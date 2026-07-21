@@ -104,7 +104,7 @@ export default function AppLayout() {
               <NavItem to="/plan" collapsed={collapsed} icon={<DocIcon />} text="训练计划" />
               <NavItem to="/activities" collapsed={collapsed} icon={<ActivityIcon />} text="活动列表" />
               {coachChat && (
-                <NavItem to="/coach" collapsed={collapsed} icon={<ChatIcon />} text="Coach 问答" />
+                <NavItem to="/coach" collapsed={collapsed} icon={<ChatIcon />} text="STRIDE Coach" />
               )}
             </NavSection>
 

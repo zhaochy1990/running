@@ -14,8 +14,9 @@
 import { useNavigate } from 'react-router-dom'
 
 import { stashProposal } from '../lib/coachProposalStorage'
+import { fingerprintProposal } from './coach-workspace/draftRevision'
+import { projectWeeklyCreate } from './coach-workspace/weeklyCreateProjection'
 import type {
-  CreatePlanDay,
   DiffChange,
   ProposalTargetKey,
   WorkspaceProposal,
@@ -106,29 +107,13 @@ function toDiffChanges(ops: unknown): DiffChange[] {
   })
 }
 
-function toCreatePlanDays(rawPlan: unknown): CreatePlanDay[] {
-  if (typeof rawPlan !== 'object' || rawPlan === null) return []
-  const sessions = (rawPlan as Record<string, unknown>).sessions
-  if (!Array.isArray(sessions)) return []
-
-  return sessions.flatMap((session) => {
-    if (typeof session !== 'object' || session === null) return []
-    const item = session as Record<string, unknown>
-    const label = str(item.date)
-    if (!label) return []
-    const detail = str(item.summary) ?? str(item.notes_md) ?? str(item.kind) ?? '训练安排'
-    return [{ label, detail }]
-  })
-}
-
 /**
  * Normalize the raw backend proposal (PlanDiff / MasterPlanDiff /
  * WeeklyPlanCreateProposal) into the workspace `WorkspaceProposal` shape.
- * `baseRevision` and `seasonImpact` come from the OUTER card (card.base_revision
- * / card.season_impact), NOT the inner proposal body. Only a `material` impact
- * level produces the blocking `seasonImpact` text; `advisory` is carried as a
- * non-blocking projection. Returns null when the raw card has no recognizable
- * proposal body — the card then behaves as a plain "open workspace" entry.
+ * `baseRevision` comes from the OUTER card but must match the revision pinned
+ * inside the raw proposal. This prevents a restored or tampered card from
+ * rebinding an old diff to a newer plan snapshot. `seasonImpact` remains outer
+ * adapter metadata. Returns null when the body is malformed or revisions differ.
  */
 function normalizeProposal(
   isWeekly: boolean,
@@ -139,6 +124,12 @@ function normalizeProposal(
 ): WorkspaceProposal | null {
   if (!raw) return null
   const ops = raw.ops
+  const rawRevision = str(raw.base_revision)
+  const isCreate = isWeekly && (raw.plan !== undefined || raw.days !== undefined || ops === undefined)
+  const revisionsMatch = isCreate
+    ? (rawRevision ?? '') === baseRevision
+    : Boolean(baseRevision) && rawRevision === baseRevision
+  if (!revisionsMatch) return null
 
   if (!isWeekly) {
     return {
@@ -150,17 +141,23 @@ function normalizeProposal(
   }
   // Weekly: a create proposal carries a full plan (no diff ops); otherwise it
   // is a weekly diff.
-  const isCreate = raw.plan !== undefined || raw.days !== undefined || ops === undefined
   if (isCreate) {
     const opIds = Array.isArray(raw.op_ids)
       ? raw.op_ids.filter((x): x is string => typeof x === 'string')
       : []
+    const { days, strength, nutrition, notesMd } = projectWeeklyCreate(raw.plan ?? raw.days ?? raw)
+    // A full create proposal must contain a reviewable calendar. Never replace
+    // the current Review with an intermediate "remove everything" marker.
+    if (days.length === 0) return null
     return {
       proposalType: 'weekly_create',
       summary,
       baseRevision,
       opIds,
-      days: toCreatePlanDays(raw.plan ?? raw.days),
+      days,
+      strength,
+      nutrition,
+      notesMd,
     }
   }
   const isMaterial = seasonImpact?.level === 'material'
@@ -187,31 +184,47 @@ export default function CoachProposalUpgradeCard({
   const resolved = resolveTarget(userId, proposal, activeTarget)
   if (!resolved) return null
 
-  const hasProposal = Boolean(proposal?.proposal)
   const summary =
     str(proposal?.summary) ?? (resolved.isWeekly ? '本周课表调整方案' : '赛季训练计划调整方案')
+  const rawProposalBody = proposal?.proposal
+  const normalized = normalizeProposal(
+    resolved.isWeekly,
+    rawProposalBody,
+    summary,
+    str(proposal?.base_revision) ?? '',
+    proposal?.season_impact,
+  )
+  // Malformed or empty proposal bodies are not actionable. The Coach reply
+  // remains visible, but no card can wipe the current Review.
+  if (rawProposalBody && !normalized) return null
+  const hasProposal = normalized !== null
 
   const onSelect = () => {
-    const normalized = normalizeProposal(
-      resolved.isWeekly,
-      proposal?.proposal,
-      summary,
-      str(proposal?.base_revision) ?? '',
-      proposal?.season_impact,
-    )
     if (normalized) {
       try {
         stashProposal({
           target: resolved.targetKey,
           contextAnchor,
           proposal: normalized,
-          rawProposal: proposal?.proposal ?? {},
+          rawProposal: rawProposalBody ?? {},
         })
       } catch {
         /* sessionStorage unavailable — the workspace can refetch */
       }
     }
-    navigate(resolved.path)
+    // For a weekly-create proposal, carry a stable content fingerprint as the
+    // draftRevision navigation state so WeeklyPlanAdjustPage can re-read the
+    // stash when this card is selected again with a revised draft (task #30).
+    // Weekly-diff and master proposals keep the existing no-state contract.
+    const navState =
+      resolved.isWeekly && normalized?.proposalType === 'weekly_create' && rawProposalBody
+        ? { state: { draftRevision: fingerprintProposal(rawProposalBody) } }
+        : undefined
+    if (navState) {
+      navigate(resolved.path, navState)
+    } else {
+      navigate(resolved.path)
+    }
   }
 
   return (

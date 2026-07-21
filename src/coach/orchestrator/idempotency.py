@@ -53,14 +53,22 @@ def assistant_message_id(client_turn_id: str) -> str:
     return f"{client_turn_id}:a"
 
 
-def request_fingerprint(*, message: str, request_target: dict[str, Any] | None) -> str:
+def request_fingerprint(
+    *,
+    message: str,
+    request_target: dict[str, Any] | None,
+    request_context: dict[str, Any] | None = None,
+) -> str:
     """Stable hash of the turn's request-defining inputs.
 
     ``request_target`` is the target the client supplied *this* turn (or
     ``None``) — deliberately not the pipeline-promoted ``active_target``.
+    ``request_context`` is the review draft the client anchored this turn to (or
+    ``None``); it is part of the request identity, so a replay carrying the same
+    id with a different draft is a conflict, not a silent replay of the old one.
     """
     payload = json.dumps(
-        {"message": message, "target": request_target},
+        {"message": message, "target": request_target, "context": request_context},
         sort_keys=True,
         ensure_ascii=False,
         separators=(",", ":"),

@@ -25,8 +25,20 @@ vi.mock('../../UserContextValue', () => ({
 
 // The upgrade card is exercised by its own test; stub it so we can count cards.
 vi.mock('../CoachProposalUpgradeCard', () => ({
-  default: ({ proposal, activeTarget }: { proposal?: unknown; activeTarget?: unknown }) => (
-    <div data-testid="upgrade-card" data-kind={proposal ? 'proposal' : activeTarget ? 'active' : 'none'} />
+  default: ({
+    proposal,
+    activeTarget,
+    contextAnchor,
+  }: {
+    proposal?: unknown
+    activeTarget?: unknown
+    contextAnchor?: string
+  }) => (
+    <div
+      data-testid="upgrade-card"
+      data-kind={proposal ? 'proposal' : activeTarget ? 'active' : 'none'}
+      data-context-anchor={contextAnchor}
+    />
   ),
 }))
 
@@ -93,6 +105,23 @@ describe('CoachChat — proposals', () => {
     expect(screen.queryByText('选择一个调整方案')).not.toBeInTheDocument()
   })
 
+  it('keeps a pending proposal anchored to the turn that produced it', () => {
+    chatState.current = {
+      ...baseChat,
+      messages: [
+        { role: 'coach', content: '已生成方案', messageId: 'proposal-message' },
+        { role: 'coach', content: '这是后续说明', messageId: 'follow-up-message' },
+      ],
+      proposals: [makeProposal('本周降量')],
+      proposalContextAnchor: 'proposal-message',
+    }
+    renderChat()
+    expect(screen.getByTestId('upgrade-card')).toHaveAttribute(
+      'data-context-anchor',
+      'proposal-message',
+    )
+  })
+
   it('renders all proposal cards and a "选择一个调整方案" heading when multiple', () => {
     chatState.current = {
       ...baseChat,
@@ -121,8 +150,32 @@ describe('CoachChat — proposals', () => {
   })
 })
 
-describe('CoachChat — history state', () => {
+describe('CoachChat — layout', () => {
   beforeEach(() => {
+    chatState.current = { ...baseChat }
+    userState.current = { ...baseUser }
+  })
+
+  it('keeps the tight column padding by default (docked workspace aside)', () => {
+    renderChat()
+    const transcript = screen.getByTestId('coach-chat-transcript')
+    expect(transcript).toHaveClass('px-1')
+    expect(transcript).not.toHaveClass('pr-4')
+  })
+
+  it('insets content but frees the scrollbar in edgeToEdge (full-page) mode', () => {
+    render(
+      <MemoryRouter>
+        <CoachChat edgeToEdge />
+      </MemoryRouter>,
+    )
+    const transcript = screen.getByTestId('coach-chat-transcript')
+    expect(transcript).not.toHaveClass('px-1')
+    expect(transcript).toHaveClass('pl-4', 'pr-4')
+  })
+})
+
+describe('CoachChat — history state', () => {  beforeEach(() => {
     userState.current = { ...baseUser }
     sendMessageMock.mockReset()
     retryMock.mockReset()

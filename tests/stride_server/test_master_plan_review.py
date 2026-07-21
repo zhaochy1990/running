@@ -1123,6 +1123,47 @@ class TestCurrentMasterPlan:
                 pace_s_km=300,
                 avg_hr=145,
             ))
+            from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+            # Completed week 1: full 7-day complete/rest_confirmed coverage.
+            week1_rows = [
+                (
+                    (week_start + timedelta(days=offset)).isoformat(),
+                    dose,
+                    status,
+                )
+                for offset, dose, status in [
+                    (0, 70, "complete"),
+                    (1, 0, "rest_confirmed"),
+                    (2, 55, "complete"),
+                    (3, 45, "complete"),
+                    (4, 0, "rest_confirmed"),
+                    (5, 60, "complete"),
+                    (6, 40, "complete"),
+                ]
+            ]
+            # Current week: every elapsed day is covered. The DB aggregation can
+            # therefore call the clamped window complete, but the API must still
+            # expose it as partial / "as of now" until the canonical week ends.
+            elapsed_days = (today - current_week).days + 1
+            current_rows = [
+                (
+                    (current_week + timedelta(days=offset)).isoformat(),
+                    50,
+                    "complete",
+                )
+                for offset in range(elapsed_days)
+            ]
+            db._conn.executemany(
+                "INSERT INTO daily_training_load "
+                "(date, algorithm_version, training_dose, coverage_status) "
+                "VALUES (?,?,?,?)",
+                [
+                    (d, TRAINING_LOAD_MODEL_VERSION, dose, status)
+                    for d, dose, status in (week1_rows + current_rows)
+                ],
+            )
+            db._conn.commit()
         finally:
             db.close()
 
@@ -1144,6 +1185,9 @@ class TestCurrentMasterPlan:
         assert completed["actual_avg_pace_fmt"] == "5:12"
         assert completed["actual_avg_hr"] == 146
         assert completed["actual_run_count"] == 2
+        assert completed["actual_training_dose"] == 270.0
+        assert completed["actual_training_dose_coverage"] == 1.0
+        assert completed["actual_training_dose_status"] == "complete"
         assert current["is_completed"] is False
         assert current["planned_distance_km"] == 50.0
         assert current["actual_distance_km"] == 7.0
@@ -1151,8 +1195,17 @@ class TestCurrentMasterPlan:
         assert current["actual_avg_pace_fmt"] == "5:00"
         assert current["actual_avg_hr"] == 145
         assert current["actual_run_count"] == 1
+        # Current week is clamped to today; the canonical week has not finished,
+        # so it is partial for plan comparison even if elapsed days are complete.
+        assert current["actual_training_dose"] == 50.0 * elapsed_days
+        assert current["actual_training_dose_coverage"] == 1.0
+        assert current["actual_training_dose_status"] == "partial"
         assert future["is_completed"] is False
         assert "actual_distance_km" not in future
+        # Future weeks must not fabricate actual dose values.
+        assert future["actual_training_dose"] is None
+        assert future["actual_training_dose_coverage"] == 0.0
+        assert future["actual_training_dose_status"] == "unknown"
 
     def test_current_synthesizes_completed_lead_in_weeks(self, app_client):
         """Completed lead-in phases without weekly skeletons still expose actual weeks."""

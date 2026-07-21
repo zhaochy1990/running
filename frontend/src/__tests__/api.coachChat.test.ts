@@ -97,6 +97,39 @@ describe('sendCoachChatMessage', () => {
     expect(sentBody.target).toMatchObject({ kind: 'week', folder: '2026-06-22_06-28(W8)' })
   })
 
+  it('includes the review draft context when provided', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(200, chatBody('ok')))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const reviewContext = {
+      kind: 'weekly_create' as const,
+      proposal: { folder: '2026-06-22_06-28(W8)', plan: { week_folder: '2026-06-22_06-28(W8)' } },
+    }
+    await sendCoachChatMessage(
+      '这个课表的训练逻辑是什么',
+      'abc123',
+      'web-default',
+      { kind: 'week', folder: '2026-06-22_06-28(W8)' },
+      reviewContext,
+    )
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect(sentBody.review_context).toMatchObject({
+      kind: 'weekly_create',
+      proposal: { folder: '2026-06-22_06-28(W8)' },
+    })
+  })
+
+  it('omits review_context when not provided', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(200, chatBody('ok')))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await sendCoachChatMessage('我状态如何', 'abc123')
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect('review_context' in sentBody).toBe(false)
+  })
+
   it('returns { ok, status, data.reply } on success', async () => {
     const fetchMock = vi
       .fn()

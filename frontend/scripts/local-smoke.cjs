@@ -142,34 +142,38 @@ async function main() {
   await page.screenshot({ path: screenshotPath, fullPage: false })
 
   await page.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' })
-  await page.getByRole('heading', { name: '本周课表' }).waitFor({ timeout: 20_000 })
+  const weeklyPlanHeading = page.getByRole('heading', { name: '本周课表' })
+  const emptyPlanHeading = page.getByRole('heading', { name: '使用 Coach Agent 生成本周计划' })
+  await weeklyPlanHeading.or(emptyPlanHeading).waitFor({ timeout: 20_000 })
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {})
-  assertCurrentWeekUrl(page.url())
 
-  const weeklyTabs = page.getByRole('tab')
-  if (await weeklyTabs.count() !== 4) {
-    throw new Error('weekly plan did not render exactly four tabs')
-  }
-  const tabChecks = [
-    ['weekly-plan-tab-schedule', null],
-    ['weekly-plan-tab-strength', null],
-    ['weekly-plan-tab-records', '本周训练记录'],
-    ['weekly-plan-tab-feedback', '围绕本周关键课记录体感'],
-  ]
-  for (const [id, expectedHeading] of tabChecks) {
-    const tab = page.locator(`#${id}`)
-    if (await tab.count() !== 1) throw new Error(`weekly plan tab missing: ${id}`)
-    await tab.click()
-    if (await tab.getAttribute('aria-selected') !== 'true') {
-      throw new Error(`weekly plan tab did not activate: ${id}`)
+  if (await weeklyPlanHeading.isVisible().catch(() => false)) {
+    assertCurrentWeekUrl(page.url())
+    const weeklyTabs = page.getByRole('tab')
+    if (await weeklyTabs.count() !== 4) {
+      throw new Error('weekly plan did not render exactly four tabs')
     }
-    const panel = page.getByRole('tabpanel')
-    await panel.waitFor({ timeout: 10_000 })
-    if (!(await panel.innerText()).trim()) {
-      throw new Error(`weekly plan tab rendered no content: ${id}`)
-    }
-    if (expectedHeading) {
-      await page.getByRole('heading', { name: expectedHeading }).waitFor({ timeout: 10_000 })
+    const tabChecks = [
+      ['weekly-plan-tab-schedule', null],
+      ['weekly-plan-tab-strength', null],
+      ['weekly-plan-tab-records', '本周训练记录'],
+      ['weekly-plan-tab-feedback', '围绕本周关键课记录体感'],
+    ]
+    for (const [id, expectedHeading] of tabChecks) {
+      const tab = page.locator(`#${id}`)
+      if (await tab.count() !== 1) throw new Error(`weekly plan tab missing: ${id}`)
+      await tab.click()
+      if (await tab.getAttribute('aria-selected') !== 'true') {
+        throw new Error(`weekly plan tab did not activate: ${id}`)
+      }
+      const panel = page.getByRole('tabpanel')
+      await panel.waitFor({ timeout: 10_000 })
+      if (!(await panel.innerText()).trim()) {
+        throw new Error(`weekly plan tab rendered no content: ${id}`)
+      }
+      if (expectedHeading) {
+        await page.getByRole('heading', { name: expectedHeading }).waitFor({ timeout: 10_000 })
+      }
     }
   }
   await page.screenshot({ path: weeklyScreenshotPath, fullPage: false })

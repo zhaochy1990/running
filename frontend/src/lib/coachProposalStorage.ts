@@ -47,14 +47,25 @@ function isStashedProposal(value: unknown): value is StashedProposal {
   if (!isTargetKey(s.target)) return false
   if (typeof s.contextAnchor !== 'string') return false
   if (typeof s.rawProposal !== 'object' || s.rawProposal === null) return false
-  const p = s.proposal as { proposalType?: unknown } | undefined
-  return (
-    typeof p === 'object' &&
-    p !== null &&
-    (p.proposalType === 'weekly_diff' ||
-      p.proposalType === 'weekly_create' ||
-      p.proposalType === 'master_diff')
-  )
+  const raw = s.rawProposal as Record<string, unknown>
+  const p = s.proposal as Record<string, unknown> | undefined
+  if (typeof p !== 'object' || p === null) return false
+  if (typeof p.baseRevision !== 'string') return false
+
+  const rawRevision = raw.base_revision
+  const revisionMatches =
+    typeof rawRevision === 'string'
+      ? rawRevision.length > 0 && rawRevision === p.baseRevision
+      : rawRevision == null && p.baseRevision === ''
+  if (!revisionMatches) return false
+
+  if (p.proposalType === 'weekly_create') {
+    // A create Review without calendar rows is an intermediate regeneration
+    // marker, not an actionable plan. Purge it instead of blanking the middle.
+    return Array.isArray(p.days) && p.days.length > 0
+  }
+  if (p.baseRevision.length === 0) return false
+  return p.proposalType === 'weekly_diff' || p.proposalType === 'master_diff'
 }
 
 /**

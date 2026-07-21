@@ -120,10 +120,13 @@ def build_orchestrator_graph(
         # active_target (which the pipeline mutates).
         client_turn_id = state.get("client_turn_id")
         receipts = list(state.get("turn_receipts") or [])
+        request_context = state.get("request_context")
         fingerprint = ""
         if client_turn_id:
             fingerprint = request_fingerprint(
-                message=utterance, request_target=state.get("request_target")
+                message=utterance,
+                request_target=state.get("request_target"),
+                request_context=request_context,
             )
             receipt = resolve_replay(
                 receipts, client_turn_id=client_turn_id, fingerprint=fingerprint
@@ -230,6 +233,7 @@ def build_orchestrator_graph(
             conversation_window=window,
             prior_target=prior_target,
             memory_context=memory_context,
+            review_context=request_context,
             target_resolver=target_resolver,
         )
         logger.debug(
@@ -261,6 +265,7 @@ def build_orchestrator_graph(
                 utterance=utterance,
                 conversation_window=window,
                 memory_context=memory_context,
+                review_context=request_context,
             )
             logger.debug(
                 "② supervisor %.0fms | call_plan=%s",

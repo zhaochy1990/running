@@ -5,6 +5,7 @@ import type {
   ApplyOutcome,
   ApplyProposalRequest,
   StashedProposal,
+  WeeklyCreateProposal,
   WeeklyDiffProposal,
 } from '../types'
 
@@ -128,5 +129,95 @@ describe('WeeklyPlanAdjustWorkspace', () => {
     renderWorkspace(baseDiffProposal)
     // the injected chat node is mounted exactly once
     expect(screen.getAllByTestId('chat-panel')).toHaveLength(1)
+  })
+
+  it('renders training, strength, and nutrition surfaces for a create proposal', () => {
+    const createProposal: WeeklyCreateProposal = {
+      proposalType: 'weekly_create',
+      summary: '创建下一周课表',
+      baseRevision: 'rev-create',
+      opIds: ['op-a', 'op-b'],
+      days: [{ label: '2026-07-20', detail: '轻松跑 8 km' }],
+      strength: [
+        {
+          label: '2026-07-21',
+          title: '下肢力量 A',
+          note: null,
+          exercises: [{ name: '高脚杯深蹲', sets: 3, target: '12 次', rest: '休息 90 秒', note: null }],
+        },
+      ],
+      nutrition: [
+        {
+          label: '2026-07-20',
+          kcalTarget: 2400,
+          carbsG: null,
+          proteinG: null,
+          fatG: null,
+          waterMl: 2500,
+          notesMd: null,
+          meals: [],
+        },
+      ],
+      notesMd: '本周以恢复为主。',
+    }
+    const stashed: StashedProposal<WeeklyCreateProposal> = {
+      target: { userId: 'u1', kind: 'weekly', folder: '2026-07-20_07-26' },
+      contextAnchor: 'msg-2',
+      proposal: createProposal,
+      rawProposal: { folder: '2026-07-20_07-26', plan: {} },
+    }
+    render(
+      <WeeklyPlanAdjustWorkspace
+        stashed={stashed}
+        currentPlanSummary="尚无本周计划"
+        onApply={vi.fn(async () => ({ status: 'ok' }) as ApplyOutcome)}
+        onDiscard={vi.fn()}
+        chat={<div data-testid="chat-panel">chat</div>}
+      />,
+    )
+    expect(screen.getByText('本周训练日历')).toBeInTheDocument()
+    expect(screen.getByText('力量训练')).toBeInTheDocument()
+    expect(screen.getByText('高脚杯深蹲')).toBeInTheDocument()
+    expect(screen.getByText('营养安排')).toBeInTheDocument()
+    expect(screen.getByText('本周说明')).toBeInTheDocument()
+    expect(screen.getByText('本周以恢复为主。')).toBeInTheDocument()
+  })
+
+  it('applies a create proposal with its op ids and keeps rawProposal untouched', async () => {
+    const rawProposal = { folder: '2026-07-20_07-26', plan: { sessions: [] } }
+    const createProposal: WeeklyCreateProposal = {
+      proposalType: 'weekly_create',
+      summary: '创建下一周课表',
+      baseRevision: 'rev-create',
+      opIds: ['op-a', 'op-b'],
+      days: [{ label: '2026-07-20', detail: '轻松跑' }],
+      strength: [],
+      nutrition: [],
+      notesMd: null,
+    }
+    const stashed: StashedProposal<WeeklyCreateProposal> = {
+      target: { userId: 'u1', kind: 'weekly', folder: '2026-07-20_07-26' },
+      contextAnchor: 'msg-2',
+      proposal: createProposal,
+      rawProposal,
+    }
+    const onApply = vi.fn<(req: ApplyProposalRequest) => Promise<ApplyOutcome>>(
+      async () => ({ status: 'ok' }) as ApplyOutcome,
+    )
+    render(
+      <WeeklyPlanAdjustWorkspace
+        stashed={stashed}
+        currentPlanSummary="尚无本周计划"
+        onApply={onApply}
+        onDiscard={vi.fn()}
+        chat={<div>chat</div>}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '启用计划' }))
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1))
+    const req = onApply.mock.calls[0][0] as ApplyProposalRequest
+    expect(req.opIds).toEqual(['op-a', 'op-b'])
+    // rawProposal is preserved verbatim for apply.
+    expect(stashed.rawProposal).toEqual({ folder: '2026-07-20_07-26', plan: { sessions: [] } })
   })
 })

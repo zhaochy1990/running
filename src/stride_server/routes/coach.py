@@ -36,6 +36,7 @@ from pydantic import (
 
 from coach.schemas import AssistantPart, assistant_parts_from_message
 from coach.contracts import CoachEvent, ProposalCard, SeasonImpact, TargetRef
+from coach.contracts import WeeklyCreateReviewContext
 from coach.orchestrator import TurnConflictError
 from coach.season_impact import evaluate_weekly_season_impact
 
@@ -119,7 +120,6 @@ _CLIENT_TURN_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
 _DEFAULT_MAX_MESSAGE_CHARS = 8000
 _DEFAULT_SESSION_ID = "web-default"
 
-
 def _validate_session_id(value: str) -> str:
     if not _SESSION_ID_RE.fullmatch(value):
         raise ValueError(
@@ -158,6 +158,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     client_turn_id: str = Field(min_length=1, max_length=128)
     target: TargetRef | None = None
+    review_context: WeeklyCreateReviewContext | None = None
     model_config = {"extra": "ignore"}
 
     @field_validator("session_id")
@@ -173,6 +174,31 @@ class ChatRequest(BaseModel):
                 "client_turn_id must be 1–128 chars of [A-Za-z0-9_-]"
             )
         return value
+
+    @model_validator(mode="after")
+    def _review_context_matches_target(self) -> "ChatRequest":
+        """A review draft must be anchored to the week it belongs to.
+
+        The draft is authoritative for the turn, so it can only ride a turn that
+        targets that same week: ``target.kind == 'week'`` and
+        ``target.folder == review_context.proposal.folder``. This makes it
+        impossible to answer against a draft for a different week than the one
+        the client is acting on. The nested review-context contract separately
+        caps the serialised payload size for every consumer path.
+        """
+        ctx = self.review_context
+        if ctx is None:
+            return self
+        target = self.target
+        if target is None or target.kind != "week":
+            raise ValueError(
+                "review_context requires a target with kind='week'"
+            )
+        if target.folder != ctx.proposal.folder:
+            raise ValueError(
+                "review_context.proposal.folder must equal target.folder"
+            )
+        return self
 
 
 class AssistantMessageDTO(BaseModel):
@@ -241,6 +267,14 @@ class SessionMessagesResponse(BaseModel):
     the server keys ``{user}:coach:{session_id}``. Normal users see only user +
     assistant text/refusal parts; debug users additionally see reasoning /
     tool_meta parts and tool messages.
+
+    ``pending_proposals`` is the latest un-consumed proposal from ``turn_receipts``
+    — present only when the most-recent proposal-bearing turn has not yet been
+    followed by a ``weekly_plan_applied`` / ``master_plan_applied`` /
+    ``proposal_abandoned`` event for the same target. The cards are freshly
+    re-enriched so ``base_revision`` and ``season_impact`` reflect current state.
+    ``pending_active_target`` and ``pending_proposal_message_id`` accompany it so
+    the frontend can restore the full workspace context.
     """
 
     session_id: str
@@ -248,6 +282,10 @@ class SessionMessagesResponse(BaseModel):
     user_id: str
     debug: bool
     messages: list[ChatMessage]
+    # Pending proposal recovery — None when no unresolved proposal exists.
+    pending_proposals: list[dict] | None = None
+    pending_active_target: dict | None = None
+    pending_proposal_message_id: str | None = None
 
 
 class PlanVersionSummary(BaseModel):
@@ -413,6 +451,11 @@ def post_chat_message(
 
     user_id: str = payload["sub"]
     thread_id = coach_thread_id(user_id, body.session_id)
+    review_context = (
+        body.review_context.model_dump(mode="json")
+        if body.review_context is not None
+        else None
+    )
     try:
         result = run_coach_turn(
             user_id=user_id,
@@ -420,6 +463,7 @@ def post_chat_message(
             message=body.message,
             client_turn_id=body.client_turn_id,
             target=body.target,
+            review_context=review_context,
         )
     except TurnConflictError as exc:
         # Same client_turn_id reused with a different request — a client bug,
@@ -526,6 +570,70 @@ def _day_has_matching_actual(activities: list[dict[str, Any]], kind: Any) -> boo
     return False
 
 
+def _changed_session_keys(
+    current: Any,
+    proposed: Any,
+    *,
+    before: str | None = None,
+    on: str | None = None,
+) -> list[str]:
+    """Session identities whose canonical content changes in a full replacement."""
+    current_by_key = {
+        (session.date, session.session_index): session
+        for session in current.sessions
+        if (before is None or session.date < before)
+        and (on is None or session.date == on)
+    }
+    proposed_by_key = {
+        (session.date, session.session_index): session
+        for session in proposed.sessions
+        if (before is None or session.date < before)
+        and (on is None or session.date == on)
+    }
+    keys = set(current_by_key) | set(proposed_by_key)
+    return [
+        f"{date}#{index}"
+        for date, index in sorted(keys)
+        if current_by_key.get((date, index)) != proposed_by_key.get((date, index))
+    ]
+
+
+def _locked_today_full_plan_keys(
+    user_id: str,
+    current: Any,
+    proposed: Any,
+    *,
+    today: str,
+) -> list[str]:
+    """Changed today sessions already backed by a synced actual."""
+    changed = set(_changed_session_keys(current, proposed, on=today))
+    if not changed:
+        return []
+    try:
+        from ..deps import get_db
+
+        db = get_db(user_id)
+        try:
+            activities = [
+                dict(row) for row in db.get_activities_for_shanghai_day(today)
+            ]
+        finally:
+            db.close()
+    except Exception:  # noqa: BLE001 — advisory lock, never fail an apply on I/O
+        return []
+    if not activities:
+        return []
+
+    locked: list[str] = []
+    for session in current.sessions:
+        key = f"{session.date}#{session.session_index}"
+        if key not in changed or session.date != today:
+            continue
+        if _day_has_matching_actual(activities, session.kind):
+            locked.append(key)
+    return locked
+
+
 def _locked_today_op_ids(
     user_id: str, accepted_ops: list[Any], plan: Any, *, today: str
 ) -> list[str]:
@@ -560,9 +668,34 @@ def _locked_today_op_ids(
     return locked
 
 
+def _is_reviewable_proposal_card(user_id: str, card: ProposalCard) -> bool:
+    """Whether a proposal can render a non-empty, actionable Review.
+
+    Historical ``regenerate_week`` calls emitted remove-only ``PlanDiff`` values
+    that projected an existing week to zero sessions. Those are intermediate
+    instructions, not replacement plans; suppress them at the HTTP boundary for
+    both live chat and history recovery. Storage failures fail open so an
+    unrelated infrastructure hiccup does not silently erase a valid card.
+    """
+    proposal = card.proposal
+    if isinstance(proposal, WeeklyPlanCreateProposal):
+        return bool(proposal.to_weekly_plan().sessions)
+    if not isinstance(proposal, PlanDiff):
+        return True
+    try:
+        current = get_weekly_plan_store().get_plan(user_id, proposal.folder)
+        if current is None or not current.sessions:
+            return True
+        applicable = [op.id for op in proposal.ops if op.accepted is not False]
+        projected = apply_diff_to_weekly_plan(current, proposal, applicable)
+        return bool(projected.sessions)
+    except Exception:  # noqa: BLE001 — filtering is defensive, not a hard gate
+        logger.exception("proposal reviewability check failed")
+        return True
+
+
 def _enrich_proposal_cards(user_id: str, cards: list[ProposalCard]) -> list[dict]:
-    """Fill ``base_revision`` + ``season_impact`` on each proposal card so the
-    client gets working stale-protection and season warnings.
+    """Filter unsafe cards and fill revision + season-impact metadata.
 
     Enrichment reads infrastructure (weekly / master stores), which core must
     not do — so it happens here at the HTTP boundary. Best-effort per card: a
@@ -570,6 +703,11 @@ def _enrich_proposal_cards(user_id: str, cards: list[ProposalCard]) -> list[dict
     """
     out: list[dict] = []
     for card in cards:
+        if not _is_reviewable_proposal_card(user_id, card):
+            logger.warning(
+                "suppressing non-reviewable proposal from %s", card.specialist_id
+            )
+            continue
         try:
             enriched = _enrich_one_card(user_id, card)
         except Exception:  # noqa: BLE001 — enrichment is advisory, never fatal
@@ -596,11 +734,16 @@ def _enrich_weekly_diff_card(
     current = get_weekly_plan_store().get_plan(user_id, diff.folder)
     if current is None:
         return card
-    base_revision = weekly_plan_fingerprint(current)
+    base_revision = (
+        diff.base_revision
+        or card.base_revision
+        or weekly_plan_fingerprint(current)
+    )
+    pinned_diff = diff.model_copy(update={"base_revision": base_revision})
     impact: SeasonImpact | None = None
     try:
-        applicable = [op.id for op in diff.ops if op.accepted is not False]
-        adjusted = apply_diff_to_weekly_plan(current, diff, applicable)
+        applicable = [op.id for op in pinned_diff.ops if op.accepted is not False]
+        adjusted = apply_diff_to_weekly_plan(current, pinned_diff, applicable)
         impact = evaluate_weekly_season_impact(
             adjusted, master=_active_master_for_user(user_id), previous=current
         )
@@ -608,6 +751,7 @@ def _enrich_weekly_diff_card(
         impact = None
     return card.model_copy(
         update={
+            "proposal": pinned_diff,
             "base_revision": base_revision,
             "season_impact": impact,
             "target": card.target or TargetRef(kind="week", folder=diff.folder),
@@ -620,15 +764,20 @@ def _enrich_weekly_create_card(
 ) -> ProposalCard:
     impact: SeasonImpact | None = None
     try:
-        created = proposal.to_weekly_plan()
+        proposed = proposal.to_weekly_plan()
+        current = get_weekly_plan_store().get_plan(user_id, proposal.folder)
         impact = evaluate_weekly_season_impact(
-            created, master=_active_master_for_user(user_id), previous=None
+            proposed,
+            master=_active_master_for_user(user_id),
+            previous=current if proposal.base_revision is not None else None,
         )
     except Exception:  # noqa: BLE001 — advisory
         impact = None
     return card.model_copy(
         update={
-            "base_revision": None,  # a brand-new week has no prior snapshot
+            # The revision lives inside the durable proposal so history recovery
+            # reuses the generation-time snapshot instead of recomputing it.
+            "base_revision": proposal.base_revision,
             "season_impact": impact,
             "target": card.target or TargetRef(kind="week", folder=proposal.folder),
         }
@@ -639,9 +788,13 @@ def _enrich_master_card(
     user_id: str, card: ProposalCard, diff: MasterPlanDiff
 ) -> ProposalCard:
     plan = _active_master_for_user(user_id)
-    base_revision = str(plan.version) if plan is not None else None
+    base_revision = diff.base_revision or card.base_revision or (
+        str(plan.version) if plan is not None else None
+    )
+    pinned_diff = diff.model_copy(update={"base_revision": base_revision})
     return card.model_copy(
         update={
+            "proposal": pinned_diff,
             "base_revision": base_revision,
             "target": card.target or TargetRef(kind="master", plan_id=diff.plan_id),
         }
@@ -673,36 +826,127 @@ def apply_coach_week_diff(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="目前只支持生成当前周和下一周的训练计划",
             )
-        try:
-            created = create_weekly_plan(
-                user_id,
-                proposal.to_weekly_plan(),
-                expected_folder=folder,
-                generated_by="coach-generation",
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if not created:
+
+        request_revision = body.base_revision or None
+        if request_revision != proposal.base_revision:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"weekly plan {folder!r} already exists",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="request base_revision does not match proposal base_revision",
             )
+
+        proposed_plan = proposal.to_weekly_plan()
+        plan_store = get_weekly_plan_store()
+        current = plan_store.get_plan(user_id, folder)
+        is_replacement = proposal.base_revision is not None
+
+        if is_replacement:
+            if (
+                current is None
+                or weekly_plan_fingerprint(current) != proposal.base_revision
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="weekly plan changed since this proposal was created",
+                )
+
+            today = today_shanghai().isoformat()
+            past_keys = _changed_session_keys(
+                current,
+                proposed_plan,
+                before=today,
+            )
+            if past_keys:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": "past_day_immutable",
+                        "message": "不能修改今天之前的训练日",
+                        "session_keys": past_keys,
+                    },
+                )
+            locked_today_keys = _locked_today_full_plan_keys(
+                user_id,
+                current,
+                proposed_plan,
+                today=today,
+            )
+            if locked_today_keys:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": "today_session_locked",
+                        "message": "今天的这节训练已有完成记录，不能再改动",
+                        "session_keys": locked_today_keys,
+                    },
+                )
+
+            impact = evaluate_weekly_season_impact(
+                proposed_plan,
+                master=_active_master_for_user(user_id),
+                previous=current,
+            )
+            if (
+                impact.level == "material"
+                and body.impact_acknowledgement != "weekly_only"
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": "season_impact_material",
+                        "message": "该调整明显偏离赛季计划，需要确认仅改本周",
+                        "season_impact": impact.model_dump(),
+                    },
+                )
+            try:
+                save_weekly_plan(
+                    user_id,
+                    proposed_plan,
+                    expected_folder=folder,
+                    generated_by="coach-regeneration",
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            created = False
+            summary = "已替换并启用本周课表"
+        else:
+            try:
+                created = create_weekly_plan(
+                    user_id,
+                    proposed_plan,
+                    expected_folder=folder,
+                    generated_by="coach-generation",
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if not created:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"weekly plan {folder!r} already exists",
+                )
+            impact = evaluate_weekly_season_impact(
+                proposed_plan,
+                master=_active_master_for_user(user_id),
+                previous=None,
+            )
+            summary = "已创建并启用本周课表"
+
         _emit_coach_event(
             user_id,
             CoachEvent(
                 type="weekly_plan_applied",
                 status="applied",
                 created_at=_now_iso(),
-                summary="已创建并启用本周课表",
+                summary=summary,
                 target=TargetRef(kind="week", folder=folder),
-                detail={"folder": folder, "created": True},
+                detail={"folder": folder, "created": created},
             ),
             body.session_id,
         )
         return {
             "applied": 1,
             "folder": folder,
-            "created": True,
+            "created": created,
+            "season_impact": impact.model_dump(),
             "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
 
@@ -712,6 +956,17 @@ def apply_coach_week_diff(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"diff folder {diff.folder!r} does not match path folder {folder!r}",
+        )
+    request_revision = body.base_revision or None
+    if diff.base_revision is None or request_revision is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="weekly diff and request must carry base_revision",
+        )
+    if request_revision != diff.base_revision:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="request base_revision does not match diff base_revision",
         )
 
     # Whole-plan apply: the client must accept exactly the applicable ops
@@ -876,6 +1131,17 @@ def apply_coach_master_diff(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"diff plan_id {diff.plan_id!r} does not match path plan_id {plan_id!r}",
         )
+    request_revision = body.base_revision or None
+    if diff.base_revision is None or request_revision is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="master diff and request must carry base_revision",
+        )
+    if request_revision != diff.base_revision:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="request base_revision does not match diff base_revision",
+        )
 
     store = get_master_plan_store()
     with master_plan_apply_lock(user_id, plan_id):
@@ -1035,6 +1301,121 @@ def get_thread_messages(
     )
 
 
+
+# ---------------------------------------------------------------------------
+# Pending-proposal recovery helper
+# ---------------------------------------------------------------------------
+
+_TERMINAL_EVENT_TYPES = frozenset(
+    {"weekly_plan_applied", "master_plan_applied", "proposal_abandoned"}
+)
+
+
+def _target_identity(target: Any) -> tuple[str, str] | None:
+    if not isinstance(target, dict):
+        return None
+    kind = str(target.get("kind") or "")
+    if kind in {"week", "session"}:
+        folder = str(target.get("folder") or "")
+        return ("week", folder) if folder else None
+    if kind == "master":
+        plan_id = str(target.get("plan_id") or "")
+        return ("master", plan_id) if plan_id else None
+    return None
+
+
+def _event_resolves_target(
+    event: dict,
+    *,
+    target: tuple[str, str] | None,
+    proposed_at: str,
+) -> bool:
+    if target is None or event.get("type") not in _TERMINAL_EVENT_TYPES:
+        return False
+    event_target = _target_identity(event.get("target") or event.get("detail"))
+    if event_target != target:
+        return False
+    event_at = str(event.get("created_at") or "")
+    # A terminal event may consume a proposal only when their ordering is
+    # provable. Legacy/corrupt checkpoints can lack either timestamp; in that
+    # case preserve the Review card rather than silently discarding user work.
+    if not proposed_at or not event_at:
+        return False
+    return event_at >= proposed_at
+
+
+def _recoverable_proposal_cards(raw_proposals: list[Any]) -> list[ProposalCard]:
+    cards: list[ProposalCard] = []
+    for raw in raw_proposals:
+        card = ProposalCard.model_validate(raw)
+        proposal = card.proposal
+        if isinstance(proposal, WeeklyPlanCreateProposal):
+            # Historical regenerate markers could contain a valid-but-empty plan.
+            # They are intermediate instructions, never a reviewable proposal.
+            if not proposal.to_weekly_plan().sessions:
+                continue
+            if card.base_revision != proposal.base_revision:
+                continue
+        elif isinstance(proposal, (PlanDiff, MasterPlanDiff)):
+            # Old receipts predate durable revision pinning. Rebinding such a diff
+            # to today's plan/version would let refresh bypass stale protection.
+            if (
+                proposal.base_revision is None
+                or card.base_revision != proposal.base_revision
+            ):
+                continue
+        cards.append(card)
+    return cards
+
+
+def _extract_pending_proposals(
+    user_id: str,
+    turn_receipts: list[dict],
+    events: list[dict],
+) -> tuple[list[dict] | None, dict | None, str | None]:
+    """Return the latest reviewable proposal unresolved for the same target.
+
+    Later read-only turns do not consume a proposal. Only an applied/abandoned
+    event for the same target, timestamped after the proposal, closes it.
+    """
+    for receipt in reversed(turn_receipts):
+        tr = receipt.get("turn_response") or {}
+        raw_proposals = tr.get("proposals") or []
+        if not raw_proposals:
+            continue
+        try:
+            cards = _recoverable_proposal_cards(list(raw_proposals))
+        except Exception:  # noqa: BLE001
+            logger.exception("pending proposal validation failed")
+            continue
+        if not cards:
+            continue
+
+        active_target = tr.get("active_target")
+        card_target = cards[0].target.model_dump() if cards[0].target else None
+        target = _target_identity(active_target or card_target)
+        proposed_at = str(receipt.get("created_at") or "")
+        if any(
+            _event_resolves_target(
+                event,
+                target=target,
+                proposed_at=proposed_at,
+            )
+            for event in events
+        ):
+            continue
+        try:
+            enriched = _enrich_proposal_cards(user_id, cards)
+        except Exception:  # noqa: BLE001
+            logger.exception("pending proposal re-enrichment failed")
+            continue
+        if not enriched:
+            continue
+        return enriched, active_target or card_target, receipt.get("message_id")
+
+    return None, None, None
+
+
 # ---------------------------------------------------------------------------
 # GET /api/users/me/coach/sessions/{session_id}/messages
 # ---------------------------------------------------------------------------
@@ -1106,12 +1487,23 @@ def get_session_messages(
                 detail=ev.get("detail") or {},
             )
         )
+    # Recover the latest unresolved proposal so a fresh tab re-shows the card.
+    pending_proposals, pending_active_target, pending_proposal_message_id = (
+        _extract_pending_proposals(
+            user_id,
+            list(channel_values.get("turn_receipts") or []),
+            list(channel_values.get("events") or []),
+        )
+    )
     return SessionMessagesResponse(
         session_id=session_id,
         thread_id=thread_id,
         user_id=user_id,
         debug=debug,
         messages=messages,
+        pending_proposals=pending_proposals,
+        pending_active_target=pending_active_target,
+        pending_proposal_message_id=pending_proposal_message_id,
     )
 
 

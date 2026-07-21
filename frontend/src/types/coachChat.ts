@@ -8,6 +8,8 @@
  * External JSON is always given an explicit shape here; never `any`.
  */
 
+export const DEFAULT_COACH_CHAT_MAX_MESSAGE_CHARS = 8000
+
 // ── Assistant renderable parts (coach.schemas.conversation.AssistantPart) ──
 
 export type AssistantPartKind = 'text' | 'reasoning' | 'refusal' | 'tool_meta'
@@ -71,6 +73,16 @@ export interface SessionHistoryResponse {
   user_id: string
   debug: boolean
   messages: CoachHistoryMessage[]
+  /**
+   * Latest unresolved proposal from turn_receipts, re-enriched server-side.
+   * Null/absent when no pending proposal exists (already applied/abandoned or
+   * the session has no proposals at all).
+   */
+  pending_proposals?: CoachProposalCard[] | null
+  /** Active-target context that accompanied the pending proposal turn. */
+  pending_active_target?: CoachActiveTarget | null
+  /** message_id of the assistant turn that produced the pending proposal. */
+  pending_proposal_message_id?: string | null
 }
 
 /**
@@ -125,6 +137,22 @@ export interface CoachTargetRef {
 export interface CoachActiveTarget extends CoachTargetRef {
   [key: string]: unknown
 }
+
+/**
+ * An unapplied review draft anchored to a coach turn. When the Review workspace
+ * asks a follow-up about a not-yet-saved proposal, this rides the request so the
+ * coach answers from the draft instead of a (non-existent) saved plan.
+ *
+ * `proposal` is the raw backend `WeeklyPlanCreateProposal` (opaque at its
+ * leaves here; validated server-side). Its `folder` must equal the turn's
+ * `target.folder` — the server rejects a mismatch.
+ */
+export interface WeeklyCreateReviewContext {
+  readonly kind: 'weekly_create'
+  readonly proposal: Readonly<Record<string, unknown>>
+}
+
+export type CoachReviewContext = WeeklyCreateReviewContext
 
 /**
  * Stable assistant-turn identity returned by POST /coach/chat. `turn_id`

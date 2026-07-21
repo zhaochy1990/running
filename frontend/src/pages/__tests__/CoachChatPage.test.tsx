@@ -37,14 +37,36 @@ describe('CoachChatPage', () => {
 
   // ── Initial load ──────────────────────────────────────────────
 
-  it('renders the page title "Coach 问答"', () => {
+  it('uses the full AppLayout content width', () => {
     render(<CoachChatPage />)
-    expect(screen.getByRole('heading', { name: 'Coach 问答' })).toBeInTheDocument()
+    expect(screen.getByTestId('coach-chat-page')).toHaveClass('w-full', 'max-w-none')
+    expect(screen.getByTestId('coach-chat-page')).not.toHaveClass('max-w-3xl')
   })
 
-  it('renders textarea with placeholder "向 Coach 继续提问..."', () => {
+  it('lets the transcript scrollbar reach the content edge while chrome stays padded', () => {
     render(<CoachChatPage />)
-    expect(screen.getByPlaceholderText('向 Coach 继续提问...')).toBeInTheDocument()
+    // The page container itself carries no horizontal padding, so the transcript
+    // scroll region (inside CoachChat) can span to AppLayout's right edge.
+    const page = screen.getByTestId('coach-chat-page')
+    expect(page).not.toHaveClass('px-4')
+    // The header keeps normal page padding.
+    const header = page.querySelector('header')
+    expect(header).toHaveClass('px-4')
+    // The transcript content is inset on the right so text is not flush.
+    expect(screen.getByTestId('coach-chat-transcript')).toHaveClass('pr-4')
+  })
+
+  it('renders the page title "STRIDE Coach"', () => {
+    render(<CoachChatPage />)
+    expect(screen.getByRole('heading', { name: 'STRIDE Coach' })).toBeInTheDocument()
+  })
+
+  it('renders a comfortable multiline composer', () => {
+    render(<CoachChatPage />)
+    const textarea = screen.getByPlaceholderText('向 Coach 继续提问...')
+    expect(textarea).toBeInTheDocument()
+    expect(textarea).toHaveAttribute('rows', '3')
+    expect(textarea).toHaveClass('min-h-[84px]')
   })
 
   it('renders the send button with label "发送给 Coach"', () => {

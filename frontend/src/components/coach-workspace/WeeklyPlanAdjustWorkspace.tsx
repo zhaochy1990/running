@@ -111,12 +111,19 @@ export function WeeklyPlanAdjustWorkspace({
         </div>
 
         <div className="rounded-lg border border-border-subtle bg-bg-card p-4">
-          <div className="mb-3 text-sm font-medium text-text-primary">
-            {proposal.summary}
-          </div>
+          {proposal.proposalType !== 'weekly_create' && (
+            <div className="mb-3 text-sm font-medium text-text-primary">
+              {proposal.summary}
+            </div>
+          )}
 
           {proposal.proposalType === 'weekly_create' ? (
-            <CreateReview days={proposal.days} />
+            <CreateReview
+              days={proposal.days}
+              strength={proposal.strength}
+              nutrition={proposal.nutrition}
+              notesMd={proposal.notesMd}
+            />
           ) : (
             <DiffReview changes={proposal.changes} />
           )}

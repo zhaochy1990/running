@@ -185,6 +185,7 @@ def test_runner_extracts_valid_proposal(monkeypatch) -> None:
     assert len(result.proposals) == 1
     assert isinstance(result.proposals[0], MasterPlanDiff)
     assert result.proposals[0].plan_id == _PLAN_ID
+    assert result.proposals[0].base_revision == "1"
     assert capture["build"]["scope"] == "master_chat"
     assert capture["build"]["checkpointer"] is None
 

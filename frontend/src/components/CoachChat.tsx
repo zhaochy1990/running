@@ -15,9 +15,11 @@ import CoachChatMessage from './CoachChatMessage'
 import CoachProposalUpgradeCard from './CoachProposalUpgradeCard'
 import { useCoachChat } from '../hooks/useCoachChat'
 import { useUser } from '../UserContextValue'
-import type { CoachTargetRef } from '../types/coachChat'
-
-const DEFAULT_MAX_MESSAGE_CHARS = 8000
+import {
+  DEFAULT_COACH_CHAT_MAX_MESSAGE_CHARS,
+  type CoachReviewContext,
+  type CoachTargetRef,
+} from '../types/coachChat'
 const TEXTAREA_MAX_HEIGHT_PX = 120
 
 export interface CoachChatProps {
@@ -31,9 +33,28 @@ export interface CoachChatProps {
    * resumes from — history before it is hidden. Omit for the full page.
    */
   contextAnchor?: string
+  /**
+   * Unapplied review draft anchored to every turn (Review workspace). When set,
+   * the coach answers questions about the drafted plan from this draft instead
+   * of reading a saved plan. Omit for the full page / ordinary chat.
+   */
+  reviewContext?: CoachReviewContext
+  /**
+   * Full-page mode: let the transcript scroll region span to the container's
+   * right edge (so the scrollbar sits flush against AppLayout's main content
+   * area) while keeping the transcript content and composer inset with normal
+   * page padding. Off (the default) keeps the tight column padding used by the
+   * docked workspace aside.
+   */
+  edgeToEdge?: boolean
 }
 
-export default function CoachChat({ target, contextAnchor }: CoachChatProps) {
+// Horizontal inset applied to transcript content and the composer in full-page
+// (edgeToEdge) mode, so the scrollbar reaches the container edge but content
+// keeps comfortable page padding.
+const EDGE_INSET = 'pl-4 pr-4 sm:pl-8 sm:pr-8 lg:pl-10 lg:pr-10 xl:pl-12 xl:pr-12'
+
+export default function CoachChat({ target, contextAnchor, reviewContext, edgeToEdge = false }: CoachChatProps) {
   const { user, coachChatDebug, coachChatMaxMessageChars } = useUser()
   const {
     messages,
@@ -43,12 +64,14 @@ export default function CoachChat({ target, contextAnchor }: CoachChatProps) {
     retry,
     proposals,
     activeTarget,
+    proposalContextAnchor,
     historyLoading,
     historyError,
     reloadHistory,
-  } = useCoachChat({ target, contextAnchor })
+  } = useCoachChat({ target, contextAnchor, reviewContext })
 
-  const maxChars = coachChatMaxMessageChars ?? DEFAULT_MAX_MESSAGE_CHARS
+  const maxChars =
+    coachChatMaxMessageChars ?? DEFAULT_COACH_CHAT_MAX_MESSAGE_CHARS
   const [draft, setDraft] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const logRef = useRef<HTMLDivElement>(null)
@@ -103,7 +126,11 @@ export default function CoachChat({ target, contextAnchor }: CoachChatProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Scrollable transcript + controls. Only message/status content is live. */}
-      <div ref={logRef} className="flex-1 space-y-4 overflow-y-auto px-1 pb-2">
+      <div
+        ref={logRef}
+        data-testid="coach-chat-transcript"
+        className={`flex-1 space-y-4 overflow-y-auto pb-2 ${edgeToEdge ? EDGE_INSET : 'px-1'}`}
+      >
         <div
           role="log"
           aria-live="polite"
@@ -179,7 +206,7 @@ export default function CoachChat({ target, contextAnchor }: CoachChatProps) {
                   key={i}
                   userId={user}
                   proposal={p}
-                  contextAnchor={latestCoachAnchor}
+                  contextAnchor={proposalContextAnchor ?? latestCoachAnchor}
                 />
               ))
             ) : (
@@ -195,24 +222,26 @@ export default function CoachChat({ target, contextAnchor }: CoachChatProps) {
 
       {/* Send error */}
       {error ? (
-        <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-accent-red/30 bg-red-soft px-3.5 py-2 text-sm text-accent-red">
-          <span>{error}</span>
-          <button
-            type="button"
-            onClick={() => retry()}
-            className="flex-shrink-0 rounded-md border border-accent-red/40 px-3 py-1 text-sm text-accent-red hover:bg-accent-red/10"
-          >
-            重试
-          </button>
+        <div className={`mt-2 ${edgeToEdge ? EDGE_INSET : ''}`}>
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-accent-red/30 bg-red-soft px-3.5 py-2 text-sm text-accent-red">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => retry()}
+              className="flex-shrink-0 rounded-md border border-accent-red/40 px-3 py-1 text-sm text-accent-red hover:bg-accent-red/10"
+            >
+              重试
+            </button>
+          </div>
         </div>
       ) : null}
 
       {/* Composer */}
-      <div className="mt-3 flex-shrink-0">
+      <div className={`mt-4 flex-shrink-0 ${edgeToEdge ? EDGE_INSET : ''}`}>
         <label htmlFor="coach-chat-input" className="sr-only">
           向 Coach 提问
         </label>
-        <div className="rounded-lg border border-border-subtle bg-bg-card focus-within:border-accent-green/50">
+        <div className="rounded-xl border border-border-subtle bg-bg-card p-2 shadow-sm transition-[border-color,box-shadow] focus-within:border-accent-green/60 focus-within:shadow-[0_0_0_3px_rgba(0,168,90,0.08)]">
           <textarea
             id="coach-chat-input"
             ref={textareaRef}
@@ -221,27 +250,34 @@ export default function CoachChat({ target, contextAnchor }: CoachChatProps) {
             onKeyDown={handleKeyDown}
             placeholder="向 Coach 继续提问..."
             aria-label="向 Coach 提问"
-            rows={1}
+            rows={3}
             disabled={loading || historyBlocked}
-            className="block w-full resize-none bg-transparent px-3.5 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none disabled:opacity-60"
+            className="block min-h-[84px] w-full resize-none bg-transparent px-2 py-2 text-sm leading-6 text-text-primary placeholder:text-text-muted focus:outline-none disabled:opacity-60"
             style={{ maxHeight: TEXTAREA_MAX_HEIGHT_PX }}
           />
-          <div className="flex items-center justify-between border-t border-border-subtle px-3.5 py-2">
-            <span className={`text-xs font-mono ${overLimit ? 'text-accent-red' : 'text-text-muted'}`}>
-              {draft.length} / {maxChars}
-            </span>
+          <div className="flex items-end justify-between gap-3 px-2 pb-1 pt-2">
+            <div className="min-w-0">
+              <span className={`text-xs font-mono ${overLimit ? 'text-accent-red' : 'text-text-muted'}`}>
+                {draft.length} / {maxChars}
+              </span>
+              <p className="mt-0.5 hidden text-[11px] text-text-muted sm:block">
+                Enter 换行 · Ctrl/Cmd + Enter 发送
+              </p>
+            </div>
             <button
               type="button"
               onClick={handleSend}
               disabled={!canSend}
               aria-label="发送给 Coach"
-              className="rounded-md bg-accent-green-dim px-4 py-1.5 text-sm font-medium text-black transition-colors hover:bg-accent-green focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex-shrink-0 rounded-lg bg-accent-green px-4 py-2 text-sm font-semibold text-white shadow-sm transition-[background-color,transform] hover:bg-accent-green-dim hover:text-black active:translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green disabled:cursor-not-allowed disabled:bg-bg-secondary disabled:text-text-muted disabled:shadow-none"
             >
               发送给 Coach
             </button>
           </div>
         </div>
-        <p className="mt-1.5 text-xs text-text-muted">Enter 换行，Ctrl/Cmd + Enter 发送。</p>
+        <p className="mt-1.5 text-xs text-text-muted sm:hidden">
+          Enter 换行，Ctrl/Cmd + Enter 发送。
+        </p>
       </div>
     </div>
   )

@@ -120,6 +120,129 @@ class TestDatabaseActivities:
 
         assert summaries[1]["actual_distance_km"] == 12.0
 
+    def test_training_dose_week_summaries_complete_full_coverage(self, db):
+        """Full 7-day window of complete/rest_confirmed → complete, all sports."""
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        rows = [
+            ("2026-05-04", 80, "complete"),
+            ("2026-05-05", 40, "complete"),
+            ("2026-05-06", 0, "rest_confirmed"),
+            ("2026-05-07", 60, "complete"),
+            ("2026-05-08", 30, "complete"),
+            ("2026-05-09", 0, "rest_confirmed"),
+            ("2026-05-10", 50, "complete"),
+        ]
+        db._conn.executemany(
+            "INSERT INTO daily_training_load "
+            "(date, algorithm_version, training_dose, coverage_status) VALUES (?,?,?,?)",
+            [(d, TRAINING_LOAD_MODEL_VERSION, dose, status) for d, dose, status in rows],
+        )
+        db._conn.commit()
+
+        summaries = db.get_training_dose_week_summaries(
+            [(1, "2026-05-04", "2026-05-10")]
+        )
+
+        assert summaries[1] == {
+            "actual_training_dose": 260.0,
+            "actual_training_dose_coverage": 1.0,
+            "dose_status": "complete",
+        }
+
+    def test_training_dose_week_summaries_partial_on_gaps_or_partial_status(self, db):
+        """Missing days or a partial/unknown day downgrade to partial coverage."""
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        db._conn.executemany(
+            "INSERT INTO daily_training_load "
+            "(date, algorithm_version, training_dose, coverage_status) VALUES (?,?,?,?)",
+            [
+                ("2026-05-04", TRAINING_LOAD_MODEL_VERSION, 80, "complete"),
+                ("2026-05-05", TRAINING_LOAD_MODEL_VERSION, 40, "partial"),
+                ("2026-05-06", TRAINING_LOAD_MODEL_VERSION, 999, "unknown"),
+            ],
+        )
+        db._conn.commit()
+
+        summaries = db.get_training_dose_week_summaries(
+            [(1, "2026-05-04", "2026-05-10")]
+        )
+
+        # unknown day contributes no dose; only 2 of 7 expected days available.
+        assert summaries[1] == {
+            "actual_training_dose": 120.0,
+            "actual_training_dose_coverage": round(2 / 7, 3),
+            "dose_status": "partial",
+        }
+
+    def test_training_dose_week_summaries_unknown_when_no_available_day(self, db):
+        """A window with only unknown rows (or none) → unknown, dose None."""
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        db._conn.execute(
+            "INSERT INTO daily_training_load "
+            "(date, algorithm_version, training_dose, coverage_status) "
+            "VALUES ('2026-05-05',?,50,'unknown')",
+            (TRAINING_LOAD_MODEL_VERSION,),
+        )
+        db._conn.commit()
+
+        summaries = db.get_training_dose_week_summaries(
+            [(1, "2026-05-04", "2026-05-10")]
+        )
+
+        assert summaries[1] == {
+            "actual_training_dose": None,
+            "actual_training_dose_coverage": 0.0,
+            "dose_status": "unknown",
+        }
+
+    def test_training_dose_week_summaries_clamped_current_week_full_coverage(self, db):
+        """Current week clamped to today counts a shorter expected window."""
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        db._conn.executemany(
+            "INSERT INTO daily_training_load "
+            "(date, algorithm_version, training_dose, coverage_status) VALUES (?,?,?,?)",
+            [
+                ("2026-05-04", TRAINING_LOAD_MODEL_VERSION, 80, "complete"),
+                ("2026-05-05", TRAINING_LOAD_MODEL_VERSION, 40, "complete"),
+                ("2026-05-06", TRAINING_LOAD_MODEL_VERSION, 60, "complete"),
+            ],
+        )
+        db._conn.commit()
+
+        # date_to clamped to "today" = 2026-05-06 → 3 expected days, all present.
+        summaries = db.get_training_dose_week_summaries(
+            [(2, "2026-05-04", "2026-05-06")]
+        )
+
+        assert summaries[2] == {
+            "actual_training_dose": 180.0,
+            "actual_training_dose_coverage": 1.0,
+            "dose_status": "complete",
+        }
+
+    def test_training_dose_week_summaries_ignores_other_algorithm_version(self, db):
+        """Rows for a different algorithm version are excluded."""
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        db._conn.execute(
+            "INSERT INTO daily_training_load "
+            "(date, algorithm_version, training_dose, coverage_status) "
+            "VALUES ('2026-05-04',?,80,'complete')",
+            (TRAINING_LOAD_MODEL_VERSION - 1,),
+        )
+        db._conn.commit()
+
+        summaries = db.get_training_dose_week_summaries(
+            [(1, "2026-05-04", "2026-05-10")]
+        )
+
+        assert summaries[1]["dose_status"] == "unknown"
+        assert summaries[1]["actual_training_dose"] is None
+
     def test_compact_training_summary_aggregates_range_and_plan(self, db):
         from stride_storage.sqlite.training_summary import get_training_summary
 

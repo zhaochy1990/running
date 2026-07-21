@@ -39,6 +39,7 @@ const stashed: StashedProposal = {
   rawProposal: {
     folder: '2026-07-13_07-19',
     ops: [{ id: 'op-1' }],
+    base_revision: 'rev-abc',
   },
 }
 
@@ -104,6 +105,32 @@ describe('coachProposalStorage', () => {
     expect(readStashedProposal(weeklyTarget)).toBeNull()
     // corrupt entry was purged
     if (key) expect(sessionStorage.getItem(key)).toBeNull()
+  })
+
+  it('returns null and purges when the raw proposal revision is missing', () => {
+    const legacy = {
+      ...stashed,
+      rawProposal: {
+        folder: '2026-07-13_07-19',
+        ops: [{ id: 'op-1' }],
+      },
+    }
+    stashProposal(legacy)
+
+    expect(readStashedProposal(weeklyTarget)).toBeNull()
+  })
+
+  it('returns null and purges when inner and projected revisions differ', () => {
+    const tampered = {
+      ...stashed,
+      rawProposal: {
+        ...stashed.rawProposal,
+        base_revision: 'different-revision',
+      },
+    }
+    stashProposal(tampered)
+
+    expect(readStashedProposal(weeklyTarget)).toBeNull()
   })
 
   it('returns null and purges when the stored target key mismatches', () => {

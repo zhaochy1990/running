@@ -80,9 +80,64 @@ export interface CreatePlanDay {
   readonly detail: string
 }
 
+/** One strength exercise projected from a canonical `StrengthExerciseSpec`. */
+export interface CreatePlanStrengthExercise {
+  readonly name: string
+  /** Number of sets, when known. */
+  readonly sets?: number | null
+  /**
+   * Human target string — reps (`12 次`) or duration (`45 秒`) — pre-formatted
+   * from `target_kind` + `target_value`. Null when the raw spec is unusable.
+   */
+  readonly target?: string | null
+  /** Rest between sets, formatted (`休息 60 秒`). Null when absent. */
+  readonly rest?: string | null
+  readonly note?: string | null
+}
+
+/** One strength day, for the standalone strength section of the create Review. */
+export interface CreatePlanStrengthDay {
+  /** ISO date label (`2026-07-20`). */
+  readonly label: string
+  /** Workout title, when the raw spec named it. */
+  readonly title?: string | null
+  readonly exercises: readonly CreatePlanStrengthExercise[]
+  readonly note?: string | null
+}
+
+/** One meal within a nutrition day. */
+export interface CreatePlanMeal {
+  readonly name: string
+  readonly timeHint?: string | null
+  readonly kcal?: number | null
+  readonly carbsG?: number | null
+  readonly proteinG?: number | null
+  readonly fatG?: number | null
+  readonly itemsMd?: string | null
+}
+
+/** One nutrition day, for the standalone nutrition section of the create Review. */
+export interface CreatePlanNutritionDay {
+  /** ISO date label (`2026-07-20`). */
+  readonly label: string
+  readonly kcalTarget?: number | null
+  readonly carbsG?: number | null
+  readonly proteinG?: number | null
+  readonly fatG?: number | null
+  readonly waterMl?: number | null
+  readonly meals: readonly CreatePlanMeal[]
+  readonly notesMd?: string | null
+}
+
 /**
  * A weekly plan-create proposal — a brand new week. Rendered as a full creation
  * Review (no diff old/new columns).
+ *
+ * The raw proposal carries a canonical `WeeklyPlan` (sessions + nutrition +
+ * top-level notes). This projection splits it into the three surfaces the
+ * Review renders: the training calendar (`days`), the standalone strength
+ * section (`strength`), and the standalone nutrition section (`nutrition`).
+ * `notesMd` is the plan-level weekly note (safe Markdown, no raw HTML).
  */
 export interface WeeklyCreateProposal {
   readonly proposalType: 'weekly_create'
@@ -90,6 +145,9 @@ export interface WeeklyCreateProposal {
   readonly baseRevision: string
   readonly opIds: readonly string[]
   readonly days: readonly CreatePlanDay[]
+  readonly strength: readonly CreatePlanStrengthDay[]
+  readonly nutrition: readonly CreatePlanNutritionDay[]
+  readonly notesMd?: string | null
 }
 
 /** A master plan diff proposal — adjust the season plan. */

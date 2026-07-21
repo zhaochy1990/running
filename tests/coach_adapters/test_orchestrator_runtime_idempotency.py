@@ -18,6 +18,7 @@ from coach.contracts import (
     SpecialistRegistry,
     SpecialistResult,
     SpecialistTask,
+    TargetRef,
 )
 from stride_server.coach_adapters.orchestrator.runtime import (
     CoachTurnResult,
@@ -47,14 +48,19 @@ def _draft(_s: str, _u: str) -> ResolverDraft:
     )
 
 
-def _run(*, message, client_turn_id, checkpointer, calls):
+def _run(
+    *, message, client_turn_id, checkpointer, calls,
+    target=None, review_context=None, registry=None,
+):
     return run_coach_turn(
         user_id="11111111-2222-4aaa-89ab-123456789012",
         session_id="web-default",
         message=message,
         client_turn_id=client_turn_id,
+        target=target,
+        review_context=review_context,
         draft_fn=_draft,
-        registry=_registry(calls),
+        registry=registry or _registry(calls),
         checkpointer=checkpointer,
         specialist_llm=object(),
         status_insight_llm=object(),
@@ -81,6 +87,51 @@ def test_replay_runs_model_once_and_returns_identical_assistant_message() -> Non
     assert len(calls) == 1  # model ran once
     assert r1.assistant_message == r2.assistant_message
     assert r1.turn_response.reply == r2.turn_response.reply
+
+
+def _tasks_registry(tasks: list[SpecialistTask]) -> SpecialistRegistry:
+    reg = SpecialistRegistry()
+
+    def _runner(task: SpecialistTask) -> SpecialistResult:
+        tasks.append(task)
+        return SpecialistResult(status="completed", reply_fragment="ok")
+
+    reg.register(SpecialistCard(id="status_insight", description="状态", writes=False), _runner)
+    return reg
+
+
+def test_review_context_is_cleared_on_a_following_ordinary_turn() -> None:
+    """Turn-scoped request inputs must not linger in the checkpoint."""
+    tasks: list[SpecialistTask] = []
+    cp = InMemorySaver()
+    review_context = {
+        "kind": "weekly_create",
+        "proposal": {"folder": "2026-07-20_07-26", "plan": {"week_folder": "2026-07-20_07-26"}},
+    }
+    # Turn 1: a review turn carries the draft into the specialist task.
+    _run(
+        message="这个课表的训练逻辑是什么",
+        client_turn_id="t-1",
+        checkpointer=cp,
+        calls=[],
+        target=TargetRef(kind="week", folder="2026-07-20_07-26"),
+        review_context=review_context,
+        registry=_tasks_registry(tasks),
+    )
+    assert tasks[-1].context.data.get("review_context") == review_context
+    # Turn 2: an ordinary turn on the SAME session must not inherit the draft.
+    _run(
+        message="我最近状态如何",
+        client_turn_id="t-2",
+        checkpointer=cp,
+        calls=[],
+        review_context=None,
+        registry=_tasks_registry(tasks),
+    )
+    assert tasks[-1].context.data == {}
+    assert tasks[-1].active_target == TargetRef(
+        kind="week", folder="2026-07-20_07-26"
+    )
 
 
 def test_concurrent_same_thread_turns_run_serially() -> None:

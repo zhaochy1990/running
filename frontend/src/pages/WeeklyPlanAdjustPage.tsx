@@ -7,7 +7,7 @@
  * chat) are injectable so the page is testable without a router or network.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useUser } from '../UserContextValue'
 import {
   abandonCoachProposal,
@@ -18,6 +18,7 @@ import {
   type CoachApplyOutcome,
 } from '../api'
 import CoachChat from '../components/CoachChat'
+import { clearPendingCoachTurnForWeek } from '../hooks/useCoachChat'
 import { weeklyPlanStats } from '../lib/weeklyPlanView'
 import { PlanAdjustIntakeWorkspace } from '../components/coach-workspace/PlanAdjustIntakeWorkspace'
 import { WeeklyPlanAdjustWorkspace } from '../components/coach-workspace/WeeklyPlanAdjustWorkspace'
@@ -27,6 +28,7 @@ import type {
   StashedProposal,
   WeeklyProposal,
 } from '../components/coach-workspace/types'
+import type { CoachReviewContext } from '../types/coachChat'
 import {
   clearStashedProposal,
   readStashedProposal,
@@ -37,6 +39,8 @@ export interface WeeklyPlanAdjustPageDeps {
   readonly folder: string
   readonly readStash: (target: ProposalTargetKey) => StashedProposal<WeeklyProposal> | null
   readonly clearStash: (target: ProposalTargetKey) => void
+  /** Clears a failed/in-flight Coach turn anchored to this draft. */
+  readonly clearPendingTurnForWeek?: (folder: string) => void
   readonly apply: (
     folder: string,
     rawProposal: Readonly<Record<string, unknown>>,
@@ -57,7 +61,17 @@ export interface WeeklyPlanAdjustPageDeps {
   readonly summaryError?: string | null
   /** True when the target week has no plan yet — invites a create instead. */
   readonly emptyTarget?: boolean
-  readonly renderChat: (contextAnchor: string) => React.ReactNode
+  readonly renderChat: (
+    contextAnchor: string,
+    reviewContext?: CoachReviewContext,
+  ) => React.ReactNode
+  /**
+   * Opaque token that changes whenever the coach re-stashes a revised draft for
+   * this same route (task #30). The Review re-reads the stash whenever it
+   * changes, so a revised weekly-create proposal replaces the one on screen
+   * without leaving the page. Same value across renders = no re-read.
+   */
+  readonly refreshToken?: string | number
 }
 
 /** Presentational core — pure over its injected deps. */
@@ -66,6 +80,7 @@ export function WeeklyPlanAdjustView({
   folder,
   readStash,
   clearStash,
+  clearPendingTurnForWeek,
   apply,
   abandon,
   navigate,
@@ -74,13 +89,30 @@ export function WeeklyPlanAdjustView({
   summaryError = null,
   emptyTarget = false,
   renderChat,
+  refreshToken,
 }: WeeklyPlanAdjustPageDeps) {
   const target = useMemo<ProposalTargetKey>(
     () => ({ userId, kind: 'weekly', folder }),
     [userId, folder],
   )
-  const stashed = useMemo(() => readStash(target), [readStash, target])
+  // `refreshToken` is an intentional extra dep: when the coach re-stashes a
+  // revised draft for this same route, the token changes and the stash is
+  // re-read, swapping the on-screen Review for the revision. eslint can't see
+  // that readStash reads external (sessionStorage) state keyed only by target.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const stashed = useMemo(() => readStash(target), [readStash, target, refreshToken])
   const contextAnchor = stashed?.contextAnchor ?? ''
+
+  // A not-yet-applied weekly-create draft anchors the chat so a follow-up like
+  // "这个课表的训练逻辑是什么" is answered from the draft, not a saved plan. Only
+  // weekly_create carries a full plan; a diff proposal has nothing to explain
+  // from a draft, so it sends no review context (ordinary chat).
+  const reviewContext = useMemo<CoachReviewContext | undefined>(() => {
+    if (!stashed || stashed.proposal.proposalType !== 'weekly_create') return undefined
+    const raw = stashed.rawProposal
+    if (typeof raw.folder !== 'string' || raw.folder !== folder) return undefined
+    return { kind: 'weekly_create', proposal: raw }
+  }, [stashed, folder])
 
   const backToWeek = useCallback(() => {
     navigate(`/week/${encodeURIComponent(folder)}`)
@@ -88,14 +120,16 @@ export function WeeklyPlanAdjustView({
 
   const onDiscard = useCallback(() => {
     void abandon({ kind: 'weekly', folder })
+    clearPendingTurnForWeek?.(folder)
     clearStash(target)
     backToWeek()
-  }, [abandon, clearStash, target, backToWeek, folder])
+  }, [abandon, clearPendingTurnForWeek, clearStash, target, backToWeek, folder])
 
   const onApplied = useCallback(() => {
+    clearPendingTurnForWeek?.(folder)
     clearStash(target)
     navigate(`/week/${encodeURIComponent(folder)}`, { coachPlanApplied: true })
-  }, [clearStash, target, navigate, folder])
+  }, [clearPendingTurnForWeek, clearStash, target, navigate, folder])
 
   const onApply = useCallback(
     (req: ApplyProposalRequest): Promise<CoachApplyOutcome> => {
@@ -129,7 +163,7 @@ export function WeeklyPlanAdjustView({
       onApply={onApply}
       onDiscard={onDiscard}
       onApplied={onApplied}
-      chat={renderChat(contextAnchor)}
+      chat={renderChat(contextAnchor, reviewContext)}
     />
   )
 }
@@ -225,7 +259,17 @@ export default function WeeklyPlanAdjustPage() {
   const { user } = useUser()
   const { folder = '' } = useParams<{ folder: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const { loading, error, emptyTarget, summary } = useWeekSummary(user, folder)
+
+  // A same-route navigation that re-stashes a revised draft carries a changing
+  // `draftRevision` marker in history state (task #30). Feed it in as the
+  // refresh token so the Review re-reads the freshly-stashed revision without
+  // leaving the page. Any location-state shape is tolerated (external input).
+  const refreshToken =
+    typeof location.state === 'object' && location.state !== null
+      ? (location.state as { draftRevision?: string | number }).draftRevision
+      : undefined
 
   return (
     <WeeklyPlanAdjustView
@@ -233,6 +277,7 @@ export default function WeeklyPlanAdjustPage() {
       folder={folder}
       readStash={(t) => readStashedProposal<WeeklyProposal>(t)}
       clearStash={clearStashedProposal}
+      clearPendingTurnForWeek={clearPendingCoachTurnForWeek}
       apply={applyCoachWeekProposal}
       abandon={abandonCoachProposal}
       navigate={(to, state) => navigate(to, state ? { state } : undefined)}
@@ -240,10 +285,12 @@ export default function WeeklyPlanAdjustPage() {
       summaryLoading={loading}
       summaryError={error}
       emptyTarget={emptyTarget}
-      renderChat={(anchor) => (
+      refreshToken={refreshToken}
+      renderChat={(anchor, reviewContext) => (
         <CoachChat
           contextAnchor={anchor}
           target={{ kind: 'week', folder }}
+          reviewContext={reviewContext}
         />
       )}
     />

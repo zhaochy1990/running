@@ -67,6 +67,10 @@ class PlanDiff(BaseModel):
     ops: list[DiffOp]
     ai_explanation: str         # natural-language explanation shown to the user
     created_at: str             # ISO datetime UTC, e.g. "2026-05-12T08:00:00Z"
+    # Snapshot fingerprint of the canonical week this diff was built against.
+    # Persisted inside the proposal so refresh recovery cannot rebind an old diff
+    # to a newer plan revision.
+    base_revision: str | None = None
 
 
 # ---------------------------------------------------------------------------

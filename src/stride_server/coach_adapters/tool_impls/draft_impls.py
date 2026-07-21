@@ -67,6 +67,32 @@ def _get_plan(user_id: str, folder: str):
     return get_weekly_plan_store().get_plan(user_id, folder)
 
 
+# A week-scope draft tool resolves its base plan through this seam. It defaults
+# to the saved plan (``_get_plan``); the Review write path injects a loader that
+# returns the unapplied draft ``WeeklyPlan`` so a diff references the draft's own
+# sessions instead of a (possibly non-existent) saved plan. Takes ``folder``.
+WeekPlanLoader = Callable[[str], Any]
+
+
+class _WeekScopeDraftImpl:
+    """Base for the 7 week-scope draft tools — owns the plan-lookup seam.
+
+    ``plan_loader`` overrides the saved-plan lookup (Review draft write path);
+    when absent the tool reads the canonical saved plan for ``user_id``.
+    """
+
+    def __init__(
+        self, user_id: str, *, plan_loader: WeekPlanLoader | None = None
+    ) -> None:
+        self._user_id = user_id
+        self._plan_loader = plan_loader
+
+    def _load_plan(self, folder: str):
+        if self._plan_loader is not None:
+            return self._plan_loader(folder)
+        return _get_plan(self._user_id, folder)
+
+
 def _lookup_session(plan: Any, date: str, session_index: int) -> dict | None:
     if plan is None:
         return None
@@ -95,13 +121,10 @@ def _session_summary(row: dict | None) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-class SwapSessionsImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
-
+class SwapSessionsImpl(_WeekScopeDraftImpl):
     def __call__(self, *, folder: str, date_a: str, date_b: str) -> ToolResult:
         try:
-            plan = _get_plan(self._user_id, folder)
+            plan = self._load_plan(folder)
             sess_a = _lookup_session(plan, date_a, 0)
             sess_b = _lookup_session(plan, date_b, 0)
         except Exception as exc:  # noqa: BLE001
@@ -149,16 +172,13 @@ class SwapSessionsImpl:
 # ---------------------------------------------------------------------------
 
 
-class ShiftSessionImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
-
+class ShiftSessionImpl(_WeekScopeDraftImpl):
     def __call__(
         self, *, folder: str, date: str, to_date: str, session_index: int = 0
     ) -> ToolResult:
         try:
             sess = _lookup_session(
-                _get_plan(self._user_id, folder), date, session_index
+                self._load_plan(folder), date, session_index
             )
         except Exception as exc:  # noqa: BLE001
             return _fail(f"db lookup failed: {exc}")
@@ -183,10 +203,7 @@ class ShiftSessionImpl:
 # ---------------------------------------------------------------------------
 
 
-class ReduceIntensityImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
-
+class ReduceIntensityImpl(_WeekScopeDraftImpl):
     def __call__(
         self, *, folder: str, scope: str, factor: float, reason: str
     ) -> ToolResult:
@@ -196,7 +213,7 @@ class ReduceIntensityImpl:
             return _fail(f"factor must be in (0.1, 1.0], got {factor}")
 
         try:
-            plan = _get_plan(self._user_id, folder)
+            plan = self._load_plan(folder)
             sessions = [session.to_dict() for session in plan.sessions] if plan else []
         except Exception as exc:  # noqa: BLE001
             return _fail(f"db lookup failed: {exc}")
@@ -259,10 +276,7 @@ def _normalise_replace_params(params: dict) -> dict:
     return normalized
 
 
-class ReplaceSessionImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
-
+class ReplaceSessionImpl(_WeekScopeDraftImpl):
     def __call__(
         self,
         *,
@@ -276,7 +290,7 @@ class ReplaceSessionImpl:
             return _fail(f"unknown session kind {new_kind!r}")
         try:
             sess = _lookup_session(
-                _get_plan(self._user_id, folder), date, session_index
+                self._load_plan(folder), date, session_index
             )
         except Exception as exc:  # noqa: BLE001
             return _fail(f"db lookup failed: {exc}")
@@ -309,13 +323,10 @@ class ReplaceSessionImpl:
 # ---------------------------------------------------------------------------
 
 
-class AddStrengthSessionImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
-
+class AddStrengthSessionImpl(_WeekScopeDraftImpl):
     def __call__(self, *, folder: str, date: str, focus: str) -> ToolResult:
         try:
-            plan = _get_plan(self._user_id, folder)
+            plan = self._load_plan(folder)
             existing = [session.to_dict() for session in plan.sessions] if plan else []
         except Exception as exc:  # noqa: BLE001
             return _fail(f"db lookup failed: {exc}")
@@ -345,10 +356,7 @@ class AddStrengthSessionImpl:
 # ---------------------------------------------------------------------------
 
 
-class ChangePaceTargetImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
-
+class ChangePaceTargetImpl(_WeekScopeDraftImpl):
     def __call__(
         self,
         *,
@@ -361,7 +369,7 @@ class ChangePaceTargetImpl:
             return _fail(f"new_pace_s_per_km must be > 0, got {new_pace_s_per_km}")
         try:
             sess = _lookup_session(
-                _get_plan(self._user_id, folder), date, session_index
+                self._load_plan(folder), date, session_index
             )
         except Exception as exc:  # noqa: BLE001
             return _fail(f"db lookup failed: {exc}")
@@ -389,20 +397,17 @@ class ChangePaceTargetImpl:
 # ---------------------------------------------------------------------------
 
 
-class RegenerateWeekImpl:
+class RegenerateWeekImpl(_WeekScopeDraftImpl):
     """Produce a 'clear this week' diff. The actual fresh plan is generated by
     the generation pipeline (Phase 5) — this draft tool just records the
     user's intent + constraints so the UI can chain into ``POST /generate``.
     """
 
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
-
     def __call__(
         self, *, folder: str, reason: str, constraints: list[str]
     ) -> ToolResult:
         try:
-            plan = _get_plan(self._user_id, folder)
+            plan = self._load_plan(folder)
             sessions = [session.to_dict() for session in plan.sessions] if plan else []
         except Exception as exc:  # noqa: BLE001
             return _fail(f"db lookup failed: {exc}")

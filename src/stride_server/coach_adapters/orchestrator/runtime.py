@@ -133,6 +133,7 @@ def run_coach_turn(
     message: str,
     client_turn_id: str | None = None,
     target: TargetRef | None = None,
+    review_context: dict[str, Any] | None = None,
     draft_fn: ResolverDraftFn | None = None,
     registry: SpecialistRegistry | None = None,
     checkpointer: Any | None = None,
@@ -150,6 +151,11 @@ def run_coach_turn(
     ``client_turn_id`` makes the turn idempotent (replay-safe). ``target`` is the
     authoritative turn target supplied by the client; when present it seeds the
     graph's ``active_target`` so this turn binds to it regardless of anaphora.
+    ``review_context`` is a serialised, already-validated review draft the client
+    anchored this turn to (an unapplied weekly-create proposal under review); it
+    seeds ``request_context`` — part of the idempotency fingerprint AND the
+    specialist's authoritative source for the drafted plan's content. Omit it (or
+    pass ``None``) for an ordinary chat turn, which then carries no draft context.
     """
     from stride_server.coach_runtime import (
         get_athlete_memory_store,
@@ -176,11 +182,17 @@ def run_coach_turn(
         }
         if client_turn_id is not None:
             seed["client_turn_id"] = client_turn_id
+        # request_target is a plain (overwrite) channel and must describe THIS
+        # request, not inherit a prior workspace turn's target from checkpoint.
+        seed["request_target"] = target.model_dump() if target is not None else None
         if target is not None:
-            # Authoritative target for this turn: seeds active_target (binding)
-            # AND request_target (idempotency fingerprint input).
+            # Authoritative target for this turn also seeds active_target (binding).
             seed["active_target"] = target.model_dump()
-            seed["request_target"] = target.model_dump()
+        # request_context is a plain (overwrite) channel: if a turn omits it,
+        # LangGraph keeps the PRIOR turn's checkpointed value. So write it every
+        # turn — the draft when reviewing, else None — to clear a stale draft
+        # from the checkpoint on an ordinary follow-up turn.
+        seed["request_context"] = review_context
         if extra:
             seed.update(extra)
         return seed

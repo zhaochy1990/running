@@ -1,5 +1,5 @@
 import { refreshAccessToken } from './store/authStore'
-import type { ChatResponse, CoachTargetRef, SessionHistoryResponse } from './types/coachChat'
+import type { ChatResponse, CoachReviewContext, CoachTargetRef, SessionHistoryResponse } from './types/coachChat'
 import type {
   AbandonedScheduledWorkout,
   PlannedNutrition,
@@ -615,6 +615,9 @@ export interface MasterPlanWeek {
   actual_avg_hr?: number | null
   actual_run_count?: number
   actual_duration_s?: number
+  actual_training_dose?: number | null
+  actual_training_dose_coverage?: number | null
+  actual_training_dose_status?: 'complete' | 'partial' | 'unknown' | null
 }
 
 export interface MasterPlanTrainingLoadProjection {
@@ -1949,6 +1952,9 @@ export const WEB_DEFAULT_SESSION_ID = 'web-default'
  * *different* request yields 409 (TurnConflictError). The id is echoed on
  * `assistant_message.turn_id`. `target` (optional) is the authoritative
  * TargetRef the turn should act on (the workspace always passes it).
+ * `reviewContext` (optional) anchors the turn to an unapplied review draft so
+ * the coach answers from that draft rather than a saved plan; the server
+ * requires its proposal folder to equal `target.folder`.
  *
  * Non-401 failures resolve to `{ ok: false }` per the project postJSON
  * contract; only an unrecoverable 401 (refresh failed) throws "Session expired".
@@ -1958,12 +1964,14 @@ export function sendCoachChatMessage(
   clientTurnId: string,
   sessionId: string = WEB_DEFAULT_SESSION_ID,
   target?: CoachTargetRef,
+  reviewContext?: CoachReviewContext,
 ): Promise<JsonResult<ChatResponse>> {
   return postJSON<ChatResponse>('/users/me/coach/chat', {
     session_id: sessionId,
     message,
     client_turn_id: clientTurnId,
     ...(target ? { target } : {}),
+    ...(reviewContext ? { review_context: reviewContext } : {}),
   })
 }
 

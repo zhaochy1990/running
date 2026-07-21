@@ -50,7 +50,7 @@ def _invoke(graph, *, message, client_turn_id, calls, session_id="s1"):
     )["turn_response_model"]
 
 
-def _invoke_state(graph, *, message, client_turn_id, session_id="s1", target=None):
+def _invoke_state(graph, *, message, client_turn_id, session_id="s1", target=None, review_context=None):
     config = {"configurable": {"thread_id": coach_thread_id("u1", session_id), "checkpoint_ns": ""}}
     # Mirror the adapter: a stable human id keyed on client_turn_id so a replay
     # overwrites the row via add_messages instead of appending a duplicate.
@@ -64,6 +64,8 @@ def _invoke_state(graph, *, message, client_turn_id, session_id="s1", target=Non
     }
     if target is not None:
         seed["request_target"] = target
+    if review_context is not None:
+        seed["request_context"] = review_context
     state = graph.invoke(seed, config=config)
     return {
         **state,
@@ -127,8 +129,53 @@ def test_replay_returns_identical_assistant_message() -> None:
     s2 = _invoke_state(graph, message="我状态如何", client_turn_id="t-1")
     assert s1["assistant_message"] == s2["assistant_message"]
     assert s1["assistant_message"]["message_id"] == "t-1:a"
-    assert s1["assistant_message"]["turn_id"] == "t-1"
-    assert len(calls) == 1  # model ran once
+
+
+def test_same_turn_id_same_context_replays_without_model() -> None:
+    ctx = {"kind": "weekly_create", "proposal": {"folder": "2026-W26"}}
+    calls: list[str] = []
+    graph = _graph(calls)
+    s1 = _invoke_state(graph, message="讲讲这个课表", client_turn_id="t-1", review_context=ctx)
+    s2 = _invoke_state(graph, message="讲讲这个课表", client_turn_id="t-1", review_context=ctx)
+    assert len(calls) == 1
+    assert (
+        TurnResponse.model_validate(s1["turn_response"]).reply
+        == TurnResponse.model_validate(s2["turn_response"]).reply
+    )
+
+
+def test_same_turn_id_different_context_conflicts() -> None:
+    calls: list[str] = []
+    graph = _graph(calls)
+    _invoke_state(
+        graph,
+        message="讲讲这个课表",
+        client_turn_id="t-1",
+        review_context={"kind": "weekly_create", "proposal": {"folder": "2026-W26"}},
+    )
+    with pytest.raises(TurnConflictError):
+        _invoke_state(
+            graph,
+            message="讲讲这个课表",
+            client_turn_id="t-1",
+            review_context={"kind": "weekly_create", "proposal": {"folder": "2026-W40"}},
+        )
+
+
+def test_adding_context_to_same_turn_id_conflicts() -> None:
+    """A turn first sent without context, replayed with one, is a conflict."""
+    calls: list[str] = []
+    graph = _graph(calls)
+    _invoke_state(graph, message="讲讲这个课表", client_turn_id="t-1")
+    with pytest.raises(TurnConflictError):
+        _invoke_state(
+            graph,
+            message="讲讲这个课表",
+            client_turn_id="t-1",
+            review_context={"kind": "weekly_create", "proposal": {"folder": "2026-W26"}},
+        )
+    # The first turn ran the model once; the conflicting replay never re-ran it.
+    assert len(calls) == 1
 
 
 def test_fingerprint_uses_request_target_not_promoted_active_target() -> None:

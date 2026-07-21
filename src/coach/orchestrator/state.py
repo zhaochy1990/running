@@ -34,6 +34,7 @@ class OrchestratorState(TypedDict, total=False):
     injected_memories: list[str]           # ids of long-term memories injected this turn (§5.4)
     client_turn_id: str | None             # idempotency key for this turn (§ backend contract)
     request_target: dict[str, Any] | None  # target the client sent THIS turn (fingerprint input)
+    request_context: dict[str, Any] | None  # review draft the client anchored THIS turn to (fingerprint + specialist context)
     turn_receipts: list[dict[str, Any]]    # bounded replay ledger, persisted across turns
     assistant_message: dict[str, Any] | None  # stable-identity assistant message for this turn
     events: Annotated[list[dict[str, Any]], add]  # trusted system receipts (applied/abandoned)

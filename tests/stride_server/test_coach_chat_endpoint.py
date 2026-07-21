@@ -86,7 +86,7 @@ def test_chat_returns_reply_and_session_thread(chat_client, monkeypatch):
     captured: dict[str, object] = {}
 
     def _fake_turn(
-        *, user_id: str, session_id: str, message: str, client_turn_id=None, target=None
+        *, user_id: str, session_id: str, message: str, client_turn_id=None, target=None, review_context=None
     ) -> TurnResponse:
         captured.update(
             user_id=user_id,
@@ -94,6 +94,7 @@ def test_chat_returns_reply_and_session_thread(chat_client, monkeypatch):
             message=message,
             client_turn_id=client_turn_id,
             target=target,
+            review_context=review_context,
         )
         return TurnResponse(
             reply="你最近负荷偏高，注意恢复。",
@@ -150,6 +151,123 @@ def test_chat_binds_authoritative_target(chat_client, monkeypatch):
     )
     assert resp.status_code == 200, resp.text
     assert captured["target"] == TargetRef(kind="week", folder="2026-06-22_06-28(W8)")
+
+
+def _review_context_body(folder: str = "2026-06-22_06-28(W8)") -> dict:
+    """A valid weekly-create review draft anchored to ``folder``."""
+    plan = WeeklyPlan(
+        week_folder=folder,
+        sessions=(
+            PlannedSession(
+                date=folder[:10],
+                session_index=0,
+                kind=SessionKind.REST,
+                summary="休息日",
+            ),
+        ),
+        notes_md="草案说明",
+    )
+    proposal = WeeklyPlanCreateProposal(
+        proposal_id="draft-1",
+        folder=folder,
+        plan=plan.to_dict(),
+        total_distance_km=30,
+        ai_explanation="以有氧为主",
+        created_at="2026-06-22T00:00:00Z",
+    )
+    return {"kind": "weekly_create", "proposal": proposal.model_dump()}
+
+
+def test_chat_forwards_matching_review_context(chat_client, monkeypatch):
+    """A review draft whose folder matches target.folder is forwarded to driver."""
+    client, private_pem, coach_routes = chat_client
+    captured: dict[str, object] = {}
+
+    def _fake_turn(*, review_context=None, **kw) -> TurnResponse:
+        captured["review_context"] = review_context
+        return TurnResponse(reply="草案逻辑是有氧积累。")
+
+    monkeypatch.setattr(coach_routes, "run_coach_turn", _fake_turn)
+    folder = "2026-06-22_06-28(W8)"
+    resp = client.post(
+        "/api/users/me/coach/chat",
+        json={
+            "session_id": "s1",
+            "message": "这个课表的训练逻辑是什么",
+            "client_turn_id": "t-1",
+            "target": {"kind": "week", "folder": folder},
+            "review_context": _review_context_body(folder),
+        },
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+    ctx = captured["review_context"]
+    assert isinstance(ctx, dict)
+    assert ctx["kind"] == "weekly_create"
+    assert ctx["proposal"]["folder"] == folder
+
+
+def test_chat_rejects_review_context_folder_mismatch(chat_client, monkeypatch):
+    """A draft for a different week than target.folder is a 422 (never runs driver)."""
+    client, private_pem, coach_routes = chat_client
+    called = {"n": 0}
+    monkeypatch.setattr(
+        coach_routes, "run_coach_turn", lambda **_kw: called.update(n=called["n"] + 1)
+    )
+    resp = client.post(
+        "/api/users/me/coach/chat",
+        json={
+            "session_id": "s1",
+            "message": "这个课表的训练逻辑是什么",
+            "client_turn_id": "t-1",
+            "target": {"kind": "week", "folder": "2026-06-29_07-05(W9)"},
+            "review_context": _review_context_body("2026-06-22_06-28(W8)"),
+        },
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 422
+    assert called["n"] == 0
+
+
+def test_chat_rejects_review_context_without_week_target(chat_client, monkeypatch):
+    """A review draft requires a target with kind='week'."""
+    client, private_pem, coach_routes = chat_client
+    called = {"n": 0}
+    monkeypatch.setattr(
+        coach_routes, "run_coach_turn", lambda **_kw: called.update(n=called["n"] + 1)
+    )
+    resp = client.post(
+        "/api/users/me/coach/chat",
+        json={
+            "session_id": "s1",
+            "message": "这个课表的训练逻辑是什么",
+            "client_turn_id": "t-1",
+            # No target at all.
+            "review_context": _review_context_body("2026-06-22_06-28(W8)"),
+        },
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 422
+    assert called["n"] == 0
+
+
+def test_chat_without_review_context_forwards_none(chat_client, monkeypatch):
+    """An ordinary chat turn carries no review context."""
+    client, private_pem, coach_routes = chat_client
+    captured: dict[str, object] = {}
+
+    def _fake_turn(*, review_context=None, **kw) -> TurnResponse:
+        captured["review_context"] = review_context
+        return TurnResponse(reply="ok")
+
+    monkeypatch.setattr(coach_routes, "run_coach_turn", _fake_turn)
+    resp = client.post(
+        "/api/users/me/coach/chat",
+        json={"session_id": "s1", "message": "我状态如何", "client_turn_id": "t-1"},
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+    assert captured["review_context"] is None
 
 
 def test_chat_requires_client_turn_id(chat_client, monkeypatch):
@@ -239,10 +357,62 @@ def test_chat_enriches_weekly_diff_proposal_with_base_revision(chat_client, monk
     )
     assert resp.status_code == 200, resp.text
     card = resp.json()["proposals"][0]
-    assert card["base_revision"] == weekly_plan_fingerprint(current)
+    expected_revision = weekly_plan_fingerprint(current)
+    assert card["base_revision"] == expected_revision
+    assert card["proposal"]["base_revision"] == expected_revision
     assert card["target"]["folder"] == folder
     # season_impact present (level none since no active master)
     assert card["season_impact"]["level"] == "none"
+
+
+def test_chat_preserves_pinned_weekly_diff_revision_when_plan_has_changed(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    folder = "2026-06-22_06-28(W8)"
+    current = WeeklyPlan(
+        week_folder=folder,
+        sessions=(PlannedSession(
+            date="2026-06-24",
+            session_index=0,
+            kind=SessionKind.RUN,
+            summary="plan changed after proposal",
+        ),),
+    )
+
+    class _Store:
+        def get_plan(self, _user_id, _folder):
+            return current
+
+    monkeypatch.setattr(coach_routes, "get_weekly_plan_store", lambda: _Store())
+    monkeypatch.setattr(coach_routes, "_active_master_for_user", lambda _uid: None)
+    diff = PlanDiff(
+        diff_id="d-pinned",
+        folder=folder,
+        ops=[],
+        ai_explanation="旧方案",
+        created_at="t",
+        base_revision="original-week-revision",
+    )
+    monkeypatch.setattr(
+        coach_routes,
+        "run_coach_turn",
+        lambda **_kw: TurnResponse(
+            reply="旧调整方案",
+            proposals=[ProposalCard(specialist_id="weekly_plan", proposal=diff)],
+        ),
+    )
+
+    resp = client.post(
+        "/api/users/me/coach/chat",
+        json={"session_id": "s2", "message": "改本周", "client_turn_id": "t-pin"},
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 200, resp.text
+    card = resp.json()["proposals"][0]
+    assert card["base_revision"] == "original-week-revision"
+    assert card["proposal"]["base_revision"] == "original-week-revision"
 
 
 def test_chat_enriches_master_diff_proposal_with_version(chat_client, monkeypatch):
@@ -268,6 +438,7 @@ def test_chat_enriches_master_diff_proposal_with_version(chat_client, monkeypatc
     assert resp.status_code == 200, resp.text
     card = resp.json()["proposals"][0]
     assert card["base_revision"] == "3"
+    assert card["proposal"]["base_revision"] == "3"
     assert card["target"]["plan_id"] == _PLAN_ID
 
 
@@ -380,6 +551,30 @@ def test_chat_rejects_empty_message(chat_client, monkeypatch):
     assert resp.status_code == 422  # pydantic min_length
 
 
+def test_chat_rejects_message_over_configured_limit(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    called = {"value": False}
+    monkeypatch.setattr(
+        coach_routes,
+        "run_coach_turn",
+        lambda **_kw: called.update(value=True) or TurnResponse(reply="x"),
+    )
+
+    resp = client.post(
+        "/api/users/me/coach/chat",
+        json={
+            "session_id": "s1",
+            "client_turn_id": "oversized-turn",
+            "message": "x" * 8001,
+        },
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 422
+    assert "8000-character limit" in resp.json()["detail"]
+    assert called["value"] is False
+
+
 # ---------------------------------------------------------------------------
 # POST /api/users/me/coach/plan/{folder}/apply
 # ---------------------------------------------------------------------------
@@ -387,7 +582,22 @@ def test_chat_rejects_empty_message(chat_client, monkeypatch):
 _APPLY_FOLDER = "2026-06-22_06-28(W8)"
 
 
+def _apply_current_plan(folder: str = _APPLY_FOLDER) -> WeeklyPlan:
+    return WeeklyPlan(
+        week_folder=folder,
+        sessions=(PlannedSession(
+            date="2026-06-24",
+            session_index=0,
+            kind=SessionKind.RUN,
+            summary="run",
+        ),),
+    )
+
+
 def _apply_body(folder: str = _APPLY_FOLDER, op_ids=("op1",)) -> dict:
+    from stride_core.plan_revision import weekly_plan_fingerprint
+
+    revision = weekly_plan_fingerprint(_apply_current_plan(folder))
     return {
         "diff": {
             "diff_id": "d1",
@@ -406,8 +616,10 @@ def _apply_body(folder: str = _APPLY_FOLDER, op_ids=("op1",)) -> dict:
             ],
             "ai_explanation": "把周三挪到周四",
             "created_at": "2026-06-28T00:00:00Z",
+            "base_revision": revision,
         },
         "accepted_op_ids": list(op_ids),
+        "base_revision": revision,
     }
 
 
@@ -483,6 +695,7 @@ def test_apply_rejects_stale_base_revision(chat_client, monkeypatch):
     client, private_pem, coach_routes = chat_client
     _stub_apply(coach_routes, monkeypatch)
     body = _apply_body()
+    body["diff"]["base_revision"] = "sha-that-does-not-match"
     body["base_revision"] = "sha-that-does-not-match"
 
     resp = client.post(
@@ -735,6 +948,226 @@ def test_apply_creates_week_from_full_proposal(chat_client, monkeypatch):
     assert captured_event["event"].type == "weekly_plan_applied"
 
 
+def test_apply_replaces_existing_week_when_proposal_revision_matches(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    from stride_core.plan_revision import weekly_plan_fingerprint
+
+    current = WeeklyPlan(
+        week_folder=_APPLY_FOLDER,
+        sessions=(
+            PlannedSession(
+                date="2026-06-22",
+                session_index=0,
+                kind=SessionKind.RUN,
+                summary="旧课表",
+                total_distance_m=5000,
+            ),
+        ),
+    )
+    revision = weekly_plan_fingerprint(current)
+    body = _create_body()
+    body["proposal"]["base_revision"] = revision
+    body["base_revision"] = revision
+    captured: dict[str, object] = {}
+
+    class _Store:
+        def get_plan(self, _user_id, _folder):
+            return current
+
+    monkeypatch.setattr(coach_routes, "get_weekly_plan_store", lambda: _Store())
+    monkeypatch.setattr(coach_routes, "today_shanghai", lambda: date(2026, 6, 22))
+    monkeypatch.setattr(coach_routes, "_active_master_for_user", lambda _uid: None)
+    monkeypatch.setattr(
+        coach_routes,
+        "save_weekly_plan",
+        lambda user_id, plan, **kwargs: captured.update(
+            user_id=user_id, plan=plan, kwargs=kwargs
+        ),
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=body,
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["created"] is False
+    assert captured["plan"].notes_md == "创建提案中的完整周级说明"
+    assert captured["kwargs"]["generated_by"] == "coach-regeneration"
+
+
+def test_apply_rejects_full_week_replacement_that_changes_past_session(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    from stride_core.plan_revision import weekly_plan_fingerprint
+
+    current = WeeklyPlan(
+        week_folder=_APPLY_FOLDER,
+        sessions=(
+            PlannedSession(
+                date="2026-06-22",
+                session_index=0,
+                kind=SessionKind.RUN,
+                summary="历史计划",
+                total_distance_m=5000,
+            ),
+        ),
+    )
+    revision = weekly_plan_fingerprint(current)
+    body = _create_body()
+    body["proposal"]["base_revision"] = revision
+    body["base_revision"] = revision
+    saved = {"called": False}
+
+    class _Store:
+        def get_plan(self, _user_id, _folder):
+            return current
+
+    monkeypatch.setattr(coach_routes, "get_weekly_plan_store", lambda: _Store())
+    monkeypatch.setattr(coach_routes, "today_shanghai", lambda: date(2026, 6, 24))
+    monkeypatch.setattr(
+        coach_routes,
+        "save_weekly_plan",
+        lambda *args, **kwargs: saved.update(called=True),
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=body,
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "past_day_immutable"
+    assert saved["called"] is False
+
+
+def test_apply_rejects_full_week_replacement_that_changes_completed_today(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    from stride_core.plan_revision import weekly_plan_fingerprint
+
+    current = WeeklyPlan(
+        week_folder=_APPLY_FOLDER,
+        sessions=(
+            PlannedSession(
+                date="2026-06-24",
+                session_index=0,
+                kind=SessionKind.RUN,
+                summary="今日已完成课表",
+                total_distance_m=8000,
+            ),
+        ),
+    )
+    revision = weekly_plan_fingerprint(current)
+    proposed = WeeklyPlan(
+        week_folder=_APPLY_FOLDER,
+        sessions=(
+            PlannedSession(
+                date="2026-06-24",
+                session_index=0,
+                kind=SessionKind.REST,
+                summary="试图改写今日已完成课表",
+            ),
+        ),
+        notes_md="完整替代方案",
+    )
+    body = _create_body()
+    body["proposal"]["plan"] = proposed.to_dict()
+    body["proposal"]["base_revision"] = revision
+    body["base_revision"] = revision
+    saved = {"called": False}
+
+    class _Store:
+        def get_plan(self, _user_id, _folder):
+            return current
+
+    monkeypatch.setattr(coach_routes, "get_weekly_plan_store", lambda: _Store())
+    monkeypatch.setattr(coach_routes, "today_shanghai", lambda: date(2026, 6, 24))
+    monkeypatch.setattr(
+        coach_routes,
+        "_locked_today_full_plan_keys",
+        lambda *_args, **_kwargs: ["2026-06-24#0"],
+    )
+    monkeypatch.setattr(
+        coach_routes,
+        "save_weekly_plan",
+        lambda *args, **kwargs: saved.update(called=True),
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=body,
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "today_session_locked"
+    assert saved["called"] is False
+
+
+def test_apply_rejects_stale_full_week_replacement(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    current = WeeklyPlan(
+        week_folder=_APPLY_FOLDER,
+        sessions=(
+            PlannedSession(
+                date="2026-06-22",
+                session_index=0,
+                kind=SessionKind.RUN,
+                summary="课表已在方案生成后变化",
+            ),
+        ),
+    )
+    body = _create_body()
+    body["proposal"]["base_revision"] = "old-revision"
+    body["base_revision"] = "old-revision"
+    saved = {"called": False}
+
+    class _Store:
+        def get_plan(self, _user_id, _folder):
+            return current
+
+    monkeypatch.setattr(coach_routes, "get_weekly_plan_store", lambda: _Store())
+    monkeypatch.setattr(coach_routes, "today_shanghai", lambda: date(2026, 6, 24))
+    monkeypatch.setattr(
+        coach_routes,
+        "save_weekly_plan",
+        lambda *args, **kwargs: saved.update(called=True),
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=body,
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 409
+    assert "changed" in str(resp.json()["detail"])
+    assert saved["called"] is False
+
+
+def test_apply_rejects_mismatched_full_week_revision_fields(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    body = _create_body()
+    body["proposal"]["base_revision"] = "proposal-revision"
+    body["base_revision"] = "different-request-revision"
+    monkeypatch.setattr(coach_routes, "today_shanghai", lambda: date(2026, 6, 24))
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=body,
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 400
+
+
 def test_apply_create_is_conflict_safe(chat_client, monkeypatch):
     client, private_pem, coach_routes = chat_client
     monkeypatch.setattr(coach_routes, "today_shanghai", lambda: date(2026, 6, 24))
@@ -862,8 +1295,10 @@ def _race_reschedule_body():
                 },
             }],
             "ai_explanation": "比赛延期", "created_at": "2026-07-16T00:00:00Z",
+            "base_revision": "3",
         },
         "accepted_op_ids": ["move-race"],
+        "base_revision": "3",
     }
 
 
@@ -885,8 +1320,10 @@ def _target_race_time_body():
             }],
             "ai_explanation": "目标成绩调整",
             "created_at": "2026-07-16T00:00:00Z",
+            "base_revision": "3",
         },
         "accepted_op_ids": ["change-target-time"],
+        "base_revision": "3",
     }
 
 
@@ -902,8 +1339,10 @@ def _master_diff_body(*, plan_id=_PLAN_ID, end_date="2026-08-15", op_ids=("op1",
                 "spec_patch": {"end_date": end_date}, "accepted": None,
             }],
             "ai_explanation": "延长基础期", "created_at": "2026-06-28T00:00:00Z",
+            "base_revision": "3",
         },
         "accepted_op_ids": list(op_ids),
+        "base_revision": "3",
     }
 
 
@@ -1396,6 +1835,7 @@ def test_master_apply_rejects_stale_base_revision(chat_client, monkeypatch):
     client, private_pem, coach_routes = chat_client
     _stub_master(coach_routes, monkeypatch, plan=_master_plan())  # version=3
     body = _master_diff_body()
+    body["diff"]["base_revision"] = "2"
     body["base_revision"] = "2"  # plan is at version 3
 
     resp = client.post(
@@ -1483,8 +1923,10 @@ def test_master_apply_rejects_partial_regeneration_selection(
             ],
             "ai_explanation": "清空重排",
             "created_at": "2026-07-15T00:00:00Z",
+            "base_revision": "3",
         },
         "accepted_op_ids": ["remove-taper"],
+        "base_revision": "3",
     }
 
     resp = client.post(
@@ -1549,3 +1991,243 @@ def test_master_apply_400_on_apply_data_error(chat_client, monkeypatch):
         headers=_auth(_token(private_pem)),
     )
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _extract_pending_proposals
+# ---------------------------------------------------------------------------
+
+
+def _make_receipt(client_turn_id: str, proposals: list, active_target=None, message_id="msg-1"):
+    """Build a minimal turn_receipt dict as stored by append_receipt."""
+    return {
+        "client_turn_id": client_turn_id,
+        "fingerprint": "fp",
+        "message_id": message_id,
+        "created_at": "2026-07-18T00:00:00Z",
+        "turn_response": {
+            "reply": "好的",
+            "proposals": proposals,
+            "active_target": active_target,
+            "clarification": None,
+        },
+    }
+
+
+def _raw_weekly_proposal(folder: str = "2026-07-13_07-19") -> dict:
+    return {
+        "specialist_id": "weekly-adjust",
+        "summary": "降低周二跑量",
+        "target": {"kind": "week", "folder": folder},
+        "proposal": {
+            "diff_id": "test-diff-id",
+            "folder": folder,
+            "ops": [],
+            "ai_explanation": "降低周二跑量以减轻疲劳",
+            "created_at": "2026-07-18T00:00:00Z",
+            "base_revision": "weekly-revision-1",
+        },
+        "base_revision": "weekly-revision-1",
+        "season_impact": None,
+    }
+
+
+def _raw_weekly_create_proposal(
+    folder: str = "2026-07-13_07-19", *, empty: bool = False
+) -> dict:
+    proposal = _review_context_body(folder)["proposal"]
+    if empty:
+        proposal = {
+            **proposal,
+            "plan": {**proposal["plan"], "sessions": []},
+            "total_distance_km": 0,
+        }
+    return {
+        "specialist_id": "weekly_plan",
+        "summary": "生成本周计划",
+        "target": {"kind": "week", "folder": folder},
+        "proposal": proposal,
+        "base_revision": None,
+        "season_impact": None,
+    }
+
+
+def _terminal_event(
+    event_type: str,
+    *,
+    folder: str = "2026-07-13_07-19",
+    created_at: str = "2026-07-18T01:00:00Z",
+) -> dict:
+    return {
+        "type": event_type,
+        "status": "abandoned" if event_type == "proposal_abandoned" else "applied",
+        "created_at": created_at,
+        "target": {"kind": "week", "folder": folder},
+        "detail": {"folder": folder},
+    }
+
+
+class TestExtractPendingProposal:
+    """Unit tests for the _extract_pending_proposals helper (pure logic)."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_enrich(self, monkeypatch):
+        """Stub _enrich_proposal_cards to echo input as-is so tests stay pure."""
+        import stride_server.routes.coach as coach_routes
+
+        def _identity(user_id, cards):
+            return [c.model_dump() for c in cards]
+
+        monkeypatch.setattr(coach_routes, "_enrich_proposal_cards", _identity)
+
+    def _call(self, receipts, events):
+        from stride_server.routes.coach import _extract_pending_proposals
+
+        return _extract_pending_proposals(USER_UUID, receipts, events)
+
+    def test_no_receipts_returns_none(self):
+        proposals, target, msg_id = self._call([], [])
+        assert proposals is None
+        assert target is None
+        assert msg_id is None
+
+    def test_receipt_without_proposals_returns_none(self):
+        receipt = _make_receipt("t1", proposals=[])
+        proposals, target, msg_id = self._call([receipt], [])
+        assert proposals is None
+
+    def test_latest_receipt_with_proposals_is_returned(self):
+        receipt = _make_receipt("t1", [_raw_weekly_proposal()], message_id="msg-42")
+        proposals, target, msg_id = self._call([receipt], [])
+        assert proposals is not None
+        assert len(proposals) == 1
+        assert proposals[0]["specialist_id"] == "weekly-adjust"
+        assert proposals[0]["base_revision"] == "weekly-revision-1"
+        assert proposals[0]["proposal"]["base_revision"] == "weekly-revision-1"
+        assert msg_id == "msg-42"
+
+    def test_unpinned_legacy_diff_is_not_recovered(self):
+        raw = _raw_weekly_proposal()
+        raw["base_revision"] = None
+        raw["proposal"] = {**raw["proposal"], "base_revision": None}
+
+        proposals, target, msg_id = self._call(
+            [_make_receipt("t1", [raw])],
+            [],
+        )
+
+        assert proposals is None
+        assert target is None
+        assert msg_id is None
+
+    def test_mismatched_inner_outer_diff_revision_is_not_recovered(self):
+        raw = _raw_weekly_proposal()
+        raw["base_revision"] = "outer-revision"
+        raw["proposal"] = {**raw["proposal"], "base_revision": "inner-revision"}
+
+        proposals, target, msg_id = self._call(
+            [_make_receipt("t1", [raw])],
+            [],
+        )
+
+        assert proposals is None
+        assert target is None
+        assert msg_id is None
+
+    def test_matching_terminal_event_after_proposal_suppresses_recovery(self):
+        receipt = _make_receipt("t1", [_raw_weekly_proposal()])
+        for event_type in ("weekly_plan_applied", "proposal_abandoned"):
+            proposals, target, msg_id = self._call(
+                [receipt], [_terminal_event(event_type)]
+            )
+            assert proposals is None, f"should be None for event type {event_type!r}"
+
+    def test_terminal_event_for_other_target_does_not_suppress_recovery(self):
+        receipt = _make_receipt("t1", [_raw_weekly_proposal()])
+        proposals, _target, _msg_id = self._call(
+            [receipt],
+            [_terminal_event("weekly_plan_applied", folder="2026-07-20_07-26")],
+        )
+        assert proposals is not None
+
+    def test_terminal_event_before_proposal_does_not_suppress_recovery(self):
+        receipt = _make_receipt("t1", [_raw_weekly_proposal()])
+        proposals, _target, _msg_id = self._call(
+            [receipt],
+            [
+                _terminal_event(
+                    "weekly_plan_applied",
+                    created_at="2026-07-17T23:59:59Z",
+                )
+            ],
+        )
+        assert proposals is not None
+
+    @pytest.mark.parametrize("missing_timestamp", ["proposal", "event"])
+    def test_missing_timestamp_does_not_suppress_recovery(self, missing_timestamp):
+        receipt = _make_receipt("t1", [_raw_weekly_proposal()])
+        event = _terminal_event("weekly_plan_applied")
+        if missing_timestamp == "proposal":
+            receipt.pop("created_at")
+        else:
+            event.pop("created_at")
+
+        proposals, _target, _msg_id = self._call([receipt], [event])
+
+        assert proposals is not None
+
+    def test_non_terminal_event_does_not_suppress_recovery(self):
+        receipt = _make_receipt("t1", [_raw_weekly_proposal()])
+        proposals, _t, _m = self._call(
+            [receipt], [{"type": "some_other_event", "status": "ok"}]
+        )
+        assert proposals is not None
+
+    def test_later_read_only_turn_does_not_consume_pending_proposal(self):
+        older = _make_receipt("t1", [_raw_weekly_proposal()], message_id="msg-1")
+        newer = _make_receipt("t2", proposals=[], message_id="msg-2")
+        proposals, _target, msg_id = self._call([older, newer], [])
+        assert proposals is not None
+        assert msg_id == "msg-1"
+
+    def test_empty_create_marker_is_skipped_for_older_reviewable_plan(self):
+        older = _make_receipt(
+            "t1", [_raw_weekly_create_proposal()], message_id="msg-valid"
+        )
+        newer = _make_receipt(
+            "t2", [_raw_weekly_create_proposal(empty=True)], message_id="msg-empty"
+        )
+        proposals, _target, msg_id = self._call([older, newer], [])
+        assert proposals is not None
+        assert msg_id == "msg-valid"
+        assert proposals[0]["proposal"]["proposal_id"] == "draft-1"
+
+    def test_filtered_latest_proposal_falls_back_to_older_reviewable_plan(
+        self, monkeypatch
+    ):
+        import stride_server.routes.coach as coach_routes
+
+        older = _make_receipt(
+            "t1", [_raw_weekly_create_proposal()], message_id="msg-valid"
+        )
+        newer = _make_receipt(
+            "t2", [_raw_weekly_proposal()], message_id="msg-remove-all"
+        )
+
+        def _filter_latest(_user_id, cards):
+            if isinstance(cards[0].proposal, PlanDiff):
+                return []
+            return [card.model_dump() for card in cards]
+
+        monkeypatch.setattr(coach_routes, "_enrich_proposal_cards", _filter_latest)
+        proposals, _target, msg_id = self._call([older, newer], [])
+
+        assert proposals is not None
+        assert msg_id == "msg-valid"
+        assert proposals[0]["proposal"]["proposal_id"] == "draft-1"
+
+    def test_active_target_is_returned(self):
+        at = {"kind": "week", "folder": "2026-07-13_07-19"}
+        receipt = _make_receipt("t1", [_raw_weekly_proposal()], active_target=at)
+        _proposals, target, _msg = self._call([receipt], [])
+        assert target == at

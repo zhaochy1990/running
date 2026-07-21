@@ -8,6 +8,12 @@ dispatcher / Aggregator) and the domain specialists. No infrastructure imports;
 from __future__ import annotations
 
 from .target import TargetKind, TargetRef
+from .review_context import (
+    MAX_REVIEW_CONTEXT_BYTES,
+    REVIEW_CONTEXT_KEY,
+    ReviewContext,
+    WeeklyCreateReviewContext,
+)
 from .events import CoachEvent, CoachEventStatus, CoachEventType
 from .specialist import (
     ArtifactRef,
@@ -35,6 +41,11 @@ __all__ = [
     # target
     "TargetKind",
     "TargetRef",
+    # review context
+    "MAX_REVIEW_CONTEXT_BYTES",
+    "REVIEW_CONTEXT_KEY",
+    "ReviewContext",
+    "WeeklyCreateReviewContext",
     # events
     "CoachEvent",
     "CoachEventStatus",
