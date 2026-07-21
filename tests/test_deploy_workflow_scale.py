@@ -62,6 +62,10 @@ def test_training_load_rollout_uses_api_owned_resumable_shards() -> None:
     assert "/internal/jobs/" not in step
     assert "status == 503" in step
     assert "MAX_RETRIES" in step
+    assert (
+        "RETRYABLE_NETWORK_ERRORS = (urllib.error.URLError, TimeoutError)" in step
+    )
+    assert step.count("except RETRYABLE_NETWORK_ERRORS as exc:") == 2
     assert "next_shard_start" in step
     assert "daily_rows_written" in step
 
@@ -82,4 +86,9 @@ def test_weekly_manual_backfill_uses_api_owned_shards() -> None:
     assert '"only_if_missing": False' in workflow
     assert '"restart_token": restart_token' in workflow
     assert "GITHUB_RUN_ID" in workflow
+    assert (
+        "RETRYABLE_NETWORK_ERRORS = (urllib.error.URLError, TimeoutError)"
+        in workflow
+    )
+    assert "except RETRYABLE_NETWORK_ERRORS as exc:" in workflow
     assert "next_shard_start" in workflow
