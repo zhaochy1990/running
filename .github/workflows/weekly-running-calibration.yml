@@ -82,7 +82,7 @@ jobs:
           headers = {"X-Internal-Token": token, "Content-Type": "application/json"}
           restart_token = f"weekly:{os.environ['GITHUB_RUN_ID']}"
           MAX_RETRIES = 8
-          MAX_SHARDS = 20
+          MAX_SHARDS = 32
 
 
           def post(body):
@@ -119,7 +119,7 @@ jobs:
                       fail(f"forced shard limit exceeded for {user}")
                   body = {
                       "user": user,
-                      "shard_days": 30,
+                      "shard_days": 14,
                       "only_if_missing": False,
                       "restart": True,
                       "restart_token": restart_token,
@@ -127,12 +127,15 @@ jobs:
                   for attempt in range(1, MAX_RETRIES + 1):
                       try:
                           status, result, retry_after = post(body)
-                      except urllib.error.URLError as exc:
+                      except (TimeoutError, urllib.error.URLError) as exc:
                           status, result, retry_after = 0, {"detail": str(exc)}, None
                       if status == 200:
                           break
                       if status in (0, 503):
-                          delay = min(30, int(retry_after or 2 ** min(attempt, 5)))
+                          delay = min(
+                              30,
+                              max(int(retry_after or 0), 2 ** min(attempt, 5)),
+                          )
                           print(
                               f"retrying forced shard for {user} after status={status} "
                               f"in {delay}s ({attempt}/{MAX_RETRIES})"

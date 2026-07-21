@@ -507,3 +507,30 @@ class TestDailyTrainingLoadDatePkMigration:
             assert _daily_training_load_pk(db) == ["date"]
         finally:
             db.close()
+
+    def test_initialization_failure_closes_sqlite_connection(
+        self, tmp_path: Path, monkeypatch
+    ):
+        import stride_storage.sqlite.database as database_mod
+
+        legacy_path = self._legacy_db(tmp_path)
+        real_connect = database_mod.sqlite3.connect
+        opened: list[sqlite3.Connection] = []
+
+        def tracking_connect(*args, **kwargs):
+            connection = real_connect(*args, **kwargs)
+            opened.append(connection)
+            return connection
+
+        def fail_migration(_self):
+            raise sqlite3.OperationalError("database is locked")
+
+        monkeypatch.setattr(database_mod.sqlite3, "connect", tracking_connect)
+        monkeypatch.setattr(Database, "_migrate", fail_migration)
+
+        with pytest.raises(sqlite3.OperationalError, match="locked"):
+            Database(db_path=legacy_path)
+
+        assert len(opened) == 1
+        with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+            opened[0].execute("SELECT 1")

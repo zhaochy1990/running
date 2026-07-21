@@ -181,7 +181,7 @@ v2 规则不读取课型标签：
 
 全量回填是否完成由 `sync_meta.training_load_backfill_complete` 独立记录，不能用“存在任意
 当前版本负荷行”代替。生产回填由 API 的 `/internal/training-load/backfill/step` 按最多
-45 天分片执行，deploy 默认每片 30 天；专用异步 job worker 不直接打开 SQLite 执行该
+45 天分片执行，deploy 和手工强制回填默认每片 14 天；专用异步 job worker 不直接打开 SQLite 执行该
 rollout。首片从零 ATL/CTL prior 开始，后续片从
 `sync_meta.training_load_backfill_progress` 恢复上一片末端状态，并在整轮中复用同一份
 calibration。只有最后一片成功且实际写出 daily rows 后才能更新 marker；短窗口回填、

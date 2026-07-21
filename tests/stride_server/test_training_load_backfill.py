@@ -8,6 +8,7 @@ from stride_core.models import ActivityDetail, DailyHealth, TimeseriesPoint
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
 INTERNAL_TOKEN = "test-internal-token-very-secret"
 UNALIASED_USER_UUID = "b2c3d4e5-f6a7-4bbb-8abc-234567890123"
+PRODUCTION_TEST_USER_UUID = "4b810bda-ad52-4714-911e-6783e1da3f4a"
 
 
 def _timeseries(duration_s: int = 3600) -> list[TimeseriesPoint]:
@@ -76,8 +77,9 @@ def test_internal_training_load_users_scans_live_uuid_databases(tmp_path, monkey
     from stride_storage.sqlite.database import Database
 
     clear_server_config_cache()
-    # Both UUID databases must be found even though no alias file exists.
-    for user_id in (USER_UUID, UNALIASED_USER_UUID):
+    # Unaliased production users remain rollout targets, but the known empty
+    # production test database is explicitly excluded from automatic backfill.
+    for user_id in (USER_UUID, UNALIASED_USER_UUID, PRODUCTION_TEST_USER_UUID):
         with Database(user=user_id):
             pass
     # Non-user directories and empty placeholders are not rollout targets.

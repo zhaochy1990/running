@@ -66,6 +66,15 @@ def test_training_load_rollout_uses_api_owned_resumable_shards() -> None:
     assert "daily_rows_written" in step
 
 
+def test_training_load_rollout_bounds_expensive_shards_and_retries_timeouts() -> None:
+    step = _training_load_rollout_step()
+
+    assert '"shard_days": 14' in step
+    assert "MAX_SHARDS = 32" in step
+    assert "except (TimeoutError, urllib.error.URLError)" in step
+    assert "max(int(retry_after or 0), 2 ** min(attempt, 5))" in step
+
+
 def test_daily_sync_retries_api_writer_contention() -> None:
     workflow = DAILY_SYNC_PATH.read_text(encoding="utf-8")
 
@@ -83,3 +92,7 @@ def test_weekly_manual_backfill_uses_api_owned_shards() -> None:
     assert '"restart_token": restart_token' in workflow
     assert "GITHUB_RUN_ID" in workflow
     assert "next_shard_start" in workflow
+    assert '"shard_days": 14' in workflow
+    assert "MAX_SHARDS = 32" in workflow
+    assert "except (TimeoutError, urllib.error.URLError)" in workflow
+    assert "max(int(retry_after or 0), 2 ** min(attempt, 5))" in workflow

@@ -33,6 +33,9 @@ _UUID4_DIR_RE = re.compile(
 )
 _BACKFILL_WINDOW_DAYS = 365
 _BACKFILL_PROGRESS_SCHEMA_VERSION = 1
+_PRODUCTION_TRAINING_LOAD_EXCLUDED_USERS = frozenset(
+    {"4b810bda-ad52-4714-911e-6783e1da3f4a"}
+)
 
 
 @dataclass(frozen=True)
@@ -228,6 +231,7 @@ def _production_training_load_users() -> list[str]:
         for entry in USER_DATA_DIR.iterdir()
         if entry.is_dir()
         and _UUID4_DIR_RE.fullmatch(entry.name)
+        and entry.name not in _PRODUCTION_TRAINING_LOAD_EXCLUDED_USERS
         and (entry / "coros.db").is_file()
         and (entry / "coros.db").stat().st_size > 0
     ]

@@ -25,8 +25,10 @@ Pipeline：Build Docker image → Push to GHCR → Azure Login (OIDC) → Deploy
 保护的 `/internal/training-load/users`。服务端从生产 Azure Files 挂载盘枚举所有
 UUID 目录中的 `coros.db`（不依赖可能滞后的 `.slug_aliases.json`）。365 天扫描（约
 1.2M 条 timeseries）不能放进单个 ACA 请求，也不能交给另一个直接打开 SQLite 的
-worker；deploy 因此按用户串行 POST `/internal/training-load/backfill/step`，每次只推进
-最多 30 天，并在 `503` / 网络失败时指数退避重试。
+worker；deploy 因此按用户串行 POST `/internal/training-load/backfill/step`。生产 driver
+每次只推进 14 天（endpoint 仍限制最多 45 天），并在 `503`、网络失败或读取超时时
+指数退避重试。已确认无 watch 数据的生产测试 UUID 会从自动 rollout 枚举中显式排除，
+但不会删除或修改其 SQLite 文件。
 
 API 内按 user 互斥 watch 数据写入与 training-load shard。每片成功后将 `next_start`、末端 ATL/CTL
 及本轮固定 calibration 写入 `sync_meta.training_load_backfill_progress`；请求超时或 API

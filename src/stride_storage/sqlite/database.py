@@ -784,17 +784,25 @@ class Database:
         seeded = self._seed_if_needed()
 
         self._conn = sqlite3.connect(str(self._path))
-        self._conn.row_factory = sqlite3.Row
-        # Azure Files can briefly retain a SQLite writer lock across requests or
-        # a revision rollover. Let API-owned writers wait for short contention;
-        # long contention is translated by the route into a retryable 503.
-        self._conn.execute("PRAGMA busy_timeout = 3000")
-        if seeded:
-            # SCHEMA was already applied during the seed; just run the
-            # idempotent column-add migrations on the live connection.
-            self._migrate()
-        else:
-            self._init_schema()
+        try:
+            self._conn.row_factory = sqlite3.Row
+            # Azure Files can briefly retain a SQLite writer lock across requests or
+            # a revision rollover. Let API-owned writers wait for short contention;
+            # long contention is translated by the route into a retryable 503.
+            self._conn.execute("PRAGMA busy_timeout = 3000")
+            if seeded:
+                # SCHEMA was already applied during the seed; just run the
+                # idempotent column-add migrations on the live connection.
+                self._migrate()
+            else:
+                self._init_schema()
+        except BaseException:
+            # ``with Database(...)`` cannot enter its context when initialization
+            # fails, so close here rather than relying on ``__exit__``. This is
+            # especially important on Azure Files, where a leaked SMB handle can
+            # keep later migration retries locked for the lifetime of the process.
+            self._conn.close()
+            raise
 
     def _seed_if_needed(self) -> bool:
         """Create a fresh schema-applied SQLite file in a local tmp dir

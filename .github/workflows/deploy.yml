@@ -319,7 +319,7 @@ jobs:
             --query "properties.configuration.ingress.fqdn" -o tsv)
 
           # The API process is the sole training-load SQLite writer. Each request
-          # advances one <=30-day shard and persists its next position in
+          # advances one <=14-day shard and persists its next position in
           # sync_meta. Workflow retries or API restarts resume from that position.
           FQDN="$FQDN" INTERNAL_TOKEN="$INTERNAL_TOKEN" python3 <<'PY'
           import json
@@ -334,7 +334,7 @@ jobs:
           headers = {"X-Internal-Token": token, "Content-Type": "application/json"}
           STEP_TIMEOUT_S = 220
           MAX_RETRIES = 8
-          MAX_SHARDS = 20
+          MAX_SHARDS = 32
 
 
           def request(path, body):
@@ -369,7 +369,7 @@ jobs:
               )
               with urllib.request.urlopen(req, timeout=60) as resp:
                   payload = json.loads(resp.read().decode() or "{}")
-          except urllib.error.URLError as exc:
+          except (TimeoutError, urllib.error.URLError) as exc:
               fail(f"could not enumerate training-load users: {exc}")
 
           users = payload.get("users")
@@ -384,7 +384,7 @@ jobs:
                       fail(f"training-load shard limit exceeded for {user}")
                   body = {
                       "user": user,
-                      "shard_days": 30,
+                      "shard_days": 14,
                       "only_if_missing": True,
                   }
                   for attempt in range(1, MAX_RETRIES + 1):
@@ -392,13 +392,16 @@ jobs:
                           status, result, retry_after = request(
                               "/internal/training-load/backfill/step", body
                           )
-                      except urllib.error.URLError as exc:
+                      except (TimeoutError, urllib.error.URLError) as exc:
                           status, result, retry_after = 0, {"detail": str(exc)}, None
 
                       if status == 200:
                           break
                       if status == 503 or status == 0:
-                          delay = min(30, int(retry_after or 2 ** min(attempt, 5)))
+                          delay = min(
+                              30,
+                              max(int(retry_after or 0), 2 ** min(attempt, 5)),
+                          )
                           print(
                               f"retrying training-load shard for {user} "
                               f"after status={status} in {delay}s "
