@@ -732,6 +732,7 @@ def _build_week_response(plan: Any, *, user_id: str | None, today: date_cls) -> 
 
     rows: list[dict[str, Any]] = []
     windows: list[tuple[int, str, str]] = []
+    week_finished: dict[int, bool] = {}
     for row in week_rows:
         week_index = int(row.get("week_index") or 0)
         start = _parse_date(row.get("week_start"))
@@ -745,23 +746,44 @@ def _build_week_response(plan: Any, *, user_id: str | None, today: date_cls) -> 
         row["actual_avg_hr"] = None
         row["actual_run_count"] = 0
         row["actual_duration_s"] = 0
+        row["actual_training_dose"] = None
+        row["actual_training_dose_coverage"] = 0.0
+        row["actual_training_dose_status"] = "unknown"
         if has_started:
             row["actual_distance_km"] = 0.0
         if user_id and has_started and week_index > 0 and start is not None and end is not None:
             actual_end = min(end, today)
             windows.append((week_index, start.isoformat(), actual_end.isoformat()))
+            # The current canonical week is always "as of now", including on
+            # Sunday: today's load can still change until the day closes. Only a
+            # week whose canonical end is strictly in the past may be complete.
+            week_finished[week_index] = end < today
         rows.append(row)
 
     actuals: dict[int, dict] = {}
+    dose_actuals: dict[int, dict] = {}
     if user_id and windows:
         db = get_db(user_id)
         try:
             actuals = db.get_running_week_summaries(windows)
+            dose_actuals = db.get_training_dose_week_summaries(windows)
         finally:
             db.close()
 
     for row in rows:
         week_index = int(row.get("week_index") or 0)
+        dose = dose_actuals.get(week_index)
+        if dose:
+            status = dose.get("dose_status", "unknown")
+            # A not-yet-finished canonical week is never "complete" even if
+            # every elapsed day is complete — it's a partial week for compares.
+            if status == "complete" and not week_finished.get(week_index, False):
+                status = "partial"
+            row["actual_training_dose"] = dose.get("actual_training_dose")
+            row["actual_training_dose_coverage"] = dose.get(
+                "actual_training_dose_coverage", 0.0
+            )
+            row["actual_training_dose_status"] = status
         actual = actuals.get(week_index)
         if not actual:
             continue

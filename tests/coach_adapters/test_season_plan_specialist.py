@@ -185,6 +185,7 @@ def test_runner_extracts_valid_proposal(monkeypatch) -> None:
     assert len(result.proposals) == 1
     assert isinstance(result.proposals[0], MasterPlanDiff)
     assert result.proposals[0].plan_id == _PLAN_ID
+    assert result.proposals[0].base_revision == "1"
     assert capture["build"]["scope"] == "master_chat"
     assert capture["build"]["checkpointer"] is None
 
@@ -485,7 +486,7 @@ def test_run_coach_turn_preflight_does_not_construct_any_llm(monkeypatch) -> Non
         session_id="clarify",
         message="我想调整整体训练计划",
         checkpointer=InMemorySaver(),
-    )
+    ).turn_response
 
     assert result.clarification is not None
     assert result.proposals == []
@@ -528,7 +529,7 @@ def test_run_coach_turn_restores_adjustment_after_phase_checkpoint(
         session_id="phase-checkpoint",
         message="训练重点改成上坡力量与跑姿经济性",
         checkpointer=saver,
-    )
+    ).turn_response
     assert "哪个阶段" in (first.clarification or "")
 
     second = run_coach_turn(
@@ -541,7 +542,7 @@ def test_run_coach_turn_restores_adjustment_after_phase_checkpoint(
         specialist_llm=object(),
         memory_store=_MemoryStore(),
         memory_extract_fn=lambda _system, _user: MemoryExtraction(),
-    )
+    ).turn_response
 
     assert second.clarification is None
     assert second.reply == "这个方向合理，可以提出调整方案。"

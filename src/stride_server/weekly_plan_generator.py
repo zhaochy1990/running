@@ -17,7 +17,14 @@ from statistics import median
 from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
 from stride_core.timefmt import shanghai_day_str, today_shanghai
 
+from .content_store import read_json
 from .deps import get_db
+from .nutrition_rules import (
+    NutritionBaseline,
+    build_fallback_baseline,
+    build_preferences_baseline,
+    build_weekly_nutrition,
+)
 from .week_generator import generate_week_plan
 from .weekly_plan_store import get_weekly_plan_store
 
@@ -50,6 +57,48 @@ class RecentTrainingContext:
     baseline_km: float | None = None
     load_ratio: float | None = None
     current_week_by_date: dict[str, dict] | None = None
+
+
+def _read_content_object(relative_path: str) -> dict | None:
+    """Best-effort object read for optional plan-generation context."""
+    try:
+        item = read_json(relative_path)
+    except Exception:  # noqa: BLE001 — optional context must not block generation
+        return None
+    if item is None:
+        return None
+    data, _source = item
+    return data if isinstance(data, dict) else None
+
+
+def _nutrition_baseline(user_id: str, db) -> NutritionBaseline:
+    """Resolve one weekly nutrition baseline from canonical athlete sources."""
+    prefs_store = _read_content_object(f"{user_id}/nutrition_prefs.json")
+    prefs = prefs_store.get("current") if prefs_store else None
+    if isinstance(prefs, dict):
+        try:
+            return build_preferences_baseline(prefs)
+        except ValueError:
+            # An incomplete preference record should degrade to an explicitly
+            # labelled estimate rather than dropping nutrition from the plan.
+            pass
+
+    bmr_kcal: float | None = None
+    weight_kg: float | None = None
+    if hasattr(db, "latest_body_composition_scan"):
+        try:
+            row = db.latest_body_composition_scan()
+            if row is not None:
+                scan = dict(row)
+                bmr_kcal = scan.get("bmr_kcal")
+                weight_kg = scan.get("weight_kg")
+        except Exception:  # noqa: BLE001 — fall through to profile estimate
+            pass
+
+    profile = _read_content_object(f"{user_id}/profile.json")
+    if weight_kg is None and profile is not None:
+        weight_kg = profile.get("weight_kg")
+    return build_fallback_baseline(weight_kg=weight_kg, bmr_kcal=bmr_kcal)
 
 
 def _master_week_target(user_id: str, week_start: date_cls) -> MasterWeekTarget | None:
@@ -240,6 +289,68 @@ def _replace_distance_label(summary: str, distance_km: float) -> str:
     return re.sub(r"（[^，）]+([，）])", rf"（{km_label}\1", summary, count=1)
 
 
+def _weekly_plan_explanation(
+    plan: WeeklyPlan,
+    *,
+    total_distance_km: float,
+    generation_notes: list[str],
+) -> str:
+    """生成 Review 首屏直接展示的完整训练解读。"""
+    run_sessions = [s for s in plan.sessions if s.kind == SessionKind.RUN]
+    strength_sessions = [s for s in plan.sessions if s.kind == SessionKind.STRENGTH]
+    rest_sessions = [s for s in plan.sessions if s.kind == SessionKind.REST]
+    quality_sessions = [
+        s
+        for s in run_sessions
+        if any(marker in s.summary for marker in ("节奏", "间歇", "阈值", "马拉松配速"))
+    ]
+    longest_run = max(
+        run_sessions,
+        key=lambda session: float(session.total_distance_m or 0),
+        default=None,
+    )
+
+    structure = (
+        f"{len(run_sessions)} 次跑步、{len(strength_sessions)} 次力量训练、"
+        f"{len(rest_sessions)} 个休息日"
+    )
+    lines = [
+        "### 本周定位",
+        f"- 计划周跑量约 **{total_distance_km:.1f} km**，包含{structure}。",
+    ]
+    lines.extend(f"- {note.strip('。 ')}。" for note in generation_notes if note)
+
+    lines.extend(["", "### 训练逻辑"])
+    if quality_sessions:
+        quality_text = "；".join(
+            f"{session.date[5:]} {session.summary}" for session in quality_sessions
+        )
+        lines.append(f"- 质量课：{quality_text}，用于衔接阈值能力与速度刺激。")
+    if longest_run is not None:
+        lines.append(
+            f"- 长距离：{longest_run.date[5:]} {longest_run.summary}，"
+            "以有氧耐力和疲劳下的动作稳定性为主，不追求额外提速。"
+        )
+    if strength_sessions:
+        lines.append(
+            "- 力量训练安排在长距离前，重点是核心与髋部稳定，保持中等强度，避免练到力竭。"
+        )
+    lines.append(
+        "- 轻松跑与休息日用于承接质量课，避免把多次高负荷训练连续堆叠。"
+    )
+
+    lines.extend(
+        [
+            "",
+            "### 执行与调整",
+            "- 轻松跑保持可对话强度；质量课以完成目标区间为准，不额外加码。",
+            "- 若出现疼痛、明显动作变形，或质量课 RPE 达到 8 以上，取消后续强度并改为休息或 Z1–Z2 轻松跑。",
+            "- 长距离前一天的力量训练不得做到力竭；睡眠或恢复明显变差时优先保留长距离，删除间歇刺激。",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _merge_current_week_actuals(
     plan: WeeklyPlan,
     *,
@@ -268,6 +379,7 @@ def _merge_current_week_actuals(
                         session,
                         kind=SessionKind.RUN,
                         summary=f"已完成跑步（{distance_km:.1f}K）",
+                        spec=None,
                         notes_md="根据已同步训练记录锁定；无需重复执行。",
                         total_distance_m=round(distance_km * 1000.0),
                         total_duration_s=(
@@ -281,6 +393,7 @@ def _merge_current_week_actuals(
                         session,
                         kind=SessionKind.REST,
                         summary="已过日期（无跑步记录）",
+                        spec=None,
                         notes_md=None,
                         total_distance_m=None,
                         total_duration_s=None,
@@ -341,7 +454,9 @@ def _merge_current_week_actuals(
                     session,
                     kind=SessionKind.REST,
                     summary="完整休息日",
+                    spec=None,
                     notes_md="本周已完成训练较多，保留至少一个完整休息日。",
+                    total_duration_s=None,
                 )
                 break
 
@@ -451,18 +566,27 @@ def build_weekly_plan(
             target_km=total_distance_km,
             context=training_context,
         )
+        nutrition = build_weekly_nutrition(
+            week_start=week_start,
+            sessions=plan.sessions,
+            baseline=_nutrition_baseline(user_id, db),
+        )
+        plan = replace(plan, nutrition=nutrition)
     finally:
         db.close()
 
-    notes = [
+    generation_notes = [
         master_target.context if master_target is not None else None,
         calibration_note,
         actual_note,
-        plan.notes_md,
     ]
     plan = replace(
         plan,
-        notes_md="。".join(note.strip("。 \t\n") for note in notes if note),
+        notes_md=_weekly_plan_explanation(
+            plan,
+            total_distance_km=total_distance_km,
+            generation_notes=[note for note in generation_notes if note],
+        ),
     )
 
     from coach.graphs.generation.rule_filter import run_rule_filter

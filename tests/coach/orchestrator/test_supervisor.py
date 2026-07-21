@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from coach.contracts import (
+    REVIEW_CONTEXT_KEY,
     Ambiguity,
     IntentHit,
     ResolverOutput,
@@ -56,6 +57,27 @@ def test_write_specialist_gets_write_boundaries() -> None:
     )
     plan = build_call_plan(out, registry=_registry(), utterance="改周三")
     assert "等用户确认" in plan.calls[0].task.boundaries
+
+
+def test_review_context_rides_scoped_context_data() -> None:
+    """A review draft is placed on ScopedContext.data for the specialist."""
+    ctx = {"kind": "weekly_create", "proposal": {"folder": "2026-W26"}}
+    out = ResolverOutput(
+        intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)],
+        active_target=TargetRef(kind="week", folder="2026-W26"),
+    )
+    plan = build_call_plan(
+        out, registry=_registry(), utterance="这个课表的训练逻辑是什么", review_context=ctx
+    )
+    assert plan.calls[0].task.context.data[REVIEW_CONTEXT_KEY] == ctx
+
+
+def test_no_review_context_leaves_scoped_data_empty() -> None:
+    out = ResolverOutput(
+        intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)],
+    )
+    plan = build_call_plan(out, registry=_registry(), utterance="我状态如何")
+    assert plan.calls[0].task.context.data == {}
 
 
 def test_ambiguity_yields_empty_plan() -> None:

@@ -1,4 +1,5 @@
 import { refreshAccessToken } from './store/authStore'
+import type { ChatResponse, CoachReviewContext, CoachTargetRef, SessionHistoryResponse } from './types/coachChat'
 import type {
   AbandonedScheduledWorkout,
   PlannedNutrition,
@@ -67,6 +68,8 @@ async function bodyResult<T>(res: Response): Promise<JsonResult<T>> {
 
 const postJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
   bodyResult<T>(await apiFetch('POST', path, body))
+const getJSON = async <T>(path: string): Promise<JsonResult<T>> =>
+  bodyResult<T>(await apiFetch('GET', path))
 const putJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
   bodyResult<T>(await apiFetch('PUT', path, body))
 const patchJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
@@ -93,6 +96,9 @@ export interface MyProfile {
   provider?: string | null
   features?: {
     coach_agent_weekly_plan: boolean
+    coach_chat?: boolean
+    coach_chat_debug?: boolean
+    coach_chat_max_message_chars?: number
   }
 }
 
@@ -609,6 +615,9 @@ export interface MasterPlanWeek {
   actual_avg_hr?: number | null
   actual_run_count?: number
   actual_duration_s?: number
+  actual_training_dose?: number | null
+  actual_training_dose_coverage?: number | null
+  actual_training_dose_status?: 'complete' | 'partial' | 'unknown' | null
 }
 
 export interface MasterPlanTrainingLoadProjection {
@@ -1922,4 +1931,185 @@ export interface StrideTrainingLoadResponse {
 
 export function getStrideTrainingLoad(user: string, days = 90) {
   return fetchJSON<StrideTrainingLoadResponse>(`/${user}/stride/training-load?days=${days}`)
+}
+
+// ── Coach chat ──────────────────────────────────────────────────────────────
+// Contract mirrors src/stride_server/routes/coach.py:
+//   POST /api/users/me/coach/chat                     -> ChatResponse
+//   GET  /api/users/me/coach/sessions/{id}/messages   -> SessionHistoryResponse
+// The session is fixed to `web-default` for this slice; the checkpointer
+// thread id is derived server-side as `{user}:coach:{session_id}`.
+
+/** The single web conversation thread for the coach chat page. */
+export const WEB_DEFAULT_SESSION_ID = 'web-default'
+
+/**
+ * Send one coach chat turn.
+ *
+ * `clientTurnId` is REQUIRED by the backend (422 if missing) and drives
+ * server-side idempotency: replaying the same id with the same request returns
+ * the same turn without re-invoking the model; a same-id replay with a
+ * *different* request yields 409 (TurnConflictError). The id is echoed on
+ * `assistant_message.turn_id`. `target` (optional) is the authoritative
+ * TargetRef the turn should act on (the workspace always passes it).
+ * `reviewContext` (optional) anchors the turn to an unapplied review draft so
+ * the coach answers from that draft rather than a saved plan; the server
+ * requires its proposal folder to equal `target.folder`.
+ *
+ * Non-401 failures resolve to `{ ok: false }` per the project postJSON
+ * contract; only an unrecoverable 401 (refresh failed) throws "Session expired".
+ */
+export function sendCoachChatMessage(
+  message: string,
+  clientTurnId: string,
+  sessionId: string = WEB_DEFAULT_SESSION_ID,
+  target?: CoachTargetRef,
+  reviewContext?: CoachReviewContext,
+): Promise<JsonResult<ChatResponse>> {
+  return postJSON<ChatResponse>('/users/me/coach/chat', {
+    session_id: sessionId,
+    message,
+    client_turn_id: clientTurnId,
+    ...(target ? { target } : {}),
+    ...(reviewContext ? { review_context: reviewContext } : {}),
+  })
+}
+
+/**
+ * Load full history for a coach session. The frontend passes only the
+ * `session_id`; the server derives the thread from the JWT.
+ */
+export function fetchCoachHistory(
+  sessionId: string = WEB_DEFAULT_SESSION_ID,
+): Promise<JsonResult<SessionHistoryResponse>> {
+  return getJSON<SessionHistoryResponse>(
+    `/users/me/coach/sessions/${encodeURIComponent(sessionId)}/messages`,
+  )
+}
+
+// ── Coach plan apply ─────────────────────────────────────────────────────────
+// Contract mirrors src/stride_server/routes/coach.py:
+//   POST /api/users/me/coach/plan/{folder}/apply           (weekly diff|create)
+//   POST /api/users/me/coach/master-plan/{plan_id}/apply   (master diff)
+// Both take the raw backend proposal the chat stashed. 409 is not a hard error:
+//   - detail.code === 'season_impact_material' -> needs an explicit weekly-only
+//     acknowledgement (mapped to `needs_ack`, NOT stale).
+//   - detail string containing 'changed'       -> the plan moved (`stale`).
+//   - anything else                            -> `error`.
+
+/**
+ * The apply result surfaced to the workspace. Kept structurally identical to the
+ * coach-workspace `ApplyOutcome` so the adapter can return it verbatim.
+ */
+export type CoachApplyOutcome =
+  | { readonly status: 'ok' }
+  | { readonly status: 'stale' }
+  | { readonly status: 'needs_ack'; readonly seasonImpact: string }
+  | { readonly status: 'error'; readonly message: string }
+
+/** Best-effort string extraction from a FastAPI `detail` payload. */
+function detailText(detail: unknown): string {
+  if (typeof detail === 'string') return detail
+  if (detail && typeof detail === 'object') {
+    const msg = (detail as Record<string, unknown>).message
+    if (typeof msg === 'string') return msg
+  }
+  return ''
+}
+
+async function toApplyOutcome(res: Response): Promise<CoachApplyOutcome> {
+  if (res.ok) return { status: 'ok' }
+  const body = (await res.json().catch(() => ({}))) as { detail?: unknown }
+  const detail = body.detail
+  if (res.status === 409) {
+    if (
+      detail &&
+      typeof detail === 'object' &&
+      (detail as Record<string, unknown>).code === 'season_impact_material'
+    ) {
+      const text =
+        detailText(detail) || '该调整明显偏离赛季计划，需要确认仅改本周'
+      return { status: 'needs_ack', seasonImpact: text }
+    }
+    if (detailText(detail).includes('changed')) {
+      return { status: 'stale' }
+    }
+  }
+  const message = detailText(detail) || `启用失败（${res.status}）`
+  return { status: 'error', message }
+}
+
+/** True when a raw weekly proposal is a create (full plan, no diff ops). */
+function isWeeklyCreateRaw(raw: Readonly<Record<string, unknown>>): boolean {
+  return raw.plan !== undefined || raw.sessions !== undefined || raw.ops === undefined
+}
+
+/**
+ * Apply a stashed weekly proposal. `rawProposal` is the original PlanDiff or
+ * WeeklyPlanCreateProposal — sent under `diff` or `proposal` accordingly.
+ */
+export async function applyCoachWeekProposal(
+  folder: string,
+  rawProposal: Readonly<Record<string, unknown>>,
+  acceptedOpIds: readonly string[],
+  baseRevision: string,
+  impactAcknowledgement?: string,
+): Promise<CoachApplyOutcome> {
+  const isCreate = isWeeklyCreateRaw(rawProposal)
+  const body: Record<string, unknown> = {
+    session_id: WEB_DEFAULT_SESSION_ID,
+    accepted_op_ids: [...acceptedOpIds],
+    base_revision: baseRevision,
+    ...(isCreate ? { proposal: rawProposal } : { diff: rawProposal }),
+    ...(impactAcknowledgement ? { impact_acknowledgement: impactAcknowledgement } : {}),
+  }
+  const res = await apiFetch(
+    'POST',
+    `/users/me/coach/plan/${encodeURIComponent(folder)}/apply`,
+    body,
+  )
+  return toApplyOutcome(res)
+}
+
+/** Apply a stashed master (season) plan diff proposal. */
+export async function applyCoachMasterProposal(
+  planId: string,
+  rawProposal: Readonly<Record<string, unknown>>,
+  acceptedOpIds: readonly string[],
+  baseRevision: string,
+  changeReason: string = 'coach adjustment',
+): Promise<CoachApplyOutcome> {
+  const res = await apiFetch(
+    'POST',
+    `/users/me/coach/master-plan/${encodeURIComponent(planId)}/apply`,
+    {
+      session_id: WEB_DEFAULT_SESSION_ID,
+      diff: rawProposal,
+      accepted_op_ids: [...acceptedOpIds],
+      change_reason: changeReason,
+      base_revision: baseRevision,
+    },
+  )
+  return toApplyOutcome(res)
+}
+
+/** Record that the user abandoned a surfaced proposal as a trusted event. */
+export async function abandonCoachProposal(target: {
+  kind: 'weekly' | 'master'
+  folder?: string
+  planId?: string
+}): Promise<boolean> {
+  const coachTarget: CoachTargetRef = target.kind === 'weekly'
+    ? { kind: 'week', folder: target.folder }
+    : { kind: 'master', plan_id: target.planId }
+  try {
+    const res = await apiFetch('POST', '/users/me/coach/proposals/abandon', {
+      session_id: WEB_DEFAULT_SESSION_ID,
+      target: coachTarget,
+      summary: '用户放弃了本次调整方案',
+    })
+    return res.ok
+  } catch {
+    return false
+  }
 }

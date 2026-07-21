@@ -9,6 +9,11 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+from stride_core.workout_spec import (
+    NormalizedStrengthWorkout,
+    StrengthExerciseSpec,
+    StrengthTargetKind,
+)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -40,6 +45,58 @@ _PACE_S_PER_KM: dict[str, float] = {
     "T":  292.0,   # ~4:52/km
     "I":  262.0,   # ~4:22/km
 }
+
+
+def _runner_strength_workout(day: str) -> NormalizedStrengthWorkout:
+    """生成可直接审阅和推送的跑者稳定性力量训练。"""
+    return NormalizedStrengthWorkout(
+        name="[STRIDE] 跑者稳定性力量",
+        date=day,
+        exercises=(
+            StrengthExerciseSpec(
+                canonical_id="goblet_squat",
+                display_name="高脚杯深蹲",
+                sets=3,
+                target_kind=StrengthTargetKind.REPS,
+                target_value=10,
+                rest_seconds=60,
+                note="膝盖跟随脚尖方向，下蹲过程保持躯干稳定。",
+                provider_id="T1301",
+            ),
+            StrengthExerciseSpec(
+                canonical_id="single_leg_calf_raise",
+                display_name="单腿提踵",
+                sets=2,
+                target_kind=StrengthTargetKind.REPS,
+                target_value=8,
+                rest_seconds=45,
+                note="每侧完成，离心下降 3 秒；出现跟腱痛则缩小幅度。",
+                provider_id="T1275",
+            ),
+            StrengthExerciseSpec(
+                canonical_id="clamshell",
+                display_name="蚌式开合",
+                sets=3,
+                target_kind=StrengthTargetKind.REPS,
+                target_value=15,
+                rest_seconds=45,
+                note="每侧完成，骨盆保持稳定，重点激活臀中肌。",
+                provider_id="T1317",
+            ),
+            StrengthExerciseSpec(
+                canonical_id="greatest_stretch",
+                display_name="世界最佳拉伸",
+                sets=2,
+                target_kind=StrengthTargetKind.REPS,
+                target_value=6,
+                rest_seconds=30,
+                note="每侧完成，配合胸椎旋转与髋屈肌伸展。",
+                provider_id="T1262",
+            ),
+        ),
+        note="中等强度，保留 2–3 次余力；长距离前一天不得练到力竭。",
+    )
+
 
 # ── Folder helpers ────────────────────────────────────────────────────────────
 
@@ -158,12 +215,20 @@ def generate_week_plan(
             SessionKind.STRENGTH if kind_str == "strength" else SessionKind.REST
         )
 
+        strength_spec = (
+            _runner_strength_workout(day_date)
+            if kind == SessionKind.STRENGTH
+            else None
+        )
+        if strength_spec is not None:
+            duration_s = 45 * 60
+
         session = PlannedSession(
             date=day_date,
             session_index=0,
             kind=kind,
             summary=summary,
-            spec=None,           # rule-engine output is aspirational, not pushable
+            spec=strength_spec,
             notes_md=notes_md,
             total_distance_m=distance_m,
             total_duration_s=duration_s,

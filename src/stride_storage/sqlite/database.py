@@ -1733,6 +1733,96 @@ class Database:
             }
         return summaries
 
+    def get_training_dose_week_summaries(
+        self,
+        week_windows: list[tuple[int, str, str]],
+        *,
+        algorithm_version: int | None = None,
+    ) -> dict[int, dict]:
+        """Return actual STRIDE training-dose summaries per Shanghai-local week.
+
+        ``week_windows`` items are ``(week_index, date_from, date_to)`` with
+        date bounds in ``YYYY-MM-DD`` Shanghai calendar days (the current week's
+        ``date_to`` should already be clamped to *today* so future days are not
+        counted). Dose comes from ``daily_training_load`` for the requested
+        ``algorithm_version`` (defaults to the live ``TRAINING_LOAD_MODEL_VERSION``)
+        and covers **all** sports, not just running.
+
+        Coverage semantics per week:
+
+        - A day counts as an *available* value when its ``coverage_status`` is
+          ``complete``, ``partial`` or ``rest_confirmed`` (``unknown`` never
+          contributes a dose).
+        - ``coverage`` is available days / expected calendar days in the window.
+        - ``dose_status`` is ``complete`` when every available day is
+          ``complete``/``rest_confirmed`` *and* coverage is full; ``partial``
+          when at least one available day exists but the window is not fully
+          ``complete``/``rest_confirmed`` covered; ``unknown`` (with
+          ``training_dose`` ``None``) when the window has no available day.
+        """
+        if not week_windows:
+            return {}
+
+        if algorithm_version is None:
+            from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+            algorithm_version = TRAINING_LOAD_MODEL_VERSION
+
+        available = ("complete", "partial", "rest_confirmed")
+        full = ("complete", "rest_confirmed")
+        summaries: dict[int, dict] = {}
+        for week_index, date_from, date_to in week_windows:
+            expected_days = int(
+                round(
+                    self._conn.execute(
+                        "SELECT julianday(?) - julianday(?) + 1", (date_to, date_from)
+                    ).fetchone()[0]
+                )
+            )
+            if expected_days <= 0:
+                continue
+            row = self._conn.execute(
+                f"""SELECT
+                        coalesce(sum(CASE WHEN coverage_status IN ({','.join('?' * len(available))})
+                            THEN training_dose ELSE 0 END), 0) AS total_dose,
+                        count(DISTINCT CASE WHEN coverage_status IN ({','.join('?' * len(available))})
+                            THEN date END) AS available_days,
+                        count(DISTINCT CASE WHEN coverage_status NOT IN ({','.join('?' * len(full))})
+                            AND coverage_status IN ({','.join('?' * len(available))})
+                            THEN date END) AS non_full_days
+                   FROM daily_training_load
+                  WHERE algorithm_version = ?
+                    AND date BETWEEN ? AND ?""",
+                (
+                    *available,
+                    *available,
+                    *full,
+                    *available,
+                    algorithm_version,
+                    date_from,
+                    date_to,
+                ),
+            ).fetchone()
+
+            available_days = int(row["available_days"] or 0)
+            if available_days == 0:
+                summaries[int(week_index)] = {
+                    "actual_training_dose": None,
+                    "actual_training_dose_coverage": 0.0,
+                    "dose_status": "unknown",
+                }
+                continue
+
+            non_full_days = int(row["non_full_days"] or 0)
+            coverage = round(min(1.0, available_days / expected_days), 3)
+            is_complete = non_full_days == 0 and available_days >= expected_days
+            summaries[int(week_index)] = {
+                "actual_training_dose": round(float(row["total_dose"] or 0.0), 1),
+                "actual_training_dose_coverage": coverage,
+                "dose_status": "complete" if is_complete else "partial",
+            }
+        return summaries
+
     def get_activity_count(self) -> int:
         row = self._conn.execute("SELECT count(*) FROM activities").fetchone()
         return row[0]

@@ -9,6 +9,7 @@ describe('routeNameFor', () => {
   it.each([
     ['/health', 'Health'],
     ['/body-composition', 'BodyComposition'],
+    ['/coach', 'Coach Chat'],
     ['/plan', 'Training Plan'],
     ['/plan/adjust', 'Training Plan Adjust'],
     ['/activities', 'Activity List'],
@@ -29,6 +30,11 @@ describe('routeNameFor', () => {
   it('collapses /activity/:id regardless of id value', () => {
     expect(routeNameFor('/activity/abc123')).toBe('Activity Detail')
     expect(routeNameFor('/activity/xyz789')).toBe('Activity Detail')
+  })
+
+  it('names Coach plan-adjust workspaces without leaking target ids', () => {
+    expect(routeNameFor('/coach/week/2026-07-13_07-19/adjust')).toBe('Coach Weekly Plan Adjust')
+    expect(routeNameFor('/coach/master/plan-9/adjust')).toBe('Coach Master Plan Adjust')
   })
 
   it('falls through to raw pathname for unknown routes', () => {

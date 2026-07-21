@@ -6,6 +6,9 @@ export interface UserContextType {
   profileReady?: boolean
   onboardingCompletedAt?: string | null
   coachAgentWeeklyPlan?: boolean
+  coachChat?: boolean
+  coachChatDebug?: boolean
+  coachChatMaxMessageChars?: number
   refresh: () => Promise<void>
 }
 
@@ -15,6 +18,9 @@ export const UserContext = createContext<UserContextType>({
   profileReady: false,
   onboardingCompletedAt: null,
   coachAgentWeeklyPlan: false,
+  coachChat: false,
+  coachChatDebug: false,
+  coachChatMaxMessageChars: undefined,
   refresh: async () => {},
 })
 

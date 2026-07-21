@@ -82,6 +82,44 @@ def test_hallucinated_specialist_dropped_then_clarify() -> None:
     assert out.ambiguity.kind == "intent"
 
 
+def test_review_context_marker_enters_user_prompt_not_system() -> None:
+    """A compact review marker (kind + folder) routes follow-ups; full draft
+    never enters the resolver prompt, and nothing per-athlete enters system."""
+    draft = ResolverDraft(
+        intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)],
+    )
+    fn, captured = _fixed(draft)
+    review_context = {
+        "kind": "weekly_create",
+        "proposal": {
+            "folder": "2026-07-20_07-26",
+            "plan": {"week_folder": "2026-07-20_07-26", "notes_md": "机密草案细节"},
+        },
+    }
+    resolve(
+        "这个课表的训练逻辑是什么",
+        registry=_registry(),
+        draft_fn=fn,
+        review_context=review_context,
+    )
+    assert "当前评审上下文" in captured["user"]
+    assert "2026-07-20_07-26" in captured["user"]
+    assert "weekly_create" in captured["user"]
+    # The full draft payload must NOT leak into either prompt.
+    assert "机密草案细节" not in captured["user"]
+    assert "机密草案细节" not in captured["system"]
+    assert "2026-07-20_07-26" not in captured["system"]
+
+
+def test_no_review_context_leaves_user_prompt_clean() -> None:
+    draft = ResolverDraft(
+        intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)],
+    )
+    fn, captured = _fixed(draft)
+    resolve("我最近状态如何", registry=_registry(), draft_fn=fn)
+    assert "当前评审上下文" not in captured["user"]
+
+
 def test_low_confidence_triggers_intent_clarify() -> None:
     draft = ResolverDraft(intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.2)])
     fn, _ = _fixed(draft)

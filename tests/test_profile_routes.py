@@ -102,6 +102,45 @@ def test_get_profile_no_files_returns_defaults(app_client):
     assert onboarding["completed_at"] is None
     assert onboarding["sync_state"] is None
     assert data["features"]["coach_agent_weekly_plan"] is False
+    assert data["features"]["coach_chat"] is False
+    assert data["features"]["coach_chat_debug"] is False
+    assert data["features"]["coach_chat_max_message_chars"] == 8000
+
+
+def test_get_profile_enables_coach_chat_for_allowlisted_users(app_client):
+    from stride_server.config.models import PlanConfig, ServerConfig
+
+    client, token = app_client
+    client.app.state.config = ServerConfig.default(env="dev").with_updates(
+        plan=PlanConfig(
+            coach_chat_users=(USER_UUID,),
+            coach_chat_debug_users=(USER_UUID,),
+            coach_chat_max_message_chars=5000,
+        ),
+    )
+
+    resp = client.get("/api/users/me/profile", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 200
+    features = resp.json()["features"]
+    assert features["coach_chat"] is True
+    assert features["coach_chat_debug"] is True
+    assert features["coach_chat_max_message_chars"] == 5000
+
+
+def test_get_profile_coach_chat_and_debug_lists_are_independent(app_client):
+    from stride_server.config.models import PlanConfig, ServerConfig
+
+    client, token = app_client
+    client.app.state.config = ServerConfig.default(env="dev").with_updates(
+        plan=PlanConfig(coach_chat_users=(USER_UUID,)),
+    )
+
+    resp = client.get("/api/users/me/profile", headers={"Authorization": f"Bearer {token}"})
+
+    features = resp.json()["features"]
+    assert features["coach_chat"] is True
+    assert features["coach_chat_debug"] is False
 
 
 def test_get_profile_enables_coach_weekly_plan_for_allowlisted_user(app_client):

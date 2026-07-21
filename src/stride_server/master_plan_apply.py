@@ -156,6 +156,45 @@ def accepted_master_diff(
     return diff.model_copy(update={"ops": [op for op in diff.ops if op.id in accepted_ids]})
 
 
+def require_whole_master_op_ids(
+    diff: MasterPlanDiff, requested_op_ids: list[str]
+) -> list[str]:
+    """Strict whole-plan master apply: ``requested_op_ids`` must be exactly the
+    applicable op ids (``accepted is not False``), order-ignored.
+
+    Raises HTTP 400 on duplicate diff op ids, unknown/duplicate/rejected
+    requested ids, or an applicable op omitted. Returns the applicable ids in
+    diff op order.
+    """
+    diff_ids = [op.id for op in diff.ops]
+    if len(diff_ids) != len(set(diff_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="赛季调整数据非法：diff op id 必须唯一",
+        )
+    known = set(diff_ids)
+    applicable = [op.id for op in diff.ops if op.accepted is not False]
+    applicable_set = set(applicable)
+
+    seen: set[str] = set()
+    for oid in requested_op_ids:
+        if oid not in known:
+            raise HTTPException(status_code=400, detail=f"未知的调整项 {oid!r}")
+        if oid in seen:
+            raise HTTPException(status_code=400, detail=f"重复的调整项 {oid!r}")
+        seen.add(oid)
+        if oid not in applicable_set:
+            raise HTTPException(status_code=400, detail=f"调整项 {oid!r} 已被拒绝，不能应用")
+
+    missing = applicable_set - seen
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail="整份赛季调整必须应用全部有效项，缺少：" + ", ".join(sorted(missing)),
+        )
+    return applicable
+
+
 def _actual_old_value(plan: Any, op: MasterPlanDiffOp) -> dict[str, Any] | None:
     phase = next((item for item in plan.phases if item.id == op.phase_id), None)
     milestone = next(

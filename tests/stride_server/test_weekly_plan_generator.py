@@ -83,7 +83,49 @@ def test_generator_uses_active_master_week_target_and_passes_week_rules(
     assert sum(
         (session.total_distance_m or 0) for session in generated.plan.sessions
     ) == 71000
-    assert "总体计划第 11 周" in (generated.plan.notes_md or "")
+    notes = generated.plan.notes_md or ""
+    assert "总体计划第 11 周" in notes
+    assert "### 本周定位" in notes
+    assert "### 训练逻辑" in notes
+    assert "### 执行与调整" in notes
+    assert "质量课" in notes
+    assert "长距离" in notes
+    assert "规则引擎生成" not in notes
+
+    assert len(generated.plan.nutrition) == 7
+    assert [item.date for item in generated.plan.nutrition] == [
+        f"2026-07-{day:02d}" for day in range(13, 20)
+    ]
+    rest_nutrition = generated.plan.nutrition[0]
+    training_nutrition = generated.plan.nutrition[1]
+    assert training_nutrition.kcal_target == rest_nutrition.kcal_target + 200
+    assert training_nutrition.carbs_g is not None
+    assert training_nutrition.protein_g is not None
+    assert training_nutrition.fat_g is not None
+    assert training_nutrition.water_ml == 3000
+    assert [meal.name for meal in training_nutrition.meals] == [
+        "训练前补给",
+        "训练中补给",
+        "训练后恢复",
+    ]
+
+    strength = next(
+        session
+        for session in generated.plan.sessions
+        if session.kind.value == "strength"
+    )
+    assert strength.spec is not None
+    assert [exercise.provider_id for exercise in strength.spec.exercises] == [
+        "T1301",
+        "T1275",
+        "T1317",
+        "T1262",
+    ]
+    assert all(exercise.sets > 0 for exercise in strength.spec.exercises)
+    assert all(exercise.target_value > 0 for exercise in strength.spec.exercises)
+    assert all(exercise.rest_seconds >= 0 for exercise in strength.spec.exercises)
+    assert all(exercise.note for exercise in strength.spec.exercises)
+
     report = run_rule_filter(
         generated.plan.to_dict(), target_weekly_km=71.0
     )

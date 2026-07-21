@@ -9,7 +9,8 @@ from typing import Any
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from coach.contracts import SpecialistTask, TargetHint, TargetRef, Turn
+from coach.contracts import ScopedContext, SpecialistTask, TargetHint, TargetRef, Turn
+from coach.contracts.review_context import MAX_REVIEW_CONTEXT_BYTES
 from stride_core.master_plan import (
     MasterPlan,
     MasterPlanGoal,
@@ -105,6 +106,9 @@ def test_runner_extracts_proposal_from_draft_turn() -> None:
     assert len(result.proposals) == 1
     assert isinstance(result.proposals[0], PlanDiff)
     assert result.proposals[0].folder == _FOLDER
+    assert result.proposals[0].base_revision == wp.weekly_plan_fingerprint(
+        WeeklyPlan(week_folder=_FOLDER)
+    )
     assert capture["build"]["scope"] == "week_chat"
     assert capture["build"]["checkpointer"] is None
 
@@ -249,6 +253,119 @@ def test_runner_creates_full_plan_proposal_when_week_missing(monkeypatch) -> Non
     assert "build" not in capture
 
 
+def test_runner_regenerates_existing_week_as_full_proposal(monkeypatch) -> None:
+    folder = "2026-07-20_07-26"
+    existing = WeeklyPlan(
+        week_folder=folder,
+        sessions=(
+            PlannedSession(
+                date="2026-07-20",
+                session_index=0,
+                kind=SessionKind.RUN,
+                summary="旧课表",
+                total_distance_m=5000,
+            ),
+        ),
+        notes_md="旧说明",
+    )
+    generated_plan = WeeklyPlan(
+        week_folder=folder,
+        sessions=(
+            PlannedSession(
+                date="2026-07-20",
+                session_index=0,
+                kind=SessionKind.REST,
+                summary="完整休息日",
+            ),
+            PlannedSession(
+                date="2026-07-21",
+                session_index=0,
+                kind=SessionKind.RUN,
+                summary="轻松跑 8km",
+                total_distance_m=8000,
+            ),
+        ),
+        notes_md="### 本周定位\n\n### 训练逻辑\n\n### 执行与调整",
+    )
+    monkeypatch.setattr(
+        wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore(existing)
+    )
+    monkeypatch.setattr(wp, "today_shanghai", lambda: date(2026, 7, 15))
+    captured: dict[str, Any] = {}
+
+    def _build(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(plan=generated_plan, total_distance_km=8.0)
+
+    monkeypatch.setattr(wp, "build_weekly_plan", _build)
+    runner = make_weekly_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=object(),
+        graph_factory=lambda **_: pytest.fail("generation must not call week_chat"),
+    )
+
+    result = runner(_task("生成我下周的训练计划", folder=folder))
+
+    assert result.status == "completed"
+    assert len(result.proposals) == 1
+    proposal = result.proposals[0]
+    assert isinstance(proposal, WeeklyPlanCreateProposal)
+    assert proposal.to_weekly_plan().sessions[1].summary == "轻松跑 8km"
+    assert "### 训练逻辑" in (proposal.to_weekly_plan().notes_md or "")
+    assert proposal.base_revision == wp.weekly_plan_fingerprint(existing)
+    assert captured["allow_existing"] is True
+
+
+def test_runner_rejects_diff_that_removes_every_existing_session(monkeypatch) -> None:
+    folder = "2026-07-20_07-26"
+    existing = WeeklyPlan(
+        week_folder=folder,
+        sessions=(
+            PlannedSession(
+                date="2026-07-21",
+                session_index=0,
+                kind=SessionKind.RUN,
+                summary="轻松跑 8km",
+                total_distance_m=8000,
+            ),
+        ),
+    )
+    destructive = PlanDiff(
+        diff_id="remove-all",
+        folder=folder,
+        ops=[
+            {
+                "id": "remove-1",
+                "op": "remove_session",
+                "date": "2026-07-21",
+                "session_index": 0,
+                "old_value": {"summary": "轻松跑 8km"},
+                "new_value": None,
+                "spec_patch": None,
+                "accepted": None,
+            }
+        ],
+        ai_explanation="清空后重新生成",
+        created_at="2026-07-19T00:00:00Z",
+    ).model_dump()
+    monkeypatch.setattr(
+        wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore(existing)
+    )
+    runner = make_weekly_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=object(),
+        graph_factory=_factory("", destructive, {}),
+    )
+
+    result = runner(_task("重新安排这一周", folder=folder))
+
+    assert result.status == "needs_clarification"
+    assert result.proposals == []
+    assert "完整替代课表" in (result.clarification or "")
+
+
 def test_runner_rejects_week_after_next_without_generation(monkeypatch) -> None:
     monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
     monkeypatch.setattr(wp, "today_shanghai", lambda: date(2026, 7, 15))
@@ -367,6 +484,181 @@ def test_runner_seeds_window_and_memory_notes() -> None:
     assert any("跟腱伤史" in c for c in contents)
     assert any("昨天我跑了10公里" in c for c in contents)
     assert capture["state_in"]["history"][-1].content == "现在呢"
+
+
+# --- Review write path: revise an unapplied weekly-create draft --------------
+
+_REVIEW_FOLDER = "2026-07-13_07-19"
+
+
+def _draft_proposal_dict() -> dict[str, Any]:
+    plan = WeeklyPlan(
+        week_folder=_REVIEW_FOLDER,
+        sessions=(
+            PlannedSession(
+                date="2026-07-15",
+                session_index=0,
+                kind=SessionKind.RUN,
+                summary="周三间歇 8km",
+                total_distance_m=8000,
+            ),
+        ),
+        notes_md="草案备注",
+    )
+    return WeeklyPlanCreateProposal(
+        proposal_id="draft-1",
+        folder=_REVIEW_FOLDER,
+        plan=plan.to_dict(),
+        total_distance_km=8.0,
+        ai_explanation="初版草案",
+        created_at="2026-07-14T00:00:00Z",
+    ).model_dump(mode="json")
+
+
+def _review_task(objective: str) -> SpecialistTask:
+    from coach.contracts import ScopedContext
+
+    return SpecialistTask(
+        objective=objective,
+        active_target=TargetRef(kind="week", folder=_REVIEW_FOLDER),
+        context=ScopedContext(
+            data={
+                "review_context": {
+                    "kind": "weekly_create",
+                    "proposal": _draft_proposal_dict(),
+                }
+            }
+        ),
+    )
+
+
+def _review_move_diff() -> dict[str, Any]:
+    from uuid import uuid4
+
+    return PlanDiff(
+        diff_id="rd1",
+        folder=_REVIEW_FOLDER,
+        ops=[
+            {
+                "id": str(uuid4()),
+                "op": "move_session",
+                "date": "2026-07-15",
+                "session_index": 0,
+                "old_value": {"date": "2026-07-15"},
+                "new_value": {"date": "2026-07-16"},
+                "spec_patch": {"new_date": "2026-07-16"},
+                "accepted": None,
+            }
+        ],
+        ai_explanation="把周三间歇挪到周四",
+        created_at="2026-07-14T08:00:00Z",
+    ).model_dump()
+
+
+def test_review_write_turn_returns_revised_full_proposal(monkeypatch) -> None:
+    """A write turn under Review produces a NEW WeeklyPlanCreateProposal built
+    from the draft + PlanDiff, never a bare PlanDiff and never touching a saved
+    plan."""
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
+    capture: dict[str, Any] = {}
+    runner = make_weekly_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=object(),
+        graph_factory=_factory("已把周三挪到周四。", _review_move_diff(), capture),
+    )
+
+    result = runner(_review_task("把周三的间歇换到周四"))
+
+    assert result.status == "completed"
+    assert len(result.proposals) == 1
+    proposal = result.proposals[0]
+    assert isinstance(proposal, WeeklyPlanCreateProposal)
+    assert proposal.proposal_id != "draft-1"  # fresh identity
+    assert proposal.folder == _REVIEW_FOLDER
+    plan = proposal.to_weekly_plan()
+    assert [s.date for s in plan.sessions] == ["2026-07-16"]  # moved
+    assert plan.notes_md == "草案备注"  # preserved
+
+
+def test_review_read_turn_keeps_no_proposal(monkeypatch) -> None:
+    """A read/explain turn under Review (no diff) returns only the reply."""
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
+    capture: dict[str, Any] = {}
+    runner = make_weekly_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=object(),
+        graph_factory=_factory("这个课表的重点是有氧耐力。", None, capture),
+    )
+
+    result = runner(_review_task("这个课表的训练逻辑是什么"))
+
+    assert result.status == "completed"
+    assert result.reply_fragment == "这个课表的重点是有氧耐力。"
+    assert result.proposals == []
+
+
+def test_review_write_turn_seeds_draft_as_authoritative(monkeypatch) -> None:
+    """The draft plan JSON is seeded into the week_chat context so the model
+    (and draft tools) act on the draft, not a saved plan."""
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
+    capture: dict[str, Any] = {}
+    runner = make_weekly_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=None,  # let the runner build a toolkit with the draft loader
+        graph_factory=_factory("ok", _review_move_diff(), capture),
+    )
+
+    runner(_review_task("把周三的间歇换到周四"))
+
+    seeded = " ".join(
+        m.content for m in capture["state_in"]["history"] if isinstance(m, HumanMessage)
+    )
+    assert "周三间歇 8km" in seeded  # draft session surfaced as authoritative base
+
+
+def test_oversized_internal_review_context_is_not_seeded_into_llm(monkeypatch) -> None:
+    """A corrupt/legacy checkpoint cannot bypass the review-context byte cap."""
+    monkeypatch.setattr(
+        wp,
+        "get_weekly_plan_store",
+        lambda: _FakeWeeklyPlanStore(WeeklyPlan(week_folder=_REVIEW_FOLDER)),
+    )
+    raw = _draft_proposal_dict()
+    raw["plan"] = {
+        **raw["plan"],
+        "notes_md": "x" * (MAX_REVIEW_CONTEXT_BYTES + 1),
+    }
+    task = SpecialistTask(
+        objective="解释这个课表",
+        active_target=TargetRef(kind="week", folder=_REVIEW_FOLDER),
+        context=ScopedContext(
+            data={
+                "review_context": {
+                    "kind": "weekly_create",
+                    "proposal": raw,
+                }
+            }
+        ),
+    )
+    capture: dict[str, Any] = {}
+    runner = make_weekly_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=object(),
+        graph_factory=_factory("按已保存计划回答。", None, capture),
+    )
+
+    result = runner(task)
+
+    assert result.status == "completed"
+    seeded = " ".join(
+        m.content for m in capture["state_in"]["history"] if isinstance(m, HumanMessage)
+    )
+    assert "当前正在评审、尚未启用" not in seeded
+    assert len(seeded.encode("utf-8")) < MAX_REVIEW_CONTEXT_BYTES
 
 
 # --- current-week folder resolution -----------------------------------------
