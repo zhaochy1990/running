@@ -56,9 +56,9 @@ def _paths():
 
     return _coredb
 
-SCHEMA = """
-PRAGMA journal_mode=WAL;
+_WAL_JOURNAL_MODE_SQL = "PRAGMA journal_mode=WAL"
 
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS activities (
     label_id        TEXT PRIMARY KEY,
     name            TEXT,
@@ -773,14 +773,10 @@ class Database:
             self._path = _paths().DB_PATH
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Workaround for Azure Files SMB: the SCHEMA's `PRAGMA
-        # journal_mode=WAL` transition deadlocks on first init when the
-        # DB lives on an SMB-mounted share, leaving a 0-byte file and
-        # subsequent retries failing with "database is locked".
-        # For brand-new DBs, build the schema + WAL state in a local
-        # tmp directory (regular FS), then move the fully-formed file
-        # into place. After that, all writes are row-level INSERT/UPDATE
-        # which work fine over SMB. Existing DBs are opened directly.
+        # Azure Files SMB cannot reliably perform a journal-mode transition.
+        # Brand-new DBs are therefore built with WAL on a local filesystem and
+        # moved into place. Existing DBs keep their persisted journal mode;
+        # opening one must never run PRAGMA journal_mode=WAL again.
         seeded = self._seed_if_needed()
 
         self._conn = sqlite3.connect(str(self._path))
@@ -797,10 +793,9 @@ class Database:
             else:
                 self._init_schema()
         except BaseException:
-            # ``with Database(...)`` cannot enter its context when initialization
-            # fails, so close here rather than relying on ``__exit__``. This is
-            # especially important on Azure Files, where a leaked SMB handle can
-            # keep later migration retries locked for the lifetime of the process.
+            # A failed schema or migration pass must not strand an SMB file
+            # handle. Otherwise every retry inherits the lock from the failed
+            # connection and the database never recovers without a process restart.
             self._conn.close()
             raise
 
@@ -819,6 +814,11 @@ class Database:
             seed = Path(tmp) / "coros.db"
             conn = sqlite3.connect(str(seed))
             try:
+                journal_mode = conn.execute(_WAL_JOURNAL_MODE_SQL).fetchone()[0]
+                if str(journal_mode).lower() != "wal":
+                    raise sqlite3.OperationalError(
+                        f"failed to seed SQLite database in WAL mode: {journal_mode}"
+                    )
                 conn.executescript(SCHEMA)
                 conn.commit()
                 # Checkpoint so the moved file is self-contained — no
