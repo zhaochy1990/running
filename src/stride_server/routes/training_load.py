@@ -20,6 +20,7 @@ from stride_core.timefmt import today_shanghai
 from stride_core.training_load.types import CalibrationSnapshot, PriorLoadState
 from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 from stride_storage.sqlite.database import Database
+from stride_storage.sqlite.training_load import has_training_load_source
 
 from stride_server.sqlite_writer import try_user_sqlite_writer
 
@@ -218,19 +219,22 @@ def _raise_writer_busy(detail: str = "SQLite writer is busy") -> None:
 
 
 def _production_training_load_users() -> list[str]:
-    """Enumerate canonical per-user databases from the live data mount."""
+    """Enumerate canonical per-user databases with rollout source data."""
     from stride_core.db import USER_DATA_DIR
 
     if not USER_DATA_DIR.exists():
         return []
-    users = [
-        entry.name
-        for entry in USER_DATA_DIR.iterdir()
-        if entry.is_dir()
-        and _UUID4_DIR_RE.fullmatch(entry.name)
-        and (entry / "coros.db").is_file()
-        and (entry / "coros.db").stat().st_size > 0
-    ]
+    users = []
+    for entry in USER_DATA_DIR.iterdir():
+        db_path = entry / "coros.db"
+        if (
+            entry.is_dir()
+            and _UUID4_DIR_RE.fullmatch(entry.name)
+            and db_path.is_file()
+            and db_path.stat().st_size > 0
+            and has_training_load_source(db_path)
+        ):
+            users.append(entry.name)
     return sorted(users)
 
 
