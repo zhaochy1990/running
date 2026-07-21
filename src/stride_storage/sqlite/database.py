@@ -874,20 +874,38 @@ class Database:
         the migration idempotent under concurrent connections (two requests
         racing to add the same column would otherwise 500 one of them).
 
-        Acquire the writer before reading any schema metadata. Azure Files SMB
-        can reject a deferred read transaction when SQLite later upgrades it for
-        ``ALTER TABLE`` even though a fresh ``BEGIN IMMEDIATE`` succeeds.
-        ``_migrate`` already owns and commits its migration transaction, so
-        committing any prior deferred state here only makes that boundary explicit.
+        Acquire the writer lazily, only when a migration is actually needed.
+        Azure Files SMB can reject a deferred read transaction when SQLite later
+        upgrades it for ``ALTER TABLE`` even though a fresh ``BEGIN IMMEDIATE``
+        succeeds. Current-schema opens must remain read-only so they can coexist
+        with a separate business writer connection.
         """
-        self._conn.commit()
-        self._conn.execute("BEGIN IMMEDIATE")
+        migration_writer_acquired = False
+
+        def _ensure_migration_writer() -> None:
+            nonlocal migration_writer_acquired
+            if migration_writer_acquired:
+                return
+            self._conn.commit()
+            self._conn.execute("BEGIN IMMEDIATE")
+            migration_writer_acquired = True
 
         def _add(table: str, column: str, coltype: str) -> None:
             try:
                 cols = {r[1] for r in self._conn.execute(f"PRAGMA table_info({table})").fetchall()}
                 if not cols:
                     return  # table doesn't exist yet; SCHEMA script will have the column
+                if column in cols:
+                    return
+                _ensure_migration_writer()
+                # Another migrator may have won while this connection moved from
+                # schema inspection to the immediate writer transaction.
+                cols = {
+                    r[1]
+                    for r in self._conn.execute(
+                        f"PRAGMA table_info({table})"
+                    ).fetchall()
+                }
                 if column in cols:
                     return
                 self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
