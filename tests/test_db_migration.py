@@ -158,6 +158,73 @@ class TestLegacyMigration:
         finally:
             db.close()
 
+    def test_migration_acquires_writer_before_schema_reads(
+        self, tmp_path: Path, monkeypatch,
+    ):
+        """Azure Files rejects a deferred schema read-to-write lock upgrade."""
+        from stride_storage.sqlite import database as database_module
+
+        legacy_path = tmp_path / "legacy-lock-upgrade.db"
+        with sqlite3.connect(legacy_path) as conn:
+            conn.executescript(
+                """
+                CREATE TABLE scheduled_workout (
+                    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date                  TEXT NOT NULL,
+                    kind                  TEXT NOT NULL,
+                    name                  TEXT NOT NULL,
+                    spec_json             TEXT NOT NULL,
+                    status                TEXT NOT NULL DEFAULT 'draft',
+                    provider              TEXT,
+                    provider_workout_id   TEXT,
+                    pushed_at             TEXT,
+                    completed_label_id    TEXT,
+                    note                  TEXT,
+                    created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+                    abandoned_by_promote_at TEXT
+                );
+                """
+            )
+
+        original_connect = database_module.sqlite3.connect
+
+        class UpgradeSensitiveConnection(sqlite3.Connection):
+            has_migration_writer = False
+            has_schema_read = False
+
+            def execute(self, sql, parameters=(), /):
+                statement = str(sql).strip().upper()
+                if statement.startswith("BEGIN IMMEDIATE"):
+                    self.has_migration_writer = True
+                elif statement.startswith("PRAGMA TABLE_INFO"):
+                    self.has_schema_read = True
+                elif (
+                    statement.startswith("ALTER TABLE")
+                    and self.has_schema_read
+                    and not self.has_migration_writer
+                ):
+                    raise sqlite3.OperationalError("database is locked")
+                return super().execute(sql, parameters)
+
+        def upgrade_sensitive_connect(*args, **kwargs):
+            return original_connect(
+                *args,
+                factory=UpgradeSensitiveConnection,
+                **kwargs,
+            )
+
+        monkeypatch.setattr(
+            database_module.sqlite3,
+            "connect",
+            upgrade_sensitive_connect,
+        )
+
+        with Database(db_path=legacy_path) as db:
+            assert {"week_folder", "planned_date", "session_index"}.issubset(
+                _scheduled_workout_columns(db)
+            )
+
     def test_scheduled_workout_plan_identity_columns_added_before_index(
         self, tmp_path: Path,
     ):

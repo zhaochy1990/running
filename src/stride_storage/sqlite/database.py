@@ -873,7 +873,16 @@ class Database:
         Each ALTER is wrapped to swallow "duplicate column" errors — this makes
         the migration idempotent under concurrent connections (two requests
         racing to add the same column would otherwise 500 one of them).
+
+        Acquire the writer before reading any schema metadata. Azure Files SMB
+        can reject a deferred read transaction when SQLite later upgrades it for
+        ``ALTER TABLE`` even though a fresh ``BEGIN IMMEDIATE`` succeeds.
+        ``_migrate`` already owns and commits its migration transaction, so
+        committing any prior deferred state here only makes that boundary explicit.
         """
+        self._conn.commit()
+        self._conn.execute("BEGIN IMMEDIATE")
+
         def _add(table: str, column: str, coltype: str) -> None:
             try:
                 cols = {r[1] for r in self._conn.execute(f"PRAGMA table_info({table})").fetchall()}
