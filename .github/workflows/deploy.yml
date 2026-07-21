@@ -335,6 +335,7 @@ jobs:
           STEP_TIMEOUT_S = 220
           MAX_RETRIES = 8
           MAX_SHARDS = 20
+          RETRYABLE_NETWORK_ERRORS = (urllib.error.URLError, TimeoutError)
 
 
           def request(path, body):
@@ -369,7 +370,7 @@ jobs:
               )
               with urllib.request.urlopen(req, timeout=60) as resp:
                   payload = json.loads(resp.read().decode() or "{}")
-          except urllib.error.URLError as exc:
+          except RETRYABLE_NETWORK_ERRORS as exc:
               fail(f"could not enumerate training-load users: {exc}")
 
           users = payload.get("users")
@@ -392,7 +393,7 @@ jobs:
                           status, result, retry_after = request(
                               "/internal/training-load/backfill/step", body
                           )
-                      except urllib.error.URLError as exc:
+                      except RETRYABLE_NETWORK_ERRORS as exc:
                           status, result, retry_after = 0, {"detail": str(exc)}, None
 
                       if status == 200:
