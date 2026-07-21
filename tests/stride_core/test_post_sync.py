@@ -5,6 +5,7 @@ import pytest
 from datetime import date
 
 from stride_core.models import ActivityDetail, TimeseriesPoint
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 
 class _RecordingHandler:
@@ -107,10 +108,8 @@ def test_stride_training_load_handler_recomputes_shanghai_tail(db, monkeypatch):
 
     monkeypatch.setattr("stride_core.post_sync.recompute_training_load", fake_recompute)
     monkeypatch.setattr(
-        "stride_core.post_sync.backfill_training_load",
-        lambda *_args, **_kwargs: pytest.fail("unexpected cold-start backfill"),
+        db, "is_training_load_backfill_complete", lambda _version: True
     )
-    monkeypatch.setattr(db, "has_daily_training_load_version", lambda _version: True)
     monkeypatch.setattr("stride_core.post_sync.today_shanghai", lambda: __import__("datetime").date(2026, 5, 10))
 
     context = PostSyncContext(
@@ -140,7 +139,9 @@ def test_stride_training_load_handler_recomputes_health_tail_from_earliest_chang
     monkeypatch.setattr(
         "stride_core.post_sync.today_shanghai", lambda: date(2026, 5, 10)
     )
-    monkeypatch.setattr(db, "has_daily_training_load_version", lambda _version: True)
+    monkeypatch.setattr(
+        db, "is_training_load_backfill_complete", lambda _version: True
+    )
 
     context = PostSyncContext(
         user="u",
@@ -172,7 +173,9 @@ def test_stride_training_load_handler_health_dates_survive_missing_activity_wind
     monkeypatch.setattr(
         "stride_core.post_sync.today_shanghai", lambda: date(2026, 5, 10)
     )
-    monkeypatch.setattr(db, "has_daily_training_load_version", lambda _version: True)
+    monkeypatch.setattr(
+        db, "is_training_load_backfill_complete", lambda _version: True
+    )
 
     # label_id not present in DB → _activity_shanghai_window returns None.
     context = PostSyncContext(
@@ -189,33 +192,32 @@ def test_stride_training_load_handler_health_dates_survive_missing_activity_wind
     assert calls == [{"start": "2026-05-03", "end": "2026-05-10"}]
 
 
-def test_stride_training_load_handler_cold_start_backfills_full_warmup(db, monkeypatch):
+def test_stride_training_load_handler_defers_full_warmup_and_resets_progress(
+    db, monkeypatch
+):
     from stride_core.post_sync import PostSyncContext, StrideTrainingLoadHandler
 
-    calls: list[dict] = []
-    monkeypatch.setattr(
-        "stride_core.post_sync.backfill_training_load",
-        lambda db_arg, **kwargs: calls.append(kwargs),
+    db.set_training_load_backfill_progress(
+        {"schema_version": 1, "next_start": "2026-01-01"}
     )
     monkeypatch.setattr(
         "stride_core.post_sync.recompute_training_load",
-        lambda *_args, **_kwargs: pytest.fail("cold start must backfill"),
-    )
-    monkeypatch.setattr(
-        "stride_core.post_sync.today_shanghai", lambda: date(2026, 5, 10)
+        lambda *_args, **_kwargs: pytest.fail(
+            "post-sync must not run a long rebuild before rollout completes"
+        ),
     )
 
-    StrideTrainingLoadHandler(backoff_s=0).run(PostSyncContext(
-        user="u", provider="garmin", operation="sync", db=db,
-        health_dates=("2026-05-02",),
-    ))
+    StrideTrainingLoadHandler(backoff_s=0).run(
+        PostSyncContext(
+            user="u",
+            provider="garmin",
+            operation="sync",
+            db=db,
+            health_dates=("2026-05-02",),
+        )
+    )
 
-    assert calls == [{
-        "as_of_date": "2026-05-10",
-        "load_lookback_days": 365,
-        "calibration_lookback_days": 365,
-        "persist": True,
-    }]
+    assert db.get_training_load_backfill_progress() is None
 
 
 def test_post_sync_result_runs_health_only_handlers(monkeypatch, tmp_path):
@@ -256,7 +258,10 @@ def test_stride_training_load_handler_recomputes_full_days_for_daily_totals(db):
     from stride_core.post_sync import PostSyncContext, StrideTrainingLoadHandler
     from datetime import date
     from stride_core.running_calibration import RunningCalibrationSnapshot
-    from stride_core.training_load import recompute_training_load
+    from stride_core.training_load import (
+        TRAINING_LOAD_MODEL_VERSION,
+        recompute_training_load,
+    )
     from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 
     SQLiteRunningCalibrationRepository(db).save_snapshot(
@@ -269,6 +274,9 @@ def test_stride_training_load_handler_recomputes_full_days_for_daily_totals(db):
     db.upsert_activity(_make_run("run2", "2026-05-01T08:00:00+00:00"), provider="coros")
 
     recompute_training_load(db, start="2026-05-01", end="2026-05-01")
+    db.mark_training_load_backfill_complete(
+        TRAINING_LOAD_MODEL_VERSION, as_of_date="2026-05-01"
+    )
     before = db.fetch_daily_training_load("2026-05-01", "2026-05-01")[0]["training_dose"]
 
     context = PostSyncContext(
@@ -291,6 +299,9 @@ def test_stride_training_load_handler_persists_stride_tables_without_overwriting
     from stride_core.post_sync import PostSyncContext, StrideTrainingLoadHandler
 
     db.upsert_activity(_make_run("run1", "2026-05-01T08:00:00+00:00", training_load=321.0))
+    db.mark_training_load_backfill_complete(
+        TRAINING_LOAD_MODEL_VERSION, as_of_date="2026-05-01"
+    )
 
     context = PostSyncContext(
         user="u",
@@ -319,7 +330,9 @@ def test_stride_training_load_handler_retries_three_times_then_logs_error(db, mo
         raise RuntimeError("load failed")
 
     monkeypatch.setattr("stride_core.post_sync.recompute_training_load", fail_recompute)
-    monkeypatch.setattr(db, "has_daily_training_load_version", lambda _version: True)
+    monkeypatch.setattr(
+        db, "is_training_load_backfill_complete", lambda _version: True
+    )
     context = PostSyncContext(
         user="u",
         provider="coros",

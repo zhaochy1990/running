@@ -61,21 +61,36 @@ jobs:
 
           fail=0
           ok=0
+          MAX_RETRIES=8
           while read -r user; do
             [ -z "$user" ] && continue
             echo "==> POST /internal/sync user=$user"
-            # max-time 300s: full COROS sync occasionally takes 1–3 min when
-            # pulling many new activities + timeseries. Generous timeout;
-            # manual workflow_dispatch is the retry mechanism if a user fails.
-            http=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
-              --max-time 300 \
-              -X POST \
-              -H "X-Internal-Token: $INTERNAL_TOKEN" \
-              "$STRIDE_PROD_URL/internal/sync?user=$user")
-            body=$(head -c 500 /tmp/resp.json | tr '\n' ' ')
-            if [ "$http" = "200" ]; then
-              # Endpoint returns {success:true|false, ...} even on HTTP 200 —
-              # surface the body so GH Actions log shows per-user outcome.
+            http="000"
+            for attempt in $(seq 1 "$MAX_RETRIES"); do
+              : > /tmp/resp.json
+              # max-time 300s: a sync can take 1–3 min when pulling activity
+              # details. API writer contention is a retryable 503 while a
+              # training-load shard owns this user's SQLite writer slot.
+              http=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+                --max-time 300 \
+                -X POST \
+                -H "X-Internal-Token: $INTERNAL_TOKEN" \
+                "$STRIDE_PROD_URL/internal/sync?user=$user") || http="000"
+              if [ "$http" != "503" ] && [ "$http" != "000" ]; then
+                break
+              fi
+              if [ "$attempt" -eq "$MAX_RETRIES" ]; then
+                break
+              fi
+              delay=$((2 ** attempt))
+              [ "$delay" -gt 30 ] && delay=30
+              echo "  retrying $user after HTTP $http in ${delay}s ($attempt/$MAX_RETRIES)"
+              sleep "$delay"
+            done
+
+            body=$(python3 -c "from pathlib import Path; print(Path('/tmp/resp.json').read_text(errors='replace')[:500].replace(chr(10), ' '))")
+            success=$(python3 -c "import json; print(str(json.load(open('/tmp/resp.json')).get('success') is True).lower())" 2>/dev/null || true)
+            if [ "$http" = "200" ] && [ "$success" = "true" ]; then
               ok=$((ok+1))
               echo "  ✓ $user (HTTP $http)"
               echo "| $user | $http | $body |" >> "$GITHUB_STEP_SUMMARY"

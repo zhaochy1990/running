@@ -20,6 +20,10 @@ from ..config import load_server_config
 from ..config.models import SyncConfig
 from ..content_store import read_json, write_json
 from ..deps import get_source
+from ..sqlite_writer import (
+    invalidate_training_load_backfill_progress,
+    try_user_sqlite_writer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -375,19 +379,23 @@ def _run_background_sync(
     )
 
     try:
-        result = source.sync_user(
-            uuid, full=full, mode=mode, progress=report_progress,
-        )
-        try:
-            run_post_sync_for_result(
-                user=uuid,
-                provider=source.info.name,
-                operation="sync",
-                result=result,
-                progress=report_progress,
+        with try_user_sqlite_writer(uuid) as acquired:
+            if not acquired:
+                raise RuntimeError("用户数据正在更新，请稍后重试")
+            invalidate_training_load_backfill_progress(uuid)
+            result = source.sync_user(
+                uuid, full=full, mode=mode, progress=report_progress,
             )
-        except Exception:
-            logger.exception("post-sync events failed for onboarding sync user=%s", uuid)
+            try:
+                run_post_sync_for_result(
+                    user=uuid,
+                    provider=source.info.name,
+                    operation="sync",
+                    result=result,
+                    progress=report_progress,
+                )
+            except Exception:
+                logger.exception("post-sync events failed for onboarding sync user=%s", uuid)
     except Exception as exc:
         logger.exception("Background sync (mode=%s) failed for %s", mode, uuid)
         onboarding = _read_onboarding(uuid)

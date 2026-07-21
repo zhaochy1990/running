@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Any
 
 from stride_core.timefmt import sqlite_mixed_date_expr
-from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from .database import Database, HRV_PREFERRED_PER_DATE_SQL
 
@@ -80,18 +79,15 @@ def fetch_recent_activities(db: Database, *, limit: int) -> list[Any]:
             atl.reasons_json AS stride_reasons_json
         FROM activities a
         LEFT JOIN activity_training_load atl ON atl.label_id = a.label_id
-          AND atl.algorithm_version = ?
         ORDER BY a.date DESC, a.label_id DESC
         LIMIT ?""",
-        (TRAINING_LOAD_MODEL_VERSION, max(1, int(limit))),
+        (max(1, int(limit)),),
     )
 
 
 def fetch_latest_health_context(db: Database) -> dict[str, Any]:
     """Return STRIDE load plus raw recovery measurements for Coach."""
-    load_row = db.fetch_latest_daily_training_load(
-        algorithm_version=TRAINING_LOAD_MODEL_VERSION
-    )
+    load_row = db.fetch_latest_daily_training_load()
     load_fields = (
         "date",
         "algorithm_version",
@@ -154,11 +150,10 @@ def fetch_health_series_context(db: Database, *, limit: int) -> dict[str, list[A
         """SELECT date, algorithm_version, calibration_id, training_dose,
             acute_load, chronic_load, form, load_ratio, coverage_status
         FROM daily_training_load
-        WHERE algorithm_version = ?
-          AND coverage_status IN ('complete', 'partial', 'rest_confirmed')
+        WHERE coverage_status IN ('complete', 'partial', 'rest_confirmed')
         ORDER BY date DESC
         LIMIT ?""",
-        (TRAINING_LOAD_MODEL_VERSION, bounded),
+        (bounded,),
     )
     return {
         "health": health_rows,
@@ -173,10 +168,9 @@ def fetch_stride_pmc_series(db: Database, *, limit: int) -> list[Any]:
         """SELECT date, algorithm_version, calibration_id, training_dose,
             acute_load, chronic_load, form, load_ratio, coverage_status
         FROM daily_training_load
-        WHERE algorithm_version = ?
-          AND coverage_status IN ('complete', 'partial', 'rest_confirmed')
+        WHERE coverage_status IN ('complete', 'partial', 'rest_confirmed')
         ORDER BY date DESC LIMIT ?""",
-        (TRAINING_LOAD_MODEL_VERSION, max(1, int(limit))),
+        (max(1, int(limit)),),
     )
 
 

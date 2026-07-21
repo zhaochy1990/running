@@ -4,7 +4,6 @@ from datetime import date
 from types import SimpleNamespace
 
 from coach.graphs.generation.rule_filter import run_rule_filter
-from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 from stride_server import weekly_plan_generator as generator
 
 
@@ -36,8 +35,7 @@ class _StateDb(_Db):
             for window, km in zip(windows, self.completed_weeks, strict=False)
         }
 
-    def fetch_latest_daily_training_load(self, *, algorithm_version):
-        assert algorithm_version == TRAINING_LOAD_MODEL_VERSION
+    def fetch_latest_daily_training_load(self):
         return {"load_ratio": self.load_ratio}
 
 

@@ -38,7 +38,6 @@ from stride_core.master_plan import (
     PhaseType,
     compute_total_weeks,
 )
-from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from .job_runner import JobStage, JobStatus, update_job
 from .llm_client import LLMClient, LLMError, LLMUnavailable
@@ -1347,9 +1346,7 @@ def _query_weekly_profile(
     # matching _query_fitness_state which selects acute_load first. The explicit
     # r[3]=chronic→ctl / r[4]=acute→atl mapping below is the anchor; don't copy
     # the column list from the other function or the two will silently swap.
-    rows = db.fetch_daily_training_load_weekly_source(
-        algorithm_version=TRAINING_LOAD_MODEL_VERSION, as_of=as_of.isoformat()
-    )
+    rows = db.fetch_daily_training_load_weekly_source(as_of=as_of.isoformat())
     dose_acc: dict[str, float] = {}
     dose_known_weeks: set[str] = set()
     dose_incomplete_weeks: set[str] = set()
@@ -1547,111 +1544,40 @@ def _query_history(user_id: str, *, as_of: date_cls | None = None) -> dict[str, 
 
 
 def _ensure_training_load_current(db, as_of=None) -> None:
-    """Ensure daily_training_load reaches ``as_of`` — computing INCREMENTALLY.
+    """Incrementally extend a verified canonical training-load series.
 
-    daily_training_load (and the calibration snapshot) are maintained at sync
-    time by the post-sync TrainingLoadHandler, so on the common path (DB freshly
-    synced before a generation) the table already reaches ``as_of`` and we skip
-    the recompute entirely — just read the latest row. This is the fix for a
-    ~47s stall: the old code re-derived the full 365-day PMC on every generation,
-    and the dominant cost was the threshold calibration recompute (~35s over
-    180-365 days of activities), even though nothing had changed since the sync.
-
-    When the table IS stale (e.g. synced yesterday, generating today) we extend
-    only the missing CTL/ATL tail and **reuse the persisted calibration** rather
-    than refitting it. The athlete calibration (threshold_hr/speed, hrmax, rhr)
-    is a slow-moving baseline already computed at sync time + a weekly job and
-    persisted in ``running_calibration_snapshot``; refitting it over 180 days was
-    the ~35s cost that dominated this call even though the snapshot was already
-    current. ``recompute_training_load`` reads the latest persisted snapshot via
-    ``_fetch_latest_calibration`` when no ``calibration_override`` is passed, then
-    extends just the gap (CTL/ATL are EWMAs seeded from the last persisted row),
-    dropping a stale-by-a-day generation from ~40s to ~1s. The full 365-day
-    warmup + calibration refit is reserved for a cold start (empty table), where
-    no snapshot may exist yet and the chronic EWMA needs ~3x42 days to converge.
+    A missing completion marker means the 365-day zero-prior warmup is still
+    pending. That work is owned exclusively by the resumable internal API shard
+    route; request-time context loading keeps any legacy canonical row readable
+    and never starts the full rebuild. Once the marker exists, a short stale tail
+    can safely continue from the persisted ATL/CTL state.
     """
     from datetime import date as _date, timedelta as _timedelta
 
-    from stride_core.timefmt import today_shanghai, utc_iso_to_shanghai_iso
+    from stride_core.timefmt import today_shanghai
     from stride_core.training_load import (
-        backfill_training_load,
+        TRAINING_LOAD_MODEL_VERSION,
         recompute_training_load,
     )
 
     as_of = as_of or today_shanghai()
-    # Chronic load is a 42-day EWMA; it needs ~3x its time-constant of warmup
-    # before it converges. A table seeded by post-sync (only the recent synced
-    # window) can REACH as_of yet still be only a few weeks deep — its chronic
-    # EWMA is cold-started from zero and reads far below steady state (e.g.
-    # CTL 21 for an athlete actually training ~65 km/wk). That understated CTL
-    # then mis-frames the athlete as detrained/overreached in the plan prompt
-    # and breaks the dose≈CTL×7 heuristic. So before trusting a "current" table,
-    # check its depth and force a full backfill when it is too shallow.
-    _CHRONIC_WARMUP_DAYS = 126  # 3 x the 42-day chronic EWMA time-constant
-    try:
-        earliest, last = db.fetch_training_load_bounds(
-            algorithm_version=TRAINING_LOAD_MODEL_VERSION
+    if not db.is_training_load_backfill_complete(TRAINING_LOAD_MODEL_VERSION):
+        logger.info(
+            "_ensure_training_load_current: full API shard backfill is pending; "
+            "using existing canonical rows"
         )
+        return
 
-        # Shallow-table guard: if the earliest persisted row is younger than the
-        # chronic warmup window AND older activity history exists to warm up on,
-        # the chronic EWMA has not converged — refit the full 365-day window.
-        # (When no older activities exist the athlete genuinely has a short
-        # history; a backfill can't deepen it, so fall through and avoid an
-        # expensive no-op refit on every generation.)
-        if last:
-            if earliest is not None:
-                # Measure the actual persisted span (earliest..last), not
-                # earliest..as_of — a shallow *and* stale table would otherwise
-                # over-report its depth. daily_training_load.date is Shanghai-local.
-                coverage_days = (
-                    _date.fromisoformat(last[:10]) - _date.fromisoformat(earliest[:10])
-                ).days
-                if coverage_days < _CHRONIC_WARMUP_DAYS:
-                    act_row = db._conn.execute(
-                        "SELECT MIN(date) FROM activities"
-                    ).fetchone()
-                    # activities.date is stored UTC ISO; daily_training_load.date
-                    # is Shanghai-local. Convert before comparing so the
-                    # "older history exists" test is timezone-consistent
-                    # (CLAUDE.md timezone discipline) — a raw UTC slice could be
-                    # one calendar day off and spuriously fire the backfill.
-                    act_min = (
-                        utc_iso_to_shanghai_iso(act_row[0])[:10]
-                        if act_row and act_row[0] else None
-                    )
-                    if act_min is not None and act_min < earliest[:10]:
-                        logger.info(
-                            "_ensure_training_load_current: daily_training_load only "
-                            "%d days deep (< %d warmup); older activities exist from %s "
-                            "— forcing full 365-day backfill so chronic load converges",
-                            coverage_days, _CHRONIC_WARMUP_DAYS, act_min,
-                        )
-                        backfill_training_load(
-                            db, as_of_date=as_of,
-                            load_lookback_days=365,
-                            calibration_lookback_days=365, persist=True,
-                        )
-                        return
+    try:
+        _earliest, last = db.fetch_training_load_bounds()
+        if not last or last >= as_of.isoformat():
+            return
 
-        if last and last >= as_of.isoformat():
-            return  # already current — the post-sync handler computed it
-
-        if last:
-            # Incremental EWMA-only tail: recompute from a small buffer before
-            # the last persisted day (prior_state seeds the EWMA from the row
-            # before the window). No calibration_override → recompute reads the
-            # already-current persisted snapshot instead of the ~35s 180-day
-            # refit.
-            gap_days = (as_of - _date.fromisoformat(last)).days
-            load_start = as_of - _timedelta(days=max(1, gap_days) + 2)
-            recompute_training_load(db, start=load_start, end=as_of, persist=True)
-        else:
-            # Cold start (no persisted rows) — full warmup for EWMA convergence
-            # plus a calibration refit, since no snapshot may exist yet.
-            backfill_training_load(db, as_of_date=as_of,
-                                   load_lookback_days=365,
-                                   calibration_lookback_days=365, persist=True)
+        # No calibration refit here: recompute_training_load reuses the latest
+        # persisted snapshot and seeds ATL/CTL from the row before this buffer.
+        gap_days = (as_of - _date.fromisoformat(last[:10])).days
+        load_start = as_of - _timedelta(days=max(1, gap_days) + 2)
+        recompute_training_load(db, start=load_start, end=as_of, persist=True)
     except Exception as exc:  # noqa: BLE001 — context load must never hard-fail
         logger.warning("_ensure_training_load_current failed: %s", exc)
 
@@ -1687,10 +1613,7 @@ def _query_fitness_state(user_id: str, *, as_of: date_cls | None = None) -> dict
         # generation against an un-synced DB still gets a current fitness state.
         _ensure_training_load_current(db, as_of=as_of)
 
-        row = db.fetch_latest_daily_training_load(
-            algorithm_version=TRAINING_LOAD_MODEL_VERSION,
-            as_of=as_of.isoformat(),
-        )
+        row = db.fetch_latest_daily_training_load(as_of=as_of.isoformat())
         # RHR for the fitness context: prefer the calibration baseline (smoothed
         # P10/25 over 30-90d — the CLAUDE.md single source) over a single noisy
         # last reading; fall back to the latest measured value when there is no

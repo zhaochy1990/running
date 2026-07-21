@@ -22,7 +22,6 @@ from stride_core.distance import meters_to_km
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL
 from stride_core.registry import read_user_provider, user_has_config
 from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai, utc_iso_to_shanghai_iso
-from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from ..deps import get_db
 
@@ -146,11 +145,9 @@ def _tsb_band(
 
 def _build_status_ring(db) -> StatusRing:
     # STRIDE-computed load from `daily_training_load` (NOT COROS ati/cti). Same
-    # table the `/pmc` endpoint reads; pick the latest row of the active
-    # algorithm version. `form` = chronic − acute; `load_ratio` = acute/chronic.
-    row = db.fetch_latest_daily_training_load(
-        algorithm_version=TRAINING_LOAD_MODEL_VERSION
-    )
+    # table the `/pmc` endpoint reads; canonical one-row-per-date series.
+    # `form` = chronic − acute; `load_ratio` = acute/chronic.
+    row = db.fetch_latest_daily_training_load()
     if row is None:
         return StatusRing(
             tsb=None, tsb_band=None, load_ratio=None,

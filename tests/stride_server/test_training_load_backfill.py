@@ -197,7 +197,7 @@ def test_internal_training_load_calibration_refresh_updates_threshold_only(tmp_p
         )
 
 
-def test_rollout_backfill_is_idempotent_when_current_version_exists(
+def test_rollout_backfill_skips_only_when_completion_marker_exists(
     tmp_path, monkeypatch
 ):
     import stride_core.db as core_db_mod
@@ -223,9 +223,12 @@ def test_rollout_backfill_is_idempotent_when_current_version_exists(
             (TRAINING_LOAD_MODEL_VERSION,),
         )
         db._conn.commit()
+        db.mark_training_load_backfill_complete(
+            TRAINING_LOAD_MODEL_VERSION, as_of_date="2026-05-20"
+        )
 
     def fail_backfill(*_args, **_kwargs):
-        raise AssertionError("idempotent rollout must not recompute existing v2 rows")
+        raise AssertionError("completed rollout must not recompute canonical rows")
 
     monkeypatch.setattr(route_mod, "backfill_training_load", fail_backfill)
     app = FastAPI()
@@ -243,7 +246,87 @@ def test_rollout_backfill_is_idempotent_when_current_version_exists(
         "user": USER_UUID,
         "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
         "skipped": True,
-        "reason": "algorithm_version_already_present",
+        "reason": "backfill_already_complete",
         "calibration_lookback_days": 180,
         "load_lookback_days": 90,
     }
+
+
+def test_backfill_step_skips_when_completion_marker_exists(tmp_path, monkeypatch):
+    """A verified full-backfill marker skips API-owned shard work."""
+    import stride_core.db as core_db_mod
+    import stride_server.deps as deps_mod
+    import stride_server.routes.training_load as route_mod
+
+    from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+    from stride_server.config import clear_server_config_cache
+    from stride_storage.sqlite.database import Database
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
+    clear_server_config_cache()
+
+    user_dir = tmp_path / USER_UUID
+    user_dir.mkdir(parents=True, exist_ok=True)
+    with Database(user=USER_UUID) as db:
+        db.mark_training_load_backfill_complete(
+            TRAINING_LOAD_MODEL_VERSION, as_of_date="2026-05-20"
+        )
+
+    app = FastAPI()
+    app.include_router(route_mod.internal_router)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.post(
+        "/internal/training-load/backfill/step",
+        json={"user": USER_UUID, "only_if_missing": True},
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["done"] is True
+    assert body["skipped"] is True
+    assert body["reason"] == "backfill_already_complete"
+    assert body["algorithm_version"] == TRAINING_LOAD_MODEL_VERSION
+
+
+def test_internal_training_load_routes_reject_non_uuid_user(tmp_path, monkeypatch):
+    import stride_core.db as core_db_mod
+    import stride_server.deps as deps_mod
+    import stride_server.routes.training_load as route_mod
+
+    from stride_server.config import clear_server_config_cache
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
+    clear_server_config_cache()
+
+    app = FastAPI()
+    app.include_router(route_mod.internal_router)
+    client = TestClient(app, raise_server_exceptions=False)
+    headers = {"X-Internal-Token": INTERNAL_TOKEN}
+    invalid_user = "../escaped-user"
+
+    calibration = client.post(
+        "/internal/training-load/calibration/refresh",
+        params={"user": invalid_user},
+        headers=headers,
+    )
+    backfill = client.post(
+        "/internal/training-load/backfill",
+        params={"user": invalid_user},
+        headers=headers,
+    )
+    shard = client.post(
+        "/internal/training-load/backfill/step",
+        json={"user": invalid_user},
+        headers=headers,
+    )
+
+    assert calibration.status_code == 422
+    assert backfill.status_code == 422
+    assert shard.status_code == 422
+    assert not (tmp_path.parent / "escaped-user").exists()

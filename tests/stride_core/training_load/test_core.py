@@ -18,6 +18,7 @@ from stride_core.training_load.types import (
     FeedbackRow,
     HealthRow,
     HrvRow,
+    PriorLoadState,
     SessionClass,
 )
 
@@ -620,6 +621,54 @@ def test_srpe_feedback_does_not_change_training_dose_atl_ctl_or_tsb():
     assert without.form == with_feedback.form
 
 
+def test_daily_load_shards_match_single_pass_with_explicit_prior_state():
+    start = date(2026, 1, 1)
+    activities = [
+        _load_result(
+            f"run-{offset}",
+            start + timedelta(days=offset),
+            40.0 + (offset % 7) * 10.0,
+        )
+        for offset in range(120)
+    ]
+    end = start + timedelta(days=119)
+
+    single_pass = compute_daily_load_series(
+        activities, [], [], [], start, end, prior_state=PriorLoadState()
+    )
+    sharded = []
+    prior = PriorLoadState()
+    for offset in range(0, 120, 30):
+        shard_start = start + timedelta(days=offset)
+        shard_end = min(shard_start + timedelta(days=29), end)
+        shard_activities = [
+            activity
+            for activity in activities
+            if shard_start <= activity.activity_date <= shard_end
+        ]
+        rows = compute_daily_load_series(
+            shard_activities,
+            [],
+            [],
+            [],
+            shard_start,
+            shard_end,
+            prior_state=prior,
+        )
+        sharded.extend(rows)
+        prior = PriorLoadState(
+            acute_load=rows[-1].acute_load,
+            chronic_load=rows[-1].chronic_load,
+        )
+
+    assert [row.date for row in sharded] == [row.date for row in single_pass]
+    for actual, expected in zip(sharded, single_pass, strict=True):
+        assert actual.training_dose == expected.training_dose
+        assert actual.acute_load == pytest.approx(expected.acute_load, abs=1e-3)
+        assert actual.chronic_load == pytest.approx(expected.chronic_load, abs=1e-3)
+        assert actual.form == pytest.approx(expected.form, abs=1e-3)
+
+
 def test_high_srpe_low_objective_load_only_adds_readiness_reason():
     start = date(2026, 5, 1)
     prior_days = []
@@ -637,6 +686,38 @@ def test_high_srpe_low_objective_load_only_adds_readiness_reason():
     rows = compute_daily_load_series(activities, [], [], feedback, start, current)
 
     assert rows[-1].training_dose == pytest.approx(10.0)
+    assert rows[-1].readiness_gate in {"yellow", "red"}
+    assert "srpe_dissociation" in rows[-1].readiness_reasons
+
+
+def test_srpe_readiness_history_survives_a_shard_boundary():
+    from stride_core.training_load.types import ReadinessLoadHistory
+
+    start = date(2026, 5, 1)
+    current = start + timedelta(days=6)
+    readiness_history = [
+        ReadinessLoadHistory(
+            activity_date=start + timedelta(days=offset),
+            sport="run_outdoor",
+            session_class=SessionClass.EASY,
+            subjective_internal_load=3 * 60.0,
+            training_dose=50.0,
+        )
+        for offset in range(6)
+    ]
+    activities = [_load_result("today", current, 10.0, duration_minutes=60.0)]
+    feedback = [FeedbackRow("today", current, 9, 60.0)]
+
+    rows = compute_daily_load_series(
+        activities,
+        [],
+        [],
+        feedback,
+        current,
+        current,
+        readiness_history=readiness_history,
+    )
+
     assert rows[-1].readiness_gate in {"yellow", "red"}
     assert "srpe_dissociation" in rows[-1].readiness_reasons
 

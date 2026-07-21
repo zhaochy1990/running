@@ -185,7 +185,7 @@ jobs:
           if ! az containerapp show \
               --name ${{ env.WORKER_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} >/dev/null 2>&1; then
-            echo "::warning::${{ env.WORKER_NAME }} does not exist yet — skipping worker deploy (create it, then re-run)."
+            echo "::warning::${{ env.WORKER_NAME }} does not exist yet — skipping worker deploy."
             exit 0
           fi
 
@@ -212,6 +212,8 @@ jobs:
             --name ${{ env.WORKER_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
+            --min-replicas 1 \
+            --max-replicas 1 \
             --command "stride-job-worker" \
             --set-env-vars STRIDE_CONFIG_ENV=prod \
               STRIDE_COROS_KEYVAULT_URL=https://stride-kv-common.vault.azure.net/ \
@@ -301,7 +303,7 @@ jobs:
             --tail 100 || true
           exit 1
 
-      - name: Backfill current STRIDE training-load model when missing
+      - name: Roll out current STRIDE training-load model (API-owned shards)
         env:
           INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}
         run: |
@@ -315,47 +317,128 @@ jobs:
             --name ${{ env.APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --query "properties.configuration.ingress.fqdn" -o tsv)
-          users_response=$(mktemp)
-          users_http=$(curl -sS -o "$users_response" -w "%{http_code}" \
-            --max-time 60 \
-            -H "X-Internal-Token: $INTERNAL_TOKEN" \
-            "https://$FQDN/internal/training-load/users") || users_http="000"
-          if [ "$users_http" != "200" ]; then
-            echo "::error::could not enumerate production training-load users (HTTP $users_http)"
-            head -c 500 "$users_response" || true
-            rm -f "$users_response"
-            exit 1
-          fi
-          python3 - "$users_response" > users.txt <<'PY'
+
+          # The API process is the sole training-load SQLite writer. Each request
+          # advances one <=30-day shard and persists its next position in
+          # sync_meta. Workflow retries or API restarts resume from that position.
+          FQDN="$FQDN" INTERNAL_TOKEN="$INTERNAL_TOKEN" python3 <<'PY'
           import json
-          import sys
+          import os
+          import time
+          import urllib.error
+          import urllib.request
 
-          with open(sys.argv[1], encoding="utf-8") as handle:
-              payload = json.load(handle)
+          fqdn = os.environ["FQDN"]
+          token = os.environ["INTERNAL_TOKEN"]
+          base = f"https://{fqdn}"
+          headers = {"X-Internal-Token": token, "Content-Type": "application/json"}
+          STEP_TIMEOUT_S = 220
+          MAX_RETRIES = 8
+          MAX_SHARDS = 20
+
+
+          def request(path, body):
+              req = urllib.request.Request(
+                  base + path,
+                  data=json.dumps(body).encode(),
+                  headers=headers,
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=STEP_TIMEOUT_S) as resp:
+                      return resp.status, json.loads(resp.read().decode() or "{}"), None
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode(errors="replace")
+                  try:
+                      payload = json.loads(raw or "{}")
+                  except json.JSONDecodeError:
+                      payload = {"detail": raw[:500]}
+                  return exc.code, payload, exc.headers.get("Retry-After")
+
+
+          def fail(message):
+              print(f"::error::{message}")
+              raise SystemExit(1)
+
+
+          try:
+              req = urllib.request.Request(
+                  base + "/internal/training-load/users",
+                  headers={"X-Internal-Token": token},
+                  method="GET",
+              )
+              with urllib.request.urlopen(req, timeout=60) as resp:
+                  payload = json.loads(resp.read().decode() or "{}")
+          except urllib.error.URLError as exc:
+              fail(f"could not enumerate training-load users: {exc}")
+
           users = payload.get("users")
-          if not isinstance(users, list) or any(not isinstance(user, str) for user in users):
-              raise SystemExit("invalid response from /internal/training-load/users")
-          print("\n".join(users))
-          PY
-          rm -f "$users_response"
+          if not isinstance(users, list) or any(not isinstance(u, str) for u in users):
+              fail("invalid response from /internal/training-load/users")
 
-          failed=0
-          while read -r user; do
-            [ -z "$user" ] && continue
-            response=$(mktemp)
-            http=$(curl -sS -o "$response" -w "%{http_code}" \
-              --max-time 600 \
-              -X POST \
-              -H "X-Internal-Token: $INTERNAL_TOKEN" \
-              "https://$FQDN/internal/training-load/backfill?user=$user&load_lookback_days=365&calibration_lookback_days=365&only_if_missing=true") \
-              || http="000"
-            if [ "$http" = "200" ]; then
-              echo "training-load model ready for $user"
-            else
-              echo "::error::training-load rollout backfill failed for $user (HTTP $http)"
-              head -c 500 "$response" || true
-              failed=1
-            fi
-            rm -f "$response"
-          done < users.txt
-          exit "$failed"
+          for user in users:
+              shard_count = 0
+              seen_next_starts = set()
+              while True:
+                  if shard_count >= MAX_SHARDS:
+                      fail(f"training-load shard limit exceeded for {user}")
+                  body = {
+                      "user": user,
+                      "shard_days": 30,
+                      "only_if_missing": True,
+                  }
+                  for attempt in range(1, MAX_RETRIES + 1):
+                      try:
+                          status, result, retry_after = request(
+                              "/internal/training-load/backfill/step", body
+                          )
+                      except urllib.error.URLError as exc:
+                          status, result, retry_after = 0, {"detail": str(exc)}, None
+
+                      if status == 200:
+                          break
+                      if status == 503 or status == 0:
+                          delay = min(30, int(retry_after or 2 ** min(attempt, 5)))
+                          print(
+                              f"retrying training-load shard for {user} "
+                              f"after status={status} in {delay}s "
+                              f"(attempt {attempt}/{MAX_RETRIES})"
+                          )
+                          time.sleep(delay)
+                          continue
+                      fail(
+                          f"training-load shard failed for {user} "
+                          f"(HTTP {status}): {result.get('detail')}"
+                      )
+                  else:
+                      fail(f"training-load shard retries exhausted for {user}")
+
+                  shard = result.get("shard")
+                  if shard is not None:
+                      if not isinstance(shard, dict):
+                          fail(f"invalid shard response for {user}: {result}")
+                      if int(shard.get("daily_rows_written") or 0) <= 0:
+                          fail(f"training-load shard wrote no daily rows for {user}")
+                      shard_count += 1
+
+                  if result.get("done"):
+                      reason = result.get("reason")
+                      print(
+                          f"training-load rollout complete for {user}: "
+                          f"{reason or f'{shard_count} shards'}"
+                      )
+                      break
+
+                  next_start = result.get("next_shard_start")
+                  if not isinstance(shard, dict) or not next_start:
+                      fail(f"invalid shard response for {user}: {result}")
+                  if next_start in seen_next_starts:
+                      fail(f"training-load shard cursor did not advance for {user}")
+                  seen_next_starts.add(next_start)
+                  print(
+                      f"training-load shard ready for {user}: "
+                      f"{shard.get('start')}..{shard.get('end')} -> {next_start}"
+                  )
+
+          print("training-load rollout complete")
+          PY

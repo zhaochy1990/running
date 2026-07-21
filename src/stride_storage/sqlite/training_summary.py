@@ -12,7 +12,6 @@ from datetime import date
 from typing import Any
 
 from stride_core.timefmt import SHANGHAI_DAY_SQL, sqlite_mixed_date_expr
-from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from .database import Database, HRV_PREFERRED_PER_DATE_SQL
 
@@ -64,10 +63,9 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
                       atl.excluded_from_pmc, af.rpe
                  FROM bounded b
                  LEFT JOIN activity_training_load atl ON atl.label_id = b.label_id
-                   AND atl.algorithm_version = ?
                  LEFT JOIN activity_feedback af ON af.label_id = b.label_id
                 ORDER BY b.shanghai_date, b.label_id""",
-        (date_from, date_to, TRAINING_LOAD_MODEL_VERSION),
+        (date_from, date_to),
     ).fetchall()
 
     running = db.get_running_week_summaries([(0, date_from, date_to)]).get(0, {})
@@ -139,9 +137,7 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
             available[row["date"]][expected] -= 1
             completed += 1
 
-    all_load_rows = db.fetch_daily_training_load(
-        date_from, date_to, algorithm_version=TRAINING_LOAD_MODEL_VERSION
-    )
+    all_load_rows = db.fetch_daily_training_load(date_from, date_to)
     load_rows = [
         row for row in all_load_rows
         if row["coverage_status"] in {"complete", "partial", "rest_confirmed"}

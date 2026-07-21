@@ -259,8 +259,6 @@ class _ActualExecutionBaseline:
 def _last_completed_week_actual(
     user_id: str, first_week_start: date_cls
 ) -> _ActualExecutionBaseline | None:
-    from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
-
     prev_start = first_week_start - timedelta(days=7)
     prev_end = first_week_start - timedelta(days=1)
     try:
@@ -270,7 +268,6 @@ def _last_completed_week_actual(
         ]).get(0, {})
         dose, load_row = db.fetch_completed_week_training_load(
             prev_start.isoformat(), prev_end.isoformat(),
-            algorithm_version=TRAINING_LOAD_MODEL_VERSION,
         )
     except Exception as exc:  # noqa: BLE001 — execution cap is best-effort context
         logger.warning("season: failed to read last completed week actual load: %s", exc)
