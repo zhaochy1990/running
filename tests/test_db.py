@@ -1,6 +1,7 @@
 """Tests for SQLite database layer."""
 
 import json
+import sqlite3
 from datetime import timedelta
 
 import pytest
@@ -10,6 +11,66 @@ from stride_core.models import (
 )
 from stride_core.timefmt import today_shanghai
 from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+
+def test_new_database_is_seeded_in_wal_mode(tmp_path) -> None:
+    from stride_storage.sqlite.database import Database
+
+    db_path = tmp_path / "new.db"
+
+    with Database(db_path=db_path) as database:
+        assert database._conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+
+def test_existing_database_keeps_its_journal_mode(tmp_path) -> None:
+    """Opening an Azure-Files-style existing DB must not force a WAL transition."""
+    from stride_storage.sqlite.database import Database
+
+    db_path = tmp_path / "existing.db"
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete"
+        conn.execute("CREATE TABLE marker (value TEXT)")
+        conn.execute("INSERT INTO marker VALUES ('preserved')")
+
+    with Database(db_path=db_path) as database:
+        assert database._conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+        assert database._conn.execute("SELECT value FROM marker").fetchone()[0] == "preserved"
+
+
+def test_database_closes_connection_when_initialization_fails(
+    tmp_path, monkeypatch
+) -> None:
+    """A failed schema/migration pass must not leak an SMB writer handle."""
+    from stride_storage.sqlite import database as database_module
+
+    db_path = tmp_path / "existing.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE marker (value TEXT)")
+
+    original_connect = database_module.sqlite3.connect
+    closed_connections: list[sqlite3.Connection] = []
+
+    class TrackingConnection(sqlite3.Connection):
+        def close(self) -> None:
+            closed_connections.append(self)
+            super().close()
+
+    def tracking_connect(*args, **kwargs):
+        return original_connect(*args, factory=TrackingConnection, **kwargs)
+
+    monkeypatch.setattr(database_module.sqlite3, "connect", tracking_connect)
+    monkeypatch.setattr(
+        database_module.Database,
+        "_init_schema",
+        lambda _self: (_ for _ in ()).throw(
+            sqlite3.OperationalError("database is locked")
+        ),
+    )
+
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+        database_module.Database(db_path=db_path)
+
+    assert len(closed_connections) == 1
 
 
 def _make_detail(label_id="test1", sport_type=100, date="20260315", distance=10000):
