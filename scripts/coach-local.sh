@@ -30,6 +30,7 @@
 #
 # 其他常用命令
 # ------------
+#   scripts/coach-local.sh sync                  # 仅同步本地 COROS DB，不启动 Coach
 #   scripts/coach-local.sh start                 # 启动可选 Copilot proxy
 #   scripts/coach-local.sh smoke                 # 验证 Copilot Responses API
 #   scripts/coach-local.sh coach "我当前的总体训练计划是什么？"
@@ -55,6 +56,7 @@
 # ------------
 # AGENT_MAESTRO_API_KEY=...             覆盖 Agent Maestro bearer 占位值
 # COPILOT_PROXY_API_KEY=...              覆盖已保存的 Copilot proxy API key
+# STRIDE_COACH_DEBUG=1                   给 coach 传 -v，打印编排 trace（各阶段耗时）
 # COPILOT_PROXY_PORT=44141               覆盖本地 Copilot proxy 端口
 # COPILOT_PROXY_STATE_DIR=...            覆盖 Copilot 持久状态目录
 # COPILOT_PROXY_CACHE_DIR=...            覆盖 Copilot npm cache 目录
@@ -96,6 +98,7 @@ Commands:
   status           Show proxy and credential status
   smoke [model]     Verify /v1/responses (default: gpt-5.6-sol)
   eval-resolver [id]  Run real-LLM Resolver fixtures (optional fixture id)
+  sync             Sync the local COROS DB without launching Coach
   coach [message]   Start Coach CLI; no message opens the interactive REPL
   logs             Show the last 50 non-verbose proxy log lines
   stop             Stop the proxy but keep credentials and API key
@@ -112,6 +115,7 @@ Optional environment variables:
   STRIDE_COACH_DATA_DIR     Local data directory (default: main checkout/data)
   STRIDE_COACH_PYTHON       Python executable (default: main checkout .venv)
   STRIDE_COACH_SKIP_SYNC=1  Skip the pre-Coach COROS sync
+  STRIDE_COACH_DEBUG=1      Pass -v to Coach for orchestration trace logging
 EOF
 }
 
@@ -484,6 +488,23 @@ coach_python() {
   fi
 }
 
+run_coros_sync() {
+  local main_root="$1" python="$2" profile="$3"
+  PYTHONIOENCODING=utf-8 PYTHONPATH="$main_root/src${PYTHONPATH:+:$PYTHONPATH}" \
+    "$python" -m coros_sync -P "$profile" sync
+}
+
+cmd_sync() {
+  local main_root python profile
+  main_root="$(main_checkout_root)"
+  python="$(coach_python "$main_root")"
+  profile="${STRIDE_COACH_PROFILE:-zhaochaoyi}"
+
+  [[ -x "$python" ]] || fail "Coach Python is not executable: $python"
+
+  run_coros_sync "$main_root" "$python" "$profile"
+}
+
 cmd_coach() {
   local main_root data_dir python profile bypass config_files agent_api_key copilot_api_key
   main_root="$(main_checkout_root)"
@@ -501,8 +522,7 @@ cmd_coach() {
   [[ -f "$REPO_ROOT/config/server.coach-cli.toml" ]] || fail "missing Coach CLI server overlay"
 
   if [[ "${STRIDE_COACH_SKIP_SYNC:-0}" != "1" ]]; then
-    PYTHONIOENCODING=utf-8 PYTHONPATH="$main_root/src${PYTHONPATH:+:$PYTHONPATH}" \
-      "$python" -m coros_sync -P "$profile" sync
+    run_coros_sync "$main_root" "$python" "$profile"
   fi
 
   local args=(
@@ -510,6 +530,9 @@ cmd_coach() {
     -P "$profile"
     --data-dir "$data_dir"
   )
+  if [[ "${STRIDE_COACH_DEBUG:-0}" == "1" ]]; then
+    args+=(-v)
+  fi
   if [[ $# -gt 0 ]]; then
     args+=(--message "$*")
   fi
@@ -606,6 +629,7 @@ case "$command_name" in
   status) [[ $# -eq 0 ]] || fail "status takes no arguments"; cmd_status ;;
   smoke) [[ $# -le 1 ]] || fail "smoke accepts at most one model"; cmd_smoke "$@" ;;
   eval-resolver) [[ $# -le 1 ]] || fail "eval-resolver accepts at most one fixture id"; cmd_eval_resolver "$@" ;;
+  sync) [[ $# -eq 0 ]] || fail "sync takes no arguments"; cmd_sync ;;
   coach) cmd_coach "$@" ;;
   logs) [[ $# -eq 0 ]] || fail "logs takes no arguments"; cmd_logs ;;
   stop) [[ $# -eq 0 ]] || fail "stop takes no arguments"; cmd_stop ;;
