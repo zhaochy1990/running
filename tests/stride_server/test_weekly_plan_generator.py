@@ -1,10 +1,60 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import date
 from types import SimpleNamespace
 
 from coach.graphs.generation.rule_filter import run_rule_filter
+from stride_core.running_calibration.types import (
+    CalibrationConfidence,
+    RunningCalibrationSnapshot,
+)
 from stride_server import weekly_plan_generator as generator
+from stride_storage.sqlite.calibration_connector import (
+    SQLiteRunningCalibrationRepository,
+)
+
+
+class _ConnDb:
+    """Minimal Database-shaped stub exposing a real ``_conn`` for calibration."""
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+
+def test_athlete_pace_zones_reads_calibration_snapshot() -> None:
+    conn = sqlite3.connect(":memory:")
+    db = _ConnDb(conn)
+    repo = SQLiteRunningCalibrationRepository(db)
+    repo.save_snapshot(
+        RunningCalibrationSnapshot(
+            as_of_date=date(2026, 7, 20),
+            threshold_speed_mps=1000.0 / 270.0,
+            threshold_speed_confidence=CalibrationConfidence.HIGH,
+        )
+    )
+
+    zones = generator._athlete_pace_zones(db, date(2026, 7, 27))
+
+    assert zones is not None
+    assert "threshold" in zones and "interval" in zones
+    # Interval band must be faster (smaller s/km) than the threshold band.
+    assert float(zones["interval"].min_pace_s_per_km or 0) < float(
+        zones["threshold"].min_pace_s_per_km or 0
+    )
+
+
+def test_athlete_pace_zones_none_without_snapshot() -> None:
+    conn = sqlite3.connect(":memory:")
+    db = _ConnDb(conn)
+    SQLiteRunningCalibrationRepository(db)  # schema only, no snapshot
+
+    assert generator._athlete_pace_zones(db, date(2026, 7, 27)) is None
+
+
+def test_athlete_pace_zones_none_for_non_sqlite_backend() -> None:
+    assert generator._athlete_pace_zones(object(), date(2026, 7, 27)) is None
+
 
 
 class _Db:

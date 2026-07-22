@@ -15,7 +15,12 @@ from datetime import date as date_cls, timedelta
 from statistics import median
 
 from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+from stride_core.running_calibration.types import PaceZone
+from stride_core.running_calibration.zones import compute_training_zones
 from stride_core.timefmt import shanghai_day_str, today_shanghai
+from stride_storage.sqlite.calibration_connector import (
+    SQLiteRunningCalibrationRepository,
+)
 
 from .content_store import read_json
 from .deps import get_db
@@ -509,6 +514,33 @@ def get_last_week_summary(
     }
 
 
+def _athlete_pace_zones(
+    db: object, as_of_date: date_cls
+) -> dict[str, PaceZone] | None:
+    """Return the athlete's calibrated pace zones keyed by zone name.
+
+    Single-source discipline: pace zones come from the running-calibration
+    snapshot via ``SQLiteRunningCalibrationRepository`` + ``compute_training_zones``
+    (never recomputed here). Returns ``None`` when no usable calibration exists
+    (no snapshot, or no threshold speed) so the caller can fall back to generic
+    paces instead of fabricating a magic default.
+    """
+    # Non-SQLite backends (e.g. lightweight test doubles) cannot back a
+    # calibration repository — treat them as "no personalised zones".
+    if getattr(db, "_conn", None) is None:
+        return None
+    repo = SQLiteRunningCalibrationRepository(db)
+    snapshot = repo.fetch_latest(as_of_date=as_of_date)
+    if (
+        snapshot is None
+        or not snapshot.threshold_speed_mps
+        or snapshot.threshold_speed_mps <= 0
+    ):
+        return None
+    zones = compute_training_zones(snapshot)
+    return {zone.name: zone for zone in zones.pace_zones}
+
+
 def build_weekly_plan(
     *,
     user_id: str,
@@ -555,11 +587,18 @@ def build_weekly_plan(
             )
         else:
             actual_note = None
+        pace_zones = _athlete_pace_zones(db, week_start)
+        pace_source_note = (
+            None
+            if pace_zones
+            else "配速区间为通用默认值，暂无个人配速校准数据（完成更多跑步后自动个性化）"
+        )
         plan, total_distance_km = generate_week_plan(
             user_id=user_id,
             week_start=week_start,
             base_distance_km=resolved_base_km,
             last_week_summary=None,
+            pace_zones=pace_zones,
         )
         plan = _merge_current_week_actuals(
             plan,
@@ -579,6 +618,7 @@ def build_weekly_plan(
         master_target.context if master_target is not None else None,
         calibration_note,
         actual_note,
+        pace_source_note,
     ]
     plan = replace(
         plan,
