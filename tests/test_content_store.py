@@ -51,6 +51,11 @@ class FakeContainerClient:
             raise RuntimeError("blob exists")
         self.blobs[name] = data
 
+    def delete_blob(self, name: str):
+        if name not in self.blobs:
+            raise ResourceNotFoundError(name)
+        del self.blobs[name]
+
 
 @pytest.fixture(autouse=True)
 def clear_blob_env(monkeypatch):
@@ -188,6 +193,30 @@ def test_json_write_prefers_blob_when_configured(monkeypatch):
     assert json.loads(fake.blobs["users/user-1/onboarding.json"].decode()) == {
         "profile_ready": True,
     }
+
+
+def test_delete_prefix_removes_only_target_user_blobs(monkeypatch):
+    fake = FakeContainerClient({
+        "users/user-1/profile.json": b"{}",
+        "users/user-1/logs/week/plan.md": b"plan",
+        "users/user-2/profile.json": b"{}",
+    })
+    monkeypatch.setenv(
+        content_store.ACCOUNT_URL_ENV,
+        "https://acct.blob.core.windows.net/",
+    )
+    monkeypatch.setenv(content_store.CONTAINER_ENV, "stride-data")
+    clear_server_config_cache()
+    monkeypatch.setattr(
+        content_store,
+        "_container_client",
+        lambda _account, _container: fake,
+    )
+
+    deleted = content_store.delete_prefix("user-1")
+
+    assert deleted == 2
+    assert fake.blobs == {"users/user-2/profile.json": b"{}"}
 
 
 def test_list_week_folders_merges_blob_and_filesystem(tmp_path, monkeypatch):

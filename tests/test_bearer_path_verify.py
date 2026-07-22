@@ -290,6 +290,43 @@ def test_create_app_succeeds_when_public_key_set(monkeypatch, rsa_keypair):
     assert app is not None
 
 
+def test_create_app_rejects_fenced_user_but_allows_delete_retry(
+    monkeypatch, rsa_keypair,
+):
+    private_pem, public_pem = rsa_keypair
+    from stride_server import auth_service_client
+    from stride_server.config.models import AuthConfig, ServerConfig
+    from stride_server.jobs import account_deletion
+    from stride_server.routes import account as account_routes
+    from stride_server.app import create_app
+
+    monkeypatch.setattr(account_deletion, "is_deleting", lambda _user: True)
+
+    async def auth_already_gone(_bearer):
+        raise auth_service_client.AuthServiceError(401, "already deleted")
+
+    monkeypatch.setattr(
+        auth_service_client,
+        "delete_my_account",
+        auth_already_gone,
+    )
+    monkeypatch.setattr(account_routes, "_delete_account_data", lambda *_args: None)
+
+    app = create_app(
+        _StubSource(),
+        config=ServerConfig.default(env="prod").with_updates(
+            auth=AuthConfig(public_key_pem=public_pem)
+        ),
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+    user_id = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
+    token = _make_token(private_pem, user_id)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.get("/api/users", headers=headers).status_code == 410
+    assert client.delete("/api/users/me", headers=headers).status_code == 204
+
+
 def test_create_app_stores_server_config() -> None:
     from stride_server.app import create_app
     from stride_server.config.models import ServerConfig

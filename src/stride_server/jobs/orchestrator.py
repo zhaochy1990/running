@@ -24,7 +24,12 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from stride_storage.interfaces.jobs import JobRecord, JobStatus, PipelineRunRecord
+from stride_storage.interfaces.jobs import (
+    JobRecord,
+    JobStatus,
+    PipelineRunRecord,
+    is_terminal,
+)
 
 from .pipelines import PipelineDef, PipelineStep, get_pipeline
 
@@ -93,6 +98,15 @@ def start_pipeline(
     pipeline = get_pipeline(name)
     if pipeline is None:
         raise ValueError(f"unknown pipeline: {name!r}")
+
+    # Refuse to start a run for a user whose account deletion is in progress: a
+    # new run would re-enqueue jobs that rebuild the very data being deleted.
+    from stride_server.jobs import account_deletion
+
+    if account_deletion.is_deleting(partition_key):
+        raise account_deletion.AccountDeletingError(
+            f"user {partition_key} is being deleted; refusing to start {name!r}"
+        )
 
     run_id = str(uuid4())
     first = pipeline.first_step()
@@ -188,13 +202,30 @@ def on_job_completed(job: JobRecord) -> None:
     if run is None:
         logger.warning("pipeline run %s missing for completed step %s", run_id, step_name)
         return
-    if run.status in (JobStatus.DONE, JobStatus.FAILED):
-        # Run already terminal (this step was the last, or a prior delivery
-        # finished/failed the run). Nothing to advance.
+    if is_terminal(run.status):
+        # Run already terminal (last step done, or a prior delivery
+        # finished/failed/cancelled the run). Nothing to advance.
         return
     pipeline = get_pipeline(run.pipeline_name)
     if pipeline is None:
         logger.error("pipeline def %s missing at runtime", run.pipeline_name)
+        return
+
+    # Deletion race: the fence may have landed while this step ran. Do NOT
+    # enqueue the next step (it would rebuild data being deleted) — mark the run
+    # CANCELLED and stop.
+    from stride_server.jobs import account_deletion
+
+    if account_deletion.is_deleting(job.partition_key):
+        steps_json = _update_step_states(
+            run.steps_json, step_name, status=JobStatus.DONE.value, job_id=job.job_id
+        )
+        store.update(
+            run_id, job.partition_key,
+            status=JobStatus.CANCELLED, current_step=None,
+            steps_json=steps_json, completed_at=_now_iso(),
+        )
+        logger.info("pipeline run %s CANCELLED (user %s deleting)", run_id, job.partition_key)
         return
 
     nxt = pipeline.next_step(step_name)
@@ -276,9 +307,8 @@ def on_job_failed(job: JobRecord) -> None:
 
     store = get_pipeline_run_store()
     run = store.get(job.partition_key, run_id)
-    if run is None:
+    if run is None or is_terminal(run.status):
         return
-    already_failed = run.status is JobStatus.FAILED
     steps_json = _update_step_states(
         run.steps_json, step_name, status=JobStatus.FAILED.value, job_id=job.job_id
     )
@@ -290,7 +320,7 @@ def on_job_failed(job: JobRecord) -> None:
         completed_at=_now_iso(),
     )
     logger.warning("pipeline run %s FAILED at step %s", run_id, step_name)
-    if not already_failed and run.pipeline_name == "onboarding":
+    if run.pipeline_name == "onboarding":
         from stride_server.jobs import onboarding_notify
 
         onboarding_notify.publish_failed(job.partition_key, step_name)
@@ -299,3 +329,34 @@ def on_job_failed(job: JobRecord) -> None:
 def _run_input(run: PipelineRunRecord) -> dict[str, Any] | None:
     """Run-level input to thread into subsequent steps (none for now)."""
     return None
+
+
+def on_job_cancelled(job: JobRecord) -> None:
+    """Worker hook: a step job reached terminal CANCELLED — cancel its run.
+
+    Marks the owning pipeline run CANCELLED (idempotent) and, unlike
+    ``on_job_failed``, emits NO failure notification — cancellation is a
+    deliberate account-deletion outcome, not an error the user should see.
+    No-op for a job with no pipeline metadata.
+    """
+    meta = _pipeline_meta(job)
+    if meta is None:
+        return
+    run_id, step_name = meta
+    from stride_server.jobs import get_pipeline_run_store
+
+    store = get_pipeline_run_store()
+    run = store.get(job.partition_key, run_id)
+    if run is None or is_terminal(run.status):
+        return
+    steps_json = _update_step_states(
+        run.steps_json, step_name, status=JobStatus.CANCELLED.value, job_id=job.job_id
+    )
+    store.update(
+        run_id, job.partition_key,
+        status=JobStatus.CANCELLED,
+        current_step=None,
+        steps_json=steps_json,
+        completed_at=_now_iso(),
+    )
+    logger.info("pipeline run %s CANCELLED at step %s", run_id, step_name)

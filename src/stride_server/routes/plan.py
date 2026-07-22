@@ -19,6 +19,7 @@ import dataclasses
 import json
 import logging
 import secrets as _secrets
+from collections.abc import Iterator
 from datetime import date as date_cls, timedelta
 from typing import Any
 
@@ -42,6 +43,7 @@ from stride_core.timefmt import today_shanghai
 from stride_core.workout_spec import NormalizedRunWorkout, NormalizedStrengthWorkout
 
 from plan_parser import parse_plan_md
+from ..bearer import reject_deleting_user
 from ..content_store import read_json as content_read_json
 from ..content_store import read_text as content_read_text
 from ..config import load_server_config
@@ -54,6 +56,7 @@ from ..deps import (
     get_server_config,
     parse_week_dates,
 )
+from ..sqlite_writer import try_user_sqlite_writer
 from ..weekly_plan_store import (
     find_session,
     get_weekly_plan_store,
@@ -834,11 +837,25 @@ def reparse_plan(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _hold_internal_plan_writer(user: str = Query(...)) -> Iterator[None]:
+    """Serialize reparse writes with sync and account deletion for this user."""
+    with try_user_sqlite_writer(user) as acquired:
+        if not acquired:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="user SQLite writer is busy; retry plan reparse later",
+                headers={"Retry-After": "2"},
+            )
+        reject_deleting_user(user)
+        yield
+
+
 @internal_router.post("/internal/plan/reparse")
 def internal_reparse_plan(
     user: str = Query(...),
     folder: str = Query(...),
     _token: None = Depends(require_internal_token),
+    _writer: None = Depends(_hold_internal_plan_writer),
 ):
     """Trusted webhook used by ``sync-data.yml`` after pushing a fresh plan.md
     to Azure Files. Re-uses the same reverse-parser path as the UI button so

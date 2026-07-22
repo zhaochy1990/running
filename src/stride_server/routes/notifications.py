@@ -12,13 +12,15 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from contextlib import contextmanager
+from typing import Any, Iterator
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from ..bearer import require_bearer
+from ..bearer import reject_deleting_user, require_bearer
 from ..notifications import store as nstore
+from ..sqlite_writer import try_user_sqlite_writer
 from .plan import require_internal_token
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,20 @@ def _caller_id(claims: dict) -> str:
     if not isinstance(sub, str):
         raise HTTPException(status_code=401, detail="invalid token sub")
     return sub
+
+
+@contextmanager
+def _notification_writer(user_id: str) -> Iterator[None]:
+    """Serialize user notification writes with account deletion cleanup."""
+    with try_user_sqlite_writer(user_id) as acquired:
+        if not acquired:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="User data is being updated; retry shortly.",
+                headers={"Retry-After": "2"},
+            )
+        reject_deleting_user(user_id)
+        yield
 
 
 # ── Device registration ────────────────────────────────────────────────────
@@ -54,15 +70,16 @@ def register_device(
     if not _REG_ID_RE.match(body.registration_id):
         raise HTTPException(status_code=422, detail="invalid registration_id")
     user_id = _caller_id(claims)
-    try:
-        nstore.upsert_device(
-            user_id,
-            body.registration_id,
-            platform=body.platform,
-            app_version=body.app_version,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    with _notification_writer(user_id):
+        try:
+            nstore.upsert_device(
+                user_id,
+                body.registration_id,
+                platform=body.platform,
+                app_version=body.app_version,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     logger.info(
         "Device registered for user=%s platform=%s",
         user_id[:8], body.platform,
@@ -78,10 +95,11 @@ def unregister_device(
     if not _REG_ID_RE.match(registration_id):
         raise HTTPException(status_code=422, detail="invalid registration_id")
     user_id = _caller_id(claims)
-    try:
-        removed = nstore.delete_device(user_id, registration_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    with _notification_writer(user_id):
+        try:
+            removed = nstore.delete_device(user_id, registration_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"unregistered": removed}
 
 
@@ -119,12 +137,13 @@ def patch_prefs(
     user_id = _caller_id(claims)
     if body.plan_reminder_time is not None and not _TIME_RE.match(body.plan_reminder_time):
         raise HTTPException(status_code=422, detail="plan_reminder_time must be HH:MM")
-    return nstore.update_prefs(
-        user_id,
-        likes_enabled=body.likes_enabled,
-        plan_reminder_enabled=body.plan_reminder_enabled,
-        plan_reminder_time=body.plan_reminder_time,
-    )
+    with _notification_writer(user_id):
+        return nstore.update_prefs(
+            user_id,
+            likes_enabled=body.likes_enabled,
+            plan_reminder_enabled=body.plan_reminder_enabled,
+            plan_reminder_time=body.plan_reminder_time,
+        )
 
 
 # ── Product-message read state ─────────────────────────────────────────────
@@ -153,10 +172,11 @@ def mark_notification_read(
     if not _NOTIFICATION_ID_RE.match(notification_id):
         raise HTTPException(status_code=422, detail="invalid notification_id")
     user_id = _caller_id(claims)
-    try:
-        read_ids = nstore.mark_notification_read(user_id, notification_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    with _notification_writer(user_id):
+        try:
+            read_ids = nstore.mark_notification_read(user_id, notification_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"read_ids": read_ids}
 
 
@@ -168,17 +188,18 @@ def internal_upsert_notification(
     body: UpsertNotificationBody,
     _token: None = Depends(require_internal_token),
 ):
-    try:
-        notification = nstore.upsert_notification(
-            body.user_id,
-            body.notification_id,
-            severity=body.severity,
-            title=body.title,
-            body=body.body,
-            action_url=body.action_url,
-            progress_pct=body.progress_pct,
-            metadata=body.metadata,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    with _notification_writer(body.user_id):
+        try:
+            notification = nstore.upsert_notification(
+                body.user_id,
+                body.notification_id,
+                severity=body.severity,
+                title=body.title,
+                body=body.body,
+                action_url=body.action_url,
+                progress_pct=body.progress_pct,
+                metadata=body.metadata,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"notification": notification}

@@ -162,6 +162,18 @@ def any_exists(
     )
 
 
+def delete_prefix(
+    relative_dir: str,
+    *,
+    config: ContentStorageConfig | None = None,
+) -> int:
+    return _store.delete_prefix(
+        relative_dir,
+        config=_content_config(config),
+        container_client=_container_client,
+    )
+
+
 def list_files_in_folder(
     relative_dir: str,
     *,

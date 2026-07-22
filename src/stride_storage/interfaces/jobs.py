@@ -29,6 +29,20 @@ class JobStatus(str, Enum):
     RUNNING = "running"
     DONE = "done"
     FAILED = "failed"
+    # Terminal — the job/run was cancelled (e.g. its owning user is being
+    # deleted). Distinct from FAILED: no retry, no poison, no failure
+    # notification. There is deliberately no CANCELLING intermediate state;
+    # cancellation is a fence + a single terminal transition.
+    CANCELLED = "cancelled"
+
+
+#: Terminal job/run statuses — a job/run in one of these never advances again.
+TERMINAL_STATUSES = frozenset({JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED})
+
+
+def is_terminal(status: JobStatus) -> bool:
+    """True when ``status`` is a terminal state (DONE / FAILED / CANCELLED)."""
+    return status in TERMINAL_STATUSES
 
 
 @dataclass(frozen=True)

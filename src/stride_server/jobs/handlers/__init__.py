@@ -18,6 +18,7 @@ from ..registry import ensure_registered
 def ensure_handlers_registered() -> None:
     """Idempotently (re)register every job handler. Safe to call repeatedly."""
     ensure_registered(hello.HELLO_JOB_TYPE, hello.handle_hello)
+    ensure_registered("onboarding_health_sync", onboarding.handle_health_sync)
     ensure_registered("onboarding_full_sync", onboarding.handle_full_sync)
     ensure_registered("onboarding_calibration", onboarding.handle_calibration)
     ensure_registered("onboarding_backfill", onboarding.handle_backfill)

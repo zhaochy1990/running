@@ -194,6 +194,21 @@ class FileNotificationsBackend(NotificationsBackend):
         )
         os.replace(tmp, path)
 
+    def delete_user(self, user_id: str) -> int:
+        with self._lock:
+            data = self._read()
+            deleted = 0
+            devices = data["devices"].pop(user_id, {})
+            deleted += len(devices) if isinstance(devices, dict) else 0
+            for key in ("prefs", "read_state"):
+                if data[key].pop(user_id, None) is not None:
+                    deleted += 1
+            notifications = data["notifications"].pop(user_id, {})
+            deleted += len(notifications) if isinstance(notifications, dict) else 0
+            if deleted:
+                self._write(data)
+            return deleted
+
     def upsert_device(self, entity: DeviceEntity) -> None:
         with self._lock:
             data = self._read()
@@ -334,6 +349,26 @@ class AzureTableNotificationsBackend(NotificationsBackend):
 
     def _prefs(self):
         return self._prefs_conn.table()
+
+    def delete_user(self, user_id: str) -> int:
+        from azure.core.exceptions import ResourceNotFoundError
+
+        deleted = 0
+        for table in (self._devices(), self._prefs()):
+            rows = list(table.query_entities(
+                "PartitionKey eq @pk",
+                parameters={"pk": user_id},
+            ))
+            for row in rows:
+                try:
+                    table.delete_entity(
+                        partition_key=row["PartitionKey"],
+                        row_key=row["RowKey"],
+                    )
+                    deleted += 1
+                except ResourceNotFoundError:
+                    continue
+        return deleted
 
     def upsert_device(self, entity: DeviceEntity) -> None:
         from azure.data.tables import UpdateMode

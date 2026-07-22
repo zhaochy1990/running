@@ -100,6 +100,20 @@ def test_loader_rejects_bad_yaml(tmp_path):
 # --- pipeline run store -----------------------------------------------------
 
 
+def test_default_onboarding_pipeline_serializes_all_sqlite_writers():
+    from stride_server.jobs.handlers import ensure_handlers_registered
+
+    ensure_handlers_registered()
+    pipelines = load_pipelines()
+
+    assert [step.name for step in pipelines["onboarding"].steps] == [
+        "health_sync",
+        "full_sync",
+        "calibration",
+        "backfill",
+    ]
+
+
 def test_pipeline_run_store_roundtrip(tmp_path):
     store = FilePipelineRunStore(tmp_path / "pr")
     store.create(PipelineRunRecord(
@@ -119,6 +133,7 @@ def test_pipeline_run_store_roundtrip(tmp_path):
 
 
 def _wire_dev_backends(tmp_path, monkeypatch, *, visibility_timeout_s=0):
+    from stride_server.jobs import account_deletion
     cfg = QueueStorageConfig(
         file_backend_dir=str(tmp_path),
         visibility_timeout_s=visibility_timeout_s,
@@ -135,6 +150,8 @@ def _wire_dev_backends(tmp_path, monkeypatch, *, visibility_timeout_s=0):
     worker = JobWorker(
         store=store, queue=queue, poison_queue=poison, config=cfg,
         on_completed=orchestrator.on_job_completed, on_failed=orchestrator.on_job_failed,
+        is_cancelled=lambda job: account_deletion.is_deleting(job.partition_key),
+        on_cancelled=orchestrator.on_job_cancelled,
     )
     return worker, prstore, queue
 
@@ -336,6 +353,174 @@ def _find_job(worker, partition_key, job_type):
         if rec.job_type == job_type:
             return rec
     raise AssertionError(f"no {job_type} job for {partition_key}")
+
+
+# --- cancellation fence -----------------------------------------------------
+
+
+def test_mark_deleting_treats_concurrent_create_conflict_as_success(monkeypatch):
+    """A second DELETE racing the Azure insert observes the winning fence."""
+    from stride_server.jobs import account_deletion
+
+    class RaceStore:
+        def __init__(self):
+            self.fence = None
+            self.get_calls = 0
+
+        def get(self, partition_key, run_id):
+            self.get_calls += 1
+            return None if self.get_calls == 1 else self.fence
+
+        def create(self, run):
+            self.fence = run
+            raise RuntimeError("entity already exists")
+
+    store = RaceStore()
+    monkeypatch.setattr(account_deletion, "_run_store", lambda: store)
+
+    account_deletion.mark_deleting("u1")
+
+    assert store.fence is not None
+    assert store.fence.status is JobStatus.CANCELLED
+
+
+def test_start_pipeline_refuses_when_user_fenced(tmp_path, monkeypatch):
+    """A fenced user (account deletion in progress) must not get a new pipeline
+    run or any enqueued job — start_pipeline raises before creating anything."""
+    from stride_server.jobs import account_deletion
+
+    job_handler("a")(lambda job, *, heartbeat: {"ok": True})
+    p = _write_yaml(tmp_path, """
+pipelines:
+  onboarding:
+    steps:
+      - {name: full_sync, job_type: a}
+""")
+    load_pipelines(p)
+    worker, prstore, queue = _wire_dev_backends(tmp_path, monkeypatch)
+
+    # Fence u1.
+    account_deletion.mark_deleting("u1")
+
+    with pytest.raises(account_deletion.AccountDeletingError):
+        orchestrator.start_pipeline("onboarding", partition_key="u1")
+
+    # No non-fence run created, nothing enqueued.
+    runs = [r for r in prstore.list_by_partition("u1")
+            if r.run_id != account_deletion.DELETION_FENCE_RUN_ID]
+    assert runs == []
+    assert queue.depth() == 0
+
+
+def test_on_job_completed_stops_advancing_when_fenced(tmp_path, monkeypatch):
+    """A completion race: the fence lands after full_sync finished. The hook must
+    NOT enqueue the next step and must mark the run CANCELLED."""
+    from stride_server.jobs import account_deletion
+
+    order = []
+    for jt in ("a", "b"):
+        def mk(n):
+            return lambda job, *, heartbeat: (order.append(n), {"step": n})[1]
+        job_handler(jt)(mk(jt))
+    p = _write_yaml(tmp_path, """
+pipelines:
+  onboarding:
+    steps:
+      - {name: full_sync, job_type: a}
+      - {name: calibration, job_type: b, depends: [full_sync]}
+""")
+    load_pipelines(p)
+    worker, prstore, queue = _wire_dev_backends(tmp_path, monkeypatch)
+
+    from stride_server.jobs import onboarding_notify
+    for name in ("publish_started", "publish_complete", "publish_sync_done",
+                 "publish_analyzing", "publish_syncing", "publish_failed"):
+        monkeypatch.setattr(onboarding_notify, name, lambda *a, **k: None)
+
+    run_id = orchestrator.start_pipeline("onboarding", partition_key="u1")
+    # Process only the first step, then fence before draining the rest.
+    worker.process_once(max_messages=1)
+    account_deletion.mark_deleting("u1")
+    for _ in range(6):
+        if worker.process_once(max_messages=5) == 0:
+            break
+
+    run = prstore.get("u1", run_id)
+    assert run.status is JobStatus.CANCELLED
+    assert order == ["a"]  # calibration never ran
+
+
+def test_on_job_cancelled_marks_run_cancelled_without_failure_notify(tmp_path, monkeypatch):
+    """When a step job is cancelled, on_job_cancelled marks its run CANCELLED and
+    does NOT emit an onboarding failure notification."""
+    from stride_storage.interfaces.jobs import JobRecord
+    from stride_server.jobs import onboarding_notify
+
+    job_handler("a")(lambda job, *, heartbeat: {"ok": True})
+    job_handler("b")(lambda job, *, heartbeat: {"ok": True})
+    p = _write_yaml(tmp_path, """
+pipelines:
+  onboarding:
+    steps:
+      - {name: full_sync, job_type: a}
+      - {name: calibration, job_type: b}
+""")
+    load_pipelines(p)
+    worker, prstore, queue = _wire_dev_backends(tmp_path, monkeypatch)
+    run_id = orchestrator.start_pipeline("onboarding", partition_key="u1")
+
+    failed_notify: list = []
+    monkeypatch.setattr(onboarding_notify, "publish_failed", lambda *a, **k: failed_notify.append(a))
+
+    # Build the cancelled step job record as the worker would hand it to the hook.
+    import json as _json
+    cancelled_job = JobRecord(
+        job_id="j-full", partition_key="u1", job_type="a",
+        status=JobStatus.CANCELLED,
+        input_json=_json.dumps({"pipeline_run_id": run_id, "step_name": "full_sync"}),
+    )
+    orchestrator.on_job_cancelled(cancelled_job)
+
+    run = prstore.get("u1", run_id)
+    assert run.status is JobStatus.CANCELLED
+    assert failed_notify == []  # no failure notification for a cancellation
+
+
+def test_failed_hook_does_not_overwrite_cancelled_run(tmp_path, monkeypatch):
+    """A late failure cannot reverse an account-deletion cancellation."""
+    from stride_server.jobs import account_deletion, onboarding_notify
+
+    job_handler("a")(lambda job, *, heartbeat: {"ok": True})
+    p = _write_yaml(tmp_path, """
+pipelines:
+  onboarding:
+    steps:
+      - {name: full_sync, job_type: a}
+""")
+    load_pipelines(p)
+    worker, prstore, _queue = _wire_dev_backends(tmp_path, monkeypatch)
+    run_id = orchestrator.start_pipeline("onboarding", partition_key="u1")
+    failed_job = _find_job(worker, "u1", "a")
+
+    account_deletion.mark_deleting("u1")
+    account_deletion.cancel_active_pipeline_runs("u1")
+    failed_job = worker._store.update(
+        failed_job.job_id,
+        "u1",
+        status=JobStatus.FAILED,
+        error_message="late failure",
+    )
+    notifications: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        onboarding_notify,
+        "publish_failed",
+        lambda user, step: notifications.append((user, step)),
+    )
+
+    orchestrator.on_job_failed(failed_job)
+
+    assert prstore.get("u1", run_id).status is JobStatus.CANCELLED
+    assert notifications == []
 
 
 def test_start_pipeline_emits_started_for_onboarding(tmp_path, monkeypatch):
