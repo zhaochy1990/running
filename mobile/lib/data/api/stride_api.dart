@@ -32,6 +32,8 @@ import '../models/team.dart';
 class StrideApi {
   StrideApi(this._dio);
 
+  static const syncReceiveTimeout = Duration(minutes: 5);
+
   final Dio _dio;
 
   // ── Profile ────────────────────────────────────────────────────────────
@@ -344,10 +346,23 @@ class StrideApi {
 
   // ── Writes ─────────────────────────────────────────────────────────────
   Future<void> triggerSync(String user, {bool full = false}) async {
-    await _post<Map<String, dynamic>>(
+    final response = await _post<Map<String, dynamic>>(
       '/api/$user/sync',
       query: {if (full) 'full': true},
+      options: Options(receiveTimeout: syncReceiveTimeout),
     );
+    final success = response['success'];
+    if (success is! bool) {
+      throw const ApiException(200, 'Invalid sync response');
+    }
+    if (!success) {
+      final error = response['error'];
+      throw ApiException(
+        200,
+        error is String && error.isNotEmpty ? error : 'Sync failed',
+        response,
+      );
+    }
   }
 
   Future<Map<String, dynamic>> pushPlannedSession(
@@ -929,8 +944,14 @@ class StrideApi {
     String path, {
     Map<String, dynamic>? query,
     Object? body,
+    Options? options,
   }) async {
-    final res = await _dio.post<T>(path, queryParameters: query, data: body);
+    final res = await _dio.post<T>(
+      path,
+      queryParameters: query,
+      data: body,
+      options: options,
+    );
     return _unpack<T>(res);
   }
 
