@@ -270,15 +270,83 @@ def _requests_generation(objective: str) -> bool:
     return any(marker in compact for marker in ("生成", "创建", "新建"))
 
 
-def _create_proposal(user_id: str, folder: str) -> WeeklyPlanCreateProposal:
+_REGENERATION_MARKERS = (
+    # Explicit whole-week regeneration / re-plan.
+    "重新生成",
+    "重新制定",
+    "重新规划",
+    "重新安排",
+    "重新排",
+    "重排",
+    "整周重",
+    "重新做",
+    "重做计划",
+    "regenerate",
+    # Same-day DOUBLE-RUN asks — the one case the surgical diff tools cannot
+    # place (they can only add strength or overwrite an existing session). A
+    # generic "加一节力量/加一个动作" must stay on the diff path, so only run
+    # double-session phrasings live here.
+    "双跑",
+    "两练",
+    "早晚各",
+    "早晚双",
+    "一天两",
+    "两次跑",
+    "secondrun",
+    "doublerun",
+    "tworuns",
+    "twoaday",
+    "twiceaday",
+    "addarun",
+)
+
+
+def _requests_regeneration(objective: str) -> bool:
+    """Detect an intent to re-plan the WHOLE week (vs a single-op adjustment).
+
+    Whole-week regeneration + same-day double-run requests are honoured by
+    generating a fresh full week (which re-balances load) and surfacing it as a
+    confirm-to-replace proposal — rather than a destructive clear-then-generate
+    diff. A plain generation request (生成/创建/新建) also qualifies. Surgical
+    single-op adjustments (swap / shift / reduce / add-strength / change-pace)
+    are intentionally left to the diff-tool path.
+    """
+    compact = re.sub(r"\s+", "", objective).lower()
+    negated = ("不要生成", "不生成", "别生成", "无需生成", "不要重新生成", "不用重新")
+    if any(marker in compact for marker in negated):
+        return False
+    if any(marker in compact for marker in _REGENERATION_MARKERS):
+        return True
+    return any(marker in compact for marker in ("生成", "创建", "新建"))
+
+
+def _create_proposal(
+    user_id: str,
+    folder: str,
+    *,
+    allow_existing: bool = False,
+    user_request: str | None = None,
+) -> WeeklyPlanCreateProposal:
     week_start = _week_start(folder)
     if week_start is None:
         raise ValueError(f"invalid weekly plan folder {folder!r}")
-    generated = build_weekly_plan(user_id=user_id, week_start=week_start)
-    explanation = (
-        f"已生成 {week_start.isoformat()} 开始的一周训练计划，"
-        f"目标周跑量约 {generated.total_distance_km:.1f} 公里；确认后才会保存。"
+    generated = build_weekly_plan(
+        user_id=user_id,
+        week_start=week_start,
+        allow_existing=allow_existing,
+        user_request=user_request,
     )
+    if allow_existing:
+        explanation = (
+            f"已按你的要求重新生成 {week_start.isoformat()} 这一周的完整训练计划"
+            f"（目标周跑量约 {generated.total_distance_km:.1f} 公里）。"
+            "确认后将用这份新计划替换当前这一周；在此之前不会改动。"
+        )
+    else:
+        explanation = (
+            f"已生成 {week_start.isoformat()} 开始的一周训练计划，"
+            f"目标周跑量约 {generated.total_distance_km:.1f} 公里；确认后才会保存。"
+        )
     return WeeklyPlanCreateProposal(
         proposal_id=str(uuid4()),
         folder=generated.plan.week_folder,
@@ -364,7 +432,9 @@ def make_weekly_plan_runner(
                     ),
                 )
             try:
-                proposal = _create_proposal(user_id, folder)
+                proposal = _create_proposal(
+                    user_id, folder, user_request=task.objective
+                )
             except WeeklyPlanAlreadyExistsError:
                 # The plan appeared between lookup and generation. Continue as
                 # an adjustment so this race never creates an overwrite proposal.
@@ -386,6 +456,35 @@ def make_weekly_plan_runner(
                     status="failed",
                     reply_fragment="训练周状态刚刚发生变化，请重试。",
                 )
+
+        # Existing week + a whole-week regeneration / add-a-session request:
+        # generate a fresh full week (which re-balances load and can place a
+        # requested same-day second run) and surface it as a confirm-to-replace
+        # proposal — never a destructive clear-then-regenerate diff.
+        if existing is not None and _requests_regeneration(task.objective):
+            rejection = _creation_rejection(folder)
+            if rejection is not None:
+                return SpecialistResult(status="rejected", reply_fragment=rejection)
+            try:
+                proposal = _create_proposal(
+                    user_id,
+                    folder,
+                    allow_existing=True,
+                    user_request=task.objective,
+                )
+            except (ValueError, OSError):
+                logger.exception(
+                    "weekly_plan: failed to regenerate replacement proposal"
+                )
+                return SpecialistResult(
+                    status="failed",
+                    reply_fragment="重新生成本周计划失败，请稍后再试。",
+                )
+            return SpecialistResult(
+                status="completed",
+                reply_fragment=proposal.ai_explanation,
+                proposals=[proposal],
+            )
 
         active_toolkit = toolkit or build_stride_toolkit(user_id)
         graph = graph_factory(

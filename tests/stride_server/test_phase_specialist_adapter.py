@@ -419,6 +419,29 @@ def test_feedback_carried_in_prompt(patch_db, monkeypatch):
     assert "本次重生成必须逐条修复" in system_prompt
 
 
+def test_user_request_carried_in_user_turn(patch_db, monkeypatch):
+    """An ad-hoc user request rides the USER turn (prompt-role discipline),
+    keeping the static doctrine system prompt cache-stable across athletes."""
+    from langchain_core.messages import HumanMessage
+
+    metas = _week_metas([70.0])
+    folders = [m.week_folder for m in metas]
+    model = FakeBindableLLM([ai_text(_batch(folders))])
+    _install_model(monkeypatch, model)
+
+    request = "周三下午加一节 5K 轻松跑（当天两练）"
+    generate_specialist_phase(
+        _build_phase(), metas, _context(), user_request=request
+    )
+    system_prompt, messages = model.captured[0]
+    user_text = next(
+        m.content for m in messages if isinstance(m, HumanMessage)
+    )
+    assert request in user_text
+    # must NOT leak into the static system prompt (cache prefix stays stable)
+    assert request not in system_prompt
+
+
 # ---------------------------------------------------------------------------
 # OPT-B: phase milestone flows into the generation prompt (single-source render)
 # ---------------------------------------------------------------------------

@@ -263,16 +263,24 @@ class CoachWeekApplyRequest(BaseModel):
 
     The orchestrator is stateless: a complete creation proposal or ``PlanDiff``
     rides the chat response and the client sends it back after confirmation.
+
+    ``replace`` opts a full-plan ``proposal`` into replacing an EXISTING week
+    (atomic whole-week ``save``) instead of the default create-only behaviour
+    (which 409s when the week already exists). The regenerate-then-confirm flow
+    sets ``replace=true`` after the user confirms the new week.
     """
 
     diff: PlanDiff | None = None
     proposal: WeeklyPlanCreateProposal | None = None
     accepted_op_ids: list[str] = Field(default_factory=list)
+    replace: bool = False
 
     @model_validator(mode="after")
     def _exactly_one_payload(self) -> "CoachWeekApplyRequest":
         if (self.diff is None) == (self.proposal is None):
             raise ValueError("provide exactly one of diff or proposal")
+        if self.replace and self.proposal is None:
+            raise ValueError("replace=true is only valid with a full-plan proposal")
         return self
 
 
@@ -301,6 +309,28 @@ def apply_coach_week_diff(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="目前只支持生成当前周和下一周的训练计划",
             )
+        if body.replace:
+            # Confirmed regenerate-then-replace: atomically swap the whole week
+            # for the freshly generated plan (no delete-first ops). ``save``
+            # replaces the entire week blob whether or not one already exists.
+            try:
+                save_weekly_plan(
+                    user_id,
+                    proposal.to_weekly_plan(),
+                    expected_folder=folder,
+                    generated_by="coach-generation-replace",
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            return {
+                "applied": 1,
+                "folder": folder,
+                "created": False,
+                "replaced": True,
+                "updated_at": datetime.now(timezone.utc).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                ),
+            }
         try:
             created = create_weekly_plan(
                 user_id,
@@ -319,6 +349,7 @@ def apply_coach_week_diff(
             "applied": 1,
             "folder": folder,
             "created": True,
+            "replaced": False,
             "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
 

@@ -1,14 +1,19 @@
+import { useState } from 'react'
 import { formatWeekRange, type PlanDay, type WeekDetail } from '../../api'
 import { computeWeekPlanIntensity } from '../../lib/planIntensity'
 import { actualRunDistanceKm, actualStrengthStats, formatDurationClock, weeklyPlanStats } from '../../lib/weeklyPlanView'
+import RegenerateWeekModal from './RegenerateWeekModal'
 
 export interface WeeklyPlanSummaryProps {
   readonly week: WeekDetail
   readonly days: readonly PlanDay[]
   readonly planTitle?: string
+  readonly folder?: string | null
+  readonly onRegenerated?: () => void
 }
 
-export default function WeeklyPlanSummary({ week, days, planTitle }: WeeklyPlanSummaryProps) {
+export default function WeeklyPlanSummary({ week, days, planTitle, folder, onRegenerated }: WeeklyPlanSummaryProps) {
+  const [regenerating, setRegenerating] = useState(false)
   const stats = weeklyPlanStats(days)
   const plannedIntensity = computeWeekPlanIntensity(stats.sessions)
   const actualRunKm = actualRunDistanceKm(week.activities)
@@ -35,9 +40,28 @@ export default function WeeklyPlanSummary({ week, days, planTitle }: WeeklyPlanS
             <p className="font-mono text-[10px] tracking-wider text-text-muted">完成度</p>
             <div className="mt-1 flex items-center gap-2"><span className="font-mono text-lg font-bold text-text-primary">{completion}%</span><span className="h-1.5 w-14 overflow-hidden rounded-full bg-bg-secondary"><span className="block h-full rounded-full bg-accent-green" style={{ width: `${completion}%` }} /></span></div>
           </div>
-          <button type="button" disabled title="本周调整流程暂未开放" className="rounded-lg bg-accent-green px-4 py-2.5 text-sm font-bold text-white opacity-60">调整本周</button>
+          <button
+            type="button"
+            data-testid="regenerate-week-button"
+            onClick={() => setRegenerating(true)}
+            disabled={!folder}
+            title={folder ? '重新生成本周训练计划' : '本周不可调整'}
+            className="rounded-lg bg-accent-green px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+          >
+            调整本周
+          </button>
         </div>
       </div>
+
+      {regenerating && folder && (
+        <RegenerateWeekModal
+          folder={folder}
+          week={week}
+          currentDays={days}
+          onClose={() => setRegenerating(false)}
+          onApplied={() => onRegenerated?.()}
+        />
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-border-subtle bg-bg-card p-5 shadow-sm">

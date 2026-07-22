@@ -93,14 +93,23 @@ def _post(client, token, body: dict, force: bool = False) -> object:
 
 @pytest.fixture(autouse=True)
 def _no_active_master_plan(monkeypatch):
-    """Legacy route expectations exercise the no-master fallback."""
+    """Legacy route expectations exercise the no-master fallback.
+
+    The executable week is produced by the LLM specialist generator; install a
+    deterministic rule-clean fake so the route is exercised without a live LLM.
+    ``today`` is pinned AFTER the target weeks so generation is not mid-week and
+    prior weeks count as complete (deterministic regardless of wall clock).
+    """
     import stride_server.weekly_plan_generator as generator
     import stride_server.routes.generate as generate_route
+    from tests.stride_server._fake_weekly_plan import install_fake_weekly_generator
 
     monkeypatch.setattr(generator, "_master_week_target", lambda *_: None)
+    monkeypatch.setattr(generator, "today_shanghai", lambda: date(2026, 5, 25))
     monkeypatch.setattr(
         generate_route, "today_shanghai", lambda: date(2026, 5, 12)
     )
+    install_fake_weekly_generator(monkeypatch)
 
 
 # ── Tests ────────────────────────────────────────────────────────────────────
@@ -140,21 +149,12 @@ class TestNewUserDefaultKm:
         assert dates[0] == "2026-05-11"
         assert dates[-1] == "2026-05-17"
 
-    def test_monday_is_rest(self, app_client):
-        client, token, _, _ = app_client
-        resp = _post(client, token, {"week_start": MONDAY})
-        data = resp.json()
-        monday_session = data["sessions"][0]
-        assert monday_session["kind"] == "rest"
-
-    def test_saturday_is_strength(self, app_client):
-        client, token, _, _ = app_client
-        resp = _post(client, token, {"week_start": MONDAY})
-        data = resp.json()
-        saturday_session = data["sessions"][5]
-        assert saturday_session["kind"] == "strength"
-
     def test_source_echoed(self, app_client):
+        # Note: the fixed Mon-rest / Sat-strength day-content assertions were
+        # removed with the rule-engine template — the executable week is now
+        # LLM-generated, so specific day-content is no longer guaranteed (that
+        # coverage lives in the S2 generation eval + weekly-generator unit
+        # tests).
         client, token, _, _ = app_client
         resp = _post(client, token, {"week_start": MONDAY, "source": "manual"})
         assert resp.json()["source"] == "manual"

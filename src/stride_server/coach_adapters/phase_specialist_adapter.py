@@ -291,6 +291,7 @@ def generate_specialist_phase(
     *,
     milestones: list[Milestone] | None = None,
     feedback: str | None = None,
+    user_request: str | None = None,
 ) -> list[dict]:
     """Generate ALL weeks of one phase in a single LLM call.
 
@@ -377,6 +378,14 @@ def generate_specialist_phase(
         f"请基于上述阶段指导 + 注入的配速/逐周量预算，一次性生成整个阶段"
         f"（共 {len(week_specs)} 周）的训练计划 JSON 信封。"
     )
+    if user_request and user_request.strip():
+        # Per-request instruction belongs in the USER turn (prompt-role
+        # discipline): the static doctrine stays in the system prompt so the
+        # cache prefix is stable, while this athlete's ad-hoc ask varies here.
+        user_text += (
+            "\n\n【本次用户特别要求——必须在计划中体现，并在相关 session 的 "
+            "notes_md 里简短回应】\n" + user_request.strip()
+        )
 
     # 4. Build the specialist's tool surface (empty for taper → plain invoke),
     #    bind it to the generator model, and run the langchain tool loop. Reuses
@@ -504,6 +513,7 @@ def generate_phase_validated(
     milestones: list[Milestone] | None = None,
     feedback: str | None = None,
     max_attempts: int = 3,
+    user_request: str | None = None,
 ) -> list[dict]:
     """Generate a whole phase, rule-gate each week, regen-with-feedback, drop strays.
 
@@ -622,6 +632,7 @@ def generate_phase_validated(
                 injuries,
                 milestones=milestones,
                 feedback=current_feedback,
+                user_request=user_request,
             )
         except (LLMUnavailable, LLMError):
             # Real LLM-infra failure — not a content fault we can regen our way

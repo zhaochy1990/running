@@ -19,6 +19,7 @@ import { shanghaiToday } from '../lib/shanghai'
 import { findCurrentWeek } from '../lib/weeklyPlanView'
 
 export interface CoachWeeklyPlanState {
+  readonly folder: string | null
   readonly week: WeekDetail | null
   readonly weeks: readonly WeekSummary[]
   readonly planDays: readonly PlanDay[]
@@ -30,6 +31,7 @@ export interface CoachWeeklyPlanState {
   readonly error: string | null
   readonly saveFeedback: (content: string) => Promise<void>
   readonly pushSession: (session: PlannedSession, targetDate?: string) => Promise<void>
+  readonly refresh: () => void
 }
 
 export function useCoachWeeklyPlan(): CoachWeeklyPlanState {
@@ -45,6 +47,9 @@ export function useCoachWeeklyPlan(): CoachWeeklyPlanState {
   const [provider, setProvider] = useState('coros')
   const [loadedFolder, setLoadedFolder] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  const refresh = useCallback(() => setReloadKey((key) => key + 1), [])
 
   useEffect(() => {
     let cancelled = false
@@ -99,7 +104,7 @@ export function useCoachWeeklyPlan(): CoachWeeklyPlanState {
         if (!cancelled) setError(reason instanceof Error ? reason.message : '无法加载本周计划')
       })
     return () => { cancelled = true }
-  }, [folder, user])
+  }, [folder, user, reloadKey])
 
   const saveFeedback = useCallback(async (content: string) => {
     if (!folder || !user) return
@@ -130,6 +135,7 @@ export function useCoachWeeklyPlan(): CoachWeeklyPlanState {
 
   const loading = folder ? loadedFolder !== folder && error === null : !weeksLoaded && error === null
   return {
+    folder: folder ?? null,
     week,
     weeks,
     planDays,
@@ -141,5 +147,6 @@ export function useCoachWeeklyPlan(): CoachWeeklyPlanState {
     error,
     saveFeedback,
     pushSession,
+    refresh,
   }
 }

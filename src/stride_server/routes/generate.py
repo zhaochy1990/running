@@ -1,7 +1,12 @@
-"""Single-week plan generation + whole-week push endpoints (rule engine, no LLM).
+"""Single-week plan generation + whole-week push endpoints.
 
-POST /api/{user}/plan/weeks/generate   — generate a rule-based weekly plan
+POST /api/{user}/plan/weeks/generate   — generate an LLM-authored weekly plan
 POST /api/{user}/plan/{folder}/push    — push all pushable sessions to watch
+
+Generation is LLM-backed (``build_weekly_plan`` → the coach specialist
+generator), so this route now performs a model call and can fail with a
+generation error (surfaced as HTTP 502) in addition to the 409 already-exists
+conflict.
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ from ..deps import get_db, get_plan_state_store, get_source_for_user, parse_week
 from ..week_generator import week_folder
 from ..weekly_plan_generator import (
     WeeklyPlanAlreadyExistsError,
+    WeeklyPlanGenerationError,
     build_weekly_plan,
     get_last_week_summary,
 )
@@ -41,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_GENERATED_BY = "rule-engine-v1"
+_GENERATED_BY = "llm-weekly-v1"
 
 
 # ── Request / response models ─────────────────────────────────────────────────
@@ -145,6 +151,23 @@ def generate_week(
                 "error": "week_already_exists",
                 "folder": exc.folder,
                 "hint": "Pass ?force=true to overwrite the existing plan",
+            },
+        ) from exc
+    except WeeklyPlanGenerationError as exc:
+        # The LLM specialist generator could not produce a rule-clean week
+        # (parse/validation/rule-filter exhausted, or the model was
+        # unavailable). Surface as a retryable upstream failure rather than a
+        # 500 so the client can offer a retry.
+        logger.warning(
+            "generate_week: generation failed week_start=%s user=%s: %s",
+            week_start, user, exc,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "weekly_generation_failed",
+                "hint": "The plan generator was unavailable or produced an "
+                "invalid week. Please retry.",
             },
         ) from exc
 

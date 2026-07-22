@@ -15,6 +15,7 @@ export interface CoachWeeklyPlanPageProps {
 export default function CoachWeeklyPlanPage({ initialTab = 'schedule' }: CoachWeeklyPlanPageProps) {
   const [activeTab, setActiveTab] = useState<CoachWeeklyPlanTab>(initialTab)
   const {
+    folder,
     week,
     weeks,
     planDays,
@@ -26,6 +27,7 @@ export default function CoachWeeklyPlanPage({ initialTab = 'schedule' }: CoachWe
     error,
     saveFeedback,
     pushSession,
+    refresh,
   } = useCoachWeeklyPlan()
 
   if (loading) return <div className="flex items-center justify-center py-20"><div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-green/30 border-t-accent-green" /></div>
@@ -37,7 +39,7 @@ export default function CoachWeeklyPlanPage({ initialTab = 'schedule' }: CoachWe
 
   return (
     <div className="mx-auto max-w-[1180px] space-y-6 px-4 py-6 sm:px-8 sm:py-8">
-      <WeeklyPlanSummary week={week} days={planDays} planTitle={planTitle} />
+      <WeeklyPlanSummary week={week} days={planDays} planTitle={planTitle} folder={folder} onRegenerated={refresh} />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <WeeklyPlanTabs active={activeTab} strengthCount={strength?.sessions.length ?? 0} recordCount={week.activity_count} onChange={setActiveTab} />
       </div>

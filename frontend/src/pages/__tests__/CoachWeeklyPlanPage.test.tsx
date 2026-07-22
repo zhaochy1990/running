@@ -11,6 +11,7 @@ vi.mock('../../hooks/useCoachWeeklyPlan', () => ({
 import CoachWeeklyPlanPage from '../CoachWeeklyPlanPage'
 
 const emptyState: CoachWeeklyPlanState = {
+  folder: null,
   week: null,
   weeks: [],
   planDays: [],
@@ -22,6 +23,7 @@ const emptyState: CoachWeeklyPlanState = {
   error: null,
   saveFeedback: vi.fn(),
   pushSession: vi.fn(),
+  refresh: vi.fn(),
 }
 
 describe('CoachWeeklyPlanPage', () => {

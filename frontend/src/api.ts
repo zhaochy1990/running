@@ -5,6 +5,7 @@ import type {
   PlannedSession,
   StructuredStatus,
   VariantsSummary,
+  WeeklyPlanStructured,
 } from './types/plan'
 
 const BASE = '/api'
@@ -785,6 +786,89 @@ export function applyMasterPlanAdjustDiff(
       accepted_op_ids: acceptedOpIds,
       change_reason: changeReason,
     },
+  )
+}
+
+// ---------------------------------------------------------------------------
+// S2 weekly Coach chat — regenerate a week → confirm-to-replace
+// ---------------------------------------------------------------------------
+
+/** Full new week produced by the coach generator, awaiting user confirmation. */
+export interface WeeklyPlanCreateProposal {
+  proposal_id: string
+  folder: string
+  plan: WeeklyPlanStructured
+  total_distance_km: number
+  ai_explanation: string
+  created_at: string
+}
+
+export interface CoachProposalCard {
+  specialist_id: string
+  proposal: WeeklyPlanCreateProposal | Record<string, unknown>
+  target?: unknown
+  summary?: string | null
+}
+
+export interface CoachChatResponse {
+  session_id: string
+  thread_id: string
+  reply: string
+  clarification?: string | null
+  active_target?: unknown
+  proposals: CoachProposalCard[]
+}
+
+export interface CoachWeekApplyResponse {
+  applied: number
+  folder: string
+  created: boolean
+  replaced?: boolean
+  updated_at: string
+  detail?: unknown
+}
+
+/** Post one turn to the orchestrator coach chat (session-scoped). */
+export function sendCoachChat(sessionId: string, message: string) {
+  return postJSON<CoachChatResponse>('/users/me/coach/chat', {
+    session_id: sessionId,
+    message,
+  })
+}
+
+/**
+ * Extract the weekly-plan full-week proposal from a coach chat response, if the
+ * ``weekly_plan`` specialist produced one this turn.
+ */
+export function weeklyProposalFromChat(
+  response: CoachChatResponse,
+): WeeklyPlanCreateProposal | null {
+  const card = response.proposals.find(
+    (c) => c.specialist_id === 'weekly_plan',
+  )
+  const proposal = card?.proposal
+  if (
+    proposal &&
+    typeof proposal === 'object' &&
+    'plan' in proposal &&
+    'folder' in proposal
+  ) {
+    return proposal as WeeklyPlanCreateProposal
+  }
+  return null
+}
+
+/**
+ * Confirm a regenerated week: atomically replace the existing week with the
+ * proposed full plan (``replace: true``).
+ */
+export function applyCoachWeekReplacement(
+  folder: string,
+  proposal: WeeklyPlanCreateProposal,
+) {
+  return postJSON<CoachWeekApplyResponse>(
+    `/users/me/coach/plan/${encodeURIComponent(folder)}/apply`,
+    { proposal, replace: true },
   )
 }
 
