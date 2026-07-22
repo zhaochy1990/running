@@ -179,6 +179,21 @@ def test_composer_carries_json_contract_field_instructions():
     assert "null" in prompt
 
 
+def test_composer_states_default_one_session_per_day():
+    """The contract must default to one session/day and only allow a second
+    same-day session when the injected user request asks for it."""
+    prompt = build_weekly_system_prompt(
+        phase=PhaseType.BASE,
+        week_meta=_week_meta(),
+        pace_targets=_pace_targets(),
+        volume_targets=_volume_targets(),
+        context_block="",
+    )
+    assert "每天默认 1 节" in prompt
+    assert "双练" in prompt
+    assert "session_index=1" in prompt
+
+
 @pytest.mark.parametrize("phase", list(PhaseType))
 def test_composer_all_phases_carry_specialist_doctrine(phase: PhaseType):
     spec = get_specialist(phase)

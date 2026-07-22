@@ -262,7 +262,7 @@ def _creation_rejection(folder: str) -> str | None:
 
 
 def _requests_generation(objective: str) -> bool:
-    compact = re.sub(r"\s+", "", objective)
+    compact = re.sub(r"\s+", "", objective).lower()
     negated = (
         "不要生成",
         "不生成",
@@ -272,7 +272,25 @@ def _requests_generation(objective: str) -> bool:
     )
     if any(marker in compact for marker in negated):
         return False
-    return any(marker in compact for marker in ("生成", "创建", "新建"))
+    markers = (
+        "生成",
+        "创建",
+        "新建",
+        # Same-day DOUBLE-RUN asks route to a full-week regeneration so the LLM
+        # generator can place the requested second same-day session (the diff
+        # tools can only add strength or overwrite an existing session). Kept
+        # run-double specific so a generic "加一节力量" stays on the diff path.
+        "双跑",
+        "两练",
+        "早晚各",
+        "早晚双",
+        "一天两",
+        "两次跑",
+        "secondrun",
+        "doublerun",
+        "tworuns",
+    )
+    return any(marker in compact for marker in markers)
 
 
 def _create_proposal(
@@ -280,6 +298,7 @@ def _create_proposal(
     folder: str,
     *,
     existing_plan: Any | None = None,
+    user_request: str | None = None,
 ) -> WeeklyPlanCreateProposal:
     week_start = _week_start(folder)
     if week_start is None:
@@ -288,6 +307,7 @@ def _create_proposal(
         user_id=user_id,
         week_start=week_start,
         allow_existing=existing_plan is not None,
+        user_request=user_request,
     )
     explanation = (
         f"已生成 {week_start.isoformat()} 开始的一周训练计划，"
@@ -507,6 +527,7 @@ def make_weekly_plan_runner(
                     user_id,
                     folder,
                     existing_plan=existing,
+                    user_request=task.objective,
                 )
             except WeeklyPlanAlreadyExistsError:
                 # The week appeared between lookup and generation. Regenerate a
@@ -519,6 +540,7 @@ def make_weekly_plan_runner(
                         user_id,
                         folder,
                         existing_plan=existing,
+                        user_request=task.objective,
                     )
                 except (ValueError, OSError):
                     logger.exception(
