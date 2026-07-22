@@ -22,6 +22,7 @@ from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibration
 from stride_storage.sqlite.database import Database
 from stride_storage.sqlite.training_load import has_training_load_source
 
+from stride_server.bearer import reject_deleting_user
 from stride_server.sqlite_writer import try_user_sqlite_writer
 
 from .plan import require_internal_token
@@ -256,6 +257,7 @@ def internal_training_load_calibration_refresh(
     with try_user_sqlite_writer(user) as acquired:
         if not acquired:
             _raise_writer_busy()
+        reject_deleting_user(user)
         try:
             with Database(user=user) as db:
                 calibration = refresh_training_load_calibration(
@@ -290,6 +292,7 @@ def internal_training_load_backfill(
     with try_user_sqlite_writer(user) as acquired:
         if not acquired:
             _raise_writer_busy()
+        reject_deleting_user(user)
         try:
             with Database(user=user) as db:
                 if only_if_missing and db.is_training_load_backfill_complete(
@@ -375,6 +378,7 @@ def internal_training_load_backfill_step(
     with try_user_sqlite_writer(user) as acquired:
         if not acquired:
             _raise_writer_busy()
+        reject_deleting_user(user)
         try:
             with Database(user=user) as db:
                 completion = db.get_training_load_backfill_completion()

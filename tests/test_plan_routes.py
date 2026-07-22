@@ -10,7 +10,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from stride_storage.sqlite.database import Database
@@ -1162,6 +1162,41 @@ class TestInternalReparse:
         assert body["user"] == USER_UUID
         assert body["folder"] == WEEK
         assert body["structured_status"] == "fresh"
+
+    def test_rechecks_deletion_fence_inside_writer_lock(
+        self, app_client, monkeypatch,
+    ):
+        client, _, _, _, _ = app_client
+        import stride_server.routes.plan as plan_mod
+        import stride_server.sqlite_writer as writer
+
+        writer.reset_for_tests()
+        checks: list[str] = []
+
+        def reject_deleting_user(user: str) -> None:
+            checks.append(user)
+            with writer.try_user_sqlite_writer(user) as acquired:
+                assert acquired is False
+            raise HTTPException(status_code=410, detail="deleted")
+
+        def fail_plan_store(_user: str):
+            raise AssertionError("fenced user must be rejected before plan store opens")
+
+        monkeypatch.setattr(
+            plan_mod,
+            "reject_deleting_user",
+            reject_deleting_user,
+            raising=False,
+        )
+        monkeypatch.setattr(plan_mod, "get_plan_state_store", fail_plan_store)
+
+        resp = client.post(
+            f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
+            headers={"X-Internal-Token": INTERNAL_TOKEN},
+        )
+
+        assert resp.status_code == 410
+        assert checks == [USER_UUID]
 
     def test_internal_route_does_not_require_bearer(self, app_client, monkeypatch):
         """Internal route should ignore Authorization headers entirely — only the

@@ -227,6 +227,36 @@ def any_exists(
     )
 
 
+def delete_prefix(
+    relative_dir: str,
+    *,
+    config: ContentStorageConfig,
+    container_client: ContainerClientFactory,
+) -> int:
+    """Delete every configured Blob below ``relative_dir``.
+
+    Filesystem content remains owned by the account route's atomic directory
+    cleanup. Blob failures deliberately propagate so account deletion can stay
+    fenced and be retried instead of silently leaving user content behind.
+    """
+    blob_config = _blob_config_from_config(config)
+    if blob_config is None:
+        return 0
+
+    account_url, container = blob_config
+    client = container_client(account_url, container)
+    prefix = _blob_name(relative_dir, config).rstrip("/") + "/"
+    names = [blob.name for blob in client.list_blobs(name_starts_with=prefix)]
+    for name in names:
+        try:
+            client.delete_blob(name)
+        except Exception as exc:
+            if not _is_blob_not_found(exc):
+                raise
+    logger.info("content delete_prefix source=blob path=%s count=%d", relative_dir, len(names))
+    return len(names)
+
+
 def list_files_in_folder(
     relative_dir: str,
     *,

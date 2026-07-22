@@ -179,6 +179,31 @@ def current_user_id(payload: dict[str, Any]) -> str:
     return payload["sub"]
 
 
+def reject_deleting_user(user_id: str) -> None:
+    """Reject work for a user whose durable deletion fence exists."""
+    from stride_server.jobs import account_deletion
+
+    try:
+        deleting = account_deletion.is_deleting(user_id)
+    except Exception as exc:  # noqa: BLE001 — coordination-store boundary
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not verify account state; try again shortly.",
+        ) from exc
+    if deleting:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This account has been deleted.",
+        )
+
+
+def reject_deleting_account(
+    payload: dict[str, Any] = Depends(require_bearer),
+) -> None:
+    """Reject stale-token requests after a durable deletion fence is set."""
+    reject_deleting_user(current_user_id(payload))
+
+
 def verify_path_user(
     user: str,
     payload: dict[str, Any] = Depends(require_bearer),

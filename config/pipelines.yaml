@@ -11,8 +11,11 @@
 pipelines:
   onboarding:
     steps:
+      - name: health_sync
+        job_type: onboarding_health_sync
       - name: full_sync
         job_type: onboarding_full_sync
+        depends: [health_sync]
       - name: calibration
         job_type: onboarding_calibration
         depends: [full_sync]

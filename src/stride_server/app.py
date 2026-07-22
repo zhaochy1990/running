@@ -25,7 +25,12 @@ from stride_core.source import DataSource
 from stride_server.config import load_server_config
 from stride_server.config.models import ServerConfig
 
-from .bearer import load_public_key_from_config, require_bearer, verify_path_user
+from .bearer import (
+    load_public_key_from_config,
+    reject_deleting_account,
+    require_bearer,
+    verify_path_user,
+)
 from .deps import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
@@ -156,18 +161,20 @@ def create_app(
     # Public routes (no auth) — liveness probe, must stay open for Azure.
     app.include_router(public.router)
 
-    # Every other router sits behind require_bearer. Writes that previously
-    # had per-endpoint Depends(require_bearer) still work (dependency runs
-    # once per request regardless of where it's declared).
-    protected = [Depends(require_bearer)]
+    # Every user request also checks the durable account-deletion fence. The
+    # account DELETE route itself keeps plain Bearer auth so retries
+    # can finish cleanup after the fence has been created.
+    protected_auth = [Depends(require_bearer)]
+    protected = [Depends(reject_deleting_account)]
 
-    # Routers with /api/{user}/... paths also enforce that the path UUID
-    # matches the JWT sub claim (403 on mismatch). The users list and
-    # health/public routers are exempt — they don't have a {user} path param.
-    protected_user = [Depends(verify_path_user)]
+    # UUID-path routers additionally enforce path user == JWT subject.
+    protected_user = [
+        Depends(verify_path_user),
+        Depends(reject_deleting_account),
+    ]
 
     app.include_router(users.router, dependencies=protected)
-    app.include_router(account.router, dependencies=protected)
+    app.include_router(account.router, dependencies=protected_auth)
     app.include_router(profile.router, dependencies=protected)
     app.include_router(onboarding.router, dependencies=protected)
     app.include_router(training_goal.router, dependencies=protected)

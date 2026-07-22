@@ -39,3 +39,34 @@ def try_user_sqlite_writer(user: str) -> Iterator[bool]:
     finally:
         if acquired:
             lock.release()
+
+
+@contextmanager
+def hold_writer(user: str) -> Iterator[None]:
+    """Wait for and hold the user's in-process writer lock."""
+    lock = _lock_for(user)
+    lock.acquire()
+    try:
+        yield
+    finally:
+        lock.release()
+
+
+@contextmanager
+def acquire_writer_for_delete(
+    user: str, *, timeout_s: float,
+) -> Iterator[bool]:
+    """Wait at most ``timeout_s`` for writers before deleting user data."""
+    lock = _lock_for(user)
+    acquired = lock.acquire(timeout=timeout_s)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            lock.release()
+
+
+def reset_for_tests() -> None:
+    """Reset the lock registry after tests have released all locks."""
+    with _LOCKS_GUARD:
+        _USER_LOCKS.clear()

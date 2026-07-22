@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 
@@ -133,6 +134,128 @@ def test_internal_notification_upsert_requires_internal_token(app_client):
     )
 
     assert response.status_code == 401
+
+
+def test_internal_notification_upsert_rechecks_fence_inside_writer_lock(
+    app_client, monkeypatch,
+):
+    client, _private_pem = app_client
+    import stride_server.routes.notifications as route_mod
+    import stride_server.sqlite_writer as writer
+
+    writer.reset_for_tests()
+    checks: list[str] = []
+
+    def reject_deleting_user(user_id: str) -> None:
+        checks.append(user_id)
+        with writer.try_user_sqlite_writer(user_id) as acquired:
+            assert acquired is False
+        raise HTTPException(status_code=410, detail="deleted")
+
+    def fail_upsert(*_args, **_kwargs):
+        raise AssertionError("fenced user must be rejected before notification write")
+
+    monkeypatch.setattr(
+        route_mod,
+        "reject_deleting_user",
+        reject_deleting_user,
+        raising=False,
+    )
+    monkeypatch.setattr(route_mod.nstore, "upsert_notification", fail_upsert)
+
+    response = client.post(
+        "/internal/notifications",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+        json={
+            "user_id": USER_A,
+            "notification_id": "sync:onboarding",
+            "title": "正在同步数据",
+            "body": "正在同步健康数据",
+        },
+    )
+
+    assert response.status_code == 410
+    assert checks == [USER_A]
+
+
+def test_file_notifications_backend_deletes_all_user_data(app_client):
+    _client, _private_pem = app_client
+    from stride_server.notifications import store as nstore
+
+    for user_id in (USER_A, USER_B):
+        nstore.upsert_device(
+            user_id,
+            f"registration_{user_id[:8]}",
+            platform="android",
+            app_version="1.0",
+        )
+        nstore.update_prefs(user_id, plan_reminder_enabled=False)
+        nstore.mark_notification_read(user_id, "legacy-message")
+        nstore.upsert_notification(
+            user_id,
+            "sync:onboarding",
+            title="同步",
+            body="处理中",
+        )
+
+    assert nstore.delete_user(USER_A) == 4
+    assert nstore.list_device_ids(USER_A) == []
+    assert nstore.get_prefs(USER_A)["updated_at"] is None
+    assert nstore.get_read_notification_ids(USER_A) == []
+    assert nstore.list_notifications(USER_A) == []
+
+    assert len(nstore.list_device_ids(USER_B)) == 1
+    assert nstore.get_prefs(USER_B)["updated_at"] is not None
+    assert nstore.get_read_notification_ids(USER_B) == ["legacy-message"]
+    assert len(nstore.list_notifications(USER_B)) == 1
+
+
+def test_azure_notifications_backend_deletes_both_user_partitions():
+    from stride_storage.azure.notifications_backend import (
+        AzureTableNotificationsBackend,
+    )
+
+    class FakeTable:
+        def __init__(self, rows):
+            self.rows = [dict(row) for row in rows]
+
+        def query_entities(self, _query, *, parameters):
+            return [
+                dict(row)
+                for row in self.rows
+                if row["PartitionKey"] == parameters["pk"]
+            ]
+
+        def delete_entity(self, *, partition_key, row_key):
+            self.rows = [
+                row
+                for row in self.rows
+                if not (
+                    row["PartitionKey"] == partition_key
+                    and row["RowKey"] == row_key
+                )
+            ]
+
+    devices = FakeTable([
+        {"PartitionKey": USER_A, "RowKey": "device-a1"},
+        {"PartitionKey": USER_A, "RowKey": "device-a2"},
+        {"PartitionKey": USER_B, "RowKey": "device-b"},
+    ])
+    prefs = FakeTable([
+        {"PartitionKey": USER_A, "RowKey": "prefs"},
+        {"PartitionKey": USER_A, "RowKey": "notification-read-state"},
+        {"PartitionKey": USER_A, "RowKey": "notification:sync"},
+        {"PartitionKey": USER_B, "RowKey": "prefs"},
+    ])
+    backend = AzureTableNotificationsBackend.__new__(
+        AzureTableNotificationsBackend
+    )
+    backend._devices_conn = SimpleNamespace(table=lambda: devices)
+    backend._prefs_conn = SimpleNamespace(table=lambda: prefs)
+
+    assert backend.delete_user(USER_A) == 5
+    assert {row["PartitionKey"] for row in devices.rows} == {USER_B}
+    assert {row["PartitionKey"] for row in prefs.rows} == {USER_B}
 
 
 def test_internal_notification_upsert_persists_generic_item(app_client):

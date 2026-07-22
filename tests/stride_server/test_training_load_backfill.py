@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 
-from fastapi import FastAPI
+import pytest
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from stride_core.models import ActivityDetail, DailyHealth, TimeseriesPoint
@@ -424,6 +425,67 @@ def test_backfill_step_skips_when_completion_marker_exists(tmp_path, monkeypatch
     assert body["skipped"] is True
     assert body["reason"] == "backfill_already_complete"
     assert body["algorithm_version"] == TRAINING_LOAD_MODEL_VERSION
+
+
+@pytest.mark.parametrize(
+    ("path", "request_kwargs"),
+    [
+        (
+            "/internal/training-load/calibration/refresh",
+            {"params": {"user": USER_UUID}},
+        ),
+        (
+            "/internal/training-load/backfill",
+            {"params": {"user": USER_UUID}},
+        ),
+        (
+            "/internal/training-load/backfill/step",
+            {"json": {"user": USER_UUID}},
+        ),
+    ],
+)
+def test_internal_training_load_writers_recheck_deletion_fence_inside_lock(
+    path, request_kwargs, monkeypatch,
+):
+    import stride_server.routes.training_load as route_mod
+    import stride_server.sqlite_writer as writer
+
+    from stride_server.config import clear_server_config_cache
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+    clear_server_config_cache()
+    writer.reset_for_tests()
+    checks: list[str] = []
+
+    def reject_deleting_user(user: str) -> None:
+        checks.append(user)
+        with writer.try_user_sqlite_writer(user) as acquired:
+            assert acquired is False
+        raise HTTPException(status_code=410, detail="deleted")
+
+    def fail_database(*_args, **_kwargs):
+        raise AssertionError("fenced user must be rejected before Database opens")
+
+    monkeypatch.setattr(
+        route_mod,
+        "reject_deleting_user",
+        reject_deleting_user,
+        raising=False,
+    )
+    monkeypatch.setattr(route_mod, "Database", fail_database)
+
+    app = FastAPI()
+    app.include_router(route_mod.internal_router)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post(
+        path,
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+        **request_kwargs,
+    )
+
+    assert response.status_code == 410
+    assert checks == [USER_UUID]
 
 
 def test_internal_training_load_routes_reject_non_uuid_user(tmp_path, monkeypatch):

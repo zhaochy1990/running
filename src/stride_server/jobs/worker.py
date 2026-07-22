@@ -39,6 +39,7 @@ from stride_storage.interfaces.jobs import (
     QueueStorageConfig,
 )
 
+from .cancellation import CancellationCheckUnavailable, JobCancelled
 from .registry import get_handler
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,8 @@ class JobWorker:
         config: QueueStorageConfig,
         on_completed: "Callable[[JobRecord], None] | None" = None,
         on_failed: "Callable[[JobRecord], None] | None" = None,
+        is_cancelled: "Callable[[JobRecord], bool] | None" = None,
+        on_cancelled: "Callable[[JobRecord], None] | None" = None,
     ) -> None:
         self._store = store
         self._queue = queue
@@ -68,6 +71,14 @@ class JobWorker:
         # itself has no pipeline dependency.
         self._on_completed = on_completed
         self._on_failed = on_failed
+        # Cancellation seam (injected by build_worker with the account-deletion
+        # fence + orchestrator cancel hook). Both default None so the generic
+        # infra — and the existing test suite — behave exactly as before.
+        # ``is_cancelled`` tells the worker a job's owner is being deleted;
+        # ``on_cancelled`` cancels the owning pipeline run. Kept optional so the
+        # worker itself has no coupling to the deletion coordinator.
+        self._is_cancelled = is_cancelled
+        self._on_cancelled = on_cancelled
 
     def _fire(self, hook: "Callable[[JobRecord], None] | None", job: JobRecord) -> bool:
         """Invoke a lifecycle hook. Returns True on success (or no hook).
@@ -102,6 +113,46 @@ class JobWorker:
             return
         self._queue.delete(msg)
 
+    def _is_job_cancelled(self, job: JobRecord) -> bool:
+        """Read the cancellation fence without ever failing open."""
+        if self._is_cancelled is None:
+            return False
+        try:
+            return bool(self._is_cancelled(job))
+        except Exception as exc:  # noqa: BLE001 — predicate boundary
+            logger.warning("job %s: cancel predicate failed", job.job_id, exc_info=True)
+            raise CancellationCheckUnavailable from exc
+
+    def _defer_for_cancellation_check(self, job: JobRecord) -> None:
+        """Leave the message leased for retry without running the handler."""
+        self._store.update(
+            job.job_id,
+            job.partition_key,
+            status=JobStatus.QUEUED,
+            heartbeat_at=_now_iso(),
+        )
+
+    def _finalize_cancelled(self, job: JobRecord, msg: QueueMessage) -> None:
+        """Take a job to terminal CANCELLED: fire the cancel hook, then ack.
+
+        Same ordering as the DONE/FAILED paths — advance the pipeline (mark the
+        run CANCELLED) BEFORE acking, so a hook failure leaves the message for
+        re-delivery instead of dropping the cancel signal. No poison, no retry.
+        """
+        cancelled = self._store.update(
+            job.job_id, job.partition_key,
+            status=JobStatus.CANCELLED,
+            completed_at=_now_iso(),
+            heartbeat_at=_now_iso(),
+        )
+        if not self._fire(self._on_cancelled, cancelled):
+            logger.warning(
+                "job %s: cancel hook failed; leaving message for re-delivery",
+                job.job_id,
+            )
+            return
+        self._queue.delete(msg)
+
     def process_once(self, *, max_messages: int = 1) -> int:
         """Receive and process up to ``max_messages``. Returns the count handled."""
         msgs = self._queue.receive(
@@ -117,6 +168,17 @@ class JobWorker:
             # Orphan message (state row gone) — drop it so it can't loop forever.
             logger.warning("job worker: no state row for %s/%s, dropping", msg.partition_key, msg.job_id)
             self._queue.delete(msg)
+            return
+
+        if job.status is JobStatus.CANCELLED:
+            self._finalize_cancelled(job, msg)
+            return
+        if job.status is JobStatus.DONE:
+            if self._fire(self._on_completed, job):
+                self._queue.delete(msg)
+            return
+        if job.status is JobStatus.FAILED:
+            self._finalize_failed(job, msg)
             return
 
         if msg.dequeue_count > self._config.poison_max_attempts:
@@ -138,6 +200,18 @@ class JobWorker:
             self._finalize_failed(failed, msg)
             return
 
+        # Cancellation fence — check BEFORE marking RUNNING so a fenced job never
+        # touches its handler (which would write the user's coros.db while the
+        # API is deleting it). If the fence store is unavailable, leave the
+        # message for retry rather than guessing that it is safe to write.
+        try:
+            if self._is_job_cancelled(job):
+                self._finalize_cancelled(job, msg)
+                return
+        except CancellationCheckUnavailable:
+            self._defer_for_cancellation_check(job)
+            return
+
         self._store.update(
             job.job_id, job.partition_key,
             status=JobStatus.RUNNING,
@@ -145,12 +219,29 @@ class JobWorker:
             heartbeat_at=_now_iso(),
         )
 
+        # Re-check after writing RUNNING to close the TOCTOU window: the fence
+        # may have landed between the pre-check and this write, and a RUNNING job
+        # is exactly what the API's wait loop blocks on.
+        try:
+            if self._is_job_cancelled(job):
+                self._finalize_cancelled(job, msg)
+                return
+        except CancellationCheckUnavailable:
+            self._defer_for_cancellation_check(job)
+            return
+
         # Mutable holder for the in-flight message so heartbeat can renew the
         # lease and rotate the receipt (Azure returns a fresh pop_receipt on
         # extend); the final delete must use the latest receipt.
         current = {"msg": msg}
 
         def heartbeat(*, stage: str | None = None, progress_pct: int | None = None) -> None:
+            # A fence that lands mid-handler surfaces here: every heartbeat
+            # re-checks and raises JobCancelled so a long-running handler
+            # (e.g. onboarding full_sync) aborts promptly instead of running to
+            # completion against a directory the API is deleting.
+            if self._is_job_cancelled(job):
+                raise JobCancelled(f"job {job.job_id} cancelled mid-flight")
             fields: dict[str, Any] = {"heartbeat_at": _now_iso()}
             if stage is not None:
                 fields["stage"] = stage
@@ -169,6 +260,20 @@ class JobWorker:
 
         try:
             result = handler(job, heartbeat=heartbeat)
+        except CancellationCheckUnavailable:
+            logger.warning(
+                "job %s (%s) paused because cancellation state is unavailable",
+                job.job_id,
+                job.job_type,
+            )
+            self._defer_for_cancellation_check(job)
+            return
+        except JobCancelled:
+            # Cooperative cancellation (fence landed mid-handler) — terminal, not
+            # a failure: no retry, no poison, no failure notification.
+            logger.info("job %s (%s) cancelled mid-flight", job.job_id, job.job_type)
+            self._finalize_cancelled(job, current["msg"])
+            return
         except Exception as exc:  # noqa: BLE001 — job boundary
             logger.exception("job %s (%s) failed", job.job_id, job.job_type)
             self._on_handler_error(job, current["msg"], exc)

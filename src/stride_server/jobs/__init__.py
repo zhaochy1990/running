@@ -12,7 +12,7 @@ from functools import lru_cache
 from typing import Any
 
 from stride_storage.interfaces.config import ConfigError, QueueStorageConfig
-from stride_storage.interfaces.jobs import GLOBAL_PARTITION
+from stride_storage.interfaces.jobs import GLOBAL_PARTITION, JobRecord
 from stride_storage.jobs import JobClient, job_store_from_config, queue_from_config
 from stride_storage.jobs.pipeline_store import pipeline_run_store_from_config
 
@@ -89,9 +89,14 @@ def build_worker() -> JobWorker:
     step job advances (or fails) its pipeline run. The worker infra itself stays
     generic — the hooks are the only coupling to the pipeline layer.
     """
-    from .orchestrator import on_job_completed, on_job_failed
+    from .orchestrator import on_job_cancelled, on_job_completed, on_job_failed
+    from .account_deletion import is_deleting
 
     config = jobs_config()
+
+    def _is_cancelled(job: JobRecord) -> bool:
+        return is_deleting(job.partition_key)
+
     return JobWorker(
         store=job_store_from_config(config),
         queue=queue_from_config(config),
@@ -99,6 +104,8 @@ def build_worker() -> JobWorker:
         config=config,
         on_completed=on_job_completed,
         on_failed=on_job_failed,
+        is_cancelled=_is_cancelled,
+        on_cancelled=on_job_cancelled,
     )
 
 

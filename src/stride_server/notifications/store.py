@@ -126,6 +126,12 @@ def upsert_device(
     _get_backend().upsert_device(entity)
 
 
+def delete_user(user_id: str) -> int:
+    """Delete every device, preference, read-state, and inbox row for a user."""
+    _validate_user_id(user_id)
+    return _get_backend().delete_user(user_id)
+
+
 def delete_device(user_id: str, registration_id: str) -> bool:
     _validate_user_id(user_id)
     _validate_registration_id(registration_id)

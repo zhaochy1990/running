@@ -132,6 +132,42 @@ def test_publish_swallows_store_errors(monkeypatch):
     N.publish_complete("u1")
 
 
+def test_publish_skips_user_with_deletion_fence(monkeypatch):
+    import stride_server.notifications.store as nstore
+
+    writes = []
+    monkeypatch.setattr(N, "_is_deleting", lambda _user_id: True)
+    monkeypatch.setattr(
+        nstore,
+        "upsert_notification",
+        lambda *args, **kwargs: writes.append((args, kwargs)),
+    )
+
+    N.publish_complete("u1")
+
+    assert writes == []
+
+
+def test_publish_purges_when_fence_lands_during_write(monkeypatch):
+    import stride_server.notifications.store as nstore
+
+    checks = iter((False, True))
+    writes = []
+    purged = []
+    monkeypatch.setattr(N, "_is_deleting", lambda _user_id: next(checks))
+    monkeypatch.setattr(
+        nstore,
+        "upsert_notification",
+        lambda *args, **kwargs: writes.append((args, kwargs)) or {},
+    )
+    monkeypatch.setattr(nstore, "delete_user", lambda user_id: purged.append(user_id) or 1)
+
+    N.publish_complete("u1")
+
+    assert len(writes) == 1
+    assert purged == ["u1"]
+
+
 # ── handler _progress → publish_syncing ────────────────────────────────────
 
 

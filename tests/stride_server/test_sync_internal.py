@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from stride_core.source import ProviderInfo, SyncResult
@@ -54,7 +54,8 @@ def _build_app(monkeypatch, source: FakeSource | None = None) -> FastAPI:
     import stride_server.routes.sync as sync_mod
     from stride_server.config import clear_server_config_cache
 
-    # No-op post-sync hook so tests don't touch DB / external services.
+    # No-op storage boundaries so tests don't touch persistent job state / DB.
+    monkeypatch.setattr(sync_mod, "reject_deleting_user", lambda _user: None)
     monkeypatch.setattr(sync_mod, "run_post_sync_for_result", lambda **kw: None)
     clear_server_config_cache()
 
@@ -142,6 +143,59 @@ def test_full_flag_forwarded_to_sync_user(monkeypatch):
 
     assert resp.status_code == 200, resp.text
     assert calls == [(USER_UUID, True)]
+
+
+def test_deleted_user_returns_410_without_syncing(monkeypatch):
+    import stride_server.routes.sync as sync_mod
+
+    source = FakeSource()
+    app = _build_app(monkeypatch, source=source)
+    monkeypatch.setattr(
+        sync_mod,
+        "reject_deleting_user",
+        lambda _user: (_ for _ in ()).throw(
+            HTTPException(status_code=410, detail="deleted")
+        ),
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.post(
+        f"/internal/sync?user={USER_UUID}",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    assert resp.status_code == 410
+
+
+def test_deletion_fence_is_rechecked_after_writer_lock(monkeypatch):
+    import stride_server.routes.sync as sync_mod
+
+    sync_calls: list[tuple[str, bool]] = []
+    fence_checks: list[str] = []
+
+    class RecordingSource(FakeSource):
+        def sync_user(self, user: str, full: bool = False) -> SyncResult:
+            sync_calls.append((user, full))
+            return SyncResult(activities=1, health=1)
+
+    app = _build_app(monkeypatch, source=RecordingSource())
+
+    def reject_on_second_check(user: str) -> None:
+        fence_checks.append(user)
+        if len(fence_checks) == 2:
+            raise HTTPException(status_code=410, detail="deleted")
+
+    monkeypatch.setattr(sync_mod, "reject_deleting_user", reject_on_second_check)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.post(
+        f"/internal/sync?user={USER_UUID}",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    assert resp.status_code == 410
+    assert fence_checks == [USER_UUID, USER_UUID]
+    assert sync_calls == []
 
 
 def test_writer_busy_returns_retryable_503(monkeypatch):

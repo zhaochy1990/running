@@ -51,6 +51,12 @@ def reset_throttle(user_id: str | None = None) -> None:
             _last_pct.pop(user_id, None)
 
 
+def _is_deleting(user_id: str) -> bool:
+    from stride_server.jobs import account_deletion
+
+    return account_deletion.is_deleting(user_id)
+
+
 def _publish(
     user_id: str,
     *,
@@ -59,10 +65,12 @@ def _publish(
     progress_pct: int,
     state: str,
 ) -> None:
-    """Upsert the single onboarding notification row. Best-effort."""
+    """Upsert progress unless account deletion has fenced the user."""
     from stride_server.notifications import store as nstore
 
     try:
+        if _is_deleting(user_id):
+            return
         nstore.upsert_notification(
             user_id,
             ONBOARDING_NOTIFICATION_ID,
@@ -73,6 +81,11 @@ def _publish(
             progress_pct=progress_pct,
             metadata={"type": "onboarding_sync", "state": state},
         )
+        # Account deletion may land between the first check and the Table write.
+        # Purge the whole partition so this best-effort progress update cannot
+        # survive after the account's canonical cleanup.
+        if _is_deleting(user_id):
+            nstore.delete_user(user_id)
     except Exception:  # noqa: BLE001 — notifications must never break the pipeline
         logger.warning("onboarding notification publish failed for %s", user_id, exc_info=True)
 

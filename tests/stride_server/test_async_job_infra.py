@@ -286,6 +286,189 @@ def test_worker_flaky_handler_succeeds_and_clears_error(store, queue):
     assert queue.depth() == 0
 
 
+def test_worker_cancels_queued_message_before_handler_runs(store, queue):
+    """A queued job whose owner is fenced must never reach its handler: the
+    worker marks it CANCELLED, acks the message, and does not poison it."""
+    ran = {"n": 0}
+
+    @job_handler("cancelme")
+    def _h(job, *, heartbeat):
+        ran["n"] += 1
+        return {"ok": True}
+
+    client = JobClient(store, queue)
+    jid = client.enqueue(partition_key="u1", job_type="cancelme")
+    poison = InMemoryJobQueue()
+    config = QueueStorageConfig(visibility_timeout_s=0, poison_max_attempts=3)
+    worker = JobWorker(
+        store=store, queue=queue, poison_queue=poison, config=config,
+        is_cancelled=lambda job: True,
+    )
+    worker.process_once(max_messages=5)
+
+    assert ran["n"] == 0  # handler never invoked
+    assert store.get("u1", jid).status is JobStatus.CANCELLED
+    assert queue.depth() == 0  # acked
+    assert poison.depth() == 0  # NOT poisoned
+
+
+def test_worker_never_restarts_already_cancelled_message(store, queue):
+    """A redelivered CANCELLED row is terminal even if the fence read fails."""
+    ran = {"n": 0}
+
+    @job_handler("cancelled")
+    def _h(job, *, heartbeat):
+        ran["n"] += 1
+        return {"ok": True}
+
+    client = JobClient(store, queue)
+    jid = client.enqueue(partition_key="u1", job_type="cancelled")
+    store.update(jid, "u1", status=JobStatus.CANCELLED)
+    poison = InMemoryJobQueue()
+
+    def unavailable(_job):
+        raise RuntimeError("pipeline store unavailable")
+
+    worker = JobWorker(
+        store=store,
+        queue=queue,
+        poison_queue=poison,
+        config=QueueStorageConfig(visibility_timeout_s=0, poison_max_attempts=3),
+        is_cancelled=unavailable,
+    )
+    worker.process_once(max_messages=5)
+
+    assert ran["n"] == 0
+    assert store.get("u1", jid).status is JobStatus.CANCELLED
+    assert queue.depth() == 0
+    assert poison.depth() == 0
+
+
+def test_worker_defers_job_when_cancel_check_is_unavailable(store, queue):
+    """An unknown fence state must never fail open and run a user-scoped job."""
+    ran = {"n": 0}
+
+    @job_handler("deferred")
+    def _h(job, *, heartbeat):
+        ran["n"] += 1
+        return {"ok": True}
+
+    client = JobClient(store, queue)
+    jid = client.enqueue(partition_key="u1", job_type="deferred")
+    poison = InMemoryJobQueue()
+
+    def unavailable(_job):
+        raise RuntimeError("pipeline store unavailable")
+
+    worker = JobWorker(
+        store=store,
+        queue=queue,
+        poison_queue=poison,
+        config=QueueStorageConfig(visibility_timeout_s=0, poison_max_attempts=3),
+        is_cancelled=unavailable,
+    )
+    worker.process_once(max_messages=5)
+
+    assert ran["n"] == 0
+    assert store.get("u1", jid).status is JobStatus.QUEUED
+    assert queue.depth() == 1
+    assert poison.depth() == 0
+
+
+def test_worker_cancels_after_running_when_fence_appears_mid_flight(store, queue):
+    """Fence appears after the job is marked RUNNING (TOCTOU window): the worker
+    re-checks and cancels rather than running the handler; on_cancelled fires."""
+    ran = {"n": 0}
+    fence = {"on": False}
+
+    @job_handler("racy")
+    def _h(job, *, heartbeat):
+        ran["n"] += 1
+        return {"ok": True}
+
+    def is_cancelled(job):
+        # Not cancelled at the pre-handler check, but yes at the post-RUNNING
+        # re-check — simulates the fence landing in the TOCTOU window.
+        if not fence["on"]:
+            fence["on"] = True
+            return False
+        return True
+
+    cancelled_hook: list[str] = []
+    client = JobClient(store, queue)
+    jid = client.enqueue(partition_key="u1", job_type="racy")
+    poison = InMemoryJobQueue()
+    config = QueueStorageConfig(visibility_timeout_s=0, poison_max_attempts=3)
+    worker = JobWorker(
+        store=store, queue=queue, poison_queue=poison, config=config,
+        is_cancelled=is_cancelled,
+        on_cancelled=lambda job: cancelled_hook.append(job.job_id),
+    )
+    worker.process_once(max_messages=5)
+
+    assert ran["n"] == 0
+    assert store.get("u1", jid).status is JobStatus.CANCELLED
+    assert cancelled_hook == [jid]
+    assert queue.depth() == 0
+    assert poison.depth() == 0
+
+
+def test_worker_leaves_message_when_cancel_hook_fails(store, queue):
+    """If the on_cancelled hook fails, the message is left for re-delivery so the
+    cancellation finalization can retry (mirrors the completion-hook contract)."""
+    @job_handler("cancelme")
+    def _h(job, *, heartbeat):
+        return {"ok": True}
+
+    client = JobClient(store, queue)
+    client.enqueue(partition_key="u1", job_type="cancelme")
+    poison = InMemoryJobQueue()
+    config = QueueStorageConfig(visibility_timeout_s=300, poison_max_attempts=3)
+
+    def boom(_job):
+        raise RuntimeError("transient cancel-hook error")
+
+    worker = JobWorker(
+        store=store, queue=queue, poison_queue=poison, config=config,
+        is_cancelled=lambda job: True,
+        on_cancelled=boom,
+    )
+    worker.process_once(max_messages=5)
+
+    assert queue.depth() == 1  # left for re-delivery
+    assert poison.depth() == 0
+
+
+def test_worker_heartbeat_cancels_running_handler(store, queue):
+    """A long handler that heartbeats after the fence lands gets JobCancelled
+    raised from within heartbeat; the worker finalizes it CANCELLED."""
+    from stride_server.jobs.cancellation import JobCancelled
+
+    fence = {"on": False}
+
+    @job_handler("longjob")
+    def _h(job, *, heartbeat):
+        # First heartbeat is fine; then the fence lands and the next raises.
+        heartbeat(stage="a", progress_pct=10)
+        fence["on"] = True
+        heartbeat(stage="b", progress_pct=20)  # should raise JobCancelled
+        return {"ok": True}
+
+    client = JobClient(store, queue)
+    jid = client.enqueue(partition_key="u1", job_type="longjob")
+    poison = InMemoryJobQueue()
+    config = QueueStorageConfig(visibility_timeout_s=0, poison_max_attempts=3)
+    worker = JobWorker(
+        store=store, queue=queue, poison_queue=poison, config=config,
+        is_cancelled=lambda job: fence["on"],
+    )
+    worker.process_once(max_messages=5)
+
+    assert store.get("u1", jid).status is JobStatus.CANCELLED
+    assert queue.depth() == 0
+    assert poison.depth() == 0
+
+
 def test_registry_rejects_duplicate():
     @job_handler("dup")
     def _a(job, *, heartbeat):

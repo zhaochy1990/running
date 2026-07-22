@@ -19,7 +19,7 @@ from stride_core.post_sync import run_post_sync_for_result
 from stride_core.registry import ProviderRegistry, UnknownProvider
 from stride_core.source import DataSource
 
-from ..bearer import require_bearer
+from ..bearer import reject_deleting_user, require_bearer
 from ..deps import get_source_for_user
 from ..sqlite_writer import (
     invalidate_training_load_backfill_progress,
@@ -52,6 +52,11 @@ def _run_sync(user: str, full: bool, source: DataSource) -> dict:
     with try_user_sqlite_writer(user) as acquired:
         if not acquired:
             raise _SQLiteWriterBusy(_WRITER_BUSY_MESSAGE)
+        # Re-check inside the same per-user lock account deletion acquires.
+        # A request may have passed its route-level fence check just before
+        # DELETE set the durable fence; without this check it could acquire the
+        # released lock after cleanup and recreate coros.db.
+        reject_deleting_user(user)
         try:
             if not source.is_logged_in(user):
                 return {
@@ -134,6 +139,7 @@ def internal_trigger_sync(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="user must be a UUID4",
         )
+    reject_deleting_user(user)
     registry: ProviderRegistry = request.app.state.registry
     try:
         source: DataSource = registry.for_user(user)
