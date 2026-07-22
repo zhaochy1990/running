@@ -134,6 +134,7 @@ def test_generator_uses_active_master_week_target_and_passes_week_rules(
 
 def test_recent_actual_volume_floors_stale_low_master_target(monkeypatch) -> None:
     """A normal week must not drop from a stable 120km baseline to 71km."""
+    monkeypatch.setattr(generator, "today_shanghai", lambda: date(2026, 7, 13))
     monkeypatch.setattr(
         "stride_server.master_plan_store.get_master_plan_store",
         lambda: SimpleNamespace(
@@ -162,6 +163,7 @@ def test_recent_actual_volume_floors_stale_low_master_target(monkeypatch) -> Non
 def test_current_stride_model_load_ratio_reduces_overloaded_week(
     monkeypatch,
 ) -> None:
+    monkeypatch.setattr(generator, "today_shanghai", lambda: date(2026, 7, 13))
     monkeypatch.setattr(
         "stride_server.master_plan_store.get_master_plan_store",
         lambda: SimpleNamespace(
@@ -190,6 +192,7 @@ def test_current_stride_model_load_ratio_reduces_overloaded_week(
 def test_recovery_week_allows_controlled_deload_from_actual_baseline(
     monkeypatch,
 ) -> None:
+    monkeypatch.setattr(generator, "today_shanghai", lambda: date(2026, 7, 13))
     monkeypatch.setattr(
         "stride_server.master_plan_store.get_master_plan_store",
         lambda: SimpleNamespace(
