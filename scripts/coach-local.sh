@@ -55,6 +55,7 @@
 # ------------
 # AGENT_MAESTRO_API_KEY=...             覆盖 Agent Maestro bearer 占位值
 # COPILOT_PROXY_API_KEY=...              覆盖已保存的 Copilot proxy API key
+# STRIDE_COACH_DEBUG=1                   给 coach 传 -v，打印编排 trace（各阶段耗时）
 # COPILOT_PROXY_PORT=44141               覆盖本地 Copilot proxy 端口
 # COPILOT_PROXY_STATE_DIR=...            覆盖 Copilot 持久状态目录
 # COPILOT_PROXY_CACHE_DIR=...            覆盖 Copilot npm cache 目录
@@ -112,6 +113,7 @@ Optional environment variables:
   STRIDE_COACH_DATA_DIR     Local data directory (default: main checkout/data)
   STRIDE_COACH_PYTHON       Python executable (default: main checkout .venv)
   STRIDE_COACH_SKIP_SYNC=1  Skip the pre-Coach COROS sync
+  STRIDE_COACH_DEBUG=1      Pass -v to Coach for orchestration trace logging
 EOF
 }
 
@@ -510,6 +512,9 @@ cmd_coach() {
     -P "$profile"
     --data-dir "$data_dir"
   )
+  if [[ "${STRIDE_COACH_DEBUG:-0}" == "1" ]]; then
+    args+=(-v)
+  fi
   if [[ $# -gt 0 ]]; then
     args+=(--message "$*")
   fi
