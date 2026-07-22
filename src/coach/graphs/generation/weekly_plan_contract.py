@@ -70,11 +70,13 @@ WEEKLY_PLAN_FIELDS_CONTRACT = """\
   "notes_md": "<本周整体说明 markdown，可选>"
 }
 
-PlannedSession（每个训练日一条；同日双练用 session_index 0/1 区分）：
+PlannedSession（**默认每个训练日只排 1 节**，同一天最多 1 条 session；仅当下方注入的
+用户请求明确要求"某天两练/早晚双跑/加一节"时，才为那一天额外排第 2 条 session，
+用 session_index 0/1 区分。不要在用户没要求时自作主张排双练）：
 {
   "schema": "plan-session/v1",
   "date": "YYYY-MM-DD",            // ISO 日期，必填
-  "session_index": 0,               // 同日第一节为 0，依次递增
+  "session_index": 0,               // 当天第一节为 0；同日第二节才用 1（仅用户要求双练时）
   "kind": "run|strength|rest|cross|note",
   "summary": "<简短用户可见标签，如 '专项长跑 32km（后 16km @ MP）'>",
   "spec": null,                     // 【硬约束】本阶段课程为 aspirational，spec 必须为 null（不推手表结构化课）
@@ -102,6 +104,9 @@ PlannedNutrition（每个有营养安排的日期一条；本周营养以 nutrit
 }
 
 【单周硬约束】
+- **每天默认 1 节训练**：同一 `date` 默认只有一条 session。只有当注入的用户请求明确要求
+  某天双练（早晚双跑 / 两练 / 再加一节）时，才在该天排第 2 条 session（session_index=1），
+  其余天保持每天 1 节。绝不在无请求时把一天拆成两节。
 - 所有 session 的 `spec` 必须为 `null`（aspirational 计划，不生成可推手表的结构化课）。
 - 跑步日的配速/心率/组数写进 `summary` / `notes_md` 文字，**用下方注入的 pace_targets**，
   绝不自行编配速；里程在每周 volume_targets 预算内分配。

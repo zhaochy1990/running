@@ -32,6 +32,24 @@ from stride_server.coach_adapters.orchestrator.weekly_plan import (
 _FOLDER = "2026-06-22_06-28(W8)"
 
 
+def test_requests_generation_routes_regen_and_double_run() -> None:
+    # Explicit generation + same-day double-run asks route to the full-week
+    # (regenerate/replace) proposal path so the LLM generator can place the
+    # requested second same-day session.
+    assert wp._requests_generation("生成下周计划")
+    assert wp._requests_generation("重新生成本周训练计划")
+    assert wp._requests_generation("周三想早晚两练，加一节轻松跑")
+    assert wp._requests_generation("周三双跑，下午再加 5K")
+    assert wp._requests_generation("please add a second run on Wednesday")
+
+    # Surgical single-op adjustments (incl. a generic strength add) stay on the
+    # diff-tool path — NOT a full-week regenerate.
+    assert not wp._requests_generation("周五加一节力量")
+    assert not wp._requests_generation("把周三的课挪到周四")
+    assert not wp._requests_generation("本周整体减量 20%")
+    assert not wp._requests_generation("不要重新生成，只微调周三")
+
+
 @pytest.fixture(autouse=True)
 def _existing_week_by_default(monkeypatch):
     """Legacy adjustment tests operate on an existing canonical week."""
