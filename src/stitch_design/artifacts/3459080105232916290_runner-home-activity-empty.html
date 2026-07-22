@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+
+<html lang="zh"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>STRIDE - Runner Home</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;family=Newsreader:ital,wght@1,400;1,500&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                "primary": "#1FAD5B",
+                "on-surface": "#171717",
+                "surface": "#FFFFFF",
+                "background": "#FFFFFF",
+                "text-muted": "#737373",
+                "border-subtle": "#E5E5E5",
+                "outline": "#D4D4D4"
+              },
+              "fontFamily": {
+                "sans": ["Geist", "Inter", "sans-serif"],
+                "mono": ["Geist Mono", "monospace"],
+                "serif": ["Newsreader", "serif"]
+              },
+              "boxShadow": {
+                "thin": "0 0 0 1px rgba(0,0,0,0.05)"
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        body {
+            max-width: 390px;
+            margin: 0 auto;
+            background-color: #FFFFFF;
+            font-family: 'Geist', sans-serif;
+            color: #171717;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen pb-20">
+<!-- Top Bar -->
+<header class="sticky top-0 z-50 border-b border-border-subtle h-[56px] px-4 flex items-center justify-between bg-white">
+<button class="w-12 h-12 flex items-center justify-start">
+<span class="material-symbols-outlined text-on-surface">menu</span>
+</button>
+<div class="font-bold tracking-tighter text-xl text-primary">STRIDE</div>
+<button class="w-12 h-12 flex items-center justify-end">
+<span class="material-symbols-outlined text-on-surface">sync</span>
+</button>
+</header>
+<main class="px-4 py-6 space-y-8">
+<!-- Sync Status & Greeting -->
+<section class="space-y-4">
+<div class="flex justify-between items-center">
+<h1 class="text-2xl font-bold">早上好，朝毅</h1>
+<div class="flex items-center gap-1 text-[11px] font-mono text-text-muted bg-neutral-50 px-2 py-0.5 rounded border border-border-subtle">
+<span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span>
+                08:12 已同步
+            </div>
+</div>
+<div class="flex justify-between items-baseline border-b border-neutral-100 pb-2">
+<span class="text-sm font-mono text-text-muted tracking-tight">7月14日 周二</span>
+</div>
+</section>
+<!-- Decision Header & Evidence -->
+<section class="space-y-4">
+<div class="text-lg font-semibold text-primary leading-tight">
+            恢复正常，可以按计划完成节奏跑
+        </div>
+<div class="grid grid-cols-1 gap-2 py-2 border-y border-neutral-100">
+<div class="flex justify-between items-center font-mono text-[12px]">
+<span class="text-text-muted">HRV</span>
+<span>52 ms <span class="text-primary">(较基线 +4%)</span></span>
+</div>
+<div class="flex justify-between items-center font-mono text-[12px]">
+<span class="text-text-muted">静息心率</span>
+<span>48 bpm <span class="text-primary">(正常)</span></span>
+</div>
+<div class="flex justify-between items-center font-mono text-[12px]">
+<span class="text-text-muted">当前状态</span>
+<span>-8% <span class="text-amber-600">(维持区)</span></span>
+</div>
+</div>
+</section>
+<!-- Activity Section (Moved Up & Updated to Zero-State) -->
+<section class="space-y-1"><div class="flex justify-between items-center border-b border-neutral-100 pb-2">
+<span class="text-[11px] font-semibold uppercase tracking-wider text-text-muted">今日活动</span>
+<button class="text-[11px] font-semibold text-primary underline underline-offset-4">全部活动</button>
+</div>
+<div class="flex items-center h-12">
+<p class="text-sm font-medium text-text-muted">今天暂无活动</p>
+</div></section>
+<!-- Weekly Training Module (Moved Down) -->
+<section class="space-y-4">
+<div class="flex flex-col gap-4">
+<div class="flex justify-between items-end">
+<div class="space-y-1">
+<div class="flex items-center gap-2"><h3 class="text-[11px] font-semibold uppercase tracking-wider text-text-muted">今日训练</h3><span class="bg-primary/10 text-primary text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">关键课</span></div>
+</div>
+</div>
+</div>
+<div class="space-y-4">
+<div class="space-y-1">
+<h2 class="text-xl font-bold">节奏跑 · 8 km</h2>
+<div class="text-sm text-text-muted font-medium">18:30 · 约 48 min</div>
+</div>
+<div class="flex gap-4 py-2">
+<div class="flex-1">
+<span class="text-[10px] text-text-muted block uppercase">配速</span>
+<span class="font-mono font-semibold">5:15–5:25 <span class="text-[10px] text-text-muted">/km</span></span>
+</div>
+<div class="w-px bg-border-subtle"></div>
+<div class="flex-1">
+<span class="text-[10px] text-text-muted block uppercase">心率</span>
+<span class="font-mono font-semibold">Z3 · 150–162 <span class="text-[10px] text-text-muted">bpm</span></span>
+</div>
+</div>
+<p class="font-serif italic text-sm text-text-muted leading-relaxed">“安排在今晚：恢复正常，且距周日长跑超过 72 小时。”</p>
+<div class="pt-2 space-y-1">
+<button class="w-full bg-primary text-white h-12 rounded font-bold text-sm shadow-sm active:scale-[0.98] transition-all">查看训练详情</button>
+<button class="w-full h-12 flex items-center justify-center text-sm font-medium text-text-muted active:bg-neutral-50 transition-all">调整今天安排</button></div>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation -->
+<nav class="fixed bottom-0 left-0 right-0 max-w-[390px] mx-auto bg-white border-t border-border-subtle h-[64px] px-6 flex justify-between items-center z-50">
+<button class="flex flex-col items-center gap-1 text-primary h-full justify-center">
+<span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 1;">directions_run</span>
+<span class="text-[10px] font-bold">跑者</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-text-muted h-full justify-center">
+<span class="material-symbols-outlined text-[24px]">fitness_center</span>
+<span class="text-[10px] font-medium">训练</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-text-muted h-full justify-center">
+<span class="material-symbols-outlined text-[24px]">leaderboard</span>
+<span class="text-[10px] font-medium">数据</span>
+</button>
+<button class="flex flex-col items-center gap-1 text-text-muted h-full justify-center">
+<span class="material-symbols-outlined text-[24px]">psychology</span>
+<span class="text-[10px] font-medium">教练</span>
+</button>
+</nav>
+</body></html>

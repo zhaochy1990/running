@@ -1,0 +1,22 @@
+{
+  "displayName": "STRIDE Mobile Foundation",
+  "theme": {
+    "bodyFont": "GEIST",
+    "colorMode": "LIGHT",
+    "colorVariant": "MONOCHROME",
+    "customColor": "#1FAD5B",
+    "headlineFont": "GEIST",
+    "labelFont": "GEIST",
+    "overrideNeutralColor": "#171717",
+    "overridePrimaryColor": "#1FAD5B",
+    "roundness": "ROUND_EIGHT",
+    "spacing": {
+      "xs": "4px",
+      "sm": "8px",
+      "md": "12px",
+      "lg": "16px",
+      "xl": "24px",
+      "2xl": "32px"
+    }
+  }
+}
