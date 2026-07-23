@@ -69,6 +69,7 @@ def install_fake_weekly_generator(monkeypatch, *, capture: dict | None = None) -
             capture["meta"] = meta
             capture["context"] = context
             capture["user_request"] = kwargs.get("user_request")
+            capture["structured"] = kwargs.get("structured")
         week_start = date.fromisoformat(meta.week_folder[:10])
         return [
             fake_week_plan_dict(

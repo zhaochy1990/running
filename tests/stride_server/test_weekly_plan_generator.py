@@ -83,6 +83,99 @@ def _master(
     return SimpleNamespace(weeks=[week], weekly_key_sessions=[], phases=[phase])
 
 
+def _specd_week(folder, week_start, target_km):
+    plan = fake_week_plan_dict(folder, week_start, target_km)
+    for s in plan["sessions"]:
+        if s["kind"] == "run":
+            s["spec"] = {
+                "schema": "run-workout/v1",
+                "name": "Easy",
+                "date": s["date"],
+                "note": None,
+                "blocks": [
+                    {
+                        "repeat": 1,
+                        "steps": [
+                            {
+                                "step_kind": "work",
+                                "duration": {"kind": "distance_m", "value": s["total_distance_m"]},
+                                "target": {"kind": "pace_s_km", "low": 360, "high": 330},
+                            }
+                        ],
+                    }
+                ],
+            }
+    return plan
+
+
+def test_midweek_merge_handles_specd_future_runs(monkeypatch) -> None:
+    """A spec'd future run that gets zeroed (REST) or rescaled mid-week must not
+    crash PlannedSession validation (spec must be None on kind=rest) or keep a
+    stale structured distance."""
+    monkeypatch.setattr(generator, "today_shanghai", lambda: date(2026, 7, 15))
+    monkeypatch.setattr(
+        "stride_server.master_plan_store.get_master_plan_store",
+        lambda: SimpleNamespace(get_active_plan=lambda _uid: _master(98, 102)),
+    )
+    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
+    monkeypatch.setattr(
+        generator,
+        "get_db",
+        lambda _uid: _StateDb(
+            completed_weeks=(100.0, 100.0),
+            load_ratio=1.0,
+            daily={  # Mon/Tue/Wed already hit the whole target → remaining 0
+                0: {"actual_distance_km": 34.0, "total_duration_s": 10000},
+                1: {"actual_distance_km": 34.0, "total_duration_s": 10000},
+                2: {"actual_distance_km": 34.0, "total_duration_s": 10000},
+            },
+        ),
+    )
+
+    def _fake(phase, week_metas, context, injuries=None, **kwargs):
+        meta = week_metas[0]
+        ws = date.fromisoformat(meta.week_folder[:10])
+        return [_specd_week(meta.week_folder, ws, float(meta.target_weekly_km))]
+
+    monkeypatch.setattr(
+        "stride_server.coach_adapters.phase_specialist_adapter."
+        "generate_phase_validated",
+        _fake,
+    )
+
+    # Must not raise (BLOCKER: REST conversion left a spec on a kind=rest session).
+    generated = generator.build_weekly_plan(user_id="u1", week_start=date(2026, 7, 13))
+
+    for s in generated.plan.sessions:
+        if s.kind.value in ("rest", "cross", "note"):
+            assert s.spec is None
+        if s.kind.value == "run" and s.spec is not None:
+            total = sum(
+                float(step.duration.value or 0)
+                for block in s.spec.blocks
+                for step in block.steps
+                if step.duration.kind.value == "distance_m"
+            )
+            assert abs(total - float(s.total_distance_m or 0)) < 1.0
+
+
+def test_build_weekly_plan_requests_structured_generation(monkeypatch) -> None:
+    """build_weekly_plan must ask the LLM generator for watch-pushable structured
+    specs (structured=True), not the aspirational spec=null skeleton."""
+    capture: dict = {}
+    monkeypatch.setattr(
+        "stride_server.master_plan_store.get_master_plan_store",
+        lambda: SimpleNamespace(get_active_plan=lambda _uid: _master(68, 74)),
+    )
+    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
+    monkeypatch.setattr(generator, "get_db", lambda _uid: _Db())
+    install_fake_weekly_generator(monkeypatch, capture=capture)
+
+    generator.build_weekly_plan(user_id="u1", week_start=date(2026, 7, 13))
+
+    assert capture["structured"] is True
+
+
 def test_generator_uses_active_master_week_target_and_passes_week_rules(
     monkeypatch,
 ) -> None:

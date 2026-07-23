@@ -54,62 +54,168 @@ WEEKLY_HARD_RULES = f"""\
 """
 
 
-# The WeeklyPlan field-shape body — the inner contract both composers share.
-# Single curly braces (this is NOT an f-string): callers may embed it directly.
-#
-# Field names below mirror ``stride_core.plan_spec``. Keep in sync if that
-# schema moves; the drift-guard test will fail loudly otherwise.
-WEEKLY_PLAN_FIELDS_CONTRACT = """\
+# The run/strength `spec` schema — emitted ONLY in structured mode. The
+# generation LLM must produce a watch-pushable NormalizedRunWorkout /
+# NormalizedStrengthWorkout per run/strength session, using the injected
+# pace_targets (never invented). Field names mirror ``stride_core.workout_spec``;
+# a drift-guard test parses the examples below through the real model. (We do NOT
+# import ``plan_parser.prompts`` — that would drag ``stride_storage.sqlite`` into
+# the coach-core import graph, forbidden by the coach-no-storage-impl contract.
+# The one source of truth is the ``workout_spec`` model, validated by the test.)
+RUN_STRENGTH_SPEC_SCHEMA = """\
+【结构化 spec schema —— run / strength session 的 `spec` 字段按此输出，可直接推手表】
+配速单位一律秒/km（4:00/km = 240），距离单位米，时长单位秒。配速 / 心率一律用**下方注入的
+pace_targets**，绝不自行编造。
+
+NormalizedRunWorkout（run session 的 spec）：
+{
+  "schema": "run-workout/v1",
+  "name": "<课名，如 'Easy 10K' / '巡航 5×1600'>",
+  "date": "YYYY-MM-DD",            // 与所在 session 同日
+  "note": null,
+  "blocks": [ <WorkoutBlock>, ... ]
+}
+WorkoutBlock = {"repeat": <int≥1>, "steps": [ <WorkoutStep>, ... ]}
+  // repeat==1 = 线性段（warmup / 连续 tempo / cooldown）；repeat>1 = 间歇组（work+recovery 重复 N 次）
+WorkoutStep = {
+  "step_kind": "warmup|work|recovery|cooldown|rest",
+  "duration": {"kind": "distance_m|time_s|open", "value": <number；open 时省略/为 null>},
+  "target":   {"kind": "pace_s_km|hr_bpm|power_w|open", "low": <number>, "high": <number>},  // open 只写 kind
+  "hr_cap_bpm": <int，可选：仅当计划给了 HR 上限时写整数 bpm，不要塞进 note>,
+  "note": null
+}
+
+例·轻松跑 Easy 10K（单 block 单 step）：
+{"schema":"run-workout/v1","name":"Easy 10K","date":"2026-06-15","blocks":[
+  {"repeat":1,"steps":[{"step_kind":"work","duration":{"kind":"distance_m","value":10000},
+   "target":{"kind":"pace_s_km","low":360,"high":330}}]}]}
+
+例·间歇 6×800m @间歇配速 + 60s 慢跑（warmup / repeat 组 / cooldown 各一 block）：
+{"schema":"run-workout/v1","name":"6x800m","date":"2026-06-18","blocks":[
+  {"repeat":1,"steps":[{"step_kind":"warmup","duration":{"kind":"distance_m","value":2000},
+   "target":{"kind":"pace_s_km","low":420,"high":380}}]},
+  {"repeat":6,"steps":[
+    {"step_kind":"work","duration":{"kind":"distance_m","value":800},"target":{"kind":"pace_s_km","low":245,"high":235}},
+    {"step_kind":"recovery","duration":{"kind":"time_s","value":60},"target":{"kind":"open"}}]},
+  {"repeat":1,"steps":[{"step_kind":"cooldown","duration":{"kind":"distance_m","value":2000},
+   "target":{"kind":"pace_s_km","low":420,"high":380}}]}]}
+
+MP 长跑 / 变速跑：单 block（repeat=1）多 step，warmup→Z2→MP 段依次排列。
+
+NormalizedStrengthWorkout（strength session 的 spec）：
+{
+  "schema": "strength-workout/v1",
+  "name": "<课名>",
+  "date": "YYYY-MM-DD",
+  "exercises": [
+    {"canonical_id":"<动作 id，如 goblet_squat>","display_name":"<中文名>",
+     "sets":<int≥1>,"target_kind":"reps|time_s","target_value":<int≥1>,
+     "rest_seconds":<int≥0>,"note":null,"provider_id":"<COROS T-code，可选，如 T1301>"}
+  ]
+}
+
+spec 硬要求：
+- run 的 `spec.blocks` 里所有 step 的 distance_m 加总应 ≈ 该 session 的 `total_distance_m`（含 warmup/cooldown）。
+- 配速的 [low, high] 必须取自注入的 pace_targets 对应区间（easy / threshold / interval / marathon 等），不得自编。
+- `rest` / `cross` / `note` 的 `spec` 必须为 `null`。
+"""
+
+
+def _spec_field_line(structured: bool) -> str:
+    if structured:
+        return (
+            '  "spec": <NormalizedRunWorkout | NormalizedStrengthWorkout>,   '
+            "// run/strength 必须给结构化 spec（schema 见下方）；rest/cross/note 为 null"
+        )
+    return (
+        '  "spec": null,                     '
+        "// 【硬约束】本阶段课程为 aspirational，spec 必须为 null（不推手表结构化课）"
+    )
+
+
+def _spec_hard_rules(structured: bool) -> str:
+    if structured:
+        return (
+            "- **每个 run / strength session 必须给出可直接推手表的结构化 `spec`**"
+            "（run → NormalizedRunWorkout，strength → NormalizedStrengthWorkout，schema 见文末），\n"
+            "  配速 / 心率 / 组数一律用**下方注入的 pace_targets**，绝不自行编造；\n"
+            "  `rest` / `cross` / `note` 的 `spec` 必须为 `null`。里程在每周 volume_targets 预算内分配。"
+        )
+    return (
+        "- 所有 session 的 `spec` 必须为 `null`（aspirational 计划，不生成可推手表的结构化课）。\n"
+        "- 跑步日的配速/心率/组数写进 `summary` / `notes_md` 文字，**用下方注入的 pace_targets**，\n"
+        "  绝不自行编配速；里程在每周 volume_targets 预算内分配。"
+    )
+
+
+def weekly_plan_fields_contract(*, structured: bool = False) -> str:
+    """The WeeklyPlan field-shape body both composers embed.
+
+    ``structured=False`` (default) → aspirational plan: every ``spec`` is ``null``
+    (used by S1 season-skeleton generation). ``structured=True`` → each run/
+    strength session must carry a watch-pushable ``NormalizedRunWorkout`` /
+    ``NormalizedStrengthWorkout`` ``spec`` (used by the coach single-week
+    executable generation), and the run/strength spec schema is appended.
+
+    Field names mirror ``stride_core.plan_spec`` / ``workout_spec``; the sync is
+    enforced by drift-guard tests in ``tests/coach`` (which may import the model).
+    """
+    spec_schema_block = ("\n\n" + RUN_STRENGTH_SPEC_SCHEMA) if structured else ""
+    return f"""\
 单个 WeeklyPlan 对象（将被 `WeeklyPlan.from_dict` 直接解析）结构如下：
 
-{
+{{
   "schema": "weekly-plan/v1",
   "week_folder": "<本周文件夹名，原样回填，见下方周框架>",
   "sessions": [ <PlannedSession>, ... ],
   "nutrition": [ <PlannedNutrition>, ... ],
   "notes_md": "<本周整体说明 markdown，可选>"
-}
+}}
 
 PlannedSession（**默认每个训练日只排 1 节**，同一天最多 1 条 session；仅当下方注入的
 用户请求明确要求"某天两练/早晚双跑/加一节"时，才为那一天额外排第 2 条 session，
 用 session_index 0/1 区分。不要在用户没要求时自作主张排双练）：
-{
+{{
   "schema": "plan-session/v1",
   "date": "YYYY-MM-DD",            // ISO 日期，必填
   "session_index": 0,               // 当天第一节为 0；同日第二节才用 1（仅用户要求双练时）
   "kind": "run|strength|rest|cross|note",
   "summary": "<简短用户可见标签，如 '专项长跑 32km（后 16km @ MP）'>",
-  "spec": null,                     // 【硬约束】本阶段课程为 aspirational，spec 必须为 null（不推手表结构化课）
+{_spec_field_line(structured)}
   "notes_md": "<该课的配速/心率/组数/理由，markdown，可选>",
   "total_distance_m": 32000,        // 跑步课填米；非跑步可为 null
   "total_duration_s": null,         // 预计时长（秒），可为 null
   "scheduled_workout_id": null      // 始终 null（推手表后才回填）
-}
+}}
 
 PlannedNutrition（每个有营养安排的日期一条；本周营养以 nutrition 列表承载）：
-{
+{{
   "schema": "plan-nutrition/v1",
   "date": "YYYY-MM-DD",
   "kcal_target": 2600,              // 可为 null
   "carbs_g": 360, "protein_g": 130, "fat_g": 70, "water_ml": 2500,  // 均可为 null
   "meals": [
-    {
+    {{
       "name": "早餐",               // 早餐/午餐/晚餐/加餐
       "time_hint": "7:30",          // 可为 null
       "kcal": 600, "carbs_g": 90, "protein_g": 25, "fat_g": 12,     // 均可为 null
       "items_md": "燕麦 80g + 鸡蛋 2 个 + 香蕉 1 根"                  // 自由文本，可为 null
-    }
+    }}
   ],
   "notes_md": "<当日营养说明，可选>"
-}
+}}
 
 【单周硬约束】
 - **每天默认 1 节训练**：同一 `date` 默认只有一条 session。只有当注入的用户请求明确要求
   某天双练（早晚双跑 / 两练 / 再加一节）时，才在该天排第 2 条 session（session_index=1），
   其余天保持每天 1 节。绝不在无请求时把一天拆成两节。
-- 所有 session 的 `spec` 必须为 `null`（aspirational 计划，不生成可推手表的结构化课）。
-- 跑步日的配速/心率/组数写进 `summary` / `notes_md` 文字，**用下方注入的 pace_targets**，
-  绝不自行编配速；里程在每周 volume_targets 预算内分配。
+{_spec_hard_rules(structured)}
 - `week_folder` 原样回填该周给出的字符串。
-- 日期落在该周的 7 天窗口内。
+- 日期落在该周的 7 天窗口内。{spec_schema_block}
 """
+
+
+# Aspirational (spec=null) body — the default both composers used before the
+# structured-generation change. Kept as a module constant for back-compat + the
+# existing drift-guard test.
+WEEKLY_PLAN_FIELDS_CONTRACT = weekly_plan_fields_contract(structured=False)
