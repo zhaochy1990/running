@@ -362,38 +362,48 @@ class _Bubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = message.isUser;
+    final isEvent = message.isEvent;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.78,
-        ),
-        margin: const EdgeInsets.only(bottom: StrideTokens.spaceMd),
-        padding: const EdgeInsets.symmetric(
-          horizontal: StrideTokens.spaceMd,
-          vertical: StrideTokens.spaceSm,
-        ),
-        decoration: BoxDecoration(
-          color: isUser ? StrideTokens.accent : StrideTokens.surface,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(StrideTokens.radiusMd),
-            topRight: const Radius.circular(StrideTokens.radiusMd),
-            bottomLeft: Radius.circular(isUser ? StrideTokens.radiusMd : 2),
-            bottomRight: Radius.circular(isUser ? 2 : StrideTokens.radiusMd),
+      child: Semantics(
+        label: isEvent ? 'Coach 事件' : (isUser ? '你的消息' : 'Coach 回复'),
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.78,
           ),
-          border: isUser ? null : Border.all(color: StrideTokens.border2),
+          margin: const EdgeInsets.only(bottom: StrideTokens.spaceMd),
+          padding: const EdgeInsets.symmetric(
+            horizontal: StrideTokens.spaceMd,
+            vertical: StrideTokens.spaceSm,
+          ),
+          decoration: BoxDecoration(
+            color: isUser
+                ? StrideTokens.accent
+                : (isEvent ? StrideTokens.accentFg : StrideTokens.surface),
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(StrideTokens.radiusMd),
+              topRight: const Radius.circular(StrideTokens.radiusMd),
+              bottomLeft: Radius.circular(isUser ? StrideTokens.radiusMd : 2),
+              bottomRight: Radius.circular(isUser ? 2 : StrideTokens.radiusMd),
+            ),
+            border: isUser
+                ? null
+                : Border.all(
+                    color: isEvent ? StrideTokens.accent : StrideTokens.border2,
+                  ),
+          ),
+          child: isUser || isEvent
+              ? Text(
+                  message.text,
+                  style: TextStyle(
+                    fontFamily: AppTypography.fontSans,
+                    fontSize: StrideTokens.fs14,
+                    color: isUser ? StrideTokens.surface : StrideTokens.fg,
+                    height: 1.5,
+                  ),
+                )
+              : ChatMarkdown(data: message.text),
         ),
-        child: isUser
-            ? Text(
-                message.text,
-                style: const TextStyle(
-                  fontFamily: AppTypography.fontSans,
-                  fontSize: StrideTokens.fs14,
-                  color: StrideTokens.surface,
-                  height: 1.5,
-                ),
-              )
-            : ChatMarkdown(data: message.text),
       ),
     );
   }

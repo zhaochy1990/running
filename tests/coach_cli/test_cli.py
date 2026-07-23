@@ -17,6 +17,7 @@ from coach_cli.cli import (
     _model_banner,
     _print_turn,
     _select_session,
+    _weekly_review_anchor,
     main,
 )
 from stride_core.master_plan_diff import (
@@ -1015,3 +1016,85 @@ def test_repl_applies_week_create_then_adjust_proposals(monkeypatch, tmp_path) -
     assert applied == ["create-1", "adjust-1"]
     assert "已创建" in result.output
     assert "已更新" in result.output
+
+
+def _weekly_create_proposal(folder: str) -> WeeklyPlanCreateProposal:
+    return WeeklyPlanCreateProposal(
+        proposal_id="create-1",
+        folder=folder,
+        plan=WeeklyPlan(week_folder=folder).to_dict(),
+        total_distance_km=111,
+        ai_explanation="下周计划",
+        created_at="t",
+    )
+
+
+def test_weekly_review_anchor_builds_target_and_context() -> None:
+    folder = "2026-07-27_08-02"
+    anchor = _weekly_review_anchor((_weekly_create_proposal(folder),))
+
+    assert anchor is not None
+    target, review_context = anchor
+    assert target.kind == "week"
+    assert target.folder == folder
+    assert review_context["kind"] == "weekly_create"
+    assert review_context["proposal"]["folder"] == folder
+    assert review_context["proposal"]["proposal_id"] == "create-1"
+
+
+def test_weekly_review_anchor_none_without_weekly_create() -> None:
+    diff = MasterPlanDiff(
+        diff_id="a", plan_id="plan-1", ops=[], ai_explanation="减量", created_at="t"
+    )
+
+    assert _weekly_review_anchor((diff,)) is None
+    assert _weekly_review_anchor(()) is None
+
+
+def test_repl_follow_up_after_weekly_create_carries_review_context(
+    monkeypatch, tmp_path
+) -> None:
+    folder = "2026-07-27_08-02"
+    create = _weekly_create_proposal(folder)
+    turns = iter(
+        [
+            SimpleNamespace(
+                reply="已生成下周计划",
+                clarification=None,
+                proposals=[ProposalCard(specialist_id="weekly_plan", proposal=create)],
+                active_target=None,
+            ),
+            _turn("周六力量：高脚杯深蹲 3×10 等。"),
+        ]
+    )
+    seen_kwargs: list[dict] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+
+    def fake_turn(**kwargs):
+        seen_kwargs.append(kwargs)
+        return next(turns)
+
+    monkeypatch.setattr("coach_cli.cli._run_turn", fake_turn)
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="生成下周计划\n8-01 力量练什么？\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert len(seen_kwargs) == 2
+    # Turn 1 (generation): no draft exists yet, so no anchor is attached.
+    assert seen_kwargs[0].get("review_context") is None
+    assert seen_kwargs[0].get("target") is None
+    # Turn 2 (follow-up): the pending draft rides as review_context anchored to
+    # the drafted week, so status_insight answers from it (not get_week_plan).
+    ctx = seen_kwargs[1]["review_context"]
+    assert ctx["kind"] == "weekly_create"
+    assert ctx["proposal"]["folder"] == folder
+    target = seen_kwargs[1]["target"]
+    assert target.kind == "week"
+    assert target.folder == folder
+

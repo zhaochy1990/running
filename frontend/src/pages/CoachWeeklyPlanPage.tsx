@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import CoachWeeklyPlanEmptyState from '../components/weekly-plan/CoachWeeklyPlanEmptyState'
+import { CoachPlanAppliedBanner } from '../components/CoachPlanAppliedBanner'
 import WeeklyFeedbackTab from '../components/weekly-plan/WeeklyFeedbackTab'
 import WeeklyPlanSummary from '../components/weekly-plan/WeeklyPlanSummary'
 import WeeklyPlanTabs, { type CoachWeeklyPlanTab } from '../components/weekly-plan/WeeklyPlanTabs'
@@ -14,6 +16,7 @@ export interface CoachWeeklyPlanPageProps {
 
 export default function CoachWeeklyPlanPage({ initialTab = 'schedule' }: CoachWeeklyPlanPageProps) {
   const [activeTab, setActiveTab] = useState<CoachWeeklyPlanTab>(initialTab)
+  const navigate = useNavigate()
   const {
     week,
     weeks,
@@ -37,7 +40,13 @@ export default function CoachWeeklyPlanPage({ initialTab = 'schedule' }: CoachWe
 
   return (
     <div className="mx-auto max-w-[1180px] space-y-6 px-4 py-6 sm:px-8 sm:py-8">
-      <WeeklyPlanSummary week={week} days={planDays} planTitle={planTitle} />
+      <CoachPlanAppliedBanner />
+      <WeeklyPlanSummary
+        week={week}
+        days={planDays}
+        planTitle={planTitle}
+        onAdjust={() => navigate(`/coach/week/${encodeURIComponent(week.folder)}/adjust`)}
+      />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <WeeklyPlanTabs active={activeTab} strengthCount={strength?.sessions.length ?? 0} recordCount={week.activity_count} onChange={setActiveTab} />
       </div>

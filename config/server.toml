@@ -92,3 +92,6 @@ token = ""
 [plan]
 prefer_authored_json = true
 coach_agent_weekly_plan_users = ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
+coach_chat_users = ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
+coach_chat_debug_users = ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
+coach_chat_max_message_chars = 8000

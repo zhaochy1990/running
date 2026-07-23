@@ -16,7 +16,14 @@ venv/
 htmlcov/
 # coach_cli local dev checkpointer (session state, never committed)
 data/_coach_dev/
+frontend/data/_coach_dev/
 data/_jobs_dev/
+frontend/data/_jobs_dev/
+# Local JSON backends contain per-user plans and coach memory; never commit.
+data/.weekly_plans.json
+data/.master_plans.json
+data/.master_plan_versions.json
+data/.athlete_memories.json
 .claude/*
 !.claude/commands/
 !.claude/skills/
@@ -27,7 +34,9 @@ data/_jobs_dev/
 .superpowers/
 .omc/
 .tmp/
+tmp/
 *.un~
+*-debug.log
 *~
 # Anchored: only ignore a top-level `profile` directory (e.g. local
 # scratch). Without the leading `/`, this rule was eating

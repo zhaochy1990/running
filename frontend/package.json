@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:frontend:local": "cross-env VITE_DEV_API_PROXY=https://stride-running.cn VITE_DEV_AUTH_PROXY=https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io VITE_AUTH_CLIENT_ID=app_62978bf2803346878a2e4805 vite --host",
-    "api": "cd .. && cross-env PYTHONIOENCODING=utf-8 python -m uvicorn stride_server.main:app --reload --port 8080",
+    "api": "cd .. && cross-env PYTHONPATH=src PYTHONIOENCODING=utf-8 STRIDE_CONFIG_ENV=local STRIDE_COACH_CONFIG_PATH=config/coach.copilot.toml AGENT_MAESTRO_API_KEY=local-dev STRIDE_COACH_FILE_BACKEND_DIR=data/_coach_dev python -m uvicorn stride_server.main:app --reload --port 8080",
     "start": "concurrently \"npm run api\" \"npm run dev\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",

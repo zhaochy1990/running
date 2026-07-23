@@ -117,11 +117,14 @@ const masterPlan: MasterPlan = {
       phase_id: 'phase-1',
       target_weekly_km_low: null,
       target_weekly_km_high: null,
-      target_training_dose_low: 180,
-      target_training_dose_high: 210,
+      target_training_dose_low: 180.2,
+      target_training_dose_high: 210.4,
       planned_distance_km: null,
       is_completed: true,
       actual_distance_km: 46.5,
+      actual_training_dose: 203.6,
+      actual_training_dose_coverage: 1,
+      actual_training_dose_status: 'complete',
       actual_avg_pace_s_km: 315,
       actual_avg_pace_fmt: '5:15',
       actual_avg_hr: 140,
@@ -164,6 +167,9 @@ const masterPlan: MasterPlan = {
       planned_distance_km: 88,
       is_completed: false,
       actual_distance_km: 12.4,
+      actual_training_dose: 88.6,
+      actual_training_dose_coverage: 0.429,
+      actual_training_dose_status: 'partial',
       actual_avg_pace_s_km: 300,
       actual_avg_pace_fmt: '5:00',
       actual_avg_hr: 145,
@@ -250,6 +256,23 @@ function renderPlanPage() {
   )
 }
 
+/** Render with an explicit coachChat flag and coach adjust route mounted. */
+function renderPlanPageWithCoach(coachChat: boolean) {
+  return render(
+    <UserContext.Provider
+      value={{ user: 'user-1', displayName: 'Runner', coachChat, refresh: async () => {} }}
+    >
+      <MemoryRouter initialEntries={['/plan']}>
+        <Routes>
+          <Route path="/plan" element={<TrainingPlanPage />} />
+          <Route path="/plan/adjust" element={<div>Legacy adjust route</div>} />
+          <Route path="/coach/master/:planId/adjust" element={<div>Coach master adjust route</div>} />
+        </Routes>
+      </MemoryRouter>
+    </UserContext.Provider>,
+  )
+}
+
 describe('TrainingPlanPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -281,14 +304,18 @@ describe('TrainingPlanPage', () => {
 
     expect(await screen.findByRole('heading', { name: '真实目标马拉松' })).toBeInTheDocument()
     expect(screen.getByText(/从 2026\/05\/04 到 2026\/10\/11，共 23 周/)).toBeInTheDocument()
-    expect(screen.getByText('周跑量（KM/周）')).toBeInTheDocument()
+    const mileageHeading = screen.getByText('周跑量（KM/周）')
+    expect(mileageHeading).toBeInTheDocument()
+    expect(mileageHeading.closest('section')).toHaveClass('overflow-visible')
     expect(screen.getByRole('button', { name: '负荷' })).toBeEnabled()
     expect(screen.getAllByText('W06').length).toBeGreaterThan(0)
     expect(screen.getByText('已完成周实际跑量')).toBeInTheDocument()
     expect(screen.getByText('计划跑量标记')).toBeInTheDocument()
     expect(screen.getAllByText('计划跑量')[0]).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'W01 实际 46.5 km · 计划 -- · 基础期' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'W01 估算 42 km · 基础期' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'W01 实际 46.5 km · 计划 42 km · 基础期' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'W01 实际 46.5 km · 计划 -- · 基础期' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'W02 估算 44 km · 基础期' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'W02 实际 0 km · 计划 -- · 基础期' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'W04 实际 68 km · 计划 54 km · 基础期' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'W04 计划 54 km · 基础期' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'W06 实际 12.4 km · 计划 88 km · 基础期' })).toBeInTheDocument()
@@ -308,10 +335,15 @@ describe('TrainingPlanPage', () => {
     expect(screen.queryByText('2026 西安马拉松')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '负荷' }))
-    expect(screen.getByText('预计周负荷（STRIDE DOSE）')).toBeInTheDocument()
-    expect(screen.getByText('STRIDE dose 是根据计划跑量与关键课估算的每周负荷区间。')).toBeInTheDocument()
-    expect(screen.getAllByText('计划负荷')[0]).toBeInTheDocument()
+    expect(screen.getByText('周负荷（STRIDE DOSE）')).toBeInTheDocument()
+    expect(screen.getByText('STRIDE dose 对比每周计划负荷区间与实际完成负荷。')).toBeInTheDocument()
+    expect(screen.getAllByText('实际负荷').length).toBeGreaterThan(0)
+    expect(screen.getByText('计划负荷区间')).toBeInTheDocument()
     expect(screen.getAllByText('390-440 dose')[0]).toBeInTheDocument()
+    expect(screen.getByText('180-210 dose')).toBeInTheDocument()
+    expect(screen.getByText('204 dose')).toBeInTheDocument()
+    expect(screen.getByText('89 dose（截至目前）')).toBeInTheDocument()
+    expect(screen.queryByText('180.2-210.4 dose')).not.toBeInTheDocument()
   })
 
   it('keeps mileage usable and disables load for a legacy plan', async () => {
@@ -455,5 +487,17 @@ describe('TrainingPlanPage', () => {
     expect(checkboxes[0]).toBeChecked()
     expect(checkboxes[1]).not.toBeChecked()
     expect(checkboxes[2]).not.toBeChecked()
+  })
+
+  it('routes 调整计划 to the coach master workspace for whitelisted users', async () => {
+    renderPlanPageWithCoach(true)
+    fireEvent.click(await screen.findByRole('button', { name: '调整计划' }))
+    expect(await screen.findByText('Coach master adjust route')).toBeInTheDocument()
+  })
+
+  it('routes 调整计划 to the legacy adjust route for non-coach users', async () => {
+    renderPlanPageWithCoach(false)
+    fireEvent.click(await screen.findByRole('button', { name: '调整计划' }))
+    expect(await screen.findByText('Legacy adjust route')).toBeInTheDocument()
   })
 })

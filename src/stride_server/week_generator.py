@@ -6,40 +6,137 @@ No LLM calls, no TRAINING_PLAN.md dependency — purely deterministic rules.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, timedelta
 
 from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+from stride_core.running_calibration.types import PaceZone
+from stride_core.workout_spec import (
+    NormalizedStrengthWorkout,
+    StrengthExerciseSpec,
+    StrengthTargetKind,
+    format_pace_s_km,
+)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 _DEFAULT_BASE_KM: float = 40.0
 
 # Day-of-week offsets (0=Mon … 6=Sun) → session configuration.
-# Each entry: (kind, label, distance_fraction, pace_hint, hr_zone, notes_md)
+# Each entry: (kind, label, distance_fraction, zone_key, fallback_pace_hint, hr_zone, notes_md)
 # distance_fraction is a fraction of weekly base km (0 for non-running days).
-_DAY_PLAN: list[tuple[str, str, float, str | None, str | None, str | None]] = [
+# zone_key maps the day to a running-calibration pace zone
+# (stride_core.running_calibration.zones); when the athlete has a calibration
+# snapshot the displayed pace + duration come from that zone's real band. The
+# fallback_pace_hint is only used when no calibration is available.
+_DAY_PLAN: list[
+    tuple[str, str, float, str | None, str | None, str | None, str | None]
+] = [
     # Mon — rest
-    ("rest",     "休息日",                     0.00,  None,                None, None),
+    ("rest",     "休息日",                     0.00,  None,        None,           None, None),
     # Tue — E medium run 20%
-    ("run",      "E 轻松跑",                   0.20,  "5:30-6:00/km",      "Z2", "轻松有氧，保持对话配速。"),
+    ("run",      "E 轻松跑",                   0.20,  "easy",      "5:30-6:00/km", "Z2", "轻松有氧，保持对话配速。"),
     # Wed — T tempo run 15%
-    ("run",      "T 节奏跑",                   0.15,  "4:45-5:00/km",      "Z3", "阈值配速，能说短句即可。"),
+    ("run",      "T 节奏跑",                   0.15,  "threshold", "4:45-5:00/km", "Z3", "阈值配速，能说短句即可。"),
     # Thu — E medium run 20%
-    ("run",      "E 轻松跑",                   0.20,  "5:30-6:00/km",      "Z2", "恢复性轻松跑。"),
+    ("run",      "E 轻松跑",                   0.20,  "easy",      "5:30-6:00/km", "Z2", "恢复性轻松跑。"),
     # Fri — I intervals 12% (short but intense)
-    ("run",      "I 间歇跑",                   0.12,  "4:15-4:30/km",      "Z5", "400m×6-8，组间慢跑 200m。"),
+    ("run",      "I 间歇跑",                   0.12,  "interval",  "4:15-4:30/km", "Z5", "400m×6-8，组间慢跑 200m。"),
     # Sat — strength (not counted in weekly km)
-    ("strength", "力量训练",                   0.00,  None,                None, "核心 + 臀腿力量，40-50min。"),
+    ("strength", "力量训练",                   0.00,  None,        None,           None, "核心 + 臀腿力量，40-50min。"),
     # Sun — E long run 33% (below the repo's <35% hard gate)
-    ("run",      "E 长距离跑",                 0.33,  "5:45-6:15/km",      "Z2", "全程有氧，后半段维持配速。"),
+    ("run",      "E 长距离跑",                 0.33,  "easy",      "5:45-6:15/km", "Z2", "全程有氧，后半段维持配速。"),
 ]
 
-# Estimated pace in s/km for each session type (used to calculate duration).
-_PACE_S_PER_KM: dict[str, float] = {
-    "E":  330.0,   # ~5:30/km
-    "T":  292.0,   # ~4:52/km
-    "I":  262.0,   # ~4:22/km
+# Fallback pace in s/km per zone_key, used only when the athlete has no running
+# calibration snapshot. When calibrated, pace comes from the zone band instead.
+_FALLBACK_PACE_S_PER_KM: dict[str, float] = {
+    "easy":      330.0,   # ~5:30/km
+    "threshold": 292.0,   # ~4:52/km
+    "interval":  262.0,   # ~4:22/km
 }
+
+
+def _format_pace_range(fast_s_per_km: float, slow_s_per_km: float) -> str:
+    """Format a (faster, slower) s/km pair as ``'M:SS-M:SS/km'``."""
+    fast = format_pace_s_km(fast_s_per_km)
+    slow = format_pace_s_km(slow_s_per_km)
+    # format_pace_s_km only returns None for a None input; both are floats here.
+    assert fast is not None and slow is not None
+    return f"{fast.removesuffix('/km')}-{slow}"
+
+
+def _resolve_run_pace(
+    zone_key: str | None,
+    pace_zones: Mapping[str, PaceZone] | None,
+    fallback_hint: str | None,
+    fallback_pace_s: float,
+) -> tuple[str | None, float]:
+    """Resolve a running day's (display pace hint, s/km for duration).
+
+    Prefers the athlete's calibrated pace band for ``zone_key``; falls back to
+    the generic ``fallback_hint`` / ``fallback_pace_s`` when no calibration zone
+    is available.
+    """
+    if zone_key and pace_zones is not None:
+        zone = pace_zones.get(zone_key)
+        if zone and zone.min_pace_s_per_km and zone.max_pace_s_per_km:
+            fast = float(zone.min_pace_s_per_km)
+            slow = float(zone.max_pace_s_per_km)
+            return _format_pace_range(fast, slow), (fast + slow) / 2.0
+    return fallback_hint, fallback_pace_s
+
+
+def _runner_strength_workout(day: str) -> NormalizedStrengthWorkout:
+    """生成可直接审阅和推送的跑者稳定性力量训练。"""
+    return NormalizedStrengthWorkout(
+        name="[STRIDE] 跑者稳定性力量",
+        date=day,
+        exercises=(
+            StrengthExerciseSpec(
+                canonical_id="goblet_squat",
+                display_name="高脚杯深蹲",
+                sets=3,
+                target_kind=StrengthTargetKind.REPS,
+                target_value=10,
+                rest_seconds=60,
+                note="膝盖跟随脚尖方向，下蹲过程保持躯干稳定。",
+                provider_id="T1301",
+            ),
+            StrengthExerciseSpec(
+                canonical_id="single_leg_calf_raise",
+                display_name="单腿提踵",
+                sets=2,
+                target_kind=StrengthTargetKind.REPS,
+                target_value=8,
+                rest_seconds=45,
+                note="每侧完成，离心下降 3 秒；出现跟腱痛则缩小幅度。",
+                provider_id="T1275",
+            ),
+            StrengthExerciseSpec(
+                canonical_id="clamshell",
+                display_name="蚌式开合",
+                sets=3,
+                target_kind=StrengthTargetKind.REPS,
+                target_value=15,
+                rest_seconds=45,
+                note="每侧完成，骨盆保持稳定，重点激活臀中肌。",
+                provider_id="T1317",
+            ),
+            StrengthExerciseSpec(
+                canonical_id="greatest_stretch",
+                display_name="世界最佳拉伸",
+                sets=2,
+                target_kind=StrengthTargetKind.REPS,
+                target_value=6,
+                rest_seconds=30,
+                note="每侧完成，配合胸椎旋转与髋屈肌伸展。",
+                provider_id="T1262",
+            ),
+        ),
+        note="中等强度，保留 2–3 次余力；长距离前一天不得练到力竭。",
+    )
+
 
 # ── Folder helpers ────────────────────────────────────────────────────────────
 
@@ -57,15 +154,17 @@ def week_folder(week_start: date) -> str:
 
 
 def generate_week_plan(
-    user_id: str,  # noqa: ARG001 — reserved for future per-user personalisation
+    user_id: str,  # noqa: ARG001 — pace personalisation flows via pace_zones
     week_start: date,
     base_distance_km: float | None,
     last_week_summary: dict | None,
+    pace_zones: Mapping[str, PaceZone] | None = None,
 ) -> tuple[WeeklyPlan, float]:
     """Rule-based single-week generator.
 
     Args:
-        user_id: User UUID (reserved for future per-user personalisation).
+        user_id: User UUID (kept for signature stability; per-athlete pace
+            personalisation is threaded via ``pace_zones``).
         week_start: Must be a Monday (weekday() == 0).
         base_distance_km: Explicit override. When None, derived from
             last_week_summary or defaulted to 40 km.
@@ -122,7 +221,7 @@ def generate_week_plan(
     folder = week_folder(week_start)
     sessions: list[PlannedSession] = []
 
-    for day_offset, (kind_str, label, frac, pace_hint, hr_zone, notes_md) in enumerate(_DAY_PLAN):
+    for day_offset, (kind_str, label, frac, zone_key, fallback_hint, hr_zone, notes_md) in enumerate(_DAY_PLAN):
         day_date = (week_start + timedelta(days=day_offset)).isoformat()
         distance_m: float | None = None
         duration_s: float | None = None
@@ -131,13 +230,14 @@ def generate_week_plan(
         if kind_str == "run" and frac > 0:
             distance_m = round(total_km * frac * 1000)
             distance_km_this = total_km * frac
-            # pick pace constant by label prefix
-            if label.startswith("T"):
-                pace_s = _PACE_S_PER_KM["T"]
-            elif label.startswith("I"):
-                pace_s = _PACE_S_PER_KM["I"]
-            else:
-                pace_s = _PACE_S_PER_KM["E"]
+            # Resolve pace + duration from the athlete's calibrated zone band,
+            # falling back to the generic literal when no calibration exists.
+            fallback_pace_s = _FALLBACK_PACE_S_PER_KM.get(
+                zone_key or "easy", _FALLBACK_PACE_S_PER_KM["easy"]
+            )
+            pace_hint, pace_s = _resolve_run_pace(
+                zone_key, pace_zones, fallback_hint, fallback_pace_s
+            )
             duration_s = round(distance_km_this * pace_s)
 
             # Build human-readable summary: "E 8K 轻松跑" style
@@ -158,12 +258,20 @@ def generate_week_plan(
             SessionKind.STRENGTH if kind_str == "strength" else SessionKind.REST
         )
 
+        strength_spec = (
+            _runner_strength_workout(day_date)
+            if kind == SessionKind.STRENGTH
+            else None
+        )
+        if strength_spec is not None:
+            duration_s = 45 * 60
+
         session = PlannedSession(
             date=day_date,
             session_index=0,
             kind=kind,
             summary=summary,
-            spec=None,           # rule-engine output is aspirational, not pushable
+            spec=strength_spec,
             notes_md=notes_md,
             total_distance_m=distance_m,
             total_duration_s=duration_s,

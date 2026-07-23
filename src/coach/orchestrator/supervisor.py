@@ -12,10 +12,13 @@ objectives and wires ``depends_on`` — lands in S2.
 
 from __future__ import annotations
 
+from typing import Any
+
 from coach.contracts import (
     CallPlan,
     IntentHit,
     ResolverOutput,
+    REVIEW_CONTEXT_KEY,
     ScopedContext,
     SpecialistCall,
     SpecialistRegistry,
@@ -27,7 +30,6 @@ from coach.contracts import (
 _READ_BOUNDARIES = "只读诊断：可读取任何训练数据，但本轮只回答 / 诊断，不要产出修改提案。"
 _WRITE_BOUNDARIES = "可读取数据并产出 typed 修改提案（diff），但不要直接落地，等用户确认。"
 
-
 def build_specialist_task(
     intent: IntentHit,
     *,
@@ -36,20 +38,26 @@ def build_specialist_task(
     active_target: TargetRef | None,
     conversation_window: list[Turn],
     memory_context: str = "",
+    review_context: dict[str, Any] | None = None,
 ) -> SpecialistTask:
     """Synthesise the rich brief for one specialist call (§4.2).
 
     S1 hands the expert an empty ``ScopedContext`` data bag — the specialist
     self-serves its read prefetch (§4.3 "专家自给"). Active long-term memory
     (§4.0), when present, rides ``context.notes`` so the expert's answer is
-    memory-aware.
+    memory-aware. An unapplied review draft (``review_context``), when present,
+    rides ``context.data[REVIEW_CONTEXT_KEY]`` as the authoritative source for
+    the drafted plan's content.
     """
     card = registry.get_card(intent.specialist_id)
     boundaries = _WRITE_BOUNDARIES if card.writes else _READ_BOUNDARIES
+    data: dict[str, Any] = {}
+    if review_context:
+        data[REVIEW_CONTEXT_KEY] = review_context
     return SpecialistTask(
         objective=utterance,
         active_target=active_target,
-        context=ScopedContext(notes=memory_context or None),
+        context=ScopedContext(data=data, notes=memory_context or None),
         boundaries=boundaries,
         conversation_window=list(conversation_window),
     )
@@ -62,6 +70,7 @@ def build_call_plan(
     utterance: str,
     conversation_window: list[Turn] | None = None,
     memory_context: str = "",
+    review_context: dict[str, Any] | None = None,
 ) -> CallPlan:
     """Build the dispatch plan from a ResolverOutput.
 
@@ -83,6 +92,7 @@ def build_call_plan(
                 active_target=resolver_output.active_target,
                 conversation_window=window,
                 memory_context=memory_context,
+                review_context=review_context,
             ),
             depends_on=[],
         )

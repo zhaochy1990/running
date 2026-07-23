@@ -344,18 +344,64 @@ def _friendly_error(exc: Exception) -> str:
     return s
 
 
+def _weekly_review_anchor(
+    proposals: tuple[Proposal, ...],
+) -> tuple[Any, dict[str, Any]] | None:
+    """Build ``(target, review_context)`` for a pending weekly-create draft.
+
+    Mirrors the web review workspace: while an unapplied weekly-create proposal
+    is pending, a follow-up question ("周六力量练什么") must be answered from the
+    in-memory draft — the plan was never saved, so ``get_week_plan`` would find
+    nothing. Re-attaching the proposal as ``review_context`` (anchored to its
+    week ``target``) makes ``status_insight`` answer from the draft JSON instead.
+
+    Returns ``None`` when no weekly-create proposal is pending — an existing-week
+    ``PlanDiff`` / master diff has no review-context contract, and turns without
+    a draft must not be forced onto one. Also returns ``None`` if the draft fails
+    to serialise (e.g. exceeds the review-context size cap) so the REPL degrades
+    to an ordinary turn instead of crashing.
+    """
+    # Lazy import mirrors the file's discipline (coach modules stay off the hot
+    # import path); coach.contracts itself is pure pydantic, no heavy deps.
+    from coach.contracts import TargetRef, WeeklyCreateReviewContext
+
+    for proposal in proposals:
+        if not isinstance(proposal, WeeklyPlanCreateProposal):
+            continue
+        try:
+            review_context = WeeklyCreateReviewContext(
+                proposal=proposal
+            ).model_dump(mode="json")
+        except ValueError:
+            return None
+        return TargetRef(kind="week", folder=proposal.folder), review_context
+    return None
+
+
 def _run_turn(
-    *, user_id: str, session_id: str, message: str, checkpointer: Any
+    *,
+    user_id: str,
+    session_id: str,
+    message: str,
+    checkpointer: Any,
+    target: Any | None = None,
+    review_context: dict[str, Any] | None = None,
 ) -> Any:
     # Lazy import: pulls in azure-identity + langchain, slow to import.
     from stride_server.coach_adapters.orchestrator import run_coach_turn
 
+    # The CLI only renders the TurnResponse; the HTTP layer consumes the stable
+    # assistant_message identity that also rides on the result. ``target`` /
+    # ``review_context`` carry a pending weekly-create draft into follow-up turns
+    # so the drafted week can be discussed before it is applied.
     return run_coach_turn(
         user_id=user_id,
         session_id=session_id,
         message=message,
         checkpointer=checkpointer,
-    )
+        target=target,
+        review_context=review_context,
+    ).turn_response
 
 
 def _apply_result_message(
@@ -544,6 +590,15 @@ def _print_repl_banner(*, user_id: str, session_id: str, db_path: Path) -> None:
 def _run_repl_turn(
     *, line: str, user_id: str, state: _ReplState, checkpointer: Any, debug: bool
 ) -> _ReplState:
+    # A pending weekly-create draft rides the next turn as review_context so a
+    # follow-up about the drafted week is answered from it (the plan is not saved
+    # yet). Absent such a draft, the turn carries no anchor (unrelated questions
+    # must not be forced onto a stale draft).
+    anchor = _weekly_review_anchor(state.pending_proposals)
+    anchor_kwargs: dict[str, Any] = {}
+    if anchor is not None:
+        target, review_context = anchor
+        anchor_kwargs = {"target": target, "review_context": review_context}
     try:
         with _Thinking(debug=debug):
             turn = _run_turn(
@@ -551,6 +606,7 @@ def _run_repl_turn(
                 session_id=state.session_id,
                 message=line,
                 checkpointer=checkpointer,
+                **anchor_kwargs,
             )
     except Exception as exc:  # noqa: BLE001 — keep the REPL alive
         click.echo(f"❌ 调用失败: {_friendly_error(exc)}")

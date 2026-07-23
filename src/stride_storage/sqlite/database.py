@@ -56,9 +56,9 @@ def _paths():
 
     return _coredb
 
-SCHEMA = """
-PRAGMA journal_mode=WAL;
+_WAL_JOURNAL_MODE_SQL = "PRAGMA journal_mode=WAL"
 
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS activities (
     label_id        TEXT PRIMARY KEY,
     name            TEXT,
@@ -773,28 +773,31 @@ class Database:
             self._path = _paths().DB_PATH
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Workaround for Azure Files SMB: the SCHEMA's `PRAGMA
-        # journal_mode=WAL` transition deadlocks on first init when the
-        # DB lives on an SMB-mounted share, leaving a 0-byte file and
-        # subsequent retries failing with "database is locked".
-        # For brand-new DBs, build the schema + WAL state in a local
-        # tmp directory (regular FS), then move the fully-formed file
-        # into place. After that, all writes are row-level INSERT/UPDATE
-        # which work fine over SMB. Existing DBs are opened directly.
+        # Azure Files SMB cannot reliably perform a journal-mode transition.
+        # Brand-new DBs are therefore built with WAL on a local filesystem and
+        # moved into place. Existing DBs keep their persisted journal mode;
+        # opening one must never run PRAGMA journal_mode=WAL again.
         seeded = self._seed_if_needed()
 
         self._conn = sqlite3.connect(str(self._path))
-        self._conn.row_factory = sqlite3.Row
-        # Azure Files can briefly retain a SQLite writer lock across requests or
-        # a revision rollover. Let API-owned writers wait for short contention;
-        # long contention is translated by the route into a retryable 503.
-        self._conn.execute("PRAGMA busy_timeout = 3000")
-        if seeded:
-            # SCHEMA was already applied during the seed; just run the
-            # idempotent column-add migrations on the live connection.
-            self._migrate()
-        else:
-            self._init_schema()
+        try:
+            self._conn.row_factory = sqlite3.Row
+            # Azure Files can briefly retain a SQLite writer lock across requests or
+            # a revision rollover. Let API-owned writers wait for short contention;
+            # long contention is translated by the route into a retryable 503.
+            self._conn.execute("PRAGMA busy_timeout = 3000")
+            if seeded:
+                # SCHEMA was already applied during the seed; just run the
+                # idempotent column-add migrations on the live connection.
+                self._migrate()
+            else:
+                self._init_schema()
+        except BaseException:
+            # A failed schema or migration pass must not strand an SMB file
+            # handle. Otherwise every retry inherits the lock from the failed
+            # connection and the database never recovers without a process restart.
+            self._conn.close()
+            raise
 
     def _seed_if_needed(self) -> bool:
         """Create a fresh schema-applied SQLite file in a local tmp dir
@@ -811,6 +814,11 @@ class Database:
             seed = Path(tmp) / "coros.db"
             conn = sqlite3.connect(str(seed))
             try:
+                journal_mode = conn.execute(_WAL_JOURNAL_MODE_SQL).fetchone()[0]
+                if str(journal_mode).lower() != "wal":
+                    raise sqlite3.OperationalError(
+                        f"failed to seed SQLite database in WAL mode: {journal_mode}"
+                    )
                 conn.executescript(SCHEMA)
                 conn.commit()
                 # Checkpoint so the moved file is self-contained — no
@@ -865,12 +873,39 @@ class Database:
         Each ALTER is wrapped to swallow "duplicate column" errors — this makes
         the migration idempotent under concurrent connections (two requests
         racing to add the same column would otherwise 500 one of them).
+
+        Acquire the writer lazily, only when a migration is actually needed.
+        Azure Files SMB can reject a deferred read transaction when SQLite later
+        upgrades it for ``ALTER TABLE`` even though a fresh ``BEGIN IMMEDIATE``
+        succeeds. Current-schema opens must remain read-only so they can coexist
+        with a separate business writer connection.
         """
+        migration_writer_acquired = False
+
+        def _ensure_migration_writer() -> None:
+            nonlocal migration_writer_acquired
+            if migration_writer_acquired:
+                return
+            self._conn.commit()
+            self._conn.execute("BEGIN IMMEDIATE")
+            migration_writer_acquired = True
+
         def _add(table: str, column: str, coltype: str) -> None:
             try:
                 cols = {r[1] for r in self._conn.execute(f"PRAGMA table_info({table})").fetchall()}
                 if not cols:
                     return  # table doesn't exist yet; SCHEMA script will have the column
+                if column in cols:
+                    return
+                _ensure_migration_writer()
+                # Another migrator may have won while this connection moved from
+                # schema inspection to the immediate writer transaction.
+                cols = {
+                    r[1]
+                    for r in self._conn.execute(
+                        f"PRAGMA table_info({table})"
+                    ).fetchall()
+                }
                 if column in cols:
                     return
                 self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
@@ -1730,6 +1765,96 @@ class Database:
                 "total_duration_s": int(row["total_duration_s"] or 0),
                 "avg_pace_s_km": int(row["avg_pace_s_km"]) if row["avg_pace_s_km"] is not None else None,
                 "avg_hr": int(row["avg_hr"]) if row["avg_hr"] is not None else None,
+            }
+        return summaries
+
+    def get_training_dose_week_summaries(
+        self,
+        week_windows: list[tuple[int, str, str]],
+        *,
+        algorithm_version: int | None = None,
+    ) -> dict[int, dict]:
+        """Return actual STRIDE training-dose summaries per Shanghai-local week.
+
+        ``week_windows`` items are ``(week_index, date_from, date_to)`` with
+        date bounds in ``YYYY-MM-DD`` Shanghai calendar days (the current week's
+        ``date_to`` should already be clamped to *today* so future days are not
+        counted). Dose comes from ``daily_training_load`` for the requested
+        ``algorithm_version`` (defaults to the live ``TRAINING_LOAD_MODEL_VERSION``)
+        and covers **all** sports, not just running.
+
+        Coverage semantics per week:
+
+        - A day counts as an *available* value when its ``coverage_status`` is
+          ``complete``, ``partial`` or ``rest_confirmed`` (``unknown`` never
+          contributes a dose).
+        - ``coverage`` is available days / expected calendar days in the window.
+        - ``dose_status`` is ``complete`` when every available day is
+          ``complete``/``rest_confirmed`` *and* coverage is full; ``partial``
+          when at least one available day exists but the window is not fully
+          ``complete``/``rest_confirmed`` covered; ``unknown`` (with
+          ``training_dose`` ``None``) when the window has no available day.
+        """
+        if not week_windows:
+            return {}
+
+        if algorithm_version is None:
+            from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+            algorithm_version = TRAINING_LOAD_MODEL_VERSION
+
+        available = ("complete", "partial", "rest_confirmed")
+        full = ("complete", "rest_confirmed")
+        summaries: dict[int, dict] = {}
+        for week_index, date_from, date_to in week_windows:
+            expected_days = int(
+                round(
+                    self._conn.execute(
+                        "SELECT julianday(?) - julianday(?) + 1", (date_to, date_from)
+                    ).fetchone()[0]
+                )
+            )
+            if expected_days <= 0:
+                continue
+            row = self._conn.execute(
+                f"""SELECT
+                        coalesce(sum(CASE WHEN coverage_status IN ({','.join('?' * len(available))})
+                            THEN training_dose ELSE 0 END), 0) AS total_dose,
+                        count(DISTINCT CASE WHEN coverage_status IN ({','.join('?' * len(available))})
+                            THEN date END) AS available_days,
+                        count(DISTINCT CASE WHEN coverage_status NOT IN ({','.join('?' * len(full))})
+                            AND coverage_status IN ({','.join('?' * len(available))})
+                            THEN date END) AS non_full_days
+                   FROM daily_training_load
+                  WHERE algorithm_version = ?
+                    AND date BETWEEN ? AND ?""",
+                (
+                    *available,
+                    *available,
+                    *full,
+                    *available,
+                    algorithm_version,
+                    date_from,
+                    date_to,
+                ),
+            ).fetchone()
+
+            available_days = int(row["available_days"] or 0)
+            if available_days == 0:
+                summaries[int(week_index)] = {
+                    "actual_training_dose": None,
+                    "actual_training_dose_coverage": 0.0,
+                    "dose_status": "unknown",
+                }
+                continue
+
+            non_full_days = int(row["non_full_days"] or 0)
+            coverage = round(min(1.0, available_days / expected_days), 3)
+            is_complete = non_full_days == 0 and available_days >= expected_days
+            summaries[int(week_index)] = {
+                "actual_training_dose": round(float(row["total_dose"] or 0.0), 1),
+                "actual_training_dose_coverage": coverage,
+                "dose_status": "complete" if is_complete else "partial",
             }
         return summaries
 

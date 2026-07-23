@@ -24,6 +24,7 @@
 # 其他常用命令
 # ------------
 #   scripts/coach-local.sh coach "我当前的总体训练计划是什么？"
+#   scripts/coach-local.sh sync                  # 仅同步本地 COROS DB，不启动 Coach
 #   scripts/coach-local.sh eval-resolver resolver-master-read
 #   scripts/coach-local.sh smoke                 # 验证 Agent Maestro Responses API
 #   scripts/coach-local.sh smoke gpt-5.6-luna
@@ -70,6 +71,7 @@ Commands:
   smoke [model]       Verify Agent Maestro /responses (default: gpt-5.6-sol)
   eval-resolver [id]  Run real-LLM Resolver fixtures (optional fixture id)
   coach [message]     Start Coach CLI; no message opens the interactive REPL
+  sync                Sync the local COROS DB without launching Coach
   help                Show this help
 
 Optional environment variables:
@@ -174,6 +176,23 @@ coach_python() {
   fi
 }
 
+run_coros_sync() {
+  local main_root="$1" python="$2" profile="$3"
+  PYTHONIOENCODING=utf-8 PYTHONPATH="$main_root/src${PYTHONPATH:+:$PYTHONPATH}" \
+    "$python" -m coros_sync -P "$profile" sync
+}
+
+cmd_sync() {
+  local main_root python profile
+  main_root="$(main_checkout_root)"
+  python="$(coach_python "$main_root")"
+  profile="${STRIDE_COACH_PROFILE:-zhaochaoyi}"
+
+  [[ -x "$python" ]] || fail "Coach Python is not executable: $python"
+
+  run_coros_sync "$main_root" "$python" "$profile"
+}
+
 cmd_coach() {
   local main_root data_dir python profile bypass config_files agent_api_key
   main_root="$(main_checkout_root)"
@@ -190,8 +209,7 @@ cmd_coach() {
   [[ -f "$REPO_ROOT/config/server.coach-cli.toml" ]] || fail "missing Coach CLI server overlay"
 
   if [[ "${STRIDE_COACH_SKIP_SYNC:-0}" != "1" ]]; then
-    PYTHONIOENCODING=utf-8 PYTHONPATH="$main_root/src${PYTHONPATH:+:$PYTHONPATH}" \
-      "$python" -m coros_sync -P "$profile" sync
+    run_coros_sync "$main_root" "$python" "$profile"
   fi
 
   local args=(
@@ -240,6 +258,7 @@ case "$command_name" in
   smoke) [[ $# -le 1 ]] || fail "smoke accepts at most one model"; cmd_smoke "$@" ;;
   eval-resolver) [[ $# -le 1 ]] || fail "eval-resolver accepts at most one fixture id"; cmd_eval_resolver "$@" ;;
   coach) cmd_coach "$@" ;;
+  sync) [[ $# -eq 0 ]] || fail "sync takes no arguments"; cmd_sync ;;
   help|-h|--help) usage ;;
   *) usage >&2; fail "unknown command: $command_name" ;;
 esac

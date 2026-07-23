@@ -91,6 +91,9 @@ class MasterPlanDiff(BaseModel):
     ops: list[MasterPlanDiffOp]
     ai_explanation: str
     created_at: str               # ISO datetime UTC
+    # Version of the active plan this diff was built against. Keeping it inside
+    # the durable proposal prevents history recovery from rebinding a stale diff.
+    base_revision: str | None = None
 
 
 _TARGET_TIME_RE = re.compile(

@@ -24,6 +24,12 @@ from langgraph.graph import END, START, StateGraph
 from coach.contracts import SpecialistRegistry, TargetRef, Turn, TurnResponse
 from .aggregator import SynthFn, aggregate
 from .dispatcher import dispatch
+from .idempotency import (
+    append_receipt,
+    assistant_message_id,
+    request_fingerprint,
+    resolve_replay,
+)
 from .memory import MemoryExtractFn, MemoryStore, load_active_memories, write_memories
 from .resolver import ResolverDraftFn, TargetResolverFn, resolve
 from .state import (
@@ -43,7 +49,42 @@ def _ms(since: float) -> float:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _events_context(events: list[dict[str, Any]], *, limit: int = 5) -> str:
+    """Compact natural-language projection of the most recent trusted events.
+
+    Surfaces what the user actually committed to (applied / abandoned a
+    proposal) so the coach doesn't re-propose something just done or dropped.
+    """
+    if not events:
+        return ""
+    recent = events[-limit:]
+    lines = ["# 最近的计划操作回执"]
+    for ev in recent:
+        summary = str(ev.get("summary") or ev.get("type") or "")
+        status = str(ev.get("status") or "")
+        lines.append(f"- [{status}] {summary}".rstrip())
+    return "\n".join(lines)
+
+
+def _build_assistant_message(
+    *, reply: str, message_id: str, turn_id: str, created_at: str
+) -> dict[str, Any]:
+    """The stable-identity assistant message dict surfaced to the HTTP layer.
+
+    Kept as a plain dict (core layer) so the route/runtime can return an
+    identical payload on the first run and on any replay.
+    """
+    parts = [{"kind": "text", "text": reply}] if reply else []
+    return {
+        "role": "assistant",
+        "message_id": message_id,
+        "turn_id": turn_id,
+        "created_at": created_at,
+        "parts": parts,
+    }
 
 
 def build_orchestrator_graph(
@@ -71,13 +112,83 @@ def build_orchestrator_graph(
         # Window excludes the current utterance (the trailing HumanMessage).
         window = history_to_window(history[:-1]) if history else []
 
+        # Idempotency: a replay of the same client_turn_id + same request returns
+        # the stored turn output (including stable message identity) without
+        # re-invoking the model. A reuse with a different request raises
+        # TurnConflictError (surfaced as 409 upstream). The fingerprint is keyed
+        # on the *request* target the client sent this turn, never the promoted
+        # active_target (which the pipeline mutates).
+        client_turn_id = state.get("client_turn_id")
+        receipts = list(state.get("turn_receipts") or [])
+        request_context = state.get("request_context")
+        fingerprint = ""
+        if client_turn_id:
+            fingerprint = request_fingerprint(
+                message=utterance,
+                request_target=state.get("request_target"),
+                request_context=request_context,
+            )
+            receipt = resolve_replay(
+                receipts, client_turn_id=client_turn_id, fingerprint=fingerprint
+            )
+            if receipt is not None:
+                replayed = receipt.get("turn_response") or {}
+                replayed_reply = str(replayed.get("reply") or "")
+                aid = assistant_message_id(client_turn_id)
+                created_at = str(receipt.get("created_at") or "")
+                # Re-emit the SAME assistant id so add_messages replaces (not
+                # appends) the prior row — history stays de-duplicated.
+                return {
+                    "history": [AIMessage(content=replayed_reply, id=aid)],
+                    "active_target": (replayed.get("active_target") or None),
+                    "turn_response": replayed,
+                    "assistant_message": _build_assistant_message(
+                        reply=replayed_reply,
+                        message_id=str(receipt.get("message_id") or aid),
+                        turn_id=client_turn_id,
+                        created_at=created_at,
+                    ),
+                    "injected_memories": [],
+                    "turn_receipts": receipts,
+                }
+
+        def _finish(result: dict[str, Any]) -> dict[str, Any]:
+            """Attach stable message identity + an idempotency receipt."""
+            reply = str((result.get("turn_response") or {}).get("reply") or "")
+            if client_turn_id:
+                aid = assistant_message_id(client_turn_id)
+                created_at = _now_iso()
+                # Tag the emitted assistant message with a stable id so a later
+                # replay overwrites this row instead of appending a copy.
+                new_history = result.get("history") or []
+                result["history"] = [
+                    (m.model_copy(update={"id": aid}) if isinstance(m, AIMessage) else m)
+                    for m in new_history
+                ]
+                result["assistant_message"] = _build_assistant_message(
+                    reply=reply,
+                    message_id=aid,
+                    turn_id=client_turn_id,
+                    created_at=created_at,
+                )
+                result["turn_receipts"] = append_receipt(
+                    receipts,
+                    client_turn_id=client_turn_id,
+                    fingerprint=fingerprint,
+                    turn_response=result.get("turn_response") or {},
+                    message_id=aid,
+                    created_at=created_at,
+                )
+            return result
+
+
         # Adapter-provided deterministic gates may answer before any memory,
         # target, data, or specialist access. The response still enters graph
         # history, so the next turn can resume the clarification naturally.
         if turn_preflight_fn is not None:
             preflight = turn_preflight_fn(utterance, window)
             if preflight is not None:
-                return {
+                return _finish({
                     "history": [AIMessage(content=preflight.reply)],
                     "active_target": (
                         preflight.active_target.model_dump()
@@ -86,7 +197,7 @@ def build_orchestrator_graph(
                     ),
                     "turn_response": preflight.model_dump(),
                     "injected_memories": [],
-                }
+                })
 
         prior_raw = state.get("active_target")
         prior_target = TargetRef.model_validate(prior_raw) if prior_raw else None
@@ -97,6 +208,13 @@ def build_orchestrator_graph(
         memory_context = ""
         if memory_store is not None and user_id:
             active_memories, memory_context = load_active_memories(memory_store, user_id)
+        # Project trusted events (applied / abandoned) into context so the coach
+        # knows what the user actually committed to. Kept compact (last few).
+        events_context = _events_context(state.get("events") or [])
+        if events_context:
+            memory_context = (
+                f"{memory_context}\n{events_context}" if memory_context else events_context
+            )
         injected_ids = [m.id for m in active_memories]
         logger.debug(
             "turn start | window=%d turns | memories=%d | prior_target_kind=%s "
@@ -115,6 +233,7 @@ def build_orchestrator_graph(
             conversation_window=window,
             prior_target=prior_target,
             memory_context=memory_context,
+            review_context=request_context,
             target_resolver=target_resolver,
         )
         logger.debug(
@@ -146,6 +265,7 @@ def build_orchestrator_graph(
                 utterance=utterance,
                 conversation_window=window,
                 memory_context=memory_context,
+                review_context=request_context,
             )
             logger.debug(
                 "② supervisor %.0fms | call_plan=%s",
@@ -204,15 +324,36 @@ def build_orchestrator_graph(
             if resolver_output.active_target is not None
             else None
         )
-        return {
+        return _finish({
             "history": [AIMessage(content=turn_response.reply)],
             "active_target": active_target,
             "turn_response": turn_response.model_dump(),
             "injected_memories": injected_ids,
-        }
+        })
 
     graph = StateGraph(OrchestratorState)
     graph.add_node("pipeline", _pipeline)
     graph.add_edge(START, "pipeline")
     graph.add_edge("pipeline", END)
+    return graph.compile(checkpointer=checkpointer)
+
+
+def build_event_recorder_graph(*, checkpointer: Any | None = None) -> Any:
+    """A minimal graph that appends a trusted CoachEvent to a thread's state.
+
+    Uses langgraph's own checkpoint mechanism (not a hand-built ``put``) so the
+    event lands durably on the same thread the chat turns use. The event goes on
+    the dedicated ``events`` channel — never disguised as a message turn.
+    """
+
+    def _record(state: OrchestratorState) -> dict[str, Any]:
+        # The caller seeds a single-item ``events`` list on invoke; langgraph's
+        # append reducer merges it into the persisted list before this node runs.
+        # Nothing else to compute — the event is already recorded.
+        return {}
+
+    graph = StateGraph(OrchestratorState)
+    graph.add_node("record", _record)
+    graph.add_edge(START, "record")
+    graph.add_edge("record", END)
     return graph.compile(checkpointer=checkpointer)

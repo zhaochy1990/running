@@ -3,8 +3,26 @@ from __future__ import annotations
 from datetime import date
 from types import SimpleNamespace
 
+import pytest
+
 from coach.graphs.generation.rule_filter import run_rule_filter
 from stride_server import weekly_plan_generator as generator
+from tests.stride_server._fake_weekly_plan import (
+    fake_week_plan_dict,
+    install_fake_weekly_generator,
+)
+
+# A fixed "today" AFTER the test weeks (prior weeks complete, target week not
+# mid-week) — deterministic regardless of wall clock. Mid-week tests override it.
+_AFTER = date(2026, 7, 27)
+
+
+@pytest.fixture(autouse=True)
+def _fake_llm_generator(monkeypatch):
+    """The executable week is LLM-generated; install a deterministic rule-clean
+    fake so build_weekly_plan's orchestration is tested without a live LLM."""
+    install_fake_weekly_generator(monkeypatch)
+    monkeypatch.setattr(generator, "today_shanghai", lambda: _AFTER)
 
 
 class _Db:
@@ -65,6 +83,99 @@ def _master(
     return SimpleNamespace(weeks=[week], weekly_key_sessions=[], phases=[phase])
 
 
+def _specd_week(folder, week_start, target_km):
+    plan = fake_week_plan_dict(folder, week_start, target_km)
+    for s in plan["sessions"]:
+        if s["kind"] == "run":
+            s["spec"] = {
+                "schema": "run-workout/v1",
+                "name": "Easy",
+                "date": s["date"],
+                "note": None,
+                "blocks": [
+                    {
+                        "repeat": 1,
+                        "steps": [
+                            {
+                                "step_kind": "work",
+                                "duration": {"kind": "distance_m", "value": s["total_distance_m"]},
+                                "target": {"kind": "pace_s_km", "low": 360, "high": 330},
+                            }
+                        ],
+                    }
+                ],
+            }
+    return plan
+
+
+def test_midweek_merge_handles_specd_future_runs(monkeypatch) -> None:
+    """A spec'd future run that gets zeroed (REST) or rescaled mid-week must not
+    crash PlannedSession validation (spec must be None on kind=rest) or keep a
+    stale structured distance."""
+    monkeypatch.setattr(generator, "today_shanghai", lambda: date(2026, 7, 15))
+    monkeypatch.setattr(
+        "stride_server.master_plan_store.get_master_plan_store",
+        lambda: SimpleNamespace(get_active_plan=lambda _uid: _master(98, 102)),
+    )
+    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
+    monkeypatch.setattr(
+        generator,
+        "get_db",
+        lambda _uid: _StateDb(
+            completed_weeks=(100.0, 100.0),
+            load_ratio=1.0,
+            daily={  # Mon/Tue/Wed already hit the whole target → remaining 0
+                0: {"actual_distance_km": 34.0, "total_duration_s": 10000},
+                1: {"actual_distance_km": 34.0, "total_duration_s": 10000},
+                2: {"actual_distance_km": 34.0, "total_duration_s": 10000},
+            },
+        ),
+    )
+
+    def _fake(phase, week_metas, context, injuries=None, **kwargs):
+        meta = week_metas[0]
+        ws = date.fromisoformat(meta.week_folder[:10])
+        return [_specd_week(meta.week_folder, ws, float(meta.target_weekly_km))]
+
+    monkeypatch.setattr(
+        "stride_server.coach_adapters.phase_specialist_adapter."
+        "generate_phase_validated",
+        _fake,
+    )
+
+    # Must not raise (BLOCKER: REST conversion left a spec on a kind=rest session).
+    generated = generator.build_weekly_plan(user_id="u1", week_start=date(2026, 7, 13))
+
+    for s in generated.plan.sessions:
+        if s.kind.value in ("rest", "cross", "note"):
+            assert s.spec is None
+        if s.kind.value == "run" and s.spec is not None:
+            total = sum(
+                float(step.duration.value or 0)
+                for block in s.spec.blocks
+                for step in block.steps
+                if step.duration.kind.value == "distance_m"
+            )
+            assert abs(total - float(s.total_distance_m or 0)) < 1.0
+
+
+def test_build_weekly_plan_requests_structured_generation(monkeypatch) -> None:
+    """build_weekly_plan must ask the LLM generator for watch-pushable structured
+    specs (structured=True), not the aspirational spec=null skeleton."""
+    capture: dict = {}
+    monkeypatch.setattr(
+        "stride_server.master_plan_store.get_master_plan_store",
+        lambda: SimpleNamespace(get_active_plan=lambda _uid: _master(68, 74)),
+    )
+    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
+    monkeypatch.setattr(generator, "get_db", lambda _uid: _Db())
+    install_fake_weekly_generator(monkeypatch, capture=capture)
+
+    generator.build_weekly_plan(user_id="u1", week_start=date(2026, 7, 13))
+
+    assert capture["structured"] is True
+
+
 def test_generator_uses_active_master_week_target_and_passes_week_rules(
     monkeypatch,
 ) -> None:
@@ -83,7 +194,43 @@ def test_generator_uses_active_master_week_target_and_passes_week_rules(
     assert sum(
         (session.total_distance_m or 0) for session in generated.plan.sessions
     ) == 71000
-    assert "总体计划第 11 周" in (generated.plan.notes_md or "")
+    notes = generated.plan.notes_md or ""
+    assert "总体计划第 11 周" in notes
+    assert "### 本周定位" in notes
+    assert "### 训练逻辑" in notes
+    assert "### 执行与调整" in notes
+    assert "质量课" in notes
+    assert "长距离" in notes
+    assert "规则引擎生成" not in notes
+
+    assert len(generated.plan.nutrition) == 7
+    assert [item.date for item in generated.plan.nutrition] == [
+        f"2026-07-{day:02d}" for day in range(13, 20)
+    ]
+    rest_nutrition = generated.plan.nutrition[0]
+    training_nutrition = generated.plan.nutrition[1]
+    assert training_nutrition.kcal_target == rest_nutrition.kcal_target + 200
+    assert training_nutrition.carbs_g is not None
+    assert training_nutrition.protein_g is not None
+    assert training_nutrition.fat_g is not None
+    assert training_nutrition.water_ml == 3000
+    assert [meal.name for meal in training_nutrition.meals] == [
+        "训练前补给",
+        "训练中补给",
+        "训练后恢复",
+    ]
+
+    strength = next(
+        session
+        for session in generated.plan.sessions
+        if session.kind.value == "strength"
+    )
+    assert strength is not None
+    # LLM-generated weeks are aspirational: every session's spec is null (the
+    # pushable structured strength/run specs are produced separately, not by the
+    # weekly generator).
+    assert all(session.spec is None for session in generated.plan.sessions)
+
     report = run_rule_filter(
         generated.plan.to_dict(), target_weekly_km=71.0
     )
@@ -317,25 +464,101 @@ def test_explicit_base_distance_overrides_master_week_target(monkeypatch) -> Non
 
 def test_generator_rejects_rule_invalid_output(monkeypatch) -> None:
     monkeypatch.setattr(generator, "_master_week_target", lambda *_: None)
+    monkeypatch.setattr(
+        "stride_server.master_plan_store.get_master_plan_store",
+        lambda: SimpleNamespace(get_active_plan=lambda _uid: None),
+    )
     monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
     monkeypatch.setattr(generator, "get_db", lambda _uid: _Db())
-    real_generate = generator.generate_week_plan
 
-    def _invalid(**kwargs):
-        plan, base = real_generate(**kwargs)
-        from dataclasses import replace
+    def _invalid(phase, week_metas, context, injuries=None, **kwargs):
+        # A single 30km run out of a 40km week → long_run_share 75% > 35%.
+        meta = week_metas[0]
+        week_start = date.fromisoformat(meta.week_folder[:10])
+        plan = fake_week_plan_dict(meta.week_folder, week_start, 40.0)
+        plan["sessions"][-1]["total_distance_m"] = 30000
+        return [plan]
 
-        sessions = list(plan.sessions)
-        sessions[-1] = replace(sessions[-1], total_distance_m=30000)
-        return replace(plan, sessions=tuple(sessions)), base
+    monkeypatch.setattr(
+        "stride_server.coach_adapters.phase_specialist_adapter."
+        "generate_phase_validated",
+        _invalid,
+    )
 
-    monkeypatch.setattr(generator, "generate_week_plan", _invalid)
-
-    import pytest
-
-    with pytest.raises(ValueError, match="failed safety rules"):
+    with pytest.raises(
+        generator.WeeklyPlanGenerationError, match="failed safety rules"
+    ):
         generator.build_weekly_plan(
             user_id="u1",
             week_start=date(2026, 7, 13),
             base_distance_km=40,
         )
+
+
+def test_midweek_same_day_double_does_not_double_count_actuals(monkeypatch) -> None:
+    """A synced day's actual km aggregates the whole day, so a same-day double
+    (session_index 0/1) must credit it to ONE session — never both."""
+    monkeypatch.setattr(generator, "today_shanghai", lambda: date(2026, 7, 15))
+    monkeypatch.setattr(
+        "stride_server.master_plan_store.get_master_plan_store",
+        lambda: SimpleNamespace(get_active_plan=lambda _uid: _master(98, 102)),
+    )
+    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
+    monkeypatch.setattr(
+        generator,
+        "get_db",
+        lambda _uid: _StateDb(
+            completed_weeks=(100.0, 100.0),
+            load_ratio=1.0,
+            daily={
+                0: {"actual_distance_km": 30.0, "total_duration_s": 9000},
+                1: {"actual_distance_km": 30.0, "total_duration_s": 9000},
+                2: {"actual_distance_km": 30.0, "total_duration_s": 9000},
+            },
+        ),
+    )
+
+    def _double_fake(phase, week_metas, context, injuries=None, **kwargs):
+        meta = week_metas[0]
+        week_start = date.fromisoformat(meta.week_folder[:10])
+        plan = fake_week_plan_dict(
+            meta.week_folder, week_start, float(meta.target_weekly_km)
+        )
+        plan["sessions"].append(
+            {
+                "schema": "plan-session/v1",
+                "date": "2026-07-15",
+                "session_index": 1,
+                "kind": "run",
+                "summary": "午后恢复跑（6K）",
+                "spec": None,
+                "notes_md": "极轻松",
+                "total_distance_m": 6000,
+                "total_duration_s": 2000,
+                "scheduled_workout_id": None,
+            }
+        )
+        return [plan]
+
+    monkeypatch.setattr(
+        "stride_server.coach_adapters.phase_specialist_adapter."
+        "generate_phase_validated",
+        _double_fake,
+    )
+
+    generated = generator.build_weekly_plan(
+        user_id="u1", week_start=date(2026, 7, 13)
+    )
+
+    wed = [s for s in generated.plan.sessions if s.date == "2026-07-15"]
+    assert len(wed) == 2
+    completed_wed = [s for s in wed if s.summary.startswith("已完成跑步")]
+    assert len(completed_wed) == 1
+    completed_km_total = sum(
+        float(s.total_distance_m or 0)
+        for s in generated.plan.sessions
+        if s.summary.startswith("已完成跑步")
+    )
+    # 3 locked days × 30K credited ONCE each. The double-count bug would credit
+    # Wed twice → 120K.
+    assert completed_km_total == 90_000

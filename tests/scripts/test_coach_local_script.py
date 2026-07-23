@@ -61,6 +61,7 @@ def test_help_exposes_coach_workflow(tmp_path: Path) -> None:
     assert "smoke [model]" in result.stdout
     assert "eval-resolver [id]" in result.stdout
     assert "coach [message]" in result.stdout
+    assert "sync" in result.stdout
     # The proxy lifecycle commands no longer exist.
     assert "auth" not in result.stdout
     assert "start" not in result.stdout
@@ -98,6 +99,18 @@ def test_coach_command_uses_agent_maestro() -> None:
     assert "server.coach-cli.toml" in body
     assert "STRIDE_CONFIG_FILES" in body
     assert "coros_sync" in body
+
+
+def test_standalone_sync_command_only_runs_coros_sync() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    body = source.split("cmd_sync() {", 1)[1].split("cmd_coach() {", 1)[0]
+
+    # The standalone `sync` command refreshes the local COROS DB and nothing else.
+    assert "run_coros_sync" in body
+    assert "coach_cli" not in body
+    assert "agent_maestro_api_key" not in body
+    # It is wired into the command dispatch.
+    assert 'sync) [[ $# -eq 0 ]] || fail "sync takes no arguments"; cmd_sync ;;' in source
 
 
 def test_eval_resolver_uses_agent_maestro_without_sync() -> None:

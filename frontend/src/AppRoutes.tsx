@@ -18,6 +18,10 @@ import TeamsListPage from './pages/teams/TeamsListPage'
 import TeamDetailPage from './pages/teams/TeamDetailPage'
 import CreateTeamPage from './pages/teams/CreateTeamPage'
 import UserCenterPage from './pages/UserCenterPage'
+import CoachChatPage from './pages/CoachChatPage'
+import WeeklyPlanAdjustPage from './pages/WeeklyPlanAdjustPage'
+import MasterPlanAdjustPage from './pages/MasterPlanAdjustPage'
+import { useUser } from './UserContextValue'
 import { getMyProfile } from './api'
 import LandingPage from './pages/landing/LandingPage'
 
@@ -78,6 +82,22 @@ function OnboardingGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// Coach chat is whitelist-gated (profile.features.coach_chat). Until the
+// profile is loaded we show a spinner (avoids a flash / premature redirect);
+// once ready, a non-whitelisted user visiting /coach directly goes home.
+function CoachChatGate({ children }: { children: React.ReactNode }) {
+  const { profileReady, coachChat } = useUser()
+  if (!profileReady) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-green/30 border-t-accent-green" />
+      </div>
+    )
+  }
+  if (!coachChat) return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
 function Dashboard() {
   return (
     <OnboardingGate>
@@ -85,6 +105,9 @@ function Dashboard() {
         <Routes>
           <Route element={<AppLayout />}>
             <Route path="/" element={<WeeklyPlanRoute />} />
+            <Route path="/coach" element={<CoachChatGate><CoachChatPage /></CoachChatGate>} />
+            <Route path="/coach/week/:folder/adjust" element={<CoachChatGate><WeeklyPlanAdjustPage /></CoachChatGate>} />
+            <Route path="/coach/master/:planId/adjust" element={<CoachChatGate><MasterPlanAdjustPage /></CoachChatGate>} />
             <Route path="/week/:folder" element={<WeeklyPlanRoute />} />
             <Route path="/activity/:id" element={<ActivityDetailPage />} />
             <Route path="/teams/:teamId/activity/:userId/:labelId" element={<ActivityDetailPage />} />

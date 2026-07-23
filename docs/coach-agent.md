@@ -112,13 +112,19 @@ Local/file backend 是 `data/.weekly_plans.json`。
 - **Pattern A**：Long-running jobs 用 FastAPI `BackgroundTasks` + Azure Table job 行 + heartbeats。App startup 在 lifespan hook 里跑 `JobScheduler.reconcile_stale_jobs()`（`app.py`）；`heartbeat_at` 超过 120s 的 RUNNING 行翻成 `FAILED`，`error_code='interrupted_by_restart'`。ACA 单副本（`--max-replicas 1`）—— 多副本需要 Service Bus。
 - **Pattern X**：AI 永远不调任何 execute 工具。所有副作用（push to watch / apply diff / sync 等）走 deterministic UI-chip endpoint。Agent 只做 (a) reads (b) draft proposals。
 - **Pattern P**：Conversation graphs 按请求构造（toolkit 在构造时绑定 user_id）；checkpointer + LLMs 是 `stride_server.coach_runtime` 里的 module-level singleton，测试用 `set_*_for_tests` 注入。
+- **Conversation idempotency**：每个写入对话的请求携带 `client_turn_id`。同一 thread 串行执行；相同 ID + 相同请求重放 checkpoint 中最近 50 条回执，不重复调用模型或追加消息；相同 ID + 不同请求返回 409。
+- **Trusted events**：计划启用或方案放弃写入独立 `events` checkpoint channel，不伪装成 `SystemMessage`。事件作为 `role=event` 返回给 UI，并以紧凑可信上下文提供给后续 Coach 推理。
 
 ## Coach HTTP endpoints (S3 + audit)
 
 | Method + path | Purpose |
 |---------------|---------|
-| `POST /api/users/me/coach/chat` | 唯一公开 Coach 对话入口。Session-threaded orchestrator brain，server 派生 `thread_id = f"{user_id}:coach:{session_id}"`，状态问答经 `status_insight` 只读 specialist。 |
-| `GET /api/users/me/coach/threads/{thread_id}/messages` | 跨 session chat history。解析 thread_id；owner 段必须 == JWT.sub 否则 403。malformed → 400。支持 `coach` session thread；内部 `qa` scope 只作为 `status_insight` implementation detail，不再是 public API。 |
+| `POST /api/users/me/coach/chat` | 唯一公开 Coach 对话入口。请求必须带 `session_id`、`client_turn_id`、`message`，计划工作区还带 authoritative `target`；server 派生 `thread_id = f"{user_id}:coach:{session_id}"`。 |
+| `GET /api/users/me/coach/sessions/{session_id}/messages` | Web/客户端历史入口。thread 由 JWT `sub` + session 派生；普通用户仅获得 user + assistant `text/refusal`，debug 白名单额外获得 reasoning、tool metadata 与 tool 行。 |
+| `GET /api/users/me/coach/threads/{thread_id}/messages` | 内部审计兼容入口。owner 段必须等于 JWT `sub`；malformed → 400，cross-user → 403。 |
+| `POST /api/users/me/coach/plan/{folder}/apply` | 整单创建或启用本周课表调整。请求携带 `session_id`，启用事件写回同一会话；`base_revision` 使用 Weekly Plan canonical JSON SHA-256；过期 409；`season_impact=material` 需 `impact_acknowledgement=weekly_only`。 |
+| `POST /api/users/me/coach/master-plan/{plan_id}/apply` | 整单启用赛季训练计划调整。请求携带 `session_id`，启用事件写回同一会话；`base_revision` 使用 Master Plan `version`；过期 409。 |
+| `POST /api/users/me/coach/proposals/abandon` | 记录用户放弃调整方案，写入 trusted event，不修改计划。 |
 | `GET /api/users/me/coach/plan-versions/week/{folder}` | 倒序列出某周的 plan versions，限定 JWT.sub user_id。 |
 | `GET /api/users/me/coach/plan-versions/week/{folder}/{version_id}` | Version artifact + parent chain。`folder` 必传 —— 没有全表扫描 fallback。missing 或 cross-user → 404。 |
 
