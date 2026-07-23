@@ -101,7 +101,7 @@ export function WeeklyPlanAdjustWorkspace({
   }
 
   return (
-    <WorkspaceLayout title="调整本周计划" chat={chat}>
+    <WorkspaceLayout title="调整训练周" chat={chat}>
       <section className="space-y-4">
         <div className="rounded-lg border border-border-subtle bg-bg-card p-4">
           <div className="text-xs font-medium uppercase tracking-wide text-text-muted">

@@ -13,6 +13,12 @@ interface PlanAdjustIntakeWorkspaceProps {
    * coach create one rather than adjust.
    */
   readonly emptyTarget?: boolean
+  /**
+   * Full render of the current plan (e.g. `<CreateReview />`), shown inside the
+   * current-plan card below the one-line summary. Omitted for `master` and when
+   * the plan hasn't loaded / the target week is empty.
+   */
+  readonly currentPlanDetail?: ReactNode
 }
 
 /**
@@ -26,8 +32,9 @@ export function PlanAdjustIntakeWorkspace({
   currentPlanSummary,
   chat,
   emptyTarget = false,
+  currentPlanDetail,
 }: PlanAdjustIntakeWorkspaceProps) {
-  const title = kind === 'weekly' ? '调整本周计划' : '调整赛季计划'
+  const title = kind === 'weekly' ? '调整训练周' : '调整赛季计划'
   return (
     <WorkspaceLayout title={title} chat={chat}>
       <section className="space-y-4">
@@ -36,6 +43,9 @@ export function PlanAdjustIntakeWorkspace({
             {kind === 'weekly' ? '当前计划' : '当前赛季计划'}
           </div>
           <div className="mt-1 text-sm text-text-primary">{currentPlanSummary}</div>
+          {currentPlanDetail && (
+            <div className="mt-4 border-t border-border-subtle pt-4">{currentPlanDetail}</div>
+          )}
         </div>
 
         <div className="rounded-lg border border-border-subtle bg-bg-card p-4 text-sm text-text-muted">
