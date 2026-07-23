@@ -470,6 +470,7 @@ def _merge_current_week_actuals(
                     session,
                     kind=SessionKind.REST,
                     summary="恢复休息（本周实际跑量已达目标）",
+                    spec=None,
                     notes_md=None,
                     total_distance_m=None,
                     total_duration_s=None,
@@ -481,9 +482,16 @@ def _merge_current_week_actuals(
                 if old_distance > 0
                 else None
             )
+            # The generated spec's block distances were sized for the ORIGINAL
+            # mileage; after a mid-week rescale they no longer match the new
+            # total_distance_m. Drop the spec (fall back to aspirational for this
+            # adjusted run) rather than push a structured workout with stale
+            # distances — pushing reads spec, not total_distance_m.
+            rescaled_spec = session.spec if distance_m == round(old_distance) else None
             sessions[index] = replace(
                 session,
                 summary=_replace_distance_label(session.summary, distance_m / 1000.0),
+                spec=rescaled_spec,
                 total_distance_m=distance_m,
                 total_duration_s=round(duration_s) if duration_s else None,
             )
@@ -698,6 +706,7 @@ def _llm_generate_week(
         injuries=[],
         milestones=milestones,
         user_request=user_request,
+        structured=True,
     )
     if not weeks:
         raise WeeklyPlanGenerationError(

@@ -292,6 +292,7 @@ def generate_specialist_phase(
     milestones: list[Milestone] | None = None,
     feedback: str | None = None,
     user_request: str | None = None,
+    structured: bool = False,
 ) -> list[dict]:
     """Generate ALL weeks of one phase in a single LLM call.
 
@@ -372,6 +373,7 @@ def generate_specialist_phase(
         context_block=context_block,
         milestone_summary=milestone_summary,
         feedback=feedback,
+        structured=structured,
     )
 
     user_text = (
@@ -504,6 +506,84 @@ def _format_rule_feedback(
     return header + "\n" + "\n".join(lines)
 
 
+def _missing_spec_violations(week: dict) -> list[RuleViolation]:
+    """Structured-mode check: every run/strength session MUST carry a spec.
+
+    In ``structured=True`` generation the LLM must emit a watch-pushable
+    ``NormalizedRunWorkout`` / ``NormalizedStrengthWorkout`` for each run/strength
+    session. A session that comes back with ``spec=None`` is fed back through the
+    regen loop (as a ``missing_spec`` HARD violation) so the model fills it in on
+    the next attempt. ``WeeklyPlan.from_dict`` has already validated the spec's
+    internal shape when present, so this only checks presence.
+    """
+    violations: list[RuleViolation] = []
+    for session in week.get("sessions") or []:
+        kind = session.get("kind")
+        if kind in ("run", "strength") and session.get("spec") is None:
+            date = session.get("date", "?")
+            idx = session.get("session_index", 0)
+            violations.append(
+                RuleViolation(
+                    rule="missing_spec",
+                    severity="error",
+                    message=(
+                        f"{date} 第 {idx} 节（{kind}）缺少结构化 spec；本次必须给出"
+                        f"可推手表的 NormalizedRunWorkout/NormalizedStrengthWorkout，"
+                        f"配速用注入的 pace_targets"
+                    ),
+                    details={"date": date, "session_index": idx, "kind": kind},
+                )
+            )
+    return violations
+
+
+def _spec_distance_mismatch_violations(week: dict) -> list[RuleViolation]:
+    """Structured-mode check: a run spec's distance must roughly match the
+    session's ``total_distance_m``.
+
+    Push reads ``session.spec`` directly (not ``total_distance_m``), so a
+    hallucinated spec whose block distances disagree with the session total would
+    push the wrong workout to the watch. We only flag GROSS mismatches (spec sums
+    to < 0.6× or > 1.6× the session total) to avoid penalising time-based recovery
+    steps that legitimately carry no distance; the mismatch is fed back so the
+    model re-emits a spec matching the total.
+    """
+    violations: list[RuleViolation] = []
+    for session in week.get("sessions") or []:
+        if session.get("kind") != "run":
+            continue
+        spec = session.get("spec")
+        total = session.get("total_distance_m")
+        if not isinstance(spec, dict) or not total:
+            continue
+        spec_m = 0.0
+        for block in spec.get("blocks") or []:
+            repeat = int(block.get("repeat", 1) or 1)
+            block_m = sum(
+                float((step.get("duration") or {}).get("value") or 0)
+                for step in block.get("steps") or []
+                if (step.get("duration") or {}).get("kind") == "distance_m"
+            )
+            spec_m += block_m * repeat
+        total_m = float(total)
+        if spec_m > 0 and (spec_m < total_m * 0.6 or spec_m > total_m * 1.6):
+            date = session.get("date", "?")
+            idx = session.get("session_index", 0)
+            violations.append(
+                RuleViolation(
+                    rule="spec_distance_mismatch",
+                    severity="error",
+                    message=(
+                        f"{date} 第 {idx} 节跑步的 spec 里程合计 {spec_m:.0f}m 与 "
+                        f"total_distance_m {total_m:.0f}m 严重不符；spec 的各段距离"
+                        f"加总必须≈ total_distance_m"
+                    ),
+                    details={"date": date, "session_index": idx, "spec_m": spec_m, "total_m": total_m},
+                )
+            )
+    return violations
+
+
 def generate_phase_validated(
     phase: Phase,
     week_metas: list[dict | WeekMeta],
@@ -514,6 +594,7 @@ def generate_phase_validated(
     feedback: str | None = None,
     max_attempts: int = 3,
     user_request: str | None = None,
+    structured: bool = False,
 ) -> list[dict]:
     """Generate a whole phase, rule-gate each week, regen-with-feedback, drop strays.
 
@@ -633,6 +714,7 @@ def generate_phase_validated(
                 milestones=milestones,
                 feedback=current_feedback,
                 user_request=user_request,
+                structured=structured,
             )
         except (LLMUnavailable, LLMError):
             # Real LLM-infra failure — not a content fault we can regen our way
@@ -670,6 +752,16 @@ def generate_phase_validated(
                 z45_pace_threshold_s_km=z45_threshold,
             )
             errs = report.errors()
+            if structured:
+                # Structured generation must also produce a spec per run/strength
+                # session, and each run spec's distance must match the session
+                # total; both are fed back as HARD violations so the regen loop
+                # fixes them.
+                errs = (
+                    errs
+                    + _missing_spec_violations(wk)
+                    + _spec_distance_mismatch_violations(wk)
+                )
             if errs:
                 per_week_errors.append((i, errs))
 

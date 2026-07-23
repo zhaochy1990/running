@@ -194,6 +194,150 @@ def test_composer_states_default_one_session_per_day():
     assert "session_index=1" in prompt
 
 
+def _prompt(structured: bool) -> str:
+    return build_weekly_system_prompt(
+        phase=PhaseType.BUILD,
+        week_meta=_week_meta(),
+        pace_targets=_pace_targets(),
+        volume_targets=_volume_targets(),
+        context_block="",
+        structured=structured,
+    )
+
+
+def test_default_is_aspirational_spec_null():
+    """Without structured=True the contract stays aspirational (spec=null) — the
+    S1 season-skeleton behaviour must not change."""
+    prompt = _prompt(structured=False)
+    assert "run-workout/v1" not in prompt
+    assert "strength-workout/v1" not in prompt
+    assert "必须为 `null`" in prompt
+
+
+def test_structured_composer_requires_pushable_spec_schema():
+    """structured=True must instruct the LLM to emit a watch-pushable spec per
+    run/strength session and include the run/strength spec schema."""
+    prompt = _prompt(structured=True)
+    for token in (
+        "可直接推手表",
+        "run-workout/v1",
+        "strength-workout/v1",
+        "NormalizedRunWorkout",
+        "NormalizedStrengthWorkout",
+        "pace_s_km",
+        "step_kind",
+    ):
+        assert token in prompt, token
+
+
+def test_structured_spec_schema_parses_under_workout_spec():
+    """Drift guard: the run/strength spec shapes the structured contract tells
+    the LLM to emit must round-trip through the real ``workout_spec`` model (and
+    attach to a ``PlannedSession``)."""
+    from stride_core.plan_spec import PlannedSession, SessionKind
+    from stride_core.workout_spec import (
+        NormalizedRunWorkout,
+        NormalizedStrengthWorkout,
+    )
+
+    run = {
+        "schema": "run-workout/v1",
+        "name": "6x800m",
+        "date": "2026-06-18",
+        "note": None,
+        "blocks": [
+            {
+                "repeat": 1,
+                "steps": [
+                    {
+                        "step_kind": "warmup",
+                        "duration": {"kind": "distance_m", "value": 2000},
+                        "target": {"kind": "pace_s_km", "low": 420, "high": 380},
+                    }
+                ],
+            },
+            {
+                "repeat": 6,
+                "steps": [
+                    {
+                        "step_kind": "work",
+                        "duration": {"kind": "distance_m", "value": 800},
+                        "target": {"kind": "pace_s_km", "low": 245, "high": 235},
+                    },
+                    {
+                        "step_kind": "recovery",
+                        "duration": {"kind": "time_s", "value": 60},
+                        "target": {"kind": "open"},
+                    },
+                ],
+            },
+        ],
+    }
+    strength = {
+        "schema": "strength-workout/v1",
+        "name": "Core",
+        "date": "2026-06-18",
+        "exercises": [
+            {
+                "canonical_id": "goblet_squat",
+                "display_name": "高脚杯深蹲",
+                "sets": 3,
+                "target_kind": "reps",
+                "target_value": 10,
+                "rest_seconds": 60,
+                "provider_id": "T1301",
+            }
+        ],
+    }
+    run_spec = NormalizedRunWorkout.from_dict(run)
+    strength_spec = NormalizedStrengthWorkout.from_dict(strength)
+    # These specs must attach to a pushable PlannedSession.
+    r = PlannedSession(
+        date="2026-06-18", session_index=0, kind=SessionKind.RUN,
+        summary="6x800m", spec=run_spec,
+    )
+    s = PlannedSession(
+        date="2026-06-18", session_index=1, kind=SessionKind.STRENGTH,
+        summary="Core", spec=strength_spec,
+    )
+    assert r.pushable and s.pushable
+
+
+def _balanced_json_blocks(text: str, prefix: str) -> list[str]:
+    """Extract every ``{...}`` block that starts with ``prefix`` (balanced braces)."""
+    blocks: list[str] = []
+    start = text.find(prefix)
+    while start != -1:
+        depth = 0
+        for end in range(start, len(text)):
+            if text[end] == "{":
+                depth += 1
+            elif text[end] == "}":
+                depth -= 1
+                if depth == 0:
+                    blocks.append(text[start : end + 1])
+                    break
+        start = text.find(prefix, start + 1)
+    return blocks
+
+
+def test_structured_contract_embedded_run_examples_parse():
+    """The actual run-workout JSON examples embedded in the prompt text (not
+    hand-authored copies) must parse under the real model — a typo in the prompt
+    JSON would steer the LLM to emit un-parseable specs, so it must fail here."""
+    import json
+
+    from coach.graphs.generation.weekly_plan_contract import RUN_STRENGTH_SPEC_SCHEMA
+    from stride_core.workout_spec import NormalizedRunWorkout
+
+    examples = _balanced_json_blocks(
+        RUN_STRENGTH_SPEC_SCHEMA, '{"schema":"run-workout/v1"'
+    )
+    assert len(examples) >= 2, "expected the easy + interval run examples"
+    for block in examples:
+        NormalizedRunWorkout.from_dict(json.loads(block))
+
+
 @pytest.mark.parametrize("phase", list(PhaseType))
 def test_composer_all_phases_carry_specialist_doctrine(phase: PhaseType):
     spec = get_specialist(phase)
