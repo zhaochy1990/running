@@ -16,10 +16,13 @@ import {
   getPlanDays,
   getWeek,
   type CoachApplyOutcome,
+  type PlanDay,
 } from '../api'
 import CoachChat from '../components/CoachChat'
 import { clearPendingCoachTurnForWeek } from '../hooks/useCoachChat'
 import { weeklyPlanStats } from '../lib/weeklyPlanView'
+import { CreateReview } from '../components/coach-workspace/CreateReview'
+import { projectCurrentWeekPlan } from '../components/coach-workspace/currentWeekProjection'
 import { PlanAdjustIntakeWorkspace } from '../components/coach-workspace/PlanAdjustIntakeWorkspace'
 import { WeeklyPlanAdjustWorkspace } from '../components/coach-workspace/WeeklyPlanAdjustWorkspace'
 import type {
@@ -61,6 +64,11 @@ export interface WeeklyPlanAdjustPageDeps {
   readonly summaryError?: string | null
   /** True when the target week has no plan yet — invites a create instead. */
   readonly emptyTarget?: boolean
+  /**
+   * Full render of the current week's plan for the intake card (e.g.
+   * `<CreateReview />`). Omitted while loading, on error, or for an empty week.
+   */
+  readonly currentPlanDetail?: React.ReactNode
   readonly renderChat: (
     contextAnchor: string,
     reviewContext?: CoachReviewContext,
@@ -88,6 +96,7 @@ export function WeeklyPlanAdjustView({
   summaryLoading = false,
   summaryError = null,
   emptyTarget = false,
+  currentPlanDetail,
   renderChat,
   refreshToken,
 }: WeeklyPlanAdjustPageDeps) {
@@ -151,6 +160,7 @@ export function WeeklyPlanAdjustView({
         kind="weekly"
         currentPlanSummary={summaryText}
         emptyTarget={emptyTarget}
+        currentPlanDetail={currentPlanDetail}
         chat={renderChat(contextAnchor)}
       />
     )
@@ -174,6 +184,8 @@ interface WeekSummaryState {
   readonly error: string | null
   readonly emptyTarget: boolean
   readonly summary: string
+  /** The current week's plan days, for the full intake render. Empty until loaded. */
+  readonly days: readonly PlanDay[]
 }
 
 /** Extract the HTTP status embedded in `fetchJSON`'s "API error: {status}" message. */
@@ -194,6 +206,7 @@ function useWeekSummary(user: string, folder: string): WeekSummaryState {
     error: null,
     emptyTarget: false,
     summary: `本周课表 · ${folder}`,
+    days: [],
   }))
 
   useEffect(() => {
@@ -204,8 +217,10 @@ function useWeekSummary(user: string, folder: string): WeekSummaryState {
         const range = formatWeekRange(week.date_from, week.date_to)
         let plannedRunKm = 0
         let sessionCount = 0
+        let days: PlanDay[] = []
         try {
-          const { days } = await getPlanDays(user, week.date_from, week.date_to)
+          const res = await getPlanDays(user, week.date_from, week.date_to)
+          days = res.days
           const stats = weeklyPlanStats(days)
           plannedRunKm = stats.plannedRunKm
           sessionCount = stats.sessions.length
@@ -214,7 +229,7 @@ function useWeekSummary(user: string, folder: string): WeekSummaryState {
         }
         if (cancelled) return
         const summary = `${range} · 计划跑量 ${plannedRunKm.toFixed(1)} km · ${sessionCount} 训练课`
-        setState({ requestKey, loading: false, error: null, emptyTarget: false, summary })
+        setState({ requestKey, loading: false, error: null, emptyTarget: false, summary, days })
       })
       .catch((error: unknown) => {
         if (cancelled) return
@@ -225,6 +240,7 @@ function useWeekSummary(user: string, folder: string): WeekSummaryState {
             error: null,
             emptyTarget: true,
             summary: `本周课表 · ${folder}`,
+            days: [],
           })
         } else {
           const message = error instanceof Error ? error.message : '加载失败'
@@ -234,6 +250,7 @@ function useWeekSummary(user: string, folder: string): WeekSummaryState {
             error: message,
             emptyTarget: false,
             summary: `本周课表 · ${folder}`,
+            days: [],
           })
         }
       })
@@ -249,6 +266,7 @@ function useWeekSummary(user: string, folder: string): WeekSummaryState {
       error: null,
       emptyTarget: false,
       summary: `本周课表 · ${folder}`,
+      days: [],
     }
   }
   return state
@@ -260,7 +278,24 @@ export default function WeeklyPlanAdjustPage() {
   const { folder = '' } = useParams<{ folder: string }>()
   const navigate = useNavigate()
   const location = useLocation()
-  const { loading, error, emptyTarget, summary } = useWeekSummary(user, folder)
+  const { loading, error, emptyTarget, summary, days } = useWeekSummary(user, folder)
+
+  // Full render of the current plan, shown inside the intake card so "current"
+  // reads with the same component the generated proposal is reviewed with.
+  // Only built once the plan has loaded and actually has content.
+  const currentPlanDetail = useMemo<React.ReactNode>(() => {
+    if (loading || error || emptyTarget || days.length === 0) return undefined
+    const projection = projectCurrentWeekPlan(days)
+    if (projection.days.length === 0) return undefined
+    return (
+      <CreateReview
+        days={projection.days}
+        strength={projection.strength}
+        nutrition={projection.nutrition}
+        notesMd={projection.notesMd}
+      />
+    )
+  }, [loading, error, emptyTarget, days])
 
   // A same-route navigation that re-stashes a revised draft carries a changing
   // `draftRevision` marker in history state (task #30). Feed it in as the
@@ -285,6 +320,7 @@ export default function WeeklyPlanAdjustPage() {
       summaryLoading={loading}
       summaryError={error}
       emptyTarget={emptyTarget}
+      currentPlanDetail={currentPlanDetail}
       refreshToken={refreshToken}
       renderChat={(anchor, reviewContext) => (
         <CoachChat
