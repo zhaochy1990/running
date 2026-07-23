@@ -1,54 +1,15 @@
-# Coach LLM Configuration — LOCAL AGENT MAESTRO + COPILOT PROXY
+# Coach LLM Configuration — LOCAL AGENT MAESTRO
 #
-# Agent Maestro is the default provider for the local Coach workflow:
+# Agent Maestro is the provider for the local Coach workflow:
 #
 #   scripts/coach-local.sh coach
 #   scripts/coach-local.sh eval-resolver
 #
-# It must already be listening at 127.0.0.1:23333. The copilot_* models remain
-# available for direct-proxy testing through the explicit auth/start/smoke/stop
-# commands. GPT-5.5/5.6 use the Responses API on both local provider surfaces.
-# Read-only status Q&A uses Luna/low; generator + reviewer stay on Sol/high.
-
-[models.copilot_sol]
-provider = "openai-compatible"
-model = "gpt-5.6-sol"
-deployment = "gpt-5.6-sol"
-endpoint = "http://127.0.0.1:44141/v1"
-api_key_env = "COPILOT_PROXY_API_KEY"
-auth = "api-key"
-api_kind = "responses"
-reasoning_effort = "high"
-max_tokens = 16384
-timeout_s = 300
-
-[models.copilot_sol.generator]
-max_tokens = 65536
-timeout_s = 600
-
-[models.copilot_sol.reviewer]
-max_tokens = 16384
-timeout_s = 300
-
-[models.copilot_luna]
-provider = "openai-compatible"
-model = "gpt-5.6-luna"
-deployment = "gpt-5.6-luna"
-endpoint = "http://127.0.0.1:44141/v1"
-api_key_env = "COPILOT_PROXY_API_KEY"
-auth = "api-key"
-api_kind = "responses"
-reasoning_effort = "medium"
-max_tokens = 4096
-timeout_s = 120
-
-[models.copilot_luna.commentary]
-max_tokens = 2048
-
-[models.copilot_luna.status_insight]
-reasoning_effort = "low"
-max_tokens = 2048
-timeout_s = 90
+# It must already be listening at 127.0.0.1:23333. GPT-5.6 uses the Responses
+# API. Read-only status Q&A uses Luna/low; generator + reviewer stay on Sol/high.
+#
+# (The file keeps its historical ``coach.copilot.toml`` name because the launcher
+# and tests reference that path; it no longer configures any Copilot proxy.)
 
 # Agent Maestro exposes the VS Code Language Model API through an
 # OpenAI-compatible Responses endpoint. The service currently accepts any
@@ -94,8 +55,7 @@ reasoning_effort = "low"
 max_tokens = 2048
 timeout_s = 90
 
-# Agent Maestro is the default local Coach provider. Switch these bindings to
-# copilot_* to test the direct Copilot proxy instead.
+# Agent Maestro is the local Coach provider for every role.
 [generator]
 model = "agent_maestro_sol"
 

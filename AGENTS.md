@@ -60,9 +60,9 @@ For both Web UI and mobile UI, we need to use the Stitch MCP to design with Stit
 
 ---
 
-## Local Coach provider（Agent Maestro 默认）
+## Local Coach provider（Agent Maestro）
 
-`config/coach.copilot.toml` 默认通过本机 Agent Maestro 的 OpenAI-compatible
+`config/coach.copilot.toml` 通过本机 Agent Maestro 的 OpenAI-compatible
 Responses API（`http://127.0.0.1:23333/api/openai/v1`）运行 Coach：
 `gpt-5.6-luna` 处理编排和只读 `status_insight`，`gpt-5.6-sol` 处理计划生成和
 reviewer。Agent Maestro 必须已在 VS Code 中启动；日常直接运行：
@@ -79,34 +79,17 @@ Azure Table；活动、健康数据和 checkpoint 仍使用本地数据。
 
 周总结必须优先走 `get_training_summary` 单次聚合工具，避免反复扩大活动明细请求。
 
-### 可选 GitHub Copilot proxy（仅开发测试）
-
-需要绕过 Agent Maestro 直接测试 GitHub Copilot 时，使用已实测的
-[`voidsteed/copilot-proxy-api`](https://github.com/voidsteed/copilot-proxy-api)。
-它是逆向 Copilot 内部 API 的社区项目，**只允许本地实验，禁止生产部署或共享账号服务**。必须启用本地 API key，不得把 prompt、response 或 token 写入日志、回复或仓库文件。
-
-截至 2026-07-14，已验证 `copilot-proxy-api@0.10.22` 的 `/v1/responses` 可调用
-`gpt-5.5`、`gpt-5.6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`。固定版本以保证可复现；升级前必须重新跑 Hello World。
-
-统一使用 [`scripts/coach-local.sh`](scripts/coach-local.sh) 管理可选代理。首次运行
-Device Flow，之后凭据持久保存在 `~/.local/share/stride/copilot-proxy/`：
+跑长会话前可先验证 Agent Maestro 的 Responses 端点可用：
 
 ```bash
-scripts/coach-local.sh auth
-scripts/coach-local.sh start
-scripts/coach-local.sh smoke
-scripts/coach-local.sh stop
+scripts/coach-local.sh smoke            # 默认 gpt-5.6-sol
+scripts/coach-local.sh smoke gpt-5.6-luna
 ```
 
-如果 `smoke` 返回上游 401，运行 `scripts/coach-local.sh auth --force`。`smoke`
-必须输出严格的 `HELLO_WORLD_OK model=gpt-5.6-sol endpoint=/v1/responses`。
-GPT-5.5 / GPT-5.6 必须走 `/v1/responses`；`/v1/chat/completions` 对这些模型会返回
-`unsupported_api_for_model`。
-
-该代理会监听所有网卡，不只 `127.0.0.1`；脚本始终生成并启用本地 API key，
-端口不得暴露到公网、局域网共享或反向代理。`stop` 只停进程并保留凭据。只有用户
-明确要撤销本地状态时才运行 `scripts/coach-local.sh reset`；该命令会删除本地
-credential、API key、日志和 npm cache，但不会撤销 GitHub OAuth grant。
+`smoke` 必须输出 `HELLO_WORLD_OK model=... endpoint=.../responses`；非 200
+说明 Agent Maestro 未启动或该模型在 VS Code Language Model 中不可用。脚本不
+启动 / 停止 / 授权任何进程，也不持久化凭据 —— Agent Maestro 由 VS Code 扩展
+自行管理。prompt、response、token 均不写入日志、回复或仓库文件。
 
 ---
 
