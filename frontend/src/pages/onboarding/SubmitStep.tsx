@@ -50,6 +50,24 @@ const FULL_PROGRESS_STEPS = [
   },
 ]
 
+// Phases the full-history sync emits that the health-only sync never does.
+// Used to infer the sync method from live progress so the copy is right even
+// when the config flag wasn't available at mount (e.g. a stale profile fetch).
+const FULL_ONLY_PHASES = new Set<string>([
+  'activities_scan',
+  'activity_details',
+  'activities_done',
+  'activity_save',
+  'calibrating',
+  'scoring',
+  'training_load',
+])
+
+function phaseImpliesFullSync(progress: SyncProgress | null | undefined): boolean {
+  if (!progress) return false
+  return FULL_ONLY_PHASES.has(progress.phase ?? '') || FULL_ONLY_PHASES.has(progress.failed_phase ?? '')
+}
+
 export default function SubmitStep({ profile, syncFullHistory = false }: Props) {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
@@ -61,8 +79,11 @@ export default function SubmitStep({ profile, syncFullHistory = false }: Props) 
   const autoResumeRef = useRef(0)
   const resumingRef = useRef(false)
 
-  const steps = syncFullHistory ? FULL_PROGRESS_STEPS : HEALTH_PROGRESS_STEPS
-  const maxPollAttempts = syncFullHistory ? FULL_MAX_POLL_ATTEMPTS : HEALTH_MAX_POLL_ATTEMPTS
+  // Reflect the ACTUAL sync method: prefer the config flag, but fall back to the
+  // sync's own progress phases so the copy self-corrects even if the flag wasn't
+  // available at mount (e.g. a stale profile fetch).
+  const isFullSync = syncFullHistory || phaseImpliesFullSync(syncStatus?.progress)
+  const steps = isFullSync ? FULL_PROGRESS_STEPS : HEALTH_PROGRESS_STEPS
 
   const startSync = useCallback(async (): Promise<void> => {
     setError('')
@@ -112,8 +133,10 @@ export default function SubmitStep({ profile, syncFullHistory = false }: Props) 
       if (status.state === 'error') {
         // Full-history mode: a crashed/interrupted sync resumes silently
         // (server uses full=False → picks up where it left off) without any
-        // "interrupted" wording, up to MAX_AUTO_RESUME times.
-        if (syncFullHistory && autoResumeRef.current < MAX_AUTO_RESUME && !resumingRef.current) {
+        // "interrupted" wording, up to MAX_AUTO_RESUME times. Detect "full" from
+        // the failed phase too, not just the config flag.
+        const full = syncFullHistory || phaseImpliesFullSync(status.progress)
+        if (full && autoResumeRef.current < MAX_AUTO_RESUME && !resumingRef.current) {
           autoResumeRef.current += 1
           resumingRef.current = true
           setError('')
@@ -153,9 +176,11 @@ export default function SubmitStep({ profile, syncFullHistory = false }: Props) 
       pollAttemptRef.current += 1
       applyStatus(status)
 
-      if (status.state === 'running' && pollAttemptRef.current >= maxPollAttempts) {
+      const full = syncFullHistory || phaseImpliesFullSync(status.progress)
+      const cap = full ? FULL_MAX_POLL_ATTEMPTS : HEALTH_MAX_POLL_ATTEMPTS
+      if (status.state === 'running' && pollAttemptRef.current >= cap) {
         setError(
-          syncFullHistory
+          full
             ? '同步耗时较长，请保持页面打开，或稍后在通知中心查看进度'
             : '同步超时，请刷新页面查看状态',
         )
@@ -165,12 +190,15 @@ export default function SubmitStep({ profile, syncFullHistory = false }: Props) 
       if (!mountedRef.current) return
 
       pollAttemptRef.current += 1
-      if (pollAttemptRef.current >= maxPollAttempts) {
+      // On repeated fetch failures use the generous full cap so a slow full sync
+      // isn't aborted; a health-only sync would have completed long before.
+      const cap = syncFullHistory ? FULL_MAX_POLL_ATTEMPTS : HEALTH_MAX_POLL_ATTEMPTS
+      if (pollAttemptRef.current >= cap) {
         setError('无法获取同步状态，请刷新页面')
         setLoading(false)
       }
     }
-  }, [applyStatus, maxPollAttempts, syncFullHistory])
+  }, [applyStatus, syncFullHistory])
 
   useEffect(() => {
     mountedRef.current = true
@@ -221,7 +249,7 @@ export default function SubmitStep({ profile, syncFullHistory = false }: Props) 
         retrying={loading}
         onRetry={handleRetry}
         steps={steps}
-        syncFullHistory={syncFullHistory}
+        syncFullHistory={isFullSync}
       />
     )
   }
@@ -231,7 +259,7 @@ export default function SubmitStep({ profile, syncFullHistory = false }: Props) 
       <div>
         <h2 className="text-lg font-bold text-text-primary">确认并开始</h2>
         <p className="text-sm text-text-muted mt-1">
-          {syncFullHistory ? '确认信息后，我们会同步你的完整历史训练数据' : '确认信息后，我们会快速同步你的健康数据'}
+          {isFullSync ? '确认信息后，我们会同步你的完整历史训练数据' : '确认信息后，我们会快速同步你的健康数据'}
         </p>
       </div>
 
@@ -259,7 +287,7 @@ export default function SubmitStep({ profile, syncFullHistory = false }: Props) 
       <div className="rounded-xl border border-border-subtle bg-accent-green/5 p-4">
         <p className="text-sm text-text-primary font-medium">接下来会做什么？</p>
         <ul className="mt-2 space-y-1 text-xs text-text-muted">
-          {syncFullHistory ? (
+          {isFullSync ? (
             <>
               <li>1. 同步你的完整历史训练与健康数据（可能需要几分钟）</li>
               <li>2. 校准训练区间、计算训练负荷与能力模型</li>

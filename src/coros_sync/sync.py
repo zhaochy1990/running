@@ -240,7 +240,7 @@ def sync_activities(
             _emit_sync_progress(
                 progress_callback,
                 phase="activity_details",
-                message=f"正在同步训练详情：{label}（已处理 {processed}/{len(ordered)}，已保存 {synced}）",
+                message=f"正在同步训练详情：{label}（已同步 {processed}/{len(ordered)}）",
                 percent=35 + round(processed / len(ordered) * 35),
                 current=processed,
                 total=len(ordered),
