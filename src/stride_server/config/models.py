@@ -70,6 +70,11 @@ class AuthServiceConfig:
 @dataclass(frozen=True)
 class SyncConfig:
     stale_after_seconds: int = 300
+    # When True, a new user's onboarding blocks on a full watch-history sync
+    # (activities + health + calibration/backfill) run entirely in the API
+    # process before entering the web app. When False, keep the async flow
+    # (fast health-only sync + background worker pipeline).
+    sync_data_at_onboarding: bool = True
 
     def with_updates(self, **updates: object) -> SyncConfig:
         return replace(self, **updates)

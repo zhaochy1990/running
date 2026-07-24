@@ -229,6 +229,9 @@ async def get_profile(
             "coach_chat": uuid in config.plan.coach_chat_users,
             "coach_chat_debug": uuid in config.plan.coach_chat_debug_users,
             "coach_chat_max_message_chars": config.plan.coach_chat_max_message_chars,
+            # Drives onboarding UX: when on, the wizard waits for a full history
+            # sync (minutes) instead of the fast health-only sync.
+            "sync_data_at_onboarding": config.sync.sync_data_at_onboarding,
         },
     }
 

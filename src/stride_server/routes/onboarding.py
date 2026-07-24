@@ -118,6 +118,19 @@ def _sync_stale_after_seconds() -> float:
     return float(sync_stale_after_seconds_from_config(load_server_config(use_cache=False).sync))
 
 
+def _sync_data_at_onboarding() -> bool:
+    """Whether onboarding blocks on a full API-process sync (config flag).
+
+    True  → new users wait for a full watch-history sync (activities + health +
+    calibration/backfill) run entirely in the API process before entering the
+    app. False → the legacy async flow (fast health-only sync at submit + the
+    background worker pipeline started at watch login).
+
+    Read uncached so a config/env change takes effect without a server restart.
+    """
+    return bool(load_server_config(use_cache=False).sync.sync_data_at_onboarding)
+
+
 def _parse_iso_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -262,7 +275,13 @@ def coros_login(
     onboarding["coros_ready"] = True
     _write_onboarding(uuid, onboarding)
 
-    _start_onboarding_pipeline(uuid)
+    # Only kick off the async worker pipeline in the legacy flow. When
+    # sync_data_at_onboarding is on, the full sync runs synchronously in the API
+    # process at /onboarding/complete, so starting the worker here would double-
+    # sync and (worse) have the worker + API write the same coros.db concurrently
+    # → SQLite "database is locked" contention.
+    if not _sync_data_at_onboarding():
+        _start_onboarding_pipeline(uuid)
 
     return {"ok": True, "region": result.region, "user_id": result.user_id}
 
@@ -331,9 +350,46 @@ def garmin_login(
     onboarding["coros_ready"] = True
     _write_onboarding(uuid, onboarding)
 
-    _start_onboarding_pipeline(uuid)
+    # See coros_login: skip the worker pipeline when the full sync runs
+    # synchronously in the API process (avoids double-sync + cross-process
+    # SQLite lock contention).
+    if not _sync_data_at_onboarding():
+        _start_onboarding_pipeline(uuid)
 
     return {"ok": True, "region": result.region, "user_id": result.user_id}
+
+
+def _run_onboarding_compute(uuid: str, report_progress) -> None:
+    """Unified calibration + backfill pass for the API-process onboarding sync.
+
+    Mirrors the worker pipeline's calibration → backfill steps (shared code in
+    ``stride_core.onboarding_compute``) but runs inline in the API process under
+    the caller's held per-user writer lock. Opens its own short-lived DB handle
+    because ``sync_user`` has already closed the one it used for the sync itself.
+    """
+    from stride_core.onboarding_compute import (
+        compute_onboarding_backfill,
+        compute_onboarding_calibration,
+    )
+    from stride_storage.sqlite.database import Database
+
+    report_progress(
+        {
+            "phase": "calibrating",
+            "message": "正在校准训练区间与个人最好成绩",
+            "percent": 96,
+        }
+    )
+    with Database(user=uuid) as db:
+        compute_onboarding_calibration(db)
+        report_progress(
+            {
+                "phase": "scoring",
+                "message": "正在计算训练负荷与能力模型",
+                "percent": 98,
+            }
+        )
+        compute_onboarding_backfill(db)
 
 
 def _run_background_sync(
@@ -347,27 +403,63 @@ def _run_background_sync(
 
     ``mode`` controls scope:
       - ``"health_only"``: lightweight sync for onboarding (dashboard + health
-        metrics only, ~10 seconds).
-      - ``"full"``: activities + health (used when the user sets up a training
-        plan and needs historical data).
+        metrics only, ~10 seconds). Legacy fast-enter flow.
+      - ``"full_onboarding"``: full watch-history sync (activities + health) run
+        entirely in the API process, followed by the unified calibration +
+        backfill compute pass, all under one held per-user writer lock. Gates
+        app entry: sets ``completed_at`` on success. Uses ``full=False`` so a
+        crashed/re-triggered run resumes at activity granularity instead of
+        re-fetching everything.
+      - ``"full"``: activities + health via the per-result post-sync chain (used
+        when the user sets up a training plan and needs historical data).
 
-    Sets ``completed_at`` ONLY after a successful sync. On failure, writes
-    ``sync_state="error"`` with ``completed_at=null`` so the client can retry.
+    Sets the onboarding ``completed_at`` ONLY after a successful onboarding-gating
+    sync. On failure, writes an ``error`` state with ``completed_at=null`` so the
+    client can resume/retry.
     """
     is_health_only = mode == "health_only"
-    state_key = "sync_state" if is_health_only else "full_sync_state"
-    progress_key = "sync_progress" if is_health_only else "full_sync_progress"
-    error_key = "error" if is_health_only else "full_sync_error"
-    failed_at_key = "failed_at" if is_health_only else "full_sync_failed_at"
+    is_full_onboarding = mode == "full_onboarding"
+    # Both onboarding modes gate app entry, so they share the sync_* keys and
+    # own the onboarding `completed_at`. The training-plan "full" mode uses the
+    # separate full_sync_* keys.
+    is_onboarding_gate = is_health_only or is_full_onboarding
+    state_key = "sync_state" if is_onboarding_gate else "full_sync_state"
+    progress_key = "sync_progress" if is_onboarding_gate else "full_sync_progress"
+    error_key = "error" if is_onboarding_gate else "full_sync_error"
+    failed_at_key = "failed_at" if is_onboarding_gate else "full_sync_failed_at"
+    # The adapter only distinguishes health_only from full; full_onboarding is a
+    # route-level concept, so it syncs in "full" scope.
+    sync_mode_for_source = "health_only" if is_health_only else "full"
+
+    # Throttle onboarding.json writes on the full-history sync: a 700+ activity
+    # pull ticks per-activity, but each write hits the content store (Azure Blob
+    # in prod). Persist only on a phase change or every ≥5% so resume-on-reopen
+    # still sees near-current progress without hammering storage.
+    last_write = {"percent": -100.0, "phase": None}
 
     def report_progress(progress: SyncProgress) -> None:
+        if is_full_onboarding:
+            phase = progress.get("phase")
+            percent = progress.get("percent")
+            phase_changed = phase is not None and phase != last_write["phase"]
+            advanced = (
+                isinstance(percent, (int, float))
+                and float(percent) - last_write["percent"] >= 5
+            )
+            if not (phase_changed or advanced):
+                return
+            if phase is not None:
+                last_write["phase"] = phase
+            if isinstance(percent, (int, float)):
+                last_write["percent"] = float(percent)
         _write_sync_progress(uuid, state_key=state_key, progress_key=progress_key, **progress)
 
-    connecting_msg = (
-        "正在连接手表，准备同步健康数据"
-        if is_health_only
-        else "正在连接手表，准备同步历史训练数据（可能需要几分钟）"
-    )
+    if is_health_only:
+        connecting_msg = "正在连接手表，准备同步健康数据"
+    elif is_full_onboarding:
+        connecting_msg = "正在连接手表，准备同步完整历史训练数据（可能需要几分钟）"
+    else:
+        connecting_msg = "正在连接手表，准备同步历史训练数据（可能需要几分钟）"
     _write_sync_progress(
         uuid,
         state="running",
@@ -384,24 +476,31 @@ def _run_background_sync(
                 raise RuntimeError("用户数据正在更新，请稍后重试")
             invalidate_training_load_backfill_progress(uuid)
             result = source.sync_user(
-                uuid, full=full, mode=mode, progress=report_progress,
+                uuid, full=full, mode=sync_mode_for_source, progress=report_progress,
             )
-            try:
-                run_post_sync_for_result(
-                    user=uuid,
-                    provider=source.info.name,
-                    operation="sync",
-                    result=result,
-                    progress=report_progress,
-                )
-            except Exception:
-                logger.exception("post-sync events failed for onboarding sync user=%s", uuid)
+            if is_full_onboarding:
+                # Unified compute pass (calibration → backfill), NOT the per-
+                # activity post-sync chain, which is wasteful on a full pull and
+                # would score ability before calibration exists. Runs under the
+                # same held writer lock, so no other API/worker writer interleaves.
+                _run_onboarding_compute(uuid, report_progress)
+            else:
+                try:
+                    run_post_sync_for_result(
+                        user=uuid,
+                        provider=source.info.name,
+                        operation="sync",
+                        result=result,
+                        progress=report_progress,
+                    )
+                except Exception:
+                    logger.exception("post-sync events failed for onboarding sync user=%s", uuid)
     except Exception as exc:
         logger.exception("Background sync (mode=%s) failed for %s", mode, uuid)
         onboarding = _read_onboarding(uuid)
         onboarding[state_key] = "error"
         onboarding[error_key] = str(exc)
-        if is_health_only:
+        if is_onboarding_gate:
             onboarding["completed_at"] = None
         onboarding[failed_at_key] = _utcnow_iso()
         progress = dict(onboarding.get(progress_key) or {})
@@ -422,7 +521,7 @@ def _run_background_sync(
     onboarding = _read_onboarding(uuid)
     onboarding[state_key] = "done"
     completed_at = _utcnow_iso()
-    if is_health_only:
+    if is_onboarding_gate:
         onboarding["completed_at"] = completed_at
     else:
         onboarding["full_sync_completed_at"] = completed_at
@@ -448,23 +547,78 @@ def _run_background_sync(
     _write_onboarding(uuid, onboarding)
 
 
+def _start_or_resume_full_onboarding_sync(
+    uuid: str,
+    source: DataSource,
+    onboarding: dict[str, Any],
+    background_tasks: BackgroundTasks,
+) -> dict[str, Any]:
+    """Start (or resume) the API-process full-history onboarding sync.
+
+    Idempotent so the frontend can call it on every mount to silently resume:
+
+      - a run whose progress is still fresh → no-op, return its running state
+        (starting a second task would lose the ``try_user_sqlite_writer`` race
+        and error out);
+      - a dead/stale ``running`` (crashed API process) → reconciled to ``error``
+        by the stale check, then re-started;
+      - a prior ``error`` or a first-ever start → started.
+
+    The background task uses ``full=False`` so a re-start resumes at activity
+    granularity (already-synced activities are skipped) instead of re-fetching
+    the whole history.
+    """
+    # Flip a dead 'running' (no progress within the stale window) to 'error' so
+    # the resume below isn't blocked by a phantom in-flight run.
+    onboarding = _mark_stale_running_sync(uuid, onboarding)
+
+    if onboarding.get("sync_state") == "running":
+        return {"state": "running", "progress": onboarding.get("sync_progress")}
+
+    now = _utcnow_iso()
+    onboarding["sync_state"] = "running"
+    onboarding["completed_at"] = None
+    onboarding.pop("error", None)
+    onboarding.pop("failed_at", None)
+    onboarding["sync_progress"] = {
+        "phase": "queued",
+        "message": "正在同步完整历史训练数据，这可能需要几分钟",
+        "percent": 0,
+        "started_at": now,
+        "updated_at": now,
+    }
+    _write_onboarding(uuid, onboarding)
+
+    background_tasks.add_task(
+        _run_background_sync, uuid, source, mode="full_onboarding", full=False,
+    )
+
+    return {"state": "running", "progress": onboarding["sync_progress"]}
+
+
 @router.post("/api/users/me/onboarding/complete")
 def onboarding_complete(
     background_tasks: BackgroundTasks,
     request: Request,
     payload: dict = Depends(require_bearer),
 ):
-    """Kick off lightweight health-only background sync for onboarding.
+    """Start the onboarding sync and gate app entry on it.
 
-    The new onboarding flow only syncs recent health/dashboard data (~14 days)
-    so the user can enter the main page quickly. Full historical sync
-    (activities + 3 years of data) is deferred to when the user sets up a
-    training plan via ``POST /api/users/me/full-sync``.
+    Two modes, selected by the ``sync.sync_data_at_onboarding`` config flag:
 
-    Returns ``{state: "running"}`` while the background task runs, or
-    ``{state: "already-complete"}`` only when a previous run finished
-    successfully (``sync_state == "done"`` with ``completed_at`` set). An
-    errored prior run does NOT count as complete — the client may re-POST.
+      - flag ON (default): a full watch-history sync (activities + health +
+        calibration/backfill) runs entirely in the API process. The client polls
+        ``/sync-status`` and enters only when it completes. Calling this again
+        while incomplete silently resumes (see
+        ``_start_or_resume_full_onboarding_sync``).
+      - flag OFF (legacy): a lightweight health-only sync (~14 days) so the user
+        enters quickly; the full historical sync is deferred to the background
+        worker pipeline / ``POST /api/users/me/full-sync``.
+
+    Returns ``{state: "running"}`` while syncing, or ``{state: "already-complete"}``
+    only when a previous run finished successfully (``sync_state == "done"`` with
+    ``completed_at`` set). An errored/incomplete prior run does NOT count as
+    complete — the client may re-POST to resume.
     """
     uuid = _validate_uuid(payload["sub"])
     onboarding = _read_onboarding(uuid)
@@ -484,6 +638,14 @@ def onboarding_complete(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="coros_ready is not set — complete watch login first",
+        )
+
+    if _sync_data_at_onboarding():
+        # Full-history sync runs synchronously in the API process; gate entry on
+        # its completion. Idempotent-resume so a reopened browser after a crash
+        # picks up where it left off (full=False) without the user acting.
+        return _start_or_resume_full_onboarding_sync(
+            uuid, source, onboarding, background_tasks
         )
 
     onboarding["sync_state"] = "running"

@@ -61,6 +61,7 @@ def test_server_config_default_shape_keeps_current_defaults() -> None:
     assert cfg.notifications.devices_table == "stridedevices"
     assert cfg.notifications.prefs_table == "strideprefs"
     assert cfg.sync.stale_after_seconds == 300
+    assert cfg.sync.sync_data_at_onboarding is True
     assert cfg.plan.coach_chat_users == ()
     assert cfg.plan.coach_chat_debug_users == ()
     assert cfg.plan.coach_chat_max_message_chars == 8_000
@@ -741,3 +742,40 @@ def test_repo_prod_config_env_still_overrides_file_and_akv(monkeypatch: pytest.M
     assert cfg.auth.public_key_pem == "prod-public-key-from-env"
     assert cfg.storage.likes.table_account_url == "https://env-table.example/"
     assert cfg.notifications.table_account_url == "https://env-table.example/"
+
+
+def test_sync_data_at_onboarding_defaults_true_and_reads_toml(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    # Not set in TOML -> keeps the True default.
+    (config_dir / "server.toml").write_text('env = "dev"', encoding="utf-8")
+    assert (
+        load_server_config(project_root=tmp_path, environ={}, use_cache=False).sync.sync_data_at_onboarding
+        is True
+    )
+
+    # Explicit TOML false is honored.
+    (config_dir / "server.toml").write_text(
+        'env = "dev"\n[sync]\nsync_data_at_onboarding = false\n', encoding="utf-8"
+    )
+    assert (
+        load_server_config(project_root=tmp_path, environ={}, use_cache=False).sync.sync_data_at_onboarding
+        is False
+    )
+
+
+def test_sync_data_at_onboarding_env_overrides_toml(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    # TOML says true; env override forces it off (env > TOML precedence).
+    (config_dir / "server.toml").write_text(
+        'env = "dev"\n[sync]\nsync_data_at_onboarding = true\n', encoding="utf-8"
+    )
+
+    cfg = load_server_config(
+        project_root=tmp_path,
+        environ={"STRIDE_SYNC_DATA_AT_ONBOARDING": "false"},
+        use_cache=False,
+    )
+
+    assert cfg.sync.sync_data_at_onboarding is False
