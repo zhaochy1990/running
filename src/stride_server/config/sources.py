@@ -56,6 +56,7 @@ _ENV_MAPPING: dict[str, tuple[str, str]] = {
     "JPUSH_APP_KEY": ("notifications.jpush.app_key", "str"),
     "JPUSH_MASTER_SECRET": ("notifications.jpush.master_secret", "str"),
     "STRIDE_SYNC_STALE_AFTER_SECONDS": ("sync.stale_after_seconds", "int"),
+    "STRIDE_SYNC_DATA_AT_ONBOARDING": ("sync.sync_data_at_onboarding", "bool"),
     "STRIDE_AKV_ENABLED": ("akv.enabled", "bool"),
     "STRIDE_AKV_VAULT_URL": ("akv.vault_url", "str"),
     "STRIDE_AKV_SECRET_PREFIX": ("akv.secret_prefix", "str"),

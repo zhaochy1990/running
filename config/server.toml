@@ -85,6 +85,7 @@ apns_production = true
 
 [sync]
 stale_after_seconds = 300
+sync_data_at_onboarding = true
 
 [internal]
 token = ""

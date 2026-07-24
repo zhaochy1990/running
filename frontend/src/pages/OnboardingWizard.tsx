@@ -27,6 +27,7 @@ function reconstructProfile(p: Record<string, unknown> | null): ProfileIn | null
 export default function OnboardingWizard() {
   const [step, setStep] = useState<Step>('loading')
   const [profileData, setProfileData] = useState<ProfileIn | null>(null)
+  const [syncFullHistory, setSyncFullHistory] = useState(false)
   const navigate = useNavigate()
   const logout = useAuthStore((s) => s.logout)
   const [signingOut, setSigningOut] = useState(false)
@@ -45,6 +46,9 @@ export default function OnboardingWizard() {
   useEffect(() => {
     getMyProfile()
       .then((p) => {
+        // Drives whether SubmitStep waits for a full history sync (minutes) or
+        // the fast health-only sync.
+        setSyncFullHistory(Boolean(p.features?.sync_data_at_onboarding))
         if (p.onboarding.completed_at) {
           setStep('done')
         } else if (!p.onboarding.coros_ready) {
@@ -128,7 +132,7 @@ export default function OnboardingWizard() {
           )}
 
           {step === 'submit' && profileData && (
-            <SubmitStep profile={profileData} />
+            <SubmitStep profile={profileData} syncFullHistory={syncFullHistory} />
           )}
 
           {step === 'submit' && !profileData && (

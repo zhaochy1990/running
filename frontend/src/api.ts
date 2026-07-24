@@ -99,6 +99,9 @@ export interface MyProfile {
     coach_chat?: boolean
     coach_chat_debug?: boolean
     coach_chat_max_message_chars?: number
+    // When true, onboarding blocks on a full watch-history sync (minutes) before
+    // entering the app; when false/undefined, the fast health-only flow is used.
+    sync_data_at_onboarding?: boolean
   }
 }
 

@@ -36,7 +36,17 @@ class CorosClient:
         self._user = user
         self._delay = request_delay
         self._client = httpx.Client(timeout=30.0)
+        # Token-refresh coordination for concurrent detail fetches (jobs>1).
+        # COROS issues a single valid access token per account, so N worker
+        # threads must NOT each re-login on expiry (that overwrites each other's
+        # token → a re-login storm that wedges the sync). Exactly one thread
+        # refreshes under `_relogin_lock`; `_token_ready` is a barrier that
+        # blocks every other worker from issuing a request with the stale token
+        # while that single refresh is in flight, then releases them all onto
+        # the fresh token.
         self._relogin_lock = threading.Lock()
+        self._token_ready = threading.Event()
+        self._token_ready.set()
 
     def close(self) -> None:
         self._client.close()
@@ -111,6 +121,36 @@ class CorosClient:
         self._creds.save(user=self._user)
         return token
 
+    def _current_token(self) -> str:
+        """Return the usable access token, blocking while a refresh is in flight.
+
+        Every request reads its token through here so that, during the brief
+        window one thread is re-logging in, all other workers park on the
+        `_token_ready` barrier instead of firing a request with the stale token
+        (which COROS would reject and which would trigger redundant refreshes).
+        """
+        self._token_ready.wait()
+        return self._creds.access_token
+
+    def _refresh_token(self, stale_token: str) -> None:
+        """Coordinate a single re-login across concurrent workers.
+
+        Exactly one thread performs the network re-login (guarded by
+        `_relogin_lock`); the rest short-circuit once they observe the token has
+        already changed. The `_token_ready` barrier is closed for the duration of
+        the refresh so no worker uses the stale token mid-flight, and always
+        reopened in `finally` so a failed re-login can't deadlock the pool.
+        """
+        with self._relogin_lock:
+            # Another thread may have refreshed while we waited for the lock.
+            if self._creds.access_token != stale_token:
+                return
+            self._token_ready.clear()
+            try:
+                self._relogin()
+            finally:
+                self._token_ready.set()
+
     # --- Low-level request helpers ---
 
     def _post_raw(self, url: str, **kwargs: Any) -> dict:
@@ -127,7 +167,6 @@ class CorosClient:
             raise CorosAuthError("Not logged in. Run: coros-sync login")
 
         url = f"{self._base}{path}"
-        old_token = self._creds.access_token
 
         def do_request(token: str) -> dict:
             h: dict[str, str] = {"accesstoken": token}
@@ -137,17 +176,15 @@ class CorosClient:
             resp.raise_for_status()
             return resp.json()
 
-        data = do_request(old_token)
+        token = self._current_token()
+        data = do_request(token)
         code = data.get("result") or data.get("apiCode")
 
         if code in (RESULT_TOKEN_EXPIRED, RESULT_TOKEN_INVALID, RESULT_WRONG_REGION):
-            with self._relogin_lock:
-                # Check if another thread already refreshed the token
-                if self._creds.access_token == old_token:
-                    self._relogin()
-            # Re-build URL in case region changed
+            self._refresh_token(token)
+            # Re-build URL in case the region changed during the refresh.
             url = f"{self._base}{path}"
-            data = do_request(self._creds.access_token)
+            data = do_request(self._current_token())
             code = data.get("result") or data.get("apiCode")
 
         if code != RESULT_SUCCESS and code is not None:
@@ -161,25 +198,24 @@ class CorosClient:
         if not self._creds.access_token:
             raise CorosAuthError("Not logged in. Run: coros-sync login")
 
-        url = f"{self._base}{path}"
-        headers = {
-            "accesstoken": self._creds.access_token,
-            "Content-Type": "application/json",
-            "yfheader": f'{{"userId":"{self._creds.user_id}"}}',
-        }
+        def do_request(token: str) -> dict:
+            url = f"{self._base}{path}"
+            headers = {
+                "accesstoken": token,
+                "Content-Type": "application/json",
+                "yfheader": f'{{"userId":"{self._creds.user_id}"}}',
+            }
+            resp = self._client.post(url, json=body, headers=headers)
+            resp.raise_for_status()
+            return resp.json()
 
-        resp = self._client.post(url, json=body, headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
+        token = self._current_token()
+        data = do_request(token)
         code = data.get("result") or data.get("apiCode")
 
         if code in (RESULT_TOKEN_EXPIRED, RESULT_TOKEN_INVALID, RESULT_WRONG_REGION):
-            self._relogin()
-            headers["accesstoken"] = self._creds.access_token
-            url = f"{self._base}{path}"
-            resp = self._client.post(url, json=body, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
+            self._refresh_token(token)
+            data = do_request(self._current_token())
             code = data.get("result") or data.get("apiCode")
 
         if code != RESULT_SUCCESS and code is not None:
