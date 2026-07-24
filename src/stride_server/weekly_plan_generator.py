@@ -1,26 +1,27 @@
-"""Reusable rule-based weekly-plan generation service.
+"""LLM-authored weekly-plan generation service.
 
-The master plan provides periodisation intent, while recent actual training and
-STRIDE load determine the executable weekly target.  This keeps a stale or
-conservative master skeleton from abruptly replacing the workload the athlete
-has already absorbed.
+The master plan provides periodisation intent (phase + advisory volume), while
+recent actual training and STRIDE load resolve an executable weekly km target.
+That target, the athlete's real pace table, phase doctrine, continuity signals,
+completed-day locks and a body-composition nutrition baseline are handed to the
+generator LLM (``generate_week_validated``), which authors the week — running,
+strength and nutrition. A deterministic ``run_rule_filter`` safety gate + bounded
+regen-with-feedback loop wrap the LLM; a week that cannot be made rule-valid
+after retries raises :class:`WeeklyPlanGenerationError` (no rule-based fallback).
 """
 
 from __future__ import annotations
 
+import logging
 import math
-import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date as date_cls, timedelta
 from statistics import median
+from typing import Any
 
-from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
-from stride_core.running_calibration.types import PaceZone
-from stride_core.running_calibration.zones import compute_training_zones
-from stride_core.timefmt import shanghai_day_str, today_shanghai
-from stride_storage.sqlite.calibration_connector import (
-    SQLiteRunningCalibrationRepository,
-)
+from stride_core.master_plan import PhaseType
+from stride_core.plan_spec import SessionKind, WeeklyPlan
+from stride_core.timefmt import shanghai_day_str, today_shanghai, week_folder
 
 from .content_store import read_json
 from .deps import get_db
@@ -28,10 +29,10 @@ from .nutrition_rules import (
     NutritionBaseline,
     build_fallback_baseline,
     build_preferences_baseline,
-    build_weekly_nutrition,
 )
-from .week_generator import generate_week_plan
 from .weekly_plan_store import get_weekly_plan_store
+
+logger = logging.getLogger(__name__)
 
 
 class WeeklyPlanAlreadyExistsError(ValueError):
@@ -40,6 +41,18 @@ class WeeklyPlanAlreadyExistsError(ValueError):
     def __init__(self, folder: str) -> None:
         self.folder = folder
         super().__init__(f"weekly plan {folder!r} already exists")
+
+
+class WeeklyPlanGenerationError(RuntimeError):
+    """Raised when the LLM generator cannot produce a rule-valid week.
+
+    Covers every terminal generation failure the caller must surface (retries
+    exhausted with rule violations, unparseable/invalid LLM output after the
+    generator's own retry, an LLM-infra outage, or a missing precondition such
+    as no running-calibration snapshot). Defined here — not in the adapter — so
+    routes and the weekly-plan specialist import it cheaply (no langchain), and
+    ``week_specialist_adapter`` re-imports it for raising.
+    """
 
 
 @dataclass(frozen=True)
@@ -54,6 +67,7 @@ class MasterWeekTarget:
     context: str
     is_recovery_week: bool = False
     is_taper_week: bool = False
+    phase_type: PhaseType | None = None
 
 
 @dataclass(frozen=True)
@@ -131,6 +145,7 @@ def _master_week_target(user_id: str, week_start: date_cls) -> MasterWeekTarget 
         None,
     )
     phase_name = (phase.name if phase is not None else "") or "未命名阶段"
+    phase_type = _coerce_phase_type(getattr(phase, "phase_type", None))
     return MasterWeekTarget(
         target_km=round(target, 1),
         context=(
@@ -139,7 +154,45 @@ def _master_week_target(user_id: str, week_start: date_cls) -> MasterWeekTarget 
         ),
         is_recovery_week=bool(getattr(match, "is_recovery_week", False)),
         is_taper_week=bool(getattr(match, "is_taper_week", False)),
+        phase_type=phase_type,
     )
+
+
+def _coerce_phase_type(value: object) -> PhaseType | None:
+    """Best-effort coerce a phase value (PhaseType or its ``.value`` string)."""
+    if isinstance(value, PhaseType):
+        return value
+    if value in (None, ""):
+        return None
+    try:
+        return PhaseType(str(getattr(value, "value", value)))
+    except ValueError:
+        return None
+
+
+def _active_master_goal(user_id: str) -> dict:
+    """Normalised goal dict from the active master plan's embedded goal snapshot.
+
+    Returns ``{}`` when there is no active plan. The goal feeds ``pace_targets``
+    (marathon-pace derivation) and continuity (race_date → macro cycle); both
+    degrade gracefully when it is empty, so a missing plan is not fatal.
+    """
+    from .master_plan_generator import _normalize_for_prompt
+    from .master_plan_store import get_master_plan_store
+
+    master = get_master_plan_store().get_active_plan(user_id)
+    goal = getattr(master, "goal", None) if master is not None else None
+    if goal is None:
+        return {}
+    raw = {
+        "distance": getattr(getattr(goal, "distance", None), "value", None)
+        or getattr(goal, "distance", None),
+        "race_date": getattr(goal, "race_date", "") or "",
+        "target_finish_time": getattr(goal, "target_time", "") or "",
+        "race_name": getattr(goal, "race_name", "") or "",
+    }
+    norm_goal, _profile = _normalize_for_prompt(raw, None)
+    return norm_goal
 
 
 def _recent_training_context(db, week_start: date_cls) -> RecentTrainingContext:
@@ -251,221 +304,187 @@ def _current_week_actual_km(context: RecentTrainingContext) -> float:
     )
 
 
-def _current_week_immutable_rule_names(
-    plan: WeeklyPlan,
+def _immutable_rules_from_actuals(
     context: RecentTrainingContext,
     *,
     prev_week_km: float | None,
+    target_km: float | None,
 ) -> set[str]:
-    """Rules violated only by completed work that can no longer be prescribed."""
+    """Rule ids that completed (already-run) work makes unfixable this week.
+
+    A mid-week's finished mileage is echoed verbatim into the generated week, so
+    some HARD rules can be violated by history alone — no arrangement of the
+    remaining days can repair them. Computed from the completed actuals + the
+    prior week + the full weekly target BEFORE generation, so the generator's
+    rule gate can exempt exactly them (mirroring the old rule generator's
+    immutable-rule exemption):
+
+    * ``weekly_progression`` — completed km already exceeds prev × 1.10; the full
+      week's total (>= completed) can only be higher.
+    * ``long_run_share`` — a completed run already exceeds 35% of the weekly
+      target; its length is fixed and total ~= target, so the share can't drop.
+    * ``rest_days`` — the athlete has already run on all 7 days of the week
+      (``current_week_by_date`` only carries days with a logged run), so no
+      future day remains that could become the required rest day.
+    """
     actual_by_date = context.current_week_by_date
-    if actual_by_date is None:
+    if not actual_by_date:
         return set()
     immutable: set[str] = set()
     actual_km = _current_week_actual_km(context)
-    if prev_week_km is not None and actual_km > prev_week_km * 1.10:
+    if (
+        prev_week_km is not None
+        and prev_week_km > 0
+        and actual_km > prev_week_km * 1.10
+    ):
         immutable.add("weekly_progression")
-
     actual_longest = max(
-        (
-            float(summary.get("actual_distance_km") or 0)
-            for summary in actual_by_date.values()
-        ),
+        (float(s.get("actual_distance_km") or 0) for s in actual_by_date.values()),
         default=0.0,
     )
-    future_longest = max(
-        (
-            float(session.total_distance_m or 0) / 1000.0
-            for session in plan.sessions
-            if session.kind == SessionKind.RUN
-            and session.date not in actual_by_date
-        ),
-        default=0.0,
-    )
-    if actual_longest > future_longest:
+    if target_km and target_km > 0 and actual_longest > 0.35 * float(target_km):
         immutable.add("long_run_share")
     if len(actual_by_date) == 7:
         immutable.add("rest_days")
     return immutable
 
 
-def _replace_distance_label(summary: str, distance_km: float) -> str:
-    km_label = f"{round(distance_km)}K"
-    return re.sub(r"（[^，）]+([，）])", rf"（{km_label}\1", summary, count=1)
+def _render_nutrition_baseline_block(baseline: NutritionBaseline) -> str:
+    """Render the athlete's real nutrition baseline for the LLM to author from."""
+    return (
+        "【营养基线（真实体测数据，据此为每天生成 nutrition）】\n"
+        f"- 基线热量（休息日）：约 {baseline.base_kcal:.0f} kcal；训练日在此基础上按当天课型"
+        "强度适度增量（易/恢复约 +200 kcal，长距/质量课更高）。\n"
+        f"- 宏量占比：蛋白 {baseline.protein_pct:.0f}% / 碳水 {baseline.carb_pct:.0f}% / "
+        f"脂肪 {baseline.fat_pct:.0f}%（据此换算每餐克数）。\n"
+        f"- 数据来源：{baseline.source_note}。"
+    )
 
 
-def _weekly_plan_explanation(
-    plan: WeeklyPlan,
+def _render_completed_days_block(
+    context: RecentTrainingContext,
     *,
-    total_distance_km: float,
-    generation_notes: list[str],
+    target_km: float,
 ) -> str:
-    """生成 Review 首屏直接展示的完整训练解读。"""
-    run_sessions = [s for s in plan.sessions if s.kind == SessionKind.RUN]
-    strength_sessions = [s for s in plan.sessions if s.kind == SessionKind.STRENGTH]
-    rest_sessions = [s for s in plan.sessions if s.kind == SessionKind.REST]
-    quality_sessions = [
-        s
-        for s in run_sessions
-        if any(marker in s.summary for marker in ("节奏", "间歇", "阈值", "马拉松配速"))
-    ]
-    longest_run = max(
-        run_sessions,
-        key=lambda session: float(session.total_distance_m or 0),
-        default=None,
-    )
+    """Render already-completed current-week days as locked context.
 
-    structure = (
-        f"{len(run_sessions)} 次跑步、{len(strength_sessions)} 次力量训练、"
-        f"{len(rest_sessions)} 个休息日"
-    )
+    Non-empty only mid-week. Instructs the LLM to echo each completed day
+    verbatim as a done session and to plan ONLY the remaining dates, so the full
+    week's running mileage still hits ``target_km`` (rule_filter validates the
+    whole stitched week).
+    """
+    actual_by_date = context.current_week_by_date
+    if not actual_by_date:
+        return ""
+    completed_km = _current_week_actual_km(context)
     lines = [
-        "### 本周定位",
-        f"- 计划周跑量约 **{total_distance_km:.1f} km**，包含{structure}。",
+        "【本周已完成（锁定，勿改）——只为剩余日期排课，全周跑量仍须命中目标周量】",
     ]
-    lines.extend(f"- {note.strip('。 ')}。" for note in generation_notes if note)
-
-    lines.extend(["", "### 训练逻辑"])
-    if quality_sessions:
-        quality_text = "；".join(
-            f"{session.date[5:]} {session.summary}" for session in quality_sessions
-        )
-        lines.append(f"- 质量课：{quality_text}，用于衔接阈值能力与速度刺激。")
-    if longest_run is not None:
-        lines.append(
-            f"- 长距离：{longest_run.date[5:]} {longest_run.summary}，"
-            "以有氧耐力和疲劳下的动作稳定性为主，不追求额外提速。"
-        )
-    if strength_sessions:
-        lines.append(
-            "- 力量训练安排在长距离前，重点是核心与髋部稳定，保持中等强度，避免练到力竭。"
-        )
+    for day in sorted(actual_by_date):
+        summary = actual_by_date[day] or {}
+        km = float(summary.get("actual_distance_km") or 0)
+        if km > 0:
+            lines.append(
+                f"- {day}：已完成跑步 {km:.1f}km —— 原样回显为一条已完成 session"
+                f"（kind=run，summary 写“已完成跑步（{km:.1f}K）”，"
+                f"total_distance_m={round(km * 1000)}，spec=null），不要改动或重复安排。"
+            )
+        else:
+            lines.append(f"- {day}：已过日期、无跑步记录 —— 回显为一条 rest。")
+    remaining = max(round(float(target_km) - completed_km, 1), 0.0)
     lines.append(
-        "- 轻松跑与休息日用于承接质量课，避免把多次高负荷训练连续堆叠。"
-    )
-
-    lines.extend(
-        [
-            "",
-            "### 执行与调整",
-            "- 轻松跑保持可对话强度；质量课以完成目标区间为准，不额外加码。",
-            "- 若出现疼痛、明显动作变形，或质量课 RPE 达到 8 以上，取消后续强度并改为休息或 Z1–Z2 轻松跑。",
-            "- 长距离前一天的力量训练不得做到力竭；睡眠或恢复明显变差时优先保留长距离，删除间歇刺激。",
-        ]
+        f"- 已完成合计 {completed_km:.1f}km；剩余目标 ≈ 目标 {float(target_km):.1f}km − "
+        f"已完成 {completed_km:.1f}km ≈ {remaining:.1f}km，分配到剩余日期；"
+        "已完成日期不要重复排课。"
     )
     return "\n".join(lines)
 
 
-def _merge_current_week_actuals(
-    plan: WeeklyPlan,
-    *,
-    target_km: float,
-    context: RecentTrainingContext,
-) -> WeeklyPlan:
-    """Lock elapsed days and distribute only the uncompleted mileage budget."""
-    actual_by_date = context.current_week_by_date
-    if actual_by_date is None:
-        return plan
-    today = today_shanghai().isoformat()
-    sessions: list[PlannedSession] = []
-    future_run_indexes: list[int] = []
-    future_weights: list[float] = []
-    actual_m = 0.0
-
-    for session in plan.sessions:
-        actual = actual_by_date.get(session.date)
-        locked = session.date < today or actual is not None
-        if locked:
-            distance_km = float((actual or {}).get("actual_distance_km") or 0)
-            if distance_km > 0:
-                actual_m += distance_km * 1000.0
-                sessions.append(
-                    replace(
-                        session,
-                        kind=SessionKind.RUN,
-                        summary=f"已完成跑步（{distance_km:.1f}K）",
-                        spec=None,
-                        notes_md="根据已同步训练记录锁定；无需重复执行。",
-                        total_distance_m=round(distance_km * 1000.0),
-                        total_duration_s=(
-                            float((actual or {}).get("total_duration_s") or 0) or None
-                        ),
-                    )
-                )
-            else:
-                sessions.append(
-                    replace(
-                        session,
-                        kind=SessionKind.REST,
-                        summary="已过日期（无跑步记录）",
-                        spec=None,
-                        notes_md=None,
-                        total_distance_m=None,
-                        total_duration_s=None,
-                    )
-                )
-            continue
-        sessions.append(session)
-        if session.kind == SessionKind.RUN:
-            future_run_indexes.append(len(sessions) - 1)
-            future_weights.append(float(session.total_distance_m or 0))
-
-    remaining_m = max(target_km * 1000.0 - actual_m, 0.0)
-    if future_run_indexes:
-        weight_total = sum(future_weights) or float(len(future_run_indexes))
-        allocated = 0.0
-        for pos, (index, weight) in enumerate(
-            zip(future_run_indexes, future_weights, strict=True)
-        ):
-            distance_m = (
-                remaining_m - allocated
-                if pos == len(future_run_indexes) - 1
-                else round(remaining_m * (weight or 1.0) / weight_total)
-            )
-            allocated += distance_m
-            session = sessions[index]
-            if distance_m <= 0:
-                sessions[index] = replace(
-                    session,
-                    kind=SessionKind.REST,
-                    summary="恢复休息（本周实际跑量已达目标）",
-                    notes_md=None,
-                    total_distance_m=None,
-                    total_duration_s=None,
-                )
-                continue
-            old_distance = float(session.total_distance_m or 0)
-            duration_s = (
-                float(session.total_duration_s or 0) * distance_m / old_distance
-                if old_distance > 0
-                else None
-            )
-            sessions[index] = replace(
-                session,
-                summary=_replace_distance_label(session.summary, distance_m / 1000.0),
-                total_distance_m=distance_m,
-                total_duration_s=round(duration_s) if duration_s else None,
-            )
-
-    work_dates = {
-        session.date
-        for session in sessions
-        if session.kind in {SessionKind.RUN, SessionKind.STRENGTH, SessionKind.CROSS}
+def _continuity_to_dict(signals: Any) -> dict | None:
+    """Project ContinuitySignals into the small dict ``_render_context_block`` reads."""
+    if signals is None:
+        return None
+    out = {
+        "macro_cycle": getattr(signals, "macro_cycle", None),
+        "current_chronic_load": getattr(signals, "current_chronic_load", None),
+        "post_race_recovery_status": getattr(signals, "post_race_recovery_status", None),
     }
-    if len(work_dates) == 7:
-        for index, session in enumerate(sessions):
-            if session.date >= today and session.kind == SessionKind.STRENGTH:
-                sessions[index] = replace(
-                    session,
-                    kind=SessionKind.REST,
-                    summary="完整休息日",
-                    spec=None,
-                    notes_md="本周已完成训练较多，保留至少一个完整休息日。",
-                    total_duration_s=None,
-                )
-                break
+    trimmed = {k: v for k, v in out.items() if v is not None}
+    return trimmed or None
 
-    return replace(plan, sessions=tuple(sessions))
+
+def _safe_continuity(db, *, goal: dict, profile: dict | None, as_of: date_cls):
+    """Best-effort continuity signals; ``None`` when unavailable (never raises)."""
+    try:
+        from .coach_adapters.continuity_analyzer import analyze_continuity
+
+        return analyze_continuity(db, goal=goal, profile=profile, as_of=as_of)
+    except Exception:  # noqa: BLE001 — continuity is optional context
+        logger.warning(
+            "weekly_plan: continuity analysis failed; continuing without it",
+            exc_info=True,
+        )
+        return None
+
+
+def _injuries_from(signals: Any, profile: dict | None) -> list[str]:
+    inj = getattr(signals, "injuries", None) if signals is not None else None
+    if not inj and profile:
+        inj = profile.get("injuries")
+    return [str(i) for i in (inj or []) if i and str(i).lower() != "none"]
+
+
+def _athlete_level(db) -> float:
+    """Athlete-level signal (CTL) for the volume budget; fall back to 60."""
+    if not hasattr(db, "fetch_latest_daily_training_load"):
+        return 60.0
+    try:
+        row = db.fetch_latest_daily_training_load()
+    except Exception:  # noqa: BLE001 — level is a soft signal
+        return 60.0
+    if row is None:
+        return 60.0
+    try:
+        chronic = row["chronic_load"]
+    except (KeyError, IndexError, TypeError):
+        chronic = None
+    if isinstance(chronic, (int, float)) and chronic > 0:
+        return float(chronic)
+    return 60.0
+
+
+def _resolve_phase_type(
+    master_target: MasterWeekTarget | None,
+    *,
+    user_id: str,
+    db,
+    goal: dict,
+    profile: dict | None,
+    as_of: date_cls,
+    continuity_signals: Any,
+) -> PhaseType:
+    """The week's periodisation phase: master phase when known, else detected, else BASE."""
+    if master_target is not None and master_target.phase_type is not None:
+        return master_target.phase_type
+    try:
+        from .coach_adapters.phase_detector import detect_current_phase
+
+        ctx = detect_current_phase(
+            db,
+            user_id=user_id,
+            goal=goal,
+            profile=profile,
+            as_of=as_of,
+            continuity=continuity_signals,
+            cross_validate_with_llm=False,
+        )
+        if ctx.current_phase_type is not None:
+            return ctx.current_phase_type
+    except Exception:  # noqa: BLE001 — phase detection must never block generation
+        logger.warning(
+            "weekly_plan: phase detection failed; defaulting to BASE", exc_info=True
+        )
+    return PhaseType.BASE
 
 
 def get_last_week_summary(
@@ -514,33 +533,6 @@ def get_last_week_summary(
     }
 
 
-def _athlete_pace_zones(
-    db: object, as_of_date: date_cls
-) -> dict[str, PaceZone] | None:
-    """Return the athlete's calibrated pace zones keyed by zone name.
-
-    Single-source discipline: pace zones come from the running-calibration
-    snapshot via ``SQLiteRunningCalibrationRepository`` + ``compute_training_zones``
-    (never recomputed here). Returns ``None`` when no usable calibration exists
-    (no snapshot, or no threshold speed) so the caller can fall back to generic
-    paces instead of fabricating a magic default.
-    """
-    # Non-SQLite backends (e.g. lightweight test doubles) cannot back a
-    # calibration repository — treat them as "no personalised zones".
-    if getattr(db, "_conn", None) is None:
-        return None
-    repo = SQLiteRunningCalibrationRepository(db)
-    snapshot = repo.fetch_latest(as_of_date=as_of_date)
-    if (
-        snapshot is None
-        or not snapshot.threshold_speed_mps
-        or snapshot.threshold_speed_mps <= 0
-    ):
-        return None
-    zones = compute_training_zones(snapshot)
-    return {zone.name: zone for zone in zones.pace_zones}
-
-
 def build_weekly_plan(
     *,
     user_id: str,
@@ -548,7 +540,21 @@ def build_weekly_plan(
     base_distance_km: float | None = None,
     allow_existing: bool = False,
 ) -> GeneratedWeeklyPlan:
-    """Generate one Monday-based week without persisting it."""
+    """Author one Monday-based week via the generator LLM (not persisted).
+
+    Resolves the executable weekly km target (master intent blended with recent
+    actual volume + STRIDE load), gathers the athlete's phase / continuity /
+    injuries / nutrition baseline + any completed-day locks, then hands them to
+    :func:`generate_week_validated`, which authors the running + strength +
+    nutrition and enforces the ``run_rule_filter`` safety gate with bounded
+    regen-with-feedback.
+
+    Raises:
+        WeeklyPlanAlreadyExistsError: the week already exists and
+            ``allow_existing`` is false.
+        WeeklyPlanGenerationError: no volume target could be resolved, or the LLM
+            could not produce a rule-valid week after retries.
+    """
     if week_start.weekday() != 0:
         raise ValueError("week_start must be a Monday")
 
@@ -563,6 +569,7 @@ def build_weekly_plan(
         if base_distance_km is None
         else None
     )
+    goal = _active_master_goal(user_id) if base_distance_km is None else {}
 
     db = get_db(user_id)
     try:
@@ -572,93 +579,103 @@ def build_weekly_plan(
             if base_distance_km is not None
             else _resolve_weekly_target(master_target, training_context)
         )
+        # Completed current-week work can only raise the executable floor: a week
+        # already run beyond target/plan is honoured, not clawed back.
         actual_km = _current_week_actual_km(training_context)
         completed_run_days = len(training_context.current_week_by_date or {})
         if completed_run_days == 7:
             resolved_base_km = math.ceil(actual_km * 2.0) / 2.0
-            actual_note = f"本周已全部完成，最终实际跑量 {actual_km:.1f}km"
         elif actual_km > 0 and (
             resolved_base_km is None or actual_km > resolved_base_km
         ):
             resolved_base_km = math.ceil(actual_km * 2.0) / 2.0
-            actual_note = (
-                f"本周已完成 {actual_km:.1f}km，目标下限抬升为 "
-                f"{resolved_base_km:.1f}km"
+        if resolved_base_km is None or resolved_base_km <= 0:
+            raise WeeklyPlanGenerationError(
+                "cannot resolve a weekly volume target for "
+                f"{week_start.isoformat()} (no master plan week, recent actual "
+                "volume, or explicit base_distance_km)"
             )
-        else:
-            actual_note = None
-        pace_zones = _athlete_pace_zones(db, week_start)
-        pace_source_note = (
-            None
-            if pace_zones
-            else "配速区间为通用默认值，暂无个人配速校准数据（完成更多跑步后自动个性化）"
+        resolved_base_km = round(float(resolved_base_km), 1)
+
+        profile = _read_content_object(f"{user_id}/profile.json")
+        continuity_signals = _safe_continuity(
+            db, goal=goal, profile=profile, as_of=week_start
         )
-        plan, total_distance_km = generate_week_plan(
+        injuries = _injuries_from(continuity_signals, profile)
+        phase_type = _resolve_phase_type(
+            master_target,
             user_id=user_id,
-            week_start=week_start,
-            base_distance_km=resolved_base_km,
-            last_week_summary=None,
-            pace_zones=pace_zones,
+            db=db,
+            goal=goal,
+            profile=profile,
+            as_of=week_start,
+            continuity_signals=continuity_signals,
         )
-        plan = _merge_current_week_actuals(
-            plan,
-            target_km=total_distance_km,
-            context=training_context,
+        level = _athlete_level(db)
+        nutrition_block = _render_nutrition_baseline_block(
+            _nutrition_baseline(user_id, db)
         )
-        nutrition = build_weekly_nutrition(
-            week_start=week_start,
-            sessions=plan.sessions,
-            baseline=_nutrition_baseline(user_id, db),
+        completed_block = _render_completed_days_block(
+            training_context, target_km=resolved_base_km
         )
-        plan = replace(plan, nutrition=nutrition)
+        continuity_dict = _continuity_to_dict(continuity_signals)
     finally:
         db.close()
-
-    generation_notes = [
-        master_target.context if master_target is not None else None,
-        calibration_note,
-        actual_note,
-        pace_source_note,
-    ]
-    plan = replace(
-        plan,
-        notes_md=_weekly_plan_explanation(
-            plan,
-            total_distance_km=total_distance_km,
-            generation_notes=[note for note in generation_notes if note],
-        ),
-    )
-
-    from coach.graphs.generation.rule_filter import run_rule_filter
 
     prev_week_km = (
         training_context.completed_week_km[0]
         if training_context.completed_week_km
         else None
     )
-    report = run_rule_filter(
-        plan.to_dict(),
-        prev_week_km=prev_week_km,
+    immutable_rules = _immutable_rules_from_actuals(
+        training_context, prev_week_km=prev_week_km, target_km=resolved_base_km
+    )
+
+    # Fold the resolution / master / completed-day context into a single extra
+    # block so the LLM's authored notes_md reflects them and it plans only the
+    # remaining days mid-week.
+    extra_parts = [
+        part
+        for part in (
+            master_target.context if master_target is not None else None,
+            calibration_note,
+            completed_block or None,
+        )
+        if part
+    ]
+
+    from coach.graphs.generation.weekly_prompt import WeekMeta
+
+    from .coach_adapters.week_specialist_adapter import generate_week_validated
+
+    phase_position = (
+        master_target.context
+        if master_target is not None
+        else f"{phase_type.value} phase"
+    )
+    week_meta = WeekMeta(
+        phase_position=phase_position,
+        week_folder=week_folder(week_start),
         target_weekly_km=resolved_base_km,
     )
-    immutable_rules = _current_week_immutable_rule_names(
-        plan,
-        training_context,
-        prev_week_km=prev_week_km,
-    )
-    actionable_errors = [
-        violation
-        for violation in report.errors()
-        if violation.rule not in immutable_rules
-    ]
-    if actionable_errors:
-        messages = "; ".join(
-            f"{violation.rule}: {violation.message}"
-            for violation in actionable_errors
-        )
-        raise ValueError(f"generated weekly plan failed safety rules: {messages}")
+    context = {
+        "user_id": user_id,
+        "goal": goal,
+        "level": level,
+        "continuity": continuity_dict,
+        "extra_context_block": "\n".join(extra_parts),
+    }
 
-    return GeneratedWeeklyPlan(
-        plan=plan,
-        total_distance_km=round(total_distance_km, 1),
+    week_dict = generate_week_validated(
+        phase_type=phase_type,
+        week_meta=week_meta,
+        context=context,
+        injuries=injuries,
+        prev_week_km=prev_week_km,
+        immutable_rules=immutable_rules,
+        nutrition_baseline_block=nutrition_block,
+        as_of=week_start,
     )
+
+    plan = WeeklyPlan.from_dict(week_dict)
+    return GeneratedWeeklyPlan(plan=plan, total_distance_km=resolved_base_km)

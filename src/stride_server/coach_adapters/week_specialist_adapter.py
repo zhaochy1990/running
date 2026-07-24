@@ -1,43 +1,62 @@
-"""Specialist generator shared helpers (formerly the per-week adapter).
+"""Single-week specialist generator + shared specialist helpers.
 
-Originally this module held the Stage-3a **per-week** generator
-(``generate_specialist_week``) and its per-phase loop (``generate_phase_weeks``).
-The phase-at-once optimization (PA-T1…T6) replaced that path with
-:mod:`stride_server.coach_adapters.phase_specialist_adapter` (an entire phase
-generated in one LLM call). The dead per-week generator + loop + per-week graph
-have been removed (PA-T6); what remains here are the **reusable specialist
-helpers** the phase-at-once adapter imports:
+Originally this module held the Stage-3a **per-week** generator and its per-phase
+loop; the phase-at-once optimization (PA-T1…T6) moved *season* generation to
+:mod:`stride_server.coach_adapters.phase_specialist_adapter` (an entire phase in
+one LLM call) and removed the old per-week loop. This module now hosts:
 
-* ``build_specialist_context`` — the 必传上下文 (pace table + volume budget) used
-  both to compose the prompt and to source the rule_filter's athlete-relative
-  Z4-Z5 threshold (``pace_targets.threshold_pace_s_km``),
-* ``_render_context_block`` — renders the continuity / prior-tail / injuries
-  pre-rendered context string the prompt composers consume,
-* ``_coerce_phase_type`` / ``_coerce_week_meta`` — input coercion,
-* the LLM tool wiring (``_build_specialist_tools`` + ``_wrap_specialist_tool``)
-  that turns a specialist's declared pull-tools (``strength_library`` /
-  ``recent_training``) into the langchain ``StructuredTool``s the tool loop
-  drives.
+* the **standalone single-week generator** used by ``build_weekly_plan`` (the
+  HTTP ``/plan/weeks/generate`` route + the conversational weekly-plan
+  specialist's creation path):
+  * ``generate_specialist_week`` — compose → tool-loop → parse(one retry) →
+    ``WeeklyPlan`` validate for ONE week,
+  * ``generate_week_validated`` — the ``run_rule_filter`` safety gate + bounded
+    regen-with-feedback that **raises** ``WeeklyPlanGenerationError`` when no
+    rule-valid week can be produced (unlike the phase path, which degrades a
+    failed phase to ``[]`` — a standalone weekly request has no season bundle to
+    fall back into, so it must surface the failure);
+* the **reusable specialist helpers** the phase-at-once adapter also imports:
+  * ``build_specialist_context`` — the 必传上下文 (pace table + volume budget) used
+    both to compose the prompt and to source the rule_filter's athlete-relative
+    Z4-Z5 threshold (``pace_targets.threshold_pace_s_km``),
+  * ``_render_context_block`` — renders the continuity / prior-tail / injuries
+    pre-rendered context string the prompt composers consume,
+  * ``_coerce_phase_type`` / ``_coerce_week_meta`` — input coercion,
+  * the LLM tool wiring (``_build_specialist_tools`` + ``_wrap_specialist_tool``)
+    that turns a specialist's declared pull-tools (``strength_library`` /
+    ``recent_training``) into the langchain ``StructuredTool``s the tool loop
+    drives.
 
 This is the **adapter** layer: it touches the DB (running calibration via
-``Database(user=...)``) — which ``coach.*`` core may not.
+``Database(user=...)``) and the LLM — neither of which ``coach.*`` core may.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from datetime import date as date_cls
 from typing import Any
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import StructuredTool
 
 from coach.graphs.conversation.tool_bridge import _build_args_schema, _serialize_result
 from coach.graphs.generation.phase_specialists import get_specialist
-from coach.graphs.generation.weekly_prompt import WeekMeta
+from coach.graphs.generation.rule_filter import RuleViolation, run_rule_filter
+from coach.graphs.generation.weekly_prompt import WeekMeta, build_weekly_system_prompt
+from coach.runtime.llm_factory import CoachLLMUnavailable
+from coach.runtime.tool_loop import run_tool_loop
 from coach.schemas import PaceTargets, ToolResult, VolumeTargets
 from stride_core.master_plan import PhaseType
+from stride_core.plan_spec import WeeklyPlan
 from stride_core.timefmt import today_shanghai
+from stride_storage.sqlite.database import Database
 
+from ..coach_runtime import get_generator_llm
+from ..llm_client import LLMError, LLMUnavailable, _map_exception
+from ..master_plan_generator import _parse_llm_output
+from ..weekly_plan_generator import WeeklyPlanGenerationError
 from .specialist_tools import (
     RECENT_TRAINING_TOOL_DESCRIPTION,
     STRENGTH_LIBRARY_TOOL_DESCRIPTION,
@@ -234,3 +253,292 @@ def _coerce_week_meta(week: Any) -> WeekMeta:
         week_folder=str(week.get("week_folder", "")),
         target_weekly_km=float(week.get("target_weekly_km") or 0.0),
     )
+
+
+# ---------------------------------------------------------------------------
+# Single-week LLM generator (the standalone analog of the phase-at-once
+# generate_specialist_phase / generate_phase_validated in
+# phase_specialist_adapter). Unlike the phase path — which "never raises",
+# degrading a failed phase to [] — the weekly path RAISES
+# ``WeeklyPlanGenerationError`` when it cannot produce a rule-valid week after
+# its bounded retries, because a standalone weekly request has no season bundle
+# to fall back into: the caller (build_weekly_plan / the HTTP route / the chat
+# specialist) must surface the failure, not silently return an empty week.
+# ---------------------------------------------------------------------------
+
+
+def _render_week_feedback(feedback: str) -> str:
+    return f"""\
+【上一轮问题——本次重新生成必须逐条修复（fix these）】
+下列问题来自上一轮 rule_filter 安全校验。重新设计本周时必须**逐条**针对性修复，不要重复同样的错误：
+{feedback}
+"""
+
+
+def _format_week_rule_feedback(violations: list[RuleViolation]) -> str:
+    """Render single-week rule violations into a regen feedback string."""
+    return "\n".join(f"违反 {v.rule}：{v.message}" for v in violations)
+
+
+def generate_specialist_week(
+    *,
+    phase_type: PhaseType,
+    week_meta: WeekMeta,
+    user_id: str,
+    pace_targets: PaceTargets,
+    volume_targets: VolumeTargets,
+    context_block: str,
+    injuries: list[str],
+    nutrition_baseline_block: str = "",
+) -> dict:
+    """Generate ONE week via the generator LLM (compose → tool-loop → parse → validate).
+
+    Mirrors ``generate_specialist_phase`` at week granularity but takes the
+    already-computed ``pace_targets`` / ``volume_targets`` (so the caller
+    computes the athlete pace table once and can reuse it across regen attempts)
+    and a pre-rendered ``context_block`` (continuity + prior-tail + injuries +
+    optional regen feedback). Binds the phase's declared pull-tools, runs the
+    shared tool loop, then does a 3-tier parse (one retry) + ``WeeklyPlan``
+    schema validation.
+
+    Returns the validated ``WeeklyPlan`` dict (does NOT run rule_filter — the
+    caller ``generate_week_validated`` owns the safety gate).
+
+    Raises:
+        ValueError starting with ``"parse_failed"`` / ``"bad_schema"``: the
+            output could not be parsed (after one retry) or is not a valid
+            ``WeeklyPlan``.
+        LLMUnavailable / LLMError: propagated from the LLM client.
+    """
+    phase_type = _coerce_phase_type(phase_type)
+    injuries = list(injuries or [])
+
+    system_prompt = build_weekly_system_prompt(
+        phase=phase_type,
+        week_meta=week_meta,
+        pace_targets=pace_targets,
+        volume_targets=volume_targets,
+        context_block=context_block,
+        nutrition_baseline_block=nutrition_baseline_block,
+    )
+    user_text = (
+        "请基于上述阶段指导 + 注入的配速/量预算"
+        + ("（含营养基线）" if nutrition_baseline_block else "")
+        + "，生成该目标周的 WeeklyPlan JSON。"
+    )
+
+    structured_tools = _build_specialist_tools(
+        phase_type, user_id=user_id, injuries=injuries
+    )
+
+    def _run_one_pass() -> str:
+        try:
+            llm = get_generator_llm()
+        except CoachLLMUnavailable as exc:
+            raise LLMUnavailable(str(exc)) from exc
+        llm_with_tools = llm.bind_tools(structured_tools) if structured_tools else llm
+        tool_map = {t.name: t for t in structured_tools}
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_text),
+        ]
+        try:
+            return run_tool_loop(llm_with_tools, messages, tool_map)
+        except CoachLLMUnavailable as exc:
+            raise LLMUnavailable(str(exc)) from exc
+        except (LLMError, LLMUnavailable):
+            raise
+        except BaseException as exc:  # noqa: BLE001 — LLM/tool boundary
+            raise _map_exception(exc) from exc
+
+    def _parse(raw: str) -> dict:
+        parsed = _parse_llm_output(raw)
+        if parsed is None:
+            raise ValueError(
+                f"parse_failed: weekly plan output unparseable (raw_len={len(raw)})"
+            )
+        if not isinstance(parsed, dict):
+            raise ValueError(
+                f"parse_failed: parsed output is {type(parsed).__name__}, not a WeeklyPlan object"
+            )
+        return parsed
+
+    raw = _run_one_pass()
+    try:
+        parsed = _parse(raw)
+    except ValueError:
+        logger.warning(
+            "generate_specialist_week: parse_failed on first attempt "
+            "(raw_len=%d) — retrying once",
+            len(raw),
+        )
+        parsed = _parse(_run_one_pass())
+
+    try:
+        plan = WeeklyPlan.from_dict(parsed)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ValueError(f"bad_schema: WeeklyPlan.from_dict failed: {exc}") from exc
+    return plan.to_dict()
+
+
+def generate_week_validated(
+    *,
+    phase_type: PhaseType,
+    week_meta: WeekMeta,
+    context: dict,
+    injuries: list[str] | None = None,
+    prev_week_km: float | None = None,
+    immutable_rules: Iterable[str] = (),
+    nutrition_baseline_block: str = "",
+    as_of: date_cls | None = None,
+    max_attempts: int = 3,
+) -> dict:
+    """Generate one week, rule-gate it, regen-with-feedback, and RAISE on failure.
+
+    The value-add over the inner ``generate_specialist_week`` (one un-gated pass)
+    is the ``run_rule_filter`` safety gate + bounded feedback-driven regen. The
+    athlete pace table + volume budget are computed once here (fail-fast on a
+    missing calibration snapshot) and reused across attempts; the Z4-Z5 pace
+    threshold is single-sourced from ``pace_targets.threshold_pace_s_km``.
+
+    ``immutable_rules`` names rule ids that are already violated by
+    *completed* work echoed into the week (e.g. ``weekly_progression`` when a
+    mid-week's finished mileage is already over the ramp cap). Those violations
+    can't be fixed by regeneration, so they are exempted from the retry/raise
+    decision — mirroring the old rule-generator's immutable-rule exemption.
+
+    Args:
+        context: shared context — ``user_id``, ``goal`` (dict), ``level``; may
+            carry ``continuity`` (ContinuitySignals dict) + ``prior_week_tail``
+            + ``nutrition_baseline_block`` is passed separately.
+        prev_week_km: prior week's actual km for the progression gate.
+        as_of: reference date for the calibration snapshot (usually week_start).
+        max_attempts: hard bound on generation attempts (default 3).
+
+    Returns:
+        The rule-clean ``WeeklyPlan`` dict.
+
+    Raises:
+        WeeklyPlanGenerationError: no usable calibration snapshot, an LLM-infra
+            outage, unparseable/invalid output after retries, or rule violations
+            that persist after ``max_attempts``.
+    """
+    week_meta = _coerce_week_meta(week_meta)
+    phase_type = _coerce_phase_type(phase_type)
+    injuries = list(injuries or [])
+    immutable = set(immutable_rules or ())
+    target_km = float(week_meta.target_weekly_km)
+
+    user_id = str(context.get("user_id") or "")
+    goal = context.get("goal") or {}
+    level = float(context.get("level") or 0.0)
+
+    # Compute the athlete pace table + volume budget ONCE (reused every attempt).
+    # A missing calibration snapshot is a hard precondition failure — surface it
+    # as a generation error instead of retrying uselessly.
+    db = Database(user=user_id)
+    try:
+        try:
+            pace_tgts, volume_tgts = build_specialist_context(
+                db,
+                goal=goal,
+                phase_type=phase_type,
+                week_meta=week_meta,
+                level=level,
+                as_of=as_of,
+            )
+        except ValueError as exc:
+            raise WeeklyPlanGenerationError(
+                f"cannot build weekly plan: {exc}"
+            ) from exc
+    finally:
+        db.close()
+
+    z45_threshold = pace_tgts.threshold_pace_s_km
+    base_context_block = _render_context_block(
+        continuity=context.get("continuity"),
+        prior_week_tail=context.get("prior_week_tail"),
+        injuries=injuries,
+    )
+    # Caller-supplied extra block (resolution notes + completed-day locks). Kept
+    # distinct from the fixed continuity/injury sections above.
+    extra = str(context.get("extra_context_block") or "").strip()
+    if extra:
+        base_context_block = (
+            f"{base_context_block}\n{extra}" if base_context_block else extra
+        )
+
+    current_feedback: str | None = None
+    for attempt in range(1, max_attempts + 1):
+        context_block = base_context_block
+        if current_feedback:
+            context_block = (
+                f"{base_context_block}\n{_render_week_feedback(current_feedback)}"
+                if base_context_block
+                else _render_week_feedback(current_feedback)
+            )
+        try:
+            week = generate_specialist_week(
+                phase_type=phase_type,
+                week_meta=week_meta,
+                user_id=user_id,
+                pace_targets=pace_tgts,
+                volume_targets=volume_tgts,
+                context_block=context_block,
+                injuries=injuries,
+                nutrition_baseline_block=nutrition_baseline_block,
+            )
+        except (LLMUnavailable, LLMError) as exc:
+            # LLM-infra failure won't fix itself via regen — fail immediately.
+            raise WeeklyPlanGenerationError(
+                f"weekly plan LLM unavailable/error on attempt "
+                f"{attempt}/{max_attempts}: {exc}"
+            ) from exc
+        except ValueError as exc:
+            # parse_failed / bad_schema survived generate_specialist_week's own
+            # one retry. Regenerate fresh (schema errors don't feed back well).
+            if attempt < max_attempts:
+                logger.warning(
+                    "generate_week_validated: attempt %d/%d generation failed "
+                    "(%s) — retrying",
+                    attempt,
+                    max_attempts,
+                    str(exc)[:200],
+                )
+                current_feedback = None
+                continue
+            raise WeeklyPlanGenerationError(
+                f"weekly plan generation failed after {max_attempts} attempts: {exc}"
+            ) from exc
+
+        report = run_rule_filter(
+            week,
+            prev_week_km=prev_week_km,
+            target_weekly_km=target_km,
+            injuries=injuries or None,
+            z45_pace_threshold_s_km=z45_threshold,
+        )
+        actionable = [v for v in report.errors() if v.rule not in immutable]
+        if not actionable:
+            return week
+
+        if attempt < max_attempts:
+            current_feedback = _format_week_rule_feedback(actionable)
+            logger.info(
+                "generate_week_validated: attempt %d/%d had %d rule violation(s) "
+                "— regenerating with feedback",
+                attempt,
+                max_attempts,
+                len(actionable),
+            )
+            continue
+
+        rules = ", ".join(sorted({v.rule for v in actionable}))
+        raise WeeklyPlanGenerationError(
+            f"weekly plan persistently violates [{rules}] after {max_attempts} "
+            "attempts: "
+            + "; ".join(f"{v.rule}: {v.message}" for v in actionable)
+        )
+
+    # The loop always returns or raises; this satisfies type-checkers.
+    raise WeeklyPlanGenerationError("weekly plan generation exhausted attempts")

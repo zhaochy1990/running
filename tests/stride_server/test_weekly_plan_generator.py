@@ -1,60 +1,34 @@
+"""build_weekly_plan orchestration tests (LLM path).
+
+The heavy generator LLM call (``generate_week_validated``) is stubbed so these
+tests exercise build_weekly_plan's own responsibilities: resolving the
+executable weekly km target, threading phase / prev-week / immutable-rule /
+nutrition-baseline / completed-day context into the generator, and surfacing
+generation failures. The LLM authoring itself is covered by
+``test_generate_week.py``.
+"""
+
 from __future__ import annotations
 
-import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 
-from coach.graphs.generation.rule_filter import run_rule_filter
-from stride_core.running_calibration.types import (
-    CalibrationConfidence,
-    RunningCalibrationSnapshot,
-)
+import pytest
+
+from stride_core.master_plan import PhaseType
+from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
 from stride_server import weekly_plan_generator as generator
-from stride_storage.sqlite.calibration_connector import (
-    SQLiteRunningCalibrationRepository,
+from stride_server.weekly_plan_generator import (
+    WeeklyPlanAlreadyExistsError,
+    WeeklyPlanGenerationError,
+)
+
+_GEN_TARGET = (
+    "stride_server.coach_adapters.week_specialist_adapter.generate_week_validated"
 )
 
 
-class _ConnDb:
-    """Minimal Database-shaped stub exposing a real ``_conn`` for calibration."""
-
-    def __init__(self, conn: sqlite3.Connection) -> None:
-        self._conn = conn
-
-
-def test_athlete_pace_zones_reads_calibration_snapshot() -> None:
-    conn = sqlite3.connect(":memory:")
-    db = _ConnDb(conn)
-    repo = SQLiteRunningCalibrationRepository(db)
-    repo.save_snapshot(
-        RunningCalibrationSnapshot(
-            as_of_date=date(2026, 7, 20),
-            threshold_speed_mps=1000.0 / 270.0,
-            threshold_speed_confidence=CalibrationConfidence.HIGH,
-        )
-    )
-
-    zones = generator._athlete_pace_zones(db, date(2026, 7, 27))
-
-    assert zones is not None
-    assert "threshold" in zones and "interval" in zones
-    # Interval band must be faster (smaller s/km) than the threshold band.
-    assert float(zones["interval"].min_pace_s_per_km or 0) < float(
-        zones["threshold"].min_pace_s_per_km or 0
-    )
-
-
-def test_athlete_pace_zones_none_without_snapshot() -> None:
-    conn = sqlite3.connect(":memory:")
-    db = _ConnDb(conn)
-    SQLiteRunningCalibrationRepository(db)  # schema only, no snapshot
-
-    assert generator._athlete_pace_zones(db, date(2026, 7, 27)) is None
-
-
-def test_athlete_pace_zones_none_for_non_sqlite_backend() -> None:
-    assert generator._athlete_pace_zones(object(), date(2026, 7, 27)) is None
-
+# ── Test doubles ──────────────────────────────────────────────────────────────
 
 
 class _Db:
@@ -69,8 +43,8 @@ class _StateDb(_Db):
     def __init__(
         self,
         *,
-        completed_weeks: tuple[float, ...],
-        load_ratio: float,
+        completed_weeks: tuple[float, ...] = (),
+        load_ratio: float | None = None,
         daily: dict[int, dict] | None = None,
     ) -> None:
         self.completed_weeks = completed_weeks
@@ -86,12 +60,17 @@ class _StateDb(_Db):
         }
 
     def fetch_latest_daily_training_load(self):
+        if self.load_ratio is None:
+            return None
         return {"load_ratio": self.load_ratio}
 
 
 class _WeeklyStore:
+    def __init__(self, existing=None) -> None:
+        self._existing = existing
+
     def get_current_plan(self, _user_id, _day):
-        return None
+        return self._existing
 
 
 def _master(
@@ -101,6 +80,7 @@ def _master(
     week_start: str = "2026-07-13",
     is_recovery_week: bool = False,
     is_taper_week: bool = False,
+    phase_type: PhaseType | None = PhaseType.BUILD,
 ):
     week = SimpleNamespace(
         week_index=11,
@@ -111,218 +91,158 @@ def _master(
         is_recovery_week=is_recovery_week,
         is_taper_week=is_taper_week,
     )
-    phase = SimpleNamespace(id="build", name="专项进展期")
-    return SimpleNamespace(weeks=[week], weekly_key_sessions=[], phases=[phase])
+    phase = SimpleNamespace(id="build", name="专项进展期", phase_type=phase_type)
+    return SimpleNamespace(
+        weeks=[week], weekly_key_sessions=[], phases=[phase], goal=None
+    )
 
 
-def test_generator_uses_active_master_week_target_and_passes_week_rules(
-    monkeypatch,
-) -> None:
+def _fake_week_dict(*, week_meta, **_kwargs) -> dict:
+    """A schema-valid WeeklyPlan dict — build_weekly_plan reports the resolved
+    target regardless of the LLM's mileage, so a minimal plan suffices."""
+    start = date.fromisoformat(week_meta.week_folder[:10])
+    plan = WeeklyPlan(
+        week_folder=week_meta.week_folder,
+        sessions=(
+            PlannedSession(
+                date=start.isoformat(),
+                session_index=0,
+                kind=SessionKind.REST,
+                summary="休息日",
+            ),
+            PlannedSession(
+                date=(start + timedelta(days=1)).isoformat(),
+                session_index=0,
+                kind=SessionKind.RUN,
+                summary="E 轻松跑",
+                total_distance_m=round(week_meta.target_weekly_km * 1000),
+            ),
+        ),
+        nutrition=(),
+        notes_md="LLM authored notes",
+    )
+    return plan.to_dict()
+
+
+def _patch_common(monkeypatch, *, master, db, existing=None):
     monkeypatch.setattr(
         "stride_server.master_plan_store.get_master_plan_store",
-        lambda: SimpleNamespace(get_active_plan=lambda _uid: _master(68, 74)),
+        lambda: SimpleNamespace(get_active_plan=lambda _uid: master),
     )
-    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
-    monkeypatch.setattr(generator, "get_db", lambda _uid: _Db())
+    monkeypatch.setattr(
+        generator, "get_weekly_plan_store", lambda: _WeeklyStore(existing)
+    )
+    monkeypatch.setattr(generator, "get_db", lambda _uid: db)
 
-    generated = generator.build_weekly_plan(
-        user_id="u1", week_start=date(2026, 7, 13)
-    )
+
+# ── Target resolution (km) ────────────────────────────────────────────────────
+
+
+def test_resolves_master_week_target_with_no_recent_volume(monkeypatch) -> None:
+    _patch_common(monkeypatch, master=_master(68, 74), db=_Db())
+    monkeypatch.setattr(_GEN_TARGET, _fake_week_dict)
+
+    generated = generator.build_weekly_plan(user_id="u1", week_start=date(2026, 7, 13))
 
     assert generated.total_distance_km == 71.0
-    assert sum(
-        (session.total_distance_m or 0) for session in generated.plan.sessions
-    ) == 71000
-    notes = generated.plan.notes_md or ""
-    assert "总体计划第 11 周" in notes
-    assert "### 本周定位" in notes
-    assert "### 训练逻辑" in notes
-    assert "### 执行与调整" in notes
-    assert "质量课" in notes
-    assert "长距离" in notes
-    assert "规则引擎生成" not in notes
-
-    assert len(generated.plan.nutrition) == 7
-    assert [item.date for item in generated.plan.nutrition] == [
-        f"2026-07-{day:02d}" for day in range(13, 20)
-    ]
-    rest_nutrition = generated.plan.nutrition[0]
-    training_nutrition = generated.plan.nutrition[1]
-    assert training_nutrition.kcal_target == rest_nutrition.kcal_target + 200
-    assert training_nutrition.carbs_g is not None
-    assert training_nutrition.protein_g is not None
-    assert training_nutrition.fat_g is not None
-    assert training_nutrition.water_ml == 3000
-    assert [meal.name for meal in training_nutrition.meals] == [
-        "训练前补给",
-        "训练中补给",
-        "训练后恢复",
-    ]
-
-    strength = next(
-        session
-        for session in generated.plan.sessions
-        if session.kind.value == "strength"
-    )
-    assert strength.spec is not None
-    assert [exercise.provider_id for exercise in strength.spec.exercises] == [
-        "T1301",
-        "T1275",
-        "T1317",
-        "T1262",
-    ]
-    assert all(exercise.sets > 0 for exercise in strength.spec.exercises)
-    assert all(exercise.target_value > 0 for exercise in strength.spec.exercises)
-    assert all(exercise.rest_seconds >= 0 for exercise in strength.spec.exercises)
-    assert all(exercise.note for exercise in strength.spec.exercises)
-
-    report = run_rule_filter(
-        generated.plan.to_dict(), target_weekly_km=71.0
-    )
-    assert report.ok, report.errors()
 
 
 def test_recent_actual_volume_floors_stale_low_master_target(monkeypatch) -> None:
-    """A normal week must not drop from a stable 120km baseline to 71km."""
-    monkeypatch.setattr(
-        "stride_server.master_plan_store.get_master_plan_store",
-        lambda: SimpleNamespace(
-            get_active_plan=lambda _uid: _master(
-                68, 74, week_start="2026-07-20"
-            )
-        ),
+    _patch_common(
+        monkeypatch,
+        master=_master(68, 74, week_start="2026-07-20"),
+        db=_StateDb(completed_weeks=(120.0, 126.0), load_ratio=1.0),
     )
-    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
-    monkeypatch.setattr(
-        generator,
-        "get_db",
-        lambda _uid: _StateDb(
-            completed_weeks=(120.0, 126.0), load_ratio=1.0
-        ),
-    )
+    monkeypatch.setattr(_GEN_TARGET, _fake_week_dict)
 
-    generated = generator.build_weekly_plan(
-        user_id="u1", week_start=date(2026, 7, 20)
-    )
+    generated = generator.build_weekly_plan(user_id="u1", week_start=date(2026, 7, 20))
 
     assert generated.total_distance_km == 111.0
-    assert "总体计划 71.0km 已校准为 111.0km" in (generated.plan.notes_md or "")
 
 
-def test_current_stride_model_load_ratio_reduces_overloaded_week(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(
-        "stride_server.master_plan_store.get_master_plan_store",
-        lambda: SimpleNamespace(
-            get_active_plan=lambda _uid: _master(
-                98, 102, week_start="2026-07-20"
-            )
-        ),
+def test_stride_load_ratio_reduces_overloaded_week(monkeypatch) -> None:
+    _patch_common(
+        monkeypatch,
+        master=_master(98, 102, week_start="2026-07-20"),
+        db=_StateDb(completed_weeks=(100.0, 100.0), load_ratio=1.30),
     )
-    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
-    monkeypatch.setattr(
-        generator,
-        "get_db",
-        lambda _uid: _StateDb(
-            completed_weeks=(100.0, 100.0), load_ratio=1.30
-        ),
-    )
+    monkeypatch.setattr(_GEN_TARGET, _fake_week_dict)
 
-    generated = generator.build_weekly_plan(
-        user_id="u1", week_start=date(2026, 7, 20)
-    )
+    generated = generator.build_weekly_plan(user_id="u1", week_start=date(2026, 7, 20))
 
     assert generated.total_distance_km == 90.0
-    assert "STRIDE load_ratio=1.30" in (generated.plan.notes_md or "")
 
 
-def test_recovery_week_allows_controlled_deload_from_actual_baseline(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(
-        "stride_server.master_plan_store.get_master_plan_store",
-        lambda: SimpleNamespace(
-            get_active_plan=lambda _uid: _master(
-                38,
-                43,
-                week_start="2026-07-20",
-                is_recovery_week=True,
-            )
-        ),
+def test_recovery_week_allows_controlled_deload(monkeypatch) -> None:
+    _patch_common(
+        monkeypatch,
+        master=_master(38, 43, week_start="2026-07-20", is_recovery_week=True),
+        db=_StateDb(completed_weeks=(120.0, 126.0), load_ratio=1.0),
     )
-    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
-    monkeypatch.setattr(
-        generator,
-        "get_db",
-        lambda _uid: _StateDb(
-            completed_weeks=(120.0, 126.0), load_ratio=1.0
-        ),
-    )
+    monkeypatch.setattr(_GEN_TARGET, _fake_week_dict)
 
-    generated = generator.build_weekly_plan(
-        user_id="u1", week_start=date(2026, 7, 20)
-    )
+    generated = generator.build_weekly_plan(user_id="u1", week_start=date(2026, 7, 20))
 
     assert generated.total_distance_km == 86.5
 
 
-def test_midweek_generation_locks_actual_days_and_only_budgets_remainder(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(generator, "today_shanghai", lambda: date(2026, 7, 16))
-    monkeypatch.setattr(
-        "stride_server.master_plan_store.get_master_plan_store",
-        lambda: SimpleNamespace(get_active_plan=lambda _uid: _master(98, 102)),
-    )
-    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
+def test_explicit_base_distance_overrides_master(monkeypatch) -> None:
     monkeypatch.setattr(
         generator,
-        "get_db",
-        lambda _uid: _StateDb(
-            completed_weeks=(100.0, 100.0),
-            load_ratio=1.0,
-            daily={
-                0: {"actual_distance_km": 30.0, "total_duration_s": 9000},
-                1: {"actual_distance_km": 25.0, "total_duration_s": 7500},
-                2: {"actual_distance_km": 20.0, "total_duration_s": 6000},
-            },
-        ),
+        "_master_week_target",
+        lambda *_: (_ for _ in ()).throw(AssertionError("must not read master")),
     )
+    monkeypatch.setattr(
+        generator,
+        "_active_master_goal",
+        lambda *_: (_ for _ in ()).throw(AssertionError("must not read master goal")),
+    )
+    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
+    monkeypatch.setattr(generator, "get_db", lambda _uid: _Db())
+    monkeypatch.setattr(_GEN_TARGET, _fake_week_dict)
 
     generated = generator.build_weekly_plan(
-        user_id="u1", week_start=date(2026, 7, 13)
+        user_id="u1", week_start=date(2026, 7, 13), base_distance_km=50
     )
 
-    assert generated.total_distance_km == 100.0
-    assert [session.summary for session in generated.plan.sessions[:3]] == [
-        "已完成跑步（30.0K）",
-        "已完成跑步（25.0K）",
-        "已完成跑步（20.0K）",
-    ]
-    assert sum(
-        float(session.total_distance_m or 0)
-        for session in generated.plan.sessions
-    ) == 100_000
-    assert any(
-        session.kind.value == "rest" for session in generated.plan.sessions[3:]
+    assert generated.total_distance_km == 50.0
+
+
+# ── Context threaded into the generator ───────────────────────────────────────
+
+
+def test_threads_phase_target_and_nutrition_to_generator(monkeypatch) -> None:
+    _patch_common(
+        monkeypatch,
+        master=_master(68, 74, phase_type=PhaseType.BUILD),
+        db=_StateDb(completed_weeks=(70.0, 68.0), load_ratio=1.0),
     )
+    captured: dict = {}
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return _fake_week_dict(week_meta=kwargs["week_meta"])
+
+    monkeypatch.setattr(_GEN_TARGET, _capture)
+
+    generated = generator.build_weekly_plan(user_id="u1", week_start=date(2026, 7, 13))
+
+    assert captured["phase_type"] == PhaseType.BUILD
+    assert captured["week_meta"].target_weekly_km == generated.total_distance_km
+    assert captured["week_meta"].week_folder.startswith("2026-07-13_")
+    # prev week actual km drives the progression gate.
+    assert captured["prev_week_km"] == 70.0
+    # nutrition baseline is injected as real body-composition context.
+    assert "营养基线" in captured["nutrition_baseline_block"]
+    assert captured["as_of"] == date(2026, 7, 13)
 
 
-def test_midweek_generation_does_not_reject_immutable_over_cap_actuals(
-    monkeypatch,
-) -> None:
-    """Progression gates apply to prescriptions, not completed historical work."""
+def test_midweek_injects_completed_days_and_immutable_rules(monkeypatch) -> None:
     monkeypatch.setattr(generator, "today_shanghai", lambda: date(2026, 7, 16))
-    monkeypatch.setattr(
-        "stride_server.master_plan_store.get_master_plan_store",
-        lambda: SimpleNamespace(get_active_plan=lambda _uid: _master(68, 74)),
-    )
-    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
-    monkeypatch.setattr(
-        generator,
-        "get_db",
-        lambda _uid: _StateDb(
+    _patch_common(
+        monkeypatch,
+        master=_master(68, 74),
+        db=_StateDb(
             completed_weeks=(40.0, 42.0),
             load_ratio=1.0,
             daily={
@@ -332,102 +252,56 @@ def test_midweek_generation_does_not_reject_immutable_over_cap_actuals(
             },
         ),
     )
+    captured: dict = {}
 
-    generated = generator.build_weekly_plan(
-        user_id="u1", week_start=date(2026, 7, 13)
-    )
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return _fake_week_dict(week_meta=kwargs["week_meta"])
 
-    # 49km actual is already above the normal 45.1km progression ceiling.
-    # The generator must preserve it and avoid prescribing additional mileage.
+    monkeypatch.setattr(_GEN_TARGET, _capture)
+
+    generated = generator.build_weekly_plan(user_id="u1", week_start=date(2026, 7, 13))
+
+    # 49 km already run is above the normal progression ceiling → floor rises.
     assert generated.total_distance_km == 49.0
-    assert sum(
-        float(session.total_distance_m or 0)
-        for session in generated.plan.sessions
-    ) == 49_000
-    assert all(
-        session.kind.value != "run" for session in generated.plan.sessions[3:]
-    )
+    # Completed work makes weekly_progression unfixable → exempted from the gate.
+    assert "weekly_progression" in captured["immutable_rules"]
+    # Completed days are injected as locked context for the LLM to echo/avoid.
+    assert "已完成" in captured["context"]["extra_context_block"]
+    assert "2026-07-13" in captured["context"]["extra_context_block"]
 
 
-def test_end_of_week_generation_preserves_completed_seven_day_streak(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(generator, "today_shanghai", lambda: date(2026, 7, 19))
-    monkeypatch.setattr(
-        "stride_server.master_plan_store.get_master_plan_store",
-        lambda: SimpleNamespace(get_active_plan=lambda _uid: _master(68, 74)),
-    )
-    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
-    monkeypatch.setattr(
-        generator,
-        "get_db",
-        lambda _uid: _StateDb(
-            completed_weeks=(70.0, 72.0),
-            load_ratio=1.0,
-            daily={
-                offset: {
-                    "actual_distance_km": 10.0,
-                    "total_duration_s": 3300,
-                }
-                for offset in range(7)
-            },
-        ),
-    )
-
-    generated = generator.build_weekly_plan(
-        user_id="u1", week_start=date(2026, 7, 13)
-    )
-
-    assert generated.total_distance_km == 70.0
-    assert sum(
-        float(session.total_distance_m or 0)
-        for session in generated.plan.sessions
-    ) == 70_000
-    assert all(
-        session.summary == "已完成跑步（10.0K）"
-        for session in generated.plan.sessions
-    )
+# ── Failure surfaces ──────────────────────────────────────────────────────────
 
 
-def test_explicit_base_distance_overrides_master_week_target(monkeypatch) -> None:
-    monkeypatch.setattr(
-        generator,
-        "_master_week_target",
-        lambda *_: (_ for _ in ()).throw(AssertionError("must not read master")),
-    )
-    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
-    monkeypatch.setattr(generator, "get_db", lambda _uid: _Db())
+def test_generation_failure_propagates(monkeypatch) -> None:
+    _patch_common(monkeypatch, master=_master(68, 74), db=_Db())
 
-    generated = generator.build_weekly_plan(
-        user_id="u1",
-        week_start=date(2026, 7, 13),
-        base_distance_km=50,
-    )
+    def _boom(**_kwargs):
+        raise WeeklyPlanGenerationError("persistently violates [rest_days]")
 
-    assert generated.total_distance_km == 50.0
+    monkeypatch.setattr(_GEN_TARGET, _boom)
+
+    with pytest.raises(WeeklyPlanGenerationError):
+        generator.build_weekly_plan(user_id="u1", week_start=date(2026, 7, 13))
 
 
-def test_generator_rejects_rule_invalid_output(monkeypatch) -> None:
-    monkeypatch.setattr(generator, "_master_week_target", lambda *_: None)
-    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
-    monkeypatch.setattr(generator, "get_db", lambda _uid: _Db())
-    real_generate = generator.generate_week_plan
+def test_no_resolvable_target_raises(monkeypatch) -> None:
+    # No active master plan and no recent volume → nothing to build a week from.
+    _patch_common(monkeypatch, master=None, db=_Db())
 
-    def _invalid(**kwargs):
-        plan, base = real_generate(**kwargs)
-        from dataclasses import replace
+    def _must_not_call(**_kwargs):
+        raise AssertionError("generator must not run without a target")
 
-        sessions = list(plan.sessions)
-        sessions[-1] = replace(sessions[-1], total_distance_m=30000)
-        return replace(plan, sessions=tuple(sessions)), base
+    monkeypatch.setattr(_GEN_TARGET, _must_not_call)
 
-    monkeypatch.setattr(generator, "generate_week_plan", _invalid)
+    with pytest.raises(WeeklyPlanGenerationError):
+        generator.build_weekly_plan(user_id="u1", week_start=date(2026, 7, 13))
 
-    import pytest
 
-    with pytest.raises(ValueError, match="failed safety rules"):
-        generator.build_weekly_plan(
-            user_id="u1",
-            week_start=date(2026, 7, 13),
-            base_distance_km=40,
-        )
+def test_existing_week_without_force_raises(monkeypatch) -> None:
+    existing = SimpleNamespace(week_folder="2026-07-13_07-19", sessions=())
+    _patch_common(monkeypatch, master=_master(68, 74), db=_Db(), existing=existing)
+
+    with pytest.raises(WeeklyPlanAlreadyExistsError):
+        generator.build_weekly_plan(user_id="u1", week_start=date(2026, 7, 13))

@@ -80,6 +80,19 @@ def _render_week_framing(week_meta: WeekMeta) -> str:
 """
 
 
+# Fixed nutrition-generation instruction. Emitted ONLY when the caller supplies a
+# non-empty ``nutrition_baseline_block`` (the athlete's real body-composition
+# baseline numbers). Kept out of the shared contract so the S2 phase / eval paths
+# — which do not pass a baseline — are byte-for-byte unchanged.
+_NUTRITION_INSTRUCTION = """\
+【营养生成要求——用下方真实体测基线为本周每一天生成 nutrition】
+- 为本周 7 天每天生成一条 PlannedNutrition（date 落在本周 7 天窗口内）。
+- kcal_target / carbs_g / protein_g / fat_g / water_ml 依据下方基线换算：训练日在基线
+  热量上按当天课型强度适度增量、休息日用基线热量；宏量按下方蛋白/碳水/脂肪百分比拆分。
+- 每天给出 meals（正餐 + 训练日的训练前/中/后补给），items_md 用具体食物且贴合当天课型。
+- 严格使用下方注入的基线数字，不要凭空编造 BMR/TDEE 或宏量占比。"""
+
+
 def build_weekly_system_prompt(
     *,
     phase: PhaseType,
@@ -87,6 +100,7 @@ def build_weekly_system_prompt(
     pace_targets: PaceTargets,
     volume_targets: VolumeTargets,
     context_block: str,
+    nutrition_baseline_block: str = "",
 ) -> str:
     """Compose the single-week generation system prompt.
 
@@ -94,8 +108,21 @@ def build_weekly_system_prompt(
     default) — the athlete's real pace table and volume budget must always be
     injected. ``context_block`` is a pre-rendered string (continuity signals +
     prior-week tail + injuries) supplied by the caller; pass ``""`` if empty.
+
+    ``nutrition_baseline_block`` is an optional pre-rendered string carrying the
+    athlete's real body-composition nutrition baseline (kcal + macro split +
+    source note). When non-empty, a fixed nutrition-generation instruction plus
+    the baseline is injected so the LLM emits the ``nutrition`` list from real
+    data. Default ``""`` leaves the prompt (and the S2 phase / eval callers that
+    never pass it) unchanged — they emit no nutrition.
     """
     specialist = get_specialist(phase)
+
+    nutrition_section = (
+        f"{_NUTRITION_INSTRUCTION}\n{nutrition_baseline_block}\n"
+        if nutrition_baseline_block
+        else ""
+    )
 
     return f"""\
 你是专业马拉松训练教练，负责生成**单周**结构化训练计划。当前阶段：{specialist.name}。
@@ -110,5 +137,5 @@ def build_weekly_system_prompt(
 
 {context_block}
 
-{_render_week_framing(week_meta)}
+{nutrition_section}{_render_week_framing(week_meta)}
 """

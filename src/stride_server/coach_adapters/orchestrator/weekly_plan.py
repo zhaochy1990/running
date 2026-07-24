@@ -46,13 +46,16 @@ from coach.graphs.conversation.graph import build_conversation_graph
 from coach.schemas import assistant_parts_from_message
 from stride_core.plan_diff import PlanDiff, apply_diff_to_weekly_plan
 from stride_core.plan_revision import weekly_plan_fingerprint
-from stride_core.timefmt import parse_week_folder_dates, today_shanghai
+from stride_core.timefmt import parse_week_folder_dates, today_shanghai, week_folder
 from stride_core.weekly_plan_proposal import WeeklyPlanCreateProposal
 from stride_core.weekly_plan_proposal import is_supported_weekly_plan_generation
 
 from ...weekly_plan_store import get_weekly_plan_store
-from ...weekly_plan_generator import WeeklyPlanAlreadyExistsError, build_weekly_plan
-from ...week_generator import week_folder
+from ...weekly_plan_generator import (
+    WeeklyPlanAlreadyExistsError,
+    WeeklyPlanGenerationError,
+    build_weekly_plan,
+)
 from ..toolkit import build_stride_toolkit
 from .weekly_review_revise import revise_weekly_create_proposal
 
@@ -520,7 +523,7 @@ def make_weekly_plan_runner(
                         folder,
                         existing_plan=existing,
                     )
-                except (ValueError, OSError):
+                except (ValueError, OSError, WeeklyPlanGenerationError):
                     logger.exception(
                         "weekly_plan: failed to regenerate newly-created week"
                     )
@@ -528,7 +531,7 @@ def make_weekly_plan_runner(
                         status="failed",
                         reply_fragment="生成周训练计划失败，请稍后再试。",
                     )
-            except (ValueError, OSError):
+            except (ValueError, OSError, WeeklyPlanGenerationError):
                 logger.exception("weekly_plan: failed to generate full-week proposal")
                 return SpecialistResult(
                     status="failed",

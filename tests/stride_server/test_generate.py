@@ -1,9 +1,16 @@
-"""Tests for POST /api/{user}/plan/weeks/generate."""
+"""Tests for POST /api/{user}/plan/weeks/generate.
+
+The route delegates authoring to ``build_weekly_plan`` (LLM path); these tests
+mock that boundary and focus on the route's own contract — Monday validation,
+supported-week gating, 409/force conflict handling, 502 on generation failure,
+response shaping, canonical-store persistence, and auth. Generation behaviour
+itself is covered by ``test_weekly_plan_generator.py`` / ``test_generate_week.py``.
+"""
 
 from __future__ import annotations
 
 import time
-from datetime import date
+from datetime import date, timedelta
 
 import jwt
 import pytest
@@ -11,6 +18,14 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
+
+from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+from stride_core.timefmt import week_folder
+from stride_server.weekly_plan_generator import (
+    GeneratedWeeklyPlan,
+    WeeklyPlanAlreadyExistsError,
+    WeeklyPlanGenerationError,
+)
 
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
 OTHER_UUID = "b1b2c3d4-e5f6-4aaa-89ab-123456789012"
@@ -46,6 +61,65 @@ def _make_token(private_pem: str, sub: str = USER_UUID) -> str:
         private_pem,
         algorithm="RS256",
     )
+
+
+def _seven_session_week(week_start: date, total_km: float) -> WeeklyPlan:
+    """A canonical 7-day LLM-shaped plan (aspirational, spec=null)."""
+    run_days = {1, 2, 3, 4, 6}
+    per_m = round(total_km * 1000 / len(run_days))
+    sessions = []
+    for offset in range(7):
+        day = (week_start + timedelta(days=offset)).isoformat()
+        if offset in run_days:
+            kind, dist = SessionKind.RUN, per_m
+        elif offset == 5:
+            kind, dist = SessionKind.STRENGTH, None
+        else:
+            kind, dist = SessionKind.REST, None
+        sessions.append(
+            PlannedSession(
+                date=day,
+                session_index=0,
+                kind=kind,
+                summary=kind.value,
+                total_distance_m=dist,
+            )
+        )
+    return WeeklyPlan(
+        week_folder=week_folder(week_start),
+        sessions=tuple(sessions),
+        nutrition=(),
+        notes_md="LLM authored notes",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _mock_generator(monkeypatch):
+    """Replace the LLM authoring boundary with a deterministic 7-session plan.
+
+    Preserves the existence semantics the route's 409/force handling depends on
+    (raise ``WeeklyPlanAlreadyExistsError`` unless ``allow_existing``).
+    """
+    import stride_server.routes.generate as generate_route
+
+    def _fake_build_weekly_plan(
+        *, user_id, week_start, base_distance_km=None, allow_existing=False
+    ):
+        from stride_server.weekly_plan_store import get_weekly_plan_store
+
+        existing = get_weekly_plan_store().get_current_plan(
+            user_id, week_start.isoformat()
+        )
+        if existing is not None and not allow_existing:
+            raise WeeklyPlanAlreadyExistsError(existing.week_folder)
+        total = 40.0 if base_distance_km is None else float(base_distance_km)
+        return GeneratedWeeklyPlan(
+            plan=_seven_session_week(week_start, total),
+            total_distance_km=round(total, 1),
+        )
+
+    monkeypatch.setattr(generate_route, "build_weekly_plan", _fake_build_weekly_plan)
+    monkeypatch.setattr(generate_route, "today_shanghai", lambda: date(2026, 5, 12))
 
 
 @pytest.fixture
@@ -91,68 +165,27 @@ def _post(client, token, body: dict, force: bool = False) -> object:
     return client.post(url, json=body, headers=_auth(token))
 
 
-@pytest.fixture(autouse=True)
-def _no_active_master_plan(monkeypatch):
-    """Legacy route expectations exercise the no-master fallback."""
-    import stride_server.weekly_plan_generator as generator
-    import stride_server.routes.generate as generate_route
-
-    monkeypatch.setattr(generator, "_master_week_target", lambda *_: None)
-    monkeypatch.setattr(
-        generate_route, "today_shanghai", lambda: date(2026, 5, 12)
-    )
+# ── Response shape ────────────────────────────────────────────────────────────
 
 
-# ── Tests ────────────────────────────────────────────────────────────────────
-
-
-class TestNewUserDefaultKm:
-    """Fresh user with no prior data → default 40 km, 7 sessions."""
-
+class TestResponseShape:
     def test_status_200(self, app_client):
         client, token, _, _ = app_client
         resp = _post(client, token, {"week_start": MONDAY})
         assert resp.status_code == 200, resp.text
 
-    def test_default_40km(self, app_client):
+    def test_folder_and_sessions(self, app_client):
         client, token, _, _ = app_client
-        resp = _post(client, token, {"week_start": MONDAY})
-        data = resp.json()
-        assert data["total_distance_km"] == 40.0
-
-    def test_7_sessions(self, app_client):
-        client, token, _, _ = app_client
-        resp = _post(client, token, {"week_start": MONDAY})
-        data = resp.json()
-        assert data["sessions_count"] == 7
-
-    def test_folder_format(self, app_client):
-        client, token, _, _ = app_client
-        resp = _post(client, token, {"week_start": MONDAY})
-        data = resp.json()
+        data = _post(client, token, {"week_start": MONDAY}).json()
         assert data["folder"] == "2026-05-11_05-17"
+        assert data["sessions_count"] == 7
 
     def test_session_dates_span_week(self, app_client):
         client, token, _, _ = app_client
-        resp = _post(client, token, {"week_start": MONDAY})
-        data = resp.json()
+        data = _post(client, token, {"week_start": MONDAY}).json()
         dates = [s["date"] for s in data["sessions"]]
         assert dates[0] == "2026-05-11"
         assert dates[-1] == "2026-05-17"
-
-    def test_monday_is_rest(self, app_client):
-        client, token, _, _ = app_client
-        resp = _post(client, token, {"week_start": MONDAY})
-        data = resp.json()
-        monday_session = data["sessions"][0]
-        assert monday_session["kind"] == "rest"
-
-    def test_saturday_is_strength(self, app_client):
-        client, token, _, _ = app_client
-        resp = _post(client, token, {"week_start": MONDAY})
-        data = resp.json()
-        saturday_session = data["sessions"][5]
-        assert saturday_session["kind"] == "strength"
 
     def test_source_echoed(self, app_client):
         client, token, _, _ = app_client
@@ -178,134 +211,10 @@ class TestNewUserDefaultKm:
         assert len(plan.sessions) == 7
 
 
-class TestProgressionFromLastWeek:
-    """When last week has sessions, progression rules apply."""
-
-    def _seed_last_week(self, tmp_path, monkeypatch, completed_km: float = 40.0):
-        """Save a WeeklyPlan + activities for the week of 2026-05-04."""
-        import stride_core.db as core_db_mod
-        monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
-        from stride_storage.sqlite.database import Database
-        from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
-        from stride_server.weekly_plan_store import get_weekly_plan_store
-
-        db = Database(user=USER_UUID)
-        prev_folder = "2026-05-04_05-10"
-
-        # Insert 6 run planned sessions for prev week
-        sessions = []
-        for i, day_str in enumerate(
-            ["2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08", "2026-05-10"]
-        ):
-            sessions.append(
-                PlannedSession(
-                    date=day_str,
-                    session_index=0,
-                    kind=SessionKind.RUN,
-                    summary=f"E run day {i}",
-                    total_distance_m=8000.0,
-                )
-            )
-        get_weekly_plan_store().save_plan(
-            USER_UUID, WeeklyPlan(week_folder=prev_folder, sessions=tuple(sessions))
-        )
-
-        # Insert activities matching those dates (simulating completion).
-        # activities.date is UTC ISO 8601 in prod (see stride_core/timefmt.py);
-        # pick 08:00 UTC so the row is unambiguously inside the Shanghai day
-        # named by `day_str` (16:00 Shanghai).
-        for i, day_str in enumerate(
-            ["2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08", "2026-05-10"]
-        ):
-            day_iso = f"{day_str}T08:00:00+00:00"
-            dist = (completed_km * 1000) / 5  # evenly split across 5 activities
-            db._conn.execute(
-                "INSERT OR REPLACE INTO activities "
-                "(label_id, name, sport_type, date, distance_m, duration_s) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (f"A{i}", f"Run {i}", 100, day_iso, dist, dist * 0.3),
-            )
-        db._conn.commit()
-        db.close()
-
-    def test_good_week_increases_5pct(self, app_client, tmp_path, monkeypatch):
-        """100% completion + low RPE → +5% distance."""
-        import stride_core.db as core_db_mod
-        import stride_server.deps as deps_mod
-        monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
-        monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
-        self._seed_last_week(tmp_path, monkeypatch, completed_km=40.0)
-
-        client, token, _, _ = app_client
-        resp = _post(client, token, {"week_start": MONDAY})
-        assert resp.status_code == 200, resp.text
-        data = resp.json()
-        # 40km × 1.05 = 42km; round to nearest 0.5 → 42.0
-        assert data["total_distance_km"] == pytest.approx(42.0, abs=0.5)
-
-    def test_low_actual_week_uses_actual_volume_not_planned_volume(
-        self, app_client, tmp_path, monkeypatch
-    ):
-        """A missed week must not pretend the planned 40 km were absorbed."""
-        import stride_core.db as core_db_mod
-        import stride_server.deps as deps_mod
-        monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
-        monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
-
-        from stride_storage.sqlite.database import Database
-        from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
-        from stride_server.weekly_plan_store import get_weekly_plan_store
-
-        db = Database(user=USER_UUID)
-        prev_folder = "2026-05-04_05-10"
-
-        # 5 planned sessions but only 2 activities (40% completion)
-        sessions = [
-            PlannedSession(
-                date=f"2026-05-0{5 + i}",
-                session_index=0,
-                kind=SessionKind.RUN,
-                summary=f"E run {i}",
-                total_distance_m=8000.0,
-            )
-            for i in range(5)
-        ]
-        get_weekly_plan_store().save_plan(
-            USER_UUID, WeeklyPlan(week_folder=prev_folder, sessions=tuple(sessions))
-        )
-
-        # Only 2 activities completed (40% of 5)
-        for i in range(2):
-            day_str = f"2026-05-0{5 + i}"
-            db._conn.execute(
-                "INSERT OR REPLACE INTO activities "
-                "(label_id, name, sport_type, date, distance_m, duration_s) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    f"B{i}",
-                    f"Run {i}",
-                    100,
-                    f"{day_str}T08:00:00+00:00",
-                    8000.0,
-                    2400.0,
-                ),
-            )
-        db._conn.commit()
-        db.close()
-
-        client, token, _, _ = app_client
-        resp = _post(client, token, {"week_start": MONDAY})
-        assert resp.status_code == 200, resp.text
-        data = resp.json()
-        # Actual total is 16km. With no other completed-week baseline or load
-        # constraint, the normal 5% progression produces 17km; the stale 40km
-        # planned value must not drive the target.
-        assert data["total_distance_km"] == pytest.approx(17.0, abs=0.5)
+# ── Validation ────────────────────────────────────────────────────────────────
 
 
 class TestValidation:
-    """Input validation edge cases."""
-
     def test_non_monday_returns_400(self, app_client):
         client, token, _, _ = app_client
         resp = _post(client, token, {"week_start": TUESDAY})
@@ -321,28 +230,38 @@ class TestValidation:
         client, token, _, _ = app_client
         resp = _post(client, token, {"week_start": MONDAY, "base_distance_km": 55.0})
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["total_distance_km"] == pytest.approx(55.0, abs=0.5)
+        assert resp.json()["total_distance_km"] == pytest.approx(55.0, abs=0.5)
+
+
+# ── Generation failure ────────────────────────────────────────────────────────
+
+
+def test_generation_failure_returns_502(app_client, monkeypatch):
+    import stride_server.routes.generate as generate_route
+
+    def _boom(**_kwargs):
+        raise WeeklyPlanGenerationError("no rule-valid week after retries")
+
+    monkeypatch.setattr(generate_route, "build_weekly_plan", _boom)
+    client, token, _, _ = app_client
+    resp = _post(client, token, {"week_start": MONDAY})
+    assert resp.status_code == 502
+    assert "weekly_plan_generation_failed" in str(resp.json()["detail"])
+
+
+# ── Conflict handling ─────────────────────────────────────────────────────────
 
 
 class TestConflictHandling:
-    """Week already exists conflict + force override."""
-
     def test_existing_week_returns_409(self, app_client):
         client, token, _, _ = app_client
-        # First call creates the week
-        r1 = _post(client, token, {"week_start": MONDAY})
-        assert r1.status_code == 200
-
-        # Second call should 409
+        assert _post(client, token, {"week_start": MONDAY}).status_code == 200
         r2 = _post(client, token, {"week_start": MONDAY})
         assert r2.status_code == 409
-        detail = r2.json()["detail"]
-        assert "week_already_exists" in str(detail)
+        assert "week_already_exists" in str(r2.json()["detail"])
 
     def test_labeled_folder_for_same_dates_returns_409(self, app_client):
         client, token, _, _ = app_client
-        from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
         from stride_server.weekly_plan_store import get_weekly_plan_store
 
         get_weekly_plan_store().save_plan(
@@ -355,19 +274,13 @@ class TestConflictHandling:
                 ),),
             ),
         )
-
         resp = _post(client, token, {"week_start": MONDAY})
-
         assert resp.status_code == 409
         assert resp.json()["detail"]["folder"] == "2026-05-11_05-17(P1W2)"
 
     def test_force_overwrites_existing(self, app_client):
         client, token, _, _ = app_client
-        # First call
-        r1 = _post(client, token, {"week_start": MONDAY})
-        assert r1.status_code == 200
-
-        # Force overwrite
+        assert _post(client, token, {"week_start": MONDAY}).status_code == 200
         r2 = _post(client, token, {"week_start": MONDAY}, force=True)
         assert r2.status_code == 200
         assert r2.json()["folder"] == "2026-05-11_05-17"
@@ -376,7 +289,6 @@ class TestConflictHandling:
         import stride_core.db as core_db_mod
         monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
         client, token, _, _ = app_client
-        # Generate twice with force
         _post(client, token, {"week_start": MONDAY})
         _post(client, token, {"week_start": MONDAY}, force=True)
 
@@ -396,16 +308,15 @@ class TestConflictHandling:
 
 def test_rejects_week_after_next(app_client):
     client, token, _, _ = app_client
-
     resp = _post(client, token, {"week_start": "2026-05-25"})
-
     assert resp.status_code == 400
     assert "current and next" in resp.json()["detail"]
 
 
-class TestAuthEnforcement:
-    """Bearer + path-user checks."""
+# ── Auth ──────────────────────────────────────────────────────────────────────
 
+
+class TestAuthEnforcement:
     def test_no_token_returns_401(self, app_client):
         client, _, _, _ = app_client
         resp = client.post(

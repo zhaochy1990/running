@@ -170,3 +170,16 @@ def parse_week_folder_dates(folder_name: str) -> tuple[str, str] | None:
     em, ed = int(m.group(4)), int(m.group(5))
     end_year = year + 1 if (em, ed) < (sm, sd) else year
     return f"{year}-{sm:02d}-{sd:02d}", f"{end_year}-{em:02d}-{ed:02d}"
+
+
+def week_folder(week_start: date) -> str:
+    """Return the canonical folder string for a Monday ``week_start``.
+
+    Format: ``YYYY-MM-DD_MM-DD`` (the exact inverse of
+    :func:`parse_week_folder_dates` for a tag-free folder). Single source for
+    building a week folder from a Monday date — routes, the weekly-plan
+    specialist, and the generator all import this rather than re-deriving the
+    ``+6 days`` end label locally.
+    """
+    week_end = week_start + timedelta(days=6)
+    return f"{week_start.isoformat()}_{week_end.month:02d}-{week_end.day:02d}"

@@ -1,6 +1,6 @@
-"""Single-week plan generation + whole-week push endpoints (rule engine, no LLM).
+"""Single-week plan generation + whole-week push endpoints (LLM-generated).
 
-POST /api/{user}/plan/weeks/generate   — generate a rule-based weekly plan
+POST /api/{user}/plan/weeks/generate   — generate an LLM weekly plan
 POST /api/{user}/plan/{folder}/push    — push all pushable sessions to watch
 """
 
@@ -18,12 +18,13 @@ from pydantic import BaseModel
 
 from stride_core.plan_spec import SessionKind
 from stride_core.source import DataSource
-from stride_core.timefmt import today_shanghai
+from stride_core.timefmt import today_shanghai, week_folder
 from stride_core.weekly_plan_proposal import is_supported_weekly_plan_generation
 from ..deps import get_db, get_plan_state_store, get_source_for_user, parse_week_dates
-from ..week_generator import week_folder
+from ..coach_runtime import get_generator_model
 from ..weekly_plan_generator import (
     WeeklyPlanAlreadyExistsError,
+    WeeklyPlanGenerationError,
     build_weekly_plan,
     get_last_week_summary,
 )
@@ -40,8 +41,6 @@ from stride_server.routes.plan import push_single_session  # noqa: E402
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_GENERATED_BY = "rule-engine-v1"
 
 
 # ── Request / response models ─────────────────────────────────────────────────
@@ -64,7 +63,7 @@ def _get_last_week_summary(user: str, db, week_start: date_cls) -> dict | None:
 
 def _write_plan(user: str, weekly_plan) -> None:
     save_weekly_plan(
-        user, weekly_plan, generated_by=_GENERATED_BY
+        user, weekly_plan, generated_by=get_generator_model()
     )
 
 
@@ -91,10 +90,11 @@ def generate_week(
     body: GenerateWeekRequest,
     force: bool = Query(default=False),
 ) -> dict[str, Any]:
-    """Generate a rule-based structured weekly plan.
+    """Generate an LLM-authored structured weekly plan.
 
     - 400 when week_start is not a Monday.
     - 409 when the week already exists (unless ?force=true).
+    - 502 when the LLM generator cannot produce a rule-valid week after retries.
     - On force=true: replaces the canonical WeeklyPlan for that week.
     """
     # ── Validate week_start ──────────────────────────────────────────────────
@@ -145,6 +145,18 @@ def generate_week(
                 "error": "week_already_exists",
                 "folder": exc.folder,
                 "hint": "Pass ?force=true to overwrite the existing plan",
+            },
+        ) from exc
+    except WeeklyPlanGenerationError as exc:
+        logger.warning(
+            "generate_week: LLM generation failed week_start=%s user=%s: %s",
+            week_start, user, exc,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "weekly_plan_generation_failed",
+                "hint": "The plan generator could not produce a valid week; please retry.",
             },
         ) from exc
 
