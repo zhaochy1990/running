@@ -12,7 +12,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-AUTH_BASE = "https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io"
+AUTH_BASE = "https://124.221.38.59"
 APP_BASE = "https://stride-running.cn"
 
 

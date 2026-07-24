@@ -710,7 +710,7 @@ def test_repo_prod_config_file_loads_prod_values_without_env_secrets(
     assert cfg.auth.public_key_pem.startswith("-----BEGIN PUBLIC KEY-----")
     assert cfg.auth.public_key_path == ""
     assert cfg.auth.audience == "app_62978bf2803346878a2e4805"
-    assert cfg.auth_service.base_url == "https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io"
+    assert cfg.auth_service.base_url == "https://124.221.38.59"
     assert cfg.storage.content.account_url == "https://authstorage2026.blob.core.windows.net/"
     assert cfg.storage.content.container == "stride-data"
     assert cfg.storage.content.prefix == "users"
