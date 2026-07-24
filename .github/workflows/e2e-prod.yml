@@ -27,7 +27,7 @@ env:
   STRIDE_SMOKE_COROS_EMAIL: ${{ secrets.STRIDE_SMOKE_COROS_EMAIL }}
   STRIDE_SMOKE_COROS_PASSWORD: ${{ secrets.STRIDE_SMOKE_COROS_PASSWORD }}
   VITE_AUTH_CLIENT_ID: ${{ secrets.VITE_AUTH_CLIENT_ID }}
-  VITE_AUTH_BASE_URL: ${{ vars.VITE_AUTH_BASE_URL || 'https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io' }}
+  VITE_AUTH_BASE_URL: ${{ vars.VITE_AUTH_BASE_URL || 'https://124.221.38.59' }}
 
 jobs:
   onboarding-smoke:

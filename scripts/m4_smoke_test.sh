@@ -4,7 +4,7 @@
 set -e
 
 PROD_URL="${STRIDE_PROD_URL:-https://stride-app.victoriousdesert-bd552447.southeastasia.azurecontainerapps.io}"
-AUTH_URL="${STRIDE_AUTH_URL:-https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io}"
+AUTH_URL="${STRIDE_AUTH_URL:-https://124.221.38.59}"
 CLIENT_ID="${STRIDE_CLIENT_ID:-app_62978bf2803346878a2e4805}"
 
 EMAIL=$(awk -F'= ' '/^email/{print $2}' .credentials.local | tr -d ' ')
