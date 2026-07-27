@@ -1,7 +1,8 @@
 // Package job defines the async-job worker domain: job/pipeline records, the
-// handler registry, and the pure lifecycle logic (dispatch, retry/poison
-// decisions, pipeline advancement). It has no knowledge of MySQL or RabbitMQ —
-// those live behind the ports declared in ports.go.
+// handler registry, and the lifecycle logic (dispatch, retry/poison decisions,
+// pipeline advancement). It depends on no datastore or broker — those live
+// behind the ports declared in ports.go — and only on a logger for diagnostics,
+// so the lifecycle logic is unit-testable with fakes.
 package job
 
 import "time"
