@@ -140,6 +140,7 @@ jobs:
               --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
               --min-replicas 1 \
               --max-replicas 1 \
+              --cpu 1.0 --memory 2.0Gi \
               --set-env-vars STRIDE_CONFIG_ENV=prod LANGSMITH_API_KEY=secretref:langsmith-api-key
           else
             az containerapp update \
@@ -148,6 +149,7 @@ jobs:
               --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
               --min-replicas 1 \
               --max-replicas 1 \
+              --cpu 1.0 --memory 2.0Gi \
               --set-env-vars STRIDE_CONFIG_ENV=prod \
               --remove-env-vars LANGSMITH_API_KEY
           fi
