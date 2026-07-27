@@ -433,6 +433,10 @@ def _apply_master_proposal(*, user_id: str, proposal: MasterPlanDiff) -> dict:
         proposal.plan_id,
         CoachMasterApplyRequest(
             diff=proposal,
+            # The apply endpoint requires the request to echo the diff's
+            # optimistic-concurrency handle; the orchestrator already pinned it
+            # onto the proposal, so pass it through instead of dropping it.
+            base_revision=proposal.base_revision,
             accepted_op_ids=[op.id for op in proposal.ops],
             change_reason="coach CLI selected proposal",
         ),
@@ -454,6 +458,10 @@ def _apply_week_proposal(
     else:
         body = CoachWeekApplyRequest(
             diff=proposal,
+            # The apply endpoint requires the request to echo the diff's
+            # optimistic-concurrency handle; the orchestrator already pinned it
+            # onto the proposal, so pass it through instead of dropping it.
+            base_revision=proposal.base_revision,
             accepted_op_ids=[
                 op.id for op in proposal.ops if op.accepted is not False
             ],
