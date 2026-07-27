@@ -1,0 +1,204 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-07-27_08-02(P2W6减量)",
+  "notes_md": "Phase 2专项期第6周(recovery/deload)。上周实际88.1km/9.0h/6次，含周日双跑；晨起RHR整周52-55(高于<50基线)；原始夜间HRV 07-22掉到25ms、整周低位30-37ms。恢复走低，本周主动减量。期望form-zone分布：比赛就绪70%+维持30%，让acute下降、RHR回<50、夜间HRV回基线。目标周量68-75km(硬上限75)，周三5×1000m受控维持强度、周六22-24K纯有氧easy为两门关键课；禁止恢复日插无氧/双跑。数据缺口：STRIDE daily_training_load表对本用户为空(0行，无本地自算负荷/CTL，负荷判断以实跑里程+心率为准)、睡眠数据全0、跑姿动态字段(垂直振幅/触地时间/垂直比)设备未记录全空。伤病：未报告，但无主观反馈(activity_feedback/weekly_feedback/sport_note均空)不等于无不适，不能推断完全无不适。",
+  "sessions": [
+    {
+      "date": "2026-07-27",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "恢复跑 8-10K（减量周开局，主动降刺激）",
+      "total_distance_m": 9000,
+      "spec": {
+        "name": "恢复跑",
+        "date": "2026-07-27",
+        "note": "上周TL大+周日双跑高温无氧，本周开局必须真恢复；配速不重要，HR为准。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 9000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 140},
+                "note": "5:40-6:10/km参考；以不产生疲劳感为准",
+                "hr_cap_bpm": 142
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-28",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松有氧 10K + 力量A（跑后3-6h）",
+      "total_distance_m": 10000,
+      "spec": {
+        "name": "轻松有氧",
+        "date": "2026-07-28",
+        "note": "全程HR≤142；不追配速。力量A另计为独立session。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 10000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 142},
+                "note": "真轻松，减量周不加量",
+                "hr_cap_bpm": 145
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-28",
+      "session_index": 1,
+      "kind": "strength",
+      "summary": "力量A：下肢耐力 + 臀（减量周维持，不力竭）",
+      "spec": {
+        "name": "力量A：下肢耐力 + 臀",
+        "date": "2026-07-28",
+        "note": "减量周纯维持神经肌肉刺激，重量偏轻，不追力竭；周四强度前不做大重量。",
+        "exercises": [
+          {"canonical_id": "T1301", "provider_id": "T1301", "display_name": "哑铃高脚杯深蹲", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 60, "note": "中等偏轻重量，膝盖稳定"},
+          {"canonical_id": "T1164", "provider_id": "T1164", "display_name": "保加利亚分腿蹲", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 60, "note": "股四头肌耐力，不追大重量"},
+          {"canonical_id": "T1305", "provider_id": "T1305", "display_name": "哑铃罗马尼亚硬拉", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 75, "note": "髋铰链，背部中立"},
+          {"canonical_id": "T1231", "provider_id": "T1231", "display_name": "靠墙静蹲", "sets": 3, "target_kind": "time_s", "target_value": 60, "rest_seconds": 60, "note": "后半程抗疲劳"},
+          {"canonical_id": "T1219", "provider_id": "T1219", "display_name": "单腿臀桥", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 45, "note": "顶峰停1-2s"}
+        ]
+      }
+    },
+    {
+      "date": "2026-07-29",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "关键强度：5×1000m 受控维持（清晨避高温）",
+      "total_distance_m": 14000,
+      "spec": {
+        "name": "5×1000m 维持",
+        "date": "2026-07-29",
+        "note": "减量周维持课，不加量不追速度。清晨5:30-6:30出发。若RHR≥54或HRV≤32或体感>36°C：降为4×1000m且HR上限166。若第2组后HR>175且RPE≥8：3组收工。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "warmup", "duration": {"kind": "distance_m", "value": 3000}, "target": {"kind": "hr_bpm", "low": 120, "high": 150}, "note": "easy热身 + 动态 + 4×80m", "hr_cap_bpm": 150}
+            ]
+          },
+          {
+            "repeat": 5,
+            "steps": [
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 1000}, "target": {"kind": "hr_bpm", "low": 170, "high": 175}, "note": "配速参考3:35-3:45/km；以HR为准，不冲配速"},
+              {"step_kind": "recovery", "duration": {"kind": "time_s", "value": 150}, "target": {"kind": "hr_bpm", "low": 120, "high": 145}, "note": "2'30慢跑恢复"}
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "cooldown", "duration": {"kind": "distance_m", "value": 2500}, "target": {"kind": "hr_bpm", "low": 120, "high": 140}, "note": "放松", "hr_cap_bpm": 140}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-30",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "恢复有氧 8-10K（绝不追配速）",
+      "total_distance_m": 8000,
+      "spec": {
+        "name": "恢复有氧",
+        "date": "2026-07-30",
+        "note": "强度课后一天，真恢复；腿沉取8K下限或改休息。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 8000}, "target": {"kind": "hr_bpm", "low": 128, "high": 140}, "note": "5:45-6:15/km参考", "hr_cap_bpm": 142}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-31",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松跑 6-8K + 力量B（长距前一天，控量）",
+      "total_distance_m": 7000,
+      "spec": {
+        "name": "轻松跑",
+        "date": "2026-07-31",
+        "note": "长距前一天，控量控强度；HR≤140，可不加strides。力量B另计为独立session。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 7000}, "target": {"kind": "hr_bpm", "low": 128, "high": 140}, "note": "真轻松", "hr_cap_bpm": 142}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-31",
+      "session_index": 1,
+      "kind": "strength",
+      "summary": "力量B：核心 + 髋稳定（不力竭）",
+      "spec": {
+        "name": "力量B：核心 + 髋稳定",
+        "date": "2026-07-31",
+        "note": "长距前一天，纯激活不力竭；量小。",
+        "exercises": [
+          {"canonical_id": "T1010", "provider_id": "T1010", "display_name": "平板支撑", "sets": 3, "target_kind": "time_s", "target_value": 60, "rest_seconds": 45, "note": "臀腰平直"},
+          {"canonical_id": "T1185", "provider_id": "T1185", "display_name": "侧平板支撑", "sets": 3, "target_kind": "time_s", "target_value": 40, "rest_seconds": 30, "note": "髋不下沉"},
+          {"canonical_id": "T1249", "provider_id": "T1249", "display_name": "鸟狗式", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 30, "note": "慢速抗旋"},
+          {"canonical_id": "T1317", "provider_id": "T1317", "display_name": "蚌式开合", "sets": 3, "target_kind": "reps", "target_value": 15, "rest_seconds": 30, "note": "臀中肌激活"},
+          {"canonical_id": "T1103", "provider_id": "T1103", "display_name": "弹力带侧向行走", "sets": 3, "target_kind": "reps", "target_value": 15, "rest_seconds": 45, "note": "膝盖朝脚尖"}
+        ]
+      }
+    },
+    {
+      "date": "2026-08-01",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "关键长距离 22-24K 纯有氧 easy（清晨）",
+      "total_distance_m": 23000,
+      "spec": {
+        "name": "长距离 22-24K easy",
+        "date": "2026-08-01",
+        "note": "减量周长距，全程纯有氧HR≤148，不加MP/无氧段。清晨尽量5:30前出发，体感>35°C只按HR跑。胶@8/16K；每15-20min小口水补电解质。降级：RHR≥54或昨晚睡差或腿沉→18-20K全程HR≤145；RHR≥57→14-16K easy。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 23000}, "target": {"kind": "hr_bpm", "low": 135, "high": 148}, "note": "交谈强度，配速不快于5:00/km；后段不主动提心率", "hr_cap_bpm": 150}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-08-02",
+      "session_index": 0,
+      "kind": "rest",
+      "summary": "完整休息（长距后；不为凑周量补跑）",
+      "spec": null
+    }
+  ],
+  "nutrition": [
+    {"date": "2026-07-27", "notes_md": "easy日：不做热量赤字；碳水中等，蛋白1.6-1.8g/kg。无最新体测/体重，不写精确克数。"},
+    {"date": "2026-07-28", "notes_md": "easy日 + 力量：跑后/练后30min内蛋白25-35g + 碳水；蛋白1.6-1.8g/kg。"},
+    {"date": "2026-07-29", "notes_md": "强度日：训前60-80g易消化碳水；训后30min内蛋白25-35g + 碳水补充。"},
+    {"date": "2026-07-30", "notes_md": "恢复日：碳水中等，蛋白1.6-1.8g/kg；补水充足。"},
+    {"date": "2026-07-31", "notes_md": "长距前一天：主食偏高、低纤维；蛋白正常；晚间补水。"},
+    {"date": "2026-08-01", "notes_md": "长距日：跑中按胶计划(@8/16K)；跑后补蛋白 + 咸味碳水；每15-20min小口含电解质水。"},
+    {"date": "2026-08-02", "notes_md": "休息日：蛋白维持1.6-1.8g/kg促恢复；碳水中等；睡眠优先。"}
+  ]
+}
