@@ -1,0 +1,35 @@
+# Non-secret defaults for the async-job worker. Secrets (mysql.dsn, amqp.url)
+# are left empty here and MUST be supplied via environment:
+#   STRIDE_WORKER_MYSQL_DSN, STRIDE_WORKER_AMQP_URL
+# Any key can be overridden by STRIDE_WORKER_<PATH> (with -/. -> _), e.g.
+#   queues.work        -> STRIDE_WORKER_QUEUES_WORK
+#   retry.max-attempts -> STRIDE_WORKER_RETRY_MAX_ATTEMPTS
+#   runtime.prefetch   -> STRIDE_WORKER_RUNTIME_PREFETCH
+#   logger.level       -> STRIDE_WORKER_LOGGER_LEVEL
+
+logger:
+  format: json          # json | console
+  service-name: stride-worker
+  level: info           # debug | info | warning | error
+  disable-caller: false
+  development: false
+
+mysql:
+  dsn: ""               # via STRIDE_WORKER_MYSQL_DSN
+
+amqp:
+  url: ""               # via STRIDE_WORKER_AMQP_URL
+
+queues:
+  work: stride.jobs
+  retry: stride.jobs.retry
+  poison: stride.jobs.poison
+
+retry:
+  max-attempts: 5
+  base-backoff: 5s
+  max-backoff: 5m
+
+runtime:
+  prefetch: 1
+  health-addr: ":8081"

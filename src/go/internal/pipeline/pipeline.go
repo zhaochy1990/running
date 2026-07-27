@@ -7,11 +7,13 @@ package pipeline
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
+
 	"github.com/zhaochy1990/stride/internal/job"
+	"github.com/zhaochy1990/stride/internal/logging"
 )
 
 // StepDef is one step of a pipeline definition.
@@ -61,7 +63,7 @@ type Orchestrator struct {
 	reg    *Registry
 	now    func() time.Time
 	newRun func() string
-	log    *slog.Logger
+	log    *zap.Logger
 }
 
 // Option configures an Orchestrator.
@@ -74,7 +76,7 @@ func WithClock(now func() time.Time) Option { return func(o *Orchestrator) { o.n
 func WithRunIDFunc(f func() string) Option { return func(o *Orchestrator) { o.newRun = f } }
 
 // WithLogger sets the structured logger.
-func WithLogger(l *slog.Logger) Option { return func(o *Orchestrator) { o.log = l } }
+func WithLogger(l *zap.Logger) Option { return func(o *Orchestrator) { o.log = l } }
 
 // New wires an Orchestrator. Defaults: UTC clock, UUIDv4 run ids.
 func New(store job.PipelineStore, enq job.Enqueuer, reg *Registry, opts ...Option) *Orchestrator {
@@ -84,7 +86,7 @@ func New(store job.PipelineStore, enq job.Enqueuer, reg *Registry, opts ...Optio
 		reg:    reg,
 		now:    func() time.Time { return time.Now().UTC() },
 		newRun: func() string { return uuid.NewString() },
-		log:    slog.Default(),
+		log:    logging.Default(),
 	}
 	for _, opt := range opts {
 		opt(o)
@@ -132,7 +134,7 @@ func (o *Orchestrator) StartPipeline(ctx context.Context, name, partitionKey str
 	if err := o.store.Update(ctx, run); err != nil {
 		return run.RunID, err
 	}
-	o.log.Info("pipeline started", "name", name, "run_id", run.RunID, "partition", partitionKey)
+	o.log.Info("pipeline started", zap.String("name", name), zap.String("run_id", run.RunID), zap.String("partition", partitionKey))
 	return run.RunID, nil
 }
 
@@ -145,14 +147,14 @@ func (o *Orchestrator) OnJobCompleted(ctx context.Context, j *job.Job) error {
 	run, err := o.store.Get(ctx, j.PartitionKey, j.PipelineRunID)
 	if err != nil {
 		if job.IsNotFound(err) {
-			o.log.Warn("pipeline run missing for completed job", "run_id", j.PipelineRunID, "job_id", j.ID)
+			o.log.Warn("pipeline run missing for completed job", zap.String("run_id", j.PipelineRunID), zap.String("job_id", j.ID))
 			return nil
 		}
 		return err
 	}
 	i := stepIndexByJobID(run, j.ID)
 	if i < 0 {
-		o.log.Warn("completed job not found in run steps", "run_id", run.RunID, "job_id", j.ID)
+		o.log.Warn("completed job not found in run steps", zap.String("run_id", run.RunID), zap.String("job_id", j.ID))
 		return nil
 	}
 	if run.Steps[i].Status == job.StatusDone {
@@ -169,7 +171,7 @@ func (o *Orchestrator) OnJobCompleted(ctx context.Context, j *job.Job) error {
 		if err := o.store.Update(ctx, run); err != nil {
 			return err
 		}
-		o.log.Info("pipeline done", "name", run.Name, "run_id", run.RunID)
+		o.log.Info("pipeline done", zap.String("name", run.Name), zap.String("run_id", run.RunID))
 		return nil
 	}
 
@@ -192,7 +194,7 @@ func (o *Orchestrator) OnJobCompleted(ctx context.Context, j *job.Job) error {
 	if err := o.store.Update(ctx, run); err != nil {
 		return err
 	}
-	o.log.Info("pipeline advanced", "run_id", run.RunID, "step", run.Steps[next].Name)
+	o.log.Info("pipeline advanced", zap.String("run_id", run.RunID), zap.String("step", run.Steps[next].Name))
 	return nil
 }
 
@@ -222,7 +224,7 @@ func (o *Orchestrator) OnJobFailed(ctx context.Context, j *job.Job) error {
 	if err := o.store.Update(ctx, run); err != nil {
 		return err
 	}
-	o.log.Error("pipeline failed", "run_id", run.RunID, "job_id", j.ID, "err", j.ErrorMessage)
+	o.log.Error("pipeline failed", zap.String("run_id", run.RunID), zap.String("job_id", j.ID), zap.String("err", j.ErrorMessage))
 	return nil
 }
 

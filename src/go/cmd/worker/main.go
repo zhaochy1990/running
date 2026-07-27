@@ -9,11 +9,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
+
+	"github.com/zhaochy1990/x/logger"
+	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/config"
 	"github.com/zhaochy1990/stride/internal/health"
@@ -25,25 +26,24 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("worker exited with error", "err", err)
+		// logger may not be up yet if config/log init failed; use the global
+		// (a no-op until MustGetLogger runs) and also print to stderr.
+		fmt.Fprintln(os.Stderr, "worker exited with error:", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	cfg, err := config.Load(os.Getenv)
-	if err != nil {
-		return err
-	}
+	cfg := config.MustLoad()
 
-	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLevel(cfg.LogLevel)}))
-	slog.SetDefault(log)
+	log := logger.MustGetLogger(&cfg.Logger)
+	defer func() { _ = log.Sync() }()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	// --- MySQL ---
-	store, err := storage.Open(cfg.MySQLDSN)
+	store, err := storage.Open(cfg.MySQL.DSN)
 	if err != nil {
 		return err
 	}
@@ -53,12 +53,12 @@ func run() error {
 	}
 
 	// --- RabbitMQ ---
-	conn, err := mq.Dial(cfg.AMQPURL)
+	conn, err := mq.Dial(cfg.AMQP.URL)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-	topo := mq.Topology{Work: cfg.WorkQueue, Retry: cfg.RetryQueue, Poison: cfg.PoisonQueue}
+	topo := mq.Topology{Work: cfg.Queues.Work, Retry: cfg.Queues.Retry, Poison: cfg.Queues.Poison}
 	if err := conn.DeclareTopology(topo); err != nil {
 		return err
 	}
@@ -67,7 +67,7 @@ func run() error {
 		return err
 	}
 	defer pub.Close()
-	consumer, err := conn.NewConsumer(topo, cfg.Prefetch)
+	consumer, err := conn.NewConsumer(topo, cfg.Runtime.Prefetch)
 	if err != nil {
 		return err
 	}
@@ -83,14 +83,14 @@ func run() error {
 	reg := job.NewRegistry()
 	registerHandlers(reg)
 	policy := job.RetryPolicy{
-		MaxAttempts: cfg.MaxAttempts,
-		BaseBackoff: cfg.BaseBackoff,
-		MaxBackoff:  cfg.MaxBackoff,
+		MaxAttempts: cfg.Retry.MaxAttempts,
+		BaseBackoff: cfg.Retry.BaseBackoff,
+		MaxBackoff:  cfg.Retry.MaxBackoff,
 	}
 	dispatcher := job.NewDispatcher(store.Jobs(), reg, pub, orch, policy, job.WithLogger(log))
 
 	// --- health ---
-	hs := health.New(cfg.HealthAddr, map[string]health.Check{
+	hs := health.New(cfg.Runtime.HealthAddr, map[string]health.Check{
 		"mysql": store.Ping,
 		"rabbitmq": func(context.Context) error {
 			if !conn.Healthy() {
@@ -101,11 +101,11 @@ func run() error {
 	})
 
 	log.Info("worker starting",
-		"work_queue", cfg.WorkQueue,
-		"prefetch", cfg.Prefetch,
-		"max_attempts", cfg.MaxAttempts,
-		"health_addr", cfg.HealthAddr,
-		"registered_types", reg.Types(),
+		zap.String("work_queue", cfg.Queues.Work),
+		zap.Int("prefetch", cfg.Runtime.Prefetch),
+		zap.Int("max_attempts", cfg.Retry.MaxAttempts),
+		zap.String("health_addr", cfg.Runtime.HealthAddr),
+		zap.Strings("registered_types", reg.Types()),
 	)
 
 	// --- run consumer + health server; first error or signal wins ---
@@ -133,17 +133,4 @@ func registerHandlers(reg *job.Registry) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
 	})
-}
-
-func parseLevel(s string) slog.Level {
-	switch strings.ToLower(s) {
-	case "debug":
-		return slog.LevelDebug
-	case "warn", "warning":
-		return slog.LevelWarn
-	case "error":
-		return slog.LevelError
-	default:
-		return slog.LevelInfo
-	}
 }

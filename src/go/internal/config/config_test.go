@@ -1,123 +1,127 @@
 package config
 
 import (
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
-func mapEnv(m map[string]string) func(string) string {
-	return func(k string) string { return m[k] }
+const validYAML = `
+logger:
+  format: json
+  service-name: stride-worker
+  level: info
+mysql:
+  dsn: "file-dsn@tcp(h:3306)/db"
+amqp:
+  url: "amqp://guest:guest@h:5672/"
+queues:
+  work: stride.jobs
+  retry: stride.jobs.retry
+  poison: stride.jobs.poison
+retry:
+  max-attempts: 5
+  base-backoff: 5s
+  max-backoff: 5m
+runtime:
+  prefetch: 1
+  health-addr: ":8081"
+`
+
+func writeConfig(t *testing.T, body string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write temp config: %v", err)
+	}
+	return path
 }
 
-func requiredEnv() map[string]string {
-	return map[string]string{
-		"STRIDE_WORKER_MYSQL_DSN": "user:pass@tcp(mysql:3306)/stride",
-		"STRIDE_WORKER_AMQP_URL":  "amqp://guest:guest@rabbit:5672/",
+func TestMustLoadFrom_FileValues(t *testing.T) {
+	cfg := MustLoadFrom(writeConfig(t, validYAML))
+
+	if cfg.MySQL.DSN != "file-dsn@tcp(h:3306)/db" {
+		t.Errorf("dsn = %q", cfg.MySQL.DSN)
+	}
+	if cfg.Queues.Work != "stride.jobs" || cfg.Queues.Poison != "stride.jobs.poison" {
+		t.Errorf("queues = %+v", cfg.Queues)
+	}
+	if cfg.Retry.MaxAttempts != 5 {
+		t.Errorf("max attempts = %d", cfg.Retry.MaxAttempts)
+	}
+	if cfg.Retry.BaseBackoff != 5*time.Second || cfg.Retry.MaxBackoff != 5*time.Minute {
+		t.Errorf("backoff = %v/%v", cfg.Retry.BaseBackoff, cfg.Retry.MaxBackoff)
+	}
+	if cfg.Runtime.Prefetch != 1 || cfg.Runtime.HealthAddr != ":8081" {
+		t.Errorf("runtime = %+v", cfg.Runtime)
+	}
+	if cfg.Logger.Level != "info" || cfg.Logger.Format != "json" {
+		t.Errorf("logger = %+v", cfg.Logger)
 	}
 }
 
-func TestLoad_DefaultsAppliedWhenOnlyRequiredSet(t *testing.T) {
-	cfg, err := Load(mapEnv(requiredEnv()))
-	if err != nil {
-		t.Fatalf("load: %v", err)
+func TestMustLoadFrom_EnvOverridesFileAndSecret(t *testing.T) {
+	// Secret comes from env; a non-secret key is overridden too.
+	t.Setenv("STRIDE_WORKER_MYSQL_DSN", "env-dsn@tcp(prod:3306)/stride")
+	t.Setenv("STRIDE_WORKER_RETRY_MAX_ATTEMPTS", "9")
+	t.Setenv("STRIDE_WORKER_QUEUES_WORK", "q.work.override")
+
+	cfg := MustLoadFrom(writeConfig(t, validYAML))
+
+	if cfg.MySQL.DSN != "env-dsn@tcp(prod:3306)/stride" {
+		t.Fatalf("env did not override secret dsn: %q", cfg.MySQL.DSN)
 	}
-	if cfg.WorkQueue != "stride.jobs" {
-		t.Errorf("work queue default = %q", cfg.WorkQueue)
+	if cfg.Retry.MaxAttempts != 9 {
+		t.Fatalf("env did not override max-attempts: %d", cfg.Retry.MaxAttempts)
 	}
-	if cfg.RetryQueue != "stride.jobs.retry" {
-		t.Errorf("retry queue default = %q", cfg.RetryQueue)
-	}
-	if cfg.PoisonQueue != "stride.jobs.poison" {
-		t.Errorf("poison queue default = %q", cfg.PoisonQueue)
-	}
-	if cfg.MaxAttempts != 5 {
-		t.Errorf("max attempts default = %d", cfg.MaxAttempts)
-	}
-	if cfg.BaseBackoff != 5*time.Second {
-		t.Errorf("base backoff default = %v", cfg.BaseBackoff)
-	}
-	if cfg.MaxBackoff != 5*time.Minute {
-		t.Errorf("max backoff default = %v", cfg.MaxBackoff)
-	}
-	if cfg.Prefetch != 1 {
-		t.Errorf("prefetch default = %d", cfg.Prefetch)
-	}
-	if cfg.HealthAddr != ":8081" {
-		t.Errorf("health addr default = %q", cfg.HealthAddr)
-	}
-	if cfg.LogLevel != "info" {
-		t.Errorf("log level default = %q", cfg.LogLevel)
+	if cfg.Queues.Work != "q.work.override" {
+		t.Fatalf("env did not override queues.work: %q", cfg.Queues.Work)
 	}
 }
 
-func TestLoad_MissingRequiredFailsFast(t *testing.T) {
-	for _, key := range []string{"STRIDE_WORKER_MYSQL_DSN", "STRIDE_WORKER_AMQP_URL"} {
-		env := requiredEnv()
-		delete(env, key)
-		_, err := Load(mapEnv(env))
-		if err == nil {
-			t.Fatalf("missing %s: want error", key)
+func TestMustLoadFrom_SecretViaEnvOnly(t *testing.T) {
+	// mysql.dsn/amqp.url empty in file; env supplies them -> valid.
+	body := `
+mysql:
+  dsn: ""
+amqp:
+  url: ""
+queues: {work: w, retry: r, poison: p}
+retry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}
+runtime: {prefetch: 1, health-addr: ":8081"}
+`
+	t.Setenv("STRIDE_WORKER_MYSQL_DSN", "d")
+	t.Setenv("STRIDE_WORKER_AMQP_URL", "amqp://x")
+	cfg := MustLoadFrom(writeConfig(t, body))
+	if cfg.MySQL.DSN != "d" || cfg.AMQP.URL != "amqp://x" {
+		t.Fatalf("secrets not sourced from env: %+v", cfg)
+	}
+}
+
+func TestMustLoadFrom_MissingRequiredPanics(t *testing.T) {
+	// Empty dsn and no env override -> validator "required" fails -> panic.
+	body := `
+mysql: {dsn: ""}
+amqp: {url: "amqp://x"}
+queues: {work: w, retry: r, poison: p}
+retry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}
+runtime: {prefetch: 1, health-addr: ":8081"}
+`
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic for missing required mysql.dsn")
 		}
-		if !strings.Contains(err.Error(), key) {
-			t.Fatalf("error should name %s, got %q", key, err.Error())
+	}()
+	_ = MustLoadFrom(writeConfig(t, body))
+}
+
+func TestMustLoadFrom_MissingFilePanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic for missing config file")
 		}
-	}
-}
-
-func TestLoad_OverridesFromEnv(t *testing.T) {
-	env := requiredEnv()
-	env["STRIDE_WORKER_WORK_QUEUE"] = "q.work"
-	env["STRIDE_WORKER_MAX_ATTEMPTS"] = "3"
-	env["STRIDE_WORKER_BASE_BACKOFF"] = "2s"
-	env["STRIDE_WORKER_MAX_BACKOFF"] = "30s"
-	env["STRIDE_WORKER_PREFETCH"] = "8"
-	env["STRIDE_WORKER_LOG_LEVEL"] = "debug"
-
-	cfg, err := Load(mapEnv(env))
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if cfg.WorkQueue != "q.work" {
-		t.Errorf("work queue = %q", cfg.WorkQueue)
-	}
-	if cfg.MaxAttempts != 3 {
-		t.Errorf("max attempts = %d", cfg.MaxAttempts)
-	}
-	if cfg.BaseBackoff != 2*time.Second {
-		t.Errorf("base backoff = %v", cfg.BaseBackoff)
-	}
-	if cfg.MaxBackoff != 30*time.Second {
-		t.Errorf("max backoff = %v", cfg.MaxBackoff)
-	}
-	if cfg.Prefetch != 8 {
-		t.Errorf("prefetch = %d", cfg.Prefetch)
-	}
-	if cfg.LogLevel != "debug" {
-		t.Errorf("log level = %q", cfg.LogLevel)
-	}
-}
-
-func TestLoad_InvalidDurationFails(t *testing.T) {
-	env := requiredEnv()
-	env["STRIDE_WORKER_BASE_BACKOFF"] = "not-a-duration"
-	if _, err := Load(mapEnv(env)); err == nil {
-		t.Fatal("want error for bad duration")
-	}
-}
-
-func TestLoad_InvalidIntFails(t *testing.T) {
-	env := requiredEnv()
-	env["STRIDE_WORKER_MAX_ATTEMPTS"] = "abc"
-	if _, err := Load(mapEnv(env)); err == nil {
-		t.Fatal("want error for bad int")
-	}
-}
-
-func TestLoad_NonPositiveMaxAttemptsFails(t *testing.T) {
-	env := requiredEnv()
-	env["STRIDE_WORKER_MAX_ATTEMPTS"] = "0"
-	if _, err := Load(mapEnv(env)); err == nil {
-		t.Fatal("want error for max attempts < 1")
-	}
+	}()
+	_ = MustLoadFrom(filepath.Join(t.TempDir(), "does-not-exist.yml"))
 }

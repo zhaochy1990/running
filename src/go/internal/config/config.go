@@ -1,112 +1,80 @@
-// Package config loads the worker's configuration from environment variables
-// (12-factor). Required secrets fail fast if missing; everything else has a
-// sensible default. See docs/adr/0002 for the delivery model (git-ignored .env).
+// Package config loads the worker's configuration with github.com/zhaochy1990/x
+// viper loader: a YAML file supplies non-secret defaults, and STRIDE_WORKER_*
+// environment variables override any key (secrets like the MySQL DSN and AMQP
+// URL are supplied only via env). Validation uses validator/v10 struct tags.
+// See docs/adr/0002.
 package config
 
 import (
-	"fmt"
-	"strconv"
+	"os"
 	"time"
+
+	"github.com/zhaochy1990/x/logger"
+	xviper "github.com/zhaochy1990/x/viper"
 )
+
+// EnvPrefix is prepended (with an underscore) to every override env var, and
+// "-"/"." in a key become "_". So queues.work -> STRIDE_WORKER_QUEUES_WORK,
+// retry.max-attempts -> STRIDE_WORKER_RETRY_MAX_ATTEMPTS, mysql.dsn ->
+// STRIDE_WORKER_MYSQL_DSN.
+const EnvPrefix = "STRIDE_WORKER"
+
+// DefaultConfigFile is used when neither an explicit path nor CONFIG_PATH is set.
+const DefaultConfigFile = "config.yml"
 
 // Config is the fully-resolved worker configuration.
 type Config struct {
-	// Secrets (required).
-	MySQLDSN string
-	AMQPURL  string
-
-	// RabbitMQ topology.
-	WorkQueue   string
-	RetryQueue  string
-	PoisonQueue string
-
-	// Retry policy.
-	MaxAttempts int
-	BaseBackoff time.Duration
-	MaxBackoff  time.Duration
-
-	// Runtime.
-	Prefetch   int
-	HealthAddr string
-	LogLevel   string
+	Logger  logger.LoggerConfig `mapstructure:"logger"`
+	MySQL   MySQL               `mapstructure:"mysql"`
+	AMQP    AMQP                `mapstructure:"amqp"`
+	Queues  Queues              `mapstructure:"queues"`
+	Retry   Retry               `mapstructure:"retry"`
+	Runtime Runtime             `mapstructure:"runtime"`
 }
 
-// Getenv reads an environment variable; inject os.Getenv in production, a map in tests.
-type Getenv func(string) string
-
-// Load resolves configuration from getenv, applying defaults and validating.
-func Load(getenv Getenv) (Config, error) {
-	cfg := Config{
-		WorkQueue:   def(getenv, "STRIDE_WORKER_WORK_QUEUE", "stride.jobs"),
-		RetryQueue:  def(getenv, "STRIDE_WORKER_RETRY_QUEUE", "stride.jobs.retry"),
-		PoisonQueue: def(getenv, "STRIDE_WORKER_POISON_QUEUE", "stride.jobs.poison"),
-		HealthAddr:  def(getenv, "STRIDE_WORKER_HEALTH_ADDR", ":8081"),
-		LogLevel:    def(getenv, "STRIDE_WORKER_LOG_LEVEL", "info"),
-	}
-
-	var err error
-	if cfg.MySQLDSN, err = required(getenv, "STRIDE_WORKER_MYSQL_DSN"); err != nil {
-		return Config{}, err
-	}
-	if cfg.AMQPURL, err = required(getenv, "STRIDE_WORKER_AMQP_URL"); err != nil {
-		return Config{}, err
-	}
-	if cfg.MaxAttempts, err = intDef(getenv, "STRIDE_WORKER_MAX_ATTEMPTS", 5); err != nil {
-		return Config{}, err
-	}
-	if cfg.MaxAttempts < 1 {
-		return Config{}, fmt.Errorf("config: STRIDE_WORKER_MAX_ATTEMPTS must be >= 1, got %d", cfg.MaxAttempts)
-	}
-	if cfg.BaseBackoff, err = durDef(getenv, "STRIDE_WORKER_BASE_BACKOFF", 5*time.Second); err != nil {
-		return Config{}, err
-	}
-	if cfg.MaxBackoff, err = durDef(getenv, "STRIDE_WORKER_MAX_BACKOFF", 5*time.Minute); err != nil {
-		return Config{}, err
-	}
-	if cfg.Prefetch, err = intDef(getenv, "STRIDE_WORKER_PREFETCH", 1); err != nil {
-		return Config{}, err
-	}
-	if cfg.Prefetch < 1 {
-		return Config{}, fmt.Errorf("config: STRIDE_WORKER_PREFETCH must be >= 1, got %d", cfg.Prefetch)
-	}
-	return cfg, nil
+// MySQL holds the datastore connection (secret; env-only).
+type MySQL struct {
+	DSN string `mapstructure:"dsn" validate:"required"`
 }
 
-func def(getenv Getenv, key, fallback string) string {
-	if v := getenv(key); v != "" {
-		return v
-	}
-	return fallback
+// AMQP holds the broker connection (secret; env-only).
+type AMQP struct {
+	URL string `mapstructure:"url" validate:"required"`
 }
 
-func required(getenv Getenv, key string) (string, error) {
-	v := getenv(key)
-	if v == "" {
-		return "", fmt.Errorf("config: %s is required but not set", key)
-	}
-	return v, nil
+// Queues names the three RabbitMQ queues.
+type Queues struct {
+	Work   string `mapstructure:"work" validate:"required"`
+	Retry  string `mapstructure:"retry" validate:"required"`
+	Poison string `mapstructure:"poison" validate:"required"`
 }
 
-func intDef(getenv Getenv, key string, fallback int) (int, error) {
-	v := getenv(key)
-	if v == "" {
-		return fallback, nil
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return 0, fmt.Errorf("config: %s must be an integer: %w", key, err)
-	}
-	return n, nil
+// Retry is the bounded-retry + backoff policy.
+type Retry struct {
+	MaxAttempts int           `mapstructure:"max-attempts" validate:"min=1"`
+	BaseBackoff time.Duration `mapstructure:"base-backoff" validate:"required"`
+	MaxBackoff  time.Duration `mapstructure:"max-backoff" validate:"required"`
 }
 
-func durDef(getenv Getenv, key string, fallback time.Duration) (time.Duration, error) {
-	v := getenv(key)
-	if v == "" {
-		return fallback, nil
+// Runtime holds process-level knobs.
+type Runtime struct {
+	Prefetch   int    `mapstructure:"prefetch" validate:"min=1"`
+	HealthAddr string `mapstructure:"health-addr" validate:"required"`
+}
+
+// MustLoad resolves the config path (explicit CONFIG_PATH env, else
+// DefaultConfigFile) and loads it, panicking on any error (fail-fast at boot).
+func MustLoad() *Config {
+	path := os.Getenv("CONFIG_PATH")
+	if path == "" {
+		path = DefaultConfigFile
 	}
-	d, err := time.ParseDuration(v)
-	if err != nil {
-		return 0, fmt.Errorf("config: %s must be a duration (e.g. 5s, 2m): %w", key, err)
-	}
-	return d, nil
+	return MustLoadFrom(path)
+}
+
+// MustLoadFrom loads configuration from an explicit YAML path (used by tests).
+func MustLoadFrom(path string) *Config {
+	var cfg Config
+	xviper.MustLoadConfig(EnvPrefix, path, &cfg)
+	return &cfg
 }

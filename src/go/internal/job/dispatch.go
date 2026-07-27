@@ -2,8 +2,11 @@ package job
 
 import (
 	"context"
-	"log/slog"
 	"time"
+
+	"go.uber.org/zap"
+
+	"github.com/zhaochy1990/stride/internal/logging"
 )
 
 // RetryPolicy governs bounded retry + backoff before poisoning.
@@ -23,7 +26,7 @@ type Dispatcher struct {
 	lifecycle Lifecycle
 	policy    RetryPolicy
 	now       func() time.Time
-	log       *slog.Logger
+	log       *zap.Logger
 }
 
 // Option configures a Dispatcher.
@@ -33,7 +36,7 @@ type Option func(*Dispatcher)
 func WithClock(now func() time.Time) Option { return func(d *Dispatcher) { d.now = now } }
 
 // WithLogger sets the structured logger.
-func WithLogger(l *slog.Logger) Option { return func(d *Dispatcher) { d.log = l } }
+func WithLogger(l *zap.Logger) Option { return func(d *Dispatcher) { d.log = l } }
 
 // NewDispatcher wires a Dispatcher. lifecycle may be NopLifecycle for standalone
 // jobs; pass a pipeline orchestrator to advance/fail pipeline runs.
@@ -45,7 +48,7 @@ func NewDispatcher(store Store, reg *Registry, pub Publisher, lc Lifecycle, poli
 		lifecycle: lc,
 		policy:    policy,
 		now:       func() time.Time { return time.Now().UTC() },
-		log:       slog.Default(),
+		log:       logging.Default(),
 	}
 	for _, o := range opts {
 		o(d)
@@ -63,7 +66,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, m Message) error {
 	if err != nil {
 		if IsNotFound(err) {
 			// Orphan pointer (state deleted / never written): drop it.
-			d.log.Warn("dropping orphan job message", "job_id", m.JobID, "partition", m.PartitionKey)
+			d.log.Warn("dropping orphan job message", zap.String("job_id", m.JobID), zap.String("partition", m.PartitionKey))
 			return nil
 		}
 		return err // infra fault -> nack/requeue
@@ -71,13 +74,13 @@ func (d *Dispatcher) Dispatch(ctx context.Context, m Message) error {
 
 	if j.Status.Terminal() {
 		// Already processed (duplicate delivery): idempotent drop.
-		d.log.Debug("job already terminal, dropping duplicate", "job_id", j.ID, "status", j.Status)
+		d.log.Debug("job already terminal, dropping duplicate", zap.String("job_id", j.ID), zap.String("status", string(j.Status)))
 		return nil
 	}
 
 	handler, ok := d.registry.Handler(j.Type)
 	if !ok {
-		d.log.Error("no handler for job type", "job_id", j.ID, "type", j.Type)
+		d.log.Error("no handler for job type", zap.String("job_id", j.ID), zap.String("type", j.Type))
 		return d.finishFailed(ctx, j, "no_handler", "no handler registered for job type "+j.Type)
 	}
 
@@ -118,9 +121,9 @@ func (d *Dispatcher) finishDone(ctx context.Context, j *Job, result string) erro
 		return err
 	}
 	if err := d.lifecycle.OnJobCompleted(ctx, j); err != nil {
-		d.log.Error("lifecycle OnJobCompleted failed", "job_id", j.ID, "err", err)
+		d.log.Error("lifecycle OnJobCompleted failed", zap.String("job_id", j.ID), zap.Error(err))
 	}
-	d.log.Info("job done", "job_id", j.ID, "type", j.Type, "attempts", j.Attempts)
+	d.log.Info("job done", zap.String("job_id", j.ID), zap.String("type", j.Type), zap.Int("attempts", j.Attempts))
 	return nil
 }
 
@@ -142,7 +145,7 @@ func (d *Dispatcher) handleFailure(ctx context.Context, j *Job, m Message, herr 
 		if err := d.publisher.PublishRetry(ctx, m, decision.Delay); err != nil {
 			return err // could not schedule retry -> redeliver
 		}
-		d.log.Warn("job failed, scheduled retry", "job_id", j.ID, "attempts", j.Attempts, "backoff", decision.Delay, "err", herr)
+		d.log.Warn("job failed, scheduled retry", zap.String("job_id", j.ID), zap.Int("attempts", j.Attempts), zap.Duration("backoff", decision.Delay), zap.Error(herr))
 		return nil
 	default: // OutcomePoison
 		if err := d.finishFailed(ctx, j, "poison", herr.Error()); err != nil {
@@ -151,7 +154,7 @@ func (d *Dispatcher) handleFailure(ctx context.Context, j *Job, m Message, herr 
 		if err := d.publisher.PublishPoison(ctx, m); err != nil {
 			return err
 		}
-		d.log.Error("job poisoned", "job_id", j.ID, "attempts", j.Attempts, "err", herr)
+		d.log.Error("job poisoned", zap.String("job_id", j.ID), zap.Int("attempts", j.Attempts), zap.Error(herr))
 		return nil
 	}
 }
@@ -167,7 +170,7 @@ func (d *Dispatcher) finishFailed(ctx context.Context, j *Job, code, msg string)
 		return err
 	}
 	if err := d.lifecycle.OnJobFailed(ctx, j); err != nil {
-		d.log.Error("lifecycle OnJobFailed failed", "job_id", j.ID, "err", err)
+		d.log.Error("lifecycle OnJobFailed failed", zap.String("job_id", j.ID), zap.Error(err))
 	}
 	return nil
 }
