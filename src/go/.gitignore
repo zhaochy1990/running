@@ -1,0 +1,7 @@
+# Secrets — never commit.
+.env
+
+# Build output.
+/out/
+worker
+*.exe
