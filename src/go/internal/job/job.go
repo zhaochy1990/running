@@ -36,9 +36,12 @@ type Job struct {
 	ResultJSON   string
 	ErrorCode    string
 	ErrorMessage string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	CompletedAt  *time.Time
+	// PipelineRunID links this job back to the PipelineRun that spawned it, so
+	// the orchestrator can advance the run on completion. Empty for standalone jobs.
+	PipelineRunID string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	CompletedAt   *time.Time
 }
 
 // PipelineStep is one node in a linear pipeline.
