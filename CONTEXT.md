@@ -38,3 +38,31 @@ _Avoid_: 普通提醒、轻微偏差
 **对话回执**：
 计划启用、放弃或被新方案替代后写入 Coach 对话的可信结果记录。
 _Avoid_: Coach 回复、用户消息
+
+### 异步任务系统（Async Job Worker）
+
+（Go 重写的后台任务基础设施所用词汇；实现设计见 `docs/adr/0001`–`0003`。）
+
+**Async Job（异步任务）**：
+一个可独立执行、可重试的后台工作单元；由 `job_type` 绑定到一个 handler，状态持久化在 MySQL。
+_Avoid_: task、message、消息
+
+**Job Handler（任务处理器）**：
+绑定到某个 `job_type` 的执行函数；在至少一次投递语义下必须幂等。
+_Avoid_: worker、processor
+
+**Pipeline（任务流水线）**：
+一个具名的、线性的 job 步骤序列（如 onboarding：full_sync → calibration → backfill）。
+_Avoid_: workflow、DAG、job chain
+
+**Pipeline Run（流水线运行）**：
+某个 pipeline 针对某个 partition 的一次执行实例。
+_Avoid_: pipeline instance、execution
+
+**Partition Key（分区键）**：
+job 与 pipeline run 的归属作用域；通常是 user_id，跨用户的全局任务用 `Global`。
+_Avoid_: tenant、scope、user id（后者只是其取值之一）
+
+**Poison（毒信任务）**：
+重试次数耗尽后被投入死信队列并置为终态 `failed` 的 job。
+_Avoid_: dead-letter（沿用作队列名 DLQ，但任务语义统一叫 poison）
