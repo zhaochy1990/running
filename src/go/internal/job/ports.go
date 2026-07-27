@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -33,6 +34,12 @@ type Publisher interface {
 type ErrNotFound struct{ Key string }
 
 func (e *ErrNotFound) Error() string { return "not found: " + e.Key }
+
+// IsNotFound reports whether err is (or wraps) an ErrNotFound.
+func IsNotFound(err error) bool {
+	var nf *ErrNotFound
+	return errors.As(err, &nf)
+}
 
 // Heartbeat lets a handler report progress mid-run; it persists stage/progress
 // on the job row. RabbitMQ holds the unacked message for the consumer, so unlike

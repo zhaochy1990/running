@@ -35,21 +35,21 @@ type RetryDecision struct {
 // DecideFailure decides whether a failed job should be retried (with exponential
 // backoff) or poisoned. attempts is the number of attempts made so far including
 // the one that just failed; once it reaches maxAttempts the job is poisoned.
-// Backoff = base * 2^(attempts-1), capped at max.
-func DecideFailure(attempts, maxAttempts int, base, max time.Duration) RetryDecision {
+// Backoff = base * 2^(attempts-1), capped at maxDelay.
+func DecideFailure(attempts, maxAttempts int, base, maxDelay time.Duration) RetryDecision {
 	if attempts >= maxAttempts {
 		return RetryDecision{Outcome: OutcomePoison}
 	}
 	delay := base
 	for i := 1; i < attempts; i++ {
 		delay *= 2
-		if delay >= max {
-			delay = max
+		if delay >= maxDelay {
+			delay = maxDelay
 			break
 		}
 	}
-	if delay > max {
-		delay = max
+	if delay > maxDelay {
+		delay = maxDelay
 	}
 	return RetryDecision{Outcome: OutcomeRetry, Delay: delay}
 }

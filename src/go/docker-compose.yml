@@ -50,8 +50,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-    ports:
-      - "8081:8081"  # /healthz
+    # No published ports: the worker has no ingress. /healthz is reached only by
+    # the in-container Docker HEALTHCHECK on loopback (ADR 0002).
 
 volumes:
   rabbitmq-data:

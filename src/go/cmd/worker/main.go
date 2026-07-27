@@ -75,7 +75,11 @@ func run() error {
 
 	// --- wiring ---
 	enq := job.NewStoreEnqueuer(store.Jobs(), pub)
-	orch := pipeline.New(store.Pipelines(), enq, pipeline.DefaultRegistry(), pipeline.WithLogger(log))
+	// Pipeline definitions land together with their step handlers (out of scope
+	// for the infra phase), so the worker starts with an empty registry. The
+	// worker only advances/finalizes runs (from stored steps) and never calls
+	// StartPipeline, so an empty registry is sufficient here.
+	orch := pipeline.New(store.Pipelines(), enq, pipeline.NewRegistry(), pipeline.WithLogger(log))
 	reg := job.NewRegistry()
 	registerHandlers(reg)
 	policy := job.RetryPolicy{

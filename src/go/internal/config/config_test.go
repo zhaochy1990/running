@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -58,7 +59,7 @@ func TestLoad_MissingRequiredFailsFast(t *testing.T) {
 		if err == nil {
 			t.Fatalf("missing %s: want error", key)
 		}
-		if !contains(err.Error(), key) {
+		if !strings.Contains(err.Error(), key) {
 			t.Fatalf("error should name %s, got %q", key, err.Error())
 		}
 	}
@@ -119,13 +120,4 @@ func TestLoad_NonPositiveMaxAttemptsFails(t *testing.T) {
 	if _, err := Load(mapEnv(env)); err == nil {
 		t.Fatal("want error for max attempts < 1")
 	}
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

@@ -61,7 +61,7 @@ func NewDispatcher(store Store, reg *Registry, pub Publisher, lc Lifecycle, poli
 func (d *Dispatcher) Dispatch(ctx context.Context, m Message) error {
 	j, err := d.store.Get(ctx, m.PartitionKey, m.JobID)
 	if err != nil {
-		if _, ok := err.(*ErrNotFound); ok {
+		if IsNotFound(err) {
 			// Orphan pointer (state deleted / never written): drop it.
 			d.log.Warn("dropping orphan job message", "job_id", m.JobID, "partition", m.PartitionKey)
 			return nil

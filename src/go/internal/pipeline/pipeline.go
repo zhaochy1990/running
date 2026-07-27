@@ -144,7 +144,7 @@ func (o *Orchestrator) OnJobCompleted(ctx context.Context, j *job.Job) error {
 	}
 	run, err := o.store.Get(ctx, j.PartitionKey, j.PipelineRunID)
 	if err != nil {
-		if _, ok := err.(*job.ErrNotFound); ok {
+		if job.IsNotFound(err) {
 			o.log.Warn("pipeline run missing for completed job", "run_id", j.PipelineRunID, "job_id", j.ID)
 			return nil
 		}
@@ -203,7 +203,7 @@ func (o *Orchestrator) OnJobFailed(ctx context.Context, j *job.Job) error {
 	}
 	run, err := o.store.Get(ctx, j.PartitionKey, j.PipelineRunID)
 	if err != nil {
-		if _, ok := err.(*job.ErrNotFound); ok {
+		if job.IsNotFound(err) {
 			return nil
 		}
 		return err
