@@ -16,3 +16,6 @@ tests/
 *.db-wal
 *.db-shm
 profile
+# Go worker/services module is built by its own src/go/Dockerfile; keep it out
+# of the Python image (Dockerfile:34 `COPY src/ ./src/`). See docs/adr/0004.
+src/go/
