@@ -125,7 +125,7 @@ func (p *Provider) SyncUser(ctx context.Context, user string, opts provider.Sync
 		}
 	}
 	if content.Has(provider.ContentHealth) {
-		if err := p.syncHealth(ctx, client, user, &res); err != nil {
+		if err := p.syncHealth(ctx, client, user, opts.Progress, &res); err != nil {
 			return res, err
 		}
 	}
@@ -140,45 +140,65 @@ type listItem struct {
 	Date      flexString `json:"date"`
 }
 
-// syncActivities pages the activity list, stopping at the first already-synced
-// activity in incremental mode, and upserts each activity's detail.
+// syncActivities collects the activity list (paging, stopping at the first
+// already-synced activity in incremental mode), then fetches + upserts each
+// activity's detail. It emits per-activity progress so a long full sync is
+// legible on the job row.
 //
 // NOTE: detail fetch is sequential for v1 (correctness first); the client's
 // re-login barrier already supports the parallel fetch that opts.jobs will drive
 // in a follow-up.
 func (p *Provider) syncActivities(ctx context.Context, client *Client, user string, opts provider.SyncOptions, res *provider.SyncResult) error {
+	items, err := p.collectActivities(ctx, client, user, opts)
+	if err != nil {
+		return err
+	}
+	total := len(items)
+	emitProgress(opts.Progress, "activities", 0, total, pctInBand(0, total, 10, 80))
+	for i, item := range items {
+		if err := p.syncOneActivity(ctx, client, user, item, res); err != nil {
+			return err
+		}
+		emitProgress(opts.Progress, "activities", i+1, total, pctInBand(i+1, total, 10, 80))
+	}
+	return nil
+}
+
+// collectActivities pages the activity list and returns the items to sync,
+// stopping at the first already-synced activity in incremental mode and honoring
+// opts.Limit. Full mode collects known activities too (re-scan).
+func (p *Provider) collectActivities(ctx context.Context, client *Client, user string, opts provider.SyncOptions) ([]listItem, error) {
 	const pageSize = 20
+	var items []listItem
 	for page := 1; ; page++ {
 		raw, err := client.ListActivities(ctx, page, pageSize)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var pageData struct {
 			DataList []listItem `json:"dataList"`
 		}
 		if err := json.Unmarshal(raw, &pageData); err != nil {
-			return fmt.Errorf("coros: parse activity list: %w", err)
+			return nil, fmt.Errorf("coros: parse activity list: %w", err)
 		}
 		if len(pageData.DataList) == 0 {
-			return nil
+			return items, nil
 		}
 		for _, item := range pageData.DataList {
 			exists, err := p.store.ActivityExists(ctx, user, item.LabelID)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if exists && opts.Mode != provider.SyncFull {
-				return nil // incremental catch-up: reached known history
+				return items, nil // incremental catch-up: reached known history
 			}
-			if err := p.syncOneActivity(ctx, client, user, item, res); err != nil {
-				return err
-			}
-			if opts.Limit > 0 && res.Activities >= opts.Limit {
-				return nil // bounded run
+			items = append(items, item)
+			if opts.Limit > 0 && len(items) >= opts.Limit {
+				return items, nil // bounded run
 			}
 		}
 		if len(pageData.DataList) < pageSize {
-			return nil // last page
+			return items, nil // last page
 		}
 	}
 }
@@ -223,7 +243,7 @@ type dayItem struct {
 // NOTE: dashboard + daily_hrv + race_predictions are a documented follow-up
 // (their payload shapes need confirming against a captured response); v1 syncs
 // daily_health, which is enough for the shadow reconcile of the health domain.
-func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, res *provider.SyncResult) error {
+func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, progress provider.ProgressCallback, res *provider.SyncResult) error {
 	raw, err := client.GetAnalyse(ctx)
 	if err != nil {
 		return err
@@ -234,7 +254,8 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 	if err := json.Unmarshal(raw, &data); err != nil {
 		return fmt.Errorf("coros: parse analyse: %w", err)
 	}
-	for _, d := range data.DayList {
+	total := len(data.DayList)
+	for i, d := range data.DayList {
 		date := d.Date
 		if date == "" {
 			date = d.HappenDay.String()
@@ -259,6 +280,7 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 		}
 		res.Health++
 		res.HealthDates = append(res.HealthDates, date)
+		emitProgress(progress, "health", i+1, total, pctInBand(i+1, total, 80, 95))
 	}
 	return nil
 }
@@ -286,6 +308,35 @@ func (p *Provider) ResyncActivity(ctx context.Context, user, labelID string) (bo
 }
 
 var _ provider.Provider = (*Provider)(nil)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// progress
+// ─────────────────────────────────────────────────────────────────────────────
+
+// emitProgress sends a {phase, current, total, percent} event if cb is non-nil.
+func emitProgress(cb provider.ProgressCallback, phase string, current, total, percent int) {
+	if cb == nil {
+		return
+	}
+	cb(provider.SyncProgress{
+		"phase":   phase,
+		"current": current,
+		"total":   total,
+		"percent": percent,
+	})
+}
+
+// pctInBand maps current/total onto the [lo, hi] percent band for a phase. A
+// zero total yields lo (nothing to do in this phase yet).
+func pctInBand(current, total, lo, hi int) int {
+	if total <= 0 {
+		return lo
+	}
+	if current > total {
+		current = total
+	}
+	return lo + (hi-lo)*current/total
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // helpers

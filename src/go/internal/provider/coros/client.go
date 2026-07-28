@@ -22,6 +22,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/zhaochy1990/stride/internal/provider"
 )
 
 // DefaultBases are the region-routed COROS API roots.
@@ -65,6 +67,11 @@ func (e *APIError) Error() string { return fmt.Sprintf("coros: [%s] %s", e.Code,
 type AuthError struct{ msg string }
 
 func (e *AuthError) Error() string { return "coros: " + e.msg }
+
+// Unwrap ties AuthError to the provider-level sentinel so callers can classify
+// any COROS auth failure with errors.Is(err, provider.ErrAuthRequired) without
+// importing this package.
+func (e *AuthError) Unwrap() error { return provider.ErrAuthRequired }
 
 // Client talks to the COROS API for one account.
 type Client struct {

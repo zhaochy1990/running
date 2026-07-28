@@ -176,6 +176,13 @@ func (e *FeatureNotSupported) Error() string {
 // credentials.
 var ErrAuthRequired = errors.New("auth required")
 
+// IsAuthError reports whether err is (or wraps) ErrAuthRequired — any
+// authentication failure that retrying won't fix. Provider adapters tie their
+// own auth errors to this sentinel via Unwrap (e.g. coros.AuthError).
+func IsAuthError(err error) bool {
+	return errors.Is(err, ErrAuthRequired)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider contract
 // ─────────────────────────────────────────────────────────────────────────────
