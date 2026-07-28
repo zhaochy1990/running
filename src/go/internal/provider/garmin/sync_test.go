@@ -103,3 +103,32 @@ func TestInfoCapabilities(t *testing.T) {
 		}
 	}
 }
+
+func TestSyncUser_EmitsProgress(t *testing.T) {
+	p, _ := newTestProvider(t, garminMux(), loggedInCreds())
+
+	var events []provider.SyncProgress
+	_, err := p.SyncUser(context.Background(), testUID, provider.SyncOptions{
+		Mode: provider.SyncFull, Content: provider.ContentActivities,
+		Progress: func(pr provider.SyncProgress) { events = append(events, pr) },
+	})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	sawFinal := false
+	maxPct := -1
+	for _, e := range events {
+		if e["phase"] == "activities" && e["current"] == 2 && e["total"] == 2 {
+			sawFinal = true
+		}
+		if pct, ok := e["percent"].(int); ok && pct > maxPct {
+			maxPct = pct
+		}
+	}
+	if !sawFinal {
+		t.Errorf("missing activities current=2/total=2 event; got %v", events)
+	}
+	if maxPct < 80 {
+		t.Errorf("max percent = %d, want >= 80", maxPct)
+	}
+}

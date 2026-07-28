@@ -154,12 +154,12 @@ func (p *Provider) syncActivities(ctx context.Context, client *Client, user stri
 		return err
 	}
 	total := len(items)
-	emitProgress(opts.Progress, "activities", 0, total, pctInBand(0, total, 10, 80))
+	provider.EmitProgress(opts.Progress, "activities", 0, total, provider.PercentInBand(0, total, 10, 80))
 	for i, item := range items {
 		if err := p.syncOneActivity(ctx, client, user, item, res); err != nil {
 			return err
 		}
-		emitProgress(opts.Progress, "activities", i+1, total, pctInBand(i+1, total, 10, 80))
+		provider.EmitProgress(opts.Progress, "activities", i+1, total, provider.PercentInBand(i+1, total, 10, 80))
 	}
 	return nil
 }
@@ -280,7 +280,7 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 		}
 		res.Health++
 		res.HealthDates = append(res.HealthDates, date)
-		emitProgress(progress, "health", i+1, total, pctInBand(i+1, total, 80, 95))
+		provider.EmitProgress(progress, "health", i+1, total, provider.PercentInBand(i+1, total, 80, 95))
 	}
 	return nil
 }
@@ -308,35 +308,6 @@ func (p *Provider) ResyncActivity(ctx context.Context, user, labelID string) (bo
 }
 
 var _ provider.Provider = (*Provider)(nil)
-
-// ─────────────────────────────────────────────────────────────────────────────
-// progress
-// ─────────────────────────────────────────────────────────────────────────────
-
-// emitProgress sends a {phase, current, total, percent} event if cb is non-nil.
-func emitProgress(cb provider.ProgressCallback, phase string, current, total, percent int) {
-	if cb == nil {
-		return
-	}
-	cb(provider.SyncProgress{
-		"phase":   phase,
-		"current": current,
-		"total":   total,
-		"percent": percent,
-	})
-}
-
-// pctInBand maps current/total onto the [lo, hi] percent band for a phase. A
-// zero total yields lo (nothing to do in this phase yet).
-func pctInBand(current, total, lo, hi int) int {
-	if total <= 0 {
-		return lo
-	}
-	if current > total {
-		current = total
-	}
-	return lo + (hi-lo)*current/total
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // helpers

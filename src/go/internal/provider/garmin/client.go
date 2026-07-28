@@ -8,6 +8,7 @@ package garmin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zhaochy1990/stride/internal/httpx"
 	"github.com/zhaochy1990/stride/internal/provider"
 )
 
@@ -192,7 +194,9 @@ func (c *Client) connectapi(ctx context.Context, path string, params url.Values)
 }
 
 // doGet performs one authenticated GET, ensuring a live bearer beforehand, and
-// returns the body + status without interpreting it.
+// returns the body + status without interpreting it. Transient failures
+// (transport, mid-body EOF, 5xx/429) are retried in place (httpx); a persistent
+// 5xx surfaces its status to the caller so connectapi can classify it.
 func (c *Client) doGet(ctx context.Context, u string) ([]byte, int, error) {
 	if err := c.ensureBearer(ctx); err != nil {
 		return nil, 0, err
@@ -209,16 +213,32 @@ func (c *Client) doGet(ctx context.Context, u string) ([]byte, int, error) {
 	req.Header.Set("User-Agent", connectUserAgent)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.http.Do(req)
+	var raw []byte
+	var status int
+	err = httpx.Do(ctx, func() error {
+		resp, e := c.http.Do(req)
+		if e != nil {
+			return fmt.Errorf("garmin: GET %s: %w", u, e)
+		}
+		defer resp.Body.Close()
+		b, e := io.ReadAll(resp.Body)
+		if e != nil {
+			return fmt.Errorf("garmin: read %s: %w", u, e) // %w keeps io.ErrUnexpectedEOF retryable
+		}
+		if httpx.RetryableStatus(resp.StatusCode) {
+			return &httpx.StatusError{Code: resp.StatusCode, Body: string(b)}
+		}
+		raw, status = b, resp.StatusCode // success / 3xx / 4xx (incl 401): stop, let caller classify
+		return nil
+	})
 	if err != nil {
-		return nil, 0, fmt.Errorf("garmin: GET %s: %w", u, err)
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
+		var se *httpx.StatusError
+		if errors.As(err, &se) {
+			return []byte(se.Body), se.Code, nil // exhausted 5xx/429: surface status to connectapi
+		}
 		return nil, 0, err
 	}
-	return raw, resp.StatusCode, nil
+	return raw, status, nil
 }
 
 // ensureBearer re-exchanges the OAuth1 token for a fresh OAuth2 bearer when the
