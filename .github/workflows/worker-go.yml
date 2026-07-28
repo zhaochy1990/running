@@ -8,8 +8,10 @@ name: worker-go
 # stride-worker additionally keeps :<sha> for tracing a running container back to
 # a commit; stride-api does not (CalVer -> Actions run -> commit is enough there).
 # The CalVer tag is the RELEASE tag that stride-devops/tencent/versions.env pins —
-# it is version-sortable, so Renovate (running in stride-devops) can watch GHCR
-# and open a PR bumping STRIDE_{WORKER,API}_IMAGE_TAG when a newer CalVer lands.
+# it is version-sortable, so the final build-push step runs Renovate against
+# stride-devops (`npx renovate zhaochy1990/stride-devops`) to open a PR bumping
+# STRIDE_{WORKER,API}_IMAGE_TAG to the new CalVer. No poll/runner lives in
+# stride-devops; this workflow drives it on-demand right after publishing.
 # The Tencent CVM is NOT deployed from here: this workflow only publishes images;
 # rollout happens by merging the Renovate PR + running ./up.sh on the CVM.
 on:
@@ -84,3 +86,25 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/stride-api:${{ steps.calver.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # Run Renovate against stride-devops right after the images land, so its
+      # versions.env bump PR opens within seconds (no poll/cron in stride-devops).
+      # Renovate clones stride-devops, reads its renovate.json, sees the new
+      # CalVer tag in GHCR, and opens the PR there. Best effort: a missing token
+      # or Renovate hiccup must NOT fail the image publish.
+      #   RENOVATE_TOKEN  — PAT/App token with contents+pull-requests write on
+      #                     zhaochy1990/stride-devops (Renovate opens the PR there).
+      #   GHCR_READ_TOKEN — read:packages, to list private GHCR tags (may be the
+      #                     same PAT as RENOVATE_TOKEN if it also has that scope).
+      - name: Open version-bump PR in stride-devops (Renovate)
+        continue-on-error: true
+        env:
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+          RENOVATE_HOST_RULES: >-
+            [{"hostType":"docker","matchHost":"ghcr.io","username":"zhaochy1990","password":"${{ secrets.GHCR_READ_TOKEN }}"}]
+          LOG_LEVEL: info
+        run: |
+          if [ -z "$RENOVATE_TOKEN" ]; then
+            echo "RENOVATE_TOKEN not set — skipping Renovate run."
+            exit 0
+          fi
+          npx --yes renovate@41 zhaochy1990/stride-devops
