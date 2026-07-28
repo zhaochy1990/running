@@ -39,7 +39,7 @@ func (f *fakeProvider) SyncUser(_ context.Context, user string, opts provider.Sy
 
 func run(t *testing.T, f *fakeProvider, input string) (string, error, []string, []int) {
 	t.Helper()
-	h := New(f)
+	h := New(func(_ context.Context, _ string) (Provider, error) { return f, nil })
 	var stages []string
 	var pcts []int
 	hb := func(stage string, pct int) error {
@@ -138,6 +138,19 @@ func TestHandler_BadPayload_Permanent(t *testing.T) {
 	}
 	if f.syncCalled {
 		t.Error("SyncUser must not run on bad payload")
+	}
+}
+
+func TestHandler_ResolveError_Retryable(t *testing.T) {
+	h := New(func(context.Context, string) (Provider, error) {
+		return nil, errors.New("db down while resolving provider")
+	})
+	_, err := h(context.Background(), &job.Job{PartitionKey: "u-123"}, func(string, int) error { return nil })
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if _, ok := job.AsPermanent(err); ok {
+		t.Errorf("resolver fault must be retryable, got permanent: %v", err)
 	}
 }
 

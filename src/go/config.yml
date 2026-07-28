@@ -33,3 +33,4 @@ retry:
 runtime:
   prefetch: 1
   health-addr: ":8081"
+  data-dir: data          # only for the file-based provider-binding fallback

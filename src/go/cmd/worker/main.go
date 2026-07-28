@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/zhaochy1990/x/logger"
 	"go.uber.org/zap"
@@ -22,9 +23,13 @@ import (
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/mq"
 	"github.com/zhaochy1990/stride/internal/pipeline"
-	"github.com/zhaochy1990/stride/internal/provider/coros"
+	"github.com/zhaochy1990/stride/internal/registry"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
+
+// watchRequestDelay is the COROS/Garmin per-request rate-limit pause (matches the
+// provider default); the worker doesn't expose it as config.
+const watchRequestDelay = 500 * time.Millisecond
 
 func main() {
 	if err := run(); err != nil {
@@ -87,9 +92,16 @@ func run() error {
 	// StartPipeline, so an empty registry is sufficient here.
 	orch := pipeline.New(store.Pipelines(), enq, pipeline.NewRegistry(), pipeline.WithLogger(log))
 	reg := job.NewRegistry()
-	// COROS watch-sync provider (writes to the same canonical MySQL store).
-	watchProvider := coros.New(store, coros.NewStorageCredentialStore(store))
-	registerHandlers(reg, watchProvider)
+	// Resolve each user's watch provider (COROS/Garmin) via the registry: MySQL
+	// credential binding first, file-based config.json fallback (ADR 0010/0011).
+	resolve := func(ctx context.Context, user string) (watchsync.Provider, error) {
+		name, err := registry.Resolve(ctx, store, cfg.Runtime.DataDir, user)
+		if err != nil {
+			return nil, err
+		}
+		return registry.Build(name, store, watchRequestDelay)
+	}
+	registerHandlers(reg, resolve)
 	policy := job.RetryPolicy{
 		MaxAttempts: cfg.Retry.MaxAttempts,
 		BaseBackoff: cfg.Retry.BaseBackoff,
@@ -135,10 +147,10 @@ func run() error {
 
 // registerHandlers wires job handlers. `hello` is the deploy smoke handler;
 // `watch_sync` runs a user's COROS watch-data sync (ADR 0011).
-func registerHandlers(reg *job.Registry, watchProvider watchsync.Provider) {
+func registerHandlers(reg *job.Registry, resolve watchsync.Resolver) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
 	})
-	reg.MustRegister(watchsync.JobType, watchsync.New(watchProvider))
+	reg.MustRegister(watchsync.JobType, watchsync.New(resolve))
 }
