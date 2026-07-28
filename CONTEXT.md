@@ -92,3 +92,15 @@ _Avoid_: COROS userId、账号 ID、provider_user_id
 **COROS 账号 ID**：
 COROS 平台侧的账号标识，仅用于向 COROS 发起请求；不代表也不替代 STRIDE 用户身份。
 _Avoid_: user_id、STRIDE UUID
+
+**手表同步任务（watch_sync）**：
+在异步 worker 中运行一名用户手表数据同步的任务；以用户 UUID 作分区键，按 payload 决定全量/增量与内容范围，进度写回任务行。
+_Avoid_: onboarding_full_sync、coros_sync、同步 handler
+
+**同步游标（Sync Cursor）**：
+记录某用户上次已同步到的位置（末次活动的 label_id）的标记；增量同步据此止于已知活动，失败重试据此断点续传。
+_Avoid_: offset、书签、last_label_id（列名）
+
+**全量同步 / 增量同步（Full / Incremental Sync）**：
+全量重扫全部历史活动；增量只拉取游标之后的新活动。同一 watch_sync 任务由 payload `mode` 选择，缺省全量。
+_Avoid_: 首次同步、resync、backfill
