@@ -15,9 +15,25 @@ import logging
 import threading
 from typing import Any
 
+from stride_storage.azure.connection import get_storage_connection_string
 from stride_storage.azure.credentials import get_credential
 
 logger = logging.getLogger(__name__)
+
+
+def _build_table_service(account_url: str) -> Any:
+    """Construct a ``TableServiceClient``.
+
+    Uses ``STRIDE_AZURE_STORAGE_CONNECTION_STRING`` (shared key / Azurite) when
+    set, else the ``account_url`` endpoint with the shared managed-identity
+    credential (prod).
+    """
+    from azure.data.tables import TableServiceClient
+
+    conn = get_storage_connection_string()
+    if conn:
+        return TableServiceClient.from_connection_string(conn)
+    return TableServiceClient(endpoint=account_url, credential=get_credential())
 
 
 class AzureTableConnection:
@@ -41,12 +57,8 @@ class AzureTableConnection:
             if self._client is not None:
                 return self._client
             from azure.core.exceptions import ResourceExistsError
-            from azure.data.tables import TableServiceClient
 
-            service = TableServiceClient(
-                endpoint=self._account_url,
-                credential=get_credential(),
-            )
+            service = _build_table_service(self._account_url)
             # Table creation is intentionally best-effort: we attempt
             # create_table once, treat "already exists" as success, and on any
             # other error log a warning and proceed with the table client.
