@@ -66,3 +66,29 @@ _Avoid_: tenant、scope、user id（后者只是其取值之一）
 **Poison（毒信任务）**：
 重试次数耗尽后被投入死信队列并置为终态 `failed` 的 job。
 _Avoid_: dead-letter（沿用作队列名 DLQ，但任务语义统一叫 poison）
+
+## 手表数据同步
+
+**手表数据源**：
+STRIDE 能同步运动与健康数据的一个手表平台（如 COROS、Garmin）；每个用户绑定唯一一个数据源。
+_Avoid_: adapter、集成、厂商、provider
+
+**手表原生区间**：
+手表自身上报的心率/配速/功率区间分布，取决于手表端配置、编码易漂移。
+_Avoid_: zoneList、区间、校准区间
+
+**校准区间**：
+用 STRIDE 校准的个人心率/配速模型在同步后算出的每次活动 time-in-zone，与训练状态页一致。
+_Avoid_: 手表原生区间、zoneList、watch zones
+
+**影子存储**：
+一份与线上手表数据并行维护、但暂不被任何产品功能读取的副本；只用于逐行比对、验证新同步管线的产出与现有数据一致。
+_Avoid_: 备份、镜像库、双写
+
+**STRIDE 用户 UUID**：
+用户在 STRIDE 内的唯一标识（= JWT `sub`）；所有手表数据都以它标识归属，跨数据源保持一致。
+_Avoid_: COROS userId、账号 ID、provider_user_id
+
+**COROS 账号 ID**：
+COROS 平台侧的账号标识，仅用于向 COROS 发起请求；不代表也不替代 STRIDE 用户身份。
+_Avoid_: user_id、STRIDE UUID
