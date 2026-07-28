@@ -234,11 +234,12 @@ def _generate_for_user(user_config: dict[str, Any], *, callbacks: list) -> int:
         "input_payload": {"goal": goal, "profile": profile},
     }
     _t0 = time.perf_counter()
-    print(f"[gen] starting generation graph at {datetime.now(tz=SHANGHAI_TZ).isoformat(timespec='seconds')}", flush=True)
+    print(f"[gen_my_master_plan] starting generation graph at {datetime.now(tz=SHANGHAI_TZ).isoformat(timespec='seconds')}", flush=True)
     
     ctx = load_master_context(state)
     _t1 = time.perf_counter()
-    print(f"[gen] loaded context in {_t1 - _t0:.1f}s", flush=True)
+    print(f"[gen_my_master_plan] loaded context in {_t1 - _t0:.1f}s", flush=True)
+    
     fitness_state = ctx.get("fitness_state") or {}
     logger.info(
         "[gen] loaded context keys=%s, history_summary=%d chars, "

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import math
 import re
+import logging
 from dataclasses import dataclass, replace
 from datetime import date as date_cls, timedelta
 from statistics import median
@@ -37,6 +38,7 @@ from .nutrition_rules import (
 from .week_generator import week_folder
 from .weekly_plan_store import get_weekly_plan_store
 
+logger = logging.getLogger(__name__)
 
 class WeeklyPlanGenerationError(ValueError):
     """Raised when the LLM generator produces no rule-clean weekly plan."""
@@ -718,7 +720,6 @@ def _llm_generate_week(
     # landing on the intended week.
     return replace(plan, week_folder=folder)
 
-
 def build_weekly_plan(
     *,
     user_id: str,
@@ -748,17 +749,26 @@ def build_weekly_plan(
         else None
     )
     gen_inputs = _master_week_generation_inputs(user_id, week_start)
+    logger.info(
+        "Generating weekly plan for user=%r, week_start=%s, base_distance_km=%s",
+        user_id,
+        week_start.isoformat(),
+        base_distance_km,
+    )
 
     db = get_db(user_id)
     try:
         training_context = _recent_training_context(db, week_start)
+        logger.info("Recent training context %r", training_context)
         resolved_base_km, calibration_note = (
             (base_distance_km, None)
             if base_distance_km is not None
             else _resolve_weekly_target(master_target, training_context)
         )
+        logger.info("Resolved base km: %s, calibration note: %s", resolved_base_km, calibration_note)
         actual_km = _current_week_actual_km(training_context)
         completed_run_days = len(training_context.current_week_by_date or {})
+        logger.info("Current week actual km: %.1f, completed run days: %d", actual_km, completed_run_days)
         if completed_run_days == 7:
             resolved_base_km = math.ceil(actual_km * 2.0) / 2.0
             actual_note = f"本周已全部完成，最终实际跑量 {actual_km:.1f}km"
@@ -773,6 +783,7 @@ def build_weekly_plan(
         else:
             actual_note = None
 
+        logger.info("Actual note: %s", actual_note)
         target_km = float(
             resolved_base_km
             if (resolved_base_km and resolved_base_km > 0)

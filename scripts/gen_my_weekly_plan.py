@@ -66,6 +66,7 @@ users: list[dict[str, Any]] = [
 
 
 DEBUG = os.environ.get("COACH_DEBUG") == "1"
+DEBUG = True
 logger = logging.getLogger(__name__)
 
 

@@ -1,6 +1,6 @@
 ---
 name: worktree-development
-description: 必须在 running 项目中任何可能修改仓库内容的开发任务开始前使用，包括 feature、bug fix、refactor、测试、文档、配置、设计和生成文件。先为当前任务创建并切换到全新的 Git worktree，再在其中完成探索、实现、测试、验证、review、commit 和 push，避免污染启动 checkout。
+description: 必须在 running 项目中任何可能修改仓库内容的开发任务开始前使用，包括 feature、bug fix、refactor、测试、文档、配置、设计和生成文件。先为当前任务创建并切换到全新的 Git worktree，再在其中完成探索、实现、测试、验证、review、commit 和 push，避免污染启动 checkout。注意：如果用户明确要求使用现有 worktree 或不创建 worktree，则可跳过本 skill。如果用户仅仅在问问题，或者要求你fix某个配置，则不需要创建 worktree。
 ---
 
 # Worktree-first development
