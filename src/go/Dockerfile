@@ -24,7 +24,7 @@ COPY config.yml ./config.yml
 # Health endpoint (keep in sync with runtime.health-addr; default :8081).
 EXPOSE 8081
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8081/healthz >/dev/null 2>&1 || exit 1
+  CMD wget -qO- http://127.0.0.1:8081/health >/dev/null 2>&1 || exit 1
 
 USER worker
 ENTRYPOINT ["/usr/local/bin/worker"]

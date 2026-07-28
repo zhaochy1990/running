@@ -1,5 +1,5 @@
 // Package health exposes a tiny HTTP liveness/readiness endpoint. The worker has
-// no ingress, so a Docker HEALTHCHECK curls /healthz to detect a wedged consumer
+// no ingress, so a Docker HEALTHCHECK curls /health to detect a wedged consumer
 // (broker or DB connectivity lost) and restart the container (ADR 0002). It is
 // built on gin like every other HTTP surface in this module (no exception).
 package health
@@ -15,7 +15,7 @@ import (
 // Check reports the health of one dependency; nil means healthy.
 type Check func(ctx context.Context) error
 
-// Server serves /healthz, running all registered checks.
+// Server serves /health, running all registered checks.
 type Server struct {
 	addr   string
 	checks map[string]Check
@@ -53,12 +53,12 @@ func Endpoint(checks map[string]Check) gin.HandlerFunc {
 	}
 }
 
-// Handler returns the /healthz http.Handler (a gin engine; exposed for testing).
+// Handler returns the /health http.Handler (a gin engine; exposed for testing).
 func (s *Server) Handler() http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.GET("/healthz", Endpoint(s.checks))
+	r.GET("/health", Endpoint(s.checks))
 	return r
 }
 
