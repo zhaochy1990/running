@@ -70,8 +70,8 @@ _Avoid_: dead-letter（沿用作队列名 DLQ，但任务语义统一叫 poison�
 ## 手表数据同步
 
 **手表数据源**：
-STRIDE 能同步运动与健康数据的一个手表平台（如 COROS、Garmin）；每个用户绑定唯一一个数据源。
-_Avoid_: adapter、集成、厂商、provider
+STRIDE 能同步运动与健康数据的一个手表平台（如 COROS、Garmin）；每个用户绑定唯一一个数据源。代码层同义词 provider / adapter 均可使用（Go 侧契约包即命名 `internal/provider`）。
+_Avoid_: 集成、厂商
 
 **手表原生区间**：
 手表自身上报的心率/配速/功率区间分布，取决于手表端配置、编码易漂移。

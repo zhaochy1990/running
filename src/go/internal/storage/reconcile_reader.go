@@ -9,12 +9,27 @@ import "context"
 // column subset comparable to the SQLite store. Nullable columns are nil when
 // absent (so the diff engine can compare nullability).
 func (s *Store) ReconcileActivityRows(ctx context.Context, userID string) (map[string]map[string]any, error) {
+	return s.reconcileActivityRows(ctx, userID, "")
+}
+
+// ReconcileActivityRowsByProvider is ReconcileActivityRows filtered to one
+// provider — used to reconcile a single provider's shadow rows (e.g. garmin)
+// without mixing in another provider's activities for the same user.
+func (s *Store) ReconcileActivityRowsByProvider(ctx context.Context, userID, provider string) (map[string]map[string]any, error) {
+	return s.reconcileActivityRows(ctx, userID, provider)
+}
+
+func (s *Store) reconcileActivityRows(ctx context.Context, userID, provider string) (map[string]map[string]any, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return nil, err
 	}
+	q := s.db.WithContext(ctx).Where("user_id = ?", uid)
+	if provider != "" {
+		q = q.Where("provider = ?", provider)
+	}
 	var rows []Activity
-	if err := s.db.WithContext(ctx).Where("user_id = ?", uid).Find(&rows).Error; err != nil {
+	if err := q.Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make(map[string]map[string]any, len(rows))

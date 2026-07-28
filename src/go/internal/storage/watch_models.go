@@ -153,6 +153,10 @@ func (ActivityWatchZone) TableName() string { return "activity_watch_zones" }
 
 // DailyHealth is a daily training-status row (table "daily_health"). Date is the
 // Shanghai calendar day key (kept as a string to stay comparable with SQLite).
+//
+// The sleep / body-battery / stress / respiration / spo2 columns mirror the
+// Python daily_health schema exactly (ADR 0006 superset). COROS leaves them NULL;
+// Garmin populates them (there is no COROS equivalent for most). Nullable → pointer.
 type DailyHealth struct {
 	UserID            string   `gorm:"column:user_id;type:char(36);primaryKey"`
 	Date              string   `gorm:"column:date;type:varchar(16);primaryKey"`
@@ -164,7 +168,21 @@ type DailyHealth struct {
 	TrainingLoadRatio *float64 `gorm:"column:training_load_ratio"`
 	TrainingLoadState *string  `gorm:"column:training_load_state;type:varchar(32)"`
 	Fatigue           *float64 `gorm:"column:fatigue"`
-	Provider          string   `gorm:"column:provider;type:varchar(32);not null;default:coros"`
+
+	// Garmin-populated signals (COROS-null). Sleep durations are seconds.
+	BodyBatteryHigh *int     `gorm:"column:body_battery_high"`
+	BodyBatteryLow  *int     `gorm:"column:body_battery_low"`
+	StressAvg       *int     `gorm:"column:stress_avg"`
+	SleepTotalS     *int     `gorm:"column:sleep_total_s"`
+	SleepDeepS      *int     `gorm:"column:sleep_deep_s"`
+	SleepLightS     *int     `gorm:"column:sleep_light_s"`
+	SleepRemS       *int     `gorm:"column:sleep_rem_s"`
+	SleepAwakeS     *int     `gorm:"column:sleep_awake_s"`
+	SleepScore      *int     `gorm:"column:sleep_score"`
+	RespirationAvg  *float64 `gorm:"column:respiration_avg"`
+	Spo2Avg         *float64 `gorm:"column:spo2_avg"`
+
+	Provider string `gorm:"column:provider;type:varchar(32);not null;default:coros"`
 }
 
 func (DailyHealth) TableName() string { return "daily_health" }
@@ -233,15 +251,19 @@ type SyncMeta struct {
 func (SyncMeta) TableName() string { return "sync_meta" }
 
 // ProviderCredential is a per-user watch login credential (table
-// "provider_credentials", ADR 0008). Secret holds the pwd_hash + access_token;
-// it is PLAINTEXT for v1 (envelope encryption is a deferred follow-up).
+// "provider_credentials", ADR 0008). Secret holds the provider-specific credential
+// blob (COROS: pwd_hash + access_token; Garmin: the full OAuth1+OAuth2 bundle). It
+// is PLAINTEXT for v1 (envelope encryption is a deferred follow-up). The column is
+// a BLOB (not a bounded varbinary): a Garmin garth-style token dump is ~4 KB and
+// its size is governed by Garmin's JWT, not us, so an opaque off-page BLOB avoids
+// ever re-guessing a cap (ADR 0009).
 type ProviderCredential struct {
 	UserID         string    `gorm:"column:user_id;type:char(36);primaryKey"`
 	Provider       string    `gorm:"column:provider;type:varchar(32);primaryKey"`
 	Email          *string   `gorm:"column:email;type:varchar(255)"`
 	Region         *string   `gorm:"column:region;type:varchar(16)"`
 	ProviderUserID *string   `gorm:"column:provider_user_id;type:varchar(64)"`
-	Secret         []byte    `gorm:"column:secret;type:varbinary(2048)"`
+	Secret         []byte    `gorm:"column:secret;type:blob"`
 	UpdatedAt      time.Time `gorm:"column:updated_at;type:datetime(6);not null"`
 }
 

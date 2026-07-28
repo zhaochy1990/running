@@ -1,7 +1,8 @@
-// Command stride-sync is the COROS watch-data sync tool (tracer bullet for the
-// Go migration). It wires config → MySQL store → COROS provider and exposes
-// login / sync / status. The sync core lives in internal/coros so a worker job
-// handler can drive the same code later.
+// Command stride-sync is the watch-data sync tool for the Go migration. One
+// binary serves every provider (COROS today, Garmin now): `login` takes an
+// explicit -provider; `sync`/`status`/`import-creds` resolve the user's bound
+// source from the registry (data/<uid>/config.json, ADR 0010). The sync core
+// lives in internal/provider/<name> so a worker job handler can drive it later.
 package main
 
 import (
@@ -14,8 +15,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/zhaochy1990/stride/internal/coros"
 	"github.com/zhaochy1990/stride/internal/provider"
+	"github.com/zhaochy1990/stride/internal/provider/coros"
+	"github.com/zhaochy1990/stride/internal/registry"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/syncconfig"
 )
@@ -53,56 +55,82 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `stride-sync — COROS watch-data sync
+	fmt.Fprint(os.Stderr, `stride-sync — watch-data sync (COROS + Garmin)
 
 usage:
-  stride-sync login        -profile <uuid|slug> -email <e> -password <p>
-  stride-sync import-creds  -profile <uuid|slug>   (seed creds from data/<uid>/config.json)
+  stride-sync login        -profile <uuid|slug> -provider <coros|garmin> -email <e> -password <p> [-region cn|global]
+  stride-sync import-creds  -profile <uuid|slug>   (seed COROS creds from data/<uid>/config.json)
   stride-sync sync          -profile <uuid|slug> [-full] [-content all|activities|health] [-limit N]
   stride-sync status        -profile <uuid|slug>
 
+login binds the user to a provider (written to config.json); sync/status resolve it.
 config: config.sync.yml (or $CONFIG_PATH); MySQL DSN via $STRIDE_SYNC_MYSQL_DSN
 data dir: $STRIDE_DATA_DIR (default ./data)
 `)
 }
 
-// deps builds the store and COROS provider from config.
-func deps() (*storage.Store, *coros.Provider, error) {
+// openStore loads config and opens the migrated MySQL store.
+func openStore() (*storage.Store, *syncconfig.Config, error) {
 	cfg := syncconfig.MustLoad()
 	store, err := storage.Open(cfg.MySQL.DSN)
 	if err != nil {
-		return nil, nil, err
+		return nil, cfg, err
 	}
 	if err := store.AutoMigrateWatch(context.Background()); err != nil {
-		return nil, nil, err
+		store.Close()
+		return nil, cfg, err
 	}
-	prov := coros.New(store, coros.NewStorageCredentialStore(store),
-		coros.WithProviderRequestDelay(cfg.Sync.RequestDelay))
-	return store, prov, nil
+	return store, cfg, nil
+}
+
+// resolveProvider builds the adapter the user is bound to (registry lookup).
+func resolveProvider(store *storage.Store, cfg *syncconfig.Config, user string) (provider.Provider, string, error) {
+	name, err := registry.ProviderName(dataDir(), user)
+	if err != nil {
+		return nil, "", err
+	}
+	prov, err := registry.Build(name, store, cfg.Sync.RequestDelay)
+	return prov, name, err
 }
 
 func runLogin(args []string) error {
 	fs := flag.NewFlagSet("login", flag.ExitOnError)
 	profile := fs.String("profile", "", "user UUID or slug")
-	email := fs.String("email", "", "COROS account email")
-	password := fs.String("password", "", "COROS account password")
+	providerName := fs.String("provider", registry.DefaultProvider, "coros | garmin")
+	email := fs.String("email", "", "account email")
+	password := fs.String("password", "", "account password")
+	region := fs.String("region", "", "login region (garmin: cn|global; coros auto-detects)")
 	_ = fs.Parse(args)
 
+	if !registry.Supported(*providerName) {
+		return fmt.Errorf("unknown -provider %q (want coros|garmin)", *providerName)
+	}
 	user, err := resolveProfile(*profile)
 	if err != nil {
 		return err
 	}
-	store, prov, err := deps()
+	store, cfg, err := openStore()
 	if err != nil {
 		return err
 	}
 	defer store.Close()
 
-	res, err := prov.Login(context.Background(), user, provider.LoginCredentials{Email: *email, Password: *password})
+	prov, err := registry.Build(*providerName, store, cfg.Sync.RequestDelay)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("logged in: user=%s region=%s coros_user=%s\n", user, res.Region, res.UserID)
+	res, err := prov.Login(context.Background(), user, provider.LoginCredentials{
+		Email: *email, Password: *password, Region: *region,
+	})
+	if err != nil {
+		return err
+	}
+	// Persist the binding so a subsequent flag-less sync resolves this provider.
+	if err := registry.WriteProviderName(dataDir(), user, *providerName); err != nil {
+		return fmt.Errorf("logged in but failed to record provider binding: %w", err)
+	}
+	fmt.Printf("logged in: user=%s provider=%s region=%s account=%s\n",
+		user, *providerName, res.Region, res.UserID)
 	return nil
 }
 
@@ -130,7 +158,7 @@ func runImportCreds(args []string) error {
 	if err := json.Unmarshal(raw, &f); err != nil {
 		return fmt.Errorf("parse %s: %w", path, err)
 	}
-	store, _, err := deps()
+	store, _, err := openStore()
 	if err != nil {
 		return err
 	}
@@ -138,6 +166,9 @@ func runImportCreds(args []string) error {
 	cs := coros.NewStorageCredentialStore(store)
 	creds := coros.Credentials{Email: f.Email, PwdHash: f.PwdHash, AccessToken: f.AccessToken, Region: f.Region, UserID: f.UserID}
 	if err := cs.Save(context.Background(), user, creds); err != nil {
+		return err
+	}
+	if err := registry.WriteProviderName(dataDir(), user, "coros"); err != nil {
 		return err
 	}
 	fmt.Printf("imported coros credentials for user=%s (region=%s)\n", user, f.Region)
@@ -161,17 +192,21 @@ func runSync(args []string) error {
 		opts.Mode = provider.SyncFull
 	}
 
-	store, prov, err := deps()
+	store, cfg, err := openStore()
 	if err != nil {
 		return err
 	}
 	defer store.Close()
 
+	prov, name, err := resolveProvider(store, cfg, user)
+	if err != nil {
+		return err
+	}
 	res, err := prov.SyncUser(context.Background(), user, opts)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("sync done: activities=%d health=%d\n", res.Activities, res.Health)
+	fmt.Printf("sync done: provider=%s activities=%d health=%d\n", name, res.Activities, res.Health)
 	return nil
 }
 
@@ -184,17 +219,21 @@ func runStatus(args []string) error {
 	if err != nil {
 		return err
 	}
-	store, prov, err := deps()
+	store, cfg, err := openStore()
 	if err != nil {
 		return err
 	}
 	defer store.Close()
 
+	prov, name, err := resolveProvider(store, cfg, user)
+	if err != nil {
+		return err
+	}
 	loggedIn, err := prov.IsLoggedIn(user)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("user=%s provider=coros logged_in=%v\n", user, loggedIn)
+	fmt.Printf("user=%s provider=%s logged_in=%v\n", user, name, loggedIn)
 	return nil
 }
 
