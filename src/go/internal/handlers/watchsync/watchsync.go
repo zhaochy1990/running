@@ -1,9 +1,11 @@
 // Package watchsync provides the worker job handler for job type "watch_sync":
-// it runs a user's watch-data sync (COROS today) inside the async-job worker.
+// it runs a user's watch-data sync (COROS or Garmin) inside the async-job worker.
 //
-// The handler depends only on a minimal provider interface, so it is unit-tested
-// with a fake and stays provider-agnostic — cmd/worker injects the concrete
-// coros.Provider. Design: docs/adr/0011-watch-sync-worker-handler.md.
+// The handler resolves the provider PER USER via an injected Resolver, so a
+// COROS user and a Garmin user both go through the same job type. It depends only
+// on a minimal provider interface, so it is unit-tested with a fake and stays
+// provider-agnostic — cmd/worker injects the registry-backed resolver.
+// Design: docs/adr/0011-watch-sync-worker-handler.md.
 package watchsync
 
 import (
@@ -19,15 +21,19 @@ import (
 // JobType is the registered job_type for the watch sync handler.
 const JobType = "watch_sync"
 
-// Provider is the slice of a watch provider the handler needs. *coros.Provider
-// satisfies it.
+// Provider is the slice of a watch provider the handler needs. Both
+// *coros.Provider and *garmin.Provider (via provider.Provider) satisfy it.
 type Provider interface {
 	IsLoggedIn(user string) (bool, error)
 	SyncUser(ctx context.Context, user string, opts provider.SyncOptions) (provider.SyncResult, error)
 }
 
-// New returns the watch_sync job.Handler bound to prov.
-func New(prov Provider) job.Handler {
+// Resolver returns the provider a user is bound to (COROS or Garmin). cmd/worker
+// backs it with the registry (MySQL binding first, file-based fallback).
+type Resolver func(ctx context.Context, user string) (Provider, error)
+
+// New returns the watch_sync job.Handler backed by resolve.
+func New(resolve Resolver) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		user := j.PartitionKey
 
@@ -35,6 +41,12 @@ func New(prov Provider) job.Handler {
 		if err != nil {
 			// A malformed payload can't be fixed by retrying.
 			return "", job.NewPermanentError("bad_payload", err)
+		}
+
+		// Resolve which watch provider this user is bound to.
+		prov, err := resolve(ctx, user)
+		if err != nil {
+			return "", err // binding lookup fault -> retryable
 		}
 
 		// Up-front login check: a missing credential is terminal (retrying can't

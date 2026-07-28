@@ -11,6 +11,7 @@
 package registry
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -83,6 +84,27 @@ func WriteProviderName(dataDir, user, providerName string) error {
 		return err
 	}
 	return os.WriteFile(path, out, 0o644)
+}
+
+// BindingReader reads a user's provider binding from the canonical MySQL store.
+// *storage.Store satisfies it via ProviderForUser.
+type BindingReader interface {
+	ProviderForUser(ctx context.Context, user string) (string, bool, error)
+}
+
+// Resolve returns the provider a user is bound to, trying the canonical MySQL
+// binding first and falling back to the file-based config.json binding when the
+// user has no stored MySQL credential (ADR 0010's migration: MySQL is becoming
+// the source of truth; legacy file-bound users still resolve until migrated).
+func Resolve(ctx context.Context, mysql BindingReader, dataDir, user string) (string, error) {
+	name, found, err := mysql.ProviderForUser(ctx, user)
+	if err != nil {
+		return "", err
+	}
+	if found {
+		return name, nil
+	}
+	return ProviderName(dataDir, user)
 }
 
 // Build constructs the concrete provider adapter for providerName, wired to the

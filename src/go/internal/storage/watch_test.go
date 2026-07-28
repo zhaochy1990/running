@@ -114,3 +114,37 @@ func TestWatch_UpsertRoundTrip(t *testing.T) {
 		t.Fatalf("GetMeta = (%q, %v, %v), want (%q, true, nil)", got, ok, err, label)
 	}
 }
+
+// TestProviderForUser is gated on a live MySQL (STRIDE_WORKER_TEST_MYSQL_DSN).
+// It verifies the binding read: none -> not found; dual-watch -> most-recent wins.
+func TestProviderForUser(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatalf("automigrate watch: %v", err)
+	}
+
+	const uid = "a1b2c3d4-0000-4000-8000-0000000000af"
+
+	// No credential yet.
+	if _, found, err := st.ProviderForUser(ctx, uid); err != nil || found {
+		t.Fatalf("ProviderForUser (empty) = (found=%v, %v), want (false, nil)", found, err)
+	}
+
+	// coros first, then garmin later -> most-recent (garmin) wins.
+	if err := st.SaveCredential(ctx, &ProviderCredential{UserID: uid, Provider: "coros", Secret: []byte("{}")}); err != nil {
+		t.Fatalf("save coros: %v", err)
+	}
+	time.Sleep(3 * time.Millisecond)
+	if err := st.SaveCredential(ctx, &ProviderCredential{UserID: uid, Provider: "garmin", Secret: []byte("{}")}); err != nil {
+		t.Fatalf("save garmin: %v", err)
+	}
+
+	name, found, err := st.ProviderForUser(ctx, uid)
+	if err != nil || !found {
+		t.Fatalf("ProviderForUser = (found=%v, %v), want found", found, err)
+	}
+	if name != "garmin" {
+		t.Errorf("ProviderForUser = %q, want garmin (most recent)", name)
+	}
+}

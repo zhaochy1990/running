@@ -219,3 +219,26 @@ func (s *Store) GetCredential(ctx context.Context, userID, provider string) (*Pr
 	}
 	return &c, nil
 }
+
+// ProviderForUser returns the watch provider the user has a stored credential
+// for, and whether any was found. If a user has credentials for several
+// providers (dual-watch), the most recently updated one wins — mirroring the
+// single "last login binds the provider" semantics of the file-based config.
+func (s *Store) ProviderForUser(ctx context.Context, userID string) (string, bool, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return "", false, err
+	}
+	var c ProviderCredential
+	err = s.db.WithContext(ctx).
+		Where("user_id = ?", uid).
+		Order("updated_at DESC").
+		First(&c).Error
+	if err == gorm.ErrRecordNotFound {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return c.Provider, true, nil
+}

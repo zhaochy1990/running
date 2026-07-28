@@ -60,6 +60,10 @@ type Retry struct {
 type Runtime struct {
 	Prefetch   int    `mapstructure:"prefetch" validate:"min=1"`
 	HealthAddr string `mapstructure:"health-addr" validate:"required"`
+	// DataDir is the athlete data root used only for the file-based provider-
+	// binding fallback (registry.ProviderName). Empty is fine — the MySQL
+	// binding is primary and an absent file resolves to the default provider.
+	DataDir string `mapstructure:"data-dir"`
 }
 
 // MustLoad resolves the config path (explicit CONFIG_PATH env, else
