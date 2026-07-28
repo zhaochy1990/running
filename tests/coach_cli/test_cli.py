@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from io import StringIO
 from types import SimpleNamespace
 
@@ -13,6 +14,7 @@ from coach_cli.cli import (
     _CHECKPOINT_DIR,
     _InputHistory,
     _build_checkpointer,
+    _apply_master_proposal,
     _apply_week_proposal,
     _model_banner,
     _print_turn,
@@ -954,6 +956,100 @@ def test_apply_week_proposal_skips_explicitly_rejected_ops(monkeypatch) -> None:
     _apply_week_proposal(user_id="user-x", proposal=proposal)
 
     assert seen_ids == ["accepted"]
+
+
+def test_apply_week_proposal_lands_through_real_endpoint(monkeypatch) -> None:
+    """Regression: the CLI must echo the diff's ``base_revision`` into the apply
+    request. The real endpoint 400s ("weekly diff and request must carry
+    base_revision") when the request omits it, so a successful land through the
+    unmocked endpoint proves the optimistic-concurrency handle round-trips.
+    """
+    import stride_server.routes.coach as coach_routes
+    from stride_core.plan_revision import weekly_plan_fingerprint
+
+    folder = "2026-12-14_12-20"
+    current = WeeklyPlan(
+        week_folder=folder,
+        sessions=(
+            PlannedSession(
+                date="2026-12-20",
+                session_index=0,
+                kind=SessionKind.RUN,
+                summary="旧",
+            ),
+        ),
+    )
+    revision = weekly_plan_fingerprint(current)
+    proposal = PlanDiff(
+        diff_id="week",
+        folder=folder,
+        base_revision=revision,
+        ops=[
+            DiffOp(
+                id="op1",
+                op=DiffOpKind.REPLACE_NOTE,
+                date="2026-12-20",
+                session_index=0,
+                old_value={"summary": "旧"},
+                new_value={"summary": "新"},
+                spec_patch={"summary": "新"},
+                accepted=None,
+            ),
+        ],
+        ai_explanation="调整说明",
+        created_at="t",
+    )
+
+    class _Store:
+        def get_plan(self, user_id, folder_):
+            return current
+
+    saved: dict = {}
+    monkeypatch.setattr(coach_routes, "get_weekly_plan_store", lambda: _Store())
+    monkeypatch.setattr(coach_routes, "today_shanghai", lambda: date(2026, 12, 1))
+    monkeypatch.setattr(coach_routes, "_locked_today_op_ids", lambda *a, **k: [])
+    monkeypatch.setattr(coach_routes, "_active_master_for_user", lambda _uid: None)
+    monkeypatch.setattr(
+        coach_routes,
+        "save_weekly_plan",
+        lambda user_id, plan, **k: saved.update(folder=k.get("expected_folder")),
+    )
+    monkeypatch.setattr(coach_routes, "_emit_coach_event", lambda *a, **k: None)
+
+    result = _apply_week_proposal(user_id="user-x", proposal=proposal)
+
+    assert result["applied"] == 1
+    assert result["folder"] == folder
+    assert result["created"] is False
+    assert saved["folder"] == folder
+
+
+def test_apply_master_proposal_forwards_base_revision(monkeypatch) -> None:
+    """Regression: the CLI must echo the proposal's ``base_revision`` into the
+    master apply request; the endpoint 400s ("master diff and request must carry
+    base_revision") without it.
+    """
+    proposal = MasterPlanDiff(
+        diff_id="m1",
+        plan_id="plan-9",
+        base_revision="7",
+        ops=[],
+        ai_explanation="减量",
+        created_at="t",
+    )
+    captured: dict = {}
+
+    def fake_apply(plan_id, body, payload):
+        captured["base_revision"] = body.base_revision
+        return {"version": 8}
+
+    monkeypatch.setattr(
+        "stride_server.routes.coach.apply_coach_master_diff", fake_apply
+    )
+
+    _apply_master_proposal(user_id="user-x", proposal=proposal)
+
+    assert captured["base_revision"] == "7"
 
 
 def test_repl_applies_week_create_then_adjust_proposals(monkeypatch, tmp_path) -> None:
