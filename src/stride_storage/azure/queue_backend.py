@@ -16,19 +16,33 @@ import json
 from functools import lru_cache
 from typing import Any
 
+from stride_storage.azure.connection import get_storage_connection_string
 from stride_storage.azure.credentials import get_credential
 from stride_storage.interfaces.jobs import QueueMessage
+
+
+def _build_queue_client(account_url: str, queue_name: str) -> Any:
+    """Construct a ``QueueClient``.
+
+    Uses ``STRIDE_AZURE_STORAGE_CONNECTION_STRING`` (shared key / Azurite) when
+    set, else the ``account_url`` endpoint with the managed-identity credential.
+    """
+    from azure.storage.queue import QueueClient
+
+    conn = get_storage_connection_string()
+    if conn:
+        return QueueClient.from_connection_string(conn, queue_name)
+    return QueueClient(
+        account_url=account_url, queue_name=queue_name, credential=get_credential()
+    )
 
 
 @lru_cache(maxsize=4)
 def _get_queue_client(account_url: str, queue_name: str) -> Any:
     """Cached ``QueueClient`` for ``(account_url, queue_name)``; creates queue once."""
     from azure.core.exceptions import ResourceExistsError
-    from azure.storage.queue import QueueClient
 
-    client = QueueClient(
-        account_url=account_url, queue_name=queue_name, credential=get_credential()
-    )
+    client = _build_queue_client(account_url, queue_name)
     try:
         client.create_queue()
     except ResourceExistsError:
