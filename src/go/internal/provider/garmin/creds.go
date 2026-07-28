@@ -7,8 +7,10 @@ package garmin
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/zhaochy1990/stride/internal/storage"
@@ -89,6 +91,40 @@ func (s *storageCredentialStore) Save(ctx context.Context, user string, c Creden
 		UpdatedAt:      time.Now().UTC(),
 	}
 	return s.backend.SaveCredential(ctx, pc)
+}
+
+// CredentialsFromGarthDump decodes a base64 garth Client.dumps() string — the
+// tokens_dump the Python garmin_sync file backend stores in
+// data/<uid>/garmin_auth.json — into Credentials. The dump is
+// base64(json([oauth1_dict, oauth2_dict])). Lets the Go shadow store reuse an
+// existing garth session (no password / MFA) for reconcile validation.
+func CredentialsFromGarthDump(email, region, dump string) (Credentials, error) {
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(dump))
+	if err != nil {
+		return Credentials{}, fmt.Errorf("garmin: base64-decode garth dump: %w", err)
+	}
+	var parts []json.RawMessage
+	if err := json.Unmarshal(decoded, &parts); err != nil {
+		return Credentials{}, fmt.Errorf("garmin: garth dump is not a JSON array: %w", err)
+	}
+	if len(parts) < 2 {
+		return Credentials{}, &AuthError{msg: "garth dump must be [oauth1, oauth2]"}
+	}
+	var o1 OAuth1Token
+	if err := json.Unmarshal(parts[0], &o1); err != nil {
+		return Credentials{}, fmt.Errorf("garmin: decode oauth1 from dump: %w", err)
+	}
+	var o2 OAuth2Token
+	if err := json.Unmarshal(parts[1], &o2); err != nil {
+		return Credentials{}, fmt.Errorf("garmin: decode oauth2 from dump: %w", err)
+	}
+	if o1.OAuthToken == "" {
+		return Credentials{}, &AuthError{msg: "garth dump has no oauth1 token"}
+	}
+	if o1.Domain == "" {
+		o1.Domain = domainForRegion(region)
+	}
+	return Credentials{Email: email, Region: region, OAuth1: o1, OAuth2: o2}, nil
 }
 
 func derefStr(p *string) string {

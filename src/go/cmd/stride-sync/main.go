@@ -17,6 +17,7 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/provider/coros"
+	"github.com/zhaochy1990/stride/internal/provider/garmin"
 	"github.com/zhaochy1990/stride/internal/registry"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/syncconfig"
@@ -59,7 +60,7 @@ func usage() {
 
 usage:
   stride-sync login        -profile <uuid|slug> -provider <coros|garmin> -email <e> -password <p> [-region cn|global]
-  stride-sync import-creds  -profile <uuid|slug>   (seed COROS creds from data/<uid>/config.json)
+  stride-sync import-creds  -profile <uuid|slug> [-provider coros|garmin]   (seed creds from data/<uid> files)
   stride-sync sync          -profile <uuid|slug> [-full] [-content all|activities|health] [-limit N]
   stride-sync status        -profile <uuid|slug>
 
@@ -137,11 +138,15 @@ func runLogin(args []string) error {
 func runImportCreds(args []string) error {
 	fs := flag.NewFlagSet("import-creds", flag.ExitOnError)
 	profile := fs.String("profile", "", "user UUID or slug")
+	providerName := fs.String("provider", "coros", "coros | garmin")
 	_ = fs.Parse(args)
 
 	user, err := resolveProfile(*profile)
 	if err != nil {
 		return err
+	}
+	if *providerName == "garmin" {
+		return importGarminCreds(user)
 	}
 	path := filepath.Join(dataDir(), user, "config.json")
 	raw, err := os.ReadFile(path)
@@ -172,6 +177,46 @@ func runImportCreds(args []string) error {
 		return err
 	}
 	fmt.Printf("imported coros credentials for user=%s (region=%s)\n", user, f.Region)
+	return nil
+}
+
+// importGarminCreds seeds the Go credential store from the Python file backend's
+// data/<uid>/garmin_auth.json (email + region + garth tokens_dump), so the Go
+// shadow sync can reuse an existing garth session without a fresh login.
+func importGarminCreds(user string) error {
+	path := filepath.Join(dataDir(), user, "garmin_auth.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read garmin creds %s: %w", path, err)
+	}
+	var f struct {
+		Email      string `json:"email"`
+		Region     string `json:"region"`
+		TokensDump string `json:"tokens_dump"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
+	}
+	if f.Region == "" {
+		f.Region = "cn"
+	}
+	creds, err := garmin.CredentialsFromGarthDump(f.Email, f.Region, f.TokensDump)
+	if err != nil {
+		return err
+	}
+	store, _, err := openStore()
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	cs := garmin.NewStorageCredentialStore(store)
+	if err := cs.Save(context.Background(), user, creds); err != nil {
+		return err
+	}
+	if err := registry.WriteProviderName(dataDir(), user, "garmin"); err != nil {
+		return err
+	}
+	fmt.Printf("imported garmin credentials for user=%s (region=%s)\n", user, f.Region)
 	return nil
 }
 
