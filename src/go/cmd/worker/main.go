@@ -17,12 +17,12 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/config"
-	"github.com/zhaochy1990/stride/internal/coros"
 	"github.com/zhaochy1990/stride/internal/handlers/watchsync"
 	"github.com/zhaochy1990/stride/internal/health"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/mq"
 	"github.com/zhaochy1990/stride/internal/pipeline"
+	"github.com/zhaochy1990/stride/internal/provider/coros"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
@@ -134,7 +134,7 @@ func run() error {
 }
 
 // registerHandlers wires job handlers. `hello` is the deploy smoke handler;
-// `watch_sync` runs a user's COROS watch-data sync (ADR 0009).
+// `watch_sync` runs a user's COROS watch-data sync (ADR 0011).
 func registerHandlers(reg *job.Registry, watchProvider watchsync.Provider) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)

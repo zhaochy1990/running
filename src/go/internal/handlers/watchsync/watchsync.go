@@ -3,7 +3,7 @@
 //
 // The handler depends only on a minimal provider interface, so it is unit-tested
 // with a fake and stays provider-agnostic — cmd/worker injects the concrete
-// coros.Provider. Design: docs/adr/0009-watch-sync-worker-handler.md.
+// coros.Provider. Design: docs/adr/0011-watch-sync-worker-handler.md.
 package watchsync
 
 import (
@@ -83,7 +83,7 @@ type payload struct {
 }
 
 // parsePayload maps InputJSON onto SyncOptions. Absent/empty payload defaults to
-// full + all + unlimited (ADR 0009).
+// full + all + unlimited (ADR 0011).
 func parsePayload(input string) (provider.SyncOptions, error) {
 	opts := provider.SyncOptions{Mode: provider.SyncFull, Content: provider.ContentAll}
 	if strings.TrimSpace(input) == "" {
