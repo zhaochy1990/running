@@ -4,6 +4,12 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ---
 
+## Go HTTP 服务（HARD）
+
+`src/go/` 是 Go 模块（`github.com/zhaochy1990/stride`，Tencent 部署的 async-job worker + sync CLIs）。**所有 Go HTTP 服务统一用 [gin](https://github.com/gin-gonic/gin)**（`cmd/api`、`internal/health` liveness 探针，以及后续任何 HTTP server / handler），不要用 chi / echo / 裸 `net/http` router —— 无例外。
+
+---
+
 ## Worktree-first development（HARD）
 
 任何可能修改仓库内容的开发任务（含代码、测试、文档、配置、设计和生成文件）开始时，必须先运行项目 skill [`worktree-development`](.claude/skills/worktree-development/SKILL.md) 的唯一可移植入口：

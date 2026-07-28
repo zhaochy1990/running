@@ -21,6 +21,6 @@ The Go worker deploys to mainland China on Tencent Cloud, independently from the
 
 - **Cross-border pull risk:** pulling images from GHCR into mainland China is slow/flaky. Mitigate with a registry mirror/proxy on the CVM side, or reconsider TCR if pulls become a deploy bottleneck. This is a conscious trade-off.
 - Secrets sit in a file on the CVM (`.env`); keep it `chmod 600`, off git, and rotate manually until SSM is adopted.
-- The worker has no HTTP ingress, so liveness comes from the Docker `HEALTHCHECK`, not an external probe.
+- The worker has no HTTP ingress, so liveness comes from the Docker `HEALTHCHECK`, not an external probe. **(Revised by ADR 0012:** a separate `cmd/api` gin binary now adds a public HTTP ingress on the same CVM. The *consumer* process still has no ingress beyond `/healthz`; the API is a distinct binary/container.)
 - **Log timestamps are UTC only because the image sets `TZ=UTC`** — zap's `ISO8601TimeEncoder` uses the process local zone, not forced UTC. This is operational logging (not persisted domain data), so the HARD timezone rule doesn't apply, but the `TZ=UTC` env is load-bearing for readable logs.
 - `x/viper.MustLoadConfig` requires a readable config file and panics if absent, so `config.yml` must ship in the image (it is `COPY`d in the Dockerfile) or be mounted; `CONFIG_PATH` can point elsewhere.
