@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from scripts import freeze_baseline
@@ -197,8 +198,11 @@ def test_freeze_baseline_picks_latest_valid_report(monkeypatch, tmp_path):
     monkeypatch.setattr(freeze_baseline, "_BASELINES_DIR", baselines_dir)
     old = _write_report(reports_dir / "old.json", _report(run_id="old"))
     new = _write_report(reports_dir / "new.json", _report(run_id="new"))
-    old.touch()
-    new.touch()
+    # Set explicit, distinct mtimes so "latest" is unambiguous. Two back-to-back
+    # ``.touch()`` calls can land in the same filesystem mtime tick, leaving the
+    # ``max(..., key=st_mtime)`` tie to be broken by arbitrary glob order (flaky).
+    os.utime(old, (1_000_000, 1_000_000))
+    os.utime(new, (2_000_000, 2_000_000))
 
     rc = freeze_baseline.main(["--scope", "s1", "--label", "latest"])
 
