@@ -8,17 +8,25 @@ import (
 
 // readSQLite reads the Python coros.db activities table into the generic row
 // shape the diff engine consumes, matching storage.ReconcileActivityRows. Uses
-// the pure-Go modernc.org/sqlite driver (no cgo).
-func readSQLite(path string, _ string) (map[string]map[string]any, error) {
+// the pure-Go modernc.org/sqlite driver (no cgo). When provider is non-empty the
+// SQLite side is filtered to that provider too, so a mixed-provider DB reconciles
+// one provider at a time.
+func readSQLite(path string, provider string) (map[string]map[string]any, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT label_id, sport_type, sport, train_kind, feel,
+	query := `SELECT label_id, sport_type, sport, train_kind, feel,
 		avg_hr, max_hr, calories_kcal, distance_m, duration_s, vo2max, temperature
-		FROM activities`)
+		FROM activities`
+	var args []any
+	if provider != "" {
+		query += " WHERE provider = ?"
+		args = append(args, provider)
+	}
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

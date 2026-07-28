@@ -21,6 +21,7 @@ import (
 func main() {
 	profile := flag.String("profile", "", "user UUID")
 	sqlitePath := flag.String("sqlite", "", "path to the Python coros.db (SQLite)")
+	providerName := flag.String("provider", "coros", "provider to reconcile (coros|garmin)")
 	flag.Parse()
 
 	user, err := uuid.Parse(*profile)
@@ -38,15 +39,15 @@ func main() {
 	}
 	defer store.Close()
 
-	right, err := store.ReconcileActivityRows(ctx, user.String())
+	right, err := store.ReconcileActivityRowsByProvider(ctx, user.String(), *providerName)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error: read MySQL:", err)
 		os.Exit(1)
 	}
 
-	left, err := readSQLite(*sqlitePath, user.String())
+	left, err := readSQLite(*sqlitePath, *providerName)
 	if err != nil {
-		fmt.Printf("MySQL activities: %d\nSQLite side unavailable: %v\n", len(right), err)
+		fmt.Printf("MySQL %s activities: %d\nSQLite side unavailable: %v\n", *providerName, len(right), err)
 		return
 	}
 
@@ -61,10 +62,10 @@ func main() {
 
 	mismatches := reconcile.Diff(reconcile.ActivityFields(), toRows(filtered), toRows(right))
 	if len(mismatches) == 0 {
-		fmt.Printf("OK: %d MySQL activities match SQLite\n", len(right))
+		fmt.Printf("OK: %d MySQL %s activities match SQLite\n", len(right), *providerName)
 		return
 	}
-	fmt.Printf("FAIL: %d mismatches across %d MySQL activities (vs SQLite)\n", len(mismatches), len(right))
+	fmt.Printf("FAIL: %d mismatches across %d MySQL %s activities (vs SQLite)\n", len(mismatches), len(right), *providerName)
 	for _, m := range mismatches {
 		fmt.Println("  " + m.String())
 	}
