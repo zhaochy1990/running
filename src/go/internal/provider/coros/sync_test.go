@@ -146,3 +146,52 @@ func TestSyncActivities_FullRescanIgnoresKnown(t *testing.T) {
 		t.Errorf("full rescan activities = %d, want 2 (known not skipped)", res.Activities)
 	}
 }
+
+func TestSyncUser_EmitsProgress(t *testing.T) {
+	fw := newFakeWriter()
+	p := newTestProvider(t, syncMux(`[{"labelId":"A","sportType":100},{"labelId":"B","sportType":100}]`), fw)
+
+	var events []provider.SyncProgress
+	_, err := p.SyncUser(context.Background(), testUID, provider.SyncOptions{
+		Mode:    provider.SyncFull,
+		Content: provider.ContentAll,
+		Progress: func(pr provider.SyncProgress) {
+			events = append(events, pr)
+		},
+	})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	var sawActivityFinal, sawHealth bool
+	maxPct := -1
+	for _, e := range events {
+		if e["phase"] == "activities" && e["current"] == 2 && e["total"] == 2 {
+			sawActivityFinal = true
+		}
+		if e["phase"] == "health" {
+			sawHealth = true
+		}
+		if pct, ok := e["percent"].(int); ok && pct > maxPct {
+			maxPct = pct
+		}
+	}
+	if !sawActivityFinal {
+		t.Errorf("missing activities current=2/total=2 event; got %v", events)
+	}
+	if !sawHealth {
+		t.Errorf("missing health progress event; got %v", events)
+	}
+	if maxPct < 80 {
+		t.Errorf("max percent = %d, want >= 80", maxPct)
+	}
+}
+
+func TestSyncUser_NilProgressIsSafe(t *testing.T) {
+	fw := newFakeWriter()
+	p := newTestProvider(t, syncMux(`[{"labelId":"A","sportType":100}]`), fw)
+	// Progress unset (nil) must not panic.
+	if _, err := p.SyncUser(context.Background(), testUID, provider.SyncOptions{Mode: provider.SyncFull, Content: provider.ContentAll}); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+}

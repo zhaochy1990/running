@@ -17,6 +17,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/config"
+	"github.com/zhaochy1990/stride/internal/coros"
+	"github.com/zhaochy1990/stride/internal/handlers/watchsync"
 	"github.com/zhaochy1990/stride/internal/health"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/mq"
@@ -51,6 +53,10 @@ func run() error {
 	if err := store.AutoMigrate(ctx); err != nil {
 		return err
 	}
+	// Watch-domain tables (activities/health/credentials/cursor) for the sync handler.
+	if err := store.AutoMigrateWatch(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ ---
 	conn, err := mq.Dial(cfg.AMQP.URL)
@@ -81,7 +87,9 @@ func run() error {
 	// StartPipeline, so an empty registry is sufficient here.
 	orch := pipeline.New(store.Pipelines(), enq, pipeline.NewRegistry(), pipeline.WithLogger(log))
 	reg := job.NewRegistry()
-	registerHandlers(reg)
+	// COROS watch-sync provider (writes to the same canonical MySQL store).
+	watchProvider := coros.New(store, coros.NewStorageCredentialStore(store))
+	registerHandlers(reg, watchProvider)
 	policy := job.RetryPolicy{
 		MaxAttempts: cfg.Retry.MaxAttempts,
 		BaseBackoff: cfg.Retry.BaseBackoff,
@@ -125,12 +133,12 @@ func run() error {
 	}
 }
 
-// registerHandlers wires job handlers. Real handlers (onboarding sync, etc.) are
-// out of scope for the infra phase; only the smoke handler is registered so the
-// deploy pipeline can prove enqueue -> worker -> done end to end.
-func registerHandlers(reg *job.Registry) {
+// registerHandlers wires job handlers. `hello` is the deploy smoke handler;
+// `watch_sync` runs a user's COROS watch-data sync (ADR 0009).
+func registerHandlers(reg *job.Registry, watchProvider watchsync.Provider) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
 	})
+	reg.MustRegister(watchsync.JobType, watchsync.New(watchProvider))
 }
