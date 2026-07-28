@@ -9,13 +9,13 @@ import (
 	"testing"
 )
 
-func TestHealthz_AllOK(t *testing.T) {
+func TestHealth_AllOK(t *testing.T) {
 	s := New(":0", map[string]Check{
 		"db":     func(context.Context) error { return nil },
 		"broker": func(context.Context) error { return nil },
 	})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	s.Handler().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -36,13 +36,13 @@ func TestHealthz_AllOK(t *testing.T) {
 	}
 }
 
-func TestHealthz_OneFailing(t *testing.T) {
+func TestHealth_OneFailing(t *testing.T) {
 	s := New(":0", map[string]Check{
 		"db":     func(context.Context) error { return nil },
 		"broker": func(context.Context) error { return errors.New("connection closed") },
 	})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	s.Handler().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {

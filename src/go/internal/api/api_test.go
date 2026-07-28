@@ -330,7 +330,7 @@ func mustJSON(t *testing.T, w *httptest.ResponseRecorder, v any) {
 	}
 }
 
-func TestHealthz_ReflectsChecks(t *testing.T) {
+func TestHealth_ReflectsChecks(t *testing.T) {
 	svc := NewService(Config{
 		Auth: NewAuthenticator("t", nil),
 		Health: map[string]health.Check{
@@ -339,7 +339,7 @@ func TestHealthz_ReflectsChecks(t *testing.T) {
 		},
 	})
 	w := httptest.NewRecorder()
-	svc.Router().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	svc.Router().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("code = %d, want 503 (a check is failing)", w.Code)
 	}

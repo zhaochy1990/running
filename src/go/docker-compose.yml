@@ -50,7 +50,7 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-    # No published ports: the worker has no ingress. /healthz is reached only by
+    # No published ports: the worker has no ingress. /health is reached only by
     # the in-container Docker HEALTHCHECK on loopback (ADR 0002).
 
   # HTTP API server (cmd/api, ADR 0012). Unlike the worker it HAS a public
