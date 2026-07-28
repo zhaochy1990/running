@@ -221,9 +221,11 @@ func (s *Store) GetCredential(ctx context.Context, userID, provider string) (*Pr
 }
 
 // ProviderForUser returns the watch provider the user has a stored credential
-// for, and whether any was found. If a user has credentials for several
-// providers (dual-watch), the most recently updated one wins — mirroring the
-// single "last login binds the provider" semantics of the file-based config.
+// for, and whether any was found. Single-watch users have exactly one row, so
+// this is unambiguous. If a user has credentials for several providers
+// (dual-watch), the most recently *written* one wins (updated_at DESC) — note
+// this bumps on token refresh too, not only login, so it tracks the most
+// recently active provider rather than a fixed binding.
 func (s *Store) ProviderForUser(ctx context.Context, userID string) (string, bool, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
