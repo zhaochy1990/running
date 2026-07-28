@@ -189,10 +189,12 @@ func ParseActivityDetail(userID, labelID string, fallbackDate time.Time, payload
 		Provider: "coros",
 		SyncedAt: time.Now().UTC(),
 	}
-	if s.TrainType != nil {
+	// train_kind / feel: COROS reports a 0 code for "untagged"/"unrated"; match
+	// Python's truthiness and leave them NULL rather than mapping 0 → "unknown".
+	if s.TrainType != nil && *s.TrainType != 0 {
 		a.TrainKind = sptr(string(coros_TrainKind(*s.TrainType)))
 	}
-	if d.SportFeelInfo.FeelType != nil {
+	if d.SportFeelInfo.FeelType != nil && *d.SportFeelInfo.FeelType != 0 {
 		a.Feel = sptr(string(coros_Feel(*d.SportFeelInfo.FeelType)))
 	}
 	if pauses := marshalPauses(d.PauseList); pauses != nil {

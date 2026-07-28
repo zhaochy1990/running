@@ -108,7 +108,9 @@ func replaceChildren[T any](tx *gorm.DB, userID, labelID string, model any, rows
 		return fmt.Errorf("storage: clear children: %w", err)
 	}
 	if len(rows) > 0 {
-		if err := tx.Create(&rows).Error; err != nil {
+		// Batch to stay under MySQL's 65535-placeholder limit (a long activity
+		// has thousands of timeseries points).
+		if err := tx.CreateInBatches(&rows, 500).Error; err != nil {
 			return fmt.Errorf("storage: insert children: %w", err)
 		}
 	}

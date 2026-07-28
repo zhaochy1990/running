@@ -105,6 +105,23 @@ func TestParseActivityDetail(t *testing.T) {
 	}
 }
 
+func TestParseActivityDetailZeroCodesStayNull(t *testing.T) {
+	// COROS reports trainType/feelType == 0 for untagged/unrated activities; they
+	// must stay NULL (matching Python truthiness), not map to "unknown". This is
+	// the parity bug the live reconciliation caught.
+	a, _, _, _, err := ParseActivityDetail("f10bc353-01ab-4db1-af9f-d9305ea9a532", "L0", time.Time{},
+		[]byte(`{"summary":{"sportType":100,"trainType":0},"sportFeelInfo":{"feelType":0}}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if a.TrainKind != nil {
+		t.Errorf("train_kind = %v, want nil for trainType 0", *a.TrainKind)
+	}
+	if a.Feel != nil {
+		t.Errorf("feel = %v, want nil for feelType 0", *a.Feel)
+	}
+}
+
 func TestParseActivityDetailFallbackDate(t *testing.T) {
 	fallback := time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC)
 	a, _, _, _, err := ParseActivityDetail("f10bc353-01ab-4db1-af9f-d9305ea9a532", "L2", fallback,

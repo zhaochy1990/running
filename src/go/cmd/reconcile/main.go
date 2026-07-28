@@ -1,11 +1,8 @@
 // Command reconcile compares the Go-written MySQL shadow store against the
 // Python SQLite store for one user, using the tolerance-aware diff engine
-// (internal/reconcile, ADR 0005). It is a manual dev tool.
-//
-// The MySQL side is read here. The SQLite side needs a driver
-// (modernc.org/sqlite, pure-Go, no cgo) which is not yet a module dependency —
-// see readSQLite. Until then the tool reports the MySQL row count and the
-// pending SQLite read; the diff engine itself is complete and unit-tested.
+// (internal/reconcile, ADR 0005). It reads the SQLite side with the pure-Go
+// modernc.org/sqlite driver and validates the activities MySQL synced. It is a
+// manual dev tool.
 package main
 
 import (
@@ -53,12 +50,21 @@ func main() {
 		return
 	}
 
-	mismatches := reconcile.Diff(reconcile.ActivityFields(), toRows(left), toRows(right))
+	// Validate only the activities present in MySQL (Go may have synced a bounded
+	// subset of the SQLite history).
+	filtered := make(map[string]map[string]any, len(right))
+	for k := range right {
+		if lv, ok := left[k]; ok {
+			filtered[k] = lv
+		}
+	}
+
+	mismatches := reconcile.Diff(reconcile.ActivityFields(), toRows(filtered), toRows(right))
 	if len(mismatches) == 0 {
-		fmt.Printf("OK: %d activities match (MySQL vs SQLite)\n", len(right))
+		fmt.Printf("OK: %d MySQL activities match SQLite\n", len(right))
 		return
 	}
-	fmt.Printf("FAIL: %d mismatches (MySQL vs SQLite)\n", len(mismatches))
+	fmt.Printf("FAIL: %d mismatches across %d MySQL activities (vs SQLite)\n", len(mismatches), len(right))
 	for _, m := range mismatches {
 		fmt.Println("  " + m.String())
 	}

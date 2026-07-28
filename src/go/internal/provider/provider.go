@@ -57,10 +57,12 @@ func (c SyncContent) Has(d SyncContent) bool { return c&d != 0 }
 
 // SyncOptions controls a sync run. Mode governs the activity scan only; health
 // always syncs by date window. A zero Content is treated as ContentAll by
-// SyncUser implementations.
+// SyncUser implementations. Limit caps the number of activities fetched (0 =
+// unlimited) — useful for bounded validation runs.
 type SyncOptions struct {
 	Mode     SyncMode
 	Content  SyncContent
+	Limit    int
 	Progress ProgressCallback
 }
 

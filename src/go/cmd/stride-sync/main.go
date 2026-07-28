@@ -32,6 +32,8 @@ func main() {
 	switch cmd {
 	case "login":
 		err = runLogin(args)
+	case "import-creds":
+		err = runImportCreds(args)
 	case "sync":
 		err = runSync(args)
 	case "status":
@@ -54,11 +56,13 @@ func usage() {
 	fmt.Fprint(os.Stderr, `stride-sync — COROS watch-data sync
 
 usage:
-  stride-sync login  -profile <uuid|slug> -email <e> -password <p>
-  stride-sync sync   -profile <uuid|slug> [-full] [-content all|activities|health]
-  stride-sync status -profile <uuid|slug>
+  stride-sync login        -profile <uuid|slug> -email <e> -password <p>
+  stride-sync import-creds  -profile <uuid|slug>   (seed creds from data/<uid>/config.json)
+  stride-sync sync          -profile <uuid|slug> [-full] [-content all|activities|health] [-limit N]
+  stride-sync status        -profile <uuid|slug>
 
 config: config.sync.yml (or $CONFIG_PATH); MySQL DSN via $STRIDE_SYNC_MYSQL_DSN
+data dir: $STRIDE_DATA_DIR (default ./data)
 `)
 }
 
@@ -102,18 +106,57 @@ func runLogin(args []string) error {
 	return nil
 }
 
-func runSync(args []string) error {
-	fs := flag.NewFlagSet("sync", flag.ExitOnError)
+func runImportCreds(args []string) error {
+	fs := flag.NewFlagSet("import-creds", flag.ExitOnError)
 	profile := fs.String("profile", "", "user UUID or slug")
-	full := fs.Bool("full", false, "full re-scan (default incremental)")
-	content := fs.String("content", "all", "all | activities | health")
 	_ = fs.Parse(args)
 
 	user, err := resolveProfile(*profile)
 	if err != nil {
 		return err
 	}
-	opts := provider.SyncOptions{Mode: provider.SyncIncremental, Content: contentFlag(*content)}
+	path := filepath.Join(dataDir(), user, "config.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read creds %s: %w", path, err)
+	}
+	var f struct {
+		Email       string `json:"email"`
+		PwdHash     string `json:"pwd_hash"`
+		AccessToken string `json:"access_token"`
+		Region      string `json:"region"`
+		UserID      string `json:"user_id"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
+	}
+	store, _, err := deps()
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	cs := coros.NewStorageCredentialStore(store)
+	creds := coros.Credentials{Email: f.Email, PwdHash: f.PwdHash, AccessToken: f.AccessToken, Region: f.Region, UserID: f.UserID}
+	if err := cs.Save(context.Background(), user, creds); err != nil {
+		return err
+	}
+	fmt.Printf("imported coros credentials for user=%s (region=%s)\n", user, f.Region)
+	return nil
+}
+
+func runSync(args []string) error {
+	fs := flag.NewFlagSet("sync", flag.ExitOnError)
+	profile := fs.String("profile", "", "user UUID or slug")
+	full := fs.Bool("full", false, "full re-scan (default incremental)")
+	content := fs.String("content", "all", "all | activities | health")
+	limit := fs.Int("limit", 0, "max activities to fetch (0 = unlimited)")
+	_ = fs.Parse(args)
+
+	user, err := resolveProfile(*profile)
+	if err != nil {
+		return err
+	}
+	opts := provider.SyncOptions{Mode: provider.SyncIncremental, Content: contentFlag(*content), Limit: *limit}
 	if *full {
 		opts.Mode = provider.SyncFull
 	}

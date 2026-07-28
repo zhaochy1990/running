@@ -132,11 +132,12 @@ func (p *Provider) SyncUser(ctx context.Context, user string, opts provider.Sync
 	return res, nil
 }
 
-// listItem is one entry of the /activity/query dataList.
+// listItem is one entry of the /activity/query dataList. Date is flexible
+// because COROS reports it as a number (YYYYMMDD) in real payloads.
 type listItem struct {
-	LabelID   string `json:"labelId"`
-	SportType int    `json:"sportType"`
-	Date      string `json:"date"`
+	LabelID   string     `json:"labelId"`
+	SportType int        `json:"sportType"`
+	Date      flexString `json:"date"`
 }
 
 // syncActivities pages the activity list, stopping at the first already-synced
@@ -172,6 +173,9 @@ func (p *Provider) syncActivities(ctx context.Context, client *Client, user stri
 			if err := p.syncOneActivity(ctx, client, user, item, res); err != nil {
 				return err
 			}
+			if opts.Limit > 0 && res.Activities >= opts.Limit {
+				return nil // bounded run
+			}
 		}
 		if len(pageData.DataList) < pageSize {
 			return nil // last page
@@ -184,7 +188,7 @@ func (p *Provider) syncOneActivity(ctx context.Context, client *Client, user str
 	if err != nil {
 		return err
 	}
-	a, laps, ts, zones, err := ParseActivityDetail(user, item.LabelID, parseListDate(item.Date), raw)
+	a, laps, ts, zones, err := ParseActivityDetail(user, item.LabelID, parseListDate(string(item.Date)), raw)
 	if err != nil {
 		return err
 	}
@@ -290,7 +294,7 @@ var _ provider.Provider = (*Provider)(nil)
 // parseListDate best-effort parses the list endpoint's date string into a UTC
 // time, used only as a fallback when a detail lacks a startTimestamp.
 func parseListDate(s string) time.Time {
-	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02"} {
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02", "20060102"} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t.UTC()
 		}
