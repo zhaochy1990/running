@@ -82,3 +82,59 @@ func MustLoadFrom(path string) *Config {
 	xviper.MustLoadConfig(EnvPrefix, path, &cfg)
 	return &cfg
 }
+
+// --- cmd/api configuration ---------------------------------------------------
+//
+// The HTTP API is a separate binary (ADR 0012) with its own required fields, so
+// it loads its own struct rather than reusing Config (whose required MySQL/AMQP/
+// queue/retry/runtime fields the worker validates). Both binaries read the same
+// config.yml and the same STRIDE_WORKER_* env namespace; the worker ignores the
+// api: section and the API ignores retry:/runtime:.
+
+// APIConfig is the fully-resolved configuration for the HTTP API server.
+type APIConfig struct {
+	Logger logger.LoggerConfig `mapstructure:"logger"`
+	MySQL  MySQL               `mapstructure:"mysql"`
+	AMQP   AMQP                `mapstructure:"amqp"`
+	Queues Queues              `mapstructure:"queues"`
+	API    API                 `mapstructure:"api"`
+}
+
+// API holds the HTTP API server knobs.
+type API struct {
+	// Addr is the listen address, e.g. ":8080".
+	Addr string `mapstructure:"addr" validate:"required"`
+	// CORSOrigins is the allow-list of browser origins (direct-browser tier).
+	CORSOrigins []string `mapstructure:"cors-origins"`
+	// InternalToken authenticates the server-to-server tier (X-Internal-Token).
+	// Secret; supply via STRIDE_WORKER_API_INTERNAL_TOKEN, never commit.
+	InternalToken string `mapstructure:"internal-token" validate:"required"`
+	// SwaggerEnabled gates the /swagger UI + spec (off in prod, ADR 0012).
+	SwaggerEnabled bool    `mapstructure:"swagger-enabled"`
+	Auth           APIAuth `mapstructure:"auth"`
+}
+
+// APIAuth configures RS256 verification of end-user JWTs (direct-browser tier).
+// Issuer/audience/public key MUST match the in-house auth-service that the Azure
+// stack uses, since the browser presents that same token (ADR 0012).
+type APIAuth struct {
+	Issuer        string `mapstructure:"issuer" validate:"required"`
+	Audience      string `mapstructure:"audience" validate:"required"`
+	PublicKeyPath string `mapstructure:"public-key-path" validate:"required"`
+}
+
+// MustLoadAPI loads the API configuration, panicking on any error (fail-fast).
+func MustLoadAPI() *APIConfig {
+	path := os.Getenv("CONFIG_PATH")
+	if path == "" {
+		path = DefaultConfigFile
+	}
+	return MustLoadAPIFrom(path)
+}
+
+// MustLoadAPIFrom loads API configuration from an explicit YAML path (tests).
+func MustLoadAPIFrom(path string) *APIConfig {
+	var cfg APIConfig
+	xviper.MustLoadConfig(EnvPrefix, path, &cfg)
+	return &cfg
+}

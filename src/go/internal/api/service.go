@@ -1,0 +1,201 @@
+// Package api is the HTTP API server (cmd/api) that fronts the async-job worker
+// (ADR 0012). It exposes create/read for Async Jobs and Pipeline Runs over gin,
+// with two auth tiers (internal shared secret + end-user RS256 JWT), partition
+// scoping, a shared job-type/pipeline catalog, and day-one idempotency. It owns
+// no storage or broker logic — those arrive via the small interfaces below,
+// satisfied by internal/storage, internal/job and internal/pipeline.
+package api
+
+import (
+	"context"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+
+	"github.com/zhaochy1990/stride/internal/health"
+	"github.com/zhaochy1990/stride/internal/job"
+	"github.com/zhaochy1990/stride/internal/logging"
+)
+
+// maxRequestBytes caps create request bodies. The API has a public ingress, so
+// an unbounded body binding into a MySQL longtext is a DoS/storage-abuse vector.
+const maxRequestBytes = 1 << 20 // 1 MiB
+
+// Enqueuer creates a standalone job and publishes its pointer.
+type Enqueuer interface {
+	Enqueue(ctx context.Context, spec job.EnqueueSpec) (string, error)
+}
+
+// JobGetter reads a job's durable state by (partition, id).
+type JobGetter interface {
+	Get(ctx context.Context, partitionKey, jobID string) (*job.Job, error)
+}
+
+// JobIdemLookup resolves a job by its idempotency key (dedup + conflict replay).
+type JobIdemLookup interface {
+	JobByIdempotencyKey(ctx context.Context, partitionKey, key string) (*job.Job, error)
+}
+
+// PipelineStarter starts a pipeline run (store-first) with an idempotency key.
+type PipelineStarter interface {
+	StartPipeline(ctx context.Context, name, partitionKey, idempotencyKey string) (string, error)
+}
+
+// RunGetter reads a pipeline run's aggregate state by (partition, run id).
+type RunGetter interface {
+	Get(ctx context.Context, partitionKey, runID string) (*job.PipelineRun, error)
+}
+
+// RunIdemLookup resolves a run by its idempotency key.
+type RunIdemLookup interface {
+	PipelineRunByIdempotencyKey(ctx context.Context, partitionKey, key string) (*job.PipelineRun, error)
+}
+
+// Config wires a Service.
+type Config struct {
+	Enqueuer  Enqueuer
+	Jobs      JobGetter
+	JobsIdem  JobIdemLookup
+	Pipelines PipelineStarter
+	Runs      RunGetter
+	RunsIdem  RunIdemLookup
+
+	// JobUserInitiable maps job type -> may a user create it; a type absent from
+	// the map is unknown (rejected 400). PipelineUserInitiable is the same for
+	// pipeline names. Both come from internal/catalog.
+	JobUserInitiable      map[string]bool
+	PipelineUserInitiable map[string]bool
+
+	Auth           *Authenticator
+	CORSOrigins    []string
+	SwaggerEnabled bool
+	// Health, when non-empty, backs GET /healthz with real dependency checks
+	// (mysql/broker) so the container HEALTHCHECK restarts a wedged API.
+	Health map[string]health.Check
+	Logger *zap.Logger
+}
+
+// Service holds the wired dependencies and builds the gin router.
+type Service struct {
+	enq       Enqueuer
+	jobs      JobGetter
+	jobsIdem  JobIdemLookup
+	pipelines PipelineStarter
+	runs      RunGetter
+	runsIdem  RunIdemLookup
+
+	jobUserInitiable      map[string]bool
+	pipelineUserInitiable map[string]bool
+
+	auth           *Authenticator
+	corsOrigins    []string
+	swaggerEnabled bool
+	health         map[string]health.Check
+	log            *zap.Logger
+}
+
+// NewService wires a Service. It panics if Auth is nil (a wiring bug — the API
+// must always be able to authenticate).
+func NewService(cfg Config) *Service {
+	if cfg.Auth == nil {
+		panic("api: NewService requires a non-nil Auth")
+	}
+	log := cfg.Logger
+	if log == nil {
+		log = logging.Default()
+	}
+	return &Service{
+		enq:                   cfg.Enqueuer,
+		jobs:                  cfg.Jobs,
+		jobsIdem:              cfg.JobsIdem,
+		pipelines:             cfg.Pipelines,
+		runs:                  cfg.Runs,
+		runsIdem:              cfg.RunsIdem,
+		jobUserInitiable:      cfg.JobUserInitiable,
+		pipelineUserInitiable: cfg.PipelineUserInitiable,
+		auth:                  cfg.Auth,
+		corsOrigins:           cfg.CORSOrigins,
+		swaggerEnabled:        cfg.SwaggerEnabled,
+		health:                cfg.Health,
+		log:                   log,
+	}
+}
+
+// Router builds the gin engine with middleware, the four authenticated routes,
+// a public /healthz, and (when enabled and built with -tags swagger) the
+// Swagger UI at /swagger/*any.
+func (s *Service) Router() *gin.Engine {
+	r := gin.New()
+	r.Use(gin.Recovery())
+	if len(s.corsOrigins) > 0 {
+		r.Use(corsMiddleware(s.corsOrigins))
+	}
+
+	r.GET("/healthz", s.healthHandler())
+	mountSwagger(r, s.swaggerEnabled)
+
+	authed := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
+	authed.POST("/jobs", s.createJob)
+	authed.GET("/jobs/:partition_key/:job_id", s.getJob)
+	authed.POST("/pipelines/:name", s.startPipeline)
+	authed.GET("/pipelines/:partition_key/:run_id", s.getPipelineRun)
+	return r
+}
+
+// healthHandler reports real dependency health when checks are wired, else a
+// static liveness OK (used in tests).
+func (s *Service) healthHandler() gin.HandlerFunc {
+	if len(s.health) > 0 {
+		return health.Endpoint(s.health)
+	}
+	return func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) }
+}
+
+// limitBody caps the request body size (public ingress hardening).
+func limitBody(max int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, max)
+		c.Next()
+	}
+}
+
+// resolvePartition returns the partition key a create request should target: for
+// the user tier it is always the JWT sub (client value ignored, ADR 0012); for
+// the internal tier it is the client-supplied value, defaulting to Global.
+func resolvePartition(caller Caller, requested string) string {
+	if caller.Tier == TierUser {
+		return caller.UserID
+	}
+	if requested == "" {
+		return job.GlobalPartition
+	}
+	return requested
+}
+
+// zapErr wraps an error as a structured log field.
+func zapErr(err error) zap.Field { return zap.Error(err) }
+
+// corsMiddleware is a minimal allow-list CORS for the direct-browser tier.
+func corsMiddleware(origins []string) gin.HandlerFunc {
+	allowed := make(map[string]bool, len(origins))
+	for _, o := range origins {
+		allowed[o] = true
+	}
+	return func(c *gin.Context) {
+		origin := c.GetHeader("Origin")
+		c.Header("Vary", "Origin")
+		if origin != "" && allowed[origin] {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Access-Control-Allow-Methods", strings.Join([]string{http.MethodGet, http.MethodPost, http.MethodOptions}, ", "))
+			c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Internal-Token, Idempotency-Key")
+			c.Header("Access-Control-Max-Age", "600")
+		}
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		c.Next()
+	}
+}

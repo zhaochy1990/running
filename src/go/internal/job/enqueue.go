@@ -13,6 +13,9 @@ type EnqueueSpec struct {
 	PartitionKey  string
 	InputJSON     string
 	PipelineRunID string // optional: links the job to a pipeline run
+	// IdempotencyKey, when non-empty, deduplicates creation: Store.Create returns
+	// ErrConflict if a job with the same (PartitionKey, IdempotencyKey) exists.
+	IdempotencyKey string
 }
 
 // Enqueuer creates a durable job and publishes its pointer. It is the single
@@ -67,14 +70,15 @@ func (e *StoreEnqueuer) Enqueue(ctx context.Context, spec EnqueueSpec) (string, 
 	}
 	now := e.now()
 	j := &Job{
-		ID:            e.newID(),
-		PartitionKey:  spec.PartitionKey,
-		Type:          spec.Type,
-		Status:        StatusQueued,
-		InputJSON:     spec.InputJSON,
-		PipelineRunID: spec.PipelineRunID,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:             e.newID(),
+		PartitionKey:   spec.PartitionKey,
+		Type:           spec.Type,
+		Status:         StatusQueued,
+		InputJSON:      spec.InputJSON,
+		IdempotencyKey: spec.IdempotencyKey,
+		PipelineRunID:  spec.PipelineRunID,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if err := e.store.Create(ctx, j); err != nil {
 		return "", err
