@@ -11,7 +11,7 @@ The COROS sync core (`internal/coros.Provider.SyncUser`) writes watch data to th
   - `IsLoggedIn(user)` false → **`PermanentError("not_logged_in")`** (checked up front; retrying can't fix a missing credential).
   - `AuthError` from `SyncUser` → **`PermanentError("auth_failed")`**.
   - Any other error → **retryable** (worker backoff → poison), resuming from the cursor.
-- **Progress → job row only.** Complete the sync client's declared-but-unwired `Progress` callback: `coros/sync.go` emits `{phase, current, total, percent}` at page boundaries and per activity-detail fetch; the handler bridges it to `Heartbeat(stage=phase, progressPct=percent)`. Proposed percent mapping: activities `10→80`, health `80→95`, done `100`. No notification-center push.
+- **Progress → job row only.** Complete the sync client's declared-but-unwired `Progress` callback: `syncActivities` collects the activity list first (so the total is known), then emits `{phase, current, total, percent}` per activity-detail fetch; `syncHealth` emits per day. The handler bridges each event to `Heartbeat(stage=phase, progressPct=percent)`. Percent bands: activities `10→80`, health `80→95`; the terminal `100` is set by the dispatcher's `finishDone` on success (not the handler). No notification-center push.
 - **Wiring:** reuse the worker's existing MySQL store (`AutoMigrateWatch` at boot), build `coros.New(store, coros.NewStorageCredentialStore(store))` with its built-in **500ms** request delay. **No new config.**
 
 ## Considered options
