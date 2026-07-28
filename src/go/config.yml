@@ -34,3 +34,16 @@ runtime:
   prefetch: 1
   health-addr: ":8081"
   data-dir: data          # only for the file-based provider-binding fallback
+
+# HTTP API server (cmd/api) — a separate binary/container (ADR 0012). The worker
+# ignores this section. Secrets stay empty here and come from env:
+#   STRIDE_WORKER_API_INTERNAL_TOKEN
+api:
+  addr: ":8080"
+  cors-origins: []          # e.g. ["https://app.example.com"] for the browser tier
+  internal-token: ""        # via STRIDE_WORKER_API_INTERNAL_TOKEN (secret)
+  swagger-enabled: false    # true in dev/staging; keep false in prod
+  auth:                     # RS256 end-user JWT (must match the auth-service)
+    issuer: ""
+    audience: ""
+    public-key-path: ""     # PEM file with the auth-service RSA public key

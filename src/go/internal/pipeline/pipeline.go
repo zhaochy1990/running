@@ -94,8 +94,10 @@ func New(store job.PipelineStore, enq job.Enqueuer, reg *Registry, opts ...Optio
 	return o
 }
 
-// StartPipeline creates a run (store-first) and enqueues its first step.
-func (o *Orchestrator) StartPipeline(ctx context.Context, name, partitionKey string) (string, error) {
+// StartPipeline creates a run (store-first) and enqueues its first step. A
+// non-empty idempotencyKey deduplicates starts: Create returns job.ErrConflict
+// if a run with the same (partitionKey, idempotencyKey) already exists.
+func (o *Orchestrator) StartPipeline(ctx context.Context, name, partitionKey, idempotencyKey string) (string, error) {
 	def, ok := o.reg.Get(name)
 	if !ok {
 		return "", fmt.Errorf("pipeline: unknown definition %q", name)
@@ -109,14 +111,15 @@ func (o *Orchestrator) StartPipeline(ctx context.Context, name, partitionKey str
 		steps[i] = job.PipelineStep{Name: s.Name, JobType: s.JobType, Status: job.StatusQueued}
 	}
 	run := &job.PipelineRun{
-		RunID:        o.newRun(),
-		PartitionKey: partitionKey,
-		Name:         name,
-		Status:       job.StatusRunning,
-		CurrentStep:  0,
-		Steps:        steps,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		RunID:          o.newRun(),
+		PartitionKey:   partitionKey,
+		Name:           name,
+		Status:         job.StatusRunning,
+		CurrentStep:    0,
+		Steps:          steps,
+		IdempotencyKey: idempotencyKey,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if err := o.store.Create(ctx, run); err != nil {
 		return "", err

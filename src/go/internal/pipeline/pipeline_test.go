@@ -81,7 +81,7 @@ func TestStartPipeline_CreatesRunAndEnqueuesFirstStep(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	o := newOrch(ps, enq)
 
-	runID, err := o.StartPipeline(context.Background(), "onboarding", "u1")
+	runID, err := o.StartPipeline(context.Background(), "onboarding", "u1", "")
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestStartPipeline_CreatesRunAndEnqueuesFirstStep(t *testing.T) {
 
 func TestStartPipeline_UnknownName(t *testing.T) {
 	o := newOrch(newFakePStore(), &fakeEnqueuer{})
-	if _, err := o.StartPipeline(context.Background(), "nope", "u1"); err == nil {
+	if _, err := o.StartPipeline(context.Background(), "nope", "u1", ""); err == nil {
 		t.Fatal("want error for unknown pipeline")
 	}
 }
@@ -121,7 +121,7 @@ func TestOnJobCompleted_AdvancesToNextStep(t *testing.T) {
 	ps := newFakePStore()
 	enq := &fakeEnqueuer{}
 	o := newOrch(ps, enq)
-	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1")
+	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1", "")
 	run := ps.snap("u1", "run-1")
 	step0JobID := run.Steps[0].JobID
 
@@ -152,7 +152,7 @@ func TestOnJobCompleted_LastStepMarksRunDone(t *testing.T) {
 	ps := newFakePStore()
 	enq := &fakeEnqueuer{}
 	o := newOrch(ps, enq)
-	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1")
+	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1", "")
 
 	// Walk all three steps to completion.
 	for step := 0; step < 3; step++ {
@@ -182,7 +182,7 @@ func TestOnJobCompleted_Idempotent(t *testing.T) {
 	ps := newFakePStore()
 	enq := &fakeEnqueuer{}
 	o := newOrch(ps, enq)
-	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1")
+	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1", "")
 	run := ps.snap("u1", "run-1")
 	jid := run.Steps[0].JobID
 
@@ -200,7 +200,7 @@ func TestOnJobFailed_MarksRunFailed(t *testing.T) {
 	ps := newFakePStore()
 	enq := &fakeEnqueuer{}
 	o := newOrch(ps, enq)
-	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1")
+	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1", "")
 	run := ps.snap("u1", "run-1")
 	jid := run.Steps[0].JobID
 

@@ -53,6 +53,22 @@ services:
     # No published ports: the worker has no ingress. /healthz is reached only by
     # the in-container Docker HEALTHCHECK on loopback (ADR 0002).
 
+  # HTTP API server (cmd/api, ADR 0012). Unlike the worker it HAS a public
+  # ingress: it publishes port 8080 so internal callers and browsers can create
+  # and poll jobs. Secrets (incl. STRIDE_WORKER_API_INTERNAL_TOKEN) come from .env.
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: ghcr.io/zhaochy1990/stride-api:latest
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
 volumes:
   rabbitmq-data:
   mysql-data:

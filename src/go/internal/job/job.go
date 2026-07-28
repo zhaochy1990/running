@@ -37,6 +37,10 @@ type Job struct {
 	ResultJSON   string
 	ErrorCode    string
 	ErrorMessage string
+	// IdempotencyKey deduplicates client-driven creation: at most one job may
+	// exist per (PartitionKey, IdempotencyKey). Empty means "no key" (stored as
+	// NULL so keyless jobs — pipeline steps, retries — never collide).
+	IdempotencyKey string
 	// PipelineRunID links this job back to the PipelineRun that spawned it, so
 	// the orchestrator can advance the run on completion. Empty for standalone jobs.
 	PipelineRunID string
@@ -62,9 +66,12 @@ type PipelineRun struct {
 	CurrentStep  int
 	Steps        []PipelineStep
 	ErrorMessage string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	CompletedAt  *time.Time
+	// IdempotencyKey deduplicates client-driven starts: at most one run may
+	// exist per (PartitionKey, IdempotencyKey). Empty means "no key" (NULL).
+	IdempotencyKey string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	CompletedAt    *time.Time
 }
 
 // Message is the pointer published to the broker. Full state lives in the store,

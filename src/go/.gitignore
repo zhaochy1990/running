@@ -3,5 +3,10 @@
 
 # Build output.
 /out/
-worker
+/worker
+/api
 *.exe
+
+# Generated Swagger docs (ADR 0012): produced at build by `swag init`, never
+# committed. `make swagger` / `go generate ./cmd/api` regenerates them.
+/cmd/api/docs/

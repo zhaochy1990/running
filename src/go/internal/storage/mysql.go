@@ -68,6 +68,26 @@ func (s *Store) Jobs() job.Store { return &jobStore{db: s.db} }
 // Pipelines returns the job.PipelineStore implementation.
 func (s *Store) Pipelines() job.PipelineStore { return &pipelineStore{db: s.db} }
 
+// JobByIdempotencyKey returns the job with the given idempotency key in the
+// partition, or a job.ErrNotFound. Used by the HTTP API to resolve a duplicate
+// create (same key) back to the existing job.
+func (s *Store) JobByIdempotencyKey(ctx context.Context, partitionKey, key string) (*job.Job, error) {
+	return (&jobStore{db: s.db}).byIdempotencyKey(ctx, partitionKey, key)
+}
+
+// PipelineRunByIdempotencyKey returns the run with the given idempotency key in
+// the partition, or a job.ErrNotFound.
+func (s *Store) PipelineRunByIdempotencyKey(ctx context.Context, partitionKey, key string) (*job.PipelineRun, error) {
+	return (&pipelineStore{db: s.db}).byIdempotencyKey(ctx, partitionKey, key)
+}
+
+// isDuplicateKey reports whether err is a MySQL duplicate-entry (1062) error,
+// which fires when the unique (partition_key, idempotency_key) index is violated.
+func isDuplicateKey(err error) bool {
+	var me *gomysql.MySQLError
+	return errors.As(err, &me) && me.Number == 1062
+}
+
 // Ping verifies connectivity (used by the health check).
 func (s *Store) Ping(ctx context.Context) error {
 	sqlDB, err := s.db.DB()
@@ -91,7 +111,11 @@ func (s *Store) Close() error {
 type jobStore struct{ db *gorm.DB }
 
 func (s *jobStore) Create(ctx context.Context, j *job.Job) error {
-	return s.db.WithContext(ctx).Create(toJobModel(j)).Error
+	err := s.db.WithContext(ctx).Create(toJobModel(j)).Error
+	if isDuplicateKey(err) {
+		return job.ErrConflict
+	}
+	return err
 }
 
 func (s *jobStore) Get(ctx context.Context, partitionKey, jobID string) (*job.Job, error) {
@@ -101,6 +125,21 @@ func (s *jobStore) Get(ctx context.Context, partitionKey, jobID string) (*job.Jo
 		First(&m).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, &job.ErrNotFound{Key: partitionKey + "|" + jobID}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return m.toDomain(), nil
+}
+
+// byIdempotencyKey looks up a job by (partition_key, idempotency_key).
+func (s *jobStore) byIdempotencyKey(ctx context.Context, partitionKey, key string) (*job.Job, error) {
+	var m jobModel
+	err := s.db.WithContext(ctx).
+		Where("partition_key = ? AND idempotency_key = ?", partitionKey, key).
+		First(&m).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, &job.ErrNotFound{Key: partitionKey + "|idem|" + key}
 	}
 	if err != nil {
 		return nil, err
@@ -122,7 +161,11 @@ func (s *pipelineStore) Create(ctx context.Context, r *job.PipelineRun) error {
 	if err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).Create(m).Error
+	err = s.db.WithContext(ctx).Create(m).Error
+	if isDuplicateKey(err) {
+		return job.ErrConflict
+	}
+	return err
 }
 
 func (s *pipelineStore) Get(ctx context.Context, partitionKey, runID string) (*job.PipelineRun, error) {
@@ -132,6 +175,21 @@ func (s *pipelineStore) Get(ctx context.Context, partitionKey, runID string) (*j
 		First(&m).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, &job.ErrNotFound{Key: partitionKey + "|" + runID}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return m.toDomain()
+}
+
+// byIdempotencyKey looks up a pipeline run by (partition_key, idempotency_key).
+func (s *pipelineStore) byIdempotencyKey(ctx context.Context, partitionKey, key string) (*job.PipelineRun, error) {
+	var m pipelineRunModel
+	err := s.db.WithContext(ctx).
+		Where("partition_key = ? AND idempotency_key = ?", partitionKey, key).
+		First(&m).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, &job.ErrNotFound{Key: partitionKey + "|idem|" + key}
 	}
 	if err != nil {
 		return nil, err

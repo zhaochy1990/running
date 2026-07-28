@@ -1,13 +1,15 @@
 // Package health exposes a tiny HTTP liveness/readiness endpoint. The worker has
 // no ingress, so a Docker HEALTHCHECK curls /healthz to detect a wedged consumer
-// (broker or DB connectivity lost) and restart the container (ADR 0002).
+// (broker or DB connectivity lost) and restart the container (ADR 0002). It is
+// built on gin like every other HTTP surface in this module (no exception).
 package health
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // Check reports the health of one dependency; nil means healthy.
@@ -24,16 +26,17 @@ func New(addr string, checks map[string]Check) *Server {
 	return &Server{addr: addr, checks: checks}
 }
 
-// Handler returns the /healthz http.Handler (exposed for testing).
-func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+// Endpoint returns a gin handler that runs all checks and reports 200 (all ok)
+// or 503 (any failing). Exposed so another gin server (e.g. cmd/api) can mount
+// the same liveness logic on its own engine.
+func Endpoint(checks map[string]Check) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 		defer cancel()
 
-		results := make(map[string]string, len(s.checks))
+		results := make(map[string]string, len(checks))
 		healthy := true
-		for name, check := range s.checks {
+		for name, check := range checks {
 			if err := check(ctx); err != nil {
 				results[name] = err.Error()
 				healthy = false
@@ -46,14 +49,17 @@ func (s *Server) Handler() http.Handler {
 		if !healthy {
 			status = http.StatusServiceUnavailable
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status": statusText(healthy),
-			"checks": results,
-		})
-	})
-	return mux
+		c.JSON(status, gin.H{"status": statusText(healthy), "checks": results})
+	}
+}
+
+// Handler returns the /healthz http.Handler (a gin engine; exposed for testing).
+func (s *Server) Handler() http.Handler {
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.GET("/healthz", Endpoint(s.checks))
+	return r
 }
 
 func statusText(healthy bool) string {

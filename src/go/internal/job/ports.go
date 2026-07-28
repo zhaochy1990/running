@@ -41,6 +41,12 @@ func IsNotFound(err error) bool {
 	return errors.As(err, &nf)
 }
 
+// ErrConflict is returned by Store.Create / PipelineStore.Create when the row
+// violates the unique (partition_key, idempotency_key) constraint — i.e. a job
+// or run with the same idempotency key already exists in the partition. Callers
+// (the HTTP API) react by returning the existing record instead of a new one.
+var ErrConflict = errors.New("conflict: duplicate idempotency key")
+
 // Heartbeat lets a handler report progress mid-run; it persists stage/progress
 // on the job row. RabbitMQ holds the unacked message for the consumer, so unlike
 // the old Azure design there is no lease to renew.
