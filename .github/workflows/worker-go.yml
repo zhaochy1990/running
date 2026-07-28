@@ -1,7 +1,8 @@
 name: worker-go
 
-# Go async-job worker CI: test on every change under src/go, and build+push the
-# image to GHCR on master. The CVM pulls from GHCR (ADR 0002 / 0004).
+# Go async-job CI: test on every change under src/go, and on master build+push
+# both images to GHCR — the worker (Dockerfile) and the HTTP API server
+# (Dockerfile.api, ADR 0012). The CVM pulls from GHCR (ADR 0002 / 0004).
 on:
   push:
     branches: [master]
@@ -45,7 +46,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push
+      - name: Build and push worker
         uses: docker/build-push-action@v6
         with:
           context: src/go
@@ -53,5 +54,16 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/stride-worker:latest
             ghcr.io/${{ github.repository_owner }}/stride-worker:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build and push api
+        uses: docker/build-push-action@v6
+        with:
+          context: src/go
+          file: src/go/Dockerfile.api
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/stride-api:latest
+            ghcr.io/${{ github.repository_owner }}/stride-api:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
