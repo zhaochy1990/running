@@ -171,3 +171,40 @@ func TestAPIErrorSurfaced(t *testing.T) {
 		t.Fatalf("expected *APIError{9999}, got %v", err)
 	}
 }
+
+func TestClient_RetriesTransient5xx(t *testing.T) {
+	var calls int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/activity/query", func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable) // transient
+			return
+		}
+		writeEnvelope(w, resultSuccess, `{"dataList":[]}`)
+	})
+	c := testClient(t, mux, Credentials{AccessToken: "tok", Region: "global", UserID: "1"}, func(Credentials) error { return nil })
+
+	if _, err := c.ListActivities(context.Background(), 1, 20); err != nil {
+		t.Fatalf("want success after retrying 503, got %v", err)
+	}
+	if n := atomic.LoadInt32(&calls); n != 3 {
+		t.Errorf("calls = %d, want 3 (retried twice then ok)", n)
+	}
+}
+
+func TestClient_DoesNotRetry4xx(t *testing.T) {
+	var calls int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/activity/query", func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(http.StatusNotFound) // terminal
+	})
+	c := testClient(t, mux, Credentials{AccessToken: "tok", Region: "global", UserID: "1"}, func(Credentials) error { return nil })
+
+	if _, err := c.ListActivities(context.Background(), 1, 20); err == nil {
+		t.Fatal("want error for 404")
+	}
+	if n := atomic.LoadInt32(&calls); n != 1 {
+		t.Errorf("calls = %d, want 1 (no retry on 4xx)", n)
+	}
+}

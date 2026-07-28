@@ -153,28 +153,49 @@ func (p *Provider) SyncUser(ctx context.Context, user string, opts provider.Sync
 		}
 	}
 	if content.Has(provider.ContentHealth) {
-		if err := p.syncHealth(ctx, client, user, &res); err != nil {
+		if err := p.syncHealth(ctx, client, user, opts.Progress, &res); err != nil {
 			return res, err
 		}
 	}
 	return res, nil
 }
 
-// syncActivities pages the activity list, stopping at the first already-synced
-// activity in incremental mode, and upserts each activity's detail.
+// syncActivities collects the activity list (paging, stopping at the first
+// already-synced activity in incremental mode), then fetches + upserts each
+// activity's detail, emitting per-activity progress like the COROS adapter.
 func (p *Provider) syncActivities(ctx context.Context, client *Client, user string, opts provider.SyncOptions, res *provider.SyncResult) error {
+	items, err := p.collectActivities(ctx, client, user, opts)
+	if err != nil {
+		return err
+	}
+	total := len(items)
+	provider.EmitProgress(opts.Progress, "activities", 0, total, provider.PercentInBand(0, total, 10, 80))
+	for i, a := range items {
+		if err := p.syncOneActivity(ctx, client, user, a, res); err != nil {
+			return err
+		}
+		provider.EmitProgress(opts.Progress, "activities", i+1, total, provider.PercentInBand(i+1, total, 10, 80))
+	}
+	return nil
+}
+
+// collectActivities pages the activity list and returns the items to sync,
+// stopping at the first already-synced activity in incremental mode and honoring
+// opts.Limit. Full mode collects known activities too (re-scan).
+func (p *Provider) collectActivities(ctx context.Context, client *Client, user string, opts provider.SyncOptions) ([]rawActivity, error) {
 	const pageSize = 20
+	var items []rawActivity
 	for start := 0; ; {
 		raw, err := client.ListActivities(ctx, start, pageSize)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		acts, err := parseActivityList(raw)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if len(acts) == 0 {
-			return nil
+			return items, nil
 		}
 		for _, a := range acts {
 			labelID := a.labelID()
@@ -183,21 +204,19 @@ func (p *Provider) syncActivities(ctx context.Context, client *Client, user stri
 			}
 			exists, err := p.store.ActivityExists(ctx, user, labelID)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if exists && opts.Mode != provider.SyncFull {
-				return nil // incremental catch-up: reached known history
+				return items, nil // incremental catch-up: reached known history
 			}
-			if err := p.syncOneActivity(ctx, client, user, a, res); err != nil {
-				return err
-			}
-			if opts.Limit > 0 && res.Activities >= opts.Limit {
-				return nil // bounded run
+			items = append(items, a)
+			if opts.Limit > 0 && len(items) >= opts.Limit {
+				return items, nil // bounded run
 			}
 		}
 		start += len(acts)
 		if len(acts) < pageSize {
-			return nil // last page
+			return items, nil // last page
 		}
 	}
 }
@@ -235,7 +254,7 @@ func (p *Provider) syncOneActivity(ctx context.Context, client *Client, user str
 // syncHealth refreshes the daily-health window (daily_health + daily_hrv) and the
 // dashboard singleton. Walks most-recent → oldest, bailing after a week of
 // consecutive empty days to avoid burning calls on idle accounts.
-func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, res *provider.SyncResult) error {
+func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, progress provider.ProgressCallback, res *provider.SyncResult) error {
 	today := time.Now().In(shanghaiZone)
 	consecEmpty := 0
 	for offset := 0; offset < healthWindowDays; offset++ {
@@ -270,6 +289,7 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 				break
 			}
 		}
+		provider.EmitProgress(progress, "health", offset+1, healthWindowDays, provider.PercentInBand(offset+1, healthWindowDays, 80, 95))
 	}
 	return p.syncDashboard(ctx, client, user, today, res)
 }

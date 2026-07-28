@@ -28,6 +28,27 @@ type SyncProgress = map[string]any
 // ProgressCallback receives incremental progress events. It may be nil.
 type ProgressCallback func(SyncProgress)
 
+// EmitProgress sends a {phase, current, total, percent} event if cb is non-nil.
+// Shared by every provider adapter so the job row shows uniform sync progress.
+func EmitProgress(cb ProgressCallback, phase string, current, total, percent int) {
+	if cb == nil {
+		return
+	}
+	cb(SyncProgress{"phase": phase, "current": current, "total": total, "percent": percent})
+}
+
+// PercentInBand maps current/total onto the [lo, hi] percent band for a sync
+// phase (e.g. activities 10→80, health 80→95). A zero total yields lo.
+func PercentInBand(current, total, lo, hi int) int {
+	if total <= 0 {
+		return lo
+	}
+	if current > total {
+		current = total
+	}
+	return lo + (hi-lo)*current/total
+}
+
 // SyncMode is the DEPTH axis of a sync: how far back the activity scan goes.
 type SyncMode string
 

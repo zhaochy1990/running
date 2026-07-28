@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zhaochy1990/stride/internal/httpx"
 	"github.com/zhaochy1990/stride/internal/provider"
 )
 
@@ -347,24 +348,41 @@ func (c *Client) doJSON(ctx context.Context, rawURL string, body any, token stri
 	return c.send(req)
 }
 
+// send issues one request, retrying transient transport/body/5xx failures in
+// place (httpx) so a mid-body "unexpected EOF" doesn't fail the whole sync.
 func (c *Client) send(req *http.Request) (apiEnvelope, error) {
+	var env apiEnvelope
+	err := httpx.Do(req.Context(), func() error {
+		// Reset the body for a retry (POST via doJSON); GET has none.
+		if req.GetBody != nil {
+			b, e := req.GetBody()
+			if e != nil {
+				return e
+			}
+			req.Body = b
+		}
+		return c.sendOnce(req, &env)
+	})
+	return env, err
+}
+
+func (c *Client) sendOnce(req *http.Request, env *apiEnvelope) error {
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return apiEnvelope{}, fmt.Errorf("coros: %s %s: %w", req.Method, req.URL.Path, err)
+		return fmt.Errorf("coros: %s %s: %w", req.Method, req.URL.Path, err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return apiEnvelope{}, err
+		return fmt.Errorf("coros: read %s: %w", req.URL.Path, err) // %w keeps io.ErrUnexpectedEOF retryable
 	}
 	if resp.StatusCode >= 400 {
-		return apiEnvelope{}, &APIError{Code: fmt.Sprintf("HTTP %d", resp.StatusCode), Message: string(raw)}
+		return &httpx.StatusError{Code: resp.StatusCode, Body: string(raw)}
 	}
-	var env apiEnvelope
-	if err := json.Unmarshal(raw, &env); err != nil {
-		return apiEnvelope{}, fmt.Errorf("coros: decode %s: %w", req.URL.Path, err)
+	if err := json.Unmarshal(raw, env); err != nil {
+		return fmt.Errorf("coros: decode %s: %w", req.URL.Path, err)
 	}
-	return env, nil
+	return nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ module github.com/zhaochy1990/stride
 go 1.25.4
 
 require (
+	github.com/avast/retry-go/v4 v4.7.0
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/rabbitmq/amqp091-go v1.13.0
