@@ -4,9 +4,10 @@ name: worker-go
 # both images to GHCR — the worker (Dockerfile) and the HTTP API server
 # (Dockerfile.api, ADR 0012). The CVM pulls from GHCR (ADR 0002 / 0004).
 #
-# Each image is tagged three ways: :latest, :<sha> (immutable, for tracing a
-# running container back to a commit), and :<CalVer> = YYYY.M.<run_number>. The
-# CalVer tag is the RELEASE tag that stride-devops/tencent/versions.env pins —
+# Both images carry :latest and a version-sortable :<CalVer> = YYYY.M.<run_number>.
+# stride-worker additionally keeps :<sha> for tracing a running container back to
+# a commit; stride-api does not (CalVer -> Actions run -> commit is enough there).
+# The CalVer tag is the RELEASE tag that stride-devops/tencent/versions.env pins —
 # it is version-sortable, so Renovate (running in stride-devops) can watch GHCR
 # and open a PR bumping STRIDE_{WORKER,API}_IMAGE_TAG when a newer CalVer lands.
 # The Tencent CVM is NOT deployed from here: this workflow only publishes images;
@@ -80,7 +81,6 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/stride-api:latest
-            ghcr.io/${{ github.repository_owner }}/stride-api:${{ github.sha }}
             ghcr.io/${{ github.repository_owner }}/stride-api:${{ steps.calver.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
