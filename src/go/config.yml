@@ -47,3 +47,5 @@ api:
     issuer: ""
     audience: ""
     public-key-path: ""     # PEM file with the auth-service RSA public key
+# ci: no-op touch to publish a fresh CalVer image and exercise the Renovate
+# version-bump flow against stride-devops (Go SHA->CalVer cutover verification).
