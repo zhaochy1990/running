@@ -1,7 +1,21 @@
 name: worker-go
 
-# Go async-job worker CI: test on every change under src/go, and build+push the
-# image to GHCR on master. The CVM pulls from GHCR (ADR 0002 / 0004).
+# Go async-job CI: `test` runs on every change under src/go OR to this workflow
+# file. `build-push` (publish both images to GHCR + open a Renovate bump PR) runs
+# on master ONLY when src/go/** actually changed — a workflow-only edit must not
+# republish a new CalVer image or bump the deployed version. Images: the worker
+# (Dockerfile) + HTTP API server (Dockerfile.api, ADR 0012). CVM pulls (ADR 0002/0004).
+#
+# Both images carry :latest and a version-sortable :<CalVer> = YYYY.M.<run_number>.
+# stride-worker additionally keeps :<sha> for tracing a running container back to
+# a commit; stride-api does not (CalVer -> Actions run -> commit is enough there).
+# The CalVer tag is the RELEASE tag that stride-devops/tencent/versions.env pins —
+# it is version-sortable, so the final build-push step runs Renovate against
+# stride-devops (`npx renovate zhaochy1990/stride-devops`) to open a PR bumping
+# STRIDE_{WORKER,API}_IMAGE_TAG to the new CalVer. No poll/runner lives in
+# stride-devops; this workflow drives it on-demand right after publishing.
+# The Tencent CVM is NOT deployed from here: this workflow only publishes images;
+# rollout happens by merging the Renovate PR + running ./up.sh on the CVM.
 on:
   push:
     branches: [master]
@@ -10,6 +24,21 @@ on:
     paths: ["src/go/**", ".github/workflows/worker-go.yml"]
 
 jobs:
+  # Did Go SOURCE change (not just this workflow file)? Gates build-push so a
+  # workflow-only edit doesn't republish an image / bump the deployed version.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            go:
+              - 'src/go/**'
+
   test:
     runs-on: ubuntu-latest
     defaults:
@@ -29,9 +58,10 @@ jobs:
         run: go test ./...
 
   build-push:
-    # Only publish from master, never from PRs.
-    if: github.event_name == 'push'
-    needs: test
+    # Publish only from master, and only when Go source actually changed — a
+    # workflow-only edit must not republish a new CalVer image or open a bump PR.
+    if: github.event_name == 'push' && needs.changes.outputs.go == 'true'
+    needs: [test, changes]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -45,7 +75,14 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push
+      # CalVer release tag: YYYY.M.<run_number>. run_number is strictly
+      # increasing per workflow, so the tag is version-sortable (Renovate's
+      # regex versioning in stride-devops orders it); both Go images share the
+      # same value so they always bump together. UTC date matches auth's scheme.
+      - name: Compute CalVer
+        id: calver
+        run: echo "version=$(date -u +%Y.%-m).${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+      - name: Build and push worker
         uses: docker/build-push-action@v6
         with:
           context: src/go
@@ -53,5 +90,58 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/stride-worker:latest
             ghcr.io/${{ github.repository_owner }}/stride-worker:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/stride-worker:${{ steps.calver.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Build and push api
+        uses: docker/build-push-action@v6
+        with:
+          context: src/go
+          file: src/go/Dockerfile.api
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/stride-api:latest
+            ghcr.io/${{ github.repository_owner }}/stride-api:${{ steps.calver.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # Run Renovate against stride-devops right after the images land, so its
+      # versions.env bump PR opens within seconds (no poll/cron in stride-devops).
+      # Renovate clones stride-devops, reads its renovate.json, sees the new
+      # CalVer tag in GHCR, and opens the PR there. Best effort: a missing token
+      # or Renovate hiccup must NOT fail the image publish.
+      #   RENOVATE_TOKEN  — PAT/App token with contents+pull-requests write on
+      #                     zhaochy1990/stride-devops (Renovate opens the PR there).
+      #   GHCR_READ_TOKEN — read:packages, to list private GHCR tags (may be the
+      #                     same PAT as RENOVATE_TOKEN if it also has that scope).
+      # Pin renovate@41 — the last major that both runs on Node 22 and reliably
+      # detects our GHCR CalVer tags (43.x needs Node >=24 and, on it, stopped
+      # opening bump PRs for the docker deps). Pin Node 22 to match @41's engine.
+      - name: Set up Node 22 for Renovate
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Open version-bump PR in stride-devops (Renovate)
+        continue-on-error: true
+        env:
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+          RENOVATE_HOST_RULES: >-
+            [{"hostType":"docker","matchHost":"ghcr.io","username":"zhaochy1990","password":"${{ secrets.GHCR_READ_TOKEN }}"}]
+          LOG_LEVEL: info
+        run: |
+          if [ -z "$RENOVATE_TOKEN" ]; then
+            echo "RENOVATE_TOKEN not set — skipping Renovate run."
+            exit 0
+          fi
+          # GHCR's tag-list API can lag a few seconds behind the push we just
+          # made; wait so Renovate reliably sees this release's own new tag.
+          sleep 30
+          # Retry transient registry/network failures: 3 attempts, 10s apart.
+          for attempt in 1 2 3; do
+            if npx --yes renovate@41 zhaochy1990/stride-devops; then
+              exit 0
+            fi
+            echo "Renovate attempt ${attempt} failed."
+            [ "${attempt}" -lt 3 ] && sleep 10
+          done
+          echo "Renovate did not succeed after 3 attempts."
+          exit 1

@@ -54,3 +54,5 @@ api:
     coach-chat-users: []
     coach-chat-debug-users: []
     coach-chat-max-message-chars: 8000
+# ci: no-op touch to publish a fresh CalVer image and exercise the Renovate
+# version-bump flow against stride-devops (Go SHA->CalVer cutover verification).

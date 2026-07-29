@@ -78,7 +78,7 @@ type Config struct {
 	Auth           *Authenticator
 	CORSOrigins    []string
 	SwaggerEnabled bool
-	// Health, when non-empty, backs GET /healthz with real dependency checks
+	// Health, when non-empty, backs GET /health with real dependency checks
 	// (mysql/broker) so the container HEALTHCHECK restarts a wedged API.
 	Health map[string]health.Check
 	Logger *zap.Logger
@@ -134,7 +134,7 @@ func NewService(cfg Config) *Service {
 }
 
 // Router builds the gin engine with middleware, the four authenticated routes,
-// a public /healthz, and (when enabled and built with -tags swagger) the
+// a public /health, and (when enabled and built with -tags swagger) the
 // Swagger UI at /swagger/*any.
 func (s *Service) Router() *gin.Engine {
 	r := gin.New()
@@ -143,7 +143,7 @@ func (s *Service) Router() *gin.Engine {
 		r.Use(corsMiddleware(s.corsOrigins))
 	}
 
-	r.GET("/healthz", s.healthHandler())
+	r.GET("/health", s.healthHandler())
 	mountSwagger(r, s.swaggerEnabled)
 
 	authed := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
