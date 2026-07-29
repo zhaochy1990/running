@@ -95,12 +95,13 @@ jobs:
       #                     zhaochy1990/stride-devops (Renovate opens the PR there).
       #   GHCR_READ_TOKEN — read:packages, to list private GHCR tags (may be the
       #                     same PAT as RENOVATE_TOKEN if it also has that scope).
-      # renovate@latest (43.x) needs Node >=24; the runner defaults to Node 22,
-      # so set up Node 24 for the npx step below.
-      - name: Set up Node 24 for Renovate
+      # Pin renovate@41 — the last major that both runs on Node 22 and reliably
+      # detects our GHCR CalVer tags (43.x needs Node >=24 and, on it, stopped
+      # opening bump PRs for the docker deps). Pin Node 22 to match @41's engine.
+      - name: Set up Node 22 for Renovate
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
       - name: Open version-bump PR in stride-devops (Renovate)
         continue-on-error: true
         env:
@@ -118,7 +119,7 @@ jobs:
           sleep 30
           # Retry transient registry/network failures: 3 attempts, 10s apart.
           for attempt in 1 2 3; do
-            if npx --yes renovate@latest zhaochy1990/stride-devops; then
+            if npx --yes renovate@41 zhaochy1990/stride-devops; then
               exit 0
             fi
             echo "Renovate attempt ${attempt} failed."
