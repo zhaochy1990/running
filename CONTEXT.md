@@ -52,7 +52,7 @@ _Avoid_: task、message、消息
 _Avoid_: worker、processor
 
 **Pipeline（任务流水线）**：
-一个具名的、线性的 job 步骤序列（如 onboarding：full_sync → calibration → backfill）。
+一个具名的、线性的 job 步骤序列（如 onboarding：full_sync → onboarding_compute）。
 _Avoid_: workflow、DAG、job chain
 
 **Pipeline Run（流水线运行）**：
@@ -66,6 +66,18 @@ _Avoid_: tenant、scope、user id（后者只是其取值之一）
 **Poison（毒信任务）**：
 重试次数耗尽后被投入死信队列并置为终态 `failed` 的 job。
 _Avoid_: dead-letter（沿用作队列名 DLQ，但任务语义统一叫 poison）
+
+### 用户 Onboarding
+
+（Go 侧新用户建档流程；实现设计见 `docs/adr/0011`（watch_sync）、`0012`（cmd/api）、`0013`（compute port）。）
+
+**Onboarding 流水线（onboarding pipeline）**：
+为一名新用户建档的两步 pipeline —— `full_sync`（跑 watch_sync 全量同步手表数据）→ `onboarding_compute`（算出个人基线与历史）。经 `POST /pipelines/onboarding` 触发，是用户可发起的。
+_Avoid_: full_sync → calibration → backfill（Python 的三步旧形态）、首次建档
+
+**Onboarding Compute（onboarding_compute）**：
+把一名用户已同步的手表数据一次性算成派生结果的合并计算步骤：校准基线（HRmax / LTHR / 阈值配速 / RHR / 临界功率 / 区间）+ 个人最好成绩 + 训练负荷历史（CTL/ATL/Form）+ 能力快照。仅内部可发起（用户发起的是整条 pipeline，不是这步）。
+_Avoid_: calibration、backfill（这是两者合并后的单步）
 
 ## 手表数据同步
 
