@@ -68,6 +68,13 @@ type Config struct {
 	JobUserInitiable      map[string]bool
 	PipelineUserInitiable map[string]bool
 
+	// User/onboarding surface (ADR 0013) — a sibling registrar sharing the auth
+	// path. Leave zero to run the job/pipeline API only (e.g. in tests).
+	UserStore     UserStore
+	ProviderLogin ProviderLogin
+	AuthNameSync  AuthNameSync
+	Features      FeatureConfig
+
 	Auth           *Authenticator
 	CORSOrigins    []string
 	SwaggerEnabled bool
@@ -88,6 +95,8 @@ type Service struct {
 
 	jobUserInitiable      map[string]bool
 	pipelineUserInitiable map[string]bool
+
+	users *userRoutes
 
 	auth           *Authenticator
 	corsOrigins    []string
@@ -115,6 +124,7 @@ func NewService(cfg Config) *Service {
 		runsIdem:              cfg.RunsIdem,
 		jobUserInitiable:      cfg.JobUserInitiable,
 		pipelineUserInitiable: cfg.PipelineUserInitiable,
+		users:                 newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.AuthNameSync, cfg.Features, log),
 		auth:                  cfg.Auth,
 		corsOrigins:           cfg.CORSOrigins,
 		swaggerEnabled:        cfg.SwaggerEnabled,
@@ -141,6 +151,7 @@ func (s *Service) Router() *gin.Engine {
 	authed.GET("/jobs/:partition_key/:job_id", s.getJob)
 	authed.POST("/pipelines/:name", s.startPipeline)
 	authed.GET("/pipelines/:partition_key/:run_id", s.getPipelineRun)
+	s.users.register(authed)
 	return r
 }
 

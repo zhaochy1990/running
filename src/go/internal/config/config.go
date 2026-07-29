@@ -112,6 +112,24 @@ type API struct {
 	// SwaggerEnabled gates the /swagger UI + spec (off in prod, ADR 0012).
 	SwaggerEnabled bool    `mapstructure:"swagger-enabled"`
 	Auth           APIAuth `mapstructure:"auth"`
+	// AuthServiceURL is the in-house auth-service origin used to mirror a user's
+	// display name (ADR 0013). Empty disables the best-effort write-back.
+	AuthServiceURL string `mapstructure:"auth-service-url"`
+	// Features are the config-driven flags echoed in GET /api/users/me/profile,
+	// mirroring the Python server config (ADR 0013).
+	Features APIFeatures `mapstructure:"features"`
+}
+
+// APIFeatures are the onboarding/coach feature flags returned in the profile
+// response. sync-data-at-onboarding is a global bool; the coach-*-users lists
+// are per-user allow-lists (membership = flag true). Mirrors the Python
+// stride_server config; kept in sync manually during coexistence (ADR 0013).
+type APIFeatures struct {
+	SyncDataAtOnboarding      bool     `mapstructure:"sync-data-at-onboarding"`
+	CoachAgentWeeklyPlanUsers []string `mapstructure:"coach-agent-weekly-plan-users"`
+	CoachChatUsers            []string `mapstructure:"coach-chat-users"`
+	CoachChatDebugUsers       []string `mapstructure:"coach-chat-debug-users"`
+	CoachChatMaxMessageChars  int      `mapstructure:"coach-chat-max-message-chars"`
 }
 
 // APIAuth configures RS256 verification of end-user JWTs (direct-browser tier).

@@ -47,3 +47,10 @@ api:
     issuer: ""
     audience: ""
     public-key-path: ""     # PEM file with the auth-service RSA public key
+  auth-service-url: ""      # in-house auth-service origin for display-name mirror; empty disables (ADR 0013)
+  features:                 # echoed in GET /api/users/me/profile (mirror Python server config)
+    sync-data-at-onboarding: true
+    coach-agent-weekly-plan-users: []
+    coach-chat-users: []
+    coach-chat-debug-users: []
+    coach-chat-max-message-chars: 8000

@@ -35,6 +35,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/api"
+	"github.com/zhaochy1990/stride/internal/authsvc"
 	"github.com/zhaochy1990/stride/internal/catalog"
 	"github.com/zhaochy1990/stride/internal/config"
 	"github.com/zhaochy1990/stride/internal/health"
@@ -69,6 +70,11 @@ func run() error {
 	if err := store.AutoMigrate(ctx); err != nil {
 		return err
 	}
+	// user_profile + user_onboarding tables for the profile/onboarding surface
+	// (ADR 0013). The worker does not need these.
+	if err := store.AutoMigrateUsers(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ (publisher only; no consumer) ---
 	conn, err := mq.Dial(cfg.AMQP.URL)
@@ -96,6 +102,17 @@ func run() error {
 	}
 	authn := api.NewAuthenticator(cfg.API.InternalToken, verifier)
 
+	// User/onboarding surface deps (ADR 0013).
+	authNameSync := authsvc.New(cfg.API.AuthServiceURL, 5*time.Second)
+	providerLogin := providerLoginAdapter{store: store, delay: watchRequestDelay}
+	features := api.FeatureConfig{
+		SyncDataAtOnboarding:      cfg.API.Features.SyncDataAtOnboarding,
+		CoachAgentWeeklyPlanUsers: toUserSet(cfg.API.Features.CoachAgentWeeklyPlanUsers),
+		CoachChatUsers:            toUserSet(cfg.API.Features.CoachChatUsers),
+		CoachChatDebugUsers:       toUserSet(cfg.API.Features.CoachChatDebugUsers),
+		CoachChatMaxMessageChars:  cfg.API.Features.CoachChatMaxMessageChars,
+	}
+
 	svc := api.NewService(api.Config{
 		Enqueuer:              enq,
 		Jobs:                  store.Jobs(),
@@ -105,6 +122,10 @@ func run() error {
 		RunsIdem:              store,
 		JobUserInitiable:      catalog.JobUserInitiable(),
 		PipelineUserInitiable: catalog.PipelineUserInitiable(),
+		UserStore:             store,
+		ProviderLogin:         providerLogin,
+		AuthNameSync:          authNameSync,
+		Features:              features,
 		Auth:                  authn,
 		CORSOrigins:           cfg.API.CORSOrigins,
 		SwaggerEnabled:        cfg.API.SwaggerEnabled,
