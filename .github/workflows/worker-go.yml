@@ -1,8 +1,10 @@
 name: worker-go
 
-# Go async-job CI: test on every change under src/go, and on master build+push
-# both images to GHCR — the worker (Dockerfile) and the HTTP API server
-# (Dockerfile.api, ADR 0012). The CVM pulls from GHCR (ADR 0002 / 0004).
+# Go async-job CI: `test` runs on every change under src/go OR to this workflow
+# file. `build-push` (publish both images to GHCR + open a Renovate bump PR) runs
+# on master ONLY when src/go/** actually changed — a workflow-only edit must not
+# republish a new CalVer image or bump the deployed version. Images: the worker
+# (Dockerfile) + HTTP API server (Dockerfile.api, ADR 0012). CVM pulls (ADR 0002/0004).
 #
 # Both images carry :latest and a version-sortable :<CalVer> = YYYY.M.<run_number>.
 # stride-worker additionally keeps :<sha> for tracing a running container back to
@@ -22,6 +24,21 @@ on:
     paths: ["src/go/**", ".github/workflows/worker-go.yml"]
 
 jobs:
+  # Did Go SOURCE change (not just this workflow file)? Gates build-push so a
+  # workflow-only edit doesn't republish an image / bump the deployed version.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            go:
+              - 'src/go/**'
+
   test:
     runs-on: ubuntu-latest
     defaults:
@@ -41,9 +58,10 @@ jobs:
         run: go test ./...
 
   build-push:
-    # Only publish from master, never from PRs.
-    if: github.event_name == 'push'
-    needs: test
+    # Publish only from master, and only when Go source actually changed — a
+    # workflow-only edit must not republish a new CalVer image or open a bump PR.
+    if: github.event_name == 'push' && needs.changes.outputs.go == 'true'
+    needs: [test, changes]
     runs-on: ubuntu-latest
     permissions:
       contents: read
