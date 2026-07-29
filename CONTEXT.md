@@ -104,3 +104,23 @@ _Avoid_: offset、书签、last_label_id（列名）
 **全量同步 / 增量同步（Full / Incremental Sync）**：
 全量重扫全部历史活动；增量只拉取游标之后的新活动。同一 watch_sync 任务由 payload `mode` 选择，缺省全量。
 _Avoid_: 首次同步、resync、backfill
+
+## 入门流程与档案（Onboarding & Profile）
+
+（面向用户的账号/入门表层词汇；Go `cmd/api` 的实现设计见 `docs/adr/0013`。）
+
+**入门流程（Onboarding）**：
+新用户进入应用前必须完成的一次性设置——连接一个手表数据源、填写基础档案；完成后才进入训练仪表盘。
+_Avoid_: 注册、引导页、新手引导
+
+**手表已连接（watch_ready）**：
+用户已成功验证并绑定一个手表数据源的标记；与具体厂商无关（COROS、Garmin 均置位）。
+_Avoid_: coros_ready
+
+**基础档案（Profile）**：
+运动员在入门流程填写的身份与体型信息（显示名、出生日期、性别、身高、体重）；不含赛季目标或训练计划目标。
+_Avoid_: 训练目标、race goal、个人资料
+
+**显示名（display_name）**：
+运动员的展示用名字；以 STRIDE 侧为准（source of truth），变更后尽力回写镜像到 Auth 服务的 `name`。
+_Avoid_: 用户名、昵称、Auth name（后者只是其镜像）

@@ -1,0 +1,24 @@
+# Go `cmd/api`: user profile + onboarding endpoints
+
+The Go `cmd/api` (ADR 0012) so far exposed only the job/pipeline control-plane. We add the first **user-facing account/onboarding** endpoints — `GET /api/users/me/profile`, `POST /api/users/me/profile`, and a unified `POST /api/users/me/watch/login` — as a **coexisting port** of the Python `stride_server` onboarding routes (steps 2/3/4 of the register→onboarding flow). The browser is *not* cut over to Go as part of this work; the port aims at contract parity so a later cutover is mostly routing.
+
+## Decision
+
+- **Coexisting port, browser-direct eventually.** Endpoints live in the existing `cmd/api` gin binary and reuse the ADR 0012 JWT user-tier (`partition_key`/user id derived from JWT `sub`). We target contract parity with the Python JSON, with the two explicit divergences noted below (each tracked as a frontend/Python follow-up).
+- **Profile + onboarding state are new Go-owned MySQL tables** (ADR 0006), *not* a file/blob content-store like Python. The `cmd/api` container on Tencent has no durable shared FS, and this state is app-level (not watch-synced), so it must not go in the watch DB (Storage-scope rule).
+  - `user_profile`: `user_id` (PK) + the **five onboarding core fields** only — `display_name`, `dob`, `sex`, `height_cm`, `weight_kg`. Race/training-plan goals (`target_*`, `pbs`, `weekly_mileage_km`, `constraints`) are **deferred to a separate future table** owned by the training-plan setup work.
+  - `user_onboarding`: `user_id` (PK), `watch_ready` bool, `profile_ready` bool, `completed_at` nullable. Sync/pipeline-progress columns are deferred to the APIs 5/6 (sync) port.
+- **`coros_ready` is renamed `watch_ready`** (schema *and* JSON), with **no `coros_ready` alias**. The Python field name is a provider-agnostic misnomer (Garmin login sets it too). Go emits `watch_ready` now; renaming the frontend + Python is a tracked follow-up that gates any onboarding cutover.
+- **`display_name` source-of-truth moves to stride.** `GET profile` reads it locally (no auth-service call on the hot path, preserving ADR 0012's offline JWT verification). `POST profile` writes it to MySQL first, then **best-effort inline** mirrors it to the auth-service via `PATCH /api/users/me {name}` (forwarding the caller's bearer); a failed push is logged, never blocks the save. Auth's `name` becomes a mirror.
+- **Unified watch login.** One route `POST /api/users/me/watch/login` with body `{provider∈{coros,garmin}, email, password, region?}` and a single handler, instead of Python's two `/{provider}/login` routes. (A path param `/:provider/login` is impossible — gin/httprouter forbids a param child alongside the static `/profile` child under `/users/me/`.) Login authenticates via `provider.Login`, which persists the `provider_credentials` row so `Store.ProviderForUser` resolves the binding — no `config.json`. On success it sets `watch_ready`. It does **not** trigger any sync/pipeline (deferred to the sync-endpoint port; the Go pipeline registry has no onboarding pipeline yet).
+- **`features` block: full parity from Go config.** `GET profile` returns `sync_data_at_onboarding` plus the `coach_*` flags, read from the Go api yaml config exactly like Python reads them from TOML (`uuid ∈ allow-list`).
+- **Handlers as a sibling registrar.** The new endpoints form their own cohesive unit in `internal/api` (own deps: profile store, onboarding store, provider login, auth name-sync) mounted on the shared authed group, keeping the ADR 0012 job/pipeline `Service` focused. One binary, one router, one auth path.
+- **Validation parity on `POST profile`.** Binding failures return `422` with a FastAPI-shaped `detail: [{loc, msg}]` array so the existing `ProfileStep` field-error UX works unchanged. Watch-login auth failures return a single generic `400 {error}` (enumeration-resistant).
+
+## Consequences
+
+- **Two tracked follow-ups gate the browser cutover:** rename `coros_ready → watch_ready` in the frontend (`OnboardingWizard`, `api.ts`, fixtures) + Python (`onboarding.py`/`watch.py`/`profile.py`), and switch the frontend's `/coros/login`+`/garmin/login` calls to `/watch/login`.
+- **Dual-config drift:** the `coach_*` allow-lists now live in both Python TOML and Go yaml during coexistence and can silently diverge; reconcile when Python retires.
+- **Auth mirror can drift on outage:** best-effort `display_name` write-back means a transient auth-service failure leaves Auth's `name` stale until the next edit. Upgrading the push to a queue-backed job (guaranteed eventual consistency) is a noted follow-up.
+- **Stacked on the unmerged `cmd/api` foundation** (ADR 0012 implementation): this branch bases on that commit and should merge after it.
+- **Race-goal profile fields + onboarding sync endpoints (APIs 5/6) remain unported**, so `completed_at` stays null in the Go flow until the sync port lands.
