@@ -102,7 +102,7 @@ func run() error {
 		}
 		return registry.Build(name, store, watchRequestDelay)
 	}
-	registerHandlers(reg, resolve)
+	registerHandlers(reg, resolve, store)
 	policy := job.RetryPolicy{
 		MaxAttempts: cfg.Retry.MaxAttempts,
 		BaseBackoff: cfg.Retry.BaseBackoff,
@@ -149,11 +149,11 @@ func run() error {
 // registerHandlers wires job handlers. `hello` is the deploy smoke handler;
 // `watch_sync` runs a user's COROS watch-data sync (ADR 0011);
 // `onboarding_compute` derives baselines/load/ability from synced data (ADR 0013).
-func registerHandlers(reg *job.Registry, resolve watchsync.Resolver) {
+func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
 	})
 	reg.MustRegister(watchsync.JobType, watchsync.New(resolve))
-	reg.MustRegister(onboardingcompute.JobType, onboardingcompute.New())
+	reg.MustRegister(onboardingcompute.JobType, onboardingcompute.New(store))
 }

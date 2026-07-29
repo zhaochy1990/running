@@ -47,6 +47,24 @@ type RunningCalibrationSnapshot struct {
 
 func (RunningCalibrationSnapshot) TableName() string { return "running_calibration_snapshot" }
 
+// RunningCalibrationZone is one training zone derived from a snapshot (table
+// "running_calibration_zone"). Mirrors the Python zone rows; zone_kind is
+// "pace" or "heart_rate". For HR zones min_speed_mps/max_speed_mps are NULL.
+type RunningCalibrationZone struct {
+	ID          uint64   `gorm:"column:id;primaryKey;autoIncrement"`
+	UserID      string   `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_run_cal_zone,priority:1"`
+	SnapshotID  uint64   `gorm:"column:snapshot_id;not null;uniqueIndex:uq_run_cal_zone,priority:2"`
+	ZoneKind    string   `gorm:"column:zone_kind;type:varchar(16);not null;uniqueIndex:uq_run_cal_zone,priority:3"`
+	Name        string   `gorm:"column:name;type:varchar(32);not null;uniqueIndex:uq_run_cal_zone,priority:4"`
+	MinValue    *float64 `gorm:"column:min_value"`
+	MaxValue    *float64 `gorm:"column:max_value"`
+	MinSpeedMps *float64 `gorm:"column:min_speed_mps"`
+	MaxSpeedMps *float64 `gorm:"column:max_speed_mps"`
+	Confidence  string   `gorm:"column:confidence;type:varchar(16);not null"`
+}
+
+func (RunningCalibrationZone) TableName() string { return "running_calibration_zone" }
+
 // PersonalBest is one achieved-time PB per display distance (table
 // "personal_bests"). Mirrors stride_core.pb_records; PK (user_id, distance).
 // EntryJSON holds the full detector entry (history progression + segment
@@ -68,6 +86,7 @@ func (PersonalBest) TableName() string { return "personal_bests" }
 func computeModels() []any {
 	return []any{
 		&RunningCalibrationSnapshot{},
+		&RunningCalibrationZone{},
 		&PersonalBest{},
 	}
 }

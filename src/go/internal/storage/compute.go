@@ -45,6 +45,29 @@ func (s *Store) UpsertRunningCalibrationSnapshot(ctx context.Context, snap *Runn
 	return out.ID, nil
 }
 
+// ReplaceCalibrationZones replaces the zone rows for one snapshot (delete by
+// snapshot_id then insert), mirroring the Python _save_zones DELETE+INSERT.
+func (s *Store) ReplaceCalibrationZones(ctx context.Context, userID string, snapshotID uint64, zones []RunningCalibrationZone) error {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	for i := range zones {
+		zones[i].UserID = uid
+		zones[i].SnapshotID = snapshotID
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ? AND snapshot_id = ?", uid, snapshotID).
+			Delete(&RunningCalibrationZone{}).Error; err != nil {
+			return err
+		}
+		if len(zones) == 0 {
+			return nil
+		}
+		return tx.CreateInBatches(&zones, 100).Error
+	})
+}
+
 // ReplacePersonalBests replaces a user's entire personal-bests set in one
 // transaction (delete-then-insert), mirroring Python persist_personal_bests
 // which rewrites the cached PB table wholesale.
