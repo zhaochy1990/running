@@ -160,10 +160,12 @@ class AccountDrawer extends ConsumerWidget {
                         await ref
                             .read(syncControllerProvider.notifier)
                             .triggerSync();
+                        if (!context.mounted) return;
                         messenger.showSnackBar(
                           const SnackBar(content: Text('已同步手表数据')),
                         );
                       } catch (e) {
+                        if (!context.mounted) return;
                         messenger.showSnackBar(
                           SnackBar(content: Text('同步失败：$e')),
                         );
