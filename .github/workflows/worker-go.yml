@@ -107,4 +107,16 @@ jobs:
             echo "RENOVATE_TOKEN not set — skipping Renovate run."
             exit 0
           fi
-          npx --yes renovate@41 zhaochy1990/stride-devops
+          # GHCR's tag-list API can lag a few seconds behind the push we just
+          # made; wait so Renovate reliably sees this release's own new tag.
+          sleep 30
+          # Retry transient registry/network failures: 3 attempts, 10s apart.
+          for attempt in 1 2 3; do
+            if npx --yes renovate@latest zhaochy1990/stride-devops; then
+              exit 0
+            fi
+            echo "Renovate attempt ${attempt} failed."
+            [ "${attempt}" -lt 3 ] && sleep 10
+          done
+          echo "Renovate did not succeed after 3 attempts."
+          exit 1
