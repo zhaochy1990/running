@@ -29,9 +29,11 @@ type Writer interface {
 
 var _ Writer = (*Store)(nil)
 
-// AutoMigrateWatch creates/updates the watch-domain tables.
+// AutoMigrateWatch creates/updates the watch-domain tables plus the
+// onboarding-compute derived tables (Go owns both schemas, ADR 0006 / 0015).
 func (s *Store) AutoMigrateWatch(ctx context.Context) error {
-	if err := s.db.WithContext(ctx).AutoMigrate(watchModels()...); err != nil {
+	models := append(watchModels(), computeModels()...)
+	if err := s.db.WithContext(ctx).AutoMigrate(models...); err != nil {
 		return fmt.Errorf("storage: automigrate watch: %w", err)
 	}
 	return nil

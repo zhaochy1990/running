@@ -148,3 +148,87 @@ func ActivityFields() []Field {
 		{Name: "temperature", Kind: Float, Tol: eps},
 	}
 }
+
+// CalibrationFields compares running_calibration_snapshot rows (keyed by
+// as_of_date). Baseline scalars use tight float tolerances; the speed-duration
+// model fields use slightly looser bands (they cascade from threshold speed,
+// which drifts marginally on legacy km-distance activities). See ADR 0015.
+func CalibrationFields() []Field {
+	return []Field{
+		{Name: "algorithm_version", Kind: Exact},
+		{Name: "threshold_hr_confidence", Kind: Exact},
+		{Name: "threshold_speed_confidence", Kind: Exact},
+		{Name: "hrmax_confidence", Kind: Exact},
+		{Name: "speed_duration_confidence", Kind: Exact},
+		{Name: "threshold_hr", Kind: Float, Tol: 0.5},
+		{Name: "threshold_speed_mps", Kind: Float, Tol: 0.02},
+		{Name: "rhr_baseline", Kind: Float, Tol: 0.5},
+		{Name: "observed_max_hr", Kind: Float, Tol: 0.5},
+		{Name: "hrmax_estimate", Kind: Float, Tol: 0.5},
+		{Name: "high_hr_reference", Kind: Float, Tol: 0.5},
+		{Name: "critical_power_w", Kind: Float, Tol: 1.0},
+		{Name: "critical_speed_mps", Kind: Float, Tol: 0.05},
+		{Name: "d_prime_m", Kind: Float, Tol: 5.0},
+		{Name: "riegel_k", Kind: Float, Tol: 0.001},
+		{Name: "endurance_index", Kind: Float, Tol: 0.01},
+		{Name: "speed_index", Kind: Float, Tol: 0.01},
+	}
+}
+
+// ZoneFields compares running_calibration_zone rows (keyed by
+// as_of_date|zone_kind|name).
+func ZoneFields() []Field {
+	return []Field{
+		{Name: "confidence", Kind: Exact},
+		{Name: "min_value", Kind: Float, Tol: 0.5},
+		{Name: "max_value", Kind: Float, Tol: 0.5},
+		{Name: "min_speed_mps", Kind: Float, Tol: 0.02},
+		{Name: "max_speed_mps", Kind: Float, Tol: 0.02},
+	}
+}
+
+// PersonalBestFields compares personal_bests rows (keyed by distance). entry_json
+// (a provenance blob) is intentionally excluded.
+func PersonalBestFields() []Field {
+	return []Field{
+		{Name: "source", Kind: Exact},
+		{Name: "achieved_at", Kind: Exact},
+		{Name: "pb_time_sec", Kind: Float, Tol: 0.5},
+	}
+}
+
+// ActivityLoadFields compares activity_training_load rows (keyed by label_id).
+// mechanical_load is excluded: it depends on the raw activity distance, which
+// diverges on legacy km-distance activities (a watch-sync data issue, not the
+// load math — ADR 0015).
+func ActivityLoadFields() []Field {
+	return []Field{
+		{Name: "session_class", Kind: Exact},
+		{Name: "coverage_status", Kind: Exact},
+		{Name: "load_confidence", Kind: Exact},
+		{Name: "training_dose_source", Kind: Exact},
+		{Name: "excluded_from_pmc", Kind: Exact},
+		{Name: "training_dose", Kind: Float, Tol: 0.5},
+		{Name: "cardio_tss", Kind: Float, Tol: 0.5},
+		{Name: "external_tss", Kind: Float, Tol: 0.5},
+		{Name: "high_intensity_tss", Kind: Float, Tol: 0.5},
+		{Name: "cardio_coverage", Kind: Float, Tol: 0.02},
+		{Name: "external_coverage", Kind: Float, Tol: 0.02},
+		{Name: "high_intensity_coverage", Kind: Float, Tol: 0.02},
+	}
+}
+
+// DailyLoadFields compares daily_training_load rows (keyed by date). NOTE: the
+// PMC is path-dependent (EWMA), so a meaningful diff requires both stores to be
+// computed over the same window/inputs. readiness_gate is excluded because it
+// needs daily_hrv/sleep, which the Go sync does not yet populate (a sync gap).
+func DailyLoadFields() []Field {
+	return []Field{
+		{Name: "coverage_status", Kind: Exact},
+		{Name: "training_dose", Kind: Float, Tol: 0.5},
+		{Name: "acute_load", Kind: Float, Tol: 1.0},
+		{Name: "chronic_load", Kind: Float, Tol: 1.0},
+		{Name: "form", Kind: Float, Tol: 1.0},
+		{Name: "load_ratio", Kind: Float, Tol: 0.02},
+	}
+}
