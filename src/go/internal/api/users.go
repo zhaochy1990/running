@@ -195,6 +195,15 @@ type validationErrorResponse struct {
 
 // getProfile returns the user's profile, onboarding state, watch provider, and
 // feature flags. display_name is read locally (stride is source of truth).
+//
+//	@Summary		Get the current user's profile, onboarding state and features
+//	@Tags			users
+//	@Produce		json
+//	@Success		200	{object}	profileResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/profile [get]
 func (u *userRoutes) getProfile(c *gin.Context) {
 	uid, ok := requireUser(c)
 	if !ok {
@@ -247,6 +256,19 @@ func (u *userRoutes) getProfile(c *gin.Context) {
 
 // postProfile validates and saves the five core profile fields, marks
 // profile_ready, then best-effort mirrors display_name to the auth-service.
+//
+//	@Summary		Save the current user's basic profile
+//	@Description	Persists the five onboarding core fields, marks profile_ready, and best-effort mirrors the display name to the auth-service.
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		profileInput	true	"Profile core fields"
+//	@Success		200		{object}	map[string]bool
+//	@Failure		401		{object}	errorResponse
+//	@Failure		422		{object}	validationErrorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/profile [post]
 func (u *userRoutes) postProfile(c *gin.Context) {
 	uid, ok := requireUser(c)
 	if !ok {
@@ -290,6 +312,19 @@ func (u *userRoutes) postProfile(c *gin.Context) {
 
 // watchLogin authenticates a watch provider (COROS/Garmin), persists creds, and
 // marks watch_ready. It triggers no sync (deferred to the sync-endpoint port).
+//
+//	@Summary		Connect a watch provider (COROS/Garmin)
+//	@Description	Authenticates the watch account, persists credentials, and marks watch_ready. Provider is selected in the body; region applies to Garmin. Triggers no sync.
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		watchLoginInput	true	"Watch provider credentials"
+//	@Success		200		{object}	watchLoginResponse
+//	@Failure		400		{object}	errorResponse
+//	@Failure		401		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/watch/login [post]
 func (u *userRoutes) watchLogin(c *gin.Context) {
 	uid, ok := requireUser(c)
 	if !ok {
