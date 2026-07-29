@@ -75,6 +75,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Also publish to Aliyun ACR (China mirror) so the Tencent CVM can pull
+      # in-region — GHCR's blob CDN is throttled from mainland China. Registry
+      # host is in the ALIYUN_ACR_REGISTRY repo variable; creds in secrets.
+      - name: Log in to Aliyun ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.ALIYUN_ACR_REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
       # CalVer release tag: YYYY.M.<run_number>. run_number is strictly
       # increasing per workflow, so the tag is version-sortable (Renovate's
       # regex versioning in stride-devops orders it); both Go images share the
@@ -91,6 +100,8 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/stride-worker:latest
             ghcr.io/${{ github.repository_owner }}/stride-worker:${{ github.sha }}
             ghcr.io/${{ github.repository_owner }}/stride-worker:${{ steps.calver.outputs.version }}
+            ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-worker:latest
+            ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-worker:${{ steps.calver.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Build and push api
@@ -102,6 +113,8 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/stride-api:latest
             ghcr.io/${{ github.repository_owner }}/stride-api:${{ steps.calver.outputs.version }}
+            ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-api:latest
+            ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-api:${{ steps.calver.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       # Run Renovate against stride-devops right after the images land, so its
