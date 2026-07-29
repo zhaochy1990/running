@@ -80,3 +80,24 @@ func (s *Store) DailyHealthWithRHR(ctx context.Context, userID string) ([]DailyH
 	}
 	return rows, nil
 }
+
+// runSportIDs mirrors stride_core.models.RUN_SPORT_IDS (sport_type integers
+// treated as running for the PB scan).
+var runSportIDs = []int{100, 101, 102, 103, 104, 600, 601, 8001, 8002, 8003, 8004, 8005}
+
+// AllRunningActivities returns every running activity (by sport_type) with a
+// positive duration, ordered by (date, label_id) — the chronological scan order
+// the PB detector needs. Mirrors pb_records.detect_personal_bests' query.
+func (s *Store) AllRunningActivities(ctx context.Context, userID string) ([]Activity, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []Activity
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ? AND sport_type IN ? AND duration_s IS NOT NULL AND duration_s > 0", uid, runSportIDs).
+		Order("date, label_id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}

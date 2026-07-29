@@ -19,6 +19,7 @@ type fakeStore struct {
 
 	snap  *storage.RunningCalibrationSnapshot
 	zones []storage.RunningCalibrationZone
+	pbs   []storage.PersonalBest
 }
 
 func (f *fakeStore) ActivitiesInWindow(context.Context, string, string, time.Time, time.Time) ([]storage.Activity, error) {
@@ -39,6 +40,13 @@ func (f *fakeStore) UpsertRunningCalibrationSnapshot(_ context.Context, snap *st
 }
 func (f *fakeStore) ReplaceCalibrationZones(_ context.Context, _ string, snapshotID uint64, zones []storage.RunningCalibrationZone) error {
 	f.zones = zones
+	return nil
+}
+func (f *fakeStore) AllRunningActivities(context.Context, string) ([]storage.Activity, error) {
+	return f.acts, nil
+}
+func (f *fakeStore) ReplacePersonalBests(_ context.Context, _ string, pbs []storage.PersonalBest) error {
+	f.pbs = pbs
 	return nil
 }
 
