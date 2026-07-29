@@ -1,7 +1,7 @@
 // Package trainingload is a pure Go port of stride_core.training_load: objective
 // per-activity load (cardio TRIMP, external/pace TSS, high-intensity TSS,
 // mechanical load) and the daily PMC (CTL/ATL/Form). Infra-free so it unit-tests
-// and reconciles against the Python single source (ADR 0013). Ported in
+// and reconciles against the Python single source (ADR 0015). Ported in
 // dependency-ordered sub-slices; this file establishes the shared types.
 package trainingload
 

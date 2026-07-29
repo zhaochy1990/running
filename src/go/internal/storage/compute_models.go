@@ -3,7 +3,7 @@
 // later training load + ability), as opposed to the watch_models.go tables which
 // mirror provider-synced data. Go owns this schema (ADR 0006); it mirrors the
 // Python SQLite columns (stride_storage/sqlite) plus a user_id tenant key so the
-// reconcile diff (ADR 0005) compares like-for-like. See ADR 0013.
+// reconcile diff (ADR 0005) compares like-for-like. See ADR 0015.
 package storage
 
 import "time"

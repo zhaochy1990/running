@@ -3,7 +3,7 @@
 // RHR baseline, critical power, speed-duration model, zones) from a window of
 // running activities plus daily resting-HR rows. It is infra-free (no DB, no
 // provider units) so it unit-tests and reconciles against the Python single
-// source (AGENTS.md, ADR 0013). The storage reader converts MySQL rows into
+// source (AGENTS.md, ADR 0015). The storage reader converts MySQL rows into
 // these domain types.
 package calibration
 

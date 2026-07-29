@@ -148,7 +148,7 @@ func run() error {
 
 // registerHandlers wires job handlers. `hello` is the deploy smoke handler;
 // `watch_sync` runs a user's COROS watch-data sync (ADR 0011);
-// `onboarding_compute` derives baselines/load/ability from synced data (ADR 0013).
+// `onboarding_compute` derives baselines/load/ability from synced data (ADR 0015).
 func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)

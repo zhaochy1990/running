@@ -2,7 +2,7 @@
 // connector (stride_storage/sqlite/calibration_connector.py): it reads the
 // synced watch tables and maps them into the infra-free calibration domain
 // types via the shared watchmap conversions, keeping the calibration math pure
-// (ADR 0013).
+// (ADR 0015).
 package calibrationsource
 
 import (

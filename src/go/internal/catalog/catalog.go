@@ -23,7 +23,7 @@ const (
 	JobTypeOnboardingCompute = "onboarding_compute"
 )
 
-// PipelineOnboarding is the new-user onboarding pipeline name (ADR 0013).
+// PipelineOnboarding is the new-user onboarding pipeline name (ADR 0015).
 const PipelineOnboarding = "onboarding"
 
 // JobSpec is one known job type and whether end users may enqueue it directly.
@@ -50,7 +50,7 @@ func Jobs() []JobSpec {
 
 // Pipelines returns every pipeline the API can start. The onboarding pipeline
 // (full_sync -> onboarding_compute) is user-initiable: a browser/app POSTs
-// /pipelines/onboarding for its own partition (ADR 0012 / 0013). Its step job
+// /pipelines/onboarding for its own partition (ADR 0012 / 0015). Its step job
 // types MUST be registered as handlers in cmd/worker.
 func Pipelines() []PipelineSpec {
 	return []PipelineSpec{

@@ -1,6 +1,6 @@
 // compute.go adds the onboarding-compute persistence surface to Store: upserting
 // the running-calibration snapshot and replacing the personal-bests set. These
-// are the write side of the onboarding_compute handler (ADR 0013); reads for the
+// are the write side of the onboarding_compute handler (ADR 0015); reads for the
 // compute inputs live alongside the watch readers.
 package storage
 

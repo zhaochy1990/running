@@ -69,7 +69,7 @@ _Avoid_: dead-letter（沿用作队列名 DLQ，但任务语义统一叫 poison�
 
 ### 用户 Onboarding
 
-（Go 侧新用户建档流程；实现设计见 `docs/adr/0011`（watch_sync）、`0012`（cmd/api）、`0013`（compute port）。）
+（Go 侧新用户建档流程；实现设计见 `docs/adr/0011`（watch_sync）、`0012`（cmd/api）、`0015`（compute port）。）
 
 **Onboarding 流水线（onboarding pipeline）**：
 为一名新用户建档的两步 pipeline —— `full_sync`（跑 watch_sync 全量同步手表数据）→ `onboarding_compute`（算出个人基线与历史）。经 `POST /pipelines/onboarding` 触发，是用户可发起的。

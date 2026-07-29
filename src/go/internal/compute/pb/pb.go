@@ -1,7 +1,7 @@
 // Package pb is a pure Go port of stride_core.pb_records: it detects achieved-
 // time personal bests (1K/3K/5K/10K/HM/FM) from a chronological scan of running
 // activities, preferring a continuous timeseries segment and falling back to
-// activity-level distance matching (ADR 0013). Infra-free: the caller provides
+// activity-level distance matching (ADR 0015). Infra-free: the caller provides
 // activities + a timeseries fetcher.
 package pb
 

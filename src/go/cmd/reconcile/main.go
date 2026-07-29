@@ -5,7 +5,7 @@
 //
 // -table selects what to reconcile: activities (default, provider-filtered),
 // calibration, zones, pbs, activity_load, daily_load (the onboarding_compute
-// derived tables, ADR 0013). The derived tables validate only rows present in
+// derived tables, ADR 0015). The derived tables validate only rows present in
 // BOTH stores; note the PMC daily_load is path-dependent, so a clean diff needs
 // both sides computed over the same window/inputs.
 package main

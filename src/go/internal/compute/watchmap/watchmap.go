@@ -2,7 +2,7 @@
 // every compute reader (calibration, training load, ability): the Go equivalent
 // of the Python connector normalisers (speed m/s, centisecond elapsed, distance
 // scale, sport derivation, Shanghai day). Single source so the conversions can
-// never drift between compute slices (ADR 0013).
+// never drift between compute slices (ADR 0015).
 package watchmap
 
 import (

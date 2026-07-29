@@ -1,7 +1,7 @@
 // Package onboardingcompute implements the onboarding_compute job handler: one
 // merged compute pass over a user's synced watch data that derives the athlete
 // baselines (calibration + personal bests), then training load, then ability,
-// persisting the results to MySQL (ADR 0013). It is the second step of the
+// persisting the results to MySQL (ADR 0015). It is the second step of the
 // onboarding pipeline (full_sync -> onboarding_compute).
 //
 // The compute is ported from Python stride_core and grows in dependency-ordered
@@ -35,7 +35,7 @@ const (
 	trainingLoadLookbackDays = 365
 )
 
-// Heartbeat percent bands for the three compute stages (ADR 0013).
+// Heartbeat percent bands for the three compute stages (ADR 0015).
 const (
 	pctCalibration  = 33
 	pctTrainingLoad = 66

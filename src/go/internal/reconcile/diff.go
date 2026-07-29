@@ -152,7 +152,7 @@ func ActivityFields() []Field {
 // CalibrationFields compares running_calibration_snapshot rows (keyed by
 // as_of_date). Baseline scalars use tight float tolerances; the speed-duration
 // model fields use slightly looser bands (they cascade from threshold speed,
-// which drifts marginally on legacy km-distance activities). See ADR 0013.
+// which drifts marginally on legacy km-distance activities). See ADR 0015.
 func CalibrationFields() []Field {
 	return []Field{
 		{Name: "algorithm_version", Kind: Exact},
@@ -200,7 +200,7 @@ func PersonalBestFields() []Field {
 // ActivityLoadFields compares activity_training_load rows (keyed by label_id).
 // mechanical_load is excluded: it depends on the raw activity distance, which
 // diverges on legacy km-distance activities (a watch-sync data issue, not the
-// load math — ADR 0013).
+// load math — ADR 0015).
 func ActivityLoadFields() []Field {
 	return []Field{
 		{Name: "session_class", Kind: Exact},

@@ -1,7 +1,7 @@
 # Go onboarding compute — implementation spec
 
 Status: **proposed** (design agreed via grilling; tolerances subject to review).
-Companion to **ADR 0013**. Scope decisions and rationale live in the ADR; this
+Companion to **ADR 0015**. Scope decisions and rationale live in the ADR; this
 file is the actionable build plan.
 
 ## Goal
@@ -134,7 +134,7 @@ to diff derived tables). Never log credentials/PII.
 Baseline math still lands in `stride_core/running_calibration/` (the Python single
 source) **first**, then is ported to Go. The Go port is a knowing, time-boxed
 second implementation; `reconcile` is the drift guard until Python retires
-(ADR 0013).
+(ADR 0015).
 
 ## Verification per slice
 
