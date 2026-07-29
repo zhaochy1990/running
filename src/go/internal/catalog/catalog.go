@@ -18,7 +18,13 @@ const (
 	JobTypeHello = "hello"
 	// JobTypeWatchSync syncs one user's watch data; a user may trigger their own.
 	JobTypeWatchSync = "watch_sync"
+	// JobTypeOnboardingCompute derives athlete baselines/load/ability from synced
+	// data. Internal-only: users start the onboarding pipeline, not this step.
+	JobTypeOnboardingCompute = "onboarding_compute"
 )
+
+// PipelineOnboarding is the new-user onboarding pipeline name (ADR 0013).
+const PipelineOnboarding = "onboarding"
 
 // JobSpec is one known job type and whether end users may enqueue it directly.
 type JobSpec struct {
@@ -38,14 +44,27 @@ func Jobs() []JobSpec {
 	return []JobSpec{
 		{Type: JobTypeHello, UserInitiable: false},
 		{Type: JobTypeWatchSync, UserInitiable: true},
+		{Type: JobTypeOnboardingCompute, UserInitiable: false},
 	}
 }
 
-// Pipelines returns every pipeline the API can start. None are wired yet (the
-// onboarding pipeline handlers are out of scope), so POST /pipelines/{name}
-// rejects all names with 400 until a definition is added here.
+// Pipelines returns every pipeline the API can start. The onboarding pipeline
+// (full_sync -> onboarding_compute) is user-initiable: a browser/app POSTs
+// /pipelines/onboarding for its own partition (ADR 0012 / 0013). Its step job
+// types MUST be registered as handlers in cmd/worker.
 func Pipelines() []PipelineSpec {
-	return nil
+	return []PipelineSpec{
+		{
+			Def: pipeline.Def{
+				Name: PipelineOnboarding,
+				Steps: []pipeline.StepDef{
+					{Name: "full_sync", JobType: JobTypeWatchSync},
+					{Name: "onboarding_compute", JobType: JobTypeOnboardingCompute},
+				},
+			},
+			UserInitiable: true,
+		},
+	}
 }
 
 // JobUserInitiable maps job type -> whether a user may create it. Types absent
