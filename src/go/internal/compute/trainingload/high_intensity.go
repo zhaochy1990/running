@@ -3,17 +3,17 @@ package trainingload
 import "math"
 
 const (
-	hiSpeedSmoothingSeconds  = 20.0
-	hiWorkIF                 = 1.05
-	hiMinWorkSeconds         = 60.0
-	hiRecoveryIF             = 0.90
-	hiRecoveryHRIF           = 0.85
-	hiRecoveryWindowSeconds  = 120.0
-	hiArmWindowSeconds       = 240.0
-	hiRecoveryWeight         = 50.0
-	hiSeverityWeight         = 100.0
-	hiSeverityExponent       = 4.0
-	hiMaxTSSPerHour          = 75.0
+	hiSpeedSmoothingSeconds = 20.0
+	hiWorkIF                = 1.05
+	hiMinWorkSeconds        = 60.0
+	hiRecoveryIF            = 0.90
+	hiRecoveryHRIF          = 0.85
+	hiRecoveryWindowSeconds = 120.0
+	hiArmWindowSeconds      = 240.0
+	hiRecoveryWeight        = 50.0
+	hiSeverityWeight        = 100.0
+	hiSeverityExponent      = 4.0
+	hiMaxTSSPerHour         = 75.0
 )
 
 type highIntensityResult struct {

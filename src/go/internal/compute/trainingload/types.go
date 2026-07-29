@@ -88,28 +88,28 @@ type CalibrationSnapshot struct {
 
 // ActivityLoadResult mirrors types.ActivityLoadResult.
 type ActivityLoadResult struct {
-	LabelID                 string
-	ActivityDate            time.Time
-	Sport                   string
-	SessionClass            SessionClass
-	DurationMinutes         *float64
-	AlgorithmVersion        int
-	CalibrationID           *int
-	CardioLoadRaw           *float64
-	CardioTSS               *float64
-	ExternalTSS             *float64
-	HighIntensityTSS        *float64
-	MechanicalLoad          *float64
-	SubjectiveInternalLoad  *float64
-	TrainingDose            *float64
-	TrainingDoseSource      *string
-	CardioCoverage          float64
-	ExternalCoverage        float64
-	HighIntensityCoverage   float64
-	CoverageStatus          CoverageStatus
-	LoadConfidence          LoadConfidence
-	ExcludedFromPMC         bool
-	Reasons                 []string
+	LabelID                string
+	ActivityDate           time.Time
+	Sport                  string
+	SessionClass           SessionClass
+	DurationMinutes        *float64
+	AlgorithmVersion       int
+	CalibrationID          *int
+	CardioLoadRaw          *float64
+	CardioTSS              *float64
+	ExternalTSS            *float64
+	HighIntensityTSS       *float64
+	MechanicalLoad         *float64
+	SubjectiveInternalLoad *float64
+	TrainingDose           *float64
+	TrainingDoseSource     *string
+	CardioCoverage         float64
+	ExternalCoverage       float64
+	HighIntensityCoverage  float64
+	CoverageStatus         CoverageStatus
+	LoadConfidence         LoadConfidence
+	ExcludedFromPMC        bool
+	Reasons                []string
 }
 
 // DailyLoadResult mirrors types.DailyLoadResult.

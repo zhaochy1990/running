@@ -175,16 +175,16 @@ func bestEffortCandidatesForActivity(a Activity, fetch TSFetcher) ([]bestEffort,
 				st := seg.startS
 				en := seg.endS
 				out = append(out, bestEffort{
-					distance:  displayByRaceType[raceType],
-					raceType:  raceType,
-					distanceM: seg.distanceM,
-					durationS: seg.durationS,
+					distance:   displayByRaceType[raceType],
+					raceType:   raceType,
+					distanceM:  seg.distanceM,
+					durationS:  seg.durationS,
 					achievedAt: achievedAt,
-					labelID:   a.LabelID,
-					source:    "segment",
-					name:      a.Name,
-					segStart:  &st,
-					segEnd:    &en,
+					labelID:    a.LabelID,
+					source:     "segment",
+					name:       a.Name,
+					segStart:   &st,
+					segEnd:     &en,
 				})
 			}
 		}
@@ -233,14 +233,14 @@ func activityLevelCandidates(a Activity, achievedAt string) []bestEffort {
 		}
 		raceType := raceTypeByDisplay[display]
 		out = append(out, bestEffort{
-			distance:  display,
-			raceType:  raceType,
-			distanceM: pbDisplayDistances[raceType],
-			durationS: *a.DurationS,
+			distance:   display,
+			raceType:   raceType,
+			distanceM:  pbDisplayDistances[raceType],
+			durationS:  *a.DurationS,
 			achievedAt: achievedAt,
-			labelID:   a.LabelID,
-			source:    "activity",
-			name:      a.Name,
+			labelID:    a.LabelID,
+			source:     "activity",
+			name:       a.Name,
 		})
 	}
 	return out

@@ -8,9 +8,9 @@ import (
 func TestBisectLeft(t *testing.T) {
 	a := []float64{0, 1, 2, 3, 4}
 	cases := []struct {
-		x        float64
-		lo, hi   int
-		want     int
+		x      float64
+		lo, hi int
+		want   int
 	}{
 		{2, 0, 5, 2},
 		{2.5, 0, 5, 3},

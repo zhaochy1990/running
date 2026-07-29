@@ -70,11 +70,11 @@ type HealthRow struct {
 
 // HrMaxProfile mirrors HrMaxProfile — the HRmax estimation result.
 type HrMaxProfile struct {
-	ObservedMaxHR  *float64
-	EstimatedHRMax *float64
-	Confidence     Confidence
+	ObservedMaxHR   *float64
+	EstimatedHRMax  *float64
+	Confidence      Confidence
 	HighHRReference *float64
-	SampleCount    int
+	SampleCount     int
 }
 
 // Snapshot mirrors RunningCalibrationSnapshot's persisted scalar fields. Zones

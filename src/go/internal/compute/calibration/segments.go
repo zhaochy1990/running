@@ -157,7 +157,7 @@ func prepareSamples(samples []Sample) preparedSamples {
 	return p
 }
 
-func rangeCount(prefix []int, start, end int) int  { return prefix[end+1] - prefix[start] }
+func rangeCount(prefix []int, start, end int) int       { return prefix[end+1] - prefix[start] }
 func rangeSum(prefix []float64, start, end int) float64 { return prefix[end+1] - prefix[start] }
 
 func durationFromSamples(samples []Sample) *float64 {
