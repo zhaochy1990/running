@@ -1,0 +1,540 @@
+definitions:
+  api.createJobRequest:
+    properties:
+      input:
+        type: object
+      partition_key:
+        example: Global
+        type: string
+      type:
+        example: watch_sync
+        type: string
+    required:
+    - type
+    type: object
+  api.enqueueJobResponse:
+    properties:
+      deduplicated:
+        type: boolean
+      job_id:
+        type: string
+      partition_key:
+        type: string
+    type: object
+  api.errorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  api.featureFlags:
+    properties:
+      coach_agent_weekly_plan:
+        type: boolean
+      coach_chat:
+        type: boolean
+      coach_chat_debug:
+        type: boolean
+      coach_chat_max_message_chars:
+        type: integer
+      sync_data_at_onboarding:
+        type: boolean
+    type: object
+  api.jobStateResponse:
+    properties:
+      attempts:
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      error_code:
+        type: string
+      error_message:
+        type: string
+      job_id:
+        type: string
+      job_type:
+        type: string
+      partition_key:
+        type: string
+      progress_pct:
+        type: integer
+      result_json:
+        type: string
+      stage:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  api.onboardingState:
+    properties:
+      completed_at:
+        type: string
+      profile_ready:
+        type: boolean
+      watch_ready:
+        type: boolean
+    type: object
+  api.pipelineStepResponse:
+    properties:
+      job_id:
+        type: string
+      job_type:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+    type: object
+  api.profileCore:
+    properties:
+      display_name:
+        type: string
+      dob:
+        type: string
+      height_cm:
+        type: number
+      sex:
+        type: string
+      weight_kg:
+        type: number
+    type: object
+  api.profileInput:
+    properties:
+      display_name:
+        type: string
+      dob:
+        type: string
+      height_cm:
+        type: number
+      sex:
+        enum:
+        - male
+        - female
+        - other
+        type: string
+      weight_kg:
+        type: number
+    required:
+    - display_name
+    - dob
+    - height_cm
+    - sex
+    - weight_kg
+    type: object
+  api.profileResponse:
+    properties:
+      display_name:
+        type: string
+      features:
+        $ref: '#/definitions/api.featureFlags'
+      id:
+        type: string
+      onboarding:
+        $ref: '#/definitions/api.onboardingState'
+      profile:
+        $ref: '#/definitions/api.profileCore'
+      provider:
+        type: string
+    type: object
+  api.runStateResponse:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      current_step:
+        type: integer
+      error_message:
+        type: string
+      partition_key:
+        type: string
+      pipeline_name:
+        type: string
+      run_id:
+        type: string
+      status:
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/api.pipelineStepResponse'
+        type: array
+      updated_at:
+        type: string
+    type: object
+  api.startPipelineRequest:
+    properties:
+      input:
+        type: object
+      partition_key:
+        type: string
+    type: object
+  api.startPipelineResponse:
+    properties:
+      deduplicated:
+        type: boolean
+      partition_key:
+        type: string
+      pipeline_name:
+        type: string
+      run_id:
+        type: string
+    type: object
+  api.validationDetailItem:
+    properties:
+      loc:
+        items:
+          type: string
+        type: array
+      msg:
+        type: string
+    type: object
+  api.validationErrorResponse:
+    properties:
+      detail:
+        items:
+          $ref: '#/definitions/api.validationDetailItem'
+        type: array
+    type: object
+  api.watchLoginInput:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+      provider:
+        enum:
+        - coros
+        - garmin
+        type: string
+      region:
+        enum:
+        - cn
+        - global
+        type: string
+    required:
+    - email
+    - password
+    - provider
+    type: object
+  api.watchLoginResponse:
+    properties:
+      ok:
+        type: boolean
+      region:
+        type: string
+      user_id:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: Create and track async jobs and pipelines for the STRIDE worker.
+  title: STRIDE Async-Job API
+  version: "1.0"
+paths:
+  /api/users/me/profile:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.profileResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get the current user's profile, onboarding state and features
+      tags:
+      - users
+    post:
+      consumes:
+      - application/json
+      description: Persists the five onboarding core fields, marks profile_ready,
+        and best-effort mirrors the display name to the auth-service.
+      parameters:
+      - description: Profile core fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.profileInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.validationErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Save the current user's basic profile
+      tags:
+      - users
+  /api/users/me/watch/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticates the watch account, persists credentials, and marks
+        watch_ready. Provider is selected in the body; region applies to Garmin. Triggers
+        no sync.
+      parameters:
+      - description: Watch provider credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.watchLoginInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.watchLoginResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Connect a watch provider (COROS/Garmin)
+      tags:
+      - users
+  /jobs:
+    post:
+      consumes:
+      - application/json
+      description: Creates a job and publishes it to the worker. Internal callers
+        may target any partition and any cataloged job type; user callers may only
+        create user-initiable types and the partition is derived from their token.
+        Supply an Idempotency-Key header to make retries safe.
+      parameters:
+      - description: Deduplicates creation; a repeat key returns the existing job
+          (200)
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Job to enqueue
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.createJobRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Existing job returned for a repeated Idempotency-Key
+          schema:
+            $ref: '#/definitions/api.enqueueJobResponse'
+        "202":
+          description: Enqueued
+          schema:
+            $ref: '#/definitions/api.enqueueJobResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Enqueue an async job
+      tags:
+      - jobs
+  /jobs/{partition_key}/{job_id}:
+    get:
+      parameters:
+      - description: Partition key (user id, or Global)
+        in: path
+        name: partition_key
+        required: true
+        type: string
+      - description: Job id
+        in: path
+        name: job_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.jobStateResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Get a job's status
+      tags:
+      - jobs
+  /pipelines/{name}:
+    post:
+      consumes:
+      - application/json
+      description: Starts a named pipeline (a linear sequence of jobs). Internal callers
+        may start any cataloged pipeline in any partition; user callers may only start
+        user-initiable pipelines in their own partition. Supply an Idempotency-Key
+        header to make retries safe.
+      parameters:
+      - description: Pipeline name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Deduplicates creation; a repeat key returns the existing run
+          (200)
+        in: header
+        name: Idempotency-Key
+        type: string
+      - description: Optional partition/input
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/api.startPipelineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Existing run returned for a repeated Idempotency-Key
+          schema:
+            $ref: '#/definitions/api.startPipelineResponse'
+        "202":
+          description: Started
+          schema:
+            $ref: '#/definitions/api.startPipelineResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Start a pipeline run
+      tags:
+      - pipelines
+  /pipelines/{partition_key}/{run_id}:
+    get:
+      parameters:
+      - description: Partition key (user id, or Global)
+        in: path
+        name: partition_key
+        required: true
+        type: string
+      - description: Run id
+        in: path
+        name: run_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.runStateResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Get a pipeline run's status
+      tags:
+      - pipelines
+securityDefinitions:
+  BearerAuth:
+    description: '"Bearer <JWT>" for end-user callers (RS256).'
+    in: header
+    name: Authorization
+    type: apiKey
+  InternalToken:
+    description: Shared secret for server-to-server callers.
+    in: header
+    name: X-Internal-Token
+    type: apiKey
+swagger: "2.0"

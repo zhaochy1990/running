@@ -7,6 +7,6 @@
 /api
 *.exe
 
-# Generated Swagger docs (ADR 0012): produced at build by `swag init`, never
-# committed. `make swagger` / `go generate ./cmd/api` regenerates them.
-/cmd/api/docs/
+# Generated Swagger docs are now committed (ADR 0014, superseding ADR 0012) so
+# `go mod tidy` resolves the tagged swagger import on a fresh checkout.
+# Regenerate with `make swagger`; CI drift-checks the tree is up to date.
