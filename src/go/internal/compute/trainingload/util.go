@@ -1,6 +1,9 @@
 package trainingload
 
-import "math"
+import (
+	"math"
+	"strings"
+)
 
 var runningSports = map[string]bool{
 	"run": true, "run_outdoor": true, "run_indoor": true,
@@ -9,7 +12,11 @@ var runningSports = map[string]bool{
 
 const cardioHRRExponent = 4.0
 
-func isRunning(sport string) bool { return runningSports[sport] }
+// isRunning mirrors core._is_running: membership OR "run_" prefix.
+func isRunning(sport string) bool {
+	s := strings.ToLower(sport)
+	return runningSports[s] || strings.HasPrefix(s, "run_")
+}
 
 func clamp(v, low, high float64) float64 { return math.Max(low, math.Min(high, v)) }
 

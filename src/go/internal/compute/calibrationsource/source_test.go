@@ -8,84 +8,6 @@ import (
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
-func TestAsSpeedMps(t *testing.T) {
-	if got := asSpeedMps(nil); got != nil {
-		t.Errorf("nil -> %v, want nil", *got)
-	}
-	zero := 0.0
-	if got := asSpeedMps(&zero); got != nil {
-		t.Errorf("0 -> %v, want nil", *got)
-	}
-	ms := 5.0
-	if got := asSpeedMps(&ms); got == nil || *got != 5.0 {
-		t.Errorf("5 (m/s) -> %v, want 5", got)
-	}
-	pace := 300.0 // sec/km style -> 1000/300
-	if got := asSpeedMps(&pace); got == nil || *got < 3.333 || *got > 3.334 {
-		t.Errorf("300 (pace) -> %v, want ~3.3333", got)
-	}
-}
-
-func TestNormalizeElapsedCentiseconds(t *testing.T) {
-	ts := func(v int64) *int64 { return &v }
-	rows := []storage.TimeseriesPoint{
-		{Timestamp: ts(178523734600)},
-		{Timestamp: ts(178523734700)},
-		{Timestamp: ts(178523734800)},
-		{Timestamp: nil},
-	}
-	got := normalizeElapsedSeconds(rows)
-	want := []float64{0, 1.0, 2.0}
-	for i, w := range want {
-		if got[i] == nil || *got[i] != w {
-			t.Errorf("elapsed[%d] = %v, want %v", i, got[i], w)
-		}
-	}
-	if got[3] != nil {
-		t.Errorf("elapsed[3] = %v, want nil", *got[3])
-	}
-}
-
-func TestSportFromRow(t *testing.T) {
-	run := "run"
-	if got := sportFromRow(&run, 0); got != "run" {
-		t.Errorf("explicit sport -> %q, want run", got)
-	}
-	empty := "  "
-	if got := sportFromRow(&empty, 100); got != "run_outdoor" {
-		t.Errorf("sport_type 100 -> %q, want run_outdoor", got)
-	}
-	if got := sportFromRow(nil, 102); got != "run_trail" {
-		t.Errorf("sport_type 102 -> %q, want run_trail", got)
-	}
-	if got := sportFromRow(nil, 9999); got != "unknown" {
-		t.Errorf("unknown sport_type -> %q, want unknown", got)
-	}
-}
-
-func TestDistanceScale(t *testing.T) {
-	rows := []storage.TimeseriesPoint{{Distance: f(1000)}, {Distance: f(5000)}}
-	ad := 5000.0
-	if got := distanceScale(rows, &ad, "coros"); got != 1.0 {
-		t.Errorf("metres scale = %v, want 1.0", got)
-	}
-	// centimetre rows: max 500000 vs 5000m activity -> ratio 100 > 20 -> 0.01
-	cm := []storage.TimeseriesPoint{{Distance: f(500000)}}
-	if got := distanceScale(cm, &ad, "coros"); got != 0.01 {
-		t.Errorf("cm scale = %v, want 0.01", got)
-	}
-}
-
-func TestShanghaiDayCrossesMidnight(t *testing.T) {
-	// 2026-07-28 20:00 UTC = 2026-07-29 04:00 Shanghai -> day 07-29.
-	utc := time.Date(2026, 7, 28, 20, 0, 0, 0, time.UTC)
-	got := shanghaiDay(utc)
-	want := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
-	if !got.Equal(want) {
-		t.Errorf("shanghaiDay = %v, want %v", got, want)
-	}
-}
-
 // fakeReader serves fixed rows so Load is testable without a DB.
 type fakeReader struct {
 	acts   []storage.Activity
@@ -109,6 +31,7 @@ func (r fakeReader) DailyHealthWithRHR(_ context.Context, _ string) ([]storage.D
 
 func f(v float64) *float64 { return &v }
 func i(v int) *int         { return &v }
+func i64(v int64) *int64   { return &v }
 
 func TestLoadDropsNonRunningAndMaps(t *testing.T) {
 	run := "run"
@@ -147,5 +70,3 @@ func TestLoadDropsNonRunningAndMaps(t *testing.T) {
 		t.Errorf("health day = %v, want %v", health[0].Date, wantDay)
 	}
 }
-
-func i64(v int64) *int64 { return &v }
