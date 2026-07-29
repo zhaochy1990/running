@@ -105,7 +105,7 @@ type ActivityTrainingLoad struct {
 	HighIntensityCoverage  float64   `gorm:"column:high_intensity_coverage;not null;default:0"`
 	CoverageStatus         string    `gorm:"column:coverage_status;type:varchar(32);not null;default:unknown"`
 	LoadConfidence         *string   `gorm:"column:load_confidence;type:varchar(16)"`
-	ExcludedFromPMC        bool      `gorm:"column:excluded_from_pmc;not null;default:true"`
+	ExcludedFromPMC        bool      `gorm:"column:excluded_from_pmc;not null"`
 	ReasonsJSON            *string   `gorm:"column:reasons_json;type:longtext"`
 	ComputedAt             time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
 }
