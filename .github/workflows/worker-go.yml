@@ -112,7 +112,7 @@ jobs:
           sleep 30
           # Retry transient registry/network failures: 3 attempts, 10s apart.
           for attempt in 1 2 3; do
-            if npx --yes renovate@41 zhaochy1990/stride-devops; then
+            if npx --yes renovate@latest zhaochy1990/stride-devops; then
               exit 0
             fi
             echo "Renovate attempt ${attempt} failed."
