@@ -132,3 +132,35 @@ type PriorLoadState struct {
 	AcuteLoad   float64
 	ChronicLoad float64
 }
+
+// HealthRow mirrors types.HealthRow (daily readiness inputs).
+type HealthRow struct {
+	Date        time.Time
+	RHR         *float64
+	SleepTotalS *float64
+	SleepScore  *float64
+}
+
+// HrvRow mirrors types.HrvRow.
+type HrvRow struct {
+	Date         time.Time
+	LastNightAvg *float64
+	Status       *string
+}
+
+// FeedbackRow mirrors types.FeedbackRow (per-activity subjective effort).
+type FeedbackRow struct {
+	LabelID         string
+	ActivityDate    time.Time
+	RPE             *int
+	DurationMinutes *float64
+}
+
+// ReadinessLoadHistory mirrors types.ReadinessLoadHistory.
+type ReadinessLoadHistory struct {
+	ActivityDate           time.Time
+	Sport                  string
+	SessionClass           SessionClass
+	SubjectiveInternalLoad float64
+	TrainingDose           float64
+}

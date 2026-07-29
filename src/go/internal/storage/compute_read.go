@@ -81,6 +81,38 @@ func (s *Store) DailyHealthWithRHR(ctx context.Context, userID string) ([]DailyH
 	return rows, nil
 }
 
+// AllDailyHealth returns every daily-health row (any provider) for the user,
+// ordered by date. The daily PMC uses row presence for REST_CONFIRMED coverage
+// and rhr/sleep for readiness.
+func (s *Store) AllDailyHealth(ctx context.Context, userID string) ([]DailyHealth, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []DailyHealth
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ?", uid).
+		Order("date").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// AllDailyHRV returns every daily-HRV row for the user, ordered by date.
+func (s *Store) AllDailyHRV(ctx context.Context, userID string) ([]DailyHRV, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []DailyHRV
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ?", uid).
+		Order("date").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // runSportIDs mirrors stride_core.models.RUN_SPORT_IDS (sport_type integers
 // treated as running for the PB scan).
 var runSportIDs = []int{100, 101, 102, 103, 104, 600, 601, 8001, 8002, 8003, 8004, 8005}

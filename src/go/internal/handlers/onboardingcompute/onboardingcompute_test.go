@@ -17,9 +17,10 @@ type fakeStore struct {
 	acts   []storage.Activity
 	health []storage.DailyHealth
 
-	snap  *storage.RunningCalibrationSnapshot
-	zones []storage.RunningCalibrationZone
-	pbs   []storage.PersonalBest
+	snap      *storage.RunningCalibrationSnapshot
+	zones     []storage.RunningCalibrationZone
+	pbs       []storage.PersonalBest
+	dailyRows int
 }
 
 func (f *fakeStore) ActivitiesInWindow(context.Context, string, string, time.Time, time.Time) ([]storage.Activity, error) {
@@ -48,6 +49,19 @@ func (f *fakeStore) AllRunningActivities(context.Context, string) ([]storage.Act
 func (f *fakeStore) ReplacePersonalBests(_ context.Context, _ string, pbs []storage.PersonalBest) error {
 	f.pbs = pbs
 	return nil
+}
+func (f *fakeStore) ReplaceActivityTrainingLoad(context.Context, string, []storage.ActivityTrainingLoad) error {
+	return nil
+}
+func (f *fakeStore) ReplaceDailyTrainingLoad(_ context.Context, _ string, rows []storage.DailyTrainingLoad) error {
+	f.dailyRows = len(rows)
+	return nil
+}
+func (f *fakeStore) AllDailyHealth(context.Context, string) ([]storage.DailyHealth, error) {
+	return f.health, nil
+}
+func (f *fakeStore) AllDailyHRV(context.Context, string) ([]storage.DailyHRV, error) {
+	return nil, nil
 }
 
 func TestHandlerStagesAndResult(t *testing.T) {

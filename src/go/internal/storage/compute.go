@@ -45,6 +45,48 @@ func (s *Store) UpsertRunningCalibrationSnapshot(ctx context.Context, snap *Runn
 	return out.ID, nil
 }
 
+// ReplaceActivityTrainingLoad upserts per-activity load rows (on user_id,label_id).
+func (s *Store) ReplaceActivityTrainingLoad(ctx context.Context, userID string, rows []ActivityTrainingLoad) error {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for i := range rows {
+		rows[i].UserID = uid
+		if rows[i].ComputedAt.IsZero() {
+			rows[i].ComputedAt = now
+		}
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).
+		Clauses(clause.OnConflict{UpdateAll: true}).
+		CreateInBatches(&rows, 200).Error
+}
+
+// ReplaceDailyTrainingLoad upserts daily PMC rows (on user_id,date).
+func (s *Store) ReplaceDailyTrainingLoad(ctx context.Context, userID string, rows []DailyTrainingLoad) error {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for i := range rows {
+		rows[i].UserID = uid
+		if rows[i].ComputedAt.IsZero() {
+			rows[i].ComputedAt = now
+		}
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).
+		Clauses(clause.OnConflict{UpdateAll: true}).
+		CreateInBatches(&rows, 200).Error
+}
+
 // ReplaceCalibrationZones replaces the zone rows for one snapshot (delete by
 // snapshot_id then insert), mirroring the Python _save_zones DELETE+INSERT.
 func (s *Store) ReplaceCalibrationZones(ctx context.Context, userID string, snapshotID uint64, zones []RunningCalibrationZone) error {

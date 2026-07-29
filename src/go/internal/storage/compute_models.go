@@ -81,6 +81,57 @@ type PersonalBest struct {
 
 func (PersonalBest) TableName() string { return "personal_bests" }
 
+// ActivityTrainingLoad is one activity's objective load (table
+// "activity_training_load"). Mirrors stride_core.training_load; PK
+// (user_id, label_id).
+type ActivityTrainingLoad struct {
+	UserID                 string    `gorm:"column:user_id;type:char(36);primaryKey"`
+	LabelID                string    `gorm:"column:label_id;type:varchar(191);primaryKey"`
+	ActivityDate           string    `gorm:"column:activity_date;type:varchar(16);not null;index:idx_atl_user_date,priority:2"`
+	Sport                  *string   `gorm:"column:sport;type:varchar(64)"`
+	SessionClass           *string   `gorm:"column:session_class;type:varchar(32)"`
+	AlgorithmVersion       int       `gorm:"column:algorithm_version;not null"`
+	CalibrationID          *int      `gorm:"column:calibration_id"`
+	CardioLoadRaw          *float64  `gorm:"column:cardio_load_raw"`
+	CardioTSS              *float64  `gorm:"column:cardio_tss"`
+	ExternalTSS            *float64  `gorm:"column:external_tss"`
+	HighIntensityTSS       *float64  `gorm:"column:high_intensity_tss"`
+	MechanicalLoad         *float64  `gorm:"column:mechanical_load"`
+	SubjectiveInternalLoad *float64  `gorm:"column:subjective_internal_load"`
+	TrainingDose           *float64  `gorm:"column:training_dose"`
+	TrainingDoseSource     *string   `gorm:"column:training_dose_source;type:varchar(64)"`
+	CardioCoverage         float64   `gorm:"column:cardio_coverage;not null;default:0"`
+	ExternalCoverage       float64   `gorm:"column:external_coverage;not null;default:0"`
+	HighIntensityCoverage  float64   `gorm:"column:high_intensity_coverage;not null;default:0"`
+	CoverageStatus         string    `gorm:"column:coverage_status;type:varchar(32);not null;default:unknown"`
+	LoadConfidence         *string   `gorm:"column:load_confidence;type:varchar(16)"`
+	ExcludedFromPMC        bool      `gorm:"column:excluded_from_pmc;not null;default:true"`
+	ReasonsJSON            *string   `gorm:"column:reasons_json;type:longtext"`
+	ComputedAt             time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
+}
+
+func (ActivityTrainingLoad) TableName() string { return "activity_training_load" }
+
+// DailyTrainingLoad is one calendar day's PMC (table "daily_training_load").
+// Mirrors stride_core.training_load; PK (user_id, date).
+type DailyTrainingLoad struct {
+	UserID               string    `gorm:"column:user_id;type:char(36);primaryKey"`
+	Date                 string    `gorm:"column:date;type:varchar(16);primaryKey"`
+	AlgorithmVersion     int       `gorm:"column:algorithm_version;not null"`
+	CalibrationID        *int      `gorm:"column:calibration_id"`
+	TrainingDose         float64   `gorm:"column:training_dose;not null;default:0"`
+	AcuteLoad            float64   `gorm:"column:acute_load"`
+	ChronicLoad          float64   `gorm:"column:chronic_load"`
+	Form                 float64   `gorm:"column:form"`
+	LoadRatio            *float64  `gorm:"column:load_ratio"`
+	CoverageStatus       string    `gorm:"column:coverage_status;type:varchar(32);not null;default:unknown"`
+	ReadinessGate        *string   `gorm:"column:readiness_gate;type:varchar(16)"`
+	ReadinessReasonsJSON *string   `gorm:"column:readiness_reasons_json;type:longtext"`
+	ComputedAt           time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
+}
+
+func (DailyTrainingLoad) TableName() string { return "daily_training_load" }
+
 // computeModels is the set of onboarding-compute derived models, migrated
 // alongside the watch models by AutoMigrateWatch.
 func computeModels() []any {
@@ -88,5 +139,7 @@ func computeModels() []any {
 		&RunningCalibrationSnapshot{},
 		&RunningCalibrationZone{},
 		&PersonalBest{},
+		&ActivityTrainingLoad{},
+		&DailyTrainingLoad{},
 	}
 }
