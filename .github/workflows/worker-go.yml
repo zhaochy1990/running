@@ -95,6 +95,12 @@ jobs:
       #                     zhaochy1990/stride-devops (Renovate opens the PR there).
       #   GHCR_READ_TOKEN — read:packages, to list private GHCR tags (may be the
       #                     same PAT as RENOVATE_TOKEN if it also has that scope).
+      # renovate@latest (43.x) needs Node >=24; the runner defaults to Node 22,
+      # so set up Node 24 for the npx step below.
+      - name: Set up Node 24 for Renovate
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - name: Open version-bump PR in stride-devops (Renovate)
         continue-on-error: true
         env:
