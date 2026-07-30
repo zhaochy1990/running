@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+
+	"github.com/zhaochy1990/stride/internal/httplog"
 )
 
 // Check reports the health of one dependency; nil means healthy.
@@ -19,11 +22,25 @@ type Check func(ctx context.Context) error
 type Server struct {
 	addr   string
 	checks map[string]Check
+	log    *zap.Logger
+}
+
+// Option configures a Server.
+type Option func(*Server)
+
+// WithLogger enables one-line-per-request access logging on the health server
+// (shared httplog middleware). Nil logger leaves logging off.
+func WithLogger(log *zap.Logger) Option {
+	return func(s *Server) { s.log = log }
 }
 
 // New builds a health Server bound to addr with the given named checks.
-func New(addr string, checks map[string]Check) *Server {
-	return &Server{addr: addr, checks: checks}
+func New(addr string, checks map[string]Check, opts ...Option) *Server {
+	s := &Server{addr: addr, checks: checks}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // Endpoint returns a gin handler that runs all checks and reports 200 (all ok)
@@ -57,6 +74,9 @@ func Endpoint(checks map[string]Check) gin.HandlerFunc {
 func (s *Server) Handler() http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
+	if s.log != nil {
+		r.Use(httplog.Middleware(s.log))
+	}
 	r.Use(gin.Recovery())
 	r.GET("/health", Endpoint(s.checks))
 	return r

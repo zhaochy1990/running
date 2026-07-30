@@ -1,5 +1,12 @@
 # Single `stride-sync` binary, registry-selected provider; adapters under `internal/provider/{coros,garmin}`
 
+> **Revised by ADR 0016:** the standalone `stride-sync` binary is now the
+> `stride watch` subcommand group of the unified `stride` binary
+> (`stride watch login|import-creds|sync|status`). The one-binary,
+> registry-selected-provider decision below is unchanged; only the invocation
+> moved from `stride-sync <verb>` to `stride watch <verb>` (the `sync` verb is
+> kept: `stride watch sync`).
+
 Adding Garmin means the Go watch-sync tool now serves two data sources. We keep
 **one `stride-sync` binary** that resolves the provider per user from a registry,
 and we regroup the adapters so COROS and Garmin are visible siblings under the

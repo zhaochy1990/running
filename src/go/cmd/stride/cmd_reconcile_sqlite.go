@@ -194,10 +194,3 @@ func querySQLite(path, query string, scan func(*sql.Rows, map[string]map[string]
 	}
 	return out, rows.Err()
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

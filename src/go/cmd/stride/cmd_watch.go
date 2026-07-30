@@ -1,19 +1,20 @@
-// Command stride-sync is the watch-data sync tool for the Go migration. One
-// binary serves every provider (COROS today, Garmin now): `login` takes an
-// explicit -provider; `sync`/`status`/`import-creds` resolve the user's bound
-// source from the registry (data/<uid>/config.json, ADR 0010). The sync core
-// lives in internal/provider/<name> so a worker job handler can drive it later.
+// Subcommand group `stride watch`: the watch-data sync tool for the Go migration.
+// One command tree serves every provider (COROS + Garmin): `login` takes an
+// explicit --provider and binds the user; `sync`/`status`/`import-creds` resolve
+// the user's bound source from the registry (data/<uid>/config.json, ADR 0010).
+// The sync core lives in internal/provider/<name> so a worker job handler can
+// drive it too.
 package main
 
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/google/uuid"
+	"github.com/spf13/cobra"
 
 	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/provider/coros"
@@ -23,51 +24,97 @@ import (
 	"github.com/zhaochy1990/stride/internal/syncconfig"
 )
 
-func main() {
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
+// newWatchCmd is the parent for the watch-data verbs. It has no Run of its own;
+// `stride watch` prints help listing the children.
+func newWatchCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "watch",
+		Short: "Watch-data sync (COROS + Garmin): login, import-creds, sync, status",
+		Long: "Watch-data sync for the Go migration.\n\n" +
+			"login binds the user to a provider (written to config.json);\n" +
+			"sync/status resolve that binding. Config: config.sync.yml (or\n" +
+			"$CONFIG_PATH); MySQL DSN via $STRIDE_SYNC_MYSQL_DSN; data dir via\n" +
+			"$STRIDE_DATA_DIR (default ./data).",
 	}
-	cmd := os.Args[1]
-	args := os.Args[2:]
-
-	var err error
-	switch cmd {
-	case "login":
-		err = runLogin(args)
-	case "import-creds":
-		err = runImportCreds(args)
-	case "sync":
-		err = runSync(args)
-	case "status":
-		err = runStatus(args)
-	case "-h", "--help", "help":
-		usage()
-		return
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
-		usage()
-		os.Exit(2)
-	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
-	}
+	c.AddCommand(
+		newWatchLoginCmd(),
+		newWatchImportCredsCmd(),
+		newWatchSyncCmd(),
+		newWatchStatusCmd(),
+	)
+	return c
 }
 
-func usage() {
-	fmt.Fprint(os.Stderr, `stride-sync — watch-data sync (COROS + Garmin)
+func newWatchLoginCmd() *cobra.Command {
+	var profile, providerName, email, password, region string
+	c := &cobra.Command{
+		Use:   "login",
+		Short: "Log in to a provider and bind the user to it",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return runLogin(profile, providerName, email, password, region)
+		},
+	}
+	f := c.Flags()
+	f.StringVarP(&profile, "profile", "P", "", "user UUID or slug")
+	f.StringVar(&providerName, "provider", registry.DefaultProvider, "coros | garmin")
+	f.StringVar(&email, "email", "", "account email")
+	f.StringVar(&password, "password", "", "account password")
+	f.StringVar(&region, "region", "", "login region (garmin: cn|global; coros auto-detects)")
+	return c
+}
 
-usage:
-  stride-sync login        -profile <uuid|slug> -provider <coros|garmin> -email <e> -password <p> [-region cn|global]
-  stride-sync import-creds  -profile <uuid|slug> [-provider coros|garmin]   (seed creds from data/<uid> files)
-  stride-sync sync          -profile <uuid|slug> [-full] [-content all|activities|health] [-limit N]
-  stride-sync status        -profile <uuid|slug>
+func newWatchImportCredsCmd() *cobra.Command {
+	var profile, providerName string
+	c := &cobra.Command{
+		Use:   "import-creds",
+		Short: "Seed provider credentials from data/<uid> files",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return runImportCreds(profile, providerName)
+		},
+	}
+	f := c.Flags()
+	f.StringVarP(&profile, "profile", "P", "", "user UUID or slug")
+	f.StringVar(&providerName, "provider", "coros", "coros | garmin")
+	return c
+}
 
-login binds the user to a provider (written to config.json); sync/status resolve it.
-config: config.sync.yml (or $CONFIG_PATH); MySQL DSN via $STRIDE_SYNC_MYSQL_DSN
-data dir: $STRIDE_DATA_DIR (default ./data)
-`)
+func newWatchSyncCmd() *cobra.Command {
+	var (
+		profile string
+		content string
+		full    bool
+		limit   int
+	)
+	c := &cobra.Command{
+		Use:   "sync",
+		Short: "Pull latest activities/health from the bound provider",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return runSync(profile, full, content, limit)
+		},
+	}
+	f := c.Flags()
+	f.StringVarP(&profile, "profile", "P", "", "user UUID or slug")
+	f.BoolVar(&full, "full", false, "full re-scan (default incremental)")
+	f.StringVar(&content, "content", "all", "all | activities | health")
+	f.IntVar(&limit, "limit", 0, "max activities to fetch (0 = unlimited)")
+	return c
+}
+
+func newWatchStatusCmd() *cobra.Command {
+	var profile string
+	c := &cobra.Command{
+		Use:   "status",
+		Short: "Show the bound provider and login state",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return runStatus(profile)
+		},
+	}
+	c.Flags().StringVarP(&profile, "profile", "P", "", "user UUID or slug")
+	return c
 }
 
 // openStore loads config and opens the migrated MySQL store.
@@ -94,19 +141,11 @@ func resolveProvider(store *storage.Store, cfg *syncconfig.Config, user string) 
 	return prov, name, err
 }
 
-func runLogin(args []string) error {
-	fs := flag.NewFlagSet("login", flag.ExitOnError)
-	profile := fs.String("profile", "", "user UUID or slug")
-	providerName := fs.String("provider", registry.DefaultProvider, "coros | garmin")
-	email := fs.String("email", "", "account email")
-	password := fs.String("password", "", "account password")
-	region := fs.String("region", "", "login region (garmin: cn|global; coros auto-detects)")
-	_ = fs.Parse(args)
-
-	if !registry.Supported(*providerName) {
-		return fmt.Errorf("unknown -provider %q (want coros|garmin)", *providerName)
+func runLogin(profile, providerName, email, password, region string) error {
+	if !registry.Supported(providerName) {
+		return fmt.Errorf("unknown --provider %q (want coros|garmin)", providerName)
 	}
-	user, err := resolveProfile(*profile)
+	user, err := resolveProfile(profile)
 	if err != nil {
 		return err
 	}
@@ -116,36 +155,31 @@ func runLogin(args []string) error {
 	}
 	defer store.Close()
 
-	prov, err := registry.Build(*providerName, store, cfg.Sync.RequestDelay)
+	prov, err := registry.Build(providerName, store, cfg.Sync.RequestDelay)
 	if err != nil {
 		return err
 	}
 	res, err := prov.Login(context.Background(), user, provider.LoginCredentials{
-		Email: *email, Password: *password, Region: *region,
+		Email: email, Password: password, Region: region,
 	})
 	if err != nil {
 		return err
 	}
 	// Persist the binding so a subsequent flag-less sync resolves this provider.
-	if err := registry.WriteProviderName(dataDir(), user, *providerName); err != nil {
+	if err := registry.WriteProviderName(dataDir(), user, providerName); err != nil {
 		return fmt.Errorf("logged in but failed to record provider binding: %w", err)
 	}
 	fmt.Printf("logged in: user=%s provider=%s region=%s account=%s\n",
-		user, *providerName, res.Region, res.UserID)
+		user, providerName, res.Region, res.UserID)
 	return nil
 }
 
-func runImportCreds(args []string) error {
-	fs := flag.NewFlagSet("import-creds", flag.ExitOnError)
-	profile := fs.String("profile", "", "user UUID or slug")
-	providerName := fs.String("provider", "coros", "coros | garmin")
-	_ = fs.Parse(args)
-
-	user, err := resolveProfile(*profile)
+func runImportCreds(profile, providerName string) error {
+	user, err := resolveProfile(profile)
 	if err != nil {
 		return err
 	}
-	if *providerName == "garmin" {
+	if providerName == "garmin" {
 		return importGarminCreds(user)
 	}
 	path := filepath.Join(dataDir(), user, "config.json")
@@ -220,20 +254,13 @@ func importGarminCreds(user string) error {
 	return nil
 }
 
-func runSync(args []string) error {
-	fs := flag.NewFlagSet("sync", flag.ExitOnError)
-	profile := fs.String("profile", "", "user UUID or slug")
-	full := fs.Bool("full", false, "full re-scan (default incremental)")
-	content := fs.String("content", "all", "all | activities | health")
-	limit := fs.Int("limit", 0, "max activities to fetch (0 = unlimited)")
-	_ = fs.Parse(args)
-
-	user, err := resolveProfile(*profile)
+func runSync(profile string, full bool, content string, limit int) error {
+	user, err := resolveProfile(profile)
 	if err != nil {
 		return err
 	}
-	opts := provider.SyncOptions{Mode: provider.SyncIncremental, Content: contentFlag(*content), Limit: *limit}
-	if *full {
+	opts := provider.SyncOptions{Mode: provider.SyncIncremental, Content: contentFlag(content), Limit: limit}
+	if full {
 		opts.Mode = provider.SyncFull
 	}
 
@@ -255,12 +282,8 @@ func runSync(args []string) error {
 	return nil
 }
 
-func runStatus(args []string) error {
-	fs := flag.NewFlagSet("status", flag.ExitOnError)
-	profile := fs.String("profile", "", "user UUID or slug")
-	_ = fs.Parse(args)
-
-	user, err := resolveProfile(*profile)
+func runStatus(profile string) error {
+	user, err := resolveProfile(profile)
 	if err != nil {
 		return err
 	}
@@ -297,7 +320,7 @@ func contentFlag(s string) provider.SyncContent {
 // data/.slug_aliases.json) to the STRIDE user UUID.
 func resolveProfile(p string) (string, error) {
 	if p == "" {
-		return "", fmt.Errorf("-profile is required")
+		return "", fmt.Errorf("--profile is required")
 	}
 	if u, err := uuid.Parse(p); err == nil {
 		return u.String(), nil

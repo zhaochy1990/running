@@ -10,7 +10,11 @@
 // registered will pass the API's 400 check yet poison at dispatch (ADR 0012).
 package catalog
 
-import "github.com/zhaochy1990/stride/internal/pipeline"
+import (
+	"encoding/json"
+
+	"github.com/zhaochy1990/stride/internal/pipeline"
+)
 
 // Canonical job-type names. Keep in sync with cmd/worker's registerHandlers.
 const (
@@ -27,24 +31,51 @@ const (
 const PipelineOnboarding = "onboarding"
 
 // JobSpec is one known job type and whether end users may enqueue it directly.
+// Description, InputSchema (JSON Schema for the job's InputJSON) and ExampleInput
+// are documentation surfaced by the API's GET /jobs discovery endpoint.
 type JobSpec struct {
 	Type          string
 	UserInitiable bool
+	Description   string
+	InputSchema   json.RawMessage
+	ExampleInput  json.RawMessage
 }
 
 // PipelineSpec is one known pipeline (its linear step definition) and whether
-// end users may start it.
+// end users may start it. Description/InputSchema/ExampleInput document it for
+// the API's GET /pipelines discovery endpoint.
 type PipelineSpec struct {
 	Def           pipeline.Def
 	UserInitiable bool
+	Description   string
+	InputSchema   json.RawMessage
+	ExampleInput  json.RawMessage
 }
 
 // Jobs returns every job type the API accepts. Unknown types are rejected 400.
 func Jobs() []JobSpec {
 	return []JobSpec{
-		{Type: JobTypeHello, UserInitiable: false},
-		{Type: JobTypeWatchSync, UserInitiable: true},
-		{Type: JobTypeOnboardingCompute, UserInitiable: false},
+		{
+			Type:          JobTypeHello,
+			UserInitiable: false,
+			Description:   "Deploy smoke handler: echoes the input back in result_json. Internal-only.",
+			InputSchema:   json.RawMessage(`{"type":"object","description":"Arbitrary JSON; echoed back verbatim in result_json.","additionalProperties":true}`),
+			ExampleInput:  json.RawMessage(`{"message":"hello world"}`),
+		},
+		{
+			Type:          JobTypeWatchSync,
+			UserInitiable: true,
+			Description:   "Sync one user's watch data (activities + health) from their linked provider. Partition key is the user UUID; the input body is optional.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"mode":{"type":"string","enum":["full","incremental"],"default":"full","description":"Sync mode."},"content":{"type":"string","enum":["all","activities","health"],"default":"all","description":"Which data to sync."},"limit":{"type":"integer","minimum":0,"default":0,"description":"Max items to sync; 0 means unlimited."}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"mode":"incremental","content":"activities","limit":50}`),
+		},
+		{
+			Type:          JobTypeOnboardingCompute,
+			UserInitiable: false,
+			Description:   "Derive athlete baselines, training load and ability from already-synced data. No input body; operates on the partition (user UUID). Internal-only.",
+			InputSchema:   json.RawMessage(`{"type":"object","description":"No input fields; operates on the partition (user UUID).","additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{}`),
+		},
 	}
 }
 
@@ -63,6 +94,9 @@ func Pipelines() []PipelineSpec {
 				},
 			},
 			UserInitiable: true,
+			Description:   "New-user onboarding: a full watch sync followed by baseline/load/ability compute. Partition key is the user UUID.",
+			InputSchema:   json.RawMessage(`{"type":"object","description":"No input consumed; onboarding operates on the partition (user UUID).","additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{}`),
 		},
 	}
 }

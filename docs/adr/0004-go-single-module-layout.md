@@ -1,5 +1,11 @@
 # Go code: one module at `src/go`, `cmd/` + `internal/`
 
+> **Revised by ADR 0016:** the "several binaries under `cmd/<name>`" layout below
+> is superseded — the module now ships **one** `stride` binary whose services are
+> cobra subcommands (`stride api|worker|reconcile`, `stride watch …`). The
+> single-module and `cmd/` + `internal/` split here still holds; only "one binary
+> per `cmd/<name>`" changed.
+
 The Go side of this repo will ship **several binaries** — `worker` (async-job worker), `stride-sync` (watch-data sync, rewrite of the Python `coros-sync`/`garmin-sync`), and a future `server` — that share substantial code (storage, config, domain types, sync logic). We use a **single Go module** rooted at `src/go`, with binaries under `cmd/` and all shared code under `internal/`. Supersedes the "`src/worker/` with its own `go.mod`" bullet in ADR 0003.
 
 ## Decision

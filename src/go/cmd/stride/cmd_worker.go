@@ -1,7 +1,6 @@
-// Command worker runs the async-job worker: it consumes pointer messages from
-// RabbitMQ and dispatches them to registered handlers, persisting state in MySQL.
-//
-// This main stays thin: load config, wire dependencies, run until a shutdown
+// Subcommand `stride worker`: the async-job worker. It consumes pointer messages
+// from RabbitMQ and dispatches them to registered handlers, persisting state in
+// MySQL. This stays thin: load config, wire dependencies, run until a shutdown
 // signal. All logic lives in internal/.
 package main
 
@@ -14,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/zhaochy1990/x/logger"
 	"go.uber.org/zap"
 
@@ -28,20 +28,22 @@ import (
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
-// watchRequestDelay is the COROS/Garmin per-request rate-limit pause (matches the
-// provider default); the worker doesn't expose it as config.
-const watchRequestDelay = 500 * time.Millisecond
+// heartbeatInterval is how often the worker logs a liveness heartbeat with its
+// running dispatch counters.
+const heartbeatInterval = 30 * time.Second
 
-func main() {
-	if err := run(); err != nil {
-		// logger may not be up yet if config/log init failed; use the global
-		// (a no-op until MustGetLogger runs) and also print to stderr.
-		fmt.Fprintln(os.Stderr, "worker exited with error:", err)
-		os.Exit(1)
+func newWorkerCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "worker",
+		Short: "Run the async-job worker (consumes RabbitMQ, persists MySQL)",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return runWorker()
+		},
 	}
 }
 
-func run() error {
+func runWorker() error {
 	cfg := config.MustLoad()
 
 	log := logger.MustGetLogger(&cfg.Logger)
@@ -79,7 +81,7 @@ func run() error {
 		return err
 	}
 	defer pub.Close()
-	consumer, err := conn.NewConsumer(topo, cfg.Runtime.Prefetch)
+	consumer, err := conn.NewConsumer(topo, cfg.Runtime.Prefetch, mq.WithConsumerLogger(log))
 	if err != nil {
 		return err
 	}
@@ -119,7 +121,7 @@ func run() error {
 			}
 			return nil
 		},
-	})
+	}, health.WithLogger(log))
 
 	log.Info("worker starting",
 		zap.String("work_queue", cfg.Queues.Work),
@@ -133,6 +135,27 @@ func run() error {
 	errCh := make(chan error, 2)
 	go func() { errCh <- consumer.Run(ctx, dispatcher.Dispatch) }()
 	go func() { errCh <- hs.Run(ctx) }()
+
+	// Periodic liveness heartbeat with running dispatch counters.
+	started := time.Now()
+	go func() {
+		t := time.NewTicker(heartbeatInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s := dispatcher.Stats()
+				log.Info("worker heartbeat",
+					zap.Duration("uptime", time.Since(started).Round(time.Second)),
+					zap.Int64("started", s.Started),
+					zap.Int64("completed", s.Completed),
+					zap.Int64("failed", s.Failed),
+				)
+			}
+		}
+	}()
 
 	select {
 	case <-ctx.Done():
