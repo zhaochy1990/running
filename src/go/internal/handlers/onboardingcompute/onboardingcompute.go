@@ -47,7 +47,7 @@ const (
 type Store interface {
 	calibrationsource.Reader
 	UpsertRunningCalibrationSnapshot(ctx context.Context, snap *storage.RunningCalibrationSnapshot) (uint64, error)
-	ReplaceCalibrationZones(ctx context.Context, userID string, snapshotID uint64, zones []storage.RunningCalibrationZone) error
+	ReplaceCalibrationZones(ctx context.Context, userID string, snapshotID uint64, paceZones []storage.RunningCalibrationPaceZone, hrZones []storage.RunningCalibrationHRZone) error
 	AllRunningActivities(ctx context.Context, userID string) ([]storage.Activity, error)
 	ReplacePersonalBests(ctx context.Context, userID string, pbs []storage.PersonalBest) error
 	ReplaceActivityTrainingLoad(ctx context.Context, userID string, rows []storage.ActivityTrainingLoad) error
@@ -120,7 +120,8 @@ func runCalibration(ctx context.Context, store Store, user string, asOf time.Tim
 		return 0, calibration.Snapshot{}, 0, err
 	}
 	zones := calibration.ComputeTrainingZones(snap)
-	if err := store.ReplaceCalibrationZones(ctx, user, snapID, toStorageZones(zones)); err != nil {
+	paceZones, hrZones := toStorageZones(zones)
+	if err := store.ReplaceCalibrationZones(ctx, user, snapID, paceZones, hrZones); err != nil {
 		return 0, calibration.Snapshot{}, 0, err
 	}
 	return snapID, snap, len(history), nil
@@ -257,29 +258,31 @@ func toStorageSnapshot(user string, s calibration.Snapshot) *storage.RunningCali
 	}
 }
 
-func toStorageZones(zs calibration.ZoneSet) []storage.RunningCalibrationZone {
-	out := make([]storage.RunningCalibrationZone, 0, len(zs.PaceZones)+len(zs.HeartRateZones))
+// toStorageZones flattens the computed zone set into the two split storage
+// tables: pace zones keep their pace/speed columns, HR zones keep their bpm
+// columns.
+func toStorageZones(zs calibration.ZoneSet) ([]storage.RunningCalibrationPaceZone, []storage.RunningCalibrationHRZone) {
+	pace := make([]storage.RunningCalibrationPaceZone, 0, len(zs.PaceZones))
 	for _, z := range zs.PaceZones {
-		out = append(out, storage.RunningCalibrationZone{
-			ZoneKind:    "pace",
-			Name:        z.Name,
-			MinValue:    z.MinPaceSPerKm,
-			MaxValue:    z.MaxPaceSPerKm,
-			MinSpeedMps: z.MinSpeedMps,
-			MaxSpeedMps: z.MaxSpeedMps,
-			Confidence:  string(z.Confidence),
+		pace = append(pace, storage.RunningCalibrationPaceZone{
+			Name:          z.Name,
+			MinPaceSPerKm: z.MinPaceSPerKm,
+			MaxPaceSPerKm: z.MaxPaceSPerKm,
+			MinSpeedMps:   z.MinSpeedMps,
+			MaxSpeedMps:   z.MaxSpeedMps,
+			Confidence:    string(z.Confidence),
 		})
 	}
+	hr := make([]storage.RunningCalibrationHRZone, 0, len(zs.HeartRateZones))
 	for _, z := range zs.HeartRateZones {
-		out = append(out, storage.RunningCalibrationZone{
-			ZoneKind:   "heart_rate",
+		hr = append(hr, storage.RunningCalibrationHRZone{
 			Name:       z.Name,
-			MinValue:   z.MinBpm,
-			MaxValue:   z.MaxBpm,
+			MinBpm:     z.MinBpm,
+			MaxBpm:     z.MaxBpm,
 			Confidence: string(z.Confidence),
 		})
 	}
-	return out
+	return pace, hr
 }
 
 func toStorageActivityLoad(user string, r trainingload.ActivityLoadResult) storage.ActivityTrainingLoad {

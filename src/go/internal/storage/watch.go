@@ -36,6 +36,15 @@ func (s *Store) AutoMigrateWatch(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).AutoMigrate(models...); err != nil {
 		return fmt.Errorf("storage: automigrate watch: %w", err)
 	}
+	// Drop the legacy mixed calibration-zone table now that pace and heart-rate
+	// zones live in running_calibration_pace_zone / running_calibration_hr_zone.
+	// AutoMigrate never drops orphaned tables, so retire it explicitly here.
+	m := s.db.WithContext(ctx).Migrator()
+	if m.HasTable("running_calibration_zone") {
+		if err := m.DropTable("running_calibration_zone"); err != nil {
+			return fmt.Errorf("storage: drop legacy running_calibration_zone: %w", err)
+		}
+	}
 	return nil
 }
 
