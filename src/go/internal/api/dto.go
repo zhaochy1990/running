@@ -81,6 +81,43 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
+// JobCatalogEntry describes one supported job type for GET /jobs. Exported so
+// cmd/api can populate it from internal/catalog without the api package
+// depending on the catalog.
+type JobCatalogEntry struct {
+	Type          string          `json:"type" example:"watch_sync"`
+	Description   string          `json:"description"`
+	UserInitiable bool            `json:"user_initiable"`
+	InputSchema   json.RawMessage `json:"input_schema" swaggertype:"object"`
+	ExampleInput  json.RawMessage `json:"example_input" swaggertype:"object"`
+}
+
+// jobCatalogResponse is the GET /jobs body.
+type jobCatalogResponse struct {
+	Jobs []JobCatalogEntry `json:"jobs"`
+}
+
+// PipelineStepInfo names one step of a pipeline (its ordered job type).
+type PipelineStepInfo struct {
+	Name    string `json:"name"`
+	JobType string `json:"job_type"`
+}
+
+// PipelineCatalogEntry describes one supported pipeline for GET /pipelines.
+type PipelineCatalogEntry struct {
+	Name          string             `json:"name" example:"onboarding"`
+	Description   string             `json:"description"`
+	UserInitiable bool               `json:"user_initiable"`
+	Steps         []PipelineStepInfo `json:"steps"`
+	InputSchema   json.RawMessage    `json:"input_schema" swaggertype:"object"`
+	ExampleInput  json.RawMessage    `json:"example_input" swaggertype:"object"`
+}
+
+// pipelineCatalogResponse is the GET /pipelines body.
+type pipelineCatalogResponse struct {
+	Pipelines []PipelineCatalogEntry `json:"pipelines"`
+}
+
 func toJobStateResponse(j *job.Job) jobStateResponse {
 	return jobStateResponse{
 		JobID:        j.ID,

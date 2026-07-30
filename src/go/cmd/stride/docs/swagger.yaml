@@ -1,4 +1,43 @@
 definitions:
+  api.JobCatalogEntry:
+    properties:
+      description:
+        type: string
+      example_input:
+        type: object
+      input_schema:
+        type: object
+      type:
+        example: watch_sync
+        type: string
+      user_initiable:
+        type: boolean
+    type: object
+  api.PipelineCatalogEntry:
+    properties:
+      description:
+        type: string
+      example_input:
+        type: object
+      input_schema:
+        type: object
+      name:
+        example: onboarding
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/api.PipelineStepInfo'
+        type: array
+      user_initiable:
+        type: boolean
+    type: object
+  api.PipelineStepInfo:
+    properties:
+      job_type:
+        type: string
+      name:
+        type: string
+    type: object
   api.createJobRequest:
     properties:
       input:
@@ -39,6 +78,13 @@ definitions:
       sync_data_at_onboarding:
         type: boolean
     type: object
+  api.jobCatalogResponse:
+    properties:
+      jobs:
+        items:
+          $ref: '#/definitions/api.JobCatalogEntry'
+        type: array
+    type: object
   api.jobStateResponse:
     properties:
       attempts:
@@ -76,6 +122,13 @@ definitions:
         type: boolean
       watch_ready:
         type: boolean
+    type: object
+  api.pipelineCatalogResponse:
+    properties:
+      pipelines:
+        items:
+          $ref: '#/definitions/api.PipelineCatalogEntry'
+        type: array
     type: object
   api.pipelineStepResponse:
     properties:
@@ -334,6 +387,20 @@ paths:
       tags:
       - users
   /jobs:
+    get:
+      description: Returns every job type the system supports (hardcoded in the catalog),
+        each with its input JSON schema and an example input. Static system metadata;
+        no auth required.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.jobCatalogResponse'
+      summary: List supported job types
+      tags:
+      - catalog
     post:
       consumes:
       - application/json
@@ -428,6 +495,21 @@ paths:
       summary: Get a job's status
       tags:
       - jobs
+  /pipelines:
+    get:
+      description: Returns every pipeline the system supports (hardcoded in the catalog),
+        each with its ordered steps, input JSON schema and an example input. Static
+        system metadata; no auth required.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.pipelineCatalogResponse'
+      summary: List supported pipelines
+      tags:
+      - catalog
   /pipelines/{name}:
     post:
       consumes:

@@ -69,6 +69,12 @@ type Config struct {
 	JobUserInitiable      map[string]bool
 	PipelineUserInitiable map[string]bool
 
+	// JobCatalog and PipelineCatalog back the discovery endpoints GET /jobs and
+	// GET /pipelines (input schema + example per type). Populated from
+	// internal/catalog by cmd/api.
+	JobCatalog      []JobCatalogEntry
+	PipelineCatalog []PipelineCatalogEntry
+
 	// User/onboarding surface (ADR 0013) — a sibling registrar sharing the auth
 	// path. Leave zero to run the job/pipeline API only (e.g. in tests).
 	UserStore     UserStore
@@ -96,6 +102,9 @@ type Service struct {
 
 	jobUserInitiable      map[string]bool
 	pipelineUserInitiable map[string]bool
+
+	jobCatalog      []JobCatalogEntry
+	pipelineCatalog []PipelineCatalogEntry
 
 	users *userRoutes
 
@@ -125,6 +134,8 @@ func NewService(cfg Config) *Service {
 		runsIdem:              cfg.RunsIdem,
 		jobUserInitiable:      cfg.JobUserInitiable,
 		pipelineUserInitiable: cfg.PipelineUserInitiable,
+		jobCatalog:            cfg.JobCatalog,
+		pipelineCatalog:       cfg.PipelineCatalog,
 		users:                 newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.AuthNameSync, cfg.Features, log),
 		auth:                  cfg.Auth,
 		corsOrigins:           cfg.CORSOrigins,
@@ -146,6 +157,11 @@ func (s *Service) Router() *gin.Engine {
 
 	r.GET("/health", s.healthHandler())
 	mountSwagger(r, s.swaggerEnabled)
+
+	// Public discovery: the catalog of supported job types and pipelines (static
+	// system metadata, no auth). Distinct from the authed create/read routes.
+	r.GET("/jobs", s.listJobs)
+	r.GET("/pipelines", s.listPipelines)
 
 	authed := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
 	authed.POST("/jobs", s.createJob)

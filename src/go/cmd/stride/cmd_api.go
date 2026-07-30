@@ -114,6 +114,8 @@ func runAPI() error {
 		RunsIdem:              store,
 		JobUserInitiable:      catalog.JobUserInitiable(),
 		PipelineUserInitiable: catalog.PipelineUserInitiable(),
+		JobCatalog:            apiJobCatalog(),
+		PipelineCatalog:       apiPipelineCatalog(),
 		UserStore:             store,
 		ProviderLogin:         providerLogin,
 		AuthNameSync:          authNameSync,
@@ -169,4 +171,43 @@ func runAPI() error {
 		}
 		return nil
 	}
+}
+
+// apiJobCatalog maps the shared job catalog into the API's discovery DTOs for
+// GET /jobs (input schema + example per type).
+func apiJobCatalog() []api.JobCatalogEntry {
+	specs := catalog.Jobs()
+	out := make([]api.JobCatalogEntry, len(specs))
+	for i, s := range specs {
+		out[i] = api.JobCatalogEntry{
+			Type:          s.Type,
+			Description:   s.Description,
+			UserInitiable: s.UserInitiable,
+			InputSchema:   s.InputSchema,
+			ExampleInput:  s.ExampleInput,
+		}
+	}
+	return out
+}
+
+// apiPipelineCatalog maps the shared pipeline catalog into the API's discovery
+// DTOs for GET /pipelines (steps + input schema + example per pipeline).
+func apiPipelineCatalog() []api.PipelineCatalogEntry {
+	specs := catalog.Pipelines()
+	out := make([]api.PipelineCatalogEntry, len(specs))
+	for i, s := range specs {
+		steps := make([]api.PipelineStepInfo, len(s.Def.Steps))
+		for j, st := range s.Def.Steps {
+			steps[j] = api.PipelineStepInfo{Name: st.Name, JobType: st.JobType}
+		}
+		out[i] = api.PipelineCatalogEntry{
+			Name:          s.Def.Name,
+			Description:   s.Description,
+			UserInitiable: s.UserInitiable,
+			Steps:         steps,
+			InputSchema:   s.InputSchema,
+			ExampleInput:  s.ExampleInput,
+		}
+	}
+	return out
 }

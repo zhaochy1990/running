@@ -167,6 +167,24 @@ const docTemplate = `{
             }
         },
         "/jobs": {
+            "get": {
+                "description": "Returns every job type the system supports (hardcoded in the catalog), each with its input JSON schema and an example input. Static system metadata; no auth required.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "catalog"
+                ],
+                "summary": "List supported job types",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.jobCatalogResponse"
+                        }
+                    }
+                }
+            },
             "post": {
                 "security": [
                     {
@@ -306,6 +324,26 @@ const docTemplate = `{
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/pipelines": {
+            "get": {
+                "description": "Returns every pipeline the system supports (hardcoded in the catalog), each with its ordered steps, input JSON schema and an example input. Static system metadata; no auth required.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "catalog"
+                ],
+                "summary": "List supported pipelines",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.pipelineCatalogResponse"
                         }
                     }
                 }
@@ -464,6 +502,65 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "api.JobCatalogEntry": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "example_input": {
+                    "type": "object"
+                },
+                "input_schema": {
+                    "type": "object"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "watch_sync"
+                },
+                "user_initiable": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.PipelineCatalogEntry": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "example_input": {
+                    "type": "object"
+                },
+                "input_schema": {
+                    "type": "object"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "onboarding"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.PipelineStepInfo"
+                    }
+                },
+                "user_initiable": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.PipelineStepInfo": {
+            "type": "object",
+            "properties": {
+                "job_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "api.createJobRequest": {
             "type": "object",
             "required": [
@@ -525,6 +622,17 @@ const docTemplate = `{
                 }
             }
         },
+        "api.jobCatalogResponse": {
+            "type": "object",
+            "properties": {
+                "jobs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.JobCatalogEntry"
+                    }
+                }
+            }
+        },
         "api.jobStateResponse": {
             "type": "object",
             "properties": {
@@ -580,6 +688,17 @@ const docTemplate = `{
                 },
                 "watch_ready": {
                     "type": "boolean"
+                }
+            }
+        },
+        "api.pipelineCatalogResponse": {
+            "type": "object",
+            "properties": {
+                "pipelines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.PipelineCatalogEntry"
+                    }
                 }
             }
         },
