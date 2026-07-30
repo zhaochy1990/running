@@ -224,3 +224,47 @@ class TestGarminSyncHealthDates:
         )
 
         assert len(changed) == 1
+
+
+class TestGarminSyncHealthWindow:
+    """run_sync derives the daily-health window from the full/incremental depth
+    axis (mirrors the Go adapter): full → HEALTH_DAYS_FULL, incremental →
+    HEALTH_DAYS_INCREMENTAL, explicit health_days always wins."""
+
+    def _capture_days(self, monkeypatch) -> dict:
+        captured: dict = {}
+        monkeypatch.setattr(
+            "garmin_sync.sync._sync_activities", lambda *a, **k: (0, [])
+        )
+
+        def fake_health(client, db, *, progress, days, health_dates_out=None):
+            captured["days"] = days
+            return 0
+
+        monkeypatch.setattr("garmin_sync.sync._sync_health", fake_health)
+        return captured
+
+    def test_full_sync_uses_deep_health_window(self, db, monkeypatch):
+        from garmin_sync.sync import HEALTH_DAYS_FULL, run_sync
+
+        captured = self._capture_days(monkeypatch)
+        run_sync(object(), db, full=True)
+
+        assert captured["days"] == HEALTH_DAYS_FULL == 365
+
+    def test_incremental_sync_uses_short_health_window(self, db, monkeypatch):
+        from garmin_sync.sync import HEALTH_DAYS_INCREMENTAL, run_sync
+
+        captured = self._capture_days(monkeypatch)
+        run_sync(object(), db, full=False)
+
+        assert captured["days"] == HEALTH_DAYS_INCREMENTAL == 28
+
+    def test_explicit_health_days_overrides_depth(self, db, monkeypatch):
+        from garmin_sync.sync import run_sync
+
+        captured = self._capture_days(monkeypatch)
+        run_sync(object(), db, full=True, health_days=60)
+
+        assert captured["days"] == 60
+

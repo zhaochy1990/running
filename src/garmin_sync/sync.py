@@ -30,6 +30,15 @@ logger = logging.getLogger(__name__)
 GARMIN_ACTIVITY_DETAILS_MAXCHART = 20_000
 GARMIN_ACTIVITY_DETAILS_MAXPOLY = 20_000
 
+# Daily-health lookback windows, selected by the full/incremental depth axis
+# (mirrors the Go garmin adapter's healthWindowDays / healthWindowDaysFull). A
+# full rebuild walks a year so the downstream compute windows are seeded
+# (training load 365d, RHR baseline 90d, calibration 180d — all <= 365); routine
+# incremental syncs only refresh the short recent window. The consecutive-empty
+# cutoff in _sync_health still terminates early for shorter histories.
+HEALTH_DAYS_INCREMENTAL = 28
+HEALTH_DAYS_FULL = 365
+
 
 def _emit(progress: SyncProgressCallback | None, **payload: Any) -> None:
     if progress is None:
@@ -45,7 +54,7 @@ def run_sync(
     progress: SyncProgressCallback | None = None,
     activity_limit: int = 200,
     since_date: str | None = None,
-    health_days: int = 28,
+    health_days: int | None = None,
     health_dates_out: set[str] | None = None,
 ) -> tuple[int, int, tuple[str, ...]]:
     """Sync the user's Garmin data into `db`.
@@ -60,6 +69,10 @@ def run_sync(
     `since_date` (YYYY-MM-DD) overrides `activity_limit` for full syncs:
     pagination stops once activities older than this date are reached.
     Also passed to the Garmin API as a server-side filter where supported.
+
+    Daily health uses the same depth axis: `health_days` defaults to
+    `HEALTH_DAYS_FULL` (365) for a full sync and `HEALTH_DAYS_INCREMENTAL`
+    (28) otherwise. Pass an explicit `health_days` to override.
     """
     # When since_date drives the cutoff, use a large safety cap so the
     # activity_limit doesn't truncate before we reach the date boundary.
@@ -72,6 +85,9 @@ def run_sync(
         # so `date.today()` would drift the cutoff window by 8 hours.
         since_date = (today_shanghai() - timedelta(days=180)).isoformat()
     effective_limit = 2000 if since_date else activity_limit
+    # Health depth follows the same full/incremental axis as activities.
+    if health_days is None:
+        health_days = HEALTH_DAYS_FULL if full else HEALTH_DAYS_INCREMENTAL
     activities_synced, new_label_ids = _sync_activities(
         client, db, full=full, progress=progress, limit=effective_limit,
         since_date=since_date,
