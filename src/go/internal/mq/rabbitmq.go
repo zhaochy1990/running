@@ -7,8 +7,10 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/job"
+	"github.com/zhaochy1990/stride/internal/logging"
 )
 
 // Conn wraps a RabbitMQ connection and hands out publishers/consumers.
@@ -142,10 +144,19 @@ type Consumer struct {
 	ch       *amqp.Channel
 	topo     Topology
 	prefetch int
+	log      *zap.Logger
+}
+
+// ConsumerOption configures a Consumer.
+type ConsumerOption func(*Consumer)
+
+// WithConsumerLogger sets the structured logger used for per-message logs.
+func WithConsumerLogger(l *zap.Logger) ConsumerOption {
+	return func(c *Consumer) { c.log = l }
 }
 
 // NewConsumer opens a channel with the given prefetch (QoS).
-func (c *Conn) NewConsumer(t Topology, prefetch int) (*Consumer, error) {
+func (c *Conn) NewConsumer(t Topology, prefetch int, opts ...ConsumerOption) (*Consumer, error) {
 	ch, err := c.conn.Channel()
 	if err != nil {
 		return nil, fmt.Errorf("mq: consumer channel: %w", err)
@@ -154,7 +165,11 @@ func (c *Conn) NewConsumer(t Topology, prefetch int) (*Consumer, error) {
 		_ = ch.Close()
 		return nil, fmt.Errorf("mq: set qos: %w", err)
 	}
-	return &Consumer{ch: ch, topo: t, prefetch: prefetch}, nil
+	con := &Consumer{ch: ch, topo: t, prefetch: prefetch, log: logging.Default()}
+	for _, o := range opts {
+		o(con)
+	}
+	return con, nil
 }
 
 // Close closes the consumer channel.
@@ -185,11 +200,14 @@ func (c *Consumer) handleDelivery(ctx context.Context, d amqp.Delivery, handle H
 	m, err := decodeMessage(d.Body)
 	if err != nil {
 		// Undecodable message: reject without requeue so it doesn't loop forever.
+		c.log.Warn("rejecting undecodable message", zap.Int("bytes", len(d.Body)), zap.Error(err))
 		_ = d.Reject(false)
 		return
 	}
+	c.log.Info("message received", zap.String("job_id", m.JobID), zap.String("partition", m.PartitionKey))
 	if err := handle(ctx, m); err != nil {
 		// Infra fault: requeue for redelivery when the fault clears.
+		c.log.Warn("message handler faulted, requeueing", zap.String("job_id", m.JobID), zap.Error(err))
 		_ = d.Nack(false, true)
 		return
 	}

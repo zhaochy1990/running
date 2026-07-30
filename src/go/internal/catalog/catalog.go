@@ -10,7 +10,11 @@
 // registered will pass the API's 400 check yet poison at dispatch (ADR 0012).
 package catalog
 
-import "github.com/zhaochy1990/stride/internal/pipeline"
+import (
+	"encoding/json"
+
+	"github.com/zhaochy1990/stride/internal/pipeline"
+)
 
 // Canonical job-type names. Keep in sync with cmd/worker's registerHandlers.
 const (

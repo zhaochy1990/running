@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -27,6 +28,29 @@ type Dispatcher struct {
 	policy    RetryPolicy
 	now       func() time.Time
 	log       *zap.Logger
+
+	// counters feed the worker heartbeat log (best-effort, monotonic).
+	started   atomic.Int64
+	completed atomic.Int64
+	failed    atomic.Int64
+}
+
+// Stats is a monotonic snapshot of dispatch activity for the heartbeat log.
+// Started counts jobs whose handler began; Completed and Failed count terminal
+// outcomes (a retried job is neither until it finally succeeds or is poisoned).
+type Stats struct {
+	Started   int64
+	Completed int64
+	Failed    int64
+}
+
+// Stats returns a snapshot of the dispatch counters.
+func (d *Dispatcher) Stats() Stats {
+	return Stats{
+		Started:   d.started.Load(),
+		Completed: d.completed.Load(),
+		Failed:    d.failed.Load(),
+	}
 }
 
 // Option configures a Dispatcher.
@@ -94,6 +118,14 @@ func (d *Dispatcher) Dispatch(ctx context.Context, m Message) error {
 		return err // infra fault -> redeliver
 	}
 
+	d.started.Add(1)
+	d.log.Info("processing job",
+		zap.String("job_id", j.ID),
+		zap.String("type", j.Type),
+		zap.String("partition", j.PartitionKey),
+		zap.Int("attempt", j.Attempts),
+	)
+
 	hb := func(stage string, pct int) error {
 		j.Stage = stage
 		j.ProgressPct = pct
@@ -123,6 +155,7 @@ func (d *Dispatcher) finishDone(ctx context.Context, j *Job, result string) erro
 	if err := d.lifecycle.OnJobCompleted(ctx, j); err != nil {
 		d.log.Error("lifecycle OnJobCompleted failed", zap.String("job_id", j.ID), zap.Error(err))
 	}
+	d.completed.Add(1)
 	d.log.Info("job done", zap.String("job_id", j.ID), zap.String("type", j.Type), zap.Int("attempts", j.Attempts))
 	return nil
 }
@@ -172,5 +205,6 @@ func (d *Dispatcher) finishFailed(ctx context.Context, j *Job, code, msg string)
 	if err := d.lifecycle.OnJobFailed(ctx, j); err != nil {
 		d.log.Error("lifecycle OnJobFailed failed", zap.String("job_id", j.ID), zap.Error(err))
 	}
+	d.failed.Add(1)
 	return nil
 }

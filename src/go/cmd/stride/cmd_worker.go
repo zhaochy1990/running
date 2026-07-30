@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/zhaochy1990/x/logger"
@@ -26,6 +27,10 @@ import (
 	"github.com/zhaochy1990/stride/internal/registry"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
+
+// heartbeatInterval is how often the worker logs a liveness heartbeat with its
+// running dispatch counters.
+const heartbeatInterval = 30 * time.Second
 
 func newWorkerCmd() *cobra.Command {
 	return &cobra.Command{
@@ -76,7 +81,7 @@ func runWorker() error {
 		return err
 	}
 	defer pub.Close()
-	consumer, err := conn.NewConsumer(topo, cfg.Runtime.Prefetch)
+	consumer, err := conn.NewConsumer(topo, cfg.Runtime.Prefetch, mq.WithConsumerLogger(log))
 	if err != nil {
 		return err
 	}
@@ -116,7 +121,7 @@ func runWorker() error {
 			}
 			return nil
 		},
-	})
+	}, health.WithLogger(log))
 
 	log.Info("worker starting",
 		zap.String("work_queue", cfg.Queues.Work),
@@ -130,6 +135,27 @@ func runWorker() error {
 	errCh := make(chan error, 2)
 	go func() { errCh <- consumer.Run(ctx, dispatcher.Dispatch) }()
 	go func() { errCh <- hs.Run(ctx) }()
+
+	// Periodic liveness heartbeat with running dispatch counters.
+	started := time.Now()
+	go func() {
+		t := time.NewTicker(heartbeatInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s := dispatcher.Stats()
+				log.Info("worker heartbeat",
+					zap.Duration("uptime", time.Since(started).Round(time.Second)),
+					zap.Int64("started", s.Started),
+					zap.Int64("completed", s.Completed),
+					zap.Int64("failed", s.Failed),
+				)
+			}
+		}
+	}()
 
 	select {
 	case <-ctx.Done():

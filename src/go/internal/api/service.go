@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/health"
+	"github.com/zhaochy1990/stride/internal/httplog"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/logging"
 )
@@ -138,7 +139,7 @@ func NewService(cfg Config) *Service {
 // Swagger UI at /swagger/*any.
 func (s *Service) Router() *gin.Engine {
 	r := gin.New()
-	r.Use(gin.Recovery())
+	r.Use(httplog.Middleware(s.log), gin.Recovery())
 	if len(s.corsOrigins) > 0 {
 		r.Use(corsMiddleware(s.corsOrigins))
 	}
