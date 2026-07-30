@@ -4,10 +4,7 @@ config.local.yml
 
 # Build output.
 /out/
-/worker
-/api
-/reconcile
-/stride-sync
+/stride
 *.exe
 
 # Generated Swagger docs are now committed (ADR 0014, superseding ADR 0012) so

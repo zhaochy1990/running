@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 #
-# HTTP API server image (cmd/api, ADR 0012). Separate from the worker image so
-# the public ingress scales/deploys independently of the consumer.
+# HTTP API server image (`stride api`, ADR 0012). Separate image from the worker
+# so the public ingress scales/deploys independently of the consumer, even though
+# both run the same unified binary (different subcommand entrypoint).
 
 # --- build ---
 FROM golang:1.25-alpine AS build
@@ -10,10 +11,10 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-# Generate the Swagger docs package at build (not committed — ADR 0012), then
-# build with -tags swagger so the /swagger UI is available when enabled.
-RUN go run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g cmd/api/main.go -o cmd/api/docs --parseInternal
-RUN CGO_ENABLED=0 GOOS=linux go build -tags swagger -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
+# Regenerate the committed Swagger docs (ADR 0014), then build with -tags swagger
+# so the /swagger UI is available when enabled.
+RUN go run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g cmd/stride/main.go -o cmd/stride/docs --parseInternal
+RUN CGO_ENABLED=0 GOOS=linux go build -tags swagger -trimpath -ldflags="-s -w" -o /out/stride ./cmd/stride
 
 # --- runtime ---
 FROM alpine:3.20
@@ -21,7 +22,7 @@ RUN apk add --no-cache ca-certificates wget && adduser -D -u 10001 api
 # zap's ISO8601 time encoder formats in the local zone; pin UTC (ADR 0002).
 ENV TZ=UTC
 WORKDIR /app
-COPY --from=build /out/api /usr/local/bin/api
+COPY --from=build /out/stride /usr/local/bin/stride
 # Non-secret config defaults; secrets come from STRIDE_WORKER_* env at runtime.
 COPY config.yml ./config.yml
 
@@ -31,4 +32,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8080/health >/dev/null 2>&1 || exit 1
 
 USER api
-ENTRYPOINT ["/usr/local/bin/api"]
+ENTRYPOINT ["/usr/local/bin/stride", "api"]

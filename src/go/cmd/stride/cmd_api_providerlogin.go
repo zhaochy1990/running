@@ -10,13 +10,9 @@ import (
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
-// watchRequestDelay is the COROS/Garmin per-request rate-limit pause (matches the
-// provider default and the worker's constant).
-const watchRequestDelay = 500 * time.Millisecond
-
 // providerLoginAdapter satisfies api.ProviderLogin by constructing the concrete
-// watch adapter via the registry and calling Login. Keeping it in cmd/api keeps
-// the api package free of provider/registry imports (ADR 0013).
+// watch adapter via the registry and calling Login. Keeping it in the command
+// layer keeps the api package free of provider/registry imports (ADR 0013).
 type providerLoginAdapter struct {
 	store *storage.Store
 	delay time.Duration
