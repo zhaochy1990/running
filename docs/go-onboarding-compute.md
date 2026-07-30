@@ -117,13 +117,13 @@ below. Proposed epsilons (tight on baselines, documented looser band on ability)
 | ability `value` (L2/L3/L4 scores, 0–100) | Float | ±1.0 *(documented — float accumulation over the ability chain)* |
 | marathon/HM estimate seconds | Float | ±2.0 |
 
-Run: `go run ./cmd/reconcile -profile <uuid> -sqlite data/<uuid>/coros.db` (extended
+Run: `go run ./cmd/stride reconcile --profile <uuid> --sqlite data/<uuid>/coros.db` (extended
 to diff derived tables). Never log credentials/PII.
 
 ## Explicit out-of-scope (tracked gaps)
 
 - **Browser credential-submit endpoint** — assume creds pre-provisioned via
-  `cmd/stride-sync import-creds`; browser onboarding is not fully complete until
+  `stride watch import-creds`; browser onboarding is not fully complete until
   this ships.
 - **Consumer read API** — this work stops at producing validated MySQL rows.
 - **Python compute retirement** — separate, gated on parity holding over real
@@ -139,6 +139,6 @@ second implementation; `reconcile` is the drift guard until Python retires
 ## Verification per slice
 
 - `cd src/go && go test ./...` (unit tests for the ported math + handler).
-- `go build ./cmd/...` (worker + api compile; api needs `swag init` first).
-- `go run ./cmd/reconcile ...` clean against the athlete — the blocking gate.
+- `go build ./cmd/stride` (the one binary compiles; the swagger build needs `make swagger` first).
+- `go run ./cmd/stride reconcile ...` clean against the athlete — the blocking gate.
 - `PYTHONPATH=src lint-imports` unaffected (Go-only change).

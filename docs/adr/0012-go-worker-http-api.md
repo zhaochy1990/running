@@ -1,5 +1,12 @@
 # Go async-job worker: HTTP API (`cmd/api`)
 
+> **Revised by ADR 0016:** `cmd/api` is no longer a distinct binary — it is the
+> `stride api` subcommand of the unified `stride` binary. The "separate
+> process/container from the worker" decision below **still holds**: the api
+> ships as its own image (`Dockerfile.api`, entrypoint `stride api`) and scales
+> independently; only "separate *binary*" became "separate *container*, shared
+> binary". The committed Swagger docs moved `cmd/api/docs` → `cmd/stride/docs`.
+
 The async-job infra (ADR 0001) had no network entry point — jobs were created only by in-process enqueue, and the sole HTTP surface was a loopback `/healthz`. We add a standalone **`cmd/api`** gin binary (same Go module, its own Docker Compose container) exposing create/read for Async Jobs and Pipeline Runs, so both the Azure/Python backend (server-to-server) and the browser/mobile app (direct) can drive and poll background work. This introduces a **public HTTP ingress on the Tencent CVM**, which revises ADR 0002's "the worker has no HTTP ingress" consequence.
 
 ## Decision

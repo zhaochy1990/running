@@ -1,29 +1,14 @@
-// Command api runs the HTTP API server that fronts the async-job worker
-// (ADR 0012): it lets internal callers and end users create Async Jobs and
+// Subcommand `stride api`: the HTTP API server that fronts the async-job worker
+// (ADR 0012). It lets internal callers and end users create Async Jobs and
 // Pipeline Runs and poll their status. It shares internal/{job,storage,pipeline}
 // with the worker but runs no consumer — it holds a MySQL connection and a
-// RabbitMQ publisher only.
-//
-// This main stays thin: load config, wire dependencies, serve until a shutdown
-// signal. All logic lives in internal/.
-//
-//	@title						STRIDE Async-Job API
-//	@version					1.0
-//	@description				Create and track async jobs and pipelines for the STRIDE worker.
-//	@securityDefinitions.apikey	InternalToken
-//	@in							header
-//	@name						X-Internal-Token
-//	@description				Shared secret for server-to-server callers.
-//	@securityDefinitions.apikey	BearerAuth
-//	@in							header
-//	@name						Authorization
-//	@description				"Bearer <JWT>" for end-user callers (RS256).
+// RabbitMQ publisher only. Stays thin: load config, wire dependencies, serve
+// until a shutdown signal. All logic lives in internal/.
 package main
 
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/cobra"
 	"github.com/zhaochy1990/x/logger"
 	"go.uber.org/zap"
 
@@ -45,14 +31,18 @@ import (
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
-func main() {
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "api exited with error:", err)
-		os.Exit(1)
+func newAPICmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "api",
+		Short: "Run the HTTP API server (jobs/pipelines + user profile/onboarding)",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return runAPI()
+		},
 	}
 }
 
-func run() error {
+func runAPI() error {
 	cfg := config.MustLoadAPI()
 
 	log := logger.MustGetLogger(&cfg.Logger)

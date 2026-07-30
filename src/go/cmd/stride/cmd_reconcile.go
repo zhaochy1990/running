@@ -1,9 +1,9 @@
-// Command reconcile compares the Go-written MySQL shadow store against the
-// Python SQLite store for one user, using the tolerance-aware diff engine
-// (internal/reconcile, ADR 0005). It reads the SQLite side with the pure-Go
-// modernc.org/sqlite driver. A manual dev tool.
+// Subcommand `stride reconcile`: compares the Go-written MySQL shadow store
+// against the Python SQLite store for one user, using the tolerance-aware diff
+// engine (internal/reconcile, ADR 0005). It reads the SQLite side with the
+// pure-Go modernc.org/sqlite driver. A manual dev tool.
 //
-// -table selects what to reconcile: activities (default, provider-filtered),
+// --table selects what to reconcile: activities (default, provider-filtered),
 // calibration, zones, pbs, activity_load, daily_load (the onboarding_compute
 // derived tables, ADR 0015). The derived tables validate only rows present in
 // BOTH stores; note the PMC daily_load is path-dependent, so a clean diff needs
@@ -12,42 +12,57 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 
 	"github.com/google/uuid"
+	"github.com/spf13/cobra"
 
 	"github.com/zhaochy1990/stride/internal/reconcile"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/syncconfig"
 )
 
-func main() {
-	profile := flag.String("profile", "", "user UUID")
-	sqlitePath := flag.String("sqlite", "", "path to the Python coros.db (SQLite)")
-	providerName := flag.String("provider", "coros", "provider to reconcile (coros|garmin), activities only")
-	table := flag.String("table", "activities", "activities|calibration|zones|pbs|activity_load|daily_load")
-	flag.Parse()
+func newReconcileCmd() *cobra.Command {
+	var (
+		profile      string
+		sqlitePath   string
+		providerName string
+		table        string
+	)
+	c := &cobra.Command{
+		Use:   "reconcile",
+		Short: "Diff the Go MySQL shadow store vs the Python SQLite store (dev tool)",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return runReconcile(profile, sqlitePath, providerName, table)
+		},
+	}
+	f := c.Flags()
+	f.StringVarP(&profile, "profile", "P", "", "user UUID")
+	f.StringVar(&sqlitePath, "sqlite", "", "path to the Python coros.db (SQLite)")
+	f.StringVar(&providerName, "provider", "coros", "provider to reconcile (coros|garmin), activities only")
+	f.StringVar(&table, "table", "activities", "activities|calibration|zones|pbs|activity_load|daily_load")
+	return c
+}
 
-	user, err := uuid.Parse(*profile)
+func runReconcile(profile, sqlitePath, providerName, table string) error {
+	user, err := uuid.Parse(profile)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error: -profile must be a user UUID")
-		os.Exit(2)
+		return fmt.Errorf("--profile must be a user UUID")
 	}
 	ctx := context.Background()
 
 	cfg := syncconfig.MustLoad()
 	store, err := storage.Open(cfg.MySQL.DSN)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		return err
 	}
 	defer store.Close()
 
-	if *table == "activities" {
-		reconcileActivities(ctx, store, user.String(), *sqlitePath, *providerName)
-		return
+	if table == "activities" {
+		reconcileActivities(ctx, store, user.String(), sqlitePath, providerName)
+		return nil
 	}
 
 	type target struct {
@@ -58,36 +73,36 @@ func main() {
 	targets := map[string]target{
 		"calibration": {
 			func() (map[string]map[string]any, error) { return store.ReconcileCalibrationRows(ctx, user.String()) },
-			func() (map[string]map[string]any, error) { return readSQLiteCalibration(*sqlitePath) },
+			func() (map[string]map[string]any, error) { return readSQLiteCalibration(sqlitePath) },
 			reconcile.CalibrationFields(),
 		},
 		"zones": {
 			func() (map[string]map[string]any, error) { return store.ReconcileZoneRows(ctx, user.String()) },
-			func() (map[string]map[string]any, error) { return readSQLiteZones(*sqlitePath) },
+			func() (map[string]map[string]any, error) { return readSQLiteZones(sqlitePath) },
 			reconcile.ZoneFields(),
 		},
 		"pbs": {
 			func() (map[string]map[string]any, error) { return store.ReconcilePersonalBestRows(ctx, user.String()) },
-			func() (map[string]map[string]any, error) { return readSQLitePBs(*sqlitePath) },
+			func() (map[string]map[string]any, error) { return readSQLitePBs(sqlitePath) },
 			reconcile.PersonalBestFields(),
 		},
 		"activity_load": {
 			func() (map[string]map[string]any, error) { return store.ReconcileActivityLoadRows(ctx, user.String()) },
-			func() (map[string]map[string]any, error) { return readSQLiteActivityLoad(*sqlitePath) },
+			func() (map[string]map[string]any, error) { return readSQLiteActivityLoad(sqlitePath) },
 			reconcile.ActivityLoadFields(),
 		},
 		"daily_load": {
 			func() (map[string]map[string]any, error) { return store.ReconcileDailyLoadRows(ctx, user.String()) },
-			func() (map[string]map[string]any, error) { return readSQLiteDailyLoad(*sqlitePath) },
+			func() (map[string]map[string]any, error) { return readSQLiteDailyLoad(sqlitePath) },
 			reconcile.DailyLoadFields(),
 		},
 	}
-	t, ok := targets[*table]
+	t, ok := targets[table]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "error: unknown -table %q\n", *table)
-		os.Exit(2)
+		return fmt.Errorf("unknown --table %q", table)
 	}
-	reconcileTable(*table, t.mysql, t.sqlite, t.fields)
+	reconcileTable(table, t.mysql, t.sqlite, t.fields)
+	return nil
 }
 
 func reconcileActivities(ctx context.Context, store *storage.Store, user, sqlitePath, provider string) {

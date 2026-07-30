@@ -1,7 +1,6 @@
-// Command worker runs the async-job worker: it consumes pointer messages from
-// RabbitMQ and dispatches them to registered handlers, persisting state in MySQL.
-//
-// This main stays thin: load config, wire dependencies, run until a shutdown
+// Subcommand `stride worker`: the async-job worker. It consumes pointer messages
+// from RabbitMQ and dispatches them to registered handlers, persisting state in
+// MySQL. This stays thin: load config, wire dependencies, run until a shutdown
 // signal. All logic lives in internal/.
 package main
 
@@ -12,8 +11,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/zhaochy1990/x/logger"
 	"go.uber.org/zap"
 
@@ -28,20 +27,18 @@ import (
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
-// watchRequestDelay is the COROS/Garmin per-request rate-limit pause (matches the
-// provider default); the worker doesn't expose it as config.
-const watchRequestDelay = 500 * time.Millisecond
-
-func main() {
-	if err := run(); err != nil {
-		// logger may not be up yet if config/log init failed; use the global
-		// (a no-op until MustGetLogger runs) and also print to stderr.
-		fmt.Fprintln(os.Stderr, "worker exited with error:", err)
-		os.Exit(1)
+func newWorkerCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "worker",
+		Short: "Run the async-job worker (consumes RabbitMQ, persists MySQL)",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return runWorker()
+		},
 	}
 }
 
-func run() error {
+func runWorker() error {
 	cfg := config.MustLoad()
 
 	log := logger.MustGetLogger(&cfg.Logger)
