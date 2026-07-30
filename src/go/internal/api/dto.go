@@ -66,6 +66,7 @@ type pipelineStepResponse struct {
 type runStateResponse struct {
 	RunID        string                 `json:"run_id"`
 	PartitionKey string                 `json:"partition_key"`
+	UserID       string                 `json:"user_id"`
 	PipelineName string                 `json:"pipeline_name"`
 	Status       string                 `json:"status"`
 	CurrentStep  int                    `json:"current_step"`
@@ -74,6 +75,12 @@ type runStateResponse struct {
 	CreatedAt    time.Time              `json:"created_at"`
 	UpdatedAt    time.Time              `json:"updated_at"`
 	CompletedAt  *time.Time             `json:"completed_at,omitempty"`
+}
+
+// userPipelinesResponse is the GET /api/users/{uid}/pipelines body: a user's
+// pipeline runs, most recent first.
+type userPipelinesResponse struct {
+	Pipelines []runStateResponse `json:"pipelines"`
 }
 
 // errorResponse is the uniform error envelope.
@@ -149,6 +156,7 @@ func toRunStateResponse(r *job.PipelineRun) runStateResponse {
 	return runStateResponse{
 		RunID:        r.RunID,
 		PartitionKey: r.PartitionKey,
+		UserID:       r.UserID,
 		PipelineName: r.Name,
 		Status:       string(r.Status),
 		CurrentStep:  r.CurrentStep,

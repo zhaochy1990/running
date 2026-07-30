@@ -100,8 +100,12 @@ func (m *jobModel) toDomain() *job.Job {
 // pipelineRunModel is the GORM row for a pipeline run. Steps are stored as a JSON
 // blob (denormalized), matching the reference design.
 type pipelineRunModel struct {
-	RunID          string     `gorm:"column:run_id;type:char(36);primaryKey"`
-	PartitionKey   string     `gorm:"column:partition_key;type:varchar(191);index:idx_runs_partition;uniqueIndex:uq_runs_partition_idem,priority:1;not null"`
+	RunID        string `gorm:"column:run_id;type:char(36);primaryKey"`
+	PartitionKey string `gorm:"column:partition_key;type:varchar(191);index:idx_runs_partition;uniqueIndex:uq_runs_partition_idem,priority:1;not null"`
+	// UserID is the triggering identity (JWT sub, or job.InternalTokenUserID).
+	// Nullable so AutoMigrate can add it to a pipeline_runs table that already
+	// has rows; legacy rows read back as "" and match no per-user listing.
+	UserID         string     `gorm:"column:user_id;type:varchar(191);index:idx_runs_user"`
 	Name           string     `gorm:"column:name;type:varchar(191);not null"`
 	Status         string     `gorm:"column:status;type:varchar(32);index;not null"`
 	CurrentStep    int        `gorm:"column:current_step;not null;default:0"`
@@ -123,6 +127,7 @@ func toPipelineModel(r *job.PipelineRun) (*pipelineRunModel, error) {
 	return &pipelineRunModel{
 		RunID:          r.RunID,
 		PartitionKey:   r.PartitionKey,
+		UserID:         r.UserID,
 		Name:           r.Name,
 		Status:         string(r.Status),
 		CurrentStep:    r.CurrentStep,
@@ -145,6 +150,7 @@ func (m *pipelineRunModel) toDomain() (*job.PipelineRun, error) {
 	return &job.PipelineRun{
 		RunID:          m.RunID,
 		PartitionKey:   m.PartitionKey,
+		UserID:         m.UserID,
 		Name:           m.Name,
 		Status:         job.Status(m.Status),
 		CurrentStep:    m.CurrentStep,

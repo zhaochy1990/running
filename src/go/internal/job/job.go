@@ -23,6 +23,11 @@ func (s Status) Terminal() bool { return s == StatusDone || s == StatusFailed }
 // GlobalPartition is the partition key for cross-user, system-wide jobs.
 const GlobalPartition = "Global"
 
+// InternalTokenUserID is the synthetic user identity recorded on a PipelineRun
+// that was triggered by an internal (X-Internal-Token) caller rather than an end
+// user. It lets internal-triggered runs be listed together under one stable id.
+const InternalTokenUserID = "internal-token"
+
 // Job is the durable record of one unit of background work. It is the source of
 // truth (persisted in MySQL); the broker only carries a pointer to it.
 type Job struct {
@@ -61,6 +66,12 @@ type PipelineStep struct {
 type PipelineRun struct {
 	RunID        string
 	PartitionKey string
+	// UserID is the identity that triggered this run: the JWT sub for an
+	// end-user-initiated run, or InternalTokenUserID for an internal-token
+	// caller. Distinct from PartitionKey (the data-scoping partition): they
+	// coincide for user-triggered runs but diverge when an internal caller
+	// starts a run targeting a specific partition.
+	UserID       string
 	Name         string
 	Status       Status
 	CurrentStep  int
