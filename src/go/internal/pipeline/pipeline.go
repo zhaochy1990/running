@@ -96,8 +96,11 @@ func New(store job.PipelineStore, enq job.Enqueuer, reg *Registry, opts ...Optio
 
 // StartPipeline creates a run (store-first) and enqueues its first step. A
 // non-empty idempotencyKey deduplicates starts: Create returns job.ErrConflict
-// if a run with the same (partitionKey, idempotencyKey) already exists.
-func (o *Orchestrator) StartPipeline(ctx context.Context, name, partitionKey, idempotencyKey string) (string, error) {
+// if a run with the same (partitionKey, idempotencyKey) already exists. userID
+// records who triggered the run (the JWT sub, or job.InternalTokenUserID for an
+// internal caller); it is stored for later per-user listing and is independent
+// of partitionKey.
+func (o *Orchestrator) StartPipeline(ctx context.Context, name, partitionKey, userID, idempotencyKey string) (string, error) {
 	def, ok := o.reg.Get(name)
 	if !ok {
 		return "", fmt.Errorf("pipeline: unknown definition %q", name)
@@ -113,6 +116,7 @@ func (o *Orchestrator) StartPipeline(ctx context.Context, name, partitionKey, id
 	run := &job.PipelineRun{
 		RunID:          o.newRun(),
 		PartitionKey:   partitionKey,
+		UserID:         userID,
 		Name:           name,
 		Status:         job.StatusRunning,
 		CurrentStep:    0,

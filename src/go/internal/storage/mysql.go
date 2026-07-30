@@ -81,6 +81,12 @@ func (s *Store) PipelineRunByIdempotencyKey(ctx context.Context, partitionKey, k
 	return (&pipelineStore{db: s.db}).byIdempotencyKey(ctx, partitionKey, key)
 }
 
+// PipelineRunsByUser returns the pipeline runs triggered by userID, most recent
+// first (capped at maxPipelineRunsPerUser). Used by GET /api/users/{uid}/pipelines.
+func (s *Store) PipelineRunsByUser(ctx context.Context, userID string) ([]*job.PipelineRun, error) {
+	return (&pipelineStore{db: s.db}).listByUser(ctx, userID)
+}
+
 // isDuplicateKey reports whether err is a MySQL duplicate-entry (1062) error,
 // which fires when the unique (partition_key, idempotency_key) index is violated.
 func isDuplicateKey(err error) bool {
@@ -195,6 +201,36 @@ func (s *pipelineStore) byIdempotencyKey(ctx context.Context, partitionKey, key 
 		return nil, err
 	}
 	return m.toDomain()
+}
+
+// maxPipelineRunsPerUser caps a per-user listing so a user with a long history
+// cannot force an unbounded result set (the endpoint is on a public ingress).
+const maxPipelineRunsPerUser = 200
+
+// listByUser returns the runs triggered by userID, newest first, capped at
+// maxPipelineRunsPerUser. An empty userID returns no rows (never a full scan).
+func (s *pipelineStore) listByUser(ctx context.Context, userID string) ([]*job.PipelineRun, error) {
+	if userID == "" {
+		return []*job.PipelineRun{}, nil
+	}
+	var models []pipelineRunModel
+	err := s.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Limit(maxPipelineRunsPerUser).
+		Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	runs := make([]*job.PipelineRun, 0, len(models))
+	for i := range models {
+		r, err := models[i].toDomain()
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, r)
+	}
+	return runs, nil
 }
 
 func (s *pipelineStore) Update(ctx context.Context, r *job.PipelineRun) error {

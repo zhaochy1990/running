@@ -166,6 +166,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/users/{uid}/pipelines": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists the pipeline runs triggered by a user, most recent first. A user caller may only list their own runs (uid must equal their JWT sub); an internal caller may list any uid, including the synthetic \"internal-token\" identity that groups internal-triggered runs.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipelines"
+                ],
+                "summary": "List a user's pipeline runs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub, or 'internal-token' for internal-triggered runs)",
+                        "name": "uid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.userPipelinesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/jobs": {
             "post": {
                 "security": [
@@ -710,6 +771,9 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
                 }
             }
         },
@@ -738,6 +802,17 @@ const docTemplate = `{
                 },
                 "run_id": {
                     "type": "string"
+                }
+            }
+        },
+        "api.userPipelinesResponse": {
+            "type": "object",
+            "properties": {
+                "pipelines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.runStateResponse"
+                    }
                 }
             }
         },

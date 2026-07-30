@@ -26,7 +26,7 @@ func TestJobModel_RoundTrip(t *testing.T) {
 func TestPipelineModel_RoundTrip(t *testing.T) {
 	now := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
 	in := &job.PipelineRun{
-		RunID: "run-1", PartitionKey: "u1", Name: "onboarding",
+		RunID: "run-1", PartitionKey: "u1", UserID: "trigger-1", Name: "onboarding",
 		Status: job.StatusRunning, CurrentStep: 1,
 		Steps: []job.PipelineStep{
 			{Name: "full_sync", JobType: "onboarding_full_sync", Status: job.StatusDone, JobID: "j1"},
@@ -44,6 +44,9 @@ func TestPipelineModel_RoundTrip(t *testing.T) {
 	}
 	if out.RunID != in.RunID || out.Status != in.Status || out.CurrentStep != in.CurrentStep {
 		t.Fatalf("scalar mismatch: %+v", out)
+	}
+	if out.UserID != in.UserID {
+		t.Fatalf("user id = %q, want %q", out.UserID, in.UserID)
 	}
 	if len(out.Steps) != 2 || out.Steps[0] != in.Steps[0] || out.Steps[1] != in.Steps[1] {
 		t.Fatalf("steps mismatch: %+v", out.Steps)

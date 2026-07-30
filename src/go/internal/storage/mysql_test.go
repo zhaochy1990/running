@@ -73,6 +73,60 @@ func TestJobStore_GetNotFound(t *testing.T) {
 	}
 }
 
+func TestPipelineStore_ListByUser(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	runs := st.Pipelines()
+	// Unique per-run suffix so repeated runs against a shared DB don't collide.
+	tag := time.Now().UTC().Format("150405.000000")
+	uid := "list-user-" + tag
+	older := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
+	newer := older.Add(time.Minute)
+
+	mk := func(id, user string, at time.Time) *job.PipelineRun {
+		return &job.PipelineRun{
+			RunID: id, PartitionKey: user, UserID: user, Name: "onboarding",
+			Status: job.StatusRunning, CreatedAt: at, UpdatedAt: at,
+		}
+	}
+	// Two runs for uid (different created_at), one for a different user.
+	if err := runs.Create(ctx, mk("r-old-"+tag, uid, older)); err != nil {
+		t.Fatalf("create old: %v", err)
+	}
+	if err := runs.Create(ctx, mk("r-new-"+tag, uid, newer)); err != nil {
+		t.Fatalf("create new: %v", err)
+	}
+	if err := runs.Create(ctx, mk("r-other-"+tag, "other-"+tag, newer)); err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+
+	got, err := st.PipelineRunsByUser(ctx, uid)
+	if err != nil {
+		t.Fatalf("list by user: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d runs, want 2 (must exclude the other user)", len(got))
+	}
+	// Newest first.
+	if got[0].RunID != "r-new-"+tag || got[1].RunID != "r-old-"+tag {
+		t.Fatalf("order = [%s, %s], want newest first", got[0].RunID, got[1].RunID)
+	}
+	for _, r := range got {
+		if r.UserID != uid {
+			t.Fatalf("leaked run for user %q", r.UserID)
+		}
+	}
+
+	// An empty user id must never scan the table.
+	empty, err := st.PipelineRunsByUser(ctx, "")
+	if err != nil {
+		t.Fatalf("list empty: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("empty user id returned %d runs, want 0", len(empty))
+	}
+}
+
 func TestForceUTCDSN(t *testing.T) {
 	out, err := forceUTCDSN("user:pass@tcp(h:3306)/db")
 	if err != nil {

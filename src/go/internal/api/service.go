@@ -40,12 +40,17 @@ type JobIdemLookup interface {
 
 // PipelineStarter starts a pipeline run (store-first) with an idempotency key.
 type PipelineStarter interface {
-	StartPipeline(ctx context.Context, name, partitionKey, idempotencyKey string) (string, error)
+	StartPipeline(ctx context.Context, name, partitionKey, userID, idempotencyKey string) (string, error)
 }
 
 // RunGetter reads a pipeline run's aggregate state by (partition, run id).
 type RunGetter interface {
 	Get(ctx context.Context, partitionKey, runID string) (*job.PipelineRun, error)
+}
+
+// RunLister lists the pipeline runs triggered by a user (newest first, capped).
+type RunLister interface {
+	PipelineRunsByUser(ctx context.Context, userID string) ([]*job.PipelineRun, error)
 }
 
 // RunIdemLookup resolves a run by its idempotency key.
@@ -60,6 +65,7 @@ type Config struct {
 	JobsIdem  JobIdemLookup
 	Pipelines PipelineStarter
 	Runs      RunGetter
+	RunsList  RunLister
 	RunsIdem  RunIdemLookup
 
 	// JobUserInitiable maps job type -> may a user create it; a type absent from
@@ -91,6 +97,7 @@ type Service struct {
 	jobsIdem  JobIdemLookup
 	pipelines PipelineStarter
 	runs      RunGetter
+	runsList  RunLister
 	runsIdem  RunIdemLookup
 
 	jobUserInitiable      map[string]bool
@@ -121,6 +128,7 @@ func NewService(cfg Config) *Service {
 		jobsIdem:              cfg.JobsIdem,
 		pipelines:             cfg.Pipelines,
 		runs:                  cfg.Runs,
+		runsList:              cfg.RunsList,
 		runsIdem:              cfg.RunsIdem,
 		jobUserInitiable:      cfg.JobUserInitiable,
 		pipelineUserInitiable: cfg.PipelineUserInitiable,
@@ -151,6 +159,7 @@ func (s *Service) Router() *gin.Engine {
 	authed.GET("/jobs/:partition_key/:job_id", s.getJob)
 	authed.POST("/pipelines/:name", s.startPipeline)
 	authed.GET("/pipelines/:partition_key/:run_id", s.getPipelineRun)
+	authed.GET("/api/users/:uid/pipelines", s.listUserPipelines)
 	s.users.register(authed)
 	return r
 }
@@ -183,6 +192,16 @@ func resolvePartition(caller Caller, requested string) string {
 		return job.GlobalPartition
 	}
 	return requested
+}
+
+// resolveUserID returns the identity to record as the run's trigger: the JWT sub
+// for the user tier, or the fixed job.InternalTokenUserID for internal callers
+// (so every internal-triggered run is listable under one stable id).
+func resolveUserID(caller Caller) string {
+	if caller.Tier == TierUser {
+		return caller.UserID
+	}
+	return job.InternalTokenUserID
 }
 
 // zapErr wraps an error as a structured log field.

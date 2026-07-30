@@ -163,6 +163,8 @@ definitions:
         type: array
       updated_at:
         type: string
+      user_id:
+        type: string
     type: object
   api.startPipelineRequest:
     properties:
@@ -181,6 +183,13 @@ definitions:
         type: string
       run_id:
         type: string
+    type: object
+  api.userPipelinesResponse:
+    properties:
+      pipelines:
+        items:
+          $ref: '#/definitions/api.runStateResponse'
+        type: array
     type: object
   api.validationDetailItem:
     properties:
@@ -235,6 +244,48 @@ info:
   title: STRIDE API
   version: "1.0"
 paths:
+  /api/users/{uid}/pipelines:
+    get:
+      description: Lists the pipeline runs triggered by a user, most recent first.
+        A user caller may only list their own runs (uid must equal their JWT sub);
+        an internal caller may list any uid, including the synthetic "internal-token"
+        identity that groups internal-triggered runs.
+      parameters:
+      - description: User id (JWT sub, or 'internal-token' for internal-triggered
+          runs)
+        in: path
+        name: uid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.userPipelinesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: List a user's pipeline runs
+      tags:
+      - pipelines
   /api/users/me/profile:
     get:
       produces:

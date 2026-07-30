@@ -51,6 +51,7 @@ func (s *Service) startPipeline(c *gin.Context) {
 	}
 
 	partition := resolvePartition(caller, body.PartitionKey)
+	userID := resolveUserID(caller)
 	idem := c.GetHeader("Idempotency-Key")
 
 	if idem != "" {
@@ -64,7 +65,7 @@ func (s *Service) startPipeline(c *gin.Context) {
 		}
 	}
 
-	runID, err := s.pipelines.StartPipeline(c.Request.Context(), name, partition, idem)
+	runID, err := s.pipelines.StartPipeline(c.Request.Context(), name, partition, userID, idem)
 	if errors.Is(err, job.ErrConflict) {
 		existing, lookupErr := s.runsIdem.PipelineRunByIdempotencyKey(c.Request.Context(), partition, idem)
 		if lookupErr != nil {
@@ -119,4 +120,44 @@ func (s *Service) getPipelineRun(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, toRunStateResponse(run))
+}
+
+// listUserPipelines godoc
+//
+//	@Summary		List a user's pipeline runs
+//	@Description	Lists the pipeline runs triggered by a user, most recent first. A user caller may only list their own runs (uid must equal their JWT sub); an internal caller may list any uid, including the synthetic "internal-token" identity that groups internal-triggered runs.
+//	@Tags			pipelines
+//	@Produce		json
+//	@Param			uid	path		string	true	"User id (JWT sub, or 'internal-token' for internal-triggered runs)"
+//	@Success		200	{object}	userPipelinesResponse
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		403	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/users/{uid}/pipelines [get]
+func (s *Service) listUserPipelines(c *gin.Context) {
+	caller := callerFrom(c)
+	uid := c.Param("uid")
+	if uid == "" {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "user id required"})
+		return
+	}
+	if caller.Tier == TierUser && uid != caller.UserID {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+
+	runs, err := s.runsList.PipelineRunsByUser(c.Request.Context(), uid)
+	if err != nil {
+		s.log.Error("list user pipelines failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	pipelines := make([]runStateResponse, len(runs))
+	for i, r := range runs {
+		pipelines[i] = toRunStateResponse(r)
+	}
+	c.JSON(http.StatusOK, userPipelinesResponse{Pipelines: pipelines})
 }
