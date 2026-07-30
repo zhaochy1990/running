@@ -1,5 +1,6 @@
 # Secrets — never commit.
 .env
+config.local.yml
 
 # Build output.
 /out/
