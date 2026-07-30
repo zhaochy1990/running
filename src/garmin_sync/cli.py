@@ -76,11 +76,11 @@ def login(ctx: click.Context, email: str | None, pwd: str | None, region: str) -
     help="Pull activities back to this date (YYYY-MM-DD); overrides --full's default window.",
 )
 @click.option(
-    "--health-days", default=28, type=click.IntRange(1, 365), show_default=True,
-    help="Number of daily Garmin health/load-ratio rows to refresh.",
+    "--health-days", default=None, type=click.IntRange(1, 365),
+    help="Daily Garmin health rows to refresh (default: 365 with --full, else 28).",
 )
 @click.pass_context
-def sync(ctx: click.Context, full: bool, since_date: str | None, health_days: int) -> None:
+def sync(ctx: click.Context, full: bool, since_date: str | None, health_days: int | None) -> None:
     """Sync activities and health data from Garmin Connect."""
     profile = ctx.obj["profile"]
     if profile is None:

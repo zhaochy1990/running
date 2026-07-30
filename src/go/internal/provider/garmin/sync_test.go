@@ -91,6 +91,30 @@ func TestSyncUser_Health(t *testing.T) {
 	}
 }
 
+func TestSyncUser_HealthFullWindow(t *testing.T) {
+	p, fw := newTestProvider(t, garminMux(), loggedInCreds())
+
+	// Full mode is the DEPTH axis for health too: it walks the deep 365-day
+	// window instead of the 28-day incremental window. The mock returns signal
+	// for every date, so the consecutive-empty cutoff never trips.
+	res, err := p.SyncUser(context.Background(), testUID, provider.SyncOptions{
+		Mode: provider.SyncFull, Content: provider.ContentHealth,
+	})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if len(fw.health) != healthWindowDaysFull {
+		t.Errorf("daily_health rows = %d, want %d (full window)", len(fw.health), healthWindowDaysFull)
+	}
+	if len(fw.hrv) != healthWindowDaysFull {
+		t.Errorf("daily_hrv rows = %d, want %d (full window)", len(fw.hrv), healthWindowDaysFull)
+	}
+	// healthWindowDaysFull daily_health + healthWindowDaysFull daily_hrv + 1 dashboard.
+	if res.Health != healthWindowDaysFull*2+1 {
+		t.Errorf("health writes = %d, want %d", res.Health, healthWindowDaysFull*2+1)
+	}
+}
+
 func TestInfoCapabilities(t *testing.T) {
 	p, _ := newTestProvider(t, garminMux(), loggedInCreds())
 	info := p.Info()

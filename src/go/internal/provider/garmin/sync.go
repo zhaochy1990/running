@@ -21,8 +21,16 @@ const providerName = "garmin"
 const (
 	activityDetailsMaxChart = 20_000
 	activityDetailsMaxPoly  = 20_000
-	healthWindowDays        = 28
-	healthMaxConsecEmpty    = 7
+	// healthWindowDays is the incremental (default) daily-health lookback: a
+	// short catch-up window for routine syncs.
+	healthWindowDays = 28
+	// healthWindowDaysFull is the SyncFull daily-health lookback. A full sync is
+	// the DEPTH axis for health too (matching the activity scan): it walks back
+	// a year so onboarding/full rebuilds seed the downstream compute windows
+	// (training load 365d, RHR baseline 90d, calibration 180d — all ≤ 365).
+	// The consecutive-empty cutoff still terminates early for shorter histories.
+	healthWindowDaysFull = 365
+	healthMaxConsecEmpty = 7
 )
 
 // shanghaiZone is Asia/Shanghai (UTC+8, no DST) — the calendar used to bucket
@@ -134,8 +142,9 @@ func (p *Provider) clientFor(ctx context.Context, user string) (*Client, error) 
 	return client, nil
 }
 
-// SyncUser runs a sync for user and returns a summary. Mode governs the activity
-// scan; health always refreshes its window. A zero Content means ContentAll.
+// SyncUser runs a sync for user and returns a summary. Mode is the depth axis
+// for both domains: it governs how far back the activity scan and the daily-
+// health window reach. A zero Content means ContentAll.
 func (p *Provider) SyncUser(ctx context.Context, user string, opts provider.SyncOptions) (provider.SyncResult, error) {
 	content := opts.Content
 	if content == 0 {
@@ -153,7 +162,7 @@ func (p *Provider) SyncUser(ctx context.Context, user string, opts provider.Sync
 		}
 	}
 	if content.Has(provider.ContentHealth) {
-		if err := p.syncHealth(ctx, client, user, opts.Progress, &res); err != nil {
+		if err := p.syncHealth(ctx, client, user, opts, &res); err != nil {
 			return res, err
 		}
 	}
@@ -253,11 +262,18 @@ func (p *Provider) syncOneActivity(ctx context.Context, client *Client, user str
 
 // syncHealth refreshes the daily-health window (daily_health + daily_hrv) and the
 // dashboard singleton. Walks most-recent → oldest, bailing after a week of
-// consecutive empty days to avoid burning calls on idle accounts.
-func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, progress provider.ProgressCallback, res *provider.SyncResult) error {
+// consecutive empty days to avoid burning calls on idle accounts. The window
+// depth follows opts.Mode: SyncFull reaches back healthWindowDaysFull, otherwise
+// the shorter healthWindowDays incremental window.
+func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, opts provider.SyncOptions, res *provider.SyncResult) error {
+	windowDays := healthWindowDays
+	if opts.Mode == provider.SyncFull {
+		windowDays = healthWindowDaysFull
+	}
+	progress := opts.Progress
 	today := time.Now().In(shanghaiZone)
 	consecEmpty := 0
-	for offset := 0; offset < healthWindowDays; offset++ {
+	for offset := 0; offset < windowDays; offset++ {
 		date := today.AddDate(0, 0, -offset).Format("2006-01-02")
 
 		tsRaw, _ := client.GetTrainingStatus(ctx, date)
@@ -289,7 +305,7 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 				break
 			}
 		}
-		provider.EmitProgress(progress, "health", offset+1, healthWindowDays, provider.PercentInBand(offset+1, healthWindowDays, 80, 95))
+		provider.EmitProgress(progress, "health", offset+1, windowDays, provider.PercentInBand(offset+1, windowDays, 80, 95))
 	}
 	return p.syncDashboard(ctx, client, user, today, res)
 }

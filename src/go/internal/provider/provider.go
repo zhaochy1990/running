@@ -49,14 +49,17 @@ func PercentInBand(current, total, lo, hi int) int {
 	return lo + (hi-lo)*current/total
 }
 
-// SyncMode is the DEPTH axis of a sync: how far back the activity scan goes.
+// SyncMode is the DEPTH axis of a sync: how far back the activity scan and the
+// daily-health window reach.
 type SyncMode string
 
 const (
 	// SyncIncremental stops the activity scan at the first already-synced
-	// activity (fast catch-up). It is the default.
+	// activity (fast catch-up) and refreshes only the short daily-health
+	// window. It is the default.
 	SyncIncremental SyncMode = "incremental"
-	// SyncFull re-scans the entire activity history and re-fetches details.
+	// SyncFull re-scans the entire activity history (re-fetching details) and
+	// walks the deep daily-health window.
 	SyncFull SyncMode = "full"
 )
 
@@ -76,10 +79,11 @@ const (
 // Has reports whether c includes domain d.
 func (c SyncContent) Has(d SyncContent) bool { return c&d != 0 }
 
-// SyncOptions controls a sync run. Mode governs the activity scan only; health
-// always syncs by date window. A zero Content is treated as ContentAll by
-// SyncUser implementations. Limit caps the number of activities fetched (0 =
-// unlimited) — useful for bounded validation runs.
+// SyncOptions controls a sync run. Mode is the depth axis for both the activity
+// scan and the daily-health window (SyncFull reaches back further than
+// SyncIncremental for each). A zero Content is treated as ContentAll by SyncUser
+// implementations. Limit caps the number of activities fetched (0 = unlimited) —
+// useful for bounded validation runs.
 type SyncOptions struct {
 	Mode     SyncMode
 	Content  SyncContent
