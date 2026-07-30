@@ -64,6 +64,36 @@ func TestParsePauses(t *testing.T) {
 	}
 }
 
+func TestActivityLevelCandidatesRejectsSubNominal(t *testing.T) {
+	d := func(v float64) *float64 { return &v }
+	dists := func(cands []bestEffort) map[string]bool {
+		m := map[string]bool{}
+		for _, c := range cands {
+			m[c.distance] = true
+		}
+		return m
+	}
+
+	// A 2.9 km run never reached 3000m: it must NOT be credited as a 3K PB.
+	subNominal := Activity{LabelID: "short", DistanceM: d(2900), DurationS: d(600)}
+	if got := dists(activityLevelCandidates(subNominal, "2025-01-01")); got["3K"] {
+		t.Errorf("2900m run must not qualify as 3K, got %v", got)
+	}
+	// A 1m-short run is excluded by the hard cutoff too.
+	justShort := Activity{LabelID: "just", DistanceM: d(4999), DurationS: d(1200)}
+	if got := dists(activityLevelCandidates(justShort, "2025-01-01")); got["5K"] {
+		t.Errorf("4999m run must not qualify as 5K, got %v", got)
+	}
+	// Exactly the nominal distance qualifies.
+	if got := dists(activityLevelCandidates(Activity{LabelID: "e", DistanceM: d(3000), DurationS: d(600)}, "2025-01-01")); !got["3K"] {
+		t.Errorf("3000m run should qualify as 3K, got %v", got)
+	}
+	// A GPS-long run within +tolerance still qualifies (upper bound unchanged).
+	if got := dists(activityLevelCandidates(Activity{LabelID: "l", DistanceM: d(5200), DurationS: d(1300)}, "2025-01-01")); !got["5K"] {
+		t.Errorf("5200m run should qualify as 5K, got %v", got)
+	}
+}
+
 func TestDetectPersonalBestsEndToEnd(t *testing.T) {
 	ts := func(v int64) *int64 { return &v }
 	d := func(v float64) *float64 { return &v }

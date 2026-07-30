@@ -59,21 +59,33 @@ _RACE_TYPE_BY_DISPLAY_DISTANCE = {
 }
 
 # Distance windows for matching an activity to a canonical race distance.
-# Real race GPS tracks measure LONG far more often than short (tangents missed,
-# course re-acquire, certified courses are a *minimum* length), so the upper
-# bound must allow ~+3% over nominal. A too-tight upper bound silently drops the
-# real race and lets a shorter *training* run at the exact nominal distance win
-# the PB instead — e.g. an FM upper of 42.4 km excluded real marathons measured
-# at 42.45–42.61 km and recorded a 42.22 km easy run as the marathon PB. Widening
-# the upper bound only ADDS candidates; the fastest within the window still wins,
-# so slower long runs never displace a real race PB.
+#
+# Lower bound = the nominal distance itself (hard cutoff). The activity-level
+# fallback credits the WHOLE activity duration against the NOMINAL distance
+# (see _activity_level_candidates), so admitting a run SHORTER than nominal
+# fabricates a too-fast PB: a 2.9 km run scored as a 3 K effort claims the
+# athlete covered 3000 m in a time they only spent on 2900 m. A run must
+# actually reach the distance to count for it. This is intentionally
+# conservative — it may miss the rare real race whose watch under-measured, but
+# it will never invent a PB the athlete didn't run. (The timeseries/segment
+# path in segments.best_distance_candidates already enforces the same
+# total_dist >= target guard; this keeps the fallback consistent with it.)
+#
+# Upper bound = ~+3% over nominal. Real race GPS tracks measure LONG far more
+# often than short (tangents missed, course re-acquire, certified courses are a
+# *minimum* length). A too-tight upper bound silently dropped the real race and
+# let a shorter *training* run at the exact nominal distance win the PB instead
+# — e.g. an FM upper of 42.4 km excluded real marathons measured at 42.45–42.61
+# km and recorded a 42.22 km easy run as the marathon PB. Widening the upper
+# bound only ADDS candidates; the fastest within the window still wins, so
+# slower long runs never displace a real race PB.
 ACTIVITY_DISTANCE_TOLERANCE_M: dict[str, tuple[float, float]] = {
-    "1K": (950.0, 1050.0),
-    "3K": (2900.0, 3100.0),
-    "5K": (4800.0, 5300.0),
-    "10K": (9800.0, 10500.0),
-    "HM": (20800.0, 21800.0),
-    "FM": (41800.0, 43500.0),
+    "1K": (1000.0, 1050.0),
+    "3K": (3000.0, 3100.0),
+    "5K": (5000.0, 5300.0),
+    "10K": (10000.0, 10500.0),
+    "HM": (21097.5, 21800.0),
+    "FM": (42195.0, 43500.0),
 }
 
 # Physiological speed ceiling for PB candidates. A GPS dropout-and-reacquire can
