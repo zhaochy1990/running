@@ -236,18 +236,24 @@ def test_pbs_history_monotonically_decreasing(app_client):
 
 
 def test_pbs_distance_tolerance_boundary(app_client):
-    """5.0 km (exactly 5000m) counts; 5.3 km (5300m) does not."""
+    """Activity-level fallback: a run must actually REACH the nominal distance.
+
+    A run shorter than nominal (4800m/4999m) never covered 5000m, so crediting
+    its full time as a 5K PB would fabricate a too-fast PB — it must be excluded
+    even when it is the fastest activity. Exactly 5000m counts; the +tolerance
+    upper bound (≤5300m) admits GPS-long races; >5300m is excluded.
+    """
     client, token, tmp_path, _ = app_client
     db = _make_db(tmp_path)
     db._conn.executemany(
         "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
         "VALUES (?, ?, ?, ?, ?)",
         [
-            ("exact_5k",  100, "2025-01-10", 5000.0, 1350.0),  # 4800–5200 → IN
-            ("short_5k",  100, "2025-01-11", 4800.0, 1300.0),  # min boundary → IN
-            ("long_5k",   100, "2025-01-12", 5200.0, 1340.0),  # max boundary → IN
-            ("too_long",  100, "2025-01-13", 5300.0, 1320.0),  # 5300 > 5200 → OUT
-            ("too_short", 100, "2025-01-14", 4700.0, 1280.0),  # 4700 < 4800 → OUT
+            ("exact_5k",   100, "2025-01-10", 5000.0, 1350.0),  # == nominal → IN
+            ("long_5k",    100, "2025-01-11", 5200.0, 1300.0),  # within +tol → IN, wins
+            ("too_long",   100, "2025-01-12", 5301.0, 1200.0),  # > 5300 upper → OUT
+            ("short_5k",   100, "2025-01-13", 4800.0, 1100.0),  # < nominal → OUT (bug fix)
+            ("just_short", 100, "2025-01-14", 4999.0, 1150.0),  # 1m short → OUT (hard cutoff)
         ],
     )
     db._conn.commit()
@@ -258,17 +264,18 @@ def test_pbs_distance_tolerance_boundary(app_client):
     pb_map = {p["distance"]: p for p in resp.json()["pbs"]}
 
     assert "5K" in pb_map
-    # Best among the three valid candidates (5000m/1350s, 4800m/1300s, 5200m/1340s)
+    # Winner is the fastest run that ACTUALLY reached 5000m: long_5k (5200m/1300s).
+    # The faster too_long/short_5k/just_short are all disqualified by distance.
     assert pb_map["5K"]["pb_time_sec"] == 1300.0
-    assert pb_map["5K"]["label_id"] == "short_5k"
-    # history: exact_5k(1350s) is first PB, short_5k(1300s) breaks it → 2 entries.
-    # long_5k(1340s) does NOT break 1300s so it's NOT in history.
+    assert pb_map["5K"]["label_id"] == "long_5k"
+    # history: exact_5k(1350s) is first PB, long_5k(1300s) breaks it → 2 entries.
     assert len(pb_map["5K"]["history"]) == 2
 
-    # 5300m and 4700m must NOT count toward 5K PBs
-    all_label_ids_in_history = [h for p in resp.json()["pbs"] for h in [p["label_id"]]]
-    assert "too_long" not in all_label_ids_in_history
-    assert "too_short" not in all_label_ids_in_history
+    # Runs that did not truly cover 5000m (or overshot the window) must NOT win.
+    winners = [p["label_id"] for p in resp.json()["pbs"]]
+    assert "short_5k" not in winners
+    assert "just_short" not in winners
+    assert "too_long" not in winners
 
 
 def test_pbs_non_running_excluded(app_client):

@@ -36,13 +36,21 @@ var raceTypeByDisplay = map[string]string{
 }
 
 // activityDistanceToleranceM: [low, high] window per display distance.
+// Lower bound = the nominal distance itself (hard cutoff): the activity-level
+// fallback credits the WHOLE activity duration against the NOMINAL distance
+// (see activityLevelCandidates), so admitting a run SHORTER than nominal
+// fabricates a too-fast PB — a 2.9 km run scored as 3K claims 3000 m covered in
+// a time only spent on 2900 m. A run must actually reach the distance to count
+// for it (mirrors the segment path's totalDist < target guard). Upper bound =
+// ~+3% over nominal to admit GPS-long real race measurements. Keep in sync with
+// pb_records.ACTIVITY_DISTANCE_TOLERANCE_M.
 var activityDistanceToleranceM = map[string][2]float64{
-	"1K":  {950.0, 1050.0},
-	"3K":  {2900.0, 3100.0},
-	"5K":  {4800.0, 5300.0},
-	"10K": {9800.0, 10500.0},
-	"HM":  {20800.0, 21800.0},
-	"FM":  {41800.0, 43500.0},
+	"1K":  {1000.0, 1050.0},
+	"3K":  {3000.0, 3100.0},
+	"5K":  {5000.0, 5300.0},
+	"10K": {10000.0, 10500.0},
+	"HM":  {21097.5, 21800.0},
+	"FM":  {42195.0, 43500.0},
 }
 
 // TSPoint is one raw timeseries row (centisecond timestamp, metres/cm distance).
