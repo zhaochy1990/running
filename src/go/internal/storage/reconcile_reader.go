@@ -115,8 +115,11 @@ func (s *Store) ReconcileCalibrationRows(ctx context.Context, userID string) (ma
 	return out, nil
 }
 
-// ReconcileZoneRows returns running_calibration_zone rows keyed by
-// as_of_date|zone_kind|name (joined to the owning snapshot).
+// ReconcileZoneRows returns the calibration zone rows keyed by
+// as_of_date|zone_kind|name. Pace and HR zones live in separate tables
+// (running_calibration_pace_zone / running_calibration_hr_zone); this projects
+// both back into the shared zone_kind|min_value|max_value comparison shape so
+// the diff still lines up against the Python single-table store.
 func (s *Store) ReconcileZoneRows(ctx context.Context, userID string) (map[string]map[string]any, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -130,23 +133,43 @@ func (s *Store) ReconcileZoneRows(ctx context.Context, userID string) (map[strin
 	for i := range snaps {
 		asOfByID[snaps[i].ID] = snaps[i].AsOfDate
 	}
-	var rows []RunningCalibrationZone
-	if err := s.db.WithContext(ctx).Where("user_id = ?", uid).Find(&rows).Error; err != nil {
+
+	var paceRows []RunningCalibrationPaceZone
+	if err := s.db.WithContext(ctx).Where("user_id = ?", uid).Find(&paceRows).Error; err != nil {
 		return nil, err
 	}
-	out := make(map[string]map[string]any, len(rows))
-	for i := range rows {
-		r := rows[i]
+	var hrRows []RunningCalibrationHRZone
+	if err := s.db.WithContext(ctx).Where("user_id = ?", uid).Find(&hrRows).Error; err != nil {
+		return nil, err
+	}
+
+	out := make(map[string]map[string]any, len(paceRows)+len(hrRows))
+	for i := range paceRows {
+		r := paceRows[i]
 		asOf, ok := asOfByID[r.SnapshotID]
 		if !ok {
 			continue
 		}
-		out[asOf+"|"+r.ZoneKind+"|"+r.Name] = map[string]any{
+		out[asOf+"|pace|"+r.Name] = map[string]any{
 			"confidence":    r.Confidence,
-			"min_value":     anyFloat(r.MinValue),
-			"max_value":     anyFloat(r.MaxValue),
+			"min_value":     anyFloat(r.MinPaceSPerKm),
+			"max_value":     anyFloat(r.MaxPaceSPerKm),
 			"min_speed_mps": anyFloat(r.MinSpeedMps),
 			"max_speed_mps": anyFloat(r.MaxSpeedMps),
+		}
+	}
+	for i := range hrRows {
+		r := hrRows[i]
+		asOf, ok := asOfByID[r.SnapshotID]
+		if !ok {
+			continue
+		}
+		out[asOf+"|heart_rate|"+r.Name] = map[string]any{
+			"confidence":    r.Confidence,
+			"min_value":     anyFloat(r.MinBpm),
+			"max_value":     anyFloat(r.MaxBpm),
+			"min_speed_mps": nil,
+			"max_speed_mps": nil,
 		}
 	}
 	return out, nil

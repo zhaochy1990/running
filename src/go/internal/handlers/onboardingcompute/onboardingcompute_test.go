@@ -18,7 +18,8 @@ type fakeStore struct {
 	health []storage.DailyHealth
 
 	snap      *storage.RunningCalibrationSnapshot
-	zones     []storage.RunningCalibrationZone
+	paceZones []storage.RunningCalibrationPaceZone
+	hrZones   []storage.RunningCalibrationHRZone
 	pbs       []storage.PersonalBest
 	dailyRows int
 }
@@ -39,8 +40,9 @@ func (f *fakeStore) UpsertRunningCalibrationSnapshot(_ context.Context, snap *st
 	f.snap = snap
 	return 7, nil
 }
-func (f *fakeStore) ReplaceCalibrationZones(_ context.Context, _ string, snapshotID uint64, zones []storage.RunningCalibrationZone) error {
-	f.zones = zones
+func (f *fakeStore) ReplaceCalibrationZones(_ context.Context, _ string, snapshotID uint64, paceZones []storage.RunningCalibrationPaceZone, hrZones []storage.RunningCalibrationHRZone) error {
+	f.paceZones = paceZones
+	f.hrZones = hrZones
 	return nil
 }
 func (f *fakeStore) AllRunningActivities(context.Context, string) ([]storage.Activity, error) {

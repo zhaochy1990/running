@@ -47,23 +47,38 @@ type RunningCalibrationSnapshot struct {
 
 func (RunningCalibrationSnapshot) TableName() string { return "running_calibration_snapshot" }
 
-// RunningCalibrationZone is one training zone derived from a snapshot (table
-// "running_calibration_zone"). Mirrors the Python zone rows; zone_kind is
-// "pace" or "heart_rate". For HR zones min_speed_mps/max_speed_mps are NULL.
-type RunningCalibrationZone struct {
-	ID          uint64   `gorm:"column:id;primaryKey;autoIncrement"`
-	UserID      string   `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_run_cal_zone,priority:1"`
-	SnapshotID  uint64   `gorm:"column:snapshot_id;not null;uniqueIndex:uq_run_cal_zone,priority:2"`
-	ZoneKind    string   `gorm:"column:zone_kind;type:varchar(16);not null;uniqueIndex:uq_run_cal_zone,priority:3"`
-	Name        string   `gorm:"column:name;type:varchar(32);not null;uniqueIndex:uq_run_cal_zone,priority:4"`
-	MinValue    *float64 `gorm:"column:min_value"`
-	MaxValue    *float64 `gorm:"column:max_value"`
-	MinSpeedMps *float64 `gorm:"column:min_speed_mps"`
-	MaxSpeedMps *float64 `gorm:"column:max_speed_mps"`
-	Confidence  string   `gorm:"column:confidence;type:varchar(16);not null"`
+// RunningCalibrationPaceZone is one pace training zone derived from a snapshot
+// (table "running_calibration_pace_zone"). Pace and heart-rate zones are stored
+// in separate tables (not a shared table with a zone_kind discriminator) so each
+// carries its own natural columns instead of overloaded min_value/max_value.
+type RunningCalibrationPaceZone struct {
+	ID            uint64   `gorm:"column:id;primaryKey;autoIncrement"`
+	UserID        string   `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_run_cal_pace_zone,priority:1"`
+	SnapshotID    uint64   `gorm:"column:snapshot_id;not null;uniqueIndex:uq_run_cal_pace_zone,priority:2"`
+	Name          string   `gorm:"column:name;type:varchar(32);not null;uniqueIndex:uq_run_cal_pace_zone,priority:3"`
+	MinPaceSPerKm *float64 `gorm:"column:min_pace_s_per_km"`
+	MaxPaceSPerKm *float64 `gorm:"column:max_pace_s_per_km"`
+	MinSpeedMps   *float64 `gorm:"column:min_speed_mps"`
+	MaxSpeedMps   *float64 `gorm:"column:max_speed_mps"`
+	Confidence    string   `gorm:"column:confidence;type:varchar(16);not null"`
 }
 
-func (RunningCalibrationZone) TableName() string { return "running_calibration_zone" }
+func (RunningCalibrationPaceZone) TableName() string { return "running_calibration_pace_zone" }
+
+// RunningCalibrationHRZone is one heart-rate training zone derived from a
+// snapshot (table "running_calibration_hr_zone"). Kept separate from the pace
+// zone table so HR rows only carry the bpm columns (no NULL pace/speed columns).
+type RunningCalibrationHRZone struct {
+	ID         uint64   `gorm:"column:id;primaryKey;autoIncrement"`
+	UserID     string   `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_run_cal_hr_zone,priority:1"`
+	SnapshotID uint64   `gorm:"column:snapshot_id;not null;uniqueIndex:uq_run_cal_hr_zone,priority:2"`
+	Name       string   `gorm:"column:name;type:varchar(32);not null;uniqueIndex:uq_run_cal_hr_zone,priority:3"`
+	MinBpm     *float64 `gorm:"column:min_bpm"`
+	MaxBpm     *float64 `gorm:"column:max_bpm"`
+	Confidence string   `gorm:"column:confidence;type:varchar(16);not null"`
+}
+
+func (RunningCalibrationHRZone) TableName() string { return "running_calibration_hr_zone" }
 
 // PersonalBest is one achieved-time PB per display distance (table
 // "personal_bests"). Mirrors stride_core.pb_records; PK (user_id, distance).
@@ -137,7 +152,8 @@ func (DailyTrainingLoad) TableName() string { return "daily_training_load" }
 func computeModels() []any {
 	return []any{
 		&RunningCalibrationSnapshot{},
-		&RunningCalibrationZone{},
+		&RunningCalibrationPaceZone{},
+		&RunningCalibrationHRZone{},
 		&PersonalBest{},
 		&ActivityTrainingLoad{},
 		&DailyTrainingLoad{},

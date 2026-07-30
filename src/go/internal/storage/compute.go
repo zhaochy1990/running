@@ -87,26 +87,42 @@ func (s *Store) ReplaceDailyTrainingLoad(ctx context.Context, userID string, row
 		CreateInBatches(&rows, 200).Error
 }
 
-// ReplaceCalibrationZones replaces the zone rows for one snapshot (delete by
-// snapshot_id then insert), mirroring the Python _save_zones DELETE+INSERT.
-func (s *Store) ReplaceCalibrationZones(ctx context.Context, userID string, snapshotID uint64, zones []RunningCalibrationZone) error {
+// ReplaceCalibrationZones replaces the zone rows for one snapshot across the two
+// split tables (delete by snapshot_id then insert), mirroring the Python
+// _save_zones DELETE+INSERT but with pace and heart-rate zones stored apart.
+func (s *Store) ReplaceCalibrationZones(ctx context.Context, userID string, snapshotID uint64, paceZones []RunningCalibrationPaceZone, hrZones []RunningCalibrationHRZone) error {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return err
 	}
-	for i := range zones {
-		zones[i].UserID = uid
-		zones[i].SnapshotID = snapshotID
+	for i := range paceZones {
+		paceZones[i].UserID = uid
+		paceZones[i].SnapshotID = snapshotID
+	}
+	for i := range hrZones {
+		hrZones[i].UserID = uid
+		hrZones[i].SnapshotID = snapshotID
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ? AND snapshot_id = ?", uid, snapshotID).
-			Delete(&RunningCalibrationZone{}).Error; err != nil {
+			Delete(&RunningCalibrationPaceZone{}).Error; err != nil {
 			return err
 		}
-		if len(zones) == 0 {
-			return nil
+		if err := tx.Where("user_id = ? AND snapshot_id = ?", uid, snapshotID).
+			Delete(&RunningCalibrationHRZone{}).Error; err != nil {
+			return err
 		}
-		return tx.CreateInBatches(&zones, 100).Error
+		if len(paceZones) > 0 {
+			if err := tx.CreateInBatches(&paceZones, 100).Error; err != nil {
+				return err
+			}
+		}
+		if len(hrZones) > 0 {
+			if err := tx.CreateInBatches(&hrZones, 100).Error; err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
