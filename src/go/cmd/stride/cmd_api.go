@@ -9,6 +9,8 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -134,11 +136,23 @@ func runAPI() error {
 	gin.SetMode(gin.ReleaseMode)
 	srv := &http.Server{Addr: cfg.API.Addr, Handler: svc.Router()}
 
-	log.Info("api starting",
+	// Derive a browsable local URL from the listen address for the startup log.
+	host, port, _ := net.SplitHostPort(cfg.API.Addr)
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	baseURL := fmt.Sprintf("http://%s:%s", host, port)
+
+	log.Info("api server listening",
 		zap.String("addr", cfg.API.Addr),
+		zap.String("port", port),
+		zap.String("url", baseURL),
 		zap.Bool("swagger_enabled", cfg.API.SwaggerEnabled),
 		zap.Strings("cors_origins", cfg.API.CORSOrigins),
 	)
+	if cfg.API.SwaggerEnabled {
+		log.Info("swagger UI available", zap.String("url", baseURL+"/swagger/index.html"))
+	}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()

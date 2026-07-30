@@ -16,9 +16,9 @@
 // The Swagger general API info below is attached to this file because
 // `swag init -g cmd/stride/main.go` reads it from the -g entry package.
 //
-//	@title						STRIDE Async-Job API
+//	@title						STRIDE API
 //	@version					1.0
-//	@description				Create and track async jobs and pipelines for the STRIDE worker.
+//	@description				HTTP API fronting the STRIDE worker: create and track async jobs and pipeline runs, and manage user profile, onboarding, and watch-provider login.
 //	@securityDefinitions.apikey	InternalToken
 //	@in							header
 //	@name						X-Internal-Token

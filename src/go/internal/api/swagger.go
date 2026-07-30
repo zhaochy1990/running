@@ -3,6 +3,8 @@
 package api
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	swaggerfiles "github.com/swaggo/files"
 	ginswagger "github.com/swaggo/gin-swagger"
@@ -11,11 +13,16 @@ import (
 	_ "github.com/zhaochy1990/stride/cmd/stride/docs"
 )
 
-// mountSwagger serves the Swagger UI at /swagger/*any when enabled. Compiled
-// only with `-tags swagger`, which requires the generated cmd/stride/docs package.
+// mountSwagger serves the Swagger UI at /swagger/*any when enabled, and
+// redirects the API root ("/") to it for convenience. Compiled only with
+// `-tags swagger`, which requires the generated cmd/stride/docs package.
 func mountSwagger(r *gin.Engine, enabled bool) {
 	if !enabled {
 		return
 	}
 	r.GET("/swagger/*any", ginswagger.WrapHandler(swaggerfiles.Handler))
+	// Browsing the API root lands on the Swagger UI (dev convenience).
+	r.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusFound, "/swagger/index.html")
+	})
 }
