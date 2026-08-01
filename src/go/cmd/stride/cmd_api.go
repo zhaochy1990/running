@@ -123,6 +123,7 @@ func runAPI() error {
 		ProviderInfo:          providerInfo,
 		AuthNameSync:          authNameSync,
 		Features:              features,
+		ActivityStore:         store,
 		Auth:                  authn,
 		CORSOrigins:           cfg.API.CORSOrigins,
 		SwaggerEnabled:        cfg.API.SwaggerEnabled,

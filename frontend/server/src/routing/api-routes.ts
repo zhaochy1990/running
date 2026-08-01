@@ -156,10 +156,13 @@ export const API_ROUTES: readonly ApiRoute[] = [
   // ── Activities (per-user, {user} = UUID) ────────────────────────────────
   // ✗ not called
   { method: 'GET', path: '/api/:user/home', upstream: 'python', goReady: false },
-  // ✓ /activities, /plan/adjust, /training-status · list / paginate activities
-  { method: 'GET', path: '/api/:user/activities', upstream: 'python', goReady: false },
-  // ✓ /activity/:id · activity detail (?include=timeseries)
-  { method: 'GET', path: '/api/:user/activities/:labelId', upstream: 'python', goReady: false },
+  // ✓ /activities, /plan/adjust, /training-status · list / paginate activities   [go-ready]
+  //   Go note (ADR 0019): contract parity incl. monthly_summaries; safe to cut over.
+  { method: 'GET', path: '/api/:user/activities', upstream: 'python', goReady: true },
+  // ✓ /activity/:id · activity detail (?include=timeseries)   [go-ready]
+  //   Go note (ADR 0019): zones projected from activity_watch_zones (watch-reported),
+  //   not calibrated zones; linked_scheduled_workout always null — cutover gated on that gap.
+  { method: 'GET', path: '/api/:user/activities/:labelId', upstream: 'python', goReady: true },
   // ✗ not called (detail uses ?include=timeseries instead)
   { method: 'GET', path: '/api/:user/activities/:labelId/timeseries', upstream: 'python', goReady: false },
   // ✗ not called

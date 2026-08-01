@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -124,7 +125,9 @@ func TestProviderForUser(t *testing.T) {
 		t.Fatalf("automigrate watch: %v", err)
 	}
 
-	const uid = "a1b2c3d4-0000-4000-8000-0000000000af"
+	// Unique per-run uid so leftover credentials from a prior run against a
+	// shared/persistent DB don't break the empty precondition below.
+	uid := fmt.Sprintf("a1b2c3d4-0000-4000-8000-%012d", time.Now().UnixNano()%1_000_000_000_000)
 
 	// No credential yet.
 	if _, found, err := st.ProviderForUser(ctx, uid); err != nil || found {
@@ -185,7 +188,9 @@ func TestLatestActivityDevice(t *testing.T) {
 	if err := st.AutoMigrateWatch(ctx); err != nil {
 		t.Fatalf("automigrate watch: %v", err)
 	}
-	const uid = "a1b2c3d4-0000-4000-8000-0000000000d2"
+	// Unique per-run uid so repeated runs against a shared/persistent DB
+	// don't see leftover activities (matches TestPipelineStore_ListByUser).
+	uid := fmt.Sprintf("a1b2c3d4-0000-4000-8000-%012d", time.Now().UnixNano()%1_000_000_000_000)
 
 	if _, ok, err := st.LatestActivityDevice(ctx, uid); err != nil || ok {
 		t.Fatalf("no activity: ok=%v err=%v, want (false, nil)", ok, err)
@@ -193,7 +198,7 @@ func TestLatestActivityDevice(t *testing.T) {
 
 	older, newer := "COROS PACE 2", "COROS PACE 3"
 	mkAct := func(label string, date time.Time, device *string) *Activity {
-		return &Activity{UserID: uid, LabelID: label, SportType: 100, Date: date, Device: device}
+		return &Activity{UserID: uid, LabelID: label, SportType: 100, Date: date, Device: device, SyncedAt: time.Now().UTC()}
 	}
 	if err := st.UpsertActivity(ctx, mkAct("l1", time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), &older), nil, nil, nil); err != nil {
 		t.Fatalf("upsert l1: %v", err)

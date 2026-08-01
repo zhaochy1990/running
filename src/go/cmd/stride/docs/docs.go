@@ -304,6 +304,183 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/{user}/activities": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a filtered, paginated activity page (newest first) plus run-distance/duration/count summaries for every Shanghai month on the page. A user caller may only list their own activities; an internal caller may list any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "List a user's activities",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size 1–200 (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Exact sport_name filter",
+                        "name": "sport",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "run | strength",
+                        "name": "sport_category",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Minimum distance in km",
+                        "name": "min_distance_km",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shanghai YYYY-MM-DD lower bound",
+                        "name": "date_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shanghai YYYY-MM-DD upper bound",
+                        "name": "date_to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.activitiesListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/activities/{labelId}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Assembles the activity, objective training load, laps, strength segments, watch-reported zones, and (with ?include=timeseries) the downsampled timeseries. A user caller may only read their own activities; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Get one activity's detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Activity label id",
+                        "name": "labelId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma list; pass 'timeseries' to inline the series",
+                        "name": "include",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.activityDetailResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/jobs": {
             "get": {
                 "description": "Returns every job type the system supports (hardcoded in the catalog), each with its input JSON schema and an example input. Static system metadata; no auth required.",
@@ -699,6 +876,242 @@ const docTemplate = `{
                 }
             }
         },
+        "api.activitiesListResponse": {
+            "type": "object",
+            "properties": {
+                "activities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.activityListItem"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "monthly_summaries": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/api.monthlySummaryDTO"
+                    }
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.activityDetailDTO": {
+            "type": "object",
+            "properties": {
+                "aerobic_effect": {
+                    "type": "number"
+                },
+                "anaerobic_effect": {
+                    "type": "number"
+                },
+                "ascent_m": {
+                    "type": "number"
+                },
+                "avg_cadence": {
+                    "type": "integer"
+                },
+                "avg_hr": {
+                    "type": "integer"
+                },
+                "avg_pace_s_km": {
+                    "type": "number"
+                },
+                "calories_kcal": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_fmt": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "number"
+                },
+                "feel_type": {
+                    "type": "integer"
+                },
+                "feels_like": {
+                    "type": "number"
+                },
+                "humidity": {
+                    "type": "number"
+                },
+                "label_id": {
+                    "type": "string"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pace_fmt": {
+                    "type": "string"
+                },
+                "pauses": {
+                    "type": "object"
+                },
+                "sport_name": {
+                    "type": "string"
+                },
+                "sport_note": {
+                    "type": "string"
+                },
+                "sport_type": {
+                    "type": "integer"
+                },
+                "temperature": {
+                    "type": "number"
+                },
+                "train_type": {
+                    "type": "string"
+                },
+                "training_load": {
+                    "type": "number"
+                },
+                "vo2max": {
+                    "type": "number"
+                },
+                "wind_speed": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.activityDetailResponse": {
+            "type": "object",
+            "properties": {
+                "activity": {
+                    "$ref": "#/definitions/api.activityDetailDTO"
+                },
+                "laps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.lapDTO"
+                    }
+                },
+                "linked_scheduled_workout": {
+                    "$ref": "#/definitions/api.linkedScheduledWorkoutDTO"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.segmentDTO"
+                    }
+                },
+                "stride_training_load": {
+                    "$ref": "#/definitions/api.strideTrainingLoadDTO"
+                },
+                "timeseries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.timeseriesDTO"
+                    }
+                },
+                "zones": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.zoneDTO"
+                    }
+                }
+            }
+        },
+        "api.activityListItem": {
+            "type": "object",
+            "properties": {
+                "aerobic_effect": {
+                    "type": "number"
+                },
+                "anaerobic_effect": {
+                    "type": "number"
+                },
+                "ascent_m": {
+                    "type": "number"
+                },
+                "avg_cadence": {
+                    "type": "integer"
+                },
+                "avg_hr": {
+                    "type": "integer"
+                },
+                "avg_pace_s_km": {
+                    "type": "number"
+                },
+                "calories_kcal": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_fmt": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "number"
+                },
+                "feels_like": {
+                    "type": "number"
+                },
+                "humidity": {
+                    "type": "number"
+                },
+                "label_id": {
+                    "type": "string"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pace_fmt": {
+                    "type": "string"
+                },
+                "route_thumb": {
+                    "type": "object"
+                },
+                "sport_name": {
+                    "type": "string"
+                },
+                "sport_type": {
+                    "type": "integer"
+                },
+                "temperature": {
+                    "type": "number"
+                },
+                "train_type": {
+                    "type": "string"
+                },
+                "training_load": {
+                    "type": "number"
+                },
+                "vo2max": {
+                    "type": "number"
+                },
+                "wind_speed": {
+                    "type": "number"
+                }
+            }
+        },
         "api.createJobRequest": {
             "type": "object",
             "required": [
@@ -823,6 +1236,81 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "api.lapDTO": {
+            "type": "object",
+            "properties": {
+                "adjusted_pace": {
+                    "type": "number"
+                },
+                "ascent_m": {
+                    "type": "number"
+                },
+                "avg_cadence": {
+                    "type": "integer"
+                },
+                "avg_hr": {
+                    "type": "integer"
+                },
+                "avg_pace": {
+                    "type": "number"
+                },
+                "avg_power": {
+                    "type": "integer"
+                },
+                "descent_m": {
+                    "type": "number"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_fmt": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "number"
+                },
+                "lap_index": {
+                    "type": "integer"
+                },
+                "lap_type": {
+                    "type": "string"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "pace_fmt": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.linkedScheduledWorkoutDTO": {
+            "type": "object",
+            "properties": {
+                "abandoned_by_promote_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.monthlySummaryDTO": {
+            "type": "object",
+            "properties": {
+                "activity_count": {
+                    "type": "integer"
+                },
+                "duration_s": {
+                    "type": "integer"
+                },
+                "total_run_km": {
+                    "type": "number"
                 }
             }
         },
@@ -984,6 +1472,62 @@ const docTemplate = `{
                 }
             }
         },
+        "api.segmentDTO": {
+            "type": "object",
+            "properties": {
+                "adjusted_pace": {
+                    "type": "number"
+                },
+                "ascent_m": {
+                    "type": "number"
+                },
+                "avg_cadence": {
+                    "type": "integer"
+                },
+                "avg_hr": {
+                    "type": "integer"
+                },
+                "avg_pace": {
+                    "type": "number"
+                },
+                "avg_power": {
+                    "type": "integer"
+                },
+                "descent_m": {
+                    "type": "number"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_fmt": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "number"
+                },
+                "lap_index": {
+                    "type": "integer"
+                },
+                "lap_type": {
+                    "type": "string"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "mode": {
+                    "type": "integer"
+                },
+                "pace_fmt": {
+                    "type": "string"
+                },
+                "seg_name": {
+                    "type": "string"
+                }
+            }
+        },
         "api.startPipelineRequest": {
             "type": "object",
             "properties": {
@@ -1009,6 +1553,112 @@ const docTemplate = `{
                 },
                 "run_id": {
                     "type": "string"
+                }
+            }
+        },
+        "api.strideTrainingLoadDTO": {
+            "type": "object",
+            "properties": {
+                "activity_date": {
+                    "type": "string"
+                },
+                "algorithm_version": {
+                    "type": "integer"
+                },
+                "calibration_id": {
+                    "type": "integer"
+                },
+                "cardio_coverage": {
+                    "type": "number"
+                },
+                "cardio_load_raw": {
+                    "type": "number"
+                },
+                "cardio_tss": {
+                    "type": "number"
+                },
+                "coverage_status": {
+                    "type": "string"
+                },
+                "excluded_from_pmc": {
+                    "type": "boolean"
+                },
+                "external_coverage": {
+                    "type": "number"
+                },
+                "external_tss": {
+                    "type": "number"
+                },
+                "high_intensity_coverage": {
+                    "type": "number"
+                },
+                "high_intensity_tss": {
+                    "type": "number"
+                },
+                "label_id": {
+                    "type": "string"
+                },
+                "load_confidence": {
+                    "type": "string"
+                },
+                "mechanical_load": {
+                    "type": "number"
+                },
+                "reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "session_class": {
+                    "type": "string"
+                },
+                "sport": {
+                    "type": "string"
+                },
+                "subjective_internal_load": {
+                    "type": "number"
+                },
+                "training_dose": {
+                    "type": "number"
+                },
+                "training_dose_source": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.timeseriesDTO": {
+            "type": "object",
+            "properties": {
+                "adjusted_pace": {
+                    "type": "number"
+                },
+                "altitude": {
+                    "type": "number"
+                },
+                "cadence": {
+                    "type": "integer"
+                },
+                "distance": {
+                    "type": "number"
+                },
+                "gps_lat": {
+                    "type": "number"
+                },
+                "gps_lon": {
+                    "type": "number"
+                },
+                "heart_rate": {
+                    "type": "integer"
+                },
+                "power": {
+                    "type": "integer"
+                },
+                "speed": {
+                    "type": "number"
+                },
+                "timestamp": {
+                    "type": "integer"
                 }
             }
         },
@@ -1117,6 +1767,32 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.zoneDTO": {
+            "type": "object",
+            "properties": {
+                "duration_s": {
+                    "type": "integer"
+                },
+                "percent": {
+                    "type": "number"
+                },
+                "range_max": {
+                    "type": "number"
+                },
+                "range_min": {
+                    "type": "number"
+                },
+                "range_unit": {
+                    "type": "string"
+                },
+                "zone_index": {
+                    "type": "integer"
+                },
+                "zone_type": {
                     "type": "string"
                 }
             }
