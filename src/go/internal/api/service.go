@@ -89,6 +89,11 @@ type Config struct {
 	AuthNameSync  AuthNameSync
 	Features      FeatureConfig
 
+	// ActivityStore backs the activity read surface (ADR 0019) — a sibling
+	// registrar sharing the auth path. Leave zero to run without the activity
+	// endpoints (e.g. in tests that never hit them).
+	ActivityStore ActivityStore
+
 	Auth           *Authenticator
 	CORSOrigins    []string
 	SwaggerEnabled bool
@@ -115,6 +120,8 @@ type Service struct {
 	pipelineCatalog []PipelineCatalogEntry
 
 	users *userRoutes
+
+	activities *activityRoutes
 
 	auth           *Authenticator
 	corsOrigins    []string
@@ -146,6 +153,7 @@ func NewService(cfg Config) *Service {
 		jobCatalog:            cfg.JobCatalog,
 		pipelineCatalog:       cfg.PipelineCatalog,
 		users:                 newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.Features, log),
+		activities:            newActivityRoutes(cfg.ActivityStore, log),
 		auth:                  cfg.Auth,
 		corsOrigins:           cfg.CORSOrigins,
 		swaggerEnabled:        cfg.SwaggerEnabled,
@@ -179,6 +187,7 @@ func (s *Service) Router() *gin.Engine {
 	authed.GET("/pipelines/:partition_key/:run_id", s.getPipelineRun)
 	authed.GET("/api/users/:uid/pipelines", s.listUserPipelines)
 	s.users.register(authed)
+	s.activities.register(authed)
 	return r
 }
 
