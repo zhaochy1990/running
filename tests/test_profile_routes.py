@@ -204,6 +204,31 @@ def test_get_profile_after_post_returns_saved_data(app_client):
     assert data["onboarding"]["profile_ready"] is True
 
 
+def test_get_profile_does_not_call_auth_service(app_client, monkeypatch):
+    """Regression guard: GET profile resolves display_name from local
+    profile.json and must never make an auth-service round trip on the hot path
+    (ADR 0013). A cross-region auth call here previously timed out at 5s on
+    every page's app-boot profile gate, making every load take ~5s.
+    """
+    import stride_server.auth_service_client as auth_client
+
+    async def _boom(*args, **kwargs):
+        raise AssertionError("GET profile must not call auth-service get_me")
+
+    monkeypatch.setattr(auth_client, "get_me", _boom)
+
+    client, token = app_client
+    client.post(
+        "/api/users/me/profile",
+        json=VALID_PROFILE_BODY,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    resp = client.get("/api/users/me/profile", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    assert resp.json()["display_name"] == "Test User"
+
+
 def test_get_profile_normalizes_legacy_fields(app_client, tmp_path):
     client, token = app_client
     profile_file = tmp_path / USER_UUID / "profile.json"
