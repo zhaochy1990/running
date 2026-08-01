@@ -7,6 +7,7 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/provider"
+	"github.com/zhaochy1990/stride/internal/storage"
 )
 
 // fakeProvider implements the minimal Provider the handler needs.
@@ -37,9 +38,20 @@ func (f *fakeProvider) SyncUser(_ context.Context, user string, opts provider.Sy
 	return f.result, f.syncErr
 }
 
+// fakeMarker captures last-sync bookkeeping written by the handler.
+type fakeMarker struct{ set map[string]string }
+
+func (m *fakeMarker) SetMeta(_ context.Context, _, key, value string) error {
+	if m.set == nil {
+		m.set = map[string]string{}
+	}
+	m.set[key] = value
+	return nil
+}
+
 func run(t *testing.T, f *fakeProvider, input string) (string, error, []string, []int) {
 	t.Helper()
-	h := New(func(_ context.Context, _ string) (Provider, error) { return f, nil })
+	h := New(func(_ context.Context, _ string) (Provider, error) { return f, nil }, &fakeMarker{})
 	var stages []string
 	var pcts []int
 	hb := func(stage string, pct int) error {
@@ -144,7 +156,7 @@ func TestHandler_BadPayload_Permanent(t *testing.T) {
 func TestHandler_ResolveError_Retryable(t *testing.T) {
 	h := New(func(context.Context, string) (Provider, error) {
 		return nil, errors.New("db down while resolving provider")
-	})
+	}, &fakeMarker{})
 	_, err := h(context.Background(), &job.Job{PartitionKey: "u-123"}, func(string, int) error { return nil })
 	if err == nil {
 		t.Fatal("want error")
@@ -171,5 +183,29 @@ func TestHandler_BridgesProgressToHeartbeat(t *testing.T) {
 	}
 	if len(pcts) != 2 || pcts[0] != 45 || pcts[1] != 95 {
 		t.Fatalf("percents = %v", pcts)
+	}
+}
+
+func TestHandler_StampsLastSyncTimeOnSuccess(t *testing.T) {
+	f := &fakeProvider{loggedIn: true, result: provider.SyncResult{Activities: 1}}
+	m := &fakeMarker{}
+	h := New(func(context.Context, string) (Provider, error) { return f, nil }, m)
+	if _, err := h(context.Background(), &job.Job{PartitionKey: "u-123"}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if _, ok := m.set[storage.MetaKeyLastSyncTime]; !ok {
+		t.Errorf("last_sync_time not stamped on success: %v", m.set)
+	}
+}
+
+func TestHandler_NoStampOnFailedSync(t *testing.T) {
+	f := &fakeProvider{loggedIn: true, syncErr: errors.New("connection reset")}
+	m := &fakeMarker{}
+	h := New(func(context.Context, string) (Provider, error) { return f, nil }, m)
+	if _, err := h(context.Background(), &job.Job{PartitionKey: "u-123"}, func(string, int) error { return nil }); err == nil {
+		t.Fatal("want error")
+	}
+	if len(m.set) != 0 {
+		t.Errorf("must not stamp last_sync_time on a failed sync: %v", m.set)
 	}
 }

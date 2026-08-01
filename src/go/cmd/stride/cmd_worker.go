@@ -177,6 +177,6 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
 	})
-	reg.MustRegister(watchsync.JobType, watchsync.New(resolve))
+	reg.MustRegister(watchsync.JobType, watchsync.New(resolve, store))
 	reg.MustRegister(onboardingcompute.JobType, onboardingcompute.New(store))
 }

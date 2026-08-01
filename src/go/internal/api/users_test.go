@@ -22,17 +22,23 @@ const testSub = "11111111-1111-4111-8111-111111111111"
 // --- fakes -------------------------------------------------------------------
 
 type fakeUserStore struct {
-	profiles   map[string]*storage.UserProfile
-	onboarding map[string]*storage.UserOnboarding
-	provider   map[string]string
-	upsertErr  error
+	profiles    map[string]*storage.UserProfile
+	onboarding  map[string]*storage.UserOnboarding
+	provider    map[string]string
+	credentials map[string]*storage.ProviderCredential
+	devices     map[string]string
+	meta        map[string]string
+	upsertErr   error
 }
 
 func newFakeUserStore() *fakeUserStore {
 	return &fakeUserStore{
-		profiles:   map[string]*storage.UserProfile{},
-		onboarding: map[string]*storage.UserOnboarding{},
-		provider:   map[string]string{},
+		profiles:    map[string]*storage.UserProfile{},
+		onboarding:  map[string]*storage.UserOnboarding{},
+		provider:    map[string]string{},
+		credentials: map[string]*storage.ProviderCredential{},
+		devices:     map[string]string{},
+		meta:        map[string]string{},
 	}
 }
 
@@ -78,6 +84,55 @@ func (f *fakeUserStore) ProviderForUser(_ context.Context, uid string) (string, 
 	return p, ok, nil
 }
 
+func credKey(uid, provider string) string { return uid + "|" + provider }
+
+func (f *fakeUserStore) GetCredential(_ context.Context, uid, provider string) (*storage.ProviderCredential, error) {
+	return f.credentials[credKey(uid, provider)], nil
+}
+
+func (f *fakeUserStore) LatestActivityDevice(_ context.Context, uid string) (string, bool, error) {
+	d, ok := f.devices[uid]
+	return d, ok, nil
+}
+
+func (f *fakeUserStore) GetMeta(_ context.Context, uid, key string) (string, bool, error) {
+	v, ok := f.meta[uid+"|"+key]
+	return v, ok, nil
+}
+
+// DeleteCredential removes the credential and the provider binding it drives, so
+// a subsequent ProviderForUser reports not-found (mirrors the real store, where
+// deleting the row clears the binding).
+func (f *fakeUserStore) DeleteCredential(_ context.Context, uid, provider string) error {
+	delete(f.credentials, credKey(uid, provider))
+	delete(f.provider, uid)
+	return nil
+}
+
+func (f *fakeUserStore) ClearWatchReady(_ context.Context, uid string) error {
+	o := f.onboarding[uid]
+	if o == nil {
+		o = &storage.UserOnboarding{UserID: uid}
+	}
+	o.WatchReady = false
+	f.onboarding[uid] = o
+	return nil
+}
+
+// fakeProviderInfo returns canned static provider metadata for GET /watch.
+type fakeProviderInfo struct {
+	displayName  string
+	capabilities []string
+	err          error
+}
+
+func (f *fakeProviderInfo) Info(string) (string, []string, error) {
+	if f.err != nil {
+		return "", nil, f.err
+	}
+	return f.displayName, f.capabilities, nil
+}
+
 type fakeProviderLogin struct {
 	result      WatchLoginResult
 	err         error
@@ -109,11 +164,12 @@ func (f *fakeAuthNameSync) SyncName(_ context.Context, bearer, name string) erro
 // --- harness -----------------------------------------------------------------
 
 type userHarness struct {
-	svc      *Service
-	store    *fakeUserStore
-	login    *fakeProviderLogin
-	authName *fakeAuthNameSync
-	key      *rsa.PrivateKey
+	svc          *Service
+	store        *fakeUserStore
+	login        *fakeProviderLogin
+	providerInfo *fakeProviderInfo
+	authName     *fakeAuthNameSync
+	key          *rsa.PrivateKey
 }
 
 func newUserHarness(t *testing.T, features FeatureConfig) *userHarness {
@@ -124,15 +180,17 @@ func newUserHarness(t *testing.T, features FeatureConfig) *userHarness {
 	}
 	store := newFakeUserStore()
 	login := &fakeProviderLogin{result: WatchLoginResult{Success: true}}
+	providerInfo := &fakeProviderInfo{displayName: "高驰", capabilities: []string{"sync_hrv_detail"}}
 	authName := &fakeAuthNameSync{}
 	svc := NewService(Config{
 		Auth:          NewAuthenticator(testToken, NewJWTVerifierFromKey(&key.PublicKey, testIssuer, testAudience)),
 		UserStore:     store,
 		ProviderLogin: login,
+		ProviderInfo:  providerInfo,
 		AuthNameSync:  authName,
 		Features:      features,
 	})
-	return &userHarness{svc: svc, store: store, login: login, authName: authName, key: key}
+	return &userHarness{svc: svc, store: store, login: login, providerInfo: providerInfo, authName: authName, key: key}
 }
 
 func (h *userHarness) userToken(t *testing.T, sub string) string {
@@ -359,5 +417,154 @@ func TestWatchLogin_AuthFailure400(t *testing.T) {
 	}
 	if o := h.store.onboarding[testSub]; o != nil && o.WatchReady {
 		t.Errorf("watch_ready must not be set on failed login")
+	}
+}
+
+// --- GET watch ---------------------------------------------------------------
+
+func TestWatch_RequiresUserTier(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	for _, method := range []string{http.MethodGet, http.MethodDelete} {
+		if w := h.do(method, "/api/users/me/watch", "", nil); w.Code != http.StatusUnauthorized {
+			t.Errorf("%s no token: code = %d, want 401", method, w.Code)
+		}
+		if w := h.do(method, "/api/users/me/watch", "", internalHdr()); w.Code != http.StatusUnauthorized {
+			t.Errorf("%s internal token: code = %d, want 401", method, w.Code)
+		}
+	}
+}
+
+func TestGetWatch_NoWatchBound(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	w := h.do(http.MethodGet, "/api/users/me/watch", "", h.bearer(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp watchInfoResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Provider != nil || resp.LoggedIn {
+		t.Errorf("want unbound/not-logged-in, got %+v", resp)
+	}
+	if resp.Capabilities == nil || len(resp.Capabilities) != 0 {
+		t.Errorf("capabilities = %v, want [] (never null)", resp.Capabilities)
+	}
+}
+
+func TestGetWatch_WithData(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	email := "a@b.com"
+	h.store.provider[testSub] = "coros"
+	h.store.credentials[credKey(testSub, "coros")] = &storage.ProviderCredential{
+		UserID: testSub, Provider: "coros", Email: &email, Secret: []byte("token"),
+	}
+	h.store.devices[testSub] = "COROS PACE 3"
+	h.store.meta[testSub+"|"+storage.MetaKeyLastSyncTime] = "2026-05-01T10:00:00Z"
+	h.providerInfo.displayName = "高驰"
+	h.providerInfo.capabilities = []string{"sync_hrv_detail"}
+
+	w := h.do(http.MethodGet, "/api/users/me/watch", "", h.bearer(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp watchInfoResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Provider == nil || *resp.Provider != "coros" {
+		t.Errorf("provider = %v, want coros", resp.Provider)
+	}
+	if resp.ProviderDisplayName == nil || *resp.ProviderDisplayName != "高驰" {
+		t.Errorf("provider_display_name = %v, want 高驰", resp.ProviderDisplayName)
+	}
+	if !resp.LoggedIn {
+		t.Errorf("logged_in = false, want true (credential has a secret)")
+	}
+	if resp.Email == nil || *resp.Email != email {
+		t.Errorf("email = %v, want %q", resp.Email, email)
+	}
+	if resp.Device == nil || *resp.Device != "COROS PACE 3" {
+		t.Errorf("device = %v, want 'COROS PACE 3'", resp.Device)
+	}
+	if resp.LastSyncAt == nil || *resp.LastSyncAt != "2026-05-01T10:00:00Z" {
+		t.Errorf("last_sync_at = %v, want the stamped time", resp.LastSyncAt)
+	}
+	if len(resp.Capabilities) != 1 || resp.Capabilities[0] != "sync_hrv_detail" {
+		t.Errorf("capabilities = %v, want [sync_hrv_detail]", resp.Capabilities)
+	}
+}
+
+func TestGetWatch_PresenceOnlyLoggedIn(t *testing.T) {
+	// A credential row with no secret blob is 'not logged in' (presence-only).
+	h := newUserHarness(t, FeatureConfig{})
+	email := "a@b.com"
+	h.store.provider[testSub] = "coros"
+	h.store.credentials[credKey(testSub, "coros")] = &storage.ProviderCredential{
+		UserID: testSub, Provider: "coros", Email: &email, Secret: nil,
+	}
+	w := h.do(http.MethodGet, "/api/users/me/watch", "", h.bearer(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp watchInfoResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.LoggedIn {
+		t.Errorf("logged_in = true, want false when secret is empty")
+	}
+	if resp.Email == nil || *resp.Email != email {
+		t.Errorf("email should still be reported: %v", resp.Email)
+	}
+}
+
+// --- DELETE watch ------------------------------------------------------------
+
+func TestDeleteWatch_NoWatchBound400(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	w := h.do(http.MethodDelete, "/api/users/me/watch", "", h.bearer(t, testSub))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("code = %d, want 400: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeleteWatch_Success(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	email := "a@b.com"
+	h.store.provider[testSub] = "coros"
+	h.store.credentials[credKey(testSub, "coros")] = &storage.ProviderCredential{
+		UserID: testSub, Provider: "coros", Email: &email, Secret: []byte("token"),
+	}
+	completed := time.Now().UTC()
+	h.store.onboarding[testSub] = &storage.UserOnboarding{
+		UserID: testSub, WatchReady: true, ProfileReady: true, CompletedAt: &completed,
+	}
+
+	w := h.do(http.MethodDelete, "/api/users/me/watch", "", h.bearer(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp disconnectWatchResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.OK || resp.Provider != "coros" {
+		t.Errorf("resp = %+v, want {ok:true, provider:coros}", resp)
+	}
+	// Credential deleted.
+	if h.store.credentials[credKey(testSub, "coros")] != nil {
+		t.Errorf("credential must be deleted on disconnect")
+	}
+	o := h.store.onboarding[testSub]
+	if o == nil || o.WatchReady {
+		t.Errorf("watch_ready must be cleared on disconnect: %+v", o)
+	}
+	// profile_ready + completed_at are intentionally retained (ADR 0018).
+	if o != nil && !o.ProfileReady {
+		t.Errorf("profile_ready must be retained on disconnect")
+	}
+	if o != nil && o.CompletedAt == nil {
+		t.Errorf("completed_at must be left untouched on disconnect (ADR 0018)")
 	}
 }

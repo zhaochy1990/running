@@ -97,6 +97,7 @@ func runAPI() error {
 	// User/onboarding surface deps (ADR 0013).
 	authNameSync := authsvc.New(cfg.API.AuthServiceURL, 5*time.Second)
 	providerLogin := providerLoginAdapter{store: store, delay: watchRequestDelay}
+	providerInfo := providerInfoAdapter{store: store, delay: watchRequestDelay}
 	features := api.FeatureConfig{
 		SyncDataAtOnboarding:      cfg.API.Features.SyncDataAtOnboarding,
 		CoachAgentWeeklyPlanUsers: toUserSet(cfg.API.Features.CoachAgentWeeklyPlanUsers),
@@ -119,6 +120,7 @@ func runAPI() error {
 		PipelineCatalog:       apiPipelineCatalog(),
 		UserStore:             store,
 		ProviderLogin:         providerLogin,
+		ProviderInfo:          providerInfo,
 		AuthNameSync:          authNameSync,
 		Features:              features,
 		Auth:                  authn,

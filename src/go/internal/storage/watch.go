@@ -168,6 +168,12 @@ func (s *Store) UpsertRacePrediction(ctx context.Context, p *RacePrediction) err
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(p).Error
 }
 
+// MetaKeyLastSyncTime is the sync_meta key holding the RFC3339 UTC timestamp of
+// the user's most recent successful watch sync. It is written by the watch_sync
+// handler and read by GET /watch (last_sync_at). Distinct from the last_label_id
+// position cursor.
+const MetaKeyLastSyncTime = "last_sync_time"
+
 // SetMeta upserts a per-user sync cursor.
 func (s *Store) SetMeta(ctx context.Context, userID, key, value string) error {
 	uid, err := canonicalUserID(userID)
@@ -229,6 +235,45 @@ func (s *Store) GetCredential(ctx context.Context, userID, provider string) (*Pr
 		return nil, err
 	}
 	return &c, nil
+}
+
+// DeleteCredential removes a user's stored credential for a provider (watch
+// disconnect). Deleting a nonexistent row is not an error. Synced watch data is
+// intentionally retained — only the login binding is cleared.
+func (s *Store) DeleteCredential(ctx context.Context, userID, providerName string) error {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	return s.db.WithContext(ctx).
+		Where("user_id = ? AND provider = ?", uid, providerName).
+		Delete(&ProviderCredential{}).Error
+}
+
+// LatestActivityDevice returns the device model string of the user's most recent
+// activity (by date) for the watch status card. ok is false when the user has no
+// activity carrying a non-empty device.
+func (s *Store) LatestActivityDevice(ctx context.Context, userID string) (string, bool, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return "", false, err
+	}
+	var a Activity
+	err = s.db.WithContext(ctx).
+		Select("device").
+		Where("user_id = ? AND device IS NOT NULL AND device <> ''", uid).
+		Order("date DESC").
+		First(&a).Error
+	if err == gorm.ErrRecordNotFound {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if a.Device == nil {
+		return "", false, nil
+	}
+	return *a.Device, true, nil
 }
 
 // ProviderForUser returns the watch provider the user has a stored credential
