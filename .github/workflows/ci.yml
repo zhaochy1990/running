@@ -59,3 +59,41 @@ jobs:
         run: |
           cd frontend
           npm run build
+
+  web-bff:
+    name: Web BFF (typecheck + build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: frontend/server/package-lock.json
+
+      - name: Install
+        run: |
+          cd frontend/server
+          npm ci
+
+      # tsc --noEmit checks every src file including __tests__ (routing table +
+      # proxy) so a type error in the strangler seam fails the PR.
+      - name: Typecheck
+        run: |
+          cd frontend/server
+          npm run typecheck
+
+      # Dockerfile.web runs `npm run build` (tsc -p tsconfig.build.json). Run it
+      # here so a compile error in the BFF fails the PR, not the deploy.
+      - name: Build
+        run: |
+          cd frontend/server
+          npm run build
+
+      - name: Test
+        run: |
+          cd frontend/server
+          npm run test
+

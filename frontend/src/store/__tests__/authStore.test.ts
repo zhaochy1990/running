@@ -8,7 +8,7 @@ function makeJwt(payload: Record<string, unknown>): string {
   return `header.${encoded}.signature`
 }
 
-describe('authStore local auth routing', () => {
+describe('authStore same-origin auth (via stride-web BFF, ADR 0017)', () => {
   beforeEach(() => {
     vi.resetModules()
     sessionStorage.clear()
@@ -23,7 +23,7 @@ describe('authStore local auth routing', () => {
     sessionStorage.clear()
   })
 
-  it('uses the Vite auth proxy path for local dev login requests', async () => {
+  it('posts login to the relative /api/auth path (BFF proxies to the auth upstream)', async () => {
     const accessToken = makeJwt({ sub: 'user-1', exp: Math.floor(Date.now() / 1000) + 3600 })
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ access_token: accessToken, refresh_token: 'refresh-token' }), {
@@ -43,7 +43,7 @@ describe('authStore local auth routing', () => {
     })
   })
 
-  it('still uses the Vite auth proxy path when only VITE_AUTH_BASE_URL is configured', async () => {
+  it('stays relative even with VITE_AUTH_BASE_URL set (no dev/prod branch anymore)', async () => {
     vi.resetModules()
     vi.stubEnv('VITE_DEV_AUTH_PROXY', '')
     const accessToken = makeJwt({ sub: 'user-1', exp: Math.floor(Date.now() / 1000) + 3600 })

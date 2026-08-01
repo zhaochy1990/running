@@ -136,3 +136,23 @@ _Avoid_: 训练目标、race goal、个人资料
 **显示名（display_name）**：
 运动员的展示用名字；以 STRIDE 侧为准（source of truth），变更后尽力回写镜像到 Auth 服务的 `name`。
 _Avoid_: 用户名、昵称、Auth name（后者只是其镜像）
+
+## 前端服务与 API 路由（stride-web）
+
+（前端从 Python 后端剥离为独立服务/容器的表层词汇；设计与取舍见 `docs/adr/0017`。）
+
+**stride-web**：
+承载浏览器前端的独立服务与容器 —— 静态 SPA + 前端 BFF 合一，是用户流量的唯一前门；与只服务 `/api` 的后端 `stride-app` 相对。
+_Avoid_: 前端容器、frontend app（后者只是其一部分）
+
+**前端 BFF（Backend-for-Frontend）**：
+`stride-web` 内的 Node/Hono 服务端层：服务静态资源，并把浏览器发来的同源 `/api/*`（含 `/api/auth/*`）按路由表转发到某个上游；页面仍客户端渲染，它不做 SSR。
+_Avoid_: SSR 服务、网关、nginx 代理
+
+**API 路由表**：
+前端 BFF 里版本化的 path→上游映射（前缀/glob，缺省 Python）；把一个 endpoint 从 Python 切到 Go 就是改这张表一行 + 配套前端 contract 改动。它是 Python→Go strangler 的切换点。
+_Avoid_: 反向代理规则、nginx location、gateway route
+
+**上游（Upstream）**：
+前端 BFF 转发目标之一：`PYTHON_API_URL`（stride-app）、`GO_API_URL`（stride api）、`AUTH_UPSTREAM_URL`（auth-service）。
+_Avoid_: 后端、origin、target
