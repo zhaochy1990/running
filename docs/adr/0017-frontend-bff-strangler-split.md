@@ -91,6 +91,11 @@ Python 镜像、不再触发 training-load backfill 与 5 分钟 health-check）
 - **backend 在 cutover 后失去 SPA 服务能力。** `mount_frontend` / `static.py` /
   `/strength_illustrations/output` mount 会在翻域名验证后的后续 backend 部署里移除；`deploy.yml`
   也随之去掉前端相关 path filter。此前保留作 fallback。
+  **（已完成）** 域名切换到 `stride-web` 后，此收尾清理已落地：`mount_frontend` / `static.py`、
+  `/strength_illustrations/output` HTTP mount、以及 cutover 期间短暂加过的 `routes/auth_proxy.py`
+  都已移除，`Dockerfile` 前端构建 stage 去掉，`deploy.yml` 去掉 `frontend/**` path filter。
+  例外：`strength_illustrations/**` path filter + `Dockerfile` 的 `COPY strength_illustrations/`
+  **保留** —— `strength_library.py` 仍读盘拼 image URL（byte-serving 归 stride-web，版本号靠后端扫盘）。
 - **ACR 发布复用 Go 服务已有的 Aliyun ACR**（`ALIYUN_ACR_REGISTRY` var +
   `ALIYUN_ACR_USERNAME`/`ALIYUN_ACR_PASSWORD` secrets，与 `worker-go.yml` 同款），namespace
   硬编码 `stride`，镜像 `${ALIYUN_ACR_REGISTRY}/stride/stride-web` 与 `stride/stride-api`、

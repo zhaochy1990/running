@@ -1,27 +1,11 @@
-# ---- Stage 1: Build frontend ----
-FROM node:24-alpine AS frontend-build
-WORKDIR /app/frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm install
-COPY frontend/ ./
-
-ARG VITE_AUTH_BASE_URL
-ARG VITE_AUTH_CLIENT_ID
-ARG VITE_APPLICATIONINSIGHTS_CONNECTION_STRING
-# AMap (高德地图) JS API 2.0 — both values bake into the bundle (key + the
-# pairing securityJsCode). Domain whitelist on the AMap console is what
-# protects the key, NOT obscurity. Sourced from stride-kv-common AKV in CI.
-ARG VITE_AMAP_KEY
-ARG VITE_AMAP_SECURITY_CODE
-ENV VITE_AUTH_BASE_URL=$VITE_AUTH_BASE_URL
-ENV VITE_AUTH_CLIENT_ID=$VITE_AUTH_CLIENT_ID
-ENV VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=$VITE_APPLICATIONINSIGHTS_CONNECTION_STRING
-ENV VITE_AMAP_KEY=$VITE_AMAP_KEY
-ENV VITE_AMAP_SECURITY_CODE=$VITE_AMAP_SECURITY_CODE
-
-RUN npm run build
-
-# ---- Stage 2: Python runtime ----
+# STRIDE Python API backend image (stride-app).
+#
+# ADR 0017: the frontend SPA and the strength-illustration *byte* serving now
+# live in the separate `stride-web` image (built from Dockerfile.web) — the
+# single user-facing front door. This image is API-only; it no longer builds or
+# ships `frontend/dist`. `strength_illustrations/` is still COPYed in below
+# because `strength_library.py` reads it on disk to construct the image URLs the
+# BFF then serves same-origin.
 FROM python:3.13-slim
 WORKDIR /app
 
@@ -69,9 +53,6 @@ RUN rm -f /app/scripts/eval_coach.py || true
 # Editable install (-e) keeps /app/src as the import location — no file copy
 # into site-packages, so __file__-based path resolution stays correct.
 RUN pip install --no-cache-dir -e ".[web,analysis]"
-
-# Copy built frontend from stage 1
-COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
 # Copy training plans as defaults (Azure Files mount may overlay at runtime)
 COPY data/ ./data/
