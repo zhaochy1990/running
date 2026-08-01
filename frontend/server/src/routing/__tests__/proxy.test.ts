@@ -61,4 +61,28 @@ describe('proxyToUpstream', () => {
     expect(res.headers.get('content-type')).toContain('application/json')
     await expect(res.json()).resolves.toEqual({ detail: 'upstream_unreachable' })
   })
+
+  it('strips Content-Encoding/Content-Length from the response (fetch already decoded the body)', async () => {
+    // Node fetch hands back a decoded body but keeps the upstream's
+    // Content-Encoding + (now-wrong) Content-Length headers. Forwarding those
+    // would make the browser fail with ERR_CONTENT_DECODING_FAILED.
+    const upstream = new Response('{"decoded":true}', {
+      status: 200,
+      headers: {
+        'content-type': 'application/json',
+        'content-encoding': 'gzip',
+        'content-length': '999',
+      },
+    })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(upstream)
+
+    const req = new Request('http://web.local/api/users/me/profile', { method: 'GET' })
+    const res = await proxyToUpstream(req, 'https://stride-app.example')
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-encoding')).toBeNull()
+    expect(res.headers.get('content-length')).toBeNull()
+    expect(res.headers.get('content-type')).toContain('application/json')
+    await expect(res.json()).resolves.toEqual({ decoded: true })
+  })
 })

@@ -89,36 +89,6 @@ jobs:
           docker push ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }}
           docker push ${{ env.GHCR_IMAGE }}:latest
 
-      # Aliyun ACR mirror (ADR 0017): the SAME image tagged + pushed to ACR so it
-      # is pullable from mainland China (readies the "re-place BFF to Tencent"
-      # escape hatch). Build-once: we re-tag the local image, never rebuild.
-      #
-      # Tolerant by design: if ALIYUN_ACR_REGISTRY is unset the mirror is not yet
-      # configured → skip with a warning. If it IS set but creds are missing →
-      # fail loudly (we must not report a dual-publish success having pushed once).
-      - name: Mirror image to Aliyun ACR
-        env:
-          ACR_REGISTRY: ${{ vars.ALIYUN_ACR_REGISTRY }}
-          ACR_NAMESPACE: ${{ vars.ALIYUN_ACR_NAMESPACE }}
-          ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -z "${ACR_REGISTRY:-}" ]; then
-            echo "::warning::ALIYUN_ACR_REGISTRY not set — skipping ACR mirror (not yet configured)."
-            exit 0
-          fi
-          if [ -z "${ACR_NAMESPACE:-}" ] || [ -z "${ACR_USERNAME:-}" ] || [ -z "${ACR_PASSWORD:-}" ]; then
-            echo "::error::ALIYUN_ACR_REGISTRY is set but ACR namespace/username/password are missing."
-            exit 1
-          fi
-          ACR_IMAGE="$ACR_REGISTRY/$ACR_NAMESPACE/stride-web"
-          echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" --username "$ACR_USERNAME" --password-stdin
-          docker tag ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} "$ACR_IMAGE:${{ steps.version.outputs.version }}"
-          docker tag ${{ env.GHCR_IMAGE }}:latest "$ACR_IMAGE:latest"
-          docker push "$ACR_IMAGE:${{ steps.version.outputs.version }}"
-          docker push "$ACR_IMAGE:latest"
-
       - name: Deploy to Container Apps (stride-web)
         env:
           PYTHON_API_URL: ${{ vars.STRIDE_PYTHON_API_URL }}
@@ -204,3 +174,36 @@ jobs:
             --revision "$LATEST" \
             --tail 100 || true
           exit 1
+
+      # Aliyun ACR mirror (ADR 0017): the SAME image tagged + pushed to ACR so it
+      # is pullable from mainland China (readies the "re-place BFF to Tencent"
+      # escape hatch). Build-once: re-tag the local image, never rebuild.
+      #
+      # Runs LAST, after deploy + health, and with `if: always()` so a mirror
+      # misconfiguration can never block the authoritative GHCR deploy (Azure
+      # pulls from GHCR). Still loud: unset registry → skip with warning;
+      # registry set but creds incomplete → fail the job (red) so a broken
+      # dual-publish is visible without stranding the deploy.
+      - name: Mirror image to Aliyun ACR
+        if: always()
+        env:
+          ACR_REGISTRY: ${{ vars.ALIYUN_ACR_REGISTRY }}
+          ACR_NAMESPACE: ${{ vars.ALIYUN_ACR_NAMESPACE }}
+          ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ACR_REGISTRY:-}" ]; then
+            echo "::warning::ALIYUN_ACR_REGISTRY not set — skipping ACR mirror (not yet configured)."
+            exit 0
+          fi
+          if [ -z "${ACR_NAMESPACE:-}" ] || [ -z "${ACR_USERNAME:-}" ] || [ -z "${ACR_PASSWORD:-}" ]; then
+            echo "::error::ALIYUN_ACR_REGISTRY is set but ACR namespace/username/password are missing (set ALIYUN_ACR_NAMESPACE var + ALIYUN_ACR_USERNAME/PASSWORD secrets)."
+            exit 1
+          fi
+          ACR_IMAGE="$ACR_REGISTRY/$ACR_NAMESPACE/stride-web"
+          echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" --username "$ACR_USERNAME" --password-stdin
+          docker tag ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} "$ACR_IMAGE:${{ steps.version.outputs.version }}"
+          docker tag ${{ env.GHCR_IMAGE }}:latest "$ACR_IMAGE:latest"
+          docker push "$ACR_IMAGE:${{ steps.version.outputs.version }}"
+          docker push "$ACR_IMAGE:latest"

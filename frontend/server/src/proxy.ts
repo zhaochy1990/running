@@ -60,6 +60,13 @@ export async function proxyToUpstream(request: Request, baseUrl: string): Promis
 
   const responseHeaders = new Headers(upstream.headers)
   for (const name of HOP_BY_HOP) responseHeaders.delete(name)
+  // Node's fetch transparently decodes gzip/br/deflate response bodies but
+  // leaves the original Content-Encoding (and now-wrong Content-Length) headers
+  // in place. Forwarding those with an already-decoded body makes the browser
+  // try to decode plain bytes → ERR_CONTENT_DECODING_FAILED. Strip both so the
+  // client receives the decoded body correctly (upstream e.g. FastAPI GZip).
+  responseHeaders.delete('content-encoding')
+  responseHeaders.delete('content-length')
   return new Response(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,
