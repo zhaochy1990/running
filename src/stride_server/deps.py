@@ -28,7 +28,6 @@ from stride_storage.sqlite.state_stores import (
 from stride_server.config.models import ServerConfig
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-FRONTEND_DIR = PROJECT_ROOT / "frontend" / "dist"
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"

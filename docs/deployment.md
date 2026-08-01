@@ -22,13 +22,17 @@ Multi-stage build (`Dockerfile`)：
   **GHCR + 阿里云 ACR 两个 registry**，部署到新 Container App `stride-web`；它拥有 `VITE_*` +
   AMap 的 Key Vault build-arg。**Azure Container App 从 GHCR 拉取（authoritative）**，ACR 是为
   大陆拉取 / 未来搬到 Tencent 预备的镜像镜像。既有 `deploy.yml` 收敛为 Python-only：去掉
-  `Dockerfile` stage 1、去掉 `frontend/**` 与 `strength_illustrations/**` path filter。
+  `Dockerfile` 的前端构建 stage + `COPY frontend/dist`、去掉 `frontend/**` path filter。
+  **`strength_illustrations/**` path filter 保留** —— `strength_library.py` 仍在 stride-app 上
+  读这些文件来拼 image URL（byte-serving 已搬到 stride-web，但 URL 版本号仍靠后端扫盘）。
 - **BFF 拥有 `/api` 路由（strangler）**：版本化 TS 路由表按 path 把 `/api/*` 分流到
   `PYTHON_API_URL`（stride-app）或 `GO_API_URL`（Tencent `stride api`），缺省 Python；
   `/api/auth/*` 走 `AUTH_UPSTREAM_URL`。这**反转了 ADR 0012 的 browser-direct-to-Go**。
 - **`strength_illustrations/` 搬进 `stride-web` 镜像**（前端拥有 UI 插图资源）。
-- **分阶段 cutover**：`stride-web` 先上新 host 验证 → 翻 `stride-running.cn` → 之后的 backend
-  部署里移除 `mount_frontend` / `static.py`。翻域名前 `stride-app` 继续 serve SPA 作 fallback。
+- **分阶段 cutover（已完成）**：`stride-web` 先上新 host 验证 → 翻 `stride-running.cn` 到
+  `stride-web`（同一 `stride-env`、同 static IP 的 hostname rebind，DNS 不变）→ backend 收尾部署里
+  移除 `mount_frontend` / `static.py`（及短暂的 `routes/auth_proxy.py` fallback）。`stride-app`
+  现在是纯 `/api/*` 后端，不再服务 SPA。
 - **ACR push 复用 Go 服务已有的 ACR**（`worker-go.yml` 同款 `ALIYUN_ACR_REGISTRY` var +
   `ALIYUN_ACR_USERNAME`/`ALIYUN_ACR_PASSWORD` secrets），namespace 硬编码 `stride`，镜像即
   `${ALIYUN_ACR_REGISTRY}/stride/stride-web`（与 `stride/stride-api`、`stride/stride-worker` 并列）。
