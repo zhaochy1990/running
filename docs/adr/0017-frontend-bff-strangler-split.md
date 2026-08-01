@@ -91,6 +91,8 @@ Python 镜像、不再触发 training-load backfill 与 5 分钟 health-check）
 - **backend 在 cutover 后失去 SPA 服务能力。** `mount_frontend` / `static.py` /
   `/strength_illustrations/output` mount 会在翻域名验证后的后续 backend 部署里移除；`deploy.yml`
   也随之去掉前端相关 path filter。此前保留作 fallback。
-- **ACR 发布需要新 CI secrets/vars**（`ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_NAMESPACE`、
-  `ALIYUN_ACR_USERNAME`/`ALIYUN_ACR_PASSWORD` 或 RAM AccessKey）；缺失时 ACR push step 应显式
-  失败或跳过，不能静默把镜像只推一处却当作双份成功。
+- **ACR 发布复用 Go 服务已有的 Aliyun ACR**（`ALIYUN_ACR_REGISTRY` var +
+  `ALIYUN_ACR_USERNAME`/`ALIYUN_ACR_PASSWORD` secrets，与 `worker-go.yml` 同款），namespace
+  硬编码 `stride`，镜像 `${ALIYUN_ACR_REGISTRY}/stride/stride-web` 与 `stride/stride-api`、
+  `stride/stride-worker` 并列 —— 不新增 namespace 变量。mirror step 在 deploy + health 之后、
+  `if: always()`，misconfig 只让 job 变红、不阻断 GHCR 权威部署。

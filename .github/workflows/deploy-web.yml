@@ -179,6 +179,11 @@ jobs:
       # is pullable from mainland China (readies the "re-place BFF to Tencent"
       # escape hatch). Build-once: re-tag the local image, never rebuild.
       #
+      # Namespace is `stride`, matching the Go images (worker-go.yml pushes
+      # `${ALIYUN_ACR_REGISTRY}/stride/stride-api` + `/stride/stride-worker`); the
+      # web image sits alongside them as `stride/stride-web`. No separate
+      # namespace variable — it's hardcoded, same as the Go workflow.
+      #
       # Runs LAST, after deploy + health, and with `if: always()` so a mirror
       # misconfiguration can never block the authoritative GHCR deploy (Azure
       # pulls from GHCR). Still loud: unset registry → skip with warning;
@@ -188,7 +193,6 @@ jobs:
         if: always()
         env:
           ACR_REGISTRY: ${{ vars.ALIYUN_ACR_REGISTRY }}
-          ACR_NAMESPACE: ${{ vars.ALIYUN_ACR_NAMESPACE }}
           ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
         run: |
@@ -197,11 +201,11 @@ jobs:
             echo "::warning::ALIYUN_ACR_REGISTRY not set — skipping ACR mirror (not yet configured)."
             exit 0
           fi
-          if [ -z "${ACR_NAMESPACE:-}" ] || [ -z "${ACR_USERNAME:-}" ] || [ -z "${ACR_PASSWORD:-}" ]; then
-            echo "::error::ALIYUN_ACR_REGISTRY is set but ACR namespace/username/password are missing (set ALIYUN_ACR_NAMESPACE var + ALIYUN_ACR_USERNAME/PASSWORD secrets)."
+          if [ -z "${ACR_USERNAME:-}" ] || [ -z "${ACR_PASSWORD:-}" ]; then
+            echo "::error::ALIYUN_ACR_REGISTRY is set but ALIYUN_ACR_USERNAME/ALIYUN_ACR_PASSWORD secrets are missing."
             exit 1
           fi
-          ACR_IMAGE="$ACR_REGISTRY/$ACR_NAMESPACE/stride-web"
+          ACR_IMAGE="$ACR_REGISTRY/stride/stride-web"
           echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" --username "$ACR_USERNAME" --password-stdin
           docker tag ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} "$ACR_IMAGE:${{ steps.version.outputs.version }}"
           docker tag ${{ env.GHCR_IMAGE }}:latest "$ACR_IMAGE:latest"

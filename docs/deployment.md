@@ -29,9 +29,10 @@ Multi-stage build (`Dockerfile`)：
 - **`strength_illustrations/` 搬进 `stride-web` 镜像**（前端拥有 UI 插图资源）。
 - **分阶段 cutover**：`stride-web` 先上新 host 验证 → 翻 `stride-running.cn` → 之后的 backend
   部署里移除 `mount_frontend` / `static.py`。翻域名前 `stride-app` 继续 serve SPA 作 fallback。
-- **ACR push 需要新 secrets/vars**：`ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_NAMESPACE`、
-  `ALIYUN_ACR_USERNAME`/`ALIYUN_ACR_PASSWORD`（或 RAM AccessKey）；缺失时该 step 显式失败/跳过，
-  不能静默只推一处却当双份成功。
+- **ACR push 复用 Go 服务已有的 ACR**（`worker-go.yml` 同款 `ALIYUN_ACR_REGISTRY` var +
+  `ALIYUN_ACR_USERNAME`/`ALIYUN_ACR_PASSWORD` secrets），namespace 硬编码 `stride`，镜像即
+  `${ALIYUN_ACR_REGISTRY}/stride/stride-web`（与 `stride/stride-api`、`stride/stride-worker` 并列）。
+  ACR mirror 步骤放在 deploy + health 之后、`if: always()`，misconfig 只让 job 变红不阻断部署。
 
 ## CI/CD（GitHub Actions）
 
