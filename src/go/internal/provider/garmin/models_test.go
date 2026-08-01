@@ -60,8 +60,8 @@ func TestBuildActivity(t *testing.T) {
 	if act.TrainType == nil || *act.TrainType != "TEMPO" {
 		t.Errorf("trainType = %v, want TEMPO", act.TrainType)
 	}
-	if act.Feel == nil || *act.Feel != string(normalize.FeelGood) {
-		t.Errorf("feel = %v, want good (75)", act.Feel)
+	if act.Feel == nil || *act.Feel != 7.5 {
+		t.Errorf("feel = %v, want 7.5 (raw 75 ÷10)", act.Feel)
 	}
 	if act.DistanceM == nil || math.Abs(*act.DistanceM-10005.7) > 1e-6 {
 		t.Errorf("distance = %v, want 10005.7", act.DistanceM)

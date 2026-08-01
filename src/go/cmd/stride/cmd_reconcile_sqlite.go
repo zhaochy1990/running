@@ -36,9 +36,9 @@ func readSQLite(path string, provider string) (map[string]map[string]any, error)
 	for rows.Next() {
 		var label string
 		var sportType sql.NullInt64
-		var sport, trainKind, feel sql.NullString
+		var sport, trainKind sql.NullString
 		var avgHr, maxHr, calories sql.NullInt64
-		var distanceM, durationS, vo2max, temperature sql.NullFloat64
+		var feel, distanceM, durationS, vo2max, temperature sql.NullFloat64
 		if err := rows.Scan(&label, &sportType, &sport, &trainKind, &feel,
 			&avgHr, &maxHr, &calories, &distanceM, &durationS, &vo2max, &temperature); err != nil {
 			return nil, err
@@ -47,7 +47,7 @@ func readSQLite(path string, provider string) (map[string]map[string]any, error)
 			"sport_type":    niInt(sportType),
 			"sport":         nsStr(sport),
 			"train_kind":    nsStr(trainKind),
-			"feel":          nsStr(feel),
+			"feel":          nfFloat(feel),
 			"avg_hr":        niInt(avgHr),
 			"max_hr":        niInt(maxHr),
 			"calories_kcal": niInt(calories),

@@ -97,9 +97,10 @@ CREATE TABLE IF NOT EXISTS activities (
     -- Provider-agnostic normalized enums written by the adapter; legacy
     -- columns (sport_type/train_type/feel_type) stay populated as the
     -- COROS-original source-of-truth used by ability.py and existing readers.
+    -- `feel` is the unified 0-10 numeric feel (COROS feel_type×2, Garmin raw÷10).
     sport           TEXT,
     train_kind      TEXT,
-    feel            TEXT,
+    feel            REAL,
     provider        TEXT NOT NULL DEFAULT 'coros',
     synced_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -950,7 +951,7 @@ class Database:
         # and fall back to sport_type / train_type / feel_type otherwise.
         _add("activities", "sport", "TEXT")
         _add("activities", "train_kind", "TEXT")
-        _add("activities", "feel", "TEXT")
+        _add("activities", "feel", "REAL")
         # Phase 3: Garmin-rich extras. NULL for COROS rows (no equivalent
         # source data). Running form metrics on activities.
         _add("activities", "vertical_oscillation_mm", "REAL")
@@ -1270,6 +1271,40 @@ class Database:
         self._migrate_vo2max_pb_to_v2()
         self._migrate_vo2max_pb_distance_units()
         self._migrate_daily_training_load_to_date_pk()
+        self._backfill_feel_numeric()
+
+    def _backfill_feel_numeric(self) -> None:
+        """Convert legacy text-enum ``activities.feel`` values to the unified
+        0-10 numeric scale in place.
+
+        Older DBs stored ``feel`` as a FeelLevel string
+        ('excellent'/'good'/'normal'/'bad'/'awful'); the column is now REAL and
+        adapters write ``feel_type``-derived numbers (COROS ``feel_type×2``,
+        Garmin raw÷10). Rebuild the historical values from the untouched raw
+        ``feel_type`` column, keyed off ``provider`` for the scale direction.
+
+        Read-check first so current-schema opens stay read-only and never
+        acquire the writer when there's nothing to convert. The guard
+        ``feel IN (<enum values>)`` is self-limiting: once converted the values
+        are numeric strings/reals, so a re-run matches nothing (idempotent).
+        """
+        legacy = self._conn.execute(
+            """SELECT 1 FROM activities
+                WHERE feel IN ('excellent', 'good', 'normal', 'bad', 'awful')
+                LIMIT 1"""
+        ).fetchone()
+        if legacy is None:
+            return
+        with self._conn:
+            self._conn.execute(
+                """UPDATE activities
+                      SET feel = CASE
+                              WHEN feel_type IS NULL THEN NULL
+                              WHEN provider = 'garmin' THEN feel_type / 10.0
+                              ELSE feel_type * 2
+                          END
+                    WHERE feel IN ('excellent', 'good', 'normal', 'bad', 'awful')"""
+            )
 
     def _migrate_daily_training_load_to_date_pk(self) -> None:
         """Collapse ``daily_training_load`` from a composite

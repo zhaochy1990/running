@@ -93,24 +93,6 @@ func TrainKindFromCode(code int) normalize.TrainKind {
 	return normalize.TrainUnknown
 }
 
-// feelByCode maps COROS feelType (1=很好 → 5=很差) → normalized Feel.
-var feelByCode = map[int]normalize.Feel{
-	1: normalize.FeelExcellent,
-	2: normalize.FeelGood,
-	3: normalize.FeelNormal,
-	4: normalize.FeelBad,
-	5: normalize.FeelAwful,
-}
-
-// FeelFromCode maps a COROS feelType to a normalized Feel, falling back to
-// FeelUnknown.
-func FeelFromCode(code int) normalize.Feel {
-	if f, ok := feelByCode[code]; ok {
-		return f
-	}
-	return normalize.FeelUnknown
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Unit conversions
 //

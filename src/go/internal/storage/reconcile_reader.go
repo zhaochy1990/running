@@ -39,7 +39,7 @@ func (s *Store) reconcileActivityRows(ctx context.Context, userID, provider stri
 			"sport_type":    a.SportType,
 			"sport":         anyStr(a.Sport),
 			"train_kind":    anyStr(a.TrainKind),
-			"feel":          anyStr(a.Feel),
+			"feel":          anyFloat(a.Feel),
 			"avg_hr":        anyInt(a.AvgHR),
 			"max_hr":        anyInt(a.MaxHR),
 			"calories_kcal": anyInt(a.CaloriesKcal),

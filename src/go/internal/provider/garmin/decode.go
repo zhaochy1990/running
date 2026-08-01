@@ -142,24 +142,14 @@ func trainKindFromLabel(label string) (normalize.TrainKind, bool) {
 	return normalize.TrainUnknown, true
 }
 
-// feelFromScore buckets Garmin's 0-100 feel slider into a normalized Feel.
-// Returns ("", false) when no rating (0/absent) — leave the column NULL.
-func feelFromScore(v *int) (normalize.Feel, bool) {
+// feelFromScore converts Garmin's 0-100 feel slider to the unified numeric
+// 0–10 feel scale (feel = raw÷10). Returns nil when no rating (0/absent) —
+// leave the column NULL.
+func feelFromScore(v *int) *float64 {
 	if v == nil || *v <= 0 {
-		return "", false
+		return nil
 	}
-	switch {
-	case *v < 20:
-		return normalize.FeelAwful, true
-	case *v < 40:
-		return normalize.FeelBad, true
-	case *v < 60:
-		return normalize.FeelNormal, true
-	case *v < 80:
-		return normalize.FeelGood, true
-	default:
-		return normalize.FeelExcellent, true
-	}
+	return fptr(float64(*v) / 10.0)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

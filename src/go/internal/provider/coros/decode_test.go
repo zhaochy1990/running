@@ -56,26 +56,6 @@ func TestTrainKindFromCode(t *testing.T) {
 	}
 }
 
-func TestFeelFromCode(t *testing.T) {
-	tests := []struct {
-		code int
-		want normalize.Feel
-	}{
-		{1, normalize.FeelExcellent},
-		{2, normalize.FeelGood},
-		{3, normalize.FeelNormal},
-		{4, normalize.FeelBad},
-		{5, normalize.FeelAwful},
-		{0, normalize.FeelUnknown},
-		{6, normalize.FeelUnknown},
-	}
-	for _, tt := range tests {
-		if got := FeelFromCode(tt.code); got != tt.want {
-			t.Errorf("FeelFromCode(%d) = %q, want %q", tt.code, got, tt.want)
-		}
-	}
-}
-
 const eps = 1e-9
 
 func approx(a, b float64) bool { return math.Abs(a-b) < eps }

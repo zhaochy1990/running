@@ -41,6 +41,21 @@ def _category(row: dict[str, Any]) -> str:
     return "cross"
 
 
+def _coerce_feel(value: Any) -> float | None:
+    """Coerce the stored numeric ``feel`` (0-10 scale) to float.
+
+    Existing SQLite databases keep TEXT affinity on ``feel``, so a numeric
+    write can be read back as the string ``"4.0"``. Coerce defensively and
+    return ``None`` for missing or non-numeric values.
+    """
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[str, Any]:
     """Aggregate activities, load, recovery, and plan adherence.
 
@@ -115,7 +130,7 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
                     ),
                 },
                 "rpe": row.get("rpe"),
-                "feel": row.get("feel") or row.get("feel_type"),
+                "feel": _coerce_feel(row.get("feel")),
             }
         )
 

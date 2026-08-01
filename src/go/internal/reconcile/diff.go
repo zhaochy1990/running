@@ -138,7 +138,7 @@ func ActivityFields() []Field {
 		{Name: "sport_type", Kind: Exact},
 		{Name: "sport", Kind: Exact},
 		{Name: "train_kind", Kind: Exact},
-		{Name: "feel", Kind: Exact},
+		{Name: "feel", Kind: Float, Tol: eps},
 		{Name: "avg_hr", Kind: Exact},
 		{Name: "max_hr", Kind: Exact},
 		{Name: "calories_kcal", Kind: Exact},

@@ -195,7 +195,8 @@ func ParseActivityDetail(userID, labelID string, fallbackDate time.Time, payload
 		a.TrainKind = sptr(string(coros_TrainKind(*s.TrainType)))
 	}
 	if d.SportFeelInfo.FeelType != nil && *d.SportFeelInfo.FeelType != 0 {
-		a.Feel = sptr(string(coros_Feel(*d.SportFeelInfo.FeelType)))
+		// Unified numeric feel: COROS feelType 1–5 → feel = feelType×2 (0–10).
+		a.Feel = fptr(float64(*d.SportFeelInfo.FeelType) * 2)
 	}
 	if pauses := marshalPauses(d.PauseList); pauses != nil {
 		a.Pauses = pauses
@@ -387,4 +388,3 @@ func emptyToNil(s *string) *string {
 
 // small aliases so the mapping above reads cleanly.
 func coros_TrainKind(code int) normalize.TrainKind { return TrainKindFromCode(code) }
-func coros_Feel(code int) normalize.Feel           { return FeelFromCode(code) }

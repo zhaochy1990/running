@@ -162,22 +162,6 @@ def kind_from_legacy_train_type(raw: str | None) -> TrainKind | None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Subjective effort (post-run feel)
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class FeelLevel(str, Enum):
-    """Subjective post-run feel — from COROS feel_type 1..5 or Garmin feel."""
-
-    EXCELLENT = "excellent"   # COROS 1
-    GOOD      = "good"        # COROS 2
-    NORMAL    = "normal"      # COROS 3
-    BAD       = "bad"         # COROS 4
-    AWFUL     = "awful"       # COROS 5
-    UNKNOWN   = "unknown"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Body parts / equipment (used by exercise catalog — task #4)
 # ─────────────────────────────────────────────────────────────────────────────
 

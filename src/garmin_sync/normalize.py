@@ -7,7 +7,8 @@ to NormalizedSport — same enum the COROS adapter targets.
 Train kind: Garmin emits `trainingEffectLabel` (string) like 'AEROBIC_BASE',
 'TEMPO', 'ANAEROBIC_CAPACITY'. Map to TrainKind.
 
-Feel: Garmin uses an integer 0-100 (post-run feel). Bucket into FeelLevel.
+Feel: Garmin uses an integer 0-100 (post-run feel). Scale ÷10 onto the
+unified 0-10 numeric feel scale.
 
 Synthesis from training data is *not* done here (Garmin gives us the labels
 directly, unlike COROS's int trainType which we map via lookup).
@@ -19,7 +20,6 @@ from typing import Any
 
 from stride_core.models import ActivityDetail
 from stride_core.normalize import (
-    FeelLevel,
     Mapper,
     NormalizedSport,
     TrainKind,
@@ -111,43 +111,6 @@ GARMIN_TRAIN_MAP: Mapper[str, TrainKind] = Mapper(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Garmin `feel` int (0-100) → FeelLevel
-# ─────────────────────────────────────────────────────────────────────────────
-#
-# Garmin's post-run "feel" rating is a 0-100 slider in the app. Bucket into
-# our 5-level FeelLevel matching the COROS 1-5 emoji rating semantics.
-
-def garmin_feel_to_level(value: int | float | None) -> FeelLevel | None:
-    """Convert Garmin's 0-100 feel score into FeelLevel. Returns None if no rating.
-
-    Bucketing matches the rough mapping the Garmin Connect UI uses to render
-    the 5-emoji slider:
-      0-19   → AWFUL
-      20-39  → BAD
-      40-59  → NORMAL
-      60-79  → GOOD
-      80-100 → EXCELLENT
-    """
-    if value is None:
-        return None
-    try:
-        v = int(value)
-    except (TypeError, ValueError):
-        return None
-    if v <= 0:
-        return None  # 0 typically means "no rating set"
-    if v < 20:
-        return FeelLevel.AWFUL
-    if v < 40:
-        return FeelLevel.BAD
-    if v < 60:
-        return FeelLevel.NORMAL
-    if v < 80:
-        return FeelLevel.GOOD
-    return FeelLevel.EXCELLENT
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Application helper (mirror of coros_sync.normalize.apply_to_detail)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -158,6 +121,11 @@ def apply_to_detail(detail: ActivityDetail, raw_activity: dict[str, Any]) -> Non
     `raw_activity` is the Garmin Connect activity-summary dict (from
     `get_activity` / `get_activities`) which carries both `activityType.typeKey`
     and `trainingEffectLabel`. Mutates detail in place.
+
+    `detail.feel` is written on the unified 0-10 numeric scale: Garmin's raw
+    post-run "feel" slider is 0-100, scaled ÷10 (so 100→10.0, 0/absent→no
+    rating). Note Garmin's scale runs high=good, the opposite direction of the
+    COROS adapter, even though both store the same 0-10 number.
     """
     activity_type = raw_activity.get("activityType") or {}
     type_key = activity_type.get("typeKey")
@@ -172,6 +140,8 @@ def apply_to_detail(detail: ActivityDetail, raw_activity: dict[str, Any]) -> Non
         if kind is not None:
             detail.train_kind = kind.value
 
-    feel_norm = garmin_feel_to_level(raw_activity.get("feel"))
-    if feel_norm is not None:
-        detail.feel = feel_norm.value
+    # feel: Garmin's 0-100 slider → unified 0-10 numeric scale. 0/absent means
+    # "no rating" (leave NULL), matching how models.py drops feel_type there.
+    raw_feel = raw_activity.get("feel")
+    if isinstance(raw_feel, (int, float)) and raw_feel > 0:
+        detail.feel = raw_feel / 10
