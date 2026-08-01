@@ -148,3 +148,69 @@ func TestProviderForUser(t *testing.T) {
 		t.Errorf("ProviderForUser = %q, want garmin (most recent)", name)
 	}
 }
+
+// TestDeleteCredential is gated on a live MySQL. Disconnect removes the row and
+// its binding; deleting again is a no-op.
+func TestDeleteCredential(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatalf("automigrate watch: %v", err)
+	}
+	const uid = "a1b2c3d4-0000-4000-8000-0000000000d1"
+
+	if err := st.SaveCredential(ctx, &ProviderCredential{UserID: uid, Provider: "coros", Secret: []byte("{}")}); err != nil {
+		t.Fatalf("save coros: %v", err)
+	}
+	if err := st.DeleteCredential(ctx, uid, "coros"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if c, err := st.GetCredential(ctx, uid, "coros"); err != nil || c != nil {
+		t.Errorf("credential should be gone: got %v, %v", c, err)
+	}
+	if _, found, err := st.ProviderForUser(ctx, uid); err != nil || found {
+		t.Errorf("binding should be gone after delete: found=%v, err=%v", found, err)
+	}
+	// Deleting a nonexistent row is not an error.
+	if err := st.DeleteCredential(ctx, uid, "coros"); err != nil {
+		t.Errorf("delete must be idempotent: %v", err)
+	}
+}
+
+// TestLatestActivityDevice is gated on a live MySQL. It returns the newest
+// activity's device, skipping rows with no device.
+func TestLatestActivityDevice(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatalf("automigrate watch: %v", err)
+	}
+	const uid = "a1b2c3d4-0000-4000-8000-0000000000d2"
+
+	if _, ok, err := st.LatestActivityDevice(ctx, uid); err != nil || ok {
+		t.Fatalf("no activity: ok=%v err=%v, want (false, nil)", ok, err)
+	}
+
+	older, newer := "COROS PACE 2", "COROS PACE 3"
+	mkAct := func(label string, date time.Time, device *string) *Activity {
+		return &Activity{UserID: uid, LabelID: label, SportType: 100, Date: date, Device: device}
+	}
+	if err := st.UpsertActivity(ctx, mkAct("l1", time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), &older), nil, nil, nil); err != nil {
+		t.Fatalf("upsert l1: %v", err)
+	}
+	if err := st.UpsertActivity(ctx, mkAct("l2", time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC), &newer), nil, nil, nil); err != nil {
+		t.Fatalf("upsert l2: %v", err)
+	}
+	// A later activity with no device must not shadow the newest device-bearing one.
+	if err := st.UpsertActivity(ctx, mkAct("l3", time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC), nil), nil, nil, nil); err != nil {
+		t.Fatalf("upsert l3: %v", err)
+	}
+
+	dev, ok, err := st.LatestActivityDevice(ctx, uid)
+	if err != nil || !ok {
+		t.Fatalf("latest device: ok=%v err=%v", ok, err)
+	}
+	if dev != newer {
+		t.Errorf("device = %q, want %q (newest activity carrying a device)", dev, newer)
+	}
+}

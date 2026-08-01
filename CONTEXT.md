@@ -117,6 +117,14 @@ _Avoid_: offset、书签、last_label_id（列名）
 全量重扫全部历史活动；增量只拉取游标之后的新活动。同一 watch_sync 任务由 payload `mode` 选择，缺省全量。
 _Avoid_: 首次同步、resync、backfill
 
+**最后同步时间（last_sync_time）**：
+记录某用户最近一次成功手表同步完成时刻（UTC RFC3339）的 sync_meta 标记；手表状态展示据此显示「最后同步」。与游标 `last_label_id` 是不同的 key。
+_Avoid_: last_label_id（那是位置游标）、last_sync（列名）
+
+**断开手表（Disconnect Watch）**：
+运动员主动解除与手表数据源的绑定：删除其凭据行并清除 watch_ready，但**保留**已同步的手表数据（仍可访问，重新绑定同一账号即复用历史）。
+_Avoid_: 注销、删除账号、清空数据、logout（provider 层用语）
+
 ## 入门流程与档案（Onboarding & Profile）
 
 （面向用户的账号/入门表层词汇；Go `cmd/api` 的实现设计见 `docs/adr/0013`。）

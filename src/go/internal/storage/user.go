@@ -75,30 +75,46 @@ func (s *Store) GetUserOnboarding(ctx context.Context, userID string) (*UserOnbo
 // SetWatchReady marks the user's watch as connected (login). It upserts the row,
 // flipping only watch_ready so a concurrent profile_ready is never clobbered.
 func (s *Store) SetWatchReady(ctx context.Context, userID string) error {
-	return s.setOnboardingFlag(ctx, userID, "watch_ready", &UserOnboarding{WatchReady: true})
+	return s.setOnboardingFlag(ctx, userID, "watch_ready", true)
+}
+
+// ClearWatchReady marks the user's watch as disconnected (DELETE /watch). It
+// upserts the row, flipping only watch_ready to false; profile_ready and
+// completed_at are left untouched (completed_at is the onboarding gate owned by
+// the not-yet-ported sync-complete flow, ADR 0018).
+func (s *Store) ClearWatchReady(ctx context.Context, userID string) error {
+	return s.setOnboardingFlag(ctx, userID, "watch_ready", false)
 }
 
 // SetProfileReady marks the user's basic profile as saved (POST profile). It
 // upserts the row, flipping only profile_ready.
 func (s *Store) SetProfileReady(ctx context.Context, userID string) error {
-	return s.setOnboardingFlag(ctx, userID, "profile_ready", &UserOnboarding{ProfileReady: true})
+	return s.setOnboardingFlag(ctx, userID, "profile_ready", true)
 }
 
 // setOnboardingFlag upserts a single onboarding boolean without disturbing the
-// other flag: on insert the whole row lands; on conflict only the named column
-// and updated_at are written.
-func (s *Store) setOnboardingFlag(ctx context.Context, userID, column string, row *UserOnboarding) error {
+// other flag: on insert the whole row lands with the named flag set to value; on
+// conflict only the named column and updated_at are written.
+func (s *Store) setOnboardingFlag(ctx context.Context, userID, column string, value bool) error {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return err
 	}
-	row.UserID = uid
-	row.UpdatedAt = time.Now().UTC()
+	now := time.Now().UTC()
+	row := &UserOnboarding{UserID: uid, UpdatedAt: now}
+	switch column {
+	case "watch_ready":
+		row.WatchReady = value
+	case "profile_ready":
+		row.ProfileReady = value
+	default:
+		return fmt.Errorf("storage: unknown onboarding flag %q", column)
+	}
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "user_id"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
-			column:       true,
-			"updated_at": row.UpdatedAt,
+			column:       value,
+			"updated_at": now,
 		}),
 	}).Create(row).Error
 }

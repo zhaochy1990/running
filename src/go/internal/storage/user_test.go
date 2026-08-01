@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -87,5 +88,46 @@ func TestUser_AbsentReturnsNil(t *testing.T) {
 	}
 	if o, err := st.GetUserOnboarding(ctx, uid); err != nil || o != nil {
 		t.Errorf("absent onboarding: got %v, %v; want nil, nil", o, err)
+	}
+}
+
+// TestUserOnboarding_ClearWatchReady verifies disconnect (ClearWatchReady) flips
+// only watch_ready, leaving profile_ready and completed_at untouched (ADR 0018).
+func TestUserOnboarding_ClearWatchReady(t *testing.T) {
+	st := openTestStore(t)
+	migrateUsers(t, st)
+	ctx := context.Background()
+	uid := uuid.NewString()
+
+	if err := st.SetWatchReady(ctx, uid); err != nil {
+		t.Fatalf("set watch_ready: %v", err)
+	}
+	if err := st.SetProfileReady(ctx, uid); err != nil {
+		t.Fatalf("set profile_ready: %v", err)
+	}
+	// Stamp completed_at directly (there is no setter yet) to prove disconnect
+	// leaves the onboarding gate untouched.
+	now := time.Now().UTC()
+	if err := st.db.WithContext(ctx).Model(&UserOnboarding{}).
+		Where("user_id = ?", uid).Update("completed_at", now).Error; err != nil {
+		t.Fatalf("stamp completed_at: %v", err)
+	}
+
+	if err := st.ClearWatchReady(ctx, uid); err != nil {
+		t.Fatalf("clear watch_ready: %v", err)
+	}
+
+	o, err := st.GetUserOnboarding(ctx, uid)
+	if err != nil || o == nil {
+		t.Fatalf("get onboarding: %v", err)
+	}
+	if o.WatchReady {
+		t.Errorf("watch_ready = true, want false after ClearWatchReady")
+	}
+	if !o.ProfileReady {
+		t.Errorf("profile_ready must be preserved on disconnect")
+	}
+	if o.CompletedAt == nil {
+		t.Errorf("completed_at must be left untouched on disconnect (ADR 0018)")
 	}
 }

@@ -46,6 +46,13 @@ type UserStore interface {
 	SetWatchReady(ctx context.Context, userID string) error
 	SetProfileReady(ctx context.Context, userID string) error
 	ProviderForUser(ctx context.Context, userID string) (string, bool, error)
+
+	// Watch status + disconnect (ADR 0018).
+	GetCredential(ctx context.Context, userID, provider string) (*storage.ProviderCredential, error)
+	LatestActivityDevice(ctx context.Context, userID string) (string, bool, error)
+	GetMeta(ctx context.Context, userID, key string) (value string, ok bool, err error)
+	DeleteCredential(ctx context.Context, userID, provider string) error
+	ClearWatchReady(ctx context.Context, userID string) error
 }
 
 // WatchLoginResult is the provider-agnostic outcome of a watch login.
@@ -61,6 +68,15 @@ type WatchLoginResult struct {
 // the api package stays free of provider/registry imports.
 type ProviderLogin interface {
 	Login(ctx context.Context, providerName, userID, email, password, region string) (WatchLoginResult, error)
+}
+
+// ProviderInfo returns a watch provider's static metadata — localized display
+// name and declared capabilities — for the watch status card. The concrete
+// adapter (cmd/api) wraps the provider registry, keeping the api package free of
+// provider/registry imports (ADR 0018). capabilities reflect what the Go adapter
+// actually supports, not the Python set.
+type ProviderInfo interface {
+	Info(providerName string) (displayName string, capabilities []string, err error)
 }
 
 // AuthNameSync best-effort mirrors a display name into the auth-service. May be
@@ -98,16 +114,17 @@ func (f FeatureConfig) forUser(uid string) featureFlags {
 type userRoutes struct {
 	store         UserStore
 	providerLogin ProviderLogin
+	providerInfo  ProviderInfo
 	authName      AuthNameSync
 	features      FeatureConfig
 	log           *zap.Logger
 }
 
-func newUserRoutes(store UserStore, pl ProviderLogin, an AuthNameSync, features FeatureConfig, log *zap.Logger) *userRoutes {
+func newUserRoutes(store UserStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, features FeatureConfig, log *zap.Logger) *userRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &userRoutes{store: store, providerLogin: pl, authName: an, features: features, log: log}
+	return &userRoutes{store: store, providerLogin: pl, providerInfo: pi, authName: an, features: features, log: log}
 }
 
 // register mounts the routes on the (already authenticated) group. Paths mirror
@@ -116,6 +133,8 @@ func newUserRoutes(store UserStore, pl ProviderLogin, an AuthNameSync, features 
 func (u *userRoutes) register(rg *gin.RouterGroup) {
 	rg.GET("/api/users/me/profile", u.getProfile)
 	rg.POST("/api/users/me/profile", u.postProfile)
+	rg.GET("/api/users/me/watch", u.getWatch)
+	rg.DELETE("/api/users/me/watch", u.deleteWatch)
 	rg.POST("/api/users/me/watch/login", u.watchLogin)
 }
 
@@ -176,6 +195,27 @@ type watchLoginResponse struct {
 	OK     bool   `json:"ok"`
 	Region string `json:"region,omitempty"`
 	UserID string `json:"user_id,omitempty"`
+}
+
+// watchInfoResponse is the watch status card contract (GET /watch). It mirrors
+// the Python WatchInfo shape so a later browser cutover is just routing (ADR
+// 0018). Nullable string fields are null when no watch is bound or there is no
+// data yet; capabilities is always a (possibly empty) array. logged_in is
+// presence-only.
+type watchInfoResponse struct {
+	Provider            *string  `json:"provider"`
+	ProviderDisplayName *string  `json:"provider_display_name"`
+	LoggedIn            bool     `json:"logged_in"`
+	Email               *string  `json:"email"`
+	Device              *string  `json:"device"`
+	LastSyncAt          *string  `json:"last_sync_at"`
+	Capabilities        []string `json:"capabilities"`
+}
+
+// disconnectWatchResponse is the DELETE /watch success body.
+type disconnectWatchResponse struct {
+	OK       bool   `json:"ok"`
+	Provider string `json:"provider"`
 }
 
 // validationDetailItem mirrors FastAPI's 422 detail entry so the frontend's
@@ -361,6 +401,135 @@ func (u *userRoutes) watchLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, watchLoginResponse{OK: true, Region: res.Region, UserID: res.UserID})
 }
 
+// getWatch returns the connected watch's status: provider, display name, login
+// state, account email, latest device, last sync time, and declared
+// capabilities. All fields come from the canonical MySQL store; logged_in is
+// presence-only (ADR 0018). No watch bound → 200 with null fields.
+//
+//	@Summary		Get the connected watch's status
+//	@Tags			users
+//	@Produce		json
+//	@Success		200	{object}	watchInfoResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/watch [get]
+func (u *userRoutes) getWatch(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+
+	providerName, found, err := u.store.ProviderForUser(ctx, uid)
+	if err != nil {
+		u.log.Error("watch: provider lookup failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if !found {
+		// No watch bound: all-null, not logged in (parity with Python).
+		c.JSON(http.StatusOK, watchInfoResponse{Capabilities: []string{}})
+		return
+	}
+
+	displayName, capabilities, err := u.providerInfo.Info(providerName)
+	if err != nil {
+		// A bound-but-unknown provider is a server-side inconsistency.
+		u.log.Error("watch: provider info failed", zap.String("provider", providerName), zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if capabilities == nil {
+		capabilities = []string{}
+	}
+
+	cred, err := u.store.GetCredential(ctx, uid, providerName)
+	if err != nil {
+		u.log.Error("watch: credential lookup failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	var email string
+	loggedIn := false
+	if cred != nil {
+		loggedIn = len(cred.Secret) > 0 // presence-only, matches Python is_logged_in
+		if cred.Email != nil {
+			email = *cred.Email
+		}
+	}
+
+	device, _, err := u.store.LatestActivityDevice(ctx, uid)
+	if err != nil {
+		u.log.Error("watch: device lookup failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+
+	lastSync, _, err := u.store.GetMeta(ctx, uid, storage.MetaKeyLastSyncTime)
+	if err != nil {
+		u.log.Error("watch: last_sync lookup failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, watchInfoResponse{
+		Provider:            &providerName,
+		ProviderDisplayName: strPtrOrNil(displayName),
+		LoggedIn:            loggedIn,
+		Email:               strPtrOrNil(email),
+		Device:              strPtrOrNil(device),
+		LastSyncAt:          strPtrOrNil(lastSync),
+		Capabilities:        capabilities,
+	})
+}
+
+// deleteWatch disconnects the user's watch: it deletes the stored credential and
+// resets watch_ready, while RETAINING all synced data. completed_at is left
+// untouched (the onboarding gate is owned by the sync-complete flow, ADR 0018).
+// No watch bound → 400.
+//
+//	@Summary		Disconnect the current user's watch
+//	@Description	Deletes the stored watch credential and marks watch_ready=false. Synced activity/health data is retained. Returns 400 when no watch is bound.
+//	@Tags			users
+//	@Produce		json
+//	@Success		200	{object}	disconnectWatchResponse
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/watch [delete]
+func (u *userRoutes) deleteWatch(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+
+	providerName, found, err := u.store.ProviderForUser(ctx, uid)
+	if err != nil {
+		u.log.Error("watch: provider lookup failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if !found {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "no watch connected"})
+		return
+	}
+
+	if err := u.store.DeleteCredential(ctx, uid, providerName); err != nil {
+		u.log.Error("watch: delete credential failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if err := u.store.ClearWatchReady(ctx, uid); err != nil {
+		u.log.Error("watch: clear watch_ready failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, disconnectWatchResponse{OK: true, Provider: providerName})
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -393,6 +562,15 @@ func isoTimePtr(t *time.Time) *string {
 		return nil
 	}
 	s := t.UTC().Format(time.RFC3339)
+	return &s
+}
+
+// strPtrOrNil returns a pointer to s, or nil when s is empty — so absent watch
+// status fields serialize as JSON null (WatchInfo parity).
+func strPtrOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
 	return &s
 }
 

@@ -85,6 +85,7 @@ type Config struct {
 	// path. Leave zero to run the job/pipeline API only (e.g. in tests).
 	UserStore     UserStore
 	ProviderLogin ProviderLogin
+	ProviderInfo  ProviderInfo
 	AuthNameSync  AuthNameSync
 	Features      FeatureConfig
 
@@ -144,7 +145,7 @@ func NewService(cfg Config) *Service {
 		pipelineUserInitiable: cfg.PipelineUserInitiable,
 		jobCatalog:            cfg.JobCatalog,
 		pipelineCatalog:       cfg.PipelineCatalog,
-		users:                 newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.AuthNameSync, cfg.Features, log),
+		users:                 newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.Features, log),
 		auth:                  cfg.Auth,
 		corsOrigins:           cfg.CORSOrigins,
 		swaggerEnabled:        cfg.SwaggerEnabled,

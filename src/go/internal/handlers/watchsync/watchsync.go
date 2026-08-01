@@ -13,9 +13,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/provider"
+	"github.com/zhaochy1990/stride/internal/storage"
 )
 
 // JobType is the registered job_type for the watch sync handler.
@@ -32,8 +34,15 @@ type Provider interface {
 // backs it with the registry (MySQL binding first, file-based fallback).
 type Resolver func(ctx context.Context, user string) (Provider, error)
 
-// New returns the watch_sync job.Handler backed by resolve.
-func New(resolve Resolver) job.Handler {
+// SyncMarker records post-sync bookkeeping. *storage.Store satisfies it via
+// SetMeta; it is an interface so the handler stays unit-testable with a fake.
+type SyncMarker interface {
+	SetMeta(ctx context.Context, userID, key, value string) error
+}
+
+// New returns the watch_sync job.Handler backed by resolve. On a successful sync
+// it stamps the user's last-sync time through marker (ADR 0018).
+func New(resolve Resolver, marker SyncMarker) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		user := j.PartitionKey
 
@@ -76,6 +85,14 @@ func New(resolve Resolver) job.Handler {
 				return "", job.NewPermanentError("auth_failed", err)
 			}
 			return "", err
+		}
+
+		// Stamp the last successful sync time for the watch status card
+		// (GET /watch, ADR 0018). Best-effort: the synced data is already
+		// persisted, so a failed meta write must never fail an otherwise-
+		// successful sync.
+		if marker != nil {
+			_ = marker.SetMeta(ctx, user, storage.MetaKeyLastSyncTime, time.Now().UTC().Format(time.RFC3339))
 		}
 
 		out, _ := json.Marshal(struct {

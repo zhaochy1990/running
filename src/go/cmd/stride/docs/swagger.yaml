@@ -51,6 +51,13 @@ definitions:
     required:
     - type
     type: object
+  api.disconnectWatchResponse:
+    properties:
+      ok:
+        type: boolean
+      provider:
+        type: string
+    type: object
   api.enqueueJobResponse:
     properties:
       deduplicated:
@@ -260,6 +267,25 @@ definitions:
           $ref: '#/definitions/api.validationDetailItem'
         type: array
     type: object
+  api.watchInfoResponse:
+    properties:
+      capabilities:
+        items:
+          type: string
+        type: array
+      device:
+        type: string
+      email:
+        type: string
+      last_sync_at:
+        type: string
+      logged_in:
+        type: boolean
+      provider:
+        type: string
+      provider_display_name:
+        type: string
+    type: object
   api.watchLoginInput:
     properties:
       email:
@@ -397,6 +423,55 @@ paths:
       security:
       - BearerAuth: []
       summary: Save the current user's basic profile
+      tags:
+      - users
+  /api/users/me/watch:
+    delete:
+      description: Deletes the stored watch credential and marks watch_ready=false.
+        Synced activity/health data is retained. Returns 400 when no watch is bound.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.disconnectWatchResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Disconnect the current user's watch
+      tags:
+      - users
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.watchInfoResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get the connected watch's status
       tags:
       - users
   /api/users/me/watch/login:
