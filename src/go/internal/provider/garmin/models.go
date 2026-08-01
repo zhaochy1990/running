@@ -138,9 +138,8 @@ func buildActivity(userID string, a rawActivity, weather *rawWeather) *storage.A
 		ft := int(*a.Feel)
 		act.FeelType = &ft
 	}
-	if f, ok := feelFromScore(act.FeelType); ok {
-		act.Feel = sptr(string(f))
-	}
+	// Unified numeric feel: Garmin's 0–100 slider → feel = raw÷10 (0–10).
+	act.Feel = feelFromScore(act.FeelType)
 	if weather != nil {
 		act.Temperature = weather.Temp
 		act.Humidity = weather.RelativeHumidity

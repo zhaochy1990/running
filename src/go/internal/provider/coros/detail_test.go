@@ -45,8 +45,8 @@ func TestParseActivityDetail(t *testing.T) {
 	if deref(a.TrainKind) != "aerobic" {
 		t.Errorf("train_kind = %q, want aerobic", deref(a.TrainKind))
 	}
-	if deref(a.Feel) != "good" {
-		t.Errorf("feel = %q, want good", deref(a.Feel))
+	if got := derefFl(a.Feel); got != 4 {
+		t.Errorf("feel = %v, want 4 (feelType 2 ×2)", got)
 	}
 	if got := derefFl(a.Temperature); got != 21.5 {
 		t.Errorf("temperature = %v, want 21.5 (×10)", got)

@@ -86,14 +86,8 @@ const (
 	TrainUnknown   TrainKind = "unknown"
 )
 
-// Feel is a subjective post-run feel rating.
-type Feel string
-
-const (
-	FeelExcellent Feel = "excellent" // COROS 1
-	FeelGood      Feel = "good"      // COROS 2
-	FeelNormal    Feel = "normal"    // COROS 3
-	FeelBad       Feel = "bad"       // COROS 4
-	FeelAwful     Feel = "awful"     // COROS 5
-	FeelUnknown   Feel = "unknown"
-)
+// Feel is stored as a unified numeric 0–10 scale (higher = better), not a
+// string enum. The conversion from each provider's native encoding lives in the
+// adapter: COROS feelType 1–5 → feel = feelType×2 (note: COROS low code = good,
+// so the numeric axis is inverted relative to the raw code); Garmin's 0–100
+// slider → feel = raw÷10. NULL when unrated. No normalize-level type is needed.

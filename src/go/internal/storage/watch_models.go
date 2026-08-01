@@ -63,10 +63,11 @@ type Activity struct {
 	FeelType  *int    `gorm:"column:feel_type"`
 	SportNote *string `gorm:"column:sport_note;type:text"`
 
-	// Provider-agnostic normalized enums (adapter-written).
-	Sport     *string `gorm:"column:sport;type:varchar(64)"`
-	TrainKind *string `gorm:"column:train_kind;type:varchar(64)"`
-	Feel      *string `gorm:"column:feel;type:varchar(64)"`
+	// Provider-agnostic normalized fields (adapter-written). Feel is a unified
+	// numeric 0–10 scale (COROS feelType×2, Garmin raw÷10), NULL when unrated.
+	Sport     *string  `gorm:"column:sport;type:varchar(64)"`
+	TrainKind *string  `gorm:"column:train_kind;type:varchar(64)"`
+	Feel      *float64 `gorm:"column:feel"`
 
 	// Running dynamics + JSON blobs (Python MySQL superset).
 	VerticalOscillationMm *float64 `gorm:"column:vertical_oscillation_mm"`

@@ -297,7 +297,7 @@ class ActivityDetail:
     # alongside as the diagnostic source-of-truth.
     sport: str | None = None        # NormalizedSport.value
     train_kind: str | None = None   # TrainKind.value
-    feel: str | None = None         # FeelLevel.value
+    feel: float | None = None       # unified 0-10 numeric feel (COROS feel_type×2, Garmin raw÷10)
     # Phase 3 running-form metrics (Garmin-only for now; COROS doesn't expose)
     vertical_oscillation_mm: float | None = None
     ground_contact_time_ms: float | None = None

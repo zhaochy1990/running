@@ -6,10 +6,9 @@ from garmin_sync.normalize import (
     GARMIN_SPORT_MAP,
     GARMIN_TRAIN_MAP,
     apply_to_detail,
-    garmin_feel_to_level,
 )
 from stride_core.models import ActivityDetail
-from stride_core.normalize import FeelLevel, NormalizedSport, TrainKind
+from stride_core.normalize import NormalizedSport, TrainKind
 
 
 def _empty_detail(**overrides) -> ActivityDetail:
@@ -90,40 +89,6 @@ class TestTrainMap:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# garmin_feel_to_level — bucket the 0-100 score
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class TestFeelBucketing:
-    def test_excellent_top(self):
-        assert garmin_feel_to_level(100) == FeelLevel.EXCELLENT
-        assert garmin_feel_to_level(80) == FeelLevel.EXCELLENT
-
-    def test_good(self):
-        assert garmin_feel_to_level(75) == FeelLevel.GOOD
-        assert garmin_feel_to_level(60) == FeelLevel.GOOD
-
-    def test_normal(self):
-        assert garmin_feel_to_level(50) == FeelLevel.NORMAL
-
-    def test_bad(self):
-        assert garmin_feel_to_level(30) == FeelLevel.BAD
-
-    def test_awful(self):
-        assert garmin_feel_to_level(10) == FeelLevel.AWFUL
-        assert garmin_feel_to_level(1) == FeelLevel.AWFUL
-
-    def test_zero_means_no_rating(self):
-        assert garmin_feel_to_level(0) is None
-
-    def test_none_passthrough(self):
-        assert garmin_feel_to_level(None) is None
-
-    def test_invalid_returns_none(self):
-        assert garmin_feel_to_level("not a number") is None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # apply_to_detail end-to-end
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -138,7 +103,7 @@ class TestApplyToDetail:
         })
         assert detail.sport == "run_outdoor"
         assert detail.train_kind == "base"
-        assert detail.feel == "good"
+        assert detail.feel == 7.5
 
     def test_strength_no_train_label(self):
         detail = _empty_detail()

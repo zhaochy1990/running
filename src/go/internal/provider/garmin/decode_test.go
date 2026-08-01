@@ -54,21 +54,25 @@ func TestFeelFromScore(t *testing.T) {
 	mk := func(v int) *int { return &v }
 	cases := []struct {
 		in   *int
-		want normalize.Feel
-		ok   bool
+		want *float64 // nil when unrated
 	}{
-		{nil, "", false},
-		{mk(0), "", false},
-		{mk(10), normalize.FeelAwful, true},
-		{mk(30), normalize.FeelBad, true},
-		{mk(50), normalize.FeelNormal, true},
-		{mk(70), normalize.FeelGood, true},
-		{mk(95), normalize.FeelExcellent, true},
+		{nil, nil},
+		{mk(0), nil},
+		{mk(10), fptr(1.0)},
+		{mk(30), fptr(3.0)},
+		{mk(50), fptr(5.0)},
+		{mk(70), fptr(7.0)},
+		{mk(95), fptr(9.5)},
 	}
 	for _, c := range cases {
-		got, ok := feelFromScore(c.in)
-		if ok != c.ok || got != c.want {
-			t.Errorf("feelFromScore(%v) = %q,%v want %q,%v", c.in, got, ok, c.want, c.ok)
+		got := feelFromScore(c.in)
+		switch {
+		case c.want == nil && got != nil:
+			t.Errorf("feelFromScore(%v) = %v, want nil", c.in, *got)
+		case c.want != nil && got == nil:
+			t.Errorf("feelFromScore(%v) = nil, want %v", c.in, *c.want)
+		case c.want != nil && got != nil && *got != *c.want:
+			t.Errorf("feelFromScore(%v) = %v, want %v", c.in, *got, *c.want)
 		}
 	}
 }
