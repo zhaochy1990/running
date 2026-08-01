@@ -11,6 +11,28 @@ Multi-stage build (`Dockerfile`)：
 
 `.dockerignore` 排除 `data/` 但放行 `data/*/TRAINING_PLAN.md`，让默认 training plans 进 image。
 
+## Planned：前端剥离为 `stride-web`（见 ADR 0017）
+
+> 设计已定、尚未实施。完整取舍见 [`docs/adr/0017-frontend-bff-strangler-split.md`](adr/0017-frontend-bff-strangler-split.md)。
+
+目标态把前端从这个共享镜像里拆出去，成为独立服务/容器 **`stride-web`** = 静态 Vite SPA +
+一个 Node/Hono **前端 BFF**（唯一前门；页面仍 CSR，不做 SSR）。届时：
+
+- **两份镜像、两条 workflow**。新 `deploy-web.yml` 构建 `Dockerfile.web`，一次构建后 tag 推到
+  **GHCR + 阿里云 ACR 两个 registry**，部署到新 Container App `stride-web`；它拥有 `VITE_*` +
+  AMap 的 Key Vault build-arg。**Azure Container App 从 GHCR 拉取（authoritative）**，ACR 是为
+  大陆拉取 / 未来搬到 Tencent 预备的镜像镜像。既有 `deploy.yml` 收敛为 Python-only：去掉
+  `Dockerfile` stage 1、去掉 `frontend/**` 与 `strength_illustrations/**` path filter。
+- **BFF 拥有 `/api` 路由（strangler）**：版本化 TS 路由表按 path 把 `/api/*` 分流到
+  `PYTHON_API_URL`（stride-app）或 `GO_API_URL`（Tencent `stride api`），缺省 Python；
+  `/api/auth/*` 走 `AUTH_UPSTREAM_URL`。这**反转了 ADR 0012 的 browser-direct-to-Go**。
+- **`strength_illustrations/` 搬进 `stride-web` 镜像**（前端拥有 UI 插图资源）。
+- **分阶段 cutover**：`stride-web` 先上新 host 验证 → 翻 `stride-running.cn` → 之后的 backend
+  部署里移除 `mount_frontend` / `static.py`。翻域名前 `stride-app` 继续 serve SPA 作 fallback。
+- **ACR push 需要新 secrets/vars**：`ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_NAMESPACE`、
+  `ALIYUN_ACR_USERNAME`/`ALIYUN_ACR_PASSWORD`（或 RAM AccessKey）；缺失时该 step 显式失败/跳过，
+  不能静默只推一处却当双份成功。
+
 ## CI/CD（GitHub Actions）
 
 两个 workflow 驱动生产：

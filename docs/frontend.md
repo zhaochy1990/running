@@ -6,6 +6,12 @@
 
 React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。共享 sidebar navigation 用 `AppLayout`。
 
+> **Planned（ADR 0017）**：前端将剥离为独立服务/容器 `stride-web` = 静态 SPA + Node/Hono
+> **前端 BFF**（唯一前门）。页面仍 CSR，token 模型不变。BFF 用一张版本化 TS **API 路由表** 把
+> `/api/*` 分流到 Python（`stride-app`）或 Go（Tencent `stride api`），`/api/auth/*` 也经 BFF
+> 走 auth 上游（全链路 same-origin）。这反转了 ADR 0012 的 browser-direct-to-Go。届时下面
+> "FastAPI 同时服务 SPA" 的描述只适用于 cutover 之前的 fallback 期。
+
 ## Pages
 
 | Route | Component | 说明 |

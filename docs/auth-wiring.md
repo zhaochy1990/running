@@ -73,6 +73,13 @@ coros-sync -P zhaochaoyi commentary push <label_id>
 
 已经走 auth-service flow（无 legacy MSAL）。`frontend/src/store/authStore.ts` 处理 login/refresh，用 `sessionStorage`；`frontend/src/api.ts` 每个请求挂 `Authorization: Bearer`（包括 `triggerSync` 和 `resyncActivity`），401 自动 retry 一次。refresh 后仍 401 → redirect `/login`。
 
+当前 `authStore.ts` 有 dev/prod 分支：dev 相对 `/api/auth/*`（Vite 代理到 `VITE_DEV_AUTH_PROXY`），prod 绝对 `VITE_AUTH_BASE_URL/api/auth/*`（浏览器直连 auth-service，跨域）。
+
+> **Planned（ADR 0017）**：前端剥离为 `stride-web` 后，`/api/auth/*` **两个环境都经前端 BFF**
+> 转发到 `AUTH_UPSTREAM_URL`，全链路 same-origin。`authStore.ts` 去掉 dev/prod 分支，永远
+> 相对 `/api/auth`；浏览器不再跨域直连 auth-service。届时 auth-service 的 CORS 可收紧为只认
+> BFF 服务端。token 模型（`sessionStorage` + Bearer）不变。
+
 ### 6. 还没做的（非阻塞 follow-up）
 
 - 给 auth-service 加 JWKS 端点，公钥轮换变成网络可发现，不用两边同时改 env var

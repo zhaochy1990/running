@@ -1,0 +1,24 @@
+{
+  "name": "stride-web-bff",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "stride-web BFF: serves the built SPA + strength illustration assets and proxies /api to the Python/Go/auth upstreams via a versioned routing table (ADR 0017).",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "hono": "^4.6.14"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.0",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.3",
+    "vitest": "^3.0.0"
+  }
+}
