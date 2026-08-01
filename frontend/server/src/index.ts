@@ -7,15 +7,15 @@ import { Hono } from 'hono'
 
 import { loadConfig } from './config.js'
 import { proxyToUpstream } from './proxy.js'
-import { GO_ROUTE_PREFIXES, resolveUpstream } from './routing/table.js'
+import { hasGoRoutes, resolveUpstream } from './routing/table.js'
 import { baseUrlFor } from './routing/upstreams.js'
 
 const config = loadConfig()
 
-// Fail fast: a routing table that names Go routes with no GO_API_URL would 502
-// every cutover endpoint at runtime — catch it at boot instead.
-if (GO_ROUTE_PREFIXES.length > 0 && !config.goApiUrl) {
-  throw new Error('stride-web BFF: routing table has Go routes but GO_API_URL is not set')
+// Fail fast: a manifest that routes any endpoint to Go with no GO_API_URL would
+// 502 every cutover endpoint at runtime — catch it at boot instead.
+if (hasGoRoutes() && !config.goApiUrl) {
+  throw new Error('stride-web BFF: an API route is set to Go but GO_API_URL is not set')
 }
 
 // Roots are relative to the process CWD (see Dockerfile.web WORKDIR).
@@ -31,7 +31,7 @@ app.get('/healthz', (c) => c.json({ status: 'ok' }))
 // The single API seam: every browser /api/* call is proxied to one upstream
 // chosen by the versioned routing table (auth / go / python).
 app.all('/api/*', async (c) => {
-  const upstream = resolveUpstream(c.req.path)
+  const upstream = resolveUpstream(c.req.method, c.req.path)
   let base: string
   try {
     base = baseUrlFor(upstream, config)
