@@ -42,6 +42,13 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION"
+          # CalVer (YYYY.M.<run_number>) — a version-sortable tag that Renovate
+          # tracks in stride-devops/versions.env (the immutable :$VERSION sha tag
+          # is what Azure deploys; the CalVer tag is only for the ACR/GHCR pin).
+          # Matches worker-go.yml's scheme so all app images bump the same way.
+          CALVER="$(date -u +%Y.%-m).${{ github.run_number }}"
+          echo "calver=$CALVER" >> "$GITHUB_OUTPUT"
+          echo "CalVer: $CALVER"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4
@@ -81,12 +88,14 @@ jobs:
             --build-arg VITE_AMAP_KEY="$AMAP_KEY" \
             --build-arg VITE_AMAP_SECURITY_CODE="$AMAP_SECURITY_CODE" \
             -t ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
+            -t ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.calver }} \
             -t ${{ env.GHCR_IMAGE }}:latest \
             .
 
       - name: Push to GHCR (authoritative — Azure pulls from here)
         run: |
           docker push ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }}
+          docker push ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.calver }}
           docker push ${{ env.GHCR_IMAGE }}:latest
 
       - name: Deploy to Container Apps (stride-web)
@@ -208,6 +217,43 @@ jobs:
           ACR_IMAGE="$ACR_REGISTRY/stride/stride-web"
           echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY" --username "$ACR_USERNAME" --password-stdin
           docker tag ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} "$ACR_IMAGE:${{ steps.version.outputs.version }}"
+          docker tag ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.calver }} "$ACR_IMAGE:${{ steps.version.outputs.calver }}"
           docker tag ${{ env.GHCR_IMAGE }}:latest "$ACR_IMAGE:latest"
           docker push "$ACR_IMAGE:${{ steps.version.outputs.version }}"
+          docker push "$ACR_IMAGE:${{ steps.version.outputs.calver }}"
           docker push "$ACR_IMAGE:latest"
+
+      # Open a version-bump PR in stride-devops the moment the CalVer image lands
+      # (same as worker-go.yml). Renovate reads stride-devops/renovate.json, sees
+      # the new ghcr.io/zhaochy1990/stride-web CalVer tag, and PRs the versions.env
+      # bump. Best-effort: a missing token / Renovate hiccup must NOT fail the
+      # deploy. Needs RENOVATE_TOKEN (+ optional GHCR_READ_TOKEN) repo secrets.
+      - name: Set up Node 22 for Renovate
+        if: always()
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Open version-bump PR in stride-devops (Renovate)
+        if: always()
+        continue-on-error: true
+        env:
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+          RENOVATE_HOST_RULES: >-
+            [{"hostType":"docker","matchHost":"ghcr.io","username":"zhaochy1990","password":"${{ secrets.GHCR_READ_TOKEN }}"}]
+          LOG_LEVEL: info
+        run: |
+          if [ -z "$RENOVATE_TOKEN" ]; then
+            echo "RENOVATE_TOKEN not set — skipping Renovate run."
+            exit 0
+          fi
+          # GHCR's tag-list API can lag a few seconds behind the push — wait so
+          # Renovate reliably sees this release's own new CalVer tag.
+          sleep 30
+          for attempt in 1 2 3; do
+            if npx --yes renovate@41 zhaochy1990/stride-devops; then
+              exit 0
+            fi
+            echo "Renovate attempt ${attempt} failed."
+            [ "${attempt}" -lt 3 ] && sleep 10
+          done
+          echo "Renovate did not succeed after 3 attempts."
