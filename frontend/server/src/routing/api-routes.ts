@@ -80,6 +80,8 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: 'POST', path: '/api/:user/sync', upstream: 'python', goReady: false },
 
   // ── Training goal / running profile / prefs ─────────────────────────────
+  // TrainingPlanPage.tsx:207
+  // 在创建训练计划的时候需要获取用户的目标
   // ✓ /plan · load current training goal
   { method: 'GET', path: '/api/users/me/training-goal', upstream: 'python', goReady: false },
   // ✓ /plan · create race training goal
