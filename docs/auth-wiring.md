@@ -73,7 +73,20 @@ coros-sync -P zhaochaoyi commentary push <label_id>
 
 已经走 auth-service flow（无 legacy MSAL）。`frontend/src/store/authStore.ts` 处理 login/refresh，用 `sessionStorage`；`frontend/src/api.ts` 每个请求挂 `Authorization: Bearer`（包括 `triggerSync` 和 `resyncActivity`），401 自动 retry 一次。refresh 后仍 401 → redirect `/login`。
 
-当前 `authStore.ts` 有 dev/prod 分支：dev 相对 `/api/auth/*`（Vite 代理到 `VITE_DEV_AUTH_PROXY`），prod 绝对 `VITE_AUTH_BASE_URL/api/auth/*`（浏览器直连 auth-service，跨域）。
+当前 `authStore.ts` 已经**去掉 dev/prod 分支**（ADR 0017）：两个环境都相对 `/api/auth/*`，
+same-origin 经前门转发，不再用 `VITE_AUTH_BASE_URL` 绝对量直连 auth-service。
+
+> **stride-app fallback 的 `/api/auth/*` 反代（`routes/auth_proxy.py`）**：ADR 0017 把前端翻成
+> same-origin 后，前端 bundle 里的 login/register/refresh/logout 变成相对 `/api/auth/*`。新的
+> `stride-web` Node BFF 会转发到 `AUTH_UPSTREAM_URL`；但**分阶段 cutover 期间老的 `stride-app`
+> 仍作为 fallback serve 同一份 SPA**（`static.py::mount_frontend`），而它原本没有 `/api/auth/*`
+> 路由 —— 浏览器 `POST /api/auth/login` 打到 GET-only 的 SPA catch-all → 405，**老服务登录直接坏掉**。
+> `routes/auth_proxy.py` 补上这个同源前门：把 `/api/auth/*` 透明反代到 `config.auth_service.base_url`
+> （即 `auth_service_client` 已经在用的同一个 auth-service，env `STRIDE_AUTH_URL` / prod
+> `server.prod.toml` 的 `[auth_service] base_url`）。它挂在 `app.py` 的 **no-bearer** 组（这些是
+> mint token 的未认证流程），且**注册在 `mount_frontend` 之前**，所以 SPA catch-all 不会吞掉它。
+> 翻域名到 `stride-web` 并移除 `mount_frontend` 后，这个 fallback 反代可一并退役。
+
 
 > **Planned（ADR 0017）**：前端剥离为 `stride-web` 后，`/api/auth/*` **两个环境都经前端 BFF**
 > 转发到 `AUTH_UPSTREAM_URL`，全链路 same-origin。`authStore.ts` 去掉 dev/prod 分支，永远

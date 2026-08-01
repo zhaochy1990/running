@@ -93,7 +93,7 @@ async def _lifespan(app: FastAPI):
         logger.exception("lifespan startup reconcile failed; continuing without sweep")
     yield
     # Shutdown: nothing special.
-from .routes import account, ability, activities, body_composition, coach, feedback, generate, health, home, jobs, likes, master_plan, notifications, nutrition_daily, nutrition_meals, nutrition_prefs, onboarding, plan, plan_variants, pbs, predictions, profile, public, review, running_profile, strength, stride, sync, teams, training_goal, training_load, training_plan, users, watch, weeks, workouts
+from .routes import account, ability, activities, auth_proxy, body_composition, coach, feedback, generate, health, home, jobs, likes, master_plan, notifications, nutrition_daily, nutrition_meals, nutrition_prefs, onboarding, plan, plan_variants, pbs, predictions, profile, public, review, running_profile, strength, stride, sync, teams, training_goal, training_load, training_plan, users, watch, weeks, workouts
 from .static import mount_frontend
 
 
@@ -155,6 +155,13 @@ def create_app(
 
     # Public routes (no auth) — liveness probe, must stay open for Azure.
     app.include_router(public.router)
+
+    # /api/auth/* reverse proxy → auth-service (no bearer: these are the
+    # token-minting flows). Restores login on the stride-app-served SPA
+    # fallback after the frontend went same-origin (ADR 0017); see
+    # routes/auth_proxy.py. Registered before mount_frontend so the SPA
+    # catch-all doesn't swallow it.
+    app.include_router(auth_proxy.router)
 
     # Every other router sits behind require_bearer. Writes that previously
     # had per-endpoint Depends(require_bearer) still work (dependency runs
