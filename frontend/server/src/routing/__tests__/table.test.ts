@@ -98,7 +98,7 @@ describe('API_ROUTES manifest integrity', () => {
     }
   })
 
-  it('goReady endpoints are the ones the Go API implements (profile GET/POST, watch GET/DELETE, activities list + detail)', () => {
+  it('goReady endpoints are the ones the Go API implements (profile GET/POST, watch GET/DELETE, activities list + detail, user sync)', () => {
     const goReady = API_ROUTES.filter((r) => r.goReady).map((r) => `${r.method} ${r.path}`).sort()
     expect(goReady).toEqual(
       [
@@ -108,6 +108,7 @@ describe('API_ROUTES manifest integrity', () => {
         'GET /api/users/me/profile',
         'GET /api/users/me/watch',
         'POST /api/users/me/profile',
+        'POST /api/:user/sync',
       ].sort(),
     )
   })

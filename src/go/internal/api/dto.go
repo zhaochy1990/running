@@ -37,6 +37,15 @@ type startPipelineResponse struct {
 	Deduplicated bool   `json:"deduplicated,omitempty"`
 }
 
+// syncRequest is the optional POST /api/{user}/sync body. All fields are
+// optional; an omitted mode defaults to "incremental" for this endpoint. It
+// mirrors provider.SyncOptionsInput (the shared watch_sync payload contract).
+type syncRequest struct {
+	Mode    string `json:"mode,omitempty" example:"incremental" enums:"full,incremental"`
+	Content string `json:"content,omitempty" example:"all" enums:"all,activities,health"`
+	Limit   int    `json:"limit,omitempty" example:"0"`
+}
+
 // jobStateResponse is the GET /jobs/{job_id} body.
 type jobStateResponse struct {
 	JobID        string     `json:"job_id"`

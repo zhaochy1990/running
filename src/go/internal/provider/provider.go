@@ -14,8 +14,10 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -97,6 +99,73 @@ type SyncResult struct {
 	Health           int      // health-domain writes (daily_health + HRV + dashboard); display count
 	ActivityLabelIDs []string // label_ids touched this run
 	HealthDates      []string // Shanghai calendar dates whose daily_health rows were refreshed
+}
+
+// SyncOptionsInput is the JSON contract for a sync request: the watch_sync job's
+// InputJSON and the POST /api/{user}/sync request body both use it. It is the
+// single source of truth for how a {mode, content, limit} blob maps onto
+// SyncOptions, shared by the API edge (validation → 400) and the worker handler
+// (parse → SyncOptions) so the two never drift.
+//
+// An empty Mode/Content means "take the sync default" (full + all); callers that
+// want a different default (e.g. the manual-sync endpoint defaults to
+// incremental) set Mode explicitly before validating.
+type SyncOptionsInput struct {
+	Mode    string `json:"mode,omitempty"`
+	Content string `json:"content,omitempty"`
+	Limit   int    `json:"limit,omitempty"`
+}
+
+// Validate reports whether the input's enums and limit are acceptable, without
+// mutating it. It is the edge check the API runs to return a clean 400.
+func (in SyncOptionsInput) Validate() error {
+	switch in.Mode {
+	case "", string(SyncFull), string(SyncIncremental):
+	default:
+		return fmt.Errorf("invalid mode %q", in.Mode)
+	}
+	switch in.Content {
+	case "", "all", "activities", "health":
+	default:
+		return fmt.Errorf("invalid content %q", in.Content)
+	}
+	if in.Limit < 0 {
+		return fmt.Errorf("limit must be >= 0, got %d", in.Limit)
+	}
+	return nil
+}
+
+// Options maps a validated input onto SyncOptions, applying the sync defaults
+// (Mode=full, Content=all) for empty fields.
+func (in SyncOptionsInput) Options() (SyncOptions, error) {
+	if err := in.Validate(); err != nil {
+		return SyncOptions{}, err
+	}
+	opts := SyncOptions{Mode: SyncFull, Content: ContentAll, Limit: in.Limit}
+	if in.Mode == string(SyncIncremental) {
+		opts.Mode = SyncIncremental
+	}
+	switch in.Content {
+	case "activities":
+		opts.Content = ContentActivities
+	case "health":
+		opts.Content = ContentHealth
+	}
+	return opts, nil
+}
+
+// ParseSyncOptions parses a watch_sync InputJSON blob into SyncOptions. An
+// absent/empty blob defaults to full + all + unlimited. Invalid JSON or an
+// invalid enum/limit is an error (the worker treats it as a permanent bad
+// payload).
+func ParseSyncOptions(input string) (SyncOptions, error) {
+	var in SyncOptionsInput
+	if strings.TrimSpace(input) != "" {
+		if err := json.Unmarshal([]byte(input), &in); err != nil {
+			return SyncOptions{}, fmt.Errorf("parse payload: %w", err)
+		}
+	}
+	return in.Options()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

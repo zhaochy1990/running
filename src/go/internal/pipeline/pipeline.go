@@ -6,7 +6,9 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -100,8 +102,10 @@ func New(store job.PipelineStore, enq job.Enqueuer, reg *Registry, opts ...Optio
 // athlete whose data the run operates on (the subject) — it flows down to every
 // step job and is what auth and per-user listing key on; empty means a system
 // run (NULL). createdBy records who triggered the run (the JWT sub, or empty for
-// an internal caller) and is provenance only.
-func (o *Orchestrator) StartPipeline(ctx context.Context, name, userID, createdBy, idempotencyKey string) (string, error) {
+// an internal caller) and is provenance only. inputJSON is the run-level input
+// threaded into every step's job InputJSON (see mergeStepInput); pass "" for a
+// pipeline that takes none.
+func (o *Orchestrator) StartPipeline(ctx context.Context, name, userID, createdBy, idempotencyKey, inputJSON string) (string, error) {
 	def, ok := o.reg.Get(name)
 	if !ok {
 		return "", fmt.Errorf("pipeline: unknown definition %q", name)
@@ -116,6 +120,7 @@ func (o *Orchestrator) StartPipeline(ctx context.Context, name, userID, createdB
 		UserID:         userID,
 		CreatedBy:      createdBy,
 		Name:           name,
+		InputJSON:      inputJSON,
 		Status:         job.StatusRunning,
 		CurrentStep:    0,
 		Steps:          steps,
@@ -130,6 +135,8 @@ func (o *Orchestrator) StartPipeline(ctx context.Context, name, userID, createdB
 		Type:          def.Steps[0].JobType,
 		UserID:        userID,
 		PipelineRunID: run.RunID,
+		// First step has no upstream result; it receives just the run input.
+		InputJSON: mergeStepInput(run.InputJSON, ""),
 	})
 	if err != nil {
 		return run.RunID, err
@@ -185,6 +192,10 @@ func (o *Orchestrator) OnJobCompleted(ctx context.Context, j *job.Job) error {
 		Type:          run.Steps[next].JobType,
 		UserID:        run.UserID,
 		PipelineRunID: run.RunID,
+		// Thread the run input plus this step's output into the next step, so a
+		// step can consume what the previous one produced (e.g. compute reads the
+		// label_ids the sync step synced).
+		InputJSON: mergeStepInput(run.InputJSON, j.ResultJSON),
 	})
 	if err != nil {
 		// Persist the completed step so a retry of this callback resumes from
@@ -240,4 +251,38 @@ func stepIndexByJobID(run *job.PipelineRun, jobID string) int {
 		}
 	}
 	return -1
+}
+
+// mergeStepInput builds a step's job InputJSON by shallow-merging the run-level
+// input over the previous step's ResultJSON. The previous result supplies what a
+// downstream step consumes (e.g. label_ids from watch_sync); the run input
+// (e.g. {"mode":"incremental"}) wins on any key conflict so it stays
+// authoritative. Non-object or empty inputs are tolerated; the result is "" when
+// there is nothing to pass.
+func mergeStepInput(runInput, prevResult string) string {
+	merged := map[string]any{}
+	if strings.TrimSpace(prevResult) != "" {
+		var prev map[string]any
+		if json.Unmarshal([]byte(prevResult), &prev) == nil {
+			for k, v := range prev {
+				merged[k] = v
+			}
+		}
+	}
+	if strings.TrimSpace(runInput) != "" {
+		var run map[string]any
+		if json.Unmarshal([]byte(runInput), &run) == nil {
+			for k, v := range run {
+				merged[k] = v // run input wins on conflict
+			}
+		}
+	}
+	if len(merged) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(merged)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }

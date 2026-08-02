@@ -77,7 +77,10 @@ export const API_ROUTES: readonly ApiRoute[] = [
   // ✓ /plan · trigger full history sync
   { method: 'POST', path: '/api/users/me/full-sync', upstream: 'python', goReady: false },
   // ✓ global(layout) · manual sync from the sync pill
-  { method: 'POST', path: '/api/:user/sync', upstream: 'python', goReady: false },
+  //   Go note: starts an async data-sync pipeline (sync + compute) and returns
+  //   202 {run_id} to poll GET /pipelines/:id (ADR 0020), vs Python's
+  //   synchronous {success,output}. Cutover needs the pill to poll — not just routing.
+  { method: 'POST', path: '/api/:user/sync', upstream: 'python', goReady: true },
 
   // ── Training goal / running profile / prefs ─────────────────────────────
   // TrainingPlanPage.tsx:207

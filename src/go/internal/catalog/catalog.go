@@ -22,13 +22,26 @@ const (
 	JobTypeHello = "hello"
 	// JobTypeWatchSync syncs one user's watch data; a user may trigger their own.
 	JobTypeWatchSync = "watch_sync"
-	// JobTypeOnboardingCompute derives athlete baselines/load/ability from synced
-	// data. Internal-only: users start the onboarding pipeline, not this step.
-	JobTypeOnboardingCompute = "onboarding_compute"
+	// JobTypeCalibration computes the 180-day athlete baseline (HRmax/LTHR/
+	// threshold/RHR/CP + zones). Internal-only: it is a step of the onboarding
+	// pipeline and (later) a weekly job.
+	JobTypeCalibration = "calibration"
+	// JobTypeCompute derives per-activity load, daily PMC and PBs from synced data
+	// + the latest calibration. Mode-aware (full|incremental). Internal-only: it is
+	// the compute step of the data_sync / onboarding pipelines.
+	JobTypeCompute = "compute"
 )
 
-// PipelineOnboarding is the new-user onboarding pipeline name (ADR 0015).
-const PipelineOnboarding = "onboarding"
+// Pipeline names (ADR 0020). Both are fronted by POST /api/{user}/sync, which
+// picks by mode; onboarding is also the new-user full path.
+const (
+	// PipelineOnboarding is the full path: watch_sync(full) -> calibration ->
+	// compute(full). New-user onboarding and any explicit full resync.
+	PipelineOnboarding = "onboarding"
+	// PipelineDataSync is the ongoing incremental path: watch_sync(incremental) ->
+	// compute(incremental).
+	PipelineDataSync = "data_sync"
+)
 
 // JobSpec is one known job type and whether end users may enqueue it directly.
 // Description, InputSchema (JSON Schema for the job's InputJSON) and ExampleInput
@@ -70,33 +83,57 @@ func Jobs() []JobSpec {
 			ExampleInput:  json.RawMessage(`{"mode":"incremental","content":"activities","limit":50}`),
 		},
 		{
-			Type:          JobTypeOnboardingCompute,
+			Type:          JobTypeCalibration,
 			UserInitiable: false,
-			Description:   "Derive athlete baselines, training load and ability from already-synced data. No input body; operates on the job's user_id (subject UUID). Internal-only.",
+			Description:   "Compute the 180-day athlete baseline (HRmax/LTHR/threshold pace/RHR/critical power + zones) from synced data. No input body; operates on the job's user_id (subject UUID). Internal-only.",
 			InputSchema:   json.RawMessage(`{"type":"object","description":"No input fields; operates on the job's user_id (subject UUID).","additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{}`),
+		},
+		{
+			Type:          JobTypeCompute,
+			UserInitiable: false,
+			Description:   "Derive per-activity training load, daily PMC (CTL/ATL/Form) and personal bests from synced data and the latest calibration snapshot. Mode-aware: full recomputes the window; incremental only touches this sync's new activities (label_ids). Internal-only.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"mode":{"type":"string","enum":["full","incremental"],"default":"full"},"label_ids":{"type":"array","items":{"type":"string"},"description":"Incremental only: the activities this sync produced."}},"additionalProperties":true}`),
+			ExampleInput:  json.RawMessage(`{"mode":"incremental","label_ids":["a1b2"]}`),
 		},
 	}
 }
 
-// Pipelines returns every pipeline the API can start. The onboarding pipeline
-// (full_sync -> onboarding_compute) is user-initiable: a browser/app POSTs
-// /pipelines/onboarding for itself (ADR 0012 / 0015). Its step job
-// types MUST be registered as handlers in cmd/worker.
+// Pipelines returns every pipeline the API can start. Both are fronted by POST
+// /api/{user}/sync (which picks by mode) and are user-initiable — a browser/app
+// triggers a run for its own user_id (the subject; ADR 0012 / 0020). Their step
+// job types MUST be registered as handlers in cmd/worker. The run-level input
+// {mode,content,limit} is threaded into each step (the sync step reads mode;
+// compute reads mode + the upstream label_ids).
 func Pipelines() []PipelineSpec {
+	syncInputSchema := json.RawMessage(`{"type":"object","properties":{"mode":{"type":"string","enum":["full","incremental"]},"content":{"type":"string","enum":["all","activities","health"]},"limit":{"type":"integer","minimum":0}},"additionalProperties":false}`)
 	return []PipelineSpec{
 		{
 			Def: pipeline.Def{
 				Name: PipelineOnboarding,
 				Steps: []pipeline.StepDef{
-					{Name: "full_sync", JobType: JobTypeWatchSync},
-					{Name: "onboarding_compute", JobType: JobTypeOnboardingCompute},
+					{Name: "sync", JobType: JobTypeWatchSync},
+					{Name: "calibration", JobType: JobTypeCalibration},
+					{Name: "compute", JobType: JobTypeCompute},
 				},
 			},
 			UserInitiable: true,
-			Description:   "New-user onboarding: a full watch sync followed by baseline/load/ability compute. user_id is the subject athlete.",
-			InputSchema:   json.RawMessage(`{"type":"object","description":"No input consumed; onboarding operates on the run's user_id (subject UUID).","additionalProperties":false}`),
-			ExampleInput:  json.RawMessage(`{}`),
+			Description:   "Full path (new-user onboarding or explicit full resync): a full watch sync, then the athlete baseline, then a full load/PMC/PB compute. The run's user_id is the subject athlete.",
+			InputSchema:   syncInputSchema,
+			ExampleInput:  json.RawMessage(`{"mode":"full"}`),
+		},
+		{
+			Def: pipeline.Def{
+				Name: PipelineDataSync,
+				Steps: []pipeline.StepDef{
+					{Name: "sync", JobType: JobTypeWatchSync},
+					{Name: "compute", JobType: JobTypeCompute},
+				},
+			},
+			UserInitiable: true,
+			Description:   "Ongoing incremental path: an incremental watch sync, then an incremental compute over only this sync's new activities. The run's user_id is the subject athlete.",
+			InputSchema:   syncInputSchema,
+			ExampleInput:  json.RawMessage(`{"mode":"incremental"}`),
 		},
 	}
 }

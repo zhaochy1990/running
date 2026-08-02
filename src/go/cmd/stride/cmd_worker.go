@@ -18,7 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/config"
-	"github.com/zhaochy1990/stride/internal/handlers/onboardingcompute"
+	"github.com/zhaochy1990/stride/internal/handlers/compute"
 	"github.com/zhaochy1990/stride/internal/handlers/watchsync"
 	"github.com/zhaochy1990/stride/internal/health"
 	"github.com/zhaochy1990/stride/internal/job"
@@ -170,13 +170,15 @@ func runWorker() error {
 }
 
 // registerHandlers wires job handlers. `hello` is the deploy smoke handler;
-// `watch_sync` runs a user's COROS watch-data sync (ADR 0011);
-// `onboarding_compute` derives baselines/load/ability from synced data (ADR 0015).
+// `watch_sync` runs a user's watch-data sync (ADR 0011); `calibration` computes
+// the athlete baseline and `compute` derives load/PMC/PBs from synced data,
+// mode-aware (ADR 0020).
 func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
 	})
 	reg.MustRegister(watchsync.JobType, watchsync.New(resolve, store))
-	reg.MustRegister(onboardingcompute.JobType, onboardingcompute.New(store))
+	reg.MustRegister(compute.CalibrationJobType, compute.NewCalibration(store))
+	reg.MustRegister(compute.ComputeJobType, compute.NewCompute(store))
 }

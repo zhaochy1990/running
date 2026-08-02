@@ -40,8 +40,10 @@ type JobIdemLookup interface {
 }
 
 // PipelineStarter starts a pipeline run (store-first) with an idempotency key.
+// inputJSON is the run-level input threaded into the pipeline's steps ("" for
+// pipelines that take none).
 type PipelineStarter interface {
-	StartPipeline(ctx context.Context, name, userID, createdBy, idempotencyKey string) (string, error)
+	StartPipeline(ctx context.Context, name, userID, createdBy, idempotencyKey, inputJSON string) (string, error)
 }
 
 // RunGetter reads a pipeline run's aggregate state by its globally-unique id.
@@ -74,6 +76,17 @@ type Config struct {
 	// pipeline names. Both come from internal/catalog.
 	JobUserInitiable      map[string]bool
 	PipelineUserInitiable map[string]bool
+
+	// WatchSyncJobType is the job type the POST /api/{user}/sync endpoint
+	// enqueues. Injected (from catalog.JobTypeWatchSync) so the api package
+	// stays decoupled from internal/catalog, matching the JobCatalog pattern.
+	WatchSyncJobType string
+
+	// SyncPipelineFull / SyncPipelineIncremental are the pipeline names POST
+	// /api/{user}/sync starts, picked by mode (full -> onboarding, incremental ->
+	// data_sync). Injected from internal/catalog for the same decoupling reason.
+	SyncPipelineFull        string
+	SyncPipelineIncremental string
 
 	// JobCatalog and PipelineCatalog back the discovery endpoints GET /jobs and
 	// GET /pipelines (input schema + example per type). Populated from
@@ -116,6 +129,11 @@ type Service struct {
 	jobUserInitiable      map[string]bool
 	pipelineUserInitiable map[string]bool
 
+	watchSyncJobType string
+
+	syncPipelineFull        string
+	syncPipelineIncremental string
+
 	jobCatalog      []JobCatalogEntry
 	pipelineCatalog []PipelineCatalogEntry
 
@@ -141,24 +159,27 @@ func NewService(cfg Config) *Service {
 		log = logging.Default()
 	}
 	return &Service{
-		enq:                   cfg.Enqueuer,
-		jobs:                  cfg.Jobs,
-		jobsIdem:              cfg.JobsIdem,
-		pipelines:             cfg.Pipelines,
-		runs:                  cfg.Runs,
-		runsList:              cfg.RunsList,
-		runsIdem:              cfg.RunsIdem,
-		jobUserInitiable:      cfg.JobUserInitiable,
-		pipelineUserInitiable: cfg.PipelineUserInitiable,
-		jobCatalog:            cfg.JobCatalog,
-		pipelineCatalog:       cfg.PipelineCatalog,
-		users:                 newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.Features, log),
-		activities:            newActivityRoutes(cfg.ActivityStore, log),
-		auth:                  cfg.Auth,
-		corsOrigins:           cfg.CORSOrigins,
-		swaggerEnabled:        cfg.SwaggerEnabled,
-		health:                cfg.Health,
-		log:                   log,
+		enq:                     cfg.Enqueuer,
+		jobs:                    cfg.Jobs,
+		jobsIdem:                cfg.JobsIdem,
+		pipelines:               cfg.Pipelines,
+		runs:                    cfg.Runs,
+		runsList:                cfg.RunsList,
+		runsIdem:                cfg.RunsIdem,
+		jobUserInitiable:        cfg.JobUserInitiable,
+		pipelineUserInitiable:   cfg.PipelineUserInitiable,
+		watchSyncJobType:        cfg.WatchSyncJobType,
+		syncPipelineFull:        cfg.SyncPipelineFull,
+		syncPipelineIncremental: cfg.SyncPipelineIncremental,
+		jobCatalog:              cfg.JobCatalog,
+		pipelineCatalog:         cfg.PipelineCatalog,
+		users:                   newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.Features, log),
+		activities:              newActivityRoutes(cfg.ActivityStore, log),
+		auth:                    cfg.Auth,
+		corsOrigins:             cfg.CORSOrigins,
+		swaggerEnabled:          cfg.SwaggerEnabled,
+		health:                  cfg.Health,
+		log:                     log,
 	}
 }
 
@@ -186,6 +207,7 @@ func (s *Service) Router() *gin.Engine {
 	authed.POST("/pipelines/:name", s.startPipeline)
 	authed.GET("/pipelines/:run_id", s.getPipelineRun)
 	authed.GET("/api/users/:uid/pipelines", s.listUserPipelines)
+	authed.POST("/api/:user/sync", s.syncUser)
 	s.users.register(authed)
 	s.activities.register(authed)
 	return r
