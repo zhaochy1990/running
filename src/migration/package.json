@@ -1,0 +1,22 @@
+{
+  "name": "stride-watch-creds-migration",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "One-off migration of COROS/Garmin watch credentials from Azure Key Vault to the Tencent MySQL provider_credentials table.",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "bin": {
+    "migrate-watch-creds": "src/index.js"
+  },
+  "scripts": {
+    "migrate": "node src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.5.0",
+    "@azure/keyvault-secrets": "^4.9.0",
+    "mysql2": "^3.11.4"
+  }
+}

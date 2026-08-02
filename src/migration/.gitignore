@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Local env / secrets — never commit real credentials or DSNs
+.env
+.env.local
+*.local
+
+# Optional local export files
+akv-export*.json
+out/
