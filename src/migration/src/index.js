@@ -28,6 +28,7 @@ import {
 import {
   corosRowFromSecret,
   garminRowFromSecret,
+  maskEmail,
   redactRow,
   secretNameToUserId,
   TransformError,
@@ -59,6 +60,10 @@ Usage: node src/index.js [options]
   --provider <p>         coros | garmin | all   (default: all)
   --user <uuid>          Restrict to a user UUID. Repeatable; also accepts a
                          comma-separated list. Default: every secret in the vault.
+  --exclude-email <e>    Skip credentials whose email is <e> (case-insensitive).
+                         Repeatable / comma list. For pruning test accounts.
+  --keep-user <uuid>     Never exclude these user UUIDs, even if their email
+                         matches --exclude-email. Repeatable / comma list.
   --limit <n>            Process at most n records.
   --vault-url <url>      Override AKV_VAULT_URL.
   --ensure-schema        CREATE TABLE IF NOT EXISTS before writing (with --commit).
@@ -104,6 +109,8 @@ function parseCli(argv) {
       commit: { type: "boolean", default: false },
       provider: { type: "string", default: "all" },
       user: { type: "string", multiple: true, default: [] },
+      "exclude-email": { type: "string", multiple: true, default: [] },
+      "keep-user": { type: "string", multiple: true, default: [] },
       limit: { type: "string" },
       "vault-url": { type: "string" },
       "ensure-schema": { type: "boolean", default: false },
@@ -129,6 +136,21 @@ function parseCli(argv) {
     .map((u) => u.trim())
     .filter(Boolean);
 
+  // Test-account filter: skip any credential whose email is in excludeEmails,
+  // unless its user_id is in keepUsers (an explicit "real account" exception).
+  const excludeEmails = new Set(
+    values["exclude-email"]
+      .flatMap((e) => e.split(","))
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const keepUsers = new Set(
+    values["keep-user"]
+      .flatMap((u) => u.split(","))
+      .map((u) => u.trim().toLowerCase())
+      .filter(Boolean),
+  );
+
   const limit = values.limit != null ? Number(values.limit) : Infinity;
   if (!(limit > 0)) throw new Error(`--limit must be a positive number`);
 
@@ -140,6 +162,8 @@ function parseCli(argv) {
     help: values.help,
     providers,
     users,
+    excludeEmails,
+    keepUsers,
     limit,
     vaultUrl: values["vault-url"],
   };
@@ -198,6 +222,7 @@ async function main() {
   const rows = [];
   const errors = [];
   const skipped = [];
+  const filtered = [];
 
   for (const ref of refs) {
     const prefix = prefixFor(ref.provider);
@@ -227,6 +252,21 @@ async function main() {
 
     try {
       const row = PROVIDERS[ref.provider].build(userId, value);
+
+      // Drop excluded test accounts (by email), keeping any --keep-user exception.
+      const email = (row.email || "").toLowerCase();
+      if (
+        email &&
+        opts.excludeEmails.has(email) &&
+        !opts.keepUsers.has(row.user_id)
+      ) {
+        filtered.push({ provider: row.provider, user_id: row.user_id });
+        console.log(
+          `  filter ${row.provider}/${row.user_id} — excluded email ${opts.showEmail ? email : maskEmail(row.email)}`,
+        );
+        continue;
+      }
+
       rows.push(row);
       const shown = opts.showEmail
         ? { ...redactRow(row), email: row.email ?? null }
@@ -245,7 +285,7 @@ async function main() {
   }
 
   console.log(
-    `\nplanned ${rows.length} row(s), skipped ${skipped.length}, errors ${errors.length}`,
+    `\nplanned ${rows.length} row(s), filtered ${filtered.length}, skipped ${skipped.length}, errors ${errors.length}`,
   );
 
   if (!opts.commit) {
