@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate, Link, Navigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
+import { apiUrl } from '../lib/apiRouting'
 
 // Auth flows through the stride-web BFF same-origin (ADR 0017): always relative
 // `/api/auth/*`. Only VITE_AUTH_CLIENT_ID (X-Client-Id) is baked into the bundle.
@@ -211,7 +212,7 @@ export default function RegisterPage() {
 
     setLoading(true)
     try {
-      const res = await fetch(`/api/auth/register`, {
+      const res = await fetch(apiUrl('POST', `/api/auth/register`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
         body: JSON.stringify({

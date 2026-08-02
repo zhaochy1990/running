@@ -1,4 +1,5 @@
 import { refreshAccessToken } from './store/authStore'
+import { apiUrl } from './lib/apiRouting'
 import type { ChatResponse, CoachReviewContext, CoachTargetRef, SessionHistoryResponse } from './types/coachChat'
 import type {
   AbandonedScheduledWorkout,
@@ -11,7 +12,6 @@ import type {
 const BASE = '/api'
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
-
 function authHeaders(): HeadersInit {
   const token = sessionStorage.getItem('access_token')
   return token ? { Authorization: `Bearer ${token}` } : {}
@@ -39,11 +39,11 @@ async function apiFetch(
     headers: { ...authHeaders(), ...(setsJsonHeader ? { 'Content-Type': 'application/json' } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
-  let res = await fetch(`${BASE}${path}`, buildInit())
+  let res = await fetch(apiUrl(method, `${BASE}${path}`), buildInit())
   if (res.status === 401) {
     try {
       await refreshAccessToken()
-      res = await fetch(`${BASE}${path}`, buildInit())
+      res = await fetch(apiUrl(method, `${BASE}${path}`), buildInit())
     } catch {
       sessionStorage.clear()
       window.location.href = '/login'
