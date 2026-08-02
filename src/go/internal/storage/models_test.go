@@ -11,7 +11,7 @@ func TestJobModel_RoundTrip(t *testing.T) {
 	now := time.Date(2026, 3, 4, 5, 6, 7, 890000000, time.UTC)
 	done := now.Add(time.Minute)
 	in := &job.Job{
-		ID: "j1", PartitionKey: "u1", Type: "greet", Status: job.StatusDone,
+		ID: "j1", UserID: "u1", CreatedBy: "u1", Type: "greet", Status: job.StatusDone,
 		Attempts: 2, Stage: "phase-2", ProgressPct: 100,
 		InputJSON: `{"a":1}`, ResultJSON: `{"ok":true}`,
 		ErrorCode: "", ErrorMessage: "", PipelineRunID: "run-9",
@@ -26,7 +26,7 @@ func TestJobModel_RoundTrip(t *testing.T) {
 func TestPipelineModel_RoundTrip(t *testing.T) {
 	now := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
 	in := &job.PipelineRun{
-		RunID: "run-1", PartitionKey: "u1", UserID: "trigger-1", Name: "onboarding",
+		RunID: "run-1", UserID: "u1", CreatedBy: "trigger-1", Name: "onboarding",
 		Status: job.StatusRunning, CurrentStep: 1,
 		Steps: []job.PipelineStep{
 			{Name: "full_sync", JobType: "onboarding_full_sync", Status: job.StatusDone, JobID: "j1"},
@@ -54,7 +54,7 @@ func TestPipelineModel_RoundTrip(t *testing.T) {
 }
 
 func TestPipelineModel_EmptyStepsJSON(t *testing.T) {
-	m := &pipelineRunModel{RunID: "r", PartitionKey: "u", Name: "x", Status: "queued"}
+	m := &pipelineRunModel{RunID: "r", UserID: nullIfEmpty("u"), Name: "x", Status: "queued"}
 	out, err := m.toDomain()
 	if err != nil {
 		t.Fatalf("to domain: %v", err)

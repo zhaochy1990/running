@@ -59,7 +59,7 @@ func run(t *testing.T, f *fakeProvider, input string) (string, error, []string, 
 		pcts = append(pcts, pct)
 		return nil
 	}
-	res, err := h(context.Background(), &job.Job{PartitionKey: "u-123", InputJSON: input}, hb)
+	res, err := h(context.Background(), &job.Job{UserID: "u-123", InputJSON: input}, hb)
 	return res, err, stages, pcts
 }
 
@@ -157,7 +157,7 @@ func TestHandler_ResolveError_Retryable(t *testing.T) {
 	h := New(func(context.Context, string) (Provider, error) {
 		return nil, errors.New("db down while resolving provider")
 	}, &fakeMarker{})
-	_, err := h(context.Background(), &job.Job{PartitionKey: "u-123"}, func(string, int) error { return nil })
+	_, err := h(context.Background(), &job.Job{UserID: "u-123"}, func(string, int) error { return nil })
 	if err == nil {
 		t.Fatal("want error")
 	}
@@ -190,7 +190,7 @@ func TestHandler_StampsLastSyncTimeOnSuccess(t *testing.T) {
 	f := &fakeProvider{loggedIn: true, result: provider.SyncResult{Activities: 1}}
 	m := &fakeMarker{}
 	h := New(func(context.Context, string) (Provider, error) { return f, nil }, m)
-	if _, err := h(context.Background(), &job.Job{PartitionKey: "u-123"}, func(string, int) error { return nil }); err != nil {
+	if _, err := h(context.Background(), &job.Job{UserID: "u-123"}, func(string, int) error { return nil }); err != nil {
 		t.Fatalf("handler: %v", err)
 	}
 	if _, ok := m.set[storage.MetaKeyLastSyncTime]; !ok {
@@ -202,7 +202,7 @@ func TestHandler_NoStampOnFailedSync(t *testing.T) {
 	f := &fakeProvider{loggedIn: true, syncErr: errors.New("connection reset")}
 	m := &fakeMarker{}
 	h := New(func(context.Context, string) (Provider, error) { return f, nil }, m)
-	if _, err := h(context.Background(), &job.Job{PartitionKey: "u-123"}, func(string, int) error { return nil }); err == nil {
+	if _, err := h(context.Background(), &job.Job{UserID: "u-123"}, func(string, int) error { return nil }); err == nil {
 		t.Fatal("want error")
 	}
 	if len(m.set) != 0 {

@@ -37,39 +37,39 @@ func newFakeJobs() *fakeJobs {
 	return &fakeJobs{byID: map[string]*job.Job{}, byIdem: map[string]*job.Job{}}
 }
 
-func jkey(pk, id string) string { return pk + "|" + id }
+func jkey(a, b string) string { return a + "|" + b }
 
 func (f *fakeJobs) Enqueue(_ context.Context, spec job.EnqueueSpec) (string, error) {
 	if f.enqError != nil {
 		return "", f.enqError
 	}
 	if spec.IdempotencyKey != "" {
-		if _, ok := f.byIdem[jkey(spec.PartitionKey, spec.IdempotencyKey)]; ok {
+		if _, ok := f.byIdem[jkey(spec.UserID, spec.IdempotencyKey)]; ok {
 			return "", job.ErrConflict
 		}
 	}
 	f.nextID++
 	id := "job-" + string(rune('a'+f.nextID))
-	j := &job.Job{ID: id, PartitionKey: spec.PartitionKey, Type: spec.Type, Status: job.StatusQueued, InputJSON: spec.InputJSON, IdempotencyKey: spec.IdempotencyKey}
-	f.byID[jkey(spec.PartitionKey, id)] = j
+	j := &job.Job{ID: id, UserID: spec.UserID, CreatedBy: spec.CreatedBy, Type: spec.Type, Status: job.StatusQueued, InputJSON: spec.InputJSON, IdempotencyKey: spec.IdempotencyKey}
+	f.byID[id] = j
 	if spec.IdempotencyKey != "" {
-		f.byIdem[jkey(spec.PartitionKey, spec.IdempotencyKey)] = j
+		f.byIdem[jkey(spec.UserID, spec.IdempotencyKey)] = j
 	}
 	return id, nil
 }
 
-func (f *fakeJobs) Get(_ context.Context, pk, id string) (*job.Job, error) {
-	if j, ok := f.byID[jkey(pk, id)]; ok {
+func (f *fakeJobs) Get(_ context.Context, id string) (*job.Job, error) {
+	if j, ok := f.byID[id]; ok {
 		return j, nil
 	}
-	return nil, &job.ErrNotFound{Key: jkey(pk, id)}
+	return nil, &job.ErrNotFound{Key: id}
 }
 
-func (f *fakeJobs) JobByIdempotencyKey(_ context.Context, pk, key string) (*job.Job, error) {
-	if j, ok := f.byIdem[jkey(pk, key)]; ok {
+func (f *fakeJobs) JobByIdempotencyKey(_ context.Context, userID, key string) (*job.Job, error) {
+	if j, ok := f.byIdem[jkey(userID, key)]; ok {
 		return j, nil
 	}
-	return nil, &job.ErrNotFound{Key: jkey(pk, key)}
+	return nil, &job.ErrNotFound{Key: jkey(userID, key)}
 }
 
 type fakeRuns struct {
@@ -84,34 +84,34 @@ func newFakeRuns() *fakeRuns {
 }
 
 // seedRun inserts a run directly (bypassing StartPipeline) so list tests can set
-// an explicit UserID and partition.
+// an explicit UserID/CreatedBy.
 func (f *fakeRuns) seedRun(r *job.PipelineRun) {
-	f.byID[jkey(r.PartitionKey, r.RunID)] = r
+	f.byID[r.RunID] = r
 	f.order = append(f.order, r)
 }
 
-func (f *fakeRuns) StartPipeline(_ context.Context, name, pk, userID, idem string) (string, error) {
+func (f *fakeRuns) StartPipeline(_ context.Context, name, userID, createdBy, idem string) (string, error) {
 	if idem != "" {
-		if _, ok := f.byIdem[jkey(pk, idem)]; ok {
+		if _, ok := f.byIdem[jkey(userID, idem)]; ok {
 			return "", job.ErrConflict
 		}
 	}
 	f.nextID++
 	id := "run-" + string(rune('a'+f.nextID))
-	r := &job.PipelineRun{RunID: id, PartitionKey: pk, UserID: userID, Name: name, Status: job.StatusRunning, IdempotencyKey: idem}
-	f.byID[jkey(pk, id)] = r
+	r := &job.PipelineRun{RunID: id, UserID: userID, CreatedBy: createdBy, Name: name, Status: job.StatusRunning, IdempotencyKey: idem}
+	f.byID[id] = r
 	f.order = append(f.order, r)
 	if idem != "" {
-		f.byIdem[jkey(pk, idem)] = r
+		f.byIdem[jkey(userID, idem)] = r
 	}
 	return id, nil
 }
 
-func (f *fakeRuns) Get(_ context.Context, pk, id string) (*job.PipelineRun, error) {
-	if r, ok := f.byID[jkey(pk, id)]; ok {
+func (f *fakeRuns) Get(_ context.Context, id string) (*job.PipelineRun, error) {
+	if r, ok := f.byID[id]; ok {
 		return r, nil
 	}
-	return nil, &job.ErrNotFound{Key: jkey(pk, id)}
+	return nil, &job.ErrNotFound{Key: id}
 }
 
 // PipelineRunsByUser returns the seeded runs whose UserID matches, in insertion
@@ -215,32 +215,41 @@ func TestCreateJob_Unauthorized(t *testing.T) {
 	}
 }
 
-func TestCreateJob_Internal_AnyTypeAndPartition(t *testing.T) {
+func TestCreateJob_Internal_AnyTypeSystemJob(t *testing.T) {
 	h := newHarness(t)
-	w := h.do(http.MethodPost, "/jobs", `{"type":"hello","partition_key":"Global"}`, internalHdr())
+	w := h.do(http.MethodPost, "/jobs", `{"type":"hello"}`, internalHdr())
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("code = %d, want 202: %s", w.Code, w.Body.String())
 	}
 	var resp enqueueJobResponse
 	mustJSON(t, w, &resp)
-	if resp.JobID == "" || resp.PartitionKey != "Global" {
+	if resp.JobID == "" {
 		t.Fatalf("resp = %+v", resp)
+	}
+	// A system (internal, no user_id) job carries an empty subject.
+	j, err := h.jobs.Get(context.Background(), resp.JobID)
+	if err != nil || j.UserID != "" {
+		t.Fatalf("system job user_id = %q (err %v), want empty", j.UserID, err)
 	}
 }
 
-func TestCreateJob_User_DerivesPartitionFromSub(t *testing.T) {
+func TestCreateJob_User_DerivesUserFromSub(t *testing.T) {
 	h := newHarness(t)
 	tok := h.userToken(t, "user-123")
-	// A client-supplied partition_key must be ignored for the user tier.
-	w := h.do(http.MethodPost, "/jobs", `{"type":"watch_sync","partition_key":"someone-else"}`,
+	// A client-supplied user_id must be ignored for the user tier.
+	w := h.do(http.MethodPost, "/jobs", `{"type":"watch_sync","user_id":"someone-else"}`,
 		map[string]string{"Authorization": "Bearer " + tok})
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("code = %d, want 202: %s", w.Code, w.Body.String())
 	}
 	var resp enqueueJobResponse
 	mustJSON(t, w, &resp)
-	if resp.PartitionKey != "user-123" {
-		t.Fatalf("partition = %q, want user-123", resp.PartitionKey)
+	j, err := h.jobs.Get(context.Background(), resp.JobID)
+	if err != nil || j.UserID != "user-123" {
+		t.Fatalf("subject = %q (err %v), want user-123", j.UserID, err)
+	}
+	if j.CreatedBy != "user-123" {
+		t.Fatalf("created_by = %q, want user-123", j.CreatedBy)
 	}
 }
 
@@ -283,23 +292,25 @@ func TestCreateJob_IdempotentReplay(t *testing.T) {
 	}
 }
 
-func TestGetJob_UserPartitionScoping(t *testing.T) {
+func TestGetJob_UserScoping(t *testing.T) {
 	h := newHarness(t)
-	// Seed a job in user-123's partition.
-	id, _ := h.jobs.Enqueue(context.Background(), job.EnqueueSpec{Type: "watch_sync", PartitionKey: "user-123"})
+	// Seed a job owned by user-123.
+	id, _ := h.jobs.Enqueue(context.Background(), job.EnqueueSpec{Type: "watch_sync", UserID: "user-123"})
 	tok := h.userToken(t, "user-123")
 
-	ok := h.do(http.MethodGet, "/jobs/user-123/"+id, "", map[string]string{"Authorization": "Bearer " + tok})
+	ok := h.do(http.MethodGet, "/jobs/"+id, "", map[string]string{"Authorization": "Bearer " + tok})
 	if ok.Code != http.StatusOK {
 		t.Fatalf("own get code = %d, want 200: %s", ok.Code, ok.Body.String())
 	}
 
-	forbidden := h.do(http.MethodGet, "/jobs/other-user/"+id, "", map[string]string{"Authorization": "Bearer " + tok})
-	if forbidden.Code != http.StatusForbidden {
-		t.Fatalf("cross-partition code = %d, want 403", forbidden.Code)
+	// Another user must not see it exists — 404, not 403.
+	otherTok := h.userToken(t, "other-user")
+	notMine := h.do(http.MethodGet, "/jobs/"+id, "", map[string]string{"Authorization": "Bearer " + otherTok})
+	if notMine.Code != http.StatusNotFound {
+		t.Fatalf("cross-user code = %d, want 404", notMine.Code)
 	}
 
-	missing := h.do(http.MethodGet, "/jobs/user-123/nope", "", map[string]string{"Authorization": "Bearer " + tok})
+	missing := h.do(http.MethodGet, "/jobs/nope", "", map[string]string{"Authorization": "Bearer " + tok})
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("missing code = %d, want 404", missing.Code)
 	}
@@ -315,8 +326,13 @@ func TestStartPipeline_UserInitiableAndUnknown(t *testing.T) {
 	}
 	var resp startPipelineResponse
 	mustJSON(t, ok, &resp)
-	if resp.RunID == "" || resp.PartitionKey != "user-9" || resp.PipelineName != "onboarding" {
+	if resp.RunID == "" || resp.PipelineName != "onboarding" {
 		t.Fatalf("resp = %+v", resp)
+	}
+	// Subject and creator are both the JWT sub for a user-started run.
+	run, err := h.runs.Get(context.Background(), resp.RunID)
+	if err != nil || run.UserID != "user-9" || run.CreatedBy != "user-9" {
+		t.Fatalf("run subject/creator = %q/%q (err %v), want user-9/user-9", run.UserID, run.CreatedBy, err)
 	}
 
 	unknown := h.do(http.MethodPost, "/pipelines/does-not-exist", "", map[string]string{"Authorization": "Bearer " + tok})
@@ -341,10 +357,10 @@ func TestListUserPipelines_Unauthorized(t *testing.T) {
 
 func TestListUserPipelines_UserScoping(t *testing.T) {
 	h := newHarness(t)
-	// Two runs triggered by user-a, one by user-b.
-	h.runs.seedRun(&job.PipelineRun{RunID: "r1", PartitionKey: "user-a", UserID: "user-a", Name: "onboarding", Status: job.StatusRunning})
-	h.runs.seedRun(&job.PipelineRun{RunID: "r2", PartitionKey: "user-a", UserID: "user-a", Name: "onboarding", Status: job.StatusDone})
-	h.runs.seedRun(&job.PipelineRun{RunID: "r3", PartitionKey: "user-b", UserID: "user-b", Name: "onboarding", Status: job.StatusRunning})
+	// Two runs for user-a, one for user-b (keyed by subject user_id).
+	h.runs.seedRun(&job.PipelineRun{RunID: "r1", UserID: "user-a", Name: "onboarding", Status: job.StatusRunning})
+	h.runs.seedRun(&job.PipelineRun{RunID: "r2", UserID: "user-a", Name: "onboarding", Status: job.StatusDone})
+	h.runs.seedRun(&job.PipelineRun{RunID: "r3", UserID: "user-b", Name: "onboarding", Status: job.StatusRunning})
 
 	tok := h.userToken(t, "user-a")
 
@@ -371,10 +387,10 @@ func TestListUserPipelines_UserScoping(t *testing.T) {
 	}
 }
 
-func TestListUserPipelines_InternalListsAnyAndInternalToken(t *testing.T) {
+func TestListUserPipelines_InternalListsAnyUser(t *testing.T) {
 	h := newHarness(t)
-	h.runs.seedRun(&job.PipelineRun{RunID: "r1", PartitionKey: "user-a", UserID: "user-a", Name: "onboarding", Status: job.StatusRunning})
-	h.runs.seedRun(&job.PipelineRun{RunID: "r2", PartitionKey: "Global", UserID: job.InternalTokenUserID, Name: "onboarding", Status: job.StatusRunning})
+	h.runs.seedRun(&job.PipelineRun{RunID: "r1", UserID: "user-a", CreatedBy: "user-a", Name: "onboarding", Status: job.StatusRunning})
+	h.runs.seedRun(&job.PipelineRun{RunID: "r2", UserID: "user-b", CreatedBy: "", Name: "onboarding", Status: job.StatusRunning})
 
 	// An internal caller may list any user.
 	anyUser := h.do(http.MethodGet, "/api/users/user-a/pipelines", "", internalHdr())
@@ -387,23 +403,23 @@ func TestListUserPipelines_InternalListsAnyAndInternalToken(t *testing.T) {
 		t.Fatalf("internal list of user-a = %+v", a.Pipelines)
 	}
 
-	// Internal-triggered runs are grouped under the synthetic identity.
-	internalRuns := h.do(http.MethodGet, "/api/users/"+job.InternalTokenUserID+"/pipelines", "", internalHdr())
-	if internalRuns.Code != http.StatusOK {
-		t.Fatalf("internal-token list code = %d, want 200", internalRuns.Code)
+	// A run internal-triggered for a subject is listed under that subject.
+	subjectRuns := h.do(http.MethodGet, "/api/users/user-b/pipelines", "", internalHdr())
+	if subjectRuns.Code != http.StatusOK {
+		t.Fatalf("subject list code = %d, want 200", subjectRuns.Code)
 	}
 	var b userPipelinesResponse
-	mustJSON(t, internalRuns, &b)
-	if len(b.Pipelines) != 1 || b.Pipelines[0].UserID != job.InternalTokenUserID {
-		t.Fatalf("internal-token list = %+v", b.Pipelines)
+	mustJSON(t, subjectRuns, &b)
+	if len(b.Pipelines) != 1 || b.Pipelines[0].UserID != "user-b" {
+		t.Fatalf("subject list = %+v", b.Pipelines)
 	}
 }
 
-func TestStartPipeline_RecordsTriggerIdentity(t *testing.T) {
+func TestStartPipeline_RecordsIdentities(t *testing.T) {
 	h := newHarness(t)
 	tok := h.userToken(t, "user-7")
 
-	// User-triggered start records user_id == sub and is listed under the user.
+	// User-triggered start records user_id == created_by == sub, listed under the user.
 	start := h.do(http.MethodPost, "/pipelines/onboarding", "", map[string]string{"Authorization": "Bearer " + tok})
 	if start.Code != http.StatusAccepted {
 		t.Fatalf("start code = %d, want 202: %s", start.Code, start.Body.String())
@@ -411,20 +427,26 @@ func TestStartPipeline_RecordsTriggerIdentity(t *testing.T) {
 	list := h.do(http.MethodGet, "/api/users/user-7/pipelines", "", map[string]string{"Authorization": "Bearer " + tok})
 	var resp userPipelinesResponse
 	mustJSON(t, list, &resp)
-	if len(resp.Pipelines) != 1 || resp.Pipelines[0].UserID != "user-7" {
-		t.Fatalf("user-triggered run not listed under sub: %+v", resp.Pipelines)
+	if len(resp.Pipelines) != 1 || resp.Pipelines[0].UserID != "user-7" || resp.Pipelines[0].CreatedBy != "user-7" {
+		t.Fatalf("user-triggered run not recorded under sub: %+v", resp.Pipelines)
 	}
 
-	// Internal-triggered start records user_id == internal-token.
-	internalStart := h.do(http.MethodPost, "/pipelines/onboarding", `{"partition_key":"Global"}`, internalHdr())
+	// Internal-triggered start for a subject: user_id is the subject, created_by empty.
+	internalStart := h.do(http.MethodPost, "/pipelines/onboarding", `{"user_id":"user-x"}`, internalHdr())
 	if internalStart.Code != http.StatusAccepted {
 		t.Fatalf("internal start code = %d, want 202: %s", internalStart.Code, internalStart.Body.String())
 	}
-	internalList := h.do(http.MethodGet, "/api/users/"+job.InternalTokenUserID+"/pipelines", "", internalHdr())
+	var isr startPipelineResponse
+	mustJSON(t, internalStart, &isr)
+	run, err := h.runs.Get(context.Background(), isr.RunID)
+	if err != nil || run.UserID != "user-x" || run.CreatedBy != "" {
+		t.Fatalf("internal run subject/creator = %q/%q (err %v), want user-x/empty", run.UserID, run.CreatedBy, err)
+	}
+	internalList := h.do(http.MethodGet, "/api/users/user-x/pipelines", "", internalHdr())
 	var iresp userPipelinesResponse
 	mustJSON(t, internalList, &iresp)
-	if len(iresp.Pipelines) != 1 || iresp.Pipelines[0].UserID != job.InternalTokenUserID {
-		t.Fatalf("internal-triggered run not under internal-token: %+v", iresp.Pipelines)
+	if len(iresp.Pipelines) != 1 || iresp.Pipelines[0].UserID != "user-x" {
+		t.Fatalf("internal-triggered run not under subject: %+v", iresp.Pipelines)
 	}
 }
 

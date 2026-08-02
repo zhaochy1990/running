@@ -1,6 +1,6 @@
 // Package api is the HTTP API server (cmd/api) that fronts the async-job worker
 // (ADR 0012). It exposes create/read for Async Jobs and Pipeline Runs over gin,
-// with two auth tiers (internal shared secret + end-user RS256 JWT), partition
+// with two auth tiers (internal shared secret + end-user RS256 JWT), per-user
 // scoping, a shared job-type/pipeline catalog, and day-one idempotency. It owns
 // no storage or broker logic — those arrive via the small interfaces below,
 // satisfied by internal/storage, internal/job and internal/pipeline.
@@ -29,34 +29,34 @@ type Enqueuer interface {
 	Enqueue(ctx context.Context, spec job.EnqueueSpec) (string, error)
 }
 
-// JobGetter reads a job's durable state by (partition, id).
+// JobGetter reads a job's durable state by its globally-unique id.
 type JobGetter interface {
-	Get(ctx context.Context, partitionKey, jobID string) (*job.Job, error)
+	Get(ctx context.Context, jobID string) (*job.Job, error)
 }
 
 // JobIdemLookup resolves a job by its idempotency key (dedup + conflict replay).
 type JobIdemLookup interface {
-	JobByIdempotencyKey(ctx context.Context, partitionKey, key string) (*job.Job, error)
+	JobByIdempotencyKey(ctx context.Context, userID, key string) (*job.Job, error)
 }
 
 // PipelineStarter starts a pipeline run (store-first) with an idempotency key.
 type PipelineStarter interface {
-	StartPipeline(ctx context.Context, name, partitionKey, userID, idempotencyKey string) (string, error)
+	StartPipeline(ctx context.Context, name, userID, createdBy, idempotencyKey string) (string, error)
 }
 
-// RunGetter reads a pipeline run's aggregate state by (partition, run id).
+// RunGetter reads a pipeline run's aggregate state by its globally-unique id.
 type RunGetter interface {
-	Get(ctx context.Context, partitionKey, runID string) (*job.PipelineRun, error)
+	Get(ctx context.Context, runID string) (*job.PipelineRun, error)
 }
 
-// RunLister lists the pipeline runs triggered by a user (newest first, capped).
+// RunLister lists the pipeline runs for a user (the subject; newest first, capped).
 type RunLister interface {
 	PipelineRunsByUser(ctx context.Context, userID string) ([]*job.PipelineRun, error)
 }
 
 // RunIdemLookup resolves a run by its idempotency key.
 type RunIdemLookup interface {
-	PipelineRunByIdempotencyKey(ctx context.Context, partitionKey, key string) (*job.PipelineRun, error)
+	PipelineRunByIdempotencyKey(ctx context.Context, userID, key string) (*job.PipelineRun, error)
 }
 
 // Config wires a Service.
@@ -174,9 +174,9 @@ func (s *Service) Router() *gin.Engine {
 
 	authed := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
 	authed.POST("/jobs", s.createJob)
-	authed.GET("/jobs/:partition_key/:job_id", s.getJob)
+	authed.GET("/jobs/:job_id", s.getJob)
 	authed.POST("/pipelines/:name", s.startPipeline)
-	authed.GET("/pipelines/:partition_key/:run_id", s.getPipelineRun)
+	authed.GET("/pipelines/:run_id", s.getPipelineRun)
 	authed.GET("/api/users/:uid/pipelines", s.listUserPipelines)
 	s.users.register(authed)
 	return r
@@ -199,27 +199,25 @@ func limitBody(max int64) gin.HandlerFunc {
 	}
 }
 
-// resolvePartition returns the partition key a create request should target: for
-// the user tier it is always the JWT sub (client value ignored, ADR 0012); for
-// the internal tier it is the client-supplied value, defaulting to Global.
-func resolvePartition(caller Caller, requested string) string {
+// resolveUserID returns the subject a create request targets: for the user tier
+// it is always the JWT sub (client value ignored, ADR 0012); for the internal
+// tier it is the client-supplied value, defaulting to empty (a system job/run,
+// stored as NULL).
+func resolveUserID(caller Caller, requested string) string {
 	if caller.Tier == TierUser {
 		return caller.UserID
-	}
-	if requested == "" {
-		return job.GlobalPartition
 	}
 	return requested
 }
 
-// resolveUserID returns the identity to record as the run's trigger: the JWT sub
-// for the user tier, or the fixed job.InternalTokenUserID for internal callers
-// (so every internal-triggered run is listable under one stable id).
-func resolveUserID(caller Caller) string {
+// resolveCreatedBy returns the actor to record as the record's creator (pure
+// provenance): the JWT sub for the user tier, or empty (NULL) for internal
+// callers.
+func resolveCreatedBy(caller Caller) string {
 	if caller.Tier == TierUser {
 		return caller.UserID
 	}
-	return job.InternalTokenUserID
+	return ""
 }
 
 // zapErr wraps an error as a structured log field.

@@ -7,40 +7,41 @@ import (
 	"github.com/zhaochy1990/stride/internal/job"
 )
 
-// createJobRequest is the POST /jobs body. partition_key is honored only for the
-// internal tier; for the user tier it is ignored and derived from the JWT sub.
+// createJobRequest is the POST /jobs body. user_id is honored only for the
+// internal tier (the subject the job operates on); for the user tier it is
+// ignored and derived from the JWT sub.
 type createJobRequest struct {
-	Type         string          `json:"type" binding:"required" example:"watch_sync"`
-	PartitionKey string          `json:"partition_key,omitempty" example:"Global"`
-	Input        json.RawMessage `json:"input,omitempty" swaggertype:"object"`
+	Type   string          `json:"type" binding:"required" example:"watch_sync"`
+	UserID string          `json:"user_id,omitempty"`
+	Input  json.RawMessage `json:"input,omitempty" swaggertype:"object"`
 }
 
 // enqueueJobResponse is returned by POST /jobs. Deduplicated is true when an
 // Idempotency-Key matched an existing job (HTTP 200) rather than creating one.
 type enqueueJobResponse struct {
 	JobID        string `json:"job_id"`
-	PartitionKey string `json:"partition_key"`
 	Deduplicated bool   `json:"deduplicated,omitempty"`
 }
 
 // startPipelineRequest is the POST /pipelines/{name} body (all fields optional).
+// user_id (the subject) is honored only for the internal tier.
 type startPipelineRequest struct {
-	PartitionKey string          `json:"partition_key,omitempty"`
-	Input        json.RawMessage `json:"input,omitempty" swaggertype:"object"`
+	UserID string          `json:"user_id,omitempty"`
+	Input  json.RawMessage `json:"input,omitempty" swaggertype:"object"`
 }
 
 // startPipelineResponse is returned by POST /pipelines/{name}.
 type startPipelineResponse struct {
 	RunID        string `json:"run_id"`
-	PartitionKey string `json:"partition_key"`
 	PipelineName string `json:"pipeline_name"`
 	Deduplicated bool   `json:"deduplicated,omitempty"`
 }
 
-// jobStateResponse is the GET /jobs/{pk}/{id} body.
+// jobStateResponse is the GET /jobs/{job_id} body.
 type jobStateResponse struct {
 	JobID        string     `json:"job_id"`
-	PartitionKey string     `json:"partition_key"`
+	UserID       string     `json:"user_id,omitempty"`
+	CreatedBy    string     `json:"created_by,omitempty"`
 	JobType      string     `json:"job_type"`
 	Status       string     `json:"status"`
 	ProgressPct  int        `json:"progress_pct"`
@@ -62,11 +63,11 @@ type pipelineStepResponse struct {
 	JobID   string `json:"job_id,omitempty"`
 }
 
-// runStateResponse is the GET /pipelines/{pk}/{run_id} body.
+// runStateResponse is the GET /pipelines/{run_id} body.
 type runStateResponse struct {
 	RunID        string                 `json:"run_id"`
-	PartitionKey string                 `json:"partition_key"`
-	UserID       string                 `json:"user_id"`
+	UserID       string                 `json:"user_id,omitempty"`
+	CreatedBy    string                 `json:"created_by,omitempty"`
 	PipelineName string                 `json:"pipeline_name"`
 	Status       string                 `json:"status"`
 	CurrentStep  int                    `json:"current_step"`
@@ -128,7 +129,8 @@ type pipelineCatalogResponse struct {
 func toJobStateResponse(j *job.Job) jobStateResponse {
 	return jobStateResponse{
 		JobID:        j.ID,
-		PartitionKey: j.PartitionKey,
+		UserID:       j.UserID,
+		CreatedBy:    j.CreatedBy,
 		JobType:      j.Type,
 		Status:       string(j.Status),
 		ProgressPct:  j.ProgressPct,
@@ -155,8 +157,8 @@ func toRunStateResponse(r *job.PipelineRun) runStateResponse {
 	}
 	return runStateResponse{
 		RunID:        r.RunID,
-		PartitionKey: r.PartitionKey,
 		UserID:       r.UserID,
+		CreatedBy:    r.CreatedBy,
 		PipelineName: r.Name,
 		Status:       string(r.Status),
 		CurrentStep:  r.CurrentStep,

@@ -8,7 +8,7 @@ import (
 )
 
 func TestMessageCodec_RoundTrip(t *testing.T) {
-	in := job.Message{JobID: "j1", PartitionKey: "u1"}
+	in := job.Message{JobID: "j1", UserID: "u1"}
 	b, err := encodeMessage(in)
 	if err != nil {
 		t.Fatalf("encode: %v", err)

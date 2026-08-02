@@ -204,7 +204,7 @@ func (c *Consumer) handleDelivery(ctx context.Context, d amqp.Delivery, handle H
 		_ = d.Reject(false)
 		return
 	}
-	c.log.Info("message received", zap.String("job_id", m.JobID), zap.String("partition", m.PartitionKey))
+	c.log.Info("message received", zap.String("job_id", m.JobID), zap.String("user_id", m.UserID))
 	if err := handle(ctx, m); err != nil {
 		// Infra fault: requeue for redelivery when the fault clears.
 		c.log.Warn("message handler faulted, requeueing", zap.String("job_id", m.JobID), zap.Error(err))

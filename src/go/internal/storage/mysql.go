@@ -54,10 +54,64 @@ func forceUTCDSN(dsn string) (string, error) {
 	return cfg.FormatDSN(), nil
 }
 
-// AutoMigrate creates/updates the jobs and pipeline_runs tables.
+// AutoMigrate creates/updates the jobs and pipeline_runs tables. It first
+// applies a transitional rename of the legacy partition_key/user_id columns to
+// the new user_id (subject) / created_by (actor) shape, so an existing database
+// upgrades in place; on a fresh database the renames are skipped and the tables
+// are created directly in the new shape.
 func (s *Store) AutoMigrate(ctx context.Context) error {
-	if err := s.db.WithContext(ctx).AutoMigrate(&jobModel{}, &pipelineRunModel{}); err != nil {
+	db := s.db.WithContext(ctx)
+	if err := s.migrateLegacyPartitionColumns(db); err != nil {
+		return err
+	}
+	if err := db.AutoMigrate(&jobModel{}, &pipelineRunModel{}); err != nil {
 		return fmt.Errorf("storage: automigrate: %w", err)
+	}
+	return nil
+}
+
+// migrateLegacyPartitionColumns renames pre-rename columns/indexes to the new
+// shape. Each step is guarded by a HasColumn/HasIndex check so it is idempotent
+// and a no-op on a fresh database. AutoMigrate then reconciles types, nullability
+// and rebuilds the new indexes.
+func (s *Store) migrateLegacyPartitionColumns(db *gorm.DB) error {
+	m := db.Migrator()
+
+	if m.HasTable(&jobModel{}) {
+		if m.HasColumn(&jobModel{}, "partition_key") && !m.HasColumn(&jobModel{}, "user_id") {
+			if err := m.RenameColumn(&jobModel{}, "partition_key", "user_id"); err != nil {
+				return fmt.Errorf("storage: rename jobs.partition_key: %w", err)
+			}
+		}
+		for _, idx := range []string{"idx_jobs_partition", "uq_jobs_partition_idem"} {
+			if m.HasIndex(&jobModel{}, idx) {
+				if err := m.DropIndex(&jobModel{}, idx); err != nil {
+					return fmt.Errorf("storage: drop jobs index %s: %w", idx, err)
+				}
+			}
+		}
+	}
+
+	if m.HasTable(&pipelineRunModel{}) {
+		// Order matters: the legacy user_id (triggerer) becomes created_by first,
+		// then partition_key (subject) takes over the user_id column name.
+		if m.HasColumn(&pipelineRunModel{}, "user_id") && !m.HasColumn(&pipelineRunModel{}, "created_by") {
+			if err := m.RenameColumn(&pipelineRunModel{}, "user_id", "created_by"); err != nil {
+				return fmt.Errorf("storage: rename pipeline_runs.user_id: %w", err)
+			}
+		}
+		if m.HasColumn(&pipelineRunModel{}, "partition_key") {
+			if err := m.RenameColumn(&pipelineRunModel{}, "partition_key", "user_id"); err != nil {
+				return fmt.Errorf("storage: rename pipeline_runs.partition_key: %w", err)
+			}
+		}
+		for _, idx := range []string{"idx_runs_partition", "uq_runs_partition_idem", "idx_runs_user"} {
+			if m.HasIndex(&pipelineRunModel{}, idx) {
+				if err := m.DropIndex(&pipelineRunModel{}, idx); err != nil {
+					return fmt.Errorf("storage: drop pipeline_runs index %s: %w", idx, err)
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -68,27 +122,28 @@ func (s *Store) Jobs() job.Store { return &jobStore{db: s.db} }
 // Pipelines returns the job.PipelineStore implementation.
 func (s *Store) Pipelines() job.PipelineStore { return &pipelineStore{db: s.db} }
 
-// JobByIdempotencyKey returns the job with the given idempotency key in the
-// partition, or a job.ErrNotFound. Used by the HTTP API to resolve a duplicate
+// JobByIdempotencyKey returns the job with the given idempotency key for the
+// user, or a job.ErrNotFound. Used by the HTTP API to resolve a duplicate
 // create (same key) back to the existing job.
-func (s *Store) JobByIdempotencyKey(ctx context.Context, partitionKey, key string) (*job.Job, error) {
-	return (&jobStore{db: s.db}).byIdempotencyKey(ctx, partitionKey, key)
+func (s *Store) JobByIdempotencyKey(ctx context.Context, userID, key string) (*job.Job, error) {
+	return (&jobStore{db: s.db}).byIdempotencyKey(ctx, userID, key)
 }
 
-// PipelineRunByIdempotencyKey returns the run with the given idempotency key in
-// the partition, or a job.ErrNotFound.
-func (s *Store) PipelineRunByIdempotencyKey(ctx context.Context, partitionKey, key string) (*job.PipelineRun, error) {
-	return (&pipelineStore{db: s.db}).byIdempotencyKey(ctx, partitionKey, key)
+// PipelineRunByIdempotencyKey returns the run with the given idempotency key for
+// the user, or a job.ErrNotFound.
+func (s *Store) PipelineRunByIdempotencyKey(ctx context.Context, userID, key string) (*job.PipelineRun, error) {
+	return (&pipelineStore{db: s.db}).byIdempotencyKey(ctx, userID, key)
 }
 
-// PipelineRunsByUser returns the pipeline runs triggered by userID, most recent
-// first (capped at maxPipelineRunsPerUser). Used by GET /api/users/{uid}/pipelines.
+// PipelineRunsByUser returns the pipeline runs for userID (the subject), most
+// recent first (capped at maxPipelineRunsPerUser). Used by GET
+// /api/users/{uid}/pipelines.
 func (s *Store) PipelineRunsByUser(ctx context.Context, userID string) ([]*job.PipelineRun, error) {
 	return (&pipelineStore{db: s.db}).listByUser(ctx, userID)
 }
 
 // isDuplicateKey reports whether err is a MySQL duplicate-entry (1062) error,
-// which fires when the unique (partition_key, idempotency_key) index is violated.
+// which fires when the unique (user_id, idempotency_key) index is violated.
 func isDuplicateKey(err error) bool {
 	var me *gomysql.MySQLError
 	return errors.As(err, &me) && me.Number == 1062
@@ -124,13 +179,13 @@ func (s *jobStore) Create(ctx context.Context, j *job.Job) error {
 	return err
 }
 
-func (s *jobStore) Get(ctx context.Context, partitionKey, jobID string) (*job.Job, error) {
+func (s *jobStore) Get(ctx context.Context, jobID string) (*job.Job, error) {
 	var m jobModel
 	err := s.db.WithContext(ctx).
-		Where("partition_key = ? AND id = ?", partitionKey, jobID).
+		Where("id = ?", jobID).
 		First(&m).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, &job.ErrNotFound{Key: partitionKey + "|" + jobID}
+		return nil, &job.ErrNotFound{Key: jobID}
 	}
 	if err != nil {
 		return nil, err
@@ -138,14 +193,14 @@ func (s *jobStore) Get(ctx context.Context, partitionKey, jobID string) (*job.Jo
 	return m.toDomain(), nil
 }
 
-// byIdempotencyKey looks up a job by (partition_key, idempotency_key).
-func (s *jobStore) byIdempotencyKey(ctx context.Context, partitionKey, key string) (*job.Job, error) {
+// byIdempotencyKey looks up a job by (user_id, idempotency_key).
+func (s *jobStore) byIdempotencyKey(ctx context.Context, userID, key string) (*job.Job, error) {
 	var m jobModel
 	err := s.db.WithContext(ctx).
-		Where("partition_key = ? AND idempotency_key = ?", partitionKey, key).
+		Where("user_id = ? AND idempotency_key = ?", userID, key).
 		First(&m).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, &job.ErrNotFound{Key: partitionKey + "|idem|" + key}
+		return nil, &job.ErrNotFound{Key: userID + "|idem|" + key}
 	}
 	if err != nil {
 		return nil, err
@@ -174,13 +229,13 @@ func (s *pipelineStore) Create(ctx context.Context, r *job.PipelineRun) error {
 	return err
 }
 
-func (s *pipelineStore) Get(ctx context.Context, partitionKey, runID string) (*job.PipelineRun, error) {
+func (s *pipelineStore) Get(ctx context.Context, runID string) (*job.PipelineRun, error) {
 	var m pipelineRunModel
 	err := s.db.WithContext(ctx).
-		Where("partition_key = ? AND run_id = ?", partitionKey, runID).
+		Where("run_id = ?", runID).
 		First(&m).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, &job.ErrNotFound{Key: partitionKey + "|" + runID}
+		return nil, &job.ErrNotFound{Key: runID}
 	}
 	if err != nil {
 		return nil, err
@@ -188,14 +243,14 @@ func (s *pipelineStore) Get(ctx context.Context, partitionKey, runID string) (*j
 	return m.toDomain()
 }
 
-// byIdempotencyKey looks up a pipeline run by (partition_key, idempotency_key).
-func (s *pipelineStore) byIdempotencyKey(ctx context.Context, partitionKey, key string) (*job.PipelineRun, error) {
+// byIdempotencyKey looks up a pipeline run by (user_id, idempotency_key).
+func (s *pipelineStore) byIdempotencyKey(ctx context.Context, userID, key string) (*job.PipelineRun, error) {
 	var m pipelineRunModel
 	err := s.db.WithContext(ctx).
-		Where("partition_key = ? AND idempotency_key = ?", partitionKey, key).
+		Where("user_id = ? AND idempotency_key = ?", userID, key).
 		First(&m).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, &job.ErrNotFound{Key: partitionKey + "|idem|" + key}
+		return nil, &job.ErrNotFound{Key: userID + "|idem|" + key}
 	}
 	if err != nil {
 		return nil, err
@@ -207,7 +262,7 @@ func (s *pipelineStore) byIdempotencyKey(ctx context.Context, partitionKey, key 
 // cannot force an unbounded result set (the endpoint is on a public ingress).
 const maxPipelineRunsPerUser = 200
 
-// listByUser returns the runs triggered by userID, newest first, capped at
+// listByUser returns the runs for userID (the subject), newest first, capped at
 // maxPipelineRunsPerUser. An empty userID returns no rows (never a full scan).
 func (s *pipelineStore) listByUser(ctx context.Context, userID string) ([]*job.PipelineRun, error) {
 	if userID == "" {

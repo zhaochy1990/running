@@ -20,19 +20,21 @@ const (
 // Terminal reports whether the status is a final state.
 func (s Status) Terminal() bool { return s == StatusDone || s == StatusFailed }
 
-// GlobalPartition is the partition key for cross-user, system-wide jobs.
-const GlobalPartition = "Global"
-
-// InternalTokenUserID is the synthetic user identity recorded on a PipelineRun
-// that was triggered by an internal (X-Internal-Token) caller rather than an end
-// user. It lets internal-triggered runs be listed together under one stable id.
-const InternalTokenUserID = "internal-token"
-
 // Job is the durable record of one unit of background work. It is the source of
 // truth (persisted in MySQL); the broker only carries a pointer to it.
 type Job struct {
-	ID           string
-	PartitionKey string
+	ID string
+	// UserID is the athlete whose data this job operates on (the subject). It is
+	// the JWT sub for user-scoped work; empty for system jobs (e.g. the deploy
+	// smoke handler), stored as NULL. It is the sole identity a handler reads to
+	// know whose data to act on, and the only value the user-tier auth check
+	// compares against the caller's JWT sub.
+	UserID string
+	// CreatedBy is the identity that triggered this job's creation (the actor):
+	// the JWT sub when a user created it directly, or empty (NULL) when an
+	// internal (X-Internal-Token) caller or the orchestrator created it. Pure
+	// provenance — never used for authorization.
+	CreatedBy    string
 	Type         string
 	Status       Status
 	Attempts     int
@@ -43,7 +45,7 @@ type Job struct {
 	ErrorCode    string
 	ErrorMessage string
 	// IdempotencyKey deduplicates client-driven creation: at most one job may
-	// exist per (PartitionKey, IdempotencyKey). Empty means "no key" (stored as
+	// exist per (UserID, IdempotencyKey). Empty means "no key" (stored as
 	// NULL so keyless jobs — pipeline steps, retries — never collide).
 	IdempotencyKey string
 	// PipelineRunID links this job back to the PipelineRun that spawned it, so
@@ -62,23 +64,27 @@ type PipelineStep struct {
 	JobID   string `json:"job_id"`
 }
 
-// PipelineRun is one execution of a named pipeline for a partition.
+// PipelineRun is one execution of a named pipeline for one athlete.
 type PipelineRun struct {
-	RunID        string
-	PartitionKey string
-	// UserID is the identity that triggered this run: the JWT sub for an
-	// end-user-initiated run, or InternalTokenUserID for an internal-token
-	// caller. Distinct from PartitionKey (the data-scoping partition): they
-	// coincide for user-triggered runs but diverge when an internal caller
-	// starts a run targeting a specific partition.
-	UserID       string
+	RunID string
+	// UserID is the athlete whose data this run operates on (the subject): the
+	// JWT sub for a user-scoped run, empty (NULL) for a system run. It is what
+	// the user-tier auth check and the per-user listing compare against, and it
+	// flows down to every step job's UserID.
+	UserID string
+	// CreatedBy is the identity that triggered this run (the actor): the JWT sub
+	// when a user started it, or empty (NULL) when an internal (X-Internal-Token)
+	// caller did. Provenance only — never used for authorization. Coincides with
+	// UserID for user-started runs; empty when an internal caller starts a run
+	// targeting an athlete's data.
+	CreatedBy    string
 	Name         string
 	Status       Status
 	CurrentStep  int
 	Steps        []PipelineStep
 	ErrorMessage string
 	// IdempotencyKey deduplicates client-driven starts: at most one run may
-	// exist per (PartitionKey, IdempotencyKey). Empty means "no key" (NULL).
+	// exist per (UserID, IdempotencyKey). Empty means "no key" (NULL).
 	IdempotencyKey string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
@@ -86,8 +92,8 @@ type PipelineRun struct {
 }
 
 // Message is the pointer published to the broker. Full state lives in the store,
-// keyed by (PartitionKey, JobID).
+// keyed by the globally-unique JobID; UserID rides along only for log context.
 type Message struct {
-	JobID        string `json:"job_id"`
-	PartitionKey string `json:"partition_key"`
+	JobID  string `json:"job_id"`
+	UserID string `json:"user_id"`
 }

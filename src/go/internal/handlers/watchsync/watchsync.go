@@ -44,7 +44,7 @@ type SyncMarker interface {
 // it stamps the user's last-sync time through marker (ADR 0018).
 func New(resolve Resolver, marker SyncMarker) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
-		user := j.PartitionKey
+		user := j.UserID
 
 		opts, err := parsePayload(j.InputJSON)
 		if err != nil {
