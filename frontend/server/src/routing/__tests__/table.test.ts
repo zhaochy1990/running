@@ -46,9 +46,16 @@ describe('resolveUpstream', () => {
     expect(resolveUpstream('GET', '/api/does/not/exist')).toBe('python')
   })
 
-  it('starts fully on Python: nothing is routed to Go yet', () => {
-    expect(hasGoRoutes()).toBe(false)
-    expect(API_ROUTES.every((r) => r.upstream === 'python')).toBe(true)
+  it('routes the cut-over watch-management endpoints to Go, siblings stay python', () => {
+    expect(hasGoRoutes()).toBe(true)
+    expect(resolveUpstream('GET', '/api/users/me/watch')).toBe('go')
+    expect(resolveUpstream('DELETE', '/api/users/me/watch')).toBe('go')
+    // adjacent endpoints not (yet) cut over
+    expect(resolveUpstream('GET', '/api/users/me/profile')).toBe('python')
+    expect(resolveUpstream('POST', '/api/users/me/watch/login')).toBe('python')
+    // only the watch GET+DELETE are on Go so far
+    expect(API_ROUTES.filter((r) => r.upstream === 'go').map((r) => `${r.method} ${r.path}`).sort())
+      .toEqual(['DELETE /api/users/me/watch', 'GET /api/users/me/watch'])
   })
 
   it('flipping a manifest entry to Go makes resolveUpstream return go (simulated cutover)', () => {

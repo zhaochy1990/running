@@ -54,10 +54,12 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: 'PATCH', path: '/api/users/me/profile', upstream: 'python', goReady: false },
   // ✓ /settings · delete account
   { method: 'DELETE', path: '/api/users/me', upstream: 'python', goReady: false },
-  // ✓ /settings + global(layout) · watch info + sync pill state   [go-ready]
-  { method: 'GET', path: '/api/users/me/watch', upstream: 'python', goReady: true },
-  // ✓ /settings · disconnect watch   [go-ready]
-  { method: 'DELETE', path: '/api/users/me/watch', upstream: 'python', goReady: true },
+  // ✓ /settings + global(layout) · watch info + sync pill state   [ON GO]
+  //   Cut over to the Go stride-api (ADR 0018). Go returns a curated Chinese
+  //   capabilities list (display-only; cosmetic diff from the old English keys).
+  { method: 'GET', path: '/api/users/me/watch', upstream: 'go', goReady: true },
+  // ✓ /settings · disconnect watch   [ON GO]
+  { method: 'DELETE', path: '/api/users/me/watch', upstream: 'go', goReady: true },
   // ✓ /onboarding, /settings · connect COROS account
   //   Go note: Go unifies these as POST /api/users/me/watch/login {provider} —
   //   cutover needs the frontend to switch to the unified path.
