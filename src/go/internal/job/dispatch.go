@@ -86,11 +86,11 @@ func NewDispatcher(store Store, reg *Registry, pub Publisher, lc Lifecycle, poli
 // caller should treat as nack/requeue (e.g. the store is unreachable), so the
 // broker will redeliver.
 func (d *Dispatcher) Dispatch(ctx context.Context, m Message) error {
-	j, err := d.store.Get(ctx, m.PartitionKey, m.JobID)
+	j, err := d.store.Get(ctx, m.JobID)
 	if err != nil {
 		if IsNotFound(err) {
 			// Orphan pointer (state deleted / never written): drop it.
-			d.log.Warn("dropping orphan job message", zap.String("job_id", m.JobID), zap.String("partition", m.PartitionKey))
+			d.log.Warn("dropping orphan job message", zap.String("job_id", m.JobID), zap.String("user_id", m.UserID))
 			return nil
 		}
 		return err // infra fault -> nack/requeue
@@ -122,7 +122,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, m Message) error {
 	d.log.Info("processing job",
 		zap.String("job_id", j.ID),
 		zap.String("type", j.Type),
-		zap.String("partition", j.PartitionKey),
+		zap.String("user_id", j.UserID),
 		zap.Int("attempt", j.Attempts),
 	)
 

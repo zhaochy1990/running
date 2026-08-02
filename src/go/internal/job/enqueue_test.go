@@ -18,7 +18,7 @@ func TestStoreEnqueuer_StoreFirstThenPublish(t *testing.T) {
 	)
 
 	id, err := e.Enqueue(context.Background(), EnqueueSpec{
-		Type: "greet", PartitionKey: "u1", InputJSON: `{"name":"a"}`,
+		Type: "greet", UserID: "u1", InputJSON: `{"name":"a"}`,
 	})
 	if err != nil {
 		t.Fatalf("enqueue: %v", err)
@@ -28,7 +28,7 @@ func TestStoreEnqueuer_StoreFirstThenPublish(t *testing.T) {
 	}
 
 	// Row is written before publish, as queued.
-	got := store.snapshot("u1", "job-1")
+	got := store.snapshot("job-1")
 	if got == nil {
 		t.Fatal("job row not created")
 	}
@@ -42,7 +42,7 @@ func TestStoreEnqueuer_StoreFirstThenPublish(t *testing.T) {
 		t.Fatal("created_at not set")
 	}
 	// Pointer published to the work queue.
-	if len(pub.work) != 1 || pub.work[0].JobID != "job-1" || pub.work[0].PartitionKey != "u1" {
+	if len(pub.work) != 1 || pub.work[0].JobID != "job-1" || pub.work[0].UserID != "u1" {
 		t.Fatalf("work publish wrong: %+v", pub.work)
 	}
 }
@@ -55,11 +55,11 @@ func TestStoreEnqueuer_CarriesPipelineLink(t *testing.T) {
 		WithIDFunc(func() string { return "job-x" }),
 	)
 	if _, err := e.Enqueue(context.Background(), EnqueueSpec{
-		Type: "step1", PartitionKey: "u1", PipelineRunID: "run-7",
+		Type: "step1", UserID: "u1", PipelineRunID: "run-7",
 	}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
-	got := store.snapshot("u1", "job-x")
+	got := store.snapshot("job-x")
 	if got.PipelineRunID != "run-7" {
 		t.Fatalf("pipeline link = %q, want run-7", got.PipelineRunID)
 	}
@@ -72,12 +72,12 @@ func TestStoreEnqueuer_PublishFailurePropagates(t *testing.T) {
 		WithEnqueueClock(fixedNow()),
 		WithIDFunc(func() string { return "job-1" }),
 	)
-	_, err := e.Enqueue(context.Background(), EnqueueSpec{Type: "greet", PartitionKey: "u1"})
+	_, err := e.Enqueue(context.Background(), EnqueueSpec{Type: "greet", UserID: "u1"})
 	if err == nil {
 		t.Fatal("want error when publish fails")
 	}
 	// Row still exists as queued (store-first); a reconcile can re-publish.
-	if got := store.snapshot("u1", "job-1"); got == nil || got.Status != StatusQueued {
+	if got := store.snapshot("job-1"); got == nil || got.Status != StatusQueued {
 		t.Fatal("row should remain queued after publish failure")
 	}
 }

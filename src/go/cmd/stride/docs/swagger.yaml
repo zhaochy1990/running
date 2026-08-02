@@ -198,11 +198,10 @@ definitions:
     properties:
       input:
         type: object
-      partition_key:
-        example: Global
-        type: string
       type:
         example: watch_sync
+        type: string
+      user_id:
         type: string
     required:
     - type
@@ -219,8 +218,6 @@ definitions:
       deduplicated:
         type: boolean
       job_id:
-        type: string
-      partition_key:
         type: string
     type: object
   api.errorResponse:
@@ -256,6 +253,8 @@ definitions:
         type: string
       created_at:
         type: string
+      created_by:
+        type: string
       error_code:
         type: string
       error_message:
@@ -263,8 +262,6 @@ definitions:
       job_id:
         type: string
       job_type:
-        type: string
-      partition_key:
         type: string
       progress_pct:
         type: integer
@@ -275,6 +272,8 @@ definitions:
       status:
         type: string
       updated_at:
+        type: string
+      user_id:
         type: string
     type: object
   api.lapDTO:
@@ -410,11 +409,11 @@ definitions:
         type: string
       created_at:
         type: string
+      created_by:
+        type: string
       current_step:
         type: integer
       error_message:
-        type: string
-      partition_key:
         type: string
       pipeline_name:
         type: string
@@ -472,15 +471,13 @@ definitions:
     properties:
       input:
         type: object
-      partition_key:
+      user_id:
         type: string
     type: object
   api.startPipelineResponse:
     properties:
       deduplicated:
         type: boolean
-      partition_key:
-        type: string
       pipeline_name:
         type: string
       run_id:
@@ -773,13 +770,11 @@ paths:
       - activities
   /api/users/{uid}/pipelines:
     get:
-      description: Lists the pipeline runs triggered by a user, most recent first.
-        A user caller may only list their own runs (uid must equal their JWT sub);
-        an internal caller may list any uid, including the synthetic "internal-token"
-        identity that groups internal-triggered runs.
+      description: Lists the pipeline runs for a user (the subject whose data they
+        operate on), most recent first. A user caller may only list their own runs
+        (uid must equal their JWT sub); an internal caller may list any uid.
       parameters:
-      - description: User id (JWT sub, or 'internal-token' for internal-triggered
-          runs)
+      - description: User id (the subject; JWT sub)
         in: path
         name: uid
         required: true
@@ -979,9 +974,9 @@ paths:
       consumes:
       - application/json
       description: Creates a job and publishes it to the worker. Internal callers
-        may target any partition and any cataloged job type; user callers may only
-        create user-initiable types and the partition is derived from their token.
-        Supply an Idempotency-Key header to make retries safe.
+        may target any user and any cataloged job type; user callers may only create
+        user-initiable types and the subject user is derived from their token. Supply
+        an Idempotency-Key header to make retries safe.
       parameters:
       - description: Deduplicates creation; a repeat key returns the existing job
           (200)
@@ -1027,14 +1022,9 @@ paths:
       summary: Enqueue an async job
       tags:
       - jobs
-  /jobs/{partition_key}/{job_id}:
+  /jobs/{job_id}:
     get:
       parameters:
-      - description: Partition key (user id, or Global)
-        in: path
-        name: partition_key
-        required: true
-        type: string
       - description: Job id
         in: path
         name: job_id
@@ -1049,10 +1039,6 @@ paths:
             $ref: '#/definitions/api.jobStateResponse'
         "401":
           description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
           schema:
             $ref: '#/definitions/api.errorResponse'
         "404":
@@ -1089,9 +1075,9 @@ paths:
       consumes:
       - application/json
       description: Starts a named pipeline (a linear sequence of jobs). Internal callers
-        may start any cataloged pipeline in any partition; user callers may only start
-        user-initiable pipelines in their own partition. Supply an Idempotency-Key
-        header to make retries safe.
+        may start any cataloged pipeline for any user; user callers may only start
+        user-initiable pipelines for themselves. Supply an Idempotency-Key header
+        to make retries safe.
       parameters:
       - description: Pipeline name
         in: path
@@ -1103,7 +1089,7 @@ paths:
         in: header
         name: Idempotency-Key
         type: string
-      - description: Optional partition/input
+      - description: Optional subject user/input
         in: body
         name: body
         schema:
@@ -1141,14 +1127,9 @@ paths:
       summary: Start a pipeline run
       tags:
       - pipelines
-  /pipelines/{partition_key}/{run_id}:
+  /pipelines/{run_id}:
     get:
       parameters:
-      - description: Partition key (user id, or Global)
-        in: path
-        name: partition_key
-        required: true
-        type: string
       - description: Run id
         in: path
         name: run_id
@@ -1163,10 +1144,6 @@ paths:
             $ref: '#/definitions/api.runStateResponse'
         "401":
           description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
           schema:
             $ref: '#/definitions/api.errorResponse'
         "404":

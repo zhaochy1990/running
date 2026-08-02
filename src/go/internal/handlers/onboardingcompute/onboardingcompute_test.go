@@ -79,7 +79,7 @@ func TestHandlerStagesAndResult(t *testing.T) {
 	var stages []string
 	hb := func(stage string, _ int) error { stages = append(stages, stage); return nil }
 
-	res, err := h(context.Background(), &job.Job{PartitionKey: testUser}, hb)
+	res, err := h(context.Background(), &job.Job{UserID: testUser}, hb)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -108,15 +108,15 @@ func TestHandlerStagesAndResult(t *testing.T) {
 
 func TestHandlerRejectsNonUUIDPartition(t *testing.T) {
 	h := New(&fakeStore{})
-	_, err := h(context.Background(), &job.Job{PartitionKey: "not-a-uuid"},
+	_, err := h(context.Background(), &job.Job{UserID: "not-a-uuid"},
 		func(string, int) error { return nil })
 
 	pe, ok := job.AsPermanent(err)
 	if !ok {
 		t.Fatalf("want a permanent error, got %v", err)
 	}
-	if pe.Code != "bad_partition" {
-		t.Fatalf("error code = %q, want bad_partition", pe.Code)
+	if pe.Code != "bad_user" {
+		t.Fatalf("error code = %q, want bad_user", pe.Code)
 	}
 }
 

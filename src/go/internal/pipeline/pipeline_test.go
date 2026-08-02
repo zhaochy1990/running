@@ -32,13 +32,13 @@ func newFakePStore() *fakePStore { return &fakePStore{rows: map[string]*job.Pipe
 func (s *fakePStore) Create(_ context.Context, r *job.PipelineRun) error {
 	cp := *r
 	cp.Steps = append([]job.PipelineStep(nil), r.Steps...)
-	s.rows[r.PartitionKey+"|"+r.RunID] = &cp
+	s.rows[r.RunID] = &cp
 	return nil
 }
-func (s *fakePStore) Get(_ context.Context, pk, id string) (*job.PipelineRun, error) {
-	r, ok := s.rows[pk+"|"+id]
+func (s *fakePStore) Get(_ context.Context, id string) (*job.PipelineRun, error) {
+	r, ok := s.rows[id]
 	if !ok {
-		return nil, &job.ErrNotFound{Key: pk + "|" + id}
+		return nil, &job.ErrNotFound{Key: id}
 	}
 	cp := *r
 	cp.Steps = append([]job.PipelineStep(nil), r.Steps...)
@@ -47,10 +47,10 @@ func (s *fakePStore) Get(_ context.Context, pk, id string) (*job.PipelineRun, er
 func (s *fakePStore) Update(_ context.Context, r *job.PipelineRun) error {
 	cp := *r
 	cp.Steps = append([]job.PipelineStep(nil), r.Steps...)
-	s.rows[r.PartitionKey+"|"+r.RunID] = &cp
+	s.rows[r.RunID] = &cp
 	return nil
 }
-func (s *fakePStore) snap(pk, id string) *job.PipelineRun { return s.rows[pk+"|"+id] }
+func (s *fakePStore) snap(id string) *job.PipelineRun { return s.rows[id] }
 
 func onboardingRegistry() *Registry {
 	r := NewRegistry()
@@ -81,22 +81,25 @@ func TestStartPipeline_CreatesRunAndEnqueuesFirstStep(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	o := newOrch(ps, enq)
 
-	runID, err := o.StartPipeline(context.Background(), "onboarding", "u1", "trigger-9", "")
+	runID, err := o.StartPipeline(context.Background(), "onboarding", "u1", "creator-9", "")
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
 	if runID != "run-1" {
 		t.Fatalf("runID = %q", runID)
 	}
-	run := ps.snap("u1", "run-1")
+	run := ps.snap("run-1")
 	if run == nil {
 		t.Fatal("run not persisted")
 	}
 	if run.Status != job.StatusRunning {
 		t.Fatalf("status = %s, want running", run.Status)
 	}
-	if run.UserID != "trigger-9" {
-		t.Fatalf("user id = %q, want trigger-9 (independent of partition)", run.UserID)
+	if run.UserID != "u1" {
+		t.Fatalf("user id (subject) = %q, want u1", run.UserID)
+	}
+	if run.CreatedBy != "creator-9" {
+		t.Fatalf("created_by (actor) = %q, want creator-9", run.CreatedBy)
 	}
 	if len(run.Steps) != 3 {
 		t.Fatalf("steps = %d, want 3", len(run.Steps))
@@ -105,7 +108,7 @@ func TestStartPipeline_CreatesRunAndEnqueuesFirstStep(t *testing.T) {
 	if len(enq.specs) != 1 {
 		t.Fatalf("enqueued %d, want 1", len(enq.specs))
 	}
-	if enq.specs[0].Type != "onboarding_full_sync" || enq.specs[0].PipelineRunID != "run-1" || enq.specs[0].PartitionKey != "u1" {
+	if enq.specs[0].Type != "onboarding_full_sync" || enq.specs[0].PipelineRunID != "run-1" || enq.specs[0].UserID != "u1" {
 		t.Fatalf("first enqueue wrong: %+v", enq.specs[0])
 	}
 	if run.Steps[0].JobID == "" {
@@ -125,18 +128,18 @@ func TestOnJobCompleted_AdvancesToNextStep(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	o := newOrch(ps, enq)
 	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1", "u1", "")
-	run := ps.snap("u1", "run-1")
+	run := ps.snap("run-1")
 	step0JobID := run.Steps[0].JobID
 
 	// full_sync completes.
 	err := o.OnJobCompleted(context.Background(), &job.Job{
-		ID: step0JobID, PartitionKey: "u1", PipelineRunID: "run-1",
+		ID: step0JobID, UserID: "u1", PipelineRunID: "run-1",
 	})
 	if err != nil {
 		t.Fatalf("OnJobCompleted: %v", err)
 	}
 
-	run = ps.snap("u1", "run-1")
+	run = ps.snap("run-1")
 	if run.Steps[0].Status != job.StatusDone {
 		t.Fatalf("step0 = %s, want done", run.Steps[0].Status)
 	}
@@ -159,16 +162,16 @@ func TestOnJobCompleted_LastStepMarksRunDone(t *testing.T) {
 
 	// Walk all three steps to completion.
 	for step := 0; step < 3; step++ {
-		run := ps.snap("u1", "run-1")
+		run := ps.snap("run-1")
 		jid := run.Steps[step].JobID
 		if err := o.OnJobCompleted(context.Background(), &job.Job{
-			ID: jid, PartitionKey: "u1", PipelineRunID: "run-1",
+			ID: jid, UserID: "u1", PipelineRunID: "run-1",
 		}); err != nil {
 			t.Fatalf("complete step %d: %v", step, err)
 		}
 	}
 
-	run := ps.snap("u1", "run-1")
+	run := ps.snap("run-1")
 	if run.Status != job.StatusDone {
 		t.Fatalf("run status = %s, want done", run.Status)
 	}
@@ -186,10 +189,10 @@ func TestOnJobCompleted_Idempotent(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	o := newOrch(ps, enq)
 	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1", "u1", "")
-	run := ps.snap("u1", "run-1")
+	run := ps.snap("run-1")
 	jid := run.Steps[0].JobID
 
-	msg := &job.Job{ID: jid, PartitionKey: "u1", PipelineRunID: "run-1"}
+	msg := &job.Job{ID: jid, UserID: "u1", PipelineRunID: "run-1"}
 	_ = o.OnJobCompleted(context.Background(), msg)
 	_ = o.OnJobCompleted(context.Background(), msg) // duplicate delivery
 
@@ -204,16 +207,16 @@ func TestOnJobFailed_MarksRunFailed(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	o := newOrch(ps, enq)
 	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1", "u1", "")
-	run := ps.snap("u1", "run-1")
+	run := ps.snap("run-1")
 	jid := run.Steps[0].JobID
 
 	err := o.OnJobFailed(context.Background(), &job.Job{
-		ID: jid, PartitionKey: "u1", PipelineRunID: "run-1", ErrorMessage: "sync exploded",
+		ID: jid, UserID: "u1", PipelineRunID: "run-1", ErrorMessage: "sync exploded",
 	})
 	if err != nil {
 		t.Fatalf("OnJobFailed: %v", err)
 	}
-	run = ps.snap("u1", "run-1")
+	run = ps.snap("run-1")
 	if run.Status != job.StatusFailed {
 		t.Fatalf("run status = %s, want failed", run.Status)
 	}
@@ -234,10 +237,10 @@ func TestLifecycle_StandaloneJobIsNoop(t *testing.T) {
 	o := newOrch(ps, enq)
 
 	// No PipelineRunID -> not part of any pipeline.
-	if err := o.OnJobCompleted(context.Background(), &job.Job{ID: "x", PartitionKey: "u1"}); err != nil {
+	if err := o.OnJobCompleted(context.Background(), &job.Job{ID: "x", UserID: "u1"}); err != nil {
 		t.Fatalf("standalone completed: %v", err)
 	}
-	if err := o.OnJobFailed(context.Background(), &job.Job{ID: "x", PartitionKey: "u1"}); err != nil {
+	if err := o.OnJobFailed(context.Background(), &job.Job{ID: "x", UserID: "u1"}); err != nil {
 		t.Fatalf("standalone failed: %v", err)
 	}
 	if len(enq.specs) != 0 || len(ps.rows) != 0 {

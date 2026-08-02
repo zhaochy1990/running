@@ -19,7 +19,7 @@ func newFakeStore(seed ...*Job) *fakeStore {
 	s := &fakeStore{rows: map[string]*Job{}}
 	for _, j := range seed {
 		cp := *j
-		s.rows[j.PartitionKey+"|"+j.ID] = &cp
+		s.rows[j.ID] = &cp
 	}
 	return s
 }
@@ -28,16 +28,16 @@ func (s *fakeStore) Create(_ context.Context, j *Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := *j
-	s.rows[j.PartitionKey+"|"+j.ID] = &cp
+	s.rows[j.ID] = &cp
 	return nil
 }
 
-func (s *fakeStore) Get(_ context.Context, pk, id string) (*Job, error) {
+func (s *fakeStore) Get(_ context.Context, id string) (*Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	j, ok := s.rows[pk+"|"+id]
+	j, ok := s.rows[id]
 	if !ok {
-		return nil, &ErrNotFound{Key: pk + "|" + id}
+		return nil, &ErrNotFound{Key: id}
 	}
 	cp := *j
 	return &cp, nil
@@ -47,14 +47,14 @@ func (s *fakeStore) Update(_ context.Context, j *Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := *j
-	s.rows[j.PartitionKey+"|"+j.ID] = &cp
+	s.rows[j.ID] = &cp
 	return nil
 }
 
-func (s *fakeStore) snapshot(pk, id string) *Job {
+func (s *fakeStore) snapshot(id string) *Job {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.rows[pk+"|"+id]
+	return s.rows[id]
 }
 
 type fakePublisher struct {
@@ -104,7 +104,7 @@ func fixedNow() func() time.Time {
 // --- tests ---------------------------------------------------------------
 
 func TestDispatch_Success(t *testing.T) {
-	seed := &Job{ID: "j1", PartitionKey: "u1", Type: "greet", Status: StatusQueued}
+	seed := &Job{ID: "j1", UserID: "u1", Type: "greet", Status: StatusQueued}
 	store := newFakeStore(seed)
 	reg := NewRegistry()
 	reg.MustRegister("greet", func(_ context.Context, j *Job, hb Heartbeat) (string, error) {
@@ -115,11 +115,11 @@ func TestDispatch_Success(t *testing.T) {
 	life := &recordingLifecycle{}
 	d := NewDispatcher(store, reg, pub, life, testPolicy(), WithClock(fixedNow()))
 
-	if err := d.Dispatch(context.Background(), Message{JobID: "j1", PartitionKey: "u1"}); err != nil {
+	if err := d.Dispatch(context.Background(), Message{JobID: "j1", UserID: "u1"}); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 
-	got := store.snapshot("u1", "j1")
+	got := store.snapshot("j1")
 	if got.Status != StatusDone {
 		t.Fatalf("status = %s, want done", got.Status)
 	}
@@ -144,16 +144,16 @@ func TestDispatch_Success(t *testing.T) {
 }
 
 func TestDispatch_MissingHandler_TerminalFailed(t *testing.T) {
-	seed := &Job{ID: "j1", PartitionKey: "u1", Type: "unknown", Status: StatusQueued}
+	seed := &Job{ID: "j1", UserID: "u1", Type: "unknown", Status: StatusQueued}
 	store := newFakeStore(seed)
 	pub := &fakePublisher{}
 	life := &recordingLifecycle{}
 	d := NewDispatcher(store, NewRegistry(), pub, life, testPolicy(), WithClock(fixedNow()))
 
-	if err := d.Dispatch(context.Background(), Message{JobID: "j1", PartitionKey: "u1"}); err != nil {
+	if err := d.Dispatch(context.Background(), Message{JobID: "j1", UserID: "u1"}); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
-	got := store.snapshot("u1", "j1")
+	got := store.snapshot("j1")
 	if got.Status != StatusFailed {
 		t.Fatalf("status = %s, want failed", got.Status)
 	}
@@ -169,7 +169,7 @@ func TestDispatch_MissingHandler_TerminalFailed(t *testing.T) {
 }
 
 func TestDispatch_TransientFailure_RetriesWithBackoff(t *testing.T) {
-	seed := &Job{ID: "j1", PartitionKey: "u1", Type: "flaky", Status: StatusQueued}
+	seed := &Job{ID: "j1", UserID: "u1", Type: "flaky", Status: StatusQueued}
 	store := newFakeStore(seed)
 	reg := NewRegistry()
 	reg.MustRegister("flaky", func(_ context.Context, j *Job, hb Heartbeat) (string, error) {
@@ -179,10 +179,10 @@ func TestDispatch_TransientFailure_RetriesWithBackoff(t *testing.T) {
 	life := &recordingLifecycle{}
 	d := NewDispatcher(store, reg, pub, life, testPolicy(), WithClock(fixedNow()))
 
-	if err := d.Dispatch(context.Background(), Message{JobID: "j1", PartitionKey: "u1"}); err != nil {
+	if err := d.Dispatch(context.Background(), Message{JobID: "j1", UserID: "u1"}); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
-	got := store.snapshot("u1", "j1")
+	got := store.snapshot("j1")
 	if got.Status != StatusQueued {
 		t.Fatalf("status = %s, want queued (awaiting retry)", got.Status)
 	}
@@ -202,7 +202,7 @@ func TestDispatch_TransientFailure_RetriesWithBackoff(t *testing.T) {
 
 func TestDispatch_ExhaustsToPoison(t *testing.T) {
 	// Job already attempted twice; MaxAttempts=3, so this (3rd) failure poisons.
-	seed := &Job{ID: "j1", PartitionKey: "u1", Type: "flaky", Status: StatusQueued, Attempts: 2}
+	seed := &Job{ID: "j1", UserID: "u1", Type: "flaky", Status: StatusQueued, Attempts: 2}
 	store := newFakeStore(seed)
 	reg := NewRegistry()
 	reg.MustRegister("flaky", func(_ context.Context, j *Job, hb Heartbeat) (string, error) {
@@ -212,10 +212,10 @@ func TestDispatch_ExhaustsToPoison(t *testing.T) {
 	life := &recordingLifecycle{}
 	d := NewDispatcher(store, reg, pub, life, testPolicy(), WithClock(fixedNow()))
 
-	if err := d.Dispatch(context.Background(), Message{JobID: "j1", PartitionKey: "u1"}); err != nil {
+	if err := d.Dispatch(context.Background(), Message{JobID: "j1", UserID: "u1"}); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
-	got := store.snapshot("u1", "j1")
+	got := store.snapshot("j1")
 	if got.Status != StatusFailed {
 		t.Fatalf("status = %s, want failed", got.Status)
 	}
@@ -231,7 +231,7 @@ func TestDispatch_ExhaustsToPoison(t *testing.T) {
 }
 
 func TestDispatch_PermanentError_NoRetry(t *testing.T) {
-	seed := &Job{ID: "j1", PartitionKey: "u1", Type: "bad", Status: StatusQueued}
+	seed := &Job{ID: "j1", UserID: "u1", Type: "bad", Status: StatusQueued}
 	store := newFakeStore(seed)
 	reg := NewRegistry()
 	reg.MustRegister("bad", func(_ context.Context, j *Job, hb Heartbeat) (string, error) {
@@ -241,10 +241,10 @@ func TestDispatch_PermanentError_NoRetry(t *testing.T) {
 	life := &recordingLifecycle{}
 	d := NewDispatcher(store, reg, pub, life, testPolicy(), WithClock(fixedNow()))
 
-	if err := d.Dispatch(context.Background(), Message{JobID: "j1", PartitionKey: "u1"}); err != nil {
+	if err := d.Dispatch(context.Background(), Message{JobID: "j1", UserID: "u1"}); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
-	got := store.snapshot("u1", "j1")
+	got := store.snapshot("j1")
 	if got.Status != StatusFailed {
 		t.Fatalf("status = %s, want failed", got.Status)
 	}
@@ -265,7 +265,7 @@ func TestDispatch_OrphanMessage_Dropped(t *testing.T) {
 	pub := &fakePublisher{}
 	d := NewDispatcher(store, reg, pub, NopLifecycle{}, testPolicy(), WithClock(fixedNow()))
 
-	if err := d.Dispatch(context.Background(), Message{JobID: "ghost", PartitionKey: "u1"}); err != nil {
+	if err := d.Dispatch(context.Background(), Message{JobID: "ghost", UserID: "u1"}); err != nil {
 		t.Fatalf("orphan should be dropped, got err: %v", err)
 	}
 	if len(pub.work)+len(pub.retry)+len(pub.poison) != 0 {
@@ -274,7 +274,7 @@ func TestDispatch_OrphanMessage_Dropped(t *testing.T) {
 }
 
 func TestDispatch_AlreadyTerminal_Idempotent(t *testing.T) {
-	seed := &Job{ID: "j1", PartitionKey: "u1", Type: "greet", Status: StatusDone}
+	seed := &Job{ID: "j1", UserID: "u1", Type: "greet", Status: StatusDone}
 	store := newFakeStore(seed)
 	reg := NewRegistry()
 	called := false
@@ -284,7 +284,7 @@ func TestDispatch_AlreadyTerminal_Idempotent(t *testing.T) {
 	})
 	d := NewDispatcher(store, reg, &fakePublisher{}, NopLifecycle{}, testPolicy(), WithClock(fixedNow()))
 
-	if err := d.Dispatch(context.Background(), Message{JobID: "j1", PartitionKey: "u1"}); err != nil {
+	if err := d.Dispatch(context.Background(), Message{JobID: "j1", UserID: "u1"}); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 	if called {
@@ -293,7 +293,7 @@ func TestDispatch_AlreadyTerminal_Idempotent(t *testing.T) {
 }
 
 func TestDispatch_Heartbeat_PersistsProgress(t *testing.T) {
-	seed := &Job{ID: "j1", PartitionKey: "u1", Type: "long", Status: StatusQueued}
+	seed := &Job{ID: "j1", UserID: "u1", Type: "long", Status: StatusQueued}
 	store := newFakeStore(seed)
 	reg := NewRegistry()
 	reg.MustRegister("long", func(_ context.Context, j *Job, hb Heartbeat) (string, error) {
@@ -304,11 +304,11 @@ func TestDispatch_Heartbeat_PersistsProgress(t *testing.T) {
 	})
 	d := NewDispatcher(store, reg, &fakePublisher{}, NopLifecycle{}, testPolicy(), WithClock(fixedNow()))
 
-	if err := d.Dispatch(context.Background(), Message{JobID: "j1", PartitionKey: "u1"}); err != nil {
+	if err := d.Dispatch(context.Background(), Message{JobID: "j1", UserID: "u1"}); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
 	// final status is done/100, but stage from the last heartbeat persists.
-	got := store.snapshot("u1", "j1")
+	got := store.snapshot("j1")
 	if got.Stage != "phase-2" {
 		t.Fatalf("stage = %q, want phase-2", got.Stage)
 	}

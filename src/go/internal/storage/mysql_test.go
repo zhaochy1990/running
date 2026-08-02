@@ -37,13 +37,13 @@ func TestJobStore_CreateGetUpdate(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
 	j := &job.Job{
-		ID: "it-" + now.Format("150405.000000"), PartitionKey: "u-it", Type: "greet",
+		ID: "it-" + now.Format("150405.000000"), UserID: "u-it", Type: "greet",
 		Status: job.StatusQueued, InputJSON: `{"x":1}`, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := jobs.Create(ctx, j); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	got, err := jobs.Get(ctx, j.PartitionKey, j.ID)
+	got, err := jobs.Get(ctx, j.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestJobStore_CreateGetUpdate(t *testing.T) {
 	if err := jobs.Update(ctx, got); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	again, _ := jobs.Get(ctx, j.PartitionKey, j.ID)
+	again, _ := jobs.Get(ctx, j.ID)
 	if again.Status != job.StatusDone || again.ProgressPct != 100 {
 		t.Fatalf("update not persisted: %+v", again)
 	}
@@ -67,7 +67,7 @@ func TestJobStore_CreateGetUpdate(t *testing.T) {
 
 func TestJobStore_GetNotFound(t *testing.T) {
 	st := openTestStore(t)
-	_, err := st.Jobs().Get(context.Background(), "nope", "nope")
+	_, err := st.Jobs().Get(context.Background(), "nope")
 	if _, ok := err.(*job.ErrNotFound); !ok {
 		t.Fatalf("want ErrNotFound, got %v", err)
 	}
@@ -85,7 +85,7 @@ func TestPipelineStore_ListByUser(t *testing.T) {
 
 	mk := func(id, user string, at time.Time) *job.PipelineRun {
 		return &job.PipelineRun{
-			RunID: id, PartitionKey: user, UserID: user, Name: "onboarding",
+			RunID: id, UserID: user, CreatedBy: user, Name: "onboarding",
 			Status: job.StatusRunning, CreatedAt: at, UpdatedAt: at,
 		}
 	}

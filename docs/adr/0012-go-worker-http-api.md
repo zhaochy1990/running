@@ -7,6 +7,22 @@
 > independently; only "separate *binary*" became "separate *container*, shared
 > binary". The committed Swagger docs moved `cmd/api/docs` → `cmd/stride/docs`.
 
+> **Amended (partition_key → user_id):** the `partition_key` column/field has
+> been replaced by two columns on `jobs` and `pipeline_runs`. `user_id` is the
+> **subject** (the athlete whose data the work operates on; NULL for system
+> jobs) — it is the only value the user-tier auth check compares against the JWT
+> `sub`, and the value handlers read to know whose data to act on. `created_by`
+> is the **actor** that triggered creation (JWT `sub`, or NULL for an internal
+> `X-Internal-Token` caller) and is provenance only. Because `job_id`/`run_id`
+> are globally-unique UUID primary keys, the read endpoints dropped the partition
+> segment: `GET /jobs/{job_id}` and `GET /pipelines/{run_id}` (auth is enforced
+> against the record's own `user_id` after lookup, returning `404` for a
+> not-owned id). Create responses no longer echo a partition. The unique
+> idempotency indexes are now `(user_id, idempotency_key)`. The former
+> `"Global"` partition and the synthetic `"internal-token"` identity are both
+> gone (replaced by NULL). "partition" was Azure Table Storage vocabulary and did
+> not map to any MySQL physical partitioning.
+
 The async-job infra (ADR 0001) had no network entry point — jobs were created only by in-process enqueue, and the sole HTTP surface was a loopback `/healthz`. We add a standalone **`cmd/api`** gin binary (same Go module, its own Docker Compose container) exposing create/read for Async Jobs and Pipeline Runs, so both the Azure/Python backend (server-to-server) and the browser/mobile app (direct) can drive and poll background work. This introduces a **public HTTP ingress on the Tencent CVM**, which revises ADR 0002's "the worker has no HTTP ingress" consequence.
 
 ## Decision

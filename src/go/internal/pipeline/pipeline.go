@@ -96,17 +96,15 @@ func New(store job.PipelineStore, enq job.Enqueuer, reg *Registry, opts ...Optio
 
 // StartPipeline creates a run (store-first) and enqueues its first step. A
 // non-empty idempotencyKey deduplicates starts: Create returns job.ErrConflict
-// if a run with the same (partitionKey, idempotencyKey) already exists. userID
-// records who triggered the run (the JWT sub, or job.InternalTokenUserID for an
-// internal caller); it is stored for later per-user listing and is independent
-// of partitionKey.
-func (o *Orchestrator) StartPipeline(ctx context.Context, name, partitionKey, userID, idempotencyKey string) (string, error) {
+// if a run with the same (userID, idempotencyKey) already exists. userID is the
+// athlete whose data the run operates on (the subject) — it flows down to every
+// step job and is what auth and per-user listing key on; empty means a system
+// run (NULL). createdBy records who triggered the run (the JWT sub, or empty for
+// an internal caller) and is provenance only.
+func (o *Orchestrator) StartPipeline(ctx context.Context, name, userID, createdBy, idempotencyKey string) (string, error) {
 	def, ok := o.reg.Get(name)
 	if !ok {
 		return "", fmt.Errorf("pipeline: unknown definition %q", name)
-	}
-	if partitionKey == "" {
-		partitionKey = job.GlobalPartition
 	}
 	now := o.now()
 	steps := make([]job.PipelineStep, len(def.Steps))
@@ -115,8 +113,8 @@ func (o *Orchestrator) StartPipeline(ctx context.Context, name, partitionKey, us
 	}
 	run := &job.PipelineRun{
 		RunID:          o.newRun(),
-		PartitionKey:   partitionKey,
 		UserID:         userID,
+		CreatedBy:      createdBy,
 		Name:           name,
 		Status:         job.StatusRunning,
 		CurrentStep:    0,
@@ -130,7 +128,7 @@ func (o *Orchestrator) StartPipeline(ctx context.Context, name, partitionKey, us
 	}
 	jobID, err := o.enq.Enqueue(ctx, job.EnqueueSpec{
 		Type:          def.Steps[0].JobType,
-		PartitionKey:  partitionKey,
+		UserID:        userID,
 		PipelineRunID: run.RunID,
 	})
 	if err != nil {
@@ -141,7 +139,7 @@ func (o *Orchestrator) StartPipeline(ctx context.Context, name, partitionKey, us
 	if err := o.store.Update(ctx, run); err != nil {
 		return run.RunID, err
 	}
-	o.log.Info("pipeline started", zap.String("name", name), zap.String("run_id", run.RunID), zap.String("partition", partitionKey))
+	o.log.Info("pipeline started", zap.String("name", name), zap.String("run_id", run.RunID), zap.String("user_id", userID))
 	return run.RunID, nil
 }
 
@@ -151,7 +149,7 @@ func (o *Orchestrator) OnJobCompleted(ctx context.Context, j *job.Job) error {
 	if j.PipelineRunID == "" {
 		return nil
 	}
-	run, err := o.store.Get(ctx, j.PartitionKey, j.PipelineRunID)
+	run, err := o.store.Get(ctx, j.PipelineRunID)
 	if err != nil {
 		if job.IsNotFound(err) {
 			o.log.Warn("pipeline run missing for completed job", zap.String("run_id", j.PipelineRunID), zap.String("job_id", j.ID))
@@ -185,7 +183,7 @@ func (o *Orchestrator) OnJobCompleted(ctx context.Context, j *job.Job) error {
 	next := i + 1
 	jobID, err := o.enq.Enqueue(ctx, job.EnqueueSpec{
 		Type:          run.Steps[next].JobType,
-		PartitionKey:  run.PartitionKey,
+		UserID:        run.UserID,
 		PipelineRunID: run.RunID,
 	})
 	if err != nil {
@@ -210,7 +208,7 @@ func (o *Orchestrator) OnJobFailed(ctx context.Context, j *job.Job) error {
 	if j.PipelineRunID == "" {
 		return nil
 	}
-	run, err := o.store.Get(ctx, j.PartitionKey, j.PipelineRunID)
+	run, err := o.store.Get(ctx, j.PipelineRunID)
 	if err != nil {
 		if job.IsNotFound(err) {
 			return nil

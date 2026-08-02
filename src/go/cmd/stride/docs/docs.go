@@ -253,7 +253,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Lists the pipeline runs triggered by a user, most recent first. A user caller may only list their own runs (uid must equal their JWT sub); an internal caller may list any uid, including the synthetic \"internal-token\" identity that groups internal-triggered runs.",
+                "description": "Lists the pipeline runs for a user (the subject whose data they operate on), most recent first. A user caller may only list their own runs (uid must equal their JWT sub); an internal caller may list any uid.",
                 "produces": [
                     "application/json"
                 ],
@@ -264,7 +264,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "User id (JWT sub, or 'internal-token' for internal-triggered runs)",
+                        "description": "User id (the subject; JWT sub)",
                         "name": "uid",
                         "in": "path",
                         "required": true
@@ -509,7 +509,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates a job and publishes it to the worker. Internal callers may target any partition and any cataloged job type; user callers may only create user-initiable types and the partition is derived from their token. Supply an Idempotency-Key header to make retries safe.",
+                "description": "Creates a job and publishes it to the worker. Internal callers may target any user and any cataloged job type; user callers may only create user-initiable types and the subject user is derived from their token. Supply an Idempotency-Key header to make retries safe.",
                 "consumes": [
                     "application/json"
                 ],
@@ -577,7 +577,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/jobs/{partition_key}/{job_id}": {
+        "/jobs/{job_id}": {
             "get": {
                 "security": [
                     {
@@ -597,13 +597,6 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Partition key (user id, or Global)",
-                        "name": "partition_key",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
                         "description": "Job id",
                         "name": "job_id",
                         "in": "path",
@@ -619,12 +612,6 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -674,7 +661,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Starts a named pipeline (a linear sequence of jobs). Internal callers may start any cataloged pipeline in any partition; user callers may only start user-initiable pipelines in their own partition. Supply an Idempotency-Key header to make retries safe.",
+                "description": "Starts a named pipeline (a linear sequence of jobs). Internal callers may start any cataloged pipeline for any user; user callers may only start user-initiable pipelines for themselves. Supply an Idempotency-Key header to make retries safe.",
                 "consumes": [
                     "application/json"
                 ],
@@ -700,7 +687,7 @@ const docTemplate = `{
                         "in": "header"
                     },
                     {
-                        "description": "Optional partition/input",
+                        "description": "Optional subject user/input",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -748,7 +735,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/pipelines/{partition_key}/{run_id}": {
+        "/pipelines/{run_id}": {
             "get": {
                 "security": [
                     {
@@ -768,13 +755,6 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Partition key (user id, or Global)",
-                        "name": "partition_key",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
                         "description": "Run id",
                         "name": "run_id",
                         "in": "path",
@@ -790,12 +770,6 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -1121,13 +1095,12 @@ const docTemplate = `{
                 "input": {
                     "type": "object"
                 },
-                "partition_key": {
-                    "type": "string",
-                    "example": "Global"
-                },
                 "type": {
                     "type": "string",
                     "example": "watch_sync"
+                },
+                "user_id": {
+                    "type": "string"
                 }
             }
         },
@@ -1149,9 +1122,6 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "job_id": {
-                    "type": "string"
-                },
-                "partition_key": {
                     "type": "string"
                 }
             }
@@ -1207,6 +1177,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "created_by": {
+                    "type": "string"
+                },
                 "error_code": {
                     "type": "string"
                 },
@@ -1217,9 +1190,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "job_type": {
-                    "type": "string"
-                },
-                "partition_key": {
                     "type": "string"
                 },
                 "progress_pct": {
@@ -1235,6 +1205,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
                     "type": "string"
                 }
             }
@@ -1440,13 +1413,13 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "created_by": {
+                    "type": "string"
+                },
                 "current_step": {
                     "type": "integer"
                 },
                 "error_message": {
-                    "type": "string"
-                },
-                "partition_key": {
                     "type": "string"
                 },
                 "pipeline_name": {
@@ -1534,7 +1507,7 @@ const docTemplate = `{
                 "input": {
                     "type": "object"
                 },
-                "partition_key": {
+                "user_id": {
                     "type": "string"
                 }
             }
@@ -1544,9 +1517,6 @@ const docTemplate = `{
             "properties": {
                 "deduplicated": {
                     "type": "boolean"
-                },
-                "partition_key": {
-                    "type": "string"
                 },
                 "pipeline_name": {
                     "type": "string"

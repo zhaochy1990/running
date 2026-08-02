@@ -7,17 +7,18 @@ import (
 )
 
 // Store is the durable job state. Implementations must be safe under concurrent
-// workers (transitions are last-write-wins on a row keyed by PartitionKey+ID).
+// workers (transitions are last-write-wins on a row keyed by the globally-unique
+// job ID).
 type Store interface {
 	Create(ctx context.Context, j *Job) error
-	Get(ctx context.Context, partitionKey, jobID string) (*Job, error)
+	Get(ctx context.Context, jobID string) (*Job, error)
 	Update(ctx context.Context, j *Job) error
 }
 
 // PipelineStore is the durable pipeline-run state.
 type PipelineStore interface {
 	Create(ctx context.Context, r *PipelineRun) error
-	Get(ctx context.Context, partitionKey, runID string) (*PipelineRun, error)
+	Get(ctx context.Context, runID string) (*PipelineRun, error)
 	Update(ctx context.Context, r *PipelineRun) error
 }
 
@@ -42,9 +43,9 @@ func IsNotFound(err error) bool {
 }
 
 // ErrConflict is returned by Store.Create / PipelineStore.Create when the row
-// violates the unique (partition_key, idempotency_key) constraint — i.e. a job
-// or run with the same idempotency key already exists in the partition. Callers
-// (the HTTP API) react by returning the existing record instead of a new one.
+// violates the unique (user_id, idempotency_key) constraint — i.e. a job or run
+// with the same idempotency key already exists for that user. Callers (the HTTP
+// API) react by returning the existing record instead of a new one.
 var ErrConflict = errors.New("conflict: duplicate idempotency key")
 
 // Heartbeat lets a handler report progress mid-run; it persists stage/progress

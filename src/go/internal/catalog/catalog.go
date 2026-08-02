@@ -65,15 +65,15 @@ func Jobs() []JobSpec {
 		{
 			Type:          JobTypeWatchSync,
 			UserInitiable: true,
-			Description:   "Sync one user's watch data (activities + health) from their linked provider. Partition key is the user UUID; the input body is optional.",
+			Description:   "Sync one user's watch data (activities + health) from their linked provider. user_id is the subject athlete; the input body is optional.",
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"mode":{"type":"string","enum":["full","incremental"],"default":"full","description":"Sync mode."},"content":{"type":"string","enum":["all","activities","health"],"default":"all","description":"Which data to sync."},"limit":{"type":"integer","minimum":0,"default":0,"description":"Max items to sync; 0 means unlimited."}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"mode":"incremental","content":"activities","limit":50}`),
 		},
 		{
 			Type:          JobTypeOnboardingCompute,
 			UserInitiable: false,
-			Description:   "Derive athlete baselines, training load and ability from already-synced data. No input body; operates on the partition (user UUID). Internal-only.",
-			InputSchema:   json.RawMessage(`{"type":"object","description":"No input fields; operates on the partition (user UUID).","additionalProperties":false}`),
+			Description:   "Derive athlete baselines, training load and ability from already-synced data. No input body; operates on the job's user_id (subject UUID). Internal-only.",
+			InputSchema:   json.RawMessage(`{"type":"object","description":"No input fields; operates on the job's user_id (subject UUID).","additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{}`),
 		},
 	}
@@ -81,7 +81,7 @@ func Jobs() []JobSpec {
 
 // Pipelines returns every pipeline the API can start. The onboarding pipeline
 // (full_sync -> onboarding_compute) is user-initiable: a browser/app POSTs
-// /pipelines/onboarding for its own partition (ADR 0012 / 0015). Its step job
+// /pipelines/onboarding for itself (ADR 0012 / 0015). Its step job
 // types MUST be registered as handlers in cmd/worker.
 func Pipelines() []PipelineSpec {
 	return []PipelineSpec{
@@ -94,8 +94,8 @@ func Pipelines() []PipelineSpec {
 				},
 			},
 			UserInitiable: true,
-			Description:   "New-user onboarding: a full watch sync followed by baseline/load/ability compute. Partition key is the user UUID.",
-			InputSchema:   json.RawMessage(`{"type":"object","description":"No input consumed; onboarding operates on the partition (user UUID).","additionalProperties":false}`),
+			Description:   "New-user onboarding: a full watch sync followed by baseline/load/ability compute. user_id is the subject athlete.",
+			InputSchema:   json.RawMessage(`{"type":"object","description":"No input consumed; onboarding operates on the run's user_id (subject UUID).","additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{}`),
 		},
 	}

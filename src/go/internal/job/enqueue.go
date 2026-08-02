@@ -9,12 +9,17 @@ import (
 
 // EnqueueSpec describes a job to enqueue.
 type EnqueueSpec struct {
-	Type          string
-	PartitionKey  string
+	Type string
+	// UserID is the athlete whose data the job operates on (the subject); empty
+	// for system jobs (stored as NULL).
+	UserID string
+	// CreatedBy is the actor that triggered creation; empty (NULL) for internal
+	// or orchestrator-created jobs.
+	CreatedBy     string
 	InputJSON     string
 	PipelineRunID string // optional: links the job to a pipeline run
 	// IdempotencyKey, when non-empty, deduplicates creation: Store.Create returns
-	// ErrConflict if a job with the same (PartitionKey, IdempotencyKey) exists.
+	// ErrConflict if a job with the same (UserID, IdempotencyKey) exists.
 	IdempotencyKey string
 }
 
@@ -65,13 +70,11 @@ func NewStoreEnqueuer(store Store, pub Publisher, opts ...EnqueueOption) *StoreE
 
 // Enqueue implements Enqueuer.
 func (e *StoreEnqueuer) Enqueue(ctx context.Context, spec EnqueueSpec) (string, error) {
-	if spec.PartitionKey == "" {
-		spec.PartitionKey = GlobalPartition
-	}
 	now := e.now()
 	j := &Job{
 		ID:             e.newID(),
-		PartitionKey:   spec.PartitionKey,
+		UserID:         spec.UserID,
+		CreatedBy:      spec.CreatedBy,
 		Type:           spec.Type,
 		Status:         StatusQueued,
 		InputJSON:      spec.InputJSON,
@@ -83,7 +86,7 @@ func (e *StoreEnqueuer) Enqueue(ctx context.Context, spec EnqueueSpec) (string, 
 	if err := e.store.Create(ctx, j); err != nil {
 		return "", err
 	}
-	if err := e.pub.PublishWork(ctx, Message{JobID: j.ID, PartitionKey: j.PartitionKey}); err != nil {
+	if err := e.pub.PublishWork(ctx, Message{JobID: j.ID, UserID: j.UserID}); err != nil {
 		return j.ID, err
 	}
 	return j.ID, nil

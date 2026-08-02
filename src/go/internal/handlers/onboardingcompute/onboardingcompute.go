@@ -66,13 +66,13 @@ type result struct {
 	DailyLoadRows       int    `json:"daily_load_rows"`
 }
 
-// New builds the onboarding_compute handler. j.PartitionKey is the user UUID.
+// New builds the onboarding_compute handler. j.UserID is the user UUID.
 func New(store Store) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
-		user := j.PartitionKey
+		user := j.UserID
 		if _, err := uuid.Parse(user); err != nil {
-			return "", job.NewPermanentError("bad_partition",
-				fmt.Errorf("onboarding_compute: partition key must be a user UUID: %w", err))
+			return "", job.NewPermanentError("bad_user",
+				fmt.Errorf("onboarding_compute: user_id must be a user UUID: %w", err))
 		}
 		asOf := shanghaiToday()
 
