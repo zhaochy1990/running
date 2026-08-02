@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { setAuthUser, clearAuthUser } from '../telemetry/appInsights'
+import { apiUrl } from '../lib/apiRouting'
 
 // Auth flows through the stride-web BFF same-origin in every environment
 // (ADR 0017), so requests are always relative `/api/auth/*` — no dev/prod
@@ -40,7 +41,7 @@ async function refreshAccessToken(): Promise<string> {
   const refreshToken = sessionStorage.getItem('refresh_token')
   if (!refreshToken) throw new Error('No refresh token')
 
-  const res = await fetch(`/api/auth/refresh`, {
+  const res = await fetch(apiUrl('POST', `/api/auth/refresh`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
     body: JSON.stringify({ refresh_token: refreshToken }),
@@ -120,7 +121,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   ...initialAuth,
 
   login: async (email: string, password: string) => {
-    const res = await fetch(`/api/auth/login`, {
+    const res = await fetch(apiUrl('POST', `/api/auth/login`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
       body: JSON.stringify({ email, password }),
@@ -167,7 +168,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     if (refreshToken) {
       try {
-        await fetch(`/api/auth/logout`, {
+        await fetch(apiUrl('POST', `/api/auth/logout`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
           body: JSON.stringify({ refresh_token: refreshToken }),

@@ -23,6 +23,15 @@ export interface BffConfig {
    * (ADR 0017). Unset in production.
    */
   readonly viteDevServerUrl: string | null
+  /**
+   * Interim (ADR 0017): the browser-facing base URL for Tencent-bound endpoints
+   * (the Tencent Caddy gateway, e.g. `https://124.221.38.59`). When set, the BFF
+   * injects it + the route manifest into the SPA so the browser calls Tencent
+   * endpoints DIRECT (one in-country hop) instead of proxying them cross-border
+   * through this Azure BFF. Empty → everything stays relative/same-origin via the
+   * BFF (dev, and the future post-备案 co-located state).
+   */
+  readonly publicDirectBaseUrl: string | null
 }
 
 function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
@@ -52,5 +61,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BffConfig {
   const devRaw = env.VITE_DEV_SERVER_URL?.trim()
   const viteDevServerUrl = devRaw ? stripTrailingSlash(devRaw) : null
 
-  return { port, pythonApiUrl, goApiUrl, authUpstreamUrl, viteDevServerUrl }
+  const directRaw = env.PUBLIC_DIRECT_BASE_URL?.trim()
+  const publicDirectBaseUrl = directRaw ? stripTrailingSlash(directRaw) : null
+
+  return { port, pythonApiUrl, goApiUrl, authUpstreamUrl, viteDevServerUrl, publicDirectBaseUrl }
 }

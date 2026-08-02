@@ -3,14 +3,38 @@ import { join } from 'node:path'
 
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 
-import { loadConfig } from './config.js'
+import { loadConfig, type BffConfig } from './config.js'
 import { proxyToUpstream } from './proxy.js'
-import { hasGoRoutes, resolveUpstream } from './routing/table.js'
+import { API_ROUTES } from './routing/api-routes.js'
+import { AUTH_PREFIX, hasGoRoutes, resolveUpstream } from './routing/table.js'
 import { baseUrlFor } from './routing/upstreams.js'
 
 const config = loadConfig()
+
+/**
+ * Build the routing config the BFF injects into index.html for the SPA. When
+ * PUBLIC_DIRECT_BASE_URL is set, the browser sends Tencent-bound (auth + Go)
+ * requests direct to that gateway; the manifest lets the client mirror the BFF's
+ * resolveUpstream exactly. Empty → nothing injected beyond an empty base, so the
+ * SPA stays relative/same-origin (dev + future co-located state).
+ */
+function routingConfigForClient(cfg: BffConfig): Record<string, unknown> {
+  if (!cfg.publicDirectBaseUrl) return { directBaseUrl: '' }
+  return {
+    directBaseUrl: cfg.publicDirectBaseUrl,
+    authPrefix: AUTH_PREFIX,
+    routes: API_ROUTES.map((r) => ({ method: r.method, path: r.path, upstream: r.upstream })),
+  }
+}
+
+function injectRouting(html: string, cfg: BffConfig): string {
+  // Escape `<` so a path can never break out of the <script> element.
+  const json = JSON.stringify(routingConfigForClient(cfg)).replace(/</g, '\\u003c')
+  const tag = `<script>window.__STRIDE_ROUTING__=${json}</script>`
+  return html.includes('</head>') ? html.replace('</head>', `${tag}</head>`) : `${tag}${html}`
+}
 
 // Fail fast: a manifest that routes any endpoint to Go with no GO_API_URL would
 // 502 every cutover endpoint at runtime — catch it at boot instead.
@@ -64,9 +88,20 @@ if (config.viteDevServerUrl) {
   console.log(`[dev] proxying non-API requests to Vite at ${devTarget}`)
   app.all('*', (c) => proxyToUpstream(c.req.raw, devTarget))
 } else {
-  // Prod: serve the built SPA. Content-hashed files under /assets get an
-  // immutable policy; everything else stays revalidated.
-  const indexHtml = readFileSync(join(STATIC_ROOT, 'index.html'), 'utf-8')
+  // Prod: serve the built SPA. index.html is served with the routing config
+  // injected (window.__STRIDE_ROUTING__). serveStatic would otherwise serve the
+  // RAW index.html for `/`, so we intercept `/` (and the SPA fallback) with the
+  // injected copy; serveStatic only handles hashed assets / static files.
+  const indexHtml = injectRouting(readFileSync(join(STATIC_ROOT, 'index.html'), 'utf-8'), config)
+  const serveIndex = (c: Context) => {
+    c.header('Cache-Control', 'no-cache')
+    return c.html(indexHtml)
+  }
+
+  // Root must be served with injection BEFORE serveStatic (which would serve the
+  // raw index.html for a directory request).
+  app.get('/', serveIndex)
+
   app.use(
     '/*',
     serveStatic({
@@ -79,10 +114,7 @@ if (config.viteDevServerUrl) {
     }),
   )
   // SPA fallback — must be last so it never shadows /api or static files.
-  app.get('*', (c) => {
-    c.header('Cache-Control', 'no-cache')
-    return c.html(indexHtml)
-  })
+  app.get('*', serveIndex)
 }
 
 serve({ fetch: app.fetch, port: config.port }, (info) => {
