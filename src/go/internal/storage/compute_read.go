@@ -133,3 +133,64 @@ func (s *Store) AllRunningActivities(ctx context.Context, userID string) ([]Acti
 	}
 	return rows, nil
 }
+
+// LatestRunningCalibrationSnapshot returns the user's most recent calibration
+// snapshot (by as_of_date, then algorithm_version), or (nil, nil) when the user
+// has none yet. The compute handler reads the baseline from here rather than
+// recomputing it (single-source rule; the calibration job owns writes).
+func (s *Store) LatestRunningCalibrationSnapshot(ctx context.Context, userID string) (*RunningCalibrationSnapshot, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []RunningCalibrationSnapshot
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ?", uid).
+		Order("as_of_date DESC, algorithm_version DESC").
+		Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return &rows[0], nil
+}
+
+// DailyTrainingLoadBefore returns the most recent daily-load row strictly before
+// the given Shanghai day (YYYY-MM-DD), or (nil, nil) when none exists. It seeds
+// the incremental PMC recompute with prior CTL/ATL so the EWMA continues from
+// where it left off rather than restarting from zero.
+func (s *Store) DailyTrainingLoadBefore(ctx context.Context, userID, date string) (*DailyTrainingLoad, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []DailyTrainingLoad
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ? AND date < ?", uid, date).
+		Order("date DESC").
+		Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return &rows[0], nil
+}
+
+// PersonalBests returns the user's cached personal-best rows (one per distance).
+// The incremental compute reads these to compare against new activities before
+// upserting only the distances that improved.
+func (s *Store) PersonalBests(ctx context.Context, userID string) ([]PersonalBest, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []PersonalBest
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ?", uid).
+		Order("distance").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}

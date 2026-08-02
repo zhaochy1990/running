@@ -25,9 +25,11 @@ func TestPipelineRegistryMatchesUserInitiable(t *testing.T) {
 }
 
 func TestOnboardingPipelineCataloged(t *testing.T) {
-	// onboarding_compute is internal-only: users start the pipeline, not the step.
-	if ui, ok := JobUserInitiable()[JobTypeOnboardingCompute]; !ok || ui {
-		t.Fatalf("onboarding_compute should be internal-only, got ok=%v ui=%v", ok, ui)
+	// calibration and compute are internal-only: users start a pipeline, not a step.
+	for _, jt := range []string{JobTypeCalibration, JobTypeCompute} {
+		if ui, ok := JobUserInitiable()[jt]; !ok || ui {
+			t.Fatalf("%s should be internal-only, got ok=%v ui=%v", jt, ok, ui)
+		}
 	}
 	// The onboarding pipeline is user-initiable and registered.
 	if ui, ok := PipelineUserInitiable()[PipelineOnboarding]; !ok || !ui {
@@ -37,9 +39,29 @@ func TestOnboardingPipelineCataloged(t *testing.T) {
 	if !ok {
 		t.Fatalf("onboarding pipeline missing from registry")
 	}
-	want := []string{JobTypeWatchSync, JobTypeOnboardingCompute}
+	want := []string{JobTypeWatchSync, JobTypeCalibration, JobTypeCompute}
 	if len(def.Steps) != len(want) {
 		t.Fatalf("onboarding has %d steps, want %d", len(def.Steps), len(want))
+	}
+	for i, jt := range want {
+		if def.Steps[i].JobType != jt {
+			t.Fatalf("step %d job type = %q, want %q", i, def.Steps[i].JobType, jt)
+		}
+	}
+}
+
+// TestDataSyncPipelineCataloged checks the incremental path: sync -> compute.
+func TestDataSyncPipelineCataloged(t *testing.T) {
+	if ui, ok := PipelineUserInitiable()[PipelineDataSync]; !ok || !ui {
+		t.Fatalf("data_sync pipeline should be user-initiable, got ok=%v ui=%v", ok, ui)
+	}
+	def, ok := PipelineRegistry().Get(PipelineDataSync)
+	if !ok {
+		t.Fatalf("data_sync pipeline missing from registry")
+	}
+	want := []string{JobTypeWatchSync, JobTypeCompute}
+	if len(def.Steps) != len(want) {
+		t.Fatalf("data_sync has %d steps, want %d", len(def.Steps), len(want))
 	}
 	for i, jt := range want {
 		if def.Steps[i].JobType != jt {

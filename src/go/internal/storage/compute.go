@@ -151,3 +151,27 @@ func (s *Store) ReplacePersonalBests(ctx context.Context, userID string, pbs []P
 		return tx.CreateInBatches(&pbs, 100).Error
 	})
 }
+
+// UpsertPersonalBests upserts the given PB rows on their (user_id, distance) key
+// WITHOUT deleting the others — the incremental compute's counterpart to
+// ReplacePersonalBests. It writes only the distances a new activity improved,
+// leaving every untouched distance's existing best in place.
+func (s *Store) UpsertPersonalBests(ctx context.Context, userID string, pbs []PersonalBest) error {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	if len(pbs) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	for i := range pbs {
+		pbs[i].UserID = uid
+		if pbs[i].UpdatedAt.IsZero() {
+			pbs[i].UpdatedAt = now
+		}
+	}
+	return s.db.WithContext(ctx).
+		Clauses(clause.OnConflict{UpdateAll: true}).
+		CreateInBatches(&pbs, 100).Error
+}

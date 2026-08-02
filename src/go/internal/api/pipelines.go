@@ -65,7 +65,7 @@ func (s *Service) startPipeline(c *gin.Context) {
 		}
 	}
 
-	runID, err := s.pipelines.StartPipeline(c.Request.Context(), name, userID, createdBy, idem)
+	runID, err := s.pipelines.StartPipeline(c.Request.Context(), name, userID, createdBy, idem, string(body.Input))
 	if errors.Is(err, job.ErrConflict) {
 		existing, lookupErr := s.runsIdem.PipelineRunByIdempotencyKey(c.Request.Context(), userID, idem)
 		if lookupErr != nil {

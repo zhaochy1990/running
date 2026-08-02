@@ -90,7 +90,7 @@ func (f *fakeRuns) seedRun(r *job.PipelineRun) {
 	f.order = append(f.order, r)
 }
 
-func (f *fakeRuns) StartPipeline(_ context.Context, name, userID, createdBy, idem string) (string, error) {
+func (f *fakeRuns) StartPipeline(_ context.Context, name, userID, createdBy, idem, inputJSON string) (string, error) {
 	if idem != "" {
 		if _, ok := f.byIdem[jkey(userID, idem)]; ok {
 			return "", job.ErrConflict
@@ -98,7 +98,7 @@ func (f *fakeRuns) StartPipeline(_ context.Context, name, userID, createdBy, ide
 	}
 	f.nextID++
 	id := "run-" + string(rune('a'+f.nextID))
-	r := &job.PipelineRun{RunID: id, UserID: userID, CreatedBy: createdBy, Name: name, Status: job.StatusRunning, IdempotencyKey: idem}
+	r := &job.PipelineRun{RunID: id, UserID: userID, CreatedBy: createdBy, Name: name, InputJSON: inputJSON, Status: job.StatusRunning, IdempotencyKey: idem}
 	f.byID[id] = r
 	f.order = append(f.order, r)
 	if idem != "" {
@@ -157,16 +157,19 @@ func newHarness(t *testing.T) *harness {
 	jobs := newFakeJobs()
 	runs := newFakeRuns()
 	svc := NewService(Config{
-		Enqueuer:              jobs,
-		Jobs:                  jobs,
-		JobsIdem:              jobs,
-		Pipelines:             runs,
-		Runs:                  runs,
-		RunsList:              runs,
-		RunsIdem:              runs,
-		JobUserInitiable:      map[string]bool{"hello": false, "watch_sync": true},
-		PipelineUserInitiable: map[string]bool{"onboarding": true, "internal_only": false},
-		Auth:                  NewAuthenticator(testToken, NewJWTVerifierFromKey(&key.PublicKey, testIssuer, testAudience)),
+		Enqueuer:                jobs,
+		Jobs:                    jobs,
+		JobsIdem:                jobs,
+		Pipelines:               runs,
+		Runs:                    runs,
+		RunsList:                runs,
+		RunsIdem:                runs,
+		JobUserInitiable:        map[string]bool{"hello": false, "watch_sync": true},
+		PipelineUserInitiable:   map[string]bool{"onboarding": true, "internal_only": false},
+		WatchSyncJobType:        "watch_sync",
+		SyncPipelineFull:        "onboarding",
+		SyncPipelineIncremental: "data_sync",
+		Auth:                    NewAuthenticator(testToken, NewJWTVerifierFromKey(&key.PublicKey, testIssuer, testAudience)),
 	})
 	return &harness{svc: svc, jobs: jobs, runs: runs, key: key}
 }

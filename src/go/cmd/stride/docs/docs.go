@@ -481,6 +481,78 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/{user}/sync": {
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Starts the data-sync pipeline for the user and returns immediately (202) with a run id; poll GET /pipelines/{run_id} for completion. The pipeline syncs watch data and then computes derived metrics (training load, PMC, personal bests). Mode picks the pipeline: \"incremental\" (default) syncs only new activities and computes only those; \"full\" re-syncs history, recomputes the athlete baseline, and does a full compute (new-user onboarding). This is the async Go replacement for the Python POST /api/{user}/sync. A user caller may only sync their own id (path {user} must equal their JWT sub); an internal caller may sync any user (path {user} must be a UUID).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sync"
+                ],
+                "summary": "Trigger a watch-data sync (+ compute) for a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub, or any user UUID for internal callers)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Optional sync options; omitted mode defaults to incremental",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/api.syncRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Started",
+                        "schema": {
+                            "$ref": "#/definitions/api.startPipelineResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/jobs": {
             "get": {
                 "description": "Returns every job type the system supports (hardcoded in the catalog), each with its input JSON schema and an example input. Static system metadata; no auth required.",
@@ -1594,6 +1666,32 @@ const docTemplate = `{
                 },
                 "training_dose_source": {
                     "type": "string"
+                }
+            }
+        },
+        "api.syncRequest": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "enum": [
+                        "all",
+                        "activities",
+                        "health"
+                    ],
+                    "example": "all"
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "full",
+                        "incremental"
+                    ],
+                    "example": "incremental"
                 }
             }
         },

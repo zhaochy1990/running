@@ -77,8 +77,13 @@ type PipelineRun struct {
 	// caller did. Provenance only — never used for authorization. Coincides with
 	// UserID for user-started runs; empty when an internal caller starts a run
 	// targeting an athlete's data.
-	CreatedBy    string
-	Name         string
+	CreatedBy string
+	Name      string
+	// InputJSON is the run-level input supplied at StartPipeline. The orchestrator
+	// threads it into every step's job InputJSON (merged with the previous step's
+	// ResultJSON), so a pipeline can carry parameters (e.g. sync mode) to its
+	// steps and pass one step's output to the next.
+	InputJSON    string
 	Status       Status
 	CurrentStep  int
 	Steps        []PipelineStep

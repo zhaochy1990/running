@@ -12,7 +12,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/zhaochy1990/stride/internal/job"
@@ -46,7 +45,7 @@ func New(resolve Resolver, marker SyncMarker) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		user := j.UserID
 
-		opts, err := parsePayload(j.InputJSON)
+		opts, err := provider.ParseSyncOptions(j.InputJSON)
 		if err != nil {
 			// A malformed payload can't be fixed by retrying.
 			return "", job.NewPermanentError("bad_payload", err)
@@ -96,53 +95,11 @@ func New(resolve Resolver, marker SyncMarker) job.Handler {
 		}
 
 		out, _ := json.Marshal(struct {
-			Activities int    `json:"activities"`
-			Health     int    `json:"health"`
-			Mode       string `json:"mode"`
-		}{res.Activities, res.Health, string(opts.Mode)})
+			Activities int      `json:"activities"`
+			Health     int      `json:"health"`
+			Mode       string   `json:"mode"`
+			LabelIDs   []string `json:"label_ids,omitempty"`
+		}{res.Activities, res.Health, string(opts.Mode), res.ActivityLabelIDs})
 		return string(out), nil
 	}
-}
-
-// payload is the optional InputJSON schema.
-type payload struct {
-	Mode    string `json:"mode"`
-	Content string `json:"content"`
-	Limit   int    `json:"limit"`
-}
-
-// parsePayload maps InputJSON onto SyncOptions. Absent/empty payload defaults to
-// full + all + unlimited (ADR 0011).
-func parsePayload(input string) (provider.SyncOptions, error) {
-	opts := provider.SyncOptions{Mode: provider.SyncFull, Content: provider.ContentAll}
-	if strings.TrimSpace(input) == "" {
-		return opts, nil
-	}
-	var p payload
-	if err := json.Unmarshal([]byte(input), &p); err != nil {
-		return provider.SyncOptions{}, fmt.Errorf("watch_sync: parse payload: %w", err)
-	}
-	switch p.Mode {
-	case "", "full":
-		opts.Mode = provider.SyncFull
-	case "incremental":
-		opts.Mode = provider.SyncIncremental
-	default:
-		return provider.SyncOptions{}, fmt.Errorf("watch_sync: invalid mode %q", p.Mode)
-	}
-	switch p.Content {
-	case "", "all":
-		opts.Content = provider.ContentAll
-	case "activities":
-		opts.Content = provider.ContentActivities
-	case "health":
-		opts.Content = provider.ContentHealth
-	default:
-		return provider.SyncOptions{}, fmt.Errorf("watch_sync: invalid content %q", p.Content)
-	}
-	if p.Limit < 0 {
-		return provider.SyncOptions{}, fmt.Errorf("watch_sync: limit must be >= 0, got %d", p.Limit)
-	}
-	opts.Limit = p.Limit
-	return opts, nil
 }

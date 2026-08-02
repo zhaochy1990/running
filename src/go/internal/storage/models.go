@@ -118,6 +118,7 @@ type pipelineRunModel struct {
 	// internal caller). Provenance only.
 	CreatedBy      *string    `gorm:"column:created_by;type:varchar(191)"`
 	Name           string     `gorm:"column:name;type:varchar(191);not null"`
+	InputJSON      string     `gorm:"column:input_json;type:longtext"`
 	Status         string     `gorm:"column:status;type:varchar(32);index;not null"`
 	CurrentStep    int        `gorm:"column:current_step;not null;default:0"`
 	StepsJSON      string     `gorm:"column:steps_json;type:longtext"`
@@ -140,6 +141,7 @@ func toPipelineModel(r *job.PipelineRun) (*pipelineRunModel, error) {
 		UserID:         nullIfEmpty(r.UserID),
 		CreatedBy:      nullIfEmpty(r.CreatedBy),
 		Name:           r.Name,
+		InputJSON:      r.InputJSON,
 		Status:         string(r.Status),
 		CurrentStep:    r.CurrentStep,
 		StepsJSON:      string(steps),
@@ -163,6 +165,7 @@ func (m *pipelineRunModel) toDomain() (*job.PipelineRun, error) {
 		UserID:         derefString(m.UserID),
 		CreatedBy:      derefString(m.CreatedBy),
 		Name:           m.Name,
+		InputJSON:      m.InputJSON,
 		Status:         job.Status(m.Status),
 		CurrentStep:    m.CurrentStep,
 		Steps:          steps,
