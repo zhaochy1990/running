@@ -55,11 +55,14 @@ export const API_ROUTES: readonly ApiRoute[] = [
   // ✓ /settings · delete account
   { method: 'DELETE', path: '/api/users/me', upstream: 'python', goReady: false },
   // ✓ /settings + global(layout) · watch info + sync pill state   [ON GO]
-  //   Cut over to the Go stride-api (ADR 0018). Go returns a curated Chinese
-  //   capabilities list (display-only; cosmetic diff from the old English keys).
-  { method: 'GET', path: '/api/users/me/watch', upstream: 'go', goReady: true },
-  // ✓ /settings · disconnect watch   [ON GO]
-  { method: 'DELETE', path: '/api/users/me/watch', upstream: 'go', goReady: true },
+  //   Reverted to Python (BFF-relative → Azure) after the Go cutover surfaced a
+  //   cross-store gap: disconnect (DELETE) writes only Tencent MySQL while connect
+  //   still runs through Python/Azure (coros/garmin login below), so the two
+  //   credential stores drift. goReady stays true — Go implements both method+paths;
+  //   re-flip upstream to 'go' once connect is on Go and the stores are reconciled.
+  { method: 'GET', path: '/api/users/me/watch', upstream: 'python', goReady: true },
+  // ✓ /settings · disconnect watch
+  { method: 'DELETE', path: '/api/users/me/watch', upstream: 'python', goReady: true },
   // ✓ /onboarding, /settings · connect COROS account
   //   Go note: Go unifies these as POST /api/users/me/watch/login {provider} —
   //   cutover needs the frontend to switch to the unified path.
