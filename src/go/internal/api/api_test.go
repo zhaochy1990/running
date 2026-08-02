@@ -488,3 +488,41 @@ func TestHealth_ReflectsChecks(t *testing.T) {
 		t.Fatalf("code = %d, want 503 (a check is failing)", w.Code)
 	}
 }
+
+// TestCORSPreflight_AllowsBrowserMethods guards the direct-browser tier (ADR
+// 0017): every method the routing manifest can send from the browser must be
+// advertised in the preflight Access-Control-Allow-Methods, or the fetch is
+// blocked by CORS before it leaves the page. Regression: DELETE /api/users/me/watch
+// was blocked because the middleware only listed GET, POST, OPTIONS.
+func TestCORSPreflight_AllowsBrowserMethods(t *testing.T) {
+	const origin = "https://stride-running.cn"
+	svc := NewService(Config{
+		Auth:        NewAuthenticator("t", nil),
+		CORSOrigins: []string{origin},
+	})
+
+	for _, reqMethod := range []string{
+		http.MethodGet,
+		http.MethodPost,
+		http.MethodPut,
+		http.MethodPatch,
+		http.MethodDelete,
+	} {
+		r := httptest.NewRequest(http.MethodOptions, "/api/users/me/watch", nil)
+		r.Header.Set("Origin", origin)
+		r.Header.Set("Access-Control-Request-Method", reqMethod)
+		w := httptest.NewRecorder()
+		svc.Router().ServeHTTP(w, r)
+
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("preflight (%s) code = %d, want 204", reqMethod, w.Code)
+		}
+		if got := w.Header().Get("Access-Control-Allow-Origin"); got != origin {
+			t.Fatalf("preflight (%s) allow-origin = %q, want %q", reqMethod, got, origin)
+		}
+		allow := w.Header().Get("Access-Control-Allow-Methods")
+		if !strings.Contains(allow, reqMethod) {
+			t.Fatalf("preflight allow-methods = %q, missing %s", allow, reqMethod)
+		}
+	}
+}
