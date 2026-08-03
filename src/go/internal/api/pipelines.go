@@ -13,13 +13,12 @@ import (
 // startPipeline godoc
 //
 //	@Summary		Start a pipeline run
-//	@Description	Starts a named pipeline (a linear sequence of jobs). Internal callers may start any cataloged pipeline for any user; user callers may only start user-initiable pipelines for themselves. Supply an Idempotency-Key header to make retries safe.
+//	@Description	Starts a named pipeline (a linear sequence of jobs). The pipeline name is supplied in the request body. Internal callers may start any cataloged pipeline for any user; user callers may only start user-initiable pipelines for themselves. Supply an Idempotency-Key header to make retries safe.
 //	@Tags			pipelines
 //	@Accept			json
 //	@Produce		json
-//	@Param			name			path		string					true	"Pipeline name"
 //	@Param			Idempotency-Key	header		string					false	"Deduplicates creation; a repeat key returns the existing run (200)"
-//	@Param			body			body		startPipelineRequest	false	"Optional subject user/input"
+//	@Param			body			body		startPipelineRequest	true	"Pipeline name (required) and optional subject user/input"
 //	@Success		202				{object}	startPipelineResponse	"Started"
 //	@Success		200				{object}	startPipelineResponse	"Existing run returned for a repeated Idempotency-Key"
 //	@Failure		400				{object}	errorResponse
@@ -28,15 +27,21 @@ import (
 //	@Failure		500				{object}	errorResponse
 //	@Security		InternalToken
 //	@Security		BearerAuth
-//	@Router			/pipelines/{name} [post]
+//	@Router			/pipelines [post]
 func (s *Service) startPipeline(c *gin.Context) {
 	caller := callerFrom(c)
-	name := c.Param("name")
 
 	var body startPipelineRequest
-	// Body is optional; tolerate an empty body (EOF) but reject a malformed one.
+	// Tolerate an empty body (EOF) so the missing-name check below owns that
+	// error, but reject a malformed one.
 	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid request body"})
+		return
+	}
+
+	name := body.Name
+	if name == "" {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "pipeline name required"})
 		return
 	}
 

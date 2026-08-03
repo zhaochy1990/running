@@ -23,14 +23,15 @@ type enqueueJobResponse struct {
 	Deduplicated bool   `json:"deduplicated,omitempty"`
 }
 
-// startPipelineRequest is the POST /pipelines/{name} body (all fields optional).
-// user_id (the subject) is honored only for the internal tier.
+// startPipelineRequest is the POST /pipelines body. name selects the pipeline to
+// start (required). user_id (the subject) is honored only for the internal tier.
 type startPipelineRequest struct {
+	Name   string          `json:"name" example:"onboarding"`
 	UserID string          `json:"user_id,omitempty"`
 	Input  json.RawMessage `json:"input,omitempty" swaggertype:"object"`
 }
 
-// startPipelineResponse is returned by POST /pipelines/{name}.
+// startPipelineResponse is returned by POST /pipelines.
 type startPipelineResponse struct {
 	RunID        string `json:"run_id"`
 	PipelineName string `json:"pipeline_name"`

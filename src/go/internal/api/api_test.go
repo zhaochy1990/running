@@ -323,7 +323,7 @@ func TestStartPipeline_UserInitiableAndUnknown(t *testing.T) {
 	h := newHarness(t)
 	tok := h.userToken(t, "user-9")
 
-	ok := h.do(http.MethodPost, "/pipelines/onboarding", "", map[string]string{"Authorization": "Bearer " + tok})
+	ok := h.do(http.MethodPost, "/pipelines", `{"name":"onboarding"}`, map[string]string{"Authorization": "Bearer " + tok})
 	if ok.Code != http.StatusAccepted {
 		t.Fatalf("start code = %d, want 202: %s", ok.Code, ok.Body.String())
 	}
@@ -338,13 +338,27 @@ func TestStartPipeline_UserInitiableAndUnknown(t *testing.T) {
 		t.Fatalf("run subject/creator = %q/%q (err %v), want user-9/user-9", run.UserID, run.CreatedBy, err)
 	}
 
-	unknown := h.do(http.MethodPost, "/pipelines/does-not-exist", "", map[string]string{"Authorization": "Bearer " + tok})
+	unknown := h.do(http.MethodPost, "/pipelines", `{"name":"does-not-exist"}`, map[string]string{"Authorization": "Bearer " + tok})
 	if unknown.Code != http.StatusBadRequest {
 		t.Fatalf("unknown code = %d, want 400", unknown.Code)
 	}
 
+	// A missing name (empty body or body without name) is a 400.
+	for _, missingBody := range []string{"", `{}`, `{"user_id":"user-9"}`} {
+		missing := h.do(http.MethodPost, "/pipelines", missingBody, map[string]string{"Authorization": "Bearer " + tok})
+		if missing.Code != http.StatusBadRequest {
+			t.Fatalf("missing-name body %q code = %d, want 400", missingBody, missing.Code)
+		}
+	}
+
+	// A malformed (non-EOF) body is a 400.
+	malformed := h.do(http.MethodPost, "/pipelines", `{`, map[string]string{"Authorization": "Bearer " + tok})
+	if malformed.Code != http.StatusBadRequest {
+		t.Fatalf("malformed body code = %d, want 400", malformed.Code)
+	}
+
 	// A user may not start an internal-only pipeline.
-	forbidden := h.do(http.MethodPost, "/pipelines/internal_only", "", map[string]string{"Authorization": "Bearer " + tok})
+	forbidden := h.do(http.MethodPost, "/pipelines", `{"name":"internal_only"}`, map[string]string{"Authorization": "Bearer " + tok})
 	if forbidden.Code != http.StatusForbidden {
 		t.Fatalf("internal-only code = %d, want 403", forbidden.Code)
 	}
@@ -423,7 +437,7 @@ func TestStartPipeline_RecordsIdentities(t *testing.T) {
 	tok := h.userToken(t, "user-7")
 
 	// User-triggered start records user_id == created_by == sub, listed under the user.
-	start := h.do(http.MethodPost, "/pipelines/onboarding", "", map[string]string{"Authorization": "Bearer " + tok})
+	start := h.do(http.MethodPost, "/pipelines", `{"name":"onboarding"}`, map[string]string{"Authorization": "Bearer " + tok})
 	if start.Code != http.StatusAccepted {
 		t.Fatalf("start code = %d, want 202: %s", start.Code, start.Body.String())
 	}
@@ -435,7 +449,7 @@ func TestStartPipeline_RecordsIdentities(t *testing.T) {
 	}
 
 	// Internal-triggered start for a subject: user_id is the subject, created_by empty.
-	internalStart := h.do(http.MethodPost, "/pipelines/onboarding", `{"user_id":"user-x"}`, internalHdr())
+	internalStart := h.do(http.MethodPost, "/pipelines", `{"name":"onboarding","user_id":"user-x"}`, internalHdr())
 	if internalStart.Code != http.StatusAccepted {
 		t.Fatalf("internal start code = %d, want 202: %s", internalStart.Code, internalStart.Body.String())
 	}
