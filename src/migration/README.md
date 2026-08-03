@@ -1,11 +1,29 @@
-# Watch credentials migration — AKV → Tencent MySQL
+# Migrations → Tencent MySQL
 
-A one-off Node.js utility that copies per-user **watch login credentials** (COROS
-and Garmin) from **Azure Key Vault** into the **Tencent MySQL** `provider_credentials`
-table read by the Go worker (`src/go/`).
+One-off Node.js utilities that copy per-user data into the **Tencent MySQL**
+tables read by the Go worker (`src/go/`). It is a standalone project — it has its
+own `package.json` and does **not** import anything from the rest of the repo.
 
-It is a standalone project — it has its own `package.json` and does **not** import
-anything from the rest of the repo.
+Two migrations live here:
+
+| Command | Source | Target table(s) |
+|---|---|---|
+| `npm run migrate` (`src/index.js`) | Azure Key Vault watch-credential secrets | `provider_credentials` |
+| `npm run migrate:profiles` (`src/migrate-profiles.js`) | local `data/<uuid>/{profile,onboarding}.json` | `user_profile`, `user_onboarding` |
+
+Both are **dry-run by default** — nothing is written until you pass `--commit`.
+
+Only **real users** (the UUIDs in `src/users.js`) are migrated; every other UUID
+is a test account and is discarded (see `AGENTS.md`). The creds migration prunes
+test accounts by `--exclude-email`; the profile migration enforces the
+`src/users.js` allowlist directly.
+
+---
+
+## 1) Watch credentials migration — AKV → `provider_credentials`
+
+A utility that copies per-user **watch login credentials** (COROS and Garmin)
+from **Azure Key Vault** into the `provider_credentials` table.
 
 ## What it does
 
@@ -80,11 +98,71 @@ comma list), `--limit <n>`, `--vault-url <url>`, `--ensure-schema`,
 Recommended flow: dry-run → dry-run for one `--user` → `--commit --limit 1` on a
 single test user → verify in the DB and via a Go worker read → full `--commit`.
 
+---
+
+## 2) Profile + onboarding migration — local `data/` → `user_profile` / `user_onboarding`
+
+Copies each real user's **profile** and **onboarding** state from the repo's
+on-disk `data/<uuid>/` snapshot into the `user_profile` and `user_onboarding`
+tables. The source files (`profile.json`, `onboarding.json`) are the filesystem
+mirror of the Azure Blob content store; download them first if your `data/` dir
+does not have them.
+
+No Azure access is needed for this migration — it reads local files only.
+
+### Column mapping
+
+**`user_profile`** (from `profile.json`; only the five onboarding core fields —
+legacy CJK keys and race/training goals are ignored):
+
+| `user_profile` | Source | Notes |
+|---|---|---|
+| `user_id` (PK) | the real-user UUID | must be in `src/users.js` |
+| `display_name` | `display_name` | missing → `""` |
+| `dob` | `dob` (`YYYY-MM-DD`) | Shanghai-local calendar date, never tz-converted |
+| `sex` | `sex` | missing → `""` |
+| `height_cm` / `weight_kg` | same | missing → `0` (Go zero value; the Go reader can't scan NULL) |
+| `created_at` / `updated_at` | run time (UTC) | `created_at` preserved on re-run |
+
+**`user_onboarding`** (from `onboarding.json`):
+
+| `user_onboarding` | Source | Notes |
+|---|---|---|
+| `user_id` (PK) | the real-user UUID | |
+| `watch_ready` | **`coros_ready`** | Python's field → Go's provider-agnostic name |
+| `profile_ready` | `profile_ready` | |
+| `completed_at` | `completed_at` | ISO-8601 → MySQL `datetime` UTC; NULL if absent |
+| `created_at` / `updated_at` | run time (UTC) | |
+
+### Usage
+
+```bash
+# 1) Dry-run all real users (reads local JSON, prints a redacted plan, writes nothing)
+npm run migrate:profiles
+
+# 2) Scope it down / point at a specific data root
+node src/migrate-profiles.js --user f10bc353-01ab-4db1-af9f-d9305ea9a532
+node src/migrate-profiles.js --data-dir /path/to/repo/data --limit 3
+node src/migrate-profiles.js --show-pii            # print full dob / height / weight
+
+# 3) Commit for real (optionally create the tables first on a fresh DB)
+node src/migrate-profiles.js --commit
+node src/migrate-profiles.js --commit --ensure-schema
+```
+
+Options: `--commit`, `--user <uuid>` (repeatable / comma list, allowlist-gated),
+`--data-dir <path>`, `--limit <n>`, `--ensure-schema`, `--show-pii`, `--verbose`,
+`--help`. The data root resolves to `--data-dir` → `STRIDE_DATA_DIR` → the
+repo-root `data/` dir. Only the MySQL env vars are needed (no `AKV_*`).
+
+---
+
 ## Safety / secrets
 
-- Logs are redacted: emails are masked (unless `--show-email`), and the `secret`
-  blob is only ever shown as a byte count. No password hash, access token, or
-  garth token is printed.
+- Logs are redacted: creds emails are masked (unless `--show-email`) and the
+  `secret` blob is only ever shown as a byte count; profile `dob` is coarsened to
+  the year and body metrics are shown as `set`/`-` (unless `--show-pii`). No
+  password hash, access token, or garth token is ever printed.
 - `.env` and any `akv-export*.json` are git-ignored. Never commit real DSNs or
   credential dumps.
 - The credential `secret` is stored **plaintext-v1** in MySQL, exactly like the Go
@@ -92,12 +170,14 @@ single test user → verify in the DB and via a Go worker read → full `--commi
 
 ## Schema
 
-The target table is normally created by the Go worker's `AutoMigrateWatch`. For a
-fresh DB, `schema.sql` holds the equivalent DDL, and `--ensure-schema` runs it.
+The target tables are normally created by the Go worker's `AutoMigrateWatch` /
+`AutoMigrateUsers`. For a fresh DB, `schema.sql` holds the equivalent DDL for all
+three tables, and each migration's `--ensure-schema` runs it.
 
 ## Tests
 
-Pure transform + config logic is covered without touching Azure or MySQL:
+Pure transform + config + selection logic is covered without touching Azure,
+MySQL, or the filesystem:
 
 ```bash
 npm test

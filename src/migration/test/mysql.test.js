@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
-import { formatUpdatedAt, parseGoDSN, parseMysqlConfig } from "../src/mysql.js";
+import { formatUpdatedAt, parseGoDSN, parseMysqlConfig, splitSqlStatements } from "../src/mysql.js";
 
 test("parseGoDSN parses a Tencent-style Go DSN", () => {
   const dsn = parseGoDSN(
@@ -59,4 +62,37 @@ test("parseMysqlConfig leaves ssl unset when TLS is off", () => {
 test("formatUpdatedAt emits MySQL datetime(6) UTC", () => {
   const s = formatUpdatedAt(new Date("2026-08-02T12:34:56.789Z"));
   assert.equal(s, "2026-08-02 12:34:56.789000");
+});
+
+test("splitSqlStatements drops -- comments and splits a multi-table DDL", () => {
+  const ddl = `
+-- a comment
+CREATE TABLE a (
+  id INT
+);
+
+-- another table
+CREATE TABLE b (id INT);
+`;
+  const stmts = splitSqlStatements(ddl);
+  assert.equal(stmts.length, 2);
+  assert.match(stmts[0], /^CREATE TABLE a/);
+  assert.match(stmts[1], /^CREATE TABLE b/);
+  assert.equal(stmts[0].includes("-- a comment"), false);
+});
+
+test("splitSqlStatements splits the real schema.sql into its 3 CREATE TABLEs", () => {
+  // Regression guard: schema.sql grew to 3 statements; both migrations run
+  // --ensure-schema through splitSqlStatements, so each must be a lone statement
+  // (mysql2 conn.query rejects multiple statements). Comment lines contain ';'.
+  const schemaPath = join(dirname(fileURLToPath(import.meta.url)), "..", "schema.sql");
+  const stmts = splitSqlStatements(readFileSync(schemaPath, "utf8"));
+  assert.equal(stmts.length, 3);
+  for (const s of stmts) {
+    assert.match(s, /^CREATE TABLE IF NOT EXISTS/);
+    assert.equal(s.includes("--"), false);
+  }
+  assert.ok(stmts.some((s) => s.includes("provider_credentials")));
+  assert.ok(stmts.some((s) => s.includes("user_profile")));
+  assert.ok(stmts.some((s) => s.includes("user_onboarding")));
 });
