@@ -252,3 +252,88 @@ func (s *Store) ReconcileDailyLoadRows(ctx context.Context, userID string) (map[
 	}
 	return out, nil
 }
+
+// ReconcileDashboardRows returns the dashboard singleton keyed by provider (the
+// SQLite store pins id=1 per provider; here the tenant key is user_id and the
+// provider column disambiguates dual-watch users).
+func (s *Store) ReconcileDashboardRows(ctx context.Context, userID string) (map[string]map[string]any, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []Dashboard
+	if err := s.db.WithContext(ctx).Where("user_id = ?", uid).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]map[string]any, len(rows))
+	for i := range rows {
+		r := rows[i]
+		out[r.Provider] = map[string]any{
+			"running_level":             anyFloat(r.RunningLevel),
+			"aerobic_score":             anyFloat(r.AerobicScore),
+			"lactate_threshold_score":   anyFloat(r.LactateThresholdScore),
+			"anaerobic_endurance_score": anyFloat(r.AnaerobicEnduranceScore),
+			"anaerobic_capacity_score":  anyFloat(r.AnaerobicCapacityScore),
+			"rhr":                       anyInt(r.RHR),
+			"threshold_hr":              anyInt(r.ThresholdHR),
+			"threshold_pace_s_km":       anyFloat(r.ThresholdPaceSKm),
+			"recovery_pct":              anyFloat(r.RecoveryPct),
+			"avg_sleep_hrv":             anyFloat(r.AvgSleepHRV),
+			"hrv_normal_low":            anyFloat(r.HRVNormalLow),
+			"hrv_normal_high":           anyFloat(r.HRVNormalHigh),
+			"weekly_distance_m":         anyFloat(r.WeeklyDistanceM),
+			"weekly_duration_s":         anyFloat(r.WeeklyDurationS),
+		}
+	}
+	return out, nil
+}
+
+// ReconcileDailyHRVRows returns daily_hrv rows keyed by date. Single-provider
+// users have one row per date, so the date alone is an unambiguous key against
+// the SQLite store.
+func (s *Store) ReconcileDailyHRVRows(ctx context.Context, userID string) (map[string]map[string]any, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []DailyHRV
+	if err := s.db.WithContext(ctx).Where("user_id = ?", uid).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]map[string]any, len(rows))
+	for i := range rows {
+		r := rows[i]
+		out[r.Date] = map[string]any{
+			"weekly_avg":              anyInt(r.WeeklyAvg),
+			"last_night_avg":          anyInt(r.LastNightAvg),
+			"last_night_5min_high":    anyInt(r.LastNight5MinHigh),
+			"status":                  anyStr(r.Status),
+			"baseline_low_upper":      anyInt(r.BaselineLowUpper),
+			"baseline_balanced_low":   anyInt(r.BaselineBalancedLow),
+			"baseline_balanced_upper": anyInt(r.BaselineBalancedUpper),
+			"feedback_phrase":         anyStr(r.FeedbackPhrase),
+		}
+	}
+	return out, nil
+}
+
+// ReconcileRacePredictionRows returns race_predictions rows keyed by race_type.
+func (s *Store) ReconcileRacePredictionRows(ctx context.Context, userID string) (map[string]map[string]any, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []RacePrediction
+	if err := s.db.WithContext(ctx).Where("user_id = ?", uid).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]map[string]any, len(rows))
+	for i := range rows {
+		r := rows[i]
+		out[r.RaceType] = map[string]any{
+			"duration_s": anyFloat(r.DurationS),
+			"avg_pace":   anyFloat(r.AvgPace),
+		}
+	}
+	return out, nil
+}

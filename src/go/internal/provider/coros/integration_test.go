@@ -62,8 +62,9 @@ func TestSyncUser_RealMySQL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
-	if res.Activities != 2 || res.Health != 1 {
-		t.Fatalf("result = %+v, want 2 activities / 1 health", res)
+	// health = 1 daily_health + 1 dashboard + 1 daily_hrv row (syncMux fixtures).
+	if res.Activities != 2 || res.Health != 3 {
+		t.Fatalf("result = %+v, want 2 activities / 3 health", res)
 	}
 
 	rows, err := st.ReconcileActivityRows(ctx, uid)
@@ -81,6 +82,46 @@ func TestSyncUser_RealMySQL(t *testing.T) {
 		if d, _ := row["distance_m"].(float64); d != 10000 {
 			t.Errorf("%s distance_m = %v, want 10000 (cm→m through MySQL)", label, d)
 		}
+	}
+
+	// Health-domain read-back through MySQL: dashboard singleton, per-day HRV,
+	// and race predictions all round-trip via the reconcile readers.
+	dash, err := st.ReconcileDashboardRows(ctx, uid)
+	if err != nil {
+		t.Fatalf("read dashboard: %v", err)
+	}
+	drow, ok := dash["coros"]
+	if !ok {
+		t.Fatalf("dashboard row not persisted")
+	}
+	if v, _ := drow["threshold_hr"].(int64); v != 165 {
+		t.Errorf("dashboard threshold_hr = %v, want 165", drow["threshold_hr"])
+	}
+	if v, _ := drow["weekly_distance_m"].(float64); v != 50000 {
+		t.Errorf("dashboard weekly_distance_m = %v, want 50000", drow["weekly_distance_m"])
+	}
+
+	hrv, err := st.ReconcileDailyHRVRows(ctx, uid)
+	if err != nil {
+		t.Fatalf("read daily_hrv: %v", err)
+	}
+	if hrow, ok := hrv["2026-05-16"]; !ok {
+		t.Errorf("daily_hrv row not persisted")
+	} else if v, _ := hrow["last_night_avg"].(int64); v != 42 {
+		t.Errorf("daily_hrv last_night_avg = %v, want 42", hrow["last_night_avg"])
+	}
+
+	preds, err := st.ReconcileRacePredictionRows(ctx, uid)
+	if err != nil {
+		t.Fatalf("read race_predictions: %v", err)
+	}
+	if len(preds) != 2 {
+		t.Errorf("race_predictions = %d, want 2", len(preds))
+	}
+	if prow, ok := preds["Marathon"]; !ok {
+		t.Errorf("Marathon prediction not persisted")
+	} else if v, _ := prow["duration_s"].(float64); v != 10800 {
+		t.Errorf("Marathon duration_s = %v, want 10800", prow["duration_s"])
 	}
 	// re-sync is idempotent: still 2 rows.
 	if _, err := p.SyncUser(ctx, uid, provider.SyncOptions{Mode: provider.SyncFull, Content: provider.ContentActivities}); err != nil {

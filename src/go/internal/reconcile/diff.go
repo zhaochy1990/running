@@ -232,3 +232,53 @@ func DailyLoadFields() []Field {
 		{Name: "load_ratio", Kind: Float, Tol: 0.02},
 	}
 }
+
+// DashboardFields compares the dashboard singleton (keyed by provider). Every
+// value passes through the sync unconverted, so the float tolerance is tight;
+// rhr / threshold_hr are integers. updated_at is excluded (it is a wall-clock
+// write time, not synced data).
+func DashboardFields() []Field {
+	const eps = 0.011
+	return []Field{
+		{Name: "running_level", Kind: Float, Tol: eps},
+		{Name: "aerobic_score", Kind: Float, Tol: eps},
+		{Name: "lactate_threshold_score", Kind: Float, Tol: eps},
+		{Name: "anaerobic_endurance_score", Kind: Float, Tol: eps},
+		{Name: "anaerobic_capacity_score", Kind: Float, Tol: eps},
+		{Name: "rhr", Kind: Exact},
+		{Name: "threshold_hr", Kind: Exact},
+		{Name: "threshold_pace_s_km", Kind: Float, Tol: eps},
+		{Name: "recovery_pct", Kind: Float, Tol: eps},
+		{Name: "avg_sleep_hrv", Kind: Float, Tol: eps},
+		{Name: "hrv_normal_low", Kind: Float, Tol: eps},
+		{Name: "hrv_normal_high", Kind: Float, Tol: eps},
+		{Name: "weekly_distance_m", Kind: Float, Tol: eps},
+		{Name: "weekly_duration_s", Kind: Float, Tol: eps},
+	}
+}
+
+// DailyHRVFields compares daily_hrv rows (keyed by date). All values are integer
+// counts / enum strings that pass through the sync verbatim, so every field is
+// Exact.
+func DailyHRVFields() []Field {
+	return []Field{
+		{Name: "weekly_avg", Kind: Exact},
+		{Name: "last_night_avg", Kind: Exact},
+		{Name: "last_night_5min_high", Kind: Exact},
+		{Name: "status", Kind: Exact},
+		{Name: "baseline_low_upper", Kind: Exact},
+		{Name: "baseline_balanced_low", Kind: Exact},
+		{Name: "baseline_balanced_upper", Kind: Exact},
+		{Name: "feedback_phrase", Kind: Exact},
+	}
+}
+
+// RacePredictionFields compares race_predictions rows (keyed by race_type).
+// duration_s / avg_pace pass through unconverted.
+func RacePredictionFields() []Field {
+	const eps = 0.011
+	return []Field{
+		{Name: "duration_s", Kind: Float, Tol: eps},
+		{Name: "avg_pace", Kind: Float, Tol: eps},
+	}
+}

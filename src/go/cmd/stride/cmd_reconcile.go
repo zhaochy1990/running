@@ -5,9 +5,11 @@
 //
 // --table selects what to reconcile: activities (default, provider-filtered),
 // calibration, zones, pbs, activity_load, daily_load (the onboarding_compute
-// derived tables, ADR 0015). The derived tables validate only rows present in
+// derived tables, ADR 0015), and the COROS health-domain tables dashboard,
+// daily_hrv, race_predictions. The derived tables validate only rows present in
 // BOTH stores; note the PMC daily_load is path-dependent, so a clean diff needs
-// both sides computed over the same window/inputs.
+// both sides computed over the same window/inputs. The health tables likewise
+// reflect the latest sync on each side, so run both syncs before reconciling.
 package main
 
 import (
@@ -42,7 +44,7 @@ func newReconcileCmd() *cobra.Command {
 	f.StringVarP(&profile, "profile", "P", "", "user UUID")
 	f.StringVar(&sqlitePath, "sqlite", "", "path to the Python coros.db (SQLite)")
 	f.StringVar(&providerName, "provider", "coros", "provider to reconcile (coros|garmin), activities only")
-	f.StringVar(&table, "table", "activities", "activities|calibration|zones|pbs|activity_load|daily_load")
+	f.StringVar(&table, "table", "activities", "activities|calibration|zones|pbs|activity_load|daily_load|dashboard|daily_hrv|race_predictions")
 	return c
 }
 
@@ -95,6 +97,23 @@ func runReconcile(profile, sqlitePath, providerName, table string) error {
 			func() (map[string]map[string]any, error) { return store.ReconcileDailyLoadRows(ctx, user.String()) },
 			func() (map[string]map[string]any, error) { return readSQLiteDailyLoad(sqlitePath) },
 			reconcile.DailyLoadFields(),
+		},
+		"dashboard": {
+			func() (map[string]map[string]any, error) { return store.ReconcileDashboardRows(ctx, user.String()) },
+			func() (map[string]map[string]any, error) { return readSQLiteDashboard(sqlitePath) },
+			reconcile.DashboardFields(),
+		},
+		"daily_hrv": {
+			func() (map[string]map[string]any, error) { return store.ReconcileDailyHRVRows(ctx, user.String()) },
+			func() (map[string]map[string]any, error) { return readSQLiteDailyHRV(sqlitePath) },
+			reconcile.DailyHRVFields(),
+		},
+		"race_predictions": {
+			func() (map[string]map[string]any, error) {
+				return store.ReconcileRacePredictionRows(ctx, user.String())
+			},
+			func() (map[string]map[string]any, error) { return readSQLiteRacePredictions(sqlitePath) },
+			reconcile.RacePredictionFields(),
 		},
 	}
 	t, ok := targets[table]

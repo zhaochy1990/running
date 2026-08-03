@@ -238,11 +238,9 @@ type dayItem struct {
 	Fatigue           *float64    `json:"fatigue"`
 }
 
-// syncHealth refreshes daily_health from /analyse/query.
-//
-// NOTE: dashboard + daily_hrv + race_predictions are a documented follow-up
-// (their payload shapes need confirming against a captured response); v1 syncs
-// daily_health, which is enough for the shadow reconcile of the health domain.
+// syncHealth refreshes daily_health from /analyse/query, then the dashboard
+// singleton, per-day HRV trend, and race predictions from /dashboard/query
+// (+ /dashboard/detail/query for the weekly volume).
 func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, progress provider.ProgressCallback, res *provider.SyncResult) error {
 	raw, err := client.GetAnalyse(ctx)
 	if err != nil {
@@ -280,8 +278,45 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 		}
 		res.Health++
 		res.HealthDates = append(res.HealthDates, date)
-		provider.EmitProgress(progress, "health", i+1, total, provider.PercentInBand(i+1, total, 80, 95))
+		provider.EmitProgress(progress, "health", i+1, total, provider.PercentInBand(i+1, total, 80, 90))
 	}
+	return p.syncDashboard(ctx, client, user, progress, res)
+}
+
+// syncDashboard writes the dashboard singleton, the per-day HRV rows, and the
+// race predictions from the COROS dashboard payloads. The fetch is best-effort:
+// a dashboard failure must not abort an otherwise-successful daily_health sync
+// (matching the Python narrowed try/except), so a fetch error returns nil. Store
+// errors propagate.
+func (p *Provider) syncDashboard(ctx context.Context, client *Client, user string, progress provider.ProgressCallback, res *provider.SyncResult) error {
+	summaryData, err := client.GetDashboard(ctx)
+	if err != nil {
+		return nil // best-effort: keep the daily_health rows already written
+	}
+	// The week record (weekly distance/duration) is optional — a failure here
+	// still yields a usable dashboard row.
+	weekData, _ := client.GetDashboardDetail(ctx)
+
+	dash, hrvRows, preds := parseDashboard(user, summaryData, weekData)
+	if dash != nil {
+		if err := p.store.UpsertDashboard(ctx, dash); err != nil {
+			return err
+		}
+		res.Health++
+	}
+	for _, h := range hrvRows {
+		if err := p.store.UpsertDailyHRV(ctx, h); err != nil {
+			return err
+		}
+		res.Health++
+		res.HealthDates = append(res.HealthDates, h.Date)
+	}
+	for i := range preds {
+		if err := p.store.UpsertRacePrediction(ctx, &preds[i]); err != nil {
+			return err
+		}
+	}
+	provider.EmitProgress(progress, "health", 1, 1, 95)
 	return nil
 }
 
