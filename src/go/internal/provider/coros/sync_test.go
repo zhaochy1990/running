@@ -16,6 +16,9 @@ const testUID = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
 type fakeWriter struct {
 	activities map[string]*storage.Activity
 	health     map[string]*storage.DailyHealth
+	hrv        map[string]*storage.DailyHRV
+	preds      map[string]*storage.RacePrediction
+	dashboard  *storage.Dashboard
 	meta       map[string]string
 }
 
@@ -23,6 +26,8 @@ func newFakeWriter() *fakeWriter {
 	return &fakeWriter{
 		activities: map[string]*storage.Activity{},
 		health:     map[string]*storage.DailyHealth{},
+		hrv:        map[string]*storage.DailyHRV{},
+		preds:      map[string]*storage.RacePrediction{},
 		meta:       map[string]string{},
 	}
 }
@@ -39,9 +44,18 @@ func (f *fakeWriter) UpsertDailyHealth(_ context.Context, h *storage.DailyHealth
 	f.health[h.Date] = h
 	return nil
 }
-func (f *fakeWriter) UpsertDashboard(context.Context, *storage.Dashboard) error           { return nil }
-func (f *fakeWriter) UpsertDailyHRV(context.Context, *storage.DailyHRV) error             { return nil }
-func (f *fakeWriter) UpsertRacePrediction(context.Context, *storage.RacePrediction) error { return nil }
+func (f *fakeWriter) UpsertDashboard(_ context.Context, d *storage.Dashboard) error {
+	f.dashboard = d
+	return nil
+}
+func (f *fakeWriter) UpsertDailyHRV(_ context.Context, h *storage.DailyHRV) error {
+	f.hrv[h.Date] = h
+	return nil
+}
+func (f *fakeWriter) UpsertRacePrediction(_ context.Context, p *storage.RacePrediction) error {
+	f.preds[p.RaceType] = p
+	return nil
+}
 func (f *fakeWriter) SetMeta(_ context.Context, _, key, value string) error {
 	f.meta[key] = value
 	return nil
@@ -86,6 +100,15 @@ func syncMux(list string) *http.ServeMux {
 	mux.HandleFunc("/analyse/query", func(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, resultSuccess, `{"dayList":[{"date":"2026-05-09","ati":10,"cti":20,"testRhr":45}]}`)
 	})
+	mux.HandleFunc("/dashboard/query", func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(w, resultSuccess, `{"summaryInfo":{"staminaLevel":65,"lthr":165,"ltsp":280,`+
+			`"sleepHrvData":{"avgSleepHrv":55,"sleepHrvAllIntervalList":[10,20,40,70],`+
+			`"sleepHrvList":[{"avgSleepHrv":42,"happenDay":20260516,"sleepHrvIntervalList":[5,26,30,38]}]},`+
+			`"runScoreList":[{"type":1,"duration":10800,"avgPace":257},{"type":4,"duration":2400,"avgPace":240}]}}`)
+	})
+	mux.HandleFunc("/dashboard/detail/query", func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(w, resultSuccess, `{"currentWeekRecord":{"distanceRecord":50000,"durationRecord":18000}}`)
+	})
 	return mux
 }
 
@@ -100,8 +123,9 @@ func TestSyncUser_FullFlow(t *testing.T) {
 	if res.Activities != 2 {
 		t.Errorf("activities = %d, want 2", res.Activities)
 	}
-	if res.Health != 1 {
-		t.Errorf("health = %d, want 1", res.Health)
+	// health = 1 daily_health + 1 dashboard + 1 daily_hrv row.
+	if res.Health != 3 {
+		t.Errorf("health = %d, want 3", res.Health)
 	}
 	if len(fw.activities) != 2 {
 		t.Errorf("stored activities = %d, want 2", len(fw.activities))
@@ -115,6 +139,26 @@ func TestSyncUser_FullFlow(t *testing.T) {
 	// health RHR should prefer testRhr (45)
 	if h := fw.health["2026-05-09"]; h.RHR == nil || *h.RHR != 45 {
 		t.Errorf("rhr = %v, want 45 (testRhr preferred)", h.RHR)
+	}
+	// dashboard singleton + weekly volume from the detail payload.
+	if fw.dashboard == nil {
+		t.Fatalf("dashboard not stored")
+	}
+	if got := derefInt(fw.dashboard.ThresholdHR); got != 165 {
+		t.Errorf("dashboard threshold_hr = %v, want 165", got)
+	}
+	if fw.dashboard.WeeklyDistanceM == nil || *fw.dashboard.WeeklyDistanceM != 50000 {
+		t.Errorf("dashboard weekly_distance_m = %v, want 50000", fw.dashboard.WeeklyDistanceM)
+	}
+	// per-day HRV row + race predictions.
+	if _, ok := fw.hrv["2026-05-16"]; !ok {
+		t.Errorf("daily_hrv row not stored")
+	}
+	if len(fw.preds) != 2 {
+		t.Errorf("race_predictions = %d, want 2", len(fw.preds))
+	}
+	if _, ok := fw.preds["Marathon"]; !ok {
+		t.Errorf("Marathon prediction not stored")
 	}
 }
 

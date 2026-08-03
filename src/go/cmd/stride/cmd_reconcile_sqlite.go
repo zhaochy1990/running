@@ -175,6 +175,67 @@ func readSQLiteDailyLoad(path string) (map[string]map[string]any, error) {
 	})
 }
 
+// readSQLiteDashboard reads the dashboard singleton, keyed by provider to match
+// the Go ReconcileDashboardRows shape.
+func readSQLiteDashboard(path string) (map[string]map[string]any, error) {
+	return querySQLite(path, `SELECT provider, running_level, aerobic_score, lactate_threshold_score,
+		anaerobic_endurance_score, anaerobic_capacity_score, rhr, threshold_hr, threshold_pace_s_km,
+		recovery_pct, avg_sleep_hrv, hrv_normal_low, hrv_normal_high, weekly_distance_m, weekly_duration_s
+		FROM dashboard`, func(rows *sql.Rows, out map[string]map[string]any) error {
+		var provider string
+		var rl, as, lts, aes, acs, tpsk, rp, ash, hnl, hnh, wd, wdur sql.NullFloat64
+		var rhr, thr sql.NullInt64
+		if err := rows.Scan(&provider, &rl, &as, &lts, &aes, &acs, &rhr, &thr, &tpsk,
+			&rp, &ash, &hnl, &hnh, &wd, &wdur); err != nil {
+			return err
+		}
+		out[provider] = map[string]any{
+			"running_level": nfFloat(rl), "aerobic_score": nfFloat(as),
+			"lactate_threshold_score": nfFloat(lts), "anaerobic_endurance_score": nfFloat(aes),
+			"anaerobic_capacity_score": nfFloat(acs), "rhr": niInt(rhr), "threshold_hr": niInt(thr),
+			"threshold_pace_s_km": nfFloat(tpsk), "recovery_pct": nfFloat(rp),
+			"avg_sleep_hrv": nfFloat(ash), "hrv_normal_low": nfFloat(hnl), "hrv_normal_high": nfFloat(hnh),
+			"weekly_distance_m": nfFloat(wd), "weekly_duration_s": nfFloat(wdur),
+		}
+		return nil
+	})
+}
+
+// readSQLiteDailyHRV reads daily_hrv rows keyed by date.
+func readSQLiteDailyHRV(path string) (map[string]map[string]any, error) {
+	return querySQLite(path, `SELECT date, weekly_avg, last_night_avg, last_night_5min_high,
+		status, baseline_low_upper, baseline_balanced_low, baseline_balanced_upper, feedback_phrase
+		FROM daily_hrv`, func(rows *sql.Rows, out map[string]map[string]any) error {
+		var date string
+		var wa, lna, l5h, blu, bbl, bbu sql.NullInt64
+		var status, phrase sql.NullString
+		if err := rows.Scan(&date, &wa, &lna, &l5h, &status, &blu, &bbl, &bbu, &phrase); err != nil {
+			return err
+		}
+		out[date] = map[string]any{
+			"weekly_avg": niInt(wa), "last_night_avg": niInt(lna), "last_night_5min_high": niInt(l5h),
+			"status": nsStr(status), "baseline_low_upper": niInt(blu),
+			"baseline_balanced_low": niInt(bbl), "baseline_balanced_upper": niInt(bbu),
+			"feedback_phrase": nsStr(phrase),
+		}
+		return nil
+	})
+}
+
+// readSQLiteRacePredictions reads race_predictions rows keyed by race_type.
+func readSQLiteRacePredictions(path string) (map[string]map[string]any, error) {
+	return querySQLite(path, `SELECT race_type, duration_s, avg_pace FROM race_predictions`,
+		func(rows *sql.Rows, out map[string]map[string]any) error {
+			var raceType string
+			var dur, pace sql.NullFloat64
+			if err := rows.Scan(&raceType, &dur, &pace); err != nil {
+				return err
+			}
+			out[raceType] = map[string]any{"duration_s": nfFloat(dur), "avg_pace": nfFloat(pace)}
+			return nil
+		})
+}
+
 func querySQLite(path, query string, scan func(*sql.Rows, map[string]map[string]any) error) (map[string]map[string]any, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
