@@ -40,8 +40,11 @@ type SyncMarker interface {
 }
 
 // New returns the watch_sync job.Handler backed by resolve. On a successful sync
-// it stamps the user's last-sync time through marker (ADR 0018).
-func New(resolve Resolver, marker SyncMarker) job.Handler {
+// it stamps the user's last-sync time through marker (ADR 0018). jobs is the
+// detail-fetch concurrency threaded into every run's SyncOptions (the adapter
+// clamps it); it is an infra knob, deliberately not part of the job payload so
+// external callers cannot dictate server-side concurrency.
+func New(resolve Resolver, marker SyncMarker, jobs int) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		user := j.UserID
 
@@ -50,6 +53,7 @@ func New(resolve Resolver, marker SyncMarker) job.Handler {
 			// A malformed payload can't be fixed by retrying.
 			return "", job.NewPermanentError("bad_payload", err)
 		}
+		opts.Jobs = jobs
 
 		// Resolve which watch provider this user is bound to.
 		prov, err := resolve(ctx, user)

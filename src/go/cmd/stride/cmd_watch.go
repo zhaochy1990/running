@@ -270,6 +270,10 @@ func runSync(profile string, full bool, content string, limit int) error {
 	}
 	defer store.Close()
 
+	// Detail-fetch concurrency comes from config (sync.jobs), not a per-call
+	// flag — it is an infra knob, and the adapter clamps it to a safe range.
+	opts.Jobs = cfg.Sync.Jobs
+
 	prov, name, err := resolveProvider(store, cfg, user)
 	if err != nil {
 		return err

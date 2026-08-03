@@ -49,9 +49,13 @@ func (m *fakeMarker) SetMeta(_ context.Context, _, key, value string) error {
 	return nil
 }
 
+// testJobs is an arbitrary non-default concurrency the tests thread through
+// New to assert it lands on the run's SyncOptions.
+const testJobs = 7
+
 func run(t *testing.T, f *fakeProvider, input string) (string, error, []string, []int) {
 	t.Helper()
-	h := New(func(_ context.Context, _ string) (Provider, error) { return f, nil }, &fakeMarker{})
+	h := New(func(_ context.Context, _ string) (Provider, error) { return f, nil }, &fakeMarker{}, testJobs)
 	var stages []string
 	var pcts []int
 	hb := func(stage string, pct int) error {
@@ -77,6 +81,9 @@ func TestHandler_DefaultsToFullAll(t *testing.T) {
 	}
 	if f.gotOpts.Content != provider.ContentAll {
 		t.Errorf("content = %v, want all (default)", f.gotOpts.Content)
+	}
+	if f.gotOpts.Jobs != testJobs {
+		t.Errorf("jobs = %d, want %d (threaded from New)", f.gotOpts.Jobs, testJobs)
 	}
 	if res != `{"activities":3,"health":2,"mode":"full"}` {
 		t.Errorf("result = %s", res)
@@ -156,7 +163,7 @@ func TestHandler_BadPayload_Permanent(t *testing.T) {
 func TestHandler_ResolveError_Retryable(t *testing.T) {
 	h := New(func(context.Context, string) (Provider, error) {
 		return nil, errors.New("db down while resolving provider")
-	}, &fakeMarker{})
+	}, &fakeMarker{}, testJobs)
 	_, err := h(context.Background(), &job.Job{UserID: "u-123"}, func(string, int) error { return nil })
 	if err == nil {
 		t.Fatal("want error")
@@ -189,7 +196,7 @@ func TestHandler_BridgesProgressToHeartbeat(t *testing.T) {
 func TestHandler_StampsLastSyncTimeOnSuccess(t *testing.T) {
 	f := &fakeProvider{loggedIn: true, result: provider.SyncResult{Activities: 1}}
 	m := &fakeMarker{}
-	h := New(func(context.Context, string) (Provider, error) { return f, nil }, m)
+	h := New(func(context.Context, string) (Provider, error) { return f, nil }, m, testJobs)
 	if _, err := h(context.Background(), &job.Job{UserID: "u-123"}, func(string, int) error { return nil }); err != nil {
 		t.Fatalf("handler: %v", err)
 	}
@@ -201,7 +208,7 @@ func TestHandler_StampsLastSyncTimeOnSuccess(t *testing.T) {
 func TestHandler_NoStampOnFailedSync(t *testing.T) {
 	f := &fakeProvider{loggedIn: true, syncErr: errors.New("connection reset")}
 	m := &fakeMarker{}
-	h := New(func(context.Context, string) (Provider, error) { return f, nil }, m)
+	h := New(func(context.Context, string) (Provider, error) { return f, nil }, m, testJobs)
 	if _, err := h(context.Background(), &job.Job{UserID: "u-123"}, func(string, int) error { return nil }); err == nil {
 		t.Fatal("want error")
 	}
