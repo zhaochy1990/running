@@ -90,12 +90,12 @@ export const API_ROUTES: readonly ApiRoute[] = [
   // ── Training goal / running profile / prefs ─────────────────────────────
   // TrainingPlanPage.tsx:207
   // 在创建训练计划的时候需要获取用户的目标
-  // ✓ /plan · load current training goal
-  { method: 'GET', path: '/api/users/me/training-goal', upstream: 'python', goReady: false },
-  // ✓ /plan · create race training goal
-  { method: 'POST', path: '/api/users/me/training-goal', upstream: 'python', goReady: false },
-  // ✗ not called
-  { method: 'PUT', path: '/api/users/me/training-goal', upstream: 'python', goReady: false },
+  // ✓ /plan · load current training goal   [go-ready]
+  { method: 'GET', path: '/api/users/me/training-goal', upstream: 'python', goReady: true },
+  // ✓ /plan · create race training goal   [go-ready]
+  { method: 'POST', path: '/api/users/me/training-goal', upstream: 'python', goReady: true },
+  // ✗ not called   [go-ready]
+  { method: 'PUT', path: '/api/users/me/training-goal', upstream: 'python', goReady: true },
   // ✗ not called
   { method: 'GET', path: '/api/users/me/running-profile', upstream: 'python', goReady: false },
   // ✓ /plan · create running profile during setup

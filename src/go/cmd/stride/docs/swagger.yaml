@@ -238,6 +238,116 @@ definitions:
       sync_data_at_onboarding:
         type: boolean
     type: object
+  api.goalInput:
+    properties:
+      available_time_slots:
+        items:
+          type: string
+        type: array
+      race_date:
+        type: string
+      race_distance:
+        enum:
+        - 5K
+        - 10K
+        - HM
+        - FM
+        - trail
+        type: string
+      race_location:
+        type: string
+      race_name:
+        type: string
+      race_timezone:
+        type: string
+      strength_willingness:
+        enum:
+        - "yes"
+        - "no"
+        - conditional
+        type: string
+      target_finish_time:
+        type: string
+      weekly_training_days:
+        maximum: 6
+        minimum: 3
+        type: integer
+    required:
+    - race_date
+    - race_distance
+    - weekly_training_days
+    type: object
+  api.goalResponse:
+    properties:
+      available_time_slots:
+        items:
+          type: string
+        type: array
+      created_at:
+        type: string
+      goal_id:
+        type: string
+      race_date:
+        type: string
+      race_distance:
+        type: string
+      race_location:
+        type: string
+      race_name:
+        type: string
+      race_timezone:
+        type: string
+      strength_willingness:
+        type: string
+      target_finish_time:
+        type: string
+      updated_at:
+        type: string
+      weekly_training_days:
+        type: integer
+    type: object
+  api.goalUpdateInput:
+    properties:
+      available_time_slots:
+        items:
+          type: string
+        type: array
+      goal_id:
+        type: string
+      race_date:
+        type: string
+      race_distance:
+        enum:
+        - 5K
+        - 10K
+        - HM
+        - FM
+        - trail
+        type: string
+      race_location:
+        type: string
+      race_name:
+        type: string
+      race_timezone:
+        type: string
+      strength_willingness:
+        enum:
+        - "yes"
+        - "no"
+        - conditional
+        type: string
+      target_finish_time:
+        type: string
+      weekly_training_days:
+        maximum: 6
+        minimum: 3
+        type: integer
+    required:
+    - goal_id
+    - race_date
+    - race_distance
+    - weekly_training_days
+    type: object
   api.jobCatalogResponse:
     properties:
       jobs:
@@ -943,6 +1053,112 @@ paths:
       summary: Save the current user's basic profile
       tags:
       - users
+  /api/users/me/training-goal:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.goalResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get the current user's active race goal
+      tags:
+      - training-goal
+    post:
+      consumes:
+      - application/json
+      description: Creates a new active race goal and archives the previous active
+        one. race_date must be a future date in Asia/Shanghai.
+      parameters:
+      - description: Race goal fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.goalInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.goalResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.validationErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set (create) the current user's race goal
+      tags:
+      - training-goal
+    put:
+      consumes:
+      - application/json
+      description: Edits the active race goal in place. goal_id must match the current
+        active goal. race_date must be a future date in Asia/Shanghai.
+      parameters:
+      - description: Race goal fields (with goal_id)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.goalUpdateInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.goalResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.validationErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update the current user's active race goal
+      tags:
+      - training-goal
   /api/users/me/watch:
     delete:
       description: Deletes the stored watch credential and marks watch_ready=false.

@@ -67,6 +67,11 @@ func runAPI() error {
 	if err := store.AutoMigrateUsers(ctx); err != nil {
 		return err
 	}
+	// race_goal table for the training-goal surface (ADR 0019). The worker does
+	// not need this.
+	if err := store.AutoMigrateGoals(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ (publisher only; no consumer) ---
 	conn, err := mq.Dial(cfg.AMQP.URL)
@@ -127,6 +132,7 @@ func runAPI() error {
 		AuthNameSync:            authNameSync,
 		Features:                features,
 		ActivityStore:           store,
+		GoalStore:               store,
 		Auth:                    authn,
 		CORSOrigins:             cfg.API.CORSOrigins,
 		SwaggerEnabled:          cfg.API.SwaggerEnabled,
