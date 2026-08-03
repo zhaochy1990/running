@@ -3,11 +3,9 @@ import test from "node:test";
 
 import {
   isoToMysqlDatetime6,
-  maskDob,
   onboardingRowFromJson,
   ProfileTransformError,
   profileRowFromJson,
-  redactProfileRow,
 } from "../src/profile-transform.js";
 
 const UUID = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
@@ -126,23 +124,4 @@ test("isoToMysqlDatetime6 preserves microseconds and shifts non-UTC offsets", ()
 
 test("isoToMysqlDatetime6 rejects a non-datetime string", () => {
   assert.throws(() => isoToMysqlDatetime6("nope"), ProfileTransformError);
-});
-
-test("redactProfileRow masks dob and hides body metrics; maskDob coarsens to year", () => {
-  const red = redactProfileRow({
-    user_id: UUID,
-    display_name: "Chaoyi",
-    dob: "1990-07-22",
-    sex: "male",
-    height_cm: 182,
-    weight_kg: 70.5,
-  });
-  assert.equal(red.dob, "1990-**-**");
-  assert.equal(red.height_cm, "set");
-  assert.equal(red.weight_kg, "set");
-  assert.equal(red.display_name, "Chaoyi");
-
-  assert.equal(maskDob(""), null);
-  assert.equal(maskDob("bad"), "****");
-  assert.equal(maskDob("2003-09-25"), "2003-**-**");
 });

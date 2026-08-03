@@ -4,14 +4,15 @@ One-off Node.js utilities that copy per-user data into the **Tencent MySQL**
 tables read by the Go worker (`src/go/`). It is a standalone project — it has its
 own `package.json` and does **not** import anything from the rest of the repo.
 
-Two migrations live here:
+Three migrations live here:
 
 | Command | Source | Target table(s) |
 |---|---|---|
 | `npm run migrate` (`src/index.js`) | Azure Key Vault watch-credential secrets | `provider_credentials` |
 | `npm run migrate:profiles` (`src/migrate-profiles.js`) | local `data/<uuid>/{profile,onboarding}.json` | `user_profile`, `user_onboarding` |
+| `npm run migrate:health` (`src/migrate-health.js`) | local `data/<uuid>/coros.db` SQLite | `daily_health`, `daily_hrv`, `dashboard`, `race_predictions` |
 
-Both are **dry-run by default** — nothing is written until you pass `--commit`.
+All are **dry-run by default** — nothing is written until you pass `--commit`.
 
 Only **real users** (the UUIDs in `src/users.js`) are migrated; every other UUID
 is a test account and is discarded (see `AGENTS.md`). The creds migration prunes
@@ -143,7 +144,6 @@ npm run migrate:profiles
 # 2) Scope it down / point at a specific data root
 node src/migrate-profiles.js --user f10bc353-01ab-4db1-af9f-d9305ea9a532
 node src/migrate-profiles.js --data-dir /path/to/repo/data --limit 3
-node src/migrate-profiles.js --show-pii            # print full dob / height / weight
 
 # 3) Commit for real (optionally create the tables first on a fresh DB)
 node src/migrate-profiles.js --commit
@@ -151,18 +151,83 @@ node src/migrate-profiles.js --commit --ensure-schema
 ```
 
 Options: `--commit`, `--user <uuid>` (repeatable / comma list, allowlist-gated),
-`--data-dir <path>`, `--limit <n>`, `--ensure-schema`, `--show-pii`, `--verbose`,
+`--data-dir <path>`, `--limit <n>`, `--ensure-schema`, `--verbose`,
 `--help`. The data root resolves to `--data-dir` → `STRIDE_DATA_DIR` → the
 repo-root `data/` dir. Only the MySQL env vars are needed (no `AKV_*`).
 
 ---
 
+## 3) Health data migration — local `coros.db` → `daily_health` / `daily_hrv` / `dashboard` / `race_predictions`
+
+Copies each real user's **watch health data** from the per-user `data/<uuid>/coros.db`
+SQLite snapshot into the four health-domain tables read by the Go worker. The
+source `coros.db` files are the per-user watch databases **downloaded from prod
+Azure Files** into the repo `data/` dir; download them first if your `data/` dir
+does not have them. This migration reads the SQLite **read-only** (via the
+built-in `node:sqlite`, so **Node ≥ 22.5** is required) and never touches prod
+storage.
+
+Column shapes are 1:1 with the SQLite source, with three adjustments:
+
+- a `user_id` (the app UUID) is injected as the tenant key;
+- the SQLite surrogate keys — `dashboard.id` (always 1, a singleton) and
+  `race_predictions.id` (autoincrement) — are dropped;
+- `dashboard` / `race_predictions` `updated_at` is stamped with the migration run
+  time (a wall-clock write time, not synced data — the Go worker overwrites it on
+  its next sync), not the SQLite value.
+
+Dates pass through **verbatim** so they stay byte-comparable with what the Go
+sync already writes — `daily_health.date` is `YYYYMMDD` (Shanghai calendar day)
+and `daily_hrv.date` is ISO `YYYY-MM-DD` — so an upsert updates the same primary
+key instead of duplicating it. `daily_health` also carries the Garmin-only
+wellness columns (`sleep_*`, `body_battery_*`, `stress_avg`, `respiration_avg`,
+`spo2_avg`); COROS users leave them NULL, Garmin users populate them.
+
+### Column mapping
+
+| Table | SQLite PK | MySQL PK | Notes |
+|---|---|---|---|
+| `daily_health` | `date` | `(user_id, date)` | all columns 1:1; `provider` carried through |
+| `daily_hrv` | `(date, provider)` | `(user_id, date, provider)` | all columns 1:1 |
+| `dashboard` | `id` (=1) | `(user_id)` | singleton → one row/user; `id` dropped, `updated_at`=run time |
+| `race_predictions` | `id` (autoinc) | `(user_id, race_type)` | `id` dropped, `updated_at`=run time; `race_type` verbatim |
+
+### Usage
+
+```bash
+# 1) Dry-run all real users (reads each coros.db, prints a per-table plan, writes nothing)
+npm run migrate:health
+
+# 2) Scope it down while testing
+node src/migrate-health.js --user f10bc353-01ab-4db1-af9f-d9305ea9a532
+node src/migrate-health.js --tables daily_health,daily_hrv
+node src/migrate-health.js --data-dir /path/to/repo/data --limit 3
+
+# 3) Commit for real (recommended: one user first, verify, then all)
+node src/migrate-health.js --commit --user f10bc353-01ab-4db1-af9f-d9305ea9a532
+node src/migrate-health.js --commit
+node src/migrate-health.js --commit --ensure-schema     # create tables on a fresh DB
+```
+
+Options: `--commit`, `--user <uuid>` (repeatable / comma list, allowlist-gated),
+`--tables <list>` (subset of `daily_health,daily_hrv,dashboard,race_predictions`;
+default all four), `--data-dir <path>`, `--limit <n>`, `--ensure-schema`,
+`--verbose`, `--help`. The data root resolves to `--data-dir` → `STRIDE_DATA_DIR`
+→ the repo-root `data/` dir. Only the MySQL env vars are needed (no `AKV_*`).
+
+The upsert mirrors the Go store's `OnConflict{UpdateAll}`, so a re-run is
+idempotent (every non-PK column is overwritten; no duplicate rows).
+
+---
+
 ## Safety / secrets
 
-- Logs are redacted: creds emails are masked (unless `--show-email`) and the
-  `secret` blob is only ever shown as a byte count; profile `dob` is coarsened to
-  the year and body metrics are shown as `set`/`-` (unless `--show-pii`). No
-  password hash, access token, or garth token is ever printed.
+- Credential-migration logs are redacted: creds emails are masked (unless
+  `--show-email`) and the `secret` blob is only ever shown as a byte count. No
+  password hash, access token, or garth token is ever printed. The profile
+  migration logs full values (display_name, dob, height, weight) so you can
+  eyeball what will be written; a missing body metric shows as `null` (it still
+  upserts as `0`, the Go zero value).
 - `.env` and any `akv-export*.json` are git-ignored. Never commit real DSNs or
   credential dumps.
 - The credential `secret` is stored **plaintext-v1** in MySQL, exactly like the Go

@@ -33,7 +33,6 @@ import {
   onboardingRowFromJson,
   ProfileTransformError,
   profileRowFromJson,
-  redactProfileRow,
 } from "./profile-transform.js";
 import { readUserJsonFile, selectUserIds } from "./profiles.js";
 import { users as REAL_USERS } from "./users.js";
@@ -57,7 +56,6 @@ Usage: node src/migrate-profiles.js [options]
                      Default: STRIDE_DATA_DIR or the repo-root data/ dir.
   --limit <n>        Process at most n users.
   --ensure-schema    Apply schema.sql (CREATE TABLE IF NOT EXISTS) before writing.
-  --show-pii         Print full dob / height / weight instead of redacting them.
   --verbose          Extra logging.
   --help             Show this help.
 
@@ -102,7 +100,6 @@ function parseCli(argv) {
       "data-dir": { type: "string" },
       limit: { type: "string" },
       "ensure-schema": { type: "boolean", default: false },
-      "show-pii": { type: "boolean", default: false },
       verbose: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
@@ -120,7 +117,6 @@ function parseCli(argv) {
   return {
     commit: values.commit,
     ensureSchema: values["ensure-schema"],
-    showPii: values["show-pii"],
     verbose: values.verbose,
     help: values.help,
     users,
@@ -177,11 +173,13 @@ async function main() {
       try {
         const row = profileRowFromJson(uid, profileJson);
         profileRows.push(row);
-        const shown = opts.showPii ? row : redactProfileRow(row);
+        // Full, un-redacted plan line: dob is shown verbatim and body metrics
+        // print their actual value, or `null` when absent (missing height/weight
+        // still upsert as 0 — the Go zero value — see profileRowFromJson).
         console.log(
-          `  plan profile     ${uid} name=${shown.display_name ?? "-"} ` +
-            `dob=${shown.dob ?? "-"} sex=${shown.sex || "-"} ` +
-            `height_cm=${shown.height_cm ?? "-"} weight_kg=${shown.weight_kg ?? "-"}`,
+          `  plan profile     ${uid} name=${row.display_name || null} ` +
+            `dob=${row.dob || null} sex=${row.sex || null} ` +
+            `height_cm=${row.height_cm || null} weight_kg=${row.weight_kg || null}`,
         );
       } catch (err) {
         const message =

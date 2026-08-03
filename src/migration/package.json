@@ -3,17 +3,19 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "One-off migrations into Tencent MySQL: COROS/Garmin watch credentials from Azure Key Vault (provider_credentials), and user profile + onboarding state from the local data/ snapshot (user_profile / user_onboarding).",
+  "description": "One-off migrations into Tencent MySQL: COROS/Garmin watch credentials from Azure Key Vault (provider_credentials), user profile + onboarding state from the local data/ snapshot (user_profile / user_onboarding), and watch health data from the local coros.db snapshot (daily_health / daily_hrv / dashboard / race_predictions).",
   "engines": {
-    "node": ">=18.17"
+    "node": ">=22.5.0"
   },
   "bin": {
     "migrate-watch-creds": "src/index.js",
-    "migrate-profiles": "src/migrate-profiles.js"
+    "migrate-profiles": "src/migrate-profiles.js",
+    "migrate-health": "src/migrate-health.js"
   },
   "scripts": {
     "migrate": "node src/index.js",
     "migrate:profiles": "node src/migrate-profiles.js",
+    "migrate:health": "node src/migrate-health.js",
     "test": "node --test"
   },
   "dependencies": {

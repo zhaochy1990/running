@@ -107,29 +107,6 @@ export function isoToMysqlDatetime6(iso) {
   );
 }
 
-/**
- * Redact a profile row for logging: display_name is kept (needed to identify the
- * user), dob is coarsened to the year, and body metrics are reduced to set/-.
- * Full values are only printed under --show-pii.
- */
-export function redactProfileRow(row) {
-  return {
-    user_id: row.user_id,
-    display_name: row.display_name || "-",
-    dob: maskDob(row.dob),
-    sex: row.sex || "-",
-    height_cm: row.height_cm ? "set" : "-",
-    weight_kg: row.weight_kg ? "set" : "-",
-  };
-}
-
-/** `1990-07-22` -> `1990-**-**`; empty -> null; malformed -> `****`. */
-export function maskDob(dob) {
-  if (!dob) return null;
-  const m = /^(\d{4})-\d{2}-\d{2}$/.exec(String(dob));
-  return m ? `${m[1]}-**-**` : "****";
-}
-
 function parseObject(json, kind) {
   let data;
   try {

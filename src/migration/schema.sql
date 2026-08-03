@@ -83,3 +83,98 @@ CREATE TABLE IF NOT EXISTS user_onboarding (
   updated_at    DATETIME(3) NULL,
   PRIMARY KEY (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Health-domain tables (targets for the health migration, src/migrate-health.js).
+-- Each is the byte-for-byte equivalent of the Go worker GORM model in
+-- src/go/internal/storage/watch_models.go, normally created in prod by
+-- AutoMigrateWatch. `int` fields become BIGINT (GORM's default on 64-bit),
+-- `float64` become DOUBLE, and time.Time become DATETIME(6).
+
+-- daily_health — one daily training-status row per (user, Shanghai day).
+--   date            Shanghai calendar day key, format YYYYMMDD (string; verbatim
+--                   from the source so it stays comparable with the Go sync)
+--   ati/cti         acute / chronic training impulse
+--   sleep_* / body_battery_* / stress_avg / respiration_avg / spo2_avg
+--                   Garmin-populated wellness extras (COROS leaves them NULL)
+--   provider        'coros' | 'garmin'
+
+CREATE TABLE IF NOT EXISTS daily_health (
+  user_id             CHAR(36)     NOT NULL,
+  date                VARCHAR(16)  NOT NULL,
+  ati                 DOUBLE       NULL,
+  cti                 DOUBLE       NULL,
+  rhr                 BIGINT       NULL,
+  distance_m          DOUBLE       NULL,
+  duration_s          DOUBLE       NULL,
+  training_load_ratio DOUBLE       NULL,
+  training_load_state VARCHAR(32)  NULL,
+  fatigue             DOUBLE       NULL,
+  body_battery_high   BIGINT       NULL,
+  body_battery_low    BIGINT       NULL,
+  stress_avg          BIGINT       NULL,
+  sleep_total_s       BIGINT       NULL,
+  sleep_deep_s        BIGINT       NULL,
+  sleep_light_s       BIGINT       NULL,
+  sleep_rem_s         BIGINT       NULL,
+  sleep_awake_s       BIGINT       NULL,
+  sleep_score         BIGINT       NULL,
+  respiration_avg     DOUBLE       NULL,
+  spo2_avg            DOUBLE       NULL,
+  provider            VARCHAR(32)  NOT NULL DEFAULT 'coros',
+  PRIMARY KEY (user_id, date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- daily_hrv — per-day nightly HRV detail. date is ISO YYYY-MM-DD (verbatim from
+-- the source). provider is part of the PK so a dual-watch user keeps both nights.
+
+CREATE TABLE IF NOT EXISTS daily_hrv (
+  user_id                 CHAR(36)     NOT NULL,
+  date                    VARCHAR(16)  NOT NULL,
+  provider                VARCHAR(32)  NOT NULL DEFAULT 'coros',
+  weekly_avg              BIGINT       NULL,
+  last_night_avg          BIGINT       NULL,
+  last_night_5min_high    BIGINT       NULL,
+  status                  VARCHAR(32)  NULL,
+  baseline_low_upper      BIGINT       NULL,
+  baseline_balanced_low   BIGINT       NULL,
+  baseline_balanced_upper BIGINT       NULL,
+  feedback_phrase         TEXT         NULL,
+  PRIMARY KEY (user_id, date, provider)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- dashboard — per-user summary snapshot (SQLite pins a singleton id=1; here the
+-- tenant key is the PK). updated_at is the migration run time (a wall-clock write
+-- time, overwritten by the Go worker's next sync).
+
+CREATE TABLE IF NOT EXISTS dashboard (
+  user_id                   CHAR(36)     NOT NULL,
+  running_level             DOUBLE       NULL,
+  aerobic_score             DOUBLE       NULL,
+  lactate_threshold_score   DOUBLE       NULL,
+  anaerobic_endurance_score DOUBLE       NULL,
+  anaerobic_capacity_score  DOUBLE       NULL,
+  rhr                       BIGINT       NULL,
+  threshold_hr              BIGINT       NULL,
+  threshold_pace_s_km       DOUBLE       NULL,
+  recovery_pct              DOUBLE       NULL,
+  avg_sleep_hrv             DOUBLE       NULL,
+  hrv_normal_low            DOUBLE       NULL,
+  hrv_normal_high           DOUBLE       NULL,
+  weekly_distance_m         DOUBLE       NULL,
+  weekly_duration_s         DOUBLE       NULL,
+  provider                  VARCHAR(32)  NOT NULL DEFAULT 'coros',
+  updated_at                DATETIME(6)  NOT NULL,
+  PRIMARY KEY (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- race_predictions — per-user, per-race-type time prediction. The SQLite surrogate
+-- id is dropped; the tenant key + race_type is the PK.
+
+CREATE TABLE IF NOT EXISTS race_predictions (
+  user_id    CHAR(36)     NOT NULL,
+  race_type  VARCHAR(32)  NOT NULL,
+  duration_s DOUBLE       NULL,
+  avg_pace   DOUBLE       NULL,
+  updated_at DATETIME(6)  NOT NULL,
+  PRIMARY KEY (user_id, race_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

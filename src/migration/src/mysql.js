@@ -11,6 +11,13 @@
 
 import mysql from "mysql2/promise";
 
+import {
+  DAILY_HEALTH_COLUMNS,
+  DAILY_HRV_COLUMNS,
+  DASHBOARD_COLUMNS,
+  RACE_PREDICTIONS_COLUMNS,
+} from "./health-transform.js";
+
 /**
  * Parse a Go-style DSN: `user:pass@tcp(host:port)/dbname?params`.
  * @returns {{host:string,port:number,user:string,password:string,database:string,tls:string|null}}
@@ -214,5 +221,67 @@ export async function upsertUserOnboarding(conn, row, now) {
     now,
     now,
   ]);
+  return res.affectedRows === 1 ? "inserted" : "updated";
+}
+
+// ── health domain (daily_health / daily_hrv / dashboard / race_predictions) ──
+//
+// The four watch health tables read by the Go worker
+// (src/go/internal/storage/watch_models.go). Each upsert mirrors the Go store's
+// clause.OnConflict{UpdateAll:true} — every non-PK column is overwritten on a
+// re-run — and binds a row's values in the transform's column order.
+
+/** Primary-key columns per health table (kept out of the UPDATE set). */
+export const HEALTH_PK = {
+  daily_health: ["user_id", "date"],
+  daily_hrv: ["user_id", "date", "provider"],
+  dashboard: ["user_id"],
+  race_predictions: ["user_id", "race_type"],
+};
+
+const HEALTH_COLUMNS = {
+  daily_health: DAILY_HEALTH_COLUMNS,
+  daily_hrv: DAILY_HRV_COLUMNS,
+  dashboard: DASHBOARD_COLUMNS,
+  race_predictions: RACE_PREDICTIONS_COLUMNS,
+};
+
+/**
+ * Build an `INSERT … ON DUPLICATE KEY UPDATE` for a table from its full column
+ * list and primary-key columns. Every non-PK column is set to VALUES(col), so a
+ * re-run overwrites the row exactly like GORM's OnConflict{UpdateAll}.
+ */
+export function buildUpsertSql(table, columns, pkColumns) {
+  const pk = new Set(pkColumns);
+  const placeholders = columns.map(() => "?").join(", ");
+  const updates = columns
+    .filter((c) => !pk.has(c))
+    .map((c) => `${c} = VALUES(${c})`)
+    .join(",\n  ");
+  return (
+    `INSERT INTO ${table}\n  (${columns.join(", ")})\n` +
+    `VALUES (${placeholders})\n` +
+    `ON DUPLICATE KEY UPDATE\n  ${updates}`
+  );
+}
+
+const HEALTH_UPSERT_SQL = Object.fromEntries(
+  Object.keys(HEALTH_COLUMNS).map((table) => [
+    table,
+    buildUpsertSql(table, HEALTH_COLUMNS[table], HEALTH_PK[table]),
+  ]),
+);
+
+/**
+ * Upsert one health-table row. The row is a plain object keyed by the table's
+ * columns (as produced by health-transform.js); values are bound in column
+ * order, undefined collapsing to SQL NULL.
+ * @returns {Promise<"inserted"|"updated">}
+ */
+export async function upsertHealthRow(conn, table, row) {
+  const columns = HEALTH_COLUMNS[table];
+  if (!columns) throw new Error(`unknown health table: ${table}`);
+  const values = columns.map((c) => (row[c] === undefined ? null : row[c]));
+  const [res] = await conn.execute(HEALTH_UPSERT_SQL[table], values);
   return res.affectedRows === 1 ? "inserted" : "updated";
 }
