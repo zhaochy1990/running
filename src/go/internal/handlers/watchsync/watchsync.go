@@ -89,7 +89,8 @@ func New(resolve Resolver, marker SyncMarker, jobs int) job.Handler {
 			}
 			// A deterministic write failure (e.g. a unique-index violation) recurs
 			// identically on every attempt, so fail fast instead of burning the
-			// whole retry budget before poisoning.
+			// whole retry budget before poisoning. (Scoped to watch_sync — the
+			// costly re-page + re-fetch path; other write handlers still retry.)
 			if storage.IsDeterministicWriteError(err) {
 				return "", job.NewPermanentError("storage_constraint", err)
 			}

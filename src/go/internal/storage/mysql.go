@@ -201,6 +201,9 @@ var deterministicWriteErrs = map[uint16]struct{}{
 	1048: {}, // ER_BAD_NULL_ERROR: NULL into a NOT NULL column
 	1406: {}, // ER_DATA_TOO_LONG: value wider than the column
 	1366: {}, // ER_TRUNCATED_WRONG_VALUE_FOR_FIELD: wrong type/encoding for column
+	1264: {}, // ER_WARN_DATA_OUT_OF_RANGE: numeric/datetime value out of column range (strict mode)
+	1265: {}, // ER_WARN_DATA_TRUNCATED: value truncated for column (strict mode)
+	1292: {}, // ER_TRUNCATED_WRONG_VALUE: bad datetime/number literal for column (strict mode)
 	3819: {}, // ER_CHECK_CONSTRAINT_VIOLATED
 }
 

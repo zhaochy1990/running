@@ -162,6 +162,8 @@ func TestIsDeterministicWriteError(t *testing.T) {
 			&gomysql.MySQLError{Number: 1062, Message: "Duplicate entry"}), true},
 		{"bad null 1048", &gomysql.MySQLError{Number: 1048}, true},
 		{"data too long 1406", &gomysql.MySQLError{Number: 1406}, true},
+		{"wrong value for field 1366", &gomysql.MySQLError{Number: 1366}, true},
+		{"check constraint 3819", &gomysql.MySQLError{Number: 3819}, true},
 		{"deadlock 1213 stays retryable", &gomysql.MySQLError{Number: 1213}, false},
 		{"lock wait 1205 stays retryable", &gomysql.MySQLError{Number: 1205}, false},
 		{"foreign key 1452 stays retryable", &gomysql.MySQLError{Number: 1452}, false},
