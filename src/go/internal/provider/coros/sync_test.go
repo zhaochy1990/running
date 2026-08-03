@@ -80,7 +80,7 @@ func newTestProvider(t *testing.T, h http.Handler, fw storage.Writer) *Provider 
 	factory := func(c Credentials, save CredentialSaver) *Client {
 		return NewClient(c,
 			WithBases(map[string]string{"global": srv.URL, "cn": srv.URL, "eu": srv.URL}),
-			WithHTTPClient(srv.Client()), WithRequestDelay(0), WithCredentialSaver(save))
+			WithHTTPClient(srv.Client()), WithRequestDelay(0), WithRetry(3, 0), WithCredentialSaver(save))
 	}
 	return New(fw, fakeCreds{}, WithClientFactory(factory))
 }
@@ -159,6 +159,47 @@ func TestSyncUser_FullFlow(t *testing.T) {
 	}
 	if _, ok := fw.preds["Marathon"]; !ok {
 		t.Errorf("Marathon prediction not stored")
+	}
+}
+
+// TestSyncDashboard_FetchFailureIsBestEffort locks in the best-effort contract:
+// when /dashboard/query fails, the sync must NOT abort — daily_health (from the
+// separate /analyse/query) is kept, while the dashboard singleton, daily_hrv,
+// and race predictions are skipped. This is the exact path that silently left
+// daily_hrv empty in prod (a transient dashboard failure); syncDashboard now
+// logs a warning instead of swallowing it, but the non-aborting behavior stays.
+func TestSyncDashboard_FetchFailureIsBestEffort(t *testing.T) {
+	fw := newFakeWriter()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/analyse/query", func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(w, resultSuccess, `{"dayList":[{"date":"2026-05-09","ati":10,"cti":20,"testRhr":45}]}`)
+	})
+	// Non-success, non-token result code → request returns an APIError (no
+	// relogin), mimicking a transient COROS-side dashboard failure.
+	mux.HandleFunc("/dashboard/query", func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(w, "9999", `null`)
+	})
+	p := newTestProvider(t, mux, fw)
+
+	res, err := p.SyncUser(context.Background(), testUID,
+		provider.SyncOptions{Mode: provider.SyncIncremental, Content: provider.ContentHealth})
+	if err != nil {
+		t.Fatalf("sync must not abort on a dashboard fetch failure: %v", err)
+	}
+	if _, ok := fw.health["2026-05-09"]; !ok {
+		t.Errorf("daily_health must survive a dashboard fetch failure")
+	}
+	if fw.dashboard != nil {
+		t.Errorf("dashboard must be nil when the fetch failed, got %+v", fw.dashboard)
+	}
+	if len(fw.hrv) != 0 {
+		t.Errorf("daily_hrv must be empty on dashboard failure, got %d rows", len(fw.hrv))
+	}
+	if len(fw.preds) != 0 {
+		t.Errorf("race_predictions must be empty on dashboard failure, got %d", len(fw.preds))
+	}
+	if res.Health != 1 {
+		t.Errorf("res.Health = %d, want 1 (only the daily_health row)", res.Health)
 	}
 }
 

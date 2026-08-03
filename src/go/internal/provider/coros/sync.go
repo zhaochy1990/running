@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"time"
 
+	"go.uber.org/zap"
+
+	"github.com/zhaochy1990/stride/internal/logging"
 	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
@@ -286,16 +289,28 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 // syncDashboard writes the dashboard singleton, the per-day HRV rows, and the
 // race predictions from the COROS dashboard payloads. The fetch is best-effort:
 // a dashboard failure must not abort an otherwise-successful daily_health sync
-// (matching the Python narrowed try/except), so a fetch error returns nil. Store
-// errors propagate.
+// (matching the Python narrowed try/except), so a fetch error is logged (WARN)
+// and returns nil rather than propagating. Store errors propagate.
 func (p *Provider) syncDashboard(ctx context.Context, client *Client, user string, progress provider.ProgressCallback, res *provider.SyncResult) error {
 	summaryData, err := client.GetDashboard(ctx)
 	if err != nil {
-		return nil // best-effort: keep the daily_health rows already written
+		// Best-effort: a dashboard failure must not abort an otherwise-successful
+		// daily_health sync (matches the Python narrowed try/except). But log a
+		// warning so a transient /dashboard/query failure — which silently drops
+		// the dashboard singleton, daily_hrv, and race predictions — is visible in
+		// prod logs instead of masquerading as an empty-but-successful sync.
+		logging.Default().Warn("coros: fetch dashboard failed; skipping dashboard/daily_hrv/race_predictions",
+			zap.String("user", user), zap.Error(err))
+		return nil
 	}
 	// The week record (weekly distance/duration) is optional — a failure here
-	// still yields a usable dashboard row.
-	weekData, _ := client.GetDashboardDetail(ctx)
+	// still yields a usable dashboard row, but log it so the missing weekly
+	// volume is traceable rather than silently absent.
+	weekData, werr := client.GetDashboardDetail(ctx)
+	if werr != nil {
+		logging.Default().Warn("coros: fetch dashboard detail failed; weekly volume will be absent",
+			zap.String("user", user), zap.Error(werr))
+	}
 
 	dash, hrvRows, preds := parseDashboard(user, summaryData, weekData)
 	if dash != nil {
