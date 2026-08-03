@@ -15,7 +15,10 @@ const sampleDetail = `{
   "sportFeelInfo": { "feelType": 2, "sportNote": "felt good" },
   "lapList": [ { "type": 10, "lapItemList": [ { "distance": 100000, "time": 36000, "avgHr": 150 } ] } ],
   "frequencyList": [ { "timestamp": 1, "heart": 140, "verticalStrideRatio": 87, "gpsLat": 311337430, "gpsLon": 1210000000 } ],
-  "zoneList": [ { "zoneType": 0, "list": [ { "min": 0, "max": 120, "duration": 60, "percent": 25 } ] } ]
+  "zoneList": [
+    { "zoneType": 0, "type": 130, "zoneItemList": [ { "leftScope": 300000, "rightScope": 240000, "second": 60, "percent": 25 } ] },
+    { "zoneType": 3, "type": 126, "zoneItemList": [ { "leftScope": 140, "rightScope": 150, "second": 90, "percent": 40 } ] }
+  ]
 }`
 
 func TestParseActivityDetail(t *testing.T) {
@@ -92,16 +95,27 @@ func TestParseActivityDetail(t *testing.T) {
 		t.Errorf("gps_lon = %v, want 121.0", got)
 	}
 
-	// watch zones (ADR 0007): raw preserved, decoded best-effort
-	if len(zones) != 1 {
-		t.Fatalf("watch zones = %d, want 1", len(zones))
+	// watch zones (ADR 0007): real COROS keys (zoneItemList/leftScope/rightScope/
+	// second), raw zoneType preserved, decoded label + unit best-effort.
+	if len(zones) != 2 {
+		t.Fatalf("watch zones = %d, want 2", len(zones))
 	}
-	z := zones[0]
-	if z.ZoneTypeRaw != 0 || z.ZoneType != "pace" || z.ZoneIndex != 1 {
-		t.Errorf("zone raw/type/index = %d/%q/%d", z.ZoneTypeRaw, z.ZoneType, z.ZoneIndex)
+	pace := zones[0]
+	if pace.ZoneTypeRaw != 0 || pace.ZoneType != "pace" || pace.ZoneIndex != 1 {
+		t.Errorf("pace zone raw/type/index = %d/%q/%d", pace.ZoneTypeRaw, pace.ZoneType, pace.ZoneIndex)
 	}
-	if derefFl(z.RangeMax) != 120 || z.DurationS == nil || *z.DurationS != 60 || derefFl(z.Percent) != 25 {
-		t.Errorf("zone values: max=%v dur=%v pct=%v", z.RangeMax, z.DurationS, z.Percent)
+	if derefFl(pace.RangeMin) != 300000 || derefFl(pace.RangeMax) != 240000 ||
+		deref(pace.RangeUnit) != "ms/km" || pace.DurationS == nil || *pace.DurationS != 60 ||
+		derefFl(pace.Percent) != 25 {
+		t.Errorf("pace zone values: min=%v max=%v unit=%q dur=%v pct=%v",
+			pace.RangeMin, pace.RangeMax, deref(pace.RangeUnit), pace.DurationS, pace.Percent)
+	}
+	hr := zones[1]
+	if hr.ZoneTypeRaw != 3 || hr.ZoneType != "heartRate" || deref(hr.RangeUnit) != "bpm" {
+		t.Errorf("hr zone raw/type/unit = %d/%q/%q", hr.ZoneTypeRaw, hr.ZoneType, deref(hr.RangeUnit))
+	}
+	if hr.DurationS == nil || *hr.DurationS != 90 || derefFl(hr.Percent) != 40 {
+		t.Errorf("hr zone dur/pct = %v/%v", hr.DurationS, hr.Percent)
 	}
 }
 

@@ -113,21 +113,26 @@ type rawPause struct {
 	Type           int   `json:"type"`
 }
 
-// rawZoneGroup / rawZoneItem model the COROS `zoneList` buckets. NOTE: the exact
-// field names are the churn-prone part flagged in ADR 0007 and MUST be confirmed
-// against a captured /activity/detail/query payload before trusting the decoded
-// values — until then only ZoneTypeRaw + ordinal index are guaranteed. The
-// transformation logic is unit-tested against the assumed shape.
+// rawZoneGroup / rawZoneItem model the COROS `zoneList` buckets. Field names were
+// the churn-prone risk flagged in ADR 0007; they are now CONFIRMED against a live
+// /activity/detail/query payload (captured 2026): each group is
+// {zoneType, type, zoneItemList:[{leftScope, rightScope, second, percent, zoneIndex}]}.
+// ZoneTypeRaw still preserves the raw zoneType int so future encoding drift stays
+// observable. Note the inner array is `zoneItemList` (NOT `list`) — the earlier
+// assumed name silently yielded zero buckets, leaving activity_watch_zones empty.
 type rawZoneGroup struct {
 	ZoneType int           `json:"zoneType"`
-	List     []rawZoneItem `json:"list"`
+	List     []rawZoneItem `json:"zoneItemList"`
 }
 
+// rawZoneItem is one bucket. For pace groups the scopes are ms/km and leftScope is
+// the SLOWER (numerically larger) bound; for HR groups they are bpm. `second` is
+// the dwell time in whole seconds.
 type rawZoneItem struct {
-	Min      *float64 `json:"min"`
-	Max      *float64 `json:"max"`
-	Duration *int     `json:"duration"`
-	Percent  *float64 `json:"percent"`
+	LeftScope  *float64 `json:"leftScope"`
+	RightScope *float64 `json:"rightScope"`
+	Second     *int     `json:"second"`
+	Percent    *float64 `json:"percent"`
 }
 
 // ParseActivityDetail converts a COROS detail payload into an activity row and
@@ -275,20 +280,22 @@ func parseTimeseries(points []rawFreq) []storage.TimeseriesPoint {
 }
 
 // parseWatchZones captures the COROS watch-reported zone buckets (ADR 0007). The
-// raw zoneType is preserved for churn detection; the decoded label is best-effort
-// pending a captured payload (see rawZoneGroup).
+// raw zoneType is preserved for churn detection; the decoded label + range unit
+// are best-effort from the shapes observed in a live 2026 payload.
 func parseWatchZones(groups []rawZoneGroup) []storage.ActivityWatchZone {
 	var zones []storage.ActivityWatchZone
 	for _, g := range groups {
 		label := zoneTypeName(g.ZoneType)
+		unit := zoneRangeUnit(g.ZoneType)
 		for i, item := range g.List {
 			zones = append(zones, storage.ActivityWatchZone{
 				ZoneType:    label,
 				ZoneIndex:   i + 1,
 				ZoneTypeRaw: g.ZoneType,
-				RangeMin:    item.Min,
-				RangeMax:    item.Max,
-				DurationS:   item.Duration,
+				RangeMin:    item.LeftScope,
+				RangeMax:    item.RightScope,
+				RangeUnit:   unit,
+				DurationS:   item.Second,
 				Percent:     item.Percent,
 			})
 		}
@@ -318,18 +325,33 @@ func lapTypeName(t int) string {
 	}
 }
 
-// zoneTypeName best-effort decodes a COROS zoneType. Unknown codes keep an
-// explicit typeN label so the raw value stays traceable (ADR 0007).
+// zoneTypeName best-effort decodes a COROS zoneType. Codes 0 (pace) and 3
+// (heartRate) are confirmed against a live 2026 payload; 1 stays "pace" for the
+// legacy encoding (COROS moved the pace group 1→0). Unknown codes keep an explicit
+// typeN label so the raw value stays traceable (ADR 0007) — a power group, if the
+// watch ever emits one, will surface as typeN rather than a wrong guess.
 func zoneTypeName(t int) string {
 	switch t {
 	case 0, 1:
-		return "pace" // COROS moved the pace group 1→0; treat both as pace
-	case 2:
-		return "heartRate"
+		return "pace"
 	case 3:
-		return "power"
+		return "heartRate"
 	default:
 		return fmt.Sprintf("type%d", t)
+	}
+}
+
+// zoneRangeUnit returns the unit of leftScope/rightScope for a zoneType, from the
+// units observed in a live 2026 payload: pace scopes are ms/km, HR scopes are bpm.
+// Unknown zoneTypes get no unit (NULL) rather than a guess.
+func zoneRangeUnit(t int) *string {
+	switch t {
+	case 0, 1:
+		return sptr("ms/km")
+	case 3:
+		return sptr("bpm")
+	default:
+		return nil
 	}
 }
 
