@@ -2,6 +2,8 @@ package storage
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -146,5 +148,31 @@ func TestForceUTCDSN(t *testing.T) {
 	}
 	if cfg.Params["time_zone"] != "'+00:00'" {
 		t.Fatalf("session time_zone not forced: %q", cfg.Params["time_zone"])
+	}
+}
+
+func TestIsDeterministicWriteError(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"dup entry 1062", &gomysql.MySQLError{Number: 1062, Message: "Duplicate entry"}, true},
+		{"wrapped dup entry 1062", fmt.Errorf("storage: insert children: %w",
+			&gomysql.MySQLError{Number: 1062, Message: "Duplicate entry"}), true},
+		{"bad null 1048", &gomysql.MySQLError{Number: 1048}, true},
+		{"data too long 1406", &gomysql.MySQLError{Number: 1406}, true},
+		{"wrong value for field 1366", &gomysql.MySQLError{Number: 1366}, true},
+		{"check constraint 3819", &gomysql.MySQLError{Number: 3819}, true},
+		{"deadlock 1213 stays retryable", &gomysql.MySQLError{Number: 1213}, false},
+		{"lock wait 1205 stays retryable", &gomysql.MySQLError{Number: 1205}, false},
+		{"foreign key 1452 stays retryable", &gomysql.MySQLError{Number: 1452}, false},
+		{"non-mysql error", errors.New("connection reset"), false},
+		{"nil", nil, false},
+	}
+	for _, c := range cases {
+		if got := IsDeterministicWriteError(c.err); got != c.want {
+			t.Errorf("%s: IsDeterministicWriteError = %v, want %v", c.name, got, c.want)
+		}
 	}
 }

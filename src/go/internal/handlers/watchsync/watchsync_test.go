@@ -3,7 +3,10 @@ package watchsync
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+
+	gomysql "github.com/go-sql-driver/mysql"
 
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/provider"
@@ -142,6 +145,38 @@ func TestHandler_TransientError_Retryable(t *testing.T) {
 	}
 	if _, ok := job.AsPermanent(err); ok {
 		t.Errorf("transient error must NOT be permanent: %v", err)
+	}
+}
+
+// TestHandler_DeterministicWriteError_Permanent covers the fail-fast path: a
+// deterministic MySQL write failure (here a 1062 unique-index violation, as
+// wrapped by the storage layer) must poison immediately rather than exhaust the
+// retry budget, since it recurs identically on every attempt.
+func TestHandler_DeterministicWriteError_Permanent(t *testing.T) {
+	dup := fmt.Errorf("storage: insert children: %w", &gomysql.MySQLError{Number: 1062, Message: "Duplicate entry"})
+	f := &fakeProvider{loggedIn: true, syncErr: dup}
+	_, err, _, _ := run(t, f, "")
+	pe, ok := job.AsPermanent(err)
+	if !ok {
+		t.Fatalf("want PermanentError, got %v", err)
+	}
+	if pe.Code != "storage_constraint" {
+		t.Errorf("code = %q, want storage_constraint", pe.Code)
+	}
+}
+
+// TestHandler_TransientWriteError_Retryable guards the other side: a transient
+// MySQL fault (deadlock 1213) must stay retryable, not be swept into the
+// fail-fast path.
+func TestHandler_TransientWriteError_Retryable(t *testing.T) {
+	deadlock := fmt.Errorf("storage: upsert activity: %w", &gomysql.MySQLError{Number: 1213, Message: "Deadlock found"})
+	f := &fakeProvider{loggedIn: true, syncErr: deadlock}
+	_, err, _, _ := run(t, f, "")
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if _, ok := job.AsPermanent(err); ok {
+		t.Errorf("transient deadlock must NOT be permanent: %v", err)
 	}
 }
 

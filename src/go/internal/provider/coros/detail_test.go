@@ -148,6 +148,128 @@ func TestParseActivityDetailFallbackDate(t *testing.T) {
 	}
 }
 
+// TestParseWatchZonesDedupsDuplicatePaceGroups reproduces a real pre-2026 COROS
+// payload: older activities carry the pace group TWICE under zoneType=1 with
+// different inner `type` sub-codes (130 and 173). Because zone_index restarts
+// per group, both groups produce (pace, 1)/(pace, 2)... keys, which collide on
+// the activity_watch_zones uq_watch_zones unique index (user_id, label_id,
+// zone_type, zone_index) — a deterministic MySQL 1062 on the child insert that
+// pins watch_sync on that activity. parseWatchZones must drop the whole
+// duplicate group so every (label, index) key is unique.
+//
+// The duplicate pace group here is deliberately made LONGER (3 buckets vs 2) to
+// pin group-level dedup: a per-bucket dedup would drop buckets 1..2 of the
+// repeat group but leak its 3rd bucket as a stray (pace, 3) Frankenstein row.
+func TestParseWatchZonesDedupsDuplicatePaceGroups(t *testing.T) {
+	const payload = `{
+  "summary": {"sportType": 100, "startTimestamp": 175000000000},
+  "zoneList": [
+    { "zoneType": 3, "type": 126, "zoneItemList": [
+      { "leftScope": 128, "rightScope": 144, "second": 333, "percent": 41 },
+      { "leftScope": 145, "rightScope": 152, "second": 28, "percent": 4 } ] },
+    { "zoneType": 1, "type": 130, "zoneItemList": [
+      { "leftScope": 370130, "rightScope": 327586, "second": 784, "percent": 98 },
+      { "leftScope": 327586, "rightScope": 303191, "second": 9, "percent": 1 } ] },
+    { "zoneType": 1, "type": 173, "zoneItemList": [
+      { "leftScope": 370130, "rightScope": 327586, "second": 784, "percent": 98 },
+      { "leftScope": 327586, "rightScope": 303191, "second": 9, "percent": 1 },
+      { "leftScope": 303191, "rightScope": 0, "second": 0, "percent": 0 } ] }
+  ]
+}`
+	_, _, _, zones, err := ParseActivityDetail("f10bc353-01ab-4db1-af9f-d9305ea9a532", "L3", time.Time{}, []byte(payload))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	// No duplicate (zone_type, zone_index) key may survive — that is the
+	// uq_watch_zones constraint the child insert enforces.
+	type key struct {
+		label string
+		index int
+	}
+	seen := map[key]int{}
+	for _, z := range zones {
+		seen[key{z.ZoneType, z.ZoneIndex}]++
+	}
+	for k, n := range seen {
+		if n > 1 {
+			t.Errorf("duplicate zone key %+v appears %d times (would 1062 on uq_watch_zones)", k, n)
+		}
+	}
+
+	// The whole duplicate pace group is dropped: 2 heartRate + 2 pace = 4 rows,
+	// keeping the first (canonical type-130) group. Crucially the repeat group's
+	// longer tail must NOT leak: there is no (pace, 3).
+	if len(zones) != 4 {
+		t.Fatalf("zones = %d, want 4 (dup pace group dropped, no tail leak)", len(zones))
+	}
+	var paceCount int
+	for _, z := range zones {
+		if z.ZoneType == "pace" {
+			paceCount++
+			if z.ZoneIndex > 2 {
+				t.Errorf("leaked tail bucket from repeat pace group: (pace, %d)", z.ZoneIndex)
+			}
+		}
+	}
+	if paceCount != 2 {
+		t.Errorf("pace rows = %d, want 2 (one deduped pace group of 2 buckets)", paceCount)
+	}
+}
+
+// TestIsExpectedDuplicateZoneGroup pins the classifier that decides whether a
+// dropped duplicate group is the known-benign pace churn (silent) or unexpected
+// new churn (logged). Only pace 130-then-173 is expected; everything else must
+// surface.
+func TestIsExpectedDuplicateZoneGroup(t *testing.T) {
+	cases := []struct {
+		name             string
+		label            string
+		keptType, dupTyp int
+		want             bool
+	}{
+		{"pace 130 then legacy 173", "pace", 130, 173, true},
+		{"pace 130 then unknown new dup 174", "pace", 130, 174, false},
+		{"pace 130 then identical 130", "pace", 130, 130, false},
+		{"pace kept non-canonical then 173", "pace", 999, 173, false},
+		{"heartRate duplicated", "heartRate", 126, 126, false},
+		{"unknown label duplicated", "type9", 1, 1, false},
+	}
+	for _, c := range cases {
+		if got := isExpectedDuplicateZoneGroup(c.label, c.keptType, c.dupTyp); got != c.want {
+			t.Errorf("%s: isExpectedDuplicateZoneGroup(%q,%d,%d) = %v, want %v",
+				c.name, c.label, c.keptType, c.dupTyp, got, c.want)
+		}
+	}
+}
+
+// TestParseWatchZonesDropsUnexpectedDuplicate confirms the robustness leg: a
+// duplicate group that is NOT the known 130/173 pace churn (here a second pace
+// group under an unknown type 174) is still dropped so the child insert never
+// hits a uq_watch_zones 1062 — the classifier only decides log-or-silent, never
+// keep-or-drop.
+func TestParseWatchZonesDropsUnexpectedDuplicate(t *testing.T) {
+	const payload = `{
+  "summary": {"sportType": 100, "startTimestamp": 175000000000},
+  "zoneList": [
+    { "zoneType": 1, "type": 130, "zoneItemList": [
+      { "leftScope": 370130, "rightScope": 327586, "second": 784, "percent": 98 } ] },
+    { "zoneType": 1, "type": 174, "zoneItemList": [
+      { "leftScope": 370130, "rightScope": 327586, "second": 784, "percent": 98 } ] }
+  ]
+}`
+	_, _, _, zones, err := ParseActivityDetail("f10bc353-01ab-4db1-af9f-d9305ea9a532", "L4", time.Time{}, []byte(payload))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(zones) != 1 {
+		t.Fatalf("zones = %d, want 1 (unexpected duplicate still dropped)", len(zones))
+	}
+	if zones[0].ZoneType != "pace" || zones[0].ZoneIndex != 1 {
+		t.Errorf("kept zone = %q/%d, want pace/1", zones[0].ZoneType, zones[0].ZoneIndex)
+	}
+}
+
 func deref(p *string) string {
 	if p == nil {
 		return ""

@@ -173,11 +173,51 @@ func (s *Store) PipelineRunsByUser(ctx context.Context, userID string) ([]*job.P
 	return (&pipelineStore{db: s.db}).listByUser(ctx, userID)
 }
 
+// mysqlErrNo returns the MySQL server error number if err is (or wraps) a
+// *mysql.MySQLError, following the %w chain.
+func mysqlErrNo(err error) (uint16, bool) {
+	var me *gomysql.MySQLError
+	if errors.As(err, &me) {
+		return me.Number, true
+	}
+	return 0, false
+}
+
 // isDuplicateKey reports whether err is a MySQL duplicate-entry (1062) error,
 // which fires when the unique (user_id, idempotency_key) index is violated.
 func isDuplicateKey(err error) bool {
-	var me *gomysql.MySQLError
-	return errors.As(err, &me) && me.Number == 1062
+	n, ok := mysqlErrNo(err)
+	return ok && n == 1062
+}
+
+// deterministicWriteErrs are MySQL server error numbers where the SAME write
+// fails identically on every retry: the row's data violates the schema, so a
+// retry only burns the job's attempt budget before poisoning. These are
+// integrity/data violations — NOT transient faults like deadlock (1213) or
+// lock-wait timeout (1205), which stay retryable. Foreign-key (1452) is
+// deliberately excluded: it can be a concurrency race that a retry resolves.
+var deterministicWriteErrs = map[uint16]struct{}{
+	1062: {}, // ER_DUP_ENTRY: unique-index violation (e.g. uq_watch_zones)
+	1048: {}, // ER_BAD_NULL_ERROR: NULL into a NOT NULL column
+	1406: {}, // ER_DATA_TOO_LONG: value wider than the column
+	1366: {}, // ER_TRUNCATED_WRONG_VALUE_FOR_FIELD: wrong type/encoding for column
+	1264: {}, // ER_WARN_DATA_OUT_OF_RANGE: numeric/datetime value out of column range (strict mode)
+	1265: {}, // ER_WARN_DATA_TRUNCATED: value truncated for column (strict mode)
+	1292: {}, // ER_TRUNCATED_WRONG_VALUE: bad datetime/number literal for column (strict mode)
+	3819: {}, // ER_CHECK_CONSTRAINT_VIOLATED
+}
+
+// IsDeterministicWriteError reports whether err is a MySQL write failure that
+// cannot be fixed by retrying (see deterministicWriteErrs). Job handlers use it
+// to fail fast (job.NewPermanentError) instead of exhausting the retry budget on
+// an error that will recur on every attempt.
+func IsDeterministicWriteError(err error) bool {
+	n, ok := mysqlErrNo(err)
+	if !ok {
+		return false
+	}
+	_, deterministic := deterministicWriteErrs[n]
+	return deterministic
 }
 
 // Ping verifies connectivity (used by the health check).
