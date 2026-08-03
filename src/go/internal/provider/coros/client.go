@@ -23,6 +23,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/zhaochy1990/stride/internal/httpx"
 	"github.com/zhaochy1990/stride/internal/provider"
 )
@@ -100,6 +102,12 @@ type Client struct {
 	retryDelay    time.Duration
 	save          CredentialSaver
 
+	// limiter is a shared token bucket gating the sync read endpoints so N
+	// concurrent detail-fetch workers stay under one aggregate request ceiling
+	// (see EnableRateLimit). nil = no limiting (single-shot uses, tests). It is
+	// installed once before any worker goroutine starts, so reads need no lock.
+	limiter *rate.Limiter
+
 	mu    sync.RWMutex // guards creds (token + region mutate on refresh)
 	creds Credentials
 }
@@ -113,7 +121,9 @@ func WithBases(m map[string]string) Option { return func(c *Client) { c.bases = 
 // WithHTTPClient sets the underlying HTTP client.
 func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
 
-// WithRequestDelay sets the post-request rate-limit pause (default 500ms).
+// WithRequestDelay sets the base per-request spacing. It seeds the shared
+// token-bucket limiter (see EnableRateLimit): the aggregate request ceiling is
+// jobs/delay. Default 500ms; 0 disables rate limiting (tests).
 func WithRequestDelay(d time.Duration) Option { return func(c *Client) { c.delay = d } }
 
 // WithCredentialSaver sets the persistence hook called after login/refresh.
@@ -129,7 +139,7 @@ func WithRetry(attempts uint, delay time.Duration) Option {
 // NewClient builds a Client seeded with creds (may be zero for a fresh Login).
 func NewClient(creds Credentials, opts ...Option) *Client {
 	c := &Client{
-		http:          &http.Client{Timeout: 30 * time.Second},
+		http:          defaultHTTPClient(),
 		bases:         DefaultBases,
 		delay:         500 * time.Millisecond,
 		retryAttempts: httpx.DefaultAttempts,
@@ -140,6 +150,45 @@ func NewClient(creds Credentials, opts ...Option) *Client {
 		o(c)
 	}
 	return c
+}
+
+// defaultHTTPClient builds the HTTP client used for real COROS traffic. It
+// clones the stdlib default transport and raises MaxIdleConnsPerHost well above
+// the parallel-fetch worker count so concurrent detail requests reuse pooled
+// keep-alive connections instead of paying a fresh TCP+TLS handshake each
+// (Go's default MaxIdleConnsPerHost is 2, which throttles a parallel sync).
+func defaultHTTPClient() *http.Client {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.MaxIdleConns = 100
+	tr.MaxIdleConnsPerHost = 32
+	tr.IdleConnTimeout = 90 * time.Second
+	return &http.Client{Timeout: 30 * time.Second, Transport: tr}
+}
+
+// EnableRateLimit installs a shared token-bucket limiter sized for jobs
+// concurrent detail fetches. The aggregate request rate is capped at
+// jobs/delay (burst jobs) — the same throughput the reference Python sync
+// reaches with jobs workers each pausing `delay` between requests, but enforced
+// as one ceiling across every goroutine sharing this client. It gates the
+// logical request only; in-place transient retries and a token-refresh re-issue
+// may briefly exceed it, so it is a near-hard ceiling, not an absolute one. A
+// non-positive delay or jobs disables limiting. Call once before spawning the
+// fetch workers.
+func (c *Client) EnableRateLimit(jobs int) {
+	if c.delay <= 0 || jobs < 1 {
+		c.limiter = nil
+		return
+	}
+	c.limiter = rate.NewLimiter(rate.Every(c.delay/time.Duration(jobs)), jobs)
+}
+
+// waitLimit blocks until the shared limiter admits one request (or ctx is done).
+// A nil limiter admits immediately.
+func (c *Client) waitLimit(ctx context.Context) error {
+	if c.limiter == nil {
+		return nil
+	}
+	return c.limiter.Wait(ctx)
 }
 
 // HashPassword returns the MD5 hex digest COROS login expects as pwd.
@@ -308,6 +357,12 @@ func (c *Client) request(ctx context.Context, method, path string, params url.Va
 	if token == "" {
 		return nil, &AuthError{msg: "not logged in; run login"}
 	}
+	// Rate-limit BEFORE issuing (shared across all concurrent workers) rather
+	// than sleeping AFTER: while one worker waits for a token the others keep
+	// their requests in flight, so no wall-clock time is spent idle.
+	if err := c.waitLimit(ctx); err != nil {
+		return nil, err
+	}
 	env, err := c.doParams(ctx, method, c.base(region)+path, params, token, yf, true)
 	if err != nil {
 		return nil, err
@@ -325,25 +380,7 @@ func (c *Client) request(ctx context.Context, method, path string, params url.Va
 	if code := env.code(); code != "" && code != resultSuccess {
 		return nil, &APIError{Code: code, Message: string(env.Message)}
 	}
-	if err := c.pause(ctx); err != nil {
-		return nil, err
-	}
 	return env.Data, nil
-}
-
-// pause applies the rate-limit delay, respecting ctx cancellation.
-func (c *Client) pause(ctx context.Context) error {
-	if c.delay <= 0 {
-		return nil
-	}
-	t := time.NewTimer(c.delay)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
-	}
 }
 
 func (c *Client) doParams(ctx context.Context, method, rawURL string, params url.Values, token string, yf, classifyCodes bool) (apiEnvelope, error) {

@@ -133,8 +133,12 @@ func TestSyncUser_FullFlow(t *testing.T) {
 	if _, ok := fw.health["2026-05-09"]; !ok {
 		t.Errorf("daily_health not stored")
 	}
-	if got := fw.meta["last_label_id"]; got != "B" {
-		t.Errorf("cursor = %q, want B", got)
+	// Detail commits are ordered oldest-first (fetchDetailsOrdered), so the
+	// last_label_id cursor advances to the newest activity in the batch. The
+	// list is newest-first [A, B], so B (oldest) commits first and A (newest)
+	// commits last.
+	if got := fw.meta["last_label_id"]; got != "A" {
+		t.Errorf("cursor = %q, want A (newest, committed last)", got)
 	}
 	// health RHR should prefer testRhr (45)
 	if h := fw.health["2026-05-09"]; h.RHR == nil || *h.RHR != 45 {
@@ -229,6 +233,57 @@ func TestSyncActivities_FullRescanIgnoresKnown(t *testing.T) {
 	}
 	if res.Activities != 2 {
 		t.Errorf("full rescan activities = %d, want 2 (known not skipped)", res.Activities)
+	}
+}
+
+func TestSyncActivities_DetailErrorCommitsOldestPrefix(t *testing.T) {
+	fw := newFakeWriter()
+	// List is newest-first: C (newest), B, A (oldest). B's detail fetch fails.
+	// Because commits are ordered oldest-first and halt at the first failure,
+	// only A (the contiguous prefix before B) is persisted — never C, even
+	// though its own fetch succeeds concurrently. That is the invariant that
+	// keeps an incremental re-scan (newest-first, stop at first known) from
+	// leaving a hole: B and C are both re-fetched next run.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/activity/query", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("pageNumber") == "1" {
+			writeEnvelope(w, resultSuccess, `{"dataList":[`+
+				`{"labelId":"C","sportType":100},`+
+				`{"labelId":"B","sportType":100},`+
+				`{"labelId":"A","sportType":100}]}`)
+			return
+		}
+		writeEnvelope(w, resultSuccess, `{"dataList":[]}`)
+	})
+	mux.HandleFunc("/activity/detail/query", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("labelId") == "B" {
+			writeEnvelope(w, "1234", `{}`) // terminal COROS API error
+			return
+		}
+		writeEnvelope(w, resultSuccess, `{"summary":{"sportType":100,"startTimestamp":175000000000,"distance":1000000,"totalTime":360000}}`)
+	})
+	p := newTestProvider(t, mux, fw)
+
+	res, err := p.SyncUser(context.Background(), testUID, provider.SyncOptions{
+		Mode: provider.SyncIncremental, Content: provider.ContentActivities, Jobs: 3,
+	})
+	if err == nil {
+		t.Fatal("want error from the failed B detail fetch")
+	}
+	if res.Activities != 1 {
+		t.Errorf("committed activities = %d, want 1 (only A before the failure)", res.Activities)
+	}
+	if _, ok := fw.activities["A"]; !ok {
+		t.Errorf("A (oldest, before the failure) must be committed")
+	}
+	if _, ok := fw.activities["B"]; ok {
+		t.Errorf("B (failed fetch) must not be committed")
+	}
+	if _, ok := fw.activities["C"]; ok {
+		t.Errorf("C (newer than the failure) must not be committed despite a successful fetch")
+	}
+	if got := fw.meta["last_label_id"]; got != "A" {
+		t.Errorf("cursor = %q, want A (last committed before the failure)", got)
 	}
 }
 

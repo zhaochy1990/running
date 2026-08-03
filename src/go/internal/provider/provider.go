@@ -86,10 +86,17 @@ func (c SyncContent) Has(d SyncContent) bool { return c&d != 0 }
 // SyncIncremental for each). A zero Content is treated as ContentAll by SyncUser
 // implementations. Limit caps the number of activities fetched (0 = unlimited) —
 // useful for bounded validation runs.
+//
+// Jobs is the detail-fetch concurrency (number of parallel COROS detail
+// requests). It is an infrastructure knob supplied by the CLI/worker from
+// configuration, NOT part of the SyncOptionsInput API contract, so external
+// callers cannot dictate server-side concurrency. A non-positive value means
+// "adapter default".
 type SyncOptions struct {
 	Mode     SyncMode
 	Content  SyncContent
 	Limit    int
+	Jobs     int
 	Progress ProgressCallback
 }
 

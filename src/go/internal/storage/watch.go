@@ -112,6 +112,14 @@ func (s *Store) UpsertActivity(ctx context.Context, a *Activity, laps []Lap, ts 
 	})
 }
 
+// childInsertBatch caps rows per multi-value INSERT for an activity's child
+// tables. MySQL allows at most 65535 bind placeholders per statement; the widest
+// child (TimeseriesPoint binds 18 columns — 19 fields minus the auto-increment
+// id) at this size uses 18*2000 = 36000, leaving generous headroom, while
+// cutting the number of round-trips to the DB ~4x vs the previous 500 (a long
+// run has thousands of timeseries points).
+const childInsertBatch = 2000
+
 // replaceChildren deletes all rows of model for (user_id, label_id) then inserts
 // rows (if any). rows must be a slice; an empty slice just clears.
 func replaceChildren[T any](tx *gorm.DB, userID, labelID string, model any, rows []T) error {
@@ -119,9 +127,7 @@ func replaceChildren[T any](tx *gorm.DB, userID, labelID string, model any, rows
 		return fmt.Errorf("storage: clear children: %w", err)
 	}
 	if len(rows) > 0 {
-		// Batch to stay under MySQL's 65535-placeholder limit (a long activity
-		// has thousands of timeseries points).
-		if err := tx.CreateInBatches(&rows, 500).Error; err != nil {
+		if err := tx.CreateInBatches(&rows, childInsertBatch).Error; err != nil {
 			return fmt.Errorf("storage: insert children: %w", err)
 		}
 	}

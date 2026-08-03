@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -18,6 +19,27 @@ import (
 )
 
 const providerName = "coros"
+
+// Detail-fetch concurrency bounds. defaultJobs matches the reference Python
+// sync's default (-j 4); maxJobs caps an operator-supplied value so a stray
+// config can't unleash an unbounded number of concurrent COROS requests.
+const (
+	defaultJobs = 4
+	maxJobs     = 16
+)
+
+// clampJobs resolves the effective detail-fetch concurrency: a non-positive
+// value (unset) falls back to defaultJobs; anything above maxJobs is capped.
+func clampJobs(jobs int) int {
+	switch {
+	case jobs < 1:
+		return defaultJobs
+	case jobs > maxJobs:
+		return maxJobs
+	default:
+		return jobs
+	}
+}
 
 // Provider is the COROS watch-data adapter.
 type Provider struct {
@@ -57,7 +79,8 @@ func WithClientFactory(f func(c Credentials, save CredentialSaver) *Client) Prov
 	return func(p *Provider) { p.newClient = f }
 }
 
-// WithProviderRequestDelay sets the default per-request rate-limit pause.
+// WithProviderRequestDelay sets the default per-request base spacing that seeds
+// the client's shared rate limiter (aggregate ceiling = jobs/delay).
 func WithProviderRequestDelay(d time.Duration) ProviderOption {
 	return func(p *Provider) { p.delay = d }
 }
@@ -120,6 +143,10 @@ func (p *Provider) SyncUser(ctx context.Context, user string, opts provider.Sync
 	if err != nil {
 		return provider.SyncResult{}, err
 	}
+	// Install the shared rate limiter sized for this run's concurrency before
+	// any fetch worker starts, so every read request (activities + health)
+	// shares one aggregate ceiling to COROS.
+	client.EnableRateLimit(clampJobs(opts.Jobs))
 
 	var res provider.SyncResult
 	if content.Has(provider.ContentActivities) {
@@ -148,9 +175,9 @@ type listItem struct {
 // activity's detail. It emits per-activity progress so a long full sync is
 // legible on the job row.
 //
-// NOTE: detail fetch is sequential for v1 (correctness first); the client's
-// re-login barrier already supports the parallel fetch that opts.jobs will drive
-// in a follow-up.
+// Detail fetch is parallel (opts.Jobs workers, clamped by clampJobs) but the
+// store commits stay strictly ordered oldest-first — see fetchDetailsOrdered
+// for why that preserves the incremental-scan cursor invariant.
 func (p *Provider) syncActivities(ctx context.Context, client *Client, user string, opts provider.SyncOptions, res *provider.SyncResult) error {
 	items, err := p.collectActivities(ctx, client, user, opts)
 	if err != nil {
@@ -158,20 +185,29 @@ func (p *Provider) syncActivities(ctx context.Context, client *Client, user stri
 	}
 	total := len(items)
 	provider.EmitProgress(opts.Progress, "activities", 0, total, provider.PercentInBand(0, total, 10, 80))
-	for i, item := range items {
-		if err := p.syncOneActivity(ctx, client, user, item, res); err != nil {
-			return err
-		}
-		provider.EmitProgress(opts.Progress, "activities", i+1, total, provider.PercentInBand(i+1, total, 10, 80))
+	if total == 0 {
+		return nil
 	}
-	return nil
+
+	// collectActivities returns items newest-first (COROS pages descend by
+	// date). Reverse to oldest-first so the ordered commit persists a
+	// contiguous oldest-first prefix on a partial run.
+	ordered := make([]listItem, total)
+	for i, item := range items {
+		ordered[total-1-i] = item
+	}
+	return p.fetchDetailsOrdered(ctx, client, user, ordered, clampJobs(opts.Jobs), opts.Progress, res)
 }
 
 // collectActivities pages the activity list and returns the items to sync,
 // stopping at the first already-synced activity in incremental mode and honoring
-// opts.Limit. Full mode collects known activities too (re-scan).
+// opts.Limit. Full mode collects known activities too (re-scan) and therefore
+// skips the per-item ActivityExists probe entirely — in full mode its result
+// never changes the outcome (every item is appended), so issuing the COUNT would
+// be a wasted round-trip per activity.
 func (p *Provider) collectActivities(ctx context.Context, client *Client, user string, opts provider.SyncOptions) ([]listItem, error) {
 	const pageSize = 20
+	full := opts.Mode == provider.SyncFull
 	var items []listItem
 	for page := 1; ; page++ {
 		raw, err := client.ListActivities(ctx, page, pageSize)
@@ -188,12 +224,14 @@ func (p *Provider) collectActivities(ctx context.Context, client *Client, user s
 			return items, nil
 		}
 		for _, item := range pageData.DataList {
-			exists, err := p.store.ActivityExists(ctx, user, item.LabelID)
-			if err != nil {
-				return nil, err
-			}
-			if exists && opts.Mode != provider.SyncFull {
-				return items, nil // incremental catch-up: reached known history
+			if !full {
+				exists, err := p.store.ActivityExists(ctx, user, item.LabelID)
+				if err != nil {
+					return nil, err
+				}
+				if exists {
+					return items, nil // incremental catch-up: reached known history
+				}
 			}
 			items = append(items, item)
 			if opts.Limit > 0 && len(items) >= opts.Limit {
@@ -206,24 +244,117 @@ func (p *Provider) collectActivities(ctx context.Context, client *Client, user s
 	}
 }
 
-func (p *Provider) syncOneActivity(ctx context.Context, client *Client, user string, item listItem, res *provider.SyncResult) error {
+// detailResult carries one activity's parsed detail (or the fetch/parse error)
+// from a fetch worker to the ordered committer.
+type detailResult struct {
+	a     *storage.Activity
+	laps  []storage.Lap
+	ts    []storage.TimeseriesPoint
+	zones []storage.ActivityWatchZone
+	err   error
+}
+
+// fetchDetailsOrdered fetches each activity's detail concurrently (bounded by
+// jobs) while committing to the store strictly in the given (oldest-first)
+// order. Commit halts at the first fetch, parse, or store error, so the
+// persisted set is always a contiguous oldest-first prefix of ordered. That is
+// what keeps the incremental cursor safe: a later incremental scan walks
+// newest-first and stops at the first activity that already exists, so every
+// not-yet-persisted (newer) activity is re-fetched — no holes.
+//
+// A feeder hands indices out in order, so workers pull roughly sequentially and
+// at most ~jobs fetched-but-uncommitted results are held in memory at once.
+func (p *Provider) fetchDetailsOrdered(
+	ctx context.Context,
+	client *Client,
+	user string,
+	ordered []listItem,
+	jobs int,
+	progress provider.ProgressCallback,
+	res *provider.SyncResult,
+) error {
+	total := len(ordered)
+	results := make([]detailResult, total)
+	ready := make([]chan struct{}, total)
+	for i := range ready {
+		ready[i] = make(chan struct{})
+	}
+
+	// fetchCtx cancels in-flight and pending fetches once the committer stops
+	// (error or ctx cancellation), so workers unwind promptly.
+	fetchCtx, cancelFetch := context.WithCancel(ctx)
+	defer cancelFetch()
+
+	indexCh := make(chan int)
+	go func() {
+		defer close(indexCh)
+		for i := 0; i < total; i++ {
+			select {
+			case indexCh <- i:
+			case <-fetchCtx.Done():
+				return
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+	for w := 0; w < jobs; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range indexCh {
+				a, laps, ts, zones, err := p.fetchOneDetail(fetchCtx, client, ordered[i], user)
+				results[i] = detailResult{a: a, laps: laps, ts: ts, zones: zones, err: err}
+				close(ready[i])
+			}
+		}()
+	}
+
+	// Commit in order. Store writes use the caller ctx (not fetchCtx) so an
+	// in-progress upsert is not cancelled by our own fetch-teardown.
+	var commitErr error
+	for i := 0; i < total; i++ {
+		select {
+		case <-ready[i]:
+		case <-ctx.Done():
+			commitErr = ctx.Err()
+		}
+		if commitErr != nil {
+			break
+		}
+		r := results[i]
+		if r.err != nil {
+			commitErr = r.err
+			break
+		}
+		if err := p.store.UpsertActivity(ctx, r.a, r.laps, r.ts, r.zones); err != nil {
+			commitErr = err
+			break
+		}
+		res.Activities++
+		res.ActivityLabelIDs = append(res.ActivityLabelIDs, ordered[i].LabelID)
+		if err := p.store.SetMeta(ctx, user, "last_label_id", ordered[i].LabelID); err != nil {
+			commitErr = err
+			break
+		}
+		provider.EmitProgress(progress, "activities", i+1, total, provider.PercentInBand(i+1, total, 10, 80))
+	}
+
+	cancelFetch()
+	wg.Wait()
+	return commitErr
+}
+
+// fetchOneDetail fetches and parses a single activity's detail. It performs no
+// store writes, so it is safe to run concurrently across workers.
+func (p *Provider) fetchOneDetail(ctx context.Context, client *Client, item listItem, user string) (
+	*storage.Activity, []storage.Lap, []storage.TimeseriesPoint, []storage.ActivityWatchZone, error,
+) {
 	raw, err := client.GetActivityDetail(ctx, item.LabelID, item.SportType)
 	if err != nil {
-		return err
+		return nil, nil, nil, nil, err
 	}
-	a, laps, ts, zones, err := ParseActivityDetail(user, item.LabelID, parseListDate(string(item.Date)), raw)
-	if err != nil {
-		return err
-	}
-	if err := p.store.UpsertActivity(ctx, a, laps, ts, zones); err != nil {
-		return err
-	}
-	res.Activities++
-	res.ActivityLabelIDs = append(res.ActivityLabelIDs, item.LabelID)
-	if err := p.store.SetMeta(ctx, user, "last_label_id", item.LabelID); err != nil {
-		return err
-	}
-	return nil
+	return ParseActivityDetail(user, item.LabelID, parseListDate(string(item.Date)), raw)
 }
 
 // dayItem is one entry of the /analyse/query dayList.

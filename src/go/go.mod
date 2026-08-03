@@ -16,6 +16,7 @@ require (
 	github.com/swaggo/swag v1.16.6
 	github.com/zhaochy1990/x v0.1.4
 	go.uber.org/zap v1.27.0
+	golang.org/x/time v0.1.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.31.2
 	modernc.org/sqlite v1.54.0

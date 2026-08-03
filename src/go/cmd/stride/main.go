@@ -42,6 +42,11 @@ import (
 // the sync command, so it lives on the shared root package.
 const watchRequestDelay = 500 * time.Millisecond
 
+// watchJobs is the detail-fetch concurrency the worker threads into each watch
+// sync (matches config.sync.yml's sync.jobs default and the reference Python
+// -j 4). The adapter clamps it to a safe range.
+const watchJobs = 4
+
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

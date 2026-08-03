@@ -15,5 +15,6 @@ mysql:
   dsn: ""                # via STRIDE_SYNC_MYSQL_DSN, e.g. user:pass@tcp(127.0.0.1:3306)/stride
 
 sync:
-  jobs: 4                # reserved for parallel detail fetch (sequential in v1)
-  request-delay: 500ms   # per-request rate-limit pause
+  jobs: 4                # parallel COROS detail-fetch workers (clamped 1..16)
+  request-delay: 500ms   # base per-request spacing; the shared limiter caps the
+                         # aggregate request rate at jobs/request-delay

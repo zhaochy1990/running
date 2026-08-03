@@ -28,6 +28,17 @@ func Open(dsn string) (*Store, error) {
 	}
 	db, err := gorm.Open(mysql.Open(normalized), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
+		// Cache prepared statements: a sync issues the same INSERT/SELECT shapes
+		// thousands of times, so preparing once per connection removes repeated
+		// parse/plan round-trips. The cache is bounded (default is unbounded)
+		// because CreateInBatches emits a distinct SQL shape per final-batch row
+		// count (a marathon's timeseries vs a short jog), so in the long-lived
+		// worker an unbounded LRU would accumulate shapes across users until it
+		// hit MySQL's max_prepared_stmt_count (default 16382). At MaxSize*MaxOpen
+		// = 256*25 the server-side statement count stays well under that ceiling.
+		PrepareStmt:        true,
+		PrepareStmtMaxSize: 256,
+		PrepareStmtTTL:     10 * time.Minute,
 		NowFunc: func() time.Time {
 			return time.Now().UTC()
 		},
@@ -35,7 +46,27 @@ func Open(dsn string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("storage: open mysql: %w", err)
 	}
+	if err := tunePool(db); err != nil {
+		return nil, err
+	}
 	return &Store{db: db}, nil
+}
+
+// tunePool sizes the underlying database/sql connection pool. The default idle
+// cap is 2, which serializes the parallel detail-fetch committer and other
+// concurrent queries onto too few connections and churns TCP/TLS to Azure MySQL.
+// Lifetimes bound how long a connection is reused so managed MySQL's own idle
+// cutoff never hands us a dead connection.
+func tunePool(db *gorm.DB) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("storage: pool handle: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetConnMaxLifetime(30 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
+	return nil
 }
 
 // forceUTCDSN parses a go-sql-driver DSN and forces parseTime + UTC location and
