@@ -118,6 +118,13 @@ func (d *Dispatcher) Dispatch(ctx context.Context, m Message) error {
 		return err // infra fault -> redeliver
 	}
 
+	// Reflect the running state on the owning pipeline run (if any). Best-effort:
+	// the job is already claimed, so a failure here is a display/telemetry gap,
+	// not a reason to redeliver the message.
+	if err := d.lifecycle.OnJobStarted(ctx, j); err != nil {
+		d.log.Error("lifecycle OnJobStarted failed", zap.String("job_id", j.ID), zap.Error(err))
+	}
+
 	d.started.Add(1)
 	d.log.Info("processing job",
 		zap.String("job_id", j.ID),

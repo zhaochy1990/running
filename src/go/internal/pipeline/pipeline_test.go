@@ -155,6 +155,110 @@ func TestOnJobCompleted_AdvancesToNextStep(t *testing.T) {
 	}
 }
 
+func TestOnJobStarted_MarksStepRunning(t *testing.T) {
+	ps := newFakePStore()
+	enq := &fakeEnqueuer{}
+	o := newOrch(ps, enq)
+	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1", "u1", "", "")
+
+	run := ps.snap("run-1")
+	step0JobID := run.Steps[0].JobID
+	// Precondition: the first step is seeded queued even though the run is running.
+	if run.Steps[0].Status != job.StatusQueued {
+		t.Fatalf("precondition step0 = %s, want queued", run.Steps[0].Status)
+	}
+
+	if err := o.OnJobStarted(context.Background(), &job.Job{
+		ID: step0JobID, UserID: "u1", PipelineRunID: "run-1",
+	}); err != nil {
+		t.Fatalf("OnJobStarted: %v", err)
+	}
+
+	run = ps.snap("run-1")
+	if run.Steps[0].Status != job.StatusRunning {
+		t.Fatalf("step0 = %s, want running", run.Steps[0].Status)
+	}
+	// Marking a step running must not enqueue anything or change the run status.
+	if len(enq.specs) != 1 {
+		t.Fatalf("enqueues = %d, want 1 (no extra enqueue on start)", len(enq.specs))
+	}
+	if run.Status != job.StatusRunning {
+		t.Fatalf("run status = %s, want running", run.Status)
+	}
+}
+
+func TestOnJobStarted_MarksNonFirstStepRunning(t *testing.T) {
+	ps := newFakePStore()
+	enq := &fakeEnqueuer{}
+	o := newOrch(ps, enq)
+	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1", "u1", "", "")
+
+	// Complete step 0 so the run advances and enqueues step 1 (still queued).
+	step0JobID := ps.snap("run-1").Steps[0].JobID
+	if err := o.OnJobCompleted(context.Background(), &job.Job{ID: step0JobID, UserID: "u1", PipelineRunID: "run-1"}); err != nil {
+		t.Fatalf("complete step0: %v", err)
+	}
+	run := ps.snap("run-1")
+	if run.Steps[1].Status != job.StatusQueued || run.CurrentStep != 1 {
+		t.Fatalf("precondition: step1=%s current=%d, want queued/1", run.Steps[1].Status, run.CurrentStep)
+	}
+
+	// A worker now claims step 1's job.
+	step1JobID := run.Steps[1].JobID
+	if err := o.OnJobStarted(context.Background(), &job.Job{ID: step1JobID, UserID: "u1", PipelineRunID: "run-1"}); err != nil {
+		t.Fatalf("OnJobStarted step1: %v", err)
+	}
+	run = ps.snap("run-1")
+	if run.Steps[1].Status != job.StatusRunning {
+		t.Fatalf("step1 = %s, want running", run.Steps[1].Status)
+	}
+	// Earlier step stays done; the run stays on step 1.
+	if run.Steps[0].Status != job.StatusDone {
+		t.Fatalf("step0 = %s, want done", run.Steps[0].Status)
+	}
+	if run.CurrentStep != 1 {
+		t.Fatalf("current step = %d, want 1", run.CurrentStep)
+	}
+}
+
+func TestOnJobStarted_Idempotent(t *testing.T) {
+	ps := newFakePStore()
+	enq := &fakeEnqueuer{}
+	o := newOrch(ps, enq)
+	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1", "u1", "", "")
+	jid := ps.snap("run-1").Steps[0].JobID
+
+	msg := &job.Job{ID: jid, UserID: "u1", PipelineRunID: "run-1"}
+	if err := o.OnJobStarted(context.Background(), msg); err != nil {
+		t.Fatalf("OnJobStarted #1: %v", err)
+	}
+	if err := o.OnJobStarted(context.Background(), msg); err != nil { // duplicate delivery
+		t.Fatalf("OnJobStarted #2: %v", err)
+	}
+	if run := ps.snap("run-1"); run.Steps[0].Status != job.StatusRunning {
+		t.Fatalf("step0 = %s, want running", run.Steps[0].Status)
+	}
+}
+
+func TestOnJobStarted_DoesNotClobberTerminalStep(t *testing.T) {
+	ps := newFakePStore()
+	enq := &fakeEnqueuer{}
+	o := newOrch(ps, enq)
+	_, _ = o.StartPipeline(context.Background(), "onboarding", "u1", "u1", "", "")
+	jid := ps.snap("run-1").Steps[0].JobID
+
+	// Step 0 completes first, then a stale/duplicate "started" delivery arrives.
+	if err := o.OnJobCompleted(context.Background(), &job.Job{ID: jid, UserID: "u1", PipelineRunID: "run-1"}); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if err := o.OnJobStarted(context.Background(), &job.Job{ID: jid, UserID: "u1", PipelineRunID: "run-1"}); err != nil {
+		t.Fatalf("late OnJobStarted: %v", err)
+	}
+	if run := ps.snap("run-1"); run.Steps[0].Status != job.StatusDone {
+		t.Fatalf("step0 = %s, want done (late start must not revert it)", run.Steps[0].Status)
+	}
+}
+
 func TestOnJobCompleted_LastStepMarksRunDone(t *testing.T) {
 	ps := newFakePStore()
 	enq := &fakeEnqueuer{}
@@ -238,6 +342,9 @@ func TestLifecycle_StandaloneJobIsNoop(t *testing.T) {
 	o := newOrch(ps, enq)
 
 	// No PipelineRunID -> not part of any pipeline.
+	if err := o.OnJobStarted(context.Background(), &job.Job{ID: "x", UserID: "u1"}); err != nil {
+		t.Fatalf("standalone started: %v", err)
+	}
 	if err := o.OnJobCompleted(context.Background(), &job.Job{ID: "x", UserID: "u1"}); err != nil {
 		t.Fatalf("standalone completed: %v", err)
 	}
