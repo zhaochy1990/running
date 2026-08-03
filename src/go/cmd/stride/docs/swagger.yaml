@@ -471,6 +471,9 @@ definitions:
     properties:
       input:
         type: object
+      name:
+        example: onboarding
+        type: string
       user_id:
         type: string
     type: object
@@ -1142,28 +1145,23 @@ paths:
       summary: List supported pipelines
       tags:
       - catalog
-  /pipelines/{name}:
     post:
       consumes:
       - application/json
-      description: Starts a named pipeline (a linear sequence of jobs). Internal callers
-        may start any cataloged pipeline for any user; user callers may only start
-        user-initiable pipelines for themselves. Supply an Idempotency-Key header
-        to make retries safe.
+      description: Starts a named pipeline (a linear sequence of jobs). The pipeline
+        name is supplied in the request body. Internal callers may start any cataloged
+        pipeline for any user; user callers may only start user-initiable pipelines
+        for themselves. Supply an Idempotency-Key header to make retries safe.
       parameters:
-      - description: Pipeline name
-        in: path
-        name: name
-        required: true
-        type: string
       - description: Deduplicates creation; a repeat key returns the existing run
           (200)
         in: header
         name: Idempotency-Key
         type: string
-      - description: Optional subject user/input
+      - description: Pipeline name (required) and optional subject user/input
         in: body
         name: body
+        required: true
         schema:
           $ref: '#/definitions/api.startPipelineRequest'
       produces:

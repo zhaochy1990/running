@@ -721,9 +721,7 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/pipelines/{name}": {
+            },
             "post": {
                 "security": [
                     {
@@ -733,7 +731,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Starts a named pipeline (a linear sequence of jobs). Internal callers may start any cataloged pipeline for any user; user callers may only start user-initiable pipelines for themselves. Supply an Idempotency-Key header to make retries safe.",
+                "description": "Starts a named pipeline (a linear sequence of jobs). The pipeline name is supplied in the request body. Internal callers may start any cataloged pipeline for any user; user callers may only start user-initiable pipelines for themselves. Supply an Idempotency-Key header to make retries safe.",
                 "consumes": [
                     "application/json"
                 ],
@@ -747,21 +745,15 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Pipeline name",
-                        "name": "name",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
                         "description": "Deduplicates creation; a repeat key returns the existing run (200)",
                         "name": "Idempotency-Key",
                         "in": "header"
                     },
                     {
-                        "description": "Optional subject user/input",
+                        "description": "Pipeline name (required) and optional subject user/input",
                         "name": "body",
                         "in": "body",
+                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/api.startPipelineRequest"
                         }
@@ -1578,6 +1570,10 @@ const docTemplate = `{
             "properties": {
                 "input": {
                     "type": "object"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "onboarding"
                 },
                 "user_id": {
                     "type": "string"
