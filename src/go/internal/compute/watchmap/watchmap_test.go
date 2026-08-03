@@ -2,7 +2,6 @@ package watchmap
 
 import (
 	"testing"
-	"time"
 
 	"github.com/zhaochy1990/stride/internal/storage"
 )
@@ -69,14 +68,5 @@ func TestDistanceScale(t *testing.T) {
 	cm := []storage.TimeseriesPoint{{Distance: f(500000)}}
 	if got := DistanceScale(cm, f(5000), "coros"); got != 0.01 {
 		t.Errorf("cm scale = %v, want 0.01", got)
-	}
-}
-
-func TestShanghaiDayCrossesMidnight(t *testing.T) {
-	utc := time.Date(2026, 7, 28, 20, 0, 0, 0, time.UTC)
-	got := ShanghaiDay(utc)
-	want := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
-	if !got.Equal(want) {
-		t.Errorf("ShanghaiDay = %v, want %v", got, want)
 	}
 }

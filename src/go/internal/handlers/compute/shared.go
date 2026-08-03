@@ -55,18 +55,3 @@ func parseDay(s string) (time.Time, bool) {
 	}
 	return t, true
 }
-
-// shanghaiToday returns the Shanghai (UTC+8) civil day as a UTC-midnight time,
-// matching the reader's activity-date representation.
-func shanghaiToday() time.Time {
-	sh := time.Now().UTC().Add(8 * time.Hour)
-	return time.Date(sh.Year(), sh.Month(), sh.Day(), 0, 0, 0, 0, time.UTC)
-}
-
-// shanghaiDayOf returns the Shanghai civil day (as a UTC-midnight time) of a UTC
-// instant — used to find the earliest new-activity day for the incremental
-// window and PMC prior-state boundary.
-func shanghaiDayOf(t time.Time) time.Time {
-	sh := t.UTC().Add(8 * time.Hour)
-	return time.Date(sh.Year(), sh.Month(), sh.Day(), 0, 0, 0, 0, time.UTC)
-}
