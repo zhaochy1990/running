@@ -1,0 +1,14 @@
+{
+  "display_name": "丁晨涛",
+  "dob": "1990-02-22",
+  "sex": "male",
+  "height_cm": 180.0,
+  "weight_kg": 70.0,
+  "target_race": "西安马拉松",
+  "target_distance": "FM",
+  "target_race_date": "2026-10-18",
+  "target_time": "2:45:00",
+  "pbs": null,
+  "weekly_mileage_km": null,
+  "constraints": null
+}
