@@ -67,7 +67,7 @@ func runAPI() error {
 	if err := store.AutoMigrateUsers(ctx); err != nil {
 		return err
 	}
-	// race_goal table for the training-goal surface (ADR 0019). The worker does
+	// race_goal table for the training-goal surface (ADR 0021). The worker does
 	// not need this.
 	if err := store.AutoMigrateGoals(ctx); err != nil {
 		return err

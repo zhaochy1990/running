@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// AutoMigrateGoals creates/updates the race_goal table (ADR 0019). Called by
+// AutoMigrateGoals creates/updates the race_goal table (ADR 0021). Called by
 // cmd/api at boot; the worker does not need this table.
 func (s *Store) AutoMigrateGoals(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).AutoMigrate(&RaceGoal{}); err != nil {

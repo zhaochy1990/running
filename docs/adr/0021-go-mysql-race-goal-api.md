@@ -19,7 +19,7 @@ ADR 0013 deferred the athlete's race/training-plan goal to "a separate future ta
 - **`user_id` is `varchar(64)`** (matching the `user_profile` precedent, keyed off the JWT `sub`), while **`goal_id` is `char(36)`** — server-minted UUID4 for new goals (see re-mint below).
 
 ### Timezone helper
-- The future-date guard (`race_date` must be strictly after **today in Shanghai**) uses the new single-source `internal/utils/timefmt.ShanghaiToday()` (ADR 0020), created and converged as a separate prep commit rather than adding another inline Shanghai copy.
+- The future-date guard (`race_date` must be strictly after **today in Shanghai**) uses the new single-source `internal/utils/timefmt.ShanghaiToday()` (ADR 0022), created and converged as a separate prep commit rather than adding another inline Shanghai copy.
 
 ### API shape / house patterns
 - Handlers form a **sibling registrar** in `internal/api` (own store dep) mounted on the shared authed group, keeping the ADR 0012 `Service` focused — same structure as the ADR 0013 profile endpoints.

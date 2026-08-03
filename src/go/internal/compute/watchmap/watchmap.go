@@ -3,7 +3,7 @@
 // of the Python connector normalisers (speed m/s, centisecond elapsed, distance
 // scale, sport derivation). Single source so the conversions can never drift
 // between compute slices (ADR 0015). Shanghai-day bucketing lives in
-// internal/utils/timefmt (ADR 0020).
+// internal/utils/timefmt (ADR 0022).
 package watchmap
 
 import (

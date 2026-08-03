@@ -3,7 +3,7 @@ package storage
 import "time"
 
 // RaceGoal is an athlete's target race plus the weekly-availability preferences
-// for training toward it (ADR 0019). It is the greenfield Go/MySQL redesign of
+// for training toward it (ADR 0021). It is the greenfield Go/MySQL redesign of
 // the Python training-goal blob: race goals only (the old type enum is dropped),
 // modelled as a proper entity and enriched toward the downstream MasterPlanGoal.
 //

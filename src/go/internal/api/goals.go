@@ -15,7 +15,7 @@ import (
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dependencies (ADR 0019). The race-goal surface is a sibling registrar with its
+// Dependencies (ADR 0021). The race-goal surface is a sibling registrar with its
 // own store port, so the ADR 0012 job/pipeline Service and the ADR 0013 profile
 // registrar stay focused.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ type GoalStore interface {
 
 // goalRoutes is the race-goal endpoint set (POST/GET/PUT /api/users/me/
 // training-goal). It mounts onto the shared authed group so it reuses the JWT
-// user-tier auth (ADR 0019).
+// user-tier auth (ADR 0021).
 type goalRoutes struct {
 	store GoalStore
 	log   *zap.Logger
@@ -268,7 +268,7 @@ func toGoalResponse(g *storage.RaceGoal) goalResponse {
 }
 
 // validateFutureRaceDate enforces that race_date is strictly after today in
-// Asia/Shanghai (ADR 0019/0020). The YYYY-MM-DD format is already guaranteed by
+// Asia/Shanghai (ADR 0021/0022). The YYYY-MM-DD format is already guaranteed by
 // the binding tag; this adds the future-date rule as a FastAPI-shaped 422.
 func validateFutureRaceDate(raceDate string) (validationErrorResponse, bool) {
 	rd, err := time.Parse("2006-01-02", raceDate)
