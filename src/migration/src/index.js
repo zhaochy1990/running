@@ -23,6 +23,7 @@ import {
   ensureSchema,
   formatUpdatedAt,
   parseMysqlConfig,
+  splitSqlStatements,
   upsertCredential,
 } from "./mysql.js";
 import {
@@ -309,7 +310,11 @@ async function main() {
   try {
     if (opts.ensureSchema) {
       const ddl = readFileSync(join(PROJECT_DIR, "schema.sql"), "utf8");
-      await ensureSchema(conn, ddl);
+      // schema.sql holds all target tables; run each statement separately since
+      // mysql2's conn.query rejects multiple statements by default.
+      for (const stmt of splitSqlStatements(ddl)) {
+        await ensureSchema(conn, stmt);
+      }
       console.log("ensured provider_credentials schema");
     }
     const updatedAt = formatUpdatedAt();

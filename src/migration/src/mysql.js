@@ -97,9 +97,30 @@ export async function connect(config) {
   return mysql.createConnection(config);
 }
 
-/** Execute the CREATE TABLE IF NOT EXISTS DDL. */
+/** Execute one DDL statement (e.g. a single CREATE TABLE IF NOT EXISTS). */
 export async function ensureSchema(conn, ddl) {
   await conn.query(ddl);
+}
+
+/**
+ * Split a `.sql` file into individual statements so a multi-table schema can be
+ * applied without enabling mysql2's `multipleStatements` (which `conn.query`
+ * rejects by default). Full-line `--` comments are dropped *before* the split,
+ * then statements are split on `;`.
+ *
+ * Invariant this relies on: every comment in schema.sql is on its own `--` line
+ * (they may contain `;`), and no statement has a `;` inside a string literal or
+ * a trailing/inline comment. That holds for schema.sql; a trailing inline
+ * comment containing `;` would mis-split.
+ */
+export function splitSqlStatements(sql) {
+  return sql
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n")
+    .split(";")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 const UPSERT_SQL = `
@@ -129,5 +150,69 @@ export async function upsertCredential(conn, row, updatedAt) {
   ]);
   // mysql affectedRows: 1 = inserted, 2 = updated (an existing row changed),
   // 0 = matched but identical.
+  return res.affectedRows === 1 ? "inserted" : "updated";
+}
+
+// ── user_profile / user_onboarding (profile+onboarding migration) ────────────
+//
+// Both upserts mirror the Go store's clause.OnConflict{UpdateAll:true} but keep
+// created_at out of the UPDATE set so the original first-write time is preserved
+// on re-runs (the Go user store lets GORM manage created_at the same way).
+
+const UPSERT_PROFILE_SQL = `
+INSERT INTO user_profile
+  (user_id, display_name, dob, sex, height_cm, weight_kg, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+  display_name = VALUES(display_name),
+  dob = VALUES(dob),
+  sex = VALUES(sex),
+  height_cm = VALUES(height_cm),
+  weight_kg = VALUES(weight_kg),
+  updated_at = VALUES(updated_at)`;
+
+/**
+ * Upsert one user_profile row. `now` is the shared run timestamp used for both
+ * created_at (insert only) and updated_at.
+ * @returns {Promise<"inserted"|"updated">}
+ */
+export async function upsertUserProfile(conn, row, now) {
+  const [res] = await conn.execute(UPSERT_PROFILE_SQL, [
+    row.user_id,
+    row.display_name,
+    row.dob,
+    row.sex,
+    row.height_cm,
+    row.weight_kg,
+    now,
+    now,
+  ]);
+  return res.affectedRows === 1 ? "inserted" : "updated";
+}
+
+const UPSERT_ONBOARDING_SQL = `
+INSERT INTO user_onboarding
+  (user_id, watch_ready, profile_ready, completed_at, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+  watch_ready = VALUES(watch_ready),
+  profile_ready = VALUES(profile_ready),
+  completed_at = VALUES(completed_at),
+  updated_at = VALUES(updated_at)`;
+
+/**
+ * Upsert one user_onboarding row. Booleans are bound as 0/1 (TINYINT(1)) and
+ * completed_at may be a datetime(6) string or null.
+ * @returns {Promise<"inserted"|"updated">}
+ */
+export async function upsertUserOnboarding(conn, row, now) {
+  const [res] = await conn.execute(UPSERT_ONBOARDING_SQL, [
+    row.user_id,
+    row.watch_ready ? 1 : 0,
+    row.profile_ready ? 1 : 0,
+    row.completed_at,
+    now,
+    now,
+  ]);
   return res.affectedRows === 1 ? "inserted" : "updated";
 }
