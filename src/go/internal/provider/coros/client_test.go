@@ -2,11 +2,14 @@ package coros
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/zhaochy1990/stride/internal/provider"
 )
 
 func TestHashPassword(t *testing.T) {
@@ -32,6 +35,7 @@ func testClient(t *testing.T, h http.Handler, creds Credentials, saver Credentia
 		WithBases(bases),
 		WithHTTPClient(srv.Client()),
 		WithRequestDelay(0),
+		WithRetry(3, 0),
 		WithCredentialSaver(saver),
 	)
 }
@@ -206,5 +210,55 @@ func TestClient_DoesNotRetry4xx(t *testing.T) {
 	}
 	if n := atomic.LoadInt32(&calls); n != 1 {
 		t.Errorf("calls = %d, want 1 (no retry on 4xx)", n)
+	}
+}
+
+// TestClient_RetriesTransientCorosCode covers the gap that left daily_hrv empty:
+// COROS answers HTTP 200 with a non-success business code. That code is now
+// retried by the shared request-layer retry (uniformly for every endpoint), so a
+// transient COROS-side failure self-heals within the sync instead of silently
+// dropping the payload.
+func TestClient_RetriesTransientCorosCode(t *testing.T) {
+	var calls int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/activity/query", func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) < 3 {
+			writeEnvelope(w, "9999", `{}`) // non-success, non-token COROS code
+			return
+		}
+		writeEnvelope(w, resultSuccess, `{"dataList":[]}`)
+	})
+	c := testClient(t, mux, Credentials{AccessToken: "tok", Region: "global", UserID: "1"}, func(Credentials) error { return nil })
+
+	if _, err := c.ListActivities(context.Background(), 1, 20); err != nil {
+		t.Fatalf("want success after retrying a transient COROS code, got %v", err)
+	}
+	if n := atomic.LoadInt32(&calls); n != 3 {
+		t.Errorf("calls = %d, want 3 (retried the COROS code twice then ok)", n)
+	}
+}
+
+// TestClient_LoginFailureNotRetried guards the boundary of the code-retry: the
+// auth endpoints opt out, so a deterministic login failure (wrong password) is
+// neither retried nor reclassified — it must surface once as a permanent
+// AuthError (errors.Is ErrAuthRequired), so the worker treats it as terminal.
+func TestClient_LoginFailureNotRetried(t *testing.T) {
+	var calls int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/account/login", func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		writeEnvelope(w, "1004", `{}`) // non-success, non-token (e.g. bad credentials)
+	})
+	c := testClient(t, mux, Credentials{}, func(Credentials) error { return nil })
+
+	_, err := c.Login(context.Background(), "a@b.com", "bad")
+	if err == nil {
+		t.Fatal("want an error on a failed login")
+	}
+	if !errors.Is(err, provider.ErrAuthRequired) {
+		t.Errorf("login failure must classify as ErrAuthRequired, got %v", err)
+	}
+	if n := atomic.LoadInt32(&calls); n != 1 {
+		t.Errorf("login calls = %d, want 1 (an auth failure must not be retried)", n)
 	}
 }

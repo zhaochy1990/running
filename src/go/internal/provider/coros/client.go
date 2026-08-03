@@ -44,6 +44,13 @@ const (
 	resultWrongRegion  = "1019"
 )
 
+// isTokenCode reports whether a COROS result code signals a stale/misrouted
+// token that a relogin (not a blind retry) must resolve. These are handled by
+// request's refresh path and are deliberately NOT treated as retryable codes.
+func isTokenCode(code string) bool {
+	return code == resultTokenInvalid || code == resultTokenExpired || code == resultWrongRegion
+}
+
 // Credentials is a COROS login credential set. PwdHash is the MD5 the login
 // endpoint accepts directly; AccessToken is the current bearer.
 type Credentials struct {
@@ -66,6 +73,16 @@ type APIError struct {
 
 func (e *APIError) Error() string { return fmt.Sprintf("coros: [%s] %s", e.Code, e.Message) }
 
+// Retryable marks a COROS application-level failure as worth re-issuing. COROS
+// answers HTTP 200 with a business result code; a non-success code that is not a
+// token/region code (those are handled by request's one-shot relogin, never
+// surfaced here) is treated as transient — server busy / throttling — and
+// retried, bounded by the client's retry attempts. Every COROS endpoint used by
+// the sync is an idempotent read, so a retry is side-effect-free; a genuinely
+// terminal code just costs the (bounded) attempts before it surfaces. The httpx
+// retry layer consults this via the Retryable() interface.
+func (e *APIError) Retryable() bool { return true }
+
 // AuthError is a login / re-login failure.
 type AuthError struct{ msg string }
 
@@ -78,10 +95,12 @@ func (e *AuthError) Unwrap() error { return provider.ErrAuthRequired }
 
 // Client talks to the COROS API for one account.
 type Client struct {
-	http  *http.Client
-	bases map[string]string
-	delay time.Duration
-	save  CredentialSaver
+	http          *http.Client
+	bases         map[string]string
+	delay         time.Duration
+	retryAttempts uint
+	retryDelay    time.Duration
+	save          CredentialSaver
 
 	// limiter is a shared token bucket gating the sync read endpoints so N
 	// concurrent detail-fetch workers stay under one aggregate request ceiling
@@ -110,13 +129,22 @@ func WithRequestDelay(d time.Duration) Option { return func(c *Client) { c.delay
 // WithCredentialSaver sets the persistence hook called after login/refresh.
 func WithCredentialSaver(s CredentialSaver) Option { return func(c *Client) { c.save = s } }
 
+// WithRetry overrides the request retry policy (attempts + base backoff) applied
+// uniformly to every COROS call: transient transport failures, HTTP 429/5xx, and
+// non-terminal COROS result codes. Tests use it to drop the backoff to zero.
+func WithRetry(attempts uint, delay time.Duration) Option {
+	return func(c *Client) { c.retryAttempts, c.retryDelay = attempts, delay }
+}
+
 // NewClient builds a Client seeded with creds (may be zero for a fresh Login).
 func NewClient(creds Credentials, opts ...Option) *Client {
 	c := &Client{
-		http:  defaultHTTPClient(),
-		bases: DefaultBases,
-		delay: 500 * time.Millisecond,
-		creds: creds,
+		http:          defaultHTTPClient(),
+		bases:         DefaultBases,
+		delay:         500 * time.Millisecond,
+		retryAttempts: httpx.DefaultAttempts,
+		retryDelay:    httpx.DefaultBaseDelay,
+		creds:         creds,
 	}
 	for _, o := range opts {
 		o(c)
@@ -242,7 +270,7 @@ func (c *Client) Login(ctx context.Context, email, password string) (Credentials
 // WRONG_REGION wins. Falls back to "global".
 func (c *Client) detectRegion(ctx context.Context, token string) string {
 	for region, base := range c.bases {
-		env, err := c.doParams(ctx, http.MethodGet, base+"/account/query", nil, token, false)
+		env, err := c.doParams(ctx, http.MethodGet, base+"/account/query", nil, token, false, false)
 		if err != nil {
 			continue
 		}
@@ -321,7 +349,9 @@ func (c *Client) base(region string) string {
 
 // request issues an authenticated query-param request, transparently refreshing
 // the token once on expiry/invalid/wrong-region, and returns the response
-// envelope's data payload.
+// envelope's data payload. Transient failures (transport, HTTP 429/5xx, and
+// non-terminal COROS result codes) are retried inside doParams → send; a token
+// code is handled here by a one-shot relogin.
 func (c *Client) request(ctx context.Context, method, path string, params url.Values, yf bool) (json.RawMessage, error) {
 	token, region := c.currentToken()
 	if token == "" {
@@ -333,17 +363,16 @@ func (c *Client) request(ctx context.Context, method, path string, params url.Va
 	if err := c.waitLimit(ctx); err != nil {
 		return nil, err
 	}
-	env, err := c.doParams(ctx, method, c.base(region)+path, params, token, yf)
+	env, err := c.doParams(ctx, method, c.base(region)+path, params, token, yf, true)
 	if err != nil {
 		return nil, err
 	}
-	switch env.code() {
-	case resultTokenExpired, resultTokenInvalid, resultWrongRegion:
+	if isTokenCode(env.code()) {
 		if err := c.refresh(ctx, token); err != nil {
 			return nil, err
 		}
 		token, region = c.currentToken()
-		env, err = c.doParams(ctx, method, c.base(region)+path, params, token, yf)
+		env, err = c.doParams(ctx, method, c.base(region)+path, params, token, yf, true)
 		if err != nil {
 			return nil, err
 		}
@@ -354,7 +383,7 @@ func (c *Client) request(ctx context.Context, method, path string, params url.Va
 	return env.Data, nil
 }
 
-func (c *Client) doParams(ctx context.Context, method, rawURL string, params url.Values, token string, yf bool) (apiEnvelope, error) {
+func (c *Client) doParams(ctx context.Context, method, rawURL string, params url.Values, token string, yf, classifyCodes bool) (apiEnvelope, error) {
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, nil)
 	if err != nil {
 		return apiEnvelope{}, err
@@ -366,7 +395,7 @@ func (c *Client) doParams(ctx context.Context, method, rawURL string, params url
 	if yf {
 		req.Header.Set("yfheader", fmt.Sprintf(`{"userId":"%s"}`, c.userID()))
 	}
-	return c.send(req)
+	return c.send(req, classifyCodes)
 }
 
 func (c *Client) doJSON(ctx context.Context, rawURL string, body any, token string) (apiEnvelope, error) {
@@ -382,14 +411,22 @@ func (c *Client) doJSON(ctx context.Context, rawURL string, body any, token stri
 	if token != "" {
 		req.Header.Set("accesstoken", token)
 	}
-	return c.send(req)
+	// The auth endpoints (login/relogin) inspect the result code themselves and
+	// must keep returning a permanent AuthError on failure, so they opt OUT of
+	// COROS-code retry (classifyCodes=false); a wrong password must not be
+	// retried or reclassified as a transient APIError.
+	return c.send(req, false)
 }
 
-// send issues one request, retrying transient transport/body/5xx failures in
-// place (httpx) so a mid-body "unexpected EOF" doesn't fail the whole sync.
-func (c *Client) send(req *http.Request) (apiEnvelope, error) {
+// send issues one request through the shared retry policy so transient transport
+// failures (a mid-body "unexpected EOF", a reset, a timeout), HTTP 429/5xx, and —
+// when classifyCodes is set — non-terminal COROS result codes are all retried in
+// place with exponential backoff, uniformly for every endpoint. classifyCodes is
+// true only for the authenticated request path (idempotent reads); it is false
+// for the auth endpoints, which evaluate the result code themselves.
+func (c *Client) send(req *http.Request, classifyCodes bool) (apiEnvelope, error) {
 	var env apiEnvelope
-	err := httpx.Do(req.Context(), func() error {
+	err := httpx.DoN(req.Context(), c.retryAttempts, c.retryDelay, func() error {
 		// Reset the body for a retry (POST via doJSON); GET has none.
 		if req.GetBody != nil {
 			b, e := req.GetBody()
@@ -398,12 +435,12 @@ func (c *Client) send(req *http.Request) (apiEnvelope, error) {
 			}
 			req.Body = b
 		}
-		return c.sendOnce(req, &env)
+		return c.sendOnce(req, &env, classifyCodes)
 	})
 	return env, err
 }
 
-func (c *Client) sendOnce(req *http.Request, env *apiEnvelope) error {
+func (c *Client) sendOnce(req *http.Request, env *apiEnvelope, classifyCodes bool) error {
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("coros: %s %s: %w", req.Method, req.URL.Path, err)
@@ -418,6 +455,17 @@ func (c *Client) sendOnce(req *http.Request, env *apiEnvelope) error {
 	}
 	if err := json.Unmarshal(raw, env); err != nil {
 		return fmt.Errorf("coros: decode %s: %w", req.URL.Path, err)
+	}
+	// COROS reports application-level failures as HTTP 200 + a business result
+	// code. On the request path, surface a retryable *APIError for any
+	// non-success, non-token code so the retry loop above covers COROS's own
+	// transient failures (e.g. throttling) the same way it covers 5xx. Token /
+	// region codes return nil so request() can run its one-shot relogin instead
+	// (a blind retry with the same stale token would be pointless).
+	if classifyCodes {
+		if code := env.code(); code != "" && code != resultSuccess && !isTokenCode(code) {
+			return &APIError{Code: code, Message: string(env.Message)}
+		}
 	}
 	return nil
 }
