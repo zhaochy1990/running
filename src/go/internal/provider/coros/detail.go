@@ -282,10 +282,34 @@ func parseTimeseries(points []rawFreq) []storage.TimeseriesPoint {
 // parseWatchZones captures the COROS watch-reported zone buckets (ADR 0007). The
 // raw zoneType is preserved for churn detection; the decoded label + range unit
 // are best-effort from the shapes observed in a live 2026 payload.
+//
+// COROS can emit two zone groups that decode to the SAME label for one activity.
+// Since zone_index restarts per group and the storage unique index
+// uq_watch_zones keys on (user_id, label_id, zone_type=label, zone_index), the
+// duplicate group's buckets collide with the first group's in a single INSERT
+// batch — a hard, deterministic MySQL 1062 that pins the whole watch_sync on
+// that activity (delete-then-insert can't help: the collision is intra-batch).
+// Two observed sources: (1) pre-2026 activities carry the pace group TWICE under
+// zoneType=1 with different inner `type` sub-codes (observed 130 and 173) but
+// byte-identical buckets; (2) the churny pace-group zoneType 1→0 migration means
+// the raw code alone is not stable, so zoneType 0 and 1 both decode to "pace".
+//
+// We keep the FIRST group for a given decoded label and skip any later group
+// that repeats it. Dedup is at the GROUP level (not per bucket) so a repeat
+// group that is longer than the first cannot leak its tail buckets past the
+// first group's length. First-wins keeps old and new activities on the same
+// pace-zone definition (the canonical type-130 group is listed first and is the
+// only one 2026 activities still emit); it is loss-free only because the
+// duplicate groups have been observed byte-identical.
 func parseWatchZones(groups []rawZoneGroup) []storage.ActivityWatchZone {
 	var zones []storage.ActivityWatchZone
+	seenLabel := make(map[string]bool)
 	for _, g := range groups {
 		label := zoneTypeName(g.ZoneType)
+		if seenLabel[label] {
+			continue // duplicate churny group for an already-emitted label (e.g. pace type 173 after 130)
+		}
+		seenLabel[label] = true
 		unit := zoneRangeUnit(g.ZoneType)
 		for i, item := range g.List {
 			zones = append(zones, storage.ActivityWatchZone{

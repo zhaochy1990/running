@@ -148,6 +148,75 @@ func TestParseActivityDetailFallbackDate(t *testing.T) {
 	}
 }
 
+// TestParseWatchZonesDedupsDuplicatePaceGroups reproduces a real pre-2026 COROS
+// payload: older activities carry the pace group TWICE under zoneType=1 with
+// different inner `type` sub-codes (130 and 173). Because zone_index restarts
+// per group, both groups produce (pace, 1)/(pace, 2)... keys, which collide on
+// the activity_watch_zones uq_watch_zones unique index (user_id, label_id,
+// zone_type, zone_index) — a deterministic MySQL 1062 on the child insert that
+// pins watch_sync on that activity. parseWatchZones must drop the whole
+// duplicate group so every (label, index) key is unique.
+//
+// The duplicate pace group here is deliberately made LONGER (3 buckets vs 2) to
+// pin group-level dedup: a per-bucket dedup would drop buckets 1..2 of the
+// repeat group but leak its 3rd bucket as a stray (pace, 3) Frankenstein row.
+func TestParseWatchZonesDedupsDuplicatePaceGroups(t *testing.T) {
+	const payload = `{
+  "summary": {"sportType": 100, "startTimestamp": 175000000000},
+  "zoneList": [
+    { "zoneType": 3, "type": 126, "zoneItemList": [
+      { "leftScope": 128, "rightScope": 144, "second": 333, "percent": 41 },
+      { "leftScope": 145, "rightScope": 152, "second": 28, "percent": 4 } ] },
+    { "zoneType": 1, "type": 130, "zoneItemList": [
+      { "leftScope": 370130, "rightScope": 327586, "second": 784, "percent": 98 },
+      { "leftScope": 327586, "rightScope": 303191, "second": 9, "percent": 1 } ] },
+    { "zoneType": 1, "type": 173, "zoneItemList": [
+      { "leftScope": 370130, "rightScope": 327586, "second": 784, "percent": 98 },
+      { "leftScope": 327586, "rightScope": 303191, "second": 9, "percent": 1 },
+      { "leftScope": 303191, "rightScope": 0, "second": 0, "percent": 0 } ] }
+  ]
+}`
+	_, _, _, zones, err := ParseActivityDetail("f10bc353-01ab-4db1-af9f-d9305ea9a532", "L3", time.Time{}, []byte(payload))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	// No duplicate (zone_type, zone_index) key may survive — that is the
+	// uq_watch_zones constraint the child insert enforces.
+	type key struct {
+		label string
+		index int
+	}
+	seen := map[key]int{}
+	for _, z := range zones {
+		seen[key{z.ZoneType, z.ZoneIndex}]++
+	}
+	for k, n := range seen {
+		if n > 1 {
+			t.Errorf("duplicate zone key %+v appears %d times (would 1062 on uq_watch_zones)", k, n)
+		}
+	}
+
+	// The whole duplicate pace group is dropped: 2 heartRate + 2 pace = 4 rows,
+	// keeping the first (canonical type-130) group. Crucially the repeat group's
+	// longer tail must NOT leak: there is no (pace, 3).
+	if len(zones) != 4 {
+		t.Fatalf("zones = %d, want 4 (dup pace group dropped, no tail leak)", len(zones))
+	}
+	var paceCount int
+	for _, z := range zones {
+		if z.ZoneType == "pace" {
+			paceCount++
+			if z.ZoneIndex > 2 {
+				t.Errorf("leaked tail bucket from repeat pace group: (pace, %d)", z.ZoneIndex)
+			}
+		}
+	}
+	if paceCount != 2 {
+		t.Errorf("pace rows = %d, want 2 (one deduped pace group of 2 buckets)", paceCount)
+	}
+}
+
 func deref(p *string) string {
 	if p == nil {
 		return ""
