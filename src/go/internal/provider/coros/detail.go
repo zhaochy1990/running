@@ -10,6 +10,9 @@ import (
 	"math"
 	"time"
 
+	"go.uber.org/zap"
+
+	"github.com/zhaochy1990/stride/internal/logging"
 	"github.com/zhaochy1990/stride/internal/normalize"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
@@ -120,8 +123,11 @@ type rawPause struct {
 // ZoneTypeRaw still preserves the raw zoneType int so future encoding drift stays
 // observable. Note the inner array is `zoneItemList` (NOT `list`) — the earlier
 // assumed name silently yielded zero buckets, leaving activity_watch_zones empty.
+// Type is the finer COROS sub-code (e.g. pace 130 vs the legacy duplicate 173);
+// it is NOT persisted but parseWatchZones uses it to classify duplicate groups.
 type rawZoneGroup struct {
 	ZoneType int           `json:"zoneType"`
+	Type     int           `json:"type"`
 	List     []rawZoneItem `json:"zoneItemList"`
 }
 
@@ -209,7 +215,7 @@ func ParseActivityDetail(userID, labelID string, fallbackDate time.Time, payload
 
 	laps := parseLaps(d.LapList)
 	ts := parseTimeseries(d.FrequencyList)
-	zones := parseWatchZones(d.ZoneList)
+	zones := parseWatchZones(labelID, d.ZoneList)
 	return a, laps, ts, zones, nil
 }
 
@@ -279,6 +285,24 @@ func parseTimeseries(points []rawFreq) []storage.TimeseriesPoint {
 	return ts
 }
 
+// COROS pace zone-group `type` sub-codes. Pre-2026 activities emit the pace
+// group TWICE: the canonical zonePaceTypeCanonical (130) first, then a
+// byte-identical duplicate under zonePaceTypeLegacyDup (173). 2026+ activities
+// emit only the canonical group.
+const (
+	zonePaceTypeCanonical = 130
+	zonePaceTypeLegacyDup = 173
+)
+
+// isExpectedDuplicateZoneGroup reports whether a repeated zone group — one whose
+// decoded label was already emitted, keptType being the first-kept group's raw
+// `type` — is the known-benign pace churn (the legacy 173 duplicate following the
+// canonical 130). Any other repeat (a different type, or a non-pace label) is
+// unexpected new churn that parseWatchZones logs so it stays observable.
+func isExpectedDuplicateZoneGroup(label string, keptType, dupType int) bool {
+	return label == "pace" && keptType == zonePaceTypeCanonical && dupType == zonePaceTypeLegacyDup
+}
+
 // parseWatchZones captures the COROS watch-reported zone buckets (ADR 0007). The
 // raw zoneType is preserved for churn detection; the decoded label + range unit
 // are best-effort from the shapes observed in a live 2026 payload.
@@ -290,26 +314,35 @@ func parseTimeseries(points []rawFreq) []storage.TimeseriesPoint {
 // batch — a hard, deterministic MySQL 1062 that pins the whole watch_sync on
 // that activity (delete-then-insert can't help: the collision is intra-batch).
 // Two observed sources: (1) pre-2026 activities carry the pace group TWICE under
-// zoneType=1 with different inner `type` sub-codes (observed 130 and 173) but
-// byte-identical buckets; (2) the churny pace-group zoneType 1→0 migration means
-// the raw code alone is not stable, so zoneType 0 and 1 both decode to "pace".
+// zoneType=1 with different inner `type` sub-codes (130 then a byte-identical
+// 173); (2) the churny pace-group zoneType 1→0 migration means the raw code
+// alone is not stable, so zoneType 0 and 1 both decode to "pace".
 //
-// We keep the FIRST group for a given decoded label and skip any later group
-// that repeats it. Dedup is at the GROUP level (not per bucket) so a repeat
-// group that is longer than the first cannot leak its tail buckets past the
-// first group's length. First-wins keeps old and new activities on the same
-// pace-zone definition (the canonical type-130 group is listed first and is the
-// only one 2026 activities still emit); it is loss-free only because the
-// duplicate groups have been observed byte-identical.
-func parseWatchZones(groups []rawZoneGroup) []storage.ActivityWatchZone {
+// Dedup runs at the GROUP level: keep the FIRST group for a given decoded label
+// and skip any later group that repeats it (so a longer duplicate group cannot
+// leak its tail buckets either). This keeps sync robust against ANY duplicate.
+// On top of that, the DROP is classified: the known 173-after-130 pace churn is
+// silent, while any other duplicate is logged as unexpected new churn — it still
+// gets dropped (sync never dies) but surfaces so the encoding shift is noticed.
+func parseWatchZones(labelID string, groups []rawZoneGroup) []storage.ActivityWatchZone {
 	var zones []storage.ActivityWatchZone
-	seenLabel := make(map[string]bool)
+	keptType := make(map[string]int) // decoded label -> `type` of the first group kept for it
+	seen := make(map[string]bool)
 	for _, g := range groups {
 		label := zoneTypeName(g.ZoneType)
-		if seenLabel[label] {
-			continue // duplicate churny group for an already-emitted label (e.g. pace type 173 after 130)
+		if seen[label] {
+			if !isExpectedDuplicateZoneGroup(label, keptType[label], g.Type) {
+				logging.Default().Warn("coros: dropping unexpected duplicate watch-zone group",
+					zap.String("label_id", labelID),
+					zap.String("zone_label", label),
+					zap.Int("kept_type", keptType[label]),
+					zap.Int("dropped_zone_type", g.ZoneType),
+					zap.Int("dropped_type", g.Type))
+			}
+			continue // drop the repeat; its buckets would collide on uq_watch_zones
 		}
-		seenLabel[label] = true
+		seen[label] = true
+		keptType[label] = g.Type
 		unit := zoneRangeUnit(g.ZoneType)
 		for i, item := range g.List {
 			zones = append(zones, storage.ActivityWatchZone{

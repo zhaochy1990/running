@@ -217,6 +217,59 @@ func TestParseWatchZonesDedupsDuplicatePaceGroups(t *testing.T) {
 	}
 }
 
+// TestIsExpectedDuplicateZoneGroup pins the classifier that decides whether a
+// dropped duplicate group is the known-benign pace churn (silent) or unexpected
+// new churn (logged). Only pace 130-then-173 is expected; everything else must
+// surface.
+func TestIsExpectedDuplicateZoneGroup(t *testing.T) {
+	cases := []struct {
+		name             string
+		label            string
+		keptType, dupTyp int
+		want             bool
+	}{
+		{"pace 130 then legacy 173", "pace", 130, 173, true},
+		{"pace 130 then unknown new dup 174", "pace", 130, 174, false},
+		{"pace 130 then identical 130", "pace", 130, 130, false},
+		{"pace kept non-canonical then 173", "pace", 999, 173, false},
+		{"heartRate duplicated", "heartRate", 126, 126, false},
+		{"unknown label duplicated", "type9", 1, 1, false},
+	}
+	for _, c := range cases {
+		if got := isExpectedDuplicateZoneGroup(c.label, c.keptType, c.dupTyp); got != c.want {
+			t.Errorf("%s: isExpectedDuplicateZoneGroup(%q,%d,%d) = %v, want %v",
+				c.name, c.label, c.keptType, c.dupTyp, got, c.want)
+		}
+	}
+}
+
+// TestParseWatchZonesDropsUnexpectedDuplicate confirms the robustness leg: a
+// duplicate group that is NOT the known 130/173 pace churn (here a second pace
+// group under an unknown type 174) is still dropped so the child insert never
+// hits a uq_watch_zones 1062 — the classifier only decides log-or-silent, never
+// keep-or-drop.
+func TestParseWatchZonesDropsUnexpectedDuplicate(t *testing.T) {
+	const payload = `{
+  "summary": {"sportType": 100, "startTimestamp": 175000000000},
+  "zoneList": [
+    { "zoneType": 1, "type": 130, "zoneItemList": [
+      { "leftScope": 370130, "rightScope": 327586, "second": 784, "percent": 98 } ] },
+    { "zoneType": 1, "type": 174, "zoneItemList": [
+      { "leftScope": 370130, "rightScope": 327586, "second": 784, "percent": 98 } ] }
+  ]
+}`
+	_, _, _, zones, err := ParseActivityDetail("f10bc353-01ab-4db1-af9f-d9305ea9a532", "L4", time.Time{}, []byte(payload))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(zones) != 1 {
+		t.Fatalf("zones = %d, want 1 (unexpected duplicate still dropped)", len(zones))
+	}
+	if zones[0].ZoneType != "pace" || zones[0].ZoneIndex != 1 {
+		t.Errorf("kept zone = %q/%d, want pace/1", zones[0].ZoneType, zones[0].ZoneIndex)
+	}
+}
+
 func deref(p *string) string {
 	if p == nil {
 		return ""
