@@ -80,7 +80,7 @@ func newTestProvider(t *testing.T, h http.Handler, fw storage.Writer) *Provider 
 	factory := func(c Credentials, save CredentialSaver) *Client {
 		return NewClient(c,
 			WithBases(map[string]string{"global": srv.URL, "cn": srv.URL, "eu": srv.URL}),
-			WithHTTPClient(srv.Client()), WithRequestDelay(0), WithCredentialSaver(save))
+			WithHTTPClient(srv.Client()), WithRequestDelay(0), WithRetry(3, 0), WithCredentialSaver(save))
 	}
 	return New(fw, fakeCreds{}, WithClientFactory(factory))
 }
