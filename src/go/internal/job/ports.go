@@ -57,9 +57,14 @@ type Heartbeat func(stage string, progressPct int) error
 // PermanentError (via NewPermanentError) to fail terminally without retry.
 type Handler func(ctx context.Context, j *Job, hb Heartbeat) (result string, err error)
 
-// Lifecycle is invoked after a job reaches a terminal state so a pipeline
-// orchestrator can advance or fail the run. Implementations MUST be idempotent.
+// Lifecycle is invoked as a job changes state so a pipeline orchestrator can
+// reflect that job's progress on its run. OnJobStarted fires when a worker
+// claims the job and begins running it; OnJobCompleted / OnJobFailed fire when
+// it reaches a terminal state (to advance or fail the run). Implementations
+// MUST be idempotent — at-least-once delivery and retries can fire any hook
+// more than once for the same job.
 type Lifecycle interface {
+	OnJobStarted(ctx context.Context, j *Job) error
 	OnJobCompleted(ctx context.Context, j *Job) error
 	OnJobFailed(ctx context.Context, j *Job) error
 }
@@ -67,5 +72,6 @@ type Lifecycle interface {
 // NopLifecycle is a Lifecycle that does nothing (for standalone jobs).
 type NopLifecycle struct{}
 
+func (NopLifecycle) OnJobStarted(context.Context, *Job) error   { return nil }
 func (NopLifecycle) OnJobCompleted(context.Context, *Job) error { return nil }
 func (NopLifecycle) OnJobFailed(context.Context, *Job) error    { return nil }

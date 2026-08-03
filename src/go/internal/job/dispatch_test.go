@@ -79,10 +79,15 @@ func (p *fakePublisher) PublishPoison(_ context.Context, m Message) error {
 }
 
 type recordingLifecycle struct {
+	started   []string
 	completed []string
 	failed    []string
 }
 
+func (l *recordingLifecycle) OnJobStarted(_ context.Context, j *Job) error {
+	l.started = append(l.started, j.ID)
+	return nil
+}
 func (l *recordingLifecycle) OnJobCompleted(_ context.Context, j *Job) error {
 	l.completed = append(l.completed, j.ID)
 	return nil
@@ -134,6 +139,9 @@ func TestDispatch_Success(t *testing.T) {
 	}
 	if got.CompletedAt == nil {
 		t.Fatal("completed_at not set")
+	}
+	if len(life.started) != 1 || life.started[0] != "j1" {
+		t.Fatalf("OnJobStarted not fired: %v", life.started)
 	}
 	if len(life.completed) != 1 || life.completed[0] != "j1" {
 		t.Fatalf("OnJobCompleted not fired: %v", life.completed)
@@ -197,6 +205,9 @@ func TestDispatch_TransientFailure_RetriesWithBackoff(t *testing.T) {
 	}
 	if len(life.failed) != 0 {
 		t.Fatal("OnJobFailed must not fire while still retrying")
+	}
+	if len(life.started) != 1 || life.started[0] != "j1" {
+		t.Fatalf("OnJobStarted must fire once the job is claimed, before its handler runs: %v", life.started)
 	}
 }
 

@@ -150,6 +150,45 @@ func (o *Orchestrator) StartPipeline(ctx context.Context, name, userID, createdB
 	return run.RunID, nil
 }
 
+// OnJobStarted marks the owning run's step as running when a worker claims j and
+// begins executing it. Without this hook a step stays queued until it completes,
+// so GET /pipelines/{run_id} would report the run as running while its active
+// step still showed queued. Idempotent: it only advances a step from queued to
+// running, so duplicate deliveries and retries are no-ops and it never clobbers
+// a step that has already reached a terminal state.
+func (o *Orchestrator) OnJobStarted(ctx context.Context, j *job.Job) error {
+	if j.PipelineRunID == "" {
+		return nil
+	}
+	run, err := o.store.Get(ctx, j.PipelineRunID)
+	if err != nil {
+		if job.IsNotFound(err) {
+			o.log.Warn("pipeline run missing for started job", zap.String("run_id", j.PipelineRunID), zap.String("job_id", j.ID))
+			return nil
+		}
+		return err
+	}
+	i := stepIndexByJobID(run, j.ID)
+	if i < 0 {
+		o.log.Warn("started job not found in run steps", zap.String("run_id", run.RunID), zap.String("job_id", j.ID))
+		return nil
+	}
+	if run.Steps[i].Status != job.StatusQueued {
+		return nil // already running or terminal: nothing to do
+	}
+	// Only the step status changes here. CurrentStep is already set to the active
+	// index by StartPipeline / OnJobCompleted before the job can be claimed, so we
+	// deliberately leave it untouched — that keeps a stale duplicate "started"
+	// delivery (guarded by the queued check above on re-read) from rewinding it.
+	run.Steps[i].Status = job.StatusRunning
+	run.UpdatedAt = o.now()
+	if err := o.store.Update(ctx, run); err != nil {
+		return err
+	}
+	o.log.Info("pipeline step running", zap.String("run_id", run.RunID), zap.String("step", run.Steps[i].Name))
+	return nil
+}
+
 // OnJobCompleted advances the run that owns j, or finalizes it if j was the last
 // step. Safe to call more than once for the same job (idempotent).
 func (o *Orchestrator) OnJobCompleted(ctx context.Context, j *job.Job) error {
