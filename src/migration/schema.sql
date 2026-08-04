@@ -230,3 +230,50 @@ CREATE TABLE IF NOT EXISTS race_goal (
   PRIMARY KEY (goal_id),
   UNIQUE KEY uidx_race_goal_active (user_id, active_flag)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- master_plan — the athlete's overall season training plan (赛季训练计划), target
+-- for the master-plan migration (src/migrate-master-plans.js). One logical
+-- artifact stored in two content formats discriminated by content_version
+-- (ADR 0024): 1 = legacy markdown overview (content is the markdown text),
+-- 2 = structured plan (content is the MasterPlan JSON blob, kept opaque here).
+--
+-- Equivalent to the Go GORM model src/go/internal/storage/master_plan_models.go
+-- (MasterPlan), created in prod by the cmd/api boot AutoMigrateMasterPlan. The
+-- DDL below is byte-for-byte SHOW CREATE TABLE of that AutoMigrate output:
+-- `int8` -> TINYINT, `int64` -> BIGINT, `string type:longtext` -> LONGTEXT,
+-- time.Time -> DATETIME(3) (GORM default precision).
+--
+-- active_flag is a STORAGE-INTEGRITY LEVER ONLY (never business logic, never in
+-- the API): a nullable-unique UNIQUE(user_id, active_flag) enforces at most one
+-- active plan per athlete across BOTH formats — 1 on the active row, NULL on
+-- draft/archived (MySQL unique indexes do not collide on NULL). A markdown row is
+-- modelled as active (status='active', active_flag=1).
+--
+-- Column contract:
+--   plan_id          v2: MasterPlan.plan_id (uuid4); v1: minted uuid4
+--   user_id          app-level UUID (JWT sub) — same id space as race_goal
+--   content_version  1 = markdown, 2 = structured MasterPlan JSON
+--   content          v1: markdown text; v2: MasterPlan JSON string (verbatim)
+--   goal_id          soft reference to race_goal.goal_id (no FK); NOT NULL
+--   status           draft | active | archived (markdown = active)
+--   active_flag      1 on the active row, NULL otherwise (constraint lever only)
+--   version          MasterPlan.version (v2 only); NULL for a markdown row
+--   created_at       first-write time carried from the source; updated_at last
+
+CREATE TABLE IF NOT EXISTS master_plan (
+  plan_id         VARCHAR(36)  NOT NULL,
+  user_id         VARCHAR(64)  NOT NULL,
+  content_version TINYINT      NOT NULL,
+  content         LONGTEXT     NOT NULL,
+  goal_id         VARCHAR(36)  NOT NULL,
+  status          VARCHAR(16)  NOT NULL,
+  active_flag     TINYINT      NULL,
+  version         BIGINT       NULL,
+  created_at      DATETIME(3)  NULL,
+  updated_at      DATETIME(3)  NULL,
+  PRIMARY KEY (plan_id),
+  UNIQUE KEY uidx_master_plan_active (user_id, active_flag),
+  KEY idx_master_plan_goal (goal_id),
+  CONSTRAINT ck_master_plan_content_version CHECK (content_version IN (1, 2)),
+  CONSTRAINT ck_master_plan_v2_version CHECK (content_version = 1 OR version IS NOT NULL)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
