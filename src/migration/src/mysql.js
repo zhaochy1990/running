@@ -285,3 +285,91 @@ export async function upsertHealthRow(conn, table, row) {
   const [res] = await conn.execute(HEALTH_UPSERT_SQL[table], values);
   return res.affectedRows === 1 ? "inserted" : "updated";
 }
+
+// ── race_goal (training-goal migration) ──────────────────────────────────────
+//
+// The migrated row is the always-active goal (status='active', active_flag=1).
+// created_at is kept out of the UPDATE set so a re-run preserves the original
+// first-write instant (same discipline as the profile upsert); every other
+// column is overwritten, mirroring the Go store's create/update semantics
+// (src/go/internal/storage/goal.go). The PK is goal_id, so the caller must
+// resolve a *stable* goal_id first (getActiveRaceGoalId to reuse a prior
+// re-mint) — a re-run with a fresh random uuid would insert a second active row
+// and collide on UNIQUE(user_id, active_flag).
+
+const UPSERT_RACE_GOAL_SQL = `
+INSERT INTO race_goal
+  (goal_id, user_id, status, active_flag, race_date, race_distance, race_name,
+   target_finish_time, weekly_training_days, available_time_slots,
+   strength_willingness, race_location, race_timezone, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+  user_id = VALUES(user_id),
+  status = VALUES(status),
+  active_flag = VALUES(active_flag),
+  race_date = VALUES(race_date),
+  race_distance = VALUES(race_distance),
+  race_name = VALUES(race_name),
+  target_finish_time = VALUES(target_finish_time),
+  weekly_training_days = VALUES(weekly_training_days),
+  available_time_slots = VALUES(available_time_slots),
+  strength_willingness = VALUES(strength_willingness),
+  race_location = VALUES(race_location),
+  race_timezone = VALUES(race_timezone),
+  updated_at = VALUES(updated_at)`;
+
+/**
+ * Upsert one race_goal row. `now` is the shared run timestamp used as a fallback
+ * for created_at/updated_at when the blob carried no ISO instant (both are
+ * normally present and preserved). active_flag is bound as 1 (the row is active).
+ *
+ * The inserted/updated outcome is decided by a PK (goal_id) pre-existence probe,
+ * NOT by res.affectedRows. Unlike the profile/health upserts (whose updated_at
+ * always advances to `now`, so a re-run genuinely changes the row and MySQL
+ * returns affectedRows=2), this row's updated_at is carried verbatim from the
+ * blob: a re-run rewrites identical values, and mysql2 reports affectedRows=1
+ * for that no-op — indistinguishable from a fresh insert (also 1). The probe is
+ * safe because the migration is single-connection and serial (no concurrent
+ * writer can insert the same goal_id between the SELECT and the INSERT).
+ * @returns {Promise<"inserted"|"updated">}
+ */
+export async function upsertRaceGoal(conn, row, now) {
+  const [existing] = await conn.execute(
+    "SELECT 1 FROM race_goal WHERE goal_id = ? LIMIT 1",
+    [row.goal_id],
+  );
+  const preExisted = existing.length > 0;
+  await conn.execute(UPSERT_RACE_GOAL_SQL, [
+    row.goal_id,
+    row.user_id,
+    row.status,
+    row.active_flag,
+    row.race_date,
+    row.race_distance,
+    row.race_name,
+    row.target_finish_time,
+    row.weekly_training_days,
+    row.available_time_slots,
+    row.strength_willingness,
+    row.race_location,
+    row.race_timezone,
+    row.created_at ?? now,
+    row.updated_at ?? now,
+  ]);
+  return preExisted ? "updated" : "inserted";
+}
+
+/**
+ * Return the goal_id of the athlete's existing active race goal, or null when
+ * none exists. Used to anchor the slug→uuid re-mint so re-runs are idempotent:
+ * a slug goal whose row already exists reuses the previously minted uuid instead
+ * of minting a fresh one (which would clobber the master-plan snapshot linkage).
+ * @returns {Promise<string|null>}
+ */
+export async function getActiveRaceGoalId(conn, userId) {
+  const [rows] = await conn.execute(
+    "SELECT goal_id FROM race_goal WHERE user_id = ? AND status = 'active' LIMIT 1",
+    [userId],
+  );
+  return rows.length > 0 ? rows[0].goal_id : null;
+}

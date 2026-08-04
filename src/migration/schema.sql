@@ -178,3 +178,55 @@ CREATE TABLE IF NOT EXISTS race_predictions (
   updated_at DATETIME(6)  NOT NULL,
   PRIMARY KEY (user_id, race_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- race_goal — the athlete's target race + weekly-availability prefs (ADR 0021),
+-- target for the training-goal migration (src/migrate-training-goals.js). This
+-- is the greenfield Go/MySQL redesign of the Python training_goal.json blob:
+-- race goals only (the old `type` enum is dropped), one active row per athlete.
+--
+-- Equivalent to the Go GORM model src/go/internal/storage/goal_models.go
+-- (RaceGoal), created in prod by the cmd/api boot AutoMigrateGoals. The DDL below
+-- is byte-for-byte SHOW CREATE TABLE of that AutoMigrate output: `int` →
+-- BIGINT, `[]string serializer:json` → LONGTEXT (a JSON-array text, e.g. `[]`),
+-- time.Time → DATETIME(3) (GORM default precision).
+--
+-- The ≤1-active invariant is a MySQL UNIQUE(user_id, active_flag): active_flag is
+-- 1 on the active row and NULL on archived rows (MySQL unique indexes do not
+-- collide on NULL), so an athlete may have many archived rows but only one
+-- active. active_flag is app-managed in lockstep with status.
+--
+-- Column contract:
+--   goal_id               UUID4 (legacy slug goal_ids are re-minted at migration)
+--   user_id               app-level UUID (JWT sub) — same id space as user_profile
+--   status                'active' | 'archived'
+--   active_flag           1 on the active row, NULL on archived rows
+--   race_date             ISO YYYY-MM-DD race day (calendar date, never tz-converted)
+--   race_distance         e.g. 'FM' | 'HM' | '10K'
+--   race_name             display name; NULL when absent
+--   target_finish_time    'H:MM:SS'; NULL when absent
+--   weekly_training_days  planned training days per week
+--   available_time_slots  JSON array text of slot labels, e.g. '[]' or '["morning"]'
+--   strength_willingness  NULL | 'low' | 'medium' | 'high'
+--   race_location         downstream MasterPlanGoal location; NULL (not in Python blob)
+--   race_timezone         race-local IANA zone; NULL (not in Python blob)
+--   created_at            first-write time (carried from the blob); updated_at last write
+
+CREATE TABLE IF NOT EXISTS race_goal (
+  goal_id              VARCHAR(36)  NOT NULL,
+  user_id              VARCHAR(64)  NOT NULL,
+  status               VARCHAR(16)  NOT NULL,
+  active_flag          TINYINT      NULL,
+  race_date            VARCHAR(10)  NOT NULL,
+  race_distance        VARCHAR(16)  NOT NULL,
+  race_name            VARCHAR(255) NULL,
+  target_finish_time   VARCHAR(16)  NULL,
+  weekly_training_days BIGINT       NOT NULL,
+  available_time_slots LONGTEXT     NULL,
+  strength_willingness VARCHAR(16)  NULL,
+  race_location        VARCHAR(255) NULL,
+  race_timezone        VARCHAR(64)  NULL,
+  created_at           DATETIME(3)  NULL,
+  updated_at           DATETIME(3)  NULL,
+  PRIMARY KEY (goal_id),
+  UNIQUE KEY uidx_race_goal_active (user_id, active_flag)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
