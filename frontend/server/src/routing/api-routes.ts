@@ -222,20 +222,20 @@ export const API_ROUTES: readonly ApiRoute[] = [
   // ── Health / fitness / training-status ──────────────────────────────────
   // ✗ not called
   { method: 'GET', path: '/api/:user/dashboard', env: 'STRIDE_ROUTE_GET_USER_DASHBOARD', goReady: false },
-  // ✓ /health, /training-status, /plan/adjust · RHR / health records
-  { method: 'GET', path: '/api/:user/health', env: 'STRIDE_ROUTE_GET_USER_HEALTH', goReady: false },
-  // ✓ /health, /plan/adjust · PMC / training-load curve
-  { method: 'GET', path: '/api/:user/pmc', env: 'STRIDE_ROUTE_GET_USER_PMC', goReady: false },
+  // ✓ /health, /training-status, /plan/adjust · RHR / health records   [go-ready ADR-0023]
+  { method: 'GET', path: '/api/:user/health', env: 'STRIDE_ROUTE_GET_USER_HEALTH', goReady: true },
+  // ✓ /health, /plan/adjust · PMC / training-load curve (vendor + STRIDE)   [go-ready ADR-0023]
+  { method: 'GET', path: '/api/:user/pmc', env: 'STRIDE_ROUTE_GET_USER_PMC', goReady: true },
   // ✗ not called
   { method: 'GET', path: '/api/:user/stats', env: 'STRIDE_ROUTE_GET_USER_STATS', goReady: false },
-  // ✓ /health, /training-status, /plan/adjust · HRV daily records
-  { method: 'GET', path: '/api/:user/hrv', env: 'STRIDE_ROUTE_GET_USER_HRV', goReady: false },
+  // ✓ /health, /training-status, /plan/adjust · HRV daily records   [go-ready ADR-0023]
+  { method: 'GET', path: '/api/:user/hrv', env: 'STRIDE_ROUTE_GET_USER_HRV', goReady: true },
   // ✓ /plan, /plan/adjust · training-plan phases / content
   { method: 'GET', path: '/api/:user/training-plan', env: 'STRIDE_ROUTE_GET_USER_TRAINING_PLAN', goReady: false },
-  // ✓ /training-status · STRIDE training-load series
-  { method: 'GET', path: '/api/:user/stride/training-load', env: 'STRIDE_ROUTE_GET_USER_STRIDE_TRAINING_LOAD', goReady: false },
-  // ✓ /training-status, /plan/adjust · pace / HR zones
-  { method: 'GET', path: '/api/:user/stride/zones', env: 'STRIDE_ROUTE_GET_USER_STRIDE_ZONES', goReady: false },
+  // ✓ /training-status · STRIDE training-load series   [go-ready ADR-0023]
+  { method: 'GET', path: '/api/:user/stride/training-load', env: 'STRIDE_ROUTE_GET_USER_STRIDE_TRAINING_LOAD', goReady: true },
+  // ✓ /training-status, /plan/adjust · pace / HR zones   [go-ready ADR-0023]
+  { method: 'GET', path: '/api/:user/stride/zones', env: 'STRIDE_ROUTE_GET_USER_STRIDE_ZONES', goReady: true },
 
   // ── Body composition ────────────────────────────────────────────────────
   // ✓ /body-composition · scans list

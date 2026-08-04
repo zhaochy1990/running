@@ -66,6 +66,32 @@ func PaceFmt(secPerKm *float64) string {
 	return fmt.Sprintf("%d:%02d/km", m, s)
 }
 
+// PacePerKmSec converts a speed (m/s) to whole seconds per kilometre, rounded
+// half-to-even, returning nil for a nil/non-positive speed. Mirrors the STRIDE
+// zone serializer's _pace_per_km_sec: int(round(1000/speed)). Note the rounding
+// (round, not truncate) differs from PaceFmt/pace_str, which truncates.
+func PacePerKmSec(speedMps *float64) *int {
+	if speedMps == nil || *speedMps <= 0 {
+		return nil
+	}
+	n := int(roundTo(1000.0/(*speedMps), 0))
+	return &n
+}
+
+// PaceMinSec renders a speed (m/s) as an "M:SS" per-km pace string (no "/km"
+// suffix, minutes not zero-padded), returning nil for a nil/non-positive speed.
+// Mirrors the STRIDE zone serializer's _pace_fmt, which formats the rounded
+// _pace_per_km_sec as f"{secs // 60}:{secs % 60:02d}". Distinct from PaceFmt
+// (which appends "/km", takes seconds-per-km, and truncates).
+func PaceMinSec(speedMps *float64) *string {
+	secs := PacePerKmSec(speedMps)
+	if secs == nil {
+		return nil
+	}
+	s := fmt.Sprintf("%d:%02d", *secs/60, *secs%60)
+	return &s
+}
+
 // ShanghaiISO renders a UTC instant as an Asia/Shanghai ISO 8601 string with the
 // "+08:00" offset, preserving the instant so the frontend's new Date(value)
 // resolves to the same moment. Mirrors utc_iso_to_shanghai_iso, including
@@ -87,6 +113,13 @@ func ShanghaiISO(t time.Time) string {
 	// microseconds; render six digits to match Python isoformat().
 	micros := lt.Nanosecond() / 1000
 	return fmt.Sprintf("%s.%06d%s", lt.Format("2006-01-02T15:04:05"), micros, off)
+}
+
+// TodayShanghai returns today's date in Asia/Shanghai as a YYYY-MM-DD string.
+// Mirrors stride_core.timefmt.today_shanghai, used at the route boundary to pin
+// an as-of date (e.g. the rhr-baseline calibration lookup).
+func TodayShanghai() string {
+	return time.Now().In(shanghai).Format("2006-01-02")
 }
 
 // RoundTo rounds x to the given number of decimals using round-half-to-even,
