@@ -373,3 +373,65 @@ export async function getActiveRaceGoalId(conn, userId) {
   );
   return rows.length > 0 ? rows[0].goal_id : null;
 }
+
+// ── master_plan (master-plan migration) ──────────────────────────────────────
+//
+// One active row per athlete (content_version 1=markdown or 2=structured), with
+// content stored verbatim. created_at is carried from the source, so — like
+// race_goal — a re-run rewrites identical values and mysql2 reports
+// affectedRows=1 for that no-op; the inserted/updated outcome is therefore
+// decided by a PK (plan_id) pre-existence probe, safe under the serial
+// single-connection migration.
+
+export const MASTER_PLAN_COLUMNS = [
+  "plan_id",
+  "user_id",
+  "content_version",
+  "content",
+  "goal_id",
+  "status",
+  "active_flag",
+  "version",
+  "created_at",
+  "updated_at",
+];
+
+const UPSERT_MASTER_PLAN_SQL = buildUpsertSql(
+  "master_plan",
+  MASTER_PLAN_COLUMNS,
+  ["plan_id"],
+);
+
+/**
+ * Upsert one master_plan row. `now` is the shared run timestamp used as a
+ * fallback for created_at/updated_at when the source carried no instant.
+ * @returns {Promise<"inserted"|"updated">}
+ */
+export async function upsertMasterPlan(conn, row, now) {
+  const [existing] = await conn.execute(
+    "SELECT 1 FROM master_plan WHERE plan_id = ? LIMIT 1",
+    [row.plan_id],
+  );
+  const preExisted = existing.length > 0;
+  const values = MASTER_PLAN_COLUMNS.map((c) => {
+    if (c === "created_at" || c === "updated_at") return row[c] ?? now;
+    return row[c] === undefined ? null : row[c];
+  });
+  await conn.execute(UPSERT_MASTER_PLAN_SQL, values);
+  return preExisted ? "updated" : "inserted";
+}
+
+/**
+ * Return the plan_id of the athlete's existing active master plan of the given
+ * content_version, or null. Used to anchor a minted v1 plan_id so re-runs are
+ * idempotent (a fresh uuid would insert a second active row and collide on
+ * UNIQUE(user_id, active_flag)).
+ * @returns {Promise<string|null>}
+ */
+export async function getActiveMasterPlanId(conn, userId, contentVersion) {
+  const [rows] = await conn.execute(
+    "SELECT plan_id FROM master_plan WHERE user_id = ? AND content_version = ? AND status = 'active' LIMIT 1",
+    [userId, contentVersion],
+  );
+  return rows.length > 0 ? rows[0].plan_id : null;
+}

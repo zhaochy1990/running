@@ -141,8 +141,8 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: 'DELETE', path: '/api/users/me/devices/:registrationId', env: 'STRIDE_ROUTE_DELETE_USERS_ME_DEVICES_REGISTRATIONID', goReady: false },
 
   // ── Master plan (season plan) ───────────────────────────────────────────
-  // ✓ /plan, /plan/adjust · load active season plan
-  { method: 'GET', path: '/api/users/me/master-plan/current', env: 'STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT', goReady: false },
+  // ✓ /plan, /plan/adjust · load active season plan   [go-ready]
+  { method: 'GET', path: '/api/users/me/master-plan/current', env: 'STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT', goReady: true },
   // ✓ /plan · load draft season plan (404 = no draft, expected)
   { method: 'GET', path: '/api/users/me/master-plan/draft', env: 'STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_DRAFT', goReady: false },
   // ✓ /plan, /coach/master/:planId/adjust · load plan by id
@@ -230,8 +230,8 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: 'GET', path: '/api/:user/stats', env: 'STRIDE_ROUTE_GET_USER_STATS', goReady: false },
   // ✓ /health, /training-status, /plan/adjust · HRV daily records   [go-ready ADR-0023]
   { method: 'GET', path: '/api/:user/hrv', env: 'STRIDE_ROUTE_GET_USER_HRV', goReady: true },
-  // ✓ /plan, /plan/adjust · training-plan phases / content
-  { method: 'GET', path: '/api/:user/training-plan', env: 'STRIDE_ROUTE_GET_USER_TRAINING_PLAN', goReady: false },
+  // ✓ /plan, /plan/adjust · training-plan phases / content   [go-ready]
+  { method: 'GET', path: '/api/:user/training-plan', env: 'STRIDE_ROUTE_GET_USER_TRAINING_PLAN', goReady: true },
   // ✓ /training-status · STRIDE training-load series   [go-ready ADR-0023]
   { method: 'GET', path: '/api/:user/stride/training-load', env: 'STRIDE_ROUTE_GET_USER_STRIDE_TRAINING_LOAD', goReady: true },
   // ✓ /training-status, /plan/adjust · pace / HR zones   [go-ready ADR-0023]

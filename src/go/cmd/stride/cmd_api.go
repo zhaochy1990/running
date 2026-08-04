@@ -72,6 +72,11 @@ func runAPI() error {
 	if err := store.AutoMigrateGoals(ctx); err != nil {
 		return err
 	}
+	// master_plan table for the master-plan read surface (ADR 0023). The worker
+	// does not need this.
+	if err := store.AutoMigrateMasterPlan(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ (publisher only; no consumer) ---
 	conn, err := mq.Dial(cfg.AMQP.URL)
@@ -135,6 +140,7 @@ func runAPI() error {
 		GoalStore:               store,
 		HealthStore:             store,
 		StrideStore:             store,
+		MasterPlanStore:         store,
 		Auth:                    authn,
 		CORSOrigins:             cfg.API.CORSOrigins,
 		SwaggerEnabled:          cfg.API.SwaggerEnabled,

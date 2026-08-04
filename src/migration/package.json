@@ -11,19 +11,22 @@
     "migrate-watch-creds": "src/index.js",
     "migrate-profiles": "src/migrate-profiles.js",
     "migrate-health": "src/migrate-health.js",
-    "migrate-training-goals": "src/migrate-training-goals.js"
+    "migrate-training-goals": "src/migrate-training-goals.js",
+    "migrate-master-plans": "src/migrate-master-plans.js"
   },
   "scripts": {
     "migrate": "node src/index.js",
     "migrate:profiles": "node src/migrate-profiles.js",
     "migrate:health": "node src/migrate-health.js",
     "migrate:training-goals": "node src/migrate-training-goals.js",
+    "migrate:master-plans": "node src/migrate-master-plans.js",
     "test": "node --test"
   },
   "dependencies": {
     "@azure/data-tables": "^13.3.2",
     "@azure/identity": "^4.5.0",
     "@azure/keyvault-secrets": "^4.9.0",
+    "@azure/storage-blob": "^12.33.0",
     "mysql2": "^3.11.4"
   }
 }

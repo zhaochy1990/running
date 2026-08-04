@@ -118,6 +118,10 @@ type Config struct {
 	HealthStore HealthStore
 	StrideStore StrideStore
 
+	// Master-plan read surface (ADR 0024) — a sibling registrar sharing the auth
+	// path. Leave zero to run without the master-plan endpoints (e.g. in tests).
+	MasterPlanStore MasterPlanStore
+
 	Auth           *Authenticator
 	CORSOrigins    []string
 	SwaggerEnabled bool
@@ -155,6 +159,7 @@ type Service struct {
 
 	healthMetrics *healthRoutes
 	strideMetrics *strideRoutes
+	masterPlan    *masterPlanRoutes
 
 	auth           *Authenticator
 	corsOrigins    []string
@@ -193,6 +198,7 @@ func NewService(cfg Config) *Service {
 		activities:              newActivityRoutes(cfg.ActivityStore, log),
 		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),
 		strideMetrics:           newStrideRoutes(cfg.StrideStore, log),
+		masterPlan:              newMasterPlanRoutes(cfg.MasterPlanStore, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
 		swaggerEnabled:          cfg.SwaggerEnabled,
@@ -231,6 +237,7 @@ func (s *Service) Router() *gin.Engine {
 	s.goals.register(authed)
 	s.healthMetrics.register(authed)
 	s.strideMetrics.register(authed)
+	s.masterPlan.register(authed)
 	return r
 }
 

@@ -81,14 +81,14 @@ CREATE TABLE b (id INT);
   assert.equal(stmts[0].includes("-- a comment"), false);
 });
 
-test("splitSqlStatements splits the real schema.sql into its 8 CREATE TABLEs", () => {
-  // Regression guard: schema.sql grew to 8 statements (3 identity/creds tables +
-  // 4 health-domain tables + race_goal); both migrations run --ensure-schema
-  // through splitSqlStatements, so each must be a lone statement (mysql2
-  // conn.query rejects multiple statements). Comment lines contain ';'.
+test("splitSqlStatements splits the real schema.sql into its 9 CREATE TABLEs", () => {
+  // Regression guard: schema.sql grew to 9 statements (3 identity/creds tables +
+  // 4 health-domain tables + race_goal + master_plan); both migrations run
+  // --ensure-schema through splitSqlStatements, so each must be a lone statement
+  // (mysql2 conn.query rejects multiple statements). Comment lines contain ';'.
   const schemaPath = join(dirname(fileURLToPath(import.meta.url)), "..", "schema.sql");
   const stmts = splitSqlStatements(readFileSync(schemaPath, "utf8"));
-  assert.equal(stmts.length, 8);
+  assert.equal(stmts.length, 9);
   for (const s of stmts) {
     assert.match(s, /^CREATE TABLE IF NOT EXISTS/);
     assert.equal(s.includes("--"), false);
@@ -101,4 +101,5 @@ test("splitSqlStatements splits the real schema.sql into its 8 CREATE TABLEs", (
   assert.ok(stmts.some((s) => s.includes("dashboard")));
   assert.ok(stmts.some((s) => s.includes("race_predictions")));
   assert.ok(stmts.some((s) => s.includes("race_goal")));
+  assert.ok(stmts.some((s) => s.includes("master_plan")));
 });
