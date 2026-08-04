@@ -8,7 +8,7 @@ import { Hono, type Context } from 'hono'
 import { loadConfig, type BffConfig } from './config.js'
 import { proxyToUpstream } from './proxy.js'
 import { API_ROUTES } from './routing/api-routes.js'
-import { AUTH_PREFIX, hasGoRoutes, resolveUpstream } from './routing/table.js'
+import { AUTH_PREFIX, hasGoRoutes, resolveUpstream, upstreamForRoute } from './routing/table.js'
 import { baseUrlFor } from './routing/upstreams.js'
 
 const config = loadConfig()
@@ -25,7 +25,7 @@ function routingConfigForClient(cfg: BffConfig): Record<string, unknown> {
   return {
     directBaseUrl: cfg.publicDirectBaseUrl,
     authPrefix: AUTH_PREFIX,
-    routes: API_ROUTES.map((r) => ({ method: r.method, path: r.path, upstream: r.upstream })),
+    routes: API_ROUTES.map((r) => ({ method: r.method, path: r.path, upstream: upstreamForRoute(r) })),
   }
 }
 
@@ -36,8 +36,9 @@ function injectRouting(html: string, cfg: BffConfig): string {
   return html.includes('</head>') ? html.replace('</head>', `${tag}</head>`) : `${tag}${html}`
 }
 
-// Fail fast: a manifest that routes any endpoint to Go with no GO_API_URL would
-// 502 every cutover endpoint at runtime — catch it at boot instead.
+// Fail fast: if any endpoint's STRIDE_ROUTE_* env var is set to Go with no
+// GO_API_URL configured, every such endpoint would 502 at runtime — catch it at
+// boot instead.
 if (hasGoRoutes() && !config.goApiUrl) {
   throw new Error('stride-web BFF: an API route is set to Go but GO_API_URL is not set')
 }
