@@ -1,7 +1,8 @@
 /**
- * Shared helpers for the prod onboarding E2E scripts (onboarding-smoke.cjs and
- * onboarding-negatives.cjs). Registers/deletes a real throwaway user against the
- * real auth + STRIDE backends and runs a scenario in a real browser — no mocks.
+ * Shared credential/browser helpers for the smoke scripts (local-smoke.cjs and
+ * verify-credentials.cjs). Loads credentials, and can register/delete a real
+ * throwaway user against the real auth + STRIDE backends and run a scenario in a
+ * real browser — no mocks.
  *
  * Credentials come from <repoRoot>/.credentials.local and frontend/.env.local,
  * or env vars (so CI can inject GitHub secrets). Email/password/token/invite
