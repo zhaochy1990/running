@@ -133,6 +133,8 @@ func runAPI() error {
 		Features:                features,
 		ActivityStore:           store,
 		GoalStore:               store,
+		HealthStore:             store,
+		StrideStore:             store,
 		Auth:                    authn,
 		CORSOrigins:             cfg.API.CORSOrigins,
 		SwaggerEnabled:          cfg.API.SwaggerEnabled,

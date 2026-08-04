@@ -645,6 +645,329 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/{user}/health": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the most recent ` + "`" + `days` + "`" + ` daily-health rows (newest first), the dashboard HRV normal-band snapshot with a per-day trend (oldest first) and its latest-reading date, and the calibrated rhr baseline. A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Daily health rows, HRV snapshot, and rhr baseline",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window 1–365 (default 30)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.healthResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/hrv": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the most recent ` + "`" + `days` + "`" + ` daily-hrv rows (oldest first) plus a small summary block for the latest reading. A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Per-day HRV detail + latest-reading summary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window 1–365 (default 30)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.hrvResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/pmc": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the vendor ATI/CTI/TSB series with ACWR-derived TSB zones and 7-day CTL ramp, plus the STRIDE training-load PMC series and latest-usable summary. A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Performance Management Chart (vendor + STRIDE)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window 14–365 (default 90)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.pmcResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/stride/training-load": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the most recent ` + "`" + `days` + "`" + ` daily training-load rows (oldest first) and the latest usable current state (never an unknown placeholder). A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "STRIDE daily training load (PMC)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window 7–365 (default 90)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.strideTrainingLoadResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/stride/zones": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the latest calibration snapshot's threshold pace/HR and the derived pace and heart-rate zones (physiological order). Empty threshold + zones when the user has no snapshot. A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "STRIDE calibration threshold + training zones",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.strideZonesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/{user}/sync": {
             "post": {
                 "security": [
@@ -1538,6 +1861,209 @@ const docTemplate = `{
                 }
             }
         },
+        "api.healthRecordDTO": {
+            "type": "object",
+            "properties": {
+                "ati": {
+                    "type": "number"
+                },
+                "body_battery_high": {
+                    "type": "integer"
+                },
+                "body_battery_low": {
+                    "type": "integer"
+                },
+                "cti": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_s": {
+                    "type": "number"
+                },
+                "fatigue": {
+                    "type": "number"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "respiration_avg": {
+                    "type": "number"
+                },
+                "rhr": {
+                    "type": "integer"
+                },
+                "sleep_awake_s": {
+                    "type": "integer"
+                },
+                "sleep_deep_s": {
+                    "type": "integer"
+                },
+                "sleep_light_s": {
+                    "type": "integer"
+                },
+                "sleep_rem_s": {
+                    "type": "integer"
+                },
+                "sleep_score": {
+                    "type": "integer"
+                },
+                "sleep_total_s": {
+                    "type": "integer"
+                },
+                "spo2_avg": {
+                    "type": "number"
+                },
+                "stress_avg": {
+                    "type": "integer"
+                },
+                "training_load_ratio": {
+                    "type": "number"
+                },
+                "training_load_state": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.healthResponse": {
+            "type": "object",
+            "properties": {
+                "health": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.healthRecordDTO"
+                    }
+                },
+                "hrv": {
+                    "$ref": "#/definitions/api.hrvSnapshotDTO"
+                },
+                "rhr_baseline": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.hrvDailyRecordDTO": {
+            "type": "object",
+            "properties": {
+                "baseline_low_upper": {
+                    "type": "integer"
+                },
+                "daily_balanced_low": {
+                    "type": "integer"
+                },
+                "daily_balanced_upper": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "feedback_phrase": {
+                    "type": "string"
+                },
+                "last_night_5min_high": {
+                    "type": "integer"
+                },
+                "last_night_avg": {
+                    "type": "integer"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "weekly_avg": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.hrvResponse": {
+            "type": "object",
+            "properties": {
+                "hrv": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.hrvDailyRecordDTO"
+                    }
+                },
+                "summary": {
+                    "$ref": "#/definitions/api.hrvSummaryDTO"
+                }
+            }
+        },
+        "api.hrvSnapshotDTO": {
+            "type": "object",
+            "properties": {
+                "avg_sleep_hrv": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "hrv_normal_high": {
+                    "type": "number"
+                },
+                "hrv_normal_low": {
+                    "type": "number"
+                },
+                "recovery_pct": {
+                    "type": "number"
+                },
+                "trend": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.hrvTrendPointDTO"
+                    }
+                }
+            }
+        },
+        "api.hrvSummaryDTO": {
+            "type": "object",
+            "properties": {
+                "daily_balanced_low": {
+                    "type": "integer"
+                },
+                "daily_balanced_upper": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "last_night_avg": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "weekly_avg": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.hrvTrendPointDTO": {
+            "type": "object",
+            "properties": {
+                "daily_balanced_low": {
+                    "type": "integer"
+                },
+                "daily_balanced_upper": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "last_night_avg": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "api.jobCatalogResponse": {
             "type": "object",
             "properties": {
@@ -1709,6 +2235,99 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.pmcRecordDTO": {
+            "type": "object",
+            "properties": {
+                "ati": {
+                    "type": "number"
+                },
+                "cti": {
+                    "type": "number"
+                },
+                "ctl_ramp": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "fatigue": {
+                    "type": "number"
+                },
+                "rhr": {
+                    "type": "integer"
+                },
+                "training_load_ratio": {
+                    "type": "number"
+                },
+                "training_load_state": {
+                    "type": "string"
+                },
+                "tsb": {
+                    "type": "number"
+                },
+                "tsb_zone": {
+                    "type": "string"
+                },
+                "tsb_zone_label": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.pmcResponse": {
+            "type": "object",
+            "properties": {
+                "pmc": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.pmcRecordDTO"
+                    }
+                },
+                "stride_pmc": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.stridePMCRecordDTO"
+                    }
+                },
+                "stride_summary": {
+                    "$ref": "#/definitions/api.stridePMCSummaryDTO"
+                },
+                "summary": {
+                    "$ref": "#/definitions/api.pmcSummaryDTO"
+                }
+            }
+        },
+        "api.pmcSummaryDTO": {
+            "type": "object",
+            "properties": {
+                "ctl_ramp": {
+                    "type": "number"
+                },
+                "current_ati": {
+                    "type": "number"
+                },
+                "current_cti": {
+                    "type": "number"
+                },
+                "current_fatigue": {
+                    "type": "number"
+                },
+                "current_rhr": {
+                    "type": "integer"
+                },
+                "current_tsb": {
+                    "type": "number"
+                },
+                "current_tsb_zone": {
+                    "type": "string"
+                },
+                "current_tsb_zone_label": {
+                    "type": "string"
+                },
+                "date": {
                     "type": "string"
                 }
             }
@@ -1914,6 +2533,145 @@ const docTemplate = `{
                 }
             }
         },
+        "api.strideHRZoneDTO": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string"
+                },
+                "lower_bpm": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "upper_bpm": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.stridePMCRecordDTO": {
+            "type": "object",
+            "properties": {
+                "acute_load": {
+                    "type": "number"
+                },
+                "algorithm_version": {
+                    "type": "integer"
+                },
+                "chronic_load": {
+                    "type": "number"
+                },
+                "chronic_load_ramp": {
+                    "type": "number"
+                },
+                "coverage_status": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "form": {
+                    "type": "number"
+                },
+                "load_ratio": {
+                    "type": "number"
+                },
+                "readiness_gate": {
+                    "type": "string"
+                },
+                "readiness_reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "training_dose": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.stridePMCSummaryDTO": {
+            "type": "object",
+            "properties": {
+                "chronic_load_ramp": {
+                    "type": "number"
+                },
+                "current_acute_load": {
+                    "type": "number"
+                },
+                "current_chronic_load": {
+                    "type": "number"
+                },
+                "current_coverage_status": {
+                    "type": "string"
+                },
+                "current_form": {
+                    "type": "number"
+                },
+                "current_load_ratio": {
+                    "type": "number"
+                },
+                "current_readiness_gate": {
+                    "type": "string"
+                },
+                "current_readiness_reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "current_training_dose": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.stridePaceZoneDTO": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string"
+                },
+                "lower_pace": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "upper_pace": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.strideThresholdDTO": {
+            "type": "object",
+            "properties": {
+                "as_of_date": {
+                    "type": "string"
+                },
+                "calibration_id": {
+                    "type": "integer"
+                },
+                "hr_bpm": {
+                    "type": "number"
+                },
+                "hr_confidence": {
+                    "type": "string"
+                },
+                "pace_per_km_sec": {
+                    "type": "integer"
+                },
+                "speed_confidence": {
+                    "type": "string"
+                },
+                "speed_mps": {
+                    "type": "number"
+                }
+            }
+        },
         "api.strideTrainingLoadDTO": {
             "type": "object",
             "properties": {
@@ -1982,6 +2740,78 @@ const docTemplate = `{
                 },
                 "training_dose_source": {
                     "type": "string"
+                }
+            }
+        },
+        "api.strideTrainingLoadRecordDTO": {
+            "type": "object",
+            "properties": {
+                "acute_load": {
+                    "type": "number"
+                },
+                "algorithm_version": {
+                    "type": "integer"
+                },
+                "chronic_load": {
+                    "type": "number"
+                },
+                "coverage_status": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "form": {
+                    "type": "number"
+                },
+                "load_ratio": {
+                    "type": "number"
+                },
+                "readiness_gate": {
+                    "type": "string"
+                },
+                "readiness_reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "training_dose": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.strideTrainingLoadResponse": {
+            "type": "object",
+            "properties": {
+                "current": {
+                    "$ref": "#/definitions/api.strideTrainingLoadRecordDTO"
+                },
+                "series": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.strideTrainingLoadRecordDTO"
+                    }
+                }
+            }
+        },
+        "api.strideZonesResponse": {
+            "type": "object",
+            "properties": {
+                "hr_zones": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.strideHRZoneDTO"
+                    }
+                },
+                "pace_zones": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.stridePaceZoneDTO"
+                    }
+                },
+                "threshold": {
+                    "$ref": "#/definitions/api.strideThresholdDTO"
                 }
             }
         },

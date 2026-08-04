@@ -72,6 +72,61 @@ func TestPaceFmt(t *testing.T) {
 	}
 }
 
+func TestPacePerKmSec(t *testing.T) {
+	tests := []struct {
+		name string
+		in   *float64
+		want *int
+	}{
+		{"nil", nil, nil},
+		{"zero", f64(0), nil},
+		{"negative", f64(-3), nil},
+		{"5:00/km", f64(1000.0 / 300.0), iptr(300)},
+		{"rounds to nearest", f64(1000.0 / 365.4), iptr(365)}, // 365.4 → 365
+		{"rounds up", f64(1000.0 / 365.6), iptr(366)},         // 365.6 → 366
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := PacePerKmSec(tc.in)
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("PacePerKmSec(%v) = %d, want nil", tc.in, *got)
+			case tc.want != nil && got == nil:
+				t.Fatalf("PacePerKmSec(%v) = nil, want %d", tc.in, *tc.want)
+			case tc.want != nil && got != nil && *got != *tc.want:
+				t.Fatalf("PacePerKmSec(%v) = %d, want %d", tc.in, *got, *tc.want)
+			}
+		})
+	}
+}
+
+func TestPaceMinSec(t *testing.T) {
+	tests := []struct {
+		name string
+		in   *float64
+		want *string
+	}{
+		{"nil", nil, nil},
+		{"zero", f64(0), nil},
+		{"5:00", f64(1000.0 / 300.0), sptr("5:00")},
+		{"6:05", f64(1000.0 / 365.0), sptr("6:05")},        // 365s → "6:05"
+		{"pads seconds", f64(1000.0 / 59.0), sptr("0:59")}, // minutes not padded, seconds padded
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := PaceMinSec(tc.in)
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("PaceMinSec(%v) = %q, want nil", tc.in, *got)
+			case tc.want != nil && got == nil:
+				t.Fatalf("PaceMinSec(%v) = nil, want %q", tc.in, *tc.want)
+			case tc.want != nil && got != nil && *got != *tc.want:
+				t.Fatalf("PaceMinSec(%v) = %q, want %q", tc.in, *got, *tc.want)
+			}
+		})
+	}
+}
+
 func TestShanghaiISO(t *testing.T) {
 	tests := []struct {
 		name string

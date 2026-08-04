@@ -111,6 +111,13 @@ type Config struct {
 	// Leave zero to run without the training-goal endpoints (e.g. in tests).
 	GoalStore GoalStore
 
+	// HealthStore and StrideStore back the training-status metrics read surface
+	// (ADR 0023) — two sibling registrars sharing the auth path. HealthStore
+	// serves /health, /hrv, /pmc; StrideStore serves /stride/zones and
+	// /stride/training-load. Leave zero to run without them (e.g. in tests).
+	HealthStore HealthStore
+	StrideStore StrideStore
+
 	Auth           *Authenticator
 	CORSOrigins    []string
 	SwaggerEnabled bool
@@ -145,6 +152,9 @@ type Service struct {
 	goals *goalRoutes
 
 	activities *activityRoutes
+
+	healthMetrics *healthRoutes
+	strideMetrics *strideRoutes
 
 	auth           *Authenticator
 	corsOrigins    []string
@@ -181,6 +191,8 @@ func NewService(cfg Config) *Service {
 		users:                   newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.Features, log),
 		goals:                   newGoalRoutes(cfg.GoalStore, log),
 		activities:              newActivityRoutes(cfg.ActivityStore, log),
+		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),
+		strideMetrics:           newStrideRoutes(cfg.StrideStore, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
 		swaggerEnabled:          cfg.SwaggerEnabled,
@@ -217,6 +229,8 @@ func (s *Service) Router() *gin.Engine {
 	s.users.register(authed)
 	s.activities.register(authed)
 	s.goals.register(authed)
+	s.healthMetrics.register(authed)
+	s.strideMetrics.register(authed)
 	return r
 }
 

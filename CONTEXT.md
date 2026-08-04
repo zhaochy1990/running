@@ -93,6 +93,14 @@ _Avoid_: zoneList、区间、校准区间
 用 STRIDE 校准的个人心率/配速模型在同步后算出的每次活动 time-in-zone，与训练状态页一致。
 _Avoid_: 手表原生区间、zoneList、watch zones
 
+**STRIDE 自研指标**：
+由 STRIDE 自研算法从同步数据算出的派生量——校准阈值/区间、训练负荷（dose / acute / chronic / form / readiness）等；接口挂在 `/stride/*` 下，与手表透传字段刻意分开。
+_Avoid_: 厂商指标、COROS 分值、watch metrics
+
+**手表透传字段**：
+直接透传手表原始读数、未经 STRIDE 重算的量——RHR、HRV、以及厂商自己算的 ATI/CTI/训练负荷比等；由 `/health`、`/hrv` 提供。
+_Avoid_: STRIDE 自研指标、校准值
+
 **影子存储**：
 一份与线上手表数据并行维护、但暂不被任何产品功能读取的副本；只用于逐行比对、验证新同步管线的产出与现有数据一致。
 _Avoid_: 备份、镜像库、双写
