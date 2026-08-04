@@ -27,6 +27,8 @@ Multi-stage build (`Dockerfile`)：
   读这些文件来拼 image URL（byte-serving 已搬到 stride-web，但 URL 版本号仍靠后端扫盘）。
 - **BFF 拥有 `/api` 路由（strangler）**：版本化 TS 路由表按 path 把 `/api/*` 分流到
   `PYTHON_API_URL`（stride-app）或 `GO_API_URL`（Tencent `stride api`），缺省 Python；
+  每个 endpoint 由各自的 `STRIDE_ROUTE_*` 环境变量选择上游（值为 `go` → Go，未设置 / 其它值 →
+  Python），所以单个 endpoint 的 cutover 只需在部署环境里设该变量，无需改路由表代码；
   `/api/auth/*` 走 `AUTH_UPSTREAM_URL`。这**反转了 ADR 0012 的 browser-direct-to-Go**。
 - **`strength_illustrations/` 搬进 `stride-web` 镜像**（前端拥有 UI 插图资源）。
 - **分阶段 cutover（已完成）**：`stride-web` 先上新 host 验证 → 翻 `stride-running.cn` 到

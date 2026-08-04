@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { API_ROUTES } from '../api-routes.js'
-import { AUTH_PREFIX, hasGoRoutes, resolveUpstream } from '../table.js'
+import { AUTH_PREFIX, hasGoRoutes, resolveUpstream, upstreamForRoute } from '../table.js'
 
 describe('resolveUpstream', () => {
   it('routes /api/auth/* to the auth upstream (any method)', () => {
@@ -13,77 +13,89 @@ describe('resolveUpstream', () => {
 
   it('does not let /api/auth match a sibling like /api/authz', () => {
     // /api/authz/thing has no manifest entry → defaults to python, not auth.
-    expect(resolveUpstream('GET', '/api/authz/thing')).toBe('python')
+    expect(resolveUpstream('GET', '/api/authz/thing', {})).toBe('python')
   })
 
-  it('routes known Python endpoints to python (all currently python)', () => {
-    expect(resolveUpstream('GET', '/api/users/me/profile')).toBe('python')
-    expect(resolveUpstream('GET', '/api/f10bc353-uuid/activities')).toBe('python')
-    expect(resolveUpstream('POST', '/api/teams/t123/join')).toBe('python')
+  it('routes known endpoints to python by default (no env set)', () => {
+    expect(resolveUpstream('GET', '/api/users/me/profile', {})).toBe('python')
+    expect(resolveUpstream('GET', '/api/f10bc353-uuid/activities', {})).toBe('python')
+    expect(resolveUpstream('POST', '/api/teams/t123/join', {})).toBe('python')
   })
 
   it('matches :seg patterns against a real UUID/id segment', () => {
     // /api/:user/activities/:labelId/ability
-    expect(resolveUpstream('GET', '/api/abc-uuid/activities/999/ability')).toBe('python')
+    expect(resolveUpstream('GET', '/api/abc-uuid/activities/999/ability', {})).toBe('python')
     // /api/teams/:teamId/activities/:userId/:labelId/likes
-    expect(resolveUpstream('DELETE', '/api/teams/t1/activities/u1/l1/likes')).toBe('python')
+    expect(resolveUpstream('DELETE', '/api/teams/t1/activities/u1/l1/likes', {})).toBe('python')
   })
 
   it('prefers the most specific (most-literal) match: draft vs :planId', () => {
     // Both /master-plan/draft (5 literals) and /master-plan/:planId (4 literals)
     // have equal segment count; the literal 'draft' entry must win.
-    expect(resolveUpstream('GET', '/api/users/me/master-plan/draft')).toBe('python')
+    expect(resolveUpstream('GET', '/api/users/me/master-plan/draft', {})).toBe('python')
     // A real plan id only matches the :planId entry.
-    expect(resolveUpstream('GET', '/api/users/me/master-plan/mp_abc')).toBe('python')
+    expect(resolveUpstream('GET', '/api/users/me/master-plan/mp_abc', {})).toBe('python')
   })
 
   it('is method-aware (an unknown method for a known path defaults to python)', () => {
-    expect(resolveUpstream('GET', '/api/users/me/profile')).toBe('python') // GET exists
-    expect(resolveUpstream('OPTIONS', '/api/users/me/profile')).toBe('python') // no entry → default
+    expect(resolveUpstream('GET', '/api/users/me/profile', {})).toBe('python') // GET exists
+    expect(resolveUpstream('OPTIONS', '/api/users/me/profile', {})).toBe('python') // no entry → default
   })
 
   it('defaults unlisted /api paths to python', () => {
-    expect(resolveUpstream('GET', '/api/does/not/exist')).toBe('python')
+    expect(resolveUpstream('GET', '/api/does/not/exist', {})).toBe('python')
+  })
+})
+
+describe('env-driven upstream selection', () => {
+  it('routes an endpoint to Go when its env var is exactly "go"', () => {
+    const env = { STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'go' }
+    expect(resolveUpstream('GET', '/api/users/me/profile', env)).toBe('go')
+    // The sibling method (POST) is a different env var → stays python.
+    expect(resolveUpstream('POST', '/api/users/me/profile', env)).toBe('python')
   })
 
-  it('watch-management endpoints are reverted to Python; no endpoints on Go yet', () => {
-    expect(hasGoRoutes()).toBe(false)
-    expect(resolveUpstream('GET', '/api/users/me/watch')).toBe('python')
-    expect(resolveUpstream('DELETE', '/api/users/me/watch')).toBe('python')
-    // adjacent endpoints also python
-    expect(resolveUpstream('GET', '/api/users/me/profile')).toBe('python')
-    expect(resolveUpstream('POST', '/api/users/me/watch/login')).toBe('python')
-    // nothing is routed to Go right now
-    expect(API_ROUTES.filter((r) => r.upstream === 'go').map((r) => `${r.method} ${r.path}`).sort())
-      .toEqual([])
+  it('is case-insensitive and trims surrounding whitespace on the env value', () => {
+    const env = { STRIDE_ROUTE_GET_USERS_ME_PROFILE: '  GO ' }
+    expect(resolveUpstream('GET', '/api/users/me/profile', env)).toBe('go')
   })
 
-  it('flipping a manifest entry to Go makes resolveUpstream return go (simulated cutover)', () => {
-    // Re-implement the exact matcher semantics against a one-entry table where
-    // GET /api/users/me/profile is flipped to go — without mutating the shipped
-    // manifest. Proves the resolver honors upstream='go'.
-    const flipped = [{ method: 'GET', path: '/api/users/me/profile', upstream: 'go' as const }]
-    const resolve = (method: string, pathname: string): 'python' | 'go' => {
-      const segs = pathname.split('/').filter(Boolean)
-      let best = -1
-      let up: 'python' | 'go' = 'python'
-      for (const r of flipped) {
-        if (r.method !== method) continue
-        const ps = r.path.split('/').filter(Boolean)
-        if (ps.length !== segs.length) continue
-        let lit = 0
-        let ok = true
-        for (let i = 0; i < ps.length; i++) {
-          if (ps[i].startsWith(':')) continue
-          if (ps[i] !== segs[i]) { ok = false; break }
-          lit++
-        }
-        if (ok && lit > best) { best = lit; up = r.upstream }
-      }
-      return up
-    }
-    expect(resolve('GET', '/api/users/me/profile')).toBe('go')
-    expect(resolve('POST', '/api/users/me/profile')).toBe('python') // POST not flipped
+  it('keeps python for unset, empty, or any non-"go" value', () => {
+    expect(resolveUpstream('GET', '/api/users/me/profile', {})).toBe('python')
+    expect(resolveUpstream('GET', '/api/users/me/profile', { STRIDE_ROUTE_GET_USERS_ME_PROFILE: '' })).toBe('python')
+    expect(resolveUpstream('GET', '/api/users/me/profile', { STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'python' })).toBe('python')
+    expect(resolveUpstream('GET', '/api/users/me/profile', { STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'golang' })).toBe('python')
+  })
+
+  it('applies the env var of the most-specific matched route only', () => {
+    // Flipping the :planId env must not leak onto the more-specific literal draft path.
+    const env = { STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_PLANID: 'go' }
+    expect(resolveUpstream('GET', '/api/users/me/master-plan/mp_abc', env)).toBe('go')
+    expect(resolveUpstream('GET', '/api/users/me/master-plan/draft', env)).toBe('python')
+  })
+
+  it('/api/auth/* is unaffected by any route env var', () => {
+    expect(resolveUpstream('POST', '/api/auth/login', { STRIDE_ROUTE_GET_HEALTH: 'go' })).toBe('auth')
+  })
+
+  it('upstreamForRoute reflects the entry env var directly', () => {
+    const profileGet = API_ROUTES.find((r) => r.method === 'GET' && r.path === '/api/users/me/profile')!
+    expect(upstreamForRoute(profileGet, {})).toBe('python')
+    expect(upstreamForRoute(profileGet, { [profileGet.env]: 'go' })).toBe('go')
+  })
+})
+
+describe('hasGoRoutes', () => {
+  it('is false when no route env var is set to go', () => {
+    expect(hasGoRoutes({})).toBe(false)
+  })
+
+  it('is true when at least one route env var is set to go', () => {
+    expect(hasGoRoutes({ STRIDE_ROUTE_GET_USER_ACTIVITIES: 'go' })).toBe(true)
+  })
+
+  it('ignores non-go values', () => {
+    expect(hasGoRoutes({ STRIDE_ROUTE_GET_USER_ACTIVITIES: 'python' })).toBe(false)
   })
 })
 
@@ -102,6 +114,15 @@ describe('API_ROUTES manifest integrity', () => {
       const key = `${r.method} ${r.path}`
       expect(seen.has(key)).toBe(false)
       seen.add(key)
+    }
+  })
+
+  it('every entry has a unique, well-formed STRIDE_ROUTE_* env var name', () => {
+    const seen = new Set<string>()
+    for (const r of API_ROUTES) {
+      expect(r.env).toMatch(/^STRIDE_ROUTE_[A-Z0-9_]+$/)
+      expect(seen.has(r.env)).toBe(false)
+      seen.add(r.env)
     }
   })
 
