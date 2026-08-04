@@ -15,6 +15,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 // ComputeJobType is the registered job_type for the compute handler.
@@ -93,7 +94,7 @@ func NewCompute(store ComputeStore) job.Handler {
 				fmt.Errorf("compute: no calibration snapshot for %s; run calibration first", user))
 		}
 		cal := toTrainingLoadCalibration(snapRow)
-		asOf := shanghaiToday()
+		asOf := timefmt.ShanghaiToday()
 
 		if in.Mode == string(provider.SyncIncremental) {
 			return runIncremental(ctx, store, user, in.LabelIDs, cal, asOf, hb)
@@ -158,7 +159,7 @@ func runIncremental(ctx context.Context, store ComputeStore, user string, labelI
 			continue
 		}
 		newActs = append(newActs, a)
-		d := shanghaiDayOf(a.Date)
+		d := timefmt.ShanghaiDay(a.Date)
 		if !haveMin || d.Before(minDay) {
 			minDay, haveMin = d, true
 		}

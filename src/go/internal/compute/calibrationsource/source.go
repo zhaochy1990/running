@@ -13,6 +13,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	"github.com/zhaochy1990/stride/internal/compute/watchmap"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 // Reader is the storage read surface Load needs. *storage.Store satisfies it.
@@ -51,7 +52,7 @@ func Load(ctx context.Context, r Reader, user, provider string, asOf time.Time, 
 		distanceM := watchmap.AsActivityDistanceMeters(a.DistanceM)
 		history = append(history, calibration.Activity{
 			LabelID:      a.LabelID,
-			ActivityDate: watchmap.ShanghaiDay(a.Date),
+			ActivityDate: timefmt.ShanghaiDay(a.Date),
 			Sport:        sport,
 			DurationS:    a.DurationS,
 			DistanceM:    distanceM,

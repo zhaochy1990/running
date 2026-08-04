@@ -10,6 +10,8 @@ import (
 	"math"
 	"sort"
 	"time"
+
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 const maxPlausibleSpeedMps = 8.0
@@ -164,7 +166,7 @@ func bestEffortCandidatesForActivity(a Activity, fetch TSFetcher) ([]bestEffort,
 	if a.LabelID == "" {
 		return nil, nil
 	}
-	achievedAt := shanghaiDayStr(a.Date)
+	achievedAt := timefmt.ShanghaiDayStr(a.Date)
 	var out []bestEffort
 
 	ts, err := fetch(a.LabelID)
@@ -400,9 +402,4 @@ func numeric(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
-}
-
-func shanghaiDayStr(utc time.Time) string {
-	sh := utc.UTC().Add(8 * time.Hour)
-	return time.Date(sh.Year(), sh.Month(), sh.Day(), 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 }

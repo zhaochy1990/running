@@ -145,7 +145,13 @@ _Avoid_: 训练目标、race goal、个人资料
 运动员的展示用名字；以 STRIDE 侧为准（source of truth），变更后尽力回写镜像到 Auth 服务的 `name`。
 _Avoid_: 用户名、昵称、Auth name（后者只是其镜像）
 
-## 前端服务与 API 路由（stride-web）
+## 赛季目标（Race Goal）
+
+（运动员为赛季设定的目标比赛；Go `cmd/api` + MySQL 的实现设计见 `docs/adr/0019`。）
+
+**赛季目标（Race Goal）**：
+运动员为某一目标比赛设定的完赛目标——一场具名比赛、其日期与距离、可选的目标完赛时间，连同为其训练的每周可用度偏好。每名运动员同时至多一个处于**活跃（active）**状态，赛季训练计划即围绕当前活跃目标组织；重新设定会归档当前活跃目标，历史目标全部保留。
+_Avoid_: 训练目标、training goal、比赛类型以外的目标（fat_loss/health/maintain 暂不建模）
 
 （前端从 Python 后端剥离为独立服务/容器的表层词汇；设计与取舍见 `docs/adr/0017`。）
 

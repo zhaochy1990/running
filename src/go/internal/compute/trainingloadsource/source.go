@@ -11,6 +11,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/compute/trainingload"
 	"github.com/zhaochy1990/stride/internal/compute/watchmap"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 // Reader is the storage read surface Load needs. *storage.Store satisfies it.
@@ -37,7 +38,7 @@ func Load(ctx context.Context, r Reader, user, provider string, start, end time.
 		distanceM := watchmap.AsActivityDistanceMeters(a.DistanceM)
 		out = append(out, trainingload.ActivityInput{
 			LabelID:      a.LabelID,
-			ActivityDate: watchmap.ShanghaiDay(a.Date),
+			ActivityDate: timefmt.ShanghaiDay(a.Date),
 			Sport:        sportFromRow(a.Sport, a.SportType),
 			SessionClass: SessionClass(a),
 			DurationS:    a.DurationS,

@@ -109,6 +109,170 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/users/me/training-goal": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "training-goal"
+                ],
+                "summary": "Get the current user's active race goal",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.goalResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Edits the active race goal in place. goal_id must match the current active goal. race_date must be a future date in Asia/Shanghai.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "training-goal"
+                ],
+                "summary": "Update the current user's active race goal",
+                "parameters": [
+                    {
+                        "description": "Race goal fields (with goal_id)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.goalUpdateInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.goalResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.validationErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new active race goal and archives the previous active one. race_date must be a future date in Asia/Shanghai.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "training-goal"
+                ],
+                "summary": "Set (create) the current user's race goal",
+                "parameters": [
+                    {
+                        "description": "Race goal fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.goalInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.goalResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.validationErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/me/watch": {
             "get": {
                 "security": [
@@ -1215,6 +1379,162 @@ const docTemplate = `{
                 },
                 "sync_data_at_onboarding": {
                     "type": "boolean"
+                }
+            }
+        },
+        "api.goalInput": {
+            "type": "object",
+            "required": [
+                "race_date",
+                "race_distance",
+                "weekly_training_days"
+            ],
+            "properties": {
+                "available_time_slots": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "race_distance": {
+                    "type": "string",
+                    "enum": [
+                        "5K",
+                        "10K",
+                        "HM",
+                        "FM",
+                        "trail"
+                    ]
+                },
+                "race_location": {
+                    "type": "string"
+                },
+                "race_name": {
+                    "type": "string"
+                },
+                "race_timezone": {
+                    "type": "string"
+                },
+                "strength_willingness": {
+                    "type": "string",
+                    "enum": [
+                        "yes",
+                        "no",
+                        "conditional"
+                    ]
+                },
+                "target_finish_time": {
+                    "type": "string"
+                },
+                "weekly_training_days": {
+                    "type": "integer",
+                    "maximum": 6,
+                    "minimum": 3
+                }
+            }
+        },
+        "api.goalResponse": {
+            "type": "object",
+            "properties": {
+                "available_time_slots": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "goal_id": {
+                    "type": "string"
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "race_distance": {
+                    "type": "string"
+                },
+                "race_location": {
+                    "type": "string"
+                },
+                "race_name": {
+                    "type": "string"
+                },
+                "race_timezone": {
+                    "type": "string"
+                },
+                "strength_willingness": {
+                    "type": "string"
+                },
+                "target_finish_time": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "weekly_training_days": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.goalUpdateInput": {
+            "type": "object",
+            "required": [
+                "goal_id",
+                "race_date",
+                "race_distance",
+                "weekly_training_days"
+            ],
+            "properties": {
+                "available_time_slots": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "goal_id": {
+                    "type": "string"
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "race_distance": {
+                    "type": "string",
+                    "enum": [
+                        "5K",
+                        "10K",
+                        "HM",
+                        "FM",
+                        "trail"
+                    ]
+                },
+                "race_location": {
+                    "type": "string"
+                },
+                "race_name": {
+                    "type": "string"
+                },
+                "race_timezone": {
+                    "type": "string"
+                },
+                "strength_willingness": {
+                    "type": "string",
+                    "enum": [
+                        "yes",
+                        "no",
+                        "conditional"
+                    ]
+                },
+                "target_finish_time": {
+                    "type": "string"
+                },
+                "weekly_training_days": {
+                    "type": "integer",
+                    "maximum": 6,
+                    "minimum": 3
                 }
             }
         },

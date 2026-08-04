@@ -1,14 +1,14 @@
 // Package watchmap holds the shared watch-row -> domain unit conversions used by
 // every compute reader (calibration, training load, ability): the Go equivalent
 // of the Python connector normalisers (speed m/s, centisecond elapsed, distance
-// scale, sport derivation, Shanghai day). Single source so the conversions can
-// never drift between compute slices (ADR 0015).
+// scale, sport derivation). Single source so the conversions can never drift
+// between compute slices (ADR 0015). Shanghai-day bucketing lives in
+// internal/utils/timefmt (ADR 0022).
 package watchmap
 
 import (
 	"math"
 	"strings"
-	"time"
 
 	"github.com/zhaochy1990/stride/internal/storage"
 )
@@ -128,13 +128,6 @@ func SportFromRow(sport *string, sportType int) string {
 func IsRunningSport(sport string) bool {
 	s := strings.ToLower(sport)
 	return s == "run" || strings.HasPrefix(s, "run_") || strings.HasPrefix(s, "running")
-}
-
-// ShanghaiDay returns the Shanghai (UTC+8) civil day of a UTC instant, as a
-// UTC-midnight time.Time so day arithmetic stays exact.
-func ShanghaiDay(utc time.Time) time.Time {
-	sh := utc.UTC().Add(8 * time.Hour)
-	return time.Date(sh.Year(), sh.Month(), sh.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 // IntToFloat converts a nullable int column to a nullable float.

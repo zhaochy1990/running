@@ -12,6 +12,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/compute/calibrationsource"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 // CalibrationJobType is the registered job_type for the calibration handler.
@@ -45,7 +46,7 @@ func NewCalibration(store CalibrationStore) job.Handler {
 			return "", job.NewPermanentError("bad_partition",
 				fmt.Errorf("calibration: partition key must be a user UUID: %w", err))
 		}
-		asOf := shanghaiToday()
+		asOf := timefmt.ShanghaiToday()
 		snapID, activities, err := runCalibration(ctx, store, user, asOf)
 		if err != nil {
 			return "", err // infra fault -> retryable

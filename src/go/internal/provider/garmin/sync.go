@@ -14,6 +14,7 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 const providerName = "garmin"
@@ -32,10 +33,6 @@ const (
 	healthWindowDaysFull = 365
 	healthMaxConsecEmpty = 7
 )
-
-// shanghaiZone is Asia/Shanghai (UTC+8, no DST) — the calendar used to bucket
-// daily health, matching stride_core.timefmt on the Python side.
-var shanghaiZone = time.FixedZone("CST", 8*3600)
 
 // Provider is the Garmin watch-data adapter.
 type Provider struct {
@@ -271,7 +268,7 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 		windowDays = healthWindowDaysFull
 	}
 	progress := opts.Progress
-	today := time.Now().In(shanghaiZone)
+	today := time.Now().In(timefmt.Shanghai)
 	consecEmpty := 0
 	for offset := 0; offset < windowDays; offset++ {
 		date := today.AddDate(0, 0, -offset).Format("2006-01-02")

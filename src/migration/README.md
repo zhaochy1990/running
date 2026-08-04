@@ -4,13 +4,14 @@ One-off Node.js utilities that copy per-user data into the **Tencent MySQL**
 tables read by the Go worker (`src/go/`). It is a standalone project — it has its
 own `package.json` and does **not** import anything from the rest of the repo.
 
-Three migrations live here:
+Four migrations live here:
 
 | Command | Source | Target table(s) |
 |---|---|---|
 | `npm run migrate` (`src/index.js`) | Azure Key Vault watch-credential secrets | `provider_credentials` |
 | `npm run migrate:profiles` (`src/migrate-profiles.js`) | local `data/<uuid>/{profile,onboarding}.json` | `user_profile`, `user_onboarding` |
 | `npm run migrate:health` (`src/migrate-health.js`) | local `data/<uuid>/coros.db` SQLite | `daily_health`, `daily_hrv`, `dashboard`, `race_predictions` |
+| `npm run migrate:training-goals` (`src/migrate-training-goals.js`) | local `data/<uuid>/training_goal.json` (+ Azure master-plan snapshots) | `race_goal` |
 
 All are **dry-run by default** — nothing is written until you pass `--commit`.
 
@@ -220,6 +221,86 @@ idempotent (every non-PK column is overwritten; no duplicate rows).
 
 ---
 
+## 4) Training-goal migration — local `data/` → `race_goal` (+ Azure master-plan rewrite)
+
+Copies each real user's **active training goal** from the repo's on-disk
+`data/<uuid>/training_goal.json` snapshot into the `race_goal` table read by the
+new Go training-goal API (`src/go/`). The source file is the filesystem mirror of
+the old Python Azure-Blob goal store; only its `current` (active) goal is
+migrated — `history` is dropped, matching the redesigned API which only surfaces
+a single active goal.
+
+This is a **two-phase** tool:
+
+1. **`race_goal` upsert** — one active row per athlete (`status='active'`,
+   `active_flag=1`). A `goal_id` that is already a UUID is migrated verbatim; a
+   legacy human slug (e.g. `s1-2026-chengdu-fm`) is **re-minted** to a fresh
+   `uuid4` so MySQL's `CHAR(36)` id space is uniform and the id stays opaque.
+2. **master-plan snapshot rewrite** — for each re-minted slug, the tool rewrites
+   the embedded `.goal.goal_id` inside the user's **Azure master-plan snapshots**
+   (the plans + versions tables) so those plans keep pointing at the same goal.
+   Skip this phase with `--skip-master-plan` (the snapshots then keep the old
+   slug, which will dangle).
+
+**Idempotency:** before minting, the tool resolves the athlete's existing active
+`goal_id` (`getActiveRaceGoalId`). A slug user whose row already exists reuses the
+previously minted UUID instead of minting a new one, so re-runs are stable — the
+row count stays put and the master-plan linkage never drifts. (`inserted` vs
+`updated` is reported from a PK pre-existence probe, not `affectedRows`, because
+this row's `updated_at` is carried from the blob unchanged and mysql2 reports
+`affectedRows=1` for such a no-op re-upsert.)
+
+### Column mapping
+
+| `race_goal` | Source (`training_goal.current.*`) | Notes |
+|---|---|---|
+| `goal_id` (PK) | `goal_id` | UUID kept as-is; slug re-minted to `uuid4` |
+| `user_id` | the real-user UUID | must be in `src/users.js` |
+| `status` | — | always `active` |
+| `active_flag` | — | always `1` (part of `UNIQUE(user_id, active_flag)`) |
+| `race_date` | `race_date` | required |
+| `race_distance` | `race_distance` | required |
+| `race_name` | `race_name` | NULL if empty |
+| `target_finish_time` | `target_finish_time` | NULL if empty |
+| `weekly_training_days` | `weekly_training_days` | missing → `0` (Go int zero) |
+| `available_time_slots` | `available_time_slots` | JSON-array text (`[]`, `["morning"]`); absent → NULL |
+| `strength_willingness` | `strength_willingness` | NULL if empty |
+| `race_location` / `race_timezone` | — | always NULL (the Python blob never carried them; the Go generator applies its Asia/Shanghai default downstream) |
+| `created_at` / `updated_at` | same | ISO-8601 → UTC `datetime(6)`; carried from the blob (original authoring instant preserved), run time only as a fallback |
+
+### Usage
+
+```bash
+# 1) Dry-run all real users (reads local JSON, prints a plan, writes nothing).
+#    Reports which goals are UUIDs (kept) vs slugs (re-mint + snapshot rewrite).
+npm run migrate:training-goals
+
+# 2) Scope it down while testing
+node src/migrate-training-goals.js --user f10bc353-01ab-4db1-af9f-d9305ea9a532
+node src/migrate-training-goals.js --data-dir /path/to/repo/data --limit 3
+
+# 3) Commit for real (recommended: one user first, verify, then all)
+node src/migrate-training-goals.js --commit --user f10bc353-01ab-4db1-af9f-d9305ea9a532
+node src/migrate-training-goals.js --commit
+node src/migrate-training-goals.js --commit --ensure-schema      # create race_goal on a fresh DB
+node src/migrate-training-goals.js --commit --skip-master-plan   # MySQL row only, no snapshot rewrite
+```
+
+Options: `--commit`, `--user <uuid>` (repeatable / comma list, allowlist-gated),
+`--data-dir <path>`, `--limit <n>`, `--ensure-schema`, `--skip-master-plan`,
+`--verbose`, `--help`. The data root resolves to `--data-dir` → `STRIDE_DATA_DIR`
+→ the repo-root `data/` dir.
+
+Env: the MySQL vars (as above) plus — for the phase-2 rewrite —
+`STRIDE_MASTER_PLAN_TABLE_ACCOUNT_URL` (and optional
+`STRIDE_MASTER_PLAN_TABLE_NAME`, default `stridemasterplan`; the versions table is
+`<name>versions`). Point these at the **same** account the server uses
+(`config/server.prod.toml` `[storage.master_plan]`); auth is
+`DefaultAzureCredential` (run `az login`). See `.env.example`. With
+`--skip-master-plan` no Azure access is needed.
+
+---
+
 ## Safety / secrets
 
 - Credential-migration logs are redacted: creds emails are masked (unless
@@ -236,8 +317,9 @@ idempotent (every non-PK column is overwritten; no duplicate rows).
 ## Schema
 
 The target tables are normally created by the Go worker's `AutoMigrateWatch` /
-`AutoMigrateUsers`. For a fresh DB, `schema.sql` holds the equivalent DDL for all
-three tables, and each migration's `--ensure-schema` runs it.
+`AutoMigrateUsers` / `AutoMigrateGoals`. For a fresh DB, `schema.sql` holds the
+equivalent DDL for all eight tables, and each migration's `--ensure-schema` runs
+it.
 
 ## Tests
 
