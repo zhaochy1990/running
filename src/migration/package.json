@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "One-off migrations into Tencent MySQL: COROS/Garmin watch credentials from Azure Key Vault (provider_credentials), user profile + onboarding state from the local data/ snapshot (user_profile / user_onboarding), watch health data from the local coros.db snapshot (daily_health / daily_hrv / dashboard / race_predictions), and the athlete training goal from the local data/ snapshot (race_goal, plus an Azure master-plan snapshot goal_id rewrite when a legacy slug goal_id is re-minted).",
+  "description": "One-off Node.js migrations from legacy Azure/local stores into Tencent MySQL.",
   "engines": {
     "node": ">=22.5.0"
   },
@@ -12,7 +12,8 @@
     "migrate-profiles": "src/migrate-profiles.js",
     "migrate-health": "src/migrate-health.js",
     "migrate-training-goals": "src/migrate-training-goals.js",
-    "migrate-master-plans": "src/migrate-master-plans.js"
+    "migrate-master-plans": "src/migrate-master-plans.js",
+    "migrate-weekly-plans": "src/migrate-weekly-plans.js"
   },
   "scripts": {
     "migrate": "node src/index.js",
@@ -20,6 +21,7 @@
     "migrate:health": "node src/migrate-health.js",
     "migrate:training-goals": "node src/migrate-training-goals.js",
     "migrate:master-plans": "node src/migrate-master-plans.js",
+    "migrate:weekly-plans": "node src/migrate-weekly-plans.js",
     "test": "node --test"
   },
   "dependencies": {

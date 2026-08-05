@@ -70,7 +70,7 @@ Usage: node src/migrate-master-plans.js [options]
 
 MySQL env (or .env here): STRIDE_WORKER_MYSQL_DSN or the discrete MYSQL_* vars.
 Azure source env: STRIDE_MASTER_PLAN_TABLE_ACCOUNT_URL (table), and content-store
-STRIDE_CONTENT_BLOB_ACCOUNT_URL / STRIDE_CONTENT_CONTAINER / STRIDE_CONTENT_PREFIX
+STRIDE_CONTENT_BLOB_ACCOUNT_URL / STRIDE_CONTENT_BLOB_CONTAINER / STRIDE_CONTENT_BLOB_PREFIX
 (defaults match config/server.prod.toml). Auth via DefaultAzureCredential ('az login').
 `,
   );
@@ -134,8 +134,12 @@ function parseCli(argv) {
 function parseContentConfig(env) {
   return {
     accountUrl: (env.STRIDE_CONTENT_BLOB_ACCOUNT_URL || "https://authstorage2026.blob.core.windows.net/").trim(),
-    container: (env.STRIDE_CONTENT_CONTAINER || "stride-data").trim(),
-    prefix: (env.STRIDE_CONTENT_PREFIX ?? "users").trim().replace(/^\/+|\/+$/g, ""),
+    container: (
+      env.STRIDE_CONTENT_BLOB_CONTAINER || env.STRIDE_CONTENT_CONTAINER || "stride-data"
+    ).trim(),
+    prefix: (
+      env.STRIDE_CONTENT_BLOB_PREFIX ?? env.STRIDE_CONTENT_PREFIX ?? "users"
+    ).trim().replace(/^\/+|\/+$/g, ""),
   };
 }
 

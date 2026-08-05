@@ -274,8 +274,12 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: 'GET', path: '/api/:user/plan/today', env: 'STRIDE_ROUTE_GET_USER_PLAN_TODAY', goReady: false },
   // ✓ /, /week, /coach/week, /plan/adjust · planned-vs-actual calendar
   { method: 'GET', path: '/api/:user/plan/days', env: 'STRIDE_ROUTE_GET_USER_PLAN_DAYS', goReady: false },
+  // ✗ not called   [go-ready]
+  { method: 'GET', path: '/api/:user/plan/weeks', env: 'STRIDE_ROUTE_GET_USER_PLAN_WEEKS', goReady: true },
   // ✓ /, /week · multi-variant comparison
   { method: 'GET', path: '/api/:user/plan/:folder/variants', env: 'STRIDE_ROUTE_GET_USER_PLAN_FOLDER_VARIANTS', goReady: false },
+  // ✗ not called   [go-ready]
+  { method: 'GET', path: '/api/:user/plan/weeks/:weekName', env: 'STRIDE_ROUTE_GET_USER_PLAN_WEEKS_WEEKNAME', goReady: true },
   // ✗ not called
   { method: 'POST', path: '/api/:user/plan/:folder/variants', env: 'STRIDE_ROUTE_POST_USER_PLAN_FOLDER_VARIANTS', goReady: false },
   // ✗ wrapper (deletePlanVariants) exists, no non-test caller

@@ -29,6 +29,11 @@ describe('resolveUpstream', () => {
     expect(resolveUpstream('DELETE', '/api/teams/t1/activities/u1/l1/likes', {})).toBe('python')
   })
 
+  it('routes plan week list and detail endpoints to python by default', () => {
+    expect(resolveUpstream('GET', '/api/u/plan/weeks', {})).toBe('python')
+    expect(resolveUpstream('GET', '/api/u/plan/weeks/2026-W32', {})).toBe('python')
+  })
+
   it('prefers the most specific (most-literal) match: draft vs :planId', () => {
     // Both /master-plan/draft (5 literals) and /master-plan/:planId (4 literals)
     // have equal segment count; the literal 'draft' entry must win.
@@ -74,6 +79,21 @@ describe('env-driven upstream selection', () => {
     expect(resolveUpstream('GET', '/api/users/me/master-plan/draft', env)).toBe('python')
   })
 
+  it('switches plan week list and detail routes independently', () => {
+    const listEnv = { STRIDE_ROUTE_GET_USER_PLAN_WEEKS: 'go' }
+    expect(resolveUpstream('GET', '/api/u/plan/weeks', listEnv)).toBe('go')
+    expect(resolveUpstream('GET', '/api/u/plan/weeks/2026-W32', listEnv)).toBe('python')
+
+    const detailEnv = { STRIDE_ROUTE_GET_USER_PLAN_WEEKS_WEEKNAME: 'go' }
+    expect(resolveUpstream('GET', '/api/u/plan/weeks', detailEnv)).toBe('python')
+    expect(resolveUpstream('GET', '/api/u/plan/weeks/2026-W32', detailEnv)).toBe('go')
+  })
+
+  it('keeps the legacy variants path on Python when plan-week detail moves to Go', () => {
+    const env = { STRIDE_ROUTE_GET_USER_PLAN_WEEKS_WEEKNAME: 'go' }
+    expect(resolveUpstream('GET', '/api/u/plan/weeks/variants', env)).toBe('python')
+  })
+
   it('/api/auth/* is unaffected by any route env var', () => {
     expect(resolveUpstream('POST', '/api/auth/login', { STRIDE_ROUTE_GET_HEALTH: 'go' })).toBe('auth')
   })
@@ -100,6 +120,15 @@ describe('hasGoRoutes', () => {
 })
 
 describe('API_ROUTES manifest integrity', () => {
+  it('keeps the legacy weekly plan routes', () => {
+    expect(API_ROUTES).toContainEqual({
+      method: 'GET',
+      path: '/api/:user/weeks',
+      env: 'STRIDE_ROUTE_GET_USER_WEEKS',
+      goReady: false,
+    })
+  })
+
   it('every entry is under /api and has no query/trailing slash', () => {
     for (const r of API_ROUTES) {
       expect(r.path.startsWith('/api/')).toBe(true)
@@ -126,7 +155,7 @@ describe('API_ROUTES manifest integrity', () => {
     }
   })
 
-  it('goReady endpoints are the ones the Go API implements (profile GET/POST, watch GET/DELETE, training-goal GET/POST/PUT, activities list + detail, user sync, training-status metrics, master-plan current + training-plan)', () => {
+  it('goReady endpoints are exactly the ones the Go API implements', () => {
     const goReady = API_ROUTES.filter((r) => r.goReady).map((r) => `${r.method} ${r.path}`).sort()
     expect(goReady).toEqual(
       [
@@ -136,6 +165,8 @@ describe('API_ROUTES manifest integrity', () => {
         'GET /api/:user/health',
         'GET /api/:user/hrv',
         'GET /api/:user/pmc',
+        'GET /api/:user/plan/weeks',
+        'GET /api/:user/plan/weeks/:weekName',
         'GET /api/:user/stride/training-load',
         'GET /api/:user/stride/zones',
         'GET /api/:user/training-plan',

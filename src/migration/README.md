@@ -4,7 +4,7 @@ One-off Node.js utilities that copy per-user data into the **Tencent MySQL**
 tables read by the Go worker (`src/go/`). It is a standalone project — it has its
 own `package.json` and does **not** import anything from the rest of the repo.
 
-Four migrations live here:
+Six migrations live here:
 
 | Command | Source | Target table(s) |
 |---|---|---|
@@ -12,13 +12,56 @@ Four migrations live here:
 | `npm run migrate:profiles` (`src/migrate-profiles.js`) | local `data/<uuid>/{profile,onboarding}.json` | `user_profile`, `user_onboarding` |
 | `npm run migrate:health` (`src/migrate-health.js`) | local `data/<uuid>/coros.db` SQLite | `daily_health`, `daily_hrv`, `dashboard`, `race_predictions` |
 | `npm run migrate:training-goals` (`src/migrate-training-goals.js`) | local `data/<uuid>/training_goal.json` (+ Azure master-plan snapshots) | `race_goal` |
+| `npm run migrate:master-plans` (`src/migrate-master-plans.js`) | Azure Table/Blob season plans | `master_plan` |
+| `npm run migrate:weekly-plans` (`src/migrate-weekly-plans.js`) | Azure Table canonical weekly plans, with Blob `plan.md` fallback | `weekly_plan` |
 
-All are **dry-run by default** — nothing is written until you pass `--commit`.
+All are **dry-run by default**. Existing migrations write with `--commit`; the
+weekly-plan backfill writes only with its explicit `--apply` flag.
 
 Only **real users** (the UUIDs in `src/users.js`) are migrated; every other UUID
 is a test account and is discarded (see `AGENTS.md`). The creds migration prunes
 test accounts by `--exclude-email`; the profile migration enforces the
 `src/users.js` allowlist directly.
+
+---
+
+## Weekly-plan backfill — Azure Table/Blob → `weekly_plan`
+
+This source-read-only tool processes only UUIDs in `src/users.js`. For each
+Shanghai natural week it selects the canonical `strideweeklyplan` Table entity
+when present; only a week with no structured entity falls back to Blob
+`users/<uuid>/logs/<week>/plan.md`. Invalid structured JSON therefore blocks
+Markdown fallback and is reported for manual handling.
+
+Structured JSON is cleaned for ADR 0025 and validated before insertion. The
+tool reports ambiguous sources, invalid Monday-Sunday bounds, missing source
+timestamps, ambiguous master-plan ownership, and target conflicts. Existing
+active rows are never overwritten; byte-equal Markdown or semantically equal
+JSON is reported as `existing`. UUIDv4 IDs are generated only immediately
+before an `--apply` insert.
+
+```bash
+# Dry-run all real users.
+npm run migrate:weekly-plans
+
+# Dry-run one allowlisted user, then insert missing rows.
+node src/migrate-weekly-plans.js --user <uuid>
+node src/migrate-weekly-plans.js --apply --user <uuid>
+```
+
+Migrate master plans first. For a confirmed health-running user whose weekly
+plans intentionally have no season-plan owner, pass
+`--allow-unowned-user <uuid>` together with the selected `--user`; otherwise
+the rows remain in the manual-review report instead of silently receiving a
+NULL `master_plan_id`.
+
+Required source env: `STRIDE_WEEKLY_PLAN_TABLE_ACCOUNT_URL` and
+`STRIDE_CONTENT_BLOB_ACCOUNT_URL`; optional table/container/prefix overrides are
+listed in `.env.example`. Azure auth uses `DefaultAzureCredential`. Target MySQL
+uses the same `STRIDE_WORKER_MYSQL_DSN` or `MYSQL_*` settings as other tools.
+
+The final JSON report is suitable for retaining as the manual-review manifest.
+The command exits non-zero when manual findings or conflicts remain.
 
 ---
 
@@ -316,10 +359,9 @@ Env: the MySQL vars (as above) plus — for the phase-2 rewrite —
 
 ## Schema
 
-The target tables are normally created by the Go worker's `AutoMigrateWatch` /
-`AutoMigrateUsers` / `AutoMigrateGoals`. For a fresh DB, `schema.sql` holds the
-equivalent DDL for all eight tables, and each migration's `--ensure-schema` runs
-it.
+The target tables are normally created by the corresponding runtime migration.
+For a fresh DB, `schema.sql` holds the equivalent DDL for all ten tables;
+migrations that expose `--ensure-schema` can apply it directly.
 
 ## Tests
 

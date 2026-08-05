@@ -1017,6 +1017,16 @@ definitions:
       timestamp:
         type: integer
     type: object
+  api.trainingPlanResponse:
+    properties:
+      content:
+        type: string
+      current_phase:
+        type: string
+      phases:
+        items: {}
+        type: array
+    type: object
   api.userPipelinesResponse:
     properties:
       pipelines:
@@ -1087,6 +1097,30 @@ definitions:
       region:
         type: string
       user_id:
+        type: string
+    type: object
+  api.weeklyPlanDetailResponse:
+    properties:
+      content: {}
+      content_version:
+        type: integer
+      created_at:
+        type: string
+      date_from:
+        type: string
+      date_to:
+        type: string
+      master_plan_id:
+        type: string
+      plan_id:
+        type: string
+      revision:
+        type: integer
+      status:
+        type: string
+      updated_at:
+        type: string
+      week_name:
         type: string
     type: object
   api.zoneDTO:
@@ -1321,6 +1355,86 @@ paths:
       summary: Per-day HRV detail + latest-reading summary
       tags:
       - metrics
+  /api/{user}/plan/weeks:
+    get:
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: List a user's active weekly plans
+      tags:
+      - weekly-plan
+  /api/{user}/plan/weeks/{weekName}:
+    get:
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Shanghai week name (YYYY-MM-DD_MM-DD)
+        in: path
+        name: weekName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.weeklyPlanDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Get a user's active weekly plan
+      tags:
+      - weekly-plan
   /api/{user}/pmc:
     get:
       description: Returns the vendor ATI/CTI/TSB series with ACWR-derived TSB zones
@@ -1501,6 +1615,38 @@ paths:
       summary: Trigger a watch-data sync (+ compute) for a user
       tags:
       - sync
+  /api/{user}/training-plan:
+    get:
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.trainingPlanResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a user's legacy markdown training overview
+      tags:
+      - master-plan
   /api/users/{uid}/pipelines:
     get:
       description: Lists the pipeline runs for a user (the subject whose data they
@@ -1541,6 +1687,35 @@ paths:
       summary: List a user's pipeline runs
       tags:
       - pipelines
+  /api/users/me/master-plan/current:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get the current user's active season training plan
+      tags:
+      - master-plan
   /api/users/me/profile:
     get:
       produces:
