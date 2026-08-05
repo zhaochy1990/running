@@ -86,7 +86,9 @@ export interface MyProfile {
   display_name: string
   profile: Record<string, unknown> | null
   onboarding: {
-    coros_ready: boolean
+    // Python uses the legacy provider-agnostic name; Go uses watch_ready.
+    coros_ready?: boolean
+    watch_ready?: boolean
     profile_ready: boolean
     completed_at: string | null
   }
@@ -130,21 +132,15 @@ export interface ProfileIn {
 
 export type ProfilePatchIn = Partial<ProfileIn>
 
-export function postCorosLogin(email: string, password: string) {
-  return postJSON<{ region?: string; user_id?: string; error?: string; detail?: unknown }>(
-    '/users/me/coros/login',
-    { email, password },
-  )
-}
-
-export function postGarminLogin(
+export function postWatchLogin(
+  provider: 'coros' | 'garmin',
   email: string,
   password: string,
   region: 'cn' | 'global' = 'cn',
 ) {
-  return postJSON<{ region?: string; user_id?: string; error?: string; detail?: unknown }>(
-    '/users/me/garmin/login',
-    { email, password, region },
+  return postJSON<{ ok?: boolean; region?: string; user_id?: string; error?: string }>(
+    '/users/me/watch/login',
+    { provider, email, password, region },
   )
 }
 
@@ -242,6 +238,32 @@ export interface SyncStatus {
 
 export function getSyncStatus() {
   return fetchJSON<SyncStatus>('/users/me/sync-status')
+}
+
+export interface PipelineRun {
+  run_id: string
+  pipeline_name: string
+  status: 'queued' | 'running' | 'done' | 'failed'
+  current_step: number
+  steps: Array<{ name: string; job_type: string; status: string }>
+  error_message?: string
+}
+
+export function startGoOnboardingSync(userId: string) {
+  return postJSON<{ run_id?: string; pipeline_name?: string; error?: string }>(
+    `/${encodeURIComponent(userId)}/sync`,
+    { mode: 'full' },
+  )
+}
+
+export function getUserPipelines(userId: string) {
+  return fetchJSON<{ pipelines: PipelineRun[] }>(
+    `/users/${encodeURIComponent(userId)}/pipelines`,
+  )
+}
+
+export function getPipelineRun(runId: string) {
+  return fetchJSON<PipelineRun>(`/pipelines/${encodeURIComponent(runId)}`)
 }
 
 export interface NotificationReadState {
@@ -493,8 +515,11 @@ export async function getAllActivitiesInRange(
 }
 
 export function triggerSync(user: string, full: boolean = false) {
-  const qs = full ? '?full=true' : ''
-  return fetch(`${BASE}/${user}/sync${qs}`, { method: 'POST', headers: authHeaders() }).then(r => r.json()) as Promise<{ success: boolean; output?: string; error?: string }>
+  return postJSON<{
+    run_id: string
+    pipeline_name: string
+    error?: string
+  }>(`/${encodeURIComponent(user)}/sync`, full ? { mode: 'full' } : { mode: 'incremental' })
 }
 
 export function resyncActivity(user: string, labelId: string) {

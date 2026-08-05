@@ -1,11 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { triggerSync, getWatchInfo } from '../api'
+import { getPipelineRun, triggerSync, getWatchInfo } from '../api'
+import { SYNC_COMPLETED_EVENT } from '../lib/syncEvents'
 import { useUser } from '../UserContextValue'
+
+const PIPELINE_POLL_MS = 2000
+const PIPELINE_TIMEOUT_MS = 60 * 60 * 1000
 
 export default function SyncStatusPill() {
   const { user } = useUser()
   const [lastSync, setLastSync] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [syncError, setSyncError] = useState(false)
   const [tick, setTick] = useState(0)
   const requestIdRef = useRef(0)
 
@@ -37,11 +42,29 @@ export default function SyncStatusPill() {
   const handleClick = async () => {
     if (syncing || !user) return
     setSyncing(true)
+    setSyncError(false)
     try {
       const res = await triggerSync(user)
-      if (res.success) {
-        await refreshLastSync()
+      if (!res.ok) throw new Error(res.data.error || `HTTP ${res.status}`)
+      if (!res.data.run_id) throw new Error('同步任务未返回 run_id')
+
+      const deadline = Date.now() + PIPELINE_TIMEOUT_MS
+      let completed = false
+      while (Date.now() < deadline) {
+        const run = await getPipelineRun(res.data.run_id)
+        if (run.status === 'done') {
+          completed = true
+          break
+        }
+        if (run.status === 'failed') throw new Error(run.error_message || '同步失败')
+        await new Promise((resolve) => window.setTimeout(resolve, PIPELINE_POLL_MS))
       }
+      if (!completed) throw new Error('同步超时')
+
+      await refreshLastSync()
+      window.dispatchEvent(new Event(SYNC_COMPLETED_EVENT))
+    } catch {
+      setSyncError(true)
     } finally {
       setSyncing(false)
     }
@@ -51,6 +74,8 @@ export default function SyncStatusPill() {
   const haveLastSync = Number.isFinite(lastSyncMs)
   const label = syncing
     ? '同步中...'
+    : syncError
+      ? '同步失败 · 重试'
     : haveLastSync
       ? `已同步 · ${relativeTime(Date.now() - lastSyncMs)}`
       : '未同步'

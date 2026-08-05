@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:frontend:local": "cross-env VITE_DEV_API_PROXY=https://stride-running.cn VITE_DEV_AUTH_PROXY=https://124.221.38.59 VITE_AUTH_CLIENT_ID=app_62978bf2803346878a2e4805 vite --host",
-    "dev:web:local": "cross-env VITE_HMR_CLIENT_PORT=5173 VITE_AUTH_CLIENT_ID=app_62978bf2803346878a2e4805 PORT=8080 PYTHON_API_URL=https://stride-running.cn AUTH_UPSTREAM_URL=https://124.221.38.59 VITE_DEV_SERVER_URL=http://127.0.0.1:5173 STRENGTH_DIR=../../strength_illustrations/output concurrently -k -n vite,bff \"vite --host --port 5173 --strictPort\" \"cd server && npm run dev\"",
+    "dev:web:local": "node --env-file=.env.web.local scripts/dev-web-local.mjs",
     "api": "cd .. && cross-env PYTHONPATH=src PYTHONIOENCODING=utf-8 STRIDE_CONFIG_ENV=local STRIDE_COACH_CONFIG_PATH=config/coach.copilot.toml AGENT_MAESTRO_API_KEY=local-dev STRIDE_COACH_FILE_BACKEND_DIR=data/_coach_dev python -m uvicorn stride_server.main:app --reload --port 8080",
     "start": "concurrently \"npm run api\" \"npm run dev\"",
     "build": "tsc -b && vite build",

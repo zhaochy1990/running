@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { postOnboardingComplete, getSyncStatus, type ProfileIn, type SyncProgress, type SyncStatus } from '../../api'
+import {
+  getSyncStatus,
+  getPipelineRun,
+  postOnboardingComplete,
+  startGoOnboardingSync,
+  type PipelineRun,
+  type ProfileIn,
+  type SyncProgress,
+  type SyncStatus,
+} from '../../api'
+import { useAuthStore } from '../../store/authStore'
 
 interface Props {
   profile: ProfileIn
@@ -17,6 +27,8 @@ const HEALTH_MAX_POLL_ATTEMPTS = 120 // 120 * 2s = 4 min (health-only sync is fa
 const FULL_MAX_POLL_ATTEMPTS = 1800 // 1800 * 2s = 60 min (full history sync can be long)
 // Silent auto-resumes before we stop hiding the failure and surface a retry.
 const MAX_AUTO_RESUME = 3
+const GO_ONBOARDING_RUN_KEY = 'go_onboarding_run_id'
+const GO_ONBOARDING_COMPLETE_KEY = 'go_onboarding_complete'
 
 const HEALTH_PROGRESS_STEPS = [
   { title: '提交任务', description: '连接手表并启动同步', phases: ['queued', 'connecting'] },
@@ -34,6 +46,7 @@ const FULL_PROGRESS_STEPS = [
     title: '同步训练与健康数据',
     description: '下载历史活动、疲劳与负荷数据',
     phases: [
+      'sync',
       'activities_scan',
       'activity_details',
       'activities_done',
@@ -46,7 +59,7 @@ const FULL_PROGRESS_STEPS = [
   {
     title: '分析并初始化',
     description: '校准训练区间、计算负荷与能力模型',
-    phases: ['calibrating', 'scoring', 'finalizing', 'complete'],
+    phases: ['calibration', 'compute', 'calibrating', 'scoring', 'finalizing', 'complete'],
   },
 ]
 
@@ -70,6 +83,8 @@ function phaseImpliesFullSync(progress: SyncProgress | null | undefined): boolea
 
 export default function SubmitStep({ profile, syncFullHistory = false }: Props) {
   const navigate = useNavigate()
+  const userId = useAuthStore((state) => state.userId)
+  const goOnboarding = import.meta.env.VITE_GO_ONBOARDING === 'true'
   const [loading, setLoading] = useState(false)
   const [started, setStarted] = useState(false)
   const [error, setError] = useState('')
@@ -92,6 +107,22 @@ export default function SubmitStep({ profile, syncFullHistory = false }: Props) 
     pollAttemptRef.current = 0
 
     try {
+      if (goOnboarding) {
+        if (!userId) throw new Error('Missing user id')
+        const { ok, data } = await startGoOnboardingSync(userId)
+        if (!mountedRef.current) return
+        if (!ok || !data.run_id) {
+          setError(data.error || '初始化请求失败，请重试')
+          setLoading(false)
+          return
+        }
+        sessionStorage.setItem(GO_ONBOARDING_RUN_KEY, data.run_id)
+        setSyncStatus({
+          state: 'running',
+          progress: { phase: 'queued', message: '正在启动 Go 数据同步', percent: 0 },
+        })
+        return
+      }
       const { ok, data } = await postOnboardingComplete()
       if (!mountedRef.current) return
 
@@ -119,7 +150,40 @@ export default function SubmitStep({ profile, syncFullHistory = false }: Props) 
       setError('请求失败，请重试')
       setLoading(false)
     }
-  }, [navigate, syncFullHistory])
+  }, [goOnboarding, navigate, syncFullHistory, userId])
+
+  const applyGoPipeline = useCallback((run: PipelineRun) => {
+    if (run.status === 'done') {
+      sessionStorage.setItem(GO_ONBOARDING_COMPLETE_KEY, 'true')
+      setSyncStatus({ state: 'done', progress: { phase: 'complete', message: '同步完成', percent: 100 } })
+      setLoading(false)
+      navigate('/')
+      return
+    }
+    if (run.status === 'failed') {
+      setSyncStatus({
+        state: 'error',
+        error: run.error_message || '同步失败',
+        progress: { phase: 'error', failed_phase: run.steps[run.current_step]?.name, percent: 0 },
+      })
+      setError(run.error_message || '同步失败，请重试')
+      setLoading(false)
+      setStarted(true)
+      return
+    }
+    const total = Math.max(run.steps.length, 1)
+    const current = Math.min(run.current_step, total - 1)
+    setSyncStatus({
+      state: 'running',
+      progress: {
+        phase: run.steps[current]?.name || 'queued',
+        message: run.status === 'queued' ? '同步任务排队中' : '正在同步并计算训练数据',
+        percent: run.status === 'queued' ? 0 : Math.round((current / total) * 100),
+      },
+    })
+    setStarted(true)
+    setLoading(true)
+  }, [navigate])
 
   const applyStatus = useCallback(
     (status: SyncStatus) => {
@@ -170,6 +234,15 @@ export default function SubmitStep({ profile, syncFullHistory = false }: Props) 
 
   const checkSyncStatus = useCallback(async () => {
     try {
+      if (goOnboarding) {
+        if (!userId) throw new Error('Missing user id')
+        const runId = sessionStorage.getItem(GO_ONBOARDING_RUN_KEY)
+        if (!runId) return
+        const run = await getPipelineRun(runId)
+        if (!mountedRef.current) return
+        applyGoPipeline(run)
+        return
+      }
       const status = await getSyncStatus()
       if (!mountedRef.current) return
 
@@ -198,17 +271,27 @@ export default function SubmitStep({ profile, syncFullHistory = false }: Props) 
         setLoading(false)
       }
     }
-  }, [applyStatus, syncFullHistory])
+  }, [applyGoPipeline, applyStatus, goOnboarding, syncFullHistory, userId])
 
   useEffect(() => {
     mountedRef.current = true
 
     // Resume-on-reopen: if a sync is already running/done/error server-side,
     // pick it up immediately instead of showing the confirm screen.
-    getSyncStatus()
+    const existingGoRun = goOnboarding ? sessionStorage.getItem(GO_ONBOARDING_RUN_KEY) : null
+    const initialStatus = goOnboarding
+      ? existingGoRun && userId
+        ? getPipelineRun(existingGoRun)
+        : Promise.resolve(undefined)
+      : getSyncStatus()
+    initialStatus
       .then((status) => {
         if (!mountedRef.current) return
-        applyStatus(status)
+        if (goOnboarding) {
+          if (status) applyGoPipeline(status as PipelineRun)
+        } else {
+          applyStatus(status as SyncStatus)
+        }
       })
       .catch(() => {
         // Before the user starts onboarding there may be no sync status yet.
@@ -217,7 +300,7 @@ export default function SubmitStep({ profile, syncFullHistory = false }: Props) 
     return () => {
       mountedRef.current = false
     }
-  }, [applyStatus])
+  }, [applyGoPipeline, applyStatus, goOnboarding, userId])
 
   useEffect(() => {
     if (!loading) return undefined

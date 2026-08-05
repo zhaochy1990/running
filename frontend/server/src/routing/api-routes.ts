@@ -63,7 +63,7 @@ export const API_ROUTES: readonly ApiRoute[] = [
 
   // ── Profile & account (users/me) ────────────────────────────────────────
   // ✓ global(layout) · load profile on app boot / onboarding gate   [go-ready]
-  //   Go note: returns watch_ready (not coros_ready) — frontend rename gates cutover.
+  //   Frontend accepts Go's watch_ready and Python's legacy coros_ready.
   { method: 'GET', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_GET_USERS_ME_PROFILE', goReady: true },
   // ✓ /onboarding · submit basic profile   [go-ready] (same watch_ready caveat)
   { method: 'POST', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_POST_USERS_ME_PROFILE', goReady: true },
@@ -72,20 +72,20 @@ export const API_ROUTES: readonly ApiRoute[] = [
   // ✓ /settings · delete account
   { method: 'DELETE', path: '/api/users/me', env: 'STRIDE_ROUTE_DELETE_USERS_ME', goReady: false },
   // ✓ /settings + global(layout) · watch info + sync pill state   [ON GO]
-  //   Reverted to Python (BFF-relative → Azure) after the Go cutover surfaced a
-  //   cross-store gap: disconnect (DELETE) writes only Tencent MySQL while connect
-  //   still runs through Python/Azure (coros/garmin login below), so the two
-  //   credential stores drift. goReady stays true — Go implements both method+paths;
-  //   re-set env to 'go' once connect is on Go and the stores are reconciled.
+  //   Sync (POST /api/:user/sync) and watch login (POST /api/users/me/watch/login)
+  //   both run on Go, so the per-user watch state lives in Tencent MySQL
+  //   (provider_credentials + sync_meta.last_sync_time). The Python/Azure store is
+  //   no longer written by any watch flow, so serving this from Python would show
+  //   a stale/empty last_sync_at after a Go sync. Set env to 'go' to read it from
+  //   Go — this is what keeps the sync pill's "上一次数据同步时间" current.
   { method: 'GET', path: '/api/users/me/watch', env: 'STRIDE_ROUTE_GET_USERS_ME_WATCH', goReady: true },
   // ✓ /settings · disconnect watch
+  //   Must follow GET watch to the same upstream: Python still serves it, its
+  //   disconnect would delete the Azure credential only, leaving the MySQL one
+  //   orphaned (the cross-store drift #299 reverted for).
   { method: 'DELETE', path: '/api/users/me/watch', env: 'STRIDE_ROUTE_DELETE_USERS_ME_WATCH', goReady: true },
-  // ✓ /onboarding, /settings · connect COROS account
-  //   Go note: Go unifies these as POST /api/users/me/watch/login {provider} —
-  //   cutover needs the frontend to switch to the unified path.
-  { method: 'POST', path: '/api/users/me/coros/login', env: 'STRIDE_ROUTE_POST_USERS_ME_COROS_LOGIN', goReady: false },
-  // ✓ /onboarding, /settings · connect Garmin account (same unified-login note)
-  { method: 'POST', path: '/api/users/me/garmin/login', env: 'STRIDE_ROUTE_POST_USERS_ME_GARMIN_LOGIN', goReady: false },
+  // ✓ /onboarding, /settings · unified Go watch login
+  { method: 'POST', path: '/api/users/me/watch/login', env: 'STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN', goReady: true },
 
   // ── Onboarding & sync ───────────────────────────────────────────────────
   // ✗ not called (frontend polls /sync-status instead)
@@ -103,6 +103,10 @@ export const API_ROUTES: readonly ApiRoute[] = [
   //   202 {run_id} to poll GET /pipelines/:id (ADR 0020), vs Python's
   //   synchronous {success,output}. Cutover needs the pill to poll — not just routing.
   { method: 'POST', path: '/api/:user/sync', env: 'STRIDE_ROUTE_POST_USER_SYNC', goReady: true },
+  // ✓ sync callers · poll one Go pipeline returned by POST /api/:user/sync
+  { method: 'GET', path: '/api/pipelines/:runId', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID', goReady: true },
+  // ✓ /onboarding · poll the current user's Go pipeline run
+  { method: 'GET', path: '/api/users/:user/pipelines', env: 'STRIDE_ROUTE_GET_USERS_USER_PIPELINES', goReady: true },
 
   // ── Training goal / running profile / prefs ─────────────────────────────
   // TrainingPlanPage.tsx:207

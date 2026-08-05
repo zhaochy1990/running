@@ -10,6 +10,7 @@ import {
   type Activity,
 } from '../api'
 import ViewHead from '../components/ViewHead'
+import { SYNC_COMPLETED_EVENT } from '../lib/syncEvents'
 import { shanghaiToday } from '../lib/shanghai'
 import { useNotificationsStore } from '../store/notificationsStore'
 import { useUser } from '../UserContextValue'
@@ -50,6 +51,7 @@ export default function ActivitiesPage() {
   const [appliedRange, setAppliedRange] = useState<{ dateFrom?: string; dateTo?: string }>({})
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(ACTIVITY_PAGE_SIZE)
+  const [manualSyncVersion, setManualSyncVersion] = useState(0)
   const syncRefreshToken = useNotificationsStore((state) => {
     const notification = state.serverNotifications.find((item) => item.id === ONBOARDING_SYNC_NOTIFICATION_ID)
     if (!notification) return ''
@@ -71,6 +73,12 @@ export default function ActivitiesPage() {
     sportFilter,
     user,
   }), [appliedRange, minDistanceKm, monthRange, page, pageSize, sportFilter, user])
+
+  useEffect(() => {
+    const refresh = () => setManualSyncVersion((version) => version + 1)
+    window.addEventListener(SYNC_COMPLETED_EVENT, refresh)
+    return () => window.removeEventListener(SYNC_COMPLETED_EVENT, refresh)
+  }, [])
 
   useEffect(() => {
     if (!user) return
@@ -108,7 +116,7 @@ export default function ActivitiesPage() {
     return () => {
       cancelled = true
     }
-  }, [appliedRange, minDistanceKm, monthRange.dateFrom, monthRange.dateTo, page, pageSize, queryKey, sportFilter, syncRefreshToken, user])
+  }, [appliedRange, manualSyncVersion, minDistanceKm, monthRange.dateFrom, monthRange.dateTo, page, pageSize, queryKey, sportFilter, syncRefreshToken, user])
 
   const summary = useMemo(() => summarizeActivities(monthActivities), [monthActivities])
   const monthGroups = useMemo(
