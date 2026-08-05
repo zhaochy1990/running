@@ -435,3 +435,54 @@ export async function getActiveMasterPlanId(conn, userId, contentVersion) {
   );
   return rows.length > 0 ? rows[0].plan_id : null;
 }
+
+// ── weekly_plan (read-only backfill migration) ───────────────────────────────
+
+export const WEEKLY_PLAN_COLUMNS = [
+  "plan_id",
+  "user_id",
+  "master_plan_id",
+  "week_start",
+  "content_version",
+  "content",
+  "status",
+  "status_slot",
+  "revision",
+  "created_at",
+  "updated_at",
+];
+
+const INSERT_WEEKLY_PLAN_SQL = `
+INSERT INTO weekly_plan
+  (${WEEKLY_PLAN_COLUMNS.join(", ")})
+VALUES (${WEEKLY_PLAN_COLUMNS.map(() => "?").join(", ")})`;
+
+/** Insert only: an existing active slot is never overwritten. */
+export async function insertWeeklyPlan(conn, row) {
+  await conn.execute(
+    INSERT_WEEKLY_PLAN_SQL,
+    WEEKLY_PLAN_COLUMNS.map((column) => row[column] ?? null),
+  );
+}
+
+export async function listActiveWeeklyPlans(conn, userId) {
+  const [rows] = await conn.execute(
+    "SELECT plan_id, user_id, master_plan_id, week_start, content_version, content " +
+      "FROM weekly_plan WHERE user_id = ? AND status = 'active'",
+    [userId],
+  );
+  return rows.map((row) => ({
+    ...row,
+    week_start: row.week_start instanceof Date
+      ? row.week_start.toISOString().slice(0, 10)
+      : String(row.week_start),
+  }));
+}
+
+export async function listMasterPlans(conn, userId) {
+  const [rows] = await conn.execute(
+    "SELECT plan_id, content_version, content FROM master_plan WHERE user_id = ?",
+    [userId],
+  );
+  return rows;
+}

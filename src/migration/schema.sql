@@ -277,3 +277,34 @@ CREATE TABLE IF NOT EXISTS master_plan (
   CONSTRAINT ck_master_plan_content_version CHECK (content_version IN (1, 2)),
   CONSTRAINT ck_master_plan_v2_version CHECK (content_version = 1 OR version IS NOT NULL)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- weekly_plan — one content-versioned row per athlete/week/lifecycle slot
+-- (ADR 0025), target for src/migrate-weekly-plans.js. content_version=1 stores
+-- non-empty legacy Markdown; content_version=2 stores validated structured JSON.
+-- status_slot is an integrity lever: MySQL's nullable unique key permits many
+-- archived rows while enforcing at most one active and one draft per week.
+
+CREATE TABLE IF NOT EXISTS weekly_plan (
+  plan_id         VARCHAR(36) NOT NULL,
+  user_id         VARCHAR(64) NOT NULL,
+  master_plan_id  VARCHAR(36) NULL,
+  week_start      DATE        NOT NULL,
+  content_version TINYINT     NOT NULL,
+  content         LONGTEXT    NOT NULL,
+  status          VARCHAR(16) NOT NULL,
+  status_slot     VARCHAR(8)  NULL,
+  revision        BIGINT      NOT NULL,
+  created_at      DATETIME(3) NOT NULL,
+  updated_at      DATETIME(3) NOT NULL,
+  PRIMARY KEY (plan_id),
+  UNIQUE KEY uidx_weekly_plan_status_slot (user_id, week_start, status_slot),
+  KEY idx_weekly_plan_master_plan (master_plan_id),
+  CONSTRAINT ck_weekly_plan_content_version CHECK (content_version IN (1, 2)),
+  CONSTRAINT ck_weekly_plan_json CHECK (content_version = 1 OR JSON_VALID(content)),
+  CONSTRAINT ck_weekly_plan_status CHECK (status IN ('draft', 'active', 'archived')),
+  CONSTRAINT ck_weekly_plan_status_slot_v2 CHECK (
+    (status IN ('active', 'draft') AND status_slot IS NOT NULL AND status_slot = status) OR
+    (status = 'archived' AND status_slot IS NULL)
+  ),
+  CONSTRAINT ck_weekly_plan_revision CHECK (revision >= 1)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -77,6 +77,9 @@ func runAPI() error {
 	if err := store.AutoMigrateMasterPlan(ctx); err != nil {
 		return err
 	}
+	if err := store.AutoMigrateWeeklyPlan(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ (publisher only; no consumer) ---
 	conn, err := mq.Dial(cfg.AMQP.URL)
@@ -141,6 +144,7 @@ func runAPI() error {
 		HealthStore:             store,
 		StrideStore:             store,
 		MasterPlanStore:         store,
+		WeeklyPlanStore:         store,
 		Auth:                    authn,
 		CORSOrigins:             cfg.API.CORSOrigins,
 		SwaggerEnabled:          cfg.API.SwaggerEnabled,
