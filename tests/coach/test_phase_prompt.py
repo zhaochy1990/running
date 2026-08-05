@@ -238,8 +238,9 @@ def test_phase_prompt_carries_weekly_hard_rules_block():
     # the block's framing header
     assert "rule_filter" in prompt
     assert "独立生成单周计划" in prompt
-    # 1. long_run_share — 35%
+    # Season-level long_run_share remains guidance, not an S2 rule_filter gate.
     assert "35%" in prompt
+    assert "不用于独立生成单周计划的 rule_filter" in prompt
     # 3. intensity_distribution — 20% (80/20)
     assert "20%" in prompt
     # 4. rest_days — at least one full rest day

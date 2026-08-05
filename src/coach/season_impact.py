@@ -25,6 +25,7 @@ wins over ``advisory`` wins over ``none``.
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 from coach.contracts import SeasonImpact
 from stride_core.master_plan import MasterPlan, Phase
@@ -113,6 +114,7 @@ def _week_satisfies_key_session(plan: WeeklyPlan, bucket: str) -> bool:
         if bucket == "strength":
             if session.kind == SessionKind.STRENGTH:
                 return True
+            continue
         elif session.kind != SessionKind.RUN:
             continue
         text = _session_text(session)

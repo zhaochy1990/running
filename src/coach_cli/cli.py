@@ -82,6 +82,7 @@ _HELP = """\
   /session   列出历史会话，选择并恢复其中一个
   /proposals 查看当前待确认的计划提案
   /apply N   应用第 N 个周计划或赛季计划提案（唯一写入入口）
+  /apply N weekly-only  确认明显偏离赛季计划，但仅修改本周
   /dismiss   放弃当前待选方案
   /help      显示这个帮助
   /exit /quit 退出
@@ -445,7 +446,10 @@ def _apply_master_proposal(*, user_id: str, proposal: MasterPlanDiff) -> dict:
 
 
 def _apply_week_proposal(
-    *, user_id: str, proposal: PlanDiff | WeeklyPlanCreateProposal
+    *,
+    user_id: str,
+    proposal: PlanDiff | WeeklyPlanCreateProposal,
+    acknowledge_weekly_only: bool = False,
 ) -> dict:
     """Create a week or apply every op in an existing-week adjustment."""
     from stride_server.routes.coach import (
@@ -454,7 +458,12 @@ def _apply_week_proposal(
     )
 
     if isinstance(proposal, WeeklyPlanCreateProposal):
-        body = CoachWeekApplyRequest(proposal=proposal)
+        body = CoachWeekApplyRequest(
+            proposal=proposal,
+            impact_acknowledgement=(
+                "weekly_only" if acknowledge_weekly_only else None
+            ),
+        )
     else:
         body = CoachWeekApplyRequest(
             diff=proposal,
@@ -465,16 +474,25 @@ def _apply_week_proposal(
             accepted_op_ids=[
                 op.id for op in proposal.ops if op.accepted is not False
             ],
+            impact_acknowledgement=(
+                "weekly_only" if acknowledge_weekly_only else None
+            ),
         )
     return apply_coach_week_diff(
         proposal.folder, body, payload={"sub": user_id}
     )
 
 
-def _apply_proposal(*, user_id: str, proposal: Proposal) -> dict:
+def _apply_proposal(
+    *, user_id: str, proposal: Proposal, acknowledge_weekly_only: bool = False
+) -> dict:
     if isinstance(proposal, MasterPlanDiff):
         return _apply_master_proposal(user_id=user_id, proposal=proposal)
-    return _apply_week_proposal(user_id=user_id, proposal=proposal)
+    return _apply_week_proposal(
+        user_id=user_id,
+        proposal=proposal,
+        acknowledge_weekly_only=acknowledge_weekly_only,
+    )
 
 
 @dataclass(frozen=True)
@@ -491,7 +509,11 @@ class _CommandOutcome:
 
 
 def _apply_pending(
-    *, user_id: str, state: _ReplState, selected: int
+    *,
+    user_id: str,
+    state: _ReplState,
+    selected: int,
+    acknowledge_weekly_only: bool = False,
 ) -> _CommandOutcome:
     proposals = state.pending_proposals
     if not proposals:
@@ -501,10 +523,24 @@ def _apply_pending(
         click.echo(f"方案编号无效，请输入 1-{len(proposals)}。")
         return _CommandOutcome(True, state)
     proposal = proposals[selected - 1]
+    if acknowledge_weekly_only and isinstance(proposal, MasterPlanDiff):
+        click.echo("weekly-only 仅适用于周计划提案，赛季计划提案未应用。")
+        return _CommandOutcome(True, state)
     try:
-        result = _apply_proposal(user_id=user_id, proposal=proposal)
+        if acknowledge_weekly_only:
+            result = _apply_proposal(
+                user_id=user_id,
+                proposal=proposal,
+                acknowledge_weekly_only=True,
+            )
+        else:
+            result = _apply_proposal(user_id=user_id, proposal=proposal)
     except Exception as exc:  # noqa: BLE001 — keep the REPL alive
         click.echo(f"❌ 应用失败: {_friendly_error(exc)}")
+        if "season_impact_material" in str(exc):
+            click.echo(
+                f"如确认只修改本周，请输入 /apply {selected} weekly-only"
+            )
         return _CommandOutcome(True, state)
     click.echo(_apply_result_message(proposal=proposal, result=result, selected=selected))
     return _CommandOutcome(True, _ReplState(state.session_id))
@@ -544,12 +580,23 @@ def _handle_slash_command(
     if not (line == "/apply" or line.startswith("/apply ")):
         return _CommandOutcome(False, state)
     parts = line.split()
-    if len(parts) != 2 or not parts[1].isascii() or not parts[1].isdigit():
-        click.echo("用法: /apply N（例如 /apply 2）")
+    has_ack = len(parts) == 3 and parts[2] == "weekly-only"
+    if (
+        len(parts) not in (2, 3)
+        or not parts[1].isascii()
+        or not parts[1].isdigit()
+        or (len(parts) == 3 and not has_ack)
+    ):
+        click.echo("用法: /apply N [weekly-only]（例如 /apply 2）")
         return _CommandOutcome(True, state)
     normalized_index = parts[1].lstrip("0") or "0"
     selected = int(normalized_index) if len(normalized_index) <= 9 else 1_000_000_000
-    return _apply_pending(user_id=user_id, state=state, selected=selected)
+    return _apply_pending(
+        user_id=user_id,
+        state=state,
+        selected=selected,
+        acknowledge_weekly_only=has_ack,
+    )
 
 
 def _warn_about_database(*, db_path: Path, profile: str) -> None:

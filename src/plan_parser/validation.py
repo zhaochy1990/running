@@ -53,6 +53,7 @@ def validate_nutrition_macros(plan: WeeklyPlan) -> WeeklyPlan:
         sessions=plan.sessions,
         nutrition=tuple(new_nutrition),
         notes_md=plan.notes_md,
+        coach_notes=plan.coach_notes,
     )
 
 

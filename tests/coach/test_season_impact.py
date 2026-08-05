@@ -172,3 +172,24 @@ def test_deleting_key_long_run_but_keeping_easy_run_is_material() -> None:
     )
     assert impact.level == "material"
     assert any("关键课" in r for r in impact.reasons)
+
+
+def test_run_text_does_not_satisfy_strength_key_session() -> None:
+    master = _master()
+    master.phases[0].key_session_types = ["strength_key"]
+    previous = WeeklyPlan(
+        week_folder="2026-06-22_06-28(W8)",
+        sessions=(_session("核心专项长跑 28km", 55.0, 0),),
+        notes_md="x",
+    )
+    adjusted = WeeklyPlan(
+        week_folder="2026-06-22_06-28(W8)",
+        sessions=(_session("渐加速长跑 28km", 55.0, 0),),
+        notes_md="x",
+    )
+
+    impact = evaluate_weekly_season_impact(
+        adjusted, master=master, previous=previous
+    )
+
+    assert impact.level == "none"

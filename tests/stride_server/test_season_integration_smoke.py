@@ -218,7 +218,7 @@ def _context() -> dict:
 # ---------------------------------------------------------------------------
 # Clean-week builder — honours the per-week threaded target_weekly_km so the
 # generated week tracks the derive ramp (no phase-boundary spike) and passes
-# run_rule_filter: ≥1 rest day, longest run ≤35% of weekly, ≤1.10× progression,
+# run_rule_filter: ≥1 rest day, valid intensity distribution,
 # all sessions aspirational (spec=None). The 4 run sessions sum EXACTLY to
 # total_km (last session absorbs rounding) so the emitted run total equals the
 # floored ≤1.10×-safe ramp target. Includes a threshold touch + an MP/long

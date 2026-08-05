@@ -440,6 +440,7 @@ export interface WeekDetail {
     structured_parsed_at?: string | null
     sessions?: PlannedSessionRow[]
     nutrition?: PlannedNutrition[]
+    coach_notes?: string | null
   }
   // Multi-variant additions (Step 4 backend additive fields).
   variants_summary?: VariantsSummary

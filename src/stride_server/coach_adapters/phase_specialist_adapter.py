@@ -487,7 +487,7 @@ def _format_rule_feedback(
     Each violation becomes one line naming the **1-based** week + the rule +
     its message, e.g.::
 
-        第 3 周违反 long_run_share：longest run is 41% of weekly volume (limit 35%)
+        第 3 周违反 rest_days：no full rest day scheduled this week
 
     The next regen (inside ``generate_phase_validated``) threads this back
     through ``generate_specialist_phase(feedback=…)`` so the LLM fixes the SPECIFIC

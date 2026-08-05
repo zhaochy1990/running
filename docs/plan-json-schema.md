@@ -16,7 +16,8 @@
   "week_folder": "2026-05-11_05-17(P1W3)",
   "sessions": [PlannedSession, ...],
   "nutrition": [PlannedNutrition, ...],
-  "notes_md": "可选 — 本周顶层备注"
+  "notes_md": "可选 — 本周完整训练逻辑说明",
+  "coach_notes": "可选 — 周课表摘要卡片中的 Coach 引言"
 }
 ```
 

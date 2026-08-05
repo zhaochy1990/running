@@ -1,4 +1,4 @@
-"""US-008 acceptance: rule_filter catches the 7 safety violations from plan §7.3."""
+"""Acceptance tests for deterministic weekly-plan safety checks."""
 
 from __future__ import annotations
 
@@ -126,7 +126,7 @@ def test_weekly_progression_does_not_reject_volume_increase():
     assert not any(v.rule == "weekly_progression" for v in report.errors())
 
 
-def test_long_run_share_over_35_percent_fails():
+def test_long_run_share_does_not_reject_week():
     plan = _plan_dict(
         [
             _minimal_run_session("2026-05-11", 5000),
@@ -139,7 +139,7 @@ def test_long_run_share_over_35_percent_fails():
         ]
     )
     report = run_rule_filter(plan)
-    assert any(v.rule == "long_run_share" for v in report.errors())
+    assert not any(v.rule == "long_run_share" for v in report.errors())
 
 
 def test_rest_days_missing_fails():

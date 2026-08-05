@@ -16,6 +16,8 @@ export default function WeeklyPlanSummary({ week, days, planTitle, onAdjust }: W
   const actualRunKm = actualRunDistanceKm(week.activities)
   const actualStrength = actualStrengthStats(week.activities)
   const displayPlanTitle = planTitle?.trim() === '本周训练重点' ? undefined : planTitle
+  const coachNotes = week.structured?.coach_notes?.trim()
+    || '优先完成关键课，其余训练按恢复状态灵活降级。训练后的真实体感会用于后续 Coach 调整。'
   const completion = stats.plannedRunKm > 0
     ? Math.min(100, Math.round((actualRunKm / stats.plannedRunKm) * 100))
     : 0
@@ -57,19 +59,21 @@ export default function WeeklyPlanSummary({ week, days, planTitle, onAdjust }: W
             <p className="text-xs font-bold uppercase tracking-wider text-text-muted">本周结构</p>
             <p className="mt-1 text-sm text-text-secondary">结构化计划实时汇总</p>
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
             <Metric label="计划跑量" value={`${stats.plannedRunKm.toFixed(1)} km`} accent />
             <Metric label="低强度 Z1+Z2" value={`${plannedIntensity.low_km.toFixed(1)} km`} accent />
+            <Metric label="Z3" value={`${plannedIntensity.mid_km.toFixed(1)} km`} accent />
             <Metric label="高强度 Z4+Z5" value={`${plannedIntensity.high_km.toFixed(1)} km`} accent />
             <Metric label="训练课" value={`${stats.sessions.length}`} />
             <Metric label="跑步课" value={`${stats.runCount}`} />
+            <Metric label="力量课" value={`${stats.strengthCount}`} />
             <Metric label="营养日" value={`${stats.nutritionDays}`} />
           </div>
         </div>
         <aside className="rounded-2xl border border-green-edge bg-green-soft p-5">
           <p className="text-xs font-bold uppercase tracking-wider text-accent-green">本周训练重点</p>
           <p className="mt-3 text-lg font-bold leading-7 text-text-primary">{stats.runCount} 次跑步 + {stats.strengthCount} 次力量维护</p>
-          <p className="mt-3 font-editorial text-sm italic leading-6 text-text-secondary">“优先完成关键课，其余训练按恢复状态灵活降级。训练后的真实体感会用于后续 Coach 调整。”</p>
+          <p className="mt-3 font-editorial text-sm italic leading-6 text-text-secondary">“{coachNotes}”</p>
           <div className="mt-4 space-y-1 border-t border-green-edge pt-3 text-xs text-text-secondary">
             <p>实际完成 {week.activity_count} 次 · 跑步 {actualRunKm.toFixed(1)} km · {week.total_duration_fmt}</p>
             <p>力量训练 {actualStrength.count} 次 · {formatDurationClock(actualStrength.durationS)}</p>
@@ -82,7 +86,7 @@ export default function WeeklyPlanSummary({ week, days, planTitle, onAdjust }: W
 
 function Metric({ label, value, accent = false }: Readonly<{ label: string; value: string; accent?: boolean }>) {
   return (
-    <div className="rounded-xl bg-bg-secondary p-3">
+    <div role="group" aria-label={label} className="rounded-xl bg-bg-secondary p-3">
       <p className="text-[11px] text-text-muted">{label}</p>
       <p className={`mt-1 font-mono text-sm font-bold ${accent ? 'text-accent-green' : 'text-text-primary'}`}>{value}</p>
     </div>

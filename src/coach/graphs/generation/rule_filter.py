@@ -1,6 +1,6 @@
 """Pure-Python rule pre-filter — see plan §7.3.
 
-Runs 7 deterministic safety checks against a freshly generated weekly plan
+Runs deterministic safety checks against a freshly generated weekly plan
 (``WeeklyPlan`` dict from ``stride_core.plan_spec``) before handing off to
 the (expensive) Claude reviewer. Any HARD-rule violation routes back to
 the generator without burning a reviewer round trip.
@@ -170,35 +170,6 @@ def check_weekly_target_volume(
             },
         )
     ]
-
-
-def check_long_run_share(plan: WeeklyPlan) -> list[RuleViolation]:
-    """Longest run ≤ 35% of weekly mileage.
-
-    Only enforced when there are at least 2 runs in the week — a single-run
-    week trivially has share=100% and is a valid taper / off-day pattern,
-    not a 80/20 violation.
-    """
-    runs = [s for s in _run_sessions(plan) if (s.total_distance_m or 0) > 0]
-    if len(runs) < 2:
-        return []
-    total_m = _total_run_distance_m(plan)
-    if total_m <= 0:
-        return []
-    longest = max((s.total_distance_m or 0) for s in runs)
-    share = longest / total_m
-    if share > 0.35:
-        return [
-            RuleViolation(
-                rule="long_run_share",
-                severity="error",
-                message=(
-                    f"longest run is {share*100:.0f}% of weekly volume (limit 35%)"
-                ),
-                details={"longest_m": longest, "total_m": total_m, "share": share},
-            )
-        ]
-    return []
 
 
 def check_intensity_distribution(
@@ -373,7 +344,6 @@ def run_rule_filter(
     violations.extend(
         check_weekly_target_volume(plan, target_weekly_km=target_weekly_km)
     )
-    violations.extend(check_long_run_share(plan))
     violations.extend(
         check_intensity_distribution(
             plan, z45_pace_threshold_s_km=z45_pace_threshold_s_km

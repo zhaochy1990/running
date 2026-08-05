@@ -272,7 +272,6 @@ def _current_week_actual_km(context: RecentTrainingContext) -> float:
 
 
 def _current_week_immutable_rule_names(
-    plan: WeeklyPlan,
     context: RecentTrainingContext,
 ) -> set[str]:
     """Rules violated only by completed work that can no longer be prescribed."""
@@ -280,25 +279,6 @@ def _current_week_immutable_rule_names(
     if actual_by_date is None:
         return set()
     immutable: set[str] = set()
-    actual_km = _current_week_actual_km(context)
-    actual_longest = max(
-        (
-            float(summary.get("actual_distance_km") or 0)
-            for summary in actual_by_date.values()
-        ),
-        default=0.0,
-    )
-    future_longest = max(
-        (
-            float(session.total_distance_m or 0) / 1000.0
-            for session in plan.sessions
-            if session.kind == SessionKind.RUN
-            and session.date not in actual_by_date
-        ),
-        default=0.0,
-    )
-    if actual_longest > future_longest:
-        immutable.add("long_run_share")
     if len(actual_by_date) == 7:
         immutable.add("rest_days")
     return immutable
@@ -840,7 +820,6 @@ def build_weekly_plan(
         target_weekly_km=target_km,
     )
     immutable_rules = _current_week_immutable_rule_names(
-        plan,
         training_context,
     )
     actionable_errors = [

@@ -462,7 +462,7 @@ def test_explicit_base_distance_overrides_master_week_target(monkeypatch) -> Non
     assert generated.total_distance_km == 50.0
 
 
-def test_generator_rejects_rule_invalid_output(monkeypatch) -> None:
+def test_generator_allows_long_run_over_35_percent(monkeypatch) -> None:
     monkeypatch.setattr(generator, "_master_week_target", lambda *_: None)
     monkeypatch.setattr(
         "stride_server.master_plan_store.get_master_plan_store",
@@ -472,11 +472,12 @@ def test_generator_rejects_rule_invalid_output(monkeypatch) -> None:
     monkeypatch.setattr(generator, "get_db", lambda _uid: _Db())
 
     def _invalid(phase, week_metas, context, injuries=None, **kwargs):
-        # A single 30km run out of a 40km week → long_run_share 75% > 35%.
         meta = week_metas[0]
         week_start = date.fromisoformat(meta.week_folder[:10])
         plan = fake_week_plan_dict(meta.week_folder, week_start, 40.0)
-        plan["sessions"][-1]["total_distance_m"] = 30000
+        run_sessions = [s for s in plan["sessions"] if s["kind"] == "run"]
+        for session, distance_m in zip(run_sessions, [5000, 5000, 5000, 5000, 20000]):
+            session["total_distance_m"] = distance_m
         return [plan]
 
     monkeypatch.setattr(
@@ -485,14 +486,13 @@ def test_generator_rejects_rule_invalid_output(monkeypatch) -> None:
         _invalid,
     )
 
-    with pytest.raises(
-        generator.WeeklyPlanGenerationError, match="failed safety rules"
-    ):
-        generator.build_weekly_plan(
-            user_id="u1",
-            week_start=date(2026, 7, 13),
-            base_distance_km=40,
-        )
+    generated = generator.build_weekly_plan(
+        user_id="u1",
+        week_start=date(2026, 7, 13),
+        base_distance_km=40,
+    )
+
+    assert generated.total_distance_km == 40.0
 
 
 def test_midweek_same_day_double_does_not_double_count_actuals(monkeypatch) -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from stride_core.plan_spec import (
     PlannedNutrition,
     PlannedSession,
@@ -154,6 +156,83 @@ def test_store_preserves_top_level_notes(tmp_path, monkeypatch) -> None:
     store.save_plan(USER_A, plan)
 
     assert store.get_plan(USER_A, plan.week_folder).notes_md == "coach rationale"
+
+
+def test_update_notes_preserves_plan_and_entity_metadata(tmp_path, monkeypatch) -> None:
+    import json
+    import stride_core.db as core_db
+
+    monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    plan = _plan()
+    store = FileWeeklyPlanStore()
+    store.save_plan(USER_A, plan, generated_by="coach-generation", source_hash="abc")
+
+    assert store.update_notes(
+        USER_A,
+        plan.week_folder,
+        notes_md="full rationale",
+        coach_notes="summary note",
+        expected_plan=plan,
+    ) is True
+
+    updated = store.get_plan(USER_A, plan.week_folder)
+    assert updated == replace(plan, notes_md="full rationale", coach_notes="summary note")
+    raw = json.loads((tmp_path / ".weekly_plans.json").read_text(encoding="utf-8"))
+    entity = raw[USER_A]["2026-07-13"]
+    assert entity["generated_by"] == "coach-generation"
+    assert entity["source_hash"] == "abc"
+
+
+def test_update_notes_rejects_stale_expected_plan(tmp_path, monkeypatch) -> None:
+    import stride_core.db as core_db
+
+    monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    plan = _plan()
+    store = FileWeeklyPlanStore()
+    store.save_plan(USER_A, plan)
+    store.save_plan(USER_A, replace(plan, notes_md="concurrent change"))
+
+    assert store.update_notes(
+        USER_A,
+        plan.week_folder,
+        notes_md=plan.notes_md,
+        coach_notes="must not land",
+        expected_plan=plan,
+    ) is False
+    assert store.get_plan(USER_A, plan.week_folder).coach_notes is None
+
+
+def test_update_notes_supports_migration_era_folder_key(tmp_path, monkeypatch) -> None:
+    import json
+    import stride_core.db as core_db
+
+    monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    plan = _plan()
+    path = tmp_path / ".weekly_plans.json"
+    path.write_text(
+        json.dumps(
+            {
+                USER_A: {
+                    plan.week_folder: {
+                        "date_from": "2026-07-13",
+                        "date_to": "2026-07-19",
+                        "plan": plan.to_dict(),
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = FileWeeklyPlanStore()
+
+    assert store.update_notes(
+        USER_A,
+        plan.week_folder,
+        notes_md=plan.notes_md,
+        coach_notes="legacy note",
+        expected_plan=plan,
+    ) is True
+    assert store.get_plan(USER_A, plan.week_folder).coach_notes == "legacy note"
 
 
 def test_store_rejects_session_outside_folder(tmp_path, monkeypatch) -> None:

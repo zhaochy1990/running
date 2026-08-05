@@ -29,6 +29,18 @@ class WeeklyPlanStore(Protocol):
 
     def get_source_hash(self, user_id: str, folder: str) -> str | None: ...
 
+    def update_notes(
+        self,
+        user_id: str,
+        folder: str,
+        *,
+        notes_md: str | None,
+        coach_notes: str | None,
+        expected_plan: WeeklyPlan,
+    ) -> bool:
+        """Atomically update top-level notes if the plan still matches."""
+        ...
+
     def get_current_plan(self, user_id: str, on_date: str) -> WeeklyPlan | None: ...
 
     def list_plans(self, user_id: str) -> list[WeeklyPlan]: ...

@@ -958,6 +958,134 @@ def test_apply_week_proposal_skips_explicitly_rejected_ops(monkeypatch) -> None:
     assert seen_ids == ["accepted"]
 
 
+def test_apply_week_proposal_forwards_weekly_only_acknowledgement(monkeypatch) -> None:
+    proposal = PlanDiff(
+        diff_id="week",
+        folder="2026-07-13_07-19",
+        ops=[],
+        ai_explanation="调整说明",
+        created_at="t",
+    )
+    captured: dict = {}
+
+    def fake_apply(folder, body, payload):
+        captured["acknowledgement"] = body.impact_acknowledgement
+        return {"folder": folder}
+
+    monkeypatch.setattr("stride_server.routes.coach.apply_coach_week_diff", fake_apply)
+
+    _apply_week_proposal(
+        user_id="user-x", proposal=proposal, acknowledge_weekly_only=True
+    )
+
+    assert captured["acknowledgement"] == "weekly_only"
+
+
+def test_repl_weekly_only_command_forwards_acknowledgement(monkeypatch, tmp_path) -> None:
+    proposal = PlanDiff(
+        diff_id="week",
+        folder="2026-07-13_07-19",
+        ops=[],
+        ai_explanation="调整说明",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="调整提案",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="weekly_plan", proposal=proposal)],
+        active_target=None,
+    )
+    acknowledgements: list[bool] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+    monkeypatch.setattr("coach_cli.cli._run_turn", lambda **_: turn)
+    monkeypatch.setattr(
+        "coach_cli.cli._apply_proposal",
+        lambda *, user_id, proposal, acknowledge_weekly_only: (
+            acknowledgements.append(acknowledge_weekly_only)
+            or {"folder": proposal.folder}
+        ),
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="调整周六\n/apply 1 weekly-only\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert acknowledgements == [True]
+
+
+def test_repl_material_impact_error_shows_weekly_only_retry(monkeypatch, tmp_path) -> None:
+    proposal = PlanDiff(
+        diff_id="week",
+        folder="2026-07-13_07-19",
+        ops=[],
+        ai_explanation="调整说明",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="调整提案",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="weekly_plan", proposal=proposal)],
+        active_target=None,
+    )
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+    monkeypatch.setattr("coach_cli.cli._run_turn", lambda **_: turn)
+    monkeypatch.setattr(
+        "coach_cli.cli._apply_proposal",
+        lambda **_: (_ for _ in ()).throw(Exception("409: season_impact_material")),
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="调整周六\n/apply 1\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "/apply 1 weekly-only" in result.output
+
+
+def test_repl_rejects_weekly_only_for_master_proposal(monkeypatch, tmp_path) -> None:
+    proposal = MasterPlanDiff(
+        diff_id="master",
+        plan_id="plan-1",
+        ops=[],
+        ai_explanation="赛季调整",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="赛季提案",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="season_plan", proposal=proposal)],
+        active_target=None,
+    )
+    applied: list[str] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+    monkeypatch.setattr("coach_cli.cli._run_turn", lambda **_: turn)
+    monkeypatch.setattr(
+        "coach_cli.cli._apply_proposal",
+        lambda **_: applied.append("applied") or {"version": 2},
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="调整赛季\n/apply 1 weekly-only\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert applied == []
+    assert "仅适用于周计划提案" in result.output
+
+
 def test_apply_week_proposal_lands_through_real_endpoint(monkeypatch) -> None:
     """Regression: the CLI must echo the diff's ``base_revision`` into the apply
     request. The real endpoint 400s ("weekly diff and request must carry
@@ -1193,4 +1321,3 @@ def test_repl_follow_up_after_weekly_create_carries_review_context(
     target = seen_kwargs[1]["target"]
     assert target.kind == "week"
     assert target.folder == folder
-

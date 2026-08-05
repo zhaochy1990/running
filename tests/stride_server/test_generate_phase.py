@@ -116,11 +116,7 @@ def _run_session(date_str: str, dist_m: int, summary: str = "run") -> dict:
 
 
 def _clean_plan_dict(week_folder: str) -> dict:
-    """A rule-clean WeeklyPlan: 3 runs (longest 30% share), rest day present.
-
-    Distances 12k/14k/14k → total 40k, longest 14k = 35% exactly (not > 35%),
-    so long_run_share passes. Days Mon/Thu/Sun used → rest days available.
-    """
+    """A rule-clean WeeklyPlan with matching volume and rest days."""
     return {
         "schema": "weekly-plan/v1",
         "week_folder": week_folder,
@@ -148,21 +144,6 @@ def _no_rest_plan_dict(week_folder: str) -> dict:
         "sessions": sessions,
         "nutrition": [],
         "notes_md": "no rest day (violation)",
-    }
-
-
-def _long_run_violation_plan_dict(week_folder: str) -> dict:
-    """A plan that violates long_run_share: longest run is 50% of weekly volume."""
-    return {
-        "schema": "weekly-plan/v1",
-        "week_folder": week_folder,
-        "sessions": [
-            _run_session("2026-06-15", 10000, "easy 10km"),
-            _run_session("2026-06-18", 10000, "easy 10km"),
-            _run_session("2026-06-21", 20000, "长跑 20km (50% share)"),
-        ],
-        "nutrition": [],
-        "notes_md": "long run too big (violation)",
     }
 
 
@@ -256,12 +237,12 @@ def test_persistent_violation_drops_week(patch_db, monkeypatch, caplog):
     metas = _week_metas([40.0, 40.0, 40.0])
     folders = [m.week_folder for m in metas]
 
-    # Week 3 (index 2) ALWAYS violates long_run_share → never fixed → dropped.
+    # Week 3 (index 2) ALWAYS violates rest_days → never fixed → dropped.
     batch = _batch(
         [
             _clean_plan_dict(folders[0]),
             _clean_plan_dict(folders[1]),
-            _long_run_violation_plan_dict(folders[2]),
+            _no_rest_plan_dict(folders[2]),
         ]
     )
     model = FakeBindableLLM([ai_text(batch)])
@@ -408,13 +389,13 @@ def test_max_attempts_one_drops_without_regen(patch_db, monkeypatch):
     metas = _week_metas([40.0, 40.0, 40.0])
     folders = [m.week_folder for m in metas]
 
-    # Week 3 (index 2) violates long_run_share. With max_attempts=1 there is no
+    # Week 3 (index 2) violates rest_days. With max_attempts=1 there is no
     # second attempt → it is dropped on the single pass.
     batch = _batch(
         [
             _clean_plan_dict(folders[0]),
             _clean_plan_dict(folders[1]),
-            _long_run_violation_plan_dict(folders[2]),
+            _no_rest_plan_dict(folders[2]),
         ]
     )
     model = FakeBindableLLM([ai_text(batch)])
