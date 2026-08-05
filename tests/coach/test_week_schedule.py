@@ -3,7 +3,7 @@
 Covers the periodization volume-arc logic the Stage-3a per-phase generator
 consumes: Shanghai-week alignment, week count, ramp character per
 ``PhaseType``, the ≤1.10× progression invariant (the key one — the Stage-3a
-``run_rule_filter.check_weekly_progression`` cap), 3:1 deload, taper /
+season-level weekly progression cap), 3:1 deload, taper /
 recovery step-downs, and cross-phase exit-volume continuity.
 """
 

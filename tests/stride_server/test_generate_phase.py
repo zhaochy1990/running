@@ -7,8 +7,7 @@ feedback=None, max_attempts=3)`` is the phase-at-once replacement for the per-we
   * computes the rule_filter inputs once (the athlete-relative Z4-Z5 threshold
     = ``pace_targets.threshold_pace_s_km``),
   * generates the whole phase via ``generate_specialist_phase`` (PA-T3),
-  * runs ``run_rule_filter`` on each week with ``prev_week_km`` = the prior
-    week's **deterministic target** (``week_metas[i-1].target_weekly_km``),
+  * runs ``run_rule_filter`` on each week against its deterministic target,
   * on any HARD-rule (severity=="error") violation, regenerates the phase WITH
     the specific violations fed back (bounded by ``max_attempts``),
   * after ``max_attempts`` drops the still-violating weeks (keeps the clean
@@ -298,19 +297,12 @@ def test_parse_failed_degrades_to_empty(patch_db, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# prev_week_km uses the deterministic target, not the generated km
+# Weekly target validation
 # ---------------------------------------------------------------------------
 
 
-def test_prev_week_km_uses_target_not_generated_km(patch_db, monkeypatch):
-    """Week i's progression check uses week_metas[i-1].target_weekly_km.
-
-    Targets are 40km then 43km. The generated km DRIFTS inside the allowed
-    target-volume tolerance: week 1 = 39km, week 2 = 43km. A *generated-km*
-    progression check would see 43/39 = 1.10x+ and trip the 1.10x cap. The
-    *target-based* check sees 43/40 = 1.075x and passes. So
-    generate_phase_validated must return BOTH weeks (no false violation).
-    """
+def test_generated_weeks_are_validated_against_individual_targets(patch_db, monkeypatch):
+    """Each generated week may drift within its own target-volume tolerance."""
     metas = _week_metas([40.0, 43.0])
     folders = [m.week_folder for m in metas]
 
@@ -341,21 +333,12 @@ def test_prev_week_km_uses_target_not_generated_km(patch_db, monkeypatch):
     _install_model(monkeypatch, model)
 
     out = generate_phase_validated(_build_phase(), metas, _context())
-    # If prev_week_km used the generated 39km, week2 (43km) > 1.10x → dropped.
-    # Target-based (43/40 = 1.075x) → both survive.
     assert len(out) == 2
     assert len(model.captured) == 1  # no regen (no false violation)
 
 
-def test_post_deload_week_uses_last_load_target_for_progression(patch_db, monkeypatch):
-    """The per-week rule gate must mirror season/master-plan semantics:
-    recovery weeks are intentional dips, and the following load week is compared
-    to the last load target rather than the recovery trough.
-
-    Targets: 80 -> 86 -> 64(deload) -> 88. Generated weeks match those targets.
-    Comparing week 4 against the 64km trough would falsely trip 1.38x; comparing
-    against the previous load week 86km passes at 1.02x.
-    """
+def test_post_deload_week_is_validated_against_its_own_target(patch_db, monkeypatch):
+    """A post-deload week passes when it matches its deterministic target."""
     metas = _week_metas([80.0, 86.0, 64.0, 88.0])
     folders = [m.week_folder for m in metas]
 

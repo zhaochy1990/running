@@ -22,17 +22,13 @@ from .rule_filter import MAX_WEEKLY_RAMP_RATIO
 # OPT-A: the deterministic ``run_rule_filter`` HARD rules, stated up-front in the
 # generation prompt so the generator emits rule-clean output on the FIRST try
 # instead of learning each threshold via an expensive rule_filter→feedback→regen
-# loop. These mirror the 5 enforced HARD rules in
-# ``coach.graphs.generation.rule_filter`` (weekly_progression / long_run_share /
-# intensity_distribution / rest_days / injury_conflict). The week-over-week ramp
-# cap is sourced from ``MAX_WEEKLY_RAMP_RATIO`` so the prompt can't drift from the
-# gate it must satisfy — a drift-guard test asserts the two stay equal.
+# loop. These mirror the enforced HARD rules in
+# ``coach.graphs.generation.rule_filter``.
 WEEKLY_HARD_RULES = f"""\
 【每周安全硬约束——违反的周会被 rule_filter 自动拒绝、触发整阶段重做，务必一次满足】
-1. 周量渐进（weekly_progression）：普通负荷周跑步总里程 ≤ 上一个**负荷周**的 {MAX_WEEKLY_RAMP_RATIO:.2f} 倍\
-（即负荷周之间涨幅 ≤ {(MAX_WEEKLY_RAMP_RATIO - 1) * 100:.0f}%）。减量/恢复周往下走永远合规；\
-减量周后的回升与减量前的最近负荷周比较，不与减量谷底比较。满足方式：按逐周表 target km 渐进，\
-恢复周降 20-30%，恢复后回到不超过上一负荷周 10% 的训练量。
+1. 赛季周量渐进（SEASON 级 weekly_volume_ramp）：赛季计划中的普通负荷周跑步总里程 ≤ 上一个\
+负荷周的 {MAX_WEEKLY_RAMP_RATIO:.2f} 倍；此限制不用于独立生成单周计划。减量/恢复周往下走合规，\
+恢复后的负荷周与恢复前最近负荷周比较。
 2. 长跑占比（long_run_share）：当周最长一次跑 ≤ 当周跑步总里程的 35%（当周有 ≥2 次跑步时强制）。\
 满足方式：长跑里程不超过周量的 1/3，其余里程拆到 easy/质量日。
 3. 强度分布（intensity_distribution，80/20 极化）：高强度（Z4-Z5：VO2max/间歇，配速快于阈值）的\

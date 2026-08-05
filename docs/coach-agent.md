@@ -137,7 +137,7 @@ Local/file backend 是 `data/.weekly_plans.json`。
 - `revise` → loop back to generator（上限 `max_iterations`，否则 fallback）
 - `block` → fallback（job marked failed）
 
-`coach.graphs.generation.rule_filter.run_rule_filter(plan_dict, ...)` 是 pure-Python 预过滤，跑 7 条安全规则（weekly progression ≤ 1.10×、long run ≤ 35%、Z4-Z5 ≤ 20%、≥ 1 rest day、`WeeklyPlan.from_dict` validity、injury-conflict keyword check、CTL ramp ≤ 6 TSS/wk）。HARD 违规直接回 generator，不调（贵的）reviewer。
+`coach.graphs.generation.rule_filter.run_rule_filter(plan_dict, ...)` 是 pure-Python 预过滤，跑 7 条安全规则（目标周量 ±1km、long run ≤ 35%、Z4-Z5 ≤ 20%、≥ 1 rest day、`WeeklyPlan.from_dict` validity、injury-conflict keyword check、CTL ramp ≤ 6 TSS/wk）。HARD 违规直接回 generator，不调（贵的）reviewer。单周生成不再限制相对上周的跑量涨幅。
 
 当前周/下周的确定性创建路径会先读取最近两个**完整上海自然周**的实际跑量，
 以其中位数作为已吸收训练基线，并结合最新 STRIDE `load_ratio` 校准目标。

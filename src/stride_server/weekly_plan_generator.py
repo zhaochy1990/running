@@ -274,8 +274,6 @@ def _current_week_actual_km(context: RecentTrainingContext) -> float:
 def _current_week_immutable_rule_names(
     plan: WeeklyPlan,
     context: RecentTrainingContext,
-    *,
-    prev_week_km: float | None,
 ) -> set[str]:
     """Rules violated only by completed work that can no longer be prescribed."""
     actual_by_date = context.current_week_by_date
@@ -283,9 +281,6 @@ def _current_week_immutable_rule_names(
         return set()
     immutable: set[str] = set()
     actual_km = _current_week_actual_km(context)
-    if prev_week_km is not None and actual_km > prev_week_km * 1.10:
-        immutable.add("weekly_progression")
-
     actual_longest = max(
         (
             float(summary.get("actual_distance_km") or 0)
@@ -840,20 +835,13 @@ def build_weekly_plan(
 
     from coach.graphs.generation.rule_filter import run_rule_filter
 
-    prev_week_km = (
-        training_context.completed_week_km[0]
-        if training_context.completed_week_km
-        else None
-    )
     report = run_rule_filter(
         plan.to_dict(),
-        prev_week_km=prev_week_km,
         target_weekly_km=target_km,
     )
     immutable_rules = _current_week_immutable_rule_names(
         plan,
         training_context,
-        prev_week_km=prev_week_km,
     )
     actionable_errors = [
         violation

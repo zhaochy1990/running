@@ -76,14 +76,13 @@
 - 真实：从 `data/zhaochaoyi/logs/` 取过去半年 weekly folders 反向构造
 - 手工：边角 case（伤后第一周、HRV 极端下行、阶段切换）
 
-## S2 L1 Rules（现有 7 条）
+## S2 L1 Rules（现有 6 条）
 
 S2 L1 已实现在 `src/coach/graphs/generation/rule_filter.py`：
 
 | Rule | 严重度 | 检查 |
 |------|--------|------|
 | `schema_validity` | error | `WeeklyPlan.from_dict` 必须过 |
-| `weekly_progression` | error | 周量 ≤ 上周 × 1.10 |
 | `long_run_share` | error | 最长课 ≤ 35% 周量 |
 | `intensity_distribution` | error | Z4-Z5 ≤ 20% 周时长（80/20） |
 | `rest_days` | error | 每周 ≥ 1 全休 |

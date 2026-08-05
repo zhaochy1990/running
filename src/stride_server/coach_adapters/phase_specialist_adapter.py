@@ -610,15 +610,6 @@ def generate_phase_validated(
     violations fed back** (bounded by ``max_attempts``). Persistently-violating
     weeks are dropped; only rule-clean weeks are returned.
 
-    **prev_week_km = deterministic target (not generated km).** For week ``i``
-    the progression check uses ``week_metas[i-1].target_weekly_km`` — the
-    DETERMINISTIC week target the generator aims at — NOT the prior generated
-    km. This makes each week's check **independent** of whether its predecessor
-    was kept or dropped (which is what lets phase-at-once work: a dropped week
-    never perturbs its successor's gate). Week 0 has no within-phase predecessor
-    so ``prev_week_km=None``; the cross-phase boundary is checked separately by
-    ``run_season_rule_filter`` (not here).
-
     Args:
         phase: the ``Phase`` to fill (routes the specialist doctrine + tools).
         week_metas: ordered per-week descriptors (dict or ``WeekMeta``). Coerced
@@ -669,22 +660,6 @@ def generate_phase_validated(
         db, goal=goal, phase_type=phase_type, week_meta=metas[0], level=level
     )
     z45_threshold = pace_targets.threshold_pace_s_km
-
-    # prev_week_km per week i = the prior deterministic LOAD target. Planned
-    # deloads are observable as target dips in the metas; the following load
-    # week is compared to the last load target, not the deload trough. This
-    # mirrors the season/master-plan volume rules and avoids dropping valid
-    # post-deload rebounds.
-    prev_km_for: list[float | None] = []
-    last_load_target: float | None = None
-    prev_target: float | None = None
-    for i, meta in enumerate(metas):
-        current_target = float(meta.target_weekly_km)
-        is_deload = prev_target is not None and current_target < prev_target
-        prev_km_for.append(prev_target if is_deload else last_load_target)
-        if not is_deload:
-            last_load_target = current_target
-        prev_target = current_target
 
     # 2. Bounded attempt loop. First attempt carries the EXTERNAL feedback (the
     #    reviewer's issues, or None); later attempts carry the prior attempt's
@@ -741,12 +716,11 @@ def generate_phase_validated(
             )
             return []
 
-        # 3. Run rule_filter on each week with the target-based prev_week_km.
+        # 3. Run rule_filter on each week.
         per_week_errors = []
         for i, wk in enumerate(weeks):
             report = run_rule_filter(
                 wk,
-                prev_week_km=prev_km_for[i],
                 target_weekly_km=float(metas[i].target_weekly_km),
                 injuries=injuries or None,
                 z45_pace_threshold_s_km=z45_threshold,

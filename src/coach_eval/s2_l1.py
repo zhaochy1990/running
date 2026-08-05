@@ -22,15 +22,10 @@ def run_s2_l1_filter(plan_dict: dict, *, fixture: dict) -> RuleFilterReport:
     """Run production weekly rules plus S2 fixture-specific hard constraints."""
     input_data = fixture.get("input") or {}
     profile = input_data.get("user_profile") or {}
-    signals = input_data.get("recent_signals") or {}
     expected = fixture.get("expected") or {}
     hard = expected.get("hard_constraints") or {}
 
-    prev_week_km = _first_number(
-        hard.get("prev_week_km"),
-        signals.get("prev_week_km"),
-        _last_prev_week_km(input_data.get("prev_plans_md") or []),
-    )
+    signals = input_data.get("recent_signals") or {}
     prev_ctl = _first_number(hard.get("prev_ctl"), signals.get("ctl"))
     z45 = _first_number(
         hard.get("z45_pace_threshold_s_km"),
@@ -42,7 +37,6 @@ def run_s2_l1_filter(plan_dict: dict, *, fixture: dict) -> RuleFilterReport:
 
     base_report = run_rule_filter(
         plan_dict,
-        prev_week_km=prev_week_km,
         prev_ctl=prev_ctl,
         injuries=injuries,
         ramp_cap_tss=ramp_cap_tss,
@@ -76,24 +70,6 @@ def _first_number(*values: Any) -> float | None:
             return float(value)
         except (TypeError, ValueError):
             continue
-    return None
-
-
-def _last_prev_week_km(prev_plans_md: list[Any]) -> float | None:
-    """Best-effort extraction from hand-written fixture notes.
-
-    Fixtures should prefer ``recent_signals.prev_week_km`` or
-    ``expected.hard_constraints.prev_week_km``. This fallback accepts simple
-    text snippets such as ``prev_week_km: 56`` for draft fixtures.
-    """
-    import re
-
-    for text in reversed(prev_plans_md):
-        if not isinstance(text, str):
-            continue
-        match = re.search(r"prev_week_km\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)", text)
-        if match:
-            return float(match.group(1))
     return None
 
 

@@ -1,8 +1,7 @@
 """Season-aggregate rule filter — cross-phase / cross-week coherence (Stage-3b T3).
 
 The per-week :mod:`coach.graphs.generation.rule_filter` only sees one week at a
-time (with at most a ``prev_week_km`` baseline that resets at every phase
-boundary). It therefore *cannot* catch problems that only appear when the whole
+time. It therefore *cannot* catch problems that only appear when the whole
 generated season is laid end-to-end: a volume spike that straddles a
 phase boundary, a taper that doesn't actually drop below the peak, a speed phase
 that schedules no speed work, or a season that silently shed half its weeks to
@@ -35,7 +34,7 @@ from .rule_filter import MAX_WEEKLY_RAMP_RATIO, _total_run_distance_m
 # ---------------------------------------------------------------------------
 
 #: Max allowed week-over-week UP-step in run km (deload/taper down-steps are
-#: always fine). Single-sourced from the per-week ``check_weekly_progression``
+#: always fine). Shared with the deterministic season week schedule
 #: gate (M1, Stage-3b I1) — this aggregate check must not drift from the gate it
 #: re-validates at the season level.
 UP_STEP_RATIO_CAP = MAX_WEEKLY_RAMP_RATIO
