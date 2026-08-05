@@ -15,8 +15,18 @@ Six migrations live here:
 | `npm run migrate:master-plans` (`src/migrate-master-plans.js`) | Azure Table/Blob season plans | `master_plan` |
 | `npm run migrate:weekly-plans` (`src/migrate-weekly-plans.js`) | Azure Table canonical weekly plans, with Blob `plan.md` fallback | `weekly_plan` |
 
-All are **dry-run by default**. Existing migrations write with `--commit`; the
-weekly-plan backfill writes only with its explicit `--apply` flag.
+## Production migration status
+
+| Data | Target | Status | Completed |
+|---|---|---|---|
+| Watch credentials | `provider_credentials` | Completed | 2026-08-05 |
+| Profile + onboarding | `user_profile`, `user_onboarding` | Completed | 2026-08-05 |
+| Health data | `daily_health`, `daily_hrv`, `dashboard`, `race_predictions` | Completed | 2026-08-05 |
+| Training goals | `race_goal` | Not recorded | — |
+| Master plans | `master_plan` | Not recorded | — |
+| Weekly plans | `weekly_plan` | Not recorded | — |
+
+All are **dry-run by default** and write only with `--commit`.
 
 Only **real users** (the UUIDs in `src/users.js`) are migrated; every other UUID
 is a test account and is discarded (see `AGENTS.md`). The creds migration prunes
@@ -38,7 +48,7 @@ tool reports ambiguous sources, invalid Monday-Sunday bounds, missing source
 timestamps, ambiguous master-plan ownership, and target conflicts. Existing
 active rows are never overwritten; byte-equal Markdown or semantically equal
 JSON is reported as `existing`. UUIDv4 IDs are generated only immediately
-before an `--apply` insert.
+before a `--commit` insert.
 
 ```bash
 # Dry-run all real users.
@@ -46,7 +56,7 @@ npm run migrate:weekly-plans
 
 # Dry-run one allowlisted user, then insert missing rows.
 node src/migrate-weekly-plans.js --user <uuid>
-node src/migrate-weekly-plans.js --apply --user <uuid>
+node src/migrate-weekly-plans.js --commit --user <uuid>
 ```
 
 Migrate master plans first. For a confirmed health-running user whose weekly
@@ -68,7 +78,9 @@ The command exits non-zero when manual findings or conflicts remain.
 ## 1) Watch credentials migration — AKV → `provider_credentials`
 
 A utility that copies per-user **watch login credentials** (COROS and Garmin)
-from **Azure Key Vault** into the `provider_credentials` table.
+from **Azure Key Vault** into the `provider_credentials` table. The command
+remains available for idempotent repair or backfill runs after the production
+migration recorded above.
 
 ## What it does
 

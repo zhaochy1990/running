@@ -24,7 +24,7 @@ function usage() {
 
 Usage: node src/migrate-weekly-plans.js [options]
 
-  --apply         Insert missing rows. Default is dry-run.
+  --commit        Insert missing rows. Default is dry-run.
   --user <uuid>   Restrict to a real-user UUID. Repeatable or comma-separated.
   --allow-unowned-user <uuid>
                   Confirm a selected real user's plans are independent.
@@ -67,7 +67,7 @@ function parseCli(argv) {
   const { values } = parseArgs({
     args: argv,
     options: {
-      apply: { type: "boolean", default: false },
+      commit: { type: "boolean", default: false },
       user: { type: "string", multiple: true, default: [] },
       "allow-unowned-user": { type: "string", multiple: true, default: [] },
       limit: { type: "string" },
@@ -85,7 +85,7 @@ function parseCli(argv) {
     .flatMap((value) => value.split(","))
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
-  return { apply: values.apply, requestedUsers, allowUnownedUsers, limit, help: values.help };
+  return { commit: values.commit, requestedUsers, allowUnownedUsers, limit, help: values.help };
 }
 
 async function main() {
@@ -112,7 +112,7 @@ async function main() {
   const mysqlConfig = parseMysqlConfig(process.env);
   const connection = await connect(mysqlConfig);
   try {
-    if (options.apply) await connection.beginTransaction();
+    if (options.commit) await connection.beginTransaction();
     const target = {
       listActiveWeeklyPlans: (userId) => listActiveWeeklyPlans(connection, userId),
       listMasterPlans: (userId) => listMasterPlans(connection, userId),
@@ -122,14 +122,14 @@ async function main() {
       userIds: ids,
       source,
       target,
-      apply: options.apply,
+      apply: options.commit,
       allowUnownedUserIds: new Set(options.allowUnownedUsers),
     });
-    if (options.apply) await connection.commit();
+    if (options.commit) await connection.commit();
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     return report.stats.conflicts > 0 || report.stats.manual > 0 ? 1 : 0;
   } catch (error) {
-    if (options.apply) await connection.rollback();
+    if (options.commit) await connection.rollback();
     throw error;
   } finally {
     await connection.end();
