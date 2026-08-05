@@ -372,6 +372,22 @@ func TestListUserPipelines_Unauthorized(t *testing.T) {
 	}
 }
 
+func TestGetPipelineRun_APIAlias(t *testing.T) {
+	h := newHarness(t)
+	h.runs.seedRun(&job.PipelineRun{RunID: "r1", UserID: "user-a", Name: "data_sync", Status: job.StatusRunning})
+	tok := h.userToken(t, "user-a")
+
+	w := h.do(http.MethodGet, "/api/pipelines/r1", "", map[string]string{"Authorization": "Bearer " + tok})
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp runStateResponse
+	mustJSON(t, w, &resp)
+	if resp.RunID != "r1" || resp.PipelineName != "data_sync" || resp.Status != string(job.StatusRunning) {
+		t.Fatalf("response = %+v", resp)
+	}
+}
+
 func TestListUserPipelines_UserScoping(t *testing.T) {
 	h := newHarness(t)
 	// Two runs for user-a, one for user-b (keyed by subject user_id).
