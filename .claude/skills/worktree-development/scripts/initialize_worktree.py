@@ -4,7 +4,7 @@
 Invoked by the portable ``create_worktree.py`` entry point (or standalone for
 diagnostics) after a fresh linked git worktree has been created, via::
 
-    python ".claude/skills/worktree-development/scripts/initialize_worktree.py"
+    python3 ".claude/skills/worktree-development/scripts/initialize_worktree.py"
 
 Behaviour (fail closed at every step):
 

@@ -16,8 +16,8 @@ plain shells, and CI):
 
 Usage::
 
-    python ".claude/skills/worktree-development/scripts/create_worktree.py" <3-5-word-kebab-name>
-    python ".claude/skills/worktree-development/scripts/create_worktree.py" <name> --base-ref <ref>
+    python3 ".claude/skills/worktree-development/scripts/create_worktree.py" <3-5-word-kebab-name>
+    python3 ".claude/skills/worktree-development/scripts/create_worktree.py" <name> --base-ref <ref>
 
 Python 3.12+.
 """
