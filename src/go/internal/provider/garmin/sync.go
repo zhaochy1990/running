@@ -10,6 +10,8 @@ package garmin
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"sync"
 	"time"
 
 	"github.com/zhaochy1990/stride/internal/provider"
@@ -151,6 +153,7 @@ func (p *Provider) SyncUser(ctx context.Context, user string, opts provider.Sync
 	if err != nil {
 		return provider.SyncResult{}, err
 	}
+	client.EnableRateLimit(provider.DetailJobs(opts.Jobs))
 
 	var res provider.SyncResult
 	if content.Has(provider.ContentActivities) {
@@ -176,13 +179,14 @@ func (p *Provider) syncActivities(ctx context.Context, client *Client, user stri
 	}
 	total := len(items)
 	provider.EmitProgress(opts.Progress, "activities", 0, total, provider.PercentInBand(0, total, 10, 80))
-	for i, a := range items {
-		if err := p.syncOneActivity(ctx, client, user, a, res); err != nil {
-			return err
-		}
-		provider.EmitProgress(opts.Progress, "activities", i+1, total, provider.PercentInBand(i+1, total, 10, 80))
+	if total == 0 {
+		return nil
 	}
-	return nil
+	ordered := make([]rawActivity, total)
+	for i, item := range items {
+		ordered[total-1-i] = item
+	}
+	return p.fetchActivitiesOrdered(ctx, client, user, ordered, provider.DetailJobs(opts.Jobs), opts.Progress, res)
 }
 
 // collectActivities pages the activity list and returns the items to sync,
@@ -190,6 +194,7 @@ func (p *Provider) syncActivities(ctx context.Context, client *Client, user stri
 // opts.Limit. Full mode collects known activities too (re-scan).
 func (p *Provider) collectActivities(ctx context.Context, client *Client, user string, opts provider.SyncOptions) ([]rawActivity, error) {
 	const pageSize = 20
+	full := opts.Mode == provider.SyncFull
 	var items []rawActivity
 	for start := 0; ; {
 		raw, err := client.ListActivities(ctx, start, pageSize)
@@ -208,12 +213,14 @@ func (p *Provider) collectActivities(ctx context.Context, client *Client, user s
 			if labelID == "" {
 				continue
 			}
-			exists, err := p.store.ActivityExists(ctx, user, labelID)
-			if err != nil {
-				return nil, err
-			}
-			if exists && opts.Mode != provider.SyncFull {
-				return items, nil // incremental catch-up: reached known history
+			if !full {
+				exists, err := p.store.ActivityExists(ctx, user, labelID)
+				if err != nil {
+					return nil, err
+				}
+				if exists {
+					return items, nil // incremental catch-up: reached known history
+				}
 			}
 			items = append(items, a)
 			if opts.Limit > 0 && len(items) >= opts.Limit {
@@ -227,15 +234,109 @@ func (p *Provider) collectActivities(ctx context.Context, client *Client, user s
 	}
 }
 
-// syncOneActivity fetches the detail sub-resources for one activity and upserts
-// it. detail/splits/weather are best-effort (a fetch failure just drops that
-// sub-resource — matching the Python path).
-func (p *Provider) syncOneActivity(ctx context.Context, client *Client, user string, a rawActivity, res *provider.SyncResult) error {
-	labelID := a.labelID()
-	detailsRaw, _ := client.GetActivityDetails(ctx, labelID, activityDetailsMaxChart, activityDetailsMaxPoly)
-	splitsRaw, _ := client.GetActivitySplits(ctx, labelID)
-	weatherRaw, _ := client.GetActivityWeather(ctx, labelID)
+type activityResult struct {
+	activity   *storage.Activity
+	laps       []storage.Lap
+	timeseries []storage.TimeseriesPoint
+	err        error
+}
 
+func (p *Provider) fetchActivitiesOrdered(ctx context.Context, client *Client, user string, ordered []rawActivity, jobs int, progress provider.ProgressCallback, res *provider.SyncResult) error {
+	results := make([]activityResult, len(ordered))
+	ready := make([]chan struct{}, len(ordered))
+	for i := range ready {
+		ready[i] = make(chan struct{})
+	}
+	fetchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	indices := make(chan int)
+	inFlight := make(chan struct{}, jobs)
+	go func() {
+		defer close(indices)
+		for i := range ordered {
+			select {
+			case inFlight <- struct{}{}:
+			case <-fetchCtx.Done():
+				return
+			}
+			select {
+			case indices <- i:
+			case <-fetchCtx.Done():
+				return
+			}
+		}
+	}()
+	var wg sync.WaitGroup
+	for range jobs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range indices {
+				results[i] = p.fetchOneActivity(fetchCtx, client, user, ordered[i])
+				close(ready[i])
+			}
+		}()
+	}
+	var commitErr error
+	for i := range ordered {
+		select {
+		case <-ready[i]:
+		case <-ctx.Done():
+			commitErr = ctx.Err()
+		}
+		if commitErr != nil {
+			break
+		}
+		r := results[i]
+		results[i] = activityResult{}
+		<-inFlight
+		if r.err != nil {
+			commitErr = r.err
+			break
+		}
+		if err := p.store.UpsertActivityPreservingEmptyChildren(ctx, r.activity, r.laps, r.timeseries, nil); err != nil {
+			commitErr = err
+			break
+		}
+		labelID := ordered[i].labelID()
+		res.Activities++
+		res.ActivityLabelIDs = append(res.ActivityLabelIDs, labelID)
+		if err := p.store.SetMeta(ctx, user, "last_label_id", labelID); err != nil {
+			commitErr = err
+			break
+		}
+		provider.EmitProgress(progress, "activities", i+1, len(ordered), provider.PercentInBand(i+1, len(ordered), 10, 80))
+	}
+	cancel()
+	wg.Wait()
+	return commitErr
+}
+
+func (p *Provider) fetchOneActivity(ctx context.Context, client *Client, user string, a rawActivity) activityResult {
+	labelID := a.labelID()
+	detailsRaw, err := client.GetActivityDetails(ctx, labelID, activityDetailsMaxChart, activityDetailsMaxPoly)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return activityResult{err: err}
+		}
+		detailsRaw = nil
+	}
+	splitsRaw, err := client.GetActivitySplits(ctx, labelID)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return activityResult{err: err}
+		}
+		splitsRaw = nil
+	}
+	var detailShape map[string]json.RawMessage
+	var splitShape map[string]json.RawMessage
+	if json.Unmarshal(detailsRaw, &detailShape) != nil || detailShape["activityDetailMetrics"] == nil {
+		detailsRaw = nil
+	}
+	if json.Unmarshal(splitsRaw, &splitShape) != nil || splitShape["lapDTOs"] == nil {
+		splitsRaw = nil
+	}
+	weatherRaw, _ := client.GetActivityWeather(ctx, labelID)
 	var weather *rawWeather
 	if len(weatherRaw) > 0 {
 		var w rawWeather
@@ -243,12 +344,25 @@ func (p *Provider) syncOneActivity(ctx context.Context, client *Client, user str
 			weather = &w
 		}
 	}
-	act := buildActivity(user, a, weather)
-	laps := parseSplits(splitsRaw)
-	ts := parseDetailsTimeseries(detailsRaw)
-	if err := p.store.UpsertActivity(ctx, act, laps, ts, nil); err != nil {
+	return activityResult{
+		activity:   buildActivity(user, a, weather),
+		laps:       parseSplits(splitsRaw),
+		timeseries: parseDetailsTimeseries(detailsRaw),
+	}
+}
+
+// syncOneActivity fetches the detail sub-resources for one activity and upserts
+// it. Detail and splits are required because an empty replacement would erase
+// existing children; weather remains best-effort.
+func (p *Provider) syncOneActivity(ctx context.Context, client *Client, user string, a rawActivity, res *provider.SyncResult) error {
+	r := p.fetchOneActivity(ctx, client, user, a)
+	if r.err != nil {
+		return r.err
+	}
+	if err := p.store.UpsertActivityPreservingEmptyChildren(ctx, r.activity, r.laps, r.timeseries, nil); err != nil {
 		return err
 	}
+	labelID := a.labelID()
 	res.Activities++
 	res.ActivityLabelIDs = append(res.ActivityLabelIDs, labelID)
 	if err := p.store.SetMeta(ctx, user, "last_label_id", labelID); err != nil {
@@ -272,11 +386,10 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 	consecEmpty := 0
 	for offset := 0; offset < windowDays; offset++ {
 		date := today.AddDate(0, 0, -offset).Format("2006-01-02")
-
-		tsRaw, _ := client.GetTrainingStatus(ctx, date)
-		usRaw, _ := client.GetUserSummary(ctx, date)
-		sleepRaw, _ := client.GetSleepData(ctx, date)
-		hrvRaw, _ := client.GetHRV(ctx, date)
+		tsRaw, usRaw, sleepRaw, hrvRaw, err := fetchHealthDay(ctx, client, date, provider.DetailJobs(opts.Jobs))
+		if err != nil {
+			return err
+		}
 
 		wrote := false
 		if h := buildDailyHealth(user, date, tsRaw, usRaw, sleepRaw); hasSignal(h) {
@@ -307,22 +420,81 @@ func (p *Provider) syncHealth(ctx context.Context, client *Client, user string, 
 	return p.syncDashboard(ctx, client, user, today, res)
 }
 
+// fetchHealthDay overlaps the four independent Garmin endpoints for one date.
+// Dates remain sequential so the seven-empty-days cutoff does not speculatively
+// fetch or write older history.
+func fetchHealthDay(ctx context.Context, client *Client, date string, jobs int) (tsRaw, usRaw, sleepRaw, hrvRaw json.RawMessage, err error) {
+	var tsErr, usErr, sleepErr, hrvErr error
+	tasks := []func(){
+		func() { tsRaw, tsErr = client.GetTrainingStatus(ctx, date) },
+		func() { usRaw, usErr = client.GetUserSummary(ctx, date) },
+		func() { sleepRaw, sleepErr = client.GetSleepData(ctx, date) },
+		func() { hrvRaw, hrvErr = client.GetHRV(ctx, date) },
+	}
+	indices := make(chan int)
+	var wg sync.WaitGroup
+	workers := min(jobs, len(tasks))
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range indices {
+				tasks[i]()
+			}
+		}()
+	}
+	for i := range tasks {
+		indices <- i
+	}
+	close(indices)
+	wg.Wait()
+	err = errors.Join(requiredHealthError(tsErr), requiredHealthError(usErr), requiredHealthError(sleepErr), requiredHealthError(hrvErr))
+	return
+}
+
+func requiredHealthError(err error) error {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Status == 404 {
+		return nil
+	}
+	return err
+}
+
 // syncDashboard pulls the most-recent metrics into the singleton dashboard row.
 func (p *Provider) syncDashboard(ctx context.Context, client *Client, user string, today time.Time, res *provider.SyncResult) error {
 	todayISO := today.Format("2006-01-02")
 	yesterdayISO := today.AddDate(0, 0, -1).Format("2006-01-02")
 
-	tsRaw, _ := client.GetTrainingStatus(ctx, todayISO)
-	usRaw, _ := client.GetUserSummary(ctx, todayISO)
-	hrvRaw, _ := client.GetHRV(ctx, yesterdayISO)
-	ltRaw, _ := client.GetLactateThreshold(ctx)
-	rpRaw, _ := client.GetRacePredictions(ctx)
-
-	dash, preds := buildDashboard(user, tsRaw, usRaw, hrvRaw, ltRaw, rpRaw)
-	if err := p.store.UpsertDashboard(ctx, dash); err != nil {
+	tsRaw, usRaw, _, hrvRaw, err := fetchHealthDay(ctx, client, todayISO, provider.DetailJobs(0))
+	if err != nil {
 		return err
 	}
-	res.Health++
+	// Dashboard uses yesterday's HRV rather than today's daily row.
+	hrvRaw, err = client.GetHRV(ctx, yesterdayISO)
+	if err = requiredHealthError(err); err != nil {
+		return err
+	}
+	ltRaw, err := client.GetLactateThreshold(ctx)
+	if err = requiredHealthError(err); err != nil {
+		return err
+	}
+	rpRaw, err := client.GetRacePredictions(ctx)
+	if err = requiredHealthError(err); err != nil {
+		return err
+	}
+
+	dash, preds := buildDashboard(user, tsRaw, usRaw, hrvRaw, ltRaw, rpRaw)
+	if dash.RHR == nil && dash.ThresholdHR == nil && dash.ThresholdPaceSKm == nil && dash.AvgSleepHRV == nil &&
+		dash.HRVNormalLow == nil && dash.HRVNormalHigh == nil && len(preds) == 0 {
+		return nil
+	}
+	if dash.RHR != nil || dash.ThresholdHR != nil || dash.ThresholdPaceSKm != nil || dash.AvgSleepHRV != nil ||
+		dash.HRVNormalLow != nil || dash.HRVNormalHigh != nil {
+		if err := p.store.UpsertDashboardPreservingNil(ctx, dash); err != nil {
+			return err
+		}
+		res.Health++
+	}
 	for i := range preds {
 		if err := p.store.UpsertRacePrediction(ctx, &preds[i]); err != nil {
 			return err
@@ -339,6 +511,7 @@ func (p *Provider) ResyncActivity(ctx context.Context, user, labelID string) (bo
 	if err != nil {
 		return false, err
 	}
+	client.EnableRateLimit(1)
 	// Scan recent activities for a matching id (bounded — resync targets recent).
 	for start := 0; start < 200; start += 20 {
 		raw, err := client.ListActivities(ctx, start, 20)

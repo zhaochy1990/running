@@ -20,27 +20,6 @@ import (
 
 const providerName = "coros"
 
-// Detail-fetch concurrency bounds. defaultJobs matches the reference Python
-// sync's default (-j 4); maxJobs caps an operator-supplied value so a stray
-// config can't unleash an unbounded number of concurrent COROS requests.
-const (
-	defaultJobs = 4
-	maxJobs     = 16
-)
-
-// clampJobs resolves the effective detail-fetch concurrency: a non-positive
-// value (unset) falls back to defaultJobs; anything above maxJobs is capped.
-func clampJobs(jobs int) int {
-	switch {
-	case jobs < 1:
-		return defaultJobs
-	case jobs > maxJobs:
-		return maxJobs
-	default:
-		return jobs
-	}
-}
-
 // Provider is the COROS watch-data adapter.
 type Provider struct {
 	provider.BaseProvider
@@ -146,7 +125,7 @@ func (p *Provider) SyncUser(ctx context.Context, user string, opts provider.Sync
 	// Install the shared rate limiter sized for this run's concurrency before
 	// any fetch worker starts, so every read request (activities + health)
 	// shares one aggregate ceiling to COROS.
-	client.EnableRateLimit(clampJobs(opts.Jobs))
+	client.EnableRateLimit(provider.DetailJobs(opts.Jobs))
 
 	var res provider.SyncResult
 	if content.Has(provider.ContentActivities) {
@@ -196,7 +175,7 @@ func (p *Provider) syncActivities(ctx context.Context, client *Client, user stri
 	for i, item := range items {
 		ordered[total-1-i] = item
 	}
-	return p.fetchDetailsOrdered(ctx, client, user, ordered, clampJobs(opts.Jobs), opts.Progress, res)
+	return p.fetchDetailsOrdered(ctx, client, user, ordered, provider.DetailJobs(opts.Jobs), opts.Progress, res)
 }
 
 // collectActivities pages the activity list and returns the items to sync,

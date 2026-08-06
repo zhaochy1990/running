@@ -19,6 +19,7 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/httpx"
 	"github.com/zhaochy1990/stride/internal/provider"
+	"golang.org/x/time/rate"
 )
 
 // Credentials is a restorable Garmin session: the OAuth bundle plus diagnostics.
@@ -40,10 +41,11 @@ type CredentialSaver func(Credentials) error
 
 // Client talks to the Garmin Connect API for one account.
 type Client struct {
-	http   *http.Client
-	domain string
-	delay  time.Duration
-	save   CredentialSaver
+	http    *http.Client
+	domain  string
+	delay   time.Duration
+	limiter *rate.Limiter
+	save    CredentialSaver
 
 	mu          sync.RWMutex
 	oauth1      OAuth1Token
@@ -51,6 +53,16 @@ type Client struct {
 	email       string
 	displayName string
 	userName    string
+}
+
+// EnableRateLimit replaces per-goroutine post-request sleeps with one shared
+// request ceiling. Burst one avoids simultaneous Garmin API spikes.
+func (c *Client) EnableRateLimit(jobs int) {
+	if c.delay <= 0 || jobs < 1 {
+		c.limiter = nil
+		return
+	}
+	c.limiter = rate.NewLimiter(rate.Every(c.delay/time.Duration(jobs)), 1)
 }
 
 // Option configures a Client.
@@ -72,7 +84,7 @@ func WithDomain(d string) Option { return func(c *Client) { c.domain = d } }
 func NewClient(creds Credentials, opts ...Option) *Client {
 	jar, _ := cookiejar.New(nil)
 	c := &Client{
-		http:        &http.Client{Timeout: 30 * time.Second, Jar: jar},
+		http:        defaultHTTPClient(jar),
 		domain:      domainForRegion(creds.Region),
 		delay:       500 * time.Millisecond,
 		oauth1:      creds.OAuth1,
@@ -88,6 +100,14 @@ func NewClient(creds Credentials, opts ...Option) *Client {
 		o(c)
 	}
 	return c
+}
+
+func defaultHTTPClient(jar http.CookieJar) *http.Client {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.MaxIdleConns = 100
+	tr.MaxIdleConnsPerHost = 32
+	tr.IdleConnTimeout = 90 * time.Second
+	return &http.Client{Timeout: 30 * time.Second, Jar: jar, Transport: tr}
 }
 
 // Login authenticates with email + password and persists the resulting bundle.
@@ -163,7 +183,7 @@ func (c *Client) connectapi(ctx context.Context, path string, params url.Values)
 	if len(params) > 0 {
 		u += "?" + params.Encode()
 	}
-	raw, status, err := c.doGet(ctx, u)
+	raw, status, bearer, err := c.doGet(ctx, u)
 	if err != nil {
 		return nil, err
 	}
@@ -172,23 +192,20 @@ func (c *Client) connectapi(ctx context.Context, path string, params url.Values)
 		hasOAuth1 := c.oauth1.OAuthToken != ""
 		c.mu.RUnlock()
 		if hasOAuth1 {
-			if err := c.forceRefresh(ctx); err != nil {
+			if err := c.forceRefresh(ctx, bearer); err != nil {
 				return nil, err
 			}
-			raw, status, err = c.doGet(ctx, u)
+			raw, status, _, err = c.doGet(ctx, u)
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
 	if status == http.StatusNoContent {
-		return json.RawMessage("null"), c.pause(ctx)
+		return json.RawMessage("null"), nil
 	}
 	if status >= 400 {
 		return nil, &APIError{Status: status, Path: path, Body: string(raw)}
-	}
-	if err := c.pause(ctx); err != nil {
-		return nil, err
 	}
 	return raw, nil
 }
@@ -197,9 +214,9 @@ func (c *Client) connectapi(ctx context.Context, path string, params url.Values)
 // returns the body + status without interpreting it. Transient failures
 // (transport, mid-body EOF, 5xx/429) are retried in place (httpx); a persistent
 // 5xx surfaces its status to the caller so connectapi can classify it.
-func (c *Client) doGet(ctx context.Context, u string) ([]byte, int, error) {
+func (c *Client) doGet(ctx context.Context, u string) ([]byte, int, string, error) {
 	if err := c.ensureBearer(ctx); err != nil {
-		return nil, 0, err
+		return nil, 0, "", err
 	}
 	c.mu.RLock()
 	bearer := c.oauth2.authHeader()
@@ -207,7 +224,7 @@ func (c *Client) doGet(ctx context.Context, u string) ([]byte, int, error) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, bearer, err
 	}
 	req.Header.Set("Authorization", bearer)
 	req.Header.Set("User-Agent", connectUserAgent)
@@ -216,6 +233,11 @@ func (c *Client) doGet(ctx context.Context, u string) ([]byte, int, error) {
 	var raw []byte
 	var status int
 	err = httpx.Do(ctx, func() error {
+		if c.limiter != nil {
+			if err := c.limiter.Wait(ctx); err != nil {
+				return err
+			}
+		}
 		resp, e := c.http.Do(req)
 		if e != nil {
 			return fmt.Errorf("garmin: GET %s: %w", u, e)
@@ -234,11 +256,11 @@ func (c *Client) doGet(ctx context.Context, u string) ([]byte, int, error) {
 	if err != nil {
 		var se *httpx.StatusError
 		if errors.As(err, &se) {
-			return []byte(se.Body), se.Code, nil // exhausted 5xx/429: surface status to connectapi
+			return []byte(se.Body), se.Code, bearer, nil // exhausted 5xx/429: surface status to connectapi
 		}
-		return nil, 0, err
+		return nil, 0, bearer, err
 	}
-	return raw, status, nil
+	return raw, status, bearer, nil
 }
 
 // ensureBearer re-exchanges the OAuth1 token for a fresh OAuth2 bearer when the
@@ -266,11 +288,14 @@ func (c *Client) ensureBearer(ctx context.Context) error {
 
 // forceRefresh re-exchanges the OAuth1 token regardless of the local expiry — for
 // the reactive path when the server rejects a bearer it thinks is still valid.
-func (c *Client) forceRefresh(ctx context.Context) error {
+func (c *Client) forceRefresh(ctx context.Context, rejectedBearer string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.oauth1.OAuthToken == "" {
 		return provider.ErrAuthRequired
+	}
+	if c.oauth2.authHeader() != rejectedBearer {
+		return nil
 	}
 	return c.exchangeLocked(ctx)
 }
@@ -291,20 +316,6 @@ func (c *Client) exchangeLocked(ctx context.Context) error {
 		})
 	}
 	return nil
-}
-
-func (c *Client) pause(ctx context.Context) error {
-	if c.delay <= 0 {
-		return nil
-	}
-	t := time.NewTimer(c.delay)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
-	}
 }
 
 // APIError is a non-2xx Garmin API response.

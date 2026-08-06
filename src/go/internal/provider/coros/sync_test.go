@@ -40,6 +40,9 @@ func (f *fakeWriter) UpsertActivity(_ context.Context, a *storage.Activity, _ []
 	f.activities[a.LabelID] = a
 	return nil
 }
+func (f *fakeWriter) UpsertActivityPreservingEmptyChildren(ctx context.Context, a *storage.Activity, laps []storage.Lap, ts []storage.TimeseriesPoint, zones []storage.ActivityWatchZone) error {
+	return f.UpsertActivity(ctx, a, laps, ts, zones)
+}
 func (f *fakeWriter) UpsertDailyHealth(_ context.Context, h *storage.DailyHealth) error {
 	f.health[h.Date] = h
 	return nil
@@ -47,6 +50,9 @@ func (f *fakeWriter) UpsertDailyHealth(_ context.Context, h *storage.DailyHealth
 func (f *fakeWriter) UpsertDashboard(_ context.Context, d *storage.Dashboard) error {
 	f.dashboard = d
 	return nil
+}
+func (f *fakeWriter) UpsertDashboardPreservingNil(ctx context.Context, d *storage.Dashboard) error {
+	return f.UpsertDashboard(ctx, d)
 }
 func (f *fakeWriter) UpsertDailyHRV(_ context.Context, h *storage.DailyHRV) error {
 	f.hrv[h.Date] = h
