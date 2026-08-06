@@ -238,6 +238,24 @@ func TestClient_RetriesTransientCorosCode(t *testing.T) {
 	}
 }
 
+func TestClient_DoesNotRetryInvalidParameterCode(t *testing.T) {
+	var calls int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/activity/detail/query", func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		writeEnvelope(w, "1031", `{}`)
+	})
+	c := testClient(t, mux, Credentials{AccessToken: "tok", Region: "global", UserID: "1"}, func(Credentials) error { return nil })
+
+	_, err := c.GetActivityDetail(context.Background(), "bad", 100)
+	if !errors.Is(err, provider.ErrInvalidRequest) {
+		t.Fatalf("error = %v, want provider.ErrInvalidRequest", err)
+	}
+	if n := atomic.LoadInt32(&calls); n != 1 {
+		t.Errorf("calls = %d, want 1 (invalid parameters are permanent)", n)
+	}
+}
+
 // TestClient_LoginFailureNotRetried guards the boundary of the code-retry: the
 // auth endpoints opt out, so a deterministic login failure (wrong password) is
 // neither retried nor reclassified — it must surface once as a permanent

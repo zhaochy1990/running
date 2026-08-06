@@ -148,6 +148,18 @@ func TestHandler_TransientError_Retryable(t *testing.T) {
 	}
 }
 
+func TestHandler_InvalidProviderRequest_Permanent(t *testing.T) {
+	f := &fakeProvider{loggedIn: true, syncErr: provider.ErrInvalidRequest}
+	_, err, _, _ := run(t, f, "")
+	pe, ok := job.AsPermanent(err)
+	if !ok {
+		t.Fatalf("want PermanentError, got %v", err)
+	}
+	if pe.Code != "provider_invalid_request" {
+		t.Errorf("code = %q, want provider_invalid_request", pe.Code)
+	}
+}
+
 // TestHandler_DeterministicWriteError_Permanent covers the fail-fast path: a
 // deterministic MySQL write failure (here a 1062 unique-index violation, as
 // wrapped by the storage layer) must poison immediately rather than exhaust the

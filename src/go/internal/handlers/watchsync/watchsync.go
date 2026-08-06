@@ -87,6 +87,9 @@ func New(resolve Resolver, marker SyncMarker, jobs int) job.Handler {
 			if provider.IsAuthError(err) {
 				return "", job.NewPermanentError("auth_failed", err)
 			}
+			if provider.IsInvalidRequest(err) {
+				return "", job.NewPermanentError("provider_invalid_request", err)
+			}
 			// A deterministic write failure (e.g. a unique-index violation) recurs
 			// identically on every attempt, so fail fast instead of burning the
 			// whole retry budget before poisoning. (Scoped to watch_sync — the
