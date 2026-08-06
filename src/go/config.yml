@@ -51,9 +51,9 @@ api:
   auth-service-url: ""      # in-house auth-service origin for display-name mirror; empty disables (ADR 0013)
   features:                 # echoed in GET /api/users/me/profile (mirror Python server config)
     sync-data-at-onboarding: true
-    coach-agent-weekly-plan-users: []
-    coach-chat-users: []
-    coach-chat-debug-users: []
+    coach-agent-weekly-plan-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
+    coach-chat-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
+    coach-chat-debug-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
     coach-chat-max-message-chars: 8000
 # ci: no-op touch to publish a fresh CalVer image and exercise the Renovate
 # version-bump flow against stride-devops (Go SHA->CalVer cutover verification).
