@@ -19,7 +19,10 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/httpx"
 	"github.com/zhaochy1990/stride/internal/provider"
+	"go.uber.org/zap"
 	"golang.org/x/time/rate"
+
+	"github.com/zhaochy1990/stride/internal/logging"
 )
 
 // Credentials is a restorable Garmin session: the OAuth bundle plus diagnostics.
@@ -240,12 +243,19 @@ func (c *Client) doGet(ctx context.Context, u string) ([]byte, int, string, erro
 		}
 		resp, e := c.http.Do(req)
 		if e != nil {
-			return fmt.Errorf("garmin: GET %s: %w", u, e)
+			for {
+				urlErr, ok := e.(*url.Error)
+				if !ok {
+					break
+				}
+				e = urlErr.Err
+			}
+			return fmt.Errorf("garmin: GET request failed: %w", e)
 		}
 		defer resp.Body.Close()
 		b, e := io.ReadAll(resp.Body)
 		if e != nil {
-			return fmt.Errorf("garmin: read %s: %w", u, e) // %w keeps io.ErrUnexpectedEOF retryable
+			return fmt.Errorf("garmin: read response: %w", e) // %w keeps io.ErrUnexpectedEOF retryable
 		}
 		if httpx.RetryableStatus(resp.StatusCode) {
 			return &httpx.StatusError{Code: resp.StatusCode, Body: string(b)}
@@ -276,6 +286,8 @@ func (c *Client) ensureBearer(ctx context.Context) error {
 		return nil
 	}
 	if !hasOAuth1 {
+		logging.Default().Warn("garmin bearer refresh unavailable",
+			zap.Bool("oauth1_present", false), zap.Bool("oauth2_present", stale != ""), zap.Bool("oauth2_expired", expired))
 		return provider.ErrAuthRequired
 	}
 	c.mu.Lock()
@@ -292,6 +304,8 @@ func (c *Client) forceRefresh(ctx context.Context, rejectedBearer string) error 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.oauth1.OAuthToken == "" {
+		logging.Default().Warn("garmin rejected bearer cannot be refreshed",
+			zap.Bool("oauth1_present", false), zap.Bool("oauth2_present", c.oauth2.AccessToken != ""))
 		return provider.ErrAuthRequired
 	}
 	if c.oauth2.authHeader() != rejectedBearer {
@@ -326,7 +340,7 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string {
-	return fmt.Sprintf("garmin: GET %s -> HTTP %d", e.Path, e.Status)
+	return fmt.Sprintf("garmin: API request -> HTTP %d", e.Status)
 }
 
 func (c *Client) displayNameOrErr() (string, error) {
