@@ -22,7 +22,7 @@ Six migrations live here:
 | Watch credentials | `provider_credentials` | Completed | 2026-08-05 |
 | Profile + onboarding | `user_profile`, `user_onboarding` | Completed | 2026-08-05 |
 | Health data | `daily_health`, `daily_hrv`, `dashboard`, `race_predictions` | Completed | 2026-08-05 |
-| Training goals | `race_goal` | Not recorded | — |
+| Training goals | `race_goal` | Completed (8 users; Daisy has no race goal) | 2026-08-06 |
 | Master plans | `master_plan` | Not recorded | — |
 | Weekly plans | `weekly_plan` | Not recorded | — |
 
