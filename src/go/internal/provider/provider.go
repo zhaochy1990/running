@@ -100,6 +100,21 @@ type SyncOptions struct {
 	Progress ProgressCallback
 }
 
+// DetailJobs bounds adapter-side fetch concurrency. A non-positive configured
+// value uses the production default; the cap prevents accidental request floods.
+func DetailJobs(jobs int) int {
+	const defaultJobs = 4
+	const maxJobs = 16
+	switch {
+	case jobs < 1:
+		return defaultJobs
+	case jobs > maxJobs:
+		return maxJobs
+	default:
+		return jobs
+	}
+}
+
 // SyncResult summarizes a sync run.
 type SyncResult struct {
 	Activities       int      // activities written/updated

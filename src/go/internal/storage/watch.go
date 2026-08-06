@@ -7,6 +7,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -19,8 +20,10 @@ import (
 type Writer interface {
 	ActivityExists(ctx context.Context, userID, labelID string) (bool, error)
 	UpsertActivity(ctx context.Context, a *Activity, laps []Lap, ts []TimeseriesPoint, zones []ActivityWatchZone) error
+	UpsertActivityPreservingEmptyChildren(ctx context.Context, a *Activity, laps []Lap, ts []TimeseriesPoint, zones []ActivityWatchZone) error
 	UpsertDailyHealth(ctx context.Context, h *DailyHealth) error
 	UpsertDashboard(ctx context.Context, d *Dashboard) error
+	UpsertDashboardPreservingNil(ctx context.Context, d *Dashboard) error
 	UpsertDailyHRV(ctx context.Context, h *DailyHRV) error
 	UpsertRacePrediction(ctx context.Context, p *RacePrediction) error
 	SetMeta(ctx context.Context, userID, key, value string) error
@@ -80,6 +83,18 @@ func (s *Store) ActivityExists(ctx context.Context, userID, labelID string) (boo
 // upsert_activity delete-then-insert semantics. a.UserID is canonicalised and
 // stamped onto every child so callers cannot desync the tenant key.
 func (s *Store) UpsertActivity(ctx context.Context, a *Activity, laps []Lap, ts []TimeseriesPoint, zones []ActivityWatchZone) error {
+	return s.upsertActivity(ctx, a, laps, ts, zones, false)
+}
+
+// UpsertActivityPreservingEmptyChildren updates the activity but replaces only
+// non-empty child collections. Garmin may legitimately return an empty detail
+// payload; preserving existing children avoids turning an incomplete response
+// into destructive data loss.
+func (s *Store) UpsertActivityPreservingEmptyChildren(ctx context.Context, a *Activity, laps []Lap, ts []TimeseriesPoint, zones []ActivityWatchZone) error {
+	return s.upsertActivity(ctx, a, laps, ts, zones, true)
+}
+
+func (s *Store) upsertActivity(ctx context.Context, a *Activity, laps []Lap, ts []TimeseriesPoint, zones []ActivityWatchZone, preserveEmpty bool) error {
 	uid, err := canonicalUserID(a.UserID)
 	if err != nil {
 		return err
@@ -99,14 +114,20 @@ func (s *Store) UpsertActivity(ctx context.Context, a *Activity, laps []Lap, ts 
 		if err := tx.Clauses(clause.OnConflict{UpdateAll: true}).Create(a).Error; err != nil {
 			return fmt.Errorf("storage: upsert activity: %w", err)
 		}
-		if err := replaceChildren(tx, uid, a.LabelID, &Lap{}, laps); err != nil {
-			return err
+		if !preserveEmpty || len(laps) > 0 {
+			if err := replaceChildren(tx, uid, a.LabelID, &Lap{}, laps); err != nil {
+				return err
+			}
 		}
-		if err := replaceChildren(tx, uid, a.LabelID, &TimeseriesPoint{}, ts); err != nil {
-			return err
+		if !preserveEmpty || len(ts) > 0 {
+			if err := replaceChildren(tx, uid, a.LabelID, &TimeseriesPoint{}, ts); err != nil {
+				return err
+			}
 		}
-		if err := replaceChildren(tx, uid, a.LabelID, &ActivityWatchZone{}, zones); err != nil {
-			return err
+		if !preserveEmpty || len(zones) > 0 {
+			if err := replaceChildren(tx, uid, a.LabelID, &ActivityWatchZone{}, zones); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -152,6 +173,31 @@ func (s *Store) UpsertDashboard(ctx context.Context, d *Dashboard) error {
 	}
 	d.UserID = uid
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(d).Error
+}
+
+// UpsertDashboardPreservingNil updates only metrics present in the response.
+func (s *Store) UpsertDashboardPreservingNil(ctx context.Context, d *Dashboard) error {
+	uid, err := canonicalUserID(d.UserID)
+	if err != nil {
+		return err
+	}
+	d.UserID = uid
+	updates := map[string]any{"provider": d.Provider, "updated_at": d.UpdatedAt}
+	for key, value := range map[string]any{
+		"rhr": d.RHR, "threshold_hr": d.ThresholdHR,
+		"threshold_pace_s_km": d.ThresholdPaceSKm, "avg_sleep_hrv": d.AvgSleepHRV,
+		"hrv_normal_low": d.HRVNormalLow, "hrv_normal_high": d.HRVNormalHigh,
+	} {
+		if !reflect.ValueOf(value).IsNil() {
+			updates[key] = value
+		}
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(d).Error; err != nil {
+			return err
+		}
+		return tx.Model(&Dashboard{}).Where("user_id = ?", uid).Updates(updates).Error
+	})
 }
 
 // UpsertDailyHRV upserts a daily_hrv row.

@@ -37,12 +37,14 @@ func mockHTTPClient(srv *httptest.Server) *http.Client {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type fakeWriter struct {
-	activities map[string]*storage.Activity
-	health     map[string]*storage.DailyHealth
-	hrv        map[string]*storage.DailyHRV
-	dashboards int
-	races      int
-	meta       map[string]string
+	activities  map[string]*storage.Activity
+	existsCalls int
+	health      map[string]*storage.DailyHealth
+	hrv         map[string]*storage.DailyHRV
+	dashboards  int
+	races       int
+	meta        map[string]string
+	onActivity  func(string)
 }
 
 func newFakeWriter() *fakeWriter {
@@ -55,12 +57,19 @@ func newFakeWriter() *fakeWriter {
 }
 
 func (f *fakeWriter) ActivityExists(_ context.Context, _, labelID string) (bool, error) {
+	f.existsCalls++
 	_, ok := f.activities[labelID]
 	return ok, nil
 }
 func (f *fakeWriter) UpsertActivity(_ context.Context, a *storage.Activity, _ []storage.Lap, _ []storage.TimeseriesPoint, _ []storage.ActivityWatchZone) error {
 	f.activities[a.LabelID] = a
+	if f.onActivity != nil {
+		f.onActivity(a.LabelID)
+	}
 	return nil
+}
+func (f *fakeWriter) UpsertActivityPreservingEmptyChildren(ctx context.Context, a *storage.Activity, laps []storage.Lap, ts []storage.TimeseriesPoint, zones []storage.ActivityWatchZone) error {
+	return f.UpsertActivity(ctx, a, laps, ts, zones)
 }
 func (f *fakeWriter) UpsertDailyHealth(_ context.Context, h *storage.DailyHealth) error {
 	f.health[h.Date] = h
@@ -69,6 +78,9 @@ func (f *fakeWriter) UpsertDailyHealth(_ context.Context, h *storage.DailyHealth
 func (f *fakeWriter) UpsertDashboard(context.Context, *storage.Dashboard) error {
 	f.dashboards++
 	return nil
+}
+func (f *fakeWriter) UpsertDashboardPreservingNil(ctx context.Context, d *storage.Dashboard) error {
+	return f.UpsertDashboard(ctx, d)
 }
 func (f *fakeWriter) UpsertDailyHRV(_ context.Context, h *storage.DailyHRV) error {
 	f.hrv[h.Date] = h
