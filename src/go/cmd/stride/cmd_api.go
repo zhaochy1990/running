@@ -82,16 +82,8 @@ func runAPI() error {
 	}
 
 	// --- RabbitMQ (publisher only; no consumer) ---
-	conn, err := mq.Dial(cfg.AMQP.URL)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
 	topo := mq.Topology{Work: cfg.Queues.Work, Retry: cfg.Queues.Retry, Poison: cfg.Queues.Poison}
-	if err := conn.DeclareTopology(topo); err != nil {
-		return err
-	}
-	pub, err := conn.NewPublisher(topo)
+	pub, err := mq.NewReconnectingPublisher(cfg.AMQP.URL, topo)
 	if err != nil {
 		return err
 	}
@@ -152,7 +144,7 @@ func runAPI() error {
 		Health: map[string]health.Check{
 			"mysql": store.Ping,
 			"rabbitmq": func(context.Context) error {
-				if !conn.Healthy() {
+				if !pub.Healthy() {
 					return errors.New("broker connection closed")
 				}
 				return nil

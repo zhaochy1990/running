@@ -91,6 +91,9 @@ func (c *Conn) NewPublisher(t Topology) (*Publisher, error) {
 // Close closes the publisher channel.
 func (p *Publisher) Close() error { return p.ch.Close() }
 
+// Healthy reports whether the publisher channel is still open.
+func (p *Publisher) Healthy() bool { return p.ch != nil && !p.ch.IsClosed() }
+
 // PublishWork publishes onto the work queue.
 func (p *Publisher) PublishWork(ctx context.Context, m job.Message) error {
 	return p.publish(ctx, p.topo.Work, m, "")
