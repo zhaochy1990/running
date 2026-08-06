@@ -139,6 +139,42 @@ func (s *Store) ClearWatchReady(ctx context.Context, userID string) error {
 	return s.setOnboardingFlag(ctx, userID, "watch_ready", false)
 }
 
+// DeleteUserData removes every row owned by userID in one transaction. The
+// explicit model list is intentional: this schema has no cross-table cascade,
+// and keeping deletion in storage makes new user-owned tables visible in review.
+func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+
+	models := []any{
+		&RunningCalibrationPaceZone{}, &RunningCalibrationHRZone{},
+		&RunningCalibrationSnapshot{}, &ActivityTrainingLoad{}, &DailyTrainingLoad{},
+		&PersonalBest{}, &ActivityWatchZone{}, &TimeseriesPoint{}, &Lap{}, &Activity{},
+		&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{}, &SyncMeta{},
+		&ProviderCredential{}, &WeeklyPlan{}, &MasterPlan{}, &RaceGoal{},
+		&UserOnboarding{}, &UserProfile{},
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, model := range models {
+			if err := tx.Where("user_id = ?", uid).Delete(model).Error; err != nil {
+				return fmt.Errorf("storage: delete user data from %s: %w", tx.Statement.Table, err)
+			}
+		}
+		// Jobs and runs also carry created_by provenance. Delete either ownership
+		// shape so account deletion leaves no actor identifier behind.
+		if err := tx.Where("user_id = ? OR created_by = ?", uid, uid).Delete(&jobModel{}).Error; err != nil {
+			return fmt.Errorf("storage: delete user jobs: %w", err)
+		}
+		if err := tx.Where("user_id = ? OR created_by = ?", uid, uid).Delete(&pipelineRunModel{}).Error; err != nil {
+			return fmt.Errorf("storage: delete user pipeline runs: %w", err)
+		}
+		return nil
+	})
+}
+
 // SetProfileReady marks the user's basic profile as saved (POST profile). It
 // upserts the row, flipping only profile_ready.
 func (s *Store) SetProfileReady(ctx context.Context, userID string) error {

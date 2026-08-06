@@ -3,6 +3,7 @@ package garmin
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -67,13 +68,16 @@ func TestFetchActivitiesOrdered_CommitsOldestFirst(t *testing.T) {
 	fw.onActivity = func(labelID string) { committed = append(committed, labelID) }
 
 	_, err := p.SyncUser(context.Background(), testUID, provider.SyncOptions{
-		Mode: provider.SyncFull, Content: provider.ContentActivities, Jobs: 4,
+		Mode: provider.SyncIncremental, Content: provider.ContentActivities, Jobs: 4,
 	})
 	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
 	if got, want := strings.Join(committed, ","), "1002,1001"; got != want {
 		t.Errorf("commit order = %s, want %s", got, want)
+	}
+	if got := fw.meta["last_label_id"]; got != "1001" {
+		t.Errorf("cursor = %q, want newest committed activity 1001", got)
 	}
 }
 
@@ -275,6 +279,31 @@ func TestInfoCapabilities(t *testing.T) {
 		}
 	}
 }
+
+func TestAPIErrorDoesNotExposePath(t *testing.T) {
+	err := (&APIError{Status: http.StatusNotFound, Path: "/usersummary/private-display-name"}).Error()
+	if strings.Contains(err, "private-display-name") || strings.Contains(err, "/usersummary/") {
+		t.Fatalf("API error exposes request path: %q", err)
+	}
+}
+
+func TestTransportErrorDoesNotExposeURL(t *testing.T) {
+	client := NewClient(Credentials{OAuth2: OAuth2Token{AccessToken: "redacted", ExpiresAt: time.Now().Add(time.Hour).Unix()}}, WithHTTPClient(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, &url.Error{Op: "Get", URL: "https://example.test/private-display-name", Err: context.DeadlineExceeded}
+	})}), WithRequestDelay(0))
+	client.domain = "example.test"
+	_, err := client.ListActivities(context.Background(), 0, 1)
+	if err == nil {
+		t.Fatal("want transport error")
+	}
+	if strings.Contains(err.Error(), "private-display-name") || strings.Contains(err.Error(), "example.test") {
+		t.Fatalf("transport error exposes URL: %q", err)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestSyncUser_EmitsProgress(t *testing.T) {
 	p, _ := newTestProvider(t, garminMux(), loggedInCreds())

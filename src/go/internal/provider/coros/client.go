@@ -81,7 +81,16 @@ func (e *APIError) Error() string { return fmt.Sprintf("coros: [%s] %s", e.Code,
 // the sync is an idempotent read, so a retry is side-effect-free; a genuinely
 // terminal code just costs the (bounded) attempts before it surfaces. The httpx
 // retry layer consults this via the Retryable() interface.
-func (e *APIError) Retryable() bool { return true }
+func (e *APIError) Retryable() bool { return e.Code != "1031" }
+
+// Unwrap marks COROS 1031 (Parameter input error) as deterministic. Unknown
+// business codes remain transient because COROS also uses them for throttling.
+func (e *APIError) Unwrap() error {
+	if e.Code == "1031" {
+		return provider.ErrInvalidRequest
+	}
+	return nil
+}
 
 // AuthError is a login / re-login failure.
 type AuthError struct{ msg string }

@@ -902,8 +902,8 @@ def test_run_refuses_to_overwrite_tracked_target(tmp_path: Path) -> None:
 def test_skill_md_uses_repository_relative_scripts() -> None:
     text = SKILL_MD.read_text(encoding="utf-8")
     assert "CLAUDE_SKILL_DIR" not in text
-    assert 'python ".claude/skills/worktree-development/scripts/initialize_worktree.py"' in text
-    assert 'python ".claude/skills/worktree-development/scripts/create_worktree.py"' in text
+    assert 'python3 ".claude/skills/worktree-development/scripts/initialize_worktree.py"' in text
+    assert 'python3 ".claude/skills/worktree-development/scripts/create_worktree.py"' in text
 
 
 def test_skill_is_self_contained_and_has_no_enterworktree() -> None:

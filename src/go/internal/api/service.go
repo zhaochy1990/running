@@ -96,11 +96,12 @@ type Config struct {
 
 	// User/onboarding surface (ADR 0013) — a sibling registrar sharing the auth
 	// path. Leave zero to run the job/pipeline API only (e.g. in tests).
-	UserStore     UserStore
-	ProviderLogin ProviderLogin
-	ProviderInfo  ProviderInfo
-	AuthNameSync  AuthNameSync
-	Features      FeatureConfig
+	UserStore      UserStore
+	ProviderLogin  ProviderLogin
+	ProviderInfo   ProviderInfo
+	AuthNameSync   AuthNameSync
+	AccountDeleter AccountDeleter
+	Features       FeatureConfig
 
 	// ActivityStore backs the activity read surface (ADR 0019) — a sibling
 	// registrar sharing the auth path. Leave zero to run without the activity
@@ -195,7 +196,7 @@ func NewService(cfg Config) *Service {
 		syncPipelineIncremental: cfg.SyncPipelineIncremental,
 		jobCatalog:              cfg.JobCatalog,
 		pipelineCatalog:         cfg.PipelineCatalog,
-		users:                   newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.Features, log),
+		users:                   newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.AccountDeleter, cfg.Features, log),
 		goals:                   newGoalRoutes(cfg.GoalStore, log),
 		activities:              newActivityRoutes(cfg.ActivityStore, log),
 		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),

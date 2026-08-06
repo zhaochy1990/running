@@ -172,6 +172,79 @@ func TestSyncUser_FullFlow(t *testing.T) {
 	}
 }
 
+func TestSyncActivities_SkipsUnknownSportBeforeDetail(t *testing.T) {
+	fw := newFakeWriter()
+	var unknownDetailCalls int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/activity/query", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("pageNumber") == "1" {
+			writeEnvelope(w, resultSuccess, `{"dataList":[{"labelId":"UNKNOWN","sportType":65535},{"labelId":"NEW","sportType":100},{"labelId":"OLD","sportType":100}]}`)
+			return
+		}
+		writeEnvelope(w, resultSuccess, `{"dataList":[]}`)
+	})
+	mux.HandleFunc("/activity/detail/query", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("labelId") == "UNKNOWN" {
+			unknownDetailCalls++
+		}
+		writeEnvelope(w, resultSuccess, `{"summary":{"sportType":100,"startTimestamp":175000000000}}`)
+	})
+	p := newTestProvider(t, mux, fw)
+
+	res, err := p.SyncUser(context.Background(), testUID, provider.SyncOptions{
+		Mode: provider.SyncFull, Content: provider.ContentActivities, Jobs: 2,
+	})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.Activities != 2 {
+		t.Errorf("activities = %d, want 2 known activities", res.Activities)
+	}
+	if _, ok := fw.activities["OLD"]; !ok {
+		t.Error("old activity missing")
+	}
+	if _, ok := fw.activities["NEW"]; !ok {
+		t.Error("new activity after invalid detail missing")
+	}
+	if _, ok := fw.activities["UNKNOWN"]; ok {
+		t.Error("unknown sport must not be stored")
+	}
+	if unknownDetailCalls != 0 {
+		t.Errorf("unknown detail calls = %d, want 0", unknownDetailCalls)
+	}
+
+	// Incremental scanning skips the leading unknown item before reaching the
+	// known NEW stop point.
+	second, err := p.SyncUser(context.Background(), testUID, provider.SyncOptions{
+		Mode: provider.SyncIncremental, Content: provider.ContentActivities, Jobs: 2,
+	})
+	if err != nil {
+		t.Fatalf("incremental sync: %v", err)
+	}
+	if second.Activities != 0 {
+		t.Errorf("incremental activities = %d, want 0", second.Activities)
+	}
+}
+
+func TestSyncActivities_DoesNotHideInvalidDetailForKnownSport(t *testing.T) {
+	fw := newFakeWriter()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/activity/query", func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(w, resultSuccess, `{"dataList":[{"labelId":"BAD","sportType":100}]}`)
+	})
+	mux.HandleFunc("/activity/detail/query", func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(w, "1031", `{}`)
+	})
+	p := newTestProvider(t, mux, fw)
+
+	_, err := p.SyncUser(context.Background(), testUID, provider.SyncOptions{
+		Mode: provider.SyncFull, Content: provider.ContentActivities,
+	})
+	if !provider.IsInvalidRequest(err) {
+		t.Fatalf("error = %v, want invalid request for known sport", err)
+	}
+}
+
 // TestSyncDashboard_FetchFailureIsBestEffort locks in the best-effort contract:
 // when /dashboard/query fails, the sync must NOT abort — daily_health (from the
 // separate /analyse/query) is kept, while the dashboard singleton, daily_hrv,

@@ -11,9 +11,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
+	"github.com/zhaochy1990/stride/internal/logging"
 	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/utils/timefmt"
@@ -145,39 +149,67 @@ func (p *Provider) clientFor(ctx context.Context, user string) (*Client, error) 
 // for both domains: it governs how far back the activity scan and the daily-
 // health window reach. A zero Content means ContentAll.
 func (p *Provider) SyncUser(ctx context.Context, user string, opts provider.SyncOptions) (provider.SyncResult, error) {
+	started := time.Now()
+	jobs := provider.DetailJobs(opts.Jobs)
+	log := logging.Default().With(
+		zap.String("provider", providerName),
+		zap.String("user", user),
+		zap.String("mode", string(opts.Mode)),
+		zap.Int("jobs", jobs),
+	)
 	content := opts.Content
 	if content == 0 {
 		content = provider.ContentAll
 	}
 	client, err := p.clientFor(ctx, user)
 	if err != nil {
+		log.Warn("watch sync client initialization failed", append(syncErrorFields(err), zap.Duration("elapsed", time.Since(started)))...)
 		return provider.SyncResult{}, err
 	}
-	client.EnableRateLimit(provider.DetailJobs(opts.Jobs))
+	client.EnableRateLimit(jobs)
 
 	var res provider.SyncResult
 	if content.Has(provider.ContentActivities) {
+		phaseStarted := time.Now()
 		if err := p.syncActivities(ctx, client, user, opts, &res); err != nil {
+			log.Warn("watch sync activities failed", append(syncErrorFields(err), zap.Duration("elapsed", time.Since(phaseStarted)))...)
 			return res, err
 		}
+		log.Info("watch sync activities completed", zap.Int("activities", res.Activities), zap.Duration("elapsed", time.Since(phaseStarted)))
 	}
 	if content.Has(provider.ContentHealth) {
+		phaseStarted := time.Now()
 		if err := p.syncHealth(ctx, client, user, opts, &res); err != nil {
+			log.Warn("watch sync health failed", append(syncErrorFields(err), zap.Duration("elapsed", time.Since(phaseStarted)))...)
 			return res, err
 		}
+		log.Info("watch sync health completed", zap.Int("writes", res.Health), zap.Duration("elapsed", time.Since(phaseStarted)))
 	}
+	log.Info("watch sync completed", zap.Int("activities", res.Activities), zap.Int("health_writes", res.Health), zap.Duration("elapsed", time.Since(started)))
 	return res, nil
+}
+
+func syncErrorFields(err error) []zap.Field {
+	fields := []zap.Field{zap.String("error_type", fmt.Sprintf("%T", err))}
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		fields = append(fields, zap.Int("http_status", apiErr.Status))
+	}
+	return fields
 }
 
 // syncActivities collects the activity list (paging, stopping at the first
 // already-synced activity in incremental mode), then fetches + upserts each
 // activity's detail, emitting per-activity progress like the COROS adapter.
 func (p *Provider) syncActivities(ctx context.Context, client *Client, user string, opts provider.SyncOptions, res *provider.SyncResult) error {
+	scanStarted := time.Now()
 	items, err := p.collectActivities(ctx, client, user, opts)
 	if err != nil {
 		return err
 	}
 	total := len(items)
+	logging.Default().Info("garmin activity scan completed",
+		zap.String("user", user), zap.Int("activities", total), zap.Duration("elapsed", time.Since(scanStarted)))
 	provider.EmitProgress(opts.Progress, "activities", 0, total, provider.PercentInBand(0, total, 10, 80))
 	if total == 0 {
 		return nil
@@ -186,7 +218,8 @@ func (p *Provider) syncActivities(ctx context.Context, client *Client, user stri
 	for i, item := range items {
 		ordered[total-1-i] = item
 	}
-	return p.fetchActivitiesOrdered(ctx, client, user, ordered, provider.DetailJobs(opts.Jobs), opts.Progress, res)
+	jobs := provider.DetailJobs(opts.Jobs)
+	return p.fetchActivitiesOrdered(ctx, client, user, ordered, jobs, opts.Progress, res)
 }
 
 // collectActivities pages the activity list and returns the items to sync,
@@ -238,10 +271,14 @@ type activityResult struct {
 	activity   *storage.Activity
 	laps       []storage.Lap
 	timeseries []storage.TimeseriesPoint
+	fetchTime  time.Duration
 	err        error
 }
 
 func (p *Provider) fetchActivitiesOrdered(ctx context.Context, client *Client, user string, ordered []rawActivity, jobs int, progress provider.ProgressCallback, res *provider.SyncResult) error {
+	started := time.Now()
+	var fetchTotal, fetchMax, commitTotal, commitMax time.Duration
+	var lapsTotal, timeseriesTotal int
 	results := make([]activityResult, len(ordered))
 	ready := make([]chan struct{}, len(ordered))
 	for i := range ready {
@@ -290,41 +327,70 @@ func (p *Provider) fetchActivitiesOrdered(ctx context.Context, client *Client, u
 		r := results[i]
 		results[i] = activityResult{}
 		<-inFlight
+		fetchTotal += r.fetchTime
+		fetchMax = max(fetchMax, r.fetchTime)
 		if r.err != nil {
 			commitErr = r.err
 			break
 		}
+		commitStarted := time.Now()
 		if err := p.store.UpsertActivityPreservingEmptyChildren(ctx, r.activity, r.laps, r.timeseries, nil); err != nil {
 			commitErr = err
 			break
 		}
 		labelID := ordered[i].labelID()
+		lapsTotal += len(r.laps)
+		timeseriesTotal += len(r.timeseries)
 		res.Activities++
 		res.ActivityLabelIDs = append(res.ActivityLabelIDs, labelID)
 		if err := p.store.SetMeta(ctx, user, "last_label_id", labelID); err != nil {
 			commitErr = err
 			break
 		}
+		commitTime := time.Since(commitStarted)
+		commitTotal += commitTime
+		commitMax = max(commitMax, commitTime)
 		provider.EmitProgress(progress, "activities", i+1, len(ordered), provider.PercentInBand(i+1, len(ordered), 10, 80))
 	}
 	cancel()
 	wg.Wait()
+	logActivityPipeline(user, jobs, res.Activities, lapsTotal, timeseriesTotal,
+		fetchTotal, fetchMax, commitTotal, commitMax, time.Since(started), commitErr)
 	return commitErr
 }
 
-func (p *Provider) fetchOneActivity(ctx context.Context, client *Client, user string, a rawActivity) activityResult {
+func logActivityPipeline(user string, jobs, activities, laps, timeseries int, fetchTotal, fetchMax, commitTotal, commitMax, elapsed time.Duration, err error) {
+	log := logging.Default().Info
+	message := "garmin activity detail pipeline completed"
+	if err != nil {
+		log = logging.Default().Warn
+		message = "garmin activity detail pipeline failed"
+	}
+	log(message,
+		zap.String("user", user), zap.Int("activities", activities), zap.Int("laps", laps),
+		zap.Int("timeseries", timeseries), zap.Int("jobs", jobs),
+		zap.Duration("fetch_total", fetchTotal), zap.Duration("fetch_max", fetchMax),
+		zap.Duration("commit_total", commitTotal), zap.Duration("commit_max", commitMax),
+		zap.Duration("elapsed", elapsed), zap.Bool("failed", err != nil))
+}
+
+func (p *Provider) fetchOneActivity(ctx context.Context, client *Client, user string, a rawActivity) (result activityResult) {
+	started := time.Now()
+	defer func() { result.fetchTime = time.Since(started) }()
 	labelID := a.labelID()
 	detailsRaw, err := client.GetActivityDetails(ctx, labelID, activityDetailsMaxChart, activityDetailsMaxPoly)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return activityResult{err: err}
+			result.err = err
+			return result
 		}
 		detailsRaw = nil
 	}
 	splitsRaw, err := client.GetActivitySplits(ctx, labelID)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return activityResult{err: err}
+			result.err = err
+			return result
 		}
 		splitsRaw = nil
 	}
@@ -344,11 +410,12 @@ func (p *Provider) fetchOneActivity(ctx context.Context, client *Client, user st
 			weather = &w
 		}
 	}
-	return activityResult{
+	result = activityResult{
 		activity:   buildActivity(user, a, weather),
 		laps:       parseSplits(splitsRaw),
 		timeseries: parseDetailsTimeseries(detailsRaw),
 	}
+	return result
 }
 
 // syncOneActivity fetches the detail sub-resources for one activity and upserts

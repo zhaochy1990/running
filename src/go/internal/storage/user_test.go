@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/zhaochy1990/stride/internal/job"
 )
 
 // migrateUsers ensures the user tables exist for the integration test (the
@@ -209,5 +211,61 @@ func TestUserOnboarding_ClearWatchReady(t *testing.T) {
 	}
 	if o.CompletedAt == nil {
 		t.Errorf("completed_at must be left untouched on disconnect (ADR 0018)")
+	}
+}
+
+func TestDeleteUserData_RemovesOwnedRowsAndPreservesOtherUsers(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	for _, migrate := range []func(context.Context) error{
+		st.AutoMigrateWatch,
+		st.AutoMigrateUsers,
+		st.AutoMigrateGoals,
+		st.AutoMigrateMasterPlan,
+		st.AutoMigrateWeeklyPlan,
+	} {
+		if err := migrate(ctx); err != nil {
+			t.Fatalf("migrate: %v", err)
+		}
+	}
+
+	deletedUID, keptUID := uuid.NewString(), uuid.NewString()
+	for _, uid := range []string{deletedUID, keptUID} {
+		if err := st.UpsertUserProfile(ctx, &UserProfile{UserID: uid, DisplayName: uid}); err != nil {
+			t.Fatalf("seed profile: %v", err)
+		}
+		if err := st.SetWatchReady(ctx, uid); err != nil {
+			t.Fatalf("seed onboarding: %v", err)
+		}
+		if err := st.SaveCredential(ctx, &ProviderCredential{UserID: uid, Provider: "coros", Secret: []byte("secret")}); err != nil {
+			t.Fatalf("seed credential: %v", err)
+		}
+		now := time.Now().UTC()
+		if err := st.Jobs().Create(ctx, &job.Job{
+			ID: uuid.NewString(), UserID: uid, CreatedBy: uid, Type: "watch_sync",
+			Status: job.StatusQueued, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("seed job: %v", err)
+		}
+	}
+
+	if err := st.DeleteUserData(ctx, deletedUID); err != nil {
+		t.Fatalf("DeleteUserData: %v", err)
+	}
+	if profile, err := st.GetUserProfile(ctx, deletedUID); err != nil || profile != nil {
+		t.Fatalf("deleted profile = %v, %v; want nil, nil", profile, err)
+	}
+	if provider, found, err := st.ProviderForUser(ctx, deletedUID); err != nil || found {
+		t.Fatalf("deleted provider = %q, %v, %v; want absent", provider, found, err)
+	}
+	var deletedJobs int64
+	if err := st.db.Model(&jobModel{}).Where("user_id = ? OR created_by = ?", deletedUID, deletedUID).Count(&deletedJobs).Error; err != nil {
+		t.Fatalf("count deleted jobs: %v", err)
+	}
+	if deletedJobs != 0 {
+		t.Fatalf("deleted user still has %d jobs", deletedJobs)
+	}
+	if profile, err := st.GetUserProfile(ctx, keptUID); err != nil || profile == nil {
+		t.Fatalf("other user's profile was removed: %v, %v", profile, err)
 	}
 }
