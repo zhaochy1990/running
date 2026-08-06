@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/logging"
@@ -53,6 +54,7 @@ type UserStore interface {
 	GetMeta(ctx context.Context, userID, key string) (value string, ok bool, err error)
 	DeleteCredential(ctx context.Context, userID, provider string) error
 	ClearWatchReady(ctx context.Context, userID string) error
+	DeleteUserData(ctx context.Context, userID string) error
 }
 
 // WatchLoginResult is the provider-agnostic outcome of a watch login.
@@ -83,6 +85,11 @@ type ProviderInfo interface {
 // nil to disable the write-back. Satisfied by *authsvc.Client.
 type AuthNameSync interface {
 	SyncName(ctx context.Context, bearer, name string) error
+}
+
+// AccountDeleter removes the current user's identity from the auth-service.
+type AccountDeleter interface {
+	DeleteAccount(ctx context.Context, bearer string) error
 }
 
 // FeatureConfig holds the config-driven feature flags echoed in the profile
@@ -116,21 +123,23 @@ type userRoutes struct {
 	providerLogin ProviderLogin
 	providerInfo  ProviderInfo
 	authName      AuthNameSync
+	accountAuth   AccountDeleter
 	features      FeatureConfig
 	log           *zap.Logger
 }
 
-func newUserRoutes(store UserStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, features FeatureConfig, log *zap.Logger) *userRoutes {
+func newUserRoutes(store UserStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, ad AccountDeleter, features FeatureConfig, log *zap.Logger) *userRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &userRoutes{store: store, providerLogin: pl, providerInfo: pi, authName: an, features: features, log: log}
+	return &userRoutes{store: store, providerLogin: pl, providerInfo: pi, authName: an, accountAuth: ad, features: features, log: log}
 }
 
 // register mounts the routes on the (already authenticated) group. Paths mirror
 // the Python contract so a later browser cutover is just routing, except the
 // unified /watch/login (ADR 0013).
 func (u *userRoutes) register(rg *gin.RouterGroup) {
+	rg.DELETE("/api/users/me", u.deleteAccount)
 	rg.GET("/api/users/me/profile", u.getProfile)
 	rg.POST("/api/users/me/profile", u.postProfile)
 	rg.GET("/api/users/me/watch", u.getWatch)
@@ -621,4 +630,62 @@ func validationMessage(fe validator.FieldError) string {
 	default:
 		return "invalid value"
 	}
+}
+
+// deleteAccount removes the auth-service identity first, then atomically clears
+// all user-owned STRIDE rows. Auth-service 401/404 means the external identity
+// is already unavailable and local cleanup can safely continue.
+//
+//	@Summary		Delete the current user's account and data
+//	@Tags			users
+//	@Success		204
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		409	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Failure		503	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me [delete]
+func (u *userRoutes) deleteAccount(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	parsedUID, err := uuid.Parse(uid)
+	if err != nil || parsedUID.Version() != 4 || parsedUID.String() != strings.ToLower(uid) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid user identifier"})
+		return
+	}
+	if u.accountAuth == nil {
+		u.log.Error("account deletion auth-service dependency is not configured")
+		c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "auth-service unavailable"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	if err := u.accountAuth.DeleteAccount(ctx, bearerFrom(c)); err != nil {
+		var responseErr interface{ HTTPStatus() int }
+		isResponse := errors.As(err, &responseErr)
+		status := 0
+		if isResponse {
+			status = responseErr.HTTPStatus()
+		}
+		if !isResponse || status >= http.StatusInternalServerError {
+			u.log.Error("auth-service account deletion failed", zapErr(err))
+			c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "auth-service unavailable"})
+			return
+		}
+		if status != http.StatusUnauthorized && status != http.StatusNotFound {
+			u.log.Warn("auth-service rejected account deletion", zap.Int("status", status))
+			c.JSON(status, errorResponse{Error: "auth-service rejected account deletion"})
+			return
+		}
+	}
+
+	if err := u.store.DeleteUserData(ctx, uid); err != nil {
+		u.log.Error("delete user data failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "failed to delete user data"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

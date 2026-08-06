@@ -10,8 +10,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -20,6 +22,28 @@ import (
 type Client struct {
 	baseURL string
 	http    *http.Client
+}
+
+// ResponseError reports a non-success response from the auth-service.
+type ResponseError struct {
+	StatusCode int
+	Method     string
+	Path       string
+}
+
+func (e *ResponseError) Error() string {
+	return fmt.Sprintf("authsvc: %s %s returned %d", e.Method, e.Path, e.StatusCode)
+}
+
+func (e *ResponseError) HTTPStatus() int { return e.StatusCode }
+
+// StatusCode returns the auth-service status carried by err, if any.
+func StatusCode(err error) (int, bool) {
+	var responseErr *ResponseError
+	if errors.As(err, &responseErr) {
+		return responseErr.StatusCode, true
+	}
+	return 0, false
 }
 
 // New builds a Client. baseURL is the auth-service origin (e.g.
@@ -66,7 +90,34 @@ func (c *Client) SyncName(ctx context.Context, bearer, name string) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("authsvc: PATCH /api/users/me returned %d", resp.StatusCode)
+		return &ResponseError{StatusCode: resp.StatusCode, Method: http.MethodPatch, Path: "/api/users/me"}
+	}
+	return nil
+}
+
+// DeleteAccount deletes the current user's identity in the auth-service. Unlike
+// the best-effort name mirror, account deletion must fail when auth-service is
+// not configured or unavailable so a still-loginable identity is never left
+// behind after STRIDE data has been erased.
+func (c *Client) DeleteAccount(ctx context.Context, bearer string) error {
+	if strings.TrimSpace(c.baseURL) == "" {
+		return errors.New("authsvc: base URL is not configured")
+	}
+	const path = "/api/users/me"
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, strings.TrimRight(c.baseURL, "/")+path, nil)
+	if err != nil {
+		return err
+	}
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 400 {
+		return &ResponseError{StatusCode: resp.StatusCode, Method: http.MethodDelete, Path: path}
 	}
 	return nil
 }
