@@ -43,6 +43,7 @@ describe('disabledReasonFor', () => {
   it.each<[StructuredStatus, boolean]>([
     ['fresh', false],
     ['authored', false],
+    ['canonical', false],
     ['stale', true],
     ['parse_failed', true],
     ['backfilled', true],

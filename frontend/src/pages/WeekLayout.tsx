@@ -85,16 +85,18 @@ export default function WeekLayout() {
   useEffect(() => {
     if (folder && user) {
       let cancelled = false
+      setPlanDays([])
       getWeek(user, folder)
         .then((data) => {
           if (cancelled) return
           setWeekDetail(data)
-          setActiveTab('plan')
           // Pull structured status from the augmented week response.
           const structured = (data as WeekDetail & {
             structured?: { structured_status?: StructuredStatus }
           }).structured
-          setStructuredStatus(structured?.structured_status ?? 'none')
+          const nextStructuredStatus = structured?.structured_status ?? 'none'
+          setStructuredStatus(nextStructuredStatus)
+          setActiveTab(data.plan ? 'plan' : nextStructuredStatus !== 'none' ? 'calendar' : 'activities')
         })
         .finally(() => {
           if (!cancelled) setLoadedFolder(folder)

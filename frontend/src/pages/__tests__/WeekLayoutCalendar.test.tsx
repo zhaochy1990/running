@@ -154,6 +154,34 @@ describe('WeekLayout — calendar tab', () => {
     expect(screen.queryByTestId('reparse-banner')).not.toBeInTheDocument()
   })
 
+  it('opens a canonical calendar when legacy markdown is absent', async () => {
+    mocks.getWeek.mockResolvedValue({
+      ...buildWeekDetail('canonical'),
+      plan: undefined,
+    })
+
+    renderAt()
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('day-card')).toHaveLength(7)
+    })
+    expect(screen.getByRole('button', { name: '日历' })).toHaveClass('text-accent-green')
+  })
+
+  it('opens training records when no plan is available', async () => {
+    mocks.getWeek.mockResolvedValue({
+      ...buildWeekDetail(null),
+      plan: undefined,
+    })
+    mocks.getPlanDays.mockResolvedValue({ days: [] })
+
+    renderAt()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '训练记录 (3)' })).toHaveClass('text-accent-green')
+    })
+  })
+
   it('shows reparse banner when status=parse_failed and triggers reparsePlan', async () => {
     mocks.getWeek.mockResolvedValue(buildWeekDetail('parse_failed'))
     mocks.reparsePlan.mockResolvedValue({
