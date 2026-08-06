@@ -54,6 +54,59 @@ func (s *Store) UpsertUserProfile(ctx context.Context, p *UserProfile) error {
 	}).Create(p).Error
 }
 
+// PatchUserProfile selectively updates an existing core profile and returns the
+// persisted row. It never inserts a sparse profile: a missing user returns
+// (nil, nil). The update and read run in one transaction so callers receive the
+// values produced by this patch without overwriting omitted columns.
+func (s *Store) PatchUserProfile(ctx context.Context, userID string, patch UserProfilePatch) (*UserProfile, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	updates := map[string]interface{}{}
+	if patch.DisplayName != nil {
+		updates["display_name"] = *patch.DisplayName
+	}
+	if patch.DOB != nil {
+		updates["dob"] = *patch.DOB
+	}
+	if patch.Sex != nil {
+		updates["sex"] = *patch.Sex
+	}
+	if patch.HeightCm != nil {
+		updates["height_cm"] = *patch.HeightCm
+	}
+	if patch.WeightKg != nil {
+		updates["weight_kg"] = *patch.WeightKg
+	}
+
+	var result *UserProfile
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(updates) > 0 {
+			updates["updated_at"] = time.Now().UTC()
+			if err := tx.Model(&UserProfile{}).Where("user_id = ?", uid).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+
+		var profile UserProfile
+		queryErr := tx.Where("user_id = ?", uid).First(&profile).Error
+		if errors.Is(queryErr, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if queryErr != nil {
+			return queryErr
+		}
+		result = &profile
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // GetUserOnboarding returns the onboarding row for userID, or (nil, nil) when
 // none exists (the caller renders the all-false default).
 func (s *Store) GetUserOnboarding(ctx context.Context, userID string) (*UserOnboarding, error) {

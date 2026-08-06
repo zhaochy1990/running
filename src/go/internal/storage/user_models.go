@@ -22,6 +22,17 @@ type UserProfile struct {
 	UpdatedAt   time.Time `gorm:"column:updated_at"`
 }
 
+// UserProfilePatch is a selective update to an existing core profile. A nil
+// field is omitted; API adapters reject explicit JSON null before constructing
+// this value, so each non-nil pointer always carries a valid replacement.
+type UserProfilePatch struct {
+	DisplayName *string
+	DOB         *string
+	Sex         *string
+	HeightCm    *float64
+	WeightKg    *float64
+}
+
 // TableName pins the table name (GORM would otherwise pluralize).
 func (UserProfile) TableName() string { return "user_profile" }
 

@@ -29,6 +29,8 @@ type fakeUserStore struct {
 	devices     map[string]string
 	meta        map[string]string
 	upsertErr   error
+	patchErr    error
+	patchCalls  int
 	deleteErr   error
 	deletedUser string
 }
@@ -55,6 +57,34 @@ func (f *fakeUserStore) UpsertUserProfile(_ context.Context, p *storage.UserProf
 	cp := *p
 	f.profiles[p.UserID] = &cp
 	return nil
+}
+
+func (f *fakeUserStore) PatchUserProfile(_ context.Context, uid string, patch storage.UserProfilePatch) (*storage.UserProfile, error) {
+	f.patchCalls++
+	if f.patchErr != nil {
+		return nil, f.patchErr
+	}
+	profile := f.profiles[uid]
+	if profile == nil {
+		return nil, nil
+	}
+	if patch.DisplayName != nil {
+		profile.DisplayName = *patch.DisplayName
+	}
+	if patch.DOB != nil {
+		profile.DOB = *patch.DOB
+	}
+	if patch.Sex != nil {
+		profile.Sex = *patch.Sex
+	}
+	if patch.HeightCm != nil {
+		profile.HeightCm = *patch.HeightCm
+	}
+	if patch.WeightKg != nil {
+		profile.WeightKg = *patch.WeightKg
+	}
+	cp := *profile
+	return &cp, nil
 }
 
 func (f *fakeUserStore) GetUserOnboarding(_ context.Context, uid string) (*storage.UserOnboarding, error) {
@@ -461,6 +491,154 @@ func TestPostProfile_AuthSyncFailureNonFatal(t *testing.T) {
 	}
 	if h.store.profiles[testSub] == nil {
 		t.Errorf("profile must be saved despite auth sync failure")
+	}
+}
+
+// --- PATCH profile -----------------------------------------------------------
+
+func seedCoreProfile(h *userHarness) {
+	h.store.profiles[testSub] = &storage.UserProfile{
+		UserID: testSub, DisplayName: "Zhao", DOB: "1990-05-01", Sex: "male", HeightCm: 178, WeightKg: 70,
+	}
+}
+
+func TestPatchProfile_RequiresUserTier(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	if w := h.do(http.MethodPatch, "/api/users/me/profile", `{}`, nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("no token: code = %d, want 401", w.Code)
+	}
+	if w := h.do(http.MethodPatch, "/api/users/me/profile", `{}`, internalHdr()); w.Code != http.StatusUnauthorized {
+		t.Fatalf("internal token: code = %d, want 401", w.Code)
+	}
+}
+
+func TestPatchProfile_PartialUpdatePreservesOtherFields(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	seedCoreProfile(h)
+	h.store.onboarding[testSub] = &storage.UserOnboarding{UserID: testSub, WatchReady: true, ProfileReady: true}
+
+	w := h.do(http.MethodPatch, "/api/users/me/profile", `{"display_name":"New Name"}`, h.bearer(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp profilePatchResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.OK || resp.ID != testSub || resp.DisplayName == nil || *resp.DisplayName != "New Name" {
+		t.Errorf("response = %+v", resp)
+	}
+	if resp.Profile == nil || resp.Profile.DOB != "1990-05-01" || resp.Profile.HeightCm != 178 || resp.Profile.WeightKg != 70 {
+		t.Errorf("response profile did not preserve omitted fields: %+v", resp.Profile)
+	}
+	got := h.store.profiles[testSub]
+	if got.DisplayName != "New Name" || got.DOB != "1990-05-01" || got.Sex != "male" || got.HeightCm != 178 || got.WeightKg != 70 {
+		t.Errorf("stored profile = %+v", got)
+	}
+	if onboarding := h.store.onboarding[testSub]; !onboarding.WatchReady || !onboarding.ProfileReady {
+		t.Errorf("PATCH changed onboarding = %+v", onboarding)
+	}
+	if h.authName.called {
+		t.Errorf("PATCH must not mirror display_name to auth-service")
+	}
+}
+
+func TestPatchProfile_UpdatesEveryCoreField(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	seedCoreProfile(h)
+	body := `{"display_name":"Lin","dob":"1992-06-07","sex":"female","height_cm":165.5,"weight_kg":55.25}`
+	w := h.do(http.MethodPatch, "/api/users/me/profile", body, h.bearer(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	got := h.store.profiles[testSub]
+	if got.DisplayName != "Lin" || got.DOB != "1992-06-07" || got.Sex != "female" || got.HeightCm != 165.5 || got.WeightKg != 55.25 {
+		t.Errorf("stored profile = %+v", got)
+	}
+}
+
+func TestPatchProfile_EmptyObjectIsNoop(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	seedCoreProfile(h)
+	before := *h.store.profiles[testSub]
+
+	w := h.do(http.MethodPatch, "/api/users/me/profile", `{}`, h.bearer(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp profilePatchResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.OK || resp.ID != "" || resp.DisplayName != nil || resp.Profile == nil || resp.Profile.DisplayName != "Zhao" {
+		t.Errorf("response = %+v", resp)
+	}
+	if got := *h.store.profiles[testSub]; got != before {
+		t.Errorf("empty PATCH changed profile: got %+v want %+v", got, before)
+	}
+	if h.authName.called {
+		t.Errorf("empty PATCH must not call auth-service")
+	}
+}
+
+func TestPatchProfile_MissingProfile404(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	w := h.do(http.MethodPatch, "/api/users/me/profile", `{"display_name":"First"}`, h.bearer(t, testSub))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("code = %d, want 404: %s", w.Code, w.Body.String())
+	}
+	if h.store.profiles[testSub] != nil {
+		t.Errorf("PATCH must not create a sparse profile")
+	}
+}
+
+func TestPatchProfile_ValidationErrors422(t *testing.T) {
+	tests := []struct {
+		name  string
+		body  string
+		field string
+	}{
+		{name: "empty name", body: `{"display_name":""}`, field: "display_name"},
+		{name: "bad dob", body: `{"dob":"not-a-date"}`, field: "dob"},
+		{name: "bad sex", body: `{"sex":"unknown"}`, field: "sex"},
+		{name: "zero height", body: `{"height_cm":0}`, field: "height_cm"},
+		{name: "negative weight", body: `{"weight_kg":-1}`, field: "weight_kg"},
+		{name: "explicit null", body: `{"display_name":null}`, field: "display_name"},
+		{name: "python-only field", body: `{"target_race":"Shanghai Marathon"}`, field: "target_race"},
+		{name: "malformed json", body: `{"display_name":`, field: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newUserHarness(t, FeatureConfig{})
+			seedCoreProfile(h)
+			w := h.do(http.MethodPatch, "/api/users/me/profile", tt.body, h.bearer(t, testSub))
+			if w.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("code = %d, want 422: %s", w.Code, w.Body.String())
+			}
+			var resp validationErrorResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if len(resp.Detail) == 0 || len(resp.Detail[0].Loc) == 0 || resp.Detail[0].Loc[0] != "body" {
+				t.Fatalf("detail = %+v", resp.Detail)
+			}
+			if tt.field != "" && (len(resp.Detail[0].Loc) != 2 || resp.Detail[0].Loc[1] != tt.field) {
+				t.Errorf("detail location = %+v, want body.%s", resp.Detail[0].Loc, tt.field)
+			}
+			if h.store.patchCalls != 0 {
+				t.Errorf("store called on invalid request")
+			}
+		})
+	}
+}
+
+func TestPatchProfile_StoreFailure500(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	seedCoreProfile(h)
+	h.store.patchErr = errors.New("database unavailable")
+	w := h.do(http.MethodPatch, "/api/users/me/profile", `{"weight_kg":69}`, h.bearer(t, testSub))
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("code = %d, want 500: %s", w.Code, w.Body.String())
 	}
 }
 

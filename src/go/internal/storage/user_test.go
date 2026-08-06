@@ -54,6 +54,86 @@ func TestUserProfile_UpsertPreservesCreatedAt(t *testing.T) {
 	}
 }
 
+func TestUserProfile_PatchSelectiveUpdate(t *testing.T) {
+	st := openTestStore(t)
+	migrateUsers(t, st)
+	ctx := context.Background()
+	uid := uuid.NewString()
+
+	if err := st.UpsertUserProfile(ctx, &UserProfile{
+		UserID: uid, DisplayName: "Zhao", DOB: "1990-05-01", Sex: "male", HeightCm: 178, WeightKg: 70,
+	}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	first, err := st.GetUserProfile(ctx, uid)
+	if err != nil || first == nil {
+		t.Fatalf("get after insert: %v (nil=%v)", err, first == nil)
+	}
+
+	name := "New Name"
+	weight := 69.5
+	updated, err := st.PatchUserProfile(ctx, uid, UserProfilePatch{DisplayName: &name, WeightKg: &weight})
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if updated == nil {
+		t.Fatal("patch returned nil profile")
+	}
+	if updated.DisplayName != name || updated.WeightKg != weight {
+		t.Errorf("patched values = %+v", updated)
+	}
+	if updated.DOB != first.DOB || updated.Sex != first.Sex || updated.HeightCm != first.HeightCm {
+		t.Errorf("omitted values changed: before=%+v after=%+v", first, updated)
+	}
+	if !updated.CreatedAt.Equal(first.CreatedAt) {
+		t.Errorf("created_at changed: got %v want %v", updated.CreatedAt, first.CreatedAt)
+	}
+}
+
+func TestUserProfile_PatchEmptyReadsWithoutUpdating(t *testing.T) {
+	st := openTestStore(t)
+	migrateUsers(t, st)
+	ctx := context.Background()
+	uid := uuid.NewString()
+
+	if err := st.UpsertUserProfile(ctx, &UserProfile{
+		UserID: uid, DisplayName: "Zhao", DOB: "1990-05-01", Sex: "male", HeightCm: 178, WeightKg: 70,
+	}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	first, err := st.GetUserProfile(ctx, uid)
+	if err != nil || first == nil {
+		t.Fatalf("get after insert: %v (nil=%v)", err, first == nil)
+	}
+
+	got, err := st.PatchUserProfile(ctx, uid, UserProfilePatch{})
+	if err != nil || got == nil {
+		t.Fatalf("empty patch: %v (nil=%v)", err, got == nil)
+	}
+	if !got.UpdatedAt.Equal(first.UpdatedAt) {
+		t.Errorf("empty patch changed updated_at: got %v want %v", got.UpdatedAt, first.UpdatedAt)
+	}
+}
+
+func TestUserProfile_PatchMissingDoesNotInsert(t *testing.T) {
+	st := openTestStore(t)
+	migrateUsers(t, st)
+	ctx := context.Background()
+	uid := uuid.NewString()
+	name := "First"
+
+	got, err := st.PatchUserProfile(ctx, uid, UserProfilePatch{DisplayName: &name})
+	if err != nil {
+		t.Fatalf("patch absent profile: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("patch absent profile = %+v, want nil", got)
+	}
+	if profile, err := st.GetUserProfile(ctx, uid); err != nil || profile != nil {
+		t.Errorf("absent patch inserted row: got %v, %v", profile, err)
+	}
+}
+
 func TestUserOnboarding_FlagIsolation(t *testing.T) {
 	st := openTestStore(t)
 	migrateUsers(t, st)

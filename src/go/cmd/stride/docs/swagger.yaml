@@ -692,6 +692,35 @@ definitions:
     - sex
     - weight_kg
     type: object
+  api.profilePatchInput:
+    properties:
+      display_name:
+        minLength: 1
+        type: string
+      dob:
+        type: string
+      height_cm:
+        type: number
+      sex:
+        enum:
+        - male
+        - female
+        - other
+        type: string
+      weight_kg:
+        type: number
+    type: object
+  api.profilePatchResponse:
+    properties:
+      display_name:
+        type: string
+      id:
+        type: string
+      ok:
+        type: boolean
+      profile:
+        $ref: '#/definitions/api.profileCore'
+    type: object
   api.profileResponse:
     properties:
       display_name:
@@ -1766,6 +1795,49 @@ paths:
       security:
       - BearerAuth: []
       summary: Get the current user's profile, onboarding state and features
+      tags:
+      - users
+    patch:
+      consumes:
+      - application/json
+      description: Updates supplied core profile fields only. Omitted fields are preserved;
+        explicit null and unsupported fields return 422. The profile must already
+        exist.
+      parameters:
+      - description: Core profile fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.profilePatchInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.profilePatchResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.validationErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Partially update the current user's basic profile
       tags:
       - users
     post:

@@ -1,8 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"reflect"
 	"strings"
@@ -43,6 +46,7 @@ func init() {
 type UserStore interface {
 	GetUserProfile(ctx context.Context, userID string) (*storage.UserProfile, error)
 	UpsertUserProfile(ctx context.Context, p *storage.UserProfile) error
+	PatchUserProfile(ctx context.Context, userID string, patch storage.UserProfilePatch) (*storage.UserProfile, error)
 	GetUserOnboarding(ctx context.Context, userID string) (*storage.UserOnboarding, error)
 	SetWatchReady(ctx context.Context, userID string) error
 	SetProfileReady(ctx context.Context, userID string) error
@@ -142,6 +146,7 @@ func (u *userRoutes) register(rg *gin.RouterGroup) {
 	rg.DELETE("/api/users/me", u.deleteAccount)
 	rg.GET("/api/users/me/profile", u.getProfile)
 	rg.POST("/api/users/me/profile", u.postProfile)
+	rg.PATCH("/api/users/me/profile", u.patchProfile)
 	rg.GET("/api/users/me/watch", u.getWatch)
 	rg.DELETE("/api/users/me/watch", u.deleteWatch)
 	rg.POST("/api/users/me/watch/login", u.watchLogin)
@@ -190,6 +195,24 @@ type profileInput struct {
 	Sex         string  `json:"sex" binding:"required,oneof=male female other"`
 	HeightCm    float64 `json:"height_cm" binding:"required,gt=0"`
 	WeightKg    float64 `json:"weight_kg" binding:"required,gt=0"`
+}
+
+// profilePatchInput is the Go-owned core subset of Python's post-onboarding
+// profile PATCH. Pointer fields distinguish omitted values from replacements;
+// decodeProfilePatch rejects explicit null and fields owned by other domains.
+type profilePatchInput struct {
+	DisplayName *string  `json:"display_name" binding:"omitempty,min=1"`
+	DOB         *string  `json:"dob" binding:"omitempty,datetime=2006-01-02"`
+	Sex         *string  `json:"sex" binding:"omitempty,oneof=male female other"`
+	HeightCm    *float64 `json:"height_cm" binding:"omitempty,gt=0"`
+	WeightKg    *float64 `json:"weight_kg" binding:"omitempty,gt=0"`
+}
+
+type profilePatchResponse struct {
+	OK          bool         `json:"ok"`
+	ID          string       `json:"id,omitempty"`
+	DisplayName *string      `json:"display_name,omitempty"`
+	Profile     *profileCore `json:"profile"`
 }
 
 // watchLoginInput is the unified watch-login body.
@@ -357,6 +380,61 @@ func (u *userRoutes) postProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// patchProfile selectively updates an existing core profile. Fields owned by the
+// separate race-goal and training-preference domains are rejected rather than
+// silently discarded, so this staged endpoint cannot lose Settings edits.
+//
+//	@Summary		Partially update the current user's basic profile
+//	@Description	Updates supplied core profile fields only. Omitted fields are preserved; explicit null and unsupported fields return 422. The profile must already exist.
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		profilePatchInput	true	"Core profile fields to update"
+//	@Success		200		{object}	profilePatchResponse
+//	@Failure		401		{object}	errorResponse
+//	@Failure		404		{object}	map[string]string
+//	@Failure		422		{object}	validationErrorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/profile [patch]
+func (u *userRoutes) patchProfile(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+
+	in, detail := decodeProfilePatch(c)
+	if detail != nil {
+		c.JSON(http.StatusUnprocessableEntity, validationErrorResponse{Detail: detail})
+		return
+	}
+
+	profile, err := u.store.PatchUserProfile(c.Request.Context(), uid, storage.UserProfilePatch{
+		DisplayName: in.DisplayName,
+		DOB:         in.DOB,
+		Sex:         in.Sex,
+		HeightCm:    in.HeightCm,
+		WeightKg:    in.WeightKg,
+	})
+	if err != nil {
+		u.log.Error("patch profile failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if profile == nil {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "Profile not found"})
+		return
+	}
+
+	core := toProfileCore(profile)
+	resp := profilePatchResponse{OK: true, Profile: &core}
+	if hasProfilePatch(in) {
+		resp.ID = uid
+		resp.DisplayName = &profile.DisplayName
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // watchLogin authenticates a watch provider (COROS/Garmin), persists creds, and
@@ -597,6 +675,61 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+func toProfileCore(profile *storage.UserProfile) profileCore {
+	return profileCore{
+		DisplayName: profile.DisplayName,
+		DOB:         profile.DOB,
+		Sex:         profile.Sex,
+		HeightCm:    profile.HeightCm,
+		WeightKg:    profile.WeightKg,
+	}
+}
+
+func hasProfilePatch(in profilePatchInput) bool {
+	return in.DisplayName != nil || in.DOB != nil || in.Sex != nil || in.HeightCm != nil || in.WeightKg != nil
+}
+
+var profilePatchFields = map[string]bool{
+	"display_name": true,
+	"dob":          true,
+	"sex":          true,
+	"height_cm":    true,
+	"weight_kg":    true,
+}
+
+// decodeProfilePatch enforces the staged Go contract before gin validation:
+// unknown fields and explicit null are errors, while an empty object is a valid
+// no-op. This avoids silently accepting Python-only profile fields.
+func decodeProfilePatch(c *gin.Context) (profilePatchInput, []validationDetailItem) {
+	var raw map[string]json.RawMessage
+	decoder := json.NewDecoder(c.Request.Body)
+	if err := decoder.Decode(&raw); err != nil || raw == nil {
+		return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body"}, Msg: "invalid request body"}}
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body"}, Msg: "invalid request body"}}
+	}
+
+	for field, value := range raw {
+		if !profilePatchFields[field] {
+			return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body", field}, Msg: "unsupported field"}}
+		}
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body", field}, Msg: "null is not allowed"}}
+		}
+	}
+
+	body, err := json.Marshal(raw)
+	if err != nil {
+		return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body"}, Msg: "invalid request body"}}
+	}
+	var in profilePatchInput
+	if err := binding.JSON.BindBody(body, &in); err != nil {
+		return profilePatchInput{}, bindingDetail(err)
+	}
+	return in, nil
 }
 
 // bindingDetail turns a gin/validator binding error into a FastAPI-shaped detail
