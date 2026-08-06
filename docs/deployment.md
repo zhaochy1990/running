@@ -29,7 +29,14 @@ Multi-stage build (`Dockerfile`)：
   `PYTHON_API_URL`（stride-app）或 `GO_API_URL`（Tencent `stride api`），缺省 Python；
   每个 endpoint 由各自的 `STRIDE_ROUTE_*` 环境变量选择上游（值为 `go` → Go，未设置 / 其它值 →
   Python），所以单个 endpoint 的 cutover 只需在部署环境里设该变量，无需改路由表代码；
-  `/api/auth/*` 走 `AUTH_UPSTREAM_URL`。这**反转了 ADR 0012 的 browser-direct-to-Go**。Web onboarding 的生产 cutover 必须原子地设置 `STRIDE_ROUTE_GET_USERS_ME_PROFILE=go`、`STRIDE_ROUTE_POST_USERS_ME_PROFILE=go`、`STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN=go`、`STRIDE_ROUTE_POST_USER_SYNC=go`、`STRIDE_ROUTE_GET_PIPELINES_RUNID=go`、`STRIDE_ROUTE_GET_JOBS_JOBID=go` 和 `STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE=go`，并配置 `GO_API_URL`：profile/watch login 建立 Go-owned readiness 和凭据；全量 generic sync 返回 `run_id`，Web 轮询该 pipeline 和当前 job 的进度，只有用户点击 **Enter STRIDE** 后提交成功的 `run_id` 才会完成 onboarding。pipeline `done` 本身不是完成；`deploy-web.yml` 在单次 `az containerapp update` 中 source-controlled 地注入这七项，先断言完整集合、后读取 ACA template 逐项验证；缺失 `GO_API_URL`、零/部分 route 或部署后未保留任一 flag 都会失败。更早一步会无认证请求 `${STRIDE_GO_API_URL}/readyz/onboarding`：Go API 必须返回 `web-onboarding-v1` 与完整七个 method/path contract，才允许写入 BFF flags；不跟随 redirect，确保正是配置的 origin 自行证明版本。若配置 `PUBLIC_DIRECT_BASE_URL`（browser-direct Tencent gateway），workflow 也对其做同一检查，因为它承接实际浏览器 onboarding 请求。该静态公开 endpoint 不接受、读取或打印 end-user credential、JWT 或 internal token。BFF 启动也会拒绝缺失 `GO_API_URL` 或部分 onboarding route，路由 manifest 测试锁定这组 Go-ready route。
+	`/api/auth/*` 走 `AUTH_UPSTREAM_URL`。这**反转了 ADR 0012 的 browser-direct-to-Go**。Web onboarding 的生产 cutover 必须原子地设置 `STRIDE_ROUTE_GET_USERS_ME_PROFILE=go`、`STRIDE_ROUTE_POST_USERS_ME_PROFILE=go`、`STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN=go`、`STRIDE_ROUTE_POST_USER_SYNC=go`、`STRIDE_ROUTE_GET_PIPELINES_RUNID=go`、`STRIDE_ROUTE_GET_JOBS_JOBID=go` 和 `STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE=go`，并配置 `GO_API_URL`：profile/watch login 建立 Go-owned readiness 和凭据；全量 generic sync 返回 `run_id`，Web 轮询该 pipeline 和当前 job 的进度，只有用户点击 **Enter STRIDE** 后提交成功的 `run_id` 才会完成 onboarding。pipeline `done` 本身不是完成；`deploy-web.yml` 在单次 `az containerapp update` 中 source-controlled 地注入这七项，先断言完整集合、后读取 ACA template 逐项验证；缺失 `GO_API_URL`、零/部分 route 或部署后未保留任一 flag 都会失败。更早一步会无认证请求 `${STRIDE_GO_API_URL}/readyz/onboarding`：Go API 必须返回 `web-onboarding-v1` 与完整七个 method/path contract，才允许写入 BFF flags；不跟随 redirect，确保正是配置的 origin 自行证明版本。若配置 `PUBLIC_DIRECT_BASE_URL`（browser-direct Tencent gateway），workflow 也对其做同一检查，因为它承接实际浏览器 onboarding 请求。该静态公开 endpoint 不接受、读取或打印 end-user credential、JWT 或 internal token。BFF 启动也会拒绝缺失 `GO_API_URL` 或部分 onboarding route，路由 manifest 测试锁定这组 Go-ready route。
+- **Team API cutover（ADR 0026）**：15 个已迁移 method/path 可通过各自 `STRIDE_ROUTE_*` flag 切到 Go；`POST /api/teams/:teamId/sync-all` 未迁移，保持 flag 未设置并继续走 Python。feed + GET/POST/DELETE likes 虽有独立 flag 便于验证，生产必须作为一个原子 cutover/rollback 单元：
+  - `STRIDE_ROUTE_GET_TEAMS_TEAMID_FEED`
+  - `STRIDE_ROUTE_GET_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES`
+  - `STRIDE_ROUTE_POST_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES`
+  - `STRIDE_ROUTE_DELETE_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES`
+
+  四项一起设为 `go` 或一起清除；Go/MySQL likes 不 backfill、不 dual-write 到 legacy Azure，回滚不会同步两边历史。完整 flag 清单见 `frontend/.env.web.local.example`。
 - **`strength_illustrations/` 搬进 `stride-web` 镜像**（前端拥有 UI 插图资源）。
 - **分阶段 cutover（已完成）**：`stride-web` 先上新 host 验证 → 翻 `stride-running.cn` 到
   `stride-web`（同一 `stride-env`、同 static IP 的 hostname rebind，DNS 不变）→ backend 收尾部署里
@@ -39,6 +46,12 @@ Multi-stage build (`Dockerfile`)：
   `ALIYUN_ACR_USERNAME`/`ALIYUN_ACR_PASSWORD` secrets），namespace 硬编码 `stride`，镜像即
   `${ALIYUN_ACR_REGISTRY}/stride/stride-web`（与 `stride/stride-api`、`stride/stride-worker` 并列）。
    ACR mirror 步骤放在 deploy + 新 revision 进入 `Running` 之后、`if: always()`，misconfig 只让 job 变红不阻断部署。
+
+### Go team API runtime and schema startup
+
+Before enabling any team route flag, the Go `stride api` deployment must have working MySQL/RabbitMQ configuration, JWT verification config, and `STRIDE_WORKER_API_AUTH_SERVICE_URL`. The browser's original `Authorization` header passes through `stride-web` to Go; Go forwards it unchanged to auth-service for canonical team/membership authorization. `AUTH_UPSTREAM_URL` on `stride-web` is a separate browser-auth proxy setting and does not satisfy the Go dependency.
+
+On every `stride api` boot, startup runs `AutoMigrateTeamLikes` after the core/user/plan schema steps. It creates or reconciles only canonical MySQL `team_likes`; teams and memberships remain auth-service-owned. Any migration error fails startup, so deploy health checks must pass before team flags are enabled. The table intentionally starts without an Azure likes backfill.
 
 ## CI/CD（GitHub Actions）
 

@@ -85,6 +85,9 @@ func runAPI() error {
 	if err := store.AutoMigrateWeeklyPlan(ctx); err != nil {
 		return err
 	}
+	if err := store.AutoMigrateTeamLikes(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ (publisher only; no consumer) ---
 	topo := mq.Topology{Work: cfg.Queues.Work, Retry: cfg.Queues.Retry, Poison: cfg.Queues.Poison}
@@ -104,8 +107,8 @@ func runAPI() error {
 	}
 	authn := api.NewAuthenticator(cfg.API.InternalToken, verifier)
 
-	// User/onboarding surface deps (ADR 0013).
-	authNameSync := authsvc.New(cfg.API.AuthServiceURL, 5*time.Second)
+	// User/onboarding and team surfaces share one auth-service client.
+	authClient := authsvc.New(cfg.API.AuthServiceURL, 5*time.Second)
 	providerLogin := providerLoginAdapter{store: store, delay: watchRequestDelay}
 	providerInfo := providerInfoAdapter{store: store, delay: watchRequestDelay}
 	features := api.FeatureConfig{
@@ -134,10 +137,12 @@ func runAPI() error {
 		UserStore:               store,
 		ProviderLogin:           providerLogin,
 		ProviderInfo:            providerInfo,
-		AuthNameSync:            authNameSync,
-		AccountDeleter:          authNameSync,
+		AuthNameSync:            authClient,
+		AccountDeleter:          authClient,
 		Features:                features,
 		ActivityStore:           store,
+		TeamAuth:                authClient,
+		TeamStore:               store,
 		GoalStore:               store,
 		HealthStore:             store,
 		StrideStore:             store,

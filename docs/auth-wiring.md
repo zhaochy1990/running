@@ -88,6 +88,12 @@ same-origin 经前门转发，不再用 `VITE_AUTH_BASE_URL` 绝对量直连 aut
 > 相对 `/api/auth`；浏览器不再跨域直连 auth-service。届时 auth-service 的 CORS 可收紧为只认
 > BFF 服务端。token 模型（`sessionStorage` + Bearer）不变。
 
-### 6. 还没做的（非阻塞 follow-up）
+### 6. Go team API 的 auth-service dependency（ADR 0026）
+
+Go team API 不拥有 team / membership 数据。它先在 Go API 边界完成现有 JWT 验证，再把浏览器传入的完整 `Authorization` header **原样转发**给 auth-service；不要提取 token 后重建 header，也不要用 service credential 代替终端用户身份。auth-service 负责 team ownership / membership 的 canonical 授权，Go 只使用返回的 member IDs 查询 MySQL activities / profiles / `team_likes`。
+
+`stride api` 必须配置 `api.auth-service-url`（env override：`STRIDE_WORKER_API_AUTH_SERVICE_URL`）。这个值为空、auth-service 网络不可达、或 auth-service 返回 5xx 时，Go team surface 不能仅凭本地验签继续提供完整功能；membership-dependent 请求会按接口约定降级为空集合或返回 503。BFF 的 `AUTH_UPSTREAM_URL` 只服务浏览器 `/api/auth/*`，不能替代 Go API 自己到 auth-service 的 server-to-server 地址。
+
+### 7. 还没做的（非阻塞 follow-up）
 
 - 给 auth-service 加 JWKS 端点，公钥轮换变成网络可发现，不用两边同时改 env var

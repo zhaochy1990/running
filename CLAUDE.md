@@ -88,14 +88,14 @@ Operational rules for Stitch MCP:
 
 | Data shape | Backend |
 |------------|---------|
-| Cross-user social signals (likes, comments, follows) | **Azure Table Storage**（canonical pattern：`stride_server/likes_store.py`） |
+| Cross-user social signals (likes, comments, follows) | **Azure Table Storage** by default（canonical pattern：`stride_server/likes_store.py`）；窄例外：Go team API 的 activity likes 由 Go-owned canonical MySQL `team_likes` 表持久化（ADR 0026） |
 | Per-user app preferences not derived from a watch | **Azure Table Storage**（PartitionKey=user_id, RowKey="prefs"） |
 | Push device tokens / FCM-style registrations | **Azure Table Storage** |
 | Bulk binary blobs (photos, video, large export files) | **Azure Blob Storage** |
 | Authoring artifacts (plan.md, feedback.md, TRAINING_PLAN.md) | **Markdown files in `data/{user_id}/logs/`**，经 `sync-data.yml` 同步到 Azure Files |
 | Auth tokens / secrets | **Azure Key Vault** |
 
-加新 feature 前问：*"这一行来自手表 sync 吗？"* 不是就别加 SQLite 表。
+加新 feature 前问：*"这一行来自手表 sync 吗？"* 不是就别加 SQLite 表。上述 `team_likes` 例外只改变 canonical backend，不放宽 SQLite 禁令；team likes 与任何其他 social state 都**绝不能**写入 per-user SQLite。除 ADR 0026 明确的 team activity likes 外，其他 social state 仍默认使用 Azure Table Storage。
 
 ### 统一数据访问层 `stride_storage`（HARD）
 
