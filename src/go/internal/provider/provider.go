@@ -292,6 +292,16 @@ func (e *FeatureNotSupported) Error() string {
 // credentials.
 var ErrAuthRequired = errors.New("auth required")
 
+// ErrInvalidRequest marks a provider-side parameter rejection that cannot be
+// repaired by retrying the same request.
+var ErrInvalidRequest = errors.New("invalid provider request")
+
+// IsInvalidRequest reports whether a provider rejected deterministic request
+// parameters. Retrying the same request cannot repair it.
+func IsInvalidRequest(err error) bool {
+	return errors.Is(err, ErrInvalidRequest)
+}
+
 // IsAuthError reports whether err is (or wraps) ErrAuthRequired — any
 // authentication failure that retrying won't fix. Provider adapters tie their
 // own auth errors to this sentinel via Unwrap (e.g. coros.AuthError).
