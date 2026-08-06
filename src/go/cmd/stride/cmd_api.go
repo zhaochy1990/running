@@ -138,6 +138,7 @@ func runAPI() error {
 		ProviderLogin:           providerLogin,
 		ProviderInfo:            providerInfo,
 		AuthNameSync:            authNameSync,
+		AccountDeleter:          authNameSync,
 		Features:                features,
 		ActivityStore:           store,
 		GoalStore:               store,

@@ -29,6 +29,8 @@ type fakeUserStore struct {
 	devices     map[string]string
 	meta        map[string]string
 	upsertErr   error
+	deleteErr   error
+	deletedUser string
 }
 
 func newFakeUserStore() *fakeUserStore {
@@ -119,6 +121,17 @@ func (f *fakeUserStore) ClearWatchReady(_ context.Context, uid string) error {
 	return nil
 }
 
+func (f *fakeUserStore) DeleteUserData(_ context.Context, uid string) error {
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
+	f.deletedUser = uid
+	delete(f.profiles, uid)
+	delete(f.onboarding, uid)
+	delete(f.provider, uid)
+	return nil
+}
+
 // fakeProviderInfo returns canned static provider metadata for GET /watch.
 type fakeProviderInfo struct {
 	displayName  string
@@ -161,6 +174,22 @@ func (f *fakeAuthNameSync) SyncName(_ context.Context, bearer, name string) erro
 	return f.err
 }
 
+type fakeAccountDeleter struct {
+	called    bool
+	gotBearer string
+	err       error
+}
+
+func (f *fakeAccountDeleter) DeleteAccount(_ context.Context, bearer string) error {
+	f.called, f.gotBearer = true, bearer
+	return f.err
+}
+
+type fakeAuthResponseError struct{ status int }
+
+func (e fakeAuthResponseError) Error() string   { return "auth-service response error" }
+func (e fakeAuthResponseError) HTTPStatus() int { return e.status }
+
 // --- harness -----------------------------------------------------------------
 
 type userHarness struct {
@@ -169,6 +198,7 @@ type userHarness struct {
 	login        *fakeProviderLogin
 	providerInfo *fakeProviderInfo
 	authName     *fakeAuthNameSync
+	accountAuth  *fakeAccountDeleter
 	key          *rsa.PrivateKey
 }
 
@@ -182,15 +212,17 @@ func newUserHarness(t *testing.T, features FeatureConfig) *userHarness {
 	login := &fakeProviderLogin{result: WatchLoginResult{Success: true}}
 	providerInfo := &fakeProviderInfo{displayName: "高驰", capabilities: []string{"sync_hrv_detail"}}
 	authName := &fakeAuthNameSync{}
+	accountAuth := &fakeAccountDeleter{}
 	svc := NewService(Config{
-		Auth:          NewAuthenticator(testToken, NewJWTVerifierFromKey(&key.PublicKey, testIssuer, testAudience)),
-		UserStore:     store,
-		ProviderLogin: login,
-		ProviderInfo:  providerInfo,
-		AuthNameSync:  authName,
-		Features:      features,
+		Auth:           NewAuthenticator(testToken, NewJWTVerifierFromKey(&key.PublicKey, testIssuer, testAudience)),
+		UserStore:      store,
+		ProviderLogin:  login,
+		ProviderInfo:   providerInfo,
+		AuthNameSync:   authName,
+		AccountDeleter: accountAuth,
+		Features:       features,
 	})
-	return &userHarness{svc: svc, store: store, login: login, providerInfo: providerInfo, authName: authName, key: key}
+	return &userHarness{svc: svc, store: store, login: login, providerInfo: providerInfo, authName: authName, accountAuth: accountAuth, key: key}
 }
 
 func (h *userHarness) userToken(t *testing.T, sub string) string {
@@ -230,6 +262,75 @@ func (h *userHarness) bearer(t *testing.T, sub string) map[string]string {
 }
 
 // --- GET profile -------------------------------------------------------------
+
+func TestDeleteAccount_RequiresUserTier(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	for _, headers := range []map[string]string{nil, internalHdr()} {
+		w := h.do(http.MethodDelete, "/api/users/me", "", headers)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("code = %d, want 401", w.Code)
+		}
+	}
+	if h.accountAuth.called || h.store.deletedUser != "" {
+		t.Fatal("unauthenticated deletion must not call dependencies")
+	}
+}
+
+func TestDeleteAccount_RejectsInvalidSubjectBeforeAuthDeletion(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	w := h.do(http.MethodDelete, "/api/users/me", "", h.bearer(t, "not-a-uuid"))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("code = %d, want 400", w.Code)
+	}
+	if h.accountAuth.called || h.store.deletedUser != "" {
+		t.Fatal("invalid subject must be rejected before either deletion")
+	}
+}
+
+func TestDeleteAccount_Success(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	h.store.profiles[testSub] = &storage.UserProfile{UserID: testSub}
+	w := h.do(http.MethodDelete, "/api/users/me", "", h.bearer(t, testSub))
+	if w.Code != http.StatusNoContent || w.Body.Len() != 0 {
+		t.Fatalf("code/body = %d/%q, want 204 with empty body", w.Code, w.Body.String())
+	}
+	if !h.accountAuth.called || h.accountAuth.gotBearer == "" {
+		t.Fatal("auth-service deletion was not called with bearer")
+	}
+	if h.store.deletedUser != testSub || h.store.profiles[testSub] != nil {
+		t.Fatal("local user data was not deleted")
+	}
+}
+
+func TestDeleteAccount_AlreadyMissingInAuthStillDeletesData(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	h.accountAuth.err = fakeAuthResponseError{status: http.StatusNotFound}
+	w := h.do(http.MethodDelete, "/api/users/me", "", h.bearer(t, testSub))
+	if w.Code != http.StatusNoContent || h.store.deletedUser != testSub {
+		t.Fatalf("code/deleted = %d/%q, want 204/%q", w.Code, h.store.deletedUser, testSub)
+	}
+}
+
+func TestDeleteAccount_AuthFailurePreservesData(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	h.accountAuth.err = errors.New("connection refused")
+	w := h.do(http.MethodDelete, "/api/users/me", "", h.bearer(t, testSub))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code = %d, want 503", w.Code)
+	}
+	if h.store.deletedUser != "" {
+		t.Fatal("local data must be preserved when auth-service deletion fails")
+	}
+}
+
+func TestDeleteAccount_LocalFailureReturns500(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	h.store.deleteErr = errors.New("delete failed")
+	w := h.do(http.MethodDelete, "/api/users/me", "", h.bearer(t, testSub))
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("code = %d, want 500", w.Code)
+	}
+}
 
 func TestGetProfile_RequiresUserTier(t *testing.T) {
 	h := newUserHarness(t, FeatureConfig{})
