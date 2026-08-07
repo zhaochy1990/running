@@ -110,25 +110,42 @@ jobs:
             echo "::error::${{ env.APP_NAME }} does not exist. Bootstrap it once (Container App + GHCR pull credential + custom domain) before this workflow can deploy."
             exit 1
           fi
-          if [ -z "${PYTHON_API_URL:-}" ] || [ -z "${AUTH_UPSTREAM_URL:-}" ]; then
-            echo "::error::STRIDE_PYTHON_API_URL and STRIDE_AUTH_UPSTREAM_URL repo vars are required (BFF fails fast without them)."
+          if [ -z "${PYTHON_API_URL:-}" ] || [ -z "${AUTH_UPSTREAM_URL:-}" ] || [ -z "${GO_API_URL:-}" ]; then
+            echo "::error::STRIDE_PYTHON_API_URL, STRIDE_AUTH_UPSTREAM_URL, and STRIDE_GO_API_URL repo vars are required."
             exit 1
           fi
 
-          # GO_API_URL is optional until the first endpoint is cut over to Go.
-          ENV_VARS="PYTHON_API_URL=$PYTHON_API_URL AUTH_UPSTREAM_URL=$AUTH_UPSTREAM_URL"
-          if [ -n "${GO_API_URL:-}" ]; then
-            ENV_VARS="$ENV_VARS GO_API_URL=$GO_API_URL"
+          # Web onboarding is a single Go lifecycle. Keep these six route choices
+          # source-controlled and deploy them in the same ACA revision: profile
+          # read/write, watch login, sync start, pipeline poll, then completion.
+          # This assertion prevents a future edit from shipping zero or a subset.
+          ONBOARDING_GO_ROUTE_VARS=(
+            STRIDE_ROUTE_GET_USERS_ME_PROFILE=go
+            STRIDE_ROUTE_POST_USERS_ME_PROFILE=go
+            STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN=go
+            STRIDE_ROUTE_POST_USER_SYNC=go
+            STRIDE_ROUTE_GET_PIPELINES_RUNID=go
+            STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE=go
+          )
+          if [ "${#ONBOARDING_GO_ROUTE_VARS[@]}" -ne 6 ] \
+            || [ "$(printf '%s\n' "${ONBOARDING_GO_ROUTE_VARS[@]}" | grep -Ec '^STRIDE_ROUTE_[A-Z0-9_]+=go$')" -ne 6 ]; then
+            echo "::error::Web onboarding Go cutover must contain exactly six STRIDE_ROUTE_*=go variables."
+            exit 1
           fi
-          # PUBLIC_DIRECT_BASE_URL (ADR 0017 interim): set to the Tencent Caddy
-          # gateway (e.g. https://124.221.38.59) to make the browser call
-          # Tencent-bound (auth + Go) endpoints direct instead of proxying them
-          # cross-border through this Azure BFF. Empty/unset → same-origin via BFF.
-          # We always set it (empty clears any prior value) so flipping the repo
-          # var + redeploy fully controls the mode.
-          ENV_VARS="$ENV_VARS PUBLIC_DIRECT_BASE_URL=${PUBLIC_DIRECT_BASE_URL:-}"
 
-          # shellcheck disable=SC2086
+          ENV_VARS=(
+            "PYTHON_API_URL=$PYTHON_API_URL"
+            "AUTH_UPSTREAM_URL=$AUTH_UPSTREAM_URL"
+            "GO_API_URL=$GO_API_URL"
+            "PUBLIC_DIRECT_BASE_URL=${PUBLIC_DIRECT_BASE_URL:-}"
+            "${ONBOARDING_GO_ROUTE_VARS[@]}"
+          )
+
+          # PUBLIC_DIRECT_BASE_URL (ADR 0017 interim): set to the Tencent Caddy
+          # gateway to make the browser call Tencent-bound (auth + Go) endpoints
+          # direct instead of proxying them cross-border through this Azure BFF.
+          # Empty/unset → same-origin via BFF; setting it every time clears stale
+          # values and keeps the repo variable authoritative.
           az containerapp update \
             --name ${{ env.APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
@@ -136,7 +153,23 @@ jobs:
             --min-replicas 1 \
             --max-replicas 1 \
             --cpu 0.5 --memory 1.0Gi \
-            --set-env-vars $ENV_VARS
+            --set-env-vars "${ENV_VARS[@]}"
+
+          # Verify the deployed ACA template, not just the local command arguments.
+          # Do not print values: these route flags are non-secret, but this pattern
+          # remains safe if the deployment env grows to include sensitive settings.
+          for route in "${ONBOARDING_GO_ROUTE_VARS[@]}"; do
+            route_name="${route%=*}"
+            route_value=$(az containerapp show \
+              --name ${{ env.APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --query "properties.template.containers[0].env[?name=='$route_name'].value | [0]" \
+              -o tsv)
+            if [ "$route_value" != "go" ]; then
+              echo "::error::Deployed $route_name is not configured for the Go onboarding lifecycle."
+              exit 1
+            fi
+          done
 
       - name: Health check (new revision must reach Running + serve /healthz)
         # Same rationale as deploy.yml: in single-revision mode ACA keeps the
