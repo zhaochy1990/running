@@ -108,6 +108,29 @@ export function structuredRowFromEntity(entity) {
 }
 
 /**
+ * Rebind a structured plan to the athlete's active race-goal row. The MySQL
+ * column and opaque JSON must carry the same id because Go returns the JSON
+ * body directly while using the column for storage-level lookups.
+ */
+export function rebindStructuredGoal(row, goalId) {
+  if (!goalId || typeof goalId !== "string") {
+    throw new MasterPlanTransformError("structured plan needs an active race_goal id");
+  }
+  let plan;
+  try {
+    plan = JSON.parse(row.content);
+  } catch {
+    throw new MasterPlanTransformError(`plan ${row.plan_id} content is not valid JSON`);
+  }
+  if (!plan || typeof plan !== "object") {
+    throw new MasterPlanTransformError(`plan ${row.plan_id} content must be a JSON object`);
+  }
+  if (plan.goal && typeof plan.goal === "object") plan.goal.goal_id = goalId;
+  else plan.goal_id = goalId;
+  return { ...row, goal_id: goalId, content: JSON.stringify(plan) };
+}
+
+/**
  * Build a `master_plan` row (content_version=1) from a markdown overview. version
  * is NULL (markdown has no plan-version). created_at/updated_at come from the
  * blob's last-modified instant when available, else the run time.

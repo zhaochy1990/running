@@ -32,8 +32,10 @@ function structured(overrides = {}) {
 
 function adapters({ structuredRows = [structured()], markdownRows = [], existing = [], masters = [master()] } = {}) {
   const inserts = [];
+  const replacements = [];
   return {
     inserts,
+    replacements,
     source: {
       async listStructured() { return structuredRows; },
       async listMarkdown() { return markdownRows; },
@@ -43,6 +45,7 @@ function adapters({ structuredRows = [structured()], markdownRows = [], existing
       async listActiveWeeklyPlans() { return existing; },
       async listMasterPlans() { return masters; },
       async insertWeeklyPlan(row) { inserts.push(row); },
+      async replaceWeeklyPlan(row) { replacements.push(row); },
     },
   };
 }
@@ -187,27 +190,51 @@ test("ambiguous master-plan ownership is reported for manual handling", async ()
   assert.equal(report.manual[0].reason, "master_plan_ambiguity");
 });
 
-test("missing master-plan prerequisite is manual unless the user is explicitly unowned", async () => {
-  const blocked = adapters({ masters: [] });
-  const blockedReport = await migrateWeeklyPlans({
-    userIds: [USER_ID], source: blocked.source, target: blocked.target,
+test("a missing master plan migrates the weekly plan with a null owner", async () => {
+  const io = adapters({ masters: [] });
+  const report = await migrateWeeklyPlans({
+    userIds: [USER_ID], source: io.source, target: io.target, apply: true,
   });
-  assert.equal(blockedReport.stats.planned, 0);
-  assert.equal(blockedReport.manual[0].reason, "master_plan_prerequisite_missing");
-
-  const allowed = adapters({ masters: [] });
-  const allowedReport = await migrateWeeklyPlans({
-    userIds: [USER_ID], source: allowed.source, target: allowed.target,
-    allowUnownedUserIds: new Set([USER_ID]),
-  });
-  assert.equal(allowedReport.stats.planned, 1);
+  assert.equal(report.stats.inserted, 1);
+  assert.equal(io.inserts[0].master_plan_id, null);
 });
 
-test("opaque legacy master-plan ownership is reported for manual handling", async () => {
+test("an opaque legacy master plan owns every weekly plan", async () => {
   const io = adapters({
     masters: [{ plan_id: "legacy-master", content_version: 1, content: "# season plan" }],
   });
-  const report = await migrateWeeklyPlans({ userIds: [USER_ID], source: io.source, target: io.target });
-  assert.equal(report.stats.planned, 0);
-  assert.equal(report.manual[0].reason, "master_plan_ownership_unknown");
+  const report = await migrateWeeklyPlans({ userIds: [USER_ID], source: io.source, target: io.target, apply: true });
+  assert.equal(report.stats.inserted, 1);
+  assert.equal(io.inserts[0].master_plan_id, "legacy-master");
+});
+
+test("an opted-in user replaces an existing structured plan with Markdown", async () => {
+  const io = adapters({
+    markdownRows: [{
+      name: "users/u/logs/2026-07-06_07-12/plan.md",
+      folder: "2026-07-06_07-12",
+      lastModified: new Date("2026-07-02T00:00:00Z"),
+      downloadedText: "# Markdown plan",
+    }],
+    existing: [{
+      plan_id: "existing-plan",
+      week_start: "2026-07-06",
+      content_version: 2,
+      content: "{}",
+      master_plan_id: "master-a",
+    }],
+  });
+  const report = await migrateWeeklyPlans({
+    userIds: [USER_ID],
+    source: io.source,
+    target: io.target,
+    apply: true,
+    preferMarkdownUserIds: new Set([USER_ID]),
+    replaceExistingUserIds: new Set([USER_ID]),
+  });
+  assert.equal(report.stats.updated, 1);
+  assert.equal(io.inserts.length, 0);
+  assert.equal(io.replacements[0].plan_id, "existing-plan");
+  assert.equal(io.replacements[0].content_version, 1);
+  assert.equal(io.replacements[0].content, "# Markdown plan");
 });

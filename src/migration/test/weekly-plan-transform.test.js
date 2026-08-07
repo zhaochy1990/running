@@ -7,6 +7,7 @@ import {
   describeMarkdownSource,
   describeStructuredSource,
   markdownWeeklyPlanRow,
+  masterPlanCandidates,
   selectPlanSources,
   structuredWeeklyPlanRow,
   weeklyPlanContentEqual,
@@ -235,4 +236,19 @@ test("existing content with a different master-plan owner is not idempotent", ()
     weeklyPlanContentEqual({ ...row, master_plan_id: "master-b" }, row),
     false,
   );
+});
+
+test("master plan date window owns a week missing from a partial skeleton", () => {
+  const master = {
+    plan_id: "master-a",
+    content_version: 2,
+    content: JSON.stringify({
+      start_date: "2026-05-04",
+      end_date: "2026-10-18",
+      weeks: [{ week_start: "2026-06-29" }],
+    }),
+  };
+  assert.deepEqual(masterPlanCandidates([master], "2026-05-04"), ["master-a"]);
+  assert.deepEqual(masterPlanCandidates([master], "2026-06-29"), ["master-a"]);
+  assert.deepEqual(masterPlanCandidates([master], "2026-04-27"), []);
 });
