@@ -24,14 +24,15 @@ import { fileURLToPath } from "node:url";
 import { getAgentConfig, type CoachAgentConfig, type ModelConfig } from "../config/config.js";
 import { buildResponsesModel } from "./common.js";
 import { memoryTools } from "./memory.js";
-import { weeklyPlanTools } from "./weekly_plan/tools.js";
 import { masterPlanTools } from "./master_plan/tools.js";
 import { createRaceTools } from "../tools/races.js";
+import { createPlanTools } from "../tools/plan.js";
 import { askUserQuestionTool } from "../tools/askUserQuestions.js";
 import type { ToolRuntime } from "langchain";
 import { getQaSubagent } from "./qa/agent.js";
 import { createLoggingMiddleware } from "./middleware.js";
 import type { StrideDataStore } from "../persistence/index.js";
+import { getCoachSubagent } from "./weekly_plan/agent.js";
 
 export const CoachContext = z.object({
   userId: z.string(),
@@ -46,12 +47,6 @@ const SKILLS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', "skills")
 console.log(dirname(fileURLToPath(import.meta.url)));
 console.log(`[coachAgent] SKILLS_DIR=${SKILLS_DIR}`);
 
-const WEEKLY_SUBAGENT_PROMPT = [
-  "你是 STRIDE 跑步教练的周计划专家。",
-  "- 查看本周/某周计划用 get_week_plan。",
-  "- 运动员要调整本周训练时，用 propose_weekly_adjustment 形成草案（不直接生效，需运动员确认）。",
-].join("\n");
-
 const MASTER_SUBAGENT_PROMPT = [
   "你是 STRIDE 跑步教练的赛季计划专家。",
   "",
@@ -63,7 +58,7 @@ const MASTER_SUBAGENT_PROMPT = [
   "   一次只问一个核心问题。拿到回答后，把原因纳入计划考量（如抽筋→加强力量与电解质；撞墙→强化长距离与糖原策略；心肺→加强有氧/阈值）。",
   "4. 若历史比赛表现正常、无需澄清，就不要为追问而追问。",
   "",
-  "查看现有赛季/总体计划用 get_master_plan；形成调整草案用 propose_master_adjustment（不直接生效，需运动员确认）。",
+  "查看现有赛季/总体计划用 get_master_plan；形成调整草案用 propose_master_adjustment。",
   "只依据工具数据说话。",
 ].join("\n");
 
@@ -81,28 +76,14 @@ export async function createCoachAgent(store: StrideDataStore, config: CoachAgen
   const modelConfig = getAgentConfig(config, "orchestrator");
   const model = buildResponsesModel(modelConfig);
 
-  // // userId comes from per-request context; injected into the supervisor prompt.
-  // const withUserId = dynamicSystemPromptMiddleware((_state, runtime) => {
-  //   const userId = (runtime.context as { userId?: string } | undefined)?.userId ?? "unknown";
-  //   return `${SUPERVISOR_PROMPT}\n\n当前运动员 userId=${userId}；记忆工具用这个 userId，委派子专家时也把它写进任务描述。`;
-  // });
-
   const qaSubagent = getQaSubagent(store, getAgentConfig(config, "qa"));
-
-  const weeklySubagent = {
-    name: "weekly_plan",
-    description: "查看或调整某一周的训练计划（每日课表、周里程）。",
-    systemPrompt: WEEKLY_SUBAGENT_PROMPT,
-    tools: weeklyPlanTools,
-    model: buildResponsesModel(getAgentConfig(config, "weekly_plan")),
-    middleware: [createLoggingMiddleware("agent:weekly_plan")],
-  };
+  const weeklySubagent = getCoachSubagent(store, getAgentConfig(config, "weekly_plan"));
 
   const masterSubagent = {
     name: "master_plan",
     description: "查看或调整赛季/总体训练计划（阶段、里程碑、周期）；生成新赛季计划前会回看历史比赛并在必要时向运动员追问。",
     systemPrompt: MASTER_SUBAGENT_PROMPT,
-    tools: [...masterPlanTools, ...createRaceTools(store), askUserQuestionTool],
+    tools: [...createPlanTools(store).filter((tool) => tool.name === "get_master_plan"), ...masterPlanTools.slice(1), ...createRaceTools(store), askUserQuestionTool],
     model: buildResponsesModel(getAgentConfig(config, "master_plan")),
     middleware: [createLoggingMiddleware("agent:master_plan")],
   };

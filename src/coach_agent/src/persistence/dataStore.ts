@@ -123,6 +123,12 @@ export interface PersonalBest {
   source: string | null;
 }
 
+/** Active structured master-plan document stored in `master_plan.content`. */
+export type MasterPlanDocument = Record<string, unknown>;
+
+/** Active structured weekly-plan document stored in `weekly_plan.content`. */
+export type WeeklyPlanDocument = Record<string, unknown>;
+
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function assertDay(day: string): string {
@@ -242,12 +248,54 @@ export class StrideDataStore {
     }));
   }
 
+  /** Current active structured season plan, or null when the athlete has none. */
+  async getMasterPlan(userId: string): Promise<MasterPlanDocument | null> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT content
+         FROM master_plan
+        WHERE user_id = ? AND content_version = 2 AND status = 'active'
+        LIMIT 1`,
+      [userId],
+    );
+    return rows.length === 0 ? null : parsePlanContent(rows[0]!.content, "master_plan");
+  }
+
+  /**
+   * Active structured weekly plan for `weekName` (`YYYY-MM-DD_MM-DD`), or null.
+   * MySQL stores the week start only, so the caller-facing week identity is
+   * reduced to its Monday date before querying.
+   */
+  async getWeeklyPlan(userId: string, weekName: string): Promise<WeeklyPlanDocument | null> {
+    const weekStart = weekName.slice(0, 10);
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT content
+         FROM weekly_plan
+        WHERE user_id = ? AND week_start = ? AND content_version = 2 AND status = 'active'
+        LIMIT 1`,
+      [userId, weekStart],
+    );
+    return rows.length === 0 ? null : parsePlanContent(rows[0]!.content, "weekly_plan");
+  }
+
   /** Release the pool — only if this store opened it (via {@link StrideDataStore.create}). */
   async close(): Promise<void> {
     if (this.ownsPool) {
       await this.pool.end();
     }
   }
+}
+
+function parsePlanContent(content: unknown, table: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = typeof content === "string" ? JSON.parse(content) : content;
+  } catch {
+    throw new Error(`${table} contains invalid JSON`);
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`${table} content must be a JSON object`);
+  }
+  return parsed as Record<string, unknown>;
 }
 
 function rowToActivity(row: RowDataPacket): Activity {
