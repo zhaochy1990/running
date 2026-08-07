@@ -593,6 +593,22 @@ definitions:
       updated_at:
         type: string
     type: object
+  api.onboardingReadinessResponse:
+    properties:
+      contract_version:
+        type: string
+      routes:
+        items:
+          $ref: '#/definitions/api.onboardingRouteContract'
+        type: array
+    type: object
+  api.onboardingRouteContract:
+    properties:
+      method:
+        type: string
+      path:
+        type: string
+    type: object
   api.onboardingState:
     properties:
       completed_at:
@@ -1181,6 +1197,21 @@ info:
   title: STRIDE API
   version: "1.0"
 paths:
+  /readyz/onboarding:
+    get:
+      description: Returns the static route contract required before the Web BFF enables
+        its Go onboarding route flags. No authentication is required and no user data
+        is returned.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.onboardingReadinessResponse'
+      summary: Web onboarding cutover readiness
+      tags:
+      - catalog
   /api/{user}/activities:
     get:
       description: Returns a filtered, paginated activity page (newest first) plus

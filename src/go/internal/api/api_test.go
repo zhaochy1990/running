@@ -232,6 +232,43 @@ func internalHdr() map[string]string { return map[string]string{"X-Internal-Toke
 
 // --- tests -------------------------------------------------------------------
 
+func TestOnboardingReadiness_AdvertisesAtomicWebContract(t *testing.T) {
+	h := newHarness(t)
+	w := h.do(http.MethodGet, "/readyz/onboarding", "", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var got onboardingReadinessResponse
+	mustJSON(t, w, &got)
+	if got.ContractVersion != onboardingContractVersion {
+		t.Errorf("contract_version = %q, want %q", got.ContractVersion, onboardingContractVersion)
+	}
+	if len(got.Routes) != len(onboardingWebRouteContracts) {
+		t.Fatalf("route count = %d, want %d", len(got.Routes), len(onboardingWebRouteContracts))
+	}
+	for i, want := range onboardingWebRouteContracts {
+		if got.Routes[i] != want {
+			t.Errorf("route %d = %+v, want %+v", i, got.Routes[i], want)
+		}
+	}
+
+	// The public declaration must track real authenticated registrations. These
+	// requests stop at auth middleware, so they cannot mutate user state.
+	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/api/users/me/profile"},
+		{http.MethodPost, "/api/users/me/profile"},
+		{http.MethodPost, "/api/users/me/watch/login"},
+		{http.MethodPost, "/api/contract-probe-user/sync"},
+		{http.MethodGet, "/api/pipelines/contract-probe-run"},
+		{http.MethodPost, "/api/users/me/onboarding/complete"},
+	} {
+		response := h.do(route.method, route.path, "", nil)
+		if response.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s = %d, want 401", route.method, route.path, response.Code)
+		}
+	}
+}
+
 func TestCreateJob_Unauthorized(t *testing.T) {
 	h := newHarness(t)
 	w := h.do(http.MethodPost, "/jobs", `{"type":"hello"}`, nil)

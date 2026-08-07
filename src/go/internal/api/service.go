@@ -231,6 +231,9 @@ func (s *Service) Router() *gin.Engine {
 	// system metadata, no auth). Distinct from the authed create/read routes.
 	r.GET("/jobs", s.listJobs)
 	r.GET("/pipelines", s.listPipelines)
+	// Deployment probes this before enabling the Web onboarding Go-route flags.
+	// It contains no user or deployment-secret data.
+	r.GET("/readyz/onboarding", s.onboardingReadiness)
 
 	authed := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
 	authed.POST("/jobs", s.createJob)
