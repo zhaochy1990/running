@@ -15,7 +15,7 @@ vi.mock('../store/authStore', () => ({
 
 // Import after the vi.mock registration (vi.mock auto-hoists, but
 // being explicit keeps the read order obvious).
-import { getUsers, postOnboardingComplete, triggerSync } from '../api'
+import { getFullSyncStatus, getUsers, postFullSync, postOnboardingComplete, triggerSync } from '../api'
 
 function resp(status: number, body: unknown = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -89,6 +89,34 @@ describe('api 401-refresh', () => {
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ run_id: 'run-123' }),
       }),
+    )
+  })
+
+  it('starts and reads the legacy Python full-sync status for plan setup', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(resp(200, { state: 'running', progress: { phase: 'queued', percent: 0 } }))
+      .mockResolvedValueOnce(resp(200, { state: 'running', progress: { phase: 'health', percent: 50 } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(postFullSync()).resolves.toEqual({
+      ok: true,
+      status: 200,
+      data: { state: 'running', progress: { phase: 'queued', percent: 0 } },
+    })
+    await expect(getFullSyncStatus()).resolves.toEqual({
+      state: 'running',
+      progress: { phase: 'health', percent: 50 },
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/users/me/full-sync',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/users/me/full-sync-status',
+      expect.objectContaining({ method: 'GET' }),
     )
   })
 

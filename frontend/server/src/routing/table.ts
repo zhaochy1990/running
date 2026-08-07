@@ -115,6 +115,11 @@ export function hasGoRoutes(env: NodeJS.ProcessEnv = process.env): boolean {
   return API_ROUTES.some((route) => upstreamForRoute(route, env) === 'go')
 }
 
+/** Return routes configured for Go that the Go API does not implement. */
+export function unsupportedGoRoutes(env: NodeJS.ProcessEnv = process.env): readonly ApiRoute[] {
+  return API_ROUTES.filter((route) => !route.goReady && upstreamForRoute(route, env) === 'go')
+}
+
 /** Reject a partial Web onboarding cutover before the BFF accepts traffic. */
 export function hasPartialWebOnboardingGoCutover(env: NodeJS.ProcessEnv = process.env): boolean {
   const enabled = WEB_ONBOARDING_GO_ROUTE_ENVS.filter(

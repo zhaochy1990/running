@@ -10,6 +10,14 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../../api', () => ({
+  ApiError: class ApiError extends Error {
+    readonly status: number
+
+    constructor(status: number) {
+      super(`API error: ${status}`)
+      this.status = status
+    }
+  },
   getPipelineRun: mocks.getPipelineRun,
   postOnboardingComplete: mocks.postOnboardingComplete,
   triggerSync: mocks.triggerSync,
@@ -80,9 +88,10 @@ describe('SubmitStep', () => {
     expect(mocks.triggerSync).not.toHaveBeenCalled()
   })
 
-  it('discards an invalid saved run and starts a new full run', async () => {
+  it('discards a confirmed missing saved run and starts a new full run', async () => {
     localStorage.setItem('stride:onboarding-run:user-1', 'old-run')
-    mocks.getPipelineRun.mockRejectedValueOnce(new Error('not found'))
+    const missing = Object.assign(new Error('API error: 404'), { status: 404 })
+    mocks.getPipelineRun.mockRejectedValueOnce(missing)
     mocks.triggerSync.mockResolvedValue({ ok: true, status: 202, data: { run_id: 'new-run', pipeline_name: 'onboarding' } })
     mocks.getPipelineRun.mockResolvedValue(runningRun)
 
@@ -90,6 +99,37 @@ describe('SubmitStep', () => {
 
     await waitFor(() => expect(mocks.triggerSync).toHaveBeenCalledWith('user-1', expect.objectContaining({ full: true, idempotencyKey: expect.any(String) })))
     expect(localStorage.getItem('stride:onboarding-run:user-1')).toBe('new-run')
+  })
+
+  it('keeps polling a saved run after an initial transient fetch failure', async () => {
+    localStorage.setItem('stride:onboarding-run:user-1', 'saved-run')
+    mocks.getPipelineRun
+      .mockRejectedValueOnce(new Error('network interrupted'))
+      .mockResolvedValueOnce({ ...runningRun, run_id: 'saved-run' })
+
+    renderStep()
+
+    await waitFor(() => expect(mocks.getPipelineRun).toHaveBeenCalledTimes(1))
+    expect(mocks.triggerSync).not.toHaveBeenCalled()
+    expect(localStorage.getItem('stride:onboarding-run:user-1')).toBe('saved-run')
+
+    await waitFor(() => expect(mocks.getPipelineRun).toHaveBeenCalledTimes(2), { timeout: 3000 })
+    expect(mocks.triggerSync).not.toHaveBeenCalled()
+  })
+
+  it('keeps polling an active run after a transient refresh failure', async () => {
+    localStorage.setItem('stride:onboarding-run:user-1', 'saved-run')
+    mocks.getPipelineRun
+      .mockResolvedValueOnce({ ...runningRun, run_id: 'saved-run' })
+      .mockRejectedValueOnce(new Error('service unavailable'))
+      .mockResolvedValueOnce({ ...runningRun, run_id: 'saved-run' })
+
+    renderStep()
+
+    await waitFor(() => expect(mocks.getPipelineRun).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(mocks.getPipelineRun).toHaveBeenCalledTimes(3), { timeout: 5000 })
+    expect(mocks.triggerSync).not.toHaveBeenCalled()
+    expect(localStorage.getItem('stride:onboarding-run:user-1')).toBe('saved-run')
   })
 
   it('reuses a persisted start key after an ambiguous start failure', async () => {

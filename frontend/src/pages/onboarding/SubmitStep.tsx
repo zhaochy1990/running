@@ -4,6 +4,7 @@ import {
   getPipelineRun,
   postOnboardingComplete,
   triggerSync,
+  ApiError,
   type PipelineRun,
 } from '../../api'
 
@@ -108,14 +109,18 @@ export default function SubmitStep({ userId }: Props) {
   const refreshRun = useCallback(async (runId: string, expectedUserId: string, generation: number) => {
     try {
       const nextRun = await getPipelineRun(runId)
-      if (!mountedRef.current || userIdRef.current !== expectedUserId || generationRef.current !== generation || runId !== runIdRef.current) return true
+      if (!mountedRef.current || userIdRef.current !== expectedUserId || generationRef.current !== generation || runId !== runIdRef.current) return 'valid' as const
       // A saved browser pointer is only valid for an onboarding full-sync run.
       // Ownership is enforced by the server before this response is returned.
-      if (nextRun.pipeline_name !== 'onboarding') return false
+      if (nextRun.pipeline_name !== 'onboarding') return 'invalid' as const
       applyRun(nextRun, expectedUserId, generation)
-      return true
-    } catch {
-      return false
+      return 'valid' as const
+    } catch (err) {
+      // A transport failure or 5xx leaves the server-side run ambiguous. Keep its
+      // browser pointer and poll it again rather than creating duplicate full syncs.
+      const status = err instanceof ApiError ? err.status : (err as { status?: unknown })?.status
+      if (typeof status === 'number' && [400, 401, 403, 404].includes(status)) return 'invalid' as const
+      return 'transient' as const
     }
   }, [applyRun])
 
@@ -179,8 +184,9 @@ export default function SubmitStep({ userId }: Props) {
       runIdRef.current = savedRunId
       // Keep recovery validation asynchronous; browser storage does not confer
       // authority over the run and the server response populates UI state.
-      void refreshRun(savedRunId, userId, generation).then((valid) => {
-        if (!mountedRef.current || userIdRef.current !== userId || generationRef.current !== generation || valid) return
+      setActiveRunId(savedRunId)
+      void refreshRun(savedRunId, userId, generation).then((result) => {
+        if (!mountedRef.current || userIdRef.current !== userId || generationRef.current !== generation || result !== 'invalid') return
         // Browser storage is only a recovery pointer. The server decides whether
         // a run exists and belongs to the current user.
         clearSavedRun(userId)
@@ -196,7 +202,7 @@ export default function SubmitStep({ userId }: Props) {
   }, [clearSavedRun, refreshRun, startNewRun, userId])
 
   useEffect(() => {
-    if (!activeRunId || (run?.status !== 'queued' && run?.status !== 'running')) return undefined
+    if (!activeRunId || run?.status === 'done' || run?.status === 'failed') return undefined
     const expectedUserId = userId
     const generation = generationRef.current
     const interval = window.setInterval(() => {

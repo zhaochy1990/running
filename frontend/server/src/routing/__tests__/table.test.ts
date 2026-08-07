@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { API_ROUTES } from '../api-routes.js'
-import { AUTH_PREFIX, hasGoRoutes, hasPartialWebOnboardingGoCutover, resolveUpstream, upstreamForRoute } from '../table.js'
+import { AUTH_PREFIX, hasGoRoutes, hasPartialWebOnboardingGoCutover, resolveUpstream, unsupportedGoRoutes, upstreamForRoute } from '../table.js'
 
 describe('resolveUpstream', () => {
   it('routes /api/auth/* to the auth upstream (any method)', () => {
@@ -116,6 +116,26 @@ describe('hasGoRoutes', () => {
 
   it('ignores non-go values', () => {
     expect(hasGoRoutes({ STRIDE_ROUTE_GET_USER_ACTIVITIES: 'python' })).toBe(false)
+  })
+})
+
+describe('Go route capability validation', () => {
+  it('reports every non-Go-ready route configured to use Go', () => {
+    expect(unsupportedGoRoutes({
+      STRIDE_ROUTE_GET_HEALTH: 'go',
+      STRIDE_ROUTE_POST_USERS_ME_FULL_SYNC: ' GO ',
+      STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'go',
+    }).map((route) => route.env)).toEqual([
+      'STRIDE_ROUTE_GET_HEALTH',
+      'STRIDE_ROUTE_POST_USERS_ME_FULL_SYNC',
+    ])
+  })
+
+  it('allows Go-ready routes and ignores non-Go values', () => {
+    expect(unsupportedGoRoutes({
+      STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'go',
+      STRIDE_ROUTE_GET_HEALTH: 'python',
+    })).toEqual([])
   })
 })
 

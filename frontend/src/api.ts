@@ -54,9 +54,18 @@ async function apiFetch(
   return res
 }
 
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(status: number) {
+    super(`API error: ${status}`)
+    this.status = status
+  }
+}
+
 async function fetchJSON<T>(path: string): Promise<T> {
   const res = await apiFetch('GET', path)
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  if (!res.ok) throw new ApiError(res.status)
   return res.json()
 }
 
@@ -294,6 +303,16 @@ export async function markNotificationRead(notificationId: string) {
 }
 
 // ─── Full sync (training plan setup) ──────────────────────────────────────
+
+export function postFullSync() {
+  return postJSON<{ state?: string; error?: string; detail?: string; progress?: SyncProgress }>(
+    '/users/me/full-sync',
+  )
+}
+
+export function getFullSyncStatus() {
+  return fetchJSON<SyncStatus>('/users/me/full-sync-status')
+}
 
 export interface Activity {
   label_id: string
