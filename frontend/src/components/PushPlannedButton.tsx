@@ -121,7 +121,7 @@ export default function PushPlannedButton({
     : isStrengthInDev
       ? '推送到手表'
       : isPushed
-        ? '✓ 已推送'
+        ? '已推送手表'
         : '推送到手表'
 
   const minDate = shiftIsoDate(session.date, -PUSH_DATE_WINDOW_DAYS)
