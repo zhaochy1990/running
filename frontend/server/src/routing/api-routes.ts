@@ -95,9 +95,6 @@ export const API_ROUTES: readonly ApiRoute[] = [
   //   POST /api/:user/sync, and GET /api/pipelines/:runId. Pipeline success alone
   //   is not completion.
   { method: 'POST', path: '/api/users/me/onboarding/complete', env: 'STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE', goReady: true },
-  // ✗ Web onboarding does not use this legacy, read-only associated-run status.
-  //   Keep it available only for older clients that still require that contract.
-  { method: 'GET', path: '/api/users/me/sync-status', env: 'STRIDE_ROUTE_GET_USERS_ME_SYNC_STATUS', goReady: true },
   // ✓ /plan · poll Python-owned full-history-sync progress during plan setup
   { method: 'GET', path: '/api/users/me/full-sync-status', env: 'STRIDE_ROUTE_GET_USERS_ME_FULL_SYNC_STATUS', goReady: false },
   // ✓ /plan · trigger Python-owned full history sync before master-plan generation

@@ -237,7 +237,6 @@ describe('API_ROUTES manifest integrity', () => {
         'GET /api/pipelines/:runId',
         'GET /api/users/me/master-plan/current',
         'GET /api/users/me/profile',
-        'GET /api/users/me/sync-status',
         'GET /api/users/me/training-goal',
         'GET /api/users/me/watch',
         'GET /api/users/:user/pipelines',
