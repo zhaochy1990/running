@@ -146,6 +146,7 @@ func (p *Provider) SyncUser(ctx context.Context, user string, opts provider.Sync
 type listItem struct {
 	LabelID   string     `json:"labelId"`
 	SportType int        `json:"sportType"`
+	SportName string     `json:"sportName"`
 	Date      flexString `json:"date"`
 }
 
@@ -206,7 +207,9 @@ func (p *Provider) collectActivities(ctx context.Context, client *Client, user s
 			if !isKnownSportCode(item.SportType) {
 				logging.Default().Warn("coros: skipping activity with unknown sport type",
 					zap.String("label_id", item.LabelID),
-					zap.Int("sport_type", item.SportType))
+					zap.Int("sport_type", item.SportType),
+					zap.String("sport_name", item.SportName),
+					zap.String("date", string(item.Date)))
 				continue
 			}
 			if !full {

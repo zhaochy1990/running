@@ -2,6 +2,7 @@ package coros
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -223,6 +224,22 @@ func TestSyncActivities_SkipsUnknownSportBeforeDetail(t *testing.T) {
 	}
 	if second.Activities != 0 {
 		t.Errorf("incremental activities = %d, want 0", second.Activities)
+	}
+}
+
+func TestListItem_DecodesSportNameAndDate(t *testing.T) {
+	var payload struct {
+		DataList []listItem `json:"dataList"`
+	}
+	if err := json.Unmarshal([]byte(`{"dataList":[{"labelId":"UNKNOWN","sportType":901,"sportName":"跳绳","date":20260807}]}`), &payload); err != nil {
+		t.Fatalf("decode list item: %v", err)
+	}
+	if len(payload.DataList) != 1 {
+		t.Fatalf("items = %d, want 1", len(payload.DataList))
+	}
+	item := payload.DataList[0]
+	if item.SportName != "跳绳" || string(item.Date) != "20260807" {
+		t.Fatalf("decoded item = %+v", item)
 	}
 }
 

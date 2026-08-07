@@ -284,6 +284,9 @@ func runSync(profile string, full bool, content string, limit int) error {
 	// Detail-fetch concurrency comes from config (sync.jobs), not a per-call
 	// flag — it is an infra knob, and the adapter clamps it to a safe range.
 	opts.Jobs = cfg.Sync.Jobs
+	progress := newWatchProgress(os.Stdout, stdoutIsTerminal())
+	opts.Progress = progress.sync
+	defer progress.finish()
 
 	prov, name, err := resolveProvider(store, cfg, user)
 	if err != nil {
@@ -294,10 +297,11 @@ func runSync(profile string, full bool, content string, limit int) error {
 	if err != nil {
 		return err
 	}
-	if err := runDerivedComputations(ctx, user, opts.Mode, res.ActivityLabelIDs,
-		compute.NewCalibration(store), compute.NewCompute(store)); err != nil {
+	if err := runDerivedComputationsWithProgress(ctx, user, opts.Mode, res.ActivityLabelIDs,
+		compute.NewCalibration(store), compute.NewCompute(store), progress.derivedHeartbeat); err != nil {
 		return err
 	}
+	progress.complete()
 	fmt.Printf("sync done: provider=%s activities=%d health=%d jobs=%d elapsed=%s\n",
 		name, res.Activities, res.Health, provider.DetailJobs(opts.Jobs), time.Since(started).Round(time.Millisecond))
 	return nil
@@ -307,9 +311,12 @@ func runSync(profile string, full bool, content string, limit int) error {
 // data-sync pipelines. Full syncs refresh the calibration before rebuilding all
 // derived data; incremental syncs only compute from this run's changed labels.
 func runDerivedComputations(ctx context.Context, user string, mode provider.SyncMode, labelIDs []string, calibration, calculation job.Handler) error {
-	noopHeartbeat := func(string, int) error { return nil }
+	return runDerivedComputationsWithProgress(ctx, user, mode, labelIDs, calibration, calculation, func(string, int) error { return nil })
+}
+
+func runDerivedComputationsWithProgress(ctx context.Context, user string, mode provider.SyncMode, labelIDs []string, calibration, calculation job.Handler, heartbeat job.Heartbeat) error {
 	if mode == provider.SyncFull {
-		if _, err := calibration(ctx, &job.Job{UserID: user}, noopHeartbeat); err != nil {
+		if _, err := calibration(ctx, &job.Job{UserID: user}, heartbeat); err != nil {
 			return fmt.Errorf("calibration: %w", err)
 		}
 	}
@@ -321,10 +328,15 @@ func runDerivedComputations(ctx context.Context, user string, mode provider.Sync
 	if err != nil {
 		return fmt.Errorf("encode compute input: %w", err)
 	}
-	if _, err := calculation(ctx, &job.Job{UserID: user, InputJSON: string(input)}, noopHeartbeat); err != nil {
+	if _, err := calculation(ctx, &job.Job{UserID: user, InputJSON: string(input)}, heartbeat); err != nil {
 		return fmt.Errorf("compute: %w", err)
 	}
 	return nil
+}
+
+func stdoutIsTerminal() bool {
+	info, err := os.Stdout.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 func runStatus(profile string) error {
