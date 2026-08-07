@@ -72,13 +72,20 @@ func TestStoreEnqueuer_PublishFailurePropagates(t *testing.T) {
 		WithEnqueueClock(fixedNow()),
 		WithIDFunc(func() string { return "job-1" }),
 	)
-	_, err := e.Enqueue(context.Background(), EnqueueSpec{Type: "greet", UserID: "u1"})
+	id, err := e.Enqueue(context.Background(), EnqueueSpec{Type: "greet", UserID: "u1"})
 	if err == nil {
 		t.Fatal("want error when publish fails")
 	}
-	// Row still exists as queued (store-first); a reconcile can re-publish.
-	if got := store.snapshot("job-1"); got == nil || got.Status != StatusQueued {
-		t.Fatal("row should remain queued after publish failure")
+	if id != "job-1" {
+		t.Fatalf("durable job id = %q, want job-1", id)
+	}
+	var publishErr *PublishFailedError
+	if !errors.As(err, &publishErr) {
+		t.Fatalf("error = %T, want PublishFailedError", err)
+	}
+	// Fail closed: an ambiguous broker delivery can observe only terminal state.
+	if got := store.snapshot("job-1"); got == nil || got.Status != StatusFailed || got.ErrorCode != "publish_failed" {
+		t.Fatalf("row should be terminal after publish failure: %+v", got)
 	}
 }
 

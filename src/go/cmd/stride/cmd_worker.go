@@ -65,6 +65,11 @@ func runWorker() error {
 	if err := store.AutoMigrateWatch(ctx); err != nil {
 		return err
 	}
+	// The final onboarding step updates user_onboarding, so worker-only deployments
+	// must own the user-table migration too.
+	if err := store.AutoMigrateUsers(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ ---
 	conn, err := mq.Dial(cfg.AMQP.URL)
@@ -93,7 +98,7 @@ func runWorker() error {
 	// for the infra phase), so the worker starts with an empty registry. The
 	// worker only advances/finalizes runs (from stored steps) and never calls
 	// StartPipeline, so an empty registry is sufficient here.
-	orch := pipeline.New(store.Pipelines(), enq, pipeline.NewRegistry(), pipeline.WithLogger(log))
+	orch := pipeline.New(store.Pipelines(), enq, pipeline.NewRegistry(), pipeline.WithLogger(log), pipeline.WithCompletionListener(store))
 	reg := job.NewRegistry()
 	// Resolve each user's watch provider (COROS/Garmin) via the registry: MySQL
 	// credential binding first, file-based config.json fallback (ADR 0010/0011).

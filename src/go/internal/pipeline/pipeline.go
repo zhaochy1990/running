@@ -58,14 +58,23 @@ func (r *Registry) Get(name string) (Def, bool) {
 	return d, ok
 }
 
+// CompletionListener receives a pipeline only after its final step has been
+// durably marked done. Implementations must guard their own side effects against
+// duplicate delivery.
+type CompletionListener interface {
+	OnPipelineCompleted(ctx context.Context, run *job.PipelineRun) error
+}
+
 // Orchestrator drives pipeline runs.
 type Orchestrator struct {
-	store  job.PipelineStore
-	enq    job.Enqueuer
-	reg    *Registry
-	now    func() time.Time
-	newRun func() string
-	log    *zap.Logger
+	store      job.PipelineStore
+	enq        job.Enqueuer
+	reg        *Registry
+	completion CompletionListener
+	now        func() time.Time
+	newRun     func() string
+	newJob     func() string
+	log        *zap.Logger
 }
 
 // Option configures an Orchestrator.
@@ -80,6 +89,11 @@ func WithRunIDFunc(f func() string) Option { return func(o *Orchestrator) { o.ne
 // WithLogger sets the structured logger.
 func WithLogger(l *zap.Logger) Option { return func(o *Orchestrator) { o.log = l } }
 
+// WithCompletionListener observes durable pipeline completion.
+func WithCompletionListener(l CompletionListener) Option {
+	return func(o *Orchestrator) { o.completion = l }
+}
+
 // New wires an Orchestrator. Defaults: UTC clock, UUIDv4 run ids.
 func New(store job.PipelineStore, enq job.Enqueuer, reg *Registry, opts ...Option) *Orchestrator {
 	o := &Orchestrator{
@@ -88,6 +102,7 @@ func New(store job.PipelineStore, enq job.Enqueuer, reg *Registry, opts ...Optio
 		reg:    reg,
 		now:    func() time.Time { return time.Now().UTC() },
 		newRun: func() string { return uuid.NewString() },
+		newJob: func() string { return uuid.NewString() },
 		log:    logging.Default(),
 	}
 	for _, opt := range opts {
@@ -106,6 +121,17 @@ func New(store job.PipelineStore, enq job.Enqueuer, reg *Registry, opts ...Optio
 // threaded into every step's job InputJSON (see mergeStepInput); pass "" for a
 // pipeline that takes none.
 func (o *Orchestrator) StartPipeline(ctx context.Context, name, userID, createdBy, idempotencyKey, inputJSON string) (string, error) {
+	return o.startPipeline(ctx, o.newRun(), name, userID, createdBy, idempotencyKey, inputJSON)
+}
+
+// StartPipelineWithID creates a run with a caller-provided ID. It is used by the
+// onboarding entrypoint to atomically claim the user-onboarding association before
+// enqueueing work, preventing concurrent browser requests from creating two runs.
+func (o *Orchestrator) StartPipelineWithID(ctx context.Context, runID, name, userID, createdBy, idempotencyKey, inputJSON string) (string, error) {
+	return o.startPipeline(ctx, runID, name, userID, createdBy, idempotencyKey, inputJSON)
+}
+
+func (o *Orchestrator) startPipeline(ctx context.Context, runID, name, userID, createdBy, idempotencyKey, inputJSON string) (string, error) {
 	def, ok := o.reg.Get(name)
 	if !ok {
 		return "", fmt.Errorf("pipeline: unknown definition %q", name)
@@ -115,8 +141,11 @@ func (o *Orchestrator) StartPipeline(ctx context.Context, name, userID, createdB
 	for i, s := range def.Steps {
 		steps[i] = job.PipelineStep{Name: s.Name, JobType: s.JobType, Status: job.StatusQueued}
 	}
+	// Persist the first job ID before publishing its pointer. A worker can never
+	// observe a first-step job that the run does not yet link to.
+	steps[0].JobID = o.newJob()
 	run := &job.PipelineRun{
-		RunID:          o.newRun(),
+		RunID:          runID,
 		UserID:         userID,
 		CreatedBy:      createdBy,
 		Name:           name,
@@ -131,7 +160,8 @@ func (o *Orchestrator) StartPipeline(ctx context.Context, name, userID, createdB
 	if err := o.store.Create(ctx, run); err != nil {
 		return "", err
 	}
-	jobID, err := o.enq.Enqueue(ctx, job.EnqueueSpec{
+	_, err := o.enq.Enqueue(ctx, job.EnqueueSpec{
+		ID:            run.Steps[0].JobID,
 		Type:          def.Steps[0].JobType,
 		UserID:        userID,
 		PipelineRunID: run.RunID,
@@ -139,11 +169,13 @@ func (o *Orchestrator) StartPipeline(ctx context.Context, name, userID, createdB
 		InputJSON: mergeStepInput(run.InputJSON, ""),
 	})
 	if err != nil {
-		return run.RunID, err
-	}
-	run.Steps[0].JobID = jobID
-	run.UpdatedAt = o.now()
-	if err := o.store.Update(ctx, run); err != nil {
+		// The run reserved this ID before the enqueue attempt. Do not rely on an
+		// enqueuer returning it alongside a publication error: the durable step
+		// job may already be terminal even when the broker boundary returns "".
+		failed := &job.Job{ID: run.Steps[0].JobID, PipelineRunID: run.RunID, ErrorMessage: "work publication failed"}
+		if failErr := o.OnJobFailed(ctx, failed); failErr != nil {
+			return run.RunID, failErr
+		}
 		return run.RunID, err
 	}
 	o.log.Info("pipeline started", zap.String("name", name), zap.String("run_id", run.RunID), zap.String("user_id", userID))
@@ -179,23 +211,94 @@ func (o *Orchestrator) OnJobStarted(ctx context.Context, j *job.Job) error {
 	// Only the step status changes here. CurrentStep is already set to the active
 	// index by StartPipeline / OnJobCompleted before the job can be claimed, so we
 	// deliberately leave it untouched — that keeps a stale duplicate "started"
-	// delivery (guarded by the queued check above on re-read) from rewinding it.
-	run.Steps[i].Status = job.StatusRunning
-	run.UpdatedAt = o.now()
-	if err := o.store.Update(ctx, run); err != nil {
+	// delivery from rewinding it. Mutate supplies cross-process serialization.
+	changed, err := o.store.Mutate(ctx, j.PipelineRunID, func(run *job.PipelineRun) (bool, error) {
+		i := stepIndexByJobID(run, j.ID)
+		if i < 0 || run.Steps[i].Status != job.StatusQueued {
+			return false, nil
+		}
+		run.Steps[i].Status = job.StatusRunning
+		run.UpdatedAt = o.now()
+		return true, nil
+	})
+	if err != nil {
+		if job.IsNotFound(err) {
+			return nil
+		}
 		return err
 	}
-	o.log.Info("pipeline step running", zap.String("run_id", run.RunID), zap.String("step", run.Steps[i].Name))
+	if changed {
+		o.log.Info("pipeline step running", zap.String("run_id", j.PipelineRunID), zap.String("job_id", j.ID))
+	}
 	return nil
 }
 
+const completionClaimTTL = 5 * time.Minute
+
 // OnJobCompleted advances the run that owns j, or finalizes it if j was the last
-// step. Safe to call more than once for the same job (idempotent).
+// step. Every state transition is locked and persisted by PipelineStore.Mutate,
+// so duplicate deliveries across worker processes cannot reserve two next jobs.
 func (o *Orchestrator) OnJobCompleted(ctx context.Context, j *job.Job) error {
 	if j.PipelineRunID == "" {
 		return nil
 	}
-	run, err := o.store.Get(ctx, j.PipelineRunID)
+
+	var nextSpec *job.EnqueueSpec
+	var completionRun *job.PipelineRun
+	var completionClaim string
+	now := o.now()
+	_, err := o.store.Mutate(ctx, j.PipelineRunID, func(run *job.PipelineRun) (bool, error) {
+		i := stepIndexByJobID(run, j.ID)
+		if i < 0 {
+			o.log.Warn("completed job not found in run steps", zap.String("run_id", run.RunID), zap.String("job_id", j.ID))
+			return false, nil
+		}
+		// A failure wins over a late completion; a terminal run cannot be reopened.
+		if run.Status == job.StatusFailed {
+			return false, nil
+		}
+		if i == len(run.Steps)-1 {
+			changed := false
+			if run.Status != job.StatusDone {
+				run.Steps[i].Status = job.StatusDone
+				run.Status = job.StatusDone
+				run.CurrentStep = i
+				run.CompletedAt = &now
+				run.UpdatedAt = now
+				changed = true
+			}
+			if o.completion == nil || run.CompletionApplied {
+				return changed, nil
+			}
+			if run.CompletionClaimID != "" && run.CompletionClaimedAt != nil && now.Sub(*run.CompletionClaimedAt) < completionClaimTTL {
+				return changed, nil
+			}
+			completionClaim = o.newJob()
+			run.CompletionClaimID = completionClaim
+			run.CompletionClaimedAt = &now
+			run.UpdatedAt = now
+			completionRun = cloneRun(run)
+			return true, nil
+		}
+
+		next := i + 1
+		if run.Steps[i].Status == job.StatusDone || run.Steps[next].JobID != "" {
+			return false, nil
+		}
+		// Reserve and durably link the next ID before its broker pointer exists.
+		run.Steps[i].Status = job.StatusDone
+		run.Steps[next].JobID = o.newJob()
+		run.CurrentStep = next
+		run.UpdatedAt = now
+		nextSpec = &job.EnqueueSpec{
+			ID:            run.Steps[next].JobID,
+			Type:          run.Steps[next].JobType,
+			UserID:        run.UserID,
+			PipelineRunID: run.RunID,
+			InputJSON:     mergeStepInput(run.InputJSON, j.ResultJSON),
+		}
+		return true, nil
+	})
 	if err != nil {
 		if job.IsNotFound(err) {
 			o.log.Warn("pipeline run missing for completed job", zap.String("run_id", j.PipelineRunID), zap.String("job_id", j.ID))
@@ -203,54 +306,50 @@ func (o *Orchestrator) OnJobCompleted(ctx context.Context, j *job.Job) error {
 		}
 		return err
 	}
-	i := stepIndexByJobID(run, j.ID)
-	if i < 0 {
-		o.log.Warn("completed job not found in run steps", zap.String("run_id", run.RunID), zap.String("job_id", j.ID))
-		return nil
-	}
-	if run.Steps[i].Status == job.StatusDone {
-		return nil // duplicate delivery: already advanced
-	}
-	run.Steps[i].Status = job.StatusDone
 
-	if i == len(run.Steps)-1 {
-		now := o.now()
-		run.Status = job.StatusDone
-		run.CurrentStep = i
-		run.CompletedAt = &now
-		run.UpdatedAt = now
-		if err := o.store.Update(ctx, run); err != nil {
+	if nextSpec != nil {
+		_, err := o.enq.Enqueue(ctx, *nextSpec)
+		if err != nil {
+			// nextSpec.ID was durably reserved and linked while advancing the
+			// pipeline, so it remains authoritative on every enqueue failure.
+			failed := &job.Job{ID: nextSpec.ID, PipelineRunID: j.PipelineRunID, ErrorMessage: "work publication failed"}
+			if failErr := o.OnJobFailed(ctx, failed); failErr != nil {
+				return failErr
+			}
 			return err
 		}
-		o.log.Info("pipeline done", zap.String("name", run.Name), zap.String("run_id", run.RunID))
+		o.log.Info("pipeline advanced", zap.String("run_id", j.PipelineRunID), zap.String("step", nextSpec.Type))
+	}
+	if completionRun == nil {
 		return nil
 	}
-
-	next := i + 1
-	jobID, err := o.enq.Enqueue(ctx, job.EnqueueSpec{
-		Type:          run.Steps[next].JobType,
-		UserID:        run.UserID,
-		PipelineRunID: run.RunID,
-		// Thread the run input plus this step's output into the next step, so a
-		// step can consume what the previous one produced (e.g. compute reads the
-		// label_ids the sync step synced).
-		InputJSON: mergeStepInput(run.InputJSON, j.ResultJSON),
-	})
-	if err != nil {
-		// Persist the completed step so a retry of this callback resumes from
-		// the next step rather than re-running the finished one.
+	if err := o.completion.OnPipelineCompleted(ctx, completionRun); err != nil {
+		_, clearErr := o.store.Mutate(ctx, j.PipelineRunID, func(run *job.PipelineRun) (bool, error) {
+			if run.CompletionApplied || run.CompletionClaimID != completionClaim {
+				return false, nil
+			}
+			run.CompletionClaimID = ""
+			run.CompletionClaimedAt = nil
+			run.UpdatedAt = o.now()
+			return true, nil
+		})
+		if clearErr != nil {
+			return clearErr
+		}
+		o.log.Error("pipeline completion listener failed", zap.String("run_id", j.PipelineRunID), zap.Error(err))
+		return err
+	}
+	_, err = o.store.Mutate(ctx, j.PipelineRunID, func(run *job.PipelineRun) (bool, error) {
+		if run.CompletionApplied || run.CompletionClaimID != completionClaim {
+			return false, nil
+		}
+		run.CompletionApplied = true
+		run.CompletionClaimID = ""
+		run.CompletionClaimedAt = nil
 		run.UpdatedAt = o.now()
-		_ = o.store.Update(ctx, run)
-		return err
-	}
-	run.Steps[next].JobID = jobID
-	run.CurrentStep = next
-	run.UpdatedAt = o.now()
-	if err := o.store.Update(ctx, run); err != nil {
-		return err
-	}
-	o.log.Info("pipeline advanced", zap.String("run_id", run.RunID), zap.String("step", run.Steps[next].Name))
-	return nil
+		return true, nil
+	})
+	return err
 }
 
 // OnJobFailed marks the owning run failed. Idempotent.
@@ -258,29 +357,36 @@ func (o *Orchestrator) OnJobFailed(ctx context.Context, j *job.Job) error {
 	if j.PipelineRunID == "" {
 		return nil
 	}
-	run, err := o.store.Get(ctx, j.PipelineRunID)
+	now := o.now()
+	changed, err := o.store.Mutate(ctx, j.PipelineRunID, func(run *job.PipelineRun) (bool, error) {
+		if run.Status.Terminal() {
+			return false, nil
+		}
+		if i := stepIndexByJobID(run, j.ID); i >= 0 {
+			run.Steps[i].Status = job.StatusFailed
+		}
+		run.Status = job.StatusFailed
+		run.ErrorMessage = j.ErrorMessage
+		run.CompletedAt = &now
+		run.UpdatedAt = now
+		return true, nil
+	})
 	if err != nil {
 		if job.IsNotFound(err) {
 			return nil
 		}
 		return err
 	}
-	if run.Status == job.StatusFailed {
-		return nil
+	if changed {
+		o.log.Error("pipeline failed", zap.String("run_id", j.PipelineRunID), zap.String("job_id", j.ID), zap.String("err", j.ErrorMessage))
 	}
-	if i := stepIndexByJobID(run, j.ID); i >= 0 {
-		run.Steps[i].Status = job.StatusFailed
-	}
-	now := o.now()
-	run.Status = job.StatusFailed
-	run.ErrorMessage = j.ErrorMessage
-	run.CompletedAt = &now
-	run.UpdatedAt = now
-	if err := o.store.Update(ctx, run); err != nil {
-		return err
-	}
-	o.log.Error("pipeline failed", zap.String("run_id", run.RunID), zap.String("job_id", j.ID), zap.String("err", j.ErrorMessage))
 	return nil
+}
+
+func cloneRun(run *job.PipelineRun) *job.PipelineRun {
+	cp := *run
+	cp.Steps = append([]job.PipelineStep(nil), run.Steps...)
+	return &cp
 }
 
 func stepIndexByJobID(run *job.PipelineRun, jobID string) int {

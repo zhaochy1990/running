@@ -249,19 +249,6 @@ export interface PipelineRun {
   error_message?: string
 }
 
-export function startGoOnboardingSync(userId: string) {
-  return postJSON<{ run_id?: string; pipeline_name?: string; error?: string }>(
-    `/${encodeURIComponent(userId)}/sync`,
-    { mode: 'full' },
-  )
-}
-
-export function getUserPipelines(userId: string) {
-  return fetchJSON<{ pipelines: PipelineRun[] }>(
-    `/users/${encodeURIComponent(userId)}/pipelines`,
-  )
-}
-
 export function getPipelineRun(runId: string) {
   return fetchJSON<PipelineRun>(`/pipelines/${encodeURIComponent(runId)}`)
 }

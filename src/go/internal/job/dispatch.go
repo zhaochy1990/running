@@ -97,7 +97,16 @@ func (d *Dispatcher) Dispatch(ctx context.Context, m Message) error {
 	}
 
 	if j.Status.Terminal() {
-		// Already processed (duplicate delivery): idempotent drop.
+		// Terminal lifecycle work is replayed until durable pipeline state catches up.
+		var lifecycleErr error
+		if j.Status == StatusDone {
+			lifecycleErr = d.lifecycle.OnJobCompleted(ctx, j)
+		} else {
+			lifecycleErr = d.lifecycle.OnJobFailed(ctx, j)
+		}
+		if lifecycleErr != nil {
+			return lifecycleErr
+		}
 		d.log.Debug("job already terminal, dropping duplicate", zap.String("job_id", j.ID), zap.String("status", string(j.Status)))
 		return nil
 	}
@@ -108,21 +117,24 @@ func (d *Dispatcher) Dispatch(ctx context.Context, m Message) error {
 		return d.finishFailed(ctx, j, "no_handler", "no handler registered for job type "+j.Type)
 	}
 
-	// Claim: mark running and count the attempt.
-	j.Status = StatusRunning
-	j.Attempts++
-	j.ErrorCode = ""
-	j.ErrorMessage = ""
-	j.UpdatedAt = d.now()
-	if err := d.store.Update(ctx, j); err != nil {
+	// Claim is compare-and-swap in the durable store. Duplicate broker pointers
+	// either observe terminal state above or lose this queued→running transition.
+	j, claimed, err := d.store.Claim(ctx, j.ID, d.now())
+	if err != nil {
 		return err // infra fault -> redeliver
+	}
+	if !claimed {
+		return nil
 	}
 
 	// Reflect the running state on the owning pipeline run (if any). Best-effort:
 	// the job is already claimed, so a failure here is a display/telemetry gap,
 	// not a reason to redeliver the message.
 	if err := d.lifecycle.OnJobStarted(ctx, j); err != nil {
-		d.log.Error("lifecycle OnJobStarted failed", zap.String("job_id", j.ID), zap.Error(err))
+		d.log.Warn("lifecycle OnJobStarted failed; continuing claimed job",
+			zap.String("job_id", j.ID),
+			zap.Error(err),
+		)
 	}
 
 	d.started.Add(1)
@@ -160,7 +172,9 @@ func (d *Dispatcher) finishDone(ctx context.Context, j *Job, result string) erro
 		return err
 	}
 	if err := d.lifecycle.OnJobCompleted(ctx, j); err != nil {
-		d.log.Error("lifecycle OnJobCompleted failed", zap.String("job_id", j.ID), zap.Error(err))
+		// The job is durably done, but its pipeline transition or completion listener
+		// is not. Nack so the terminal-message path can retry that idempotent work.
+		return err
 	}
 	d.completed.Add(1)
 	d.log.Info("job done", zap.String("job_id", j.ID), zap.String("type", j.Type), zap.Int("attempts", j.Attempts))
@@ -210,7 +224,7 @@ func (d *Dispatcher) finishFailed(ctx context.Context, j *Job, code, msg string)
 		return err
 	}
 	if err := d.lifecycle.OnJobFailed(ctx, j); err != nil {
-		d.log.Error("lifecycle OnJobFailed failed", zap.String("job_id", j.ID), zap.Error(err))
+		return err
 	}
 	d.failed.Add(1)
 	return nil

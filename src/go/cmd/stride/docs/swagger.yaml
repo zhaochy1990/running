@@ -568,6 +568,26 @@ definitions:
       total_run_km:
         type: number
     type: object
+  api.onboardingCompleteResponse:
+    properties:
+      progress:
+        $ref: '#/definitions/api.onboardingProgress'
+      state:
+        type: string
+    type: object
+  api.onboardingProgress:
+    properties:
+      message:
+        type: string
+      percent:
+        type: integer
+      phase:
+        type: string
+      started_at:
+        type: string
+      updated_at:
+        type: string
+    type: object
   api.onboardingState:
     properties:
       completed_at:
@@ -992,6 +1012,15 @@ definitions:
         - full
         - incremental
         example: incremental
+        type: string
+    type: object
+  api.syncStatusResponse:
+    properties:
+      error:
+        type: string
+      progress:
+        $ref: '#/definitions/api.onboardingProgress'
+      state:
         type: string
     type: object
   api.timeseriesDTO:
@@ -1716,6 +1745,38 @@ paths:
       summary: Get the current user's active season training plan
       tags:
       - master-plan
+  /api/users/me/onboarding/complete:
+    post:
+      description: Starts or resumes the durable full-history onboarding pipeline.
+        The request body must be empty; a connected watch is required.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.onboardingCompleteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Start or resume the current user's onboarding sync
+      tags:
+      - users
   /api/users/me/profile:
     get:
       produces:
@@ -1774,6 +1835,30 @@ paths:
       security:
       - BearerAuth: []
       summary: Save the current user's basic profile
+      tags:
+      - users
+  /api/users/me/sync-status:
+    get:
+      description: Returns the durable full-history onboarding pipeline state, or
+        an object with null state and progress when onboarding has not started.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.syncStatusResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get the current user's onboarding sync status
       tags:
       - users
   /api/users/me/training-goal:
@@ -1884,8 +1969,9 @@ paths:
       - training-goal
   /api/users/me/watch:
     delete:
-      description: Deletes the stored watch credential and marks watch_ready=false.
-        Synced activity/health data is retained. Returns 400 when no watch is bound.
+      description: Deletes the stored watch credential and clears watch-dependent
+        onboarding state. Synced activity/health data is retained. Returns 400 when
+        no watch is bound.
       produces:
       - application/json
       responses:

@@ -118,6 +118,9 @@ type API struct {
 	// Features are the config-driven flags echoed in GET /api/users/me/profile,
 	// mirroring the Python server config (ADR 0013).
 	Features APIFeatures `mapstructure:"features"`
+	// OnboardingStaleAfter determines when an active onboarding pipeline may be
+	// superseded by a retry. Zero is normalized to five minutes by the API.
+	OnboardingStaleAfter time.Duration `mapstructure:"onboarding-stale-after"`
 }
 
 // APIFeatures are the onboarding/coach feature flags returned in the profile

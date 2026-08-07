@@ -62,6 +62,11 @@ func runAPI() error {
 	if err := store.AutoMigrate(ctx); err != nil {
 		return err
 	}
+	// Watch-domain tables include provider credentials and activity metadata read
+	// by the watch login/status surface.
+	if err := store.AutoMigrateWatch(ctx); err != nil {
+		return err
+	}
 	// user_profile + user_onboarding tables for the profile/onboarding surface
 	// (ADR 0013). The worker does not need these.
 	if err := store.AutoMigrateUsers(ctx); err != nil {
@@ -99,7 +104,7 @@ func runAPI() error {
 
 	// --- wiring ---
 	enq := job.NewStoreEnqueuer(store.Jobs(), pub)
-	orch := pipeline.New(store.Pipelines(), enq, catalog.PipelineRegistry(), pipeline.WithLogger(log))
+	orch := pipeline.New(store.Pipelines(), enq, catalog.PipelineRegistry(), pipeline.WithLogger(log), pipeline.WithCompletionListener(store))
 
 	verifier, err := api.NewJWTVerifier(cfg.API.Auth.PublicKeyPath, cfg.API.Auth.Issuer, cfg.API.Auth.Audience)
 	if err != nil {
@@ -139,6 +144,7 @@ func runAPI() error {
 		ProviderInfo:            providerInfo,
 		AuthNameSync:            authNameSync,
 		Features:                features,
+		OnboardingStaleAfter:    cfg.API.OnboardingStaleAfter,
 		ActivityStore:           store,
 		GoalStore:               store,
 		HealthStore:             store,

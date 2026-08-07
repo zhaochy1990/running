@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { getMyProfile, getUserPipelines, type ProfileIn } from '../api'
+import { getMyProfile, type ProfileIn } from '../api'
 import { useAuthStore } from '../store/authStore'
 import ProfileStep from './onboarding/ProfileStep'
 import SubmitStep from './onboarding/SubmitStep'
@@ -45,16 +45,11 @@ export default function OnboardingWizard() {
 
   useEffect(() => {
     getMyProfile()
-      .then(async (p) => {
+      .then((p) => {
         // Drives whether SubmitStep waits for a full history sync (minutes) or
         // the fast health-only sync.
         setSyncFullHistory(Boolean(p.features?.sync_data_at_onboarding))
-        let completed = Boolean(p.onboarding.completed_at)
-        if (!completed && import.meta.env.VITE_GO_ONBOARDING === 'true') {
-          const { pipelines } = await getUserPipelines(p.id)
-          completed = pipelines.some((run) => run.pipeline_name === 'onboarding' && run.status === 'done')
-        }
-        if (completed) {
+        if (p.onboarding.completed_at) {
           setStep('done')
         } else if (!(p.onboarding.watch_ready ?? p.onboarding.coros_ready)) {
           // Go uses watch_ready; Python retains the legacy coros_ready name.

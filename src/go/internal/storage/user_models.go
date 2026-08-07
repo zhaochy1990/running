@@ -29,15 +29,19 @@ func (UserProfile) TableName() string { return "user_profile" }
 //
 // WatchReady is the provider-agnostic "a watch data source is connected" flag —
 // the rename of Python's misnamed coros_ready (Garmin login sets it too). The
-// sync/pipeline-progress columns are deferred to the sync-endpoint port, so
-// CompletedAt stays null in the Go flow until that lands.
+// OnboardingRunID associates the user with the currently relevant onboarding
+// pipeline run. Nil is the canonical no-claim value, matching the nullable
+// MySQL column. While a run is being created, UpdatedAt is the durable claim
+// timestamp; once present, the pipeline record remains the source of truth for
+// progress.
 type UserOnboarding struct {
-	UserID       string     `gorm:"column:user_id;primaryKey;size:64"`
-	WatchReady   bool       `gorm:"column:watch_ready;not null;default:false"`
-	ProfileReady bool       `gorm:"column:profile_ready;not null;default:false"`
-	CompletedAt  *time.Time `gorm:"column:completed_at"`
-	CreatedAt    time.Time  `gorm:"column:created_at"`
-	UpdatedAt    time.Time  `gorm:"column:updated_at"`
+	UserID          string     `gorm:"column:user_id;primaryKey;size:64"`
+	WatchReady      bool       `gorm:"column:watch_ready;not null;default:false"`
+	ProfileReady    bool       `gorm:"column:profile_ready;not null;default:false"`
+	CompletedAt     *time.Time `gorm:"column:completed_at"`
+	OnboardingRunID *string    `gorm:"column:onboarding_run_id;size:64"`
+	CreatedAt       time.Time  `gorm:"column:created_at"`
+	UpdatedAt       time.Time  `gorm:"column:updated_at"`
 }
 
 // TableName pins the table name.

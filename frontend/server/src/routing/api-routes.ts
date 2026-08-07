@@ -90,10 +90,11 @@ export const API_ROUTES: readonly ApiRoute[] = [
   // ── Onboarding & sync ───────────────────────────────────────────────────
   // ✗ not called (frontend polls /sync-status instead)
   { method: 'GET', path: '/api/users/me/onboarding/pipeline-status', env: 'STRIDE_ROUTE_GET_USERS_ME_ONBOARDING_PIPELINE_STATUS', goReady: false },
-  // ✓ /onboarding · finalize onboarding, kick off first sync
-  { method: 'POST', path: '/api/users/me/onboarding/complete', env: 'STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE', goReady: false },
-  // ✓ /onboarding · poll onboarding sync status
-  { method: 'GET', path: '/api/users/me/sync-status', env: 'STRIDE_ROUTE_GET_USERS_ME_SYNC_STATUS', goReady: false },
+  // ✓ /onboarding · finalize onboarding, start/resume the Go full-history pipeline [go-ready]
+  //   Cut over this POST and its GET status poll atomically; the UI depends on both.
+  { method: 'POST', path: '/api/users/me/onboarding/complete', env: 'STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE', goReady: true },
+  // ✓ /onboarding · poll the paired Go onboarding sync status [go-ready]
+  { method: 'GET', path: '/api/users/me/sync-status', env: 'STRIDE_ROUTE_GET_USERS_ME_SYNC_STATUS', goReady: true },
   // ✓ /plan · poll full-history-sync progress during plan setup
   { method: 'GET', path: '/api/users/me/full-sync-status', env: 'STRIDE_ROUTE_GET_USERS_ME_FULL_SYNC_STATUS', goReady: false },
   // ✓ /plan · trigger full history sync

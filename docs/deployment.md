@@ -29,7 +29,7 @@ Multi-stage build (`Dockerfile`)：
   `PYTHON_API_URL`（stride-app）或 `GO_API_URL`（Tencent `stride api`），缺省 Python；
   每个 endpoint 由各自的 `STRIDE_ROUTE_*` 环境变量选择上游（值为 `go` → Go，未设置 / 其它值 →
   Python），所以单个 endpoint 的 cutover 只需在部署环境里设该变量，无需改路由表代码；
-  `/api/auth/*` 走 `AUTH_UPSTREAM_URL`。这**反转了 ADR 0012 的 browser-direct-to-Go**。
+  `/api/auth/*` 走 `AUTH_UPSTREAM_URL`。这**反转了 ADR 0012 的 browser-direct-to-Go**。`POST /api/users/me/onboarding/complete` 与 `GET /api/users/me/sync-status` 必须一起设置为 `go`；仅支持完整 onboarding pipeline，且 Go `sync-data-at-onboarding` 必须保持 `true`，不能用 health-only/partial sync cutover。
 - **`strength_illustrations/` 搬进 `stride-web` 镜像**（前端拥有 UI 插图资源）。
 - **分阶段 cutover（已完成）**：`stride-web` 先上新 host 验证 → 翻 `stride-running.cn` 到
   `stride-web`（同一 `stride-env`、同 static IP 的 hostname rebind，DNS 不变）→ backend 收尾部署里

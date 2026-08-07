@@ -11,6 +11,8 @@ The user tier may sync only its own id (path `{user}` must equal the JWT `sub`, 
 
 **Build-only, not cut over.** The route-table entry is marked `goReady: true` but left `upstream: 'python'`. Go's compute writes the MySQL shadow store (ADR 0005) that no read endpoint consumes yet, so flipping now would make the pill "succeed" while the user's activities/health (still read from Python SQLite) don't change. The flip is a later step gated on the read endpoints migrating, and it also needs the pill to poll instead of await — so the cutover is not "just routing".
 
+**Onboarding completion/status is implemented separately.** `POST /api/users/me/onboarding/complete` starts the same full-history `onboarding` pipeline and `GET /api/users/me/sync-status` maps its durable state for the onboarding UI. Their route flags must be enabled together; partial/health-only onboarding is not supported, and `sync-data-at-onboarding` must stay `true` for that cutover.
+
 ## The compute split (calibration vs compute)
 
 The former single `onboarding_compute` job is split into two job types, because the derived metrics have different update cadences:

@@ -6,13 +6,14 @@ import (
 	"time"
 )
 
-// Store is the durable job state. Implementations must be safe under concurrent
-// workers (transitions are last-write-wins on a row keyed by the globally-unique
-// job ID).
+// Store is the durable job state.
 type Store interface {
 	Create(ctx context.Context, j *Job) error
 	Get(ctx context.Context, jobID string) (*Job, error)
 	Update(ctx context.Context, j *Job) error
+	// Claim atomically transitions a queued job to running and returns false when
+	// another delivery has already claimed or terminated it.
+	Claim(ctx context.Context, jobID string, now time.Time) (*Job, bool, error)
 }
 
 // PipelineStore is the durable pipeline-run state.
@@ -20,6 +21,10 @@ type PipelineStore interface {
 	Create(ctx context.Context, r *PipelineRun) error
 	Get(ctx context.Context, runID string) (*PipelineRun, error)
 	Update(ctx context.Context, r *PipelineRun) error
+	// Mutate locks a run for the duration of fn and persists its resulting state.
+	// The returned changed value reports whether fn made a durable mutation. It is
+	// the cross-process serialization boundary for pipeline lifecycle transitions.
+	Mutate(ctx context.Context, runID string, fn func(*PipelineRun) (changed bool, err error)) (changed bool, err error)
 }
 
 // Publisher publishes pointer messages onto the broker's three queues.
@@ -47,6 +52,36 @@ func IsNotFound(err error) bool {
 // with the same idempotency key already exists for that user. Callers (the HTTP
 // API) react by returning the existing record instead of a new one.
 var ErrConflict = errors.New("conflict: duplicate idempotency key")
+
+// PublishFailedError reports a publish failure after the job was durably marked
+// terminal. The job must never be executed if the broker delivery was ambiguous.
+type PublishFailedError struct {
+	JobID string
+	Err   error
+}
+
+func (e *PublishFailedError) Error() string {
+	return "job publish failed: " + e.Err.Error()
+}
+func (e *PublishFailedError) Unwrap() error { return e.Err }
+
+// PublishPendingError remains as a compatibility marker for callers which use
+// an alternate enqueuer. StoreEnqueuer itself now fail-closes via
+// PublishFailedError and never leaves a queued orphan for reconciliation.
+type PublishPendingError struct {
+	JobID string
+	Err   error
+}
+
+func (e *PublishPendingError) Error() string {
+	return "job stored but publish pending: " + e.Err.Error()
+}
+func (e *PublishPendingError) Unwrap() error { return e.Err }
+
+func IsPublishPending(err error) bool {
+	var pending *PublishPendingError
+	return errors.As(err, &pending)
+}
 
 // Heartbeat lets a handler report progress mid-run; it persists stage/progress
 // on the job row. RabbitMQ holds the unacked message for the consumer, so unlike

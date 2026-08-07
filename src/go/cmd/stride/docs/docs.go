@@ -61,6 +61,55 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/users/me/onboarding/complete": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Starts or resumes the durable full-history onboarding pipeline. The request body must be empty; a connected watch is required.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Start or resume the current user's onboarding sync",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.onboardingCompleteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/me/profile": {
             "get": {
                 "security": [
@@ -144,6 +193,43 @@ const docTemplate = `{
                         "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/api.validationErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/sync-status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the durable full-history onboarding pipeline state, or an object with null state and progress when onboarding has not started.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get the current user's onboarding sync status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.syncStatusResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
                         }
                     },
                     "500": {
@@ -360,7 +446,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deletes the stored watch credential and marks watch_ready=false. Synced activity/health data is retained. Returns 400 when no watch is bound.",
+                "description": "Deletes the stored watch credential and clears watch-dependent onboarding state. Synced activity/health data is retained. Returns 400 when no watch is bound.",
                 "produces": [
                     "application/json"
                 ],
@@ -2422,6 +2508,37 @@ const docTemplate = `{
                 }
             }
         },
+        "api.onboardingCompleteResponse": {
+            "type": "object",
+            "properties": {
+                "progress": {
+                    "$ref": "#/definitions/api.onboardingProgress"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.onboardingProgress": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "percent": {
+                    "type": "integer"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "api.onboardingState": {
             "type": "object",
             "properties": {
@@ -3063,6 +3180,20 @@ const docTemplate = `{
                         "incremental"
                     ],
                     "example": "incremental"
+                }
+            }
+        },
+        "api.syncStatusResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "progress": {
+                    "$ref": "#/definitions/api.onboardingProgress"
+                },
+                "state": {
+                    "type": "string"
                 }
             }
         },

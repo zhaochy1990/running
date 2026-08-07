@@ -73,10 +73,12 @@ func (f *fakeJobs) JobByIdempotencyKey(_ context.Context, userID, key string) (*
 }
 
 type fakeRuns struct {
-	byID   map[string]*job.PipelineRun
-	byIdem map[string]*job.PipelineRun
-	order  []*job.PipelineRun
-	nextID int
+	byID                map[string]*job.PipelineRun
+	byIdem              map[string]*job.PipelineRun
+	order               []*job.PipelineRun
+	nextID              int
+	startErr            error
+	startAfterCreateErr error
 }
 
 func newFakeRuns() *fakeRuns {
@@ -91,18 +93,38 @@ func (f *fakeRuns) seedRun(r *job.PipelineRun) {
 }
 
 func (f *fakeRuns) StartPipeline(_ context.Context, name, userID, createdBy, idem, inputJSON string) (string, error) {
+	return f.startPipeline(name, userID, createdBy, idem, inputJSON, "")
+}
+
+func (f *fakeRuns) StartPipelineWithID(_ context.Context, runID, name, userID, createdBy, idem, inputJSON string) (string, error) {
+	return f.startPipeline(name, userID, createdBy, idem, inputJSON, runID)
+}
+
+func (f *fakeRuns) startPipeline(name, userID, createdBy, idem, inputJSON, runID string) (string, error) {
+	if f.startErr != nil {
+		return "", f.startErr
+	}
 	if idem != "" {
 		if _, ok := f.byIdem[jkey(userID, idem)]; ok {
 			return "", job.ErrConflict
 		}
 	}
 	f.nextID++
-	id := "run-" + string(rune('a'+f.nextID))
+	id := runID
+	if id == "" {
+		id = "run-" + string(rune('a'+f.nextID))
+	}
 	r := &job.PipelineRun{RunID: id, UserID: userID, CreatedBy: createdBy, Name: name, InputJSON: inputJSON, Status: job.StatusRunning, IdempotencyKey: idem}
 	f.byID[id] = r
 	f.order = append(f.order, r)
 	if idem != "" {
 		f.byIdem[jkey(userID, idem)] = r
+	}
+	if f.startAfterCreateErr != nil {
+		if _, ok := f.startAfterCreateErr.(*job.PublishFailedError); ok {
+			r.Status = job.StatusFailed
+		}
+		return id, f.startAfterCreateErr
 	}
 	return id, nil
 }

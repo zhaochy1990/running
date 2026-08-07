@@ -15,7 +15,7 @@ vi.mock('../store/authStore', () => ({
 
 // Import after the vi.mock registration (vi.mock auto-hoists, but
 // being explicit keeps the read order obvious).
-import { getUsers, postOnboardingComplete } from '../api'
+import { getSyncStatus, getUsers, postOnboardingComplete } from '../api'
 
 function resp(status: number, body: unknown = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -73,7 +73,38 @@ describe('api 401-refresh', () => {
     expect(refreshMock).not.toHaveBeenCalled()
   })
 
-  it('postJSON sends method=POST + JSON content-type + body, and refreshes on 401', async () => {
+  it('posts onboarding completion and fetches its sync status', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(resp(200, { state: 'running', progress: { phase: 'queued', percent: 0 } }))
+      .mockResolvedValueOnce(resp(200, { state: 'running', progress: { phase: 'health', percent: 50 } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(postOnboardingComplete()).resolves.toEqual({
+      ok: true,
+      status: 200,
+      data: { state: 'running', progress: { phase: 'queued', percent: 0 } },
+    })
+    await expect(getSyncStatus()).resolves.toEqual({
+      state: 'running',
+      progress: { phase: 'health', percent: 50 },
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/users/me/onboarding/complete',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+      }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/users/me/sync-status',
+      expect.objectContaining({ method: 'GET' }),
+    )
+  })
+
+  it('retries onboarding completion with the original POST request after a 401', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(resp(401))
@@ -84,8 +115,6 @@ describe('api 401-refresh', () => {
     const out = await postOnboardingComplete()
     expect(out).toEqual({ ok: true, status: 200, data: { state: 'done' } })
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    // Both calls carry the POST + JSON Content-Type — verifies the retry
-    // doesn't drop method/headers (the original duplication risk).
     for (const [url, init] of fetchMock.mock.calls) {
       expect(url).toBe('/api/users/me/onboarding/complete')
       expect(init.method).toBe('POST')
