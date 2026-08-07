@@ -137,7 +137,6 @@ func runAPI() error {
 		AuthNameSync:            authNameSync,
 		AccountDeleter:          authNameSync,
 		Features:                features,
-		OnboardingStaleAfter:    cfg.API.OnboardingStaleAfter,
 		ActivityStore:           store,
 		GoalStore:               store,
 		HealthStore:             store,

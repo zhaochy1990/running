@@ -580,19 +580,6 @@ definitions:
       state:
         type: string
     type: object
-  api.onboardingProgress:
-    properties:
-      message:
-        type: string
-      percent:
-        type: integer
-      phase:
-        type: string
-      started_at:
-        type: string
-      updated_at:
-        type: string
-    type: object
   api.onboardingReadinessResponse:
     properties:
       contract_version:
@@ -1062,15 +1049,6 @@ definitions:
         - full
         - incremental
         example: incremental
-        type: string
-    type: object
-  api.syncStatusResponse:
-    properties:
-      error:
-        type: string
-      progress:
-        $ref: '#/definitions/api.onboardingProgress'
-      state:
         type: string
     type: object
   api.timeseriesDTO:
@@ -2016,31 +1994,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Save the current user's basic profile
-      tags:
-      - users
-  /api/users/me/sync-status:
-    get:
-      description: Legacy read-only status for an explicitly associated onboarding
-        run, or null state and progress when none exists. Generic POST /api/{user}/sync
-        runs are polled through GET /api/pipelines/{run_id}, not this endpoint.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.syncStatusResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: Get the current user's onboarding sync status
       tags:
       - users
   /api/users/me/training-goal:

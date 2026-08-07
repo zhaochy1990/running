@@ -8,6 +8,7 @@ WORKFLOW_PATH = WORKFLOW_DIR / "deploy.yml"
 WEB_WORKFLOW_PATH = WORKFLOW_DIR / "deploy-web.yml"
 DAILY_SYNC_PATH = WORKFLOW_DIR / "daily-sync.yml"
 WEEKLY_CALIBRATION_PATH = WORKFLOW_DIR / "weekly-running-calibration.yml"
+WEB_DEPLOY_PATH = WORKFLOW_DIR / "deploy-web.yml"
 
 
 def test_stride_app_deploys_keep_one_warm_replica() -> None:
@@ -78,6 +79,20 @@ def test_async_job_worker_deploys_keep_one_warm_replica() -> None:
 
     assert "--min-replicas 1" in update_command
     assert "--max-replicas 1" in update_command
+
+
+def test_web_deploy_waits_for_revision_without_http_health_probe() -> None:
+    workflow = WEB_DEPLOY_PATH.read_text(encoding="utf-8")
+    wait_step = workflow.split("- name: Wait for new revision to reach Running", 1)[1].split(
+        "- name: Mirror image to Aliyun ACR", 1
+    )[0]
+
+    assert "properties.runningState" in wait_step
+    assert "/healthz" not in wait_step
+    assert "curl " not in wait_step
+    assert '"Failed" || "$STATE" == "Degraded"' in wait_step
+    assert "az containerapp logs show" in wait_step
+    assert "never reached Running after 5 minutes" in wait_step
 
 
 def _training_load_rollout_step() -> str:

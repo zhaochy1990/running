@@ -385,43 +385,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/users/me/sync-status": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Legacy read-only status for an explicitly associated onboarding run, or null state and progress when none exists. Generic POST /api/{user}/sync runs are polled through GET /api/pipelines/{run_id}, not this endpoint.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "users"
-                ],
-                "summary": "Get the current user's onboarding sync status",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.syncStatusResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/users/me/training-goal": {
             "get": {
                 "security": [
@@ -2741,26 +2704,6 @@ const docTemplate = `{
                 }
             }
         },
-        "api.onboardingProgress": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string"
-                },
-                "percent": {
-                    "type": "integer"
-                },
-                "phase": {
-                    "type": "string"
-                },
-                "started_at": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
         "api.onboardingReadinessResponse": {
             "type": "object",
             "properties": {
@@ -3470,20 +3413,6 @@ const docTemplate = `{
                         "incremental"
                     ],
                     "example": "incremental"
-                }
-            }
-        },
-        "api.syncStatusResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string"
-                },
-                "progress": {
-                    "$ref": "#/definitions/api.onboardingProgress"
-                },
-                "state": {
-                    "type": "string"
                 }
             }
         },
