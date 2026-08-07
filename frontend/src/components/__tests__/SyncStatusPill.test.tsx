@@ -43,7 +43,7 @@ describe('SyncStatusPill', () => {
 
     await waitFor(() => expect(api.getPipelineRun).toHaveBeenCalledWith('run-1'))
     await waitFor(() => expect(completed).toHaveBeenCalledOnce())
-    expect(api.triggerSync).toHaveBeenCalledWith('user-1')
+    expect(api.triggerSync).toHaveBeenCalledWith('user-1', { full: false })
     expect(api.getWatchInfo).toHaveBeenCalledTimes(2)
 
     window.removeEventListener(SYNC_COMPLETED_EVENT, completed)

@@ -2,6 +2,8 @@ package job
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,6 +11,9 @@ import (
 
 // EnqueueSpec describes a job to enqueue.
 type EnqueueSpec struct {
+	// ID reserves a globally unique job ID before the owning pipeline run is
+	// persisted. Empty means the enqueuer generates an ID.
+	ID   string
 	Type string
 	// UserID is the athlete whose data the job operates on (the subject); empty
 	// for system jobs (stored as NULL).
@@ -31,9 +36,9 @@ type Enqueuer interface {
 }
 
 // StoreEnqueuer is the store-first Enqueuer: it writes the job row as queued
-// (source of truth) and then publishes the pointer to the work queue. If the
-// publish fails, the row remains queued and the error is returned so the caller
-// can react (a reconcile pass can re-publish orphaned queued rows).
+// (source of truth) and then publishes its pointer. A failed publish is
+// fail-closed: the row is durably terminal before the error is returned, so an
+// ambiguous broker delivery cannot execute it later.
 type StoreEnqueuer struct {
 	store Store
 	pub   Publisher
@@ -71,8 +76,12 @@ func NewStoreEnqueuer(store Store, pub Publisher, opts ...EnqueueOption) *StoreE
 // Enqueue implements Enqueuer.
 func (e *StoreEnqueuer) Enqueue(ctx context.Context, spec EnqueueSpec) (string, error) {
 	now := e.now()
+	jobID := spec.ID
+	if jobID == "" {
+		jobID = e.newID()
+	}
 	j := &Job{
-		ID:             e.newID(),
+		ID:             jobID,
 		UserID:         spec.UserID,
 		CreatedBy:      spec.CreatedBy,
 		Type:           spec.Type,
@@ -87,7 +96,20 @@ func (e *StoreEnqueuer) Enqueue(ctx context.Context, spec EnqueueSpec) (string, 
 		return "", err
 	}
 	if err := e.pub.PublishWork(ctx, Message{JobID: j.ID, UserID: j.UserID}); err != nil {
-		return j.ID, err
+		publishErr := err
+		failedAt := e.now()
+		j.Status = StatusFailed
+		j.ErrorCode = "publish_failed"
+		j.ErrorMessage = "work publication failed"
+		j.CompletedAt = &failedAt
+		j.UpdatedAt = failedAt
+		if err := e.store.Update(ctx, j); err != nil {
+			// The pointer may have reached the broker despite its publish error. Return
+			// an error that makes the caller retry rather than claiming fail-closed
+			// without first durably preventing handler execution.
+			return j.ID, fmt.Errorf("job publish failure could not be durably closed: %w", errors.Join(publishErr, err))
+		}
+		return j.ID, &PublishFailedError{JobID: j.ID, Err: publishErr}
 	}
 	return j.ID, nil
 }

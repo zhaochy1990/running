@@ -116,17 +116,20 @@ type pipelineRunModel struct {
 	UserID *string `gorm:"column:user_id;type:varchar(191);index:idx_runs_user;uniqueIndex:uq_runs_user_idem,priority:1"`
 	// CreatedBy is the actor that triggered the run (JWT sub, or NULL for an
 	// internal caller). Provenance only.
-	CreatedBy      *string    `gorm:"column:created_by;type:varchar(191)"`
-	Name           string     `gorm:"column:name;type:varchar(191);not null"`
-	InputJSON      string     `gorm:"column:input_json;type:longtext"`
-	Status         string     `gorm:"column:status;type:varchar(32);index;not null"`
-	CurrentStep    int        `gorm:"column:current_step;not null;default:0"`
-	StepsJSON      string     `gorm:"column:steps_json;type:longtext"`
-	ErrorMessage   string     `gorm:"column:error_message;type:text"`
-	IdempotencyKey *string    `gorm:"column:idempotency_key;type:varchar(191);uniqueIndex:uq_runs_user_idem,priority:2"`
-	CreatedAt      time.Time  `gorm:"column:created_at;type:datetime(6);autoCreateTime:false"`
-	UpdatedAt      time.Time  `gorm:"column:updated_at;type:datetime(6);autoUpdateTime:false"`
-	CompletedAt    *time.Time `gorm:"column:completed_at;type:datetime(6)"`
+	CreatedBy           *string    `gorm:"column:created_by;type:varchar(191)"`
+	Name                string     `gorm:"column:name;type:varchar(191);not null"`
+	InputJSON           string     `gorm:"column:input_json;type:longtext"`
+	Status              string     `gorm:"column:status;type:varchar(32);index;not null"`
+	CurrentStep         int        `gorm:"column:current_step;not null;default:0"`
+	StepsJSON           string     `gorm:"column:steps_json;type:longtext"`
+	ErrorMessage        string     `gorm:"column:error_message;type:text"`
+	CompletionApplied   bool       `gorm:"column:completion_applied;not null;default:false"`
+	CompletionClaimID   string     `gorm:"column:completion_claim_id;type:char(36);index"`
+	CompletionClaimedAt *time.Time `gorm:"column:completion_claimed_at;type:datetime(6)"`
+	IdempotencyKey      *string    `gorm:"column:idempotency_key;type:varchar(191);uniqueIndex:uq_runs_user_idem,priority:2"`
+	CreatedAt           time.Time  `gorm:"column:created_at;type:datetime(6);autoCreateTime:false"`
+	UpdatedAt           time.Time  `gorm:"column:updated_at;type:datetime(6);autoUpdateTime:false"`
+	CompletedAt         *time.Time `gorm:"column:completed_at;type:datetime(6)"`
 }
 
 func (pipelineRunModel) TableName() string { return "pipeline_runs" }
@@ -137,19 +140,22 @@ func toPipelineModel(r *job.PipelineRun) (*pipelineRunModel, error) {
 		return nil, err
 	}
 	return &pipelineRunModel{
-		RunID:          r.RunID,
-		UserID:         nullIfEmpty(r.UserID),
-		CreatedBy:      nullIfEmpty(r.CreatedBy),
-		Name:           r.Name,
-		InputJSON:      r.InputJSON,
-		Status:         string(r.Status),
-		CurrentStep:    r.CurrentStep,
-		StepsJSON:      string(steps),
-		ErrorMessage:   r.ErrorMessage,
-		IdempotencyKey: nullIfEmpty(r.IdempotencyKey),
-		CreatedAt:      r.CreatedAt,
-		UpdatedAt:      r.UpdatedAt,
-		CompletedAt:    r.CompletedAt,
+		RunID:               r.RunID,
+		UserID:              nullIfEmpty(r.UserID),
+		CreatedBy:           nullIfEmpty(r.CreatedBy),
+		Name:                r.Name,
+		InputJSON:           r.InputJSON,
+		Status:              string(r.Status),
+		CurrentStep:         r.CurrentStep,
+		StepsJSON:           string(steps),
+		ErrorMessage:        r.ErrorMessage,
+		CompletionApplied:   r.CompletionApplied,
+		CompletionClaimID:   r.CompletionClaimID,
+		CompletionClaimedAt: r.CompletionClaimedAt,
+		IdempotencyKey:      nullIfEmpty(r.IdempotencyKey),
+		CreatedAt:           r.CreatedAt,
+		UpdatedAt:           r.UpdatedAt,
+		CompletedAt:         r.CompletedAt,
 	}, nil
 }
 
@@ -161,18 +167,21 @@ func (m *pipelineRunModel) toDomain() (*job.PipelineRun, error) {
 		}
 	}
 	return &job.PipelineRun{
-		RunID:          m.RunID,
-		UserID:         derefString(m.UserID),
-		CreatedBy:      derefString(m.CreatedBy),
-		Name:           m.Name,
-		InputJSON:      m.InputJSON,
-		Status:         job.Status(m.Status),
-		CurrentStep:    m.CurrentStep,
-		Steps:          steps,
-		ErrorMessage:   m.ErrorMessage,
-		IdempotencyKey: derefString(m.IdempotencyKey),
-		CreatedAt:      m.CreatedAt,
-		UpdatedAt:      m.UpdatedAt,
-		CompletedAt:    m.CompletedAt,
+		RunID:               m.RunID,
+		UserID:              derefString(m.UserID),
+		CreatedBy:           derefString(m.CreatedBy),
+		Name:                m.Name,
+		InputJSON:           m.InputJSON,
+		Status:              job.Status(m.Status),
+		CurrentStep:         m.CurrentStep,
+		Steps:               steps,
+		ErrorMessage:        m.ErrorMessage,
+		CompletionApplied:   m.CompletionApplied,
+		CompletionClaimID:   m.CompletionClaimID,
+		CompletionClaimedAt: m.CompletionClaimedAt,
+		IdempotencyKey:      derefString(m.IdempotencyKey),
+		CreatedAt:           m.CreatedAt,
+		UpdatedAt:           m.UpdatedAt,
+		CompletedAt:         m.CompletedAt,
 	}, nil
 }

@@ -125,18 +125,114 @@ func (s *Store) GetUserOnboarding(ctx context.Context, userID string) (*UserOnbo
 	return &o, nil
 }
 
-// SetWatchReady marks the user's watch as connected (login). It upserts the row,
-// flipping only watch_ready so a concurrent profile_ready is never clobbered.
+// ErrNoProviderCredential reports a readiness transition after the credential
+// persistence boundary did not leave any provider credential for the user.
+var ErrNoProviderCredential = errors.New("storage: no provider credential")
+
+// SetWatchReady marks a successful provider login as connected. It serializes
+// with DisconnectWatch on the user's onboarding row and verifies the provider
+// credential inside that lock, so a late readiness write cannot recreate a
+// watch_ready=true state after disconnect removed the final credential.
 func (s *Store) SetWatchReady(ctx context.Context, userID string) error {
-	return s.setOnboardingFlag(ctx, userID, "watch_ready", true)
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, err := ensureLockedUserOnboarding(tx, uid, now); err != nil {
+			return err
+		}
+		var credentials int64
+		if err := tx.Model(&ProviderCredential{}).Where("user_id = ?", uid).Count(&credentials).Error; err != nil {
+			return err
+		}
+		if credentials == 0 {
+			return ErrNoProviderCredential
+		}
+		return tx.Model(&UserOnboarding{}).Where("user_id = ?", uid).Updates(map[string]interface{}{
+			"watch_ready": true,
+			"updated_at":  now,
+		}).Error
+	})
 }
 
-// ClearWatchReady marks the user's watch as disconnected (DELETE /watch). It
-// upserts the row, flipping only watch_ready to false; profile_ready and
-// completed_at are left untouched (completed_at is the onboarding gate owned by
-// the not-yet-ported sync-complete flow, ADR 0018).
+// ClearWatchReady is the compatibility flag mutation used by non-atomic stores.
+// The production disconnect path uses DisconnectWatch so credentials and all
+// watch-dependent onboarding state change atomically.
 func (s *Store) ClearWatchReady(ctx context.Context, userID string) error {
 	return s.setOnboardingFlag(ctx, userID, "watch_ready", false)
+}
+
+// FinalizeOnboardingRun marks a connected user's onboarding complete after the
+// API has verified that runID is their completed onboarding pipeline. The write
+// deliberately does not require onboarding_run_id to be linked: generic full
+// sync runs must never mutate onboarding state. Both prerequisite predicates
+// make a concurrent profile or final-watch change win safely. The returned
+// boolean reports whether this call wrote the marker; an existing completion is
+// idempotent.
+func (s *Store) FinalizeOnboardingRun(ctx context.Context, userID, runID string) (bool, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return false, err
+	}
+	now := time.Now().UTC()
+	result := s.db.WithContext(ctx).Model(&UserOnboarding{}).
+		Where("user_id = ? AND profile_ready = ? AND watch_ready = ? AND completed_at IS NULL", uid, true, true).
+		Updates(map[string]interface{}{"completed_at": now, "updated_at": now})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+// ensureLockedUserOnboarding creates a default row without clobbering existing
+// flags, then locks it as the cross-replica per-user onboarding mutex.
+func ensureLockedUserOnboarding(tx *gorm.DB, userID string, now time.Time) (*UserOnboarding, error) {
+	if err := tx.Exec("INSERT IGNORE INTO user_onboarding (user_id, watch_ready, profile_ready, created_at, updated_at) VALUES (?, false, false, ?, ?)", userID, now, now).Error; err != nil {
+		return nil, err
+	}
+	var onboarding UserOnboarding
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("user_id = ?", userID).First(&onboarding).Error; err != nil {
+		return nil, err
+	}
+	return &onboarding, nil
+}
+
+// DisconnectWatch atomically removes one provider credential. It resets
+// watch-dependent onboarding state only when the user has no other provider
+// credentials; dual-watch users remain connected through their remaining source.
+// Synced watch data is retained.
+func (s *Store) DisconnectWatch(ctx context.Context, userID, providerName string) error {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// The locked onboarding row is the per-user mutex shared with
+		// SetWatchReady. Create it first because a credential may predate any
+		// onboarding state (for example after an older login path).
+		if _, err := ensureLockedUserOnboarding(tx, uid, now); err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ? AND provider = ?", uid, providerName).Delete(&ProviderCredential{}).Error; err != nil {
+			return err
+		}
+		var remaining int64
+		if err := tx.Model(&ProviderCredential{}).Where("user_id = ?", uid).Count(&remaining).Error; err != nil {
+			return err
+		}
+		if remaining > 0 {
+			return nil
+		}
+		return tx.Model(&UserOnboarding{}).Where("user_id = ?", uid).Updates(map[string]interface{}{
+			"watch_ready":       false,
+			"completed_at":      nil,
+			"onboarding_run_id": nil,
+			"updated_at":        now,
+		}).Error
+	})
 }
 
 // DeleteUserData removes every row owned by userID in one transaction. The

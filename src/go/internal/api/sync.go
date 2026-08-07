@@ -9,19 +9,22 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/provider"
 )
 
 // syncUser godoc
 //
 //	@Summary		Trigger a watch-data sync (+ compute) for a user
-//	@Description	Starts the data-sync pipeline for the user and returns immediately (202) with a run id; poll GET /pipelines/{run_id} for completion. The pipeline syncs watch data and then computes derived metrics (training load, PMC, personal bests). Mode picks the pipeline: "incremental" (default) syncs only new activities and computes only those; "full" re-syncs history, recomputes the athlete baseline, and does a full compute (new-user onboarding). This is the async Go replacement for the Python POST /api/{user}/sync. A user caller may only sync their own id (path {user} must equal their JWT sub); an internal caller may sync any user (path {user} must be a UUID).
+//	@Description	Starts a pipeline only and returns immediately (202) with a run id; Web clients poll GET /api/pipelines/{run_id}. The pipeline syncs watch data and then computes derived metrics (training load, PMC, personal bests). Mode picks the pipeline: "incremental" (default) syncs only new activities and computes only those; "full" re-syncs history, recomputes the athlete baseline, and does a full compute. A successful full pipeline does not complete onboarding: the user must explicitly finalize its successful run through POST /api/users/me/onboarding/complete. This is the async Go replacement for the Python POST /api/{user}/sync. A user caller may only sync their own id (path {user} must equal their JWT sub); an internal caller may sync any user (path {user} must be a UUID).
 //	@Tags			sync
 //	@Accept			json
 //	@Produce		json
 //	@Param			user	path		string					true	"User id (JWT sub, or any user UUID for internal callers)"
+//	@Param			Idempotency-Key	header		string					false	"Deduplicates creation; a repeat key returns the existing run (200)"
 //	@Param			body	body		syncRequest				false	"Optional sync options; omitted mode defaults to incremental"
 //	@Success		202		{object}	startPipelineResponse	"Started"
+//	@Success		200		{object}	startPipelineResponse	"Existing run returned for a repeated Idempotency-Key"
 //	@Failure		400		{object}	errorResponse
 //	@Failure		401		{object}	errorResponse
 //	@Failure		403		{object}	errorResponse
@@ -88,7 +91,31 @@ func (s *Service) syncUser(c *gin.Context) {
 		return
 	}
 
-	runID, err := s.pipelines.StartPipeline(c.Request.Context(), pipelineName, userID, resolveCreatedBy(caller), "", string(inputJSON))
+	// Match POST /pipelines idempotency semantics: a repeat key resolves to the
+	// same run, and a unique-key race is recovered by looking it up.
+	idem := c.GetHeader("Idempotency-Key")
+	if idem != "" {
+		if existing, err := s.runsIdem.PipelineRunByIdempotencyKey(c.Request.Context(), userID, idem); err == nil {
+			c.JSON(http.StatusOK, startPipelineResponse{RunID: existing.RunID, PipelineName: existing.Name, Deduplicated: true})
+			return
+		} else if !job.IsNotFound(err) {
+			s.log.Error("sync idempotency lookup failed", zapErr(err))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+	}
+
+	runID, err := s.pipelines.StartPipeline(c.Request.Context(), pipelineName, userID, resolveCreatedBy(caller), idem, string(inputJSON))
+	if errors.Is(err, job.ErrConflict) {
+		existing, lookupErr := s.runsIdem.PipelineRunByIdempotencyKey(c.Request.Context(), userID, idem)
+		if lookupErr != nil {
+			s.log.Error("sync idempotency conflict resolve failed", zapErr(lookupErr))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+		c.JSON(http.StatusOK, startPipelineResponse{RunID: existing.RunID, PipelineName: existing.Name, Deduplicated: true})
+		return
+	}
 	if err != nil {
 		s.log.Error("start sync pipeline failed", zapErr(err))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "start sync failed"})

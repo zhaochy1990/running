@@ -6,11 +6,11 @@
 
 React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。共享 sidebar navigation 用 `AppLayout`。
 
-> **Planned（ADR 0017）**：前端将剥离为独立服务/容器 `stride-web` = 静态 SPA + Node/Hono
-> **前端 BFF**（唯一前门）。页面仍 CSR，token 模型不变。BFF 用一张版本化 TS **API 路由表** 把
-> `/api/*` 分流到 Python（`stride-app`）或 Go（Tencent `stride api`），`/api/auth/*` 也经 BFF
-> 走 auth 上游（全链路 same-origin）。这反转了 ADR 0012 的 browser-direct-to-Go。届时下面
-> "FastAPI 同时服务 SPA" 的描述只适用于 cutover 之前的 fallback 期。
+> **当前部署（ADR 0017）**：前端已拆为独立服务/容器 `stride-web` = 静态 SPA + Node/Hono
+> 前端 BFF。页面仍 CSR，token 模型不变。BFF 用版本化 TS **API 路由表** 把 `/api/*` 分流到
+> Python（`stride-app`）或 Go（Tencent `stride api`），`/api/auth/*` 也经 BFF 走 auth 上游。默认
+> 为 same-origin；配置 `PUBLIC_DIRECT_BASE_URL` 时，SPA 可按同一 manifest 直连 Tencent-bound
+> auth/Go routes。`stride-app` 现在是 API-only，以下 FastAPI+SPA 说明只保留为历史 fallback。
 
 ## Pages
 
@@ -28,7 +28,7 @@ React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。
 
 ## API Layer (`src/stride_server/`)
 
-FastAPI backend 同时服务 REST API 和构建好的 frontend（SPA 静态文件）。入口 `stride_server.main:app`（跑 `uvicorn stride_server.main:app`）。app 是三个包的组合：
+生产中的 `stride-app` 只服务 REST API；本地 Python backend 入口仍是 `stride_server.main:app`（跑 `uvicorn stride_server.main:app`）。以下是其三个包的组成；其旧 SPA 静态挂载不再是生产前端路径：
 
 - **`stride_core/`** —— 共享数据层：DB schema、models、analyze/export helpers、`DataSource` protocol (`stride_core/source.py`)。source-agnostic —— 不 import `coros_sync`。
 - **`coros_sync/`** —— COROS-specific adapter + CLI。`coros_sync/adapter.py::CorosDataSource` 实现 `DataSource`。

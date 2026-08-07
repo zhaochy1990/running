@@ -14,25 +14,29 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
 const testSub = "11111111-1111-4111-8111-111111111111"
 
+func stringPtr(s string) *string { return &s }
+
 // --- fakes -------------------------------------------------------------------
 
 type fakeUserStore struct {
-	profiles    map[string]*storage.UserProfile
-	onboarding  map[string]*storage.UserOnboarding
-	provider    map[string]string
-	credentials map[string]*storage.ProviderCredential
-	devices     map[string]string
-	meta        map[string]string
-	upsertErr   error
-	patchErr    error
-	patchCalls  int
-	deleteErr   error
-	deletedUser string
+	profiles      map[string]*storage.UserProfile
+	onboarding    map[string]*storage.UserOnboarding
+	provider      map[string]string
+	credentials   map[string]*storage.ProviderCredential
+	devices       map[string]string
+	meta          map[string]string
+	upsertErr     error
+	patchErr      error
+	patchCalls    int
+	deleteErr     error
+	deletedUser   string
+	finalizeCalls int
 }
 
 func newFakeUserStore() *fakeUserStore {
@@ -92,13 +96,18 @@ func (f *fakeUserStore) GetUserOnboarding(_ context.Context, uid string) (*stora
 }
 
 func (f *fakeUserStore) SetWatchReady(_ context.Context, uid string) error {
-	o := f.onboarding[uid]
-	if o == nil {
-		o = &storage.UserOnboarding{UserID: uid}
+	for key := range f.credentials {
+		if strings.HasPrefix(key, uid+"|") {
+			o := f.onboarding[uid]
+			if o == nil {
+				o = &storage.UserOnboarding{UserID: uid}
+			}
+			o.WatchReady = true
+			f.onboarding[uid] = o
+			return nil
+		}
 	}
-	o.WatchReady = true
-	f.onboarding[uid] = o
-	return nil
+	return storage.ErrNoProviderCredential
 }
 
 func (f *fakeUserStore) SetProfileReady(_ context.Context, uid string) error {
@@ -147,8 +156,21 @@ func (f *fakeUserStore) ClearWatchReady(_ context.Context, uid string) error {
 		o = &storage.UserOnboarding{UserID: uid}
 	}
 	o.WatchReady = false
+	o.CompletedAt = nil
+	o.OnboardingRunID = nil
 	f.onboarding[uid] = o
 	return nil
+}
+
+func (f *fakeUserStore) FinalizeOnboardingRun(_ context.Context, uid, _ string) (bool, error) {
+	f.finalizeCalls++
+	o := f.onboarding[uid]
+	if o == nil || !o.ProfileReady || !o.WatchReady || o.CompletedAt != nil {
+		return false, nil
+	}
+	now := time.Now().UTC()
+	o.CompletedAt = &now
+	return true, nil
 }
 
 func (f *fakeUserStore) DeleteUserData(_ context.Context, uid string) error {
@@ -182,12 +204,17 @@ type fakeProviderLogin struct {
 	gotProvider string
 	gotUser     string
 	gotRegion   string
+	store       *fakeUserStore
 }
 
 func (f *fakeProviderLogin) Login(_ context.Context, providerName, userID, email, password, region string) (WatchLoginResult, error) {
 	f.gotProvider, f.gotUser, f.gotRegion = providerName, userID, region
 	if f.err != nil {
 		return WatchLoginResult{}, f.err
+	}
+	if f.result.Success && f.store != nil {
+		f.store.provider[userID] = providerName
+		f.store.credentials[credKey(userID, providerName)] = &storage.ProviderCredential{UserID: userID, Provider: providerName, Secret: []byte("token")}
 	}
 	return f.result, nil
 }
@@ -222,9 +249,22 @@ func (e fakeAuthResponseError) HTTPStatus() int { return e.status }
 
 // --- harness -----------------------------------------------------------------
 
+type fakeJobGetter struct{ rows map[string]*job.Job }
+
+func (f *fakeJobGetter) Get(_ context.Context, id string) (*job.Job, error) {
+	j, ok := f.rows[id]
+	if !ok {
+		return nil, &job.ErrNotFound{Key: id}
+	}
+	cp := *j
+	return &cp, nil
+}
+
 type userHarness struct {
 	svc          *Service
 	store        *fakeUserStore
+	runs         *fakeRuns
+	jobs         *fakeJobGetter
 	login        *fakeProviderLogin
 	providerInfo *fakeProviderInfo
 	authName     *fakeAuthNameSync
@@ -239,20 +279,28 @@ func newUserHarness(t *testing.T, features FeatureConfig) *userHarness {
 		t.Fatalf("gen key: %v", err)
 	}
 	store := newFakeUserStore()
-	login := &fakeProviderLogin{result: WatchLoginResult{Success: true}}
+	runs := newFakeRuns()
+	jobs := &fakeJobGetter{rows: map[string]*job.Job{}}
+	login := &fakeProviderLogin{result: WatchLoginResult{Success: true}, store: store}
 	providerInfo := &fakeProviderInfo{displayName: "高驰", capabilities: []string{"sync_hrv_detail"}}
 	authName := &fakeAuthNameSync{}
 	accountAuth := &fakeAccountDeleter{}
 	svc := NewService(Config{
-		Auth:           NewAuthenticator(testToken, NewJWTVerifierFromKey(&key.PublicKey, testIssuer, testAudience)),
-		UserStore:      store,
-		ProviderLogin:  login,
-		ProviderInfo:   providerInfo,
-		AuthNameSync:   authName,
-		AccountDeleter: accountAuth,
-		Features:       features,
+		Auth:             NewAuthenticator(testToken, NewJWTVerifierFromKey(&key.PublicKey, testIssuer, testAudience)),
+		Pipelines:        runs,
+		Runs:             runs,
+		Jobs:             jobs,
+		RunsList:         runs,
+		RunsIdem:         runs,
+		SyncPipelineFull: "onboarding",
+		UserStore:        store,
+		ProviderLogin:    login,
+		ProviderInfo:     providerInfo,
+		AuthNameSync:     authName,
+		AccountDeleter:   accountAuth,
+		Features:         features,
 	})
-	return &userHarness{svc: svc, store: store, login: login, providerInfo: providerInfo, authName: authName, accountAuth: accountAuth, key: key}
+	return &userHarness{svc: svc, store: store, runs: runs, jobs: jobs, login: login, providerInfo: providerInfo, authName: authName, accountAuth: accountAuth, key: key}
 }
 
 func (h *userHarness) userToken(t *testing.T, sub string) string {
@@ -665,6 +713,9 @@ func TestWatchLogin_Success(t *testing.T) {
 	if o := h.store.onboarding[testSub]; o == nil || !o.WatchReady {
 		t.Errorf("watch_ready not set")
 	}
+	if cred := h.store.credentials[credKey(testSub, "coros")]; cred == nil {
+		t.Error("successful login must persist a credential before readiness")
+	}
 }
 
 func TestWatchLogin_GarminRegionDefault(t *testing.T) {
@@ -808,6 +859,24 @@ func TestDeleteWatch_NoWatchBound400(t *testing.T) {
 	}
 }
 
+func TestDeleteWatch_WithoutOnboardingRowCreatesClearedState(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	h.store.provider[testSub] = "coros"
+	h.store.credentials[credKey(testSub, "coros")] = &storage.ProviderCredential{UserID: testSub, Provider: "coros", Secret: []byte("token")}
+
+	w := h.do(http.MethodDelete, "/api/users/me/watch", "", h.bearer(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if cred := h.store.credentials[credKey(testSub, "coros")]; cred != nil {
+		t.Errorf("credential must be deleted on disconnect")
+	}
+	o := h.store.onboarding[testSub]
+	if o == nil || o.WatchReady || o.ProfileReady || o.OnboardingRunID != nil || o.CompletedAt != nil {
+		t.Errorf("missing-row disconnect must create cleared onboarding state: %+v", o)
+	}
+}
+
 func TestDeleteWatch_Success(t *testing.T) {
 	h := newUserHarness(t, FeatureConfig{})
 	email := "a@b.com"
@@ -839,11 +908,256 @@ func TestDeleteWatch_Success(t *testing.T) {
 	if o == nil || o.WatchReady {
 		t.Errorf("watch_ready must be cleared on disconnect: %+v", o)
 	}
-	// profile_ready + completed_at are intentionally retained (ADR 0018).
+	// Profile remains, but watch-dependent onboarding completion is cleared.
 	if o != nil && !o.ProfileReady {
 		t.Errorf("profile_ready must be retained on disconnect")
 	}
-	if o != nil && o.CompletedAt == nil {
-		t.Errorf("completed_at must be left untouched on disconnect (ADR 0018)")
+	if o != nil && o.CompletedAt != nil {
+		t.Errorf("completed_at must be cleared on disconnect")
+	}
+	if o != nil && o.OnboardingRunID != nil {
+		t.Errorf("onboarding run must be cleared on disconnect")
+	}
+}
+
+// --- onboarding completion ----------------------------------------------------
+
+func TestGenericFullSyncDoesNotMutateOnboardingState(t *testing.T) {
+	for _, completed := range []bool{false, true} {
+		t.Run("completed="+map[bool]string{false: "false", true: "true"}[completed], func(t *testing.T) {
+			h := newUserHarness(t, FeatureConfig{})
+			var completedAt *time.Time
+			if completed {
+				now := time.Now().UTC()
+				completedAt = &now
+			}
+			h.store.onboarding[testSub] = &storage.UserOnboarding{
+				UserID: testSub, WatchReady: true, ProfileReady: true,
+				OnboardingRunID: stringPtr("existing-run"), CompletedAt: completedAt,
+			}
+
+			w := h.do(http.MethodPost, "/api/"+testSub+"/sync", `{"mode":"full"}`, h.bearer(t, testSub))
+			if w.Code != http.StatusAccepted {
+				t.Fatalf("code = %d, want 202: %s", w.Code, w.Body.String())
+			}
+			o := h.store.onboarding[testSub]
+			if o.OnboardingRunID == nil || *o.OnboardingRunID != "existing-run" || (o.CompletedAt != nil) != completed {
+				t.Fatalf("generic sync mutated onboarding state: %+v", o)
+			}
+		})
+	}
+}
+
+func TestOnboardingComplete_RequiresUserTier(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	body := `{"run_id":"22222222-2222-4222-8222-222222222222"}`
+	for name, headers := range map[string]map[string]string{"anonymous": nil, "internal": internalHdr()} {
+		t.Run(name, func(t *testing.T) {
+			w := h.do(http.MethodPost, "/api/users/me/onboarding/complete", body, headers)
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("code = %d, want 401: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestOnboardingComplete_FinalizesVerifiedDoneRun(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	h.store.onboarding[testSub] = &storage.UserOnboarding{UserID: testSub, ProfileReady: true, WatchReady: true}
+	runID := "22222222-2222-4222-8222-222222222222"
+	h.runs.seedRun(&job.PipelineRun{RunID: runID, UserID: testSub, Name: "onboarding", Status: job.StatusDone})
+
+	w := h.do(http.MethodPost, "/api/users/me/onboarding/complete", `{"run_id":"`+runID+`"}`, h.bearer(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if h.store.onboarding[testSub].CompletedAt == nil || h.store.finalizeCalls != 1 {
+		t.Fatalf("verified completion was not persisted: %+v", h.store.onboarding[testSub])
+	}
+	if len(h.runs.byID) != 1 {
+		t.Fatalf("finalizer must not start a pipeline: runs=%d", len(h.runs.byID))
+	}
+}
+
+func TestOnboardingComplete_RejectsMalformedRunIDBeforeIdempotency(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	now := time.Now().UTC()
+	h.store.onboarding[testSub] = &storage.UserOnboarding{UserID: testSub, WatchReady: true, CompletedAt: &now}
+
+	w := h.do(http.MethodPost, "/api/users/me/onboarding/complete", `{"run_id":"not-a-uuid"}`, h.bearer(t, testSub))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("code = %d, want 400: %s", w.Code, w.Body.String())
+	}
+	if h.store.finalizeCalls != 0 || len(h.runs.byID) != 0 {
+		t.Fatal("invalid finalization must not mutate or start work")
+	}
+}
+
+func TestOnboardingComplete_RejectsUnverifiedRuns(t *testing.T) {
+	cases := []struct {
+		name string
+		run  *job.PipelineRun
+	}{
+		{"missing", nil},
+		{"wrong owner", &job.PipelineRun{RunID: "22222222-2222-4222-8222-222222222222", UserID: "other", Name: "onboarding", Status: job.StatusDone}},
+		{"wrong pipeline", &job.PipelineRun{RunID: "22222222-2222-4222-8222-222222222222", UserID: testSub, Name: "data_sync", Status: job.StatusDone}},
+		{"queued", &job.PipelineRun{RunID: "22222222-2222-4222-8222-222222222222", UserID: testSub, Name: "onboarding", Status: job.StatusQueued}},
+		{"running", &job.PipelineRun{RunID: "22222222-2222-4222-8222-222222222222", UserID: testSub, Name: "onboarding", Status: job.StatusRunning}},
+		{"failed", &job.PipelineRun{RunID: "22222222-2222-4222-8222-222222222222", UserID: testSub, Name: "onboarding", Status: job.StatusFailed}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newUserHarness(t, FeatureConfig{})
+			h.store.onboarding[testSub] = &storage.UserOnboarding{UserID: testSub, ProfileReady: true, WatchReady: true}
+			if tc.run != nil {
+				h.runs.seedRun(tc.run)
+			}
+			w := h.do(http.MethodPost, "/api/users/me/onboarding/complete", `{"run_id":"22222222-2222-4222-8222-222222222222"}`, h.bearer(t, testSub))
+			if w.Code != http.StatusConflict {
+				t.Fatalf("code = %d, want 409: %s", w.Code, w.Body.String())
+			}
+			if h.store.onboarding[testSub].CompletedAt != nil || h.store.finalizeCalls != 0 || len(h.runs.byID) > 1 {
+				t.Fatal("unverified finalization must not mutate or start work")
+			}
+		})
+	}
+}
+
+func TestOnboardingComplete_RequiresProfileAndConnectedWatch(t *testing.T) {
+	for name, onboarding := range map[string]*storage.UserOnboarding{
+		"missing both":    nil,
+		"missing profile": {UserID: testSub, WatchReady: true},
+		"missing watch":   {UserID: testSub, ProfileReady: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newUserHarness(t, FeatureConfig{})
+			h.store.onboarding[testSub] = onboarding
+			runID := "22222222-2222-4222-8222-222222222222"
+			h.runs.seedRun(&job.PipelineRun{RunID: runID, UserID: testSub, Name: "onboarding", Status: job.StatusDone})
+			w := h.do(http.MethodPost, "/api/users/me/onboarding/complete", `{"run_id":"`+runID+`"}`, h.bearer(t, testSub))
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("code = %d, want 400: %s", w.Code, w.Body.String())
+			}
+			if h.store.finalizeCalls != 0 {
+				t.Fatal("missing prerequisite must not finalize")
+			}
+		})
+	}
+}
+
+func TestSyncStatus_DoneRunIsReadOnly(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	h.store.onboarding[testSub] = &storage.UserOnboarding{UserID: testSub, WatchReady: true, OnboardingRunID: stringPtr("run-1")}
+	h.runs.seedRun(&job.PipelineRun{RunID: "run-1", UserID: testSub, Name: "onboarding", Status: job.StatusDone})
+
+	w := h.do(http.MethodGet, "/api/users/me/sync-status", "", h.bearer(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if h.store.onboarding[testSub].CompletedAt != nil || h.store.finalizeCalls != 0 {
+		t.Fatal("legacy sync status must not finalize onboarding")
+	}
+}
+
+func TestSyncStatus_MapsRunStatesAndHidesInternalErrors(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	h.store.onboarding[testSub] = &storage.UserOnboarding{UserID: testSub, WatchReady: true, OnboardingRunID: stringPtr("run-1")}
+	h.runs.seedRun(&job.PipelineRun{
+		RunID: "run-1", UserID: testSub, Name: "onboarding", Status: job.StatusRunning,
+		Steps: []job.PipelineStep{{Name: "sync", Status: job.StatusRunning, JobID: "job-1"}},
+	})
+	w := h.do(http.MethodGet, "/api/users/me/sync-status", "", h.bearer(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("running code = %d: %s", w.Code, w.Body.String())
+	}
+	var running syncStatusResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &running); err != nil {
+		t.Fatalf("decode running: %v", err)
+	}
+	if running.State == nil || *running.State != "running" || running.Progress == nil || running.Progress.Phase != "sync" {
+		t.Fatalf("running response = %+v", running)
+	}
+
+	h.runs.byID["run-1"].Status = job.StatusFailed
+	h.runs.byID["run-1"].ErrorMessage = "mysql password leaked"
+	w = h.do(http.MethodGet, "/api/users/me/sync-status", "", h.bearer(t, testSub))
+	var failed syncStatusResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &failed); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if failed.State == nil || *failed.State != "error" || failed.Error != publicOnboardingError {
+		t.Fatalf("failed response = %+v", failed)
+	}
+}
+
+func TestSyncStatus_AbsentReturnsNullFields(t *testing.T) {
+	for _, onboarding := range []*storage.UserOnboarding{
+		nil,
+		{UserID: testSub, WatchReady: true, OnboardingRunID: stringPtr("missing-run")},
+	} {
+		h := newUserHarness(t, FeatureConfig{})
+		if onboarding != nil {
+			h.store.onboarding[testSub] = onboarding
+		}
+		w := h.do(http.MethodGet, "/api/users/me/sync-status", "", h.bearer(t, testSub))
+		if w.Code != http.StatusOK {
+			t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+		}
+		if got := strings.TrimSpace(w.Body.String()); got != `{"state":null,"progress":null}` {
+			t.Fatalf("response = %s, want null state and progress fields", got)
+		}
+	}
+}
+
+func TestSyncStatus_ActiveHeartbeatPreventsStaleError(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	stale := time.Now().UTC().Add(-10 * time.Minute)
+	recent := time.Now().UTC()
+	h.store.onboarding[testSub] = &storage.UserOnboarding{UserID: testSub, WatchReady: true, OnboardingRunID: stringPtr("run-1")}
+	h.runs.seedRun(&job.PipelineRun{RunID: "run-1", UserID: testSub, Name: "onboarding", Status: job.StatusRunning, UpdatedAt: stale, Steps: []job.PipelineStep{{Name: "sync", Status: job.StatusRunning, JobID: "job-1"}}})
+	h.jobs.rows["job-1"] = &job.Job{ID: "job-1", Status: job.StatusRunning, UpdatedAt: recent, Stage: "syncing", ProgressPct: 50}
+	w := h.do(http.MethodGet, "/api/users/me/sync-status", "", h.bearer(t, testSub))
+	var resp syncStatusResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if w.Code != http.StatusOK || resp.State == nil || *resp.State != "running" || resp.Progress == nil || resp.Progress.Phase != "syncing" {
+		t.Fatalf("response = %d %+v", w.Code, resp)
+	}
+}
+
+func TestSyncStatus_CompletedOnboardingWithoutRunReturnsDone(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	now := time.Now().UTC()
+	h.store.onboarding[testSub] = &storage.UserOnboarding{UserID: testSub, WatchReady: true, CompletedAt: &now}
+
+	w := h.do(http.MethodGet, "/api/users/me/sync-status", "", h.bearer(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d: %s", w.Code, w.Body.String())
+	}
+	var resp syncStatusResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.State == nil || *resp.State != "done" || resp.Progress == nil || resp.Progress.Percent != 100 {
+		t.Fatalf("response = %+v", resp)
+	}
+}
+
+func TestSyncStatus_CompletedOnboardingReturnsDone(t *testing.T) {
+	h := newUserHarness(t, FeatureConfig{})
+	now := time.Now().UTC()
+	h.store.onboarding[testSub] = &storage.UserOnboarding{UserID: testSub, WatchReady: true, CompletedAt: &now, OnboardingRunID: stringPtr("run-1")}
+	h.runs.seedRun(&job.PipelineRun{RunID: "run-1", UserID: testSub, Name: "onboarding", Status: job.StatusDone})
+	w := h.do(http.MethodGet, "/api/users/me/sync-status", "", h.bearer(t, testSub))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d: %s", w.Code, w.Body.String())
+	}
+	var resp syncStatusResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.State == nil || *resp.State != "done" || resp.Progress == nil || resp.Progress.Percent != 100 {
+		t.Fatalf("response = %+v", resp)
 	}
 }

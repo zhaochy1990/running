@@ -1,5 +1,11 @@
 # Go onboarding pipeline: native compute port (2-step), dual-run toward Python retirement
 
+> **Runtime topology superseded.** This historical decision records the original
+> two-step proposal. The deployed Go catalog in `internal/catalog/catalog.go` is
+> `sync → calibration → compute` (ADR 0020), not `full_sync → onboarding_compute`.
+> Generic sync starts a pipeline only; a successful run is finalized separately by
+> explicit `run_id` submission after the user selects **Enter STRIDE**.
+
 The Go worker can already sync a user's watch data (`watch_sync`, ADR 0011) and
 `cmd/api` (ADR 0012) can start pipelines, but the onboarding *pipeline* has no
 definition and the Python-only calibration/backfill compute passes have no Go
@@ -99,8 +105,9 @@ so the order is a data dependency, not duplicate work.
   matching GORM models + `AutoMigrateWatch`.
 - **`reconcile` grows** derived-table readers on both stores and per-metric
   tolerances; it stays a manual dev tool.
-- **Browser onboarding is not fully complete** until the credential-submit
-  endpoint ships — this iteration assumes credentials are pre-provisioned via
-  `cmd/stride-sync import-creds`. A tracked gap, not a silent one.
+- **Historical gap closed elsewhere.** Browser watch credential submission now
+  exists at `POST /api/users/me/watch/login`. It remains separate from the Web
+  sync/finalize handshake: generic full sync returns `run_id`; only explicit
+  finalization of the completed run marks onboarding complete.
 - **Python compute retirement is a tracked future flip**, unblocked only once
   parity holds and readers are migrated; nothing here removes Python.

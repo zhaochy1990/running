@@ -92,6 +92,7 @@ func (s *Service) startPipeline(c *gin.Context) {
 // getPipelineRun godoc
 //
 //	@Summary		Get a pipeline run's status
+//	@Description	Reads one asynchronous pipeline run. Web onboarding polls the /api alias with the run_id returned by POST /api/{user}/sync; a done run remains separate from explicit onboarding finalization.
 //	@Tags			pipelines
 //	@Produce		json
 //	@Param			run_id	path		string	true	"Run id"
@@ -102,6 +103,7 @@ func (s *Service) startPipeline(c *gin.Context) {
 //	@Security		InternalToken
 //	@Security		BearerAuth
 //	@Router			/pipelines/{run_id} [get]
+//	@Router			/api/pipelines/{run_id} [get]
 func (s *Service) getPipelineRun(c *gin.Context) {
 	caller := callerFrom(c)
 	runID := c.Param("run_id")

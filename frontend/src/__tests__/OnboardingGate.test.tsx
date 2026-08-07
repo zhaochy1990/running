@@ -71,4 +71,11 @@ describe('OnboardingGate loading vs error', () => {
     renderAt('/')
     expect(await screen.findByText('DASHBOARD_HOME')).toBeInTheDocument()
   })
+
+  it('keeps a user gated when a pipeline may be done but completed_at is null', async () => {
+    mocks.getMyProfile.mockResolvedValue({ onboarding: { completed_at: null } })
+    renderAt('/')
+    expect(await screen.findByText('STRIDE 初始化')).toBeInTheDocument()
+    expect(screen.queryByText('DASHBOARD_HOME')).not.toBeInTheDocument()
+  })
 })

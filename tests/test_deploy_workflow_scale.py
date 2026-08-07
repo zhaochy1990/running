@@ -5,6 +5,7 @@ from pathlib import Path
 
 WORKFLOW_DIR = Path(__file__).parents[1] / ".github" / "workflows"
 WORKFLOW_PATH = WORKFLOW_DIR / "deploy.yml"
+WEB_WORKFLOW_PATH = WORKFLOW_DIR / "deploy-web.yml"
 DAILY_SYNC_PATH = WORKFLOW_DIR / "daily-sync.yml"
 WEEKLY_CALIBRATION_PATH = WORKFLOW_DIR / "weekly-running-calibration.yml"
 WEB_DEPLOY_PATH = WORKFLOW_DIR / "deploy-web.yml"
@@ -31,6 +32,42 @@ def test_stride_app_deploys_keep_one_warm_replica() -> None:
     for command in app_commands:
         assert "--min-replicas 1" in command
         assert "--max-replicas 1" in command
+
+
+def test_stride_web_deploys_atomic_go_onboarding_routes() -> None:
+    """The production web revision cannot mix Python and Go onboarding state."""
+    workflow = WEB_WORKFLOW_PATH.read_text(encoding="utf-8")
+    deploy_step = workflow.split("- name: Deploy to Container Apps (stride-web)", maxsplit=1)[1].split(
+        "- name: Health check",
+        maxsplit=1,
+    )[0]
+    expected_routes = {
+        "STRIDE_ROUTE_GET_USERS_ME_PROFILE=go",
+        "STRIDE_ROUTE_POST_USERS_ME_PROFILE=go",
+        "STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN=go",
+        "STRIDE_ROUTE_POST_USER_SYNC=go",
+        "STRIDE_ROUTE_GET_PIPELINES_RUNID=go",
+        "STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE=go",
+    }
+
+    assert "ONBOARDING_GO_ROUTE_VARS=(" in deploy_step
+    assert '"${#ONBOARDING_GO_ROUTE_VARS[@]}" -ne 6' in deploy_step
+    assert 'grep -Ec \'^STRIDE_ROUTE_[A-Z0-9_]+=go$\'' in deploy_step
+    assert "GO_API_URL=$GO_API_URL" in deploy_step
+    assert 'verify_onboarding_readiness "${GO_API_URL%/}/readyz/onboarding"' in deploy_step
+    assert 'verify_onboarding_readiness "${PUBLIC_DIRECT_BASE_URL%/}/readyz/onboarding"' in deploy_step
+    assert "readiness_bodies=()" in deploy_step
+    assert 'readiness_bodies+=("$readiness_body")' in deploy_step
+    assert "curl --silent --connect-timeout 10 --max-time 30" in deploy_step
+    assert "--location" not in deploy_step
+    assert 'readiness_status" != "200"' in deploy_step
+    assert 'payload.get("contract_version") != "web-onboarding-v1"' in deploy_step
+    assert 'actual != expected' in deploy_step
+    assert "refusing Web route cutover" in deploy_step
+    assert "--set-env-vars \"${ENV_VARS[@]}\"" in deploy_step
+    assert "Deployed $route_name is not configured for the Go onboarding lifecycle." in deploy_step
+    assert deploy_step.index("verify_onboarding_readiness") < deploy_step.index("--set-env-vars")
+    assert {line.strip() for line in deploy_step.splitlines()} >= expected_routes
 
 
 def test_async_job_worker_deploys_keep_one_warm_replica() -> None:

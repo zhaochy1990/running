@@ -65,22 +65,25 @@ CREATE TABLE IF NOT EXISTS user_profile (
 
 -- user_onboarding — onboarding gate flags (ADR 0013). Equivalent to the Go GORM
 -- model UserOnboarding. Python's coros_ready maps to the provider-agnostic
--- watch_ready; completed_at is nullable (Go leaves it null until the
--- sync-endpoint port lands, but migrated rows carry the legacy Python value).
+-- watch_ready; completed_at records successful Go/Python onboarding completion.
+-- onboarding_run_id associates an in-progress Go onboarding pipeline; it is NULL
+-- when no run is claimed or after a watch disconnect.
 --
 -- Column contract:
---   watch_ready    a watch data source is connected (Python coros_ready)
---   profile_ready  the profile form has been saved
---   completed_at   onboarding completion instant (UTC), NULL if never completed
---   created_at     first-write time; updated_at last-write time (UTC)
+--   watch_ready       a watch data source is connected (Python coros_ready)
+--   profile_ready     the profile form has been saved
+--   completed_at      onboarding completion instant (UTC), NULL if never completed
+--   onboarding_run_id current Go onboarding pipeline run id, NULL when absent
+--   created_at        first-write time; updated_at last-write time (UTC)
 
 CREATE TABLE IF NOT EXISTS user_onboarding (
   user_id       VARCHAR(64) NOT NULL,
   watch_ready   TINYINT(1)  NOT NULL DEFAULT 0,
-  profile_ready TINYINT(1)  NOT NULL DEFAULT 0,
-  completed_at  DATETIME(3) NULL,
-  created_at    DATETIME(3) NULL,
-  updated_at    DATETIME(3) NULL,
+  profile_ready     TINYINT(1)  NOT NULL DEFAULT 0,
+  completed_at      DATETIME(3) NULL,
+  onboarding_run_id VARCHAR(64) NULL,
+  created_at        DATETIME(3) NULL,
+  updated_at        DATETIME(3) NULL,
   PRIMARY KEY (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

@@ -1,8 +1,12 @@
-# Go onboarding compute — implementation spec
+# Go onboarding compute — historical implementation spec
 
-Status: **proposed** (design agreed via grilling; tolerances subject to review).
-Companion to **ADR 0015**. Scope decisions and rationale live in the ADR; this
-file is the actionable build plan.
+Status: **superseded for runtime topology and onboarding completion**. This
+pre-implementation two-step proposal is retained for historical rationale only.
+The deployed Go catalog is `sync → calibration → compute` in
+`src/go/internal/catalog/catalog.go`; Web onboarding starts generic full sync,
+polls its `run_id`, then explicitly finalizes that successful run after the user
+selects **Enter STRIDE**. Pipeline success alone is not onboarding completion.
+Companion to **ADR 0015**.
 
 ## Goal
 
@@ -120,11 +124,11 @@ below. Proposed epsilons (tight on baselines, documented looser band on ability)
 Run: `go run ./cmd/stride reconcile --profile <uuid> --sqlite data/<uuid>/coros.db` (extended
 to diff derived tables). Never log credentials/PII.
 
-## Explicit out-of-scope (tracked gaps)
+## Historical out-of-scope (tracked gaps)
 
-- **Browser credential-submit endpoint** — assume creds pre-provisioned via
-  `stride watch import-creds`; browser onboarding is not fully complete until
-  this ships.
+- **Browser credential-submit endpoint** — this historical gap is closed by
+  `POST /api/users/me/watch/login`. It is separate from generic sync and the
+  explicit successful-`run_id` finalizer.
 - **Consumer read API** — this work stops at producing validated MySQL rows.
 - **Python compute retirement** — separate, gated on parity holding over real
   athletes + all Python readers re-pointed to Go/MySQL.
