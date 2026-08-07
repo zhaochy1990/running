@@ -115,7 +115,7 @@ jobs:
             exit 1
           fi
 
-          # Web onboarding is a single Go lifecycle. Keep these six route choices
+          # Web onboarding is a single Go lifecycle. Keep these seven route choices
           # source-controlled and deploy them in the same ACA revision: profile
           # read/write, watch login, sync start, pipeline poll, then completion.
           # This assertion prevents a future edit from shipping zero or a subset.
@@ -125,17 +125,18 @@ jobs:
             STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN=go
             STRIDE_ROUTE_POST_USER_SYNC=go
             STRIDE_ROUTE_GET_PIPELINES_RUNID=go
+            STRIDE_ROUTE_GET_JOBS_JOBID=go
             STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE=go
           )
-          if [ "${#ONBOARDING_GO_ROUTE_VARS[@]}" -ne 6 ] \
-            || [ "$(printf '%s\n' "${ONBOARDING_GO_ROUTE_VARS[@]}" | grep -Ec '^STRIDE_ROUTE_[A-Z0-9_]+=go$')" -ne 6 ]; then
-            echo "::error::Web onboarding Go cutover must contain exactly six STRIDE_ROUTE_*=go variables."
+          if [ "${#ONBOARDING_GO_ROUTE_VARS[@]}" -ne 7 ] \
+            || [ "$(printf '%s\n' "${ONBOARDING_GO_ROUTE_VARS[@]}" | grep -Ec '^STRIDE_ROUTE_[A-Z0-9_]+=go$')" -ne 7 ]; then
+            echo "::error::Web onboarding Go cutover must contain exactly seven STRIDE_ROUTE_*=go variables."
             exit 1
           fi
 
           # Verify the deployed Go revision before changing the BFF route flags.
           # This endpoint is intentionally public and static: it proves
-          # reachability and the complete six-route contract without accepting,
+          # reachability and the complete seven-route contract without accepting,
           # reading, or printing user credentials, JWTs, or internal tokens.
           # Do not follow redirects: the exact configured origin must attest to
           # its own contract. When browser-direct routing is enabled, verify the
@@ -169,9 +170,10 @@ jobs:
               ("GET", "/api/users/me/profile"),
               ("POST", "/api/users/me/profile"),
               ("POST", "/api/users/me/watch/login"),
-              ("POST", "/api/:user/sync"),
-              ("GET", "/api/pipelines/:run_id"),
-              ("POST", "/api/users/me/onboarding/complete"),
+               ("POST", "/api/:user/sync"),
+               ("GET", "/api/pipelines/:run_id"),
+               ("GET", "/api/jobs/:job_id"),
+               ("POST", "/api/users/me/onboarding/complete"),
           }
           with open(sys.argv[1], encoding="utf-8") as response:
               payload = json.load(response)

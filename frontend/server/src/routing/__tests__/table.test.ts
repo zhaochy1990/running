@@ -146,6 +146,7 @@ describe('Web onboarding Go cutover', () => {
     STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN: 'go',
     STRIDE_ROUTE_POST_USER_SYNC: 'go',
     STRIDE_ROUTE_GET_PIPELINES_RUNID: 'go',
+    STRIDE_ROUTE_GET_JOBS_JOBID: 'go',
     STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE: 'go',
   }
 
@@ -160,8 +161,9 @@ describe('Web onboarding Go cutover', () => {
       STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'go',
       STRIDE_ROUTE_POST_USERS_ME_PROFILE: 'go',
       STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN: 'go',
-      STRIDE_ROUTE_POST_USER_SYNC: 'go',
-      STRIDE_ROUTE_GET_PIPELINES_RUNID: 'go',
+       STRIDE_ROUTE_POST_USER_SYNC: 'go',
+       STRIDE_ROUTE_GET_PIPELINES_RUNID: 'go',
+       STRIDE_ROUTE_GET_JOBS_JOBID: 'go',
     })).toBe(true)
   })
 })
@@ -206,8 +208,9 @@ describe('API_ROUTES manifest integrity', () => {
     expect(API_ROUTES.filter((route) => [
       '/api/users/me/profile',
       '/api/users/me/watch/login',
-      '/api/:user/sync',
-      '/api/pipelines/:runId',
+       '/api/:user/sync',
+       '/api/pipelines/:runId',
+       '/api/jobs/:jobId',
       '/api/users/me/onboarding/complete',
     ].includes(route.path) && ['GET', 'POST'].includes(route.method))).toEqual([
       { method: 'GET', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_GET_USERS_ME_PROFILE', goReady: true },
@@ -215,7 +218,8 @@ describe('API_ROUTES manifest integrity', () => {
       { method: 'POST', path: '/api/users/me/watch/login', env: 'STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN', goReady: true },
       { method: 'POST', path: '/api/users/me/onboarding/complete', env: 'STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE', goReady: true },
       { method: 'POST', path: '/api/:user/sync', env: 'STRIDE_ROUTE_POST_USER_SYNC', goReady: true },
-      { method: 'GET', path: '/api/pipelines/:runId', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID', goReady: true },
+       { method: 'GET', path: '/api/pipelines/:runId', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID', goReady: true },
+       { method: 'GET', path: '/api/jobs/:jobId', env: 'STRIDE_ROUTE_GET_JOBS_JOBID', goReady: true },
     ])
   })
 
@@ -235,6 +239,7 @@ describe('API_ROUTES manifest integrity', () => {
         'GET /api/:user/stride/zones',
         'GET /api/:user/training-plan',
         'GET /api/pipelines/:runId',
+        'GET /api/jobs/:jobId',
         'GET /api/users/me/master-plan/current',
         'GET /api/users/me/profile',
         'GET /api/users/me/training-goal',

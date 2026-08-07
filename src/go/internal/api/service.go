@@ -235,6 +235,7 @@ func (s *Service) Router() *gin.Engine {
 	authed := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
 	authed.POST("/jobs", s.createJob)
 	authed.GET("/jobs/:job_id", s.getJob)
+	authed.GET("/api/jobs/:job_id", s.getJob)
 	authed.POST("/pipelines", s.startPipeline)
 	authed.GET("/pipelines/:run_id", s.getPipelineRun)
 	authed.GET("/api/pipelines/:run_id", s.getPipelineRun)

@@ -1722,17 +1722,19 @@ class Database:
         )
         summary_rows = self._conn.execute(
             f"""SELECT {month_sql} AS month,
-                      count(*) AS activity_count,
-                      coalesce(sum(CASE WHEN {run_sql} THEN coalesce(distance_m, 0) ELSE 0 END), 0) / 1000.0 AS total_run_km,
-                      coalesce(sum(coalesce(duration_s, 0)), 0) AS duration_s
+                       count(*) AS activity_count,
+                       coalesce(sum(CASE WHEN {run_sql} THEN coalesce(distance_m, 0) ELSE 0 END), 0) / 1000.0 AS total_run_km,
+                       coalesce(sum(CASE WHEN {run_sql} THEN coalesce(duration_s, 0) ELSE 0 END), 0) AS run_duration_s,
+                       coalesce(sum(coalesce(duration_s, 0)), 0) AS duration_s
                  FROM activities {summary_where}
                 GROUP BY month""",
-            tuple(run_params + params + visible_months),
+            tuple(run_params + run_params + params + visible_months),
         ).fetchall()
         return {
             row["month"]: {
                 "activity_count": int(row["activity_count"] or 0),
                 "total_run_km": round(float(row["total_run_km"] or 0), 1),
+                "run_duration_s": int(row["run_duration_s"] or 0),
                 "duration_s": int(row["duration_s"] or 0),
             }
             for row in summary_rows

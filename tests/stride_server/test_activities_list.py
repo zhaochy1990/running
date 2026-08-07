@@ -142,7 +142,7 @@ def test_activity_list_monthly_summary_is_not_limited_by_current_page(app_client
         "2026-05": {
             "activity_count": 4,
             "total_run_km": 15.0,
+            "run_duration_s": 5400,
             "duration_s": 10600,
         }
     }
-

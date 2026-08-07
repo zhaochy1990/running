@@ -106,6 +106,8 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: 'POST', path: '/api/:user/sync', env: 'STRIDE_ROUTE_POST_USER_SYNC', goReady: true },
   // ✓ sync callers · poll one Go pipeline returned by POST /api/:user/sync
   { method: 'GET', path: '/api/pipelines/:runId', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID', goReady: true },
+  // ✓ /onboarding · read the active step's job progress [go-ready]
+  { method: 'GET', path: '/api/jobs/:jobId', env: 'STRIDE_ROUTE_GET_JOBS_JOBID', goReady: true },
   // ✓ /onboarding · poll the current user's Go pipeline run
   { method: 'GET', path: '/api/users/:user/pipelines', env: 'STRIDE_ROUTE_GET_USERS_USER_PIPELINES', goReady: true },
 

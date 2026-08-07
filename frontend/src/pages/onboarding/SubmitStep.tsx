@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   getPipelineRun,
+  getJobState,
   postOnboardingComplete,
   triggerSync,
   ApiError,
+  type JobState,
   type PipelineRun,
 } from '../../api'
 
@@ -12,11 +14,12 @@ interface Props {
   userId: string
 }
 
-const POLL_INTERVAL_MS = 2000
+const POLL_INTERVAL_MS = 5000
 const ONBOARDING_RUN_KEY_PREFIX = 'stride:onboarding-run:'
 const ONBOARDING_START_KEY_PREFIX = 'stride:onboarding-start-key:'
 
 type RunView = 'starting' | 'running' | 'failed' | 'done'
+type ActiveJob = JobState & { stepJobId: string }
 
 type StageState = 'pending' | 'active' | 'done' | 'failed'
 
@@ -71,6 +74,7 @@ function stateLabel(state: StageState) {
 export default function SubmitStep({ userId }: Props) {
   const navigate = useNavigate()
   const [run, setRun] = useState<PipelineRun | null>(null)
+  const [activeJob, setActiveJob] = useState<ActiveJob | null>(null)
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [view, setView] = useState<RunView>('starting')
   const [error, setError] = useState('')
@@ -80,6 +84,7 @@ export default function SubmitStep({ userId }: Props) {
   const userIdRef = useRef(userId)
   const generationRef = useRef(0)
   const runIdRef = useRef<string | null>(null)
+  const currentJobIdRef = useRef<string | null>(null)
   const startInFlightRef = useRef(false)
 
   const clearSavedRun = useCallback((forUserId = userId) => {
@@ -94,6 +99,7 @@ export default function SubmitStep({ userId }: Props) {
     if (!mountedRef.current || userIdRef.current !== expectedUserId || generationRef.current !== generation || nextRun.run_id !== runIdRef.current) return
     setActiveRunId(nextRun.run_id)
     setRun(nextRun)
+    currentJobIdRef.current = nextRun.steps[nextRun.current_step]?.job_id ?? null
     if (nextRun.status === 'done') {
       setView('done')
       setError('')
@@ -114,6 +120,25 @@ export default function SubmitStep({ userId }: Props) {
       // Ownership is enforced by the server before this response is returned.
       if (nextRun.pipeline_name !== 'onboarding') return 'invalid' as const
       applyRun(nextRun, expectedUserId, generation)
+      const jobId = nextRun.steps[nextRun.current_step]?.job_id
+      if (jobId && nextRun.status !== 'done' && nextRun.status !== 'failed') {
+        if (currentJobIdRef.current !== jobId) setActiveJob(null)
+        try {
+          const job = await getJobState(jobId)
+          if (mountedRef.current && userIdRef.current === expectedUserId && generationRef.current === generation && runId === runIdRef.current) {
+            if (currentJobIdRef.current === jobId) {
+              setActiveJob({ ...job, stepJobId: jobId })
+              if (job.status === 'done' || job.status === 'failed') {
+                void refreshRun(runId, expectedUserId, generation)
+              }
+            }
+          }
+        } catch {
+          // Pipeline state remains authoritative when a transient job read fails.
+        }
+      } else if (mountedRef.current && userIdRef.current === expectedUserId && generationRef.current === generation) {
+        setActiveJob(null)
+      }
       return 'valid' as const
     } catch (err) {
       // A transport failure or 5xx leaves the server-side run ambiguous. Keep its
@@ -124,12 +149,28 @@ export default function SubmitStep({ userId }: Props) {
     }
   }, [applyRun])
 
+  const refreshActiveJob = useCallback(async (runId: string, jobId: string, expectedUserId: string, generation: number) => {
+    try {
+      const job = await getJobState(jobId)
+      if (!mountedRef.current || userIdRef.current !== expectedUserId || generationRef.current !== generation || runId !== runIdRef.current || currentJobIdRef.current !== jobId) return
+      setActiveJob({ ...job, stepJobId: jobId })
+      if (job.status === 'done' || job.status === 'failed') {
+        // Pipeline advancement is the only time we need to read the run again.
+        void refreshRun(runId, expectedUserId, generation)
+      }
+    } catch {
+      // Keep the last displayed progress and retry the job on the next interval.
+    }
+  }, [refreshRun])
+
   const startNewRun = useCallback(async (expectedUserId = userId, generation = generationRef.current) => {
     if (startInFlightRef.current || userIdRef.current !== expectedUserId || generationRef.current !== generation) return
     startInFlightRef.current = true
     runIdRef.current = null
+    currentJobIdRef.current = null
     setActiveRunId(null)
     setRun(null)
+    setActiveJob(null)
     setView('starting')
     setError('')
     setFinalizeError('')
@@ -168,8 +209,10 @@ export default function SubmitStep({ userId }: Props) {
     const generation = ++generationRef.current
     startInFlightRef.current = false
     runIdRef.current = null
+    currentJobIdRef.current = null
     setActiveRunId(null)
     setRun(null)
+    setActiveJob(null)
     setView('starting')
     setError('')
     setFinalizing(false)
@@ -205,11 +248,17 @@ export default function SubmitStep({ userId }: Props) {
     if (!activeRunId || run?.status === 'done' || run?.status === 'failed') return undefined
     const expectedUserId = userId
     const generation = generationRef.current
+    const jobId = currentJobIdRef.current
     const interval = window.setInterval(() => {
-      void refreshRun(activeRunId, expectedUserId, generation)
+      if (jobId) {
+        void refreshActiveJob(activeRunId, jobId, expectedUserId, generation)
+      } else {
+        // The pipeline may still be creating its first step/job.
+        void refreshRun(activeRunId, expectedUserId, generation)
+      }
     }, POLL_INTERVAL_MS)
     return () => window.clearInterval(interval)
-  }, [activeRunId, refreshRun, run?.status, userId])
+  }, [activeRunId, refreshActiveJob, refreshRun, run?.status, userId])
 
   const retry = () => {
     clearSavedRun()
@@ -264,16 +313,30 @@ export default function SubmitStep({ userId }: Props) {
 
       <ol className="space-y-3" aria-label="数据准备进度">
         {STAGES.map((stage, index) => {
-          const state = failed && !run ? (index === 0 ? 'failed' : 'pending') : stageState(run, index)
-          return (
-            <li key={stage.key} className="flex gap-3 rounded-lg border border-border-subtle bg-bg-base p-4">
-              <StageIcon state={state} />
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-text-primary">
-                  {stage.title} <span className="text-text-muted">· {stateLabel(state)}</span>
-                </p>
-                <p className="mt-0.5 text-xs text-text-muted">{stage.description}</p>
+           const state = failed && !run ? (index === 0 ? 'failed' : 'pending') : stageState(run, index)
+           const currentJobId = run?.steps[run.current_step]?.job_id
+           const progress = state === 'active' && stageForStep(run?.steps[run.current_step]?.name) === index && activeJob?.stepJobId === currentJobId
+             ? activeJob?.progress_pct
+             : undefined
+           return (
+            <li key={stage.key} className="rounded-lg border border-border-subtle bg-bg-base p-4">
+              <div className="flex gap-3">
+               <StageIcon state={state} />
+               <div className="min-w-0">
+                 <p className="text-sm font-medium text-text-primary">
+                   {stage.title} <span className="text-text-muted">· {stateLabel(state)}</span>
+                 </p>
+                 <p className="mt-0.5 text-xs text-text-muted">{stage.description}</p>
+               </div>
               </div>
+              {progress !== undefined && (
+                <div className="mt-3 ml-8" aria-label={`${stage.title}进度 ${progress}%`}>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-border-subtle">
+                    <div className="h-full rounded-full bg-accent-green transition-all duration-300" style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+                  </div>
+                  <p className="mt-1 text-right text-xs tabular-nums text-text-muted">{progress}%</p>
+                </div>
+              )}
             </li>
           )
         })}

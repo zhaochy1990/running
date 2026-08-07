@@ -341,6 +341,7 @@ type activityListItem struct {
 type monthlySummaryDTO struct {
 	ActivityCount int     `json:"activity_count"`
 	TotalRunKm    float64 `json:"total_run_km"`
+	RunDurationS  int     `json:"run_duration_s"`
 	DurationS     int     `json:"duration_s"`
 }
 
@@ -512,6 +513,7 @@ func toActivitiesListResponse(page *storage.ActivityPage, offset, limit int) act
 		summaries[month] = monthlySummaryDTO{
 			ActivityCount: m.ActivityCount,
 			TotalRunKm:    apifmt.RoundTo(m.TotalRunKm, 1),
+			RunDurationS:  m.RunDurationS,
 			DurationS:     m.DurationS,
 		}
 	}

@@ -2680,6 +2680,9 @@ const docTemplate = `{
                 "duration_s": {
                     "type": "integer"
                 },
+                "run_duration_s": {
+                    "type": "integer"
+                },
                 "total_run_km": {
                     "type": "number"
                 }

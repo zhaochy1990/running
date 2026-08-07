@@ -62,6 +62,7 @@ type ActivityListParams struct {
 type ActivityMonthly struct {
 	ActivityCount int
 	TotalRunKm    float64
+	RunDurationS  int
 	DurationS     int
 }
 
@@ -146,11 +147,13 @@ func (s *Store) activityMonthlySummaries(ctx context.Context, uid string, p Acti
 		Month         string  `gorm:"column:month"`
 		ActivityCount int     `gorm:"column:activity_count"`
 		TotalRunKm    float64 `gorm:"column:total_run_km"`
+		RunDurationS  float64 `gorm:"column:run_duration_s"`
 		DurationS     float64 `gorm:"column:duration_s"`
 	}
 	selectExpr := shanghaiMonthExpr + " AS month, " +
 		"count(*) AS activity_count, " +
 		"coalesce(sum(CASE WHEN " + runningActivityPredicate + " THEN coalesce(distance_m, 0) ELSE 0 END), 0) / 1000.0 AS total_run_km, " +
+		"coalesce(sum(CASE WHEN " + runningActivityPredicate + " THEN coalesce(duration_s, 0) ELSE 0 END), 0) AS run_duration_s, " +
 		"coalesce(sum(coalesce(duration_s, 0)), 0) AS duration_s"
 
 	var aggs []monthAgg
@@ -168,6 +171,7 @@ func (s *Store) activityMonthlySummaries(ctx context.Context, uid string, p Acti
 		out[a.Month] = ActivityMonthly{
 			ActivityCount: a.ActivityCount,
 			TotalRunKm:    a.TotalRunKm,
+			RunDurationS:  int(a.RunDurationS),
 			DurationS:     int(a.DurationS), // int() truncation, matching Python
 		}
 	}

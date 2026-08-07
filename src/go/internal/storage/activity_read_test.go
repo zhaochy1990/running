@@ -143,6 +143,9 @@ func TestListActivities_MonthlySummaries(t *testing.T) {
 	if mar.TotalRunKm < 4.999 || mar.TotalRunKm > 5.001 {
 		t.Fatalf("march run km = %v, want 5.0", mar.TotalRunKm)
 	}
+	if mar.RunDurationS != 1800 {
+		t.Fatalf("march run duration = %d, want 1800 (strength excluded)", mar.RunDurationS)
+	}
 	if mar.DurationS != 3000 {
 		t.Fatalf("march duration = %d, want 3000 (1800+1200)", mar.DurationS)
 	}

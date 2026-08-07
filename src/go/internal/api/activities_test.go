@@ -285,7 +285,7 @@ func TestActivityList_MonthlyRoundingAndItem(t *testing.T) {
 				AvgPaceSKm: fptr(350),  // 5:50/km
 			}},
 			MonthlySummaries: map[string]storage.ActivityMonthly{
-				"2026-01": {ActivityCount: 1, TotalRunKm: 5.234, DurationS: 1830},
+				"2026-01": {ActivityCount: 1, TotalRunKm: 5.234, RunDurationS: 1830, DurationS: 1830},
 			},
 		},
 	})
@@ -303,6 +303,9 @@ func TestActivityList_MonthlyRoundingAndItem(t *testing.T) {
 	}
 	if sum.TotalRunKm != 5.2 {
 		t.Fatalf("total_run_km = %v, want 5.2 (rounded)", sum.TotalRunKm)
+	}
+	if sum.RunDurationS != 1830 {
+		t.Fatalf("run_duration_s = %d, want 1830", sum.RunDurationS)
 	}
 	if len(resp.Activities) != 1 {
 		t.Fatalf("activities len = %d, want 1", len(resp.Activities))

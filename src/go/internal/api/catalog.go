@@ -54,6 +54,7 @@ var onboardingWebRouteContracts = []onboardingRouteContract{
 	{Method: http.MethodPost, Path: "/api/users/me/watch/login"},
 	{Method: http.MethodPost, Path: "/api/:user/sync"},
 	{Method: http.MethodGet, Path: "/api/pipelines/:run_id"},
+	{Method: http.MethodGet, Path: "/api/jobs/:job_id"},
 	{Method: http.MethodPost, Path: "/api/users/me/onboarding/complete"},
 }
 

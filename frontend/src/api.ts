@@ -257,12 +257,23 @@ export interface PipelineRun {
   pipeline_name: string
   status: 'queued' | 'running' | 'done' | 'failed'
   current_step: number
-  steps: Array<{ name: string; job_type: string; status: string }>
+  steps: Array<{ name: string; job_type: string; status: string; job_id?: string }>
   error_message?: string
 }
 
 export function getPipelineRun(runId: string) {
   return fetchJSON<PipelineRun>(`/pipelines/${encodeURIComponent(runId)}`)
+}
+
+export interface JobState {
+  job_id: string
+  status: 'queued' | 'running' | 'done' | 'failed'
+  progress_pct: number
+  stage?: string
+}
+
+export function getJobState(jobId: string) {
+  return fetchJSON<JobState>(`/jobs/${encodeURIComponent(jobId)}`)
 }
 
 export interface NotificationReadState {
@@ -457,6 +468,7 @@ export interface ActivitiesListResponse {
 export interface ActivityMonthlySummary {
   activity_count: number
   total_run_km: number
+  run_duration_s: number
   duration_s: number
 }
 

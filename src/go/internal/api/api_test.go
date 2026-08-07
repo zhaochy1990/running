@@ -260,6 +260,7 @@ func TestOnboardingReadiness_AdvertisesAtomicWebContract(t *testing.T) {
 		{http.MethodPost, "/api/users/me/watch/login"},
 		{http.MethodPost, "/api/contract-probe-user/sync"},
 		{http.MethodGet, "/api/pipelines/contract-probe-run"},
+		{http.MethodGet, "/api/jobs/contract-probe-job"},
 		{http.MethodPost, "/api/users/me/onboarding/complete"},
 	} {
 		response := h.do(route.method, route.path, "", nil)
@@ -375,6 +376,11 @@ func TestGetJob_UserScoping(t *testing.T) {
 	missing := h.do(http.MethodGet, "/jobs/nope", "", map[string]string{"Authorization": "Bearer " + tok})
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("missing code = %d, want 404", missing.Code)
+	}
+
+	alias := h.do(http.MethodGet, "/api/jobs/"+id, "", map[string]string{"Authorization": "Bearer " + tok})
+	if alias.Code != http.StatusOK {
+		t.Fatalf("API alias code = %d, want 200: %s", alias.Code, alias.Body.String())
 	}
 }
 
