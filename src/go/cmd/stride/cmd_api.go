@@ -104,7 +104,7 @@ func runAPI() error {
 
 	// --- wiring ---
 	enq := job.NewStoreEnqueuer(store.Jobs(), pub)
-	orch := pipeline.New(store.Pipelines(), enq, catalog.PipelineRegistry(), pipeline.WithLogger(log), pipeline.WithCompletionListener(store))
+	orch := pipeline.New(store.Pipelines(), enq, catalog.PipelineRegistry(), pipeline.WithLogger(log))
 
 	verifier, err := api.NewJWTVerifier(cfg.API.Auth.PublicKeyPath, cfg.API.Auth.Issuer, cfg.API.Auth.Audience)
 	if err != nil {

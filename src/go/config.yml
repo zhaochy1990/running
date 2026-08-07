@@ -51,6 +51,8 @@ api:
   auth-service-url: ""      # in-house auth-service origin for display-name mirror; empty disables (ADR 0013)
   onboarding-stale-after: 5m # stale active onboarding runs can be retried
   features:                 # echoed in GET /api/users/me/profile (mirror Python server config)
+    # Coexistence flag only: Go completion never starts work; it requires a
+    # verified successful run_id from generic full sync.
     sync-data-at-onboarding: true
     coach-agent-weekly-plan-users: []
     coach-chat-users: []

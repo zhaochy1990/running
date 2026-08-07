@@ -156,8 +156,10 @@ jobs:
         # doesn't exist yet (legitimate first-deploy) — every other failure
         # (bad command, permissions, crash-loop on boot) fails the deploy loudly.
         #
-        # The worker MUST carry the same watch-credential Key Vault env as
-        # stride-app: onboarding_full_sync reads the user's COROS/Garmin creds,
+        # The legacy Python compatibility worker MUST carry the same watch-
+        # credential Key Vault env as stride-app: onboarding_full_sync reads the
+        # user's COROS/Garmin creds. This is not the Go runtime catalog's
+        # watch_sync step,
         # which prod stores in Key Vault (coros-config-{uuid}). Without these the
         # worker falls back to the file backend, finds no creds, and every
         # onboarding sync fails "not logged in to watch provider".

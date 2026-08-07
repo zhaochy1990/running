@@ -23,6 +23,21 @@ import { API_ROUTES, type ApiRoute } from './api-routes.js'
 
 export type Upstream = 'python' | 'go' | 'auth'
 
+/**
+ * Web onboarding is a single Go contract: read and persist profile readiness,
+ * connect the Go-owned watch credential, start generic full sync, poll that run,
+ * then explicitly finalize it. Routing only a subset would mix the legacy Python
+ * state with the Go run_id lifecycle.
+ */
+export const WEB_ONBOARDING_GO_ROUTE_ENVS = [
+  'STRIDE_ROUTE_GET_USERS_ME_PROFILE',
+  'STRIDE_ROUTE_POST_USERS_ME_PROFILE',
+  'STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN',
+  'STRIDE_ROUTE_POST_USER_SYNC',
+  'STRIDE_ROUTE_GET_PIPELINES_RUNID',
+  'STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE',
+] as const
+
 /** Prefix under which the in-house auth-service is reached (same-origin via BFF). */
 export const AUTH_PREFIX = '/api/auth'
 
@@ -98,4 +113,12 @@ export function resolveUpstream(
  *  boot to require GO_API_URL). */
 export function hasGoRoutes(env: NodeJS.ProcessEnv = process.env): boolean {
   return API_ROUTES.some((route) => upstreamForRoute(route, env) === 'go')
+}
+
+/** Reject a partial Web onboarding cutover before the BFF accepts traffic. */
+export function hasPartialWebOnboardingGoCutover(env: NodeJS.ProcessEnv = process.env): boolean {
+  const enabled = WEB_ONBOARDING_GO_ROUTE_ENVS.filter(
+    (name) => env[name]?.trim().toLowerCase() === GO_ENV_VALUE,
+  )
+  return enabled.length > 0 && enabled.length < WEB_ONBOARDING_GO_ROUTE_ENVS.length
 }

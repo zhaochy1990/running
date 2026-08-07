@@ -109,149 +109,36 @@ func TestUser_AbsentReturnsNil(t *testing.T) {
 	}
 }
 
-// TestUserOnboarding_ClearWatchReady verifies the compatibility mutation leaves
-// unrelated flags untouched. Production disconnect uses DisconnectWatch.
-func TestUserOnboarding_ClaimRequiresConnectedWatch(t *testing.T) {
-	st := openTestStore(t)
-	migrateUsers(t, st)
-	claimed, err := st.ClaimOnboardingRun(context.Background(), uuid.NewString(), "run-1", time.Now().UTC().Add(-5*time.Minute))
-	if err != nil {
-		t.Fatalf("claim: %v", err)
-	}
-	if claimed {
-		t.Fatal("claim must require watch_ready")
-	}
-}
-
-func TestUserOnboarding_FreshWatchReadyRowClaimsNullableRunID(t *testing.T) {
-	st := openTestStore(t)
-	migrateUserWatchTables(t, st)
-	ctx := context.Background()
-	uid := uuid.NewString()
-	saveTestCredential(t, st, uid)
-	if err := st.SetWatchReady(ctx, uid); err != nil {
-		t.Fatalf("set watch_ready: %v", err)
-	}
-	before, err := st.GetUserOnboarding(ctx, uid)
-	if err != nil || before == nil || before.OnboardingRunID != nil {
-		t.Fatalf("fresh readiness row = %+v, err=%v; want nullable absent run", before, err)
-	}
-
-	staleBefore := time.Now().UTC().Add(-time.Minute)
-	claimed, err := st.ClaimOnboardingRun(ctx, uid, "run-a", staleBefore)
-	if err != nil || !claimed {
-		t.Fatalf("first claim from NULL: claimed=%v err=%v", claimed, err)
-	}
-	claimed, err = st.ClaimOnboardingRun(ctx, uid, "run-b", staleBefore)
-	if err != nil {
-		t.Fatalf("second claim: %v", err)
-	}
-	if claimed {
-		t.Fatal("fresh missing-run claim must not be replaced")
-	}
-	o, err := st.GetUserOnboarding(ctx, uid)
-	if err != nil || o == nil || o.OnboardingRunID == nil || *o.OnboardingRunID != "run-a" {
-		t.Fatalf("onboarding = %+v, err=%v; want run-a", o, err)
-	}
-}
-
-func TestUserOnboarding_StaleMissingRunClaimCanBeRecovered(t *testing.T) {
-	st := openTestStore(t)
-	migrateUserWatchTables(t, st)
-	ctx := context.Background()
-	uid := uuid.NewString()
-	saveTestCredential(t, st, uid)
-	if err := st.SetWatchReady(ctx, uid); err != nil {
-		t.Fatalf("set watch_ready: %v", err)
-	}
-	claimed, err := st.ClaimOnboardingRun(ctx, uid, "run-a", time.Now().UTC().Add(-time.Minute))
-	if err != nil || !claimed {
-		t.Fatalf("first claim: claimed=%v err=%v", claimed, err)
-	}
-	staleAt := time.Now().UTC().Add(-2 * time.Minute)
-	if err := st.db.WithContext(ctx).Model(&UserOnboarding{}).Where("user_id = ?", uid).Update("updated_at", staleAt).Error; err != nil {
-		t.Fatalf("age claim: %v", err)
-	}
-	claimed, err = st.ClaimOnboardingRun(ctx, uid, "run-b", time.Now().UTC().Add(-time.Minute))
-	if err != nil || !claimed {
-		t.Fatalf("stale replacement: claimed=%v err=%v", claimed, err)
-	}
-	o, err := st.GetUserOnboarding(ctx, uid)
-	if err != nil || o == nil || o.OnboardingRunID == nil || *o.OnboardingRunID != "run-b" {
-		t.Fatalf("onboarding = %+v, err=%v; want run-b", o, err)
-	}
-}
-
-func TestUserOnboarding_ConcurrentMissingRunClaimsHaveOneWinner(t *testing.T) {
-	st := openTestStore(t)
-	migrateUserWatchTables(t, st)
-	ctx := context.Background()
-	uid := uuid.NewString()
-	saveTestCredential(t, st, uid)
-	if err := st.SetWatchReady(ctx, uid); err != nil {
-		t.Fatalf("set watch_ready: %v", err)
-	}
-	staleBefore := time.Now().UTC().Add(-time.Minute)
-	start := make(chan struct{})
-	claimed := make(chan bool, 2)
-	errs := make(chan error, 2)
-	for _, runID := range []string{"run-a", "run-b"} {
-		go func(runID string) {
-			<-start
-			ok, err := st.ClaimOnboardingRun(ctx, uid, runID, staleBefore)
-			claimed <- ok
-			errs <- err
-		}(runID)
-	}
-	close(start)
-	winners := 0
-	for range 2 {
-		if err := <-errs; err != nil {
-			t.Fatalf("claim: %v", err)
-		}
-		if <-claimed {
-			winners++
-		}
-	}
-	if winners != 1 {
-		t.Fatalf("successful claims = %d, want 1", winners)
-	}
-}
-
-func TestUserOnboarding_ClearOnboardingRunAndCompletionGuards(t *testing.T) {
+func TestUserOnboarding_FinalizeRequiresBothPrerequisites(t *testing.T) {
 	st := openTestStore(t)
 	migrateUserWatchTables(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
 	saveTestCredential(t, st, uid)
 
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, uuid.NewString()); err != nil || wrote {
+		t.Fatalf("finalize without prerequisites: wrote=%v err=%v", wrote, err)
+	}
 	if err := st.SetWatchReady(ctx, uid); err != nil {
 		t.Fatalf("set watch_ready: %v", err)
 	}
-	claimed, err := st.ClaimOnboardingRun(ctx, uid, "run-current", time.Now().UTC().Add(-5*time.Minute))
-	if err != nil || !claimed {
-		t.Fatalf("claim: claimed=%v err=%v", claimed, err)
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, uuid.NewString()); err != nil || wrote {
+		t.Fatalf("finalize without profile: wrote=%v err=%v", wrote, err)
 	}
-	if err := st.CompleteOnboardingRun(ctx, uid, "run-old"); err != nil {
-		t.Fatalf("complete old run: %v", err)
+	if err := st.SetProfileReady(ctx, uid); err != nil {
+		t.Fatalf("set profile_ready: %v", err)
 	}
-	o, err := st.GetUserOnboarding(ctx, uid)
-	if err != nil || o == nil || o.CompletedAt != nil {
-		t.Fatalf("old run must not complete onboarding: %+v, err=%v", o, err)
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, uuid.NewString()); err != nil || !wrote {
+		t.Fatalf("finalize with both prerequisites: wrote=%v err=%v", wrote, err)
 	}
-	if err := st.ClearOnboardingRun(ctx, uid, "run-old"); err != nil {
-		t.Fatalf("clear old run: %v", err)
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, uuid.NewString()); err != nil || wrote {
+		t.Fatalf("repeat finalization: wrote=%v err=%v", wrote, err)
 	}
-	o, err = st.GetUserOnboarding(ctx, uid)
-	if err != nil || o.OnboardingRunID == nil || *o.OnboardingRunID != "run-current" {
-		t.Fatalf("old run must not clear current claim: %+v, err=%v", o, err)
+	if err := st.DisconnectWatch(ctx, uid, "coros"); err != nil {
+		t.Fatalf("disconnect: %v", err)
 	}
-	if err := st.ClearOnboardingRun(ctx, uid, "run-current"); err != nil {
-		t.Fatalf("clear current run: %v", err)
-	}
-	o, err = st.GetUserOnboarding(ctx, uid)
-	if err != nil || o.OnboardingRunID != nil {
-		t.Fatalf("current claim must clear: %+v, err=%v", o, err)
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, uuid.NewString()); err != nil || wrote {
+		t.Fatalf("finalize disconnected user: wrote=%v err=%v", wrote, err)
 	}
 }
 
@@ -364,12 +251,8 @@ func TestUserOnboarding_DisconnectWatchClearsDependentState(t *testing.T) {
 	if err := st.SetProfileReady(ctx, uid); err != nil {
 		t.Fatalf("set profile_ready: %v", err)
 	}
-	claimed, err := st.ClaimOnboardingRun(ctx, uid, "run-current", time.Now().UTC().Add(-5*time.Minute))
-	if err != nil || !claimed {
-		t.Fatalf("claim: claimed=%v err=%v", claimed, err)
-	}
-	if err := st.CompleteOnboardingRun(ctx, uid, "run-current"); err != nil {
-		t.Fatalf("complete current run: %v", err)
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, "run-current"); err != nil || !wrote {
+		t.Fatalf("finalize current run: wrote=%v err=%v", wrote, err)
 	}
 
 	if err := st.DisconnectWatch(ctx, uid, "coros"); err != nil {
@@ -402,12 +285,11 @@ func TestUserOnboarding_DisconnectOneOfTwoProvidersPreservesState(t *testing.T) 
 	if err := st.SetWatchReady(ctx, uid); err != nil {
 		t.Fatalf("set watch_ready: %v", err)
 	}
-	claimed, err := st.ClaimOnboardingRun(ctx, uid, "run-current", time.Now().UTC().Add(-5*time.Minute))
-	if err != nil || !claimed {
-		t.Fatalf("claim: claimed=%v err=%v", claimed, err)
+	if err := st.SetProfileReady(ctx, uid); err != nil {
+		t.Fatalf("set profile_ready: %v", err)
 	}
-	if err := st.CompleteOnboardingRun(ctx, uid, "run-current"); err != nil {
-		t.Fatalf("complete: %v", err)
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, "run-current"); err != nil || !wrote {
+		t.Fatalf("finalize: wrote=%v err=%v", wrote, err)
 	}
 
 	if err := st.DisconnectWatch(ctx, uid, "coros"); err != nil {
@@ -420,7 +302,7 @@ func TestUserOnboarding_DisconnectOneOfTwoProvidersPreservesState(t *testing.T) 
 		t.Fatalf("garmin credential = %+v, err=%v; want retained", cred, err)
 	}
 	o, err := st.GetUserOnboarding(ctx, uid)
-	if err != nil || o == nil || !o.WatchReady || o.CompletedAt == nil || o.OnboardingRunID == nil || *o.OnboardingRunID != "run-current" {
+	if err != nil || o == nil || !o.WatchReady || o.CompletedAt == nil || o.OnboardingRunID != nil {
 		t.Fatalf("remaining provider must preserve onboarding state: %+v, err=%v", o, err)
 	}
 }

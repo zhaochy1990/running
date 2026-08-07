@@ -568,10 +568,15 @@ definitions:
       total_run_km:
         type: number
     type: object
+  api.onboardingCompleteInput:
+    properties:
+      run_id:
+        type: string
+    required:
+    - run_id
+    type: object
   api.onboardingCompleteResponse:
     properties:
-      progress:
-        $ref: '#/definitions/api.onboardingProgress'
       state:
         type: string
     type: object
@@ -1595,20 +1600,26 @@ paths:
     post:
       consumes:
       - application/json
-      description: 'Starts the data-sync pipeline for the user and returns immediately
-        (202) with a run id; poll GET /pipelines/{run_id} for completion. The pipeline
-        syncs watch data and then computes derived metrics (training load, PMC, personal
-        bests). Mode picks the pipeline: "incremental" (default) syncs only new activities
+      description: 'Starts a pipeline only and returns immediately (202) with a run
+        id; Web clients poll GET /api/pipelines/{run_id}. The pipeline syncs watch
+        data and then computes derived metrics (training load, PMC, personal bests).
+        Mode picks the pipeline: "incremental" (default) syncs only new activities
         and computes only those; "full" re-syncs history, recomputes the athlete baseline,
-        and does a full compute (new-user onboarding). This is the async Go replacement
-        for the Python POST /api/{user}/sync. A user caller may only sync their own
-        id (path {user} must equal their JWT sub); an internal caller may sync any
-        user (path {user} must be a UUID).'
+        and does a full compute. A successful full pipeline does not complete onboarding:
+        the user must explicitly finalize its successful run through POST /api/users/me/onboarding/complete.
+        This is the async Go replacement for the Python POST /api/{user}/sync. A user
+        caller may only sync their own id (path {user} must equal their JWT sub);
+        an internal caller may sync any user (path {user} must be a UUID).'
       parameters:
       - description: User id (JWT sub, or any user UUID for internal callers)
         in: path
         name: user
         required: true
+        type: string
+      - description: Deduplicates creation; a repeat key returns the existing run
+          (200)
+        in: header
+        name: Idempotency-Key
         type: string
       - description: Optional sync options; omitted mode defaults to incremental
         in: body
@@ -1618,6 +1629,10 @@ paths:
       produces:
       - application/json
       responses:
+        "200":
+          description: Existing run returned for a repeated Idempotency-Key
+          schema:
+            $ref: '#/definitions/api.startPipelineResponse'
         "202":
           description: Started
           schema:
@@ -1676,6 +1691,42 @@ paths:
       summary: Get a user's legacy markdown training overview
       tags:
       - master-plan
+  /api/pipelines/{run_id}:
+    get:
+      description: Reads one asynchronous pipeline run. Web onboarding polls the /api
+        alias with the run_id returned by POST /api/{user}/sync; a done run remains
+        separate from explicit onboarding finalization.
+      parameters:
+      - description: Run id
+        in: path
+        name: run_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.runStateResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Get a pipeline run's status
+      tags:
+      - pipelines
   /api/users/{uid}/pipelines:
     get:
       description: Lists the pipeline runs for a user (the subject whose data they
@@ -1747,8 +1798,20 @@ paths:
       - master-plan
   /api/users/me/onboarding/complete:
     post:
-      description: Starts or resumes the durable full-history onboarding pipeline.
-        The request body must be empty; a connected watch is required.
+      consumes:
+      - application/json
+      description: Marks onboarding complete after the user explicitly submits a completed
+        run_id. The run must belong to the caller, use the onboarding pipeline, and
+        have finished successfully; profile and watch readiness are also required.
+        A 409 means the run is missing, belongs to another user, is not an onboarding
+        run, or is not done. This endpoint never starts or retries pipeline work.
+      parameters:
+      - description: Completed onboarding pipeline run
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.onboardingCompleteInput'
       produces:
       - application/json
       responses:
@@ -1774,7 +1837,7 @@ paths:
             $ref: '#/definitions/api.errorResponse'
       security:
       - BearerAuth: []
-      summary: Start or resume the current user's onboarding sync
+      summary: Finalize the current user's onboarding
       tags:
       - users
   /api/users/me/profile:
@@ -1839,8 +1902,9 @@ paths:
       - users
   /api/users/me/sync-status:
     get:
-      description: Returns the durable full-history onboarding pipeline state, or
-        an object with null state and progress when onboarding has not started.
+      description: Legacy read-only status for an explicitly associated onboarding
+        run, or null state and progress when none exists. Generic POST /api/{user}/sync
+        runs are polled through GET /api/pipelines/{run_id}, not this endpoint.
       produces:
       - application/json
       responses:
@@ -2224,6 +2288,9 @@ paths:
       - pipelines
   /pipelines/{run_id}:
     get:
+      description: Reads one asynchronous pipeline run. Web onboarding polls the /api
+        alias with the run_id returned by POST /api/{user}/sync; a done run remains
+        separate from explicit onboarding finalization.
       parameters:
       - description: Run id
         in: path

@@ -88,12 +88,15 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: 'POST', path: '/api/users/me/watch/login', env: 'STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN', goReady: true },
 
   // ── Onboarding & sync ───────────────────────────────────────────────────
-  // ✗ not called (frontend polls /sync-status instead)
+  // ✗ legacy Python pipeline status; Web onboarding polls /api/pipelines/:runId.
   { method: 'GET', path: '/api/users/me/onboarding/pipeline-status', env: 'STRIDE_ROUTE_GET_USERS_ME_ONBOARDING_PIPELINE_STATUS', goReady: false },
-  // ✓ /onboarding · finalize onboarding, start/resume the Go full-history pipeline [go-ready]
-  //   Cut over this POST and its GET status poll atomically; the UI depends on both.
+  // ✓ /onboarding · explicitly finalize a completed onboarding run [go-ready]
+  //   Web onboarding must also cut over profile GET/POST, watch login,
+  //   POST /api/:user/sync, and GET /api/pipelines/:runId. Pipeline success alone
+  //   is not completion.
   { method: 'POST', path: '/api/users/me/onboarding/complete', env: 'STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE', goReady: true },
-  // ✓ /onboarding · poll the paired Go onboarding sync status [go-ready]
+  // ✗ Web onboarding does not use this legacy, read-only associated-run status.
+  //   Keep it available only for older clients that still require that contract.
   { method: 'GET', path: '/api/users/me/sync-status', env: 'STRIDE_ROUTE_GET_USERS_ME_SYNC_STATUS', goReady: true },
   // ✓ /plan · poll full-history-sync progress during plan setup
   { method: 'GET', path: '/api/users/me/full-sync-status', env: 'STRIDE_ROUTE_GET_USERS_ME_FULL_SYNC_STATUS', goReady: false },

@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"testing"
+
+	"github.com/zhaochy1990/stride/internal/job"
 )
 
 // startedRun returns the pipeline run the fake recorded for runID.
@@ -104,6 +106,54 @@ func TestSyncUser_FullStartsOnboardingPipeline(t *testing.T) {
 	run := h.startedRun(t, resp.RunID)
 	if run.Name != "onboarding" || run.InputJSON != `{"mode":"full"}` {
 		t.Fatalf("run = %+v, want onboarding with full input", run)
+	}
+}
+
+func TestSyncUser_IdempotencyReplaysFullAndIncrementalRuns(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "incremental", body: `{"mode":"incremental"}`, want: "data_sync"},
+		{name: "full", body: `{"mode":"full"}`, want: "onboarding"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			tok := h.userToken(t, "user-123")
+			headers := map[string]string{"Authorization": "Bearer " + tok, "Idempotency-Key": "sync-key"}
+			first := h.do(http.MethodPost, "/api/user-123/sync", tc.body, headers)
+			if first.Code != http.StatusAccepted {
+				t.Fatalf("first code = %d, want 202: %s", first.Code, first.Body.String())
+			}
+			var started startPipelineResponse
+			mustJSON(t, first, &started)
+
+			second := h.do(http.MethodPost, "/api/user-123/sync", tc.body, headers)
+			if second.Code != http.StatusOK {
+				t.Fatalf("second code = %d, want 200: %s", second.Code, second.Body.String())
+			}
+			var replay startPipelineResponse
+			mustJSON(t, second, &replay)
+			if !replay.Deduplicated || replay.RunID != started.RunID || replay.PipelineName != tc.want || len(h.runs.byID) != 1 {
+				t.Fatalf("replay = %+v runs=%d", replay, len(h.runs.byID))
+			}
+		})
+	}
+}
+
+func TestSyncUser_IdempotencyConflictRecoversExistingRun(t *testing.T) {
+	h := newHarness(t)
+	h.runs.startAfterCreateErr = job.ErrConflict
+	tok := h.userToken(t, "user-123")
+	w := h.do(http.MethodPost, "/api/user-123/sync", `{"mode":"full"}`, map[string]string{"Authorization": "Bearer " + tok, "Idempotency-Key": "sync-key"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp startPipelineResponse
+	mustJSON(t, w, &resp)
+	if !resp.Deduplicated || resp.PipelineName != "onboarding" || len(h.runs.byID) != 1 {
+		t.Fatalf("response = %+v runs=%d", resp, len(h.runs.byID))
 	}
 }
 

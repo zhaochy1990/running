@@ -251,6 +251,7 @@ export default function TrainingPlanPage() {
           lede="设置目标赛事，AI 教练会基于你的训练史与当前体能倒推出一份周期化赛季计划"
         />
         <TrainingPlanSetup
+          userId={user}
           onDraftReady={(planId) => {
             setPageState('loading')
             getMasterPlanById(planId)

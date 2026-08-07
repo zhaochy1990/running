@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { API_ROUTES } from '../api-routes.js'
-import { AUTH_PREFIX, hasGoRoutes, resolveUpstream, upstreamForRoute } from '../table.js'
+import { AUTH_PREFIX, hasGoRoutes, hasPartialWebOnboardingGoCutover, resolveUpstream, upstreamForRoute } from '../table.js'
 
 describe('resolveUpstream', () => {
   it('routes /api/auth/* to the auth upstream (any method)', () => {
@@ -119,6 +119,33 @@ describe('hasGoRoutes', () => {
   })
 })
 
+describe('Web onboarding Go cutover', () => {
+  const fullWebOnboardingGoEnv = {
+    STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'go',
+    STRIDE_ROUTE_POST_USERS_ME_PROFILE: 'go',
+    STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN: 'go',
+    STRIDE_ROUTE_POST_USER_SYNC: 'go',
+    STRIDE_ROUTE_GET_PIPELINES_RUNID: 'go',
+    STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE: 'go',
+  }
+
+  it('allows no onboarding Go routes or the complete route set', () => {
+    expect(hasPartialWebOnboardingGoCutover({})).toBe(false)
+    expect(hasPartialWebOnboardingGoCutover(fullWebOnboardingGoEnv)).toBe(false)
+  })
+
+  it('rejects every partial combination', () => {
+    expect(hasPartialWebOnboardingGoCutover({ STRIDE_ROUTE_POST_USER_SYNC: 'go' })).toBe(true)
+    expect(hasPartialWebOnboardingGoCutover({
+      STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'go',
+      STRIDE_ROUTE_POST_USERS_ME_PROFILE: 'go',
+      STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN: 'go',
+      STRIDE_ROUTE_POST_USER_SYNC: 'go',
+      STRIDE_ROUTE_GET_PIPELINES_RUNID: 'go',
+    })).toBe(true)
+  })
+})
+
 describe('API_ROUTES manifest integrity', () => {
   it('keeps the legacy weekly plan routes', () => {
     expect(API_ROUTES).toContainEqual({
@@ -153,6 +180,23 @@ describe('API_ROUTES manifest integrity', () => {
       expect(seen.has(r.env)).toBe(false)
       seen.add(r.env)
     }
+  })
+
+  it('keeps the Web onboarding Go cutover as profile, watch, start, poll, and finalization', () => {
+    expect(API_ROUTES.filter((route) => [
+      '/api/users/me/profile',
+      '/api/users/me/watch/login',
+      '/api/:user/sync',
+      '/api/pipelines/:runId',
+      '/api/users/me/onboarding/complete',
+    ].includes(route.path) && ['GET', 'POST'].includes(route.method))).toEqual([
+      { method: 'GET', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_GET_USERS_ME_PROFILE', goReady: true },
+      { method: 'POST', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_POST_USERS_ME_PROFILE', goReady: true },
+      { method: 'POST', path: '/api/users/me/watch/login', env: 'STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN', goReady: true },
+      { method: 'POST', path: '/api/users/me/onboarding/complete', env: 'STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE', goReady: true },
+      { method: 'POST', path: '/api/:user/sync', env: 'STRIDE_ROUTE_POST_USER_SYNC', goReady: true },
+      { method: 'GET', path: '/api/pipelines/:runId', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID', goReady: true },
+    ])
   })
 
   it('goReady endpoints are exactly the ones the Go API implements', () => {

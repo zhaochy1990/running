@@ -2,6 +2,13 @@
 
 Cross-platform mobile app for the STRIDE running training project. **Android v1** is the current target; iOS Phase 2 reuses the same `lib/` codebase.
 
+> **Status: mobile onboarding is intentionally paused and unsupported.** Do not
+> enable `STRIDE_V2` for production onboarding. The current mobile flow uses the
+> legacy completion/start endpoint and `/sync-status`; it does not start generic
+> full sync, retain and poll its `run_id`, or offer the **Enter STRIDE** explicit
+> finalization handshake. Web is the supported onboarding surface until mobile is
+> redesigned and verified against the Go contract.
+
 This is a client of the existing FastAPI backend at `https://stride-app.<region>.azurecontainerapps.io/api/*` (auth via `https://auth-backend.<region>.azurecontainerapps.io/api/auth/*`). No new backend endpoints required for v1 reads — push notifications (S13a) add a few.
 
 ## Quick reference
@@ -76,9 +83,9 @@ lib/
 
 ## features_v2 — M1 Rewrite
 
-`features_v2/` contains the full M1 screen set (12 screens). All routes use the `/v2/` prefix and coexist with legacy routes.
+`features_v2/` contains the full M1 screen set (12 screens). All routes use the `/v2/` prefix and coexist with legacy routes. Its onboarding route map is documentation of the paused implementation, not a supported production workflow.
 
-### Enabling v2 UI
+### Enabling v2 UI for non-onboarding development only
 
 ```bash
 # Run with v2 router enabled

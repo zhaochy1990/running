@@ -84,12 +84,12 @@ _Avoid_: dead-letter（沿用作队列名 DLQ，但任务语义统一叫 poison�
 （Go 侧新用户建档流程；实现设计见 `docs/adr/0011`（watch_sync）、`0012`（cmd/api）、`0015`（compute port）。）
 
 **Onboarding 流水线（onboarding pipeline）**：
-为一名新用户建档的两步 pipeline —— `full_sync`（跑 watch_sync 全量同步手表数据）→ `onboarding_compute`（算出个人基线与历史）。经 `POST /pipelines/onboarding` 触发，是用户可发起的。
-_Avoid_: full_sync → calibration → backfill（Python 的三步旧形态）、首次建档
+为一名新用户建档的 Go pipeline：`sync`（全量 watch sync）→ `calibration`（个人基线）→ `compute`（派生指标与历史）。Web 由 `POST /api/{user}/sync` 的 `mode:"full"` 启动，返回的 `run_id` 由 `GET /api/pipelines/{run_id}` 轮询。
+_Avoid_: 把 pipeline `done` 叫作 onboarding 完成、onboarding_compute（已废弃运行时名称）
 
-**Onboarding Compute（onboarding_compute）**：
-把一名用户已同步的手表数据一次性算成派生结果的合并计算步骤：校准基线（HRmax / LTHR / 阈值配速 / RHR / 临界功率 / 区间）+ 个人最好成绩 + 训练负荷历史（CTL/ATL/Form）+ 能力快照。仅内部可发起（用户发起的是整条 pipeline，不是这步）。
-_Avoid_: calibration、backfill（这是两者合并后的单步）
+**Onboarding 完成（onboarding finalization）**：
+pipeline `done` 只表示可完成；用户点击 **Enter STRIDE** 后才以该成功 `run_id` 调用 `POST /api/users/me/onboarding/complete`。服务端验证归属、pipeline、终态、profile 与手表就绪后写 completion marker；不会启动、重试或关联任务。`GET /api/users/me/sync-status` 是 legacy/read-only associated-run API，不用于 Web 轮询。
+_Avoid_: pipeline success = onboarding complete、sync-status poll
 
 ## 手表数据同步
 
@@ -126,8 +126,8 @@ COROS 平台侧的账号标识，仅用于向 COROS 发起请求；不代表也�
 _Avoid_: user_id、STRIDE UUID
 
 **手表同步任务（watch_sync）**：
-在异步 worker 中运行一名用户手表数据同步的任务；以用户 UUID 作分区键，按 payload 决定全量/增量与内容范围，进度写回任务行。
-_Avoid_: onboarding_full_sync、coros_sync、同步 handler
+在异步 worker 中运行一名用户手表数据同步的任务；以用户 UUID 作分区键，按 payload 决定全量/增量与内容范围，进度写回任务行。Go runtime 的 onboarding pipeline 使用 `sync → calibration → compute`；Python compatibility worker 仍单独使用 `onboarding_full_sync → onboarding_calibration → onboarding_backfill`。
+_Avoid_: 把 Python compatibility topology 当作 Go catalog、coros_sync、同步 handler
 
 **同步游标（Sync Cursor）**：
 记录某用户上次已同步到的位置（末次活动的 label_id）的标记；增量同步据此止于已知活动，失败重试据此断点续传。

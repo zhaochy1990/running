@@ -3,9 +3,9 @@ import {
   createRunningProfile,
   createTrainingGoal,
   generateMasterPlan,
-  getFullSyncStatus,
   getMasterPlanJob,
-  postFullSync,
+  getPipelineRun,
+  triggerSync,
   type RaceDistance,
   type CurrentWeeklyKm,
   type RunningAge,
@@ -13,7 +13,7 @@ import {
   type WeeklyTrainingDays,
   type MasterPlanJob,
   type MasterPlanJobStage,
-  type SyncStatus,
+  type PipelineRun,
 } from '../api'
 
 type SetupPhase = 'goals' | 'syncing' | 'generating' | 'ready'
@@ -21,6 +21,11 @@ type SetupPhase = 'goals' | 'syncing' | 'generating' | 'ready'
 const POLL_INTERVAL_MS = 1500
 const MAX_POLL_ATTEMPTS = 400 // 400 * 1.5s = 10 min
 const MAX_SYNC_POLL_ATTEMPTS = 900 // 900 * 1.5s = 22.5 min
+const TRAINING_PLAN_SYNC_RUN_KEY_PREFIX = 'stride:training-plan-sync-run:'
+
+function syncRunStorageKey(userId: string) {
+  return `${TRAINING_PLAN_SYNC_RUN_KEY_PREFIX}${userId}`
+}
 
 const DISTANCE_OPTIONS: { value: RaceDistance; label: string }[] = [
   { value: '5K', label: '5K' },
@@ -61,10 +66,11 @@ const GEN_STEPS: { title: string; hint?: string; stages: MasterPlanJobStage[] }[
 ]
 
 interface Props {
+  userId: string
   onDraftReady: (planId: string) => void
 }
 
-export default function TrainingPlanSetup({ onDraftReady }: Props) {
+export default function TrainingPlanSetup({ userId, onDraftReady }: Props) {
   const [phase, setPhase] = useState<SetupPhase>('goals')
 
   // ── Goal form state ──────────────────────────────────────────────────────
@@ -85,7 +91,8 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
 
   // ── Generating state ─────────────────────────────────────────────────────
   const [goalId, setGoalId] = useState<string | null>(null)
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
+  const [syncRun, setSyncRun] = useState<PipelineRun | null>(null)
+  const [syncRunId, setSyncRunId] = useState<string | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
   const [job, setJob] = useState<MasterPlanJob | null>(null)
   const [draftPlanId, setDraftPlanId] = useState<string | null>(null)
@@ -94,6 +101,11 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
   const handledSyncDoneRef = useRef(false)
   const handledDoneRef = useRef(false)
   const mountedRef = useRef(true)
+  const userIdRef = useRef(userId)
+
+  const clearSavedSyncRun = useCallback((forUserId = userId) => {
+    localStorage.removeItem(syncRunStorageKey(forUserId))
+  }, [userId])
 
   useEffect(() => {
     mountedRef.current = true
@@ -124,40 +136,20 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
   }, [])
 
   const startFullSync = useCallback(async (nextGoalId: string | null) => {
-    const existing = await getFullSyncStatus().catch(() => null)
-    if (existing?.state === 'done') {
-      setGoalId(nextGoalId)
-      syncAttemptRef.current = 0
-      handledSyncDoneRef.current = true
-      setSyncStatus(existing)
-      await startGeneration(nextGoalId)
-      return
+    const expectedUserId = userId
+    const sync = await triggerSync(expectedUserId, { full: true })
+    if (!sync.ok || !sync.data.run_id) {
+      throw new Error(sync.data.error || '历史训练数据同步启动失败，请重试')
     }
-    if (existing?.state === 'running') {
-      if (!mountedRef.current) return
-      setGoalId(nextGoalId)
-      syncAttemptRef.current = 0
-      handledSyncDoneRef.current = false
-      setSyncStatus(existing)
-      setPhase('syncing')
-      return
-    }
-    const sync = await postFullSync()
-    if (!sync.ok) {
-      const detail = typeof sync.data.detail === 'string' ? sync.data.detail : undefined
-      throw new Error(sync.data.error || detail || '历史训练数据同步启动失败，请重试')
-    }
-    if (!mountedRef.current) return
+    if (!mountedRef.current || userIdRef.current !== expectedUserId) return
+    localStorage.setItem(syncRunStorageKey(expectedUserId), sync.data.run_id)
     setGoalId(nextGoalId)
     syncAttemptRef.current = 0
     handledSyncDoneRef.current = false
-    setSyncStatus({
-      state: sync.data.state === 'error' ? 'error' : 'running',
-      error: sync.data.error,
-      progress: sync.data.progress ?? null,
-    })
+    setSyncRunId(sync.data.run_id)
+    setSyncRun(null)
     setPhase('syncing')
-  }, [startGeneration])
+  }, [userId])
 
   const handleGoalSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -209,13 +201,16 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
   }
 
   const pollSync = useCallback(async () => {
+    if (!syncRunId) return
+    const expectedUserId = userId
     try {
-      const next = await getFullSyncStatus()
-      if (!mountedRef.current) return
+      const next = await getPipelineRun(syncRunId)
+      if (!mountedRef.current || userIdRef.current !== expectedUserId) return
       syncAttemptRef.current += 1
-      setSyncStatus(next)
+      setSyncRun(next)
 
-      if (next.state === 'done') {
+      if (next.status === 'done') {
+        clearSavedSyncRun(expectedUserId)
         if (handledSyncDoneRef.current) return
         handledSyncDoneRef.current = true
         try {
@@ -226,8 +221,9 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
         return
       }
 
-      if (next.state === 'error') {
-        setError(next.error || '历史训练数据同步失败，请重试')
+      if (next.status === 'failed') {
+        clearSavedSyncRun(expectedUserId)
+        setError(next.error_message || '历史训练数据同步失败，请重试')
         return
       }
 
@@ -235,13 +231,13 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
         setError('历史训练数据同步超时，请刷新页面查看状态')
       }
     } catch {
-      if (!mountedRef.current) return
+      if (!mountedRef.current || userIdRef.current !== expectedUserId) return
       syncAttemptRef.current += 1
       if (syncAttemptRef.current >= MAX_SYNC_POLL_ATTEMPTS) {
         setError('无法获取同步状态，请刷新页面')
       }
     }
-  }, [goalId, startGeneration])
+  }, [clearSavedSyncRun, goalId, startGeneration, syncRunId, userId])
 
   const pollJob = useCallback(async () => {
     if (!jobId) return
@@ -276,10 +272,29 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
   }, [jobId])
 
   useEffect(() => {
-    if (phase !== 'syncing') return undefined
+    userIdRef.current = userId
+    syncAttemptRef.current = 0
+    handledSyncDoneRef.current = false
+    setError('')
+    setSyncRun(null)
+    setGoalId(null)
+    setSyncRunId(null)
+
+    const savedRunId = localStorage.getItem(syncRunStorageKey(userId))
+    if (savedRunId) {
+      setSyncRunId(savedRunId)
+      setPhase('syncing')
+    } else {
+      setPhase('goals')
+    }
+  }, [userId])
+
+  useEffect(() => {
+    if (phase !== 'syncing' || !syncRunId) return undefined
+    void pollSync()
     const id = window.setInterval(() => { void pollSync() }, POLL_INTERVAL_MS)
     return () => window.clearInterval(id)
-  }, [phase, pollSync])
+  }, [phase, pollSync, syncRunId])
 
   useEffect(() => {
     if (phase !== 'generating' || !jobId) return undefined
@@ -308,7 +323,7 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
   }
 
   if (phase === 'syncing') {
-    return <SyncProgressCard status={syncStatus} error={error} onRetry={handleRetry} />
+    return <SyncProgressCard run={syncRun} error={error} onRetry={handleRetry} />
   }
 
   if (phase === 'ready' && draftPlanId) {
@@ -590,13 +605,15 @@ function IntakeFact({ label, value }: { label: string; value: string }) {
   )
 }
 
-function SyncProgressCard({ status, error, onRetry }: { status: SyncStatus | null; error: string; onRetry: () => void }) {
-  const failed = Boolean(error) || status?.state === 'error'
-  const progress = status?.progress ?? null
-  const percent = clampPercent(progress?.percent ?? (failed ? 100 : 8))
+function SyncProgressCard({ run, error, onRetry }: { run: PipelineRun | null; error: string; onRetry: () => void }) {
+  const failed = Boolean(error) || run?.status === 'failed'
+  const activeStep = run?.steps[run.current_step]?.name ?? 'queued'
+  const percent = clampPercent(run?.status === 'done' ? 100 : run && run.steps.length > 0 ? (run.current_step * 100) / run.steps.length : (failed ? 100 : 8))
   const message = failed
-    ? error || status?.error || '历史训练数据同步失败'
-    : progress?.message || '正在同步历史训练数据'
+    ? error || run?.error_message || '历史训练数据同步失败'
+    : run?.status === 'done'
+      ? '历史训练数据同步完成'
+      : `正在执行 ${activeStep}`
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -625,9 +642,9 @@ function SyncProgressCard({ status, error, onRetry }: { status: SyncStatus | nul
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
-          <ContextStat label="当前阶段" value={progress?.phase ?? 'queued'} />
-          <ContextStat label="已同步活动" value={progress?.synced_activities != null ? String(progress.synced_activities) : '—'} />
-          <ContextStat label="健康天数" value={progress?.synced_health != null ? String(progress.synced_health) : '—'} />
+          <ContextStat label="当前阶段" value={activeStep} />
+          <ContextStat label="Pipeline" value={run?.pipeline_name ?? '—'} />
+          <ContextStat label="状态" value={run?.status ?? 'queued'} />
         </div>
         {failed && (
           <button

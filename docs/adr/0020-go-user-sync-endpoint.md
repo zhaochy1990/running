@@ -1,6 +1,6 @@
 # Go `POST /api/{user}/sync`: async data-sync pipeline (sync + compute)
 
-The browser's manual "sync now" pill calls Python's synchronous `POST /api/{user}/sync`, which holds the request open for the whole sync and returns `{success, output}`. We add the Go equivalent as an **async façade over a pipeline**: it starts a data-sync pipeline for the user and returns **202 `{run_id, partition_key, pipeline_name}`**; the client polls `GET /pipelines/{partition_key}/{run_id}`. It is the `/api/*`-shaped door the browser needs, since the path-preserving BFF (ADR 0017) proxies only `/api/*` and cannot reach Go's root-level `POST /jobs` / `POST /pipelines/{name}`.
+The browser's manual "sync now" pill calls Python's synchronous `POST /api/{user}/sync`, which holds the request open for the whole sync and returns `{success, output}`. We add the Go equivalent as an **async façade over a pipeline**: it starts a data-sync pipeline for the user and returns **202 `{run_id, pipeline_name}`**; the Web BFF/client polls `GET /api/pipelines/{run_id}`. It is the `/api/*`-shaped door the browser needs, since the path-preserving BFF (ADR 0017) proxies only `/api/*` and cannot reach Go's root-level `POST /jobs` / `POST /pipelines/{name}`.
 
 **A sync is sync + compute, not just sync.** A watch sync only lands raw activity/health rows; the derived metrics (per-activity training load, daily PMC — CTL/ATL/Form — and personal bests) still need computing, which Python did in its post-sync hook. So `/api/{user}/sync` starts a pipeline, and `mode` picks which one:
 
@@ -11,7 +11,7 @@ The user tier may sync only its own id (path `{user}` must equal the JWT `sub`, 
 
 **Build-only, not cut over.** The route-table entry is marked `goReady: true` but left `upstream: 'python'`. Go's compute writes the MySQL shadow store (ADR 0005) that no read endpoint consumes yet, so flipping now would make the pill "succeed" while the user's activities/health (still read from Python SQLite) don't change. The flip is a later step gated on the read endpoints migrating, and it also needs the pill to poll instead of await — so the cutover is not "just routing".
 
-**Onboarding completion/status is implemented separately.** `POST /api/users/me/onboarding/complete` starts the same full-history `onboarding` pipeline and `GET /api/users/me/sync-status` maps its durable state for the onboarding UI. Their route flags must be enabled together; partial/health-only onboarding is not supported, and `sync-data-at-onboarding` must stay `true` for that cutover.
+**Onboarding completion is implemented separately.** `POST /api/{user}/sync` with `mode:"full"` starts the full-history `onboarding` pipeline and returns `run_id`; it does not alter onboarding completion state. The Web client polls that run through `GET /api/pipelines/{run_id}`. A `done` status only makes the run eligible for `POST /api/users/me/onboarding/complete {"run_id":"..."}`. When the user selects **Enter STRIDE**, that finalizer verifies the caller, pipeline name, and terminal success before recording completion; it never starts, resumes, or retries work. `GET /api/users/me/sync-status` is legacy/read-only associated-run status and is not part of Web onboarding.
 
 ## The compute split (calibration vs compute)
 
@@ -34,6 +34,7 @@ Pipelines gained a run-level `InputJSON` (persisted on `pipeline_runs`) that the
 
 ## Consequences
 
+- **Pipeline and onboarding state are distinct.** `pipeline_runs.status = done` means derived data is ready; `user_onboarding.completed_at != NULL` is a later, explicit user-confirmed transition. The latter can occur only when the finalizer verifies the submitted successful onboarding `run_id`.
 - **Python's per-user sync lock is intentionally dropped.** Python serialized syncs per user via an in-process `threading.Lock` (`sqlite_writer.py`) because SQLite is single-writer and a concurrent sync errors hard. Go's work runs out-of-process in the worker with no partition affinity, so two runs for one user can overlap. This is safe (not prevented): writes are cursor-based upserts into MySQL, which tolerates concurrent writers, so overlap is idempotent — wasteful, not corrupting. True per-user serialization (partition→consumer affinity or a distributed lock) is a worker-layer follow-up.
 - **Shared payload contract.** The `{mode, content, limit}` schema lives once in `internal/provider` (`SyncOptionsInput` + `ParseSyncOptions`), used by both the API edge (validate → 400) and the `watch_sync` handler.
 - **The API stays decoupled from `internal/catalog`:** the `watch_sync` job-type name and the two pipeline names are injected via `Config` (`WatchSyncJobType`, `SyncPipelineFull`, `SyncPipelineIncremental`), not imported.

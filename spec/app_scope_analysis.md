@@ -240,7 +240,7 @@ Shell 5 tab：Today / Health / Teams / Plan / Profile。**设计稿 D5 主页**�
 
 ## 4. 后端 API 现状
 
-按 router 文件分组，标注 mobile/web/两者用：
+按 router 文件分组，标注 mobile/web/两者用。**Mobile onboarding is paused and unsupported** until it implements the Go/Web generic-sync → `run_id` poll → explicit finalization contract; endpoint availability alone does not indicate mobile onboarding support.
 
 | Endpoint | 文件 | M/W | 作用 |
 |---|---|---|---|
@@ -251,8 +251,8 @@ Shell 5 tab：Today / Health / Teams / Plan / Profile。**设计稿 D5 主页**�
 | `DELETE /api/users/me` | account.py | W? | 账号注销 |
 | `POST /api/users/me/coros/login` | onboarding.py | W | COROS 绑表登录 |
 | `POST /api/users/me/garmin/login` | onboarding.py | W | Garmin 绑表登录 |
-| `POST /api/users/me/onboarding/complete` | onboarding.py | W | 引导完成 |
-| `GET /api/users/me/sync-status` | onboarding.py | W | 首次同步状态 |
+| `POST /api/users/me/onboarding/complete` | onboarding.py | W（legacy Python） | 旧引导启动/完成接口；Go/Web 需提交成功 `run_id` 显式完成 |
+| `GET /api/users/me/sync-status` | onboarding.py | W（legacy） | 关联 run 的只读状态；不用于 Go/Web generic sync 轮询 |
 | `POST /api/users/me/full-sync` | onboarding.py | W | 触发 3 年全量同步（C3 用）|
 | `GET /api/users/me/full-sync-status` | onboarding.py | W | 全量同步状态 |
 | `GET /api/users/me/watch` | watch.py | W | 已绑手表信息 |
@@ -266,7 +266,7 @@ Shell 5 tab：Today / Health / Teams / Plan / Profile。**设计稿 D5 主页**�
 | `POST /api/{user}/activities/{id}/commentary` | activities.py | CLI | 写 commentary |
 | `POST /api/{user}/activities/{id}/commentary/regenerate` | activities.py | W | 重新生成 commentary |
 | `POST /api/{user}/activities/{id}/resync` | activities.py | M+W | 重新拉取该活动 |
-| `POST /api/{user}/sync` | sync.py | M+W | 触发完整同步 |
+| `POST /api/{user}/sync` | sync.py | M+W（Python legacy）；W（Go cutover） | Go generic pipeline launcher；`mode:"full"` 返回 `run_id`，需轮询并显式完成 onboarding |
 | `GET /api/{user}/dashboard` | health.py | W | 仪表盘聚合 |
 | `GET /api/{user}/health?days` | health.py | M+W | 健康时序 |
 | `GET /api/{user}/hrv` | health.py | W | HRV |

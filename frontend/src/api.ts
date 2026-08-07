@@ -28,6 +28,7 @@ async function apiFetch(
   method: HttpMethod,
   path: string,
   body?: unknown,
+  headers: HeadersInit = {},
 ): Promise<Response> {
   // POST/PUT/PATCH historically always set Content-Type, even when the
   // caller passes no body (e.g. postOnboardingComplete). Preserved.
@@ -36,7 +37,7 @@ async function apiFetch(
   // access_token from sessionStorage, which refreshAccessToken mutates.
   const buildInit = (): RequestInit => ({
     method,
-    headers: { ...authHeaders(), ...(setsJsonHeader ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { ...authHeaders(), ...(setsJsonHeader ? { 'Content-Type': 'application/json' } : {}), ...headers },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   let res = await fetch(apiUrl(method, `${BASE}${path}`), buildInit())
@@ -66,8 +67,8 @@ async function bodyResult<T>(res: Response): Promise<JsonResult<T>> {
   return { ok: res.ok, status: res.status, data: data as T }
 }
 
-const postJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
-  bodyResult<T>(await apiFetch('POST', path, body))
+const postJSON = async <T>(path: string, body?: unknown, headers?: HeadersInit): Promise<JsonResult<T>> =>
+  bodyResult<T>(await apiFetch('POST', path, body, headers))
 const getJSON = async <T>(path: string): Promise<JsonResult<T>> =>
   bodyResult<T>(await apiFetch('GET', path))
 const putJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
@@ -213,8 +214,10 @@ export function disconnectWatch() {
   return deleteJSON<{ ok: boolean; provider: string }>('/users/me/watch')
 }
 
-export function postOnboardingComplete() {
-  return postJSON<{ state?: string; error?: string; detail?: string; progress?: SyncProgress }>('/users/me/onboarding/complete')
+export function postOnboardingComplete(runId: string) {
+  return postJSON<{ state?: string; error?: string; detail?: string }>('/users/me/onboarding/complete', {
+    run_id: runId,
+  })
 }
 
 export interface SyncProgress {
@@ -291,16 +294,6 @@ export async function markNotificationRead(notificationId: string) {
 }
 
 // ─── Full sync (training plan setup) ──────────────────────────────────────
-
-export function postFullSync() {
-  return postJSON<{ state?: string; error?: string; detail?: string; progress?: SyncProgress }>(
-    '/users/me/full-sync',
-  )
-}
-
-export function getFullSyncStatus() {
-  return fetchJSON<SyncStatus>('/users/me/full-sync-status')
-}
 
 export interface Activity {
   label_id: string
@@ -502,12 +495,23 @@ export async function getAllActivitiesInRange(
   return getAllActivities(user, opts)
 }
 
-export function triggerSync(user: string, full: boolean = false) {
+export interface TriggerSyncOptions {
+  full?: boolean
+  idempotencyKey?: string
+}
+
+export function triggerSync(user: string, options: TriggerSyncOptions | boolean = {}) {
+  const { full = false, idempotencyKey } = typeof options === 'boolean' ? { full: options } : options
   return postJSON<{
     run_id: string
     pipeline_name: string
+    deduplicated?: boolean
     error?: string
-  }>(`/${encodeURIComponent(user)}/sync`, full ? { mode: 'full' } : { mode: 'incremental' })
+  }>(
+    `/${encodeURIComponent(user)}/sync`,
+    full ? { mode: 'full' } : { mode: 'incremental' },
+    idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+  )
 }
 
 export function resyncActivity(user: string, labelId: string) {
