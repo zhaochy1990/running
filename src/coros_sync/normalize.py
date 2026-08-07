@@ -65,6 +65,7 @@ COROS_SPORT_MAP: Mapper[int, NormalizedSport] = Mapper(
         502: NormalizedSport.HIIT,
         503: NormalizedSport.JUMP_ROPE,
         504: NormalizedSport.ROWING,
+        901: NormalizedSport.JUMP_ROPE,
         # Walking / hiking
         600: NormalizedSport.WALK,
         601: NormalizedSport.HIKE,
