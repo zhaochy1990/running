@@ -122,10 +122,20 @@ def test_training_load_rollout_uses_api_owned_resumable_shards() -> None:
     assert "daily_rows_written" in step
 
 
-def test_daily_sync_retries_api_writer_contention() -> None:
+def test_daily_sync_uses_and_waits_for_go_pipeline() -> None:
     workflow = DAILY_SYNC_PATH.read_text(encoding="utf-8")
 
-    assert '"503"' in workflow
+    assert "STRIDE_GO_API_URL" in workflow
+    assert '"${STRIDE_GO_API_URL%/}/api/$user/sync"' in workflow
+    assert "--data '{\"mode\":\"incremental\"}'" in workflow
+    assert "Idempotency-Key: daily-sync-$sync_day-$user" in workflow
+    assert '"${STRIDE_GO_API_URL%/}/api/pipelines/$run_id"' in workflow
+    assert '"$status" = "done"' in workflow
+    assert '"$status" = "failed"' in workflow
+    assert 'if [ "$terminal" = "done" ]; then' in workflow
+    assert 'fail=$((fail+1))' in workflow
+    assert 'if [ "$fail" -gt 0 ]; then' in workflow
+    assert "exit 1" in workflow
     assert "MAX_RETRIES" in workflow
     assert "retrying" in workflow
 
