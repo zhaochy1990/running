@@ -144,3 +144,17 @@ def test_weekly_manual_backfill_uses_api_owned_shards() -> None:
     )
     assert "except RETRYABLE_NETWORK_ERRORS as exc:" in workflow
     assert "next_shard_start" in workflow
+
+
+def test_weekly_calibration_refresh_enqueues_go_calibration_jobs() -> None:
+    workflow = WEEKLY_CALIBRATION_PATH.read_text(encoding="utf-8")
+
+    assert 'GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}' in workflow
+    assert 'ENDPOINT="/jobs"' in workflow
+    assert '\\"type\\":\\"calibration\\"' in workflow
+    assert '\\"user_id\\":\\"$user\\"' in workflow
+    assert "Idempotency-Key: weekly-calibration-${GITHUB_RUN_ID}-${user}" in workflow
+    assert '[ "$http" != "200" ] && [ "$http" != "202" ]' in workflow
+    assert workflow.index('if [ "$MODE" = "backfill" ]; then') < workflow.index(
+        'if [ -z "$STRIDE_PROD_URL" ] || [ -z "$INTERNAL_TOKEN" ]; then'
+    )
