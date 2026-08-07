@@ -44,7 +44,7 @@ export default function SyncStatusPill() {
     setSyncing(true)
     setSyncError(false)
     try {
-      const res = await triggerSync(user)
+      const res = await triggerSync(user, { full: false })
       if (!res.ok) throw new Error(res.data.error || `HTTP ${res.status}`)
       if (!res.data.run_id) throw new Error('同步任务未返回 run_id')
 

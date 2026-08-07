@@ -62,6 +62,11 @@ func runAPI() error {
 	if err := store.AutoMigrate(ctx); err != nil {
 		return err
 	}
+	// Watch-domain tables include provider credentials and activity metadata read
+	// by the watch login/status surface.
+	if err := store.AutoMigrateWatch(ctx); err != nil {
+		return err
+	}
 	// user_profile + user_onboarding tables for the profile/onboarding surface
 	// (ADR 0013). The worker does not need these.
 	if err := store.AutoMigrateUsers(ctx); err != nil {
@@ -132,6 +137,7 @@ func runAPI() error {
 		AuthNameSync:            authNameSync,
 		AccountDeleter:          authNameSync,
 		Features:                features,
+		OnboardingStaleAfter:    cfg.API.OnboardingStaleAfter,
 		ActivityStore:           store,
 		GoalStore:               store,
 		HealthStore:             store,

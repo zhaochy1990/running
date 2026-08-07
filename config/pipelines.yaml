@@ -1,5 +1,12 @@
 # Async-job pipeline definitions.
 #
+# This is the live Python/Azure compatibility worker topology, not the Go runtime
+# catalog. Python onboarding remains full_sync -> calibration -> backfill. Go's
+# catalog is src/go/internal/catalog/catalog.go, where onboarding is
+# sync -> calibration -> compute. Their completion contracts also differ: Python
+# compatibility completion starts work; Go/Web completion explicitly finalizes a
+# verified successful pipeline run.
+#
 # Each pipeline is an ordered set of steps; each step is a job whose `job_type`
 # must have a registered `@job_handler`. `depends` declares which earlier steps
 # must finish first (linear for now; the field exists to make the dependency

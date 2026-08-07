@@ -15,6 +15,61 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/pipelines/{run_id}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reads one asynchronous pipeline run. Web onboarding polls the /api alias with the run_id returned by POST /api/{user}/sync; a done run remains separate from explicit onboarding finalization.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipelines"
+                ],
+                "summary": "Get a pipeline run's status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run id",
+                        "name": "run_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.runStateResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/me": {
             "delete": {
                 "security": [
@@ -98,6 +153,69 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/onboarding/complete": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks onboarding complete after the user explicitly submits a completed run_id. The run must belong to the caller, use the onboarding pipeline, and have finished successfully; profile and watch readiness are also required. A 409 means the run is missing, belongs to another user, is not an onboarding run, or is not done. This endpoint never starts or retries pipeline work.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Finalize the current user's onboarding",
+                "parameters": [
+                    {
+                        "description": "Completed onboarding pipeline run",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.onboardingCompleteInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.onboardingCompleteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
                         }
                     },
                     "500": {
@@ -256,6 +374,43 @@ const docTemplate = `{
                         "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/api.validationErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/sync-status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Legacy read-only status for an explicitly associated onboarding run, or null state and progress when none exists. Generic POST /api/{user}/sync runs are polled through GET /api/pipelines/{run_id}, not this endpoint.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get the current user's onboarding sync status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.syncStatusResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
                         }
                     },
                     "500": {
@@ -472,7 +627,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deletes the stored watch credential and marks watch_ready=false. Synced activity/health data is retained. Returns 400 when no watch is bound.",
+                "description": "Deletes the stored watch credential and clears watch-dependent onboarding state. Synced activity/health data is retained. Returns 400 when no watch is bound.",
                 "produces": [
                     "application/json"
                 ],
@@ -1264,7 +1419,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Starts the data-sync pipeline for the user and returns immediately (202) with a run id; poll GET /pipelines/{run_id} for completion. The pipeline syncs watch data and then computes derived metrics (training load, PMC, personal bests). Mode picks the pipeline: \"incremental\" (default) syncs only new activities and computes only those; \"full\" re-syncs history, recomputes the athlete baseline, and does a full compute (new-user onboarding). This is the async Go replacement for the Python POST /api/{user}/sync. A user caller may only sync their own id (path {user} must equal their JWT sub); an internal caller may sync any user (path {user} must be a UUID).",
+                "description": "Starts a pipeline only and returns immediately (202) with a run id; Web clients poll GET /api/pipelines/{run_id}. The pipeline syncs watch data and then computes derived metrics (training load, PMC, personal bests). Mode picks the pipeline: \"incremental\" (default) syncs only new activities and computes only those; \"full\" re-syncs history, recomputes the athlete baseline, and does a full compute. A successful full pipeline does not complete onboarding: the user must explicitly finalize its successful run through POST /api/users/me/onboarding/complete. This is the async Go replacement for the Python POST /api/{user}/sync. A user caller may only sync their own id (path {user} must equal their JWT sub); an internal caller may sync any user (path {user} must be a UUID).",
                 "consumes": [
                     "application/json"
                 ],
@@ -1284,6 +1439,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
+                        "type": "string",
+                        "description": "Deduplicates creation; a repeat key returns the existing run (200)",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
                         "description": "Optional sync options; omitted mode defaults to incremental",
                         "name": "body",
                         "in": "body",
@@ -1293,6 +1454,12 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "Existing run returned for a repeated Idempotency-Key",
+                        "schema": {
+                            "$ref": "#/definitions/api.startPipelineResponse"
+                        }
+                    },
                     "202": {
                         "description": "Started",
                         "schema": {
@@ -1633,6 +1800,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Reads one asynchronous pipeline run. Web onboarding polls the /api alias with the run_id returned by POST /api/{user}/sync; a done run remains separate from explicit onboarding finalization.",
                 "produces": [
                     "application/json"
                 ],
@@ -1672,6 +1840,26 @@ const docTemplate = `{
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/readyz/onboarding": {
+            "get": {
+                "description": "Returns the static route contract required before the Web BFF enables its Go onboarding route flags. No authentication is required and no user data is returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "catalog"
+                ],
+                "summary": "Web onboarding cutover readiness",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.onboardingReadinessResponse"
                         }
                     }
                 }
@@ -2534,6 +2722,70 @@ const docTemplate = `{
                 }
             }
         },
+        "api.onboardingCompleteInput": {
+            "type": "object",
+            "required": [
+                "run_id"
+            ],
+            "properties": {
+                "run_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.onboardingCompleteResponse": {
+            "type": "object",
+            "properties": {
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.onboardingProgress": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "percent": {
+                    "type": "integer"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.onboardingReadinessResponse": {
+            "type": "object",
+            "properties": {
+                "contract_version": {
+                    "type": "string"
+                },
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.onboardingRouteContract"
+                    }
+                }
+            }
+        },
+        "api.onboardingRouteContract": {
+            "type": "object",
+            "properties": {
+                "method": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                }
+            }
+        },
         "api.onboardingState": {
             "type": "object",
             "properties": {
@@ -3218,6 +3470,20 @@ const docTemplate = `{
                         "incremental"
                     ],
                     "example": "incremental"
+                }
+            }
+        },
+        "api.syncStatusResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "progress": {
+                    "$ref": "#/definitions/api.onboardingProgress"
+                },
+                "state": {
+                    "type": "string"
                 }
             }
         },

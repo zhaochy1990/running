@@ -88,6 +88,13 @@ type PipelineRun struct {
 	CurrentStep  int
 	Steps        []PipelineStep
 	ErrorMessage string
+	// CompletionApplied records successful delivery to the pipeline completion
+	// listener. CompletionClaimID/At form a durable, expiring claim so concurrent
+	// terminal deliveries cannot run the listener more than once. A worker that
+	// dies after claiming is recovered after the bounded claim timeout.
+	CompletionApplied   bool
+	CompletionClaimID   string
+	CompletionClaimedAt *time.Time
 	// IdempotencyKey deduplicates client-driven starts: at most one run may
 	// exist per (UserID, IdempotencyKey). Empty means "no key" (NULL).
 	IdempotencyKey string

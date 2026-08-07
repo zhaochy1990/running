@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -49,6 +50,25 @@ func (s *fakeStore) Update(_ context.Context, j *Job) error {
 	cp := *j
 	s.rows[j.ID] = &cp
 	return nil
+}
+
+func (s *fakeStore) Claim(_ context.Context, id string, now time.Time) (*Job, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j, ok := s.rows[id]
+	if !ok {
+		return nil, false, &ErrNotFound{Key: id}
+	}
+	if j.Status != StatusQueued {
+		return nil, false, nil
+	}
+	j.Status = StatusRunning
+	j.Attempts++
+	j.ErrorCode = ""
+	j.ErrorMessage = ""
+	j.UpdatedAt = now
+	cp := *j
+	return &cp, true, nil
 }
 
 func (s *fakeStore) snapshot(id string) *Job {
@@ -284,6 +304,36 @@ func TestDispatch_OrphanMessage_Dropped(t *testing.T) {
 	}
 }
 
+func TestDispatch_DuplicateDeliveryClaimsOnlyOnce(t *testing.T) {
+	seed := &Job{ID: "j1", UserID: "u1", Type: "block", Status: StatusQueued}
+	store := newFakeStore(seed)
+	reg := NewRegistry()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	reg.MustRegister("block", func(context.Context, *Job, Heartbeat) (string, error) {
+		calls.Add(1)
+		close(started)
+		<-release
+		return "", nil
+	})
+	d := NewDispatcher(store, reg, &fakePublisher{}, NopLifecycle{}, testPolicy(), WithClock(fixedNow()))
+	errCh := make(chan error, 2)
+	go func() { errCh <- d.Dispatch(context.Background(), Message{JobID: "j1"}) }()
+	<-started
+	go func() { errCh <- d.Dispatch(context.Background(), Message{JobID: "j1"}) }()
+	close(release)
+	if err := <-errCh; err != nil {
+		t.Fatalf("first dispatch: %v", err)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("duplicate dispatch: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("handler calls = %d, want 1", got)
+	}
+}
+
 func TestDispatch_AlreadyTerminal_Idempotent(t *testing.T) {
 	seed := &Job{ID: "j1", UserID: "u1", Type: "greet", Status: StatusDone}
 	store := newFakeStore(seed)
@@ -300,6 +350,114 @@ func TestDispatch_AlreadyTerminal_Idempotent(t *testing.T) {
 	}
 	if called {
 		t.Fatal("handler must not run for an already-terminal job")
+	}
+}
+
+type failingStartedLifecycle struct {
+	started int
+}
+
+func (l *failingStartedLifecycle) OnJobStarted(context.Context, *Job) error {
+	l.started++
+	return errors.New("pipeline status unavailable")
+}
+func (l *failingStartedLifecycle) OnJobCompleted(context.Context, *Job) error { return nil }
+func (l *failingStartedLifecycle) OnJobFailed(context.Context, *Job) error    { return nil }
+
+func TestDispatch_StartedLifecycleFailureStillRunsHandler(t *testing.T) {
+	seed := &Job{ID: "j1", UserID: "u1", Type: "greet", Status: StatusQueued}
+	store := newFakeStore(seed)
+	reg := NewRegistry()
+	var calls atomic.Int32
+	reg.MustRegister("greet", func(context.Context, *Job, Heartbeat) (string, error) {
+		calls.Add(1)
+		return `{"ok":true}`, nil
+	})
+	life := &failingStartedLifecycle{}
+	d := NewDispatcher(store, reg, &fakePublisher{}, life, testPolicy(), WithClock(fixedNow()))
+
+	if err := d.Dispatch(context.Background(), Message{JobID: "j1", UserID: "u1"}); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("handler calls = %d, want 1", got)
+	}
+	if life.started != 1 {
+		t.Fatalf("OnJobStarted calls = %d, want 1", life.started)
+	}
+	if got := store.snapshot("j1"); got.Status != StatusDone {
+		t.Fatalf("status = %s, want done", got.Status)
+	}
+}
+
+type failOnceLifecycle struct {
+	completed int
+}
+
+func (l *failOnceLifecycle) OnJobStarted(context.Context, *Job) error { return nil }
+func (l *failOnceLifecycle) OnJobFailed(context.Context, *Job) error  { return nil }
+func (l *failOnceLifecycle) OnJobCompleted(context.Context, *Job) error {
+	l.completed++
+	if l.completed == 1 {
+		return errors.New("completion listener unavailable")
+	}
+	return nil
+}
+
+func TestDispatch_TerminalCompletionLifecycleRetries(t *testing.T) {
+	seed := &Job{ID: "j1", UserID: "u1", Type: "greet", Status: StatusQueued}
+	store := newFakeStore(seed)
+	reg := NewRegistry()
+	reg.MustRegister("greet", func(context.Context, *Job, Heartbeat) (string, error) { return "", nil })
+	life := &failOnceLifecycle{}
+	d := NewDispatcher(store, reg, &fakePublisher{}, life, testPolicy(), WithClock(fixedNow()))
+
+	if err := d.Dispatch(context.Background(), Message{JobID: "j1", UserID: "u1"}); err == nil {
+		t.Fatal("first delivery must request lifecycle retry")
+	}
+	if got := store.snapshot("j1"); got.Status != StatusDone {
+		t.Fatalf("job status = %s, want durable done", got.Status)
+	}
+	if err := d.Dispatch(context.Background(), Message{JobID: "j1", UserID: "u1"}); err != nil {
+		t.Fatalf("terminal replay: %v", err)
+	}
+	if life.completed != 2 {
+		t.Fatalf("completion calls = %d, want 2", life.completed)
+	}
+}
+
+type failOnceFailedLifecycle struct{ calls int }
+
+func (l *failOnceFailedLifecycle) OnJobStarted(context.Context, *Job) error   { return nil }
+func (l *failOnceFailedLifecycle) OnJobCompleted(context.Context, *Job) error { return nil }
+func (l *failOnceFailedLifecycle) OnJobFailed(context.Context, *Job) error {
+	l.calls++
+	if l.calls == 1 {
+		return errors.New("pipeline unavailable")
+	}
+	return nil
+}
+
+func TestDispatch_TerminalFailureLifecycleRetries(t *testing.T) {
+	seed := &Job{ID: "j1", UserID: "u1", Type: "bad", Status: StatusQueued}
+	store := newFakeStore(seed)
+	reg := NewRegistry()
+	reg.MustRegister("bad", func(context.Context, *Job, Heartbeat) (string, error) {
+		return "", NewPermanentError("bad_input", errors.New("bad"))
+	})
+	life := &failOnceFailedLifecycle{}
+	d := NewDispatcher(store, reg, &fakePublisher{}, life, testPolicy(), WithClock(fixedNow()))
+	if err := d.Dispatch(context.Background(), Message{JobID: "j1"}); err == nil {
+		t.Fatal("terminal lifecycle failure must request redelivery")
+	}
+	if got := store.snapshot("j1"); got.Status != StatusFailed {
+		t.Fatalf("status = %s, want failed", got.Status)
+	}
+	if err := d.Dispatch(context.Background(), Message{JobID: "j1"}); err != nil {
+		t.Fatalf("terminal replay: %v", err)
+	}
+	if life.calls != 2 {
+		t.Fatalf("failed lifecycle calls = %d, want 2", life.calls)
 	}
 }
 

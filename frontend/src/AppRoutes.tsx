@@ -22,7 +22,7 @@ import CoachChatPage from './pages/CoachChatPage'
 import WeeklyPlanAdjustPage from './pages/WeeklyPlanAdjustPage'
 import MasterPlanAdjustPage from './pages/MasterPlanAdjustPage'
 import { useUser } from './UserContextValue'
-import { getMyProfile, getUserPipelines } from './api'
+import { getMyProfile } from './api'
 import LandingPage from './pages/landing/LandingPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -47,13 +47,8 @@ function OnboardingGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false
     getMyProfile()
-      .then(async (p) => {
-        let completed = Boolean(p.onboarding.completed_at)
-        if (!completed && import.meta.env.VITE_GO_ONBOARDING === 'true') {
-          const { pipelines } = await getUserPipelines(p.id)
-          completed = pipelines.some((run) => run.pipeline_name === 'onboarding' && run.status === 'done')
-        }
-        if (!cancelled) setGateState(completed ? 'ready' : 'onboarding')
+      .then((p) => {
+        if (!cancelled) setGateState(p.onboarding.completed_at ? 'ready' : 'onboarding')
       })
       .catch(() => {
         if (!cancelled) setGateState('error')

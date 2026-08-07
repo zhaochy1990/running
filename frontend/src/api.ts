@@ -28,6 +28,7 @@ async function apiFetch(
   method: HttpMethod,
   path: string,
   body?: unknown,
+  headers: HeadersInit = {},
 ): Promise<Response> {
   // POST/PUT/PATCH historically always set Content-Type, even when the
   // caller passes no body (e.g. postOnboardingComplete). Preserved.
@@ -36,7 +37,7 @@ async function apiFetch(
   // access_token from sessionStorage, which refreshAccessToken mutates.
   const buildInit = (): RequestInit => ({
     method,
-    headers: { ...authHeaders(), ...(setsJsonHeader ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { ...authHeaders(), ...(setsJsonHeader ? { 'Content-Type': 'application/json' } : {}), ...headers },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   let res = await fetch(apiUrl(method, `${BASE}${path}`), buildInit())
@@ -53,9 +54,18 @@ async function apiFetch(
   return res
 }
 
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(status: number) {
+    super(`API error: ${status}`)
+    this.status = status
+  }
+}
+
 async function fetchJSON<T>(path: string): Promise<T> {
   const res = await apiFetch('GET', path)
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  if (!res.ok) throw new ApiError(res.status)
   return res.json()
 }
 
@@ -66,8 +76,8 @@ async function bodyResult<T>(res: Response): Promise<JsonResult<T>> {
   return { ok: res.ok, status: res.status, data: data as T }
 }
 
-const postJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
-  bodyResult<T>(await apiFetch('POST', path, body))
+const postJSON = async <T>(path: string, body?: unknown, headers?: HeadersInit): Promise<JsonResult<T>> =>
+  bodyResult<T>(await apiFetch('POST', path, body, headers))
 const getJSON = async <T>(path: string): Promise<JsonResult<T>> =>
   bodyResult<T>(await apiFetch('GET', path))
 const putJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
@@ -213,8 +223,10 @@ export function disconnectWatch() {
   return deleteJSON<{ ok: boolean; provider: string }>('/users/me/watch')
 }
 
-export function postOnboardingComplete() {
-  return postJSON<{ state?: string; error?: string; detail?: string; progress?: SyncProgress }>('/users/me/onboarding/complete')
+export function postOnboardingComplete(runId: string) {
+  return postJSON<{ state?: string; error?: string; detail?: string }>('/users/me/onboarding/complete', {
+    run_id: runId,
+  })
 }
 
 export interface SyncProgress {
@@ -247,19 +259,6 @@ export interface PipelineRun {
   current_step: number
   steps: Array<{ name: string; job_type: string; status: string }>
   error_message?: string
-}
-
-export function startGoOnboardingSync(userId: string) {
-  return postJSON<{ run_id?: string; pipeline_name?: string; error?: string }>(
-    `/${encodeURIComponent(userId)}/sync`,
-    { mode: 'full' },
-  )
-}
-
-export function getUserPipelines(userId: string) {
-  return fetchJSON<{ pipelines: PipelineRun[] }>(
-    `/users/${encodeURIComponent(userId)}/pipelines`,
-  )
 }
 
 export function getPipelineRun(runId: string) {
@@ -515,12 +514,23 @@ export async function getAllActivitiesInRange(
   return getAllActivities(user, opts)
 }
 
-export function triggerSync(user: string, full: boolean = false) {
+export interface TriggerSyncOptions {
+  full?: boolean
+  idempotencyKey?: string
+}
+
+export function triggerSync(user: string, options: TriggerSyncOptions | boolean = {}) {
+  const { full = false, idempotencyKey } = typeof options === 'boolean' ? { full: options } : options
   return postJSON<{
     run_id: string
     pipeline_name: string
+    deduplicated?: boolean
     error?: string
-  }>(`/${encodeURIComponent(user)}/sync`, full ? { mode: 'full' } : { mode: 'incremental' })
+  }>(
+    `/${encodeURIComponent(user)}/sync`,
+    full ? { mode: 'full' } : { mode: 'incremental' },
+    idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+  )
 }
 
 export function resyncActivity(user: string, labelId: string) {

@@ -9,6 +9,7 @@ import (
 	gomysql "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 
 	"github.com/zhaochy1990/stride/internal/job"
@@ -284,6 +285,36 @@ func (s *jobStore) Update(ctx context.Context, j *job.Job) error {
 	return s.db.WithContext(ctx).Save(toJobModel(j)).Error
 }
 
+func (s *jobStore) Claim(ctx context.Context, jobID string, now time.Time) (*job.Job, bool, error) {
+	var claimed *job.Job
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&jobModel{}).Where("id = ? AND status = ?", jobID, string(job.StatusQueued)).
+			Updates(map[string]interface{}{
+				"status":        string(job.StatusRunning),
+				"attempts":      gorm.Expr("attempts + 1"),
+				"error_code":    "",
+				"error_message": "",
+				"updated_at":    now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		var m jobModel
+		if err := tx.Where("id = ?", jobID).First(&m).Error; err != nil {
+			return err
+		}
+		claimed = m.toDomain()
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return claimed, claimed != nil, nil
+}
+
 // --- job.PipelineStore ---------------------------------------------------
 
 type pipelineStore struct{ db *gorm.DB }
@@ -365,4 +396,36 @@ func (s *pipelineStore) Update(ctx context.Context, r *job.PipelineRun) error {
 		return err
 	}
 	return s.db.WithContext(ctx).Save(m).Error
+}
+
+// Mutate serializes a read-modify-write transition with SELECT ... FOR UPDATE.
+// The callback runs inside the transaction, and the mutated JSON step state is
+// saved before the lock is released. Callers must keep external side effects
+// (broker publication and completion listeners) outside this transaction.
+func (s *pipelineStore) Mutate(ctx context.Context, runID string, fn func(*job.PipelineRun) (bool, error)) (bool, error) {
+	changed := false
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var m pipelineRunModel
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("run_id = ?", runID).First(&m).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &job.ErrNotFound{Key: runID}
+		}
+		if err != nil {
+			return err
+		}
+		run, err := m.toDomain()
+		if err != nil {
+			return err
+		}
+		changed, err = fn(run)
+		if err != nil || !changed {
+			return err
+		}
+		updated, err := toPipelineModel(run)
+		if err != nil {
+			return err
+		}
+		return tx.Save(updated).Error
+	})
+	return changed, err
 }

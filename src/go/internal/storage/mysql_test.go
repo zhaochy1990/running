@@ -67,11 +67,100 @@ func TestJobStore_CreateGetUpdate(t *testing.T) {
 	}
 }
 
+func TestJobStore_ClaimIsAtomic(t *testing.T) {
+	st := openTestStore(t)
+	jobs := st.Jobs()
+	ctx := context.Background()
+	tag := time.Now().UTC().Format("20060102150405.000000")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	j := &job.Job{ID: "claim-" + tag, UserID: "claim-user-" + tag, Type: "greet", Status: job.StatusQueued, CreatedAt: now, UpdatedAt: now}
+	if err := jobs.Create(ctx, j); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	results := make(chan bool, 2)
+	errs := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, claimed, err := jobs.Claim(ctx, j.ID, time.Now().UTC())
+			results <- claimed
+			errs <- err
+		}()
+	}
+	claimed := 0
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatalf("claim: %v", err)
+		}
+		if <-results {
+			claimed++
+		}
+	}
+	if claimed != 1 {
+		t.Fatalf("successful claims = %d, want 1", claimed)
+	}
+	got, err := jobs.Get(ctx, j.ID)
+	if err != nil || got.Status != job.StatusRunning || got.Attempts != 1 {
+		t.Fatalf("claimed job = %+v, err=%v; want running/attempt 1", got, err)
+	}
+}
+
 func TestJobStore_GetNotFound(t *testing.T) {
 	st := openTestStore(t)
 	_, err := st.Jobs().Get(context.Background(), "nope")
 	if _, ok := err.(*job.ErrNotFound); !ok {
 		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}
+
+func TestPipelineStore_MutateSerializesTransitions(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	runs := st.Pipelines()
+	tag := time.Now().UTC().Format("20060102150405.000000")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	run := &job.PipelineRun{
+		RunID: "mutate-" + tag, UserID: "mutate-user-" + tag, Name: "onboarding", Status: job.StatusRunning,
+		Steps:     []job.PipelineStep{{Name: "sync", JobType: "sync", Status: job.StatusQueued, JobID: "step-" + tag}, {Name: "next", JobType: "next", Status: job.StatusQueued}},
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := runs.Create(ctx, run); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	results := make(chan bool, 2)
+	errs := make(chan error, 2)
+	for range 2 {
+		go func() {
+			changed, err := runs.Mutate(ctx, run.RunID, func(r *job.PipelineRun) (bool, error) {
+				if r.Steps[0].Status == job.StatusDone || r.Steps[1].JobID != "" {
+					return false, nil
+				}
+				r.Steps[0].Status = job.StatusDone
+				r.Steps[1].JobID = "reserved-" + tag
+				r.CurrentStep = 1
+				r.UpdatedAt = time.Now().UTC()
+				return true, nil
+			})
+			results <- changed
+			errs <- err
+		}()
+	}
+	changed := 0
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatalf("mutate: %v", err)
+		}
+		if <-results {
+			changed++
+		}
+	}
+	if changed != 1 {
+		t.Fatalf("mutations = %d, want 1", changed)
+	}
+	got, err := runs.Get(ctx, run.RunID)
+	if err != nil || got.Steps[0].Status != job.StatusDone || got.Steps[1].JobID != "reserved-"+tag || got.CurrentStep != 1 {
+		t.Fatalf("transition = %+v, err=%v", got, err)
 	}
 }
 

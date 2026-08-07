@@ -10,6 +10,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -96,12 +97,15 @@ type Config struct {
 
 	// User/onboarding surface (ADR 0013) — a sibling registrar sharing the auth
 	// path. Leave zero to run the job/pipeline API only (e.g. in tests).
-	UserStore      UserStore
-	ProviderLogin  ProviderLogin
-	ProviderInfo   ProviderInfo
-	AuthNameSync   AuthNameSync
-	AccountDeleter AccountDeleter
-	Features       FeatureConfig
+	// OnboardingStaleAfter controls replacement of stuck runs; zero defaults to
+	// five minutes.
+	OnboardingStaleAfter time.Duration
+	UserStore            UserStore
+	ProviderLogin        ProviderLogin
+	ProviderInfo         ProviderInfo
+	AuthNameSync         AuthNameSync
+	AccountDeleter       AccountDeleter
+	Features             FeatureConfig
 
 	// ActivityStore backs the activity read surface (ADR 0019) — a sibling
 	// registrar sharing the auth path. Leave zero to run without the activity
@@ -196,7 +200,7 @@ func NewService(cfg Config) *Service {
 		syncPipelineIncremental: cfg.SyncPipelineIncremental,
 		jobCatalog:              cfg.JobCatalog,
 		pipelineCatalog:         cfg.PipelineCatalog,
-		users:                   newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.AccountDeleter, cfg.Features, log),
+		users:                   newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.AccountDeleter, cfg.Features, cfg.Runs, cfg.Jobs, cfg.OnboardingStaleAfter, log),
 		goals:                   newGoalRoutes(cfg.GoalStore, log),
 		activities:              newActivityRoutes(cfg.ActivityStore, log),
 		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),
@@ -228,6 +232,9 @@ func (s *Service) Router() *gin.Engine {
 	// system metadata, no auth). Distinct from the authed create/read routes.
 	r.GET("/jobs", s.listJobs)
 	r.GET("/pipelines", s.listPipelines)
+	// Deployment probes this before enabling the Web onboarding Go-route flags.
+	// It contains no user or deployment-secret data.
+	r.GET("/readyz/onboarding", s.onboardingReadiness)
 
 	authed := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
 	authed.POST("/jobs", s.createJob)

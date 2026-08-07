@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/logging"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
@@ -58,6 +59,10 @@ type UserStore interface {
 	GetMeta(ctx context.Context, userID, key string) (value string, ok bool, err error)
 	DeleteCredential(ctx context.Context, userID, provider string) error
 	ClearWatchReady(ctx context.Context, userID string) error
+	// FinalizeOnboardingRun conditionally marks a connected user complete after
+	// the API has verified a completed onboarding pipeline. It reports whether
+	// this request wrote the completion marker; no pre-linked run is required.
+	FinalizeOnboardingRun(ctx context.Context, userID, runID string) (bool, error)
 	DeleteUserData(ctx context.Context, userID string) error
 }
 
@@ -129,14 +134,20 @@ type userRoutes struct {
 	authName      AuthNameSync
 	accountAuth   AccountDeleter
 	features      FeatureConfig
+	runs          RunGetter
+	jobs          JobGetter
+	staleAfter    time.Duration
 	log           *zap.Logger
 }
 
-func newUserRoutes(store UserStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, ad AccountDeleter, features FeatureConfig, log *zap.Logger) *userRoutes {
+func newUserRoutes(store UserStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, ad AccountDeleter, features FeatureConfig, runs RunGetter, jobs JobGetter, staleAfter time.Duration, log *zap.Logger) *userRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &userRoutes{store: store, providerLogin: pl, providerInfo: pi, authName: an, accountAuth: ad, features: features, log: log}
+	if staleAfter <= 0 {
+		staleAfter = 300 * time.Second
+	}
+	return &userRoutes{store: store, providerLogin: pl, providerInfo: pi, authName: an, accountAuth: ad, features: features, runs: runs, jobs: jobs, staleAfter: staleAfter, log: log}
 }
 
 // register mounts the routes on the (already authenticated) group. Paths mirror
@@ -150,6 +161,8 @@ func (u *userRoutes) register(rg *gin.RouterGroup) {
 	rg.GET("/api/users/me/watch", u.getWatch)
 	rg.DELETE("/api/users/me/watch", u.deleteWatch)
 	rg.POST("/api/users/me/watch/login", u.watchLogin)
+	rg.POST("/api/users/me/onboarding/complete", u.completeOnboarding)
+	rg.GET("/api/users/me/sync-status", u.syncStatus)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -248,6 +261,30 @@ type watchInfoResponse struct {
 type disconnectWatchResponse struct {
 	OK       bool   `json:"ok"`
 	Provider string `json:"provider"`
+}
+
+const publicOnboardingError = "同步任务失败，请点击重试"
+
+type onboardingProgress struct {
+	Phase     string `json:"phase"`
+	Message   string `json:"message"`
+	Percent   int    `json:"percent"`
+	StartedAt string `json:"started_at,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+type onboardingCompleteInput struct {
+	RunID string `json:"run_id" binding:"required,uuid4"`
+}
+
+type onboardingCompleteResponse struct {
+	State string `json:"state"`
+}
+
+type syncStatusResponse struct {
+	State    *string             `json:"state"`
+	Progress *onboardingProgress `json:"progress"`
+	Error    string              `json:"error,omitempty"`
 }
 
 // validationDetailItem mirrors FastAPI's 422 detail entry so the frontend's
@@ -488,6 +525,213 @@ func (u *userRoutes) watchLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, watchLoginResponse{OK: true, Region: res.Region, UserID: res.UserID})
 }
 
+// completeOnboarding finalizes onboarding only after the caller explicitly
+// submits a verified, completed onboarding pipeline run. It never starts,
+// retries, or re-associates pipeline work.
+//
+//	@Summary		Finalize the current user's onboarding
+//	@Description	Marks onboarding complete after the user explicitly submits a completed run_id. The run must belong to the caller, use the onboarding pipeline, and have finished successfully; profile and watch readiness are also required. A 409 means the run is missing, belongs to another user, is not an onboarding run, or is not done. This endpoint never starts or retries pipeline work.
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		onboardingCompleteInput	true	"Completed onboarding pipeline run"
+//	@Success		200	{object}	onboardingCompleteResponse
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		409	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/onboarding/complete [post]
+func (u *userRoutes) completeOnboarding(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	if u.store == nil || u.runs == nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "onboarding unavailable"})
+		return
+	}
+	var in onboardingCompleteInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid request"})
+		return
+	}
+	ctx := c.Request.Context()
+	onb, err := u.store.GetUserOnboarding(ctx, uid)
+	if err != nil {
+		u.log.Error("get onboarding failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if onb == nil || !onb.ProfileReady || !onb.WatchReady {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "profile and watch connection required"})
+		return
+	}
+	if onb.CompletedAt != nil {
+		c.JSON(http.StatusOK, onboardingCompleteResponse{State: "already-complete"})
+		return
+	}
+	run, err := u.runs.Get(ctx, in.RunID)
+	if err != nil {
+		if job.IsNotFound(err) {
+			c.JSON(http.StatusConflict, errorResponse{Error: "onboarding run is not ready"})
+			return
+		}
+		u.log.Error("get onboarding pipeline failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if run.UserID != uid || run.Name != "onboarding" {
+		c.JSON(http.StatusConflict, errorResponse{Error: "onboarding run is not valid"})
+		return
+	}
+	if run.Status != job.StatusDone {
+		c.JSON(http.StatusConflict, errorResponse{Error: "onboarding run is not ready"})
+		return
+	}
+	if _, err := u.store.FinalizeOnboardingRun(ctx, uid, run.RunID); err != nil {
+		u.log.Error("finalize onboarding failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, onboardingCompleteResponse{State: "complete"})
+}
+
+// syncStatus translates the durable onboarding pipeline state into the existing
+// client contract without exposing worker/storage/provider internals. It returns
+// an object with null state and progress when no onboarding run is associated.
+//
+//	@Summary		Get the current user's onboarding sync status
+//	@Description	Legacy read-only status for an explicitly associated onboarding run, or null state and progress when none exists. Generic POST /api/{user}/sync runs are polled through GET /api/pipelines/{run_id}, not this endpoint.
+//	@Tags			users
+//	@Produce		json
+//	@Success		200	{object}	syncStatusResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/sync-status [get]
+func (u *userRoutes) syncStatus(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	if u.store == nil || u.runs == nil || u.jobs == nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "onboarding unavailable"})
+		return
+	}
+	ctx := c.Request.Context()
+	onb, err := u.store.GetUserOnboarding(ctx, uid)
+	if err != nil {
+		u.log.Error("get onboarding failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if onb == nil {
+		c.JSON(http.StatusOK, syncStatusResponse{})
+		return
+	}
+	if onb.CompletedAt != nil {
+		c.JSON(http.StatusOK, syncStatusResponse{State: strPtrOrNil("done"), Progress: &onboardingProgress{Phase: "complete", Message: "同步完成", Percent: 100}})
+		return
+	}
+	if onb.OnboardingRunID == nil {
+		c.JSON(http.StatusOK, syncStatusResponse{})
+		return
+	}
+	run, err := u.runs.Get(ctx, *onb.OnboardingRunID)
+	if job.IsNotFound(err) || (err == nil && (run.UserID != uid || run.Name != "onboarding")) {
+		c.JSON(http.StatusOK, syncStatusResponse{})
+		return
+	}
+	if err != nil {
+		u.log.Error("get onboarding pipeline failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	switch run.Status {
+	case job.StatusDone:
+		c.JSON(http.StatusOK, syncStatusResponse{State: strPtrOrNil("done"), Progress: &onboardingProgress{Phase: "complete", Message: "同步完成", Percent: 100}})
+	case job.StatusFailed:
+		c.JSON(http.StatusOK, syncStatusResponse{State: strPtrOrNil("error"), Progress: u.progressForRun(ctx, run), Error: publicOnboardingError})
+	default:
+		if u.isStaleRun(ctx, run) {
+			c.JSON(http.StatusOK, syncStatusResponse{State: strPtrOrNil("error"), Progress: &onboardingProgress{Phase: "error", Message: publicOnboardingError, Percent: runProgress(run)}, Error: publicOnboardingError})
+			return
+		}
+		c.JSON(http.StatusOK, syncStatusResponse{State: strPtrOrNil("running"), Progress: u.progressForRun(ctx, run)})
+	}
+}
+
+func (u *userRoutes) activeJob(ctx context.Context, run *job.PipelineRun) *job.Job {
+	if run.CurrentStep < 0 || run.CurrentStep >= len(run.Steps) {
+		return nil
+	}
+	jobID := run.Steps[run.CurrentStep].JobID
+	if jobID == "" {
+		return nil
+	}
+	j, err := u.jobs.Get(ctx, jobID)
+	if err != nil {
+		u.log.Warn("get active onboarding job failed", zap.String("run_id", run.RunID), zap.String("job_id", jobID), zapErr(err))
+		return nil
+	}
+	return j
+}
+
+func (u *userRoutes) isStaleRun(ctx context.Context, run *job.PipelineRun) bool {
+	if u.staleAfter <= 0 {
+		return false
+	}
+	updatedAt := run.UpdatedAt
+	if active := u.activeJob(ctx, run); active != nil && active.Status == job.StatusRunning && active.UpdatedAt.After(updatedAt) {
+		updatedAt = active.UpdatedAt
+	}
+	return !updatedAt.IsZero() && time.Since(updatedAt) > u.staleAfter
+}
+
+func runProgress(run *job.PipelineRun) int {
+	if len(run.Steps) == 0 {
+		return 0
+	}
+	return (run.CurrentStep * 100) / len(run.Steps)
+}
+
+func (u *userRoutes) progressForRun(ctx context.Context, run *job.PipelineRun) *onboardingProgress {
+	phase := "queued"
+	if run.CurrentStep >= 0 && run.CurrentStep < len(run.Steps) {
+		phase = run.Steps[run.CurrentStep].Name
+	}
+	message := "正在同步完整历史训练数据，这可能需要几分钟"
+	if phase == "calibration" {
+		message = "正在计算个人训练基线"
+	} else if phase == "compute" {
+		message = "正在计算训练历史"
+	} else if run.Status == job.StatusFailed {
+		phase, message = "error", publicOnboardingError
+	}
+	updatedAt := run.UpdatedAt
+	percent := runProgress(run)
+	if active := u.activeJob(ctx, run); active != nil {
+		if active.UpdatedAt.After(updatedAt) {
+			updatedAt = active.UpdatedAt
+		}
+		if active.Stage != "" {
+			phase = active.Stage
+		}
+		if active.ProgressPct > 0 {
+			percent = (run.CurrentStep*100 + active.ProgressPct) / len(run.Steps)
+		}
+	}
+	return &onboardingProgress{Phase: phase, Message: message, Percent: percent, StartedAt: isoTime(run.CreatedAt), UpdatedAt: isoTime(updatedAt)}
+}
+
+func isoTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
 // getWatch returns the connected watch's status: provider, display name, login
 // state, account email, latest device, last sync time, and declared
 // capabilities. All fields come from the canonical MySQL store; logged_in is
@@ -572,12 +816,11 @@ func (u *userRoutes) getWatch(c *gin.Context) {
 }
 
 // deleteWatch disconnects the user's watch: it deletes the stored credential and
-// resets watch_ready, while RETAINING all synced data. completed_at is left
-// untouched (the onboarding gate is owned by the sync-complete flow, ADR 0018).
+// atomically clears watch-dependent onboarding state while RETAINING synced data.
 // No watch bound → 400.
 //
 //	@Summary		Disconnect the current user's watch
-//	@Description	Deletes the stored watch credential and marks watch_ready=false. Synced activity/health data is retained. Returns 400 when no watch is bound.
+//	@Description	Deletes the stored watch credential and clears watch-dependent onboarding state. Synced activity/health data is retained. Returns 400 when no watch is bound.
 //	@Tags			users
 //	@Produce		json
 //	@Success		200	{object}	disconnectWatchResponse
@@ -604,15 +847,27 @@ func (u *userRoutes) deleteWatch(c *gin.Context) {
 		return
 	}
 
-	if err := u.store.DeleteCredential(ctx, uid, providerName); err != nil {
-		u.log.Error("watch: delete credential failed", zapErr(err))
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-		return
-	}
-	if err := u.store.ClearWatchReady(ctx, uid); err != nil {
-		u.log.Error("watch: clear watch_ready failed", zapErr(err))
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-		return
+	// The concrete store provides an atomic implementation; test and alternate
+	// stores retain the two-port fallback for compatibility.
+	if atomicStore, ok := u.store.(interface {
+		DisconnectWatch(context.Context, string, string) error
+	}); ok {
+		if err := atomicStore.DisconnectWatch(ctx, uid, providerName); err != nil {
+			u.log.Error("watch: disconnect failed", zapErr(err))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+	} else {
+		if err := u.store.DeleteCredential(ctx, uid, providerName); err != nil {
+			u.log.Error("watch: delete credential failed", zapErr(err))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+		if err := u.store.ClearWatchReady(ctx, uid); err != nil {
+			u.log.Error("watch: clear watch_ready failed", zapErr(err))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, disconnectWatchResponse{OK: true, Provider: providerName})
 }

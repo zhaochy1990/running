@@ -85,6 +85,8 @@ apns_production = true
 
 [sync]
 stale_after_seconds = 300
+# Python compatibility endpoint behavior only. It does not make Go generic-sync
+# success complete onboarding and does not cause Go finalization to start work.
 sync_data_at_onboarding = true
 
 [internal]

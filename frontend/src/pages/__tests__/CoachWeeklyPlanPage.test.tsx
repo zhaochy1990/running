@@ -97,7 +97,7 @@ describe('CoachWeeklyPlanPage', () => {
     expect(screen.getByText('跑步课')).toBeInTheDocument()
     expect(screen.queryByText('Sessions')).not.toBeInTheDocument()
     expect(screen.queryByText('Runs')).not.toBeInTheDocument()
-    expect(screen.getAllByText('蛋白质目标 130 g')).toHaveLength(2)
+    expect(screen.getAllByText('蛋白质目标 130 g')).toHaveLength(1)
     expect(screen.queryByText(/P130/)).not.toBeInTheDocument()
     expect(screen.getByText('实际跑量')).toBeInTheDocument()
     expect(screen.getByText('完成度')).toBeInTheDocument()

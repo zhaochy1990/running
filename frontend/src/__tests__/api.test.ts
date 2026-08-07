@@ -15,7 +15,7 @@ vi.mock('../store/authStore', () => ({
 
 // Import after the vi.mock registration (vi.mock auto-hoists, but
 // being explicit keeps the read order obvious).
-import { getUsers, postOnboardingComplete } from '../api'
+import { getFullSyncStatus, getUsers, postFullSync, postOnboardingComplete, triggerSync } from '../api'
 
 function resp(status: number, body: unknown = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -73,7 +73,54 @@ describe('api 401-refresh', () => {
     expect(refreshMock).not.toHaveBeenCalled()
   })
 
-  it('postJSON sends method=POST + JSON content-type + body, and refreshes on 401', async () => {
+  it('posts a completed pipeline run when finalizing onboarding', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(200, { state: 'complete' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(postOnboardingComplete('run-123')).resolves.toEqual({
+      ok: true,
+      status: 200,
+      data: { state: 'complete' },
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/users/me/onboarding/complete',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ run_id: 'run-123' }),
+      }),
+    )
+  })
+
+  it('starts and reads the legacy Python full-sync status for plan setup', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(resp(200, { state: 'running', progress: { phase: 'queued', percent: 0 } }))
+      .mockResolvedValueOnce(resp(200, { state: 'running', progress: { phase: 'health', percent: 50 } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(postFullSync()).resolves.toEqual({
+      ok: true,
+      status: 200,
+      data: { state: 'running', progress: { phase: 'queued', percent: 0 } },
+    })
+    await expect(getFullSyncStatus()).resolves.toEqual({
+      state: 'running',
+      progress: { phase: 'health', percent: 50 },
+    })
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/users/me/full-sync',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/users/me/full-sync-status',
+      expect.objectContaining({ method: 'GET' }),
+    )
+  })
+
+  it('retries onboarding completion with the original POST request after a 401', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(resp(401))
@@ -81,15 +128,29 @@ describe('api 401-refresh', () => {
     vi.stubGlobal('fetch', fetchMock)
     refreshMock.mockResolvedValueOnce(undefined)
 
-    const out = await postOnboardingComplete()
+    const out = await postOnboardingComplete('run-123')
     expect(out).toEqual({ ok: true, status: 200, data: { state: 'done' } })
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    // Both calls carry the POST + JSON Content-Type — verifies the retry
-    // doesn't drop method/headers (the original duplication risk).
     for (const [url, init] of fetchMock.mock.calls) {
       expect(url).toBe('/api/users/me/onboarding/complete')
       expect(init.method).toBe('POST')
       expect(init.headers).toMatchObject({ 'Content-Type': 'application/json' })
+      expect(init.body).toBe(JSON.stringify({ run_id: 'run-123' }))
     }
+  })
+
+  it('sends an idempotency key when starting a full sync', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(202, { run_id: 'run-1', pipeline_name: 'onboarding' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(triggerSync('user-1', { full: true, idempotencyKey: 'start-key' })).resolves.toMatchObject({ ok: true })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/user-1/sync',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json', 'Idempotency-Key': 'start-key' }),
+        body: JSON.stringify({ mode: 'full' }),
+      }),
+    )
   })
 })

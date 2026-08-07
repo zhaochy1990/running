@@ -3,6 +3,8 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,12 +14,42 @@ import (
 // --- fakes ---------------------------------------------------------------
 
 type fakeEnqueuer struct {
+	mu    sync.Mutex
 	specs []job.EnqueueSpec
 }
 
 func (e *fakeEnqueuer) Enqueue(_ context.Context, spec job.EnqueueSpec) (string, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.specs = append(e.specs, spec)
+	if spec.ID != "" {
+		return spec.ID, nil
+	}
 	return jobIDFor(len(e.specs)), nil
+}
+
+func (e *fakeEnqueuer) count() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.specs)
+}
+
+type partialEnqueuer struct {
+	fakeEnqueuer
+	failAt         int
+	err            error
+	emptyOnFailure bool
+}
+
+func (e *partialEnqueuer) Enqueue(ctx context.Context, spec job.EnqueueSpec) (string, error) {
+	id, _ := e.fakeEnqueuer.Enqueue(ctx, spec)
+	if len(e.specs) == e.failAt {
+		if e.emptyOnFailure {
+			return "", e.err
+		}
+		return id, e.err
+	}
+	return id, nil
 }
 
 func jobIDFor(n int) string {
@@ -25,33 +57,61 @@ func jobIDFor(n int) string {
 }
 
 type fakePStore struct {
+	mu   sync.Mutex
 	rows map[string]*job.PipelineRun
 }
 
 func newFakePStore() *fakePStore { return &fakePStore{rows: map[string]*job.PipelineRun{}} }
 
 func (s *fakePStore) Create(_ context.Context, r *job.PipelineRun) error {
-	cp := *r
-	cp.Steps = append([]job.PipelineStep(nil), r.Steps...)
-	s.rows[r.RunID] = &cp
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rows[r.RunID] = copyRun(r)
 	return nil
 }
 func (s *fakePStore) Get(_ context.Context, id string) (*job.PipelineRun, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	r, ok := s.rows[id]
 	if !ok {
 		return nil, &job.ErrNotFound{Key: id}
 	}
-	cp := *r
-	cp.Steps = append([]job.PipelineStep(nil), r.Steps...)
-	return &cp, nil
+	return copyRun(r), nil
 }
 func (s *fakePStore) Update(_ context.Context, r *job.PipelineRun) error {
-	cp := *r
-	cp.Steps = append([]job.PipelineStep(nil), r.Steps...)
-	s.rows[r.RunID] = &cp
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rows[r.RunID] = copyRun(r)
 	return nil
 }
-func (s *fakePStore) snap(id string) *job.PipelineRun { return s.rows[id] }
+func (s *fakePStore) Mutate(_ context.Context, id string, fn func(*job.PipelineRun) (bool, error)) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.rows[id]
+	if !ok {
+		return false, &job.ErrNotFound{Key: id}
+	}
+	candidate := copyRun(r)
+	changed, err := fn(candidate)
+	if err != nil || !changed {
+		return changed, err
+	}
+	s.rows[id] = candidate
+	return true, nil
+}
+func (s *fakePStore) snap(id string) *job.PipelineRun {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return copyRun(s.rows[id])
+}
+func copyRun(r *job.PipelineRun) *job.PipelineRun {
+	if r == nil {
+		return nil
+	}
+	cp := *r
+	cp.Steps = append([]job.PipelineStep(nil), r.Steps...)
+	return &cp
+}
 
 func onboardingRegistry() *Registry {
 	r := NewRegistry()
@@ -117,6 +177,21 @@ func TestStartPipeline_CreatesRunAndEnqueuesFirstStep(t *testing.T) {
 	}
 }
 
+func TestStartPipeline_PublishFailureFailsReservedFirstStep(t *testing.T) {
+	ps := newFakePStore()
+	enq := &partialEnqueuer{failAt: 1, err: errors.New("broker unavailable"), emptyOnFailure: true}
+	o := newOrch(ps, enq)
+
+	runID, err := o.StartPipeline(context.Background(), "onboarding", "u1", "u1", "", "")
+	if runID != "run-1" || err == nil {
+		t.Fatalf("start = %q, %v; want publish failure", runID, err)
+	}
+	run := ps.snap(runID)
+	if run == nil || run.Steps[0].JobID == "" || run.Steps[0].Status != job.StatusFailed || run.Status != job.StatusFailed {
+		t.Fatalf("reserved first step and run must be failed: %+v", run)
+	}
+}
+
 func TestStartPipeline_UnknownName(t *testing.T) {
 	o := newOrch(newFakePStore(), &fakeEnqueuer{})
 	if _, err := o.StartPipeline(context.Background(), "nope", "u1", "u1", "", ""); err == nil {
@@ -152,6 +227,29 @@ func TestOnJobCompleted_AdvancesToNextStep(t *testing.T) {
 	}
 	if run.Status != job.StatusRunning {
 		t.Fatalf("run status = %s, want running", run.Status)
+	}
+}
+
+func TestOnJobCompleted_PublishFailureFailsReservedNextStep(t *testing.T) {
+	ps := newFakePStore()
+	enq := &partialEnqueuer{failAt: 2, err: errors.New("broker unavailable"), emptyOnFailure: true}
+	o := newOrch(ps, enq)
+	if _, err := o.StartPipeline(context.Background(), "onboarding", "u1", "u1", "", ""); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	first := ps.snap("run-1").Steps[0].JobID
+	if err := o.OnJobCompleted(context.Background(), &job.Job{ID: first, UserID: "u1", PipelineRunID: "run-1"}); err == nil {
+		t.Fatal("complete must return publish failure")
+	}
+	run := ps.snap("run-1")
+	if run.Steps[0].Status != job.StatusDone || run.CurrentStep != 1 || run.Steps[1].JobID == "" || run.Steps[1].Status != job.StatusFailed || run.Status != job.StatusFailed {
+		t.Fatalf("reserved next step and run must be failed: %+v", run)
+	}
+	if err := o.OnJobCompleted(context.Background(), &job.Job{ID: first, UserID: "u1", PipelineRunID: "run-1"}); err != nil {
+		t.Fatalf("duplicate completion: %v", err)
+	}
+	if len(enq.specs) != 2 {
+		t.Fatalf("enqueues = %d, want no duplicate next job", len(enq.specs))
 	}
 }
 
@@ -259,6 +357,16 @@ func TestOnJobStarted_DoesNotClobberTerminalStep(t *testing.T) {
 	}
 }
 
+type fakeCompletionListener struct {
+	runs []*job.PipelineRun
+	err  error
+}
+
+func (l *fakeCompletionListener) OnPipelineCompleted(_ context.Context, run *job.PipelineRun) error {
+	l.runs = append(l.runs, run)
+	return l.err
+}
+
 func TestOnJobCompleted_LastStepMarksRunDone(t *testing.T) {
 	ps := newFakePStore()
 	enq := &fakeEnqueuer{}
@@ -289,6 +397,103 @@ func TestOnJobCompleted_LastStepMarksRunDone(t *testing.T) {
 	}
 }
 
+func TestOnJobCompleted_ConcurrentFinalCallbacksClaimListenerOnce(t *testing.T) {
+	ps := newFakePStore()
+	enq := &fakeEnqueuer{}
+	listener := &fakeCompletionListener{}
+	o := New(ps, enq, onboardingRegistry(), WithClock(fixedNow()), WithRunIDFunc(func() string { return "run-1" }), WithCompletionListener(listener))
+	if _, err := o.StartPipeline(context.Background(), "onboarding", "u1", "u1", "", ""); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	for step := 0; step < 2; step++ {
+		run := ps.snap("run-1")
+		if err := o.OnJobCompleted(context.Background(), &job.Job{ID: run.Steps[step].JobID, UserID: "u1", PipelineRunID: run.RunID}); err != nil {
+			t.Fatalf("complete step %d: %v", step, err)
+		}
+	}
+	last := ps.snap("run-1").Steps[2].JobID
+	msg := &job.Job{ID: last, UserID: "u1", PipelineRunID: "run-1"}
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- o.OnJobCompleted(context.Background(), msg)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("final completion: %v", err)
+		}
+	}
+	if len(listener.runs) != 1 || !ps.snap("run-1").CompletionApplied {
+		t.Fatalf("listener calls=%d completion_applied=%v, want 1/true", len(listener.runs), ps.snap("run-1").CompletionApplied)
+	}
+}
+
+func TestOnJobCompleted_FinalStepNotifiesListenerOnce(t *testing.T) {
+	ps := newFakePStore()
+	enq := &fakeEnqueuer{}
+	listener := &fakeCompletionListener{}
+	o := New(ps, enq, onboardingRegistry(),
+		WithClock(fixedNow()),
+		WithRunIDFunc(func() string { return "run-1" }),
+		WithCompletionListener(listener),
+	)
+	if _, err := o.StartPipeline(context.Background(), "onboarding", "u1", "u1", "", ""); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	for step := 0; step < 3; step++ {
+		run := ps.snap("run-1")
+		if err := o.OnJobCompleted(context.Background(), &job.Job{ID: run.Steps[step].JobID, UserID: "u1", PipelineRunID: run.RunID}); err != nil {
+			t.Fatalf("complete step %d: %v", step, err)
+		}
+	}
+	if len(listener.runs) != 1 || listener.runs[0].RunID != "run-1" || listener.runs[0].Status != job.StatusDone {
+		t.Fatalf("listener runs = %+v, want one completed run", listener.runs)
+	}
+	last := ps.snap("run-1").Steps[2].JobID
+	if err := o.OnJobCompleted(context.Background(), &job.Job{ID: last, UserID: "u1", PipelineRunID: "run-1"}); err != nil {
+		t.Fatalf("duplicate completion: %v", err)
+	}
+	if len(listener.runs) != 1 {
+		t.Fatalf("listener calls = %d, want one", len(listener.runs))
+	}
+}
+
+func TestOnJobCompleted_RetriesCompletionListenerAfterFailure(t *testing.T) {
+	ps := newFakePStore()
+	enq := &fakeEnqueuer{}
+	listener := &fakeCompletionListener{err: errors.New("onboarding store unavailable")}
+	o := New(ps, enq, onboardingRegistry(), WithClock(fixedNow()), WithRunIDFunc(func() string { return "run-1" }), WithCompletionListener(listener))
+	if _, err := o.StartPipeline(context.Background(), "onboarding", "u1", "u1", "", ""); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	for step := 0; step < 2; step++ {
+		run := ps.snap("run-1")
+		if err := o.OnJobCompleted(context.Background(), &job.Job{ID: run.Steps[step].JobID, UserID: "u1", PipelineRunID: run.RunID}); err != nil {
+			t.Fatalf("complete step %d: %v", step, err)
+		}
+	}
+	last := ps.snap("run-1").Steps[2].JobID
+	if err := o.OnJobCompleted(context.Background(), &job.Job{ID: last, UserID: "u1", PipelineRunID: "run-1"}); err == nil {
+		t.Fatal("want listener failure")
+	}
+	if run := ps.snap("run-1"); run.Status != job.StatusDone || run.CompletionApplied {
+		t.Fatalf("terminal run must remain pending listener application: %+v", run)
+	}
+	listener.err = nil
+	if err := o.OnJobCompleted(context.Background(), &job.Job{ID: last, UserID: "u1", PipelineRunID: "run-1"}); err != nil {
+		t.Fatalf("listener retry: %v", err)
+	}
+	if len(listener.runs) != 2 || !ps.snap("run-1").CompletionApplied {
+		t.Fatalf("listener calls=%d completion_applied=%v, want 2/true", len(listener.runs), ps.snap("run-1").CompletionApplied)
+	}
+}
+
 func TestOnJobCompleted_Idempotent(t *testing.T) {
 	ps := newFakePStore()
 	enq := &fakeEnqueuer{}
@@ -302,8 +507,43 @@ func TestOnJobCompleted_Idempotent(t *testing.T) {
 	_ = o.OnJobCompleted(context.Background(), msg) // duplicate delivery
 
 	// Step 1 must be enqueued exactly once despite the double fire.
-	if len(enq.specs) != 2 {
-		t.Fatalf("enqueues = %d, want 2 (no double-enqueue)", len(enq.specs))
+	if enq.count() != 2 {
+		t.Fatalf("enqueues = %d, want 2 (no double-enqueue)", enq.count())
+	}
+}
+
+func TestOnJobCompleted_ConcurrentCallbacksReserveOneNextStep(t *testing.T) {
+	ps := newFakePStore()
+	enq := &fakeEnqueuer{}
+	o := newOrch(ps, enq)
+	if _, err := o.StartPipeline(context.Background(), "onboarding", "u1", "u1", "", ""); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	jid := ps.snap("run-1").Steps[0].JobID
+	msg := &job.Job{ID: jid, UserID: "u1", PipelineRunID: "run-1"}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- o.OnJobCompleted(context.Background(), msg)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent completion: %v", err)
+		}
+	}
+	if enq.count() != 2 { // first job + precisely one second-step job
+		t.Fatalf("enqueues = %d, want 2", enq.count())
+	}
+	run := ps.snap("run-1")
+	if run.Steps[0].Status != job.StatusDone || run.Steps[1].JobID == "" || run.CurrentStep != 1 {
+		t.Fatalf("run transition not durably reserved: %+v", run)
 	}
 }
 
@@ -377,8 +617,7 @@ func TestInputThreading(t *testing.T) {
 
 	// Complete step 0 with a result carrying label_ids; step 1 must see both the
 	// run's mode and the upstream label_ids.
-	done := &job.Job{ID: enq.specs[0].PipelineRunID, UserID: "u1", PipelineRunID: "run-1", ResultJSON: `{"label_ids":["a","b"],"activities":2}`}
-	done.ID = jobIDFor(1) // step 0's job id
+	done := &job.Job{ID: enq.specs[0].ID, UserID: "u1", PipelineRunID: "run-1", ResultJSON: `{"label_ids":["a","b"],"activities":2}`}
 	if err := o.OnJobCompleted(context.Background(), done); err != nil {
 		t.Fatalf("advance: %v", err)
 	}

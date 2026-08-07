@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { API_ROUTES } from '../api-routes.js'
-import { AUTH_PREFIX, hasGoRoutes, resolveUpstream, upstreamForRoute } from '../table.js'
+import { AUTH_PREFIX, hasGoRoutes, hasPartialWebOnboardingGoCutover, resolveUpstream, unsupportedGoRoutes, upstreamForRoute } from '../table.js'
 
 describe('resolveUpstream', () => {
   it('routes /api/auth/* to the auth upstream (any method)', () => {
@@ -119,6 +119,53 @@ describe('hasGoRoutes', () => {
   })
 })
 
+describe('Go route capability validation', () => {
+  it('reports every non-Go-ready route configured to use Go', () => {
+    expect(unsupportedGoRoutes({
+      STRIDE_ROUTE_GET_HEALTH: 'go',
+      STRIDE_ROUTE_POST_USERS_ME_FULL_SYNC: ' GO ',
+      STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'go',
+    }).map((route) => route.env)).toEqual([
+      'STRIDE_ROUTE_GET_HEALTH',
+      'STRIDE_ROUTE_POST_USERS_ME_FULL_SYNC',
+    ])
+  })
+
+  it('allows Go-ready routes and ignores non-Go values', () => {
+    expect(unsupportedGoRoutes({
+      STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'go',
+      STRIDE_ROUTE_GET_HEALTH: 'python',
+    })).toEqual([])
+  })
+})
+
+describe('Web onboarding Go cutover', () => {
+  const fullWebOnboardingGoEnv = {
+    STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'go',
+    STRIDE_ROUTE_POST_USERS_ME_PROFILE: 'go',
+    STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN: 'go',
+    STRIDE_ROUTE_POST_USER_SYNC: 'go',
+    STRIDE_ROUTE_GET_PIPELINES_RUNID: 'go',
+    STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE: 'go',
+  }
+
+  it('allows no onboarding Go routes or the complete route set', () => {
+    expect(hasPartialWebOnboardingGoCutover({})).toBe(false)
+    expect(hasPartialWebOnboardingGoCutover(fullWebOnboardingGoEnv)).toBe(false)
+  })
+
+  it('rejects every partial combination', () => {
+    expect(hasPartialWebOnboardingGoCutover({ STRIDE_ROUTE_POST_USER_SYNC: 'go' })).toBe(true)
+    expect(hasPartialWebOnboardingGoCutover({
+      STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'go',
+      STRIDE_ROUTE_POST_USERS_ME_PROFILE: 'go',
+      STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN: 'go',
+      STRIDE_ROUTE_POST_USER_SYNC: 'go',
+      STRIDE_ROUTE_GET_PIPELINES_RUNID: 'go',
+    })).toBe(true)
+  })
+})
+
 describe('API_ROUTES manifest integrity', () => {
   it('keeps the legacy weekly plan routes', () => {
     expect(API_ROUTES).toContainEqual({
@@ -155,6 +202,23 @@ describe('API_ROUTES manifest integrity', () => {
     }
   })
 
+  it('keeps the Web onboarding Go cutover as profile, watch, start, poll, and finalization', () => {
+    expect(API_ROUTES.filter((route) => [
+      '/api/users/me/profile',
+      '/api/users/me/watch/login',
+      '/api/:user/sync',
+      '/api/pipelines/:runId',
+      '/api/users/me/onboarding/complete',
+    ].includes(route.path) && ['GET', 'POST'].includes(route.method))).toEqual([
+      { method: 'GET', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_GET_USERS_ME_PROFILE', goReady: true },
+      { method: 'POST', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_POST_USERS_ME_PROFILE', goReady: true },
+      { method: 'POST', path: '/api/users/me/watch/login', env: 'STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN', goReady: true },
+      { method: 'POST', path: '/api/users/me/onboarding/complete', env: 'STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE', goReady: true },
+      { method: 'POST', path: '/api/:user/sync', env: 'STRIDE_ROUTE_POST_USER_SYNC', goReady: true },
+      { method: 'GET', path: '/api/pipelines/:runId', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID', goReady: true },
+    ])
+  })
+
   it('goReady endpoints are exactly the ones the Go API implements', () => {
     const goReady = API_ROUTES.filter((r) => r.goReady).map((r) => `${r.method} ${r.path}`).sort()
     expect(goReady).toEqual(
@@ -173,9 +237,11 @@ describe('API_ROUTES manifest integrity', () => {
         'GET /api/pipelines/:runId',
         'GET /api/users/me/master-plan/current',
         'GET /api/users/me/profile',
+        'GET /api/users/me/sync-status',
         'GET /api/users/me/training-goal',
         'GET /api/users/me/watch',
         'GET /api/users/:user/pipelines',
+        'POST /api/users/me/onboarding/complete',
         'POST /api/users/me/profile',
         'POST /api/users/me/watch/login',
         'POST /api/users/me/training-goal',
