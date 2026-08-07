@@ -44,6 +44,10 @@ Multi-stage build (`Dockerfile`)：
 
 两个 workflow 驱动生产：
 
+### `.github/workflows/daily-sync.yml` —— Go daily watch sync
+
+每天 00:00 Asia/Shanghai（GitHub Actions 可能延迟）从 `data/.slug_aliases.json` 枚举用户，调用 Go API 的 `POST /api/{uuid}/sync` 并传入 `{"mode":"incremental"}`。它使用仓库变量 `STRIDE_GO_API_URL` 和 secret `STRIDE_INTERNAL_TOKEN`；部署 Go API 时必须将同一个 secret 注入为 `STRIDE_WORKER_API_INTERNAL_TOKEN`，否则内部认证会返回 401。workflow 为每个用户 / 上海日期使用幂等键，并轮询 `GET /api/pipelines/{run_id}`；只有 pipeline 到达 `done` 才计为成功。
+
 ### `.github/workflows/deploy.yml` —— 重建 + 重部署容器
 
 触发：push 到 `master` 且 `src/coros_sync/**`、`src/stride_core/**`、`src/stride_server/**`、`src/coach/**`、`config/**`、`frontend/**`、`Dockerfile`、`.github/workflows/deploy.yml`、`pyproject.toml` 中任一变更。
