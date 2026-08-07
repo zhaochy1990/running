@@ -38,7 +38,7 @@ Multi-stage build (`Dockerfile`)：
 - **ACR push 复用 Go 服务已有的 ACR**（`worker-go.yml` 同款 `ALIYUN_ACR_REGISTRY` var +
   `ALIYUN_ACR_USERNAME`/`ALIYUN_ACR_PASSWORD` secrets），namespace 硬编码 `stride`，镜像即
   `${ALIYUN_ACR_REGISTRY}/stride/stride-web`（与 `stride/stride-api`、`stride/stride-worker` 并列）。
-  ACR mirror 步骤放在 deploy + health 之后、`if: always()`，misconfig 只让 job 变红不阻断部署。
+   ACR mirror 步骤放在 deploy + 新 revision 进入 `Running` 之后、`if: always()`，misconfig 只让 job 变红不阻断部署。
 
 ## CI/CD（GitHub Actions）
 

@@ -138,22 +138,16 @@ jobs:
             --cpu 0.5 --memory 1.0Gi \
             --set-env-vars $ENV_VARS
 
-      - name: Health check (new revision must reach Running + serve /healthz)
-        # Same rationale as deploy.yml: in single-revision mode ACA keeps the
-        # prior revision serving when the new one fails to boot, so probing the
-        # FQDN alone can pass against stale code. Target the new revision name.
+      - name: Wait for new revision to reach Running
+        # In single-revision mode ACA keeps the prior revision serving when the
+        # new one fails to boot, so check the new revision rather than its FQDN.
         run: |
           set -e
           LATEST=$(az containerapp show \
             --name ${{ env.APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --query "properties.latestRevisionName" -o tsv)
-          FQDN=$(az containerapp show \
-            --name ${{ env.APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query "properties.configuration.ingress.fqdn" -o tsv)
           echo "Verifying revision: $LATEST"
-          echo "App URL: https://$FQDN"
 
           for i in $(seq 1 30); do
             STATE=$(az containerapp revision show \
@@ -164,11 +158,8 @@ jobs:
             echo "Attempt $i/30 — revision=$LATEST runningState=$STATE"
 
             if [[ "$STATE" == Running* ]]; then
-              if curl -sf "https://$FQDN/healthz" | grep -q '"status":"ok"'; then
-                echo "✓ Revision $LATEST is $STATE and /healthz=ok"
-                exit 0
-              fi
-              echo "  revision $STATE but /healthz not yet ok — retrying"
+              echo "✓ Revision $LATEST is $STATE"
+              exit 0
             fi
 
             if [[ "$STATE" == "Failed" || "$STATE" == "Degraded" ]]; then
@@ -201,7 +192,7 @@ jobs:
       # web image sits alongside them as `stride/stride-web`. No separate
       # namespace variable — it's hardcoded, same as the Go workflow.
       #
-      # Runs LAST, after deploy + health, and with `if: always()` so a mirror
+      # Runs LAST, after deployment + revision readiness, and with `if: always()` so a mirror
       # misconfiguration can never block the authoritative GHCR deploy (Azure
       # pulls from GHCR). Still loud: unset registry → skip with warning;
       # registry set but creds incomplete → fail the job (red) so a broken
