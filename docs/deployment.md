@@ -76,6 +76,10 @@ GitHub workflow run token 幂等触发强制重建；`/internal/training-load/ba
 onboarding handlers 直接写 per-user SQLite 是独立的历史架构债，本次只移除专用
 `training_load_backfill` worker writer，不能把 worker 描述为全局 SQLite 零写入。
 
+### `.github/workflows/worker-go.yml` —— 发布 Go worker + API 镜像
+
+`src/go/**` 变更 push 到 `master` 且 Go 测试通过后，workflow 统一计算本次 CalVer，并用两项 matrix 在独立 runner 上并行构建 `stride-worker` 和 `stride-api`。两个镜像分别推送到 GHCR 与阿里云 ACR；worker 额外保留 commit SHA tag。两项构建使用独立 BuildKit GHA cache scope，避免并发导出缓存互相覆盖。只有整个 matrix 成功后，独立的 Renovate job 才更新 `stride-devops` 中两项镜像版本，避免部署指向只发布了一半的 release。仅修改 workflow 本身会运行测试，但不会重新发布镜像。
+
 ### `.github/workflows/sync-data.yml` —— 同步 training-log markdown 到 prod Azure Files
 
 触发：push 到 `master` 且 `data/*/logs/**`、`data/*/TRAINING_PLAN.md`、`data/*/status.md` 中任一变更。经 `az storage file upload-batch` 推到 `authstorage2026` 上 `stride-data` share（RG `rg-common-prod`）。

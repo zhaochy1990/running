@@ -1,19 +1,20 @@
 name: worker-go
 
 # Go async-job CI: `test` runs on every change under src/go OR to this workflow
-# file. `build-push` (publish both images to GHCR + open a Renovate bump PR) runs
-# on master ONLY when src/go/** actually changed — a workflow-only edit must not
-# republish a new CalVer image or bump the deployed version. Images: the worker
-# (Dockerfile) + HTTP API server (Dockerfile.api, ADR 0012). CVM pulls (ADR 0002/0004).
+# file. On master, a two-entry matrix publishes the worker and API images to GHCR
+# + ACR in parallel, but only when src/go/** actually changed — a workflow-only
+# edit must not republish a new CalVer image or bump the deployed version. Images:
+# the worker (Dockerfile) + HTTP API server (Dockerfile.api, ADR 0012). CVM pulls
+# (ADR 0002/0004).
 #
-# Both images carry :latest and a version-sortable :<CalVer> = YYYY.M.<run_number>.
-# stride-worker additionally keeps :<sha> for tracing a running container back to
-# a commit; stride-api does not (CalVer -> Actions run -> commit is enough there).
-# The CalVer tag is the RELEASE tag that stride-devops/tencent/versions.env pins —
-# it is version-sortable, so the final build-push step runs Renovate against
-# stride-devops (`npx renovate zhaochy1990/stride-devops`) to open a PR bumping
-# STRIDE_{WORKER,API}_IMAGE_TAG to the new CalVer. No poll/runner lives in
-# stride-devops; this workflow drives it on-demand right after publishing.
+# Both images carry :latest and a shared, version-sortable :<CalVer> =
+# YYYY.M.<run_number>. stride-worker additionally keeps :<sha> for tracing a
+# running container back to a commit; stride-api does not (CalVer -> Actions run
+# -> commit is enough there). After both matrix builds succeed, a separate
+# Renovate job runs against stride-devops (`npx renovate
+# zhaochy1990/stride-devops`) to open a PR bumping STRIDE_{WORKER,API}_IMAGE_TAG to
+# the new CalVer. No poll/runner lives in stride-devops; this workflow drives it
+# on-demand right after publishing.
 # The Tencent CVM is NOT deployed from here: this workflow only publishes images;
 # rollout happens by merging the Renovate PR + running ./up.sh on the CVM.
 on:
@@ -30,6 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       go: ${{ steps.filter.outputs.go }}
+      calver: ${{ steps.calver.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -38,6 +40,11 @@ jobs:
           filters: |
             go:
               - 'src/go/**'
+      # Compute once before the matrix fans out so both images always share the
+      # same release tag, even if their runners cross a UTC date boundary.
+      - name: Compute CalVer
+        id: calver
+        run: echo "version=$(date -u +%Y.%-m).${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
   test:
     runs-on: ubuntu-latest
@@ -66,6 +73,30 @@ jobs:
     permissions:
       contents: read
       packages: write
+    strategy:
+      # Let the other image finish if one build fails so diagnostics and caches
+      # from both independent publications remain available.
+      fail-fast: false
+      matrix:
+        include:
+          - name: worker
+            dockerfile: src/go/Dockerfile
+            cache_scope: stride-worker
+            tags: |
+              ghcr.io/${{ github.repository_owner }}/stride-worker:latest
+              ghcr.io/${{ github.repository_owner }}/stride-worker:${{ github.sha }}
+              ghcr.io/${{ github.repository_owner }}/stride-worker:${{ needs.changes.outputs.calver }}
+              ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-worker:latest
+              ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-worker:${{ needs.changes.outputs.calver }}
+          - name: api
+            dockerfile: src/go/Dockerfile.api
+            cache_scope: stride-api
+            tags: |
+              ghcr.io/${{ github.repository_owner }}/stride-api:latest
+              ghcr.io/${{ github.repository_owner }}/stride-api:${{ needs.changes.outputs.calver }}
+              ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-api:latest
+              ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-api:${{ needs.changes.outputs.calver }}
+    name: build-push (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -84,39 +115,28 @@ jobs:
           registry: ${{ vars.ALIYUN_ACR_REGISTRY }}
           username: ${{ secrets.ALIYUN_ACR_USERNAME }}
           password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
-      # CalVer release tag: YYYY.M.<run_number>. run_number is strictly
-      # increasing per workflow, so the tag is version-sortable (Renovate's
-      # regex versioning in stride-devops orders it); both Go images share the
-      # same value so they always bump together. UTC date matches auth's scheme.
-      - name: Compute CalVer
-        id: calver
-        run: echo "version=$(date -u +%Y.%-m).${{ github.run_number }}" >> "$GITHUB_OUTPUT"
-      - name: Build and push worker
+      - name: Build and push ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
           context: src/go
+          file: ${{ matrix.dockerfile }}
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/stride-worker:latest
-            ghcr.io/${{ github.repository_owner }}/stride-worker:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/stride-worker:${{ steps.calver.outputs.version }}
-            ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-worker:latest
-            ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-worker:${{ steps.calver.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Build and push api
-        uses: docker/build-push-action@v6
-        with:
-          context: src/go
-          file: src/go/Dockerfile.api
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/stride-api:latest
-            ghcr.io/${{ github.repository_owner }}/stride-api:${{ steps.calver.outputs.version }}
-            ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-api:latest
-            ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-api:${{ steps.calver.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ matrix.tags }}
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}
+          cache-to: type=gha,scope=${{ matrix.cache_scope }},mode=max
+
+  renovate:
+    # Join the matrix after both images have landed. A failed matrix child blocks
+    # the version bump so stride-devops never points at a partial release.
+    if: >-
+      github.event_name == 'push' &&
+      needs.changes.outputs.go == 'true' &&
+      needs.build-push.result == 'success'
+    needs: [changes, build-push]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
       # Run Renovate against stride-devops right after the images land, so its
       # versions.env bump PR opens within seconds (no poll/cron in stride-devops).
       # Renovate clones stride-devops, reads its renovate.json, sees the new
