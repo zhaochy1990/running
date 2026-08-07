@@ -104,6 +104,7 @@ type Config struct {
 	ProviderLogin        ProviderLogin
 	ProviderInfo         ProviderInfo
 	AuthNameSync         AuthNameSync
+	AccountDeleter       AccountDeleter
 	Features             FeatureConfig
 
 	// ActivityStore backs the activity read surface (ADR 0019) — a sibling
@@ -199,7 +200,7 @@ func NewService(cfg Config) *Service {
 		syncPipelineIncremental: cfg.SyncPipelineIncremental,
 		jobCatalog:              cfg.JobCatalog,
 		pipelineCatalog:         cfg.PipelineCatalog,
-		users:                   newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.Features, cfg.Pipelines, cfg.Runs, cfg.Jobs, cfg.OnboardingStaleAfter, log),
+		users:                   newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.AccountDeleter, cfg.Features, cfg.Runs, cfg.Jobs, cfg.OnboardingStaleAfter, log),
 		goals:                   newGoalRoutes(cfg.GoalStore, log),
 		activities:              newActivityRoutes(cfg.ActivityStore, log),
 		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),

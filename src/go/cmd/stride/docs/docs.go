@@ -70,6 +70,54 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/users/me": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Delete the current user's account and data",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/me/master-plan/current": {
             "get": {
                 "security": [
@@ -256,6 +304,70 @@ const docTemplate = `{
                         "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.validationErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates supplied core profile fields only. Omitted fields are preserved; explicit null and unsupported fields return 422. The profile must already exist.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Partially update the current user's basic profile",
+                "parameters": [
+                    {
+                        "description": "Core profile fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.profilePatchInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.profilePatchResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "422": {
@@ -664,26 +776,6 @@ const docTemplate = `{
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/readyz/onboarding": {
-            "get": {
-                "description": "Returns the static route contract required before the Web BFF enables its Go onboarding route flags. No authentication is required and no user data is returned.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "catalog"
-                ],
-                "summary": "Web onboarding cutover readiness",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.onboardingReadinessResponse"
                         }
                     }
                 }
@@ -1748,6 +1840,26 @@ const docTemplate = `{
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/readyz/onboarding": {
+            "get": {
+                "description": "Returns the static route contract required before the Web BFF enables its Go onboarding route flags. No authentication is required and no user data is returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "catalog"
+                ],
+                "summary": "Web onboarding cutover readiness",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.onboardingReadinessResponse"
                         }
                     }
                 }
@@ -2858,6 +2970,49 @@ const docTemplate = `{
                 },
                 "weight_kg": {
                     "type": "number"
+                }
+            }
+        },
+        "api.profilePatchInput": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "dob": {
+                    "type": "string"
+                },
+                "height_cm": {
+                    "type": "number"
+                },
+                "sex": {
+                    "type": "string",
+                    "enum": [
+                        "male",
+                        "female",
+                        "other"
+                    ]
+                },
+                "weight_kg": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.profilePatchResponse": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ok": {
+                    "type": "boolean"
+                },
+                "profile": {
+                    "$ref": "#/definitions/api.profileCore"
                 }
             }
         },

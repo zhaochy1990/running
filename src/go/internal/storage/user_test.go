@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/zhaochy1990/stride/internal/job"
 )
 
 // migrateUsers ensures the user tables exist for the integration test (the
@@ -66,6 +68,86 @@ func TestUserProfile_UpsertPreservesCreatedAt(t *testing.T) {
 	}
 	if !second.CreatedAt.Equal(created) {
 		t.Errorf("created_at not preserved: got %v want %v", second.CreatedAt, created)
+	}
+}
+
+func TestUserProfile_PatchSelectiveUpdate(t *testing.T) {
+	st := openTestStore(t)
+	migrateUsers(t, st)
+	ctx := context.Background()
+	uid := uuid.NewString()
+
+	if err := st.UpsertUserProfile(ctx, &UserProfile{
+		UserID: uid, DisplayName: "Zhao", DOB: "1990-05-01", Sex: "male", HeightCm: 178, WeightKg: 70,
+	}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	first, err := st.GetUserProfile(ctx, uid)
+	if err != nil || first == nil {
+		t.Fatalf("get after insert: %v (nil=%v)", err, first == nil)
+	}
+
+	name := "New Name"
+	weight := 69.5
+	updated, err := st.PatchUserProfile(ctx, uid, UserProfilePatch{DisplayName: &name, WeightKg: &weight})
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if updated == nil {
+		t.Fatal("patch returned nil profile")
+	}
+	if updated.DisplayName != name || updated.WeightKg != weight {
+		t.Errorf("patched values = %+v", updated)
+	}
+	if updated.DOB != first.DOB || updated.Sex != first.Sex || updated.HeightCm != first.HeightCm {
+		t.Errorf("omitted values changed: before=%+v after=%+v", first, updated)
+	}
+	if !updated.CreatedAt.Equal(first.CreatedAt) {
+		t.Errorf("created_at changed: got %v want %v", updated.CreatedAt, first.CreatedAt)
+	}
+}
+
+func TestUserProfile_PatchEmptyReadsWithoutUpdating(t *testing.T) {
+	st := openTestStore(t)
+	migrateUsers(t, st)
+	ctx := context.Background()
+	uid := uuid.NewString()
+
+	if err := st.UpsertUserProfile(ctx, &UserProfile{
+		UserID: uid, DisplayName: "Zhao", DOB: "1990-05-01", Sex: "male", HeightCm: 178, WeightKg: 70,
+	}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	first, err := st.GetUserProfile(ctx, uid)
+	if err != nil || first == nil {
+		t.Fatalf("get after insert: %v (nil=%v)", err, first == nil)
+	}
+
+	got, err := st.PatchUserProfile(ctx, uid, UserProfilePatch{})
+	if err != nil || got == nil {
+		t.Fatalf("empty patch: %v (nil=%v)", err, got == nil)
+	}
+	if !got.UpdatedAt.Equal(first.UpdatedAt) {
+		t.Errorf("empty patch changed updated_at: got %v want %v", got.UpdatedAt, first.UpdatedAt)
+	}
+}
+
+func TestUserProfile_PatchMissingDoesNotInsert(t *testing.T) {
+	st := openTestStore(t)
+	migrateUsers(t, st)
+	ctx := context.Background()
+	uid := uuid.NewString()
+	name := "First"
+
+	got, err := st.PatchUserProfile(ctx, uid, UserProfilePatch{DisplayName: &name})
+	if err != nil {
+		t.Fatalf("patch absent profile: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("patch absent profile = %+v, want nil", got)
+	}
+	if profile, err := st.GetUserProfile(ctx, uid); err != nil || profile != nil {
+		t.Errorf("absent patch inserted row: got %v, %v", profile, err)
 	}
 }
 
@@ -385,5 +467,61 @@ func TestUserOnboarding_ClearWatchReady(t *testing.T) {
 	}
 	if o.CompletedAt == nil {
 		t.Errorf("completed_at must be left untouched on disconnect (ADR 0018)")
+	}
+}
+
+func TestDeleteUserData_RemovesOwnedRowsAndPreservesOtherUsers(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	for _, migrate := range []func(context.Context) error{
+		st.AutoMigrateWatch,
+		st.AutoMigrateUsers,
+		st.AutoMigrateGoals,
+		st.AutoMigrateMasterPlan,
+		st.AutoMigrateWeeklyPlan,
+	} {
+		if err := migrate(ctx); err != nil {
+			t.Fatalf("migrate: %v", err)
+		}
+	}
+
+	deletedUID, keptUID := uuid.NewString(), uuid.NewString()
+	for _, uid := range []string{deletedUID, keptUID} {
+		if err := st.UpsertUserProfile(ctx, &UserProfile{UserID: uid, DisplayName: uid}); err != nil {
+			t.Fatalf("seed profile: %v", err)
+		}
+		if err := st.SaveCredential(ctx, &ProviderCredential{UserID: uid, Provider: "coros", Secret: []byte("secret")}); err != nil {
+			t.Fatalf("seed credential: %v", err)
+		}
+		if err := st.SetWatchReady(ctx, uid); err != nil {
+			t.Fatalf("seed onboarding: %v", err)
+		}
+		now := time.Now().UTC()
+		if err := st.Jobs().Create(ctx, &job.Job{
+			ID: uuid.NewString(), UserID: uid, CreatedBy: uid, Type: "watch_sync",
+			Status: job.StatusQueued, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("seed job: %v", err)
+		}
+	}
+
+	if err := st.DeleteUserData(ctx, deletedUID); err != nil {
+		t.Fatalf("DeleteUserData: %v", err)
+	}
+	if profile, err := st.GetUserProfile(ctx, deletedUID); err != nil || profile != nil {
+		t.Fatalf("deleted profile = %v, %v; want nil, nil", profile, err)
+	}
+	if provider, found, err := st.ProviderForUser(ctx, deletedUID); err != nil || found {
+		t.Fatalf("deleted provider = %q, %v, %v; want absent", provider, found, err)
+	}
+	var deletedJobs int64
+	if err := st.db.Model(&jobModel{}).Where("user_id = ? OR created_by = ?", deletedUID, deletedUID).Count(&deletedJobs).Error; err != nil {
+		t.Fatalf("count deleted jobs: %v", err)
+	}
+	if deletedJobs != 0 {
+		t.Fatalf("deleted user still has %d jobs", deletedJobs)
+	}
+	if profile, err := st.GetUserProfile(ctx, keptUID); err != nil || profile == nil {
+		t.Fatalf("other user's profile was removed: %v, %v", profile, err)
 	}
 }

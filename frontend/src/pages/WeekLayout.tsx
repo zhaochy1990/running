@@ -21,6 +21,7 @@ import PushAllPlannedButton from '../components/PushAllPlannedButton'
 import VariantComparisonView from '../components/VariantComparisonView'
 import RouteThumbnail from '../components/RouteThumbnail'
 import ViewHead from '../components/ViewHead'
+import HardcodedStrengthPreview, { hasHardcodedStrengthPreview } from '../components/weekly-plan/HardcodedStrengthPreview'
 
 function parseFolderTag(folder: string): { phase: string | null; weekNum: string | null } {
   const m = /\(([^)]+)\)\s*$/.exec(folder)
@@ -55,6 +56,7 @@ export default function WeekLayout() {
   // anyone opening the dashboard from a different timezone.
   const _today = shanghaiToday()
   const needsFeedback = weekDetail ? !weekDetail.feedback?.trim() && weekDetail.activity_count > 0 && weekDetail.date_to < _today : false
+  const hasHardcodedStrength = hasHardcodedStrengthPreview(folder)
 
   // Pull the connected provider once so we can dispatch push capabilities
   // (Garmin doesn't support strength push yet → button shows as "in dev").
@@ -85,16 +87,18 @@ export default function WeekLayout() {
   useEffect(() => {
     if (folder && user) {
       let cancelled = false
+      setPlanDays([])
       getWeek(user, folder)
         .then((data) => {
           if (cancelled) return
           setWeekDetail(data)
-          setActiveTab('plan')
           // Pull structured status from the augmented week response.
           const structured = (data as WeekDetail & {
             structured?: { structured_status?: StructuredStatus }
           }).structured
-          setStructuredStatus(structured?.structured_status ?? 'none')
+          const nextStructuredStatus = structured?.structured_status ?? 'none'
+          setStructuredStatus(nextStructuredStatus)
+          setActiveTab(data.plan ? 'plan' : nextStructuredStatus !== 'none' ? 'calendar' : 'activities')
         })
         .finally(() => {
           if (!cancelled) setLoadedFolder(folder)
@@ -232,9 +236,9 @@ export default function WeekLayout() {
                 方案 ({weekDetail.variants_summary?.total ?? 0})
               </TabButton>
             )}
-            {(strengthData?.sessions.length ?? 0) > 0 && (
+            {((strengthData?.sessions.length ?? 0) > 0 || hasHardcodedStrength) && (
               <TabButton active={activeTab === 'strength'} onClick={() => setActiveTab('strength')} color="green">
-                力量训练 ({strengthData?.sessions.length ?? 0})
+                力量训练 ({strengthData?.sessions.length || 2})
               </TabButton>
             )}
             {structuredStatus !== 'none' && (
@@ -271,7 +275,7 @@ export default function WeekLayout() {
             <VariantComparisonView user={user} folder={folder} />
           )}
           {activeTab === 'strength' && (
-            <StrengthTab data={strengthData} loading={strengthLoading} />
+            hasHardcodedStrength ? <HardcodedStrengthPreview /> : <StrengthTab data={strengthData} loading={strengthLoading} />
           )}
           {activeTab === 'calendar' && (
             <CalendarTab

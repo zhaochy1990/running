@@ -29,6 +29,15 @@ export default defineConfig(({ mode }) => {
         '/api': devApiProxy
           ? { target: devApiProxy, changeOrigin: true, secure: true }
           : 'http://localhost:8080',
+        ...(devApiProxy
+          ? {
+              '/strength_illustrations': {
+                target: devApiProxy,
+                changeOrigin: true,
+                secure: true,
+              },
+            }
+          : {}),
       },
     },
   }

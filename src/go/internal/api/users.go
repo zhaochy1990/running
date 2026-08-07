@@ -1,8 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"reflect"
 	"strings"
@@ -11,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/job"
@@ -43,6 +47,7 @@ func init() {
 type UserStore interface {
 	GetUserProfile(ctx context.Context, userID string) (*storage.UserProfile, error)
 	UpsertUserProfile(ctx context.Context, p *storage.UserProfile) error
+	PatchUserProfile(ctx context.Context, userID string, patch storage.UserProfilePatch) (*storage.UserProfile, error)
 	GetUserOnboarding(ctx context.Context, userID string) (*storage.UserOnboarding, error)
 	SetWatchReady(ctx context.Context, userID string) error
 	SetProfileReady(ctx context.Context, userID string) error
@@ -58,6 +63,7 @@ type UserStore interface {
 	// the API has verified a completed onboarding pipeline. It reports whether
 	// this request wrote the completion marker; no pre-linked run is required.
 	FinalizeOnboardingRun(ctx context.Context, userID, runID string) (bool, error)
+	DeleteUserData(ctx context.Context, userID string) error
 }
 
 // WatchLoginResult is the provider-agnostic outcome of a watch login.
@@ -88,6 +94,11 @@ type ProviderInfo interface {
 // nil to disable the write-back. Satisfied by *authsvc.Client.
 type AuthNameSync interface {
 	SyncName(ctx context.Context, bearer, name string) error
+}
+
+// AccountDeleter removes the current user's identity from the auth-service.
+type AccountDeleter interface {
+	DeleteAccount(ctx context.Context, bearer string) error
 }
 
 // FeatureConfig holds the config-driven feature flags echoed in the profile
@@ -121,37 +132,32 @@ type userRoutes struct {
 	providerLogin ProviderLogin
 	providerInfo  ProviderInfo
 	authName      AuthNameSync
+	accountAuth   AccountDeleter
 	features      FeatureConfig
-	pipelines     OnboardingPipelineStarter
 	runs          RunGetter
 	jobs          JobGetter
 	staleAfter    time.Duration
 	log           *zap.Logger
 }
 
-// OnboardingPipelineStarter reserves a caller-selected onboarding run ID before
-// its first job is made available to workers.
-type OnboardingPipelineStarter interface {
-	StartPipelineWithID(context.Context, string, string, string, string, string, string) (string, error)
-}
-
-func newUserRoutes(store UserStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, features FeatureConfig, pipelines PipelineStarter, runs RunGetter, jobs JobGetter, staleAfter time.Duration, log *zap.Logger) *userRoutes {
+func newUserRoutes(store UserStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, ad AccountDeleter, features FeatureConfig, runs RunGetter, jobs JobGetter, staleAfter time.Duration, log *zap.Logger) *userRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
 	if staleAfter <= 0 {
 		staleAfter = 300 * time.Second
 	}
-	starter, _ := pipelines.(OnboardingPipelineStarter)
-	return &userRoutes{store: store, providerLogin: pl, providerInfo: pi, authName: an, features: features, pipelines: starter, runs: runs, jobs: jobs, staleAfter: staleAfter, log: log}
+	return &userRoutes{store: store, providerLogin: pl, providerInfo: pi, authName: an, accountAuth: ad, features: features, runs: runs, jobs: jobs, staleAfter: staleAfter, log: log}
 }
 
 // register mounts the routes on the (already authenticated) group. Paths mirror
 // the Python contract so a later browser cutover is just routing, except the
 // unified /watch/login (ADR 0013).
 func (u *userRoutes) register(rg *gin.RouterGroup) {
+	rg.DELETE("/api/users/me", u.deleteAccount)
 	rg.GET("/api/users/me/profile", u.getProfile)
 	rg.POST("/api/users/me/profile", u.postProfile)
+	rg.PATCH("/api/users/me/profile", u.patchProfile)
 	rg.GET("/api/users/me/watch", u.getWatch)
 	rg.DELETE("/api/users/me/watch", u.deleteWatch)
 	rg.POST("/api/users/me/watch/login", u.watchLogin)
@@ -202,6 +208,24 @@ type profileInput struct {
 	Sex         string  `json:"sex" binding:"required,oneof=male female other"`
 	HeightCm    float64 `json:"height_cm" binding:"required,gt=0"`
 	WeightKg    float64 `json:"weight_kg" binding:"required,gt=0"`
+}
+
+// profilePatchInput is the Go-owned core subset of Python's post-onboarding
+// profile PATCH. Pointer fields distinguish omitted values from replacements;
+// decodeProfilePatch rejects explicit null and fields owned by other domains.
+type profilePatchInput struct {
+	DisplayName *string  `json:"display_name" binding:"omitempty,min=1"`
+	DOB         *string  `json:"dob" binding:"omitempty,datetime=2006-01-02"`
+	Sex         *string  `json:"sex" binding:"omitempty,oneof=male female other"`
+	HeightCm    *float64 `json:"height_cm" binding:"omitempty,gt=0"`
+	WeightKg    *float64 `json:"weight_kg" binding:"omitempty,gt=0"`
+}
+
+type profilePatchResponse struct {
+	OK          bool         `json:"ok"`
+	ID          string       `json:"id,omitempty"`
+	DisplayName *string      `json:"display_name,omitempty"`
+	Profile     *profileCore `json:"profile"`
 }
 
 // watchLoginInput is the unified watch-login body.
@@ -393,6 +417,61 @@ func (u *userRoutes) postProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// patchProfile selectively updates an existing core profile. Fields owned by the
+// separate race-goal and training-preference domains are rejected rather than
+// silently discarded, so this staged endpoint cannot lose Settings edits.
+//
+//	@Summary		Partially update the current user's basic profile
+//	@Description	Updates supplied core profile fields only. Omitted fields are preserved; explicit null and unsupported fields return 422. The profile must already exist.
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		profilePatchInput	true	"Core profile fields to update"
+//	@Success		200		{object}	profilePatchResponse
+//	@Failure		401		{object}	errorResponse
+//	@Failure		404		{object}	map[string]string
+//	@Failure		422		{object}	validationErrorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/profile [patch]
+func (u *userRoutes) patchProfile(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+
+	in, detail := decodeProfilePatch(c)
+	if detail != nil {
+		c.JSON(http.StatusUnprocessableEntity, validationErrorResponse{Detail: detail})
+		return
+	}
+
+	profile, err := u.store.PatchUserProfile(c.Request.Context(), uid, storage.UserProfilePatch{
+		DisplayName: in.DisplayName,
+		DOB:         in.DOB,
+		Sex:         in.Sex,
+		HeightCm:    in.HeightCm,
+		WeightKg:    in.WeightKg,
+	})
+	if err != nil {
+		u.log.Error("patch profile failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if profile == nil {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "Profile not found"})
+		return
+	}
+
+	core := toProfileCore(profile)
+	resp := profilePatchResponse{OK: true, Profile: &core}
+	if hasProfilePatch(in) {
+		resp.ID = uid
+		resp.DisplayName = &profile.DisplayName
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // watchLogin authenticates a watch provider (COROS/Garmin), persists creds, and
@@ -853,6 +932,61 @@ func firstNonEmpty(a, b string) string {
 	return b
 }
 
+func toProfileCore(profile *storage.UserProfile) profileCore {
+	return profileCore{
+		DisplayName: profile.DisplayName,
+		DOB:         profile.DOB,
+		Sex:         profile.Sex,
+		HeightCm:    profile.HeightCm,
+		WeightKg:    profile.WeightKg,
+	}
+}
+
+func hasProfilePatch(in profilePatchInput) bool {
+	return in.DisplayName != nil || in.DOB != nil || in.Sex != nil || in.HeightCm != nil || in.WeightKg != nil
+}
+
+var profilePatchFields = map[string]bool{
+	"display_name": true,
+	"dob":          true,
+	"sex":          true,
+	"height_cm":    true,
+	"weight_kg":    true,
+}
+
+// decodeProfilePatch enforces the staged Go contract before gin validation:
+// unknown fields and explicit null are errors, while an empty object is a valid
+// no-op. This avoids silently accepting Python-only profile fields.
+func decodeProfilePatch(c *gin.Context) (profilePatchInput, []validationDetailItem) {
+	var raw map[string]json.RawMessage
+	decoder := json.NewDecoder(c.Request.Body)
+	if err := decoder.Decode(&raw); err != nil || raw == nil {
+		return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body"}, Msg: "invalid request body"}}
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body"}, Msg: "invalid request body"}}
+	}
+
+	for field, value := range raw {
+		if !profilePatchFields[field] {
+			return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body", field}, Msg: "unsupported field"}}
+		}
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body", field}, Msg: "null is not allowed"}}
+		}
+	}
+
+	body, err := json.Marshal(raw)
+	if err != nil {
+		return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body"}, Msg: "invalid request body"}}
+	}
+	var in profilePatchInput
+	if err := binding.JSON.BindBody(body, &in); err != nil {
+		return profilePatchInput{}, bindingDetail(err)
+	}
+	return in, nil
+}
+
 // bindingDetail turns a gin/validator binding error into a FastAPI-shaped detail
 // array. Non-validator errors (malformed JSON, wrong types) collapse to a single
 // body-level item.
@@ -884,4 +1018,62 @@ func validationMessage(fe validator.FieldError) string {
 	default:
 		return "invalid value"
 	}
+}
+
+// deleteAccount removes the auth-service identity first, then atomically clears
+// all user-owned STRIDE rows. Auth-service 401/404 means the external identity
+// is already unavailable and local cleanup can safely continue.
+//
+//	@Summary		Delete the current user's account and data
+//	@Tags			users
+//	@Success		204
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		409	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Failure		503	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me [delete]
+func (u *userRoutes) deleteAccount(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	parsedUID, err := uuid.Parse(uid)
+	if err != nil || parsedUID.Version() != 4 || parsedUID.String() != strings.ToLower(uid) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid user identifier"})
+		return
+	}
+	if u.accountAuth == nil {
+		u.log.Error("account deletion auth-service dependency is not configured")
+		c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "auth-service unavailable"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	if err := u.accountAuth.DeleteAccount(ctx, bearerFrom(c)); err != nil {
+		var responseErr interface{ HTTPStatus() int }
+		isResponse := errors.As(err, &responseErr)
+		status := 0
+		if isResponse {
+			status = responseErr.HTTPStatus()
+		}
+		if !isResponse || status >= http.StatusInternalServerError {
+			u.log.Error("auth-service account deletion failed", zapErr(err))
+			c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "auth-service unavailable"})
+			return
+		}
+		if status != http.StatusUnauthorized && status != http.StatusNotFound {
+			u.log.Warn("auth-service rejected account deletion", zap.Int("status", status))
+			c.JSON(status, errorResponse{Error: "auth-service rejected account deletion"})
+			return
+		}
+	}
+
+	if err := u.store.DeleteUserData(ctx, uid); err != nil {
+		u.log.Error("delete user data failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "failed to delete user data"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

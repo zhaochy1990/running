@@ -12,9 +12,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"github.com/zhaochy1990/x/logger"
 
 	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/provider/coros"
@@ -133,12 +135,16 @@ func openStore() (*storage.Store, *syncconfig.Config, error) {
 
 // resolveProvider builds the adapter the user is bound to (registry lookup).
 func resolveProvider(store *storage.Store, cfg *syncconfig.Config, user string) (provider.Provider, string, error) {
-	name, err := registry.ProviderName(dataDir(), user)
+	name, err := resolveWatchProviderName(context.Background(), store, dataDir(), user)
 	if err != nil {
 		return nil, "", err
 	}
 	prov, err := registry.Build(name, store, cfg.Sync.RequestDelay)
 	return prov, name, err
+}
+
+func resolveWatchProviderName(ctx context.Context, bindings registry.BindingReader, dir, user string) (string, error) {
+	return registry.Resolve(ctx, bindings, dir, user)
 }
 
 func runLogin(profile, providerName, email, password, region string) error {
@@ -255,6 +261,7 @@ func importGarminCreds(user string) error {
 }
 
 func runSync(profile string, full bool, content string, limit int) error {
+	started := time.Now()
 	user, err := resolveProfile(profile)
 	if err != nil {
 		return err
@@ -269,6 +276,8 @@ func runSync(profile string, full bool, content string, limit int) error {
 		return err
 	}
 	defer store.Close()
+	log := logger.MustGetLogger(&cfg.Logger)
+	defer func() { _ = log.Sync() }()
 
 	// Detail-fetch concurrency comes from config (sync.jobs), not a per-call
 	// flag — it is an infra knob, and the adapter clamps it to a safe range.
@@ -282,7 +291,8 @@ func runSync(profile string, full bool, content string, limit int) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("sync done: provider=%s activities=%d health=%d\n", name, res.Activities, res.Health)
+	fmt.Printf("sync done: provider=%s activities=%d health=%d jobs=%d elapsed=%s\n",
+		name, res.Activities, res.Health, provider.DetailJobs(opts.Jobs), time.Since(started).Round(time.Millisecond))
 	return nil
 }
 

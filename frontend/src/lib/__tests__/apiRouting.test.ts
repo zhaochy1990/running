@@ -41,6 +41,15 @@ describe('apiUrl (client-side Tencent/Azure routing, ADR 0017 interim)', () => {
     expect(apiUrl('GET', '/api/abc/weeks')).toBe('/api/abc/weeks')
   })
 
+  it('matches routes by pathname while preserving the query string', () => {
+    setRouting({
+      directBaseUrl: TENCENT,
+      routes: [{ method: 'GET', path: '/api/:user/activities', upstream: 'go' }],
+    })
+    const path = '/api/abc/activities?date_from=2026-08-01&limit=200'
+    expect(apiUrl('GET', path)).toBe(`${TENCENT}${path}`)
+  })
+
   it('honors most-specific-wins: a more-specific Python route shadows a Go pattern', () => {
     setRouting({
       directBaseUrl: TENCENT,

@@ -733,6 +733,35 @@ definitions:
     - sex
     - weight_kg
     type: object
+  api.profilePatchInput:
+    properties:
+      display_name:
+        minLength: 1
+        type: string
+      dob:
+        type: string
+      height_cm:
+        type: number
+      sex:
+        enum:
+        - male
+        - female
+        - other
+        type: string
+      weight_kg:
+        type: number
+    type: object
+  api.profilePatchResponse:
+    properties:
+      display_name:
+        type: string
+      id:
+        type: string
+      ok:
+        type: boolean
+      profile:
+        $ref: '#/definitions/api.profileCore'
+    type: object
   api.profileResponse:
     properties:
       display_name:
@@ -1197,21 +1226,6 @@ info:
   title: STRIDE API
   version: "1.0"
 paths:
-  /readyz/onboarding:
-    get:
-      description: Returns the static route contract required before the Web BFF enables
-        its Go onboarding route flags. No authentication is required and no user data
-        is returned.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.onboardingReadinessResponse'
-      summary: Web onboarding cutover readiness
-      tags:
-      - catalog
   /api/{user}/activities:
     get:
       description: Returns a filtered, paginated activity page (newest first) plus
@@ -1798,6 +1812,36 @@ paths:
       summary: List a user's pipeline runs
       tags:
       - pipelines
+  /api/users/me:
+    delete:
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete the current user's account and data
+      tags:
+      - users
   /api/users/me/master-plan/current:
     get:
       produces:
@@ -1891,6 +1935,49 @@ paths:
       security:
       - BearerAuth: []
       summary: Get the current user's profile, onboarding state and features
+      tags:
+      - users
+    patch:
+      consumes:
+      - application/json
+      description: Updates supplied core profile fields only. Omitted fields are preserved;
+        explicit null and unsupported fields return 422. The profile must already
+        exist.
+      parameters:
+      - description: Core profile fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.profilePatchInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.profilePatchResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.validationErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Partially update the current user's basic profile
       tags:
       - users
     post:
@@ -2353,6 +2440,21 @@ paths:
       summary: Get a pipeline run's status
       tags:
       - pipelines
+  /readyz/onboarding:
+    get:
+      description: Returns the static route contract required before the Web BFF enables
+        its Go onboarding route flags. No authentication is required and no user data
+        is returned.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.onboardingReadinessResponse'
+      summary: Web onboarding cutover readiness
+      tags:
+      - catalog
 securityDefinitions:
   BearerAuth:
     description: '"Bearer <JWT>" for end-user callers (RS256).'

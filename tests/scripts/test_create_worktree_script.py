@@ -345,7 +345,7 @@ def test_skill_md_uses_portable_repository_relative_creator() -> None:
     text = SKILL_MD.read_text(encoding="utf-8")
     assert "EnterWorktree" not in text
     assert "CLAUDE_SKILL_DIR" not in text
-    assert 'python ".claude/skills/worktree-development/scripts/create_worktree.py"' in text
+    assert 'python3 ".claude/skills/worktree-development/scripts/create_worktree.py"' in text
 
 
 def test_root_claude_md_points_to_portable_creator() -> None:

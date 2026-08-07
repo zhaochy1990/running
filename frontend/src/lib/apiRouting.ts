@@ -102,9 +102,10 @@ function resolveUpstream(
 export function apiUrl(method: string, fullPath: string): string {
   const cfg = typeof window !== 'undefined' ? window.__STRIDE_ROUTING__ : undefined
   if (!cfg?.directBaseUrl) return fullPath
+  const pathname = fullPath.split(/[?#]/, 1)[0]
   const upstream = resolveUpstream(
     method,
-    fullPath,
+    pathname,
     cfg.routes ?? [],
     cfg.authPrefix ?? DEFAULT_AUTH_PREFIX,
   )

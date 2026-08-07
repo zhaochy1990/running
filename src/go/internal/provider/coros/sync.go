@@ -203,6 +203,12 @@ func (p *Provider) collectActivities(ctx context.Context, client *Client, user s
 			return items, nil
 		}
 		for _, item := range pageData.DataList {
+			if !isKnownSportCode(item.SportType) {
+				logging.Default().Warn("coros: skipping activity with unknown sport type",
+					zap.String("label_id", item.LabelID),
+					zap.Int("sport_type", item.SportType))
+				continue
+			}
 			if !full {
 				exists, err := p.store.ActivityExists(ctx, user, item.LabelID)
 				if err != nil {

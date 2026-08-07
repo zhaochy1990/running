@@ -54,9 +54,9 @@ api:
     # Coexistence flag only: Go completion never starts work; it requires a
     # verified successful run_id from generic full sync.
     sync-data-at-onboarding: true
-    coach-agent-weekly-plan-users: []
-    coach-chat-users: []
-    coach-chat-debug-users: []
+    coach-agent-weekly-plan-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
+    coach-chat-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
+    coach-chat-debug-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
     coach-chat-max-message-chars: 8000
 # ci: no-op touch to publish a fresh CalVer image and exercise the Renovate
 # version-bump flow against stride-devops (Go SHA->CalVer cutover verification).

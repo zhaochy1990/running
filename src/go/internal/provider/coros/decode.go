@@ -71,6 +71,11 @@ func SportFromCode(code int) normalize.Sport {
 	return normalize.SportUnknown
 }
 
+func isKnownSportCode(code int) bool {
+	_, ok := sportByCode[code]
+	return ok
+}
+
 // trainKindByCode maps COROS trainType (1-8) → normalized TrainKind. Inferred
 // kinds (TEMPO, LONG_RUN, RACE) have no COROS code and are never produced here.
 var trainKindByCode = map[int]normalize.TrainKind{

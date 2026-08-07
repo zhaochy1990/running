@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 
 	"github.com/zhaochy1990/stride/internal/storage"
@@ -37,6 +38,7 @@ func mockHTTPClient(srv *httptest.Server) *http.Client {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type fakeWriter struct {
+	mu          sync.Mutex
 	activities  map[string]*storage.Activity
 	existsCalls int
 	health      map[string]*storage.DailyHealth
@@ -62,7 +64,9 @@ func (f *fakeWriter) ActivityExists(_ context.Context, _, labelID string) (bool,
 	return ok, nil
 }
 func (f *fakeWriter) UpsertActivity(_ context.Context, a *storage.Activity, _ []storage.Lap, _ []storage.TimeseriesPoint, _ []storage.ActivityWatchZone) error {
+	f.mu.Lock()
 	f.activities[a.LabelID] = a
+	f.mu.Unlock()
 	if f.onActivity != nil {
 		f.onActivity(a.LabelID)
 	}
@@ -91,6 +95,8 @@ func (f *fakeWriter) UpsertRacePrediction(context.Context, *storage.RacePredicti
 	return nil
 }
 func (f *fakeWriter) SetMeta(_ context.Context, _, key, value string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.meta[key] = value
 	return nil
 }
