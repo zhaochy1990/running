@@ -127,6 +127,9 @@ def test_daily_sync_uses_and_waits_for_go_pipeline() -> None:
     workflow = DAILY_SYNC_PATH.read_text(encoding="utf-8")
 
     assert "STRIDE_GO_API_URL" in workflow
+    assert "STRIDE_GO_INTERNAL_TOKEN" in workflow
+    assert "${{ secrets.STRIDE_INTERNAL_TOKEN }}" not in workflow
+    assert 'INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}' in workflow
     assert '"${STRIDE_GO_API_URL%/}/api/$user/sync"' in workflow
     assert "--data '{\"mode\":\"incremental\"}'" in workflow
     assert "Idempotency-Key: daily-sync-$sync_day-$user" in workflow
@@ -144,6 +147,8 @@ def test_daily_sync_uses_and_waits_for_go_pipeline() -> None:
 def test_weekly_manual_backfill_uses_api_owned_shards() -> None:
     workflow = WEEKLY_CALIBRATION_PATH.read_text(encoding="utf-8")
 
+    assert 'PYTHON_INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}' in workflow
+    assert 'token = os.environ["PYTHON_INTERNAL_TOKEN"]' in workflow
     assert "/internal/training-load/backfill/step" in workflow
     assert "load_lookback_days=365" not in workflow
     assert '"only_if_missing": False' in workflow
@@ -161,11 +166,14 @@ def test_weekly_calibration_refresh_enqueues_go_calibration_jobs() -> None:
     workflow = WEEKLY_CALIBRATION_PATH.read_text(encoding="utf-8")
 
     assert 'GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}' in workflow
+    assert 'GO_INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}' in workflow
+    assert 'PYTHON_INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}' in workflow
     assert 'ENDPOINT="/jobs"' in workflow
     assert '\\"type\\":\\"calibration\\"' in workflow
     assert '\\"user_id\\":\\"$user\\"' in workflow
     assert "Idempotency-Key: weekly-calibration-${GITHUB_RUN_ID}-${user}" in workflow
+    assert '-H "X-Internal-Token: $GO_INTERNAL_TOKEN"' in workflow
     assert '[ "$http" != "200" ] && [ "$http" != "202" ]' in workflow
     assert workflow.index('if [ "$MODE" = "backfill" ]; then') < workflow.index(
-        'if [ -z "$STRIDE_PROD_URL" ] || [ -z "$INTERNAL_TOKEN" ]; then'
+        'if [ -z "$STRIDE_PROD_URL" ] || [ -z "$PYTHON_INTERNAL_TOKEN" ]; then'
     )

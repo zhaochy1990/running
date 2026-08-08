@@ -5,9 +5,10 @@ name: Weekly running calibration recompute
 #                               https://stride-app.<region>.azurecontainerapps.io
 #   STRIDE_GO_API_URL          — base URL of the deployed Go API, e.g.
 #                               https://stride-api.<region>.example.com
-#   STRIDE_INTERNAL_TOKEN     — random 32+ char string. Same value must be set
-#                               on Python as STRIDE_INTERNAL_TOKEN and Go as
-#                               STRIDE_WORKER_API_INTERNAL_TOKEN.
+#   STRIDE_INTERNAL_TOKEN     — random 32+ char string for the Python backfill
+#                               endpoint.
+#   STRIDE_GO_INTERNAL_TOKEN  — random 32+ char string. The Go API must receive
+#                               the same value as STRIDE_WORKER_API_INTERNAL_TOKEN.
 # If a required secret or variable is unset the workflow fails so the omission is
 # visible.
 
@@ -59,7 +60,8 @@ jobs:
         env:
           STRIDE_PROD_URL: ${{ secrets.STRIDE_PROD_URL }}
           GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}
-          INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}
+          PYTHON_INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}
+          GO_INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}
           # `mode` is only set for workflow_dispatch. Cron runs default to refresh.
           MODE: ${{ inputs.mode || 'refresh' }}
         run: |
@@ -70,7 +72,7 @@ jobs:
           # series from zero; later requests resume sync_meta progress. This
           # dedicated rollout is never delegated to the async worker.
           if [ "$MODE" = "backfill" ]; then
-            if [ -z "$STRIDE_PROD_URL" ] || [ -z "$INTERNAL_TOKEN" ]; then
+            if [ -z "$STRIDE_PROD_URL" ] || [ -z "$PYTHON_INTERNAL_TOKEN" ]; then
               echo "::error::STRIDE_PROD_URL or STRIDE_INTERNAL_TOKEN secret missing"
               exit 1
             fi
@@ -82,7 +84,7 @@ jobs:
           import urllib.request
 
           base = os.environ["STRIDE_PROD_URL"].rstrip("/")
-          token = os.environ["INTERNAL_TOKEN"]
+          token = os.environ["PYTHON_INTERNAL_TOKEN"]
           headers = {"X-Internal-Token": token, "Content-Type": "application/json"}
           restart_token = f"weekly:{os.environ['GITHUB_RUN_ID']}"
           MAX_RETRIES = 8
@@ -177,8 +179,8 @@ jobs:
             echo "::error::unknown mode $MODE"
             exit 1
           fi
-          if [ -z "$GO_API_URL" ] || [ -z "$INTERNAL_TOKEN" ]; then
-            echo "::error::STRIDE_GO_API_URL repository variable or STRIDE_INTERNAL_TOKEN secret missing"
+          if [ -z "$GO_API_URL" ] || [ -z "$GO_INTERNAL_TOKEN" ]; then
+            echo "::error::STRIDE_GO_API_URL repository variable or STRIDE_GO_INTERNAL_TOKEN secret missing"
             exit 1
           fi
           ENDPOINT="/jobs"
@@ -202,7 +204,7 @@ jobs:
             code=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
               --max-time "$TIMEOUT" \
               -X POST \
-              -H "X-Internal-Token: $INTERNAL_TOKEN" \
+              -H "X-Internal-Token: $GO_INTERNAL_TOKEN" \
               -H "Content-Type: application/json" \
               -H "Idempotency-Key: weekly-calibration-${GITHUB_RUN_ID}-${user}" \
               --data "{\"type\":\"calibration\",\"user_id\":\"$user\",\"input\":{}}" \

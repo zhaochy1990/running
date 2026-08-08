@@ -59,7 +59,7 @@ On every `stride api` boot, startup runs `AutoMigrateTeamLikes` after the core/u
 
 ### `.github/workflows/daily-sync.yml` —— Go daily watch sync
 
-每天 00:00 Asia/Shanghai（GitHub Actions 可能延迟）从 `data/.slug_aliases.json` 枚举用户，调用 Go API 的 `POST /api/{uuid}/sync` 并传入 `{"mode":"incremental"}`。它使用仓库变量 `STRIDE_GO_API_URL` 和 secret `STRIDE_INTERNAL_TOKEN`；部署 Go API 时必须将同一个 secret 注入为 `STRIDE_WORKER_API_INTERNAL_TOKEN`，否则内部认证会返回 401。workflow 为每个用户 / 上海日期使用幂等键，并轮询 `GET /api/pipelines/{run_id}`；只有 pipeline 到达 `done` 才计为成功。
+每天 00:00 Asia/Shanghai（GitHub Actions 可能延迟）从 `data/.slug_aliases.json` 枚举用户，调用 Go API 的 `POST /api/{uuid}/sync` 并传入 `{"mode":"incremental"}`。它使用仓库变量 `STRIDE_GO_API_URL` 和专属 secret `STRIDE_GO_INTERNAL_TOKEN`；部署 Go API 时必须将同一个 secret 注入为 `STRIDE_WORKER_API_INTERNAL_TOKEN`，否则内部认证会返回 401。Python 的 `STRIDE_INTERNAL_TOKEN` 不可用于 Go 服务。workflow 为每个用户 / 上海日期使用幂等键，并轮询 `GET /api/pipelines/{run_id}`；只有 pipeline 到达 `done` 才计为成功。
 
 ### `.github/workflows/deploy.yml` —— 重建 + 重部署容器
 
@@ -101,11 +101,11 @@ onboarding handlers 直接写 per-user SQLite 是独立的历史架构债，本�
 
 每周日触发时，workflow 从 `data/.slug_aliases.json` 枚举用户，并通过 Go API 的
 `POST /jobs` 入队 internal-only `calibration` job。请求使用
-`STRIDE_GO_API_URL` repository variable、`STRIDE_INTERNAL_TOKEN` secret，以及按
+`STRIDE_GO_API_URL` repository variable、`STRIDE_GO_INTERNAL_TOKEN` secret，以及按
 workflow run 和用户固定的 `Idempotency-Key`；因此网络重试不会重复入队。`refresh`
 模式只入队并在 API 返回 `202`（或幂等重放的 `200`）后完成。手工 `backfill` 模式仍调用
 Python API 的 resumable shard endpoint，见上文，直到该 SQLite 写入流程迁移到 Go。Go
-API 的 `STRIDE_WORKER_API_INTERNAL_TOKEN` 必须与 workflow secret 同值。
+API 的 `STRIDE_WORKER_API_INTERNAL_TOKEN` 必须与 `STRIDE_GO_INTERNAL_TOKEN` 同值。手工 `backfill` 模式继续调用 Python 服务，使用 `STRIDE_INTERNAL_TOKEN`。
 
 ### `.github/workflows/sync-data.yml` —— 同步 training-log markdown 到 prod Azure Files
 
