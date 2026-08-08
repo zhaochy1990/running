@@ -47,11 +47,12 @@ def test_stride_web_deploys_atomic_go_onboarding_routes() -> None:
         "STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN=go",
         "STRIDE_ROUTE_POST_USER_SYNC=go",
         "STRIDE_ROUTE_GET_PIPELINES_RUNID=go",
+        "STRIDE_ROUTE_GET_JOBS_JOBID=go",
         "STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE=go",
     }
 
     assert "ONBOARDING_GO_ROUTE_VARS=(" in deploy_step
-    assert '"${#ONBOARDING_GO_ROUTE_VARS[@]}" -ne 6' in deploy_step
+    assert '"${#ONBOARDING_GO_ROUTE_VARS[@]}" -ne 7' in deploy_step
     assert 'grep -Ec \'^STRIDE_ROUTE_[A-Z0-9_]+=go$\'' in deploy_step
     assert "GO_API_URL=$GO_API_URL" in deploy_step
     assert 'verify_onboarding_readiness "${GO_API_URL%/}/readyz/onboarding"' in deploy_step
