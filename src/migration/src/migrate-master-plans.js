@@ -35,6 +35,7 @@ import {
   V1_GOAL_SEED,
   markdownRow,
   raceGoalRowFromSeed,
+  rebindStructuredGoal,
   structuredRowFromEntity,
 } from "./masterplan-transform.js";
 import {
@@ -266,9 +267,14 @@ async function main() {
     for (const item of planned) {
       try {
         if (item.kind === "v2") {
-          const outcome = await upsertMasterPlan(conn, item.v2, now);
+          const activeGoalId = await getActiveRaceGoalId(conn, item.uid);
+          if (!activeGoalId) {
+            throw new Error("no active race_goal; run migrate-training-goals before migrating this structured plan");
+          }
+          const row = rebindStructuredGoal(item.v2, activeGoalId);
+          const outcome = await upsertMasterPlan(conn, row, now);
           if (outcome === "inserted") mpInserted++; else mpUpdated++;
-          console.log(`  ${outcome} v2 ${item.uid} plan=${item.v2.plan_id.slice(0, 8)}`);
+          console.log(`  ${outcome} v2 ${item.uid} plan=${row.plan_id.slice(0, 8)} goal=${activeGoalId.slice(0, 8)}`);
         } else {
           // v1: mint stable goal_id + plan_id (reuse prior on re-run for idempotency).
           const goalId = (await getActiveRaceGoalId(conn, item.uid)) ?? randomUUID();

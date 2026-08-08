@@ -196,14 +196,16 @@ function groupByWeek(sources) {
   return grouped;
 }
 
-/** Structured presence wins by week before either representation is validated. */
-export function selectPlanSources(structured, markdown) {
+/** Select one source per week before either representation is validated. */
+export function selectPlanSources(structured, markdown, { preferMarkdown = false } = {}) {
   const selected = [];
   const issues = [];
   const structuredByWeek = groupByWeek(structured);
   const markdownByWeek = groupByWeek(markdown);
 
-  for (const [weekStart, sources] of structuredByWeek) {
+  const preferred = preferMarkdown ? markdownByWeek : structuredByWeek;
+  const fallback = preferMarkdown ? structuredByWeek : markdownByWeek;
+  for (const [weekStart, sources] of preferred) {
     if (sources.length !== 1) {
       issues.push({
         weekStart,
@@ -214,8 +216,8 @@ export function selectPlanSources(structured, markdown) {
       selected.push(sources[0]);
     }
   }
-  for (const [weekStart, sources] of markdownByWeek) {
-    if (structuredByWeek.has(weekStart)) continue;
+  for (const [weekStart, sources] of fallback) {
+    if (preferred.has(weekStart)) continue;
     if (sources.length !== 1) {
       issues.push({
         weekStart,
@@ -608,7 +610,8 @@ export function weeklyPlanContentEqual(existing, candidate) {
 }
 
 export function masterPlanCandidates(masterPlans, weekStart) {
-  const candidates = new Set();
+  const exactCandidates = new Set();
+  const dateRangeCandidates = new Set();
   for (const row of masterPlans) {
     if (Number(row.content_version) !== 2 || typeof row.content !== "string") continue;
     let plan;
@@ -621,7 +624,20 @@ export function masterPlanCandidates(masterPlans, weekStart) {
       ...(Array.isArray(plan.weeks) ? plan.weeks : []),
       ...(Array.isArray(plan.weekly_key_sessions) ? plan.weekly_key_sessions : []),
     ];
-    if (weeks.some((week) => week?.week_start === weekStart)) candidates.add(row.plan_id);
+    if (weeks.some((week) => week?.week_start === weekStart)) {
+      exactCandidates.add(row.plan_id);
+      continue;
+    }
+    // Older plans can have a partial week skeleton even though their declared
+    // season window covers the weekly plan. Use it only as a fallback.
+    if (
+      parseIsoDate(plan.start_date) &&
+      parseIsoDate(plan.end_date) &&
+      weekStart >= plan.start_date &&
+      weekStart <= plan.end_date
+    ) {
+      dateRangeCandidates.add(row.plan_id);
+    }
   }
-  return [...candidates];
+  return exactCandidates.size > 0 ? [...exactCandidates] : [...dateRangeCandidates];
 }

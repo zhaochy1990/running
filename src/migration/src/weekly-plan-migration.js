@@ -5,7 +5,6 @@ import {
   describeMarkdownSource,
   describeStructuredSource,
   markdownWeeklyPlanRow,
-  masterPlanCandidates,
   selectPlanSources,
   structuredWeeklyPlanRow,
   weeklyPlanContentEqual,
@@ -27,6 +26,8 @@ export async function migrateWeeklyPlans({
   source,
   target,
   apply = false,
+  preferMarkdownUserIds = new Set(),
+  replaceExistingUserIds = new Set(),
   uuidFactory = randomUUID,
   allowUnownedUserIds = new Set(),
 }) {
@@ -70,7 +71,9 @@ export async function migrateWeeklyPlans({
       }
     }
 
-    const { selected, issues } = selectPlanSources(structured, markdown);
+    const { selected, issues } = selectPlanSources(structured, markdown, {
+      preferMarkdown: preferMarkdownUserIds.has(userId),
+    });
     for (const issue of issues) report.manual.push(manualRecord(userId, issue));
 
     const existingByWeek = new Map();
@@ -81,56 +84,23 @@ export async function migrateWeeklyPlans({
     }
 
     for (const selectedSource of selected) {
-      const ownership = masterPlanCandidates(masterPlans, selectedSource.weekStart);
-      if (ownership.length > 1) {
+      if (masterPlans.length > 1) {
         report.manual.push(
           manualRecord(
             userId,
             {
               weekStart: selectedSource.weekStart,
               reason: "master_plan_ambiguity",
-              message: `${selectedSource.weekStart} belongs to ${ownership.length} master plans`,
+              message: `${selectedSource.weekStart} has ${masterPlans.length} active master plan candidates`,
             },
             selectedSource.sourceRef,
           ),
         );
         continue;
       }
-      if (
-        ownership.length === 0 &&
-        masterPlans.some((plan) => Number(plan.content_version) === 1)
-      ) {
-        report.manual.push(
-          manualRecord(
-            userId,
-            {
-              weekStart: selectedSource.weekStart,
-              reason: "master_plan_ownership_unknown",
-              message: `${selectedSource.weekStart} may belong to an opaque legacy master plan`,
-            },
-            selectedSource.sourceRef,
-          ),
-        );
-        continue;
-      }
-      if (
-        ownership.length === 0 &&
-        masterPlans.length === 0 &&
-        !allowUnownedUserIds.has(userId)
-      ) {
-        report.manual.push(
-          manualRecord(
-            userId,
-            {
-              weekStart: selectedSource.weekStart,
-              reason: "master_plan_prerequisite_missing",
-              message: "no migrated master plan exists; explicitly confirm this user has independent weekly plans",
-            },
-            selectedSource.sourceRef,
-          ),
-        );
-        continue;
-      }
+      // A user has at most one active season plan, so every weekly plan belongs
+      // to it regardless of source format or date-window completeness.
+      const masterPlanId = masterPlans[0]?.plan_id ?? null;
 
       let candidate;
       try {
@@ -138,8 +108,8 @@ export async function migrateWeeklyPlans({
           selectedSource.value.text = await source.readMarkdown(selectedSource.value);
         }
         candidate = selectedSource.kind === "structured"
-          ? structuredWeeklyPlanRow(selectedSource, userId, ownership[0] ?? null)
-          : markdownWeeklyPlanRow(selectedSource, userId, ownership[0] ?? null);
+          ? structuredWeeklyPlanRow(selectedSource, userId, masterPlanId)
+          : markdownWeeklyPlanRow(selectedSource, userId, masterPlanId);
       } catch (error) {
         const reason = error instanceof WeeklyPlanTransformError ? error.reason : "invalid_content";
         report.manual.push(
@@ -176,6 +146,10 @@ export async function migrateWeeklyPlans({
         if (weeklyPlanContentEqual(matches[0], candidate)) {
           report.stats.existing++;
           report.actions.push({ user_id: userId, week_start: candidate.week_start, action: "existing" });
+        } else if (apply && replaceExistingUserIds.has(userId)) {
+          await target.replaceWeeklyPlan({ ...matches[0], ...candidate });
+          report.stats.updated = (report.stats.updated ?? 0) + 1;
+          report.actions.push({ user_id: userId, week_start: candidate.week_start, action: "updated" });
         } else {
           report.stats.conflicts++;
           report.manual.push(

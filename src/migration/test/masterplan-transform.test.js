@@ -9,6 +9,7 @@ import {
   formatDatetimeMs,
   markdownRow,
   raceGoalRowFromSeed,
+  rebindStructuredGoal,
   structuredRowFromEntity,
 } from "../src/masterplan-transform.js";
 
@@ -67,6 +68,14 @@ test("structuredRowFromEntity falls back to a top-level goal_id", () => {
   const entity = v2Entity({ plan: { goal: undefined, goal_id: "legacy-slug" } });
   const row = structuredRowFromEntity(entity);
   assert.equal(row.goal_id, "legacy-slug");
+});
+
+test("rebindStructuredGoal keeps the v2 column and JSON goal_id aligned", () => {
+  const row = structuredRowFromEntity(v2Entity());
+  const rebound = rebindStructuredGoal(row, "active-goal-uuid");
+  assert.equal(rebound.goal_id, "active-goal-uuid");
+  assert.equal(JSON.parse(rebound.content).goal.goal_id, "active-goal-uuid");
+  assert.equal(rebound.plan_id, row.plan_id);
 });
 
 test("structuredRowFromEntity rejects missing/invalid plan_json", () => {

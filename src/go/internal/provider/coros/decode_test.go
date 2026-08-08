@@ -17,6 +17,7 @@ func TestSportFromCode(t *testing.T) {
 		{102, normalize.SportRunTrail},
 		{103, normalize.SportRunTrack},
 		{104, normalize.SportRunTreadmill},
+		{901, normalize.SportJumpRope},
 		{402, normalize.SportStrength},
 		{800, normalize.SportStrength}, // alternate strength code
 		{600, normalize.SportWalk},

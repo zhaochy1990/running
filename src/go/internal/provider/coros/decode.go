@@ -42,6 +42,7 @@ var sportByCode = map[int]normalize.Sport{
 	502: normalize.SportHIIT,
 	503: normalize.SportJumpRope,
 	504: normalize.SportRowing,
+	901: normalize.SportJumpRope,
 	// Walking / hiking
 	600: normalize.SportWalk,
 	601: normalize.SportHike,

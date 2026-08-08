@@ -55,6 +55,10 @@ class TestSportMap:
         assert COROS_SPORT_MAP.to_normalized(300) == NormalizedSport.SWIM_POOL
         assert COROS_SPORT_MAP.to_normalized(301) == NormalizedSport.SWIM_OPEN
 
+    def test_jump_rope_both_codes_resolve(self):
+        assert COROS_SPORT_MAP.to_normalized(503) == NormalizedSport.JUMP_ROPE
+        assert COROS_SPORT_MAP.to_normalized(901) == NormalizedSport.JUMP_ROPE
+
     def test_unknown_sport_falls_back_to_unknown(self):
         assert COROS_SPORT_MAP.to_normalized(99999) == NormalizedSport.UNKNOWN
 

@@ -15,6 +15,7 @@ import {
   listActiveWeeklyPlans,
   listMasterPlans,
   parseMysqlConfig,
+  replaceWeeklyPlan,
 } from "./mysql.js";
 
 const PROJECT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -28,7 +29,12 @@ Usage: node src/migrate-weekly-plans.js [options]
   --user <uuid>   Restrict to a real-user UUID. Repeatable or comma-separated.
   --allow-unowned-user <uuid>
                   Confirm a selected real user's plans are independent.
-                  Repeatable or comma-separated.
+                   Repeatable or comma-separated.
+  --prefer-markdown-user <uuid>
+                   Prefer plan.md over structured source for selected users.
+  --replace-existing-user <uuid>
+                   Replace an existing active row for selected users. Requires
+                   --commit and is intended for representation migration.
   --limit <n>     Process at most n users.
   --help          Show this help.
 
@@ -70,6 +76,8 @@ function parseCli(argv) {
       commit: { type: "boolean", default: false },
       user: { type: "string", multiple: true, default: [] },
       "allow-unowned-user": { type: "string", multiple: true, default: [] },
+      "prefer-markdown-user": { type: "string", multiple: true, default: [] },
+      "replace-existing-user": { type: "string", multiple: true, default: [] },
       limit: { type: "string" },
       help: { type: "boolean", default: false },
     },
@@ -85,7 +93,17 @@ function parseCli(argv) {
     .flatMap((value) => value.split(","))
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
-  return { commit: values.commit, requestedUsers, allowUnownedUsers, limit, help: values.help };
+  const parseUserList = (value) => value.flatMap((item) => item.split(","))
+    .map((item) => item.trim().toLowerCase()).filter(Boolean);
+  return {
+    commit: values.commit,
+    requestedUsers,
+    allowUnownedUsers,
+    preferMarkdownUsers: parseUserList(values["prefer-markdown-user"]),
+    replaceExistingUsers: parseUserList(values["replace-existing-user"]),
+    limit,
+    help: values.help,
+  };
 }
 
 async function main() {
@@ -107,6 +125,14 @@ async function main() {
   if (invalidUnowned.length > 0) {
     throw new Error(`--allow-unowned-user must be selected real users: ${invalidUnowned.join(",")}`);
   }
+  for (const userId of [...options.preferMarkdownUsers, ...options.replaceExistingUsers]) {
+    if (!realUsers.has(userId) || !selected.has(userId)) {
+      throw new Error(`Markdown replacement users must be selected real users: ${userId}`);
+    }
+  }
+  if (!options.commit && options.replaceExistingUsers.length > 0) {
+    throw new Error("--replace-existing-user requires --commit");
+  }
 
   const source = makeWeeklyPlanSource(parseWeeklyPlanSourceConfig(process.env));
   const mysqlConfig = parseMysqlConfig(process.env);
@@ -117,6 +143,7 @@ async function main() {
       listActiveWeeklyPlans: (userId) => listActiveWeeklyPlans(connection, userId),
       listMasterPlans: (userId) => listMasterPlans(connection, userId),
       insertWeeklyPlan: (row) => insertWeeklyPlan(connection, row),
+      replaceWeeklyPlan: (row) => replaceWeeklyPlan(connection, row),
     };
     const report = await migrateWeeklyPlans({
       userIds: ids,
@@ -124,6 +151,8 @@ async function main() {
       target,
       apply: options.commit,
       allowUnownedUserIds: new Set(options.allowUnownedUsers),
+      preferMarkdownUserIds: new Set(options.preferMarkdownUsers),
+      replaceExistingUserIds: new Set(options.replaceExistingUsers),
     });
     if (options.commit) await connection.commit();
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

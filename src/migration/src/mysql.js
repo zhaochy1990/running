@@ -465,6 +465,14 @@ export async function insertWeeklyPlan(conn, row) {
   );
 }
 
+/** Replace content fields of an existing active weekly plan without changing its identity. */
+export async function replaceWeeklyPlan(conn, row) {
+  await conn.execute(
+    "UPDATE weekly_plan SET master_plan_id = ?, content_version = ?, content = ?, updated_at = ? WHERE plan_id = ? AND status = 'active'",
+    [row.master_plan_id, row.content_version, row.content, row.updated_at, row.plan_id],
+  );
+}
+
 export async function listActiveWeeklyPlans(conn, userId) {
   const [rows] = await conn.execute(
     "SELECT plan_id, user_id, master_plan_id, week_start, content_version, content " +
@@ -481,7 +489,7 @@ export async function listActiveWeeklyPlans(conn, userId) {
 
 export async function listMasterPlans(conn, userId) {
   const [rows] = await conn.execute(
-    "SELECT plan_id, content_version, content FROM master_plan WHERE user_id = ?",
+    "SELECT plan_id, content_version, content FROM master_plan WHERE user_id = ? AND active_flag = 1",
     [userId],
   );
   return rows;

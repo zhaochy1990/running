@@ -7,12 +7,12 @@
 logger:
   format: console        # json | console
   service-name: stride-sync
-  level: info            # debug | info | warning | error
+  level: debug            # debug | info | warning | error
   disable-caller: false
-  development: false
+  development: true
 
 mysql:
-  dsn: ""                # via STRIDE_SYNC_MYSQL_DSN, e.g. user:pass@tcp(127.0.0.1:3306)/stride
+  dsn: "root:root_password@tcp(127.0.0.1:3306)/stride"                # via STRIDE_SYNC_MYSQL_DSN, e.g. user:pass@tcp(127.0.0.1:3306)/stride
 
 sync:
   jobs: 4                # parallel COROS detail-fetch workers (clamped 1..16)
