@@ -5,6 +5,7 @@ import { createPlanTools } from "../../tools/plan.js";
 import { createCurrentTimeTools } from "../../tools/currentTime.js";
 import { createRaceTools } from "../../tools/races.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
+import { askUserQuestionTool } from "../../tools/askUserQuestions.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import type { StrideDataStore } from "../../persistence/index.js";
 import type { ModelConfig } from "../../config/config.js";
@@ -27,7 +28,15 @@ export function getMasterPlanSubagent(store: StrideDataStore, config: ModelConfi
         name: "master_plan",
         description: "查看或调整赛季/总体训练计划（阶段、里程碑、周期）；生成新赛季计划前会回看历史比赛并在必要时向运动员追问。",
         systemPrompt: MASTER_PLAN_PROMPT,
-        tools: [...activitiesTools, ...trainingLoadTools, ...planTools, ...currentTimeTools, ...raceTools, ...runningCalibrationTools],
+        tools: [
+            ...activitiesTools,
+            ...trainingLoadTools,
+            ...planTools,
+            ...currentTimeTools,
+            ...raceTools,
+            ...runningCalibrationTools,
+            askUserQuestionTool,
+        ],
         model: buildResponsesModel(config),
         middleware: [createLoggingMiddleware("agent:master_plan")],
         // Skill loaded via SkillsMiddleware from the deep agent's FilesystemBackend

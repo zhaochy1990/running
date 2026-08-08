@@ -45,7 +45,9 @@ export async function createCoachAgent(store: StrideDataStore, config: CoachAgen
     subagents: [qaSubagent, weeklySubagent, masterSubagent],
     contextSchema: CoachContext,
     middleware: [createLoggingMiddleware("agent")],
-    backend: new FilesystemBackend({ rootDir: SKILLS_DIR }),
+    // Skill paths are virtual (for example `/generate-master-plan/SKILL.md`).
+    // Without virtualMode, an absolute path escapes rootDir and targets the OS root.
+    backend: new FilesystemBackend({ rootDir: SKILLS_DIR, virtualMode: true }),
     checkpointer: new MemorySaver(),
     store: new InMemoryStore(),
   });

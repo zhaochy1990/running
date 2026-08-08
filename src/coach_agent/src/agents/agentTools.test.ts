@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { access } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import type { ModelConfig } from "../config/config.js";
 import { StrideDataStore } from "../persistence/index.js";
 import { getMasterPlanSubagent } from "./master_plan/agent.js";
@@ -17,6 +20,14 @@ const modelConfig: ModelConfig = {
   max_tokens: 100,
   timeout_s: 1,
 };
+
+test("master-plan skills are present in the compiled virtual filesystem root", async () => {
+  const skillsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "skills");
+  await Promise.all([
+    access(join(skillsDir, "analyze-race", "SKILL.md")),
+    access(join(skillsDir, "generate-master-plan", "SKILL.md")),
+  ]);
+});
 
 test("all athlete-facing subagents expose PB and running-calibration tools", () => {
   const store = new StrideDataStore({} as never);
