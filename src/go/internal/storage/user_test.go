@@ -514,6 +514,13 @@ func TestDeleteUserData_RemovesOwnedRowsAndPreservesOtherUsers(t *testing.T) {
 	if provider, found, err := st.ProviderForUser(ctx, deletedUID); err != nil || found {
 		t.Fatalf("deleted provider = %q, %v, %v; want absent", provider, found, err)
 	}
+	var deletedCredentials int64
+	if err := st.db.Model(&ProviderCredential{}).Where("user_id = ?", deletedUID).Count(&deletedCredentials).Error; err != nil {
+		t.Fatalf("count deleted credentials: %v", err)
+	}
+	if deletedCredentials != 0 {
+		t.Fatalf("deleted user still has %d provider credentials", deletedCredentials)
+	}
 	var deletedJobs int64
 	if err := st.db.Model(&jobModel{}).Where("user_id = ? OR created_by = ?", deletedUID, deletedUID).Count(&deletedJobs).Error; err != nil {
 		t.Fatalf("count deleted jobs: %v", err)

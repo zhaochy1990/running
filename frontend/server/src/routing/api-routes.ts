@@ -69,8 +69,10 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: 'POST', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_POST_USERS_ME_PROFILE', goReady: true },
   // ✓ /settings · edit profile fields   (Go has no PATCH profile yet)
   { method: 'PATCH', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_PATCH_USERS_ME_PROFILE', goReady: false },
-  // ✓ /settings · delete account
-  { method: 'DELETE', path: '/api/users/me', env: 'STRIDE_ROUTE_DELETE_USERS_ME', goReady: false },
+  // ✓ /settings · delete account [go-ready]
+  //   Watch credentials are Go/MySQL-owned. Account deletion must use the same
+  //   upstream so DeleteUserData removes provider_credentials atomically.
+  { method: 'DELETE', path: '/api/users/me', env: 'STRIDE_ROUTE_DELETE_USERS_ME', goReady: true },
   // ✓ /settings + global(layout) · watch info + sync pill state   [ON GO]
   //   Sync (POST /api/:user/sync) and watch login (POST /api/users/me/watch/login)
   //   both run on Go, so the per-user watch state lives in Tencent MySQL

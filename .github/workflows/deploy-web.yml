@@ -197,6 +197,7 @@ jobs:
             "AUTH_UPSTREAM_URL=$AUTH_UPSTREAM_URL"
             "GO_API_URL=$GO_API_URL"
             "PUBLIC_DIRECT_BASE_URL=${PUBLIC_DIRECT_BASE_URL:-}"
+            "STRIDE_ROUTE_DELETE_USERS_ME=go"
             "${ONBOARDING_GO_ROUTE_VARS[@]}"
           )
 

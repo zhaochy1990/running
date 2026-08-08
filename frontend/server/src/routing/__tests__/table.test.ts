@@ -60,6 +60,11 @@ describe('env-driven upstream selection', () => {
     expect(resolveUpstream('POST', '/api/users/me/profile', env)).toBe('python')
   })
 
+  it('routes account deletion to Go when enabled', () => {
+    const env = { STRIDE_ROUTE_DELETE_USERS_ME: 'go' }
+    expect(resolveUpstream('DELETE', '/api/users/me', env)).toBe('go')
+  })
+
   it('is case-insensitive and trims surrounding whitespace on the env value', () => {
     const env = { STRIDE_ROUTE_GET_USERS_ME_PROFILE: '  GO ' }
     expect(resolveUpstream('GET', '/api/users/me/profile', env)).toBe('go')
@@ -227,6 +232,7 @@ describe('API_ROUTES manifest integrity', () => {
     const goReady = API_ROUTES.filter((r) => r.goReady).map((r) => `${r.method} ${r.path}`).sort()
     expect(goReady).toEqual(
       [
+        'DELETE /api/users/me',
         'DELETE /api/users/me/watch',
         'GET /api/:user/activities',
         'GET /api/:user/activities/:labelId',
