@@ -87,9 +87,7 @@ API 内按 user 互斥 watch 数据写入与 training-load shard。每片成功�
 校验每个带 shard 的响应 `daily_rows_written > 0`，并要求非终态响应提供且推进
 `next_shard_start`；任一异常都会失败。
 
-手工 `weekly-running-calibration.yml` 的 `backfill` 模式也使用同一 shard 接口，并用
-GitHub workflow run token 幂等触发强制重建；`/internal/training-load/backfill` 只允许
-最多 90 天的诊断性短窗口。异步 worker 仍服务 onboarding 等既有 pipeline；其中
+`/internal/training-load/backfill` 只允许最多 90 天的诊断性短窗口。异步 worker 仍服务 onboarding 等既有 pipeline；其中
 onboarding handlers 直接写 per-user SQLite 是独立的历史架构债，本次只移除专用
 `training_load_backfill` worker writer，不能把 worker 描述为全局 SQLite 零写入。
 
@@ -102,10 +100,7 @@ onboarding handlers 直接写 per-user SQLite 是独立的历史架构债，本�
 每周日触发时，workflow 从 `data/.slug_aliases.json` 枚举用户，并通过 Go API 的
 `POST /jobs` 入队 internal-only `calibration` job。请求使用
 `STRIDE_GO_API_URL` repository variable、`STRIDE_GO_INTERNAL_TOKEN` secret，以及按
-workflow run 和用户固定的 `Idempotency-Key`；因此网络重试不会重复入队。`refresh`
-模式只入队并在 API 返回 `202`（或幂等重放的 `200`）后完成。手工 `backfill` 模式仍调用
-Python API 的 resumable shard endpoint，见上文，直到该 SQLite 写入流程迁移到 Go。Go
-API 的 `STRIDE_WORKER_API_INTERNAL_TOKEN` 必须与 `STRIDE_GO_INTERNAL_TOKEN` 同值。手工 `backfill` 模式继续调用 Python 服务，使用 `STRIDE_INTERNAL_TOKEN`。
+workflow run 和用户固定的 `Idempotency-Key`；因此网络重试不会重复入队。API 返回 `202`（或幂等重放的 `200`）后完成。该 workflow 只调用 Go API，不提供 Python backfill fallback。Go API 的 `STRIDE_WORKER_API_INTERNAL_TOKEN` 必须与 `STRIDE_GO_INTERNAL_TOKEN` 同值。
 
 ### `.github/workflows/sync-data.yml` —— 同步 training-log markdown 到 prod Azure Files
 
