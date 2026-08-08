@@ -16,7 +16,7 @@ const userId = "11c2e582-5a85-4633-81d2-df7e37ad7b48";
 const cfg = { context: { userId }, configurable: { thread_id: 'thread_id_1' } };
 
 await agent.invoke({
-  messages: [{ role: "user", content: "帮我生成下周的训练计划" }],
+  messages: [{ role: "user", content: "帮我生成训练计划" }],
 }, cfg);
 
 // await agent.invoke({

@@ -67,11 +67,11 @@ export function createLoggingMiddleware(scope = "agent") {
         wrapToolCall: async (request, handler) => {
             const startedAt = Date.now();
             const name = request.toolCall.name;
-            log.info({ tool: name, argKeys: Object.keys(request.toolCall.args ?? {}) }, "before tool execution,");
+            log.info(request.toolCall, "tool call request,");
 
             try {
                 const result = await handler(request);
-                log.info({ tool: name, ms: Date.now() - startedAt }, "after tool execution,");
+                log.info({ tool: name, ms: Date.now() - startedAt, result }, "after tool execution,");
                 return result;
             } catch (error) {
                 log.warn(

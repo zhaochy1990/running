@@ -27,7 +27,7 @@ test("plan tools query the MySQL store with the runtime user identity", async ()
   const config = { context: { userId } };
 
   assert.equal(masterTool!.name, "get_master_plan");
-  assert.equal(weeklyTool!.name, "get_week_plan");
+  assert.equal(weeklyTool!.name, "get_weekly_plan");
   assert.deepEqual(await masterTool!.invoke({}, config), { plan_id: "master-1", status: "active" });
   assert.deepEqual(
     await weeklyTool!.invoke({ weekName: "2026-07-20_07-26" }, config),

@@ -42,9 +42,12 @@ export { StrideDataStore } from "./dataStore.js";
 export type {
   Activity,
   DailyTrainingLoad,
+  HeartRateZone,
   MasterPlanDocument,
+  PaceZone,
   PersonalBest,
   RaceEffort,
+  RunningCalibration,
   WeeklyPlanDocument,
 } from "./dataStore.js";
 export { createStridePool } from "./mysql.js";

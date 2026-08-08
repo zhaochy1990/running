@@ -123,6 +123,33 @@ export interface PersonalBest {
   source: string | null;
 }
 
+/** Latest running calibration and its derived training zones. */
+export interface RunningCalibration {
+  asOfDate: string;
+  thresholdHr: number | null;
+  thresholdSpeedMps: number | null;
+  thresholdHrConfidence: string;
+  thresholdSpeedConfidence: string;
+  heartRateZones: HeartRateZone[];
+  paceZones: PaceZone[];
+}
+
+export interface HeartRateZone {
+  name: string;
+  minBpm: number | null;
+  maxBpm: number | null;
+  confidence: string;
+}
+
+export interface PaceZone {
+  name: string;
+  minPaceSPerKm: number | null;
+  maxPaceSPerKm: number | null;
+  minSpeedMps: number | null;
+  maxSpeedMps: number | null;
+  confidence: string;
+}
+
 /** Active structured master-plan document stored in `master_plan.content`. */
 export type MasterPlanDocument = Record<string, unknown>;
 
@@ -248,6 +275,50 @@ export class StrideDataStore {
     }));
   }
 
+  /** Latest canonical running calibration and zones, or null when not computed. */
+  async getLatestRunningCalibration(userId: string): Promise<RunningCalibration | null> {
+    const [snapshotRows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT id, as_of_date, threshold_hr, threshold_speed_mps,
+              threshold_hr_confidence, threshold_speed_confidence
+         FROM running_calibration_snapshot
+        WHERE user_id = ?
+        ORDER BY as_of_date DESC, algorithm_version DESC
+        LIMIT 1`,
+      [userId],
+    );
+    const snapshot = snapshotRows[0];
+    if (!snapshot) {
+      return null;
+    }
+
+    const [paceRows, heartRateRows] = await Promise.all([
+      this.pool.query<RowDataPacket[]>(
+        `SELECT name, min_pace_s_per_km, max_pace_s_per_km, min_speed_mps, max_speed_mps, confidence
+           FROM running_calibration_pace_zone
+          WHERE user_id = ? AND snapshot_id = ?
+          ORDER BY name ASC`,
+        [userId, snapshot.id],
+      ),
+      this.pool.query<RowDataPacket[]>(
+        `SELECT name, min_bpm, max_bpm, confidence
+           FROM running_calibration_hr_zone
+          WHERE user_id = ? AND snapshot_id = ?
+          ORDER BY name ASC`,
+        [userId, snapshot.id],
+      ),
+    ]);
+
+    return {
+      asOfDate: snapshot.as_of_date as string,
+      thresholdHr: (snapshot.threshold_hr ?? null) as number | null,
+      thresholdSpeedMps: (snapshot.threshold_speed_mps ?? null) as number | null,
+      thresholdHrConfidence: snapshot.threshold_hr_confidence as string,
+      thresholdSpeedConfidence: snapshot.threshold_speed_confidence as string,
+      paceZones: paceRows[0].map(rowToPaceZone),
+      heartRateZones: heartRateRows[0].map(rowToHeartRateZone),
+    };
+  }
+
   /** Current active structured season plan, or null when the athlete has none. */
   async getMasterPlan(userId: string): Promise<MasterPlanDocument | null> {
     const [rows] = await this.pool.query<RowDataPacket[]>(
@@ -369,5 +440,25 @@ function rowToRaceEffort(row: RowDataPacket): RaceEffort {
     avgHr: (row.avg_hr ?? null) as number | null,
     maxHr: (row.max_hr ?? null) as number | null,
     feel: (row.feel ?? null) as string | null,
+  };
+}
+
+function rowToPaceZone(row: RowDataPacket): PaceZone {
+  return {
+    name: row.name as string,
+    minPaceSPerKm: (row.min_pace_s_per_km ?? null) as number | null,
+    maxPaceSPerKm: (row.max_pace_s_per_km ?? null) as number | null,
+    minSpeedMps: (row.min_speed_mps ?? null) as number | null,
+    maxSpeedMps: (row.max_speed_mps ?? null) as number | null,
+    confidence: row.confidence as string,
+  };
+}
+
+function rowToHeartRateZone(row: RowDataPacket): HeartRateZone {
+  return {
+    name: row.name as string,
+    minBpm: (row.min_bpm ?? null) as number | null,
+    maxBpm: (row.max_bpm ?? null) as number | null,
+    confidence: row.confidence as string,
   };
 }
