@@ -40,14 +40,14 @@ export function createLoggingMiddleware(scope = "agent") {
         // One LLM call: what tools were bound → what the model decided to call.
         wrapModelCall: async (request, handler) => {
             const startedAt = Date.now();
-            log.info(
-                {
-                    messages: request.messages.length,
-                    boundTools: request.tools.map(toolName),
-                },
-                "request send to LLM,",
-            );
-            log.info(request.messages);
+            const messageCount = Object.keys(request.messages).length;
+            const lastMessage = request.messages[messageCount - 1];
+            log.info({
+                content: lastMessage?.content,
+                type: lastMessage?.type,
+                totalMessages: messageCount,
+                boundTools: request.tools.map(toolName).join(", ")
+            }, "message sent to LLM,");
 
             const response = await handler(request);
 
@@ -55,7 +55,7 @@ export function createLoggingMiddleware(scope = "agent") {
             log.info(
                 {
                     ms: Date.now() - startedAt,
-                    toolCalls: toolCalls.map((call) => call.name),
+                    toolCalls: toolCalls.map((call) => call.name).join(", "),
                     done: toolCalls.length === 0,
                 },
                 "response received from LLM,",

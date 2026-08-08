@@ -10,9 +10,15 @@ const config = loadConfig();
 const store = StrideDataStore.create(readStrideMySqlConfig(config));
 const agent = await createCoachAgent(store, config);
 
-const userId = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
+// const userId = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
+const userId = "11c2e582-5a85-4633-81d2-df7e37ad7b48";
 
 const cfg = { context: { userId }, configurable: { thread_id: 'thread_id_1' } };
+
+await agent.invoke({
+  messages: [{ role: "user", content: "帮我生成下周的训练计划" }],
+}, cfg);
+
 // await agent.invoke({
 //   messages: [{ role: "user", content: "帮我生成下周的训练计划" }],
 // }, cfg);
@@ -21,15 +27,15 @@ const cfg = { context: { userId }, configurable: { thread_id: 'thread_id_1' } };
 //   messages: [{ role: "user", content: "我这周练的怎么样？" }],
 // }, cfg);
 
-await agent.invoke({
-  messages: [{ role: "user", content: "我这周的训练计划是什么？" }],
-}, cfg);
+// await agent.invoke({
+//   messages: [{ role: "user", content: "我这周的训练计划是什么？" }],
+// }, cfg);
 
 // 回答来源：交互式从 stdin 读；自动化测试则用 HITL_ANSWERS（\n 分隔）按序喂入，
 // 避免管道 EOF 关闭 readline 的问题。
 // const scriptedAnswers = (process.env.HITL_ANSWERS ?? "").split("\n").filter((s) => s.length > 0);
 // let scriptCursor = 0;
-// const rl = createInterface({ input: process.stdin, output: process.stdout });
+const rl = createInterface({ input: process.stdin, output: process.stdout });
 
 // async function readAnswer(): Promise<string> {
 //   if (scriptCursor < scriptedAnswers.length) {
@@ -100,5 +106,5 @@ await agent.invoke({
 // // ── 其它可选回归（默认注释）──
 // // await askWithHITL("训练问答 → 负荷分析", "我最近的训练负荷和疲劳状态怎么样？现在能加量吗？", "sess-load");
 
-// await rl.close();
+await rl.close();
 await store.close();

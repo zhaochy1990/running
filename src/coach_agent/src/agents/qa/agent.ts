@@ -4,6 +4,9 @@ import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import type { StrideDataStore } from "../../persistence/index.js";
 import type { ModelConfig } from "../../config/config.js";
+import { getLogger } from "../../logging/index.js";
+
+const logger = getLogger("coachAgent:qa");
 
 // TODO: 关于跑步知识需要外接知识库
 export function getQaSubagent(store: StrideDataStore, config: ModelConfig) {
@@ -23,6 +26,8 @@ export function getQaSubagent(store: StrideDataStore, config: ModelConfig) {
 
 你不对运动员的训练计划进行修改或调整，也不提供个性化训练建议。你只回答运动员关于训练的问题，并且只依据工具数据说话。
     `;
+
+    logger.info(`creating qa subagent with model ${config.name} (${config.model})`);
 
     return {
         name: "training_question",

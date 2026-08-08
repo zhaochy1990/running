@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { deepMerge } from "./deepMerge.js";
 import type { CoachAgentConfig, PartialCoachAgentConfig, ModelConfig, DataStoreConfig } from "./types.js";
+import { getLogger } from "../logging/index.js";
 
 export type * from "./types.js";
 
@@ -11,6 +12,7 @@ export type * from "./types.js";
 const ENV = process.env.STRIDE_COACH_ENV ?? process.env.NODE_ENV ?? "local";
 const DEFAULT_CONFIG_FILE = "coach.yaml";
 const TARGET_ENV_CONFIG_FILE = `coach.${ENV}.yaml`;
+const logger = getLogger("config");
 
 interface ResolvedConfigFiles {
     defaultConfigFile?: string;
@@ -25,6 +27,11 @@ export function loadConfig(options: LoadConfigOptions = {}): CoachAgentConfig {
     const configFiles = resolveConfigFiles(options);
     const defaultConfig = configFiles.defaultConfigFile ? readConfigFile(configFiles.defaultConfigFile) : {};
     const targetEnvConfig = configFiles.targetEnvConfigFile ? readConfigFile(configFiles.targetEnvConfigFile) : {};
+
+
+    logger.info(`Loading coach config for env "${ENV}"`);
+    logger.info(`  default config: ${configFiles.defaultConfigFile ?? "(none)"}`);
+    logger.info(`  target env config: ${configFiles.targetEnvConfigFile ?? "(none)"}`);
 
     return deepMerge(defaultConfig, targetEnvConfig) as CoachAgentConfig;
 }
