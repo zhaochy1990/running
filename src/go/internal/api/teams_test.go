@@ -281,14 +281,14 @@ func TestTeamRoutesRequireJWTUserTier(t *testing.T) {
 }
 
 func TestTeamProxyRoutesForwardOriginalAuthorizationAndPreserveContracts(t *testing.T) {
-	t.Run("list and my teams fall back empty", func(t *testing.T) {
+	t.Run("list and my teams report auth-service unavailability", func(t *testing.T) {
 		h := newTeamHarness(t)
 		h.auth.listTeamsErr = &authsvc.AuthServiceUnavailable{Detail: "down"}
 		h.auth.myTeamsErr = &authsvc.AuthServiceUnavailable{Detail: "down"}
 		header := h.bearer(t, teamUserA)
 		for _, path := range []string{"/api/teams", "/api/users/me/teams"} {
 			w := h.do(t, http.MethodGet, path, "", header)
-			if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"teams":[]`) {
+			if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "auth-service unavailable: down") {
 				t.Fatalf("%s: code=%d body=%s", path, w.Code, w.Body.String())
 			}
 		}
@@ -387,8 +387,8 @@ func TestTeamMembersBatchNamePrecedence(t *testing.T) {
 
 	h.auth.membersErr = &authsvc.AuthServiceUnavailable{Detail: "down"}
 	w = h.do(t, http.MethodGet, "/api/teams/team-1/members", "", h.bearer(t, teamUserA))
-	if w.Code != 200 || w.Body.String() != `{"members":[]}` {
-		t.Fatalf("fallback=%d %s", w.Code, w.Body.String())
+	if w.Code != 503 || !strings.Contains(w.Body.String(), "auth-service unavailable: down") {
+		t.Fatalf("unavailable=%d %s", w.Code, w.Body.String())
 	}
 }
 
@@ -453,6 +453,20 @@ func TestTeamFeedValidationAndLikeFailureFallback(t *testing.T) {
 	mustJSON(t, w, &resp)
 	if h.store.feedDays != 30 || h.store.feedLimit != 20 || resp.Activities[0].LikeCount != 0 || resp.Activities[0].YouLiked || len(resp.Activities[0].TopLikers) != 0 {
 		t.Fatalf("resp=%+v defaults=%d/%d", resp, h.store.feedDays, h.store.feedLimit)
+	}
+}
+
+func TestTeamFeedRequiresMembershipBeforeMySQLQuery(t *testing.T) {
+	h := newTeamHarness(t)
+	h.auth.members = []authsvc.Member{{UserID: teamUserB}}
+
+	w := h.do(t, http.MethodGet, "/api/teams/team-1/feed", "", h.bearer(t, teamUserA))
+
+	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "Caller is not a member") {
+		t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
+	}
+	if h.store.feedCalls != 0 || h.store.bulkLikeCalls != 0 {
+		t.Fatalf("unauthorized feed queried MySQL: feed=%d likes=%d", h.store.feedCalls, h.store.bulkLikeCalls)
 	}
 }
 

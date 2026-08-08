@@ -217,11 +217,6 @@ func (t *teamRoutes) listTeams(c *gin.Context) {
 	}
 	teams, err := t.auth.ListTeams(c.Request.Context(), originalAuthorization(c))
 	if err != nil {
-		var unavailable *authsvc.AuthServiceUnavailable
-		if errors.As(err, &unavailable) {
-			c.JSON(http.StatusOK, teamsResponse{Teams: []authsvc.Team{}})
-			return
-		}
 		t.writeAuthError(c, err)
 		return
 	}
@@ -339,11 +334,6 @@ func (t *teamRoutes) listMembers(c *gin.Context) {
 	}
 	members, err := t.auth.ListMembers(c.Request.Context(), originalAuthorization(c), c.Param("teamId"))
 	if err != nil {
-		var unavailable *authsvc.AuthServiceUnavailable
-		if errors.As(err, &unavailable) {
-			c.JSON(http.StatusOK, membersResponse{Members: []authsvc.Member{}})
-			return
-		}
 		t.writeAuthError(c, err)
 		return
 	}
@@ -364,11 +354,6 @@ func (t *teamRoutes) myTeams(c *gin.Context) {
 	}
 	teams, err := t.auth.ListMyTeams(c.Request.Context(), originalAuthorization(c))
 	if err != nil {
-		var unavailable *authsvc.AuthServiceUnavailable
-		if errors.As(err, &unavailable) {
-			c.JSON(http.StatusOK, myTeamsResponse{Teams: []authsvc.MyTeam{}})
-			return
-		}
 		t.writeAuthError(c, err)
 		return
 	}
@@ -392,15 +377,9 @@ func (t *teamRoutes) feed(c *gin.Context) {
 		return
 	}
 
-	members, err := t.auth.ListMembers(c.Request.Context(), originalAuthorization(c), c.Param("teamId"))
-	if err != nil {
-		var unavailable *authsvc.AuthServiceUnavailable
-		if errors.As(err, &unavailable) {
-			members = []authsvc.Member{}
-		} else {
-			t.writeAuthError(c, err)
-			return
-		}
+	members, ok := t.authorizeMembership(c, callerID, "")
+	if !ok {
+		return
 	}
 	ids := memberIDs(members)
 	profiles := t.profiles(c.Request.Context(), ids)
@@ -613,13 +592,8 @@ func (t *teamRoutes) validateAndAuthorizeLike(c *gin.Context) (string, []authsvc
 func (t *teamRoutes) authorizeMembership(c *gin.Context, callerID, targetID string) ([]authsvc.Member, bool) {
 	members, err := t.auth.ListMembers(c.Request.Context(), originalAuthorization(c), c.Param("teamId"))
 	if err != nil {
-		var unavailable *authsvc.AuthServiceUnavailable
-		if errors.As(err, &unavailable) {
-			members = []authsvc.Member{}
-		} else {
-			t.writeAuthError(c, err)
-			return nil, false
-		}
+		t.writeAuthError(c, err)
+		return nil, false
 	}
 	byID := membersByID(members)
 	if _, ok := byID[callerID]; !ok {

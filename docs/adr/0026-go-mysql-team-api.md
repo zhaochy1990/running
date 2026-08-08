@@ -9,8 +9,8 @@ The team web surface is migrated from Python to Go without moving team identity 
 - The in-house auth-service remains the source of truth for teams, ownership, and memberships. Go does not create team or membership tables.
 - Every Go team request keeps the caller's original `Authorization` header and forwards it unchanged to auth-service for team and membership operations. The Go API therefore depends on auth-service availability and a configured `api.auth-service-url`; local JWT verification alone is not a replacement for membership authorization.
 - STRIDE MySQL remains canonical for watch-synced activities and user-profile enrichment. Team feed, mileage, and teammate activity detail read those existing MySQL records for the member IDs returned by auth-service.
-- Team activity likes are the narrow social-storage exception: Go owns the canonical MySQL `team_likes` table. The key `(team_id, owner_user_id, label_id, liker_user_id)` makes writes idempotent and prevents likes leaking across teams.
-- No team or social state is written to per-user SQLite. Social state outside these team activity likes continues to use Azure Table Storage by default.
+- Go API persistent state, including team activity likes, is canonical in MySQL. The `team_likes` key `(team_id, owner_user_id, label_id, liker_user_id)` makes writes idempotent and prevents likes leaking across teams.
+- No team or social state is written to per-user SQLite. Python services retain their existing Azure Table backends; Go API features do not add Azure storage dependencies.
 
 ### Likes migration and notifications
 
