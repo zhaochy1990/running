@@ -3,6 +3,20 @@ import { describe, expect, it } from 'vitest'
 import { API_ROUTES } from '../api-routes.js'
 import { AUTH_PREFIX, hasGoRoutes, hasPartialWebOnboardingGoCutover, resolveUpstream, unsupportedGoRoutes, upstreamForRoute } from '../table.js'
 
+const TEAM_FEED_AND_LIKES_CUTOVER = {
+  STRIDE_ROUTE_GET_TEAMS_TEAMID_FEED: 'go',
+  STRIDE_ROUTE_GET_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES: 'go',
+  STRIDE_ROUTE_POST_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES: 'go',
+  STRIDE_ROUTE_DELETE_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES: 'go',
+}
+
+const TEAM_FEED_AND_LIKES_REQUESTS = [
+  ['GET', '/api/teams/t1/feed', 'STRIDE_ROUTE_GET_TEAMS_TEAMID_FEED'],
+  ['GET', '/api/teams/t1/activities/u1/l1/likes', 'STRIDE_ROUTE_GET_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES'],
+  ['POST', '/api/teams/t1/activities/u1/l1/likes', 'STRIDE_ROUTE_POST_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES'],
+  ['DELETE', '/api/teams/t1/activities/u1/l1/likes', 'STRIDE_ROUTE_DELETE_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES'],
+] as const
+
 describe('resolveUpstream', () => {
   it('routes /api/auth/* to the auth upstream (any method)', () => {
     expect(resolveUpstream('POST', '/api/auth/login')).toBe('auth')
@@ -97,6 +111,33 @@ describe('env-driven upstream selection', () => {
   it('keeps the legacy variants path on Python when plan-week detail moves to Go', () => {
     const env = { STRIDE_ROUTE_GET_USER_PLAN_WEEKS_WEEKNAME: 'go' }
     expect(resolveUpstream('GET', '/api/u/plan/weeks/variants', env)).toBe('python')
+  })
+
+  it('keeps team sync-all on Python even when every Go-ready team route is cut over', () => {
+    const env = Object.fromEntries(
+      API_ROUTES.filter((route) => route.goReady && (
+        route.path === '/api/users/me/teams' || route.path.startsWith('/api/teams')
+      )).map((route) => [route.env, 'go']),
+    )
+    expect(resolveUpstream('POST', '/api/teams/t1/sync-all', env)).toBe('python')
+  })
+
+  it('can route feed and each likes method to Go independently', () => {
+    for (const [method, path, envName] of TEAM_FEED_AND_LIKES_REQUESTS) {
+      const env = { [envName]: 'go' }
+      for (const [candidateMethod, candidatePath] of TEAM_FEED_AND_LIKES_REQUESTS) {
+        expect(resolveUpstream(candidateMethod, candidatePath, env)).toBe(
+          candidateMethod === method && candidatePath === path ? 'go' : 'python',
+        )
+      }
+    }
+  })
+
+  it('routes feed and all three likes methods together as one atomic cutover unit', () => {
+    for (const [method, path] of TEAM_FEED_AND_LIKES_REQUESTS) {
+      expect(resolveUpstream(method, path, TEAM_FEED_AND_LIKES_CUTOVER)).toBe('go')
+    }
+    expect(resolveUpstream('POST', '/api/teams/t1/sync-all', TEAM_FEED_AND_LIKES_CUTOVER)).toBe('python')
   })
 
   it('/api/auth/* is unaffected by any route env var', () => {
@@ -233,6 +274,8 @@ describe('API_ROUTES manifest integrity', () => {
     expect(goReady).toEqual(
       [
         'DELETE /api/users/me',
+        'DELETE /api/teams/:teamId',
+        'DELETE /api/teams/:teamId/activities/:userId/:labelId/likes',
         'DELETE /api/users/me/watch',
         'GET /api/:user/activities',
         'GET /api/:user/activities/:labelId',
@@ -246,12 +289,25 @@ describe('API_ROUTES manifest integrity', () => {
         'GET /api/:user/training-plan',
         'GET /api/pipelines/:runId',
         'GET /api/jobs/:jobId',
+        'GET /api/teams',
+        'GET /api/teams/:teamId',
+        'GET /api/teams/:teamId/activities/:userId/:labelId',
+        'GET /api/teams/:teamId/activities/:userId/:labelId/likes',
+        'GET /api/teams/:teamId/feed',
+        'GET /api/teams/:teamId/members',
+        'GET /api/teams/:teamId/mileage',
         'GET /api/users/me/master-plan/current',
         'GET /api/users/me/profile',
+        'GET /api/users/me/teams',
         'GET /api/users/me/training-goal',
         'GET /api/users/me/watch',
         'GET /api/users/:user/pipelines',
         'POST /api/users/me/onboarding/complete',
+        'POST /api/teams',
+        'POST /api/teams/:teamId/activities/:userId/:labelId/likes',
+        'POST /api/teams/:teamId/join',
+        'POST /api/teams/:teamId/leave',
+        'POST /api/teams/:teamId/transfer-owner',
         'POST /api/users/me/profile',
         'POST /api/users/me/watch/login',
         'POST /api/users/me/training-goal',

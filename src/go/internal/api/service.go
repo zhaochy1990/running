@@ -108,6 +108,11 @@ type Config struct {
 	// endpoints (e.g. in tests that never hit them).
 	ActivityStore ActivityStore
 
+	// TeamAuth and TeamStore back the team/social surface. TeamAuth owns teams and
+	// memberships; TeamStore owns MySQL activity aggregates, profiles, and likes.
+	TeamAuth  TeamAuthService
+	TeamStore TeamStore
+
 	// Race-goal surface (ADR 0021) — a sibling registrar sharing the auth path.
 	// Leave zero to run without the training-goal endpoints (e.g. in tests).
 	GoalStore GoalStore
@@ -158,6 +163,7 @@ type Service struct {
 	goals *goalRoutes
 
 	activities *activityRoutes
+	teams      *teamRoutes
 
 	healthMetrics *healthRoutes
 	strideMetrics *strideRoutes
@@ -199,6 +205,7 @@ func NewService(cfg Config) *Service {
 		users:                   newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.AccountDeleter, cfg.Features, cfg.Runs, log),
 		goals:                   newGoalRoutes(cfg.GoalStore, log),
 		activities:              newActivityRoutes(cfg.ActivityStore, log),
+		teams:                   newTeamRoutes(cfg.TeamAuth, cfg.TeamStore, cfg.ActivityStore, log),
 		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),
 		strideMetrics:           newStrideRoutes(cfg.StrideStore, log),
 		masterPlan:              newMasterPlanRoutes(cfg.MasterPlanStore, log),
@@ -243,6 +250,7 @@ func (s *Service) Router() *gin.Engine {
 	authed.POST("/api/:user/sync", s.syncUser)
 	s.users.register(authed)
 	s.activities.register(authed)
+	s.teams.register(authed)
 	s.goals.register(authed)
 	s.healthMetrics.register(authed)
 	s.strideMetrics.register(authed)

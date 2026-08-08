@@ -307,36 +307,36 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: 'POST', path: '/api/:user/workout/run', env: 'STRIDE_ROUTE_POST_USER_WORKOUT_RUN', goReady: false },
 
   // ── Teams & social ──────────────────────────────────────────────────────
-  // ✓ /teams, /teams/:id · my team memberships
-  { method: 'GET', path: '/api/users/me/teams', env: 'STRIDE_ROUTE_GET_USERS_ME_TEAMS', goReady: false },
-  // ✓ /teams · list all teams
-  { method: 'GET', path: '/api/teams', env: 'STRIDE_ROUTE_GET_TEAMS', goReady: false },
-  // ✓ /teams/new · create a team
-  { method: 'POST', path: '/api/teams', env: 'STRIDE_ROUTE_POST_TEAMS', goReady: false },
-  // ✓ /teams/:id · team detail
-  { method: 'GET', path: '/api/teams/:teamId', env: 'STRIDE_ROUTE_GET_TEAMS_TEAMID', goReady: false },
-  // ✓ /teams/:id · delete team
-  { method: 'DELETE', path: '/api/teams/:teamId', env: 'STRIDE_ROUTE_DELETE_TEAMS_TEAMID', goReady: false },
-  // ✓ /teams/:id · team member list
-  { method: 'GET', path: '/api/teams/:teamId/members', env: 'STRIDE_ROUTE_GET_TEAMS_TEAMID_MEMBERS', goReady: false },
-  // ✓ /teams/:id · team activity feed
-  { method: 'GET', path: '/api/teams/:teamId/feed', env: 'STRIDE_ROUTE_GET_TEAMS_TEAMID_FEED', goReady: false },
-  // ✓ /teams/:id · mileage leaderboard
-  { method: 'GET', path: '/api/teams/:teamId/mileage', env: 'STRIDE_ROUTE_GET_TEAMS_TEAMID_MILEAGE', goReady: false },
-  // ✓ /teams, /teams/:id · join team
-  { method: 'POST', path: '/api/teams/:teamId/join', env: 'STRIDE_ROUTE_POST_TEAMS_TEAMID_JOIN', goReady: false },
-  // ✓ /teams/:id · leave team
-  { method: 'POST', path: '/api/teams/:teamId/leave', env: 'STRIDE_ROUTE_POST_TEAMS_TEAMID_LEAVE', goReady: false },
-  // ✓ /teams/:id · sync all members
+  // ✓ /teams, /teams/:id · my team memberships   [go-ready]
+  { method: 'GET', path: '/api/users/me/teams', env: 'STRIDE_ROUTE_GET_USERS_ME_TEAMS', goReady: true },
+  // ✓ /teams · list all teams   [go-ready]
+  { method: 'GET', path: '/api/teams', env: 'STRIDE_ROUTE_GET_TEAMS', goReady: true },
+  // ✓ /teams/new · create a team   [go-ready]
+  { method: 'POST', path: '/api/teams', env: 'STRIDE_ROUTE_POST_TEAMS', goReady: true },
+  // ✓ /teams/:id · team detail   [go-ready]
+  { method: 'GET', path: '/api/teams/:teamId', env: 'STRIDE_ROUTE_GET_TEAMS_TEAMID', goReady: true },
+  // ✓ /teams/:id · delete team   [go-ready]
+  { method: 'DELETE', path: '/api/teams/:teamId', env: 'STRIDE_ROUTE_DELETE_TEAMS_TEAMID', goReady: true },
+  // ✓ /teams/:id · team member list   [go-ready]
+  { method: 'GET', path: '/api/teams/:teamId/members', env: 'STRIDE_ROUTE_GET_TEAMS_TEAMID_MEMBERS', goReady: true },
+  // ✓ /teams/:id · team activity feed   [go-ready]
+  { method: 'GET', path: '/api/teams/:teamId/feed', env: 'STRIDE_ROUTE_GET_TEAMS_TEAMID_FEED', goReady: true },
+  // ✓ /teams/:id · mileage leaderboard   [go-ready]
+  { method: 'GET', path: '/api/teams/:teamId/mileage', env: 'STRIDE_ROUTE_GET_TEAMS_TEAMID_MILEAGE', goReady: true },
+  // ✓ /teams, /teams/:id · join team   [go-ready]
+  { method: 'POST', path: '/api/teams/:teamId/join', env: 'STRIDE_ROUTE_POST_TEAMS_TEAMID_JOIN', goReady: true },
+  // ✓ /teams/:id · leave team   [go-ready]
+  { method: 'POST', path: '/api/teams/:teamId/leave', env: 'STRIDE_ROUTE_POST_TEAMS_TEAMID_LEAVE', goReady: true },
+  // ✓ /teams/:id · sync all members (Python only; orchestration is not migrated)
   { method: 'POST', path: '/api/teams/:teamId/sync-all', env: 'STRIDE_ROUTE_POST_TEAMS_TEAMID_SYNC_ALL', goReady: false },
-  // ✓ /teams/:id · transfer ownership
-  { method: 'POST', path: '/api/teams/:teamId/transfer-owner', env: 'STRIDE_ROUTE_POST_TEAMS_TEAMID_TRANSFER_OWNER', goReady: false },
-  // ✓ /activity/:id (team view) · load a teammate's activity detail
-  { method: 'GET', path: '/api/teams/:teamId/activities/:userId/:labelId', env: 'STRIDE_ROUTE_GET_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID', goReady: false },
-  // ✓ /teams/:id · activity like list
-  { method: 'GET', path: '/api/teams/:teamId/activities/:userId/:labelId/likes', env: 'STRIDE_ROUTE_GET_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES', goReady: false },
-  // ✓ /teams/:id · like an activity
-  { method: 'POST', path: '/api/teams/:teamId/activities/:userId/:labelId/likes', env: 'STRIDE_ROUTE_POST_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES', goReady: false },
-  // ✓ /teams/:id · unlike an activity
-  { method: 'DELETE', path: '/api/teams/:teamId/activities/:userId/:labelId/likes', env: 'STRIDE_ROUTE_DELETE_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES', goReady: false },
+  // ✓ /teams/:id · transfer ownership   [go-ready]
+  { method: 'POST', path: '/api/teams/:teamId/transfer-owner', env: 'STRIDE_ROUTE_POST_TEAMS_TEAMID_TRANSFER_OWNER', goReady: true },
+  // ✓ /activity/:id (team view) · load a teammate's activity detail   [go-ready]
+  { method: 'GET', path: '/api/teams/:teamId/activities/:userId/:labelId', env: 'STRIDE_ROUTE_GET_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID', goReady: true },
+  // ✓ /teams/:id · activity like list   [go-ready]
+  { method: 'GET', path: '/api/teams/:teamId/activities/:userId/:labelId/likes', env: 'STRIDE_ROUTE_GET_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES', goReady: true },
+  // ✓ /teams/:id · like an activity   [go-ready]
+  { method: 'POST', path: '/api/teams/:teamId/activities/:userId/:labelId/likes', env: 'STRIDE_ROUTE_POST_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES', goReady: true },
+  // ✓ /teams/:id · unlike an activity   [go-ready]
+  { method: 'DELETE', path: '/api/teams/:teamId/activities/:userId/:labelId/likes', env: 'STRIDE_ROUTE_DELETE_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES', goReady: true },
 ]

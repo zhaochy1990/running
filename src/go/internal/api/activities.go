@@ -149,67 +149,68 @@ func (a *activityRoutes) detail(c *gin.Context) {
 		return
 	}
 	labelID := c.Param("labelId")
-	ctx := c.Request.Context()
-
-	activity, err := a.store.ActivityByID(ctx, user, labelID)
+	resp, found, err := assembleActivityDetail(
+		c.Request.Context(), a.store, user, labelID,
+		includeHas(c.Query("include"), "timeseries"),
+	)
 	if err != nil {
-		a.log.Error("get activity failed", zapErr(err))
+		a.log.Error("assemble activity detail failed", zapErr(err))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	if activity == nil {
+	if !found {
 		c.JSON(http.StatusNotFound, errorResponse{Error: "Not found"})
 		return
 	}
+	c.JSON(http.StatusOK, resp)
+}
 
-	laps, err := a.store.ActivityLapsByType(ctx, user, labelID, "autoKm")
+// assembleActivityDetail is the shared MySQL-backed detail assembler used by
+// both the owner-scoped activity route and the team-authorized activity route.
+// found=false distinguishes an absent activity from a storage failure.
+func assembleActivityDetail(ctx context.Context, store ActivityStore, userID, labelID string, includeTimeseries bool) (*activityDetailResponse, bool, error) {
+	activity, err := store.ActivityByID(ctx, userID, labelID)
 	if err != nil {
-		a.log.Error("get laps failed", zapErr(err))
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-		return
+		return nil, false, err
 	}
-	segs, err := a.store.ActivityLapsByType(ctx, user, labelID, "type2")
-	if err != nil {
-		a.log.Error("get segments failed", zapErr(err))
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-		return
-	}
-	zones, err := a.store.ActivityWatchZones(ctx, user, labelID)
-	if err != nil {
-		a.log.Error("get zones failed", zapErr(err))
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-		return
-	}
-	load, err := a.store.ActivityTrainingLoad(ctx, user, labelID)
-	if err != nil {
-		a.log.Error("get training load failed", zapErr(err))
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-		return
+	if activity == nil {
+		return nil, false, nil
 	}
 
-	resp := activityDetailResponse{
-		Activity:           toActivityDetail(activity),
-		StrideTrainingLoad: toStrideTrainingLoad(load),
-		Laps:               toLapDTOs(laps),
-		Segments:           toSegmentDTOs(segs),
-		Zones:              toZoneDTOs(zones),
-		// linked_scheduled_workout is always null (ADR 0019): the scheduled_workout
-		// authoring table is not part of the watch-synced MySQL store.
+	laps, err := store.ActivityLapsByType(ctx, userID, labelID, "autoKm")
+	if err != nil {
+		return nil, false, err
+	}
+	segs, err := store.ActivityLapsByType(ctx, userID, labelID, "type2")
+	if err != nil {
+		return nil, false, err
+	}
+	zones, err := store.ActivityWatchZones(ctx, userID, labelID)
+	if err != nil {
+		return nil, false, err
+	}
+	load, err := store.ActivityTrainingLoad(ctx, userID, labelID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	resp := &activityDetailResponse{
+		Activity:               toActivityDetail(activity),
+		StrideTrainingLoad:     toStrideTrainingLoad(load),
+		Laps:                   toLapDTOs(laps),
+		Segments:               toSegmentDTOs(segs),
+		Zones:                  toZoneDTOs(zones),
 		LinkedScheduledWorkout: nil,
 	}
-
-	if includeHas(c.Query("include"), "timeseries") {
-		ts, err := a.store.ActivityTimeseries(ctx, user, labelID)
+	if includeTimeseries {
+		ts, err := store.ActivityTimeseries(ctx, userID, labelID)
 		if err != nil {
-			a.log.Error("get timeseries failed", zapErr(err))
-			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-			return
+			return nil, false, err
 		}
 		series := toTimeseriesDTOs(downsampleTimeseries(ts))
 		resp.Timeseries = &series
 	}
-
-	c.JSON(http.StatusOK, resp)
+	return resp, true, nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
