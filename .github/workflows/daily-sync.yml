@@ -3,7 +3,7 @@ name: Daily auto-sync
 # Required GitHub Actions repository variable and secret:
 #   STRIDE_GO_API_URL         — base URL of the deployed Go API, e.g.
 #                               https://stride-api.<domain>
-#   STRIDE_INTERNAL_TOKEN     — random 32+ char string. The Go API must receive
+#   STRIDE_GO_INTERNAL_TOKEN  — random 32+ char string. The Go API must receive
 #                               the same value as STRIDE_WORKER_API_INTERNAL_TOKEN.
 # If either value is unset the workflow fails so the omission is visible.
 
@@ -48,11 +48,11 @@ jobs:
         if: steps.users.outputs.count != '0'
         env:
           STRIDE_GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}
-          INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}
+          INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}
         run: |
           set -u
           if [ -z "$STRIDE_GO_API_URL" ] || [ -z "$INTERNAL_TOKEN" ]; then
-            echo "::error::STRIDE_GO_API_URL variable or STRIDE_INTERNAL_TOKEN secret missing"
+            echo "::error::STRIDE_GO_API_URL variable or STRIDE_GO_INTERNAL_TOKEN secret missing"
             exit 1
           fi
 
