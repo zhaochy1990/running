@@ -8,12 +8,17 @@ description: >-
 
 ## Step 1: 确认训练目标和赛季目标
 
-首先，我们需要确认用户是否有一个赛季目标，如果没有，我们需要询问用户的训练目标。我们当前支持的训练目标包括：
+首先且只调用 `get_master_plan`，确认用户是否已有完整的 race goal。完整目标必须包括：比赛项目、比赛日期、比赛地点和目标完赛时间。
+
+如果不存在赛季计划，或目标任一字段缺失，立即调用 `ask_user_question` 追问缺失信息。收到回答前，**禁止**调用其它tools，也不要分析运动数据或生成计划。
+
+当前支持的训练目标包括：
 - 全程马拉松（42.195公里）
 - 半程马拉松（21.0975公里）
 
-用户需要告诉我们他的目标比赛的时间和地点，以及他希望达到的目标成绩（完成时间）。
+追问应一次收集完整目标：比赛项目、日期、地点和目标完赛时间。
 
+只有完整 race goal 已从计划或用户回答中确认后，才继续查询 PB、能力水平和历史比赛数据。
 
 然后，我们需要查询用户的PB数据（个人最好成绩），包括：
 - 5kpb(5公里PB)
@@ -33,3 +38,121 @@ description: >-
 ## Step 2: 分析用户历史跑步数据
 
 使用Skill "analyze-race" 来分析用户的历史跑步数据.
+
+## Step 3: 生成训练计划
+
+我们需要根据用户距离比赛的时间、训练目标、用户的PB数据、当前能力水平和历史跑步数据，来生成一份完整的训练计划大纲，这份训练计划大纲重点在于规划用户的整体训练周期，训练阶段，以及每个阶段的训练重点和阶段目标。
+
+训练计划由跑步训练、力量训练和营养与恢复三部分组成。整个训练计划要包括下面的内容，
+1. 训练周期划分：根据用户的备赛时间将整个训练周期划分为不同的阶段
+2. 每个周期的训练重点，以及每个周期的阶段性目标
+3. 每个阶段的力量训练频率，以及力量训练重点
+4. 每个阶段的营养与恢复建议
+
+注意，我们在同时进行跑步训练和力量训练时，需要确保两者的训练量和强度合理搭配，确保用户的跑步训练和力量训练是彼此互补的，而不是相互干扰的。
+
+### 训练周期划分
+
+我们对一个具体用户设计训练周期主要依据用户的备赛时间和训练目标。备赛时间指从当前日期到比赛日期的时间长度。
+
+一般来说，训练周期可以分为以下几个阶段：
+1. 基础期（Base Phase）：这个阶段的长度可以根据用户的备赛时间灵活安排，主要目标是建立有氧基础，提高耐力和心肺功能。训练内容以中低强度的长距离跑为主，同时加入适量的力量训练和核心训练。
+2. 提升期（Build Phase）：在基础期的基础上，逐步增加训练强度和距离，加入阈值训练和间歇训练，以提高速度和耐力。力量训练继续进行，但强度和频率需要进行调整，以适应跑步训练的增加。
+3. 马拉松专项期（Peak Phase）：在提升期的基础上，进一步提高训练强度和比赛模拟训练，重点是比赛节奏训练和长距离跑。力量训练以维持为主，避免过度疲劳。
+4. 赛前减量期（Taper Phase）：这个周期一般时长2周，其中第二周为比赛周，从第一周逐步减少训练量，但需要保持训练强度，调整身体状态，确保身体充分恢复，为比赛做好准备。
+5. 赛后恢复期（Recovery Phase）：这个周期一般时长2周，比赛结束后，进行主动恢复，调整训练计划，恢复身体状态。
+
+首先我们判断用户的备赛时间，赛前减量期和赛后恢复期是必不可少的，其它周期我们根据用户的备赛时间来设计，
+1. 备赛时间 <= 6周，训练周期应以专项期为主，因为时间紧迫，我们需要尽快进入比赛节奏训练，不需要基础期和提升期。
+2. 备赛时间 > 6周 且 <= 12周，训练周期应包括基础期和专项期
+3. 备赛时间 > 12周，训练周期应包括基础期、提升期和专项期
+
+注意：用户的赛后恢复期不计算在备赛时间内，赛后恢复期处于比赛结束后，主要是为了帮助用户恢复身体状态，调整训练计划，为下一阶段的训练做好准备。
+
+## Step 4: 输出 Coach Agent MasterPlan
+
+最终回复必须是一个**完整 JSON 对象**，不要输出 Markdown。
+
+所有面向用户的文本字段使用中文；字段名和枚举值使用英文/ASCII。输出必须包含：
+
+```json
+{
+  "status": "draft",
+  "goal": {
+    "race_name": "赛事名称",
+    "distance": "FM",
+    "race_date": "YYYY-MM-DD",
+    "target_time": "H:MM:SS",
+    "timezone": "Asia/Shanghai",
+    "location": "赛事城市或 null"
+  },
+  "start_date": "YYYY-MM-DD",
+  "end_date": "YYYY-MM-DD",
+  "total_weeks": 10,
+  "phases": [{
+    "name": "基础期",
+    "start_date": "YYYY-MM-DD",
+    "end_date": "YYYY-MM-DD",
+    "focus": "阶段训练重点",
+    "weekly_distance_km_low": 80,
+    "weekly_distance_km_high": 95,
+    "key_session_types": ["长距离", "阈值", "力量"],
+    "milestones": [{
+      "type": "long_run",
+      "date": "YYYY-MM-DD",
+      "target": "32km 长跑",
+      "completed_actual": null
+    }],
+    "key_workouts": "关键课型",
+    "monitoring_triggers": ["RHR 连续升高则降量"],
+    "coach_note": "阶段提醒",
+    "strength": {
+      "sessions_per_week": 2,
+      "focus": "下肢力量、臀髋稳定与核心抗旋转",
+      "timing": "安排在轻松跑后或与质量跑同日，避免长跑前一天"
+    },
+    "recovery": {
+      "focus": "保证睡眠、补碳水和蛋白质，监测疲劳与疼痛",
+      "sleep_target_hours": "7-9",
+      "adjustment_trigger": "连续两天 RHR 高于基线或疼痛≥3/10时取消质量课并降量"
+    },
+    "is_completed": false,
+    "summary": null
+  }],
+  "weeks": [{
+    "week_index": 1,
+    "week_start": "YYYY-MM-DD",
+    "phase_name": "对应phases[].name",
+    "target_weekly_km_low": 80,
+    "target_weekly_km_high": 95,
+    "key_sessions": [{
+      "type": "long_run",
+      "distance_km": 28,
+      "duration_min": null,
+      "intensity": null,
+      "purpose": null
+    }],
+    "is_recovery_week": false
+  }],
+  "training_principles": ["训练原则"],
+  "generated_by": "coach_agent",
+  "version": 1,
+  "created_at": "ISO 8601 UTC",
+  "updated_at": "ISO 8601 UTC"
+}
+```
+
+规则：
+
+1. 新计划 `status` 固定为 `draft`，`version` 固定为 `1`。
+2. `phase_name` 只能为 `基础期`、`提升期`、`专项速度周期`、`马拉松专项期`、`赛前减量期`、`赛后恢复期`，并且不同phase不可以重复；
+3. `distance` 只能为 `FM` 或 `HM`。
+4. milestone `type` 只能为 `race`、`test_run`、`long_run`、`strength_test`、`body_composition`。
+5. `created_at`、`updated_at` 必须为 ISO 8601 UTC（带 `Z` 或 `+00:00`）。`summary` 只用于 `is_completed=true` 的阶段，否则为 `null`。
+6. `total_weeks` 必须等于 `weeks.length`，且每个 week 的 `week_index` 从 1 开始连续递增。注意，total_weeks 包含赛后恢复期，所以它会比用户的备赛时间长。
+7. 每个 phase 必须包含 `strength` 与 `recovery`：
+   - `strength.sessions_per_week` 为非负整数；`focus` 说明力量/稳定性重点；`timing` 明确与跑步课的安排关系。
+   - 基础期通常每周 2 次力量；提升和专项期通常 1-2 次维持；赛前减量期停止力量训练或者进行最多 1 次轻量激活；比赛周和赛后恢复期为 0 次正式力量课。
+   - 避免把高负荷下肢力量安排在长跑或关键质量跑前一天；同日安排时优先跑步在前、力量在后。
+   - `recovery.focus` 必须覆盖睡眠、补给或营养、放松/恢复中的至少两项；`sleep_target_hours` 为目标睡眠范围；`adjustment_trigger` 是明确的疲劳、疼痛或恢复信号及调整动作。
+   - 赛后恢复期必须显式降低跑量和力量负荷，以轻松活动、睡眠、补给和疼痛监测为重点，不安排阈值、间歇或长距离关键课。

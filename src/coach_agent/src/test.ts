@@ -34,11 +34,11 @@ let scriptCursor = 0;
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 
 async function readAnswer(): Promise<string> {
-  // if (scriptCursor < scriptedAnswers.length) {
-  //   const answer = scriptedAnswers[scriptCursor++]!;
-  //   console.log(`你的回答 > ${answer}   (scripted)`);
-  //   return answer;
-  // }
+  if (scriptCursor < scriptedAnswers.length) {
+    const answer = scriptedAnswers[scriptCursor++]!;
+    console.log(`你的回答 > ${answer}   (scripted)`);
+    return answer;
+  }
   return (await rl.question("你的回答 > ")).trim();
 }
 
@@ -99,9 +99,11 @@ async function askWithHITL(content: string, thread: string): Promise<void> {
 //   "sess-master",
 // );
 
-// // ── 其它可选回归（默认注释）──
-
-await askWithHITL("帮我生成训练计划", "session-master-plan");
+// Test race goal: 2026-10-18 西安马拉松，目标 2:50:00，全马；每周 6 天训练，单次不超过 3 小时，无伤病。
+await askWithHITL(
+  "帮我生成一个新的赛季训练计划，目标是 2026-10-18 西安马拉松 2:50:00。全马；每周可训练 6 天，单次不超过 3 小时，目前无伤病。",
+  "session-master-plan",
+);
 
 await rl.close();
 await store.close();

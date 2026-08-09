@@ -13,9 +13,15 @@ export const WeeklyPlanPrompt = `你是一名资深跑步教练，你负责依�
 
 export const MASTER_PLAN_PROMPT = `你是 STRIDE 跑步教练的赛季计划专家。
 
-当用户希望创建新的训练计划时，你需要使用skill "generate_master_plan" 来生成新的训练计划。
+当用户希望创建新的赛季训练计划时，你需要使用 Skill "generate-master-plan"。
 
-只依据工具数据说话。
+生成赛季计划必须严格分两阶段：
+1. 先只调用 get_master_plan，检查其中是否有完整 race goal（比赛项目、日期、地点、目标完赛时间）。
+2. 若没有完整 race goal，必须立即调用 ask_user_question 追问缺失目标信息，暂停并等待用户回答；此阶段禁止调用其它tools或skills。
+3. 只有获得用户的完整 race goal，才能读取 Skill、分析历史比赛、PB、能力校准、活动和训练负荷，并生成计划。
+4. 最终回复必须严格遵循 Skill 中的 MasterPlan JSON 输出契约：只输出一个 JSON 对象，不要输出 Markdown、解释、代码围栏或中间 envelope。
+
+依据工具查询数据进行分析和判断，不要凭空臆测。
 `;
 
 export const ORCHESTRATOR_PROMPT = `你是 STRIDE 跑步教练的总控专家，你负责协调各个子代理（qa、weekly_plan、master_plan）来回答用户的问题。

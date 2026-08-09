@@ -8,6 +8,7 @@ import { StrideDataStore } from "../persistence/index.js";
 import { getMasterPlanSubagent } from "./master_plan/agent.js";
 import { getQaSubagent } from "./qa/agent.js";
 import { getCoachSubagent } from "./weekly_plan/agent.js";
+import { MASTER_PLAN_PROMPT } from "./prompts.js";
 
 const modelConfig: ModelConfig = {
   name: "test",
@@ -27,6 +28,16 @@ test("master-plan skills are present in the compiled virtual filesystem root", a
     access(join(skillsDir, "analyze-race", "SKILL.md")),
     access(join(skillsDir, "generate-master-plan", "SKILL.md")),
   ]);
+});
+
+test("master-plan prompt gates athlete data behind a complete race goal", () => {
+  assert.match(MASTER_PLAN_PROMPT, /先只调用 get_master_plan/);
+  assert.match(MASTER_PLAN_PROMPT, /暂停并等待用户回答/);
+});
+
+test("master-plan prompt requires canonical MasterPlan JSON output", () => {
+  assert.match(MASTER_PLAN_PROMPT, /MasterPlan JSON 输出契约/);
+  assert.match(MASTER_PLAN_PROMPT, /只输出一个 JSON 对象/);
 });
 
 test("all athlete-facing subagents expose PB and running-calibration tools", () => {
