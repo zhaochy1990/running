@@ -128,7 +128,7 @@ scripts/coach-local.sh smoke gpt-5.6-luna
 
 只有 `src/stride_storage/` 包允许直接写 SQL 读取 / 修改数据库。其它包（`stride_server/`、`coach/`、`stride_core/`、routes、adapters、scripts 等）需要数据时必须调用 `stride_storage` 暴露的 API / repository / store 方法；缺方法就先在 `stride_storage` 增加一个语义明确的方法，并补 storage 层测试。
 
-禁止在非 storage 包里新增：`db._conn.execute(...)`、`conn.execute(...)`、裸 SQL 字符串查询表、或为了绕开缺失 API 直接打开 SQLite 连接。例外只限已有 legacy 代码的迁移前状态；改到相关代码时要顺手收敛到 storage API，不能扩大直接 SQL 面。
+禁止在非 storage 包里新增：`db._conn.execute(...)`、`conn.execute(...)`、裸 SQL 字符串查询表、或为了绕开缺失 API 直接打开 SQLite 连接。例外只限已有 legacy 代码的迁移前状态，以及下方 weekly plan authoring 流程中使用 prod readonly 账号执行的临时 MySQL CLI 查询；该 CLI 例外不得写入应用代码或持久化为脚本。改到 legacy 代码时要顺手收敛到 storage API，不能扩大直接 SQL 面。
 
 ## Timezone discipline (HARD)
 
@@ -226,14 +226,14 @@ scripts/coach-local.sh smoke gpt-5.6-luna
 ### Weekly plan generation workflow（HARD）
 
 1. **按需同步所有用户**：如需在生成前刷新 prod 数据，可手动触发 GitHub Actions 的 `.github/workflows/daily-sync.yml`（`Daily auto-sync`）：`gh workflow run daily-sync.yml`。该 workflow 会遍历 `data/.slug_aliases.json` 中的所有 user UUID，触发并等待每个用户的 data pipeline。必须等待 workflow 成功完成；任一用户失败时先报告失败，不得把旧数据误称为最新数据。不要把它与 `.github/workflows/sync-data.yml` 混淆，后者同步 authoring files 到 Azure，不负责刷新 MySQL 运动数据。
-2. **prod MySQL 只读检查**：生成下一周计划期间，允许通过仓库支持的 Go storage 接口或其 MySQL-backed API/CLI 对 prod 腾讯云 MySQL 做只读查询，读取目标用户的最新活动、健康、训练负荷和能力基线。默认用户是 `zhaochaoyi`，但必须先解析并核对目标 user UUID；生成阶段禁止任何 MySQL 写操作，也不得在 storage 层之外临时编写裸 SQL。
+2. **prod MySQL 只读检查**：生成下一周计划期间，允许直接使用非交互 MySQL CLI 对 prod 腾讯云 MySQL 执行只读 SQL，读取目标用户的最新活动、健康、训练负荷和能力基线。连接参数必须且只能从主 checkout 根目录 `.credentials.local` 的 `host`、`port`、`database_name`、`database_readonly_username`、`database_readonly_password` 加载；不得使用 `database_username` / `database_password` 读写账号，也不得在 readonly 账号不可用时回退到任何其他账号。只允许 `SELECT`、`SHOW`、`DESCRIBE` / `DESC`、`EXPLAIN`、`WITH ... SELECT` 等只读语句；禁止多语句输入、存储过程调用、写操作及 schema 变更，并禁止 `INTO OUTFILE` / `INTO DUMPFILE`、`FOR UPDATE`、`LOCK IN SHARE MODE`、`GET_LOCK()` 等写文件或显式加锁形式。
 3. **禁止 SQLite 数据源**：不得运行本地 sync 来准备计划上下文，不得读取 `data/{user_id}/coros.db`，也不得在 MySQL 查询失败、数据缺失或连接不可用时退回 SQLite。此时应停止生成并向用户报告缺失项或连接问题。
 4. **组合 authoring 输入**：当前训练阶段和人工反馈继续读取本地 `TRAINING_PLAN.md`、上一周 `feedback.md` 等 authoring artifacts；运动和健康事实只以本轮 prod MySQL 查询结果为准。
 5. **生成本地草稿**：只把结果写到本地 `data/{user_id}/logs/<week>/plan.md` 和 `plan.json`。生成后完成 schema 校验和 review，但不要写入 MySQL、提交/推送 Git 或触发任何远端同步。
 6. **等待人工 review**：为 `plan.md` 和 `plan.json` 分别计算 Git blob hash（未跟踪文件则计算 SHA-256），把两个文件路径及 hash 组成同一份草稿 manifest。向用户展示 manifest 和校验结果，并等待用户明确表示该版本 **review 通过**。仅生成草稿、查看草稿、提出修改意见或完成自动 review 均不构成写入授权；任一文件内容变化都会使之前的 review 通过失效，必须重新生成 manifest 并重新 review。
 7. **review 通过后写入 MySQL**：只有用户明确表示已 review 通过并要求发布已确认 manifest 后，才允许从只读阶段升级为写操作，并通过仓库已有且受支持的 MySQL 写接口发布。写入必须携带预期 plan revision（或等价 CAS 条件），原子地拒绝并发变化；写入前再次核对 manifest、user UUID、week start 和 revision。若没有受支持的发布接口，停止并报告需要先实现接口，禁止用临时脚本或裸 SQL 绕过。若任一项变化、写入冲突或校验失败，停止发布且不得激活新计划。写入成功后回读并核对远端内容与本地已确认 manifest 一致；不一致时立即报告，不得继续覆盖。
 
-MySQL 访问凭据只从现有本地安全配置或环境变量加载；不得写入仓库、计划文件或回复，也不得在日志中输出 DSN、密码或 token。
+MySQL CLI 必须使用 batch/non-interactive 模式。不得把密码放在命令行参数中；应使用权限为 `0600` 的临时 `--defaults-extra-file`，用后立即删除。不得输出、记录或回复 `.credentials.local` 的任何值、DSN、密码或 token；查询结果也不得包含 credential/token/secret 列。若 readonly 凭据缺失、连接失败或权限异常，停止检查并报告，不得改用读写账号。
 
 ### 起草新 weekly plan 前必看的输入
 
