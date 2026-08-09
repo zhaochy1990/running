@@ -71,80 +71,11 @@ description: >-
 
 ## Step 4: 输出 Coach Agent MasterPlan
 
-最终回复必须是一个**完整 JSON 对象**，不要输出 Markdown。
+运行时会依据 `MasterPlanSchema` 验证结构化输出；不要输出 Markdown、解释或代码围栏。所有面向用户的文本字段使用中文；字段名和枚举值使用英文/ASCII。
 
-所有面向用户的文本字段使用中文；字段名和枚举值使用英文/ASCII。输出必须包含：
+字段语义和业务规则：
 
-```json
-{
-  "status": "draft",
-  "goal": {
-    "race_name": "赛事名称",
-    "distance": "FM",
-    "race_date": "YYYY-MM-DD",
-    "target_time": "H:MM:SS",
-    "timezone": "Asia/Shanghai",
-    "location": "赛事城市或 null"
-  },
-  "start_date": "YYYY-MM-DD",
-  "end_date": "YYYY-MM-DD",
-  "total_weeks": 10,
-  "phases": [{
-    "name": "基础期",
-    "start_date": "YYYY-MM-DD",
-    "end_date": "YYYY-MM-DD",
-    "focus": "阶段训练重点",
-    "weekly_distance_km_low": 80,
-    "weekly_distance_km_high": 95,
-    "key_session_types": ["长距离", "阈值", "力量"],
-    "milestones": [{
-      "type": "long_run",
-      "date": "YYYY-MM-DD",
-      "target": "32km 长跑",
-      "completed_actual": null
-    }],
-    "key_workouts": "关键课型",
-    "monitoring_triggers": ["RHR 连续升高则降量"],
-    "coach_note": "阶段提醒",
-    "strength": {
-      "sessions_per_week": 2,
-      "focus": "下肢力量、臀髋稳定与核心抗旋转",
-      "timing": "安排在轻松跑后或与质量跑同日，避免长跑前一天"
-    },
-    "recovery": {
-      "focus": "保证睡眠、补碳水和蛋白质，监测疲劳与疼痛",
-      "sleep_target_hours": "7-9",
-      "adjustment_trigger": "连续两天 RHR 高于基线或疼痛≥3/10时取消质量课并降量"
-    },
-    "is_completed": false,
-    "summary": null
-  }],
-  "weeks": [{
-    "week_index": 1,
-    "week_start": "YYYY-MM-DD",
-    "phase_name": "对应phases[].name",
-    "target_weekly_km_low": 80,
-    "target_weekly_km_high": 95,
-    "key_sessions": [{
-      "type": "long_run",
-      "distance_km": 28,
-      "duration_min": null,
-      "intensity": null,
-      "purpose": null
-    }],
-    "is_recovery_week": false
-  }],
-  "training_principles": ["训练原则"],
-  "generated_by": "coach_agent",
-  "version": 1,
-  "created_at": "ISO 8601 UTC",
-  "updated_at": "ISO 8601 UTC"
-}
-```
-
-规则：
-
-1. 新计划 `status` 固定为 `draft`，`version` 固定为 `1`。
+1. 新计划 `status` 固定为 `draft`，`generated_by` 固定为 `coach_agent`，`version` 固定为 `1`。`goal` 包含赛事名称、`FM`/`HM`、比赛日、目标时间、`Asia/Shanghai` 与地点；顶层包含计划日期范围、阶段、周安排、训练原则和 UTC 创建/更新时间。
 2. `phase_name` 只能为 `基础期`、`提升期`、`专项速度周期`、`马拉松专项期`、`赛前减量期`、`赛后恢复期`，并且不同phase不可以重复；
 3. `distance` 只能为 `FM` 或 `HM`。
 4. milestone `type` 只能为 `race`、`test_run`、`long_run`、`strength_test`、`body_composition`。

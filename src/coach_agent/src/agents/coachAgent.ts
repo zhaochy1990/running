@@ -12,8 +12,9 @@ import { createLoggingMiddleware } from "./middleware.js";
 import type { StrideDataStore } from "../persistence/index.js";
 import { getCoachSubagent } from "./weekly_plan/agent.js";
 import { getLogger } from "../logging/index.js";
-import { getMasterPlanSubagent } from "./master_plan/agent.js";
+import { getMasterPlanGeneratorSubagent, getMasterPlanSubagent } from "./master_plan/agent.js";
 import { ORCHESTRATOR_PROMPT } from "./prompts.js";
+import { createMasterPlanPassthroughMiddleware } from "./masterPlanPassthrough.js";
 
 export const CoachContext = z.object({
   userId: z.string(),
@@ -35,6 +36,7 @@ export async function createCoachAgent(store: StrideDataStore, config: CoachAgen
   const weeklySubagent = getCoachSubagent(store, getAgentConfig(config, "weekly_plan"));
 
   const masterSubagent = getMasterPlanSubagent(store, getAgentConfig(config, "master_plan"));
+  const masterPlanGenerator = getMasterPlanGeneratorSubagent(store, getAgentConfig(config, "master_plan"));
 
   logger.info(`creating orchestrator with model ${modelConfig.name} (${modelConfig.model})`);
 
@@ -42,9 +44,9 @@ export async function createCoachAgent(store: StrideDataStore, config: CoachAgen
     model,
     systemPrompt: ORCHESTRATOR_PROMPT,
     tools: memoryTools,
-    subagents: [qaSubagent, weeklySubagent, masterSubagent],
+    subagents: [qaSubagent, weeklySubagent, masterSubagent, masterPlanGenerator],
     contextSchema: CoachContext,
-    middleware: [createLoggingMiddleware("agent")],
+    middleware: [createMasterPlanPassthroughMiddleware(), createLoggingMiddleware("agent")],
     // Skill paths are virtual (for example `/generate-master-plan/SKILL.md`).
     // Without virtualMode, an absolute path escapes rootDir and targets the OS root.
     backend: new FilesystemBackend({ rootDir: SKILLS_DIR, virtualMode: true }),
