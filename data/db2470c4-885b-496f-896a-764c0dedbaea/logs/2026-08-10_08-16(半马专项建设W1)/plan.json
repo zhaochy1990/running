@@ -1,0 +1,25 @@
+{
+  "schema":"weekly-plan/v1",
+  "week_folder":"2026-08-10_08-16(半马专项建设W1)",
+  "sessions":[
+    {"date":"2026-08-10","session_index":0,"kind":"run","summary":"轻松跑 20km","total_distance_m":20000,"spec":{"name":"轻松跑 20km","date":"2026-08-10","blocks":[{"repeat":1,"steps":[{"step_kind":"work","duration":{"kind":"distance_m","value":20000},"target":{"kind":"pace_s_km","low":310,"high":270},"note":"完全有氧，可分早晚完成"}]}]}},
+    {"date":"2026-08-11","session_index":0,"kind":"run","summary":"轻松跑 20km","total_distance_m":20000,"spec":{"name":"轻松跑 20km","date":"2026-08-11","blocks":[{"repeat":1,"steps":[{"step_kind":"work","duration":{"kind":"distance_m","value":20000},"target":{"kind":"pace_s_km","low":310,"high":270},"note":"以轻松有氧为主"}]}]}},
+    {"date":"2026-08-11","session_index":1,"kind":"strength","summary":"跑者基础力量","spec":{"name":"跑者基础力量","date":"2026-08-11","exercises":[{"canonical_id":"T1301","display_name":"高脚杯深蹲","sets":3,"target_kind":"reps","target_value":12,"rest_seconds":60,"note":"中轻重量，不到力竭","provider_id":"T1301"},{"canonical_id":"T1010","display_name":"平板支撑","sets":3,"target_kind":"time_s","target_value":45,"rest_seconds":45,"note":"骨盆中立","provider_id":"T1010"}],"note":"总时长控制在20分钟。"}},
+    {"date":"2026-08-12","session_index":0,"kind":"run","summary":"受控阈值 20km（主段10km）","total_distance_m":20000,"spec":{"name":"受控阈值 2×5km","date":"2026-08-12","blocks":[{"repeat":1,"steps":[{"step_kind":"warmup","duration":{"kind":"distance_m","value":4000},"target":{"kind":"pace_s_km","low":315,"high":270},"note":"含动态活动"},{"step_kind":"work","duration":{"kind":"distance_m","value":5000},"target":{"kind":"pace_s_km","low":204,"high":198},"note":"受控阈值，热中不硬顶"},{"step_kind":"recovery","duration":{"kind":"distance_m","value":1000},"target":{"kind":"open","low":null,"high":null},"note":"轻松慢跑"},{"step_kind":"work","duration":{"kind":"distance_m","value":5000},"target":{"kind":"pace_s_km","low":204,"high":198},"note":"受控阈值，保持均匀，不加速收尾"},{"step_kind":"cooldown","duration":{"kind":"distance_m","value":5000},"target":{"kind":"pace_s_km","low":320,"high":275},"note":"轻松放松"}]}],"note":"固定距离合计20km，其中阈值主段10km。晨脉异常、HRV跌破个人区间、疼痛或高热时全程改轻松跑。"}},
+    {"date":"2026-08-13","session_index":0,"kind":"run","summary":"恢复跑 18km","total_distance_m":18000,"spec":{"name":"恢复跑 18km","date":"2026-08-13","blocks":[{"repeat":1,"steps":[{"step_kind":"work","duration":{"kind":"distance_m","value":18000},"target":{"kind":"pace_s_km","low":320,"high":280},"note":"可分两次；腿沉缩至12km"}]}]}},
+    {"date":"2026-08-14","session_index":0,"kind":"rest","summary":"完全休息","spec":null,"notes_md":"检查晨脉、HRV和腿部反应，不补跑。"},
+    {"date":"2026-08-15","session_index":0,"kind":"run","summary":"22km轻松长跑","total_distance_m":22000,"notes_md":"状态极佳时可在心率不超过150bpm的前提下现场自然渐进，但不作为结构化必做段。","spec":{"name":"22km轻松长跑","date":"2026-08-15","blocks":[{"repeat":1,"steps":[{"step_kind":"work","duration":{"kind":"distance_m","value":22000},"target":{"kind":"pace_s_km","low":305,"high":265},"hr_cap_bpm":150,"note":"全程轻松，目标心率135–150bpm"}]}],"note":"按4:25–5:05/km轻松完成；状态极佳时可在轻松心率内现场自然渐进，但不设结构化必做段。"}},
+    {"date":"2026-08-16","session_index":0,"kind":"run","summary":"恢复跑 18km","total_distance_m":18000,"spec":{"name":"恢复跑 18km","date":"2026-08-16","blocks":[{"repeat":1,"steps":[{"step_kind":"work","duration":{"kind":"distance_m","value":18000},"target":{"kind":"pace_s_km","low":325,"high":285},"note":"可分两次；长跑后仍沉重则缩至7km，周量约107km"}]}]}}
+  ],
+  "nutrition":[
+    {"date":"2026-08-10","kcal_target":3200,"carbs_g":475,"protein_g":120,"fat_g":90,"water_ml":3500,"notes_md":"高跑量轻松日，维持能量平衡。"},
+    {"date":"2026-08-11","kcal_target":3250,"carbs_g":490,"protein_g":120,"fat_g":88,"water_ml":3500,"notes_md":"跑后和力量后及时补碳水蛋白。"},
+    {"date":"2026-08-12","kcal_target":3500,"carbs_g":555,"protein_g":120,"fat_g":90,"water_ml":4000,"notes_md":"跑前30–60g碳水，跑后碳蛋约3:1。"},
+    {"date":"2026-08-13","kcal_target":3150,"carbs_g":465,"protein_g":120,"fat_g":90,"water_ml":3500,"notes_md":"恢复跑日蛋白不断档。"},
+    {"date":"2026-08-14","kcal_target":2750,"carbs_g":365,"protein_g":120,"fat_g":90,"water_ml":3000,"notes_md":"休息日正常进食，为长跑储备糖原。"},
+    {"date":"2026-08-15","kcal_target":3600,"carbs_g":570,"protein_g":120,"fat_g":90,"water_ml":4200,"notes_md":"开跑30分钟后按40–60g碳水/小时并补钠。"},
+    {"date":"2026-08-16","kcal_target":3150,"carbs_g":465,"protein_g":120,"fat_g":90,"water_ml":3500,"notes_md":"恢复跑后及时补主食和蛋白。"}
+  ],
+  "notes_md":"生产主计划本周135–145km，但刚完成117.6km且RHR仍高于49基线；用118km吸收，避免68km断崖，也不硬追145km。8月9日STRIDE ratio 0.83；HRV已连续两晚回到57。周三固定完成2×5km受控阈值主段，以缩减热身和其余轻松里程把当日控制在20km；周六固定为22km全程轻松。状态极佳时可在轻松心率内现场自然渐进，但不作为结构化必做段。无伤病反馈不等于确认无伤。",
+  "coach_notes":"本周训练重点是周三的强度课和周六的长距离课。其它训练可以根据自身反应随时调整；有氧跑可以增加或者减少距离，但不要产生疲劳感。恢复也是训练的一部分，请给自己恢复的空间。"
+}

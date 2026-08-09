@@ -1,0 +1,24 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-08-10_08-16(健康跑·有氧基础W7保守重启)",
+  "sessions": [
+    {"date":"2026-08-10","session_index":0,"kind":"run","summary":"恢复跑走 1km","total_distance_m":1000,"spec":{"name":"恢复跑走 1km","date":"2026-08-10","blocks":[{"repeat":1,"steps":[{"step_kind":"work","duration":{"kind":"distance_m","value":1000},"target":{"kind":"hr_bpm","low":110,"high":135},"note":"上周日已休息，可用跑1min/走1min"}]}],"note":"全程轻松；任何不适改步行。"}},
+    {"date":"2026-08-11","session_index":0,"kind":"run","summary":"轻松跑 2.5km","total_distance_m":2500,"spec":{"name":"轻松跑 2.5km","date":"2026-08-11","blocks":[{"repeat":1,"steps":[{"step_kind":"warmup","duration":{"kind":"distance_m","value":500},"target":{"kind":"hr_bpm","low":115,"high":135},"note":"慢跑或快走"},{"step_kind":"work","duration":{"kind":"distance_m","value":1500},"target":{"kind":"hr_bpm","low":125,"high":145},"note":"能完整说话"},{"step_kind":"cooldown","duration":{"kind":"distance_m","value":500},"target":{"kind":"hr_bpm","low":110,"high":135},"note":"放松"}]}],"note":"可按状态缩短，不能产生疲劳感。"}},
+    {"date":"2026-08-12","session_index":0,"kind":"run","summary":"轻质强度 3km","total_distance_m":3000,"spec":{"name":"轻质强度 3km","date":"2026-08-12","blocks":[{"repeat":1,"steps":[{"step_kind":"warmup","duration":{"kind":"distance_m","value":1000},"target":{"kind":"hr_bpm","low":120,"high":140},"note":"轻松热身"}]},{"repeat":4,"steps":[{"step_kind":"work","duration":{"kind":"time_s","value":20},"target":{"kind":"open","low":null,"high":null},"note":"轻快但不冲刺","hr_cap_bpm":155},{"step_kind":"recovery","duration":{"kind":"time_s","value":100},"target":{"kind":"hr_bpm","low":115,"high":140},"note":"慢跑或走"}]},{"repeat":1,"steps":[{"step_kind":"cooldown","duration":{"kind":"open","value":null},"target":{"kind":"hr_bpm","low":115,"high":140},"note":"轻松跑至总里程3km"}]}],"note":"睡眠差、晨脉异常或炎热时取消轻快段。"}},
+    {"date":"2026-08-13","session_index":0,"kind":"strength","summary":"基础力量 20min","spec":{"name":"基础力量","date":"2026-08-13","exercises":[{"canonical_id":"T1301","display_name":"高脚杯深蹲","sets":3,"target_kind":"reps","target_value":10,"rest_seconds":60,"note":"轻重量，留2–3次余力","provider_id":"T1301"},{"canonical_id":"T1010","display_name":"平板支撑","sets":3,"target_kind":"time_s","target_value":25,"rest_seconds":45,"note":"臀腰平直","provider_id":"T1010"}],"note":"不练到酸痛。"}},
+    {"date":"2026-08-14","session_index":0,"kind":"rest","summary":"休息或轻松步行","spec":null,"notes_md":"为周六留体力。"},
+    {"date":"2026-08-15","session_index":0,"kind":"run","summary":"轻松长距离 3.5km","total_distance_m":3500,"spec":{"name":"轻松长距离 3.5km","date":"2026-08-15","blocks":[{"repeat":1,"steps":[{"step_kind":"warmup","duration":{"kind":"distance_m","value":500},"target":{"kind":"hr_bpm","low":110,"high":135},"note":"快走或慢跑"},{"step_kind":"work","duration":{"kind":"distance_m","value":2500},"target":{"kind":"hr_bpm","low":125,"high":145},"note":"可跑走结合"},{"step_kind":"cooldown","duration":{"kind":"distance_m","value":500},"target":{"kind":"hr_bpm","low":110,"high":135},"note":"轻松结束"}]}],"note":"结束时应感觉还能继续；任何疼痛立即停止。"}},
+    {"date":"2026-08-16","session_index":0,"kind":"rest","summary":"完整休息","spec":null,"notes_md":"吸收周六长距离，不补跑。"}
+  ],
+  "nutrition": [
+    {"date":"2026-08-10","kcal_target":1750,"carbs_g":215,"protein_g":85,"fat_g":60,"water_ml":2100,"notes_md":"恢复跑走后正常均衡饮食。"},
+    {"date":"2026-08-11","kcal_target":1850,"carbs_g":240,"protein_g":85,"fat_g":60,"water_ml":2200,"notes_md":"跑后补主食和20–25g蛋白。"},
+    {"date":"2026-08-12","kcal_target":1900,"carbs_g":255,"protein_g":85,"fat_g":60,"water_ml":2300,"notes_md":"训练前后分配碳水，热天补电解质。"},
+    {"date":"2026-08-13","kcal_target":1800,"carbs_g":225,"protein_g":90,"fat_g":60,"water_ml":2100,"notes_md":"力量后1小时内补蛋白。"},
+    {"date":"2026-08-14","kcal_target":1750,"carbs_g":215,"protein_g":85,"fat_g":60,"water_ml":2000,"notes_md":"不低碳，为周六储备。"},
+    {"date":"2026-08-15","kcal_target":1950,"carbs_g":270,"protein_g":85,"fat_g":58,"water_ml":2400,"notes_md":"跑前熟悉主食，出汗多时补电解质。"},
+    {"date":"2026-08-16","kcal_target":1750,"carbs_g":215,"protein_g":85,"fat_g":60,"water_ml":2000,"notes_md":"休息恢复，维持蛋白和正常进食。"}
+  ],
+  "notes_md": "生产分析中活动为0，不能推断或虚构近期表现；无反馈按未报告伤病处理。8月5日STRIDE PMC ratio 0.34仅说明长期停训后的低负荷，RHR最近有效值为7月31日54（基线50），HRV在7月30日后无夜间实值，执行采用保守重启。",
+  "coach_notes": "本周训练重点是周三的强度课和周六的长距离课。其它训练可以根据自身反应随时调整；有氧跑可以增加或者减少距离，但不要产生疲劳感。恢复也是训练的一部分，请给自己恢复的空间。"
+}
