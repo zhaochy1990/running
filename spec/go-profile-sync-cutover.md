@@ -95,7 +95,7 @@ Move Web profile editing, user-declared running background, injury records, and 
 ## Release order
 
 1. Implement and deploy canonical MySQL season-plan readers, including race goal and synchronized training context, with the `plan-setup-v1` readiness capability.
-2. Deploy the Go schema, APIs, `web-onboarding-v2` readiness capability, and migration command.
+2. Deploy the Go schema, APIs, `web-onboarding-v2` readiness capability, and the `src/migration` running-age migration command.
 3. Run and review the running-age migration report.
 4. Verify the Tencent gateway supports the new methods, authorization headers, CORS, and OPTIONS requests.
 5. Deploy Web UI, BFF manifest, and the complete expected route-flag set together. Audit and remove stale ACA `STRIDE_ROUTE_*` overrides rather than relying on incremental updates. Do not use authenticated or mutating gateway route probes in deploy-web; no harmless endpoint/token exists.

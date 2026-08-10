@@ -71,44 +71,6 @@ func TestUserProfile_UpsertPreservesCreatedAt(t *testing.T) {
 	}
 }
 
-func TestUserProfile_MigrateRunningAgeIfUnknownIsConditional(t *testing.T) {
-	st := openTestStore(t)
-	migrateUsers(t, st)
-	ctx := context.Background()
-	uid := uuid.NewString()
-	if err := st.UpsertUserProfile(ctx, &UserProfile{UserID: uid, RunningAgeRange: RunningAgeUnknown}); err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	updated, err := st.MigrateRunningAgeIfUnknown(ctx, uid, RunningAge6M1Y)
-	if err != nil || !updated {
-		t.Fatalf("first migration: updated=%v err=%v", updated, err)
-	}
-	updated, err = st.MigrateRunningAgeIfUnknown(ctx, uid, RunningAge3YPlus)
-	if err != nil || updated {
-		t.Fatalf("repeat migration: updated=%v err=%v", updated, err)
-	}
-	profile, err := st.GetUserProfile(ctx, uid)
-	if err != nil || profile == nil || profile.RunningAgeRange != RunningAge6M1Y {
-		t.Fatalf("profile after migration: %+v, err=%v", profile, err)
-	}
-}
-
-func TestUserProfile_MigrateRunningAgeDoesNotInsertOrAcceptUnknown(t *testing.T) {
-	st := openTestStore(t)
-	migrateUsers(t, st)
-	ctx := context.Background()
-	uid := uuid.NewString()
-	if updated, err := st.MigrateRunningAgeIfUnknown(ctx, uid, RunningAge6M1Y); err != nil || updated {
-		t.Fatalf("missing profile migration: updated=%v err=%v", updated, err)
-	}
-	if profile, err := st.GetUserProfile(ctx, uid); err != nil || profile != nil {
-		t.Fatalf("missing profile after migration: %+v, err=%v", profile, err)
-	}
-	if _, err := st.MigrateRunningAgeIfUnknown(ctx, uid, RunningAgeUnknown); err == nil {
-		t.Fatal("unknown migration value was accepted")
-	}
-}
-
 func TestUserProfile_PatchSelectiveUpdate(t *testing.T) {
 	st := openTestStore(t)
 	migrateUsers(t, st)

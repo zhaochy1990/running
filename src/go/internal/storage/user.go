@@ -60,29 +60,6 @@ func (s *Store) UpsertUserProfile(ctx context.Context, p *UserProfile) error {
 	}).Create(p).Error
 }
 
-// MigrateRunningAgeIfUnknown conditionally updates a profile's running age. It
-// never inserts a profile and cannot overwrite an explicit value, making repeat
-// migration runs and concurrent profile edits safe.
-func (s *Store) MigrateRunningAgeIfUnknown(ctx context.Context, userID, runningAge string) (bool, error) {
-	uid, err := canonicalUserID(userID)
-	if err != nil {
-		return false, err
-	}
-	if !ValidRunningAgeRange(runningAge) || runningAge == RunningAgeUnknown {
-		return false, fmt.Errorf("storage: invalid migration running_age_range %q", runningAge)
-	}
-	result := s.db.WithContext(ctx).Model(&UserProfile{}).
-		Where("user_id = ? AND running_age_range = ?", uid, RunningAgeUnknown).
-		Updates(map[string]interface{}{
-			"running_age_range": runningAge,
-			"updated_at":        time.Now().UTC(),
-		})
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected > 0, nil
-}
-
 // PatchUserProfile selectively updates an existing core profile and returns the
 // persisted row. It never inserts a sparse profile: a missing user returns
 // (nil, nil). The update and read run in one transaction so callers receive the
