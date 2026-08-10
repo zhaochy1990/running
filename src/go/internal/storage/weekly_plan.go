@@ -48,6 +48,29 @@ type WeekSummary struct {
 	TotalDurationS float64
 }
 
+// ListWeekActivities returns one user's activities in a Shanghai calendar week,
+// ordered chronologically for the week-detail timeline.
+func (s *Store) ListWeekActivities(ctx context.Context, userID, dateFrom, dateTo string) ([]Activity, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := time.Parse("2006-01-02", dateFrom); err != nil {
+		return nil, fmt.Errorf("storage: invalid date_from: %w", err)
+	}
+	if _, err := time.Parse("2006-01-02", dateTo); err != nil {
+		return nil, fmt.Errorf("storage: invalid date_to: %w", err)
+	}
+	var activities []Activity
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ? AND DATE(date + INTERVAL 8 HOUR) BETWEEN ? AND ?", uid, dateFrom, dateTo).
+		Order("date ASC, label_id ASC").
+		Find(&activities).Error; err != nil {
+		return nil, err
+	}
+	return activities, nil
+}
+
 // ListWeekSummaries returns active weekly plans newest first. When masterPlanID
 // is non-empty, only plans linked to that master plan are returned.
 func (s *Store) ListWeekSummaries(ctx context.Context, userID, masterPlanID string) ([]WeekSummary, error) {

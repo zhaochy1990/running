@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"regexp"
 	"sort"
@@ -22,6 +23,7 @@ import (
 type WeeklyPlanStore interface {
 	ListActiveWeeklyPlans(ctx context.Context, userID string) ([]storage.WeeklyPlan, error)
 	ListWeekSummaries(ctx context.Context, userID, masterPlanID string) ([]storage.WeekSummary, error)
+	ListWeekActivities(ctx context.Context, userID, dateFrom, dateTo string) ([]storage.Activity, error)
 	GetActiveWeeklyPlan(ctx context.Context, userID, weekStart string) (*storage.WeeklyPlan, error)
 }
 
@@ -44,6 +46,7 @@ func (w *weeklyPlanRoutes) register(rg *gin.RouterGroup) {
 	rg.GET("/api/:user/plan/weeks", w.list)
 	rg.GET("/api/:user/plan/weeks/:weekName", w.detail)
 	rg.GET("/api/:user/weeks", w.listSummaries)
+	rg.GET("/api/:user/weeks/:weekName", w.weekDetail)
 }
 
 type weeklyPlanMetadataResponse struct {
@@ -77,6 +80,33 @@ type weekSummaryResponse struct {
 	TotalKM            float64 `json:"total_km"`
 	TotalDurationS     float64 `json:"total_duration_s"`
 	TotalDurationFmt   string  `json:"total_duration_fmt"`
+}
+
+type weekActivityResponse struct {
+	activityDetailDTO
+	RouteThumb json.RawMessage `json:"route_thumb" swaggertype:"object"`
+}
+
+type structuredWeekResponse struct {
+	StructuredStatus string `json:"structured_status"`
+	Sessions         any    `json:"sessions"`
+	Nutrition        any    `json:"nutrition"`
+	CoachNotes       any    `json:"coach_notes"`
+}
+
+type weekDetailResponse struct {
+	WeekName         string                  `json:"week_name"`
+	DateFrom         string                  `json:"date_from"`
+	DateTo           string                  `json:"date_to"`
+	Plan             *string                 `json:"plan,omitempty"`
+	PlanSource       string                  `json:"plan_source"`
+	FeedbackSource   string                  `json:"feedback_source"`
+	Activities       []weekActivityResponse  `json:"activities"`
+	TotalKM          float64                 `json:"total_km"`
+	TotalDurationS   float64                 `json:"total_duration_s"`
+	TotalDurationFmt string                  `json:"total_duration_fmt"`
+	ActivityCount    int                     `json:"activity_count"`
+	Structured       *structuredWeekResponse `json:"structured,omitempty"`
 }
 
 var weekNamePattern = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2})$`)
@@ -203,6 +233,99 @@ func (w *weeklyPlanRoutes) listSummaries(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"weeks": weeks})
+}
+
+// weekDetail returns the migrated active weekly plan plus activities from the
+// canonical MySQL stores.
+//
+//	@Summary		Get a user's week detail
+//	@Tags			weekly-plan
+//	@Produce		json
+//	@Param			user		path	string	true	"User id (JWT sub)"
+//	@Param			weekName	path	string	true	"Shanghai week name (YYYY-MM-DD_MM-DD)"
+//	@Success		200	{object}	weekDetailResponse
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		403	{object}	errorResponse
+//	@Failure		404	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/{user}/weeks/{weekName} [get]
+func (w *weeklyPlanRoutes) weekDetail(c *gin.Context) {
+	user := c.Param("user")
+	if !authorizeUser(c, user) {
+		return
+	}
+	weekName := c.Param("weekName")
+	weekStart, weekEnd, ok := weekIdentity(weekName)
+	if !ok {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_week_name"})
+		return
+	}
+	plan, err := w.store.GetActiveWeeklyPlan(c.Request.Context(), user, weekStart)
+	if err != nil {
+		w.log.Error("get week detail plan failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if plan == nil {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "weekly_plan_not_found"})
+		return
+	}
+	dateTo := weekEnd.Format("2006-01-02")
+	rows, err := w.store.ListWeekActivities(c.Request.Context(), user, weekStart, dateTo)
+	if err != nil {
+		w.log.Error("get week detail activities failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+
+	response := weekDetailResponse{
+		WeekName: weekName, DateFrom: weekStart, DateTo: dateTo,
+		PlanSource: "weekly_plan_store", FeedbackSource: "none",
+		Activities: make([]weekActivityResponse, 0, len(rows)),
+	}
+	for i := range rows {
+		activity := toActivityDetail(&rows[i])
+		response.Activities = append(response.Activities, weekActivityResponse{
+			activityDetailDTO: activity,
+			RouteThumb:        routeThumbRaw(rows[i].RouteThumbJSON),
+		})
+		response.TotalKM += activity.DistanceKm
+		if rows[i].DurationS != nil {
+			response.TotalDurationS += *rows[i].DurationS
+		}
+	}
+	response.TotalKM = math.Round(response.TotalKM*10) / 10
+	response.TotalDurationFmt = apifmt.DurationFmt(&response.TotalDurationS)
+	response.ActivityCount = len(response.Activities)
+
+	if plan.ContentVersion == storage.WeeklyPlanContentMarkdown {
+		response.Plan = &plan.Content
+	} else {
+		var document map[string]any
+		if err := json.Unmarshal([]byte(plan.Content), &document); err != nil {
+			w.log.Error("weekly plan content is invalid JSON", zapErr(err), zap.String("plan_id", plan.PlanID))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+		sessions, sessionsOK := document["sessions"].([]any)
+		nutrition, nutritionOK := document["nutrition"].([]any)
+		if !sessionsOK || !nutritionOK {
+			w.log.Error("weekly plan content is missing structured arrays", zap.String("plan_id", plan.PlanID))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+		coachNotes := document["coach_notes"]
+		if coachNotes == nil {
+			coachNotes = document["notes_md"]
+		}
+		response.Structured = &structuredWeekResponse{
+			StructuredStatus: "canonical", Sessions: sessions, Nutrition: nutrition, CoachNotes: coachNotes,
+		}
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 // detail returns the active weekly plan in its stored representation.

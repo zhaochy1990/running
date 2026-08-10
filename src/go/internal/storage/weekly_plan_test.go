@@ -104,6 +104,33 @@ func TestListWeekSummariesFiltersMasterPlanAndAggregatesShanghaiWeek(t *testing.
 	}
 }
 
+func TestListWeekActivitiesUsesShanghaiDatesAndChronologicalOrder(t *testing.T) {
+	store := openWatchTestStore(t)
+	userID := uuid.NewString()
+	otherUser := uuid.NewString()
+	distance := 5000.0
+	seedActivity(t, store, userID, &Activity{
+		LabelID: "late", Date: time.Date(2026, 8, 2, 15, 59, 0, 0, time.UTC), DistanceM: &distance,
+	}, nil, nil, nil)
+	seedActivity(t, store, userID, &Activity{
+		LabelID: "early", Date: time.Date(2026, 7, 26, 16, 0, 0, 0, time.UTC), DistanceM: &distance,
+	}, nil, nil, nil)
+	seedActivity(t, store, userID, &Activity{
+		LabelID: "outside", Date: time.Date(2026, 8, 2, 16, 0, 0, 0, time.UTC), DistanceM: &distance,
+	}, nil, nil, nil)
+	seedActivity(t, store, otherUser, &Activity{
+		LabelID: "other", Date: time.Date(2026, 7, 27, 1, 0, 0, 0, time.UTC), DistanceM: &distance,
+	}, nil, nil, nil)
+
+	rows, err := store.ListWeekActivities(context.Background(), userID, "2026-07-27", "2026-08-02")
+	if err != nil {
+		t.Fatalf("list week activities: %v", err)
+	}
+	if len(rows) != 2 || rows[0].LabelID != "early" || rows[1].LabelID != "late" {
+		t.Fatalf("activities=%+v", rows)
+	}
+}
+
 func TestWeeklyPlanStatusSlotsAreUniquePerWeek(t *testing.T) {
 	store := openTestStore(t)
 	migrateWeeklyPlan(t, store)

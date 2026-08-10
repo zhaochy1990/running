@@ -1689,6 +1689,79 @@
                 }
             }
         },
+        "/api/{user}/weeks/{weekName}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "weekly-plan"
+                ],
+                "summary": "Get a user's week detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shanghai week name (YYYY-MM-DD_MM-DD)",
+                        "name": "weekName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.weekDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/jobs": {
             "get": {
                 "description": "Returns every job type the system supports (hardcoded in the catalog), each with its input JSON schema and an example input. Static system metadata; no auth required.",
@@ -3696,6 +3769,17 @@
                 }
             }
         },
+        "api.structuredWeekResponse": {
+            "type": "object",
+            "properties": {
+                "coach_notes": {},
+                "nutrition": {},
+                "sessions": {},
+                "structured_status": {
+                    "type": "string"
+                }
+            }
+        },
         "api.syncRequest": {
             "type": "object",
             "properties": {
@@ -3862,6 +3946,142 @@
                     "type": "string"
                 },
                 "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.weekActivityResponse": {
+            "type": "object",
+            "properties": {
+                "aerobic_effect": {
+                    "type": "number"
+                },
+                "anaerobic_effect": {
+                    "type": "number"
+                },
+                "ascent_m": {
+                    "type": "number"
+                },
+                "avg_cadence": {
+                    "type": "integer"
+                },
+                "avg_hr": {
+                    "type": "integer"
+                },
+                "avg_pace_s_km": {
+                    "type": "number"
+                },
+                "calories_kcal": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_fmt": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "number"
+                },
+                "feel_type": {
+                    "type": "integer"
+                },
+                "feels_like": {
+                    "type": "number"
+                },
+                "humidity": {
+                    "type": "number"
+                },
+                "label_id": {
+                    "type": "string"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pace_fmt": {
+                    "type": "string"
+                },
+                "pauses": {
+                    "type": "object"
+                },
+                "route_thumb": {
+                    "type": "object"
+                },
+                "sport_name": {
+                    "type": "string"
+                },
+                "sport_note": {
+                    "type": "string"
+                },
+                "sport_type": {
+                    "type": "integer"
+                },
+                "temperature": {
+                    "type": "number"
+                },
+                "train_type": {
+                    "type": "string"
+                },
+                "training_load": {
+                    "type": "number"
+                },
+                "vo2max": {
+                    "type": "number"
+                },
+                "wind_speed": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.weekDetailResponse": {
+            "type": "object",
+            "properties": {
+                "activities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.weekActivityResponse"
+                    }
+                },
+                "activity_count": {
+                    "type": "integer"
+                },
+                "date_from": {
+                    "type": "string"
+                },
+                "date_to": {
+                    "type": "string"
+                },
+                "feedback_source": {
+                    "type": "string"
+                },
+                "plan": {
+                    "type": "string"
+                },
+                "plan_source": {
+                    "type": "string"
+                },
+                "structured": {
+                    "$ref": "#/definitions/api.structuredWeekResponse"
+                },
+                "total_duration_fmt": {
+                    "type": "string"
+                },
+                "total_duration_s": {
+                    "type": "number"
+                },
+                "total_km": {
+                    "type": "number"
+                },
+                "week_name": {
                     "type": "string"
                 }
             }
