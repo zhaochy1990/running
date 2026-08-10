@@ -375,6 +375,31 @@ The target tables are normally created by the corresponding runtime migration.
 For a fresh DB, `schema.sql` holds the equivalent DDL for all ten tables;
 migrations that expose `--ensure-schema` can apply it directly.
 
+### Current season-plan cutover
+
+The master-plan migration also owns the explicit, outage-only schema transition
+from `master_plan.version` to `master_plan.revision`; Go AutoMigrate must not be
+used to infer this rename. Its target-aware dry-run reads Azure source and MySQL
+target, then emits a redacted per-user manifest for manual review. Structured
+content supersedes Markdown when both source forms exist; a different existing
+MySQL current row is a conflict and is never overwritten.
+
+Every action is identity-bound: selected STRIDE user UUID, Azure partition,
+embedded source user/plan IDs, manifest IDs, and MySQL target IDs must agree.
+Target discovery checks rows marked current by either `active_flag=1` or
+`status='active'`; duplicate candidates or either direction of marker drift is a
+conflict.
+
+During commit, each user is written transactionally and independently read back
+after commit for verification. Commit is bound to the manually reviewed manifest:
+source and target identities/hashes are re-read and any drift aborts the run. The schema
+operation is idempotent only for an old-only `version` state or a new-only
+`revision` state; both columns or neither column is a conflict. Stop the old Go
+API before commit; this is a full Go API maintenance window, so all existing Go-routed
+Web features are unavailable. Do not restart or roll back the old image after the rename.
+See `../../spec/go-current-season-plan-cutover.md` and ADR 0024 for the complete
+release and response contract.
+
 ## Tests
 
 Pure transform + config + selection logic is covered without touching Azure,

@@ -39,7 +39,9 @@ prod 启用：revision `stride-app--0000037` 起：
 
 公钥 env set 时，每个 `/api/*` 路由（除 `/api/health`）都要 Bearer。`stride_server/app.py` 在 router 级别套 `Depends(require_bearer)`，只放过 `public` router（仅 `/api/health` 给 Azure liveness probe）。CORS 故意大开（`allow_origins=["*"]`）—— 真正的 authz 边界是 Bearer 层不是 Origin。
 
-已验证：`/api/*`（除 `/api/health`）无 token → 401；valid user token → 200。覆盖读（`/users`, `/weeks`, `/activities`, `/dashboard`, `/health`, `/pmc`, `/stats`, `/training-plan`）和写（`/sync`, `/resync`, `/commentary`）。
+已验证：Python `/api/*`（除 `/api/health`）无 token → 401；valid user token → 200。覆盖读（`/users`, `/weeks`, `/activities`, `/dashboard`, `/health`, `/pmc`, `/stats`）和写（`/sync`, `/resync`, `/commentary`）。Legacy Python `/api/{user}/training-plan` 仍受相同 Bearer 保护，但已不是官方 Web API。
+
+Go `stride api` 使用同一 auth-service 公钥在 Gin middleware 本地验签 JWT，并按 JWT `sub` 做用户隔离。Web 的 `/api/users/me/master-plan/current` 由 BFF 路由到 Go；它不经过 FastAPI `require_bearer`。
 
 ### 3. CLI auth (`coros-sync auth` 组)
 
@@ -78,7 +80,7 @@ same-origin 经前门转发，不再用 `VITE_AUTH_BASE_URL` 绝对量直连 aut
 
 > **前门 = stride-web BFF（域名切换已完成）**：用户域名 `stride-running.cn` 已翻到 `stride-web`，
 > 由它的 Node BFF 作为唯一前门，把 `/api/auth/*` 转发到 `AUTH_UPSTREAM_URL`（auth-service），
-> `/api/*` 转发到 `PYTHON_API_URL`（stride-app）。**stride-app 已不再服务 SPA / 不再是 web 前门**：
+> 其它 `/api/*` 按版本化路由表转发到 `PYTHON_API_URL`（stride-app）或 `GO_API_URL`（stride api）。**stride-app 已不再服务 SPA / 不再是 web 前门**：
 > `mount_frontend` / `static.py` 及短暂存在过的 `routes/auth_proxy.py` fallback 反代都已随 ADR 0017
 > 收尾清理移除。浏览器永不直接打 stride-app 的 `/api/auth/*`，所以老后端无需 auth 反代。
 

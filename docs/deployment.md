@@ -95,6 +95,29 @@ onboarding handlers 直接写 per-user SQLite 是独立的历史架构债，本�
 
 `src/go/**` 变更 push 到 `master` 且 Go 测试通过后，workflow 统一计算本次 CalVer，并用两项 matrix 在独立 runner 上并行构建 `stride-worker` 和 `stride-api`。两个镜像分别推送到 GHCR 与阿里云 ACR；worker 额外保留 commit SHA tag。两项构建使用独立 BuildKit GHA cache scope，避免并发导出缓存互相覆盖。只有整个 matrix 成功后，独立的 Renovate job 才更新 `stride-devops` 中两项镜像版本，避免部署指向只发布了一半的 release。仅修改 workflow 本身会运行测试，但不会重新发布镜像。
 
+### 赛季训练计划统一读取切流
+
+Web 只通过 Go `GET /api/users/me/master-plan/current` 读取当前赛季训练计划。该接口从
+MySQL `master_plan` 的唯一 active 行读取，并按 `content_version` 返回 Markdown 或结构化
+内容；不得 fallback 到 Python、Azure、文件或 SQLite。Web 镜像在 `Dockerfile.web` 中把
+`STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT=go` 设为默认值，`deploy-web.yml` 不提供
+额外 readiness gate，因此发布顺序由人工负责。
+
+`master_plan.version` 改名为 `revision` 是停机式破坏性迁移：
+
+1. 运行 target-aware migration dry-run，人工审阅不含计划正文、运动员姓名、凭据或 token 的 manifest。
+2. 构建并发布新 Go API 与 Web 镜像，但此时不要 rollout。
+3. 开始完整 Go API 维护窗口：从流量入口摘除服务并停止全部旧实例，确认旧容器不会因 restart policy 再启动。维护窗口内，所有已通过 BFF 切到 Go 的 Web 功能都不可用，不只是 `/plan`。
+4. 由 `src/migration` 工具幂等执行列 rename、CHECK 更新、数据写入与回读校验。
+5. 启动新 Go API并验证 unified current 的 Markdown、JSON 与 404 场景。
+6. 将新 Go API重新接入流量并结束维护窗口。
+7. 最后部署 Web。
+
+commit 前必须用已人工审阅 manifest 的 hash 重新核对 Azure 源和 MySQL 目标；任一变化都
+停止执行并要求重新 dry-run/review。迁移失败时保持 Go API 停止，修复后重跑；工具不自动反向 rename。旧 Go 镜像不知道
+`revision`，禁止直接回滚；必须先人工反向迁移 schema。完整契约见
+[`spec/go-current-season-plan-cutover.md`](../spec/go-current-season-plan-cutover.md) 与 ADR 0024。
+
 ### `.github/workflows/weekly-running-calibration.yml` —— 周度运动员基线校准
 
 每周日触发时，workflow 从 `data/.slug_aliases.json` 枚举用户，并通过 Go API 的

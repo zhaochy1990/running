@@ -42,7 +42,7 @@ React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。
 - `POST /api/{user}/activities/{id}/resync` —— 从 COROS 重拉单个活动（拿更新的 feedback）
 - `GET /api/{user}/weeks` / `GET /api/{user}/weeks/{folder}` (`routes/weeks.py`) —— training-week plan/feedback/activities
 - `GET /api/{user}/plan/weeks` / `GET /api/{user}/plan/weeks/{week_name}`（Go `cmd/api`）—— active 本周课表元数据列表与详情；新接口以规范化周名称替代 legacy folder
-- `GET /api/{user}/training-plan` —— TRAINING_PLAN.md 内容 + 解析后的 phase 时间轴 (`routes/training_plan.py`)
+- `GET /api/users/me/master-plan/current` —— Go/MySQL 统一返回当前赛季训练计划；`content_version=1` 的 `plan` 是 Markdown，`content_version=2` 的 `plan` 是结构化内容。Web 不再调用 legacy `/api/{user}/training-plan`。
 - `GET /api/{user}/dashboard` / `/health` / `/pmc` / `/stats` —— fitness & health (`routes/health.py`)
 - `POST /api/{user}/sync` —— 经配置的 `DataSource` 触发完整 sync (`routes/sync.py`)
 - `POST /api/users/me/coach/chat` —— 固定 session 的 Coach 对话；请求带 `client_turn_id`，计划工作区额外带 typed `target`
