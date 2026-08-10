@@ -45,20 +45,6 @@ table_name = "stridemasterplan"
 table_account_url = ""
 table_name = "strideweeklyplan"
 
-# Canonical season-plan generation input. Production resolves these values from
-# Key Vault or STRIDE_DATABASE_* environment variables; sqlite is never used as
-# a generation fallback.
-[storage.database]
-mode = "sqlite"
-host = ""
-port = 3306
-database = ""
-username = ""
-password = ""
-tls_ca_path = ""
-connect_timeout_s = 5
-read_timeout_s = 30
-
 # Async-job infra (queue layer + state store). Empty URLs → dev in-memory
 # queue + file state store. Prod sets these to Azure Storage Queue + Table
 # in server.prod.toml. Consumed by the worker (`python -m stride_server.jobs`)

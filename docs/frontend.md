@@ -56,8 +56,8 @@ React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。
 - Go `GET`/`POST`/`PATCH /api/users/me/profile` owns the five core profile fields plus `running_age_range`.
 - Injury history is a separate Go resource under `/api/users/me/injuries`; it is not embedded in profile PATCH.
 - Weekly mileage and PBs are derived from watch data, not user-declared profile fields.
-- Web plan setup no longer calls Python `running-profile`, `full-sync`, or `full-sync-status`. It saves the race goal, waits for a Go incremental `data_sync` Pipeline Run, then starts season-plan generation.
-- Detailed contract and canonical generation-reader cutover gate: [`spec/go-profile-sync-cutover.md`](../spec/go-profile-sync-cutover.md).
+- Web plan setup no longer calls Python `running-profile`, `full-sync`, or `full-sync-status`. It saves the race goal, waits for a Go incremental `data_sync` Pipeline Run, then starts the existing season-plan generation flow.
+- Python season-plan generation remains unchanged and is outside this Go cutover. Detailed route contract: [`spec/go-profile-sync-cutover.md`](../spec/go-profile-sync-cutover.md).
 
 ## Segment Display
 

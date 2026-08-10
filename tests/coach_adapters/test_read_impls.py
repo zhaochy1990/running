@@ -316,23 +316,7 @@ def test_activity_detail_missing(patched_db) -> None:
     assert any("not found" in e for e in res.errors)
 
 
-def test_estimate_master_plan_load_empty_no_plan(patched_db, monkeypatch) -> None:
-    # The estimator now reads history from the canonical season-plan context;
-    # the SQLite fixture only covers the independent empty-plan lookup.
-    import stride_server.canonical_season_plan as canonical_mod
-
-    monkeypatch.setattr(
-        canonical_mod,
-        "load_canonical_season_context",
-        lambda *_args, **_kwargs: {
-            "history": {
-                "max_weekly_km": 0.0,
-                "weekly_profile": [],
-                "total_activities": 0,
-            }
-        },
-    )
-
+def test_estimate_master_plan_load_empty_no_plan(patched_db) -> None:
     res = read_impls.EstimateMasterPlanLoadImpl("uid")()
     assert res.ok
     assert res.data["plan_estimate"] is None

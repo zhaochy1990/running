@@ -43,7 +43,6 @@ from stride_core.master_plan_diff import (
 from stride_core.timefmt import today_shanghai
 
 from ..bearer import require_bearer
-from ..canonical_season_plan import load_canonical_season_context
 from ..content_store import read_json, write_json
 from ..deps import get_db
 from .. import job_runner
@@ -85,6 +84,28 @@ class GenerateRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _read_current_goal(user_id: str) -> dict[str, Any] | None:
+    """Read current training goal from content store. Returns None if absent."""
+    item = read_json(f"{user_id}/training_goal.json")
+    if item is None:
+        return None
+    data, _ = item
+    if isinstance(data, dict):
+        return data.get("current")
+    return None
+
+
+def _read_current_profile(user_id: str) -> dict[str, Any] | None:
+    """Read current running profile from content store. Returns None if absent."""
+    item = read_json(f"{user_id}/running_profile.json")
+    if item is None:
+        return None
+    data, _ = item
+    if isinstance(data, dict):
+        return data.get("current")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # POST /api/users/me/master-plan/generate
 # ---------------------------------------------------------------------------
@@ -116,19 +137,32 @@ def generate_master_plan(
             },
         )
 
-    # Resolve both goal and profile from the canonical MySQL reader. This proves
-    # a Go-created goal ID before generation and prevents a stale content-store
-    # snapshot from entering the prompt.
-    try:
-        canonical = load_canonical_season_context(user_id, goal_id=body.goal_id)
-    except Exception as exc:  # noqa: BLE001 — canonical input is a hard gate
-        logger.error("master-plan generation canonical context unavailable: %s", exc)
+    # --- Validate explicit goal_id if provided ---
+    if body.goal_id is not None:
+        goal_store_item = read_json(f"{user_id}/training_goal.json")
+        if goal_store_item is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Training goal '{body.goal_id}' not found",
+            )
+        store_data, _ = goal_store_item
+        current_goal = store_data.get("current") if isinstance(store_data, dict) else None
+        if current_goal is None or current_goal.get("goal_id") != body.goal_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Training goal '{body.goal_id}' not found",
+            )
+
+    # --- Read current goal (required) ---
+    goal = _read_current_goal(user_id)
+    if goal is None:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="canonical MySQL training context unavailable",
-        ) from exc
-    goal = dict(canonical["goal"])
-    profile = dict(canonical.get("profile") or {})
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="训练目标未设置",
+        )
+
+    # --- Read current profile (optional) ---
+    profile = _read_current_profile(user_id)
 
     # --- Create job ---
     job_id = job_runner.create_job(user_id)
@@ -592,19 +626,6 @@ def confirm_master_plan(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="该总纲已确认（status=active），无需重复确认",
-        )
-
-    try:
-        canonical = load_canonical_season_context(user_id, goal_id=plan.goal.goal_id)
-    except Exception as exc:  # noqa: BLE001 — activation needs canonical goal
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="canonical MySQL training context unavailable",
-        ) from exc
-    if canonical["goal"].get("goal_id") != plan.goal.goal_id:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Training Goal 与当前 Master Plan 不一致，请刷新后重试",
         )
 
     # Archive any existing active plans for this user

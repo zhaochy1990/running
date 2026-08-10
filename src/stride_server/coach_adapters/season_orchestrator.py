@@ -88,8 +88,8 @@ from coach.graphs.generation.week_schedule import (
 from coach.graphs.generation.weekly_prompt import WeekMeta
 from coach.schemas import PhaseReview, PhaseWeeks, SeasonPlanBundle
 from stride_core.master_plan import MasterPlan, MasterPlanWeek, Milestone, Phase
+from stride_storage.sqlite.database import Database
 
-from ..canonical_season_plan import load_canonical_season_context
 from ..coach_runtime import get_generator_model
 from .phase_review_adapter import review_phase
 from .phase_specialist_adapter import generate_phase_validated
@@ -257,34 +257,27 @@ class _ActualExecutionBaseline:
 
 
 def _last_completed_week_actual(
-    user_id: str,
-    first_week_start: date_cls,
-    *,
-    canonical_context: dict | None = None,
+    user_id: str, first_week_start: date_cls
 ) -> _ActualExecutionBaseline | None:
     prev_start = first_week_start - timedelta(days=7)
-    context = canonical_context
-    if context is None:
-        try:
-            context = load_canonical_season_context(user_id, as_of=first_week_start - timedelta(days=1))
-        except Exception as exc:  # noqa: BLE001 — canonical context is a hard gate
-            raise RuntimeError("canonical_mysql_unavailable: actual execution baseline") from exc
-    rows = [
-        row
-        for row in (context.get("history") or {}).get("weekly_profile", [])
-        if row.get("week_start") == prev_start.isoformat()
-    ]
-    running = rows[0] if rows else {}
-    km = float(running.get("distance_km") or 0.0)
+    prev_end = first_week_start - timedelta(days=1)
+    try:
+        db = Database(user=user_id)
+        running = db.get_running_week_summaries([
+            (0, prev_start.isoformat(), prev_end.isoformat())
+        ]).get(0, {})
+        dose, load_row = db.fetch_completed_week_training_load(
+            prev_start.isoformat(), prev_end.isoformat(),
+        )
+    except Exception as exc:  # noqa: BLE001 — execution cap is best-effort context
+        logger.warning("season: failed to read last completed week actual load: %s", exc)
+        return None
+    km = float(running.get("actual_distance_km") or 0.0)
     if km <= 0:
         return None
-    dose = (
-        float(running.get("dose") or 0.0)
-        if running.get("dose_coverage_status") in ("complete", "rest_confirmed")
-        else 0.0
-    )
-    acute = float(running["atl"]) if running.get("atl") is not None else None
-    chronic = float(running["ctl"]) if running.get("ctl") is not None else None
+    dose = float(dose or 0.0)
+    acute = float(load_row["acute_load"]) if load_row and load_row["acute_load"] is not None else None
+    chronic = float(load_row["chronic_load"]) if load_row and load_row["chronic_load"] is not None else None
     return _ActualExecutionBaseline(
         last_week_km=round(km, 1),
         last_week_dose=round(dose, 1) if dose > 0 else None,
@@ -293,15 +286,8 @@ def _last_completed_week_actual(
     )
 
 
-def _last_completed_week_actual_km(
-    user_id: str,
-    first_week_start: date_cls,
-    *,
-    canonical_context: dict | None = None,
-) -> float | None:
-    baseline = _last_completed_week_actual(
-        user_id, first_week_start, canonical_context=canonical_context
-    )
+def _last_completed_week_actual_km(user_id: str, first_week_start: date_cls) -> float | None:
+    baseline = _last_completed_week_actual(user_id, first_week_start)
     return baseline.last_week_km if baseline is not None else None
 
 
@@ -365,8 +351,7 @@ class _ActualExecutionCapper:
 
     @classmethod
     def from_context(
-        cls, context: dict, *, master_plan: MasterPlan,
-        canonical_context: dict | None = None,
+        cls, context: dict, *, master_plan: MasterPlan
     ) -> "_ActualExecutionCapper | None":
         raw = context.get("actual_execution") or context.get("execution_adjustment")
         baseline = _float_from_mapping(
@@ -390,9 +375,7 @@ class _ActualExecutionCapper:
             user_id = str(context.get("user_id") or master_plan.user_id or "")
             first = _first_week_start(master_plan)
             if user_id and first is not None:
-                actual = _last_completed_week_actual(
-                    user_id, first, canonical_context=canonical_context
-                )
+                actual = _last_completed_week_actual(user_id, first)
                 if actual is not None:
                     baseline = actual.last_week_km
                     last_week_dose = last_week_dose if last_week_dose is not None else actual.last_week_dose
@@ -633,43 +616,6 @@ def _attributed_phase_ids(report: SeasonRuleReport) -> set[str]:
     return targets
 
 
-def _load_generation_canonical_context(
-    master_plan: MasterPlan, context: dict
-) -> dict:
-    """Resolve the one canonical MySQL context used by the whole season.
-
-    The context may already be attached by the S1 loader. Otherwise this is the
-    hard gate for direct callers: no phase metadata, tool construction, or LLM
-    invocation occurs until MySQL supplies calibration and history.
-    """
-    injected = context.get("canonical_season_context")
-    if isinstance(injected, dict):
-        canonical = injected
-    else:
-        user_id = str(context.get("user_id") or master_plan.user_id or "")
-        if not user_id:
-            raise RuntimeError("canonical_mysql_unavailable: season user_id is missing")
-        try:
-            canonical = dict(
-                load_canonical_season_context(
-                    user_id,
-                    goal_id=master_plan.goal_id,
-                    as_of=_first_week_start(master_plan),
-                )
-            )
-        except Exception as exc:  # noqa: BLE001 — canonical data is a hard gate
-            raise RuntimeError("canonical_mysql_unavailable: season context unavailable") from exc
-
-    if not isinstance(canonical.get("calibration"), dict):
-        raise RuntimeError("canonical_mysql_unavailable: calibration is missing")
-    calibration = canonical["calibration"]
-    if not calibration.get("threshold_speed_mps"):
-        raise RuntimeError("canonical_mysql_unavailable: threshold calibration is missing")
-    if not isinstance(canonical.get("history"), dict):
-        raise RuntimeError("canonical_mysql_unavailable: history is missing")
-    return canonical
-
-
 def generate_season(
     master_plan: MasterPlan,
     context: dict,
@@ -699,16 +645,10 @@ def generate_season(
         ``review.verdict`` (``revise`` / ``block``) visible; persistent season
         errors are logged. Never raises, never loops unbounded.
     """
-    # Hard gate: canonical MySQL must be available before any generation/review
-    # work, including phase metadata expansion or LLM construction.
-    canonical_context = _load_generation_canonical_context(master_plan, context)
-    context = {**context, "canonical_season_context": canonical_context}
     injuries = list(injuries or [])
     milestones = list(master_plan.milestones or [])
     master_weeks = list(master_plan.weeks or master_plan.weekly_key_sessions or [])
-    actual_capper = _ActualExecutionCapper.from_context(
-        context, master_plan=master_plan, canonical_context=canonical_context
-    )
+    actual_capper = _ActualExecutionCapper.from_context(context, master_plan=master_plan)
     phase_week_metas: dict[str, list[WeekMeta]] = {}
 
     # --- Pass 1: inline per-phase generation with review-driven regen. -------

@@ -113,44 +113,12 @@ class QueueStorageConfig:
 
 
 @dataclass(frozen=True)
-class DatabaseStorageConfig:
-    mode: str = "sqlite"
-    host: str = ""
-    port: int = 3306
-    database: str = ""
-    username: str = ""
-    password: str = field(default="", repr=False)
-    tls_ca_path: str = ""
-    connect_timeout_s: int = 5
-    read_timeout_s: int = 30
-
-    def with_updates(self, **updates: object) -> DatabaseStorageConfig:
-        return replace(self, **updates)
-
-    def validate(self, *, require_connection: bool = True) -> None:
-        if self.mode not in {"sqlite", "mysql"}:
-            raise ConfigError("storage.database.mode must be 'sqlite' or 'mysql'")
-        if not 1 <= self.port <= 65535:
-            raise ConfigError("storage.database.port must be between 1 and 65535")
-        for path, value in (("storage.database.connect_timeout_s", self.connect_timeout_s), ("storage.database.read_timeout_s", self.read_timeout_s)):
-            validate_positive(path, value)
-        if self.mode == "mysql" and require_connection:
-            self.validate_mysql_connection()
-
-    def validate_mysql_connection(self) -> None:
-        for path, value in (("storage.database.host", self.host), ("storage.database.database", self.database), ("storage.database.username", self.username), ("storage.database.password", self.password)):
-            if not isinstance(value, str) or not value.strip():
-                raise ConfigError(f"{path} is required for canonical MySQL")
-
-
-@dataclass(frozen=True)
 class StorageConfig:
     content: ContentStorageConfig = field(default_factory=ContentStorageConfig)
     likes: LikesStorageConfig = field(default_factory=LikesStorageConfig)
     master_plan: MasterPlanStorageConfig = field(default_factory=MasterPlanStorageConfig)
     weekly_plan: WeeklyPlanStorageConfig = field(default_factory=WeeklyPlanStorageConfig)
     jobs: QueueStorageConfig = field(default_factory=QueueStorageConfig)
-    database: DatabaseStorageConfig = field(default_factory=DatabaseStorageConfig)
 
     def with_updates(self, **updates: object) -> StorageConfig:
         return replace(self, **updates)

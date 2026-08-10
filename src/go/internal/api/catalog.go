@@ -41,7 +41,6 @@ func (s *Service) listPipelines(c *gin.Context) {
 const (
 	onboardingContractVersion = "web-onboarding-v2"
 	planSetupContractVersion  = "plan-setup-v1"
-	seasonPlanReaderVersion   = "mysql-season-plan-context-v1"
 )
 
 type onboardingRouteContract struct {
@@ -93,9 +92,8 @@ var planSetupRouteContracts = []onboardingRouteContract{
 
 func (s *Service) planSetupReadiness(c *gin.Context) {
 	c.JSON(http.StatusOK, planSetupReadinessResponse{
-		ContractVersion:       planSetupContractVersion,
-		ReaderContractVersion: seasonPlanReaderVersion,
-		Routes:                append([]onboardingRouteContract(nil), planSetupRouteContracts...),
+		ContractVersion: planSetupContractVersion,
+		Routes:          append([]onboardingRouteContract(nil), planSetupRouteContracts...),
 	})
 }
 
@@ -105,7 +103,6 @@ type onboardingReadinessResponse struct {
 }
 
 type planSetupReadinessResponse struct {
-	ContractVersion       string                    `json:"contract_version"`
-	ReaderContractVersion string                    `json:"reader_contract_version"`
-	Routes                []onboardingRouteContract `json:"routes"`
+	ContractVersion string                    `json:"contract_version"`
+	Routes          []onboardingRouteContract `json:"routes"`
 }

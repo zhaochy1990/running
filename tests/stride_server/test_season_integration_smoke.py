@@ -51,6 +51,7 @@ from langchain_core.messages import AIMessage, SystemMessage
 from coach.graphs.generation.rule_filter import _total_run_distance_m, run_rule_filter
 from coach.graphs.generation.season_rule_filter import run_season_rule_filter
 from coach.graphs.generation.week_schedule import derive_phase_weeks
+from stride_storage.sqlite.database import Database
 from stride_core.master_plan import (
     MasterPlan,
     MasterPlanStatus,
@@ -60,6 +61,14 @@ from stride_core.master_plan import (
     PhaseType,
 )
 from stride_core.plan_spec import WeeklyPlan
+from stride_storage.sqlite.calibration_connector import (
+    SQLiteRunningCalibrationRepository,
+)
+from stride_core.running_calibration.types import (
+    CalibrationConfidence,
+    RunningCalibrationSnapshot,
+)
+
 import stride_server.coach_adapters.phase_review_adapter as review_mod
 import stride_server.coach_adapters.phase_specialist_adapter as phase_mod
 import stride_server.coach_adapters.season_orchestrator as orch_mod
@@ -77,6 +86,20 @@ USER_ID = "a1b2c3d4-e5f6-4aaa-89ab-0000000000a6"
 # ---------------------------------------------------------------------------
 # Seeding helpers (mirror Stage-3a smoke / T5)
 # ---------------------------------------------------------------------------
+
+
+def _seed_calibration(db: Database) -> None:
+    repo = SQLiteRunningCalibrationRepository(db)
+    repo.save_snapshot(
+        RunningCalibrationSnapshot(
+            as_of_date=date(2026, 5, 20),
+            threshold_speed_mps=_THRESHOLD_SPEED_MPS,
+            threshold_hr=168.0,
+            threshold_speed_confidence=CalibrationConfidence.HIGH,
+            threshold_hr_confidence=CalibrationConfidence.HIGH,
+            hrmax_confidence=CalibrationConfidence.NONE,
+        )
+    )
 
 
 def _fm_goal() -> dict:
@@ -183,29 +206,12 @@ def _master_plan() -> MasterPlan:
     )
 
 
-def _canonical_context() -> dict:
-    return {
-        "contract_version": "mysql-season-plan-context-v1",
-        "goal": _fm_goal(),
-        "history": {"weekly_profile": []},
-        "calibration": {
-            "as_of_date": "2026-05-20",
-            "threshold_speed_mps": _THRESHOLD_SPEED_MPS,
-            "threshold_hr": 168.0,
-            "threshold_speed_confidence": "high",
-            "threshold_hr_confidence": "high",
-        },
-        "continuity": {"macro_cycle": "base", "current_chronic_load": 55.0},
-    }
-
-
 def _context() -> dict:
     return {
         "user_id": USER_ID,
         "goal": _fm_goal(),
         "level": 63.0,
         "continuity": {"macro_cycle": "base", "current_chronic_load": 55.0},
-        "canonical_season_context": _canonical_context(),
     }
 
 
@@ -348,15 +354,17 @@ class _FakeReviewerLLM:
 
 
 # ---------------------------------------------------------------------------
-# Wiring — phase-at-once generation consumes the injected canonical context.
-# ``build_specialist_context`` (imported from week_specialist_adapter) reads
-# ``today_shanghai`` out of week_mod, so patch that one on week_mod. Reviewer LLM
-# on the review adapter; stub the provenance model so we don't read real config.
+# Wiring — phase-at-once generation lives in phase_specialist_adapter: patch its
+# generator LLM + Database there. ``build_specialist_context`` (imported from
+# week_specialist_adapter) reads ``today_shanghai`` out of week_mod, so patch
+# that one on week_mod. Reviewer LLM on the review adapter; stub the provenance
+# model so we don't read real config.
 # ---------------------------------------------------------------------------
 
 
-def _wire(monkeypatch, *, gen: _FakeGenLLM, reviewer: _FakeReviewerLLM) -> None:
+def _wire(monkeypatch, db, *, gen: _FakeGenLLM, reviewer: _FakeReviewerLLM) -> None:
     monkeypatch.setattr(phase_mod, "get_generator_llm", lambda: gen)
+    monkeypatch.setattr(phase_mod, "Database", lambda **kw: db)
     monkeypatch.setattr(week_mod, "today_shanghai", lambda: _AS_OF)
     monkeypatch.setattr(review_mod, "get_reviewer_llm", lambda: reviewer)
     monkeypatch.setattr(orch_mod, "get_generator_model", lambda: "test-gen-model")
@@ -400,14 +408,15 @@ def _expected_total_weeks(mp: MasterPlan) -> int:
 # ---------------------------------------------------------------------------
 
 
-def test_season_integration_all_weeks_rule_clean(monkeypatch):
+def test_season_integration_all_weeks_rule_clean(db, monkeypatch):
     """Headline smoke: a realistic 4-phase season runs end-to-end; every week
     across every phase is independently run_rule_filter-clean, the season
     aggregate rules pass with no boundary spike, the real per-phase reviewer ran
     and passed every phase, and the SeasonPlanBundle is assembled correctly."""
+    _seed_calibration(db)
     gen = _FakeGenLLM()
     reviewer = _FakeReviewerLLM()
-    _wire(monkeypatch, gen=gen, reviewer=reviewer)
+    _wire(monkeypatch, db, gen=gen, reviewer=reviewer)
 
     mp = _master_plan()
     bundle = generate_season(mp, _context(), injuries=[])
@@ -454,7 +463,7 @@ def test_season_integration_all_weeks_rule_clean(monkeypatch):
 
     # === HEADLINE: every week across ALL phases independently passes ==========
     # run_rule_filter, re-run with the
-    # real athlete-relative Z4-Z5 threshold from the canonical MySQL fixture.
+    # real athlete-relative Z4-Z5 threshold from the seeded calibration snapshot.
     # This proves the assembled artifacts are genuinely rule-clean, not merely
     # un-blocked by the loop.
     #

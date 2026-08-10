@@ -275,7 +275,7 @@ func TestOnboardingReadiness_AdvertisesAtomicWebContract(t *testing.T) {
 	}
 }
 
-func TestPlanSetupReadiness_AdvertisesReaderContract(t *testing.T) {
+func TestPlanSetupReadiness_AdvertisesRouteContract(t *testing.T) {
 	h := newHarness(t)
 	w := h.do(http.MethodGet, "/readyz/plan-setup", "", nil)
 	if w.Code != http.StatusOK {
@@ -283,8 +283,8 @@ func TestPlanSetupReadiness_AdvertisesReaderContract(t *testing.T) {
 	}
 	var got planSetupReadinessResponse
 	mustJSON(t, w, &got)
-	if got.ContractVersion != planSetupContractVersion || got.ReaderContractVersion != seasonPlanReaderVersion {
-		t.Fatalf("readiness = %+v", got)
+	if got.ContractVersion != planSetupContractVersion {
+		t.Fatalf("contract_version = %q, want %q", got.ContractVersion, planSetupContractVersion)
 	}
 	if len(got.Routes) != len(planSetupRouteContracts) {
 		t.Fatalf("route count = %d, want %d", len(got.Routes), len(planSetupRouteContracts))

@@ -98,12 +98,6 @@ jobs:
           docker push ${{ env.GHCR_IMAGE }}:latest
 
       - name: Deploy to Container Apps
-        env:
-          DATABASE_HOST: ${{ vars.STRIDE_DATABASE_HOST }}
-          DATABASE_PORT: ${{ vars.STRIDE_DATABASE_PORT }}
-          DATABASE_NAME: ${{ vars.STRIDE_DATABASE_NAME }}
-          DATABASE_USERNAME: ${{ vars.STRIDE_DATABASE_READONLY_USERNAME }}
-          DATABASE_PASSWORD: ${{ secrets.STRIDE_DATABASE_READONLY_PASSWORD }}
         run: |
           # `[observability].langsmith_enabled` in coach.prod.toml is the SINGLE
           # authoritative tracing switch (the runtime forces LANGSMITH_TRACING
@@ -113,29 +107,6 @@ jobs:
           #   otherwise                   → REMOVE the env so a prior wiring can't
           #                                 strand and keep tracing on.
           # Secret presence alone never flips tracing; only the reviewed flag does.
-          # Canonical generation reads use the dedicated readonly MySQL account.
-          # Register the password as an ACA secret without printing it; the other
-          # connection values are non-secret repository variables.
-          if [ -z "${DATABASE_HOST:-}" ] || [ -z "${DATABASE_PORT:-}" ] \
-             || [ -z "${DATABASE_NAME:-}" ] || [ -z "${DATABASE_USERNAME:-}" ] \
-             || [ -z "${DATABASE_PASSWORD:-}" ]; then
-            echo "::error::Readonly canonical MySQL deployment settings are incomplete."
-            exit 1
-          fi
-          az containerapp secret set \
-            --name ${{ env.APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --secrets stride-database-readonly-password="$DATABASE_PASSWORD" >/dev/null
-          COMMON_ENV_VARS=(
-            STRIDE_CONFIG_ENV=prod
-            STRIDE_DATABASE_MODE=mysql
-            STRIDE_DATABASE_HOST="$DATABASE_HOST"
-            STRIDE_DATABASE_PORT="$DATABASE_PORT"
-            STRIDE_DATABASE_NAME="$DATABASE_NAME"
-            STRIDE_DATABASE_USERNAME="$DATABASE_USERNAME"
-            STRIDE_DATABASE_PASSWORD=secretref:stride-database-readonly-password
-          )
-
           if grep -Eiq '^[[:space:]]*langsmith_enabled[[:space:]]*=[[:space:]]*true' config/coach.prod.toml \
              && [ -n "${LANGSMITH_API_KEY:-}" ]; then
             az containerapp secret set \
@@ -149,7 +120,7 @@ jobs:
               --min-replicas 1 \
               --max-replicas 1 \
               --cpu 1.0 --memory 2.0Gi \
-              --set-env-vars "${COMMON_ENV_VARS[@]}" LANGSMITH_API_KEY=secretref:langsmith-api-key
+              --set-env-vars STRIDE_CONFIG_ENV=prod LANGSMITH_API_KEY=secretref:langsmith-api-key
           else
             az containerapp update \
               --name ${{ env.APP_NAME }} \
@@ -158,7 +129,7 @@ jobs:
               --min-replicas 1 \
               --max-replicas 1 \
               --cpu 1.0 --memory 2.0Gi \
-              --set-env-vars "${COMMON_ENV_VARS[@]}" \
+              --set-env-vars STRIDE_CONFIG_ENV=prod \
               --remove-env-vars LANGSMITH_API_KEY
           fi
 

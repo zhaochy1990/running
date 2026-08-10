@@ -28,6 +28,7 @@ from datetime import date
 
 import pytest
 
+from stride_storage.sqlite.database import Database
 from stride_core.master_plan import (
     KeySession,
     MasterPlan,
@@ -38,6 +39,15 @@ from stride_core.master_plan import (
     Phase,
     PhaseType,
 )
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+from stride_storage.sqlite.calibration_connector import (
+    SQLiteRunningCalibrationRepository,
+)
+from stride_core.running_calibration.types import (
+    CalibrationConfidence,
+    RunningCalibrationSnapshot,
+)
+
 import stride_server.coach_adapters.week_specialist_adapter as week_mod
 import stride_server.coach_adapters.phase_specialist_adapter as phase_mod
 import stride_server.coach_adapters.phase_review_adapter as review_mod
@@ -55,6 +65,20 @@ USER_ID = "a1b2c3d4-e5f6-4aaa-89ab-000000000099"
 # ---------------------------------------------------------------------------
 # Seeding helpers
 # ---------------------------------------------------------------------------
+
+
+def _seed_calibration(db: Database) -> None:
+    repo = SQLiteRunningCalibrationRepository(db)
+    repo.save_snapshot(
+        RunningCalibrationSnapshot(
+            as_of_date=date(2026, 5, 20),
+            threshold_speed_mps=_THRESHOLD_SPEED_MPS,
+            threshold_hr=168.0,
+            threshold_speed_confidence=CalibrationConfidence.HIGH,
+            threshold_hr_confidence=CalibrationConfidence.HIGH,
+            hrmax_confidence=CalibrationConfidence.NONE,
+        )
+    )
 
 
 def _fm_goal() -> dict:
@@ -165,29 +189,12 @@ def _with_master_weeks(mp: MasterPlan, targets_by_phase: dict[str, list[float]])
     return mp.model_copy(update={"weeks": weeks, "weekly_key_sessions": weeks})
 
 
-def _canonical_context(*weekly_profile: dict) -> dict:
-    return {
-        "contract_version": "mysql-season-plan-context-v1",
-        "goal": _fm_goal(),
-        "history": {"weekly_profile": list(weekly_profile)},
-        "calibration": {
-            "as_of_date": "2026-05-20",
-            "threshold_speed_mps": _THRESHOLD_SPEED_MPS,
-            "threshold_hr": 168.0,
-            "threshold_speed_confidence": "high",
-            "threshold_hr_confidence": "high",
-        },
-        "continuity": {"macro_cycle": "build", "current_chronic_load": 60.0},
-    }
-
-
-def _context(*weekly_profile: dict) -> dict:
+def _context() -> dict:
     return {
         "user_id": USER_ID,
         "goal": _fm_goal(),
         "level": 62.0,
         "continuity": {"macro_cycle": "build", "current_chronic_load": 60.0},
-        "canonical_season_context": _canonical_context(*weekly_profile),
     }
 
 
@@ -366,11 +373,15 @@ class _FakeReviewerLLM:
 # ---------------------------------------------------------------------------
 
 
-def _wire(monkeypatch, *, reviewer: _FakeReviewerLLM, gen: _FakeGenLLM | None = None):
+def _wire(monkeypatch, db, *, reviewer: _FakeReviewerLLM, gen: _FakeGenLLM | None = None):
     gen = gen or _FakeGenLLM()
-    # Phase-at-once generation consumes the injected canonical context. Keep the
-    # legacy DB argument only for tests that seed the explicit execution fixture.
+    # Phase-at-once generation lives in phase_specialist_adapter: patch its own
+    # generator LLM + Database there. build_specialist_context (imported from
+    # week_specialist_adapter) reads today_shanghai out of week_mod, so patch
+    # that one on week_mod.
     monkeypatch.setattr(phase_mod, "get_generator_llm", lambda: gen)
+    monkeypatch.setattr(phase_mod, "Database", lambda **kw: db)
+    monkeypatch.setattr(orch_mod, "Database", lambda **kw: db)
     monkeypatch.setattr(week_mod, "today_shanghai", lambda: _AS_OF)
     monkeypatch.setattr(review_mod, "get_reviewer_llm", lambda: reviewer)
     # generated_by stamp: avoid reading real coach config.
@@ -378,14 +389,24 @@ def _wire(monkeypatch, *, reviewer: _FakeReviewerLLM, gen: _FakeGenLLM | None = 
     return gen
 
 
+def _insert_run(db: Database, label_id: str, *, date_iso: str, km: float) -> None:
+    db._conn.execute(
+        "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (label_id, 100, date_iso, km * 1000.0, km * 330.0),
+    )
+    db._conn.commit()
+
+
 # ---------------------------------------------------------------------------
 # Happy path
 # ---------------------------------------------------------------------------
 
 
-def test_happy_path_three_phases_clean(monkeypatch):
+def test_happy_path_three_phases_clean(db, monkeypatch):
+    _seed_calibration(db)
     reviewer = _FakeReviewerLLM(["pass"])
-    _wire(monkeypatch, reviewer=reviewer)
+    _wire(monkeypatch, db, reviewer=reviewer)
 
     mp = _master_plan()
     bundle = generate_season(mp, _context(), injuries=[])
@@ -407,7 +428,7 @@ def test_happy_path_three_phases_clean(monkeypatch):
     assert report.ok, [v.message for v in report.errors()]
 
 
-def test_uses_master_plan_weekly_skeleton_before_derived_phase_ramp(monkeypatch):
+def test_uses_master_plan_weekly_skeleton_before_derived_phase_ramp(db, monkeypatch):
     """When S1 provides week-level mileage, S2 must use it as the source of truth.
 
     The base phase band is 50-70km; ``derive_phase_weeks`` would open around
@@ -415,8 +436,9 @@ def test_uses_master_plan_weekly_skeleton_before_derived_phase_ramp(monkeypatch)
     sizes each week from the prompt row it receives. If this assertion fails,
     weekly generation is ignoring ``master_plan.weeks``.
     """
+    _seed_calibration(db)
     reviewer = _FakeReviewerLLM(["pass"])
-    _wire(monkeypatch, reviewer=reviewer)
+    _wire(monkeypatch, db, reviewer=reviewer)
 
     mp = _with_master_weeks(
         _master_plan(),
@@ -438,7 +460,7 @@ def test_uses_master_plan_weekly_skeleton_before_derived_phase_ramp(monkeypatch)
     assert base_kms == [64.0, 68.0]
 
 
-def test_caps_master_week_targets_after_actual_under_execution(monkeypatch):
+def test_caps_master_week_targets_after_actual_under_execution(db, monkeypatch):
     """Recent actual execution is a hard safety cap over the master target.
 
     Example: master planned 70km last week and 75km this week, but the athlete
@@ -446,8 +468,9 @@ def test_caps_master_week_targets_after_actual_under_execution(monkeypatch):
     ceiling, then generated load weeks return to the repository's 10% hard gate;
     the plan must not jump straight back to 75km.
     """
+    _seed_calibration(db)
     reviewer = _FakeReviewerLLM(["pass"])
-    _wire(monkeypatch, reviewer=reviewer)
+    _wire(monkeypatch, db, reviewer=reviewer)
 
     mp = _with_master_weeks(
         _master_plan(),
@@ -473,15 +496,18 @@ def test_caps_master_week_targets_after_actual_under_execution(monkeypatch):
     assert base_kms == [46.0, 50.6]
 
 
-def test_reads_last_completed_week_actual_km_for_execution_cap(monkeypatch):
+def test_reads_last_completed_week_actual_km_for_execution_cap(db, monkeypatch):
     """If caller omits actual_execution, generation should read recent DB data.
 
     The master skeleton says 70/75km, but the previous Shanghai week before
     2026-06-08 contains only 40km of actual running. The generated week targets
     should therefore be capped exactly like the explicit-context path.
     """
+    _seed_calibration(db)
+    _insert_run(db, "prev-1", date_iso="2026-06-02T01:00:00Z", km=16.0)
+    _insert_run(db, "prev-2", date_iso="2026-06-05T01:00:00Z", km=24.0)
     reviewer = _FakeReviewerLLM(["pass"])
-    _wire(monkeypatch, reviewer=reviewer)
+    _wire(monkeypatch, db, reviewer=reviewer)
 
     mp = _with_master_weeks(
         _master_plan(),
@@ -491,8 +517,7 @@ def test_reads_last_completed_week_actual_km_for_execution_cap(monkeypatch):
             "p-taper": [58.0, 45.0],
         },
     )
-    context = _context({"week_start": "2026-06-01", "distance_km": 40.0})
-    bundle = generate_season(mp, context, injuries=[])
+    bundle = generate_season(mp, _context(), injuries=[])
 
     from coach.graphs.generation.rule_filter import _total_run_distance_m
     from stride_core.plan_spec import WeeklyPlan
@@ -504,18 +529,29 @@ def test_reads_last_completed_week_actual_km_for_execution_cap(monkeypatch):
     assert base_kms == [46.0, 50.6]
 
 
-def test_execution_cap_uses_recent_training_dose_when_it_is_tighter(monkeypatch):
-    """The canonical history/load fields tighten the rebound cap."""
-    context = _context({
-        "week_start": "2026-06-01",
-        "distance_km": 40.0,
-        "dose": 205.0,
-        "atl": 120.0,
-        "ctl": 50.0,
-        "dose_coverage_status": "complete",
-    })
+def test_execution_cap_uses_recent_training_dose_when_it_is_tighter(db, monkeypatch):
+    """The execution cap should account for actual load, not just distance.
+
+    The previous Shanghai week has only 40km, but its latest acute/chronic ratio
+    is already so high that a 15% rebound would leave the athlete in overreach
+    after executing the whole week. A pure mileage cap would still emit 46km;
+    the load-aware cap must tighten below that and then keep later load weeks on
+    the normal 10% progression.
+    """
+    _seed_calibration(db)
+    _insert_run(db, "prev-1", date_iso="2026-06-02T01:00:00Z", km=16.0)
+    _insert_run(db, "prev-2", date_iso="2026-06-05T01:00:00Z", km=24.0)
+    for offset, dose in enumerate([25.0, 25.0, 30.0, 30.0, 30.0, 30.0, 30.0]):
+        day = date(2026, 6, 1).fromordinal(date(2026, 6, 1).toordinal() + offset)
+        db._conn.execute(
+            "INSERT INTO daily_training_load "
+            "(date, algorithm_version, training_dose, acute_load, chronic_load, form, "
+            "coverage_status) VALUES (?, ?, ?, 120.0, 50.0, -70.0, 'complete')",
+            (day.isoformat(), TRAINING_LOAD_MODEL_VERSION, dose),
+        )
+    db._conn.commit()
     reviewer = _FakeReviewerLLM(["pass"])
-    _wire(monkeypatch, reviewer=reviewer)
+    _wire(monkeypatch, db, reviewer=reviewer)
 
     mp = _with_master_weeks(
         _master_plan(),
@@ -525,7 +561,7 @@ def test_execution_cap_uses_recent_training_dose_when_it_is_tighter(monkeypatch)
             "p-taper": [58.0, 45.0],
         },
     )
-    bundle = generate_season(mp, context, injuries=[])
+    bundle = generate_season(mp, _context(), injuries=[])
 
     from coach.graphs.generation.rule_filter import _total_run_distance_m
     from stride_core.plan_spec import WeeklyPlan
@@ -538,24 +574,28 @@ def test_execution_cap_uses_recent_training_dose_when_it_is_tighter(monkeypatch)
     assert base_kms[1] <= round(base_kms[0] * 1.10, 1) + 0.1
 
 
-def test_execution_cap_ignores_partial_week_training_dose(monkeypatch):
-    context = _context({
-        "week_start": "2026-06-01",
-        "distance_km": 40.0,
-        "dose": 100.0,
-        "atl": 120.0,
-        "ctl": 50.0,
-        "dose_coverage_status": "partial",
-    })
+def test_execution_cap_ignores_partial_week_training_dose(db, monkeypatch):
+    _seed_calibration(db)
+    _insert_run(db, "prev-1", date_iso="2026-06-02T01:00:00Z", km=16.0)
+    _insert_run(db, "prev-2", date_iso="2026-06-05T01:00:00Z", km=24.0)
+    for offset in range(5):
+        day = date(2026, 6, 1).fromordinal(date(2026, 6, 1).toordinal() + offset)
+        db._conn.execute(
+            "INSERT INTO daily_training_load "
+            "(date, algorithm_version, training_dose, acute_load, chronic_load, form, "
+            "coverage_status) VALUES (?, ?, 100, 120, 50, -70, 'complete')",
+            (day.isoformat(), TRAINING_LOAD_MODEL_VERSION),
+        )
+    db._conn.commit()
     reviewer = _FakeReviewerLLM(["pass"])
-    _wire(monkeypatch, reviewer=reviewer)
+    _wire(monkeypatch, db, reviewer=reviewer)
 
     bundle = generate_season(
         _with_master_weeks(_master_plan(), {
             "p-base": [70.0, 75.0], "p-build": [80.0, 84.0],
             "p-taper": [58.0, 45.0],
         }),
-        context, injuries=[],
+        _context(), injuries=[],
     )
 
     from coach.graphs.generation.rule_filter import _total_run_distance_m
@@ -573,9 +613,10 @@ def test_execution_cap_ignores_partial_week_training_dose(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_exit_volume_threaded_no_boundary_spike(monkeypatch):
+def test_exit_volume_threaded_no_boundary_spike(db, monkeypatch):
+    _seed_calibration(db)
     reviewer = _FakeReviewerLLM(["pass"])
-    _wire(monkeypatch, reviewer=reviewer)
+    _wire(monkeypatch, db, reviewer=reviewer)
 
     mp = _master_plan()
     bundle = generate_season(mp, _context(), injuries=[])
@@ -607,9 +648,10 @@ def test_exit_volume_threaded_no_boundary_spike(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_review_driven_regen_carries_feedback(monkeypatch):
+def test_review_driven_regen_carries_feedback(db, monkeypatch):
     """PA-T5 headline: a block→pass regen now THREADS the reviewer's critique
     into the regeneration prompt (the old blind regen carried nothing)."""
+    _seed_calibration(db)
     # First review of the build phase blocks; the regen attempt passes.
     # base passes first; build: block (attempt 1) then pass (attempt 2); taper passes.
     # Sequence is consumed across phases AND regen attempts in call order.
@@ -622,7 +664,7 @@ def test_review_driven_regen_carries_feedback(monkeypatch):
             "pass",
         ]
     )
-    gen = _wire(monkeypatch, reviewer=reviewer)
+    gen = _wire(monkeypatch, db, reviewer=reviewer)
 
     mp = _master_plan()
     bundle = generate_season(mp, _context(), injuries=[], max_phase_attempts=2)
@@ -655,9 +697,10 @@ def test_review_driven_regen_carries_feedback(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_persistent_block_degrades_to_bundle(monkeypatch):
+def test_persistent_block_degrades_to_bundle(db, monkeypatch):
+    _seed_calibration(db)
     reviewer = _FakeReviewerLLM(["block"])  # ALWAYS block
-    _wire(monkeypatch, reviewer=reviewer)
+    _wire(monkeypatch, db, reviewer=reviewer)
 
     mp = _master_plan()
     # Must NOT raise, must NOT loop forever.
@@ -707,10 +750,11 @@ class _TaperSpikeGenLLM(_FakeGenLLM):
         return _clean_week_plan(folder, total_km=total_km)
 
 
-def test_season_rule_driven_regen(monkeypatch):
+def test_season_rule_driven_regen(db, monkeypatch):
+    _seed_calibration(db)
     reviewer = _FakeReviewerLLM(["pass"])  # reviews never block — only season rule fires
     gen = _TaperSpikeGenLLM()
-    _wire(monkeypatch, reviewer=reviewer, gen=gen)
+    _wire(monkeypatch, db, reviewer=reviewer, gen=gen)
 
     mp = _master_plan()
     bundle = generate_season(mp, _context(), injuries=[], max_phase_attempts=2)
@@ -741,12 +785,13 @@ def test_season_rule_driven_regen(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_owned_milestone_threaded_into_generation_prompt(monkeypatch):
+def test_owned_milestone_threaded_into_generation_prompt(db, monkeypatch):
     """The build phase owns ``ms-build`` (target "30K 节奏跑 4:45/km"); the
     orchestrator must thread it into that phase's generation prompt so the
     generator designs toward the SAME milestone the reviewer judges against."""
+    _seed_calibration(db)
     reviewer = _FakeReviewerLLM(["pass"])
-    gen = _wire(monkeypatch, reviewer=reviewer)
+    gen = _wire(monkeypatch, db, reviewer=reviewer)
 
     mp = _master_plan()
     generate_season(mp, _context(), injuries=[])
@@ -766,50 +811,10 @@ def test_owned_milestone_threaded_into_generation_prompt(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_canonical_context_is_used_without_opening_sqlite(monkeypatch):
+def test_generated_by_override(db, monkeypatch):
+    _seed_calibration(db)
     reviewer = _FakeReviewerLLM(["pass"])
-    gen = _FakeGenLLM()
-    _wire(monkeypatch, reviewer=reviewer, gen=gen)
-    import stride_storage.sqlite.calibration_connector as calibration_mod
-    import stride_storage.sqlite.database as sqlite_mod
-
-    def _sqlite_boom(*_args, **_kwargs):
-        pytest.fail("season opened SQLite")
-
-    monkeypatch.setattr(sqlite_mod, "Database", _sqlite_boom)
-    monkeypatch.setattr(calibration_mod, "SQLiteRunningCalibrationRepository", _sqlite_boom)
-
-    context = _context()
-    context["canonical_season_context"]["calibration"]["threshold_speed_mps"] = 5.0
-    bundle = generate_season(_master_plan(), context, injuries=[])
-
-    assert bundle.phases
-    assert gen.captured
-    assert "阈值 3:20" in gen.captured[0]
-
-
-def test_canonical_failure_blocks_generation_before_llm(monkeypatch):
-    calls = {"llm": 0}
-
-    def _fail(*_args, **_kwargs):
-        raise RuntimeError("offline")
-
-    monkeypatch.setattr(orch_mod, "load_canonical_season_context", _fail)
-    monkeypatch.setattr(orch_mod, "get_generator_model", lambda: "unused")
-
-    class _NoLLM:
-        def __call__(self, *_args, **_kwargs):
-            calls["llm"] += 1
-
-    monkeypatch.setattr(phase_mod, "get_generator_llm", _NoLLM())
-    with pytest.raises(RuntimeError, match="canonical_mysql_unavailable"):
-        generate_season(_master_plan(), {"user_id": USER_ID, "goal": _fm_goal(), "level": 60.0})
-    assert calls["llm"] == 0
-
-
-def test_generated_by_override(monkeypatch):
-    reviewer = _FakeReviewerLLM(["pass"])
-    _wire(monkeypatch, reviewer=reviewer)
+    _wire(monkeypatch, db, reviewer=reviewer)
 
     bundle = generate_season(
         _master_plan(), _context(), injuries=[], generated_by="explicit-model"

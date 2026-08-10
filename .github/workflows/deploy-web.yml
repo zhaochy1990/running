@@ -148,14 +148,14 @@ jobs:
             exit 1
           fi
 
-          # Verify the deployed Go and Python revisions before changing the BFF
-          # route flags. These endpoints are intentionally public and static:
-          # they prove reachability and capability versions without accepting,
-          # reading, or printing user credentials, JWTs, or internal tokens. Do
-          # not follow redirects: each configured origin must attest to its own
-          # contract. When browser-direct routing is enabled, verify the Tencent
-          # gateway's static readiness endpoints too; do not probe authenticated
-          # or mutating gateway routes here.
+          # Verify the deployed Go revision before changing the BFF route flags.
+          # These endpoints are intentionally public and static: they prove
+          # reachability and capability versions without accepting, reading, or
+          # printing user credentials, JWTs, or internal tokens. Do not follow
+          # redirects: each configured origin must attest to its own contract.
+          # When browser-direct routing is enabled, verify the Tencent gateway's
+          # static readiness endpoints too; do not probe authenticated or
+          # mutating gateway routes here.
           readiness_bodies=()
           cleanup_readiness_bodies() {
             rm -f "${readiness_bodies[@]}"
@@ -164,8 +164,7 @@ jobs:
           verify_readiness_contract() {
             local readiness_url="$1"
             local expected_version="$2"
-            local expected_reader_version="$3"
-            local expected_routes_json="$4"
+            local expected_routes_json="$3"
             local readiness_body
             local readiness_status
             readiness_body=$(mktemp)
@@ -173,24 +172,22 @@ jobs:
             if ! readiness_status=$(curl --silent --connect-timeout 10 --max-time 30 \
               --output "$readiness_body" --write-out '%{http_code}' \
               "$readiness_url"); then
-              echo "::error::Go onboarding readiness endpoint was unreachable; refusing Web route cutover."
+              echo "::error::Go readiness endpoint was unreachable; refusing Web route cutover."
               exit 1
             fi
             if [ "$readiness_status" != "200" ]; then
-              echo "::error::Go onboarding readiness endpoint did not return HTTP 200; refusing Web route cutover."
+              echo "::error::Go readiness endpoint did not return HTTP 200; refusing Web route cutover."
               exit 1
             fi
-            if ! python3 - "$readiness_body" "$expected_version" "$expected_reader_version" "$expected_routes_json" <<'PY'
+            if ! python3 - "$readiness_body" "$expected_version" "$expected_routes_json" <<'PY'
           import json
           import sys
 
           with open(sys.argv[1], encoding="utf-8") as response:
               payload = json.load(response)
-          expected = {(route["method"], route["path"]) for route in json.loads(sys.argv[4])}
+          expected = {(route["method"], route["path"]) for route in json.loads(sys.argv[3])}
           actual = {(route.get("method"), route.get("path")) for route in payload.get("routes", [])}
           if payload.get("contract_version") != sys.argv[2] or actual != expected:
-              raise SystemExit(1)
-          if sys.argv[3] and payload.get("reader_contract_version") != sys.argv[3]:
               raise SystemExit(1)
           PY
             then
@@ -200,46 +197,14 @@ jobs:
           }
           ONBOARDING_ROUTES_JSON='[{"method":"GET","path":"/api/users/me/profile"},{"method":"POST","path":"/api/users/me/profile"},{"method":"PATCH","path":"/api/users/me/profile"},{"method":"POST","path":"/api/users/me/watch/login"},{"method":"GET","path":"/api/users/me/injuries"},{"method":"POST","path":"/api/users/me/injuries"},{"method":"PUT","path":"/api/users/me/injuries/:injuryId"},{"method":"DELETE","path":"/api/users/me/injuries/:injuryId"},{"method":"POST","path":"/api/:user/sync"},{"method":"GET","path":"/api/pipelines/:run_id"},{"method":"GET","path":"/api/jobs/:job_id"},{"method":"POST","path":"/api/users/me/onboarding/complete"}]'
           PLAN_SETUP_ROUTES_JSON='[{"method":"GET","path":"/api/users/me/training-goal"},{"method":"POST","path":"/api/users/me/training-goal"},{"method":"POST","path":"/api/:user/sync"},{"method":"GET","path":"/api/pipelines/:run_id"}]'
-          verify_readiness_contract "${GO_API_URL%/}/readyz/onboarding" "web-onboarding-v2" "" "$ONBOARDING_ROUTES_JSON"
-          verify_readiness_contract "${GO_API_URL%/}/readyz/plan-setup" "plan-setup-v1" "mysql-season-plan-context-v1" "$PLAN_SETUP_ROUTES_JSON"
-
-          verify_python_reader_readiness() {
-            local readiness_url="$1"
-            local readiness_body
-            local readiness_status
-            readiness_body=$(mktemp)
-            readiness_bodies+=("$readiness_body")
-            if ! readiness_status=$(curl --silent --connect-timeout 10 --max-time 30 \
-              --output "$readiness_body" --write-out '%{http_code}' \
-              "$readiness_url"); then
-              echo "::error::Python season-plan reader readiness endpoint was unreachable; refusing Web route cutover."
-              exit 1
-            fi
-            if [ "$readiness_status" != "200" ]; then
-              echo "::error::Python season-plan reader readiness endpoint did not return HTTP 200; refusing Web route cutover."
-              exit 1
-            fi
-            if ! python3 - "$readiness_body" <<'PY'
-          import json
-          import sys
-
-          with open(sys.argv[1], encoding="utf-8") as response:
-              payload = json.load(response)
-          if payload.get("contract_version") != "mysql-season-plan-context-v1":
-              raise SystemExit(1)
-          PY
-            then
-              echo "::error::Python season-plan reader contract is incomplete or incompatible; refusing Web route cutover."
-              exit 1
-            fi
-          }
-          verify_python_reader_readiness "${PYTHON_API_URL%/}/readyz/season-plan-reader"
+          verify_readiness_contract "${GO_API_URL%/}/readyz/onboarding" "web-onboarding-v2" "$ONBOARDING_ROUTES_JSON"
+          verify_readiness_contract "${GO_API_URL%/}/readyz/plan-setup" "plan-setup-v1" "$PLAN_SETUP_ROUTES_JSON"
 
           if [ -n "${PUBLIC_DIRECT_BASE_URL:-}" ]; then
-            verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/readyz/onboarding" "web-onboarding-v2" "" "$ONBOARDING_ROUTES_JSON"
-            verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/readyz/plan-setup" "plan-setup-v1" "mysql-season-plan-context-v1" "$PLAN_SETUP_ROUTES_JSON"
+            verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/readyz/onboarding" "web-onboarding-v2" "$ONBOARDING_ROUTES_JSON"
+            verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/readyz/plan-setup" "plan-setup-v1" "$PLAN_SETUP_ROUTES_JSON"
           fi
-          echo "Go onboarding v2, plan-setup v1, and canonical MySQL reader readiness contracts verified."
+          echo "Go onboarding v2 and plan-setup v1 readiness contracts verified."
 
           ENV_VARS=(
             "PYTHON_API_URL=$PYTHON_API_URL"
@@ -248,8 +213,7 @@ jobs:
             "PUBLIC_DIRECT_BASE_URL=${PUBLIC_DIRECT_BASE_URL:-}"
             "STRIDE_ROUTE_DELETE_USERS_ME=go"
             "${ONBOARDING_GO_ROUTE_VARS[@]}"
-            "STRIDE_ROUTE_GET_USERS_ME_TRAINING_GOAL=go"
-            "STRIDE_ROUTE_POST_USERS_ME_TRAINING_GOAL=go"
+            "${PLAN_SETUP_GO_ROUTE_VARS[@]}"
           )
 
           # PUBLIC_DIRECT_BASE_URL (ADR 0017 interim): set to the Tencent Caddy

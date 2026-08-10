@@ -224,17 +224,6 @@ def app_client(tmp_path, monkeypatch, rsa_keypair):
     import stride_core.db as core_db_mod
     monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
     monkeypatch.setattr(mp_mod, "get_db", lambda user: Database(user=user))
-    # Confirmation validates the draft goal against the canonical season-plan
-    # reader. Inject that reader seam rather than allowing a SQLite/file goal
-    # fallback into the endpoint test.
-    monkeypatch.setattr(
-        mp_mod,
-        "load_canonical_season_context",
-        lambda _user_id, *, goal_id=None: {
-            "contract_version": "mysql-season-plan-context-v1",
-            "goal": {"goal_id": goal_id},
-        },
-    )
 
     # Reset the lru_cache so we get a fresh store using tmp_path
     reset_master_plan_store_cache()

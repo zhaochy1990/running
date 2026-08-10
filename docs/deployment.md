@@ -29,7 +29,7 @@ Multi-stage build (`Dockerfile`)：
   `PYTHON_API_URL`（stride-app）或 `GO_API_URL`（Tencent `stride api`），缺省 Python；
   每个 endpoint 由各自的 `STRIDE_ROUTE_*` 环境变量选择上游（值为 `go` → Go，未设置 / 其它值 →
   Python），所以单个 endpoint 的 cutover 只需在部署环境里设该变量，无需改路由表代码；
-	`/api/auth/*` 走 `AUTH_UPSTREAM_URL`。这**反转了 ADR 0012 的 browser-direct-to-Go**。Web onboarding 生产 cutover 必须原子地设置 `web-onboarding-v2` 完整 12 项 route flags：profile GET/POST/PATCH、injury GET/POST/PUT/DELETE、watch login、incremental sync、pipeline/job polling 和 onboarding completion。Plan setup 另有 `plan-setup-v1` 完整 4 项 flags：training-goal GET/POST、incremental sync 和 pipeline polling；同时要求 canonical reader contract `mysql-season-plan-context-v1`。部署前，workflow 检查 Go origin 的两个静态 readiness contract、Python `${PYTHON_API_URL%/}/readyz/season-plan-reader` 的 reader contract，以及（若配置）direct gateway 的两个静态 readiness contract；不执行 authenticated 或 mutating gateway route probe，因为没有 harmless endpoint/token。随后 `deploy-web.yml` 清理所有 manifest `STRIDE_ROUTE_*` ACA overrides，再写入完整 flags，并核对部署后的 exact env set。缺失/部分 route、任一 readiness contract 不匹配或部署后 flag 丢失都会失败。readiness endpoint 不认证、不接收或打印 end-user credential、JWT 或 internal token；BFF 启动也拒绝未实现的 Go route 或原子 cutover。发布后的 profile PATCH、injury CRUD、onboarding、incremental pipeline 和 generation gating 必须作为单独的 production release-verification 步骤，由持有合法用户令牌的发布人员执行。
+	`/api/auth/*` 走 `AUTH_UPSTREAM_URL`。这**反转了 ADR 0012 的 browser-direct-to-Go**。Web onboarding 生产 cutover 必须原子地设置 `web-onboarding-v2` 完整 12 项 route flags：profile GET/POST/PATCH、injury GET/POST/PUT/DELETE、watch login、incremental sync、pipeline/job polling 和 onboarding completion。Plan setup 另有 `plan-setup-v1` 完整 4 项 flags：training-goal GET/POST、incremental sync 和 pipeline polling。部署前，workflow 检查 Go origin 的两个静态 readiness contract，以及（若配置）direct gateway 的两个静态 readiness contract；不执行 authenticated 或 mutating gateway route probe，因为没有 harmless endpoint/token。随后 `deploy-web.yml` 清理所有 manifest `STRIDE_ROUTE_*` ACA overrides，再写入完整 flags，并核对部署后的 exact env set。缺失/部分 route、readiness contract 不匹配或部署后 flag 丢失都会失败。readiness endpoint 不认证、不接收或打印 end-user credential、JWT 或 internal token；BFF 启动也拒绝未实现的 Go route 或原子 cutover。Python season-plan generation remains unchanged and is outside this Go cutover. 发布后的 profile PATCH、injury CRUD、onboarding 和 incremental pipeline 必须作为单独的 production release-verification 步骤，由持有合法用户令牌的发布人员执行。
 - **Team API cutover（ADR 0026）**：15 个已迁移 method/path 可通过各自 `STRIDE_ROUTE_*` flag 切到 Go；`POST /api/teams/:teamId/sync-all` 未迁移，保持 flag 未设置并继续走 Python。feed + GET/POST/DELETE likes 虽有独立 flag 便于验证，生产必须作为一个原子 cutover/rollback 单元：
   - `STRIDE_ROUTE_GET_TEAMS_TEAMID_FEED`
   - `STRIDE_ROUTE_GET_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES`
@@ -110,9 +110,9 @@ workflow run 和用户固定的 `Idempotency-Key`；因此网络重试不会重�
 
 **DB-row 内容**（如 `activity_commentary`）**不**在 `sync-data.yml` 覆盖范围内（住在 SQLite 不是 markdown）。用 `coros-sync -P <user> commentary push <label_id> --url $STRIDE_PROD_URL`，POST 到 server 的 `/api/{user}/activities/{label_id}/commentary`。
 
-### Canonical season-plan MySQL reader
+### Season-plan generation scope
 
-`stride-app` 的赛季训练计划生成只读腾讯云 MySQL，不再读取本地 SQLite。`deploy.yml` 必须配置 repository variables `STRIDE_DATABASE_HOST`、`STRIDE_DATABASE_PORT`、`STRIDE_DATABASE_NAME`、`STRIDE_DATABASE_READONLY_USERNAME` 和 secret `STRIDE_DATABASE_READONLY_PASSWORD`；workflow 将密码注册为 ACA secret，并注入 `STRIDE_DATABASE_*`。任一项缺失时部署失败，禁止回退到读写账号或 SQLite。
+Python season-plan generation is unchanged and outside this Go profile, injury, and plan-setup cutover. No canonical-reader readiness or deployment wiring is required here.
 
 ### Structured-plan reparse webhook
 

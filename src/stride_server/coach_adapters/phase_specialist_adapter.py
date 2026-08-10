@@ -30,10 +30,8 @@ The rule_filter + feedback-regen LOOP is a SEPARATE task (PA-T4); here we only
 generate + parse + validate one phase. ``feedback`` is just passed through to
 ``build_phase_system_prompt`` for a one-shot regen.
 
-This is the **adapter** layer: it touches the canonical MySQL season context and
-LLM — neither of which ``coach.*`` core may. The context is loaded and validated
-by the season orchestrator before any LLM work; this adapter only consumes the
-injected snapshot/history and never opens SQLite.
+This is the **adapter** layer: it touches the DB (running calibration via
+``Database(user=...)``) and the LLM — neither of which ``coach.*`` core may.
 Everything reusable (``build_specialist_context``, ``_render_context_block``,
 the tool wrappers, ``_build_specialist_tools``, ``_coerce_phase_type``, the
 shared 3-tier ``_parse_llm_output``, ``run_tool_loop``, ``get_generator_llm``)
@@ -60,6 +58,7 @@ from coach.graphs.generation.weekly_prompt import WeekMeta
 from coach.runtime.llm_factory import CoachLLMUnavailable
 from coach.runtime.tool_loop import run_tool_loop
 from coach.schemas import PaceTargets
+from stride_storage.sqlite.database import Database
 from stride_core.master_plan import Milestone, MilestoneType, Phase, PhaseType
 from stride_core.plan_spec import WeeklyPlan
 from stride_core.timefmt import today_shanghai
@@ -85,7 +84,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_phase_week_specs(
-    canonical_context: dict,
+    db: Any,
     *,
     goal: dict,
     phase_type: PhaseType,
@@ -111,8 +110,8 @@ def build_phase_week_specs(
     so a dip is the observable signal of a deload without an explicit flag.
 
     Args:
-        canonical_context: canonical MySQL season context containing calibration
-            and history; reused across all per-week calculations.
+        db: an open user ``Database`` handle (reused across all per-week
+            ``build_specialist_context`` calls).
         goal / phase_type / level: shared per-phase context (see
             :func:`build_specialist_context`).
         week_metas: ordered per-week ``WeekMeta`` (from ``derive_phase_weeks``).
@@ -135,7 +134,7 @@ def build_phase_week_specs(
     prev_km: float | None = None
     for i, wm in enumerate(week_metas):
         pt, vt = build_specialist_context(
-            canonical_context, goal=goal, phase_type=phase_type, week_meta=wm, level=level, as_of=as_of
+            db, goal=goal, phase_type=phase_type, week_meta=wm, level=level, as_of=as_of
         )
         # pace is athlete-level (identical every week) — keep the first one.
         if pace is None:
@@ -343,12 +342,10 @@ def generate_specialist_phase(
     injuries = list(injuries or [])
     phase_type = _coerce_phase_type(phase.phase_type or PhaseType.BASE)
 
-    # 1. Consume the canonical MySQL context injected by the orchestrator.
-    canonical_context = context.get("canonical_season_context")
-    if not isinstance(canonical_context, dict):
-        raise ValueError("canonical_mysql_unavailable: season context is missing")
+    # 1. Open the user DB once and build the shared pace table + per-week specs.
+    db = Database(user=user_id)
     pace_targets, week_specs = build_phase_week_specs(
-        canonical_context,
+        db,
         goal=goal,
         phase_type=phase_type,
         week_metas=week_metas,
@@ -396,10 +393,7 @@ def generate_specialist_phase(
     #    bind it to the generator model, and run the langchain tool loop. Reuses
     #    the per-week adapter's _build_specialist_tools / tool wrappers.
     structured_tools = _build_specialist_tools(
-        phase_type,
-        user_id=user_id,
-        injuries=injuries,
-        canonical_context=canonical_context,
+        phase_type, user_id=user_id, injuries=injuries
     )
 
     def _run_one_pass() -> str:
@@ -657,13 +651,13 @@ def generate_phase_validated(
     injuries = list(injuries or [])
     phase_type = _coerce_phase_type(phase.phase_type or PhaseType.BASE)
 
-    # 1. Compute deterministic rule_filter inputs from the same canonical context
-    #    that each generation pass uses. This is a hard precondition before LLM work.
-    canonical_context = context.get("canonical_season_context")
-    if not isinstance(canonical_context, dict):
-        raise ValueError("canonical_mysql_unavailable: season context is missing")
+    # 1. Compute the deterministic, athlete-level rule_filter inputs ONCE. The
+    #    Z4-Z5 threshold = pace_targets.threshold_pace_s_km comes from the SAME
+    #    build_specialist_context call PA-T3 makes (single-sourced — never a
+    #    divergent recompute). One DB handle for the whole loop.
+    db = Database(user=user_id)
     pace_targets, _vt = build_specialist_context(
-        canonical_context, goal=goal, phase_type=phase_type, week_meta=metas[0], level=level
+        db, goal=goal, phase_type=phase_type, week_meta=metas[0], level=level
     )
     z45_threshold = pace_targets.threshold_pace_s_km
 

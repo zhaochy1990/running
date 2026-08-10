@@ -18,7 +18,6 @@ from stride_server.config.models import (
     CoachPersistenceConfig,
     ConfigError,
     ContentStorageConfig,
-    DatabaseStorageConfig,
     JPushConfig,
     NotificationConfig,
     ServerConfig,
@@ -147,65 +146,6 @@ def test_non_dev_auth_requires_public_key_or_explicit_insecure_flag() -> None:
 
     with pytest.raises(ConfigError, match="auth.public_key"):
         cfg.validate()
-
-
-def test_mysql_database_config_requires_canonical_connection_fields() -> None:
-    config = DatabaseStorageConfig(mode="mysql")
-
-    with pytest.raises(ConfigError, match="storage.database.host"):
-        config.validate()
-
-
-def test_mysql_database_config_resolves_from_environment(tmp_path: Path) -> None:
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    (config_dir / "server.toml").write_text(
-        'env = "prod"\n[auth]\nallow_insecure_without_key = true\n'
-        '[storage.database]\nmode = "sqlite"\n',
-        encoding="utf-8",
-    )
-
-    config = load_server_config(
-        project_root=tmp_path,
-        config_dir=config_dir,
-        environ={
-            "STRIDE_DATABASE_MODE": "mysql",
-            "STRIDE_DATABASE_HOST": "mysql.example",
-            "STRIDE_DATABASE_NAME": "stride",
-            "STRIDE_DATABASE_USERNAME": "reader",
-            "STRIDE_DATABASE_PASSWORD": "configured-value",
-            "STRIDE_DATABASE_PORT": "3307",
-            "STRIDE_DATABASE_CONNECT_TIMEOUT_S": "7",
-            "STRIDE_DATABASE_READ_TIMEOUT_S": "31",
-        },
-        use_cache=False,
-    )
-
-    assert config.storage.database.mode == "mysql"
-    assert config.storage.database.host == "mysql.example"
-    assert config.storage.database.database == "stride"
-    assert config.storage.database.username == "reader"
-    assert config.storage.database.password == "configured-value"
-    assert config.storage.database.port == 3307
-    assert config.storage.database.connect_timeout_s == 7
-    assert config.storage.database.read_timeout_s == 31
-
-
-def test_load_server_config_rejects_unknown_database_mode(tmp_path: Path) -> None:
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    (config_dir / "server.toml").write_text(
-        'env = "dev"\n[storage.database]\nmode = "postgres"\n',
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ConfigError, match="storage.database.mode"):
-        load_server_config(
-            project_root=tmp_path,
-            config_dir=config_dir,
-            environ={},
-            use_cache=False,
-        )
 
 
 def test_non_dev_auth_allows_explicit_insecure_flag() -> None:

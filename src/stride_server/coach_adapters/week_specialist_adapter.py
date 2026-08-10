@@ -19,8 +19,8 @@ helpers** the phase-at-once adapter imports:
   ``recent_training``) into the langchain ``StructuredTool``s the tool loop
   drives.
 
-This is the **adapter** layer: it consumes injected canonical MySQL context —
-which ``coach.*`` core may not load itself.
+This is the **adapter** layer: it touches the DB (running calibration via
+``Database(user=...)``) — which ``coach.*`` core may not.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_specialist_context(
-    canonical_context: Any,
+    db: Any,
     *,
     goal: dict,
     phase_type: PhaseType,
@@ -67,9 +67,8 @@ def build_specialist_context(
 ) -> tuple[PaceTargets, VolumeTargets]:
     """Compute the week's required pace table + volume budget.
 
-    ``pace_targets`` consumes the canonical season context's calibration snapshot;
-    ``volume_targets`` is pure (target_weekly_km from ``week_meta`` + phase + athlete
-    level).
+    ``pace_targets`` needs the DB (running-calibration snapshot); ``volume_targets``
+    is pure (target_weekly_km from ``week_meta`` + phase + athlete level).
 
     Exposed as a standalone helper so the per-phase loop / graph wiring task can
     reuse it — notably to supply the rule_filter's athlete-relative Z4-Z5
@@ -81,12 +80,7 @@ def build_specialist_context(
     from a degraded one (CLAUDE.md anti-pattern: no magic default).
     """
     ref = as_of or today_shanghai()
-    calibration = (
-        canonical_context.get("calibration")
-        if isinstance(canonical_context, dict)
-        else canonical_context
-    )
-    pt = pace_targets(calibration, goal=goal, as_of=ref)
+    pt = pace_targets(db, goal=goal, as_of=ref)
     vt = volume_targets(week_meta.target_weekly_km, phase_type, level)
     return pt, vt
 
@@ -188,7 +182,6 @@ def _build_specialist_tools(
     *,
     user_id: str,
     injuries: list[str],
-    canonical_context: dict[str, Any] | None = None,
 ) -> list[StructuredTool]:
     """Build StructuredTools for the tools this specialist is allowed to use.
 
@@ -204,7 +197,7 @@ def _build_specialist_tools(
         if name == "strength_library":
             impl = StrengthLibraryTool(user_id, default_injuries=injuries)
         elif name == "recent_training":
-            impl = RecentTrainingTool(user_id, canonical_context=canonical_context)
+            impl = RecentTrainingTool(user_id)
         else:
             # Declared but not yet wired — skip (don't promise an unbindable tool).
             logger.debug(

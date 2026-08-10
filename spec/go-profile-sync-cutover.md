@@ -48,7 +48,7 @@ Move Web profile editing, user-declared running background, injury records, and 
 - Add a skippable injury-management step using the same injury CRUD APIs. Mutations save immediately. Empty and skipped are equivalent.
 - Onboarding finalization requires a valid profile including running age, but does not require an injury record.
 - Replace `web-onboarding-v1` with `web-onboarding-v2`. Its exact capability set contains the existing seven onboarding routes plus `PATCH /api/users/me/profile`, `GET/POST /api/users/me/injuries`, and `PUT/DELETE /api/users/me/injuries/:injuryId`. Update the Go capability response/test, deploy-workflow exact-set assertion, BFF atomic-cutover validation, production route flags, and deployment documentation together.
-- Add a separate `plan-setup-v1` readiness capability that attests to `GET/POST /api/users/me/training-goal`, `POST /api/:user/sync`, `GET /api/pipelines/:run_id`, and the deployed canonical MySQL season-plan context reader contract. Web deployment must verify this capability through both the Go origin and direct gateway before enabling the plan-setup route flags.
+- Add a separate `plan-setup-v1` readiness capability that attests to exactly `GET/POST /api/users/me/training-goal`, `POST /api/:user/sync`, and `GET /api/pipelines/:run_id`. Web deployment must verify this route capability through both the Go origin and direct gateway before enabling the plan-setup route flags.
 
 ### Training-plan setup sync
 
@@ -64,13 +64,10 @@ Move Web profile editing, user-declared running background, injury records, and 
   - `GET /api/users/me/full-sync-status`
 - Remove their BFF entries once no Web runtime uses them. Keep Python routes temporarily for non-Web compatibility unless separately retired.
 
-### Canonical generation inputs
+### Season-plan generation boundary
 
-- Before Web route cutover, migrate the Python season-plan context readers for race goal, activities, health, PBs, calibration, and training load to canonical MySQL through `stride_storage` APIs. Do not query MySQL directly outside `stride_storage` and do not fall back to SQLite when MySQL is unavailable.
-- The goal ID returned by the Go race-goal API must resolve through the same canonical reader used by season-plan generation before generation starts.
-- Route both `GET` and `POST /api/users/me/training-goal` to Go as part of the same declared plan-setup cutover. A mixed Python writer/Go reader configuration is invalid and must fail BFF startup or deployment validation.
-- Expose the canonical reader contract version in `plan-setup-v1` readiness. `deploy-web` must refuse the route-flag update unless the exact route set and reader capability match; source-controlled release order alone is not a sufficient gate.
-- New running age and injury records remain out of the generator prompt in this delivery; this is an intentional product-scope limitation, not a storage fallback.
+- Python season-plan generation remains unchanged and is outside this Go profile, injury, and plan-setup cutover.
+- New running age and injury records remain out of the unchanged generator prompt in this delivery; this is an intentional product-scope limitation.
 
 ## Data migration
 
@@ -83,7 +80,7 @@ Move Web profile editing, user-declared running background, injury records, and 
 - The Python season-plan generator does not consume the new MySQL running age or injuries in this delivery. Saving these fields therefore does not yet affect generated-plan personalization.
 - Incremental sync does not recompute the 180-day calibration baseline; it synchronizes new data and incrementally computes load, PMC, and PBs.
 - Existing completed users are not forced back through onboarding.
-- Stale Web clients are unsupported. Deploying the breaking Go profile POST before Web may temporarily make the old onboarding UI fail with 422; this short deployment window is explicitly accepted, but the new Web must not deploy before Go and the canonical MySQL readers.
+- Stale Web clients are unsupported. Deploying the breaking Go profile POST before Web may temporarily make the old onboarding UI fail with 422; this short deployment window is explicitly accepted. The unchanged Python season-plan generator is not a release prerequisite for this Go cutover.
 
 ## Verification
 
@@ -94,9 +91,8 @@ Move Web profile editing, user-declared running background, injury records, and 
 
 ## Release order
 
-1. Implement and deploy canonical MySQL season-plan readers, including race goal and synchronized training context, with the `plan-setup-v1` readiness capability.
-2. Deploy the Go schema, APIs, `web-onboarding-v2` readiness capability, and the `src/migration` running-age migration command.
-3. Run and review the running-age migration report.
-4. Verify the Tencent gateway supports the new methods, authorization headers, CORS, and OPTIONS requests.
-5. Deploy Web UI, BFF manifest, and the complete expected route-flag set together. Audit and remove stale ACA `STRIDE_ROUTE_*` overrides rather than relying on incremental updates. Do not use authenticated or mutating gateway route probes in deploy-web; no harmless endpoint/token exists.
-6. As a separate production release-verification step, using valid user credentials, verify profile PATCH, injury CRUD, onboarding, incremental pipeline completion, and generation gating.
+1. Deploy the Go schema, APIs, `web-onboarding-v2` and `plan-setup-v1` readiness capabilities, and the `src/migration` running-age migration command.
+2. Run and review the running-age migration report.
+3. Verify the Tencent gateway supports the new methods, authorization headers, CORS, and OPTIONS requests.
+4. Deploy Web UI, BFF manifest, and the complete expected route-flag set together. Audit and remove stale ACA `STRIDE_ROUTE_*` overrides rather than relying on incremental updates. Do not use authenticated or mutating gateway route probes in deploy-web; no harmless endpoint/token exists. Python season-plan generation remains unchanged and out of scope.
+5. As a separate production release-verification step, using valid user credentials, verify profile PATCH, injury CRUD, onboarding, incremental pipeline completion, and generation gating.

@@ -22,8 +22,16 @@ from datetime import date
 
 import pytest
 
+from stride_storage.sqlite.database import Database
 from stride_core.master_plan import Milestone, MilestoneType, Phase, PhaseType
 from stride_core.plan_spec import WeeklyPlan
+from stride_storage.sqlite.calibration_connector import (
+    SQLiteRunningCalibrationRepository,
+)
+from stride_core.running_calibration.types import (
+    CalibrationConfidence,
+    RunningCalibrationSnapshot,
+)
 import stride_server.coach_adapters.phase_specialist_adapter as adapter_mod
 from stride_server.coach_adapters.phase_specialist_adapter import (
     build_phase_week_specs,
@@ -47,6 +55,20 @@ USER_ID = "a1b2c3d4-e5f6-4aaa-89ab-0000000000aa"
 # ---------------------------------------------------------------------------
 # Seeding helpers
 # ---------------------------------------------------------------------------
+
+
+def _seed_calibration(db: Database) -> None:
+    repo = SQLiteRunningCalibrationRepository(db)
+    repo.save_snapshot(
+        RunningCalibrationSnapshot(
+            as_of_date=date(2026, 5, 20),
+            threshold_speed_mps=_THRESHOLD_SPEED_MPS,
+            threshold_hr=168.0,
+            threshold_speed_confidence=CalibrationConfidence.HIGH,
+            threshold_hr_confidence=CalibrationConfidence.HIGH,
+            hrmax_confidence=CalibrationConfidence.NONE,
+        )
+    )
 
 
 def _fm_goal() -> dict:
@@ -143,29 +165,15 @@ def _batch(week_folders: list[str]) -> str:
 
 
 def _context() -> dict:
-    return {
-        "user_id": USER_ID,
-        "goal": _fm_goal(),
-        "level": 65.0,
-        "canonical_season_context": {
-            "contract_version": "mysql-season-plan-context-v1",
-            "goal": _fm_goal(),
-            "history": {"weekly_profile": []},
-            "calibration": {
-                "as_of_date": "2026-05-20",
-                "threshold_speed_mps": _THRESHOLD_SPEED_MPS,
-                "threshold_hr": 168.0,
-                "threshold_speed_confidence": "high",
-                "threshold_hr_confidence": "high",
-            },
-        },
-    }
+    return {"user_id": USER_ID, "goal": _fm_goal(), "level": 65.0}
 
 
 @pytest.fixture
-def patch_db(monkeypatch):
+def patch_db(db, monkeypatch):
+    _seed_calibration(db)
+    monkeypatch.setattr(adapter_mod, "Database", lambda **kw: db)
     monkeypatch.setattr(adapter_mod, "today_shanghai", lambda: _AS_OF)
-    return {"calibration": {"threshold_speed_mps": _THRESHOLD_SPEED_MPS, "as_of_date": "2026-05-20"}}
+    return db
 
 
 def _install_model(monkeypatch, model: FakeBindableLLM) -> None:
@@ -180,7 +188,7 @@ def _install_model(monkeypatch, model: FakeBindableLLM) -> None:
 def test_build_phase_week_specs_pace_shared_volume_per_week(patch_db):
     metas = _week_metas([70.0, 80.0, 90.0])
     pace, specs = build_phase_week_specs(
-        {"calibration": {"threshold_speed_mps": _THRESHOLD_SPEED_MPS, "as_of_date": "2026-05-20"}},
+        patch_db,
         goal=_fm_goal(),
         phase_type=PhaseType.BUILD,
         week_metas=metas,
@@ -202,7 +210,7 @@ def test_is_deload_derived_from_dip(patch_db):
     # week 3 dips below week 2 → deload; others not (week 1 never deload).
     metas = _week_metas([70.0, 80.0, 60.0, 85.0])
     _pace, specs = build_phase_week_specs(
-        {"calibration": {"threshold_speed_mps": _THRESHOLD_SPEED_MPS, "as_of_date": "2026-05-20"}},
+        patch_db,
         goal=_fm_goal(),
         phase_type=PhaseType.BUILD,
         week_metas=metas,
@@ -369,7 +377,7 @@ def test_empty_week_metas_raises_without_parse_failed_prefix(patch_db):
     # must be a plain ValueError WITHOUT the parse_failed sentinel.
     with pytest.raises(ValueError) as exc:
         build_phase_week_specs(
-            {"calibration": {"threshold_speed_mps": _THRESHOLD_SPEED_MPS, "as_of_date": "2026-05-20"}},
+            patch_db,
             goal=_fm_goal(),
             phase_type=PhaseType.BUILD,
             week_metas=[],
