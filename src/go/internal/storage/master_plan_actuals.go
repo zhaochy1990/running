@@ -4,8 +4,6 @@ import (
 	"context"
 	"math"
 	"time"
-
-	"github.com/zhaochy1990/stride/internal/compute/trainingload"
 )
 
 // WeekWindow is one (Shanghai-local) week span to aggregate actuals over.
@@ -79,7 +77,7 @@ const doseWeekSQL = `SELECT
     COUNT(DISTINCT CASE WHEN coverage_status IN ('complete','partial','rest_confirmed') THEN date END) AS available_days,
     COUNT(DISTINCT CASE WHEN coverage_status = 'partial' THEN date END) AS non_full_days
   FROM daily_training_load
- WHERE user_id = ? AND algorithm_version = ? AND date BETWEEN ? AND ?`
+ WHERE user_id = ? AND date BETWEEN ? AND ?`
 
 // RunningWeekSummaries returns the actual running rollup per week window. A window
 // with zero runs is omitted (parity with the Python behaviour). Read-only.
@@ -108,8 +106,8 @@ func (s *Store) RunningWeekSummaries(ctx context.Context, userID string, windows
 	return out, nil
 }
 
-// TrainingDoseWeekSummaries returns the actual STRIDE-dose rollup per week window
-// from daily_training_load at the live algorithm version. Read-only.
+// TrainingDoseWeekSummaries returns the canonical actual STRIDE-dose rollup per
+// week window. algorithm_version is provenance metadata, not a read filter.
 func (s *Store) TrainingDoseWeekSummaries(ctx context.Context, userID string, windows []WeekWindow) (map[int]TrainingDoseWeekSummary, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -122,7 +120,7 @@ func (s *Store) TrainingDoseWeekSummaries(ctx context.Context, userID string, wi
 			continue
 		}
 		var agg doseWeekAgg
-		if err := s.db.WithContext(ctx).Raw(doseWeekSQL, uid, trainingload.ModelVersion, w.From, w.To).Scan(&agg).Error; err != nil {
+		if err := s.db.WithContext(ctx).Raw(doseWeekSQL, uid, w.From, w.To).Scan(&agg).Error; err != nil {
 			return nil, err
 		}
 		if agg.AvailableDays == 0 {

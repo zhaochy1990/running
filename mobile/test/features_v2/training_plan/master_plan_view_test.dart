@@ -720,6 +720,51 @@ void main() {
   // ===========================================================================
 
   group('MasterPlan model', () {
+    test('fromCurrentEnvelope unwraps structured content and envelope metadata', () {
+      final content = {
+        'goal': {'goal_id': 'goal-001'},
+        'start_date': '2026-05-12',
+        'end_date': '2026-10-26',
+        'phases': <dynamic>[],
+        'milestones': <dynamic>[],
+        'training_principles': <dynamic>[],
+        'generated_by': 'fixture',
+        'current_phase_id': null,
+        'current_week_number': null,
+        'total_weeks': 24,
+        'next_milestone': null,
+      };
+      final plan = MasterPlan.fromCurrentEnvelope({
+        'content_version': 2,
+        'status': 'active',
+        'plan_id': 'plan-envelope',
+        'goal_id': 'goal-001',
+        'revision': 4,
+        'created_at': '2026-05-12T00:00:00Z',
+        'updated_at': '2026-06-01T00:00:00Z',
+        'plan': content,
+      });
+      expect(plan.planId, 'plan-envelope');
+      expect(plan.version, 4);
+      expect(plan.totalWeeks, 24);
+    });
+
+    test('fromCurrentEnvelope rejects Markdown content explicitly', () {
+      expect(
+        () => MasterPlan.fromCurrentEnvelope({
+          'content_version': 1,
+          'status': 'active',
+          'plan_id': 'plan-markdown',
+          'goal_id': 'goal-001',
+          'revision': null,
+          'created_at': '2026-05-12T00:00:00Z',
+          'updated_at': '2026-06-01T00:00:00Z',
+          'plan': '# Markdown',
+        }),
+        throwsFormatException,
+      );
+    });
+
     test('fromJson parses all fields correctly', () {
       final plan = _makePlan();
       expect(plan.planId, _kPlanId);

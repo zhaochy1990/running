@@ -12,7 +12,6 @@ import {
   getPMC,
   getPlanDays,
   getStrideZones,
-  getTrainingPlan,
   getWeeks,
   sendMasterPlanAdjustMessage,
   type Activity,
@@ -41,7 +40,6 @@ vi.mock('../../api', async () => {
     getPMC: vi.fn(),
     getPlanDays: vi.fn(),
     getStrideZones: vi.fn(),
-    getTrainingPlan: vi.fn(),
     getWeeks: vi.fn(),
     sendMasterPlanAdjustMessage: vi.fn(),
     applyMasterPlanAdjustDiff: vi.fn(),
@@ -195,7 +193,35 @@ function proposalResponse(): {
 describe('TrainingPlanAdjustPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    vi.mocked(getCurrentMasterPlan).mockResolvedValue(masterPlan)
+    vi.mocked(getCurrentMasterPlan).mockResolvedValue({
+      content_version: 2,
+      status: 'active',
+      plan_id: masterPlan.plan_id,
+      goal_id: masterPlan.goal_id,
+      revision: masterPlan.version,
+      created_at: masterPlan.created_at,
+      updated_at: masterPlan.updated_at,
+      plan: {
+        goal: {
+          goal_id: masterPlan.goal_id,
+          race_name: '真实调整马拉松',
+          distance: 'FM',
+          race_date: '2026-10-11',
+          target_time: '03:15:00',
+        },
+        start_date: masterPlan.start_date,
+        end_date: masterPlan.end_date,
+        total_weeks: masterPlan.total_weeks,
+        phases: masterPlan.phases,
+        milestones: masterPlan.milestones,
+        weeks: [],
+        training_principles: masterPlan.training_principles,
+        generated_by: masterPlan.generated_by,
+        current_phase_id: masterPlan.current_phase_id,
+        current_week_number: masterPlan.current_week_number,
+        next_milestone: masterPlan.next_milestone,
+      },
+    })
     vi.mocked(getMyProfile).mockResolvedValue({
       id: 'user-1',
       display_name: 'Runner',
@@ -206,13 +232,6 @@ describe('TrainingPlanAdjustPage', () => {
         target_time: '03:15:00',
       },
       onboarding: { coros_ready: true, profile_ready: true, completed_at: '2026-05-01T00:00:00Z' },
-    })
-    vi.mocked(getTrainingPlan).mockResolvedValue({
-      content: '# Plan\n\nCurrent markdown plan.',
-      phases: [
-        { name: 'Phase 1：基础期', start: '2026-05-04', end: '2026-06-28' },
-      ],
-      current_phase: 'Phase 1：基础期',
     })
     vi.mocked(getWeeks).mockResolvedValue({
       weeks: [{

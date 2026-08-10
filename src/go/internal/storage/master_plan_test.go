@@ -3,12 +3,11 @@ package storage
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
 
-// migrateMasterPlan ensures the master_plan table exists for the integration
-// test (the shared openTestStore only migrates jobs/pipeline_runs).
 func migrateMasterPlan(t *testing.T, st *Store) {
 	t.Helper()
 	if err := st.AutoMigrateMasterPlan(context.Background()); err != nil {
@@ -19,8 +18,8 @@ func migrateMasterPlan(t *testing.T, st *Store) {
 func ptrInt8(v int8) *int8    { return &v }
 func ptrInt64(v int64) *int64 { return &v }
 
-// structuredPlan builds a valid active v2 (structured) row for uid.
 func structuredPlan(uid string) *MasterPlan {
+	now := time.Now().UTC().Truncate(time.Millisecond)
 	return &MasterPlan{
 		PlanID:         uuid.NewString(),
 		UserID:         uid,
@@ -29,12 +28,14 @@ func structuredPlan(uid string) *MasterPlan {
 		GoalID:         uuid.NewString(),
 		Status:         MasterPlanStatusActive,
 		ActiveFlag:     ptrInt8(1),
-		Version:        ptrInt64(1),
+		Revision:       ptrInt64(1),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 }
 
-// markdownPlan builds a valid active v1 (markdown) row for uid — no plan version.
 func markdownPlan(uid string) *MasterPlan {
+	now := time.Now().UTC().Truncate(time.Millisecond)
 	return &MasterPlan{
 		PlanID:         uuid.NewString(),
 		UserID:         uid,
@@ -43,7 +44,9 @@ func markdownPlan(uid string) *MasterPlan {
 		GoalID:         uuid.NewString(),
 		Status:         MasterPlanStatusActive,
 		ActiveFlag:     ptrInt8(1),
-		Version:        nil,
+		Revision:       nil,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 }
 
@@ -54,169 +57,153 @@ func seedPlan(t *testing.T, st *Store, p *MasterPlan) {
 	}
 }
 
-// Happy path: an active structured plan is returned by GetActiveStructuredPlan,
-// and GetMarkdownOverview returns nil for that user.
-func TestMasterPlan_ActiveStructuredHappyPath(t *testing.T) {
+func TestMasterPlan_CurrentStructured(t *testing.T) {
 	st := openTestStore(t)
 	migrateMasterPlan(t, st)
-	ctx := context.Background()
 	uid := uuid.NewString()
-
 	want := structuredPlan(uid)
 	seedPlan(t, st, want)
 
-	got, err := st.GetActiveStructuredPlan(ctx, uid)
+	got, err := st.GetCurrentMasterPlan(context.Background(), uid)
 	if err != nil || got == nil {
-		t.Fatalf("GetActiveStructuredPlan: err=%v nil=%v", err, got == nil)
+		t.Fatalf("GetCurrentMasterPlan: err=%v nil=%v", err, got == nil)
 	}
 	if got.PlanID != want.PlanID || got.ContentVersion != MasterPlanContentStructured {
 		t.Fatalf("wrong row: %+v", got)
 	}
-	if got.Content != want.Content {
-		t.Fatalf("content not preserved verbatim: %q", got.Content)
-	}
-	if got.Version == nil || *got.Version != 1 {
-		t.Fatalf("version not preserved: %v", got.Version)
-	}
-
-	md, err := st.GetMarkdownOverview(ctx, uid)
-	if err != nil {
-		t.Fatalf("GetMarkdownOverview err: %v", err)
-	}
-	if md != nil {
-		t.Fatalf("structured user must have no markdown overview, got %+v", md)
+	if got.Revision == nil || *got.Revision != 1 {
+		t.Fatalf("revision not preserved: %v", got.Revision)
 	}
 }
 
-// Happy path: a markdown overview is returned by GetMarkdownOverview, and
-// GetActiveStructuredPlan returns nil for that user.
-func TestMasterPlan_MarkdownHappyPath(t *testing.T) {
+func TestMasterPlan_CurrentMarkdown(t *testing.T) {
 	st := openTestStore(t)
 	migrateMasterPlan(t, st)
-	ctx := context.Background()
 	uid := uuid.NewString()
-
 	want := markdownPlan(uid)
 	seedPlan(t, st, want)
 
-	got, err := st.GetMarkdownOverview(ctx, uid)
+	got, err := st.GetCurrentMasterPlan(context.Background(), uid)
 	if err != nil || got == nil {
-		t.Fatalf("GetMarkdownOverview: err=%v nil=%v", err, got == nil)
+		t.Fatalf("GetCurrentMasterPlan: err=%v nil=%v", err, got == nil)
 	}
 	if got.PlanID != want.PlanID || got.ContentVersion != MasterPlanContentMarkdown {
 		t.Fatalf("wrong row: %+v", got)
 	}
-	if got.Content != want.Content {
-		t.Fatalf("markdown content not preserved verbatim: %q", got.Content)
-	}
-	if got.Version != nil {
-		t.Fatalf("markdown row must have NULL version, got %v", *got.Version)
-	}
-
-	sp, err := st.GetActiveStructuredPlan(ctx, uid)
-	if err != nil {
-		t.Fatalf("GetActiveStructuredPlan err: %v", err)
-	}
-	if sp != nil {
-		t.Fatalf("markdown user must have no structured plan, got %+v", sp)
+	if got.Revision != nil {
+		t.Fatalf("markdown row must have NULL revision, got %v", *got.Revision)
 	}
 }
 
-// GetActiveStructuredPlan must ignore draft/archived rows and other users' rows,
-// returning only this user's single active structured plan.
-func TestMasterPlan_IgnoresNonActiveAndOtherUsers(t *testing.T) {
+func TestMasterPlan_CurrentIgnoresInactiveAndOtherUsers(t *testing.T) {
 	st := openTestStore(t)
 	migrateMasterPlan(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
-	other := uuid.NewString()
-
 	active := structuredPlan(uid)
 	seedPlan(t, st, active)
 
-	// A draft and an archived plan for the same user — both active_flag=NULL so
-	// they never collide with the active row on UNIQUE(user_id, active_flag).
 	draft := structuredPlan(uid)
 	draft.Status = MasterPlanStatusDraft
 	draft.ActiveFlag = nil
 	seedPlan(t, st, draft)
-
 	archived := structuredPlan(uid)
 	archived.Status = MasterPlanStatusArchived
 	archived.ActiveFlag = nil
 	seedPlan(t, st, archived)
+	seedPlan(t, st, structuredPlan(uuid.NewString()))
 
-	// Another user's active plan must not leak.
-	seedPlan(t, st, structuredPlan(other))
-
-	got, err := st.GetActiveStructuredPlan(ctx, uid)
-	if err != nil || got == nil {
-		t.Fatalf("GetActiveStructuredPlan: err=%v nil=%v", err, got == nil)
-	}
-	if got.PlanID != active.PlanID {
-		t.Fatalf("returned wrong plan: got %s want the active one %s", got.PlanID, active.PlanID)
+	got, err := st.GetCurrentMasterPlan(ctx, uid)
+	if err != nil || got == nil || got.PlanID != active.PlanID {
+		t.Fatalf("GetCurrentMasterPlan returned %+v, err=%v", got, err)
 	}
 }
 
-// Negative path: no plan for the user -> (nil, nil), never an error, for both
-// readers. A malformed (non-UUID) user id is rejected.
-func TestMasterPlan_NotFoundAndBadUserID(t *testing.T) {
+func TestMasterPlan_CurrentNotFoundAndBadUserID(t *testing.T) {
+	st := openTestStore(t)
+	migrateMasterPlan(t, st)
+
+	got, err := st.GetCurrentMasterPlan(context.Background(), uuid.NewString())
+	if err != nil || got != nil {
+		t.Fatalf("unknown user: got=%v err=%v", got, err)
+	}
+	if _, err := st.GetCurrentMasterPlan(context.Background(), "not-a-uuid"); err == nil {
+		t.Fatal("expected error for non-UUID user id")
+	}
+}
+
+func TestMasterPlan_RelationalInvariants(t *testing.T) {
 	st := openTestStore(t)
 	migrateMasterPlan(t, st)
 	ctx := context.Background()
 
-	sp, err := st.GetActiveStructuredPlan(ctx, uuid.NewString())
-	if err != nil || sp != nil {
-		t.Fatalf("expected (nil,nil) for unknown user: sp=%v err=%v", sp, err)
-	}
-	md, err := st.GetMarkdownOverview(ctx, uuid.NewString())
-	if err != nil || md != nil {
-		t.Fatalf("expected (nil,nil) for unknown user: md=%v err=%v", md, err)
-	}
+	t.Run("one current plan across formats", func(t *testing.T) {
+		uid := uuid.NewString()
+		seedPlan(t, st, structuredPlan(uid))
+		err := st.db.WithContext(ctx).Create(markdownPlan(uid)).Error
+		if err == nil || !isDuplicateKey(err) {
+			t.Fatalf("expected duplicate-key error, got %v", err)
+		}
+	})
 
-	if _, err := st.GetActiveStructuredPlan(ctx, "not-a-uuid"); err == nil {
-		t.Fatalf("expected error for non-UUID user id")
+	tests := []struct {
+		name string
+		plan *MasterPlan
+	}{
+		{name: "invalid content version", plan: func() *MasterPlan {
+			p := structuredPlan(uuid.NewString())
+			p.ContentVersion = 3
+			return p
+		}()},
+		{name: "structured revision missing", plan: func() *MasterPlan {
+			p := structuredPlan(uuid.NewString())
+			p.Revision = nil
+			return p
+		}()},
+		{name: "structured revision nonpositive", plan: func() *MasterPlan {
+			p := structuredPlan(uuid.NewString())
+			p.Revision = ptrInt64(0)
+			return p
+		}()},
+		{name: "markdown revision present", plan: func() *MasterPlan {
+			p := markdownPlan(uuid.NewString())
+			p.Revision = ptrInt64(1)
+			return p
+		}()},
+		{name: "active status without flag", plan: func() *MasterPlan {
+			p := structuredPlan(uuid.NewString())
+			p.ActiveFlag = nil
+			return p
+		}()},
+		{name: "flag without active status", plan: func() *MasterPlan {
+			p := structuredPlan(uuid.NewString())
+			p.Status = MasterPlanStatusArchived
+			return p
+		}()},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := st.db.WithContext(ctx).Create(tt.plan).Error; err == nil {
+				t.Fatalf("expected CHECK constraint rejection")
+			}
+		})
 	}
 }
 
-// Edge: the UNIQUE(user_id, active_flag) constraint forbids a second active row
-// (across BOTH formats) for the same athlete.
-func TestMasterPlan_AtMostOneActivePerUser(t *testing.T) {
+func TestMasterPlan_CurrentRejectsInvalidStoredIdentity(t *testing.T) {
 	st := openTestStore(t)
 	migrateMasterPlan(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
+	p := structuredPlan(uid)
+	seedPlan(t, st, p)
 
-	seedPlan(t, st, structuredPlan(uid))
-
-	// A second active row (structured or markdown) for the same user collides.
-	dup := markdownPlan(uid) // active_flag=1, same user, different plan_id
-	err := st.db.WithContext(ctx).Create(dup).Error
-	if err == nil {
-		t.Fatalf("expected UNIQUE(user_id, active_flag) violation on a second active row")
+	if err := st.db.WithContext(ctx).Model(&MasterPlan{}).
+		Where("plan_id = ?", p.PlanID).
+		Update("goal_id", "").Error; err != nil {
+		t.Fatalf("corrupt row fixture: %v", err)
 	}
-	if !isDuplicateKey(err) {
-		t.Fatalf("expected duplicate-key (1062), got %v", err)
-	}
-}
-
-// Edge: CHECK ck_master_plan_content_version rejects an out-of-range format, and
-// CHECK ck_master_plan_v2_version rejects a structured row missing its version.
-// These also assert AutoMigrate actually created the CHECK constraints.
-func TestMasterPlan_CheckConstraints(t *testing.T) {
-	st := openTestStore(t)
-	migrateMasterPlan(t, st)
-	ctx := context.Background()
-
-	badVersion := structuredPlan(uuid.NewString())
-	badVersion.ContentVersion = 3
-	if err := st.db.WithContext(ctx).Create(badVersion).Error; err == nil {
-		t.Fatalf("expected content_version CHECK to reject content_version=3")
-	}
-
-	missingVersion := structuredPlan(uuid.NewString())
-	missingVersion.Version = nil // v2 row with no version
-	if err := st.db.WithContext(ctx).Create(missingVersion).Error; err == nil {
-		t.Fatalf("expected v2-version CHECK to reject a structured row with NULL version")
+	if _, err := st.GetCurrentMasterPlan(ctx, uid); err == nil {
+		t.Fatal("expected invalid stored identity error")
 	}
 }

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { describe, expect, it } from 'vitest'
 
 import { API_ROUTES } from '../api-routes.js'
@@ -305,6 +307,21 @@ describe('API_ROUTES manifest integrity', () => {
     ])
   })
 
+  it('keeps the unified current season-plan route and removes the legacy training-plan route', () => {
+    expect(API_ROUTES).toContainEqual({
+      method: 'GET',
+      path: '/api/users/me/master-plan/current',
+      env: 'STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT',
+      goReady: true,
+    })
+    expect(API_ROUTES.some((route) => route.path === '/api/:user/training-plan')).toBe(false)
+  })
+
+  it('defaults the production Web image current season-plan route to Go', () => {
+    const dockerfile = readFileSync(new URL('../../../../../Dockerfile.web', import.meta.url), 'utf8')
+    expect(dockerfile).toContain('STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT=go')
+  })
+
   it('goReady endpoints are exactly the ones the Go API implements', () => {
     const goReady = API_ROUTES.filter((r) => r.goReady).map((r) => `${r.method} ${r.path}`).sort()
     expect(goReady).toEqual(
@@ -323,7 +340,6 @@ describe('API_ROUTES manifest integrity', () => {
         'GET /api/:user/plan/weeks/:weekName',
         'GET /api/:user/stride/training-load',
         'GET /api/:user/stride/zones',
-        'GET /api/:user/training-plan',
         'GET /api/pipelines/:run_id',
         'GET /api/jobs/:job_id',
         'GET /api/teams',

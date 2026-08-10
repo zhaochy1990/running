@@ -27,7 +27,7 @@ export function parseGoDSN(dsn) {
     /^(?:([^:@/]+)(?::([^@/]*))?@)?tcp\(([^)]+)\)\/([^?]*)(?:\?(.*))?$/.exec(
       dsn.trim(),
     );
-  if (!m) throw new Error(`could not parse STRIDE_WORKER_MYSQL_DSN: ${dsn}`);
+  if (!m) throw new Error("could not parse STRIDE_WORKER_MYSQL_DSN");
   const [, user = "", password = "", address, database, query = ""] = m;
   const colon = address.lastIndexOf(":");
   const host = colon >= 0 ? address.slice(0, colon) : address;
@@ -391,7 +391,7 @@ export const MASTER_PLAN_COLUMNS = [
   "goal_id",
   "status",
   "active_flag",
-  "version",
+  "revision",
   "created_at",
   "updated_at",
 ];

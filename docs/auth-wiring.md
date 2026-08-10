@@ -39,9 +39,9 @@ prod 启用：revision `stride-app--0000037` 起：
 
 公钥 env set 时，每个 `/api/*` 路由（除 `/api/health`）都要 Bearer。`stride_server/app.py` 在 router 级别套 `Depends(require_bearer)`，只放过 `public` router（仅 `/api/health` 给 Azure liveness probe）。CORS 故意大开（`allow_origins=["*"]`）—— 真正的 authz 边界是 Bearer 层不是 Origin。
 
-已验证：Python `/api/*`（除 `/api/health`）无 token → 401；valid user token → 200。覆盖读（`/users`, `/weeks`, `/activities`, `/dashboard`, `/health`, `/pmc`, `/stats`）和写（`/sync`, `/resync`, `/commentary`）。Legacy Python `/api/{user}/training-plan` 仍受相同 Bearer 保护，但已不是官方 Web API。
+已验证：Python `/api/*`（除 `/api/health`）无 token → 401；valid user token → 200。覆盖读（`/users`, `/weeks`, `/activities`, `/dashboard`, `/health`, `/pmc`, `/stats`）和写（`/sync`, `/resync`, `/commentary`）。
 
-Go `stride api` 使用同一 auth-service 公钥在 Gin middleware 本地验签 JWT，并按 JWT `sub` 做用户隔离。Web 的 `/api/users/me/master-plan/current` 由 BFF 路由到 Go；它不经过 FastAPI `require_bearer`。
+Go `stride api` 使用同一 auth-service 公钥在 Gin middleware 本地验签 JWT，并按 JWT `sub` 做用户隔离。Web 只通过 `/api/users/me/master-plan/current` 读取当前赛季训练计划；BFF 默认将该路由转发到 Go，因此它不经过 FastAPI `require_bearer`，也不提供其他数据源 fallback。
 
 ### 3. CLI auth (`coros-sync auth` 组)
 

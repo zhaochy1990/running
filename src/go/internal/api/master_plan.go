@@ -7,9 +7,11 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/logging"
@@ -22,13 +24,11 @@ import (
 // with its own store port, mounted on the shared authed group.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// MasterPlanStore is the master-plan persistence the read handlers need.
-// Satisfied by *storage.Store. The plan getters return (nil, nil) when absent;
-// the week-summary methods aggregate the athlete's activities / training dose for
-// the #6 weeks[].actual_* fields.
+// MasterPlanStore is the MySQL persistence needed by the unified current-plan
+// reader. GetCurrentMasterPlan returns either content representation and never
+// falls back to Python, Azure, files, or SQLite.
 type MasterPlanStore interface {
-	GetActiveStructuredPlan(ctx context.Context, userID string) (*storage.MasterPlan, error)
-	GetMarkdownOverview(ctx context.Context, userID string) (*storage.MasterPlan, error)
+	GetCurrentMasterPlan(ctx context.Context, userID string) (*storage.MasterPlan, error)
 	RunningWeekSummaries(ctx context.Context, userID string, windows []storage.WeekWindow) (map[int]storage.RunningWeekSummary, error)
 	TrainingDoseWeekSummaries(ctx context.Context, userID string, windows []storage.WeekWindow) (map[int]storage.TrainingDoseWeekSummary, error)
 }
@@ -45,25 +45,27 @@ func newMasterPlanRoutes(store MasterPlanStore, log *zap.Logger) *masterPlanRout
 	return &masterPlanRoutes{store: store, log: log}
 }
 
-// register mounts the two read endpoints on the (already authenticated) group.
-// Paths mirror the Python contract so a later BFF cutover is just routing.
+// register mounts the single official current season-plan read endpoint on the
+// already-authenticated group.
 func (m *masterPlanRoutes) register(rg *gin.RouterGroup) {
+	if m.store == nil {
+		return
+	}
 	rg.GET("/api/users/me/master-plan/current", m.getCurrent)
-	rg.GET("/api/:user/training-plan", m.getTrainingPlan)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/users/me/master-plan/current  (#6 — the active structured plan)
+// GET /api/users/me/master-plan/current
 // ─────────────────────────────────────────────────────────────────────────────
 
-// getCurrent returns the user's active structured (content_version=2) master
-// plan, enriched with three date-derived position fields, or 404 when none
-// (the frontend then falls back to the markdown overview).
+// getCurrent returns the user's active season plan as a content-versioned
+// envelope. Only canonical absence is a 404; every storage or validation failure
+// is surfaced as 500.
 //
 //	@Summary		Get the current user's active season training plan
 //	@Tags			master-plan
 //	@Produce		json
-//	@Success		200	{object}	map[string]interface{}
+//	@Success		200	{object}	currentSeasonPlanEnvelope
 //	@Failure		401	{object}	errorResponse
 //	@Failure		404	{object}	map[string]string
 //	@Failure		500	{object}	errorResponse
@@ -74,19 +76,20 @@ func (m *masterPlanRoutes) getCurrent(c *gin.Context) {
 	if !ok {
 		return
 	}
-	plan, err := m.store.GetActiveStructuredPlan(c.Request.Context(), uid)
+	row, err := m.store.GetCurrentMasterPlan(c.Request.Context(), uid)
 	if err != nil {
-		m.log.Error("get active master plan failed", zapErr(err))
+		m.log.Error("get current master plan failed", zapErr(err))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	if plan == nil {
+	if row == nil {
 		c.JSON(http.StatusNotFound, gin.H{"detail": "当前没有激活的赛季训练计划"})
 		return
 	}
-	doc, windows, weekFinished, err := buildCurrentResponse(plan, timefmt.ShanghaiToday())
+
+	envelope, windows, weekFinished, err := buildCurrentEnvelope(row, timefmt.ShanghaiToday(), m.log)
 	if err != nil {
-		m.log.Error("master plan content is not valid JSON", zapErr(err), zap.String("plan_id", plan.PlanID))
+		m.log.Error("current master plan is invalid", zapErr(err), zap.String("plan_id", row.PlanID))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
@@ -98,11 +101,13 @@ func (m *masterPlanRoutes) getCurrent(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 			return
 		}
-		if weeks, ok := doc["weeks"].([]map[string]any); ok {
-			overlayActuals(weeks, run, dose, weekFinished)
+		if doc, ok := envelope.Plan.(map[string]any); ok {
+			if weeks, ok := doc["weeks"].([]map[string]any); ok {
+				overlayActuals(weeks, run, dose, weekFinished)
+			}
 		}
 	}
-	c.JSON(http.StatusOK, doc)
+	c.JSON(http.StatusOK, envelope)
 }
 
 func cmpErr(a, b error) error {
@@ -113,55 +118,70 @@ func cmpErr(a, b error) error {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET /api/{user}/training-plan  (legacy markdown overview)
+// Unified envelope and structured response builder
 // ─────────────────────────────────────────────────────────────────────────────
 
-// trainingPlanResponse is the markdown-overview wire shape. `phases` is always an
-// empty array and `current_phase` always null: the Python endpoint derived them
-// from a hard-coded single-athlete phase timeline, which is wrong for a general
-// user and is dropped in the greenfield port (ADR 0024). `content` is the raw
-// markdown, or null when the user has no overview.
-type trainingPlanResponse struct {
-	Content      *string       `json:"content"`
-	Phases       []interface{} `json:"phases"`
-	CurrentPhase *string       `json:"current_phase"`
+type currentSeasonPlanEnvelope struct {
+	ContentVersion int8      `json:"content_version" enums:"1,2"`
+	Status         string    `json:"status" enums:"active"`
+	PlanID         string    `json:"plan_id"`
+	GoalID         string    `json:"goal_id"`
+	Revision       *int64    `json:"revision" extensions:"x-nullable"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	Plan           any       `json:"plan"`
 }
 
-// getTrainingPlan returns the user's markdown (content_version=1) season-plan
-// overview. A user caller may only read their own {user}; an internal caller any.
-//
-//	@Summary		Get a user's legacy markdown training overview
-//	@Tags			master-plan
-//	@Produce		json
-//	@Param			user	path		string	true	"User id (JWT sub)"
-//	@Success		200		{object}	trainingPlanResponse
-//	@Failure		401		{object}	errorResponse
-//	@Failure		403		{object}	errorResponse
-//	@Failure		500		{object}	errorResponse
-//	@Security		BearerAuth
-//	@Router			/api/{user}/training-plan [get]
-func (m *masterPlanRoutes) getTrainingPlan(c *gin.Context) {
-	user := c.Param("user")
-	if !authorizeUser(c, user) {
-		return
+func buildCurrentEnvelope(row *storage.MasterPlan, today time.Time, log *zap.Logger) (currentSeasonPlanEnvelope, []storage.WeekWindow, map[int]bool, error) {
+	if row == nil || strings.TrimSpace(row.Content) == "" {
+		return currentSeasonPlanEnvelope{}, nil, nil, fmt.Errorf("current plan content is empty")
 	}
-	plan, err := m.store.GetMarkdownOverview(c.Request.Context(), user)
+	if _, err := uuid.Parse(row.PlanID); err != nil {
+		return currentSeasonPlanEnvelope{}, nil, nil, fmt.Errorf("current plan_id is invalid")
+	}
+	if _, err := uuid.Parse(row.GoalID); err != nil {
+		return currentSeasonPlanEnvelope{}, nil, nil, fmt.Errorf("current goal_id is invalid")
+	}
+	if row.Status != storage.MasterPlanStatusActive || row.CreatedAt.IsZero() || row.UpdatedAt.IsZero() {
+		return currentSeasonPlanEnvelope{}, nil, nil, fmt.Errorf("current plan metadata is invalid")
+	}
+	envelope := currentSeasonPlanEnvelope{
+		ContentVersion: row.ContentVersion,
+		Status:         row.Status,
+		PlanID:         row.PlanID,
+		GoalID:         row.GoalID,
+		Revision:       row.Revision,
+		CreatedAt:      row.CreatedAt,
+		UpdatedAt:      row.UpdatedAt,
+	}
+	if row.ContentVersion == storage.MasterPlanContentMarkdown {
+		envelope.Plan = row.Content
+		return envelope, nil, nil, nil
+	}
+	if row.ContentVersion != storage.MasterPlanContentStructured {
+		return currentSeasonPlanEnvelope{}, nil, nil, fmt.Errorf("unsupported content_version %d", row.ContentVersion)
+	}
+	if row.Revision == nil || *row.Revision < 1 {
+		return currentSeasonPlanEnvelope{}, nil, nil, fmt.Errorf("structured plan revision must be positive")
+	}
+	doc, windows, weekFinished, err := buildCurrentResponse(row, today)
 	if err != nil {
-		m.log.Error("get markdown overview failed", zapErr(err))
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-		return
+		return currentSeasonPlanEnvelope{}, nil, nil, err
 	}
-	resp := trainingPlanResponse{Content: nil, Phases: []interface{}{}, CurrentPhase: nil}
-	if plan != nil {
-		content := plan.Content
-		resp.Content = &content
+	goal, ok := doc["goal"].(map[string]any)
+	if !ok || asString(goal["goal_id"]) == "" {
+		return currentSeasonPlanEnvelope{}, nil, nil, fmt.Errorf("structured plan goal is required")
 	}
-	c.JSON(http.StatusOK, resp)
+	if embeddedGoal := asString(goal["goal_id"]); embeddedGoal != row.GoalID {
+		log.Warn("master plan embedded goal_id drift", zap.String("plan_id", row.PlanID))
+		goal["goal_id"] = row.GoalID
+	}
+	for _, key := range []string{"plan_id", "user_id", "status", "version", "revision", "created_at", "updated_at"} {
+		delete(doc, key)
+	}
+	envelope.Plan = doc
+	return envelope, windows, weekFinished, nil
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// #6 response builder (pure — unit-tested)
-// ─────────────────────────────────────────────────────────────────────────────
 
 type mpPhase struct {
 	ID          string `json:"id"`
@@ -202,6 +222,9 @@ func buildCurrentResponse(plan *storage.MasterPlan, today time.Time) (map[string
 	if err := json.Unmarshal([]byte(plan.Content), &parsed); err != nil {
 		return nil, nil, nil, err
 	}
+	if err := validateStructuredPlanDoc(doc, parsed); err != nil {
+		return nil, nil, nil, err
+	}
 
 	rawWeeks := toMapSlice(doc["weeks"])
 	if len(rawWeeks) == 0 {
@@ -215,6 +238,127 @@ func buildCurrentResponse(plan *storage.MasterPlan, today time.Time) (map[string
 	doc["weeks"] = weeks
 	delete(doc, "weekly_key_sessions")
 	return doc, windows, weekFinished, nil
+}
+
+func validateStructuredPlanDoc(doc map[string]any, parsed mpContent) error {
+	goal, ok := doc["goal"].(map[string]any)
+	if !ok || strings.TrimSpace(asString(goal["goal_id"])) == "" || goal["target_time"] == nil {
+		return fmt.Errorf("structured plan goal is invalid")
+	}
+	if parsed.StartDate == "" || parsed.EndDate == "" || parsed.TotalWeeks < 1 {
+		return fmt.Errorf("structured plan dates and total_weeks are required")
+	}
+	start, ok := parseExactDate(parsed.StartDate)
+	if !ok {
+		return fmt.Errorf("structured plan start_date is invalid")
+	}
+	end, ok := parseExactDate(parsed.EndDate)
+	if !ok || end.Before(start) {
+		return fmt.Errorf("structured plan end_date is invalid")
+	}
+
+	phases, ok := doc["phases"].([]any)
+	if !ok {
+		return fmt.Errorf("structured plan phases are required")
+	}
+	for _, raw := range phases {
+		phase, ok := raw.(map[string]any)
+		if !ok || !validPhase(phase) {
+			return fmt.Errorf("structured plan phase is invalid")
+		}
+	}
+	milestones, ok := doc["milestones"].([]any)
+	if !ok {
+		return fmt.Errorf("structured plan milestones are required")
+	}
+	for _, raw := range milestones {
+		milestone, ok := raw.(map[string]any)
+		if !ok || !validMilestone(milestone) {
+			return fmt.Errorf("structured plan milestone is invalid")
+		}
+	}
+	weeksValue, hasWeeks := doc["weeks"]
+	if !hasWeeks {
+		weeksValue = doc["weekly_key_sessions"]
+	}
+	weeks, ok := weeksValue.([]any)
+	if !ok {
+		return fmt.Errorf("structured plan weeks are required")
+	}
+	for _, raw := range weeks {
+		week, ok := raw.(map[string]any)
+		if !ok || !validWeek(week) {
+			return fmt.Errorf("structured plan week is invalid")
+		}
+	}
+	principles, ok := doc["training_principles"].([]any)
+	if !ok || !allStrings(principles) || strings.TrimSpace(asString(doc["generated_by"])) == "" {
+		return fmt.Errorf("structured plan principles or generator are invalid")
+	}
+	return nil
+}
+
+func validPhase(phase map[string]any) bool {
+	start, okStart := parseExactDate(asString(phase["start_date"]))
+	end, okEnd := parseExactDate(asString(phase["end_date"]))
+	return strings.TrimSpace(asString(phase["id"])) != "" && strings.TrimSpace(asString(phase["name"])) != "" &&
+		okStart && okEnd && !end.Before(start) && isNumber(phase["weekly_distance_km_low"]) &&
+		isNumber(phase["weekly_distance_km_high"]) && isStringArray(phase["key_session_types"]) && isStringArray(phase["milestone_ids"])
+}
+
+func validMilestone(milestone map[string]any) bool {
+	_, okDate := parseExactDate(asString(milestone["date"]))
+	return strings.TrimSpace(asString(milestone["id"])) != "" && strings.TrimSpace(asString(milestone["type"])) != "" &&
+		strings.TrimSpace(asString(milestone["phase_id"])) != "" && milestone["target"] != nil && okDate
+}
+
+func validWeek(week map[string]any) bool {
+	_, okDate := parseExactDate(asString(week["week_start"]))
+	keySessions, ok := week["key_sessions"].([]any)
+	if !ok || !allMaps(keySessions) {
+		return false
+	}
+	return asInt(week["week_index"]) > 0 && okDate && strings.TrimSpace(asString(week["phase_id"])) != "" &&
+		isNullableNumber(week["target_weekly_km_low"]) && isNullableNumber(week["target_weekly_km_high"])
+}
+
+func parseExactDate(value string) (time.Time, bool) {
+	if len(value) != len("2006-01-02") {
+		return time.Time{}, false
+	}
+	return parseDate(value)
+}
+
+func allStrings(values []any) bool {
+	for _, value := range values {
+		if _, ok := value.(string); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func allMaps(values []any) bool {
+	for _, value := range values {
+		if _, ok := value.(map[string]any); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func isStringArray(value any) bool {
+	values, ok := value.([]any)
+	return ok && allStrings(values)
+}
+
+func isNumber(value any) bool {
+	_, ok := asFloat(value)
+	return ok
+}
+
+func isNullableNumber(value any) bool {
+	return value == nil || isNumber(value)
 }
 
 // currentPhaseID returns the id of the phase whose [start,end] contains today,

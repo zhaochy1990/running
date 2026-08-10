@@ -1,80 +1,55 @@
 #!/usr/bin/env node
-// migrate-master-plans.js — migrate the athlete's active 赛季训练计划 from Azure into
-// the Tencent MySQL `master_plan` table read by the Go #6 endpoint (ADR 0024).
-//
-// One logical artifact, two content formats:
-//   v2 structured — the active row in Azure Table `stridemasterplan`; plan_json
-//                   is stored verbatim as content (content_version=2).
-//   v1 markdown   — the user's Azure Blob `TRAINING_PLAN.md`; stored as content
-//                   (content_version=1). These users have no structured goal, so
-//                   a reviewed per-user seed (masterplan-transform.js V1_GOAL_SEED)
-//                   supplies the goal, and we ALSO mint a race_goal row so the
-//                   master_plan.goal_id soft reference resolves.
-//
-// Only the ACTIVE plan is migrated. A user with neither (a 健康跑 user, e.g.
-// pan-friend) is skipped. SAFE BY DEFAULT: dry-run unless --commit. ONLY the real
-// users in src/users.js are ever touched (src/migration/AGENTS.md).
-//
-//   node src/migrate-master-plans.js                 # dry-run, all real users
-//   node src/migrate-master-plans.js --user <uuid>   # one real user (repeatable)
-//   node src/migrate-master-plans.js --commit --ensure-schema
 
-import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { DefaultAzureCredential } from "@azure/identity";
-import { odata, TableClient } from "@azure/data-tables";
-import { BlobServiceClient } from "@azure/storage-blob";
-
-import { parseMasterPlanConfig } from "./masterplan-azure.js";
 import {
-  MasterPlanTransformError,
-  V1_GOAL_SEED,
-  markdownRow,
-  raceGoalRowFromSeed,
-  rebindStructuredGoal,
-  structuredRowFromEntity,
-} from "./masterplan-transform.js";
+  assertManifestUserSelection,
+  buildMasterPlanManifest,
+  commitMasterPlanManifest,
+} from "./master-plan-migration.js";
 import {
-  connect,
-  ensureSchema,
-  formatUpdatedAt,
-  getActiveMasterPlanId,
-  getActiveRaceGoalId,
-  parseMysqlConfig,
-  splitSqlStatements,
-  upsertMasterPlan,
-  upsertRaceGoal,
-} from "./mysql.js";
+  createMasterPlanSchemaAdapter,
+  createMasterPlanTarget,
+} from "./master-plan-mysql.js";
+import { upgradeMasterPlanSchema } from "./master-plan-schema.js";
+import {
+  makeMasterPlanSource,
+  parseMasterPlanSourceConfig,
+} from "./masterplan-azure.js";
+import { V1_GOAL_SEED } from "./masterplan-transform.js";
+import { connect, parseMysqlConfig } from "./mysql.js";
 import { selectUserIds } from "./profiles.js";
 import { users as REAL_USERS } from "./users.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_DIR = join(__dirname, "..");
+const PROJECT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function usage() {
-  process.stdout.write(
-    `migrate-master-plans — Azure 赛季训练计划 -> Tencent MySQL master_plan (ADR 0024)
+  process.stdout.write(`migrate-master-plans — Azure 赛季训练计划 -> Tencent MySQL
 
-Usage: node src/migrate-master-plans.js [options]
+Usage:
+  npm run migrate:master-plans -- [--user <uuid>] [--limit <n>] [--manifest-out <path>]
+  npm run migrate:master-plans -- --commit --reviewed-manifest <path> --reviewed-hash <sha256:...>
+  npm run migrate:master-plans -- --commit --schema-upgrade
 
-  --commit             Actually write to MySQL. Default is dry-run.
-  --user <uuid>        Restrict to a user UUID. Repeatable / comma list. Must be
-                       in the real-user allowlist (src/users.js).
-  --limit <n>          Process at most n users.
-  --ensure-schema      Apply schema.sql (CREATE TABLE IF NOT EXISTS) before writing.
-  --verbose            Extra logging.
-  --help               Show this help.
+Dry-run always reads both Azure sources and the MySQL target and prints a
+redacted canonical manifest. Structured JSON supersedes Markdown.
 
-MySQL env (or .env here): STRIDE_WORKER_MYSQL_DSN or the discrete MYSQL_* vars.
-Azure source env: STRIDE_MASTER_PLAN_TABLE_ACCOUNT_URL (table), and content-store
-STRIDE_CONTENT_BLOB_ACCOUNT_URL / STRIDE_CONTENT_BLOB_CONTAINER / STRIDE_CONTENT_BLOB_PREFIX
-(defaults match config/server.prod.toml). Auth via DefaultAzureCredential ('az login').
-`,
-  );
+Options:
+  --commit                    Enable the explicitly requested write operation.
+  --reviewed-manifest <path>  Reviewed dry-run manifest required for data commit.
+  --reviewed-hash <hash>      Reviewed manifest hash required for data commit.
+  --manifest-out <path>       Also write the dry-run manifest to this local path.
+  --schema-upgrade            Validate or upgrade version -> revision. Requires --commit.
+  --user <uuid>               Restrict to a real user. Repeatable/comma-separated.
+  --limit <n>                 Process at most n real users.
+  --help                      Show help.
+
+Never run --commit while an old Go API instance is active. The command never
+prints plan content, credentials, tokens, or DSNs.
+`);
 }
 
 function loadDotEnv(dir) {
@@ -88,17 +63,17 @@ function loadDotEnv(dir) {
     for (const raw of text.split(/\r?\n/)) {
       const line = raw.trim();
       if (!line || line.startsWith("#")) continue;
-      const eq = line.indexOf("=");
-      if (eq < 0) continue;
-      const key = line.slice(0, eq).trim();
-      let val = line.slice(eq + 1).trim();
+      const separator = line.indexOf("=");
+      if (separator < 0) continue;
+      const key = line.slice(0, separator).trim();
+      let value = line.slice(separator + 1).trim();
       if (
-        (val.startsWith('"') && val.endsWith('"')) ||
-        (val.startsWith("'") && val.endsWith("'"))
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
       ) {
-        val = val.slice(1, -1);
+        value = value.slice(1, -1);
       }
-      if (!(key in process.env)) process.env[key] = val;
+      if (!(key in process.env)) process.env[key] = value;
     }
   }
 }
@@ -108,209 +83,128 @@ function parseCli(argv) {
     args: argv,
     options: {
       commit: { type: "boolean", default: false },
+      "reviewed-manifest": { type: "string" },
+      "reviewed-hash": { type: "string" },
+      "manifest-out": { type: "string" },
+      "schema-upgrade": { type: "boolean", default: false },
       user: { type: "string", multiple: true, default: [] },
       limit: { type: "string" },
-      "ensure-schema": { type: "boolean", default: false },
-      verbose: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
     allowPositionals: false,
   });
-  const users = values.user
-    .flatMap((u) => u.split(","))
-    .map((u) => u.trim())
-    .filter(Boolean);
-  const limit = values.limit != null ? Number(values.limit) : Infinity;
-  if (!(limit > 0)) throw new Error(`--limit must be a positive number`);
+  const users = values.user.flatMap((item) => item.split(","))
+    .map((item) => item.trim()).filter(Boolean);
+  const limit = values.limit == null ? Infinity : Number(values.limit);
+  if (!(limit > 0)) throw new Error("--limit must be a positive number");
+  if (values["schema-upgrade"] && !values.commit) {
+    throw new Error("--schema-upgrade requires --commit");
+  }
+  if (values.commit && !values["schema-upgrade"] &&
+      (!values["reviewed-manifest"] || !values["reviewed-hash"])) {
+    throw new Error("data commit requires --reviewed-manifest and --reviewed-hash");
+  }
+  if (!values.commit && (values["reviewed-manifest"] || values["reviewed-hash"])) {
+    throw new Error("reviewed manifest options require --commit");
+  }
+  if (values["schema-upgrade"] && (values["reviewed-manifest"] || values["reviewed-hash"])) {
+    throw new Error("run schema upgrade and data commit as separate explicit operations");
+  }
   return {
     commit: values.commit,
-    ensureSchema: values["ensure-schema"],
-    verbose: values.verbose,
-    help: values.help,
+    schemaUpgrade: values["schema-upgrade"],
+    reviewedManifest: values["reviewed-manifest"],
+    reviewedHash: values["reviewed-hash"],
+    manifestOut: values["manifest-out"],
     users,
     limit,
+    help: values.help,
   };
 }
 
-function parseContentConfig(env) {
-  return {
-    accountUrl: (env.STRIDE_CONTENT_BLOB_ACCOUNT_URL || "https://authstorage2026.blob.core.windows.net/").trim(),
-    container: (
-      env.STRIDE_CONTENT_BLOB_CONTAINER || env.STRIDE_CONTENT_CONTAINER || "stride-data"
-    ).trim(),
-    prefix: (
-      env.STRIDE_CONTENT_BLOB_PREFIX ?? env.STRIDE_CONTENT_PREFIX ?? "users"
-    ).trim().replace(/^\/+|\/+$/g, ""),
-  };
+function schemaColumn(inspection) {
+  if (inspection.columns.includes("revision") && !inspection.columns.includes("version")) {
+    return "revision";
+  }
+  if (inspection.columns.includes("version") && !inspection.columns.includes("revision")) {
+    return "version";
+  }
+  throw new Error("master_plan must have exactly one of version or revision");
 }
 
-async function readActivePlanEntity(tableClient, uid) {
-  const found = [];
-  for await (const e of tableClient.listEntities({
-    queryOptions: { filter: odata`PartitionKey eq ${uid} and status eq ${"active"}` },
-  })) {
-    found.push(e);
-  }
-  if (found.length === 0) return null;
-  if (found.length > 1) {
-    throw new Error(`user ${uid} has ${found.length} active structured plans (expected 1)`);
-  }
-  return found[0];
-}
-
-async function readMarkdown(containerClient, name) {
-  const blob = containerClient.getBlobClient(name);
-  if (!(await blob.exists())) return null;
-  const buf = await blob.downloadToBuffer();
-  const props = await blob.getProperties();
-  return { text: buf.toString("utf8"), lastModified: props.lastModified ?? null };
+function parseReviewedManifest(file) {
+  const value = JSON.parse(readFileSync(resolve(file), "utf8"));
+  if (!value || typeof value !== "object") throw new Error("reviewed manifest must be a JSON object");
+  return value;
 }
 
 async function main() {
   loadDotEnv(PROJECT_DIR);
-  const opts = parseCli(process.argv.slice(2));
-  if (opts.help) {
+  const options = parseCli(process.argv.slice(2));
+  if (options.help) {
     usage();
     return 0;
   }
 
-  console.log(
-    `mode=${opts.commit ? "COMMIT" : "dry-run"} allowlist=${REAL_USERS.length} real user(s)`,
-  );
-  const { ids, rejected } = selectUserIds(REAL_USERS, opts.users, opts.limit);
-  for (const r of rejected) {
-    console.warn(`  ignore --user ${r}: not in real-user allowlist (test account)`);
+  const { ids, rejected } = selectUserIds(REAL_USERS, options.users, options.limit);
+  if (rejected.length > 0) {
+    process.stderr.write(`ignored ${rejected.length} user selection(s) outside the real-user allowlist\n`);
   }
-  console.log(`selected ${ids.length} user(s)\n`);
-
-  const cred = new DefaultAzureCredential();
-  const mpCfg = parseMasterPlanConfig(process.env);
-  if (!mpCfg.accountUrl) throw new Error("STRIDE_MASTER_PLAN_TABLE_ACCOUNT_URL is required");
-  const plansTable = new TableClient(mpCfg.accountUrl, mpCfg.tableName, cred);
-  const contentCfg = parseContentConfig(process.env);
-  const container = new BlobServiceClient(contentCfg.accountUrl, cred).getContainerClient(
-    contentCfg.container,
-  );
-
-  // ── plan phase (read + classify from Azure; no MySQL writes, no mint) ────────
-  const planned = []; // { uid, kind: 'v2'|'v1', v2?, v1? }
-  const skipped = [];
-  const errors = [];
-
-  for (const uid of ids) {
-    try {
-      const entity = await readActivePlanEntity(plansTable, uid);
-      if (entity) {
-        const row = structuredRowFromEntity(entity); // validates plan_json + goal_id + version
-        planned.push({ uid, kind: "v2", v2: row });
-        console.log(
-          `  plan v2 ${uid} plan=${row.plan_id.slice(0, 8)} version=${row.version} ` +
-            `goal_id=${row.goal_id} content=${row.content.length}B`,
-        );
-        continue;
-      }
-      const seed = V1_GOAL_SEED[uid];
-      if (seed) {
-        const name = `${contentCfg.prefix ? contentCfg.prefix + "/" : ""}${uid}/TRAINING_PLAN.md`;
-        const md = await readMarkdown(container, name);
-        if (!md) {
-          errors.push({ uid, kind: "v1", message: `seed present but no blob ${name}` });
-          console.error(`  ERROR v1 ${uid}: no markdown blob ${name}`);
-          continue;
-        }
-        planned.push({ uid, kind: "v1", v1: { md, seed } });
-        console.log(
-          `  plan v1 ${uid} markdown=${md.text.length}B race=${seed.race_name ?? "-"} ` +
-            `date=${seed.race_date} target=${seed.target_finish_time}`,
-        );
-        continue;
-      }
-      skipped.push(uid);
-      console.warn(`  skip ${uid}: no active structured plan and not a markdown user`);
-    } catch (err) {
-      const message = err instanceof MasterPlanTransformError ? err.message : String(err?.message || err);
-      errors.push({ uid, kind: "plan", message });
-      console.error(`  ERROR ${uid}: ${message}`);
-    }
-  }
-
-  const v2Count = planned.filter((p) => p.kind === "v2").length;
-  const v1Count = planned.filter((p) => p.kind === "v1").length;
-  console.log(
-    `\nplanned ${planned.length} plan(s) (v2=${v2Count}, v1=${v1Count}), ` +
-      `skipped ${skipped.length}, errors ${errors.length}`,
-  );
-
-  if (!opts.commit) {
-    console.log("\ndry-run complete — nothing written. Re-run with --commit to apply.");
-    return errors.length > 0 ? 1 : 0;
-  }
-  if (planned.length === 0) {
-    console.log("\nnothing to write.");
-    return errors.length > 0 ? 1 : 0;
-  }
-
-  // ── commit phase (MySQL) ─────────────────────────────────────────────────────
-  const dbConfig = parseMysqlConfig(process.env);
-  console.log(
-    `\nconnecting to mysql ${dbConfig.user}@${dbConfig.host}:${dbConfig.port}/${dbConfig.database}${dbConfig.ssl ? " (tls)" : ""}`,
-  );
-  const conn = await connect(dbConfig);
-  let mpInserted = 0, mpUpdated = 0, goalInserted = 0, goalUpdated = 0;
+  const connection = await connect(parseMysqlConfig(process.env));
   try {
-    if (opts.ensureSchema) {
-      const ddl = readFileSync(join(PROJECT_DIR, "schema.sql"), "utf8");
-      for (const stmt of splitSqlStatements(ddl)) await ensureSchema(conn, stmt);
-      console.log("ensured schema (schema.sql)");
+    const schemaAdapter = createMasterPlanSchemaAdapter(connection);
+    if (options.schemaUpgrade) {
+      const result = await upgradeMasterPlanSchema(schemaAdapter);
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
     }
-    const now = formatUpdatedAt();
-    for (const item of planned) {
-      try {
-        if (item.kind === "v2") {
-          const activeGoalId = await getActiveRaceGoalId(conn, item.uid);
-          if (!activeGoalId) {
-            throw new Error("no active race_goal; run migrate-training-goals before migrating this structured plan");
-          }
-          const row = rebindStructuredGoal(item.v2, activeGoalId);
-          const outcome = await upsertMasterPlan(conn, row, now);
-          if (outcome === "inserted") mpInserted++; else mpUpdated++;
-          console.log(`  ${outcome} v2 ${item.uid} plan=${row.plan_id.slice(0, 8)} goal=${activeGoalId.slice(0, 8)}`);
-        } else {
-          // v1: mint stable goal_id + plan_id (reuse prior on re-run for idempotency).
-          const goalId = (await getActiveRaceGoalId(conn, item.uid)) ?? randomUUID();
-          const planId = (await getActiveMasterPlanId(conn, item.uid, 1)) ?? randomUUID();
-          const goalRow = raceGoalRowFromSeed(item.uid, goalId, item.v1.seed);
-          const gOut = await upsertRaceGoal(conn, goalRow, now);
-          if (gOut === "inserted") goalInserted++; else goalUpdated++;
-          const mpRow = markdownRow(item.uid, planId, item.v1.md.text, goalId, {
-            createdAt: item.v1.md.lastModified,
-            updatedAt: item.v1.md.lastModified,
-          });
-          const mOut = await upsertMasterPlan(conn, mpRow, now);
-          if (mOut === "inserted") mpInserted++; else mpUpdated++;
-          console.log(
-            `  ${mOut} v1 ${item.uid} plan=${planId.slice(0, 8)} + ${gOut} race_goal=${goalId.slice(0, 8)}`,
-          );
-        }
-      } catch (err) {
-        errors.push({ uid: item.uid, kind: "commit", message: String(err?.message || err) });
-        console.error(`  ERROR committing ${item.uid}: ${err?.message || err}`);
-      }
-    }
-  } finally {
-    await conn.end();
-  }
 
-  console.log(
-    `\ncommit complete — master_plan(inserted ${mpInserted}, updated ${mpUpdated}), ` +
-      `race_goal(inserted ${goalInserted}, updated ${goalUpdated}), errors ${errors.length}`,
-  );
-  return errors.length > 0 ? 1 : 0;
+    const inspection = await schemaAdapter.inspect();
+    const target = createMasterPlanTarget(connection, { revisionColumn: schemaColumn(inspection) });
+    const sourceConfig = parseMasterPlanSourceConfig(process.env);
+    if (!sourceConfig.tableAccountUrl) throw new Error("STRIDE_MASTER_PLAN_TABLE_ACCOUNT_URL is required");
+    if (!sourceConfig.blobAccountUrl) throw new Error("STRIDE_CONTENT_BLOB_ACCOUNT_URL is required");
+    const source = makeMasterPlanSource(sourceConfig);
+
+    if (!options.commit) {
+      const manifest = await buildMasterPlanManifest({
+        userIds: ids,
+        source,
+        target,
+        goalSeeds: V1_GOAL_SEED,
+      });
+      const output = `${JSON.stringify(manifest, null, 2)}\n`;
+      process.stdout.write(output);
+      if (options.manifestOut) {
+        const { writeFileSync } = await import("node:fs");
+        writeFileSync(resolve(options.manifestOut), output, { encoding: "utf8", mode: 0o600 });
+      }
+      return manifest.users.some((record) => record.action === "conflict") ? 1 : 0;
+    }
+
+    if (schemaColumn(inspection) !== "revision") {
+      throw new Error("data commit requires the revision-only schema; run --commit --schema-upgrade first");
+    }
+    await upgradeMasterPlanSchema(schemaAdapter);
+    const reviewedManifest = parseReviewedManifest(options.reviewedManifest);
+    assertManifestUserSelection(reviewedManifest, ids);
+    const result = await commitMasterPlanManifest({
+      reviewedManifest,
+      reviewedHash: options.reviewedHash,
+      source,
+      target,
+      goalSeeds: V1_GOAL_SEED,
+    });
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  } finally {
+    await connection.end();
+  }
 }
 
 main()
   .then((code) => process.exit(code ?? 0))
-  .catch((err) => {
-    console.error(`fatal: ${err?.stack || err?.message || err}`);
+  .catch((error) => {
+    process.stderr.write(`fatal: ${error?.message ?? String(error)}\n`);
     process.exit(2);
   });

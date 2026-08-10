@@ -18,18 +18,14 @@ import "time"
 // MasterPlan validation in Go/SQL for no query benefit.
 //
 // ActiveFlag is a STORAGE-INTEGRITY LEVER ONLY. It carries no business meaning
-// beyond Status, is never surfaced in the API response, and must never be
-// branched on in business logic. Its sole purpose is to let MySQL enforce "at
-// most one active plan per athlete" via UNIQUE(user_id, active_flag): it is 1 on
-// the single active row and NULL on every draft/archived row (MySQL unique
-// indexes do not collide on NULL, so an athlete may have many archived rows but
-// only one active). A markdown row is modelled as active (Status="active",
-// ActiveFlag=1), so an athlete has at most one current plan *across both
-// formats* — reads still filter on Status, not ActiveFlag.
+// beyond Status and is never surfaced in the API response. MySQL uses
+// UNIQUE(user_id, active_flag) to enforce at most one active plan per athlete:
+// it is 1 on the current row and NULL on every draft/archived row. Current-row
+// discovery checks both Status and ActiveFlag so either direction of marker
+// drift is exposed as an invariant failure.
 //
-// Version is the structured plan's own revision counter (the Python
-// MasterPlan.version); it is v2-only and NULL for a markdown row, which has no
-// plan-version concept. A CHECK guarantees a v2 row always carries it.
+// Revision is the structured plan's mutation counter. It is v2-only, positive,
+// and NULL for a markdown row, which has no plan-revision concept.
 //
 // GoalID is a soft reference to race_goal.goal_id (indexed, no FOREIGN KEY,
 // matching the house standalone-table style). It is NOT NULL for both formats:
@@ -45,9 +41,9 @@ type MasterPlan struct {
 	ContentVersion int8      `gorm:"column:content_version;not null;check:ck_master_plan_content_version,content_version IN (1,2)"`
 	Content        string    `gorm:"column:content;type:longtext;not null"`
 	GoalID         string    `gorm:"column:goal_id;size:36;not null;index:idx_master_plan_goal"`
-	Status         string    `gorm:"column:status;size:16;not null"`
+	Status         string    `gorm:"column:status;size:16;not null;check:ck_master_plan_current_marker,(status = 'active' AND active_flag = 1) OR (status <> 'active' AND active_flag IS NULL)"`
 	ActiveFlag     *int8     `gorm:"column:active_flag;uniqueIndex:uidx_master_plan_active,priority:2"`
-	Version        *int64    `gorm:"column:version;check:ck_master_plan_v2_version,content_version = 1 OR version IS NOT NULL"`
+	Revision       *int64    `gorm:"column:revision;check:ck_master_plan_revision,(content_version = 1 AND revision IS NULL) OR (content_version = 2 AND revision >= 1)"`
 	CreatedAt      time.Time `gorm:"column:created_at"`
 	UpdatedAt      time.Time `gorm:"column:updated_at"`
 }
