@@ -9,6 +9,7 @@ WEB_WORKFLOW_PATH = WORKFLOW_DIR / "deploy-web.yml"
 DAILY_SYNC_PATH = WORKFLOW_DIR / "daily-sync.yml"
 WEEKLY_CALIBRATION_PATH = WORKFLOW_DIR / "weekly-running-calibration.yml"
 WEB_DEPLOY_PATH = WORKFLOW_DIR / "deploy-web.yml"
+WEB_DOCKERFILE_PATH = Path(__file__).parents[1] / "Dockerfile.web"
 
 
 def test_stride_app_deploys_keep_one_warm_replica() -> None:
@@ -75,6 +76,27 @@ def test_stride_web_deploys_atomic_go_onboarding_routes() -> None:
     assert "Deployed $route_name is not configured for the expected Go cutover." in deploy_step
     assert deploy_step.index("verify_readiness_contract") < deploy_step.index("--set-env-vars")
     assert {line.strip() for line in deploy_step.splitlines()} >= expected_routes
+
+
+def test_stride_web_image_defaults_to_atomic_go_onboarding_routes() -> None:
+    """Tencent uses the image defaults, so the complete contract must be baked in."""
+    dockerfile = WEB_DOCKERFILE_PATH.read_text(encoding="utf-8")
+    expected_routes = {
+        "STRIDE_ROUTE_GET_USERS_ME_PROFILE=go",
+        "STRIDE_ROUTE_POST_USERS_ME_PROFILE=go",
+        "STRIDE_ROUTE_PATCH_USERS_ME_PROFILE=go",
+        "STRIDE_ROUTE_GET_USERS_ME_INJURIES=go",
+        "STRIDE_ROUTE_POST_USERS_ME_INJURIES=go",
+        "STRIDE_ROUTE_PUT_USERS_ME_INJURIES_INJURYID=go",
+        "STRIDE_ROUTE_DELETE_USERS_ME_INJURIES_INJURYID=go",
+        "STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN=go",
+        "STRIDE_ROUTE_POST_USER_SYNC=go",
+        "STRIDE_ROUTE_GET_PIPELINES_RUNID=go",
+        "STRIDE_ROUTE_GET_JOBS_JOBID=go",
+        "STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE=go",
+    }
+
+    assert {line.strip().removesuffix(" \\") for line in dockerfile.splitlines()} >= expected_routes
 
 
 def test_async_job_worker_deploys_keep_one_warm_replica() -> None:
