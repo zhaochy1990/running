@@ -76,3 +76,5 @@ node_modules/
 .worktrees/
 
 data/*/testing/**
+.opencode
+src/coach_agent/.env
