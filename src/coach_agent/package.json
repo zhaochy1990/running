@@ -8,7 +8,9 @@
     "clean": "node scripts/clean.mjs",
     "copy-assets": "node scripts/copy-assets.mjs",
     "build": "npm run clean && tsc && npm run copy-assets",
-    "test": "npm run build && node --test dist/tools/*.test.js dist/agents/*.test.js",
+    "test:master-plan": "npm run build && node --test dist/graph/master_plan/*.test.js",
+    "test": "npm run build && node --test dist/tools/*.test.js dist/agents/*.test.js dist/graph/master_plan/*.test.js",
+    "master-plan:local": "npm run build && node dist/runners/masterPlan.js",
     "dev": "npm run build && node dist/test.js"
   },
   "keywords": [],
