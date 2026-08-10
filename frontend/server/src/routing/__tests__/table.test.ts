@@ -317,9 +317,10 @@ describe('API_ROUTES manifest integrity', () => {
     expect(API_ROUTES.some((route) => route.path === '/api/:user/training-plan')).toBe(false)
   })
 
-  it('defaults the production Web image current season-plan route to Go', () => {
+  it('defaults production Web image season-plan routes to Go', () => {
     const dockerfile = readFileSync(new URL('../../../../../Dockerfile.web', import.meta.url), 'utf8')
     expect(dockerfile).toContain('STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT=go')
+    expect(dockerfile).toContain('STRIDE_ROUTE_GET_USER_WEEKS=go')
   })
 
   it('goReady endpoints are exactly the ones the Go API implements', () => {
