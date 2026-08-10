@@ -32,11 +32,46 @@ export type Upstream = 'python' | 'go' | 'auth'
 export const WEB_ONBOARDING_GO_ROUTE_ENVS = [
   'STRIDE_ROUTE_GET_USERS_ME_PROFILE',
   'STRIDE_ROUTE_POST_USERS_ME_PROFILE',
+  'STRIDE_ROUTE_PATCH_USERS_ME_PROFILE',
   'STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN',
+  'STRIDE_ROUTE_GET_USERS_ME_INJURIES',
+  'STRIDE_ROUTE_POST_USERS_ME_INJURIES',
+  'STRIDE_ROUTE_PUT_USERS_ME_INJURIES_INJURYID',
+  'STRIDE_ROUTE_DELETE_USERS_ME_INJURIES_INJURYID',
   'STRIDE_ROUTE_POST_USER_SYNC',
   'STRIDE_ROUTE_GET_PIPELINES_RUNID',
   'STRIDE_ROUTE_GET_JOBS_JOBID',
   'STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE',
+] as const
+
+export const WEB_ONBOARDING_GO_ROUTE_CONTRACT = [
+  { method: 'GET', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_GET_USERS_ME_PROFILE' },
+  { method: 'POST', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_POST_USERS_ME_PROFILE' },
+  { method: 'PATCH', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_PATCH_USERS_ME_PROFILE' },
+  { method: 'POST', path: '/api/users/me/watch/login', env: 'STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN' },
+  { method: 'GET', path: '/api/users/me/injuries', env: 'STRIDE_ROUTE_GET_USERS_ME_INJURIES' },
+  { method: 'POST', path: '/api/users/me/injuries', env: 'STRIDE_ROUTE_POST_USERS_ME_INJURIES' },
+  { method: 'PUT', path: '/api/users/me/injuries/:injuryId', env: 'STRIDE_ROUTE_PUT_USERS_ME_INJURIES_INJURYID' },
+  { method: 'DELETE', path: '/api/users/me/injuries/:injuryId', env: 'STRIDE_ROUTE_DELETE_USERS_ME_INJURIES_INJURYID' },
+  { method: 'POST', path: '/api/:user/sync', env: 'STRIDE_ROUTE_POST_USER_SYNC' },
+  { method: 'GET', path: '/api/pipelines/:run_id', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID' },
+  { method: 'GET', path: '/api/jobs/:job_id', env: 'STRIDE_ROUTE_GET_JOBS_JOBID' },
+  { method: 'POST', path: '/api/users/me/onboarding/complete', env: 'STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE' },
+] as const
+
+/** Routes whose Go cutover must include both goal methods and the shared sync path. */
+export const PLAN_SETUP_GO_ROUTE_ENVS = [
+  'STRIDE_ROUTE_GET_USERS_ME_TRAINING_GOAL',
+  'STRIDE_ROUTE_POST_USERS_ME_TRAINING_GOAL',
+  'STRIDE_ROUTE_POST_USER_SYNC',
+  'STRIDE_ROUTE_GET_PIPELINES_RUNID',
+] as const
+
+export const PLAN_SETUP_GO_ROUTE_CONTRACT = [
+  { method: 'GET', path: '/api/users/me/training-goal', env: 'STRIDE_ROUTE_GET_USERS_ME_TRAINING_GOAL' },
+  { method: 'POST', path: '/api/users/me/training-goal', env: 'STRIDE_ROUTE_POST_USERS_ME_TRAINING_GOAL' },
+  { method: 'POST', path: '/api/:user/sync', env: 'STRIDE_ROUTE_POST_USER_SYNC' },
+  { method: 'GET', path: '/api/pipelines/:run_id', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID' },
 ] as const
 
 /** Prefix under which the in-house auth-service is reached (same-origin via BFF). */
@@ -122,9 +157,18 @@ export function unsupportedGoRoutes(env: NodeJS.ProcessEnv = process.env): reado
 }
 
 /** Reject a partial Web onboarding cutover before the BFF accepts traffic. */
+function hasPartialGoCutover(
+  routeEnvs: readonly string[],
+  env: NodeJS.ProcessEnv,
+): boolean {
+  const enabled = routeEnvs.filter((name) => env[name]?.trim().toLowerCase() === GO_ENV_VALUE)
+  return enabled.length > 0 && enabled.length < routeEnvs.length
+}
+
 export function hasPartialWebOnboardingGoCutover(env: NodeJS.ProcessEnv = process.env): boolean {
-  const enabled = WEB_ONBOARDING_GO_ROUTE_ENVS.filter(
-    (name) => env[name]?.trim().toLowerCase() === GO_ENV_VALUE,
-  )
-  return enabled.length > 0 && enabled.length < WEB_ONBOARDING_GO_ROUTE_ENVS.length
+  return hasPartialGoCutover(WEB_ONBOARDING_GO_ROUTE_ENVS, env)
+}
+
+export function hasPartialPlanSetupGoCutover(env: NodeJS.ProcessEnv = process.env): boolean {
+  return hasPartialGoCutover(PLAN_SETUP_GO_ROUTE_ENVS, env)
 }

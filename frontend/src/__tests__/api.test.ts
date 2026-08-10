@@ -15,7 +15,7 @@ vi.mock('../store/authStore', () => ({
 
 // Import after the vi.mock registration (vi.mock auto-hoists, but
 // being explicit keeps the read order obvious).
-import { getFullSyncStatus, getUsers, postFullSync, postOnboardingComplete, triggerSync } from '../api'
+import { getPipelineRun, getUsers, postOnboardingComplete, triggerSync } from '../api'
 
 function resp(status: number, body: unknown = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -92,30 +92,26 @@ describe('api 401-refresh', () => {
     )
   })
 
-  it('starts and reads the legacy Python full-sync status for plan setup', async () => {
+  it('starts incremental sync and polls one pipeline run', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(resp(200, { state: 'running', progress: { phase: 'queued', percent: 0 } }))
-      .mockResolvedValueOnce(resp(200, { state: 'running', progress: { phase: 'health', percent: 50 } }))
+      .mockResolvedValueOnce(resp(202, { run_id: 'run-1', pipeline_name: 'data_sync' }))
+      .mockResolvedValueOnce(resp(200, { run_id: 'run-1', pipeline_name: 'data_sync', status: 'done', current_step: 0, steps: [] }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(postFullSync()).resolves.toEqual({
+    await expect(triggerSync('user-1', { full: false, idempotencyKey: 'attempt-1' })).resolves.toMatchObject({
       ok: true,
-      status: 200,
-      data: { state: 'running', progress: { phase: 'queued', percent: 0 } },
+      data: { run_id: 'run-1' },
     })
-    await expect(getFullSyncStatus()).resolves.toEqual({
-      state: 'running',
-      progress: { phase: 'health', percent: 50 },
-    })
+    await expect(getPipelineRun('run-1')).resolves.toMatchObject({ status: 'done' })
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      '/api/users/me/full-sync',
-      expect.objectContaining({ method: 'POST' }),
+      '/api/user-1/sync',
+      expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'Idempotency-Key': 'attempt-1' }), body: JSON.stringify({ mode: 'incremental' }) }),
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      '/api/users/me/full-sync-status',
+      '/api/pipelines/run-1',
       expect.objectContaining({ method: 'GET' }),
     )
   })

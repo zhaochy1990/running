@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { getMyProfile, type ProfileIn } from '../api'
+import { getMyProfile, type ProfileIn, type RunningAgeRange } from '../api'
+import InjuryStep from './onboarding/InjuryStep'
 import { useAuthStore } from '../store/authStore'
 import ProfileStep from './onboarding/ProfileStep'
 import SubmitStep from './onboarding/SubmitStep'
 import WatchStep from './onboarding/WatchStep'
 
-type Step = 'loading' | 'profile' | 'watch' | 'submit' | 'done'
+type Step = 'loading' | 'profile' | 'watch' | 'injuries' | 'submit' | 'done'
 
 function reconstructProfile(p: Record<string, unknown> | null): ProfileIn | null {
   if (!p) return null
-  // Only basic fields are required for onboarding; race goals are set later.
-  const required = ['display_name', 'dob', 'sex', 'height_cm', 'weight_kg']
+  // Profile onboarding owns only the Go profile fields; race goals are set later.
+  const required = ['display_name', 'dob', 'sex', 'height_cm', 'weight_kg', 'running_age_range']
   for (const k of required) {
     if (p[k] === undefined || p[k] === null) return null
   }
@@ -21,6 +22,7 @@ function reconstructProfile(p: Record<string, unknown> | null): ProfileIn | null
     sex: String(p.sex),
     height_cm: Number(p.height_cm),
     weight_kg: Number(p.weight_kg),
+    running_age_range: (String(p.running_age_range) as RunningAgeRange),
   }
 }
 
@@ -64,7 +66,7 @@ export default function OnboardingWizard() {
           // Go uses watch_ready; Python retains the legacy coros_ready name.
           setStep('watch')
         } else {
-          setStep('submit')
+          setStep('injuries')
         }
       })
       .catch(() => {
@@ -75,8 +77,8 @@ export default function OnboardingWizard() {
 
   if (step === 'done') return <Navigate to="/" replace />
 
-  const stepIndex = step === 'profile' ? 0 : step === 'watch' ? 1 : step === 'submit' ? 2 : -1
-  const steps = ['基础资料', '绑定手表', '同步数据']
+  const stepIndex = step === 'profile' ? 0 : step === 'watch' ? 1 : step === 'injuries' ? 2 : step === 'submit' ? 3 : -1
+  const steps = ['基础资料', '绑定手表', '伤病记录（可跳过）', '同步数据']
 
   return (
     <div className="flex min-h-screen items-start justify-center bg-bg-base px-4 py-12">
@@ -140,7 +142,11 @@ export default function OnboardingWizard() {
           )}
 
           {step === 'watch' && (
-            <WatchStep onSuccess={() => setStep('submit')} />
+            <WatchStep onSuccess={() => setStep('injuries')} />
+          )}
+
+          {step === 'injuries' && (
+            <InjuryStep onSuccess={() => setStep('submit')} />
           )}
 
           {step === 'submit' && profileData && userId && (

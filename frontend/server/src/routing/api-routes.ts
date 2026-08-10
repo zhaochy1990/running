@@ -67,8 +67,13 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: 'GET', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_GET_USERS_ME_PROFILE', goReady: true },
   // ✓ /onboarding · submit basic profile   [go-ready] (same watch_ready caveat)
   { method: 'POST', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_POST_USERS_ME_PROFILE', goReady: true },
-  // ✓ /settings · edit profile fields   (Go has no PATCH profile yet)
-  { method: 'PATCH', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_PATCH_USERS_ME_PROFILE', goReady: false },
+  // ✓ /settings · edit the six Go-owned profile fields   [go-ready]
+  { method: 'PATCH', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_PATCH_USERS_ME_PROFILE', goReady: true },
+  // ✓ /onboarding, /settings · injury records   [go-ready]
+  { method: 'GET', path: '/api/users/me/injuries', env: 'STRIDE_ROUTE_GET_USERS_ME_INJURIES', goReady: true },
+  { method: 'POST', path: '/api/users/me/injuries', env: 'STRIDE_ROUTE_POST_USERS_ME_INJURIES', goReady: true },
+  { method: 'PUT', path: '/api/users/me/injuries/:injuryId', env: 'STRIDE_ROUTE_PUT_USERS_ME_INJURIES_INJURYID', goReady: true },
+  { method: 'DELETE', path: '/api/users/me/injuries/:injuryId', env: 'STRIDE_ROUTE_DELETE_USERS_ME_INJURIES_INJURYID', goReady: true },
   // ✓ /settings · delete account [go-ready]
   //   Watch credentials are Go/MySQL-owned. Account deletion must use the same
   //   upstream so DeleteUserData removes provider_credentials atomically.
@@ -90,30 +95,24 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: 'POST', path: '/api/users/me/watch/login', env: 'STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN', goReady: true },
 
   // ── Onboarding & sync ───────────────────────────────────────────────────
-  // ✗ legacy Python pipeline status; Web onboarding polls /api/pipelines/:runId.
-  { method: 'GET', path: '/api/users/me/onboarding/pipeline-status', env: 'STRIDE_ROUTE_GET_USERS_ME_ONBOARDING_PIPELINE_STATUS', goReady: false },
   // ✓ /onboarding · explicitly finalize a completed onboarding run [go-ready]
   //   Web onboarding must also cut over profile GET/POST, watch login,
-  //   POST /api/:user/sync, and GET /api/pipelines/:runId. Pipeline success alone
+  //   POST /api/:user/sync, and GET /api/pipelines/:run_id. Pipeline success alone
   //   is not completion.
   { method: 'POST', path: '/api/users/me/onboarding/complete', env: 'STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE', goReady: true },
-  // ✓ /plan · poll Python-owned full-history-sync progress during plan setup
-  { method: 'GET', path: '/api/users/me/full-sync-status', env: 'STRIDE_ROUTE_GET_USERS_ME_FULL_SYNC_STATUS', goReady: false },
-  // ✓ /plan · trigger Python-owned full history sync before master-plan generation
-  { method: 'POST', path: '/api/users/me/full-sync', env: 'STRIDE_ROUTE_POST_USERS_ME_FULL_SYNC', goReady: false },
   // ✓ global(layout) · manual sync from the sync pill
   //   Go note: starts an async data-sync pipeline (sync + compute) and returns
   //   202 {run_id} to poll GET /pipelines/:id (ADR 0020), vs Python's
   //   synchronous {success,output}. Cutover needs the pill to poll — not just routing.
   { method: 'POST', path: '/api/:user/sync', env: 'STRIDE_ROUTE_POST_USER_SYNC', goReady: true },
   // ✓ sync callers · poll one Go pipeline returned by POST /api/:user/sync
-  { method: 'GET', path: '/api/pipelines/:runId', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID', goReady: true },
+  { method: 'GET', path: '/api/pipelines/:run_id', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID', goReady: true },
   // ✓ /onboarding · read the active step's job progress [go-ready]
-  { method: 'GET', path: '/api/jobs/:jobId', env: 'STRIDE_ROUTE_GET_JOBS_JOBID', goReady: true },
+  { method: 'GET', path: '/api/jobs/:job_id', env: 'STRIDE_ROUTE_GET_JOBS_JOBID', goReady: true },
   // ✓ /onboarding · poll the current user's Go pipeline run
   { method: 'GET', path: '/api/users/:user/pipelines', env: 'STRIDE_ROUTE_GET_USERS_USER_PIPELINES', goReady: true },
 
-  // ── Training goal / running profile / prefs ─────────────────────────────
+  // ── Training goal / preferences ───────────────────────────────────────────
   // TrainingPlanPage.tsx:207
   // 在创建训练计划的时候需要获取用户的目标
   // ✓ /plan · load current training goal   [go-ready]
@@ -122,12 +121,6 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: 'POST', path: '/api/users/me/training-goal', env: 'STRIDE_ROUTE_POST_USERS_ME_TRAINING_GOAL', goReady: true },
   // ✗ not called   [go-ready]
   { method: 'PUT', path: '/api/users/me/training-goal', env: 'STRIDE_ROUTE_PUT_USERS_ME_TRAINING_GOAL', goReady: true },
-  // ✗ not called
-  { method: 'GET', path: '/api/users/me/running-profile', env: 'STRIDE_ROUTE_GET_USERS_ME_RUNNING_PROFILE', goReady: false },
-  // ✓ /plan · create running profile during setup
-  { method: 'POST', path: '/api/users/me/running-profile', env: 'STRIDE_ROUTE_POST_USERS_ME_RUNNING_PROFILE', goReady: false },
-  // ✗ not called
-  { method: 'PUT', path: '/api/users/me/running-profile', env: 'STRIDE_ROUTE_PUT_USERS_ME_RUNNING_PROFILE', goReady: false },
   // ✗ not called
   { method: 'GET', path: '/api/users/me/nutrition-prefs', env: 'STRIDE_ROUTE_GET_USERS_ME_NUTRITION_PREFS', goReady: false },
   // ✗ not called

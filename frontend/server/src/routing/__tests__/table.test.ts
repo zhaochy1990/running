@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
 import { API_ROUTES } from '../api-routes.js'
-import { AUTH_PREFIX, hasGoRoutes, hasPartialWebOnboardingGoCutover, resolveUpstream, unsupportedGoRoutes, upstreamForRoute } from '../table.js'
+import {
+  AUTH_PREFIX,
+  hasGoRoutes,
+  hasPartialPlanSetupGoCutover,
+  hasPartialWebOnboardingGoCutover,
+  PLAN_SETUP_GO_ROUTE_CONTRACT,
+  resolveUpstream,
+  unsupportedGoRoutes,
+  upstreamForRoute,
+  WEB_ONBOARDING_GO_ROUTE_CONTRACT,
+} from '../table.js'
 
 const TEAM_FEED_AND_LIKES_CUTOVER = {
   STRIDE_ROUTE_GET_TEAMS_TEAMID_FEED: 'go',
@@ -169,11 +179,11 @@ describe('Go route capability validation', () => {
   it('reports every non-Go-ready route configured to use Go', () => {
     expect(unsupportedGoRoutes({
       STRIDE_ROUTE_GET_HEALTH: 'go',
-      STRIDE_ROUTE_POST_USERS_ME_FULL_SYNC: ' GO ',
+      STRIDE_ROUTE_GET_USERS_ME_NUTRITION_PREFS: ' GO ',
       STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'go',
     }).map((route) => route.env)).toEqual([
       'STRIDE_ROUTE_GET_HEALTH',
-      'STRIDE_ROUTE_POST_USERS_ME_FULL_SYNC',
+      'STRIDE_ROUTE_GET_USERS_ME_NUTRITION_PREFS',
     ])
   })
 
@@ -189,11 +199,22 @@ describe('Web onboarding Go cutover', () => {
   const fullWebOnboardingGoEnv = {
     STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'go',
     STRIDE_ROUTE_POST_USERS_ME_PROFILE: 'go',
+    STRIDE_ROUTE_PATCH_USERS_ME_PROFILE: 'go',
     STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN: 'go',
+    STRIDE_ROUTE_GET_USERS_ME_INJURIES: 'go',
+    STRIDE_ROUTE_POST_USERS_ME_INJURIES: 'go',
+    STRIDE_ROUTE_PUT_USERS_ME_INJURIES_INJURYID: 'go',
+    STRIDE_ROUTE_DELETE_USERS_ME_INJURIES_INJURYID: 'go',
     STRIDE_ROUTE_POST_USER_SYNC: 'go',
     STRIDE_ROUTE_GET_PIPELINES_RUNID: 'go',
     STRIDE_ROUTE_GET_JOBS_JOBID: 'go',
     STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE: 'go',
+  }
+  const fullPlanSetupGoEnv = {
+    STRIDE_ROUTE_GET_USERS_ME_TRAINING_GOAL: 'go',
+    STRIDE_ROUTE_POST_USERS_ME_TRAINING_GOAL: 'go',
+    STRIDE_ROUTE_POST_USER_SYNC: 'go',
+    STRIDE_ROUTE_GET_PIPELINES_RUNID: 'go',
   }
 
   it('allows no onboarding Go routes or the complete route set', () => {
@@ -201,16 +222,27 @@ describe('Web onboarding Go cutover', () => {
     expect(hasPartialWebOnboardingGoCutover(fullWebOnboardingGoEnv)).toBe(false)
   })
 
-  it('rejects every partial combination', () => {
-    expect(hasPartialWebOnboardingGoCutover({ STRIDE_ROUTE_POST_USER_SYNC: 'go' })).toBe(true)
-    expect(hasPartialWebOnboardingGoCutover({
-      STRIDE_ROUTE_GET_USERS_ME_PROFILE: 'go',
-      STRIDE_ROUTE_POST_USERS_ME_PROFILE: 'go',
-      STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN: 'go',
-       STRIDE_ROUTE_POST_USER_SYNC: 'go',
-       STRIDE_ROUTE_GET_PIPELINES_RUNID: 'go',
-       STRIDE_ROUTE_GET_JOBS_JOBID: 'go',
-    })).toBe(true)
+  it('rejects every partial onboarding combination', () => {
+    const routeNames = Object.keys(fullWebOnboardingGoEnv)
+    for (const routeName of routeNames) {
+      const partial = { ...fullWebOnboardingGoEnv }
+      delete partial[routeName as keyof typeof partial]
+      expect(hasPartialWebOnboardingGoCutover(partial)).toBe(true)
+    }
+  })
+
+  it('allows no plan-setup Go routes or the complete route set', () => {
+    expect(hasPartialPlanSetupGoCutover({})).toBe(false)
+    expect(hasPartialPlanSetupGoCutover(fullPlanSetupGoEnv)).toBe(false)
+  })
+
+  it('rejects every partial plan-setup combination', () => {
+    const routeNames = Object.keys(fullPlanSetupGoEnv)
+    for (const routeName of routeNames) {
+      const partial = { ...fullPlanSetupGoEnv }
+      delete partial[routeName as keyof typeof partial]
+      expect(hasPartialPlanSetupGoCutover(partial)).toBe(true)
+    }
   })
 })
 
@@ -250,22 +282,26 @@ describe('API_ROUTES manifest integrity', () => {
     }
   })
 
-  it('keeps the Web onboarding Go cutover as profile, watch, start, poll, and finalization', () => {
-    expect(API_ROUTES.filter((route) => [
-      '/api/users/me/profile',
-      '/api/users/me/watch/login',
-       '/api/:user/sync',
-       '/api/pipelines/:runId',
-       '/api/jobs/:jobId',
-      '/api/users/me/onboarding/complete',
-    ].includes(route.path) && ['GET', 'POST'].includes(route.method))).toEqual([
-      { method: 'GET', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_GET_USERS_ME_PROFILE', goReady: true },
-      { method: 'POST', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_POST_USERS_ME_PROFILE', goReady: true },
-      { method: 'POST', path: '/api/users/me/watch/login', env: 'STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN', goReady: true },
-      { method: 'POST', path: '/api/users/me/onboarding/complete', env: 'STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE', goReady: true },
-      { method: 'POST', path: '/api/:user/sync', env: 'STRIDE_ROUTE_POST_USER_SYNC', goReady: true },
-       { method: 'GET', path: '/api/pipelines/:runId', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID', goReady: true },
-       { method: 'GET', path: '/api/jobs/:jobId', env: 'STRIDE_ROUTE_GET_JOBS_JOBID', goReady: true },
+  it('keeps the Web onboarding Go cutover as the exact 12-route contract', () => {
+    expect(WEB_ONBOARDING_GO_ROUTE_CONTRACT).toEqual([
+      { method: 'GET', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_GET_USERS_ME_PROFILE' },
+      { method: 'POST', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_POST_USERS_ME_PROFILE' },
+      { method: 'PATCH', path: '/api/users/me/profile', env: 'STRIDE_ROUTE_PATCH_USERS_ME_PROFILE' },
+      { method: 'POST', path: '/api/users/me/watch/login', env: 'STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN' },
+      { method: 'GET', path: '/api/users/me/injuries', env: 'STRIDE_ROUTE_GET_USERS_ME_INJURIES' },
+      { method: 'POST', path: '/api/users/me/injuries', env: 'STRIDE_ROUTE_POST_USERS_ME_INJURIES' },
+      { method: 'PUT', path: '/api/users/me/injuries/:injuryId', env: 'STRIDE_ROUTE_PUT_USERS_ME_INJURIES_INJURYID' },
+      { method: 'DELETE', path: '/api/users/me/injuries/:injuryId', env: 'STRIDE_ROUTE_DELETE_USERS_ME_INJURIES_INJURYID' },
+      { method: 'POST', path: '/api/:user/sync', env: 'STRIDE_ROUTE_POST_USER_SYNC' },
+      { method: 'GET', path: '/api/pipelines/:run_id', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID' },
+      { method: 'GET', path: '/api/jobs/:job_id', env: 'STRIDE_ROUTE_GET_JOBS_JOBID' },
+      { method: 'POST', path: '/api/users/me/onboarding/complete', env: 'STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE' },
+    ])
+    expect(PLAN_SETUP_GO_ROUTE_CONTRACT).toEqual([
+      { method: 'GET', path: '/api/users/me/training-goal', env: 'STRIDE_ROUTE_GET_USERS_ME_TRAINING_GOAL' },
+      { method: 'POST', path: '/api/users/me/training-goal', env: 'STRIDE_ROUTE_POST_USERS_ME_TRAINING_GOAL' },
+      { method: 'POST', path: '/api/:user/sync', env: 'STRIDE_ROUTE_POST_USER_SYNC' },
+      { method: 'GET', path: '/api/pipelines/:run_id', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID' },
     ])
   })
 
@@ -274,6 +310,7 @@ describe('API_ROUTES manifest integrity', () => {
     expect(goReady).toEqual(
       [
         'DELETE /api/users/me',
+        'DELETE /api/users/me/injuries/:injuryId',
         'DELETE /api/teams/:teamId',
         'DELETE /api/teams/:teamId/activities/:userId/:labelId/likes',
         'DELETE /api/users/me/watch',
@@ -287,8 +324,8 @@ describe('API_ROUTES manifest integrity', () => {
         'GET /api/:user/stride/training-load',
         'GET /api/:user/stride/zones',
         'GET /api/:user/training-plan',
-        'GET /api/pipelines/:runId',
-        'GET /api/jobs/:jobId',
+        'GET /api/pipelines/:run_id',
+        'GET /api/jobs/:job_id',
         'GET /api/teams',
         'GET /api/teams/:teamId',
         'GET /api/teams/:teamId/activities/:userId/:labelId',
@@ -302,16 +339,20 @@ describe('API_ROUTES manifest integrity', () => {
         'GET /api/users/me/training-goal',
         'GET /api/users/me/watch',
         'GET /api/users/:user/pipelines',
+        'GET /api/users/me/injuries',
         'POST /api/users/me/onboarding/complete',
         'POST /api/teams',
         'POST /api/teams/:teamId/activities/:userId/:labelId/likes',
         'POST /api/teams/:teamId/join',
         'POST /api/teams/:teamId/leave',
         'POST /api/teams/:teamId/transfer-owner',
+        'POST /api/users/me/injuries',
         'POST /api/users/me/profile',
         'POST /api/users/me/watch/login',
         'POST /api/users/me/training-goal',
         'POST /api/:user/sync',
+        'PUT /api/users/me/injuries/:injuryId',
+        'PATCH /api/users/me/profile',
         'PUT /api/users/me/training-goal',
       ].sort(),
     )
