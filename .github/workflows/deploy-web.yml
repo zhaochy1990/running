@@ -197,12 +197,12 @@ jobs:
           }
           ONBOARDING_ROUTES_JSON='[{"method":"GET","path":"/api/users/me/profile"},{"method":"POST","path":"/api/users/me/profile"},{"method":"PATCH","path":"/api/users/me/profile"},{"method":"POST","path":"/api/users/me/watch/login"},{"method":"GET","path":"/api/users/me/injuries"},{"method":"POST","path":"/api/users/me/injuries"},{"method":"PUT","path":"/api/users/me/injuries/:injuryId"},{"method":"DELETE","path":"/api/users/me/injuries/:injuryId"},{"method":"POST","path":"/api/:user/sync"},{"method":"GET","path":"/api/pipelines/:run_id"},{"method":"GET","path":"/api/jobs/:job_id"},{"method":"POST","path":"/api/users/me/onboarding/complete"}]'
           PLAN_SETUP_ROUTES_JSON='[{"method":"GET","path":"/api/users/me/training-goal"},{"method":"POST","path":"/api/users/me/training-goal"},{"method":"POST","path":"/api/:user/sync"},{"method":"GET","path":"/api/pipelines/:run_id"}]'
-          verify_readiness_contract "${GO_API_URL%/}/readyz/onboarding" "web-onboarding-v2" "$ONBOARDING_ROUTES_JSON"
-          verify_readiness_contract "${GO_API_URL%/}/readyz/plan-setup" "plan-setup-v1" "$PLAN_SETUP_ROUTES_JSON"
+          verify_readiness_contract "${GO_API_URL%/}/api/readyz/onboarding" "web-onboarding-v2" "$ONBOARDING_ROUTES_JSON"
+          verify_readiness_contract "${GO_API_URL%/}/api/readyz/plan-setup" "plan-setup-v1" "$PLAN_SETUP_ROUTES_JSON"
 
           if [ -n "${PUBLIC_DIRECT_BASE_URL:-}" ]; then
-            verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/readyz/onboarding" "web-onboarding-v2" "$ONBOARDING_ROUTES_JSON"
-            verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/readyz/plan-setup" "plan-setup-v1" "$PLAN_SETUP_ROUTES_JSON"
+            verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/api/readyz/onboarding" "web-onboarding-v2" "$ONBOARDING_ROUTES_JSON"
+            verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/api/readyz/plan-setup" "plan-setup-v1" "$PLAN_SETUP_ROUTES_JSON"
           fi
           echo "Go onboarding v2 and plan-setup v1 readiness contracts verified."
 

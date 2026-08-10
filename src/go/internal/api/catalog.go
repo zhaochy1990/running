@@ -75,7 +75,7 @@ var onboardingWebRouteContracts = []onboardingRouteContract{
 //	@Tags			catalog
 //	@Produce		json
 //	@Success		200	{object}	onboardingReadinessResponse
-//	@Router			/readyz/onboarding [get]
+//	@Router			/api/readyz/onboarding [get]
 func (s *Service) onboardingReadiness(c *gin.Context) {
 	c.JSON(http.StatusOK, onboardingReadinessResponse{
 		ContractVersion: onboardingContractVersion,
@@ -90,6 +90,15 @@ var planSetupRouteContracts = []onboardingRouteContract{
 	{Method: http.MethodGet, Path: "/api/pipelines/:run_id"},
 }
 
+// planSetupReadiness is the public, static deployment contract for the Web
+// training-plan setup cutover.
+//
+//	@Summary		Training-plan setup cutover readiness
+//	@Description	Returns the static route contract required before the Web BFF enables its Go plan-setup route flags. No authentication is required and no user data is returned.
+//	@Tags			catalog
+//	@Produce		json
+//	@Success		200	{object}	planSetupReadinessResponse
+//	@Router			/api/readyz/plan-setup [get]
 func (s *Service) planSetupReadiness(c *gin.Context) {
 	c.JSON(http.StatusOK, planSetupReadinessResponse{
 		ContractVersion: planSetupContractVersion,

@@ -60,8 +60,10 @@ def test_stride_web_deploys_atomic_go_onboarding_routes() -> None:
     assert '"${#ONBOARDING_GO_ROUTE_VARS[@]}" -ne 12' in deploy_step
     assert 'grep -Ec \'^STRIDE_ROUTE_[A-Z0-9_]+=go$\'' in deploy_step
     assert "GO_API_URL=$GO_API_URL" in deploy_step
-    assert 'verify_readiness_contract "${GO_API_URL%/}/readyz/onboarding" "web-onboarding-v2"' in deploy_step
-    assert 'verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/readyz/onboarding" "web-onboarding-v2"' in deploy_step
+    assert 'verify_readiness_contract "${GO_API_URL%/}/api/readyz/onboarding" "web-onboarding-v2"' in deploy_step
+    assert 'verify_readiness_contract "${GO_API_URL%/}/api/readyz/plan-setup" "plan-setup-v1"' in deploy_step
+    assert 'verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/api/readyz/onboarding" "web-onboarding-v2"' in deploy_step
+    assert 'verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/api/readyz/plan-setup" "plan-setup-v1"' in deploy_step
     assert "readiness_bodies=()" in deploy_step
     assert 'readiness_bodies+=("$readiness_body")' in deploy_step
     assert "curl --silent --connect-timeout 10 --max-time 30" in deploy_step

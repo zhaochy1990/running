@@ -234,7 +234,7 @@ func internalHdr() map[string]string { return map[string]string{"X-Internal-Toke
 
 func TestOnboardingReadiness_AdvertisesAtomicWebContract(t *testing.T) {
 	h := newHarness(t)
-	w := h.do(http.MethodGet, "/readyz/onboarding", "", nil)
+	w := h.do(http.MethodGet, "/api/readyz/onboarding", "", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
 	}
@@ -277,7 +277,7 @@ func TestOnboardingReadiness_AdvertisesAtomicWebContract(t *testing.T) {
 
 func TestPlanSetupReadiness_AdvertisesRouteContract(t *testing.T) {
 	h := newHarness(t)
-	w := h.do(http.MethodGet, "/readyz/plan-setup", "", nil)
+	w := h.do(http.MethodGet, "/api/readyz/plan-setup", "", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
 	}
@@ -292,6 +292,16 @@ func TestPlanSetupReadiness_AdvertisesRouteContract(t *testing.T) {
 	for i, want := range planSetupRouteContracts {
 		if got.Routes[i] != want {
 			t.Errorf("route %d = %+v, want %+v", i, got.Routes[i], want)
+		}
+	}
+}
+
+func TestReadinessLegacyPathsAreNotExposed(t *testing.T) {
+	h := newHarness(t)
+	for _, path := range []string{"/readyz/onboarding", "/readyz/plan-setup"} {
+		w := h.do(http.MethodGet, path, "", nil)
+		if w.Code != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404", path, w.Code)
 		}
 	}
 }
