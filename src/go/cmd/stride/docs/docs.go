@@ -70,6 +70,46 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/readyz/onboarding": {
+            "get": {
+                "description": "Returns the static route contract required before the Web BFF enables its Go onboarding route flags. No authentication is required and no user data is returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "catalog"
+                ],
+                "summary": "Web onboarding cutover readiness",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.onboardingReadinessResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/readyz/plan-setup": {
+            "get": {
+                "description": "Returns the static route contract required before the Web BFF enables its Go plan-setup route flags. No authentication is required and no user data is returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "catalog"
+                ],
+                "summary": "Training-plan setup cutover readiness",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.planSetupReadinessResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/me": {
             "delete": {
                 "security": [
@@ -1957,26 +1997,6 @@ const docTemplate = `{
                     }
                 }
             }
-        },
-        "/readyz/onboarding": {
-            "get": {
-                "description": "Returns the static route contract required before the Web BFF enables its Go onboarding route flags. No authentication is required and no user data is returned.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "catalog"
-                ],
-                "summary": "Web onboarding cutover readiness",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.onboardingReadinessResponse"
-                        }
-                    }
-                }
-            }
         }
     },
     "definitions": {
@@ -3021,6 +3041,20 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
+                }
+            }
+        },
+        "api.planSetupReadinessResponse": {
+            "type": "object",
+            "properties": {
+                "contract_version": {
+                    "type": "string"
+                },
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.onboardingRouteContract"
+                    }
                 }
             }
         },

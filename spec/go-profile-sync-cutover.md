@@ -48,7 +48,7 @@ Move Web profile editing, user-declared running background, injury records, and 
 - Add a skippable injury-management step using the same injury CRUD APIs. Mutations save immediately. Empty and skipped are equivalent.
 - Onboarding finalization requires a valid profile including running age, but does not require an injury record.
 - Replace `web-onboarding-v1` with `web-onboarding-v2`. Its exact capability set contains the existing seven onboarding routes plus `PATCH /api/users/me/profile`, `GET/POST /api/users/me/injuries`, and `PUT/DELETE /api/users/me/injuries/:injuryId`. Update the Go capability response/test, deploy-workflow exact-set assertion, BFF atomic-cutover validation, production route flags, and deployment documentation together.
-- Add a separate `plan-setup-v1` readiness capability that attests to exactly `GET/POST /api/users/me/training-goal`, `POST /api/:user/sync`, and `GET /api/pipelines/:run_id`. Web deployment must verify this route capability through both the Go origin and direct gateway before enabling the plan-setup route flags.
+- Add public static `/api/readyz/onboarding` and `/api/readyz/plan-setup` readiness capabilities. `plan-setup-v1` attests to exactly `GET/POST /api/users/me/training-goal`, `POST /api/:user/sync`, and `GET /api/pipelines/:run_id`. Web deployment must verify these capabilities through both the Go origin and direct gateway before enabling the route flags; keeping them under `/api` reuses the gateway's existing API forwarding rule.
 
 ### Training-plan setup sync
 

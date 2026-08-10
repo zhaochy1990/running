@@ -693,6 +693,15 @@ definitions:
       status:
         type: string
     type: object
+  api.planSetupReadinessResponse:
+    properties:
+      contract_version:
+        type: string
+      routes:
+        items:
+          $ref: '#/definitions/api.onboardingRouteContract'
+        type: array
+    type: object
   api.pmcRecordDTO:
     properties:
       ati:
@@ -1799,6 +1808,36 @@ paths:
       summary: Get a pipeline run's status
       tags:
       - pipelines
+  /api/readyz/onboarding:
+    get:
+      description: Returns the static route contract required before the Web BFF enables
+        its Go onboarding route flags. No authentication is required and no user data
+        is returned.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.onboardingReadinessResponse'
+      summary: Web onboarding cutover readiness
+      tags:
+      - catalog
+  /api/readyz/plan-setup:
+    get:
+      description: Returns the static route contract required before the Web BFF enables
+        its Go plan-setup route flags. No authentication is required and no user data
+        is returned.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.planSetupReadinessResponse'
+      summary: Training-plan setup cutover readiness
+      tags:
+      - catalog
   /api/users/{uid}/pipelines:
     get:
       description: Lists the pipeline runs for a user (the subject whose data they
@@ -2569,21 +2608,6 @@ paths:
       summary: Get a pipeline run's status
       tags:
       - pipelines
-  /readyz/onboarding:
-    get:
-      description: Returns the static route contract required before the Web BFF enables
-        its Go onboarding route flags. No authentication is required and no user data
-        is returned.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.onboardingReadinessResponse'
-      summary: Web onboarding cutover readiness
-      tags:
-      - catalog
 securityDefinitions:
   BearerAuth:
     description: '"Bearer <JWT>" for end-user callers (RS256).'
