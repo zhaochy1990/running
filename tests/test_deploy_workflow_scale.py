@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 
@@ -72,10 +73,72 @@ def test_stride_web_deploys_atomic_go_onboarding_routes() -> None:
     assert 'readiness_status" != "200"' in deploy_step
     assert 'actual != expected' in deploy_step
     assert "refusing Web route cutover" in deploy_step
+    assert "ENV_VAR_CANDIDATES=(" in deploy_step
+    assert 'for assignment in "${ENV_VAR_CANDIDATES[@]}"' in deploy_step
+    assert 'if [ "${#ENV_VARS[@]}" -gt 0 ]' in deploy_step
+    assert 'for existing in "${ENV_VARS[@]}"' in deploy_step
+    assert 'if [ "${existing%%=*}" = "$name" ]' in deploy_step
+    assert 'if [ "${existing#*=}" != "$value" ]' in deploy_step
+    assert 'ENV_VARS+=("$assignment")' in deploy_step
     assert "--set-env-vars \"${ENV_VARS[@]}\"" in deploy_step
     assert "Deployed $route_name is not configured for the expected Go cutover." in deploy_step
     assert deploy_step.index("verify_readiness_contract") < deploy_step.index("--set-env-vars")
     assert {line.strip() for line in deploy_step.splitlines()} >= expected_routes
+
+
+def test_web_deploy_deduplicates_aca_environment_variables() -> None:
+    script = r'''
+set -euo pipefail
+ENV_VAR_CANDIDATES=(
+  "PYTHON_API_URL=https://python.example/path?a=b"
+  "STRIDE_ROUTE_POST_USER_SYNC=go"
+  "STRIDE_ROUTE_GET_PIPELINES_RUNID=go"
+  "STRIDE_ROUTE_POST_USER_SYNC=go"
+)
+ENV_VARS=()
+for assignment in "${ENV_VAR_CANDIDATES[@]}"; do
+  name="${assignment%%=*}"
+  value="${assignment#*=}"
+  duplicate=false
+  if [ "${#ENV_VARS[@]}" -gt 0 ]; then
+    for existing in "${ENV_VARS[@]}"; do
+      if [ "${existing%%=*}" = "$name" ]; then
+        if [ "${existing#*=}" != "$value" ]; then
+          exit 2
+        fi
+        duplicate=true
+        break
+      fi
+    done
+  fi
+  if [ "$duplicate" = true ]; then
+    continue
+  fi
+  ENV_VARS+=("$assignment")
+done
+printf '%s\n' "${ENV_VARS[@]}"
+'''
+    completed = subprocess.run(
+        ["bash", "-eu", "-o", "pipefail", "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.stdout.splitlines() == [
+        "PYTHON_API_URL=https://python.example/path?a=b",
+        "STRIDE_ROUTE_POST_USER_SYNC=go",
+        "STRIDE_ROUTE_GET_PIPELINES_RUNID=go",
+    ]
+
+    prefix, _, suffix = script.rpartition('"STRIDE_ROUTE_POST_USER_SYNC=go"')
+    conflicting = subprocess.run(
+        ["bash", "-eu", "-o", "pipefail", "-c", f'{prefix}"STRIDE_ROUTE_POST_USER_SYNC=python"{suffix}'],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert conflicting.returncode == 2
 
 
 def test_stride_web_image_defaults_to_atomic_go_onboarding_routes() -> None:

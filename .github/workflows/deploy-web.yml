@@ -206,7 +206,7 @@ jobs:
           fi
           echo "Go onboarding v2 and plan-setup v1 readiness contracts verified."
 
-          ENV_VARS=(
+          ENV_VAR_CANDIDATES=(
             "PYTHON_API_URL=$PYTHON_API_URL"
             "AUTH_UPSTREAM_URL=$AUTH_UPSTREAM_URL"
             "GO_API_URL=$GO_API_URL"
@@ -215,6 +215,28 @@ jobs:
             "${ONBOARDING_GO_ROUTE_VARS[@]}"
             "${PLAN_SETUP_GO_ROUTE_VARS[@]}"
           )
+          ENV_VARS=()
+          for assignment in "${ENV_VAR_CANDIDATES[@]}"; do
+            name="${assignment%%=*}"
+            value="${assignment#*=}"
+            duplicate=false
+            if [ "${#ENV_VARS[@]}" -gt 0 ]; then
+              for existing in "${ENV_VARS[@]}"; do
+                if [ "${existing%%=*}" = "$name" ]; then
+                  if [ "${existing#*=}" != "$value" ]; then
+                    echo "::error::Conflicting values configured for $name."
+                    exit 1
+                  fi
+                  duplicate=true
+                  break
+                fi
+              done
+            fi
+            if [ "$duplicate" = true ]; then
+              continue
+            fi
+            ENV_VARS+=("$assignment")
+          done
 
           # PUBLIC_DIRECT_BASE_URL (ADR 0017 interim): set to the Tencent Caddy
           # gateway to make the browser call Tencent-bound (auth + Go) endpoints
