@@ -11,18 +11,19 @@ concepts: [`concepts.md`]
 3. 避免聊天 Agent 与生成 Graph 同时设计计划，保证只有一个 Master Plan 生成权威。
 4. 允许高成本、多模型和多轮修订，以计划质量优先。
 5. 固定质量流程，但通过 planning mode、modifier 和合法停止状态适配不同用户。
+6. 首期优先跑通 Planning Kernel 并验证计划质量；速度、持久化 checkpoint、断点恢复和 API 稳定性在后续集成阶段优化。
 
 ## 架构总览
 
-系统分为 Conversation Plane 和 Generation Plane：
+系统分为 Conversation Plane 和 Planning Plane：
 
 ```mermaid
 flowchart TD
     U[User] <--> O[Deep Agent Orchestrator]
     O <--> M[Master Plan Conversational Subagent]
 
-    M -->|validated GenerationRequest| T[generate_master_plan tool]
-    T --> G[Master Plan Generation LangGraph]
+    M -->|validated PlanningRequest| T[run_master_plan_planning tool]
+    T --> G[Master Plan Planning LangGraph]
     G -->|GenerationOutcome| T
     T --> M
     M -->|解释结果或继续澄清| O
@@ -36,7 +37,7 @@ flowchart TD
 ```
 
 - **Conversation Plane** 负责理解“用户想要什么”，并把自然语言收敛为明确请求。
-- **Generation Plane** 负责决定“如何可靠地产出高质量计划”，不承担开放式聊天。
+- **Planning Plane** 负责决定“如何可靠地产出、评审或比较高质量计划 artifact”，不承担开放式聊天。
 
 ## Agent 与组件职责
 
@@ -53,7 +54,7 @@ flowchart TD
 - 不收集 Master Plan 的完整必需字段。
 - 不读取或分析训练数据来设计赛季计划。
 - 不判断目标现实性、阶段结构或周量。
-- 不直接调用 Master Plan Generation LangGraph。
+- 不直接调用 Master Plan Planning LangGraph。
 - 不重写、补全或“润色”结构化 Master Plan。
 
 Orchestrator 是路由层，不是计划生成层。
@@ -70,10 +71,10 @@ Orchestrator 是路由层，不是计划生成层。
   - 每周可训练天数、固定不可训练日、最长训练时长和双练能力；
   - 用户已知伤病、当前症状、训练偏好和现实日程约束；
   - 多场比赛优先级以及用户对 A/B/C 目标的选择。
-- 识别用户请求的 mode hints 和 modifier hints；最终 `resolved_mode`、resolved modifiers 与 workflow decision 由 Generation LangGraph 基于权威上下文决定。
-- 将已确认信息归一化为 `MasterPlanGenerationRequest`。
-- 仅在生成前置条件满足时调用 `generate_master_plan` 工具。
-- 根据 `GenerationOutcome` 向用户继续追问、解释阻断原因、呈现 draft 或讨论修改方向。
+- 识别用户请求的 mode hints 和 modifier hints；最终 `resolved_mode`、resolved modifiers 与 workflow decision 由 Planning LangGraph 基于权威上下文决定。
+- 将已确认信息归一化为 `MasterPlanGraphRequest`。
+- 仅在完整 intake 问卷确认后调用 `run_master_plan_planning` 工具。
+- 根据 `MasterPlanGraphOutcome` 向用户继续追问、解释阻断原因、呈现 draft 或讨论修改方向。
 
 **不负责**：
 
@@ -85,15 +86,15 @@ Orchestrator 是路由层，不是计划生成层。
 
 该 subagent 是用户与确定性生成流程之间的唯一对话接口。
 
-### `generate_master_plan` Tool Adapter
+### `run_master_plan_planning` Tool Adapter
 
 **职责**：
 
 - 为 Master Plan Conversational Subagent 暴露单一、结构化的生成入口。
 - 从 runtime context 获取 `user_id`、身份和 invocation metadata；模型不得自行提供这些可信字段。
-- 校验 `MasterPlanGenerationRequest` 的结构和用户确认状态。
-- 创建独立 `generation_id`，调用 Master Plan Generation LangGraph。
-- 把 Graph 的结构化 `GenerationOutcome` 原样返回聊天层。
+- 校验 `MasterPlanGraphRequest` 的结构和用户确认状态。
+- 创建独立 `generation_id`，调用 Master Plan Planning LangGraph。
+- 把 Graph 的结构化 `MasterPlanGraphOutcome` 原样返回聊天层。
 
 **不负责**：
 
@@ -104,7 +105,7 @@ Orchestrator 是路由层，不是计划生成层。
 
 它是边界适配器，不是 Agent。
 
-### Master Plan Generation LangGraph
+### Master Plan Planning LangGraph
 
 **职责**：
 
@@ -124,9 +125,9 @@ Orchestrator 是路由层，不是计划生成层。
 - 不生成逐日 Weekly Plan。
 - 不持久化为 active plan。
 
-Generation LangGraph 是 Master Plan 内容的唯一生成权威。
+Planning LangGraph 是 Master Plan 内容的唯一规划权威。
 
-## Generation LangGraph 高层流程
+## Planning LangGraph 高层流程
 
 ```mermaid
 flowchart TD
@@ -154,7 +155,7 @@ flowchart TD
     RF -->|pass| PR[Parallel Specialist Review]
     PR --> AD[Adjudicate Reviews]
     AD -->|revise| RV
-    AD -->|block| FR[failed_review]
+    AD -->|block| FR[failed_quality_gate]
     AD -->|pass| FN[Finalize Draft]
     RV --> SL
 
@@ -176,12 +177,12 @@ Graph 的 state、节点职责、mode 子图、Reviewer 编排和 Revision 协�
 
 ## Conversation 与 Generation 的交接契约
 
-### Generation Request
+### Planning Request
 
 聊天层只传用户声明和明确决策，不传其自行总结的训练事实：
 
 ```text
-MasterPlanGenerationRequest
+MasterPlanGraphRequest
   requested_mode
   requested_modifiers[]
   goal / races[]
@@ -194,7 +195,7 @@ MasterPlanGenerationRequest
 
 可信身份字段（例如 `user_id`）来自 runtime context，不允许模型作为 tool 参数提供。
 
-### Generation Outcome
+### Planning Outcome
 
 Graph 只返回以下结构化结果之一：
 
@@ -206,7 +207,8 @@ goal_conflict          -> conflicting goals and required user choice
 multi_cycle_required   -> realistic multi-cycle path and negotiation options
 blocked_for_safety     -> reasons and prerequisites before planning
 unsupported            -> missing planner capability
-failed_review          -> unresolved quality issues
+failed_quality_gate    -> unresolved quality issues
+infrastructure_failure -> required model or data source unavailable
 ```
 
 聊天层负责把结果解释给用户；只有 `completed` 才包含完整 Master Plan draft。
@@ -216,7 +218,7 @@ failed_review          -> unresolved quality issues
 | 数据 | 所有者 | 使用方式 |
 |---|---|---|
 | 用户自然语言意图 | Conversation Plane | 澄清并归一化为用户声明 |
-| 用户确认的目标与时间约束 | Generation Request | 生成时视为不可静默修改的约束 |
+| 用户确认的目标与时间约束 | Planning Request | 规划时视为不可静默修改的约束 |
 | 活动、健康、负荷、PB、校准、计划 | Canonical storage | 由 Context Builder 直接读取 |
 | Athlete/Goal Assessment | Generation Graph state | 供 Strategy、Reviewer 和最终解释使用 |
 | 候选策略与 review issues | Generation Graph private state | 不作为正式计划保存 |
@@ -251,7 +253,7 @@ Generate draft
 ```text
 orchestrator
   -> master_plan conversational subagent
-       -> generate_master_plan tool
+       -> run_master_plan_planning tool
             -> master plan generation LangGraph
 ```
 
