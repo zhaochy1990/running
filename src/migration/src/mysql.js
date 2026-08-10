@@ -525,7 +525,7 @@ export async function ensureRunningAgeColumn(conn) {
       "WHERE table_schema = DATABASE() AND table_name = 'user_profile' " +
       "AND column_name = 'running_age_range'",
   );
-  if (Number(rows[0]?.column_count ?? 0) === 0) {
+  if (Number(rows[0]?.column_count ?? rows[0]?.COLUMN_COUNT ?? 0) === 0) {
     await conn.execute(
       "ALTER TABLE user_profile ADD COLUMN running_age_range VARCHAR(16) " +
         "NOT NULL DEFAULT 'unknown'",

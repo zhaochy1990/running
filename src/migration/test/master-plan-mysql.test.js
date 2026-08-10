@@ -104,6 +104,39 @@ test("schema adapter inspects columns, checks, and active unique index", async (
   assert.deepEqual(inspection.uniqueIndexes.uidx_master_plan_active, ["user_id", "active_flag"]);
 });
 
+test("schema adapter normalizes uppercase information_schema metadata keys", async () => {
+  const conn = fakeConnection([
+    [
+      { COLUMN_NAME: "version", DATA_TYPE: "bigint", IS_NULLABLE: "YES" },
+      { COLUMN_NAME: "content", DATA_TYPE: "longtext", IS_NULLABLE: "NO" },
+    ],
+    [
+      { CONSTRAINT_NAME: "ck_master_plan_content_version", CHECK_CLAUSE: "content_version in (1, 2)" },
+      { CONSTRAINT_NAME: "ck_master_plan_v2_version", CHECK_CLAUSE: "content_version = 1 or version is not null" },
+    ],
+    [
+      { INDEX_NAME: "uidx_master_plan_active", NON_UNIQUE: 0, SEQ_IN_INDEX: 1, COLUMN_NAME: "user_id" },
+      { INDEX_NAME: "uidx_master_plan_active", NON_UNIQUE: 0, SEQ_IN_INDEX: 2, COLUMN_NAME: "active_flag" },
+    ],
+  ]);
+  const inspection = await createMasterPlanSchemaAdapter(conn).inspect();
+  assert.deepEqual(inspection.columns, ["version", "content"]);
+  assert.equal(inspection.revisionColumn, null);
+  assert.equal(inspection.checks.ck_master_plan_v2_version.includes("version"), true);
+  assert.deepEqual(inspection.uniqueIndexes.uidx_master_plan_active, ["user_id", "active_flag"]);
+});
+
+test("schema adapter drops uppercase check names during rename", async () => {
+  const conn = fakeConnection([[
+    { CONSTRAINT_NAME: "ck_master_plan_content_version" },
+    { CONSTRAINT_NAME: "ck_master_plan_v2_version" },
+  ]]);
+  await createMasterPlanSchemaAdapter(conn).renameVersionAndReplaceChecks();
+  const ddl = conn.calls[1][1];
+  assert.match(ddl, /DROP CHECK ck_master_plan_content_version/i);
+  assert.match(ddl, /DROP CHECK ck_master_plan_v2_version/i);
+});
+
 test("revision-only real adapter metadata validates without DDL", async () => {
   const conn = fakeConnection([
     [

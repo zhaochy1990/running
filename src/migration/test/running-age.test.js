@@ -9,7 +9,7 @@ import {
   runRunningAgeMigration,
   runningAgeFromJson,
 } from "../src/migrate-running-age.js";
-import { RUNNING_AGE_UPDATE_SQL } from "../src/mysql.js";
+import { ensureRunningAgeColumn, RUNNING_AGE_UPDATE_SQL } from "../src/mysql.js";
 import { selectUserIds } from "../src/profiles.js";
 
 const REAL = ["11111111-1111-4111-8111-111111111111"];
@@ -97,6 +97,18 @@ test("commit counts conditional updates, skips, missing, and failures", async ()
   assert.equal(calls[0].sql, RUNNING_AGE_UPDATE_SQL);
   assert.match(calls[0].sql, /WHERE user_id = \? AND running_age_range = 'unknown'/);
   assert.deepEqual(calls[0].params.slice(0, 2), ["6m_1y", calls[0].params[1]]);
+});
+
+test("running-age schema detection accepts uppercase metadata aliases", async () => {
+  const calls = [];
+  const connection = {
+    async execute(sql) {
+      calls.push(sql);
+      return [[{ COLUMN_COUNT: 1 }]];
+    },
+  };
+  assert.equal(await ensureRunningAgeColumn(connection), false);
+  assert.equal(calls.length, 1);
 });
 
 test("empty report has only count fields", () => {

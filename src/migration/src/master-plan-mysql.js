@@ -43,6 +43,10 @@ function assertRevisionColumn(column) {
   }
 }
 
+function metadataValue(row, name) {
+  return row?.[name] ?? row?.[name.toUpperCase()] ?? null;
+}
+
 export function createMasterPlanTarget(conn, { revisionColumn = "revision" } = {}) {
   assertRevisionColumn(revisionColumn);
   const selectedRevision = `${revisionColumn} AS revision`;
@@ -108,15 +112,24 @@ export function createMasterPlanSchemaAdapter(conn) {
         "SELECT index_name, non_unique, seq_in_index, column_name FROM information_schema.statistics " +
           "WHERE table_schema = DATABASE() AND table_name = 'master_plan' ORDER BY index_name, seq_in_index",
       );
+      const normalizedColumns = columns.map((column) => ({
+        column_name: metadataValue(column, "column_name"),
+        data_type: metadataValue(column, "data_type"),
+        is_nullable: metadataValue(column, "is_nullable"),
+      }));
       const uniqueIndexes = {};
       for (const index of indexes) {
-        if (Number(index.non_unique) !== 0) continue;
-        (uniqueIndexes[index.index_name] ??= []).push(index.column_name);
+        if (Number(metadataValue(index, "non_unique")) !== 0) continue;
+        const indexName = metadataValue(index, "index_name");
+        (uniqueIndexes[indexName] ??= []).push(metadataValue(index, "column_name"));
       }
       return {
-        columns: columns.map((column) => column.column_name),
-        revisionColumn: columns.find((column) => column.column_name === "revision") ?? null,
-        checks: Object.fromEntries(checks.map((check) => [check.constraint_name, check.check_clause])),
+        columns: normalizedColumns.map((column) => column.column_name),
+        revisionColumn: normalizedColumns.find((column) => column.column_name === "revision") ?? null,
+        checks: Object.fromEntries(checks.map((check) => [
+          metadataValue(check, "constraint_name"),
+          metadataValue(check, "check_clause"),
+        ])),
         uniqueIndexes,
       };
     },
@@ -140,7 +153,7 @@ export function createMasterPlanSchemaAdapter(conn) {
         "SELECT constraint_name FROM information_schema.table_constraints " +
           "WHERE table_schema = DATABASE() AND table_name = 'master_plan' AND constraint_type = 'CHECK'",
       );
-      const names = new Set(checks.map((check) => check.constraint_name));
+      const names = new Set(checks.map((check) => metadataValue(check, "constraint_name")));
       const drops = [
         "ck_master_plan_content_version",
         "ck_master_plan_v2_version",
