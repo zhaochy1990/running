@@ -1,13 +1,13 @@
 """Specialist 必传上下文 calculators + pull tools — see Stage-3a spec §4.
 
-Adapter layer (reads DB + running calibration). Returns the **core** types
+Adapter layer (reads canonical MySQL season context). Returns the **core** types
 ``PaceTargets`` / ``VolumeTargets`` (defined in ``coach.schemas``); the
 dependency points adapter → core, which is correct.
 
 Single-source discipline (CLAUDE.md HARD):
-- Athlete baselines (threshold pace, LTHR, pace/HR zones) come ONLY from
-  ``stride_core.running_calibration`` via ``SQLiteRunningCalibrationRepository``
-  + ``compute_training_zones``. We never recompute threshold/HR from raw
+- Athlete baselines (threshold pace, LTHR, pace/HR zones) come ONLY from the
+  canonical MySQL calibration snapshot plus ``compute_training_zones``. We never
+  recompute threshold/HR from raw
   activities here, and never hard-code a magic 185-style default.
 - The injury → contraindicated-exercise keyword map is reused from
   ``coach.graphs.generation.rule_filter.INJURY_CONTRAINDICATION_KEYWORDS``,
@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import functools
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import date as date_cls
 from typing import Any
 
@@ -30,8 +30,9 @@ from coach.graphs.generation.rule_filter import INJURY_CONTRAINDICATION_KEYWORDS
 from coach.schemas import PaceTargets, ToolResult, VolumeTargets
 from stride_core.master_plan import PhaseType
 from stride_core.models import RUN_SPORT_SQL_LIST
-from stride_storage.sqlite.calibration_connector import (
-    SQLiteRunningCalibrationRepository,
+from stride_core.running_calibration.types import (
+    CalibrationConfidence,
+    RunningCalibrationSnapshot,
 )
 from stride_core.running_calibration.zones import compute_training_zones
 from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai
@@ -48,31 +49,66 @@ _FM_DISTANCE_KM = 42.195
 # ---------------------------------------------------------------------------
 
 
-def pace_targets(db: Any, *, goal: dict, as_of: date_cls) -> PaceTargets:
-    """Build the athlete's real pace table from calibration + the goal.
+def _calibration_snapshot(source: Any, *, as_of: date_cls) -> RunningCalibrationSnapshot:
+    """Resolve a canonical calibration mapping into the domain snapshot type.
 
-    Source of truth:
-      * threshold pace + easy/z2 band + interval band come from the running
-        calibration snapshot and its derived zones (single-source).
-      * MP (marathon pace) is derived from the goal.
-
-    Raises ``ValueError`` when no usable calibration snapshot exists (no
-    snapshot at all, or threshold speed missing). The caller MUST be able to
-    tell the difference between a real pace table and a degraded one — we do
-    NOT fabricate a magic default (CLAUDE.md anti-pattern).
+    Season generation passes the already-loaded MySQL context here. The lazy
+    SQLite branch is retained only for legacy callers of this low-level helper;
+    no season-generation adapter passes a database handle.
     """
-    repo = SQLiteRunningCalibrationRepository(db)
-    snapshot = repo.fetch_latest(as_of_date=as_of)
-    if snapshot is None:
-        raise ValueError(
-            "pace_targets: no running calibration snapshot available "
-            f"as of {as_of.isoformat()}; cannot derive pace table"
+    if isinstance(source, RunningCalibrationSnapshot):
+        snapshot = source
+    elif isinstance(source, Mapping):
+        raw_date = source.get("as_of_date") or as_of.isoformat()
+        try:
+            snapshot_date = date_cls.fromisoformat(str(raw_date)[:10])
+        except ValueError:
+            snapshot_date = as_of
+        enum_fields = {
+            "threshold_hr_confidence",
+            "threshold_speed_confidence",
+            "hrmax_confidence",
+            "speed_duration_confidence",
+        }
+        values: dict[str, Any] = {}
+        for name in RunningCalibrationSnapshot.__dataclass_fields__:
+            if name in source:
+                value = source[name]
+                if name in enum_fields and not isinstance(value, CalibrationConfidence):
+                    try:
+                        value = CalibrationConfidence(str(value))
+                    except ValueError:
+                        value = CalibrationConfidence.NONE
+                values[name] = value
+        values["as_of_date"] = snapshot_date
+        snapshot = RunningCalibrationSnapshot(**values)
+    else:
+        # Legacy SQLite-only compatibility for direct specialist_tools users.
+        from stride_storage.sqlite.calibration_connector import (
+            SQLiteRunningCalibrationRepository,
         )
+
+        snapshot = SQLiteRunningCalibrationRepository(source).fetch_latest(as_of_date=as_of)
+        if snapshot is None:
+            raise ValueError(
+                "pace_targets: no running calibration snapshot available "
+                f"as of {as_of.isoformat()}; cannot derive pace table"
+            )
     if not snapshot.threshold_speed_mps or snapshot.threshold_speed_mps <= 0:
         raise ValueError(
             "pace_targets: calibration snapshot has no threshold_speed_mps; "
             "cannot derive threshold/interval/easy paces"
         )
+    return snapshot
+
+
+def pace_targets(calibration: Any, *, goal: dict, as_of: date_cls) -> PaceTargets:
+    """Build the athlete's real pace table from canonical calibration + goal.
+
+    Season generation supplies ``context["calibration"]`` from the MySQL season
+    reader. A legacy DB handle is accepted only for callers outside that path.
+    """
+    snapshot = _calibration_snapshot(calibration, as_of=as_of)
 
     threshold_speed = float(snapshot.threshold_speed_mps)
     threshold_pace = 1000.0 / threshold_speed  # s/km
@@ -322,14 +358,54 @@ def strength_library(
 # ---------------------------------------------------------------------------
 
 
-def recent_training(
-    db: Any,
+def _canonical_recent_training(
+    context: Mapping[str, Any],
     weeks: int,
     *,
     as_of: date_cls | None = None,
     filter: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Aggregate running activities into compact per-week summary rows.
+    history = context.get("history") or {}
+    rows = history.get("weekly_profile") or []
+    ref = as_of or today_shanghai()
+    cutoff = ref
+    lookback_start = date_cls.fromordinal(
+        cutoff.toordinal() - max(int(weeks), 0) * 7
+    )
+    summary: list[dict[str, Any]] = []
+    for raw in rows:
+        if not isinstance(raw, Mapping):
+            continue
+        week = str(raw.get("week_start") or raw.get("week") or "")
+        try:
+            week_day = date_cls.fromisoformat(week[:10])
+        except ValueError:
+            continue
+        if not (lookback_start <= week_day <= cutoff):
+            continue
+        row = {
+            "week": week,
+            "total_km": round(float(raw.get("distance_km") or raw.get("total_km") or 0.0), 1),
+            "session_count": int(raw.get("n_runs") or raw.get("session_count") or 0),
+            "longest_km": round(float(raw.get("longest_km") or 0.0), 1),
+        }
+        if filter == "long_run":
+            row = {"week": week, "longest_km": row["longest_km"]}
+        summary.append(row)
+    return summary
+
+
+def recent_training(
+    source: Any,
+    weeks: int,
+    *,
+    as_of: date_cls | None = None,
+    filter: str | None = None,
+) -> list[dict[str, Any]]:
+    """Aggregate canonical season history into compact weekly rows.
+
+    Season generation passes the already-loaded MySQL context. The legacy
+    SQLite connection branch remains for callers outside season generation.
 
     Args:
         db: a Database handle (or anything exposing ``_conn``).
@@ -364,7 +440,10 @@ def recent_training(
             "expected one of None, 'long_run', 'quality'"
         )
 
-    conn = getattr(db, "_conn", db)
+    if isinstance(source, Mapping):
+        return _canonical_recent_training(source, weeks, as_of=as_of, filter=filter)
+
+    conn = getattr(source, "_conn", source)
     ref = as_of or today_shanghai()
     cutoff = ref.isoformat()
     lookback_days = max(int(weeks), 0) * 7
@@ -482,17 +561,23 @@ class StrengthLibraryTool:
 
 
 class RecentTrainingTool:
-    """LLM-facing wrapper over the pure ``recent_training`` aggregation.
+    """LLM-facing wrapper over canonical season history.
 
-    Opens a short-lived ``Database(user=user_id)`` internally so the LLM-facing
-    signature carries no ``db`` arg (mirrors the read-tool impls' DB-per-call
-    pattern)."""
+    The season generator injects the already-loaded MySQL context. A missing
+    context is an error rather than an invitation to open a legacy SQLite DB.
+    """
 
-    def __init__(self, user_id: str) -> None:
+    def __init__(self, user_id: str, *, canonical_context: Mapping[str, Any] | None = None) -> None:
         self._user_id = user_id
+        self._canonical_context = canonical_context
 
     @_tool_safe
     def __call__(self, *, weeks: int = 4, filter: str | None = None) -> ToolResult:
+        if self._canonical_context is not None:
+            summary = recent_training(self._canonical_context, int(weeks), filter=filter)
+            return ToolResult(ok=True, data={"weeks": summary})
+
+        # Legacy callers outside season generation retain the old SQLite seam.
         from stride_storage.sqlite.database import Database
 
         db = Database(user=self._user_id)

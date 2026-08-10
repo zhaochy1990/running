@@ -257,6 +257,11 @@ func TestOnboardingReadiness_AdvertisesAtomicWebContract(t *testing.T) {
 	for _, route := range []struct{ method, path string }{
 		{http.MethodGet, "/api/users/me/profile"},
 		{http.MethodPost, "/api/users/me/profile"},
+		{http.MethodPatch, "/api/users/me/profile"},
+		{http.MethodGet, "/api/users/me/injuries"},
+		{http.MethodPost, "/api/users/me/injuries"},
+		{http.MethodPut, "/api/users/me/injuries/contract-probe-injury"},
+		{http.MethodDelete, "/api/users/me/injuries/contract-probe-injury"},
 		{http.MethodPost, "/api/users/me/watch/login"},
 		{http.MethodPost, "/api/contract-probe-user/sync"},
 		{http.MethodGet, "/api/pipelines/contract-probe-run"},
@@ -266,6 +271,27 @@ func TestOnboardingReadiness_AdvertisesAtomicWebContract(t *testing.T) {
 		response := h.do(route.method, route.path, "", nil)
 		if response.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s = %d, want 401", route.method, route.path, response.Code)
+		}
+	}
+}
+
+func TestPlanSetupReadiness_AdvertisesReaderContract(t *testing.T) {
+	h := newHarness(t)
+	w := h.do(http.MethodGet, "/readyz/plan-setup", "", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var got planSetupReadinessResponse
+	mustJSON(t, w, &got)
+	if got.ContractVersion != planSetupContractVersion || got.ReaderContractVersion != seasonPlanReaderVersion {
+		t.Fatalf("readiness = %+v", got)
+	}
+	if len(got.Routes) != len(planSetupRouteContracts) {
+		t.Fatalf("route count = %d, want %d", len(got.Routes), len(planSetupRouteContracts))
+	}
+	for i, want := range planSetupRouteContracts {
+		if got.Routes[i] != want {
+			t.Errorf("route %d = %+v, want %+v", i, got.Routes[i], want)
 		}
 	}
 }

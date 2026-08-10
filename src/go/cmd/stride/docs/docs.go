@@ -118,6 +118,208 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/users/me/injuries": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns active records first, then updated_at descending and id descending. Cursor pagination is opaque and limited to 50 records per page.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "injuries"
+                ],
+                "summary": "List the current user's injury records",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page size (1-50; default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque page cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.injuriesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "injuries"
+                ],
+                "summary": "Create an injury record",
+                "parameters": [
+                    {
+                        "description": "Injury record",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.injuryInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.injuryResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/injuries/{injuryId}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "injuries"
+                ],
+                "summary": "Replace an injury record",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Injury id",
+                        "name": "injuryId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Complete replacement",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.injuryInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.injuryResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "injuries"
+                ],
+                "summary": "Delete an injury record",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Injury id",
+                        "name": "injuryId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/me/master-plan/current": {
             "get": {
                 "security": [
@@ -2552,6 +2754,71 @@ const docTemplate = `{
                 }
             }
         },
+        "api.injuriesResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.injuryResponse"
+                    }
+                },
+                "next_cursor": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.injuryInput": {
+            "type": "object",
+            "required": [
+                "description",
+                "recovery_status",
+                "running_restriction"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "recovery_status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "recovered"
+                    ]
+                },
+                "running_restriction": {
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "easy_only",
+                        "no_running"
+                    ]
+                }
+            }
+        },
+        "api.injuryResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "recovery_status": {
+                    "type": "string"
+                },
+                "running_restriction": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "api.jobCatalogResponse": {
             "type": "object",
             "properties": {
@@ -2879,6 +3146,9 @@ const docTemplate = `{
                 "height_cm": {
                     "type": "number"
                 },
+                "running_age_range": {
+                    "type": "string"
+                },
                 "sex": {
                     "type": "string"
                 },
@@ -2893,6 +3163,7 @@ const docTemplate = `{
                 "display_name",
                 "dob",
                 "height_cm",
+                "running_age_range",
                 "sex",
                 "weight_kg"
             ],
@@ -2905,6 +3176,16 @@ const docTemplate = `{
                 },
                 "height_cm": {
                     "type": "number"
+                },
+                "running_age_range": {
+                    "type": "string",
+                    "enum": [
+                        "unknown",
+                        "lt_6m",
+                        "6m_1y",
+                        "1y_3y",
+                        "3y_plus"
+                    ]
                 },
                 "sex": {
                     "type": "string",
@@ -2931,6 +3212,16 @@ const docTemplate = `{
                 },
                 "height_cm": {
                     "type": "number"
+                },
+                "running_age_range": {
+                    "type": "string",
+                    "enum": [
+                        "unknown",
+                        "lt_6m",
+                        "6m_1y",
+                        "1y_3y",
+                        "3y_plus"
+                    ]
                 },
                 "sex": {
                     "type": "string",
@@ -2981,6 +3272,9 @@ const docTemplate = `{
                     "$ref": "#/definitions/api.profileCore"
                 },
                 "provider": {
+                    "type": "string"
+                },
+                "running_age_range": {
                     "type": "string"
                 }
             }

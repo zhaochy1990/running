@@ -8,7 +8,8 @@ import { Hono, type Context } from 'hono'
 import { loadConfig, type BffConfig } from './config.js'
 import { proxyToUpstream } from './proxy.js'
 import { API_ROUTES } from './routing/api-routes.js'
-import { AUTH_PREFIX, hasGoRoutes, hasPartialWebOnboardingGoCutover, resolveUpstream, unsupportedGoRoutes, upstreamForRoute } from './routing/table.js'
+import { AUTH_PREFIX, resolveUpstream, upstreamForRoute } from './routing/table.js'
+import { validateRouteConfiguration } from './routing/validation.js'
 import { baseUrlFor } from './routing/upstreams.js'
 
 const config = loadConfig()
@@ -36,19 +37,9 @@ function injectRouting(html: string, cfg: BffConfig): string {
   return html.includes('</head>') ? html.replace('</head>', `${tag}</head>`) : `${tag}${html}`
 }
 
-// Fail fast: if any endpoint's STRIDE_ROUTE_* env var is set to Go with no
-// GO_API_URL configured, every such endpoint would 502 at runtime — catch it at
-// boot instead.
-if (hasGoRoutes() && !config.goApiUrl) {
-  throw new Error('stride-web BFF: an API route is set to Go but GO_API_URL is not set')
-}
-const unsupportedRoutes = unsupportedGoRoutes()
-if (unsupportedRoutes.length > 0) {
-  throw new Error(`stride-web BFF: routes not implemented by Go are set to Go: ${unsupportedRoutes.map((route) => route.env).join(', ')}`)
-}
-if (hasPartialWebOnboardingGoCutover()) {
-  throw new Error('stride-web BFF: Web onboarding Go routes must be enabled as an atomic set')
-}
+// Fail closed before accepting traffic: route flags, Go capability declarations,
+// and the upstream URL must agree at startup.
+validateRouteConfiguration(process.env, config.goApiUrl)
 
 // Roots are relative to the process CWD (see Dockerfile.web WORKDIR).
 const STATIC_ROOT = process.env.STATIC_DIR?.trim() || './dist'

@@ -10,8 +10,8 @@ import re
 from html import escape
 from pathlib import Path
 
-from fastapi import APIRouter
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -20,6 +20,26 @@ router = APIRouter()
 @router.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@router.get("/readyz/season-plan-reader")
+def season_plan_reader_readiness(request: Request):
+    """Report whether the canonical production season-plan reader is usable."""
+    from stride_server.canonical_season_plan import probe_canonical_season_plan_reader
+
+    config = getattr(request.app.state, "config", None)
+    engine = getattr(request.app.state, "season_plan_reader_engine", None)
+    try:
+        contract_version = probe_canonical_season_plan_reader(config, engine=engine)
+    except Exception:  # noqa: BLE001 — readiness must fail closed without details
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unavailable"},
+        )
+    return {
+        "contract_version": contract_version,
+        "reader_contract_version": contract_version,
+    }
 
 
 # ── Privacy policy ─────────────────────────────────────────────────────────

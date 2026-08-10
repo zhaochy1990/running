@@ -24,16 +24,8 @@ from datetime import date
 
 import pytest
 
-from stride_storage.sqlite.database import Database
 from stride_core.master_plan import Phase, PhaseType
 from stride_core.plan_spec import WeeklyPlan
-from stride_storage.sqlite.calibration_connector import (
-    SQLiteRunningCalibrationRepository,
-)
-from stride_core.running_calibration.types import (
-    CalibrationConfidence,
-    RunningCalibrationSnapshot,
-)
 import stride_server.coach_adapters.phase_specialist_adapter as adapter_mod
 from stride_server.coach_adapters.phase_specialist_adapter import (
     generate_phase_validated,
@@ -50,20 +42,6 @@ USER_ID = "a1b2c3d4-e5f6-4aaa-89ab-0000000000aa"
 # ---------------------------------------------------------------------------
 # Seeding helpers
 # ---------------------------------------------------------------------------
-
-
-def _seed_calibration(db: Database) -> None:
-    repo = SQLiteRunningCalibrationRepository(db)
-    repo.save_snapshot(
-        RunningCalibrationSnapshot(
-            as_of_date=date(2026, 5, 20),
-            threshold_speed_mps=_THRESHOLD_SPEED_MPS,
-            threshold_hr=168.0,
-            threshold_speed_confidence=CalibrationConfidence.HIGH,
-            threshold_hr_confidence=CalibrationConfidence.HIGH,
-            hrmax_confidence=CalibrationConfidence.NONE,
-        )
-    )
 
 
 def _fm_goal() -> dict:
@@ -154,15 +132,29 @@ def _batch(week_dicts: list[dict]) -> str:
 
 
 def _context() -> dict:
-    return {"user_id": USER_ID, "goal": _fm_goal(), "level": 65.0}
+    return {
+        "user_id": USER_ID,
+        "goal": _fm_goal(),
+        "level": 65.0,
+        "canonical_season_context": {
+            "contract_version": "mysql-season-plan-context-v1",
+            "goal": _fm_goal(),
+            "history": {"weekly_profile": []},
+            "calibration": {
+                "as_of_date": "2026-05-20",
+                "threshold_speed_mps": _THRESHOLD_SPEED_MPS,
+                "threshold_hr": 168.0,
+                "threshold_speed_confidence": "high",
+                "threshold_hr_confidence": "high",
+            },
+        },
+    }
 
 
 @pytest.fixture
-def patch_db(db, monkeypatch):
-    _seed_calibration(db)
-    monkeypatch.setattr(adapter_mod, "Database", lambda **kw: db)
+def patch_db(monkeypatch):
     monkeypatch.setattr(adapter_mod, "today_shanghai", lambda: _AS_OF)
-    return db
+    return {"calibration": {"threshold_speed_mps": _THRESHOLD_SPEED_MPS, "as_of_date": "2026-05-20"}}
 
 
 def _install_model(monkeypatch, model: FakeBindableLLM) -> None:

@@ -15,8 +15,7 @@ Covers:
 from __future__ import annotations
 
 import json
-import threading
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -35,11 +34,10 @@ from stride_server.master_plan_generator import (
     _build_master_plan,
     _parse_llm_output,
     _parse_master_plan_output,
-    _query_history,
     run_generate_job,
 )
 from stride_core.master_plan import MasterPlan, MasterPlanStatus, MilestoneType
-from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+from stride_storage.mysql.season_plan_reader import MySQLSeasonPlanReader
 
 # ---------------------------------------------------------------------------
 # Constants / helpers
@@ -235,36 +233,55 @@ def patch_store(monkeypatch, mock_store):
     return mock_store
 
 
+def _canonical_context(**overrides: Any) -> dict[str, Any]:
+    context: dict[str, Any] = {
+        "contract_version": "mysql-season-plan-context-v1",
+        "goal": {
+            **GOAL,
+            "goal_id": GOAL_ID,
+            "distance": "fm",
+        },
+        "profile": {
+            **PROFILE,
+            "weekly_run_days_max": 5,
+        },
+        "history": {
+            "monthly_km": [],
+            "max_weekly_km": 0.0,
+            "total_activities": 0,
+            "weekly_profile": [],
+        },
+        "fitness_state": {
+            "ctl": None,
+            "atl": None,
+            "tsb": None,
+            "rhr": None,
+            "summary": "体能数据暂无",
+        },
+        "pb_seconds": {},
+        "calibration": {"threshold_speed_mps": None},
+        "continuity": None,
+        "body_composition": None,
+    }
+    context.update(overrides)
+    return context
+
+
 @pytest.fixture
 def patch_history(monkeypatch):
-    """Patch DB queries to return empty history (avoids needing a real DB)."""
-    import stride_server.master_plan_generator as mod
-
-    monkeypatch.setattr(mod, "_query_history", lambda uid, *, as_of=None: {
-        "monthly_km": [],
-        "max_weekly_km": 0.0,
-        "total_activities": 0,
-        "weekly_profile": [],
-    })
-    monkeypatch.setattr(mod, "_query_fitness_state", lambda uid: {
-        "ctl": None,
-        "atl": None,
-        "tsb": None,
-        "rhr": None,
-        "summary": "体能数据暂无",
-    })
-    # load_master_context now calls analyze_continuity with Database(user=...),
-    # which for the test USER_ID would open/create a real (empty) DB as a side
-    # effect. Stub it on the ADAPTER module (where the name is used) so the
-    # flow tests stay hermetic. Patch the binding the code actually calls —
-    # the adapter imports analyze_continuity at module load, so patch
-    # adapter_mod.analyze_continuity, not the analyzer module's name.
+    """Inject canonical season context without opening SQLite or MySQL."""
+    import stride_server.canonical_season_plan as canonical_mod
     import stride_server.coach_adapters.master_plan_adapter as adapter_mod
-    monkeypatch.setattr(adapter_mod, "analyze_continuity", lambda *a, **k: None)
+
+    monkeypatch.setattr(
+        canonical_mod,
+        "load_canonical_season_context",
+        lambda user_id, *, goal_id=None, as_of=None: _canonical_context(),
+    )
 
     # These integration tests cover parser/job lifecycle behavior. Their
-    # historical fixture intentionally has no weekly skeleton; the weekly-dose
-    # contract is covered by dedicated projection tests with canonical weeks.
+    # fixture intentionally has no weekly skeleton; the projection contract is
+    # covered separately with canonical history data.
     original_projection = adapter_mod.apply_master_plan_training_load_projection
 
     def _compat_projection(plan, estimate, **kwargs):
@@ -348,48 +365,35 @@ def test_generate_master_plan_returns_prompt_size_metadata(monkeypatch):
     assert CapturingLLMClient.kwargs_seen == [{"max_tokens": 20000}]
 
 
-def test_generate_master_plan_returns_load_tool_estimate(monkeypatch):
+def test_generate_master_plan_uses_canonical_history_for_load_estimate(monkeypatch):
     _patch_projection_compat(monkeypatch)
     raw_response = _sentinel_wrap(_VALID_JSON_STR)
-    calls: list[dict[str, Any]] = []
-
-    class FakeLoadTool:
-        def __init__(self, user_id: str) -> None:
-            self.user_id = user_id
-
-        def __call__(self, **kwargs: Any):
-            from coach.schemas import ToolResult
-
-            calls.append(kwargs)
-            return ToolResult(
-                ok=True,
-                data={
-                    "plan_estimate": {
-                        "history_anchor": {"distance_anchor_km": 100.0},
-                        "plan_summary": {"peak_weekly_km": 95.0},
-                        "alignment": {"status": "ok", "issues": []},
-                    }
-                },
-            )
+    history = {
+        "monthly_km": [],
+        "max_weekly_km": 52.0,
+        "total_activities": 5,
+        "weekly_profile": [
+            {"week_start": "2026-08-03", "distance_km": 50.0, "n_runs": 5, "hours": 4.0, "dose": 400.0}
+        ],
+        "threshold_speed_mps": 4.0,
+    }
 
     monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
-    monkeypatch.setattr(adapter_mod, "EstimateMasterPlanLoadImpl", FakeLoadTool)
-
     out = adapter_mod.generate_master_plan(
         {
             "job_id": "",
             "user_id": USER_ID,
-            "input_payload": {"goal": GOAL, "profile": PROFILE},
+            "input_payload": {},
             "context": {
+                **_canonical_context(history=history),
                 "history_summary": "history",
-                "fitness_state": {"summary": "fitness"},
             },
         }
     )
 
-    assert calls and calls[0]["plan"]["user_id"] == USER_ID
-    assert calls[0]["as_of_date"] is None
-    assert out["master_plan_load_estimate"]["alignment"]["status"] == "ok"
+    estimate = out["master_plan_load_estimate"]
+    assert estimate["history_anchor"]["distance_anchor_km"] == 50.0
+    assert estimate["history_anchor"]["dose_anchor"] == 400.0
 
 
 def test_generate_master_plan_passes_context_pb_seconds_to_builder(monkeypatch):
@@ -427,56 +431,25 @@ def test_generate_master_plan_passes_context_pb_seconds_to_builder(monkeypatch):
     assert seen["pb_seconds"] == {"fm": 10762.0}
 
 
-def test_load_master_context_uses_load_tool_for_anchor(monkeypatch):
-    import stride_server.master_plan_generator as mod
+def test_load_master_context_uses_canonical_history_for_anchor(monkeypatch):
+    import stride_server.canonical_season_plan as canonical_mod
 
-    monkeypatch.setattr(mod, "_query_history", lambda _uid, *, as_of=None: {
+    history = {
         "monthly_km": [],
         "max_weekly_km": 150.0,
         "total_activities": 100,
-        "weekly_profile": [],
-    })
-    monkeypatch.setattr(mod, "_query_fitness_state", lambda _uid, *, as_of=None: {"summary": "fitness"})
-    monkeypatch.setattr(adapter_mod, "_query_history", mod._query_history)
-    monkeypatch.setattr(adapter_mod, "_query_fitness_state", mod._query_fitness_state)
-    monkeypatch.setattr(adapter_mod, "analyze_continuity", lambda *a, **k: None)
-    monkeypatch.setattr(adapter_mod, "detect_current_phase", lambda *a, **k: None)
-    monkeypatch.setattr(adapter_mod, "_load_pb_seconds", lambda _db: {})
-    monkeypatch.setattr(adapter_mod, "_load_body_composition", lambda _db, _profile, *, as_of=None: None)
-
-    class FakeDb:
-        def close(self):
-            pass
-
-    monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: FakeDb())
-
-    class FakeLoadTool:
-        def __init__(self, user_id: str) -> None:
-            self.user_id = user_id
-
-        def __call__(self, **kwargs: Any):
-            from coach.schemas import ToolResult
-
-            return ToolResult(
-                ok=True,
-                data={
-                    "history_anchor": {
-                        "history_active_weeks": 12,
-                        "distance_anchor_km": 120.0,
-                        "recent_avg_weekly_km": 122.0,
-                        "recent_median_weekly_km": 120.0,
-                        "recent_last4_avg_weekly_km": 118.0,
-                        "history_peak_weekly_km": 150.0,
-                        "dose_anchor": 95.0,
-                        "avg_runs_per_active_week": 6.0,
-                    }
-                },
-            )
-
-    monkeypatch.setattr(adapter_mod, "EstimateMasterPlanLoadImpl", FakeLoadTool)
+        "weekly_profile": [
+            {"week_start": "2026-08-03", "distance_km": 120.0, "n_runs": 6, "hours": 10.0, "dose": 95.0}
+        ],
+    }
+    monkeypatch.setattr(
+        canonical_mod,
+        "load_canonical_season_context",
+        lambda *args, **kwargs: _canonical_context(history=history),
+    )
 
     ctx = adapter_mod.load_master_context(
-        {"user_id": USER_ID, "job_id": "", "input_payload": {"goal": GOAL, "profile": PROFILE}}
+        {"user_id": USER_ID, "job_id": "", "input_payload": {}}
     )
 
     assert ctx["training_load_tool"]["history_anchor"]["distance_anchor_km"] == 120.0
@@ -1622,7 +1595,11 @@ class TestRunGenerateJob:
             def __call__(self, **kwargs: Any) -> ToolResult:
                 return ToolResult(ok=False, errors=["estimator crashed"])
 
-        monkeypatch.setattr(adapter_mod, "EstimateMasterPlanLoadImpl", FailingLoadTool)
+        monkeypatch.setattr(
+            adapter_mod,
+            "estimate_master_plan_training_load",
+            lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("estimator crashed")),
+        )
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -1813,14 +1790,14 @@ class TestRunGenerateJob:
         def _exploding_history(_uid: str, *, as_of=None) -> dict:
             raise RuntimeError("unexpected database crash!")
 
-        monkeypatch.setattr(mod, "_query_history", _exploding_history)
-        # master_plan_adapter.load_master_context imports `_query_history`
-        # at module-load time (`from ..master_plan_generator import _query_history`),
-        # so patching `mod._query_history` alone doesn't rebind the adapter's
-        # local name. Patch both so the exception actually fires during
-        # generation rather than letting the adapter call the real DB
-        # (which would then hit a real LLM further downstream).
-        monkeypatch.setattr(adapter_mod, "_query_history", _exploding_history)
+        import stride_server.canonical_season_plan as canonical_mod
+        monkeypatch.setattr(
+            canonical_mod,
+            "load_canonical_season_context",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                RuntimeError("unexpected database crash!")
+            ),
+        )
 
         job_id = create_job(USER_ID)
         # Must not raise
@@ -2454,687 +2431,145 @@ class TestPromptPerPhaseMilestones:
 
 
 # ---------------------------------------------------------------------------
-# Real-DB regression tests for _query_history
-# Locks the already-applied fix for:
-#   1. sport_type filter uses RUN_SPORT_SQL_LIST (not the wrong literal "= 1")
-#   2. distance_m stores literal meters and is converted to km at query time
+# Canonical MySQL reader algorithms and master-context seam
 # ---------------------------------------------------------------------------
 
 
-class TestQueryHistoryRealDB:
-    def _seed(self, tmp_path):
-        from stride_storage.sqlite.database import Database
+class TestMySQLSeasonPlanReaderAlgorithms:
+    """Exercise canonical reader aggregation without reopening legacy SQLite."""
 
-        db = Database(db_path=tmp_path / "coros.db")
-        c = db._conn
-        # Running: COROS sport_type 100, distance in meters (21.1 km)
-        c.execute(
-            "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
-            "VALUES ('a1', 100, '2026-05-01T08:00:00+00:00', 21100, 5400)"
-        )
-        # Running: Garmin sport_type 8001, distance in meters (10.0 km)
-        c.execute(
-            "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
-            "VALUES ('a2', 8001, '2026-05-08T08:00:00+00:00', 10000, 2550)"
-        )
-        # Running: COROS sport_type 101, distance in meters (15 km)
-        c.execute(
-            "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
-            "VALUES ('a3', 101, '2026-05-15T08:00:00+00:00', 15000, 4000)"
-        )
-        # Non-running: strength (sport_type 4) — must be excluded
-        c.execute(
-            "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
-            "VALUES ('a4', 4, '2026-05-16T08:00:00+00:00', 0, 1800)"
-        )
-        c.commit()
-        return db
+    @staticmethod
+    def _reader() -> MySQLSeasonPlanReader:
+        return MySQLSeasonPlanReader(object())
 
-    def test_counts_running_across_sport_codes_excludes_strength(self, tmp_path, monkeypatch):
-        """total_activities counts sport_type 100, 8001, 101 — excludes sport_type 4."""
-        db = self._seed(tmp_path)
-        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
-        result = _query_history("anyuser")
-        assert result["total_activities"] == 3
-
-    def test_distance_normalized_to_km(self, tmp_path, monkeypatch):
-        """Monthly km for 2026-05: 21.1 + 10.0 + 15.0 = 46.1 km;
-        hours from duration_s: (5400 + 2550 + 4000) / 3600 = 3.32 h
-        (strength row excluded)."""
-        db = self._seed(tmp_path)
-        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
-        result = _query_history("anyuser")
-        may = next(m for m in result["monthly_km"] if m["month"] == "2026-05")
-        assert abs(may["km"] - 46.1) < 0.2
-        assert abs(may["hours"] - 3.32) < 0.05
-
-    def test_query_history_does_not_load_or_self_heal_pbs(self, tmp_path, monkeypatch):
-        """_query_history only loads training history. PB loading belongs to
-        load_master_context/load_personal_bests so the PB source is explicit."""
-        from stride_core.pb_records import fetch_personal_bests
-
-        db = self._seed(tmp_path)
-        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
-        assert fetch_personal_bests(db) == {}  # nothing persisted yet
-
-        result = _query_history("anyuser")
-        assert "best_10k_s" not in result
-        assert "best_hm_s" not in result
-
-        # _query_history must not trigger load_personal_bests self-heal.
-        assert fetch_personal_bests(db) == {}
-
-
-# ---------------------------------------------------------------------------
-# _query_weekly_profile — 16-week cross-source weekly athlete profile
-# ---------------------------------------------------------------------------
-
-
-class TestWeeklyProfile:
-    """Cross-source week alignment, Shanghai boundary, snapshot-vs-sum, and
-    run-type classification for the 16-week weekly profile.
-
-    The four source tables store ``date`` differently; all must collapse to the
-    SAME Monday ``week_start`` for a given Shanghai calendar week.
-    """
-
-    def _db(self, tmp_path):
-        from stride_storage.sqlite.database import Database
-        return Database(db_path=tmp_path / "coros.db")
-
-    def _add_run(self, c, label, date_iso, *, km, dur_s, avg_hr=None,
-                 train_kind=None, name=None, sport_type=100):
-        c.execute(
-            "INSERT INTO activities (label_id, sport_type, date, distance_m, "
-            "duration_s, avg_hr, train_kind, name) VALUES (?,?,?,?,?,?,?,?)",
-            (label, sport_type, date_iso, km * 1000.0, dur_s, avg_hr, train_kind, name),
-        )
-
-    def _profile(self, db, **kw):
-        from stride_server.master_plan_generator import _query_weekly_profile
-        return _query_weekly_profile(db, **kw)
-
-    def test_cross_source_week_alignment(self, tmp_path):
-        """An activity (UTC ISO), dtl (YYYY-MM-DD), health (YYYYMMDD), and hrv
-        (YYYY-MM-DD) all in the same Shanghai week merge into ONE entry keyed by
-        that week's Monday, with every metric populated."""
-        db = self._db(tmp_path)
-        c = db._conn
-        # 2026-06-17 is a Wednesday → Monday of week = 2026-06-15.
-        # Activity at 08:00 UTC on the 17th = 16:00 CST 17th → still 06-17.
-        self._add_run(c, "a1", "2026-06-17T08:00:00+00:00", km=10.0, dur_s=3000,
-                      avg_hr=150)
-        c.execute("INSERT INTO daily_training_load (date, algorithm_version, "
-                  "training_dose, acute_load, chronic_load, form, coverage_status) "
-                  "VALUES ('2026-06-17', ?, 70, 65.0, 60.0, -5.0, 'complete')",
-                  (TRAINING_LOAD_MODEL_VERSION,))
-        c.execute("INSERT INTO daily_health (date, rhr) VALUES ('2026-06-17', 48)")
-        c.execute("INSERT INTO daily_hrv (date, last_night_avg) "
-                  "VALUES ('20260617', 35)")
-        c.commit()
-
-        prof = self._profile(db)
-        assert len(prof) == 1
-        w = prof[0]
-        assert w["week_start"] == "2026-06-15"  # Monday
-        assert abs(w["distance_km"] - 10.0) < 1e-6
-        assert abs(w["hours"] - (3000 / 3600.0)) < 1e-6
-        assert abs(w["avg_hr"] - 150) < 1e-6
-        assert w["ctl"] == 60.0
-        assert w["atl"] == 65.0
-        assert w["form"] == -5.0
-        assert w["dose"] == 70
-        assert w["rhr"] == 48
-        assert w["hrv"] == 35
-        assert w["n_runs"] == 1
-
-    def test_shanghai_boundary_pushes_to_next_week(self, tmp_path):
-        """A run finishing 23:30 UTC Sunday = 07:30 CST Monday → lands in the
-        NEXT Shanghai week, not the UTC one."""
-        db = self._db(tmp_path)
-        c = db._conn
-        # 2026-06-14 is a Sunday. 23:30 UTC → 2026-06-15 07:30 CST (Monday).
-        self._add_run(c, "a1", "2026-06-14T23:30:00+00:00", km=8.0, dur_s=2400)
-        c.commit()
-        prof = self._profile(db)
-        assert len(prof) == 1
-        # Shanghai date is Monday 06-15 → its own week Monday is 06-15,
-        # NOT the UTC-Sunday week (Monday 06-08).
-        assert prof[0]["week_start"] == "2026-06-15"
-
-    def test_ctl_atl_form_end_of_week_snapshot_dose_sum(self, tmp_path):
-        """ctl/atl/form = value on the LATEST day in the week; dose = sum."""
-        db = self._db(tmp_path)
-        c = db._conn
-        # Week of 2026-06-15 (Mon) .. 2026-06-21 (Sun).
-        rows = [
-            ("2026-06-15", 50, 40.0, 55.0, 15.0),
-            ("2026-06-17", 60, 48.0, 56.0, 8.0),
-            ("2026-06-20", 80, 70.0, 58.0, -12.0),  # latest day → snapshot
-        ]
-        for d, dose, atl, ctl, form in rows:
-            c.execute("INSERT INTO daily_training_load (date, algorithm_version, "
-                      "training_dose, acute_load, chronic_load, form, coverage_status) "
-                      "VALUES (?, ?, ?, ?, ?, ?, 'complete')",
-                      (d, TRAINING_LOAD_MODEL_VERSION, dose, atl, ctl, form))
-        c.commit()
-        w = self._profile(db)[0]
-        assert w["week_start"] == "2026-06-15"
-        assert w["ctl"] == 58.0   # latest day snapshot, NOT summed
-        assert w["atl"] == 70.0
-        assert w["form"] == -12.0
-        assert w["dose"] == 50 + 60 + 80  # additive
-        assert w["dose_coverage_status"] == "complete"
-
-    def test_partial_daily_dose_is_kept_with_weekly_coverage_caveat(self, tmp_path):
-        db = self._db(tmp_path)
-        c = db._conn
-        self._add_run(
-            c, "a1", "2026-06-17T08:00:00+00:00",
-            km=10.0, dur_s=3000,
-        )
-        c.executemany(
-            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-            "acute_load, chronic_load, form, coverage_status) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+    def test_history_aggregates_running_rows_and_excludes_non_running_rows(self):
+        reader = self._reader()
+        history = reader._history(
             [
-                ("2026-06-16", TRAINING_LOAD_MODEL_VERSION, 50, 45, 55, 10, "complete"),
-                ("2026-06-17", TRAINING_LOAD_MODEL_VERSION, 60, 50, 56, 6, "partial"),
+                {"date": "2026-06-17T08:00:00+00:00", "distance_m": 21_100, "duration_s": 5400, "avg_hr": 140, "train_kind": "base"},
+                {"date": "2026-06-18T08:00:00+00:00", "distance_m": 10_000, "duration_s": 2500, "avg_hr": 160, "train_kind": "interval"},
             ],
+            [],
+            [],
+            [],
+            {"threshold_speed_mps": 4.0},
         )
-        c.commit()
+        week = history["weekly_profile"][0]
+        assert history["total_activities"] == 2
+        assert week["week_start"] == "2026-06-15"
+        assert week["distance_km"] == pytest.approx(31.1)
+        assert week["n_long"] == 1
+        assert week["n_speed"] == 1
+        assert week["avg_pace_s_km"] == pytest.approx((5400 + 2500) / 31.1)
+        assert week["avg_hr"] == pytest.approx((140 * 5400 + 160 * 2500) / 7900)
 
-        week = self._profile(db)[0]
-
-        assert week["dose"] == 110
-        assert week["dose_coverage_status"] == "partial"
-
-    def test_uses_canonical_load_regardless_of_audit_version(self, tmp_path):
-        db = self._db(tmp_path)
-        c = db._conn
-        c.execute(
-            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-            "acute_load, chronic_load, form, coverage_status) "
-            "VALUES ('2026-06-17', 1, 70, 65, 60, -5, 'complete')"
-        )
-        c.commit()
-
-        w = self._profile(db)[0]
-        assert w["dose"] == 70
-        assert w["ctl"] == 60
-        assert w["atl"] == 65
-
-    def test_n_long_and_pace_and_hr_weighting(self, tmp_path):
-        """n_long counts runs >= 20km.
-        avg_pace = total_s/total_km; avg_hr is duration-weighted."""
-        db = self._db(tmp_path)
-        c = db._conn
-        # Same week (Mon 2026-06-15). Run1: 21.1km/5400s, HR 140.
-        # Run2: 15km/4000s, HR 160. Run3: 5km/1500s, no HR.
-        self._add_run(c, "a1", "2026-06-15T08:00:00+00:00", km=21.1, dur_s=5400,
-                      avg_hr=140)
-        self._add_run(c, "a2", "2026-06-16T08:00:00+00:00", km=15.0, dur_s=4000,
-                      avg_hr=160)
-        self._add_run(c, "a3", "2026-06-17T08:00:00+00:00", km=5.0, dur_s=1500)
-        c.commit()
-        w = self._profile(db)[0]
-        assert w["n_runs"] == 3
-        assert w["n_long"] == 1  # only the 21.1km run >= 20
-        total_km = 21.1 + 15.0 + 5.0
-        total_s = 5400 + 4000 + 1500
-        assert abs(w["avg_pace_s_km"] - total_s / total_km) < 1e-6
-        # duration-weighted over the two runs WITH hr only.
-        exp_hr = (140 * 5400 + 160 * 4000) / (5400 + 4000)
-        assert abs(w["avg_hr"] - exp_hr) < 1e-6
-
-    def test_n_speed_train_kind_and_pace_fallback(self, tmp_path):
-        """Speed = explicit hard train_kind; for NULL train_kind, fall back to
-        pace (run avg speed >= threshold). ``base`` is NOT speed."""
-        db = self._db(tmp_path)
-        c = db._conn
-        # threshold_speed_mps = 4.0 m/s (= 250 s/km).
-        # interval → speed. base → NOT speed. NULL + fast (5.0 m/s) → speed.
-        # NULL + slow (3.0 m/s) → not speed.
-        self._add_run(c, "i1", "2026-06-15T08:00:00+00:00", km=10.0, dur_s=2500,
-                      train_kind="interval")
-        self._add_run(c, "b1", "2026-06-16T08:00:00+00:00", km=10.0, dur_s=2500,
-                      train_kind="base")
-        # 10km in 2000s → 5.0 m/s ≥ 4.0 → speed (NULL train_kind)
-        self._add_run(c, "f1", "2026-06-17T08:00:00+00:00", km=10.0, dur_s=2000)
-        # 10km in 3334s → 3.0 m/s < 4.0 → not speed
-        self._add_run(c, "s1", "2026-06-18T08:00:00+00:00", km=10.0, dur_s=3334)
-        c.commit()
-        w = self._profile(db, threshold_speed_mps=4.0)[0]
-        assert w["n_runs"] == 4
-        assert w["n_speed"] == 2  # interval + fast-NULL
-
-        # Fallback disabled when threshold is None → only the explicit one.
-        w2 = self._profile(db, threshold_speed_mps=None)[0]
-        assert w2["n_speed"] == 1  # only 'interval'
-
-    def test_race_name_heuristic(self, tmp_path):
-        db = self._db(tmp_path)
-        c = db._conn
-        self._add_run(c, "r1", "2026-06-15T08:00:00+00:00", km=42.2, dur_s=12000,
-                      name="上海马拉松")
-        self._add_run(c, "r2", "2026-06-16T08:00:00+00:00", km=10.0, dur_s=2500,
-                      name="Morning easy run")
-        c.commit()
-        w = self._profile(db)[0]
-        assert w["n_race"] == 1
-
-    def test_trims_to_most_recent_16_weeks(self, tmp_path):
-        """More than 16 weeks present → only the 16 most recent, oldest-first."""
-        db = self._db(tmp_path)
-        c = db._conn
-        # 20 distinct weeks, one run each (Mondays 2026-01-05 .. spaced 7d).
-        from datetime import date as _date, timedelta as _td
-        start = _date(2026, 1, 5)  # a Monday
+    def test_history_aligns_shanghai_boundary_and_trims_to_16_weeks(self):
+        reader = self._reader()
+        activities = [
+            {"date": datetime(2026, 6, 14, 23, 30, tzinfo=timezone.utc), "distance_m": 8000, "duration_s": 2400, "train_kind": "base"}
+        ]
+        start = date(2026, 1, 5)
         for i in range(20):
-            d = start + _td(days=7 * i)
-            iso = f"{d.isoformat()}T08:00:00+00:00"
-            self._add_run(c, f"w{i}", iso, km=10.0, dur_s=3000)
-        c.commit()
-        prof = self._profile(db, weeks=16)
-        assert len(prof) == 16
-        # oldest-first; first kept = week index 4 (20 - 16).
-        weeks_kept = [w["week_start"] for w in prof]
-        assert weeks_kept == sorted(weeks_kept)
-        assert weeks_kept[0] == (start + _td(days=7 * 4)).isoformat()
-        assert weeks_kept[-1] == (start + _td(days=7 * 19)).isoformat()
+            day = start + timedelta(days=7 * i)
+            activities.append({
+                "date": f"{day.isoformat()}T08:00:00+00:00",
+                "distance_m": 10_000,
+                "duration_s": 3000,
+                "train_kind": "base",
+            })
+        boundary = reader._history(activities[:1], [], [], [], {"threshold_speed_mps": 4.0})
+        assert boundary["weekly_profile"][0]["week_start"] == "2026-06-15"
 
-    def test_unknown_only_dose_week_exposes_none_not_zero(self, tmp_path):
-        """A week with only 'unknown' coverage_status days must have dose=None.
+        history = reader._history(activities[1:], [], [], [], {"threshold_speed_mps": 4.0})
+        weeks = history["weekly_profile"]
+        assert len(weeks) == 16
+        assert weeks == sorted(weeks, key=lambda row: row["week_start"])
+        assert weeks[0]["week_start"] == "2026-02-02"
+        assert weeks[-1]["week_start"] == "2026-05-18"
 
-        The query only adds to dose_acc for complete/partial/rest_confirmed rows.
-        If only 'unknown' rows exist for a week, dose_acc is never updated and
-        the bucket keeps dose=0.0 (the initializer default) — falsely showing a
-        confirmed zero instead of missing data. Fix: set dose=None for such weeks.
-        """
-        db = self._db(tmp_path)
-        c = db._conn
-        self._add_run(c, "a1", "2026-06-17T08:00:00+00:00", km=10.0, dur_s=3000)
-        c.execute(
-            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-            "acute_load, chronic_load, form, coverage_status) "
-            "VALUES ('2026-06-17', ?, 0, 50, 60, -10, 'unknown')",
-            (TRAINING_LOAD_MODEL_VERSION,),
+    def test_fitness_prefers_calibration_rhr_and_canonical_load(self):
+        reader = self._reader()
+        state = reader._fitness(
+            [{"date": "20260610", "rhr": 52}],
+            [{"date": "2026-06-10", "last_night_avg": 42}],
+            [{"date": "2026-06-10", "training_dose": 70, "acute_load": 69.9, "chronic_load": 64.1, "form": -5.8, "load_ratio": 1.09, "coverage_status": "complete", "algorithm_version": 1}],
+            {"rhr_baseline": 45.0},
         )
-        c.commit()
-
-        week = self._profile(db)[0]
-
-        # dose must be None (data unavailable), not 0.0 (confirmed zero)
-        assert week["dose"] is None
-        assert week["dose_coverage_status"] == "unknown"
-
-
-# ---------------------------------------------------------------------------
-# _query_fitness_state — reads STRIDE daily_training_load, not COROS ati/cti
-# ---------------------------------------------------------------------------
-
-
-class TestQueryFitnessStateStride:
-    def test_reads_stride_load_not_coros(self, tmp_path, monkeypatch):
-        from stride_storage.sqlite.database import Database
-        db = Database(db_path=tmp_path / "coros.db")
-        c = db._conn
-        c.execute("INSERT INTO daily_health (date, ati, cti, fatigue, rhr) "
-                  "VALUES ('20260610', 136, 120, 50, 48)")
-        c.execute("INSERT INTO daily_hrv (date, last_night_avg, provider) "
-                  "VALUES ('2026-06-10', 42, 'garmin')")
-        c.execute("INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-                  "acute_load, chronic_load, form, coverage_status) "
-                  "VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8, 'complete')",
-                  (TRAINING_LOAD_MODEL_VERSION,))
-        c.commit()
-        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
-        from stride_server import master_plan_generator as mod
-        monkeypatch.setattr(mod, "_ensure_training_load_current", lambda db, as_of=None: None)
-        state = mod._query_fitness_state("anyuser")
-        assert state["ctl"] == 64.1      # chronic_load, NOT cti=120
-        assert state["atl"] == 69.9      # acute_load, NOT ati=136
-        assert state["rhr"] == 48        # no calibration -> fallback to raw daily_health
-        assert state["hrv"] == 42        # latest preferred daily_hrv row
-        assert state["hrv_date"] == "2026-06-10"
-        assert "fatigue" not in state
-        assert "training_load_state" not in state
-        assert "64" in state["summary"]
-        assert "HRV 42ms" in state["summary"]
-
-    def test_prefers_calibration_rhr_baseline_over_raw(self, tmp_path, monkeypatch):
-        from stride_core.running_calibration import RUNNING_CALIBRATION_MODEL_VERSION
-        from stride_storage.sqlite.database import Database
-        from stride_storage.sqlite.calibration_connector import (
-            SQLiteRunningCalibrationRepository,
-        )
-        db = Database(db_path=tmp_path / "coros.db")
-        c = db._conn
-        # raw last-measured rhr = 52, but the smoothed calibration baseline = 45.
-        c.execute("INSERT INTO daily_health (date, ati, cti, fatigue, rhr) "
-                  "VALUES ('20260610', 136, 120, 50, 52)")
-        c.execute("INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-                  "acute_load, chronic_load, form, coverage_status) "
-                  "VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8, 'complete')",
-                  (TRAINING_LOAD_MODEL_VERSION,))
-        SQLiteRunningCalibrationRepository(db)  # bootstrap calibration tables
-        c.execute(
-            "INSERT INTO running_calibration_snapshot "
-            "(as_of_date, algorithm_version, threshold_hr, threshold_speed_mps, "
-            " threshold_hr_confidence, threshold_speed_confidence, rhr_baseline, "
-            " observed_max_hr, hrmax_estimate, hrmax_confidence) "
-            "VALUES ('2026-06-10', ?, 175.0, 4.65, 'medium', 'medium', 45.0, 188.0, 188.0, 'medium')",
-            (RUNNING_CALIBRATION_MODEL_VERSION,),
-        )
-        c.commit()
-        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
-        from stride_server import master_plan_generator as mod
-        monkeypatch.setattr(mod, "_ensure_training_load_current", lambda db, as_of=None: None)
-        state = mod._query_fitness_state("anyuser")
-        assert state["rhr"] == 45.0      # calibration baseline preferred over raw 52
-
-    def test_reads_legacy_audit_version_as_canonical_state(self, tmp_path, monkeypatch):
-        from stride_storage.sqlite.database import Database
-
-        db = Database(db_path=tmp_path / "coros.db")
-        c = db._conn
-        c.execute(
-            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-            "acute_load, chronic_load, form, coverage_status) "
-            "VALUES ('2026-06-10', 1, 70, 69.9, 64.1, -5.8, 'complete')"
-        )
-        c.commit()
-        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
-        from stride_server import master_plan_generator as mod
-        monkeypatch.setattr(mod, "_ensure_training_load_current", lambda db, as_of=None: None)
-
-        state = mod._query_fitness_state("anyuser", as_of=date(2026, 6, 10))
-
         assert state["ctl"] == 64.1
         assert state["atl"] == 69.9
+        assert state["tsb"] == -5.8
+        assert state["rhr"] == 45.0
+        assert state["hrv"] == 42.0
+        assert state["training_load_ratio"] == pytest.approx(1.09)
+        assert "fatigue" not in state
+
+    def test_unknown_load_coverage_is_not_treated_as_valid(self):
+        reader = self._reader()
+        state = reader._fitness(
+            [], [],
+            [{"date": "2026-06-10", "training_dose": 0, "acute_load": 50, "chronic_load": 60, "form": 10, "coverage_status": "unknown"}],
+            {"rhr_baseline": None},
+        )
+        assert state["ctl"] is None
+        assert state["atl"] is None
+        assert state["tsb"] is None
 
 
-def test_ensure_training_load_current_reads_legacy_row_while_rollout_is_pending(
-    tmp_path, monkeypatch
-):
-    from datetime import date
+def test_load_master_context_uses_canonical_context_and_preserves_body_data(monkeypatch):
+    import stride_server.canonical_season_plan as canonical_mod
+    from coach.schemas import ContinuitySignals
 
-    from stride_server import master_plan_generator as mod
-    from stride_storage.sqlite.database import Database
-
-    db = Database(db_path=tmp_path / "coros.db")
-    db._conn.execute(
-        "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-        "acute_load, chronic_load, form, coverage_status) "
-        "VALUES ('2026-07-15', 1, 70, 69.9, 64.1, -5.8, 'partial')"
+    context = _canonical_context(
+        body_composition={"scan_date": "2026-06-01", "weight_kg": 70.0, "body_fat_pct": 14.0, "smm_kg": 33.0, "bmi": 22.86},
+        pb_seconds={"10k": 2550.0, "fm": 10762.0},
+        continuity=ContinuitySignals(macro_cycle="summer").model_dump(),
     )
-    db._conn.commit()
+    monkeypatch.setattr(canonical_mod, "load_canonical_season_context", lambda *a, **k: context)
+
+    result = adapter_mod.load_master_context(
+        {"user_id": USER_ID, "job_id": "", "input_payload": {"goal_id": GOAL_ID}}
+    )
+
+    assert result["goal"]["goal_id"] == GOAL_ID
+    assert result["pb_seconds"] == {"10k": 2550.0, "fm": 10762.0}
+    assert result["body_composition"]["weight_kg"] == 70.0
+    assert result["continuity"]["macro_cycle"] == "summer"
+
+
+def test_load_master_context_has_no_sqlite_fallback(monkeypatch):
+    import stride_server.canonical_season_plan as canonical_mod
+
     monkeypatch.setattr(
-        "stride_core.training_load.recompute_training_load",
-        lambda *_args, **_kwargs: pytest.fail(
-            "master-plan reads must not run the full rollout"
-        ),
+        canonical_mod,
+        "load_canonical_season_context",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("MySQL offline")),
     )
-
-    mod._ensure_training_load_current(db, as_of=date(2026, 7, 15))
-
-    row = db.fetch_latest_daily_training_load(as_of="2026-07-15")
-    assert row is not None
-    assert row["algorithm_version"] == 1
-    assert row["chronic_load"] == 64.1
-
-
-# ---------------------------------------------------------------------------
-# load_master_context double baseline (Stage-3a P2)
-# Performance baseline (real PBs via load_master_context/load_personal_bests) +
-# body-composition baseline (body_composition_scan, added here). COROS
-# race_predictions are deliberately NOT surfaced into the context. Graceful
-# degrade when there's no body-comp scan.
-# ---------------------------------------------------------------------------
-
-
-class TestLoadMasterContextDoubleBaseline:
-    def _seed_db(self, tmp_path, *, with_body_comp: bool):
-        from stride_storage.sqlite.database import Database
-
-        db = Database(db_path=tmp_path / "coros.db")
-        c = db._conn
-        # Seed COROS race_predictions to prove they are NOT surfaced into the
-        # context: load_master_context anchors milestones to real PBs from
-        # personal_bests, so these prediction rows must never leak into history.
-        for race_type, dur in (
-            ("5K", 1200.0),       # 20:00
-            ("10K", 2520.0),      # 42:00
-            ("Half Marathon", 5700.0),  # 1:35:00
-            ("Marathon", 12000.0),      # 3:20:00
-        ):
-            c.execute(
-                "INSERT INTO race_predictions (race_type, duration_s, avg_pace) "
-                "VALUES (?, ?, NULL)",
-                (race_type, dur),
-            )
-        for distance, pb_time_sec in (("10K", 2550.0), ("FM", 10762.0)):
-            entry = {
-                "distance": distance,
-                "pb_time_sec": pb_time_sec,
-                "achieved_at": "2026-05-08",
-                "source": "activity",
-            }
-            c.execute(
-                "INSERT INTO personal_bests "
-                "(distance, pb_time_sec, achieved_at, source, entry_json) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (distance, pb_time_sec, entry["achieved_at"], entry["source"], json.dumps(entry)),
-            )
-        if with_body_comp:
-            c.execute(
-                "INSERT INTO body_composition_scan "
-                "(scan_date, weight_kg, body_fat_pct, smm_kg, fat_mass_kg, "
-                " visceral_fat_level, bmr_kcal) "
-                "VALUES ('2026-06-01', 70.0, 14.0, 33.0, 9.8, 6, 1600)"
-            )
-            # Older scan — latest_body_composition_scan must pick 2026-06-01.
-            c.execute(
-                "INSERT INTO body_composition_scan "
-                "(scan_date, weight_kg, body_fat_pct, smm_kg, fat_mass_kg, "
-                " visceral_fat_level, bmr_kcal) "
-                "VALUES ('2026-01-01', 75.0, 18.0, 31.0, 13.5, 8, 1550)"
-            )
-        c.commit()
-        return db
-
-    def _patch_db_and_load(self, db, monkeypatch, *, profile):
-        # All three readers (history, fitness, body-comp) open Database(user=...);
-        # route every one at the single seeded handle.
-        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
-        from stride_server import master_plan_generator as mod
-        monkeypatch.setattr(mod, "_ensure_training_load_current", lambda db, as_of=None: None)
-        # Keep continuity hermetic — not the subject under test here.
-        monkeypatch.setattr(adapter_mod, "analyze_continuity", lambda *a, **k: None)
-        state = {
-            "user_id": USER_ID,
-            "job_id": "",
-            "input_payload": {"goal": GOAL, "profile": profile},
-        }
-        return adapter_mod.load_master_context(state)
-
-    def test_both_baselines_present(self, tmp_path, monkeypatch):
-        """Seeded body_composition_scan → context carries a body_composition
-        block with weight/body_fat/smm + BMI (height from profile). Seeded COROS
-        race_predictions must NOT leak into history — the planner anchors to real
-        PBs only."""
-        db = self._seed_db(tmp_path, with_body_comp=True)
-        ctx = self._patch_db_and_load(
-            db, monkeypatch, profile={"height_cm": 175.0}
-        )
-
-        # The graph context exposes only the rendered history summary. COROS
-        # race_predictions are NOT surfaced; real PBs come from personal_bests,
-        # not prediction rows.
-        assert "history" not in ctx
-        assert ctx["pb_seconds"] == {"10k": 2550.0, "fm": 10762.0}
-        assert "Actual personal bests" in ctx["history_summary"]
-        assert "10K: 42:30" in ctx["history_summary"]
-        assert "FM: 2:59:22" in ctx["history_summary"]
-        assert "3:20:00" not in ctx["history_summary"]
-
-        # Body-composition baseline — latest scan (2026-06-01, not the older one).
-        bc = ctx["body_composition"]
-        assert bc is not None
-        assert bc["scan_date"] == "2026-06-01"
-        assert bc["weight_kg"] == 70.0
-        assert bc["body_fat_pct"] == 14.0
-        assert bc["smm_kg"] == 33.0
-        # BMI = 70 / 1.75^2 = 22.86
-        assert bc["bmi"] is not None
-        assert abs(bc["bmi"] - 22.86) < 0.05
-
-        # Human-visible prose line carries body-comp too.
-        assert "body_composition_summary" in ctx
-        assert "70" in ctx["body_composition_summary"]
-
-    def test_bmi_none_when_no_height(self, tmp_path, monkeypatch):
-        """No height in profile → body-comp block still present (weight/fat/smm)
-        but bmi is None (don't fabricate a height)."""
-        db = self._seed_db(tmp_path, with_body_comp=True)
-        ctx = self._patch_db_and_load(db, monkeypatch, profile=None)
-
-        bc = ctx["body_composition"]
-        assert bc is not None
-        assert bc["weight_kg"] == 70.0
-        assert bc["bmi"] is None
-
-    def test_graceful_degrade_no_body_comp(self, tmp_path, monkeypatch):
-        """No body_composition_scan → load_master_context succeeds, body_composition
-        is None, and the rendered history remains PB-only (predictions never
-        surfaced)."""
-        db = self._seed_db(tmp_path, with_body_comp=False)
-        ctx = self._patch_db_and_load(
-            db, monkeypatch, profile={"height_cm": 175.0}
-        )
-
-        # Degrades, never raises.
-        assert ctx["body_composition"] is None
-        # History summary present but carries no fitness-prediction baseline.
-        assert "history" not in ctx
-        assert ctx["pb_seconds"] == {"10k": 2550.0, "fm": 10762.0}
-        assert "FM: 2:59:22" in ctx["history_summary"]
-        assert "3:20:00" not in ctx["history_summary"]
-
-    def test_bmi_math(self):
-        """BMI helper on a known weight+height: 60kg @ 1.70m → 20.76."""
-        from stride_server.coach_adapters.master_plan_adapter import _compute_bmi
-
-        assert _compute_bmi(60.0, 170.0) == pytest.approx(20.76, abs=0.01)
-        assert _compute_bmi(70.0, None) is None
-        assert _compute_bmi(None, 175.0) is None
-        assert _compute_bmi(70.0, 0) is None
-
-    def test_body_composition_as_of_uses_storage_api_not_adapter_sql(self):
-        from datetime import date as date_cls
-        from stride_server.coach_adapters.master_plan_adapter import _load_body_composition
-
-        class _Db:
-            @property
-            def _conn(self):  # pragma: no cover - should never be reached
-                raise AssertionError("adapter must not access raw SQL connection")
-
-            def body_composition_scan_at_or_before(self, scan_date: str):
-                assert scan_date == "2026-05-01"
-                return {
-                    "scan_date": "2026-04-23",
-                    "weight_kg": 71.6,
-                    "body_fat_pct": 22.9,
-                    "smm_kg": 31.1,
-                    "fat_mass_kg": 16.4,
-                    "visceral_fat_level": 5,
-                    "bmr_kcal": None,
-                    "protein_kg": None,
-                    "water_l": None,
-                    "smi": None,
-                    "inbody_score": 68,
-                }
-
-        body = _load_body_composition(
-            _Db(), {"height_cm": 170.0}, as_of=date_cls(2026, 5, 1)
-        )
-
-        assert body is not None
-        assert body["scan_date"] == "2026-04-23"
-        assert body["bmi"] == pytest.approx(24.78, abs=0.01)
-
-    def test_goal_as_of_date_anchors_context_queries(self, monkeypatch):
-        """Replay generation must use the frozen as_of_date for DB-derived
-        context, not today's wall clock. Otherwise a May replay can leak July
-        fitness/history into the prompt while only the visible date is frozen.
-        """
-        from datetime import date as date_cls
-
-        seen: dict[str, object] = {}
-
-        class _Db:
-            pass
-
-        class _LoadTool:
-            def __init__(self, user_id: str) -> None:
-                self.user_id = user_id
-
-            def __call__(self, **kwargs: Any):
-                from coach.schemas import ToolResult
-
-                seen["load_tool_as_of"] = kwargs.get("as_of_date")
-                return ToolResult(ok=True, data={"history_anchor": {}})
-
-        def _history(uid, *, as_of=None):
-            seen["history_as_of"] = as_of
-            return {"total_activities": 0, "weekly_profile": []}
-
-        def _fitness(uid, *, as_of=None):
-            seen["fitness_as_of"] = as_of
-            return {"summary": "fitness"}
-
-        monkeypatch.setattr(adapter_mod, "_query_history", _history)
-        monkeypatch.setattr(adapter_mod, "_query_fitness_state", _fitness)
-        monkeypatch.setattr(adapter_mod, "_load_pb_seconds", lambda db: {})
-
-        def _body(db, profile, *, as_of=None):
-            seen["body_as_of"] = as_of
-            return None
-
-        monkeypatch.setattr(adapter_mod, "_load_body_composition", _body)
-        monkeypatch.setattr(adapter_mod, "_format_body_composition_summary", lambda bc: "body")
-        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: _Db())
-
-        def _continuity(db, *, goal, profile, as_of):
-            seen["continuity_as_of"] = as_of
-            return None
-
-        def _phase(db, *, user_id, goal, profile, as_of, continuity, cross_validate_with_llm):
-            seen["phase_as_of"] = as_of
-            return None
-
-        monkeypatch.setattr(adapter_mod, "analyze_continuity", _continuity)
-        monkeypatch.setattr(adapter_mod, "detect_current_phase", _phase)
-        monkeypatch.setattr(adapter_mod, "EstimateMasterPlanLoadImpl", _LoadTool)
-
+    with pytest.raises(ValueError, match="canonical_mysql_unavailable"):
         adapter_mod.load_master_context(
-            {
-                "user_id": USER_ID,
-                "job_id": "",
-                "input_payload": {
-                    "goal": {**GOAL, "as_of_date": "2026-05-19"},
-                    "profile": PROFILE,
-                },
-            }
+            {"user_id": USER_ID, "job_id": "", "input_payload": {}}
         )
 
-        frozen = date_cls(2026, 5, 19)
-        assert seen["history_as_of"] == frozen
-        assert seen["fitness_as_of"] == frozen
-        assert seen["continuity_as_of"] == frozen
-        assert seen["phase_as_of"] == frozen
-        assert seen["body_as_of"] == frozen
-        assert seen["load_tool_as_of"] == "2026-05-19"
+
+def test_canonical_query_helpers_delegate_to_one_context(monkeypatch):
+    import stride_server.canonical_season_plan as canonical_mod
+    import stride_server.master_plan_generator as mod
+
+    context = _canonical_context(
+        history={"total_activities": 3, "weekly_profile": []},
+        fitness_state={"ctl": 60.0, "summary": "canonical"},
+    )
+    monkeypatch.setattr(canonical_mod, "load_canonical_season_context", lambda *a, **k: context)
+    assert mod._query_history(USER_ID)["total_activities"] == 3
+    assert mod._query_fitness_state(USER_ID)["ctl"] == 60.0
+
+
+def test_compute_bmi_without_fabricating_height():
+    from stride_server.coach_adapters.master_plan_adapter import _compute_bmi
+
+    assert _compute_bmi(60.0, 170.0) == pytest.approx(20.76, abs=0.01)
+    assert _compute_bmi(70.0, None) is None
+    assert _compute_bmi(None, 175.0) is None
+    assert _compute_bmi(70.0, 0) is None
 
 
 # ---------------------------------------------------------------------------

@@ -38,37 +38,59 @@ def test_stride_web_deploys_atomic_go_onboarding_routes() -> None:
     """The production web revision cannot mix Python and Go onboarding state."""
     workflow = WEB_WORKFLOW_PATH.read_text(encoding="utf-8")
     deploy_step = workflow.split("- name: Deploy to Container Apps (stride-web)", maxsplit=1)[1].split(
-        "- name: Health check",
+        "- name: Wait for new revision to reach Running",
         maxsplit=1,
     )[0]
-    expected_routes = {
+    onboarding_routes = {
         "STRIDE_ROUTE_GET_USERS_ME_PROFILE=go",
         "STRIDE_ROUTE_POST_USERS_ME_PROFILE=go",
+        "STRIDE_ROUTE_PATCH_USERS_ME_PROFILE=go",
+        "STRIDE_ROUTE_GET_USERS_ME_INJURIES=go",
+        "STRIDE_ROUTE_POST_USERS_ME_INJURIES=go",
+        "STRIDE_ROUTE_PUT_USERS_ME_INJURIES_INJURYID=go",
+        "STRIDE_ROUTE_DELETE_USERS_ME_INJURIES_INJURYID=go",
         "STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN=go",
         "STRIDE_ROUTE_POST_USER_SYNC=go",
         "STRIDE_ROUTE_GET_PIPELINES_RUNID=go",
         "STRIDE_ROUTE_GET_JOBS_JOBID=go",
         "STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE=go",
     }
+    plan_setup_routes = {
+        "STRIDE_ROUTE_GET_USERS_ME_TRAINING_GOAL=go",
+        "STRIDE_ROUTE_POST_USERS_ME_TRAINING_GOAL=go",
+        "STRIDE_ROUTE_POST_USER_SYNC=go",
+        "STRIDE_ROUTE_GET_PIPELINES_RUNID=go",
+    }
 
     assert "ONBOARDING_GO_ROUTE_VARS=(" in deploy_step
-    assert '"${#ONBOARDING_GO_ROUTE_VARS[@]}" -ne 7' in deploy_step
+    assert "PLAN_SETUP_GO_ROUTE_VARS=(" in deploy_step
+    assert '"${#ONBOARDING_GO_ROUTE_VARS[@]}" -ne 12' in deploy_step
+    assert '"${#PLAN_SETUP_GO_ROUTE_VARS[@]}" -ne 4' in deploy_step
     assert 'grep -Ec \'^STRIDE_ROUTE_[A-Z0-9_]+=go$\'' in deploy_step
     assert "GO_API_URL=$GO_API_URL" in deploy_step
-    assert 'verify_onboarding_readiness "${GO_API_URL%/}/readyz/onboarding"' in deploy_step
-    assert 'verify_onboarding_readiness "${PUBLIC_DIRECT_BASE_URL%/}/readyz/onboarding"' in deploy_step
+    assert 'verify_readiness_contract "${GO_API_URL%/}/readyz/onboarding" "web-onboarding-v2"' in deploy_step
+    assert 'verify_readiness_contract "${GO_API_URL%/}/readyz/plan-setup" "plan-setup-v1" "mysql-season-plan-context-v1"' in deploy_step
+    assert 'verify_python_reader_readiness "${PYTHON_API_URL%/}/readyz/season-plan-reader"' in deploy_step
+    assert 'verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/readyz/onboarding" "web-onboarding-v2"' in deploy_step
+    assert 'verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/readyz/plan-setup" "plan-setup-v1" "mysql-season-plan-context-v1"' in deploy_step
     assert "readiness_bodies=()" in deploy_step
     assert 'readiness_bodies+=("$readiness_body")' in deploy_step
     assert "curl --silent --connect-timeout 10 --max-time 30" in deploy_step
     assert "--location" not in deploy_step
     assert 'readiness_status" != "200"' in deploy_step
-    assert 'payload.get("contract_version") != "web-onboarding-v1"' in deploy_step
+    assert 'payload.get("contract_version")' in deploy_step
+    assert 'payload.get("reader_contract_version")' in deploy_step
     assert 'actual != expected' in deploy_step
     assert "refusing Web route cutover" in deploy_step
     assert "--set-env-vars \"${ENV_VARS[@]}\"" in deploy_step
-    assert "Deployed $route_name is not configured for the Go onboarding lifecycle." in deploy_step
-    assert deploy_step.index("verify_onboarding_readiness") < deploy_step.index("--set-env-vars")
-    assert {line.strip() for line in deploy_step.splitlines()} >= expected_routes
+    assert "--remove-env-vars \"${STALE_ROUTE_ENVS[@]}\"" in deploy_step
+    assert 'properties.template.containers[0].env[].name' in deploy_step
+    assert "Deployed $route_name is not configured for the expected Go cutover." in deploy_step
+    assert deploy_step.index("verify_readiness_contract") < deploy_step.index("--set-env-vars")
+
+    lines = {line.strip() for line in deploy_step.splitlines()}
+    assert onboarding_routes <= lines
+    assert plan_setup_routes <= lines
 
 
 def test_async_job_worker_deploys_keep_one_warm_replica() -> None:

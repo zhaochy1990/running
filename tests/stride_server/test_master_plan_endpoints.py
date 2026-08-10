@@ -15,6 +15,7 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from stride_server.job_runner import _reset_jobs_for_tests
+from stride_storage.interfaces.season_plan import CanonicalSeasonPlanDataUnavailable
 
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
 OTHER_UUID = "b1b2c3d4-e5f6-4aaa-89ab-123456789012"
@@ -29,8 +30,6 @@ VALID_GOAL: dict[str, Any] = {
     "created_at": "2026-05-12T10:00:00+00:00",
     "updated_at": "2026-05-12T10:00:00+00:00",
 }
-
-VALID_GOAL_STORE = {"current": VALID_GOAL, "history": []}
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -89,14 +88,23 @@ def app_client(tmp_path, monkeypatch, rsa_keypair):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("STRIDE_AUTH_PUBLIC_KEY_PEM", public_pem)
 
-    import stride_core.db as core_db_mod
-    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+    # Generation reads its goal/profile/history through the canonical reader.
+    # Inject that context at the route seam; do not seed the legacy content
+    # store or SQLite fixture.
+    import stride_server.routes.master_plan as mp_mod
 
-    # Point content_store file reads to tmp_path. The read/write primitives
-    # now live in stride_storage.content.store (exposed as cs_mod._store);
-    # patch _file_path there so the facade's delegated calls pick it up.
-    import stride_server.content_store as cs_mod
-    monkeypatch.setattr(cs_mod._store, "_file_path", lambda rel: tmp_path / rel)
+    def canonical_context(_user_id: str, *, goal_id: str | None = None):
+        if goal_id and goal_id != VALID_GOAL["goal_id"]:
+            raise CanonicalSeasonPlanDataUnavailable("canonical race goal not found")
+        return {
+            "contract_version": "mysql-season-plan-context-v1",
+            "goal": dict(VALID_GOAL),
+            "profile": {"weekly_run_days_max": VALID_GOAL["weekly_training_days"]},
+            "history": {"weekly_profile": [], "max_weekly_km": 0.0},
+            "fitness_state": {},
+        }
+
+    monkeypatch.setattr(mp_mod, "load_canonical_season_context", canonical_context)
 
     from stride_server.bearer import require_bearer
     from stride_server.routes.master_plan import router
@@ -106,16 +114,6 @@ def app_client(tmp_path, monkeypatch, rsa_keypair):
 
     client = TestClient(app, raise_server_exceptions=False)
     return client, _token(private_pem), tmp_path, private_pem
-
-
-def _write_goal(tmp_path, user_id: str = USER_UUID, goal_store: dict | None = None) -> None:
-    """Write a training_goal.json for the given user under tmp_path."""
-    import json
-    user_dir = tmp_path / user_id
-    user_dir.mkdir(parents=True, exist_ok=True)
-    (user_dir / "training_goal.json").write_text(
-        json.dumps(goal_store or VALID_GOAL_STORE), encoding="utf-8"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +132,6 @@ def _stub_noop(job_id, user_id, goal, profile):
 
 def test_generate_with_goal_returns_201(app_client, tmp_path, monkeypatch):
     client, token, tmp_path, _ = app_client
-    _write_goal(tmp_path)
 
     import stride_server.routes.master_plan as mp_mod
     monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
@@ -156,11 +153,15 @@ def test_generate_with_goal_returns_201(app_client, tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_generate_without_goal_returns_422(app_client, tmp_path, monkeypatch):
-    client, token, tmp_path, _ = app_client
-    # Do NOT write goal — content_store returns None
+def test_generate_without_canonical_goal_returns_503(app_client, monkeypatch):
+    client, token, _, _ = app_client
 
     import stride_server.routes.master_plan as mp_mod
+
+    def missing_goal(*_args, **_kwargs):
+        raise CanonicalSeasonPlanDataUnavailable("canonical race goal not found")
+
+    monkeypatch.setattr(mp_mod, "load_canonical_season_context", missing_goal)
     monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
 
     resp = client.post(
@@ -168,20 +169,24 @@ def test_generate_without_goal_returns_422(app_client, tmp_path, monkeypatch):
         json={},
         headers=_auth(token),
     )
-    assert resp.status_code == 422, resp.text
-    assert "训练目标未设置" in resp.text
+    assert resp.status_code == 503, resp.text
+    assert resp.json() == {"detail": "canonical MySQL training context unavailable"}
 
 
 # ---------------------------------------------------------------------------
-# Test 3: POST generate with nonexistent goal_id → 404
+# Test 3: POST generate with nonexistent canonical goal_id → 503
 # ---------------------------------------------------------------------------
 
 
-def test_generate_with_nonexistent_goal_id_returns_404(app_client, tmp_path, monkeypatch):
-    client, token, tmp_path, _ = app_client
-    _write_goal(tmp_path)  # goal exists but with different goal_id
+def test_generate_with_nonexistent_goal_id_returns_503(app_client, monkeypatch):
+    client, token, _, _ = app_client
 
     import stride_server.routes.master_plan as mp_mod
+
+    def missing_goal(*_args, **_kwargs):
+        raise CanonicalSeasonPlanDataUnavailable("canonical race goal not found")
+
+    monkeypatch.setattr(mp_mod, "load_canonical_season_context", missing_goal)
     monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
 
     resp = client.post(
@@ -189,7 +194,8 @@ def test_generate_with_nonexistent_goal_id_returns_404(app_client, tmp_path, mon
         json={"goal_id": "nonexistent-goal-id-0000-000000000000"},
         headers=_auth(token),
     )
-    assert resp.status_code == 404, resp.text
+    assert resp.status_code == 503, resp.text
+    assert resp.json() == {"detail": "canonical MySQL training context unavailable"}
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +205,6 @@ def test_generate_with_nonexistent_goal_id_returns_404(app_client, tmp_path, mon
 
 def test_generate_idempotent_when_running_job_exists(app_client, tmp_path, monkeypatch):
     client, token, tmp_path, _ = app_client
-    _write_goal(tmp_path)
 
     import stride_server.routes.master_plan as mp_mod
     monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
@@ -232,7 +237,6 @@ def test_generate_idempotent_when_running_job_exists(app_client, tmp_path, monke
 
 def test_get_job_status_returns_200(app_client, tmp_path, monkeypatch):
     client, token, tmp_path, _ = app_client
-    _write_goal(tmp_path)
 
     import stride_server.routes.master_plan as mp_mod
     monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
@@ -287,7 +291,6 @@ def test_get_job_unknown_returns_404(app_client):
 
 def test_get_job_other_user_returns_403(app_client, tmp_path, monkeypatch):
     client, token, tmp_path, private_pem = app_client
-    _write_goal(tmp_path)
 
     import stride_server.routes.master_plan as mp_mod
     monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
@@ -317,7 +320,6 @@ def test_get_job_other_user_returns_403(app_client, tmp_path, monkeypatch):
 
 def test_get_job_stage_label_empty_when_no_stage(app_client, tmp_path, monkeypatch):
     client, token, tmp_path, _ = app_client
-    _write_goal(tmp_path)
 
     import stride_server.routes.master_plan as mp_mod
     monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
@@ -346,7 +348,6 @@ def test_get_job_stage_label_empty_when_no_stage(app_client, tmp_path, monkeypat
 
 def test_raw_output_only_on_failure(app_client, tmp_path, monkeypatch):
     client, token, tmp_path, _ = app_client
-    _write_goal(tmp_path)
 
     import stride_server.job_runner as jr_mod
     import stride_server.routes.master_plan as mp_mod

@@ -70,6 +70,7 @@ func newRootCmd() *cobra.Command {
 		newAPICmd(),
 		newWorkerCmd(),
 		newReconcileCmd(),
+		newMigrateRunningAgeCmd(),
 		newWatchCmd(),
 	)
 	return root

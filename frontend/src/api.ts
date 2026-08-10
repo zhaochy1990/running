@@ -106,6 +106,7 @@ export interface MyProfile {
   // it. Currently the /api/users/me/profile route doesn't return this field,
   // so callers should treat `undefined` as "fall back to coros default".
   provider?: string | null
+  running_age_range?: RunningAgeRange
   features?: {
     coach_agent_weekly_plan: boolean
     coach_chat?: boolean
@@ -121,7 +122,7 @@ export function getMyProfile() {
   return fetchJSON<MyProfile>('/users/me/profile')
 }
 
-export type TargetDistance = '5K' | '10K' | 'HM' | 'FM'
+export type RunningAgeRange = 'unknown' | 'lt_6m' | '6m_1y' | '1y_3y' | '3y_plus'
 
 export interface ProfileIn {
   display_name: string
@@ -129,15 +130,7 @@ export interface ProfileIn {
   sex: string
   height_cm: number
   weight_kg: number
-  // Race goal fields — optional during onboarding, filled later in training
-  // plan setup when the user chooses a target race.
-  target_race?: string
-  target_distance?: TargetDistance
-  target_race_date?: string
-  target_time?: string
-  pbs?: Record<string, string>
-  weekly_mileage_km?: number
-  constraints?: string
+  running_age_range: RunningAgeRange
 }
 
 export type ProfilePatchIn = Partial<ProfileIn>
@@ -158,33 +151,41 @@ export function postProfile(profile: ProfileIn) {
   return postJSON<{ error?: string; detail?: unknown }>('/users/me/profile', profile)
 }
 
-export type RunningAge = 'lt_6m' | '6m_1y' | '1y_3y' | '3y_plus'
-export type CurrentWeeklyKm = 'lt_20' | '20_40' | '40_60' | '60_plus'
-export type RunningPbDistance = '5K' | '10K' | 'HM' | 'FM'
-
-export interface RunningProfilePb {
-  distance: RunningPbDistance
-  time: string
+export interface InjuryRecord {
+  id: string
+  description: string
+  recovery_status: 'active' | 'recovered'
+  running_restriction: 'none' | 'easy_only' | 'no_running'
+  created_at: string
+  updated_at: string
 }
 
-export interface RunningProfileInput {
-  running_age: RunningAge
-  current_weekly_km: CurrentWeeklyKm
-  pbs: RunningProfilePb[]
-  injuries: string[]
+export interface InjuriesResponse {
+  items: InjuryRecord[]
+  next_cursor: string | null
 }
 
-export interface RunningProfile extends RunningProfileInput {
-  profile_id?: string
-  created_at?: string
-  updated_at?: string
+export type InjuryInput = Pick<InjuryRecord, 'description' | 'recovery_status' | 'running_restriction'>
+
+export function listInjuries(limit = 50, cursor?: string) {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (cursor) params.set('cursor', cursor)
+  return fetchJSON<InjuriesResponse>(`/users/me/injuries?${params.toString()}`)
 }
 
-export function createRunningProfile(profile: RunningProfileInput) {
-  return postJSON<RunningProfile & { error?: string; detail?: unknown }>(
-    '/users/me/running-profile',
-    profile,
+export function createInjury(input: InjuryInput) {
+  return postJSON<InjuryRecord & { error?: string; detail?: unknown }>('/users/me/injuries', input)
+}
+
+export function updateInjury(injuryId: string, input: InjuryInput) {
+  return putJSON<InjuryRecord & { error?: string; detail?: unknown }>(
+    `/users/me/injuries/${encodeURIComponent(injuryId)}`,
+    input,
   )
+}
+
+export function deleteInjury(injuryId: string) {
+  return deleteJSON<Record<string, never>>(`/users/me/injuries/${encodeURIComponent(injuryId)}`)
 }
 
 export function patchMyProfile(patch: ProfilePatchIn) {
@@ -311,18 +312,6 @@ export async function markNotificationRead(notificationId: string) {
   const res = await postJSON<NotificationReadState>(`/users/me/notifications/${encoded}/read`)
   if (!res.ok) throw new Error(`mark notification read failed: HTTP ${res.status}`)
   return res.data
-}
-
-// ─── Full sync (training plan setup) ──────────────────────────────────────
-
-export function postFullSync() {
-  return postJSON<{ state?: string; error?: string; detail?: string; progress?: SyncProgress }>(
-    '/users/me/full-sync',
-  )
-}
-
-export function getFullSyncStatus() {
-  return fetchJSON<SyncStatus>('/users/me/full-sync-status')
 }
 
 export interface Activity {

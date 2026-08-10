@@ -394,55 +394,8 @@ def _build_master_plan(
 
 
 def _inject_completed_phase_summaries(plan: MasterPlan, user_id: str) -> MasterPlan:
-    """Cache a deterministic actual-results summary on each is_completed phase.
-
-    Opens the per-user coros.db once and aggregates each completed phase's
-    Shanghai-day window via ``phase_summary.aggregate_phase_summary`` (no LLM).
-    Returns a new MasterPlan with the summaries populated; phases with no
-    completed lead-in (the common case) come back unchanged.
-
-    Graceful by design: any failure (no DB, aggregation error) leaves the
-    affected phase's ``summary`` as ``None`` rather than failing generation.
-    """
-    completed = [p for p in plan.phases if getattr(p, "is_completed", False)]
-    if not completed:
-        return plan
-
-    try:
-        from stride_storage.sqlite.database import Database
-
-        from .phase_summary import aggregate_phase_summary
-    except Exception:  # noqa: BLE001 — import failure must not block gen
-        logger.warning("phase_summary import failed; skipping summaries", exc_info=True)
-        return plan
-
-    db = None
-    try:
-        db = Database(user=user_id)
-        new_phases: list[Phase] = []
-        for phase in plan.phases:
-            if not getattr(phase, "is_completed", False):
-                new_phases.append(phase)
-                continue
-            try:
-                summary = aggregate_phase_summary(db, phase.start_date, phase.end_date)
-                new_phases.append(phase.model_copy(update={"summary": summary}))
-            except Exception:  # noqa: BLE001 — one phase failing leaves it None
-                logger.warning(
-                    "phase summary failed for phase=%s (%s~%s); leaving None",
-                    phase.id, phase.start_date, phase.end_date, exc_info=True,
-                )
-                new_phases.append(phase)
-        return plan.model_copy(update={"phases": new_phases})
-    except Exception:  # noqa: BLE001 — DB open / outer failure must not block gen
-        logger.warning("completed-phase summary injection failed", exc_info=True)
-        return plan
-    finally:
-        if db is not None:
-            try:
-                db.close()
-            except Exception:  # noqa: BLE001
-                pass
+    """Leave summaries unchanged until their canonical MySQL schema exists."""
+    return plan
 
 
 def _build_goal_snapshot(
@@ -1204,480 +1157,18 @@ def _ensure_pushback_multi_cycle_path(principles: list[Any]) -> list[str]:
 
 # ---------------------------------------------------------------------------
 # History / fitness helpers
-# ---------------------------------------------------------------------------
-
-
-# Monday-of-week for a ``YYYY-MM-DD`` date expression ``D``. ``%w`` is
-# 0=Sun..6=Sat; ``(%w+6)%7`` = days elapsed since Monday, so subtracting that
-# many days snaps any date back to its ISO-week Monday. Year-boundary safe
-# because SQLite's ``date(..., '-N days')`` does real calendar arithmetic.
-# ``date_expr`` is interpolated twice, so callers MUST pass a deterministic,
-# side-effect-free expression (a column or a pure transform of one) — never
-# anything containing ``random()`` / ``now`` without an explicit anchor.
-def _monday_expr(date_expr: str) -> str:
-    return f"date({date_expr}, '-' || ((strftime('%w', {date_expr}) + 6) % 7) || ' days')"
-
-
-# Per-run km from canonical metre storage.
-_PER_RUN_KM = "distance_m / 1000.0"
-
-# train_kind values that are unambiguously hard/speed work. ``base`` (= easy)
-# and ``aerobic`` are deliberately excluded. NULL train_kind falls through to
-# the pace heuristic in _query_weekly_profile.
-_SPEED_TRAIN_KINDS = ("interval", "threshold", "vo2max", "anaerobic")
-
-# Coarse name-keyword race heuristic (see _query_weekly_profile docstring).
-# Keywords overlap by design (``%赛%`` ⊃ ``%比赛%``); n_race is COUNT-per-row so
-# the overlap is harmless, but ``%赛%`` is broad and will also match names like
-# "备赛长距" — n_race is a soft signal, not an authoritative race flag.
-_RACE_NAME_KEYWORDS = ("%马拉松%", "%marathon%", "%比赛%", "%race%", "%赛%")
-
-
-def _query_weekly_profile(
-    db: Any,
-    *,
-    weeks: int = 16,
-    threshold_speed_mps: float | None = None,
-    as_of: date_cls | None = None,
-) -> list[dict[str, Any]]:
-    """Build a per-Shanghai-week athlete profile, oldest → newest.
-
-    Merges four heterogeneously-dated source tables on a common Monday-of-week
-    key (``week_start``), then returns the ``weeks`` most-recent buckets.
-
-    The four sources store ``date`` differently and MUST be normalised to the
-    same Shanghai calendar week before bucketing:
-      * ``activities.date``      — UTC ISO 8601; shift +8h first, then Monday.
-      * ``daily_training_load``  — already Shanghai ``YYYY-MM-DD``; Monday direct.
-      * ``daily_health.date``    — Shanghai compact ``YYYYMMDD``; reformat first.
-      * ``daily_hrv.date``       — Shanghai ``YYYY-MM-DD``; Monday direct.
-
-    EWMA states (ctl/atl/form) are END-OF-WEEK SNAPSHOTS (value on the latest
-    daily_training_load date in the week) — they are NOT summable. ``dose`` IS
-    per-day additive, so it's summed.
-
-    Race detection is a COARSE name-keyword heuristic (matches 马拉松/marathon/
-    比赛/race/赛 in ``activities.name``) — NOT an authoritative race flag, which
-    the schema lacks. It will over-count (e.g. a "race-pace" workout named so)
-    and under-count unnamed races; treat ``n_race`` as a soft signal only.
-    """
-    from stride_core.models import RUN_SPORT_SQL_LIST
-
-    conn = db._conn
-    buckets: dict[str, dict[str, Any]] = {}
-
-    def _bucket(week_start: str) -> dict[str, Any]:
-        b = buckets.get(week_start)
-        if b is None:
-            b = {
-                "week_start": week_start,
-                "distance_km": 0.0,
-                "hours": 0.0,
-                "avg_pace_s_km": None,
-                "avg_hr": None,
-                "ctl": None,
-                "atl": None,
-                "training_load_ratio": None,
-                "form": None,
-                "dose": 0.0,
-                "dose_coverage_status": None,
-                "rhr": None,
-                "hrv": None,
-                "n_runs": 0,
-                "n_long": 0,
-                "n_speed": 0,
-                "n_race": 0,
-            }
-            buckets[week_start] = b
-        return b
-
-    # --- activities: distance / time / pace / hr / run counts ---------------
-    act_monday = _monday_expr("datetime(date, '+8 hours')")
-    speed_in = ", ".join(f"'{k}'" for k in _SPEED_TRAIN_KINDS)
-    race_like = " OR ".join(f"name LIKE '{kw}'" for kw in _RACE_NAME_KEYWORDS)
-    # pace fallback bound: a run whose true avg speed >= threshold is "hard".
-    # avg speed = total_km*1000 / total_s; compare to threshold_speed_mps.
-    pace_speed_clause = "0"
-    if threshold_speed_mps is not None and threshold_speed_mps > 0:
-        pace_speed_clause = (
-            f"(duration_s > 0 AND ({_PER_RUN_KM}) * 1000.0 / duration_s >= {threshold_speed_mps})"
-        )
-    as_of = as_of or today_shanghai()
-    rows = conn.execute(
-        f"""
-        SELECT {act_monday} AS wk,
-               SUM({_PER_RUN_KM}) AS km,
-               SUM(COALESCE(duration_s, 0)) AS dur_s,
-               SUM(CASE WHEN avg_hr IS NOT NULL
-                        THEN avg_hr * COALESCE(duration_s, 0) ELSE 0 END) AS hr_wsum,
-               SUM(CASE WHEN avg_hr IS NOT NULL
-                        THEN COALESCE(duration_s, 0) ELSE 0 END) AS hr_wden,
-               COUNT(*) AS n_runs,
-               SUM(CASE WHEN ({_PER_RUN_KM}) >= 20 THEN 1 ELSE 0 END) AS n_long,
-               SUM(CASE WHEN train_kind IN ({speed_in})
-                          OR (train_kind IS NULL AND {pace_speed_clause})
-                        THEN 1 ELSE 0 END) AS n_speed,
-               SUM(CASE WHEN {race_like} THEN 1 ELSE 0 END) AS n_race
-        FROM activities
-        WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
-          AND date(datetime(date, '+8 hours')) <= ?
-        GROUP BY wk
-        """,
-        (as_of.isoformat(),),
-    ).fetchall()
-    for r in rows:
-        wk = r[0]
-        if wk is None:
-            continue
-        b = _bucket(wk)
-        km = r[1] or 0.0
-        dur_s = r[2] or 0.0
-        b["distance_km"] = km
-        b["hours"] = dur_s / 3600.0
-        b["avg_pace_s_km"] = (dur_s / km) if km else None
-        b["avg_hr"] = (r[3] / r[4]) if r[4] else None
-        b["n_runs"] = r[5] or 0
-        b["n_long"] = r[6] or 0
-        b["n_speed"] = r[7] or 0
-        b["n_race"] = r[8] or 0
-
-    # --- daily_training_load: dose (sum) + ctl/atl/form (end-of-week) --------
-    # NOTE: column order here is chronic_load (CTL) FIRST, intentionally NOT
-    # matching _query_fitness_state which selects acute_load first. The explicit
-    # r[3]=chronic→ctl / r[4]=acute→atl mapping below is the anchor; don't copy
-    # the column list from the other function or the two will silently swap.
-    rows = db.fetch_daily_training_load_weekly_source(as_of=as_of.isoformat())
-    dose_acc: dict[str, float] = {}
-    dose_known_weeks: set[str] = set()
-    dose_incomplete_weeks: set[str] = set()
-    for r in rows:
-        wk = date_cls.fromisoformat(r["date"]).strftime("%Y-%m-%d")
-        wk = (date_cls.fromisoformat(wk) - timedelta(days=date_cls.fromisoformat(wk).weekday())).isoformat()
-        if wk is None:
-            continue
-        b = _bucket(wk)
-        coverage_status = r["coverage_status"]
-        if coverage_status in {"complete", "partial", "rest_confirmed"}:
-            dose_acc[wk] = dose_acc.get(wk, 0.0) + (r["training_dose"] or 0.0)
-            dose_known_weeks.add(wk)
-        if coverage_status in {"partial", "unknown"}:
-            dose_incomplete_weeks.add(wk)
-        # rows ascend by date, so the last write per week is the latest day.
-        b["ctl"] = r["chronic_load"]
-        b["atl"] = r["acute_load"]
-        b["training_load_ratio"] = (r["acute_load"] / r["chronic_load"]) if r["chronic_load"] else None
-        b["form"] = r["form"]
-    for wk, total in dose_acc.items():
-        buckets[wk]["dose"] = total
-    for wk in dose_known_weeks:
-        buckets[wk]["dose_coverage_status"] = (
-            "partial" if wk in dose_incomplete_weeks else "complete"
-        )
-    for wk in dose_incomplete_weeks - dose_known_weeks:
-        buckets[wk]["dose_coverage_status"] = "unknown"
-        # These weeks have no confirmed dose days; reset the 0.0 initializer so
-        # the value is explicitly absent rather than appearing as a confirmed zero.
-        buckets[wk]["dose"] = None
-
-    # --- daily_health: rhr (avg) --------------------------------------------
-    health_norm = sqlite_mixed_date_expr("date")
-    health_monday = _monday_expr(health_norm)
-    rows = conn.execute(
-        f"""
-        SELECT {health_monday} AS wk, AVG(rhr) AS rhr
-        FROM daily_health
-        WHERE rhr IS NOT NULL
-          AND {health_norm} <= ?
-        GROUP BY wk
-        """,
-        (as_of.isoformat(),),
-    ).fetchall()
-    for r in rows:
-        wk = r[0]
-        if wk is None:
-            continue
-        _bucket(wk)["rhr"] = r[1]
-
-    # --- daily_hrv: last_night_avg (avg) ------------------------------------
-    hrv_norm = sqlite_mixed_date_expr("date")
-    hrv_monday = _monday_expr(hrv_norm)
-    rows = conn.execute(
-        f"""
-        SELECT {hrv_monday} AS wk, AVG(last_night_avg) AS hrv
-        FROM daily_hrv
-        WHERE last_night_avg IS NOT NULL
-          AND {hrv_norm} <= ?
-        GROUP BY wk
-        """,
-        (as_of.isoformat(),),
-    ).fetchall()
-    for r in rows:
-        wk = r[0]
-        if wk is None:
-            continue
-        _bucket(wk)["hrv"] = r[1]
-
-    # Most-recent ``weeks`` buckets, returned oldest → newest.
-    ordered = sorted(buckets.values(), key=lambda b: b["week_start"])
-    return ordered[-weeks:]
-
+# SQL for generation lives exclusively in stride_storage.mysql.
 
 def _query_history(user_id: str, *, as_of: date_cls | None = None) -> dict[str, Any]:
-    """Query activities DB for a 3-year training history summary.
-
-    Returns a dict with keys: monthly_km, max_weekly_km, total_activities,
-    and weekly_profile. PB loading happens in load_master_context via
-    load_personal_bests so training-history and race-time anchors stay separate.
-
-    All failures are silently absorbed — returns zeros / empty lists rather
-    than blocking the generation flow.
-    """
-    result: dict[str, Any] = {
-        "monthly_km": [],
-        "max_weekly_km": 0.0,
-        "total_activities": 0,
-        "weekly_profile": [],
-    }
-    try:
-        from stride_storage.sqlite.database import Database
-        from stride_core.models import RUN_SPORT_SQL_LIST
-
-        db = Database(user=user_id)
-        conn = db._conn
-
-        # Running activities are matched against the canonical RUN_SPORT_IDS set
-        # (COROS 100-104/600-601 + Garmin-synced 8001-8005), NOT a literal
-        # ``sport_type = 1`` — ``1`` is not a stored running code, so the old
-        # filter silently matched zero rows (especially for Garmin-synced
-        # users). RUN_SPORT_SQL_LIST is the same single-source fragment
-        # ability.py uses; keep them in sync.
-
-        as_of = as_of or today_shanghai()
-
-        # Monthly running km (last 36 months). Activity distances are stored in
-        # metres and converted to kilometres here.
-        _KM_EXPR = "SUM(distance_m) / 1000.0"
-        _HR_EXPR = "SUM(COALESCE(duration_s, 0)) / 3600.0"
-        # Bucket by Shanghai calendar (UTC+8), per the Timezone discipline HARD
-        # rule: a run finishing 23:30 UTC on the 31st is 07:30 CST the next day
-        # and must land in the next month/week, not the UTC one.
-        _SH_MONTH = "strftime('%Y-%m', datetime(date, '+8 hours'))"
-        _SH_WEEK = "strftime('%Y-%W', datetime(date, '+8 hours'))"
-        rows = conn.execute(
-            f"""
-            SELECT {_SH_MONTH} AS month,
-                   {_KM_EXPR} AS km,
-                   {_HR_EXPR} AS hours
-            FROM activities
-            WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
-              AND date(datetime(date, '+8 hours')) >= date(?, '-36 months')
-              AND date(datetime(date, '+8 hours')) <= ?
-            GROUP BY month
-            ORDER BY month
-            """,
-            (as_of.isoformat(), as_of.isoformat()),
-        ).fetchall()
-        result["monthly_km"] = [
-            {"month": r[0], "km": round(r[1], 1), "hours": round(r[2] or 0.0, 1)}
-            for r in rows
-        ]
-
-        # Max single-week km (approximate: 7-day Shanghai-week windows)
-        row = conn.execute(
-            f"""
-            SELECT MAX(week_km)
-            FROM (
-                SELECT {_SH_WEEK} AS wk,
-                       {_KM_EXPR} AS week_km
-                FROM activities
-                WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
-                  AND date(datetime(date, '+8 hours')) >= date(?, '-36 months')
-                  AND date(datetime(date, '+8 hours')) <= ?
-                GROUP BY wk
-            )
-            """,
-            (as_of.isoformat(), as_of.isoformat()),
-        ).fetchone()
-        result["max_weekly_km"] = round(row[0] or 0.0, 1)
-
-        # Total running activities
-        row = conn.execute(
-            f"""
-            SELECT COUNT(*) FROM activities
-            WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
-              AND date(datetime(date, '+8 hours')) <= ?
-            """,
-            (as_of.isoformat(),),
-        ).fetchone()
-        result["total_activities"] = row[0] or 0
-
-        # 16-week weekly athlete profile. The threshold speed (for the NULL-
-        # train_kind pace fallback in speed classification) is read from the
-        # canonical running-calibration reader — never inline-computed (repo
-        # HARD rule). If it's unavailable, the fallback is simply disabled.
-        try:
-            from stride_storage.sqlite.calibration_connector import (
-                SQLiteRunningCalibrationRepository,
-            )
-            threshold_speed_mps: float | None = None
-            try:
-                snap = SQLiteRunningCalibrationRepository(db).fetch_latest(as_of)
-                if snap is not None:
-                    threshold_speed_mps = snap.threshold_speed_mps
-                    result["threshold_speed_mps"] = threshold_speed_mps
-            except Exception:  # noqa: BLE001 — calibration read must not block
-                logger.warning(
-                    "_query_history: threshold_speed read failed for %s", user_id, exc_info=True
-                )
-            result["weekly_profile"] = _query_weekly_profile(
-                db, weeks=16, threshold_speed_mps=threshold_speed_mps, as_of=as_of
-            )
-        except Exception:  # noqa: BLE001 — weekly profile must not block gen
-            logger.warning(
-                "_query_history: weekly_profile build failed for %s", user_id, exc_info=True
-            )
-
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("_query_history failed for user %s: %s", user_id, exc)
-
-    return result
-
-
-def _ensure_training_load_current(db, as_of=None) -> None:
-    """Incrementally extend a verified canonical training-load series.
-
-    A missing completion marker means the 365-day zero-prior warmup is still
-    pending. That work is owned exclusively by the resumable internal API shard
-    route; request-time context loading keeps any legacy canonical row readable
-    and never starts the full rebuild. Once the marker exists, a short stale tail
-    can safely continue from the persisted ATL/CTL state.
-    """
-    from datetime import date as _date, timedelta as _timedelta
-
-    from stride_core.timefmt import today_shanghai
-    from stride_core.training_load import (
-        TRAINING_LOAD_MODEL_VERSION,
-        recompute_training_load,
-    )
-
-    as_of = as_of or today_shanghai()
-    if not db.is_training_load_backfill_complete(TRAINING_LOAD_MODEL_VERSION):
-        logger.info(
-            "_ensure_training_load_current: full API shard backfill is pending; "
-            "using existing canonical rows"
-        )
-        return
-
-    try:
-        _earliest, last = db.fetch_training_load_bounds()
-        if not last or last >= as_of.isoformat():
-            return
-
-        # No calibration refit here: recompute_training_load reuses the latest
-        # persisted snapshot and seeds ATL/CTL from the row before this buffer.
-        gap_days = (as_of - _date.fromisoformat(last[:10])).days
-        load_start = as_of - _timedelta(days=max(1, gap_days) + 2)
-        recompute_training_load(db, start=load_start, end=as_of, persist=True)
-    except Exception as exc:  # noqa: BLE001 — context load must never hard-fail
-        logger.warning("_ensure_training_load_current failed: %s", exc)
+    from .canonical_season_plan import load_canonical_season_context
+    return dict(load_canonical_season_context(user_id, as_of=as_of).get("history") or {})
 
 
 def _query_fitness_state(user_id: str, *, as_of: date_cls | None = None) -> dict[str, Any]:
-    """Query STRIDE daily_training_load for the most recent fitness snapshot.
-
-    Returns the latest CTL/ATL/form from the canonical STRIDE PMC table (not
-    the COROS vendor ati/cti fields which use a different scale). RHR is still
-    read from daily_health as a raw measurement.
-    """
-    result: dict[str, Any] = {
-        "ctl": None,
-        "atl": None,
-        "tsb": None,
-        "rhr": None,
-        "hrv": None,
-        "hrv_date": None,
-        "summary": "体能数据暂无",
-    }
-    try:
-        from stride_storage.sqlite.database import Database
-        db = Database(user=user_id)
-        conn = db._conn
-        as_of = as_of or today_shanghai()
-
-        # daily_training_load is maintained at sync time by the post-sync
-        # TrainingLoadHandler, so this call is now a cheap freshness check
-        # (~0.01s) on the common path — it returns immediately when the table
-        # already reaches today, and only computes the missing tail incrementally
-        # (seeded from the last persisted EWMA) when the DB is stale. It is NOT
-        # the old ~47s full 365-day recompute. Kept as a safety net so a
-        # generation against an un-synced DB still gets a current fitness state.
-        _ensure_training_load_current(db, as_of=as_of)
-
-        row = db.fetch_latest_daily_training_load(as_of=as_of.isoformat())
-        # RHR for the fitness context: prefer the calibration baseline (smoothed
-        # P10/25 over 30-90d — the CLAUDE.md single source) over a single noisy
-        # last reading; fall back to the latest measured value when there is no
-        # calibration snapshot yet.
-        from stride_storage.sqlite.calibration_connector import (
-            SQLiteRunningCalibrationRepository,
-        )
-        _calib = SQLiteRunningCalibrationRepository(db).fetch_latest(as_of)
-        rhr = _calib.rhr_baseline if _calib and _calib.rhr_baseline is not None else None
-        if rhr is None:
-            rhr_row = conn.execute(
-                "SELECT rhr FROM daily_health WHERE rhr IS NOT NULL "
-                "AND (substr(date,1,4)||'-'||substr(date,5,2)||'-'||substr(date,7,2)) <= ? "
-                "ORDER BY date DESC LIMIT 1",
-                (as_of.isoformat(),),
-            ).fetchone()
-            rhr = rhr_row[0] if rhr_row else None
-
-        from stride_storage.sqlite.database import HRV_PREFERRED_PER_DATE_SQL
-
-        hrv_row = conn.execute(
-            f"SELECT date, last_night_avg FROM ({HRV_PREFERRED_PER_DATE_SQL}) "
-            "WHERE last_night_avg IS NOT NULL AND date <= ? ORDER BY date DESC LIMIT 1",
-            (as_of.isoformat(),),
-        ).fetchone()
-        hrv_date = hrv_row[0] if hrv_row else None
-        hrv = hrv_row[1] if hrv_row else None
-
-        if row:
-            atl = row["acute_load"]
-            ctl = row["chronic_load"]
-            form = row["form"]
-            ratio = round(atl / ctl, 2) if ctl else None
-            result.update({
-                "ctl": round(ctl, 1) if ctl is not None else None,
-                "atl": round(atl, 1) if atl is not None else None,
-                "tsb": round(form, 1) if form is not None else None,
-                "rhr": rhr,
-                "hrv": round(hrv, 1) if hrv is not None else None,
-                "hrv_date": hrv_date,
-                "training_load_ratio": ratio,
-            })
-            parts = []
-            if ctl is not None:
-                parts.append(f"CTL {ctl:.0f}")
-            if atl is not None:
-                parts.append(f"ATL {atl:.0f}")
-            if form is not None:
-                parts.append(f"Form {form:+.0f}")
-            if ratio is not None:
-                parts.append(f"acute/chronic {ratio}")
-            if rhr is not None:
-                parts.append(f"RHR {rhr}bpm")
-            if hrv is not None:
-                parts.append(f"HRV {hrv:.0f}ms")
-            result["summary"] = "，".join(parts) if parts else "体能数据暂无"
-
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("_query_fitness_state failed for user %s: %s", user_id, exc)
-
-    return result
+    from .canonical_season_plan import load_canonical_season_context
+    return dict(load_canonical_season_context(user_id, as_of=as_of).get("fitness_state") or {})
 
 
-# ---------------------------------------------------------------------------
 # History summary formatter
 # ---------------------------------------------------------------------------
 
@@ -2190,6 +1681,7 @@ def _run_generate_job_inner(
     # / goal_realism) need target_race + prs to do anything — missing kwargs
     # are silent no-ops per run_master_rule_filter's contract.
     norm_goal, norm_profile = _normalize_for_prompt(goal, profile)
+    goal_id = norm_goal.get("goal_id") or norm_goal.get("id")
     rfk: dict = {
         "target_race": {
             "distance": norm_goal.get("distance"),
@@ -2218,7 +1710,10 @@ def _run_generate_job_inner(
         "job_id": job_id,
         "user_id": user_id,
         "plan_type": "master",
-        "input_payload": {"goal": goal, "profile": profile},
+        "input_payload": {
+            "goal_id": goal_id,
+            "as_of_date": goal.get("as_of_date"),
+        },
     }
 
     try:
@@ -2256,6 +1751,10 @@ def _run_generate_job_inner(
             logger.warning("job=%s weekly load projection failed: %s", job_id, exc)
             update_job(job_id, status=JobStatus.FAILED, error=msg)
             return
+        if msg.startswith("canonical_mysql_unavailable"):
+            logger.warning("job=%s canonical MySQL context unavailable: %s", job_id, exc)
+            update_job(job_id, status=JobStatus.FAILED, error=msg)
+            return
         raise
 
     # ------------------------------------------------------------------
@@ -2291,9 +1790,8 @@ def _run_generate_job_inner(
         update_job(job_id, status=JobStatus.FAILED, error=f"bad_schema: {exc}")
         return
 
-    # Q2a: cache deterministic "actual results" summaries on completed phases.
-    # Done here (generation time) so GET is a pure read — never recompute on
-    # read. Aggregation touches coros.db so it lives in the adapter layer.
+    # Historical body/zone phase summaries are intentionally omitted until the
+    # canonical MySQL reader exposes their full schema; never use coros.db here.
     plan = _inject_completed_phase_summaries(plan, user_id)
 
     store = get_master_plan_store()

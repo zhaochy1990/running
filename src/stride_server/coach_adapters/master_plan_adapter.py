@@ -31,24 +31,20 @@ from coach.graphs.generation.state import GenState
 from coach.schemas import ReviewReport
 from stride_core.timefmt import today_shanghai
 
-from .continuity_analyzer import analyze_continuity
-from .phase_detector import detect_current_phase
 from ..job_runner import JobStage, update_job
 from ..llm_client import LLMClient
 from ..master_plan_generator import (
     _build_master_plan,
     _format_history_summary,
-    _normalise_pb_seconds,
     _parse_master_plan_output,
-    _query_fitness_state,
-    _query_history,
     build_master_prompts,
 )
 from .master_plan_load import (
     apply_master_plan_training_load_projection,
+    build_training_history_load_anchor,
+    estimate_master_plan_training_load,
     format_training_load_anchor_for_prompt,
 )
-from .tool_impls.read_impls import EstimateMasterPlanLoadImpl
 
 logger = logging.getLogger(__name__)
 
@@ -132,19 +128,6 @@ _PB_HISTORY_KEYS = {
 }
 
 
-def _load_pb_seconds(db) -> dict[str, float]:
-    """Load achieved PB seconds from personal_bests, self-healing via the
-    canonical PB reader when needed."""
-    from stride_core.pb_records import load_personal_bests
-
-    pb_map = load_personal_bests(db)
-    raw = {}
-    for display, key in (("5K", "5k"), ("10K", "10k"), ("HM", "hm"), ("FM", "fm")):
-        entry = pb_map.get(display)
-        if isinstance(entry, dict) and entry.get("pb_time_sec") is not None:
-            raw[key] = entry.get("pb_time_sec")
-    return _normalise_pb_seconds(raw)
-
 
 def _history_with_pb_seconds(history: dict, pb_seconds: dict[str, float]) -> dict:
     if not pb_seconds:
@@ -193,133 +176,56 @@ def _build_context_snippets(
 
 
 def load_master_context(state: GenState) -> dict:
-    """Query DB for training history + fitness state, return as context dict.
-
-    Emits two stage updates as side effect:
-    * READING_HISTORY @ 10% — before history query
-    * EVALUATING @ 30%       — before fitness-state query
-    """
+    """Load the complete S1 context from the canonical MySQL reader."""
     user_id = state.get("user_id") or ""
     job_id = state.get("job_id") or ""
     payload = state.get("input_payload") or {}
-    goal = payload.get("goal") or {}
-    profile = payload.get("profile")
-
     as_of = today_shanghai()
-    raw_as_of = goal.get("as_of_date")
+    raw_as_of = payload.get("as_of_date")
     if raw_as_of:
-        try:
-            as_of = date_cls.fromisoformat(str(raw_as_of))
-        except (ValueError, TypeError):
-            logger.warning("load_master_context: ignoring invalid as_of_date=%r", raw_as_of)
-
+        as_of = date_cls.fromisoformat(str(raw_as_of))
     if job_id:
         update_job(job_id, stage=JobStage.READING_HISTORY, progress=10)
-    history = _query_history(user_id, as_of=as_of)
-    logger.debug(
-        "load_master_context: user=%s history_loaded activities=%d",
-        user_id,
-        history.get("total_activities", 0),
-    )
+    try:
+        from ..canonical_season_plan import load_canonical_season_context
+        from .master_plan_load import build_training_history_load_anchor
+        from coach.schemas import ContinuitySignals
+
+        canonical = load_canonical_season_context(
+            user_id, goal_id=payload.get("goal_id"), as_of=as_of
+        )
+    except Exception as exc:  # noqa: BLE001 — canonical data is a hard gate
+        raise ValueError(f"canonical_mysql_unavailable: {exc}") from exc
+
+    goal = dict(canonical["goal"])
+    profile = dict(canonical.get("profile") or {})
+    history = dict(canonical.get("history") or {})
+    pb_seconds = dict(canonical.get("pb_seconds") or {})
+    fitness_state = dict(canonical.get("fitness_state") or {})
+    continuity_raw = canonical.get("continuity")
+    continuity = ContinuitySignals.model_validate(continuity_raw) if continuity_raw else None
+    anchor = build_training_history_load_anchor(history)
+    load_summary = format_training_load_anchor_for_prompt(anchor)
     if job_id:
         update_job(job_id, stage=JobStage.EVALUATING, progress=30)
-    logger.debug("load_master_context: user=%s querying fitness state...", user_id)
-    fitness_state = _query_fitness_state(user_id, as_of=as_of)
-    logger.debug(
-        "load_master_context: user=%s fitness_summary=%r",
-        user_id,
-        fitness_state.get("summary"),
-    )
-
-    continuity = None
-    body_composition: dict | None = None
-    current_phase = None
-    pb_seconds: dict[str, float] = {}
-    try:
-        from stride_storage.sqlite.database import Database
-        db = Database(user=user_id)
-        try:
-            pb_seconds = _load_pb_seconds(db)
-        except Exception as exc:  # noqa: BLE001 — PB read must not block gen
-            logger.warning("load_master_context: PB read failed for %s: %s", user_id, exc)
-        continuity = analyze_continuity(db, goal=goal, profile=profile, as_of=as_of)
-        # Authoritative current-phase position. Deterministic-only here
-        # (cross_validate_with_llm=False): the LLM cross-check is a reviewer
-        # gpt-5.5 round-trip that dominates context-load latency yet never
-        # changes the verdict (deterministic always wins), so the generation
-        # path skips it. Reuse the continuity we just computed to avoid a second
-        # DB pass.
-        try:
-            current_phase = detect_current_phase(
-                db, user_id=user_id, goal=goal, profile=profile,
-                as_of=as_of, continuity=continuity,
-                cross_validate_with_llm=False,
-            )
-        except Exception as exc:  # noqa: BLE001 — detection must not hard-fail gen
-            logger.warning("load_master_context: phase detection failed: %s", exc)
-        # Body-composition baseline. Reuse the same db handle as the explicit
-        # PB/continuity context load above.
-        try:
-            body_composition = _load_body_composition(db, profile, as_of=as_of)
-        except Exception as exc:  # noqa: BLE001 — degrade to perf-only milestones
-            logger.warning("load_master_context: body_composition failed: %s", exc)
-    except Exception as exc:  # noqa: BLE001 — context load must never hard-fail
-        logger.warning("load_master_context: continuity failed: %s", exc)
-
-    history_summary = _format_history_summary(_history_with_pb_seconds(history, pb_seconds))
-    load_tool_result = EstimateMasterPlanLoadImpl(user_id)(
-        as_of_date=as_of.isoformat(),
-    )
-    training_load_tool: dict = {}
-    training_load_tool_summary = "Training-load estimator tool: unavailable."
-    if load_tool_result.ok and isinstance(load_tool_result.data, dict):
-        training_load_tool = load_tool_result.data
-        training_load_tool_summary = format_training_load_anchor_for_prompt(
-            training_load_tool.get("history_anchor")
-        )
-        history_summary = history_summary + "\n" + training_load_tool_summary
-    else:
-        logger.warning(
-            "load_master_context: estimate_master_plan_load anchor failed user=%s errors=%s",
-            user_id,
-            load_tool_result.errors,
-        )
-    logger.debug(
-        "load_master_context: user=%s history_summary_chars=%d weekly_profile_weeks=%d pb_keys=%s",
-        user_id,
-        len(history_summary),
-        len(history.get("weekly_profile") or []),
-        sorted(pb_seconds),
-    )
-
-    # Surface live-data snippets to the generating UI (screen-2). Best-effort:
-    # a failure here must never block context load.
-    if job_id:
-        try:
-            update_job(
-                job_id,
-                context_snippets=_build_context_snippets(
-                    history, fitness_state, goal, as_of=as_of
-                ),
-            )
-        except Exception as exc:  # noqa: BLE001 — snippets are cosmetic
-            logger.warning("load_master_context: snippet stash failed: %s", exc)
-
+        update_job(job_id, context_snippets=_build_context_snippets(history, fitness_state, goal, as_of=as_of))
     return {
-        "history_summary": history_summary,
+        "goal": goal,
+        "profile": profile,
+        "history": history,
+        "history_summary": _format_history_summary(_history_with_pb_seconds(history, pb_seconds)) + "\n" + load_summary,
         "pb_seconds": pb_seconds,
         "fitness_state": fitness_state,
         "as_of_date": as_of.isoformat(),
-        "training_load_tool": training_load_tool,
-        "training_load_tool_summary": training_load_tool_summary,
-        "continuity": continuity.model_dump() if continuity is not None else None,
-        "current_phase": current_phase.model_dump() if current_phase is not None else None,
-        "body_composition": body_composition,
-        "body_composition_summary": (
-            _format_body_composition_summary(body_composition)
-            if body_composition is not None
-            else None
-        ),
+        "training_load_tool": {"history_anchor": anchor},
+        "training_load_tool_summary": load_summary,
+        "continuity": continuity.model_dump() if continuity else None,
+        "current_phase": None,
+        "body_composition": canonical.get("body_composition"),
+        "body_composition_summary": None,
+        # Preserve the single canonical MySQL snapshot for downstream S2 season
+        # generation; phase specialists must not reopen legacy SQLite.
+        "canonical_season_context": canonical,
     }
 
 
@@ -346,10 +252,9 @@ def generate_master_plan(state: GenState) -> dict:
     user_id = state.get("user_id") or ""
     payload = state.get("input_payload") or {}
     runtime_options = state.get("runtime_options") or {}
-    goal = payload.get("goal") or {}
-    profile = payload.get("profile")
-
     ctx = state.get("context") or {}
+    goal = dict(ctx.get("goal") or {})
+    profile = dict(ctx.get("profile") or {})
     history_summary = ctx.get("history_summary", "")
     fitness_state = ctx.get("fitness_state") or {}
     pb_seconds = ctx.get("pb_seconds") or {}
@@ -529,27 +434,22 @@ def generate_master_plan(state: GenState) -> dict:
     if job_id:
         update_job(job_id, stage=JobStage.RULE_FILTER, progress=75)
 
-    load_estimate: dict | None = None
-    load_tool_result = EstimateMasterPlanLoadImpl(user_id)(
-        plan=plan.model_dump(mode="json"),
-        target_race={
-            "distance": goal.get("distance") or goal.get("race_distance"),
-            "goal_time_s": goal.get("goal_time_s"),
-            "race_date": goal.get("race_date"),
-        },
-        weekly_run_days_max=(profile or {}).get("weekly_run_days_max")
-        or (profile or {}).get("weekly_training_days")
-        or goal.get("weekly_training_days"),
-        injuries=(profile or {}).get("injuries") or goal.get("injuries"),
-        as_of_date=ctx.get("as_of_date"),
-    )
-    if load_tool_result.ok and isinstance(load_tool_result.data, dict):
-        load_estimate = load_tool_result.data.get("plan_estimate")
-    else:
-        raise ValueError(
-            "load_estimation_failed: "
-            + "; ".join(str(error) for error in load_tool_result.errors)
+    history_anchor = build_training_history_load_anchor(ctx.get("history") or {})
+    try:
+        load_estimate = estimate_master_plan_training_load(
+            plan.model_dump(mode="json"),
+            history_anchor=history_anchor,
+            threshold_speed_mps=history_anchor.get("threshold_speed_mps"),
+            target_race={
+                "distance": goal.get("distance") or goal.get("race_distance"),
+                "goal_time_s": goal.get("goal_time_s"),
+                "race_date": goal.get("race_date"),
+            },
+            weekly_run_days_max=(profile or {}).get("weekly_run_days_max")
+            or goal.get("weekly_training_days"),
         )
+    except Exception as exc:  # noqa: BLE001 - normalize estimator failures
+        raise ValueError(f"load_estimation_failed: {exc}") from exc
 
     try:
         plan = apply_master_plan_training_load_projection(

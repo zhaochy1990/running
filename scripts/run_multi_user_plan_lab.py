@@ -199,6 +199,7 @@ def _season_context(
         "goal": norm_goal,
         "level": _level_from_context(master_context),
         "continuity": master_context.get("continuity"),
+        "canonical_season_context": master_context.get("canonical_season_context"),
     }
 
 

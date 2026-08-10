@@ -481,6 +481,50 @@ definitions:
       status:
         type: string
     type: object
+  api.injuriesResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/api.injuryResponse'
+        type: array
+      next_cursor:
+        type: string
+    type: object
+  api.injuryInput:
+    properties:
+      description:
+        type: string
+      recovery_status:
+        enum:
+        - active
+        - recovered
+        type: string
+      running_restriction:
+        enum:
+        - none
+        - easy_only
+        - no_running
+        type: string
+    required:
+    - description
+    - recovery_status
+    - running_restriction
+    type: object
+  api.injuryResponse:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      recovery_status:
+        type: string
+      running_restriction:
+        type: string
+      updated_at:
+        type: string
+    type: object
   api.jobCatalogResponse:
     properties:
       jobs:
@@ -694,6 +738,8 @@ definitions:
         type: string
       height_cm:
         type: number
+      running_age_range:
+        type: string
       sex:
         type: string
       weight_kg:
@@ -707,6 +753,14 @@ definitions:
         type: string
       height_cm:
         type: number
+      running_age_range:
+        enum:
+        - unknown
+        - lt_6m
+        - 6m_1y
+        - 1y_3y
+        - 3y_plus
+        type: string
       sex:
         enum:
         - male
@@ -719,6 +773,7 @@ definitions:
     - display_name
     - dob
     - height_cm
+    - running_age_range
     - sex
     - weight_kg
     type: object
@@ -731,6 +786,14 @@ definitions:
         type: string
       height_cm:
         type: number
+      running_age_range:
+        enum:
+        - unknown
+        - lt_6m
+        - 6m_1y
+        - 1y_3y
+        - 3y_plus
+        type: string
       sex:
         enum:
         - male
@@ -764,6 +827,8 @@ definitions:
       profile:
         $ref: '#/definitions/api.profileCore'
       provider:
+        type: string
+      running_age_range:
         type: string
     type: object
   api.runStateResponse:
@@ -1822,6 +1887,134 @@ paths:
       summary: Delete the current user's account and data
       tags:
       - users
+  /api/users/me/injuries:
+    get:
+      description: Returns active records first, then updated_at descending and id
+        descending. Cursor pagination is opaque and limited to 50 records per page.
+      parameters:
+      - description: Page size (1-50; default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Opaque page cursor
+        in: query
+        name: cursor
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.injuriesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List the current user's injury records
+      tags:
+      - injuries
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Injury record
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.injuryInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.injuryResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create an injury record
+      tags:
+      - injuries
+  /api/users/me/injuries/{injuryId}:
+    delete:
+      parameters:
+      - description: Injury id
+        in: path
+        name: injuryId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete an injury record
+      tags:
+      - injuries
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Injury id
+        in: path
+        name: injuryId
+        required: true
+        type: string
+      - description: Complete replacement
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.injuryInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.injuryResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Replace an injury record
+      tags:
+      - injuries
   /api/users/me/master-plan/current:
     get:
       produces:

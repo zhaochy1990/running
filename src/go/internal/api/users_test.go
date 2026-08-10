@@ -87,6 +87,9 @@ func (f *fakeUserStore) PatchUserProfile(_ context.Context, uid string, patch st
 	if patch.WeightKg != nil {
 		profile.WeightKg = *patch.WeightKg
 	}
+	if patch.RunningAgeRange != nil {
+		profile.RunningAgeRange = *patch.RunningAgeRange
+	}
 	cp := *profile
 	return &cp, nil
 }
@@ -452,7 +455,7 @@ func TestGetProfile_EmptyDefaults(t *testing.T) {
 func TestGetProfile_WithData(t *testing.T) {
 	h := newUserHarness(t, FeatureConfig{CoachChatUsers: map[string]bool{testSub: true}})
 	h.store.profiles[testSub] = &storage.UserProfile{
-		UserID: testSub, DisplayName: "Zhao", DOB: "1990-05-01", Sex: "male", HeightCm: 178, WeightKg: 70,
+		UserID: testSub, DisplayName: "Zhao", DOB: "1990-05-01", Sex: "male", HeightCm: 178, WeightKg: 70, RunningAgeRange: storage.RunningAgeUnknown,
 	}
 	h.store.onboarding[testSub] = &storage.UserOnboarding{UserID: testSub, WatchReady: true, ProfileReady: true}
 	h.store.provider[testSub] = "coros"
@@ -481,7 +484,7 @@ func TestGetProfile_WithData(t *testing.T) {
 
 // --- POST profile ------------------------------------------------------------
 
-const validProfileBody = `{"display_name":"Zhao","dob":"1990-05-01","sex":"male","height_cm":178,"weight_kg":70}`
+const validProfileBody = `{"display_name":"Zhao","dob":"1990-05-01","sex":"male","height_cm":178,"weight_kg":70,"running_age_range":"unknown"}`
 
 func TestPostProfile_Valid(t *testing.T) {
 	h := newUserHarness(t, FeatureConfig{})
@@ -546,7 +549,7 @@ func TestPostProfile_AuthSyncFailureNonFatal(t *testing.T) {
 
 func seedCoreProfile(h *userHarness) {
 	h.store.profiles[testSub] = &storage.UserProfile{
-		UserID: testSub, DisplayName: "Zhao", DOB: "1990-05-01", Sex: "male", HeightCm: 178, WeightKg: 70,
+		UserID: testSub, DisplayName: "Zhao", DOB: "1990-05-01", Sex: "male", HeightCm: 178, WeightKg: 70, RunningAgeRange: storage.RunningAgeUnknown,
 	}
 }
 

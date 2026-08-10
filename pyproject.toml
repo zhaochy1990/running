@@ -44,6 +44,10 @@ web = [
     "azure-data-tables>=12.5",
     "azure-storage-queue>=12.10",
     "pyyaml>=6.0",
+    # Canonical season-plan generation reads Tencent MySQL through
+    # stride_storage; never fall back to local SQLite.
+    "sqlalchemy>=2.0,<3.0",
+    "pymysql>=1.1,<2.0",
 ]
 dev = [
     "pytest>=8.0",

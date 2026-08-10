@@ -12,25 +12,44 @@ import "time"
 // Shanghai-local calendar date with no instant, so it must never undergo a
 // timezone conversion.
 type UserProfile struct {
-	UserID      string    `gorm:"column:user_id;primaryKey;size:64"`
-	DisplayName string    `gorm:"column:display_name;size:255"`
-	DOB         string    `gorm:"column:dob;size:10"`
-	Sex         string    `gorm:"column:sex;size:16"`
-	HeightCm    float64   `gorm:"column:height_cm"`
-	WeightKg    float64   `gorm:"column:weight_kg"`
-	CreatedAt   time.Time `gorm:"column:created_at"`
-	UpdatedAt   time.Time `gorm:"column:updated_at"`
+	UserID          string    `gorm:"column:user_id;primaryKey;size:64"`
+	DisplayName     string    `gorm:"column:display_name;size:255"`
+	DOB             string    `gorm:"column:dob;size:10"`
+	Sex             string    `gorm:"column:sex;size:16"`
+	HeightCm        float64   `gorm:"column:height_cm"`
+	WeightKg        float64   `gorm:"column:weight_kg"`
+	RunningAgeRange string    `gorm:"column:running_age_range;type:varchar(16);not null;default:unknown"`
+	CreatedAt       time.Time `gorm:"column:created_at"`
+	UpdatedAt       time.Time `gorm:"column:updated_at"`
 }
 
 // UserProfilePatch is a selective update to an existing core profile. A nil
 // field is omitted; API adapters reject explicit JSON null before constructing
 // this value, so each non-nil pointer always carries a valid replacement.
 type UserProfilePatch struct {
-	DisplayName *string
-	DOB         *string
-	Sex         *string
-	HeightCm    *float64
-	WeightKg    *float64
+	DisplayName     *string
+	DOB             *string
+	Sex             *string
+	HeightCm        *float64
+	WeightKg        *float64
+	RunningAgeRange *string
+}
+
+const (
+	RunningAgeUnknown = "unknown"
+	RunningAgeLT6M    = "lt_6m"
+	RunningAge6M1Y    = "6m_1y"
+	RunningAge1Y3Y    = "1y_3y"
+	RunningAge3YPlus  = "3y_plus"
+)
+
+func ValidRunningAgeRange(value string) bool {
+	switch value {
+	case RunningAgeUnknown, RunningAgeLT6M, RunningAge6M1Y, RunningAge1Y3Y, RunningAge3YPlus:
+		return true
+	default:
+		return false
+	}
 }
 
 // TableName pins the table name (GORM would otherwise pluralize).

@@ -72,6 +72,9 @@ func runAPI() error {
 	if err := store.AutoMigrateUsers(ctx); err != nil {
 		return err
 	}
+	if err := store.AutoMigrateInjuries(ctx); err != nil {
+		return err
+	}
 	// race_goal table for the training-goal surface (ADR 0021). The worker does
 	// not need this.
 	if err := store.AutoMigrateGoals(ctx); err != nil {
@@ -135,6 +138,7 @@ func runAPI() error {
 		JobCatalog:              apiJobCatalog(),
 		PipelineCatalog:         apiPipelineCatalog(),
 		UserStore:               store,
+		InjuryStore:             store,
 		ProviderLogin:           providerLogin,
 		ProviderInfo:            providerInfo,
 		AuthNameSync:            authClient,

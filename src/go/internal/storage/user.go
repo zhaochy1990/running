@@ -13,7 +13,7 @@ import (
 // AutoMigrateUsers creates/updates the user_profile and user_onboarding tables
 // (ADR 0013). Called by cmd/api at boot; the worker does not need these tables.
 func (s *Store) AutoMigrateUsers(ctx context.Context) error {
-	if err := s.db.WithContext(ctx).AutoMigrate(&UserProfile{}, &UserOnboarding{}); err != nil {
+	if err := s.db.WithContext(ctx).AutoMigrate(&UserProfile{}, &UserOnboarding{}, &InjuryRecord{}); err != nil {
 		return fmt.Errorf("storage: automigrate users: %w", err)
 	}
 	return nil
@@ -44,14 +44,43 @@ func (s *Store) UpsertUserProfile(ctx context.Context, p *UserProfile) error {
 	if err != nil {
 		return err
 	}
+	if p.RunningAgeRange == "" {
+		p.RunningAgeRange = RunningAgeUnknown
+	}
+	if !ValidRunningAgeRange(p.RunningAgeRange) {
+		return fmt.Errorf("storage: invalid running_age_range %q", p.RunningAgeRange)
+	}
 	p.UserID = uid
 	p.UpdatedAt = time.Now().UTC()
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "user_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"display_name", "dob", "sex", "height_cm", "weight_kg", "updated_at",
+			"display_name", "dob", "sex", "height_cm", "weight_kg", "running_age_range", "updated_at",
 		}),
 	}).Create(p).Error
+}
+
+// MigrateRunningAgeIfUnknown conditionally updates a profile's running age. It
+// never inserts a profile and cannot overwrite an explicit value, making repeat
+// migration runs and concurrent profile edits safe.
+func (s *Store) MigrateRunningAgeIfUnknown(ctx context.Context, userID, runningAge string) (bool, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return false, err
+	}
+	if !ValidRunningAgeRange(runningAge) || runningAge == RunningAgeUnknown {
+		return false, fmt.Errorf("storage: invalid migration running_age_range %q", runningAge)
+	}
+	result := s.db.WithContext(ctx).Model(&UserProfile{}).
+		Where("user_id = ? AND running_age_range = ?", uid, RunningAgeUnknown).
+		Updates(map[string]interface{}{
+			"running_age_range": runningAge,
+			"updated_at":        time.Now().UTC(),
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 // PatchUserProfile selectively updates an existing core profile and returns the
@@ -79,6 +108,12 @@ func (s *Store) PatchUserProfile(ctx context.Context, userID string, patch UserP
 	}
 	if patch.WeightKg != nil {
 		updates["weight_kg"] = *patch.WeightKg
+	}
+	if patch.RunningAgeRange != nil {
+		if !ValidRunningAgeRange(*patch.RunningAgeRange) {
+			return nil, fmt.Errorf("storage: invalid running_age_range %q", *patch.RunningAgeRange)
+		}
+		updates["running_age_range"] = *patch.RunningAgeRange
 	}
 
 	var result *UserProfile
@@ -250,7 +285,7 @@ func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
 		&PersonalBest{}, &ActivityWatchZone{}, &TimeseriesPoint{}, &Lap{}, &Activity{},
 		&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{}, &SyncMeta{},
 		&ProviderCredential{}, &WeeklyPlan{}, &MasterPlan{}, &RaceGoal{},
-		&UserOnboarding{}, &UserProfile{},
+		&UserOnboarding{}, &UserProfile{}, &InjuryRecord{},
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

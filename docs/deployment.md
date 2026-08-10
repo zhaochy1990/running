@@ -29,7 +29,7 @@ Multi-stage build (`Dockerfile`)：
   `PYTHON_API_URL`（stride-app）或 `GO_API_URL`（Tencent `stride api`），缺省 Python；
   每个 endpoint 由各自的 `STRIDE_ROUTE_*` 环境变量选择上游（值为 `go` → Go，未设置 / 其它值 →
   Python），所以单个 endpoint 的 cutover 只需在部署环境里设该变量，无需改路由表代码；
-	`/api/auth/*` 走 `AUTH_UPSTREAM_URL`。这**反转了 ADR 0012 的 browser-direct-to-Go**。Web onboarding 的生产 cutover 必须原子地设置 `STRIDE_ROUTE_GET_USERS_ME_PROFILE=go`、`STRIDE_ROUTE_POST_USERS_ME_PROFILE=go`、`STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN=go`、`STRIDE_ROUTE_POST_USER_SYNC=go`、`STRIDE_ROUTE_GET_PIPELINES_RUNID=go`、`STRIDE_ROUTE_GET_JOBS_JOBID=go` 和 `STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE=go`，并配置 `GO_API_URL`：profile/watch login 建立 Go-owned readiness 和凭据；全量 generic sync 返回 `run_id`，Web 轮询该 pipeline 和当前 job 的进度，只有用户点击 **Enter STRIDE** 后提交成功的 `run_id` 才会完成 onboarding。pipeline `done` 本身不是完成；`deploy-web.yml` 在单次 `az containerapp update` 中 source-controlled 地注入这七项，先断言完整集合、后读取 ACA template 逐项验证；缺失 `GO_API_URL`、零/部分 route 或部署后未保留任一 flag 都会失败。更早一步会无认证请求 `${STRIDE_GO_API_URL}/readyz/onboarding`：Go API 必须返回 `web-onboarding-v1` 与完整七个 method/path contract，才允许写入 BFF flags；不跟随 redirect，确保正是配置的 origin 自行证明版本。若配置 `PUBLIC_DIRECT_BASE_URL`（browser-direct Tencent gateway），workflow 也对其做同一检查，因为它承接实际浏览器 onboarding 请求。该静态公开 endpoint 不接受、读取或打印 end-user credential、JWT 或 internal token。BFF 启动也会拒绝缺失 `GO_API_URL` 或部分 onboarding route，路由 manifest 测试锁定这组 Go-ready route。
+	`/api/auth/*` 走 `AUTH_UPSTREAM_URL`。这**反转了 ADR 0012 的 browser-direct-to-Go**。Web onboarding 生产 cutover 必须原子地设置 `web-onboarding-v2` 完整 12 项 route flags：profile GET/POST/PATCH、injury GET/POST/PUT/DELETE、watch login、incremental sync、pipeline/job polling 和 onboarding completion。Plan setup 另有 `plan-setup-v1` 完整 4 项 flags：training-goal GET/POST、incremental sync 和 pipeline polling；同时要求 canonical reader contract `mysql-season-plan-context-v1`。部署前，workflow 检查 Go origin 的两个静态 readiness contract、Python `${PYTHON_API_URL%/}/readyz/season-plan-reader` 的 reader contract，以及（若配置）direct gateway 的两个静态 readiness contract；不执行 authenticated 或 mutating gateway route probe，因为没有 harmless endpoint/token。随后 `deploy-web.yml` 清理所有 manifest `STRIDE_ROUTE_*` ACA overrides，再写入完整 flags，并核对部署后的 exact env set。缺失/部分 route、任一 readiness contract 不匹配或部署后 flag 丢失都会失败。readiness endpoint 不认证、不接收或打印 end-user credential、JWT 或 internal token；BFF 启动也拒绝未实现的 Go route 或原子 cutover。发布后的 profile PATCH、injury CRUD、onboarding、incremental pipeline 和 generation gating 必须作为单独的 production release-verification 步骤，由持有合法用户令牌的发布人员执行。
 - **Team API cutover（ADR 0026）**：15 个已迁移 method/path 可通过各自 `STRIDE_ROUTE_*` flag 切到 Go；`POST /api/teams/:teamId/sync-all` 未迁移，保持 flag 未设置并继续走 Python。feed + GET/POST/DELETE likes 虽有独立 flag 便于验证，生产必须作为一个原子 cutover/rollback 单元：
   - `STRIDE_ROUTE_GET_TEAMS_TEAMID_FEED`
   - `STRIDE_ROUTE_GET_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES`
@@ -109,6 +109,10 @@ workflow run 和用户固定的 `Idempotency-Key`；因此网络重试不会重�
 这就是 `plan.md` / `feedback.md` 不重建镜像也能在 prod 出现的原因 —— 它们 runtime 落到 Azure Files，不在 image 里。`.dockerignore` 排掉 `data/` 整个（除 `data/*/TRAINING_PLAN.md`），所以 `logs/` 下的 markdown 只经 `sync-data.yml` 到 prod，不经 image。
 
 **DB-row 内容**（如 `activity_commentary`）**不**在 `sync-data.yml` 覆盖范围内（住在 SQLite 不是 markdown）。用 `coros-sync -P <user> commentary push <label_id> --url $STRIDE_PROD_URL`，POST 到 server 的 `/api/{user}/activities/{label_id}/commentary`。
+
+### Canonical season-plan MySQL reader
+
+`stride-app` 的赛季训练计划生成只读腾讯云 MySQL，不再读取本地 SQLite。`deploy.yml` 必须配置 repository variables `STRIDE_DATABASE_HOST`、`STRIDE_DATABASE_PORT`、`STRIDE_DATABASE_NAME`、`STRIDE_DATABASE_READONLY_USERNAME` 和 secret `STRIDE_DATABASE_READONLY_PASSWORD`；workflow 将密码注册为 ACA secret，并注入 `STRIDE_DATABASE_*`。任一项缺失时部署失败，禁止回退到读写账号或 SQLite。
 
 ### Structured-plan reparse webhook
 
