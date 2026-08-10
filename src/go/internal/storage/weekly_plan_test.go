@@ -72,6 +72,38 @@ func TestWeeklyPlanReadsReturnOnlyActiveRows(t *testing.T) {
 	}
 }
 
+func TestListWeekSummariesFiltersMasterPlanAndAggregatesShanghaiWeek(t *testing.T) {
+	store := openWatchTestStore(t)
+	migrateWeeklyPlan(t, store)
+	userID := uuid.NewString()
+	masterID := uuid.NewString()
+	otherMasterID := uuid.NewString()
+	week := weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusActive)
+	week.MasterPlanID = &masterID
+	seedWeeklyPlan(t, store, week)
+	other := weeklyPlanRow(userID, "2026-08-03", WeeklyPlanStatusActive)
+	other.MasterPlanID = &otherMasterID
+	seedWeeklyPlan(t, store, other)
+	distance := 5000.0
+	duration := 1800.0
+	seedActivity(t, store, userID, &Activity{
+		LabelID: "week-activity", Date: time.Date(2026, 7, 26, 16, 30, 0, 0, time.UTC),
+		DistanceM: &distance, DurationS: &duration,
+	}, nil, nil, nil)
+
+	weeks, err := store.ListWeekSummaries(context.Background(), userID, masterID)
+	if err != nil {
+		t.Fatalf("list summaries: %v", err)
+	}
+	if len(weeks) != 1 {
+		t.Fatalf("weeks=%+v", weeks)
+	}
+	got := weeks[0]
+	if got.PlanID != week.PlanID || got.ActivityCount != 1 || got.TotalKM != 5 || got.TotalDurationS != 1800 {
+		t.Fatalf("summary=%+v", got)
+	}
+}
+
 func TestWeeklyPlanStatusSlotsAreUniquePerWeek(t *testing.T) {
 	store := openTestStore(t)
 	migrateWeeklyPlan(t, store)

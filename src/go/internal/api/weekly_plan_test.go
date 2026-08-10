@@ -17,9 +17,20 @@ import (
 )
 
 type fakeWeeklyPlanStore struct {
-	plans   map[string][]storage.WeeklyPlan
-	listErr error
-	getErr  error
+	plans            map[string][]storage.WeeklyPlan
+	summaries        map[string][]storage.WeekSummary
+	listErr          error
+	getErr           error
+	summaryErr       error
+	lastMasterPlanID string
+}
+
+func (f *fakeWeeklyPlanStore) ListWeekSummaries(_ context.Context, userID, masterPlanID string) ([]storage.WeekSummary, error) {
+	f.lastMasterPlanID = masterPlanID
+	if f.summaryErr != nil {
+		return nil, f.summaryErr
+	}
+	return f.summaries[userID], nil
 }
 
 func (f *fakeWeeklyPlanStore) ListActiveWeeklyPlans(_ context.Context, userID string) ([]storage.WeeklyPlan, error) {
@@ -54,7 +65,7 @@ func newWeeklyPlanHarness(t *testing.T) *weeklyPlanHarness {
 	if err != nil {
 		t.Fatalf("gen key: %v", err)
 	}
-	store := &fakeWeeklyPlanStore{plans: map[string][]storage.WeeklyPlan{}}
+	store := &fakeWeeklyPlanStore{plans: map[string][]storage.WeeklyPlan{}, summaries: map[string][]storage.WeekSummary{}}
 	svc := NewService(Config{
 		Auth:            NewAuthenticator(testToken, NewJWTVerifierFromKey(&key.PublicKey, testIssuer, testAudience)),
 		WeeklyPlanStore: store,
@@ -125,6 +136,63 @@ func TestWeeklyPlanListReturnsActiveMetadata(t *testing.T) {
 	}
 	if _, exists := body.Weeks[0]["content"]; exists {
 		t.Fatalf("list must not include content: %v", body.Weeks[0])
+	}
+}
+
+func TestWeekSummaryListSupportsMasterPlanFilter(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	masterPlanID := "3d8bb767-e441-4f5a-a617-7f4dfcbf96bc"
+	h.store.summaries[userID] = []storage.WeekSummary{{
+		PlanID: "week-1", WeekStart: "2026-07-27", ActivityCount: 2,
+		ContentVersion: storage.WeeklyPlanContentMarkdown, Content: "# Base W1\nDetails",
+		TotalKM: 12.3, TotalDurationS: 3661,
+	}}
+
+	resp := h.do(http.MethodGet, "/api/"+userID+"/weeks?master_plan="+masterPlanID, h.bearer(t, userID))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if h.store.lastMasterPlanID != masterPlanID {
+		t.Fatalf("master plan filter=%q", h.store.lastMasterPlanID)
+	}
+	var body struct {
+		Weeks []weekSummaryResponse `json:"weeks"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Weeks) != 1 {
+		t.Fatalf("weeks=%d want 1", len(body.Weeks))
+	}
+	week := body.Weeks[0]
+	if week.Folder != "2026-07-27_08-02" || week.DateTo != "2026-08-02" || !week.HasPlan {
+		t.Fatalf("week identity=%+v", week)
+	}
+	if week.ActivityCount != 2 || week.TotalKM != 12.3 || week.TotalDurationFmt != "01:01:01" {
+		t.Fatalf("week summary=%+v", week)
+	}
+	if week.HasFeedback || week.HasBodyComposition || week.PlanSource != "weekly_plan_store" {
+		t.Fatalf("legacy fields=%+v", week)
+	}
+	if week.PlanTitle != "Base W1" {
+		t.Fatalf("plan title=%q", week.PlanTitle)
+	}
+}
+
+func TestWeekSummaryListRejectsEmptyMasterPlan(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	resp := h.do(http.MethodGet, "/api/user-a/weeks?master_plan=", h.bearer(t, "user-a"))
+	if resp.Code != http.StatusBadRequest || resp.Body.String() != `{"error":"invalid_master_plan"}` {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestWeekSummaryListRejectsMalformedMasterPlan(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	resp := h.do(http.MethodGet, "/api/user-a/weeks?master_plan=not-a-uuid", h.bearer(t, "user-a"))
+	if resp.Code != http.StatusBadRequest || resp.Body.String() != `{"error":"invalid_master_plan"}` {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
 	}
 }
 

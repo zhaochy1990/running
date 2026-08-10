@@ -254,7 +254,7 @@ describe('API_ROUTES manifest integrity', () => {
       method: 'GET',
       path: '/api/:user/weeks',
       env: 'STRIDE_ROUTE_GET_USER_WEEKS',
-      goReady: false,
+      goReady: true,
     })
   })
 
@@ -340,6 +340,7 @@ describe('API_ROUTES manifest integrity', () => {
         'GET /api/:user/plan/weeks/:weekName',
         'GET /api/:user/stride/training-load',
         'GET /api/:user/stride/zones',
+        'GET /api/:user/weeks',
         'GET /api/pipelines/:run_id',
         'GET /api/jobs/:job_id',
         'GET /api/teams',

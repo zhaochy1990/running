@@ -35,6 +35,49 @@ func (s *Store) ListActiveWeeklyPlans(ctx context.Context, userID string) ([]Wee
 	return plans, nil
 }
 
+// WeekSummary is the active-plan metadata and activity rollup needed by the
+// legacy /api/{user}/weeks response. Activity dates are grouped by Shanghai day.
+type WeekSummary struct {
+	PlanID         string
+	MasterPlanID   *string
+	WeekStart      string
+	ContentVersion int8
+	Content        string
+	ActivityCount  int
+	TotalKM        float64
+	TotalDurationS float64
+}
+
+// ListWeekSummaries returns active weekly plans newest first. When masterPlanID
+// is non-empty, only plans linked to that master plan are returned.
+func (s *Store) ListWeekSummaries(ctx context.Context, userID, masterPlanID string) ([]WeekSummary, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	query := s.db.WithContext(ctx).
+		Table("weekly_plan AS wp").
+		Select(`wp.plan_id, wp.master_plan_id, DATE_FORMAT(wp.week_start, '%Y-%m-%d') AS week_start,
+			wp.content_version, wp.content,
+			COUNT(a.label_id) AS activity_count,
+			ROUND(COALESCE(SUM(a.distance_m), 0) / 1000.0, 1) AS total_km,
+			ROUND(COALESCE(SUM(a.duration_s), 0), 0) AS total_duration_s`).
+		Joins(`LEFT JOIN activities AS a ON a.user_id = wp.user_id
+			AND DATE(a.date + INTERVAL 8 HOUR) BETWEEN wp.week_start AND DATE_ADD(wp.week_start, INTERVAL 6 DAY)`).
+		Where("wp.user_id = ? AND wp.status = ?", uid, WeeklyPlanStatusActive)
+	if masterPlanID != "" {
+		query = query.Where("wp.master_plan_id = ?", masterPlanID)
+	}
+	var weeks []WeekSummary
+	if err := query.
+		Group("wp.plan_id, wp.master_plan_id, wp.week_start, wp.content_version, wp.content").
+		Order("wp.week_start DESC").
+		Scan(&weeks).Error; err != nil {
+		return nil, err
+	}
+	return weeks, nil
+}
+
 // GetActiveWeeklyPlan returns the active plan for one Shanghai week, or nil
 // when the week has only draft/archived rows or no row at all.
 func (s *Store) GetActiveWeeklyPlan(ctx context.Context, userID, weekStart string) (*WeeklyPlan, error) {
