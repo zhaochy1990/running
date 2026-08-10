@@ -230,12 +230,6 @@ class StrideApi {
     return WeekDetail.fromJson(json);
   }
 
-  /// Overall TRAINING_PLAN.md + phase timeline.
-  Future<TrainingPlanResponse> getTrainingPlan(String user) async {
-    final json = await _get<Map<String, dynamic>>('/api/$user/training-plan');
-    return TrainingPlanResponse.fromJson(json);
-  }
-
   // ── Health ─────────────────────────────────────────────────────────────
   Future<HealthResponse> getHealth(String user, {int days = 30}) async {
     final json = await _get<Map<String, dynamic>>(
@@ -674,13 +668,17 @@ class StrideApi {
     );
   }
 
-  /// GET /api/users/me/master-plan/current — active plan with derived fields.
+  /// GET /api/users/me/master-plan/current — unified current-plan envelope.
+  ///
+  /// The inactive v2 mobile plan screen supports structured content only. A
+  /// Markdown envelope fails explicitly instead of silently parsing as an empty
+  /// structured plan.
   Future<MasterPlan?> getCurrentMasterPlan() async {
     try {
       final r = await _get<Map<String, dynamic>>(
         '/api/users/me/master-plan/current',
       );
-      return MasterPlan.fromJson(r);
+      return MasterPlan.fromCurrentEnvelope(r);
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) return null;
       rethrow;

@@ -48,9 +48,13 @@ func seedNonRun(t *testing.T, st *Store, uid, label, dayISO string) {
 }
 
 func seedDose(t *testing.T, st *Store, uid, day, status string, dose float64) {
+	seedDoseVersion(t, st, uid, day, status, dose, trainingload.ModelVersion)
+}
+
+func seedDoseVersion(t *testing.T, st *Store, uid, day, status string, dose float64, version int) {
 	t.Helper()
 	row := &DailyTrainingLoad{
-		UserID: uid, Date: day, AlgorithmVersion: trainingload.ModelVersion,
+		UserID: uid, Date: day, AlgorithmVersion: version,
 		TrainingDose: dose, CoverageStatus: status, ComputedAt: time.Now().UTC(),
 	}
 	if err := st.db.WithContext(context.Background()).Create(row).Error; err != nil {
@@ -108,7 +112,7 @@ func TestTrainingDoseWeekSummaries(t *testing.T) {
 	seedDose(t, st, uid, "2026-06-01", "complete", 100)
 	seedDose(t, st, uid, "2026-06-02", "complete", 120)
 	seedDose(t, st, uid, "2026-06-03", "partial", 80)
-	seedDose(t, st, uid, "2026-06-04", "rest_confirmed", 0)
+	seedDoseVersion(t, st, uid, "2026-06-04", "rest_confirmed", 0, trainingload.ModelVersion-1)
 	seedDose(t, st, uid, "2026-06-05", "unknown", 999) // excluded (no dose contributed)
 
 	got, err := st.TrainingDoseWeekSummaries(ctx, uid, []WeekWindow{{Index: 2, From: "2026-06-01", To: "2026-06-07"}})

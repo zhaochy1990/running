@@ -1,15 +1,11 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 import {
   getCurrentMasterPlan,
-  getDraftMasterPlan,
-  getMyProfile,
-  getTrainingGoal,
-  getTrainingPlan,
-  sendMasterPlanReviewMessage,
-  type MasterPlan,
+  type CurrentSeasonPlan,
+  type SeasonPlanContent,
 } from '../../api'
 import { UserContext } from '../../UserContextValue'
 import TrainingPlanPage from '../TrainingPlanPage'
@@ -27,18 +23,19 @@ vi.mock('../../api', async () => {
   return {
     ...actual,
     getCurrentMasterPlan: vi.fn(),
-    getDraftMasterPlan: vi.fn(),
-    getTrainingPlan: vi.fn(),
-    getTrainingGoal: vi.fn(),
-    getMyProfile: vi.fn(),
-    sendMasterPlanReviewMessage: vi.fn(),
   }
 })
 
-const masterPlan: MasterPlan = {
-  plan_id: 'plan-1',
-  user_id: 'user-1',
-  status: 'active',
+const seasonPlan: SeasonPlanContent = {
+  goal: {
+    goal_id: 'goal-1',
+    race_name: '真实目标马拉松',
+    distance: 'FM',
+    race_date: '2026-10-11',
+    target_time: '03:15:00',
+    timezone: 'Asia/Shanghai',
+    location: null,
+  },
   start_date: '2026-05-04',
   end_date: '2026-10-11',
   phases: [
@@ -229,9 +226,6 @@ const masterPlan: MasterPlan = {
     },
   ],
   generated_by: 'gpt-4.1',
-  version: 2,
-  created_at: '2026-05-01T00:00:00Z',
-  updated_at: '2026-06-01T00:00:00Z',
   current_phase_id: 'phase-1',
   current_week_number: 6,
   total_weeks: 23,
@@ -241,6 +235,17 @@ const masterPlan: MasterPlan = {
     target: '10K 测试跑验证阈值能力',
     days_until: 39,
   },
+}
+
+const structuredCurrentPlan: CurrentSeasonPlan = {
+  content_version: 2,
+  status: 'active',
+  plan_id: 'plan-1',
+  goal_id: 'goal-1',
+  revision: 2,
+  created_at: '2026-05-01T00:00:00Z',
+  updated_at: '2026-06-01T00:00:00Z',
+  plan: seasonPlan,
 }
 
 function renderPlanPage() {
@@ -276,27 +281,7 @@ function renderPlanPageWithCoach(coachChat: boolean) {
 describe('TrainingPlanPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    vi.mocked(getCurrentMasterPlan).mockResolvedValue(masterPlan)
-    vi.mocked(getDraftMasterPlan).mockResolvedValue(null)
-    vi.mocked(getTrainingPlan).mockResolvedValue({
-      content: '# Legacy Plan',
-      phases: [],
-      current_phase: null,
-    })
-    vi.mocked(getTrainingGoal).mockResolvedValue({
-      type: 'race',
-      race_distance: 'FM',
-      race_name: '真实目标马拉松',
-      race_date: '2026-10-11',
-      target_finish_time: '03:15:00',
-      weekly_training_days: 5,
-    })
-    vi.mocked(getMyProfile).mockResolvedValue({
-      id: 'user-1',
-      display_name: 'Runner',
-      profile: {},
-      onboarding: { coros_ready: true, profile_ready: true, completed_at: '2026-05-01T00:00:00Z' },
-    })
+    vi.mocked(getCurrentMasterPlan).mockResolvedValue(structuredCurrentPlan)
   })
 
   it('renders the current master plan view from live API data', async () => {
@@ -346,15 +331,18 @@ describe('TrainingPlanPage', () => {
     expect(screen.queryByText('180.2-210.4 dose')).not.toBeInTheDocument()
   })
 
-  it('keeps mileage usable and disables load for a legacy plan', async () => {
+  it('keeps mileage usable and disables load when structured load projection is unavailable', async () => {
     vi.mocked(getCurrentMasterPlan).mockResolvedValueOnce({
-      ...masterPlan,
-      training_load_projection: null,
-      weeks: (masterPlan.weeks ?? []).map((week) => ({
-        ...week,
-        target_training_dose_low: null,
-        target_training_dose_high: null,
-      })),
+      ...structuredCurrentPlan,
+      plan: {
+        ...seasonPlan,
+        training_load_projection: null,
+        weeks: (seasonPlan.weeks ?? []).map((week) => ({
+          ...week,
+          target_training_dose_low: null,
+          target_training_dose_high: null,
+        })),
+      },
     })
 
     renderPlanPage()
@@ -364,129 +352,58 @@ describe('TrainingPlanPage', () => {
     expect(screen.getByText('该计划尚无可用的周负荷数据')).toBeInTheDocument()
   })
 
-  it('falls back to profile target fields when the training goal is unavailable', async () => {
-    vi.mocked(getTrainingGoal).mockResolvedValueOnce(null)
-    vi.mocked(getMyProfile).mockResolvedValueOnce({
-      id: 'user-1',
-      display_name: 'Runner',
-      profile: {
-        target_race: '个人资料马拉松',
-        target_distance: 'HM',
-        target_race_date: '2026-09-20',
-        target_time: '01:29:30',
-      },
-      onboarding: { coros_ready: true, profile_ready: true, completed_at: '2026-05-01T00:00:00Z' },
+  it('renders a Markdown current season plan with the existing Markdown renderer', async () => {
+    vi.mocked(getCurrentMasterPlan).mockResolvedValueOnce({
+      content_version: 1,
+      status: 'active',
+      plan_id: 'plan-markdown',
+      goal_id: 'goal-1',
+      revision: null,
+      created_at: '2026-05-01T00:00:00Z',
+      updated_at: '2026-06-01T00:00:00Z',
+      plan: '# 旧赛季计划\n\n- 保持有氧基础',
     })
 
     renderPlanPage()
 
-    expect(await screen.findByRole('heading', { name: '个人资料马拉松' })).toBeInTheDocument()
-    expect(screen.getByText(/目标赛事：半马 · 2026\/09\/20/)).toBeInTheDocument()
-    expect(screen.getByText('2026/09/20 · 半马')).toBeInTheDocument()
-    expect(screen.getByText('01:29:30')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '旧赛季计划' })).toBeInTheDocument()
+    expect(screen.getByText('保持有氧基础')).toBeInTheDocument()
   })
 
-  it('renders a draft master plan in review mode instead of auto-confirming it', async () => {
-    vi.mocked(getCurrentMasterPlan).mockResolvedValueOnce(null)
-    vi.mocked(getDraftMasterPlan).mockResolvedValueOnce({
-      ...masterPlan,
-      status: 'draft',
-      plan_id: 'draft-1',
-    })
-    vi.mocked(getTrainingPlan).mockResolvedValueOnce({
-      content: null,
-      phases: [],
-      current_phase: null,
-    })
+  it('uses the unified current request as the only active-plan load request', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
 
     renderPlanPage()
 
-    expect(await screen.findByRole('heading', { name: '审阅你的赛季训练计划' })).toBeInTheDocument()
-    expect(screen.getByText('和 Coach 审阅计划')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: /启用计划/ })[0]).toBeInTheDocument()
-    expect(screen.queryByText('调整计划')).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '真实目标马拉松' })).toBeInTheDocument()
+    expect(getCurrentMasterPlan).toHaveBeenCalledTimes(1)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('labels atomic target race review ops and falls back from new_value to spec_patch', async () => {
+  it('renders the creation screen only when the unified request returns 404 absence', async () => {
     vi.mocked(getCurrentMasterPlan).mockResolvedValueOnce(null)
-    vi.mocked(getDraftMasterPlan).mockResolvedValueOnce({
-      ...masterPlan,
-      status: 'draft',
-      plan_id: 'draft-1',
-    })
-    vi.mocked(getTrainingPlan).mockResolvedValueOnce({
-      content: null,
-      phases: [],
-      current_phase: null,
-    })
-    vi.mocked(sendMasterPlanReviewMessage).mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      data: {
-        stage: 'proposal',
-        ai_response: '已生成目标赛事调整建议。',
-        clarification: null,
-        assessment: null,
-        diff: {
-          diff_id: 'diff-target',
-          plan_id: 'draft-1',
-          ai_explanation: '目标比赛日期和完赛时间已更新。',
-          created_at: '2026-06-10T00:00:00Z',
-          ops: [
-            {
-              id: 'op-race',
-              op: 'reschedule_target_race',
-              phase_id: null,
-              milestone_id: 'milestone-race',
-              old_value: { race_date: '2026-10-11' },
-              new_value: {},
-              spec_patch: { race_date: '2026-11-08' },
-              accepted: null,
-            },
-            {
-              id: 'op-time',
-              op: 'update_target_race_time',
-              phase_id: null,
-              milestone_id: 'milestone-race',
-              old_value: { target_time: '03:15:00' },
-              new_value: null,
-              spec_patch: { target_time: '03:05:00' },
-              accepted: null,
-            },
-            {
-              id: 'op-companion',
-              op: 'replace_weekly_range',
-              phase_id: 'phase-1',
-              milestone_id: null,
-              old_value: { weekly_distance_km_low: 42, weekly_distance_km_high: 54 },
-              new_value: { weekly_distance_km_low: 45, weekly_distance_km_high: 50 },
-              spec_patch: { weekly_distance_km_low: 45, weekly_distance_km_high: 50 },
-              accepted: null,
-            },
-          ],
-        },
-      },
-    })
 
     renderPlanPage()
 
-    expect(await screen.findByRole('heading', { name: '审阅你的赛季训练计划' })).toBeInTheDocument()
-    fireEvent.change(screen.getByPlaceholderText('告诉 Coach 你想调整哪里...'), {
-      target: { value: '比赛延期并更新完赛目标' },
-    })
-    fireEvent.click(screen.getByTitle('提交反馈'))
+    expect((await screen.findAllByRole('heading', { name: '创建你的赛季计划' })).length).toBeGreaterThan(0)
+    expect(screen.queryByText('无法读取赛季训练计划')).not.toBeInTheDocument()
+  })
 
-    await waitFor(() => expect(sendMasterPlanReviewMessage).toHaveBeenCalled())
-    expect(await screen.findByText('Coach 调整建议')).toBeInTheDocument()
-    expect(screen.getByText('调整目标比赛日期')).toBeInTheDocument()
-    expect(screen.getByText('{"race_date":"2026-10-11"} -> {"race_date":"2026-11-08"}')).toBeInTheDocument()
-    expect(screen.getByText('调整目标完赛时间')).toBeInTheDocument()
-    expect(screen.getByText('{"target_time":"03:15:00"} -> {"target_time":"03:05:00"}')).toBeInTheDocument()
-    const checkboxes = screen.getAllByRole('checkbox')
-    expect(checkboxes).toHaveLength(3)
-    expect(checkboxes[0]).toBeChecked()
-    expect(checkboxes[1]).not.toBeChecked()
-    expect(checkboxes[2]).not.toBeChecked()
+  it('renders a dedicated read error for non-404 current-plan failures', async () => {
+    vi.mocked(getCurrentMasterPlan).mockRejectedValueOnce(new Error('API error: 500'))
+
+    renderPlanPage()
+
+    expect(await screen.findByRole('heading', { name: '无法读取赛季训练计划' })).toBeInTheDocument()
+    expect(screen.getByText('计划数据暂时不可用，请稍后重试。')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '创建你的赛季计划' })).not.toBeInTheDocument()
+  })
+
+  it('does not display the structured plan revision to athletes', async () => {
+    renderPlanPage()
+
+    expect(await screen.findByRole('heading', { name: '真实目标马拉松' })).toBeInTheDocument()
+    expect(screen.queryByText(/修订号|revision|v2/i)).not.toBeInTheDocument()
   })
 
   it('routes 调整计划 to the coach master workspace for whitelisted users', async () => {

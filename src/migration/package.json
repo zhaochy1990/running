@@ -21,6 +21,7 @@
     "migrate:health": "node src/migrate-health.js",
     "migrate:training-goals": "node src/migrate-training-goals.js",
     "migrate:master-plans": "node src/migrate-master-plans.js",
+    "migrate:master-plans:schema": "node src/migrate-master-plans.js --commit --schema-upgrade",
     "migrate:weekly-plans": "node src/migrate-weekly-plans.js",
     "test": "node --test"
   },

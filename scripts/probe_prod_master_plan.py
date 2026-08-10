@@ -1,12 +1,13 @@
-"""Read-only probe: confirm a prod user's master-plan / goal / legacy-plan state.
+"""Read-only probe for the unified production current season-plan contract.
 
-Reads email/password from repo-root .credentials.local, logs in against the
-prod auth backend, then GETs three endpoints to classify why /plan shows no
-change. Prints NO secrets/tokens. Safe: all requests are GET except login.
+Reads credentials from repo-root .credentials.local, logs in, and inspects only
+status plus content_version. It never prints credentials, tokens, user identity,
+or plan content. All requests are GET except login.
 """
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import urllib.request
 import urllib.error
@@ -16,9 +17,24 @@ AUTH_BASE = "https://124.221.38.59"
 APP_BASE = "https://stride-running.cn"
 
 
+def _main_checkout_root() -> Path | None:
+    try:
+        common_dir = subprocess.check_output(
+            ["git", "-C", str(Path(__file__).resolve().parents[1]), "rev-parse", "--git-common-dir"],
+            text=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    common_path = Path(common_dir)
+    if not common_path.is_absolute():
+        common_path = Path(__file__).resolve().parents[1] / common_path
+    return common_path.resolve().parent
+
+
 def _read_creds() -> tuple[str, str]:
-    # .credentials.local lives at repo root (one level up from this worktree's scripts/)
+    checkout_root = _main_checkout_root()
     candidates = [
+        *((checkout_root / ".credentials.local",) if checkout_root else ()),
         Path(__file__).resolve().parents[1] / ".credentials.local",
         Path("C:/Users/zhaochaoyi/workspace/running/.credentials.local"),
     ]
@@ -60,6 +76,21 @@ def _get(url: str, token: str) -> tuple[int, object]:
         return e.code, None
 
 
+def _current_plan_summary(status: int, payload: object) -> str:
+    if status == 404:
+        return "no active season plan"
+    if status != 200:
+        return "unexpected response"
+    if not isinstance(payload, dict):
+        return "malformed response"
+    content_version = payload.get("content_version")
+    if content_version == 1:
+        return "active Markdown season plan (content_version=1)"
+    if content_version == 2:
+        return "active structured season plan (content_version=2)"
+    return "malformed response"
+
+
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser()
@@ -81,32 +112,16 @@ def main() -> None:
         )
         if status == 200 and isinstance(data, dict) and data.get("access_token"):
             token = data["access_token"]
-            # decode sub from JWT (no verify — just read payload)
-            import base64
-            payload_b64 = token.split(".")[1] + "=="
-            sub = json.loads(base64.urlsafe_b64decode(payload_b64)).get("sub")
-            print(f"login OK (client_id={client_id!r}) sub={sub}")
+            print("login OK")
             break
-        print(f"login attempt client_id={client_id!r} -> {status}")
+        print(f"login attempt failed: HTTP {status}")
     else:
         raise SystemExit("login failed for all client_id variants")
 
-    mp_status, _ = _get(f"{app_base}/api/users/me/master-plan/current", token)
-    goal_status, _ = _get(f"{app_base}/api/users/me/training-goal", token)
-    tp_status, tp = _get(f"{app_base}/api/{sub}/training-plan", token)
-    has_legacy = bool(isinstance(tp, dict) and tp.get("content"))
+    mp_status, mp = _get(f"{app_base}/api/users/me/master-plan/current", token)
 
-    print("--- prod state for this account ---")
-    print(f"GET master-plan/current : {mp_status}  ({'has ACTIVE plan' if mp_status==200 else 'no active plan' if mp_status==404 else 'unexpected'})")
-    print(f"GET training-goal       : {goal_status}  ({'has goal' if goal_status==200 else 'no goal' if goal_status==404 else 'unexpected'})")
-    print(f"GET training-plan       : {tp_status}  (legacy markdown content present: {has_legacy})")
-    print("--- diagnosis ---")
-    if mp_status == 404 and has_legacy:
-        print("CONFIRMED: no master plan + has legacy plan.md -> frontend renders legacy branch, no entry to new flow. Migration needed.")
-    elif mp_status == 200:
-        print("User already has an ACTIVE master plan -> /plan should show new SeasonOverview. Root cause is elsewhere.")
-    else:
-        print("State does not match the assumed root cause; inspect manually.")
+    print("--- current season-plan contract ---")
+    print(f"GET master-plan/current : {mp_status}  ({_current_plan_summary(mp_status, mp)})")
 
 
 if __name__ == "__main__":

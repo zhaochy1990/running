@@ -136,8 +136,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/api.currentSeasonPlanEnvelope"
                         }
                     },
                     "401": {
@@ -1456,57 +1455,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/{user}/training-plan": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "master-plan"
-                ],
-                "summary": "Get a user's legacy markdown training overview",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "User id (JWT sub)",
-                        "name": "user",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.trainingPlanResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/jobs": {
             "get": {
                 "description": "Returns every job type the system supports (hardcoded in the catalog), each with its input JSON schema and an example input. Static system metadata; no auth required.",
@@ -2139,6 +2087,41 @@ const docTemplate = `{
                     "example": "watch_sync"
                 },
                 "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.currentSeasonPlanEnvelope": {
+            "type": "object",
+            "properties": {
+                "content_version": {
+                    "type": "integer",
+                    "enum": [
+                        1,
+                        2
+                    ]
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "goal_id": {
+                    "type": "string"
+                },
+                "plan": {},
+                "plan_id": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer",
+                    "x-nullable": true
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active"
+                    ]
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }
@@ -3451,21 +3434,6 @@ const docTemplate = `{
                 },
                 "timestamp": {
                     "type": "integer"
-                }
-            }
-        },
-        "api.trainingPlanResponse": {
-            "type": "object",
-            "properties": {
-                "content": {
-                    "type": "string"
-                },
-                "current_phase": {
-                    "type": "string"
-                },
-                "phases": {
-                    "type": "array",
-                    "items": {}
                 }
             }
         },

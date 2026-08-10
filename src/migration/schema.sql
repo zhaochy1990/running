@@ -260,7 +260,7 @@ CREATE TABLE IF NOT EXISTS race_goal (
 --   goal_id          soft reference to race_goal.goal_id (no FK); NOT NULL
 --   status           draft | active | archived (markdown = active)
 --   active_flag      1 on the active row, NULL otherwise (constraint lever only)
---   version          MasterPlan.version (v2 only); NULL for a markdown row
+--   revision         structured plan revision (v2 only); NULL for markdown
 --   created_at       first-write time carried from the source; updated_at last
 
 CREATE TABLE IF NOT EXISTS master_plan (
@@ -271,14 +271,21 @@ CREATE TABLE IF NOT EXISTS master_plan (
   goal_id         VARCHAR(36)  NOT NULL,
   status          VARCHAR(16)  NOT NULL,
   active_flag     TINYINT      NULL,
-  version         BIGINT       NULL,
+  revision        BIGINT       NULL,
   created_at      DATETIME(3)  NULL,
   updated_at      DATETIME(3)  NULL,
   PRIMARY KEY (plan_id),
   UNIQUE KEY uidx_master_plan_active (user_id, active_flag),
   KEY idx_master_plan_goal (goal_id),
   CONSTRAINT ck_master_plan_content_version CHECK (content_version IN (1, 2)),
-  CONSTRAINT ck_master_plan_v2_version CHECK (content_version = 1 OR version IS NOT NULL)
+  CONSTRAINT ck_master_plan_revision CHECK (
+    (content_version = 1 AND revision IS NULL) OR
+    (content_version = 2 AND revision >= 1)
+  ),
+  CONSTRAINT ck_master_plan_current_marker CHECK (
+    (status = 'active' AND active_flag = 1) OR
+    (status <> 'active' AND active_flag IS NULL)
+  )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- weekly_plan — one content-versioned row per athlete/week/lifecycle slot

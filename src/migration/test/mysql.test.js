@@ -4,7 +4,13 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { formatUpdatedAt, parseGoDSN, parseMysqlConfig, splitSqlStatements } from "../src/mysql.js";
+import {
+  MASTER_PLAN_COLUMNS,
+  formatUpdatedAt,
+  parseGoDSN,
+  parseMysqlConfig,
+  splitSqlStatements,
+} from "../src/mysql.js";
 
 test("parseGoDSN parses a Tencent-style Go DSN", () => {
   const dsn = parseGoDSN(
@@ -26,6 +32,14 @@ test("parseGoDSN handles the local dev DSN without params", () => {
   assert.equal(dsn.port, 3306);
   assert.equal(dsn.database, "stride");
   assert.equal(dsn.tls, null);
+});
+
+test("parseGoDSN never echoes a malformed DSN", () => {
+  const secret = "user:super-secret-password@not-a-valid-dsn";
+  assert.throws(
+    () => parseGoDSN(secret),
+    (error) => error.message === "could not parse STRIDE_WORKER_MYSQL_DSN" && !error.message.includes(secret),
+  );
 });
 
 test("parseMysqlConfig prefers STRIDE_WORKER_MYSQL_DSN and maps tls to ssl", () => {
@@ -103,4 +117,14 @@ test("splitSqlStatements splits the real schema.sql into its 10 CREATE TABLEs", 
   assert.ok(stmts.some((s) => s.includes("race_goal")));
   assert.ok(stmts.some((s) => s.includes("master_plan")));
   assert.ok(stmts.some((s) => s.includes("weekly_plan")));
+  const masterPlan = stmts.find((s) => s.includes("CREATE TABLE IF NOT EXISTS master_plan"));
+  assert.match(masterPlan, /\brevision\s+BIGINT\s+NULL/i);
+  assert.doesNotMatch(masterPlan, /\bversion\s+BIGINT/i);
+  assert.match(masterPlan, /ck_master_plan_revision/i);
+  assert.match(masterPlan, /ck_master_plan_current_marker/i);
+});
+
+test("shared master-plan column list uses canonical revision", () => {
+  assert.equal(MASTER_PLAN_COLUMNS.includes("revision"), true);
+  assert.equal(MASTER_PLAN_COLUMNS.includes("version"), false);
 });

@@ -1,6 +1,6 @@
 # Go serves one content-versioned current season plan
 
-The athlete has one active 赛季训练计划 that may be stored as Markdown (`content_version=1`) or structured JSON (`content_version=2`). Web now reads both formats through the single Go `GET /api/users/me/master-plan/current` endpoint backed only by canonical MySQL; the former `GET /api/{user}/training-plan` compatibility endpoint is removed from Web, BFF, Go, mobile, probes, and public Go documentation. Python APIs are unchanged and are not a fallback for the new Web contract.
+The athlete has one active 赛季训练计划 that may be stored as Markdown (`content_version=1`) or structured JSON (`content_version=2`). Web reads both formats through the single Go `GET /api/users/me/master-plan/current` endpoint backed only by canonical MySQL. Official Web, BFF, mobile, probe, and public Go surfaces expose no second current-plan read contract. Python APIs are unchanged and are not a fallback for the new Web contract.
 
 ## Decision
 
@@ -24,6 +24,6 @@ The athlete has one active 赛季训练计划 that may be stored as Markdown (`c
 
 - `content_version` identifies the representation; `revision` identifies a structured plan mutation. They are different concepts and must not be called versions interchangeably.
 - MySQL absence or failure never falls back to Azure, files, SQLite, or Python.
-- The legacy Python `/api/{user}/training-plan` remains untouched but is no longer an official Web route. Unmatched direct requests may still reach Python through the BFF's default behavior.
+- Python compatibility APIs remain untouched; unmatched requests still follow the BFF's default Python behavior, but official clients expose only the unified current-plan route.
 - The old Python write system may continue using its legacy `version` model internally because it is outside this read migration.
 - The migration CLI's destructive DDL is a narrow, one-time exception to ADR 0006's single Go schema-owner rule. The final Go GORM model remains the canonical steady-state schema; the CLI only performs the rename that AutoMigrate intentionally cannot express.

@@ -206,6 +206,30 @@ definitions:
     required:
     - type
     type: object
+  api.currentSeasonPlanEnvelope:
+    properties:
+      content_version:
+        enum:
+        - 1
+        - 2
+        type: integer
+      created_at:
+        type: string
+      goal_id:
+        type: string
+      plan: {}
+      plan_id:
+        type: string
+      revision:
+        type: integer
+        x-nullable: true
+      status:
+        enum:
+        - active
+        type: string
+      updated_at:
+        type: string
+    type: object
   api.disconnectWatchResponse:
     properties:
       ok:
@@ -1076,16 +1100,6 @@ definitions:
       timestamp:
         type: integer
     type: object
-  api.trainingPlanResponse:
-    properties:
-      content:
-        type: string
-      current_phase:
-        type: string
-      phases:
-        items: {}
-        type: array
-    type: object
   api.userPipelinesResponse:
     properties:
       pipelines:
@@ -1684,38 +1698,6 @@ paths:
       summary: Trigger a watch-data sync (+ compute) for a user
       tags:
       - sync
-  /api/{user}/training-plan:
-    get:
-      parameters:
-      - description: User id (JWT sub)
-        in: path
-        name: user
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.trainingPlanResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: Get a user's legacy markdown training overview
-      tags:
-      - master-plan
   /api/pipelines/{run_id}:
     get:
       description: Reads one asynchronous pipeline run. Web onboarding polls the /api
@@ -1830,8 +1812,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/api.currentSeasonPlanEnvelope'
         "401":
           description: Unauthorized
           schema:

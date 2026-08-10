@@ -20,7 +20,7 @@ React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。
 | `/week/:folder` | `WeekLayout` | 指定周视图 |
 | `/activity/:id` | `ActivityDetailPage` | 活动详情 —— metrics / HR/pace charts / zones / segment / sport_note |
 | `/health` | `HealthPage` | Fatigue / HRV / RHR / 训练负荷 趋势（recharts） |
-| `/plan` | `TrainingPlanPage` | overall training plan + phase 时间轴 |
+| `/plan` | `TrainingPlanPage` | 当前赛季训练计划；一次统一请求，支持 Markdown 与结构化展示 |
 | `/coach` | `CoachChatPage` | 日常 Coach 问答；两栏布局，固定 `web-default` 长期会话 |
 | `/coach/week/:folder/adjust` | `WeeklyPlanAdjustPage` | 本周课表调整与整单 Diff Review；三栏布局 |
 | `/coach/master/:planId/adjust` | `MasterPlanAdjustPage` | 赛季训练计划调整与整单 Diff Review；三栏布局 |
@@ -42,7 +42,7 @@ React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。
 - `POST /api/{user}/activities/{id}/resync` —— 从 COROS 重拉单个活动（拿更新的 feedback）
 - `GET /api/{user}/weeks` / `GET /api/{user}/weeks/{folder}` (`routes/weeks.py`) —— training-week plan/feedback/activities
 - `GET /api/{user}/plan/weeks` / `GET /api/{user}/plan/weeks/{week_name}`（Go `cmd/api`）—— active 本周课表元数据列表与详情；新接口以规范化周名称替代 legacy folder
-- `GET /api/users/me/master-plan/current` —— Go/MySQL 统一返回当前赛季训练计划；`content_version=1` 的 `plan` 是 Markdown，`content_version=2` 的 `plan` 是结构化内容。Web 不再调用 legacy `/api/{user}/training-plan`。
+- `GET /api/users/me/master-plan/current` —— Go/MySQL 统一返回当前赛季训练计划；`content_version=1` 的 `plan` 是 Markdown 且 `revision=null`，`content_version=2` 的 `plan` 是结构化内容且 `revision>=1`。只有 404 表示尚无计划；其他失败由 Web 显示读取错误。
 - `GET /api/{user}/dashboard` / `/health` / `/pmc` / `/stats` —— fitness & health (`routes/health.py`)
 - `POST /api/{user}/sync` —— 经配置的 `DataSource` 触发完整 sync (`routes/sync.py`)
 - `POST /api/users/me/coach/chat` —— 固定 session 的 Coach 对话；请求带 `client_turn_id`，计划工作区额外带 typed `target`
@@ -50,6 +50,8 @@ React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。
 - `POST /api/users/me/coach/plan/{folder}/apply` —— 整单启用本周课表创建/调整，校验 fingerprint 与赛季影响确认；`session_id` 绑定 trusted event 会话
 - `POST /api/users/me/coach/master-plan/{plan_id}/apply` —— 整单启用赛季训练计划调整，校验 plan version；`session_id` 绑定 trusted event 会话
 - `POST /api/users/me/coach/proposals/abandon` —— 记录用户放弃调整方案的 trusted event；`session_id` 决定写入的长期会话
+
+当前赛季计划的无凭据浏览器回归使用真实 BFF 路由和本地 fixture 上游：`cd frontend && npm run smoke:plan:fixture`。它覆盖结构化、Markdown、404 创建页和读取错误四种状态。
 
 ## Segment Display
 

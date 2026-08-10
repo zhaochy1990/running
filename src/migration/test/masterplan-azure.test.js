@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  makeMasterPlanSource,
   parseMasterPlanConfig,
   rewriteGoalIdInJson,
   rewriteUserGoalId,
@@ -137,4 +138,56 @@ test("rewriteUserGoalId is a no-op when snapshots already hold the new id", asyn
   assert.equal(stats.versionsRewritten, 0);
   assert.equal(clients.plans.updates.length, 0);
   assert.equal(clients.versions.updates.length, 0);
+});
+
+test("master-plan source reads active structured entities and identity-bound Markdown", async () => {
+  const filters = [];
+  const table = {
+    listEntities(options) {
+      filters.push(options.queryOptions.filter);
+      return (async function* () {
+        yield { partitionKey: "u1", rowKey: "p1", status: "active" };
+      })();
+    },
+  };
+  const blobName = "users/u1/TRAINING_PLAN.md";
+  const blob = {
+    async exists() { return true; },
+    async downloadToBuffer() { return Buffer.from("# season plan\n"); },
+    async getProperties() { return { lastModified: new Date("2026-08-01T00:00:00Z") }; },
+  };
+  const container = {
+    requested: [],
+    getBlobClient(name) { this.requested.push(name); return blob; },
+  };
+  const source = makeMasterPlanSource(
+    { tableAccountUrl: "unused", tableName: "unused", blobAccountUrl: "unused", container: "unused", prefix: "users" },
+    {},
+    { table, container },
+  );
+
+  const structured = await source.listStructured("u1");
+  const markdown = await source.readMarkdown("u1");
+  assert.equal(structured.length, 1);
+  assert.equal(filters.length, 1);
+  assert.match(String(filters[0]), /kind.*plan/i);
+  assert.deepEqual(container.requested, [blobName]);
+  assert.deepEqual(markdown, {
+    user_id: "u1",
+    blob_name: blobName,
+    text: "# season plan\n",
+    lastModified: new Date("2026-08-01T00:00:00Z"),
+  });
+});
+
+test("master-plan source returns null for absent Markdown", async () => {
+  const source = makeMasterPlanSource(
+    { tableAccountUrl: "unused", tableName: "unused", blobAccountUrl: "unused", container: "unused", prefix: "" },
+    {},
+    {
+      table: { listEntities() { return (async function* () {})(); } },
+      container: { getBlobClient() { return { async exists() { return false; } }; } },
+    },
+  );
+  assert.equal(await source.readMarkdown("u1"), null);
 });

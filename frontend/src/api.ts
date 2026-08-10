@@ -560,22 +560,6 @@ export function regenerateCommentary(user: string, labelId: string) {
     }>
 }
 
-export interface TrainingPlanPhase {
-  name: string
-  start: string
-  end: string
-}
-
-export interface TrainingPlan {
-  content: string | null
-  phases: TrainingPlanPhase[]
-  current_phase: string | null
-}
-
-export function getTrainingPlan(user: string) {
-  return fetchJSON<TrainingPlan>(`/${user}/training-plan`)
-}
-
 // ---------------------------------------------------------------------------
 // Master Plan — active long-term plan adjustment
 // ---------------------------------------------------------------------------
@@ -688,15 +672,7 @@ export interface MasterPlan {
   plan_id: string
   user_id: string
   status: string
-  goal?: {
-    goal_id: string
-    race_name?: string
-    distance?: string
-    race_date?: string
-    target_time?: string
-    timezone?: string
-    location?: string | null
-  }
+  goal?: SeasonPlanGoal
   start_date: string
   end_date: string
   phases: MasterPlanPhase[]
@@ -714,6 +690,52 @@ export interface MasterPlan {
   total_weeks: number | null
   next_milestone: MasterPlanNextMilestone | null
 }
+
+export interface SeasonPlanGoal {
+  goal_id: string
+  race_name?: string
+  distance?: string
+  race_date?: string
+  target_time?: string
+  timezone?: string
+  location?: string | null
+}
+
+export interface SeasonPlanContent {
+  goal: SeasonPlanGoal
+  start_date: string
+  end_date: string
+  total_weeks: number
+  phases: MasterPlanPhase[]
+  milestones: MasterPlanMilestone[]
+  weeks: MasterPlanWeek[]
+  training_load_projection?: MasterPlanTrainingLoadProjection | null
+  training_principles: string[]
+  generated_by: string
+  current_phase_id: string | null
+  current_week_number: number | null
+  next_milestone: MasterPlanNextMilestone | null
+}
+
+interface CurrentSeasonPlanBase {
+  status: 'active'
+  plan_id: string
+  goal_id: string
+  created_at: string
+  updated_at: string
+}
+
+export type CurrentSeasonPlan =
+  | (CurrentSeasonPlanBase & {
+      content_version: 1
+      revision: null
+      plan: string
+    })
+  | (CurrentSeasonPlanBase & {
+      content_version: 2
+      revision: number
+      plan: SeasonPlanContent
+    })
 
 export interface MasterPlanDiffOp {
   id: string
@@ -764,14 +786,234 @@ export interface MasterPlanAdjustApplyResponse {
   affected_weeks: MasterPlanAffectedWeek[]
 }
 
-export async function getCurrentMasterPlan(): Promise<MasterPlan | null> {
-  // Route through apiFetch so the 401→refresh→retry path + header/init shape
-  // match every other GET client (and the api.activities test contract).
-  // 404 means "no active plan" → null (not an error); other !ok still throws.
+export function parseCurrentSeasonPlan(value: unknown): CurrentSeasonPlan {
+  if (!isRecord(value)) invalidCurrentSeasonPlan()
+  const base = value as Record<string, unknown>
+  if (
+    base.status !== 'active'
+    || !nonEmptyString(base.plan_id)
+    || !nonEmptyString(base.goal_id)
+    || !validTimestamp(base.created_at)
+    || !validTimestamp(base.updated_at)
+  ) {
+    invalidCurrentSeasonPlan()
+  }
+
+  if (base.content_version === 1) {
+    if (base.revision !== null || !nonEmptyString(base.plan)) invalidCurrentSeasonPlan()
+    return base as unknown as CurrentSeasonPlan
+  }
+
+  if (base.content_version === 2) {
+    if (!Number.isInteger(base.revision) || (base.revision as number) < 1) invalidCurrentSeasonPlan()
+    if (!isSeasonPlanContent(base.plan) || base.plan.goal.goal_id !== base.goal_id) invalidCurrentSeasonPlan()
+    return base as unknown as CurrentSeasonPlan
+  }
+
+  return invalidCurrentSeasonPlan()
+}
+
+function isSeasonPlanContent(value: unknown): value is SeasonPlanContent {
+  if (!isRecord(value)) return false
+  return isSeasonPlanGoal(value.goal)
+    && dateOnly(value.start_date)
+    && dateOnly(value.end_date)
+    && Number.isInteger(value.total_weeks)
+    && (value.total_weeks as number) > 0
+    && recordArray(value.phases, isSeasonPlanPhase)
+    && recordArray(value.milestones, isSeasonPlanMilestone)
+    && recordArray(value.weeks, isSeasonPlanWeek)
+    && (value.training_load_projection === undefined || value.training_load_projection === null || isTrainingLoadProjection(value.training_load_projection))
+    && Array.isArray(value.training_principles)
+    && value.training_principles.every(nonEmptyString)
+    && nonEmptyString(value.generated_by)
+    && (value.current_phase_id === null || nonEmptyString(value.current_phase_id))
+    && (value.current_week_number === null || (Number.isInteger(value.current_week_number) && (value.current_week_number as number) > 0))
+    && (value.next_milestone === null || isNextMilestone(value.next_milestone))
+}
+
+function isSeasonPlanGoal(value: unknown): value is SeasonPlanGoal {
+  return isRecord(value)
+    && nonEmptyString(value.goal_id)
+    && typeof value.race_name === 'string'
+    && nonEmptyString(value.distance)
+    && dateOnly(value.race_date)
+    && typeof value.target_time === 'string'
+    && nonEmptyString(value.timezone)
+    && (value.location === undefined || value.location === null || typeof value.location === 'string')
+}
+
+function isSeasonPlanPhase(value: Record<string, unknown>): boolean {
+  return nonEmptyString(value.id)
+    && nonEmptyString(value.name)
+    && dateOnly(value.start_date)
+    && dateOnly(value.end_date)
+    && typeof value.focus === 'string'
+    && finiteNumber(value.weekly_distance_km_low)
+    && finiteNumber(value.weekly_distance_km_high)
+    && stringArray(value.key_session_types)
+    && stringArray(value.milestone_ids)
+    && optionalString(value, 'phase_type')
+    && optionalString(value, 'rhythm')
+    && optionalString(value, 'key_workouts')
+    && optionalStringArray(value, 'monitoring_triggers')
+    && optionalString(value, 'coach_note')
+    && optionalBoolean(value, 'is_completed')
+    && (value.summary === undefined || value.summary === null || isCompletedPhaseSummary(value.summary))
+}
+
+function isCompletedPhaseSummary(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  return finiteNumber(value.total_distance_km)
+    && nonNegativeInteger(value.run_count)
+    && finiteNumber(value.weekly_avg_km)
+    && nullableNumber(value.avg_pace_s_km)
+    && typeof value.avg_pace_fmt === 'string'
+    && nullableNumber(value.avg_hr)
+    && recordArray(value.hr_zone_distribution, (zone) => (
+      nonNegativeInteger(zone.zone_index)
+      && finiteNumber(zone.minutes)
+      && finiteNumber(zone.percent)
+    ))
+}
+
+function isSeasonPlanMilestone(value: Record<string, unknown>): boolean {
+  return nonEmptyString(value.id)
+    && nonEmptyString(value.type)
+    && dateOnly(value.date)
+    && nonEmptyString(value.phase_id)
+    && typeof value.target === 'string'
+    && (value.completed_actual === null || value.completed_actual === undefined || typeof value.completed_actual === 'string')
+    && optionalString(value, 'metric')
+    && (value.target_value === undefined || value.target_value === null || finiteNumber(value.target_value))
+    && (value.comparator === undefined || value.comparator === null || ['<=', '>=', '=='].includes(String(value.comparator)))
+}
+
+function isSeasonPlanWeek(value: Record<string, unknown>): boolean {
+  return Number.isInteger(value.week_index)
+    && (value.week_index as number) > 0
+    && dateOnly(value.week_start)
+    && nonEmptyString(value.phase_id)
+    && nullableNumber(value.target_weekly_km_low)
+    && nullableNumber(value.target_weekly_km_high)
+    && recordArray(value.key_sessions, isSeasonPlanKeySession)
+    && optionalBoolean(value, 'is_recovery_week')
+    && optionalBoolean(value, 'is_taper_week')
+    && optionalNullableNumber(value, 'target_training_dose_low')
+    && optionalNullableNumber(value, 'target_training_dose_high')
+    && (value.week_end === undefined || value.week_end === null || dateOnly(value.week_end))
+    && optionalNullableNumber(value, 'planned_distance_km')
+    && optionalBoolean(value, 'is_completed')
+    && optionalNullableNumber(value, 'actual_distance_km')
+    && optionalNullableNumber(value, 'actual_avg_pace_s_km')
+    && optionalString(value, 'actual_avg_pace_fmt')
+    && optionalNullableNumber(value, 'actual_avg_hr')
+    && optionalNonNegativeInteger(value, 'actual_run_count')
+    && optionalNonNegativeInteger(value, 'actual_duration_s')
+    && optionalNullableNumber(value, 'actual_training_dose')
+    && optionalNullableNumber(value, 'actual_training_dose_coverage')
+    && (
+      value.actual_training_dose_status === undefined
+      || value.actual_training_dose_status === null
+      || ['complete', 'partial', 'unknown'].includes(String(value.actual_training_dose_status))
+    )
+}
+
+function isSeasonPlanKeySession(value: Record<string, unknown>): boolean {
+  return nonEmptyString(value.type)
+    && nullableNumber(value.distance_km)
+    && nullableNumber(value.duration_min)
+    && optionalString(value, 'intensity')
+    && optionalString(value, 'purpose')
+}
+
+function isTrainingLoadProjection(value: unknown): boolean {
+  if (!isRecord(value) || !validTimestamp(value.calculated_at)) return false
+  if (value.status === 'available') return value.unavailable_reason === null
+  return value.status === 'unavailable'
+    && (
+      value.unavailable_reason === 'weekly_skeleton_unavailable'
+      || value.unavailable_reason === 'personal_threshold_unavailable'
+      || value.unavailable_reason === 'planned_session_uncomputable'
+    )
+}
+
+function isNextMilestone(value: unknown): boolean {
+  return isRecord(value)
+    && nonEmptyString(value.id)
+    && dateOnly(value.date)
+    && typeof value.target === 'string'
+    && Number.isInteger(value.days_until)
+}
+
+function recordArray(
+  value: unknown,
+  predicate: (item: Record<string, unknown>) => boolean,
+): boolean {
+  return Array.isArray(value) && value.every((item) => isRecord(item) && predicate(item))
+}
+
+function stringArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+function optionalString(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || value[key] === null || typeof value[key] === 'string'
+}
+
+function optionalStringArray(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || stringArray(value[key])
+}
+
+function optionalBoolean(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || typeof value[key] === 'boolean'
+}
+
+function optionalNullableNumber(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || nullableNumber(value[key])
+}
+
+function optionalNonNegativeInteger(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || nonNegativeInteger(value[key])
+}
+
+function nonNegativeInteger(value: unknown): boolean {
+  return Number.isInteger(value) && (value as number) >= 0
+}
+
+function finiteNumber(value: unknown): boolean {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function nullableNumber(value: unknown): boolean {
+  return value === null || finiteNumber(value)
+}
+
+function dateOnly(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function validTimestamp(value: unknown): value is string {
+  return nonEmptyString(value) && !Number.isNaN(Date.parse(value))
+}
+
+function invalidCurrentSeasonPlan(): never {
+  throw new Error('Invalid current season plan')
+}
+
+export async function getCurrentMasterPlan(): Promise<CurrentSeasonPlan | null> {
   const res = await apiFetch('GET', '/users/me/master-plan/current')
   if (res.status === 404) return null
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
-  return res.json()
+  if (!res.ok) throw new ApiError(res.status)
+  return parseCurrentSeasonPlan(await res.json())
 }
 
 export async function getDraftMasterPlan(): Promise<MasterPlan | null> {

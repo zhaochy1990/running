@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,34 +22,22 @@ import (
 // --- fake master-plan store --------------------------------------------------
 
 type fakeMasterPlanStore struct {
-	structured    map[string]*storage.MasterPlan
-	markdown      map[string]*storage.MasterPlan
-	running       map[int]storage.RunningWeekSummary
-	dose          map[int]storage.TrainingDoseWeekSummary
-	structuredErr error
-	markdownErr   error
-	actualsErr    error
+	current    map[string]*storage.MasterPlan
+	running    map[int]storage.RunningWeekSummary
+	dose       map[int]storage.TrainingDoseWeekSummary
+	currentErr error
+	actualsErr error
 }
 
 func newFakeMasterPlanStore() *fakeMasterPlanStore {
-	return &fakeMasterPlanStore{
-		structured: map[string]*storage.MasterPlan{},
-		markdown:   map[string]*storage.MasterPlan{},
-	}
+	return &fakeMasterPlanStore{current: map[string]*storage.MasterPlan{}}
 }
 
-func (f *fakeMasterPlanStore) GetActiveStructuredPlan(_ context.Context, uid string) (*storage.MasterPlan, error) {
-	if f.structuredErr != nil {
-		return nil, f.structuredErr
+func (f *fakeMasterPlanStore) GetCurrentMasterPlan(_ context.Context, uid string) (*storage.MasterPlan, error) {
+	if f.currentErr != nil {
+		return nil, f.currentErr
 	}
-	return f.structured[uid], nil
-}
-
-func (f *fakeMasterPlanStore) GetMarkdownOverview(_ context.Context, uid string) (*storage.MasterPlan, error) {
-	if f.markdownErr != nil {
-		return nil, f.markdownErr
-	}
-	return f.markdown[uid], nil
+	return f.current[uid], nil
 }
 
 func (f *fakeMasterPlanStore) RunningWeekSummaries(_ context.Context, _ string, _ []storage.WeekWindow) (map[int]storage.RunningWeekSummary, error) {
@@ -122,10 +111,10 @@ const samplePlanJSON = `{
   "plan_id": "p1", "user_id": "u1", "status": "active",
   "goal": {"goal_id": "g1", "distance": "FM", "target_time": "3:30:00"},
   "start_date": "2026-06-01", "end_date": "2026-06-14", "total_weeks": 2,
-  "phases": [{"id": "ph1", "name": "Base", "start_date": "2026-06-01", "end_date": "2026-06-14", "is_completed": false}],
+  "phases": [{"id": "ph1", "name": "Base", "start_date": "2026-06-01", "end_date": "2026-06-14", "focus": "base", "weekly_distance_km_low": 40, "weekly_distance_km_high": 55, "key_session_types": [], "milestone_ids": ["m0", "m1"], "is_completed": false}],
   "milestones": [
-    {"id": "m0", "date": "2026-05-01", "target": "done", "completed_actual": "ok"},
-    {"id": "m1", "date": "2026-06-20", "target": "30K 节奏跑", "completed_actual": null}
+    {"id": "m0", "type": "test_run", "date": "2026-05-01", "phase_id": "ph1", "target": "done", "completed_actual": "ok"},
+    {"id": "m1", "type": "long_run", "date": "2026-06-20", "phase_id": "ph1", "target": "30K 节奏跑", "completed_actual": null}
   ],
   "weeks": [
     {"week_index": 1, "week_start": "2026-06-01", "phase_id": "ph1", "target_weekly_km_low": 40, "target_weekly_km_high": 50, "key_sessions": [], "is_recovery_week": false, "is_taper_week": false},
@@ -220,7 +209,7 @@ func TestBuildCurrentResponse_ExpandsStartedWeeks(t *testing.T) {
 	plan := `{
       "plan_id": "p", "user_id": "u", "status": "active", "goal": {"goal_id": "g", "target_time": "x"},
       "start_date": "2026-06-01", "end_date": "2026-06-21", "total_weeks": 3,
-      "phases": [{"id": "ph1", "start_date": "2026-06-01", "end_date": "2026-06-21", "is_completed": false}],
+      "phases": [{"id": "ph1", "name": "Base", "start_date": "2026-06-01", "end_date": "2026-06-21", "focus": "base", "weekly_distance_km_low": 30, "weekly_distance_km_high": 40, "key_session_types": [], "milestone_ids": [], "is_completed": false}],
       "milestones": [], "weeks": [
         {"week_index": 3, "week_start": "2026-06-15", "phase_id": "ph1", "target_weekly_km_low": 30, "target_weekly_km_high": 40, "key_sessions": []}
       ], "training_principles": [], "generated_by": "x", "version": 1,
@@ -279,7 +268,33 @@ func TestBuildCurrentResponse_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestBuildCurrentResponse_RejectsMalformedNestedContent(t *testing.T) {
+	for _, content := range []string{
+		strings.Replace(samplePlanJSON, `"start_date": "2026-06-01"`, `"start_date": "2026-06-01T00:00:00Z"`, 1),
+		strings.Replace(samplePlanJSON, `"name": "Base"`, `"name": null`, 1),
+		strings.Replace(samplePlanJSON, `"week_index": 1`, `"week_index": 0`, 1),
+		strings.Replace(samplePlanJSON, `"type": "long_run"`, `"type": null`, 1),
+	} {
+		if _, _, _, err := buildCurrentResponse(&storage.MasterPlan{Content: content}, time.Now()); err == nil {
+			t.Fatalf("expected malformed structured content to be rejected: %s", content)
+		}
+	}
+}
+
 // --- handler: GET /master-plan/current ---------------------------------------
+
+func TestMasterPlanRouteSkippedWithoutStore(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("gen key: %v", err)
+	}
+	svc := NewService(Config{Auth: NewAuthenticator(testToken, NewJWTVerifierFromKey(&key.PublicKey, testIssuer, testAudience))})
+	w := httptest.NewRecorder()
+	svc.Router().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/users/me/master-plan/current", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("code = %d, want 404 when store is not configured", w.Code)
+	}
+}
 
 func TestGetCurrent_RequiresUserTier(t *testing.T) {
 	h := newMPHarness(t)
@@ -301,10 +316,17 @@ func TestGetCurrent_NotFound(t *testing.T) {
 	}
 }
 
-func TestGetCurrent_HappyPath(t *testing.T) {
+func TestGetCurrent_StructuredEnvelope(t *testing.T) {
 	h := newMPHarness(t)
 	uid := uuid.NewString()
-	h.store.structured[uid] = &storage.MasterPlan{PlanID: "p1", UserID: uid, Content: samplePlanJSON}
+	planID, goalID := uuid.NewString(), uuid.NewString()
+	revision := int64(4)
+	now := time.Now().UTC()
+	h.store.current[uid] = &storage.MasterPlan{
+		PlanID: planID, UserID: uid, ContentVersion: storage.MasterPlanContentStructured,
+		Content: samplePlanJSON, GoalID: goalID, Status: storage.MasterPlanStatusActive,
+		Revision: &revision, CreatedAt: now, UpdatedAt: now,
+	}
 
 	w := h.do(http.MethodGet, "/api/users/me/master-plan/current", h.bearer(t, uid))
 	if w.Code != http.StatusOK {
@@ -314,74 +336,96 @@ func TestGetCurrent_HappyPath(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	// structural parity: passthrough + derived fields + no weekly_key_sessions.
-	for _, k := range []string{"plan_id", "goal", "phases", "weeks", "current_phase_id", "current_week_number", "next_milestone"} {
-		if _, ok := body[k]; !ok {
-			t.Errorf("response missing key %q", k)
+	if body["content_version"] != float64(2) || body["plan_id"] != planID || body["goal_id"] != goalID || body["revision"] != float64(4) {
+		t.Fatalf("wrong envelope: %v", body)
+	}
+	doc, ok := body["plan"].(map[string]any)
+	if !ok {
+		t.Fatalf("plan is not an object: %T", body["plan"])
+	}
+	for _, k := range []string{"goal", "phases", "weeks", "current_phase_id", "current_week_number", "next_milestone"} {
+		if _, ok := doc[k]; !ok {
+			t.Errorf("structured plan missing key %q", k)
 		}
 	}
-	if _, present := body["weekly_key_sessions"]; present {
-		t.Errorf("weekly_key_sessions must not be in the response")
+	for _, k := range []string{"plan_id", "user_id", "status", "version", "created_at", "updated_at", "weekly_key_sessions"} {
+		if _, present := doc[k]; present {
+			t.Errorf("resource metadata %q must not be nested in plan", k)
+		}
+	}
+	goal := doc["goal"].(map[string]any)
+	if goal["goal_id"] != goalID {
+		t.Errorf("nested goal_id = %v, want row goal %s", goal["goal_id"], goalID)
+	}
+}
+
+func TestGetCurrent_MarkdownEnvelope(t *testing.T) {
+	h := newMPHarness(t)
+	uid, planID, goalID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	now := time.Now().UTC()
+	h.store.current[uid] = &storage.MasterPlan{
+		PlanID: planID, UserID: uid, ContentVersion: storage.MasterPlanContentMarkdown,
+		Content: "# 训练总纲\n基础期", GoalID: goalID, Status: storage.MasterPlanStatusActive,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	w := h.do(http.MethodGet, "/api/users/me/master-plan/current", h.bearer(t, uid))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200 (%s)", w.Code, w.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if body["content_version"] != float64(1) || body["revision"] != nil || body["plan"] != "# 训练总纲\n基础期" {
+		t.Fatalf("wrong markdown envelope: %v", body)
 	}
 }
 
 func TestGetCurrent_StoreError(t *testing.T) {
 	h := newMPHarness(t)
 	uid := uuid.NewString()
-	h.store.structuredErr = errors.New("boom")
+	h.store.currentErr = errors.New("boom")
 	w := h.do(http.MethodGet, "/api/users/me/master-plan/current", h.bearer(t, uid))
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("code = %d, want 500", w.Code)
 	}
 }
 
-// --- handler: GET /{user}/training-plan --------------------------------------
-
-func TestGetTrainingPlan_HappyPath(t *testing.T) {
-	h := newMPHarness(t)
-	uid := uuid.NewString()
-	h.store.markdown[uid] = &storage.MasterPlan{UserID: uid, Content: "# 训练总纲\n基础期"}
-
-	w := h.do(http.MethodGet, "/api/"+uid+"/training-plan", h.bearer(t, uid))
-	if w.Code != http.StatusOK {
-		t.Fatalf("code = %d, want 200", w.Code)
+func TestGetCurrent_InvalidRowsAre500(t *testing.T) {
+	now := time.Now().UTC()
+	revision := int64(1)
+	cases := []struct {
+		name string
+		row  *storage.MasterPlan
+	}{
+		{name: "empty markdown", row: &storage.MasterPlan{ContentVersion: storage.MasterPlanContentMarkdown, Content: ""}},
+		{name: "invalid json", row: &storage.MasterPlan{ContentVersion: storage.MasterPlanContentStructured, Content: "{", Revision: &revision}},
+		{name: "missing goal", row: &storage.MasterPlan{ContentVersion: storage.MasterPlanContentStructured, Content: `{"start_date":"2026-01-01","end_date":"2026-01-07","total_weeks":1,"phases":[],"milestones":[],"weeks":[]}`, Revision: &revision}},
+		{name: "missing revision", row: &storage.MasterPlan{ContentVersion: storage.MasterPlanContentStructured, Content: samplePlanJSON}},
 	}
-	var body trainingPlanResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if body.Content == nil || *body.Content != "# 训练总纲\n基础期" {
-		t.Errorf("content = %v, want the markdown", body.Content)
-	}
-	if len(body.Phases) != 0 || body.CurrentPhase != nil {
-		t.Errorf("phases/current_phase must be empty/null, got %v / %v", body.Phases, body.CurrentPhase)
-	}
-}
-
-func TestGetTrainingPlan_NoOverviewReturnsNullContent(t *testing.T) {
-	h := newMPHarness(t)
-	uid := uuid.NewString()
-	w := h.do(http.MethodGet, "/api/"+uid+"/training-plan", h.bearer(t, uid))
-	if w.Code != http.StatusOK {
-		t.Fatalf("code = %d, want 200", w.Code)
-	}
-	var body trainingPlanResponse
-	_ = json.Unmarshal(w.Body.Bytes(), &body)
-	if body.Content != nil {
-		t.Errorf("content = %v, want null", *body.Content)
-	}
-	if body.Phases == nil || len(body.Phases) != 0 || body.CurrentPhase != nil {
-		t.Errorf("want phases=[] current_phase=null, got %v / %v", body.Phases, body.CurrentPhase)
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newMPHarness(t)
+			uid := uuid.NewString()
+			tt.row.PlanID = uuid.NewString()
+			tt.row.UserID = uid
+			tt.row.GoalID = uuid.NewString()
+			tt.row.Status = storage.MasterPlanStatusActive
+			tt.row.CreatedAt = now
+			tt.row.UpdatedAt = now
+			h.store.current[uid] = tt.row
+			w := h.do(http.MethodGet, "/api/users/me/master-plan/current", h.bearer(t, uid))
+			if w.Code != http.StatusInternalServerError {
+				t.Fatalf("code = %d, want 500 (%s)", w.Code, w.Body.String())
+			}
+		})
 	}
 }
 
-func TestGetTrainingPlan_ForbidsOtherUser(t *testing.T) {
+func TestLegacyTrainingPlanRouteIsRemoved(t *testing.T) {
 	h := newMPHarness(t)
-	me := uuid.NewString()
-	other := uuid.NewString()
-	w := h.do(http.MethodGet, "/api/"+other+"/training-plan", h.bearer(t, me))
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("code = %d, want 403", w.Code)
+	uid := uuid.NewString()
+	w := h.do(http.MethodGet, "/api/"+uid+"/training-plan", h.bearer(t, uid))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("code = %d, want 404", w.Code)
 	}
 }
 
@@ -447,7 +491,7 @@ func currentWeekPlan(t *testing.T) string {
 	end := today.AddDate(0, 0, 6-daysSinceMon).Format("2006-01-02")
 	return `{"plan_id":"p","user_id":"u","status":"active","goal":{"goal_id":"g","target_time":"x"},
       "start_date":"` + mon + `","end_date":"` + end + `","total_weeks":1,
-      "phases":[{"id":"ph1","start_date":"` + mon + `","end_date":"` + end + `","is_completed":false}],
+      "phases":[{"id":"ph1","name":"Base","start_date":"` + mon + `","end_date":"` + end + `","focus":"base","weekly_distance_km_low":40,"weekly_distance_km_high":50,"key_session_types":[],"milestone_ids":[],"is_completed":false}],
       "milestones":[],"weeks":[{"week_index":1,"week_start":"` + mon + `","phase_id":"ph1","target_weekly_km_low":40,"target_weekly_km_high":50,"key_sessions":[]}],
       "training_principles":[],"generated_by":"x","version":1,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`
 }
@@ -455,7 +499,9 @@ func currentWeekPlan(t *testing.T) string {
 func TestGetCurrent_OverlaysActualsThroughHandler(t *testing.T) {
 	h := newMPHarness(t)
 	uid := uuid.NewString()
-	h.store.structured[uid] = &storage.MasterPlan{PlanID: "p1", UserID: uid, Content: currentWeekPlan(t)}
+	revision := int64(1)
+	now := time.Now().UTC()
+	h.store.current[uid] = &storage.MasterPlan{PlanID: uuid.NewString(), UserID: uid, ContentVersion: storage.MasterPlanContentStructured, Content: currentWeekPlan(t), GoalID: uuid.NewString(), Status: storage.MasterPlanStatusActive, Revision: &revision, CreatedAt: now, UpdatedAt: now}
 	pace := 330
 	h.store.running = map[int]storage.RunningWeekSummary{1: {RunCount: 3, DistanceKm: 31.2, TotalDurationS: 10800, AvgPaceSKm: &pace}}
 	dose := 245.0
@@ -467,7 +513,8 @@ func TestGetCurrent_OverlaysActualsThroughHandler(t *testing.T) {
 	}
 	var body map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &body)
-	weeks, _ := body["weeks"].([]any)
+	plan, _ := body["plan"].(map[string]any)
+	weeks, _ := plan["weeks"].([]any)
 	if len(weeks) == 0 {
 		t.Fatalf("no weeks in response")
 	}
@@ -487,7 +534,9 @@ func TestGetCurrent_OverlaysActualsThroughHandler(t *testing.T) {
 func TestGetCurrent_ActualsErrorIs500(t *testing.T) {
 	h := newMPHarness(t)
 	uid := uuid.NewString()
-	h.store.structured[uid] = &storage.MasterPlan{PlanID: "p1", UserID: uid, Content: currentWeekPlan(t)}
+	revision := int64(1)
+	now := time.Now().UTC()
+	h.store.current[uid] = &storage.MasterPlan{PlanID: uuid.NewString(), UserID: uid, ContentVersion: storage.MasterPlanContentStructured, Content: currentWeekPlan(t), GoalID: uuid.NewString(), Status: storage.MasterPlanStatusActive, Revision: &revision, CreatedAt: now, UpdatedAt: now}
 	h.store.actualsErr = errors.New("db down")
 	w := h.do(http.MethodGet, "/api/users/me/master-plan/current", h.bearer(t, uid))
 	if w.Code != http.StatusInternalServerError {

@@ -95,78 +95,50 @@ func (e *e2eServer) get(t *testing.T, path, sub string) (int, []byte) {
 	return resp.StatusCode, body
 }
 
-func TestE2E_MasterPlanCurrent_Structured(t *testing.T) {
+func TestE2E_MasterPlanCurrent(t *testing.T) {
 	e := newE2EServer(t)
 
-	// happy: a v2 user gets their structured plan with derived fields.
 	code, body := e.get(t, "/api/users/me/master-plan/current", e2eV2User)
 	if code != http.StatusOK {
 		t.Fatalf("v2 current: code=%d body=%s", code, body)
 	}
-	var doc map[string]any
-	if err := json.Unmarshal(body, &doc); err != nil {
+	var envelope map[string]any
+	if err := json.Unmarshal(body, &envelope); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	for _, k := range []string{"plan_id", "goal", "phases", "milestones", "weeks", "current_phase_id", "current_week_number", "next_milestone", "version"} {
+	if envelope["content_version"] != float64(2) || envelope["revision"] == nil {
+		t.Fatalf("unexpected structured envelope: %v", envelope)
+	}
+	doc, ok := envelope["plan"].(map[string]any)
+	if !ok {
+		t.Fatalf("structured plan is not an object")
+	}
+	for _, k := range []string{"goal", "phases", "milestones", "weeks", "current_phase_id", "current_week_number", "next_milestone"} {
 		if _, ok := doc[k]; !ok {
-			t.Errorf("v2 response missing key %q", k)
+			t.Errorf("v2 plan missing key %q", k)
 		}
 	}
 	if _, present := doc["weekly_key_sessions"]; present {
-		t.Errorf("weekly_key_sessions must be dropped from the response")
-	}
-	if doc["user_id"] != e2eV2User {
-		t.Errorf("user_id = %v, want %s", doc["user_id"], e2eV2User)
+		t.Errorf("weekly_key_sessions must be dropped")
 	}
 
-	// edge: a v2 user whose embedded goal_id is still a legacy slug still serves.
 	if code, _ := e.get(t, "/api/users/me/master-plan/current", e2eV2SlugUser); code != http.StatusOK {
 		t.Errorf("v2 slug-goal current: code=%d, want 200", code)
 	}
 
-	// negative: a markdown-only (v1) user has no active structured plan -> 404.
-	if code, _ := e.get(t, "/api/users/me/master-plan/current", e2eV1User); code != http.StatusNotFound {
-		t.Errorf("v1 user current: code=%d, want 404", code)
+	code, body = e.get(t, "/api/users/me/master-plan/current", e2eV1User)
+	if code != http.StatusOK {
+		t.Fatalf("v1 current: code=%d body=%s", code, body)
+	}
+	_ = json.Unmarshal(body, &envelope)
+	if envelope["content_version"] != float64(1) || envelope["revision"] != nil {
+		t.Fatalf("unexpected markdown envelope: %v", envelope)
+	}
+	if text, ok := envelope["plan"].(string); !ok || text == "" {
+		t.Errorf("v1 markdown plan is empty")
 	}
 
-	// negative: no auth -> 401.
 	if code, _ := e.get(t, "/api/users/me/master-plan/current", ""); code != http.StatusUnauthorized {
 		t.Errorf("no-auth current: code=%d, want 401", code)
-	}
-}
-
-func TestE2E_TrainingPlanMarkdown(t *testing.T) {
-	e := newE2EServer(t)
-
-	// happy: a v1 user's markdown overview is returned as raw content.
-	code, body := e.get(t, "/api/"+e2eV1User+"/training-plan", e2eV1User)
-	if code != http.StatusOK {
-		t.Fatalf("v1 training-plan: code=%d body=%s", code, body)
-	}
-	var resp trainingPlanResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp.Content == nil || len(*resp.Content) == 0 {
-		t.Errorf("v1 markdown content empty")
-	}
-	if len(resp.Phases) != 0 || resp.CurrentPhase != nil {
-		t.Errorf("phases/current_phase must be []/null, got %v / %v", resp.Phases, resp.CurrentPhase)
-	}
-
-	// edge: a v2 user has a lingering markdown blob but NO active markdown row
-	// (migrated as v2) -> content null.
-	code, body = e.get(t, "/api/"+e2eV2User+"/training-plan", e2eV2User)
-	if code != http.StatusOK {
-		t.Fatalf("v2 training-plan: code=%d", code)
-	}
-	_ = json.Unmarshal(body, &resp)
-	if resp.Content != nil {
-		t.Errorf("v2 user training-plan content = %v, want null", *resp.Content)
-	}
-
-	// negative: one user may not read another user's overview -> 403.
-	if code, _ := e.get(t, "/api/"+e2eV2User+"/training-plan", e2eV1User); code != http.StatusForbidden {
-		t.Errorf("cross-user training-plan: code=%d, want 403", code)
 	}
 }

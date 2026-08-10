@@ -123,6 +123,37 @@ class NextMilestone {
 
 class MasterPlan {
 
+  factory MasterPlan.fromCurrentEnvelope(Map<String, dynamic> json) {
+    if (json['content_version'] != 2 ||
+        json['status'] != 'active' ||
+        json['revision'] is! int ||
+        (json['revision'] as int) < 1 ||
+        json['plan_id'] is! String ||
+        (json['plan_id'] as String).isEmpty ||
+        json['goal_id'] is! String ||
+        (json['goal_id'] as String).isEmpty ||
+        json['created_at'] is! String ||
+        json['updated_at'] is! String ||
+        json['plan'] is! Map<String, dynamic>) {
+      throw const FormatException('Invalid current season plan');
+    }
+    final content = Map<String, dynamic>.from(
+      json['plan'] as Map<String, dynamic>,
+    );
+    final goal = content['goal'];
+    if (goal is! Map<String, dynamic> || goal['goal_id'] != json['goal_id']) {
+      throw const FormatException('Invalid current season plan');
+    }
+    return MasterPlan.fromJson({
+      ...content,
+      'plan_id': json['plan_id'],
+      'status': json['status'],
+      'version': json['revision'],
+      'created_at': json['created_at'],
+      'updated_at': json['updated_at'],
+    });
+  }
+
   factory MasterPlan.fromJson(Map<String, dynamic> json) => MasterPlan(
         planId: json['plan_id'] as String? ?? '',
         userId: json['user_id'] as String? ?? '',

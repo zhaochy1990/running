@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -7,13 +7,10 @@ import {
   applyMasterPlanReviewDiff,
   confirmMasterPlan,
   getCurrentMasterPlan,
-  getDraftMasterPlan,
   getMasterPlanById,
-  getMyProfile,
-  getTrainingGoal,
-  getTrainingPlan,
   sendMasterPlanReviewMessage,
   type CompletedPhaseSummary,
+  type CurrentSeasonPlan,
   type MasterPlan,
   type MasterPlanAdjustMessage,
   type MasterPlanDiff,
@@ -21,9 +18,7 @@ import {
   type MasterPlanMilestone,
   type MasterPlanPhase,
   type MasterPlanWeek,
-  type MyProfile,
-  type TrainingGoal,
-  type TrainingPlan,
+  type SeasonPlanContent,
 } from '../api'
 import { shanghaiToday } from '../lib/shanghai'
 import { useUser } from '../UserContextValue'
@@ -157,72 +152,56 @@ function formatSlashDate(dateStr: string): string {
   return `${year}/${month}/${day}`
 }
 
-function stringField(raw: Record<string, unknown> | null | undefined, key: string): string {
-  const value = raw?.[key]
-  return typeof value === 'string' ? value.trim() : ''
-}
-
 function distanceLabel(value: string): string {
   const labels: Record<string, string> = { '5K': '5K', '10K': '10K', HM: '半马', FM: '全马', trail: '越野' }
   return labels[value] || value
 }
 
-function targetFrom(goal: TrainingGoal | null, profile: MyProfile | null, plan?: MasterPlan | null): TargetSummary {
-  const rawProfile = profile?.profile ?? null
-  const raceName = goal?.race_name?.trim() || plan?.goal?.race_name || stringField(rawProfile, 'target_race')
-  const distance = goal?.race_distance || plan?.goal?.distance || stringField(rawProfile, 'target_distance')
-  const raceDate = goal?.race_date || plan?.goal?.race_date || stringField(rawProfile, 'target_race_date')
-  const targetTime = goal?.target_finish_time || plan?.goal?.target_time || stringField(rawProfile, 'target_time')
+function targetFromPlan(plan: Pick<SeasonPlanContent, 'goal'>): TargetSummary {
   return {
-    raceName,
-    distance: distanceLabel(distance),
-    raceDate,
-    targetTime,
+    raceName: plan.goal.race_name?.trim() || '',
+    distance: distanceLabel(plan.goal.distance || ''),
+    raceDate: plan.goal.race_date || '',
+    targetTime: plan.goal.target_time || '',
   }
 }
 
-type PageState = 'loading' | 'setup' | 'review' | 'plan'
+type PageState = 'loading' | 'setup' | 'review' | 'plan' | 'error'
+type SeasonPlanView = SeasonPlanContent | MasterPlan
 
 export default function TrainingPlanPage() {
   const { user, coachChat } = useUser()
   const navigate = useNavigate()
-  const [masterPlan, setMasterPlan] = useState<MasterPlan | null>(null)
+  const [currentPlan, setCurrentPlan] = useState<CurrentSeasonPlan | null>(null)
   const [draftPlan, setDraftPlan] = useState<MasterPlan | null>(null)
-  const [fallbackPlan, setFallbackPlan] = useState<TrainingPlan | null>(null)
   const [target, setTarget] = useState<TargetSummary>(EMPTY_TARGET)
   const [pageState, setPageState] = useState<PageState>('loading')
   const [planTab, setPlanTab] = useState<PlanTab>('overview')
   const [selectedPhaseId, setSelectedPhaseId] = useState<string | null>(null)
   const requestKey = user || ''
   const [loadedKey, setLoadedKey] = useState('')
+  const requestRef = useRef<{ key: string; promise: ReturnType<typeof getCurrentMasterPlan> } | null>(null)
 
-  const loadPlan = useCallback(() => {
+  const loadPlan = useCallback((force = false) => {
     if (!user) return undefined
     let cancelled = false
+    if (force || requestRef.current?.key !== requestKey) {
+      requestRef.current = { key: requestKey, promise: getCurrentMasterPlan() }
+    }
+    const request = requestRef.current.promise
 
-    Promise.all([
-      getCurrentMasterPlan().catch(() => null),
-      getDraftMasterPlan().catch(() => null),
-      getTrainingPlan(user).catch(() => null),
-      getTrainingGoal().catch(() => null),
-      getMyProfile().catch(() => null),
-    ]).then(([master, draft, fallback, goal, profile]) => {
-      if (cancelled) return
-      setMasterPlan(master)
-      setDraftPlan(draft)
-      setFallbackPlan(fallback)
-      setTarget(targetFrom(goal, profile, master ?? draft))
-      if (master) {
-        setPageState('plan')
-      } else if (draft) {
-        setPageState('review')
-      } else if (fallback?.content) {
-        setPageState('plan')
-      } else {
-        setPageState('setup')
-      }
+    request.then((plan) => {
+      if (cancelled || requestRef.current?.promise !== request) return
+      setCurrentPlan(plan)
+      setTarget(plan?.content_version === 2 ? targetFromPlan(plan.plan) : EMPTY_TARGET)
+      setPageState(plan ? 'plan' : 'setup')
+    }).catch(() => {
+      if (cancelled || requestRef.current?.promise !== request) return
+      setCurrentPlan(null)
+      setTarget(EMPTY_TARGET)
+      setPageState('error')
     }).finally(() => {
-      if (!cancelled) setLoadedKey(requestKey)
+      if (!cancelled && requestRef.current?.promise === request) setLoadedKey(requestKey)
     })
 
     return () => { cancelled = true }
@@ -256,7 +235,7 @@ export default function TrainingPlanPage() {
             getMasterPlanById(planId)
               .then((plan) => {
                 setDraftPlan(plan)
-                setTarget((prev) => prev.raceName ? prev : targetFrom(null, null, plan))
+                setTarget(targetFromPlan({ goal: plan.goal ?? { goal_id: '' } }))
                 setPageState('review')
               })
               .catch(() => { loadPlan() })
@@ -274,20 +253,42 @@ export default function TrainingPlanPage() {
         onPlanUpdated={setDraftPlan}
         onConfirmed={() => {
           setPageState('loading')
-          loadPlan()
+          loadPlan(true)
         }}
       />
     )
   }
 
-  if (masterPlan) {
+  if (pageState === 'error') {
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
+        <ViewHead
+          eyebrow="赛季训练计划 · 读取失败"
+          title="无法读取赛季训练计划"
+          lede="计划数据暂时不可用，请稍后重试。"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            setPageState('loading')
+            loadPlan(true)
+          }}
+          className="inline-flex h-10 items-center justify-center rounded-lg border border-border-subtle bg-bg-card px-5 text-sm font-semibold text-text-primary"
+        >
+          重试
+        </button>
+      </div>
+    )
+  }
+
+  if (currentPlan?.content_version === 2) {
     return (
       <>
         <div className="max-w-5xl mx-auto px-4 pt-4 sm:px-8">
           <CoachPlanAppliedBanner />
         </div>
         <SeasonOverview
-          plan={masterPlan}
+          plan={currentPlan.plan}
           target={target}
           tab={planTab}
           onTab={setPlanTab}
@@ -296,7 +297,7 @@ export default function TrainingPlanPage() {
           onAdjust={() =>
             navigate(
               coachChat
-                ? `/coach/master/${encodeURIComponent(masterPlan.plan_id)}/adjust`
+                ? `/coach/master/${encodeURIComponent(currentPlan.plan_id)}/adjust`
                 : '/plan/adjust',
             )
           }
@@ -305,28 +306,20 @@ export default function TrainingPlanPage() {
     )
   }
 
-  if (fallbackPlan?.content) {
+  if (currentPlan?.content_version === 1) {
     return (
       <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
-        <ViewHead
-          eyebrow="训练计划"
-          title="训练总览"
-          lede={fallbackPlan.current_phase ? `当前阶段 · ${fallbackPlan.current_phase}` : '训练总纲'}
-        />
+        <ViewHead eyebrow="赛季训练计划 · 已启用" title="赛季训练计划" lede="当前赛季安排" />
         <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 sm:p-6">
           <div className="prose max-w-none">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{fallbackPlan.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{currentPlan.plan}</ReactMarkdown>
           </div>
         </div>
       </div>
     )
   }
 
-  return (
-    <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
-      <ViewHead eyebrow="训练计划" title="训练计划生成中" lede="赛季计划正在后台生成，请稍后刷新页面查看" />
-    </div>
-  )
+  return null
 }
 
 function DraftReviewWorkspace({
@@ -625,7 +618,7 @@ function SeasonOverviewBody({
   selectedPhaseId,
   onSelectPhase,
 }: {
-  plan: MasterPlan
+  plan: SeasonPlanView
   target: TargetSummary
   selectedPhaseId: string | null
   onSelectPhase: (id: string) => void
@@ -697,7 +690,7 @@ function SeasonOverview({
   onSelectPhase,
   onAdjust,
 }: {
-  plan: MasterPlan
+  plan: SeasonPlanView
   target: TargetSummary
   tab: PlanTab
   onTab: (tab: PlanTab) => void
@@ -720,7 +713,7 @@ function SeasonOverview({
       <section className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <p className="font-mono text-[10px] font-semibold tracking-[0.14em] text-text-muted uppercase mb-2">
-            赛季训练计划 · {plan.status === 'active' ? '已启用' : plan.status}
+            赛季训练计划 · {'status' in plan && plan.status !== 'active' ? plan.status : '已启用'}
           </p>
           <h1 className="text-[28px] sm:text-[32px] font-semibold leading-[1.1] text-text-primary break-words">
             {heroTitle}
@@ -792,7 +785,7 @@ function MileageCycleCard({
   currentWeek,
   onSelectPhase,
 }: {
-  plan: MasterPlan
+  plan: SeasonPlanView
   spans: PhaseSpan[]
   totalWeeks: number
   currentWeek: number
@@ -1033,7 +1026,7 @@ function SummaryCards({
   currentPhase,
   nextMilestone,
 }: {
-  plan: MasterPlan
+  plan: SeasonPlanView
   target: TargetSummary
   currentWeek: number
   currentPhase: MasterPlanPhase | null
@@ -1267,7 +1260,7 @@ function buildPhaseSpans(phases: MasterPlanPhase[], totalWeeks: number | null): 
   return spans
 }
 
-function buildMileageBars(plan: MasterPlan, spans: PhaseSpan[], totalWeeks: number, currentWeek: number): MileageBar[] {
+function buildMileageBars(plan: SeasonPlanView, spans: PhaseSpan[], totalWeeks: number, currentWeek: number): MileageBar[] {
   if (!spans[0]) return []
   const weeklyTargets = masterPlanWeeksByIndex(plan)
   const raw = spans.flatMap((span) => Array.from({ length: span.weekCount }, (_, localIndex) => {
@@ -1357,8 +1350,9 @@ function parseDoseStatus(value: unknown): MileageBar['actualDoseStatus'] {
     : null
 }
 
-function masterPlanWeeksByIndex(plan: MasterPlan): Map<number, MasterPlanWeek> {
-  const weeks = (plan.weeks && plan.weeks.length > 0) ? plan.weeks : (plan.weekly_key_sessions ?? [])
+function masterPlanWeeksByIndex(plan: SeasonPlanView): Map<number, MasterPlanWeek> {
+  const legacyWeeks = 'weekly_key_sessions' in plan ? plan.weekly_key_sessions ?? [] : []
+  const weeks = (plan.weeks && plan.weeks.length > 0) ? plan.weeks : legacyWeeks
   const out = new Map<number, MasterPlanWeek>()
   for (const week of weeks) {
     if (Number.isFinite(week.week_index)) out.set(week.week_index, week)
@@ -1419,7 +1413,7 @@ function findPhaseForDate(phases: MasterPlanPhase[], today: string): MasterPlanP
   }) ?? null
 }
 
-function selectNextMilestone(plan: MasterPlan, today: string): MasterPlanMilestone | null {
+function selectNextMilestone(plan: SeasonPlanView, today: string): MasterPlanMilestone | null {
   if (plan.next_milestone) {
     return {
       id: plan.next_milestone.id,
@@ -1434,7 +1428,7 @@ function selectNextMilestone(plan: MasterPlan, today: string): MasterPlanMilesto
   return sorted.find((milestone) => milestone.date >= today) ?? sorted.at(-1) ?? null
 }
 
-function buildHeroLede(plan: MasterPlan, target: TargetSummary, currentPhase: MasterPlanPhase | null, totalWeeks: number, currentWeek: number): string {
+function buildHeroLede(plan: SeasonPlanView, target: TargetSummary, currentPhase: MasterPlanPhase | null, totalWeeks: number, currentWeek: number): string {
   const parts = [
     `从 ${formatSlashDate(plan.start_date)} 到 ${formatSlashDate(plan.end_date)}，共 ${totalWeeks} 周。`,
     `当前处于第 ${currentWeek} 周${currentPhase ? ` · ${currentPhase.name}` : ''}，`,

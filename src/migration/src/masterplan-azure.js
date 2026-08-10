@@ -19,6 +19,7 @@
 
 import { DefaultAzureCredential } from "@azure/identity";
 import { odata, TableClient } from "@azure/data-tables";
+import { BlobServiceClient } from "@azure/storage-blob";
 
 const DEFAULT_TABLE_NAME = "stridemasterplan";
 
@@ -37,6 +38,21 @@ export function parseMasterPlanConfig(env) {
     accountUrl,
     tableName,
     versionsTableName: tableName + "versions",
+  };
+}
+
+export function parseMasterPlanSourceConfig(env) {
+  const table = parseMasterPlanConfig(env);
+  return {
+    tableAccountUrl: table.accountUrl,
+    tableName: table.tableName,
+    blobAccountUrl: (env.STRIDE_CONTENT_BLOB_ACCOUNT_URL || "").trim(),
+    container: (
+      env.STRIDE_CONTENT_BLOB_CONTAINER || env.STRIDE_CONTENT_CONTAINER || "stride-data"
+    ).trim(),
+    prefix: (
+      env.STRIDE_CONTENT_BLOB_PREFIX ?? env.STRIDE_CONTENT_PREFIX ?? "users"
+    ).trim().replace(/^\/+|\/+$/g, ""),
   };
 }
 
@@ -80,6 +96,44 @@ export function rewriteGoalIdInJson(jsonStr, oldId, newId) {
  * Build the two TableClients (plans + versions). Credential defaults to
  * DefaultAzureCredential; pass one in for tests/other identities.
  */
+export function makeMasterPlanSource(config, credential = new DefaultAzureCredential(), clients = {}) {
+  const table = clients.table ?? new TableClient(
+    config.tableAccountUrl,
+    config.tableName,
+    credential,
+  );
+  const container = clients.container ?? new BlobServiceClient(config.blobAccountUrl, credential)
+    .getContainerClient(config.container);
+  return {
+    async listStructured(userId) {
+      const entities = [];
+      for await (const entity of table.listEntities({
+        queryOptions: {
+          filter: odata`PartitionKey eq ${userId} and kind eq ${"plan"} and status eq ${"active"}`,
+        },
+      })) {
+        entities.push(entity);
+      }
+      return entities;
+    },
+    async readMarkdown(userId) {
+      const blobName = `${config.prefix ? config.prefix + "/" : ""}${userId}/TRAINING_PLAN.md`;
+      const blob = container.getBlobClient(blobName);
+      if (!(await blob.exists())) return null;
+      const [buffer, properties] = await Promise.all([
+        blob.downloadToBuffer(),
+        blob.getProperties(),
+      ]);
+      return {
+        user_id: userId,
+        blob_name: blobName,
+        text: buffer.toString("utf8"),
+        lastModified: properties.lastModified ?? null,
+      };
+    },
+  };
+}
+
 export function makeTableClients(config, credential = new DefaultAzureCredential()) {
   if (!config.accountUrl) {
     throw new Error(

@@ -377,28 +377,43 @@ migrations that expose `--ensure-schema` can apply it directly.
 
 ### Current season-plan cutover
 
-The master-plan migration also owns the explicit, outage-only schema transition
-from `master_plan.version` to `master_plan.revision`; Go AutoMigrate must not be
-used to infer this rename. Its target-aware dry-run reads Azure source and MySQL
-target, then emits a redacted per-user manifest for manual review. Structured
-content supersedes Markdown when both source forms exist; a different existing
-MySQL current row is a conflict and is never overwritten.
+The master-plan migration owns the explicit, outage-only transition from
+`master_plan.version` to `master_plan.revision`; Go AutoMigrate must not infer the
+rename. Dry-run always reads both Azure forms and MySQL, applies structured-over-
+Markdown precedence, and emits only a redacted canonical manifest plus stable hash.
 
-Every action is identity-bound: selected STRIDE user UUID, Azure partition,
-embedded source user/plan IDs, manifest IDs, and MySQL target IDs must agree.
-Target discovery checks rows marked current by either `active_flag=1` or
-`status='active'`; duplicate candidates or either direction of marker drift is a
-conflict.
+```bash
+# Target-aware dry-run. The local manifest file is created mode 0600.
+npm run migrate:master-plans -- --user <real-user-uuid> \
+  --manifest-out ./reviewed-season-plans.json
 
-During commit, each user is written transactionally and independently read back
-after commit for verification. Commit is bound to the manually reviewed manifest:
-source and target identities/hashes are re-read and any drift aborts the run. The schema
-operation is idempotent only for an old-only `version` state or a new-only
-`revision` state; both columns or neither column is a conflict. Stop the old Go
-API before commit; this is a full Go API maintenance window, so all existing Go-routed
-Web features are unavailable. Do not restart or roll back the old image after the rename.
-See `../../spec/go-current-season-plan-cutover.md` and ADR 0024 for the complete
-release and response contract.
+# During the full Go API maintenance window, validate/upgrade the schema.
+npm run migrate:master-plans:schema
+
+# After manual review, commit exactly the reviewed manifest/hash.
+npm run migrate:master-plans -- --commit --user <real-user-uuid> \
+  --reviewed-manifest ./reviewed-season-plans.json \
+  --reviewed-hash sha256:<hash-from-the-manifest>
+```
+
+The selected real-user set must exactly match the manifest. Every action binds the
+selected UUID, Azure partition/blob owner, embedded user/plan IDs, manifest IDs,
+and MySQL target IDs. Target discovery uses `active_flag=1 OR status='active'`;
+duplicates, marker drift in either direction, target-only rows, or a different
+current plan are conflicts and are never overwritten.
+
+Commit re-reads every source and target before the first write and rejects any
+identity/hash/classification drift. Inserts are per-user transactions; each commit
+is independently read back and must produce exactly one valid current row with the
+expected hash. Conflict manifests cannot commit. Legacy source `version` maps to
+canonical `revision` without changing Azure.
+
+Schema upgrade accepts only `version`-only (validate rows, rename, replace checks,
+then validate) or `revision`-only (validate/no-op) states. Both/neither are
+conflicts. Stop every old Go API instance before schema/data commit; on failure,
+leave Go stopped and repair/re-run. Do not restart or roll back the old image
+without manually reversing the schema first. See
+`../../spec/go-current-season-plan-cutover.md` and ADR 0024.
 
 ## Tests
 
