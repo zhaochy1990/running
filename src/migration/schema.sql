@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS user_profile (
   sex          VARCHAR(16)  NULL,
   height_cm    DOUBLE       NULL,
   weight_kg    DOUBLE       NULL,
+  running_age_range VARCHAR(16) NOT NULL DEFAULT 'unknown',
   created_at   DATETIME(3)  NULL,
   updated_at   DATETIME(3)  NULL,
   PRIMARY KEY (user_id)

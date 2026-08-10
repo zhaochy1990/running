@@ -4,7 +4,7 @@ One-off Node.js utilities that copy per-user data into the **Tencent MySQL**
 tables read by the Go worker (`src/go/`). It is a standalone project — it has its
 own `package.json` and does **not** import anything from the rest of the repo.
 
-Six migrations live here:
+Seven migrations live here:
 
 | Command | Source | Target table(s) |
 |---|---|---|
@@ -14,6 +14,7 @@ Six migrations live here:
 | `npm run migrate:training-goals` (`src/migrate-training-goals.js`) | local `data/<uuid>/training_goal.json` (+ Azure master-plan snapshots) | `race_goal` |
 | `npm run migrate:master-plans` (`src/migrate-master-plans.js`) | Azure Table/Blob season plans | `master_plan` |
 | `npm run migrate:weekly-plans` (`src/migrate-weekly-plans.js`) | Azure Table canonical weekly plans, with Blob `plan.md` fallback | `weekly_plan` |
+| `npm run migrate:running-age` (`src/migrate-running-age.js`) | local `data/<uuid>/running_profile.json` | existing `user_profile` rows |
 
 ## Production migration status
 
@@ -72,6 +73,33 @@ uses the same `STRIDE_WORKER_MYSQL_DSN` or `MYSQL_*` settings as other tools.
 
 The final JSON report is suitable for retaining as the manual-review manifest.
 The command exits non-zero when manual findings or conflicts remain.
+
+---
+
+## 7) Running-age migration — local `running_profile.json` → `user_profile`
+
+Backfills only the declared running-age value from each real user's local
+`running_profile.json`. It accepts `current.running_age` and the transitional
+`current.running_age_range` key, normalizes `lt6m` to `lt_6m`, and ignores legacy
+injury strings. Values outside `lt_6m`, `6m_1y`, `1y_3y`, and `3y_plus` are
+reported as failures. The command never inserts a profile and updates only an
+existing row whose `running_age_range` is still `unknown`; the conditional SQL
+makes reruns safe under concurrent profile edits.
+
+```bash
+# Dry-run is the default and emits only {migrated, skipped, missing, failed} JSON.
+npm run migrate:running-age
+node src/migrate-running-age.js --user zhaochaoyi
+
+# Write the selected real user after reviewing the dry-run report.
+node src/migrate-running-age.js --commit --user zhaochaoyi
+node src/migrate-running-age.js --commit --ensure-schema
+```
+
+`--user` accepts a UUID or an alias from `data/.slug_aliases.json`; aliases are
+still gated by the real-user allowlist in `src/users.js`. Use `--data-dir` or
+`STRIDE_DATA_DIR` for another local snapshot root. The migration prints no source
+values, user content, database configuration, or credentials.
 
 ---
 

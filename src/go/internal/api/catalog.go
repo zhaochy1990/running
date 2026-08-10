@@ -38,7 +38,10 @@ func (s *Service) listPipelines(c *gin.Context) {
 	c.JSON(http.StatusOK, pipelineCatalogResponse{Pipelines: pipelines})
 }
 
-const onboardingContractVersion = "web-onboarding-v1"
+const (
+	onboardingContractVersion = "web-onboarding-v2"
+	planSetupContractVersion  = "plan-setup-v1"
+)
 
 type onboardingRouteContract struct {
 	Method string `json:"method"`
@@ -51,7 +54,12 @@ type onboardingRouteContract struct {
 var onboardingWebRouteContracts = []onboardingRouteContract{
 	{Method: http.MethodGet, Path: "/api/users/me/profile"},
 	{Method: http.MethodPost, Path: "/api/users/me/profile"},
+	{Method: http.MethodPatch, Path: "/api/users/me/profile"},
 	{Method: http.MethodPost, Path: "/api/users/me/watch/login"},
+	{Method: http.MethodGet, Path: "/api/users/me/injuries"},
+	{Method: http.MethodPost, Path: "/api/users/me/injuries"},
+	{Method: http.MethodPut, Path: "/api/users/me/injuries/:injuryId"},
+	{Method: http.MethodDelete, Path: "/api/users/me/injuries/:injuryId"},
 	{Method: http.MethodPost, Path: "/api/:user/sync"},
 	{Method: http.MethodGet, Path: "/api/pipelines/:run_id"},
 	{Method: http.MethodGet, Path: "/api/jobs/:job_id"},
@@ -75,7 +83,26 @@ func (s *Service) onboardingReadiness(c *gin.Context) {
 	})
 }
 
+var planSetupRouteContracts = []onboardingRouteContract{
+	{Method: http.MethodGet, Path: "/api/users/me/training-goal"},
+	{Method: http.MethodPost, Path: "/api/users/me/training-goal"},
+	{Method: http.MethodPost, Path: "/api/:user/sync"},
+	{Method: http.MethodGet, Path: "/api/pipelines/:run_id"},
+}
+
+func (s *Service) planSetupReadiness(c *gin.Context) {
+	c.JSON(http.StatusOK, planSetupReadinessResponse{
+		ContractVersion: planSetupContractVersion,
+		Routes:          append([]onboardingRouteContract(nil), planSetupRouteContracts...),
+	})
+}
+
 type onboardingReadinessResponse struct {
+	ContractVersion string                    `json:"contract_version"`
+	Routes          []onboardingRouteContract `json:"routes"`
+}
+
+type planSetupReadinessResponse struct {
 	ContractVersion string                    `json:"contract_version"`
 	Routes          []onboardingRouteContract `json:"routes"`
 }

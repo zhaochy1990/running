@@ -53,6 +53,14 @@ React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。
 
 当前赛季计划的无凭据浏览器回归使用真实 BFF 路由和本地 fixture 上游：`cd frontend && npm run smoke:plan:fixture`。它覆盖结构化、Markdown、404 创建页和读取错误四种状态。
 
+## Profile cutover target
+
+- Go `GET`/`POST`/`PATCH /api/users/me/profile` owns the five core profile fields plus `running_age_range`.
+- Injury history is a separate Go resource under `/api/users/me/injuries`; it is not embedded in profile PATCH.
+- Weekly mileage and PBs are derived from watch data, not user-declared profile fields.
+- Web plan setup no longer calls Python `running-profile`, `full-sync`, or `full-sync-status`. It saves the race goal, waits for a Go incremental `data_sync` Pipeline Run, then starts the existing season-plan generation flow.
+- Python season-plan generation remains unchanged and is outside this Go cutover. Detailed route contract: [`spec/go-profile-sync-cutover.md`](../spec/go-profile-sync-cutover.md).
+
 ## Segment Display
 
 活动 segment 用 `exercise_type` 映射展示名（热身/训练/放松/恢复）。已知 COROS exercise code（T-codes for strength，S-codes for rest）的名字来自 `_EXERCISE_NAMES` dict。未知 S-code（如 running workout plan 引用 S4208）fallback 到 `exercise_type` 映射。

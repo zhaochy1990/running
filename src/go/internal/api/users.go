@@ -129,6 +129,7 @@ func (f FeatureConfig) forUser(uid string) featureFlags {
 // authed group so it reuses the JWT user-tier auth (ADR 0013).
 type userRoutes struct {
 	store         UserStore
+	injuries      InjuryStore
 	providerLogin ProviderLogin
 	providerInfo  ProviderInfo
 	authName      AuthNameSync
@@ -138,11 +139,11 @@ type userRoutes struct {
 	log           *zap.Logger
 }
 
-func newUserRoutes(store UserStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, ad AccountDeleter, features FeatureConfig, runs RunGetter, log *zap.Logger) *userRoutes {
+func newUserRoutes(store UserStore, injuries InjuryStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, ad AccountDeleter, features FeatureConfig, runs RunGetter, log *zap.Logger) *userRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &userRoutes{store: store, providerLogin: pl, providerInfo: pi, authName: an, accountAuth: ad, features: features, runs: runs, log: log}
+	return &userRoutes{store: store, injuries: injuries, providerLogin: pl, providerInfo: pi, authName: an, accountAuth: ad, features: features, runs: runs, log: log}
 }
 
 // register mounts the routes on the (already authenticated) group. Paths mirror
@@ -153,6 +154,10 @@ func (u *userRoutes) register(rg *gin.RouterGroup) {
 	rg.GET("/api/users/me/profile", u.getProfile)
 	rg.POST("/api/users/me/profile", u.postProfile)
 	rg.PATCH("/api/users/me/profile", u.patchProfile)
+	rg.GET("/api/users/me/injuries", u.listInjuries)
+	rg.POST("/api/users/me/injuries", u.createInjury)
+	rg.PUT("/api/users/me/injuries/:injuryId", u.updateInjury)
+	rg.DELETE("/api/users/me/injuries/:injuryId", u.deleteInjury)
 	rg.GET("/api/users/me/watch", u.getWatch)
 	rg.DELETE("/api/users/me/watch", u.deleteWatch)
 	rg.POST("/api/users/me/watch/login", u.watchLogin)
@@ -164,20 +169,22 @@ func (u *userRoutes) register(rg *gin.RouterGroup) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type profileResponse struct {
-	ID          string          `json:"id"`
-	DisplayName string          `json:"display_name"`
-	Provider    *string         `json:"provider"`
-	Profile     *profileCore    `json:"profile"`
-	Onboarding  onboardingState `json:"onboarding"`
-	Features    featureFlags    `json:"features"`
+	ID              string          `json:"id"`
+	DisplayName     string          `json:"display_name"`
+	RunningAgeRange string          `json:"running_age_range"`
+	Provider        *string         `json:"provider"`
+	Profile         *profileCore    `json:"profile"`
+	Onboarding      onboardingState `json:"onboarding"`
+	Features        featureFlags    `json:"features"`
 }
 
 type profileCore struct {
-	DisplayName string  `json:"display_name"`
-	DOB         string  `json:"dob"`
-	Sex         string  `json:"sex"`
-	HeightCm    float64 `json:"height_cm"`
-	WeightKg    float64 `json:"weight_kg"`
+	DisplayName     string  `json:"display_name"`
+	DOB             string  `json:"dob"`
+	Sex             string  `json:"sex"`
+	HeightCm        float64 `json:"height_cm"`
+	WeightKg        float64 `json:"weight_kg"`
+	RunningAgeRange string  `json:"running_age_range"`
 }
 
 type onboardingState struct {
@@ -197,22 +204,24 @@ type featureFlags struct {
 // profileInput is the POST profile body — the five onboarding core fields only
 // (race/training-plan goals are set later, ADR 0013).
 type profileInput struct {
-	DisplayName string  `json:"display_name" binding:"required"`
-	DOB         string  `json:"dob" binding:"required,datetime=2006-01-02"`
-	Sex         string  `json:"sex" binding:"required,oneof=male female other"`
-	HeightCm    float64 `json:"height_cm" binding:"required,gt=0"`
-	WeightKg    float64 `json:"weight_kg" binding:"required,gt=0"`
+	DisplayName     string  `json:"display_name" binding:"required"`
+	DOB             string  `json:"dob" binding:"required,datetime=2006-01-02"`
+	Sex             string  `json:"sex" binding:"required,oneof=male female other"`
+	HeightCm        float64 `json:"height_cm" binding:"required,gt=0"`
+	WeightKg        float64 `json:"weight_kg" binding:"required,gt=0"`
+	RunningAgeRange string  `json:"running_age_range" binding:"required,oneof=unknown lt_6m 6m_1y 1y_3y 3y_plus"`
 }
 
 // profilePatchInput is the Go-owned core subset of Python's post-onboarding
 // profile PATCH. Pointer fields distinguish omitted values from replacements;
 // decodeProfilePatch rejects explicit null and fields owned by other domains.
 type profilePatchInput struct {
-	DisplayName *string  `json:"display_name" binding:"omitempty,min=1"`
-	DOB         *string  `json:"dob" binding:"omitempty,datetime=2006-01-02"`
-	Sex         *string  `json:"sex" binding:"omitempty,oneof=male female other"`
-	HeightCm    *float64 `json:"height_cm" binding:"omitempty,gt=0"`
-	WeightKg    *float64 `json:"weight_kg" binding:"omitempty,gt=0"`
+	DisplayName     *string  `json:"display_name" binding:"omitempty,min=1"`
+	DOB             *string  `json:"dob" binding:"omitempty,datetime=2006-01-02"`
+	Sex             *string  `json:"sex" binding:"omitempty,oneof=male female other"`
+	HeightCm        *float64 `json:"height_cm" binding:"omitempty,gt=0"`
+	WeightKg        *float64 `json:"weight_kg" binding:"omitempty,gt=0"`
+	RunningAgeRange *string  `json:"running_age_range" binding:"omitempty,oneof=unknown lt_6m 6m_1y 1y_3y 3y_plus"`
 }
 
 type profilePatchResponse struct {
@@ -317,18 +326,23 @@ func (u *userRoutes) getProfile(c *gin.Context) {
 		return
 	}
 
-	resp := profileResponse{ID: uid, Features: u.features.forUser(uid)}
+	resp := profileResponse{ID: uid, RunningAgeRange: storage.RunningAgeUnknown, Features: u.features.forUser(uid)}
 	if found {
 		resp.Provider = &providerName
 	}
 	if profile != nil {
 		resp.DisplayName = profile.DisplayName
+		resp.RunningAgeRange = profile.RunningAgeRange
+		if resp.RunningAgeRange == "" {
+			resp.RunningAgeRange = storage.RunningAgeUnknown
+		}
 		resp.Profile = &profileCore{
-			DisplayName: profile.DisplayName,
-			DOB:         profile.DOB,
-			Sex:         profile.Sex,
-			HeightCm:    profile.HeightCm,
-			WeightKg:    profile.WeightKg,
+			DisplayName:     profile.DisplayName,
+			DOB:             profile.DOB,
+			Sex:             profile.Sex,
+			HeightCm:        profile.HeightCm,
+			WeightKg:        profile.WeightKg,
+			RunningAgeRange: resp.RunningAgeRange,
 		}
 	}
 	if onb != nil {
@@ -369,12 +383,13 @@ func (u *userRoutes) postProfile(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	if err := u.store.UpsertUserProfile(ctx, &storage.UserProfile{
-		UserID:      uid,
-		DisplayName: in.DisplayName,
-		DOB:         in.DOB,
-		Sex:         in.Sex,
-		HeightCm:    in.HeightCm,
-		WeightKg:    in.WeightKg,
+		UserID:          uid,
+		DisplayName:     in.DisplayName,
+		DOB:             in.DOB,
+		Sex:             in.Sex,
+		HeightCm:        in.HeightCm,
+		WeightKg:        in.WeightKg,
+		RunningAgeRange: in.RunningAgeRange,
 	}); err != nil {
 		u.log.Error("upsert profile failed", zapErr(err))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
@@ -427,11 +442,12 @@ func (u *userRoutes) patchProfile(c *gin.Context) {
 	}
 
 	profile, err := u.store.PatchUserProfile(c.Request.Context(), uid, storage.UserProfilePatch{
-		DisplayName: in.DisplayName,
-		DOB:         in.DOB,
-		Sex:         in.Sex,
-		HeightCm:    in.HeightCm,
-		WeightKg:    in.WeightKg,
+		DisplayName:     in.DisplayName,
+		DOB:             in.DOB,
+		Sex:             in.Sex,
+		HeightCm:        in.HeightCm,
+		WeightKg:        in.WeightKg,
+		RunningAgeRange: in.RunningAgeRange,
 	})
 	if err != nil {
 		u.log.Error("patch profile failed", zapErr(err))
@@ -776,25 +792,31 @@ func firstNonEmpty(a, b string) string {
 }
 
 func toProfileCore(profile *storage.UserProfile) profileCore {
+	runningAge := profile.RunningAgeRange
+	if runningAge == "" {
+		runningAge = storage.RunningAgeUnknown
+	}
 	return profileCore{
-		DisplayName: profile.DisplayName,
-		DOB:         profile.DOB,
-		Sex:         profile.Sex,
-		HeightCm:    profile.HeightCm,
-		WeightKg:    profile.WeightKg,
+		DisplayName:     profile.DisplayName,
+		DOB:             profile.DOB,
+		Sex:             profile.Sex,
+		HeightCm:        profile.HeightCm,
+		WeightKg:        profile.WeightKg,
+		RunningAgeRange: runningAge,
 	}
 }
 
 func hasProfilePatch(in profilePatchInput) bool {
-	return in.DisplayName != nil || in.DOB != nil || in.Sex != nil || in.HeightCm != nil || in.WeightKg != nil
+	return in.DisplayName != nil || in.DOB != nil || in.Sex != nil || in.HeightCm != nil || in.WeightKg != nil || in.RunningAgeRange != nil
 }
 
 var profilePatchFields = map[string]bool{
-	"display_name": true,
-	"dob":          true,
-	"sex":          true,
-	"height_cm":    true,
-	"weight_kg":    true,
+	"display_name":      true,
+	"dob":               true,
+	"sex":               true,
+	"height_cm":         true,
+	"weight_kg":         true,
+	"running_age_range": true,
 }
 
 // decodeProfilePatch enforces the staged Go contract before gin validation:

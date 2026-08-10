@@ -97,6 +97,7 @@ type Config struct {
 	// User/onboarding surface (ADR 0013) — a sibling registrar sharing the auth
 	// path. Leave zero to run the job/pipeline API only (e.g. in tests).
 	UserStore      UserStore
+	InjuryStore    InjuryStore
 	ProviderLogin  ProviderLogin
 	ProviderInfo   ProviderInfo
 	AuthNameSync   AuthNameSync
@@ -202,7 +203,7 @@ func NewService(cfg Config) *Service {
 		syncPipelineIncremental: cfg.SyncPipelineIncremental,
 		jobCatalog:              cfg.JobCatalog,
 		pipelineCatalog:         cfg.PipelineCatalog,
-		users:                   newUserRoutes(cfg.UserStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.AccountDeleter, cfg.Features, cfg.Runs, log),
+		users:                   newUserRoutes(cfg.UserStore, cfg.InjuryStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.AccountDeleter, cfg.Features, cfg.Runs, log),
 		goals:                   newGoalRoutes(cfg.GoalStore, log),
 		activities:              newActivityRoutes(cfg.ActivityStore, log),
 		teams:                   newTeamRoutes(cfg.TeamAuth, cfg.TeamStore, cfg.ActivityStore, log),
@@ -238,6 +239,7 @@ func (s *Service) Router() *gin.Engine {
 	// Deployment probes this before enabling the Web onboarding Go-route flags.
 	// It contains no user or deployment-secret data.
 	r.GET("/readyz/onboarding", s.onboardingReadiness)
+	r.GET("/readyz/plan-setup", s.planSetupReadiness)
 
 	authed := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
 	authed.POST("/jobs", s.createJob)

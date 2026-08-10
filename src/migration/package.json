@@ -13,7 +13,8 @@
     "migrate-health": "src/migrate-health.js",
     "migrate-training-goals": "src/migrate-training-goals.js",
     "migrate-master-plans": "src/migrate-master-plans.js",
-    "migrate-weekly-plans": "src/migrate-weekly-plans.js"
+    "migrate-weekly-plans": "src/migrate-weekly-plans.js",
+    "migrate-running-age": "src/migrate-running-age.js"
   },
   "scripts": {
     "migrate": "node src/index.js",
@@ -23,6 +24,7 @@
     "migrate:master-plans": "node src/migrate-master-plans.js",
     "migrate:master-plans:schema": "node src/migrate-master-plans.js --commit --schema-upgrade",
     "migrate:weekly-plans": "node src/migrate-weekly-plans.js",
+    "migrate:running-age": "node src/migrate-running-age.js",
     "test": "node --test"
   },
   "dependencies": {

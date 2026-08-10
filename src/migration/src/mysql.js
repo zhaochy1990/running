@@ -494,3 +494,43 @@ export async function listMasterPlans(conn, userId) {
   );
   return rows;
 }
+
+// ── running age backfill (legacy running_profile.json) ───────────────────────
+
+export const RUNNING_AGE_UPDATE_SQL =
+  "UPDATE user_profile SET running_age_range = ?, updated_at = ? " +
+  "WHERE user_id = ? AND running_age_range = 'unknown'";
+
+/**
+ * Conditionally update one existing unknown profile. The predicate is the
+ * idempotency/concurrency guard; callers must treat affectedRows=0 as skipped.
+ */
+export async function updateRunningAgeIfUnknown(conn, userId, runningAge, now) {
+  const [result] = await conn.execute(RUNNING_AGE_UPDATE_SQL, [
+    runningAge,
+    now,
+    userId,
+  ]);
+  return result.affectedRows > 0;
+}
+
+/**
+ * Add the column to an existing user_profile table without touching rows. The
+ * CREATE TABLE definition in schema.sql covers fresh databases; this helper is
+ * for the already-created table used by the one-time backfill.
+ */
+export async function ensureRunningAgeColumn(conn) {
+  const [rows] = await conn.execute(
+    "SELECT COUNT(*) AS column_count FROM information_schema.columns " +
+      "WHERE table_schema = DATABASE() AND table_name = 'user_profile' " +
+      "AND column_name = 'running_age_range'",
+  );
+  if (Number(rows[0]?.column_count ?? 0) === 0) {
+    await conn.execute(
+      "ALTER TABLE user_profile ADD COLUMN running_age_range VARCHAR(16) " +
+        "NOT NULL DEFAULT 'unknown'",
+    );
+    return true;
+  }
+  return false;
+}
