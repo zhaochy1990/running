@@ -7,17 +7,21 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/zhaochy1990/stride/internal/apifmt"
 	"github.com/zhaochy1990/stride/internal/logging"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
 type WeeklyPlanStore interface {
 	ListActiveWeeklyPlans(ctx context.Context, userID string) ([]storage.WeeklyPlan, error)
+	ListWeekSummaries(ctx context.Context, userID, masterPlanID string) ([]storage.WeekSummary, error)
 	GetActiveWeeklyPlan(ctx context.Context, userID, weekStart string) (*storage.WeeklyPlan, error)
 }
 
@@ -39,6 +43,7 @@ func (w *weeklyPlanRoutes) register(rg *gin.RouterGroup) {
 	}
 	rg.GET("/api/:user/plan/weeks", w.list)
 	rg.GET("/api/:user/plan/weeks/:weekName", w.detail)
+	rg.GET("/api/:user/weeks", w.listSummaries)
 }
 
 type weeklyPlanMetadataResponse struct {
@@ -57,6 +62,21 @@ type weeklyPlanMetadataResponse struct {
 type weeklyPlanDetailResponse struct {
 	weeklyPlanMetadataResponse
 	Content any `json:"content"`
+}
+
+type weekSummaryResponse struct {
+	Folder             string  `json:"folder"`
+	DateFrom           string  `json:"date_from"`
+	DateTo             string  `json:"date_to"`
+	HasPlan            bool    `json:"has_plan"`
+	HasFeedback        bool    `json:"has_feedback"`
+	HasBodyComposition bool    `json:"has_body_composition"`
+	PlanSource         string  `json:"plan_source"`
+	PlanTitle          string  `json:"plan_title"`
+	ActivityCount      int     `json:"activity_count"`
+	TotalKM            float64 `json:"total_km"`
+	TotalDurationS     float64 `json:"total_duration_s"`
+	TotalDurationFmt   string  `json:"total_duration_fmt"`
 }
 
 var weekNamePattern = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2})$`)
@@ -127,6 +147,60 @@ func (w *weeklyPlanRoutes) list(c *gin.Context) {
 			return
 		}
 		weeks = append(weeks, item)
+	}
+	c.JSON(http.StatusOK, gin.H{"weeks": weeks})
+}
+
+// listSummaries exposes canonical MySQL weekly plans in the legacy list shape.
+// File-backed feedback/body-composition flags are false because those stores
+// are not part of stride-api.
+func (w *weeklyPlanRoutes) listSummaries(c *gin.Context) {
+	user := c.Param("user")
+	if !authorizeUser(c, user) {
+		return
+	}
+	masterPlanID, hasMasterPlan := c.GetQuery("master_plan")
+	masterPlanID = strings.TrimSpace(masterPlanID)
+	if hasMasterPlan && masterPlanID == "" {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_master_plan"})
+		return
+	}
+	if masterPlanID != "" {
+		if _, err := uuid.Parse(masterPlanID); err != nil {
+			c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_master_plan"})
+			return
+		}
+	}
+	rows, err := w.store.ListWeekSummaries(c.Request.Context(), user, masterPlanID)
+	if err != nil {
+		w.log.Error("list week summaries failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	weeks := make([]weekSummaryResponse, 0, len(rows))
+	for _, row := range rows {
+		start, err := time.Parse("2006-01-02", row.WeekStart)
+		if err != nil || start.Weekday() != time.Monday {
+			w.log.Error("weekly plan has invalid identity", zap.String("plan_id", row.PlanID), zap.String("week_start", row.WeekStart))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+		end := start.AddDate(0, 0, 6)
+		folder := start.Format("2006-01-02") + "_" + end.Format("01-02")
+		planTitle := folder
+		if row.ContentVersion == storage.WeeklyPlanContentMarkdown {
+			firstLine, _, _ := strings.Cut(row.Content, "\n")
+			if title := strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(firstLine), "# ")); title != "" {
+				planTitle = title
+			}
+		}
+		weeks = append(weeks, weekSummaryResponse{
+			Folder: folder, DateFrom: row.WeekStart, DateTo: end.Format("2006-01-02"),
+			HasPlan: true, HasFeedback: false, HasBodyComposition: false,
+			PlanSource: "weekly_plan_store", PlanTitle: planTitle,
+			ActivityCount: row.ActivityCount, TotalKM: row.TotalKM,
+			TotalDurationS: row.TotalDurationS, TotalDurationFmt: apifmt.DurationFmt(&row.TotalDurationS),
+		})
 	}
 	c.JSON(http.StatusOK, gin.H{"weeks": weeks})
 }

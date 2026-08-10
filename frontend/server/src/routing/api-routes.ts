@@ -207,7 +207,7 @@ export const API_ROUTES: readonly ApiRoute[] = [
 
   // ── Weeks / weekly plan.md ──────────────────────────────────────────────
   // ✓ /, /week, /plan, /plan/adjust · list weekly-plan folders
-  { method: 'GET', path: '/api/:user/weeks', env: 'STRIDE_ROUTE_GET_USER_WEEKS', goReady: false },
+  { method: 'GET', path: '/api/:user/weeks', env: 'STRIDE_ROUTE_GET_USER_WEEKS', goReady: true },
   // ✓ /, /week, /coach/week/:folder/adjust · load week detail
   { method: 'GET', path: '/api/:user/weeks/:folder', env: 'STRIDE_ROUTE_GET_USER_WEEKS_FOLDER', goReady: false },
   // ✗ not called
