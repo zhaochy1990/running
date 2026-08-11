@@ -5,10 +5,10 @@ The Go `cmd/api` has ported the write/onboarding/watch surface (ADR 0013, 0018, 
 - `GET /api/{user}/health` — daily-health rows + HRV snapshot block + per-day HRV trend + `rhr_baseline`
 - `GET /api/{user}/hrv` — per-day HRV detail + latest-reading summary
 - `GET /api/{user}/stride/zones` — STRIDE calibration threshold + pace/HR training zones
-- `GET /api/{user}/stride/training-load` — daily PMC series (STRIDE load) + latest usable current
+- `GET /api/{user}/stride/training-load` — calendar-continuous daily PMC series (STRIDE load) + projected current
 - `GET /api/{user}/pmc` — vendor ATI/CTI/TSB PMC **and** the STRIDE-load PMC block, combined
 
-All five emit the exact Python JSON they shadow. They are marked `goReady: true` in the BFF strangler manifest but keep `upstream: 'python'` — no browser traffic is cut over (a separate routing decision, per ADR 0019).
+All five emit the frontend-consumed contract of the Python routes they shadow, with the deliberate divergences documented below. They are marked `goReady: true` in the BFF strangler manifest but keep `upstream: 'python'` — no browser traffic is cut over (a separate routing decision, per ADR 0019).
 
 ## Decision
 
@@ -33,4 +33,4 @@ All five emit the exact Python JSON they shadow. They are marked `goReady: true`
 - **Manifest is `goReady:true` but still `upstream:'python'`** for all five routes (`frontend/server/src/routing/api-routes.ts`), so a cutover is a one-line `upstream` flip per route once parity is validated. Until then no user traffic hits the Go handlers.
 - **The 自研 / 透传 boundary is expressed in the route layout, not by reshaping `/pmc`.** `/stride/*` carries STRIDE-computed metrics and `/health`+`/hrv` carry watch-passthrough fields (see `CONTEXT.md` → STRIDE 自研指标 / 手表透传字段). `/pmc` deliberately spans both for contract parity — splitting it into a vendor-only `/pmc` + a new `/stride/pmc` was considered and rejected, because the STRIDE-load PMC is already served by `/stride/training-load` (same table, same shape) and a second endpoint would duplicate it.
 - **`internal/apifmt` gains a speed→pace helper** that is the single source for the `_pace_fmt` formula; future zone/pace ports reuse it rather than re-deriving `1000/speed` rounding.
-- **Tests are layered** (per ADR 0019): pure `apifmt` unit tests for the new pace helper; `internal/api` handler-contract tests against fake `HealthStore`/`StrideStore` (auth tiers, `days` clamping, zone ordering + int/pace formatting, `current` = latest-usable selection, null/empty invariants, `/pmc` tsb-zone bands + ramps); and MySQL-gated `internal/storage` integration tests (windowing/order, latest-usable filter, the `chronic_load_7d_ago` join, date normalization).
+- **Tests are layered** (per ADR 0019): pure `apifmt` unit tests for the new pace helper; `internal/api` handler-contract tests against fake `HealthStore`/`StrideStore` (auth tiers, `days` clamping, zone ordering + int/pace formatting, calendar-continuous projection and projected `current`, null/empty invariants, `/pmc` tsb-zone bands + ramps); and MySQL-gated `internal/storage` integration tests (windowing/order, latest-usable persisted-row filter, the `chronic_load_7d_ago` join, date normalization).
