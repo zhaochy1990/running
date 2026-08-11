@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -25,6 +26,7 @@ type WeeklyPlanStore interface {
 	ListWeekSummaries(ctx context.Context, userID, masterPlanID string) ([]storage.WeekSummary, error)
 	ListWeekActivities(ctx context.Context, userID, dateFrom, dateTo string) ([]storage.Activity, error)
 	GetActiveWeeklyPlan(ctx context.Context, userID, weekStart string) (*storage.WeeklyPlan, error)
+	PutWeeklyFeedback(ctx context.Context, userID, weekStart, content string) (storage.WeeklyFeedback, error)
 }
 
 type weeklyPlanRoutes struct {
@@ -47,6 +49,84 @@ func (w *weeklyPlanRoutes) register(rg *gin.RouterGroup) {
 	rg.GET("/api/:user/plan/weeks/:weekName", w.detail)
 	rg.GET("/api/:user/weeks", w.listSummaries)
 	rg.GET("/api/:user/weeks/:weekName", w.weekDetail)
+	rg.PUT("/api/:user/weeks/:weekName/feedback", w.putFeedback)
+}
+
+type putWeeklyFeedbackRequest struct {
+	Content *string `json:"content" binding:"required"`
+}
+
+type weeklyFeedbackResponse struct {
+	Success     bool   `json:"success"`
+	Week        string `json:"week"`
+	Feedback    string `json:"feedback"`
+	HasFeedback bool   `json:"has_feedback"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+// putFeedback saves the athlete's feedback for one Shanghai natural week.
+//
+//	@Summary		Save weekly feedback
+//	@Tags			weekly-plan
+//	@Accept			json
+//	@Produce		json
+//	@Param			user		path		string					true	"User id (JWT sub)"
+//	@Param			weekName	path		string					true	"Shanghai week name (YYYY-MM-DD_MM-DD)"
+//	@Param			body		body		putWeeklyFeedbackRequest	true	"Weekly feedback"
+//	@Success		200			{object}	weeklyFeedbackResponse
+//	@Failure		400			{object}	errorResponse
+//	@Failure		401			{object}	errorResponse
+//	@Failure		403			{object}	errorResponse
+//	@Failure		413			{object}	errorResponse
+//	@Failure		422			{object}	errorResponse
+//	@Failure		500			{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/{user}/weeks/{weekName}/feedback [put]
+func (w *weeklyPlanRoutes) putFeedback(c *gin.Context) {
+	user := c.Param("user")
+	if !authorizeUser(c, user) {
+		return
+	}
+	weekName := c.Param("weekName")
+	weekStart, _, ok := weekIdentity(weekName)
+	if !ok {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_week_name"})
+		return
+	}
+	var request putWeeklyFeedbackRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "weekly_feedback_too_large"})
+			return
+		}
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+	if request.Content == nil {
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+	content := *request.Content
+	if len([]byte(content)) > 256*1024 {
+		c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "weekly_feedback_too_large"})
+		return
+	}
+	if strings.TrimSpace(content) == "" {
+		content = ""
+	}
+	row, err := w.store.PutWeeklyFeedback(c.Request.Context(), user, weekStart, content)
+	if err != nil {
+		w.log.Error("put weekly feedback failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, weeklyFeedbackResponse{
+		Success: true, Week: weekName, Feedback: row.ContentMD, HasFeedback: row.ContentMD != "",
+		CreatedAt: row.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: row.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	})
 }
 
 type weeklyPlanMetadataResponse struct {

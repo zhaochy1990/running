@@ -88,6 +88,9 @@ func runAPI() error {
 	if err := store.AutoMigrateWeeklyPlan(ctx); err != nil {
 		return err
 	}
+	if err := store.AutoMigrateWeeklyFeedback(ctx); err != nil {
+		return err
+	}
 	if err := store.AutoMigrateTeamLikes(ctx); err != nil {
 		return err
 	}

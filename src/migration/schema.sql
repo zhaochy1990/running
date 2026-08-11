@@ -319,3 +319,15 @@ CREATE TABLE IF NOT EXISTS weekly_plan (
   ),
   CONSTRAINT ck_weekly_plan_revision CHECK (revision >= 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- weekly_feedback — one athlete-authored feedback body per Shanghai week.
+-- Its lifecycle is independent from every weekly_plan row for that week.
+
+CREATE TABLE IF NOT EXISTS weekly_feedback (
+  user_id     VARCHAR(64) NOT NULL,
+  week_start  DATE        NOT NULL,
+  content_md  LONGTEXT    NOT NULL,
+  created_at  DATETIME(3) NOT NULL,
+  updated_at  DATETIME(3) NOT NULL,
+  PRIMARY KEY (user_id, week_start)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

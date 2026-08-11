@@ -6,8 +6,10 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +29,21 @@ type fakeWeeklyPlanStore struct {
 	lastMasterPlanID string
 	lastDateFrom     string
 	lastDateTo       string
+	feedback         map[string]storage.WeeklyFeedback
+	now              time.Time
+}
+
+func (f *fakeWeeklyPlanStore) PutWeeklyFeedback(_ context.Context, userID, weekStart, content string) (storage.WeeklyFeedback, error) {
+	now := f.now
+	key := userID + "/" + weekStart
+	row, exists := f.feedback[key]
+	if !exists {
+		row = storage.WeeklyFeedback{UserID: userID, WeekStart: weekStart, CreatedAt: now}
+	}
+	row.ContentMD = content
+	row.UpdatedAt = now
+	f.feedback[key] = row
+	return row, nil
 }
 
 func (f *fakeWeeklyPlanStore) ListWeekActivities(_ context.Context, userID, dateFrom, dateTo string) ([]storage.Activity, error) {
@@ -81,6 +98,8 @@ func newWeeklyPlanHarness(t *testing.T) *weeklyPlanHarness {
 	store := &fakeWeeklyPlanStore{
 		plans: map[string][]storage.WeeklyPlan{}, summaries: map[string][]storage.WeekSummary{},
 		activities: map[string][]storage.Activity{},
+		feedback:   map[string]storage.WeeklyFeedback{},
+		now:        time.Date(2026, 8, 11, 1, 2, 3, 0, time.UTC),
 	}
 	svc := NewService(Config{
 		Auth:            NewAuthenticator(testToken, NewJWTVerifierFromKey(&key.PublicKey, testIssuer, testAudience)),
@@ -103,13 +122,81 @@ func (h *weeklyPlanHarness) bearer(t *testing.T, sub string) map[string]string {
 }
 
 func (h *weeklyPlanHarness) do(method, path string, headers map[string]string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
+	return h.doBody(method, path, headers, nil)
+}
+
+func (h *weeklyPlanHarness) doBody(method, path string, headers map[string]string, body io.Reader) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, body)
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
 	resp := httptest.NewRecorder()
 	h.svc.Router().ServeHTTP(resp, req)
 	return resp
+}
+
+func TestPutWeeklyFeedbackCreatesNormalizedFeedback(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	resp := h.doBody(http.MethodPut, "/api/"+userID+"/weeks/2026-12-28_01-03/feedback", h.bearer(t, userID), strings.NewReader(`{"content":"  Great week!  ","legacy":true}`))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["success"] != true || body["week"] != "2026-12-28_01-03" || body["feedback"] != "  Great week!  " || body["has_feedback"] != true {
+		t.Fatalf("body=%v", body)
+	}
+	if body["created_at"] != "2026-08-11T01:02:03Z" || body["updated_at"] != "2026-08-11T01:02:03Z" {
+		t.Fatalf("timestamps=%v", body)
+	}
+}
+
+func TestPutWeeklyFeedbackValidatesRequestAndAuthorization(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	tests := []struct {
+		name, path, body string
+		headers          map[string]string
+		status           int
+		error            string
+	}{
+		{"cross user", "/api/other/weeks/2026-07-27_08-02/feedback", `{"content":"x"}`, h.bearer(t, "user-a"), http.StatusForbidden, "forbidden"},
+		{"bad week", "/api/user-a/weeks/2026-07-28_08-03/feedback", `{"content":"x"}`, h.bearer(t, "user-a"), http.StatusBadRequest, "invalid_week_name"},
+		{"non string", "/api/user-a/weeks/2026-07-27_08-02/feedback", `{"content":42}`, h.bearer(t, "user-a"), http.StatusUnprocessableEntity, "invalid_content"},
+		{"missing content", "/api/user-a/weeks/2026-07-27_08-02/feedback", `{}`, h.bearer(t, "user-a"), http.StatusUnprocessableEntity, "invalid_content"},
+		{"too large utf8", "/api/user-a/weeks/2026-07-27_08-02/feedback", `{"content":"` + strings.Repeat("跑", 87382) + `"}`, h.bearer(t, "user-a"), http.StatusRequestEntityTooLarge, "weekly_feedback_too_large"},
+		{"too large body", "/api/user-a/weeks/2026-07-27_08-02/feedback", `{"content":"` + strings.Repeat("x", 1024*1024) + `"}`, h.bearer(t, "user-a"), http.StatusRequestEntityTooLarge, "weekly_feedback_too_large"},
+		{"too large whitespace", "/api/user-a/weeks/2026-07-27_08-02/feedback", `{"content":"` + strings.Repeat(" ", 256*1024+1) + `"}`, h.bearer(t, "user-a"), http.StatusRequestEntityTooLarge, "weekly_feedback_too_large"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resp := h.doBody(http.MethodPut, test.path, test.headers, strings.NewReader(test.body))
+			if resp.Code != test.status || resp.Body.String() != `{"error":"`+test.error+`"}` {
+				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+			}
+		})
+	}
+}
+
+func TestPutWeeklyFeedbackClearsWhitespaceAndRefreshesUpdate(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	path := "/api/" + userID + "/weeks/2026-07-27_08-02/feedback"
+	first := h.doBody(http.MethodPut, path, h.bearer(t, userID), strings.NewReader(`{"content":"first"}`))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
+	}
+	h.store.now = time.Date(2026, 8, 11, 2, 3, 4, 0, time.UTC)
+	second := h.doBody(http.MethodPut, path, h.bearer(t, userID), strings.NewReader("{\"content\":\" \\n\\t \"}"))
+	var body weeklyFeedbackResponse
+	if err := json.Unmarshal(second.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if second.Code != http.StatusOK || body.Feedback != "" || body.HasFeedback || body.CreatedAt != "2026-08-11T01:02:03Z" || body.UpdatedAt != "2026-08-11T02:03:04Z" {
+		t.Fatalf("status=%d body=%+v", second.Code, body)
+	}
 }
 
 func weeklyPlanFixture(id, userID, weekStart string, contentVersion int8, content string) storage.WeeklyPlan {

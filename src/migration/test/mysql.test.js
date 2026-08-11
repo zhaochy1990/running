@@ -95,14 +95,14 @@ CREATE TABLE b (id INT);
   assert.equal(stmts[0].includes("-- a comment"), false);
 });
 
-test("splitSqlStatements splits the real schema.sql into its 10 CREATE TABLEs", () => {
-  // Regression guard: schema.sql has 10 statements (3 identity/creds tables +
-  // 4 health-domain tables + race_goal + master_plan + weekly_plan); migrations run
+test("splitSqlStatements splits the real schema.sql into its 11 CREATE TABLEs", () => {
+  // Regression guard: schema.sql has 11 statements (3 identity/creds tables +
+  // 4 health-domain tables + race_goal + master_plan + weekly_plan + weekly_feedback); migrations run
   // --ensure-schema through splitSqlStatements, so each must be a lone statement
   // (mysql2 conn.query rejects multiple statements). Comment lines contain ';'.
   const schemaPath = join(dirname(fileURLToPath(import.meta.url)), "..", "schema.sql");
   const stmts = splitSqlStatements(readFileSync(schemaPath, "utf8"));
-  assert.equal(stmts.length, 10);
+  assert.equal(stmts.length, 11);
   for (const s of stmts) {
     assert.match(s, /^CREATE TABLE IF NOT EXISTS/);
     assert.equal(s.includes("--"), false);
@@ -117,6 +117,10 @@ test("splitSqlStatements splits the real schema.sql into its 10 CREATE TABLEs", 
   assert.ok(stmts.some((s) => s.includes("race_goal")));
   assert.ok(stmts.some((s) => s.includes("master_plan")));
   assert.ok(stmts.some((s) => s.includes("weekly_plan")));
+  const weeklyFeedback = stmts.find((s) => s.includes("CREATE TABLE IF NOT EXISTS weekly_feedback"));
+  assert.match(weeklyFeedback, /PRIMARY KEY \(user_id, week_start\)/i);
+  assert.match(weeklyFeedback, /content_md\s+LONGTEXT\s+NOT NULL/i);
+  assert.doesNotMatch(weeklyFeedback, /FOREIGN KEY/i);
   const masterPlan = stmts.find((s) => s.includes("CREATE TABLE IF NOT EXISTS master_plan"));
   assert.match(masterPlan, /\brevision\s+BIGINT\s+NULL/i);
   assert.doesNotMatch(masterPlan, /\bversion\s+BIGINT/i);
