@@ -99,8 +99,6 @@ type weekDetailResponse struct {
 	DateFrom         string                  `json:"date_from"`
 	DateTo           string                  `json:"date_to"`
 	Plan             *string                 `json:"plan,omitempty"`
-	PlanSource       string                  `json:"plan_source"`
-	FeedbackSource   string                  `json:"feedback_source"`
 	Activities       []weekActivityResponse  `json:"activities"`
 	TotalKM          float64                 `json:"total_km"`
 	TotalDurationS   float64                 `json:"total_duration_s"`
@@ -283,7 +281,6 @@ func (w *weeklyPlanRoutes) weekDetail(c *gin.Context) {
 
 	response := weekDetailResponse{
 		WeekName: weekName, DateFrom: weekStart, DateTo: dateTo,
-		PlanSource: "weekly_plan_store", FeedbackSource: "none",
 		Activities: make([]weekActivityResponse, 0, len(rows)),
 	}
 	for i := range rows {

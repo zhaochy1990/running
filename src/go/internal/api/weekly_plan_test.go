@@ -272,8 +272,6 @@ func TestWeekDetailReturnsMigratedPlanAndActivities(t *testing.T) {
 		WeekName         string                 `json:"week_name"`
 		DateFrom         string                 `json:"date_from"`
 		DateTo           string                 `json:"date_to"`
-		PlanSource       string                 `json:"plan_source"`
-		FeedbackSource   string                 `json:"feedback_source"`
 		Activities       []map[string]any       `json:"activities"`
 		TotalKM          float64                `json:"total_km"`
 		TotalDurationS   float64                `json:"total_duration_s"`
@@ -284,14 +282,24 @@ func TestWeekDetailReturnsMigratedPlanAndActivities(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
+	var raw map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode raw: %v", err)
+	}
+	if _, exists := raw["plan_source"]; exists {
+		t.Fatalf("response must not include plan_source: %v", raw)
+	}
+	if _, exists := raw["feedback_source"]; exists {
+		t.Fatalf("response must not include feedback_source: %v", raw)
+	}
 	if body.WeekName != "2026-07-27_08-02" || body.DateFrom != "2026-07-27" || body.DateTo != "2026-08-02" {
 		t.Fatalf("week identity=%+v", body)
 	}
 	if h.store.lastDateFrom != body.DateFrom || h.store.lastDateTo != body.DateTo {
 		t.Fatalf("activity bounds=%s..%s", h.store.lastDateFrom, h.store.lastDateTo)
 	}
-	if body.PlanSource != "weekly_plan_store" || body.FeedbackSource != "none" || body.Structured.StructuredStatus != "canonical" {
-		t.Fatalf("sources/structured=%+v", body)
+	if body.Structured.StructuredStatus != "canonical" {
+		t.Fatalf("structured=%+v", body)
 	}
 	if body.ActivityCount != 2 || body.TotalKM != 6.2 || body.TotalDurationS != 2400 || body.TotalDurationFmt != "00:40:00" {
 		t.Fatalf("totals=%+v", body)

@@ -4068,13 +4068,7 @@ const docTemplate = `{
                 "date_to": {
                     "type": "string"
                 },
-                "feedback_source": {
-                    "type": "string"
-                },
                 "plan": {
-                    "type": "string"
-                },
-                "plan_source": {
                     "type": "string"
                 },
                 "structured": {
