@@ -1,7 +1,7 @@
 import { ContextSnapshotSchema, type ContextSnapshot, type MasterPlanContextProvider } from "../graph/master_plan/index.js";
-import type { Activity, ActiveMasterPlanMetadata, DailyRecovery, DailyTrainingLoad, PersonalBest, RaceEffort, RunningCalibration, StrideDataStore, UserProfile } from "./dataStore.js";
+import type { Activity, ActiveMasterPlanMetadata, DailyRecovery, DailyTrainingLoad, PersonalBest, RaceEffort, RunningCalibration, StrideDataStore, UserInjury, UserProfile } from "./dataStore.js";
 
-type ContextStore = Pick<StrideDataStore, "getUserProfile" | "getActivitiesByDateRange" | "getDailyTrainingLoadByDateRange" | "getDailyRecoveryByDateRange" | "getPersonalBests" | "getLatestRunningCalibration" | "getRaceHistory" | "getActiveMasterPlanMetadata">;
+type ContextStore = Pick<StrideDataStore, "getUserProfile" | "getUserInjuries" | "getActivitiesByDateRange" | "getDailyTrainingLoadByDateRange" | "getDailyRecoveryByDateRange" | "getPersonalBests" | "getLatestRunningCalibration" | "getRaceHistory" | "getActiveMasterPlanMetadata">;
 
 export class MySqlMasterPlanContextProvider implements MasterPlanContextProvider {
   constructor(private readonly store: ContextStore) {}
@@ -10,20 +10,20 @@ export class MySqlMasterPlanContextProvider implements MasterPlanContextProvider
     const end = shanghaiDay(asOf);
     const macroStart = addDays(end, -730);
     const recentStart = addDays(end, -111);
-    const [profile, activities, loads, recovery, pbs, calibration, races, activePlan] = await Promise.all([
-      this.store.getUserProfile(userId), this.store.getActivitiesByDateRange(userId, macroStart, end),
+    const [profile, injuries, activities, loads, recovery, pbs, calibration, races, activePlan] = await Promise.all([
+      this.store.getUserProfile(userId), this.store.getUserInjuries(userId), this.store.getActivitiesByDateRange(userId, macroStart, end),
       this.store.getDailyTrainingLoadByDateRange(userId, recentStart, end), this.store.getDailyRecoveryByDateRange(userId, recentStart, end),
       this.store.getPersonalBests(userId), this.store.getLatestRunningCalibration(userId), this.store.getRaceHistory(userId, { limit: 30 }), this.store.getActiveMasterPlanMetadata(userId),
     ]);
     if (!profile) throw new Error(`required user profile not found for ${userId}`);
     const runs = activities.filter((a) => a.sport?.toLowerCase().startsWith("run") || a.sportName?.toLowerCase().includes("run"));
     return ContextSnapshotSchema.parse({
-      schema_version: 1, user: { id: userId, profile: profileShape(profile) }, injuries: [], personal_bests: pbShape(pbs), running_calibration: calibrationShape(calibration), race_history: raceShape(races),
+      schema_version: 1, user: { id: userId, profile: profileShape(profile) }, injuries: injuryShape(injuries), personal_bests: pbShape(pbs), running_calibration: calibrationShape(calibration), race_history: raceShape(races),
       macro_history: macroHistory(runs, macroStart, end), recent_history: { start_date: recentStart, end_date: end, weeks: weeklyHistory(runs.filter((a) => activityDay(a) >= recentStart), loads, recovery) },
       fitness_state: fitnessState(loads, end), body_composition: { weight_kg: profile.weightKg, body_fat_pct: null, skeletal_muscle_kg: null },
       active_plan: activePlanShape(activePlan), current_phase: currentPhase(activePlan, end), continuity: continuity(runs, activePlan, end),
-      coverage: coverage(profile, runs, loads, recovery, calibration, activePlan),
-      source_manifest: [{ domain: "activities", source: "mysql.activities+activity_training_load", range_start: macroStart, range_end: end, records: runs.length }, { domain: "training_load", source: "mysql.daily_training_load", range_start: recentStart, range_end: end, records: loads.length }, { domain: "recovery", source: "mysql.daily_health+daily_hrv", range_start: recentStart, range_end: end, records: recovery.length }, { domain: "body_composition", source: "mysql.user_profile.weight_kg", range_start: null, range_end: end, records: profile.weightKg === null ? 0 : 1 }],
+      coverage: coverage(profile, runs, loads, recovery, calibration, injuries, activePlan),
+      source_manifest: [{ domain: "activities", source: "mysql.activities+activity_training_load", range_start: macroStart, range_end: end, records: runs.length }, { domain: "training_load", source: "mysql.daily_training_load", range_start: recentStart, range_end: end, records: loads.length }, { domain: "recovery", source: "mysql.daily_health+daily_hrv", range_start: recentStart, range_end: end, records: recovery.length }, { domain: "injuries", source: "mysql.user_injury", range_start: null, range_end: end, records: injuries.length }, { domain: "body_composition", source: "mysql.user_profile.weight_kg", range_start: null, range_end: end, records: profile.weightKg === null ? 0 : 1 }],
       as_of: new Date(asOf).toISOString(),
     });
   }
@@ -32,6 +32,7 @@ export class MySqlMasterPlanContextProvider implements MasterPlanContextProvider
 const n = (values: Array<number | null>): number | null => { const xs = values.filter((x): x is number => x !== null); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; };
 const round = (v: number, p = 1) => Number(v.toFixed(p));
 function profileShape(p: UserProfile) { return { display_name: p.displayName, dob: p.dob, sex: p.sex, height_cm: p.heightCm, weight_kg: p.weightKg, running_age_range: p.runningAgeRange }; }
+function injuryShape(rows: UserInjury[]) { return rows.map((injury) => ({ body_area: injury.description, status: `${injury.recoveryStatus}; restriction=${injury.runningRestriction}`, occurred_on: null, source: "mysql.user_injury" })); }
 function pbShape(rows: PersonalBest[]) { return rows.map((p) => ({ distance: p.distance, time_sec: p.timeSec, achieved_at: p.achievedAt, source: p.source })); }
 function calibrationShape(c: RunningCalibration | null) { return c && { as_of_date: c.asOfDate, threshold_hr: c.thresholdHr, threshold_speed_mps: c.thresholdSpeedMps, threshold_hr_confidence: c.thresholdHrConfidence, threshold_speed_confidence: c.thresholdSpeedConfidence, heart_rate_zones: c.heartRateZones, pace_zones: c.paceZones }; }
 function raceShape(rows: RaceEffort[]) { return rows.map(({ date, distanceKm, durationMin, avgPaceSKm, avgHr, maxHr, feel }) => ({ date, distance_km: distanceKm, duration_min: durationMin, avg_pace_s_km: avgPaceSKm, avg_hr: avgHr, max_hr: maxHr, feel })); }
@@ -43,7 +44,7 @@ function fitnessState(loads: DailyTrainingLoad[], end: string) { const x = loads
 function activePlanShape(p: ActiveMasterPlanMetadata | null) { if (!p) return null; return { plan_id: p.planId, revision: p.revision, status: p.status, start_date: stringOrNull(p.content.start_date), end_date: stringOrNull(p.content.end_date) }; }
 function currentPhase(p: ActiveMasterPlanMetadata | null, day: string) { const phases = Array.isArray(p?.content.phases) ? p.content.phases : []; const phase = phases.find((value): value is Record<string, unknown> => { if (typeof value !== "object" || value === null) return false; const candidate = value as Record<string, unknown>; const start = stringOrNull(candidate.start_date); const end = stringOrNull(candidate.end_date); return start !== null && end !== null && start <= day && end >= day; }); return phase ? { name: String(phase.name), start_date: stringOrNull(phase.start_date), end_date: stringOrNull(phase.end_date), source: "active_plan" as const } : null; }
 function continuity(runs: Activity[], p: ActiveMasterPlanMetadata | null, end: string) { const last = runs.map(activityDay).sort().at(-1) ?? null; return { active_plan_continuation: p !== null, last_activity_date: last, days_since_last_run: last ? dayDiff(last, end) : null }; }
-function coverage(p: UserProfile, runs: Activity[], loads: DailyTrainingLoad[], recovery: DailyRecovery[], c: RunningCalibration | null, plan: ActiveMasterPlanMetadata | null) { return [{ domain: "profile", status: "complete", detail: null }, { domain: "activities", status: runs.length ? "complete" : "missing", detail: runs.length ? null : "no runs in lookback" }, { domain: "training_load", status: loads.length ? "complete" : "missing", detail: loads.length ? null : "not computed" }, { domain: "recovery", status: recovery.length ? "partial" : "missing", detail: recovery.length ? "availability varies by day" : "no RHR/HRV" }, { domain: "running_calibration", status: c ? "complete" : "missing", detail: c ? null : "not computed" }, { domain: "body_composition", status: p.weightKg === null ? "missing" : "partial", detail: "no dedicated body-composition table; profile weight only" }, { domain: "injuries", status: "missing", detail: "no canonical local injury table" }, { domain: "active_plan", status: plan ? "complete" : "missing", detail: plan ? null : "no active plan" }] as const; }
+function coverage(p: UserProfile, runs: Activity[], loads: DailyTrainingLoad[], recovery: DailyRecovery[], c: RunningCalibration | null, injuries: UserInjury[], plan: ActiveMasterPlanMetadata | null) { return [{ domain: "profile", status: "complete", detail: null }, { domain: "activities", status: runs.length ? "complete" : "missing", detail: runs.length ? null : "no runs in lookback" }, { domain: "training_load", status: loads.length ? "complete" : "missing", detail: loads.length ? null : "not computed" }, { domain: "recovery", status: recovery.length ? "partial" : "missing", detail: recovery.length ? "availability varies by day" : "no RHR/HRV" }, { domain: "running_calibration", status: c ? "complete" : "missing", detail: c ? null : "not computed" }, { domain: "body_composition", status: p.weightKg === null ? "missing" : "partial", detail: "no dedicated body-composition table; profile weight only" }, { domain: "injuries", status: "complete", detail: injuries.length ? null : "no recorded injuries" }, { domain: "active_plan", status: plan ? "complete" : "missing", detail: plan ? null : "no active plan" }] as const; }
 function stringOrNull(v: unknown): string | null { return typeof v === "string" ? v : null; }
 function dayDiff(a: string, b: string): number { return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400_000); }
 function addDays(day: string, amount: number): string { const d = new Date(`${day}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + amount); return d.toISOString().slice(0, 10); }

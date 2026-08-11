@@ -27,6 +27,9 @@ try {
   });
   const generationId = `master-plan-${PROFILE}-${Date.now()}`;
   const result = await graph.invoke({ request }, { context: { userId: USER_ID, generationId } });
+  if (result.outcome?.decision === "infrastructure_failure") {
+    throw new Error(`planning snapshot failed: ${result.outcome.code}`);
+  }
   if (!capturedSnapshot) throw new Error("snapshot was not loaded");
   const outputDir = resolve(process.cwd(), "../../.omc/eval/master-plan", generationId);
   await mkdir(outputDir, { recursive: true });
@@ -35,4 +38,4 @@ try {
   console.log(`Master-plan evaluation artifacts: ${outputDir}`);
 } finally { await store.close(); }
 
-function redactedManifest(snapshot: ContextSnapshot) { return { schema_version: snapshot.schema_version, as_of: snapshot.as_of, user: { id: "[redacted]" }, coverage: snapshot.coverage, source_manifest: snapshot.source_manifest, aggregate_counts: { months: snapshot.macro_history.months.length, recent_weeks: snapshot.recent_history.weeks.length, races: snapshot.race_history.length, personal_bests: snapshot.personal_bests.length }, body_composition_fields_available: { weight_kg: snapshot.body_composition.weight_kg !== null, body_fat_pct: snapshot.body_composition.body_fat_pct !== null, skeletal_muscle_kg: snapshot.body_composition.skeletal_muscle_kg !== null } }; }
+function redactedManifest(snapshot: ContextSnapshot) { return { schema_version: snapshot.schema_version, as_of: snapshot.as_of, user: { id: "[redacted]" }, coverage: snapshot.coverage, source_manifest: snapshot.source_manifest, aggregate_counts: { months: snapshot.macro_history.months.length, recent_weeks: snapshot.recent_history.weeks.length, races: snapshot.race_history.length, personal_bests: snapshot.personal_bests.length, injuries: snapshot.injuries.length }, body_composition_fields_available: { weight_kg: snapshot.body_composition.weight_kg !== null, body_fat_pct: snapshot.body_composition.body_fat_pct !== null, skeletal_muscle_kg: snapshot.body_composition.skeletal_muscle_kg !== null } }; }

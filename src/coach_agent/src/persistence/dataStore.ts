@@ -107,8 +107,8 @@ export interface RaceEffort {
   avgPaceSKm: number | null;
   avgHr: number | null;
   maxHr: number | null;
-  /** 主观感受：excellent / good / normal / bad / awful（awful/bad 常是“跑崩”信号）。 */
-  feel: string | null;
+  /** 手表同步的数值主观感受评分。 */
+  feel: number | null;
 }
 
 /** 某个标准距离上的个人最好成绩（`personal_bests`），作为“这次本该多快”的参照。 */
@@ -151,6 +151,7 @@ export interface PaceZone {
 }
 
 export interface UserProfile { userId: string; displayName: string | null; dob: string | null; sex: string | null; heightCm: number | null; weightKg: number | null; runningAgeRange: string | null }
+export interface UserInjury { description: string; recoveryStatus: string; runningRestriction: string }
 export interface DailyRecovery { date: string; rhr: number | null; hrv: number | null }
 export interface ActiveMasterPlanMetadata { planId: string; revision: number; status: string; content: MasterPlanDocument }
 
@@ -192,6 +193,21 @@ export class StrideDataStore {
     const [rows] = await this.pool.query<RowDataPacket[]>(`SELECT user_id, display_name, dob, sex, height_cm, weight_kg, running_age_range FROM user_profile WHERE user_id = ? LIMIT 1`, [userId]);
     const row = rows[0];
     return row ? { userId: row.user_id as string, displayName: (row.display_name ?? null) as string | null, dob: (row.dob ?? null) as string | null, sex: (row.sex ?? null) as string | null, heightCm: (row.height_cm ?? null) as number | null, weightKg: (row.weight_kg ?? null) as number | null, runningAgeRange: (row.running_age_range ?? null) as string | null } : null;
+  }
+
+  async getUserInjuries(userId: string): Promise<UserInjury[]> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT description, recovery_status, running_restriction
+         FROM user_injury
+        WHERE user_id = ?
+        ORDER BY created_at ASC, id ASC`,
+      [userId],
+    );
+    return rows.map((row) => ({
+      description: row.description as string,
+      recoveryStatus: row.recovery_status as string,
+      runningRestriction: row.running_restriction as string,
+    }));
   }
 
   async getDailyRecoveryByDateRange(userId: string, startDay: string, endDay: string): Promise<DailyRecovery[]> {
@@ -454,7 +470,7 @@ function rowToRaceEffort(row: RowDataPacket): RaceEffort {
   const distanceM = (row.distance_m ?? null) as number | null;
   const durationS = (row.duration_s ?? null) as number | null;
   return {
-    date: row.sh_day as string,
+    date: mysqlDay(row.sh_day),
     labelId: row.label_id as string,
     name: (row.name ?? null) as string | null,
     sport: (row.sport ?? null) as string | null,
@@ -463,8 +479,15 @@ function rowToRaceEffort(row: RowDataPacket): RaceEffort {
     avgPaceSKm: (row.avg_pace_s_km ?? null) as number | null,
     avgHr: (row.avg_hr ?? null) as number | null,
     maxHr: (row.max_hr ?? null) as number | null,
-    feel: (row.feel ?? null) as string | null,
+    feel: (row.feel ?? null) as number | null,
   };
+}
+
+function mysqlDay(value: unknown): string {
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10);
+  }
+  return normalizeDay(String(value));
 }
 
 function rowToPaceZone(row: RowDataPacket): PaceZone {

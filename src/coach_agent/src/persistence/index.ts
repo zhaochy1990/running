@@ -49,6 +49,7 @@ export type {
   PersonalBest,
   RaceEffort,
   RunningCalibration,
+  UserInjury,
   WeeklyPlanDocument,
   UserProfile,
   DailyRecovery,
