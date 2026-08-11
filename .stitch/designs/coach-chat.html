@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>STRIDE - AI Coach</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "secondary-fixed-dim": "#c7c6c6",
+                        "inverse-on-surface": "#2f3033",
+                        "surface-container-low": "#1b1c1e",
+                        "primary-fixed": "#ffdad7",
+                        "secondary-container": "#464747",
+                        "surface-container-highest": "#343537",
+                        "primary-container": "#ff6363",
+                        "on-tertiary-fixed-variant": "#464748",
+                        "outline": "#a88988",
+                        "on-secondary-fixed-variant": "#464747",
+                        "tertiary": "#c7c6c7",
+                        "on-surface": "#e3e2e5",
+                        "secondary-fixed": "#e4e2e1",
+                        "coral-wash": "#2A1719",
+                        "on-background": "#e3e2e5",
+                        "inverse-surface": "#e3e2e5",
+                        "surface-container-high": "#292a2c",
+                        "on-secondary-container": "#b6b5b4",
+                        "on-primary-fixed-variant": "#8f0d1c",
+                        "on-surface-variant": "#e1bfbc",
+                        "coral-pressed": "#E95252",
+                        "ink-primary": "#F9F9F9",
+                        "primary": "#ffb3af",
+                        "tertiary-container": "#989798",
+                        "on-error-container": "#ffdad6",
+                        "surface-tint": "#ffb3af",
+                        "warning-amber": "#E3AC5B",
+                        "surface-variant": "#343537",
+                        "tertiary-fixed": "#e3e2e3",
+                        "ink-secondary": "#CECECE",
+                        "surface-container": "#1f2022",
+                        "on-primary-fixed": "#410006",
+                        "secondary": "#c7c6c6",
+                        "inverse-primary": "#b12a30",
+                        "surface-dim": "#121316",
+                        "surface-bright": "#38393c",
+                        "on-secondary": "#303030",
+                        "surface-container-lowest": "#0d0e10",
+                        "primary-fixed-dim": "#ffb3af",
+                        "outline-variant": "#59413f",
+                        "surface": "#101111",
+                        "divider": "#2A2B2D",
+                        "on-tertiary-container": "#2f3031",
+                        "on-tertiary-fixed": "#1b1c1d",
+                        "on-primary": "#68000e",
+                        "on-error": "#690005",
+                        "raised": "#18191A",
+                        "error-container": "#93000a",
+                        "background": "#121316",
+                        "success-mint": "#69D3A7",
+                        "on-primary-container": "#67000e",
+                        "canvas": "#07080A",
+                        "ink-muted": "#8F9093",
+                        "error": "#ffb4ab",
+                        "on-tertiary": "#303031",
+                        "tertiary-fixed-dim": "#c7c6c7",
+                        "on-secondary-fixed": "#1b1c1c"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "margin-mobile": "20px",
+                        "unit": "8px",
+                        "touch-target-min": "44px",
+                        "gutter": "8px",
+                        "button-height": "48px"
+                    },
+                    fontFamily: {
+                        "title-card": ["Inter"],
+                        "headline-screen": ["Inter"],
+                        "display-metric": ["JetBrains Mono"],
+                        "data-inline": ["JetBrains Mono"],
+                        "body-main": ["Inter"],
+                        "label-nav": ["Inter"],
+                        "label-metadata": ["Inter"]
+                    },
+                    fontSize: {
+                        "title-card": ["17px", { lineHeight: "22px", fontWeight: "600" }],
+                        "headline-screen": ["22px", { lineHeight: "28px", letterSpacing: "-0.01em", fontWeight: "600" }],
+                        "display-metric": ["28px", { lineHeight: "34px", letterSpacing: "-0.02em", fontWeight: "600" }],
+                        "data-inline": ["14px", { lineHeight: "18px", fontWeight: "500" }],
+                        "body-main": ["15px", { lineHeight: "22px", fontWeight: "400" }],
+                        "label-nav": ["11px", { lineHeight: "14px", fontWeight: "500" }],
+                        "label-metadata": ["13px", { lineHeight: "16px", fontWeight: "500" }]
+                    }
+                }
+            }
+        };
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-jetbrains { font-family: 'JetBrains Mono', monospace; }
+        /* Scrollbar hiding for clean aesthetic */
+        ::-webkit-scrollbar { display: none; }
+        * { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-canvas text-ink-primary min-h-screen flex flex-col max-w-[390px] mx-auto relative overflow-hidden">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full max-w-[390px] bg-background z-50 flex justify-between items-center px-margin-mobile h-button-height border-b border-divider">
+<div class="flex items-center gap-3 w-10">
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A stylized, minimalist avatar for an AI running coach. High-contrast monochromatic color scheme with intense subtle red glowing accents on a pitch-black background, conveying deep technical intelligence and elite athleticism. Professional, serious dark UI context." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAcNfWUc8fZMue3lsGOG9Z6-d-FuFvB44GNCidHO8FgMcI3Y24ophEFsnvP92H5j2Xa2BBJTvvyaPHhK6HviSroIIGf0iEm7sRkZw8GnaDiG7Ur3PShvyKArwatukw1OXbYUq0HCY5b457nsjacJkuhtks-aLP_PWCeHc6GyU_pRxsiL4iqEhvvkRKZewv0uV38uj3zq0t3LTSc5FgZ6acwES7mReugFvadsNK3RZc7_VINlRVgaFG5f5KJsFUJZDHYhs9B8RhmPFLG"/>
+</div>
+</div>
+<div class="flex flex-col items-center justify-center flex-1">
+<h1 class="font-headline-screen text-headline-screen text-ink-primary">Coach</h1>
+<span class="font-label-metadata text-label-metadata text-success-mint flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-success-mint animate-pulse"></span>
+                在线 · 已读取今日状态
+            </span>
+</div>
+<div class="w-10 flex justify-end">
+<button class="w-11 h-11 flex items-center justify-center text-primary hover:opacity-80 transition-opacity duration-200">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">history</span>
+</button>
+</div>
+</header>
+<!-- Chat Transcript Area -->
+<main class="flex-1 overflow-y-auto pt-[80px] pb-[160px] px-margin-mobile flex flex-col gap-6">
+<!-- Date Divider -->
+<div class="flex justify-center my-2">
+<span class="px-3 py-1 bg-surface-container rounded-full font-label-metadata text-label-metadata text-ink-muted">今天</span>
+</div>
+<!-- User Message -->
+<div class="flex flex-col items-end gap-1">
+<div class="bg-raised border border-divider rounded-t-xl rounded-l-xl rounded-br-sm px-4 py-3 max-w-[85%] text-ink-primary font-body-main text-body-main">
+                这两天腿有点沉，周四的节奏跑还要照常吗？
+            </div>
+</div>
+<!-- Coach Message 1 -->
+<div class="flex flex-col items-start gap-1">
+<div class="flex items-end gap-2">
+<div class="bg-surface border border-divider rounded-t-xl rounded-r-xl rounded-bl-sm px-4 py-3 max-w-[85%] text-ink-primary font-body-main text-body-main">
+                    明白你的感受。从你的身体指标看，连续的高强度训练确实积累了一些疲劳。
+                </div>
+</div>
+</div>
+<!-- Evidence Capsule -->
+<div class="flex flex-wrap gap-2 ml-4 mb-2">
+<div class="flex items-center gap-1.5 bg-coral-wash px-2.5 py-1.5 rounded-full border border-outline-variant">
+<span class="material-symbols-outlined text-primary text-[14px]">monitor_heart</span>
+<span class="font-label-metadata text-label-metadata text-ink-secondary">HRV 较基线</span>
+<span class="font-data-inline text-data-inline text-primary">-8%</span>
+</div>
+<div class="flex items-center gap-1.5 bg-surface-container px-2.5 py-1.5 rounded-full border border-divider">
+<span class="material-symbols-outlined text-ink-muted text-[14px]">bedtime</span>
+<span class="font-label-metadata text-label-metadata text-ink-secondary">昨晚睡眠</span>
+<span class="font-data-inline text-data-inline text-ink-primary">6小时42分</span>
+</div>
+<div class="flex items-center gap-1.5 bg-coral-wash px-2.5 py-1.5 rounded-full border border-outline-variant">
+<span class="material-symbols-outlined text-primary text-[14px]">trending_up</span>
+<span class="font-label-metadata text-label-metadata text-ink-secondary">近7天负荷</span>
+<span class="font-data-inline text-data-inline text-primary">+12%</span>
+</div>
+</div>
+<!-- Coach Message 2 -->
+<div class="flex flex-col items-start gap-1">
+<div class="bg-surface border border-divider rounded-xl px-4 py-3 max-w-[85%] text-ink-primary font-body-main text-body-main ml-4">
+                我建议将周四的节奏跑降级，以确保更好的恢复。目前的身体信号不建议进行过大的强度刺激。
+            </div>
+</div>
+<!-- Proposal Card -->
+<div class="bg-surface border border-divider rounded-xl p-4 ml-4 max-w-[90%] relative overflow-hidden">
+<div class="absolute top-0 left-0 w-1 h-full bg-primary"></div>
+<h3 class="font-title-card text-title-card text-ink-primary mb-3 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[18px]">edit_calendar</span>
+                建议调整周四训练
+            </h3>
+<div class="bg-raised rounded-lg p-3 mb-3 border border-divider flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-label-metadata text-label-metadata text-ink-muted line-through">节奏跑 · 3 × 10分钟</span>
+</div>
+<span class="material-symbols-outlined text-ink-muted text-[16px]">arrow_forward</span>
+<div class="flex flex-col text-right">
+<span class="font-body-main text-body-main text-primary font-medium">轻松跑 · 45分钟</span>
+</div>
+</div>
+<p class="font-label-metadata text-label-metadata text-ink-secondary mb-4 flex items-start gap-1">
+<span class="material-symbols-outlined text-ink-muted text-[14px] mt-0.5">info</span>
+                保留周总量，降低高强度刺激
+            </p>
+<div class="flex gap-2">
+<button class="flex-1 h-11 rounded-lg bg-raised border border-divider font-body-main text-[14px] text-ink-primary flex items-center justify-center hover:bg-surface-container-high transition-colors">
+                    查看详情
+                </button>
+<button class="flex-1 h-11 rounded-lg bg-primary text-on-primary font-body-main text-[14px] font-medium flex items-center justify-center hover:bg-primary-fixed-dim transition-colors">
+                    应用到计划
+                </button>
+</div>
+</div>
+<!-- Coach Continuation -->
+<div class="flex flex-col items-start gap-1">
+<div class="bg-surface border border-divider rounded-xl px-4 py-3 max-w-[85%] text-ink-primary font-body-main text-body-main ml-4 mb-4">
+                如果晨间状态恢复，我会在周六重新安排质量课。
+            </div>
+</div>
+</main>
+<!-- Bottom Pinned Chat Composer -->
+<div class="fixed bottom-[64px] left-0 w-full max-w-[390px] bg-background border-t border-divider p-3 pb-safe z-40 mx-auto right-0">
+<div class="flex items-end gap-2">
+<button class="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-full bg-raised border border-divider text-ink-primary hover:bg-surface-container transition-colors mb-0.5">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">add</span>
+</button>
+<div class="flex-1 relative bg-raised border border-divider rounded-2xl overflow-hidden focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
+<textarea class="w-full bg-transparent border-none text-body-main font-body-main text-ink-primary placeholder-ink-muted focus:ring-0 resize-none px-4 py-3 min-h-[48px] max-h-[120px] scrollbar-hide block" placeholder="问问 Coach..." rows="1" style="field-sizing: content;"></textarea>
+<div class="absolute right-1.5 bottom-1.5 flex items-center justify-center">
+<button class="w-9 h-9 flex items-center justify-center rounded-full bg-primary text-on-primary hover:bg-primary-fixed-dim transition-colors">
+<span class="material-symbols-outlined text-[18px]">send</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full max-w-[390px] mx-auto right-0 z-50 flex justify-around items-center px-unit pb-safe h-[64px] bg-surface border-t border-divider">
+<button class="flex flex-col items-center justify-center text-ink-muted hover:text-primary-container transition-transform duration-200 w-16 h-11">
+<span class="material-symbols-outlined text-[24px] mb-1" style="font-variation-settings: 'FILL' 0;">home</span>
+<span class="font-label-nav text-label-nav">首页</span>
+</button>
+<button class="flex flex-col items-center justify-center text-ink-muted hover:text-primary-container transition-transform duration-200 w-16 h-11">
+<span class="material-symbols-outlined text-[24px] mb-1" style="font-variation-settings: 'FILL' 0;">calendar_today</span>
+<span class="font-label-nav text-label-nav">计划</span>
+</button>
+<button class="flex flex-col items-center justify-center text-ink-muted hover:text-primary-container transition-transform duration-200 w-16 h-11">
+<span class="material-symbols-outlined text-[24px] mb-1" style="font-variation-settings: 'FILL' 0;">fiber_manual_record</span>
+<span class="font-label-nav text-label-nav">记录</span>
+</button>
+<button class="flex flex-col items-center justify-center text-ink-muted hover:text-primary-container transition-transform duration-200 w-16 h-11">
+<span class="material-symbols-outlined text-[24px] mb-1" style="font-variation-settings: 'FILL' 0;">insights</span>
+<span class="font-label-nav text-label-nav">分析</span>
+</button>
+<button class="flex flex-col items-center justify-center text-primary scale-95 transition-transform duration-200 w-16 h-11">
+<span class="material-symbols-outlined text-[24px] mb-1" style="font-variation-settings: 'FILL' 1;">chat_bubble</span>
+<span class="font-label-nav text-label-nav font-bold">Coach</span>
+</button>
+</nav>
+</body></html>

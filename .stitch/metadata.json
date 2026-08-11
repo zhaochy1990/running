@@ -1,0 +1,30 @@
+{
+  "projectId": "12727163079393064568",
+  "title": "STRIDE · Mobile",
+  "screens": [
+    {
+      "screenId": "37a9244be34d480da86d615494935637",
+      "title": "Coach 对话 · 方案调整建议",
+      "deviceType": "MOBILE",
+      "html": "designs/coach-chat.html",
+      "screenshot": "designs/coach-chat.png"
+    },
+    {
+      "screenId": "b9dd2908d4594fe298ae666cf5d5612a",
+      "title": "训练计划 · STRIDE",
+      "deviceType": "MOBILE",
+      "html": "designs/training-plan.html",
+      "screenshot": "designs/training-plan.png"
+    }
+  ],
+  "designSystem": {
+    "assetId": "55b0f44dc6df450096ceb80642d451b0",
+    "displayName": "Ember Focus",
+    "sourceName": "STRIDE Ember",
+    "primaryColor": "#ff6363",
+    "surfaceColor": "#101111",
+    "backgroundColor": "#07080a",
+    "fontFamily": "INTER",
+    "dataFontFamily": "JETBRAINS_MONO"
+  }
+}
