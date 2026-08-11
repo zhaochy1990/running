@@ -119,43 +119,43 @@
       min-height: max(884px, 100dvh);
     }
   </style>
-  </head>
+</head>
 <body class="font-body-main selection:bg-primary-container selection:text-on-primary-container pb-[80px]">
 <!-- TopAppBar -->
-<header class="fixed top-0 w-full z-50 bg-background flex justify-between items-center px-margin-mobile h-[64px] border-b border-divider md:hidden">
+<header class="fixed top-0 w-full z-50 bg-background flex justify-between items-center px-margin-mobile h-[64px] border-b border-divider" style="padding-top: env(safe-area-inset-top, 0px); height: calc(64px + env(safe-area-inset-top, 0px));">
 <div class="flex items-center gap-2 text-ink-primary">
 <span class="material-symbols-outlined text-[24px]">calendar_today</span>
 <span class="font-headline-screen text-headline-screen">训练计划</span>
 </div>
 <div class="flex items-center gap-1">
-<button class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors">
+<button aria-label="上周" class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors">
 <span class="material-symbols-outlined text-ink-primary">chevron_left</span>
 </button>
 <span class="font-label-metadata text-label-metadata text-ink-primary">8月10日 — 8月16日</span>
-<button class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors">
+<button aria-label="下周" class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors">
 <span class="material-symbols-outlined text-ink-primary">chevron_right</span>
 </button>
 </div>
 </header>
-<main class="pt-[84px] px-margin-mobile flex flex-col gap-[24px] max-w-[390px] mx-auto md:max-w-3xl">
+<main class="pt-[84px] px-margin-mobile flex flex-col gap-[24px] max-w-[390px] mx-auto" style="padding-top: calc(84px + env(safe-area-inset-top, 0px));">
 <!-- Phase Summary Strip -->
-<section class="flex justify-between items-center bg-surface px-4 py-3 rounded-xl border border-divider">
+<section class="flex justify-between items-center bg-surface px-4 py-3 rounded-xl border border-divider rounded-[16px]">
 <div class="flex flex-col">
 <span class="font-label-metadata text-label-metadata text-ink-muted">BUILD · 第3周</span>
 <span class="font-title-card text-title-card text-ink-primary">提升阈值耐力</span>
 </div>
 <div class="flex flex-col items-end">
 <span class="font-label-metadata text-label-metadata text-ink-muted">Progress</span>
-<span class="font-data-inline text-data-inline text-ink-primary">3 / 5</span>
+<span class="font-data-inline text-data-inline text-ink-primary">1 / 5</span>
 </div>
 </section>
 <!-- Dominant Today Card -->
-<section class="bg-surface rounded-xl border border-primary p-[20px] relative overflow-hidden">
-<div class="absolute top-0 left-0 w-1 h-full bg-primary"></div>
+<section class="bg-surface rounded-xl border p-[20px] relative overflow-hidden rounded-[16px] border-primary-container">
+<div class="absolute top-0 left-0 w-1 h-full bg-primary-container"></div>
 <div class="flex justify-between items-start mb-4">
 <div>
 <div class="flex items-center gap-2 mb-1">
-<span class="font-label-metadata text-label-metadata text-primary uppercase tracking-wide">今天 · 周二</span>
+<span class="font-label-metadata text-label-metadata text-primary-container uppercase tracking-wide">今天 · 周二</span>
 </div>
 <h2 class="font-title-card text-[22px] leading-[28px] font-semibold text-ink-primary">阈值间歇跑</h2>
 </div>
@@ -178,43 +178,43 @@
 </div>
 </div>
 <div class="flex gap-2 mt-6">
-<button class="flex-1 bg-primary text-on-primary h-button-height rounded-lg font-title-card text-title-card flex justify-center items-center hover:opacity-90 transition-opacity">
+<button class="flex-1 bg-primary-container text-on-primary-container h-button-height rounded-[14px] font-title-card text-title-card flex justify-center items-center hover:opacity-90 transition-opacity">
                     开始训练
                 </button>
-<button class="w-[80px] bg-raised text-ink-primary border border-divider h-button-height rounded-lg font-title-card text-title-card flex justify-center items-center hover:bg-surface-container transition-colors">
+<button class="w-[80px] bg-raised text-ink-primary border border-divider h-button-height rounded-[14px] font-title-card text-title-card flex justify-center items-center hover:bg-surface-container transition-colors">
                     详情
                 </button>
 </div>
 </section>
 <!-- Weekly Summary -->
-<section class="bg-surface rounded-xl border border-divider p-[20px]">
+<section class="bg-surface rounded-xl border border-divider p-[20px] rounded-[16px]">
 <h3 class="font-label-metadata text-label-metadata text-ink-muted mb-4">本周概览</h3>
 <div class="flex justify-between items-end mb-3">
 <div class="flex flex-col">
 <span class="font-label-metadata text-label-metadata text-ink-muted">周负荷</span>
 <div class="flex items-baseline gap-1">
-<span class="font-display-metric text-[24px] leading-tight text-ink-primary">432</span>
+<span class="font-display-metric text-[24px] leading-tight text-ink-primary">82</span>
 <span class="font-data-inline text-data-inline text-ink-muted">/ 520</span>
 </div>
 </div>
 <div class="flex flex-col items-end">
 <span class="font-label-metadata text-label-metadata text-ink-muted">计划里程</span>
-<span class="font-display-metric text-[24px] leading-tight text-ink-primary">48 <span class="font-data-inline text-[14px]">km</span></span>
+<span class="font-display-metric text-[24px] leading-tight text-ink-primary">48 km</span>
 </div>
 </div>
 <!-- Progress Rail -->
 <div class="w-full h-2 bg-surface-container-high rounded-full overflow-hidden flex">
-<div class="h-full bg-primary" style="width: 83%"></div>
+<div class="h-full bg-primary-container" style="width: 16%"></div>
 </div>
 <div class="mt-2 text-right">
-<span class="font-label-metadata text-label-metadata text-ink-muted">已完成 5 次跑步中的 3 次</span>
+<span class="font-label-metadata text-label-metadata text-ink-muted">已完成 5 次跑步中的 1 次</span>
 </div>
 </section>
 <!-- 7-Day Schedule List -->
 <section class="flex flex-col gap-2">
 <h3 class="font-label-metadata text-label-metadata text-ink-muted mb-1 px-1">本周日程</h3>
 <!-- Mon: Completed -->
-<div class="bg-surface rounded-xl border border-divider p-3 flex items-center gap-3 opacity-60">
+<div class="bg-surface rounded-xl border border-divider p-3 flex items-center gap-3 opacity-60 rounded-[16px]">
 <div class="w-8 flex flex-col items-center">
 <span class="font-label-metadata text-[11px] text-ink-muted">周一</span>
 </div>
@@ -222,125 +222,60 @@
 <div>
 <span class="font-title-card text-[15px] block text-ink-primary">恢复跑 6 km</span>
 <span class="font-label-metadata text-[11px] text-success-mint">已完成</span>
-</div>
+<span class="font-data-inline text-[12px] text-ink-secondary block mt-1">轻松配速 · Z1–Z2</span></div>
 <span class="material-symbols-outlined text-success-mint fill">check_circle</span>
 </div>
 </div>
 <!-- Tue: Current -->
-<div class="bg-coral-wash rounded-xl border border-primary p-3 flex items-center gap-3 relative">
-<div class="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-primary rounded-r-md"></div>
-<div class="w-8 flex flex-col items-center">
-<span class="font-label-metadata text-[11px] text-primary">周二</span>
-</div>
-<div class="flex-1 flex justify-between items-center">
-<div>
-<span class="font-title-card text-[15px] block text-primary">阈值间歇跑</span>
-<span class="font-label-metadata text-[11px] text-primary opacity-80">当前</span>
-</div>
-<span class="material-symbols-outlined text-primary">arrow_forward</span>
-</div>
-</div>
+<div class="bg-coral-wash rounded-xl border border-primary-container p-3 flex items-center gap-3 relative rounded-[16px]"><div class="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-primary-container rounded-r-md"></div><div class="w-8 flex flex-col items-center"><span class="font-label-metadata text-[11px] text-primary-container">周二</span></div><div class="flex-1 flex justify-between items-center"><div><span class="font-title-card text-[15px] block text-primary-container">阈值间歇跑</span><span class="font-data-inline text-[12px] text-primary-container opacity-80 block mt-1">4'35–4'45 /km · 165–174 bpm</span></div><span class="material-symbols-outlined text-primary-container">arrow_forward</span></div></div>
 <!-- Wed -->
-<div class="bg-surface rounded-xl border border-divider p-3 flex items-center gap-3">
+<div class="bg-surface rounded-xl border border-divider p-3 flex items-center gap-3 rounded-[16px]">
 <div class="w-8 flex flex-col items-center">
 <span class="font-label-metadata text-[11px] text-ink-muted">周三</span>
 </div>
 <div class="flex-1">
 <span class="font-title-card text-[15px] block text-ink-primary">力量与灵活性 35分钟</span>
-</div>
+<span class="font-data-inline text-[12px] text-ink-secondary block mt-1">下肢稳定 · 核心控制</span></div>
 </div>
 <!-- Thu -->
-<div class="bg-surface rounded-xl border border-divider p-3 flex items-center gap-3">
+<div class="bg-surface rounded-xl border border-divider p-3 flex items-center gap-3 rounded-[16px]">
 <div class="w-8 flex flex-col items-center">
 <span class="font-label-metadata text-[11px] text-ink-muted">周四</span>
 </div>
 <div class="flex-1">
 <span class="font-title-card text-[15px] block text-ink-primary">轻松跑 8 km</span>
-</div>
+<span class="font-data-inline text-[12px] text-ink-secondary block mt-1">5'25–5'50 /km · Z2</span></div>
 </div>
 <!-- Fri -->
-<div class="bg-surface-container-lowest rounded-xl border border-divider border-dashed p-3 flex items-center gap-3">
+<div class="bg-surface-container-lowest rounded-xl border border-divider border-dashed p-3 flex items-center gap-3 rounded-[16px]">
 <div class="w-8 flex flex-col items-center">
 <span class="font-label-metadata text-[11px] text-ink-muted">周五</span>
 </div>
-<div class="flex-1 flex items-center gap-2">
-<span class="material-symbols-outlined text-[16px] text-ink-muted">bed</span>
-<span class="font-title-card text-[15px] block text-ink-muted">休息</span>
-</div>
+<div class="flex-1 flex items-center gap-2"><div class="flex flex-col"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[16px] text-ink-muted">bed</span><span class="font-title-card text-[15px] block text-ink-muted">休息</span></div><span class="font-data-inline text-[12px] text-ink-muted block mt-1">恢复与睡眠优先</span></div></div>
 </div>
 <!-- Sat -->
-<div class="bg-surface rounded-xl border border-divider p-3 flex items-center gap-3">
+<div class="bg-surface rounded-xl border border-divider p-3 flex items-center gap-3 rounded-[16px]">
 <div class="w-8 flex flex-col items-center">
 <span class="font-label-metadata text-[11px] text-ink-muted">周六</span>
 </div>
 <div class="flex-1">
 <span class="font-title-card text-[15px] block text-ink-primary">长距离跑 18 km</span>
-<span class="font-data-inline text-[12px] text-ink-secondary">@ 5'35–5'55 /km</span>
+<span class="font-data-inline text-[12px] text-ink-secondary">5'35–5'55 /km · Z2 长距离</span>
 </div>
 </div>
 <!-- Sun -->
-<div class="bg-surface rounded-xl border border-divider p-3 flex items-center gap-3">
+<div class="bg-surface rounded-xl border border-divider p-3 flex items-center gap-3 rounded-[16px]">
 <div class="w-8 flex flex-col items-center">
 <span class="font-label-metadata text-[11px] text-ink-muted">周日</span>
 </div>
 <div class="flex-1">
 <span class="font-title-card text-[15px] block text-ink-primary">恢复跑 6 km</span>
-</div>
+<span class="font-data-inline text-[12px] text-ink-secondary block mt-1">5'45–6'10 /km · Z1</span></div>
 </div>
 </section>
 <!-- Coach Insight Card -->
-<section class="bg-surface-container-high rounded-xl border border-divider p-4 flex gap-3 mb-[24px]">
-<div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center shrink-0 border border-primary/30">
-<span class="material-symbols-outlined text-primary text-[20px]">chat_bubble</span>
-</div>
-<div class="flex flex-col justify-between">
-<div>
-<span class="font-label-metadata text-[11px] text-ink-muted mb-1 block">Coach 提醒</span>
-<p class="font-body-main text-[14px] leading-[20px] text-ink-primary mb-3">近两天恢复略低，质量课后优先补充碳水与睡眠。</p>
-</div>
-<button class="self-start text-primary font-label-metadata text-label-metadata flex items-center gap-1 hover:opacity-80">
-                    和 Coach 聊聊
-                    <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
-</button>
-</div>
-</section>
+<section class="bg-surface-container-high rounded-[16px] border border-primary-container p-4 flex gap-3 mb-[24px]"><div class="w-10 h-10 rounded-full bg-primary-container/20 flex items-center justify-center shrink-0 border border-primary-container/30"><span class="material-symbols-outlined text-primary-container text-[20px]">chat_bubble</span></div><div class="flex flex-col justify-between"><div><span class="font-label-metadata text-[11px] text-ink-muted mb-1 block">Coach 提醒</span><p class="font-body-main text-[14px] leading-[20px] text-ink-primary mb-3">近两天恢复略低，质量课后优先补充碳水与睡眠。</p></div><button aria-label="和 Coach 聊聊" class="self-start text-primary-container font-label-metadata text-label-metadata flex items-center gap-1 hover:opacity-80 h-[44px] active:scale-95">和 Coach 聊聊<span class="material-symbols-outlined text-[14px]">arrow_forward</span></button></div></section>
 </main>
 <!-- BottomNavBar -->
-<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-unit pb-safe h-[64px] bg-surface dark:bg-surface md:hidden border-t border-divider shadow-[0_-4px_20px_rgba(0,0,0,0.4)]">
-<div class="flex flex-col items-center justify-center text-ink-muted w-[64px] h-[64px] hover:text-primary-container cursor-pointer transition-colors">
-<span class="material-symbols-outlined mb-1">home</span>
-<span class="font-label-nav text-label-nav">首页</span>
-</div>
-<!-- Active Tab: Plan -->
-<div class="flex flex-col items-center justify-center text-primary w-[64px] h-[64px] Active: scale-95 transition-transform duration-200 cursor-pointer">
-<span class="material-symbols-outlined mb-1 fill">calendar_today</span>
-<span class="font-label-nav text-label-nav">计划</span>
-</div>
-<div class="flex flex-col items-center justify-center text-ink-muted w-[64px] h-[64px] hover:text-primary-container cursor-pointer transition-colors">
-<span class="material-symbols-outlined mb-1">fiber_manual_record</span>
-<span class="font-label-nav text-label-nav">记录</span>
-</div>
-<div class="flex flex-col items-center justify-center text-ink-muted w-[64px] h-[64px] hover:text-primary-container cursor-pointer transition-colors">
-<span class="material-symbols-outlined mb-1">insights</span>
-<span class="font-label-nav text-label-nav">分析</span>
-</div>
-<div class="flex flex-col items-center justify-center text-ink-muted w-[64px] h-[64px] hover:text-primary-container cursor-pointer transition-colors">
-<span class="material-symbols-outlined mb-1">chat_bubble</span>
-<span class="font-label-nav text-label-nav">Coach</span>
-</div>
-</nav>
-<div class="hidden md:flex fixed top-0 w-full h-[64px] bg-surface border-b border-divider z-50 justify-between items-center px-[40px]">
-<div class="flex items-center gap-2 text-ink-primary">
-<span class="material-symbols-outlined text-[24px]">calendar_today</span>
-<span class="font-headline-screen text-headline-screen">AI Coach</span>
-</div>
-<div class="flex gap-8">
-<a class="font-label-metadata text-[14px] text-ink-muted hover:text-primary transition-colors" href="#">首页</a>
-<a class="font-label-metadata text-[14px] text-primary border-b-2 border-primary pb-1" href="#">计划</a>
-<a class="font-label-metadata text-[14px] text-ink-muted hover:text-primary transition-colors" href="#">记录</a>
-<a class="font-label-metadata text-[14px] text-ink-muted hover:text-primary transition-colors" href="#">分析</a>
-<a class="font-label-metadata text-[14px] text-ink-muted hover:text-primary transition-colors" href="#">Coach</a>
-</div>
-<div class="w-8 h-8 rounded-full bg-surface-container-high border border-divider"></div>
-</div>
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-unit pb-safe h-[64px] bg-surface dark:bg-surface border-t border-divider" style="padding-bottom: env(safe-area-inset-bottom, 0px); height: calc(64px + env(safe-area-inset-bottom, 0px));"><button aria-label="首页" class="flex flex-col items-center justify-center text-ink-muted w-[64px] h-[64px] hover:text-primary-container cursor-pointer transition-colors"><span class="material-symbols-outlined mb-1">home</span><span class="font-label-nav text-label-nav">首页</span></button><button aria-current="page" aria-label="计划" class="flex flex-col items-center justify-center text-primary-container w-[64px] h-[64px] scale-95 transition-transform duration-200 cursor-pointer active:scale-95"><span class="material-symbols-outlined mb-1 fill">calendar_today</span><span class="font-label-nav text-label-nav">计划</span></button><button aria-label="记录" class="flex flex-col items-center justify-center text-ink-muted w-[64px] h-[64px] hover:text-primary-container cursor-pointer transition-colors"><span class="material-symbols-outlined mb-1">fiber_manual_record</span><span class="font-label-nav text-label-nav">记录</span></button><button aria-label="分析" class="flex flex-col items-center justify-center text-ink-muted w-[64px] h-[64px] hover:text-primary-container cursor-pointer transition-colors"><span class="material-symbols-outlined mb-1">insights</span><span class="font-label-nav text-label-nav">分析</span></button><button aria-label="Coach" class="flex flex-col items-center justify-center text-ink-muted w-[64px] h-[64px] hover:text-primary-container cursor-pointer transition-colors"><span class="material-symbols-outlined mb-1">chat_bubble</span><span class="font-label-nav text-label-nav">Coach</span></button></nav>
 </body></html>

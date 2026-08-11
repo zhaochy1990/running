@@ -3,15 +3,15 @@
   "title": "STRIDE · Mobile",
   "screens": [
     {
-      "screenId": "37a9244be34d480da86d615494935637",
+      "screenId": "feef2ca21d294d5ead2a7348c0ce9de7",
       "title": "Coach 对话 · 方案调整建议",
       "deviceType": "MOBILE",
       "html": "designs/coach-chat.html",
       "screenshot": "designs/coach-chat.png"
     },
     {
-      "screenId": "b9dd2908d4594fe298ae666cf5d5612a",
-      "title": "训练计划 · STRIDE",
+      "screenId": "814398c82042485b94c98acf6acea69e",
+      "title": "训练计划 · 最终精修版 (V2)",
       "deviceType": "MOBILE",
       "html": "designs/training-plan.html",
       "screenshot": "designs/training-plan.png"
