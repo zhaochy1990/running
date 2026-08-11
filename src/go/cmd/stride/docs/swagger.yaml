@@ -1132,6 +1132,14 @@ definitions:
       threshold:
         $ref: '#/definitions/api.strideThresholdDTO'
     type: object
+  api.structuredWeekResponse:
+    properties:
+      coach_notes: {}
+      nutrition: {}
+      sessions: {}
+      structured_status:
+        type: string
+    type: object
   api.syncRequest:
     properties:
       content:
@@ -1244,6 +1252,92 @@ definitions:
       region:
         type: string
       user_id:
+        type: string
+    type: object
+  api.weekActivityResponse:
+    properties:
+      aerobic_effect:
+        type: number
+      anaerobic_effect:
+        type: number
+      ascent_m:
+        type: number
+      avg_cadence:
+        type: integer
+      avg_hr:
+        type: integer
+      avg_pace_s_km:
+        type: number
+      calories_kcal:
+        type: integer
+      date:
+        type: string
+      distance_km:
+        type: number
+      distance_m:
+        type: number
+      duration_fmt:
+        type: string
+      duration_s:
+        type: number
+      feel_type:
+        type: integer
+      feels_like:
+        type: number
+      humidity:
+        type: number
+      label_id:
+        type: string
+      max_hr:
+        type: integer
+      name:
+        type: string
+      pace_fmt:
+        type: string
+      pauses:
+        type: object
+      route_thumb:
+        type: object
+      sport_name:
+        type: string
+      sport_note:
+        type: string
+      sport_type:
+        type: integer
+      temperature:
+        type: number
+      train_type:
+        type: string
+      training_load:
+        type: number
+      vo2max:
+        type: number
+      wind_speed:
+        type: number
+    type: object
+  api.weekDetailResponse:
+    properties:
+      activities:
+        items:
+          $ref: '#/definitions/api.weekActivityResponse'
+        type: array
+      activity_count:
+        type: integer
+      date_from:
+        type: string
+      date_to:
+        type: string
+      plan:
+        type: string
+      structured:
+        $ref: '#/definitions/api.structuredWeekResponse'
+      total_duration_fmt:
+        type: string
+      total_duration_s:
+        type: number
+      total_km:
+        type: number
+      week_name:
         type: string
     type: object
   api.weeklyPlanDetailResponse:
@@ -1772,6 +1866,52 @@ paths:
       summary: Trigger a watch-data sync (+ compute) for a user
       tags:
       - sync
+  /api/{user}/weeks/{weekName}:
+    get:
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Shanghai week name (YYYY-MM-DD_MM-DD)
+        in: path
+        name: weekName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.weekDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Get a user's week detail
+      tags:
+      - weekly-plan
   /api/pipelines/{run_id}:
     get:
       description: Reads one asynchronous pipeline run. Web onboarding polls the /api
