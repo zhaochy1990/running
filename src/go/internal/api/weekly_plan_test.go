@@ -312,15 +312,55 @@ func TestWeekDetailReturnsMigratedPlanAndActivities(t *testing.T) {
 	}
 }
 
-func TestWeekDetailValidatesWeekNameAndRequiresActivePlan(t *testing.T) {
+func TestWeekDetailValidatesWeekNameAndAllowsMissingPlan(t *testing.T) {
 	h := newWeeklyPlanHarness(t)
 	invalid := h.do(http.MethodGet, "/api/user-a/weeks/2026-07-28_08-03", h.bearer(t, "user-a"))
 	if invalid.Code != http.StatusBadRequest || invalid.Body.String() != `{"error":"invalid_week_name"}` {
 		t.Fatalf("invalid status=%d body=%s", invalid.Code, invalid.Body.String())
 	}
 	missing := h.do(http.MethodGet, "/api/user-a/weeks/2026-07-27_08-02", h.bearer(t, "user-a"))
-	if missing.Code != http.StatusNotFound || missing.Body.String() != `{"error":"weekly_plan_not_found"}` {
+	if missing.Code != http.StatusOK {
 		t.Fatalf("missing status=%d body=%s", missing.Code, missing.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(missing.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode missing plan: %v", err)
+	}
+	if body["week_name"] != "2026-07-27_08-02" || body["activity_count"] != float64(0) {
+		t.Fatalf("missing plan body=%v", body)
+	}
+	if _, exists := body["plan"]; exists {
+		t.Fatalf("missing plan response must omit plan: %v", body)
+	}
+	if _, exists := body["structured"]; exists {
+		t.Fatalf("missing plan response must omit structured: %v", body)
+	}
+}
+
+func TestWeekDetailReturnsActivitiesWithoutActivePlan(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	distance := 5000.0
+	duration := 1800.0
+	h.store.activities[userID] = []storage.Activity{{
+		LabelID: "run", SportType: 100,
+		Date:      time.Date(2026, 7, 27, 1, 0, 0, 0, time.UTC),
+		DistanceM: &distance, DurationS: &duration,
+	}}
+
+	resp := h.do(http.MethodGet, "/api/"+userID+"/weeks/2026-07-27_08-02", h.bearer(t, userID))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["activity_count"] != float64(1) || body["total_km"] != 5.0 || body["total_duration_s"] != 1800.0 {
+		t.Fatalf("activity-only body=%v", body)
+	}
+	if _, exists := body["plan"]; exists {
+		t.Fatalf("activity-only response must omit plan: %v", body)
 	}
 }
 

@@ -233,8 +233,8 @@ func (w *weeklyPlanRoutes) listSummaries(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"weeks": weeks})
 }
 
-// weekDetail returns the migrated active weekly plan plus activities from the
-// canonical MySQL stores.
+// weekDetail returns activities for a Shanghai week and includes the migrated
+// active weekly plan when one exists.
 //
 //	@Summary		Get a user's week detail
 //	@Tags			weekly-plan
@@ -245,7 +245,6 @@ func (w *weeklyPlanRoutes) listSummaries(c *gin.Context) {
 //	@Failure		400	{object}	errorResponse
 //	@Failure		401	{object}	errorResponse
 //	@Failure		403	{object}	errorResponse
-//	@Failure		404	{object}	errorResponse
 //	@Failure		500	{object}	errorResponse
 //	@Security		InternalToken
 //	@Security		BearerAuth
@@ -265,10 +264,6 @@ func (w *weeklyPlanRoutes) weekDetail(c *gin.Context) {
 	if err != nil {
 		w.log.Error("get week detail plan failed", zapErr(err))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-		return
-	}
-	if plan == nil {
-		c.JSON(http.StatusNotFound, errorResponse{Error: "weekly_plan_not_found"})
 		return
 	}
 	dateTo := weekEnd.Format("2006-01-02")
@@ -298,6 +293,10 @@ func (w *weeklyPlanRoutes) weekDetail(c *gin.Context) {
 	response.TotalDurationFmt = apifmt.DurationFmt(&response.TotalDurationS)
 	response.ActivityCount = len(response.Activities)
 
+	if plan == nil {
+		c.JSON(http.StatusOK, response)
+		return
+	}
 	if plan.ContentVersion == storage.WeeklyPlanContentMarkdown {
 		response.Plan = &plan.Content
 	} else {

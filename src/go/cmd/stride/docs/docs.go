@@ -1755,12 +1755,6 @@ const docTemplate = `{
                             "$ref": "#/definitions/api.errorResponse"
                         }
                     },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
