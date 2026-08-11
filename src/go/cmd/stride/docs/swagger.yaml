@@ -864,6 +864,13 @@ definitions:
       running_age_range:
         type: string
     type: object
+  api.putWeeklyFeedbackRequest:
+    properties:
+      content:
+        type: string
+    required:
+    - content
+    type: object
   api.runStateResponse:
     properties:
       completed_at:
@@ -1327,10 +1334,23 @@ definitions:
         type: string
       date_to:
         type: string
+      feedback:
+        type: string
+      feedback_created_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      feedback_updated_at:
+        format: date-time
+        type: string
+        x-nullable: true
       plan:
         type: string
+        x-nullable: true
       structured:
-        $ref: '#/definitions/api.structuredWeekResponse'
+        allOf:
+        - $ref: '#/definitions/api.structuredWeekResponse'
+        x-nullable: true
       total_duration_fmt:
         type: string
       total_duration_s:
@@ -1338,6 +1358,21 @@ definitions:
       total_km:
         type: number
       week_name:
+        type: string
+    type: object
+  api.weeklyFeedbackResponse:
+    properties:
+      created_at:
+        type: string
+      feedback:
+        type: string
+      has_feedback:
+        type: boolean
+      success:
+        type: boolean
+      updated_at:
+        type: string
+      week:
         type: string
     type: object
   api.weeklyPlanDetailResponse:
@@ -1898,6 +1933,10 @@ paths:
           description: Forbidden
           schema:
             $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1906,6 +1945,64 @@ paths:
       - InternalToken: []
       - BearerAuth: []
       summary: Get a user's week detail
+      tags:
+      - weekly-plan
+  /api/{user}/weeks/{weekName}/feedback:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Shanghai week name (YYYY-MM-DD_MM-DD)
+        in: path
+        name: weekName
+        required: true
+        type: string
+      - description: Weekly feedback
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.putWeeklyFeedbackRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.weeklyFeedbackResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Save weekly feedback
       tags:
       - weekly-plan
   /api/pipelines/{run_id}:

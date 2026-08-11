@@ -6,8 +6,10 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,9 +26,36 @@ type fakeWeeklyPlanStore struct {
 	getErr           error
 	summaryErr       error
 	activitiesErr    error
+	feedbackErr      error
 	lastMasterPlanID string
 	lastDateFrom     string
 	lastDateTo       string
+	feedback         map[string]storage.WeeklyFeedback
+	now              time.Time
+}
+
+func (f *fakeWeeklyPlanStore) GetWeeklyFeedback(_ context.Context, userID, weekStart string) (*storage.WeeklyFeedback, error) {
+	if f.feedbackErr != nil {
+		return nil, f.feedbackErr
+	}
+	row, exists := f.feedback[userID+"/"+weekStart]
+	if !exists {
+		return nil, nil
+	}
+	return &row, nil
+}
+
+func (f *fakeWeeklyPlanStore) PutWeeklyFeedback(_ context.Context, userID, weekStart, content string) (storage.WeeklyFeedback, error) {
+	now := f.now
+	key := userID + "/" + weekStart
+	row, exists := f.feedback[key]
+	if !exists {
+		row = storage.WeeklyFeedback{UserID: userID, WeekStart: weekStart, CreatedAt: now}
+	}
+	row.ContentMD = content
+	row.UpdatedAt = now
+	f.feedback[key] = row
+	return row, nil
 }
 
 func (f *fakeWeeklyPlanStore) ListWeekActivities(_ context.Context, userID, dateFrom, dateTo string) ([]storage.Activity, error) {
@@ -81,6 +110,8 @@ func newWeeklyPlanHarness(t *testing.T) *weeklyPlanHarness {
 	store := &fakeWeeklyPlanStore{
 		plans: map[string][]storage.WeeklyPlan{}, summaries: map[string][]storage.WeekSummary{},
 		activities: map[string][]storage.Activity{},
+		feedback:   map[string]storage.WeeklyFeedback{},
+		now:        time.Date(2026, 8, 11, 1, 2, 3, 0, time.UTC),
 	}
 	svc := NewService(Config{
 		Auth:            NewAuthenticator(testToken, NewJWTVerifierFromKey(&key.PublicKey, testIssuer, testAudience)),
@@ -103,13 +134,81 @@ func (h *weeklyPlanHarness) bearer(t *testing.T, sub string) map[string]string {
 }
 
 func (h *weeklyPlanHarness) do(method, path string, headers map[string]string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, nil)
+	return h.doBody(method, path, headers, nil)
+}
+
+func (h *weeklyPlanHarness) doBody(method, path string, headers map[string]string, body io.Reader) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, body)
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
 	resp := httptest.NewRecorder()
 	h.svc.Router().ServeHTTP(resp, req)
 	return resp
+}
+
+func TestPutWeeklyFeedbackCreatesNormalizedFeedback(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	resp := h.doBody(http.MethodPut, "/api/"+userID+"/weeks/2026-12-28_01-03/feedback", h.bearer(t, userID), strings.NewReader(`{"content":"  Great week!  ","legacy":true}`))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["success"] != true || body["week"] != "2026-12-28_01-03" || body["feedback"] != "  Great week!  " || body["has_feedback"] != true {
+		t.Fatalf("body=%v", body)
+	}
+	if body["created_at"] != "2026-08-11T01:02:03Z" || body["updated_at"] != "2026-08-11T01:02:03Z" {
+		t.Fatalf("timestamps=%v", body)
+	}
+}
+
+func TestPutWeeklyFeedbackValidatesRequestAndAuthorization(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	tests := []struct {
+		name, path, body string
+		headers          map[string]string
+		status           int
+		error            string
+	}{
+		{"cross user", "/api/other/weeks/2026-07-27_08-02/feedback", `{"content":"x"}`, h.bearer(t, "user-a"), http.StatusForbidden, "forbidden"},
+		{"bad week", "/api/user-a/weeks/2026-07-28_08-03/feedback", `{"content":"x"}`, h.bearer(t, "user-a"), http.StatusBadRequest, "invalid_week_name"},
+		{"non string", "/api/user-a/weeks/2026-07-27_08-02/feedback", `{"content":42}`, h.bearer(t, "user-a"), http.StatusUnprocessableEntity, "invalid_content"},
+		{"missing content", "/api/user-a/weeks/2026-07-27_08-02/feedback", `{}`, h.bearer(t, "user-a"), http.StatusUnprocessableEntity, "invalid_content"},
+		{"too large utf8", "/api/user-a/weeks/2026-07-27_08-02/feedback", `{"content":"` + strings.Repeat("跑", 87382) + `"}`, h.bearer(t, "user-a"), http.StatusRequestEntityTooLarge, "weekly_feedback_too_large"},
+		{"too large body", "/api/user-a/weeks/2026-07-27_08-02/feedback", `{"content":"` + strings.Repeat("x", 1024*1024) + `"}`, h.bearer(t, "user-a"), http.StatusRequestEntityTooLarge, "weekly_feedback_too_large"},
+		{"too large whitespace", "/api/user-a/weeks/2026-07-27_08-02/feedback", `{"content":"` + strings.Repeat(" ", 256*1024+1) + `"}`, h.bearer(t, "user-a"), http.StatusRequestEntityTooLarge, "weekly_feedback_too_large"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resp := h.doBody(http.MethodPut, test.path, test.headers, strings.NewReader(test.body))
+			if resp.Code != test.status || resp.Body.String() != `{"error":"`+test.error+`"}` {
+				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+			}
+		})
+	}
+}
+
+func TestPutWeeklyFeedbackClearsWhitespaceAndRefreshesUpdate(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	path := "/api/" + userID + "/weeks/2026-07-27_08-02/feedback"
+	first := h.doBody(http.MethodPut, path, h.bearer(t, userID), strings.NewReader(`{"content":"first"}`))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
+	}
+	h.store.now = time.Date(2026, 8, 11, 2, 3, 4, 0, time.UTC)
+	second := h.doBody(http.MethodPut, path, h.bearer(t, userID), strings.NewReader("{\"content\":\" \\n\\t \"}"))
+	var body weeklyFeedbackResponse
+	if err := json.Unmarshal(second.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if second.Code != http.StatusOK || body.Feedback != "" || body.HasFeedback || body.CreatedAt != "2026-08-11T01:02:03Z" || body.UpdatedAt != "2026-08-11T02:03:04Z" {
+		t.Fatalf("status=%d body=%+v", second.Code, body)
+	}
 }
 
 func weeklyPlanFixture(id, userID, weekStart string, contentVersion int8, content string) storage.WeeklyPlan {
@@ -196,6 +295,51 @@ func TestWeekSummaryListSupportsMasterPlanFilter(t *testing.T) {
 	}
 }
 
+func TestWeekSummaryListReturnsPlanActivityAndFeedbackWeekUnion(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	h.store.summaries[userID] = []storage.WeekSummary{
+		{PlanID: "plan", WeekStart: "2026-08-03", ContentVersion: storage.WeeklyPlanContentStructured, HasFeedback: true},
+		{WeekStart: "2026-07-27", ActivityCount: 1, TotalKM: 5, TotalDurationS: 1800},
+		{WeekStart: "2026-07-20", FeedbackRowExists: true, HasFeedback: true},
+		{WeekStart: "2026-07-13", FeedbackRowExists: true, HasFeedback: false},
+	}
+
+	resp := h.do(http.MethodGet, "/api/"+userID+"/weeks", h.bearer(t, userID))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	weeks := body["weeks"].([]any)
+	if len(weeks) != 4 {
+		t.Fatalf("weeks=%v", weeks)
+	}
+	for i, want := range []struct {
+		folder      string
+		hasPlan     bool
+		hasFeedback bool
+	}{
+		{"2026-08-03_08-09", true, true},
+		{"2026-07-27_08-02", false, false},
+		{"2026-07-20_07-26", false, true},
+		{"2026-07-13_07-19", false, false},
+	} {
+		week := weeks[i].(map[string]any)
+		if week["folder"] != want.folder || week["has_plan"] != want.hasPlan || week["has_feedback"] != want.hasFeedback {
+			t.Fatalf("week[%d]=%v", i, week)
+		}
+		if _, exists := week["feedback"]; exists {
+			t.Fatalf("list leaked feedback body: %v", week)
+		}
+		if _, exists := week["feedback_updated_at"]; exists {
+			t.Fatalf("list leaked feedback timestamp: %v", week)
+		}
+	}
+}
+
 func TestWeekSummaryListRejectsEmptyMasterPlan(t *testing.T) {
 	h := newWeeklyPlanHarness(t)
 	resp := h.do(http.MethodGet, "/api/user-a/weeks?master_plan=", h.bearer(t, "user-a"))
@@ -263,6 +407,11 @@ func TestWeekDetailReturnsMigratedPlanAndActivities(t *testing.T) {
 		{LabelID: "a", Name: &name, SportType: 100, Date: time.Date(2026, 7, 27, 0, 30, 0, 0, time.UTC), DistanceM: &distanceA, DurationS: &durationA, AvgPaceSKm: &pace, SportNote: &note, RouteThumbJSON: &route},
 		{LabelID: "b", SportType: 402, Date: time.Date(2026, 7, 28, 0, 30, 0, 0, time.UTC), DistanceM: &distanceB, DurationS: &durationB},
 	}
+	h.store.feedback[userID+"/2026-07-27"] = storage.WeeklyFeedback{
+		UserID: userID, WeekStart: "2026-07-27", ContentMD: "Weekly reflection",
+		CreatedAt: time.Date(2026, 8, 3, 1, 2, 3, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 8, 4, 4, 5, 6, 123000000, time.UTC),
+	}
 
 	resp := h.do(http.MethodGet, "/api/"+userID+"/weeks/2026-07-27_08-02", h.bearer(t, userID))
 	if resp.Code != http.StatusOK {
@@ -292,6 +441,12 @@ func TestWeekDetailReturnsMigratedPlanAndActivities(t *testing.T) {
 	if _, exists := raw["feedback_source"]; exists {
 		t.Fatalf("response must not include feedback_source: %v", raw)
 	}
+	if raw["feedback"] != "Weekly reflection" || raw["feedback_created_at"] != "2026-08-03T01:02:03Z" || raw["feedback_updated_at"] != "2026-08-04T04:05:06.123Z" {
+		t.Fatalf("feedback=%v", raw)
+	}
+	if strings.Contains(raw["feedback"].(string), note) {
+		t.Fatalf("sport_note leaked into weekly feedback: %v", raw)
+	}
 	if body.WeekName != "2026-07-27_08-02" || body.DateFrom != "2026-07-27" || body.DateTo != "2026-08-02" {
 		t.Fatalf("week identity=%+v", body)
 	}
@@ -312,28 +467,15 @@ func TestWeekDetailReturnsMigratedPlanAndActivities(t *testing.T) {
 	}
 }
 
-func TestWeekDetailValidatesWeekNameAndAllowsMissingPlan(t *testing.T) {
+func TestWeekDetailValidatesWeekNameAndReturnsNotFoundWhenAllSourcesMissing(t *testing.T) {
 	h := newWeeklyPlanHarness(t)
 	invalid := h.do(http.MethodGet, "/api/user-a/weeks/2026-07-28_08-03", h.bearer(t, "user-a"))
 	if invalid.Code != http.StatusBadRequest || invalid.Body.String() != `{"error":"invalid_week_name"}` {
 		t.Fatalf("invalid status=%d body=%s", invalid.Code, invalid.Body.String())
 	}
 	missing := h.do(http.MethodGet, "/api/user-a/weeks/2026-07-27_08-02", h.bearer(t, "user-a"))
-	if missing.Code != http.StatusOK {
+	if missing.Code != http.StatusNotFound || missing.Body.String() != `{"error":"week_not_found"}` {
 		t.Fatalf("missing status=%d body=%s", missing.Code, missing.Body.String())
-	}
-	var body map[string]any
-	if err := json.Unmarshal(missing.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode missing plan: %v", err)
-	}
-	if body["week_name"] != "2026-07-27_08-02" || body["activity_count"] != float64(0) {
-		t.Fatalf("missing plan body=%v", body)
-	}
-	if _, exists := body["plan"]; exists {
-		t.Fatalf("missing plan response must omit plan: %v", body)
-	}
-	if _, exists := body["structured"]; exists {
-		t.Fatalf("missing plan response must omit structured: %v", body)
 	}
 }
 
@@ -359,8 +501,63 @@ func TestWeekDetailReturnsActivitiesWithoutActivePlan(t *testing.T) {
 	if body["activity_count"] != float64(1) || body["total_km"] != 5.0 || body["total_duration_s"] != 1800.0 {
 		t.Fatalf("activity-only body=%v", body)
 	}
-	if _, exists := body["plan"]; exists {
-		t.Fatalf("activity-only response must omit plan: %v", body)
+	if body["plan"] != nil || body["structured"] != nil || body["feedback"] != "" || body["feedback_created_at"] != nil || body["feedback_updated_at"] != nil {
+		t.Fatalf("activity-only stable shape=%v", body)
+	}
+}
+
+func TestWeekDetailReturnsFeedbackOnlyAndDistinguishesClearedRow(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	created := time.Date(2026, 8, 3, 1, 2, 3, 0, time.UTC)
+	updated := time.Date(2026, 8, 4, 4, 5, 6, 0, time.UTC)
+	h.store.feedback[userID+"/2026-07-27"] = storage.WeeklyFeedback{
+		UserID: userID, WeekStart: "2026-07-27", ContentMD: "", CreatedAt: created, UpdatedAt: updated,
+	}
+
+	resp := h.do(http.MethodGet, "/api/"+userID+"/weeks/2026-07-27_08-02", h.bearer(t, userID))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["plan"] != nil || body["structured"] != nil || body["feedback"] != "" || body["feedback_created_at"] != created.Format(time.RFC3339) || body["feedback_updated_at"] != updated.Format(time.RFC3339) {
+		t.Fatalf("cleared feedback shape=%v", body)
+	}
+	if activities, ok := body["activities"].([]any); !ok || len(activities) != 0 {
+		t.Fatalf("activities=%v", body["activities"])
+	}
+}
+
+func TestWeekDetailReturnsNonEmptyFeedbackWithoutPlanOrActivities(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	h.store.feedback[userID+"/2026-07-27"] = storage.WeeklyFeedback{
+		UserID: userID, WeekStart: "2026-07-27", ContentMD: "Recovered well",
+		CreatedAt: time.Date(2026, 8, 3, 1, 2, 3, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 8, 4, 4, 5, 6, 0, time.UTC),
+	}
+	resp := h.do(http.MethodGet, "/api/"+userID+"/weeks/2026-07-27_08-02", h.bearer(t, userID))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["plan"] != nil || body["structured"] != nil || body["feedback"] != "Recovered well" {
+		t.Fatalf("feedback-only body=%v", body)
+	}
+}
+
+func TestWeekDetailMapsFeedbackStoreFailure(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	h.store.feedbackErr = errors.New("feedback unavailable")
+	resp := h.do(http.MethodGet, "/api/user-a/weeks/2026-07-27_08-02", h.bearer(t, "user-a"))
+	if resp.Code != http.StatusInternalServerError || resp.Body.String() != `{"error":"internal error"}` {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
 	}
 }
 
@@ -381,8 +578,8 @@ func TestWeekDetailSupportsMarkdownAndCrossYearWeek(t *testing.T) {
 	if body["week_name"] != "2026-12-28_01-03" || body["date_to"] != "2027-01-03" || body["plan"] != "# Race week\n" {
 		t.Fatalf("body=%v", body)
 	}
-	if _, ok := body["structured"]; ok {
-		t.Fatalf("markdown response must not include structured: %v", body)
+	if body["structured"] != nil {
+		t.Fatalf("markdown response structured must be null: %v", body)
 	}
 }
 

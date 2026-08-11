@@ -4,7 +4,7 @@ One-off Node.js utilities that copy per-user data into the **Tencent MySQL**
 tables read by the Go worker (`src/go/`). It is a standalone project — it has its
 own `package.json` and does **not** import anything from the rest of the repo.
 
-Seven migrations live here:
+Eight migrations live here:
 
 | Command | Source | Target table(s) |
 |---|---|---|
@@ -15,6 +15,7 @@ Seven migrations live here:
 | `npm run migrate:master-plans` (`src/migrate-master-plans.js`) | Azure Table/Blob season plans | `master_plan` |
 | `npm run migrate:weekly-plans` (`src/migrate-weekly-plans.js`) | Azure Table canonical weekly plans, with Blob `plan.md` fallback | `weekly_plan` |
 | `npm run migrate:running-age` (`src/migrate-running-age.js`) | local `data/<uuid>/running_profile.json` | existing `user_profile` rows |
+| `npm run migrate:weekly-feedback` (`src/migrate-weekly-feedback.js`) | local SQLite `weekly_feedback`, with `feedback.md` fallback | `weekly_feedback` |
 
 ## Production migration status
 
@@ -33,6 +34,24 @@ Only **real users** (the UUIDs in `src/users.js`) are migrated; every other UUID
 is a test account and is discarded (see `AGENTS.md`). The creds migration prunes
 test accounts by `--exclude-email`; the profile migration enforces the
 `src/users.js` allowlist directly.
+
+---
+
+## Weekly-feedback backfill — local history → `weekly_feedback`
+
+Dry-run writes a redacted review manifest; SQLite wins over Markdown for each
+validated natural week. Apply requires the unchanged manifest and its exact hash.
+
+```bash
+npm run migrate:weekly-feedback -- --manifest-out ./weekly-feedback-review.json
+npm run migrate:weekly-feedback -- --commit \
+  --reviewed-manifest ./weekly-feedback-review.json \
+  --reviewed-hash sha256:<hash-from-manifest>
+```
+
+`--user` is repeatable or comma-separated and remains gated by `src/users.js`.
+`--limit` caps users. Sources default to repository `data/`; use `--data-dir`
+for a local snapshot override. MySQL uses `STRIDE_WORKER_MYSQL_DSN` or `MYSQL_*`.
 
 ---
 

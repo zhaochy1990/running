@@ -300,10 +300,8 @@ export default function WeekLayout() {
               user={user}
               folder={weekDetail.week_name}
               feedback={weekDetail.feedback}
-              source={weekDetail.feedback_source}
               updatedAt={weekDetail.feedback_updated_at}
-              onSaved={(newDetail) => setWeekDetail(newDetail)}
-              reload={() => folder && user ? getWeek(user, folder) : undefined}
+              onSaved={(saved) => setWeekDetail((current) => current ? { ...current, ...saved } : current)}
               activities={weekDetail.activities}
               totalKm={weekDetail.total_km}
               totalDurationFmt={weekDetail.total_duration_fmt}
@@ -653,16 +651,14 @@ function TabButton({ active, onClick, color, children }: {
 }
 
 function FeedbackPanel({
-  user, folder, feedback, source, updatedAt, onSaved, reload,
+  user, folder, feedback, updatedAt, onSaved,
   activities, totalKm, totalDurationFmt, activityCount, dateTo,
 }: {
   user: string
   folder: string
   feedback: string | undefined
-  source: 'db' | 'file' | 'none' | undefined
   updatedAt: string | null | undefined
-  onSaved: (detail: WeekDetail) => void
-  reload: () => Promise<WeekDetail> | undefined
+  onSaved: (detail: Pick<WeekDetail, 'feedback' | 'feedback_created_at' | 'feedback_updated_at'>) => void
   activities: Activity[]
   totalKm: number
   totalDurationFmt: string
@@ -713,10 +709,11 @@ function FeedbackPanel({
     try {
       const res = await updateWeeklyFeedback(user, folder, draft)
       if (!res.ok) throw new Error(`保存失败 (${res.status})`)
-      const reloaded = await reload()
-      if (reloaded) {
-        onSaved({ ...reloaded, feedback: draft })
-      }
+      onSaved({
+        feedback: res.data.feedback,
+        feedback_created_at: res.data.created_at,
+        feedback_updated_at: res.data.updated_at,
+      })
       setEditing(false)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '保存失败')
@@ -732,17 +729,12 @@ function FeedbackPanel({
       {/* Header: source badge + edit/save controls */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          {source === 'db' && (
-            <span className="text-[11px] font-mono text-accent-cyan bg-accent-cyan/10 px-2 py-0.5 rounded">
-              已编辑
-            </span>
-          )}
-          {source === 'file' && (
+          {!isEmpty && (
             <span className="text-[11px] font-mono text-text-muted bg-bg-secondary px-2 py-0.5 rounded">
-              来自 feedback.md
+              已保存
             </span>
           )}
-          {updatedAt && source === 'db' && (
+          {updatedAt && (
             <span className="text-[11px] font-mono text-text-muted">
               {updatedAt.replace('T', ' ').slice(0, 19)}
             </span>

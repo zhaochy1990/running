@@ -103,8 +103,14 @@ export function useCoachWeeklyPlan(): CoachWeeklyPlanState {
 
   const saveFeedback = useCallback(async (content: string) => {
     if (!folder || !user) return
-    await updateWeeklyFeedback(user, folder, content)
-    setWeek((current) => current ? { ...current, feedback: content, feedback_source: 'db' } : current)
+    const response = await updateWeeklyFeedback(user, folder, content)
+    if (!response.ok) throw new Error(`保存失败 (${response.status})`)
+    setWeek((current) => current ? {
+      ...current,
+      feedback: response.data.feedback,
+      feedback_created_at: response.data.created_at,
+      feedback_updated_at: response.data.updated_at,
+    } : current)
   }, [folder, user])
 
   const pushSession = useCallback(async (session: PlannedSession, targetDate?: string) => {

@@ -1,10 +1,12 @@
-# feedback.md 自动同步 + RPE / feel_type 含义
+# 周反馈与 RPE / feel_type
 
-**何时读**：sync 后想把 `sport_note` 追加进 feedback.md，或在 plan / commentary 里引用 RPE 时必读。
+**何时读**：读取或写入周反馈，或在 plan / commentary 里引用 RPE 时必读。
 
-## feedback.md 是什么
+## 周反馈是什么
 
-每周训练的反馈文件，通常含主观感受。每次 sync 后，把本周带 `sport_note` 的活动反馈追加到对应周目录的 `feedback.md` 中。格式直接追加原始文本，与用户在 COROS App 写的保持一致。
+周反馈是运动员针对一个上海自然周记录的整周反馈。人工 rollout 完成前，生产兼容路径仍使用 legacy `feedback.md`；`STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE=true` 后，canonical source 是 MySQL `weekly_feedback`，legacy 文件仅保留为迁移材料。
+
+活动 `sport_note` 和 `feel_type` 属于单次活动，随活动展示，不自动拼接到周反馈。
 
 ## 查询本周带 `sport_note` 的活动
 
@@ -23,14 +25,14 @@ rows = db._conn.execute('''
 
 COROS App 训练后表情评分：1=很好，2=好，3=一般，4=差，5=很差。若无法确认准确映射，以 `sport_note` 文字内容为准。
 
-## Feedback 自动生成，不要用模板
+## 周反馈内容
 
-feedback.md 不需要提前创建模板。内容全部从数据自动获取：
+周反馈不需要模板，可包含：
 
-1. **主观反馈**（`sport_note` + `feel_type`）—— 从 COROS App 训练反馈同步
+1. **主观反馈**——整周 RPE、感知疲劳、疼痛、恢复与计划执行感受
 2. **客观数据**（10km 测试成绩、周跑量、总时长、平均心率等）—— 从 DB 活动记录和健康数据查询
 
-每次更新 feedback.md 时追加内容，不覆盖已有内容。不要用 `____` 占位符。
+用户通过周反馈 API 整体保存正文；不要用 `____` 占位符。活动反馈保持在活动记录中。
 
 ## RPE (Rate of Perceived Exertion)
 

@@ -1747,6 +1747,103 @@
                             "$ref": "#/definitions/api.errorResponse"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/weeks/{weekName}/feedback": {
+            "put": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "weekly-plan"
+                ],
+                "summary": "Save weekly feedback",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shanghai week name (YYYY-MM-DD_MM-DD)",
+                        "name": "weekName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Weekly feedback",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.putWeeklyFeedbackRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.weeklyFeedbackResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -3355,6 +3452,17 @@
                 }
             }
         },
+        "api.putWeeklyFeedbackRequest": {
+            "type": "object",
+            "required": [
+                "content"
+            ],
+            "properties": {
+                "content": {
+                    "type": "string"
+                }
+            }
+        },
         "api.runStateResponse": {
             "type": "object",
             "properties": {
@@ -4054,11 +4162,30 @@
                 "date_to": {
                     "type": "string"
                 },
-                "plan": {
+                "feedback": {
                     "type": "string"
                 },
+                "feedback_created_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "feedback_updated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "plan": {
+                    "type": "string",
+                    "x-nullable": true
+                },
                 "structured": {
-                    "$ref": "#/definitions/api.structuredWeekResponse"
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/api.structuredWeekResponse"
+                        }
+                    ],
+                    "x-nullable": true
                 },
                 "total_duration_fmt": {
                     "type": "string"
@@ -4070,6 +4197,29 @@
                     "type": "number"
                 },
                 "week_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.weeklyFeedbackResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "feedback": {
+                    "type": "string"
+                },
+                "has_feedback": {
+                    "type": "boolean"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "week": {
                     "type": "string"
                 }
             }

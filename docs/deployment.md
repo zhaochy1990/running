@@ -129,7 +129,18 @@ workflow run 和用户固定的 `Idempotency-Key`；因此网络重试不会重�
 
 触发：push 到 `master` 且 `data/*/logs/**`、`data/*/TRAINING_PLAN.md`、`data/*/status.md` 中任一变更。经 `az storage file upload-batch` 推到 `authstorage2026` 上 `stride-data` share（RG `rg-common-prod`）。
 
-这就是 `plan.md` / `feedback.md` 不重建镜像也能在 prod 出现的原因 —— 它们 runtime 落到 Azure Files，不在 image 里。`.dockerignore` 排掉 `data/` 整个（除 `data/*/TRAINING_PLAN.md`），所以 `logs/` 下的 markdown 只经 `sync-data.yml` 到 prod，不经 image。
+这就是 `plan.md` 不重建镜像也能在 prod 出现的原因：它经 `sync-data.yml` 落到 Azure Files，不在 image 里。完成下方人工 rollout 后，周反馈改由 MySQL `weekly_feedback` 提供，并应从同步 workflow 移除 `feedback.md`。
+
+## Weekly feedback manual rollout
+
+ADR 0028 的生产启用必须由人工完成，本仓库部署 workflow 不自动打开 PUT route：
+
+1. 部署包含 `weekly_feedback` schema、Go GET/PUT 和迁移 CLI 的版本，但保持 feedback PUT 仍指向 Python。
+2. 对生产目标运行默认 dry-run，保存并人工审阅零错误 manifest；核对 manifest 的 MySQL `database_name`、`server_uuid`、用户清单和记录哈希。
+3. 使用同一 manifest/hash 显式 `--commit`，等待单事务写入和 readback verification 成功。失败时保持 BFF 不变。
+4. 在同一个 BFF revision 中确认两个 week GET 已指向 Go，再设置 `STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK=go` 和 `STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE=true`。BFF 会拒绝只切 PUT，也会在 completion marker 存在后拒绝任一路由回退。
+5. 用真实用户验证 list、detail、非空保存、清空和 reload；确认 `sport_note` 未拼接到周反馈。
+6. 验证成功后，将同名 GitHub Actions repository variable `STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE` 设为 `true`，使 `sync-data.yml` 只同步 `plan.md`。不要通过恢复 Python PUT 回滚；需要回滚时先制定 MySQL 数据一致性方案。
 
 **DB-row 内容**（如 `activity_commentary`）**不**在 `sync-data.yml` 覆盖范围内（住在 SQLite 不是 markdown）。用 `coros-sync -P <user> commentary push <label_id> --url $STRIDE_PROD_URL`，POST 到 server 的 `/api/{user}/activities/{label_id}/commentary`。
 

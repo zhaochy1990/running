@@ -3,10 +3,12 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import { API_ROUTES } from '../api-routes.js'
+import { validateRouteConfiguration } from '../validation.js'
 import {
   AUTH_PREFIX,
   hasGoRoutes,
   hasPartialPlanSetupGoCutover,
+  hasPartialWeeklyFeedbackGoCutover,
   hasPartialWebOnboardingGoCutover,
   PLAN_SETUP_GO_ROUTE_CONTRACT,
   resolveUpstream,
@@ -131,6 +133,17 @@ describe('env-driven upstream selection', () => {
     expect(resolveUpstream('GET', '/api/u/weeks/2026-08-10_08-16/strength', detailEnv)).toBe('python')
     expect(resolveUpstream('GET', '/api/u/weeks/2026-08-10_08-16/review', detailEnv)).toBe('python')
     expect(resolveUpstream('PUT', '/api/u/weeks/2026-08-10_08-16/feedback', detailEnv)).toBe('python')
+  })
+
+  it('routes the complete weekly-feedback cutover unit to Go', () => {
+    const env = {
+      STRIDE_ROUTE_GET_USER_WEEKS: 'go',
+      STRIDE_ROUTE_GET_USER_WEEKS_WEEKNAME: 'go',
+      STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK: 'go',
+    }
+    expect(resolveUpstream('GET', '/api/u/weeks', env)).toBe('go')
+    expect(resolveUpstream('GET', '/api/u/weeks/2026-08-10_08-16', env)).toBe('go')
+    expect(resolveUpstream('PUT', '/api/u/weeks/2026-08-10_08-16/feedback', env)).toBe('go')
   })
 
   it('keeps the legacy variants path on Python when plan-week detail moves to Go', () => {
@@ -259,6 +272,31 @@ describe('Web onboarding Go cutover', () => {
       expect(hasPartialPlanSetupGoCutover(partial)).toBe(true)
     }
   })
+
+  it('requires both week readers before weekly-feedback PUT moves to Go', () => {
+    expect(hasPartialWeeklyFeedbackGoCutover({ STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK: 'go' })).toBe(true)
+    expect(hasPartialWeeklyFeedbackGoCutover({
+      STRIDE_ROUTE_GET_USER_WEEKS: 'go',
+      STRIDE_ROUTE_GET_USER_WEEKS_WEEKNAME: 'go',
+      STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK: 'go',
+    })).toBe(false)
+  })
+
+  it('prevents route rollback after weekly-feedback cutover is marked complete', () => {
+    expect(() => validateRouteConfiguration({
+      GO_API_URL: 'http://go',
+      STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE: 'true',
+      STRIDE_ROUTE_GET_USER_WEEKS: 'go',
+      STRIDE_ROUTE_GET_USER_WEEKS_WEEKNAME: 'go',
+      STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK: 'go',
+    })).not.toThrow()
+    expect(() => validateRouteConfiguration({
+      GO_API_URL: 'http://go',
+      STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE: 'true',
+      STRIDE_ROUTE_GET_USER_WEEKS: 'go',
+      STRIDE_ROUTE_GET_USER_WEEKS_WEEKNAME: 'go',
+    })).toThrow(/cannot route any member back to Python/)
+  })
 })
 
 describe('API_ROUTES manifest integrity', () => {
@@ -267,6 +305,12 @@ describe('API_ROUTES manifest integrity', () => {
       method: 'GET',
       path: '/api/:user/weeks',
       env: 'STRIDE_ROUTE_GET_USER_WEEKS',
+      goReady: true,
+    })
+    expect(API_ROUTES).toContainEqual({
+      method: 'PUT',
+      path: '/api/:user/weeks/:weekName/feedback',
+      env: 'STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK',
       goReady: true,
     })
     expect(API_ROUTES).toContainEqual({
@@ -341,6 +385,10 @@ describe('API_ROUTES manifest integrity', () => {
     expect(dockerfile).toContain('STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT=go')
     expect(dockerfile).toContain('STRIDE_ROUTE_GET_USER_WEEKS=go')
     expect(dockerfile).toContain('STRIDE_ROUTE_GET_USER_WEEKS_WEEKNAME=go')
+    expect(dockerfile).not.toContain('STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK=go')
+
+    const deployment = readFileSync(new URL('../../../../../.github/workflows/deploy-web.yml', import.meta.url), 'utf8')
+    expect(deployment).not.toContain('STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK=go')
   })
 
   it('goReady endpoints are exactly the ones the Go API implements', () => {
@@ -393,6 +441,7 @@ describe('API_ROUTES manifest integrity', () => {
         'PUT /api/users/me/injuries/:injuryId',
         'PATCH /api/users/me/profile',
         'PUT /api/users/me/training-goal',
+        'PUT /api/:user/weeks/:weekName/feedback',
       ].sort(),
     )
   })
