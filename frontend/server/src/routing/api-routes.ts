@@ -216,8 +216,8 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: 'GET', path: '/api/:user/weeks/:folder/review', env: 'STRIDE_ROUTE_GET_USER_WEEKS_FOLDER_REVIEW', goReady: false },
   // ✓ /, /week, /coach/week · weekly strength tab
   { method: 'GET', path: '/api/:user/weeks/:folder/strength', env: 'STRIDE_ROUTE_GET_USER_WEEKS_FOLDER_STRENGTH', goReady: false },
-  // ✓ /, /week, /coach/week · save weekly feedback
-  { method: 'PUT', path: '/api/:user/weeks/:folder/feedback', env: 'STRIDE_ROUTE_PUT_USER_WEEKS_FOLDER_FEEDBACK', goReady: false },
+  // ✓ /, /week, /coach/week · save canonical MySQL weekly feedback [go-ready]
+  { method: 'PUT', path: '/api/:user/weeks/:weekName/feedback', env: 'STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK', goReady: true },
   // ✓ /, /week · reparse plan.md into structured plan (WeekLayout)
   { method: 'POST', path: '/api/:user/plan/reparse', env: 'STRIDE_ROUTE_POST_USER_PLAN_REPARSE', goReady: false },
 

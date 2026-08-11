@@ -14,6 +14,7 @@
     "preview": "vite preview",
     "smoke:local": "node scripts/local-smoke.cjs",
     "smoke:web:local": "cross-env STRIDE_LOCAL_URL=http://127.0.0.1:8080 node scripts/local-smoke.cjs",
+    "smoke:weekly-feedback:local": "node scripts/weekly-feedback-smoke.cjs",
     "smoke:plan:fixture": "npm run build && npm --prefix server run build && node scripts/current-plan-smoke.cjs",
     "test": "vitest run",
     "test:watch": "vitest"

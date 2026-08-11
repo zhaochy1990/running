@@ -15,7 +15,7 @@ vi.mock('../store/authStore', () => ({
 
 // Import after the vi.mock registration (vi.mock auto-hoists, but
 // being explicit keeps the read order obvious).
-import { getPipelineRun, getUsers, postOnboardingComplete, triggerSync } from '../api'
+import { getPipelineRun, getUsers, postOnboardingComplete, triggerSync, updateWeeklyFeedback } from '../api'
 
 function resp(status: number, body: unknown = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -148,5 +148,46 @@ describe('api 401-refresh', () => {
         body: JSON.stringify({ mode: 'full' }),
       }),
     )
+  })
+
+  it('uses the canonical Go weekly-feedback request and response contract', async () => {
+    const payload = {
+      success: true,
+      week: '2026-08-10_08-16',
+      feedback: '完成良好',
+      has_feedback: true,
+      created_at: '2026-08-16T10:00:00Z',
+      updated_at: '2026-08-16T11:00:00Z',
+    }
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(200, payload))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(updateWeeklyFeedback('user-1', payload.week, payload.feedback)).resolves.toEqual({
+      ok: true,
+      status: 200,
+      data: payload,
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/user-1/weeks/2026-08-10_08-16/feedback',
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ content: '完成良好' }) }),
+    )
+  })
+
+  it('normalizes the Python weekly-feedback response during manual cutover', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(200, {
+      success: true,
+      week: '2026-08-10_08-16',
+      feedback_updated_at: '2026-08-16T11:00:00Z',
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(updateWeeklyFeedback('user-1', '2026-08-10_08-16', 'legacy window')).resolves.toMatchObject({
+      ok: true,
+      data: {
+        feedback: 'legacy window',
+        has_feedback: true,
+        created_at: '2026-08-16T11:00:00Z',
+        updated_at: '2026-08-16T11:00:00Z',
+      },
+    })
   })
 })

@@ -36,6 +36,7 @@ from rich.console import Console
 from rich.table import Table
 
 from stride_core.plan_spec import SUPPORTED_SCHEMA_VERSION, WeeklyPlan
+from stride_core.timefmt import parse_week_folder_dates
 
 from .stride_auth import bearer_header
 
@@ -130,14 +131,16 @@ _SENTINEL_INSTRUCTIONS = """\
 def build_prompt(
     *, user: str, week_folder: str,
     user_dir: Path, recent_weeks: int = 4,
+    recent_feedback: list[tuple[str, str]] | None = None,
 ) -> str:
     """Assemble the prompt body (excluding the sentinel instructions
     which `omc ask` doesn't need to see if the agent prompt already
     embeds them — but we always append the sentinel block to defend
     against agent-prompt drift).
 
-    Reads pure local files: TRAINING_PLAN.md, recent N weekly plans +
-    the most recent feedback. No DB calls — the CLI is offline-friendly.
+    Reads pure local authoring files: TRAINING_PLAN.md and recent weekly plans.
+    Canonical weekly feedback lives in MySQL and is deliberately not replaced
+    by legacy local feedback.md content in this offline compatibility command.
     """
     parts: list[str] = []
     parts.append(f"# Generate weekly training plan for {week_folder}")
@@ -161,15 +164,15 @@ def build_prompt(
         recent = [p for p in folders if p.name != week_folder][:recent_weeks]
         for folder in reversed(recent):  # oldest-first for reading flow
             plan_md = folder / "plan.md"
-            fb_md = folder / "feedback.md"
             if plan_md.exists():
                 parts.append(f"## Recent week {folder.name} — plan.md")
                 parts.append(plan_md.read_text(encoding="utf-8"))
                 parts.append("")
-            if fb_md.exists():
-                parts.append(f"## Recent week {folder.name} — feedback.md")
-                parts.append(fb_md.read_text(encoding="utf-8"))
-                parts.append("")
+    for folder, feedback in recent_feedback or []:
+        if feedback:
+            parts.append(f"## Recent week {folder} — canonical weekly feedback")
+            parts.append(feedback)
+            parts.append("")
     parts.append(_SENTINEL_INSTRUCTIONS)
     return "\n".join(parts)
 
@@ -374,6 +377,47 @@ def _prod_url(option_url: str | None) -> str:
     return url
 
 
+def fetch_recent_weekly_feedback(
+    *, prod_url: str, profile: str, exclude_folder: str, limit: int = 4,
+) -> list[tuple[str, str]]:
+    headers = _require_token(profile)
+    list_response = httpx.get(
+        f"{prod_url.rstrip('/')}/api/{profile}/weeks",
+        headers=headers,
+        timeout=30.0,
+    )
+    if list_response.status_code >= 400:
+        raise click.ClickException(
+            f"weekly feedback list → HTTP {list_response.status_code}: {list_response.text[:500]}"
+        )
+    bounds = parse_week_folder_dates(exclude_folder)
+    excluded_week = (
+        f"{bounds[0]}_{bounds[1][5:]}" if bounds else exclude_folder
+    )
+    folders = [
+        item.get("folder") for item in list_response.json().get("weeks", [])
+        if isinstance(item, dict) and isinstance(item.get("folder"), str)
+        and item.get("folder") != excluded_week and item.get("has_feedback") is True
+    ][:limit]
+    feedback: list[tuple[str, str]] = []
+    for folder in folders:
+        response = httpx.get(
+            f"{prod_url.rstrip('/')}/api/{profile}/weeks/{folder}",
+            headers=headers,
+            timeout=30.0,
+        )
+        if response.status_code == 404:
+            continue
+        if response.status_code >= 400:
+            raise click.ClickException(
+                f"weekly feedback read → HTTP {response.status_code}: {response.text[:500]}"
+            )
+        value = response.json().get("feedback", "")
+        if isinstance(value, str) and value:
+            feedback.append((folder, value))
+    return feedback
+
+
 # ── generate-variants ────────────────────────────────────────────────────
 
 
@@ -395,17 +439,23 @@ def generate_variants(
 ) -> None:
     """Fan out to N models via `omc ask`, parse output, upload each variant."""
     profile = _profile_or_fail(ctx)
-    if not dry_run:
-        url = _prod_url(prod_url)
-    else:
-        url = None  # not used
+    # Dry-run suppresses uploads, not canonical context reads.
+    url = _prod_url(prod_url)
 
     from stride_core.db import USER_DATA_DIR
     user_dir = Path(USER_DATA_DIR) / profile
     if not user_dir.is_dir():
         raise click.ClickException(f"user dir not found: {user_dir}")
 
-    prompt = build_prompt(user=profile, week_folder=week_folder, user_dir=user_dir)
+    recent_feedback = fetch_recent_weekly_feedback(
+        prod_url=url, profile=profile, exclude_folder=week_folder,
+    )
+    prompt = build_prompt(
+        user=profile,
+        week_folder=week_folder,
+        user_dir=user_dir,
+        recent_feedback=recent_feedback,
+    )
     prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8]
     model_ids = [m.strip() for m in models.split(",") if m.strip()]
     if not model_ids:

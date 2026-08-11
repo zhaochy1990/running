@@ -11,7 +11,7 @@
 | 项 | 内容 |
 |----|------|
 | 中文名 | 周训练计划（weekly plan） |
-| 输入 | 当前 master plan 阶段、上周 feedback.md、最近身体信号（HRV/RHR/sleep/PMC）、用户文字 request |
+| 输入 | 当前 master plan 阶段、MySQL 上周周反馈、最近身体信号（HRV/RHR/sleep/PMC）、用户文字 request |
 | 输出 | `WeeklyPlan` 结构 + `plan.md` + `plan.json` |
 | 调用频率 | 每周 1 次（下周开始前） |
 | Pipeline | conversation: `week_chat` prompt；generation: `build_generation_graph` with `plan_type="week"` |
@@ -32,7 +32,7 @@
     // S2 不需要 target_race / prs / db_history_weeks 等 strategic 字段
   },
   "prev_plans_md": ["..."],          // 最近 2 周的 plan.md 全文
-  "prev_feedback_md": ["..."],       // 最近 2 周的 feedback.md 全文
+  "prev_feedback_md": ["..."],       // 最近 2 周 canonical weekly_feedback 正文
   "recent_signals": {                // 冻结的 DB snapshot
     "hrv_7d": [62, 60, 58, 56, 55, 54, 54],
     "rhr_7d": [48, 50, 51, 53, 54, 54, 54],
@@ -53,7 +53,7 @@
 |------|------|------|
 | `user_profile.phase` | ✅ | 决定本周强度 / 量结构 |
 | `prev_plans_md` | ✅ | 与上周衔接 |
-| `prev_feedback_md` | ✅ | 上周 RPE / 感受响应 |
+| `prev_feedback_md` | ✅ | 从 MySQL weekly_feedback 获取的上周 RPE / 感受响应 |
 | `recent_signals` | ✅ | HRV/RHR/sleep/PMC 触发降量逻辑 |
 | `target_week_start` | ✅ | 目标周的时间锚点（ISO 周一日期，跟存储无关） |
 | `user_request_md` | optional | 缺省 = autonomous generation，judge 跳过 `request_handling` axis |

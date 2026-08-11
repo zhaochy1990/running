@@ -36,7 +36,6 @@ export default function CoachWeeklyPlanPage({ initialTab = 'schedule' }: CoachWe
   if (error) return <div role="alert" className="mx-auto mt-10 max-w-xl rounded-xl border border-accent-red/30 bg-red-soft p-4 text-sm text-accent-red">{error}</div>
   if (!week) return <div className="px-4 py-12 sm:px-8"><CoachWeeklyPlanEmptyState /></div>
   const displayDays = hardcodedWeekDays(week.week_name, planDays) ?? planDays
-  if (displayDays.every((day) => day.sessions.length === 0) && !week.plan?.trim()) return <div className="px-4 py-12 sm:px-8"><CoachWeeklyPlanEmptyState /></div>
 
   const planTitle = weeks.find((item) => item.folder === week.week_name)?.plan_title
   const hasHardcodedStrength = hasHardcodedStrengthPreview(week.week_name)

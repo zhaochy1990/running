@@ -10,7 +10,7 @@ Variants 是 append-only 的 side rows；选定某个只把完整 `WeeklyPlan` �
 
 ```bash
 # 1. 给下周生成 3 个模型 variant（经 omc-teams 并行）。
-#    每个模型拿到相同 context（TRAINING_PLAN.md + 最近几周的 plan.md + feedback.md），
+#    每个模型拿到相同 context（TRAINING_PLAN.md + 最近几周的 plan.md；周反馈从 MySQL 获取），
 #    用 sentinel-anchored JSON 输出协议。解析失败的上传为 parse_failed
 #   （可浏览但不可选）。需要 auth（无 anonymous fallback）。
 coros-sync plan generate-variants -P zhaochaoyi --week 2026-05-04_05-10 \

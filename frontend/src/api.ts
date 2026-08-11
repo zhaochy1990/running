@@ -424,23 +424,22 @@ export interface WeekDetail {
   week_name: string
   date_from: string
   date_to: string
-  plan?: string
-  feedback?: string
-  feedback_source?: 'db' | 'file' | 'none'
-  feedback_updated_at?: string | null
-  feedback_generated_by?: string | null
+  plan: string | null
+  feedback: string
+  feedback_created_at: string | null
+  feedback_updated_at: string | null
   activities: Activity[]
   total_km: number
   total_duration_s: number
   total_duration_fmt: string
   activity_count: number
-  structured?: {
+  structured: {
     structured_status: StructuredStatus | null
     structured_parsed_at?: string | null
     sessions?: PlannedSessionRow[]
     nutrition?: PlannedNutrition[]
     coach_notes?: string | null
-  }
+  } | null
   // Multi-variant additions (Step 4 backend additive fields).
   variants_summary?: VariantsSummary
   abandoned_scheduled_workouts?: AbandonedScheduledWorkout[]
@@ -1830,17 +1829,36 @@ export function reparsePlan(user: string, folder: string) {
   return postJSON<ReparsePlanResponse>(`/${user}/plan/reparse?${qs}`)
 }
 
-export function updateWeeklyFeedback(user: string, folder: string, content: string, generatedBy?: string) {
-  return putJSON<{
+export interface WeeklyFeedbackResponse {
     success: boolean
     week: string
-    feedback_source: string
-    feedback_updated_at?: string | null
-    feedback_generated_by?: string | null
-  }>(`/${user}/weeks/${folder}/feedback`, {
-    content,
-    generated_by: generatedBy,
-  })
+    feedback: string
+    has_feedback: boolean
+    created_at: string
+    updated_at: string
+}
+
+interface LegacyWeeklyFeedbackResponse {
+  success: boolean
+  week: string
+  feedback_updated_at?: string | null
+}
+
+export async function updateWeeklyFeedback(user: string, weekName: string, content: string) {
+  const result = await putJSON<WeeklyFeedbackResponse | LegacyWeeklyFeedbackResponse>(`/${user}/weeks/${weekName}/feedback`, { content })
+  if (!result.ok || 'feedback' in result.data) return result as JsonResult<WeeklyFeedbackResponse>
+  const updatedAt = result.data.feedback_updated_at ?? new Date().toISOString()
+  return {
+    ...result,
+    data: {
+      success: result.data.success,
+      week: result.data.week,
+      feedback: content.trim() ? content : '',
+      has_feedback: Boolean(content.trim()),
+      created_at: updatedAt,
+      updated_at: updatedAt,
+    },
+  }
 }
 
 export interface Segment extends Lap {

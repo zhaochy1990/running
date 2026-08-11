@@ -72,14 +72,19 @@ jobs:
 
             echo "==> Syncing $user logs..."
             if [ -d "$user_dir/logs" ]; then
-              # Weekly markdown (plan.md, feedback.md)
+              # Before manual ADR 0028 cutover, preserve legacy feedback.md.
+              # After the repo variable is true, sync plan.md only.
+              WEEKLY_MD_PATTERN="*.md"
+              if [ "${{ vars.STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE }}" = "true" ]; then
+                WEEKLY_MD_PATTERN="plan.md"
+              fi
               az storage file upload-batch \
                 --account-name authstorage2026 \
                 --account-key "$ACCOUNT_KEY" \
                 --destination stride-data \
                 --destination-path "$user/logs" \
                 --source "$user_dir/logs" \
-                --pattern "*.md" \
+                --pattern "$WEEKLY_MD_PATTERN" \
                 --output none
               az storage blob upload-batch \
                 --account-name authstorage2026 \
@@ -87,7 +92,7 @@ jobs:
                 --destination "$BLOB_CONTAINER" \
                 --destination-path "users/$user/logs" \
                 --source "$user_dir/logs" \
-                --pattern "*.md" \
+                --pattern "$WEEKLY_MD_PATTERN" \
                 --overwrite \
                 --output none
 

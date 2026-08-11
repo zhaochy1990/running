@@ -67,6 +67,5 @@ React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。
 
 ## Weekly Feedback
 
-"本周反馈" tab 合并两个来源：
-1. 周 logs 目录下的 `feedback.md`
-2. 该周 DB activities 的 `sport_note`（前 20 字符 dedupe 已有 feedback）
+"本周反馈" tab 读取并整体保存 MySQL `weekly_feedback`。活动 `sport_note`
+仍随活动展示，不拼接进周反馈；legacy `feedback.md` 只用于迁移。

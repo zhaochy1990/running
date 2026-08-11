@@ -81,4 +81,4 @@ These three + existing injuries form a connected动力链 risk chain. Fixing mob
 - Easy runs generally 10 km+ (guideline, not hard rule) — avoid too-short runs
 - Pushed workouts use `[STRIDE]` prefix, no warmup/cooldown segments
 - When plan changes mid-week, check COROS watch state and re-push to stay consistent
-- Feedback auto-sync: after each `sync`, scan activities with `sport_note` for the current week and append to `logs/{week}/feedback.md` verbatim
+- Weekly feedback is canonical in MySQL; keep activity `sport_note` on the activity and never append it to legacy `feedback.md`

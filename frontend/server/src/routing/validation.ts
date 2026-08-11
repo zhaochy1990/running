@@ -1,6 +1,8 @@
 import {
   hasGoRoutes,
   hasPartialPlanSetupGoCutover,
+  hasPartialWeeklyFeedbackGoCutover,
+  WEEKLY_FEEDBACK_GO_ROUTE_ENVS,
   hasPartialWebOnboardingGoCutover,
   unsupportedGoRoutes,
 } from './table.js'
@@ -27,5 +29,12 @@ export function validateRouteConfiguration(
   }
   if (hasPartialWebOnboardingGoCutover(env)) {
     throw new Error('stride-web BFF: Web onboarding Go routes must be enabled as an atomic set')
+  }
+  if (hasPartialWeeklyFeedbackGoCutover(env)) {
+    throw new Error('stride-web BFF: weekly-feedback PUT requires both week readers on Go')
+  }
+  if (env.STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE?.trim().toLowerCase() === 'true'
+      && WEEKLY_FEEDBACK_GO_ROUTE_ENVS.some((name) => env[name]?.trim().toLowerCase() !== 'go')) {
+    throw new Error('stride-web BFF: completed weekly-feedback cutover cannot route any member back to Python')
   }
 }

@@ -59,16 +59,15 @@ function buildWeekDetail(structuredStatus: StructuredStatus | null): WeekDetail 
     date_from: '2026-04-20',
     date_to: '2026-04-26',
     plan: '# Week 0\n\nEasy week.',
-    feedback: undefined,
-    feedback_source: 'none',
+    feedback: '',
+    feedback_created_at: null,
     feedback_updated_at: null,
-    feedback_generated_by: null,
     activities: [],
     total_km: 35,
     total_duration_s: 12600,
     total_duration_fmt: '3:30:00',
     activity_count: 3,
-    structured: structuredStatus !== null ? { structured_status: structuredStatus } : undefined,
+    structured: structuredStatus !== null ? { structured_status: structuredStatus } : null,
   }
 }
 

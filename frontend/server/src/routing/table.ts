@@ -74,6 +74,13 @@ export const PLAN_SETUP_GO_ROUTE_CONTRACT = [
   { method: 'GET', path: '/api/pipelines/:run_id', env: 'STRIDE_ROUTE_GET_PIPELINES_RUNID' },
 ] as const
 
+/** Weekly feedback can move only when both aggregate readers already use Go. */
+export const WEEKLY_FEEDBACK_GO_ROUTE_ENVS = [
+  'STRIDE_ROUTE_GET_USER_WEEKS',
+  'STRIDE_ROUTE_GET_USER_WEEKS_WEEKNAME',
+  'STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK',
+] as const
+
 /** Prefix under which the in-house auth-service is reached (same-origin via BFF). */
 export const AUTH_PREFIX = '/api/auth'
 
@@ -171,4 +178,9 @@ export function hasPartialWebOnboardingGoCutover(env: NodeJS.ProcessEnv = proces
 
 export function hasPartialPlanSetupGoCutover(env: NodeJS.ProcessEnv = process.env): boolean {
   return hasPartialGoCutover(PLAN_SETUP_GO_ROUTE_ENVS, env)
+}
+
+export function hasPartialWeeklyFeedbackGoCutover(env: NodeJS.ProcessEnv = process.env): boolean {
+  const putEnabled = env.STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK?.trim().toLowerCase() === GO_ENV_VALUE
+  return putEnabled && hasPartialGoCutover(WEEKLY_FEEDBACK_GO_ROUTE_ENVS, env)
 }

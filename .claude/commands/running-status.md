@@ -163,7 +163,7 @@ Read `TRAINING_PLAN.md` to understand:
 
 Also check if there is a `plan.md` for the current week in the `logs/` folder — it will tell you what was specifically planned.
 
-Also check if there is a `feedback.md` for the current or previous week — it will have subjective RPE and perceived fatigue notes.
+Read current and previous-week subjective RPE and perceived fatigue from MySQL `weekly_feedback`; do not fall back to legacy `feedback.md`.
 
 ## Data Conversions
 
