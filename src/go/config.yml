@@ -53,7 +53,14 @@ api:
     # Coexistence flag only: Go completion never starts work; it requires a
     # verified successful run_id from generic full sync.
     sync-data-at-onboarding: true
-    coach-agent-weekly-plan-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
+
+# "dehua": "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
+# "dingchentao": "7bd56762-3b04-42a6-9d8b-98f595628430",
+# "lvge": "0a74ac88-629e-4zuib8e-97c8-d49ccf5a986b",
+# "renzhen": "bffa65bc-4501-41e7-a68c-96da76d5b7bc"
+# "pan": "5ee229a6-cdc1-4260-84d3-71ec622126c2",
+
+    coach-agent-weekly-plan-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532","bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9", "5ee229a6-cdc1-4260-84d3-71ec622126c2", "7bd56762-3b04-42a6-9d8b-98f595628430", "0a74ac88-629e-4b8e-97c8-d49ccf5a986b", "bffa65bc-4501-41e7-a68c-96da76d5b7bc", "d3438b21-0d9b-4432-96c6-bb5564b74141","db2470c4-885b-496f-896a-764c0dedbaea","ba103cff-ad2c-4f9e-9920-983337544a2c"]
     coach-chat-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
     coach-chat-debug-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
     coach-chat-max-message-chars: 8000
