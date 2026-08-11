@@ -4,7 +4,7 @@
 
 ## 分工
 
-- **Local machine** 是 **author** 环境。LLM 工具在这里运行，产出 weekly `plan.md`、refined `activity_commentary` DB 行和临时分析。周反馈直接读写 MySQL `weekly_feedback`；legacy `feedback.md` 只用于迁移。
+- **Local machine** 是 **author** 环境。LLM 工具在这里运行，产出 weekly `plan.md`、refined `activity_commentary` DB 行和临时分析。rollout marker 前周反馈沿用 legacy `feedback.md`；marker 后直接读写 MySQL `weekly_feedback`，legacy 文件仅用于迁移。
 - **Azure Container App (`stride-app`)** 是 **reader** 环境，**同时也是 default draft-writer**。它服务 dashboard UI 和 read API，数据来自：
   - Markdown 文件经 `sync-data.yml` GitHub Action 同步（push 到 master → `az storage file upload-batch` 到 `authstorage2026/stride-data`）。
   - SQLite 数据（activities、health）两端各自独立从 COROS 同步。

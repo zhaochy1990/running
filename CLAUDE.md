@@ -204,7 +204,7 @@ data/
             2026-04-13_04-19(赛后恢复)/  # format: YYYY-MM-DD_MM-DD(阶段标注)
                 plan.md                  # weekly training plan
                 plan.json                # 结构化版本，server reparse 时优先用
-                feedback.md              # legacy migration source only
+                feedback.md              # rollout 前兼容来源；marker 后仅用于迁移
     dehua/                       # another user
         ...
 src/                 # tools source code

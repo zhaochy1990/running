@@ -67,5 +67,6 @@ React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。
 
 ## Weekly Feedback
 
-"本周反馈" tab 读取并整体保存 MySQL `weekly_feedback`。活动 `sport_note`
-仍随活动展示，不拼接进周反馈；legacy `feedback.md` 只用于迁移。
+rollout marker 前，"本周反馈" tab 仍兼容 Python/legacy 保存响应；marker 后
+读取并整体保存 MySQL `weekly_feedback`。活动 `sport_note` 始终随活动展示，
+不拼接进周反馈；marker 后 legacy `feedback.md` 只用于迁移。
