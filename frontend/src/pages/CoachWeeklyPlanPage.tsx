@@ -35,11 +35,11 @@ export default function CoachWeeklyPlanPage({ initialTab = 'schedule' }: CoachWe
   if (loading) return <div className="flex items-center justify-center py-20"><div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-green/30 border-t-accent-green" /></div>
   if (error) return <div role="alert" className="mx-auto mt-10 max-w-xl rounded-xl border border-accent-red/30 bg-red-soft p-4 text-sm text-accent-red">{error}</div>
   if (!week) return <div className="px-4 py-12 sm:px-8"><CoachWeeklyPlanEmptyState /></div>
-  const displayDays = hardcodedWeekDays(week.folder, planDays) ?? planDays
+  const displayDays = hardcodedWeekDays(week.week_name, planDays) ?? planDays
   if (displayDays.every((day) => day.sessions.length === 0) && !week.plan?.trim()) return <div className="px-4 py-12 sm:px-8"><CoachWeeklyPlanEmptyState /></div>
 
-  const planTitle = weeks.find((item) => item.folder === week.folder)?.plan_title
-  const hasHardcodedStrength = hasHardcodedStrengthPreview(week.folder)
+  const planTitle = weeks.find((item) => item.folder === week.week_name)?.plan_title
+  const hasHardcodedStrength = hasHardcodedStrengthPreview(week.week_name)
   const strengthCount = hasHardcodedStrength ? 2 : strength?.sessions.length ?? 0
 
   return (
@@ -49,7 +49,7 @@ export default function CoachWeeklyPlanPage({ initialTab = 'schedule' }: CoachWe
         week={week}
         days={displayDays}
         planTitle={planTitle}
-        onAdjust={() => navigate(`/coach/week/${encodeURIComponent(week.folder)}/adjust`)}
+        onAdjust={() => navigate(`/coach/week/${encodeURIComponent(week.week_name)}/adjust`)}
       />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <WeeklyPlanTabs active={activeTab} strengthCount={strengthCount} recordCount={week.activity_count} onChange={setActiveTab} />

@@ -421,7 +421,7 @@ export interface WeekSummary {
 }
 
 export interface WeekDetail {
-  folder: string
+  week_name: string
   date_from: string
   date_to: string
   plan?: string
@@ -1736,8 +1736,8 @@ export function syncTeamAll(id: string) {
   return postJSON<TeamSyncSummary>(`/teams/${id}/sync-all`)
 }
 
-export function getWeek(user: string, folder: string) {
-  return fetchJSON<WeekDetail>(`/${user}/weeks/${folder}`)
+export function getWeek(user: string, weekName: string) {
+  return fetchJSON<WeekDetail>(`/${user}/weeks/${weekName}`)
 }
 
 export function getWeekStrength(user: string, folder: string) {

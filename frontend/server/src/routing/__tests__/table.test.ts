@@ -120,6 +120,19 @@ describe('env-driven upstream selection', () => {
     expect(resolveUpstream('GET', '/api/u/plan/weeks/2026-W32', detailEnv)).toBe('go')
   })
 
+  it('switches week summary and detail routes independently', () => {
+    const listEnv = { STRIDE_ROUTE_GET_USER_WEEKS: 'go' }
+    expect(resolveUpstream('GET', '/api/u/weeks', listEnv)).toBe('go')
+    expect(resolveUpstream('GET', '/api/u/weeks/2026-08-10_08-16', listEnv)).toBe('python')
+
+    const detailEnv = { STRIDE_ROUTE_GET_USER_WEEKS_WEEKNAME: 'go' }
+    expect(resolveUpstream('GET', '/api/u/weeks', detailEnv)).toBe('python')
+    expect(resolveUpstream('GET', '/api/u/weeks/2026-08-10_08-16', detailEnv)).toBe('go')
+    expect(resolveUpstream('GET', '/api/u/weeks/2026-08-10_08-16/strength', detailEnv)).toBe('python')
+    expect(resolveUpstream('GET', '/api/u/weeks/2026-08-10_08-16/review', detailEnv)).toBe('python')
+    expect(resolveUpstream('PUT', '/api/u/weeks/2026-08-10_08-16/feedback', detailEnv)).toBe('python')
+  })
+
   it('keeps the legacy variants path on Python when plan-week detail moves to Go', () => {
     const env = { STRIDE_ROUTE_GET_USER_PLAN_WEEKS_WEEKNAME: 'go' }
     expect(resolveUpstream('GET', '/api/u/plan/weeks/variants', env)).toBe('python')
@@ -249,11 +262,17 @@ describe('Web onboarding Go cutover', () => {
 })
 
 describe('API_ROUTES manifest integrity', () => {
-  it('keeps the legacy weekly plan routes', () => {
+  it('keeps the weekly plan routes', () => {
     expect(API_ROUTES).toContainEqual({
       method: 'GET',
       path: '/api/:user/weeks',
       env: 'STRIDE_ROUTE_GET_USER_WEEKS',
+      goReady: true,
+    })
+    expect(API_ROUTES).toContainEqual({
+      method: 'GET',
+      path: '/api/:user/weeks/:weekName',
+      env: 'STRIDE_ROUTE_GET_USER_WEEKS_WEEKNAME',
       goReady: true,
     })
   })
@@ -321,6 +340,7 @@ describe('API_ROUTES manifest integrity', () => {
     const dockerfile = readFileSync(new URL('../../../../../Dockerfile.web', import.meta.url), 'utf8')
     expect(dockerfile).toContain('STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT=go')
     expect(dockerfile).toContain('STRIDE_ROUTE_GET_USER_WEEKS=go')
+    expect(dockerfile).toContain('STRIDE_ROUTE_GET_USER_WEEKS_WEEKNAME=go')
   })
 
   it('goReady endpoints are exactly the ones the Go API implements', () => {
@@ -342,6 +362,7 @@ describe('API_ROUTES manifest integrity', () => {
         'GET /api/:user/stride/training-load',
         'GET /api/:user/stride/zones',
         'GET /api/:user/weeks',
+        'GET /api/:user/weeks/:weekName',
         'GET /api/pipelines/:run_id',
         'GET /api/jobs/:job_id',
         'GET /api/teams',
