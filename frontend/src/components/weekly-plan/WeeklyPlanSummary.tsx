@@ -17,7 +17,7 @@ export default function WeeklyPlanSummary({ week, days, planTitle, onAdjust }: W
   const plannedIntensity = computeWeekPlanIntensity(stats.sessions)
   const actualRunKm = actualRunDistanceKm(week.activities)
   const actualStrength = actualStrengthStats(week.activities)
-  const strengthCount = week.folder === HARDCODED_STRENGTH_FOLDER ? 2 : stats.strengthCount
+  const strengthCount = week.week_name === HARDCODED_STRENGTH_FOLDER ? 2 : stats.strengthCount
   const displayPlanTitle = planTitle?.trim() === '本周训练重点' ? undefined : planTitle
   const coachNotes = week.structured?.coach_notes?.trim()
     || '优先完成关键课，其余训练按恢复状态灵活降级。训练后的真实体感会用于后续 Coach 调整。'

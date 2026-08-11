@@ -206,7 +206,7 @@ export default function WeekLayout() {
       ) : weekDetail ? (
         <div className="animate-fade-in">
           {(() => {
-            const { phase, weekNum } = parseFolderTag(weekDetail.folder)
+            const { phase, weekNum } = parseFolderTag(weekDetail.week_name)
             const range = formatWeekRange(weekDetail.date_from, weekDetail.date_to)
             const title = weekNum ? `W${weekNum} · ${range}` : range
             return (
@@ -298,12 +298,12 @@ export default function WeekLayout() {
           {activeTab === 'feedback' && (
             <FeedbackPanel
               user={user}
-              folder={weekDetail.folder}
+              folder={weekDetail.week_name}
               feedback={weekDetail.feedback}
               source={weekDetail.feedback_source}
               updatedAt={weekDetail.feedback_updated_at}
               onSaved={(newDetail) => setWeekDetail(newDetail)}
-              reload={() => folder && user ? getWeek(user, folder).then(setWeekDetail) : undefined}
+              reload={() => folder && user ? getWeek(user, folder) : undefined}
               activities={weekDetail.activities}
               totalKm={weekDetail.total_km}
               totalDurationFmt={weekDetail.total_duration_fmt}
@@ -662,7 +662,7 @@ function FeedbackPanel({
   source: 'db' | 'file' | 'none' | undefined
   updatedAt: string | null | undefined
   onSaved: (detail: WeekDetail) => void
-  reload: () => Promise<unknown> | undefined
+  reload: () => Promise<WeekDetail> | undefined
   activities: Activity[]
   totalKm: number
   totalDurationFmt: string
@@ -714,8 +714,8 @@ function FeedbackPanel({
       const res = await updateWeeklyFeedback(user, folder, draft)
       if (!res.ok) throw new Error(`保存失败 (${res.status})`)
       const reloaded = await reload()
-      if (reloaded && typeof reloaded === 'object' && 'folder' in reloaded) {
-        onSaved(reloaded as WeekDetail)
+      if (reloaded) {
+        onSaved({ ...reloaded, feedback: draft })
       }
       setEditing(false)
     } catch (e: unknown) {

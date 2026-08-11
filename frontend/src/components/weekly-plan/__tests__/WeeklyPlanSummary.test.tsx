@@ -4,7 +4,7 @@ import WeeklyPlanSummary from '../WeeklyPlanSummary'
 import type { PlanDay, WeekDetail } from '../../../api'
 
 const week: WeekDetail = {
-  folder: '2026-07-13_07-19',
+  week_name: '2026-07-13_07-19',
   date_from: '2026-07-13',
   date_to: '2026-07-19',
   activities: [],

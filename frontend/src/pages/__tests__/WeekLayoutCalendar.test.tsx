@@ -55,7 +55,7 @@ const weeks: WeekSummary[] = [
 
 function buildWeekDetail(structuredStatus: StructuredStatus | null): WeekDetail {
   return {
-    folder: FOLDER,
+    week_name: FOLDER,
     date_from: '2026-04-20',
     date_to: '2026-04-26',
     plan: '# Week 0\n\nEasy week.',

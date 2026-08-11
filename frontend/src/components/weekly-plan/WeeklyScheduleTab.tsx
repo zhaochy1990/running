@@ -94,7 +94,7 @@ export default function WeeklyScheduleTab({
     return <div className="prose rounded-2xl border border-border-subtle bg-bg-card p-6"><ReactMarkdown remarkPlugins={[remarkGfm]}>{week.plan}</ReactMarkdown></div>
   }
 
-  const displayDays = hardcodedWeekDays(week.folder, days) ?? days
+  const displayDays = hardcodedWeekDays(week.week_name, days) ?? days
   const stats = weeklyPlanStats(displayDays)
   return (
     <div className="space-y-4">
@@ -126,7 +126,7 @@ export default function WeeklyScheduleTab({
                     canPushRun={canPushRun}
                     canPushStrength={canPushStrength}
                     onPush={onPush}
-                    hidePush={week.folder === HARDCODED_STRENGTH_FOLDER && day.date !== '2026-08-06' && day.date !== '2026-08-09'}
+                    hidePush={week.week_name === HARDCODED_STRENGTH_FOLDER && day.date !== '2026-08-06' && day.date !== '2026-08-09'}
                   />
                 ))}
                 {day.nutrition && <NutritionLine nutrition={day.nutrition} />}
