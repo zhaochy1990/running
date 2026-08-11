@@ -94,39 +94,55 @@ function exactTarget(target, candidate) {
     target.created_at === candidate.created_at && target.updated_at === candidate.updated_at;
 }
 
-async function classify({ userIds, source, target }) {
+function skipKey(userId, kind, sourceRef) {
+  return `${userId}/${kind}/${sourceRef}`;
+}
+
+async function classify({ userIds, source, target, skippedSources = [] }) {
   const records = [];
   const rows = new Map();
   const candidatesReport = [];
+  const skipped = new Set(skippedSources.map((item) => skipKey(item.user_id, item.source_kind, item.source_ref)));
   for (const userId of userIds) {
     const [sqliteRows, markdownRows, existingRows] = await Promise.all([
       source.listSQLite(userId), source.listMarkdown(userId), target.listWeeklyFeedback(userId),
     ]);
     const sqlite = sqliteRows.map((row) => sourceCandidate(userId, "sqlite", row));
     const markdown = markdownRows.map((row) => sourceCandidate(userId, "markdown", row));
-    const invalid = [...sqlite, ...markdown].filter((candidate) => !candidate.row);
+    const allCandidates = [...sqlite, ...markdown];
+    for (const candidate of allCandidates) {
+      if (skipped.has(skipKey(userId, candidate.record.source_kind, candidate.record.source_ref))) {
+        candidate.skipped = true;
+        candidate.record.action = "skipped";
+        candidate.record.reason = "operator_approved_skip";
+      }
+    }
+    const invalid = allCandidates.filter((candidate) => !candidate.row && !candidate.skipped);
     records.push(...invalid.map((candidate) => candidate.record));
 
-    const sqliteWeeks = new Set(sqlite.map((candidate) => candidate.row?.week_start ?? candidate.record.week_start).filter(Boolean));
-    const everySourceWeek = new Set([...sqlite, ...markdown]
+    const sqliteWeeks = new Set(sqlite.filter((candidate) => !candidate.skipped)
+      .map((candidate) => candidate.row?.week_start ?? candidate.record.week_start).filter(Boolean));
+    const everySourceWeek = new Set([...sqlite, ...markdown].filter((candidate) => !candidate.skipped)
       .map((candidate) => candidate.row?.week_start ?? candidate.record.week_start).filter(Boolean));
     const selected = [
-      ...sqlite.filter((candidate) => candidate.row),
-      ...markdown.filter((candidate) => candidate.row && !sqliteWeeks.has(candidate.row.week_start)),
+      ...sqlite.filter((candidate) => candidate.row && !candidate.skipped),
+      ...markdown.filter((candidate) => candidate.row && !candidate.skipped && !sqliteWeeks.has(candidate.row.week_start)),
     ];
+    records.push(...allCandidates.filter((candidate) => candidate.skipped).map((candidate) => candidate.record));
     for (const candidate of sqlite) {
       candidatesReport.push({
         user_id: userId, source_kind: "sqlite", source_ref: candidate.record.source_ref,
         week_start: candidate.row?.week_start ?? candidate.record.week_start,
-        selected: Boolean(candidate.row), reason: candidate.row ? "sqlite_precedence" : candidate.record.reason,
+        selected: Boolean(candidate.row) && !candidate.skipped,
+        reason: candidate.skipped ? "operator_approved_skip" : candidate.row ? "sqlite_precedence" : candidate.record.reason,
       });
     }
     for (const candidate of markdown) {
       const weekStart = candidate.row?.week_start ?? candidate.record.week_start;
       candidatesReport.push({
         user_id: userId, source_kind: "markdown", source_ref: candidate.record.source_ref,
-        week_start: weekStart, selected: Boolean(candidate.row) && !sqliteWeeks.has(weekStart),
-        reason: !candidate.row ? candidate.record.reason : sqliteWeeks.has(weekStart) ? "shadowed_by_sqlite" : "markdown_fallback",
+        week_start: weekStart, selected: Boolean(candidate.row) && !candidate.skipped && !sqliteWeeks.has(weekStart),
+        reason: candidate.skipped ? "operator_approved_skip" : !candidate.row ? candidate.record.reason : sqliteWeeks.has(weekStart) ? "shadowed_by_sqlite" : "markdown_fallback",
       });
     }
     const grouped = new Map();
@@ -167,9 +183,10 @@ async function classify({ userIds, source, target }) {
   return { records, rows, candidates: candidatesReport };
 }
 
-function manifestBody(users, targetIdentity, records, candidates) {
+function manifestBody(users, targetIdentity, skippedSources, records, candidates) {
   return {
     manifest_version: 1, users: [...users].sort(), target_identity: targetIdentity,
+    skipped_sources: [...skippedSources].sort((a, b) => stableJson(a).localeCompare(stableJson(b))),
     error_count: records.filter((record) => record.action === "conflict").length,
     candidates, records,
   };
@@ -178,7 +195,7 @@ function manifestBody(users, targetIdentity, records, candidates) {
 export async function buildWeeklyFeedbackManifest(options) {
   const targetIdentity = await options.target.getIdentity();
   const { records, candidates } = await classify(options);
-  const body = manifestBody(options.userIds, targetIdentity, records, candidates);
+  const body = manifestBody(options.userIds, targetIdentity, options.skippedSources ?? [], records, candidates);
   return { ...body, manifest_hash: hash(stableJson(body)) };
 }
 
@@ -186,7 +203,7 @@ function validateReviewed(manifest, reviewedHash, userIds) {
   if (!manifest || manifest.manifest_version !== 1 || !Array.isArray(manifest.records)) {
     throw new FeedbackManifestError("reviewed manifest is invalid");
   }
-  const body = manifestBody(manifest.users ?? [], manifest.target_identity, manifest.records, manifest.candidates ?? []);
+  const body = manifestBody(manifest.users ?? [], manifest.target_identity, manifest.skipped_sources ?? [], manifest.records, manifest.candidates ?? []);
   if (manifest.error_count !== body.error_count || body.error_count !== 0) {
     throw new FeedbackManifestError("reviewed manifest must contain zero errors");
   }
@@ -201,14 +218,17 @@ function validateReviewed(manifest, reviewedHash, userIds) {
   }
 }
 
-export async function applyWeeklyFeedbackManifest({ reviewedManifest, reviewedHash, userIds, source, target }) {
+export async function applyWeeklyFeedbackManifest({ reviewedManifest, reviewedHash, userIds, source, target, skippedSources = [] }) {
   validateReviewed(reviewedManifest, reviewedHash, userIds);
+  if (stableJson(reviewedManifest.skipped_sources ?? []) !== stableJson(skippedSources)) {
+    throw new FeedbackManifestError("reviewed skipped sources do not match apply options");
+  }
   return target.transaction(async (tx) => {
     // The destination drift check, all inserts, and read-back verification share
     // one global transaction. This leaves no partial per-user commits.
-    const current = await classify({ userIds, source, target: tx });
+    const current = await classify({ userIds, source, target: tx, skippedSources });
     const currentIdentity = await tx.getIdentity();
-    const currentBody = manifestBody(userIds, currentIdentity, current.records, current.candidates);
+    const currentBody = manifestBody(userIds, currentIdentity, skippedSources, current.records, current.candidates);
     if (hash(stableJson(currentBody)) !== reviewedHash) {
       throw new FeedbackManifestError("source or target drift since review");
     }
@@ -222,6 +242,7 @@ export async function applyWeeklyFeedbackManifest({ reviewedManifest, reviewedHa
       userIds,
       source,
       target: { listWeeklyFeedback: async () => [] },
+      skippedSources,
     });
     if (sourceRecheck.records.some((record) => record.action === "conflict")
         || current.rows.size !== sourceRecheck.rows.size
@@ -230,7 +251,7 @@ export async function applyWeeklyFeedbackManifest({ reviewedManifest, reviewedHa
     }
     for (const userId of userIds) {
       const actual = (await tx.listWeeklyFeedback(userId)).map(normalizedTarget);
-      for (const record of current.records.filter((item) => item.user_id === userId)) {
+      for (const record of current.records.filter((item) => item.user_id === userId && item.action !== "skipped")) {
         const expected = current.rows.get(`${record.user_id}/${record.week_start}`);
         const matches = actual.filter((row) => row.week_start === record.week_start);
         if (matches.length !== 1 || !exactTarget(matches[0], expected)) {

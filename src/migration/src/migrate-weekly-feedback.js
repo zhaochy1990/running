@@ -34,6 +34,7 @@ export function parseWeeklyFeedbackCli(argv, { defaultDataDir = REPO_DATA_DIR } 
       "manifest-out": { type: "string" },
       "reviewed-manifest": { type: "string" },
       "reviewed-hash": { type: "string" },
+      "skip-source": { type: "string", multiple: true, default: [] },
       help: { type: "boolean", default: false },
     },
     allowPositionals: false,
@@ -59,6 +60,14 @@ export function parseWeeklyFeedbackCli(argv, { defaultDataDir = REPO_DATA_DIR } 
     manifestOut: values["manifest-out"] ? resolve(values["manifest-out"]) : null,
     reviewedManifest: values["reviewed-manifest"] ? resolve(values["reviewed-manifest"]) : null,
     reviewedHash: values["reviewed-hash"] ?? null,
+    skippedSources: values["skip-source"].map((value) => {
+      const [user_id, source_kind, ...sourceParts] = value.split(":");
+      const source_ref = sourceParts.join(":");
+      if (!user_id || !["sqlite", "markdown"].includes(source_kind) || !source_ref) {
+        throw new Error("--skip-source must be user_id:sqlite|markdown:source_ref");
+      }
+      return { user_id, source_kind, source_ref };
+    }),
     help: values.help,
   };
 }
@@ -75,6 +84,7 @@ Usage: migrate-weekly-feedback [options]
   --commit                   Apply an already-reviewed zero-error manifest.
   --reviewed-manifest <path> Reviewed dry-run manifest required by --commit.
   --reviewed-hash <sha256:…> Exact reviewed hash required by --commit.
+  --skip-source <spec>       Exact user_id:kind:source_ref approved for omission.
   --help                     Show this help. Default mode is dry-run.
 `);
 }
@@ -110,9 +120,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
         userIds: ids,
         source,
         target,
+        skippedSources: options.skippedSources,
       });
     } else {
-      report = await buildWeeklyFeedbackManifest({ userIds: ids, source, target });
+      report = await buildWeeklyFeedbackManifest({ userIds: ids, source, target, skippedSources: options.skippedSources });
     }
     await output(report, options.manifestOut);
     return report.error_count > 0 ? 1 : 0;

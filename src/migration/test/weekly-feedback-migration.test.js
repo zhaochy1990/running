@@ -221,3 +221,23 @@ test("an invalid SQLite row still blocks Markdown fallback for its normalized we
   assert.equal(manifest.records[0].reason, "invalid_timestamp");
   assert.equal(manifest.candidates.find((candidate) => candidate.source_kind === "markdown").selected, false);
 });
+
+test("operator-approved source skips are hashed and must match apply", async () => {
+  const bad = markdown({ folder: "2025-12-30_01-05(bad)" });
+  const io = adapters({ markdownRows: [bad] });
+  const skippedSources = [{ user_id: USER, source_kind: "markdown", source_ref: bad.folder }];
+  const reviewed = await buildWeeklyFeedbackManifest({
+    userIds: [USER], source: io.source, target: io.target, skippedSources,
+  });
+  assert.equal(reviewed.error_count, 0);
+  assert.equal(reviewed.records[0].action, "skipped");
+  assert.deepEqual(reviewed.skipped_sources, skippedSources);
+  await assert.rejects(applyWeeklyFeedbackManifest({
+    reviewedManifest: reviewed, reviewedHash: reviewed.manifest_hash,
+    userIds: [USER], source: io.source, target: io.target,
+  }), /skipped sources/);
+  await applyWeeklyFeedbackManifest({
+    reviewedManifest: reviewed, reviewedHash: reviewed.manifest_hash,
+    userIds: [USER], source: io.source, target: io.target, skippedSources,
+  });
+});
