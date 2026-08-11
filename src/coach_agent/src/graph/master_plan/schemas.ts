@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const DaySchema = z.string().regex(DAY).refine((day) => { const date = new Date(`${day}T00:00:00Z`); return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === day; }, "expected a valid calendar day");
 const UTC_ISO = /(?:Z|[+-]00:00)$/;
 const EMBEDDED_RACE_PACE = /(?:\b(?:MP|HMP|RP)\b|race[- ]?pace|target[- ]?pace|比赛配速|目标配速|马拉松配速|半马配速)/i;
 
@@ -82,7 +83,7 @@ export type SelectedStrategy = z.infer<typeof SelectedStrategySchema>;
 
 const MilestoneSchema = z.object({
   type: z.enum(["race", "test_run", "long_run", "strength_test", "body_composition"]),
-  date: z.string().regex(DAY),
+  date: DaySchema,
   target: z.string(),
   completed_actual: z.string().nullable(),
 });
@@ -101,8 +102,8 @@ const RecoverySchema = z.object({
 
 const PhaseSchema = z.object({
   name: z.enum(["基础期", "提升期", "专项速度周期", "马拉松专项期", "赛前减量期", "赛后恢复期"]),
-  start_date: z.string().regex(DAY),
-  end_date: z.string().regex(DAY),
+  start_date: DaySchema,
+  end_date: DaySchema,
   focus: z.string(),
   weekly_distance_km_low: z.number().nonnegative(),
   weekly_distance_km_high: z.number().nonnegative(),
@@ -131,7 +132,7 @@ const KeySessionSchema = z.object({
 
 const WeekSchema = z.object({
   week_index: z.int().positive(),
-  week_start: z.string().regex(DAY),
+  week_start: DaySchema,
   phase_name: PhaseSchema.shape.name,
   target_weekly_km_low: z.number().nonnegative(),
   target_weekly_km_high: z.number().nonnegative(),
@@ -169,13 +170,13 @@ export const MasterPlanSchema = z.object({
   goal: z.object({
     race_name: z.string(),
     distance: z.enum(["FM", "HM"]),
-    race_date: z.string().regex(DAY),
+    race_date: DaySchema,
     target_time: z.string(),
     timezone: z.literal("Asia/Shanghai"),
     location: z.string().min(1),
   }),
-  start_date: z.string().regex(DAY),
-  end_date: z.string().regex(DAY),
+  start_date: DaySchema,
+  end_date: DaySchema,
   total_weeks: z.int().positive(),
   phases: z.array(PhaseSchema).min(1),
   weeks: z.array(WeekSchema).min(1),

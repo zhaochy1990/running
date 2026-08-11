@@ -88,12 +88,18 @@ try {
     await writeFile(resolve(outputDir, "strategy-judgments.json"), `${JSON.stringify(result.outcome.artifact.judgments, null, 2)}\n`, "utf8");
     await writeFile(resolve(outputDir, "selected-strategy.json"), `${JSON.stringify(result.outcome.artifact.selected_strategy, null, 2)}\n`, "utf8");
     await writeFile(resolve(outputDir, "final-draft.json"), `${JSON.stringify(result.outcome.artifact.plan, null, 2)}\n`, "utf8");
+    await writeFile(resolve(outputDir, "simulation-report.json"), `${JSON.stringify(result.outcome.artifact.simulation_report, null, 2)}\n`, "utf8");
+    await writeFile(resolve(outputDir, "rule-report.json"), `${JSON.stringify(result.outcome.artifact.rule_report, null, 2)}\n`, "utf8");
   }
   await writeFile(resolve(outputDir, "outcome.json"), `${JSON.stringify(result.outcome, null, 2)}\n`, "utf8");
   await writeFile(resolve(outputDir, "captured-strategies.json"), `${JSON.stringify(capturedStrategies, null, 2)}\n`, "utf8");
   await writeFile(resolve(outputDir, "captured-judgments.json"), `${JSON.stringify(capturedJudgments, null, 2)}\n`, "utf8");
   if (capturedSelectedStrategy) await writeFile(resolve(outputDir, "captured-selected-strategy.json"), `${JSON.stringify(capturedSelectedStrategy, null, 2)}\n`, "utf8");
   if (capturedPlanBeforeValidation) await writeFile(resolve(outputDir, "captured-plan-before-strategy-validation.json"), `${JSON.stringify(capturedPlanBeforeValidation, null, 2)}\n`, "utf8");
+  if (result.outcome?.decision === "failed_quality_gate") {
+    if (result.outcome.artifact.simulation_report) await writeFile(resolve(outputDir, "simulation-report.json"), `${JSON.stringify(result.outcome.artifact.simulation_report, null, 2)}\n`, "utf8");
+    if (result.outcome.artifact.rule_report) await writeFile(resolve(outputDir, "rule-report.json"), `${JSON.stringify(result.outcome.artifact.rule_report, null, 2)}\n`, "utf8");
+  }
   if (result.outcome?.decision !== "completed") throw new Error(`master-plan planning ended with ${result.outcome?.decision ?? "missing_outcome"}`);
   console.log(`Master-plan evaluation artifacts: ${outputDir}; model=${modelConfig.model}`);
 } finally { await store.close(); }

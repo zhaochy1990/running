@@ -1,6 +1,8 @@
 import { z } from "zod/v4";
 import { MasterPlanSchema, SelectedStrategySchema, StrategyCandidateSchema, StrategyJudgmentSchema } from "./schemas.js";
 import { AssessmentFactsSchema, AthleteAssessmentSchema, GoalAssessmentSchema } from "./assessment.js";
+import { SimulationReportSchema } from "./simulation.js";
+import { RuleReportSchema } from "./rules.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -132,6 +134,8 @@ const CompletedOutcomeSchema = OutcomeIdentitySchema.extend({
     strategy_candidates: z.array(StrategyCandidateSchema).min(2).max(3),
     judgments: z.array(StrategyJudgmentSchema).min(6).max(9),
     selected_strategy: SelectedStrategySchema,
+    simulation_report: SimulationReportSchema,
+    rule_report: RuleReportSchema,
   }).strict(),
 }).strict().superRefine((outcome, ctx) => {
   const ids = outcome.artifact.strategy_candidates.map((candidate) => candidate.candidate_id);
@@ -216,6 +220,8 @@ const FailedQualityGateOutcomeSchema = OutcomeIdentitySchema.extend({
     type: z.literal("quality_failure_report"),
     unresolved_issues: z.array(z.string().min(1)).min(1),
     attempt_history: z.array(z.string().min(1)),
+    simulation_report: SimulationReportSchema.optional(),
+    rule_report: RuleReportSchema.optional(),
   }).strict(),
 }).strict();
 

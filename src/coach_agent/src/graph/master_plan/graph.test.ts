@@ -121,6 +121,8 @@ test("compiled graph reports malformed dependency output as a quality failure", 
 
   const { outcome } = await graph.invoke({ request: createTestRequest() }, { context: runtimeContext });
   assert.equal(outcome.decision, "failed_quality_gate");
+  if (outcome.decision !== "failed_quality_gate") assert.fail("expected quality failure");
+  assert.equal(outcome.artifact.rule_report?.violations[0]?.rule_id, "schema_validity");
 });
 
 test("compiled graph reports a candidate that changes the confirmed primary goal", async () => {
@@ -168,4 +170,25 @@ test("all-vetoed strategies return a typed quality failure", async () => {
   });
   const { outcome } = await graph.invoke({ request: createTestRequest() }, { context: runtimeContext });
   assert.equal(outcome.decision, "failed_quality_gate");
+});
+
+test("deterministic rule errors block completion after simulation", async () => {
+  const plan = createTestMasterPlan();
+  plan.weeks[0]!.key_sessions[0]!.distance_km = 30;
+  const graph = createMasterPlanGraph({ ...assessmentDependencies, contextProvider: { async loadSnapshot() { return snapshot; } }, skeletonModel: { async invoke() { return plan; } } });
+  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context: runtimeContext });
+  assert.equal(outcome.decision, "failed_quality_gate");
+  if (outcome.decision !== "failed_quality_gate") assert.fail("expected failure");
+  assert.ok(outcome.artifact.unresolved_issues.includes("long_run_share"));
+  assert.equal(typeof outcome.artifact.simulation_report, "object");
+  assert.equal(typeof outcome.artifact.rule_report, "object");
+});
+
+test("rule warnings are retained on a completed outcome", async () => {
+  const graph = createMasterPlanGraph({ ...assessmentDependencies, contextProvider: { async loadSnapshot() { return snapshot; } }, skeletonModel: { async invoke() { return createTestMasterPlan(); } } });
+  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context: runtimeContext });
+  assert.equal(outcome.decision, "completed");
+  if (outcome.decision !== "completed") assert.fail("expected completed");
+  assert.equal(typeof outcome.artifact.simulation_report, "object");
+  assert.equal(typeof outcome.artifact.rule_report, "object");
 });

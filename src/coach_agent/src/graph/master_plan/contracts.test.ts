@@ -3,6 +3,8 @@ import test from "node:test";
 import { MasterPlanGraphOutcome, MasterPlanGraphRequest } from "./contracts.js";
 import { createAssessmentSnapshot, createTestAthleteAssessment, createTestGoalAssessment, createTestJudgments, createTestMasterPlan, createTestRequest, createTestStrategyCandidate } from "./testFixtures.js";
 import { deriveAssessmentFacts } from "./assessment.js";
+import { simulateMasterPlanLoad } from "./simulation.js";
+import { runMasterPlanRuleFilter } from "./rules.js";
 
 test("request accepts explicit empty constraints in a complete confirmed intake", () => {
   const request = createTestRequest();
@@ -74,6 +76,8 @@ function completedOutcome() {
         weights: { performance_path: 0.45, safety_load: 0.35, constraint_feasibility: 0.2 },
         rationale: "balanced wins", tradeoffs: ["moderate risk"],
       },
+      simulation_report: simulateMasterPlanLoad(createTestMasterPlan(), createAssessmentSnapshot()),
+      rule_report: runMasterPlanRuleFilter(createTestMasterPlan(), MasterPlanGraphRequest.parse(createTestRequest()), createAssessmentSnapshot()),
     },
   };
 }
