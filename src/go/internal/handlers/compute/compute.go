@@ -49,11 +49,12 @@ type ComputeStore interface {
 }
 
 // computeInput is the compute step's InputJSON: the sync mode (threaded from the
-// pipeline run) and the label_ids the upstream watch_sync produced (present in
-// incremental mode).
+// pipeline run), plus the activity labels and Shanghai health dates produced by
+// the upstream watch_sync step.
 type computeInput struct {
-	Mode     string   `json:"mode"`
-	LabelIDs []string `json:"label_ids"`
+	Mode        string   `json:"mode"`
+	LabelIDs    []string `json:"label_ids"`
+	HealthDates []string `json:"health_dates"`
 }
 
 type computeResult struct {
@@ -97,7 +98,7 @@ func NewCompute(store ComputeStore) job.Handler {
 		asOf := timefmt.ShanghaiToday()
 
 		if in.Mode == string(provider.SyncIncremental) {
-			return runIncremental(ctx, store, user, in.LabelIDs, cal, asOf, hb)
+			return runIncremental(ctx, store, user, in.LabelIDs, in.HealthDates, cal, asOf, hb)
 		}
 		return runFull(ctx, store, user, cal, asOf, hb)
 	}
@@ -133,11 +134,11 @@ func runFull(ctx context.Context, store ComputeStore, user string, cal trainingl
 	return string(out), nil
 }
 
-// runIncremental computes load only for this sync's new activities, extends the
-// daily PMC from prior state over [earliest-new-day, today], and upserts only the
-// PBs a new activity improved.
-func runIncremental(ctx context.Context, store ComputeStore, user string, labelIDs []string, cal trainingload.CalibrationSnapshot, asOf time.Time, hb job.Heartbeat) (string, error) {
-	if len(labelIDs) == 0 {
+// runIncremental computes load for this sync's new activity or health dates,
+// extends the daily PMC from prior state over [earliest-changed-day, today], and
+// upserts only the PBs a new activity improved.
+func runIncremental(ctx context.Context, store ComputeStore, user string, labelIDs, healthDates []string, cal trainingload.CalibrationSnapshot, asOf time.Time, hb job.Heartbeat) (string, error) {
+	if len(labelIDs) == 0 && len(healthDates) == 0 {
 		out, _ := json.Marshal(computeResult{User: user, Status: "noop", Mode: "incremental"})
 		return string(out), nil
 	}
@@ -164,9 +165,21 @@ func runIncremental(ctx context.Context, store ComputeStore, user string, labelI
 			minDay, haveMin = d, true
 		}
 	}
+	// A health-only sync has no activity label but still proves that the watch
+	// covered that Shanghai day. Include those dates so a zero-dose
+	// rest_confirmed row is computed and the PMC reaches today.
+	for _, raw := range healthDates {
+		d, ok := parseDay(raw)
+		if !ok || d.After(asOf) {
+			continue
+		}
+		if !haveMin || d.Before(minDay) {
+			minDay, haveMin = d, true
+		}
+	}
 	if !haveMin {
-		// The new labels weren't running activities (e.g. a health-only sync);
-		// nothing for the load/PB path to do.
+		// The new labels were not running activities and no valid health date
+		// reached this step, so there is no daily window to recompute.
 		out, _ := json.Marshal(computeResult{User: user, Status: "noop_no_running", Mode: "incremental"})
 		return string(out), nil
 	}

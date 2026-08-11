@@ -109,11 +109,12 @@ func New(resolve Resolver, marker SyncMarker, jobs int) job.Handler {
 		}
 
 		out, _ := json.Marshal(struct {
-			Activities int      `json:"activities"`
-			Health     int      `json:"health"`
-			Mode       string   `json:"mode"`
-			LabelIDs   []string `json:"label_ids,omitempty"`
-		}{res.Activities, res.Health, string(opts.Mode), res.ActivityLabelIDs})
+			Activities  int      `json:"activities"`
+			Health      int      `json:"health"`
+			Mode        string   `json:"mode"`
+			LabelIDs    []string `json:"label_ids,omitempty"`
+			HealthDates []string `json:"health_dates,omitempty"`
+		}{res.Activities, res.Health, string(opts.Mode), res.ActivityLabelIDs, res.HealthDates})
 		return string(out), nil
 	}
 }

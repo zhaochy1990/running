@@ -15,6 +15,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 // metricsUserA/B are two distinct JWT subs used to prove tenant isolation on the
@@ -339,14 +340,16 @@ func TestStrideTrainingLoad_EmptySeries_NullCurrent(t *testing.T) {
 	}
 }
 
-func TestStrideTrainingLoad_CurrentIsLatestUsable(t *testing.T) {
+func TestStrideTrainingLoad_ProjectsFromLatestUsable(t *testing.T) {
+	today := timefmt.ShanghaiToday()
+	yesterday := today.AddDate(0, 0, -1)
 	ss := &fakeStrideStore{
 		series: []storage.DailyTrainingLoad{
-			{Date: "2026-05-08", CoverageStatus: "complete", TrainingDose: 40, AcuteLoad: 30, ChronicLoad: 28, Form: -2},
-			{Date: "2026-05-09", CoverageStatus: "unknown", TrainingDose: 0},
+			{Date: yesterday.Format("2006-01-02"), CoverageStatus: "complete", TrainingDose: 40, AcuteLoad: 30, ChronicLoad: 28, Form: -2},
+			{Date: today.Format("2006-01-02"), CoverageStatus: "unknown", TrainingDose: 0},
 		},
 		latestUsable: &storage.DailyTrainingLoad{
-			Date: "2026-05-08", CoverageStatus: "complete", TrainingDose: 40, AcuteLoad: 30,
+			Date: yesterday.Format("2006-01-02"), CoverageStatus: "complete", TrainingDose: 40, AcuteLoad: 30,
 			ChronicLoad: 28, Form: -2, ReadinessGate: strptr("green"),
 			ReadinessReasonsJSON: strptr(`["fresh"]`),
 		},
@@ -363,14 +366,75 @@ func TestStrideTrainingLoad_CurrentIsLatestUsable(t *testing.T) {
 	if len(resp.Series) != 2 {
 		t.Fatalf("series len = %d, want 2", len(resp.Series))
 	}
-	if resp.Current == nil || resp.Current.Date != "2026-05-08" {
-		t.Fatalf("current = %+v, want the 05-08 usable row (not the 05-09 unknown)", resp.Current)
+	if resp.Current == nil || resp.Current.Date != today.Format("2006-01-02") {
+		t.Fatalf("current = %+v, want projected Shanghai today", resp.Current)
 	}
-	if resp.Current.ReadinessGate == nil || *resp.Current.ReadinessGate != "green" {
-		t.Fatalf("current readiness_gate = %v, want green", resp.Current.ReadinessGate)
+	if resp.Current.CoverageStatus != "rest_assumed" {
+		t.Fatalf("current coverage = %q, want rest_assumed", resp.Current.CoverageStatus)
 	}
-	if len(resp.Current.ReadinessReasons) != 1 || resp.Current.ReadinessReasons[0] != "fresh" {
-		t.Fatalf("readiness_reasons = %v, want [fresh]", resp.Current.ReadinessReasons)
+	if resp.Current.ReadinessGate != nil || len(resp.Current.ReadinessReasons) != 0 {
+		t.Fatalf("assumed rest readiness = %v / %v, want nil / []", resp.Current.ReadinessGate, resp.Current.ReadinessReasons)
+	}
+}
+
+func TestStrideTrainingLoad_AssumesMissingTailDaysAreRestThroughShanghaiToday(t *testing.T) {
+	today := timefmt.ShanghaiToday()
+	lastObserved := today.AddDate(0, 0, -2)
+	yesterday := today.AddDate(0, 0, -1)
+	observed := storage.DailyTrainingLoad{
+		Date:             lastObserved.Format("2006-01-02"),
+		AlgorithmVersion: 2,
+		CoverageStatus:   "complete",
+		TrainingDose:     80,
+		AcuteLoad:        70,
+		ChronicLoad:      50,
+		Form:             -20,
+	}
+	ss := &fakeStrideStore{
+		series: []storage.DailyTrainingLoad{
+			observed,
+			{
+				Date:             yesterday.Format("2006-01-02"),
+				AlgorithmVersion: 2,
+				CoverageStatus:   "unknown",
+				AcuteLoad:        70,
+				ChronicLoad:      50,
+				Form:             -20,
+			},
+		},
+		latestUsable: &observed,
+	}
+	h := newMetricsHarness(t, &fakeHealthStore{}, ss)
+	w := h.do(http.MethodGet, "/api/"+metricsUserA+"/stride/training-load?days=30", h.bearer(t, metricsUserA))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", w.Code)
+	}
+	var resp strideTrainingLoadResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Series) != 3 {
+		t.Fatalf("series len = %d, want observed day plus two assumed rest days", len(resp.Series))
+	}
+	for i, want := range []string{
+		lastObserved.Format("2006-01-02"),
+		yesterday.Format("2006-01-02"),
+		today.Format("2006-01-02"),
+	} {
+		if resp.Series[i].Date != want {
+			t.Fatalf("series[%d].date = %q, want %q", i, resp.Series[i].Date, want)
+		}
+	}
+	for _, row := range resp.Series[1:] {
+		if row.CoverageStatus != "rest_assumed" || row.TrainingDose != 0 {
+			t.Fatalf("assumed rest row = %+v, want zero-dose rest_assumed", row)
+		}
+	}
+	if resp.Current == nil || resp.Current.Date != today.Format("2006-01-02") {
+		t.Fatalf("current = %+v, want Shanghai today", resp.Current)
+	}
+	if resp.Current.AcuteLoad >= observed.AcuteLoad || resp.Current.ChronicLoad >= observed.ChronicLoad {
+		t.Fatalf("assumed rest must decay ATL/CTL, got acute=%v chronic=%v", resp.Current.AcuteLoad, resp.Current.ChronicLoad)
 	}
 }
 

@@ -1501,7 +1501,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the most recent ` + "`" + `days` + "`" + ` daily training-load rows (oldest first) and the latest usable current state (never an unknown placeholder). A user caller may only read their own data; an internal caller may read any user.",
+                "description": "Returns the most recent ` + "`" + `days` + "`" + ` daily training-load rows (oldest first), projecting missing tail dates through Shanghai today as zero-dose assumed rest with ATL/CTL decay. A user caller may only read their own data; an internal caller may read any user.",
                 "produces": [
                     "application/json"
                 ],
