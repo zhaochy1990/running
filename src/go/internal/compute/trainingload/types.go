@@ -42,6 +42,7 @@ const (
 	CoveragePartial       CoverageStatus = "partial"
 	CoverageUnknown       CoverageStatus = "unknown"
 	CoverageRestConfirmed CoverageStatus = "rest_confirmed"
+	CoverageRestAssumed   CoverageStatus = "rest_assumed"
 )
 
 // Sample mirrors types.ActivitySample.
@@ -131,6 +132,15 @@ type DailyLoadResult struct {
 type PriorLoadState struct {
 	AcuteLoad   float64
 	ChronicLoad float64
+}
+
+// DailyProjectionInput is one server-side calendar day to evaluate from an
+// existing PMC state. Callers choose the dose and auditable coverage label; the
+// canonical 7/42-day EWMA math remains owned by this package.
+type DailyProjectionInput struct {
+	Date           time.Time
+	TrainingDose   float64
+	CoverageStatus CoverageStatus
 }
 
 // HealthRow mirrors types.HealthRow (daily readiness inputs).

@@ -438,6 +438,51 @@ func TestStrideTrainingLoad_AssumesMissingTailDaysAreRestThroughShanghaiToday(t 
 	}
 }
 
+func TestStrideTrainingLoad_AssumesInteriorUnknownAndMissingDaysAreRest(t *testing.T) {
+	today := timefmt.ShanghaiToday()
+	start := today.AddDate(0, 0, -4)
+	observed := storage.DailyTrainingLoad{
+		Date: start.Format("2006-01-02"), AlgorithmVersion: 2,
+		CoverageStatus: "complete", TrainingDose: 80, AcuteLoad: 70, ChronicLoad: 50, Form: -20,
+	}
+	laterObserved := storage.DailyTrainingLoad{
+		Date: today.AddDate(0, 0, -1).Format("2006-01-02"), AlgorithmVersion: 2,
+		CoverageStatus: "complete", TrainingDose: 50, AcuteLoad: 999, ChronicLoad: 999, Form: 0,
+	}
+	ss := &fakeStrideStore{
+		series: []storage.DailyTrainingLoad{
+			observed,
+			{Date: start.AddDate(0, 0, 1).Format("2006-01-02"), CoverageStatus: "unknown", AcuteLoad: 70, ChronicLoad: 50},
+			// start+2 is absent entirely.
+			laterObserved,
+		},
+		latestUsable: &laterObserved,
+	}
+	h := newMetricsHarness(t, &fakeHealthStore{}, ss)
+	w := h.do(http.MethodGet, "/api/"+metricsUserA+"/stride/training-load?days=30", h.bearer(t, metricsUserA))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", w.Code)
+	}
+	var resp strideTrainingLoadResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Series) != 5 {
+		t.Fatalf("series len = %d, want five continuous days", len(resp.Series))
+	}
+	for _, idx := range []int{1, 2, 4} {
+		if resp.Series[idx].CoverageStatus != "rest_assumed" || resp.Series[idx].TrainingDose != 0 {
+			t.Fatalf("series[%d] = %+v, want assumed rest", idx, resp.Series[idx])
+		}
+	}
+	if resp.Series[3].CoverageStatus != "complete" || resp.Series[3].TrainingDose != 50 {
+		t.Fatalf("later observed day = %+v, want complete dose 50", resp.Series[3])
+	}
+	if resp.Series[3].AcuteLoad == laterObserved.AcuteLoad {
+		t.Fatalf("later observed ATL should be recomputed after assumed rest, not reuse stale %v", laterObserved.AcuteLoad)
+	}
+}
+
 // ── /health ──────────────────────────────────────────────────────────────────
 
 func TestHealth_SnapshotTrendAndBaseline(t *testing.T) {

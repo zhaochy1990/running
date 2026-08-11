@@ -15,7 +15,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/http"
 	"sort"
 	"time"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/apifmt"
 	"github.com/zhaochy1990/stride/internal/compute/calibration"
+	"github.com/zhaochy1990/stride/internal/compute/trainingload"
 	"github.com/zhaochy1990/stride/internal/logging"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/utils/timefmt"
@@ -118,7 +118,7 @@ func (sr *strideRoutes) zones(c *gin.Context) {
 // client sees the same calendar and ATL/CTL decay semantics.
 //
 //	@Summary		STRIDE daily training load (PMC)
-//	@Description	Returns the most recent `days` daily training-load rows (oldest first), projecting missing tail dates through Shanghai today as zero-dose assumed rest with ATL/CTL decay. A user caller may only read their own data; an internal caller may read any user.
+//	@Description	Returns the most recent `days` daily training-load rows (oldest first), projecting missing or unknown dates through Shanghai today as zero-dose assumed rest with canonical ATL/CTL decay. A user caller may only read their own data; an internal caller may read any user.
 //	@Tags			metrics
 //	@Produce		json
 //	@Param			user	path		string	true	"User id (JWT sub)"
@@ -163,7 +163,7 @@ func (sr *strideRoutes) trainingLoad(c *gin.Context) {
 		return
 	}
 
-	series, current = projectAssumedRestTail(series, current, timefmt.ShanghaiToday(), days)
+	series, current = projectAssumedRestDays(series, current, timefmt.ShanghaiToday(), days)
 	c.JSON(http.StatusOK, toStrideTrainingLoadResponse(series, current))
 }
 
@@ -357,11 +357,10 @@ func toStrideTrainingLoadRecord(r *storage.DailyTrainingLoad) strideTrainingLoad
 	}
 }
 
-// projectAssumedRestTail extends the latest persisted usable state through the
-// requested Shanghai day. It is a read-only projection: sync/compute remains
-// the owner of canonical MySQL rows, while the GET contract stays current even
-// when no sync job ran on a no-activity day.
-func projectAssumedRestTail(
+// projectAssumedRestDays produces a calendar-continuous read-only view through
+// Shanghai today. Missing and unknown days become zero-dose assumed rest; the
+// canonical EWMA calculation remains in internal/compute/trainingload.
+func projectAssumedRestDays(
 	series []storage.DailyTrainingLoad,
 	current *storage.DailyTrainingLoad,
 	today time.Time,
@@ -370,68 +369,74 @@ func projectAssumedRestTail(
 	if current == nil {
 		return series, nil
 	}
-	anchor, err := time.Parse("2006-01-02", current.Date)
-	if err != nil || !anchor.Before(today) {
+
+	anchorRow := current
+	for i := range series {
+		if isPersistedUsableCoverage(series[i].CoverageStatus) {
+			anchorRow = &series[i]
+			break
+		}
+	}
+	anchor, err := time.Parse("2006-01-02", anchorRow.Date)
+	if err != nil || anchor.After(today) {
 		return series, current
 	}
 
-	// The response is bounded by `limit`. If the persisted state is very old,
-	// advance ATL/CTL to the day before the visible window in closed form rather
-	// than allocating one row per stale calendar day.
-	firstProjectedDay := anchor.AddDate(0, 0, 1)
-	visibleStart := today.AddDate(0, 0, -(limit - 1))
-	if firstProjectedDay.Before(visibleStart) {
-		skipped := int(visibleStart.Sub(firstProjectedDay).Hours() / 24)
-		currentCopy := *current
-		currentCopy.AcuteLoad *= math.Exp(-float64(skipped) / 7.0)
-		currentCopy.ChronicLoad *= math.Exp(-float64(skipped) / 42.0)
-		current = &currentCopy
-		firstProjectedDay = visibleStart
-	}
-
-	projected := make([]storage.DailyTrainingLoad, 0, limit)
+	persistedByDate := make(map[string]storage.DailyTrainingLoad, len(series))
 	for _, row := range series {
-		day, parseErr := time.Parse("2006-01-02", row.Date)
-		if parseErr == nil && !day.After(anchor) && !day.Before(visibleStart) {
-			projected = append(projected, row)
-		}
+		persistedByDate[row.Date] = row
 	}
 
-	acute, chronic := current.AcuteLoad, current.ChronicLoad
-	kAcute := 1.0 - math.Exp(-1.0/7.0)
-	kChronic := 1.0 - math.Exp(-1.0/42.0)
-	var latest *storage.DailyTrainingLoad
-	for day := firstProjectedDay; !day.After(today); day = day.AddDate(0, 0, 1) {
-		acute += kAcute * (0 - acute)
-		chronic += kChronic * (0 - chronic)
-		var ratio *float64
-		if chronic > 0 {
-			r := roundTrainingLoad(acute / chronic)
-			ratio = &r
+	inputs := make([]trainingload.DailyProjectionInput, 0, int(today.Sub(anchor).Hours()/24))
+	for day := anchor.AddDate(0, 0, 1); !day.After(today); day = day.AddDate(0, 0, 1) {
+		date := day.Format("2006-01-02")
+		input := trainingload.DailyProjectionInput{
+			Date:           day,
+			CoverageStatus: trainingload.CoverageRestAssumed,
 		}
+		if row, ok := persistedByDate[date]; ok && isPersistedUsableCoverage(row.CoverageStatus) {
+			input.TrainingDose = row.TrainingDose
+			input.CoverageStatus = trainingload.CoverageStatus(row.CoverageStatus)
+		}
+		inputs = append(inputs, input)
+	}
+	daily := trainingload.ComputeDailyLoadProjection(
+		trainingload.PriorLoadState{AcuteLoad: anchorRow.AcuteLoad, ChronicLoad: anchorRow.ChronicLoad},
+		inputs,
+	)
+	projected := make([]storage.DailyTrainingLoad, 0, len(daily)+1)
+	projected = append(projected, *anchorRow)
+	for _, result := range daily {
 		row := storage.DailyTrainingLoad{
-			Date:             day.Format("2006-01-02"),
-			AlgorithmVersion: current.AlgorithmVersion,
-			TrainingDose:     0,
-			AcuteLoad:        roundTrainingLoad(acute),
-			ChronicLoad:      roundTrainingLoad(chronic),
-			Form:             roundTrainingLoad(chronic - acute),
-			LoadRatio:        ratio,
-			CoverageStatus:   "rest_assumed",
+			Date:             result.Date.Format("2006-01-02"),
+			AlgorithmVersion: anchorRow.AlgorithmVersion,
+			TrainingDose:     result.TrainingDose,
+			AcuteLoad:        result.AcuteLoad,
+			ChronicLoad:      result.ChronicLoad,
+			Form:             result.Form,
+			LoadRatio:        result.LoadRatio,
+			CoverageStatus:   string(result.CoverageStatus),
+		}
+		if persisted, ok := persistedByDate[row.Date]; ok && isPersistedUsableCoverage(persisted.CoverageStatus) {
+			row.CalibrationID = persisted.CalibrationID
+			row.ReadinessGate = persisted.ReadinessGate
+			row.ReadinessReasonsJSON = persisted.ReadinessReasonsJSON
 		}
 		projected = append(projected, row)
-		latest = &projected[len(projected)-1]
 	}
 	if len(projected) > limit {
 		projected = projected[len(projected)-limit:]
-		latest = &projected[len(projected)-1]
 	}
-	if latest == nil {
-		return projected, current
-	}
-	return projected, latest
+	return projected, &projected[len(projected)-1]
 }
 
-func roundTrainingLoad(v float64) float64 {
-	return math.Round(v*10000) / 10000
+func isPersistedUsableCoverage(status string) bool {
+	switch status {
+	case string(trainingload.CoverageComplete),
+		string(trainingload.CoveragePartial),
+		string(trainingload.CoverageRestConfirmed):
+		return true
+	default:
+		return false
+	}
 }

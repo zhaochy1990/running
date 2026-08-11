@@ -183,7 +183,7 @@ func TestCompute_Incremental_NoLabels_Noop(t *testing.T) {
 		t.Fatalf("compute incremental noop: %v", err)
 	}
 	if f.activityUpserts != 0 || f.dailyUpserts != 0 || f.pbUpserted {
-		t.Fatalf("no label_ids should be a no-op, got %+v", f)
+		t.Fatalf("no activity or health dates should be a no-op, got %+v", f)
 	}
 }
 

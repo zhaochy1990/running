@@ -40,3 +40,23 @@ func TestComputeDailyLoadSeriesEWMA(t *testing.T) {
 		t.Errorf("day1 form = %v, want negative (acute>chronic)", series[0].Form)
 	}
 }
+
+func TestComputeDailyLoadProjectionUsesCanonicalRestDecay(t *testing.T) {
+	start := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	rows := ComputeDailyLoadProjection(
+		PriorLoadState{AcuteLoad: 70, ChronicLoad: 50},
+		[]DailyProjectionInput{
+			{Date: start, TrainingDose: 0, CoverageStatus: CoverageRestAssumed},
+			{Date: start.AddDate(0, 0, 1), TrainingDose: 50, CoverageStatus: CoverageComplete},
+		},
+	)
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	if rows[0].AcuteLoad >= 70 || rows[0].ChronicLoad >= 50 {
+		t.Fatalf("zero dose must decay ATL/CTL: %+v", rows[0])
+	}
+	if rows[1].TrainingDose != 50 || rows[1].CoverageStatus != CoverageComplete {
+		t.Fatalf("observed day = %+v, want complete dose 50", rows[1])
+	}
+}

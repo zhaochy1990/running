@@ -6,8 +6,8 @@
 //     onboarding and, later, on a weekly cadence. Owns calibration writes.
 //   - compute (ComputeJobType): per-activity training load + daily PMC
 //     (CTL/ATL/Form) + personal bests. Mode-aware: full recomputes over the
-//     window; incremental only touches this sync's new activities and extends the
-//     PMC tail from prior state. It READS the latest calibration snapshot (single
+//     window; incremental uses this sync's new activity and health dates and
+//     extends the PMC tail from prior state. It READS the latest calibration snapshot (single
 //     source) rather than recomputing it.
 //
 // Both share the domain→storage converters and small helpers in this package, so
