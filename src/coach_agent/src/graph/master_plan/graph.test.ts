@@ -9,7 +9,7 @@ import {
   MasterPlanGraphOutcome,
   type MasterPlanGraphContext,
 } from "./index.js";
-import { createAssessmentSnapshot, createTestAthleteAssessment, createTestGoalAssessment, createTestJudgments, createTestMasterPlan, createTestRequest, createTestStrategyCandidate } from "./testFixtures.js";
+import { createAssessmentSnapshot, createTestAthleteAssessment, createTestGoalAssessment, createTestJudgments, createTestMasterPlan, createTestRequest, createTestReviewReport, createTestStrategyCandidate } from "./testFixtures.js";
 
 const runtimeContext: MasterPlanGraphContext = {
   userId: "athlete-342",
@@ -27,6 +27,7 @@ const assessmentDependencies = {
   goalAssessmentModel: { async invoke() { return createTestGoalAssessment(); } },
   strategyModel: { async invoke({ archetype }: { archetype: typeof strategies[number] }) { return createTestStrategyCandidate(archetype); } },
   judgmentModel: { async invoke({ judge, candidate }: { judge: "performance_path" | "safety_load" | "constraint_feasibility"; candidate: ReturnType<typeof createTestStrategyCandidate> }) { return createTestJudgments(candidate.candidate_id).find((item) => item.judge === judge)!; } },
+  reviewModel: { async invoke({ reviewerType }: { reviewerType: "periodization" | "load_progression" | "constraint_grounding" }) { return createTestReviewReport(reviewerType); } },
 };
 
 test("loads one immutable snapshot at the graph seam and passes it to the skeleton", async () => {
@@ -191,4 +192,62 @@ test("rule warnings are retained on a completed outcome", async () => {
   if (outcome.decision !== "completed") assert.fail("expected completed");
   assert.equal(typeof outcome.artifact.simulation_report, "object");
   assert.equal(typeof outcome.artifact.rule_report, "object");
+  assert.equal(outcome.artifact.artifact_revision, 1);
+  assert.equal(outcome.artifact.review_reports.length, 3);
+  assert.equal(outcome.artifact.adjudication.decision, "pass");
+});
+
+test("dispatches all current artifact reviewers independently after rules pass", async () => {
+  const calls: Array<{ reviewerType: string; artifactRevision: number; reviewTaskId: string; selectedStrategy: unknown }> = [];
+  const graph = createMasterPlanGraph({
+    ...assessmentDependencies,
+    contextProvider: { async loadSnapshot() { return snapshot; } },
+    skeletonModel: { async invoke() { return createTestMasterPlan(); } },
+    reviewModel: { async invoke(input) { calls.push(input); await new Promise((resolve) => setTimeout(resolve, input.reviewerType === "periodization" ? 20 : 1)); return createTestReviewReport(input.reviewerType); } },
+  });
+  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context: runtimeContext });
+  assert.equal(outcome.decision, "completed");
+  assert.deepEqual(calls.map((call) => call.reviewerType).sort(), ["constraint_grounding", "load_progression", "periodization"]);
+  assert.ok(calls.every((call) => call.artifactRevision === 1 && call.reviewTaskId.includes(":r1:")));
+  assert.ok(calls.every((call) => "selectedStrategy" in call));
+});
+
+test("reviewer infrastructure failure returns a retryable infrastructure outcome", async () => {
+  const graph = createMasterPlanGraph({
+    ...assessmentDependencies,
+    contextProvider: { async loadSnapshot() { return snapshot; } },
+    skeletonModel: { async invoke() { return createTestMasterPlan(); } },
+    reviewModel: { async invoke() { throw new Error("network unavailable"); } },
+  });
+  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context: runtimeContext });
+  assert.equal(outcome.decision, "infrastructure_failure");
+  if (outcome.decision === "infrastructure_failure") assert.equal(outcome.retryable, true);
+});
+
+test("review block veto returns quality failure with current reports, adjudication, simulation and rules", async () => {
+  const graph = createMasterPlanGraph({
+    ...assessmentDependencies,
+    contextProvider: { async loadSnapshot() { return snapshot; } }, skeletonModel: { async invoke() { return createTestMasterPlan(); } },
+    reviewModel: { async invoke({ reviewerType }) { return reviewerType === "constraint_grounding" ? createTestReviewReport(reviewerType, { verdict: "block", issues: [{ issue_id: "rest-day-conflict", severity: "hard", evidence_fact_ids: ["frequency.recent_run_days_per_week"], evidence_refs: ["fact:frequency.recent_run_days_per_week"], target_path: "/weeks/0", suggested_action: "Restore rest." }] }) : createTestReviewReport(reviewerType); } },
+  });
+  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context: runtimeContext });
+  assert.equal(outcome.decision, "failed_quality_gate");
+  if (outcome.decision !== "failed_quality_gate") assert.fail("expected failure");
+  assert.equal(outcome.artifact.adjudication?.decision, "block");
+  assert.equal(outcome.artifact.review_reports?.length, 3);
+  assert.ok(outcome.artifact.simulation_report && outcome.artifact.rule_report);
+});
+
+test("stale reviewer passes cannot finalize a newer artifact revision", async () => {
+  const graph = createMasterPlanGraph({
+    ...assessmentDependencies,
+    artifactRevision: 2,
+    contextProvider: { async loadSnapshot() { return snapshot; } },
+    skeletonModel: { async invoke() { return createTestMasterPlan(); } },
+    reviewModel: { async invoke({ reviewerType }) { return createTestReviewReport(reviewerType); } },
+  });
+  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context: runtimeContext });
+  assert.equal(outcome.decision, "failed_quality_gate");
+  if (outcome.decision !== "failed_quality_gate") assert.fail("expected quality failure");
+  assert.ok(outcome.artifact.review_worker_errors?.every((error) => error.artifact_revision === 2));
 });

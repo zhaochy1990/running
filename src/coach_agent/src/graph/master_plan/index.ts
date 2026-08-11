@@ -5,6 +5,8 @@ export { AssessmentFactsSchema, AthleteAssessmentSchema, GoalAssessmentSchema, a
 export type { AssessmentFacts, AthleteAssessment, GoalAssessment } from "./assessment.js";
 export { MasterPlanSchema, SelectedStrategySchema, StrategyArchetypeSchema, StrategyCandidateSchema, StrategyJudgmentSchema } from "./schemas.js";
 export type { MasterPlan, SelectedStrategy, StrategyCandidate, StrategyJudgment } from "./schemas.js";
+export { ReviewAdjudicationSchema, ReviewReportSchema, ReviewerTypeSchema } from "./review.js";
+export type { ReviewAdjudication, ReviewReport, ReviewerType } from "./review.js";
 export {
   MasterPlanGraphContext,
   MasterPlanGraphOutcome,

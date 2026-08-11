@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { simulateMasterPlanLoad, simulatePmcDays } from "./simulation.js";
 import { createAssessmentSnapshot, createTestMasterPlan } from "./testFixtures.js";
+import { createTestRequest } from "./testFixtures.js";
 
 test("PMC uses canonical 7/42 day constants and daily update order", () => {
   const [day] = simulatePmcDays([100], { atl: 70, ctl: 60 });
@@ -12,12 +13,12 @@ test("PMC uses canonical 7/42 day constants and daily update order", () => {
   assert.equal(day.ratio, 1.2142);
 });
 
-test("weekly simulator deterministically estimates dose and applies the fixed v1 distribution", () => {
+test("weekly simulator deterministically estimates dose and applies the default v1 distribution", () => {
   const report = simulateMasterPlanLoad(createTestMasterPlan(), createAssessmentSnapshot());
   const first = report.weeks[0];
   assert.ok(first);
   assert.equal(report.algorithm_version, "master-plan-load-v1");
-  assert.deepEqual(report.daily_distribution, [0.1, 0.18, 0.12, 0.18, 0.1, 0.27, 0.05]);
+  assert.deepEqual(first.daily_distribution, [0.1, 0.18, 0.12, 0.18, 0.1, 0.27, 0.05]);
   assert.equal(first.estimated, true);
   assert.equal(first.provenance, "weekly_midpoint+key_sessions+remaining_easy_volume");
   assert.equal(first.confidence, "high");
@@ -64,4 +65,22 @@ test("simulator does not invent PMC state when the initial ATL or CTL is missing
   assert.equal(report.weeks[0]!.end_atl, null);
   assert.equal(report.weeks[0]!.end_form, null);
   assert.equal(report.weeks[0]!.missing_dose_reason, "initial_pmc_state_missing");
+});
+
+test("simulator respects unavailable days and assigns the race to race day", () => {
+  const report = simulateMasterPlanLoad(createTestMasterPlan(), createAssessmentSnapshot(), createTestRequest());
+  assert.equal(report.weeks[0]!.daily_distribution[6], 0);
+  assert.equal(report.weeks[1]!.daily_distribution[6], 0.85);
+  assert.ok(report.weeks[1]!.daily_distribution.filter((share) => share > 0).length <= createTestRequest().availability.weekly_run_days_max);
+  assert.ok(Math.abs(report.weeks[0]!.daily_distribution.reduce((sum, share) => sum + share, 0) - 1) < 1e-9);
+  assert.ok(Math.abs(report.weeks[1]!.daily_distribution.reduce((sum, share) => sum + share, 0) - 1) < 1e-9);
+});
+
+test("simulator limits routine load to explicit windows and weekly run-day maximum", () => {
+  const request = createTestRequest();
+  request.availability.weekly_run_days_max = 2;
+  request.availability.available_training_windows = request.availability.available_training_windows.filter((window) => ["tuesday", "thursday", "saturday"].includes(window.day));
+  const report = simulateMasterPlanLoad(createTestMasterPlan(), createAssessmentSnapshot(), request);
+  const usedDays = report.weeks[0]!.daily_distribution.flatMap((share, index) => share > 0 ? [index] : []);
+  assert.deepEqual(usedDays, [1, 5]);
 });

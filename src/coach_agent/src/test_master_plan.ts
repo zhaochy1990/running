@@ -2,9 +2,11 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createMasterPlanGraph, MasterPlanGraphRequest, AthleteAssessmentSchema, GoalAssessmentSchema, MasterPlanSchema, ModelContractError, StrategyCandidateSchema, StrategyJudgmentSchema, authoritativeGoalLevel, authoritativeReadiness, canonicalizeAssessmentSummary, validateAssessmentReferences, validateAthleteAssessmentRanges, validateGoalAssessmentTargets, type AssessmentFacts, type AthleteAssessment, type ContextSnapshot, type GoalAssessment } from "./graph/master_plan/index.js";
+import { createMasterPlanGraph, MasterPlanGraphRequest, AthleteAssessmentSchema, GoalAssessmentSchema, MasterPlanSchema, ModelContractError, ReviewReportSchema, StrategyCandidateSchema, StrategyJudgmentSchema, authoritativeGoalLevel, authoritativeReadiness, canonicalizeAssessmentSummary, validateAssessmentReferences, validateAthleteAssessmentRanges, validateGoalAssessmentTargets, type AssessmentFacts, type AthleteAssessment, type ContextSnapshot, type GoalAssessment } from "./graph/master_plan/index.js";
 import { MySqlMasterPlanContextProvider, StrideDataStore } from "./persistence/index.js";
 import { buildResponsesModel } from "./agents/common.js";
+import { runMasterPlanRuleFilter } from "./graph/master_plan/rules.js";
+import { validateSkeletonAgainstStrategy } from "./graph/master_plan/graph.js";
 
 type Profile = "local" | "prod";
 const PROFILE = "local" as Profile;
@@ -22,6 +24,8 @@ const config = loadConfig();
 const modelConfig = getAgentConfig(config, "master_plan");
 const reviewerConfig = getAgentConfig(config, "reviewer");
 const doctrine = await readFile(resolve(dirname(fileURLToPath(import.meta.url)), "graph/master_plan/doctrine/planning.md"), "utf8");
+const reviewRubricEntries = await Promise.all(["periodization", "load_progression", "constraint_grounding"].map(async (name) => [name, await readFile(resolve(dirname(fileURLToPath(import.meta.url)), `graph/master_plan/doctrine/review/${name}.md`), "utf8")] as const));
+const reviewRubrics = Object.fromEntries(reviewRubricEntries) as Record<string, string>;
 const store = StrideDataStore.create(readStrideMySqlConfig(config));
 try {
   const provider = new MySqlMasterPlanContextProvider(store);
@@ -45,7 +49,7 @@ try {
             ["user", JSON.stringify({ task: "Assess athlete readiness for the confirmed request", request: input.request, assessment_facts: input.facts, snapshot: input.snapshot })],
           ], (assessment) => { const canonical = canonicalizeAssessmentSummary(assessment); validateAssessmentReferences(canonical, input.facts); validateAthleteAssessmentRanges(canonical, input.facts, input.request); if (canonical.readiness !== authoritativeReadiness(input.facts)) throw new Error("readiness conflict"); return canonical; });
         } catch (error) {
-          console.error(`athlete assessment call failed: ${error instanceof Error ? `${error.name}: ${error.message}` : "unknown error"}`);
+          console.error("athlete assessment call failed");
           if (error instanceof Error && (error.name === "ZodError" || /structured|schema|parse/i.test(error.message))) throw new ModelContractError(error.message);
           throw error;
         }
@@ -69,7 +73,8 @@ try {
     },
     strategyModel: { async invoke(input) { const value = await invokeStructured(modelConfig, StrategyCandidateSchema, `submit_${input.archetype}_strategy`, [["system", `Generate exactly one macro strategy for the archetype supplied in the user message. Candidate ID must match the schema. Strategies differ materially but ALL must stay inside AthleteAssessment safe_training_ranges: phase weekly high never exceeds assessed weekly high; planned longest run never exceeds assessed long_run high; quality frequency never exceeds assessed quality high; load-week growth never exceeds 10% across recovery; phase weeks must fit race runway. Aggressive means using the upper safe boundary with stricter gates, never exceeding it. Fill weekly_highs_km, max_long_run_km, max_quality_sessions_per_week, and race_week_index so constraints are machine-checkable. Set hard_constraints_satisfied=false and list violations if any bound cannot be met. Use only supplied fact_ids as evidence. Do not generate weekly sessions yet.\n\n${doctrine}`], ["user", JSON.stringify(input)]]); capturedStrategies.push(value); return value; } },
     judgmentModel: { async invoke(input) { const value = await invokeStructured(reviewerConfig, StrategyJudgmentSchema, `submit_${input.judge}_judgment`, [["system", `Evaluate the judge role supplied in the user message against immutable facts, assessments, confirmed availability, and doctrine. Set veto=true only for a concrete confirmed hard-constraint or safety violation; low score or an ordinary tradeoff is not a veto. Use candidate_id exactly and cite only existing fact_ids.\n\n${doctrine}`], ["user", JSON.stringify(input)]]); capturedJudgments.push(value); return value; } },
-    skeletonModel: { async invoke(input) { capturedSelectedStrategy = input.selectedStrategy; capturedPlanBeforeValidation = await invokeStructured(modelConfig, MasterPlanSchema, "submit_master_plan_skeleton", [["system", `Generate the complete strategic Master Plan JSON in Chinese from the selected strategy. Cover every Monday-Sunday week from the current planning week through race day plus two recovery weeks. Use 1-3 strategic key sessions only; no ordinary easy/recovery/filler runs. Recovery weeks have at most one key session; race week contains only race. Respect max session duration and confirmed goal. MP/HMP work embedded in a long run stays one long_run. Every week must fall inside its named phase date range and weekly volume range. For every index before and including race week, copy selectedStrategy.candidate.weekly_highs_km exactly into weeks[index].target_weekly_km_high; do not optimize or round it. The race session must be at selectedStrategy.candidate.race_week_index. Non-recovery/pre-race weeks stay within AthleteAssessment safe high; long runs do not exceed selectedStrategy.max_long_run_km; hard running stimuli do not exceed selectedStrategy.max_quality_sessions_per_week. status=draft, generated_by=coach_agent, version=1, UTC timestamps.\n\n${doctrine}`], ["user", JSON.stringify(input)]]); return capturedPlanBeforeValidation; } },
+    skeletonModel: { async invoke(input) { capturedSelectedStrategy = input.selectedStrategy; capturedPlanBeforeValidation = await invokeStructured(modelConfig, MasterPlanSchema, "submit_master_plan_skeleton", [["system", `Generate the complete strategic Master Plan JSON in Chinese from the selected strategy. Cover every Monday-Sunday week from the current planning week through race day plus two recovery weeks. Use 1-3 strategic key sessions only; no ordinary easy/recovery/filler runs. Recovery weeks have at most one key session; race week contains only race. Respect max session duration and confirmed goal. MP/HMP work embedded in a long run stays one long_run. Do not place two heavy marathon-specific long runs in consecutive weeks: the week before the maximal specific rehearsal must be an absorption week or use an easy/shorter long run with materially less MP exposure. Every week must fall inside its named phase date range and weekly volume range; each phase low must be <= the minimum weekly low inside that phase and each phase high must be >= the maximum weekly high. For every index before and including race week, copy selectedStrategy.candidate.weekly_highs_km exactly into weeks[index].target_weekly_km_high; do not optimize or round it. The race session must be at selectedStrategy.candidate.race_week_index. Non-recovery/pre-race weeks stay within AthleteAssessment safe high; long runs do not exceed selectedStrategy.max_long_run_km; hard running stimuli do not exceed selectedStrategy.max_quality_sessions_per_week. status=draft, generated_by=coach_agent, version=1, UTC timestamps.\n\n${doctrine}`], ["user", JSON.stringify(input)]], (plan) => { const report = runMasterPlanRuleFilter(plan, input.request, input.snapshot); if (report.has_errors) throw new Error(`deterministic rule errors: ${report.violations.filter((item) => item.severity === "error").map((item) => `${item.rule_id}:${item.message}`).join("; ")}`); validateSkeletonAgainstStrategy(plan, input.selectedStrategy, input.athleteAssessment); return plan; }); return capturedPlanBeforeValidation; } },
+    reviewModel: { async invoke(input) { const rubric = reviewRubrics[input.reviewerType]!; return invokeStructured(reviewerConfig, ReviewReportSchema, `submit_${input.reviewerType}_review`, [["system", `You are an independent Master Plan reviewer. Follow this versioned rubric exactly. Return the supplied review_task_id, reviewer_type, artifact_revision, rubric_version='rubric-v1', prompt_version='prompt-v1'. Use exactly the rubric score axes. Every report must cite evidence_refs using fact:<fact_id>, simulation:<field/path>, rule:<rule_id>, or system:<reason>. A pass has no issues; every non-pass has issues. Every issue must include at least one evidence_ref and include evidence_fact_ids for referenced facts.\n\n${rubric}`], ["user", JSON.stringify(input)]]); } },
   });
   const generationId = `master-plan-${PROFILE}-${Date.now()}`;
   const result = await graph.invoke({ request }, { context: { userId: USER_ID, generationId } });
@@ -90,6 +95,8 @@ try {
     await writeFile(resolve(outputDir, "final-draft.json"), `${JSON.stringify(result.outcome.artifact.plan, null, 2)}\n`, "utf8");
     await writeFile(resolve(outputDir, "simulation-report.json"), `${JSON.stringify(result.outcome.artifact.simulation_report, null, 2)}\n`, "utf8");
     await writeFile(resolve(outputDir, "rule-report.json"), `${JSON.stringify(result.outcome.artifact.rule_report, null, 2)}\n`, "utf8");
+    await writeFile(resolve(outputDir, "review-reports.json"), `${JSON.stringify(result.outcome.artifact.review_reports, null, 2)}\n`, "utf8");
+    await writeFile(resolve(outputDir, "review-adjudication.json"), `${JSON.stringify(result.outcome.artifact.adjudication, null, 2)}\n`, "utf8");
   }
   await writeFile(resolve(outputDir, "outcome.json"), `${JSON.stringify(result.outcome, null, 2)}\n`, "utf8");
   await writeFile(resolve(outputDir, "captured-strategies.json"), `${JSON.stringify(capturedStrategies, null, 2)}\n`, "utf8");
@@ -99,6 +106,9 @@ try {
   if (result.outcome?.decision === "failed_quality_gate") {
     if (result.outcome.artifact.simulation_report) await writeFile(resolve(outputDir, "simulation-report.json"), `${JSON.stringify(result.outcome.artifact.simulation_report, null, 2)}\n`, "utf8");
     if (result.outcome.artifact.rule_report) await writeFile(resolve(outputDir, "rule-report.json"), `${JSON.stringify(result.outcome.artifact.rule_report, null, 2)}\n`, "utf8");
+    if (result.outcome.artifact.review_reports) await writeFile(resolve(outputDir, "review-reports.json"), `${JSON.stringify(result.outcome.artifact.review_reports, null, 2)}\n`, "utf8");
+    if (result.outcome.artifact.adjudication) await writeFile(resolve(outputDir, "review-adjudication.json"), `${JSON.stringify(result.outcome.artifact.adjudication, null, 2)}\n`, "utf8");
+    if (result.outcome.artifact.review_worker_errors) await writeFile(resolve(outputDir, "review-worker-errors.json"), `${JSON.stringify(result.outcome.artifact.review_worker_errors, null, 2)}\n`, "utf8");
   }
   if (result.outcome?.decision !== "completed") throw new Error(`master-plan planning ended with ${result.outcome?.decision ?? "missing_outcome"}`);
   console.log(`Master-plan evaluation artifacts: ${outputDir}; model=${modelConfig.model}`);
@@ -111,12 +121,11 @@ async function invokeStructured<Output>(model: Parameters<typeof buildResponsesM
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       const structured = buildResponsesModel(model).withStructuredOutput(schema as never, { name, method: "functionCalling", strict: true });
-      const retryMessage: ["user", string][] = attempt === 1 ? [] : [["user", "The previous submission violated the required schema or deterministic contract. Submit a corrected value only; do not relax or reinterpret any fact."]];
+      const detail = lastError instanceof Error ? lastError.message : "unknown contract violation";
+      const retryMessage: ["user", string][] = attempt === 1 ? [] : [["user", `The previous submission violated the required schema or deterministic contract: ${detail}. Submit a corrected value only; do not relax or reinterpret any fact.`]];
       return validate(schema.parse(await structured.invoke([...messages, ...retryMessage])));
     } catch (error) { lastError = error; if (!(error instanceof Error) || (!/Zod|schema|contract|conflict|fact|target|range|structured|parse/i.test(`${error.name} ${error.message}`))) throw error; }
   }
-  const error = lastError;
-  const issues = error instanceof Error && "issues" in error && Array.isArray(error.issues) ? error.issues.map((issue: { path?: unknown[]; message?: string }) => `${issue.path?.join(".")}: ${issue.message}`).join("; ") : error instanceof Error ? error.message : "unknown model contract error";
-  console.error(`${name} contract failed after retries: ${issues}`);
-  throw new ModelContractError(issues);
+  console.error(`${name} contract failed after retries`);
+  throw new ModelContractError("structured output contract failed after retries");
 }

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MasterPlanGraphOutcome, MasterPlanGraphRequest } from "./contracts.js";
-import { createAssessmentSnapshot, createTestAthleteAssessment, createTestGoalAssessment, createTestJudgments, createTestMasterPlan, createTestRequest, createTestStrategyCandidate } from "./testFixtures.js";
+import { createAssessmentSnapshot, createTestAthleteAssessment, createTestGoalAssessment, createTestJudgments, createTestMasterPlan, createTestRequest, createTestReviewReport, createTestStrategyCandidate } from "./testFixtures.js";
 import { deriveAssessmentFacts } from "./assessment.js";
 import { simulateMasterPlanLoad } from "./simulation.js";
 import { runMasterPlanRuleFilter } from "./rules.js";
+import { adjudicateMasterPlanReviews } from "./review.js";
 
 test("request accepts explicit empty constraints in a complete confirmed intake", () => {
   const request = createTestRequest();
@@ -57,6 +58,8 @@ test("outcome rejects decision and artifact mismatches", () => {
 });
 
 function completedOutcome() {
+  const facts = deriveAssessmentFacts(createAssessmentSnapshot(), createTestRequest());
+  const reviewReports = [createTestReviewReport("periodization"), createTestReviewReport("load_progression"), createTestReviewReport("constraint_grounding")];
   return {
     decision: "completed",
     request_id: "request-342",
@@ -65,7 +68,7 @@ function completedOutcome() {
       type: "master_plan_draft",
       activation_status: "inactive",
       plan: createTestMasterPlan(),
-      facts: deriveAssessmentFacts(createAssessmentSnapshot(), createTestRequest()),
+      facts,
       athlete_assessment: createTestAthleteAssessment(),
       goal_assessment: createTestGoalAssessment(),
       strategy_candidates: [createTestStrategyCandidate("conservative"), createTestStrategyCandidate("balanced")],
@@ -78,6 +81,10 @@ function completedOutcome() {
       },
       simulation_report: simulateMasterPlanLoad(createTestMasterPlan(), createAssessmentSnapshot()),
       rule_report: runMasterPlanRuleFilter(createTestMasterPlan(), MasterPlanGraphRequest.parse(createTestRequest()), createAssessmentSnapshot()),
+      artifact_revision: 1,
+      review_reports: reviewReports,
+      adjudication: adjudicateMasterPlanReviews(1, reviewReports, facts),
+      warnings: [],
     },
   };
 }

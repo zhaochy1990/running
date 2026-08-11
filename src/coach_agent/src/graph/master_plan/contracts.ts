@@ -3,6 +3,7 @@ import { MasterPlanSchema, SelectedStrategySchema, StrategyCandidateSchema, Stra
 import { AssessmentFactsSchema, AthleteAssessmentSchema, GoalAssessmentSchema } from "./assessment.js";
 import { SimulationReportSchema } from "./simulation.js";
 import { RuleReportSchema } from "./rules.js";
+import { ReviewAdjudicationSchema, ReviewReportSchema, ReviewWorkerErrorSchema, adjudicateMasterPlanReviews, REQUIRED_REVIEWERS } from "./review.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -136,6 +137,10 @@ const CompletedOutcomeSchema = OutcomeIdentitySchema.extend({
     selected_strategy: SelectedStrategySchema,
     simulation_report: SimulationReportSchema,
     rule_report: RuleReportSchema,
+    artifact_revision: z.int().positive(),
+    review_reports: z.array(ReviewReportSchema).length(3),
+    adjudication: ReviewAdjudicationSchema,
+    warnings: z.array(z.string()),
   }).strict(),
 }).strict().superRefine((outcome, ctx) => {
   const ids = outcome.artifact.strategy_candidates.map((candidate) => candidate.candidate_id);
@@ -147,6 +152,14 @@ const CompletedOutcomeSchema = OutcomeIdentitySchema.extend({
   }
   if (outcome.artifact.judgments.some((judgment) => !ids.includes(judgment.candidate_id))) ctx.addIssue({ code: "custom", path: ["artifact", "judgments"], message: "judgments must reference an emitted candidate" });
   if (!ids.includes(outcome.artifact.selected_strategy.candidate.candidate_id)) ctx.addIssue({ code: "custom", path: ["artifact", "selected_strategy"], message: "selected strategy must be one of the emitted candidates" });
+  const reviewerTypes = outcome.artifact.review_reports.map((report) => report.reviewer_type);
+  if (outcome.artifact.review_reports.some((report) => report.artifact_revision !== outcome.artifact.artifact_revision) || REQUIRED_REVIEWERS.some((reviewer) => reviewerTypes.filter((item) => item === reviewer).length !== 1)) ctx.addIssue({ code: "custom", path: ["artifact", "review_reports"], message: "completed outcome requires one current report per required reviewer" });
+  try {
+    const expected = adjudicateMasterPlanReviews(outcome.artifact.artifact_revision, outcome.artifact.review_reports, outcome.artifact.facts, { simulation: outcome.artifact.simulation_report, rules: outcome.artifact.rule_report });
+    const expectedWarnings = expected.issues.filter((item) => item.severity === "warning").map((item) => item.issue_id);
+    if (expected.decision === "revise" || expected.decision === "block" || JSON.stringify(expected) !== JSON.stringify(outcome.artifact.adjudication)) ctx.addIssue({ code: "custom", path: ["artifact", "adjudication"], message: "completed outcome requires the deterministic current adjudication" });
+    if (JSON.stringify(expectedWarnings) !== JSON.stringify(outcome.artifact.warnings)) ctx.addIssue({ code: "custom", path: ["artifact", "warnings"], message: "warnings must match adjudicated warning issues" });
+  } catch { ctx.addIssue({ code: "custom", path: ["artifact", "adjudication"], message: "completed outcome review evidence is invalid" }); }
 });
 
 const ReviewCompletedOutcomeSchema = OutcomeIdentitySchema.extend({
@@ -222,6 +235,9 @@ const FailedQualityGateOutcomeSchema = OutcomeIdentitySchema.extend({
     attempt_history: z.array(z.string().min(1)),
     simulation_report: SimulationReportSchema.optional(),
     rule_report: RuleReportSchema.optional(),
+    review_reports: z.array(ReviewReportSchema).optional(),
+    adjudication: ReviewAdjudicationSchema.optional(),
+    review_worker_errors: z.array(ReviewWorkerErrorSchema).optional(),
   }).strict(),
 }).strict();
 

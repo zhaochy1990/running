@@ -175,3 +175,13 @@ export function createTestJudgments(candidateId: string, scores: [number, number
     rationale: `${judge} rationale`, evidence_fact_ids: ["volume.recent_weekly_km"],
   }));
 }
+
+export function createTestReviewReport(reviewerType: "periodization" | "load_progression" | "constraint_grounding", overrides: Record<string, unknown> = {}) {
+  const scores = reviewerType === "periodization" ? { season_structure: 5, peak_timing: 5, recovery_absorption: 5, taper_quality: 5 } : reviewerType === "load_progression" ? { volume_progression: 5, dose_trajectory: 5, hard_stimulus_density: 5, long_run_concentration: 5 } : { goal_fidelity: 5, availability_fit: 5, evidence_grounding: 5, selected_strategy_fidelity: 5 };
+  return {
+    review_task_id: `master-plan:r1:${reviewerType}:rubric-v1:prompt-v1`, reviewer_type: reviewerType,
+    artifact_revision: 1, rubric_version: "rubric-v1", prompt_version: "prompt-v1", verdict: "pass" as const,
+    scores, evidence_refs: ["fact:volume.recent_weekly_km"], issues: [], rationale: `${reviewerType} passed`, confidence: 0.9,
+    ...overrides,
+  };
+}
