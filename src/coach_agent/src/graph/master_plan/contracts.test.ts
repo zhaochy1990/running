@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MasterPlanGraphOutcome, MasterPlanGraphRequest } from "./contracts.js";
-import { createTestMasterPlan, createTestRequest } from "./testFixtures.js";
+import { createAssessmentSnapshot, createTestAthleteAssessment, createTestGoalAssessment, createTestMasterPlan, createTestRequest } from "./testFixtures.js";
+import { deriveAssessmentFacts } from "./assessment.js";
 
 test("request accepts explicit empty constraints in a complete confirmed intake", () => {
   const request = createTestRequest();
@@ -33,6 +34,12 @@ test("request rejects ambiguous primary race priorities", () => {
   assert.equal(MasterPlanGraphRequest.safeParse(ambiguous).success, false);
 });
 
+test("request rejects malformed race target times instead of treating them as finish-only", () => {
+  const request = createTestRequest();
+  request.goals[0]!.target_time = "2:50";
+  assert.equal(MasterPlanGraphRequest.safeParse(request).success, false);
+});
+
 test("outcome rejects decision and artifact mismatches", () => {
   const completed = {
     decision: "completed",
@@ -42,6 +49,9 @@ test("outcome rejects decision and artifact mismatches", () => {
       type: "master_plan_draft",
       activation_status: "inactive",
       plan: createTestMasterPlan(),
+      facts: deriveAssessmentFacts(createAssessmentSnapshot(), createTestRequest()),
+      athlete_assessment: createTestAthleteAssessment(),
+      goal_assessment: createTestGoalAssessment(),
     },
   };
   assert.equal(MasterPlanGraphOutcome.safeParse(completed).success, true);

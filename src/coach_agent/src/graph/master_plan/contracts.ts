@@ -1,8 +1,10 @@
 import { z } from "zod/v4";
 import { MasterPlanSchema } from "./schemas.js";
+import { AssessmentFactsSchema, AthleteAssessmentSchema, GoalAssessmentSchema } from "./assessment.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+const RACE_TIME = /^\d{1,2}:[0-5]\d:[0-5]\d$/;
 const identifier = z.string().min(1);
 const weekday = z.enum([
   "monday",
@@ -19,7 +21,7 @@ const GoalSchema = z.object({
   location: z.string().min(1),
   distance: z.enum(["FM", "HM"]),
   race_date: z.string().regex(DAY),
-  target_time: z.string().min(1).nullable(),
+  target_time: z.string().regex(RACE_TIME, "expected H:MM:SS").nullable(),
   finish_only: z.boolean(),
   priority: z.enum(["A", "B", "C"]),
 }).strict().superRefine((goal, ctx) => {
@@ -124,6 +126,9 @@ const CompletedOutcomeSchema = OutcomeIdentitySchema.extend({
     type: z.literal("master_plan_draft"),
     activation_status: z.literal("inactive"),
     plan: MasterPlanSchema,
+    facts: AssessmentFactsSchema,
+    athlete_assessment: AthleteAssessmentSchema,
+    goal_assessment: GoalAssessmentSchema,
   }).strict(),
 }).strict();
 
