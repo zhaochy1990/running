@@ -215,6 +215,19 @@ export async function applyWeeklyFeedbackManifest({ reviewedManifest, reviewedHa
     for (const record of current.records) {
       if (record.action === "insert") await tx.insertWeeklyFeedback(current.rows.get(`${record.user_id}/${record.week_start}`));
     }
+    // Local SQLite/Markdown cannot participate in the MySQL transaction. Read
+    // it again before commit and roll back if any selected source changed while
+    // inserts were in flight.
+    const sourceRecheck = await classify({
+      userIds,
+      source,
+      target: { listWeeklyFeedback: async () => [] },
+    });
+    if (sourceRecheck.records.some((record) => record.action === "conflict")
+        || current.rows.size !== sourceRecheck.rows.size
+        || [...current.rows].some(([key, row]) => stableJson(row) !== stableJson(sourceRecheck.rows.get(key)))) {
+      throw new FeedbackManifestError("source drift during commit");
+    }
     for (const userId of userIds) {
       const actual = (await tx.listWeeklyFeedback(userId)).map(normalizedTarget);
       for (const record of current.records.filter((item) => item.user_id === userId)) {

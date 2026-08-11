@@ -170,6 +170,28 @@ test("apply rolls back all writes when insert or readback verification fails", a
   }
 });
 
+test("apply rolls back when a local source changes after the destination check", async () => {
+  const rows = [sqlite()];
+  const io = adapters({ sqliteRows: rows });
+  const reviewed = await buildWeeklyFeedbackManifest({ userIds: [USER], source: io.source, target: io.target });
+  const originalTransaction = io.target.transaction;
+  io.target.transaction = (operation) => originalTransaction(async (tx) => operation({
+    ...tx,
+    insertWeeklyFeedback: async (row) => {
+      await tx.insertWeeklyFeedback(row);
+      rows[0].content_md = "changed during commit";
+    },
+  }));
+  await assert.rejects(applyWeeklyFeedbackManifest({
+    reviewedManifest: reviewed,
+    reviewedHash: reviewed.manifest_hash,
+    userIds: [USER],
+    source: io.source,
+    target: io.target,
+  }), /source drift during commit/);
+  assert.deepEqual(io.targetRows, []);
+});
+
 test("manifest is bound to the selected allowlisted user identities", async () => {
   const io = adapters();
   const reviewed = await buildWeeklyFeedbackManifest({ userIds: [USER], source: io.source, target: io.target });

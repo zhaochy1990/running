@@ -4,7 +4,7 @@
 
 ## 周反馈是什么
 
-周反馈是运动员针对一个上海自然周记录的整周反馈，canonical source 是 MySQL `weekly_feedback`。每名运动员每周至多一条；空白正文表示没有反馈，但记录仍可保留编辑时间。legacy `feedback.md` 仅作为一次性迁移来源，运行时不再读取、追加或同步。
+周反馈是运动员针对一个上海自然周记录的整周反馈。人工 rollout 完成前，生产兼容路径仍使用 legacy `feedback.md`；`STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE=true` 后，canonical source 是 MySQL `weekly_feedback`，legacy 文件仅保留为迁移材料。
 
 活动 `sport_note` 和 `feel_type` 属于单次活动，随活动展示，不自动拼接到周反馈。
 

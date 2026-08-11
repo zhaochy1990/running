@@ -132,6 +132,7 @@ def build_prompt(
     *, user: str, week_folder: str,
     user_dir: Path, recent_weeks: int = 4,
     recent_feedback: list[tuple[str, str]] | None = None,
+    include_legacy_feedback: bool = False,
 ) -> str:
     """Assemble the prompt body (excluding the sentinel instructions
     which `omc ask` doesn't need to see if the agent prompt already
@@ -168,6 +169,12 @@ def build_prompt(
                 parts.append(f"## Recent week {folder.name} — plan.md")
                 parts.append(plan_md.read_text(encoding="utf-8"))
                 parts.append("")
+            if include_legacy_feedback:
+                feedback_md = folder / "feedback.md"
+                if feedback_md.exists():
+                    parts.append(f"## Recent week {folder.name} — legacy feedback.md")
+                    parts.append(feedback_md.read_text(encoding="utf-8"))
+                    parts.append("")
     for folder, feedback in recent_feedback or []:
         if feedback:
             parts.append(f"## Recent week {folder} — canonical weekly feedback")
@@ -377,6 +384,11 @@ def _prod_url(option_url: str | None) -> str:
     return url
 
 
+def _weekly_feedback_cutover_complete() -> bool:
+    import os
+    return os.environ.get("STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE", "").strip().lower() == "true"
+
+
 def fetch_recent_weekly_feedback(
     *, prod_url: str, profile: str, exclude_folder: str, limit: int = 4,
 ) -> list[tuple[str, str]]:
@@ -439,8 +451,11 @@ def generate_variants(
 ) -> None:
     """Fan out to N models via `omc ask`, parse output, upload each variant."""
     profile = _profile_or_fail(ctx)
-    # Dry-run suppresses uploads, not canonical context reads.
-    url = _prod_url(prod_url)
+    cutover_complete = _weekly_feedback_cutover_complete()
+    # Before manual rollout, preserve the existing offline dry-run and legacy
+    # authoring source. After the completion marker, canonical API reads are
+    # mandatory even for dry-run, while only uploads remain suppressed.
+    url = _prod_url(prod_url) if (not dry_run or cutover_complete) else None
 
     from stride_core.db import USER_DATA_DIR
     user_dir = Path(USER_DATA_DIR) / profile
@@ -449,12 +464,13 @@ def generate_variants(
 
     recent_feedback = fetch_recent_weekly_feedback(
         prod_url=url, profile=profile, exclude_folder=week_folder,
-    )
+    ) if cutover_complete and url else []
     prompt = build_prompt(
         user=profile,
         week_folder=week_folder,
         user_dir=user_dir,
         recent_feedback=recent_feedback,
+        include_legacy_feedback=not cutover_complete,
     )
     prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8]
     model_ids = [m.strip() for m in models.split(",") if m.strip()]
