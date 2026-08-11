@@ -6,15 +6,18 @@ import {
   MasterPlanGraphRequest,
 } from "./contracts.js";
 import { MasterPlanSchema } from "./schemas.js";
+import type { ContextSnapshot, MasterPlanContextProvider } from "./context.js";
 
 interface SkeletonModel {
   invoke(input: {
     request: MasterPlanGraphRequest;
     context: MasterPlanGraphContext;
+    snapshot: ContextSnapshot;
   }): Promise<unknown>;
 }
 
 interface MasterPlanGraphDependencies {
+  contextProvider: MasterPlanContextProvider;
   skeletonModel: SkeletonModel;
 }
 
@@ -55,7 +58,13 @@ export function createMasterPlanGraph(dependencies: MasterPlanGraphDependencies)
       };
     }
 
-    const plan = MasterPlanSchema.parse(await dependencies.skeletonModel.invoke({ request, context }));
+    let snapshot: ContextSnapshot;
+    try {
+      snapshot = await dependencies.contextProvider.loadSnapshot(context.userId, request.requested_as_of);
+    } catch {
+      return { outcome: MasterPlanGraphOutcome.parse({ decision: "infrastructure_failure", request_id: request.request_id, generation_id: context.generationId, code: "context_snapshot_unavailable", retryable: true }) };
+    }
+    const plan = MasterPlanSchema.parse(await dependencies.skeletonModel.invoke({ request, context, snapshot }));
     const primaryGoal = request.goals.find((goal) => goal.priority === "A") ?? request.goals[0]!;
     if (
       plan.goal.race_name !== primaryGoal.race_name

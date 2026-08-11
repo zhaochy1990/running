@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   createMasterPlanGraph,
+  FrozenMasterPlanContextProvider,
   MasterPlanGraphOutcome,
   MasterPlanGraphRequest,
 } from "../graph/master_plan/index.js";
@@ -114,6 +115,10 @@ const stubPlan = {
 
 const generationId = "local-kernel-seam";
 const graph = createMasterPlanGraph({
+  contextProvider: new FrozenMasterPlanContextProvider({
+    schema_version: 1, user: { id: "local-testing-athlete", profile: { display_name: null, dob: null, sex: null, height_cm: null, weight_kg: null, running_age_range: null } }, injuries: [], personal_bests: [], running_calibration: null, race_history: [],
+    macro_history: { start_date: "2024-08-10", end_date: "2026-08-10", months: [], peak_weekly_distance_km: null, longest_run_km: null, gap_periods: [], consistency_pct: null }, recent_history: { start_date: "2026-04-20", end_date: "2026-08-10", weeks: [] }, fitness_state: { as_of_date: "2026-08-10", ctl: null, atl: null, form: null }, body_composition: { weight_kg: null, body_fat_pct: null, skeletal_muscle_kg: null }, active_plan: null, current_phase: null, continuity: { active_plan_continuation: false, last_activity_date: null, days_since_last_run: null }, coverage: [], source_manifest: [], as_of: "2026-08-10T00:00:00Z",
+  }),
   skeletonModel: { async invoke() { return stubPlan; } },
 });
 const result = await graph.invoke(

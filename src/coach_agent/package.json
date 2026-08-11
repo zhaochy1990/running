@@ -11,6 +11,7 @@
     "test:master-plan": "npm run build && node --test dist/graph/master_plan/*.test.js",
     "test": "npm run build && node --test dist/tools/*.test.js dist/agents/*.test.js dist/graph/master_plan/*.test.js",
     "master-plan:local": "npm run build && node dist/runners/masterPlan.js",
+    "test-master-plan:runner": "npm run build && node dist/test_master_plan.js",
     "dev": "npm run build && node dist/test.js"
   },
   "keywords": [],

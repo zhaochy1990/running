@@ -39,6 +39,7 @@ export async function createPersistence(): Promise<Persistence> {
 export { MySqlSaver } from "./checkpointer.js";
 export { MySqlStore } from "./store.js";
 export { StrideDataStore } from "./dataStore.js";
+export { MySqlMasterPlanContextProvider } from "./masterPlanContextProvider.js";
 export type {
   Activity,
   DailyTrainingLoad,
@@ -49,5 +50,8 @@ export type {
   RaceEffort,
   RunningCalibration,
   WeeklyPlanDocument,
+  UserProfile,
+  DailyRecovery,
+  ActiveMasterPlanMetadata,
 } from "./dataStore.js";
 export { createStridePool } from "./mysql.js";

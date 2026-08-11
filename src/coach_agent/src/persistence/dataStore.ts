@@ -150,6 +150,10 @@ export interface PaceZone {
   confidence: string;
 }
 
+export interface UserProfile { userId: string; displayName: string | null; dob: string | null; sex: string | null; heightCm: number | null; weightKg: number | null; runningAgeRange: string | null }
+export interface DailyRecovery { date: string; rhr: number | null; hrv: number | null }
+export interface ActiveMasterPlanMetadata { planId: string; revision: number; status: string; content: MasterPlanDocument }
+
 /** Active structured master-plan document stored in `master_plan.content`. */
 export type MasterPlanDocument = Record<string, unknown>;
 
@@ -182,6 +186,24 @@ export class StrideDataStore {
    */
   static create(config: MySqlConfig): StrideDataStore {
     return new StrideDataStore(createStridePool(config), { ownsPool: true });
+  }
+
+  async getUserProfile(userId: string): Promise<UserProfile | null> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(`SELECT user_id, display_name, dob, sex, height_cm, weight_kg, running_age_range FROM user_profile WHERE user_id = ? LIMIT 1`, [userId]);
+    const row = rows[0];
+    return row ? { userId: row.user_id as string, displayName: (row.display_name ?? null) as string | null, dob: (row.dob ?? null) as string | null, sex: (row.sex ?? null) as string | null, heightCm: (row.height_cm ?? null) as number | null, weightKg: (row.weight_kg ?? null) as number | null, runningAgeRange: (row.running_age_range ?? null) as string | null } : null;
+  }
+
+  async getDailyRecoveryByDateRange(userId: string, startDay: string, endDay: string): Promise<DailyRecovery[]> {
+    assertDay(startDay); assertDay(endDay);
+    const [rows] = await this.pool.query<RowDataPacket[]>(`SELECT h.date, h.rhr, MAX(v.last_night_avg) AS hrv FROM daily_health h LEFT JOIN daily_hrv v ON v.user_id = h.user_id AND REPLACE(v.date, '-', '') = REPLACE(h.date, '-', '') WHERE h.user_id = ? AND REPLACE(h.date, '-', '') BETWEEN REPLACE(?, '-', '') AND REPLACE(?, '-', '') GROUP BY h.date, h.rhr ORDER BY h.date ASC`, [userId, startDay, endDay]);
+    return rows.map((row) => ({ date: normalizeDay(row.date as string), rhr: (row.rhr ?? null) as number | null, hrv: (row.hrv ?? null) as number | null }));
+  }
+
+  async getActiveMasterPlanMetadata(userId: string): Promise<ActiveMasterPlanMetadata | null> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(`SELECT plan_id, revision, status, content FROM master_plan WHERE user_id = ? AND content_version = 2 AND status = 'active' LIMIT 1`, [userId]);
+    const row = rows[0];
+    return row ? { planId: row.plan_id as string, revision: row.revision as number, status: row.status as string, content: parsePlanContent(row.content, "master_plan") } : null;
   }
 
   /**
@@ -355,6 +377,8 @@ export class StrideDataStore {
     }
   }
 }
+
+function normalizeDay(day: string): string { return day.length === 8 ? `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}` : day; }
 
 function parsePlanContent(content: unknown, table: string): Record<string, unknown> {
   let parsed: unknown;
