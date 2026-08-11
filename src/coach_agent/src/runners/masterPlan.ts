@@ -6,7 +6,7 @@ import {
   MasterPlanGraphOutcome,
   MasterPlanGraphRequest,
 } from "../graph/master_plan/index.js";
-import { createAssessmentSnapshot, createTestAthleteAssessment, createTestGoalAssessment } from "../graph/master_plan/testFixtures.js";
+import { createAssessmentSnapshot, createTestAthleteAssessment, createTestGoalAssessment, createTestJudgments, createTestStrategyCandidate } from "../graph/master_plan/testFixtures.js";
 
 const request = MasterPlanGraphRequest.parse({
   request_id: "local-new-season",
@@ -118,6 +118,8 @@ const generationId = "local-kernel-seam";
 const graph = createMasterPlanGraph({
   assessmentModel: { async invoke() { return createTestAthleteAssessment(); } },
   goalAssessmentModel: { async invoke() { return createTestGoalAssessment(); } },
+  strategyModel: { async invoke({ archetype }) { return createTestStrategyCandidate(archetype); } },
+  judgmentModel: { async invoke({ judge, candidate }) { return createTestJudgments(candidate.candidate_id).find((item) => item.judge === judge)!; } },
   contextProvider: new FrozenMasterPlanContextProvider(createAssessmentSnapshot()),
   skeletonModel: { async invoke() { return stubPlan; } },
 });

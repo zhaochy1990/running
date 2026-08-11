@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { createMasterPlanGraph, MasterPlanGraphRequest, AthleteAssessmentSchema, GoalAssessmentSchema, ModelContractError, type AssessmentFacts, type AthleteAssessment, type ContextSnapshot, type GoalAssessment } from "./graph/master_plan/index.js";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createMasterPlanGraph, MasterPlanGraphRequest, AthleteAssessmentSchema, GoalAssessmentSchema, MasterPlanSchema, ModelContractError, StrategyCandidateSchema, StrategyJudgmentSchema, authoritativeGoalLevel, authoritativeReadiness, canonicalizeAssessmentSummary, validateAssessmentReferences, validateAthleteAssessmentRanges, validateGoalAssessmentTargets, type AssessmentFacts, type AthleteAssessment, type ContextSnapshot, type GoalAssessment } from "./graph/master_plan/index.js";
 import { MySqlMasterPlanContextProvider, StrideDataStore } from "./persistence/index.js";
 import { buildResponsesModel } from "./agents/common.js";
 
@@ -19,6 +20,8 @@ if (PROFILE === "prod") {
 const { getAgentConfig, loadConfig, readStrideMySqlConfig } = await import("./config/config.js");
 const config = loadConfig();
 const modelConfig = getAgentConfig(config, "master_plan");
+const reviewerConfig = getAgentConfig(config, "reviewer");
+const doctrine = await readFile(resolve(dirname(fileURLToPath(import.meta.url)), "graph/master_plan/doctrine/planning.md"), "utf8");
 const store = StrideDataStore.create(readStrideMySqlConfig(config));
 try {
   const provider = new MySqlMasterPlanContextProvider(store);
@@ -26,6 +29,10 @@ try {
   let capturedFacts: AssessmentFacts | undefined;
   let capturedAthleteAssessment: AthleteAssessment | undefined;
   let capturedGoalAssessment: GoalAssessment | undefined;
+  const capturedStrategies: unknown[] = [];
+  const capturedJudgments: unknown[] = [];
+  let capturedSelectedStrategy: unknown;
+  let capturedPlanBeforeValidation: unknown;
   const request = MasterPlanGraphRequest.parse({ request_id: `snapshot-${Date.now()}`, requested_mode: "new_season", requested_modifiers: [], goals: [{ race_name: "西安马拉松", location: "西安", distance: "FM", race_date: "2026-10-18", target_time: "2:50:00", finish_only: false, priority: "A" }], availability: { weekly_run_days_max: 6, available_training_windows: [], unavailable_days: ["sunday"], max_session_duration_min: 180, allows_double_sessions: false, preferred_long_run_day: "saturday", strength_sessions_per_week: 2, strength_available_days: ["monday", "thursday"] }, injury_declarations: [], environment_constraints: [], travel_constraints: [], preferences: [], prohibited_arrangements: [], active_plan_action: "none", user_confirmations: { intake_complete: true, goals_confirmed: true, availability_confirmed: true, injury_history_confirmed: true, constraints_confirmed: true }, requested_as_of: AS_OF });
   const graph = createMasterPlanGraph({
     contextProvider: { async loadSnapshot(userId, asOf) { capturedSnapshot = await provider.loadSnapshot(userId, asOf); return capturedSnapshot; } },
@@ -33,11 +40,10 @@ try {
       async invoke(input) {
         capturedFacts = input.facts;
         try {
-          const structured = buildResponsesModel(modelConfig).withStructuredOutput(AthleteAssessmentSchema, { name: "submit_athlete_assessment", method: "functionCalling", strict: true });
-          capturedAthleteAssessment = await structured.invoke([
+          capturedAthleteAssessment = await invokeStructured(modelConfig, AthleteAssessmentSchema, "submit_athlete_assessment", [
             ["system", "You are the athlete-readiness assessor. Submit only the forced function schema. Treat AssessmentFacts as immutable truth. Each material_conclusion uses claim + explanation + fact_ids. Allowed claims: volume_baseline_established, long_run_tolerance_established, quality_tolerance_established, availability_requires_adjustment, load_state_supportive, coverage_sufficient, goal_requires_improvement, goal_runway_limited, goal_supported_by_history. Each gap uses description + fact_ids. Do not put numerical values in explanation; cite fact_ids instead. Assess safe feasible ranges and gaps; do not prescribe a season strategy."],
             ["user", JSON.stringify({ task: "Assess athlete readiness for the confirmed request", request: input.request, assessment_facts: input.facts, snapshot: input.snapshot })],
-          ]);
+          ], (assessment) => { const canonical = canonicalizeAssessmentSummary(assessment); validateAssessmentReferences(canonical, input.facts); validateAthleteAssessmentRanges(canonical, input.facts, input.request); if (canonical.readiness !== authoritativeReadiness(input.facts)) throw new Error("readiness conflict"); return canonical; });
         } catch (error) {
           console.error(`athlete assessment call failed: ${error instanceof Error ? `${error.name}: ${error.message}` : "unknown error"}`);
           if (error instanceof Error && (error.name === "ZodError" || /structured|schema|parse/i.test(error.message))) throw new ModelContractError(error.message);
@@ -49,12 +55,11 @@ try {
     goalAssessmentModel: {
       async invoke(input) {
         capturedFacts = input.facts;
-        const structured = buildResponsesModel(modelConfig).withStructuredOutput(GoalAssessmentSchema, { name: "submit_goal_assessment", method: "functionCalling", strict: true });
         try {
-          capturedGoalAssessment = await structured.invoke([
-            ["system", "You are the race-goal feasibility assessor. Submit only the forced function schema. Treat AssessmentFacts as immutable truth. Each material_conclusion uses an allowed claim + explanation + fact_ids; every conflict uses description + fact_ids. A.target is {kind:'time',time_seconds:confirmed target seconds,label:confirmed time}; B.target is a strictly slower time or PB; C.target is a still slower time, PB, or finish fallback. Every gate condition cites fact_ids. Do not prescribe training. Use multi_cycle_required only for the deterministic extreme-gap case; otherwise multi_cycle_path must be empty."],
+          capturedGoalAssessment = await invokeStructured(modelConfig, GoalAssessmentSchema, "submit_goal_assessment", [
+            ["system", "You are the race-goal feasibility assessor. Submit only the forced function schema. Treat AssessmentFacts as immutable truth. Each material_conclusion uses an allowed claim + explanation + fact_ids; every conflict uses description + fact_ids. For this timed goal: A.target={kind:'time',time_seconds:goal.a.target_seconds,label:confirmed H:MM:SS}; B.target must be either a strictly slower time or {kind:'pb',time_seconds:goal.a.matching_pb_seconds,label containing PB}; C.target should be {kind:'finish',time_seconds:null,label containing Finish or 完赛}, or a strictly slower time. Every gate condition cites fact_ids. Do not prescribe training. Use multi_cycle_required only for the deterministic extreme-gap case; otherwise multi_cycle_path must be empty."],
             ["user", JSON.stringify({ task: "Assess the confirmed race goal", request: input.request, assessment_facts: input.facts, snapshot: input.snapshot })],
-          ]);
+          ], (assessment) => { const canonical = canonicalizeAssessmentSummary(assessment); validateAssessmentReferences(canonical, input.facts); validateGoalAssessmentTargets(canonical, input.request, input.facts); if (canonical.level !== authoritativeGoalLevel(input.facts) || (canonical.level !== "multi_cycle_required" && canonical.multi_cycle_path.length)) throw new Error("goal classification conflict"); return canonical; });
         } catch (error) {
           if (error instanceof Error && (error.name === "ZodError" || /structured|schema|parse/i.test(error.message))) throw new ModelContractError(error.message);
           throw error;
@@ -62,7 +67,9 @@ try {
         return capturedGoalAssessment;
       },
     },
-    skeletonModel: { async invoke({ request: r }) { const goal = r.goals.find((g) => g.priority === "A")!; return { status: "draft", goal: { race_name: goal.race_name, distance: goal.distance, race_date: goal.race_date, target_time: goal.target_time!, timezone: "Asia/Shanghai", location: goal.location }, start_date: "2026-10-12", end_date: goal.race_date, total_weeks: 1, phases: [{ name: "赛前减量期", start_date: "2026-10-12", end_date: goal.race_date, focus: "Issue #343 runner seam", weekly_distance_km_low: 42.195, weekly_distance_km_high: 42.195, key_session_types: ["race"], milestones: [{ type: "race", date: goal.race_date, target: goal.race_name, completed_actual: null }], key_workouts: "Goal race", monitoring_triggers: ["stub only"], coach_note: "inactive stub", strength: { sessions_per_week: 0, focus: "none", timing: "none" }, recovery: { focus: "recovery", sleep_target_hours: "7-9", adjustment_trigger: "pain" }, is_completed: false, summary: null }], weeks: [{ week_index: 1, week_start: "2026-10-12", phase_name: "赛前减量期", target_weekly_km_low: 42.195, target_weekly_km_high: 42.195, key_sessions: [{ type: "race", distance_km: 42.195, duration_min: 170, intensity: "goal race", purpose: "stub" }], is_recovery_week: false }], training_principles: ["Evaluation-only inactive stub"], generated_by: "coach_agent", version: 1, created_at: AS_OF, updated_at: AS_OF }; } },
+    strategyModel: { async invoke(input) { const value = await invokeStructured(modelConfig, StrategyCandidateSchema, `submit_${input.archetype}_strategy`, [["system", `Generate exactly one macro strategy for the archetype supplied in the user message. Candidate ID must match the schema. Strategies differ materially but ALL must stay inside AthleteAssessment safe_training_ranges: phase weekly high never exceeds assessed weekly high; planned longest run never exceeds assessed long_run high; quality frequency never exceeds assessed quality high; load-week growth never exceeds 10% across recovery; phase weeks must fit race runway. Aggressive means using the upper safe boundary with stricter gates, never exceeding it. Fill weekly_highs_km, max_long_run_km, max_quality_sessions_per_week, and race_week_index so constraints are machine-checkable. Set hard_constraints_satisfied=false and list violations if any bound cannot be met. Use only supplied fact_ids as evidence. Do not generate weekly sessions yet.\n\n${doctrine}`], ["user", JSON.stringify(input)]]); capturedStrategies.push(value); return value; } },
+    judgmentModel: { async invoke(input) { const value = await invokeStructured(reviewerConfig, StrategyJudgmentSchema, `submit_${input.judge}_judgment`, [["system", `Evaluate the judge role supplied in the user message against immutable facts, assessments, confirmed availability, and doctrine. Set veto=true only for a concrete confirmed hard-constraint or safety violation; low score or an ordinary tradeoff is not a veto. Use candidate_id exactly and cite only existing fact_ids.\n\n${doctrine}`], ["user", JSON.stringify(input)]]); capturedJudgments.push(value); return value; } },
+    skeletonModel: { async invoke(input) { capturedSelectedStrategy = input.selectedStrategy; capturedPlanBeforeValidation = await invokeStructured(modelConfig, MasterPlanSchema, "submit_master_plan_skeleton", [["system", `Generate the complete strategic Master Plan JSON in Chinese from the selected strategy. Cover every Monday-Sunday week from the current planning week through race day plus two recovery weeks. Use 1-3 strategic key sessions only; no ordinary easy/recovery/filler runs. Recovery weeks have at most one key session; race week contains only race. Respect max session duration and confirmed goal. MP/HMP work embedded in a long run stays one long_run. Every week must fall inside its named phase date range and weekly volume range. For every index before and including race week, copy selectedStrategy.candidate.weekly_highs_km exactly into weeks[index].target_weekly_km_high; do not optimize or round it. The race session must be at selectedStrategy.candidate.race_week_index. Non-recovery/pre-race weeks stay within AthleteAssessment safe high; long runs do not exceed selectedStrategy.max_long_run_km; hard running stimuli do not exceed selectedStrategy.max_quality_sessions_per_week. status=draft, generated_by=coach_agent, version=1, UTC timestamps.\n\n${doctrine}`], ["user", JSON.stringify(input)]]); return capturedPlanBeforeValidation; } },
   });
   const generationId = `master-plan-${PROFILE}-${Date.now()}`;
   const result = await graph.invoke({ request }, { context: { userId: USER_ID, generationId } });
@@ -76,8 +83,34 @@ try {
   if (capturedFacts) await writeFile(resolve(outputDir, "assessment-facts.json"), `${JSON.stringify(capturedFacts, null, 2)}\n`, "utf8");
   if (capturedAthleteAssessment) await writeFile(resolve(outputDir, "athlete-assessment.json"), `${JSON.stringify(capturedAthleteAssessment, null, 2)}\n`, "utf8");
   if (capturedGoalAssessment) await writeFile(resolve(outputDir, "goal-assessment.json"), `${JSON.stringify(capturedGoalAssessment, null, 2)}\n`, "utf8");
+  if (result.outcome?.decision === "completed") {
+    await writeFile(resolve(outputDir, "strategy-candidates.json"), `${JSON.stringify(result.outcome.artifact.strategy_candidates, null, 2)}\n`, "utf8");
+    await writeFile(resolve(outputDir, "strategy-judgments.json"), `${JSON.stringify(result.outcome.artifact.judgments, null, 2)}\n`, "utf8");
+    await writeFile(resolve(outputDir, "selected-strategy.json"), `${JSON.stringify(result.outcome.artifact.selected_strategy, null, 2)}\n`, "utf8");
+    await writeFile(resolve(outputDir, "final-draft.json"), `${JSON.stringify(result.outcome.artifact.plan, null, 2)}\n`, "utf8");
+  }
   await writeFile(resolve(outputDir, "outcome.json"), `${JSON.stringify(result.outcome, null, 2)}\n`, "utf8");
+  await writeFile(resolve(outputDir, "captured-strategies.json"), `${JSON.stringify(capturedStrategies, null, 2)}\n`, "utf8");
+  await writeFile(resolve(outputDir, "captured-judgments.json"), `${JSON.stringify(capturedJudgments, null, 2)}\n`, "utf8");
+  if (capturedSelectedStrategy) await writeFile(resolve(outputDir, "captured-selected-strategy.json"), `${JSON.stringify(capturedSelectedStrategy, null, 2)}\n`, "utf8");
+  if (capturedPlanBeforeValidation) await writeFile(resolve(outputDir, "captured-plan-before-strategy-validation.json"), `${JSON.stringify(capturedPlanBeforeValidation, null, 2)}\n`, "utf8");
+  if (result.outcome?.decision !== "completed") throw new Error(`master-plan planning ended with ${result.outcome?.decision ?? "missing_outcome"}`);
   console.log(`Master-plan evaluation artifacts: ${outputDir}; model=${modelConfig.model}`);
 } finally { await store.close(); }
 
 function redactedManifest(snapshot: ContextSnapshot) { return { schema_version: snapshot.schema_version, as_of: snapshot.as_of, user: { id: "[redacted]" }, coverage: snapshot.coverage, source_manifest: snapshot.source_manifest, aggregate_counts: { months: snapshot.macro_history.months.length, recent_weeks: snapshot.recent_history.weeks.length, races: snapshot.race_history.length, personal_bests: snapshot.personal_bests.length, injuries: snapshot.injuries.length }, body_composition_fields_available: { weight_kg: snapshot.body_composition.weight_kg !== null, body_fat_pct: snapshot.body_composition.body_fat_pct !== null, skeletal_muscle_kg: snapshot.body_composition.skeletal_muscle_kg !== null } }; }
+
+async function invokeStructured<Output>(model: Parameters<typeof buildResponsesModel>[0], schema: { parse(value: unknown): Output }, name: string, messages: Array<["system" | "user", string]>, validate: (value: Output) => Output = (value) => value): Promise<Output> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const structured = buildResponsesModel(model).withStructuredOutput(schema as never, { name, method: "functionCalling", strict: true });
+      const retryMessage: ["user", string][] = attempt === 1 ? [] : [["user", "The previous submission violated the required schema or deterministic contract. Submit a corrected value only; do not relax or reinterpret any fact."]];
+      return validate(schema.parse(await structured.invoke([...messages, ...retryMessage])));
+    } catch (error) { lastError = error; if (!(error instanceof Error) || (!/Zod|schema|contract|conflict|fact|target|range|structured|parse/i.test(`${error.name} ${error.message}`))) throw error; }
+  }
+  const error = lastError;
+  const issues = error instanceof Error && "issues" in error && Array.isArray(error.issues) ? error.issues.map((issue: { path?: unknown[]; message?: string }) => `${issue.path?.join(".")}: ${issue.message}`).join("; ") : error instanceof Error ? error.message : "unknown model contract error";
+  console.error(`${name} contract failed after retries: ${issues}`);
+  throw new ModelContractError(issues);
+}

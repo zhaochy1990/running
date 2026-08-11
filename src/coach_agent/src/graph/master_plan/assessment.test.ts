@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AthleteAssessmentSchema, ContextSnapshotSchema, createMasterPlanGraph, MasterPlanGraphRequest, deriveAssessmentFacts, type MasterPlanGraphContext } from "./index.js";
-import { createAssessmentSnapshot, createTestMasterPlan, createTestRequest } from "./testFixtures.js";
+import { createAssessmentSnapshot, createTestJudgments, createTestMasterPlan, createTestRequest, createTestStrategyCandidate } from "./testFixtures.js";
 
 const context: MasterPlanGraphContext = { userId: "athlete-344", generationId: "generation-344" };
 
@@ -50,6 +50,8 @@ function dependencies(overrides: Record<string, unknown> = {}) {
     contextProvider: { async loadSnapshot() { return createAssessmentSnapshot(); } },
     assessmentModel: { async invoke() { return validAthleteAssessment(); } },
     goalAssessmentModel: { async invoke() { return validGoalAssessment(); } },
+    strategyModel: { async invoke({ archetype }: { archetype: "conservative" | "balanced" | "aggressive_gated" }) { return createTestStrategyCandidate(archetype); } },
+    judgmentModel: { async invoke({ judge, candidate }: { judge: "performance_path" | "safety_load" | "constraint_feasibility"; candidate: ReturnType<typeof createTestStrategyCandidate> }) { return createTestJudgments(candidate.candidate_id).find((item) => item.judge === judge)!; } },
     skeletonModel: { async invoke() { return createTestMasterPlan(); } },
     ...overrides,
   };

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MasterPlanGraphOutcome, MasterPlanGraphRequest } from "./contracts.js";
-import { createAssessmentSnapshot, createTestAthleteAssessment, createTestGoalAssessment, createTestMasterPlan, createTestRequest } from "./testFixtures.js";
+import { createAssessmentSnapshot, createTestAthleteAssessment, createTestGoalAssessment, createTestJudgments, createTestMasterPlan, createTestRequest, createTestStrategyCandidate } from "./testFixtures.js";
 import { deriveAssessmentFacts } from "./assessment.js";
 
 test("request accepts explicit empty constraints in a complete confirmed intake", () => {
@@ -41,19 +41,7 @@ test("request rejects malformed race target times instead of treating them as fi
 });
 
 test("outcome rejects decision and artifact mismatches", () => {
-  const completed = {
-    decision: "completed",
-    request_id: "request-342",
-    generation_id: "generation-342",
-    artifact: {
-      type: "master_plan_draft",
-      activation_status: "inactive",
-      plan: createTestMasterPlan(),
-      facts: deriveAssessmentFacts(createAssessmentSnapshot(), createTestRequest()),
-      athlete_assessment: createTestAthleteAssessment(),
-      goal_assessment: createTestGoalAssessment(),
-    },
-  };
+  const completed = completedOutcome();
   assert.equal(MasterPlanGraphOutcome.safeParse(completed).success, true);
   assert.equal(MasterPlanGraphOutcome.safeParse({ ...completed, artifact: undefined }).success, false);
 
@@ -64,4 +52,34 @@ test("outcome rejects decision and artifact mismatches", () => {
     prerequisites: ["medical clearance"],
   };
   assert.equal(MasterPlanGraphOutcome.safeParse(safetyWithDraft).success, false);
+});
+
+function completedOutcome() {
+  return {
+    decision: "completed",
+    request_id: "request-342",
+    generation_id: "generation-342",
+    artifact: {
+      type: "master_plan_draft",
+      activation_status: "inactive",
+      plan: createTestMasterPlan(),
+      facts: deriveAssessmentFacts(createAssessmentSnapshot(), createTestRequest()),
+      athlete_assessment: createTestAthleteAssessment(),
+      goal_assessment: createTestGoalAssessment(),
+      strategy_candidates: [createTestStrategyCandidate("conservative"), createTestStrategyCandidate("balanced")],
+      judgments: [...createTestJudgments("strategy-conservative-v1"), ...createTestJudgments("strategy-balanced-v1")],
+      selected_strategy: {
+        candidate: createTestStrategyCandidate("balanced"),
+        scores: { performance_path: 4, safety_load: 4, constraint_feasibility: 4, weighted_total: 4 },
+        weights: { performance_path: 0.45, safety_load: 0.35, constraint_feasibility: 0.2 },
+        rationale: "balanced wins", tradeoffs: ["moderate risk"],
+      },
+    },
+  };
+}
+
+test("completed outcome requires a complete candidate-judgment relationship", () => {
+  const outcome = completedOutcome();
+  outcome.artifact.judgments = outcome.artifact.judgments.filter((judgment) => !(judgment.candidate_id === outcome.artifact.strategy_candidates[0]!.candidate_id && judgment.judge === "safety_load"));
+  assert.equal(MasterPlanGraphOutcome.safeParse(outcome).success, false);
 });

@@ -42,6 +42,12 @@ test("embedded race-pace long runs cannot be duplicated as race-pace sessions", 
   assert.equal(MasterPlanSchema.safeParse(invalidPlan).success, false);
 });
 
+test("strategic skeleton rejects ordinary filler runs", () => {
+  const plan = createTestMasterPlan();
+  plan.weeks[0]!.key_sessions[0]!.purpose = "easy recovery filler run";
+  assert.equal(MasterPlanSchema.safeParse(plan).success, false);
+});
+
 test("the legacy schema import is the Kernel-owned schema", () => {
   assert.equal(LegacyMasterPlanSchema, MasterPlanSchema);
 });

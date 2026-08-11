@@ -1,20 +1,33 @@
 import assert from "node:assert/strict";
+import { access } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   ContextSnapshotSchema,
   createMasterPlanGraph,
   MasterPlanGraphOutcome,
   type MasterPlanGraphContext,
 } from "./index.js";
-import { createAssessmentSnapshot, createTestAthleteAssessment, createTestGoalAssessment, createTestMasterPlan, createTestRequest } from "./testFixtures.js";
+import { createAssessmentSnapshot, createTestAthleteAssessment, createTestGoalAssessment, createTestJudgments, createTestMasterPlan, createTestRequest, createTestStrategyCandidate } from "./testFixtures.js";
 
 const runtimeContext: MasterPlanGraphContext = {
   userId: "athlete-342",
   generationId: "generation-342",
 };
 
+test("planning doctrine is packaged beside the compiled Kernel", async () => {
+  await access(join(dirname(fileURLToPath(import.meta.url)), "doctrine", "planning.md"));
+});
+
 const snapshot = ContextSnapshotSchema.parse(createAssessmentSnapshot());
-const assessmentDependencies = { assessmentModel: { async invoke() { return createTestAthleteAssessment(); } }, goalAssessmentModel: { async invoke() { return createTestGoalAssessment(); } } };
+const strategies = ["conservative", "balanced", "aggressive_gated"] as const;
+const assessmentDependencies = {
+  assessmentModel: { async invoke() { return createTestAthleteAssessment(); } },
+  goalAssessmentModel: { async invoke() { return createTestGoalAssessment(); } },
+  strategyModel: { async invoke({ archetype }: { archetype: typeof strategies[number] }) { return createTestStrategyCandidate(archetype); } },
+  judgmentModel: { async invoke({ judge, candidate }: { judge: "performance_path" | "safety_load" | "constraint_feasibility"; candidate: ReturnType<typeof createTestStrategyCandidate> }) { return createTestJudgments(candidate.candidate_id).find((item) => item.judge === judge)!; } },
+};
 
 test("loads one immutable snapshot at the graph seam and passes it to the skeleton", async () => {
   const loads: unknown[] = [];
@@ -29,7 +42,7 @@ test("loads one immutable snapshot at the graph seam and passes it to the skelet
   await graph.invoke({ request: { ...createTestRequest(), requested_as_of: requestedAsOf } }, { context: runtimeContext });
 
   assert.deepEqual(loads, [[runtimeContext.userId, requestedAsOf]]);
-  assert.equal((inputs[0] as { snapshot: unknown }).snapshot, snapshot);
+  assert.deepEqual((inputs[0] as { snapshot: unknown }).snapshot, snapshot);
   assert.equal(Object.isFrozen(snapshot), true);
 });
 
@@ -119,6 +132,40 @@ test("compiled graph reports a candidate that changes the confirmed primary goal
     skeletonModel: { async invoke() { return plan; } },
   });
 
+  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context: runtimeContext });
+  assert.equal(outcome.decision, "failed_quality_gate");
+});
+
+test("fans out independent strategies and judges, then passes only selected strategy to skeleton", async () => {
+  const strategyInputs: unknown[] = [];
+  const judgmentInputs: unknown[] = [];
+  const skeletonInputs: unknown[] = [];
+  const graph = createMasterPlanGraph({
+    ...assessmentDependencies,
+    contextProvider: { async loadSnapshot() { return snapshot; } },
+    strategyModel: { async invoke(input) { strategyInputs.push(input); await new Promise((resolve) => setTimeout(resolve, input.archetype === "conservative" ? 20 : 1)); return createTestStrategyCandidate(input.archetype); } },
+    judgmentModel: { async invoke(input) { judgmentInputs.push(input); return createTestJudgments(input.candidate.candidate_id).find((item) => item.judge === input.judge)!; } },
+    skeletonModel: { async invoke(input) { skeletonInputs.push(input); return createTestMasterPlan(); } },
+  });
+  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context: runtimeContext });
+  assert.equal(outcome.decision, "completed");
+  if (outcome.decision !== "completed") assert.fail("expected completed");
+  assert.deepEqual(outcome.artifact.strategy_candidates.map((candidate) => candidate.candidate_id), ["strategy-aggressive-gated-v1", "strategy-balanced-v1", "strategy-conservative-v1"]);
+  assert.equal(strategyInputs.length, 3);
+  assert.equal(strategyInputs.every((input) => !("strategy_candidates" in (input as object))), true);
+  assert.equal(judgmentInputs.length, 9);
+  const skeleton = skeletonInputs[0] as Record<string, unknown>;
+  assert.deepEqual(skeleton.selectedStrategy, outcome.artifact.selected_strategy);
+  assert.equal("strategyCandidates" in skeleton, false);
+});
+
+test("all-vetoed strategies return a typed quality failure", async () => {
+  const graph = createMasterPlanGraph({
+    ...assessmentDependencies,
+    contextProvider: { async loadSnapshot() { return snapshot; } },
+    skeletonModel: { async invoke() { return createTestMasterPlan(); } },
+    judgmentModel: { async invoke({ judge, candidate }) { return { ...createTestJudgments(candidate.candidate_id).find((item) => item.judge === judge)!, veto: true }; } },
+  });
   const { outcome } = await graph.invoke({ request: createTestRequest() }, { context: runtimeContext });
   assert.equal(outcome.decision, "failed_quality_gate");
 });

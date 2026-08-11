@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { MasterPlanSchema } from "./schemas.js";
+import { MasterPlanSchema, SelectedStrategySchema, StrategyCandidateSchema, StrategyJudgmentSchema } from "./schemas.js";
 import { AssessmentFactsSchema, AthleteAssessmentSchema, GoalAssessmentSchema } from "./assessment.js";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -129,8 +129,21 @@ const CompletedOutcomeSchema = OutcomeIdentitySchema.extend({
     facts: AssessmentFactsSchema,
     athlete_assessment: AthleteAssessmentSchema,
     goal_assessment: GoalAssessmentSchema,
+    strategy_candidates: z.array(StrategyCandidateSchema).min(2).max(3),
+    judgments: z.array(StrategyJudgmentSchema).min(6).max(9),
+    selected_strategy: SelectedStrategySchema,
   }).strict(),
-}).strict();
+}).strict().superRefine((outcome, ctx) => {
+  const ids = outcome.artifact.strategy_candidates.map((candidate) => candidate.candidate_id);
+  if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", path: ["artifact", "strategy_candidates"], message: "candidate IDs must be unique" });
+  const judges = ["performance_path", "safety_load", "constraint_feasibility"];
+  for (const id of ids) {
+    const reports = outcome.artifact.judgments.filter((judgment) => judgment.candidate_id === id);
+    if (reports.length !== 3 || new Set(reports.map((report) => report.judge)).size !== judges.length) ctx.addIssue({ code: "custom", path: ["artifact", "judgments"], message: `candidate ${id} must have exactly three distinct judges` });
+  }
+  if (outcome.artifact.judgments.some((judgment) => !ids.includes(judgment.candidate_id))) ctx.addIssue({ code: "custom", path: ["artifact", "judgments"], message: "judgments must reference an emitted candidate" });
+  if (!ids.includes(outcome.artifact.selected_strategy.candidate.candidate_id)) ctx.addIssue({ code: "custom", path: ["artifact", "selected_strategy"], message: "selected strategy must be one of the emitted candidates" });
+});
 
 const ReviewCompletedOutcomeSchema = OutcomeIdentitySchema.extend({
   decision: z.literal("review_completed"),

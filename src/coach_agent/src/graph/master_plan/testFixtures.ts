@@ -57,8 +57,8 @@ export function createTestMasterPlan() {
       location: "西安",
     },
     start_date: "2026-08-10",
-    end_date: "2026-08-16",
-    total_weeks: 1,
+    end_date: "2026-08-23",
+    total_weeks: 2,
     phases: [{
       name: "基础期" as const,
       start_date: "2026-08-10",
@@ -75,6 +75,8 @@ export function createTestMasterPlan() {
       recovery: { focus: "睡眠和补给", sleep_target_hours: "7-9", adjustment_trigger: "疼痛或睡眠恶化" },
       is_completed: false,
       summary: null,
+    }, {
+      name: "赛前减量期" as const, start_date: "2026-08-17", end_date: "2026-08-23", focus: "目标比赛", weekly_distance_km_low: 42.195, weekly_distance_km_high: 50, key_session_types: ["race"], milestones: [{ type: "race" as const, date: "2026-08-23", target: "测试比赛", completed_actual: null }], key_workouts: "目标比赛", monitoring_triggers: ["异常时停止"], coach_note: "比赛周", strength: { sessions_per_week: 0, focus: "无", timing: "无" }, recovery: { focus: "恢复", sleep_target_hours: "7-9", adjustment_trigger: "疼痛" }, is_completed: false, summary: null,
     }],
     weeks: [{
       week_index: 1,
@@ -86,12 +88,12 @@ export function createTestMasterPlan() {
         type: "long_run" as const,
         distance_km: 24,
         duration_min: null,
-        intensity: "easy",
+        intensity: "Z2 endurance",
         purpose: "建立耐力",
       }],
       is_recovery_week: false,
-    }],
-    training_principles: ["循序渐进"],
+    }, { week_index: 2, week_start: "2026-08-17", phase_name: "赛前减量期" as const, target_weekly_km_low: 42.195, target_weekly_km_high: 50, key_sessions: [{ type: "race" as const, distance_km: 42.195, duration_min: 170, intensity: "目标比赛", purpose: "完成目标比赛" }], is_recovery_week: false }],
+    training_principles: ["循序渐进", "长跑练习碳水、液体与电解质补给"],
     generated_by: "coach_agent" as const,
     version: 1 as const,
     created_at: "2026-08-10T00:00:00Z",
@@ -142,4 +144,34 @@ export function createTestAthleteAssessment() {
 export function createTestGoalAssessment() {
   const conditions = (fact_id: string) => [{ description: "Evidence gate", fact_ids: [fact_id] }];
   return { schema_version: 1 as const, level: "aggressive_but_plausible" as const, summary: "Aggressive but plausible goal", material_conclusions: [{ claim: "goal_requires_improvement" as const, explanation: "Goal requires improvement", fact_ids: ["goal.a.improvement_pct"] }], abc_gates: { A: { target: { kind: "time" as const, time_seconds: 10200, label: "2:50:00" }, conditions: conditions("goal.a.improvement_pct") }, B: { target: { kind: "time" as const, time_seconds: 10380, label: "2:53:00" }, conditions: conditions("goal.a.matching_pb_seconds") }, C: { target: { kind: "finish" as const, time_seconds: null, label: "Safe completion" }, conditions: conditions("load.current_form") } }, conflicts: [], multi_cycle_path: [] };
+}
+
+export function createTestStrategyCandidate(archetype: "conservative" | "balanced" | "aggressive_gated" = "balanced") {
+  const loadHigh = archetype === "conservative" ? 70 : archetype === "balanced" ? 75 : 80;
+  const longRun = archetype === "conservative" ? 24 : archetype === "balanced" ? 27 : 30;
+  return {
+    schema_version: 1 as const,
+    candidate_id: `strategy-${archetype.replace("_", "-")}-v1`,
+    archetype,
+    phases: [
+      { name: "基础", weeks: 1, focus: "巩固容量", weekly_km_low: 60, weekly_km_high: loadHigh },
+      { name: "比赛", weeks: 1, focus: "目标比赛", weekly_km_low: 42.195, weekly_km_high: 50 },
+    ],
+    weekly_highs_km: [loadHigh, 50],
+    max_long_run_km: longRun,
+    max_quality_sessions_per_week: 2,
+    race_week_index: 2,
+    load_curve: `${archetype} load curve`, recovery_cadence: "3:1",
+    specific_progression: ["MP 8→12→16→20km"], milestones: ["半马检验A目标门槛"],
+    taper: "两周减量", strength: "每周两次下肢耐力", nutrition: "长跑补给演练",
+    risk_tradeoffs: [`${archetype}风险收益`], hard_constraints_satisfied: true,
+    hard_constraint_violations: [] as string[], evidence_fact_ids: ["volume.recent_weekly_km"],
+  };
+}
+
+export function createTestJudgments(candidateId: string, scores: [number, number, number] = [4, 4, 4]) {
+  return (["performance_path", "safety_load", "constraint_feasibility"] as const).map((judge, index) => ({
+    schema_version: 1 as const, judge, candidate_id: candidateId, score: scores[index]!, veto: false,
+    rationale: `${judge} rationale`, evidence_fact_ids: ["volume.recent_weekly_km"],
+  }));
 }

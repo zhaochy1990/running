@@ -126,13 +126,12 @@ export function validateGoalAssessmentTargets(assessment: GoalAssessment, reques
     return;
   }
   if (b.kind === "time" && (b.time_seconds === null || (confirmedSeconds !== null && b.time_seconds <= confirmedSeconds))) throw new Error("goal assessment B target must be slower than A");
-  if (b.kind === "pb" && b.time_seconds !== null) throw new Error("goal assessment PB target must not carry an arbitrary time");
-  if (b.kind === "pb" && (matchingPb === null || !/(?:PB|personal best|个人最好)/i.test(b.label))) throw new Error("goal assessment PB target requires matching PB evidence");
+  if (b.kind === "pb" && (matchingPb === null || b.time_seconds !== matchingPb || !/(?:PB|personal best|个人最好)/i.test(b.label))) throw new Error("goal assessment PB target requires exact matching PB evidence");
   if (b.kind !== "time" && b.kind !== "pb") throw new Error("goal assessment B target must be a conservative time or PB");
   const bFloor = b.kind === "time" ? b.time_seconds : matchingPb;
   if (c.kind === "time" && (c.time_seconds === null || (bFloor !== null && c.time_seconds <= bFloor) || (bFloor === null && confirmedSeconds !== null && c.time_seconds <= confirmedSeconds))) throw new Error("goal assessment C target must be slower than B");
-  if ((c.kind === "pb" || c.kind === "finish") && c.time_seconds !== null) throw new Error("goal assessment fallback target must not carry an arbitrary time");
-  if (c.kind === "pb" && (matchingPb === null || (bFloor !== null && matchingPb < bFloor) || !/(?:PB|personal best|个人最好)/i.test(c.label))) throw new Error("goal assessment PB fallback must be no faster than B and backed by matching PB");
+  if (c.kind === "finish" && c.time_seconds !== null) throw new Error("goal assessment finish target must not carry a time");
+  if (c.kind === "pb" && (matchingPb === null || c.time_seconds !== matchingPb || (bFloor !== null && matchingPb < bFloor) || !/(?:PB|personal best|个人最好)/i.test(c.label))) throw new Error("goal assessment PB fallback must be no faster than B and backed by exact matching PB");
   if (c.kind === "finish" && !/(?:finish|completion|完赛|安全)/i.test(c.label)) throw new Error("goal assessment finish fallback must identify safe completion");
   if (c.kind !== "time" && c.kind !== "pb" && c.kind !== "finish") throw new Error("goal assessment C target must be a fallback");
 }

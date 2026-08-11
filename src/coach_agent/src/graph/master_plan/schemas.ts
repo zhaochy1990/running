@@ -18,6 +18,68 @@ export const KeySessionTypeSchema = z.enum([
   "strength_key",
 ]);
 
+export const StrategyArchetypeSchema = z.enum(["conservative", "balanced", "aggressive_gated"]);
+
+const StrategyPhaseSchema = z.object({
+  name: z.string().min(1),
+  weeks: z.int().positive(),
+  focus: z.string().min(1),
+  weekly_km_low: z.number().nonnegative(),
+  weekly_km_high: z.number().nonnegative(),
+}).strict().refine((phase) => phase.weekly_km_low <= phase.weekly_km_high, "phase weekly low must not exceed high");
+
+export const StrategyCandidateSchema = z.object({
+  schema_version: z.literal(1),
+  candidate_id: z.string().regex(/^strategy-(?:conservative|balanced|aggressive-gated)-v1$/),
+  archetype: StrategyArchetypeSchema,
+  phases: z.array(StrategyPhaseSchema).min(2),
+  weekly_highs_km: z.array(z.number().nonnegative()).min(2),
+  max_long_run_km: z.number().nonnegative(),
+  max_quality_sessions_per_week: z.int().nonnegative(),
+  race_week_index: z.int().positive(),
+  load_curve: z.string().min(1),
+  recovery_cadence: z.string().min(1),
+  specific_progression: z.array(z.string().min(1)).min(1),
+  milestones: z.array(z.string().min(1)).min(1),
+  taper: z.string().min(1),
+  strength: z.string().min(1),
+  nutrition: z.string().min(1),
+  risk_tradeoffs: z.array(z.string().min(1)).min(1),
+  hard_constraints_satisfied: z.boolean(),
+  hard_constraint_violations: z.array(z.string().min(1)),
+  evidence_fact_ids: z.array(z.string().min(1)).min(1),
+}).strict().superRefine((candidate, ctx) => {
+  const expectedId = `strategy-${candidate.archetype.replace("_", "-")}-v1`;
+  if (candidate.candidate_id !== expectedId) ctx.addIssue({ code: "custom", path: ["candidate_id"], message: `must be ${expectedId}` });
+  if (candidate.hard_constraints_satisfied === (candidate.hard_constraint_violations.length > 0)) ctx.addIssue({ code: "custom", path: ["hard_constraint_violations"], message: "must agree with hard_constraints_satisfied" });
+});
+export type StrategyCandidate = z.infer<typeof StrategyCandidateSchema>;
+
+export const StrategyJudgmentSchema = z.object({
+  schema_version: z.literal(1),
+  judge: z.enum(["performance_path", "safety_load", "constraint_feasibility"]),
+  candidate_id: StrategyCandidateSchema.shape.candidate_id,
+  score: z.int().min(1).max(5),
+  veto: z.boolean(),
+  rationale: z.string().min(1),
+  evidence_fact_ids: z.array(z.string().min(1)).min(1),
+}).strict();
+export type StrategyJudgment = z.infer<typeof StrategyJudgmentSchema>;
+
+export const SelectedStrategySchema = z.object({
+  candidate: StrategyCandidateSchema,
+  scores: z.object({
+    performance_path: z.int().min(1).max(5),
+    safety_load: z.int().min(1).max(5),
+    constraint_feasibility: z.int().min(1).max(5),
+    weighted_total: z.number().min(1).max(5),
+  }).strict(),
+  weights: z.object({ performance_path: z.literal(0.45), safety_load: z.literal(0.35), constraint_feasibility: z.literal(0.2) }).strict(),
+  rationale: z.string().min(1),
+  tradeoffs: z.array(z.string().min(1)).min(1),
+}).strict();
+export type SelectedStrategy = z.infer<typeof SelectedStrategySchema>;
+
 const MilestoneSchema = z.object({
   type: z.enum(["race", "test_run", "long_run", "strength_test", "body_composition"]),
   date: z.string().regex(DAY),
@@ -27,14 +89,14 @@ const MilestoneSchema = z.object({
 
 const StrengthSchema = z.object({
   sessions_per_week: z.int().nonnegative(),
-  focus: z.string(),
-  timing: z.string(),
+  focus: z.string().min(1),
+  timing: z.string().min(1),
 });
 
 const RecoverySchema = z.object({
-  focus: z.string(),
-  sleep_target_hours: z.string(),
-  adjustment_trigger: z.string(),
+  focus: z.string().min(1),
+  sleep_target_hours: z.string().min(1),
+  adjustment_trigger: z.string().min(1),
 });
 
 const PhaseSchema = z.object({
@@ -76,6 +138,18 @@ const WeekSchema = z.object({
   key_sessions: z.array(KeySessionSchema),
   is_recovery_week: z.boolean(),
 }).superRefine((week, ctx) => {
+  if (week.key_sessions.length > (week.is_recovery_week ? 1 : 3)) {
+    ctx.addIssue({ code: "custom", path: ["key_sessions"], message: week.is_recovery_week ? "recovery weeks may contain at most one strategic key session" : "weeks may contain at most three strategic key sessions" });
+  }
+  const raceSessions = week.key_sessions.filter((session) => session.type === "race");
+  if (raceSessions.length > 0 && (raceSessions.length !== 1 || week.key_sessions.length !== 1)) {
+    ctx.addIssue({ code: "custom", path: ["key_sessions"], message: "race weeks may contain only the target race key session" });
+  }
+  for (const [index, session] of week.key_sessions.entries()) {
+    if (/(?:^|\b)(?:easy|recovery|filler|commute)(?:\b|$)|轻松跑|恢复跑|填充跑|通勤跑/i.test(`${session.intensity ?? ""} ${session.purpose ?? ""}`)) {
+      ctx.addIssue({ code: "custom", path: ["key_sessions", index], message: "ordinary easy/recovery/filler runs do not belong in the strategic skeleton" });
+    }
+  }
   const hasEmbeddedRacePaceLongRun = week.key_sessions.some((session) =>
     session.type === "long_run"
     && EMBEDDED_RACE_PACE.test(`${session.intensity ?? ""} ${session.purpose ?? ""}`)
