@@ -1334,10 +1334,23 @@ definitions:
         type: string
       date_to:
         type: string
+      feedback:
+        type: string
+      feedback_created_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      feedback_updated_at:
+        format: date-time
+        type: string
+        x-nullable: true
       plan:
         type: string
+        x-nullable: true
       structured:
-        $ref: '#/definitions/api.structuredWeekResponse'
+        allOf:
+        - $ref: '#/definitions/api.structuredWeekResponse'
+        x-nullable: true
       total_duration_fmt:
         type: string
       total_duration_s:
@@ -1918,6 +1931,10 @@ paths:
             $ref: '#/definitions/api.errorResponse'
         "403":
           description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
           schema:
             $ref: '#/definitions/api.errorResponse'
         "500":

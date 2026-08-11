@@ -1755,6 +1755,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/api.errorResponse"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -4164,11 +4170,30 @@ const docTemplate = `{
                 "date_to": {
                     "type": "string"
                 },
-                "plan": {
+                "feedback": {
                     "type": "string"
                 },
+                "feedback_created_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "feedback_updated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "plan": {
+                    "type": "string",
+                    "x-nullable": true
+                },
                 "structured": {
-                    "$ref": "#/definitions/api.structuredWeekResponse"
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/api.structuredWeekResponse"
+                        }
+                    ],
+                    "x-nullable": true
                 },
                 "total_duration_fmt": {
                     "type": "string"

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -58,4 +59,30 @@ func (s *Store) PutWeeklyFeedback(ctx context.Context, userID, weekStart, conten
 		return WeeklyFeedback{}, err
 	}
 	return row, nil
+}
+
+// GetWeeklyFeedback returns the unique feedback row for a user-week. A nil row
+// means it was never written; an existing row may legitimately have empty
+// normalized content.
+func (s *Store) GetWeeklyFeedback(ctx context.Context, userID, weekStart string) (*WeeklyFeedback, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	start, err := time.Parse("2006-01-02", weekStart)
+	if err != nil {
+		return nil, fmt.Errorf("storage: invalid week_start: %w", err)
+	}
+	if start.Weekday() != time.Monday {
+		return nil, fmt.Errorf("storage: week_start must be a Monday")
+	}
+	var row WeeklyFeedback
+	err = s.db.WithContext(ctx).First(&row, "user_id = ? AND week_start = ?", uid, weekStart).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
 }

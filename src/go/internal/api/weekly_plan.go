@@ -26,6 +26,7 @@ type WeeklyPlanStore interface {
 	ListWeekSummaries(ctx context.Context, userID, masterPlanID string) ([]storage.WeekSummary, error)
 	ListWeekActivities(ctx context.Context, userID, dateFrom, dateTo string) ([]storage.Activity, error)
 	GetActiveWeeklyPlan(ctx context.Context, userID, weekStart string) (*storage.WeeklyPlan, error)
+	GetWeeklyFeedback(ctx context.Context, userID, weekStart string) (*storage.WeeklyFeedback, error)
 	PutWeeklyFeedback(ctx context.Context, userID, weekStart, content string) (storage.WeeklyFeedback, error)
 }
 
@@ -175,16 +176,19 @@ type structuredWeekResponse struct {
 }
 
 type weekDetailResponse struct {
-	WeekName         string                  `json:"week_name"`
-	DateFrom         string                  `json:"date_from"`
-	DateTo           string                  `json:"date_to"`
-	Plan             *string                 `json:"plan,omitempty"`
-	Activities       []weekActivityResponse  `json:"activities"`
-	TotalKM          float64                 `json:"total_km"`
-	TotalDurationS   float64                 `json:"total_duration_s"`
-	TotalDurationFmt string                  `json:"total_duration_fmt"`
-	ActivityCount    int                     `json:"activity_count"`
-	Structured       *structuredWeekResponse `json:"structured,omitempty"`
+	WeekName          string                  `json:"week_name"`
+	DateFrom          string                  `json:"date_from"`
+	DateTo            string                  `json:"date_to"`
+	Plan              *string                 `json:"plan" extensions:"x-nullable"`
+	Activities        []weekActivityResponse  `json:"activities"`
+	TotalKM           float64                 `json:"total_km"`
+	TotalDurationS    float64                 `json:"total_duration_s"`
+	TotalDurationFmt  string                  `json:"total_duration_fmt"`
+	ActivityCount     int                     `json:"activity_count"`
+	Structured        *structuredWeekResponse `json:"structured" extensions:"x-nullable"`
+	Feedback          string                  `json:"feedback"`
+	FeedbackCreatedAt *string                 `json:"feedback_created_at" format:"date-time" extensions:"x-nullable"`
+	FeedbackUpdatedAt *string                 `json:"feedback_updated_at" format:"date-time" extensions:"x-nullable"`
 }
 
 var weekNamePattern = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2})$`)
@@ -302,10 +306,15 @@ func (w *weeklyPlanRoutes) listSummaries(c *gin.Context) {
 				planTitle = title
 			}
 		}
+		hasPlan := row.PlanID != ""
+		planSource := "none"
+		if hasPlan {
+			planSource = "weekly_plan_store"
+		}
 		weeks = append(weeks, weekSummaryResponse{
 			Folder: folder, DateFrom: row.WeekStart, DateTo: end.Format("2006-01-02"),
-			HasPlan: true, HasFeedback: false, HasBodyComposition: false,
-			PlanSource: "weekly_plan_store", PlanTitle: planTitle,
+			HasPlan: hasPlan, HasFeedback: row.HasFeedback, HasBodyComposition: false,
+			PlanSource: planSource, PlanTitle: planTitle,
 			ActivityCount: row.ActivityCount, TotalKM: row.TotalKM,
 			TotalDurationS: row.TotalDurationS, TotalDurationFmt: apifmt.DurationFmt(&row.TotalDurationS),
 		})
@@ -313,8 +322,8 @@ func (w *weeklyPlanRoutes) listSummaries(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"weeks": weeks})
 }
 
-// weekDetail returns activities for a Shanghai week and includes the migrated
-// active weekly plan when one exists.
+// weekDetail aggregates an active plan, activities, and weekly feedback for one
+// Shanghai natural week.
 //
 //	@Summary		Get a user's week detail
 //	@Tags			weekly-plan
@@ -325,6 +334,7 @@ func (w *weeklyPlanRoutes) listSummaries(c *gin.Context) {
 //	@Failure		400	{object}	errorResponse
 //	@Failure		401	{object}	errorResponse
 //	@Failure		403	{object}	errorResponse
+//	@Failure		404	{object}	errorResponse
 //	@Failure		500	{object}	errorResponse
 //	@Security		InternalToken
 //	@Security		BearerAuth
@@ -353,6 +363,12 @@ func (w *weeklyPlanRoutes) weekDetail(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
+	feedback, err := w.store.GetWeeklyFeedback(c.Request.Context(), user, weekStart)
+	if err != nil {
+		w.log.Error("get week detail feedback failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
 
 	response := weekDetailResponse{
 		WeekName: weekName, DateFrom: weekStart, DateTo: dateTo,
@@ -372,8 +388,19 @@ func (w *weeklyPlanRoutes) weekDetail(c *gin.Context) {
 	response.TotalKM = math.Round(response.TotalKM*10) / 10
 	response.TotalDurationFmt = apifmt.DurationFmt(&response.TotalDurationS)
 	response.ActivityCount = len(response.Activities)
+	if feedback != nil {
+		response.Feedback = feedback.ContentMD
+		createdAt := feedback.CreatedAt.UTC().Format(time.RFC3339Nano)
+		updatedAt := feedback.UpdatedAt.UTC().Format(time.RFC3339Nano)
+		response.FeedbackCreatedAt = &createdAt
+		response.FeedbackUpdatedAt = &updatedAt
+	}
 
 	if plan == nil {
+		if len(rows) == 0 && feedback == nil {
+			c.JSON(http.StatusNotFound, errorResponse{Error: "week_not_found"})
+			return
+		}
 		c.JSON(http.StatusOK, response)
 		return
 	}

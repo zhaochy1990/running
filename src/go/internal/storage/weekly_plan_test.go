@@ -75,6 +75,9 @@ func TestWeeklyPlanReadsReturnOnlyActiveRows(t *testing.T) {
 func TestListWeekSummariesFiltersMasterPlanAndAggregatesShanghaiWeek(t *testing.T) {
 	store := openWatchTestStore(t)
 	migrateWeeklyPlan(t, store)
+	if err := store.AutoMigrateWeeklyFeedback(context.Background()); err != nil {
+		t.Fatalf("automigrate feedback: %v", err)
+	}
 	userID := uuid.NewString()
 	masterID := uuid.NewString()
 	otherMasterID := uuid.NewString()
@@ -90,6 +93,13 @@ func TestListWeekSummariesFiltersMasterPlanAndAggregatesShanghaiWeek(t *testing.
 		LabelID: "week-activity", Date: time.Date(2026, 7, 26, 16, 30, 0, 0, time.UTC),
 		DistanceM: &distance, DurationS: &duration,
 	}, nil, nil, nil)
+	seedActivity(t, store, userID, &Activity{
+		LabelID: "activity-only", Date: time.Date(2026, 7, 19, 16, 0, 0, 0, time.UTC),
+		DistanceM: &distance, DurationS: &duration,
+	}, nil, nil, nil)
+	if _, err := store.PutWeeklyFeedback(context.Background(), userID, "2026-07-13", "feedback-only"); err != nil {
+		t.Fatalf("put feedback-only: %v", err)
+	}
 
 	weeks, err := store.ListWeekSummaries(context.Background(), userID, masterID)
 	if err != nil {
@@ -101,6 +111,58 @@ func TestListWeekSummariesFiltersMasterPlanAndAggregatesShanghaiWeek(t *testing.
 	got := weeks[0]
 	if got.PlanID != week.PlanID || got.ActivityCount != 1 || got.TotalKM != 5 || got.TotalDurationS != 1800 {
 		t.Fatalf("summary=%+v", got)
+	}
+}
+
+func TestListWeekSummariesReturnsUnfilteredSourceUnion(t *testing.T) {
+	store := openWatchTestStore(t)
+	migrateWeeklyPlan(t, store)
+	if err := store.AutoMigrateWeeklyFeedback(context.Background()); err != nil {
+		t.Fatalf("automigrate feedback: %v", err)
+	}
+	userID, otherUser := uuid.NewString(), uuid.NewString()
+	plan := weeklyPlanRow(userID, "2026-08-03", WeeklyPlanStatusActive)
+	seedWeeklyPlan(t, store, plan)
+	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusDraft))
+	distance, duration := 5000.0, 1800.0
+	seedActivity(t, store, userID, &Activity{
+		LabelID: "shanghai-monday", Date: time.Date(2026, 7, 26, 16, 0, 0, 0, time.UTC),
+		DistanceM: &distance, DurationS: &duration,
+	}, nil, nil, nil)
+	if _, err := store.PutWeeklyFeedback(context.Background(), userID, "2026-07-20", "done"); err != nil {
+		t.Fatalf("put feedback: %v", err)
+	}
+	if _, err := store.PutWeeklyFeedback(context.Background(), userID, "2026-07-13", ""); err != nil {
+		t.Fatalf("put empty feedback: %v", err)
+	}
+	if _, err := store.PutWeeklyFeedback(context.Background(), otherUser, "2026-07-06", "private"); err != nil {
+		t.Fatalf("put other feedback: %v", err)
+	}
+	otherPlan := weeklyPlanRow(otherUser, "2026-06-29", WeeklyPlanStatusActive)
+	seedWeeklyPlan(t, store, otherPlan)
+	seedActivity(t, store, otherUser, &Activity{
+		LabelID: "other-activity", Date: time.Date(2026, 6, 29, 1, 0, 0, 0, time.UTC),
+		DistanceM: &distance, DurationS: &duration,
+	}, nil, nil, nil)
+
+	weeks, err := store.ListWeekSummaries(context.Background(), userID, "")
+	if err != nil {
+		t.Fatalf("list summaries: %v", err)
+	}
+	if len(weeks) != 4 {
+		t.Fatalf("weeks=%+v", weeks)
+	}
+	if weeks[0].WeekStart != "2026-08-03" || weeks[0].PlanID != plan.PlanID {
+		t.Fatalf("plan week=%+v", weeks[0])
+	}
+	if weeks[1].WeekStart != "2026-07-27" || weeks[1].PlanID != "" || weeks[1].ActivityCount != 1 || weeks[1].TotalKM != 5 {
+		t.Fatalf("activity week=%+v", weeks[1])
+	}
+	if weeks[2].WeekStart != "2026-07-20" || !weeks[2].FeedbackRowExists || !weeks[2].HasFeedback {
+		t.Fatalf("feedback week=%+v", weeks[2])
+	}
+	if weeks[3].WeekStart != "2026-07-13" || !weeks[3].FeedbackRowExists || weeks[3].HasFeedback {
+		t.Fatalf("empty feedback week=%+v", weeks[3])
 	}
 }
 

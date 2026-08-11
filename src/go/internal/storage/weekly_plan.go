@@ -38,14 +38,16 @@ func (s *Store) ListActiveWeeklyPlans(ctx context.Context, userID string) ([]Wee
 // WeekSummary is the active-plan metadata and activity rollup needed by the
 // legacy /api/{user}/weeks response. Activity dates are grouped by Shanghai day.
 type WeekSummary struct {
-	PlanID         string
-	MasterPlanID   *string
-	WeekStart      string
-	ContentVersion int8
-	Content        string
-	ActivityCount  int
-	TotalKM        float64
-	TotalDurationS float64
+	PlanID            string
+	MasterPlanID      *string
+	WeekStart         string
+	ContentVersion    int8
+	Content           string
+	FeedbackRowExists bool
+	HasFeedback       bool
+	ActivityCount     int
+	TotalKM           float64
+	TotalDurationS    float64
 }
 
 // ListWeekActivities returns one user's activities in a Shanghai calendar week,
@@ -71,30 +73,48 @@ func (s *Store) ListWeekActivities(ctx context.Context, userID, dateFrom, dateTo
 	return activities, nil
 }
 
-// ListWeekSummaries returns active weekly plans newest first. When masterPlanID
-// is non-empty, only plans linked to that master plan are returned.
+// ListWeekSummaries returns the newest-first union of active-plan, activity,
+// and feedback weeks. A master-plan filter intentionally narrows discovery to
+// active plans linked to that plan because activities and feedback have no
+// master-plan ownership of their own.
 func (s *Store) ListWeekSummaries(ctx context.Context, userID, masterPlanID string) ([]WeekSummary, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return nil, err
 	}
+	var weekSources *gorm.DB
+	if masterPlanID != "" {
+		weekSources = s.db.WithContext(ctx).Raw(`
+			SELECT week_start FROM weekly_plan
+			WHERE user_id = ? AND status = ? AND master_plan_id = ?`, uid, WeeklyPlanStatusActive, masterPlanID)
+	} else {
+		weekSources = s.db.WithContext(ctx).Raw(`
+			SELECT week_start FROM weekly_plan WHERE user_id = ? AND status = ?
+			UNION
+			SELECT DATE_SUB(DATE(date + INTERVAL 8 HOUR), INTERVAL WEEKDAY(DATE(date + INTERVAL 8 HOUR)) DAY)
+			FROM activities WHERE user_id = ?
+			UNION
+			SELECT week_start FROM weekly_feedback WHERE user_id = ?`, uid, WeeklyPlanStatusActive, uid, uid)
+	}
+
 	query := s.db.WithContext(ctx).
-		Table("weekly_plan AS wp").
-		Select(`wp.plan_id, wp.master_plan_id, DATE_FORMAT(wp.week_start, '%Y-%m-%d') AS week_start,
-			wp.content_version, wp.content,
+		Table("(?) AS weeks", weekSources).
+		Select(`COALESCE(wp.plan_id, '') AS plan_id, wp.master_plan_id,
+			DATE_FORMAT(weeks.week_start, '%Y-%m-%d') AS week_start,
+			COALESCE(wp.content_version, 0) AS content_version, COALESCE(wp.content, '') AS content,
+			wf.user_id IS NOT NULL AS feedback_row_exists,
+			COALESCE(wf.content_md <> '', FALSE) AS has_feedback,
 			COUNT(a.label_id) AS activity_count,
 			ROUND(COALESCE(SUM(a.distance_m), 0) / 1000.0, 1) AS total_km,
 			ROUND(COALESCE(SUM(a.duration_s), 0), 0) AS total_duration_s`).
-		Joins(`LEFT JOIN activities AS a ON a.user_id = wp.user_id
-			AND DATE(a.date + INTERVAL 8 HOUR) BETWEEN wp.week_start AND DATE_ADD(wp.week_start, INTERVAL 6 DAY)`).
-		Where("wp.user_id = ? AND wp.status = ?", uid, WeeklyPlanStatusActive)
-	if masterPlanID != "" {
-		query = query.Where("wp.master_plan_id = ?", masterPlanID)
-	}
+		Joins(`LEFT JOIN weekly_plan AS wp ON wp.user_id = ? AND wp.week_start = weeks.week_start AND wp.status = ?`, uid, WeeklyPlanStatusActive).
+		Joins(`LEFT JOIN weekly_feedback AS wf ON wf.user_id = ? AND wf.week_start = weeks.week_start`, uid).
+		Joins(`LEFT JOIN activities AS a ON a.user_id = ? AND DATE(a.date + INTERVAL 8 HOUR)
+			BETWEEN weeks.week_start AND DATE_ADD(weeks.week_start, INTERVAL 6 DAY)`, uid)
 	var weeks []WeekSummary
 	if err := query.
-		Group("wp.plan_id, wp.master_plan_id, wp.week_start, wp.content_version, wp.content").
-		Order("wp.week_start DESC").
+		Group("weeks.week_start, wp.plan_id, wp.master_plan_id, wp.content_version, wp.content, wf.user_id, wf.content_md").
+		Order("weeks.week_start DESC").
 		Scan(&weeks).Error; err != nil {
 		return nil, err
 	}

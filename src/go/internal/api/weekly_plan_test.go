@@ -26,11 +26,23 @@ type fakeWeeklyPlanStore struct {
 	getErr           error
 	summaryErr       error
 	activitiesErr    error
+	feedbackErr      error
 	lastMasterPlanID string
 	lastDateFrom     string
 	lastDateTo       string
 	feedback         map[string]storage.WeeklyFeedback
 	now              time.Time
+}
+
+func (f *fakeWeeklyPlanStore) GetWeeklyFeedback(_ context.Context, userID, weekStart string) (*storage.WeeklyFeedback, error) {
+	if f.feedbackErr != nil {
+		return nil, f.feedbackErr
+	}
+	row, exists := f.feedback[userID+"/"+weekStart]
+	if !exists {
+		return nil, nil
+	}
+	return &row, nil
 }
 
 func (f *fakeWeeklyPlanStore) PutWeeklyFeedback(_ context.Context, userID, weekStart, content string) (storage.WeeklyFeedback, error) {
@@ -283,6 +295,51 @@ func TestWeekSummaryListSupportsMasterPlanFilter(t *testing.T) {
 	}
 }
 
+func TestWeekSummaryListReturnsPlanActivityAndFeedbackWeekUnion(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	h.store.summaries[userID] = []storage.WeekSummary{
+		{PlanID: "plan", WeekStart: "2026-08-03", ContentVersion: storage.WeeklyPlanContentStructured, HasFeedback: true},
+		{WeekStart: "2026-07-27", ActivityCount: 1, TotalKM: 5, TotalDurationS: 1800},
+		{WeekStart: "2026-07-20", FeedbackRowExists: true, HasFeedback: true},
+		{WeekStart: "2026-07-13", FeedbackRowExists: true, HasFeedback: false},
+	}
+
+	resp := h.do(http.MethodGet, "/api/"+userID+"/weeks", h.bearer(t, userID))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	weeks := body["weeks"].([]any)
+	if len(weeks) != 4 {
+		t.Fatalf("weeks=%v", weeks)
+	}
+	for i, want := range []struct {
+		folder      string
+		hasPlan     bool
+		hasFeedback bool
+	}{
+		{"2026-08-03_08-09", true, true},
+		{"2026-07-27_08-02", false, false},
+		{"2026-07-20_07-26", false, true},
+		{"2026-07-13_07-19", false, false},
+	} {
+		week := weeks[i].(map[string]any)
+		if week["folder"] != want.folder || week["has_plan"] != want.hasPlan || week["has_feedback"] != want.hasFeedback {
+			t.Fatalf("week[%d]=%v", i, week)
+		}
+		if _, exists := week["feedback"]; exists {
+			t.Fatalf("list leaked feedback body: %v", week)
+		}
+		if _, exists := week["feedback_updated_at"]; exists {
+			t.Fatalf("list leaked feedback timestamp: %v", week)
+		}
+	}
+}
+
 func TestWeekSummaryListRejectsEmptyMasterPlan(t *testing.T) {
 	h := newWeeklyPlanHarness(t)
 	resp := h.do(http.MethodGet, "/api/user-a/weeks?master_plan=", h.bearer(t, "user-a"))
@@ -350,6 +407,11 @@ func TestWeekDetailReturnsMigratedPlanAndActivities(t *testing.T) {
 		{LabelID: "a", Name: &name, SportType: 100, Date: time.Date(2026, 7, 27, 0, 30, 0, 0, time.UTC), DistanceM: &distanceA, DurationS: &durationA, AvgPaceSKm: &pace, SportNote: &note, RouteThumbJSON: &route},
 		{LabelID: "b", SportType: 402, Date: time.Date(2026, 7, 28, 0, 30, 0, 0, time.UTC), DistanceM: &distanceB, DurationS: &durationB},
 	}
+	h.store.feedback[userID+"/2026-07-27"] = storage.WeeklyFeedback{
+		UserID: userID, WeekStart: "2026-07-27", ContentMD: "Weekly reflection",
+		CreatedAt: time.Date(2026, 8, 3, 1, 2, 3, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 8, 4, 4, 5, 6, 123000000, time.UTC),
+	}
 
 	resp := h.do(http.MethodGet, "/api/"+userID+"/weeks/2026-07-27_08-02", h.bearer(t, userID))
 	if resp.Code != http.StatusOK {
@@ -379,6 +441,12 @@ func TestWeekDetailReturnsMigratedPlanAndActivities(t *testing.T) {
 	if _, exists := raw["feedback_source"]; exists {
 		t.Fatalf("response must not include feedback_source: %v", raw)
 	}
+	if raw["feedback"] != "Weekly reflection" || raw["feedback_created_at"] != "2026-08-03T01:02:03Z" || raw["feedback_updated_at"] != "2026-08-04T04:05:06.123Z" {
+		t.Fatalf("feedback=%v", raw)
+	}
+	if strings.Contains(raw["feedback"].(string), note) {
+		t.Fatalf("sport_note leaked into weekly feedback: %v", raw)
+	}
 	if body.WeekName != "2026-07-27_08-02" || body.DateFrom != "2026-07-27" || body.DateTo != "2026-08-02" {
 		t.Fatalf("week identity=%+v", body)
 	}
@@ -399,28 +467,15 @@ func TestWeekDetailReturnsMigratedPlanAndActivities(t *testing.T) {
 	}
 }
 
-func TestWeekDetailValidatesWeekNameAndAllowsMissingPlan(t *testing.T) {
+func TestWeekDetailValidatesWeekNameAndReturnsNotFoundWhenAllSourcesMissing(t *testing.T) {
 	h := newWeeklyPlanHarness(t)
 	invalid := h.do(http.MethodGet, "/api/user-a/weeks/2026-07-28_08-03", h.bearer(t, "user-a"))
 	if invalid.Code != http.StatusBadRequest || invalid.Body.String() != `{"error":"invalid_week_name"}` {
 		t.Fatalf("invalid status=%d body=%s", invalid.Code, invalid.Body.String())
 	}
 	missing := h.do(http.MethodGet, "/api/user-a/weeks/2026-07-27_08-02", h.bearer(t, "user-a"))
-	if missing.Code != http.StatusOK {
+	if missing.Code != http.StatusNotFound || missing.Body.String() != `{"error":"week_not_found"}` {
 		t.Fatalf("missing status=%d body=%s", missing.Code, missing.Body.String())
-	}
-	var body map[string]any
-	if err := json.Unmarshal(missing.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode missing plan: %v", err)
-	}
-	if body["week_name"] != "2026-07-27_08-02" || body["activity_count"] != float64(0) {
-		t.Fatalf("missing plan body=%v", body)
-	}
-	if _, exists := body["plan"]; exists {
-		t.Fatalf("missing plan response must omit plan: %v", body)
-	}
-	if _, exists := body["structured"]; exists {
-		t.Fatalf("missing plan response must omit structured: %v", body)
 	}
 }
 
@@ -446,8 +501,63 @@ func TestWeekDetailReturnsActivitiesWithoutActivePlan(t *testing.T) {
 	if body["activity_count"] != float64(1) || body["total_km"] != 5.0 || body["total_duration_s"] != 1800.0 {
 		t.Fatalf("activity-only body=%v", body)
 	}
-	if _, exists := body["plan"]; exists {
-		t.Fatalf("activity-only response must omit plan: %v", body)
+	if body["plan"] != nil || body["structured"] != nil || body["feedback"] != "" || body["feedback_created_at"] != nil || body["feedback_updated_at"] != nil {
+		t.Fatalf("activity-only stable shape=%v", body)
+	}
+}
+
+func TestWeekDetailReturnsFeedbackOnlyAndDistinguishesClearedRow(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	created := time.Date(2026, 8, 3, 1, 2, 3, 0, time.UTC)
+	updated := time.Date(2026, 8, 4, 4, 5, 6, 0, time.UTC)
+	h.store.feedback[userID+"/2026-07-27"] = storage.WeeklyFeedback{
+		UserID: userID, WeekStart: "2026-07-27", ContentMD: "", CreatedAt: created, UpdatedAt: updated,
+	}
+
+	resp := h.do(http.MethodGet, "/api/"+userID+"/weeks/2026-07-27_08-02", h.bearer(t, userID))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["plan"] != nil || body["structured"] != nil || body["feedback"] != "" || body["feedback_created_at"] != created.Format(time.RFC3339) || body["feedback_updated_at"] != updated.Format(time.RFC3339) {
+		t.Fatalf("cleared feedback shape=%v", body)
+	}
+	if activities, ok := body["activities"].([]any); !ok || len(activities) != 0 {
+		t.Fatalf("activities=%v", body["activities"])
+	}
+}
+
+func TestWeekDetailReturnsNonEmptyFeedbackWithoutPlanOrActivities(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	h.store.feedback[userID+"/2026-07-27"] = storage.WeeklyFeedback{
+		UserID: userID, WeekStart: "2026-07-27", ContentMD: "Recovered well",
+		CreatedAt: time.Date(2026, 8, 3, 1, 2, 3, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 8, 4, 4, 5, 6, 0, time.UTC),
+	}
+	resp := h.do(http.MethodGet, "/api/"+userID+"/weeks/2026-07-27_08-02", h.bearer(t, userID))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["plan"] != nil || body["structured"] != nil || body["feedback"] != "Recovered well" {
+		t.Fatalf("feedback-only body=%v", body)
+	}
+}
+
+func TestWeekDetailMapsFeedbackStoreFailure(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	h.store.feedbackErr = errors.New("feedback unavailable")
+	resp := h.do(http.MethodGet, "/api/user-a/weeks/2026-07-27_08-02", h.bearer(t, "user-a"))
+	if resp.Code != http.StatusInternalServerError || resp.Body.String() != `{"error":"internal error"}` {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
 	}
 }
 
@@ -468,8 +578,8 @@ func TestWeekDetailSupportsMarkdownAndCrossYearWeek(t *testing.T) {
 	if body["week_name"] != "2026-12-28_01-03" || body["date_to"] != "2027-01-03" || body["plan"] != "# Race week\n" {
 		t.Fatalf("body=%v", body)
 	}
-	if _, ok := body["structured"]; ok {
-		t.Fatalf("markdown response must not include structured: %v", body)
+	if body["structured"] != nil {
+		t.Fatalf("markdown response structured must be null: %v", body)
 	}
 }
 
