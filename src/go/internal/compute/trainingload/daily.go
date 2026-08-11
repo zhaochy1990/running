@@ -297,8 +297,7 @@ func ComputeDailyLoadSeries(
 			}
 		}
 		if coverage != CoverageUnknown {
-			acute += kAcute * (dose - acute)
-			chronic += kChronic * (dose - chronic)
+			acute, chronic = advanceDailyLoad(acute, chronic, dose, kAcute, kChronic)
 		}
 		gate, readinessReasons := readinessForDay(day, healthByDate, hrvByDate, healthRows, hrvRows, dayActivities, feedbackByLabel, historyByClass)
 
@@ -355,6 +354,42 @@ func ComputeDailyLoadSeries(
 		}
 	}
 	return out
+}
+
+// ComputeDailyLoadProjection advances a prior PMC state across caller-supplied
+// days using the same canonical EWMA math as ComputeDailyLoadSeries. Projection
+// days are always considered load-bearing observations: a zero dose decays ATL
+// and CTL even when the coverage label is rest_assumed.
+func ComputeDailyLoadProjection(prior PriorLoadState, days []DailyProjectionInput) []DailyLoadResult {
+	acute, chronic := prior.AcuteLoad, prior.ChronicLoad
+	kAcute := 1.0 - math.Exp(-1.0/7.0)
+	kChronic := 1.0 - math.Exp(-1.0/42.0)
+	out := make([]DailyLoadResult, 0, len(days))
+	for _, day := range days {
+		acute, chronic = advanceDailyLoad(acute, chronic, day.TrainingDose, kAcute, kChronic)
+		var ratio *float64
+		if chronic > 0 {
+			r := round4(acute / chronic)
+			ratio = &r
+		}
+		out = append(out, DailyLoadResult{
+			Date:             day.Date,
+			AlgorithmVersion: ModelVersion,
+			TrainingDose:     round4(day.TrainingDose),
+			AcuteLoad:        round4(acute),
+			ChronicLoad:      round4(chronic),
+			Form:             round4(chronic - acute),
+			LoadRatio:        ratio,
+			CoverageStatus:   day.CoverageStatus,
+		})
+	}
+	return out
+}
+
+func advanceDailyLoad(acute, chronic, dose, kAcute, kChronic float64) (float64, float64) {
+	acute += kAcute * (dose - acute)
+	chronic += kChronic * (dose - chronic)
+	return acute, chronic
 }
 
 func sum(xs []float64) float64 {

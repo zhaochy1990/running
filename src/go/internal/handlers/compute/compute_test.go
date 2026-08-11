@@ -5,8 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zhaochy1990/stride/internal/compute/trainingload"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 const testUser = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
@@ -25,6 +27,7 @@ type fakeStore struct {
 	zonesReplaced    bool
 	activityUpserts  int
 	dailyUpserts     int
+	dailyRows        []storage.DailyTrainingLoad
 	pbReplaced       bool
 	pbUpserted       bool
 	priorReadForDate string
@@ -82,6 +85,7 @@ func (f *fakeStore) ReplaceActivityTrainingLoad(_ context.Context, _ string, row
 }
 func (f *fakeStore) ReplaceDailyTrainingLoad(_ context.Context, _ string, rows []storage.DailyTrainingLoad) error {
 	f.dailyUpserts++
+	f.dailyRows = append([]storage.DailyTrainingLoad(nil), rows...)
 	return nil
 }
 func (f *fakeStore) ReplacePersonalBests(_ context.Context, _ string, _ []storage.PersonalBest) error {
@@ -179,6 +183,38 @@ func TestCompute_Incremental_NoLabels_Noop(t *testing.T) {
 		t.Fatalf("compute incremental noop: %v", err)
 	}
 	if f.activityUpserts != 0 || f.dailyUpserts != 0 || f.pbUpserted {
-		t.Fatalf("no label_ids should be a no-op, got %+v", f)
+		t.Fatalf("no activity or health dates should be a no-op, got %+v", f)
+	}
+}
+
+func TestCompute_Incremental_HealthOnlySyncConfirmsRestThroughToday(t *testing.T) {
+	today := timefmt.ShanghaiToday()
+	f := &fakeStore{
+		snap: &storage.RunningCalibrationSnapshot{ID: 7},
+		prior: &storage.DailyTrainingLoad{
+			AcuteLoad:   70,
+			ChronicLoad: 50,
+		},
+		health: []storage.DailyHealth{{Date: today.Format("20060102")}},
+	}
+	input := `{"mode":"incremental","health_dates":["` + today.Format("2006-01-02") + `"]}`
+	if _, err := runJob(t, NewCompute(f), input); err != nil {
+		t.Fatalf("compute health-only incremental: %v", err)
+	}
+	if len(f.dailyRows) != 1 {
+		t.Fatalf("daily rows = %d, want today's rest row", len(f.dailyRows))
+	}
+	row := f.dailyRows[0]
+	if row.Date != today.Format("2006-01-02") {
+		t.Fatalf("date = %q, want Shanghai today", row.Date)
+	}
+	if row.CoverageStatus != string(trainingload.CoverageRestConfirmed) {
+		t.Fatalf("coverage = %q, want rest_confirmed", row.CoverageStatus)
+	}
+	if row.TrainingDose != 0 {
+		t.Fatalf("training dose = %v, want 0", row.TrainingDose)
+	}
+	if row.AcuteLoad >= f.prior.AcuteLoad || row.ChronicLoad >= f.prior.ChronicLoad {
+		t.Fatalf("rest day must decay ATL/CTL, got acute=%v chronic=%v", row.AcuteLoad, row.ChronicLoad)
 	}
 }

@@ -59,7 +59,8 @@ for r in rows: print(dict(r))
 - STRIDE canonical ratio 固定为 7/42 天时间常数 EWMA，不按厂商切换；跨厂家离线验证可补充 7/28 eACWR 参考线，但不能据此改写 PMC。
 - 实际活动逐时间段积分，包含心率、速度和高强度工作后恢复残余三个可审计通道；计划活动按结构化训练段输出 expected/low/high 区间，两者使用同一 TSS 标尺。
 - 厂家负荷、training effect 与厂家 ratio 只做离线验证，不作为 STRIDE 计算输入。
-- `coverage_status=unknown` 的日期不按零负荷休息日衰减；只有完整活动历史或厂家健康日存在时才能确认休息。
+- 持久化计算中，`coverage_status=unknown` 的日期不按零负荷休息日衰减；只有完整活动历史或厂家健康日存在时才能写入 `rest_confirmed`。
+- `/stride/training-load` 的读取投影会把序列内缺失或 `unknown` 的日期临时视为零负荷 `rest_assumed`，按 canonical 7/42 天 EWMA 重算到上海当天；这是为了让训练状态日历连续的只读假设，不写回 MySQL，后续同步数据可以替换它。
 
 ## 比赛就绪 / 训练 / 恢复阈值
 

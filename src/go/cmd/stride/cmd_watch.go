@@ -297,7 +297,7 @@ func runSync(profile string, full bool, content string, limit int) error {
 	if err != nil {
 		return err
 	}
-	if err := runDerivedComputationsWithProgress(ctx, user, opts.Mode, res.ActivityLabelIDs,
+	if err := runDerivedComputationsWithProgress(ctx, user, opts.Mode, res.ActivityLabelIDs, res.HealthDates,
 		compute.NewCalibration(store), compute.NewCompute(store), progress.derivedHeartbeat); err != nil {
 		return err
 	}
@@ -309,12 +309,13 @@ func runSync(profile string, full bool, content string, limit int) error {
 
 // runDerivedComputations runs the same post-sync handlers as the asynchronous
 // data-sync pipelines. Full syncs refresh the calibration before rebuilding all
-// derived data; incremental syncs only compute from this run's changed labels.
-func runDerivedComputations(ctx context.Context, user string, mode provider.SyncMode, labelIDs []string, calibration, calculation job.Handler) error {
-	return runDerivedComputationsWithProgress(ctx, user, mode, labelIDs, calibration, calculation, func(string, int) error { return nil })
+// derived data; incremental syncs compute from this run's changed activity and
+// health dates.
+func runDerivedComputations(ctx context.Context, user string, mode provider.SyncMode, labelIDs, healthDates []string, calibration, calculation job.Handler) error {
+	return runDerivedComputationsWithProgress(ctx, user, mode, labelIDs, healthDates, calibration, calculation, func(string, int) error { return nil })
 }
 
-func runDerivedComputationsWithProgress(ctx context.Context, user string, mode provider.SyncMode, labelIDs []string, calibration, calculation job.Handler, heartbeat job.Heartbeat) error {
+func runDerivedComputationsWithProgress(ctx context.Context, user string, mode provider.SyncMode, labelIDs, healthDates []string, calibration, calculation job.Handler, heartbeat job.Heartbeat) error {
 	if mode == provider.SyncFull {
 		if _, err := calibration(ctx, &job.Job{UserID: user}, heartbeat); err != nil {
 			return fmt.Errorf("calibration: %w", err)
@@ -322,9 +323,10 @@ func runDerivedComputationsWithProgress(ctx context.Context, user string, mode p
 	}
 
 	input, err := json.Marshal(struct {
-		Mode     provider.SyncMode `json:"mode"`
-		LabelIDs []string          `json:"label_ids,omitempty"`
-	}{Mode: mode, LabelIDs: labelIDs})
+		Mode        provider.SyncMode `json:"mode"`
+		LabelIDs    []string          `json:"label_ids,omitempty"`
+		HealthDates []string          `json:"health_dates,omitempty"`
+	}{Mode: mode, LabelIDs: labelIDs, HealthDates: healthDates})
 	if err != nil {
 		return fmt.Errorf("encode compute input: %w", err)
 	}

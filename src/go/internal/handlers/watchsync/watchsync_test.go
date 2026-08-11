@@ -2,6 +2,7 @@ package watchsync
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -107,6 +108,29 @@ func TestHandler_ParsesPayload(t *testing.T) {
 	}
 	if f.gotOpts.Limit != 50 {
 		t.Errorf("limit = %d, want 50", f.gotOpts.Limit)
+	}
+}
+
+func TestHandler_ReturnsHealthDatesForDownstreamCompute(t *testing.T) {
+	f := &fakeProvider{
+		loggedIn: true,
+		result: provider.SyncResult{
+			Health:      2,
+			HealthDates: []string{"2026-08-10", "2026-08-11"},
+		},
+	}
+	res, err, _, _ := run(t, f, `{"mode":"incremental"}`)
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	var body struct {
+		HealthDates []string `json:"health_dates"`
+	}
+	if err := json.Unmarshal([]byte(res), &body); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if len(body.HealthDates) != 2 || body.HealthDates[0] != "2026-08-10" || body.HealthDates[1] != "2026-08-11" {
+		t.Fatalf("health_dates = %v, want synced Shanghai days", body.HealthDates)
 	}
 }
 

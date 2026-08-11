@@ -19,8 +19,9 @@ type watchBindingStub struct {
 func TestRunDerivedComputations_IncrementalOnlyComputesChangedLabels(t *testing.T) {
 	var calibrationCalls, computeCalls int
 	var computeInput struct {
-		Mode     string   `json:"mode"`
-		LabelIDs []string `json:"label_ids"`
+		Mode        string   `json:"mode"`
+		LabelIDs    []string `json:"label_ids"`
+		HealthDates []string `json:"health_dates"`
 	}
 	calibration := func(context.Context, *job.Job, job.Heartbeat) (string, error) {
 		calibrationCalls++
@@ -34,7 +35,7 @@ func TestRunDerivedComputations_IncrementalOnlyComputesChangedLabels(t *testing.
 		return "", nil
 	}
 
-	if err := runDerivedComputations(context.Background(), "athlete", provider.SyncIncremental, []string{"new-1"}, calibration, calculation); err != nil {
+	if err := runDerivedComputations(context.Background(), "athlete", provider.SyncIncremental, []string{"new-1"}, []string{"2026-08-11"}, calibration, calculation); err != nil {
 		t.Fatalf("run derived computations: %v", err)
 	}
 	if calibrationCalls != 0 || computeCalls != 1 {
@@ -42,6 +43,9 @@ func TestRunDerivedComputations_IncrementalOnlyComputesChangedLabels(t *testing.
 	}
 	if computeInput.Mode != "incremental" || len(computeInput.LabelIDs) != 1 || computeInput.LabelIDs[0] != "new-1" {
 		t.Fatalf("compute input = %+v", computeInput)
+	}
+	if len(computeInput.HealthDates) != 1 || computeInput.HealthDates[0] != "2026-08-11" {
+		t.Fatalf("compute health dates = %v", computeInput.HealthDates)
 	}
 }
 
@@ -64,7 +68,7 @@ func TestRunDerivedComputations_FullCalibratesBeforeFullCompute(t *testing.T) {
 		return "", nil
 	}
 
-	if err := runDerivedComputations(context.Background(), "athlete", provider.SyncFull, nil, calibration, calculation); err != nil {
+	if err := runDerivedComputations(context.Background(), "athlete", provider.SyncFull, nil, nil, calibration, calculation); err != nil {
 		t.Fatalf("run derived computations: %v", err)
 	}
 	if len(order) != 2 || order[0] != "calibration" || order[1] != "compute" || mode != "full" {
@@ -82,7 +86,7 @@ func TestRunDerivedComputations_StopsWhenCalibrationFails(t *testing.T) {
 		return "", nil
 	}
 
-	err := runDerivedComputations(context.Background(), "athlete", provider.SyncFull, nil, calibration, calculation)
+	err := runDerivedComputations(context.Background(), "athlete", provider.SyncFull, nil, nil, calibration, calculation)
 	if err == nil || !strings.Contains(err.Error(), "calibration: no source data") {
 		t.Fatalf("error = %v", err)
 	}
@@ -95,7 +99,7 @@ func TestRunDerivedComputations_WrapsComputeFailure(t *testing.T) {
 	calculation := func(context.Context, *job.Job, job.Heartbeat) (string, error) {
 		return "", errors.New("missing baseline")
 	}
-	err := runDerivedComputations(context.Background(), "athlete", provider.SyncIncremental, nil, nil, calculation)
+	err := runDerivedComputations(context.Background(), "athlete", provider.SyncIncremental, nil, nil, nil, calculation)
 	if err == nil || !strings.Contains(err.Error(), "compute: missing baseline") {
 		t.Fatalf("error = %v", err)
 	}
