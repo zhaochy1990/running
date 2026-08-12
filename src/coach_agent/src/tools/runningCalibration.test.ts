@@ -47,8 +47,9 @@ test("get_running_calibration returns the latest threshold and zones for the run
 		new StrideDataStore(pool as never),
 	);
 
-	assert.equal(tool!.name, "get_running_calibration");
-	assert.deepEqual(await tool!.invoke({}, { context: { userId } }), {
+	assert.ok(tool);
+	assert.equal(tool.name, "get_running_calibration");
+	assert.deepEqual(await tool.invoke({}, { context: { userId } }), {
 		asOfDate: "2026-08-08",
 		thresholdHr: 168,
 		thresholdSpeedMps: 3.9,
@@ -59,19 +60,18 @@ test("get_running_calibration returns the latest threshold and zones for the run
 				name: "threshold",
 				minPaceSPerKm: 270,
 				maxPaceSPerKm: 250,
-				minSpeedMps: 3.7,
-				maxSpeedMps: 4,
-				confidence: "medium",
 			},
 		],
-		heartRateZones: [
-			{ name: "threshold", minBpm: 160, maxBpm: 170, confidence: "high" },
-		],
+		heartRateZones: [{ name: "threshold", minBpm: 160, maxBpm: 170 }],
 	});
 	assert.deepEqual(
 		calls.map((call) => call.values),
 		[[userId], [userId, 42], [userId, 42]],
 	);
+	const zoneQueries = calls.slice(1).map((call) => call.sql);
+	for (const field of ["confidence", "min_speed_mps", "max_speed_mps"]) {
+		assert.ok(zoneQueries.every((sql) => !sql.includes(field)));
+	}
 });
 
 test("get_running_calibration returns null without a computed calibration", async () => {
@@ -84,6 +84,7 @@ test("get_running_calibration returns null without a computed calibration", asyn
 		new StrideDataStore(pool as never),
 	);
 
-	assert.equal(await tool!.invoke({}, { context: { userId } }), null);
-	await assert.rejects(() => tool!.invoke({}, {}), /missing userId/);
+	assert.ok(tool);
+	assert.equal(await tool.invoke({}, { context: { userId } }), null);
+	await assert.rejects(() => tool.invoke({}, {}), /missing userId/);
 });

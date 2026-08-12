@@ -138,16 +138,12 @@ export interface HeartRateZone {
 	name: string;
 	minBpm: number | null;
 	maxBpm: number | null;
-	confidence: string;
 }
 
 export interface PaceZone {
 	name: string;
 	minPaceSPerKm: number | null;
 	maxPaceSPerKm: number | null;
-	minSpeedMps: number | null;
-	maxSpeedMps: number | null;
-	confidence: string;
 }
 
 export interface UserProfile {
@@ -404,14 +400,14 @@ export class StrideDataStore {
 
 		const [paceRows, heartRateRows] = await Promise.all([
 			this.pool.query<RowDataPacket[]>(
-				`SELECT name, min_pace_s_per_km, max_pace_s_per_km, min_speed_mps, max_speed_mps, confidence
+				`SELECT name, min_pace_s_per_km, max_pace_s_per_km
            FROM running_calibration_pace_zone
           WHERE user_id = ? AND snapshot_id = ?
           ORDER BY name ASC`,
 				[userId, snapshot.id],
 			),
 			this.pool.query<RowDataPacket[]>(
-				`SELECT name, min_bpm, max_bpm, confidence
+				`SELECT name, min_bpm, max_bpm
            FROM running_calibration_hr_zone
           WHERE user_id = ? AND snapshot_id = ?
           ORDER BY name ASC`,
@@ -586,9 +582,6 @@ function rowToPaceZone(row: RowDataPacket): PaceZone {
 		name: row.name as string,
 		minPaceSPerKm: (row.min_pace_s_per_km ?? null) as number | null,
 		maxPaceSPerKm: (row.max_pace_s_per_km ?? null) as number | null,
-		minSpeedMps: (row.min_speed_mps ?? null) as number | null,
-		maxSpeedMps: (row.max_speed_mps ?? null) as number | null,
-		confidence: row.confidence as string,
 	};
 }
 
@@ -597,6 +590,5 @@ function rowToHeartRateZone(row: RowDataPacket): HeartRateZone {
 		name: row.name as string,
 		minBpm: (row.min_bpm ?? null) as number | null,
 		maxBpm: (row.max_bpm ?? null) as number | null,
-		confidence: row.confidence as string,
 	};
 }
