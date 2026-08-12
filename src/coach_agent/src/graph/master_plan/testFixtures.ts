@@ -162,7 +162,6 @@ export function createTestMasterPlan() {
 
 export function createAssessmentSnapshot() {
 	return {
-		schema_version: 1 as const,
 		user: {
 			id: "athlete-344",
 			profile: {
@@ -378,7 +377,6 @@ export function createAssessmentSnapshot() {
 				detail: "no canonical records",
 			},
 		],
-		source_manifest: [],
 		as_of: "2026-08-10T00:00:00Z",
 	};
 }

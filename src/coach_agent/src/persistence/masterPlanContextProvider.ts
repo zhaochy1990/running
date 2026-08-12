@@ -70,7 +70,6 @@ export class MySqlMasterPlanContextProvider
 				a.sportName?.toLowerCase().includes("run"),
 		);
 		return ContextSnapshotSchema.parse({
-			schema_version: 1,
 			user: { id: userId, profile: profileShape(profile) },
 			injuries: injuryShape(injuries),
 			personal_bests: pbShape(pbs),
@@ -106,43 +105,6 @@ export class MySqlMasterPlanContextProvider
 				injuries,
 				activePlan,
 			),
-			source_manifest: [
-				{
-					domain: "activities",
-					source: "mysql.activities+activity_training_load",
-					range_start: macroStart,
-					range_end: end,
-					records: runs.length,
-				},
-				{
-					domain: "training_load",
-					source: "mysql.daily_training_load",
-					range_start: recentStart,
-					range_end: end,
-					records: loads.length,
-				},
-				{
-					domain: "recovery",
-					source: "mysql.daily_health+daily_hrv",
-					range_start: recentStart,
-					range_end: end,
-					records: recovery.length,
-				},
-				{
-					domain: "injuries",
-					source: "mysql.user_injury",
-					range_start: null,
-					range_end: end,
-					records: injuries.length,
-				},
-				{
-					domain: "body_composition",
-					source: "mysql.user_profile.weight_kg",
-					range_start: null,
-					range_end: end,
-					records: profile.weightKg === null ? 0 : 1,
-				},
-			],
 			as_of: new Date(asOf).toISOString(),
 		});
 	}
@@ -151,6 +113,27 @@ export class MySqlMasterPlanContextProvider
 const n = (values: Array<number | null>): number | null => {
 	const xs = values.filter((x): x is number => x !== null);
 	return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+};
+const durationWeightedActivityAverage = (
+	activities: Activity[],
+	metric: (activity: Activity) => number | null,
+): number | null => {
+	const measured = activities.filter(
+		(activity) => metric(activity) !== null && (activity.durationS ?? 0) > 0,
+	);
+	const duration = measured.reduce(
+		(total, activity) => total + (activity.durationS ?? 0),
+		0,
+	);
+	return duration
+		? Math.round(
+				measured.reduce(
+					(total, activity) =>
+						total + (metric(activity) ?? 0) * (activity.durationS ?? 0),
+					0,
+				) / duration,
+			)
+		: null;
 };
 const round = (v: number, p = 1) => Number(v.toFixed(p));
 function profileShape(p: UserProfile) {
@@ -297,6 +280,11 @@ function macroHistory(runs: Activity[], start: string, end: string) {
 					xs.reduce((s, a) => s + (a.distanceM ?? 0), 0) / 1000,
 				),
 				hours: round(xs.reduce((s, a) => s + (a.durationS ?? 0), 0) / 3600, 2),
+				avg_pace_s_km: durationWeightedActivityAverage(
+					xs,
+					(a) => a.avgPaceSKm,
+				),
+				avg_hr: durationWeightedActivityAverage(xs, (a) => a.avgHr),
 				run_count: xs.length,
 			})),
 		peak_weekly_distance_km: weeks.length

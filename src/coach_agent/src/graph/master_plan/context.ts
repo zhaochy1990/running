@@ -41,7 +41,6 @@ const WeeklyMetricsSchema = z
 /** Complete, invocation-scoped and deeply immutable input to the planning Kernel. */
 export const ContextSnapshotSchema = z
 	.object({
-		schema_version: z.literal(1),
 		user: z.object({ id: z.string().min(1), profile: ProfileSchema }).strict(),
 		injuries: z.array(
 			z
@@ -98,9 +97,16 @@ export const ContextSnapshotSchema = z
 							month: z.string().regex(/^\d{4}-\d{2}$/),
 							distance_km: z.number().nonnegative(),
 							hours: z.number().nonnegative(),
+							avg_pace_s_km: nullableNumber.optional(),
+							avg_hr: nullableNumber.optional(),
 							run_count: z.number().int().nonnegative(),
 						})
-						.strict(),
+						.strict()
+						.transform((month) => ({
+							...month,
+							avg_pace_s_km: month.avg_pace_s_km ?? null,
+							avg_hr: month.avg_hr ?? null,
+						})),
 				),
 				peak_weekly_distance_km: nullableNumber,
 				longest_run_km: nullableNumber,
@@ -178,17 +184,6 @@ export const ContextSnapshotSchema = z
 					domain: z.string(),
 					status: z.enum(["complete", "partial", "missing"]),
 					detail: z.string().nullable(),
-				})
-				.strict(),
-		),
-		source_manifest: z.array(
-			z
-				.object({
-					domain: z.string(),
-					source: z.string(),
-					range_start: day.nullable(),
-					range_end: day.nullable(),
-					records: z.number().int().nonnegative(),
 				})
 				.strict(),
 		),

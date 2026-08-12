@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Pool, RowDataPacket } from "mysql2/promise";
+import { ContextSnapshotSchema } from "../graph/master_plan/index.js";
 import { StrideDataStore } from "./dataStore.js";
 import { MySqlMasterPlanContextProvider } from "./masterPlanContextProvider.js";
 
@@ -192,16 +193,8 @@ test("context provider maps canonical injuries and numeric race feel", async () 
 		},
 	]);
 	assert.equal(snapshot.race_history[0]?.feel, 8);
-	assert.deepEqual(
-		snapshot.source_manifest.find((item) => item.domain === "injuries"),
-		{
-			domain: "injuries",
-			source: "mysql.user_injury",
-			range_start: null,
-			range_end: "2026-08-11",
-			records: 1,
-		},
-	);
+	assert.equal("schema_version" in snapshot, false);
+	assert.equal("source_manifest" in snapshot, false);
 });
 
 test("context provider excludes trail-labelled outdoor activities from road-run evidence", async () => {
@@ -213,11 +206,11 @@ test("context provider excludes trail-labelled outdoor activities from road-run 
 		date: new Date("2026-07-01T00:00:00Z"),
 		distanceM: 50000,
 		durationS: 20000,
-		avgPaceSKm: null,
+		avgPaceSKm: 300,
 		adjustedPace: null,
 		bestKmPace: null,
 		maxPace: null,
-		avgHr: null,
+		avgHr: 140,
 		maxHr: null,
 		avgCadence: null,
 		maxCadence: null,
@@ -251,6 +244,42 @@ test("context provider excludes trail-labelled outdoor activities from road-run 
 		labelId: "road",
 		name: "公路长跑",
 		distanceM: 30000,
+		durationS: 10000,
+		avgPaceSKm: 330,
+		avgHr: 150,
+	};
+	const missingMetrics = {
+		...trail,
+		labelId: "missing-metrics",
+		date: new Date("2026-06-01T00:00:00Z"),
+		distanceM: 10000,
+		durationS: 3600,
+		avgPaceSKm: null,
+		avgHr: null,
+	};
+	const paceOnly = {
+		...trail,
+		labelId: "pace-only",
+		distanceM: 5000,
+		durationS: 5000,
+		avgPaceSKm: 360,
+		avgHr: null,
+	};
+	const hrOnly = {
+		...trail,
+		labelId: "hr-only",
+		distanceM: 5000,
+		durationS: 5000,
+		avgPaceSKm: null,
+		avgHr: 160,
+	};
+	const zeroDuration = {
+		...trail,
+		labelId: "zero-duration",
+		distanceM: 5000,
+		durationS: 0,
+		avgPaceSKm: 999,
+		avgHr: 999,
 	};
 	const provider = new MySqlMasterPlanContextProvider({
 		async getUserProfile() {
@@ -268,7 +297,7 @@ test("context provider excludes trail-labelled outdoor activities from road-run 
 			return [];
 		},
 		async getActivitiesByDateRange() {
-			return [trail, road];
+			return [missingMetrics, trail, road, paceOnly, hrOnly, zeroDuration];
 		},
 		async getDailyTrainingLoadByDateRange() {
 			return [];
@@ -295,6 +324,35 @@ test("context provider excludes trail-labelled outdoor activities from road-run 
 	);
 	assert.equal(snapshot.macro_history.longest_run_km, 50);
 	assert.equal(snapshot.macro_history.longest_road_run_km, 30);
+	assert.deepEqual(snapshot.macro_history.months, [
+		{
+			month: "2026-06",
+			distance_km: 10,
+			hours: 1,
+			avg_pace_s_km: null,
+			avg_hr: null,
+			run_count: 1,
+		},
+		{
+			month: "2026-07",
+			distance_km: 95,
+			hours: 11.11,
+			avg_pace_s_km: 317,
+			avg_hr: 146,
+			run_count: 5,
+		},
+	]);
+	const legacySnapshot = ContextSnapshotSchema.parse({
+		...snapshot,
+		macro_history: {
+			...snapshot.macro_history,
+			months: [
+				{ month: "2026-07", distance_km: 95, hours: 11.11, run_count: 5 },
+			],
+		},
+	});
+	assert.equal(legacySnapshot.macro_history.months[0]?.avg_pace_s_km, null);
+	assert.equal(legacySnapshot.macro_history.months[0]?.avg_hr, null);
 });
 
 test("context provider materializes complete zero-run weeks", async () => {
