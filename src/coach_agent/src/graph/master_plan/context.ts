@@ -98,9 +98,16 @@ export const ContextSnapshotSchema = z
 							month: z.string().regex(/^\d{4}-\d{2}$/),
 							distance_km: z.number().nonnegative(),
 							hours: z.number().nonnegative(),
+							avg_pace_s_km: nullableNumber.optional(),
+							avg_hr: nullableNumber.optional(),
 							run_count: z.number().int().nonnegative(),
 						})
-						.strict(),
+						.strict()
+						.transform((month) => ({
+							...month,
+							avg_pace_s_km: month.avg_pace_s_km ?? null,
+							avg_hr: month.avg_hr ?? null,
+						})),
 				),
 				peak_weekly_distance_km: nullableNumber,
 				longest_run_km: nullableNumber,
