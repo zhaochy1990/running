@@ -6,6 +6,7 @@ import {
 	type AssessmentFacts,
 	type AthleteAssessment,
 	AthleteAssessmentSchema,
+	authoritativeContinuity,
 	authoritativeGoalLevel,
 	authoritativeReadiness,
 	canonicalizeAssessmentSummary,
@@ -81,6 +82,14 @@ interface AssessmentModel {
 		facts: AssessmentFacts;
 	}): Promise<unknown>;
 }
+interface GoalAssessmentModel extends AssessmentModel {
+	invoke(input: {
+		request: MasterPlanGraphRequest;
+		snapshot: ContextSnapshot;
+		facts: AssessmentFacts;
+		athleteAssessment: AthleteAssessment;
+	}): Promise<unknown>;
+}
 interface StrategyModel {
 	invoke(input: {
 		archetype: StrategyArchetype;
@@ -120,7 +129,7 @@ interface ReviewModel {
 export interface MasterPlanGraphDependencies {
 	contextProvider: MasterPlanContextProvider;
 	assessmentModel: AssessmentModel;
-	goalAssessmentModel: AssessmentModel;
+	goalAssessmentModel: GoalAssessmentModel;
 	strategyModel: StrategyModel;
 	judgmentModel: JudgmentModel;
 	reviewModel: ReviewModel;
@@ -129,7 +138,7 @@ export interface MasterPlanGraphDependencies {
 	artifactRevision?: number;
 }
 
-export class ModelContractError extends Error { }
+export class ModelContractError extends Error {}
 
 export const GraphInput = new StateSchema({ request: MasterPlanGraphRequest });
 export const GraphOutput = new StateSchema({ outcome: MasterPlanGraphOutcome });
@@ -204,7 +213,7 @@ class MasterPlanNodes {
 		const request = MasterPlanGraphRequest.parse(state.request);
 		const context = MasterPlanGraphContext.parse(runtime.context);
 
-		const artifactRevision = 1;
+		const artifactRevision = this.dependencies.artifactRevision ?? 1;
 		if (request.requested_mode !== "new_season") {
 			logger.warn(`Requested mode ${request.requested_mode} is not supported`);
 			return {
@@ -249,23 +258,23 @@ class MasterPlanNodes {
 			};
 		}
 
-		// const safetyReasons = explicitAcuteRestrictions(request, snapshot);
-		// if (safetyReasons.length > 0)
-		//   return {
-		//     context,
-		//     snapshot,
-		//     outcome: MasterPlanGraphOutcome.parse({
-		//       decision: "blocked_for_safety",
-		//       request_id: request.request_id,
-		//       generation_id: context.generationId,
-		//       reasons: safetyReasons,
-		//       prerequisites: [
-		//         "Obtain clinical clearance or an explicit return-to-run restriction update",
-		//       ],
-		//     }),
-		//   };
+		const safetyReasons = explicitAcuteRestrictions(request, snapshot);
+		if (safetyReasons.length > 0)
+			return {
+				context,
+				snapshot,
+				outcome: MasterPlanGraphOutcome.parse({
+					decision: "blocked_for_safety",
+					request_id: request.request_id,
+					generation_id: context.generationId,
+					reasons: safetyReasons,
+					prerequisites: [
+						"Obtain clinical clearance or an explicit return-to-run restriction update",
+					],
+				}),
+			};
 
-		logger.info(snapshot, 'context snapshot,');
+		logger.info(snapshot, "context snapshot,");
 
 		const facts = deriveAssessmentFacts(snapshot, request);
 		const volume = facts.facts.find(
@@ -274,9 +283,9 @@ class MasterPlanNodes {
 		const frequency = facts.facts.find(
 			(fact) => fact.fact_id === "frequency.recent_run_days_per_week",
 		)?.value;
-		logger.info(facts, 'assessment facts,');
-		logger.info(volume, 'recent weekly volume (km),');
-		logger.info(frequency, 'recent weekly frequency (days),');
+		logger.info(facts, "assessment facts,");
+		logger.info(volume, "recent weekly volume (km),");
+		logger.info(frequency, "recent weekly frequency (days),");
 
 		if (
 			typeof volume !== "number" ||
@@ -308,7 +317,6 @@ class MasterPlanNodes {
 
 	readonly assessAthlete = async (state: typeof GraphState.State) => {
 		logger.info(`Assessing athlete for request ${state.request.request_id}...`);
-		throw new Error("Testing");
 
 		const { request, snapshot, facts, context } = required(state);
 		try {
@@ -321,10 +329,16 @@ class MasterPlanNodes {
 					}),
 				),
 			);
+			logger.info(
+				assessment,
+				`Athlete assessment for request ${request.request_id}`,
+			);
 			validateAssessmentReferences(assessment, facts);
 			validateAthleteAssessmentRanges(assessment, facts, request);
 			if (assessment.readiness !== authoritativeReadiness(facts))
 				throw new Error("readiness conflict");
+			if (assessment.continuity !== authoritativeContinuity(facts))
+				throw new Error("continuity conflict");
 			if (assessment.readiness === "missing_baseline")
 				return {
 					outcome: MasterPlanGraphOutcome.parse({
@@ -357,7 +371,8 @@ class MasterPlanNodes {
 	};
 
 	readonly assessGoal = async (state: typeof GraphState.State) => {
-		const { request, snapshot, facts, context } = required(state);
+		const { request, snapshot, facts, context, athleteAssessment } =
+			requiredWithAthleteAssessment(state);
 		try {
 			const assessment = canonicalizeAssessmentSummary(
 				GoalAssessmentSchema.parse(
@@ -365,13 +380,18 @@ class MasterPlanNodes {
 						request,
 						snapshot,
 						facts,
+						athleteAssessment,
 					}),
 				),
+			);
+			logger.info(
+				assessment,
+				`Goal assessment for request ${request.request_id}`,
 			);
 			validateAssessmentReferences(assessment, facts);
 			validateGoalAssessmentTargets(assessment, request, facts);
 			if (
-				assessment.level !== authoritativeGoalLevel(facts) ||
+				assessment.level !== authoritativeGoalLevel(facts, athleteAssessment) ||
 				(assessment.level !== "multi_cycle_required" &&
 					assessment.multi_cycle_path.length)
 			)
@@ -388,9 +408,9 @@ class MasterPlanNodes {
 								assessment.multi_cycle_path.length >= 2
 									? assessment.multi_cycle_path
 									: [
-										"Develop the required baseline",
-										"Reassess the confirmed target",
-									],
+											"Develop the required baseline",
+											"Reassess the confirmed target",
+										],
 						},
 					}),
 				};
@@ -538,10 +558,10 @@ class MasterPlanNodes {
 				outcome: isContractError(error)
 					? qualityFailure(request, context, "candidate_plan_contract_invalid")
 					: infrastructureFailure(
-						request,
-						context,
-						"skeleton_model_unavailable",
-					),
+							request,
+							context,
+							"skeleton_model_unavailable",
+						),
 			};
 		}
 		const schemaReport = runMasterPlanRuleFilter(raw, request, snapshot);
@@ -633,14 +653,14 @@ class MasterPlanNodes {
 		);
 		return report.has_errors
 			? {
-				ruleReport: report,
-				outcome: qualityFailureWithReports(
-					state.request,
-					state.context!,
-					state.simulationReport!,
-					report,
-				),
-			}
+					ruleReport: report,
+					outcome: qualityFailureWithReports(
+						state.request,
+						state.context!,
+						state.simulationReport!,
+						report,
+					),
+				}
 			: { ruleReport: report };
 	};
 
@@ -739,13 +759,13 @@ class MasterPlanNodes {
 				adjudication.decision === "pass_with_warnings"
 				? { adjudication }
 				: {
-					adjudication,
-					outcome: qualityFailureWithReviews(
-						state,
-						`review_${adjudication.decision}`,
 						adjudication,
-					),
-				};
+						outcome: qualityFailureWithReviews(
+							state,
+							`review_${adjudication.decision}`,
+							adjudication,
+						),
+					};
 		} catch {
 			return {
 				outcome: qualityFailureWithReviews(
@@ -825,6 +845,12 @@ function required(state: typeof GraphState.State) {
 		facts: state.facts!,
 	};
 }
+function requiredWithAthleteAssessment(state: typeof GraphState.State) {
+	return {
+		...required(state),
+		athleteAssessment: state.athleteAssessment!,
+	};
+}
 function requiredWithAssessments(state: typeof GraphState.State) {
 	return {
 		...required(state),
@@ -861,10 +887,10 @@ function workerFailure(state: typeof GraphState.State) {
 	return error.startsWith("infra:")
 		? infrastructureFailure(state.request, state.context!, error.slice(6))
 		: qualityFailure(
-			state.request,
-			state.context!,
-			error.replace(/^quality:/, ""),
-		);
+				state.request,
+				state.context!,
+				error.replace(/^quality:/, ""),
+			);
 }
 function infrastructureFailure(
 	request: MasterPlanGraphRequest,
@@ -1052,7 +1078,7 @@ export function validateSkeletonAgainstStrategy(
 		if (
 			!isException &&
 			week.target_weekly_km_high >
-			athlete.safe_training_ranges.weekly_distance_km.high
+				athlete.safe_training_ranges.weekly_distance_km.high
 		)
 			throw new Error("skeleton weekly volume exceeds athlete safe range");
 		if (
@@ -1153,7 +1179,7 @@ function inclusiveWeeks(start: string, end: string): number {
 		((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) /
 			86_400_000 +
 			1) /
-		7,
+			7,
 	);
 }
 function addDays(day: string, amount: number): string {

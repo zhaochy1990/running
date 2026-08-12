@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	AthleteAssessmentSchema,
+	authoritativeGoalLevel,
 	ContextSnapshotSchema,
 	createMasterPlanGraph,
-	MasterPlanGraphRequest,
 	deriveAssessmentFacts,
+	GoalAssessmentSchema,
 	type MasterPlanGraphContext,
+	MasterPlanGraphRequest,
+	validateAthleteAssessmentRanges,
 } from "./index.js";
 import {
 	createAssessmentSnapshot,
@@ -24,10 +27,15 @@ const context: MasterPlanGraphContext = {
 
 function validAthleteAssessment() {
 	return {
-		schema_version: 1 as const,
-		readiness: "limited" as const,
+		schema_version: 2 as const,
+		readiness: "ready" as const,
 		summary: "Recent training supports continued structured preparation.",
+		capability_confidence: "high" as const,
+		current_phase: null,
+		continuity: "continuous" as const,
+		recommended_entry_phase: "build" as const,
 		safe_training_ranges: {
+			starting_weekly_distance_km: { low: 62, high: 70 },
 			weekly_distance_km: { low: 62, high: 82 },
 			runs_per_week: { low: 4, high: 6 },
 			long_run_km: { low: 20, high: 30 },
@@ -41,13 +49,15 @@ function validAthleteAssessment() {
 				fact_ids: ["volume.recent_weekly_km"],
 			},
 		],
+		limiting_factors: [],
+		assumptions_to_validate: [],
 		gaps: [],
 	};
 }
 
 function validGoalAssessment() {
 	return {
-		schema_version: 1 as const,
+		schema_version: 2 as const,
 		level: "aggressive_but_plausible" as const,
 		summary:
 			"The confirmed 2:50 goal is plausible only through explicit gates.",
@@ -67,6 +77,8 @@ function validGoalAssessment() {
 				},
 				conditions: [
 					{
+						signal: "race_specific_performance" as const,
+						criterion: "Complete a race-specific validation effort",
 						description: "Pass race-specific checks",
 						fact_ids: ["goal.a.improvement_pct"],
 					},
@@ -80,6 +92,8 @@ function validGoalAssessment() {
 				},
 				conditions: [
 					{
+						signal: "race_specific_performance" as const,
+						criterion: "Reassess when A validation is incomplete",
 						description: "Use if A checks are incomplete",
 						fact_ids: ["goal.a.matching_pb_seconds"],
 					},
@@ -93,6 +107,8 @@ function validGoalAssessment() {
 				},
 				conditions: [
 					{
+						signal: "health_readiness" as const,
+						criterion: "Start healthy enough to complete the race safely",
 						description: "Protect health and completion",
 						fact_ids: ["load.current_form"],
 					},
@@ -166,8 +182,15 @@ function dependencies(overrides: Record<string, unknown> = {}) {
 
 test("derives deterministic assessment facts from worked literals and passes assessments to skeleton", async () => {
 	const skeletonInputs: unknown[] = [];
+	const goalInputs: unknown[] = [];
 	const graph = createMasterPlanGraph(
 		dependencies({
+			goalAssessmentModel: {
+				async invoke(input: unknown) {
+					goalInputs.push(input);
+					return validGoalAssessment();
+				},
+			},
 			skeletonModel: {
 				async invoke(input: unknown) {
 					skeletonInputs.push(input);
@@ -203,6 +226,12 @@ test("derives deterministic assessment facts from worked literals and passes ass
 	assert.equal(values["goal.a.matching_pb_seconds"], 10631);
 	assert.equal(values["goal.a.improvement_pct"], 4.05);
 	assert.equal(values["coverage.ratio"], 0.75);
+	assert.equal(values["continuity.days_since_last_run"], 1);
+	assert.equal(values["continuity.current_phase"], "none");
+	assert.deepEqual(
+		(goalInputs[0] as { athleteAssessment: unknown }).athleteAssessment,
+		outcome.artifact.athlete_assessment,
+	);
 	const input = skeletonInputs[0] as {
 		facts: unknown;
 		athleteAssessment: unknown;
@@ -214,6 +243,81 @@ test("derives deterministic assessment facts from worked literals and passes ass
 		outcome.artifact.athlete_assessment,
 	);
 	assert.deepEqual(input.goalAssessment, outcome.artifact.goal_assessment);
+});
+
+test("athlete assessment rejects goal-specific conclusions", () => {
+	assert.throws(() =>
+		AthleteAssessmentSchema.parse({
+			...validAthleteAssessment(),
+			material_conclusions: [
+				{
+					claim: "goal_runway_limited",
+					explanation: "Goal runway is limited",
+					fact_ids: ["race.a.weeks_to_race"],
+				},
+			],
+		}),
+	);
+});
+
+test("athlete assessment rejects goal facts in capability notes", () => {
+	assert.throws(() => {
+		const assessment = AthleteAssessmentSchema.parse({
+			...validAthleteAssessment(),
+			limiting_factors: [
+				{
+					description: "The goal runway is short",
+					fact_ids: ["race.a.weeks_to_race"],
+				},
+			],
+		});
+		validateAthleteAssessmentRanges(
+			assessment,
+			deriveAssessmentFacts(
+				ContextSnapshotSchema.parse(createAssessmentSnapshot()),
+				MasterPlanGraphRequest.parse(createTestRequest()),
+			),
+			MasterPlanGraphRequest.parse(createTestRequest()),
+		);
+	});
+});
+
+test("limited athlete capability makes an otherwise supported goal conditional", () => {
+	const snapshot = createAssessmentSnapshot();
+	snapshot.continuity.days_since_last_run = 30;
+	const facts = deriveAssessmentFacts(
+		ContextSnapshotSchema.parse(snapshot),
+		MasterPlanGraphRequest.parse(createTestRequest()),
+	);
+	const athlete = AthleteAssessmentSchema.parse({
+		...validAthleteAssessment(),
+		readiness: "limited",
+		continuity: "returning",
+		recommended_entry_phase: "return_to_run",
+	});
+	assert.equal(authoritativeGoalLevel(facts, athlete), "conditional");
+});
+
+test("goal assessment requires operational gate criteria", () => {
+	const assessment = validGoalAssessment();
+	const condition = assessment.abc_gates.A.conditions[0]!;
+	assert.throws(() =>
+		GoalAssessmentSchema.parse({
+			...assessment,
+			abc_gates: {
+				...assessment.abc_gates,
+				A: {
+					...assessment.abc_gates.A,
+					conditions: [
+						{
+							description: condition.description,
+							fact_ids: condition.fact_ids,
+						},
+					],
+				},
+			},
+		}),
+	);
 });
 
 test("rejects an assessment citation whose fact id does not exist", async () => {
