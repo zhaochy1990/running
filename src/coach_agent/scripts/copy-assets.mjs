@@ -21,35 +21,35 @@ const DIST = join(ROOT, "dist");
 const SKIP_EXT = new Set([".ts", ".tsx"]);
 
 async function* walk(dir) {
-  for (const entry of await readdir(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      yield* walk(full);
-    } else if (entry.isFile()) {
-      yield full;
-    }
-  }
+	for (const entry of await readdir(dir, { withFileTypes: true })) {
+		const full = join(dir, entry.name);
+		if (entry.isDirectory()) {
+			yield* walk(full);
+		} else if (entry.isFile()) {
+			yield full;
+		}
+	}
 }
 
 async function main() {
-  try {
-    await stat(SRC);
-  } catch {
-    console.error(`copy-assets: source dir not found: ${SRC}`);
-    process.exit(1);
-  }
+	try {
+		await stat(SRC);
+	} catch {
+		console.error(`copy-assets: source dir not found: ${SRC}`);
+		process.exit(1);
+	}
 
-  let copied = 0;
-  for await (const file of walk(SRC)) {
-    if (SKIP_EXT.has(extname(file))) continue;
-    const rel = relative(SRC, file);
-    const dest = join(DIST, rel);
-    await mkdir(dirname(dest), { recursive: true });
-    await cp(file, dest);
-    copied += 1;
-    console.log(`  ${rel}`);
-  }
-  console.log(`copy-assets: copied ${copied} asset(s) src/ -> dist/`);
+	let copied = 0;
+	for await (const file of walk(SRC)) {
+		if (SKIP_EXT.has(extname(file))) continue;
+		const rel = relative(SRC, file);
+		const dest = join(DIST, rel);
+		await mkdir(dirname(dest), { recursive: true });
+		await cp(file, dest);
+		copied += 1;
+		console.log(`  ${rel}`);
+	}
+	console.log(`copy-assets: copied ${copied} asset(s) src/ -> dist/`);
 }
 
 await main();

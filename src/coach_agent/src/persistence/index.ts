@@ -12,28 +12,28 @@ import { MySqlSaver } from "./checkpointer.js";
 import { MySqlStore } from "./store.js";
 
 export interface Persistence {
-  checkpointer: MySqlSaver;
-  store: MySqlStore;
-  pool: Pool;
-  close(): Promise<void>;
+	checkpointer: MySqlSaver;
+	store: MySqlStore;
+	pool: Pool;
+	close(): Promise<void>;
 }
 
 export async function createPersistence(): Promise<Persistence> {
-  const config = readMySqlConfig();
-  await ensureDatabase(config);
-  const pool = createPool(config);
+	const config = readMySqlConfig();
+	await ensureDatabase(config);
+	const pool = createPool(config);
 
-  const checkpointer = new MySqlSaver(pool);
-  const store = new MySqlStore(pool);
-  await checkpointer.setup();
-  await store.setup();
+	const checkpointer = new MySqlSaver(pool);
+	const store = new MySqlStore(pool);
+	await checkpointer.setup();
+	await store.setup();
 
-  return {
-    checkpointer,
-    store,
-    pool,
-    close: () => pool.end(),
-  };
+	return {
+		checkpointer,
+		store,
+		pool,
+		close: () => pool.end(),
+	};
 }
 
 export { MySqlSaver } from "./checkpointer.js";
@@ -41,18 +41,18 @@ export { MySqlStore } from "./store.js";
 export { StrideDataStore } from "./dataStore.js";
 export { MySqlMasterPlanContextProvider } from "./masterPlanContextProvider.js";
 export type {
-  Activity,
-  DailyTrainingLoad,
-  HeartRateZone,
-  MasterPlanDocument,
-  PaceZone,
-  PersonalBest,
-  RaceEffort,
-  RunningCalibration,
-  UserInjury,
-  WeeklyPlanDocument,
-  UserProfile,
-  DailyRecovery,
-  ActiveMasterPlanMetadata,
+	Activity,
+	DailyTrainingLoad,
+	HeartRateZone,
+	MasterPlanDocument,
+	PaceZone,
+	PersonalBest,
+	RaceEffort,
+	RunningCalibration,
+	UserInjury,
+	WeeklyPlanDocument,
+	UserProfile,
+	DailyRecovery,
+	ActiveMasterPlanMetadata,
 } from "./dataStore.js";
 export { createStridePool } from "./mysql.js";

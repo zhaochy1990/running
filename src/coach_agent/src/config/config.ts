@@ -3,7 +3,12 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { deepMerge } from "./deepMerge.js";
-import type { CoachAgentConfig, PartialCoachAgentConfig, ModelConfig, DataStoreConfig } from "./types.js";
+import type {
+	CoachAgentConfig,
+	PartialCoachAgentConfig,
+	ModelConfig,
+	DataStoreConfig,
+} from "./types.js";
 import { getLogger } from "../logging/index.js";
 
 export type * from "./types.js";
@@ -15,56 +20,70 @@ const TARGET_ENV_CONFIG_FILE = `coach.${ENV}.yaml`;
 const logger = getLogger("config");
 
 interface ResolvedConfigFiles {
-    defaultConfigFile?: string;
-    targetEnvConfigFile?: string;
+	defaultConfigFile?: string;
+	targetEnvConfigFile?: string;
 }
 
 export interface LoadConfigOptions {
-    cwd?: string;
+	cwd?: string;
 }
 
 export function loadConfig(options: LoadConfigOptions = {}): CoachAgentConfig {
-    const configFiles = resolveConfigFiles(options);
-    const defaultConfig = configFiles.defaultConfigFile ? readConfigFile(configFiles.defaultConfigFile) : {};
-    const targetEnvConfig = configFiles.targetEnvConfigFile ? readConfigFile(configFiles.targetEnvConfigFile) : {};
+	const configFiles = resolveConfigFiles(options);
+	const defaultConfig = configFiles.defaultConfigFile
+		? readConfigFile(configFiles.defaultConfigFile)
+		: {};
+	const targetEnvConfig = configFiles.targetEnvConfigFile
+		? readConfigFile(configFiles.targetEnvConfigFile)
+		: {};
 
+	logger.info(`Loading coach config for env "${ENV}"`);
+	logger.info(`  default config: ${configFiles.defaultConfigFile ?? "(none)"}`);
+	logger.info(`  target env config: ${configFiles.targetEnvConfigFile ?? "(none)"}`);
 
-    logger.info(`Loading coach config for env "${ENV}"`);
-    logger.info(`  default config: ${configFiles.defaultConfigFile ?? "(none)"}`);
-    logger.info(`  target env config: ${configFiles.targetEnvConfigFile ?? "(none)"}`);
-
-    return deepMerge(defaultConfig, targetEnvConfig) as CoachAgentConfig;
+	return deepMerge(defaultConfig, targetEnvConfig) as CoachAgentConfig;
 }
 
-export function getAgentConfig(config: CoachAgentConfig, agentName: string): ModelConfig {
-    const agentConfig = config.agents.find((agent) => agent.name === agentName);
-    if (!agentConfig || typeof agentConfig !== "object" || !("model" in agentConfig)) {
-        throw new Error(`Agent "${agentName}" is not defined in the coach config`);
-    }
+export function getAgentConfig(
+	config: CoachAgentConfig,
+	agentName: string,
+): ModelConfig {
+	const agentConfig = config.agents.find((agent) => agent.name === agentName);
+	if (
+		!agentConfig ||
+		typeof agentConfig !== "object" ||
+		!("model" in agentConfig)
+	) {
+		throw new Error(`Agent "${agentName}" is not defined in the coach config`);
+	}
 
-    const model = config.models.find((candidate) => candidate.name === agentConfig.model);
-    if (!model) {
-        throw new Error(`Model "${agentConfig.model}" is not defined in the coach config`);
-    }
+	const model = config.models.find(
+		(candidate) => candidate.name === agentConfig.model,
+	);
+	if (!model) {
+		throw new Error(
+			`Model "${agentConfig.model}" is not defined in the coach config`,
+		);
+	}
 
-    // override the model's base settings with any per-agent overrides
-    if (agentConfig.max_tokens !== undefined) {
-        model.max_tokens = agentConfig.max_tokens;
-    }
-    if (agentConfig.timeout_s !== undefined) {
-        model.timeout_s = agentConfig.timeout_s;
-    }
-    if (agentConfig.reasoning_effort !== undefined) {
-        model.reasoning_effort = agentConfig.reasoning_effort;
-    }
-    if (agentConfig.thinking !== undefined) {
-        model.thinking = agentConfig.thinking;
-    }
-    if (agentConfig.response_format !== undefined) {
-        model.response_format = agentConfig.response_format;
-    }
+	// override the model's base settings with any per-agent overrides
+	if (agentConfig.max_tokens !== undefined) {
+		model.max_tokens = agentConfig.max_tokens;
+	}
+	if (agentConfig.timeout_s !== undefined) {
+		model.timeout_s = agentConfig.timeout_s;
+	}
+	if (agentConfig.reasoning_effort !== undefined) {
+		model.reasoning_effort = agentConfig.reasoning_effort;
+	}
+	if (agentConfig.thinking !== undefined) {
+		model.thinking = agentConfig.thinking;
+	}
+	if (agentConfig.response_format !== undefined) {
+		model.response_format = agentConfig.response_format;
+	}
 
-    return model;
+	return model;
 }
 
 /**
@@ -72,79 +91,88 @@ export function getAgentConfig(config: CoachAgentConfig, agentName: string): Mod
  * block of the coach config. Parallels {@link getAgentConfig}: a pure read of
  * the already-loaded config that throws if the section is missing.
  */
-export function readStrideMySqlConfig(config: CoachAgentConfig): DataStoreConfig {
-    if (!config.data_store) {
-        throw new Error("`data_store` is not defined in the coach config");
-    }
-    return config.data_store;
+export function readStrideMySqlConfig(
+	config: CoachAgentConfig,
+): DataStoreConfig {
+	if (!config.data_store) {
+		throw new Error("`data_store` is not defined in the coach config");
+	}
+	return config.data_store;
 }
 
 // Resolve the path to the config file based on the provided options and environment variables.
-function resolveConfigFiles(options: LoadConfigOptions = {}): ResolvedConfigFiles {
-    const repoRoot = findRepoRoot(options.cwd ?? process.cwd());
-    const configDir = join(repoRoot, "config");
+function resolveConfigFiles(
+	options: LoadConfigOptions = {},
+): ResolvedConfigFiles {
+	const repoRoot = findRepoRoot(options.cwd ?? process.cwd());
+	const configDir = join(repoRoot, "config");
 
-    const defaultConfigPath = join(configDir, DEFAULT_CONFIG_FILE);
-    const targetEnvConfigPath = join(configDir, TARGET_ENV_CONFIG_FILE);
-    const configFiles: ResolvedConfigFiles = {};
+	const defaultConfigPath = join(configDir, DEFAULT_CONFIG_FILE);
+	const targetEnvConfigPath = join(configDir, TARGET_ENV_CONFIG_FILE);
+	const configFiles: ResolvedConfigFiles = {};
 
-    if (existsSync(defaultConfigPath)) {
-        configFiles.defaultConfigFile = defaultConfigPath;
-    }
+	if (existsSync(defaultConfigPath)) {
+		configFiles.defaultConfigFile = defaultConfigPath;
+	}
 
-    if (existsSync(targetEnvConfigPath)) {
-        configFiles.targetEnvConfigFile = targetEnvConfigPath;
-    }
+	if (existsSync(targetEnvConfigPath)) {
+		configFiles.targetEnvConfigFile = targetEnvConfigPath;
+	}
 
-    if (!configFiles.defaultConfigFile && !configFiles.targetEnvConfigFile) {
-        throw new Error(`No config file found. Tried ${defaultConfigPath} and ${targetEnvConfigPath}`);
-    }
+	if (!configFiles.defaultConfigFile && !configFiles.targetEnvConfigFile) {
+		throw new Error(
+			`No config file found. Tried ${defaultConfigPath} and ${targetEnvConfigPath}`,
+		);
+	}
 
-    return configFiles;
+	return configFiles;
 }
 
 function readConfigFile(configPath: string): PartialCoachAgentConfig {
-    const rawConfig = readFileSync(configPath, "utf8");
-    const parsedConfig: unknown = parse(rawConfig);
+	const rawConfig = readFileSync(configPath, "utf8");
+	const parsedConfig: unknown = parse(rawConfig);
 
-    if (!isRecord(parsedConfig)) {
-        throw new Error(`Config file must contain a YAML mapping: ${configPath}`);
-    }
+	if (!isRecord(parsedConfig)) {
+		throw new Error(`Config file must contain a YAML mapping: ${configPath}`);
+	}
 
-    return parsedConfig as PartialCoachAgentConfig;
+	return parsedConfig as PartialCoachAgentConfig;
 }
 
 function findRepoRoot(startDir: string = process.cwd()): string {
-    let currentDir = resolve(startDir);
-    const moduleDir = dirname(fileURLToPath(import.meta.url));
+	let currentDir = resolve(startDir);
+	const moduleDir = dirname(fileURLToPath(import.meta.url));
 
-    for (const candidate of [currentDir, moduleDir]) {
-        const found = findRepoRootFrom(candidate);
-        if (found) {
-            return found;
-        }
-    }
+	for (const candidate of [currentDir, moduleDir]) {
+		const found = findRepoRootFrom(candidate);
+		if (found) {
+			return found;
+		}
+	}
 
-    throw new Error(`Unable to find repository root from ${currentDir}`);
+	throw new Error(`Unable to find repository root from ${currentDir}`);
 }
 
 function findRepoRootFrom(startDir: string): string | undefined {
-    let currentDir = resolve(startDir);
+	let currentDir = resolve(startDir);
 
-    while (true) {
-        if (existsSync(join(currentDir, "config")) && existsSync(join(currentDir, ".root"))) {
-            return currentDir;
-        }
+	while (true) {
+		if (
+			existsSync(join(currentDir, "config")) &&
+			existsSync(join(currentDir, ".root"))
+		) {
+			return currentDir;
+		}
 
-        const parentDir = dirname(currentDir);
-        if (parentDir === currentDir) {
-            return undefined;
-        }
+		const parentDir = dirname(currentDir);
+		if (parentDir === currentDir) {
+			return undefined;
+		}
 
-        currentDir = parentDir;
-    }
+		currentDir = parentDir;
+	}
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }

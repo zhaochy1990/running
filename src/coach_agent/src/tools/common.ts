@@ -51,23 +51,23 @@ import type { CoachToolRuntime } from "../agents/coachAgent.js";
  * JSON-serializable value — the factory serializes it into the ToolMessage.
  */
 export type CoachToolHandler<Schema extends z.ZodObject<any>, Output> = (
-  input: z.infer<Schema>,
-  runtime: CoachToolRuntime,
+	input: z.infer<Schema>,
+	runtime: CoachToolRuntime,
 ) => Output | Promise<Output>;
 
 /** Declarative description of one tool: metadata + schema + domain handler. */
 export interface CoachToolSpec<
-  Schema extends z.ZodObject<any> = z.ZodObject<any>,
-  Output = unknown,
+	Schema extends z.ZodObject<any> = z.ZodObject<any>,
+	Output = unknown,
 > {
-  /** Model-facing tool name. Prefer snake_case. */
-  name: string;
-  /** Model-facing description — when/why to call this tool. */
-  description: string;
-  /** Zod input schema. Do NOT put `userId` here; it comes from context. */
-  schema: Schema;
-  /** Domain logic that produces the tool's result. */
-  handler: CoachToolHandler<Schema, Output>;
+	/** Model-facing tool name. Prefer snake_case. */
+	name: string;
+	/** Model-facing description — when/why to call this tool. */
+	description: string;
+	/** Zod input schema. Do NOT put `userId` here; it comes from context. */
+	schema: Schema;
+	/** Domain logic that produces the tool's result. */
+	handler: CoachToolHandler<Schema, Output>;
 }
 
 /**
@@ -82,20 +82,20 @@ export interface CoachToolSpec<
  * so no type information is discarded.
  */
 export function defineCoachTool<Schema extends z.ZodObject<any>, Output>(
-  spec: CoachToolSpec<Schema, Output>,
+	spec: CoachToolSpec<Schema, Output>,
 ) {
-  return tool(
-    (input: z.infer<Schema>, runtime: CoachToolRuntime) =>
-      spec.handler(input, runtime),
-    {
-      name: spec.name,
-      description: spec.description,
-      schema: spec.schema,
-    },
-  );
+	return tool(
+		(input: z.infer<Schema>, runtime: CoachToolRuntime) =>
+			spec.handler(input, runtime),
+		{
+			name: spec.name,
+			description: spec.description,
+			schema: spec.schema,
+		},
+	);
 }
 
 /** Wrap many specs at once — convenience over mapping {@link defineCoachTool}. */
 export function defineCoachTools(specs: Array<CoachToolSpec<any, any>>) {
-  return specs.map(defineCoachTool);
+	return specs.map(defineCoachTool);
 }
