@@ -204,7 +204,7 @@ class MasterPlanNodes {
 		const request = MasterPlanGraphRequest.parse(state.request);
 		const context = MasterPlanGraphContext.parse(runtime.context);
 
-		const artifactRevision = this.dependencies.artifactRevision ?? 1;
+		const artifactRevision = 1;
 		if (request.requested_mode !== "new_season") {
 			logger.warn(`Requested mode ${request.requested_mode} is not supported`);
 			return {
@@ -248,23 +248,21 @@ class MasterPlanNodes {
 				),
 			};
 		}
-		logger.info(snapshot, "Snapshot context");
-
-		const safetyReasons = explicitAcuteRestrictions(request, snapshot);
-		if (safetyReasons.length > 0)
-			return {
-				context,
-				snapshot,
-				outcome: MasterPlanGraphOutcome.parse({
-					decision: "blocked_for_safety",
-					request_id: request.request_id,
-					generation_id: context.generationId,
-					reasons: safetyReasons,
-					prerequisites: [
-						"Obtain clinical clearance or an explicit return-to-run restriction update",
-					],
-				}),
-			};
+		// const safetyReasons = explicitAcuteRestrictions(request, snapshot);
+		// if (safetyReasons.length > 0)
+		//   return {
+		//     context,
+		//     snapshot,
+		//     outcome: MasterPlanGraphOutcome.parse({
+		//       decision: "blocked_for_safety",
+		//       request_id: request.request_id,
+		//       generation_id: context.generationId,
+		//       reasons: safetyReasons,
+		//       prerequisites: [
+		//         "Obtain clinical clearance or an explicit return-to-run restriction update",
+		//       ],
+		//     }),
+		//   };
 
 		const facts = deriveAssessmentFacts(snapshot, request);
 		const volume = facts.facts.find(

@@ -125,6 +125,12 @@ scripts/coach-local.sh smoke gpt-5.6-luna
 
 **Go API 的所有持久化状态统一落 MySQL**，不要为 Go API 新增 Azure Table、Azure Blob、Azure Files 或 Key Vault 存储依赖；Python 服务保留既有 Azure 后端。遗留 SQLite 的迁移或调试任务必须与 weekly plan authoring 流程隔离。likes_store 是 Python two-backend 文件（dev JSON / prod Azure Table）+ `DefaultAzureCredential`，不要把它用于 Go API。
 
+### SQL ownership rule (HARD)
+
+只有各运行时的 storage 包允许直接写 SQL 读取 / 修改数据库：Python `src/stride_storage/`、Go `src/go/internal/storage/`、TypeScript Coach `src/coach_agent/src/persistence/`。其它包（`stride_server/`、`coach/`、`stride_core/`、Coach graph / tools、routes、adapters、scripts 等）需要数据时必须调用对应 storage 包暴露的 API / repository / store 方法；缺方法就先在 storage 层增加一个语义明确的方法，并补 storage 层测试。
+
+禁止在非 storage 包里新增：`db._conn.execute(...)`、`conn.execute(...)`、裸 SQL 字符串查询表、或为了绕开缺失 API 直接打开 SQLite 连接。例外只限已有 legacy 代码的迁移前状态，以及下方 weekly plan authoring 流程中使用 prod readonly 账号执行的临时 MySQL CLI 查询；该 CLI 例外不得写入应用代码或持久化为脚本。改到 legacy 代码时要顺手收敛到 storage API，不能扩大直接 SQL 面。
+
 ## Timezone discipline (HARD)
 
 所有 `coros.db` 时间戳列存 **UTC ISO 8601**。所有面向用户的日 / 周分类是 **Asia/Shanghai (UTC+8, 无 DST)**。混用会把 00:00–07:59 上海窗口静默错分到错误日期。
