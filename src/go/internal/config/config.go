@@ -24,12 +24,13 @@ const DefaultConfigFile = "config.yml"
 
 // Config is the fully-resolved worker configuration.
 type Config struct {
-	Logger  logger.LoggerConfig `mapstructure:"logger"`
-	MySQL   MySQL               `mapstructure:"mysql"`
-	AMQP    AMQP                `mapstructure:"amqp"`
-	Queues  Queues              `mapstructure:"queues"`
-	Retry   Retry               `mapstructure:"retry"`
-	Runtime Runtime             `mapstructure:"runtime"`
+	Logger        logger.LoggerConfig `mapstructure:"logger"`
+	MySQL         MySQL               `mapstructure:"mysql"`
+	AMQP          AMQP                `mapstructure:"amqp"`
+	Queues        Queues              `mapstructure:"queues"`
+	Retry         Retry               `mapstructure:"retry"`
+	Runtime       Runtime             `mapstructure:"runtime"`
+	RaceDetection RaceDetection       `mapstructure:"race-detection"`
 }
 
 // MySQL holds the datastore connection (secret; env-only).
@@ -64,6 +65,17 @@ type Runtime struct {
 	// binding fallback (registry.ProviderName). Empty is fine — the MySQL
 	// binding is primary and an absent file resolves to the default provider.
 	DataDir string `mapstructure:"data-dir"`
+}
+
+// RaceDetection configures the independent activity classifier. The API key is
+// required at worker boot and should be supplied through
+// STRIDE_WORKER_RACE_DETECTION_API_KEY.
+type RaceDetection struct {
+	Endpoint       string        `mapstructure:"endpoint" validate:"required,url"`
+	APIKey         string        `mapstructure:"api-key" validate:"required"`
+	Model          string        `mapstructure:"model" validate:"required"`
+	Timeout        time.Duration `mapstructure:"timeout" validate:"required"`
+	MaxConcurrency int           `mapstructure:"max-concurrency" validate:"min=1"`
 }
 
 // MustLoad resolves the config path (explicit CONFIG_PATH env, else

@@ -233,7 +233,7 @@ func apiPipelineCatalog() []api.PipelineCatalogEntry {
 	for i, s := range specs {
 		steps := make([]api.PipelineStepInfo, len(s.Def.Steps))
 		for j, st := range s.Def.Steps {
-			steps[j] = api.PipelineStepInfo{Name: st.Name, JobType: st.JobType}
+			steps[j] = api.PipelineStepInfo{Name: st.Name, JobType: st.JobType, ContinueOnFailure: st.ContinueOnFailure}
 		}
 		out[i] = api.PipelineCatalogEntry{
 			Name:          s.Def.Name,

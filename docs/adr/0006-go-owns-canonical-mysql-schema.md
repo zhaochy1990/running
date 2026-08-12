@@ -8,7 +8,8 @@ worker infra already established (ADR 0003 / ADR 0004): **GORM models with
 `parseTime=true&loc=UTC&time_zone='+00:00'`, and domain-owns-time (GORM auto
 timestamps disabled). The watch tables (`activities`, `sync_meta`, `laps`,
 `timeseries`, `daily_health`, `dashboard`, `daily_hrv`, `race_predictions`,
-`activity_watch_zones`, `provider_credentials`) are added as GORM models
+`activity_watch_zones`, `provider_credentials`, and the confirmed activity-reference
+projection `races`) are added as GORM models
 alongside the existing `jobModel`/`pipelineRunModel`.
 
 We keep the well-reasoned column decisions of the repo's dormant Python

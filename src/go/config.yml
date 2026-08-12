@@ -35,6 +35,15 @@ runtime:
   health-addr: ":8081"
   data-dir: data          # only for the file-based provider-binding fallback
 
+# Independent race detector (not Coach Agent). The DeepSeek key is secret and
+# must be supplied via STRIDE_WORKER_RACE_DETECTION_API_KEY.
+race-detection:
+  endpoint: "https://api.deepseek.com"
+  api-key: ""
+  model: "deepseek-v4-flash"
+  timeout: 30s
+  max-concurrency: 8
+
 # HTTP API server (`stride api`) — a separate container (ADR 0012), same unified
 # binary as the worker. The worker ignores this section. Secrets stay empty here
 # and come from env:

@@ -4,8 +4,13 @@ The browser's manual "sync now" pill calls Python's synchronous `POST /api/{user
 
 **A sync is sync + compute, not just sync.** A watch sync only lands raw activity/health rows; the derived metrics (per-activity training load, daily PMC — CTL/ATL/Form — and personal bests) still need computing, which Python did in its post-sync hook. So `/api/{user}/sync` starts a pipeline, and `mode` picks which one:
 
-- **`incremental`** (default): `data_sync` = `watch_sync(incremental)` → `compute(incremental)`. Syncs only new activities and computes only those.
-- **`full`**: `onboarding` = `watch_sync(full)` → `calibration` → `compute(full)`. Re-syncs history, recomputes the athlete baseline, and does a full compute. This is also the new-user onboarding path.
+- **`incremental`** (default): `data_sync` = `watch_sync(incremental)` → `race_detection` (optional) → `compute(incremental)`. Syncs only new activities, classifies only their HM/FM-distance candidates, and computes only those activities.
+- **`full`**: `onboarding` = `watch_sync(full)` → `race_detection` (optional) → `calibration` → `compute(full)`. Re-syncs history, classifies the synced HM/FM-distance candidates, recomputes the athlete baseline, and does a full compute. This is also the new-user onboarding path.
+
+Race detection is the independent ingestion module specified by ADR 0029. A
+terminal failure remains visible on that step but does not fail the sync
+pipeline; downstream deterministic work still runs and the pipeline can finish
+`done`.
 
 The user tier may sync only its own id (path `{user}` must equal the JWT `sub`, else 403); the internal tier may sync any user (path must be a UUID), collapsing Python's separate `/internal/sync` route into the same path.
 
@@ -24,7 +29,7 @@ The former single `onboarding_compute` job is split into two job types, because 
 
 ## Pipeline I/O threading
 
-Pipelines gained a run-level `InputJSON` (persisted on `pipeline_runs`) that the orchestrator threads into every step, **merged with the previous step's `ResultJSON`** (run input wins on key conflict). This lets `mode` reach both the sync and compute steps, and lets `watch_sync` hand its `label_ids` to the incremental `compute` step. (In the 3-step `onboarding` pipeline the intermediate `calibration` result sits between sync and compute, so its `label_ids` don't reach compute — which is fine, because onboarding's compute is *full* and does not need them.)
+Pipelines gained a run-level `InputJSON` (persisted on `pipeline_runs`) that the orchestrator threads into every step, **merged with the previous step's `ResultJSON`** (run input wins on key conflict). This lets `mode` reach sync, race detection, and compute, and lets `watch_sync` hand its `label_ids` to incremental enrichment/compute. Race detection preserves those upstream fields in its successful result; if its optional step fails, the orchestrator passes its original input to the next step. In the full `onboarding` pipeline, the later `calibration` result sits between race detection and compute, so labels do not reach compute—which is fine because onboarding compute is full.
 
 ## Considered options
 

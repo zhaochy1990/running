@@ -95,6 +95,30 @@ onboarding handlers 直接写 per-user SQLite 是独立的历史架构债，本�
 
 `src/go/**` 变更 push 到 `master` 且 Go 测试通过后，workflow 统一计算本次 CalVer，并用两项 matrix 在独立 runner 上并行构建 `stride-worker` 和 `stride-api`。两个镜像分别推送到 GHCR 与阿里云 ACR；worker 额外保留 commit SHA tag。两项构建使用独立 BuildKit GHA cache scope，避免并发导出缓存互相覆盖。只有整个 matrix 成功后，独立的 Renovate job 才更新 `stride-devops` 中两项镜像版本，避免部署指向只发布了一半的 release。仅修改 workflow 本身会运行测试，但不会重新发布镜像。
 
+#### Race detection worker configuration
+
+The worker's independent race-detection module (ADR 0029) requires
+`STRIDE_WORKER_RACE_DETECTION_API_KEY`. The deployment must inject it only into
+`stride-worker`; `stride-api` neither loads nor needs the key. The committed
+`src/go/config.yml` supplies the non-secret defaults:
+
+- endpoint `https://api.deepseek.com`;
+- model `deepseek-v4-flash`;
+- timeout 30 seconds;
+- maximum concurrency 8.
+
+They can be overridden with the corresponding `STRIDE_WORKER_RACE_DETECTION_*`
+environment variables. Missing/empty key or invalid race-detection settings make
+the worker fail at startup by design. Before rollout, add the provider key to the
+deployment's secret store and expose it as
+`STRIDE_WORKER_RACE_DETECTION_API_KEY`; never commit or print its value.
+
+After the schema and worker are deployed, enqueue internal-only
+`race_detection_backfill` once per existing user to inspect historical HM/FM
+candidates. It is not a scheduled job and is unnecessary for newly synced
+activities. The job is partial-success: confirmed rows are committed as they are
+found, while a failed candidate remains absent and causes the job to retry/fail.
+
 ### 赛季训练计划统一读取切流
 
 Web 只通过 Go `GET /api/users/me/master-plan/current` 读取当前赛季训练计划。该接口从

@@ -19,11 +19,13 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/config"
 	"github.com/zhaochy1990/stride/internal/handlers/compute"
+	racehandler "github.com/zhaochy1990/stride/internal/handlers/racedetection"
 	"github.com/zhaochy1990/stride/internal/handlers/watchsync"
 	"github.com/zhaochy1990/stride/internal/health"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/mq"
 	"github.com/zhaochy1990/stride/internal/pipeline"
+	"github.com/zhaochy1990/stride/internal/racedetection"
 	"github.com/zhaochy1990/stride/internal/registry"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
@@ -51,6 +53,16 @@ func runWorker() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	raceClassifier, err := racedetection.NewChatCompletionsClassifier(racedetection.ChatCompletionsConfig{
+		Endpoint: cfg.RaceDetection.Endpoint,
+		APIKey:   cfg.RaceDetection.APIKey,
+		Model:    cfg.RaceDetection.Model,
+		Timeout:  cfg.RaceDetection.Timeout,
+	})
+	if err != nil {
+		return err
+	}
 
 	// --- MySQL ---
 	store, err := storage.Open(cfg.MySQL.DSN)
@@ -104,7 +116,7 @@ func runWorker() error {
 		}
 		return registry.Build(name, store, watchRequestDelay)
 	}
-	registerHandlers(reg, resolve, store)
+	registerHandlers(reg, resolve, store, racedetection.New(raceClassifier), cfg.RaceDetection.MaxConcurrency)
 	policy := job.RetryPolicy{
 		MaxAttempts: cfg.Retry.MaxAttempts,
 		BaseBackoff: cfg.Retry.BaseBackoff,
@@ -173,12 +185,14 @@ func runWorker() error {
 // `watch_sync` runs a user's watch-data sync (ADR 0011); `calibration` computes
 // the athlete baseline and `compute` derives load/PMC/PBs from synced data,
 // mode-aware (ADR 0020).
-func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store) {
+func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
 	})
 	reg.MustRegister(watchsync.JobType, watchsync.New(resolve, store, watchJobs))
+	reg.MustRegister(racehandler.JobType, racehandler.New(store, raceDetector, raceConcurrency))
+	reg.MustRegister(racehandler.BackfillJobType, racehandler.NewBackfill(store, raceDetector, raceConcurrency))
 	reg.MustRegister(compute.CalibrationJobType, compute.NewCalibration(store))
 	reg.MustRegister(compute.ComputeJobType, compute.NewCompute(store))
 }

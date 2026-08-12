@@ -259,7 +259,7 @@ func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
 	models := []any{
 		&RunningCalibrationPaceZone{}, &RunningCalibrationHRZone{},
 		&RunningCalibrationSnapshot{}, &ActivityTrainingLoad{}, &DailyTrainingLoad{},
-		&PersonalBest{}, &ActivityWatchZone{}, &TimeseriesPoint{}, &Lap{}, &Activity{},
+		&PersonalBest{}, &Race{}, &ActivityWatchZone{}, &TimeseriesPoint{}, &Lap{}, &Activity{},
 		&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{}, &SyncMeta{},
 		&ProviderCredential{}, &WeeklyPlan{}, &MasterPlan{}, &RaceGoal{},
 		&UserOnboarding{}, &UserProfile{}, &InjuryRecord{},

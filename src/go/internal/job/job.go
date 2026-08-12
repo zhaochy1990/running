@@ -58,10 +58,11 @@ type Job struct {
 
 // PipelineStep is one node in a linear pipeline.
 type PipelineStep struct {
-	Name    string `json:"name"`
-	JobType string `json:"job_type"`
-	Status  Status `json:"status"`
-	JobID   string `json:"job_id"`
+	Name              string `json:"name"`
+	JobType           string `json:"job_type"`
+	Status            Status `json:"status"`
+	JobID             string `json:"job_id"`
+	ContinueOnFailure bool   `json:"continue_on_failure,omitempty"`
 }
 
 // PipelineRun is one execution of a named pipeline for one athlete.

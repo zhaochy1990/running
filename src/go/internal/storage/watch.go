@@ -36,6 +36,7 @@ var _ Writer = (*Store)(nil)
 // onboarding-compute derived tables (Go owns both schemas, ADR 0006 / 0015).
 func (s *Store) AutoMigrateWatch(ctx context.Context) error {
 	models := append(watchModels(), computeModels()...)
+	models = append(models, &Race{})
 	if err := s.db.WithContext(ctx).AutoMigrate(models...); err != nil {
 		return fmt.Errorf("storage: automigrate watch: %w", err)
 	}

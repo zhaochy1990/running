@@ -39,7 +39,7 @@ func TestOnboardingPipelineCataloged(t *testing.T) {
 	if !ok {
 		t.Fatalf("onboarding pipeline missing from registry")
 	}
-	want := []string{JobTypeWatchSync, JobTypeCalibration, JobTypeCompute}
+	want := []string{JobTypeWatchSync, JobTypeRaceDetection, JobTypeCalibration, JobTypeCompute}
 	if len(def.Steps) != len(want) {
 		t.Fatalf("onboarding has %d steps, want %d", len(def.Steps), len(want))
 	}
@@ -48,9 +48,12 @@ func TestOnboardingPipelineCataloged(t *testing.T) {
 			t.Fatalf("step %d job type = %q, want %q", i, def.Steps[i].JobType, jt)
 		}
 	}
+	if !def.Steps[1].ContinueOnFailure {
+		t.Fatal("onboarding race detection must continue on terminal failure")
+	}
 }
 
-// TestDataSyncPipelineCataloged checks the incremental path: sync -> compute.
+// TestDataSyncPipelineCataloged checks the incremental path: sync -> race detection -> compute.
 func TestDataSyncPipelineCataloged(t *testing.T) {
 	if ui, ok := PipelineUserInitiable()[PipelineDataSync]; !ok || !ui {
 		t.Fatalf("data_sync pipeline should be user-initiable, got ok=%v ui=%v", ok, ui)
@@ -59,7 +62,7 @@ func TestDataSyncPipelineCataloged(t *testing.T) {
 	if !ok {
 		t.Fatalf("data_sync pipeline missing from registry")
 	}
-	want := []string{JobTypeWatchSync, JobTypeCompute}
+	want := []string{JobTypeWatchSync, JobTypeRaceDetection, JobTypeCompute}
 	if len(def.Steps) != len(want) {
 		t.Fatalf("data_sync has %d steps, want %d", len(def.Steps), len(want))
 	}
@@ -67,6 +70,9 @@ func TestDataSyncPipelineCataloged(t *testing.T) {
 		if def.Steps[i].JobType != jt {
 			t.Fatalf("step %d job type = %q, want %q", i, def.Steps[i].JobType, jt)
 		}
+	}
+	if !def.Steps[1].ContinueOnFailure {
+		t.Fatal("data_sync race detection must continue on terminal failure")
 	}
 }
 

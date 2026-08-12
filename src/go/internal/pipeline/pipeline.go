@@ -20,8 +20,9 @@ import (
 
 // StepDef is one step of a pipeline definition.
 type StepDef struct {
-	Name    string
-	JobType string
+	Name              string
+	JobType           string
+	ContinueOnFailure bool
 }
 
 // Def is a named linear pipeline.
@@ -139,7 +140,12 @@ func (o *Orchestrator) startPipeline(ctx context.Context, runID, name, userID, c
 	now := o.now()
 	steps := make([]job.PipelineStep, len(def.Steps))
 	for i, s := range def.Steps {
-		steps[i] = job.PipelineStep{Name: s.Name, JobType: s.JobType, Status: job.StatusQueued}
+		steps[i] = job.PipelineStep{
+			Name:              s.Name,
+			JobType:           s.JobType,
+			Status:            job.StatusQueued,
+			ContinueOnFailure: s.ContinueOnFailure,
+		}
 	}
 	// Persist the first job ID before publishing its pointer. A worker can never
 	// observe a first-step job that the run does not yet link to.
@@ -358,12 +364,32 @@ func (o *Orchestrator) OnJobFailed(ctx context.Context, j *job.Job) error {
 		return nil
 	}
 	now := o.now()
+	var nextSpec *job.EnqueueSpec
 	changed, err := o.store.Mutate(ctx, j.PipelineRunID, func(run *job.PipelineRun) (bool, error) {
 		if run.Status.Terminal() {
 			return false, nil
 		}
-		if i := stepIndexByJobID(run, j.ID); i >= 0 {
-			run.Steps[i].Status = job.StatusFailed
+		i := stepIndexByJobID(run, j.ID)
+		if i < 0 {
+			return false, nil
+		}
+		run.Steps[i].Status = job.StatusFailed
+		if run.Steps[i].ContinueOnFailure && i < len(run.Steps)-1 {
+			next := i + 1
+			if run.Steps[next].JobID != "" {
+				return false, nil
+			}
+			run.Steps[next].JobID = o.newJob()
+			run.CurrentStep = next
+			run.UpdatedAt = now
+			nextSpec = &job.EnqueueSpec{
+				ID:            run.Steps[next].JobID,
+				Type:          run.Steps[next].JobType,
+				UserID:        run.UserID,
+				PipelineRunID: run.RunID,
+				InputJSON:     mergeStepInput(run.InputJSON, j.InputJSON),
+			}
+			return true, nil
 		}
 		run.Status = job.StatusFailed
 		run.ErrorMessage = j.ErrorMessage
@@ -378,7 +404,24 @@ func (o *Orchestrator) OnJobFailed(ctx context.Context, j *job.Job) error {
 		return err
 	}
 	if changed {
-		o.log.Error("pipeline failed", zap.String("run_id", j.PipelineRunID), zap.String("job_id", j.ID), zap.String("err", j.ErrorMessage))
+		if nextSpec == nil {
+			o.log.Error("pipeline failed", zap.String("run_id", j.PipelineRunID), zap.String("job_id", j.ID), zap.String("err", j.ErrorMessage))
+		}
+	}
+	if nextSpec != nil {
+		if _, err := o.enq.Enqueue(ctx, *nextSpec); err != nil {
+			failed := &job.Job{ID: nextSpec.ID, PipelineRunID: j.PipelineRunID, ErrorMessage: "work publication failed"}
+			if failErr := o.OnJobFailed(ctx, failed); failErr != nil {
+				return failErr
+			}
+			return err
+		}
+		o.log.Warn("optional pipeline step failed; continuing",
+			zap.String("run_id", j.PipelineRunID),
+			zap.String("job_id", j.ID),
+			zap.String("next_step", nextSpec.Type),
+			zap.String("err", j.ErrorMessage),
+		)
 	}
 	return nil
 }

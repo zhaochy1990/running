@@ -2,7 +2,8 @@
 
 > **Runtime topology superseded.** This historical decision records the original
 > two-step proposal. The deployed Go catalog in `internal/catalog/catalog.go` is
-> `sync → calibration → compute` (ADR 0020), not `full_sync → onboarding_compute`.
+> `sync → race_detection (optional) → calibration → compute` (ADR 0020 / 0029),
+> not `full_sync → onboarding_compute`.
 > Generic sync starts a pipeline only; a successful run is finalized separately by
 > explicit `run_id` submission after the user selects **Enter STRIDE**.
 

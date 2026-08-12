@@ -117,8 +117,9 @@ type jobCatalogResponse struct {
 
 // PipelineStepInfo names one step of a pipeline (its ordered job type).
 type PipelineStepInfo struct {
-	Name    string `json:"name"`
-	JobType string `json:"job_type"`
+	Name              string `json:"name"`
+	JobType           string `json:"job_type"`
+	ContinueOnFailure bool   `json:"continue_on_failure,omitempty"`
 }
 
 // PipelineCatalogEntry describes one supported pipeline for GET /pipelines.

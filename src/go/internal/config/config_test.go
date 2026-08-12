@@ -27,6 +27,12 @@ retry:
 runtime:
   prefetch: 1
   health-addr: ":8081"
+race-detection:
+  endpoint: https://api.deepseek.com
+  api-key: test-key
+  model: deepseek-v4-flash
+  timeout: 30s
+  max-concurrency: 8
 `
 
 func writeConfig(t *testing.T, body string) string {
@@ -56,6 +62,9 @@ func TestMustLoadFrom_FileValues(t *testing.T) {
 	}
 	if cfg.Runtime.Prefetch != 1 || cfg.Runtime.HealthAddr != ":8081" {
 		t.Errorf("runtime = %+v", cfg.Runtime)
+	}
+	if cfg.RaceDetection.Model != "deepseek-v4-flash" || cfg.RaceDetection.MaxConcurrency != 8 {
+		t.Errorf("race detection = %+v", cfg.RaceDetection)
 	}
 	if cfg.Logger.Level != "info" || cfg.Logger.Format != "json" {
 		t.Errorf("logger = %+v", cfg.Logger)
@@ -91,6 +100,7 @@ amqp:
 queues: {work: w, retry: r, poison: p}
 retry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}
 runtime: {prefetch: 1, health-addr: ":8081"}
+race-detection: {endpoint: "https://api.deepseek.com", api-key: test, model: deepseek-v4-flash, timeout: 30s, max-concurrency: 8}
 `
 	t.Setenv("STRIDE_WORKER_MYSQL_DSN", "d")
 	t.Setenv("STRIDE_WORKER_AMQP_URL", "amqp://x")
@@ -108,10 +118,21 @@ amqp: {url: "amqp://x"}
 queues: {work: w, retry: r, poison: p}
 retry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}
 runtime: {prefetch: 1, health-addr: ":8081"}
+race-detection: {endpoint: "https://api.deepseek.com", api-key: test, model: deepseek-v4-flash, timeout: 30s, max-concurrency: 8}
 `
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected panic for missing required mysql.dsn")
+		}
+	}()
+	_ = MustLoadFrom(writeConfig(t, body))
+}
+
+func TestMustLoadFrom_MissingRaceDetectionAPIKeyPanics(t *testing.T) {
+	body := "\nmysql: {dsn: \"d\"}\namqp: {url: \"amqp://x\"}\nqueues: {work: w, retry: r, poison: p}\nretry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}\nruntime: {prefetch: 1, health-addr: \":8081\"}\nrace-detection: {endpoint: \"https://api.deepseek.com\", api-key: \"\", model: deepseek-v4-flash, timeout: 30s, max-concurrency: 8}\n"
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic for missing race-detection.api-key")
 		}
 	}()
 	_ = MustLoadFrom(writeConfig(t, body))
