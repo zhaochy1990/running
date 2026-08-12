@@ -378,7 +378,7 @@ export class StrideDataStore {
 		);
 		return rows.map((r) => ({
 			distance: r.distance as string,
-			timeSec: r.pb_time_sec as number,
+			timeSec: Math.round(Number(r.pb_time_sec) * 10) / 10,
 			achievedAt: (r.achieved_at ?? null) as string | null,
 			source: (r.source ?? null) as string | null,
 		}));
