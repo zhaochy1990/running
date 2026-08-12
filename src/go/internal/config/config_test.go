@@ -138,6 +138,16 @@ func TestMustLoadFrom_MissingRaceDetectionAPIKeyPanics(t *testing.T) {
 	_ = MustLoadFrom(writeConfig(t, body))
 }
 
+func TestMustLoadFrom_InvalidRaceDetectionTimeoutPanics(t *testing.T) {
+	body := "\nmysql: {dsn: \"d\"}\namqp: {url: \"amqp://x\"}\nqueues: {work: w, retry: r, poison: p}\nretry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}\nruntime: {prefetch: 1, health-addr: \":8081\"}\nrace-detection: {endpoint: \"https://api.deepseek.com\", api-key: test, model: deepseek-v4-flash, timeout: 0s, max-concurrency: 8}\n"
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic for non-positive race-detection.timeout")
+		}
+	}()
+	_ = MustLoadFrom(writeConfig(t, body))
+}
+
 func TestMustLoadFrom_MissingFilePanics(t *testing.T) {
 	defer func() {
 		if recover() == nil {

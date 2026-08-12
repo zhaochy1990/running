@@ -62,3 +62,17 @@ func TestDetectorClassifiesOnlyDistanceAndSportCandidates(t *testing.T) {
 		t.Fatalf("classifier saw %+v", classifier.seen)
 	}
 }
+
+func TestDetectorDoesNotClassifyRejectedCandidate(t *testing.T) {
+	classifier := &fakeClassifier{decisions: map[string]bool{"long-run": true}}
+	detector := New(classifier)
+	got, err := detector.Detect(context.Background(), Candidate{
+		LabelID: "long-run", Sport: "run_outdoor", DistanceM: 30_000,
+	})
+	if err != nil || got {
+		t.Fatalf("Detect rejected candidate = (%v, %v), want (false, nil)", got, err)
+	}
+	if len(classifier.seen) != 0 {
+		t.Fatalf("classifier called for rejected candidate: %+v", classifier.seen)
+	}
+}

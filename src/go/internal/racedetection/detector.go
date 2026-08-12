@@ -4,7 +4,11 @@
 // classifier makes the final boolean decision.
 package racedetection
 
-import "context"
+import (
+	"context"
+
+	"github.com/zhaochy1990/stride/internal/normalize"
+)
 
 // RaceType is the standard distance band which admitted a candidate.
 type RaceType string
@@ -12,9 +16,6 @@ type RaceType string
 const (
 	RaceTypeHalfMarathon RaceType = "half_marathon"
 	RaceTypeMarathon     RaceType = "marathon"
-
-	SportOutdoorRun = "run_outdoor"
-	SportTrackRun   = "run_track"
 
 	HalfMarathonMinDistanceM = 20_900
 	HalfMarathonMaxDistanceM = 22_000
@@ -55,7 +56,7 @@ func New(classifier Classifier) *Detector { return &Detector{classifier: classif
 // and FM bands. Indoor, trail, treadmill, unknown, 25K and 30K runs are rejected
 // before any LLM call.
 func CandidateType(sport string, distanceM float64) (RaceType, bool) {
-	if sport != SportOutdoorRun && sport != SportTrackRun {
+	if sport != string(normalize.SportRunOutdoor) && sport != string(normalize.SportRunTrack) {
 		return "", false
 	}
 	switch {

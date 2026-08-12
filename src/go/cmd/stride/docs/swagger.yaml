@@ -33,6 +33,8 @@ definitions:
     type: object
   api.PipelineStepInfo:
     properties:
+      continue_on_failure:
+        type: boolean
       job_type:
         type: string
       name:
@@ -684,6 +686,8 @@ definitions:
     type: object
   api.pipelineStepResponse:
     properties:
+      continue_on_failure:
+        type: boolean
       job_id:
         type: string
       job_type:

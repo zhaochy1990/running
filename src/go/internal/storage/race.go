@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/zhaochy1990/stride/internal/normalize"
 	"github.com/zhaochy1990/stride/internal/racedetection"
 	"gorm.io/gorm/clause"
 )
@@ -53,7 +54,7 @@ func (s *Store) RaceCandidates(ctx context.Context, userID string, labelIDs []st
             a.ascent_m, COALESCE(a.train_kind, '') AS train_kind,
             COALESCE(a.sport_note, '') AS sport_note`).
 		Where("a.user_id = ?", uid).
-		Where("a.sport IN ?", []string{racedetection.SportOutdoorRun, racedetection.SportTrackRun}).
+		Where("a.sport IN ?", []normalize.Sport{normalize.SportRunOutdoor, normalize.SportRunTrack}).
 		Where(`((a.distance_m BETWEEN ? AND ?)
              OR (a.distance_m BETWEEN ? AND ?))`,
 			racedetection.HalfMarathonMinDistanceM, racedetection.HalfMarathonMaxDistanceM,

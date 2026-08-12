@@ -36,11 +36,15 @@ func NewChatCompletionsClassifier(cfg ChatCompletionsConfig) (*ChatCompletionsCl
 	if strings.TrimSpace(cfg.Endpoint) == "" || strings.TrimSpace(cfg.APIKey) == "" || strings.TrimSpace(cfg.Model) == "" {
 		return nil, errors.New("race detection: endpoint, api key and model are required")
 	}
-	if _, err := url.ParseRequestURI(cfg.Endpoint); err != nil {
+	endpoint, err := url.ParseRequestURI(cfg.Endpoint)
+	if err != nil {
 		return nil, fmt.Errorf("race detection: invalid endpoint: %w", err)
 	}
+	if endpoint.Scheme == "" || endpoint.Host == "" {
+		return nil, errors.New("race detection: endpoint must be an absolute URL")
+	}
 	if cfg.Timeout <= 0 {
-		cfg.Timeout = 30 * time.Second
+		return nil, errors.New("race detection: timeout must be greater than zero")
 	}
 	return &ChatCompletionsClassifier{
 		url:    strings.TrimRight(cfg.Endpoint, "/") + "/chat/completions",
@@ -103,8 +107,13 @@ func (c *ChatCompletionsClassifier) Classify(ctx context.Context, candidate Cand
 	var decision struct {
 		IsRace *bool `json:"is_race"`
 	}
-	if err := json.Unmarshal([]byte(response.Choices[0].Message.Content), &decision); err != nil {
+	decisionDecoder := json.NewDecoder(strings.NewReader(response.Choices[0].Message.Content))
+	decisionDecoder.DisallowUnknownFields()
+	if err := decisionDecoder.Decode(&decision); err != nil {
 		return false, fmt.Errorf("race detection: decode decision: %w", err)
+	}
+	if err := decisionDecoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return false, errors.New("race detection: decision contains trailing JSON")
 	}
 	if decision.IsRace == nil {
 		return false, errors.New("race detection: decision omitted is_race")

@@ -61,6 +61,16 @@ func TestRaceCandidatesFiltersAndSkipsConfirmed(t *testing.T) {
 	if err := st.InsertRace(ctx, &Race{UserID: uid, LabelID: "hm"}); err != nil {
 		t.Fatalf("insert confirmed race: %v", err)
 	}
+	if err := st.InsertRace(ctx, &Race{UserID: uid, LabelID: "hm"}); err != nil {
+		t.Fatalf("duplicate confirmed race: %v", err)
+	}
+	var raceCount int64
+	if err := st.db.WithContext(ctx).Model(&Race{}).Where("user_id = ? AND label_id = ?", uid, "hm").Count(&raceCount).Error; err != nil {
+		t.Fatalf("count confirmed race: %v", err)
+	}
+	if raceCount != 1 {
+		t.Fatalf("confirmed race count = %d, want idempotent singleton", raceCount)
+	}
 	remaining, err := st.RaceCandidates(ctx, uid, []string{"hm", "fm-track", "long-30k"})
 	if err != nil {
 		t.Fatalf("incremental candidates: %v", err)

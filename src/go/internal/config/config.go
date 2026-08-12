@@ -74,7 +74,7 @@ type RaceDetection struct {
 	Endpoint       string        `mapstructure:"endpoint" validate:"required,url"`
 	APIKey         string        `mapstructure:"api-key" validate:"required"`
 	Model          string        `mapstructure:"model" validate:"required"`
-	Timeout        time.Duration `mapstructure:"timeout" validate:"required"`
+	Timeout        time.Duration `mapstructure:"timeout" validate:"gt=0"`
 	MaxConcurrency int           `mapstructure:"max-concurrency" validate:"min=1"`
 }
 

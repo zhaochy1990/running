@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/zhaochy1990/stride/internal/job"
 	detector "github.com/zhaochy1990/stride/internal/racedetection"
@@ -49,6 +52,25 @@ func (partialClassifier) Classify(_ context.Context, c detector.Candidate) (bool
 		return false, errors.New("provider timeout")
 	}
 	return true, nil
+}
+
+type concurrencyClassifier struct {
+	active  atomic.Int64
+	peak    atomic.Int64
+	release <-chan struct{}
+}
+
+func (c *concurrencyClassifier) Classify(_ context.Context, _ detector.Candidate) (bool, error) {
+	active := c.active.Add(1)
+	defer c.active.Add(-1)
+	for {
+		peak := c.peak.Load()
+		if active <= peak || c.peak.CompareAndSwap(peak, active) {
+			break
+		}
+	}
+	<-c.release
+	return false, nil
 }
 
 func TestHandlerContinuesAfterOneCandidateFails(t *testing.T) {
@@ -102,6 +124,44 @@ func TestIncrementalHandlerScopesReadAndReplacementToSyncedLabels(t *testing.T) 
 	}
 	if !stringsContainAll(result, "label_ids", "health_dates") {
 		t.Fatalf("result did not preserve downstream inputs: %s", result)
+	}
+}
+
+func TestHandlerBoundsClassifierConcurrency(t *testing.T) {
+	store := &fakeStore{}
+	for i := 0; i < 6; i++ {
+		store.candidates = append(store.candidates, storage.RaceCandidate{
+			LabelID: fmt.Sprintf("race-%d", i), Sport: "run_outdoor", DistanceM: 21_100,
+		})
+	}
+	release := make(chan struct{})
+	classifier := &concurrencyClassifier{release: release}
+	done := make(chan error, 1)
+	go func() {
+		h := New(store, detector.New(classifier), 2)
+		_, err := h(context.Background(), &job.Job{
+			UserID: "f10bc353-01ab-4db1-af9f-d9305ea9a532", InputJSON: "{\"label_ids\":[\"scope\"]}",
+		}, func(string, int) error { return nil })
+		done <- err
+	}()
+	deadline := time.After(time.Second)
+	for classifier.peak.Load() < 2 {
+		select {
+		case <-deadline:
+			t.Fatal("classifier did not reach configured concurrency")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if peak := classifier.peak.Load(); peak != 2 {
+		t.Fatalf("peak concurrency = %d, want 2", peak)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if peak := classifier.peak.Load(); peak != 2 {
+		t.Fatalf("final peak concurrency = %d, want 2", peak)
 	}
 }
 
