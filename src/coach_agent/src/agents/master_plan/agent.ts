@@ -1,17 +1,17 @@
-import { buildResponsesModel } from "../common.js";
+import type { ModelConfig } from "../../config/config.js";
+import type { StrideDataStore } from "../../persistence/index.js";
 import { createActivitiesTools } from "../../tools/activities.js";
-import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
-import { createPlanTools } from "../../tools/plan.js";
+import { askUserQuestionTool } from "../../tools/askUserQuestions.js";
 import { createCurrentTimeTools } from "../../tools/currentTime.js";
+import { createPlanTools } from "../../tools/plan.js";
 import { createRaceTools } from "../../tools/races.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
-import { askUserQuestionTool } from "../../tools/askUserQuestions.js";
-import { createLoggingMiddleware } from "../middleware.js";
-import type { StrideDataStore } from "../../persistence/index.js";
-import type { ModelConfig } from "../../config/config.js";
-import { MASTER_PLAN_PROMPT, MASTER_PLAN_READ_PROMPT } from "../prompts.js";
+import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
 import { getLogger } from "../../utils/logger.js";
-import { MasterPlanSchema } from "./schema.js";
+import { buildResponsesModel } from "../common.js";
+import { createLoggingMiddleware } from "../middleware.js";
+import { MASTER_PLAN_PROMPT, MASTER_PLAN_READ_PROMPT } from "../prompts.js";
+import { MasterPlanDirectResponseSchema } from "./schema.js";
 
 const logger = getLogger("coachAgent:master_plan");
 
@@ -22,7 +22,7 @@ export function getMasterPlanSubagent(
 	return createMasterPlanSubagent(store, config, false);
 }
 
-/** Dedicated generator: its final response is a validated MasterPlan draft. */
+/** Dedicated generator: its final response requests direct MasterPlan delivery. */
 export function getMasterPlanGeneratorSubagent(
 	store: StrideDataStore,
 	config: ModelConfig,
@@ -63,7 +63,9 @@ function createMasterPlanSubagent(
 			askUserQuestionTool,
 		],
 		model: buildResponsesModel(config),
-		...(generatesPlan ? { responseFormat: MasterPlanSchema } : {}),
+		...(generatesPlan
+			? { responseFormat: MasterPlanDirectResponseSchema }
+			: {}),
 		middleware: [createLoggingMiddleware("agent:master_plan")],
 		// Skill loaded via SkillsMiddleware from the deep agent's FilesystemBackend
 		// (rooted at `dist/agents/skills/` in coachAgent.ts). The agent reads the

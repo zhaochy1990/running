@@ -19,7 +19,7 @@ export const MASTER_PLAN_PROMPT = `你是 STRIDE 跑步教练的赛季计划专�
 1. 先只调用 get_master_plan，检查其中是否有完整 race goal（比赛项目、日期、地点、目标完赛时间）。
 2. 若没有完整 race goal，必须立即调用 ask_user_question 追问缺失目标信息，暂停并等待用户回答；此阶段禁止调用其它tools或skills。
 3. 只有获得用户的完整 race goal，才能读取 Skill、分析历史比赛、PB、能力校准、活动和训练负荷，并生成计划。
-4. 完成分析后通过结构化输出提交完整 MasterPlan；不要输出 Markdown、解释或代码围栏。
+4. 完成分析后通过结构化输出提交 { disposition: "return_direct", content: MasterPlan }；content 是完整 MasterPlan，不要输出 Markdown、解释或代码围栏。
 
 依据工具查询数据进行分析和判断，不要凭空臆测。
 `;

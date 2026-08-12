@@ -1,6 +1,6 @@
 import { AIMessage } from "@langchain/core/messages";
 import { createMiddleware } from "langchain";
-import { MasterPlanSchema } from "./master_plan/schema.js";
+import { DirectResponseEnvelopeSchema } from "./master_plan/schema.js";
 
 type MessageLike = {
 	type?: unknown;
@@ -15,23 +15,10 @@ type MessageLike = {
 	}>;
 };
 
-const MASTER_PLAN_SEMANTIC_ISSUES = new Set([
-	"must be null for an incomplete phase",
-	"recovery weeks may contain at most one strategic key session",
-	"weeks may contain at most three strategic key sessions",
-	"race weeks may contain only the target race key session",
-	"ordinary easy/recovery/filler runs do not belong in the strategic skeleton",
-	"embedded race-pace work must be represented only by its long_run session",
-	"must equal weeks.length",
-	"phase names must be unique",
-	"must be consecutive from 1",
-]);
-
 /**
- * Returns a master-plan task result only when it is a JSON object tied to the
+ * Returns the content of an explicit direct-response envelope tied to the
  * preceding generator call. Plan quality belongs to the generator/reviewer;
- * it must not trigger an orchestrator rewrite. The string is deliberately not
- * re-serialized so its exact bytes reach the athlete.
+ * the orchestrator only honors the declared handoff disposition.
  */
 export function getMasterPlanTaskResult(
 	messages: readonly MessageLike[],
@@ -54,16 +41,10 @@ export function getMasterPlanTaskResult(
 		);
 	if (generatorCall === undefined) return undefined;
 	try {
-		const parsed: unknown = JSON.parse(result.content);
-		const validation = MasterPlanSchema.safeParse(parsed);
-		return validation.success ||
-			validation.error.issues.every(
-				(issue) =>
-					issue.code === "custom" &&
-					MASTER_PLAN_SEMANTIC_ISSUES.has(issue.message),
-			)
-			? result.content
-			: undefined;
+		const envelope = DirectResponseEnvelopeSchema.safeParse(
+			JSON.parse(result.content),
+		);
+		return envelope.success ? JSON.stringify(envelope.data.content) : undefined;
 	} catch {
 		return undefined;
 	}

@@ -10,8 +10,11 @@ import {
 	getMasterPlanGeneratorSubagent,
 	getMasterPlanSubagent,
 } from "./master_plan/agent.js";
-import { MasterPlanSchema } from "./master_plan/schema.js";
-import { getMasterPlanTaskResult } from "./masterPlanPassthrough.js";
+import { MasterPlanDirectResponseSchema } from "./master_plan/schema.js";
+import {
+	createMasterPlanPassthroughMiddleware,
+	getMasterPlanTaskResult,
+} from "./masterPlanPassthrough.js";
 import { MASTER_PLAN_PROMPT } from "./prompts.js";
 import { getQaSubagent } from "./qa/agent.js";
 import { getCoachSubagent } from "./weekly_plan/agent.js";
@@ -50,7 +53,7 @@ test("master-plan agent has a machine-enforced structured output contract", () =
 	const store = new StrideDataStore({} as never);
 	const generator = getMasterPlanGeneratorSubagent(store, modelConfig);
 	const reader = getMasterPlanSubagent(store, modelConfig);
-	assert.equal(generator.responseFormat, MasterPlanSchema);
+	assert.equal(generator.responseFormat, MasterPlanDirectResponseSchema);
 	assert.equal(reader.responseFormat, undefined);
 	assert.ok(generator.skills.includes("/generate-master-plan/"));
 	assert.ok(!reader.skills.includes("/generate-master-plan/"));
@@ -110,8 +113,12 @@ const masterPlan = {
 	updated_at: "2026-08-09T00:00:00Z",
 };
 
-test("orchestrator forwards a validated master-plan task result byte-for-byte", () => {
-	const content = JSON.stringify(masterPlan, null, 2);
+function directResponse(content: unknown): string {
+	return JSON.stringify({ disposition: "return_direct", content });
+}
+
+test("orchestrator extracts a validated master plan from its direct envelope", () => {
+	const content = JSON.stringify(masterPlan);
 	const result = getMasterPlanTaskResult([
 		{
 			type: "ai",
@@ -123,10 +130,72 @@ test("orchestrator forwards a validated master-plan task result byte-for-byte", 
 				},
 			],
 		},
-		{ type: "tool", name: "task", tool_call_id: "task-1", content },
+		{
+			type: "tool",
+			name: "task",
+			tool_call_id: "task-1",
+			content: directResponse(masterPlan),
+		},
 	]);
 
 	assert.equal(result, content);
+});
+
+test("passthrough middleware skips the model only for a direct envelope", async () => {
+	const middleware = createMasterPlanPassthroughMiddleware();
+	const wrapModelCall = middleware.wrapModelCall;
+	assert.ok(wrapModelCall);
+
+	let handlerCalls = 0;
+	const fallback = new AIMessage("fallback");
+	const handler = async () => {
+		handlerCalls += 1;
+		return fallback;
+	};
+	const taskCall = new AIMessage({
+		content: "",
+		tool_calls: [
+			{
+				id: "task-1",
+				name: "task",
+				args: { subagent_type: "generate_master_plan" },
+				type: "tool_call",
+			},
+		],
+	});
+	const runtime = {} as never;
+	const direct = await wrapModelCall(
+		{
+			messages: [
+				taskCall,
+				new ToolMessage({
+					content: directResponse(masterPlan),
+					tool_call_id: "task-1",
+				}),
+			],
+			runtime,
+		} as never,
+		handler,
+	);
+	assert.equal(handlerCalls, 0);
+	assert.ok(AIMessage.isInstance(direct));
+	assert.equal(direct.content, JSON.stringify(masterPlan));
+
+	const delegated = await wrapModelCall(
+		{
+			messages: [
+				taskCall,
+				new ToolMessage({
+					content: JSON.stringify({ disposition: "continue" }),
+					tool_call_id: "task-1",
+				}),
+			],
+			runtime,
+		} as never,
+		handler,
+	);
+	assert.equal(handlerCalls, 1);
+	assert.equal(delegated, fallback);
 });
 
 test("orchestrator forwards the runtime task result when ToolMessage omits name", () => {
@@ -143,14 +212,18 @@ test("orchestrator forwards the runtime task result when ToolMessage omits name"
 				},
 			],
 		}),
-		new ToolMessage({ content, tool_call_id: "task-1" }),
+		new ToolMessage({
+			content: directResponse(masterPlan),
+			tool_call_id: "task-1",
+		}),
 	]);
 
 	assert.equal(result, content);
 });
 
-test("orchestrator forwards a structurally complete plan with semantic issues", () => {
-	const content = JSON.stringify({ ...masterPlan, total_weeks: 2 });
+test("orchestrator forwards the envelope content without revalidating it", () => {
+	const plan = { ...masterPlan, total_weeks: 2 };
+	const content = JSON.stringify(plan);
 	const result = getMasterPlanTaskResult([
 		{
 			type: "ai",
@@ -162,7 +235,11 @@ test("orchestrator forwards a structurally complete plan with semantic issues", 
 				},
 			],
 		},
-		{ type: "tool", tool_call_id: "task-1", content },
+		{
+			type: "tool",
+			tool_call_id: "task-1",
+			content: directResponse(plan),
+		},
 	]);
 
 	assert.equal(result, content);
@@ -181,7 +258,7 @@ test("orchestrator does not bypass the model for unrelated or invalid task resul
 				type: "tool",
 				name: "task",
 				tool_call_id: "task-1",
-				content: JSON.stringify(masterPlan),
+				content: directResponse(masterPlan),
 			},
 		]),
 		undefined,
@@ -222,7 +299,10 @@ test("orchestrator does not bypass the model for unrelated or invalid task resul
 			{
 				type: "tool",
 				tool_call_id: "task-1",
-				content: "[]",
+				content: JSON.stringify({
+					disposition: "continue",
+					content: masterPlan,
+				}),
 			},
 		]),
 		undefined,
@@ -243,7 +323,7 @@ test("orchestrator does not bypass the model for unrelated or invalid task resul
 				type: "tool",
 				status: "error",
 				tool_call_id: "task-1",
-				content: JSON.stringify(masterPlan),
+				content: directResponse(masterPlan),
 			},
 		]),
 		undefined,
@@ -283,13 +363,7 @@ test("orchestrator does not bypass the model for unrelated or invalid task resul
 			{
 				type: "tool",
 				tool_call_id: "task-1",
-				content: JSON.stringify({
-					status: "draft",
-					generated_by: "coach_agent",
-					goal: {},
-					phases: [],
-					weeks: [],
-				}),
+				content: JSON.stringify({ disposition: "return_direct" }),
 			},
 		]),
 		undefined,
@@ -310,8 +384,8 @@ test("orchestrator does not bypass the model for unrelated or invalid task resul
 				type: "tool",
 				tool_call_id: "task-1",
 				content: JSON.stringify({
-					...masterPlan,
-					goal: { ...masterPlan.goal, race_date: "2026-02-30" },
+					disposition: "return_direct",
+					content: [],
 				}),
 			},
 		]),
