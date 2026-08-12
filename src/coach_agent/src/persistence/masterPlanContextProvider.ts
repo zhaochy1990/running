@@ -30,15 +30,15 @@ type ContextStore = Pick<
 >;
 
 export class MySqlMasterPlanContextProvider
-	implements MasterPlanContextProvider
-{
-	constructor(private readonly store: ContextStore) {}
+	implements MasterPlanContextProvider {
+	constructor(private readonly store: ContextStore) { }
 
 	async loadSnapshot(
 		userId: string,
 		asOf = new Date().toISOString(),
 	): Promise<ContextSnapshot> {
 		const end = shanghaiDay(asOf);
+		// past 2 years
 		const macroStart = addDays(end, -730);
 		const recentStart = addDays(end, -111);
 		const [
@@ -273,10 +273,10 @@ function macroHistory(runs: Activity[], start: string, end: string) {
 	const dates = [...new Set(runs.map(activityDay))].sort();
 	const intervals = dates.length
 		? [
-				[start, dates[0]!],
-				...dates.slice(1).map((date, i) => [dates[i]!, date]),
-				[dates.at(-1)!, end],
-			]
+			[start, dates[0]!],
+			...dates.slice(1).map((date, i) => [dates[i]!, date]),
+			[dates.at(-1)!, end],
+		]
 		: [[start, end]];
 	const gaps = intervals
 		.map(([from, to]) => ({
@@ -311,9 +311,9 @@ function macroHistory(runs: Activity[], start: string, end: string) {
 		gap_periods: gaps,
 		consistency_pct: weeks.length
 			? round(
-					(100 * weeks.filter((w) => w.run_count > 0).length) /
-						Math.max(1, Math.ceil(dayDiff(start, end) / 7)),
-				)
+				(100 * weeks.filter((w) => w.run_count > 0).length) /
+				Math.max(1, Math.ceil(dayDiff(start, end) / 7)),
+			)
 			: null,
 	};
 }
@@ -347,11 +347,11 @@ function currentPhase(p: ActiveMasterPlanMetadata | null, day: string) {
 	});
 	return phase
 		? {
-				name: String(phase.name),
-				start_date: stringOrNull(phase.start_date),
-				end_date: stringOrNull(phase.end_date),
-				source: "active_plan" as const,
-			}
+			name: String(phase.name),
+			start_date: stringOrNull(phase.start_date),
+			end_date: stringOrNull(phase.end_date),
+			source: "active_plan" as const,
+		}
 		: null;
 }
 function continuity(

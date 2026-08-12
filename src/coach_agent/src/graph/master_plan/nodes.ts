@@ -129,7 +129,7 @@ export interface MasterPlanGraphDependencies {
 	artifactRevision?: number;
 }
 
-export class ModelContractError extends Error {}
+export class ModelContractError extends Error { }
 
 export const GraphInput = new StateSchema({ request: MasterPlanGraphRequest });
 export const GraphOutput = new StateSchema({ outcome: MasterPlanGraphOutcome });
@@ -248,6 +248,7 @@ class MasterPlanNodes {
 				),
 			};
 		}
+
 		// const safetyReasons = explicitAcuteRestrictions(request, snapshot);
 		// if (safetyReasons.length > 0)
 		//   return {
@@ -264,6 +265,8 @@ class MasterPlanNodes {
 		//     }),
 		//   };
 
+		logger.info(snapshot, 'context snapshot,');
+
 		const facts = deriveAssessmentFacts(snapshot, request);
 		const volume = facts.facts.find(
 			(fact) => fact.fact_id === "volume.recent_weekly_km",
@@ -271,12 +274,16 @@ class MasterPlanNodes {
 		const frequency = facts.facts.find(
 			(fact) => fact.fact_id === "frequency.recent_run_days_per_week",
 		)?.value;
+		logger.info(facts, 'assessment facts,');
+		logger.info(volume, 'recent weekly volume (km),');
+		logger.info(frequency, 'recent weekly frequency (days),');
+
 		if (
 			typeof volume !== "number" ||
 			volume <= 0 ||
 			typeof frequency !== "number" ||
 			frequency <= 0
-		)
+		) {
 			return {
 				context,
 				snapshot,
@@ -294,10 +301,15 @@ class MasterPlanNodes {
 					},
 				}),
 			};
+		}
+
 		return { context, snapshot, facts, artifactRevision };
 	};
 
 	readonly assessAthlete = async (state: typeof GraphState.State) => {
+		logger.info(`Assessing athlete for request ${state.request.request_id}...`);
+		throw new Error("Testing");
+
 		const { request, snapshot, facts, context } = required(state);
 		try {
 			const assessment = canonicalizeAssessmentSummary(
@@ -376,9 +388,9 @@ class MasterPlanNodes {
 								assessment.multi_cycle_path.length >= 2
 									? assessment.multi_cycle_path
 									: [
-											"Develop the required baseline",
-											"Reassess the confirmed target",
-										],
+										"Develop the required baseline",
+										"Reassess the confirmed target",
+									],
 						},
 					}),
 				};
@@ -526,10 +538,10 @@ class MasterPlanNodes {
 				outcome: isContractError(error)
 					? qualityFailure(request, context, "candidate_plan_contract_invalid")
 					: infrastructureFailure(
-							request,
-							context,
-							"skeleton_model_unavailable",
-						),
+						request,
+						context,
+						"skeleton_model_unavailable",
+					),
 			};
 		}
 		const schemaReport = runMasterPlanRuleFilter(raw, request, snapshot);
@@ -621,14 +633,14 @@ class MasterPlanNodes {
 		);
 		return report.has_errors
 			? {
-					ruleReport: report,
-					outcome: qualityFailureWithReports(
-						state.request,
-						state.context!,
-						state.simulationReport!,
-						report,
-					),
-				}
+				ruleReport: report,
+				outcome: qualityFailureWithReports(
+					state.request,
+					state.context!,
+					state.simulationReport!,
+					report,
+				),
+			}
 			: { ruleReport: report };
 	};
 
@@ -727,13 +739,13 @@ class MasterPlanNodes {
 				adjudication.decision === "pass_with_warnings"
 				? { adjudication }
 				: {
+					adjudication,
+					outcome: qualityFailureWithReviews(
+						state,
+						`review_${adjudication.decision}`,
 						adjudication,
-						outcome: qualityFailureWithReviews(
-							state,
-							`review_${adjudication.decision}`,
-							adjudication,
-						),
-					};
+					),
+				};
 		} catch {
 			return {
 				outcome: qualityFailureWithReviews(
@@ -803,6 +815,8 @@ function sharedWorkerState(state: typeof GraphState.State) {
 		goalAssessment: state.goalAssessment,
 	};
 }
+
+// get the required state values
 function required(state: typeof GraphState.State) {
 	return {
 		request: state.request,
@@ -847,10 +861,10 @@ function workerFailure(state: typeof GraphState.State) {
 	return error.startsWith("infra:")
 		? infrastructureFailure(state.request, state.context!, error.slice(6))
 		: qualityFailure(
-				state.request,
-				state.context!,
-				error.replace(/^quality:/, ""),
-			);
+			state.request,
+			state.context!,
+			error.replace(/^quality:/, ""),
+		);
 }
 function infrastructureFailure(
 	request: MasterPlanGraphRequest,
@@ -1038,7 +1052,7 @@ export function validateSkeletonAgainstStrategy(
 		if (
 			!isException &&
 			week.target_weekly_km_high >
-				athlete.safe_training_ranges.weekly_distance_km.high
+			athlete.safe_training_ranges.weekly_distance_km.high
 		)
 			throw new Error("skeleton weekly volume exceeds athlete safe range");
 		if (
@@ -1139,7 +1153,7 @@ function inclusiveWeeks(start: string, end: string): number {
 		((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) /
 			86_400_000 +
 			1) /
-			7,
+		7,
 	);
 }
 function addDays(day: string, amount: number): string {
