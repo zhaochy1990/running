@@ -314,6 +314,7 @@ class MasterPlanNodes {
 
 	readonly assessAthlete = async (state: typeof GraphState.State) => {
 		logger.info(`Assessing athlete for request ${state.request.request_id}...`);
+
 		const { request, snapshot, facts, context } = required(state);
 		try {
 			const res = await measureExecutionTimeAsync(() =>
