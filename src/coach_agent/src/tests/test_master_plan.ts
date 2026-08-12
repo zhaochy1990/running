@@ -41,7 +41,7 @@ import { getLogger } from "../utils/logger.js";
 type Profile = "local" | "prod";
 const PROFILE = "local" as Profile;
 const USER_ID = "11c2e582-5a85-4633-81d2-df7e37ad7b48";
-const AS_OF = new Date().toISOString();
+const AS_OF = new Date("2026-08-07").toISOString();
 
 export const config = loadConfig();
 const modelConfig = getAgentConfig(config, "master_plan");

@@ -377,8 +377,8 @@ function coverage(
 		},
 		{
 			domain: "recovery",
-			status: recovery.length ? "partial" : "missing",
-			detail: recovery.length ? "availability varies by day" : "no RHR/HRV",
+			status: recovery.length ? "complete" : "missing",
+			detail: recovery.length ? null : "no RHR/HRV",
 		},
 		{
 			domain: "running_calibration",
@@ -388,7 +388,7 @@ function coverage(
 		{
 			domain: "body_composition",
 			status: p.weightKg === null ? "missing" : "partial",
-			detail: "no dedicated body-composition table; profile weight only",
+			detail: "no dedicated body-composition table; weight only",
 		},
 		{
 			domain: "injuries",

@@ -274,8 +274,6 @@ class MasterPlanNodes {
 				}),
 			};
 
-		logger.info(snapshot, "context snapshot,");
-
 		const facts = deriveAssessmentFacts(snapshot, request);
 		const volume = facts.facts.find(
 			(fact) => fact.fact_id === "volume.recent_weekly_km",
@@ -283,9 +281,8 @@ class MasterPlanNodes {
 		const frequency = facts.facts.find(
 			(fact) => fact.fact_id === "frequency.recent_run_days_per_week",
 		)?.value;
-		logger.info(facts, "assessment facts,");
-		logger.info(volume, "recent weekly volume (km),");
-		logger.info(frequency, "recent weekly frequency (days),");
+		logger.info("recent weekly volume (km): %s", volume);
+		logger.info("recent weekly frequency (days): %s", frequency);
 
 		if (
 			typeof volume !== "number" ||
@@ -320,19 +317,20 @@ class MasterPlanNodes {
 
 		const { request, snapshot, facts, context } = required(state);
 		try {
+			const res = await measureExecutionTimeAsync(() =>
+				this.dependencies.assessmentModel.invoke({
+					request,
+					snapshot,
+					facts,
+				}),
+			);
+			logger.info(`Athlete assessment model invoked in ${res.time.toFixed(2)} ms`);
+
 			const assessment = canonicalizeAssessmentSummary(
-				AthleteAssessmentSchema.parse(
-					await this.dependencies.assessmentModel.invoke({
-						request,
-						snapshot,
-						facts,
-					}),
-				),
+				AthleteAssessmentSchema.parse(res.result),
 			);
-			logger.info(
-				assessment,
-				`Athlete assessment for request ${request.request_id}`,
-			);
+			logger.info(assessment, `Athlete assessment for request ${request.request_id}`);
+
 			validateAssessmentReferences(assessment, facts);
 			validateAthleteAssessmentRanges(assessment, facts, request);
 			if (assessment.readiness !== authoritativeReadiness(facts))
@@ -432,6 +430,9 @@ class MasterPlanNodes {
 						},
 					}),
 				};
+			logger.info(assessment, `Goal assessment for request ${request.request_id}`);
+			throw new Error("Testing");
+
 			return { goalAssessment: assessment };
 		} catch (error) {
 			return {
@@ -776,8 +777,8 @@ class MasterPlanNodes {
 		}
 	};
 
-	readonly stopOr = (next: string) => (state: typeof GraphState.State) =>
-		state.outcome ? END : next;
+	readonly stopOr = (next: string) => (state: typeof GraphState.State) => state.outcome ? END : next;
+
 	readonly fanStrategies = (state: typeof GraphState.State) =>
 		this.archetypes.map(
 			(archetype) =>
