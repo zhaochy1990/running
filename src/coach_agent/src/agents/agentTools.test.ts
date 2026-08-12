@@ -3,17 +3,18 @@ import { access } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { AIMessage, ToolMessage } from "@langchain/core/messages";
 import type { ModelConfig } from "../config/config.js";
 import { StrideDataStore } from "../persistence/index.js";
 import {
 	getMasterPlanGeneratorSubagent,
 	getMasterPlanSubagent,
 } from "./master_plan/agent.js";
+import { MasterPlanSchema } from "./master_plan/schema.js";
+import { getMasterPlanTaskResult } from "./masterPlanPassthrough.js";
+import { MASTER_PLAN_PROMPT } from "./prompts.js";
 import { getQaSubagent } from "./qa/agent.js";
 import { getCoachSubagent } from "./weekly_plan/agent.js";
-import { MASTER_PLAN_PROMPT } from "./prompts.js";
-import { getMasterPlanTaskResult } from "./masterPlanPassthrough.js";
-import { MasterPlanSchema } from "./master_plan/schema.js";
 
 const modelConfig: ModelConfig = {
 	name: "test",
@@ -128,6 +129,45 @@ test("orchestrator forwards a validated master-plan task result byte-for-byte", 
 	assert.equal(result, content);
 });
 
+test("orchestrator forwards the runtime task result when ToolMessage omits name", () => {
+	const content = JSON.stringify(masterPlan);
+	const result = getMasterPlanTaskResult([
+		new AIMessage({
+			content: "",
+			tool_calls: [
+				{
+					id: "task-1",
+					name: "task",
+					args: { subagent_type: "generate_master_plan" },
+					type: "tool_call",
+				},
+			],
+		}),
+		new ToolMessage({ content, tool_call_id: "task-1" }),
+	]);
+
+	assert.equal(result, content);
+});
+
+test("orchestrator forwards a structurally complete plan with semantic issues", () => {
+	const content = JSON.stringify({ ...masterPlan, total_weeks: 2 });
+	const result = getMasterPlanTaskResult([
+		{
+			type: "ai",
+			tool_calls: [
+				{
+					id: "task-1",
+					name: "task",
+					args: { subagent_type: "generate_master_plan" },
+				},
+			],
+		},
+		{ type: "tool", tool_call_id: "task-1", content },
+	]);
+
+	assert.equal(result, content);
+});
+
 test("orchestrator does not bypass the model for unrelated or invalid task results", () => {
 	assert.equal(
 		getMasterPlanTaskResult([
@@ -163,6 +203,116 @@ test("orchestrator does not bypass the model for unrelated or invalid task resul
 				name: "task",
 				tool_call_id: "task-1",
 				content: "not JSON",
+			},
+		]),
+		undefined,
+	);
+	assert.equal(
+		getMasterPlanTaskResult([
+			{
+				type: "ai",
+				tool_calls: [
+					{
+						id: "task-1",
+						name: "task",
+						args: { subagent_type: "generate_master_plan" },
+					},
+				],
+			},
+			{
+				type: "tool",
+				tool_call_id: "task-1",
+				content: "[]",
+			},
+		]),
+		undefined,
+	);
+	assert.equal(
+		getMasterPlanTaskResult([
+			{
+				type: "ai",
+				tool_calls: [
+					{
+						id: "task-1",
+						name: "task",
+						args: { subagent_type: "generate_master_plan" },
+					},
+				],
+			},
+			{
+				type: "tool",
+				status: "error",
+				tool_call_id: "task-1",
+				content: JSON.stringify(masterPlan),
+			},
+		]),
+		undefined,
+	);
+	assert.equal(
+		getMasterPlanTaskResult([
+			{
+				type: "ai",
+				tool_calls: [
+					{
+						id: "task-1",
+						name: "task",
+						args: { subagent_type: "generate_master_plan" },
+					},
+				],
+			},
+			{
+				type: "tool",
+				tool_call_id: "task-1",
+				content: '{"error":"generation_failed"}',
+			},
+		]),
+		undefined,
+	);
+	assert.equal(
+		getMasterPlanTaskResult([
+			{
+				type: "ai",
+				tool_calls: [
+					{
+						id: "task-1",
+						name: "task",
+						args: { subagent_type: "generate_master_plan" },
+					},
+				],
+			},
+			{
+				type: "tool",
+				tool_call_id: "task-1",
+				content: JSON.stringify({
+					status: "draft",
+					generated_by: "coach_agent",
+					goal: {},
+					phases: [],
+					weeks: [],
+				}),
+			},
+		]),
+		undefined,
+	);
+	assert.equal(
+		getMasterPlanTaskResult([
+			{
+				type: "ai",
+				tool_calls: [
+					{
+						id: "task-1",
+						name: "task",
+						args: { subagent_type: "generate_master_plan" },
+					},
+				],
+			},
+			{
+				type: "tool",
+				tool_call_id: "task-1",
+				content: JSON.stringify({
+					...masterPlan,
+					goal: { ...masterPlan.goal, race_date: "2026-02-30" },
+				}),
 			},
 		]),
 		undefined,
