@@ -59,7 +59,7 @@ export const ContextSnapshotSchema = z
 					distance: z.string(),
 					time_sec: z.number().positive(),
 					achieved_at: day.nullable(),
-					source: z.string().nullable(),
+					activity_label_id: z.string().min(1),
 				})
 				.strict(),
 		),

@@ -1,6 +1,124 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { Pool, RowDataPacket } from "mysql2/promise";
+import { StrideDataStore } from "./dataStore.js";
 import { MySqlMasterPlanContextProvider } from "./masterPlanContextProvider.js";
+
+test("personal best loader returns activity label ID instead of source", async () => {
+	let query = "";
+	const pool = {
+		async query(sql: string) {
+			query = sql;
+			return [
+				[
+					{
+						distance: "5K",
+						pb_time_sec: 1170.34,
+						achieved_at: "2026-05-27",
+						activity_label_id: "activity-5k-pb",
+					},
+				] as RowDataPacket[],
+				[],
+			];
+		},
+	} as unknown as Pool;
+
+	const rows = await new StrideDataStore(pool).getPersonalBests("athlete");
+
+	assert.match(query, /entry_json, '\$\.label_id'/);
+	assert.deepEqual(rows, [
+		{
+			distance: "5K",
+			timeSec: 1170.3,
+			achievedAt: "2026-05-27",
+			activityLabelId: "activity-5k-pb",
+		},
+	]);
+});
+
+test("personal best loader rejects records without an activity label ID", async () => {
+	const pool = {
+		async query() {
+			return [
+				[
+					{
+						distance: "5K",
+						pb_time_sec: 1170.3,
+						achieved_at: "2026-05-27",
+						activity_label_id: null,
+					},
+				] as RowDataPacket[],
+				[],
+			];
+		},
+	} as unknown as Pool;
+
+	await assert.rejects(
+		new StrideDataStore(pool).getPersonalBests("athlete"),
+		/personal best 5K has no activity label ID/,
+	);
+});
+
+test("context provider exposes PB activity label ID without source", async () => {
+	const provider = new MySqlMasterPlanContextProvider({
+		async getUserProfile() {
+			return {
+				userId: "athlete",
+				displayName: null,
+				dob: null,
+				sex: null,
+				heightCm: null,
+				weightKg: 70,
+				runningAgeRange: null,
+			};
+		},
+		async getUserInjuries() {
+			return [];
+		},
+		async getActivitiesByDateRange() {
+			return [];
+		},
+		async getDailyTrainingLoadByDateRange() {
+			return [];
+		},
+		async getDailyRecoveryByDateRange() {
+			return [];
+		},
+		async getPersonalBests() {
+			return [
+				{
+					distance: "5K",
+					timeSec: 1170.3,
+					achievedAt: "2026-05-27",
+					activityLabelId: "activity-5k-pb",
+				},
+			];
+		},
+		async getLatestRunningCalibration() {
+			return null;
+		},
+		async getRaceHistory() {
+			return [];
+		},
+		async getActiveMasterPlanMetadata() {
+			return null;
+		},
+	});
+
+	const snapshot = await provider.loadSnapshot(
+		"athlete",
+		"2026-08-11T00:00:00Z",
+	);
+
+	assert.deepEqual(snapshot.personal_bests, [
+		{
+			distance: "5K",
+			time_sec: 1170.3,
+			achieved_at: "2026-05-27",
+			activity_label_id: "activity-5k-pb",
+		},
+	]);
+});
 
 test("context provider maps canonical injuries and numeric race feel", async () => {
 	const provider = new MySqlMasterPlanContextProvider({

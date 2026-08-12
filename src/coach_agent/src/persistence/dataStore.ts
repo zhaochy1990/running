@@ -119,8 +119,8 @@ export interface PersonalBest {
 	timeSec: number;
 	/** 取得日期 `YYYY-MM-DD`（可能为空）。 */
 	achievedAt: string | null;
-	/** 来源：`activity` / `segment` 等。 */
-	source: string | null;
+	/** 产生该 PB 的活动 label ID。 */
+	activityLabelId: string;
 }
 
 /** Latest running calibration and its derived training zones. */
@@ -366,18 +366,27 @@ export class StrideDataStore {
 	/** 运动员各标准距离的个人最好成绩（`personal_bests`），作为比赛表现的参照系。 */
 	async getPersonalBests(userId: string): Promise<PersonalBest[]> {
 		const [rows] = await this.pool.query<RowDataPacket[]>(
-			`SELECT distance, pb_time_sec, achieved_at, source
+			`SELECT distance, pb_time_sec, achieved_at,
+			        JSON_UNQUOTE(JSON_EXTRACT(entry_json, '$.label_id')) AS activity_label_id
          FROM personal_bests
         WHERE user_id = ?
         ORDER BY pb_time_sec ASC`,
 			[userId],
 		);
-		return rows.map((r) => ({
-			distance: r.distance as string,
-			timeSec: Math.round(Number(r.pb_time_sec) * 10) / 10,
-			achievedAt: (r.achieved_at ?? null) as string | null,
-			source: (r.source ?? null) as string | null,
-		}));
+		return rows.map((r) => {
+			if (
+				typeof r.activity_label_id !== "string" ||
+				r.activity_label_id.length === 0
+			) {
+				throw new Error(`personal best ${String(r.distance)} has no activity label ID`);
+			}
+			return {
+				distance: r.distance as string,
+				timeSec: Math.round(Number(r.pb_time_sec) * 10) / 10,
+				achievedAt: (r.achieved_at ?? null) as string | null,
+				activityLabelId: r.activity_label_id,
+			};
+		});
 	}
 
 	/** Latest canonical running calibration and zones, or null when not computed. */
