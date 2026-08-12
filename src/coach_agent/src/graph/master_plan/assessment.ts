@@ -27,24 +27,27 @@ export const AssessmentFactsSchema = z
 	.strict();
 export type AssessmentFacts = z.infer<typeof AssessmentFactsSchema>;
 
-const ClaimSchema = z.enum([
+const AthleteClaimSchema = z.enum([
 	"volume_baseline_established",
 	"long_run_tolerance_established",
 	"quality_tolerance_established",
 	"availability_requires_adjustment",
 	"load_state_supportive",
 	"coverage_sufficient",
+]);
+const GoalClaimSchema = z.enum([
 	"goal_requires_improvement",
 	"goal_runway_limited",
 	"goal_supported_by_history",
 ]);
-const MaterialConclusionSchema = z
-	.object({
-		claim: ClaimSchema,
-		explanation: z.string().min(1),
-		fact_ids: z.array(z.string().min(1)).min(1),
-	})
-	.strict();
+const MaterialConclusionSchema = <T extends z.ZodType>(claim: T) =>
+	z
+		.object({
+			claim,
+			explanation: z.string().min(1),
+			fact_ids: z.array(z.string().min(1)).min(1),
+		})
+		.strict();
 const EvidenceNoteSchema = z
 	.object({
 		description: z.string().min(1),
@@ -58,18 +61,34 @@ const RangeSchema = z
 
 export const AthleteAssessmentSchema = z
 	.object({
-		schema_version: z.literal(1),
+		schema_version: z.literal(2),
 		readiness: z.enum(["ready", "limited", "missing_baseline"]),
 		summary: z.string().min(1),
+		capability_confidence: z.enum(["high", "medium", "low"]),
+		current_phase: z.string().min(1).nullable(),
+		continuity: z.enum(["continuous", "interrupted", "returning", "unknown"]),
+		recommended_entry_phase: z.enum([
+			"base",
+			"build",
+			"peak",
+			"taper",
+			"recovery",
+			"return_to_run",
+		]),
 		safe_training_ranges: z
 			.object({
+				starting_weekly_distance_km: RangeSchema,
 				weekly_distance_km: RangeSchema,
 				runs_per_week: RangeSchema,
 				long_run_km: RangeSchema,
 				quality_sessions_per_week: RangeSchema,
 			})
 			.strict(),
-		material_conclusions: z.array(MaterialConclusionSchema).min(1),
+		material_conclusions: z
+			.array(MaterialConclusionSchema(AthleteClaimSchema))
+			.min(1),
+		limiting_factors: z.array(EvidenceNoteSchema),
+		assumptions_to_validate: z.array(EvidenceNoteSchema),
 		gaps: z.array(EvidenceNoteSchema),
 	})
 	.strict();
@@ -88,6 +107,14 @@ const GateSchema = z
 			.array(
 				z
 					.object({
+						signal: z.enum([
+							"race_specific_performance",
+							"durability",
+							"health_readiness",
+							"fueling_execution",
+							"availability_consistency",
+						]),
+						criterion: z.string().min(1),
 						description: z.string().min(1),
 						fact_ids: z.array(z.string().min(1)).min(1),
 					})
@@ -99,7 +126,7 @@ const GateSchema = z
 
 export const GoalAssessmentSchema = z
 	.object({
-		schema_version: z.literal(1),
+		schema_version: z.literal(2),
 		level: z.enum([
 			"supported",
 			"aggressive_but_plausible",
@@ -108,7 +135,9 @@ export const GoalAssessmentSchema = z
 			"unsafe_or_incompatible",
 		]),
 		summary: z.string().min(1),
-		material_conclusions: z.array(MaterialConclusionSchema).min(1),
+		material_conclusions: z
+			.array(MaterialConclusionSchema(GoalClaimSchema))
+			.min(1),
 		abc_gates: z
 			.object({ A: GateSchema, B: GateSchema, C: GateSchema })
 			.strict(),
@@ -314,6 +343,18 @@ export function deriveAssessmentFacts(
 				"boolean",
 				"request.availability+request.prohibited_arrangements",
 			),
+			fact(
+				"continuity.days_since_last_run",
+				snapshot.continuity.days_since_last_run,
+				"days",
+				"snapshot.continuity.days_since_last_run",
+			),
+			fact(
+				"continuity.current_phase",
+				snapshot.current_phase?.name ?? "none",
+				"phase",
+				"snapshot.current_phase",
+			),
 		],
 	});
 }
@@ -328,7 +369,11 @@ export function validateAssessmentReferences(
 	);
 	const noteIds =
 		"gaps" in assessment
-			? assessment.gaps.flatMap((item) => item.fact_ids)
+			? [
+					...assessment.gaps,
+					...assessment.limiting_factors,
+					...assessment.assumptions_to_validate,
+				].flatMap((item) => item.fact_ids)
 			: assessment.conflicts.flatMap((item) => item.fact_ids);
 	const gateIds =
 		"abc_gates" in assessment
@@ -374,6 +419,16 @@ export function validateGoalAssessmentTargets(
 	const a = assessment.abc_gates.A.target;
 	const b = assessment.abc_gates.B.target;
 	const c = assessment.abc_gates.C.target;
+	for (const gate of Object.values(assessment.abc_gates))
+		for (const condition of gate.conditions)
+			if (
+				/(?:readiness|evidence)\s+(?:supports?|no longer supports?)/i.test(
+					condition.criterion,
+				)
+			)
+				throw new Error(
+					"goal gate criterion must be an observable future validation",
+				);
 	const matchingPb = numberFact(
 		facts.facts.find((fact) => fact.fact_id === "goal.a.matching_pb_seconds")
 			?.value,
@@ -459,12 +514,36 @@ export function authoritativeReadiness(
 		(numberFact(values.get("frequency.recent_run_days_per_week")) ?? 0) <= 0
 	)
 		return "missing_baseline";
-	const runway = numberFact(values.get("race.a.weeks_to_race"));
-	return runway !== null && runway < 12 ? "limited" : "ready";
+	const daysSinceLastRun = numberFact(
+		values.get("continuity.days_since_last_run"),
+	);
+	const ctl = numberFact(values.get("load.current_ctl"));
+	const form = numberFact(values.get("load.current_form"));
+	if (
+		(daysSinceLastRun !== null && daysSinceLastRun >= 14) ||
+		(ctl !== null && ctl > 0 && form !== null && form / ctl < -0.25)
+	)
+		return "limited";
+	return "ready";
+}
+
+export function authoritativeContinuity(
+	facts: AssessmentFacts,
+): AthleteAssessment["continuity"] {
+	const days = numberFact(
+		facts.facts.find(
+			(fact) => fact.fact_id === "continuity.days_since_last_run",
+		)?.value,
+	);
+	if (days === null) return "unknown";
+	if (days >= 28) return "returning";
+	if (days >= 14) return "interrupted";
+	return "continuous";
 }
 
 export function authoritativeGoalLevel(
 	facts: AssessmentFacts,
+	athlete?: AthleteAssessment,
 ): GoalAssessment["level"] {
 	const values = new Map(facts.facts.map((fact) => [fact.fact_id, fact.value]));
 	const improvement = numberFact(values.get("goal.a.improvement_pct"));
@@ -477,6 +556,13 @@ export function authoritativeGoalLevel(
 	if (improvement === null) return "conditional";
 	if (improvement > 15 || (improvement > 10 && (runway ?? 0) < 16))
 		return "multi_cycle_required";
+	if (
+		athlete &&
+		(athlete.readiness === "limited" ||
+			athlete.continuity === "returning" ||
+			athlete.capability_confidence === "low")
+	)
+		return "conditional";
 	if (improvement > 3 || (runway ?? 99) < 12) return "aggressive_but_plausible";
 	return "supported";
 }
@@ -493,6 +579,34 @@ export function validateAthleteAssessmentRanges(
 	const roadLongest = numberFact(byId.get("history.longest_road_run_km"));
 	const quality = numberFact(byId.get("tolerance.quality_sessions_per_week"));
 	const distance = assessment.safe_training_ranges.weekly_distance_km;
+	const startingDistance =
+		assessment.safe_training_ranges.starting_weekly_distance_km;
+	if (
+		startingDistance.low > startingDistance.high ||
+		startingDistance.high > distance.high ||
+		startingDistance.high > Math.max(recentKm ?? 0, stableKm ?? 0) * 1.1 + 1
+	)
+		throw new Error(
+			"athlete assessment starting range exceeds peak training boundary",
+		);
+	const currentPhase = byId.get("continuity.current_phase");
+	if (
+		assessment.current_phase !== (currentPhase === "none" ? null : currentPhase)
+	)
+		throw new Error("athlete assessment current phase contradicts snapshot");
+	const athleteNoteIds = [
+		...assessment.limiting_factors,
+		...assessment.assumptions_to_validate,
+		...assessment.gaps,
+	].flatMap((item) => item.fact_ids);
+	if (
+		athleteNoteIds.some(
+			(id) => id.startsWith("goal.") || id.startsWith("race."),
+		)
+	)
+		throw new Error(
+			"athlete assessment notes must not assess race-goal feasibility",
+		);
 	if (
 		distance.low > distance.high ||
 		distance.high >
@@ -598,11 +712,14 @@ function goalIncompatible(request: MasterPlanGraphRequest): boolean {
 	);
 }
 function validateClaim(
-	claim: z.infer<typeof ClaimSchema>,
+	claim: z.infer<typeof AthleteClaimSchema> | z.infer<typeof GoalClaimSchema>,
 	factIds: string[],
 	facts: Map<string, z.infer<typeof FactSchema>>,
 ): void {
-	const required: Record<z.infer<typeof ClaimSchema>, string[]> = {
+	const required: Record<
+		z.infer<typeof AthleteClaimSchema> | z.infer<typeof GoalClaimSchema>,
+		string[]
+	> = {
 		volume_baseline_established: ["volume.recent_weekly_km"],
 		long_run_tolerance_established: ["tolerance.long_run_km"],
 		quality_tolerance_established: ["tolerance.quality_sessions_per_week"],
@@ -649,7 +766,9 @@ function validateClaim(
 function positive(value: unknown): boolean {
 	return (numberFact(value) ?? 0) > 0;
 }
-function claimExplanation(claim: z.infer<typeof ClaimSchema>): string {
+function claimExplanation(
+	claim: z.infer<typeof AthleteClaimSchema> | z.infer<typeof GoalClaimSchema>,
+): string {
 	return (
 		{
 			volume_baseline_established:

@@ -383,10 +383,15 @@ export function createAssessmentSnapshot() {
 
 export function createTestAthleteAssessment() {
 	return {
-		schema_version: 1 as const,
-		readiness: "limited" as const,
-		summary: "Ready with limited runway",
+		schema_version: 2 as const,
+		readiness: "ready" as const,
+		summary: "Ready for structured preparation",
+		capability_confidence: "high" as const,
+		current_phase: null,
+		continuity: "continuous" as const,
+		recommended_entry_phase: "build" as const,
 		safe_training_ranges: {
+			starting_weekly_distance_km: { low: 55, high: 70 },
 			weekly_distance_km: { low: 55, high: 80 },
 			runs_per_week: { low: 4, high: 6 },
 			long_run_km: { low: 18, high: 30 },
@@ -399,16 +404,24 @@ export function createTestAthleteAssessment() {
 				fact_ids: ["volume.recent_weekly_km"],
 			},
 		],
+		limiting_factors: [],
+		assumptions_to_validate: [],
 		gaps: [],
 	};
 }
 
 export function createTestGoalAssessment() {
 	const conditions = (fact_id: string) => [
-		{ description: "Evidence gate", fact_ids: [fact_id] },
+		{
+			signal: "race_specific_performance" as const,
+			criterion:
+				"Complete a race-specific validation effort at the required level",
+			description: "Evidence gate",
+			fact_ids: [fact_id],
+		},
 	];
 	return {
-		schema_version: 1 as const,
+		schema_version: 2 as const,
 		level: "aggressive_but_plausible" as const,
 		summary: "Aggressive but plausible goal",
 		material_conclusions: [
