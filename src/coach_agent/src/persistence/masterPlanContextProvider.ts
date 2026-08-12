@@ -159,7 +159,7 @@ function pbShape(rows: PersonalBest[]) {
 		distance: p.distance,
 		time_sec: p.timeSec,
 		achieved_at: p.achievedAt,
-		source: p.source,
+		activity_label_id: p.activityLabelId,
 	}));
 }
 function calibrationShape(c: RunningCalibration | null) {

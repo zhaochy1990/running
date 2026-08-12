@@ -179,7 +179,7 @@ export function createAssessmentSnapshot() {
 				distance: "FM",
 				time_sec: 10631,
 				achieved_at: "2026-03-01",
-				source: "race_result",
+				activity_label_id: "activity-fm-pb",
 			},
 		],
 		running_calibration: {
