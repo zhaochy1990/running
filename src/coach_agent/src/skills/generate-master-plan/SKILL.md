@@ -71,7 +71,7 @@ description: >-
 
 ## Step 4: 输出 Coach Agent MasterPlan
 
-运行时会依据 `MasterPlanSchema` 验证结构化输出；不要输出 Markdown、解释或代码围栏。所有面向用户的文本字段使用中文；字段名和枚举值使用英文/ASCII。
+运行时会依据结构化输出 schema 验证返回值。最终返回 `{ "disposition": "return_direct", "content": MasterPlan }`，其中 `content` 是下面定义的完整 MasterPlan；不要输出 Markdown、解释或代码围栏。所有面向用户的文本字段使用中文；字段名和枚举值使用英文/ASCII。
 
 字段语义和业务规则：
 

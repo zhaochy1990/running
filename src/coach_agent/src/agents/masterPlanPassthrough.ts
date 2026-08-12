@@ -1,11 +1,12 @@
 import { AIMessage } from "@langchain/core/messages";
 import { createMiddleware } from "langchain";
-import { MasterPlanSchema } from "./master_plan/schema.js";
+import { DirectResponseEnvelopeSchema } from "./master_plan/schema.js";
 
 type MessageLike = {
 	type?: unknown;
 	name?: unknown;
 	content?: unknown;
+	status?: unknown;
 	tool_call_id?: unknown;
 	tool_calls?: Array<{
 		id?: unknown;
@@ -15,9 +16,9 @@ type MessageLike = {
 };
 
 /**
- * Returns a master-plan task result only when it is a bare JSON object tied to
- * the preceding `task` call. The returned string is deliberately not parsed
- * and re-serialized so its exact bytes reach the athlete.
+ * Returns the content of an explicit direct-response envelope tied to the
+ * preceding generator call. Plan quality belongs to the generator/reviewer;
+ * the orchestrator only honors the declared handoff disposition.
  */
 export function getMasterPlanTaskResult(
 	messages: readonly MessageLike[],
@@ -25,7 +26,7 @@ export function getMasterPlanTaskResult(
 	const result = messages.at(-1);
 	if (
 		result?.type !== "tool" ||
-		result.name !== "task" ||
+		result.status === "error" ||
 		typeof result.content !== "string"
 	) {
 		return undefined;
@@ -40,9 +41,10 @@ export function getMasterPlanTaskResult(
 		);
 	if (generatorCall === undefined) return undefined;
 	try {
-		return MasterPlanSchema.safeParse(JSON.parse(result.content)).success
-			? result.content
-			: undefined;
+		const envelope = DirectResponseEnvelopeSchema.safeParse(
+			JSON.parse(result.content),
+		);
+		return envelope.success ? JSON.stringify(envelope.data.content) : undefined;
 	} catch {
 		return undefined;
 	}
