@@ -11,7 +11,7 @@ import { getQaSubagent } from "./qa/agent.js";
 import { createLoggingMiddleware } from "./middleware.js";
 import type { StrideDataStore } from "../persistence/index.js";
 import { getCoachSubagent } from "./weekly_plan/agent.js";
-import { getLogger } from "../logging/index.js";
+import { getLogger } from "../utils/logger.js";
 import {
 	getMasterPlanGeneratorSubagent,
 	getMasterPlanSubagent,

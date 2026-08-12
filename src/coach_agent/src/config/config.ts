@@ -9,7 +9,7 @@ import type {
 	ModelConfig,
 	DataStoreConfig,
 } from "./types.js";
-import { getLogger } from "../logging/index.js";
+import { getLogger } from "../utils/logger.js";
 
 export type * from "./types.js";
 

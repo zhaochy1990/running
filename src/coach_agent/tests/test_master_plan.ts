@@ -30,7 +30,7 @@ import {
 import { buildResponsesModel } from "../src/agents/common.js";
 import { runMasterPlanRuleFilter } from "../src/graph/master_plan/rules.js";
 import { validateSkeletonAgainstStrategy } from "../src/graph/master_plan/graph.js";
-import { getLogger } from "../src/logging/index.js";
+import { getLogger } from "../src/utils/logger.js";
 import { getAgentConfig, loadConfig, readStrideMySqlConfig } from "../src/config/config.js";
 
 type Profile = "local" | "prod";

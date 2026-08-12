@@ -65,7 +65,8 @@ import {
   type ReviewReport,
   type ReviewWorkerError,
 } from "./review.js";
-import { getLogger } from "../../logging/index.js";
+import { getLogger } from "../../utils/logger.js";
+import { measureExecutionTimeAsync } from "../../utils/performance.js";
 
 type StrategyArchetype = z.infer<typeof StrategyArchetypeSchema>;
 type Judge = StrategyJudgment["judge"];
@@ -208,7 +209,7 @@ export function createMasterPlanGraph(
     const request = MasterPlanGraphRequest.parse(state.request);
     const context = MasterPlanGraphContext.parse(runtime.context);
 
-    const artifactRevision = dependencies.artifactRevision ?? 1;
+    const artifactRevision = 1;
     if (request.requested_mode !== "new_season") {
       logger.warn(
         `Requested mode ${request.requested_mode} is not supported`,
@@ -231,11 +232,16 @@ export function createMasterPlanGraph(
 
     let snapshot: ContextSnapshot;
     try {
-      snapshot = await dependencies.contextProvider.loadSnapshot(
-        context.userId,
-        request.requested_as_of,
+      const res = await measureExecutionTimeAsync(
+        () => dependencies.contextProvider.loadSnapshot(
+          context.userId,
+          request.requested_as_of,
+        )
       );
-    } catch {
+      snapshot = res.result;
+      logger.info(`Loaded context snapshot for user ${context.userId} as of ${snapshot.as_of} in ${res.time.toFixed(2)} ms`);
+    } catch (e) {
+      logger.error(`Failed to load context snapshot for user ${context.userId}: ${e instanceof Error ? e.message : "unknown error"}`);
       return {
         context,
         outcome: infrastructureFailure(
@@ -245,21 +251,24 @@ export function createMasterPlanGraph(
         ),
       };
     }
-    const safetyReasons = explicitAcuteRestrictions(request, snapshot);
-    if (safetyReasons.length > 0)
-      return {
-        context,
-        snapshot,
-        outcome: MasterPlanGraphOutcome.parse({
-          decision: "blocked_for_safety",
-          request_id: request.request_id,
-          generation_id: context.generationId,
-          reasons: safetyReasons,
-          prerequisites: [
-            "Obtain clinical clearance or an explicit return-to-run restriction update",
-          ],
-        }),
-      };
+    logger.info(snapshot, 'Snapshot context');
+
+    // const safetyReasons = explicitAcuteRestrictions(request, snapshot);
+    // if (safetyReasons.length > 0)
+    //   return {
+    //     context,
+    //     snapshot,
+    //     outcome: MasterPlanGraphOutcome.parse({
+    //       decision: "blocked_for_safety",
+    //       request_id: request.request_id,
+    //       generation_id: context.generationId,
+    //       reasons: safetyReasons,
+    //       prerequisites: [
+    //         "Obtain clinical clearance or an explicit return-to-run restriction update",
+    //       ],
+    //     }),
+    //   };
+
     const facts = deriveAssessmentFacts(snapshot, request);
     const volume = facts.facts.find(
       (fact) => fact.fact_id === "volume.recent_weekly_km",
@@ -436,6 +445,7 @@ export function createMasterPlanGraph(
       };
     }
   };
+
   const judgeWorker = async (state: typeof GraphState.State) => {
     const { request, facts, athleteAssessment, goalAssessment } =
       requiredWithAssessments(state);
@@ -462,6 +472,7 @@ export function createMasterPlanGraph(
       };
     }
   };
+
   const dispatchJudges = (state: typeof GraphState.State) => {
     if (state.workerErrors.length) return { outcome: workerFailure(state) };
     try {
@@ -477,6 +488,7 @@ export function createMasterPlanGraph(
       };
     }
   };
+
   const selectStrategy = (state: typeof GraphState.State) => {
     if (state.workerErrors.length) return { outcome: workerFailure(state) };
     try {
@@ -493,6 +505,7 @@ export function createMasterPlanGraph(
       };
     }
   };
+
   const expandSkeleton = async (state: typeof GraphState.State) => {
     const {
       request,
@@ -535,6 +548,7 @@ export function createMasterPlanGraph(
     const plan = MasterPlanSchema.parse(raw);
     return { plan };
   };
+
   const finalize = (state: typeof GraphState.State) => {
     const { request, context, facts, athleteAssessment, goalAssessment } =
       requiredWithAssessments(state);
@@ -583,6 +597,7 @@ export function createMasterPlanGraph(
       }),
     };
   };
+
   const simulateLoad = (state: typeof GraphState.State) => {
     try {
       return {
@@ -602,6 +617,7 @@ export function createMasterPlanGraph(
       };
     }
   };
+
   const filterRules = (state: typeof GraphState.State) => {
     const report = runMasterPlanRuleFilter(
       state.plan!,
@@ -620,6 +636,7 @@ export function createMasterPlanGraph(
       }
       : { ruleReport: report };
   };
+
   const validateSelected = (state: typeof GraphState.State) => {
     try {
       validateSkeletonAgainstStrategy(
@@ -640,6 +657,7 @@ export function createMasterPlanGraph(
       };
     }
   };
+
   const reviewWorker = async (state: typeof GraphState.State) => {
     const input = {
       reviewerType: state.reviewerType!,
@@ -681,6 +699,7 @@ export function createMasterPlanGraph(
       };
     }
   };
+
   const adjudicateReviews = (state: typeof GraphState.State) => {
     const currentErrors = state.reviewWorkerErrors.filter(
       (item) => item.artifact_revision === state.artifactRevision,

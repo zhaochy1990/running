@@ -6,7 +6,7 @@ import { createRunningCalibrationTools } from "../../tools/runningCalibration.js
 import { createLoggingMiddleware } from "../middleware.js";
 import type { StrideDataStore } from "../../persistence/index.js";
 import type { ModelConfig } from "../../config/config.js";
-import { getLogger } from "../../logging/index.js";
+import { getLogger } from "../../utils/logger.js";
 
 const logger = getLogger("coachAgent:qa");
 

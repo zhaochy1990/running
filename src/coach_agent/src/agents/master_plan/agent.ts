@@ -10,7 +10,7 @@ import { createLoggingMiddleware } from "../middleware.js";
 import type { StrideDataStore } from "../../persistence/index.js";
 import type { ModelConfig } from "../../config/config.js";
 import { MASTER_PLAN_PROMPT, MASTER_PLAN_READ_PROMPT } from "../prompts.js";
-import { getLogger } from "../../logging/index.js";
+import { getLogger } from "../../utils/logger.js";
 import { MasterPlanSchema } from "./schema.js";
 
 const logger = getLogger("coachAgent:master_plan");

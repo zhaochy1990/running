@@ -20,7 +20,7 @@
  */
 
 import { createMiddleware } from "langchain";
-import { getLogger } from "../logging/index.js";
+import { getLogger } from "../utils/logger.js";
 
 /** Best-effort tool name from a bound tool (ClientTool has `name`; ServerTool is opaque). */
 function toolName(tool: unknown): string {

@@ -7,7 +7,7 @@ import {
 	IntentClassificationSchema,
 	type IntentLabel,
 } from "./state.js";
-import { getLogger } from "../logging/index.js";
+import { getLogger } from "../utils/logger.js";
 
 const logger = getLogger("orchestrator");
 
@@ -18,7 +18,7 @@ function buildResponsesModel(model: ModelConfig): ChatOpenAIResponses {
 	) {
 		throw new Error(
 			`ChatOpenAIResponses requires an openai-compatible Responses model; ` +
-				`"${model.name}" is provider=${model.provider} api_kind=${model.api_kind}`,
+			`"${model.name}" is provider=${model.provider} api_kind=${model.api_kind}`,
 		);
 	}
 
