@@ -208,11 +208,9 @@ async function main() {
 
 function redactedManifest(snapshot: ContextSnapshot) {
   return {
-    schema_version: snapshot.schema_version,
     as_of: snapshot.as_of,
     user: { id: "[redacted]" },
     coverage: snapshot.coverage,
-    source_manifest: snapshot.source_manifest,
     aggregate_counts: {
       months: snapshot.macro_history.months.length,
       recent_weeks: snapshot.recent_history.weeks.length,

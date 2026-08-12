@@ -70,7 +70,6 @@ export class MySqlMasterPlanContextProvider
 				a.sportName?.toLowerCase().includes("run"),
 		);
 		return ContextSnapshotSchema.parse({
-			schema_version: 1,
 			user: { id: userId, profile: profileShape(profile) },
 			injuries: injuryShape(injuries),
 			personal_bests: pbShape(pbs),
@@ -106,43 +105,6 @@ export class MySqlMasterPlanContextProvider
 				injuries,
 				activePlan,
 			),
-			source_manifest: [
-				{
-					domain: "activities",
-					source: "mysql.activities+activity_training_load",
-					range_start: macroStart,
-					range_end: end,
-					records: runs.length,
-				},
-				{
-					domain: "training_load",
-					source: "mysql.daily_training_load",
-					range_start: recentStart,
-					range_end: end,
-					records: loads.length,
-				},
-				{
-					domain: "recovery",
-					source: "mysql.daily_health+daily_hrv",
-					range_start: recentStart,
-					range_end: end,
-					records: recovery.length,
-				},
-				{
-					domain: "injuries",
-					source: "mysql.user_injury",
-					range_start: null,
-					range_end: end,
-					records: injuries.length,
-				},
-				{
-					domain: "body_composition",
-					source: "mysql.user_profile.weight_kg",
-					range_start: null,
-					range_end: end,
-					records: profile.weightKg === null ? 0 : 1,
-				},
-			],
 			as_of: new Date(asOf).toISOString(),
 		});
 	}

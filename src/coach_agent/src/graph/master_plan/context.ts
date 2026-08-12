@@ -41,7 +41,6 @@ const WeeklyMetricsSchema = z
 /** Complete, invocation-scoped and deeply immutable input to the planning Kernel. */
 export const ContextSnapshotSchema = z
 	.object({
-		schema_version: z.literal(1),
 		user: z.object({ id: z.string().min(1), profile: ProfileSchema }).strict(),
 		injuries: z.array(
 			z
@@ -178,17 +177,6 @@ export const ContextSnapshotSchema = z
 					domain: z.string(),
 					status: z.enum(["complete", "partial", "missing"]),
 					detail: z.string().nullable(),
-				})
-				.strict(),
-		),
-		source_manifest: z.array(
-			z
-				.object({
-					domain: z.string(),
-					source: z.string(),
-					range_start: day.nullable(),
-					range_end: day.nullable(),
-					records: z.number().int().nonnegative(),
 				})
 				.strict(),
 		),

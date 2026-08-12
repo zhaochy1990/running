@@ -74,16 +74,8 @@ test("context provider maps canonical injuries and numeric race feel", async () 
 		},
 	]);
 	assert.equal(snapshot.race_history[0]?.feel, 8);
-	assert.deepEqual(
-		snapshot.source_manifest.find((item) => item.domain === "injuries"),
-		{
-			domain: "injuries",
-			source: "mysql.user_injury",
-			range_start: null,
-			range_end: "2026-08-11",
-			records: 1,
-		},
-	);
+	assert.equal("schema_version" in snapshot, false);
+	assert.equal("source_manifest" in snapshot, false);
 });
 
 test("context provider excludes trail-labelled outdoor activities from road-run evidence", async () => {
