@@ -2215,6 +2215,9 @@ const docTemplate = `{
         "api.PipelineStepInfo": {
             "type": "object",
             "properties": {
+                "continue_on_failure": {
+                    "type": "boolean"
+                },
                 "job_type": {
                     "type": "string"
                 },
@@ -3194,6 +3197,9 @@ const docTemplate = `{
         "api.pipelineStepResponse": {
             "type": "object",
             "properties": {
+                "continue_on_failure": {
+                    "type": "boolean"
+                },
                 "job_id": {
                     "type": "string"
                 },

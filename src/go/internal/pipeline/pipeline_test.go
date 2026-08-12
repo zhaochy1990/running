@@ -576,6 +576,57 @@ func TestOnJobFailed_MarksRunFailed(t *testing.T) {
 	}
 }
 
+func TestOnJobFailed_OptionalStepContinuesWithOriginalInput(t *testing.T) {
+	ps := newFakePStore()
+	enq := &fakeEnqueuer{}
+	reg := NewRegistry()
+	reg.MustRegister(Def{Name: "sync", Steps: []StepDef{
+		{Name: "watch", JobType: "watch"},
+		{Name: "race", JobType: "race_detection", ContinueOnFailure: true},
+		{Name: "compute", JobType: "compute"},
+	}})
+	o := New(ps, enq, reg, WithClock(fixedNow()), WithRunIDFunc(func() string { return "run-1" }))
+	if _, err := o.StartPipeline(context.Background(), "sync", "u1", "u1", "", `{"mode":"incremental"}`); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	watch := ps.snap("run-1").Steps[0].JobID
+	if err := o.OnJobCompleted(context.Background(), &job.Job{
+		ID: watch, PipelineRunID: "run-1", ResultJSON: `{"label_ids":["a1"]}`,
+	}); err != nil {
+		t.Fatalf("complete watch: %v", err)
+	}
+	raceInput := enq.specs[1].InputJSON
+	raceID := ps.snap("run-1").Steps[1].JobID
+	if err := o.OnJobFailed(context.Background(), &job.Job{
+		ID: raceID, PipelineRunID: "run-1", InputJSON: raceInput, ErrorMessage: "one classification failed",
+	}); err != nil {
+		t.Fatalf("optional failure: %v", err)
+	}
+	run := ps.snap("run-1")
+	if run.Status != job.StatusRunning || run.Steps[1].Status != job.StatusFailed || run.CurrentStep != 2 {
+		t.Fatalf("run = %+v", run)
+	}
+	if got := enq.specs[2].InputJSON; got != raceInput {
+		t.Fatalf("compute input = %s, want %s", got, raceInput)
+	}
+	if err := o.OnJobFailed(context.Background(), &job.Job{
+		ID: raceID, PipelineRunID: "run-1", InputJSON: raceInput, ErrorMessage: "duplicate",
+	}); err != nil {
+		t.Fatalf("duplicate optional failure: %v", err)
+	}
+	if len(enq.specs) != 3 {
+		t.Fatalf("duplicate optional failure enqueued %d specs, want 3", len(enq.specs))
+	}
+	computeID := ps.snap("run-1").Steps[2].JobID
+	if err := o.OnJobCompleted(context.Background(), &job.Job{ID: computeID, PipelineRunID: "run-1"}); err != nil {
+		t.Fatalf("complete compute: %v", err)
+	}
+	run = ps.snap("run-1")
+	if run.Status != job.StatusDone || run.Steps[1].Status != job.StatusFailed {
+		t.Fatalf("final run = %+v", run)
+	}
+}
+
 func TestLifecycle_StandaloneJobIsNoop(t *testing.T) {
 	ps := newFakePStore()
 	enq := &fakeEnqueuer{}

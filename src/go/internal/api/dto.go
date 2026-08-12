@@ -67,10 +67,11 @@ type jobStateResponse struct {
 
 // pipelineStepResponse is one step in a run's aggregate state.
 type pipelineStepResponse struct {
-	Name    string `json:"name"`
-	JobType string `json:"job_type"`
-	Status  string `json:"status"`
-	JobID   string `json:"job_id,omitempty"`
+	Name              string `json:"name"`
+	JobType           string `json:"job_type"`
+	Status            string `json:"status"`
+	JobID             string `json:"job_id,omitempty"`
+	ContinueOnFailure bool   `json:"continue_on_failure,omitempty"`
 }
 
 // runStateResponse is the GET /pipelines/{run_id} body.
@@ -117,8 +118,9 @@ type jobCatalogResponse struct {
 
 // PipelineStepInfo names one step of a pipeline (its ordered job type).
 type PipelineStepInfo struct {
-	Name    string `json:"name"`
-	JobType string `json:"job_type"`
+	Name              string `json:"name"`
+	JobType           string `json:"job_type"`
+	ContinueOnFailure bool   `json:"continue_on_failure,omitempty"`
 }
 
 // PipelineCatalogEntry describes one supported pipeline for GET /pipelines.
@@ -159,10 +161,11 @@ func toRunStateResponse(r *job.PipelineRun) runStateResponse {
 	steps := make([]pipelineStepResponse, len(r.Steps))
 	for i, s := range r.Steps {
 		steps[i] = pipelineStepResponse{
-			Name:    s.Name,
-			JobType: s.JobType,
-			Status:  string(s.Status),
-			JobID:   s.JobID,
+			Name:              s.Name,
+			JobType:           s.JobType,
+			Status:            string(s.Status),
+			JobID:             s.JobID,
+			ContinueOnFailure: s.ContinueOnFailure,
 		}
 	}
 	return runStateResponse{

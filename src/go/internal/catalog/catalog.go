@@ -30,16 +30,23 @@ const (
 	// + the latest calibration. Mode-aware (full|incremental). Internal-only: it is
 	// the compute step of the data_sync / onboarding pipelines.
 	JobTypeCompute = "compute"
+	// JobTypeRaceDetection classifies synced HM/FM-distance outdoor/track runs.
+	// It is optional inside sync pipelines: terminal failure remains observable
+	// on the step while the pipeline advances to deterministic compute.
+	JobTypeRaceDetection = "race_detection"
+	// JobTypeRaceDetectionBackfill is the internal one-time all-history scan.
+	JobTypeRaceDetectionBackfill = "race_detection_backfill"
 )
 
 // Pipeline names (ADR 0020). Both are fronted by POST /api/{user}/sync, which
 // picks by mode; onboarding is also the new-user full path.
 const (
-	// PipelineOnboarding is the full path: watch_sync(full) -> calibration ->
-	// compute(full). New-user onboarding and any explicit full resync.
+	// PipelineOnboarding is the full path: watch_sync(full) -> optional
+	// race_detection -> calibration -> compute(full). New-user onboarding and
+	// any explicit full resync.
 	PipelineOnboarding = "onboarding"
-	// PipelineDataSync is the ongoing incremental path: watch_sync(incremental) ->
-	// compute(incremental).
+	// PipelineDataSync is the ongoing incremental path: watch_sync(incremental)
+	// -> optional race_detection -> compute(incremental).
 	PipelineDataSync = "data_sync"
 )
 
@@ -90,6 +97,20 @@ func Jobs() []JobSpec {
 			ExampleInput:  json.RawMessage(`{}`),
 		},
 		{
+			Type:          JobTypeRaceDetection,
+			UserInitiable: false,
+			Description:   "Classify newly synced outdoor/track half-marathon and marathon distance candidates and persist confirmed activity references. Internal optional pipeline step.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"mode":{"type":"string"},"label_ids":{"type":"array","items":{"type":"string"}}},"additionalProperties":true}`),
+			ExampleInput:  json.RawMessage(`{"mode":"incremental","label_ids":["a1b2"]}`),
+		},
+		{
+			Type:          JobTypeRaceDetectionBackfill,
+			UserInitiable: false,
+			Description:   "One-time all-history race detection backfill for one athlete. Skips activities already referenced by races. Internal-only.",
+			InputSchema:   json.RawMessage(`{"type":"object","additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{}`),
+		},
+		{
 			Type:          JobTypeCompute,
 			UserInitiable: false,
 			Description:   "Derive per-activity training load, daily PMC (CTL/ATL/Form) and personal bests from synced data and the latest calibration snapshot. Mode-aware: full recomputes the window; incremental only touches this sync's new activities (label_ids). Internal-only.",
@@ -104,7 +125,7 @@ func Jobs() []JobSpec {
 // triggers a run for its own user_id (the subject; ADR 0012 / 0020). Their step
 // job types MUST be registered as handlers in cmd/worker. The run-level input
 // {mode,content,limit} is threaded into each step (the sync step reads mode;
-// compute reads mode + the upstream label_ids).
+// race_detection and compute read mode + the upstream label_ids).
 func Pipelines() []PipelineSpec {
 	syncInputSchema := json.RawMessage(`{"type":"object","properties":{"mode":{"type":"string","enum":["full","incremental"]},"content":{"type":"string","enum":["all","activities","health"]},"limit":{"type":"integer","minimum":0}},"additionalProperties":false}`)
 	return []PipelineSpec{
@@ -113,12 +134,13 @@ func Pipelines() []PipelineSpec {
 				Name: PipelineOnboarding,
 				Steps: []pipeline.StepDef{
 					{Name: "sync", JobType: JobTypeWatchSync},
+					{Name: "race_detection", JobType: JobTypeRaceDetection, ContinueOnFailure: true},
 					{Name: "calibration", JobType: JobTypeCalibration},
 					{Name: "compute", JobType: JobTypeCompute},
 				},
 			},
 			UserInitiable: true,
-			Description:   "Full path (new-user onboarding or explicit full resync): a full watch sync, then the athlete baseline, then a full load/PMC/PB compute. The run's user_id is the subject athlete.",
+			Description:   "Full path (new-user onboarding or explicit full resync): a full watch sync, optional race detection, the athlete baseline, then a full load/PMC/PB compute. Race-detection failure remains visible on its step but does not fail the pipeline. The run's user_id is the subject athlete.",
 			InputSchema:   syncInputSchema,
 			ExampleInput:  json.RawMessage(`{"mode":"full"}`),
 		},
@@ -127,11 +149,12 @@ func Pipelines() []PipelineSpec {
 				Name: PipelineDataSync,
 				Steps: []pipeline.StepDef{
 					{Name: "sync", JobType: JobTypeWatchSync},
+					{Name: "race_detection", JobType: JobTypeRaceDetection, ContinueOnFailure: true},
 					{Name: "compute", JobType: JobTypeCompute},
 				},
 			},
 			UserInitiable: true,
-			Description:   "Ongoing incremental path: an incremental watch sync, then an incremental compute over only this sync's new activities. The run's user_id is the subject athlete.",
+			Description:   "Ongoing incremental path: an incremental watch sync, optional race detection, then an incremental compute over only this sync's new activities. Race-detection failure remains visible on its step but does not fail the pipeline. The run's user_id is the subject athlete.",
 			InputSchema:   syncInputSchema,
 			ExampleInput:  json.RawMessage(`{"mode":"incremental"}`),
 		},
