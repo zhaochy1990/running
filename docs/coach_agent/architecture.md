@@ -219,6 +219,8 @@ infrastructure_failure -> required model or data source unavailable
 
 `src/coach_agent` 是不依赖数据库客户端的核心 package，在 `src/data/dataProvider.ts` 定义只读 `DataProvider` interface。`src/coach_agent_api` 是 HTTP composition root：负责 RS256 Bearer 验证、MySQL `DataProvider` adapter、LangGraph checkpoint/store、turn receipt、同 thread 串行锁和进程生命周期。未来 CLI 可以调用 HTTP API，或为同一个 interface 注入自己的 adapter；不得从核心 package 直接执行 SQL。
 
+API 基础设施配置由 Convict 从 `config/coach-api.yaml`、`config/coach-api.<STRIDE_COACH_ENV|NODE_ENV|local>.yaml` 和 schema 映射的环境变量加载，后者优先级最高，并以 strict schema 在启动时校验。模型与 Agent 的动态 registry 仍由 `coach_agent` 自己的 YAML loader 管理，避免 API 与未来 CLI 的 composition 配置侵入核心 package。
+
 | 数据 | 所有者 | 使用方式 |
 |---|---|---|
 | 用户自然语言意图 | Conversation Plane | 澄清并归一化为用户声明 |

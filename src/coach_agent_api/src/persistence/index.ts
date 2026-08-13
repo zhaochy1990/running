@@ -1,7 +1,7 @@
 import type { Pool } from "mysql2/promise";
 import { CoordinatedTurnRunner } from "../turns.js";
 import { MySqlSaver } from "./checkpointer.js";
-import { createPool, ensureDatabase, readMySqlConfig } from "./mysql.js";
+import { createPool, ensureDatabase, type MySqlConfig } from "./mysql.js";
 import { MySqlStore } from "./store.js";
 import { MySqlThreadLock, MySqlTurnReceiptStore } from "./turns.js";
 
@@ -13,8 +13,9 @@ export interface Persistence {
 	close(): Promise<void>;
 }
 
-export async function createPersistence(): Promise<Persistence> {
-	const config = readMySqlConfig();
+export async function createPersistence(
+	config: MySqlConfig,
+): Promise<Persistence> {
 	await ensureDatabase(config);
 	const pool = createPool(config);
 	try {
