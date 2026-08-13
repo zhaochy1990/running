@@ -78,3 +78,4 @@ node_modules/
 data/*/testing/**
 .opencode
 src/coach_agent/.env
+config/coach.prod.yaml
