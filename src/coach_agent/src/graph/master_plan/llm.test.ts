@@ -3,6 +3,12 @@ import test from "node:test";
 import { OutputParserException } from "@langchain/core/output_parsers";
 import type { ModelConfig } from "../../config/config.js";
 import { createMasterPlanLlmModels } from "./llm/models.js";
+import {
+	athleteAssessmentPrompt,
+	goalAssessmentPrompt,
+	reviewPrompt,
+	strategyPrompt,
+} from "./llm/prompts.js";
 import { invokeStructured } from "./llm/structured.js";
 
 const MODEL: ModelConfig = {
@@ -34,6 +40,45 @@ test("createMasterPlanLlmModels loads every graph model without invoking an LLM"
 	for (const model of Object.values(models)) {
 		assert.equal(typeof model.invoke, "function");
 	}
+});
+
+test("prompt builders keep runtime data in user messages", () => {
+	const input = {
+		request: { id: "request" },
+		facts: { id: "facts" },
+		snapshot: { id: "snapshot" },
+	};
+	const athleteMessages = athleteAssessmentPrompt(input);
+	const goalMessages = goalAssessmentPrompt({
+		...input,
+		athleteAssessment: { id: "assessment" },
+	});
+
+	assert.equal(athleteMessages[0]?.[0], "system");
+	assert.deepEqual(JSON.parse(athleteMessages[1]?.[1] ?? ""), {
+		task: "Assess the athlete's current capability and safe planning entry point",
+		request: input.request,
+		assessment_facts: input.facts,
+		snapshot: input.snapshot,
+	});
+	assert.deepEqual(JSON.parse(goalMessages[1]?.[1] ?? ""), {
+		task: "Assess the confirmed race goal against the athlete assessment",
+		request: input.request,
+		assessment_facts: input.facts,
+		athlete_assessment: { id: "assessment" },
+		snapshot: input.snapshot,
+	});
+});
+
+test("prompt builders append doctrine and review rubrics to system messages", () => {
+	const input = { id: "input" };
+	const strategyMessages = strategyPrompt(input, "DOCTRINE");
+	const reviewMessages = reviewPrompt(input, "RUBRIC");
+
+	assert.match(strategyMessages[0]?.[1] ?? "", /\n\nDOCTRINE$/);
+	assert.match(reviewMessages[0]?.[1] ?? "", /\n\nRUBRIC$/);
+	assert.equal(strategyMessages[1]?.[1], JSON.stringify(input));
+	assert.equal(reviewMessages[1]?.[1], JSON.stringify(input));
 });
 
 test("invokeStructured retries deterministic validation failures", async () => {
