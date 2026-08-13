@@ -1,0 +1,458 @@
+{
+  "status": "draft",
+  "goal": {
+    "race_name": "2026 西安马拉松",
+    "distance": "FM",
+    "race_date": "2026-10-18",
+    "target_time": "2:50:00",
+    "timezone": "Asia/Shanghai",
+    "location": "西安"
+  },
+  "start_date": "2026-08-17",
+  "end_date": "2026-11-01",
+  "total_weeks": 11,
+  "phases": [
+    {
+      "name": "基础期",
+      "start_date": "2026-08-17",
+      "end_date": "2026-08-23",
+      "focus": "承接现有训练连续性，用一周恢复稳定的六天训练节奏；当前 CTL 约 52.6、Form 约 +11，重点是恢复规律跑量而非追加强度。",
+      "weekly_distance_km_low": 68,
+      "weekly_distance_km_high": 74,
+      "key_session_types": [
+        "threshold",
+        "long_run",
+        "strength_key"
+      ],
+      "milestones": [
+        {
+          "type": "strength_test",
+          "date": "2026-08-23",
+          "target": "无痛完成单腿提踵每侧25次、单腿臀桥每侧20次，左右差不超过10%。",
+          "completed_actual": null
+        }
+      ],
+      "key_workouts": "一节受控阈值课和一节24km轻松长跑，其余跑量均为轻松跑或恢复跑。",
+      "monitoring_triggers": [
+        "晨起静息心率较近期约48-52bpm升高7bpm并持续2天，取消阈值课并将周量下调20%。",
+        "HRV较近期约31-37下降15%以上且伴随腿沉，质量课改为45-60分钟轻松跑。",
+        "任何局部疼痛达到3/10或改变跑姿，停止强度并改为无痛交叉训练。"
+      ],
+      "coach_note": "七月曾出现115-130km高周量及HRV下降，本周不沿用该峰值，而从近期约75km周量附近稳定起步。",
+      "strength": {
+        "sessions_per_week": 2,
+        "focus": "臀中肌、腘绳肌、小腿比目鱼肌、踝足稳定和核心抗旋转。",
+        "timing": "安排在周二质量跑后和周五轻松跑后，每次25-35分钟；长跑前一天不做高负荷下肢力量。"
+      },
+      "recovery": {
+        "focus": "保证睡眠，质量课和长跑后及时补充碳水与蛋白，并进行小腿、髋部放松。",
+        "sleep_target_hours": "7.5-9小时",
+        "adjustment_trigger": "连续两晚睡眠不足6小时、晨脉升高或肌肉酸痛超过48小时，取消下一节质量课并减量20%。"
+      },
+      "is_completed": false,
+      "summary": null
+    },
+    {
+      "name": "提升期",
+      "start_date": "2026-08-24",
+      "end_date": "2026-09-06",
+      "focus": "以阈值能力和渐进长跑提高有氧上限，同时用10km测试判断2:50目标所需速度是否正在接近。",
+      "weekly_distance_km_low": 76,
+      "weekly_distance_km_high": 88,
+      "key_session_types": [
+        "threshold",
+        "long_run",
+        "time_trial",
+        "strength_key"
+      ],
+      "milestones": [
+        {
+          "type": "test_run",
+          "date": "2026-09-06",
+          "target": "10km测试争取38:30以内；若高于39:00或后半程明显掉速，全马训练暂按2:53-2:55能力档执行。",
+          "completed_actual": null
+        }
+      ],
+      "key_workouts": "第一周完成阈值重复跑和28km含受控马拉松努力段的长跑；第二周完成10km测试及30km渐进长跑。",
+      "monitoring_triggers": [
+        "阈值段配速无法维持4:03-4:08/km且心率超过171bpm，立即减少一组，不用加速补回。",
+        "长跑后半程配速掉幅超过3%且非天气原因，下一次马拉松努力段减少4-6km。",
+        "周量完成率低于85%，下一周不得继续加量。"
+      ],
+      "coach_note": "当前阈值校准约4:05/km，而2:50目标配速约4:03/km，目标具有挑战性，必须由测试结果决定是否执行A目标。",
+      "strength": {
+        "sessions_per_week": 2,
+        "focus": "单腿蹲拉模式、臀腿后链、小腿耐力和髋稳定，以中等负荷维持动作质量。",
+        "timing": "周二质量跑后做主力量，周五轻松跑后做短耐力；距离长跑至少36小时。"
+      },
+      "recovery": {
+        "focus": "长跑中开始固定补给流程，训练后补碳水和蛋白，并通过睡眠与轻松活动促进恢复。",
+        "sleep_target_hours": "7.5-9小时",
+        "adjustment_trigger": "长跑后48小时仍明显腿沉、静息心率升高7bpm或疼痛达到3/10，取消周中阈值并将跑量下调20-25%。"
+      },
+      "is_completed": false,
+      "summary": null
+    },
+    {
+      "name": "马拉松专项期",
+      "start_date": "2026-09-07",
+      "end_date": "2026-10-04",
+      "focus": "将马拉松努力嵌入长跑，完成补给、配速和30km后结构耐力验证；用半马模拟决定最终A/B比赛目标。",
+      "weekly_distance_km_low": 64,
+      "weekly_distance_km_high": 90,
+      "key_session_types": [
+        "tempo",
+        "threshold",
+        "long_run",
+        "time_trial",
+        "strength_key"
+      ],
+      "milestones": [
+        {
+          "type": "long_run",
+          "date": "2026-09-20",
+          "target": "完成32km长跑，内含18km马拉松努力段，课中摄入碳水60-75g/小时，后半程动作稳定。",
+          "completed_actual": null
+        },
+        {
+          "type": "test_run",
+          "date": "2026-09-27",
+          "target": "半马模拟争取1:23:30以内且配速均匀；达到目标并恢复正常方可保留2:50为A目标。",
+          "completed_actual": null
+        },
+        {
+          "type": "long_run",
+          "date": "2026-10-04",
+          "target": "完成30km长跑，内含16km目标马拉松配速；若前置测试未达标，则改按4:08-4:12/km完成。",
+          "completed_actual": null
+        }
+      ],
+      "key_workouts": "先用一周吸收负荷，再完成32km专项长跑、半马模拟和赛前14天的最后一次30km专项确认；所有马配段均属于长跑组成部分。",
+      "monitoring_triggers": [
+        "马拉松努力段心率超过159bpm并持续上升、配速掉幅超过3%或RPE达到8/10，提前结束快段并轻松跑回。",
+        "32km课后48小时仍异常疲劳，下一周仅保留半马模拟或阈值中的一项。",
+        "半马模拟后酸痛达到6/10并持续两天，未来5天全部改为恢复跑或休息。",
+        "体感温度达到30℃时按心率和体感执行，目标配速放慢5-15秒/km，不以高温成绩判定能力。"
+      ],
+      "coach_note": "专项期只有一项核心任务：在不过度透支的前提下，把可持续马拉松努力延长；不连续安排两天强度。",
+      "strength": {
+        "sessions_per_week": 1,
+        "focus": "以小腿、腘绳肌、臀中肌和核心为主的低量维持，避免力竭和延迟性酸痛。",
+        "timing": "安排在周二质量跑后20-25分钟；半马模拟周仅做弹力带和自重激活。"
+      },
+      "recovery": {
+        "focus": "长课前补足糖原，课中演练碳水、电解质和饮水，课后优先补给、睡眠及轻度活动恢复。",
+        "sleep_target_hours": "8-9小时",
+        "adjustment_trigger": "睡眠不足6小时、静息心率升高7bpm、HRV下降15%以上或疼痛达到3/10时，当日关键课改为轻松跑并减少本周总量20%。"
+      },
+      "is_completed": false,
+      "summary": null
+    },
+    {
+      "name": "赛前减量期",
+      "start_date": "2026-10-05",
+      "end_date": "2026-10-18",
+      "focus": "两周减量，降低总量并保留少量马拉松配速触感；比赛周消除疲劳、补足糖原并明确A/B配速决策。",
+      "weekly_distance_km_low": 54,
+      "weekly_distance_km_high": 64,
+      "key_session_types": [
+        "race_pace",
+        "long_run",
+        "race"
+      ],
+      "milestones": [
+        {
+          "type": "race",
+          "date": "2026-10-18",
+          "target": "西安马拉松A目标2:50:00；若10km或半马检查未达标、天气不利或恢复异常，执行B目标2:53:00-2:55:00。",
+          "completed_actual": null
+        }
+      ],
+      "key_workouts": "减量首周完成一节短马拉松配速课和20km长跑；比赛周只保留短轻松跑、加速跑与正式比赛。",
+      "monitoring_triggers": [
+        "赛前10天出现疼痛达到3/10，取消全部强度并进行评估。",
+        "出现感冒症状或静息心率升高7bpm，跑量再减少30-50%，优先睡眠和补液。",
+        "比赛日气温、风力或身体反馈不支持A目标，前10km按B目标配速开局。"
+      ],
+      "coach_note": "减量阶段不再争取新的适应；宁可少跑一次，也不要带着残余疲劳进入比赛。",
+      "strength": {
+        "sessions_per_week": 1,
+        "focus": "仅做低负荷神经激活、髋部稳定和踝足活动，不做力竭训练。",
+        "timing": "只在减量第一周早段完成一次15-20分钟激活；比赛周正式力量训练为0次。"
+      },
+      "recovery": {
+        "focus": "提高睡眠规律性，赛前补足碳水和水分电解质，减少高纤维及陌生食物。",
+        "sleep_target_hours": "8-9小时",
+        "adjustment_trigger": "赛前3天体重下降超过1%、尿色深或睡眠连续不足6小时，停止额外训练并加强碳水、补液和休息。"
+      },
+      "is_completed": false,
+      "summary": null
+    },
+    {
+      "name": "赛后恢复期",
+      "start_date": "2026-10-19",
+      "end_date": "2026-11-01",
+      "focus": "用两周主动恢复修复肌肉和结缔组织，逐步恢复轻松跑，不安排阈值、间歇或长距离关键课。",
+      "weekly_distance_km_low": 18,
+      "weekly_distance_km_high": 38,
+      "key_session_types": [],
+      "milestones": [],
+      "key_workouts": "第一周以步行、休息和20-40分钟恢复跑为主；第二周仅在无痛且疲劳消退后增加轻松跑次数。",
+      "monitoring_triggers": [
+        "局部疼痛、肿胀或步态异常持续72小时，暂停跑步并寻求专业评估。",
+        "晨起静息心率较基线升高7bpm或全身疲劳持续一周，不增加跑量。",
+        "赛后情绪低落、睡眠紊乱或食欲异常持续一周，延长恢复期。"
+      ],
+      "coach_note": "赛后两周的目标是恢复健康与训练欲望，不追求配速或周量。",
+      "strength": {
+        "sessions_per_week": 0,
+        "focus": "不做正式力量训练，仅进行无痛活动度练习和轻度激活。",
+        "timing": "第一周完全停止力量；第二周若行走和轻松跑均无痛，可做10-15分钟自重激活。"
+      },
+      "recovery": {
+        "focus": "优先睡眠、碳水与蛋白补给、补液和低强度活动，并持续监测疼痛。",
+        "sleep_target_hours": "8-9小时",
+        "adjustment_trigger": "酸痛、疲劳或静息心率在赛后7天仍未明显恢复，第二周继续按第一周负荷，不恢复正式训练。"
+      },
+      "is_completed": false,
+      "summary": null
+    }
+  ],
+  "weeks": [
+    {
+      "week_index": 1,
+      "week_start": "2026-08-17",
+      "phase_name": "基础期",
+      "target_weekly_km_low": 68,
+      "target_weekly_km_high": 74,
+      "key_sessions": [
+        {
+          "type": "threshold",
+          "distance_km": 14,
+          "duration_min": 72,
+          "intensity": "3km热身；3×2km@4:05-4:10/km，组间慢跑2分钟；放松至总计14km，心率主要控制在159-170bpm。",
+          "purpose": "重新建立受控阈值刺激，不追求力竭。"
+        },
+        {
+          "type": "long_run",
+          "distance_km": 24,
+          "duration_min": 125,
+          "intensity": "全程轻松，约4:55-5:25/km或135-149bpm；最后加入4×20秒放松加速，组间充分慢跑。",
+          "purpose": "稳定长跑频率和六天训练节奏。"
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 2,
+      "week_start": "2026-08-24",
+      "phase_name": "提升期",
+      "target_weekly_km_low": 76,
+      "target_weekly_km_high": 82,
+      "key_sessions": [
+        {
+          "type": "threshold",
+          "distance_km": 16,
+          "duration_min": 80,
+          "intensity": "3km热身；4×2km@4:03-4:08/km，组间慢跑2分钟；放松至16km。",
+          "purpose": "提高阈值耐力并观察目标马拉松配速的相对强度。"
+        },
+        {
+          "type": "long_run",
+          "distance_km": 28,
+          "duration_min": 145,
+          "intensity": "8km轻松＋3×4km@4:10-4:15/km，组间1km轻松跑＋放松至28km；全程不超过3小时。",
+          "purpose": "在长跑中建立受控马拉松努力和补给节奏；快段属于本节长跑，不单列。"
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 3,
+      "week_start": "2026-08-31",
+      "phase_name": "提升期",
+      "target_weekly_km_low": 82,
+      "target_weekly_km_high": 88,
+      "key_sessions": [
+        {
+          "type": "time_trial",
+          "distance_km": 15,
+          "duration_min": 65,
+          "intensity": "3km热身含4×20秒加速；10km测试，前5km约3:52-3:54/km、后5km按体感推进；2km放松，总计15km。",
+          "purpose": "以10km测试判断A目标速度储备，整节训练总距离包含热身和放松。"
+        },
+        {
+          "type": "long_run",
+          "distance_km": 30,
+          "duration_min": 155,
+          "intensity": "前22km约4:55-5:20/km，最后8km在状态良好时渐进至4:08-4:12/km；若测试后未恢复则全程轻松。",
+          "purpose": "提高疲劳后的跑姿稳定和有氧耐力。"
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 4,
+      "week_start": "2026-09-07",
+      "phase_name": "马拉松专项期",
+      "target_weekly_km_low": 64,
+      "target_weekly_km_high": 70,
+      "key_sessions": [
+        {
+          "type": "tempo",
+          "distance_km": 14,
+          "duration_min": 72,
+          "intensity": "3km热身；连续8km@4:12-4:18/km；3km放松，保持可控呼吸。",
+          "purpose": "恢复周保留适度节奏感，不制造高乳酸。"
+        },
+        {
+          "type": "long_run",
+          "distance_km": 24,
+          "duration_min": 125,
+          "intensity": "轻松跑约4:55-5:25/km或135-149bpm，练习每小时60g左右碳水。",
+          "purpose": "吸收前两周负荷并维持结构耐力。"
+        }
+      ],
+      "is_recovery_week": true
+    },
+    {
+      "week_index": 5,
+      "week_start": "2026-09-14",
+      "phase_name": "马拉松专项期",
+      "target_weekly_km_low": 84,
+      "target_weekly_km_high": 90,
+      "key_sessions": [
+        {
+          "type": "threshold",
+          "distance_km": 16,
+          "duration_min": 80,
+          "intensity": "3km热身；3×3km@4:03-4:08/km，组间慢跑3分钟；放松至16km。",
+          "purpose": "维持阈值能力，为周末专项长跑提供速度支撑。"
+        },
+        {
+          "type": "long_run",
+          "distance_km": 32,
+          "duration_min": 160,
+          "intensity": "8km轻松＋3×6km@4:05-4:10/km，组间1km轻松跑＋放松至32km；若心率持续超过159bpm则将快段放慢或提前结束。",
+          "purpose": "完成核心马拉松专项耐力与补给演练；18km快段全部属于本节长跑。"
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 6,
+      "week_start": "2026-09-21",
+      "phase_name": "马拉松专项期",
+      "target_weekly_km_low": 80,
+      "target_weekly_km_high": 86,
+      "key_sessions": [
+        {
+          "type": "time_trial",
+          "distance_km": 25.1,
+          "duration_min": 115,
+          "intensity": "3km热身含加速；21.1km半马模拟，前5km克制、随后均匀配速；1km放松，总计25.1km。目标1:23:30以内，不在高温下强求成绩。",
+          "purpose": "验证阈值耐力、竞争配速和2:50全马A目标可行性。"
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 7,
+      "week_start": "2026-09-28",
+      "phase_name": "马拉松专项期",
+      "target_weekly_km_low": 78,
+      "target_weekly_km_high": 84,
+      "key_sessions": [
+        {
+          "type": "threshold",
+          "distance_km": 13,
+          "duration_min": 68,
+          "intensity": "3km热身；4×1.5km@4:00-4:05/km，组间慢跑2分钟；放松至13km，全程留有余力。",
+          "purpose": "用低总量维持阈值触感，不影响最后一次专项长跑。"
+        },
+        {
+          "type": "long_run",
+          "distance_km": 30,
+          "duration_min": 150,
+          "intensity": "8km轻松＋2×8km@4:03-4:06/km，组间2km轻松＋放松至30km；仅在10km和半马检查达标时执行目标配速，否则快段按4:08-4:12/km。",
+          "purpose": "赛前14天完成最后一次受控专项确认；16km马配段属于本节长跑。"
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 8,
+      "week_start": "2026-10-05",
+      "phase_name": "赛前减量期",
+      "target_weekly_km_low": 58,
+      "target_weekly_km_high": 64,
+      "key_sessions": [
+        {
+          "type": "race_pace",
+          "distance_km": 13,
+          "duration_min": 65,
+          "intensity": "3km热身；2×4km按最终比赛目标配速，组间1km轻松；1km放松，总计13km。",
+          "purpose": "在减量中保留比赛节奏触感，结束时应感觉仍可继续。"
+        },
+        {
+          "type": "long_run",
+          "distance_km": 20,
+          "duration_min": 100,
+          "intensity": "前10km轻松，随后8km按最终比赛目标配速，2km放松；不追求心率或配速突破。",
+          "purpose": "维持长时间跑动和补给流程；8km比赛配速段属于本节长跑。"
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 9,
+      "week_start": "2026-10-12",
+      "phase_name": "赛前减量期",
+      "target_weekly_km_low": 54,
+      "target_weekly_km_high": 60,
+      "key_sessions": [
+        {
+          "type": "race",
+          "distance_km": 42.2,
+          "duration_min": 170,
+          "intensity": "A方案平均约4:02.8/km：前5km约4:05-4:07/km，5-30km稳定约4:02-4:04/km，30km后按体感决定；若检查或天气不支持，B方案按4:06-4:09/km开局。",
+          "purpose": "完成西安马拉松；前半程克制，每小时摄入60-75g碳水并按天气补充水和电解质。"
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 10,
+      "week_start": "2026-10-19",
+      "phase_name": "赛后恢复期",
+      "target_weekly_km_low": 18,
+      "target_weekly_km_high": 25,
+      "key_sessions": [],
+      "is_recovery_week": true
+    },
+    {
+      "week_index": 11,
+      "week_start": "2026-10-26",
+      "phase_name": "赛后恢复期",
+      "target_weekly_km_low": 28,
+      "target_weekly_km_high": 38,
+      "key_sessions": [],
+      "is_recovery_week": true
+    }
+  ],
+  "training_principles": [
+    "目标2:50:00对应平均配速约4:02.8/km；相对全马PB 2:57:11需提升约4.1%，但当前阈值校准约4:05/km，因此A目标必须由10km与半马检查确认，未达标时采用2:53-2:55的B目标。",
+    "每周训练6天：周一休息，周二关键课，周三轻松跑，周四中等距离轻松跑或加速跑，周五轻松跑，周六短轻松跑，周日长跑；半马模拟周将模拟安排在周日。",
+    "除关键课外的里程以轻松跑完成，通常约4:52-5:41/km或135-149bpm；恢复日以心率低于135bpm为主，炎热天气优先按心率和体感而非配速。",
+    "每周最多两节独立关键跑，长跑内的马拉松配速段不另算一节；关键课之间至少间隔48小时，不连续两天高强度。",
+    "所有单次训练包含热身、恢复和放松在内均不得超过180分钟；若32km训练预计超时，则在180分钟处结束。",
+    "超过90分钟的训练，课前补足碳水，课中每小时摄入60-75g碳水并补水、电解质；比赛使用已在长跑中验证的产品。",
+    "周量只在恢复正常、无疼痛且完成率达到85%以上时推进；晨脉升高7bpm、HRV下降15%以上、睡眠不足或局部疼痛达到3/10时，取消强度并减量20-30%。",
+    "力量训练始终放在跑步之后，且不安排在长跑前一天；专项期从每周2次降至1次，比赛周和赛后第一周不做正式力量训练。",
+    "赛前两周减量但保留短比赛配速刺激；赛后两周不安排阈值、间歇或长跑，只在无痛和疲劳明显消退后逐步恢复。"
+  ],
+  "generated_by": "coach_agent",
+  "version": 1,
+  "created_at": "2026-08-13T06:17:07.754Z",
+  "updated_at": "2026-08-13T06:17:07.754Z"
+}

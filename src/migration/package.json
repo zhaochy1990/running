@@ -34,6 +34,7 @@
     "@azure/identity": "^4.5.0",
     "@azure/keyvault-secrets": "^4.9.0",
     "@azure/storage-blob": "^12.33.0",
+    "axios": "^1.19.0",
     "mysql2": "^3.11.4"
   }
 }

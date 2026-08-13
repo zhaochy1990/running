@@ -27,6 +27,15 @@ function toolName(tool: unknown): string {
 	return (tool as { name?: string })?.name ?? "<unknown>";
 }
 
+function valueSize(value: unknown): number | null {
+	if (typeof value === "string") return value.length;
+	try {
+		return JSON.stringify(value)?.length ?? null;
+	} catch {
+		return null;
+	}
+}
+
 /**
  * Build a logging middleware scoped to a logger namespace (e.g. `"agent"`,
  * `"agent:qa"`), so main-agent and subagent turns stay filterable in the logs.
@@ -44,8 +53,8 @@ export function createLoggingMiddleware(scope = "agent") {
 			const lastMessage = request.messages[messageCount - 1];
 			log.info(
 				{
-					content: lastMessage?.content,
 					type: lastMessage?.type,
+					contentChars: valueSize(lastMessage?.content),
 					totalMessages: messageCount,
 					boundTools: request.tools.map(toolName).join(", "),
 				},
@@ -70,12 +79,22 @@ export function createLoggingMiddleware(scope = "agent") {
 		wrapToolCall: async (request, handler) => {
 			const startedAt = Date.now();
 			const name = request.toolCall.name;
-			log.info(request.toolCall, "tool call request,");
+			log.info(
+				{
+					tool: name,
+					argKeys: Object.keys(request.toolCall.args ?? {}),
+				},
+				"tool call request,",
+			);
 
 			try {
 				const result = await handler(request);
 				log.info(
-					{ tool: name, ms: Date.now() - startedAt, result },
+					{
+						tool: name,
+						ms: Date.now() - startedAt,
+						resultChars: valueSize(result),
+					},
 					"after tool execution,",
 				);
 				return result;

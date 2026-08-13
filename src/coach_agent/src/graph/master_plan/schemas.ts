@@ -194,13 +194,36 @@ const PhaseSchema = z
 		}
 	});
 
-const KeySessionSchema = z.object({
-	type: KeySessionTypeSchema,
-	distance_km: z.number().nonnegative().nullable(),
-	duration_min: z.number().nonnegative().nullable(),
-	intensity: z.string().nullable(),
-	purpose: z.string().nullable(),
-});
+const KeySessionSchema = z
+	.object({
+		type: KeySessionTypeSchema.describe(
+			"Classify the complete standalone workout, not an interval or pace segment embedded inside another workout.",
+		),
+		distance_km: z
+			.number()
+			.nonnegative()
+			.nullable()
+			.describe(
+				"Total distance of this complete workout. Do not put only the distance of its work intervals here.",
+			),
+		duration_min: z
+			.number()
+			.nonnegative()
+			.nullable()
+			.describe(
+				"Total elapsed duration of this complete workout, including warm-up, recoveries, and cool-down; not only work-interval time.",
+			),
+		intensity: z
+			.string()
+			.nullable()
+			.describe(
+				"Describe every component of this one workout here, including any race-pace blocks embedded in a long run.",
+			),
+		purpose: z.string().nullable(),
+	})
+	.describe(
+		"Exactly one independently performed workout. Embedded blocks are components of this object and must not be repeated as sibling key_sessions.",
+	);
 
 const WeekSchema = z
 	.object({
@@ -209,7 +232,11 @@ const WeekSchema = z
 		phase_name: PhaseSchema.shape.name,
 		target_weekly_km_low: z.number().nonnegative(),
 		target_weekly_km_high: z.number().nonnegative(),
-		key_sessions: z.array(KeySessionSchema),
+		key_sessions: z
+			.array(KeySessionSchema)
+			.describe(
+				"Strategic workouts for the week. Each object is one independently performed workout, never a component of another object.",
+			),
 		is_recovery_week: z.boolean(),
 	})
 	.superRefine((week, ctx) => {
