@@ -12,7 +12,8 @@ import (
 )
 
 // AutoMigrateUsers creates/updates the user_profile and user_onboarding tables
-// (ADR 0013). Called by cmd/api at boot; the worker does not need these tables.
+// (ADR 0013). Both API and worker call it: the API owns public profile writes,
+// while the worker persists private derived profile facts such as activity area.
 func (s *Store) AutoMigrateUsers(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).AutoMigrate(&UserProfile{}, &UserOnboarding{}, &InjuryRecord{}); err != nil {
 		return fmt.Errorf("storage: automigrate users: %w", err)
