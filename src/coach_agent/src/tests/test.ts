@@ -91,33 +91,35 @@ async function askWithHITL(content: string, thread: string): Promise<void> {
 		callbacks: [tokenUsage],
 	};
 	const startTime = Date.now();
-	let res = (await agent.invoke(
-		{ messages: [{ role: "user", content }] },
-		cfg,
-	)) as {
-		messages: Array<{ content: unknown }>;
-		__interrupt__?: Array<{ value: AskUserQuestionPayload }>;
-	};
-
-	let guard = 0;
-	while (res.__interrupt__?.length && guard++ < 6) {
-		const intr = res.__interrupt__[0]?.value;
-		if (intr?.kind === ASK_USER_QUESTION_KIND) {
-			console.log(`\n----- 教练想追问你 -----\n${renderQuestion(intr)}`);
-			//     } else {
-			//       console.log(`\n----- 教练暂停并请求输入 -----\n${JSON.stringify(intr.value)}`);
-		}
-		const answer = (await readAnswer()).trim();
-		res = (await agent.invoke(
-			new Command({ resume: answer }),
+	try {
+		let res = (await agent.invoke(
+			{ messages: [{ role: "user", content }] },
 			cfg,
-		)) as typeof res;
-	}
+		)) as {
+			messages: Array<{ content: unknown }>;
+			__interrupt__?: Array<{ value: AskUserQuestionPayload }>;
+		};
 
-	const endTime = Date.now();
-	printAnswer(res);
-	console.log(`Request took ${endTime - startTime} ms`);
-	console.log(`\n${formatTokenUsageReport(tokenUsage.summary())}`);
+		let guard = 0;
+		while (res.__interrupt__?.length && guard++ < 6) {
+			const intr = res.__interrupt__[0]?.value;
+			if (intr?.kind === ASK_USER_QUESTION_KIND) {
+				console.log(`\n----- 教练想追问你 -----\n${renderQuestion(intr)}`);
+				//     } else {
+				//       console.log(`\n----- 教练暂停并请求输入 -----\n${JSON.stringify(intr.value)}`);
+			}
+			const answer = (await readAnswer()).trim();
+			res = (await agent.invoke(
+				new Command({ resume: answer }),
+				cfg,
+			)) as typeof res;
+		}
+
+		printAnswer(res);
+	} finally {
+		console.log(`Request took ${Date.now() - startTime} ms`);
+		console.log(`\n${formatTokenUsageReport(tokenUsage.summary())}`);
+	}
 }
 
 // // ── Scenario：生成赛季计划 → Coach 先回看历史比赛 → 若发现跑崩则追问原因 ──

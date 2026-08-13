@@ -102,3 +102,26 @@ test("reports missing usage without silently treating it as zero", () => {
 	assert.equal(summary.calls[0]?.totalTokens, null);
 	assert.match(formatTokenUsageReport(summary), /usage=partial \(0\/1/);
 });
+
+test("retains failed LLM calls in the final report", () => {
+	const tracker = new LlmTokenUsageTracker();
+	tracker.handleChatModelStart(
+		{},
+		[],
+		"run-failed",
+		undefined,
+		{ invocation_params: { model: "gpt-plan" } },
+		undefined,
+		{ lc_agent_name: "generate_master_plan" },
+	);
+	tracker.handleLLMError(new Error("provider unavailable"), "run-failed");
+
+	const summary = tracker.summary();
+	assert.equal(summary.callCount, 1);
+	assert.equal(summary.reportedCallCount, 0);
+	assert.equal(summary.calls[0]?.status, "failed");
+	assert.match(
+		formatTokenUsageReport(summary),
+		/#1 agent=generate_master_plan model=gpt-plan .*status=failed/,
+	);
+});
