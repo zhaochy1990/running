@@ -19,13 +19,14 @@ import (
 )
 
 type fakeStore struct {
-	candidates []storage.RaceCandidate
-	timeseries map[string][]storage.TimeseriesPoint
-	readErr    map[string]error
-	starts     []detector.Coordinate
-	listedIDs  []string
-	inserted   []storage.Race
-	mu         sync.Mutex
+	candidates     []storage.RaceCandidate
+	timeseries     map[string][]storage.TimeseriesPoint
+	readErr        map[string]error
+	starts         []detector.Coordinate
+	insertedResult bool
+	listedIDs      []string
+	inserted       []storage.Race
+	mu             sync.Mutex
 }
 
 func (f *fakeStore) ActivityStartCoordinates(_ context.Context, _ string) ([]detector.Coordinate, error) {
@@ -48,11 +49,14 @@ func (f *fakeStore) RaceCandidates(_ context.Context, _ string, labelIDs []strin
 	return f.candidates, nil
 }
 
-func (f *fakeStore) InsertRace(_ context.Context, race *storage.Race) error {
+func (f *fakeStore) InsertRace(_ context.Context, race *storage.Race) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.inserted = append(f.inserted, *race)
-	return nil
+	if !f.insertedResult {
+		return false, nil
+	}
+	return true, nil
 }
 
 type classifier struct{}
@@ -106,7 +110,7 @@ func TestHandlerContinuesAfterOneCandidateFails(t *testing.T) {
 		{LabelID: "confirmed-1", Sport: "run_outdoor", DistanceM: 21100},
 		{LabelID: "failed", Sport: "run_outdoor", DistanceM: 42195},
 		{LabelID: "confirmed-2", Sport: "run_track", DistanceM: 42195},
-	}}
+	}, insertedResult: true}
 	h := New(store, detector.New(partialClassifier{}), 3)
 	_, err := h(context.Background(), &job.Job{
 		UserID:    "f10bc353-01ab-4db1-af9f-d9305ea9a532",
@@ -192,7 +196,7 @@ func TestIncrementalWithoutLabelsDoesNotRequestBackfill(t *testing.T) {
 }
 
 func TestIncrementalHandlerScopesReadAndReplacementToSyncedLabels(t *testing.T) {
-	store := &fakeStore{candidates: []storage.RaceCandidate{{LabelID: "new-race", Name: "Official Marathon", Sport: "run_outdoor", DistanceM: 42195}}}
+	store := &fakeStore{candidates: []storage.RaceCandidate{{LabelID: "new-race", Name: "Official Marathon", Sport: "run_outdoor", DistanceM: 42195}}, insertedResult: true}
 	h := New(store, detector.New(classifier{}), 2)
 	input, _ := json.Marshal(map[string]any{"mode": "incremental", "label_ids": []string{"new-race", "new-long-run"}, "health_dates": []string{"2026-08-12"}})
 
@@ -270,6 +274,51 @@ func TestHandlerKeepsTraceOutOfModelClassifierWhileBuildingLocationContext(t *te
 
 func int64Pointer(v int64) *int64       { return &v }
 func float64Pointer(v float64) *float64 { return &v }
+
+func TestHandlerResultCountsOnlyCurrentConfirmations(t *testing.T) {
+	store := &fakeStore{
+		insertedResult: true,
+		candidates: []storage.RaceCandidate{
+			{LabelID: "race", Name: "Official Marathon", Sport: "run_outdoor", DistanceM: 42_195},
+			{LabelID: "training", Name: "Long run", Sport: "run_outdoor", DistanceM: 21_100},
+		},
+	}
+	h := NewBackfill(store, detector.New(classifier{}), 2)
+	result, err := h(context.Background(), &job.Job{
+		UserID: "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+	}, func(string, int) error { return nil })
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(result), &got); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if got["candidates"] != float64(2) || got["confirmed"] != float64(1) {
+		t.Fatalf("result = %s", result)
+	}
+	if _, ok := got["previousConfirmed"]; ok {
+		t.Fatalf("result must not include redundant previousConfirmed: %s", result)
+	}
+}
+
+func TestHandlerDoesNotCountIdempotentRaceInsertAsCurrentConfirmation(t *testing.T) {
+	store := &fakeStore{
+		candidates: []storage.RaceCandidate{{
+			LabelID: "concurrently-confirmed", Name: "Official Marathon", Sport: "run_outdoor", DistanceM: 42_195,
+		}},
+	}
+	h := NewBackfill(store, detector.New(classifier{}), 1)
+	result, err := h(context.Background(), &job.Job{
+		UserID: "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+	}, func(string, int) error { return nil })
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if !strings.Contains(result, `"confirmed":0`) {
+		t.Fatalf("result = %s", result)
+	}
+}
 
 func TestHandlerBoundsClassifierConcurrency(t *testing.T) {
 	store := &fakeStore{}

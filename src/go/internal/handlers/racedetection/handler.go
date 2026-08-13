@@ -29,7 +29,7 @@ type Store interface {
 	RaceCandidates(ctx context.Context, userID string, labelIDs []string) ([]storage.RaceCandidate, error)
 	ActivityStartCoordinates(ctx context.Context, userID string) ([]detector.Coordinate, error)
 	ActivityTimeseries(ctx context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error)
-	InsertRace(ctx context.Context, race *storage.Race) error
+	InsertRace(ctx context.Context, race *storage.Race) (bool, error)
 }
 
 type detectionInput struct {
@@ -115,10 +115,11 @@ func newHandler(store Store, raceDetector *detector.Detector, maxConcurrency int
 					}
 				}
 				if classifyErr == nil && isRace {
-					classifyErr = store.InsertRace(ctx, &storage.Race{
+					var inserted bool
+					inserted, classifyErr = store.InsertRace(ctx, &storage.Race{
 						UserID: j.UserID, LabelID: row.LabelID, CreatedAt: time.Now().UTC(),
 					})
-					if classifyErr == nil {
+					if classifyErr == nil && inserted {
 						confirmed.Add(1)
 					}
 				}
