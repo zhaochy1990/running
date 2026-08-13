@@ -10,11 +10,11 @@ import {
 	loadConfig,
 	MasterPlanSchema,
 } from "coach_agent";
-import { loadStrideDataConfig } from "../config.js";
+import { loadApiConfig } from "../config.js";
 import { MySqlDataProvider } from "../data/mysqlDataProvider.js";
 
 const config = loadConfig();
-const store = MySqlDataProvider.create(loadStrideDataConfig());
+const store = MySqlDataProvider.create(loadApiConfig().strideDatabase);
 const agent = await createCoachAgent(store, config);
 
 const userId = "f10bc353-01ab-4db1-af9f-d9305ea9a532";

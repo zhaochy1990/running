@@ -18,7 +18,7 @@ export async function createCoachApiRuntime(
 	const dataProvider = MySqlDataProvider.create(apiConfig.strideDatabase);
 	let persistence: Persistence | undefined;
 	try {
-		persistence = await createPersistence();
+		persistence = await createPersistence(apiConfig.persistenceDatabase);
 		const activePersistence = persistence;
 		const coach = await createCoachAgent(dataProvider, coachConfig, {
 			checkpointer: activePersistence.checkpointer,

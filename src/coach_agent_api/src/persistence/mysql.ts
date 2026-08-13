@@ -1,10 +1,3 @@
-/**
- * MySQL connection for coach-agent persistence (checkpoints + store).
- *
- * Local dev default targets the Docker MySQL (root / root_password @ 127.0.0.1:3306,
- * database `coach_agent`). Override via COACH_AGENT_MYSQL_* env vars.
- */
-
 import type { Pool } from "mysql2/promise";
 import mysql from "mysql2/promise";
 
@@ -14,16 +7,6 @@ export interface MySqlConfig {
 	user: string;
 	password: string;
 	database: string;
-}
-
-export function readMySqlConfig(): MySqlConfig {
-	return {
-		host: process.env.COACH_AGENT_MYSQL_HOST ?? "127.0.0.1",
-		port: Number(process.env.COACH_AGENT_MYSQL_PORT ?? "3306"),
-		user: process.env.COACH_AGENT_MYSQL_USER ?? "root",
-		password: process.env.COACH_AGENT_MYSQL_PASSWORD ?? "root_password",
-		database: process.env.COACH_AGENT_MYSQL_DATABASE ?? "coach_agent",
-	};
 }
 
 /** Reject anything that isn't a plain identifier (defends the DDL interpolation). */

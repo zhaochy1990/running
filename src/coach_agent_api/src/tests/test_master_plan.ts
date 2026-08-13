@@ -6,7 +6,7 @@ import {
 	loadConfig,
 	MasterPlanGraphRequest,
 } from "coach_agent";
-import { loadStrideDataConfig } from "../config.js";
+import { loadApiConfig } from "../config.js";
 import { MySqlDataProvider } from "../data/mysqlDataProvider.js";
 
 type Profile = "local" | "prod";
@@ -17,7 +17,7 @@ const AS_OF = new Date("2026-08-07").toISOString();
 export const config = loadConfig();
 const modelConfig = getAgentConfig(config, "master_plan");
 const reviewerConfig = getAgentConfig(config, "reviewer");
-const store = MySqlDataProvider.create(loadStrideDataConfig());
+const store = MySqlDataProvider.create(loadApiConfig().strideDatabase);
 
 const provider = new DataProviderMasterPlanContextProvider(store);
 

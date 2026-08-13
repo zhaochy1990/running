@@ -23,6 +23,19 @@ Supply `resume` instead of `message` to continue a human-in-the-loop interrupt; 
 
 ## Configuration
 
-Required: `STRIDE_AUTH_PUBLIC_KEY_PEM` or `STRIDE_AUTH_PUBLIC_KEY_PATH`, plus `STRIDE_COACH_DATA_HOST`, `STRIDE_COACH_DATA_READONLY_USER`, `STRIDE_COACH_DATA_READONLY_PASSWORD`, and `STRIDE_COACH_DATA_DATABASE`. Optional ports and auth issuer/audience use the names documented in `src/config.ts`. Coach checkpoint/store MySQL continues to use `COACH_AGENT_MYSQL_*`.
+The API uses Convict with this precedence:
+
+`schema defaults < config/coach-api.yaml < config/coach-api.<environment>.yaml < environment variables`
+
+`STRIDE_COACH_ENV`, then `NODE_ENV`, selects the environment; it defaults to `local`. Unknown YAML keys and invalid or missing required values fail at startup. The checked-in local overlay targets `src/go/docker-compose.yml`; production secrets remain environment-only.
+
+Schema-mapped variables:
+
+- HTTP: `STRIDE_COACH_API_HOST`, `STRIDE_COACH_API_PORT`
+- JWT: exactly one of `STRIDE_AUTH_PUBLIC_KEY_PEM` or `STRIDE_AUTH_PUBLIC_KEY_PATH`, plus `STRIDE_AUTH_ISSUER` and optional `STRIDE_AUTH_AUDIENCE`
+- Read-only STRIDE MySQL: `STRIDE_COACH_DATA_HOST`, `STRIDE_COACH_DATA_PORT`, `STRIDE_COACH_DATA_READONLY_USER`, `STRIDE_COACH_DATA_READONLY_PASSWORD`, `STRIDE_COACH_DATA_DATABASE`
+- Coach checkpoint/store MySQL: `COACH_AGENT_MYSQL_HOST`, `COACH_AGENT_MYSQL_PORT`, `COACH_AGENT_MYSQL_USER`, `COACH_AGENT_MYSQL_PASSWORD`, `COACH_AGENT_MYSQL_DATABASE`
+
+The API config is separate from `coach_agent`'s model/agent YAML because that dynamic registry has a different schema and is also reused by future composition roots such as a CLI.
 
 Use Node 24, then run `npm ci`, `npm test`, and `npm start`. `npm run smoke` starts an ephemeral in-process HTTP server with fake dependencies and verifies `/health` without contacting MySQL or an LLM.
