@@ -105,15 +105,17 @@ func (s *Store) ActivityStartCoordinates(ctx context.Context, userID string) ([]
 	return coordinates, nil
 }
 
-// InsertRace idempotently persists one confirmed race activity reference.
-func (s *Store) InsertRace(ctx context.Context, race *Race) error {
+// InsertRace idempotently persists one confirmed race activity reference and
+// reports whether this call inserted the row.
+func (s *Store) InsertRace(ctx context.Context, race *Race) (bool, error) {
 	uid, err := canonicalUserID(race.UserID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	race.UserID = uid
 	if race.CreatedAt.IsZero() {
 		race.CreatedAt = time.Now().UTC()
 	}
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(race).Error
+	tx := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(race)
+	return tx.RowsAffected == 1, tx.Error
 }

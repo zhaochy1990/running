@@ -83,10 +83,12 @@ func TestRaceCandidatesFiltersAndSkipsConfirmed(t *testing.T) {
 		t.Fatalf("empty incremental scope = (%+v, %v), want no candidates", empty, err)
 	}
 
-	if err := st.InsertRace(ctx, &Race{UserID: uid, LabelID: "hm"}); err != nil {
+	inserted, err := st.InsertRace(ctx, &Race{UserID: uid, LabelID: "hm"})
+	if err != nil || !inserted {
 		t.Fatalf("insert confirmed race: %v", err)
 	}
-	if err := st.InsertRace(ctx, &Race{UserID: uid, LabelID: "hm"}); err != nil {
+	inserted, err = st.InsertRace(ctx, &Race{UserID: uid, LabelID: "hm"})
+	if err != nil || inserted {
 		t.Fatalf("duplicate confirmed race: %v", err)
 	}
 	var raceCount int64

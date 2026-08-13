@@ -112,6 +112,12 @@ is synchronized, persist a reusable fact, and stay independent from Coach Agent.
   historical candidates once, skips already-confirmed references, and is not
   part of normal incremental synchronization. Operationally it is intended for
   a single rollout-time run, not a recurring schedule.
+- Race-detection job results report `{candidates, confirmed}`. `candidates`
+  counts unconfirmed activities selected for model assessment; `confirmed`
+  counts only rows newly inserted by that job. Already-confirmed
+  references are filtered in the Go storage query before model classification,
+  so reruns do not spend model tokens on them. An idempotent insert that loses a
+  concurrent race to another job is not counted as newly confirmed.
 - Race-detection configuration is required by the worker. Missing or invalid
   endpoint, API key, model, timeout, or concurrency fails worker startup. The
   API process does not load this configuration because it never calls the model.
