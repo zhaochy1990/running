@@ -16,8 +16,8 @@
  * // activities.ts
  * const getRecentActivitiesSchema = z.object({ limit: z.number().optional() });
  *
- * export class MySQLActivitiesTool {
- *   constructor(private store: StrideDataStore) {}
+ * export class ActivitiesToolImpl {
+ *   constructor(private store: DataProvider) {}
  *   async getRecentActivities(
  *     input: z.infer<typeof getRecentActivitiesSchema>,
  *     runtime: CoachToolRuntime,
@@ -27,8 +27,8 @@
  *   }
  * }
  *
- * export function createActivitiesTools(store: StrideDataStore) {
- *   const impl = new MySQLActivitiesTool(store);
+ * export function createActivitiesTools(store: DataProvider) {
+ *   const impl = new ActivitiesToolImpl(store);
  *   return defineCoachTools([
  *     {
  *       name: "get_recent_activities",
@@ -42,7 +42,7 @@
  */
 
 import { tool } from "@langchain/core/tools";
-import * as z from "zod";
+import type * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
 
 /**
