@@ -1,9 +1,7 @@
-import { loadConfig } from "coach_agent";
-import { loadStrideDataConfig } from "../config.js";
+import { loadApiConfig } from "../config.js";
 import { MySqlDataProvider } from "../data/mysqlDataProvider.js";
 
-loadConfig();
-const provider = MySqlDataProvider.create(loadStrideDataConfig());
+const provider = MySqlDataProvider.create(loadApiConfig().strideDatabase);
 
 async function main() {}
 
