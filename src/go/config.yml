@@ -74,5 +74,5 @@ api:
     coach-chat-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
     coach-chat-debug-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
     coach-chat-max-message-chars: 8000
-# ci: no-op touch to publish a fresh CalVer image and exercise the Renovate
-# version-bump flow against stride-devops (Go SHA->CalVer cutover verification).
+# ci: no-op touch to republish with pinned BuildKit v0.31.2 and exercise the
+# Renovate version-bump flow after the Aliyun ACR compatibility failure.
