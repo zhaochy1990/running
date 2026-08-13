@@ -161,7 +161,7 @@ test("context provider excludes trail-labelled outdoor activities from road-run 
 		avgStepLenCm: null,
 		ascentM: null,
 		descentM: null,
-		strideDose: null,
+		strideSessionClass: null,
 		temperature: null,
 		humidity: null,
 		feelsLike: null,
@@ -289,6 +289,85 @@ test("context provider excludes trail-labelled outdoor activities from road-run 
 	});
 	assert.equal(legacySnapshot.macro_history.months[0]?.avg_pace_s_km, null);
 	assert.equal(legacySnapshot.macro_history.months[0]?.avg_hr, null);
+});
+
+test("context provider counts STRIDE session class without vendor train kind", async () => {
+	const activity = {
+		userId: "athlete",
+		labelId: "threshold-run",
+		name: "Morning Run",
+		sportName: "Outdoor Run",
+		date: new Date("2026-08-10T00:00:00Z"),
+		distanceM: 10000,
+		durationS: 3000,
+		avgPaceSKm: 300,
+		bestKmPace: null,
+		maxPace: null,
+		avgHr: 160,
+		maxHr: null,
+		avgCadence: null,
+		maxCadence: null,
+		avgPower: null,
+		maxPower: null,
+		avgStepLenCm: null,
+		ascentM: null,
+		descentM: null,
+		strideSessionClass: "tempo",
+		temperature: null,
+		humidity: null,
+		feelsLike: null,
+		windSpeed: null,
+		sportNote: null,
+		sport: "run_outdoor",
+		feel: null,
+		verticalOscillationMm: null,
+		groundContactTimeMs: null,
+		verticalRatioPct: null,
+		pauses: null,
+		provider: "coros",
+	};
+	const provider = new DataProviderMasterPlanContextProvider({
+		async getUserProfile() {
+			return {
+				userId: "athlete",
+				displayName: null,
+				dob: null,
+				sex: null,
+				heightCm: null,
+				weightKg: 70,
+				runningAgeRange: null,
+			};
+		},
+		async getUserInjuries() {
+			return [];
+		},
+		async getActivitiesByDateRange() {
+			return [activity];
+		},
+		async getDailyTrainingLoadByDateRange() {
+			return [];
+		},
+		async getDailyRecoveryByDateRange() {
+			return [];
+		},
+		async getPersonalBests() {
+			return [];
+		},
+		async getLatestRunningCalibration() {
+			return null;
+		},
+		async getRaceHistory() {
+			return [];
+		},
+		async getActiveMasterPlanMetadata() {
+			return null;
+		},
+	});
+	const snapshot = await provider.loadSnapshot(
+		"athlete",
+		"2026-08-11T00:00:00Z",
+	);
+	assert.equal(snapshot.recent_history.weeks.at(-1)?.speed_session_count, 1);
 });
 
 test("context provider materializes complete zero-run weeks", async () => {

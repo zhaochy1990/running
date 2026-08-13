@@ -42,7 +42,7 @@ interface ActivitiesTool {
 		runtime: CoachToolRuntime,
 	): Promise<{
 		activities: Activity[];
-		provenance: { source: "stride"; vendorDerived: false };
+		provenance: { source: "stride"; vendor_derived: false };
 	}>;
 }
 
@@ -54,7 +54,7 @@ class ActivitiesToolImpl implements ActivitiesTool {
 		runtime: CoachToolRuntime,
 	): Promise<{
 		activities: Activity[];
-		provenance: { source: "stride"; vendorDerived: false };
+		provenance: { source: "stride"; vendor_derived: false };
 	}> {
 		const userId = runtime.context?.userId;
 		if (!userId) {
@@ -75,7 +75,7 @@ class ActivitiesToolImpl implements ActivitiesTool {
 				input.startDay,
 				endDay,
 			),
-			provenance: { source: "stride", vendorDerived: false },
+			provenance: { source: "stride", vendor_derived: false },
 		};
 	}
 }

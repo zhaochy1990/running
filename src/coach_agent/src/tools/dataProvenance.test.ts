@@ -22,11 +22,50 @@ test("activity and load tools label STRIDE provenance", async () => {
 		await activityTool?.invoke({ startDay: "2026-08-01" }, config),
 		{
 			activities: [],
-			provenance: { source: "stride", vendorDerived: false },
+			provenance: { source: "stride", vendor_derived: false },
 		},
 	);
 	assert.deepEqual(await loadTool?.invoke({ startDay: "2026-08-01" }, config), {
-		strideTrainingLoad: [],
-		provenance: { source: "stride", vendorDerived: false },
+		available: false,
+		stride_training_load: [],
+		missing_reason: "stride_load_not_computed",
+		provenance: { source: "stride", vendor_derived: false },
 	});
+});
+
+test("load tool marks computed STRIDE PMC as available", async () => {
+	const computedProvider = {
+		async getDailyTrainingLoadByDateRange() {
+			return [
+				{
+					date: "2026-08-01",
+					trainingDose: 42,
+					acuteLoad: 40,
+					chronicLoad: 38,
+					form: -2,
+					loadRatio: 1.05,
+					coverageStatus: "complete",
+				},
+			];
+		},
+	} as unknown as DataProvider;
+	const [loadTool] = createTrainingLoadTools(computedProvider);
+	assert.deepEqual(
+		await loadTool?.invoke({ startDay: "2026-08-01" }, { context: { userId } }),
+		{
+			available: true,
+			stride_training_load: [
+				{
+					date: "2026-08-01",
+					trainingDose: 42,
+					acuteLoad: 40,
+					chronicLoad: 38,
+					form: -2,
+					loadRatio: 1.05,
+					coverageStatus: "complete",
+				},
+			],
+			provenance: { source: "stride", vendor_derived: false },
+		},
+	);
 });

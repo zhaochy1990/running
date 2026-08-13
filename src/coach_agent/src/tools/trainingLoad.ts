@@ -37,8 +37,10 @@ interface TrainingLoadTool {
 		input: GetDailyTrainingLoadInput,
 		runtime: CoachToolRuntime,
 	): Promise<{
-		strideTrainingLoad: DailyTrainingLoad[];
-		provenance: { source: "stride"; vendorDerived: false };
+		available: boolean;
+		stride_training_load: DailyTrainingLoad[];
+		missing_reason?: "stride_load_not_computed";
+		provenance: { source: "stride"; vendor_derived: false };
 	}>;
 }
 
@@ -49,8 +51,10 @@ class TrainingLoadToolImpl implements TrainingLoadTool {
 		input: GetDailyTrainingLoadInput,
 		runtime: CoachToolRuntime,
 	): Promise<{
-		strideTrainingLoad: DailyTrainingLoad[];
-		provenance: { source: "stride"; vendorDerived: false };
+		available: boolean;
+		stride_training_load: DailyTrainingLoad[];
+		missing_reason?: "stride_load_not_computed";
+		provenance: { source: "stride"; vendor_derived: false };
 	}> {
 		const userId = runtime.context?.userId;
 		if (!userId) {
@@ -65,13 +69,18 @@ class TrainingLoadToolImpl implements TrainingLoadTool {
 			);
 		}
 		const endDay = input.endDay ?? asof;
+		const strideTrainingLoad = await this.store.getDailyTrainingLoadByDateRange(
+			userId,
+			input.startDay,
+			endDay,
+		);
 		return {
-			strideTrainingLoad: await this.store.getDailyTrainingLoadByDateRange(
-				userId,
-				input.startDay,
-				endDay,
-			),
-			provenance: { source: "stride", vendorDerived: false },
+			available: strideTrainingLoad.length > 0,
+			stride_training_load: strideTrainingLoad,
+			...(strideTrainingLoad.length === 0
+				? { missing_reason: "stride_load_not_computed" as const }
+				: {}),
+			provenance: { source: "stride", vendor_derived: false },
 		};
 	}
 }

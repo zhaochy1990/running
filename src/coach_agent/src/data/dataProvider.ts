@@ -71,7 +71,7 @@ export interface Activity {
 	avgStepLenCm: number | null;
 	ascentM: number | null;
 	descentM: number | null;
-	strideDose: number | null;
+	strideSessionClass: string | null;
 	temperature: number | null;
 	humidity: number | null;
 	feelsLike: number | null;

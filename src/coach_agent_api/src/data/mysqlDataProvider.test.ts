@@ -124,8 +124,10 @@ test("running calibration omits zone confidence and speed details", async () => 
 });
 
 test("activity reads do not expose vendor-derived metrics to Coach", async () => {
+	let sql = "";
 	const provider = new MySqlDataProvider({
-		async query() {
+		async query(query: string) {
+			sql = query;
 			return [
 				[
 					{
@@ -138,7 +140,7 @@ test("activity reads do not expose vendor-derived metrics to Coach", async () =>
 						aerobic_effect: 4,
 						anaerobic_effect: 3,
 						train_kind: "threshold",
-						stride_dose: 80,
+						stride_session_class: "tempo",
 					},
 				],
 			];
@@ -149,7 +151,8 @@ test("activity reads do not expose vendor-derived metrics to Coach", async () =>
 		"2026-08-01",
 		"2026-08-01",
 	);
-	assert.equal(activity?.strideDose, 80);
+	assert.equal(activity?.strideSessionClass, "tempo");
+	assert.match(sql, /t.session_class AS stride_session_class/);
 	for (const key of [
 		"trainingLoad",
 		"vo2max",
