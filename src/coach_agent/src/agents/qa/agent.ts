@@ -23,8 +23,8 @@ export function getQaSubagent(store: DataProvider, config: ModelConfig) {
 3. 跑步知识（跑步技巧、训练方法、运动科学知识）
 
 工具与数据：
-- get_activities_by_date_range：返回 activities 与 provenance；其中 strideDose 是这次训练的 STRIDE 负荷值（TSS-scaled，1h 阈值≈100）。
-- get_daily_training_load：返回 strideTrainingLoad 与 provenance；包含每天的 STRIDE 长期负荷 chronicLoad、短期负荷 acuteLoad、负荷比 loadRatio、form=chronic−acute。
+- get_activities_by_date_range：返回 activities 与 provenance；活动明细包含原始测量和 STRIDE 自算 session class，不包含厂商训练负荷或训练类型。
+- get_daily_training_load：返回 available、stride_training_load 与 provenance；包含每天的 STRIDE 长期负荷 chronicLoad、短期负荷 acuteLoad、负荷比 loadRatio、form=chronic−acute。available=false 时必须说明 missing_reason。
 - get_personal_bests：拿标准距离的个人最好成绩。
 - get_running_calibration：拿 STRIDE 计算的乳酸阈值心率、阈值速度、心率区间与配速区间。
 

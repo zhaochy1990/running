@@ -211,7 +211,8 @@ export class MySqlDataProvider implements DataProvider {
               a.distance_m, a.duration_s, a.avg_pace_s_km, a.best_km_pace,
               a.max_pace, a.avg_hr, a.max_hr, a.avg_cadence, a.max_cadence,
               a.avg_power, a.max_power, a.avg_step_len_cm, a.ascent_m,
-              a.descent_m, t.training_dose AS stride_dose, a.temperature,
+              a.descent_m,
+              t.session_class AS stride_session_class, a.temperature,
               a.humidity, a.feels_like, a.wind_speed, a.sport_note, a.sport,
               a.feel, a.vertical_oscillation_mm, a.ground_contact_time_ms,
               a.vertical_ratio_pct, a.pauses, a.provider
@@ -482,7 +483,7 @@ function rowToActivity(row: RowDataPacket): Activity {
 		avgStepLenCm: (row.avg_step_len_cm ?? null) as number | null,
 		ascentM: (row.ascent_m ?? null) as number | null,
 		descentM: (row.descent_m ?? null) as number | null,
-		strideDose: (row.stride_dose ?? null) as number | null,
+		strideSessionClass: (row.stride_session_class ?? null) as string | null,
 		temperature: (row.temperature ?? null) as number | null,
 		humidity: (row.humidity ?? null) as number | null,
 		feelsLike: (row.feels_like ?? null) as number | null,
