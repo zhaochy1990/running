@@ -189,7 +189,28 @@ export function createAssessmentSnapshot() {
 			threshold_hr_confidence: "high",
 			threshold_speed_confidence: "high",
 			heart_rate_zones: [],
-			pace_zones: [],
+			pace_zones: [
+				{
+					name: "easy",
+					minPaceSPerKm: 1000 / (4.25 * 0.84),
+					maxPaceSPerKm: 1000 / (4.25 * 0.72),
+				},
+				{
+					name: "marathon",
+					minPaceSPerKm: 1000 / (4.25 * 0.97),
+					maxPaceSPerKm: 1000 / (4.25 * 0.84),
+				},
+				{
+					name: "threshold",
+					minPaceSPerKm: 1000 / (4.25 * 1.03),
+					maxPaceSPerKm: 1000 / (4.25 * 0.97),
+				},
+				{
+					name: "interval",
+					minPaceSPerKm: 1000 / (4.25 * 1.11),
+					maxPaceSPerKm: 1000 / (4.25 * 1.03),
+				},
+			],
 		},
 		race_history: [],
 		macro_history: {
