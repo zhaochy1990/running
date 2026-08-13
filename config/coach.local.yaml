@@ -140,18 +140,3 @@ observability:
   langsmith_project: stride-coach-dev
   langsmith_endpoint: https://api.smith.langchain.com
   langsmith_api_key_env: LANGSMITH_API_KEY
-
-# Local `stride` MySQL — the multi-user watch-sync data (activities, laps,
-# daily_health, …) read by StrideDataStore (src/coach_agent persistence).
-# NOTE: the coach-agent checkpointer/store live in a *different* DB
-# (`coach_agent`); this block only points at the read-only `stride` data.
-#
-# `date` columns are stored UTC; StrideDataStore pins the pool to UTC and does
-# Asia/Shanghai (UTC+8) day filtering in SQL. Resolved via
-# readStrideMySqlConfig(config) in src/coach_agent/src/config/config.ts.
-data_store:
-  host: 127.0.0.1
-  port: 3306
-  user: root
-  password: root_password
-  database: stride

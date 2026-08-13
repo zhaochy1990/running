@@ -1,11 +1,11 @@
 // import assert from "node:assert/strict";
 // import test from "node:test";
-// import type { WeeklyPlan } from "../../agents/weekly_plan/schema.js";
+// import type { WeeklyPlan } from "@stride/contract";
 // import type { CoachAgentConfig } from "../../config/config.js";
 // import type {
 // 	DailyRecovery,
 // 	WeeklyPlanContext,
-// } from "../../persistence/index.js";
+// } from "../../data/index.js";
 // import { createWeeklyPlanGeneratorGraph } from "./index.js";
 // import type { WeeklyPlanLlm } from "./llm.js";
 // import {

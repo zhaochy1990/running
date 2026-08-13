@@ -5,8 +5,8 @@
  * database `coach_agent`). Override via COACH_AGENT_MYSQL_* env vars.
  */
 
-import mysql from "mysql2/promise";
 import type { Pool } from "mysql2/promise";
+import mysql from "mysql2/promise";
 
 export interface MySqlConfig {
   host: string;
@@ -65,8 +65,7 @@ export function createPool(config: MySqlConfig): Pool {
  * Pool for the `stride` data DB. Pins `timezone: "Z"` so mysql2 reads/writes
  * DATETIME columns as UTC — matching the storage convention that every
  * `stride`/`coros.db` timestamp is UTC ISO 8601 (see AGENTS.md timezone rule).
- * The config comes from the coach config's `data_store` block via
- * `readStrideMySqlConfig` (config/config.ts).
+ * The config is supplied by the API composition root.
  */
 export function createStridePool(config: MySqlConfig): Pool {
   return mysql.createPool({

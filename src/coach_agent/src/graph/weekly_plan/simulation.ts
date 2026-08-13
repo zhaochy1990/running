@@ -9,7 +9,7 @@ import {
 import { z } from "zod/v4";
 
 export type { WeeklyPlanSimulationReport } from "@stride/contract";
-import type { WeeklyPlanContext } from "../../persistence/weeklyPlanContextProvider.js";
+import type { WeeklyPlanContext } from "../../data/weeklyPlanContextProvider.js";
 import { simulatePmcDays } from "../master_plan/simulation.js";
 import { estimatePlannedRunLoad } from "../training_load/plannedRunLoad.js";
 

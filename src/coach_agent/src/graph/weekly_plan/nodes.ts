@@ -1,22 +1,25 @@
 import { StateSchema } from "@langchain/langgraph";
 import {
-  PHASE_NAMES,
-  type PhaseName,
-  PhaseNameSchema,
-  RecoveryTrendSchema,
-  type TargetTrainingLoad,
-  TargetTrainingLoadSchema,
-  type WeeklyPlan,
-  WeeklyPlanGeneratorContext,
-  WeeklyPlanGeneratorOutcome,
-  WeeklyPlanGeneratorRequest,
-  WeeklyPlanSchema,
-  type WeeklyPlanSimulationReport,
-  WeeklyPlanSimulationReportSchema,
+	PHASE_NAMES,
+	type PhaseName,
+	PhaseNameSchema,
+	RecoveryTrendSchema,
+	type TargetTrainingLoad,
+	TargetTrainingLoadSchema,
+	type WeeklyPlan,
+	WeeklyPlanGeneratorContext,
+	WeeklyPlanGeneratorOutcome,
+	WeeklyPlanGeneratorRequest,
+	WeeklyPlanSchema,
+	type WeeklyPlanSimulationReport,
+	WeeklyPlanSimulationReportSchema,
 } from "@stride/contract";
 import { z } from "zod/v4";
 import type { CoachAgentConfig } from "../../config/config.js";
-import type { WeeklyPlanContext, WeeklyPlanContextProvider } from "../../persistence/weeklyPlanContextProvider.js";
+import type {
+	WeeklyPlanContext,
+	WeeklyPlanContextProvider,
+} from "../../data/weeklyPlanContextProvider.js";
 import { getLogger } from "../../utils/logger.js";
 import { simulateWeeklyPlanLoad } from "./simulation.js";
 import type { WeeklyPlanLLM, WeeklyPlanLlmInput } from "./weeklyPlanNode.js";
@@ -31,655 +34,777 @@ export const LOAD_MATCH_TOLERANCE = 0.1;
 
 /** True when the simulated total dose falls inside the target band ± tolerance. */
 export function loadWithinTolerance(
-  simulation: WeeklyPlanSimulationReport | undefined,
-  target: TargetTrainingLoad | undefined,
-  tolerance: number = LOAD_MATCH_TOLERANCE,
+	simulation: WeeklyPlanSimulationReport | undefined,
+	target: TargetTrainingLoad | undefined,
+	tolerance: number = LOAD_MATCH_TOLERANCE,
 ): boolean | null {
-  if (!simulation || !target) return null;
-  if (!simulation.available || simulation.total_dose === null) return null;
-  const low = target.training_load_low;
-  const high = target.training_load_high;
-  if (low === null || high === null) return null;
-  return simulation.total_dose >= low * (1 - tolerance) && simulation.total_dose <= high * (1 + tolerance);
+	if (!simulation || !target) return null;
+	if (!simulation.available || simulation.total_dose === null) return null;
+	const low = target.training_load_low;
+	const high = target.training_load_high;
+	if (low === null || high === null) return null;
+	return (
+		simulation.total_dose >= low * (1 - tolerance) &&
+		simulation.total_dose <= high * (1 + tolerance)
+	);
 }
 
 /** Copy deterministic per-session doses from the simulation report into the plan. */
-export function mergeSimulationIntoPlan(plan: WeeklyPlan, simulation: WeeklyPlanSimulationReport): WeeklyPlan {
-  const doses = new Map(simulation.sessions.map((session) => [`${session.date}:${session.session_index}`, session.estimated_dose]));
-  return {
-    ...plan,
-    sessions: plan.sessions.map((session) => ({
-      ...session,
-      estimated_dose: doses.get(`${session.date}:${session.session_index}`) ?? null,
-    })),
-  };
+export function mergeSimulationIntoPlan(
+	plan: WeeklyPlan,
+	simulation: WeeklyPlanSimulationReport,
+): WeeklyPlan {
+	const doses = new Map(
+		simulation.sessions.map((session) => [
+			`${session.date}:${session.session_index}`,
+			session.estimated_dose,
+		]),
+	);
+	return {
+		...plan,
+		sessions: plan.sessions.map((session) => ({
+			...session,
+			estimated_dose:
+				doses.get(`${session.date}:${session.session_index}`) ?? null,
+		})),
+	};
 }
 
 /** Feedback for the next generation attempt when load validation bounced. */
-export function simulationFeedback(state: typeof GraphState.State): Exclude<WeeklyPlanLlmInput["previousSimulation"], undefined> {
-  const simulation = state.simulation;
-  if (!simulation) return null;
-  const target = state.target_training_load;
-  return {
-    attempt: state.generation_attempts ?? 1,
-    total_dose: simulation.total_dose,
-    target_training_load_low: target?.training_load_low ?? null,
-    target_training_load_high: target?.training_load_high ?? null,
-  };
+export function simulationFeedback(
+	state: typeof GraphState.State,
+): Exclude<WeeklyPlanLlmInput["previousSimulation"], undefined> {
+	const simulation = state.simulation;
+	if (!simulation) return null;
+	const target = state.target_training_load;
+	return {
+		attempt: state.generation_attempts ?? 1,
+		total_dose: simulation.total_dose,
+		target_training_load_low: target?.training_load_low ?? null,
+		target_training_load_high: target?.training_load_high ?? null,
+	};
 }
 
 /** Node names for each canonical phase, keyed by the phase enum value. */
 export const PHASE_NODE_NAMES: Record<PhaseName, string> = {
-  base: "phase_base",
-  build: "phase_build",
-  speed: "phase_speed",
-  marathon: "phase_marathon",
-  taper: "phase_taper",
-  recovery: "phase_recovery",
+	base: "phase_base",
+	build: "phase_build",
+	speed: "phase_speed",
+	marathon: "phase_marathon",
+	taper: "phase_taper",
+	recovery: "phase_recovery",
 };
 
 /** Resolve the target week's phase from the training position: stage.phase_name takes priority, phase.name is the fallback. */
-export function resolvePhaseName(weeklyContext: WeeklyPlanContext | undefined): PhaseName | null {
-  const stage = record(weeklyContext?.training_position.stage);
-  const stagePhase = string(stage?.phase_name);
-  if (isPhaseName(stagePhase)) return stagePhase;
-  const phase = record(weeklyContext?.training_position.phase);
-  const phaseName = string(phase?.name);
-  if (isPhaseName(phaseName)) return phaseName;
-  return null;
+export function resolvePhaseName(
+	weeklyContext: WeeklyPlanContext | undefined,
+): PhaseName | null {
+	const stage = record(weeklyContext?.training_position.stage);
+	const stagePhase = string(stage?.phase_name);
+	if (isPhaseName(stagePhase)) return stagePhase;
+	const phase = record(weeklyContext?.training_position.phase);
+	const phaseName = string(phase?.name);
+	if (isPhaseName(phaseName)) return phaseName;
+	return null;
 }
 
 function isPhaseName(value: string | null): value is PhaseName {
-  return value !== null && PHASE_NAMES.includes(value as PhaseName);
+	return value !== null && PHASE_NAMES.includes(value as PhaseName);
 }
 
 export const GraphInput = new StateSchema({
-  request: WeeklyPlanGeneratorRequest,
+	request: WeeklyPlanGeneratorRequest,
 });
 export const GraphOutput = new StateSchema({
-  outcome: WeeklyPlanGeneratorOutcome,
-  weekly_context: z.custom<WeeklyPlanContext>().optional(),
-  target_training_load: TargetTrainingLoadSchema.optional(),
-  phase: PhaseNameSchema.optional(),
-  weekly_plan: WeeklyPlanSchema.optional(),
-  simulation: WeeklyPlanSimulationReportSchema.optional(),
-  generation_attempts: z.int().positive().optional(),
+	outcome: WeeklyPlanGeneratorOutcome,
+	weekly_context: z.custom<WeeklyPlanContext>().optional(),
+	target_training_load: TargetTrainingLoadSchema.optional(),
+	phase: PhaseNameSchema.optional(),
+	weekly_plan: WeeklyPlanSchema.optional(),
+	simulation: WeeklyPlanSimulationReportSchema.optional(),
+	generation_attempts: z.int().positive().optional(),
 });
 export const GraphState = new StateSchema({
-  request: WeeklyPlanGeneratorRequest,
-  context: WeeklyPlanGeneratorContext.optional(),
-  weekly_context: z.custom<WeeklyPlanContext>().optional(),
-  target_training_load: TargetTrainingLoadSchema.optional(),
-  phase: PhaseNameSchema.optional(),
-  weekly_plan: WeeklyPlanSchema.optional(),
-  simulation: WeeklyPlanSimulationReportSchema.optional(),
-  generation_attempts: z.int().positive().optional(),
-  outcome: WeeklyPlanGeneratorOutcome.optional(),
+	request: WeeklyPlanGeneratorRequest,
+	context: WeeklyPlanGeneratorContext.optional(),
+	weekly_context: z.custom<WeeklyPlanContext>().optional(),
+	target_training_load: TargetTrainingLoadSchema.optional(),
+	phase: PhaseNameSchema.optional(),
+	weekly_plan: WeeklyPlanSchema.optional(),
+	simulation: WeeklyPlanSimulationReportSchema.optional(),
+	generation_attempts: z.int().positive().optional(),
+	outcome: WeeklyPlanGeneratorOutcome.optional(),
 });
 
 /** Node implementations for the weekly plan generator graph. */
 export class WeeklyPlanGeneratorNodes {
-  constructor(
-    private readonly config: CoachAgentConfig,
-    private readonly contextProvider: WeeklyPlanContextProvider,
-    private readonly planLlm: WeeklyPlanLLM,
-  ) {}
+	constructor(
+		private readonly config: CoachAgentConfig,
+		private readonly contextProvider: WeeklyPlanContextProvider,
+		private readonly planLlm: WeeklyPlanLLM,
+	) { }
 
-  readonly loadWeeklyPlanContext = async (state: typeof GraphState.State, runtime: { context?: WeeklyPlanGeneratorContext }) => {
-    const request = WeeklyPlanGeneratorRequest.parse(state.request);
-    const context = WeeklyPlanGeneratorContext.parse(runtime.context);
-    try {
-      const asOf = request.requested_as_of ?? new Date().toISOString();
-      const weeklyContext = await this.contextProvider.loadSnapshot(context.userId, asOf);
-      logger.info(`Loaded weekly plan context for user ${context.userId} as of ${asOf}`);
-      return { context, weekly_context: weeklyContext };
-    } catch (e) {
-      logger.error(`Failed to load weekly plan context for user ${context.userId}: ${e instanceof Error ? e.message : "unknown error"}`);
-      return {
-        context,
-        outcome: WeeklyPlanGeneratorOutcome.parse({
-          decision: "infrastructure_failure",
-          request_id: request.request_id,
-          generation_id: context.generationId,
-          reason: "context_snapshot_unavailable",
-        }),
-      };
-    }
-  };
+	readonly loadWeeklyPlanContext = async (
+		state: typeof GraphState.State,
+		runtime: { context?: WeeklyPlanGeneratorContext },
+	) => {
+		const request = WeeklyPlanGeneratorRequest.parse(state.request);
+		const context = WeeklyPlanGeneratorContext.parse(runtime.context);
+		try {
+			const asOf = request.requested_as_of ?? new Date().toISOString();
+			const weeklyContext = await this.contextProvider.loadSnapshot(
+				context.userId,
+				asOf,
+			);
+			logger.info(
+				`Loaded weekly plan context for user ${context.userId} as of ${asOf}`,
+			);
+			return { context, weekly_context: weeklyContext };
+		} catch (e) {
+			logger.error(
+				`Failed to load weekly plan context for user ${context.userId}: ${e instanceof Error ? e.message : "unknown error"}`,
+			);
+			return {
+				context,
+				outcome: WeeklyPlanGeneratorOutcome.parse({
+					decision: "infrastructure_failure",
+					request_id: request.request_id,
+					generation_id: context.generationId,
+					reason: "context_snapshot_unavailable",
+				}),
+			};
+		}
+	};
 
-  readonly getTargetTrainingLoad = (state: typeof GraphState.State) => {
-    const request = WeeklyPlanGeneratorRequest.parse(state.request);
-    const context = WeeklyPlanGeneratorContext.parse(state.context);
-    const weeklyContext = state.weekly_context;
-    const fitness = record(weeklyContext?.fitness_state);
-    const strideLoad = record(fitness?.stride_training_load);
-    const loadRatio = number(strideLoad?.load_ratio);
-    const form = number(strideLoad?.form);
-    const acuteLoad = number(strideLoad?.acute_load);
-    const chronicLoad = number(strideLoad?.chronic_load);
-    const completeWeeks = (weeklyContext?.recent_training_weeks ?? []).filter((week) => week.complete === true).slice(-4);
-    const anchorDose = avg(completeWeeks.map((week) => week.actual.total_training_dose));
-    const anchorKm = avg(completeWeeks.map((week) => week.actual.total_run_distance_km));
-    const latestWeek = weeklyContext?.absorbed_load.latest_complete_week ?? null;
-    const latestWeekDistance = latestWeek === null ? null : number(latestWeek.actual_run_distance_km);
-    const latestWeekDose = latestWeek === null ? null : number(latestWeek.actual_training_dose);
-    const highCost = highCostRecentTraining(weeklyContext?.absorbed_load.complete_weeks_considered ?? [], latestWeekDose);
-    const activityRestricted = hasActivityRestriction(weeklyContext?.injury ?? []);
-    const isRecoveryWeek = record(weeklyContext?.training_position.stage)?.is_recovery_week === true;
-    const stageTargetKmHigh = number(record(weeklyContext?.training_position.stage)?.target_weekly_km_high);
-    const recoveryWeekOverridden = recoveryWeekOverriddenByUndeliveredPeak(
-      isRecoveryWeek,
-      weeklyContext?.recent_training_weeks ?? [],
-      latestWeek?.week_start ?? null,
-      latestWeekDistance,
-      stageTargetKmHigh,
-    );
-    const recoveryTrend = assessRecoveryTrend(weeklyContext?.fitness_state.trend ?? []);
-    const sevenDayAvg = weeklyContext?.recovery.seven_day_average ?? null;
+	readonly getTargetTrainingLoad = (state: typeof GraphState.State) => {
+		const request = WeeklyPlanGeneratorRequest.parse(state.request);
+		const context = WeeklyPlanGeneratorContext.parse(state.context);
+		const weeklyContext = state.weekly_context;
+		const fitness = record(weeklyContext?.fitness_state);
+		const strideLoad = record(fitness?.stride_training_load);
+		const loadRatio = number(strideLoad?.load_ratio);
+		const form = number(strideLoad?.form);
+		const acuteLoad = number(strideLoad?.acute_load);
+		const chronicLoad = number(strideLoad?.chronic_load);
+		const completeWeeks = (weeklyContext?.recent_training_weeks ?? [])
+			.filter((week) => week.complete === true)
+			.slice(-4);
+		const anchorDose = avg(
+			completeWeeks.map((week) => week.actual.total_training_dose),
+		);
+		const anchorKm = avg(
+			completeWeeks.map((week) => week.actual.total_run_distance_km),
+		);
+		const latestWeek =
+			weeklyContext?.absorbed_load.latest_complete_week ?? null;
+		const latestWeekDistance =
+			latestWeek === null ? null : number(latestWeek.actual_run_distance_km);
+		const latestWeekDose =
+			latestWeek === null ? null : number(latestWeek.actual_training_dose);
+		const highCost = highCostRecentTraining(
+			weeklyContext?.absorbed_load.complete_weeks_considered ?? [],
+			latestWeekDose,
+		);
+		const activityRestricted = hasActivityRestriction(
+			weeklyContext?.injury ?? [],
+		);
+		const isRecoveryWeek =
+			record(weeklyContext?.training_position.stage)?.is_recovery_week === true;
+		const stageTargetKmHigh = number(
+			record(weeklyContext?.training_position.stage)?.target_weekly_km_high,
+		);
+		const recoveryWeekOverridden = recoveryWeekOverriddenByUndeliveredPeak(
+			isRecoveryWeek,
+			weeklyContext?.recent_training_weeks ?? [],
+			latestWeek?.week_start ?? null,
+			latestWeekDistance,
+			stageTargetKmHigh,
+		);
+		const recoveryTrend = assessRecoveryTrend(
+			weeklyContext?.fitness_state.trend ?? [],
+		);
+		const sevenDayAvg = weeklyContext?.recovery.seven_day_average ?? null;
 
-    const rationale: string[] = [];
-    if (anchorDose !== null) rationale.push(`4-week avg training load ${anchorDose} (${completeWeeks.length} complete weeks)`);
-    if (anchorKm !== null && latestWeekDistance !== null) rationale.push(`4-week avg distance ${anchorKm} km vs latest complete week ${latestWeekDistance} km`);
-    if (loadRatio !== null) rationale.push(`load_ratio ${loadRatio.toFixed(2)}`);
-    if (recoveryTrend.available)
-      rationale.push(
-        `recovery trend: rhr ${recoveryTrend.prior_rhr_avg?.toFixed(1)} -> ${recoveryTrend.recent_rhr_avg?.toFixed(1)}, hrv ${recoveryTrend.prior_hrv_avg?.toFixed(1)} -> ${recoveryTrend.recent_hrv_avg?.toFixed(1)} (${recoveryTrend.window_days}-day window)`,
-      );
-    if (highCost) rationale.push("recent high-cost training detected");
-    if (activityRestricted) rationale.push("activity restricted by injury");
-    if (isRecoveryWeek) rationale.push("recovery week marked by master plan");
+		const rationale: string[] = [];
+		if (anchorDose !== null)
+			rationale.push(
+				`4-week avg training load ${anchorDose} (${completeWeeks.length} complete weeks)`,
+			);
+		if (anchorKm !== null && latestWeekDistance !== null)
+			rationale.push(
+				`4-week avg distance ${anchorKm} km vs latest complete week ${latestWeekDistance} km`,
+			);
+		if (loadRatio !== null)
+			rationale.push(`load_ratio ${loadRatio.toFixed(2)}`);
+		if (recoveryTrend.available)
+			rationale.push(
+				`recovery trend: rhr ${recoveryTrend.prior_rhr_avg?.toFixed(1)} -> ${recoveryTrend.recent_rhr_avg?.toFixed(1)}, hrv ${recoveryTrend.prior_hrv_avg?.toFixed(1)} -> ${recoveryTrend.recent_hrv_avg?.toFixed(1)} (${recoveryTrend.window_days}-day window)`,
+			);
+		if (highCost) rationale.push("recent high-cost training detected");
+		if (activityRestricted) rationale.push("activity restricted by injury");
+		if (isRecoveryWeek) rationale.push("recovery week marked by master plan");
 
-    const decision = decideTargetLoad({
-      anchorKm,
-      latestWeekDistance,
-      loadRatio,
-      form,
-      recoveryDeteriorating: recoveryTrend.deteriorating,
-      highCost,
-      activityRestricted,
-      isRecoveryWeek: isRecoveryWeek && !recoveryWeekOverridden,
-    });
-    for (const line of decision.rationale) rationale.push(line);
-    if (recoveryWeekOverridden)
-      rationale.push("recovery week overridden: previous week was a planned peak week that was not delivered, so recovery already happened");
+		const decision = decideTargetLoad({
+			anchorKm,
+			latestWeekDistance,
+			loadRatio,
+			form,
+			recoveryDeteriorating: recoveryTrend.deteriorating,
+			highCost,
+			activityRestricted,
+			isRecoveryWeek: isRecoveryWeek && !recoveryWeekOverridden,
+		});
+		for (const line of decision.rationale) rationale.push(line);
+		if (recoveryWeekOverridden)
+			rationale.push(
+				"recovery week overridden: previous week was a planned peak week that was not delivered, so recovery already happened",
+			);
 
-    const loadLow = anchorDose === null ? null : round(anchorDose * decision.lowRatio);
-    const loadHigh = anchorDose === null ? null : round(anchorDose * decision.highRatio);
-    const canProject = anchorDose !== null && acuteLoad !== null && chronicLoad !== null;
-    const distanceRange =
-      anchorDose === null
-        ? { low: null, high: null, density: null }
-        : projectDistanceRange({
-            anchorDose,
-            anchorKm: anchorKm as number,
-            loadLow,
-            loadHigh,
-            removeQualityStimulus: decision.removeQualityStimulus,
-            phase: resolvePhaseName(weeklyContext),
-          });
-    if (distanceRange.low !== null)
-      rationale.push(`dose density ${distanceRange.density} dose/km: target distance range ${distanceRange.low}-${distanceRange.high} km`);
+		const loadLow =
+			anchorDose === null ? null : round(anchorDose * decision.lowRatio);
+		const loadHigh =
+			anchorDose === null ? null : round(anchorDose * decision.highRatio);
+		const canProject =
+			anchorDose !== null && acuteLoad !== null && chronicLoad !== null;
+		const distanceRange =
+			anchorDose === null
+				? { low: null, high: null, density: null }
+				: projectDistanceRange({
+					anchorDose,
+					anchorKm: anchorKm as number,
+					loadLow,
+					loadHigh,
+					removeQualityStimulus: decision.removeQualityStimulus,
+					phase: resolvePhaseName(weeklyContext),
+				});
+		if (distanceRange.low !== null)
+			rationale.push(
+				`dose density ${distanceRange.density} dose/km: target distance range ${distanceRange.low}-${distanceRange.high} km`,
+			);
 
-    logger.info(
-      `Computed target training load for request ${request.request_id}: decision=${decision.decision}, training load: (${loadLow} - ${loadHigh}), distance: (${distanceRange.low} - ${distanceRange.high}) km, load ratio: (${decision.lowRatio} - ${decision.highRatio})`,
-    );
+		logger.info(
+			`Computed target training load for request ${request.request_id}: decision=${decision.decision}, training load: (${loadLow} - ${loadHigh}), distance: (${distanceRange.low} - ${distanceRange.high}) km, load ratio: (${decision.lowRatio} - ${decision.highRatio})`,
+		);
 
-    return {
-      target_training_load: TargetTrainingLoadSchema.parse({
-        available: anchorDose !== null,
-        missing_reason: anchorDose === null ? "no_complete_week_load" : null,
-        load_decision: decision.decision,
-        training_load_low: loadLow,
-        training_load_high: loadHigh,
-        target_distance_km_low: distanceRange.low,
-        target_distance_km_high: distanceRange.high,
-        load_ratio_low: canProject ? projectEndOfWeekLoadRatio(acuteLoad as number, chronicLoad as number, loadLow as number) : null,
-        load_ratio_high: canProject ? projectEndOfWeekLoadRatio(acuteLoad as number, chronicLoad as number, loadHigh as number) : null,
-        remove_quality_stimulus: decision.removeQualityStimulus,
-        details: {
-          last_complete_week:
-            latestWeek === null
-              ? null
-              : {
-                  week_start: latestWeek.week_start,
-                  distance_km: latestWeekDistance,
-                  training_load: latestWeekDose,
-                },
-          anchor: {
-            training_load_avg4w: anchorDose,
-            distance_km_avg4w: anchorKm,
-          },
-          trend: {
-            recovery: recoveryTrend.available
-              ? RecoveryTrendSchema.parse({
-                  available: true,
-                  recent_rhr_avg: recoveryTrend.recent_rhr_avg,
-                  prior_rhr_avg: recoveryTrend.prior_rhr_avg,
-                  recent_hrv_avg: recoveryTrend.recent_hrv_avg,
-                  prior_hrv_avg: recoveryTrend.prior_hrv_avg,
-                  rhr_rising: recoveryTrend.rhr_rising,
-                  hrv_falling: recoveryTrend.hrv_falling,
-                  deteriorating: recoveryTrend.deteriorating,
-                  window_days: recoveryTrend.window_days,
-                  missing_reason: null,
-                })
-              : {
-                  available: false,
-                  recent_rhr_avg: null,
-                  prior_rhr_avg: null,
-                  recent_hrv_avg: null,
-                  prior_hrv_avg: null,
-                  rhr_rising: false,
-                  hrv_falling: false,
-                  deteriorating: false,
-                  window_days: 0,
-                  missing_reason: recoveryTrend.missing_reason,
-                },
-            seven_day_average: {
-              rhr: number(sevenDayAvg?.rhr),
-              hrv: number(sevenDayAvg?.hrv),
-            },
-            current_load_ratio: loadRatio,
-            form,
-            is_recovery_week: isRecoveryWeek,
-            recovery_week_overridden: recoveryWeekOverridden,
-            activity_restricted: activityRestricted,
-            recent_high_cost_training: highCost,
-          },
-          rationale,
-        },
-      }),
-    };
-  };
+		return {
+			target_training_load: TargetTrainingLoadSchema.parse({
+				available: anchorDose !== null,
+				missing_reason: anchorDose === null ? "no_complete_week_load" : null,
+				load_decision: decision.decision,
+				training_load_low: loadLow,
+				training_load_high: loadHigh,
+				target_distance_km_low: distanceRange.low,
+				target_distance_km_high: distanceRange.high,
+				load_ratio_low: canProject
+					? projectEndOfWeekLoadRatio(
+						acuteLoad as number,
+						chronicLoad as number,
+						loadLow as number,
+					)
+					: null,
+				load_ratio_high: canProject
+					? projectEndOfWeekLoadRatio(
+						acuteLoad as number,
+						chronicLoad as number,
+						loadHigh as number,
+					)
+					: null,
+				remove_quality_stimulus: decision.removeQualityStimulus,
+				details: {
+					last_complete_week:
+						latestWeek === null
+							? null
+							: {
+								week_start: latestWeek.week_start,
+								distance_km: latestWeekDistance,
+								training_load: latestWeekDose,
+							},
+					anchor: {
+						training_load_avg4w: anchorDose,
+						distance_km_avg4w: anchorKm,
+					},
+					trend: {
+						recovery: recoveryTrend.available
+							? RecoveryTrendSchema.parse({
+								available: true,
+								recent_rhr_avg: recoveryTrend.recent_rhr_avg,
+								prior_rhr_avg: recoveryTrend.prior_rhr_avg,
+								recent_hrv_avg: recoveryTrend.recent_hrv_avg,
+								prior_hrv_avg: recoveryTrend.prior_hrv_avg,
+								rhr_rising: recoveryTrend.rhr_rising,
+								hrv_falling: recoveryTrend.hrv_falling,
+								deteriorating: recoveryTrend.deteriorating,
+								window_days: recoveryTrend.window_days,
+								missing_reason: null,
+							})
+							: {
+								available: false,
+								recent_rhr_avg: null,
+								prior_rhr_avg: null,
+								recent_hrv_avg: null,
+								prior_hrv_avg: null,
+								rhr_rising: false,
+								hrv_falling: false,
+								deteriorating: false,
+								window_days: 0,
+								missing_reason: recoveryTrend.missing_reason,
+							},
+						seven_day_average: {
+							rhr: number(sevenDayAvg?.rhr),
+							hrv: number(sevenDayAvg?.hrv),
+						},
+						current_load_ratio: loadRatio,
+						form,
+						is_recovery_week: isRecoveryWeek,
+						recovery_week_overridden: recoveryWeekOverridden,
+						activity_restricted: activityRestricted,
+						recent_high_cost_training: highCost,
+					},
+					rationale,
+				},
+			}),
+		};
+	};
 
-  readonly routeByPhase = (state: typeof GraphState.State) => {
-    const phase = resolvePhaseName(state.weekly_context);
-    if (phase === null) {
-      logger.error(`Cannot resolve target week phase for request ${state.request?.request_id}: no stage.phase_name or phase.name`);
-      return "phase_unresolvable";
-    }
-    logger.info("Route the generation request to phase node: " + phase);
-    return PHASE_NODE_NAMES[phase];
-  };
+	readonly routeByPhase = (state: typeof GraphState.State) => {
+		const phase = resolvePhaseName(state.weekly_context);
+		if (phase === null) {
+			logger.error(
+				`Cannot resolve target week phase for request ${state.request?.request_id}: no stage.phase_name or phase.name`,
+			);
+			return "phase_unresolvable";
+		}
+		logger.info("Route the generation request to phase node: " + phase);
+		return PHASE_NODE_NAMES[phase];
+	};
 
-  private readonly phaseNode = (phase: PhaseName) => async (state: typeof GraphState.State) => {
-    const request = WeeklyPlanGeneratorRequest.parse(state.request);
-    const context = WeeklyPlanGeneratorContext.parse(state.context);
-    const weeklyContext = state.weekly_context;
-    const targetTrainingLoad = state.target_training_load;
-    if (!weeklyContext || !targetTrainingLoad) {
-      throw new Error("weekly_context and target_training_load are required before phase generation");
-    }
-    try {
-      const attempt = (state.generation_attempts ?? 0) + 1;
-      const feedback = simulationFeedback(state);
-      if (feedback === null) {
-        logger.info(`Generating weekly plan for request ${request.request_id} in ${phase} phase (attempt ${attempt}/${MAX_GENERATION_ATTEMPTS})`);
-      } else {
-        logger.info(
-          `Regenerating weekly plan for request ${request.request_id} in ${phase} phase (attempt ${attempt}/${MAX_GENERATION_ATTEMPTS}) after load mismatch: previous total dose ${formatNumber(feedback.total_dose)} vs target ${formatNumber(feedback.target_training_load_low)}-${formatNumber(feedback.target_training_load_high)}`,
-        );
-      }
-      const weeklyPlan = await this.planLlm.invoke({
-        phase,
-        weeklyContext,
-        targetTrainingLoad,
-        previousSimulation: feedback ?? null,
-      });
-      logger.info(`Generated weekly plan for request ${request.request_id} in ${phase} phase (attempt ${attempt}/${MAX_GENERATION_ATTEMPTS})`);
-      return {
-        phase,
-        weekly_plan: weeklyPlan,
-        generation_attempts: attempt,
-      };
-    } catch (error) {
-      logger.error(
-        `Weekly plan generation failed for request ${request.request_id} in ${phase} phase: ${error instanceof Error ? error.message : "unknown error"}`,
-      );
-      return {
-        phase,
-        outcome: WeeklyPlanGeneratorOutcome.parse({
-          decision: "quality_failure",
-          request_id: request.request_id,
-          generation_id: context.generationId,
-          reason: "generation_failed",
-        }),
-      };
-    }
-  };
+	private readonly phaseNode =
+		(phase: PhaseName) => async (state: typeof GraphState.State) => {
+			const request = WeeklyPlanGeneratorRequest.parse(state.request);
+			const context = WeeklyPlanGeneratorContext.parse(state.context);
+			const weeklyContext = state.weekly_context;
+			const targetTrainingLoad = state.target_training_load;
+			if (!weeklyContext || !targetTrainingLoad) {
+				throw new Error(
+					"weekly_context and target_training_load are required before phase generation",
+				);
+			}
+			try {
+				const attempt = (state.generation_attempts ?? 0) + 1;
+				const feedback = simulationFeedback(state);
+				if (feedback === null) {
+					logger.info(
+						`Generating weekly plan for request ${request.request_id} in ${phase} phase (attempt ${attempt}/${MAX_GENERATION_ATTEMPTS})`,
+					);
+				} else {
+					logger.info(
+						`Regenerating weekly plan for request ${request.request_id} in ${phase} phase (attempt ${attempt}/${MAX_GENERATION_ATTEMPTS}) after load mismatch: previous total dose ${formatNumber(feedback.total_dose)} vs target ${formatNumber(feedback.target_training_load_low)}-${formatNumber(feedback.target_training_load_high)}`,
+					);
+				}
+				const weeklyPlan = await this.planLlm.invoke({
+					phase,
+					weeklyContext,
+					targetTrainingLoad,
+					previousSimulation: feedback ?? null,
+				});
+				logger.info(
+					`Generated weekly plan for request ${request.request_id} in ${phase} phase (attempt ${attempt}/${MAX_GENERATION_ATTEMPTS})`,
+				);
+				return {
+					phase,
+					weekly_plan: weeklyPlan,
+					generation_attempts: attempt,
+				};
+			} catch (error) {
+				logger.error(
+					`Weekly plan generation failed for request ${request.request_id} in ${phase} phase: ${error instanceof Error ? error.message : "unknown error"}`,
+				);
+				return {
+					phase,
+					outcome: WeeklyPlanGeneratorOutcome.parse({
+						decision: "quality_failure",
+						request_id: request.request_id,
+						generation_id: context.generationId,
+						reason: "generation_failed",
+					}),
+				};
+			}
+		};
 
-  readonly phaseBase = this.phaseNode("base");
-  readonly phaseBuild = this.phaseNode("build");
-  readonly phaseSpeed = this.phaseNode("speed");
-  readonly phaseMarathon = this.phaseNode("marathon");
-  readonly phaseTaper = this.phaseNode("taper");
-  readonly phaseRecovery = this.phaseNode("recovery");
+	readonly phaseBase = this.phaseNode("base");
+	readonly phaseBuild = this.phaseNode("build");
+	readonly phaseSpeed = this.phaseNode("speed");
+	readonly phaseMarathon = this.phaseNode("marathon");
+	readonly phaseTaper = this.phaseNode("taper");
+	readonly phaseRecovery = this.phaseNode("recovery");
 
-  /** Deterministically simulate the generated plan, back-fill session doses. */
-  readonly simulateLoad = (state: typeof GraphState.State) => {
-    logger.info(`Simulating weekly plan load for request ${state.request?.request_id}`);
+	/** Deterministically simulate the generated plan, back-fill session doses. */
+	readonly simulateLoad = (state: typeof GraphState.State) => {
+		logger.info(`Simulating weekly plan load for request ${state.request?.request_id}`);
 
-    const weeklyContext = state.weekly_context;
-    const weeklyPlan = state.weekly_plan;
-    if (!weeklyContext) {
-      throw new Error("weekly_context is missing before load simulation");
-    }
-    if (!weeklyPlan) {
-      throw new Error("weekly_plan is missing before load simulation");
-    }
-    const simulation = simulateWeeklyPlanLoad(weeklyPlan, weeklyContext);
-    const request = WeeklyPlanGeneratorRequest.parse(state.request);
-    logger.info(
-      `Simulated weekly plan load for request ${request.request_id}: total dose ${formatNumber(simulation.total_dose)} (available=${simulation.available}, ${simulation.sessions.length} run sessions, ${simulation.days.length} days)`,
-    );
-    return {
-      simulation,
-      weekly_plan: mergeSimulationIntoPlan(weeklyPlan, simulation),
-    };
-  };
+		const weeklyContext = state.weekly_context;
+		const weeklyPlan = state.weekly_plan;
+		if (!weeklyContext) {
+			throw new Error("weekly_context is missing before load simulation");
+		}
+		if (!weeklyPlan) {
+			throw new Error("weekly_plan is missing before load simulation");
+		}
+		const simulation = simulateWeeklyPlanLoad(weeklyPlan, weeklyContext);
+		const request = WeeklyPlanGeneratorRequest.parse(state.request);
+		logger.info(
+			`Simulated weekly plan load for request ${request.request_id}: total dose ${formatNumber(simulation.total_dose)} (available=${simulation.available}, ${simulation.sessions.length} run sessions, ${simulation.days.length} days)`,
+		);
+		return {
+			simulation,
+			weekly_plan: mergeSimulationIntoPlan(weeklyPlan, simulation),
+		};
+	};
 
-  /** Route back to the phase node when the total dose misses the target. */
-  readonly evaluateLoadMatch = (state: typeof GraphState.State) => {
-    const request = WeeklyPlanGeneratorRequest.parse(state.request);
-    const simulation = state.simulation;
-    const target = state.target_training_load;
-    const phase = state.phase;
-    const attempts = state.generation_attempts ?? 1;
-    const inRange = loadWithinTolerance(simulation, target);
-    const low = target?.training_load_low ?? null;
-    const high = target?.training_load_high ?? null;
-    const band = low === null || high === null ? "n/a" : `${formatNumber(low * (1 - LOAD_MATCH_TOLERANCE))}-${formatNumber(high * (1 + LOAD_MATCH_TOLERANCE))}`;
-    if (inRange === null) {
-      logger.warn(`Cannot verify total load for request ${request.request_id}: simulation or target load unavailable; keeping the generated plan`);
-      return "finalize";
-    }
-    if (inRange) {
-      logger.info(
-        `Total load ${formatNumber(simulation?.total_dose)} within tolerance [${band}] for request ${request.request_id}; passing through after ${attempts} attempt(s)`,
-      );
-      return "finalize";
-    }
-    if (attempts >= MAX_GENERATION_ATTEMPTS) {
-      logger.error(
-        `Bouncing request ${request.request_id} to load_mismatch: total dose ${formatNumber(simulation?.total_dose)} still outside tolerance [${band}] after ${attempts}/${MAX_GENERATION_ATTEMPTS} attempts`,
-      );
-      return "load_mismatch";
-    }
-    logger.warn(
-      `Bouncing request ${request.request_id} back to ${phase ?? "?"} phase node: total dose ${formatNumber(simulation?.total_dose)} outside tolerance [${band}] (attempt ${attempts}/${MAX_GENERATION_ATTEMPTS})`,
-    );
-    return phase === null || phase === undefined ? "load_mismatch" : PHASE_NODE_NAMES[phase];
-  };
+	/** Route back to the phase node when the total dose misses the target. */
+	readonly evaluateLoadMatch = (state: typeof GraphState.State) => {
+		const request = WeeklyPlanGeneratorRequest.parse(state.request);
+		const simulation = state.simulation;
+		const target = state.target_training_load;
+		const phase = state.phase;
+		const attempts = state.generation_attempts ?? 1;
+		const inRange = loadWithinTolerance(simulation, target);
+		const low = target?.training_load_low ?? null;
+		const high = target?.training_load_high ?? null;
+		const band =
+			low === null || high === null
+				? "n/a"
+				: `${formatNumber(low * (1 - LOAD_MATCH_TOLERANCE))}-${formatNumber(high * (1 + LOAD_MATCH_TOLERANCE))}`;
+		if (inRange === null) {
+			logger.warn(
+				`Cannot verify total load for request ${request.request_id}: simulation or target load unavailable; keeping the generated plan`,
+			);
+			return "finalize";
+		}
+		if (inRange) {
+			logger.info(
+				`Total load ${formatNumber(simulation?.total_dose)} within tolerance [${band}] for request ${request.request_id}; passing through after ${attempts} attempt(s)`,
+			);
+			return "finalize";
+		}
+		if (attempts >= MAX_GENERATION_ATTEMPTS) {
+			logger.error(
+				`Bouncing request ${request.request_id} to load_mismatch: total dose ${formatNumber(simulation?.total_dose)} still outside tolerance [${band}] after ${attempts}/${MAX_GENERATION_ATTEMPTS} attempts`,
+			);
+			return "load_mismatch";
+		}
+		logger.warn(
+			`Bouncing request ${request.request_id} back to ${phase ?? "?"} phase node: total dose ${formatNumber(simulation?.total_dose)} outside tolerance [${band}] (attempt ${attempts}/${MAX_GENERATION_ATTEMPTS})`,
+		);
+		return phase === null || phase === undefined
+			? "load_mismatch"
+			: PHASE_NODE_NAMES[phase];
+	};
 
-  readonly loadMismatch = (state: typeof GraphState.State) => {
-    const request = WeeklyPlanGeneratorRequest.parse(state.request);
-    const context = WeeklyPlanGeneratorContext.parse(state.context);
-    logger.error(
-      `Weekly plan load mismatch unresolved for request ${request.request_id}: total dose ${formatNumber(state.simulation?.total_dose)} vs target ${formatNumber(state.target_training_load?.training_load_low)}-${formatNumber(state.target_training_load?.training_load_high)} after ${state.generation_attempts ?? 1} attempts`,
-    );
-    return {
-      outcome: WeeklyPlanGeneratorOutcome.parse({
-        decision: "quality_failure",
-        request_id: request.request_id,
-        generation_id: context.generationId,
-        reason: "load_mismatch_unresolved",
-      }),
-    };
-  };
+	readonly loadMismatch = (state: typeof GraphState.State) => {
+		const request = WeeklyPlanGeneratorRequest.parse(state.request);
+		const context = WeeklyPlanGeneratorContext.parse(state.context);
+		logger.error(
+			`Weekly plan load mismatch unresolved for request ${request.request_id}: total dose ${formatNumber(state.simulation?.total_dose)} vs target ${formatNumber(state.target_training_load?.training_load_low)}-${formatNumber(state.target_training_load?.training_load_high)} after ${state.generation_attempts ?? 1} attempts`,
+		);
+		return {
+			outcome: WeeklyPlanGeneratorOutcome.parse({
+				decision: "quality_failure",
+				request_id: request.request_id,
+				generation_id: context.generationId,
+				reason: "load_mismatch_unresolved",
+			}),
+		};
+	};
 
-  readonly phaseUnresolvable = (state: typeof GraphState.State) => {
-    const request = WeeklyPlanGeneratorRequest.parse(state.request);
-    const context = WeeklyPlanGeneratorContext.parse(state.context);
-    logger.error(`No canonical phase for request ${request.request_id}: target week phase is missing or unknown`);
-    return {
-      outcome: WeeklyPlanGeneratorOutcome.parse({
-        decision: "quality_failure",
-        request_id: request.request_id,
-        generation_id: context.generationId,
-        reason: "phase_unresolvable",
-      }),
-    };
-  };
+	readonly phaseUnresolvable = (state: typeof GraphState.State) => {
+		const request = WeeklyPlanGeneratorRequest.parse(state.request);
+		const context = WeeklyPlanGeneratorContext.parse(state.context);
+		logger.error(
+			`No canonical phase for request ${request.request_id}: target week phase is missing or unknown`,
+		);
+		return {
+			outcome: WeeklyPlanGeneratorOutcome.parse({
+				decision: "quality_failure",
+				request_id: request.request_id,
+				generation_id: context.generationId,
+				reason: "phase_unresolvable",
+			}),
+		};
+	};
 
-  readonly finalize = (state: typeof GraphState.State) => {
-    const request = WeeklyPlanGeneratorRequest.parse(state.request);
-    const context = WeeklyPlanGeneratorContext.parse(state.context);
-    const targetLoad = state.target_training_load;
-    const phase = state.phase;
-    const weeklyPlan = state.weekly_plan;
-    if (!targetLoad) {
-      throw new Error("target_training_load is missing before finalize");
-    }
-    if (!phase) {
-      throw new Error("phase is missing before finalize");
-    }
-    if (!weeklyPlan) {
-      throw new Error("weekly_plan is missing before finalize");
-    }
-    if (!state.simulation) {
-      throw new Error("simulation is missing before finalize");
-    }
-    logger.info(`Finalizing request ${request.request_id} for phase ${phase} with target training load ${JSON.stringify(targetLoad)}`);
-    return {
-      outcome: WeeklyPlanGeneratorOutcome.parse({
-        decision: "completed",
-        request_id: request.request_id,
-        generation_id: context.generationId,
-        phase,
-        weekly_plan: weeklyPlan,
-        target_training_load: targetLoad,
-        simulation: state.simulation,
-        generation_attempts: state.generation_attempts ?? 1,
-      }),
-    };
-  };
+	readonly finalize = (state: typeof GraphState.State) => {
+		const request = WeeklyPlanGeneratorRequest.parse(state.request);
+		const context = WeeklyPlanGeneratorContext.parse(state.context);
+		const targetLoad = state.target_training_load;
+		const phase = state.phase;
+		const weeklyPlan = state.weekly_plan;
+		if (!targetLoad) {
+			throw new Error("target_training_load is missing before finalize");
+		}
+		if (!phase) {
+			throw new Error("phase is missing before finalize");
+		}
+		if (!weeklyPlan) {
+			throw new Error("weekly_plan is missing before finalize");
+		}
+		if (!state.simulation) {
+			throw new Error("simulation is missing before finalize");
+		}
+		logger.info(
+			`Finalizing request ${request.request_id} for phase ${phase} with target training load ${JSON.stringify(targetLoad)}`,
+		);
+		return {
+			outcome: WeeklyPlanGeneratorOutcome.parse({
+				decision: "completed",
+				request_id: request.request_id,
+				generation_id: context.generationId,
+				phase,
+				weekly_plan: weeklyPlan,
+				target_training_load: targetLoad,
+				simulation: state.simulation,
+				generation_attempts: state.generation_attempts ?? 1,
+			}),
+		};
+	};
 }
 
 function record(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+	return typeof value === "object" && value !== null && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
 }
 
 function string(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
+	return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function number(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+	return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function formatNumber(value: number | null | undefined): string {
-  return value === null || value === undefined ? "n/a" : String(Number(value.toFixed(1)));
+	return value === null || value === undefined
+		? "n/a"
+		: String(Number(value.toFixed(1)));
 }
 
 function round(value: number): number {
-  return Number(value.toFixed(2));
+	return Number(value.toFixed(2));
 }
 
 interface RecoveryPoint {
-  date: string;
-  rhr: number | null;
-  hrv: number | null;
+	date: string;
+	rhr: number | null;
+	hrv: number | null;
 }
 
 interface RecoveryTrendAssessment {
-  available: boolean;
-  missing_reason: string | null;
-  recent_rhr_avg: number | null;
-  prior_rhr_avg: number | null;
-  recent_hrv_avg: number | null;
-  prior_hrv_avg: number | null;
-  rhr_rising: boolean;
-  hrv_falling: boolean;
-  deteriorating: boolean;
-  window_days: number;
+	available: boolean;
+	missing_reason: string | null;
+	recent_rhr_avg: number | null;
+	prior_rhr_avg: number | null;
+	recent_hrv_avg: number | null;
+	prior_hrv_avg: number | null;
+	rhr_rising: boolean;
+	hrv_falling: boolean;
+	deteriorating: boolean;
+	window_days: number;
 }
 
 const RECOVERY_WINDOW_DAYS = 5;
 
-function assessRecoveryTrend(history: RecoveryPoint[]): RecoveryTrendAssessment {
-  const withReadings = history.filter((point) => point.rhr !== null && point.hrv !== null);
-  if (withReadings.length < RECOVERY_WINDOW_DAYS * 2) {
-    return {
-      available: false,
-      missing_reason: "insufficient_recovery_history",
-      recent_rhr_avg: null,
-      prior_rhr_avg: null,
-      recent_hrv_avg: null,
-      prior_hrv_avg: null,
-      rhr_rising: false,
-      hrv_falling: false,
-      deteriorating: false,
-      window_days: 0,
-    };
-  }
-  const prior = withReadings.slice(0, RECOVERY_WINDOW_DAYS);
-  const recent = withReadings.slice(-RECOVERY_WINDOW_DAYS);
-  const priorRhrAvg = mean(prior.map((point) => point.rhr));
-  const recentRhrAvg = mean(recent.map((point) => point.rhr));
-  const priorHrvAvg = mean(prior.map((point) => point.hrv));
-  const recentHrvAvg = mean(recent.map((point) => point.hrv));
-  const rhrRising = recentRhrAvg > priorRhrAvg;
-  const hrvFalling = recentHrvAvg < priorHrvAvg;
-  return {
-    available: true,
-    missing_reason: null,
-    recent_rhr_avg: round(recentRhrAvg),
-    prior_rhr_avg: round(priorRhrAvg),
-    recent_hrv_avg: round(recentHrvAvg),
-    prior_hrv_avg: round(priorHrvAvg),
-    rhr_rising: rhrRising,
-    hrv_falling: hrvFalling,
-    deteriorating: rhrRising && hrvFalling,
-    window_days: RECOVERY_WINDOW_DAYS,
-  };
+function assessRecoveryTrend(
+	history: RecoveryPoint[],
+): RecoveryTrendAssessment {
+	const withReadings = history.filter(
+		(point) => point.rhr !== null && point.hrv !== null,
+	);
+	if (withReadings.length < RECOVERY_WINDOW_DAYS * 2) {
+		return {
+			available: false,
+			missing_reason: "insufficient_recovery_history",
+			recent_rhr_avg: null,
+			prior_rhr_avg: null,
+			recent_hrv_avg: null,
+			prior_hrv_avg: null,
+			rhr_rising: false,
+			hrv_falling: false,
+			deteriorating: false,
+			window_days: 0,
+		};
+	}
+	const prior = withReadings.slice(0, RECOVERY_WINDOW_DAYS);
+	const recent = withReadings.slice(-RECOVERY_WINDOW_DAYS);
+	const priorRhrAvg = mean(prior.map((point) => point.rhr));
+	const recentRhrAvg = mean(recent.map((point) => point.rhr));
+	const priorHrvAvg = mean(prior.map((point) => point.hrv));
+	const recentHrvAvg = mean(recent.map((point) => point.hrv));
+	const rhrRising = recentRhrAvg > priorRhrAvg;
+	const hrvFalling = recentHrvAvg < priorHrvAvg;
+	return {
+		available: true,
+		missing_reason: null,
+		recent_rhr_avg: round(recentRhrAvg),
+		prior_rhr_avg: round(priorRhrAvg),
+		recent_hrv_avg: round(recentHrvAvg),
+		prior_hrv_avg: round(priorHrvAvg),
+		rhr_rising: rhrRising,
+		hrv_falling: hrvFalling,
+		deteriorating: rhrRising && hrvFalling,
+		window_days: RECOVERY_WINDOW_DAYS,
+	};
 }
 
 function mean(values: Array<number | null>): number {
-  const numbers = values.filter((value): value is number => value !== null);
-  if (numbers.length === 0) return 0;
-  return numbers.reduce((total, value) => total + value, 0) / numbers.length;
+	const numbers = values.filter((value): value is number => value !== null);
+	if (numbers.length === 0) return 0;
+	return numbers.reduce((total, value) => total + value, 0) / numbers.length;
 }
 
 interface AbsorbedWeek {
-  week_start: string;
-  actual_run_distance_km: number;
-  actual_training_dose: number;
+	week_start: string;
+	actual_run_distance_km: number;
+	actual_training_dose: number;
 }
 
-function highCostRecentTraining(completeWeeks: AbsorbedWeek[], latestWeekDose: number | null): boolean {
-  if (latestWeekDose === null || completeWeeks.length < 2) return false;
-  const doses = completeWeeks.map((week) => week.actual_training_dose).sort((a, b) => a - b);
-  const median = doses[Math.floor(doses.length / 2)] ?? 0;
-  return median > 0 && latestWeekDose > median * 1.3;
+function highCostRecentTraining(
+	completeWeeks: AbsorbedWeek[],
+	latestWeekDose: number | null,
+): boolean {
+	if (latestWeekDose === null || completeWeeks.length < 2) return false;
+	const doses = completeWeeks
+		.map((week) => week.actual_training_dose)
+		.sort((a, b) => a - b);
+	const median = doses[Math.floor(doses.length / 2)] ?? 0;
+	return median > 0 && latestWeekDose > median * 1.3;
 }
 
 function medianDose(completeWeeks: AbsorbedWeek[]): number | null {
-  if (completeWeeks.length === 0) return null;
-  const doses = completeWeeks.map((week) => week.actual_training_dose).sort((a, b) => a - b);
-  return doses[Math.floor(doses.length / 2)] ?? null;
+	if (completeWeeks.length === 0) return null;
+	const doses = completeWeeks
+		.map((week) => week.actual_training_dose)
+		.sort((a, b) => a - b);
+	return doses[Math.floor(doses.length / 2)] ?? null;
 }
 
 function avg(values: Array<number | null>): number | null {
-  const numbers = values.filter((value): value is number => value !== null);
-  if (numbers.length === 0) return null;
-  return round(numbers.reduce((sum, value) => sum + value, 0) / numbers.length);
+	const numbers = values.filter((value): value is number => value !== null);
+	if (numbers.length === 0) return null;
+	return round(numbers.reduce((sum, value) => sum + value, 0) / numbers.length);
 }
 
-function projectEndOfWeekLoadRatio(startAcute: number, startChronic: number, weeklyDose: number): number {
-  const kAcute = 1 - Math.exp(-1 / 7);
-  const kChronic = 1 - Math.exp(-1 / 42);
-  let acute = startAcute;
-  let chronic = startChronic;
-  const dailyDose = weeklyDose / 7;
-  for (let day = 0; day < 7; day += 1) {
-    acute += kAcute * (dailyDose - acute);
-    chronic += kChronic * (dailyDose - chronic);
-  }
-  return round(acute / chronic);
+function projectEndOfWeekLoadRatio(
+	startAcute: number,
+	startChronic: number,
+	weeklyDose: number,
+): number {
+	const kAcute = 1 - Math.exp(-1 / 7);
+	const kChronic = 1 - Math.exp(-1 / 42);
+	let acute = startAcute;
+	let chronic = startChronic;
+	const dailyDose = weeklyDose / 7;
+	for (let day = 0; day < 7; day += 1) {
+		acute += kAcute * (dailyDose - acute);
+		chronic += kChronic * (dailyDose - chronic);
+	}
+	return round(acute / chronic);
 }
 
 /** Project a target distance range from the anchor dose density. */
 function projectDistanceRange(opts: {
-  anchorDose: number;
-  anchorKm: number;
-  loadLow: number | null;
-  loadHigh: number | null;
-  removeQualityStimulus: boolean;
-  phase: PhaseName | null;
+	anchorDose: number;
+	anchorKm: number;
+	loadLow: number | null;
+	loadHigh: number | null;
+	removeQualityStimulus: boolean;
+	phase: PhaseName | null;
 }): { low: number | null; high: number | null; density: number | null } {
-  const { anchorDose, anchorKm, loadLow, loadHigh } = opts;
-  if (anchorKm <= 0 || loadLow === null || loadHigh === null) {
-    return { low: null, high: null, density: null };
-  }
-  const density = anchorDose / anchorKm;
-  let highDensity = density * 1.1;
-  let lowDensity = density * 0.9;
-  if (opts.removeQualityStimulus) {
-    highDensity *= 0.9;
-    lowDensity *= 0.9;
-  }
-  if (opts.phase === "taper") {
-    highDensity *= 1.1;
-    lowDensity *= 1.1;
-  }
-  return {
-    low: round(loadLow / highDensity),
-    high: round(loadHigh / lowDensity),
-    density: round(density),
-  };
+	const { anchorDose, anchorKm, loadLow, loadHigh } = opts;
+	if (anchorKm <= 0 || loadLow === null || loadHigh === null) {
+		return { low: null, high: null, density: null };
+	}
+	const density = anchorDose / anchorKm;
+	let highDensity = density * 1.1;
+	let lowDensity = density * 0.9;
+	if (opts.removeQualityStimulus) {
+		highDensity *= 0.9;
+		lowDensity *= 0.9;
+	}
+	if (opts.phase === "taper") {
+		highDensity *= 1.1;
+		lowDensity *= 1.1;
+	}
+	return {
+		low: round(loadLow / highDensity),
+		high: round(loadHigh / lowDensity),
+		density: round(density),
+	};
 }
 
-function hasActivityRestriction(injuries: Array<{ running_restriction: string }>): boolean {
-  return injuries.some((injury) => injury.running_restriction !== "" && !/^(none|无|没有|no)$/i.test(injury.running_restriction.trim()));
+function hasActivityRestriction(
+	injuries: Array<{ running_restriction: string }>,
+): boolean {
+	return injuries.some(
+		(injury) =>
+			injury.running_restriction !== "" &&
+			!/^(none|无|没有|no)$/i.test(injury.running_restriction.trim()),
+	);
 }
 
 interface RecentTrainingWeekWithPlanned {
-  week_start: string;
-  complete: boolean;
-  planned:
-    | {
-        available: true;
-        total_run_distance_km: number | null;
-        run_sessions: unknown[];
-      }
-    | { available: false; total_run_distance_km: null; run_sessions: [] };
-  actual: { total_run_distance_km: number | null };
+	week_start: string;
+	complete: boolean;
+	planned:
+	| {
+		available: true;
+		total_run_distance_km: number | null;
+		run_sessions: unknown[];
+	}
+	| { available: false; total_run_distance_km: null; run_sessions: [] };
+	actual: { total_run_distance_km: number | null };
 }
 
 function recoveryWeekOverriddenByUndeliveredPeak(
-  isRecoveryWeek: boolean,
-  recentWeeks: RecentTrainingWeekWithPlanned[],
-  latestWeekStart: string | null,
-  latestWeekDistance: number | null,
-  stageTargetKmHigh: number | null,
+	isRecoveryWeek: boolean,
+	recentWeeks: RecentTrainingWeekWithPlanned[],
+	latestWeekStart: string | null,
+	latestWeekDistance: number | null,
+	stageTargetKmHigh: number | null,
 ): boolean {
-  if (!isRecoveryWeek || latestWeekStart === null) return false;
-  const latestWeek = recentWeeks.find((week) => week.complete === true && week.week_start === latestWeekStart);
-  if (latestWeek?.planned.available !== true || latestWeek.planned.total_run_distance_km === null || latestWeekDistance === null) {
-    return false;
-  }
-  const plannedKm = latestWeek.planned.total_run_distance_km;
-  if (stageTargetKmHigh !== null && plannedKm < stageTargetKmHigh) return false;
-  return latestWeekDistance < plannedKm * 0.9;
+	if (!isRecoveryWeek || latestWeekStart === null) return false;
+	const latestWeek = recentWeeks.find(
+		(week) => week.complete === true && week.week_start === latestWeekStart,
+	);
+	if (
+		latestWeek?.planned.available !== true ||
+		latestWeek.planned.total_run_distance_km === null ||
+		latestWeekDistance === null
+	) {
+		return false;
+	}
+	const plannedKm = latestWeek.planned.total_run_distance_km;
+	if (stageTargetKmHigh !== null && plannedKm < stageTargetKmHigh) return false;
+	return latestWeekDistance < plannedKm * 0.9;
 }
 
 interface LoadDecisionInput {
-  anchorKm: number | null;
-  latestWeekDistance: number | null;
-  loadRatio: number | null;
-  form: number | null;
-  recoveryDeteriorating: boolean;
-  highCost: boolean;
-  activityRestricted: boolean;
-  isRecoveryWeek: boolean;
+	anchorKm: number | null;
+	latestWeekDistance: number | null;
+	loadRatio: number | null;
+	form: number | null;
+	recoveryDeteriorating: boolean;
+	highCost: boolean;
+	activityRestricted: boolean;
+	isRecoveryWeek: boolean;
 }
 
 interface LoadDecision {
-  decision: "increase" | "maintain" | "decrease" | "recover";
-  lowRatio: number;
-  highRatio: number;
-  removeQualityStimulus: boolean;
-  rationale: string[];
+	decision: "increase" | "maintain" | "decrease" | "recover";
+	lowRatio: number;
+	highRatio: number;
+	removeQualityStimulus: boolean;
+	rationale: string[];
 }
 
 const RECOVERY_WEEK_MIN_RATIO = 0.7;
@@ -687,107 +812,119 @@ const RECOVERY_WEEK_MAINTAIN_RATIO = 0.85;
 const RECOVERY_WEEK_MAX_RATIO = 0.95;
 
 function decideTargetLoad(input: LoadDecisionInput): LoadDecision {
-  if (input.isRecoveryWeek && input.anchorKm !== null) {
-    return decideRecoveryWeekLoad(input);
-  }
+	if (input.isRecoveryWeek && input.anchorKm !== null) {
+		return decideRecoveryWeekLoad(input);
+	}
 
-  if (input.recoveryDeteriorating) {
-    return {
-      decision: "decrease",
-      lowRatio: 0.8,
-      highRatio: 0.9,
-      removeQualityStimulus: true,
-      rationale: ["recovery deterioration is a veto: cut to 80-90% of anchor"],
-    };
-  }
-  if (input.activityRestricted) {
-    return {
-      decision: "decrease",
-      lowRatio: 0.8,
-      highRatio: 0.9,
-      removeQualityStimulus: true,
-      rationale: ["activity restriction: cut to 80-90% of anchor"],
-    };
-  }
-  if (input.loadRatio === null || input.anchorKm === null) {
-    return {
-      decision: "maintain",
-      lowRatio: 1,
-      highRatio: 1.08,
-      removeQualityStimulus: false,
-      rationale: ["load_ratio unavailable: maintain at anchor"],
-    };
-  }
-  if (input.loadRatio > 1.25) {
-    return {
-      decision: "decrease",
-      lowRatio: 0.8,
-      highRatio: 0.9,
-      removeQualityStimulus: true,
-      rationale: ["load_ratio > 1.25: cut to 80-90% of anchor"],
-    };
-  }
-  if (input.loadRatio >= 1.1 || input.highCost) {
-    return {
-      decision: "maintain",
-      lowRatio: 0.95,
-      highRatio: 1.03,
-      removeQualityStimulus: false,
-      rationale: [`load_ratio ${input.loadRatio.toFixed(2)}${input.highCost ? " with recent high-cost training" : ""}: hold between -5% and +3%`],
-    };
-  }
-  if (input.loadRatio >= 0.9) {
-    return {
-      decision: "maintain",
-      lowRatio: 1,
-      highRatio: 1.08,
-      removeQualityStimulus: false,
-      rationale: [`load_ratio ${input.loadRatio.toFixed(2)}: maintain to +8%`],
-    };
-  }
-  return {
-    decision: "increase",
-    lowRatio: 1.05,
-    highRatio: 1.1,
-    removeQualityStimulus: false,
-    rationale: [`load_ratio ${input.loadRatio.toFixed(2)}: recovery rebound of 5-10%`],
-  };
+	if (input.recoveryDeteriorating) {
+		return {
+			decision: "decrease",
+			lowRatio: 0.8,
+			highRatio: 0.9,
+			removeQualityStimulus: true,
+			rationale: ["recovery deterioration is a veto: cut to 80-90% of anchor"],
+		};
+	}
+	if (input.activityRestricted) {
+		return {
+			decision: "decrease",
+			lowRatio: 0.8,
+			highRatio: 0.9,
+			removeQualityStimulus: true,
+			rationale: ["activity restriction: cut to 80-90% of anchor"],
+		};
+	}
+	if (input.loadRatio === null || input.anchorKm === null) {
+		return {
+			decision: "maintain",
+			lowRatio: 1,
+			highRatio: 1.08,
+			removeQualityStimulus: false,
+			rationale: ["load_ratio unavailable: maintain at anchor"],
+		};
+	}
+	if (input.loadRatio > 1.25) {
+		return {
+			decision: "decrease",
+			lowRatio: 0.8,
+			highRatio: 0.9,
+			removeQualityStimulus: true,
+			rationale: ["load_ratio > 1.25: cut to 80-90% of anchor"],
+		};
+	}
+	if (input.loadRatio >= 1.1 || input.highCost) {
+		return {
+			decision: "maintain",
+			lowRatio: 0.95,
+			highRatio: 1.03,
+			removeQualityStimulus: false,
+			rationale: [
+				`load_ratio ${input.loadRatio.toFixed(2)}${input.highCost ? " with recent high-cost training" : ""}: hold between -5% and +3%`,
+			],
+		};
+	}
+	if (input.loadRatio >= 0.9) {
+		return {
+			decision: "maintain",
+			lowRatio: 1,
+			highRatio: 1.08,
+			removeQualityStimulus: false,
+			rationale: [`load_ratio ${input.loadRatio.toFixed(2)}: maintain to +8%`],
+		};
+	}
+	return {
+		decision: "increase",
+		lowRatio: 1.05,
+		highRatio: 1.1,
+		removeQualityStimulus: false,
+		rationale: [
+			`load_ratio ${input.loadRatio.toFixed(2)}: recovery rebound of 5-10%`,
+		],
+	};
 }
 
 function decideRecoveryWeekLoad(input: LoadDecisionInput): LoadDecision {
-  const anchorRatio = input.latestWeekDistance !== null && input.anchorKm !== null ? input.latestWeekDistance / input.anchorKm : null;
-  const needsDeepCut = (anchorRatio !== null && anchorRatio >= 0.9) || input.recoveryDeteriorating || input.highCost;
-  if (needsDeepCut) {
-    return {
-      decision: "recover",
-      lowRatio: RECOVERY_WEEK_MIN_RATIO,
-      highRatio: 0.8,
-      removeQualityStimulus: true,
-      rationale: [
-        `recovery week: deep cut to 70-80% (latest week ${anchorRatio !== null ? anchorRatio.toFixed(2) : "n/a"} of anchor${input.recoveryDeteriorating ? ", recovery deteriorating" : ""}${input.highCost ? ", high-cost training" : ""})`,
-      ],
-    };
-  }
-  const canMaintain =
-    anchorRatio !== null &&
-    anchorRatio < 0.9 &&
-    !input.recoveryDeteriorating &&
-    (input.loadRatio === null || input.loadRatio <= 1) &&
-    (input.form === null || input.form >= 0);
-  if (canMaintain) {
-    return {
-      decision: "maintain",
-      lowRatio: RECOVERY_WEEK_MAINTAIN_RATIO,
-      highRatio: RECOVERY_WEEK_MAX_RATIO,
-      removeQualityStimulus: false,
-      rationale: ["recovery week: maintain rather than cut (already below anchor, stable recovery)"],
-    };
-  }
-  return {
-    decision: "recover",
-    lowRatio: 0.8,
-    highRatio: 0.9,
-    removeQualityStimulus: false,
-    rationale: ["recovery week: moderate cut to 80-90% of anchor"],
-  };
+	const anchorRatio =
+		input.latestWeekDistance !== null && input.anchorKm !== null
+			? input.latestWeekDistance / input.anchorKm
+			: null;
+	const needsDeepCut =
+		(anchorRatio !== null && anchorRatio >= 0.9) ||
+		input.recoveryDeteriorating ||
+		input.highCost;
+	if (needsDeepCut) {
+		return {
+			decision: "recover",
+			lowRatio: RECOVERY_WEEK_MIN_RATIO,
+			highRatio: 0.8,
+			removeQualityStimulus: true,
+			rationale: [
+				`recovery week: deep cut to 70-80% (latest week ${anchorRatio !== null ? anchorRatio.toFixed(2) : "n/a"} of anchor${input.recoveryDeteriorating ? ", recovery deteriorating" : ""}${input.highCost ? ", high-cost training" : ""})`,
+			],
+		};
+	}
+	const canMaintain =
+		anchorRatio !== null &&
+		anchorRatio < 0.9 &&
+		!input.recoveryDeteriorating &&
+		(input.loadRatio === null || input.loadRatio <= 1) &&
+		(input.form === null || input.form >= 0);
+	if (canMaintain) {
+		return {
+			decision: "maintain",
+			lowRatio: RECOVERY_WEEK_MAINTAIN_RATIO,
+			highRatio: RECOVERY_WEEK_MAX_RATIO,
+			removeQualityStimulus: false,
+			rationale: [
+				"recovery week: maintain rather than cut (already below anchor, stable recovery)",
+			],
+		};
+	}
+	return {
+		decision: "recover",
+		lowRatio: 0.8,
+		highRatio: 0.9,
+		removeQualityStimulus: false,
+		rationale: ["recovery week: moderate cut to 80-90% of anchor"],
+	};
 }

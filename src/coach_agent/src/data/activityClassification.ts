@@ -1,4 +1,4 @@
-import type { Activity } from "./dataStore.js";
+import type { Activity } from "./dataProvider.js";
 
 type ActivityClassificationInput = Pick<Activity, "name" | "sport" | "sportName" | "sportNote" | "trainKind">;
 
