@@ -279,7 +279,7 @@ export const MasterPlanSchema = z
 			race_date: DaySchema,
 			target_time: z.string(),
 			timezone: z.literal("Asia/Shanghai"),
-			location: z.string().min(1),
+			location: z.string().min(1).nullish(),
 		}),
 		start_date: DaySchema,
 		end_date: DaySchema,

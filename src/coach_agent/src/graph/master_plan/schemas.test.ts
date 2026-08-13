@@ -65,3 +65,16 @@ test("strategic skeleton rejects ordinary filler runs", () => {
 test("the legacy schema import is the Kernel-owned schema", () => {
 	assert.equal(LegacyMasterPlanSchema, MasterPlanSchema);
 });
+
+test("master plan accepts an omitted or null race location", () => {
+	const plan = createTestMasterPlan();
+	const { location: _location, ...goalWithoutLocation } = plan.goal;
+	const withoutLocation = { ...plan, goal: goalWithoutLocation };
+	assert.equal(MasterPlanSchema.safeParse(withoutLocation).success, true);
+
+	const withNullLocation = {
+		...plan,
+		goal: { ...plan.goal, location: null },
+	};
+	assert.equal(MasterPlanSchema.safeParse(withNullLocation).success, true);
+});

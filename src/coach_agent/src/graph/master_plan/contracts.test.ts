@@ -21,6 +21,24 @@ test("request accepts explicit empty constraints in a complete confirmed intake"
 	assert.deepEqual(MasterPlanGraphRequest.parse(request), request);
 });
 
+test("request accepts an omitted or null race location", () => {
+	const request = createTestRequest();
+	const goal = request.goals[0];
+	assert.ok(goal);
+	const { location: _location, ...goalWithoutLocation } = goal;
+	const withoutLocation = { ...request, goals: [goalWithoutLocation] };
+	assert.equal(MasterPlanGraphRequest.safeParse(withoutLocation).success, true);
+
+	const withNullLocation = {
+		...request,
+		goals: [{ ...goal, location: null }],
+	};
+	assert.equal(
+		MasterPlanGraphRequest.safeParse(withNullLocation).success,
+		true,
+	);
+});
+
 test("request rejects omitted intake fields and unconfirmed answers", () => {
 	const { preferences: _, ...missingPreferences } = createTestRequest();
 	assert.equal(

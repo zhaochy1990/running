@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { Command } from "@langchain/langgraph";
 import { createCoachAgent } from "../agents/coachAgent.js";
@@ -16,8 +17,8 @@ const config = loadConfig();
 const store = StrideDataStore.create(readStrideMySqlConfig(config));
 const agent = await createCoachAgent(store, config);
 
-// const userId = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
-const userId = "11c2e582-5a85-4633-81d2-df7e37ad7b48";
+const userId = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
+// const userId = "11c2e582-5a85-4633-81d2-df7e37ad7b48";
 
 // await agent.invoke({
 //   messages: [{ role: "user", content: "帮我生成下周的训练计划" }],
@@ -51,11 +52,28 @@ async function readAnswer(): Promise<string> {
 
 function printAnswer(res: { messages: Array<{ content: unknown }> }): void {
 	const last = res.messages.at(-1);
-	const text =
-		typeof last?.content === "string"
-			? last.content
-			: JSON.stringify(last?.content);
+	const content = last?.content;
+	const text = typeof content === "string" ? content : JSON.stringify(content);
 	console.log(`\n===== 最后回答 =====\n${text}`);
+
+	const rawJson = typeof content === "string" ? JSON.parse(content) : content;
+
+	const now = new Date();
+	const year = now.getFullYear();
+	const month = String(now.getMonth() + 1).padStart(2, "0");
+	const day = String(now.getDate()).padStart(2, "0");
+	const hour = String(now.getHours()).padStart(2, "0");
+	const minute = String(now.getMinutes()).padStart(2, "0");
+	const second = String(now.getSeconds()).padStart(2, "0");
+
+	// YYYY-MM-DD_hh:mm:ss_{userId}.json
+	var outputFileName = `${year}-${month}-${day}_${hour}:${minute}:${second}_${userId}.json`;
+
+	writeFileSync(
+		`./test-output/${outputFileName}`,
+		JSON.stringify(rawJson, null, 2),
+	);
+	console.log(`\n===== 最后回答已写入 ./test-output/${outputFileName} =====`);
 }
 
 /** 把 ask_user_question 的 interrupt payload 渲染成给运动员看的追问文本。 */

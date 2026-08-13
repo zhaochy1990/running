@@ -8,7 +8,7 @@ description: >-
 
 ## Step 1: 确认训练目标和赛季目标
 
-首先且只调用 `get_master_plan`，确认用户是否已有完整的 race goal。完整目标必须包括：比赛项目、比赛日期、比赛地点和目标完赛时间。
+首先且只调用 `get_master_plan`，确认用户是否已有完整的 race goal。完整目标必须包括：比赛项目、比赛日期和目标完赛时间；比赛地点可选。
 
 如果不存在赛季计划，或目标任一字段缺失，立即调用 `ask_user_question` 追问缺失信息。收到回答前，**禁止**调用其它tools，也不要分析运动数据或生成计划。
 
@@ -16,7 +16,7 @@ description: >-
 - 全程马拉松（42.195公里）
 - 半程马拉松（21.0975公里）
 
-追问应一次收集完整目标：比赛项目、日期、地点和目标完赛时间。
+追问应一次收集完整目标：比赛项目、日期和目标完赛时间。地点仅在用户主动提供时记录，不因地点缺失而追问。
 
 只有完整 race goal 已从计划或用户回答中确认后，才继续查询 PB、能力水平和历史比赛数据。
 
@@ -75,7 +75,7 @@ description: >-
 
 字段语义和业务规则：
 
-1. 新计划 `status` 固定为 `draft`，`generated_by` 固定为 `coach_agent`，`version` 固定为 `1`。`goal` 包含赛事名称、`FM`/`HM`、比赛日、目标时间、`Asia/Shanghai` 与地点；顶层包含计划日期范围、阶段、周安排、训练原则和 UTC 创建/更新时间。
+1. 新计划 `status` 固定为 `draft`，`generated_by` 固定为 `coach_agent`，`version` 固定为 `1`。`goal` 包含赛事名称、`FM`/`HM`、比赛日、目标时间与 `Asia/Shanghai`，地点可选；顶层包含计划日期范围、阶段、周安排、训练原则和 UTC 创建/更新时间。
 2. `phase_name` 只能为 `基础期`、`提升期`、`专项速度周期`、`马拉松专项期`、`赛前减量期`、`赛后恢复期`，并且不同phase不可以重复；
 3. `distance` 只能为 `FM` 或 `HM`。
 4. milestone `type` 只能为 `race`、`test_run`、`long_run`、`strength_test`、`body_composition`。

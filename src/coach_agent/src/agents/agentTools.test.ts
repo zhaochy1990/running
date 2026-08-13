@@ -45,6 +45,7 @@ test("master-plan skills are present in the compiled virtual filesystem root", a
 
 test("master-plan prompt gates athlete data behind a complete race goal", () => {
 	assert.match(MASTER_PLAN_PROMPT, /先只调用 get_master_plan/);
+	assert.match(MASTER_PLAN_PROMPT, /比赛地点可选/);
 	assert.match(MASTER_PLAN_PROMPT, /暂停并等待用户回答/);
 });
 

@@ -1,1 +1,5 @@
-import { getAgentConfig, loadConfig, readStrideMySqlConfig } from "../config/config.js";
+import {
+	getAgentConfig,
+	loadConfig,
+	readStrideMySqlConfig,
+} from "../config/config.js";

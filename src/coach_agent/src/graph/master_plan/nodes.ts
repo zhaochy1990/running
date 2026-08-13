@@ -324,12 +324,17 @@ class MasterPlanNodes {
 					facts,
 				}),
 			);
-			logger.info(`Athlete assessment model invoked in ${res.time.toFixed(2)} ms`);
+			logger.info(
+				`Athlete assessment model invoked in ${res.time.toFixed(2)} ms`,
+			);
 
 			const assessment = canonicalizeAssessmentSummary(
 				AthleteAssessmentSchema.parse(res.result),
 			);
-			logger.info(assessment, `Athlete assessment for request ${request.request_id}`);
+			logger.info(
+				assessment,
+				`Athlete assessment for request ${request.request_id}`,
+			);
 
 			validateAssessmentReferences(assessment, facts);
 			validateAthleteAssessmentRanges(assessment, facts, request);
@@ -430,7 +435,10 @@ class MasterPlanNodes {
 						},
 					}),
 				};
-			logger.info(assessment, `Goal assessment for request ${request.request_id}`);
+			logger.info(
+				assessment,
+				`Goal assessment for request ${request.request_id}`,
+			);
 			throw new Error("Testing");
 
 			return { goalAssessment: assessment };
@@ -777,7 +785,8 @@ class MasterPlanNodes {
 		}
 	};
 
-	readonly stopOr = (next: string) => (state: typeof GraphState.State) => state.outcome ? END : next;
+	readonly stopOr = (next: string) => (state: typeof GraphState.State) =>
+		state.outcome ? END : next;
 
 	readonly fanStrategies = (state: typeof GraphState.State) =>
 		this.archetypes.map(

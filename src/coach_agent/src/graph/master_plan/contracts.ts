@@ -37,7 +37,7 @@ const weekday = z.enum([
 const GoalSchema = z
 	.object({
 		race_name: z.string().min(1),
-		location: z.string().min(1),
+		location: z.string().min(1).nullish(),
 		distance: z.enum(["FM", "HM"]),
 		race_date: z.string().regex(DAY),
 		target_time: z.string().regex(RACE_TIME, "expected H:MM:SS").nullable(),

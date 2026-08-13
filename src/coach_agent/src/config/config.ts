@@ -39,7 +39,9 @@ export function loadConfig(options: LoadConfigOptions = {}): CoachAgentConfig {
 
 	logger.info(`Loading coach config for env "${ENV}"`);
 	logger.info(`  default config: ${configFiles.defaultConfigFile ?? "(none)"}`);
-	logger.info(`  target env config: ${configFiles.targetEnvConfigFile ?? "(none)"}`);
+	logger.info(
+		`  target env config: ${configFiles.targetEnvConfigFile ?? "(none)"}`,
+	);
 
 	return deepMerge(defaultConfig, targetEnvConfig) as CoachAgentConfig;
 }

@@ -378,7 +378,9 @@ export class StrideDataStore {
 				typeof r.activity_label_id !== "string" ||
 				r.activity_label_id.length === 0
 			) {
-				throw new Error(`personal best ${String(r.distance)} has no activity label ID`);
+				throw new Error(
+					`personal best ${String(r.distance)} has no activity label ID`,
+				);
 			}
 			return {
 				distance: r.distance as string,
