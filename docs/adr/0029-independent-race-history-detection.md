@@ -45,12 +45,21 @@ is synchronized, persist a reusable fact, and stay independent from Coach Agent.
 - Parse watch-recorded pause count, total duration, and Shanghai-local intervals
   from `activities.pauses` in Go. Missing pause data stays unknown rather than
   being interpreted as zero pauses. Pause details are not sent to the model.
-- Infer the athlete's usual activity area from the largest strict-majority
-  cluster of historical activity start points. Go compares the candidate start
-  with that area; an HM/FM in a clearly different city is strong race evidence.
-  If fewer than three valid historical starts exist or no strict majority exists,
-  the location context is unknown; no home location is guessed or persisted, and
-  neither the cluster nor its distance is sent to the model.
+- Add an independent internal-only `usual_activity_area` job. It scans each
+  historical activity's first valid GPS point once, derives the largest
+  strict-majority cluster, and persists the imprecise center, supporting
+  activity count, and computation timestamp as internal fields on
+  `user_profile`. If fewer than three valid starts exist or no strict majority
+  exists, it persists a computed-but-unknown snapshot so later jobs do not
+  repeat the scan. It never creates a sparse profile, exposes these coordinates
+  through the public profile API, sends them to the model, or writes them to
+  logs. The full onboarding pipeline runs this optional job after `watch_sync`;
+  existing users need one standalone run during rollout.
+- Race detection reads only the persisted profile snapshot and compares each
+  candidate start with it; an HM/FM in a clearly different city is strong race
+  evidence. A missing or unknown snapshot makes travel evidence neutral. Race
+  detection never falls back to scanning historical timeseries, so a normal
+  backfill reads only the candidate activities' own indexed timeseries.
 - Treat 42.0–43.5 km as strong positive evidence because ordinary training very
   rarely exceeds 40 km. This is a general distance prior, not a city-, date-, or
   fixture-specific rule, and does not replace the model decision.
@@ -126,7 +135,8 @@ is synchronized, persist a reusable fact, and stay independent from Coach Agent.
 
 ```mermaid
 flowchart LR
-    S[watch_sync] --> G{sport and distance gate}
+    S[watch_sync] --> A[usual_activity_area one-time profile cache]
+    A --> G{sport and distance gate}
     G -->|not candidate| K[skip]
     G -->|HM or FM candidate| F[Go route, pause, travel, time, distance evidence]
     F --> L[LLM semantic evidence only]
@@ -152,6 +162,8 @@ observable rather than hiding errors inside the race handler.
   consume `races` is deliberately a later change.
 - Candidate selection is deterministic, cheap, and testable without a model.
   Model cost is bounded to plausible half/full-marathon efforts.
+- The expensive all-history activity-start scan moves out of race detection and
+  runs at most once per user unless the persisted snapshot is explicitly reset.
 - A model outage may leave a temporary detection gap while the underlying sync
   still succeeds. Normal job retry handles transient failures; operators can
   observe the failed step and explicitly retry/backfill if needed.

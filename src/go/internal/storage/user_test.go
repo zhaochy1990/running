@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/zhaochy1990/stride/internal/activityarea"
 	"github.com/zhaochy1990/stride/internal/job"
 )
 
@@ -68,6 +69,70 @@ func TestUserProfile_UpsertPreservesCreatedAt(t *testing.T) {
 	}
 	if !second.CreatedAt.Equal(created) {
 		t.Errorf("created_at not preserved: got %v want %v", second.CreatedAt, created)
+	}
+}
+
+func TestUsualActivityArea_RoundTripAndCoreWritesPreserveDerivedFields(t *testing.T) {
+	st := openTestStore(t)
+	migrateUsers(t, st)
+	ctx := context.Background()
+	uid := uuid.NewString()
+	if err := st.UpsertUserProfile(ctx, &UserProfile{
+		UserID: uid, DisplayName: "Runner", DOB: "1990-05-01", Sex: "male", HeightCm: 178, WeightKg: 70,
+	}); err != nil {
+		t.Fatalf("insert profile: %v", err)
+	}
+	computedAt := time.Date(2026, 8, 13, 8, 0, 0, 123000000, time.UTC)
+	found, err := st.SaveUsualActivityArea(ctx, uid, &activityarea.Area{
+		Latitude: 31.2304, Longitude: 121.4737, SupportingActivityCount: 42,
+	}, computedAt)
+	if err != nil || !found {
+		t.Fatalf("save area = found %v, err %v", found, err)
+	}
+	snapshot, err := st.UsualActivityArea(ctx, uid)
+	if err != nil || snapshot == nil || !snapshot.Computed || snapshot.Area == nil || snapshot.Area.SupportingActivityCount != 42 {
+		t.Fatalf("read area = %+v, %v", snapshot, err)
+	}
+
+	if err := st.UpsertUserProfile(ctx, &UserProfile{
+		UserID: uid, DisplayName: "Runner Updated", DOB: "1990-05-01", Sex: "male", HeightCm: 178, WeightKg: 71,
+	}); err != nil {
+		t.Fatalf("core upsert: %v", err)
+	}
+	name := "Runner Patched"
+	if _, err := st.PatchUserProfile(ctx, uid, UserProfilePatch{DisplayName: &name}); err != nil {
+		t.Fatalf("core patch: %v", err)
+	}
+	snapshot, err = st.UsualActivityArea(ctx, uid)
+	if err != nil || snapshot == nil || !snapshot.Computed || snapshot.Area == nil || snapshot.Area.Latitude != 31.2304 || snapshot.Area.SupportingActivityCount != 42 {
+		t.Fatalf("derived area after core writes = %+v, %v", snapshot, err)
+	}
+}
+
+func TestUsualActivityArea_CachesUnknownAndDoesNotCreateSparseProfile(t *testing.T) {
+	st := openTestStore(t)
+	migrateUsers(t, st)
+	ctx := context.Background()
+	uid := uuid.NewString()
+	computedAt := time.Now().UTC().Truncate(time.Microsecond)
+	found, err := st.SaveUsualActivityArea(ctx, uid, nil, computedAt)
+	if err != nil || found {
+		t.Fatalf("missing profile save = found %v, err %v", found, err)
+	}
+	if profile, err := st.GetUserProfile(ctx, uid); err != nil || profile != nil {
+		t.Fatalf("sparse profile = %+v, %v", profile, err)
+	}
+
+	if err := st.UpsertUserProfile(ctx, &UserProfile{UserID: uid, DisplayName: "Runner"}); err != nil {
+		t.Fatalf("insert profile: %v", err)
+	}
+	found, err = st.SaveUsualActivityArea(ctx, uid, nil, computedAt)
+	if err != nil || !found {
+		t.Fatalf("save unknown = found %v, err %v", found, err)
+	}
+	snapshot, err := st.UsualActivityArea(ctx, uid)
+	if err != nil || snapshot == nil || !snapshot.Computed || snapshot.Area != nil {
+		t.Fatalf("unknown snapshot = %+v, %v", snapshot, err)
 	}
 }
 

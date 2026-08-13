@@ -103,6 +103,20 @@ type RaceDetectionRuntimeConfig struct {
 	RaceDetection RaceDetection `mapstructure:"race-detection"`
 }
 
+// ActivityAreaRuntimeConfig contains the independent area job's only runtime
+// dependency. Keeping it separate avoids requiring any LLM settings for the
+// local one-time derivation.
+type ActivityAreaRuntimeConfig struct {
+	MySQL MySQL `mapstructure:"mysql"`
+}
+
+// MustLoadActivityAreaRuntimeFrom loads only MySQL from an explicit config.
+func MustLoadActivityAreaRuntimeFrom(path string) *ActivityAreaRuntimeConfig {
+	var cfg ActivityAreaRuntimeConfig
+	xviper.MustLoadConfig(EnvPrefix, path, &cfg)
+	return &cfg
+}
+
 // MustLoadRaceDetectionRuntimeFrom loads MySQL and race-detection settings from
 // one config file with the same STRIDE_WORKER_* overrides as the worker.
 func MustLoadRaceDetectionRuntimeFrom(path string) *RaceDetectionRuntimeConfig {

@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/config"
+	areaHandler "github.com/zhaochy1990/stride/internal/handlers/activityarea"
 	"github.com/zhaochy1990/stride/internal/handlers/compute"
 	racehandler "github.com/zhaochy1990/stride/internal/handlers/racedetection"
 	"github.com/zhaochy1990/stride/internal/handlers/watchsync"
@@ -70,6 +71,10 @@ func runWorker() error {
 	}
 	// Watch-domain tables (activities/health/credentials/cursor) for the sync handler.
 	if err := store.AutoMigrateWatch(ctx); err != nil {
+		return err
+	}
+	// The usual-activity-area job persists its derived snapshot on user_profile.
+	if err := store.AutoMigrateUsers(ctx); err != nil {
 		return err
 	}
 
@@ -193,6 +198,7 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
 	})
 	reg.MustRegister(watchsync.JobType, watchsync.New(resolve, store, watchJobs))
+	reg.MustRegister(areaHandler.JobType, areaHandler.New(store))
 	reg.MustRegister(racehandler.JobType, racehandler.New(store, raceDetector, raceConcurrency))
 	reg.MustRegister(racehandler.BackfillJobType, racehandler.NewBackfill(store, raceDetector, raceConcurrency))
 	reg.MustRegister(compute.CalibrationJobType, compute.NewCalibration(store))

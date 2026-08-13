@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -58,7 +59,11 @@ func TestRaceCandidatesFiltersAndSkipsConfirmed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("activity start coordinates: %v", err)
 	}
-	if len(starts) != 2 || starts[0].Latitude != 31.2304 || starts[0].Longitude != 121.4737 || starts[1].Latitude != 39.9042 {
+	startSet := map[[2]float64]bool{}
+	for _, start := range starts {
+		startSet[[2]float64{start.Latitude, start.Longitude}] = true
+	}
+	if len(starts) != 2 || !startSet[[2]float64{31.2304, 121.4737}] || !startSet[[2]float64{39.9042, 116.4074}] {
 		t.Fatalf("activity start coordinates = %+v, want first valid point from each activity", starts)
 	}
 
@@ -74,8 +79,17 @@ func TestRaceCandidatesFiltersAndSkipsConfirmed(t *testing.T) {
 		t.Fatalf("all-history candidates = %+v", all)
 	}
 	for _, candidate := range all {
-		if candidate.LabelID == "hm" && (candidate.Pauses == nil || *candidate.Pauses != pauses) {
-			t.Fatalf("HM pause data = %v, want stored activity pauses", candidate.Pauses)
+		if candidate.LabelID == "hm" {
+			if candidate.Pauses == nil {
+				t.Fatal("HM pause data is nil, want stored activity pauses")
+			}
+			var gotPauses, wantPauses any
+			if err := json.Unmarshal([]byte(*candidate.Pauses), &gotPauses); err != nil {
+				t.Fatalf("decode HM pause data: %v", err)
+			}
+			if err := json.Unmarshal([]byte(pauses), &wantPauses); err != nil || !reflect.DeepEqual(gotPauses, wantPauses) {
+				t.Fatalf("HM pause data = %s, want JSON-equivalent %s", *candidate.Pauses, pauses)
+			}
 		}
 	}
 	empty, err := st.RaceCandidates(ctx, uid, []string{})

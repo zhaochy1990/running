@@ -92,11 +92,14 @@ func runRaceGoldenRegression(t *testing.T, dsn string, raceDetector *detector.De
 		t.Fatalf("open local MySQL: %v", err)
 	}
 	defer store.Close()
-	starts, err := store.ActivityStartCoordinates(context.Background(), goldenUserID)
+	snapshot, err := store.UsualActivityArea(context.Background(), goldenUserID)
 	if err != nil {
-		t.Fatalf("read historical activity starts: %v", err)
+		t.Fatalf("read persisted usual activity area: %v", err)
 	}
-	usualArea := detector.InferUsualActivityArea(starts)
+	if snapshot == nil {
+		t.Fatal("usual activity area has not been computed; run usual_activity_area once before the golden regression")
+	}
+	usualArea := snapshot.Area
 	type result struct {
 		label              string
 		activityTime       string

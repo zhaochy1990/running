@@ -126,10 +126,12 @@ this local URL. Copy `src/go/config.local.example.yml` to the ignored
 `make test-racedetection`; production continues to read `src/go/config.yml`.
 
 After the schema and worker are deployed, enqueue internal-only
-`race_detection_backfill` once per existing user to inspect historical HM/FM
-candidates. It is not a scheduled job and is unnecessary for newly synced
-activities. The job is partial-success: confirmed rows are committed as they are
-found, while a failed candidate remains absent and causes the job to retry/fail.
+`usual_activity_area` once per existing user, then enqueue
+`race_detection_backfill` to inspect historical HM/FM candidates. The first job
+performs the one-time historical activity-start scan and caches the result on
+`user_profile`; race backfill never repeats that scan. Neither job is scheduled.
+The race job is partial-success: confirmed rows are committed as they are found,
+while a failed candidate remains absent and causes the job to retry/fail.
 
 ### 赛季训练计划统一读取切流
 

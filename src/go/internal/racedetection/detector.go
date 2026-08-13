@@ -8,9 +8,9 @@ package racedetection
 import (
 	"context"
 	"encoding/json"
-	"math"
 	"time"
 
+	"github.com/zhaochy1990/stride/internal/activityarea"
 	"github.com/zhaochy1990/stride/internal/normalize"
 )
 
@@ -106,13 +106,6 @@ func centisecondEpoch(value int64) time.Time {
 	return time.Unix(seconds, nanoseconds).UTC()
 }
 
-// Coordinate is one activity start used to infer the athlete's usual activity
-// area without storing or claiming a precise home address.
-type Coordinate struct {
-	Latitude  float64
-	Longitude float64
-}
-
 // LocationContext describes the majority cluster of historical activity starts
 // and the candidate's distance from that cluster. Nil means the history did not
 // contain a reliable majority area.
@@ -123,57 +116,11 @@ type LocationContext struct {
 	CandidateStartDistanceKM *float64
 }
 
-// UsualActivityArea is the stable historical cluster computed once per job.
-type UsualActivityArea struct {
-	Latitude                float64
-	Longitude               float64
-	SupportingActivityCount int
-}
-
-const usualActivityAreaRadiusKM = 50.0
-
-// InferUsualActivityArea computes the historical majority cluster once. A job
-// with many race candidates reuses the result instead of reclustering history.
-func InferUsualActivityArea(starts []Coordinate) *UsualActivityArea {
-	valid := make([]Coordinate, 0, len(starts))
-	for _, start := range starts {
-		if validCoordinate(start.Latitude, start.Longitude) {
-			valid = append(valid, start)
-		}
-	}
-	if len(valid) < 3 {
-		return nil
-	}
-	best := []Coordinate(nil)
-	for _, center := range valid {
-		cluster := make([]Coordinate, 0, len(valid))
-		for _, point := range valid {
-			if haversineKM(center, point) <= usualActivityAreaRadiusKM {
-				cluster = append(cluster, point)
-			}
-		}
-		if len(cluster) > len(best) {
-			best = cluster
-		}
-	}
-	if len(best) < 3 || len(best)*2 <= len(valid) {
-		return nil
-	}
-	var latitude, longitude float64
-	for _, point := range best {
-		latitude += point.Latitude
-		longitude += point.Longitude
-	}
-	typical := Coordinate{Latitude: latitude / float64(len(best)), Longitude: longitude / float64(len(best))}
-	return &UsualActivityArea{
-		Latitude: typical.Latitude, Longitude: typical.Longitude,
-		SupportingActivityCount: len(best),
-	}
-}
+const usualActivityAreaRadiusKM = activityarea.RadiusKM
 
 // LocationContextForTrace adds only the candidate-specific start distance to a
 // previously inferred historical area.
-func LocationContextForTrace(area *UsualActivityArea, trace []TracePoint) *LocationContext {
+func LocationContextForTrace(area *activityarea.Area, trace []TracePoint) *LocationContext {
 	if area == nil {
 		return nil
 	}
@@ -185,7 +132,7 @@ func LocationContextForTrace(area *UsualActivityArea, trace []TracePoint) *Locat
 		if point.Latitude == nil || point.Longitude == nil || !validCoordinate(*point.Latitude, *point.Longitude) {
 			continue
 		}
-		distance := haversineKM(Coordinate{Latitude: area.Latitude, Longitude: area.Longitude}, Coordinate{Latitude: *point.Latitude, Longitude: *point.Longitude})
+		distance := activityarea.DistanceKM(activityarea.Coordinate{Latitude: area.Latitude, Longitude: area.Longitude}, activityarea.Coordinate{Latitude: *point.Latitude, Longitude: *point.Longitude})
 		context.CandidateStartDistanceKM = &distance
 		break
 	}
@@ -194,16 +141,6 @@ func LocationContextForTrace(area *UsualActivityArea, trace []TracePoint) *Locat
 
 func validCoordinate(latitude, longitude float64) bool {
 	return latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180 && (latitude != 0 || longitude != 0)
-}
-
-func haversineKM(a, b Coordinate) float64 {
-	const earthRadiusKM = 6371.0088
-	lat1 := a.Latitude * math.Pi / 180
-	lat2 := b.Latitude * math.Pi / 180
-	deltaLat := (b.Latitude - a.Latitude) * math.Pi / 180
-	deltaLon := (b.Longitude - a.Longitude) * math.Pi / 180
-	h := math.Sin(deltaLat/2)*math.Sin(deltaLat/2) + math.Cos(lat1)*math.Cos(lat2)*math.Sin(deltaLon/2)*math.Sin(deltaLon/2)
-	return earthRadiusKM * 2 * math.Atan2(math.Sqrt(h), math.Sqrt(1-h))
 }
 
 // Candidate is the activity context sent to the classifier after the

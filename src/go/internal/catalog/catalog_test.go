@@ -39,7 +39,7 @@ func TestOnboardingPipelineCataloged(t *testing.T) {
 	if !ok {
 		t.Fatalf("onboarding pipeline missing from registry")
 	}
-	want := []string{JobTypeWatchSync, JobTypeRaceDetection, JobTypeCalibration, JobTypeCompute}
+	want := []string{JobTypeWatchSync, JobTypeUsualActivityArea, JobTypeRaceDetection, JobTypeCalibration, JobTypeCompute}
 	if len(def.Steps) != len(want) {
 		t.Fatalf("onboarding has %d steps, want %d", len(def.Steps), len(want))
 	}
@@ -48,8 +48,8 @@ func TestOnboardingPipelineCataloged(t *testing.T) {
 			t.Fatalf("step %d job type = %q, want %q", i, def.Steps[i].JobType, jt)
 		}
 	}
-	if !def.Steps[1].ContinueOnFailure {
-		t.Fatal("onboarding race detection must continue on terminal failure")
+	if !def.Steps[1].ContinueOnFailure || !def.Steps[2].ContinueOnFailure {
+		t.Fatal("onboarding area and race detection must continue on terminal failure")
 	}
 }
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"math"
 	"testing"
+
+	"github.com/zhaochy1990/stride/internal/activityarea"
 )
 
 type fakeClassifier struct {
@@ -13,7 +15,7 @@ type fakeClassifier struct {
 
 func TestLocationContextUsesHistoricalMajorityCluster(t *testing.T) {
 	lat, lon := 39.9042, 116.4074
-	area := InferUsualActivityArea([]Coordinate{
+	area := activityarea.Infer([]activityarea.Coordinate{
 		{Latitude: 31.2304, Longitude: 121.4737},
 		{Latitude: 31.2200, Longitude: 121.4800},
 		{Latitude: 31.2400, Longitude: 121.4600},
@@ -29,7 +31,7 @@ func TestLocationContextUsesHistoricalMajorityCluster(t *testing.T) {
 }
 
 func TestUsualActivityAreaStaysUnknownWithoutMajority(t *testing.T) {
-	if got := InferUsualActivityArea([]Coordinate{
+	if got := activityarea.Infer([]activityarea.Coordinate{
 		{Latitude: 31.2304, Longitude: 121.4737},
 		{Latitude: 39.9042, Longitude: 116.4074},
 		{Latitude: 23.1291, Longitude: 113.2644},
@@ -39,7 +41,7 @@ func TestUsualActivityAreaStaysUnknownWithoutMajority(t *testing.T) {
 }
 
 func TestLocationContextForTraceReusesInferredArea(t *testing.T) {
-	area := InferUsualActivityArea([]Coordinate{
+	area := activityarea.Infer([]activityarea.Coordinate{
 		{Latitude: 31.2304, Longitude: 121.4737},
 		{Latitude: 31.2200, Longitude: 121.4800},
 		{Latitude: 31.2400, Longitude: 121.4600},

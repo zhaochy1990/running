@@ -187,6 +187,13 @@ race-detection:
 	}
 }
 
+func TestMustLoadActivityAreaRuntimeFrom_RequiresOnlyMySQL(t *testing.T) {
+	cfg := MustLoadActivityAreaRuntimeFrom(writeConfig(t, "mysql: {dsn: local-dsn}\n"))
+	if cfg.MySQL.DSN != "local-dsn" {
+		t.Fatalf("mysql dsn = %q", cfg.MySQL.DSN)
+	}
+}
+
 func TestMustLoadFrom_MissingFilePanics(t *testing.T) {
 	defer func() {
 		if recover() == nil {
