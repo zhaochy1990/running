@@ -60,7 +60,6 @@ export interface Activity {
 	distanceM: number | null;
 	durationS: number | null;
 	avgPaceSKm: number | null;
-	adjustedPace: number | null;
 	bestKmPace: number | null;
 	maxPace: number | null;
 	avgHr: number | null;
@@ -72,19 +71,13 @@ export interface Activity {
 	avgStepLenCm: number | null;
 	ascentM: number | null;
 	descentM: number | null;
-	caloriesKcal: number | null;
-	aerobicEffect: number | null;
-	anaerobicEffect: number | null;
-	trainingLoad: number | null;
 	strideDose: number | null;
-	vo2max: number | null;
 	temperature: number | null;
 	humidity: number | null;
 	feelsLike: number | null;
 	windSpeed: number | null;
 	sportNote: string | null;
 	sport: string | null;
-	trainKind: string | null;
 	feel: string | null;
 	verticalOscillationMm: number | null;
 	groundContactTimeMs: number | null;
@@ -100,7 +93,6 @@ export interface DailyTrainingLoad {
 	chronicLoad: number | null;
 	form: number | null;
 	loadRatio: number | null;
-	readinessGate: string | null;
 	coverageStatus: string;
 }
 export interface RaceEffort {

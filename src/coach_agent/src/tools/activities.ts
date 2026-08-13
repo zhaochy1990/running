@@ -40,7 +40,10 @@ interface ActivitiesTool {
 	getActivitiesByDateRange(
 		input: GetActivitiesByDateRangeInput,
 		runtime: CoachToolRuntime,
-	): Promise<Activity[]>;
+	): Promise<{
+		activities: Activity[];
+		provenance: { source: "stride"; vendorDerived: false };
+	}>;
 }
 
 class ActivitiesToolImpl implements ActivitiesTool {
@@ -49,7 +52,10 @@ class ActivitiesToolImpl implements ActivitiesTool {
 	async getActivitiesByDateRange(
 		input: GetActivitiesByDateRangeInput,
 		runtime: CoachToolRuntime,
-	): Promise<Activity[]> {
+	): Promise<{
+		activities: Activity[];
+		provenance: { source: "stride"; vendorDerived: false };
+	}> {
 		const userId = runtime.context?.userId;
 		if (!userId) {
 			throw new Error(
@@ -63,7 +69,14 @@ class ActivitiesToolImpl implements ActivitiesTool {
 			);
 		}
 		const endDay = input.endDay ?? asof;
-		return this.store.getActivitiesByDateRange(userId, input.startDay, endDay);
+		return {
+			activities: await this.store.getActivitiesByDateRange(
+				userId,
+				input.startDay,
+				endDay,
+			),
+			provenance: { source: "stride", vendorDerived: false },
+		};
 	}
 }
 

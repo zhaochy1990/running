@@ -19,6 +19,8 @@ Request body:
 
 Supply `resume` instead of `message` to continue a human-in-the-loop interrupt; it may be a string or an array of selected option labels.
 
+`client_turn_id` is an idempotency key within the derived user/session thread. Identical retries replay the stored public response, reuse with different input returns `409`, and turns on one thread execute serially. The API retains the latest 50 receipts per thread.
+
 ## Configuration
 
 Required: `STRIDE_AUTH_PUBLIC_KEY_PEM` or `STRIDE_AUTH_PUBLIC_KEY_PATH`, plus `STRIDE_COACH_DATA_HOST`, `STRIDE_COACH_DATA_READONLY_USER`, `STRIDE_COACH_DATA_READONLY_PASSWORD`, and `STRIDE_COACH_DATA_DATABASE`. Optional ports and auth issuer/audience use the names documented in `src/config.ts`. Coach checkpoint/store MySQL continues to use `COACH_AGENT_MYSQL_*`.

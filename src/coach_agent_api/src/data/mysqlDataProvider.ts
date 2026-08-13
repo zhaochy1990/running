@@ -207,7 +207,14 @@ export class MySqlDataProvider implements DataProvider {
 			);
 		}
 		const [rows] = await this.pool.query<RowDataPacket[]>(
-			`SELECT a.*, t.training_dose AS stride_dose
+			`SELECT a.user_id, a.label_id, a.name, a.sport_name, a.date,
+              a.distance_m, a.duration_s, a.avg_pace_s_km, a.best_km_pace,
+              a.max_pace, a.avg_hr, a.max_hr, a.avg_cadence, a.max_cadence,
+              a.avg_power, a.max_power, a.avg_step_len_cm, a.ascent_m,
+              a.descent_m, t.training_dose AS stride_dose, a.temperature,
+              a.humidity, a.feels_like, a.wind_speed, a.sport_note, a.sport,
+              a.feel, a.vertical_oscillation_mm, a.ground_contact_time_ms,
+              a.vertical_ratio_pct, a.pauses, a.provider
          FROM activities a
          LEFT JOIN activity_training_load t
            ON t.user_id = a.user_id AND t.label_id = a.label_id
@@ -238,7 +245,7 @@ export class MySqlDataProvider implements DataProvider {
 		}
 		const [rows] = await this.pool.query<RowDataPacket[]>(
 			`SELECT date, training_dose, acute_load, chronic_load, form, load_ratio,
-              readiness_gate, coverage_status
+              coverage_status
          FROM daily_training_load
         WHERE user_id = ? AND date BETWEEN ? AND ?
         ORDER BY date ASC`,
@@ -464,7 +471,6 @@ function rowToActivity(row: RowDataPacket): Activity {
 		distanceM: (row.distance_m ?? null) as number | null,
 		durationS: (row.duration_s ?? null) as number | null,
 		avgPaceSKm: (row.avg_pace_s_km ?? null) as number | null,
-		adjustedPace: (row.adjusted_pace ?? null) as number | null,
 		bestKmPace: (row.best_km_pace ?? null) as number | null,
 		maxPace: (row.max_pace ?? null) as number | null,
 		avgHr: (row.avg_hr ?? null) as number | null,
@@ -476,19 +482,13 @@ function rowToActivity(row: RowDataPacket): Activity {
 		avgStepLenCm: (row.avg_step_len_cm ?? null) as number | null,
 		ascentM: (row.ascent_m ?? null) as number | null,
 		descentM: (row.descent_m ?? null) as number | null,
-		caloriesKcal: (row.calories_kcal ?? null) as number | null,
-		aerobicEffect: (row.aerobic_effect ?? null) as number | null,
-		anaerobicEffect: (row.anaerobic_effect ?? null) as number | null,
-		trainingLoad: (row.training_load ?? null) as number | null,
 		strideDose: (row.stride_dose ?? null) as number | null,
-		vo2max: (row.vo2max ?? null) as number | null,
 		temperature: (row.temperature ?? null) as number | null,
 		humidity: (row.humidity ?? null) as number | null,
 		feelsLike: (row.feels_like ?? null) as number | null,
 		windSpeed: (row.wind_speed ?? null) as number | null,
 		sportNote: (row.sport_note ?? null) as string | null,
 		sport: (row.sport ?? null) as string | null,
-		trainKind: (row.train_kind ?? null) as string | null,
 		feel: (row.feel ?? null) as string | null,
 		verticalOscillationMm: (row.vertical_oscillation_mm ?? null) as
 			| number
@@ -508,7 +508,6 @@ function rowToDailyTrainingLoad(row: RowDataPacket): DailyTrainingLoad {
 		chronicLoad: (row.chronic_load ?? null) as number | null,
 		form: (row.form ?? null) as number | null,
 		loadRatio: (row.load_ratio ?? null) as number | null,
-		readinessGate: (row.readiness_gate ?? null) as string | null,
 		coverageStatus: row.coverage_status as string,
 	};
 }

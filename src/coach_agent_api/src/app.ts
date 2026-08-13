@@ -2,6 +2,12 @@ import { Command } from "@langchain/langgraph";
 import { Hono } from "hono";
 import type { JwtVerifier } from "./auth.js";
 import { AuthError } from "./auth.js";
+import {
+	createInMemoryTurnCoordinator,
+	fingerprintTurn,
+	TurnConflictError,
+	type TurnCoordinator,
+} from "./turns.js";
 
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
@@ -12,10 +18,13 @@ export interface CoachInvoker {
 export interface AppDependencies {
 	jwtVerifier: JwtVerifier;
 	coach: CoachInvoker;
+	turnCoordinator?: TurnCoordinator;
 }
 
 export function createApp(dependencies: AppDependencies): Hono {
 	const app = new Hono();
+	const turnCoordinator =
+		dependencies.turnCoordinator ?? createInMemoryTurnCoordinator();
 
 	app.get("/health", (context) => context.json({ status: "ok" }));
 
@@ -36,20 +45,39 @@ export function createApp(dependencies: AppDependencies): Hono {
 		const body = await readChatRequest(context.req.raw);
 		if (!body.ok) return context.json({ error: body.error }, 400);
 		const threadId = `${identity.userId}:coach:${body.value.sessionId}`;
-		const input =
-			body.value.resume === undefined
-				? {
-						messages: [{ role: "user", content: body.value.message as string }],
-					}
-				: new Command({ resume: body.value.resume });
-		const result = await dependencies.coach.invoke(input, {
-			context: { userId: identity.userId },
-			configurable: {
-				thread_id: threadId,
-				client_turn_id: body.value.clientTurnId,
-			},
-		});
-		return context.json(toPublicResponse(result));
+		try {
+			const response = await turnCoordinator.run(
+				{
+					threadId,
+					clientTurnId: body.value.clientTurnId,
+					fingerprint: fingerprintTurn(body.value),
+				},
+				async () => {
+					const input =
+						body.value.resume === undefined
+							? {
+									messages: [
+										{ role: "user", content: body.value.message as string },
+									],
+								}
+							: new Command({ resume: body.value.resume });
+					const result = await dependencies.coach.invoke(input, {
+						context: { userId: identity.userId },
+						configurable: {
+							thread_id: threadId,
+							client_turn_id: body.value.clientTurnId,
+						},
+					});
+					return toPublicResponse(result);
+				},
+			);
+			return context.json(response);
+		} catch (error) {
+			if (error instanceof TurnConflictError) {
+				return context.json({ error: "client_turn_id_conflict" }, 409);
+			}
+			throw error;
+		}
 	});
 
 	return app;
@@ -103,12 +131,17 @@ async function readChatRequest(
 }
 
 function isValidResume(value: unknown): value is string | string[] {
-	if (typeof value === "string") return value.length <= 20_000;
+	if (typeof value === "string")
+		return value.trim().length > 0 && value.length <= 20_000;
 	return (
 		Array.isArray(value) &&
+		value.length > 0 &&
 		value.length <= 50 &&
 		value.every(
-			(answer) => typeof answer === "string" && answer.length <= 2_000,
+			(answer) =>
+				typeof answer === "string" &&
+				answer.trim().length > 0 &&
+				answer.length <= 2_000,
 		) &&
 		value.reduce((length, answer) => length + answer.length, 0) <= 20_000
 	);

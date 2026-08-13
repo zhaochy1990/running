@@ -220,3 +220,68 @@ test("chat validates the public request contract before invoking Coach", async (
 	assert.equal(response.status, 400);
 	assert.equal(called, false);
 });
+
+test("chat replays an identical client turn and conflicts on changed input", async () => {
+	let calls = 0;
+	const app = createApp({
+		jwtVerifier: {
+			async verify() {
+				return { userId: "athlete-1" };
+			},
+		},
+		coach: {
+			async invoke() {
+				calls += 1;
+				return { messages: [{ type: "ai", content: `answer-${calls}` }] };
+			},
+		},
+	});
+	const request = (message: string) =>
+		app.request("/api/users/me/coach/chat", {
+			method: "POST",
+			headers: {
+				authorization: "Bearer signed",
+				"content-type": "application/json",
+			},
+			body: JSON.stringify({
+				session_id: "session-1",
+				client_turn_id: "turn-1",
+				message,
+			}),
+		});
+	const first = await request("same");
+	const replay = await request("same");
+	assert.deepEqual(await first.json(), await replay.json());
+	assert.equal(calls, 1);
+	const conflict = await request("changed");
+	assert.equal(conflict.status, 409);
+	assert.equal(calls, 1);
+});
+
+test("chat rejects empty interrupt answers", async () => {
+	const app = createApp({
+		jwtVerifier: {
+			async verify() {
+				return { userId: "athlete-1" };
+			},
+		},
+		coach: {
+			async invoke() {
+				throw new Error("must not invoke");
+			},
+		},
+	});
+	const response = await app.request("/api/users/me/coach/chat", {
+		method: "POST",
+		headers: {
+			authorization: "Bearer signed",
+			"content-type": "application/json",
+		},
+		body: JSON.stringify({
+			session_id: "session-1",
+			client_turn_id: "turn-1",
+			resume: "   ",
+		}),
+	});
+	assert.equal(response.status, 400);
+});

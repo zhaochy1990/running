@@ -122,3 +122,41 @@ test("running calibration omits zone confidence and speed details", async () => 
 		assert.doesNotMatch(sql, /confidence|min_speed_mps|max_speed_mps/);
 	}
 });
+
+test("activity reads do not expose vendor-derived metrics to Coach", async () => {
+	const provider = new MySqlDataProvider({
+		async query() {
+			return [
+				[
+					{
+						user_id: "athlete",
+						label_id: "run-1",
+						date: new Date("2026-08-01T00:00:00Z"),
+						provider: "coros",
+						training_load: 999,
+						vo2max: 60,
+						aerobic_effect: 4,
+						anaerobic_effect: 3,
+						train_kind: "threshold",
+						stride_dose: 80,
+					},
+				],
+			];
+		},
+	} as never);
+	const [activity] = await provider.getActivitiesByDateRange(
+		"athlete",
+		"2026-08-01",
+		"2026-08-01",
+	);
+	assert.equal(activity?.strideDose, 80);
+	for (const key of [
+		"trainingLoad",
+		"vo2max",
+		"aerobicEffect",
+		"anaerobicEffect",
+		"trainKind",
+	]) {
+		assert.equal(Object.hasOwn(activity ?? {}, key), false);
+	}
+});
