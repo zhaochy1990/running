@@ -1,13 +1,16 @@
-import { loadConfig, readStrideMySqlConfig } from "../config/config.js";
+import { createInterface } from "node:readline/promises";
+import { Command } from "@langchain/langgraph";
 import { createCoachAgent } from "../agents/coachAgent.js";
+import { loadConfig, readStrideMySqlConfig } from "../config/config.js";
 import { StrideDataStore } from "../persistence/index.js";
 import {
 	ASK_USER_QUESTION_KIND,
 	type AskUserQuestionPayload,
 } from "../tools/askUserQuestions.js";
-import { Command } from "@langchain/langgraph";
-import { createInterface } from "node:readline/promises";
-import { context } from "langchain";
+import {
+	formatTokenUsageReport,
+	LlmTokenUsageTracker,
+} from "../utils/tokenUsage.js";
 
 const config = loadConfig();
 const store = StrideDataStore.create(readStrideMySqlConfig(config));
@@ -38,7 +41,8 @@ const rl = createInterface({ input: process.stdin, output: process.stdout });
 
 async function readAnswer(): Promise<string> {
 	if (scriptCursor < scriptedAnswers.length) {
-		const answer = scriptedAnswers[scriptCursor++]!;
+		const answer = scriptedAnswers[scriptCursor++];
+		if (answer === undefined) throw new Error("scripted answer is missing");
 		console.log(`你的回答 > ${answer}   (scripted)`);
 		return answer;
 	}
@@ -80,7 +84,12 @@ function renderQuestion(value: AskUserQuestionPayload): string {
  * 恢复，直到没有新的追问为止。
  */
 async function askWithHITL(content: string, thread: string): Promise<void> {
-	const cfg = { context: { userId }, configurable: { thread_id: thread } };
+	const tokenUsage = new LlmTokenUsageTracker();
+	const cfg = {
+		context: { userId },
+		configurable: { thread_id: thread },
+		callbacks: [tokenUsage],
+	};
 	const startTime = Date.now();
 	let res = (await agent.invoke(
 		{ messages: [{ role: "user", content }] },
@@ -108,6 +117,7 @@ async function askWithHITL(content: string, thread: string): Promise<void> {
 	const endTime = Date.now();
 	printAnswer(res);
 	console.log(`Request took ${endTime - startTime} ms`);
+	console.log(`\n${formatTokenUsageReport(tokenUsage.summary())}`);
 }
 
 // // ── Scenario：生成赛季计划 → Coach 先回看历史比赛 → 若发现跑崩则追问原因 ──
