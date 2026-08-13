@@ -94,6 +94,8 @@ onboarding handlers 直接写 per-user SQLite 是独立的历史架构债，本�
 ### `.github/workflows/worker-go.yml` —— 发布 Go worker + API 镜像
 
 `src/go/**` 变更 push 到 `master` 且 Go 测试通过后，workflow 统一计算本次 CalVer，并用两项 matrix 在独立 runner 上并行构建 `stride-worker` 和 `stride-api`。两个镜像分别推送到 GHCR 与阿里云 ACR；worker 额外保留 commit SHA tag。两项构建使用独立 BuildKit GHA cache scope，避免并发导出缓存互相覆盖。只有整个 matrix 成功后，独立的 Renovate job 才更新 `stride-devops` 中两项镜像版本，避免部署指向只发布了一半的 release。仅修改 workflow 本身会运行测试，但不会重新发布镜像。
+阿里云个人版 ACR 不支持 BuildKit 0.32 默认生成的 OCI artifact provenance，
+因此 workflow 将 BuildKit 固定为最后确认可同时推送 GHCR 与 ACR 的 `v0.31.2`。
 
 #### Race detection worker configuration
 

@@ -99,7 +99,12 @@ jobs:
     name: build-push (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
+      # BuildKit 0.32 changed provenance to OCI artifact descriptors, which
+      # Aliyun Personal Edition ACR does not accept. Pin the last known-good
+      # version until the registry supports that manifest class.
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=moby/buildkit:v0.31.2
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
