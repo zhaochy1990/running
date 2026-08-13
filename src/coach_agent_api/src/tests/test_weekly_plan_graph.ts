@@ -5,7 +5,7 @@ import {
 	DataProviderWeeklyPlanContextProvider,
 	loadConfig,
 } from "coach_agent";
-import { loadStrideDataConfig } from "../config.js";
+import { loadApiConfig } from "../config.js";
 import { MySqlDataProvider } from "../data/mysqlDataProvider.js";
 
 type Profile = "local" | "prod";
@@ -26,7 +26,7 @@ async function main() {
 		cwd: repoRoot,
 		configFile: join(repoRoot, "config", `coach.${PROFILE}.yaml`),
 	});
-	const provider = MySqlDataProvider.create(loadStrideDataConfig());
+	const provider = MySqlDataProvider.create(loadApiConfig().strideDatabase);
 	try {
 		const contextProvider = new DataProviderWeeklyPlanContextProvider(provider);
 		const graph = createWeeklyPlanGeneratorGraph(config, contextProvider);

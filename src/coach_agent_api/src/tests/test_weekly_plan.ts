@@ -10,7 +10,7 @@ import {
 	LlmTokenUsageTracker,
 	loadConfig,
 } from "coach_agent";
-import { loadStrideDataConfig } from "../config.js";
+import { loadApiConfig } from "../config.js";
 import { MySqlDataProvider } from "../data/mysqlDataProvider.js";
 
 const usernameMap: Record<string, string> = {
@@ -43,7 +43,7 @@ function requireUserId(): { userId: string; username: string } {
 const asof = "2026-08-16";
 const { userId, username } = requireUserId();
 const config = loadConfig();
-const provider = MySqlDataProvider.create(loadStrideDataConfig());
+const provider = MySqlDataProvider.create(loadApiConfig().strideDatabase);
 const agent = await createCoachAgent(provider, config);
 
 // 回答来源：交互式从 stdin 读；自动化测试则用 HITL_ANSWERS（\n 分隔）按序喂入，
