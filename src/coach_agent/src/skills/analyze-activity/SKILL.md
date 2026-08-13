@@ -4,13 +4,13 @@ description: >-
   解读并分析来自 get_activities_by_date_range 工具返回的 Activity 运动数据。
   当需要回答"今天/最近跑得怎么样"、评估单次或一段时间的跑步训练（配速 / 心率 / 步频 / 功率 /
   STRIDE 训练负荷 / 疲劳 / 天气影响），或解释某个 Activity 字段含义时使用。本 skill 覆盖每个字段的语义、
-  单位、取值范围与枚举映射（sport / feel / train_kind），以及配速换算、
+  单位、取值范围与枚举映射（sport / feel），以及配速换算、
   强度判定、天气校正和多日周期负荷分析的方法。
 ---
 
 # 分析高驰 (COROS) 运动数据
 
-工具返回 `{ activities, provenance }`；`provenance` 必须是 `{ source: "stride", vendorDerived: false }`。`Activity` 是一次运动（一堂课）的记录，包含运动类型、时间、距离、配速、心率、步频、功率与 STRIDE 训练负荷等字段。厂商训练效果、厂商训练负荷和手表 VO2max 不会进入 Coach context。
+工具返回 `{ activities, provenance }`；`provenance` 必须是 `{ source: "stride", vendor_derived: false }`。`Activity` 是一次运动（一堂课）的记录，包含运动类型、时间、距离、配速、心率、步频、功率，以及用于内部汇总的 STRIDE 自算 session class。厂商训练类型、训练效果、训练负荷和手表 VO2max 不会进入 Coach context；训练负荷统一读取 `get_daily_training_load` 的 `stride_training_load`。
 
 ## 1. 属性列表
 
@@ -37,7 +37,7 @@ description: >-
 | `avgPower` / `maxPower` | W | 跑步功率。 |
 | `ascentM` | 米 | 累计爬升（场地 / 跑步机通常为 0）。 |
 | `descentM` | 米 | 累计下降。 |
-| `strideDose` | TSS-scaled | STRIDE 自算单次训练剂量；未计算时为 null。 |
+| `strideSessionClass` | string \| null | STRIDE 自算训练类别，用于聚合质量课；不是厂商训练类型。 |
 | `temperature` | °C | 气温。 |
 | `feelsLike` | °C | 体感温度。 |
 | `humidity` | % | 相对湿度。 |
@@ -98,7 +98,7 @@ description: >-
 1. **训练量**：区间内总 km、总时长、跑步次数、平均单次距离。
 2. **强度分布**：结合活动名称、配速和校准区间统计轻松跑与质量课占比。健康的分布应
    轻松为主，高强度适量。
-3. **负荷趋势**：使用 `strideDose` 和 `get_daily_training_load` 的 STRIDE PMC，看是稳步、堆量还是骤降；连续多天高负荷 +
+3. **负荷趋势**：使用 `get_daily_training_load` 的 `stride_training_load`（`available=false` 时说明 `missing_reason`），看是稳步、堆量还是骤降；连续多天高负荷 +
    感受转差（`feel` 往 bad/awful 走）提示疲劳堆积。
 4. **一致性**：有没有长时间断跑、忽多忽少。
 5. **纵向对比**：同类型轻松跑的"配速 @ 心率"随时间的变化 = 有氧进步信号。
