@@ -38,6 +38,7 @@ runtime:
 # Independent race detector (not Coach Agent). The DeepSeek key is secret and
 # must be supplied via STRIDE_WORKER_RACE_DETECTION_API_KEY.
 race-detection:
+  api-kind: "chat-completions"
   endpoint: "https://api.deepseek.com"
   api-key: ""
   model: "deepseek-v4-flash"

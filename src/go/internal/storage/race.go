@@ -19,8 +19,9 @@ type Race struct {
 
 func (Race) TableName() string { return "races" }
 
-// RaceCandidate is the storage projection used by the independent race
-// detection module. It contains no GPS or timeseries data.
+// RaceCandidate is the bounded activity-row projection used by the independent
+// race detection module. GPS/timeseries are loaded separately only after this
+// deterministic query admits the activity.
 type RaceCandidate struct {
 	LabelID    string
 	Name       string
@@ -34,6 +35,7 @@ type RaceCandidate struct {
 	AscentM    *float64
 	TrainKind  string
 	SportNote  string
+	Pauses     *string
 }
 
 // RaceCandidates returns unconfirmed outdoor/track HM/FM distance candidates.
@@ -52,7 +54,7 @@ func (s *Store) RaceCandidates(ctx context.Context, userID string, labelIDs []st
 		Select(`a.label_id, COALESCE(a.name, '') AS name, COALESCE(a.sport, '') AS sport,
             a.date, a.distance_m, a.duration_s, a.avg_pace_s_km, a.avg_hr, a.max_hr,
             a.ascent_m, COALESCE(a.train_kind, '') AS train_kind,
-            COALESCE(a.sport_note, '') AS sport_note`).
+            COALESCE(a.sport_note, '') AS sport_note, a.pauses`).
 		Where("a.user_id = ?", uid).
 		Where("a.sport IN ?", []normalize.Sport{normalize.SportRunOutdoor, normalize.SportRunTrack}).
 		Where(`((a.distance_m BETWEEN ? AND ?)
@@ -69,6 +71,38 @@ func (s *Store) RaceCandidates(ctx context.Context, userID string, labelIDs []st
 		return nil, err
 	}
 	return rows, nil
+}
+
+// ActivityStartCoordinates returns the first valid GPS point from every
+// historical activity. Race detection uses this bounded projection to infer
+// the athlete's usual activity area; it does not claim a home address or call a
+// geocoding service.
+func (s *Store) ActivityStartCoordinates(ctx context.Context, userID string) ([]racedetection.Coordinate, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	firstPointIDs := s.db.WithContext(ctx).Model(&TimeseriesPoint{}).
+		Select("MIN(id)").
+		Where("user_id = ? AND gps_lat IS NOT NULL AND gps_lon IS NOT NULL", uid).
+		Where("gps_lat BETWEEN -90 AND 90 AND gps_lon BETWEEN -180 AND 180").
+		Where("NOT (gps_lat = 0 AND gps_lon = 0)").
+		Group("label_id")
+	var rows []struct {
+		Latitude  float64 `gorm:"column:latitude"`
+		Longitude float64 `gorm:"column:longitude"`
+	}
+	if err := s.db.WithContext(ctx).Model(&TimeseriesPoint{}).
+		Select("gps_lat AS latitude, gps_lon AS longitude").
+		Where("user_id = ? AND id IN (?)", uid, firstPointIDs).
+		Order("id").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	coordinates := make([]racedetection.Coordinate, len(rows))
+	for i, row := range rows {
+		coordinates[i] = racedetection.Coordinate{Latitude: row.Latitude, Longitude: row.Longitude}
+	}
+	return coordinates, nil
 }
 
 // InsertRace idempotently persists one confirmed race activity reference.

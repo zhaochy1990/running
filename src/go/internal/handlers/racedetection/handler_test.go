@@ -14,13 +14,29 @@ import (
 	"github.com/zhaochy1990/stride/internal/job"
 	detector "github.com/zhaochy1990/stride/internal/racedetection"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type fakeStore struct {
 	candidates []storage.RaceCandidate
+	timeseries map[string][]storage.TimeseriesPoint
+	readErr    map[string]error
+	starts     []detector.Coordinate
 	listedIDs  []string
 	inserted   []storage.Race
 	mu         sync.Mutex
+}
+
+func (f *fakeStore) ActivityStartCoordinates(_ context.Context, _ string) ([]detector.Coordinate, error) {
+	return f.starts, nil
+}
+
+func (f *fakeStore) ActivityTimeseries(_ context.Context, _, labelID string) ([]storage.TimeseriesPoint, error) {
+	if err := f.readErr[labelID]; err != nil {
+		return nil, err
+	}
+	return f.timeseries[labelID], nil
 }
 
 func (f *fakeStore) RaceCandidates(_ context.Context, _ string, labelIDs []string) ([]storage.RaceCandidate, error) {
@@ -41,17 +57,29 @@ func (f *fakeStore) InsertRace(_ context.Context, race *storage.Race) error {
 
 type classifier struct{}
 
-func (classifier) Classify(_ context.Context, c detector.Candidate) (bool, error) {
-	return c.Name == "Official Marathon", nil
+func (classifier) Assess(_ context.Context, c detector.Candidate) (detector.ModelAssessment, error) {
+	if c.Name == "Official Marathon" {
+		return detector.ModelAssessment{EventIntent: detector.EvidenceRace, IntensityContinuity: detector.EvidenceRace}, nil
+	}
+	return detector.ModelAssessment{EventIntent: detector.EvidenceUnknown, IntensityContinuity: detector.EvidenceUnknown}, nil
 }
 
 type partialClassifier struct{}
 
-func (partialClassifier) Classify(_ context.Context, c detector.Candidate) (bool, error) {
+func (partialClassifier) Assess(_ context.Context, c detector.Candidate) (detector.ModelAssessment, error) {
 	if c.LabelID == "failed" {
-		return false, errors.New("provider timeout")
+		return detector.ModelAssessment{}, errors.New("provider timeout")
 	}
-	return true, nil
+	return detector.ModelAssessment{EventIntent: detector.EvidenceRace, IntensityContinuity: detector.EvidenceRace}, nil
+}
+
+type traceClassifier struct {
+	seen chan detector.Candidate
+}
+
+func (c *traceClassifier) Assess(_ context.Context, candidate detector.Candidate) (detector.ModelAssessment, error) {
+	c.seen <- candidate
+	return detector.ModelAssessment{EventIntent: detector.EvidenceUnknown, IntensityContinuity: detector.EvidenceUnknown}, nil
 }
 
 type concurrencyClassifier struct {
@@ -60,7 +88,7 @@ type concurrencyClassifier struct {
 	release <-chan struct{}
 }
 
-func (c *concurrencyClassifier) Classify(_ context.Context, _ detector.Candidate) (bool, error) {
+func (c *concurrencyClassifier) Assess(_ context.Context, _ detector.Candidate) (detector.ModelAssessment, error) {
 	active := c.active.Add(1)
 	defer c.active.Add(-1)
 	for {
@@ -70,7 +98,7 @@ func (c *concurrencyClassifier) Classify(_ context.Context, _ detector.Candidate
 		}
 	}
 	<-c.release
-	return false, nil
+	return detector.ModelAssessment{EventIntent: detector.EvidenceUnknown, IntensityContinuity: detector.EvidenceUnknown}, nil
 }
 
 func TestHandlerContinuesAfterOneCandidateFails(t *testing.T) {
@@ -91,6 +119,62 @@ func TestHandlerContinuesAfterOneCandidateFails(t *testing.T) {
 	defer store.mu.Unlock()
 	if len(store.inserted) != 2 {
 		t.Fatalf("inserted = %+v", store.inserted)
+	}
+}
+
+func TestTokenUsageLogContainsExactPerActivityCounts(t *testing.T) {
+	core, observed := observer.New(zap.InfoLevel)
+	logTokenUsage(zap.New(core), "user-1", "activity-1", detector.TokenUsage{
+		APIKind: "responses", Model: "gpt-5.6-luna", Available: true,
+		InputTokens: 1234, OutputTokens: 17, TotalTokens: 1251,
+	})
+	entries := observed.FilterMessage("race detection token usage").All()
+	if len(entries) != 1 {
+		t.Fatalf("token usage log entries = %d, want 1", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	for key, want := range map[string]any{
+		"user_id": "user-1", "label_id": "activity-1",
+		"api_kind": "responses", "model": "gpt-5.6-luna",
+		"usage_available": true, "input_tokens": int64(1234),
+		"output_tokens": int64(17), "total_tokens": int64(1251),
+	} {
+		if got := fields[key]; got != want {
+			t.Errorf("log field %s = %#v, want %#v", key, got, want)
+		}
+	}
+}
+
+func TestClassificationLogContainsScoreAndCoordinateFreeRouteMetrics(t *testing.T) {
+	core, observed := observer.New(zap.InfoLevel)
+	logClassification(zap.New(core), "user-1", "activity-1", detector.ClassificationResult{
+		ScoreResult: detector.ScoreResult{IsRace: true, Score: 45, Threshold: 35, Dimensions: []detector.ScoreContribution{{
+			Dimension: detector.DimensionRouteShape, Evidence: detector.EvidenceRace, RaceWeight: 15, TrainingWeight: 15, Contribution: 15, Source: detector.EvidenceSourceGo,
+		}}},
+		Assessment: detector.ModelAssessment{EventIntent: detector.EvidenceUnknown, IntensityContinuity: detector.EvidenceRace},
+		Route: detector.RouteAnalysis{
+			Shape: detector.RouteShapeLargeLoopOrPointToPoint, ValidPoints: 12_345, PathLengthM: 21_234,
+			BoundingWidthM: 4_000, BoundingHeightM: 3_000, StartEndDistanceM: 1_200, PathToPerimeter: 1.52,
+		},
+	})
+	entries := observed.FilterMessage("race detection classification").All()
+	if len(entries) != 1 {
+		t.Fatalf("classification log entries = %d, want 1", len(entries))
+	}
+	fields := entries[0].ContextMap()
+	for key, want := range map[string]any{
+		"user_id": "user-1", "label_id": "activity-1", "is_race": true,
+		"score": int64(45), "threshold": int64(35), "route_shape": "large_loop_or_point_to_point",
+		"route_valid_points": int64(12_345), "route_path_length_m": float64(21_234),
+	} {
+		if got := fields[key]; got != want {
+			t.Errorf("log field %s = %#v, want %#v", key, got, want)
+		}
+	}
+	for _, forbidden := range []string{"latitude", "longitude", "trace"} {
+		if _, exists := fields[forbidden]; exists {
+			t.Errorf("classification log includes forbidden field %q", forbidden)
+		}
 	}
 }
 
@@ -126,6 +210,66 @@ func TestIncrementalHandlerScopesReadAndReplacementToSyncedLabels(t *testing.T) 
 		t.Fatalf("result did not preserve downstream inputs: %s", result)
 	}
 }
+
+func TestCandidateUsesShanghaiLocalStartAndWeekday(t *testing.T) {
+	row := storage.RaceCandidate{
+		LabelID: "morning-race", Sport: "run_outdoor", DistanceM: 21_100,
+		Date: time.Date(2024, time.March, 9, 23, 30, 0, 0, time.UTC),
+	}
+	candidate := toCandidate(row, nil)
+	if candidate.Date != "2024-03-10 07:30:00" || candidate.Weekday != "Sunday" {
+		t.Fatalf("local calendar context = date %q weekday %q", candidate.Date, candidate.Weekday)
+	}
+}
+
+func TestCandidateIncludesRecordedPauseTiming(t *testing.T) {
+	pauseStart := time.Date(2024, time.March, 9, 23, 45, 0, 0, time.UTC).Unix() * 100
+	rawPauses := fmt.Sprintf(`[{"startTimestamp":%d,"endTimestamp":%d,"duration":1234}]`, pauseStart, pauseStart+1234)
+	candidate := toCandidate(storage.RaceCandidate{
+		LabelID: "paused-run", Sport: "run_outdoor", DistanceM: 21_100,
+		Date: time.Date(2024, time.March, 9, 23, 30, 0, 0, time.UTC), Pauses: &rawPauses,
+	}, nil)
+	if candidate.Pauses == nil || candidate.Pauses.Count != 1 || candidate.Pauses.TotalDurationS != 12.34 {
+		t.Fatalf("pause summary = %+v", candidate.Pauses)
+	}
+	if len(candidate.Pauses.Intervals) != 1 || candidate.Pauses.Intervals[0].StartLocal != "2024-03-10 07:45:00" || candidate.Pauses.Intervals[0].EndLocal != "2024-03-10 07:45:12" {
+		t.Fatalf("pause intervals = %+v", candidate.Pauses.Intervals)
+	}
+}
+
+func TestHandlerKeepsTraceOutOfModelClassifierWhileBuildingLocationContext(t *testing.T) {
+	points := []storage.TimeseriesPoint{
+		{Timestamp: int64Pointer(100), GPSLat: float64Pointer(31.2304), GPSLon: float64Pointer(121.4737), Altitude: float64Pointer(8.5)},
+		{Timestamp: int64Pointer(200), GPSLat: float64Pointer(31.2310), GPSLon: float64Pointer(121.4742), Altitude: float64Pointer(9.0)},
+	}
+	store := &fakeStore{
+		candidates: []storage.RaceCandidate{{LabelID: "trace-race", Sport: "run_outdoor", DistanceM: 21_100}},
+		timeseries: map[string][]storage.TimeseriesPoint{"trace-race": points},
+		starts: []detector.Coordinate{
+			{Latitude: 31.23, Longitude: 121.47},
+			{Latitude: 31.22, Longitude: 121.48},
+			{Latitude: 31.24, Longitude: 121.46},
+			{Latitude: 39.90, Longitude: 116.40},
+		},
+	}
+	classifier := &traceClassifier{seen: make(chan detector.Candidate, 1)}
+	h := New(store, detector.New(classifier), 1)
+	if _, err := h(context.Background(), &job.Job{
+		UserID: "f10bc353-01ab-4db1-af9f-d9305ea9a532", InputJSON: "{\"label_ids\":[\"trace-race\"]}",
+	}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	seen := <-classifier.seen
+	if len(seen.Trace) != 0 {
+		t.Fatalf("classifier received %d trace points, want none", len(seen.Trace))
+	}
+	if seen.Location == nil || seen.Location.SupportingActivityCount != 3 || seen.Location.CandidateStartDistanceKM == nil {
+		t.Fatalf("classifier usual activity area = %+v", seen.Location)
+	}
+}
+
+func int64Pointer(v int64) *int64       { return &v }
+func float64Pointer(v float64) *float64 { return &v }
 
 func TestHandlerBoundsClassifierConcurrency(t *testing.T) {
 	store := &fakeStore{}

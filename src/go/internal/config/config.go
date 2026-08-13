@@ -71,6 +71,7 @@ type Runtime struct {
 // required at worker boot and should be supplied through
 // STRIDE_WORKER_RACE_DETECTION_API_KEY.
 type RaceDetection struct {
+	APIKind        string        `mapstructure:"api-kind" validate:"required,oneof=chat-completions responses"`
 	Endpoint       string        `mapstructure:"endpoint" validate:"required,url"`
 	APIKey         string        `mapstructure:"api-key" validate:"required"`
 	Model          string        `mapstructure:"model" validate:"required"`
@@ -91,6 +92,21 @@ func MustLoad() *Config {
 // MustLoadFrom loads configuration from an explicit YAML path (used by tests).
 func MustLoadFrom(path string) *Config {
 	var cfg Config
+	xviper.MustLoadConfig(EnvPrefix, path, &cfg)
+	return &cfg
+}
+
+// RaceDetectionRuntimeConfig contains the independent detector's complete
+// runtime dependencies without unrelated worker queues or AMQP configuration.
+type RaceDetectionRuntimeConfig struct {
+	MySQL         MySQL         `mapstructure:"mysql"`
+	RaceDetection RaceDetection `mapstructure:"race-detection"`
+}
+
+// MustLoadRaceDetectionRuntimeFrom loads MySQL and race-detection settings from
+// one config file with the same STRIDE_WORKER_* overrides as the worker.
+func MustLoadRaceDetectionRuntimeFrom(path string) *RaceDetectionRuntimeConfig {
+	var cfg RaceDetectionRuntimeConfig
 	xviper.MustLoadConfig(EnvPrefix, path, &cfg)
 	return &cfg
 }

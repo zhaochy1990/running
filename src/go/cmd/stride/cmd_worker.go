@@ -54,12 +54,7 @@ func runWorker() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	raceClassifier, err := racedetection.NewChatCompletionsClassifier(racedetection.ChatCompletionsConfig{
-		Endpoint: cfg.RaceDetection.Endpoint,
-		APIKey:   cfg.RaceDetection.APIKey,
-		Model:    cfg.RaceDetection.Model,
-		Timeout:  cfg.RaceDetection.Timeout,
-	})
+	raceClassifier, err := newRaceClassifier(cfg.RaceDetection)
 	if err != nil {
 		return err
 	}
@@ -179,6 +174,13 @@ func runWorker() error {
 		}
 		return nil
 	}
+}
+
+func newRaceClassifier(cfg config.RaceDetection) (racedetection.Classifier, error) {
+	return racedetection.NewClassifier(racedetection.ProviderConfig{
+		APIKind: cfg.APIKind, Endpoint: cfg.Endpoint, APIKey: cfg.APIKey,
+		Model: cfg.Model, Timeout: cfg.Timeout,
+	})
 }
 
 // registerHandlers wires job handlers. `hello` is the deploy smoke handler;

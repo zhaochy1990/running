@@ -103,6 +103,7 @@ The worker's independent race-detection module (ADR 0029) requires
 `src/go/config.yml` supplies the non-secret defaults:
 
 - endpoint `https://api.deepseek.com`;
+- API protocol `chat-completions`;
 - model `deepseek-v4-flash`;
 - timeout 30 seconds;
 - maximum concurrency 8.
@@ -112,6 +113,15 @@ environment variables. Missing/empty key or invalid race-detection settings make
 the worker fail at startup by design. Before rollout, add the provider key to the
 deployment's secret store and expose it as
 `STRIDE_WORKER_RACE_DETECTION_API_KEY`; never commit or print its value.
+
+The worker also supports `race-detection.api-kind: responses` for a
+worker-reachable OpenAI-compatible Responses endpoint. Local Agent Maestro
+(`http://127.0.0.1:23333/api/openai/v1`, model `gpt-5.6-luna`) is suitable
+for local golden validation only: that loopback service runs inside VS Code and
+is not reachable from the deployed worker container. Do not point production at
+this local URL. Copy `src/go/config.local.example.yml` to the ignored
+`src/go/config.local.yml`, set its local MySQL DSN, and run
+`make test-racedetection`; production continues to read `src/go/config.yml`.
 
 After the schema and worker are deployed, enqueue internal-only
 `race_detection_backfill` once per existing user to inspect historical HM/FM

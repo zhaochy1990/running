@@ -2,17 +2,58 @@ package racedetection
 
 import (
 	"context"
+	"math"
 	"testing"
 )
 
 type fakeClassifier struct {
-	decisions map[string]bool
-	seen      []Candidate
+	assessments map[string]ModelAssessment
+	seen        []Candidate
 }
 
-func (f *fakeClassifier) Classify(_ context.Context, candidate Candidate) (bool, error) {
+func TestLocationContextUsesHistoricalMajorityCluster(t *testing.T) {
+	lat, lon := 39.9042, 116.4074
+	area := InferUsualActivityArea([]Coordinate{
+		{Latitude: 31.2304, Longitude: 121.4737},
+		{Latitude: 31.2200, Longitude: 121.4800},
+		{Latitude: 31.2400, Longitude: 121.4600},
+		{Latitude: 39.9042, Longitude: 116.4074},
+	})
+	context := LocationContextForTrace(area, []TracePoint{{Latitude: &lat, Longitude: &lon}})
+	if context == nil || context.SupportingActivityCount != 3 || context.CandidateStartDistanceKM == nil {
+		t.Fatalf("location context = %+v", context)
+	}
+	if math.Abs(*context.CandidateStartDistanceKM-1067) > 10 {
+		t.Fatalf("candidate distance = %.1f km, want about 1067 km", *context.CandidateStartDistanceKM)
+	}
+}
+
+func TestUsualActivityAreaStaysUnknownWithoutMajority(t *testing.T) {
+	if got := InferUsualActivityArea([]Coordinate{
+		{Latitude: 31.2304, Longitude: 121.4737},
+		{Latitude: 39.9042, Longitude: 116.4074},
+		{Latitude: 23.1291, Longitude: 113.2644},
+	}); got != nil {
+		t.Fatalf("location context = %+v, want unknown", got)
+	}
+}
+
+func TestLocationContextForTraceReusesInferredArea(t *testing.T) {
+	area := InferUsualActivityArea([]Coordinate{
+		{Latitude: 31.2304, Longitude: 121.4737},
+		{Latitude: 31.2200, Longitude: 121.4800},
+		{Latitude: 31.2400, Longitude: 121.4600},
+	})
+	lat, lon := 39.9042, 116.4074
+	got := LocationContextForTrace(area, []TracePoint{{Latitude: &lat, Longitude: &lon}})
+	if got == nil || got.CandidateStartDistanceKM == nil || got.SupportingActivityCount != 3 {
+		t.Fatalf("location context = %+v", got)
+	}
+}
+
+func (f *fakeClassifier) Assess(_ context.Context, candidate Candidate) (ModelAssessment, error) {
 	f.seen = append(f.seen, candidate)
-	return f.decisions[candidate.LabelID], nil
+	return f.assessments[candidate.LabelID], nil
 }
 
 func TestCandidateTypeUsesOnlyHalfAndFullMarathonBands(t *testing.T) {
@@ -45,8 +86,8 @@ func TestCandidateTypeUsesOnlyHalfAndFullMarathonBands(t *testing.T) {
 }
 
 func TestDetectorClassifiesOnlyDistanceAndSportCandidates(t *testing.T) {
-	classifier := &fakeClassifier{decisions: map[string]bool{
-		"hm-race": true,
+	classifier := &fakeClassifier{assessments: map[string]ModelAssessment{
+		"hm-race": {EventIntent: EvidenceRace, IntensityContinuity: EvidenceRace},
 	}}
 	detector := New(classifier)
 	got, err := detector.Detect(context.Background(), Candidate{
@@ -64,7 +105,7 @@ func TestDetectorClassifiesOnlyDistanceAndSportCandidates(t *testing.T) {
 }
 
 func TestDetectorDoesNotClassifyRejectedCandidate(t *testing.T) {
-	classifier := &fakeClassifier{decisions: map[string]bool{"long-run": true}}
+	classifier := &fakeClassifier{assessments: map[string]ModelAssessment{"long-run": {EventIntent: EvidenceRace, IntensityContinuity: EvidenceRace}}}
 	detector := New(classifier)
 	got, err := detector.Detect(context.Background(), Candidate{
 		LabelID: "long-run", Sport: "run_outdoor", DistanceM: 30_000,
@@ -74,5 +115,98 @@ func TestDetectorDoesNotClassifyRejectedCandidate(t *testing.T) {
 	}
 	if len(classifier.seen) != 0 {
 		t.Fatalf("classifier called for rejected candidate: %+v", classifier.seen)
+	}
+}
+
+func TestScoreAssessmentUsesFixedWeightsAndThreshold(t *testing.T) {
+	assessment := scoringEvidence{
+		Model:         ModelAssessment{EventIntent: EvidenceUnknown, IntensityContinuity: EvidenceRace},
+		DistancePrior: EvidenceRace, PausePattern: EvidenceTraining, RouteShape: EvidenceUnknown,
+		Travel: EvidenceUnknown, TimeWindow: EvidenceRace,
+	}
+	result, err := ScoreAssessment(assessment)
+	if err != nil {
+		t.Fatalf("ScoreAssessment: %v", err)
+	}
+	// +25 distance +20 intensity -20 pauses +10 time = 35. The threshold is inclusive.
+	if result.Score != 35 || result.Threshold != DefaultRaceScoreThreshold || !result.IsRace {
+		t.Fatalf("score result = %+v", result)
+	}
+	want := map[ScoreDimension]int{
+		DimensionEventIntent: 0, DimensionDistancePrior: 25, DimensionIntensityContinuity: 20,
+		DimensionPausePattern: -20, DimensionRouteShape: 0, DimensionTravel: 0, DimensionTimeWindow: 10,
+	}
+	for _, contribution := range result.Dimensions {
+		if contribution.Contribution != want[contribution.Dimension] {
+			t.Errorf("dimension %s contribution = %d, want %d", contribution.Dimension, contribution.Contribution, want[contribution.Dimension])
+		}
+	}
+}
+
+func TestScoreAssessmentUsesRequestedRouteAndTravelRaceWeights(t *testing.T) {
+	result, err := ScoreAssessment(scoringEvidence{
+		Model:         ModelAssessment{EventIntent: EvidenceUnknown, IntensityContinuity: EvidenceUnknown},
+		DistancePrior: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceRace,
+		Travel: EvidenceRace, TimeWindow: EvidenceUnknown,
+	})
+	if err != nil {
+		t.Fatalf("ScoreAssessment: %v", err)
+	}
+	if result.Score != 45 || !result.IsRace {
+		t.Fatalf("route and travel score = %+v, want 45 and race", result)
+	}
+	wantRaceWeights := map[ScoreDimension]int{
+		DimensionRouteShape: 20,
+		DimensionTravel:     25,
+	}
+	for _, contribution := range result.Dimensions {
+		if want, ok := wantRaceWeights[contribution.Dimension]; ok && contribution.RaceWeight != want {
+			t.Errorf("dimension %s race weight = %d, want %d", contribution.Dimension, contribution.RaceWeight, want)
+		}
+	}
+}
+
+func TestScoreAssessmentAppliesTrainingTimeAgainstPositiveRoute(t *testing.T) {
+	result, err := ScoreAssessment(scoringEvidence{
+		Model:         ModelAssessment{EventIntent: EvidenceUnknown, IntensityContinuity: EvidenceRace},
+		DistancePrior: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceRace,
+		Travel: EvidenceUnknown, TimeWindow: EvidenceTraining,
+	})
+	if err != nil {
+		t.Fatalf("ScoreAssessment: %v", err)
+	}
+	// Intensity +20 and the requested route weight +20 exactly offset a
+	// training-like time window (-20) at the inclusive race threshold.
+	if result.Score != 20 || !result.IsRace {
+		t.Fatalf("score result = %+v", result)
+	}
+}
+
+func TestScoreAssessmentPreservesExplicitPersonalTimeTrial(t *testing.T) {
+	result, err := ScoreAssessment(scoringEvidence{
+		Model:         ModelAssessment{EventIntent: EvidenceRace, IntensityContinuity: EvidenceRace},
+		DistancePrior: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceTraining,
+		Travel: EvidenceUnknown, TimeWindow: EvidenceTraining,
+	})
+	if err != nil {
+		t.Fatalf("ScoreAssessment: %v", err)
+	}
+	if result.Score != 20 || !result.IsRace {
+		t.Fatalf("explicit personal time trial score = %+v", result)
+	}
+}
+
+func TestScoreAssessmentRejectsMissingOrUnknownEvidence(t *testing.T) {
+	assessment := scoringEvidence{
+		Model:         ModelAssessment{EventIntent: EvidenceRace, IntensityContinuity: EvidenceUnknown},
+		DistancePrior: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceUnknown, Travel: EvidenceUnknown,
+		// TimeWindow deliberately omitted.
+	}
+	if _, err := ScoreAssessment(assessment); err == nil {
+		t.Fatal("missing dimension evidence must fail")
+	}
+	assessment.TimeWindow = Evidence("maybe")
+	if _, err := ScoreAssessment(assessment); err == nil {
+		t.Fatal("unknown dimension evidence must fail")
 	}
 }

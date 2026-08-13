@@ -28,6 +28,7 @@ runtime:
   prefetch: 1
   health-addr: ":8081"
 race-detection:
+  api-kind: chat-completions
   endpoint: https://api.deepseek.com
   api-key: test-key
   model: deepseek-v4-flash
@@ -63,7 +64,7 @@ func TestMustLoadFrom_FileValues(t *testing.T) {
 	if cfg.Runtime.Prefetch != 1 || cfg.Runtime.HealthAddr != ":8081" {
 		t.Errorf("runtime = %+v", cfg.Runtime)
 	}
-	if cfg.RaceDetection.Model != "deepseek-v4-flash" || cfg.RaceDetection.MaxConcurrency != 8 {
+	if cfg.RaceDetection.APIKind != "chat-completions" || cfg.RaceDetection.Model != "deepseek-v4-flash" || cfg.RaceDetection.MaxConcurrency != 8 {
 		t.Errorf("race detection = %+v", cfg.RaceDetection)
 	}
 	if cfg.Logger.Level != "info" || cfg.Logger.Format != "json" {
@@ -100,7 +101,7 @@ amqp:
 queues: {work: w, retry: r, poison: p}
 retry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}
 runtime: {prefetch: 1, health-addr: ":8081"}
-race-detection: {endpoint: "https://api.deepseek.com", api-key: test, model: deepseek-v4-flash, timeout: 30s, max-concurrency: 8}
+race-detection: {api-kind: chat-completions, endpoint: "https://api.deepseek.com", api-key: test, model: deepseek-v4-flash, timeout: 30s, max-concurrency: 8}
 `
 	t.Setenv("STRIDE_WORKER_MYSQL_DSN", "d")
 	t.Setenv("STRIDE_WORKER_AMQP_URL", "amqp://x")
@@ -118,7 +119,7 @@ amqp: {url: "amqp://x"}
 queues: {work: w, retry: r, poison: p}
 retry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}
 runtime: {prefetch: 1, health-addr: ":8081"}
-race-detection: {endpoint: "https://api.deepseek.com", api-key: test, model: deepseek-v4-flash, timeout: 30s, max-concurrency: 8}
+race-detection: {api-kind: chat-completions, endpoint: "https://api.deepseek.com", api-key: test, model: deepseek-v4-flash, timeout: 30s, max-concurrency: 8}
 `
 	defer func() {
 		if recover() == nil {
@@ -129,7 +130,7 @@ race-detection: {endpoint: "https://api.deepseek.com", api-key: test, model: dee
 }
 
 func TestMustLoadFrom_MissingRaceDetectionAPIKeyPanics(t *testing.T) {
-	body := "\nmysql: {dsn: \"d\"}\namqp: {url: \"amqp://x\"}\nqueues: {work: w, retry: r, poison: p}\nretry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}\nruntime: {prefetch: 1, health-addr: \":8081\"}\nrace-detection: {endpoint: \"https://api.deepseek.com\", api-key: \"\", model: deepseek-v4-flash, timeout: 30s, max-concurrency: 8}\n"
+	body := "\nmysql: {dsn: \"d\"}\namqp: {url: \"amqp://x\"}\nqueues: {work: w, retry: r, poison: p}\nretry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}\nruntime: {prefetch: 1, health-addr: \":8081\"}\nrace-detection: {api-kind: chat-completions, endpoint: \"https://api.deepseek.com\", api-key: \"\", model: deepseek-v4-flash, timeout: 30s, max-concurrency: 8}\n"
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected panic for missing race-detection.api-key")
@@ -139,13 +140,51 @@ func TestMustLoadFrom_MissingRaceDetectionAPIKeyPanics(t *testing.T) {
 }
 
 func TestMustLoadFrom_InvalidRaceDetectionTimeoutPanics(t *testing.T) {
-	body := "\nmysql: {dsn: \"d\"}\namqp: {url: \"amqp://x\"}\nqueues: {work: w, retry: r, poison: p}\nretry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}\nruntime: {prefetch: 1, health-addr: \":8081\"}\nrace-detection: {endpoint: \"https://api.deepseek.com\", api-key: test, model: deepseek-v4-flash, timeout: 0s, max-concurrency: 8}\n"
+	body := "\nmysql: {dsn: \"d\"}\namqp: {url: \"amqp://x\"}\nqueues: {work: w, retry: r, poison: p}\nretry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}\nruntime: {prefetch: 1, health-addr: \":8081\"}\nrace-detection: {api-kind: chat-completions, endpoint: \"https://api.deepseek.com\", api-key: test, model: deepseek-v4-flash, timeout: 0s, max-concurrency: 8}\n"
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected panic for non-positive race-detection.timeout")
 		}
 	}()
 	_ = MustLoadFrom(writeConfig(t, body))
+}
+
+func TestMustLoadFrom_InvalidRaceDetectionAPIKindPanics(t *testing.T) {
+	body := "\nmysql: {dsn: \"d\"}\namqp: {url: \"amqp://x\"}\nqueues: {work: w, retry: r, poison: p}\nretry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}\nruntime: {prefetch: 1, health-addr: \":8081\"}\nrace-detection: {api-kind: unknown, endpoint: \"https://example.com\", api-key: test, model: model, timeout: 30s, max-concurrency: 8}\n"
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic for unsupported race-detection.api-kind")
+		}
+	}()
+	_ = MustLoadFrom(writeConfig(t, body))
+}
+
+func TestMustLoadRaceDetectionRuntimeFrom_ReadsMySQLAndRaceSettings(t *testing.T) {
+	body := `
+mysql:
+  dsn: file-user:file-password@tcp(127.0.0.1:3306)/stride
+race-detection:
+  api-kind: responses
+  endpoint: http://127.0.0.1:23333/api/openai/v1
+  api-key: local-test-key
+  model: file-model
+  timeout: 45s
+  max-concurrency: 6
+`
+	cfg := MustLoadRaceDetectionRuntimeFrom(writeConfig(t, body))
+
+	if cfg.MySQL.DSN != "file-user:file-password@tcp(127.0.0.1:3306)/stride" {
+		t.Fatalf("mysql test dsn = %q", cfg.MySQL.DSN)
+	}
+	if cfg.RaceDetection.APIKind != "responses" || cfg.RaceDetection.Endpoint != "http://127.0.0.1:23333/api/openai/v1" {
+		t.Fatalf("race detection endpoint = %+v", cfg.RaceDetection)
+	}
+	if cfg.RaceDetection.APIKey != "local-test-key" || cfg.RaceDetection.Model != "file-model" {
+		t.Fatalf("race detection model = %+v", cfg.RaceDetection)
+	}
+	if cfg.RaceDetection.Timeout != 45*time.Second || cfg.RaceDetection.MaxConcurrency != 6 {
+		t.Fatalf("race detection runtime = %+v", cfg.RaceDetection)
+	}
 }
 
 func TestMustLoadFrom_MissingFilePanics(t *testing.T) {
