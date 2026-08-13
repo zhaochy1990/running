@@ -4,7 +4,7 @@
 
 SWAG_VERSION := v1.16.6
 
-.PHONY: build build-stride build-stride-swagger swagger test vet fmt
+.PHONY: build build-stride build-stride-swagger swagger test test-racedetection vet fmt
 
 # Compile-check every package (no output binary emitted to out/).
 build:
@@ -27,6 +27,14 @@ build-stride-swagger: swagger
 
 test:
 	go test ./...
+
+# Run the real-provider golden regression using CONFIG_PATH (default
+# config.local.yml) for MySQL, protocol, endpoint, model, timeout, and concurrency.
+# Secrets may be overridden with the standard STRIDE_WORKER_* environment vars.
+test-racedetection:
+	STRIDE_RUN_CONFIGURED_RACE_GOLDEN=1 \
+		CONFIG_PATH="$${CONFIG_PATH:-$(CURDIR)/config.local.yml}" \
+		go test ./internal/handlers/racedetection -run '^TestConfiguredRaceGoldenRegression$$' -count=1 -v
 
 vet:
 	go vet ./...
