@@ -36,7 +36,10 @@ interface TrainingLoadTool {
 	getDailyTrainingLoad(
 		input: GetDailyTrainingLoadInput,
 		runtime: CoachToolRuntime,
-	): Promise<DailyTrainingLoad[]>;
+	): Promise<{
+		strideTrainingLoad: DailyTrainingLoad[];
+		provenance: { source: "stride"; vendorDerived: false };
+	}>;
 }
 
 class TrainingLoadToolImpl implements TrainingLoadTool {
@@ -45,7 +48,10 @@ class TrainingLoadToolImpl implements TrainingLoadTool {
 	async getDailyTrainingLoad(
 		input: GetDailyTrainingLoadInput,
 		runtime: CoachToolRuntime,
-	): Promise<DailyTrainingLoad[]> {
+	): Promise<{
+		strideTrainingLoad: DailyTrainingLoad[];
+		provenance: { source: "stride"; vendorDerived: false };
+	}> {
 		const userId = runtime.context?.userId;
 		if (!userId) {
 			throw new Error(
@@ -59,11 +65,14 @@ class TrainingLoadToolImpl implements TrainingLoadTool {
 			);
 		}
 		const endDay = input.endDay ?? asof;
-		return this.store.getDailyTrainingLoadByDateRange(
-			userId,
-			input.startDay,
-			endDay,
-		);
+		return {
+			strideTrainingLoad: await this.store.getDailyTrainingLoadByDateRange(
+				userId,
+				input.startDay,
+				endDay,
+			),
+			provenance: { source: "stride", vendorDerived: false },
+		};
 	}
 }
 
@@ -84,7 +93,7 @@ export function createTrainingLoadTools(store: DataProvider): StructuredTool[] {
 				"获取运动员在某个日期区间（Asia/Shanghai 日历日，含起止两端）的每日 STRIDE 训练负荷（PMC），按日期最早在前。" +
 				"每天返回：长期负荷 chronicLoad（CTL，约 42 天）、短期负荷 acuteLoad（ATL，约 7 天）、" +
 				"负荷比 loadRatio（acute/chronic）、form（chronic−acute，正=更 fresh，负=更疲劳）、" +
-				"当日训练剂量 trainingDose、就绪度 readinessGate。" +
+				"当日 STRIDE 训练剂量 trainingDose 与数据覆盖状态 coverageStatus。所有负荷均为 STRIDE 自算，不含厂商派生值。" +
 				"回答“我现在疲劳吗/负荷高不高/恢复得怎么样/能不能加量”这类问题时用它。" +
 				"startDay 必填；endDay 缺省为 runtime context 的 asof。问“当前状态”时围绕 asof 向前查询若干天看趋势。",
 			schema: getDailyTrainingLoadSchema,

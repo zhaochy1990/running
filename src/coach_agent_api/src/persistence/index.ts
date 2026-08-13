@@ -1,11 +1,14 @@
 import type { Pool } from "mysql2/promise";
+import { CoordinatedTurnRunner } from "../turns.js";
 import { MySqlSaver } from "./checkpointer.js";
 import { createPool, ensureDatabase, readMySqlConfig } from "./mysql.js";
 import { MySqlStore } from "./store.js";
+import { MySqlThreadLock, MySqlTurnReceiptStore } from "./turns.js";
 
 export interface Persistence {
 	checkpointer: MySqlSaver;
 	store: MySqlStore;
+	turnCoordinator: CoordinatedTurnRunner;
 	pool: Pool;
 	close(): Promise<void>;
 }
@@ -17,9 +20,20 @@ export async function createPersistence(): Promise<Persistence> {
 	try {
 		const checkpointer = new MySqlSaver(pool);
 		const store = new MySqlStore(pool);
+		const turnReceipts = new MySqlTurnReceiptStore(pool);
 		await checkpointer.setup();
 		await store.setup();
-		return { checkpointer, store, pool, close: () => pool.end() };
+		await turnReceipts.setup();
+		return {
+			checkpointer,
+			store,
+			turnCoordinator: new CoordinatedTurnRunner(
+				turnReceipts,
+				new MySqlThreadLock(config),
+			),
+			pool,
+			close: () => pool.end(),
+		};
 	} catch (error) {
 		await pool.end();
 		throw error;

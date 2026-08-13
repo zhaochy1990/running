@@ -28,6 +28,7 @@ export async function createCoachApiRuntime(
 		return {
 			app: createApp({
 				jwtVerifier,
+				turnCoordinator: activePersistence.turnCoordinator,
 				coach: {
 					invoke: (input, invocationConfig) =>
 						coach.invoke(input as never, invocationConfig as never),

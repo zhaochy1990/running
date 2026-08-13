@@ -217,7 +217,7 @@ infrastructure_failure -> required model or data source unavailable
 
 ### TypeScript runtime seam
 
-`src/coach_agent` 是不依赖数据库客户端的核心 package，在 `src/data/dataProvider.ts` 定义只读 `DataProvider` interface。`src/coach_agent_api` 是 HTTP composition root：负责 RS256 Bearer 验证、MySQL `DataProvider` adapter、LangGraph checkpoint/store 写入和进程生命周期。未来 CLI 可以调用 HTTP API，或为同一个 interface 注入自己的 adapter；不得从核心 package 直接执行 SQL。
+`src/coach_agent` 是不依赖数据库客户端的核心 package，在 `src/data/dataProvider.ts` 定义只读 `DataProvider` interface。`src/coach_agent_api` 是 HTTP composition root：负责 RS256 Bearer 验证、MySQL `DataProvider` adapter、LangGraph checkpoint/store、turn receipt、同 thread 串行锁和进程生命周期。未来 CLI 可以调用 HTTP API，或为同一个 interface 注入自己的 adapter；不得从核心 package 直接执行 SQL。
 
 | 数据 | 所有者 | 使用方式 |
 |---|---|---|
