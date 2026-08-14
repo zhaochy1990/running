@@ -111,19 +111,6 @@ func MustLoadRaceDetectionRuntimeFrom(path string) *RaceDetectionRuntimeConfig {
 	return &cfg
 }
 
-// MySQLRuntimeConfig is the minimal configuration for one-off storage tools.
-type MySQLRuntimeConfig struct {
-	MySQL MySQL `mapstructure:"mysql"`
-}
-
-// MustLoadMySQLRuntimeFrom loads only the MySQL settings and standard
-// STRIDE_WORKER_* overrides, without requiring unrelated worker dependencies.
-func MustLoadMySQLRuntimeFrom(path string) *MySQLRuntimeConfig {
-	var cfg MySQLRuntimeConfig
-	xviper.MustLoadConfig(EnvPrefix, path, &cfg)
-	return &cfg
-}
-
 // --- cmd/api configuration ---------------------------------------------------
 //
 // The HTTP API is a separate binary (ADR 0012) with its own required fields, so

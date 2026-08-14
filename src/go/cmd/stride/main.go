@@ -68,7 +68,6 @@ func newRootCmd() *cobra.Command {
 	}
 	root.AddCommand(
 		newAPICmd(),
-		newBackfillActivityStartGPSCmd(),
 		newWorkerCmd(),
 		newReconcileCmd(),
 		newWatchCmd(),
