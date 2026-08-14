@@ -17,12 +17,18 @@ class MySQLRunningCalibrationTool {
 		runtime: CoachToolRuntime,
 	): Promise<RunningCalibration | null> {
 		const userId = runtime.context?.userId;
+		const asof = runtime.context?.asof;
 		if (!userId) {
 			throw new Error(
 				"get_running_calibration: missing userId in runtime context",
 			);
 		}
-		return this.store.getLatestRunningCalibration(userId);
+		if (!asof) {
+			throw new Error(
+				"get_running_calibration: missing asof in runtime context",
+			);
+		}
+		return this.store.getLatestRunningCalibration(userId, asof);
 	}
 }
 

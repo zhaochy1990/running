@@ -21,7 +21,10 @@ const getWeeklyPlanSchema = z.object({
 });
 
 export interface PlanStore {
-	getMasterPlan(userId: string): Promise<MasterPlanDocument | null>;
+	getMasterPlan(
+		userId: string,
+		day: string,
+	): Promise<MasterPlanDocument | null>;
 	getWeeklyPlan(
 		userId: string,
 		weekName: string,
@@ -35,7 +38,9 @@ class MySQLPlanTool {
 		_input: z.infer<typeof getMasterPlanSchema>,
 		runtime: CoachToolRuntime,
 	): Promise<MasterPlanDocument | null> {
-		return this.store.getMasterPlan(requireUserId(runtime, "get_master_plan"));
+		const userId = requireUserId(runtime, "get_master_plan");
+		const asof = requireAsOf(runtime, "get_master_plan");
+		return this.store.getMasterPlan(userId, asof);
 	}
 
 	async getWeeklyPlan(
@@ -80,4 +85,10 @@ function requireUserId(runtime: CoachToolRuntime, toolName: string): string {
 	if (!userId)
 		throw new Error(`${toolName}: missing userId in runtime context`);
 	return userId;
+}
+
+function requireAsOf(runtime: CoachToolRuntime, toolName: string): string {
+	const asof = runtime.context?.asof;
+	if (!asof) throw new Error(`${toolName}: missing asof in runtime context`);
+	return asof;
 }

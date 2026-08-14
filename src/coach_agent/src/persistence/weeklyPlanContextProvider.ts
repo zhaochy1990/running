@@ -3,6 +3,7 @@ import {
 	mondayOnOrBefore as monday,
 	planningStartDate,
 	shanghaiDay,
+	weekFolder,
 } from "../utils/planningDate.js";
 import type {
 	ActiveMasterPlanMetadata,
@@ -17,7 +18,7 @@ import type {
 
 type ContextStore = Pick<
 	StrideDataStore,
-	| "getActiveMasterPlanMetadata"
+	| "getMasterPlanMetadataForDate"
 	| "getActivitiesByDateRange"
 	| "getDailyRecoveryByDateRange"
 	| "getDailyTrainingLoadByDateRange"
@@ -33,6 +34,7 @@ export interface WeeklyPlanContextProvider {
 export interface WeeklyPlanContext {
 	as_of: string;
 	plan_start: string;
+	week_folder: string;
 	lookback: { start_date: string; end_date: string; days: number };
 	training_position: {
 		phase: Record<string, unknown> | null;
@@ -62,18 +64,19 @@ export class MySqlWeeklyPlanContextProvider
 		const feedbackStart = monday(start);
 		const [plan, activities, feedback, loads, recovery, injuries, calibration] =
 			await Promise.all([
-				this.store.getActiveMasterPlanMetadata(userId),
+				this.store.getMasterPlanMetadataForDate(userId, planStart),
 				this.store.getActivitiesByDateRange(userId, start, end),
 				this.store.getWeeklyFeedbackByDateRange(userId, feedbackStart, end),
 				this.store.getDailyTrainingLoadByDateRange(userId, start, end),
 				this.store.getDailyRecoveryByDateRange(userId, start, end),
 				this.store.getUserInjuries(userId),
-				this.store.getLatestRunningCalibration(userId),
+				this.store.getLatestRunningCalibration(userId, end),
 			]);
 
 		return {
 			as_of: end,
 			plan_start: planStart,
+			week_folder: weekFolder(planStart),
 			lookback: { start_date: start, end_date: end, days: LOOKBACK_DAYS },
 			training_position: trainingPosition(plan, planStart),
 			recent_activities: activities.map(activityShape),

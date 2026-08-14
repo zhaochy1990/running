@@ -14,7 +14,11 @@ import { createLoggingMiddleware } from "../middleware.js";
 import { WeeklyPlanPrompt } from "../prompts.js";
 import { WeeklyPlanDirectResponseSchema } from "./schema.js";
 
-export function getCoachSubagent(store: StrideDataStore, config: ModelConfig) {
+function createWeeklyPlanSubagent(
+	store: StrideDataStore,
+	config: ModelConfig,
+	generatesPlan: boolean,
+) {
 	const activitiesTools = createActivitiesTools(store);
 	const trainingLoadTools = createTrainingLoadTools(store);
 	const planTools = createPlanTools(store);
@@ -25,9 +29,10 @@ export function getCoachSubagent(store: StrideDataStore, config: ModelConfig) {
 	);
 
 	return {
-		name: "weekly_plan",
-		description:
-			"generate or adjust the training plan for a week or adjust the training plan for a specific day",
+		name: generatesPlan ? "generate_weekly_plan" : "weekly_plan",
+		description: generatesPlan
+			? "generate a new structured weekly training plan"
+			: "read, explain, or discuss an existing weekly training plan",
 		systemPrompt: WeeklyPlanPrompt,
 		tools: [
 			...weeklyPlanContextTools,
@@ -38,11 +43,28 @@ export function getCoachSubagent(store: StrideDataStore, config: ModelConfig) {
 			...runningCalibrationTools,
 		],
 		model: buildResponsesModel(config),
-		responseFormat: WeeklyPlanDirectResponseSchema,
-		middleware: [createLoggingMiddleware("agent:weekly_plan")],
+		...(generatesPlan
+			? { responseFormat: WeeklyPlanDirectResponseSchema }
+			: {}),
+		middleware: [
+			createLoggingMiddleware(
+				generatesPlan ? "agent:generate_weekly_plan" : "agent:weekly_plan",
+			),
+		],
 		// Skill loaded via SkillsMiddleware from the deep agent's FilesystemBackend
 		// (rooted at `dist/agents/skills/` in coachAgent.ts). The agent reads the
 		// full SKILL.md on demand via read_file. Path is relative to that root.
-		skills: ["/generate-weekly-plan/"],
+		skills: generatesPlan ? ["/generate-weekly-plan/"] : [],
 	};
+}
+
+export function getCoachSubagent(store: StrideDataStore, config: ModelConfig) {
+	return createWeeklyPlanSubagent(store, config, false);
+}
+
+export function getWeeklyPlanGeneratorSubagent(
+	store: StrideDataStore,
+	config: ModelConfig,
+) {
+	return createWeeklyPlanSubagent(store, config, true);
 }

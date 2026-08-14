@@ -71,8 +71,13 @@ test("get_running_calibration returns the latest threshold and zones for the run
 	);
 	assert.deepEqual(
 		calls.map((call) => call.values),
-		[[userId], [userId, 42], [userId, 42]],
+		[
+			[userId, "2026-08-14"],
+			[userId, 42],
+			[userId, 42],
+		],
 	);
+	assert.match(calls[0]?.sql ?? "", /as_of_date <= \?/);
 	const zoneQueries = calls.slice(1).map((call) => call.sql);
 	for (const field of ["confidence", "min_speed_mps", "max_speed_mps"]) {
 		assert.ok(zoneQueries.every((sql) => !sql.includes(field)));
@@ -95,4 +100,8 @@ test("get_running_calibration returns null without a computed calibration", asyn
 		null,
 	);
 	await assert.rejects(() => tool.invoke({}, {}), /missing userId/);
+	await assert.rejects(
+		() => tool.invoke({}, { context: { userId } }),
+		/missing asof/,
+	);
 });

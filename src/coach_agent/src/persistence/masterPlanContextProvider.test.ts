@@ -5,11 +5,13 @@ import { ContextSnapshotSchema } from "../graph/master_plan/index.js";
 import { StrideDataStore } from "./dataStore.js";
 import { MySqlMasterPlanContextProvider } from "./masterPlanContextProvider.js";
 
-test("personal best loader returns activity label ID instead of source", async () => {
+test("personal best loader returns activity label ID before the asof cutoff", async () => {
 	let query = "";
+	let params: unknown[] = [];
 	const pool = {
-		async query(sql: string) {
+		async query(sql: string, values: unknown[]) {
 			query = sql;
+			params = values;
 			return [
 				[
 					{
@@ -24,9 +26,14 @@ test("personal best loader returns activity label ID instead of source", async (
 		},
 	} as unknown as Pool;
 
-	const rows = await new StrideDataStore(pool).getPersonalBests("athlete");
+	const rows = await new StrideDataStore(pool).getPersonalBests(
+		"athlete",
+		"2026-06-10",
+	);
 
 	assert.match(query, /entry_json, '\$\.label_id'/);
+	assert.match(query, /achieved_at <= \?/);
+	assert.deepEqual(params, ["athlete", "2026-06-10"]);
 	assert.deepEqual(rows, [
 		{
 			distance: "5K",
@@ -55,7 +62,7 @@ test("personal best loader rejects records without an activity label ID", async 
 	} as unknown as Pool;
 
 	await assert.rejects(
-		new StrideDataStore(pool).getPersonalBests("athlete"),
+		new StrideDataStore(pool).getPersonalBests("athlete", "2026-06-10"),
 		/personal best 5K has no activity label ID/,
 	);
 });
@@ -135,7 +142,7 @@ test("context provider exposes PB activity label ID without source", async () =>
 		async getRaceHistory() {
 			return [];
 		},
-		async getActiveMasterPlanMetadata() {
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 	});
@@ -209,7 +216,7 @@ test("context provider maps canonical injuries and numeric race feel", async () 
 				},
 			];
 		},
-		async getActiveMasterPlanMetadata() {
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 	});
@@ -349,7 +356,7 @@ test("context provider excludes trail-labelled outdoor activities from road-run 
 		async getRaceHistory() {
 			return [];
 		},
-		async getActiveMasterPlanMetadata() {
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 	});
@@ -424,7 +431,7 @@ test("context provider materializes complete zero-run weeks", async () => {
 		async getRaceHistory() {
 			return [];
 		},
-		async getActiveMasterPlanMetadata() {
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 	});

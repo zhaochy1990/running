@@ -48,7 +48,7 @@ const activity: Activity = {
 test("weekly context combines all weekly planning evidence", async () => {
 	const ranges: Array<[string, string, string]> = [];
 	const provider = new MySqlWeeklyPlanContextProvider({
-		async getActiveMasterPlanMetadata() {
+		async getMasterPlanMetadataForDate() {
 			return {
 				planId: "plan-1",
 				revision: 2,
@@ -137,6 +137,7 @@ test("weekly context combines all weekly planning evidence", async () => {
 
 	assert.equal(snapshot.as_of, "2026-08-15");
 	assert.equal(snapshot.plan_start, "2026-08-17");
+	assert.equal(snapshot.week_folder, "2026-08-17_08-23");
 	assert.deepEqual(snapshot.lookback, {
 		start_date: "2026-07-19",
 		end_date: "2026-08-15",
@@ -175,7 +176,7 @@ test("weekly context combines all weekly planning evidence", async () => {
 
 test("weekly context keeps a Monday as the planning start", async () => {
 	const provider = new MySqlWeeklyPlanContextProvider({
-		async getActiveMasterPlanMetadata() {
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 		async getActivitiesByDateRange() {
@@ -204,7 +205,7 @@ test("weekly context keeps a Monday as the planning start", async () => {
 
 test("weekly context reports unavailable STRIDE load without fallback", async () => {
 	const provider = new MySqlWeeklyPlanContextProvider({
-		async getActiveMasterPlanMetadata() {
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 		async getActivitiesByDateRange() {
@@ -240,7 +241,7 @@ test("weekly context reports unavailable STRIDE load without fallback", async ()
 
 test("weekly context treats null PMC values as not computed", async () => {
 	const provider = new MySqlWeeklyPlanContextProvider({
-		async getActiveMasterPlanMetadata() {
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 		async getActivitiesByDateRange() {

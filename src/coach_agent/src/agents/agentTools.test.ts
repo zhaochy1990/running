@@ -19,7 +19,11 @@ import {
 } from "./masterPlanPassthrough.js";
 import { MASTER_PLAN_PROMPT } from "./prompts.js";
 import { getQaSubagent } from "./qa/agent.js";
-import { getCoachSubagent } from "./weekly_plan/agent.js";
+import {
+	getCoachSubagent,
+	getWeeklyPlanGeneratorSubagent,
+} from "./weekly_plan/agent.js";
+import { WeeklyPlanDirectResponseSchema } from "./weekly_plan/schema.js";
 
 const modelConfig: ModelConfig = {
 	name: "test",
@@ -80,12 +84,19 @@ test("master-plan agent has a machine-enforced structured output contract", () =
 	assert.ok(!generator.tools.some((tool) => tool.name === "get_current_time"));
 });
 
-test("weekly-plan agent uses context tools instead of system time", () => {
+test("weekly-plan reader and generator keep distinct contracts", () => {
 	const store = new StrideDataStore({} as never);
-	const weekly = getCoachSubagent(store, modelConfig);
-	const names = weekly.tools.map((tool) => tool.name);
-	assert.ok(names.includes("get_weekly_plan_context"));
-	assert.ok(!names.includes("get_current_time"));
+	const reader = getCoachSubagent(store, modelConfig);
+	const generator = getWeeklyPlanGeneratorSubagent(store, modelConfig);
+	for (const subagent of [reader, generator]) {
+		const names = subagent.tools.map((tool) => tool.name);
+		assert.ok(names.includes("get_weekly_plan_context"));
+		assert.ok(!names.includes("get_current_time"));
+	}
+	assert.equal(reader.responseFormat, undefined);
+	assert.deepEqual(reader.skills, []);
+	assert.equal(generator.responseFormat, WeeklyPlanDirectResponseSchema);
+	assert.ok(generator.skills.includes("/generate-weekly-plan/"));
 });
 
 const masterPlan = {
@@ -143,8 +154,11 @@ const masterPlan = {
 };
 
 const weeklyPlan = {
+	schema: "weekly-plan/v1" as const,
+	week_folder: "2026-06-15_06-21",
 	sessions: [
 		{
+			schema: "plan-session/v1" as const,
 			date: "2026-06-15",
 			session_index: 0,
 			summary: "休息",
@@ -155,9 +169,11 @@ const weeklyPlan = {
 			spec: null,
 		},
 	],
-	nutrition: [
-		{
-			date: "2026-06-15",
+	nutrition: Array.from({ length: 7 }, (_, index) => {
+		const date = `2026-06-${String(15 + index).padStart(2, "0")}`;
+		return {
+			schema: "plan-nutrition/v1" as const,
+			date,
 			kcal_target: null,
 			carbs_g: null,
 			protein_g: null,
@@ -165,8 +181,8 @@ const weeklyPlan = {
 			water_ml: null,
 			meals: [],
 			notes_md: "按饥饿感正常进食",
-		},
-	],
+		};
+	}),
 	notes_md: null,
 	coach_notes: null,
 };
@@ -200,47 +216,53 @@ test("orchestrator extracts a validated master plan from its direct envelope", (
 });
 
 test("orchestrator extracts a validated weekly plan from its direct envelope", () => {
-	const result = getDirectPlanTaskResult([
-		{
-			type: "ai",
-			tool_calls: [
-				{
-					id: "task-1",
-					name: "task",
-					args: { subagent_type: "weekly_plan" },
-				},
-			],
-		},
-		{
-			type: "tool",
-			name: "task",
-			tool_call_id: "task-1",
-			content: directResponse(weeklyPlan),
-		},
-	]);
+	const result = getDirectPlanTaskResult(
+		[
+			{
+				type: "ai",
+				tool_calls: [
+					{
+						id: "task-1",
+						name: "task",
+						args: { subagent_type: "generate_weekly_plan" },
+					},
+				],
+			},
+			{
+				type: "tool",
+				name: "task",
+				tool_call_id: "task-1",
+				content: directResponse(weeklyPlan),
+			},
+		],
+		"2026-06-15",
+	);
 
 	assert.equal(result, JSON.stringify(weeklyPlan));
 });
 
 test("orchestrator rejects an invalid weekly-plan direct envelope", () => {
-	const result = getDirectPlanTaskResult([
-		{
-			type: "ai",
-			tool_calls: [
-				{
-					id: "task-1",
-					name: "task",
-					args: { subagent_type: "weekly_plan" },
-				},
-			],
-		},
-		{
-			type: "tool",
-			name: "task",
-			tool_call_id: "task-1",
-			content: directResponse({ sessions: [] }),
-		},
-	]);
+	const result = getDirectPlanTaskResult(
+		[
+			{
+				type: "ai",
+				tool_calls: [
+					{
+						id: "task-1",
+						name: "task",
+						args: { subagent_type: "generate_weekly_plan" },
+					},
+				],
+			},
+			{
+				type: "tool",
+				name: "task",
+				tool_call_id: "task-1",
+				content: directResponse({ sessions: [] }),
+			},
+		],
+		"2026-06-15",
+	);
 
 	assert.equal(result, undefined);
 });
@@ -267,7 +289,7 @@ test("passthrough middleware skips the model only for a direct envelope", async 
 			},
 		],
 	});
-	const runtime = {} as never;
+	const runtime = { context: { asof: "2026-06-10" } } as never;
 	const direct = await wrapModelCall(
 		{
 			messages: [
@@ -291,7 +313,7 @@ test("passthrough middleware skips the model only for a direct envelope", async 
 			{
 				id: "weekly-task",
 				name: "task",
-				args: { subagent_type: "weekly_plan" },
+				args: { subagent_type: "generate_weekly_plan" },
 				type: "tool_call",
 			},
 		],
@@ -313,6 +335,33 @@ test("passthrough middleware skips the model only for a direct envelope", async 
 	assert.ok(AIMessage.isInstance(weeklyDirect));
 	assert.equal(weeklyDirect.content, JSON.stringify(weeklyPlan));
 
+	const readerTaskCall = new AIMessage({
+		content: "",
+		tool_calls: [
+			{
+				id: "reader-task",
+				name: "task",
+				args: { subagent_type: "weekly_plan" },
+				type: "tool_call",
+			},
+		],
+	});
+	const readerResult = await wrapModelCall(
+		{
+			messages: [
+				readerTaskCall,
+				new ToolMessage({
+					content: directResponse(weeklyPlan),
+					tool_call_id: "reader-task",
+				}),
+			],
+			runtime,
+		} as never,
+		handler,
+	);
+	assert.equal(handlerCalls, 1);
+	assert.equal(readerResult, fallback);
+
 	const delegated = await wrapModelCall(
 		{
 			messages: [
@@ -326,7 +375,7 @@ test("passthrough middleware skips the model only for a direct envelope", async 
 		} as never,
 		handler,
 	);
-	assert.equal(handlerCalls, 1);
+	assert.equal(handlerCalls, 2);
 	assert.equal(delegated, fallback);
 });
 

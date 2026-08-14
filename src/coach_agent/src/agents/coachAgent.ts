@@ -17,7 +17,10 @@ import { memoryTools } from "./memory.js";
 import { createLoggingMiddleware } from "./middleware.js";
 import { ORCHESTRATOR_PROMPT } from "./prompts.js";
 import { getQaSubagent } from "./qa/agent.js";
-import { getCoachSubagent } from "./weekly_plan/agent.js";
+import {
+	getCoachSubagent,
+	getWeeklyPlanGeneratorSubagent,
+} from "./weekly_plan/agent.js";
 
 export const CoachContext = z
 	.object({
@@ -50,6 +53,10 @@ export async function createCoachAgent(
 		store,
 		getAgentConfig(config, "weekly_plan"),
 	);
+	const weeklyPlanGenerator = getWeeklyPlanGeneratorSubagent(
+		store,
+		getAgentConfig(config, "weekly_plan"),
+	);
 
 	const masterSubagent = getMasterPlanSubagent(
 		store,
@@ -71,6 +78,7 @@ export async function createCoachAgent(
 		subagents: [
 			qaSubagent,
 			weeklySubagent,
+			weeklyPlanGenerator,
 			masterSubagent,
 			masterPlanGenerator,
 		],

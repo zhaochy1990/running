@@ -31,7 +31,7 @@ type ContextStore = Pick<
 	| "getPersonalBests"
 	| "getLatestRunningCalibration"
 	| "getRaceHistory"
-	| "getActiveMasterPlanMetadata"
+	| "getMasterPlanMetadataForDate"
 >;
 
 export class MySqlMasterPlanContextProvider
@@ -63,10 +63,10 @@ export class MySqlMasterPlanContextProvider
 			this.store.getActivitiesByDateRange(userId, macroStart, end),
 			this.store.getDailyTrainingLoadByDateRange(userId, recentStart, end),
 			this.store.getDailyRecoveryByDateRange(userId, recentStart, end),
-			this.store.getPersonalBests(userId),
-			this.store.getLatestRunningCalibration(userId),
-			this.store.getRaceHistory(userId, { limit: 30 }),
-			this.store.getActiveMasterPlanMetadata(userId),
+			this.store.getPersonalBests(userId, end),
+			this.store.getLatestRunningCalibration(userId, end),
+			this.store.getRaceHistory(userId, { asOfDate: end, limit: 30 }),
+			this.store.getMasterPlanMetadataForDate(userId, planningStartDate(end)),
 		]);
 		if (!profile)
 			throw new Error(`required user profile not found for ${userId}`);

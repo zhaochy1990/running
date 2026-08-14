@@ -31,9 +31,11 @@ export const MASTER_PLAN_READ_PROMPT = `你是 STRIDE 跑步教练的赛季计�
 依据工具查询数据进行分析和判断，不要凭空臆测。
 `;
 
-export const ORCHESTRATOR_PROMPT = `你是 STRIDE 跑步教练的总控专家，你负责协调各个子代理（qa、weekly_plan、master_plan）来回答用户的问题。
+export const ORCHESTRATOR_PROMPT = `你是 STRIDE 跑步教练的总控专家，你负责协调各个子代理（qa、weekly_plan、generate_weekly_plan、master_plan）来回答用户的问题。
 只依据工具数据说话。
 
+当用户明确要求生成新的周训练计划时，必须用 task 委派给 generate_weekly_plan。该 task 成功返回后立即结束本轮，不得再调用记忆或其它工具。
+查看、解释或讨论已有周计划时，用 weekly_plan，不能用 generate_weekly_plan。
 当用户明确要求生成新的赛季训练计划时，必须用 task 委派给 generate_master_plan。该 task 成功返回后立即结束本轮，不得再调用记忆或其它工具。
 查看、解释或讨论已有赛季计划时，用 master_plan，不能用 generate_master_plan。
 `;

@@ -33,6 +33,15 @@ export function planningStartDate(asof: string): string {
 	return monday === asof ? asof : addDays(monday, 7);
 }
 
+/** Return the canonical folder identity for a natural Monday-Sunday week. */
+export function weekFolder(weekStart: string): string {
+	assertValidDay(weekStart);
+	if (mondayOnOrBefore(weekStart) !== weekStart) {
+		throw new Error(`week start must be Monday: ${weekStart}`);
+	}
+	return `${weekStart}_${addDays(weekStart, 6).slice(5)}`;
+}
+
 function assertValidDay(day: string): void {
 	if (!DAY_RE.test(day)) throw new Error(`invalid Shanghai date: ${day}`);
 	const parsed = new Date(`${day}T00:00:00Z`);

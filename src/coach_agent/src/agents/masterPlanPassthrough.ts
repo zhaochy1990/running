@@ -1,5 +1,6 @@
 import { AIMessage } from "@langchain/core/messages";
 import { createMiddleware } from "langchain";
+import { planningStartDate, weekFolder } from "../utils/planningDate.js";
 import { DirectResponseEnvelopeSchema } from "./master_plan/schema.js";
 import { WeeklyPlanDirectResponseSchema } from "./weekly_plan/schema.js";
 
@@ -24,6 +25,7 @@ type MessageLike = {
 function getPlanTaskResult(
 	messages: readonly MessageLike[],
 	acceptedSubagents: readonly string[],
+	expectedWeeklyPlanStart?: string,
 ): string | undefined {
 	const result = messages.at(-1);
 	if (
@@ -45,11 +47,18 @@ function getPlanTaskResult(
 	if (generatorCall === undefined) return undefined;
 	try {
 		const schema =
-			generatorCall.args?.subagent_type === "weekly_plan"
+			generatorCall.args?.subagent_type === "generate_weekly_plan"
 				? WeeklyPlanDirectResponseSchema
 				: DirectResponseEnvelopeSchema;
 		const envelope = schema.safeParse(JSON.parse(result.content));
-		return envelope.success ? JSON.stringify(envelope.data.content) : undefined;
+		if (!envelope.success) return undefined;
+		if (generatorCall.args?.subagent_type === "generate_weekly_plan") {
+			if (expectedWeeklyPlanStart === undefined) return undefined;
+			const content = envelope.data.content as { week_folder?: unknown };
+			if (content.week_folder !== weekFolder(expectedWeeklyPlanStart))
+				return undefined;
+		}
+		return JSON.stringify(envelope.data.content);
 	} catch {
 		return undefined;
 	}
@@ -64,8 +73,13 @@ export function getMasterPlanTaskResult(
 /** Return validated generated plan content without an orchestrator rewrite. */
 export function getDirectPlanTaskResult(
 	messages: readonly MessageLike[],
+	expectedWeeklyPlanStart?: string,
 ): string | undefined {
-	return getPlanTaskResult(messages, ["generate_master_plan", "weekly_plan"]);
+	return getPlanTaskResult(
+		messages,
+		["generate_master_plan", "generate_weekly_plan"],
+		expectedWeeklyPlanStart,
+	);
 }
 
 /** Avoid an LLM round-trip that can rewrite a structured generated plan. */
@@ -73,7 +87,14 @@ export function createPlanPassthroughMiddleware() {
 	return createMiddleware({
 		name: "PlanPassthroughMiddleware",
 		wrapModelCall: async (request, handler) => {
-			const result = getDirectPlanTaskResult(request.messages as MessageLike[]);
+			const runtime = request.runtime as { context?: { asof?: unknown } };
+			const asof = runtime.context?.asof;
+			const expectedWeeklyPlanStart =
+				typeof asof === "string" ? planningStartDate(asof) : undefined;
+			const result = getDirectPlanTaskResult(
+				request.messages as MessageLike[],
+				expectedWeeklyPlanStart,
+			);
 			return result === undefined
 				? handler(request)
 				: new AIMessage({ content: result });
