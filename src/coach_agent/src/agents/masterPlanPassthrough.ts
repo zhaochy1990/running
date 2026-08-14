@@ -1,6 +1,7 @@
 import { AIMessage } from "@langchain/core/messages";
 import { createMiddleware } from "langchain";
 import { DirectResponseEnvelopeSchema } from "./master_plan/schema.js";
+import { WeeklyPlanDirectResponseSchema } from "./weekly_plan/schema.js";
 
 type MessageLike = {
 	type?: unknown;
@@ -20,8 +21,9 @@ type MessageLike = {
  * preceding generator call. Plan quality belongs to the generator/reviewer;
  * the orchestrator only honors the declared handoff disposition.
  */
-export function getMasterPlanTaskResult(
+function getPlanTaskResult(
 	messages: readonly MessageLike[],
+	acceptedSubagents: readonly string[],
 ): string | undefined {
 	const result = messages.at(-1);
 	if (
@@ -37,28 +39,48 @@ export function getMasterPlanTaskResult(
 			(call) =>
 				call.id === result.tool_call_id &&
 				call.name === "task" &&
-				call.args?.subagent_type === "generate_master_plan",
+				typeof call.args?.subagent_type === "string" &&
+				acceptedSubagents.includes(call.args.subagent_type),
 		);
 	if (generatorCall === undefined) return undefined;
 	try {
-		const envelope = DirectResponseEnvelopeSchema.safeParse(
-			JSON.parse(result.content),
-		);
+		const schema =
+			generatorCall.args?.subagent_type === "weekly_plan"
+				? WeeklyPlanDirectResponseSchema
+				: DirectResponseEnvelopeSchema;
+		const envelope = schema.safeParse(JSON.parse(result.content));
 		return envelope.success ? JSON.stringify(envelope.data.content) : undefined;
 	} catch {
 		return undefined;
 	}
 }
 
-/** Avoid an LLM round-trip that can rewrite a structured master-plan result. */
-export function createMasterPlanPassthroughMiddleware() {
+export function getMasterPlanTaskResult(
+	messages: readonly MessageLike[],
+): string | undefined {
+	return getPlanTaskResult(messages, ["generate_master_plan"]);
+}
+
+/** Return validated generated plan content without an orchestrator rewrite. */
+export function getDirectPlanTaskResult(
+	messages: readonly MessageLike[],
+): string | undefined {
+	return getPlanTaskResult(messages, ["generate_master_plan", "weekly_plan"]);
+}
+
+/** Avoid an LLM round-trip that can rewrite a structured generated plan. */
+export function createPlanPassthroughMiddleware() {
 	return createMiddleware({
-		name: "MasterPlanPassthroughMiddleware",
+		name: "PlanPassthroughMiddleware",
 		wrapModelCall: async (request, handler) => {
-			const result = getMasterPlanTaskResult(request.messages as MessageLike[]);
+			const result = getDirectPlanTaskResult(request.messages as MessageLike[]);
 			return result === undefined
 				? handler(request)
 				: new AIMessage({ content: result });
 		},
 	});
 }
+
+/** @deprecated Use createPlanPassthroughMiddleware. */
+export const createMasterPlanPassthroughMiddleware =
+	createPlanPassthroughMiddleware;

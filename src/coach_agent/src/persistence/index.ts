@@ -7,8 +7,8 @@
  */
 
 import type { Pool } from "mysql2/promise";
-import { createPool, ensureDatabase, readMySqlConfig } from "./mysql.js";
 import { MySqlSaver } from "./checkpointer.js";
+import { createPool, ensureDatabase, readMySqlConfig } from "./mysql.js";
 import { MySqlStore } from "./store.js";
 
 export interface Persistence {
@@ -37,11 +37,10 @@ export async function createPersistence(): Promise<Persistence> {
 }
 
 export { MySqlSaver } from "./checkpointer.js";
-export { MySqlStore } from "./store.js";
-export { StrideDataStore } from "./dataStore.js";
-export { MySqlMasterPlanContextProvider } from "./masterPlanContextProvider.js";
 export type {
+	ActiveMasterPlanMetadata,
 	Activity,
+	DailyRecovery,
 	DailyTrainingLoad,
 	HeartRateZone,
 	MasterPlanDocument,
@@ -50,9 +49,16 @@ export type {
 	RaceEffort,
 	RunningCalibration,
 	UserInjury,
-	WeeklyPlanDocument,
 	UserProfile,
-	DailyRecovery,
-	ActiveMasterPlanMetadata,
+	WeeklyFeedback,
+	WeeklyPlanDocument,
 } from "./dataStore.js";
+export { StrideDataStore } from "./dataStore.js";
+export { MySqlMasterPlanContextProvider } from "./masterPlanContextProvider.js";
 export { createStridePool } from "./mysql.js";
+export { MySqlStore } from "./store.js";
+export type {
+	WeeklyPlanContext,
+	WeeklyPlanContextProvider,
+} from "./weeklyPlanContextProvider.js";
+export { MySqlWeeklyPlanContextProvider } from "./weeklyPlanContextProvider.js";

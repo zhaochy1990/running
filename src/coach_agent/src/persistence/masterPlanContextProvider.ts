@@ -3,6 +3,11 @@ import {
 	ContextSnapshotSchema,
 	type MasterPlanContextProvider,
 } from "../graph/master_plan/index.js";
+import {
+	addDays,
+	planningStartDate,
+	shanghaiDay,
+} from "../utils/planningDate.js";
 import type {
 	ActiveMasterPlanMetadata,
 	Activity,
@@ -106,6 +111,7 @@ export class MySqlMasterPlanContextProvider
 				injuries,
 				activePlan,
 			),
+			plan_start: planningStartDate(end),
 			as_of: new Date(asOf).toISOString(),
 		});
 	}
@@ -406,16 +412,6 @@ function dayDiff(a: string, b: string): number {
 	return Math.round(
 		(Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400_000,
 	);
-}
-function addDays(day: string, amount: number): string {
-	const d = new Date(`${day}T00:00:00Z`);
-	d.setUTCDate(d.getUTCDate() + amount);
-	return d.toISOString().slice(0, 10);
-}
-function shanghaiDay(iso: string): string {
-	const d = new Date(iso);
-	if (Number.isNaN(d.valueOf())) throw new Error(`invalid asOf: ${iso}`);
-	return new Date(d.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
 }
 function isRoadRun(run: Activity): boolean {
 	const token =

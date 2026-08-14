@@ -5,7 +5,6 @@ import {
 } from "../../persistence/index.js";
 import { createActivitiesTools } from "../../tools/activities.js";
 import { askUserQuestionTool } from "../../tools/askUserQuestions.js";
-import { createCurrentTimeTools } from "../../tools/currentTime.js";
 import { createMasterPlanContextTools } from "../../tools/masterPlanContext.js";
 import { createPlanTools } from "../../tools/plan.js";
 import { createRaceTools } from "../../tools/races.js";
@@ -43,7 +42,6 @@ function createMasterPlanSubagent(
 	const activitiesTools = createActivitiesTools(store);
 	const trainingLoadTools = createTrainingLoadTools(store);
 	const planTools = createPlanTools(store);
-	const currentTimeTools = createCurrentTimeTools();
 	const raceTools = createRaceTools(store);
 	const runningCalibrationTools = createRunningCalibrationTools(store);
 	const masterPlanContextTools = createMasterPlanContextTools(
@@ -58,7 +56,6 @@ function createMasterPlanSubagent(
 	const tools = generatesPlan
 		? [
 				...planTools.filter((tool) => tool.name === "get_master_plan"),
-				...currentTimeTools,
 				...masterPlanContextTools,
 				askUserQuestionTool,
 			]
@@ -66,7 +63,6 @@ function createMasterPlanSubagent(
 				...activitiesTools,
 				...trainingLoadTools,
 				...planTools,
-				...currentTimeTools,
 				...raceTools,
 				...runningCalibrationTools,
 				askUserQuestionTool,

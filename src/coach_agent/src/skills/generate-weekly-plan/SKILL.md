@@ -10,6 +10,8 @@ description: Use this skill when the user wants to generate a new weekly trainin
 call `get_master_plan` to retrieve the user's season goal and current active training plan. If the user does not have a season goal or training plan, reject the request and ask the user to set a season goal and training plan first.
 
 next, call `get_weekly_plan_context` to retrieve the user's current training status, the response includes the following information:
+- `as_of`: the inclusive training-data cutoff date
+- `plan_start`: the authoritative Monday for the target week
 - current training phase and stage
 - recent training activities and feedback
 - current fitness state and training load
@@ -21,6 +23,11 @@ next, call `get_weekly_plan_context` to retrieve the user's current training sta
 Based on the user's season goal, current training phase and stage, recent training activities and feedback, and current fitness state, generate a weekly training plan for the target week. The plan should include the following information:
 - daily training schedule for the target week
 - specific content for each training session (including training type, volume, intensity, etc.)
+
+The target week is exactly `plan_start` through six days after `plan_start`. Do not
+use the system date or independently reinterpret “this week” or “next week”. Every
+session and nutrition date must fall within that target week, and nutrition must
+cover all seven dates.
 
 We need to use different training types and training intensities for different training phases. You need reference the instructions from "references" folder to understand how to organize the trainings for each phase. Currently, the training phases include: 基础期(base.md)、提升期(build.md)、专项速度周期(speed.md)、马拉松专项期(marathon.md)、赛前减量期(taper.md)、赛后恢复期(recovery.md).
 

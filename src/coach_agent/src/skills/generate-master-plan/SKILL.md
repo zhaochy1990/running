@@ -24,6 +24,10 @@ description: >-
 当前计划连续性。不要另外查询大日期区间的逐条 Activity；这会重复数据并造成超大
 工具结果。
 
+该工具返回的 `as_of` 是本轮数据截止日，`plan_start` 是本轮计划唯一可信的起始日。
+`plan_start` 为 `as_of` 当天或之后的首个周一；禁止改用系统当前日期或自行推导
+“本周/下周”。
+
 然后，我们需要查询用户的PB数据（个人最好成绩），包括：
 - 5kpb(5公里PB)
 - 10kpb(10公里PB)
@@ -57,7 +61,7 @@ description: >-
 
 ### 训练周期划分
 
-我们对一个具体用户设计训练周期主要依据用户的备赛时间和训练目标。备赛时间指从当前日期到比赛日期的时间长度。
+我们对一个具体用户设计训练周期主要依据用户的备赛时间和训练目标。备赛时间指从 `plan_start` 到比赛日期的时间长度。
 
 一般来说，训练周期可以分为以下几个阶段：
 1. 基础期（Base Phase）：这个阶段的长度可以根据用户的备赛时间灵活安排，主要目标是建立有氧基础，提高耐力和心肺功能。训练内容以中低强度的长距离跑为主，同时加入适量的力量训练和核心训练。
@@ -79,7 +83,7 @@ description: >-
 
 字段语义和业务规则：
 
-1. 新计划 `status` 固定为 `draft`，`generated_by` 固定为 `coach_agent`，`version` 固定为 `1`。`goal` 包含赛事名称、`FM`/`HM`、比赛日、目标时间与 `Asia/Shanghai`，地点可选；顶层包含计划日期范围、阶段、周安排、训练原则和 UTC 创建/更新时间。
+1. 新计划 `status` 固定为 `draft`，`generated_by` 固定为 `coach_agent`，`version` 固定为 `1`。`goal` 包含赛事名称、`FM`/`HM`、比赛日、目标时间与 `Asia/Shanghai`，地点可选；顶层包含计划日期范围、阶段、周安排、训练原则和 UTC 创建/更新时间。`start_date`、首个 phase 的 `start_date` 和首个 `week_start` 必须都等于上下文中的 `plan_start`。
 2. `phase_name` 只能为 `基础期`、`提升期`、`专项速度周期`、`马拉松专项期`、`赛前减量期`、`赛后恢复期`，并且不同phase不可以重复；
 3. `distance` 只能为 `FM` 或 `HM`。
 4. milestone `type` 只能为 `race`、`test_run`、`long_run`、`strength_test`、`body_composition`。

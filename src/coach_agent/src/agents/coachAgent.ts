@@ -1,27 +1,30 @@
-import { createDeepAgent, FilesystemBackend } from "deepagents";
-import { InMemoryStore, MemorySaver } from "@langchain/langgraph";
-import { z } from "zod/v4";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getAgentConfig, type CoachAgentConfig } from "../config/config.js";
-import { buildResponsesModel } from "./common.js";
-import { memoryTools } from "./memory.js";
+import { InMemoryStore, MemorySaver } from "@langchain/langgraph";
+import { createDeepAgent, FilesystemBackend } from "deepagents";
 import type { ToolRuntime } from "langchain";
-import { getQaSubagent } from "./qa/agent.js";
-import { createLoggingMiddleware } from "./middleware.js";
+import { z } from "zod/v4";
+import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
 import type { StrideDataStore } from "../persistence/index.js";
-import { getCoachSubagent } from "./weekly_plan/agent.js";
 import { getLogger } from "../utils/logger.js";
+import { buildResponsesModel } from "./common.js";
 import {
 	getMasterPlanGeneratorSubagent,
 	getMasterPlanSubagent,
 } from "./master_plan/agent.js";
+import { createPlanPassthroughMiddleware } from "./masterPlanPassthrough.js";
+import { memoryTools } from "./memory.js";
+import { createLoggingMiddleware } from "./middleware.js";
 import { ORCHESTRATOR_PROMPT } from "./prompts.js";
-import { createMasterPlanPassthroughMiddleware } from "./masterPlanPassthrough.js";
+import { getQaSubagent } from "./qa/agent.js";
+import { getCoachSubagent } from "./weekly_plan/agent.js";
 
-export const CoachContext = z.object({
-	userId: z.string(),
-});
+export const CoachContext = z
+	.object({
+		userId: z.string().min(1),
+		asof: z.iso.date(),
+	})
+	.strict();
 export type CoachToolRuntime = ToolRuntime<unknown, typeof CoachContext>;
 
 // Skills live next to the compiled agents (`dist/agents/skills/**`, copied from
@@ -73,7 +76,7 @@ export async function createCoachAgent(
 		],
 		contextSchema: CoachContext,
 		middleware: [
-			createMasterPlanPassthroughMiddleware(),
+			createPlanPassthroughMiddleware(),
 			createLoggingMiddleware("agent"),
 		],
 		// Skill paths are virtual (for example `/generate-master-plan/SKILL.md`).

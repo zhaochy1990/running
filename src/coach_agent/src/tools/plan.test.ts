@@ -26,7 +26,7 @@ class FakePlanStore implements PlanStore {
 test("plan tools query the MySQL store with the runtime user identity", async () => {
 	const store = new FakePlanStore();
 	const [masterTool, weeklyTool] = createPlanTools(store as never);
-	const config = { context: { userId } };
+	const config = { context: { userId, asof: "2026-07-20" } };
 
 	assert.equal(masterTool!.name, "get_master_plan");
 	assert.equal(weeklyTool!.name, "get_weekly_plan");

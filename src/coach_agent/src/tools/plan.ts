@@ -81,22 +81,3 @@ function requireUserId(runtime: CoachToolRuntime, toolName: string): string {
 		throw new Error(`${toolName}: missing userId in runtime context`);
 	return userId;
 }
-
-function currentShanghaiWeekName(now: Date = new Date()): string {
-	const parts = new Intl.DateTimeFormat("en-CA", {
-		timeZone: "Asia/Shanghai",
-		year: "numeric",
-		month: "2-digit",
-		day: "2-digit",
-	}).formatToParts(now);
-	const value = (type: string) =>
-		parts.find((part) => part.type === type)!.value;
-	const shanghaiToday = new Date(
-		`${value("year")}-${value("month")}-${value("day")}T00:00:00Z`,
-	);
-	const monday = new Date(shanghaiToday);
-	monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
-	const sunday = new Date(monday);
-	sunday.setUTCDate(sunday.getUTCDate() + 6);
-	return `${monday.toISOString().slice(0, 10)}_${sunday.toISOString().slice(5, 10)}`;
-}

@@ -441,6 +441,7 @@ export function createAssessmentSnapshot() {
 				detail: "no canonical records",
 			},
 		],
+		plan_start: "2026-08-10",
 		as_of: "2026-08-10T00:00:00Z",
 	};
 }

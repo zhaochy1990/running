@@ -166,6 +166,11 @@ export interface DailyRecovery {
 	rhr: number | null;
 	hrv: number | null;
 }
+export interface WeeklyFeedback {
+	weekStart: string;
+	contentMd: string;
+	updatedAt: Date;
+}
 export interface ActiveMasterPlanMetadata {
 	planId: string;
 	revision: number;
@@ -261,6 +266,32 @@ export class StrideDataStore {
 			date: normalizeDay(row.date as string),
 			rhr: (row.rhr ?? null) as number | null,
 			hrv: (row.hrv ?? null) as number | null,
+		}));
+	}
+
+	async getWeeklyFeedbackByDateRange(
+		userId: string,
+		startDay: string,
+		endDay: string,
+	): Promise<WeeklyFeedback[]> {
+		assertDay(startDay);
+		assertDay(endDay);
+		if (startDay > endDay) {
+			throw new Error(
+				`startDay (${startDay}) must not be after endDay (${endDay})`,
+			);
+		}
+		const [rows] = await this.pool.query<RowDataPacket[]>(
+			`SELECT week_start, content_md, updated_at
+         FROM weekly_feedback
+        WHERE user_id = ? AND week_start BETWEEN ? AND ?
+        ORDER BY week_start ASC`,
+			[userId, startDay, endDay],
+		);
+		return rows.map((row) => ({
+			weekStart: mysqlDay(row.week_start),
+			contentMd: row.content_md as string,
+			updatedAt: row.updated_at as Date,
 		}));
 	}
 

@@ -60,6 +60,40 @@ test("personal best loader rejects records without an activity label ID", async 
 	);
 });
 
+test("weekly feedback loader reads the bounded user-week range", async () => {
+	let params: unknown[] = [];
+	const pool = {
+		async query(_sql: string, values: unknown[]) {
+			params = values;
+			return [
+				[
+					{
+						week_start: "2026-08-03",
+						content_md: "recovered well",
+						updated_at: new Date("2026-08-10T00:00:00Z"),
+					},
+				] as RowDataPacket[],
+				[],
+			];
+		},
+	} as unknown as Pool;
+
+	const rows = await new StrideDataStore(pool).getWeeklyFeedbackByDateRange(
+		"athlete",
+		"2026-07-20",
+		"2026-08-10",
+	);
+
+	assert.deepEqual(params, ["athlete", "2026-07-20", "2026-08-10"]);
+	assert.deepEqual(rows, [
+		{
+			weekStart: "2026-08-03",
+			contentMd: "recovered well",
+			updatedAt: new Date("2026-08-10T00:00:00Z"),
+		},
+	]);
+});
+
 test("context provider exposes PB activity label ID without source", async () => {
 	const provider = new MySqlMasterPlanContextProvider({
 		async getUserProfile() {
@@ -111,6 +145,7 @@ test("context provider exposes PB activity label ID without source", async () =>
 		"2026-08-11T00:00:00Z",
 	);
 
+	assert.equal(snapshot.plan_start, "2026-08-17");
 	assert.deepEqual(snapshot.personal_bests, [
 		{
 			distance: "5K",
