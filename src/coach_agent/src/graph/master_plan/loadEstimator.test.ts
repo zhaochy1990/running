@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { estimateMasterPlanWeekLoad } from "./loadEstimator.js";
 import type { MasterPlan } from "./schemas.js";
+import structuredFixtures from "./structuredLoadFixtures.json" with {
+	type: "json",
+};
 import { createTestMasterPlan } from "./testFixtures.js";
 
 type Week = MasterPlan["weeks"][number];
@@ -41,6 +44,28 @@ function estimate(
 	);
 }
 
+function step(
+	step_kind: "warmup" | "work" | "recovery" | "cooldown" | "rest",
+	duration: { kind: "time_s" | "distance_m"; value: number },
+	target:
+		| { kind: "pace_s_km" | "hr_bpm" | "power_w"; low: number; high: number }
+		| { kind: "open"; low: null; high: null },
+) {
+	return { step_kind, duration, target, note: null, hr_cap_bpm: null };
+}
+
+function workoutStructure(
+	blocks: Array<{ repeat: number; steps: ReturnType<typeof step>[] }>,
+) {
+	return {
+		schema: "run-workout/v1" as const,
+		name: "structured test",
+		date: "2026-08-11",
+		note: null,
+		blocks,
+	};
+}
+
 test("weekly range and remaining easy volume match the Python master-plan estimator", () => {
 	const result = estimate({ key_sessions: [] });
 
@@ -65,6 +90,51 @@ test("weekly range and remaining easy volume match the Python master-plan estima
 	]);
 });
 
+test("shared structured fixtures match Python planned-load details", () => {
+	const base = createTestMasterPlan().weeks[0];
+	assert.ok(base);
+	for (const fixture of structuredFixtures.cases) {
+		const result = estimateMasterPlanWeekLoad(
+			{
+				...base,
+				target_weekly_km_low: fixture.declared_distance_km,
+				target_weekly_km_high: fixture.declared_distance_km,
+				key_sessions: [
+					{
+						type: fixture.type,
+						distance_km: fixture.declared_distance_km,
+						duration_min: fixture.declared_duration_min,
+						intensity: fixture.id,
+						purpose: "structured parity",
+						workout_structure: fixture.workout_structure,
+					},
+				],
+			} as Week,
+			createTestMasterPlan().goal,
+			structuredFixtures.threshold_speed_mps,
+			canonicalPaceZones(structuredFixtures.threshold_speed_mps),
+			structuredFixtures.threshold_hr,
+			structuredFixtures.rhr,
+		);
+
+		assert.equal(
+			result.lowDose,
+			Number(fixture.expected.low_dose.toFixed(1)),
+			fixture.id,
+		);
+		assert.equal(
+			result.expectedDose,
+			Number(fixture.expected.expected_dose.toFixed(1)),
+			fixture.id,
+		);
+		assert.equal(
+			result.highDose,
+			Number(fixture.expected.high_dose.toFixed(1)),
+			fixture.id,
+		);
+	}
+});
+
 test("quality sessions use their personal pace-zone range instead of whole-workout average speed", () => {
 	const result = estimate({
 		key_sessions: [
@@ -84,6 +154,310 @@ test("quality sessions use their personal pace-zone range instead of whole-worko
 	assert.equal(result.highDose, 372.5);
 	assert.equal(result.keySessionKm, 12);
 	assert.ok(result.assumptions.includes("z5_pace_zone_range"));
+});
+
+test("structured intervals integrate warm-up, repeated work, active recovery and cooldown", () => {
+	const result = estimate({
+		target_weekly_km_low: 11.304,
+		target_weekly_km_high: 11.304,
+		key_sessions: [
+			{
+				type: "interval",
+				distance_km: 11.304,
+				duration_min: 55,
+				intensity:
+					"15 min warm-up + 6 x (3 min work + 2 min jog) + 10 min cooldown",
+				purpose: "interval stimulus",
+				workout_structure: {
+					schema: "run-workout/v1",
+					name: "6x3min",
+					date: "2026-08-11",
+					note: null,
+					blocks: [
+						{
+							repeat: 1,
+							steps: [
+								{
+									step_kind: "warmup",
+									duration: { kind: "time_s", value: 900 },
+									target: { kind: "open", low: null, high: null },
+								},
+							],
+						},
+						{
+							repeat: 6,
+							steps: [
+								{
+									step_kind: "work",
+									duration: { kind: "time_s", value: 180 },
+									target: {
+										kind: "pace_s_km",
+										low: 1000 / (4 * 1.1),
+										high: 1000 / (4 * 1.1),
+									},
+								},
+								{
+									step_kind: "recovery",
+									duration: { kind: "time_s", value: 120 },
+									target: { kind: "open", low: null, high: null },
+								},
+							],
+						},
+						{
+							repeat: 1,
+							steps: [
+								{
+									step_kind: "cooldown",
+									duration: { kind: "time_s", value: 600 },
+									target: { kind: "open", low: null, high: null },
+								},
+							],
+						},
+					],
+				},
+			},
+		] as unknown as Week["key_sessions"],
+	});
+
+	assert.equal(result.expectedDose, 81.3);
+	assert.deepEqual(result.lowDose, result.expectedDose);
+	assert.deepEqual(result.highDose, result.expectedDose);
+	assert.ok(
+		result.assumptions.includes("structured_workout_segments_integrated"),
+	);
+});
+
+test("structured distance ranges, repeat blocks and passive rests match the Python oracle", () => {
+	const result = estimate({
+		target_weekly_km_low: 11,
+		target_weekly_km_high: 11,
+		key_sessions: [
+			{
+				type: "interval",
+				distance_km: 11,
+				duration_min: 51.7379,
+				intensity: "2km warm-up + 5 x (1km work + 400m jog) + 2km cooldown",
+				purpose: "interval stimulus",
+				workout_structure: workoutStructure([
+					{
+						repeat: 1,
+						steps: [
+							step(
+								"warmup",
+								{ kind: "distance_m", value: 2000 },
+								{
+									kind: "pace_s_km",
+									low: 330,
+									high: 310,
+								},
+							),
+						],
+					},
+					{
+						repeat: 5,
+						steps: [
+							step(
+								"work",
+								{ kind: "distance_m", value: 1000 },
+								{
+									kind: "pace_s_km",
+									low: 230,
+									high: 220,
+								},
+							),
+							step(
+								"recovery",
+								{ kind: "distance_m", value: 400 },
+								{
+									kind: "pace_s_km",
+									low: 360,
+									high: 340,
+								},
+							),
+							step(
+								"rest",
+								{ kind: "time_s", value: 60 },
+								{
+									kind: "open",
+									low: null,
+									high: null,
+								},
+							),
+						],
+					},
+					{
+						repeat: 1,
+						steps: [
+							step(
+								"cooldown",
+								{ kind: "distance_m", value: 2000 },
+								{
+									kind: "open",
+									low: null,
+									high: null,
+								},
+							),
+						],
+					},
+				]),
+			},
+		],
+	});
+
+	assert.deepEqual(
+		[result.expectedDose, result.lowDose, result.highDose],
+		[80.3, 78.5, 82.1],
+	);
+});
+
+test("structured long runs integrate embedded race-pace blocks as one session", () => {
+	const result = estimate({
+		target_weekly_km_low: 25,
+		target_weekly_km_high: 25,
+		key_sessions: [
+			{
+				type: "long_run",
+				distance_km: 25,
+				duration_min: 114.0374,
+				intensity: "5km easy + 15km MP + 5km easy",
+				purpose: "marathon-specific endurance",
+				workout_structure: workoutStructure([
+					{
+						repeat: 1,
+						steps: [
+							step(
+								"warmup",
+								{ kind: "distance_m", value: 5000 },
+								{
+									kind: "open",
+									low: null,
+									high: null,
+								},
+							),
+							step(
+								"work",
+								{ kind: "distance_m", value: 15000 },
+								{
+									kind: "pace_s_km",
+									low: 245,
+									high: 240,
+								},
+							),
+							step(
+								"cooldown",
+								{ kind: "distance_m", value: 5000 },
+								{
+									kind: "open",
+									low: null,
+									high: null,
+								},
+							),
+						],
+					},
+				]),
+			},
+		],
+	});
+
+	assert.deepEqual(
+		[result.expectedDose, result.lowDose, result.highDose],
+		[172.2, 170.3, 174.1],
+	);
+	assert.equal(result.longRunDose, 172.2);
+});
+
+test("structured HR targets use the athlete's threshold and resting HR calibration", () => {
+	const base = createTestMasterPlan().weeks[0];
+	assert.ok(base);
+	const result = estimateMasterPlanWeekLoad(
+		{
+			...base,
+			target_weekly_km_low: 5.7,
+			target_weekly_km_high: 5.7,
+			key_sessions: [
+				{
+					type: "tempo",
+					distance_km: 5.7,
+					duration_min: 30,
+					intensity: "30min HR 140-150",
+					purpose: "tempo stimulus",
+					workout_structure: workoutStructure([
+						{
+							repeat: 1,
+							steps: [
+								step(
+									"work",
+									{ kind: "time_s", value: 1800 },
+									{
+										kind: "hr_bpm",
+										low: 140,
+										high: 150,
+									},
+								),
+							],
+						},
+					]),
+				},
+			],
+		},
+		createTestMasterPlan().goal,
+		4,
+		canonicalPaceZones(),
+		170,
+		50,
+	);
+
+	assert.deepEqual(
+		[result.expectedDose, result.lowDose, result.highDose],
+		[31.3, 28.1, 34.7],
+	);
+	assert.ok(
+		result.assumptions.includes("heart_rate_target_used_as_intensity_proxy"),
+	);
+});
+
+test("partially computable structures expose coverage instead of guessing power targets", () => {
+	const result = estimate({
+		target_weekly_km_low: 4.8,
+		target_weekly_km_high: 4.8,
+		key_sessions: [
+			{
+				type: "threshold",
+				distance_km: 4.8,
+				duration_min: 40,
+				intensity: "20min pace + 20min power",
+				purpose: "threshold stimulus",
+				workout_structure: workoutStructure([
+					{
+						repeat: 1,
+						steps: [
+							step(
+								"work",
+								{ kind: "time_s", value: 1200 },
+								{
+									kind: "pace_s_km",
+									low: 250,
+									high: 250,
+								},
+							),
+							step(
+								"work",
+								{ kind: "time_s", value: 1200 },
+								{
+									kind: "power_w",
+									low: 250,
+									high: 300,
+								},
+							),
+						],
+					},
+				]),
+			},
+		],
+	});
+
+	assert.equal(result.expectedDose, 33.3);
+	assert.ok(result.assumptions.includes("structured_workout_partial_coverage"));
 });
 
 test("multi-zone quality text follows the Python marker precedence", () => {

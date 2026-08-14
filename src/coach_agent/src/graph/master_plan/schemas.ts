@@ -159,6 +159,59 @@ const RecoverySchema = z.object({
 	adjustment_trigger: z.string().min(1),
 });
 
+const WorkoutDurationSchema = z.discriminatedUnion("kind", [
+	z
+		.object({
+			kind: z.enum(["time_s", "distance_m"]),
+			value: z.number().positive(),
+		})
+		.strict(),
+	z.object({ kind: z.literal("open"), value: z.null() }).strict(),
+]);
+
+const WorkoutTargetSchema = z.discriminatedUnion("kind", [
+	z
+		.object({
+			kind: z.enum(["pace_s_km", "hr_bpm", "power_w"]),
+			low: z.number().positive(),
+			high: z.number().positive(),
+		})
+		.strict(),
+	z.object({ kind: z.literal("open"), low: z.null(), high: z.null() }).strict(),
+]);
+
+const WorkoutStepSchema = z
+	.object({
+		step_kind: z.enum(["warmup", "work", "recovery", "cooldown", "rest"]),
+		duration: WorkoutDurationSchema,
+		target: WorkoutTargetSchema,
+		note: z.string().nullable().optional(),
+		hr_cap_bpm: z.int().positive().nullable().optional(),
+	})
+	.strict();
+
+const WorkoutStructureSchema = z
+	.object({
+		schema: z.literal("run-workout/v1"),
+		name: z.string().min(1),
+		date: DaySchema,
+		note: z.string().nullable(),
+		blocks: z
+			.array(
+				z
+					.object({
+						repeat: z.int().positive(),
+						steps: z.array(WorkoutStepSchema).min(1),
+					})
+					.strict(),
+			)
+			.min(1),
+	})
+	.strict()
+	.describe(
+		"Canonical running-workout blocks. Repeated interval work and recovery belong in the same block.",
+	);
+
 const PhaseSchema = z
 	.object({
 		name: z.enum([
@@ -220,6 +273,9 @@ const KeySessionSchema = z
 				"Describe every component of this one workout here, including any race-pace blocks embedded in a long run.",
 			),
 		purpose: z.string().nullable(),
+		workout_structure: WorkoutStructureSchema.nullish().describe(
+			"Machine-readable structure for this complete running workout. Use null only for strength sessions or legacy plans.",
+		),
 	})
 	.describe(
 		"Exactly one independently performed workout. Embedded blocks are components of this object and must not be repeated as sibling key_sessions.",
@@ -263,6 +319,37 @@ const WeekSchema = z
 			});
 		}
 		for (const [index, session] of week.key_sessions.entries()) {
+			const structure = session.workout_structure;
+			if (structure) {
+				const weekEnd = new Date(`${week.week_start}T00:00:00Z`);
+				weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+				if (
+					structure.date < week.week_start ||
+					structure.date > weekEnd.toISOString().slice(0, 10)
+				)
+					ctx.addIssue({
+						code: "custom",
+						path: ["key_sessions", index, "workout_structure", "date"],
+						message: "must fall inside the containing Monday-Sunday week",
+					});
+				for (const [blockIndex, block] of structure.blocks.entries())
+					for (const [stepIndex, step] of block.steps.entries())
+						if (step.step_kind === "work" && step.target.kind === "open")
+							ctx.addIssue({
+								code: "custom",
+								path: [
+									"key_sessions",
+									index,
+									"workout_structure",
+									"blocks",
+									blockIndex,
+									"steps",
+									stepIndex,
+									"target",
+								],
+								message: "work steps require an explicit target",
+							});
+			}
 			if (
 				/(?:^|\b)(?:easy|recovery|filler|commute)(?:\b|$)|轻松跑|恢复跑|填充跑|通勤跑/i.test(
 					`${session.intensity ?? ""} ${session.purpose ?? ""}`,

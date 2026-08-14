@@ -42,7 +42,7 @@ export const SimulationWeekSchema = z
 	.strict();
 export const SimulationReportSchema = z
 	.object({
-		algorithm_version: z.literal("master-plan-load-v2"),
+		algorithm_version: z.literal("master-plan-load-v3"),
 		estimated: z.literal(true),
 		provenance: z.string(),
 		weeks: z.array(SimulationWeekSchema),
@@ -111,6 +111,8 @@ export function simulateMasterPlanLoad(
 			plan.goal,
 			threshold,
 			snapshot.running_calibration?.pace_zones,
+			snapshot.running_calibration?.threshold_hr,
+			snapshot.running_calibration?.rhr_baseline,
 		);
 		const estimatedDose = estimate.expectedDose;
 		if (estimatedDose === null) pmcAvailable = false;
@@ -141,16 +143,20 @@ export function simulateMasterPlanLoad(
 			confidence:
 				estimatedDose === null
 					? ("low" as const)
-					: !initialPmcAvailable ||
-							snapshot.running_calibration?.threshold_speed_confidence !==
-								"high" ||
-							estimate.lowDose !== estimate.highDose ||
-							estimate.assumptions.some((assumption) =>
-								/(?:unspecified|unknown|distance_only)/.test(assumption),
-							) ||
-							(week.week_index === 1 && partialCurrentWeek)
-						? ("medium" as const)
-						: ("high" as const),
+					: estimate.assumptions.includes("structured_workout_partial_coverage")
+						? ("low" as const)
+						: !initialPmcAvailable ||
+								snapshot.running_calibration?.threshold_speed_confidence !==
+									"high" ||
+								estimate.lowDose !== estimate.highDose ||
+								estimate.assumptions.some((assumption) =>
+									/(?:unspecified|unknown|distance_only|legacy_unstructured|^open_|heart_rate_target|differs_from_declared)/.test(
+										assumption,
+									),
+								) ||
+								(week.week_index === 1 && partialCurrentWeek)
+							? ("medium" as const)
+							: ("high" as const),
 			daily_distribution: weekDistribution,
 			estimated_dose: estimatedDose === null ? null : round(estimatedDose),
 			estimated_dose_low:
@@ -172,10 +178,10 @@ export function simulateMasterPlanLoad(
 		};
 	});
 	return SimulationReportSchema.parse({
-		algorithm_version: "master-plan-load-v2",
+		algorithm_version: "master-plan-load-v3",
 		estimated: true,
 		provenance:
-			"deterministic strategic estimate; Python master-plan pace-zone parity with explicit dose ranges; expected dose drives availability-adjusted Mon-Sun PMC shares",
+			"deterministic strategic estimate; canonical run-workout/v1 segment integration with explicit legacy fallback; expected dose drives availability-adjusted Mon-Sun PMC shares",
 		weeks,
 	});
 }

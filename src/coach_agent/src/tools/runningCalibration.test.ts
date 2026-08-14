@@ -18,6 +18,7 @@ test("get_running_calibration returns the latest threshold and zones for the run
 							as_of_date: "2026-08-08",
 							threshold_hr: 168,
 							threshold_speed_mps: 3.9,
+							rhr_baseline: 48,
 							threshold_hr_confidence: "high",
 							threshold_speed_confidence: "medium",
 						},
@@ -53,6 +54,7 @@ test("get_running_calibration returns the latest threshold and zones for the run
 		asOfDate: "2026-08-08",
 		thresholdHr: 168,
 		thresholdSpeedMps: 3.9,
+		rhrBaseline: 48,
 		thresholdHrConfidence: "high",
 		thresholdSpeedConfidence: "medium",
 		paceZones: [

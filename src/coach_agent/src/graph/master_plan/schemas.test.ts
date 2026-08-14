@@ -78,3 +78,72 @@ test("master plan accepts an omitted or null race location", () => {
 	};
 	assert.equal(MasterPlanSchema.safeParse(withNullLocation).success, true);
 });
+
+test("key sessions accept the canonical structured running-workout shape", () => {
+	const plan = createTestMasterPlan();
+	const session = plan.weeks[0]!.key_sessions[0]! as Record<string, unknown>;
+	session.workout_structure = {
+		schema: "run-workout/v1",
+		name: "6x3min",
+		date: "2026-08-11",
+		note: null,
+		blocks: [
+			{
+				repeat: 6,
+				steps: [
+					{
+						step_kind: "work",
+						duration: { kind: "time_s", value: 180 },
+						target: { kind: "pace_s_km", low: 230, high: 225 },
+					},
+					{
+						step_kind: "recovery",
+						duration: { kind: "time_s", value: 120 },
+						target: { kind: "open", low: null, high: null },
+					},
+				],
+			},
+		],
+	};
+
+	assert.equal(MasterPlanSchema.safeParse(plan).success, true);
+});
+
+test("structured workout dates stay in their week and work targets are explicit", () => {
+	const plan = createTestMasterPlan();
+	const session = plan.weeks[0]!.key_sessions[0]! as Record<string, unknown>;
+	const workout = {
+		schema: "run-workout/v1",
+		name: "invalid",
+		date: "2026-08-18",
+		note: null,
+		blocks: [
+			{
+				repeat: 1,
+				steps: [
+					{
+						step_kind: "work",
+						duration: { kind: "time_s", value: 600 },
+						target: { kind: "open", low: null, high: null },
+					},
+				],
+			},
+		],
+	};
+	session.workout_structure = workout;
+
+	const result = MasterPlanSchema.safeParse(plan);
+	assert.equal(result.success, false);
+	assert.ok(
+		!result.success &&
+			result.error.issues.some((issue) =>
+				issue.message.includes("containing Monday-Sunday week"),
+			),
+	);
+	assert.ok(
+		!result.success &&
+			result.error.issues.some((issue) =>
+				issue.message.includes("explicit target"),
+			),
+	);
+});

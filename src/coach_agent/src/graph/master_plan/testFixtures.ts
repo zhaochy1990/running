@@ -186,6 +186,7 @@ export function createAssessmentSnapshot() {
 			as_of_date: "2026-08-10",
 			threshold_hr: 172,
 			threshold_speed_mps: 4.25,
+			rhr_baseline: 50,
 			threshold_hr_confidence: "high",
 			threshold_speed_confidence: "high",
 			heart_rate_zones: [],

@@ -207,7 +207,7 @@ test("adjudicator blocks a missing required reviewer and rejects unknown evidenc
 test("adjudicator rejects unknown rule and simulation evidence", () => {
 	const evidence = {
 		simulation: {
-			algorithm_version: "master-plan-load-v2" as const,
+			algorithm_version: "master-plan-load-v3" as const,
 			estimated: true as const,
 			provenance: "test",
 			weeks: [],

@@ -24,7 +24,7 @@ test("weekly simulator deterministically estimates a dose range and applies the 
 	);
 	const first = report.weeks[0];
 	assert.ok(first);
-	assert.equal(report.algorithm_version, "master-plan-load-v2");
+	assert.equal(report.algorithm_version, "master-plan-load-v3");
 	assert.deepEqual(
 		first.daily_distribution,
 		[0.1, 0.18, 0.12, 0.18, 0.1, 0.27, 0.05],
@@ -39,6 +39,7 @@ test("weekly simulator deterministically estimates a dose range and applies the 
 	assert.equal(first.estimated_dose_low, 329.4);
 	assert.equal(first.estimated_dose_high, 439.2);
 	assert.deepEqual(first.load_assumptions, [
+		"legacy_unstructured_session_approximation",
 		"z2_pace_zone_range",
 		"remaining_weekly_distance_in_easy_zone",
 	]);
@@ -115,6 +116,52 @@ test("simulator distinguishes an uncomputable session from missing calibration",
 	assert.equal(
 		report.weeks[0]!.missing_dose_reason,
 		"planned_session_uncomputable",
+	);
+});
+
+test("simulator reports low confidence for partially covered structured workouts", () => {
+	const plan = createTestMasterPlan() as MasterPlan;
+	plan.weeks[0]!.key_sessions[0] = {
+		type: "threshold",
+		distance_km: 4.8,
+		duration_min: 40,
+		intensity: "20min pace + 20min power",
+		purpose: "threshold stimulus",
+		workout_structure: {
+			schema: "run-workout/v1",
+			name: "partial",
+			date: "2026-08-11",
+			note: null,
+			blocks: [
+				{
+					repeat: 1,
+					steps: [
+						{
+							step_kind: "work",
+							duration: { kind: "time_s", value: 1200 },
+							target: { kind: "pace_s_km", low: 250, high: 250 },
+							note: null,
+							hr_cap_bpm: null,
+						},
+						{
+							step_kind: "work",
+							duration: { kind: "time_s", value: 1200 },
+							target: { kind: "power_w", low: 250, high: 300 },
+							note: null,
+							hr_cap_bpm: null,
+						},
+					],
+				},
+			],
+		},
+	};
+
+	const report = simulateMasterPlanLoad(plan, createAssessmentSnapshot());
+	assert.equal(report.weeks[0]!.confidence, "low");
+	assert.ok(
+		report.weeks[0]!.load_assumptions.includes(
+			"structured_workout_partial_coverage",
+		),
 	);
 });
 
