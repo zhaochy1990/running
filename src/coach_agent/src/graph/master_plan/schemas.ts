@@ -13,6 +13,8 @@ const DaySchema = z
 const UTC_ISO = /(?:Z|[+-]00:00)$/;
 const EMBEDDED_RACE_PACE =
 	/(?:\b(?:MP|HMP|RP)\b|race[- ]?pace|target[- ]?pace|比赛配速|目标配速|马拉松配速|半马配速)/i;
+const ORDINARY_FILLER_PURPOSE =
+	/^\s*(?:(?:ordinary|easy|recovery|filler|commute)\s+)*(?:easy|recovery|filler|commute)\s+run\s*[.!]?\s*$|^\s*(?:普通)?(?:轻松|恢复|填充|通勤)跑(?:训练)?\s*[。！]?\s*$/i;
 
 export const KeySessionTypeSchema = z.enum([
 	"long_run",
@@ -308,14 +310,20 @@ const WeekSchema = z
 		const raceSessions = week.key_sessions.filter(
 			(session) => session.type === "race",
 		);
+		const raceWeekCompanions = week.key_sessions.filter(
+			(session) => session.type !== "race",
+		);
 		if (
 			raceSessions.length > 0 &&
-			(raceSessions.length !== 1 || week.key_sessions.length !== 1)
+			(raceSessions.length !== 1 ||
+				raceWeekCompanions.length > 1 ||
+				raceWeekCompanions.some((session) => session.type !== "race_pace"))
 		) {
 			ctx.addIssue({
 				code: "custom",
 				path: ["key_sessions"],
-				message: "race weeks may contain only the target race key session",
+				message:
+					"race weeks may contain the target race and at most one race-pace activation session",
 			});
 		}
 		for (const [index, session] of week.key_sessions.entries()) {
@@ -350,11 +358,7 @@ const WeekSchema = z
 								message: "work steps require an explicit target",
 							});
 			}
-			if (
-				/(?:^|\b)(?:easy|recovery|filler|commute)(?:\b|$)|轻松跑|恢复跑|填充跑|通勤跑/i.test(
-					`${session.intensity ?? ""} ${session.purpose ?? ""}`,
-				)
-			) {
+			if (ORDINARY_FILLER_PURPOSE.test(session.purpose ?? "")) {
 				ctx.addIssue({
 					code: "custom",
 					path: ["key_sessions", index],
@@ -372,7 +376,20 @@ const WeekSchema = z
 		);
 		if (
 			hasEmbeddedRacePaceLongRun &&
-			week.key_sessions.some((session) => session.type === "race_pace")
+			week.key_sessions.some(
+				(session) =>
+					session.type === "race_pace" &&
+					session.workout_structure &&
+					week.key_sessions.some(
+						(longRun) =>
+							longRun.type === "long_run" &&
+							longRun.workout_structure?.date ===
+								session.workout_structure?.date &&
+							EMBEDDED_RACE_PACE.test(
+								`${longRun.intensity ?? ""} ${longRun.purpose ?? ""}`,
+							),
+					),
+			)
 		) {
 			ctx.addIssue({
 				code: "custom",
@@ -431,6 +448,54 @@ export const MasterPlanSchema = z
 					path: ["weeks", index, "week_index"],
 					message: "must be consecutive from 1",
 				});
+			}
+			if (week.key_sessions.some((session) => session.type === "race")) {
+				const activation = week.key_sessions.find(
+					(session) => session.type === "race_pace",
+				);
+				if (activation && !activation.workout_structure)
+					ctx.addIssue({
+						code: "custom",
+						path: [
+							"weeks",
+							index,
+							"key_sessions",
+							week.key_sessions.indexOf(activation),
+							"workout_structure",
+						],
+						message: "race-week activation requires workout_structure",
+					});
+				if (activation?.workout_structure) {
+					const workDistanceKm = activation.workout_structure.blocks.reduce(
+						(total, block) =>
+							total +
+							block.repeat *
+								block.steps.reduce(
+									(sum, step) =>
+										sum +
+										(step.step_kind === "work" &&
+										step.duration.kind === "distance_m"
+											? step.duration.value / 1000
+											: 0),
+									0,
+								),
+						0,
+					);
+					const [minimum, maximum] =
+						plan.goal.distance === "FM" ? [10, 15] : [8, 10];
+					if (workDistanceKm < minimum || workDistanceKm > maximum)
+						ctx.addIssue({
+							code: "custom",
+							path: [
+								"weeks",
+								index,
+								"key_sessions",
+								week.key_sessions.indexOf(activation),
+								"workout_structure",
+							],
+							message: `race-week ${plan.goal.distance} activation requires ${minimum}-${maximum}km of race-pace work`,
+						});
+				}
 			}
 		}
 	});
