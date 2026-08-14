@@ -15,7 +15,8 @@
     "migrate-master-plans": "src/migrate-master-plans.js",
     "migrate-weekly-plans": "src/migrate-weekly-plans.js",
     "migrate-running-age": "src/migrate-running-age.js",
-    "migrate-weekly-feedback": "src/migrate-weekly-feedback.js"
+    "migrate-weekly-feedback": "src/migrate-weekly-feedback.js",
+    "backfill-activity-start-gps": "src/activity-start-gps-backfill.js"
   },
   "scripts": {
     "migrate": "node src/index.js",
@@ -27,6 +28,7 @@
     "migrate:weekly-plans": "node src/migrate-weekly-plans.js",
     "migrate:running-age": "node src/migrate-running-age.js",
     "migrate:weekly-feedback": "node src/migrate-weekly-feedback.js",
+    "migrate:activity-start-gps": "node src/activity-start-gps-backfill.js",
     "test": "node --test"
   },
   "dependencies": {
