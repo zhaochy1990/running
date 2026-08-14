@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -67,8 +68,17 @@ func TestRaceCandidatesFiltersAndSkipsConfirmed(t *testing.T) {
 		t.Fatalf("all-history candidates = %+v", all)
 	}
 	for _, candidate := range all {
-		if candidate.LabelID == "hm" && (candidate.Pauses == nil || *candidate.Pauses != pauses) {
-			t.Fatalf("HM pause data = %v, want stored activity pauses", candidate.Pauses)
+		if candidate.LabelID == "hm" {
+			if candidate.Pauses == nil {
+				t.Fatal("HM pause data is nil, want stored activity pauses")
+			}
+			var gotPauses, wantPauses any
+			if err := json.Unmarshal([]byte(*candidate.Pauses), &gotPauses); err != nil {
+				t.Fatalf("decode HM pause data: %v", err)
+			}
+			if err := json.Unmarshal([]byte(pauses), &wantPauses); err != nil || !reflect.DeepEqual(gotPauses, wantPauses) {
+				t.Fatalf("HM pause data = %s, want JSON-equivalent %s", *candidate.Pauses, pauses)
+			}
 		}
 	}
 	empty, err := st.RaceCandidates(ctx, uid, []string{})

@@ -149,6 +149,15 @@ func TestWatchActivityStartGPSRoundTripAndResync(t *testing.T) {
 		t.Fatalf("updated start GPS = (%+v, %v)", got, err)
 	}
 
+	activity.StartGPSLat, activity.StartGPSLon = nil, nil
+	if err := st.UpsertActivityPreservingEmptyChildren(ctx, activity, nil, nil, nil); err != nil {
+		t.Fatalf("resync without detail GPS: %v", err)
+	}
+	got, err = st.ActivityByID(ctx, uid, activity.LabelID)
+	if err != nil || got == nil || got.StartGPSLat == nil || *got.StartGPSLat != 39.9042 || got.StartGPSLon == nil || *got.StartGPSLon != 116.4074 {
+		t.Fatalf("preserved start GPS = (%+v, %v)", got, err)
+	}
+
 	withoutGPS := &Activity{
 		UserID: uid, LabelID: "no-gps-activity", SportType: 402,
 		Date: time.Now().UTC(), Provider: "test", SyncedAt: time.Now().UTC(),
