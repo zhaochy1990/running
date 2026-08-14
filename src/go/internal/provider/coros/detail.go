@@ -271,15 +271,12 @@ func parseTimeseries(points []rawFreq) []storage.TimeseriesPoint {
 		if p.VerticalStrideRatio != nil {
 			pt.VerticalRatioPct = fptr(VerticalRatioPct(*p.VerticalStrideRatio))
 		}
-		if p.GpsLat != nil {
-			if v, ok := GPSCoord(*p.GpsLat); ok {
-				pt.GPSLat = fptr(v)
-			}
-		}
-		if p.GpsLon != nil {
-			if v, ok := GPSCoord(*p.GpsLon); ok {
-				pt.GPSLon = fptr(v)
-			}
+		// COROS uses the pair (0,0) for no fix. A single zero axis is a valid
+		// WGS-84 coordinate on the equator or prime meridian, so decode GPS as
+		// a pair rather than applying GPSCoord's legacy per-axis zero guard.
+		if p.GpsLat != nil && p.GpsLon != nil && (*p.GpsLat != 0 || *p.GpsLon != 0) {
+			pt.GPSLat = fptr(float64(*p.GpsLat) / 1e7)
+			pt.GPSLon = fptr(float64(*p.GpsLon) / 1e7)
 		}
 		ts = append(ts, pt)
 	}
