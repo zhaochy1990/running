@@ -125,6 +125,7 @@ test("weekly context combines all weekly planning evidence", async () => {
 				asOfDate: "2026-08-01",
 				thresholdHr: 170,
 				thresholdSpeedMps: 4,
+				rhrBaseline: 48,
 				thresholdHrConfidence: "high",
 				thresholdSpeedConfidence: "medium",
 				heartRateZones: [{ name: "Z2", minBpm: 130, maxBpm: 145 }],
