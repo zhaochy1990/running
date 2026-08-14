@@ -10,11 +10,25 @@
       "screenshot": "designs/coach-chat.png"
     },
     {
-      "screenId": "814398c82042485b94c98acf6acea69e",
-      "title": "训练计划 · 最终精修版 (V2)",
+      "screenId": "37c297bb8740456b8a715111ab6fbb8a",
+      "title": "计划 · 赛季计划",
+      "deviceType": "MOBILE",
+      "html": "designs/season-plan.html",
+      "screenshot": "designs/season-plan.png"
+    },
+    {
+      "screenId": "fef851f0fb5b42bf8d73e7d87c9f5cfc",
+      "title": "计划 · 周计划",
       "deviceType": "MOBILE",
       "html": "designs/training-plan.html",
       "screenshot": "designs/training-plan.png"
+    },
+    {
+      "screenId": "3dd373e0aef64a1c981f3c43c92cc3d7",
+      "title": "训练详情 · 结构化课表 (最终版)",
+      "deviceType": "MOBILE",
+      "html": "designs/workout-detail.html",
+      "screenshot": "designs/workout-detail.png"
     }
   ],
   "designSystem": {

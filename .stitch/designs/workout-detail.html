@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Workout Detail</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#ff6363",
+                        "error-container": "#93000a",
+                        "ink-muted": "#8F9093",
+                        "error": "#ffb4ab",
+                        "on-secondary-fixed-variant": "#464747",
+                        "inverse-on-surface": "#2f3033",
+                        "on-primary-container": "#67000e",
+                        "coral-pressed": "#E95252",
+                        "surface-container": "#1f2022",
+                        "surface-dim": "#121316",
+                        "raised": "#18191A",
+                        "canvas": "#07080A",
+                        "on-tertiary-container": "#2f3031",
+                        "primary": "#ffb3af",
+                        "divider": "#2A2B2D",
+                        "secondary-container": "#464747",
+                        "ink-primary": "#F9F9F9",
+                        "on-primary-fixed-variant": "#8f0d1c",
+                        "on-surface": "#e3e2e5",
+                        "tertiary": "#c7c6c7",
+                        "on-secondary": "#303030",
+                        "on-primary": "#68000e",
+                        "surface-variant": "#343537",
+                        "primary-fixed-dim": "#ffb3af",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-fixed": "#1b1c1d",
+                        "surface-container-low": "#1b1c1e",
+                        "secondary-fixed": "#e4e2e1",
+                        "tertiary-fixed": "#e3e2e3",
+                        "on-background": "#e3e2e5",
+                        "on-secondary-fixed": "#1b1c1c",
+                        "outline": "#a88988",
+                        "surface-tint": "#ffb3af",
+                        "on-tertiary-fixed-variant": "#464748",
+                        "on-secondary-container": "#b6b5b4",
+                        "surface-container-high": "#292a2c",
+                        "on-surface-variant": "#e1bfbc",
+                        "surface-bright": "#38393c",
+                        "ink-secondary": "#CECECE",
+                        "secondary": "#c7c6c6",
+                        "inverse-primary": "#b12a30",
+                        "primary-fixed": "#ffdad7",
+                        "on-error": "#690005",
+                        "background": "#121316",
+                        "outline-variant": "#59413f",
+                        "surface-container-lowest": "#0d0e10",
+                        "inverse-surface": "#e3e2e5",
+                        "warning-amber": "#E3AC5B",
+                        "coral-wash": "#2A1719",
+                        "surface-container-highest": "#343537",
+                        "success-mint": "#69D3A7",
+                        "on-tertiary": "#303031",
+                        "tertiary-container": "#989798",
+                        "tertiary-fixed-dim": "#c7c6c7",
+                        "surface": "#101111",
+                        "on-primary-fixed": "#410006",
+                        "secondary-fixed-dim": "#c7c6c6"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "unit": "8px",
+                        "gutter": "8px",
+                        "margin-mobile": "20px",
+                        "button-height": "48px",
+                        "touch-target-min": "44px"
+                    },
+                    "fontFamily": {
+                        "title-card": ["Inter"],
+                        "label-metadata": ["Inter"],
+                        "headline-screen": ["Inter"],
+                        "data-inline": ["JetBrains Mono"],
+                        "label-nav": ["Inter"],
+                        "body-main": ["Inter"],
+                        "display-metric": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "title-card": ["17px", {"lineHeight": "22px", "fontWeight": "600"}],
+                        "label-metadata": ["13px", {"lineHeight": "16px", "fontWeight": "500"}],
+                        "headline-screen": ["22px", {"lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "data-inline": ["14px", {"lineHeight": "18px", "fontWeight": "500"}],
+                        "label-nav": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                        "body-main": ["15px", {"lineHeight": "22px", "fontWeight": "400"}],
+                        "display-metric": ["28px", {"lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "600"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #07080A;
+            color: #F9F9F9;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            min-height: max(884px, 100dvh);
+        }
+
+        ::-webkit-scrollbar {
+            display: none;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="font-body-main text-body-main pb-24 selection:bg-primary-container selection:text-on-primary-container">
+<!-- Top Navigation -->
+<header class="fixed top-0 w-full z-50 bg-canvas/90 backdrop-blur-md flex justify-between items-center px-margin-mobile h-button-height border-b border-divider/50 shadow-[0_4px_30px_rgba(0,0,0,0.5)] transition-opacity duration-200">
+<button class="flex items-center gap-1 text-ink-secondary hover:text-ink-primary transition-colors min-w-[touch-target-min] h-[touch-target-min]">
+<span class="material-symbols-outlined" data-icon="arrow_back_ios_new">arrow_back_ios_new</span>
+<span class="font-label-metadata text-label-metadata">本周计划</span>
+</button>
+<button class="text-ink-secondary hover:text-ink-primary transition-colors flex items-center justify-center min-w-[touch-target-min] h-[touch-target-min]">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</header>
+<main class="pt-[calc(48px+20px)] px-margin-mobile max-w-2xl mx-auto space-y-8">
+<!-- Workout Summary -->
+<section class="space-y-1">
+<h1 class="font-headline-screen text-[32px] leading-[40px] font-bold text-ink-primary tracking-tight">阈值间歇跑</h1>
+<p class="font-label-metadata text-label-metadata text-ink-muted">周四 · 重点训练</p>
+<div class="font-data-inline text-data-inline text-ink-secondary mt-2">
+                1:04:30<span class="mx-2 text-divider">•</span>12.0 km<span class="mx-2 text-divider">•</span>230 TL
+            </div>
+</section>
+<!-- Structured Segments -->
+<section class="space-y-3">
+<!-- Segment 1: Warmup -->
+<div class="flex bg-surface rounded-xl border border-divider overflow-hidden">
+<div class="w-1.5 bg-surface-variant shrink-0"></div>
+<div class="flex-1 p-4 flex flex-col gap-1">
+<div class="flex justify-between items-center">
+<span class="font-title-card text-[15px] text-ink-primary font-semibold">1 热身</span>
+<span class="font-data-inline text-[14px] text-ink-primary">2.0 km</span>
+</div>
+<div class="flex items-center gap-4 text-ink-secondary font-data-inline text-[13px]">
+<span>配速 5'30”–6'00” /km</span>
+<span>心率 Z1–Z2</span>
+</div>
+</div>
+</div>
+<!-- Repeat Group -->
+<div class="border border-divider rounded-xl overflow-hidden bg-surface-container-lowest">
+<div class="bg-surface border-b border-divider px-4 py-2 flex justify-between items-center">
+<span class="font-label-metadata text-label-metadata text-ink-primary font-medium flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px]" data-icon="repeat">repeat</span>
+                        重复 6 次
+                    </span>
+</div>
+<div class="p-3 space-y-3">
+<!-- Segment 2: Work -->
+<div class="flex bg-surface rounded-xl border border-divider overflow-hidden">
+<div class="w-1.5 bg-primary-container shrink-0"></div>
+<div class="flex-1 p-4 flex flex-col gap-1">
+<div class="flex justify-between items-center">
+<span class="font-title-card text-[15px] text-primary-container font-semibold">2 阈值跑</span>
+<span class="font-data-inline text-[14px] text-primary-container font-semibold">2.0 km</span>
+</div>
+<div class="flex items-center gap-4 text-ink-primary font-data-inline text-[13px]">
+<span>配速 3'45”–4'00” /km</span>
+<span>心率 Z4</span>
+</div>
+</div>
+</div>
+<!-- Segment 3: Recovery -->
+<div class="flex bg-surface rounded-xl border border-divider overflow-hidden">
+<div class="w-1.5 bg-surface-variant shrink-0"></div>
+<div class="flex-1 p-4 flex flex-col gap-1">
+<div class="flex justify-between items-center">
+<span class="font-title-card text-[15px] text-ink-secondary font-semibold">3 恢复</span>
+<span class="font-data-inline text-[14px] text-ink-secondary">3:00 慢跑</span>
+</div>
+<div class="text-ink-muted font-body-main text-[13px]">
+                                保持轻松，不看配速
+                            </div>
+</div>
+</div>
+</div>
+</div>
+<!-- Segment 4: Cooldown -->
+<div class="flex bg-surface rounded-xl border border-divider overflow-hidden">
+<div class="w-1.5 bg-surface-variant shrink-0"></div>
+<div class="flex-1 p-4 flex flex-col gap-1">
+<div class="flex justify-between items-center">
+<span class="font-title-card text-[15px] text-ink-primary font-semibold">4 冷身</span>
+<span class="font-data-inline text-[14px] text-ink-primary">2.0 km</span>
+</div>
+<div class="flex items-center gap-4 text-ink-secondary font-data-inline text-[13px]">
+<span>配速 5'40”–6'10” /km</span>
+<span>心率 Z1</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Coach Note -->
+<section class="bg-coral-wash rounded-xl p-5 border border-outline-variant/30">
+<h3 class="font-title-card text-[15px] text-primary-container font-semibold mb-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]" data-icon="tips_and_updates">tips_and_updates</span>
+                教练叮嘱
+            </h3>
+<p class="font-body-main text-[14px] leading-relaxed text-ink-primary/90 mb-3">
+                前两组压住节奏，最后两组再逐步推进。若第三组后呼吸无法在恢复段稳定，后续改为 4 组，不要硬顶。
+            </p>
+<ul class="space-y-1">
+<li class="font-body-main text-[13px] text-ink-secondary flex items-start gap-1.5">
+<span class="text-primary-container mt-0.5">•</span> 前 15 分钟不追配速
+                </li>
+<li class="font-body-main text-[13px] text-ink-secondary flex items-start gap-1.5">
+<span class="text-primary-container mt-0.5">•</span> 恢复段必须慢下来
+                </li>
+<li class="font-body-main text-[13px] text-ink-secondary flex items-start gap-1.5">
+<span class="text-primary-container mt-0.5">•</span> 疼痛超过 3/10 立即停止
+                </li>
+</ul>
+</section>
+<!-- Execution Details -->
+<section>
+<div class="grid grid-cols-2 gap-3">
+<div class="bg-surface rounded-xl p-3 border border-divider flex flex-col gap-1">
+<span class="font-label-metadata text-[12px] text-ink-muted">路线</span>
+<span class="font-body-main text-[14px] text-ink-primary">城市平路</span>
+</div>
+<div class="bg-surface rounded-xl p-3 border border-divider flex flex-col gap-1">
+<span class="font-label-metadata text-[12px] text-ink-muted">装备</span>
+<span class="font-body-main text-[14px] text-ink-primary">Endorphin Speed 3</span>
+</div>
+<div class="bg-surface rounded-xl p-3 border border-divider flex flex-col gap-1">
+<span class="font-label-metadata text-[12px] text-ink-muted">补给</span>
+<span class="font-body-main text-[14px] text-ink-primary">400-600ml</span>
+</div>
+<div class="bg-surface rounded-xl p-3 border border-divider flex flex-col gap-1">
+<span class="font-label-metadata text-[12px] text-ink-muted">同步</span>
+<span class="font-body-main text-[14px] text-ink-primary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-success-mint" data-icon="check_circle">check_circle</span>
+                        已连接 COROS
+                    </span>
+</div>
+</div>
+</section>
+<!-- Bottom Actions -->
+<section class="pt-4 space-y-4">
+<button class="w-full bg-primary-container text-[#121316] font-title-card text-title-card h-button-height rounded-lg flex items-center justify-center gap-2 hover:bg-primary transition-colors active:scale-[0.98]">
+                同步到运动手表
+            </button>
+<div class="text-center">
+<a class="font-label-metadata text-[13px] text-ink-secondary hover:text-ink-primary transition-colors inline-flex items-center gap-1" href="#">
+                    和 Coach 讨论这堂训练
+                    <span class="material-symbols-outlined text-[16px]" data-icon="arrow_forward">arrow_forward</span>
+</a>
+</div>
+</section>
+</main>
+</body></html>
