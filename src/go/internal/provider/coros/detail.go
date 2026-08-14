@@ -215,6 +215,7 @@ func ParseActivityDetail(userID, labelID string, fallbackDate time.Time, payload
 
 	laps := parseLaps(d.LapList)
 	ts := parseTimeseries(d.FrequencyList)
+	a.SetStartGPSFromTimeseries(ts)
 	zones := parseWatchZones(labelID, d.ZoneList)
 	return a, laps, ts, zones, nil
 }

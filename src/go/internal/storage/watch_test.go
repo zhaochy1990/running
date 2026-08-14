@@ -116,6 +116,52 @@ func TestWatch_UpsertRoundTrip(t *testing.T) {
 	}
 }
 
+func TestWatchActivityStartGPSRoundTripAndResync(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatalf("automigrate watch: %v", err)
+	}
+
+	uid := fmt.Sprintf("a1b2c3d4-0000-4000-8000-%012d", time.Now().UnixNano()%1_000_000_000_000)
+	activity := &Activity{
+		UserID: uid, LabelID: "gps-activity", SportType: 100,
+		Date: time.Now().UTC(), Provider: "test", SyncedAt: time.Now().UTC(),
+		StartGPSLat: fptr(31.2304), StartGPSLon: fptr(121.4737),
+	}
+	if err := st.UpsertActivity(ctx, activity, nil, nil, nil); err != nil {
+		t.Fatalf("upsert initial GPS: %v", err)
+	}
+	got, err := st.ActivityByID(ctx, uid, activity.LabelID)
+	if err != nil || got == nil {
+		t.Fatalf("read initial GPS = (%+v, %v)", got, err)
+	}
+	if got.StartGPSLat == nil || *got.StartGPSLat != 31.2304 || got.StartGPSLon == nil || *got.StartGPSLon != 121.4737 {
+		t.Fatalf("initial start GPS = (%v, %v)", got.StartGPSLat, got.StartGPSLon)
+	}
+
+	activity.StartGPSLat, activity.StartGPSLon = fptr(39.9042), fptr(116.4074)
+	if err := st.UpsertActivity(ctx, activity, nil, nil, nil); err != nil {
+		t.Fatalf("resync updated GPS: %v", err)
+	}
+	got, err = st.ActivityByID(ctx, uid, activity.LabelID)
+	if err != nil || got == nil || got.StartGPSLat == nil || *got.StartGPSLat != 39.9042 || got.StartGPSLon == nil || *got.StartGPSLon != 116.4074 {
+		t.Fatalf("updated start GPS = (%+v, %v)", got, err)
+	}
+
+	withoutGPS := &Activity{
+		UserID: uid, LabelID: "no-gps-activity", SportType: 402,
+		Date: time.Now().UTC(), Provider: "test", SyncedAt: time.Now().UTC(),
+	}
+	if err := st.UpsertActivity(ctx, withoutGPS, nil, nil, nil); err != nil {
+		t.Fatalf("upsert without GPS: %v", err)
+	}
+	got, err = st.ActivityByID(ctx, uid, withoutGPS.LabelID)
+	if err != nil || got == nil || got.StartGPSLat != nil || got.StartGPSLon != nil {
+		t.Fatalf("no-GPS activity = (%+v, %v), want NULL coordinates", got, err)
+	}
+}
+
 // TestProviderForUser is gated on a live MySQL (STRIDE_WORKER_TEST_MYSQL_DSN).
 // It verifies the binding read: none -> not found; dual-watch -> most-recent wins.
 func TestProviderForUser(t *testing.T) {

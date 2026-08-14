@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zhaochy1990/stride/internal/activityarea"
 	"github.com/zhaochy1990/stride/internal/job"
 	detector "github.com/zhaochy1990/stride/internal/racedetection"
 	"github.com/zhaochy1990/stride/internal/storage"
@@ -23,17 +22,15 @@ type fakeStore struct {
 	candidates     []storage.RaceCandidate
 	timeseries     map[string][]storage.TimeseriesPoint
 	readErr        map[string]error
-	usualArea      *activityarea.Snapshot
-	areaReads      int
+	starts         []detector.Coordinate
 	insertedResult bool
 	listedIDs      []string
 	inserted       []storage.Race
 	mu             sync.Mutex
 }
 
-func (f *fakeStore) UsualActivityArea(_ context.Context, _ string) (*activityarea.Snapshot, error) {
-	f.areaReads++
-	return f.usualArea, nil
+func (f *fakeStore) ActivityStartCoordinates(_ context.Context, _ string) ([]detector.Coordinate, error) {
+	return f.starts, nil
 }
 
 func (f *fakeStore) ActivityTimeseries(_ context.Context, _, labelID string) ([]storage.TimeseriesPoint, error) {
@@ -252,7 +249,12 @@ func TestHandlerKeepsTraceOutOfModelClassifierWhileBuildingLocationContext(t *te
 	store := &fakeStore{
 		candidates: []storage.RaceCandidate{{LabelID: "trace-race", Sport: "run_outdoor", DistanceM: 21_100}},
 		timeseries: map[string][]storage.TimeseriesPoint{"trace-race": points},
-		usualArea:  &activityarea.Snapshot{Computed: true, Area: &activityarea.Area{Latitude: 31.23, Longitude: 121.47, SupportingActivityCount: 3}},
+		starts: []detector.Coordinate{
+			{Latitude: 31.23, Longitude: 121.47},
+			{Latitude: 31.22, Longitude: 121.48},
+			{Latitude: 31.24, Longitude: 121.46},
+			{Latitude: 39.90, Longitude: 116.40},
+		},
 	}
 	classifier := &traceClassifier{seen: make(chan detector.Candidate, 1)}
 	h := New(store, detector.New(classifier), 1)
@@ -267,29 +269,6 @@ func TestHandlerKeepsTraceOutOfModelClassifierWhileBuildingLocationContext(t *te
 	}
 	if seen.Location == nil || seen.Location.SupportingActivityCount != 3 || seen.Location.CandidateStartDistanceKM == nil {
 		t.Fatalf("classifier usual activity area = %+v", seen.Location)
-	}
-	if store.areaReads != 1 {
-		t.Fatalf("usual activity area reads = %d, want one profile read", store.areaReads)
-	}
-}
-
-func TestHandlerTreatsMissingPersistedAreaAsUnknownWithoutHistoricalFallback(t *testing.T) {
-	store := &fakeStore{
-		candidates: []storage.RaceCandidate{{LabelID: "race", Sport: "run_outdoor", DistanceM: 21_100}},
-		timeseries: map[string][]storage.TimeseriesPoint{"race": {{
-			GPSLat: float64Pointer(39.9042), GPSLon: float64Pointer(116.4074),
-		}}},
-	}
-	classifier := &traceClassifier{seen: make(chan detector.Candidate, 1)}
-	h := New(store, detector.New(classifier), 1)
-	if _, err := h(context.Background(), &job.Job{
-		UserID: "f10bc353-01ab-4db1-af9f-d9305ea9a532", InputJSON: "{\"label_ids\":[\"race\"]}",
-	}, func(string, int) error { return nil }); err != nil {
-		t.Fatalf("handler: %v", err)
-	}
-	seen := <-classifier.seen
-	if seen.Location != nil || store.areaReads != 1 {
-		t.Fatalf("location = %+v, profile reads = %d; want unknown from one profile read", seen.Location, store.areaReads)
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/zhaochy1990/stride/internal/activityarea"
 	"github.com/zhaochy1990/stride/internal/normalize"
 	"github.com/zhaochy1990/stride/internal/racedetection"
 	"gorm.io/gorm/clause"
@@ -74,45 +73,30 @@ func (s *Store) RaceCandidates(ctx context.Context, userID string, labelIDs []st
 	return rows, nil
 }
 
-// ActivityStartCoordinates returns the first valid GPS point from every
-// historical activity. Only the independent usual_activity_area job calls this
-// expensive all-history query; race detection reads the persisted profile
-// snapshot and must never call it or fall back to it.
-func (s *Store) ActivityStartCoordinates(ctx context.Context, userID string) ([]activityarea.Coordinate, error) {
+// ActivityStartCoordinates returns the activity-level start coordinate cached
+// during watch sync. It scans only the user's activity rows and never reads the
+// potentially multi-million-row timeseries table.
+func (s *Store) ActivityStartCoordinates(ctx context.Context, userID string) ([]racedetection.Coordinate, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return nil, err
 	}
 	var rows []struct {
-		Latitude  *float64 `gorm:"column:latitude"`
-		Longitude *float64 `gorm:"column:longitude"`
+		Latitude  float64 `gorm:"column:latitude"`
+		Longitude float64 `gorm:"column:longitude"`
 	}
-	// Drive from the much smaller activities table, then perform one indexed
-	// first-point lookup per activity. LATERAL avoids both the all-user GROUP BY
-	// and duplicated scalar subqueries for latitude/longitude (MySQL 8.0.14+).
-	query := s.db.WithContext(ctx).Raw(`
-        SELECT first_point.gps_lat AS latitude, first_point.gps_lon AS longitude
-        FROM activities AS a
-        JOIN LATERAL (
-            SELECT t.gps_lat, t.gps_lon
-            FROM timeseries AS t FORCE INDEX (idx_timeseries_user_label)
-            WHERE t.user_id = a.user_id AND t.label_id = a.label_id
-              AND t.gps_lat IS NOT NULL AND t.gps_lon IS NOT NULL
-              AND t.gps_lat BETWEEN -90 AND 90 AND t.gps_lon BETWEEN -180 AND 180
-              AND NOT (t.gps_lat = 0 AND t.gps_lon = 0)
-            ORDER BY t.id
-            LIMIT 1
-        ) AS first_point ON TRUE
-        WHERE a.user_id = ?
-        ORDER BY a.date, a.label_id`, uid)
-	if err := query.Scan(&rows).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&Activity{}).
+		Select("start_gps_lat AS latitude, start_gps_lon AS longitude").
+		Where("user_id = ?", uid).
+		Where("start_gps_lat IS NOT NULL AND start_gps_lon IS NOT NULL").
+		Where("start_gps_lat BETWEEN -90 AND 90 AND start_gps_lon BETWEEN -180 AND 180").
+		Where("NOT (start_gps_lat = 0 AND start_gps_lon = 0)").
+		Order("date, label_id").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	coordinates := make([]activityarea.Coordinate, 0, len(rows))
-	for _, row := range rows {
-		if row.Latitude != nil && row.Longitude != nil {
-			coordinates = append(coordinates, activityarea.Coordinate{Latitude: *row.Latitude, Longitude: *row.Longitude})
-		}
+	coordinates := make([]racedetection.Coordinate, len(rows))
+	for i, row := range rows {
+		coordinates[i] = racedetection.Coordinate{Latitude: row.Latitude, Longitude: row.Longitude}
 	}
 	return coordinates, nil
 }

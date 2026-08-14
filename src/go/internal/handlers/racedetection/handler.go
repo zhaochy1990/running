@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/zhaochy1990/stride/internal/activityarea"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/logging"
 	detector "github.com/zhaochy1990/stride/internal/racedetection"
@@ -28,7 +27,7 @@ const (
 
 type Store interface {
 	RaceCandidates(ctx context.Context, userID string, labelIDs []string) ([]storage.RaceCandidate, error)
-	UsualActivityArea(ctx context.Context, userID string) (*activityarea.Snapshot, error)
+	ActivityStartCoordinates(ctx context.Context, userID string) ([]detector.Coordinate, error)
 	ActivityTimeseries(ctx context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error)
 	InsertRace(ctx context.Context, race *storage.Race) (bool, error)
 }
@@ -84,16 +83,14 @@ func newHandler(store Store, raceDetector *detector.Detector, maxConcurrency int
 		if err != nil {
 			return "", err
 		}
-		var usualArea *activityarea.Area
+		var starts []detector.Coordinate
+		var usualArea *detector.UsualActivityArea
 		if len(candidates) > 0 {
-			var snapshot *activityarea.Snapshot
-			snapshot, err = store.UsualActivityArea(ctx, j.UserID)
+			starts, err = store.ActivityStartCoordinates(ctx, j.UserID)
 			if err != nil {
 				return "", err
 			}
-			if snapshot != nil {
-				usualArea = snapshot.Area
-			}
+			usualArea = detector.InferUsualActivityArea(starts)
 		}
 		_ = hb("race_detection", 5)
 

@@ -454,12 +454,8 @@ func TestGetProfile_EmptyDefaults(t *testing.T) {
 
 func TestGetProfile_WithData(t *testing.T) {
 	h := newUserHarness(t, FeatureConfig{CoachChatUsers: map[string]bool{testSub: true}})
-	usualLatitude, usualLongitude := 31.2304, 121.4737
-	computedAt := time.Date(2026, 8, 13, 8, 0, 0, 0, time.UTC)
 	h.store.profiles[testSub] = &storage.UserProfile{
 		UserID: testSub, DisplayName: "Zhao", DOB: "1990-05-01", Sex: "male", HeightCm: 178, WeightKg: 70, RunningAgeRange: storage.RunningAgeUnknown,
-		UsualActivityAreaLatitude: &usualLatitude, UsualActivityAreaLongitude: &usualLongitude,
-		UsualActivityAreaSupportingActivities: 42, UsualActivityAreaComputedAt: &computedAt,
 	}
 	h.store.onboarding[testSub] = &storage.UserOnboarding{UserID: testSub, WatchReady: true, ProfileReady: true}
 	h.store.provider[testSub] = "coros"
@@ -483,9 +479,6 @@ func TestGetProfile_WithData(t *testing.T) {
 	}
 	if !resp.Features.CoachChat {
 		t.Errorf("coach_chat membership not reflected")
-	}
-	if strings.Contains(w.Body.String(), "usual_activity_area") || strings.Contains(w.Body.String(), "31.2304") {
-		t.Fatalf("private derived profile coordinates leaked into API response: %s", w.Body.String())
 	}
 }
 

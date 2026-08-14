@@ -6,14 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/zhaochy1990/stride/internal/activityarea"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 // AutoMigrateUsers creates/updates the user_profile and user_onboarding tables
-// (ADR 0013). Both API and worker call it: the API owns public profile writes,
-// while the worker persists private derived profile facts such as activity area.
+// (ADR 0013). Called by cmd/api at boot; the worker does not need these tables.
 func (s *Store) AutoMigrateUsers(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).AutoMigrate(&UserProfile{}, &UserOnboarding{}, &InjuryRecord{}); err != nil {
 		return fmt.Errorf("storage: automigrate users: %w", err)
@@ -36,46 +34,6 @@ func (s *Store) GetUserProfile(ctx context.Context, userID string) (*UserProfile
 		return nil, err
 	}
 	return &p, nil
-}
-
-// UsualActivityArea returns nil when the profile does not exist. An existing
-// profile returns a snapshot whose Computed flag distinguishes not-yet-run from
-// the cached "insufficient evidence" result.
-func (s *Store) UsualActivityArea(ctx context.Context, userID string) (*activityarea.Snapshot, error) {
-	profile, err := s.GetUserProfile(ctx, userID)
-	if err != nil || profile == nil {
-		return nil, err
-	}
-	snapshot := &activityarea.Snapshot{Computed: profile.UsualActivityAreaComputedAt != nil}
-	if profile.UsualActivityAreaLatitude != nil && profile.UsualActivityAreaLongitude != nil && profile.UsualActivityAreaSupportingActivities > 0 {
-		snapshot.Area = &activityarea.Area{
-			Latitude: *profile.UsualActivityAreaLatitude, Longitude: *profile.UsualActivityAreaLongitude,
-			SupportingActivityCount: profile.UsualActivityAreaSupportingActivities,
-		}
-	}
-	return snapshot, nil
-}
-
-// SaveUsualActivityArea writes only the internal derived columns and never
-// creates a sparse profile. found=false means the user's profile is absent.
-func (s *Store) SaveUsualActivityArea(ctx context.Context, userID string, area *activityarea.Area, computedAt time.Time) (found bool, err error) {
-	uid, err := canonicalUserID(userID)
-	if err != nil {
-		return false, err
-	}
-	updates := map[string]any{
-		"usual_activity_area_latitude":              nil,
-		"usual_activity_area_longitude":             nil,
-		"usual_activity_area_supporting_activities": 0,
-		"usual_activity_area_computed_at":           computedAt.UTC(),
-	}
-	if area != nil {
-		updates["usual_activity_area_latitude"] = area.Latitude
-		updates["usual_activity_area_longitude"] = area.Longitude
-		updates["usual_activity_area_supporting_activities"] = area.SupportingActivityCount
-	}
-	result := s.db.WithContext(ctx).Model(&UserProfile{}).Where("user_id = ?", uid).Updates(updates)
-	return result.RowsAffected == 1, result.Error
 }
 
 // UpsertUserProfile inserts or updates the five core fields for a user, keyed on

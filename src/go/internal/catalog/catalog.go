@@ -22,9 +22,6 @@ const (
 	JobTypeHello = "hello"
 	// JobTypeWatchSync syncs one user's watch data; a user may trigger their own.
 	JobTypeWatchSync = "watch_sync"
-	// JobTypeUsualActivityArea computes and caches the user's majority activity
-	// area. Internal-only; full onboarding runs it before race detection.
-	JobTypeUsualActivityArea = "usual_activity_area"
 	// JobTypeCalibration computes the 180-day athlete baseline (HRmax/LTHR/
 	// threshold/RHR/CP + zones). Internal-only: it is a step of the onboarding
 	// pipeline and (later) a weekly job.
@@ -44,8 +41,9 @@ const (
 // Pipeline names (ADR 0020). Both are fronted by POST /api/{user}/sync, which
 // picks by mode; onboarding is also the new-user full path.
 const (
-	// PipelineOnboarding is the full path: watch_sync(full) -> optional usual
-	// activity area -> optional race detection -> calibration -> compute(full).
+	// PipelineOnboarding is the full path: watch_sync(full) -> optional
+	// race_detection -> calibration -> compute(full). New-user onboarding and
+	// any explicit full resync.
 	PipelineOnboarding = "onboarding"
 	// PipelineDataSync is the ongoing incremental path: watch_sync(incremental)
 	// -> optional race_detection -> compute(incremental).
@@ -99,13 +97,6 @@ func Jobs() []JobSpec {
 			ExampleInput:  json.RawMessage(`{}`),
 		},
 		{
-			Type:          JobTypeUsualActivityArea,
-			UserInitiable: false,
-			Description:   "Compute and cache one user's usual activity area from historical activity starts. A cached result, including unknown, is reused. Internal-only.",
-			InputSchema:   json.RawMessage(`{"type":"object","additionalProperties":true}`),
-			ExampleInput:  json.RawMessage(`{}`),
-		},
-		{
 			Type:          JobTypeRaceDetection,
 			UserInitiable: false,
 			Description:   "Classify newly synced outdoor/track half-marathon and marathon distance candidates and persist confirmed activity references. Internal optional pipeline step.",
@@ -143,14 +134,13 @@ func Pipelines() []PipelineSpec {
 				Name: PipelineOnboarding,
 				Steps: []pipeline.StepDef{
 					{Name: "sync", JobType: JobTypeWatchSync},
-					{Name: "usual_activity_area", JobType: JobTypeUsualActivityArea, ContinueOnFailure: true},
 					{Name: "race_detection", JobType: JobTypeRaceDetection, ContinueOnFailure: true},
 					{Name: "calibration", JobType: JobTypeCalibration},
 					{Name: "compute", JobType: JobTypeCompute},
 				},
 			},
 			UserInitiable: true,
-			Description:   "Full path (new-user onboarding or explicit full resync): a full watch sync, cached usual-activity-area derivation, optional race detection, the athlete baseline, then a full load/PMC/PB compute. Area/race-detection failures remain visible but do not fail the pipeline. The run's user_id is the subject athlete.",
+			Description:   "Full path (new-user onboarding or explicit full resync): a full watch sync, optional race detection, the athlete baseline, then a full load/PMC/PB compute. Race-detection failure remains visible on its step but does not fail the pipeline. The run's user_id is the subject athlete.",
 			InputSchema:   syncInputSchema,
 			ExampleInput:  json.RawMessage(`{"mode":"full"}`),
 		},

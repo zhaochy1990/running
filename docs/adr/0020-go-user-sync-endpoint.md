@@ -5,12 +5,12 @@ The browser's manual "sync now" pill calls Python's synchronous `POST /api/{user
 **A sync is sync + compute, not just sync.** A watch sync only lands raw activity/health rows; the derived metrics (per-activity training load, daily PMC — CTL/ATL/Form — and personal bests) still need computing, which Python did in its post-sync hook. So `/api/{user}/sync` starts a pipeline, and `mode` picks which one:
 
 - **`incremental`** (default): `data_sync` = `watch_sync(incremental)` → `race_detection` (optional) → `compute(incremental)`. Syncs only new activities, classifies only their HM/FM-distance candidates, and computes only those activities.
-- **`full`**: `onboarding` = `watch_sync(full)` → `usual_activity_area` (optional, cached) → `race_detection` (optional) → `calibration` → `compute(full)`. It computes the user's usual activity area once, classifies the synced HM/FM-distance candidates using that profile snapshot, recomputes the athlete baseline, and does a full compute. This is also the new-user onboarding path.
+- **`full`**: `onboarding` = `watch_sync(full)` → `race_detection` (optional) → `calibration` → `compute(full)`. Re-syncs history, classifies the synced HM/FM-distance candidates, recomputes the athlete baseline, and does a full compute. This is also the new-user onboarding path.
 
-Race detection and the profile-level usual-activity-area derivation are the
-independent ingestion modules specified by ADR 0029. A terminal failure remains
-visible on either optional step but does not fail the sync pipeline; downstream
-deterministic work still runs and the pipeline can finish `done`.
+Race detection is the independent ingestion module specified by ADR 0029. A
+terminal failure remains visible on that step but does not fail the sync
+pipeline; downstream deterministic work still runs and the pipeline can finish
+`done`.
 
 The user tier may sync only its own id (path `{user}` must equal the JWT `sub`, else 403); the internal tier may sync any user (path must be a UUID), collapsing Python's separate `/internal/sync` route into the same path.
 

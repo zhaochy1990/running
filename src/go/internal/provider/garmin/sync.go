@@ -410,10 +410,13 @@ func (p *Provider) fetchOneActivity(ctx context.Context, client *Client, user st
 			weather = &w
 		}
 	}
+	activity := buildActivity(user, a, weather)
+	timeseries := parseDetailsTimeseries(detailsRaw)
+	activity.SetStartGPSFromTimeseries(timeseries)
 	result = activityResult{
-		activity:   buildActivity(user, a, weather),
+		activity:   activity,
 		laps:       parseSplits(splitsRaw),
-		timeseries: parseDetailsTimeseries(detailsRaw),
+		timeseries: timeseries,
 	}
 	return result
 }

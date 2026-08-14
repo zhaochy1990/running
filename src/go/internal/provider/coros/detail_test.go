@@ -119,6 +119,28 @@ func TestParseActivityDetail(t *testing.T) {
 	}
 }
 
+func TestParseActivityDetailCapturesFirstValidGPSOnActivity(t *testing.T) {
+	a, _, _, _, err := ParseActivityDetail(
+		"f10bc353-01ab-4db1-af9f-d9305ea9a532", "L-GPS", time.Time{},
+		[]byte(`{"summary":{"sportType":100},"frequencyList":[
+			{"gpsLat":0,"gpsLon":0},
+			{"gpsLat":311337430},
+			{"gpsLat":950000000,"gpsLon":1210000000},
+			{"gpsLat":312304000,"gpsLon":1214737000},
+			{"gpsLat":399042000,"gpsLon":1164074000}
+		]}`),
+	)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if a.StartGPSLat == nil || !approx(*a.StartGPSLat, 31.2304) {
+		t.Fatalf("start_gps_lat = %v, want 31.2304", a.StartGPSLat)
+	}
+	if a.StartGPSLon == nil || !approx(*a.StartGPSLon, 121.4737) {
+		t.Fatalf("start_gps_lon = %v, want 121.4737", a.StartGPSLon)
+	}
+}
+
 func TestParseActivityDetailZeroCodesStayNull(t *testing.T) {
 	// COROS reports trainType/feelType == 0 for untagged/unrated activities; they
 	// must stay NULL (matching Python truthiness), not map to "unknown". This is
