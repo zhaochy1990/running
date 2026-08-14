@@ -20,7 +20,7 @@ export function getCoachSubagent(store: StrideDataStore, config: ModelConfig) {
 
 	return {
 		name: "weekly_plan",
-		description: "查看或调整某一天的训练计划",
+		description: "generate or adjust the training plan for a week or adjust the training plan for a specific day",
 		systemPrompt: WeeklyPlanPrompt,
 		tools: [
 			...activitiesTools,
@@ -35,6 +35,6 @@ export function getCoachSubagent(store: StrideDataStore, config: ModelConfig) {
 		// Skill loaded via SkillsMiddleware from the deep agent's FilesystemBackend
 		// (rooted at `dist/agents/skills/` in coachAgent.ts). The agent reads the
 		// full SKILL.md on demand via read_file. Path is relative to that root.
-		// skills: ["/analyze-activity/"],
+		skills: ["/generate-weekly-plan/"],
 	};
 }
