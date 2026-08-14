@@ -45,9 +45,17 @@ const activity: Activity = {
 	provider: "coros",
 };
 
+function providerUsingMySqlFeedback(
+	store: ConstructorParameters<typeof MySqlWeeklyPlanContextProvider>[0],
+): MySqlWeeklyPlanContextProvider {
+	return new MySqlWeeklyPlanContextProvider(store, {
+		weeklyFeedbackCutoverComplete: true,
+	});
+}
+
 test("weekly context combines all weekly planning evidence", async () => {
 	const ranges: Array<[string, string, string]> = [];
-	const provider = new MySqlWeeklyPlanContextProvider({
+	const provider = providerUsingMySqlFeedback({
 		async getMasterPlanMetadataForDate() {
 			return {
 				planId: "plan-1",

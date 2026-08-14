@@ -69,8 +69,10 @@ test("personal best loader rejects records without an activity label ID", async 
 
 test("weekly feedback loader reads the bounded user-week range", async () => {
 	let params: unknown[] = [];
+	let query = "";
 	const pool = {
-		async query(_sql: string, values: unknown[]) {
+		async query(sql: string, values: unknown[]) {
+			query = sql;
 			params = values;
 			return [
 				[
@@ -91,7 +93,13 @@ test("weekly feedback loader reads the bounded user-week range", async () => {
 		"2026-08-10",
 	);
 
-	assert.deepEqual(params, ["athlete", "2026-07-20", "2026-08-10"]);
+	assert.deepEqual(params, [
+		"athlete",
+		"2026-07-20",
+		"2026-08-10",
+		"2026-08-10",
+	]);
+	assert.match(query, /DATE\(updated_at \+ INTERVAL 8 HOUR\) <= \?/);
 	assert.deepEqual(rows, [
 		{
 			weekStart: "2026-08-03",

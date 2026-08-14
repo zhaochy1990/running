@@ -284,9 +284,11 @@ export class StrideDataStore {
 		const [rows] = await this.pool.query<RowDataPacket[]>(
 			`SELECT week_start, content_md, updated_at
          FROM weekly_feedback
-        WHERE user_id = ? AND week_start BETWEEN ? AND ?
+        WHERE user_id = ?
+          AND week_start BETWEEN ? AND ?
+          AND DATE(updated_at + INTERVAL 8 HOUR) <= ?
         ORDER BY week_start ASC`,
-			[userId, startDay, endDay],
+			[userId, startDay, endDay, endDay],
 		);
 		return rows.map((row) => ({
 			weekStart: mysqlDay(row.week_start),

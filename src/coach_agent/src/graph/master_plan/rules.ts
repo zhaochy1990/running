@@ -1,7 +1,11 @@
-import type { MasterPlanGraphRequest } from "./contracts.js";
-import type { ContextSnapshot } from "./context.js";
-import { MasterPlanSchema, type MasterPlan } from "./schemas.js";
 import { z } from "zod/v4";
+import {
+	addDays,
+	mondayOnOrBefore as monday,
+} from "../../utils/planningDate.js";
+import type { ContextSnapshot } from "./context.js";
+import type { MasterPlanGraphRequest } from "./contracts.js";
+import { type MasterPlan, MasterPlanSchema } from "./schemas.js";
 
 export type RuleSeverity = "error" | "warning";
 export const RuleViolationSchema = z
@@ -350,11 +354,6 @@ function report(violations: RuleViolation[]): RuleReport {
 		has_errors: violations.some((v) => v.severity === "error"),
 	});
 }
-function addDays(day: string, days: number): string {
-	const d = new Date(`${day}T00:00:00Z`);
-	d.setUTCDate(d.getUTCDate() + days);
-	return d.toISOString().slice(0, 10);
-}
 function positiveRacePace(text: string): boolean {
 	const marker =
 		/(?:\bMP\b|\bHMP\b|\bRP\b|race[- ]?pace|target[- ]?pace|目标配速|比赛配速|马拉松配速|半马配速)/i;
@@ -400,9 +399,4 @@ function validDay(day: string): boolean {
 	return (
 		!Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === day
 	);
-}
-function monday(day: string): string {
-	const date = new Date(`${day}T00:00:00Z`);
-	date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
-	return date.toISOString().slice(0, 10);
 }

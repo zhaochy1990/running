@@ -15,6 +15,10 @@ import type {
 	UserInjury,
 	WeeklyFeedback,
 } from "./dataStore.js";
+import {
+	createWeeklyFeedbackSource,
+	type WeeklyFeedbackSource,
+} from "./weeklyFeedbackSource.js";
 
 type ContextStore = Pick<
 	StrideDataStore,
@@ -52,7 +56,24 @@ const LOOKBACK_DAYS = 28;
 export class MySqlWeeklyPlanContextProvider
 	implements WeeklyPlanContextProvider
 {
-	constructor(private readonly store: ContextStore) {}
+	private readonly feedbackSource: WeeklyFeedbackSource;
+
+	constructor(
+		private readonly store: ContextStore,
+		options: {
+			weeklyFeedbackCutoverComplete?: boolean;
+			legacyDataDir?: string;
+		} = {},
+	) {
+		this.feedbackSource = createWeeklyFeedbackSource(store, {
+			...(options.weeklyFeedbackCutoverComplete === undefined
+				? {}
+				: { cutoverComplete: options.weeklyFeedbackCutoverComplete }),
+			...(options.legacyDataDir === undefined
+				? {}
+				: { legacyDataDir: options.legacyDataDir }),
+		});
+	}
 
 	public async loadSnapshot(
 		userId: string,
@@ -66,7 +87,7 @@ export class MySqlWeeklyPlanContextProvider
 			await Promise.all([
 				this.store.getMasterPlanMetadataForDate(userId, planStart),
 				this.store.getActivitiesByDateRange(userId, start, end),
-				this.store.getWeeklyFeedbackByDateRange(userId, feedbackStart, end),
+				this.feedbackSource.getByDateRange(userId, feedbackStart, end),
 				this.store.getDailyTrainingLoadByDateRange(userId, start, end),
 				this.store.getDailyRecoveryByDateRange(userId, start, end),
 				this.store.getUserInjuries(userId),

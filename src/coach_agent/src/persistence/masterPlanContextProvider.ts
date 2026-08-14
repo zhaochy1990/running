@@ -5,6 +5,7 @@ import {
 } from "../graph/master_plan/index.js";
 import {
 	addDays,
+	mondayOnOrBefore as monday,
 	planningStartDate,
 	shanghaiDay,
 } from "../utils/planningDate.js";
@@ -198,12 +199,6 @@ function raceShape(rows: RaceEffort[]) {
 }
 function activityDay(a: Activity): string {
 	return new Date(a.date.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
-}
-function monday(day: string): string {
-	const d = new Date(`${day}T00:00:00Z`);
-	const delta = (d.getUTCDay() + 6) % 7;
-	d.setUTCDate(d.getUTCDate() - delta);
-	return d.toISOString().slice(0, 10);
 }
 function weeklyHistory(
 	runs: Activity[],
