@@ -16,7 +16,7 @@ Nine migrations live here:
 | `npm run migrate:weekly-plans` (`src/migrate-weekly-plans.js`) | Azure Table canonical weekly plans, with Blob `plan.md` fallback | `weekly_plan` |
 | `npm run migrate:running-age` (`src/migrate-running-age.js`) | local `data/<uuid>/running_profile.json` | existing `user_profile` rows |
 | `npm run migrate:weekly-feedback` (`src/migrate-weekly-feedback.js`) | local SQLite `weekly_feedback`, with `feedback.md` fallback | `weekly_feedback` |
-| `npm run migrate:activity-start-gps` (`src/activity-start-gps-backfill.js`) | first valid GPS pair from each activity's MySQL `timeseries` rows | existing `activities.start_gps_lat`, `activities.start_gps_lon` |
+| `npm run migrate:activity-start-gps` (Go `stride backfill-activity-start-gps`) | first valid GPS pair from each activity's MySQL `timeseries` rows | existing `activities.start_gps_lat`, `activities.start_gps_lon` |
 
 ## Production migration status
 
@@ -49,7 +49,7 @@ groups or aggregates the full `timeseries` table.
 ```bash
 # Preview one real user without writing.
 npm run migrate:activity-start-gps -- \
-  --user f10bc353-01ab-4db1-af9f-d9305ea9a532 --limit 25
+  --user f10bc353-01ab-4db1-af9f-d9305ea9a532 --limit 25 --delay 25ms
 
 # Apply a bounded validation batch, then run without --limit after review.
 npm run migrate:activity-start-gps -- \
@@ -58,7 +58,7 @@ npm run migrate:activity-start-gps -- --commit
 ```
 
 `--batch-size` controls activity keyset pages (default `25`, maximum `500`), and
-`--delay-ms` throttles after each timeseries lookup (default `25`). `--limit` is
+`--delay` throttles after each timeseries lookup (default `25ms`). `--limit` is
 a total activity cap for the run; it is intended for validation, not as a resume
 cursor. Commit mode updates only rows whose two cache
 columns are still `NULL`, immediately reads each updated row back, continues past
@@ -68,8 +68,10 @@ overwritten.
 
 Production should start with a small `--limit` and the default delay while MySQL
 CPU and query latency are monitored. Increase scope only while database load
-remains healthy. MySQL uses `STRIDE_WORKER_MYSQL_DSN` or the discrete `MYSQL_*`
-variables; credentials and coordinates are never printed.
+remains healthy. Configuration uses `CONFIG_PATH` (default `src/go/config.yml`)
+plus the standard `STRIDE_WORKER_MYSQL_DSN` override; credentials and coordinates
+are never printed. SQL remains owned by `src/go/internal/storage/`; this Node
+project provides only the migration entrypoint and operator documentation.
 
 ---
 
