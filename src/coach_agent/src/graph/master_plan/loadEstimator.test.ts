@@ -48,7 +48,7 @@ function step(
 	step_kind: "warmup" | "work" | "recovery" | "cooldown" | "rest",
 	duration: { kind: "time_s" | "distance_m"; value: number },
 	target:
-		| { kind: "pace_s_km" | "hr_bpm" | "power_w"; low: number; high: number }
+		| { kind: "pace_s_km" | "hr_bpm"; low: number; high: number }
 		| { kind: "open"; low: null; high: null },
 ) {
 	return { step_kind, duration, target, note: null, hr_cap_bpm: null };
@@ -310,6 +310,41 @@ test("structured distance ranges, repeat blocks and passive rests match the Pyth
 	);
 });
 
+test("structured weekly volume uses segment distance instead of a conflicting declaration", () => {
+	const result = estimate({
+		target_weekly_km_low: 20,
+		target_weekly_km_high: 20,
+		key_sessions: [
+			{
+				type: "threshold",
+				distance_km: 20,
+				duration_min: 50,
+				intensity: "conflicting declaration",
+				purpose: "regression",
+				workout_structure: workoutStructure([
+					{
+						repeat: 1,
+						steps: [
+							step(
+								"work",
+								{ kind: "distance_m", value: 10000 },
+								{
+									kind: "pace_s_km",
+									low: 250,
+									high: 250,
+								},
+							),
+						],
+					},
+				]),
+			},
+		],
+	});
+
+	assert.equal(result.keySessionKm, 10);
+	assert.equal(result.remainingEasyKm, 10);
+});
+
 test("structured long runs integrate embedded race-pace blocks as one session", () => {
 	const result = estimate({
 		target_weekly_km_low: 25,
@@ -414,50 +449,6 @@ test("structured HR targets use the athlete's threshold and resting HR calibrati
 	assert.ok(
 		result.assumptions.includes("heart_rate_target_used_as_intensity_proxy"),
 	);
-});
-
-test("partially computable structures expose coverage instead of guessing power targets", () => {
-	const result = estimate({
-		target_weekly_km_low: 4.8,
-		target_weekly_km_high: 4.8,
-		key_sessions: [
-			{
-				type: "threshold",
-				distance_km: 4.8,
-				duration_min: 40,
-				intensity: "20min pace + 20min power",
-				purpose: "threshold stimulus",
-				workout_structure: workoutStructure([
-					{
-						repeat: 1,
-						steps: [
-							step(
-								"work",
-								{ kind: "time_s", value: 1200 },
-								{
-									kind: "pace_s_km",
-									low: 250,
-									high: 250,
-								},
-							),
-							step(
-								"work",
-								{ kind: "time_s", value: 1200 },
-								{
-									kind: "power_w",
-									low: 250,
-									high: 300,
-								},
-							),
-						],
-					},
-				]),
-			},
-		],
-	});
-
-	assert.equal(result.expectedDose, 33.3);
-	assert.ok(result.assumptions.includes("structured_workout_partial_coverage"));
 });
 
 test("multi-zone quality text follows the Python marker precedence", () => {

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MasterPlanSchema as LegacyMasterPlanSchema } from "../../agents/master_plan/schema.js";
-import { KeySessionTypeSchema, MasterPlanSchema } from "./schemas.js";
+import {
+	KeySessionTypeSchema,
+	type MasterPlan,
+	MasterPlanSchema,
+} from "./schemas.js";
 import { createTestMasterPlan } from "./testFixtures.js";
 
 const strategicTypes = [
@@ -66,11 +70,57 @@ test("strategic skeleton rejects ordinary filler runs", () => {
 
 test("strategic sessions may describe easy segments inside the complete workout", () => {
 	const plan = createTestMasterPlan();
-	const firstSession = plan.weeks[0]?.key_sessions[0];
+	const firstSession = plan.weeks[0]?.key_sessions[0] as unknown as
+		| MasterPlan["weeks"][number]["key_sessions"][number]
+		| undefined;
 	assert.ok(firstSession);
+	firstSession.distance_km = 28;
+	firstSession.workout_structure = structuredWorkout("2026-08-11", 28000);
 	firstSession.intensity = "12km轻松跑 + 8km稳态跑 + 8km轻松跑";
 	firstSession.purpose = "Build easy aerobic endurance and late-run stability";
 	assert.equal(MasterPlanSchema.safeParse(plan).success, true);
+});
+
+test("new running key sessions require a complete structured workout", () => {
+	const plan = createTestMasterPlan();
+	const firstSession = plan.weeks[0]?.key_sessions[0] as unknown as Record<
+		string,
+		unknown
+	>;
+	assert.ok(firstSession);
+	firstSession.workout_structure = null;
+	assert.equal(MasterPlanSchema.safeParse(plan).success, false);
+
+	firstSession.type = "strength_key";
+	firstSession.distance_km = null;
+	assert.equal(MasterPlanSchema.safeParse(plan).success, true);
+});
+
+test("declared distance must match fully distance-based workout segments", () => {
+	const plan = createTestMasterPlan();
+	const firstSession = plan.weeks[0]?.key_sessions[0] as unknown as
+		| MasterPlan["weeks"][number]["key_sessions"][number]
+		| undefined;
+	assert.ok(firstSession);
+	firstSession.distance_km = 28;
+	firstSession.workout_structure = structuredWorkout("2026-08-11", 24000);
+	assert.equal(MasterPlanSchema.safeParse(plan).success, false);
+});
+
+test("canonical generated workouts reject unsupported power targets", () => {
+	const plan = createTestMasterPlan();
+	const firstSession = plan.weeks[0]?.key_sessions[0];
+	assert.ok(firstSession?.workout_structure);
+	const firstTarget = firstSession.workout_structure.blocks[0]?.steps[0] as
+		| Record<string, unknown>
+		| undefined;
+	assert.ok(firstTarget);
+	firstTarget.target = {
+		kind: "power_w",
+		low: 250,
+		high: 300,
+	};
+	assert.equal(MasterPlanSchema.safeParse(plan).success, false);
 });
 
 test("race week accepts one race-pace activation but rejects other companions", () => {
@@ -83,7 +133,7 @@ test("race week accepts one race-pace activation but rejects other companions", 
 		duration_min: 70,
 		intensity: "3km热身 + 10km马拉松配速 + 3km放松",
 		purpose: "比赛周维持专项节奏和体能",
-		workout_structure: structuredWorkout("2026-08-18", 10000),
+		workout_structure: structuredActivation("2026-08-18", 10000, 3000, 3000),
 	};
 	raceWeek.key_sessions.unshift(activation);
 	assert.equal(MasterPlanSchema.safeParse(plan).success, true);
@@ -115,6 +165,27 @@ test("race-week activation enforces the goal-specific race-pace work distance", 
 	);
 });
 
+test("race-week activation work must target the goal race pace", () => {
+	const plan = MasterPlanSchema.parse(createTestMasterPlan());
+	const raceWeek = plan.weeks[1];
+	assert.ok(raceWeek);
+	const activation = structuredWorkout("2026-08-18", 10000);
+	activation.blocks[0]!.steps[0]!.target = {
+		kind: "pace_s_km",
+		low: 330,
+		high: 320,
+	};
+	raceWeek.key_sessions.unshift({
+		type: "race_pace",
+		distance_km: 10,
+		duration_min: 55,
+		intensity: "10km easy",
+		purpose: "比赛周激活",
+		workout_structure: activation,
+	});
+	assert.equal(MasterPlanSchema.safeParse(plan).success, false);
+});
+
 test("race-week activation requires structured segments", () => {
 	const plan = MasterPlanSchema.parse(createTestMasterPlan());
 	const raceWeek = plan.weeks[1];
@@ -130,7 +201,12 @@ test("race-week activation requires structured segments", () => {
 	assert.equal(MasterPlanSchema.safeParse(plan).success, false);
 });
 
-function structuredWorkout(date: string, workDistanceM: number) {
+function structuredWorkout(
+	date: string,
+	workDistanceM: number,
+): NonNullable<
+	MasterPlan["weeks"][number]["key_sessions"][number]["workout_structure"]
+> {
 	return {
 		schema: "run-workout/v1" as const,
 		name: "structured workout",
@@ -149,6 +225,29 @@ function structuredWorkout(date: string, workDistanceM: number) {
 			},
 		],
 	};
+}
+
+function structuredActivation(
+	date: string,
+	workDistanceM: number,
+	warmupDistanceM: number,
+	cooldownDistanceM: number,
+) {
+	const structure = structuredWorkout(date, workDistanceM);
+	structure.blocks[0]!.steps = [
+		{
+			step_kind: "warmup",
+			duration: { kind: "distance_m", value: warmupDistanceM },
+			target: { kind: "pace_s_km", low: 330, high: 300 },
+		},
+		...structure.blocks[0]!.steps,
+		{
+			step_kind: "cooldown",
+			duration: { kind: "distance_m", value: cooldownDistanceM },
+			target: { kind: "pace_s_km", low: 330, high: 300 },
+		},
+	];
+	return structure;
 }
 
 test("the legacy schema import is the Kernel-owned schema", () => {

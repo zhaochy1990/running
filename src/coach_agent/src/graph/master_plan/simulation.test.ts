@@ -35,18 +35,17 @@ test("weekly simulator deterministically estimates a dose range and applies the 
 		"weekly_high_target+key_sessions+remaining_easy_volume",
 	);
 	assert.equal(first.confidence, "medium");
-	assert.equal(first.estimated_dose, 407.8);
-	assert.equal(first.estimated_dose_low, 329.4);
-	assert.equal(first.estimated_dose_high, 439.2);
+	assert.equal(first.estimated_dose, 408.5);
+	assert.equal(first.estimated_dose_low, 339.5);
+	assert.equal(first.estimated_dose_high, 430.5);
 	assert.deepEqual(first.load_assumptions, [
-		"legacy_unstructured_session_approximation",
-		"z2_pace_zone_range",
+		"structured_workout_segments_integrated",
 		"remaining_weekly_distance_in_easy_zone",
 	]);
-	assert.equal(first.long_run_dose_share, 0.3);
-	assert.equal(first.end_ctl, 66.5048);
-	assert.equal(first.end_atl, 63.8552);
-	assert.equal(first.end_form, 2.6496);
+	assert.equal(first.long_run_dose_share, 0.3012);
+	assert.equal(first.end_ctl, 66.5202);
+	assert.equal(first.end_atl, 63.9181);
+	assert.equal(first.end_form, 2.602);
 });
 
 test("simulator does not report high confidence from low-confidence calibration", () => {
@@ -109,6 +108,7 @@ test("simulator distinguishes an uncomputable session from missing calibration",
 		...plan.weeks[0]!.key_sessions[0]!,
 		distance_km: null,
 		duration_min: null,
+		workout_structure: null,
 	};
 	const report = simulateMasterPlanLoad(plan, createAssessmentSnapshot());
 
@@ -116,52 +116,6 @@ test("simulator distinguishes an uncomputable session from missing calibration",
 	assert.equal(
 		report.weeks[0]!.missing_dose_reason,
 		"planned_session_uncomputable",
-	);
-});
-
-test("simulator reports low confidence for partially covered structured workouts", () => {
-	const plan = createTestMasterPlan() as MasterPlan;
-	plan.weeks[0]!.key_sessions[0] = {
-		type: "threshold",
-		distance_km: 4.8,
-		duration_min: 40,
-		intensity: "20min pace + 20min power",
-		purpose: "threshold stimulus",
-		workout_structure: {
-			schema: "run-workout/v1",
-			name: "partial",
-			date: "2026-08-11",
-			note: null,
-			blocks: [
-				{
-					repeat: 1,
-					steps: [
-						{
-							step_kind: "work",
-							duration: { kind: "time_s", value: 1200 },
-							target: { kind: "pace_s_km", low: 250, high: 250 },
-							note: null,
-							hr_cap_bpm: null,
-						},
-						{
-							step_kind: "work",
-							duration: { kind: "time_s", value: 1200 },
-							target: { kind: "power_w", low: 250, high: 300 },
-							note: null,
-							hr_cap_bpm: null,
-						},
-					],
-				},
-			],
-		},
-	};
-
-	const report = simulateMasterPlanLoad(plan, createAssessmentSnapshot());
-	assert.equal(report.weeks[0]!.confidence, "low");
-	assert.ok(
-		report.weeks[0]!.load_assumptions.includes(
-			"structured_workout_partial_coverage",
-		),
 	);
 });
 

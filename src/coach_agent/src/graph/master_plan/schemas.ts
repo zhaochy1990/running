@@ -15,6 +15,8 @@ const EMBEDDED_RACE_PACE =
 	/(?:\b(?:MP|HMP|RP)\b|race[- ]?pace|target[- ]?pace|比赛配速|目标配速|马拉松配速|半马配速)/i;
 const ORDINARY_FILLER_PURPOSE =
 	/^\s*(?:(?:ordinary|easy|recovery|filler|commute)\s+)*(?:easy|recovery|filler|commute)\s+run\s*[.!]?\s*$|^\s*(?:普通)?(?:轻松|恢复|填充|通勤)跑(?:训练)?\s*[。！]?\s*$/i;
+const RACE_DISTANCE_KM = { FM: 42.195, HM: 21.0975 } as const;
+const RACE_TIME = /^(\d+):(\d{2}):(\d{2})$/;
 
 export const KeySessionTypeSchema = z.enum([
 	"long_run",
@@ -174,7 +176,7 @@ const WorkoutDurationSchema = z.discriminatedUnion("kind", [
 const WorkoutTargetSchema = z.discriminatedUnion("kind", [
 	z
 		.object({
-			kind: z.enum(["pace_s_km", "hr_bpm", "power_w"]),
+			kind: z.enum(["pace_s_km", "hr_bpm"]),
 			low: z.number().positive(),
 			high: z.number().positive(),
 		})
@@ -328,6 +330,12 @@ const WeekSchema = z
 		}
 		for (const [index, session] of week.key_sessions.entries()) {
 			const structure = session.workout_structure;
+			if (session.type !== "strength_key" && !structure)
+				ctx.addIssue({
+					code: "custom",
+					path: ["key_sessions", index, "workout_structure"],
+					message: "running key sessions require workout_structure",
+				});
 			if (structure) {
 				const weekEnd = new Date(`${week.week_start}T00:00:00Z`);
 				weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
@@ -357,6 +365,31 @@ const WeekSchema = z
 								],
 								message: "work steps require an explicit target",
 							});
+				const activeSteps = structure.blocks
+					.flatMap((block) =>
+						Array.from({ length: block.repeat }, () => block.steps).flat(),
+					)
+					.filter((step) => step.step_kind !== "rest");
+				if (
+					session.distance_km !== null &&
+					activeSteps.every((step) => step.duration.kind === "distance_m")
+				) {
+					const structuredDistanceKm = activeSteps.reduce(
+						(total, step) =>
+							total +
+							(step.duration.kind === "distance_m"
+								? step.duration.value / 1000
+								: 0),
+						0,
+					);
+					if (Math.abs(session.distance_km - structuredDistanceKm) > 0.01)
+						ctx.addIssue({
+							code: "custom",
+							path: ["key_sessions", index, "distance_km"],
+							message:
+								"must equal the complete distance-based workout_structure total",
+						});
+				}
 			}
 			if (ORDINARY_FILLER_PURPOSE.test(session.purpose ?? "")) {
 				ctx.addIssue({
@@ -466,6 +499,10 @@ export const MasterPlanSchema = z
 						message: "race-week activation requires workout_structure",
 					});
 				if (activation?.workout_structure) {
+					const goalPaceSPerKm = targetPaceSPerKm(
+						plan.goal.target_time,
+						RACE_DISTANCE_KM[plan.goal.distance],
+					);
 					const workDistanceKm = activation.workout_structure.blocks.reduce(
 						(total, block) =>
 							total +
@@ -474,7 +511,8 @@ export const MasterPlanSchema = z
 									(sum, step) =>
 										sum +
 										(step.step_kind === "work" &&
-										step.duration.kind === "distance_m"
+										step.duration.kind === "distance_m" &&
+										targetsGoalRacePace(step.target, goalPaceSPerKm)
 											? step.duration.value / 1000
 											: 0),
 									0,
@@ -501,3 +539,25 @@ export const MasterPlanSchema = z
 	});
 
 export type MasterPlan = z.infer<typeof MasterPlanSchema>;
+
+function targetPaceSPerKm(
+	targetTime: string,
+	distanceKm: number,
+): number | null {
+	const match = RACE_TIME.exec(targetTime);
+	if (!match) return null;
+	const [, hours, minutes, seconds] = match;
+	const totalSeconds =
+		Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
+	return totalSeconds > 0 ? totalSeconds / distanceKm : null;
+}
+
+function targetsGoalRacePace(
+	target: z.infer<typeof WorkoutTargetSchema>,
+	goalPaceSPerKm: number | null,
+): boolean {
+	if (target.kind !== "pace_s_km" || goalPaceSPerKm === null) return false;
+	const fastest = Math.min(target.low, target.high);
+	const slowest = Math.max(target.low, target.high);
+	return fastest >= goalPaceSPerKm * 0.97 && slowest <= goalPaceSPerKm * 1.03;
+}

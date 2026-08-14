@@ -138,10 +138,7 @@ export function estimateMasterPlanWeekLoad(
 			expectedKeyDose += estimate.expectedDose;
 			lowKeyDose += estimate.lowDose;
 			highKeyDose += estimate.highDose;
-			keySessionKm += Math.max(
-				0,
-				session.distance_km ?? estimate.estimatedDistanceKm,
-			);
+			keySessionKm += Math.max(0, estimate.estimatedDistanceKm);
 			if (session.type === "long_run")
 				longRunDose = Math.max(longRunDose, estimate.expectedDose);
 			continue;
@@ -415,7 +412,6 @@ function structuredStepIntensity(
 			assumption: "heart_rate_target_used_as_intensity_proxy",
 		};
 	}
-	if (target.kind === "power_w") return null;
 	const defaultIf = OPEN_STEP_IF[step.step_kind as keyof typeof OPEN_STEP_IF];
 	return defaultIf
 		? {
