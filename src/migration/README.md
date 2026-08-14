@@ -4,7 +4,7 @@ One-off Node.js utilities that copy per-user data into the **Tencent MySQL**
 tables read by the Go worker (`src/go/`). It is a standalone project — it has its
 own `package.json` and does **not** import anything from the rest of the repo.
 
-Eight migrations live here:
+Nine migrations live here:
 
 | Command | Source | Target table(s) |
 |---|---|---|
@@ -16,6 +16,7 @@ Eight migrations live here:
 | `npm run migrate:weekly-plans` (`src/migrate-weekly-plans.js`) | Azure Table canonical weekly plans, with Blob `plan.md` fallback | `weekly_plan` |
 | `npm run migrate:running-age` (`src/migrate-running-age.js`) | local `data/<uuid>/running_profile.json` | existing `user_profile` rows |
 | `npm run migrate:weekly-feedback` (`src/migrate-weekly-feedback.js`) | local SQLite `weekly_feedback`, with `feedback.md` fallback | `weekly_feedback` |
+| `npm run migrate:activity-start-gps` (`src/activity-start-gps-backfill.js`) | first valid GPS pair from each activity's MySQL `timeseries` rows | existing `activities.start_gps_lat`, `activities.start_gps_lon` |
 
 ## Production migration status
 
@@ -34,6 +35,42 @@ Only **real users** (the UUIDs in `src/users.js`) are migrated; every other UUID
 is a test account and is discarded (see `AGENTS.md`). The creds migration prunes
 test accounts by `--exclude-email`; the profile migration enforces the
 `src/users.js` allowlist directly.
+
+---
+
+## Activity-start GPS backfill — `timeseries` → `activities`
+
+This one-off backfill populates the activity-level start-coordinate cache added
+for race detection. It is dry-run by default and accepts only real-user UUIDs
+from `src/users.js`. Missing activities are keyset-paged; every activity performs
+one indexed `(user_id, label_id)` lookup with `ORDER BY id LIMIT 1`. It never
+groups or aggregates the full `timeseries` table.
+
+```bash
+# Preview one real user without writing.
+npm run migrate:activity-start-gps -- \
+  --user f10bc353-01ab-4db1-af9f-d9305ea9a532 --limit 25
+
+# Apply a bounded validation batch, then run without --limit after review.
+npm run migrate:activity-start-gps -- \
+  --commit --user f10bc353-01ab-4db1-af9f-d9305ea9a532 --limit 25
+npm run migrate:activity-start-gps -- --commit
+```
+
+`--batch-size` controls activity keyset pages (default `25`, maximum `500`), and
+`--delay-ms` throttles after each timeseries lookup (default `25`). `--limit` is
+a total activity cap for the run; it is intended for validation, not as a resume
+cursor. Commit mode updates only rows whose two cache
+columns are still `NULL`, immediately reads each updated row back, continues past
+per-activity failures, and exits non-zero when any failures occurred. Re-running
+is safe: already cached activities never query `timeseries` and are never
+overwritten.
+
+Production should start with a small `--limit` and the default delay while MySQL
+CPU and query latency are monitored. Increase scope only while database load
+remains healthy. MySQL uses `STRIDE_WORKER_MYSQL_DSN` or the discrete `MYSQL_*`
+variables; credentials and coordinates are never printed. This one-off script is
+the `src/migration/` exception to the repository SQL ownership rule.
 
 ---
 
