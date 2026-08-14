@@ -13,10 +13,10 @@ import type {
 	RunningCalibration,
 	StrideDataStore,
 	UserInjury,
-	WeeklyFeedback,
 } from "./dataStore.js";
 import {
 	createWeeklyFeedbackSource,
+	type WeeklyFeedbackRecord,
 	type WeeklyFeedbackSource,
 } from "./weeklyFeedbackSource.js";
 
@@ -163,11 +163,11 @@ function activityShape(activity: Activity) {
 	};
 }
 
-function feedbackShape(feedback: WeeklyFeedback) {
+function feedbackShape(feedback: WeeklyFeedbackRecord) {
 	return {
 		week_start: feedback.weekStart,
 		content_md: truncate(feedback.contentMd, 12_000),
-		updated_at: feedback.updatedAt.toISOString(),
+		updated_at: feedback.updatedAt?.toISOString() ?? null,
 	};
 }
 
@@ -297,9 +297,7 @@ function boolean(value: unknown): boolean | null {
 }
 
 function activityDay(activity: Activity): string {
-	return new Date(activity.date.getTime() + 8 * 3600_000)
-		.toISOString()
-		.slice(0, 10);
+	return shanghaiDay(activity.date.toISOString());
 }
 
 function round(value: number, precision = 0): number {

@@ -136,12 +136,21 @@ test("weekly plan schema rejects empty run blocks and strength exercises", () =>
 	assert.equal(WeeklyPlanSchema.safeParse(strengthPlan).success, false);
 });
 
-test("weekly plan schema requires COROS T-codes for strength exercises", () => {
+test("weekly plan schema permits the canonical custom-exercise fallback", () => {
 	const plan = canonicalPlan();
 	const strengthSpec = plan.sessions[1]?.spec;
 	assert.ok(strengthSpec && "exercises" in strengthSpec);
 	const firstExercise = strengthSpec.exercises[0];
 	assert.ok(firstExercise);
 	firstExercise.canonical_id = "split_squat";
+	const customExercise = firstExercise as Omit<
+		typeof firstExercise,
+		"provider_id"
+	> & {
+		provider_id: string | null;
+	};
+	customExercise.provider_id = null;
+	assert.equal(WeeklyPlanSchema.safeParse(plan).success, true);
+	customExercise.provider_id = "invented";
 	assert.equal(WeeklyPlanSchema.safeParse(plan).success, false);
 });

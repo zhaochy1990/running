@@ -50,14 +50,17 @@ const StrengthWorkoutSchema = z.strictObject({
 	exercises: z
 		.array(
 			z.strictObject({
-				canonical_id: z.string().regex(/^T\d+$/, "expected COROS T-code"),
+				canonical_id: z.string().min(1),
 				display_name: z.string().min(1),
 				sets: z.int().positive(),
 				target_kind: z.enum(["reps", "time_s"]),
 				target_value: z.int().positive(),
 				rest_seconds: z.int().nonnegative(),
 				note: z.string().nullable(),
-				provider_id: z.string().regex(/^T\d+$/, "expected COROS T-code"),
+				provider_id: z
+					.string()
+					.regex(/^T\d+$/, "expected COROS T-code")
+					.nullable(),
 			}),
 		)
 		.min(1),

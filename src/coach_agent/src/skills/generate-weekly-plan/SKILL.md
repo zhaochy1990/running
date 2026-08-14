@@ -32,12 +32,15 @@ cover all seven dates.
 Set the WeeklyPlan top-level `week_folder` exactly to the context `week_folder`;
 do not derive or invent it. Include every canonical schema stamp required by the
 structured output contract.
-For every strength exercise, set both `canonical_id` and `provider_id` to the
-same real COROS T-code (for example `T1262`); never use a free-form slug or null.
+For catalogued strength exercises, set both `canonical_id` and `provider_id` to
+the same real COROS T-code (for example `T1262`). When no catalog exercise
+accurately represents the movement, use a stable descriptive `canonical_id` and
+set `provider_id` to null so the adapter creates a custom exercise; never invent
+or approximate a T-code.
 Use only verified catalog mappings, including: squat `T1061`, single-leg
 deadlift `T1187`, side plank `T1185`, dead bug `T1243`, single-leg calf raise
 `T1275`, step-up `T1296`, goblet squat `T1301`, and dumbbell Romanian deadlift
-`T1305`. Choose a different verified exercise instead of inventing an ID.
+`T1305`.
 
 We need to use different training types and training intensities for different training phases. You need reference the instructions from "references" folder to understand how to organize the trainings for each phase. Currently, the training phases include: 基础期(base.md)、提升期(build.md)、专项速度周期(speed.md)、马拉松专项期(marathon.md)、赛前减量期(taper.md)、赛后恢复期(recovery.md).
 

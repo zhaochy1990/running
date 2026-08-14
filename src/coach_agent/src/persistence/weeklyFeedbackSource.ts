@@ -1,5 +1,5 @@
 import type { Dirent } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { addDays, shanghaiDay } from "../utils/planningDate.js";
@@ -10,8 +10,12 @@ export interface WeeklyFeedbackSource {
 		userId: string,
 		startDay: string,
 		endDay: string,
-	): Promise<WeeklyFeedback[]>;
+	): Promise<WeeklyFeedbackRecord[]>;
 }
+
+export type WeeklyFeedbackRecord = Omit<WeeklyFeedback, "updatedAt"> & {
+	updatedAt: Date | null;
+};
 
 type MySqlFeedbackStore = Pick<StrideDataStore, "getWeeklyFeedbackByDateRange">;
 
@@ -38,7 +42,7 @@ export class MySqlWeeklyFeedbackSource implements WeeklyFeedbackSource {
 		userId: string,
 		startDay: string,
 		endDay: string,
-	): Promise<WeeklyFeedback[]> {
+	): Promise<WeeklyFeedbackRecord[]> {
 		return this.store.getWeeklyFeedbackByDateRange(userId, startDay, endDay);
 	}
 }
@@ -50,10 +54,9 @@ export class LegacyFileWeeklyFeedbackSource implements WeeklyFeedbackSource {
 		userId: string,
 		startDay: string,
 		endDay: string,
-	): Promise<WeeklyFeedback[]> {
+	): Promise<WeeklyFeedbackRecord[]> {
 		assertUserId(userId);
 		assertRange(startDay, endDay);
-		const endExclusive = new Date(`${addDays(endDay, 1)}T00:00:00+08:00`);
 		const logsDir = join(this.dataDir, userId, "logs");
 		let entries: Dirent[];
 		try {
@@ -66,20 +69,19 @@ export class LegacyFileWeeklyFeedbackSource implements WeeklyFeedbackSource {
 		const rows = await Promise.all(
 			entries
 				.filter((entry) => entry.isDirectory())
-				.map(async (entry): Promise<WeeklyFeedback | null> => {
+				.map(async (entry): Promise<WeeklyFeedbackRecord | null> => {
 					const weekStart = weekStartFromFolder(entry.name);
-					if (!weekStart || weekStart < startDay || weekStart > endDay) {
+					if (
+						!weekStart ||
+						weekStart < startDay ||
+						addDays(weekStart, 6) > endDay
+					) {
 						return null;
 					}
 					const path = join(logsDir, entry.name, "feedback.md");
 					try {
-						const [contentMd, metadata] = await Promise.all([
-							readFile(path, "utf8"),
-							stat(path),
-						]);
-						return metadata.mtime < endExclusive
-							? { weekStart, contentMd, updatedAt: metadata.mtime }
-							: null;
+						const contentMd = await readFile(path, "utf8");
+						return { weekStart, contentMd, updatedAt: null };
 					} catch (error) {
 						if (isMissing(error)) return null;
 						throw error;
@@ -87,7 +89,7 @@ export class LegacyFileWeeklyFeedbackSource implements WeeklyFeedbackSource {
 				}),
 		);
 		return rows
-			.filter((row): row is WeeklyFeedback => row !== null)
+			.filter((row): row is WeeklyFeedbackRecord => row !== null)
 			.sort((left, right) => left.weekStart.localeCompare(right.weekStart));
 	}
 }
