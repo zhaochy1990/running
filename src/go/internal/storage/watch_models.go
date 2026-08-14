@@ -75,6 +75,8 @@ type Activity struct {
 	VerticalRatioPct      *float64 `gorm:"column:vertical_ratio_pct"`
 	Pauses                *string  `gorm:"column:pauses;type:json"`
 	RouteThumbJSON        *string  `gorm:"column:route_thumb_json;type:json"`
+	StartGPSLat           *float64 `gorm:"column:start_gps_lat"`
+	StartGPSLon           *float64 `gorm:"column:start_gps_lon"`
 
 	Provider string    `gorm:"column:provider;type:varchar(32);not null;default:coros"`
 	SyncedAt time.Time `gorm:"column:synced_at;type:datetime(6);not null"`
@@ -132,6 +134,24 @@ type TimeseriesPoint struct {
 }
 
 func (TimeseriesPoint) TableName() string { return "timeseries" }
+
+// SetStartGPSFromTimeseries caches the first complete, valid GPS fix on the
+// activity row. It deliberately requires a paired coordinate so a partial
+// sample cannot become an unusable activity start.
+func (a *Activity) SetStartGPSFromTimeseries(points []TimeseriesPoint) {
+	a.StartGPSLat, a.StartGPSLon = nil, nil
+	for _, point := range points {
+		if point.GPSLat == nil || point.GPSLon == nil {
+			continue
+		}
+		lat, lon := *point.GPSLat, *point.GPSLon
+		if lat < -90 || lat > 90 || lon < -180 || lon > 180 || (lat == 0 && lon == 0) {
+			continue
+		}
+		a.StartGPSLat, a.StartGPSLon = &lat, &lon
+		return
+	}
+}
 
 // ActivityWatchZone is a WATCH-REPORTED zone bucket (table "activity_watch_zones",
 // ADR 0007). Distinct from calibrated zones. ZoneTypeRaw preserves the raw COROS

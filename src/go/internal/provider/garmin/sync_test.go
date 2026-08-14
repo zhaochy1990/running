@@ -103,6 +103,45 @@ func TestSyncUser_DetailFailureStillStoresSummary(t *testing.T) {
 	}
 }
 
+func TestSyncUserCapturesFirstValidGPSOnActivity(t *testing.T) {
+	base := garminMux()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/details") {
+			w.Write([]byte(`{
+				"metricDescriptors":[
+					{"key":"directLatitude","metricsIndex":0},
+					{"key":"directLongitude","metricsIndex":1}
+				],
+				"activityDetailMetrics":[
+					{"metrics":[0,0]},
+					{"metrics":[31.1,null]},
+					{"metrics":[95,121.4]},
+					{"metrics":[31.2304,121.4737]},
+					{"metrics":[39.9042,116.4074]}
+				]
+			}`))
+			return
+		}
+		base.ServeHTTP(w, r)
+	})
+	p, fw := newTestProvider(t, handler, loggedInCreds())
+
+	_, err := p.SyncUser(context.Background(), testUID, provider.SyncOptions{
+		Mode: provider.SyncFull, Content: provider.ContentActivities, Jobs: 2,
+	})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	for labelID, activity := range fw.activities {
+		if activity.StartGPSLat == nil || *activity.StartGPSLat != 31.2304 {
+			t.Fatalf("activity %s start_gps_lat = %v, want 31.2304", labelID, activity.StartGPSLat)
+		}
+		if activity.StartGPSLon == nil || *activity.StartGPSLon != 121.4737 {
+			t.Fatalf("activity %s start_gps_lon = %v, want 121.4737", labelID, activity.StartGPSLon)
+		}
+	}
+}
+
 func TestSyncUser_MalformedDetailStillStoresSummary(t *testing.T) {
 	base := garminMux()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

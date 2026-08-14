@@ -73,29 +73,25 @@ func (s *Store) RaceCandidates(ctx context.Context, userID string, labelIDs []st
 	return rows, nil
 }
 
-// ActivityStartCoordinates returns the first valid GPS point from every
-// historical activity. Race detection uses this bounded projection to infer
-// the athlete's usual activity area; it does not claim a home address or call a
-// geocoding service.
+// ActivityStartCoordinates returns the activity-level start coordinate cached
+// during watch sync. It scans only the user's activity rows and never reads the
+// potentially multi-million-row timeseries table.
 func (s *Store) ActivityStartCoordinates(ctx context.Context, userID string) ([]racedetection.Coordinate, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return nil, err
 	}
-	firstPointIDs := s.db.WithContext(ctx).Model(&TimeseriesPoint{}).
-		Select("MIN(id)").
-		Where("user_id = ? AND gps_lat IS NOT NULL AND gps_lon IS NOT NULL", uid).
-		Where("gps_lat BETWEEN -90 AND 90 AND gps_lon BETWEEN -180 AND 180").
-		Where("NOT (gps_lat = 0 AND gps_lon = 0)").
-		Group("label_id")
 	var rows []struct {
 		Latitude  float64 `gorm:"column:latitude"`
 		Longitude float64 `gorm:"column:longitude"`
 	}
-	if err := s.db.WithContext(ctx).Model(&TimeseriesPoint{}).
-		Select("gps_lat AS latitude, gps_lon AS longitude").
-		Where("user_id = ? AND id IN (?)", uid, firstPointIDs).
-		Order("id").Scan(&rows).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&Activity{}).
+		Select("start_gps_lat AS latitude, start_gps_lon AS longitude").
+		Where("user_id = ?", uid).
+		Where("start_gps_lat IS NOT NULL AND start_gps_lon IS NOT NULL").
+		Where("start_gps_lat BETWEEN -90 AND 90 AND start_gps_lon BETWEEN -180 AND 180").
+		Where("NOT (start_gps_lat = 0 AND start_gps_lon = 0)").
+		Order("date, label_id").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	coordinates := make([]racedetection.Coordinate, len(rows))

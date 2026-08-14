@@ -1,6 +1,7 @@
 package coros
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -116,6 +117,59 @@ func TestParseActivityDetail(t *testing.T) {
 	}
 	if hr.DurationS == nil || *hr.DurationS != 90 || derefFl(hr.Percent) != 40 {
 		t.Errorf("hr zone dur/pct = %v/%v", hr.DurationS, hr.Percent)
+	}
+}
+
+func TestParseActivityDetailCapturesFirstValidGPSOnActivity(t *testing.T) {
+	a, _, _, _, err := ParseActivityDetail(
+		"f10bc353-01ab-4db1-af9f-d9305ea9a532", "L-GPS", time.Time{},
+		[]byte(`{"summary":{"sportType":100},"frequencyList":[
+			{"gpsLat":0,"gpsLon":0},
+			{"gpsLat":311337430},
+			{"gpsLat":950000000,"gpsLon":1210000000},
+			{"gpsLat":312304000,"gpsLon":1214737000},
+			{"gpsLat":399042000,"gpsLon":1164074000}
+		]}`),
+	)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if a.StartGPSLat == nil || !approx(*a.StartGPSLat, 31.2304) {
+		t.Fatalf("start_gps_lat = %v, want 31.2304", a.StartGPSLat)
+	}
+	if a.StartGPSLon == nil || !approx(*a.StartGPSLon, 121.4737) {
+		t.Fatalf("start_gps_lon = %v, want 121.4737", a.StartGPSLon)
+	}
+}
+
+func TestParseActivityDetailAcceptsEquatorAndPrimeMeridianStarts(t *testing.T) {
+	tests := []struct {
+		name    string
+		latRaw  int64
+		lonRaw  int64
+		wantLat float64
+		wantLon float64
+	}{
+		{name: "equator", latRaw: 0, lonRaw: 1_036_819_000, wantLat: 0, wantLon: 103.6819},
+		{name: "prime meridian", latRaw: 513_890_000, lonRaw: 0, wantLat: 51.389, wantLon: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := fmt.Sprintf(
+				`{"summary":{"sportType":100},"frequencyList":[{"gpsLat":%d,"gpsLon":%d}]}`,
+				tt.latRaw, tt.lonRaw,
+			)
+			a, _, _, _, err := ParseActivityDetail(
+				"f10bc353-01ab-4db1-af9f-d9305ea9a532", "L-ZERO-AXIS", time.Time{}, []byte(payload),
+			)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if a.StartGPSLat == nil || !approx(*a.StartGPSLat, tt.wantLat) ||
+				a.StartGPSLon == nil || !approx(*a.StartGPSLon, tt.wantLon) {
+				t.Fatalf("start GPS = (%v, %v), want (%v, %v)", a.StartGPSLat, a.StartGPSLon, tt.wantLat, tt.wantLon)
+			}
+		})
 	}
 }
 

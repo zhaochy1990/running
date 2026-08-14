@@ -45,8 +45,15 @@ is synchronized, persist a reusable fact, and stay independent from Coach Agent.
 - Parse watch-recorded pause count, total duration, and Shanghai-local intervals
   from `activities.pauses` in Go. Missing pause data stays unknown rather than
   being interpreted as zero pauses. Pause details are not sent to the model.
+- During COROS and Garmin detail sync, select the first sample that contains a
+  complete, valid GPS pair and persist it as nullable
+  `activities.start_gps_lat` / `activities.start_gps_lon`. Zero/zero, partial,
+  and out-of-range pairs are skipped. Re-syncing an activity updates these
+  values idempotently; activities without a valid fix keep both columns NULL.
 - Infer the athlete's usual activity area from the largest strict-majority
-  cluster of historical activity start points. Go compares the candidate start
+  cluster of historical activity start points. The historical read scans only
+  these cached columns on the user's `activities` rows; it never groups or joins
+  the multi-million-row `timeseries` table. Go compares the candidate start
   with that area; an HM/FM in a clearly different city is strong race evidence.
   If fewer than three valid historical starts exist or no strict majority exists,
   the location context is unknown; no home location is guessed or persisted, and
@@ -152,6 +159,10 @@ observable rather than hiding errors inside the race handler.
   consume `races` is deliberately a later change.
 - Candidate selection is deterministic, cheap, and testable without a model.
   Model cost is bounded to plausible half/full-marathon efforts.
+- Existing activity rows remain without cached start coordinates until a watch
+  detail sync revisits them. Schema migration does not run an automatic
+  all-history timeseries backfill, avoiding a deployment-time MySQL spike;
+  missing historical starts make travel evidence neutral.
 - A model outage may leave a temporary detection gap while the underlying sync
   still succeeds. Normal job retry handles transient failures; operators can
   observe the failed step and explicitly retry/backfill if needed.
