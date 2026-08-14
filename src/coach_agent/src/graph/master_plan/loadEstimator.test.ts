@@ -103,6 +103,27 @@ test("multi-zone quality text follows the Python marker precedence", () => {
 	assert.ok(result.assumptions.includes("z2_pace_zone_range"));
 });
 
+test("Z1 sessions use the persisted open-ended recovery pace zone", () => {
+	const result = estimate({
+		target_weekly_km_low: 10,
+		target_weekly_km_high: 10,
+		key_sessions: [
+			{
+				type: "long_run",
+				distance_km: 10,
+				duration_min: null,
+				intensity: "Z1 recovery",
+				purpose: "recovery stimulus",
+			},
+		],
+	});
+
+	assert.equal(result.expectedDose, 42.4);
+	assert.equal(result.lowDose, 34.7);
+	assert.equal(result.highDose, 50);
+	assert.ok(result.assumptions.includes("z1_pace_zone_range"));
+});
+
 test("distance takes precedence over total duration for strategic session load", () => {
 	const common = {
 		type: "threshold" as const,

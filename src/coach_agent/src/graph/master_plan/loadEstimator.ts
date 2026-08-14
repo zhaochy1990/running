@@ -3,7 +3,8 @@ import type { MasterPlan } from "./schemas.js";
 type Week = MasterPlan["weeks"][number];
 type KeySession = Week["key_sessions"][number];
 type Goal = MasterPlan["goal"];
-type PaceZoneName = "easy" | "marathon" | "threshold" | "interval";
+type PaceZoneName = "recovery" | "easy" | "marathon" | "threshold" | "interval";
+type RequiredPaceZoneName = Exclude<PaceZoneName, "recovery">;
 type PaceZoneInput = {
 	name?: unknown;
 	minPaceSPerKm?: unknown;
@@ -36,9 +37,13 @@ export interface MasterPlanWeekLoadEstimate {
 	unavailableReason: string | null;
 }
 
-type PaceZoneRanges = Record<PaceZoneName, readonly [number, number]>;
+type PaceZoneRanges = Record<RequiredPaceZoneName, readonly [number, number]> &
+	Partial<Record<"recovery", readonly [number, number]>>;
 
 const RACE_DISTANCE_KM = { FM: 42.195, HM: 21.0975 } as const;
+// The persisted recovery zone is open-ended below. Match the canonical Python
+// master-plan approximation when converting that open boundary to an IF range.
+const OPEN_RECOVERY_ZONE_IF_FLOOR = 0.5;
 
 /**
  * Estimate one strategic master-plan week on the canonical Python TSS scale.
@@ -249,15 +254,23 @@ function sessionIntensityRange(
 ): IntensityRange | null {
 	const text =
 		`${session.intensity ?? ""} ${session.purpose ?? ""}`.toLowerCase();
-	if (text.includes("z1")) return null;
 	for (const [token, zone] of [
+		["z1", "recovery"],
 		["z2", "easy"],
 		["z3", "marathon"],
 		["z4", "threshold"],
 		["z5", "interval"],
 	] as const)
-		if (text.includes(token))
-			return intensityRange(zoneRanges, zone, [`${token}_pace_zone_range`]);
+		if (text.includes(token)) {
+			const range = zoneRanges[zone];
+			return range
+				? {
+						low: range[0],
+						high: range[1],
+						assumptions: [`${token}_pace_zone_range`],
+					}
+				: null;
+		}
 
 	switch (session.type) {
 		case "strength_key":
@@ -516,7 +529,7 @@ function distanceDose(
 
 function intensityRange(
 	ranges: PaceZoneRanges,
-	zone: PaceZoneName,
+	zone: RequiredPaceZoneName,
 	assumptions: string[],
 ): IntensityRange {
 	const [low, high] = ranges[zone];
@@ -528,14 +541,21 @@ function resolvePaceZoneRanges(
 	thresholdSpeedMps: number,
 ): PaceZoneRanges | null {
 	const resolved: Partial<Record<PaceZoneName, readonly [number, number]>> = {};
-	const required: PaceZoneName[] = [
+	const supported: PaceZoneName[] = [
+		"recovery",
+		"easy",
+		"marathon",
+		"threshold",
+		"interval",
+	];
+	const required: RequiredPaceZoneName[] = [
 		"easy",
 		"marathon",
 		"threshold",
 		"interval",
 	];
 	const zones = paceZones.filter(isPaceZoneInput);
-	for (const name of required) {
+	for (const name of supported) {
 		const zone = zones.find((item) => item.name === name);
 		if (!zone) continue;
 		const minPace = positiveNumber(
@@ -544,7 +564,12 @@ function resolvePaceZoneRanges(
 		const maxPace = positiveNumber(
 			zone.maxPaceSPerKm ?? zone.max_pace_s_per_km,
 		);
-		const low = maxPace === null ? null : 1000 / maxPace / thresholdSpeedMps;
+		const low =
+			maxPace === null
+				? name === "recovery"
+					? OPEN_RECOVERY_ZONE_IF_FLOOR
+					: null
+				: 1000 / maxPace / thresholdSpeedMps;
 		const high = minPace === null ? null : 1000 / minPace / thresholdSpeedMps;
 		if (low === null || high === null || low <= 0 || high < low) continue;
 		resolved[name] = [low, high];
