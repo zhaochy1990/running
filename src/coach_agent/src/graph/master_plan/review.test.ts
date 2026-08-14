@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { deriveAssessmentFacts } from "./assessment.js";
 import {
 	adjudicateMasterPlanReviews,
 	mergeReviewReportsByRevisionAndTask,
 	mergeReviewWorkerErrors,
 	type ReviewReport,
 } from "./review.js";
-import { deriveAssessmentFacts } from "./assessment.js";
 import { createAssessmentSnapshot, createTestRequest } from "./testFixtures.js";
 
 const reviewerTypes = [
@@ -207,7 +207,7 @@ test("adjudicator blocks a missing required reviewer and rejects unknown evidenc
 test("adjudicator rejects unknown rule and simulation evidence", () => {
 	const evidence = {
 		simulation: {
-			algorithm_version: "master-plan-load-v1" as const,
+			algorithm_version: "master-plan-load-v3" as const,
 			estimated: true as const,
 			provenance: "test",
 			weeks: [],

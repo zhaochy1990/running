@@ -96,3 +96,8 @@ description: >-
    - 长跑内的马拉松配速、半马配速、阈值段、坡跑段或补给演练都是这节 `long_run` 的组成部分，统一写入该 object 的 `intensity` / `purpose`，不能再拆成平级的 `race_pace`、`threshold` 或其它 object。
    - 例如“32km 长跑，内含 20km 马拉松配速”只输出一个 `long_run`：`distance_km=32`，并在 `intensity` 中描述 20km 马配结构；不能额外输出一个 `distance_km=20` 的 `race_pace`。
    - 只有确实在另一时间单独完成的训练才使用另一个 object。输出前逐周检查：object 数量必须等于实际独立关键训练课数量。
+   - 每节跑步课必须填写 `workout_structure`，使用 canonical `run-workout/v1`：`schema`、`name`、课表日期 `date`、可空 `note` 与 `blocks`。`date` 必须位于所属周内。力量课可填 `null`。
+   - `blocks[].repeat` 是整组重复次数，`steps` 是组内依次执行的分段。比如 6×3 分钟间歇、组间 2 分钟慢跑，必须是一个 `repeat=6` 的 block，内含一个 `work` step 和一个 `recovery` step，不能把恢复遗漏或另建训练课。
+   - `step_kind` 只能为 `warmup`、`work`、`recovery`、`cooldown`、`rest`；慢跑恢复用 `recovery`，完全静止的被动休息才用 `rest`。负荷计算会计入前者、排除后者。
+   - duration 使用 `time_s` / `distance_m` / `open`；target 使用 `pace_s_km` / `hr_bpm` / `power_w` / `open`。单位固定为秒、米、秒每公里、bpm、W。配速 target 的 `low` 是较慢端（数值较大），`high` 是较快端（数值较小）。
+   - 热身、放松、慢跑恢复没有明确目标时可用 `open` target；`work` 不得用 `open` target。长跑中的马配段必须作为同一 `long_run.workout_structure` 中的 `work` step。

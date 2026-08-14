@@ -13,7 +13,7 @@ This doctrine governs FM/HM strategic season plans. It is input to strategy and 
 
 - Include only adaptation-driving sessions: long run, threshold, tempo, interval, VO2max, hill, race pace, test/tune-up race, race, or a strategic strength checkpoint.
 - Omit easy, recovery, commute, and filler runs. Weekly Plan later distributes the remaining volume.
-- Load weeks contain one to three strategic sessions; recovery weeks zero or one; race week contains only the target race.
+- Load weeks contain one to three strategic sessions; recovery weeks zero or one. Race week contains the target race plus at most one independent midweek race-pace activation: prescribe 10-15km at marathon pace for FM or 8-10km at half-marathon pace for HM, with warm-up and cooldown included in that same complete workout object.
 - At most two hard running stimuli per week. A long run with embedded MP/HMP/RP is itself a hard stimulus and must not be duplicated as a separate race-pace session.
 - Weekly high includes all distance-based strategic sessions. Keep the long run normally within 35% of weekly high, subject to later frequency-specific rules.
 

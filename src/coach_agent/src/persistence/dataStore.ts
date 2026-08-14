@@ -128,6 +128,7 @@ export interface RunningCalibration {
 	asOfDate: string;
 	thresholdHr: number | null;
 	thresholdSpeedMps: number | null;
+	rhrBaseline: number | null;
 	thresholdHrConfidence: string;
 	thresholdSpeedConfidence: string;
 	heartRateZones: HeartRateZone[];
@@ -396,7 +397,7 @@ export class StrideDataStore {
 		userId: string,
 	): Promise<RunningCalibration | null> {
 		const [snapshotRows] = await this.pool.query<RowDataPacket[]>(
-			`SELECT id, as_of_date, threshold_hr, threshold_speed_mps,
+			`SELECT id, as_of_date, threshold_hr, threshold_speed_mps, rhr_baseline,
               threshold_hr_confidence, threshold_speed_confidence
          FROM running_calibration_snapshot
         WHERE user_id = ?
@@ -432,6 +433,7 @@ export class StrideDataStore {
 			thresholdSpeedMps: (snapshot.threshold_speed_mps ?? null) as
 				| number
 				| null,
+			rhrBaseline: (snapshot.rhr_baseline ?? null) as number | null,
 			thresholdHrConfidence: snapshot.threshold_hr_confidence as string,
 			thresholdSpeedConfidence: snapshot.threshold_speed_confidence as string,
 			paceZones: paceRows[0].map(rowToPaceZone),

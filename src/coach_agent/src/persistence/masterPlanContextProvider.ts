@@ -1,11 +1,11 @@
 import {
-	ContextSnapshotSchema,
 	type ContextSnapshot,
+	ContextSnapshotSchema,
 	type MasterPlanContextProvider,
 } from "../graph/master_plan/index.js";
 import type {
-	Activity,
 	ActiveMasterPlanMetadata,
+	Activity,
 	DailyRecovery,
 	DailyTrainingLoad,
 	PersonalBest,
@@ -169,6 +169,7 @@ function calibrationShape(c: RunningCalibration | null) {
 			as_of_date: c.asOfDate,
 			threshold_hr: c.thresholdHr,
 			threshold_speed_mps: c.thresholdSpeedMps,
+			rhr_baseline: c.rhrBaseline,
 			threshold_hr_confidence: c.thresholdHrConfidence,
 			threshold_speed_confidence: c.thresholdSpeedConfidence,
 			heart_rate_zones: c.heartRateZones,

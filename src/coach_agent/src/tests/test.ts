@@ -3,6 +3,7 @@ import { createInterface } from "node:readline/promises";
 import { Command } from "@langchain/langgraph";
 import { createCoachAgent } from "../agents/coachAgent.js";
 import { loadConfig, readStrideMySqlConfig } from "../config/config.js";
+import { MasterPlanSchema } from "../graph/master_plan/schemas.js";
 import { StrideDataStore } from "../persistence/index.js";
 import {
 	ASK_USER_QUESTION_KIND,
@@ -56,7 +57,9 @@ function printAnswer(res: { messages: Array<{ content: unknown }> }): void {
 	const text = typeof content === "string" ? content : JSON.stringify(content);
 	console.log(`\n===== 最后回答 =====\n${text}`);
 
-	const rawJson = typeof content === "string" ? JSON.parse(content) : content;
+	const rawJson = MasterPlanSchema.parse(
+		typeof content === "string" ? JSON.parse(content) : content,
+	);
 
 	const now = new Date();
 	const year = now.getFullYear();

@@ -1,0 +1,226 @@
+{
+  "threshold_speed_mps": 4.0,
+  "threshold_hr": 170.0,
+  "rhr": 50.0,
+  "cases": [
+    {
+      "id": "time_interval_with_active_recovery",
+      "type": "interval",
+      "declared_distance_km": 11.304,
+      "declared_duration_min": 55.0,
+      "expected": {
+        "low_dose": 81.337,
+        "expected_dose": 81.337,
+        "high_dose": 81.337,
+        "estimated_distance_km": 11.304,
+        "estimated_duration_minutes": 55.0,
+        "unestimated_steps": 0
+      },
+      "workout_structure": {
+        "schema": "run-workout/v1",
+        "name": "6 x 3 min",
+        "date": "2026-08-11",
+        "note": null,
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": { "kind": "time_s", "value": 900 },
+                "target": { "kind": "open", "low": null, "high": null },
+                "note": null,
+                "hr_cap_bpm": null
+              }
+            ]
+          },
+          {
+            "repeat": 6,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": { "kind": "time_s", "value": 180 },
+                "target": { "kind": "pace_s_km", "low": 227.2727272727, "high": 227.2727272727 },
+                "note": null,
+                "hr_cap_bpm": null
+              },
+              {
+                "step_kind": "recovery",
+                "duration": { "kind": "time_s", "value": 120 },
+                "target": { "kind": "open", "low": null, "high": null },
+                "note": null,
+                "hr_cap_bpm": null
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "cooldown",
+                "duration": { "kind": "time_s", "value": 600 },
+                "target": { "kind": "open", "low": null, "high": null },
+                "note": null,
+                "hr_cap_bpm": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "distance_interval_with_passive_rest",
+      "type": "interval",
+      "declared_distance_km": 11.0,
+      "declared_duration_min": 51.7379,
+      "expected": {
+        "low_dose": 78.523,
+        "expected_dose": 80.2912,
+        "high_dose": 82.0914,
+        "estimated_distance_km": 11.0,
+        "estimated_duration_minutes": 51.7379,
+        "unestimated_steps": 0
+      },
+      "workout_structure": {
+        "schema": "run-workout/v1",
+        "name": "5 x 1 km",
+        "date": "2026-08-11",
+        "note": null,
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": { "kind": "distance_m", "value": 2000 },
+                "target": { "kind": "pace_s_km", "low": 330, "high": 310 },
+                "note": null,
+                "hr_cap_bpm": null
+              }
+            ]
+          },
+          {
+            "repeat": 5,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": { "kind": "distance_m", "value": 1000 },
+                "target": { "kind": "pace_s_km", "low": 230, "high": 220 },
+                "note": null,
+                "hr_cap_bpm": null
+              },
+              {
+                "step_kind": "recovery",
+                "duration": { "kind": "distance_m", "value": 400 },
+                "target": { "kind": "pace_s_km", "low": 360, "high": 340 },
+                "note": null,
+                "hr_cap_bpm": null
+              },
+              {
+                "step_kind": "rest",
+                "duration": { "kind": "time_s", "value": 60 },
+                "target": { "kind": "open", "low": null, "high": null },
+                "note": null,
+                "hr_cap_bpm": null
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "cooldown",
+                "duration": { "kind": "distance_m", "value": 2000 },
+                "target": { "kind": "open", "low": null, "high": null },
+                "note": null,
+                "hr_cap_bpm": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "long_run_with_race_pace_block",
+      "type": "long_run",
+      "declared_distance_km": 25.0,
+      "declared_duration_min": 114.0374,
+      "expected": {
+        "low_dose": 170.3268,
+        "expected_dose": 172.2256,
+        "high_dose": 174.1475,
+        "estimated_distance_km": 25.0,
+        "estimated_duration_minutes": 114.0374,
+        "unestimated_steps": 0
+      },
+      "workout_structure": {
+        "schema": "run-workout/v1",
+        "name": "25 km specific long run",
+        "date": "2026-08-15",
+        "note": null,
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": { "kind": "distance_m", "value": 5000 },
+                "target": { "kind": "open", "low": null, "high": null },
+                "note": null,
+                "hr_cap_bpm": null
+              },
+              {
+                "step_kind": "work",
+                "duration": { "kind": "distance_m", "value": 15000 },
+                "target": { "kind": "pace_s_km", "low": 245, "high": 240 },
+                "note": null,
+                "hr_cap_bpm": null
+              },
+              {
+                "step_kind": "cooldown",
+                "duration": { "kind": "distance_m", "value": 5000 },
+                "target": { "kind": "open", "low": null, "high": null },
+                "note": null,
+                "hr_cap_bpm": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "heart_rate_target",
+      "type": "tempo",
+      "declared_distance_km": 5.7,
+      "declared_duration_min": 30.0,
+      "expected": {
+        "low_dose": 28.125,
+        "expected_dose": 31.3368,
+        "high_dose": 34.7222,
+        "estimated_distance_km": 5.7,
+        "estimated_duration_minutes": 30.0,
+        "unestimated_steps": 0
+      },
+      "workout_structure": {
+        "schema": "run-workout/v1",
+        "name": "HR tempo",
+        "date": "2026-08-11",
+        "note": null,
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": { "kind": "time_s", "value": 1800 },
+                "target": { "kind": "hr_bpm", "low": 140, "high": 150 },
+                "note": null,
+                "hr_cap_bpm": null
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

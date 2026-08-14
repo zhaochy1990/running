@@ -47,6 +47,36 @@ export function createTestRequest() {
 	};
 }
 
+function structuredRun(
+	name: string,
+	date: string,
+	distanceM: number,
+	paceSPerKm: number,
+) {
+	return {
+		schema: "run-workout/v1" as const,
+		name,
+		date,
+		note: null,
+		blocks: [
+			{
+				repeat: 1,
+				steps: [
+					{
+						step_kind: "work" as const,
+						duration: { kind: "distance_m" as const, value: distanceM },
+						target: {
+							kind: "pace_s_km" as const,
+							low: paceSPerKm,
+							high: paceSPerKm,
+						},
+					},
+				],
+			},
+		],
+	};
+}
+
 export function createTestMasterPlan() {
 	return {
 		status: "draft" as const,
@@ -130,6 +160,12 @@ export function createTestMasterPlan() {
 						duration_min: null,
 						intensity: "Z2 endurance",
 						purpose: "建立耐力",
+						workout_structure: structuredRun(
+							"24km long run",
+							"2026-08-15",
+							24000,
+							300,
+						),
 					},
 				],
 				is_recovery_week: false,
@@ -147,6 +183,12 @@ export function createTestMasterPlan() {
 						duration_min: 170,
 						intensity: "目标比赛",
 						purpose: "完成目标比赛",
+						workout_structure: structuredRun(
+							"西安马拉松",
+							"2026-08-23",
+							42195,
+							242,
+						),
 					},
 				],
 				is_recovery_week: false,
@@ -186,10 +228,32 @@ export function createAssessmentSnapshot() {
 			as_of_date: "2026-08-10",
 			threshold_hr: 172,
 			threshold_speed_mps: 4.25,
+			rhr_baseline: 50,
 			threshold_hr_confidence: "high",
 			threshold_speed_confidence: "high",
 			heart_rate_zones: [],
-			pace_zones: [],
+			pace_zones: [
+				{
+					name: "easy",
+					minPaceSPerKm: 1000 / (4.25 * 0.84),
+					maxPaceSPerKm: 1000 / (4.25 * 0.72),
+				},
+				{
+					name: "marathon",
+					minPaceSPerKm: 1000 / (4.25 * 0.97),
+					maxPaceSPerKm: 1000 / (4.25 * 0.84),
+				},
+				{
+					name: "threshold",
+					minPaceSPerKm: 1000 / (4.25 * 1.03),
+					maxPaceSPerKm: 1000 / (4.25 * 0.97),
+				},
+				{
+					name: "interval",
+					minPaceSPerKm: 1000 / (4.25 * 1.11),
+					maxPaceSPerKm: 1000 / (4.25 * 1.03),
+				},
+			],
 		},
 		race_history: [],
 		macro_history: {

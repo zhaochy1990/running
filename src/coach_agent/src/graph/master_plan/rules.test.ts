@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runMasterPlanRuleFilter } from "./rules.js";
 import {
 	ContextSnapshotSchema,
 	MasterPlanGraphRequest,
 	MasterPlanSchema,
 } from "./index.js";
+import { runMasterPlanRuleFilter } from "./rules.js";
 import {
 	createAssessmentSnapshot,
 	createTestMasterPlan,
@@ -103,12 +103,14 @@ test("load_week_ramp retains the pre-recovery anchor", () => {
 		const w = structuredClone(p.weeks[0]!);
 		w.week_index = 2;
 		w.week_start = "2026-08-17";
+		w.key_sessions[0]!.workout_structure!.date = "2026-08-18";
 		w.is_recovery_week = true;
 		w.target_weekly_km_high = 50;
 		w.target_weekly_km_low = 45;
 		const next = structuredClone(p.weeks[0]!);
 		next.week_index = 3;
 		next.week_start = "2026-08-24";
+		next.key_sessions[0]!.workout_structure!.date = "2026-08-25";
 		next.target_weekly_km_high = 90;
 		p.weeks = [p.weeks[0]!, w, next];
 		p.total_weeks = 3;
@@ -128,6 +130,15 @@ test("recovery_cadence warns after four consecutive load weeks", () => {
 				...structuredClone(p.weeks[0]!),
 				week_index: i + 1,
 				week_start: date.toISOString().slice(0, 10),
+				key_sessions: p.weeks[0]!.key_sessions.map((session) => ({
+					...structuredClone(session),
+					workout_structure: session.workout_structure
+						? {
+								...structuredClone(session.workout_structure),
+								date: date.toISOString().slice(0, 10),
+							}
+						: null,
+				})),
 			};
 		});
 		p.total_weeks = 5;
@@ -153,6 +164,19 @@ test("taper_volume_drop rejects an insufficient taper", () =>
 	));
 test("hard_stimulus_density counts hard work after a hard session but ignores negated MP", () => {
 	const plan = mutated((p) => {
+		const structure = p.weeks[0]!.key_sessions[0]!.workout_structure;
+		if (!structure) throw new Error("structured test fixture missing");
+		const sessionStructure = (name: string, distanceM: number) => ({
+			...structuredClone(structure),
+			name,
+			blocks: structure.blocks.map((block) => ({
+				...structuredClone(block),
+				steps: block.steps.map((step) => ({
+					...structuredClone(step),
+					duration: { kind: "distance_m" as const, value: distanceM },
+				})),
+			})),
+		});
 		p.weeks[0]!.key_sessions = [
 			{
 				type: "threshold",
@@ -160,6 +184,7 @@ test("hard_stimulus_density counts hard work after a hard session but ignores ne
 				duration_min: 50,
 				intensity: "threshold",
 				purpose: "quality",
+				workout_structure: sessionStructure("threshold", 10000),
 			},
 			{
 				type: "interval",
@@ -167,6 +192,7 @@ test("hard_stimulus_density counts hard work after a hard session but ignores ne
 				duration_min: 50,
 				intensity: "interval",
 				purpose: "quality",
+				workout_structure: sessionStructure("interval", 10000),
 			},
 			{
 				type: "long_run",
@@ -174,16 +200,23 @@ test("hard_stimulus_density counts hard work after a hard session but ignores ne
 				duration_min: 120,
 				intensity: "不含MP专项段",
 				purpose: "耐力",
+				workout_structure: sessionStructure("long run", 20000),
 			},
 		];
 	});
 	assert.ok(!ids(check(plan)).includes("hard_stimulus_density"));
 	plan.weeks[0]!.key_sessions[2]!.intensity = "含MP专项段";
+	const parsed = MasterPlanSchema.safeParse(plan);
+	assert.equal(parsed.success, true, parsed.error?.message ?? "schema invalid");
 	assert.ok(ids(check(plan)).includes("hard_stimulus_density"));
 });
 test("long_run_share applies default and frequency_limited thresholds", () => {
 	const plan = mutated((p) => {
 		p.weeks[0]!.key_sessions[0]!.distance_km = 30;
+		const step =
+			p.weeks[0]!.key_sessions[0]!.workout_structure?.blocks[0]?.steps[0];
+		if (!step) throw new Error("structured test fixture missing");
+		step.duration = { kind: "distance_m", value: 30000 };
 	});
 	assert.ok(ids(check(plan)).includes("long_run_share"));
 	assert.ok(
@@ -209,6 +242,10 @@ test("race_week_volume includes the race distance", () =>
 test("availability_constraints checks key count, explicit duration, calibrated slow edge, and missing calibration warning", () => {
 	const plan = mutated((p) => {
 		p.weeks[0]!.key_sessions[0]!.distance_km = 80;
+		const step =
+			p.weeks[0]!.key_sessions[0]!.workout_structure?.blocks[0]?.steps[0];
+		if (!step) throw new Error("structured test fixture missing");
+		step.duration = { kind: "distance_m", value: 80000 };
 	});
 	assert.ok(
 		ids(
@@ -241,6 +278,10 @@ test("availability duration uses the calibrated pace-zone slow edge", () => {
 	const plan = mutated((p) => {
 		p.weeks[0]!.key_sessions[0]!.distance_km = 20;
 		p.weeks[0]!.key_sessions[0]!.duration_min = null;
+		const step =
+			p.weeks[0]!.key_sessions[0]!.workout_structure?.blocks[0]?.steps[0];
+		if (!step) throw new Error("structured test fixture missing");
+		step.duration = { kind: "distance_m", value: 20000 };
 	});
 	const snapshot = ContextSnapshotSchema.parse({
 		...createAssessmentSnapshot(),

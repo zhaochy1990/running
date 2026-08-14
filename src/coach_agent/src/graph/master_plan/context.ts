@@ -67,6 +67,7 @@ export const ContextSnapshotSchema = z
 				as_of_date: day,
 				threshold_hr: nullableNumber,
 				threshold_speed_mps: nullableNumber,
+				rhr_baseline: nullableNumber,
 				threshold_hr_confidence: z.string(),
 				threshold_speed_confidence: z.string(),
 				heart_rate_zones: z.array(z.unknown()),

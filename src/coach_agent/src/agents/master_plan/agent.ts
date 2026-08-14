@@ -16,6 +16,7 @@ import { buildResponsesModel } from "../common.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { MASTER_PLAN_PROMPT, MASTER_PLAN_READ_PROMPT } from "../prompts.js";
 import { MasterPlanDirectResponseSchema } from "./schema.js";
+import { createMasterPlanValidationMiddleware } from "./validationMiddleware.js";
 
 const logger = getLogger("coachAgent:master_plan");
 
@@ -82,7 +83,10 @@ function createMasterPlanSubagent(
 		...(generatesPlan
 			? { responseFormat: MasterPlanDirectResponseSchema }
 			: {}),
-		middleware: [createLoggingMiddleware("agent:master_plan")],
+		middleware: [
+			...(generatesPlan ? [createMasterPlanValidationMiddleware()] : []),
+			createLoggingMiddleware("agent:master_plan"),
+		],
 		// Skill loaded via SkillsMiddleware from the deep agent's FilesystemBackend
 		// (rooted at `dist/agents/skills/` in coachAgent.ts). The agent reads the
 		// full SKILL.md on demand via read_file. Path is relative to that root.
