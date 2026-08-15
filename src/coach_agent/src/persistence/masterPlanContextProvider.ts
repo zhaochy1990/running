@@ -16,6 +16,7 @@ import type {
 	DailyTrainingLoad,
 	PersonalBest,
 	RaceEffort,
+	RaceTarget,
 	RunningCalibration,
 	StrideDataStore,
 	UserInjury,
@@ -33,12 +34,12 @@ type ContextStore = Pick<
 	| "getLatestRunningCalibration"
 	| "getRaceHistory"
 	| "getMasterPlanMetadataForDate"
+	| "getRaceTarget"
 >;
 
 export class MySqlMasterPlanContextProvider
-	implements MasterPlanContextProvider
-{
-	constructor(private readonly store: ContextStore) {}
+	implements MasterPlanContextProvider {
+	constructor(private readonly store: ContextStore) { }
 
 	async loadSnapshot(
 		userId: string,
@@ -58,6 +59,7 @@ export class MySqlMasterPlanContextProvider
 			calibration,
 			races,
 			activePlan,
+			raceTarget,
 		] = await Promise.all([
 			this.store.getUserProfile(userId),
 			this.store.getUserInjuries(userId),
@@ -68,6 +70,7 @@ export class MySqlMasterPlanContextProvider
 			this.store.getLatestRunningCalibration(userId, end),
 			this.store.getRaceHistory(userId, { asOfDate: end, limit: 30 }),
 			this.store.getMasterPlanMetadataForDate(userId, planningStartDate(end)),
+			this.store.getRaceTarget(userId),
 		]);
 		if (!profile)
 			throw new Error(`required user profile not found for ${userId}`);
@@ -78,6 +81,7 @@ export class MySqlMasterPlanContextProvider
 		);
 		return ContextSnapshotSchema.parse({
 			user: { id: userId, profile: profileShape(profile) },
+			race_target: raceTargetShape(raceTarget),
 			injuries: injuryShape(injuries),
 			personal_bests: pbShape(pbs),
 			running_calibration: calibrationShape(calibration),
@@ -135,12 +139,12 @@ const durationWeightedActivityAverage = (
 	);
 	return duration
 		? Math.round(
-				measured.reduce(
-					(total, activity) =>
-						total + (metric(activity) ?? 0) * (activity.durationS ?? 0),
-					0,
-				) / duration,
-			)
+			measured.reduce(
+				(total, activity) =>
+					total + (metric(activity) ?? 0) * (activity.durationS ?? 0),
+				0,
+			) / duration,
+		)
 		: null;
 };
 const round = (v: number, p = 1) => Number(v.toFixed(p));
@@ -154,6 +158,10 @@ function profileShape(p: UserProfile) {
 		running_age_range: p.runningAgeRange,
 	};
 }
+function raceTargetShape(r: RaceTarget | null) {
+	return r
+}
+
 function injuryShape(rows: UserInjury[]) {
 	return rows.map((injury) => ({
 		body_area: injury.description,
@@ -259,10 +267,10 @@ function macroHistory(runs: Activity[], start: string, end: string) {
 	const dates = [...new Set(runs.map(activityDay))].sort();
 	const intervals = dates.length
 		? [
-				[start, dates[0]!],
-				...dates.slice(1).map((date, i) => [dates[i]!, date]),
-				[dates.at(-1)!, end],
-			]
+			[start, dates[0]!],
+			...dates.slice(1).map((date, i) => [dates[i]!, date]),
+			[dates.at(-1)!, end],
+		]
 		: [[start, end]];
 	const gaps = intervals
 		.map(([from, to]) => ({
@@ -295,9 +303,9 @@ function macroHistory(runs: Activity[], start: string, end: string) {
 		gap_periods: gaps,
 		consistency_pct: weeks.length
 			? round(
-					(100 * weeks.filter((w) => w.run_count > 0).length) /
-						Math.max(1, Math.ceil(dayDiff(start, end) / 7)),
-				)
+				(100 * weeks.filter((w) => w.run_count > 0).length) /
+				Math.max(1, Math.ceil(dayDiff(start, end) / 7)),
+			)
 			: null,
 	};
 }
@@ -331,11 +339,11 @@ function currentPhase(p: ActiveMasterPlanMetadata | null, day: string) {
 	});
 	return phase
 		? {
-				name: String(phase.name),
-				start_date: stringOrNull(phase.start_date),
-				end_date: stringOrNull(phase.end_date),
-				source: "active_plan" as const,
-			}
+			name: String(phase.name),
+			start_date: stringOrNull(phase.start_date),
+			end_date: stringOrNull(phase.end_date),
+			source: "active_plan" as const,
+		}
 		: null;
 }
 function continuity(

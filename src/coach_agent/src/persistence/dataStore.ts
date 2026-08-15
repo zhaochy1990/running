@@ -111,6 +111,17 @@ export interface RaceEffort {
 	feel: number | null;
 }
 
+export interface RaceTarget {
+	goal_id: string;
+	user_id: string;
+	status: string;
+	race_date: string; // Asia/Shanghai 日历日 `YYYY-MM-DD`。
+	race_distance: string; // 如 `5K` / `10K` / `HM` / `FM`。
+	race_name: string;
+	target_finish_time: string; // 目标完赛时间，`hh:mm:ss`。
+	weekly_training_days: number; // 每周训练天数。
+}
+
 /** 某个标准距离上的个人最好成绩（`personal_bests`），作为“这次本该多快”的参照。 */
 export interface PersonalBest {
 	/** 距离标签，如 `5K` / `10K` / `HM` / `FM`。 */
@@ -225,14 +236,14 @@ export class StrideDataStore {
 		const row = rows[0];
 		return row
 			? {
-					userId: row.user_id as string,
-					displayName: (row.display_name ?? null) as string | null,
-					dob: (row.dob ?? null) as string | null,
-					sex: (row.sex ?? null) as string | null,
-					heightCm: (row.height_cm ?? null) as number | null,
-					weightKg: (row.weight_kg ?? null) as number | null,
-					runningAgeRange: (row.running_age_range ?? null) as string | null,
-				}
+				userId: row.user_id as string,
+				displayName: (row.display_name ?? null) as string | null,
+				dob: (row.dob ?? null) as string | null,
+				sex: (row.sex ?? null) as string | null,
+				heightCm: (row.height_cm ?? null) as number | null,
+				weightKg: (row.weight_kg ?? null) as number | null,
+				runningAgeRange: (row.running_age_range ?? null) as string | null,
+			}
 			: null;
 	}
 
@@ -522,6 +533,18 @@ export class StrideDataStore {
 		return rows.length === 0
 			? null
 			: parsePlanContent(rows[0]!.content, "weekly_plan");
+	}
+
+	async getRaceTarget(userId: string): Promise<RaceTarget | null> {
+		const [rows] = await this.pool.query<RowDataPacket[]>(
+			`SELECT *
+         FROM race_goal
+        WHERE user_id = ? and status = 'active'
+        ORDER BY race_date DESC
+        LIMIT 1`,
+			[userId],
+		);
+		return rows.length === 0 ? null : (rows[0] as RaceTarget);
 	}
 
 	/** Release the pool — only if this store opened it (via {@link StrideDataStore.create}). */

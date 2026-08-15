@@ -101,7 +101,3 @@ export function createPlanPassthroughMiddleware() {
 		},
 	});
 }
-
-/** @deprecated Use createPlanPassthroughMiddleware. */
-export const createMasterPlanPassthroughMiddleware =
-	createPlanPassthroughMiddleware;

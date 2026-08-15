@@ -1,26 +1,23 @@
+import { createDeepAgent, FilesystemBackend } from "deepagents";
+import { InMemoryStore, MemorySaver } from "@langchain/langgraph";
+import { z } from "zod/v4";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { InMemoryStore, MemorySaver } from "@langchain/langgraph";
-import { createDeepAgent, FilesystemBackend } from "deepagents";
-import type { ToolRuntime } from "langchain";
-import { z } from "zod/v4";
-import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
-import type { StrideDataStore } from "../persistence/index.js";
-import { getLogger } from "../utils/logger.js";
+import { getAgentConfig, type CoachAgentConfig } from "../config/config.js";
 import { buildResponsesModel } from "./common.js";
+import { memoryTools } from "./memory.js";
+import type { ToolRuntime } from "langchain";
+import { getQaSubagent } from "./qa/agent.js";
+import { createLoggingMiddleware } from "./middleware.js";
+import type { StrideDataStore } from "../persistence/index.js";
+import { getCoachSubagent, getWeeklyPlanGeneratorSubagent } from "./weekly_plan/agent.js";
+import { getLogger } from "../utils/logger.js";
 import {
 	getMasterPlanGeneratorSubagent,
 	getMasterPlanSubagent,
 } from "./master_plan/agent.js";
-import { createPlanPassthroughMiddleware } from "./masterPlanPassthrough.js";
-import { memoryTools } from "./memory.js";
-import { createLoggingMiddleware } from "./middleware.js";
 import { ORCHESTRATOR_PROMPT } from "./prompts.js";
-import { getQaSubagent } from "./qa/agent.js";
-import {
-	getCoachSubagent,
-	getWeeklyPlanGeneratorSubagent,
-} from "./weekly_plan/agent.js";
+import { createPlanPassthroughMiddleware } from "./masterPlanPassthrough.js";
 
 export const CoachContext = z
 	.object({

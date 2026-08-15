@@ -4,7 +4,7 @@ import { Command } from "@langchain/langgraph";
 import { createCoachAgent } from "../agents/coachAgent.js";
 import { loadConfig, readStrideMySqlConfig } from "../config/config.js";
 import { MasterPlanSchema } from "../graph/master_plan/schemas.js";
-import { StrideDataStore } from "../persistence/index.js";
+import { MySqlMasterPlanContextProvider, StrideDataStore } from "../persistence/index.js";
 import {
 	ASK_USER_QUESTION_KIND,
 	type AskUserQuestionPayload,
@@ -18,9 +18,39 @@ const config = loadConfig();
 const store = StrideDataStore.create(readStrideMySqlConfig(config));
 const agent = await createCoachAgent(store, config);
 
-const userId = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
-const asof = "2026-08-14";
+const masterPlanContextProvider = new MySqlMasterPlanContextProvider(store);
+
+console.log('argv, ', process.argv);
+
+let userId = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
 // const userId = "11c2e582-5a85-4633-81d2-df7e37ad7b48";
+const usernameMap: Record<string, string> = {
+	pan: "5ee229a6-cdc1-4260-84d3-71ec622126c2",
+	dingchentao: "7bd56762-3b04-42a6-9d8b-98f595628430",
+	lvge: "0a74ac88-629e-4b8e-97c8-d49ccf5a986b",
+	dehua: "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
+	renzhen: "bffa65bc-4501-41e7-a68c-96da76d5b7bc",
+	zhaochaoyi: "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+};
+
+if (process.argv.length === 3) {
+	const username = process.argv[2] as string;
+	if (!usernameMap[username]) {
+		console.error(
+			`Unknown username: ${username}. Valid usernames: ${Object.keys(
+				usernameMap,
+			).join(", ")}`,
+		);
+		process.exit(1);
+	}
+	userId = usernameMap[username] as string;
+}
+console.log(`Using userId: ${userId}`);
+
+const asof = "2026-08-14";
+
+const res = await masterPlanContextProvider.loadSnapshot(userId, asof);
+console.log(res);
 
 // await agent.invoke({
 //   messages: [{ role: "user", content: "帮我生成下周的训练计划" }],
@@ -151,9 +181,11 @@ async function askWithHITL(content: string, thread: string): Promise<void> {
 //   "sess-master",
 // );
 
+
+
 // Test race goal: 2026-10-18 西安马拉松，目标 2:50:00，全马；每周 6 天训练，单次不超过 3 小时，无伤病。
 await askWithHITL(
-	"帮我生成一个新的赛季训练计划，目标是 2026-10-18 西安马拉松 2:50:00。全马；每周可训练 6 天，单次不超过 3 小时，目前无伤病。",
+	"帮助用户生成赛季训练计划, 用户目标为全马比赛，比赛日期为2026-10-18，目标比赛为西安马拉松，目标成绩为 2:45:00，每周训练6天，每天都可以训练，目前无伤病",
 	"session-master-plan",
 );
 
