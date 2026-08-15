@@ -41,7 +41,7 @@ prod 启用：revision `stride-app--0000037` 起：
 
 已验证：Python `/api/*`（除 `/api/health`）无 token → 401；valid user token → 200。覆盖读（`/users`, `/weeks`, `/activities`, `/dashboard`, `/health`, `/pmc`, `/stats`）和写（`/sync`, `/resync`, `/commentary`）。
 
-Go `stride api` 使用同一 auth-service 公钥在 Gin middleware 本地验签 JWT，并按 JWT `sub` 做用户隔离。`GET /api/users/{user_id}/master-plan/current` 允许普通 user JWT 读取自己的计划，允许 `X-Internal-Token` 跨用户读取；配置 `STRIDE_WORKER_API_AUTH_ADMIN_AUDIENCE` 后，也允许该独立 audience 且 `role=admin` 的 JWT 跨用户读取。admin audience 必须与普通 `STRIDE_WORKER_API_AUTH_AUDIENCE` 不同，普通 audience 上只有 `role=admin` 不会获得跨用户权限。现有 Web 继续通过兼容别名 `/api/users/me/master-plan/current` 读取当前赛季训练计划；BFF 默认将该别名转发到 Go，因此它不经过 FastAPI `require_bearer`，也不提供其他数据源 fallback。
+Go `stride api` 使用同一 auth-service 公钥在 Gin middleware 本地验签 JWT，并按 JWT `sub` 做用户隔离。`GET /api/users/{user_id}/master-plan/current` 允许普通 user JWT 读取自己的计划，允许 `X-Internal-Token` 跨用户读取；配置 `STRIDE_WORKER_API_AUTH_ADMIN_AUDIENCE` 后，也允许该独立 audience 且 `role=admin` 的 JWT 跨用户读取。admin audience 必须与普通 `STRIDE_WORKER_API_AUTH_AUDIENCE` 不同，普通 audience 上只有 `role=admin` 不会获得跨用户权限。admin JWT 使用独立 caller tier，除该按用户 Master Plan 只读接口外，默认在现有 user/internal 路由返回 403。现有 Web 继续通过兼容别名 `/api/users/me/master-plan/current` 读取当前赛季训练计划；BFF 默认将该别名转发到 Go，因此它不经过 FastAPI `require_bearer`，也不提供其他数据源 fallback。
 
 ### 3. CLI auth (`coros-sync auth` 组)
 

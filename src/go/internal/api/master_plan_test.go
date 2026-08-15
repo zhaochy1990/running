@@ -367,6 +367,16 @@ func TestGetCurrentForUser_RejectsInvalidUserID(t *testing.T) {
 	}
 }
 
+func TestAdminTierIsDeniedOutsideExplicitMasterPlanRoute(t *testing.T) {
+	h := newMPHarness(t)
+	adminID := uuid.NewString()
+	headers := h.bearerWithClaims(t, adminID, testAdminAudience, "admin")
+	w := h.do(http.MethodGet, "/api/users/"+adminID+"/pipelines", headers)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("code = %d, want 403: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestGetCurrent_NotFound(t *testing.T) {
 	h := newMPHarness(t)
 	uid := uuid.NewString()

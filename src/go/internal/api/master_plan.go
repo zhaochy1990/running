@@ -104,7 +104,7 @@ func (m *masterPlanRoutes) getCurrentForUser(c *gin.Context) {
 		return
 	}
 	caller := callerFrom(c)
-	if caller.Tier == TierUser && !caller.Admin && uid != caller.UserID {
+	if caller.Tier == TierUser && uid != caller.UserID {
 		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
 		return
 	}

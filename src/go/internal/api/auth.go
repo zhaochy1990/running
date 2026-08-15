@@ -20,13 +20,16 @@ const (
 	TierInternal Tier = iota
 	// TierUser is an end user presenting an RS256 JWT (direct-browser tier).
 	TierUser
+	// TierAdmin is an administrator presenting a JWT for the separate admin
+	// audience. Admin callers are denied by default and explicitly admitted only
+	// by routes that define admin behavior.
+	TierAdmin
 )
 
 // Caller is the authenticated identity attached to a request.
 type Caller struct {
 	Tier   Tier
-	UserID string // JWT sub; set only for TierUser
-	Admin  bool   // verified admin role on the configured admin audience
+	UserID string // JWT sub; set for user and admin JWT callers
 }
 
 const callerContextKey = "api.caller"
@@ -104,7 +107,7 @@ func (v *JWTVerifier) Verify(tokenString string) (Caller, error) {
 	if sub == "" {
 		return Caller{}, errors.New("api: token missing sub")
 	}
-	admin := false
+	tier := TierUser
 	if v.adminAudience != "" {
 		claimAudiences, claimErr := claims.GetAudience()
 		if claimErr != nil {
@@ -115,10 +118,10 @@ func (v *JWTVerifier) Verify(tokenString string) (Caller, error) {
 			if role != "admin" {
 				return Caller{}, errors.New("api: admin audience requires admin role")
 			}
-			admin = true
+			tier = TierAdmin
 		}
 	}
-	return Caller{Tier: TierUser, UserID: sub, Admin: admin}, nil
+	return Caller{Tier: tier, UserID: sub}, nil
 }
 
 func containsString(values []string, want string) bool {
@@ -178,6 +181,17 @@ func (a *Authenticator) middleware() gin.HandlerFunc {
 		c.Set(callerContextKey, caller)
 		c.Next()
 	}
+}
+
+// rejectAdminCaller keeps the admin-dashboard identity out of existing user and
+// internal routes. A route that supports TierAdmin must be mounted directly on
+// the parent authenticated group instead of the default-deny child group.
+func rejectAdminCaller(c *gin.Context) {
+	if callerFrom(c).Tier == TierAdmin {
+		c.AbortWithStatusJSON(403, errorResponse{Error: "forbidden"})
+		return
+	}
+	c.Next()
 }
 
 // callerFrom returns the authenticated caller stored by the middleware.

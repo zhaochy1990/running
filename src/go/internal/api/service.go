@@ -241,7 +241,15 @@ func (s *Service) Router() *gin.Engine {
 	r.GET("/api/readyz/onboarding", s.onboardingReadiness)
 	r.GET("/api/readyz/plan-setup", s.planSetupReadiness)
 
-	authed := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
+	authenticated := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
+	// Master-plan path reads are the only current surface that explicitly admits
+	// the separate admin JWT tier. The /me handler still rejects it.
+	s.masterPlan.register(authenticated)
+
+	// Existing routes accept only the original user/internal tiers. Keeping this
+	// default deny prevents an admin-dashboard token from silently inheriting
+	// user or server-to-server capabilities.
+	authed := authenticated.Group("", rejectAdminCaller)
 	authed.POST("/jobs", s.createJob)
 	authed.GET("/jobs/:job_id", s.getJob)
 	authed.GET("/api/jobs/:job_id", s.getJob)
@@ -256,7 +264,6 @@ func (s *Service) Router() *gin.Engine {
 	s.goals.register(authed)
 	s.healthMetrics.register(authed)
 	s.strideMetrics.register(authed)
-	s.masterPlan.register(authed)
 	s.weeklyPlan.register(authed)
 	return r
 }
