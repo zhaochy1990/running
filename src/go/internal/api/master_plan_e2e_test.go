@@ -98,7 +98,7 @@ func (e *e2eServer) get(t *testing.T, path, sub string) (int, []byte) {
 func TestE2E_MasterPlanCurrent(t *testing.T) {
 	e := newE2EServer(t)
 
-	code, body := e.get(t, "/api/users/me/master-plan/current", e2eV2User)
+	code, body := e.get(t, "/api/users/"+e2eV2User+"/master-plan/current", e2eV2User)
 	if code != http.StatusOK {
 		t.Fatalf("v2 current: code=%d body=%s", code, body)
 	}

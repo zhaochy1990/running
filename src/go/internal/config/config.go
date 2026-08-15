@@ -166,6 +166,7 @@ type APIFeatures struct {
 type APIAuth struct {
 	Issuer        string `mapstructure:"issuer" validate:"required"`
 	Audience      string `mapstructure:"audience" validate:"required"`
+	AdminAudience string `mapstructure:"admin-audience"`
 	PublicKeyPath string `mapstructure:"public-key-path" validate:"required"`
 }
 

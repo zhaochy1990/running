@@ -20,12 +20,16 @@ const (
 	TierInternal Tier = iota
 	// TierUser is an end user presenting an RS256 JWT (direct-browser tier).
 	TierUser
+	// TierAdmin is an administrator presenting a JWT for the separate admin
+	// audience. Admin callers are denied by default and explicitly admitted only
+	// by routes that define admin behavior.
+	TierAdmin
 )
 
 // Caller is the authenticated identity attached to a request.
 type Caller struct {
 	Tier   Tier
-	UserID string // JWT sub; set only for TierUser
+	UserID string // JWT sub; set for user and admin JWT callers
 }
 
 const callerContextKey = "api.caller"
@@ -35,14 +39,15 @@ var ErrUnauthorized = errors.New("unauthorized")
 
 // JWTVerifier verifies RS256 end-user tokens against the auth-service public key.
 type JWTVerifier struct {
-	key      *rsa.PublicKey
-	issuer   string
-	audience string
+	key           *rsa.PublicKey
+	issuer        string
+	audience      string
+	adminAudience string
 }
 
 // NewJWTVerifier loads the RSA public key from a PEM file (ADR 0012: the key is
 // public, delivered via config, and must match the in-house auth-service).
-func NewJWTVerifier(pemPath, issuer, audience string) (*JWTVerifier, error) {
+func NewJWTVerifier(pemPath, issuer, audience, adminAudience string) (*JWTVerifier, error) {
 	pem, err := os.ReadFile(pemPath)
 	if err != nil {
 		return nil, fmt.Errorf("api: read public key: %w", err)
@@ -51,37 +56,81 @@ func NewJWTVerifier(pemPath, issuer, audience string) (*JWTVerifier, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api: parse public key: %w", err)
 	}
-	return NewJWTVerifierFromKey(key, issuer, audience), nil
+	return newJWTVerifier(key, issuer, audience, adminAudience)
 }
 
 // NewJWTVerifierFromKey builds a verifier from an in-memory key (tests).
 func NewJWTVerifierFromKey(key *rsa.PublicKey, issuer, audience string) *JWTVerifier {
-	return &JWTVerifier{key: key, issuer: issuer, audience: audience}
+	verifier, _ := newJWTVerifier(key, issuer, audience, "")
+	return verifier
 }
 
-// Verify checks signature (RS256 only), issuer, audience and expiry, and returns
-// the non-empty subject (user id) claim.
-func (v *JWTVerifier) Verify(tokenString string) (string, error) {
+// NewJWTVerifierFromKeyWithAdmin builds a verifier with a separate admin
+// audience. Keeping this constructor explicit makes the elevated audience easy
+// to spot in tests and prevents it from being enabled accidentally.
+func NewJWTVerifierFromKeyWithAdmin(key *rsa.PublicKey, issuer, audience, adminAudience string) (*JWTVerifier, error) {
+	return newJWTVerifier(key, issuer, audience, adminAudience)
+}
+
+func newJWTVerifier(key *rsa.PublicKey, issuer, audience, adminAudience string) (*JWTVerifier, error) {
+	adminAudience = strings.TrimSpace(adminAudience)
+	if adminAudience != "" && adminAudience == strings.TrimSpace(audience) {
+		return nil, errors.New("api: admin audience must differ from user audience")
+	}
+	return &JWTVerifier{key: key, issuer: issuer, audience: audience, adminAudience: adminAudience}, nil
+}
+
+// Verify checks signature (RS256 only), issuer, an allowed audience, expiry, and
+// the non-empty subject. Admin authority is granted only when both the dedicated
+// admin audience and role=admin are present; role alone is never sufficient.
+func (v *JWTVerifier) Verify(tokenString string) (Caller, error) {
+	audiences := []string{v.audience}
+	if v.adminAudience != "" && v.adminAudience != v.audience {
+		audiences = append(audiences, v.adminAudience)
+	}
 	token, err := jwt.Parse(
 		tokenString,
 		func(t *jwt.Token) (any, error) { return v.key, nil },
 		jwt.WithValidMethods([]string{"RS256"}),
 		jwt.WithIssuer(v.issuer),
-		jwt.WithAudience(v.audience),
+		jwt.WithAudience(audiences...),
 		jwt.WithExpirationRequired(),
 	)
 	if err != nil {
-		return "", err
+		return Caller{}, err
 	}
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return "", errors.New("api: unexpected claims type")
+		return Caller{}, errors.New("api: unexpected claims type")
 	}
 	sub, _ := claims["sub"].(string)
 	if sub == "" {
-		return "", errors.New("api: token missing sub")
+		return Caller{}, errors.New("api: token missing sub")
 	}
-	return sub, nil
+	tier := TierUser
+	if v.adminAudience != "" {
+		claimAudiences, claimErr := claims.GetAudience()
+		if claimErr != nil {
+			return Caller{}, claimErr
+		}
+		if containsString(claimAudiences, v.adminAudience) {
+			role, _ := claims["role"].(string)
+			if role != "admin" {
+				return Caller{}, errors.New("api: admin audience requires admin role")
+			}
+			tier = TierAdmin
+		}
+	}
+	return Caller{Tier: tier, UserID: sub}, nil
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 // Authenticator resolves the tier of a request. The internal tier is a shared
@@ -111,11 +160,11 @@ func (a *Authenticator) authenticate(c *gin.Context) (Caller, error) {
 		if a.verifier == nil {
 			return Caller{}, ErrUnauthorized
 		}
-		sub, err := a.verifier.Verify(strings.TrimPrefix(auth, prefix))
+		caller, err := a.verifier.Verify(strings.TrimPrefix(auth, prefix))
 		if err != nil {
 			return Caller{}, ErrUnauthorized
 		}
-		return Caller{Tier: TierUser, UserID: sub}, nil
+		return caller, nil
 	}
 	return Caller{}, ErrUnauthorized
 }
@@ -132,6 +181,17 @@ func (a *Authenticator) middleware() gin.HandlerFunc {
 		c.Set(callerContextKey, caller)
 		c.Next()
 	}
+}
+
+// rejectAdminCaller keeps the admin-dashboard identity out of existing user and
+// internal routes. A route that supports TierAdmin must be mounted directly on
+// the parent authenticated group instead of the default-deny child group.
+func rejectAdminCaller(c *gin.Context) {
+	if callerFrom(c).Tier == TierAdmin {
+		c.AbortWithStatusJSON(403, errorResponse{Error: "forbidden"})
+		return
+	}
+	c.Next()
 }
 
 // callerFrom returns the authenticated caller stored by the middleware.

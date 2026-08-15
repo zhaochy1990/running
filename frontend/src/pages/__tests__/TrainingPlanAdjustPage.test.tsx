@@ -406,6 +406,12 @@ describe('TrainingPlanAdjustPage', () => {
     })
   })
 
+  it('loads the current master plan for the authenticated user', async () => {
+    renderAdjustPage()
+
+    await waitFor(() => expect(getCurrentMasterPlan).toHaveBeenCalledWith('user-1'))
+  })
+
   it('does not load scan data or ask Coach before direction and phase are clear', async () => {
     renderAdjustPage()
 

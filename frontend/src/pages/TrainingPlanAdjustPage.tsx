@@ -127,7 +127,7 @@ export default function TrainingPlanAdjustPage() {
     let cancelled = false
     setLoadingPlan(true)
     Promise.all([
-      getCurrentMasterPlan().catch(() => null),
+      getCurrentMasterPlan(user).catch(() => null),
       getMyProfile().catch(() => null),
     ]).then(([current, profileData]) => {
       if (cancelled) return

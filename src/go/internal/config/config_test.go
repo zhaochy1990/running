@@ -195,3 +195,25 @@ func TestMustLoadFrom_MissingFilePanics(t *testing.T) {
 	}()
 	_ = MustLoadFrom(filepath.Join(t.TempDir(), "does-not-exist.yml"))
 }
+
+func TestMustLoadAPIFrom_AdminAudienceEnvOverride(t *testing.T) {
+	body := `
+logger: {format: json, service-name: stride-api, level: info}
+mysql: {dsn: mysql-dsn}
+amqp: {url: "amqp://guest:guest@localhost:5672/"}
+queues: {work: w, retry: r, poison: p}
+api:
+  addr: ":8080"
+  internal-token: internal-token
+  auth:
+    issuer: auth-service
+    audience: stride-user
+    admin-audience: ""
+    public-key-path: /keys/public.pem
+`
+	t.Setenv("STRIDE_WORKER_API_AUTH_ADMIN_AUDIENCE", "stride-admin")
+	cfg := MustLoadAPIFrom(writeConfig(t, body))
+	if cfg.API.Auth.AdminAudience != "stride-admin" {
+		t.Fatalf("admin audience = %q", cfg.API.Auth.AdminAudience)
+	}
+}

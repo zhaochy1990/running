@@ -45,13 +45,14 @@ func newMasterPlanRoutes(store MasterPlanStore, log *zap.Logger) *masterPlanRout
 	return &masterPlanRoutes{store: store, log: log}
 }
 
-// register mounts the single official current season-plan read endpoint on the
-// already-authenticated group.
+// register mounts the current season-plan read endpoints on the already-
+// authenticated group. /me remains as a compatibility alias for Web clients.
 func (m *masterPlanRoutes) register(rg *gin.RouterGroup) {
 	if m.store == nil {
 		return
 	}
 	rg.GET("/api/users/me/master-plan/current", m.getCurrent)
+	rg.GET("/api/users/:user_id/master-plan/current", m.getCurrentForUser)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,6 +77,41 @@ func (m *masterPlanRoutes) getCurrent(c *gin.Context) {
 	if !ok {
 		return
 	}
+	m.getCurrentForUserID(c, uid)
+}
+
+// getCurrentForUser returns one user's current plan. User JWTs may read only
+// their own subject; verified admin JWTs and the internal token may read any
+// user. The target must be a UUID before the storage adapter is called.
+//
+//	@Summary		Get a user's active season training plan
+//	@Tags			master-plan
+//	@Produce		json
+//	@Param			user_id	path		string	true	"User id (JWT sub)"
+//	@Success		200			{object}	currentSeasonPlanEnvelope
+//	@Failure		400			{object}	errorResponse
+//	@Failure		401			{object}	errorResponse
+//	@Failure		403			{object}	errorResponse
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/users/{user_id}/master-plan/current [get]
+func (m *masterPlanRoutes) getCurrentForUser(c *gin.Context) {
+	uid := c.Param("user_id")
+	if _, err := uuid.Parse(uid); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "user must be a UUID"})
+		return
+	}
+	caller := callerFrom(c)
+	if caller.Tier == TierUser && uid != caller.UserID {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+	m.getCurrentForUserID(c, uid)
+}
+
+func (m *masterPlanRoutes) getCurrentForUserID(c *gin.Context, uid string) {
 	row, err := m.store.GetCurrentMasterPlan(c.Request.Context(), uid)
 	if err != nil {
 		m.log.Error("get current master plan failed", zapErr(err))
