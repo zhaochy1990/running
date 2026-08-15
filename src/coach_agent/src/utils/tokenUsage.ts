@@ -130,7 +130,7 @@ export class LlmTokenUsageTracker extends BaseCallbackHandler {
 
 export function formatTokenUsageReport(summary: LlmTokenUsageSummary): string {
 	const lines = [
-		"===== Master plan LLM token usage =====",
+		"===== LLM token usage =====",
 		`LLM calls: ${summary.callCount}`,
 	];
 
