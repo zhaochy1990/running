@@ -4,10 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "tsc": "tsc",
+    "tsc": "node node_modules/typescript/lib/tsc.js",
     "clean": "node scripts/clean.mjs",
     "copy-assets": "node scripts/copy-assets.mjs",
-    "build": "npm run clean && tsc && npm run copy-assets",
+    "build": "npm run clean && npm run tsc && npm run copy-assets",
     "test": "npm run build && node --test dist/tools/*.test.js dist/agents/*.test.js dist/agents/master_plan/*.test.js dist/graph/master_plan/*.test.js dist/persistence/*.test.js dist/utils/*.test.js",
     "test:deepagent": "npm run build && node dist/tests/test.js",
     "test:weekly-plan": "npm run build && node dist/tests/test_weekly_plan.js",
