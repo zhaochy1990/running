@@ -121,7 +121,7 @@ describe('master plan API clients', () => {
       plan: '# Markdown season plan',
     })))
 
-    const result = await getCurrentMasterPlan()
+    const result = await getCurrentMasterPlan('user-1')
 
     expect(result?.content_version).toBe(1)
     if (result?.content_version !== 1) throw new Error('expected Markdown plan')
@@ -154,7 +154,7 @@ describe('master plan API clients', () => {
       },
     })))
 
-    const result = await getCurrentMasterPlan()
+    const result = await getCurrentMasterPlan('user-1')
 
     expect(result?.content_version).toBe(2)
     if (result?.content_version !== 2) throw new Error('expected structured plan')
@@ -167,8 +167,8 @@ describe('master plan API clients', () => {
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ detail: 'not found' }), { status: 404 }))
 
-    await expect(getCurrentMasterPlan()).resolves.toBeNull()
-    expect(fetchMock).toHaveBeenCalledWith('/api/users/me/master-plan/current', { method: 'GET', headers: {}, body: undefined })
+    await expect(getCurrentMasterPlan('user-1')).resolves.toBeNull()
+    expect(fetchMock).toHaveBeenCalledWith('/api/users/user-1/master-plan/current', { method: 'GET', headers: {}, body: undefined })
   })
 
   it.each([
@@ -208,7 +208,7 @@ describe('master plan API clients', () => {
   ])('rejects %s in current season-plan envelopes', async (_case, payload) => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(payload)))
 
-    await expect(getCurrentMasterPlan()).rejects.toThrow('Invalid current season plan')
+    await expect(getCurrentMasterPlan('user-1')).rejects.toThrow('Invalid current season plan')
   })
 
   it.each([
@@ -233,7 +233,7 @@ describe('master plan API clients', () => {
       },
     }
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(plan)))
-    await expect(getCurrentMasterPlan()).rejects.toThrow('Invalid current season plan')
+    await expect(getCurrentMasterPlan('user-1')).rejects.toThrow('Invalid current season plan')
   })
 
   it('rejects non-404 current season-plan failures', async () => {
@@ -242,7 +242,7 @@ describe('master plan API clients', () => {
       { status: 500 },
     ))
 
-    await expect(getCurrentMasterPlan()).rejects.toMatchObject({ status: 500 })
+    await expect(getCurrentMasterPlan('user-1')).rejects.toMatchObject({ status: 500 })
   })
 
   it('posts adjust messages with history to the active master plan endpoint', async () => {

@@ -144,7 +144,8 @@ async function main() {
   await page.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' })
   const weeklyPlanHeading = page.getByRole('heading', { name: '本周课表' })
   const emptyPlanHeading = page.getByRole('heading', { name: '使用 Coach Agent 生成本周计划' })
-  await weeklyPlanHeading.or(emptyPlanHeading).waitFor({ timeout: 20_000 })
+  const noWeekMessage = page.getByText('请选择一个训练周', { exact: true })
+  await weeklyPlanHeading.or(emptyPlanHeading).or(noWeekMessage).waitFor({ timeout: 20_000 })
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {})
 
   if (await weeklyPlanHeading.isVisible().catch(() => false)) {

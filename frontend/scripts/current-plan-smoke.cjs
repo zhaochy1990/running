@@ -103,7 +103,7 @@ function createFixtureServer() {
         features: { coach_agent_weekly_plan: false, coach_chat: false },
       })
     }
-    if (req.method === 'GET' && req.url === '/api/users/me/master-plan/current') {
+    if (req.method === 'GET' && req.url === '/api/users/fixture-user/master-plan/current') {
       const mode = requestMode(req)
       if (mode === 'structured') return json(res, 200, structuredPlan)
       if (mode === 'markdown') return json(res, 200, markdownPlan)
@@ -145,7 +145,7 @@ async function assertScenario(browser, mode, assertion) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   const currentRequests = []
   page.on('request', (request) => {
-    if (new URL(request.url()).pathname === '/api/users/me/master-plan/current') currentRequests.push(request.url())
+    if (new URL(request.url()).pathname === '/api/users/fixture-user/master-plan/current') currentRequests.push(request.url())
   })
   await page.addInitScript(({ jwt }) => {
     sessionStorage.setItem('access_token', jwt)
@@ -175,7 +175,7 @@ async function main() {
       PYTHON_API_URL: `http://${host}:${fixturePort}`,
       GO_API_URL: `http://${host}:${fixturePort}`,
       AUTH_UPSTREAM_URL: `http://${host}:${fixturePort}`,
-      STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT: 'go',
+      STRIDE_ROUTE_GET_USERS_USER_ID_MASTER_PLAN_CURRENT: 'go',
     },
   })
   let bffOutput = ''

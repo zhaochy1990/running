@@ -144,7 +144,7 @@ export const API_ROUTES: readonly ApiRoute[] = [
 
   // ── Master plan (season plan) ───────────────────────────────────────────
   // ✓ /plan, /plan/adjust · load active season plan   [go-ready]
-  { method: 'GET', path: '/api/users/me/master-plan/current', env: 'STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT', goReady: true },
+  { method: 'GET', path: '/api/users/:user_id/master-plan/current', env: 'STRIDE_ROUTE_GET_USERS_USER_ID_MASTER_PLAN_CURRENT', goReady: true },
   // ✓ /plan · load draft season plan (404 = no draft, expected)
   { method: 'GET', path: '/api/users/me/master-plan/draft', env: 'STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_DRAFT', goReady: false },
   // ✓ /plan, /coach/master/:planId/adjust · load plan by id

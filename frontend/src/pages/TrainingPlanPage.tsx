@@ -186,7 +186,7 @@ export default function TrainingPlanPage() {
     if (!user) return undefined
     let cancelled = false
     if (force || requestRef.current?.key !== requestKey) {
-      requestRef.current = { key: requestKey, promise: getCurrentMasterPlan() }
+      requestRef.current = { key: requestKey, promise: getCurrentMasterPlan(user) }
     }
     const request = requestRef.current.promise
 

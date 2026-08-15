@@ -288,6 +288,7 @@ describe('TrainingPlanPage', () => {
     renderPlanPage()
 
     expect(await screen.findByRole('heading', { name: '真实目标马拉松' })).toBeInTheDocument()
+    expect(getCurrentMasterPlan).toHaveBeenCalledWith('user-1')
     expect(screen.getByText(/从 2026\/05\/04 到 2026\/10\/11，共 23 周/)).toBeInTheDocument()
     const mileageHeading = screen.getByText('周跑量（KM/周）')
     expect(mileageHeading).toBeInTheDocument()

@@ -997,8 +997,8 @@ function invalidCurrentSeasonPlan(): never {
   throw new Error('Invalid current season plan')
 }
 
-export async function getCurrentMasterPlan(): Promise<CurrentSeasonPlan | null> {
-  const res = await apiFetch('GET', '/users/me/master-plan/current')
+export async function getCurrentMasterPlan(userId: string): Promise<CurrentSeasonPlan | null> {
+  const res = await apiFetch('GET', `/users/${encodeURIComponent(userId)}/master-plan/current`)
   if (res.status === 404) return null
   if (!res.ok) throw new ApiError(res.status)
   return parseCurrentSeasonPlan(await res.json())

@@ -370,11 +370,11 @@ describe('API_ROUTES manifest integrity', () => {
     ])
   })
 
-  it('keeps the unified current season-plan route and removes the legacy training-plan route', () => {
+  it('keeps the user-scoped current season-plan route and removes the legacy training-plan route', () => {
     expect(API_ROUTES).toContainEqual({
       method: 'GET',
-      path: '/api/users/me/master-plan/current',
-      env: 'STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT',
+      path: '/api/users/:user_id/master-plan/current',
+      env: 'STRIDE_ROUTE_GET_USERS_USER_ID_MASTER_PLAN_CURRENT',
       goReady: true,
     })
     expect(API_ROUTES.some((route) => route.path === '/api/:user/training-plan')).toBe(false)
@@ -382,7 +382,8 @@ describe('API_ROUTES manifest integrity', () => {
 
   it('defaults production Web image season-plan routes to Go', () => {
     const dockerfile = readFileSync(new URL('../../../../../Dockerfile.web', import.meta.url), 'utf8')
-    expect(dockerfile).toContain('STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT=go')
+    expect(dockerfile).toContain('STRIDE_ROUTE_GET_USERS_USER_ID_MASTER_PLAN_CURRENT=go')
+    expect(dockerfile).not.toContain('STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT=go')
     expect(dockerfile).toContain('STRIDE_ROUTE_GET_USER_WEEKS=go')
     expect(dockerfile).toContain('STRIDE_ROUTE_GET_USER_WEEKS_WEEKNAME=go')
     expect(dockerfile).not.toContain('STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK=go')
@@ -420,7 +421,7 @@ describe('API_ROUTES manifest integrity', () => {
         'GET /api/teams/:teamId/feed',
         'GET /api/teams/:teamId/members',
         'GET /api/teams/:teamId/mileage',
-        'GET /api/users/me/master-plan/current',
+        'GET /api/users/:user_id/master-plan/current',
         'GET /api/users/me/profile',
         'GET /api/users/me/teams',
         'GET /api/users/me/training-goal',
