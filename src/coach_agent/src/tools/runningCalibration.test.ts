@@ -50,26 +50,34 @@ test("get_running_calibration returns the latest threshold and zones for the run
 
 	assert.ok(tool);
 	assert.equal(tool.name, "get_running_calibration");
-	assert.deepEqual(await tool.invoke({}, { context: { userId } }), {
-		asOfDate: "2026-08-08",
-		thresholdHr: 168,
-		thresholdSpeedMps: 3.9,
-		rhrBaseline: 48,
-		thresholdHrConfidence: "high",
-		thresholdSpeedConfidence: "medium",
-		paceZones: [
-			{
-				name: "threshold",
-				minPaceSPerKm: 270,
-				maxPaceSPerKm: 250,
-			},
-		],
-		heartRateZones: [{ name: "threshold", minBpm: 160, maxBpm: 170 }],
-	});
+	assert.deepEqual(
+		await tool.invoke({}, { context: { userId, asof: "2026-08-14" } }),
+		{
+			asOfDate: "2026-08-08",
+			thresholdHr: 168,
+			thresholdSpeedMps: 3.9,
+			rhrBaseline: 48,
+			thresholdHrConfidence: "high",
+			thresholdSpeedConfidence: "medium",
+			paceZones: [
+				{
+					name: "threshold",
+					minPaceSPerKm: 270,
+					maxPaceSPerKm: 250,
+				},
+			],
+			heartRateZones: [{ name: "threshold", minBpm: 160, maxBpm: 170 }],
+		},
+	);
 	assert.deepEqual(
 		calls.map((call) => call.values),
-		[[userId], [userId, 42], [userId, 42]],
+		[
+			[userId, "2026-08-14"],
+			[userId, 42],
+			[userId, 42],
+		],
 	);
+	assert.match(calls[0]?.sql ?? "", /as_of_date <= \?/);
 	const zoneQueries = calls.slice(1).map((call) => call.sql);
 	for (const field of ["confidence", "min_speed_mps", "max_speed_mps"]) {
 		assert.ok(zoneQueries.every((sql) => !sql.includes(field)));
@@ -87,6 +95,13 @@ test("get_running_calibration returns null without a computed calibration", asyn
 	);
 
 	assert.ok(tool);
-	assert.equal(await tool.invoke({}, { context: { userId } }), null);
+	assert.equal(
+		await tool.invoke({}, { context: { userId, asof: "2026-08-14" } }),
+		null,
+	);
 	await assert.rejects(() => tool.invoke({}, {}), /missing userId/);
+	await assert.rejects(
+		() => tool.invoke({}, { context: { userId } }),
+		/missing asof/,
+	);
 });

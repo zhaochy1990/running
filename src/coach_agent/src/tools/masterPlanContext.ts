@@ -16,12 +16,18 @@ class MasterPlanContextTool {
 		runtime: CoachToolRuntime,
 	) {
 		const userId = runtime.context?.userId;
+		const asof = runtime.context?.asof;
 		if (!userId) {
 			throw new Error(
 				"get_master_plan_context: missing userId in runtime context",
 			);
 		}
-		return this.provider.loadSnapshot(userId);
+		if (!asof) {
+			throw new Error(
+				"get_master_plan_context: missing asof in runtime context",
+			);
+		}
+		return this.provider.loadSnapshot(userId, asof);
 	}
 }
 

@@ -188,6 +188,7 @@ export const ContextSnapshotSchema = z
 				})
 				.strict(),
 		),
+		plan_start: day,
 		as_of: z.string().datetime({ offset: true }),
 	})
 	.strict()

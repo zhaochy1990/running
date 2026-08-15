@@ -3,7 +3,10 @@ import { createInterface } from "node:readline/promises";
 import { Command } from "@langchain/langgraph";
 import { createCoachAgent } from "../agents/coachAgent.js";
 import { loadConfig, readStrideMySqlConfig } from "../config/config.js";
-import { StrideDataStore } from "../persistence/index.js";
+import {
+	MySqlWeeklyPlanContextProvider,
+	StrideDataStore,
+} from "../persistence/index.js";
 import {
 	ASK_USER_QUESTION_KIND,
 	type AskUserQuestionPayload,
@@ -18,9 +21,8 @@ const store = StrideDataStore.create(readStrideMySqlConfig(config));
 const agent = await createCoachAgent(store, config);
 
 const userId = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
+const asof = "2026-06-10";
 // const userId = "11c2e582-5a85-4633-81d2-df7e37ad7b48";
-
-
 
 // await agent.invoke({
 //   messages: [{ role: "user", content: "我这周练的怎么样？" }],
@@ -102,7 +104,7 @@ function renderQuestion(value: AskUserQuestionPayload): string {
 async function askWithHITL(content: string, thread: string): Promise<void> {
 	const tokenUsage = new LlmTokenUsageTracker();
 	const cfg = {
-		context: { userId },
+		context: { userId, asof },
 		configurable: { thread_id: thread },
 		callbacks: [tokenUsage],
 	};
@@ -146,12 +148,10 @@ async function askWithHITL(content: string, thread: string): Promise<void> {
 // 	"session-master-plan",
 // );
 
+const provider = new MySqlWeeklyPlanContextProvider(store);
+await provider.loadSnapshot(userId, asof);
 
-await askWithHITL(
-	"帮我生成下周的训练计划",
-	"session-weekly-plan",
-);
-
+await askWithHITL("帮我生成下周的训练计划", "session-weekly-plan");
 
 await rl.close();
 await store.close();

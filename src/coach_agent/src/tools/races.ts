@@ -44,10 +44,15 @@ class MySQLRaceTool {
 		runtime: CoachToolRuntime,
 	): Promise<RaceEffort[]> {
 		const userId = runtime.context?.userId;
+		const asof = runtime.context?.asof;
 		if (!userId) {
 			throw new Error("get_race_history: missing userId in runtime context");
 		}
+		if (!asof) {
+			throw new Error("get_race_history: missing asof in runtime context");
+		}
 		return this.store.getRaceHistory(userId, {
+			asOfDate: asof,
 			...(input.minDistanceKm !== undefined
 				? { minDistanceKm: input.minDistanceKm }
 				: {}),
@@ -60,10 +65,14 @@ class MySQLRaceTool {
 		runtime: CoachToolRuntime,
 	): Promise<PersonalBest[]> {
 		const userId = runtime.context?.userId;
+		const asof = runtime.context?.asof;
 		if (!userId) {
 			throw new Error("get_personal_bests: missing userId in runtime context");
 		}
-		return this.store.getPersonalBests(userId);
+		if (!asof) {
+			throw new Error("get_personal_bests: missing asof in runtime context");
+		}
+		return this.store.getPersonalBests(userId, asof);
 	}
 }
 

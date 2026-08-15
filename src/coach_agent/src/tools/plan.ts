@@ -21,7 +21,10 @@ const getWeeklyPlanSchema = z.object({
 });
 
 export interface PlanStore {
-	getMasterPlan(userId: string): Promise<MasterPlanDocument | null>;
+	getMasterPlan(
+		userId: string,
+		day: string,
+	): Promise<MasterPlanDocument | null>;
 	getWeeklyPlan(
 		userId: string,
 		weekName: string,
@@ -35,7 +38,9 @@ class MySQLPlanTool {
 		_input: z.infer<typeof getMasterPlanSchema>,
 		runtime: CoachToolRuntime,
 	): Promise<MasterPlanDocument | null> {
-		return this.store.getMasterPlan(requireUserId(runtime, "get_master_plan"));
+		const userId = requireUserId(runtime, "get_master_plan");
+		const asof = requireAsOf(runtime, "get_master_plan");
+		return this.store.getMasterPlan(userId, asof);
 	}
 
 	async getWeeklyPlan(
@@ -82,21 +87,8 @@ function requireUserId(runtime: CoachToolRuntime, toolName: string): string {
 	return userId;
 }
 
-function currentShanghaiWeekName(now: Date = new Date()): string {
-	const parts = new Intl.DateTimeFormat("en-CA", {
-		timeZone: "Asia/Shanghai",
-		year: "numeric",
-		month: "2-digit",
-		day: "2-digit",
-	}).formatToParts(now);
-	const value = (type: string) =>
-		parts.find((part) => part.type === type)!.value;
-	const shanghaiToday = new Date(
-		`${value("year")}-${value("month")}-${value("day")}T00:00:00Z`,
-	);
-	const monday = new Date(shanghaiToday);
-	monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
-	const sunday = new Date(monday);
-	sunday.setUTCDate(sunday.getUTCDate() + 6);
-	return `${monday.toISOString().slice(0, 10)}_${sunday.toISOString().slice(5, 10)}`;
+function requireAsOf(runtime: CoachToolRuntime, toolName: string): string {
+	const asof = runtime.context?.asof;
+	if (!asof) throw new Error(`${toolName}: missing asof in runtime context`);
+	return asof;
 }

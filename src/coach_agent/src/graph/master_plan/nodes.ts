@@ -2,6 +2,7 @@ import { END, ReducedValue, Send, StateSchema } from "@langchain/langgraph";
 import { z } from "zod/v4";
 import { getLogger } from "../../utils/logger.js";
 import { measureExecutionTimeAsync } from "../../utils/performance.js";
+import { addDays } from "../../utils/planningDate.js";
 import {
 	type AssessmentFacts,
 	type AthleteAssessment,
@@ -1191,9 +1192,4 @@ function inclusiveWeeks(start: string, end: string): number {
 			1) /
 			7,
 	);
-}
-function addDays(day: string, amount: number): string {
-	const date = new Date(`${day}T00:00:00Z`);
-	date.setUTCDate(date.getUTCDate() + amount);
-	return date.toISOString().slice(0, 10);
 }

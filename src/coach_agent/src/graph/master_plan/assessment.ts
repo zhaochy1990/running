@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { addDays, shanghaiDay } from "../../utils/planningDate.js";
 import type { ContextSnapshot } from "./context.js";
 import type { MasterPlanGraphRequest } from "./contracts.js";
 
@@ -680,19 +681,6 @@ function parseDuration(value: string): number | null {
 }
 function numberFact(value: unknown): number | null {
 	return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-function addDays(day: string, amount: number): string {
-	const date = new Date(`${day}T00:00:00Z`);
-	date.setUTCDate(date.getUTCDate() + amount);
-	return date.toISOString().slice(0, 10);
-}
-function shanghaiDay(iso: string): string {
-	return new Intl.DateTimeFormat("en-CA", {
-		timeZone: "Asia/Shanghai",
-		year: "numeric",
-		month: "2-digit",
-		day: "2-digit",
-	}).format(new Date(iso));
 }
 function goalIncompatible(request: MasterPlanGraphRequest): boolean {
 	const available = new Set(

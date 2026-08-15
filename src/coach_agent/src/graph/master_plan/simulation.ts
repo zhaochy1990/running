@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { mondayOnOrBefore as monday } from "../../utils/planningDate.js";
 import type { ContextSnapshot } from "./context.js";
 import type { MasterPlanGraphRequest } from "./contracts.js";
 import { estimateMasterPlanWeekLoad } from "./loadEstimator.js";
@@ -190,11 +191,6 @@ function dayDiff(from: string, to: string): number {
 		(Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
 			86_400_000,
 	);
-}
-function monday(day: string): string {
-	const date = new Date(`${day}T00:00:00Z`);
-	date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
-	return date.toISOString().slice(0, 10);
 }
 function distributionForWeek(
 	week: MasterPlan["weeks"][number],

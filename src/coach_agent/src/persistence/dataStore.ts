@@ -166,6 +166,11 @@ export interface DailyRecovery {
 	rhr: number | null;
 	hrv: number | null;
 }
+export interface WeeklyFeedback {
+	weekStart: string;
+	contentMd: string;
+	updatedAt: Date;
+}
 export interface ActiveMasterPlanMetadata {
 	planId: string;
 	revision: number;
@@ -264,22 +269,59 @@ export class StrideDataStore {
 		}));
 	}
 
-	async getActiveMasterPlanMetadata(
+	async getWeeklyFeedbackByDateRange(
 		userId: string,
-	): Promise<ActiveMasterPlanMetadata | null> {
+		startDay: string,
+		endDay: string,
+	): Promise<WeeklyFeedback[]> {
+		assertDay(startDay);
+		assertDay(endDay);
+		if (startDay > endDay) {
+			throw new Error(
+				`startDay (${startDay}) must not be after endDay (${endDay})`,
+			);
+		}
 		const [rows] = await this.pool.query<RowDataPacket[]>(
-			`SELECT plan_id, revision, status, content FROM master_plan WHERE user_id = ? AND content_version = 2 AND status = 'active' LIMIT 1`,
+			`SELECT week_start, content_md, updated_at
+         FROM weekly_feedback
+        WHERE user_id = ?
+          AND week_start BETWEEN ? AND ?
+          AND DATE(updated_at + INTERVAL 8 HOUR) <= ?
+        ORDER BY week_start ASC`,
+			[userId, startDay, endDay, endDay],
+		);
+		return rows.map((row) => ({
+			weekStart: mysqlDay(row.week_start),
+			contentMd: row.content_md as string,
+			updatedAt: row.updated_at as Date,
+		}));
+	}
+
+	async getMasterPlanMetadataForDate(
+		userId: string,
+		day: string,
+	): Promise<ActiveMasterPlanMetadata | null> {
+		assertDay(day);
+		const [rows] = await this.pool.query<RowDataPacket[]>(
+			`SELECT plan_id, revision, status, content
+	         FROM master_plan
+	        WHERE user_id = ?
+	          AND content_version = 2
+	          AND status IN ('active', 'archived')`,
 			[userId],
 		);
-		const row = rows[0];
-		return row
-			? {
-					planId: row.plan_id as string,
-					revision: row.revision as number,
-					status: row.status as string,
-					content: parsePlanContent(row.content, "master_plan"),
-				}
-			: null;
+		const matches = rows
+			.map((row) => ({
+				planId: row.plan_id as string,
+				revision: row.revision as number,
+				status: row.status as string,
+				content: parsePlanContent(row.content, "master_plan"),
+			}))
+			.filter((plan) => masterPlanContainsDay(plan.content, day));
+		if (matches.length > 1) {
+			throw new Error(`multiple master plans cover ${day} for ${userId}`);
+		}
+		return matches[0] ?? null;
 	}
 
 	/**
@@ -348,31 +390,39 @@ export class StrideDataStore {
 	 */
 	async getRaceHistory(
 		userId: string,
-		options: { minDistanceKm?: number; limit?: number } = {},
+		options: { asOfDate: string; minDistanceKm?: number; limit?: number },
 	): Promise<RaceEffort[]> {
+		assertDay(options.asOfDate);
 		const minDistanceM = Math.round((options.minDistanceKm ?? 20) * 1000);
 		const limit = Math.min(Math.max(options.limit ?? 15, 1), 100);
 		const [rows] = await this.pool.query<RowDataPacket[]>(
 			`SELECT DATE(date + INTERVAL 8 HOUR) AS sh_day, label_id, name, sport,
               distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr, feel
          FROM activities
-        WHERE user_id = ? AND sport LIKE 'run%' AND distance_m >= ?
-        ORDER BY date DESC
-        LIMIT ?`,
-			[userId, minDistanceM, limit],
+	       WHERE user_id = ?
+	         AND sport LIKE 'run%'
+	         AND distance_m >= ?
+	         AND DATE(date + INTERVAL 8 HOUR) <= ?
+	       ORDER BY date DESC
+	       LIMIT ?`,
+			[userId, minDistanceM, options.asOfDate, limit],
 		);
 		return rows.map(rowToRaceEffort);
 	}
 
 	/** 运动员各标准距离的个人最好成绩（`personal_bests`），作为比赛表现的参照系。 */
-	async getPersonalBests(userId: string): Promise<PersonalBest[]> {
+	async getPersonalBests(
+		userId: string,
+		asOfDate: string,
+	): Promise<PersonalBest[]> {
+		assertDay(asOfDate);
 		const [rows] = await this.pool.query<RowDataPacket[]>(
 			`SELECT distance, pb_time_sec, achieved_at,
 			        JSON_UNQUOTE(JSON_EXTRACT(entry_json, '$.label_id')) AS activity_label_id
          FROM personal_bests
-        WHERE user_id = ?
-        ORDER BY pb_time_sec ASC`,
-			[userId],
+	       WHERE user_id = ? AND achieved_at <= ?
+	       ORDER BY pb_time_sec ASC`,
+			[userId, asOfDate],
 		);
 		return rows.map((r) => {
 			if (
@@ -392,18 +442,19 @@ export class StrideDataStore {
 		});
 	}
 
-	/** Latest canonical running calibration and zones, or null when not computed. */
+	/** Latest canonical running calibration on or before the inclusive cutoff. */
 	async getLatestRunningCalibration(
 		userId: string,
+		asOfDate: string,
 	): Promise<RunningCalibration | null> {
 		const [snapshotRows] = await this.pool.query<RowDataPacket[]>(
 			`SELECT id, as_of_date, threshold_hr, threshold_speed_mps, rhr_baseline,
               threshold_hr_confidence, threshold_speed_confidence
          FROM running_calibration_snapshot
-        WHERE user_id = ?
+	       WHERE user_id = ? AND as_of_date <= ?
         ORDER BY as_of_date DESC, algorithm_version DESC
         LIMIT 1`,
-			[userId],
+			[userId, asOfDate],
 		);
 		const snapshot = snapshotRows[0];
 		if (!snapshot) {
@@ -441,18 +492,14 @@ export class StrideDataStore {
 		};
 	}
 
-	/** Current active structured season plan, or null when the athlete has none. */
-	async getMasterPlan(userId: string): Promise<MasterPlanDocument | null> {
-		const [rows] = await this.pool.query<RowDataPacket[]>(
-			`SELECT content
-         FROM master_plan
-        WHERE user_id = ? AND content_version = 2 AND status = 'active'
-        LIMIT 1`,
-			[userId],
+	/** Structured season plan covering the requested day, or null. */
+	async getMasterPlan(
+		userId: string,
+		day: string,
+	): Promise<MasterPlanDocument | null> {
+		return (
+			(await this.getMasterPlanMetadataForDate(userId, day))?.content ?? null
 		);
-		return rows.length === 0
-			? null
-			: parsePlanContent(rows[0]!.content, "master_plan");
 	}
 
 	/**
@@ -505,6 +552,28 @@ function parsePlanContent(
 		throw new Error(`${table} content must be a JSON object`);
 	}
 	return parsed as Record<string, unknown>;
+}
+
+function masterPlanContainsDay(
+	content: MasterPlanDocument,
+	day: string,
+): boolean {
+	const record = content as Record<string, unknown>;
+	const start =
+		typeof record.start_date === "string" ? record.start_date : null;
+	const end = typeof record.end_date === "string" ? record.end_date : null;
+	if (start !== null && end !== null) return start <= day && day <= end;
+	const phases = Array.isArray(record.phases) ? record.phases : [];
+	return phases.some((phase) => {
+		if (typeof phase !== "object" || phase === null) return false;
+		const value = phase as Record<string, unknown>;
+		return (
+			typeof value.start_date === "string" &&
+			typeof value.end_date === "string" &&
+			value.start_date <= day &&
+			day <= value.end_date
+		);
+	});
 }
 
 function rowToActivity(row: RowDataPacket): Activity {

@@ -3,6 +3,12 @@ import {
 	ContextSnapshotSchema,
 	type MasterPlanContextProvider,
 } from "../graph/master_plan/index.js";
+import {
+	addDays,
+	mondayOnOrBefore as monday,
+	planningStartDate,
+	shanghaiDay,
+} from "../utils/planningDate.js";
 import type {
 	ActiveMasterPlanMetadata,
 	Activity,
@@ -26,7 +32,7 @@ type ContextStore = Pick<
 	| "getPersonalBests"
 	| "getLatestRunningCalibration"
 	| "getRaceHistory"
-	| "getActiveMasterPlanMetadata"
+	| "getMasterPlanMetadataForDate"
 >;
 
 export class MySqlMasterPlanContextProvider
@@ -58,10 +64,10 @@ export class MySqlMasterPlanContextProvider
 			this.store.getActivitiesByDateRange(userId, macroStart, end),
 			this.store.getDailyTrainingLoadByDateRange(userId, recentStart, end),
 			this.store.getDailyRecoveryByDateRange(userId, recentStart, end),
-			this.store.getPersonalBests(userId),
-			this.store.getLatestRunningCalibration(userId),
-			this.store.getRaceHistory(userId, { limit: 30 }),
-			this.store.getActiveMasterPlanMetadata(userId),
+			this.store.getPersonalBests(userId, end),
+			this.store.getLatestRunningCalibration(userId, end),
+			this.store.getRaceHistory(userId, { asOfDate: end, limit: 30 }),
+			this.store.getMasterPlanMetadataForDate(userId, planningStartDate(end)),
 		]);
 		if (!profile)
 			throw new Error(`required user profile not found for ${userId}`);
@@ -106,6 +112,7 @@ export class MySqlMasterPlanContextProvider
 				injuries,
 				activePlan,
 			),
+			plan_start: planningStartDate(end),
 			as_of: new Date(asOf).toISOString(),
 		});
 	}
@@ -192,12 +199,6 @@ function raceShape(rows: RaceEffort[]) {
 }
 function activityDay(a: Activity): string {
 	return new Date(a.date.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
-}
-function monday(day: string): string {
-	const d = new Date(`${day}T00:00:00Z`);
-	const delta = (d.getUTCDay() + 6) % 7;
-	d.setUTCDate(d.getUTCDate() - delta);
-	return d.toISOString().slice(0, 10);
 }
 function weeklyHistory(
 	runs: Activity[],
@@ -406,16 +407,6 @@ function dayDiff(a: string, b: string): number {
 	return Math.round(
 		(Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400_000,
 	);
-}
-function addDays(day: string, amount: number): string {
-	const d = new Date(`${day}T00:00:00Z`);
-	d.setUTCDate(d.getUTCDate() + amount);
-	return d.toISOString().slice(0, 10);
-}
-function shanghaiDay(iso: string): string {
-	const d = new Date(iso);
-	if (Number.isNaN(d.valueOf())) throw new Error(`invalid asOf: ${iso}`);
-	return new Date(d.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
 }
 function isRoadRun(run: Activity): boolean {
 	const token =

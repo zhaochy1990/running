@@ -5,11 +5,13 @@ import { ContextSnapshotSchema } from "../graph/master_plan/index.js";
 import { StrideDataStore } from "./dataStore.js";
 import { MySqlMasterPlanContextProvider } from "./masterPlanContextProvider.js";
 
-test("personal best loader returns activity label ID instead of source", async () => {
+test("personal best loader returns activity label ID before the asof cutoff", async () => {
 	let query = "";
+	let params: unknown[] = [];
 	const pool = {
-		async query(sql: string) {
+		async query(sql: string, values: unknown[]) {
 			query = sql;
+			params = values;
 			return [
 				[
 					{
@@ -24,9 +26,14 @@ test("personal best loader returns activity label ID instead of source", async (
 		},
 	} as unknown as Pool;
 
-	const rows = await new StrideDataStore(pool).getPersonalBests("athlete");
+	const rows = await new StrideDataStore(pool).getPersonalBests(
+		"athlete",
+		"2026-06-10",
+	);
 
 	assert.match(query, /entry_json, '\$\.label_id'/);
+	assert.match(query, /achieved_at <= \?/);
+	assert.deepEqual(params, ["athlete", "2026-06-10"]);
 	assert.deepEqual(rows, [
 		{
 			distance: "5K",
@@ -55,9 +62,51 @@ test("personal best loader rejects records without an activity label ID", async 
 	} as unknown as Pool;
 
 	await assert.rejects(
-		new StrideDataStore(pool).getPersonalBests("athlete"),
+		new StrideDataStore(pool).getPersonalBests("athlete", "2026-06-10"),
 		/personal best 5K has no activity label ID/,
 	);
+});
+
+test("weekly feedback loader reads the bounded user-week range", async () => {
+	let params: unknown[] = [];
+	let query = "";
+	const pool = {
+		async query(sql: string, values: unknown[]) {
+			query = sql;
+			params = values;
+			return [
+				[
+					{
+						week_start: "2026-08-03",
+						content_md: "recovered well",
+						updated_at: new Date("2026-08-10T00:00:00Z"),
+					},
+				] as RowDataPacket[],
+				[],
+			];
+		},
+	} as unknown as Pool;
+
+	const rows = await new StrideDataStore(pool).getWeeklyFeedbackByDateRange(
+		"athlete",
+		"2026-07-20",
+		"2026-08-10",
+	);
+
+	assert.deepEqual(params, [
+		"athlete",
+		"2026-07-20",
+		"2026-08-10",
+		"2026-08-10",
+	]);
+	assert.match(query, /DATE\(updated_at \+ INTERVAL 8 HOUR\) <= \?/);
+	assert.deepEqual(rows, [
+		{
+			weekStart: "2026-08-03",
+			contentMd: "recovered well",
+			updatedAt: new Date("2026-08-10T00:00:00Z"),
+		},
+	]);
 });
 
 test("context provider exposes PB activity label ID without source", async () => {
@@ -101,7 +150,7 @@ test("context provider exposes PB activity label ID without source", async () =>
 		async getRaceHistory() {
 			return [];
 		},
-		async getActiveMasterPlanMetadata() {
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 	});
@@ -111,6 +160,7 @@ test("context provider exposes PB activity label ID without source", async () =>
 		"2026-08-11T00:00:00Z",
 	);
 
+	assert.equal(snapshot.plan_start, "2026-08-17");
 	assert.deepEqual(snapshot.personal_bests, [
 		{
 			distance: "5K",
@@ -174,7 +224,7 @@ test("context provider maps canonical injuries and numeric race feel", async () 
 				},
 			];
 		},
-		async getActiveMasterPlanMetadata() {
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 	});
@@ -314,7 +364,7 @@ test("context provider excludes trail-labelled outdoor activities from road-run 
 		async getRaceHistory() {
 			return [];
 		},
-		async getActiveMasterPlanMetadata() {
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 	});
@@ -389,7 +439,7 @@ test("context provider materializes complete zero-run weeks", async () => {
 		async getRaceHistory() {
 			return [];
 		},
-		async getActiveMasterPlanMetadata() {
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 	});

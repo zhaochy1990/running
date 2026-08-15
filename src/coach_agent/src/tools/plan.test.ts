@@ -6,10 +6,15 @@ import { createPlanTools, type PlanStore } from "./plan.js";
 const userId = "athlete-1";
 
 class FakePlanStore implements PlanStore {
-	calls: Array<{ method: string; userId: string; weekName?: string }> = [];
+	calls: Array<{
+		method: string;
+		userId: string;
+		weekName?: string;
+		day?: string;
+	}> = [];
 
-	async getMasterPlan(requestUserId: string) {
-		this.calls.push({ method: "master", userId: requestUserId });
+	async getMasterPlan(requestUserId: string, day: string) {
+		this.calls.push({ method: "master", userId: requestUserId, day });
 		return requestUserId === userId
 			? { plan_id: "master-1", status: "active" }
 			: null;
@@ -26,7 +31,7 @@ class FakePlanStore implements PlanStore {
 test("plan tools query the MySQL store with the runtime user identity", async () => {
 	const store = new FakePlanStore();
 	const [masterTool, weeklyTool] = createPlanTools(store as never);
-	const config = { context: { userId } };
+	const config = { context: { userId, asof: "2026-07-20" } };
 
 	assert.equal(masterTool!.name, "get_master_plan");
 	assert.equal(weeklyTool!.name, "get_weekly_plan");
@@ -39,7 +44,7 @@ test("plan tools query the MySQL store with the runtime user identity", async ()
 		{ week_folder: "2026-07-20_07-26", sessions: [] },
 	);
 	assert.deepEqual(store.calls, [
-		{ method: "master", userId },
+		{ method: "master", userId, day: "2026-07-20" },
 		{ method: "weekly", userId, weekName: "2026-07-20_07-26" },
 	]);
 });
@@ -47,9 +52,13 @@ test("plan tools query the MySQL store with the runtime user identity", async ()
 test("plan tools reject calls without a runtime user identity", async () => {
 	const [masterTool] = createPlanTools(new FakePlanStore() as never);
 	await assert.rejects(() => masterTool!.invoke({}, {}), /missing userId/);
+	await assert.rejects(
+		() => masterTool!.invoke({}, { context: { userId } }),
+		/missing asof/,
+	);
 });
 
-test("StrideDataStore queries active structured plans by user and week", async () => {
+test("StrideDataStore queries structured plans by requested day and week", async () => {
 	const queries: Array<{ sql: string; values: unknown[] }> = [];
 	const pool = {
 		async query(sql: string, values: unknown[]) {
@@ -57,9 +66,15 @@ test("StrideDataStore queries active structured plans by user and week", async (
 			return [
 				[
 					{
-						content: JSON.stringify({
-							plan_id: queries.length === 1 ? "master-1" : "week-1",
-						}),
+						content: JSON.stringify(
+							queries.length === 1
+								? {
+										plan_id: "master-1",
+										start_date: "2026-06-01",
+										end_date: "2026-10-01",
+									}
+								: { plan_id: "week-1" },
+						),
 					},
 				],
 			];
@@ -67,13 +82,17 @@ test("StrideDataStore queries active structured plans by user and week", async (
 	};
 	const store = new StrideDataStore(pool as never);
 
-	assert.deepEqual(await store.getMasterPlan(userId), { plan_id: "master-1" });
+	assert.deepEqual(await store.getMasterPlan(userId, "2026-07-20"), {
+		plan_id: "master-1",
+		start_date: "2026-06-01",
+		end_date: "2026-10-01",
+	});
 	assert.deepEqual(await store.getWeeklyPlan(userId, "2026-07-20_07-26"), {
 		plan_id: "week-1",
 	});
 	assert.match(
 		queries[0]!.sql,
-		/user_id = \? AND content_version = 2 AND status = 'active'/,
+		/user_id = \?[\s\S]*content_version = 2[\s\S]*status IN \('active', 'archived'\)/,
 	);
 	assert.deepEqual(queries[0]!.values, [userId]);
 	assert.match(
@@ -91,7 +110,75 @@ test("StrideDataStore rejects malformed plan JSON", async () => {
 	};
 	const store = new StrideDataStore(pool as never);
 	await assert.rejects(
-		() => store.getMasterPlan(userId),
+		() => store.getMasterPlan(userId, "2026-07-20"),
 		/master_plan contains invalid JSON/,
+	);
+});
+
+test("StrideDataStore selects only the master plan covering the requested day", async () => {
+	const pool = {
+		async query() {
+			return [
+				[
+					{
+						plan_id: "past",
+						revision: 1,
+						status: "archived",
+						content: JSON.stringify({
+							start_date: "2026-01-01",
+							end_date: "2026-05-31",
+						}),
+					},
+					{
+						plan_id: "future",
+						revision: 2,
+						status: "active",
+						content: JSON.stringify({
+							start_date: "2026-06-01",
+							end_date: "2026-10-31",
+						}),
+					},
+				],
+			];
+		},
+	};
+	const store = new StrideDataStore(pool as never);
+	assert.deepEqual(await store.getMasterPlan(userId, "2026-05-15"), {
+		start_date: "2026-01-01",
+		end_date: "2026-05-31",
+	});
+});
+
+test("StrideDataStore rejects ambiguous overlapping master plans", async () => {
+	const pool = {
+		async query() {
+			return [
+				[
+					{
+						plan_id: "one",
+						revision: 1,
+						status: "archived",
+						content: JSON.stringify({
+							start_date: "2026-05-01",
+							end_date: "2026-06-30",
+						}),
+					},
+					{
+						plan_id: "two",
+						revision: 2,
+						status: "active",
+						content: JSON.stringify({
+							start_date: "2026-06-01",
+							end_date: "2026-10-31",
+						}),
+					},
+				],
+			];
+		},
+	};
+	const store = new StrideDataStore(pool as never);
+	await assert.rejects(
+		() => store.getMasterPlan(userId, "2026-06-15"),
+		/multiple master plans cover 2026-06-15/,
 	);
 });

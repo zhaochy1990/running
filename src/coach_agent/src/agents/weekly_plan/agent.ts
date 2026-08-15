@@ -1,40 +1,70 @@
-import { buildResponsesModel } from "../common.js";
+import type { ModelConfig } from "../../config/config.js";
+import {
+	MySqlWeeklyPlanContextProvider,
+	type StrideDataStore,
+} from "../../persistence/index.js";
 import { createActivitiesTools } from "../../tools/activities.js";
-import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
 import { createPlanTools } from "../../tools/plan.js";
-import { createCurrentTimeTools } from "../../tools/currentTime.js";
 import { createRaceTools } from "../../tools/races.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
+import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
+import { createWeeklyPlanContextTools } from "../../tools/weeklyPlanContext.js";
+import { buildResponsesModel } from "../common.js";
 import { createLoggingMiddleware } from "../middleware.js";
-import type { StrideDataStore } from "../../persistence/index.js";
-import type { ModelConfig } from "../../config/config.js";
 import { WeeklyPlanPrompt } from "../prompts.js";
+import { WeeklyPlanDirectResponseSchema } from "./schema.js";
 
-export function getCoachSubagent(store: StrideDataStore, config: ModelConfig) {
+function createWeeklyPlanSubagent(
+	store: StrideDataStore,
+	config: ModelConfig,
+	generatesPlan: boolean,
+) {
 	const activitiesTools = createActivitiesTools(store);
 	const trainingLoadTools = createTrainingLoadTools(store);
 	const planTools = createPlanTools(store);
-	const currentTimeTools = createCurrentTimeTools();
 	const raceTools = createRaceTools(store);
 	const runningCalibrationTools = createRunningCalibrationTools(store);
+	const weeklyPlanContextTools = createWeeklyPlanContextTools(
+		new MySqlWeeklyPlanContextProvider(store),
+	);
 
 	return {
-		name: "weekly_plan",
-		description: "generate or adjust the training plan for a week or adjust the training plan for a specific day",
+		name: generatesPlan ? "generate_weekly_plan" : "weekly_plan",
+		description: generatesPlan
+			? "generate a new structured weekly training plan"
+			: "read, explain, or discuss an existing weekly training plan",
 		systemPrompt: WeeklyPlanPrompt,
 		tools: [
+			...weeklyPlanContextTools,
+			...planTools,
 			...activitiesTools,
 			...trainingLoadTools,
-			...planTools,
-			...currentTimeTools,
 			...raceTools,
 			...runningCalibrationTools,
 		],
 		model: buildResponsesModel(config),
-		middleware: [createLoggingMiddleware("agent:weekly_plan")],
+		...(generatesPlan
+			? { responseFormat: WeeklyPlanDirectResponseSchema }
+			: {}),
+		middleware: [
+			createLoggingMiddleware(
+				generatesPlan ? "agent:generate_weekly_plan" : "agent:weekly_plan",
+			),
+		],
 		// Skill loaded via SkillsMiddleware from the deep agent's FilesystemBackend
 		// (rooted at `dist/agents/skills/` in coachAgent.ts). The agent reads the
 		// full SKILL.md on demand via read_file. Path is relative to that root.
-		skills: ["/generate-weekly-plan/"],
+		skills: generatesPlan ? ["/generate-weekly-plan/"] : [],
 	};
+}
+
+export function getCoachSubagent(store: StrideDataStore, config: ModelConfig) {
+	return createWeeklyPlanSubagent(store, config, false);
+}
+
+export function getWeeklyPlanGeneratorSubagent(
+	store: StrideDataStore,
+	config: ModelConfig,
+) {
+	return createWeeklyPlanSubagent(store, config, true);
 }
