@@ -158,9 +158,10 @@ func (f *fakeRuns) PipelineRunByIdempotencyKey(_ context.Context, pk, key string
 // --- harness -----------------------------------------------------------------
 
 const (
-	testIssuer   = "https://auth.example.com"
-	testAudience = "stride"
-	testToken    = "s3cr3t-internal"
+	testIssuer        = "https://auth.example.com"
+	testAudience      = "stride"
+	testAdminAudience = "stride-admin"
+	testToken         = "s3cr3t-internal"
 )
 
 type harness struct {

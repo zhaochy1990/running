@@ -143,7 +143,7 @@ func (s *Service) getPipelineRun(c *gin.Context) {
 //	@Router			/api/users/{uid}/pipelines [get]
 func (s *Service) listUserPipelines(c *gin.Context) {
 	caller := callerFrom(c)
-	uid := c.Param("uid")
+	uid := c.Param("user_id")
 	if uid == "" {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "user id required"})
 		return

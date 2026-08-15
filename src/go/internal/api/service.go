@@ -248,7 +248,7 @@ func (s *Service) Router() *gin.Engine {
 	authed.POST("/pipelines", s.startPipeline)
 	authed.GET("/pipelines/:run_id", s.getPipelineRun)
 	authed.GET("/api/pipelines/:run_id", s.getPipelineRun)
-	authed.GET("/api/users/:uid/pipelines", s.listUserPipelines)
+	authed.GET("/api/users/:user_id/pipelines", s.listUserPipelines)
 	authed.POST("/api/:user/sync", s.syncUser)
 	s.users.register(authed)
 	s.activities.register(authed)

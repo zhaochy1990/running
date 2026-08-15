@@ -2115,6 +2115,49 @@ paths:
       summary: List a user's pipeline runs
       tags:
       - pipelines
+  /api/users/{user_id}/master-plan/current:
+    get:
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.currentSeasonPlanEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Get a user's active season training plan
+      tags:
+      - master-plan
   /api/users/me:
     delete:
       responses:

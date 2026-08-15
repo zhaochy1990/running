@@ -23,6 +23,7 @@ import (
 
 type fakeMasterPlanStore struct {
 	current    map[string]*storage.MasterPlan
+	currentUID string
 	running    map[int]storage.RunningWeekSummary
 	dose       map[int]storage.TrainingDoseWeekSummary
 	currentErr error
@@ -34,6 +35,7 @@ func newFakeMasterPlanStore() *fakeMasterPlanStore {
 }
 
 func (f *fakeMasterPlanStore) GetCurrentMasterPlan(_ context.Context, uid string) (*storage.MasterPlan, error) {
+	f.currentUID = uid
 	if f.currentErr != nil {
 		return nil, f.currentErr
 	}
@@ -75,19 +77,32 @@ func newMPHarness(t *testing.T) *mpHarness {
 		t.Fatalf("gen key: %v", err)
 	}
 	store := newFakeMasterPlanStore()
+	verifier, err := NewJWTVerifierFromKeyWithAdmin(&key.PublicKey, testIssuer, testAudience, testAdminAudience)
+	if err != nil {
+		t.Fatalf("new verifier: %v", err)
+	}
 	svc := NewService(Config{
-		Auth:            NewAuthenticator(testToken, NewJWTVerifierFromKey(&key.PublicKey, testIssuer, testAudience)),
+		Auth:            NewAuthenticator(testToken, verifier),
 		MasterPlanStore: store,
 	})
 	return &mpHarness{svc: svc, store: store, key: key}
 }
 
 func (h *mpHarness) bearer(t *testing.T, sub string) map[string]string {
+	return h.bearerWithClaims(t, sub, testAudience, "")
+}
+
+func (h *mpHarness) bearerWithClaims(t *testing.T, sub, audience, role string) map[string]string {
 	t.Helper()
-	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+	claims := jwt.MapClaims{
 		"sub": sub, "iss": testIssuer, "aud": testAudience,
 		"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
-	})
+	}
+	claims["aud"] = audience
+	if role != "" {
+		claims["role"] = role
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	s, err := tok.SignedString(h.key)
 	if err != nil {
 		t.Fatalf("sign: %v", err)
@@ -304,6 +319,51 @@ func TestGetCurrent_RequiresUserTier(t *testing.T) {
 	}
 	if w := h.do(http.MethodGet, path, internalHdr()); w.Code != http.StatusUnauthorized {
 		t.Errorf("internal token: code = %d, want 401", w.Code)
+	}
+}
+
+func TestGetCurrentForUser_AuthorizesUserAdminAndInternalCallers(t *testing.T) {
+	h := newMPHarness(t)
+	userID := uuid.NewString()
+	otherUserID := uuid.NewString()
+	path := "/api/users/" + userID + "/master-plan/current"
+
+	tests := []struct {
+		name    string
+		headers map[string]string
+		want    int
+	}{
+		{name: "no token", want: http.StatusUnauthorized},
+		{name: "user reads self", headers: h.bearer(t, userID), want: http.StatusNotFound},
+		{name: "user cannot read another user", headers: h.bearer(t, otherUserID), want: http.StatusForbidden},
+		{name: "admin reads any user", headers: h.bearerWithClaims(t, uuid.NewString(), testAdminAudience, "admin"), want: http.StatusNotFound},
+		{name: "admin audience requires admin role", headers: h.bearerWithClaims(t, uuid.NewString(), testAdminAudience, "user"), want: http.StatusUnauthorized},
+		{name: "admin role on user audience has user scope", headers: h.bearerWithClaims(t, otherUserID, testAudience, "admin"), want: http.StatusForbidden},
+		{name: "internal reads any user", headers: internalHdr(), want: http.StatusNotFound},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h.store.currentUID = ""
+			w := h.do(http.MethodGet, path, tt.headers)
+			if w.Code != tt.want {
+				t.Fatalf("code = %d, want %d: %s", w.Code, tt.want, w.Body.String())
+			}
+			if tt.want == http.StatusNotFound && h.store.currentUID != userID {
+				t.Fatalf("store user = %q, want %q", h.store.currentUID, userID)
+			}
+		})
+	}
+}
+
+func TestGetCurrentForUser_RejectsInvalidUserID(t *testing.T) {
+	h := newMPHarness(t)
+	w := h.do(http.MethodGet, "/api/users/not-a-uuid/master-plan/current", internalHdr())
+	if w.Code != http.StatusBadRequest || w.Body.String() != `{"error":"user must be a UUID"}` {
+		t.Fatalf("response = %d %s", w.Code, w.Body.String())
+	}
+	if h.store.currentUID != "" {
+		t.Fatalf("store called for invalid user %q", h.store.currentUID)
 	}
 }
 

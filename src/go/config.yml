@@ -57,6 +57,7 @@ api:
   auth:                     # RS256 end-user JWT (must match the auth-service)
     issuer: ""
     audience: ""
+    admin-audience: ""      # optional separate admin-dashboard audience
     public-key-path: ""     # PEM file with the auth-service RSA public key
   auth-service-url: ""      # in-house auth-service origin for display-name mirror; empty disables (ADR 0013)
   features:                 # echoed in GET /api/users/me/profile (mirror Python server config)

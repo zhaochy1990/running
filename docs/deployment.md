@@ -133,7 +133,7 @@ found, while a failed candidate remains absent and causes the job to retry/fail.
 
 ### 赛季训练计划统一读取切流
 
-Web 只通过 Go `GET /api/users/me/master-plan/current` 读取当前赛季训练计划。该接口从
+Web 仍通过 Go 兼容别名 `GET /api/users/me/master-plan/current` 读取当前赛季训练计划；按用户查询的 canonical 路径是 `GET /api/users/{user_id}/master-plan/current`。该接口从
 MySQL `master_plan` 的唯一 active 行读取，并按 `content_version` 返回 Markdown 或结构化
 内容；不得 fallback 到 Python、Azure、文件或 SQLite。Web 镜像在 `Dockerfile.web` 中把
 `STRIDE_ROUTE_GET_USERS_ME_MASTER_PLAN_CURRENT=go` 设为默认值，`deploy-web.yml` 不提供

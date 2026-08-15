@@ -42,7 +42,7 @@ React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。
 - `POST /api/{user}/activities/{id}/resync` —— 从 COROS 重拉单个活动（拿更新的 feedback）
 - `GET /api/{user}/weeks` / `GET /api/{user}/weeks/{week_name}`（Go `cmd/api`）—— training-week summary/detail；详情使用规范化 `week_name`
 - `GET /api/{user}/plan/weeks` / `GET /api/{user}/plan/weeks/{week_name}`（Go `cmd/api`）—— active 本周课表元数据列表与详情；新接口以规范化周名称替代 legacy folder
-- `GET /api/users/me/master-plan/current` —— Go/MySQL 统一返回当前赛季训练计划；`content_version=1` 的 `plan` 是 Markdown 且 `revision=null`，`content_version=2` 的 `plan` 是结构化内容且 `revision>=1`。只有 404 表示尚无计划；其他失败由 Web 显示读取错误。
+- `GET /api/users/{user_id}/master-plan/current` —— Go/MySQL 按用户统一返回当前赛季训练计划；普通用户只能读取自己的 `user_id`，admin JWT 和 internal token 可跨用户读取。现有 Web 使用兼容别名 `GET /api/users/me/master-plan/current`。`content_version=1` 的 `plan` 是 Markdown 且 `revision=null`，`content_version=2` 的 `plan` 是结构化内容且 `revision>=1`。只有 404 表示尚无计划；其他失败由 Web 显示读取错误。
 - `GET /api/{user}/dashboard` / `/health` / `/pmc` / `/stats` —— fitness & health (`routes/health.py`)
 - `POST /api/{user}/sync` —— 经配置的 `DataSource` 触发完整 sync (`routes/sync.py`)
 - `POST /api/users/me/coach/chat` —— 固定 session 的 Coach 对话；请求带 `client_turn_id`，计划工作区额外带 typed `target`
