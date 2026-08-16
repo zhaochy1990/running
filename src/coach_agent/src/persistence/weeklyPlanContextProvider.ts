@@ -23,6 +23,7 @@ import {
 type ContextStore = Pick<
 	StrideDataStore,
 	| "getMasterPlanMetadataForDate"
+	| "getWeeklyPlan"
 	| "getActivitiesByDateRange"
 	| "getDailyRecoveryByDateRange"
 	| "getDailyTrainingLoadByDateRange"
@@ -45,6 +46,8 @@ export interface WeeklyPlanContext {
 		stage: Record<string, unknown> | null;
 	};
 	recent_activities: Array<Record<string, unknown>>;
+	recent_training_weeks: Array<Record<string, unknown>>;
+	absorbed_load: Record<string, unknown>;
 	recent_feedback: Array<Record<string, unknown>>;
 	fitness_state: Record<string, unknown>;
 	injury_and_recovery: Record<string, unknown>;
@@ -83,17 +86,35 @@ export class MySqlWeeklyPlanContextProvider
 		const planStart = planningStartDate(end);
 		const start = addDays(end, -(LOOKBACK_DAYS - 1));
 		const feedbackStart = monday(start);
-		const [plan, activities, feedback, loads, recovery, injuries, calibration] =
-			await Promise.all([
-				this.store.getMasterPlanMetadataForDate(userId, planStart),
-				this.store.getActivitiesByDateRange(userId, start, end),
-				this.feedbackSource.getByDateRange(userId, feedbackStart, end),
-				this.store.getDailyTrainingLoadByDateRange(userId, start, end),
-				this.store.getDailyRecoveryByDateRange(userId, start, end),
-				this.store.getUserInjuries(userId),
-				this.store.getLatestRunningCalibration(userId, end),
-			]);
+		const recentWeekStarts = completedWeekStarts(planStart);
+		const [
+			plan,
+			activities,
+			feedback,
+			loads,
+			recovery,
+			injuries,
+			calibration,
+			...weeklyPlans
+		] = await Promise.all([
+			this.store.getMasterPlanMetadataForDate(userId, planStart),
+			this.store.getActivitiesByDateRange(userId, start, end),
+			this.feedbackSource.getByDateRange(userId, feedbackStart, end),
+			this.store.getDailyTrainingLoadByDateRange(userId, start, end),
+			this.store.getDailyRecoveryByDateRange(userId, start, end),
+			this.store.getUserInjuries(userId),
+			this.store.getLatestRunningCalibration(userId, end),
+			...recentWeekStarts.map((weekStart) =>
+				this.store.getWeeklyPlan(userId, weekFolder(weekStart)),
+			),
+		]);
 
+		const recentWeeks = recentTrainingWeeks(
+			recentWeekStarts,
+			weeklyPlans,
+			activities,
+			end,
+		);
 		return {
 			as_of: end,
 			plan_start: planStart,
@@ -101,6 +122,8 @@ export class MySqlWeeklyPlanContextProvider
 			lookback: { start_date: start, end_date: end, days: LOOKBACK_DAYS },
 			training_position: trainingPosition(plan, planStart),
 			recent_activities: activities.map(activityShape),
+			recent_training_weeks: recentWeeks,
+			absorbed_load: absorbedLoadShape(recentWeeks),
 			recent_feedback: feedback.map(feedbackShape),
 			fitness_state: fitnessShape(loads, end),
 			injury_and_recovery: recoveryShape(injuries, recovery, end),
@@ -109,11 +132,44 @@ export class MySqlWeeklyPlanContextProvider
 	}
 }
 
+function absorbedLoadShape(weeks: Array<Record<string, unknown>>) {
+	const complete = weeks
+		.filter((week) => week.complete === true)
+		.slice(-3)
+		.map((week) => {
+			const actual = record(week.actual);
+			return {
+				week_start: string(week.week_start),
+				actual_run_distance_km: number(actual?.total_run_distance_km) ?? 0,
+				actual_training_dose: number(actual?.total_training_dose) ?? 0,
+			};
+		});
+	const distances = complete
+		.map((week) => week.actual_run_distance_km)
+		.sort((left, right) => left - right);
+	return {
+		complete_weeks_considered: complete,
+		distance_anchor_km: median(distances),
+		latest_complete_week: complete.at(-1) ?? null,
+	};
+}
+
+function median(values: number[]): number | null {
+	if (values.length === 0) return null;
+	const middle = Math.floor(values.length / 2);
+	const upper = values[middle];
+	if (upper === undefined) return null;
+	if (values.length % 2 === 1) return upper;
+	const lower = values[middle - 1];
+	return lower === undefined ? null : round((lower + upper) / 2, 2);
+}
+
 function trainingPosition(plan: ActiveMasterPlanMetadata | null, day: string) {
 	if (!plan) return { phase: null, stage: null };
 	const phases = records(plan.content.phases);
 	const weeks = records(plan.content.weeks);
 	const phase = phases.find((candidate) => containsDay(candidate, day));
+	const milestones = records(plan.content.milestones);
 	const weekStart = monday(day);
 	const stage = weeks.find(
 		(candidate) => string(candidate.week_start) === weekStart,
@@ -125,6 +181,16 @@ function trainingPosition(plan: ActiveMasterPlanMetadata | null, day: string) {
 					start_date: string(phase.start_date),
 					end_date: string(phase.end_date),
 					focus: string(phase.focus),
+					milestones: milestones
+						.filter((milestone) =>
+							containsDay(phase, string(milestone.date) ?? ""),
+						)
+						.map((milestone) => ({
+							type: string(milestone.type),
+							date: string(milestone.date),
+							target: string(milestone.target),
+							completed_actual: string(milestone.completed_actual),
+						})),
 				}
 			: null,
 		stage: stage
@@ -141,6 +207,141 @@ function trainingPosition(plan: ActiveMasterPlanMetadata | null, day: string) {
 				}
 			: null,
 	};
+}
+
+function completedWeekStarts(planStart: string): string[] {
+	const latest = monday(addDays(planStart, -1));
+	return [-21, -14, -7, 0].map((offset) => addDays(latest, offset));
+}
+
+function recentTrainingWeeks(
+	weekStarts: string[],
+	plans: Array<Record<string, unknown> | null>,
+	activities: Activity[],
+	asOf: string,
+): Array<Record<string, unknown>> {
+	return weekStarts.map((weekStart, index) => {
+		const weekEnd = addDays(weekStart, 6);
+		const weekActivities = activities.filter((activity) => {
+			const day = activityDay(activity);
+			return weekStart <= day && day <= weekEnd;
+		});
+		const runActivities = weekActivities.filter(isRunActivity);
+		const qualityActivities = runActivities.filter(isQualityActivity);
+		const runsByDay = groupActivitiesByDay(runActivities);
+		const qualityByDay = groupActivitiesByDay(qualityActivities);
+		const longestRunDay =
+			[...runsByDay.entries()]
+				.map(([date, dayActivities]) => ({
+					date,
+					distance_km: activityDistanceKm(dayActivities),
+				}))
+				.sort((left, right) => right.distance_km - left.distance_km)[0] ?? null;
+		return {
+			week_start: weekStart,
+			week_end: weekEnd,
+			complete: weekEnd <= asOf,
+			planned: plannedWeekShape(plans[index] ?? null),
+			actual: {
+				total_run_distance_km: round(
+					runActivities.reduce(
+						(sum, activity) => sum + (activity.distanceM ?? 0) / 1000,
+						0,
+					),
+					2,
+				),
+				total_training_dose: round(
+					weekActivities.reduce(
+						(sum, activity) => sum + (activity.strideDose ?? 0),
+						0,
+					),
+					2,
+				),
+				run_days: new Set(runActivities.map(activityDay)).size,
+				longest_run: longestRunDay,
+				quality_stimulus_days: [...qualityByDay.entries()].map(
+					([date, dayActivities]) => ({
+						date,
+						training_types: unique(
+							dayActivities.map((activity) => activity.trainKind),
+						),
+						names: unique(dayActivities.map((activity) => activity.name)),
+						total_distance_km: activityDistanceKm(dayActivities),
+					}),
+				),
+			},
+		};
+	});
+}
+
+function plannedWeekShape(plan: Record<string, unknown> | null) {
+	if (!plan)
+		return { available: false, total_run_distance_km: null, run_sessions: [] };
+	const runSessions = records(plan.sessions)
+		.filter((session) => string(session.kind) === "run")
+		.map((session) => {
+			const distanceM = number(session.total_distance_m);
+			return {
+				date: string(session.date),
+				summary: string(session.summary),
+				distance_km: distanceM === null ? null : round(distanceM / 1000, 2),
+			};
+		});
+	const completeDistance = runSessions.every(
+		(session) => session.distance_km !== null,
+	);
+	return {
+		available: true,
+		distance_coverage: completeDistance ? "complete" : "partial",
+		total_run_distance_km: completeDistance
+			? round(
+					runSessions.reduce(
+						(sum, session) => sum + (session.distance_km ?? 0),
+						0,
+					),
+					2,
+				)
+			: null,
+		run_sessions: runSessions,
+	};
+}
+
+function groupActivitiesByDay(activities: Activity[]): Map<string, Activity[]> {
+	const groups = new Map<string, Activity[]>();
+	for (const activity of activities) {
+		const day = activityDay(activity);
+		groups.set(day, [...(groups.get(day) ?? []), activity]);
+	}
+	return groups;
+}
+
+function activityDistanceKm(activities: Activity[]): number {
+	return round(
+		activities.reduce(
+			(sum, activity) => sum + (activity.distanceM ?? 0) / 1000,
+			0,
+		),
+		2,
+	);
+}
+
+function unique(values: Array<string | null>): string[] {
+	return [
+		...new Set(values.filter((value): value is string => value !== null)),
+	];
+}
+
+function isRunActivity(activity: Activity): boolean {
+	return (
+		activity.sport?.toLowerCase().includes("run") === true ||
+		activity.sportName?.toLowerCase().includes("run") === true
+	);
+}
+
+function isQualityActivity(activity: Activity): boolean {
+	return /threshold|tempo|interval|vo2|max|anaerobic|race[_ -]?pace/i.test(
+		activity.trainKind ?? "",
+	);
 }
 
 function activityShape(activity: Activity) {
@@ -276,6 +477,12 @@ function records(value: unknown): Record<string, unknown>[] {
 					typeof item === "object" && item !== null && !Array.isArray(item),
 			)
 		: [];
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+	return typeof value === "object" && value !== null && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
 }
 
 function containsDay(value: Record<string, unknown>, day: string): boolean {
