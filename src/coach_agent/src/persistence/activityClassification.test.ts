@@ -41,6 +41,36 @@ test("quality classification uses training kind and descriptive name", () => {
 	);
 	assert.equal(
 		isQualityRunningActivity({
+			name: "Hill repeats",
+			sport: "run_outdoor",
+			sportName: "Outdoor Run",
+			sportNote: null,
+			trainKind: "aerobic",
+		}),
+		true,
+	);
+	assert.equal(
+		isQualityRunningActivity({
+			name: "上海马拉松",
+			sport: "run_outdoor",
+			sportName: "Outdoor Run",
+			sportNote: null,
+			trainKind: "base",
+		}),
+		true,
+	);
+	assert.equal(
+		isQualityRunningActivity({
+			name: "Easy hilly run",
+			sport: "run_outdoor",
+			sportName: "Outdoor Run",
+			sportNote: null,
+			trainKind: "base",
+		}),
+		false,
+	);
+	assert.equal(
+		isQualityRunningActivity({
 			name: "City marathon",
 			sport: "run_outdoor",
 			sportName: "Outdoor Run",

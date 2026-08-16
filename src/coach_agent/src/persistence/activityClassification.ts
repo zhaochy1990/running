@@ -26,7 +26,13 @@ export function isQualityRunningActivity(
 		)
 	)
 		return true;
-	const description = [activity.name, activity.sportNote]
+	const name = activity.name ?? "";
+	if (
+		/race|marathon|比赛|马拉松/i.test(name) ||
+		/hill(?: repeats?| sprints?)|坡跑|爬坡间歇/i.test(name)
+	)
+		return true;
+	const description = [name, activity.sportNote]
 		.filter((value): value is string => value !== null)
 		.join(" ");
 	const mentionsPaceAbbreviation = description
@@ -35,7 +41,7 @@ export function isQualityRunningActivity(
 		.some((token) => token === "MP" || token === "HMP");
 	return (
 		mentionsPaceAbbreviation ||
-		/interval|tempo|threshold|speed|vo2max|race[_ -]?pace|marathon[_ -]?pace|间歇|阈值|节奏|马拉松配速|马配/i.test(
+		/interval|tempo|threshold|speed|vo2max|race[_ -]?pace|marathon[_ -]?pace|hill repeats?|坡跑|爬坡间歇|间歇|阈值|节奏|马拉松配速|马配/i.test(
 			description,
 		)
 	);

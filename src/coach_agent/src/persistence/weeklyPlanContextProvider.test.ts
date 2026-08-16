@@ -368,6 +368,7 @@ test("weekly context anchors distance to completed-week median", async () => {
 });
 
 test("weekly context keeps a Monday as the planning start", async () => {
+	const activityRanges: Array<[string, string]> = [];
 	const provider = new MySqlWeeklyPlanContextProvider({
 		async getMasterPlanMetadataForDate() {
 			return null;
@@ -375,7 +376,8 @@ test("weekly context keeps a Monday as the planning start", async () => {
 		async getWeeklyPlan() {
 			return null;
 		},
-		async getActivitiesByDateRange() {
+		async getActivitiesByDateRange(_userId, start, end) {
+			activityRanges.push([start, end]);
 			return [];
 		},
 		async getWeeklyFeedbackByDateRange() {
@@ -397,6 +399,7 @@ test("weekly context keeps a Monday as the planning start", async () => {
 
 	const snapshot = await provider.loadSnapshot("athlete", "2026-08-17");
 	assert.equal(snapshot.plan_start, "2026-08-17");
+	assert.deepEqual(activityRanges, [["2026-07-20", "2026-08-17"]]);
 });
 
 test("weekly context reports unavailable STRIDE load without fallback", async () => {

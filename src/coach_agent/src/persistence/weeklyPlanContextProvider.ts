@@ -145,6 +145,11 @@ export class MySqlWeeklyPlanContextProvider
 		const start = addDays(end, -(LOOKBACK_DAYS - 1));
 		const feedbackStart = monday(start);
 		const recentWeekStarts = completedWeekStarts(planStart);
+		const earliestWeekStart = recentWeekStarts[0];
+		const trainingHistoryStart =
+			earliestWeekStart !== undefined && earliestWeekStart < start
+				? earliestWeekStart
+				: start;
 		const [
 			plan,
 			activities,
@@ -156,7 +161,7 @@ export class MySqlWeeklyPlanContextProvider
 			...weeklyPlans
 		] = await Promise.all([
 			this.store.getMasterPlanMetadataForDate(userId, planStart),
-			this.store.getActivitiesByDateRange(userId, start, end),
+			this.store.getActivitiesByDateRange(userId, trainingHistoryStart, end),
 			this.feedbackSource.getByDateRange(userId, feedbackStart, end),
 			this.store.getDailyTrainingLoadByDateRange(userId, start, end),
 			this.store.getDailyRecoveryByDateRange(userId, start, end),
