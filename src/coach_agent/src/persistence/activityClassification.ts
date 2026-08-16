@@ -21,7 +21,7 @@ export function isQualityRunningActivity(
 ): boolean {
 	if (!isRunningActivity(activity)) return false;
 	if (
-		/interval|tempo|threshold|speed|vo2|max|anaerobic|race[_ -]?pace|marathon[_ -]?pace/i.test(
+		/interval|tempo|threshold|speed|sprint|vo2|max|anaerobic|race|race[_ -]?pace|marathon[_ -]?pace/i.test(
 			activity.trainKind ?? "",
 		)
 	)

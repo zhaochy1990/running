@@ -31,6 +31,26 @@ test("running classification accepts canonical sport fields", () => {
 test("quality classification uses training kind and descriptive name", () => {
 	assert.equal(
 		isQualityRunningActivity({
+			name: "Short repetitions",
+			sport: "run_outdoor",
+			sportName: "Outdoor Run",
+			sportNote: null,
+			trainKind: "sprint",
+		}),
+		true,
+	);
+	assert.equal(
+		isQualityRunningActivity({
+			name: "City marathon",
+			sport: "run_outdoor",
+			sportName: "Outdoor Run",
+			sportNote: null,
+			trainKind: "race",
+		}),
+		true,
+	);
+	assert.equal(
+		isQualityRunningActivity({
 			name: "Easy run",
 			sport: "run_outdoor",
 			sportName: "Outdoor Run",
