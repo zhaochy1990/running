@@ -42,6 +42,20 @@ const WeeklyMetricsSchema = z
 export const ContextSnapshotSchema = z
 	.object({
 		user: z.object({ id: z.string().min(1), profile: ProfileSchema }).strict(),
+		race_target: z
+			.object({
+				goal_id: z.string().min(1),
+				user_id: z.string().min(1),
+				status: z.string().min(1),
+				race_date: day,
+				race_distance: z.string().min(1),
+				race_name: z.string().min(1),
+				target_finish_time: z.string().min(1),
+				weekly_training_days: z.number().int().min(1).max(7),
+			})
+			.strict()
+			.nullable()
+			.optional(),
 		injuries: z.array(
 			z
 				.object({

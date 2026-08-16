@@ -79,3 +79,4 @@ data/*/testing/**
 .opencode
 src/coach_agent/.env
 config/coach.prod.yaml
+src/coach_agent/test-output

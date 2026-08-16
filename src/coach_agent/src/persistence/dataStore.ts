@@ -230,20 +230,20 @@ export class StrideDataStore {
 
 	async getUserProfile(userId: string): Promise<UserProfile | null> {
 		const [rows] = await this.pool.query<RowDataPacket[]>(
-			`SELECT user_id, display_name, dob, sex, height_cm, weight_kg, running_age_range FROM user_profile WHERE user_id = ? LIMIT 1`,
+			`SELECT user_id, display_name, DATE_FORMAT(dob, '%Y-%m-%d') AS dob, sex, height_cm, weight_kg, running_age_range FROM user_profile WHERE user_id = ? LIMIT 1`,
 			[userId],
 		);
 		const row = rows[0];
 		return row
 			? {
-				userId: row.user_id as string,
-				displayName: (row.display_name ?? null) as string | null,
-				dob: (row.dob ?? null) as string | null,
-				sex: (row.sex ?? null) as string | null,
-				heightCm: (row.height_cm ?? null) as number | null,
-				weightKg: (row.weight_kg ?? null) as number | null,
-				runningAgeRange: (row.running_age_range ?? null) as string | null,
-			}
+					userId: row.user_id as string,
+					displayName: (row.display_name ?? null) as string | null,
+					dob: (row.dob ?? null) as string | null,
+					sex: (row.sex ?? null) as string | null,
+					heightCm: (row.height_cm ?? null) as number | null,
+					weightKg: (row.weight_kg ?? null) as number | null,
+					runningAgeRange: (row.running_age_range ?? null) as string | null,
+				}
 			: null;
 	}
 
@@ -537,7 +537,9 @@ export class StrideDataStore {
 
 	async getRaceTarget(userId: string): Promise<RaceTarget | null> {
 		const [rows] = await this.pool.query<RowDataPacket[]>(
-			`SELECT *
+			`SELECT goal_id, user_id, status,
+			        DATE_FORMAT(race_date, '%Y-%m-%d') AS race_date,
+			        race_distance, race_name, target_finish_time, weekly_training_days
          FROM race_goal
         WHERE user_id = ? and status = 'active'
         ORDER BY race_date DESC

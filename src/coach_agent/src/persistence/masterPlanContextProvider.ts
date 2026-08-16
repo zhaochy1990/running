@@ -38,8 +38,9 @@ type ContextStore = Pick<
 >;
 
 export class MySqlMasterPlanContextProvider
-	implements MasterPlanContextProvider {
-	constructor(private readonly store: ContextStore) { }
+	implements MasterPlanContextProvider
+{
+	constructor(private readonly store: ContextStore) {}
 
 	async loadSnapshot(
 		userId: string,
@@ -139,12 +140,12 @@ const durationWeightedActivityAverage = (
 	);
 	return duration
 		? Math.round(
-			measured.reduce(
-				(total, activity) =>
-					total + (metric(activity) ?? 0) * (activity.durationS ?? 0),
-				0,
-			) / duration,
-		)
+				measured.reduce(
+					(total, activity) =>
+						total + (metric(activity) ?? 0) * (activity.durationS ?? 0),
+					0,
+				) / duration,
+			)
 		: null;
 };
 const round = (v: number, p = 1) => Number(v.toFixed(p));
@@ -160,6 +161,17 @@ function profileShape(p: UserProfile) {
 }
 function raceTargetShape(r: RaceTarget | null) {
 	return r
+		? {
+				goal_id: r.goal_id,
+				user_id: r.user_id,
+				status: r.status,
+				race_date: r.race_date,
+				race_distance: r.race_distance,
+				race_name: r.race_name,
+				target_finish_time: r.target_finish_time,
+				weekly_training_days: r.weekly_training_days,
+			}
+		: null;
 }
 
 function injuryShape(rows: UserInjury[]) {
@@ -267,10 +279,10 @@ function macroHistory(runs: Activity[], start: string, end: string) {
 	const dates = [...new Set(runs.map(activityDay))].sort();
 	const intervals = dates.length
 		? [
-			[start, dates[0]!],
-			...dates.slice(1).map((date, i) => [dates[i]!, date]),
-			[dates.at(-1)!, end],
-		]
+				[start, dates[0]!],
+				...dates.slice(1).map((date, i) => [dates[i]!, date]),
+				[dates.at(-1)!, end],
+			]
 		: [[start, end]];
 	const gaps = intervals
 		.map(([from, to]) => ({
@@ -303,9 +315,9 @@ function macroHistory(runs: Activity[], start: string, end: string) {
 		gap_periods: gaps,
 		consistency_pct: weeks.length
 			? round(
-				(100 * weeks.filter((w) => w.run_count > 0).length) /
-				Math.max(1, Math.ceil(dayDiff(start, end) / 7)),
-			)
+					(100 * weeks.filter((w) => w.run_count > 0).length) /
+						Math.max(1, Math.ceil(dayDiff(start, end) / 7)),
+				)
 			: null,
 	};
 }
@@ -339,11 +351,11 @@ function currentPhase(p: ActiveMasterPlanMetadata | null, day: string) {
 	});
 	return phase
 		? {
-			name: String(phase.name),
-			start_date: stringOrNull(phase.start_date),
-			end_date: stringOrNull(phase.end_date),
-			source: "active_plan" as const,
-		}
+				name: String(phase.name),
+				start_date: stringOrNull(phase.start_date),
+				end_date: stringOrNull(phase.end_date),
+				source: "active_plan" as const,
+			}
 		: null;
 }
 function continuity(

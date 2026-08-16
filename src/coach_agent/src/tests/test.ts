@@ -4,7 +4,10 @@ import { Command } from "@langchain/langgraph";
 import { createCoachAgent } from "../agents/coachAgent.js";
 import { loadConfig, readStrideMySqlConfig } from "../config/config.js";
 import { MasterPlanSchema } from "../graph/master_plan/schemas.js";
-import { MySqlMasterPlanContextProvider, StrideDataStore } from "../persistence/index.js";
+import {
+	MySqlMasterPlanContextProvider,
+	StrideDataStore,
+} from "../persistence/index.js";
 import {
 	ASK_USER_QUESTION_KIND,
 	type AskUserQuestionPayload,
@@ -14,16 +17,6 @@ import {
 	LlmTokenUsageTracker,
 } from "../utils/tokenUsage.js";
 
-const config = loadConfig();
-const store = StrideDataStore.create(readStrideMySqlConfig(config));
-const agent = await createCoachAgent(store, config);
-
-const masterPlanContextProvider = new MySqlMasterPlanContextProvider(store);
-
-console.log('argv, ', process.argv);
-
-let userId = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
-// const userId = "11c2e582-5a85-4633-81d2-df7e37ad7b48";
 const usernameMap: Record<string, string> = {
 	pan: "5ee229a6-cdc1-4260-84d3-71ec622126c2",
 	dingchentao: "7bd56762-3b04-42a6-9d8b-98f595628430",
@@ -33,9 +26,14 @@ const usernameMap: Record<string, string> = {
 	zhaochaoyi: "f10bc353-01ab-4db1-af9f-d9305ea9a532",
 };
 
-if (process.argv.length === 3) {
-	const username = process.argv[2] as string;
-	if (!usernameMap[username]) {
+function requireUserId(): string {
+	const username = process.argv[2];
+	if (!username) {
+		console.error("Missing username. Usage: npm run test:deepagent -- <user>");
+		process.exit(1);
+	}
+	const userId = usernameMap[username];
+	if (!userId) {
 		console.error(
 			`Unknown username: ${username}. Valid usernames: ${Object.keys(
 				usernameMap,
@@ -43,14 +41,26 @@ if (process.argv.length === 3) {
 		);
 		process.exit(1);
 	}
-	userId = usernameMap[username] as string;
+	return userId;
 }
+
+const userId = requireUserId();
+const config = loadConfig();
+const store = StrideDataStore.create(readStrideMySqlConfig(config));
+const agent = await createCoachAgent(store, config);
+const masterPlanContextProvider = new MySqlMasterPlanContextProvider(store);
+
 console.log(`Using userId: ${userId}`);
 
 const asof = "2026-08-14";
 
 const res = await masterPlanContextProvider.loadSnapshot(userId, asof);
 console.log(res);
+const raceTarget = res.race_target;
+if (!raceTarget) {
+	console.error(`No active race target found for user ID: ${userId}`);
+	process.exit(1);
+}
 
 // await agent.invoke({
 //   messages: [{ role: "user", content: "帮我生成下周的训练计划" }],
@@ -181,11 +191,8 @@ async function askWithHITL(content: string, thread: string): Promise<void> {
 //   "sess-master",
 // );
 
-
-
-// Test race goal: 2026-10-18 西安马拉松，目标 2:50:00，全马；每周 6 天训练，单次不超过 3 小时，无伤病。
 await askWithHITL(
-	"帮助用户生成赛季训练计划, 用户目标为全马比赛，比赛日期为2026-10-18，目标比赛为西安马拉松，目标成绩为 2:45:00，每周训练6天，每天都可以训练，目前无伤病",
+	`帮助用户生成赛季训练计划。使用已保存的比赛目标：${raceTarget.race_distance}，比赛日期 ${raceTarget.race_date}，目标成绩 ${raceTarget.target_finish_time}，目标比赛 ${raceTarget.race_name}，每周训练 ${raceTarget.weekly_training_days} 天。根据用户档案和训练记录处理伤病及其他约束。`,
 	"session-master-plan",
 );
 

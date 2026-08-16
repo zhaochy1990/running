@@ -2,8 +2,93 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import { ContextSnapshotSchema } from "../graph/master_plan/index.js";
+import { createAssessmentSnapshot } from "../graph/master_plan/testFixtures.js";
 import { StrideDataStore } from "./dataStore.js";
 import { MySqlMasterPlanContextProvider } from "./masterPlanContextProvider.js";
+
+test("user profile loader returns dob as a Shanghai calendar day", async () => {
+	let query = "";
+	const pool = {
+		async query(sql: string) {
+			query = sql;
+			return [
+				[
+					{
+						user_id: "athlete",
+						display_name: "Pan",
+						dob: "1979-01-02",
+						sex: "male",
+						height_cm: 173,
+						weight_kg: 75,
+						running_age_range: "5_10",
+					},
+				] as RowDataPacket[],
+				[],
+			];
+		},
+	} as unknown as Pool;
+
+	const profile = await new StrideDataStore(pool).getUserProfile("athlete");
+
+	assert.match(query, /DATE_FORMAT\(dob, '%Y-%m-%d'\) AS dob/);
+	assert.equal(profile?.dob, "1979-01-02");
+});
+
+test("race target loader returns a bounded user's Shanghai race day", async () => {
+	let query = "";
+	let params: unknown[] = [];
+	const pool = {
+		async query(sql: string, values: unknown[]) {
+			query = sql;
+			params = values;
+			return [
+				[
+					{
+						goal_id: "goal-1",
+						user_id: "athlete",
+						status: "active",
+						race_date: "2026-08-30",
+						race_distance: "FM",
+						race_name: "上海马拉松",
+						target_finish_time: "3:40:00",
+						weekly_training_days: 5,
+					},
+				] as RowDataPacket[],
+				[],
+			];
+		},
+	} as unknown as Pool;
+
+	const target = await new StrideDataStore(pool).getRaceTarget("athlete");
+
+	assert.match(query, /DATE_FORMAT\(race_date, '%Y-%m-%d'\) AS race_date/);
+	assert.deepEqual(params, ["athlete"]);
+	assert.equal(target?.race_date, "2026-08-30");
+});
+
+test("context rejects a race target without a name or finish time", () => {
+	const base = ContextSnapshotSchema.parse(createAssessmentSnapshot());
+	const raceTarget = {
+		goal_id: "goal-1",
+		user_id: "athlete",
+		status: "active",
+		race_date: "2026-10-18",
+		race_distance: "FM",
+		race_name: "西安马拉松",
+		target_finish_time: "2:45:00",
+		weekly_training_days: 5,
+	};
+
+	for (const field of ["race_name", "target_finish_time"] as const) {
+		assert.equal(
+			ContextSnapshotSchema.safeParse({
+				...base,
+				race_target: { ...raceTarget, [field]: null },
+			}).success,
+			false,
+		);
+	}
+});
 
 test("personal best loader returns activity label ID before the asof cutoff", async () => {
 	let query = "";
@@ -122,6 +207,18 @@ test("context provider exposes PB activity label ID without source", async () =>
 				runningAgeRange: null,
 			};
 		},
+		async getRaceTarget() {
+			return {
+				goal_id: "goal-1",
+				user_id: "athlete",
+				status: "active",
+				race_date: "2026-10-18",
+				race_distance: "FM",
+				race_name: "西安马拉松",
+				target_finish_time: "2:45:00",
+				weekly_training_days: 5,
+			};
+		},
 		async getUserInjuries() {
 			return [];
 		},
@@ -161,6 +258,16 @@ test("context provider exposes PB activity label ID without source", async () =>
 	);
 
 	assert.equal(snapshot.plan_start, "2026-08-17");
+	assert.deepEqual(snapshot.race_target, {
+		goal_id: "goal-1",
+		user_id: "athlete",
+		status: "active",
+		race_date: "2026-10-18",
+		race_distance: "FM",
+		race_name: "西安马拉松",
+		target_finish_time: "2:45:00",
+		weekly_training_days: 5,
+	});
 	assert.deepEqual(snapshot.personal_bests, [
 		{
 			distance: "5K",
@@ -183,6 +290,9 @@ test("context provider maps canonical injuries and numeric race feel", async () 
 				weightKg: 70,
 				runningAgeRange: "5_10",
 			};
+		},
+		async getRaceTarget() {
+			return null;
 		},
 		async getUserInjuries() {
 			return [
@@ -343,6 +453,9 @@ test("context provider excludes trail-labelled outdoor activities from road-run 
 				runningAgeRange: "5_10",
 			};
 		},
+		async getRaceTarget() {
+			return null;
+		},
 		async getUserInjuries() {
 			return [];
 		},
@@ -417,6 +530,9 @@ test("context provider materializes complete zero-run weeks", async () => {
 				weightKg: 70,
 				runningAgeRange: "5_10",
 			};
+		},
+		async getRaceTarget() {
+			return null;
 		},
 		async getUserInjuries() {
 			return [];
