@@ -221,19 +221,34 @@ func weekIdentity(weekName string) (weekStart string, weekEnd time.Time, ok bool
 }
 
 func weeklyPlanMetadata(plan storage.WeeklyPlan) (weeklyPlanMetadataResponse, error) {
-	start, err := time.Parse("2006-01-02", plan.WeekStart)
+	start, err := parseStoredWeekStart(plan.WeekStart)
 	if err != nil || start.Weekday() != time.Monday {
 		return weeklyPlanMetadataResponse{}, fmt.Errorf("invalid stored week_start %q", plan.WeekStart)
 	}
 	end := start.AddDate(0, 0, 6)
+	dateFrom := start.Format("2006-01-02")
 	return weeklyPlanMetadataResponse{
-		PlanID: plan.PlanID, WeekName: start.Format("2006-01-02") + "_" + end.Format("01-02"),
-		DateFrom: plan.WeekStart, DateTo: end.Format("2006-01-02"),
+		PlanID: plan.PlanID, WeekName: dateFrom + "_" + end.Format("01-02"),
+		DateFrom: dateFrom, DateTo: end.Format("2006-01-02"),
 		MasterPlanID: plan.MasterPlanID, Status: plan.Status,
 		ContentVersion: plan.ContentVersion, Revision: plan.Revision,
 		CreatedAt: plan.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt: plan.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}, nil
+}
+
+func parseStoredWeekStart(value string) (time.Time, error) {
+	if date, err := time.Parse("2006-01-02", value); err == nil {
+		return date, nil
+	}
+	date, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if date.Hour() != 0 || date.Minute() != 0 || date.Second() != 0 || date.Nanosecond() != 0 {
+		return time.Time{}, fmt.Errorf("stored date is not midnight")
+	}
+	return date, nil
 }
 
 // list returns metadata for every active weekly plan, newest first.

@@ -87,7 +87,9 @@ func (f *fakeWeeklyPlanStore) GetActiveWeeklyPlan(_ context.Context, userID, wee
 		return nil, f.getErr
 	}
 	for i := range f.plans[userID] {
-		if f.plans[userID][i].WeekStart == weekStart && f.plans[userID][i].Status == storage.WeeklyPlanStatusActive {
+		storedWeekStart := f.plans[userID][i].WeekStart
+		storedWeekStart = strings.TrimSuffix(storedWeekStart, "T00:00:00Z")
+		if storedWeekStart == weekStart && f.plans[userID][i].Status == storage.WeeklyPlanStatusActive {
 			plan := f.plans[userID][i]
 			return &plan, nil
 		}
@@ -325,6 +327,77 @@ func TestWeeklyPlanListReturnsActiveMetadata(t *testing.T) {
 	}
 	if _, exists := body.Weeks[0]["content"]; exists {
 		t.Fatalf("list must not include content: %v", body.Weeks[0])
+	}
+}
+
+func TestWeeklyPlanListNormalizesMySQLDateScan(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	h.store.plans[userID] = []storage.WeeklyPlan{
+		weeklyPlanFixture("plan-1", userID, "2026-08-10T00:00:00Z", storage.WeeklyPlanContentStructured, `{"sessions":[],"nutrition":[]}`),
+	}
+
+	resp := h.do(http.MethodGet, "/api/"+userID+"/plan/weeks", h.adminBearer(t, "admin-user"))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		Weeks []weeklyPlanMetadataResponse `json:"weeks"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Weeks) != 1 {
+		t.Fatalf("weeks=%d want 1", len(body.Weeks))
+	}
+	week := body.Weeks[0]
+	if week.WeekName != "2026-08-10_08-16" || week.DateFrom != "2026-08-10" || week.DateTo != "2026-08-16" {
+		t.Fatalf("week=%+v", week)
+	}
+}
+
+func TestWeeklyPlanDetailNormalizesMySQLDateScan(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	h.store.plans[userID] = []storage.WeeklyPlan{
+		weeklyPlanFixture("plan-1", userID, "2026-08-10T00:00:00Z", storage.WeeklyPlanContentStructured, `{"sessions":[],"nutrition":[]}`),
+	}
+
+	resp := h.do(http.MethodGet, "/api/"+userID+"/plan/weeks/2026-08-10_08-16", h.adminBearer(t, "admin-user"))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var body weeklyPlanDetailResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.WeekName != "2026-08-10_08-16" || body.DateFrom != "2026-08-10" || body.DateTo != "2026-08-16" {
+		t.Fatalf("week=%+v", body.weeklyPlanMetadataResponse)
+	}
+}
+
+func TestWeeklyPlanListRejectsInvalidStoredWeekStart(t *testing.T) {
+	tests := []struct {
+		name      string
+		weekStart string
+	}{
+		{name: "malformed", weekStart: "not-a-date"},
+		{name: "non-midnight RFC3339", weekStart: "2026-08-10T01:00:00Z"},
+		{name: "non-Monday canonical", weekStart: "2026-08-11"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			h := newWeeklyPlanHarness(t)
+			userID := "user-a"
+			h.store.plans[userID] = []storage.WeeklyPlan{
+				weeklyPlanFixture("plan-1", userID, test.weekStart, storage.WeeklyPlanContentStructured, `{"sessions":[],"nutrition":[]}`),
+			}
+
+			resp := h.do(http.MethodGet, "/api/"+userID+"/plan/weeks", h.adminBearer(t, "admin-user"))
+			if resp.Code != http.StatusInternalServerError || resp.Body.String() != `{"error":"internal error"}` {
+				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+			}
+		})
 	}
 }
 
