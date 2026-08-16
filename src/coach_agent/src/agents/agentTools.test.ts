@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -97,6 +97,29 @@ test("weekly-plan reader and generator keep distinct contracts", () => {
 	assert.deepEqual(reader.skills, []);
 	assert.equal(generator.responseFormat, WeeklyPlanDirectResponseSchema);
 	assert.ok(generator.skills.includes("/generate-weekly-plan/"));
+});
+
+test("weekly-plan skill routes every canonical phase name", async () => {
+	const skillsDir = join(
+		dirname(fileURLToPath(import.meta.url)),
+		"..",
+		"skills",
+	);
+	const skill = await readFile(
+		join(skillsDir, "generate-weekly-plan", "SKILL.md"),
+		"utf8",
+	);
+	for (const phase of [
+		"基础期",
+		"提升期",
+		"专项速度周期",
+		"马拉松专项期",
+		"赛前减量期",
+		"赛后恢复期",
+	])
+		assert.match(skill, new RegExp(phase));
+	assert.match(skill, /preceding day rest or a short recovery run/);
+	assert.match(skill, /Exceed 12% only for an explicit back-to-back/);
 });
 
 const masterPlan = {

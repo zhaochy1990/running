@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
 import { addDays, shanghaiDay } from "../../utils/planningDate.js";
+import { median } from "../../utils/statistics.js";
 import type { ContextSnapshot } from "./context.js";
 import type { MasterPlanGraphRequest } from "./contracts.js";
 
@@ -647,14 +648,6 @@ export function validateAthleteAssessmentRanges(
 		);
 }
 
-function median(values: readonly number[]): number | null {
-	if (values.length === 0) return null;
-	const sorted = [...values].sort((a, b) => a - b);
-	const middle = Math.floor(sorted.length / 2);
-	return sorted.length % 2 === 0
-		? round((sorted[middle - 1]! + sorted[middle]!) / 2, 2)
-		: sorted[middle]!;
-}
 function round(value: number, digits: number): number {
 	const factor = 10 ** digits;
 	return Math.round(value * factor) / factor;

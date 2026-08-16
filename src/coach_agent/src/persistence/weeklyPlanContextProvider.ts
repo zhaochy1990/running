@@ -5,6 +5,11 @@ import {
 	shanghaiDay,
 	weekFolder,
 } from "../utils/planningDate.js";
+import { median } from "../utils/statistics.js";
+import {
+	isQualityRunningActivity,
+	isRunningActivity,
+} from "./activityClassification.js";
 import type {
 	ActiveMasterPlanMetadata,
 	Activity,
@@ -36,6 +41,59 @@ export interface WeeklyPlanContextProvider {
 	loadSnapshot(userId: string, asOf: string): Promise<WeeklyPlanContext>;
 }
 
+interface PlannedRunSessionSummary {
+	date: string | null;
+	summary: string | null;
+	distance_km: number | null;
+}
+
+type PlannedWeekSummary =
+	| {
+			available: false;
+			total_run_distance_km: null;
+			run_sessions: [];
+	  }
+	| {
+			available: true;
+			distance_coverage: "complete" | "partial";
+			total_run_distance_km: number | null;
+			run_sessions: PlannedRunSessionSummary[];
+	  };
+
+interface ActualTrainingWeekSummary {
+	total_run_distance_km: number;
+	total_training_dose: number;
+	run_days: number;
+	longest_run: { date: string; distance_km: number } | null;
+	quality_stimulus_days: Array<{
+		date: string;
+		training_types: string[];
+		names: string[];
+		notes: string[];
+		total_distance_km: number;
+	}>;
+}
+
+export interface RecentTrainingWeek {
+	week_start: string;
+	week_end: string;
+	complete: boolean;
+	planned: PlannedWeekSummary;
+	actual: ActualTrainingWeekSummary;
+}
+
+interface AbsorbedLoadWeek {
+	week_start: string;
+	actual_run_distance_km: number;
+	actual_training_dose: number;
+}
+
+export interface AbsorbedLoad {
+	complete_weeks_considered: AbsorbedLoadWeek[];
+	distance_anchor_km: number | null;
+	latest_complete_week: AbsorbedLoadWeek | null;
+}
+
 export interface WeeklyPlanContext {
 	as_of: string;
 	plan_start: string;
@@ -46,8 +104,8 @@ export interface WeeklyPlanContext {
 		stage: Record<string, unknown> | null;
 	};
 	recent_activities: Array<Record<string, unknown>>;
-	recent_training_weeks: Array<Record<string, unknown>>;
-	absorbed_load: Record<string, unknown>;
+	recent_training_weeks: RecentTrainingWeek[];
+	absorbed_load: AbsorbedLoad;
 	recent_feedback: Array<Record<string, unknown>>;
 	fitness_state: Record<string, unknown>;
 	injury_and_recovery: Record<string, unknown>;
@@ -132,36 +190,21 @@ export class MySqlWeeklyPlanContextProvider
 	}
 }
 
-function absorbedLoadShape(weeks: Array<Record<string, unknown>>) {
+function absorbedLoadShape(weeks: RecentTrainingWeek[]): AbsorbedLoad {
 	const complete = weeks
 		.filter((week) => week.complete === true)
 		.slice(-3)
-		.map((week) => {
-			const actual = record(week.actual);
-			return {
-				week_start: string(week.week_start),
-				actual_run_distance_km: number(actual?.total_run_distance_km) ?? 0,
-				actual_training_dose: number(actual?.total_training_dose) ?? 0,
-			};
-		});
-	const distances = complete
-		.map((week) => week.actual_run_distance_km)
-		.sort((left, right) => left - right);
+		.map((week) => ({
+			week_start: week.week_start,
+			actual_run_distance_km: week.actual.total_run_distance_km,
+			actual_training_dose: week.actual.total_training_dose,
+		}));
+	const distances = complete.map((week) => week.actual_run_distance_km);
 	return {
 		complete_weeks_considered: complete,
 		distance_anchor_km: median(distances),
 		latest_complete_week: complete.at(-1) ?? null,
 	};
-}
-
-function median(values: number[]): number | null {
-	if (values.length === 0) return null;
-	const middle = Math.floor(values.length / 2);
-	const upper = values[middle];
-	if (upper === undefined) return null;
-	if (values.length % 2 === 1) return upper;
-	const lower = values[middle - 1];
-	return lower === undefined ? null : round((lower + upper) / 2, 2);
 }
 
 function trainingPosition(plan: ActiveMasterPlanMetadata | null, day: string) {
@@ -219,15 +262,15 @@ function recentTrainingWeeks(
 	plans: Array<Record<string, unknown> | null>,
 	activities: Activity[],
 	asOf: string,
-): Array<Record<string, unknown>> {
+): RecentTrainingWeek[] {
 	return weekStarts.map((weekStart, index) => {
 		const weekEnd = addDays(weekStart, 6);
 		const weekActivities = activities.filter((activity) => {
 			const day = activityDay(activity);
 			return weekStart <= day && day <= weekEnd;
 		});
-		const runActivities = weekActivities.filter(isRunActivity);
-		const qualityActivities = runActivities.filter(isQualityActivity);
+		const runActivities = weekActivities.filter(isRunningActivity);
+		const qualityActivities = runActivities.filter(isQualityRunningActivity);
 		const runsByDay = groupActivitiesByDay(runActivities);
 		const qualityByDay = groupActivitiesByDay(qualityActivities);
 		const longestRunDay =
@@ -266,6 +309,7 @@ function recentTrainingWeeks(
 							dayActivities.map((activity) => activity.trainKind),
 						),
 						names: unique(dayActivities.map((activity) => activity.name)),
+						notes: unique(dayActivities.map((activity) => activity.sportNote)),
 						total_distance_km: activityDistanceKm(dayActivities),
 					}),
 				),
@@ -274,7 +318,9 @@ function recentTrainingWeeks(
 	});
 }
 
-function plannedWeekShape(plan: Record<string, unknown> | null) {
+function plannedWeekShape(
+	plan: Record<string, unknown> | null,
+): PlannedWeekSummary {
 	if (!plan)
 		return { available: false, total_run_distance_km: null, run_sessions: [] };
 	const runSessions = records(plan.sessions)
@@ -329,19 +375,6 @@ function unique(values: Array<string | null>): string[] {
 	return [
 		...new Set(values.filter((value): value is string => value !== null)),
 	];
-}
-
-function isRunActivity(activity: Activity): boolean {
-	return (
-		activity.sport?.toLowerCase().includes("run") === true ||
-		activity.sportName?.toLowerCase().includes("run") === true
-	);
-}
-
-function isQualityActivity(activity: Activity): boolean {
-	return /threshold|tempo|interval|vo2|max|anaerobic|race[_ -]?pace/i.test(
-		activity.trainKind ?? "",
-	);
 }
 
 function activityShape(activity: Activity) {
@@ -477,12 +510,6 @@ function records(value: unknown): Record<string, unknown>[] {
 					typeof item === "object" && item !== null && !Array.isArray(item),
 			)
 		: [];
-}
-
-function record(value: unknown): Record<string, unknown> | null {
-	return typeof value === "object" && value !== null && !Array.isArray(value)
-		? (value as Record<string, unknown>)
-		: null;
 }
 
 function containsDay(value: Record<string, unknown>, day: string): boolean {

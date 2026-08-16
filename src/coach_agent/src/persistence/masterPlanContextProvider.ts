@@ -9,6 +9,10 @@ import {
 	planningStartDate,
 	shanghaiDay,
 } from "../utils/planningDate.js";
+import {
+	isQualityRunningActivity,
+	isRunningActivity,
+} from "./activityClassification.js";
 import type {
 	ActiveMasterPlanMetadata,
 	Activity,
@@ -75,11 +79,7 @@ export class MySqlMasterPlanContextProvider
 		]);
 		if (!profile)
 			throw new Error(`required user profile not found for ${userId}`);
-		const runs = activities.filter(
-			(a) =>
-				a.sport?.toLowerCase().startsWith("run") ||
-				a.sportName?.toLowerCase().includes("run"),
-		);
+		const runs = activities.filter(isRunningActivity);
 		return ContextSnapshotSchema.parse({
 			user: { id: userId, profile: profileShape(profile) },
 			race_target: raceTargetShape(raceTarget),
@@ -253,11 +253,7 @@ function weeklyHistory(
 			long_run_km: acts.length
 				? round(Math.max(...acts.map((a) => a.distanceM ?? 0)) / 1000)
 				: null,
-			speed_session_count: acts.filter((a) =>
-				/interval|tempo|threshold|speed/i.test(
-					`${a.trainKind ?? ""} ${a.name ?? ""}`,
-				),
-			).length,
+			speed_session_count: acts.filter(isQualityRunningActivity).length,
 			race_count: acts.filter((a) => /race|比赛|马拉松/i.test(a.name ?? ""))
 				.length,
 			training_dose: round(ls.reduce((s, x) => s + x.trainingDose, 0)),

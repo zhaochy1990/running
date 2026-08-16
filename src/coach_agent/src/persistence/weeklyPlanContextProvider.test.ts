@@ -264,6 +264,7 @@ test("weekly context combines all weekly planning evidence", async () => {
 					date: "2026-08-14",
 					training_types: ["threshold", "vo2max"],
 					names: ["Threshold run", "Interval cooldown"],
+					notes: ["controlled"],
 					total_distance_km: 12,
 				},
 			],

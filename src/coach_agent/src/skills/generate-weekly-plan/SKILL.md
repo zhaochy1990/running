@@ -40,12 +40,12 @@ Complete this step only after choosing one numeric weekly running-distance targe
 
 Read exactly one phase reference matching `training_position.phase`. Choose the most specific match first, so any phase containing `marathon` or `马拉松` uses the marathon reference even when its name also contains `build` or `建设`:
 
-- base/aerobic/foundation → `references/base.md`
-- build/progression/threshold → `references/build.md`
-- speed/专项速度 → `references/speed.md`
-- marathon/马拉松专项 → `references/marathon.md`
-- taper/赛前减量 → `references/taper.md`
-- recovery/赛后恢复 → `references/recovery.md`
+- base/aerobic/foundation/基础期 → `references/base.md`
+- build/progression/threshold/提升期/进展期 → `references/build.md`
+- speed/专项速度/专项速度周期/速度期 → `references/speed.md`
+- marathon/马拉松专项/马拉松专项期 → `references/marathon.md`
+- taper/赛前减量/赛前减量期 → `references/taper.md`
+- recovery/赛后恢复/赛后恢复期 → `references/recovery.md`
 
 Select the nearest upcoming milestone with `completed_actual: null` inside the current phase. If none is upcoming, use the latest unmet phase milestone as diagnostic evidence rather than blindly rescheduling it. Choose this week's key stimulus as a conservative bridge from the athlete's most recent completed stimulus toward the selected milestone. The bridge must be smaller than or equal to the milestone demand; do not rehearse the full milestone early. If no phase milestone is present, use the stage `key_sessions` and phase focus.
 
@@ -58,6 +58,8 @@ Build a stimulus signature from the latest two weeks of actual quality sessions:
 Use 1Q1L when load is high, recovery is uncertain, the prior long run was unusually costly, or the phase milestone can be served inside the long run. Use 2Q1L only when recovery is stable, recent load is controlled, and both quality sessions have distinct phase-specific purposes. A long run with a sustained MP/HMP/threshold segment counts as both L and one Q. Recovery weeks use 0Q1L.
 
 Separate quality stimuli by at least 48 hours. Place at least one explicit `kind: rest` day in every plan. Never schedule a quality session immediately after a costly long run.
+
+Protect a key long run that contains MP/HMP/threshold work: normally make the preceding day rest or a short recovery run no longer than 10% of the weekly distance target. A 10-12% preceding run is acceptable only when recent consecutive-day history shows it is well tolerated. Exceed 12% only for an explicit back-to-back endurance milestone with established tolerance; otherwise move that easy volume earlier in the week. Do not create an accidental weekend load spike merely to reach the weekly total.
 
 ## 5. Build and audit the structured plan
 
@@ -75,7 +77,8 @@ Before returning, audit all of these conditions:
 2. phase focus and nearest milestone are served by the key stimulus;
 3. stimulus signature differs from the latest completed comparable quality session;
 4. Q/L count, 48-hour separation, explicit rest day, and injury constraints pass;
-5. every workout block, session total, date, nutrition day, schema stamp, and strength ID is internally consistent.
+5. the day before a quality long run passes the back-to-back exposure rule;
+6. every workout block, session total, date, nutrition day, schema stamp, and strength ID is internally consistent.
 
 In `coach_notes`, concisely record the actual complete-week anchor, chosen weekly target and load decision, phase/milestone bridge, rotation decision, and the recovery trigger that would reduce or cancel quality.
 
