@@ -42,7 +42,10 @@ func newWeeklyPlanRoutes(store WeeklyPlanStore, log *zap.Logger) *weeklyPlanRout
 	return &weeklyPlanRoutes{store: store, log: log}
 }
 
-func (w *weeklyPlanRoutes) register(rg *gin.RouterGroup) {
+// registerReads mounts the Weekly Plan read surface on the shared authenticated
+// group. User callers remain tenant-scoped, while verified admin and internal
+// callers may inspect any user's plan.
+func (w *weeklyPlanRoutes) registerReads(rg *gin.RouterGroup) {
 	if w.store == nil {
 		return
 	}
@@ -50,6 +53,14 @@ func (w *weeklyPlanRoutes) register(rg *gin.RouterGroup) {
 	rg.GET("/api/:user/plan/weeks/:weekName", w.detail)
 	rg.GET("/api/:user/weeks", w.listSummaries)
 	rg.GET("/api/:user/weeks/:weekName", w.weekDetail)
+}
+
+// registerWrites keeps Weekly Plan mutations on the default-deny route group,
+// so an admin-dashboard token cannot edit an athlete's feedback.
+func (w *weeklyPlanRoutes) registerWrites(rg *gin.RouterGroup) {
+	if w.store == nil {
+		return
+	}
 	rg.PUT("/api/:user/weeks/:weekName/feedback", w.putFeedback)
 }
 
