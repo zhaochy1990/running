@@ -26,7 +26,7 @@ const usernameMap: Record<string, string> = {
 	zhaochaoyi: "f10bc353-01ab-4db1-af9f-d9305ea9a532",
 };
 
-function requireUserId(): string {
+function requireUserId(): { userId: string; username: string } {
 	const username = process.argv[2];
 	if (!username) {
 		console.error("Missing username. Usage: npm run test:deepagent -- <user>");
@@ -41,10 +41,10 @@ function requireUserId(): string {
 		);
 		process.exit(1);
 	}
-	return userId;
+	return { userId, username };
 }
 
-const userId = requireUserId();
+const { userId, username } = requireUserId();
 const config = loadConfig();
 const store = StrideDataStore.create(readStrideMySqlConfig(config));
 const agent = await createCoachAgent(store, config);
@@ -111,10 +111,10 @@ function printAnswer(res: { messages: Array<{ content: unknown }> }): void {
 	const second = String(now.getSeconds()).padStart(2, "0");
 
 	// YYYY-MM-DD_hh:mm:ss_{userId}.json
-	var outputFileName = `${year}-${month}-${day}_${hour}:${minute}:${second}_${userId}.json`;
+	var outputFileName = `${year}-${month}-${day}_${hour}:${minute}:${second}_${username}.json`;
 
 	writeFileSync(
-		`./test-output/${outputFileName}`,
+		`./test-output/master-plan/${outputFileName}`,
 		JSON.stringify(rawJson, null, 2),
 	);
 	console.log(`\n===== 最后回答已写入 ./test-output/${outputFileName} =====`);

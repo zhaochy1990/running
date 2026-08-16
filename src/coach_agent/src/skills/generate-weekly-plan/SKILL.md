@@ -25,6 +25,13 @@ Based on the user's season goal, current training phase and stage, recent traini
 - daily training schedule for the target week
 - specific content for each training session (including training type, volume, intensity, etc.)
 
+- take references/8weeks.md for an example traning plan for users that are in the 8 weeks before their race.
+
+我们要保证用户的周训练计划遵循1Q1L或者2Q1L的典型结构。
+注意，我们需要根据用户前面4周的负荷来规划下一周的训练负荷。举例如下，
+1. example1，用户前一周的训练完成程度不高而下一周是恢复周，那么下一周就不用完全按照恢复周来训练，负荷可以适当提高
+2. example2，用户前一周的训练强度超过了计划的强度，而下一周计划继续加强度，这时候需要根据用户的恢复情况（采用静息心率，RHV等健康指标来进行判断）来调整下一周的训练负荷，如果恢复的好，那么可以按照训练计划继续加量，如果恢复的不好，需要适当减量，避免过度训练导致受伤
+
 The target week is exactly `plan_start` through six days after `plan_start`. Do not
 use the system date or independently reinterpret “this week” or “next week”. Every
 session and nutrition date must fall within that target week, and nutrition must
