@@ -52,7 +52,7 @@ const masterPlanContextProvider = new MySqlMasterPlanContextProvider(store);
 
 console.log(`Using userId: ${userId}`);
 
-const asof = "2026-08-14";
+const asof = "2026-08-16";
 
 const res = await masterPlanContextProvider.loadSnapshot(userId, asof);
 console.log(res);
