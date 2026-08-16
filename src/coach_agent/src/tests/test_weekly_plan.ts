@@ -16,21 +16,40 @@ import {
 	LlmTokenUsageTracker,
 } from "../utils/tokenUsage.js";
 
+process.env.STRIDE_COACH_ENV = "prod";
+
+const usernameMap: Record<string, string> = {
+	pan: "5ee229a6-cdc1-4260-84d3-71ec622126c2",
+	dingchentao: "7bd56762-3b04-42a6-9d8b-98f595628430",
+	lvge: "0a74ac88-629e-4b8e-97c8-d49ccf5a986b",
+	dehua: "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
+	renzhen: "bffa65bc-4501-41e7-a68c-96da76d5b7bc",
+	zhaochaoyi: "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+};
+
+function requireUserId(): string {
+	const username = process.argv[2];
+	if (!username) {
+		console.error("Missing username. Usage: npm run test:deepagent -- <user>");
+		process.exit(1);
+	}
+	const userId = usernameMap[username];
+	if (!userId) {
+		console.error(
+			`Unknown username: ${username}. Valid usernames: ${Object.keys(
+				usernameMap,
+			).join(", ")}`,
+		);
+		process.exit(1);
+	}
+	return userId;
+}
+
+const asof = "2026-08-16";
+const userId = requireUserId();
 const config = loadConfig();
 const store = StrideDataStore.create(readStrideMySqlConfig(config));
 const agent = await createCoachAgent(store, config);
-
-const userId = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
-const asof = "2026-06-10";
-// const userId = "11c2e582-5a85-4633-81d2-df7e37ad7b48";
-
-// await agent.invoke({
-//   messages: [{ role: "user", content: "我这周练的怎么样？" }],
-// }, cfg);
-
-// await agent.invoke({
-//   messages: [{ role: "user", content: "我这周的训练计划是什么？" }],
-// }, cfg);
 
 // 回答来源：交互式从 stdin 读；自动化测试则用 HITL_ANSWERS（\n 分隔）按序喂入，
 // 避免管道 EOF 关闭 readline 的问题。
@@ -139,14 +158,6 @@ async function askWithHITL(content: string, thread: string): Promise<void> {
 		console.log(`\n${formatTokenUsageReport(tokenUsage.summary())}`);
 	}
 }
-
-// // ── Scenario：生成赛季计划 → Coach 先回看历史比赛 → 若发现跑崩则追问原因 ──
-
-// Test race goal: 2026-10-18 西安马拉松，目标 2:50:00，全马；每周 6 天训练，单次不超过 3 小时，无伤病。
-// await askWithHITL(
-// 	"帮我生成一个新的赛季训练计划，目标是 2026-10-18 西安马拉松 2:50:00。全马；每周可训练 6 天，单次不超过 3 小时，目前无伤病。",
-// 	"session-master-plan",
-// );
 
 const provider = new MySqlWeeklyPlanContextProvider(store);
 await provider.loadSnapshot(userId, asof);
