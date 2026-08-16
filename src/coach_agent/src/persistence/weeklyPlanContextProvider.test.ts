@@ -378,7 +378,13 @@ test("weekly context keeps a Monday as the planning start", async () => {
 		},
 		async getActivitiesByDateRange(_userId, start, end) {
 			activityRanges.push([start, end]);
-			return [];
+			return [
+				{
+					...activity,
+					labelId: "earliest-week-monday",
+					date: new Date("2026-07-20T04:00:00Z"),
+				},
+			];
 		},
 		async getWeeklyFeedbackByDateRange() {
 			return [];
@@ -400,6 +406,8 @@ test("weekly context keeps a Monday as the planning start", async () => {
 	const snapshot = await provider.loadSnapshot("athlete", "2026-08-17");
 	assert.equal(snapshot.plan_start, "2026-08-17");
 	assert.deepEqual(activityRanges, [["2026-07-20", "2026-08-17"]]);
+	assert.equal(snapshot.recent_training_weeks[0]?.actual.run_days, 1);
+	assert.equal(snapshot.recent_activities.length, 0);
 });
 
 test("weekly context reports unavailable STRIDE load without fallback", async () => {

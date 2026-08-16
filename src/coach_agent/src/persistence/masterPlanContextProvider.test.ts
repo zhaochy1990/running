@@ -3,7 +3,7 @@ import test from "node:test";
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import { ContextSnapshotSchema } from "../graph/master_plan/index.js";
 import { createAssessmentSnapshot } from "../graph/master_plan/testFixtures.js";
-import { StrideDataStore } from "./dataStore.js";
+import { type Activity, StrideDataStore } from "./dataStore.js";
 import { MySqlMasterPlanContextProvider } from "./masterPlanContextProvider.js";
 
 test("user profile loader returns dob as a Shanghai calendar day", async () => {
@@ -566,4 +566,108 @@ test("context provider materializes complete zero-run weeks", async () => {
 	assert.equal(snapshot.recent_history.weeks.length, 17);
 	assert.equal(snapshot.recent_history.weeks.at(-2)?.run_day_count, 0);
 	assert.equal(snapshot.recent_history.weeks.at(-2)?.distance_km, 0);
+});
+
+test("context provider counts split quality activities once per training day", async () => {
+	const qualityActivity: Activity = {
+		userId: "athlete",
+		labelId: "quality-main",
+		name: "1km interval repeats",
+		sportName: "Outdoor Run",
+		date: new Date("2026-08-04T10:00:00Z"),
+		distanceM: 8000,
+		durationS: 2400,
+		avgPaceSKm: 300,
+		adjustedPace: null,
+		bestKmPace: null,
+		maxPace: null,
+		avgHr: 160,
+		maxHr: null,
+		avgCadence: null,
+		maxCadence: null,
+		avgPower: null,
+		maxPower: null,
+		avgStepLenCm: null,
+		ascentM: null,
+		descentM: null,
+		caloriesKcal: null,
+		aerobicEffect: null,
+		anaerobicEffect: null,
+		trainingLoad: null,
+		strideDose: null,
+		vo2max: null,
+		temperature: null,
+		humidity: null,
+		feelsLike: null,
+		windSpeed: null,
+		sportNote: null,
+		sport: "run_outdoor",
+		trainKind: null,
+		feel: null,
+		verticalOscillationMm: null,
+		groundContactTimeMs: null,
+		verticalRatioPct: null,
+		pauses: null,
+		provider: "coros",
+	};
+	const provider = new MySqlMasterPlanContextProvider({
+		async getUserProfile() {
+			return {
+				userId: "athlete",
+				displayName: null,
+				dob: null,
+				sex: null,
+				heightCm: null,
+				weightKg: 70,
+				runningAgeRange: "5_10",
+			};
+		},
+		async getRaceTarget() {
+			return null;
+		},
+		async getUserInjuries() {
+			return [];
+		},
+		async getActivitiesByDateRange() {
+			return [
+				qualityActivity,
+				{
+					...qualityActivity,
+					labelId: "quality-cooldown",
+					name: "threshold cooldown segment",
+					date: new Date("2026-08-04T11:00:00Z"),
+				},
+			];
+		},
+		async getDailyTrainingLoadByDateRange() {
+			return [];
+		},
+		async getDailyRecoveryByDateRange() {
+			return [];
+		},
+		async getPersonalBests() {
+			return [];
+		},
+		async getLatestRunningCalibration() {
+			return null;
+		},
+		async getRaceHistory() {
+			return [];
+		},
+		async getMasterPlanMetadataForDate() {
+			return null;
+		},
+	});
+
+	const snapshot = await provider.loadSnapshot(
+		"athlete",
+		"2026-08-11T00:00:00Z",
+	);
+
+	const activityWeek = snapshot.recent_history.weeks.find(
+		(week) => week.week_start === "2026-08-03",
+	);
+	assert.equal(activityWeek?.run_count, 2);
+	assert.equal(activityWeek?.run_day_count, 1);
+	assert.equal(activityWeek?.speed_session_count, 1);
 });

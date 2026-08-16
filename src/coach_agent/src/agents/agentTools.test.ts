@@ -120,6 +120,8 @@ test("weekly-plan skill routes every canonical phase name", async () => {
 		assert.match(skill, new RegExp(phase));
 	assert.match(skill, /preceding day rest or a short recovery run/);
 	assert.match(skill, /Exceed 12% only for an explicit back-to-back/);
+	assert.match(skill, /Treat recovery as a veto, not an average/);
+	assert.match(skill, /target 80-90% of the actual anchor/);
 });
 
 const masterPlan = {

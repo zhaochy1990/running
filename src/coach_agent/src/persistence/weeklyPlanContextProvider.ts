@@ -184,7 +184,9 @@ export class MySqlWeeklyPlanContextProvider
 			week_folder: weekFolder(planStart),
 			lookback: { start_date: start, end_date: end, days: LOOKBACK_DAYS },
 			training_position: trainingPosition(plan, planStart),
-			recent_activities: activities.map(activityShape),
+			recent_activities: activities
+				.filter((activity) => activityDay(activity) >= start)
+				.map(activityShape),
 			recent_training_weeks: recentWeeks,
 			absorbed_load: absorbedLoadShape(recentWeeks),
 			recent_feedback: feedback.map(feedbackShape),

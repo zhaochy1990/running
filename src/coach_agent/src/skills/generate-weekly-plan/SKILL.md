@@ -30,6 +30,8 @@ For an ordinary load week, use these starting bands and then apply recovery/inju
 | `load_ratio` >1.25, worsening recovery, active restriction, or repeated high-strain days | -10% to -20%; remove a quality stimulus |
 | `load_ratio` <0.75 with stable recovery | rebuild by 5-10%, not an abrupt return to the master range |
 
+Treat recovery as a veto, not an average. When recent raw RHR rises while HRV falls versus the preceding measured window, classify recovery as worsening even if the `load_ratio` row alone would allow maintenance. Select the most conservative applicable row: target 80-90% of the actual anchor and remove one formal quality stimulus. Use the upper half only when the change is small, the latest easy-run response is normal, and there is no injury, sleep, or high-strain warning. Preserve the phase-specific stimulus family inside the reduced dose; do not use milestone pressure or a master-plan volume range to raise the target.
+
 Do not prescribe an ordinary-week increase above 10% from the larger of the latest complete week and the 2-3-week median. A stale master-plan lower bound never justifies a larger jump. When complete history is sparse, hold or reduce instead of inventing fitness.
 
 For an explicit recovery week, normally use 70-80% of the absorbed anchor, zero formal quality sessions, and an easy long run. If the preceding complete week was already materially under the anchor and `load_ratio < 0.90` with stable recovery, use 80-90% instead of stacking another deep cut. Taper and race weeks follow their phase reference.

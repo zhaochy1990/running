@@ -253,7 +253,9 @@ function weeklyHistory(
 			long_run_km: acts.length
 				? round(Math.max(...acts.map((a) => a.distanceM ?? 0)) / 1000)
 				: null,
-			speed_session_count: acts.filter(isQualityRunningActivity).length,
+			speed_session_count: new Set(
+				acts.filter(isQualityRunningActivity).map(activityDay),
+			).size,
 			race_count: acts.filter((a) => /race|比赛|马拉松/i.test(a.name ?? ""))
 				.length,
 			training_dose: round(ls.reduce((s, x) => s + x.trainingDose, 0)),
