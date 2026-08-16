@@ -113,8 +113,12 @@ func newWeeklyPlanHarness(t *testing.T) *weeklyPlanHarness {
 		feedback:   map[string]storage.WeeklyFeedback{},
 		now:        time.Date(2026, 8, 11, 1, 2, 3, 0, time.UTC),
 	}
+	verifier, err := NewJWTVerifierFromKeyWithAdmin(&key.PublicKey, testIssuer, testAudience, testAdminAudience)
+	if err != nil {
+		t.Fatalf("admin verifier: %v", err)
+	}
 	svc := NewService(Config{
-		Auth:            NewAuthenticator(testToken, NewJWTVerifierFromKey(&key.PublicKey, testIssuer, testAudience)),
+		Auth:            NewAuthenticator(testToken, verifier),
 		WeeklyPlanStore: store,
 	})
 	return &weeklyPlanHarness{svc: svc, store: store, key: key}
@@ -129,6 +133,19 @@ func (h *weeklyPlanHarness) bearer(t *testing.T, sub string) map[string]string {
 	signed, err := tok.SignedString(h.key)
 	if err != nil {
 		t.Fatalf("sign: %v", err)
+	}
+	return map[string]string{"Authorization": "Bearer " + signed}
+}
+
+func (h *weeklyPlanHarness) adminBearer(t *testing.T, sub string) map[string]string {
+	t.Helper()
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"sub": sub, "iss": testIssuer, "aud": testAdminAudience, "role": "admin",
+		"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
+	})
+	signed, err := tok.SignedString(h.key)
+	if err != nil {
+		t.Fatalf("sign admin token: %v", err)
 	}
 	return map[string]string{"Authorization": "Bearer " + signed}
 }
@@ -218,6 +235,63 @@ func weeklyPlanFixture(id, userID, weekStart string, contentVersion int8, conten
 		Status: storage.WeeklyPlanStatusActive, Revision: 3,
 		CreatedAt: time.Date(2026, 7, 20, 1, 2, 3, 0, time.UTC),
 		UpdatedAt: time.Date(2026, 7, 21, 4, 5, 6, 0, time.UTC),
+	}
+}
+
+func TestWeeklyPlanReadsAuthorizeUserAdminAndInternalCallers(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "user-a"
+	weekName := "2026-07-27_08-02"
+	h.store.plans[userID] = []storage.WeeklyPlan{
+		weeklyPlanFixture("plan-1", userID, "2026-07-27", storage.WeeklyPlanContentStructured, "{\"sessions\":[],\"nutrition\":[]}"),
+	}
+	h.store.summaries[userID] = []storage.WeekSummary{{
+		PlanID: "plan-1", WeekStart: "2026-07-27", ContentVersion: storage.WeeklyPlanContentStructured,
+	}}
+
+	paths := []string{
+		"/api/" + userID + "/plan/weeks",
+		"/api/" + userID + "/plan/weeks/" + weekName,
+		"/api/" + userID + "/weeks",
+		"/api/" + userID + "/weeks/" + weekName,
+	}
+	callers := []struct {
+		name    string
+		headers map[string]string
+	}{
+		{name: "user self", headers: h.bearer(t, userID)},
+		{name: "admin", headers: h.adminBearer(t, "admin-user")},
+		{name: "internal", headers: internalHdr()},
+	}
+	for _, caller := range callers {
+		for _, path := range paths {
+			t.Run(caller.name+" "+path, func(t *testing.T) {
+				resp := h.do(http.MethodGet, path, caller.headers)
+				if resp.Code != http.StatusOK {
+					t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+				}
+			})
+		}
+	}
+
+	for _, path := range paths {
+		resp := h.do(http.MethodGet, path, h.bearer(t, "other-user"))
+		if resp.Code != http.StatusForbidden {
+			t.Fatalf("cross-user path=%s status=%d body=%s", path, resp.Code, resp.Body.String())
+		}
+	}
+}
+
+func TestWeeklyPlanAdminCannotWriteFeedback(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	resp := h.doBody(
+		http.MethodPut,
+		"/api/user-a/weeks/2026-07-27_08-02/feedback",
+		h.adminBearer(t, "admin-user"),
+		strings.NewReader("{\"content\":\"admin edit\"}"),
+	)
+	if resp.Code != http.StatusForbidden || resp.Body.String() != "{\"error\":\"forbidden\"}" {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
 	}
 }
 

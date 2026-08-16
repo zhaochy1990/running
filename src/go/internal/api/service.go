@@ -242,9 +242,11 @@ func (s *Service) Router() *gin.Engine {
 	r.GET("/api/readyz/plan-setup", s.planSetupReadiness)
 
 	authenticated := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
-	// Master-plan path reads are the only current surface that explicitly admits
-	// the separate admin JWT tier. The /me handler still rejects it.
+	// Plan path reads explicitly admit the separate admin JWT tier. The
+	// master-plan /me handler still rejects it, and Weekly Plan mutations remain
+	// on the default-deny child group below.
 	s.masterPlan.register(authenticated)
+	s.weeklyPlan.registerReads(authenticated)
 
 	// Existing routes accept only the original user/internal tiers. Keeping this
 	// default deny prevents an admin-dashboard token from silently inheriting
@@ -264,7 +266,7 @@ func (s *Service) Router() *gin.Engine {
 	s.goals.register(authed)
 	s.healthMetrics.register(authed)
 	s.strideMetrics.register(authed)
-	s.weeklyPlan.register(authed)
+	s.weeklyPlan.registerWrites(authed)
 	return r
 }
 
