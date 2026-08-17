@@ -1498,7 +1498,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates a new active plan. If one already exists, replace_existing must be true; the prior plan is archived atomically.",
+                "description": "Creates a new active plan. Replacing one requires replace_existing plus the confirmed active plan id and revision; the prior plan is archived atomically.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2633,6 +2633,12 @@ const docTemplate = `{
                 "content": {
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "expected_active_plan_id": {
+                    "type": "string"
+                },
+                "expected_active_revision": {
+                    "type": "integer"
                 },
                 "replace_existing": {
                     "type": "boolean"

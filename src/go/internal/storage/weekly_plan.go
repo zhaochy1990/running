@@ -15,6 +15,17 @@ import (
 // without explicitly allowing replacement of the active plan for that week.
 var ErrWeeklyPlanExists = errors.New("storage: active weekly plan already exists")
 
+// ErrWeeklyPlanConflict means the active plan changed after an administrator
+// confirmed a specific plan revision for replacement.
+var ErrWeeklyPlanConflict = errors.New("storage: active weekly plan changed")
+
+// WeeklyPlanReplacement is the active row revision an administrator reviewed
+// and explicitly confirmed replacing.
+type WeeklyPlanReplacement struct {
+	PlanID   string
+	Revision int64
+}
+
 func (s *Store) AutoMigrateWeeklyPlan(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).AutoMigrate(&WeeklyPlan{}); err != nil {
 		return fmt.Errorf("storage: automigrate weekly_plan: %w", err)
@@ -151,12 +162,12 @@ func (s *Store) GetActiveWeeklyPlan(ctx context.Context, userID, weekStart strin
 }
 
 // ApplyStructuredWeeklyPlan inserts a new active structured plan for one
-// Shanghai week. When replaceExisting is true, the prior active row is archived
-// in the same transaction before the new active row is inserted. All rows for
-// the user/week are locked so the active transition is serialized. The new
-// plan has its own identity and therefore starts at revision 1.
+// Shanghai week. Replacing an active row requires its exact plan ID and revision;
+// that row is archived in the same transaction before the new active row is
+// inserted. All rows for the user/week are locked so the active transition is
+// serialized. The new plan has its own identity and therefore starts at revision 1.
 func (s *Store) ApplyStructuredWeeklyPlan(
-	ctx context.Context, userID, weekStart, content string, replaceExisting bool,
+	ctx context.Context, userID, weekStart, content string, replacement *WeeklyPlanReplacement,
 ) (*WeeklyPlan, *WeeklyPlan, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -189,21 +200,36 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 					replaced = &rows[i]
 				}
 			}
-			if replaced != nil && !replaceExisting {
+			if replaced == nil {
+				if replacement != nil {
+					return ErrWeeklyPlanConflict
+				}
+			} else if replacement == nil {
 				return ErrWeeklyPlanExists
+			} else if replaced.PlanID != replacement.PlanID || replaced.Revision != replacement.Revision {
+				return ErrWeeklyPlanConflict
 			}
 
 			now := time.Now().UTC().Truncate(time.Millisecond)
 			if replaced != nil {
-				if err := tx.Model(&WeeklyPlan{}).
-					Where("plan_id = ? AND user_id = ? AND status = ?", replaced.PlanID, uid, WeeklyPlanStatusActive).
+				result := tx.Model(&WeeklyPlan{}).
+					Where("plan_id = ? AND user_id = ? AND status = ? AND revision = ?", replaced.PlanID, uid, WeeklyPlanStatusActive, replaced.Revision).
 					Updates(map[string]any{
 						"status":      WeeklyPlanStatusArchived,
 						"status_slot": nil,
+						"revision":    replaced.Revision + 1,
 						"updated_at":  now,
-					}).Error; err != nil {
-					return fmt.Errorf("storage: archive prior weekly plan: %w", err)
+					})
+				if result.Error != nil {
+					return fmt.Errorf("storage: archive prior weekly plan: %w", result.Error)
 				}
+				if result.RowsAffected != 1 {
+					return ErrWeeklyPlanConflict
+				}
+				replaced.Status = WeeklyPlanStatusArchived
+				replaced.StatusSlot = nil
+				replaced.Revision++
+				replaced.UpdatedAt = now
 			}
 
 			activeSlot := WeeklyPlanStatusActive

@@ -81,7 +81,41 @@ func validateAppliedWeeklyPlan(document map[string]any, expectedWeek string) ([]
 			return nil, fmt.Errorf("nutrition is missing %s", expectedDate)
 		}
 	}
-	return json.Marshal(document)
+	stored, err := cloneJSONMap(document)
+	if err != nil {
+		return nil, fmt.Errorf("clone weekly plan content: %w", err)
+	}
+	delete(stored, "schema")
+	delete(stored, "week_folder")
+	stripStoredWeeklyPlanMetadata(stored)
+	return json.Marshal(stored)
+}
+
+func cloneJSONMap(document map[string]any) (map[string]any, error) {
+	raw, err := json.Marshal(document)
+	if err != nil {
+		return nil, err
+	}
+	var clone map[string]any
+	if err := json.Unmarshal(raw, &clone); err != nil {
+		return nil, err
+	}
+	return clone, nil
+}
+
+func stripStoredWeeklyPlanMetadata(value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		delete(typed, "schema")
+		delete(typed, "scheduled_workout_id")
+		for _, child := range typed {
+			stripStoredWeeklyPlanMetadata(child)
+		}
+	case []any:
+		for _, child := range typed {
+			stripStoredWeeklyPlanMetadata(child)
+		}
+	}
 }
 
 func validateAppliedSession(row map[string]any, start, end time.Time) (string, int64, error) {

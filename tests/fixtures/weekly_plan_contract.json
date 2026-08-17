@@ -1,0 +1,107 @@
+{
+  "expected_week": "2026-08-17_08-23",
+  "base": {
+    "schema": "weekly-plan/v1",
+    "week_folder": "2026-08-17_08-23",
+    "sessions": [
+      {
+        "schema": "plan-session/v1",
+        "date": "2026-08-17",
+        "session_index": 0,
+        "kind": "run",
+        "summary": "Easy run",
+        "spec": {
+          "schema": "run-workout/v1",
+          "name": "Easy run",
+          "date": "2026-08-17",
+          "note": null,
+          "blocks": [
+            {
+              "repeat": 1,
+              "steps": [
+                {
+                  "step_kind": "work",
+                  "duration": { "kind": "distance_m", "value": 8000 },
+                  "target": { "kind": "pace_s_km", "low": 330, "high": 360 },
+                  "note": null,
+                  "hr_cap_bpm": 150
+                }
+              ]
+            }
+          ]
+        },
+        "notes_md": null,
+        "total_distance_m": 8000,
+        "total_duration_s": null
+      },
+      {
+        "schema": "plan-session/v1",
+        "date": "2026-08-18",
+        "session_index": 0,
+        "kind": "strength",
+        "summary": "Strength",
+        "spec": {
+          "schema": "strength-workout/v1",
+          "name": "Strength",
+          "date": "2026-08-18",
+          "note": null,
+          "exercises": [
+            {
+              "canonical_id": "T1262",
+              "display_name": "Split squat",
+              "sets": 3,
+              "target_kind": "reps",
+              "target_value": 8,
+              "rest_seconds": 60,
+              "note": null,
+              "provider_id": "T1262"
+            }
+          ]
+        },
+        "notes_md": null,
+        "total_distance_m": null,
+        "total_duration_s": 1800
+      },
+      {
+        "schema": "plan-session/v1",
+        "date": "2026-08-19",
+        "session_index": 0,
+        "kind": "rest",
+        "summary": "Rest",
+        "spec": null,
+        "notes_md": null,
+        "total_distance_m": null,
+        "total_duration_s": null
+      }
+    ],
+    "nutrition": [
+      {
+        "schema": "plan-nutrition/v1", "date": "2026-08-17",
+        "kcal_target": 2400, "carbs_g": 300, "protein_g": 130, "fat_g": null, "water_ml": 2600,
+        "meals": [{ "name": "Breakfast", "time_hint": "08:00", "kcal": 600, "carbs_g": 80, "protein_g": 30, "fat_g": null, "items_md": null }],
+        "notes_md": null
+      },
+      { "schema": "plan-nutrition/v1", "date": "2026-08-18", "kcal_target": null, "carbs_g": null, "protein_g": null, "fat_g": null, "water_ml": null, "meals": [], "notes_md": null },
+      { "schema": "plan-nutrition/v1", "date": "2026-08-19", "kcal_target": null, "carbs_g": null, "protein_g": null, "fat_g": null, "water_ml": null, "meals": [], "notes_md": null },
+      { "schema": "plan-nutrition/v1", "date": "2026-08-20", "kcal_target": null, "carbs_g": null, "protein_g": null, "fat_g": null, "water_ml": null, "meals": [], "notes_md": null },
+      { "schema": "plan-nutrition/v1", "date": "2026-08-21", "kcal_target": null, "carbs_g": null, "protein_g": null, "fat_g": null, "water_ml": null, "meals": [], "notes_md": null },
+      { "schema": "plan-nutrition/v1", "date": "2026-08-22", "kcal_target": null, "carbs_g": null, "protein_g": null, "fat_g": null, "water_ml": null, "meals": [], "notes_md": null },
+      { "schema": "plan-nutrition/v1", "date": "2026-08-23", "kcal_target": null, "carbs_g": null, "protein_g": null, "fat_g": null, "water_ml": null, "meals": [], "notes_md": null }
+    ],
+    "notes_md": null,
+    "coach_notes": "Build week"
+  },
+  "cases": [
+    { "name": "canonical nested plan", "valid": true, "patches": [] },
+    { "name": "nullable run spec", "valid": true, "patches": [{ "op": "set", "path": ["sessions", 0, "spec"], "value": null }] },
+    { "name": "empty sessions", "valid": true, "patches": [{ "op": "set", "path": ["sessions"], "value": [] }] },
+    { "name": "extra top-level field", "valid": false, "patches": [{ "op": "set", "path": ["unexpected"], "value": true }] },
+    { "name": "missing session summary", "valid": false, "patches": [{ "op": "delete", "path": ["sessions", 0, "summary"] }] },
+    { "name": "rest session with spec", "valid": false, "patches": [{ "op": "set", "path": ["sessions", 2, "spec"], "value": {} }] },
+    { "name": "run workout date mismatch", "valid": false, "patches": [{ "op": "set", "path": ["sessions", 0, "spec", "date"], "value": "2026-08-18" }] },
+    { "name": "invalid duration kind", "valid": false, "patches": [{ "op": "set", "path": ["sessions", 0, "spec", "blocks", 0, "steps", 0, "duration", "kind"], "value": "minutes" }] },
+    { "name": "invalid strength provider id", "valid": false, "patches": [{ "op": "set", "path": ["sessions", 1, "spec", "exercises", 0, "provider_id"], "value": "squat" }] },
+    { "name": "missing nutrition day", "valid": false, "patches": [{ "op": "delete", "path": ["nutrition", 6] }] },
+    { "name": "malformed meal", "valid": false, "patches": [{ "op": "delete", "path": ["nutrition", 0, "meals", 0, "protein_g"] }] }
+  ]
+}

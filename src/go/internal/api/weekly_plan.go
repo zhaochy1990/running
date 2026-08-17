@@ -26,7 +26,7 @@ type WeeklyPlanStore interface {
 	ListWeekSummaries(ctx context.Context, userID, masterPlanID string) ([]storage.WeekSummary, error)
 	ListWeekActivities(ctx context.Context, userID, dateFrom, dateTo string) ([]storage.Activity, error)
 	GetActiveWeeklyPlan(ctx context.Context, userID, weekStart string) (*storage.WeeklyPlan, error)
-	ApplyStructuredWeeklyPlan(ctx context.Context, userID, weekStart, content string, replaceExisting bool) (*storage.WeeklyPlan, *storage.WeeklyPlan, error)
+	ApplyStructuredWeeklyPlan(ctx context.Context, userID, weekStart, content string, replacement *storage.WeeklyPlanReplacement) (*storage.WeeklyPlan, *storage.WeeklyPlan, error)
 	GetWeeklyFeedback(ctx context.Context, userID, weekStart string) (*storage.WeeklyFeedback, error)
 	PutWeeklyFeedback(ctx context.Context, userID, weekStart, content string) (storage.WeeklyFeedback, error)
 }
@@ -76,8 +76,10 @@ func (w *weeklyPlanRoutes) registerAdminWrites(rg *gin.RouterGroup) {
 }
 
 type applyWeeklyPlanRequest struct {
-	Content         map[string]any `json:"content" binding:"required"`
-	ReplaceExisting bool           `json:"replace_existing"`
+	Content                map[string]any `json:"content" binding:"required"`
+	ReplaceExisting        bool           `json:"replace_existing"`
+	ExpectedActivePlanID   *string        `json:"expected_active_plan_id"`
+	ExpectedActiveRevision *int64         `json:"expected_active_revision"`
 }
 
 type applyWeeklyPlanResponse struct {
@@ -87,11 +89,12 @@ type applyWeeklyPlanResponse struct {
 }
 
 // apply imports a validated structured Weekly Plan for an existing athlete.
-// A caller must explicitly opt in to replacing an active plan; the store then
-// archives the old row and inserts the new active row atomically.
+// A caller must explicitly identify the active plan it confirmed replacing;
+// the store then archives that exact revision and inserts the new active row
+// atomically.
 //
 //	@Summary		Apply a structured Weekly Plan as an administrator
-//	@Description	Creates a new active plan. If one already exists, replace_existing must be true; the prior plan is archived atomically.
+//	@Description	Creates a new active plan. Replacing one requires replace_existing plus the confirmed active plan id and revision; the prior plan is archived atomically.
 //	@Tags			weekly-plan
 //	@Accept			json
 //	@Produce		json
@@ -135,6 +138,11 @@ func (w *weeklyPlanRoutes) apply(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
+	replacement, err := weeklyPlanReplacement(request)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_replacement"})
+		return
+	}
 	content, err := validateAppliedWeeklyPlan(request.Content, weekName)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
@@ -142,10 +150,14 @@ func (w *weeklyPlanRoutes) apply(c *gin.Context) {
 	}
 
 	created, replaced, err := w.store.ApplyStructuredWeeklyPlan(
-		c.Request.Context(), user, weekStart, string(content), request.ReplaceExisting,
+		c.Request.Context(), user, weekStart, string(content), replacement,
 	)
 	if errors.Is(err, storage.ErrWeeklyPlanExists) {
 		c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_exists"})
+		return
+	}
+	if errors.Is(err, storage.ErrWeeklyPlanConflict) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_changed"})
 		return
 	}
 	if err != nil {
@@ -173,6 +185,26 @@ func (w *weeklyPlanRoutes) apply(c *gin.Context) {
 		Plan:           weeklyPlanDetailResponse{weeklyPlanMetadataResponse: metadata, Content: document},
 		ReplacedPlanID: replacedID,
 	})
+}
+
+func weeklyPlanReplacement(request applyWeeklyPlanRequest) (*storage.WeeklyPlanReplacement, error) {
+	if !request.ReplaceExisting {
+		if request.ExpectedActivePlanID != nil || request.ExpectedActiveRevision != nil {
+			return nil, errors.New("replacement expectation requires replace_existing")
+		}
+		return nil, nil
+	}
+	if request.ExpectedActivePlanID == nil || strings.TrimSpace(*request.ExpectedActivePlanID) == "" ||
+		request.ExpectedActiveRevision == nil || *request.ExpectedActiveRevision < 1 {
+		return nil, errors.New("replacement expectation is incomplete")
+	}
+	planID, err := uuid.Parse(*request.ExpectedActivePlanID)
+	if err != nil {
+		return nil, errors.New("replacement plan id is invalid")
+	}
+	return &storage.WeeklyPlanReplacement{
+		PlanID: planID.String(), Revision: *request.ExpectedActiveRevision,
+	}, nil
 }
 
 type putWeeklyFeedbackRequest struct {

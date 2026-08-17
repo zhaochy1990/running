@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -71,8 +72,13 @@ func cloneAppliedWeeklyPlan(t *testing.T, document map[string]any) map[string]an
 
 func TestValidateAppliedWeeklyPlanAcceptsCanonicalNestedContent(t *testing.T) {
 	document := validNestedAppliedWeeklyPlan(t)
-	if _, err := validateAppliedWeeklyPlan(document, "2026-08-17_08-23"); err != nil {
+	content, err := validateAppliedWeeklyPlan(document, "2026-08-17_08-23")
+	if err != nil {
 		t.Fatalf("validate canonical plan: %v", err)
+	}
+	if string(content) == "" || strings.Contains(string(content), `"schema"`) ||
+		strings.Contains(string(content), `"week_folder"`) || strings.Contains(string(content), `"scheduled_workout_id"`) {
+		t.Fatalf("stored content contains authoring metadata: %s", content)
 	}
 }
 

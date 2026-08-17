@@ -1,7 +1,9 @@
 name: worker-go
 
-# Go async-job CI: `test` runs on every change under src/go OR to this workflow
-# file. On master, a two-entry matrix publishes the worker and API images to GHCR
+# Go async-job CI: `test` runs for Go and shared Weekly Plan contract changes;
+# `contract-parity` additionally checks the canonical Coach schema against the
+# same fixture used by the Go validator. On master, a two-entry matrix publishes
+# the worker and API images to GHCR
 # + ACR in parallel, but only when src/go/** actually changed — a workflow-only
 # edit must not republish a new CalVer image or bump the deployed version. Images:
 # the worker (Dockerfile) + HTTP API server (Dockerfile.api, ADR 0012). CVM pulls
@@ -20,9 +22,19 @@ name: worker-go
 on:
   push:
     branches: [master]
-    paths: ["src/go/**", ".github/workflows/worker-go.yml"]
+    paths:
+      - "src/go/**"
+      - "src/coach_agent/src/agents/weekly_plan/schema.ts"
+      - "src/coach_agent/src/agents/weeklyPlanSchemaParity.test.ts"
+      - "tests/fixtures/weekly_plan_contract.json"
+      - ".github/workflows/worker-go.yml"
   pull_request:
-    paths: ["src/go/**", ".github/workflows/worker-go.yml"]
+    paths:
+      - "src/go/**"
+      - "src/coach_agent/src/agents/weekly_plan/schema.ts"
+      - "src/coach_agent/src/agents/weeklyPlanSchemaParity.test.ts"
+      - "tests/fixtures/weekly_plan_contract.json"
+      - ".github/workflows/worker-go.yml"
 
 jobs:
   # Did Go SOURCE change (not just this workflow file)? Gates build-push so a
@@ -31,6 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       go: ${{ steps.filter.outputs.go }}
+      contract: ${{ steps.filter.outputs.contract }}
       calver: ${{ steps.calver.outputs.version }}
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +53,13 @@ jobs:
           filters: |
             go:
               - 'src/go/**'
+            contract:
+              - 'src/go/internal/api/weekly_plan_validation.go'
+              - 'src/go/internal/api/weekly_plan_contract_parity_test.go'
+              - 'src/coach_agent/src/agents/weekly_plan/schema.ts'
+              - 'src/coach_agent/src/agents/weeklyPlanSchemaParity.test.ts'
+              - 'tests/fixtures/weekly_plan_contract.json'
+              - '.github/workflows/worker-go.yml'
       # Compute once before the matrix fans out so both images always share the
       # same release tag, even if their runners cross a UTC date boundary.
       - name: Compute CalVer
@@ -64,11 +84,36 @@ jobs:
       - name: Test
         run: go test ./...
 
+  contract-parity:
+    if: needs.changes.outputs.contract == 'true'
+    needs: changes
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/coach_agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: src/coach_agent/package-lock.json
+      - run: npm ci
+      - name: Build Coach Agent
+        run: npm run build
+      - name: Verify Weekly Plan contract parity
+        run: node --test dist/agents/weeklyPlanSchemaParity.test.js
+
   build-push:
     # Publish only from master, and only when Go source actually changed — a
     # workflow-only edit must not republish a new CalVer image or open a bump PR.
-    if: github.event_name == 'push' && needs.changes.outputs.go == 'true'
-    needs: [test, changes]
+    if: >-
+      always() &&
+      github.event_name == 'push' &&
+      needs.changes.outputs.go == 'true' &&
+      needs.test.result == 'success' &&
+      (needs.contract-parity.result == 'success' || needs.contract-parity.result == 'skipped')
+    needs: [test, changes, contract-parity]
     runs-on: ubuntu-latest
     permissions:
       contents: read

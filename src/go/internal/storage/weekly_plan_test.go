@@ -251,23 +251,32 @@ func TestApplyStructuredWeeklyPlanCreatesAndReplacesAtomically(t *testing.T) {
 	weekStart := "2026-08-17"
 	content := "{\"schema\":\"weekly-plan/v1\",\"week_folder\":\"2026-08-17_08-23\",\"sessions\":[],\"nutrition\":[]}"
 
-	first, replaced, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, false)
+	first, replaced, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, nil)
 	if err != nil || replaced != nil || first == nil || first.Status != WeeklyPlanStatusActive || first.Revision != 1 {
 		t.Fatalf("first=%+v replaced=%+v err=%v", first, replaced, err)
 	}
-	if _, _, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, false); !errors.Is(err, ErrWeeklyPlanExists) {
+	if _, _, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, nil); !errors.Is(err, ErrWeeklyPlanExists) {
 		t.Fatalf("apply without replacement err=%v", err)
 	}
 
-	second, replaced, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, true)
-	if err != nil || replaced == nil || replaced.PlanID != first.PlanID || second == nil || second.Revision != 1 {
+	second, replaced, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, &WeeklyPlanReplacement{PlanID: first.PlanID, Revision: first.Revision})
+	if err != nil || replaced == nil || replaced.PlanID != first.PlanID || replaced.Revision != 2 || second == nil || second.Revision != 1 {
 		t.Fatalf("second=%+v replaced=%+v err=%v", second, replaced, err)
 	}
 	var rows []WeeklyPlan
-	if err := store.db.Where("user_id = ? AND week_start = ?", userID, weekStart).Order("revision").Find(&rows).Error; err != nil {
+	if err := store.db.Where("user_id = ? AND week_start = ?", userID, weekStart).Find(&rows).Error; err != nil {
 		t.Fatalf("list rows: %v", err)
 	}
-	if len(rows) != 2 || rows[0].Status != WeeklyPlanStatusArchived || rows[0].StatusSlot != nil || rows[1].Status != WeeklyPlanStatusActive || rows[1].StatusSlot == nil || *rows[1].StatusSlot != WeeklyPlanStatusActive {
+	if len(rows) != 2 {
+		t.Fatalf("rows=%+v", rows)
+	}
+	byStatus := make(map[string]WeeklyPlan, len(rows))
+	for _, row := range rows {
+		byStatus[row.Status] = row
+	}
+	archived, active := byStatus[WeeklyPlanStatusArchived], byStatus[WeeklyPlanStatusActive]
+	if archived.PlanID != first.PlanID || archived.StatusSlot != nil || archived.Revision != 2 ||
+		active.PlanID != second.PlanID || active.StatusSlot == nil || *active.StatusSlot != WeeklyPlanStatusActive || active.Revision != 1 {
 		t.Fatalf("rows=%+v", rows)
 	}
 }
@@ -276,7 +285,7 @@ func TestApplyStructuredWeeklyPlanRejectsNonMonday(t *testing.T) {
 	store := openTestStore(t)
 	migrateWeeklyPlan(t, store)
 	userID := uuid.NewString()
-	if _, _, err := store.ApplyStructuredWeeklyPlan(context.Background(), userID, "2026-08-18", "{}", false); err == nil {
+	if _, _, err := store.ApplyStructuredWeeklyPlan(context.Background(), userID, "2026-08-18", "{}", nil); err == nil {
 		t.Fatal("non-Monday week_start must fail")
 	}
 }
@@ -292,7 +301,7 @@ func TestApplyStructuredWeeklyPlanConcurrentFirstApplyReturnsConflict(t *testing
 	for range 2 {
 		go func() {
 			<-start
-			_, _, err := store.ApplyStructuredWeeklyPlan(ctx, userID, "2026-08-17", content, false)
+			_, _, err := store.ApplyStructuredWeeklyPlan(ctx, userID, "2026-08-17", content, nil)
 			errs <- err
 		}()
 	}
@@ -312,5 +321,25 @@ func TestApplyStructuredWeeklyPlanConcurrentFirstApplyReturnsConflict(t *testing
 	}
 	if successes != 1 || conflicts != 1 {
 		t.Fatalf("successes=%d conflicts=%d, want 1 each", successes, conflicts)
+	}
+}
+
+func TestApplyStructuredWeeklyPlanRejectsStaleReplacement(t *testing.T) {
+	store := openTestStore(t)
+	migrateWeeklyPlan(t, store)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	content := `{"sessions":[],"nutrition":[]}`
+	active, _, err := store.ApplyStructuredWeeklyPlan(ctx, userID, "2026-08-17", content, nil)
+	if err != nil {
+		t.Fatalf("first apply: %v", err)
+	}
+	_, _, err = store.ApplyStructuredWeeklyPlan(ctx, userID, "2026-08-17", content, &WeeklyPlanReplacement{PlanID: active.PlanID, Revision: active.Revision + 1})
+	if !errors.Is(err, ErrWeeklyPlanConflict) {
+		t.Fatalf("stale replacement err=%v", err)
+	}
+	got, err := store.GetActiveWeeklyPlan(ctx, userID, "2026-08-17")
+	if err != nil || got == nil || got.PlanID != active.PlanID || got.Revision != active.Revision {
+		t.Fatalf("active after conflict=%+v err=%v", got, err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -35,7 +36,7 @@ type fakeWeeklyPlanStore struct {
 }
 
 func (f *fakeWeeklyPlanStore) ApplyStructuredWeeklyPlan(
-	_ context.Context, userID, weekStart, content string, replaceExisting bool,
+	_ context.Context, userID, weekStart, content string, replacement *storage.WeeklyPlanReplacement,
 ) (*storage.WeeklyPlan, *storage.WeeklyPlan, error) {
 	if f.getErr != nil {
 		return nil, nil, f.getErr
@@ -44,13 +45,21 @@ func (f *fakeWeeklyPlanStore) ApplyStructuredWeeklyPlan(
 	var replaced *storage.WeeklyPlan
 	for i := range plans {
 		if plans[i].WeekStart == weekStart && plans[i].Status == storage.WeeklyPlanStatusActive {
-			if !replaceExisting {
+			if replacement == nil {
 				return nil, nil, storage.ErrWeeklyPlanExists
 			}
+			if plans[i].PlanID != replacement.PlanID || plans[i].Revision != replacement.Revision {
+				return nil, nil, storage.ErrWeeklyPlanConflict
+			}
+			plans[i].Status = storage.WeeklyPlanStatusArchived
+			plans[i].StatusSlot = nil
+			plans[i].Revision++
 			copy := plans[i]
 			replaced = &copy
-			plans[i].Status = storage.WeeklyPlanStatusArchived
 		}
+	}
+	if replaced == nil && replacement != nil {
+		return nil, nil, storage.ErrWeeklyPlanConflict
 	}
 	created := storage.WeeklyPlan{
 		PlanID: "applied-plan", UserID: userID, WeekStart: weekStart,
@@ -366,17 +375,20 @@ func TestAdminAppliesWeeklyPlanWithoutExistingPlan(t *testing.T) {
 func TestAdminApplyRequiresReplacementConfirmation(t *testing.T) {
 	h := newWeeklyPlanHarness(t)
 	userID := "d31c2cbc-c3f5-4a10-92d0-73fa3281a002"
+	priorPlanID := "937f592a-9354-4ee4-8a5c-5b2593511122"
 	weekName := "2026-08-17_08-23"
-	h.store.plans[userID] = []storage.WeeklyPlan{
-		weeklyPlanFixture("prior-plan", userID, "2026-08-17", storage.WeeklyPlanContentStructured, validAppliedWeeklyPlan(weekName)),
-	}
+	prior := weeklyPlanFixture(priorPlanID, userID, "2026-08-17", storage.WeeklyPlanContentStructured, validAppliedWeeklyPlan(weekName))
+	h.store.plans[userID] = []storage.WeeklyPlan{prior}
 	body := "{\"content\":" + validAppliedWeeklyPlan(weekName) + ",\"replace_existing\":false}"
 	conflict := h.doBody(http.MethodPost, "/api/"+userID+"/plan/weeks/"+weekName, h.adminBearer(t, "admin-user"), strings.NewReader(body))
 	if conflict.Code != http.StatusConflict || conflict.Body.String() != "{\"error\":\"weekly_plan_exists\"}" {
 		t.Fatalf("status=%d body=%s", conflict.Code, conflict.Body.String())
 	}
 
-	body = "{\"content\":" + validAppliedWeeklyPlan(weekName) + ",\"replace_existing\":true}"
+	body = fmt.Sprintf(
+		`{"content":%s,"replace_existing":true,"expected_active_plan_id":%q,"expected_active_revision":%d}`,
+		validAppliedWeeklyPlan(weekName), priorPlanID, prior.Revision,
+	)
 	replaced := h.doBody(http.MethodPost, "/api/"+userID+"/plan/weeks/"+weekName, h.adminBearer(t, "admin-user"), strings.NewReader(body))
 	if replaced.Code != http.StatusCreated {
 		t.Fatalf("status=%d body=%s", replaced.Code, replaced.Body.String())
@@ -385,11 +397,31 @@ func TestAdminApplyRequiresReplacementConfirmation(t *testing.T) {
 	if err := json.Unmarshal(replaced.Body.Bytes(), &result); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if result.ReplacedPlanID == nil || *result.ReplacedPlanID != "prior-plan" || result.Plan.Revision != 1 {
+	if result.ReplacedPlanID == nil || *result.ReplacedPlanID != priorPlanID || result.Plan.Revision != 1 {
 		t.Fatalf("result=%+v", result)
 	}
 	if h.store.plans[userID][0].Status != storage.WeeklyPlanStatusArchived {
 		t.Fatalf("prior status=%s", h.store.plans[userID][0].Status)
+	}
+	if h.store.plans[userID][0].Revision != prior.Revision+1 {
+		t.Fatalf("prior revision=%d, want %d", h.store.plans[userID][0].Revision, prior.Revision+1)
+	}
+}
+
+func TestAdminApplyRejectsStaleReplacementConfirmation(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "d31c2cbc-c3f5-4a10-92d0-73fa3281a004"
+	weekName := "2026-08-17_08-23"
+	plan := weeklyPlanFixture("598c03de-dbe5-4a17-93c2-bb2ed99532e9", userID, "2026-08-17", storage.WeeklyPlanContentStructured, `{"sessions":[],"nutrition":[]}`)
+	plan.Revision = 2
+	h.store.plans[userID] = []storage.WeeklyPlan{plan}
+	body := "{\"content\":" + validAppliedWeeklyPlan(weekName) + ",\"replace_existing\":true,\"expected_active_plan_id\":\"937f592a-9354-4ee4-8a5c-5b2593511122\",\"expected_active_revision\":1}"
+	resp := h.doBody(http.MethodPost, "/api/"+userID+"/plan/weeks/"+weekName, h.adminBearer(t, "admin-user"), strings.NewReader(body))
+	if resp.Code != http.StatusConflict || resp.Body.String() != `{"error":"weekly_plan_changed"}` {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if h.store.plans[userID][0].Status != storage.WeeklyPlanStatusActive {
+		t.Fatalf("concurrent plan status=%s", h.store.plans[userID][0].Status)
 	}
 }
 
@@ -418,6 +450,8 @@ func TestWeeklyPlanApplyIsAdminOnlyAndValidatesContent(t *testing.T) {
 		{name: "wrong week", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-24_08-30") + "}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
 		{name: "missing arrays", headers: h.adminBearer(t, "admin"), body: "{\"content\":{\"schema\":\"weekly-plan/v1\",\"week_folder\":\"2026-08-17_08-23\"}}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
 		{name: "duplicate sessions", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + string(duplicateRaw) + "}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
+		{name: "replacement missing expectation", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-17_08-23") + ",\"replace_existing\":true}", status: http.StatusUnprocessableEntity, error: "invalid_replacement"},
+		{name: "replacement invalid plan id", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-17_08-23") + ",\"replace_existing\":true,\"expected_active_plan_id\":\"not-a-uuid\",\"expected_active_revision\":1}", status: http.StatusUnprocessableEntity, error: "invalid_replacement"},
 		{name: "too large", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-17_08-23") + ",\"padding\":\"" + strings.Repeat("x", maxRequestBytes) + "\"}", status: http.StatusRequestEntityTooLarge, error: "weekly_plan_too_large"},
 	}
 	for _, test := range tests {
