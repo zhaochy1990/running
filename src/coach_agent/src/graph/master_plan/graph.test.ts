@@ -18,6 +18,7 @@ import {
 	createTestRequest,
 	createTestReviewReport,
 	createTestStrategyCandidate,
+	structuredRun,
 } from "./testFixtures.js";
 
 const runtimeContext: MasterPlanGraphContext = {
@@ -361,6 +362,12 @@ test("all-vetoed strategies return a typed quality failure", async () => {
 test("deterministic rule errors block completion after simulation", async () => {
 	const plan = createTestMasterPlan();
 	plan.weeks[0]!.key_sessions[0]!.distance_km = 30;
+	plan.weeks[0]!.key_sessions[0]!.workout_structure = structuredRun(
+		"30km long run",
+		"2026-08-15",
+		30000,
+		300,
+	);
 	const graph = createMasterPlanGraph({
 		...assessmentDependencies,
 		contextProvider: {

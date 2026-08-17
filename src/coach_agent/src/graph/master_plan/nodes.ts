@@ -440,7 +440,6 @@ class MasterPlanNodes {
 				assessment,
 				`Goal assessment for request ${request.request_id}`,
 			);
-			throw new Error("Testing");
 
 			return { goalAssessment: assessment };
 		} catch (error) {

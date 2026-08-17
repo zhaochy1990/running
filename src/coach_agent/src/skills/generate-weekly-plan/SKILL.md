@@ -14,6 +14,7 @@ Use `absorbed_load.distance_anchor_km` as the deterministic median of the latest
 Complete this step only after identifying:
 
 - the provided `distance_anchor_km`, latest complete-week distance and training dose, and whether completion is rising, stable, or falling; do not recompute the median;
+- whether the latest complete week was already materially under the anchor (below 90%), i.e. whether this week would be a second consecutive low-volume week;
 - the latest STRIDE `load_ratio`, raw RHR/HRV trend, injuries, and any unusually costly recent session;
 - the current phase/stage, recovery-week flag, nearest milestone inside the current phase, and `quality_stimulus_days`/`longest_run` evidence from the latest two weeks. Multiple activity records on one day are one stimulus day.
 
@@ -34,7 +35,13 @@ Treat recovery as a veto, not an average. When recent raw RHR rises while HRV fa
 
 Do not prescribe an ordinary-week increase above 10% from the larger of the latest complete week and the 2-3-week median. A stale master-plan lower bound never justifies a larger jump. When complete history is sparse, hold or reduce instead of inventing fitness.
 
-For an explicit recovery week, normally use 70-80% of the absorbed anchor, zero formal quality sessions, and an easy long run. If the preceding complete week was already materially under the anchor and `load_ratio < 0.90` with stable recovery, use 80-90% instead of stacking another deep cut. Taper and race weeks follow their phase reference.
+For a week flagged `is_recovery_week`, first verify whether a deep cut is actually warranted. A recovery week is a tool to absorb load, not a standing instruction to cut volume. Decide the band from evidence before touching volume:
+
+- **Deep cut is warranted (70-80% of the absorbed anchor, 0Q1L)**: the latest complete week executed at or above 90% of the anchor, or there is recent abnormal stress — an unusually costly session, repeated high-strain days, or worsening recovery (raw RHR rising while HRV falls versus the preceding measured window).
+- **Maintain instead of cutting (85-95% of the anchor, 0Q1L or one light quality stimulus)**: the latest complete week was already materially under the anchor (below 90%) with stable recovery and `load_ratio` ≤ 1.0 and positive form. Stacking a second deep cut then slides into over-deloading (detraining); target the master plan's `target_weekly_km_low/high` range rather than applying another discount on top of it.
+- **Moderate cut (80-90% of the anchor)**: the preceding complete week was materially under the anchor and `load_ratio < 0.90` with stable recovery — do not stack another deep cut.
+
+The resulting target must never fall below the master plan recovery-week `target_weekly_km_low`. When the recovery week is upgraded to a maintenance week, allow one light quality stimulus (1Q1L) so the following build week does not jump more than 10% from this week's total. Taper and race weeks follow their phase reference.
 
 Complete this step only after choosing one numeric weekly running-distance target and one load decision: increase, maintain, reduce, recovery, or taper.
 
@@ -57,7 +64,7 @@ Phase specificity decides the stimulus family. For example, marathon-specific wo
 
 Build a stimulus signature from the latest two weeks of actual quality sessions: energy system, work-repetition duration or distance, session shape, and whether the long run contained a quality segment. Avoid repeating the same signature in consecutive weeks. A recent `5×1 km` session, for example, should rotate to threshold time blocks, longer cruise repetitions, hills, or phase-appropriate race-pace work rather than another 1 km repetition session.
 
-Use 1Q1L when load is high, recovery is uncertain, the prior long run was unusually costly, or the phase milestone can be served inside the long run. Use 2Q1L only when recovery is stable, recent load is controlled, and both quality sessions have distinct phase-specific purposes. A long run with a sustained MP/HMP/threshold segment counts as both L and one Q. Recovery weeks use 0Q1L.
+Use 1Q1L when load is high, recovery is uncertain, the prior long run was unusually costly, or the phase milestone can be served inside the long run. Use 2Q1L only when recovery is stable, recent load is controlled, and both quality sessions have distinct phase-specific purposes. A long run with a sustained MP/HMP/threshold segment counts as both L and one Q. Recovery weeks use 0Q1L; a recovery week upgraded to maintenance under Step 2 may use one light quality stimulus.
 
 Separate quality stimuli by at least 48 hours. Place at least one explicit `kind: rest` day in every plan. Never schedule a quality session immediately after a costly long run.
 
@@ -82,7 +89,7 @@ Before returning, audit all of these conditions:
 5. the day before a quality long run passes the back-to-back exposure rule;
 6. every workout block, session total, date, nutrition day, schema stamp, and strength ID is internally consistent.
 
-In `coach_notes`, concisely record the actual complete-week anchor, chosen weekly target and load decision, phase/milestone bridge, rotation decision, and the recovery trigger that would reduce or cancel quality.
+In `coach_notes`, concisely record the actual complete-week anchor, chosen weekly target and load decision, phase/milestone bridge, rotation decision, and the recovery trigger that would reduce or cancel quality. For a recovery week, state which evidence justified a deep cut versus a maintenance band (latest complete week vs anchor, `load_ratio`, form, recovery trend).
 
 ## 6. Simulate the final candidate
 

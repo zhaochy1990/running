@@ -47,7 +47,7 @@ export function createTestRequest() {
 	};
 }
 
-function structuredRun(
+export function structuredRun(
 	name: string,
 	date: string,
 	distanceM: number,
