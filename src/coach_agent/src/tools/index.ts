@@ -11,3 +11,4 @@ export { createRaceTools } from "./races.js";
 export { createRunningCalibrationTools } from "./runningCalibration.js";
 export { createTrainingLoadTools } from "./trainingLoad.js";
 export { createWeeklyPlanContextTools } from "./weeklyPlanContext.js";
+export { createWeeklyPlanLoadTools } from "./weeklyPlanLoad.js";

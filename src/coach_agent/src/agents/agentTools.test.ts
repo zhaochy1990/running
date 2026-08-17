@@ -93,6 +93,17 @@ test("weekly-plan reader and generator keep distinct contracts", () => {
 		assert.ok(names.includes("get_weekly_plan_context"));
 		assert.ok(!names.includes("get_current_time"));
 	}
+	assert.ok(
+		!reader.tools.some((tool) => tool.name === "simulate_weekly_plan_load"),
+	);
+	assert.ok(
+		generator.tools.some((tool) => tool.name === "simulate_weekly_plan_load"),
+	);
+	assert.ok(
+		generator.middleware.every(
+			(middleware) => middleware.name !== "WeeklyPlanLoadSimulationMiddleware",
+		),
+	);
 	assert.equal(reader.responseFormat, undefined);
 	assert.deepEqual(reader.skills, []);
 	assert.equal(generator.responseFormat, WeeklyPlanDirectResponseSchema);

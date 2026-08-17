@@ -8,7 +8,7 @@
     "clean": "node scripts/clean.mjs",
     "copy-assets": "node scripts/copy-assets.mjs",
     "build": "npm run clean && npm run tsc && npm run copy-assets",
-    "test": "npm run build && node --test dist/tools/*.test.js dist/agents/*.test.js dist/agents/master_plan/*.test.js dist/graph/master_plan/*.test.js dist/persistence/*.test.js dist/utils/*.test.js",
+    "test": "npm run build && node --test dist/tools/*.test.js dist/agents/*.test.js dist/agents/master_plan/*.test.js dist/graph/master_plan/*.test.js dist/graph/weekly_plan/*.test.js dist/persistence/*.test.js dist/utils/*.test.js",
     "test:deepagent": "npm run build && node dist/tests/test.js",
     "test:weekly-plan": "npm run build && node dist/tests/test_weekly_plan.js",
     "test:masterplan-graph": "npm run build && node dist/tests/test_master_plan.js",

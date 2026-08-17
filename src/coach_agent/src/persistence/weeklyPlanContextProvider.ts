@@ -493,6 +493,7 @@ function calibrationShape(calibration: RunningCalibration | null) {
 				? round(1000 / calibration.thresholdSpeedMps)
 				: null,
 		threshold_speed_mps: calibration.thresholdSpeedMps,
+		rhr_baseline: calibration.rhrBaseline,
 		threshold_hr_confidence: calibration.thresholdHrConfidence,
 		threshold_pace_confidence: calibration.thresholdSpeedConfidence,
 		heart_rate_zones: calibration.heartRateZones,
