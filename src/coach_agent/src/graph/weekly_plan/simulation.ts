@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { z } from "zod/v4";
 import type { WeeklyPlan } from "../../agents/weekly_plan/schema.js";
 import type { WeeklyPlanContext } from "../../persistence/weeklyPlanContextProvider.js";
@@ -194,11 +193,6 @@ export function simulateWeeklyPlanLoad(
 		missing_dose_reasons: unique(missingReasons),
 		safety_issues: safetyIssues,
 	});
-}
-
-/** Stable identity used to bind a simulation report to the returned candidate. */
-export function weeklyPlanSimulationKey(plan: WeeklyPlan): string {
-	return createHash("sha256").update(JSON.stringify(plan)).digest("hex");
 }
 
 function dailyDoses(

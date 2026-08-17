@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-	simulateWeeklyPlanLoad,
-	weeklyPlanSimulationKey,
-} from "./simulation.js";
+import { simulateWeeklyPlanLoad } from "./simulation.js";
 import {
 	createWeeklyPlanSimulationContext as context,
 	createWeeklyPlanForSimulation as weeklyPlan,
@@ -98,11 +95,4 @@ test("weekly simulator does not blame a rest plan for pre-existing overreach", (
 			"preexisting_overreach_persists_without_planned_load",
 		),
 	);
-});
-
-test("weekly simulation identity changes with any returned plan edit", () => {
-	const plan = weeklyPlan();
-	const original = weeklyPlanSimulationKey(plan);
-	plan.coach_notes = "edited after simulation";
-	assert.notEqual(weeklyPlanSimulationKey(plan), original);
 });

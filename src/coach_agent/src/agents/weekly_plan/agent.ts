@@ -9,10 +9,10 @@ import { createRaceTools } from "../../tools/races.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
 import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
 import { createWeeklyPlanContextTools } from "../../tools/weeklyPlanContext.js";
+import { createWeeklyPlanLoadTools } from "../../tools/weeklyPlanLoad.js";
 import { buildResponsesModel } from "../common.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { WeeklyPlanPrompt } from "../prompts.js";
-import { createWeeklyPlanLoadSimulationMiddleware } from "./loadSimulationMiddleware.js";
 import { WeeklyPlanDirectResponseSchema } from "./schema.js";
 
 function createWeeklyPlanSubagent(
@@ -25,8 +25,12 @@ function createWeeklyPlanSubagent(
 	const planTools = createPlanTools(store);
 	const raceTools = createRaceTools(store);
 	const runningCalibrationTools = createRunningCalibrationTools(store);
+	const weeklyPlanContextProvider = new MySqlWeeklyPlanContextProvider(store);
 	const weeklyPlanContextTools = createWeeklyPlanContextTools(
-		new MySqlWeeklyPlanContextProvider(store),
+		weeklyPlanContextProvider,
+	);
+	const weeklyPlanLoadTools = createWeeklyPlanLoadTools(
+		weeklyPlanContextProvider,
 	);
 
 	return {
@@ -42,13 +46,13 @@ function createWeeklyPlanSubagent(
 			...trainingLoadTools,
 			...raceTools,
 			...runningCalibrationTools,
+			...(generatesPlan ? weeklyPlanLoadTools : []),
 		],
 		model: buildResponsesModel(config),
 		...(generatesPlan
 			? { responseFormat: WeeklyPlanDirectResponseSchema }
 			: {}),
 		middleware: [
-			...(generatesPlan ? [createWeeklyPlanLoadSimulationMiddleware()] : []),
 			createLoggingMiddleware(
 				generatesPlan ? "agent:generate_weekly_plan" : "agent:weekly_plan",
 			),
