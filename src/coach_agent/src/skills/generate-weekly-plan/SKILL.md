@@ -1,56 +1,89 @@
 ---
 name: generate-weekly-plan
-description: Use this skill when the user wants to generate a new weekly training plan. The skill will generate a weekly training plan based on the user's season goal, season training plan, current training phase, and recent training activities. The plan should include the daily training schedule for the target week, specific content for each training session (including training type, volume, intensity, etc.), as well as dietary and recovery recommendations.
+description: Generate a structured weekly running plan from the athlete's active master plan, actual completed training, STRIDE load, recovery signals, phase milestones, and recent stimulus history.
 ---
 
-# How to generate a weekly training plan
+# Generate a weekly training plan
 
-## Step 1: Look up the user's master training plan and current training status
+## 1. Load the bounded evidence
 
-call `get_master_plan` to retrieve the user's season goal and current active training plan. If the user does not have a season goal or training plan, reject the request and ask the user to set a season goal and training plan first.
+Call `get_master_plan` once. If there is no active master plan, ask the athlete to create one first. Call `get_weekly_plan_context` once; it is the source for the authoritative `plan_start`, `week_folder`, recent planned-versus-actual weeks, STRIDE load, recovery, injuries, calibration, current phase, stage, and phase milestones.
 
-next, call `get_weekly_plan_context` to retrieve the user's current training status, the response includes the following information:
-- `as_of`: the inclusive training-data cutoff date
-- `plan_start`: the authoritative Monday for the target week
-- `week_folder`: the authoritative canonical folder identity for the target week
-- current training phase and stage
-- recent training activities and feedback
-- current fitness state and training load
-- injury status and recovery status
-- user's running calibration data (lactate threshold heart rate, threshold pace, heart rate zones, pace zones)
+Use `absorbed_load.distance_anchor_km` as the deterministic median of the latest complete weeks and `absorbed_load.latest_complete_week` for recency. Use only `recent_training_weeks` entries with `complete: true` as any additional full-week evidence. A partial week is useful for the latest stimulus and recovery evidence, but it is not a low-volume completed week. Treat actual completed training as the exposure the athlete absorbed. Planned sessions that were skipped do not count as completed exposure.
 
-## Step 2: Generate the weekly training plan
+Complete this step only after identifying:
 
-Based on the user's season goal, current training phase and stage, recent training activities and feedback, and current fitness state, generate a weekly training plan for the target week. The plan should include the following information:
-- daily training schedule for the target week
-- specific content for each training session (including training type, volume, intensity, etc.)
+- the provided `distance_anchor_km`, latest complete-week distance and training dose, and whether completion is rising, stable, or falling; do not recompute the median;
+- the latest STRIDE `load_ratio`, raw RHR/HRV trend, injuries, and any unusually costly recent session;
+- the current phase/stage, recovery-week flag, nearest milestone inside the current phase, and `quality_stimulus_days`/`longest_run` evidence from the latest two weeks. Multiple activity records on one day are one stimulus day.
 
-- take references/8weeks.md for an example traning plan for users that are in the 8 weeks before their race.
+## 2. Set the load target from absorbed training
 
-我们要保证用户的周训练计划遵循1Q1L或者2Q1L的典型结构。
-注意，我们需要根据用户前面4周的负荷来规划下一周的训练负荷。举例如下，
-1. example1，用户前一周的训练完成程度不高而下一周是恢复周，那么下一周就不用完全按照恢复周来训练，负荷可以适当提高
-2. example2，用户前一周的训练强度超过了计划的强度，而下一周计划继续加强度，这时候需要根据用户的恢复情况（采用静息心率，RHV等健康指标来进行判断）来调整下一周的训练负荷，如果恢复的好，那么可以按照训练计划继续加量，如果恢复的不好，需要适当减量，避免过度训练导致受伤
+The actual complete-week median is the absolute-volume anchor. The master-plan range supplies periodization direction and key-session intent; it is not an instruction to jump back to an unabsorbed volume.
 
-The target week is exactly `plan_start` through six days after `plan_start`. Do not
-use the system date or independently reinterpret “this week” or “next week”. Every
-session and nutrition date must fall within that target week, and nutrition must
-cover all seven dates.
-Set the WeeklyPlan top-level `week_folder` exactly to the context `week_folder`;
-do not derive or invent it. Include every canonical schema stamp required by the
-structured output contract.
-For catalogued strength exercises, set both `canonical_id` and `provider_id` to
-the same real COROS T-code (for example `T1262`). When no catalog exercise
-accurately represents the movement, use a stable descriptive `canonical_id` and
-set `provider_id` to null so the adapter creates a custom exercise; never invent
-or approximate a T-code.
-Use only verified catalog mappings, including: squat `T1061`, single-leg
-deadlift `T1187`, side plank `T1185`, dead bug `T1243`, single-leg calf raise
-`T1275`, step-up `T1296`, goblet squat `T1301`, and dumbbell Romanian deadlift
-`T1305`.
+For an ordinary load week, use these starting bands and then apply recovery/injury evidence:
 
-We need to use different training types and training intensities for different training phases. You need reference the instructions from "references" folder to understand how to organize the trainings for each phase. Currently, the training phases include: 基础期(base.md)、提升期(build.md)、专项速度周期(speed.md)、马拉松专项期(marathon.md)、赛前减量期(taper.md)、赛后恢复期(recovery.md).
+| Evidence | Target versus actual anchor |
+| --- | --- |
+| `load_ratio` 0.90-1.10 and stable recovery | maintain to +8% |
+| `load_ratio` 1.10-1.25 or one unusually costly recent session | -5% to +3% |
+| `load_ratio` >1.25, worsening recovery, active restriction, or repeated high-strain days | -10% to -20%; remove a quality stimulus |
+| `load_ratio` <0.75 with stable recovery | rebuild by 5-10%, not an abrupt return to the master range |
 
-## Step 3: 输出 Coach Agent WeeklyPlan
+Treat recovery as a veto, not an average. When recent raw RHR rises while HRV falls versus the preceding measured window, classify recovery as worsening even if the `load_ratio` row alone would allow maintenance. Select the most conservative applicable row: target 80-90% of the actual anchor and remove one formal quality stimulus. Use the upper half only when the change is small, the latest easy-run response is normal, and there is no injury, sleep, or high-strain warning. Preserve the phase-specific stimulus family inside the reduced dose; do not use milestone pressure or a master-plan volume range to raise the target.
 
-运行时会依据结构化输出 schema 验证返回值。最终返回 `{ "disposition": "return_direct", "content": WeeklyPlan }`，其中 `content` 是下面定义的完整 WeeklyPlan；不要输出 Markdown。所有面向用户的文本字段使用中文；字段名和枚举值使用英文/ASCII。
+Do not prescribe an ordinary-week increase above 10% from the larger of the latest complete week and the 2-3-week median. A stale master-plan lower bound never justifies a larger jump. When complete history is sparse, hold or reduce instead of inventing fitness.
+
+For an explicit recovery week, normally use 70-80% of the absorbed anchor, zero formal quality sessions, and an easy long run. If the preceding complete week was already materially under the anchor and `load_ratio < 0.90` with stable recovery, use 80-90% instead of stacking another deep cut. Taper and race weeks follow their phase reference.
+
+Complete this step only after choosing one numeric weekly running-distance target and one load decision: increase, maintain, reduce, recovery, or taper.
+
+## 3. Bridge the phase milestone
+
+Read exactly one phase reference matching `training_position.phase`. Choose the most specific match first, so any phase containing `marathon` or `马拉松` uses the marathon reference even when its name also contains `build` or `建设`:
+
+- base/aerobic/foundation/基础期 → `references/base.md`
+- build/progression/threshold/提升期/进展期 → `references/build.md`
+- speed/专项速度/专项速度周期/速度期 → `references/speed.md`
+- marathon/马拉松专项/马拉松专项期 → `references/marathon.md`
+- taper/赛前减量/赛前减量期 → `references/taper.md`
+- recovery/赛后恢复/赛后恢复期 → `references/recovery.md`
+
+Select the nearest upcoming milestone with `completed_actual: null` inside the current phase. If none is upcoming, use the latest unmet phase milestone as diagnostic evidence rather than blindly rescheduling it. Choose this week's key stimulus as a conservative bridge from the athlete's most recent completed stimulus toward the selected milestone. The bridge must be smaller than or equal to the milestone demand; do not rehearse the full milestone early. If no phase milestone is present, use the stage `key_sessions` and phase focus.
+
+Phase specificity decides the stimulus family. For example, marathon-specific work uses marathon pace, threshold/cruise work, and specific long runs. Standalone hard 200 m or 400 m repetitions for maximal speed belong to a speed phase, not a marathon-specific phase; relaxed strides with full recovery remain neuromuscular maintenance rather than a quality session.
+
+## 4. Rotate quality stimuli
+
+Build a stimulus signature from the latest two weeks of actual quality sessions: energy system, work-repetition duration or distance, session shape, and whether the long run contained a quality segment. Avoid repeating the same signature in consecutive weeks. A recent `5×1 km` session, for example, should rotate to threshold time blocks, longer cruise repetitions, hills, or phase-appropriate race-pace work rather than another 1 km repetition session.
+
+Use 1Q1L when load is high, recovery is uncertain, the prior long run was unusually costly, or the phase milestone can be served inside the long run. Use 2Q1L only when recovery is stable, recent load is controlled, and both quality sessions have distinct phase-specific purposes. A long run with a sustained MP/HMP/threshold segment counts as both L and one Q. Recovery weeks use 0Q1L.
+
+Separate quality stimuli by at least 48 hours. Place at least one explicit `kind: rest` day in every plan. Never schedule a quality session immediately after a costly long run.
+
+Protect a key long run that contains MP/HMP/threshold work: normally make the preceding day rest or a short recovery run no longer than 10% of the weekly distance target. A 10-12% preceding run is acceptable only when recent consecutive-day history shows it is well tolerated. Exceed 12% only for an explicit back-to-back endurance milestone with established tolerance; otherwise move that easy volume earlier in the week. Do not create an accidental weekend load spike merely to reach the weekly total.
+
+## 5. Build and audit the structured plan
+
+Distribute easy running around the selected key sessions so the sum of every run session's `total_distance_m` matches the numeric weekly target. Prefer trimming easy filler before changing the milestone bridge. Keep the long run proportionate to the established long-run history; avoid creating a single-session load spike merely to hit a distance target.
+
+Use running calibration for pace/HR targets. When calibration is missing or low-confidence, prescribe effort/HR conservatively and leave unsupported numeric targets open instead of estimating them. Respect every injury restriction.
+
+The target week is exactly `plan_start` through six days later. Set top-level `week_folder` exactly to the context `week_folder`. Every session and nutrition date must be inside that week, and nutrition must cover all seven dates.
+
+For catalogued strength exercises, set `canonical_id` and `provider_id` to the same verified COROS T-code. Verified mappings: squat `T1061`, single-leg deadlift `T1187`, side plank `T1185`, dead bug `T1243`, single-leg calf raise `T1275`, step-up `T1296`, goblet squat `T1301`, and dumbbell Romanian deadlift `T1305`. For other movements, use a stable descriptive `canonical_id` and `provider_id: null`.
+
+Before returning, audit all of these conditions:
+
+1. weekly distance equals the chosen actual-load target;
+2. phase focus and nearest milestone are served by the key stimulus;
+3. stimulus signature differs from the latest completed comparable quality session;
+4. Q/L count, 48-hour separation, explicit rest day, and injury constraints pass;
+5. the day before a quality long run passes the back-to-back exposure rule;
+6. every workout block, session total, date, nutrition day, schema stamp, and strength ID is internally consistent.
+
+In `coach_notes`, concisely record the actual complete-week anchor, chosen weekly target and load decision, phase/milestone bridge, rotation decision, and the recovery trigger that would reduce or cancel quality.
+
+## 6. Return the WeeklyPlan
+
+Return `{ "disposition": "return_direct", "content": WeeklyPlan }`. Do not return Markdown. Use Chinese for athlete-facing text and English/ASCII for field names and enum values.

@@ -81,12 +81,55 @@ test("weekly context combines all weekly planning evidence", async () => {
 							key_sessions: [{ type: "threshold" }],
 						},
 					],
+					milestones: [
+						{
+							type: "test_run",
+							date: "2026-08-23",
+							target: "2×20 minutes at threshold with stable effort",
+						},
+						{
+							type: "race",
+							date: "2026-10-18",
+							target: "race outside the current phase",
+						},
+					],
 				},
 			};
 		},
+		async getWeeklyPlan(_userId, weekName) {
+			return weekName === "2026-08-10_08-16"
+				? {
+						sessions: [
+							{
+								kind: "run",
+								date: "2026-08-12",
+								summary: "5×1 km intervals",
+								total_distance_m: 12000,
+							},
+							{
+								kind: "run",
+								date: "2026-08-14",
+								summary: "Flexible recovery run",
+								total_distance_m: null,
+							},
+						],
+					}
+				: null;
+		},
 		async getActivitiesByDateRange(userId, start, end) {
 			ranges.push([userId, start, end]);
-			return [activity];
+			return [
+				activity,
+				{
+					...activity,
+					labelId: "run-2",
+					name: "Interval cooldown",
+					distanceM: 2000,
+					durationS: 900,
+					strideDose: 15,
+					trainKind: "vo2max",
+				},
+			];
 		},
 		async getWeeklyFeedbackByDateRange(userId, start, end) {
 			ranges.push([userId, start, end]);
@@ -153,7 +196,80 @@ test("weekly context combines all weekly planning evidence", async () => {
 		days: 28,
 	});
 	assert.equal(snapshot.training_position.phase?.name, "提升期");
+	assert.deepEqual(snapshot.training_position.phase?.milestones, [
+		{
+			type: "test_run",
+			date: "2026-08-23",
+			target: "2×20 minutes at threshold with stable effort",
+			completed_actual: null,
+		},
+	]);
 	assert.equal(snapshot.training_position.stage, null);
+	assert.deepEqual(snapshot.absorbed_load, {
+		complete_weeks_considered: [
+			{
+				week_start: "2026-07-20",
+				actual_run_distance_km: 0,
+				actual_training_dose: 0,
+			},
+			{
+				week_start: "2026-07-27",
+				actual_run_distance_km: 0,
+				actual_training_dose: 0,
+			},
+			{
+				week_start: "2026-08-03",
+				actual_run_distance_km: 0,
+				actual_training_dose: 0,
+			},
+		],
+		distance_anchor_km: 0,
+		latest_complete_week: {
+			week_start: "2026-08-03",
+			actual_run_distance_km: 0,
+			actual_training_dose: 0,
+		},
+	});
+	assert.deepEqual(snapshot.recent_training_weeks.at(-1), {
+		week_start: "2026-08-10",
+		week_end: "2026-08-16",
+		complete: false,
+		planned: {
+			available: true,
+			distance_coverage: "partial",
+			total_run_distance_km: null,
+			run_sessions: [
+				{
+					date: "2026-08-12",
+					summary: "5×1 km intervals",
+					distance_km: 12,
+				},
+				{
+					date: "2026-08-14",
+					summary: "Flexible recovery run",
+					distance_km: null,
+				},
+			],
+		},
+		actual: {
+			total_run_distance_km: 12,
+			total_training_dose: 87,
+			run_days: 1,
+			longest_run: {
+				date: "2026-08-14",
+				distance_km: 12,
+			},
+			quality_stimulus_days: [
+				{
+					date: "2026-08-14",
+					training_types: ["threshold", "vo2max"],
+					names: ["Threshold run", "Interval cooldown"],
+					notes: ["controlled"],
+					total_distance_km: 12,
+				},
+			],
+		},
+	});
 	assert.equal(snapshot.recent_activities[0]?.date, "2026-08-14");
 	assert.equal(snapshot.recent_activities[0]?.training_dose, 72);
 	const recentActivity = snapshot.recent_activities[0];
@@ -183,13 +299,92 @@ test("weekly context combines all weekly planning evidence", async () => {
 	]);
 });
 
+test("weekly context anchors distance to completed-week median", async () => {
+	const provider = providerUsingMySqlFeedback({
+		async getMasterPlanMetadataForDate() {
+			return null;
+		},
+		async getWeeklyPlan() {
+			return null;
+		},
+		async getActivitiesByDateRange() {
+			return [
+				{
+					...activity,
+					labelId: "week-1",
+					date: new Date("2026-07-21T04:00:00Z"),
+					distanceM: 40_000,
+					strideDose: 40,
+				},
+				{
+					...activity,
+					labelId: "week-2",
+					date: new Date("2026-07-28T04:00:00Z"),
+					distanceM: 80_000,
+					strideDose: 80,
+				},
+				{
+					...activity,
+					labelId: "week-3",
+					date: new Date("2026-08-04T04:00:00Z"),
+					distanceM: 60_000,
+					strideDose: 60,
+				},
+				{
+					...activity,
+					labelId: "partial-week",
+					date: new Date("2026-08-11T04:00:00Z"),
+					distanceM: 200_000,
+					strideDose: 200,
+				},
+			];
+		},
+		async getWeeklyFeedbackByDateRange() {
+			return [];
+		},
+		async getDailyTrainingLoadByDateRange() {
+			return [];
+		},
+		async getDailyRecoveryByDateRange() {
+			return [];
+		},
+		async getUserInjuries() {
+			return [];
+		},
+		async getLatestRunningCalibration() {
+			return null;
+		},
+	});
+
+	const snapshot = await provider.loadSnapshot("athlete", "2026-08-15");
+
+	assert.equal(snapshot.absorbed_load.distance_anchor_km, 60);
+	assert.deepEqual(snapshot.absorbed_load.latest_complete_week, {
+		week_start: "2026-08-03",
+		actual_run_distance_km: 60,
+		actual_training_dose: 60,
+	});
+	assert.equal(snapshot.recent_training_weeks.at(-1)?.complete, false);
+});
+
 test("weekly context keeps a Monday as the planning start", async () => {
+	const activityRanges: Array<[string, string]> = [];
 	const provider = new MySqlWeeklyPlanContextProvider({
 		async getMasterPlanMetadataForDate() {
 			return null;
 		},
-		async getActivitiesByDateRange() {
-			return [];
+		async getWeeklyPlan() {
+			return null;
+		},
+		async getActivitiesByDateRange(_userId, start, end) {
+			activityRanges.push([start, end]);
+			return [
+				{
+					...activity,
+					labelId: "earliest-week-monday",
+					date: new Date("2026-07-20T04:00:00Z"),
+				},
+			];
 		},
 		async getWeeklyFeedbackByDateRange() {
 			return [];
@@ -210,11 +405,17 @@ test("weekly context keeps a Monday as the planning start", async () => {
 
 	const snapshot = await provider.loadSnapshot("athlete", "2026-08-17");
 	assert.equal(snapshot.plan_start, "2026-08-17");
+	assert.deepEqual(activityRanges, [["2026-07-20", "2026-08-17"]]);
+	assert.equal(snapshot.recent_training_weeks[0]?.actual.run_days, 1);
+	assert.equal(snapshot.recent_activities.length, 0);
 });
 
 test("weekly context reports unavailable STRIDE load without fallback", async () => {
 	const provider = new MySqlWeeklyPlanContextProvider({
 		async getMasterPlanMetadataForDate() {
+			return null;
+		},
+		async getWeeklyPlan() {
 			return null;
 		},
 		async getActivitiesByDateRange() {
@@ -251,6 +452,9 @@ test("weekly context reports unavailable STRIDE load without fallback", async ()
 test("weekly context treats null PMC values as not computed", async () => {
 	const provider = new MySqlWeeklyPlanContextProvider({
 		async getMasterPlanMetadataForDate() {
+			return null;
+		},
+		async getWeeklyPlan() {
 			return null;
 		},
 		async getActivitiesByDateRange() {
