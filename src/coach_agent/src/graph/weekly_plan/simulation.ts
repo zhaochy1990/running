@@ -135,8 +135,22 @@ export function simulateWeeklyPlanLoad(
 					ctl: initialCtl,
 				})
 			: [];
+	const zeroLoadPmcPath =
+		available && initialAtl !== null && initialCtl !== null
+			? projectPmc(
+					initialPmcDate,
+					weekStart,
+					Array.from({ length: 7 }, () => 0),
+					{
+						atl: initialAtl,
+						ctl: initialCtl,
+					},
+				)
+			: [];
 	if (initialAtl === null || initialCtl === null)
 		assumptions.push("initial_pmc_state_missing");
+	if (maximumConsecutiveOverreach(zeroLoadPmcPath) >= 3)
+		assumptions.push("preexisting_overreach_persists_without_planned_load");
 
 	const days = dailyExpected.map((dose, index) => {
 		const pmc = pmcPath[index];
@@ -157,7 +171,7 @@ export function simulateWeeklyPlanLoad(
 				...sessionReports.map((session) => session.estimated_dose ?? 0),
 			)
 		: null;
-	const safetyIssues = pmcSafetyIssues(days);
+	const safetyIssues = pmcSafetyIssues(days, zeroLoadPmcPath);
 
 	return WeeklyPlanSimulationReportSchema.parse({
 		algorithm_version: "weekly-plan-load-v1",
@@ -224,20 +238,30 @@ function projectPmc(
 
 function pmcSafetyIssues(
 	days: z.input<typeof DailySimulationSchema>[],
+	zeroLoadDays: Array<{ ratio: number | null }>,
 ): string[] {
+	const candidateConsecutive = maximumConsecutiveOverreach(days);
+	const zeroLoadConsecutive = maximumConsecutiveOverreach(zeroLoadDays);
+	return candidateConsecutive >= 3 && candidateConsecutive > zeroLoadConsecutive
+		? ["planned_load_extends_overreach_more_than_1_25_to_3_consecutive_days"]
+		: [];
+}
+
+function maximumConsecutiveOverreach(
+	days: Array<{ load_ratio?: number | null; ratio?: number | null }>,
+): number {
 	let consecutiveOverreach = 0;
 	let maximumConsecutive = 0;
 	for (const day of days) {
-		if (day.load_ratio !== null && day.load_ratio > 1.25) {
+		const ratio = day.load_ratio ?? day.ratio ?? null;
+		if (ratio !== null && ratio > 1.25) {
 			consecutiveOverreach += 1;
 			maximumConsecutive = Math.max(maximumConsecutive, consecutiveOverreach);
 		} else {
 			consecutiveOverreach = 0;
 		}
 	}
-	return maximumConsecutive >= 3
-		? ["projected_overreach_more_than_1_25_for_3_consecutive_days"]
-		: [];
+	return maximumConsecutive;
 }
 
 function materiallyDifferent(declared: number, estimated: number): boolean {

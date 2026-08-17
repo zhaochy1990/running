@@ -74,8 +74,30 @@ test("weekly simulator flags three consecutive projected overreach days", () => 
 	const report = simulateWeeklyPlanLoad(weeklyPlan(), snapshot);
 
 	assert.deepEqual(report.safety_issues, [
-		"projected_overreach_more_than_1_25_for_3_consecutive_days",
+		"planned_load_extends_overreach_more_than_1_25_to_3_consecutive_days",
 	]);
+});
+
+test("weekly simulator does not blame a rest plan for pre-existing overreach", () => {
+	const snapshot = context();
+	const strideLoad = snapshot.fitness_state.stride_training_load as {
+		available: boolean;
+		acute_load: number;
+		chronic_load: number;
+	};
+	strideLoad.acute_load = 120;
+	strideLoad.chronic_load = 40;
+	const plan = weeklyPlan();
+	plan.sessions = [];
+
+	const report = simulateWeeklyPlanLoad(plan, snapshot);
+
+	assert.deepEqual(report.safety_issues, []);
+	assert.ok(
+		report.load_assumptions.includes(
+			"preexisting_overreach_persists_without_planned_load",
+		),
+	);
 });
 
 test("weekly simulation identity changes with any returned plan edit", () => {

@@ -104,7 +104,7 @@ test("weekly generator must revise a simulated overreach candidate", async () =>
 	assert.equal(result?.jumpTo, "model");
 	assert.match(
 		String(result?.messages?.[0]?.content),
-		/projected_overreach_more_than_1_25_for_3_consecutive_days/,
+		/planned_load_extends_overreach_more_than_1_25_to_3_consecutive_days/,
 	);
 });
 
