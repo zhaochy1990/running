@@ -189,7 +189,7 @@ test("weekly context combines all weekly planning evidence", async () => {
 
 	assert.equal(snapshot.as_of, "2026-08-15");
 	assert.equal(snapshot.plan_start, "2026-08-17");
-	assert.equal(snapshot.week_folder, "2026-08-17_08-23");
+	assert.equal(snapshot.week_name, "2026-08-17_08-23");
 	assert.deepEqual(snapshot.lookback, {
 		start_date: "2026-07-19",
 		end_date: "2026-08-15",

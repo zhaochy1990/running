@@ -180,7 +180,7 @@ const masterPlan = {
 
 const weeklyPlan = {
 	schema: "weekly-plan/v1" as const,
-	week_folder: "2026-06-15_06-21",
+	week_name: "2026-06-15_06-21",
 	sessions: [
 		{
 			schema: "plan-session/v1" as const,

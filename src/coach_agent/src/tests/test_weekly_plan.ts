@@ -16,10 +16,8 @@ import {
 	LlmTokenUsageTracker,
 } from "../utils/tokenUsage.js";
 
-process.env.STRIDE_COACH_ENV = "prod";
-
 const usernameMap: Record<string, string> = {
-	pan: "5ee229a6-cdc1-4260-84d3-71ec622126c2",
+	// pan: "5ee229a6-cdc1-4260-84d3-71ec622126c2",
 	dingchentao: "7bd56762-3b04-42a6-9d8b-98f595628430",
 	lvge: "0a74ac88-629e-4b8e-97c8-d49ccf5a986b",
 	dehua: "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
@@ -160,9 +158,10 @@ async function askWithHITL(content: string, thread: string): Promise<void> {
 }
 
 const provider = new MySqlWeeklyPlanContextProvider(store);
-await provider.loadSnapshot(userId, asof);
+const ctx = await provider.loadSnapshot(userId, asof);
+console.log(ctx);
 
-await askWithHITL("帮我生成下周的训练计划", "session-weekly-plan");
+// await askWithHITL("帮我生成下周的训练计划", "session-weekly-plan");
 
 await rl.close();
 await store.close();

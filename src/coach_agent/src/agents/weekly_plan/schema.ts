@@ -122,29 +122,29 @@ const PlannedNutritionSchema = z.strictObject({
 export const WeeklyPlanSchema = z
 	.strictObject({
 		schema: z.literal("weekly-plan/v1"),
-		week_folder: z.string().min(1),
+		week_name: z.string().min(1),
 		sessions: z.array(PlannedSessionSchema),
 		nutrition: z.array(PlannedNutritionSchema),
 		notes_md: z.string().nullable(),
 		coach_notes: z.string().nullable(),
 	})
 	.superRefine((plan, context) => {
-		const weekStart = plan.week_folder.slice(0, 10);
+		const weekStart = plan.week_name.slice(0, 10);
 		let expectedFolder: string;
 		try {
 			expectedFolder = weekFolder(weekStart);
 		} catch {
 			context.addIssue({
 				code: "custom",
-				path: ["week_folder"],
+				path: ["week_name"],
 				message: "invalid week folder start",
 			});
 			return;
 		}
-		if (plan.week_folder !== expectedFolder) {
+		if (plan.week_name !== expectedFolder) {
 			context.addIssue({
 				code: "custom",
-				path: ["week_folder"],
+				path: ["week_name"],
 				message: `expected ${expectedFolder}`,
 			});
 		}
@@ -152,7 +152,7 @@ export const WeeklyPlanSchema = z
 		if (mondayOnOrBefore(weekStart) !== weekStart) {
 			context.addIssue({
 				code: "custom",
-				path: ["week_folder"],
+				path: ["week_name"],
 				message: "week must start on Monday",
 			});
 		}

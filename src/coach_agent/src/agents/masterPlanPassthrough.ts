@@ -54,8 +54,8 @@ function getPlanTaskResult(
 		if (!envelope.success) return undefined;
 		if (generatorCall.args?.subagent_type === "generate_weekly_plan") {
 			if (expectedWeeklyPlanStart === undefined) return undefined;
-			const content = envelope.data.content as { week_folder?: unknown };
-			if (content.week_folder !== weekFolder(expectedWeeklyPlanStart))
+			const content = envelope.data.content as { week_name?: unknown };
+			if (content.week_name !== weekFolder(expectedWeeklyPlanStart))
 				return undefined;
 		}
 		return JSON.stringify(envelope.data.content);

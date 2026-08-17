@@ -23,7 +23,7 @@ class FakePlanStore implements PlanStore {
 	async getWeeklyPlan(requestUserId: string, weekName: string) {
 		this.calls.push({ method: "weekly", userId: requestUserId, weekName });
 		return requestUserId === userId && weekName === "2026-07-20_07-26"
-			? { week_folder: weekName, sessions: [] }
+			? { week_name: weekName, sessions: [] }
 			: null;
 	}
 }
@@ -41,7 +41,7 @@ test("plan tools query the MySQL store with the runtime user identity", async ()
 	});
 	assert.deepEqual(
 		await weeklyTool!.invoke({ weekName: "2026-07-20_07-26" }, config),
-		{ week_folder: "2026-07-20_07-26", sessions: [] },
+		{ week_name: "2026-07-20_07-26", sessions: [] },
 	);
 	assert.deepEqual(store.calls, [
 		{ method: "master", userId, day: "2026-07-20" },

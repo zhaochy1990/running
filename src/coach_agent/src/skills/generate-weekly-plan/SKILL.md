@@ -7,7 +7,7 @@ description: Generate a structured weekly running plan from the athlete's active
 
 ## 1. Load the bounded evidence
 
-Call `get_master_plan` once. If there is no active master plan, ask the athlete to create one first. Call `get_weekly_plan_context` once; it is the source for the authoritative `plan_start`, `week_folder`, recent planned-versus-actual weeks, STRIDE load, recovery, injuries, calibration, current phase, stage, and phase milestones.
+Call `get_master_plan` once. If there is no active master plan, ask the athlete to create one first. Call `get_weekly_plan_context` once; it is the source for the authoritative `plan_start`, `week_name`, recent planned-versus-actual weeks, STRIDE load, recovery, injuries, calibration, current phase, stage, and phase milestones.
 
 Use `absorbed_load.distance_anchor_km` as the deterministic median of the latest complete weeks and `absorbed_load.latest_complete_week` for recency. Use only `recent_training_weeks` entries with `complete: true` as any additional full-week evidence. A partial week is useful for the latest stimulus and recovery evidence, but it is not a low-volume completed week. Treat actual completed training as the exposure the athlete absorbed. Planned sessions that were skipped do not count as completed exposure.
 
@@ -69,7 +69,7 @@ Distribute easy running around the selected key sessions so the sum of every run
 
 Use running calibration for pace/HR targets. When calibration is missing or low-confidence, prescribe effort/HR conservatively and leave unsupported numeric targets open instead of estimating them. Respect every injury restriction.
 
-The target week is exactly `plan_start` through six days later. Set top-level `week_folder` exactly to the context `week_folder`. Every session and nutrition date must be inside that week, and nutrition must cover all seven dates.
+The target week is exactly `plan_start` through six days later. Set top-level `week_name` exactly to the context `week_name`. Every session and nutrition date must be inside that week, and nutrition must cover all seven dates.
 
 For catalogued strength exercises, set `canonical_id` and `provider_id` to the same verified COROS T-code. Verified mappings: squat `T1061`, single-leg deadlift `T1187`, side plank `T1185`, dead bug `T1243`, single-leg calf raise `T1275`, step-up `T1296`, goblet squat `T1301`, and dumbbell Romanian deadlift `T1305`. For other movements, use a stable descriptive `canonical_id` and `provider_id: null`.
 

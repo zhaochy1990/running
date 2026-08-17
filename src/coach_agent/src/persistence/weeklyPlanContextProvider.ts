@@ -97,7 +97,7 @@ export interface AbsorbedLoad {
 export interface WeeklyPlanContext {
 	as_of: string;
 	plan_start: string;
-	week_folder: string;
+	week_name: string;
 	lookback: { start_date: string; end_date: string; days: number };
 	training_position: {
 		phase: Record<string, unknown> | null;
@@ -181,7 +181,7 @@ export class MySqlWeeklyPlanContextProvider
 		return {
 			as_of: end,
 			plan_start: planStart,
-			week_folder: weekFolder(planStart),
+			week_name: weekFolder(planStart),
 			lookback: { start_date: start, end_date: end, days: LOOKBACK_DAYS },
 			training_position: trainingPosition(plan, planStart),
 			recent_activities: activities
