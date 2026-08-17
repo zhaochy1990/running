@@ -165,26 +165,27 @@ func newWeeklyPlanHarness(t *testing.T) *weeklyPlanHarness {
 
 func (h *weeklyPlanHarness) bearer(t *testing.T, sub string) map[string]string {
 	t.Helper()
-	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"sub": sub, "iss": testIssuer, "aud": testAudience,
-		"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
-	})
-	signed, err := tok.SignedString(h.key)
-	if err != nil {
-		t.Fatalf("sign: %v", err)
-	}
-	return map[string]string{"Authorization": "Bearer " + signed}
+	return h.bearerWithClaims(t, sub, testAudience, "")
 }
 
 func (h *weeklyPlanHarness) adminBearer(t *testing.T, sub string) map[string]string {
 	t.Helper()
-	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"sub": sub, "iss": testIssuer, "aud": testAdminAudience, "role": "admin",
+	return h.bearerWithClaims(t, sub, testAdminAudience, "admin")
+}
+
+func (h *weeklyPlanHarness) bearerWithClaims(t *testing.T, sub, audience, role string) map[string]string {
+	t.Helper()
+	claims := jwt.MapClaims{
+		"sub": sub, "iss": testIssuer, "aud": audience,
 		"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
-	})
+	}
+	if role != "" {
+		claims["role"] = role
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	signed, err := tok.SignedString(h.key)
 	if err != nil {
-		t.Fatalf("sign admin token: %v", err)
+		t.Fatalf("sign token: %v", err)
 	}
 	return map[string]string{"Authorization": "Bearer " + signed}
 }
@@ -346,7 +347,7 @@ func validAppliedWeeklyPlan(weekName string) string {
 		})
 	}
 	document := map[string]any{
-		"schema": "weekly-plan/v1", "week_folder": weekName,
+		"schema": "weekly-plan/v1", "week_name": weekName,
 		"sessions": []any{}, "nutrition": nutrition,
 		"notes_md": nil, "coach_notes": nil,
 	}
@@ -445,10 +446,14 @@ func TestWeeklyPlanApplyIsAdminOnlyAndValidatesContent(t *testing.T) {
 		status  int
 		error   string
 	}{
+		{name: "unauthenticated", body: validBody, status: http.StatusUnauthorized, error: "unauthorized"},
 		{name: "user", headers: h.bearer(t, userID), body: validBody, status: http.StatusForbidden, error: "forbidden"},
+		{name: "admin role on user audience", headers: h.bearerWithClaims(t, userID, testAudience, "admin"), body: validBody, status: http.StatusForbidden, error: "forbidden"},
+		{name: "admin audience without admin role", headers: h.bearerWithClaims(t, userID, testAdminAudience, "user"), body: validBody, status: http.StatusUnauthorized, error: "unauthorized"},
 		{name: "internal", headers: internalHdr(), body: validBody, status: http.StatusForbidden, error: "forbidden"},
 		{name: "wrong week", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-24_08-30") + "}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
-		{name: "missing arrays", headers: h.adminBearer(t, "admin"), body: "{\"content\":{\"schema\":\"weekly-plan/v1\",\"week_folder\":\"2026-08-17_08-23\"}}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
+		{name: "missing arrays", headers: h.adminBearer(t, "admin"), body: "{\"content\":{\"schema\":\"weekly-plan/v1\",\"week_name\":\"2026-08-17_08-23\"}}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
+		{name: "legacy week folder", headers: h.adminBearer(t, "admin"), body: strings.Replace(validBody, "week_name", "week_folder", 1), status: http.StatusUnprocessableEntity, error: "invalid_content"},
 		{name: "duplicate sessions", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + string(duplicateRaw) + "}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
 		{name: "replacement missing expectation", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-17_08-23") + ",\"replace_existing\":true}", status: http.StatusUnprocessableEntity, error: "invalid_replacement"},
 		{name: "replacement invalid plan id", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-17_08-23") + ",\"replace_existing\":true,\"expected_active_plan_id\":\"not-a-uuid\",\"expected_active_revision\":1}", status: http.StatusUnprocessableEntity, error: "invalid_replacement"},

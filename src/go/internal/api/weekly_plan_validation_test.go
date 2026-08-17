@@ -77,7 +77,7 @@ func TestValidateAppliedWeeklyPlanAcceptsCanonicalNestedContent(t *testing.T) {
 		t.Fatalf("validate canonical plan: %v", err)
 	}
 	if string(content) == "" || strings.Contains(string(content), `"schema"`) ||
-		strings.Contains(string(content), `"week_folder"`) || strings.Contains(string(content), `"scheduled_workout_id"`) {
+		strings.Contains(string(content), `"week_name"`) || strings.Contains(string(content), `"scheduled_workout_id"`) {
 		t.Fatalf("stored content contains authoring metadata: %s", content)
 	}
 }

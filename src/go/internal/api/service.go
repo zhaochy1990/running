@@ -243,9 +243,9 @@ func (s *Service) Router() *gin.Engine {
 	r.GET("/api/readyz/plan-setup", s.planSetupReadiness)
 
 	authenticated := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
-	// Plan path reads explicitly admit the separate admin JWT tier. The
-	// master-plan /me handler still rejects it, and Weekly Plan mutations remain
-	// on the default-deny child group below.
+	// Plan routes explicitly admit the separate admin JWT tier. The master-plan
+	// /me handler still rejects it; only the narrow Weekly Plan import route may
+	// mutate data outside the default-deny child group below.
 	s.masterPlan.register(authenticated)
 	s.weeklyPlan.registerReads(authenticated)
 	s.weeklyPlan.registerAdminWrites(authenticated)

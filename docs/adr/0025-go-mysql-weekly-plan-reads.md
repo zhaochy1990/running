@@ -69,7 +69,7 @@ MySQL 没有部分唯一索引，因此 `status_slot` 仅用于强制每个用�
 
 ### Content and lifecycle
 
-`content_version=1` 保存非空 Markdown；`content_version=2` 保存结构化 JSON 对象，必须包含 `sessions` 和 `nutrition` 数组，可选 `notes_md`。结构化内容沿用当前 session、workout 和 nutrition 字段，但迁移时递归删除所有 `schema`、顶层 `week_folder` 和 session 的 `scheduled_workout_id`。周身份只存在于外层记录。session/nutrition 日期必须落在该自然周，`(date, session_index)` 唯一，同一天最多一条 nutrition；计数字段为整数，度量字段可为有限 number 或 null。
+`content_version=1` 保存非空 Markdown；`content_version=2` 保存结构化 JSON 对象，必须包含 `sessions` 和 `nutrition` 数组，可选 `notes_md`。结构化内容沿用当前 session、workout 和 nutrition 字段，但迁移时递归删除所有 `schema`、顶层 `week_name` 和 session 的 `scheduled_workout_id`。周身份只存在于外层记录。session/nutrition 日期必须落在该自然周，`(date, session_index)` 唯一，同一天最多一条 nutrition；计数字段为整数，度量字段可为有限 number 或 null。
 
 draft 是内容完整、尚未启用的候选课表；active 是该自然周当前生效的课表；archived 是同周旧 active 被新 draft 替换后的历史快照。同周最多一个 draft。调整 active 时创建或更新 draft，不直接修改 active；启用在一个事务中将旧 active 归档、draft 启用，并保持各自 `plan_id` 不变。新未来周也先创建 draft，必须显式确认，不按日期自动启用。过去周的所有状态均不可再调整或启用；周结束后仍未启用的 draft 可物理删除。赛季训练计划状态变化不影响关联课表。
 

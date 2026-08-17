@@ -249,7 +249,7 @@ func TestApplyStructuredWeeklyPlanCreatesAndReplacesAtomically(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.NewString()
 	weekStart := "2026-08-17"
-	content := "{\"schema\":\"weekly-plan/v1\",\"week_folder\":\"2026-08-17_08-23\",\"sessions\":[],\"nutrition\":[]}"
+	content := "{\"schema\":\"weekly-plan/v1\",\"week_name\":\"2026-08-17_08-23\",\"sessions\":[],\"nutrition\":[]}"
 
 	first, replaced, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, nil)
 	if err != nil || replaced != nil || first == nil || first.Status != WeeklyPlanStatusActive || first.Revision != 1 {
@@ -295,7 +295,7 @@ func TestApplyStructuredWeeklyPlanConcurrentFirstApplyReturnsConflict(t *testing
 	migrateWeeklyPlan(t, store)
 	ctx := context.Background()
 	userID := uuid.NewString()
-	content := "{\"schema\":\"weekly-plan/v1\",\"week_folder\":\"2026-08-17_08-23\",\"sessions\":[],\"nutrition\":[]}"
+	content := "{\"schema\":\"weekly-plan/v1\",\"week_name\":\"2026-08-17_08-23\",\"sessions\":[],\"nutrition\":[]}"
 	start := make(chan struct{})
 	errs := make(chan error, 2)
 	for range 2 {

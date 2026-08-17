@@ -24,10 +24,10 @@ func validateAppliedWeeklyPlan(document map[string]any, expectedWeek string) ([]
 	if document == nil {
 		return nil, errors.New("weekly plan content must be a JSON object")
 	}
-	if !hasExactKeys(document, "schema", "week_folder", "sessions", "nutrition", "notes_md", "coach_notes") {
+	if !hasExactKeys(document, "schema", "week_name", "sessions", "nutrition", "notes_md", "coach_notes") {
 		return nil, errors.New("weekly plan fields do not match the canonical schema")
 	}
-	if document["schema"] != "weekly-plan/v1" || document["week_folder"] != expectedWeek {
+	if document["schema"] != "weekly-plan/v1" || document["week_name"] != expectedWeek {
 		return nil, errors.New("weekly plan identity mismatch")
 	}
 	if !nullableString(document["notes_md"]) || !nullableString(document["coach_notes"]) {
@@ -86,7 +86,7 @@ func validateAppliedWeeklyPlan(document map[string]any, expectedWeek string) ([]
 		return nil, fmt.Errorf("clone weekly plan content: %w", err)
 	}
 	delete(stored, "schema")
-	delete(stored, "week_folder")
+	delete(stored, "week_name")
 	stripStoredWeeklyPlanMetadata(stored)
 	return json.Marshal(stored)
 }
