@@ -93,14 +93,17 @@ jobs:
         working-directory: src/coach_agent
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: src/coach_agent/package-lock.json
-      - run: npm ci
+          cache: pnpm
+          cache-dependency-path: src/coach_agent/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
       - name: Build Coach Agent
-        run: npm run build
+        run: pnpm run build
       - name: Verify Weekly Plan contract parity
         run: node --test dist/agents/weeklyPlanSchemaParity.test.js
 
