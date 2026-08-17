@@ -26,6 +26,8 @@ on:
       - "src/go/**"
       - "src/coach_agent/src/agents/weekly_plan/schema.ts"
       - "src/coach_agent/src/agents/weeklyPlanSchemaParity.test.ts"
+      - "src/coach_agent/scripts/generate-weekly-plan-schema.mjs"
+      - "src/go/internal/api/weekly_plan_schema.json"
       - "tests/fixtures/weekly_plan_contract.json"
       - ".github/workflows/worker-go.yml"
   pull_request:
@@ -33,6 +35,8 @@ on:
       - "src/go/**"
       - "src/coach_agent/src/agents/weekly_plan/schema.ts"
       - "src/coach_agent/src/agents/weeklyPlanSchemaParity.test.ts"
+      - "src/coach_agent/scripts/generate-weekly-plan-schema.mjs"
+      - "src/go/internal/api/weekly_plan_schema.json"
       - "tests/fixtures/weekly_plan_contract.json"
       - ".github/workflows/worker-go.yml"
 
@@ -58,6 +62,8 @@ jobs:
               - 'src/go/internal/api/weekly_plan_contract_parity_test.go'
               - 'src/coach_agent/src/agents/weekly_plan/schema.ts'
               - 'src/coach_agent/src/agents/weeklyPlanSchemaParity.test.ts'
+              - 'src/coach_agent/scripts/generate-weekly-plan-schema.mjs'
+              - 'src/go/internal/api/weekly_plan_schema.json'
               - 'tests/fixtures/weekly_plan_contract.json'
               - '.github/workflows/worker-go.yml'
       # Compute once before the matrix fans out so both images always share the
@@ -104,6 +110,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build Coach Agent
         run: pnpm run build
+      - name: Verify generated Weekly Plan JSON Schema
+        run: pnpm run verify:weekly-plan-schema
       - name: Verify Weekly Plan contract parity
         run: node --test dist/agents/weeklyPlanSchemaParity.test.js
 

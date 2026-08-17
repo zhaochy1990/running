@@ -98,6 +98,7 @@
     { "name": "extra top-level field", "valid": false, "patches": [{ "op": "set", "path": ["unexpected"], "value": true }] },
     { "name": "legacy week folder", "valid": false, "patches": [{ "op": "delete", "path": ["week_name"] }, { "op": "set", "path": ["week_folder"], "value": "2026-08-17_08-23" }] },
     { "name": "missing session summary", "valid": false, "patches": [{ "op": "delete", "path": ["sessions", 0, "summary"] }] },
+    { "name": "whitespace session summary", "valid": true, "patches": [{ "op": "set", "path": ["sessions", 0, "summary"], "value": "   " }] },
     { "name": "rest session with spec", "valid": false, "patches": [{ "op": "set", "path": ["sessions", 2, "spec"], "value": {} }] },
     { "name": "run workout date mismatch", "valid": false, "patches": [{ "op": "set", "path": ["sessions", 0, "spec", "date"], "value": "2026-08-18" }] },
     { "name": "invalid duration kind", "valid": false, "patches": [{ "op": "set", "path": ["sessions", 0, "spec", "blocks", 0, "steps", 0, "duration", "kind"], "value": "minutes" }] },
