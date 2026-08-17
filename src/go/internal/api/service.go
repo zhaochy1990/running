@@ -20,8 +20,9 @@ import (
 	"github.com/zhaochy1990/stride/internal/logging"
 )
 
-// maxRequestBytes caps create request bodies. The API has a public ingress, so
-// an unbounded body binding into a MySQL longtext is a DoS/storage-abuse vector.
+// maxRequestBytes caps authenticated request bodies. The API has a public
+// ingress, so an unbounded body binding into MySQL longtext is a DoS/storage-
+// abuse vector.
 const maxRequestBytes = 1 << 20 // 1 MiB
 
 // Enqueuer creates a standalone job and publishes its pointer.

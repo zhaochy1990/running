@@ -125,7 +125,6 @@ func (w *weeklyPlanRoutes) apply(c *gin.Context) {
 		return
 	}
 
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2*1024*1024)
 	var request applyWeeklyPlanRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		var maxBytesError *http.MaxBytesError
