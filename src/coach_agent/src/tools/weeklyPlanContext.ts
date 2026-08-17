@@ -39,7 +39,7 @@ export function createWeeklyPlanContextTools(
 			name: "get_weekly_plan_context",
 			description:
 				"一次获取周计划决策所需的有界上下文：当前赛季 phase、阶段里程碑与本周 stage、确定性实际负荷锚点、最近四周计划/实际摘要、最近 28 天活动和周反馈、" +
-				"STRIDE CTL/ATL/Form/负荷趋势、伤病限制、原始 RHR/HRV 恢复趋势，以及乳酸阈值心率、阈值配速和训练区间。" +
+				"STRIDE CTL/ATL/Form/负荷趋势、伤病限制、原始 RHR/HRV 恢复趋势，以及用户画像（年龄/体重/乳酸阈值心率/阈值配速/静息心率/心率与配速区间）。" +
 				"生成或调整周计划前调用一次；不要再分别重复查询这些数据。",
 			schema: getWeeklyPlanContextSchema,
 			handler: (input, runtime) => impl.getWeeklyPlanContext(input, runtime),

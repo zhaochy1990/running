@@ -56,6 +56,17 @@ function providerUsingMySqlFeedback(
 test("weekly context combines all weekly planning evidence", async () => {
 	const ranges: Array<[string, string, string]> = [];
 	const provider = providerUsingMySqlFeedback({
+		async getUserProfile() {
+			return {
+				userId: "athlete",
+				displayName: "Athlete",
+				dob: "1979-01-02",
+				sex: "male",
+				heightCm: 175,
+				weightKg: 68,
+				runningAgeRange: "40-49",
+			};
+		},
 		async getMasterPlanMetadataForDate() {
 			return {
 				planId: "plan-1",
@@ -286,14 +297,24 @@ test("weekly context combines all weekly planning evidence", async () => {
 		1.1,
 	);
 	assert.equal("readiness_gate" in snapshot.fitness_state, false);
-	assert.deepEqual(
-		(snapshot.injury_and_recovery.recovery as Record<string, unknown>)
-			.seven_day_average,
-		{ rhr: 51, hrv: 58 },
-	);
-	assert.equal(snapshot.running_calibration?.lactate_threshold_hr, 170);
-	assert.equal(snapshot.running_calibration?.threshold_pace_s_per_km, 250);
-	assert.equal(snapshot.running_calibration?.rhr_baseline, 48);
+	assert.deepEqual(snapshot.injury, [
+		{
+			description: "left Achilles",
+			recovery_status: "recovering",
+			running_restriction: "easy_only",
+		},
+	]);
+	assert.deepEqual(snapshot.recovery.seven_day_average, { rhr: 51, hrv: 58 });
+	assert.deepEqual(snapshot.user_profile, {
+		age: 47,
+		weight_kg: 68,
+		threshold_pace_s_per_km: 250,
+		threshold_speed_mps: 4,
+		lactate_threshold_hr: 170,
+		rhr_baseline: 48,
+		heart_rate_zones: [{ name: "Z2", minBpm: 130, maxBpm: 145 }],
+		pace_zones: [{ name: "Z2", minPaceSPerKm: 330, maxPaceSPerKm: 390 }],
+	});
 	assert.deepEqual(ranges, [
 		["athlete", "2026-07-19", "2026-08-15"],
 		["athlete", "2026-07-13", "2026-08-15"],
@@ -302,6 +323,9 @@ test("weekly context combines all weekly planning evidence", async () => {
 
 test("weekly context anchors distance to completed-week median", async () => {
 	const provider = providerUsingMySqlFeedback({
+		async getUserProfile() {
+			return null;
+		},
 		async getMasterPlanMetadataForDate() {
 			return null;
 		},
@@ -371,6 +395,9 @@ test("weekly context anchors distance to completed-week median", async () => {
 test("weekly context keeps a Monday as the planning start", async () => {
 	const activityRanges: Array<[string, string]> = [];
 	const provider = new MySqlWeeklyPlanContextProvider({
+		async getUserProfile() {
+			return null;
+		},
 		async getMasterPlanMetadataForDate() {
 			return null;
 		},
@@ -413,6 +440,9 @@ test("weekly context keeps a Monday as the planning start", async () => {
 
 test("weekly context reports unavailable STRIDE load without fallback", async () => {
 	const provider = new MySqlWeeklyPlanContextProvider({
+		async getUserProfile() {
+			return null;
+		},
 		async getMasterPlanMetadataForDate() {
 			return null;
 		},
@@ -447,11 +477,23 @@ test("weekly context reports unavailable STRIDE load without fallback", async ()
 		available: false,
 		missing_reason: "stride_load_not_computed",
 	});
-	assert.equal(snapshot.running_calibration, null);
+	assert.deepEqual(snapshot.user_profile, {
+		age: null,
+		weight_kg: null,
+		threshold_pace_s_per_km: null,
+		threshold_speed_mps: null,
+		lactate_threshold_hr: null,
+		rhr_baseline: null,
+		heart_rate_zones: [],
+		pace_zones: [],
+	});
 });
 
 test("weekly context treats null PMC values as not computed", async () => {
 	const provider = new MySqlWeeklyPlanContextProvider({
+		async getUserProfile() {
+			return null;
+		},
 		async getMasterPlanMetadataForDate() {
 			return null;
 		},

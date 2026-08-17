@@ -55,10 +55,9 @@ export function simulateWeeklyPlanLoad(
 	plan: WeeklyPlan,
 	context: WeeklyPlanContext,
 ): WeeklyPlanSimulationReport {
-	const calibration = record(context.running_calibration);
-	const thresholdSpeed = number(calibration?.threshold_speed_mps);
-	const thresholdHr = number(calibration?.lactate_threshold_hr);
-	const rhr = number(calibration?.rhr_baseline);
+	const thresholdSpeed = context.user_profile.threshold_speed_mps;
+	const thresholdHr = context.user_profile.lactate_threshold_hr;
+	const rhr = context.user_profile.rhr_baseline;
 	const weekStart = context.plan_start;
 	const sessionReports: z.input<typeof SessionSimulationSchema>[] = [];
 	const missingReasons: string[] = [];

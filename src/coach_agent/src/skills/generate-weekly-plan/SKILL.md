@@ -1,53 +1,55 @@
 ---
 name: generate-weekly-plan
-description: Generate a structured weekly running plan from the athlete's active master plan, actual completed training, STRIDE load, recovery signals, phase milestones, and recent stimulus history.
+description: 根据运动员的活跃主计划、实际完成的训练、STRIDE 负荷、恢复信号、阶段里程碑和近期刺激历史，生成结构化的周训练计划。
 ---
 
-# Generate a weekly training plan
+# 生成每周训练计划
 
-## 1. Load the bounded evidence
+## 1. load weekly plan context
 
-Call `get_master_plan` once. If there is no active master plan, ask the athlete to create one first. Call `get_weekly_plan_context` once; it is the source for the authoritative `plan_start`, `week_name`, recent planned-versus-actual weeks, STRIDE load, recovery, injuries, calibration, current phase, stage, and phase milestones.
+首先调用一次 `get_master_plan`。如果没有active的主计划，我们需要直接返回并请运动员先创建一个赛季训练计划。
 
-Use `absorbed_load.distance_anchor_km` as the deterministic median of the latest complete weeks and `absorbed_load.latest_complete_week` for recency. Use only `recent_training_weeks` entries with `complete: true` as any additional full-week evidence. A partial week is useful for the latest stimulus and recovery evidence, but it is not a low-volume completed week. Treat actual completed training as the exposure the athlete absorbed. Planned sessions that were skipped do not count as completed exposure.
+然后，调用一次 `get_weekly_plan_context`；它是权威的 `plan_start`、`week_name`、近期计划与实际完成周、STRIDE 负荷、恢复、伤病、训练水平、当前阶段（phase）、子阶段（stage）和阶段里程碑的来源。
 
-Complete this step only after identifying:
+使用 `absorbed_load.distance_anchor_km` 作为最近完整周的确定性中位数，用 `absorbed_load.latest_complete_week` 判断时效性。只把 `recent_training_weeks` 中 `complete: true` 的条目作为额外的完整周证据。不完整的周可用于最近的刺激与恢复证据，但它不是低量完整周。把实际完成的训练视为运动员已吸收的暴露量。被跳过的计划训练不计入已完成暴露量。
 
-- the provided `distance_anchor_km`, latest complete-week distance and training dose, and whether completion is rising, stable, or falling; do not recompute the median;
-- whether the latest complete week was already materially under the anchor (below 90%), i.e. whether this week would be a second consecutive low-volume week;
-- the latest STRIDE `load_ratio`, raw RHR/HRV trend, injuries, and any unusually costly recent session;
-- the current phase/stage, recovery-week flag, nearest milestone inside the current phase, and `quality_stimulus_days`/`longest_run` evidence from the latest two weeks. Multiple activity records on one day are one stimulus day.
+只有确认以下信息后，才算完成本步骤：
 
-## 2. Set the load target from absorbed training
+- 给定的 `distance_anchor_km`、最近完整周的距离与训练剂量，以及完成量处于上升、持平还是下降趋势；不要重新计算中位数；
+- 最近完整周是否已明显低于锚点（低于 90%），即本周是否会成为连续第二个低量周；
+- 最新的 STRIDE `load_ratio`、原始 RHR/HRV 趋势、伤病，以及任何异常高代价的近期训练；
+- 当前阶段/子阶段、恢复周标记、当前阶段内最近的里程碑，以及最近两周的 `quality_stimulus_days`/`longest_run` 证据。同一天的多条活动记录算一个刺激日。
 
-The actual complete-week median is the absolute-volume anchor. The master-plan range supplies periodization direction and key-session intent; it is not an instruction to jump back to an unabsorbed volume.
+## 2. 根据已吸收训练设定负荷目标
 
-For an ordinary load week, use these starting bands and then apply recovery/injury evidence:
+实际完整周中位数是绝对量的锚点。主计划给出的区间提供周期化方向与关键训练意图；它不是让你跳回未吸收量的指令。
 
-| Evidence | Target versus actual anchor |
+对于普通负荷周，先使用以下起始区间，再应用恢复/伤病证据：
+
+| 证据 | 相对实际锚点的目标 |
 | --- | --- |
-| `load_ratio` 0.90-1.10 and stable recovery | maintain to +8% |
-| `load_ratio` 1.10-1.25 or one unusually costly recent session | -5% to +3% |
-| `load_ratio` >1.25, worsening recovery, active restriction, or repeated high-strain days | -10% to -20%; remove a quality stimulus |
-| `load_ratio` <0.75 with stable recovery | rebuild by 5-10%, not an abrupt return to the master range |
+| `load_ratio` 0.90-1.10 且恢复稳定 | 维持至 +8% |
+| `load_ratio` 1.10-1.25 或有一次异常高代价的近期训练 | -5% 至 +3% |
+| `load_ratio` >1.25、恢复恶化、活动受限，或反复出现高负荷天 | -10% 至 -20%；移除一个质量刺激 |
+| `load_ratio` <0.75 且恢复稳定 | 恢复性回升 5-10%，而不是骤然回到主计划区间 |
 
-Treat recovery as a veto, not an average. When recent raw RHR rises while HRV falls versus the preceding measured window, classify recovery as worsening even if the `load_ratio` row alone would allow maintenance. Select the most conservative applicable row: target 80-90% of the actual anchor and remove one formal quality stimulus. Use the upper half only when the change is small, the latest easy-run response is normal, and there is no injury, sleep, or high-strain warning. Preserve the phase-specific stimulus family inside the reduced dose; do not use milestone pressure or a master-plan volume range to raise the target.
+把恢复视为一票否决，而不是取平均。当近期原始 RHR 相对前一个测量窗口上升而 HRV 下降时，即使 `load_ratio` 一行单独看允许维持，也要把恢复归类为恶化。选择适用行中最保守的一条：目标设为实际锚点的 80-90%，并移除一个正式的质量刺激。只有当变化很小、最近轻松跑反应正常、且没有伤病、睡眠或高负荷警告时，才使用区间的上半部分。在降低剂量的同时保留阶段特定的刺激家族；不要用里程碑压力或主计划量区间来提高目标。
 
-Do not prescribe an ordinary-week increase above 10% from the larger of the latest complete week and the 2-3-week median. A stale master-plan lower bound never justifies a larger jump. When complete history is sparse, hold or reduce instead of inventing fitness.
+普通周的增幅不要超过最近完整周与 2-3 周中位数两者中较大者的 10%。过时的主计划下限永远不能证明更大的跳跃是合理的。当完整历史稀疏时，选择维持或减少，而不是凭空发明体能。
 
-For a week flagged `is_recovery_week`, first verify whether a deep cut is actually warranted. A recovery week is a tool to absorb load, not a standing instruction to cut volume. Decide the band from evidence before touching volume:
+对于标记为 `is_recovery_week` 的周，首先确认深度削减是否真的有必要。恢复周是吸收负荷的工具，不是削减量的固定指令。在触碰量之前，先根据证据决定区间：
 
-- **Deep cut is warranted (70-80% of the absorbed anchor, 0Q1L)**: the latest complete week executed at or above 90% of the anchor, or there is recent abnormal stress — an unusually costly session, repeated high-strain days, or worsening recovery (raw RHR rising while HRV falls versus the preceding measured window).
-- **Maintain instead of cutting (85-95% of the anchor, 0Q1L or one light quality stimulus)**: the latest complete week was already materially under the anchor (below 90%) with stable recovery and `load_ratio` ≤ 1.0 and positive form. Stacking a second deep cut then slides into over-deloading (detraining); target the master plan's `target_weekly_km_low/high` range rather than applying another discount on top of it.
-- **Moderate cut (80-90% of the anchor)**: the preceding complete week was materially under the anchor and `load_ratio < 0.90` with stable recovery — do not stack another deep cut.
+- **需要深度削减（锚点的 70-80%，0Q1L）**：最近完整周执行量达到锚点的 90% 或以上，或近期存在异常压力——异常高代价的训练、反复的高负荷天、或恢复恶化（原始 RHR 相对前一个测量窗口上升而 HRV 下降）。
+- **维持而非削减（锚点的 85-95%，0Q1L 或一个轻松质量刺激）**：最近完整周已明显低于锚点（低于 90%），且恢复稳定、`load_ratio` ≤ 1.0、form 为正。再叠一层深度削减就会滑入过度减载（detraining）；应瞄准主计划的 `target_weekly_km_low/high` 区间，而不是在它之上再打折扣。
+- **中度削减（锚点的 80-90%）**：前一完整周明显低于锚点，且 `load_ratio` < 0.90、恢复稳定——不要再叠一层深度削减。
 
-The resulting target must never fall below the master plan recovery-week `target_weekly_km_low`. When the recovery week is upgraded to a maintenance week, allow one light quality stimulus (1Q1L) so the following build week does not jump more than 10% from this week's total. Taper and race weeks follow their phase reference.
+最终目标绝不能低于主计划恢复周的 `target_weekly_km_low`。当恢复周升级为维持周时，允许一个轻松质量刺激（1Q1L），使接下来的建设周相比本周总量增幅不超过 10%。减量周和比赛周遵循各自的阶段参考。
 
-Complete this step only after choosing one numeric weekly running-distance target and one load decision: increase, maintain, reduce, recovery, or taper.
+只有选定一个数值化的周跑步距离目标和一个负荷决策（增加、维持、减少、恢复或减量）后，才算完成本步骤。
 
-## 3. Bridge the phase milestone
+## 3. 衔接阶段里程碑
 
-Read exactly one phase reference matching `training_position.phase`. Choose the most specific match first, so any phase containing `marathon` or `马拉松` uses the marathon reference even when its name also contains `build` or `建设`:
+读取恰好一条与 `training_position.phase` 匹配的阶段参考。先匹配最具体的，因此任何包含 `marathon` 或 `马拉松` 的阶段即使名字里也有 `build` 或 `建设`，也要用马拉松参考：
 
 - base/aerobic/foundation/基础期 → `references/base.md`
 - build/progression/threshold/提升期/进展期 → `references/build.md`
@@ -56,49 +58,49 @@ Read exactly one phase reference matching `training_position.phase`. Choose the 
 - taper/赛前减量/赛前减量期 → `references/taper.md`
 - recovery/赛后恢复/赛后恢复期 → `references/recovery.md`
 
-Select the nearest upcoming milestone with `completed_actual: null` inside the current phase. If none is upcoming, use the latest unmet phase milestone as diagnostic evidence rather than blindly rescheduling it. Choose this week's key stimulus as a conservative bridge from the athlete's most recent completed stimulus toward the selected milestone. The bridge must be smaller than or equal to the milestone demand; do not rehearse the full milestone early. If no phase milestone is present, use the stage `key_sessions` and phase focus.
+选择当前阶段内 `completed_actual: null` 的最近即将到来的里程碑。如果没有即将到来的里程碑，把最近未达成的阶段里程碑作为诊断证据，而不是盲目重排它。选择本周的关键刺激，作为从运动员最近完成的刺激通向所选里程碑的保守衔接。衔接的负荷必须小于或等于里程碑的负荷要求；不要提前完整演练里程碑。如果当前阶段没有里程碑，使用子阶段的 `key_sessions` 和阶段重点。
 
-Phase specificity decides the stimulus family. For example, marathon-specific work uses marathon pace, threshold/cruise work, and specific long runs. Standalone hard 200 m or 400 m repetitions for maximal speed belong to a speed phase, not a marathon-specific phase; relaxed strides with full recovery remain neuromuscular maintenance rather than a quality session.
+阶段特异性决定刺激家族。例如，马拉松专项训练使用马拉松配速、阈值/巡航跑和专项长跑。单独的 200 m 或 400 m 全力间歇属于速度期，不属于马拉松专项期；充分恢复下的放松大步跑（strides）只是神经肌肉维持，不是质量训练。
 
-## 4. Rotate quality stimuli
+## 4. 轮换质量刺激
 
-Build a stimulus signature from the latest two weeks of actual quality sessions: energy system, work-repetition duration or distance, session shape, and whether the long run contained a quality segment. Avoid repeating the same signature in consecutive weeks. A recent `5×1 km` session, for example, should rotate to threshold time blocks, longer cruise repetitions, hills, or phase-appropriate race-pace work rather than another 1 km repetition session.
+根据最近两周的实际质量训练构建刺激特征：能量系统、每组工作的时长或距离、训练形态，以及长跑是否含质量段落。避免在连续两周重复同一特征。例如，最近的 `5×1 km` 训练应轮换到阈值时间块、更长的巡航重复跑、坡跑或阶段合适的比赛配速训练，而不是再来一次 1 km 重复训练。
 
-Use 1Q1L when load is high, recovery is uncertain, the prior long run was unusually costly, or the phase milestone can be served inside the long run. Use 2Q1L only when recovery is stable, recent load is controlled, and both quality sessions have distinct phase-specific purposes. A long run with a sustained MP/HMP/threshold segment counts as both L and one Q. Recovery weeks use 0Q1L; a recovery week upgraded to maintenance under Step 2 may use one light quality stimulus.
+当负荷较高、恢复不确定、此前长跑异常高代价，或阶段里程碑可以在长跑内完成时，使用 1Q1L。只有当恢复稳定、近期负荷可控、且两个质量训练都有明确的阶段特定目的时，才使用 2Q1L。含持续 MP/HMP/阈值段落的长跑同时计为 L 和一个 Q。恢复周使用 0Q1L；在第 2 步中升级为维持周的恢复周可以使用一个轻松质量刺激。
 
-Separate quality stimuli by at least 48 hours. Place at least one explicit `kind: rest` day in every plan. Never schedule a quality session immediately after a costly long run.
+质量刺激之间至少间隔 48 小时。每份计划中至少安排一个明确的 `kind: rest` 日。绝不要在代价高昂的长跑之后紧接着安排质量训练。
 
-Protect a key long run that contains MP/HMP/threshold work: normally make the preceding day rest or a short recovery run no longer than 10% of the weekly distance target. A 10-12% preceding run is acceptable only when recent consecutive-day history shows it is well tolerated. Exceed 12% only for an explicit back-to-back endurance milestone with established tolerance; otherwise move that easy volume earlier in the week. Do not create an accidental weekend load spike merely to reach the weekly total.
+保护含 MP/HMP/阈值工作的关键长跑：通常把前一天设为休息日或不超过周距离目标 10% 的短恢复跑。只有当近期连续日历史显示耐受良好时，才允许前一日为 10-12%。除非是已有耐受基础的明确背靠背耐力里程碑，否则不要超过 12%；否则把那段轻松量提前到周初。不要仅仅为了凑周总量而制造意外的周末负荷尖峰。
 
-## 5. Build and audit the structured plan
+## 5. 构建并审计结构化计划
 
-Distribute easy running around the selected key sessions so the sum of every run session's `total_distance_m` matches the numeric weekly target. Prefer trimming easy filler before changing the milestone bridge. Keep the long run proportionate to the established long-run history; avoid creating a single-session load spike merely to hit a distance target.
+围绕所选的关键训练分配轻松跑，使每条跑步训练的 `total_distance_m` 之和等于数值化的周目标。优先削减轻松填充跑，而不是改动里程碑衔接。让长跑与既有长跑历史保持相称；不要为了达到距离目标而制造单次训练负荷尖峰。
 
-Use running calibration for pace/HR targets. When calibration is missing or low-confidence, prescribe effort/HR conservatively and leave unsupported numeric targets open instead of estimating them. Respect every injury restriction.
+使用跑步校准（running calibration）确定配速/心率目标。当校准缺失或置信度低时，保守地开出努力度/心率处方，并把无依据的数值目标留空，而不是自行估算。尊重每一条伤病限制。
 
-The target week is exactly `plan_start` through six days later. Set top-level `week_name` exactly to the context `week_name`. Every session and nutrition date must be inside that week, and nutrition must cover all seven dates.
+目标周恰好是 `plan_start` 起的六天。顶层 `week_name` 必须精确等于上下文的 `week_name`。每条训练和营养日期都必须在该周内，且营养必须覆盖全部七个日期。
 
-For catalogued strength exercises, set `canonical_id` and `provider_id` to the same verified COROS T-code. Verified mappings: squat `T1061`, single-leg deadlift `T1187`, side plank `T1185`, dead bug `T1243`, single-leg calf raise `T1275`, step-up `T1296`, goblet squat `T1301`, and dumbbell Romanian deadlift `T1305`. For other movements, use a stable descriptive `canonical_id` and `provider_id: null`.
+对于目录化的力量训练动作，把 `canonical_id` 和 `provider_id` 设为同一个已验证的 COROS T-code。已验证映射：深蹲 `T1061`、单腿硬拉 `T1187`、侧平板支撑 `T1185`、死虫式 `T1243`、单腿提踵 `T1275`、登台阶 `T1296`、高脚杯深蹲 `T1301`、哑铃罗马尼亚硬拉 `T1305`。对于其他动作，使用稳定的描述性 `canonical_id` 和 `provider_id: null`。
 
-Before returning, audit all of these conditions:
+返回前，审计以下所有条件：
 
-1. weekly distance equals the chosen actual-load target;
-2. phase focus and nearest milestone are served by the key stimulus;
-3. stimulus signature differs from the latest completed comparable quality session;
-4. Q/L count, 48-hour separation, explicit rest day, and injury constraints pass;
-5. the day before a quality long run passes the back-to-back exposure rule;
-6. every workout block, session total, date, nutrition day, schema stamp, and strength ID is internally consistent.
+1. 周距离等于所选的实际负荷目标；
+2. 阶段重点和最近里程碑由关键刺激支撑；
+3. 刺激特征与最近一次已完成的可比质量训练不同；
+4. Q/L 数量、48 小时间隔、明确的休息日、伤病约束均通过；
+5. 质量长跑前一天满足背靠背暴露规则；
+6. 每个训练块、训练总距离、日期、营养日、schema 标记和力量训练 ID 内部一致。
 
-In `coach_notes`, concisely record the actual complete-week anchor, chosen weekly target and load decision, phase/milestone bridge, rotation decision, and the recovery trigger that would reduce or cancel quality. For a recovery week, state which evidence justified a deep cut versus a maintenance band (latest complete week vs anchor, `load_ratio`, form, recovery trend).
+在 `coach_notes` 中简洁记录：实际完整周锚点、选定的周目标与负荷决策、阶段/里程碑衔接、轮换决策，以及会触发减少或取消质量训练的恢复信号。对于恢复周，说明哪个证据支持深度削减而非维持区间（最近完整周 vs 锚点、`load_ratio`、form、恢复趋势）。
 
-## 6. Simulate the final candidate
+## 6. 模拟最终候选计划
 
-Call `simulate_weekly_plan_load` with the complete candidate after its sessions, nutrition, and `coach_notes` are final. Use the report as the authoritative planned-dose and PMC projection; do not manually approximate dose, CTL, ATL, Form, or load ratio.
+在候选计划的训练、营养和 `coach_notes` 全部定稿后，用完整候选计划调用 `simulate_weekly_plan_load`。以报告作为计划剂量的权威数值与 PMC 预测；不要手工估算剂量、CTL、ATL、Form 或负荷比。
 
-When `available: true`, inspect total dose, every daily load-ratio/Form transition, maximum session share, and `safety_issues`. Revise unsafe scheduling or dose, then simulate the complete revised candidate again. Treat `preexisting_overreach_persists_without_planned_load` as a recovery constraint rather than a candidate-plan error: choose the most conservative recovery schedule, document it in `coach_notes`, and do not add load that prolongs the overreach. When the only missing reason is unavailable athlete calibration or initial PMC state, preserve conservative targets and record that limitation in `coach_notes`. Any missing workout structure, uncomputable planned session, structured-distance mismatch, or safety issue requires a corrected candidate and another simulation.
+当 `available: true` 时，检查总剂量、每个每日负荷比/Form 转变、最大训练占比和 `safety_issues`。修正不安全的安排或剂量，然后再次模拟完整的修正候选计划。把 `preexisting_overreach_persists_without_planned_load` 当作恢复约束而不是候选计划错误：选择最保守的恢复安排，记录在 `coach_notes` 中，不要增加会延长过度负荷的训练量。当唯一缺失的原因是运动员校准或初始 PMC 状态不可用时，保留保守目标并在 `coach_notes` 中记录该限制。任何缺失的训练结构、无法计算的计划训练、结构化距离不匹配或安全问题，都需要修正候选计划并再次模拟。
 
-Complete this step only when the candidate has been simulated after its last edit. The returned `content` must be byte-for-byte the same logical WeeklyPlan object passed to the final simulation call.
+只有候选计划在最后一次编辑后已经过模拟，才算完成本步骤。返回的 `content` 必须与传给最终模拟调用的 WeeklyPlan 对象逻辑上逐字节相同。
 
-## 7. Return the WeeklyPlan
+## 7. 返回 WeeklyPlan
 
-Return `{ "disposition": "return_direct", "content": WeeklyPlan }`. Do not return Markdown. Use Chinese for athlete-facing text and English/ASCII for field names and enum values.
+返回 `{ "disposition": "return_direct", "content": WeeklyPlan }`。不要返回 Markdown。面向运动员的文本使用中文，字段名和枚举值保留英文/ASCII。

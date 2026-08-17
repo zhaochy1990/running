@@ -15,9 +15,12 @@ import type {
 	Activity,
 	DailyRecovery,
 	DailyTrainingLoad,
+	HeartRateZone,
+	PaceZone,
 	RunningCalibration,
 	StrideDataStore,
 	UserInjury,
+	UserProfile,
 } from "./dataStore.js";
 import {
 	createWeeklyFeedbackSource,
@@ -27,6 +30,7 @@ import {
 
 type ContextStore = Pick<
 	StrideDataStore,
+	| "getUserProfile"
 	| "getMasterPlanMetadataForDate"
 	| "getWeeklyPlan"
 	| "getActivitiesByDateRange"
@@ -94,11 +98,23 @@ export interface AbsorbedLoad {
 	latest_complete_week: AbsorbedLoadWeek | null;
 }
 
+export interface WeeklyUserProfile {
+	age: number | null;
+	weight_kg: number | null;
+	threshold_pace_s_per_km: number | null;
+	threshold_speed_mps: number | null;
+	lactate_threshold_hr: number | null;
+	rhr_baseline: number | null;
+	heart_rate_zones: HeartRateZone[];
+	pace_zones: PaceZone[];
+}
+
 export interface WeeklyPlanContext {
 	as_of: string;
 	plan_start: string;
 	week_name: string;
 	lookback: { start_date: string; end_date: string; days: number };
+	user_profile: WeeklyUserProfile;
 	training_position: {
 		phase: Record<string, unknown> | null;
 		stage: Record<string, unknown> | null;
@@ -108,8 +124,17 @@ export interface WeeklyPlanContext {
 	absorbed_load: AbsorbedLoad;
 	recent_feedback: Array<Record<string, unknown>>;
 	fitness_state: Record<string, unknown>;
-	injury_and_recovery: Record<string, unknown>;
-	running_calibration: Record<string, unknown> | null;
+	injury: Array<{
+		description: string;
+		recovery_status: string;
+		running_restriction: string;
+	}>;
+	recovery: {
+		latest: DailyRecovery | null;
+		seven_day_average: { rhr: number | null; hrv: number | null };
+		history: DailyRecovery[];
+		provenance: { source: string };
+	};
 }
 
 const LOOKBACK_DAYS = 28;
@@ -151,6 +176,7 @@ export class MySqlWeeklyPlanContextProvider
 				? earliestWeekStart
 				: start;
 		const [
+			profile,
 			plan,
 			activities,
 			feedback,
@@ -160,6 +186,7 @@ export class MySqlWeeklyPlanContextProvider
 			calibration,
 			...weeklyPlans
 		] = await Promise.all([
+			this.store.getUserProfile(userId),
 			this.store.getMasterPlanMetadataForDate(userId, planStart),
 			this.store.getActivitiesByDateRange(userId, trainingHistoryStart, end),
 			this.feedbackSource.getByDateRange(userId, feedbackStart, end),
@@ -183,6 +210,7 @@ export class MySqlWeeklyPlanContextProvider
 			plan_start: planStart,
 			week_name: weekFolder(planStart),
 			lookback: { start_date: start, end_date: end, days: LOOKBACK_DAYS },
+			user_profile: userProfileShape(profile, calibration, end),
 			training_position: trainingPosition(plan, planStart),
 			recent_activities: activities
 				.filter((activity) => activityDay(activity) >= start)
@@ -191,8 +219,8 @@ export class MySqlWeeklyPlanContextProvider
 			absorbed_load: absorbedLoadShape(recentWeeks),
 			recent_feedback: feedback.map(feedbackShape),
 			fitness_state: fitnessShape(loads, end),
-			injury_and_recovery: recoveryShape(injuries, recovery, end),
-			running_calibration: calibrationShape(calibration),
+			injury: injuryShape(injuries),
+			recovery: recoveryShape(recovery, end),
 		};
 	}
 }
@@ -452,11 +480,15 @@ function fitnessShape(loads: DailyTrainingLoad[], day: string) {
 	};
 }
 
-function recoveryShape(
-	injuries: UserInjury[],
-	recovery: DailyRecovery[],
-	asOfDay: string,
-) {
+function injuryShape(injuries: UserInjury[]) {
+	return injuries.map((injury) => ({
+		description: injury.description,
+		recovery_status: injury.recoveryStatus,
+		running_restriction: injury.runningRestriction,
+	}));
+}
+
+function recoveryShape(recovery: DailyRecovery[], asOfDay: string) {
 	const measured = recovery.filter(
 		(row) => row.rhr !== null || row.hrv !== null,
 	);
@@ -466,39 +498,45 @@ function recoveryShape(
 		(row) => row.date >= sevenDayStart && row.date <= asOfDay,
 	);
 	return {
-		injuries: injuries.map((injury) => ({
-			description: injury.description,
-			recovery_status: injury.recoveryStatus,
-			running_restriction: injury.runningRestriction,
-		})),
-		recovery: {
-			latest,
-			seven_day_average: {
-				rhr: average(recent.map((row) => row.rhr)),
-				hrv: average(recent.map((row) => row.hrv)),
-			},
-			history: measured.slice(-14),
-			provenance: { source: "raw_health_measurements" },
+		latest,
+		seven_day_average: {
+			rhr: average(recent.map((row) => row.rhr)),
+			hrv: average(recent.map((row) => row.hrv)),
 		},
+		history: measured.slice(-14),
+		provenance: { source: "raw_health_measurements" },
 	};
 }
 
-function calibrationShape(calibration: RunningCalibration | null) {
-	if (!calibration) return null;
+function userProfileShape(
+	profile: UserProfile | null,
+	calibration: RunningCalibration | null,
+	asOfDay: string,
+): WeeklyUserProfile {
 	return {
-		as_of_date: calibration.asOfDate,
-		lactate_threshold_hr: calibration.thresholdHr,
+		age: ageOn(asOfDay, profile?.dob ?? null),
+		weight_kg: profile?.weightKg ?? null,
 		threshold_pace_s_per_km:
-			calibration.thresholdSpeedMps && calibration.thresholdSpeedMps > 0
+			calibration?.thresholdSpeedMps && calibration.thresholdSpeedMps > 0
 				? round(1000 / calibration.thresholdSpeedMps)
 				: null,
-		threshold_speed_mps: calibration.thresholdSpeedMps,
-		rhr_baseline: calibration.rhrBaseline,
-		threshold_hr_confidence: calibration.thresholdHrConfidence,
-		threshold_pace_confidence: calibration.thresholdSpeedConfidence,
-		heart_rate_zones: calibration.heartRateZones,
-		pace_zones: calibration.paceZones,
+		threshold_speed_mps: calibration?.thresholdSpeedMps ?? null,
+		lactate_threshold_hr: calibration?.thresholdHr ?? null,
+		rhr_baseline: calibration?.rhrBaseline ?? null,
+		heart_rate_zones: calibration?.heartRateZones ?? [],
+		pace_zones: calibration?.paceZones ?? [],
 	};
+}
+
+function ageOn(asOfDay: string, dob: string | null): number | null {
+	if (!dob) return null;
+	const dobYear = number(Number.parseInt(dob.slice(0, 4), 10));
+	if (dobYear === null) return null;
+	const asOfYear = Number.parseInt(asOfDay.slice(0, 4), 10);
+	const birthdayThisYear = `${asOfYear}-${dob.slice(5)}`;
+	return birthdayThisYear <= asOfDay
+		? asOfYear - dobYear
+		: asOfYear - dobYear - 1;
 }
 
 function average(values: Array<number | null>): number | null {

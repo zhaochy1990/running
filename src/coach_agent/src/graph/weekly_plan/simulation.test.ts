@@ -46,7 +46,7 @@ test("weekly simulator rejects incomplete structured distance coverage", () => {
 
 test("weekly simulator reports missing athlete calibration without fallback constants", () => {
 	const snapshot = context();
-	snapshot.running_calibration = null;
+	snapshot.user_profile.threshold_speed_mps = null;
 
 	const report = simulateWeeklyPlanLoad(weeklyPlan(), snapshot);
 
