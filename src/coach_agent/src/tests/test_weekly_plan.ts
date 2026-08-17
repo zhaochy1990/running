@@ -159,9 +159,9 @@ async function askWithHITL(content: string, thread: string): Promise<void> {
 
 const provider = new MySqlWeeklyPlanContextProvider(store);
 const ctx = await provider.loadSnapshot(userId, asof);
-console.log(ctx);
+// console.log(ctx);
 
-// await askWithHITL("帮我生成下周的训练计划", "session-weekly-plan");
+await askWithHITL("帮我生成下周的训练计划", "session-weekly-plan");
 
 await rl.close();
 await store.close();
