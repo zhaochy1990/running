@@ -5,7 +5,7 @@ export function createWeeklyPlanSimulationContext(): WeeklyPlanContext {
 	return {
 		as_of: "2026-08-14",
 		plan_start: "2026-08-17",
-		week_folder: "2026-08-17_08-23",
+		week_name: "2026-08-17_08-23",
 		lookback: { start_date: "2026-07-18", end_date: "2026-08-14", days: 28 },
 		training_position: { phase: null, stage: null },
 		recent_activities: [],
@@ -100,7 +100,7 @@ function runSession(
 export function createWeeklyPlanForSimulation(): WeeklyPlan {
 	return {
 		schema: "weekly-plan/v1",
-		week_folder: "2026-08-17_08-23",
+		week_name: "2026-08-17_08-23",
 		sessions: [
 			runSession("2026-08-17", 0, 10_000, {
 				kind: "pace_s_km",

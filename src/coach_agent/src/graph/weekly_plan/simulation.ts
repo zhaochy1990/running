@@ -59,7 +59,7 @@ export function simulateWeeklyPlanLoad(
 	const thresholdSpeed = number(calibration?.threshold_speed_mps);
 	const thresholdHr = number(calibration?.lactate_threshold_hr);
 	const rhr = number(calibration?.rhr_baseline);
-	const weekStart = plan.week_folder.slice(0, 10);
+	const weekStart = context.plan_start;
 	const sessionReports: z.input<typeof SessionSimulationSchema>[] = [];
 	const missingReasons: string[] = [];
 	const assumptions: string[] = [];
