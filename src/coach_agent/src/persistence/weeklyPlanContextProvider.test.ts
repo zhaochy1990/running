@@ -293,6 +293,7 @@ test("weekly context combines all weekly planning evidence", async () => {
 	);
 	assert.equal(snapshot.running_calibration?.lactate_threshold_hr, 170);
 	assert.equal(snapshot.running_calibration?.threshold_pace_s_per_km, 250);
+	assert.equal(snapshot.running_calibration?.rhr_baseline, 48);
 	assert.deepEqual(ranges, [
 		["athlete", "2026-07-19", "2026-08-15"],
 		["athlete", "2026-07-13", "2026-08-15"],

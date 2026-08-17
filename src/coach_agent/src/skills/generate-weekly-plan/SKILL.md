@@ -84,6 +84,14 @@ Before returning, audit all of these conditions:
 
 In `coach_notes`, concisely record the actual complete-week anchor, chosen weekly target and load decision, phase/milestone bridge, rotation decision, and the recovery trigger that would reduce or cancel quality.
 
-## 6. Return the WeeklyPlan
+## 6. Simulate the final candidate
+
+Call `simulate_weekly_plan_load` with the complete candidate after its sessions, nutrition, and `coach_notes` are final. Use the report as the authoritative planned-dose and PMC projection; do not manually approximate dose, CTL, ATL, Form, or load ratio.
+
+When `available: true`, inspect total dose, every daily load-ratio/Form transition, maximum session share, and `safety_issues`. Revise unsafe scheduling or dose, then simulate the complete revised candidate again. When the only missing reason is unavailable athlete calibration or initial PMC state, preserve conservative targets and record that limitation in `coach_notes`. Any missing workout structure, uncomputable planned session, structured-distance mismatch, or safety issue requires a corrected candidate and another simulation.
+
+Complete this step only when the candidate has been simulated after its last edit. The returned `content` must be byte-for-byte the same logical WeeklyPlan object passed to the final simulation call.
+
+## 7. Return the WeeklyPlan
 
 Return `{ "disposition": "return_direct", "content": WeeklyPlan }`. Do not return Markdown. Use Chinese for athlete-facing text and English/ASCII for field names and enum values.

@@ -12,6 +12,7 @@ import { createWeeklyPlanContextTools } from "../../tools/weeklyPlanContext.js";
 import { buildResponsesModel } from "../common.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { WeeklyPlanPrompt } from "../prompts.js";
+import { createWeeklyPlanLoadSimulationMiddleware } from "./loadSimulationMiddleware.js";
 import { WeeklyPlanDirectResponseSchema } from "./schema.js";
 
 function createWeeklyPlanSubagent(
@@ -47,6 +48,7 @@ function createWeeklyPlanSubagent(
 			? { responseFormat: WeeklyPlanDirectResponseSchema }
 			: {}),
 		middleware: [
+			...(generatesPlan ? [createWeeklyPlanLoadSimulationMiddleware()] : []),
 			createLoggingMiddleware(
 				generatesPlan ? "agent:generate_weekly_plan" : "agent:weekly_plan",
 			),
