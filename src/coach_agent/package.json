@@ -8,6 +8,8 @@
     "clean": "node scripts/clean.mjs",
     "copy-assets": "node scripts/copy-assets.mjs",
     "build": "npm run clean && npm run tsc && npm run copy-assets",
+    "generate:weekly-plan-schema": "node scripts/generate-weekly-plan-schema.mjs",
+    "verify:weekly-plan-schema": "pnpm run generate:weekly-plan-schema && git diff --exit-code -- ../go/internal/api/weekly_plan_schema.json",
     "test": "npm run build && node --test dist/tools/*.test.js dist/agents/*.test.js dist/agents/master_plan/*.test.js dist/graph/master_plan/*.test.js dist/graph/weekly_plan/*.test.js dist/persistence/*.test.js dist/utils/*.test.js",
     "test:deepagent": "npm run build && node dist/tests/test.js",
     "test:weekly-plan": "npm run build && node dist/tests/test_weekly_plan.js",
@@ -32,7 +34,8 @@
     "langchain": "^1.5.5",
     "mysql2": "^3.23.2",
     "pino": "^10.3.1",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.8",

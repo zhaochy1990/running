@@ -20,8 +20,9 @@ import (
 	"github.com/zhaochy1990/stride/internal/logging"
 )
 
-// maxRequestBytes caps create request bodies. The API has a public ingress, so
-// an unbounded body binding into a MySQL longtext is a DoS/storage-abuse vector.
+// maxRequestBytes caps authenticated request bodies. The API has a public
+// ingress, so an unbounded body binding into MySQL longtext is a DoS/storage-
+// abuse vector.
 const maxRequestBytes = 1 << 20 // 1 MiB
 
 // Enqueuer creates a standalone job and publishes its pointer.
@@ -242,11 +243,12 @@ func (s *Service) Router() *gin.Engine {
 	r.GET("/api/readyz/plan-setup", s.planSetupReadiness)
 
 	authenticated := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
-	// Plan path reads explicitly admit the separate admin JWT tier. The
-	// master-plan /me handler still rejects it, and Weekly Plan mutations remain
-	// on the default-deny child group below.
+	// Plan routes explicitly admit the separate admin JWT tier. The master-plan
+	// /me handler still rejects it; only the narrow Weekly Plan import route may
+	// mutate data outside the default-deny child group below.
 	s.masterPlan.register(authenticated)
 	s.weeklyPlan.registerReads(authenticated)
+	s.weeklyPlan.registerAdminWrites(authenticated)
 
 	// Existing routes accept only the original user/internal tiers. Keeping this
 	// default deny prevents an admin-dashboard token from silently inheriting

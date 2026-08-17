@@ -6,8 +6,25 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// ErrWeeklyPlanExists is returned when a caller attempts to apply a plan
+// without explicitly allowing replacement of the active plan for that week.
+var ErrWeeklyPlanExists = errors.New("storage: active weekly plan already exists")
+
+// ErrWeeklyPlanConflict means the active plan changed after an administrator
+// confirmed a specific plan revision for replacement.
+var ErrWeeklyPlanConflict = errors.New("storage: active weekly plan changed")
+
+// WeeklyPlanReplacement is the active row revision an administrator reviewed
+// and explicitly confirmed replacing.
+type WeeklyPlanReplacement struct {
+	PlanID   string
+	Revision int64
+}
 
 func (s *Store) AutoMigrateWeeklyPlan(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).AutoMigrate(&WeeklyPlan{}); err != nil {
@@ -142,4 +159,106 @@ func (s *Store) GetActiveWeeklyPlan(ctx context.Context, userID, weekStart strin
 		return nil, err
 	}
 	return &plan, nil
+}
+
+// ApplyStructuredWeeklyPlan inserts a new active structured plan for one
+// Shanghai week. Replacing an active row requires its exact plan ID and revision;
+// that row is archived in the same transaction before the new active row is
+// inserted. All rows for the user/week are locked so the active transition is
+// serialized. The new plan has its own identity and therefore starts at revision 1.
+func (s *Store) ApplyStructuredWeeklyPlan(
+	ctx context.Context, userID, weekStart, content string, replacement *WeeklyPlanReplacement,
+) (*WeeklyPlan, *WeeklyPlan, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	start, err := time.Parse("2006-01-02", weekStart)
+	if err != nil {
+		return nil, nil, fmt.Errorf("storage: invalid week_start: %w", err)
+	}
+	if start.Weekday() != time.Monday {
+		return nil, nil, fmt.Errorf("storage: week_start must be a Monday")
+	}
+
+	var created *WeeklyPlan
+	var replaced *WeeklyPlan
+	apply := func() error {
+		created = nil
+		replaced = nil
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var rows []WeeklyPlan
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("user_id = ? AND week_start = ?", uid, weekStart).
+				Order("revision DESC, created_at DESC").
+				Find(&rows).Error; err != nil {
+				return fmt.Errorf("storage: lock weekly plans: %w", err)
+			}
+
+			for i := range rows {
+				if rows[i].Status == WeeklyPlanStatusActive {
+					replaced = &rows[i]
+				}
+			}
+			if replaced == nil {
+				if replacement != nil {
+					return ErrWeeklyPlanConflict
+				}
+			} else if replacement == nil {
+				return ErrWeeklyPlanExists
+			} else if replaced.PlanID != replacement.PlanID || replaced.Revision != replacement.Revision {
+				return ErrWeeklyPlanConflict
+			}
+
+			now := time.Now().UTC().Truncate(time.Millisecond)
+			if replaced != nil {
+				result := tx.Model(&WeeklyPlan{}).
+					Where("plan_id = ? AND user_id = ? AND status = ? AND revision = ?", replaced.PlanID, uid, WeeklyPlanStatusActive, replaced.Revision).
+					Updates(map[string]any{
+						"status":      WeeklyPlanStatusArchived,
+						"status_slot": nil,
+						"revision":    replaced.Revision + 1,
+						"updated_at":  now,
+					})
+				if result.Error != nil {
+					return fmt.Errorf("storage: archive prior weekly plan: %w", result.Error)
+				}
+				if result.RowsAffected != 1 {
+					return ErrWeeklyPlanConflict
+				}
+				replaced.Status = WeeklyPlanStatusArchived
+				replaced.StatusSlot = nil
+				replaced.Revision++
+				replaced.UpdatedAt = now
+			}
+
+			activeSlot := WeeklyPlanStatusActive
+			row := &WeeklyPlan{
+				PlanID: uuid.NewString(), UserID: uid, WeekStart: weekStart,
+				ContentVersion: WeeklyPlanContentStructured, Content: content,
+				Status: WeeklyPlanStatusActive, StatusSlot: &activeSlot,
+				Revision: 1, CreatedAt: now, UpdatedAt: now,
+			}
+			if err := tx.Create(row).Error; err != nil {
+				if isDuplicateKey(err) {
+					return ErrWeeklyPlanExists
+				}
+				return fmt.Errorf("storage: create weekly plan: %w", err)
+			}
+			created = row
+			return nil
+		})
+	}
+	err = apply()
+	// Two first-time applies can both lock the empty key range before either
+	// inserts. InnoDB resolves that insert race by deadlocking one transaction.
+	// Retry it once so the loser observes the winner's active row and returns the
+	// stable domain conflict instead of leaking a transient 500 to the caller.
+	if number, ok := mysqlErrNo(err); ok && number == 1213 {
+		err = apply()
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return created, replaced, nil
 }
