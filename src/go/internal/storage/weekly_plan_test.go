@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -239,5 +240,77 @@ func TestWeeklyPlanCheckConstraints(t *testing.T) {
 	missingSlot.StatusSlot = nil
 	if err := store.db.Create(missingSlot).Error; err == nil {
 		t.Fatal("active rows must carry a non-null status_slot")
+	}
+}
+
+func TestApplyStructuredWeeklyPlanCreatesAndReplacesAtomically(t *testing.T) {
+	store := openTestStore(t)
+	migrateWeeklyPlan(t, store)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	weekStart := "2026-08-17"
+	content := "{\"schema\":\"weekly-plan/v1\",\"week_folder\":\"2026-08-17_08-23\",\"sessions\":[],\"nutrition\":[]}"
+
+	first, replaced, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, false)
+	if err != nil || replaced != nil || first == nil || first.Status != WeeklyPlanStatusActive || first.Revision != 1 {
+		t.Fatalf("first=%+v replaced=%+v err=%v", first, replaced, err)
+	}
+	if _, _, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, false); !errors.Is(err, ErrWeeklyPlanExists) {
+		t.Fatalf("apply without replacement err=%v", err)
+	}
+
+	second, replaced, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, true)
+	if err != nil || replaced == nil || replaced.PlanID != first.PlanID || second == nil || second.Revision != 1 {
+		t.Fatalf("second=%+v replaced=%+v err=%v", second, replaced, err)
+	}
+	var rows []WeeklyPlan
+	if err := store.db.Where("user_id = ? AND week_start = ?", userID, weekStart).Order("revision").Find(&rows).Error; err != nil {
+		t.Fatalf("list rows: %v", err)
+	}
+	if len(rows) != 2 || rows[0].Status != WeeklyPlanStatusArchived || rows[0].StatusSlot != nil || rows[1].Status != WeeklyPlanStatusActive || rows[1].StatusSlot == nil || *rows[1].StatusSlot != WeeklyPlanStatusActive {
+		t.Fatalf("rows=%+v", rows)
+	}
+}
+
+func TestApplyStructuredWeeklyPlanRejectsNonMonday(t *testing.T) {
+	store := openTestStore(t)
+	migrateWeeklyPlan(t, store)
+	userID := uuid.NewString()
+	if _, _, err := store.ApplyStructuredWeeklyPlan(context.Background(), userID, "2026-08-18", "{}", false); err == nil {
+		t.Fatal("non-Monday week_start must fail")
+	}
+}
+
+func TestApplyStructuredWeeklyPlanConcurrentFirstApplyReturnsConflict(t *testing.T) {
+	store := openTestStore(t)
+	migrateWeeklyPlan(t, store)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	content := "{\"schema\":\"weekly-plan/v1\",\"week_folder\":\"2026-08-17_08-23\",\"sessions\":[],\"nutrition\":[]}"
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	for range 2 {
+		go func() {
+			<-start
+			_, _, err := store.ApplyStructuredWeeklyPlan(ctx, userID, "2026-08-17", content, false)
+			errs <- err
+		}()
+	}
+	close(start)
+
+	var successes, conflicts int
+	for range 2 {
+		err := <-errs
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrWeeklyPlanExists):
+			conflicts++
+		default:
+			t.Fatalf("concurrent apply returned unexpected error: %v", err)
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("successes=%d conflicts=%d, want 1 each", successes, conflicts)
 	}
 }

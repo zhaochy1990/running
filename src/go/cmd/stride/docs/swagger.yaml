@@ -196,6 +196,25 @@ definitions:
       wind_speed:
         type: number
     type: object
+  api.applyWeeklyPlanRequest:
+    properties:
+      content:
+        additionalProperties: {}
+        type: object
+      replace_existing:
+        type: boolean
+    required:
+    - content
+    type: object
+  api.applyWeeklyPlanResponse:
+    properties:
+      plan:
+        $ref: '#/definitions/api.weeklyPlanDetailResponse'
+      replaced_plan_id:
+        type: string
+      success:
+        type: boolean
+    type: object
   api.createJobRequest:
     properties:
       input:
@@ -1713,6 +1732,68 @@ paths:
       - InternalToken: []
       - BearerAuth: []
       summary: Get a user's active weekly plan
+      tags:
+      - weekly-plan
+    post:
+      consumes:
+      - application/json
+      description: Creates a new active plan. If one already exists, replace_existing
+        must be true; the prior plan is archived atomically.
+      parameters:
+      - description: Target user UUID
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Shanghai week name (YYYY-MM-DD_MM-DD)
+        in: path
+        name: weekName
+        required: true
+        type: string
+      - description: Structured plan and replacement decision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.applyWeeklyPlanRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.applyWeeklyPlanResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Apply a structured Weekly Plan as an administrator
       tags:
       - weekly-plan
   /api/{user}/pmc:

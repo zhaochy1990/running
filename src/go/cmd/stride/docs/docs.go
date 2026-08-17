@@ -1491,6 +1491,99 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new active plan. If one already exists, replace_existing must be true; the prior plan is archived atomically.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "weekly-plan"
+                ],
+                "summary": "Apply a structured Weekly Plan as an administrator",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Target user UUID",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shanghai week name (YYYY-MM-DD_MM-DD)",
+                        "name": "weekName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Structured plan and replacement decision",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.applyWeeklyPlanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.applyWeeklyPlanResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
             }
         },
         "/api/{user}/pmc": {
@@ -2528,6 +2621,35 @@ const docTemplate = `{
                 },
                 "wind_speed": {
                     "type": "number"
+                }
+            }
+        },
+        "api.applyWeeklyPlanRequest": {
+            "type": "object",
+            "required": [
+                "content"
+            ],
+            "properties": {
+                "content": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "replace_existing": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.applyWeeklyPlanResponse": {
+            "type": "object",
+            "properties": {
+                "plan": {
+                    "$ref": "#/definitions/api.weeklyPlanDetailResponse"
+                },
+                "replaced_plan_id": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
                 }
             }
         },

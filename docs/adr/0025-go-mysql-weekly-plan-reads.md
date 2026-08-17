@@ -13,6 +13,20 @@ GET /api/{user_id}/plan/weeks
 GET /api/{user_id}/plan/weeks/{week_name}
 ```
 
+Admin Dashboard 另有一个窄写入口：
+
+```text
+POST /api/{user_id}/plan/weeks/{week_name}
+```
+
+该入口只接受独立 Admin audience 且 `role=admin` 的 JWT；普通用户 JWT 和
+internal token 均返回 `403`。请求体包含 `content`（`weekly-plan/v1`）与
+`replace_existing`。目标周已有 active 时，未显式确认替换返回
+`409 weekly_plan_exists`；确认后在同一事务中把旧 active 改为 `archived`、
+清空其 `status_slot`，再插入新的 active。新记录使用新的 `plan_id`，因此
+`revision` 从 1 开始。该入口是管理员导入已在 Dashboard 严格校验的完整计划，
+不替代面向运动员的 draft/review 流程。
+
 `week_name` 是派生的可读标识，严格使用 `YYYY-MM-DD_MM-DD`，表示 Asia/Shanghai 下周一至周日的自然周；跨年示例为 `2026-12-28_01-03`。数据库只存 `week_start`，不存 `week_name` 或 `week_end`。非法名称返回 `400 invalid_week_name`，该周没有 active 课表返回 `404 weekly_plan_not_found`。
 
 两个接口只读取 `active`：列表返回所有过去、当前和未来的 active 课表，按 `week_start DESC` 稳定排序且首版不分页；详情返回完整内容。draft 和 archived 不通过这两个接口暴露。响应包含 `plan_id`、`week_name`、`date_from`、`date_to`、`master_plan_id`、`status`、`content_version`、`revision`、`created_at` 和 `updated_at`；列表不返回 `content`，详情根据 `content_version` 将 `content` 返回为 Markdown 字符串或 JSON 对象。这两个课表资源接口不混入 activities、执行统计、feedback、variants 或 scheduled-workout 状态；独立的周聚合 API 与周反馈归属见 ADR 0028。

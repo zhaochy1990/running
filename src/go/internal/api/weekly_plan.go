@@ -26,6 +26,7 @@ type WeeklyPlanStore interface {
 	ListWeekSummaries(ctx context.Context, userID, masterPlanID string) ([]storage.WeekSummary, error)
 	ListWeekActivities(ctx context.Context, userID, dateFrom, dateTo string) ([]storage.Activity, error)
 	GetActiveWeeklyPlan(ctx context.Context, userID, weekStart string) (*storage.WeeklyPlan, error)
+	ApplyStructuredWeeklyPlan(ctx context.Context, userID, weekStart, content string, replaceExisting bool) (*storage.WeeklyPlan, *storage.WeeklyPlan, error)
 	GetWeeklyFeedback(ctx context.Context, userID, weekStart string) (*storage.WeeklyFeedback, error)
 	PutWeeklyFeedback(ctx context.Context, userID, weekStart, content string) (storage.WeeklyFeedback, error)
 }
@@ -62,6 +63,117 @@ func (w *weeklyPlanRoutes) registerWrites(rg *gin.RouterGroup) {
 		return
 	}
 	rg.PUT("/api/:user/weeks/:weekName/feedback", w.putFeedback)
+}
+
+// registerAdminWrites mounts the narrow administrator-only plan import path on
+// the parent authenticated group. The handler still verifies TierAdmin so user
+// and internal callers cannot use it.
+func (w *weeklyPlanRoutes) registerAdminWrites(rg *gin.RouterGroup) {
+	if w.store == nil {
+		return
+	}
+	rg.POST("/api/:user/plan/weeks/:weekName", w.apply)
+}
+
+type applyWeeklyPlanRequest struct {
+	Content         map[string]any `json:"content" binding:"required"`
+	ReplaceExisting bool           `json:"replace_existing"`
+}
+
+type applyWeeklyPlanResponse struct {
+	Success        bool                     `json:"success"`
+	Plan           weeklyPlanDetailResponse `json:"plan"`
+	ReplacedPlanID *string                  `json:"replaced_plan_id"`
+}
+
+// apply imports a validated structured Weekly Plan for an existing athlete.
+// A caller must explicitly opt in to replacing an active plan; the store then
+// archives the old row and inserts the new active row atomically.
+//
+//	@Summary		Apply a structured Weekly Plan as an administrator
+//	@Description	Creates a new active plan. If one already exists, replace_existing must be true; the prior plan is archived atomically.
+//	@Tags			weekly-plan
+//	@Accept			json
+//	@Produce		json
+//	@Param			user		path		string				 true	"Target user UUID"
+//	@Param			weekName	path		string				 true	"Shanghai week name (YYYY-MM-DD_MM-DD)"
+//	@Param			body		body		applyWeeklyPlanRequest true	"Structured plan and replacement decision"
+//	@Success		201			{object}	applyWeeklyPlanResponse
+//	@Failure		400			{object}	errorResponse
+//	@Failure		401			{object}	errorResponse
+//	@Failure		403			{object}	errorResponse
+//	@Failure		409			{object}	errorResponse
+//	@Failure		413			{object}	errorResponse
+//	@Failure		422			{object}	errorResponse
+//	@Failure		500			{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/{user}/plan/weeks/{weekName} [post]
+func (w *weeklyPlanRoutes) apply(c *gin.Context) {
+	if callerFrom(c).Tier != TierAdmin {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+	user := c.Param("user")
+	if _, err := uuid.Parse(user); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user"})
+		return
+	}
+	weekName := c.Param("weekName")
+	weekStart, _, ok := weekIdentity(weekName)
+	if !ok {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_week_name"})
+		return
+	}
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2*1024*1024)
+	var request applyWeeklyPlanRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "weekly_plan_too_large"})
+			return
+		}
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+	content, err := validateAppliedWeeklyPlan(request.Content, weekName)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+
+	created, replaced, err := w.store.ApplyStructuredWeeklyPlan(
+		c.Request.Context(), user, weekStart, string(content), request.ReplaceExisting,
+	)
+	if errors.Is(err, storage.ErrWeeklyPlanExists) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_exists"})
+		return
+	}
+	if err != nil {
+		w.log.Error("apply weekly plan failed", zapErr(err), zap.String("user_id", user), zap.String("week_name", weekName))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	metadata, err := weeklyPlanMetadata(*created)
+	if err != nil {
+		w.log.Error("applied weekly plan has invalid identity", zapErr(err), zap.String("plan_id", created.PlanID))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	var document map[string]any
+	if err := json.Unmarshal(content, &document); err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	var replacedID *string
+	if replaced != nil {
+		replacedID = &replaced.PlanID
+	}
+	c.JSON(http.StatusCreated, applyWeeklyPlanResponse{
+		Success:        true,
+		Plan:           weeklyPlanDetailResponse{weeklyPlanMetadataResponse: metadata, Content: document},
+		ReplacedPlanID: replacedID,
+	})
 }
 
 type putWeeklyFeedbackRequest struct {

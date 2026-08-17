@@ -247,6 +247,7 @@ func (s *Service) Router() *gin.Engine {
 	// on the default-deny child group below.
 	s.masterPlan.register(authenticated)
 	s.weeklyPlan.registerReads(authenticated)
+	s.weeklyPlan.registerAdminWrites(authenticated)
 
 	// Existing routes accept only the original user/internal tiers. Keeping this
 	// default deny prevents an admin-dashboard token from silently inheriting

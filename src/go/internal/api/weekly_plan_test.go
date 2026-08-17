@@ -34,6 +34,34 @@ type fakeWeeklyPlanStore struct {
 	now              time.Time
 }
 
+func (f *fakeWeeklyPlanStore) ApplyStructuredWeeklyPlan(
+	_ context.Context, userID, weekStart, content string, replaceExisting bool,
+) (*storage.WeeklyPlan, *storage.WeeklyPlan, error) {
+	if f.getErr != nil {
+		return nil, nil, f.getErr
+	}
+	plans := f.plans[userID]
+	var replaced *storage.WeeklyPlan
+	for i := range plans {
+		if plans[i].WeekStart == weekStart && plans[i].Status == storage.WeeklyPlanStatusActive {
+			if !replaceExisting {
+				return nil, nil, storage.ErrWeeklyPlanExists
+			}
+			copy := plans[i]
+			replaced = &copy
+			plans[i].Status = storage.WeeklyPlanStatusArchived
+		}
+	}
+	created := storage.WeeklyPlan{
+		PlanID: "applied-plan", UserID: userID, WeekStart: weekStart,
+		ContentVersion: storage.WeeklyPlanContentStructured, Content: content,
+		Status: storage.WeeklyPlanStatusActive, Revision: 1,
+		CreatedAt: f.now, UpdatedAt: f.now,
+	}
+	f.plans[userID] = append(plans, created)
+	return &created, replaced, nil
+}
+
 func (f *fakeWeeklyPlanStore) GetWeeklyFeedback(_ context.Context, userID, weekStart string) (*storage.WeeklyFeedback, error) {
 	if f.feedbackErr != nil {
 		return nil, f.feedbackErr
@@ -294,6 +322,110 @@ func TestWeeklyPlanAdminCannotWriteFeedback(t *testing.T) {
 	)
 	if resp.Code != http.StatusForbidden || resp.Body.String() != "{\"error\":\"forbidden\"}" {
 		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func validAppliedWeeklyPlan(weekName string) string {
+	start, _, _ := weekIdentity(weekName)
+	date, _ := time.Parse("2006-01-02", start)
+	nutrition := make([]map[string]any, 0, 7)
+	for offset := range 7 {
+		nutrition = append(nutrition, map[string]any{
+			"schema": "plan-nutrition/v1", "date": date.AddDate(0, 0, offset).Format("2006-01-02"),
+			"kcal_target": nil, "carbs_g": nil, "protein_g": nil, "fat_g": nil,
+			"water_ml": nil, "meals": []any{}, "notes_md": nil,
+		})
+	}
+	document := map[string]any{
+		"schema": "weekly-plan/v1", "week_folder": weekName,
+		"sessions": []any{}, "nutrition": nutrition,
+		"notes_md": nil, "coach_notes": nil,
+	}
+	raw, _ := json.Marshal(document)
+	return string(raw)
+}
+
+func TestAdminAppliesWeeklyPlanWithoutExistingPlan(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "d31c2cbc-c3f5-4a10-92d0-73fa3281a001"
+	weekName := "2026-08-17_08-23"
+	body := "{\"content\":" + validAppliedWeeklyPlan(weekName) + ",\"replace_existing\":false}"
+	resp := h.doBody(http.MethodPost, "/api/"+userID+"/plan/weeks/"+weekName, h.adminBearer(t, "admin-user"), strings.NewReader(body))
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var result applyWeeklyPlanResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !result.Success || result.ReplacedPlanID != nil || result.Plan.Status != storage.WeeklyPlanStatusActive || result.Plan.Revision != 1 {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestAdminApplyRequiresReplacementConfirmation(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "d31c2cbc-c3f5-4a10-92d0-73fa3281a002"
+	weekName := "2026-08-17_08-23"
+	h.store.plans[userID] = []storage.WeeklyPlan{
+		weeklyPlanFixture("prior-plan", userID, "2026-08-17", storage.WeeklyPlanContentStructured, validAppliedWeeklyPlan(weekName)),
+	}
+	body := "{\"content\":" + validAppliedWeeklyPlan(weekName) + ",\"replace_existing\":false}"
+	conflict := h.doBody(http.MethodPost, "/api/"+userID+"/plan/weeks/"+weekName, h.adminBearer(t, "admin-user"), strings.NewReader(body))
+	if conflict.Code != http.StatusConflict || conflict.Body.String() != "{\"error\":\"weekly_plan_exists\"}" {
+		t.Fatalf("status=%d body=%s", conflict.Code, conflict.Body.String())
+	}
+
+	body = "{\"content\":" + validAppliedWeeklyPlan(weekName) + ",\"replace_existing\":true}"
+	replaced := h.doBody(http.MethodPost, "/api/"+userID+"/plan/weeks/"+weekName, h.adminBearer(t, "admin-user"), strings.NewReader(body))
+	if replaced.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", replaced.Code, replaced.Body.String())
+	}
+	var result applyWeeklyPlanResponse
+	if err := json.Unmarshal(replaced.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result.ReplacedPlanID == nil || *result.ReplacedPlanID != "prior-plan" || result.Plan.Revision != 1 {
+		t.Fatalf("result=%+v", result)
+	}
+	if h.store.plans[userID][0].Status != storage.WeeklyPlanStatusArchived {
+		t.Fatalf("prior status=%s", h.store.plans[userID][0].Status)
+	}
+}
+
+func TestWeeklyPlanApplyIsAdminOnlyAndValidatesContent(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "d31c2cbc-c3f5-4a10-92d0-73fa3281a003"
+	path := "/api/" + userID + "/plan/weeks/2026-08-17_08-23"
+	validBody := "{\"content\":" + validAppliedWeeklyPlan("2026-08-17_08-23") + "}"
+	duplicateSessions := validAppliedWeeklyPlan("2026-08-17_08-23")
+	var duplicateDocument map[string]any
+	_ = json.Unmarshal([]byte(duplicateSessions), &duplicateDocument)
+	duplicateDocument["sessions"] = []any{
+		map[string]any{"schema": "plan-session/v1", "date": "2026-08-17", "session_index": 0},
+		map[string]any{"schema": "plan-session/v1", "date": "2026-08-17", "session_index": 0},
+	}
+	duplicateRaw, _ := json.Marshal(duplicateDocument)
+	tests := []struct {
+		name    string
+		headers map[string]string
+		body    string
+		status  int
+		error   string
+	}{
+		{name: "user", headers: h.bearer(t, userID), body: validBody, status: http.StatusForbidden, error: "forbidden"},
+		{name: "internal", headers: internalHdr(), body: validBody, status: http.StatusForbidden, error: "forbidden"},
+		{name: "wrong week", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-24_08-30") + "}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
+		{name: "missing arrays", headers: h.adminBearer(t, "admin"), body: "{\"content\":{\"schema\":\"weekly-plan/v1\",\"week_folder\":\"2026-08-17_08-23\"}}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
+		{name: "duplicate sessions", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + string(duplicateRaw) + "}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resp := h.doBody(http.MethodPost, path, test.headers, strings.NewReader(test.body))
+			if resp.Code != test.status || resp.Body.String() != "{\"error\":\""+test.error+"\"}" {
+				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+			}
+		})
 	}
 }
 
