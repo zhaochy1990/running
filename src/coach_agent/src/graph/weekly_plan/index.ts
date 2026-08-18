@@ -1,4 +1,6 @@
+export type { TargetTrainingLoad } from "./contracts.js";
 export {
+	TargetTrainingLoadSchema,
 	WeeklyPlanGeneratorContext,
 	WeeklyPlanGeneratorOutcome,
 	WeeklyPlanGeneratorRequest,
