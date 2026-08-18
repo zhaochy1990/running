@@ -13,6 +13,7 @@
     "test": "npm run build && node --test dist/tools/*.test.js dist/agents/*.test.js dist/agents/master_plan/*.test.js dist/graph/master_plan/*.test.js dist/graph/weekly_plan/*.test.js dist/persistence/*.test.js dist/utils/*.test.js",
     "test:deepagent": "npm run build && node dist/tests/test.js",
     "test:weekly-plan": "npm run build && node dist/tests/test_weekly_plan.js",
+    "test:weekly-plan-graph": "npm run build && node dist/tests/test_weekly_plan_graph.js",
     "test:masterplan-graph": "npm run build && node dist/tests/test_master_plan.js",
     "test:race-analysis": "npm run build && node dist/tests/test_race_analysis.js",
     "format": "biome format --write src scripts",

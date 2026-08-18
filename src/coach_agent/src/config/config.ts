@@ -26,22 +26,19 @@ interface ResolvedConfigFiles {
 
 export interface LoadConfigOptions {
 	cwd?: string;
+	/** Explicit config file path; when provided it is merged on top of the default config (like the env-specific file). */
+	configFile?: string;
 }
 
 export function loadConfig(options: LoadConfigOptions = {}): CoachAgentConfig {
 	const configFiles = resolveConfigFiles(options);
-	const defaultConfig = configFiles.defaultConfigFile
-		? readConfigFile(configFiles.defaultConfigFile)
-		: {};
-	const targetEnvConfig = configFiles.targetEnvConfigFile
-		? readConfigFile(configFiles.targetEnvConfigFile)
-		: {};
+	const defaultConfig = configFiles.defaultConfigFile ? readConfigFile(configFiles.defaultConfigFile) : {};
+	const targetEnvConfigFile = options.configFile ?? configFiles.targetEnvConfigFile;
+	const targetEnvConfig = targetEnvConfigFile ? readConfigFile(targetEnvConfigFile) : {};
 
 	logger.info(`Loading coach config for env "${ENV}"`);
 	logger.info(`  default config: ${configFiles.defaultConfigFile ?? "(none)"}`);
-	logger.info(
-		`  target env config: ${configFiles.targetEnvConfigFile ?? "(none)"}`,
-	);
+	logger.info(`  target env config: ${targetEnvConfigFile ?? "(none)"}${options.configFile ? " (explicit)" : ""}`);
 
 	return deepMerge(defaultConfig, targetEnvConfig) as CoachAgentConfig;
 }
