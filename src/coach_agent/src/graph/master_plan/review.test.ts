@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deriveAssessmentFacts } from "./assessment.js";
 import {
 	adjudicateMasterPlanReviews,
 	mergeReviewReportsByRevisionAndTask,
 	mergeReviewWorkerErrors,
 	type ReviewReport,
-} from "./review.js";
+} from "@stride/contract";
+import { deriveAssessmentFacts } from "./assessment.js";
 import { createAssessmentSnapshot, createTestRequest } from "./testFixtures.js";
 
 const reviewerTypes = [

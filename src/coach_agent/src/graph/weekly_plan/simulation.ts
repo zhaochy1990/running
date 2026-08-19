@@ -1,7 +1,7 @@
+import type { WeeklyPlan } from "@stride/contract";
+import { addDays } from "@stride/contract";
 import { z } from "zod/v4";
-import type { WeeklyPlan } from "../../agents/weekly_plan/schema.js";
 import type { WeeklyPlanContext } from "../../persistence/weeklyPlanContextProvider.js";
-import { addDays } from "../../utils/planningDate.js";
 import { simulatePmcDays } from "../master_plan/simulation.js";
 import { estimatePlannedRunLoad } from "../training_load/plannedRunLoad.js";
 

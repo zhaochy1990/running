@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MasterPlanSchema as LegacyMasterPlanSchema } from "../../agents/master_plan/schema.js";
 import {
 	KeySessionTypeSchema,
+	MasterPlanSchema as LegacyMasterPlanSchema,
 	type MasterPlan,
 	MasterPlanSchema,
-} from "./schemas.js";
+} from "@stride/contract";
 import { createTestMasterPlan } from "./testFixtures.js";
 
 const strategicTypes = [

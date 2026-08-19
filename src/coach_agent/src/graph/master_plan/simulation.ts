@@ -1,55 +1,20 @@
-import { z } from "zod/v4";
-import { mondayOnOrBefore as monday } from "../../utils/planningDate.js";
+import {
+	type MasterPlan,
+	type MasterPlanGraphRequest,
+	mondayOnOrBefore as monday,
+	type SimulationReport,
+	SimulationReportSchema,
+	type SimulationWeek,
+	SimulationWeekSchema,
+} from "@stride/contract";
 import type { ContextSnapshot } from "./context.js";
-import type { MasterPlanGraphRequest } from "./contracts.js";
 import { estimateMasterPlanWeekLoad } from "./loadEstimator.js";
-import type { MasterPlan } from "./schemas.js";
 
-const ACUTE_K = 1 - Math.exp(-1 / 7);
-const CHRONIC_K = 1 - Math.exp(-1 / 42);
-const DISTRIBUTION: readonly number[] = [
-	0.1, 0.18, 0.12, 0.18, 0.1, 0.27, 0.05,
-];
-const DailyDistributionSchema = z
-	.array(z.number().min(0).max(1))
-	.length(7)
-	.refine(
-		(shares) =>
-			Math.abs(shares.reduce((sum, share) => sum + share, 0) - 1) < 1e-9,
-		"daily distribution must sum to 1",
-	);
-export const SimulationWeekSchema = z
-	.object({
-		week_index: z.int().positive(),
-		week_start: z.string(),
-		estimated: z.literal(true),
-		provenance: z.enum([
-			"weekly_high_target+key_sessions+remaining_easy_volume",
-			"partial_current_week+weekly_high_target+key_sessions+remaining_easy_volume",
-		]),
-		confidence: z.enum(["high", "medium", "low"]),
-		daily_distribution: DailyDistributionSchema,
-		estimated_dose: z.number().nullable(),
-		estimated_dose_low: z.number().nullable(),
-		estimated_dose_high: z.number().nullable(),
-		load_assumptions: z.array(z.string()),
-		missing_dose_reason: z.string().nullable(),
-		end_ctl: z.number().nullable(),
-		end_atl: z.number().nullable(),
-		end_form: z.number().nullable(),
-		ratio: z.number().nullable(),
-		long_run_dose_share: z.number().nullable(),
-	})
-	.strict();
-export const SimulationReportSchema = z
-	.object({
-		algorithm_version: z.literal("master-plan-load-v3"),
-		estimated: z.literal(true),
-		provenance: z.string(),
-		weeks: z.array(SimulationWeekSchema),
-	})
-	.strict();
-export type SimulationReport = z.infer<typeof SimulationReportSchema>;
+export type { SimulationReport } from "@stride/contract";
+export {
+	SimulationReportSchema,
+	SimulationWeekSchema,
+} from "@stride/contract";
 export interface PmcDay {
 	dose: number;
 	atl: number;
@@ -57,6 +22,12 @@ export interface PmcDay {
 	form: number;
 	ratio: number | null;
 }
+
+const ACUTE_K = 1 - Math.exp(-1 / 7);
+const CHRONIC_K = 1 - Math.exp(-1 / 42);
+const DISTRIBUTION: readonly number[] = [
+	0.1, 0.18, 0.12, 0.18, 0.1, 0.27, 0.05,
+];
 
 const round = (value: number): number => Number(value.toFixed(4));
 

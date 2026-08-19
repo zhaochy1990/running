@@ -1,4 +1,4 @@
-import type { WeeklyPlan } from "../../agents/weekly_plan/schema.js";
+import type { WeeklyPlan } from "@stride/contract";
 import type { WeeklyPlanContext } from "../../persistence/weeklyPlanContextProvider.js";
 
 export function createWeeklyPlanSimulationContext(): WeeklyPlanContext {

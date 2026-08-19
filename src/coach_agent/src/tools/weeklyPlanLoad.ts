@@ -1,7 +1,7 @@
 import type { StructuredTool } from "@langchain/core/tools";
+import { WeeklyPlanSchema } from "@stride/contract";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
-import { WeeklyPlanSchema } from "../agents/weekly_plan/schema.js";
 import { simulateWeeklyPlanLoad } from "../graph/weekly_plan/simulation.js";
 import type { WeeklyPlanContextProvider } from "../persistence/weeklyPlanContextProvider.js";
 import { defineCoachTools } from "./common.js";

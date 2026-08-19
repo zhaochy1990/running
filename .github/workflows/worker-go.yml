@@ -24,18 +24,20 @@ on:
     branches: [master]
     paths:
       - "src/go/**"
-      - "src/coach_agent/src/agents/weekly_plan/schema.ts"
-      - "src/coach_agent/src/agents/weeklyPlanSchemaParity.test.ts"
-      - "src/coach_agent/scripts/generate-weekly-plan-schema.mjs"
+      - "src/coach_contract/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "src/go/internal/api/weekly_plan_schema.json"
       - "tests/fixtures/weekly_plan_contract.json"
       - ".github/workflows/worker-go.yml"
   pull_request:
     paths:
       - "src/go/**"
-      - "src/coach_agent/src/agents/weekly_plan/schema.ts"
-      - "src/coach_agent/src/agents/weeklyPlanSchemaParity.test.ts"
-      - "src/coach_agent/scripts/generate-weekly-plan-schema.mjs"
+      - "src/coach_contract/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "src/go/internal/api/weekly_plan_schema.json"
       - "tests/fixtures/weekly_plan_contract.json"
       - ".github/workflows/worker-go.yml"
@@ -60,9 +62,10 @@ jobs:
             contract:
               - 'src/go/internal/api/weekly_plan_validation.go'
               - 'src/go/internal/api/weekly_plan_contract_parity_test.go'
-              - 'src/coach_agent/src/agents/weekly_plan/schema.ts'
-              - 'src/coach_agent/src/agents/weeklyPlanSchemaParity.test.ts'
-              - 'src/coach_agent/scripts/generate-weekly-plan-schema.mjs'
+              - 'src/coach_contract/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
               - 'src/go/internal/api/weekly_plan_schema.json'
               - 'tests/fixtures/weekly_plan_contract.json'
               - '.github/workflows/worker-go.yml'
@@ -96,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: src/coach_agent
+        working-directory: src/coach_contract
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -106,14 +109,15 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: src/coach_agent/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - name: Build Coach Agent
-        run: pnpm run build
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build Workspace (contract -> coach_agent)
+        run: pnpm -r build
       - name: Verify generated Weekly Plan JSON Schema
         run: pnpm run verify:weekly-plan-schema
       - name: Verify Weekly Plan contract parity
-        run: node --test dist/agents/weeklyPlanSchemaParity.test.js
+        run: node --test dist/weekly_plan/schemaParity.test.js
 
   build-push:
     # Publish only from master, and only when Go source actually changed — a

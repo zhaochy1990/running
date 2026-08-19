@@ -1,0 +1,3 @@
+packages:
+  - src/coach_agent
+  - src/coach_contract

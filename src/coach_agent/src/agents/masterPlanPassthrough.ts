@@ -1,8 +1,11 @@
 import { AIMessage } from "@langchain/core/messages";
+import {
+	DirectResponseEnvelopeSchema,
+	planningStartDate,
+	WeeklyPlanDirectResponseSchema,
+	weekFolder,
+} from "@stride/contract";
 import { createMiddleware } from "langchain";
-import { planningStartDate, weekFolder } from "../utils/planningDate.js";
-import { DirectResponseEnvelopeSchema } from "./master_plan/schema.js";
-import { WeeklyPlanDirectResponseSchema } from "./weekly_plan/schema.js";
 
 type MessageLike = {
 	type?: unknown;

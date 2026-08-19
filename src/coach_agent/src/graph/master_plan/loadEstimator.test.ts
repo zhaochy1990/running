@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { MasterPlan } from "@stride/contract";
 import { estimateMasterPlanWeekLoad } from "./loadEstimator.js";
-import type { MasterPlan } from "./schemas.js";
 import structuredFixtures from "./structuredLoadFixtures.json" with {
 	type: "json",
 };

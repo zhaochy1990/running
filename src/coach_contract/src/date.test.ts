@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { planningStartDate, shanghaiDay, weekFolder } from "./planningDate.js";
+import { planningStartDate, shanghaiDay, weekFolder } from "./date.js";
 
 test("planning start is the first Monday on or after asof", () => {
 	assert.equal(planningStartDate("2026-05-04"), "2026-05-04");

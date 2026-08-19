@@ -1,4 +1,26 @@
 export type {
+	MasterPlan,
+	ReviewAdjudication,
+	ReviewerType,
+	ReviewReport,
+	SelectedStrategy,
+	StrategyCandidate,
+	StrategyJudgment,
+} from "@stride/contract";
+export {
+	MasterPlanGraphContext,
+	MasterPlanGraphOutcome,
+	MasterPlanGraphRequest,
+	MasterPlanSchema,
+	ReviewAdjudicationSchema,
+	ReviewerTypeSchema,
+	ReviewReportSchema,
+	SelectedStrategySchema,
+	StrategyArchetypeSchema,
+	StrategyCandidateSchema,
+	StrategyJudgmentSchema,
+} from "@stride/contract";
+export type {
 	AssessmentFacts,
 	AthleteAssessment,
 	GoalAssessment,
@@ -21,32 +43,4 @@ export {
 	ContextSnapshotSchema,
 	FrozenMasterPlanContextProvider,
 } from "./context.js";
-export {
-	MasterPlanGraphContext,
-	MasterPlanGraphOutcome,
-	MasterPlanGraphRequest,
-} from "./contracts.js";
 export { createMasterPlanGraph, ModelContractError } from "./graph.js";
-export type {
-	ReviewAdjudication,
-	ReviewerType,
-	ReviewReport,
-} from "./review.js";
-export {
-	ReviewAdjudicationSchema,
-	ReviewerTypeSchema,
-	ReviewReportSchema,
-} from "./review.js";
-export type {
-	MasterPlan,
-	SelectedStrategy,
-	StrategyCandidate,
-	StrategyJudgment,
-} from "./schemas.js";
-export {
-	MasterPlanSchema,
-	SelectedStrategySchema,
-	StrategyArchetypeSchema,
-	StrategyCandidateSchema,
-	StrategyJudgmentSchema,
-} from "./schemas.js";

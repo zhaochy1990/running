@@ -1,5 +1,5 @@
+import type { MasterPlan } from "@stride/contract";
 import { estimatePlannedRunLoad } from "../training_load/plannedRunLoad.js";
-import type { MasterPlan } from "./schemas.js";
 
 type Week = MasterPlan["weeks"][number];
 type KeySession = Week["key_sessions"][number];

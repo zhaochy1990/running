@@ -1,9 +1,9 @@
 import { writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { Command } from "@langchain/langgraph";
+import { MasterPlanSchema } from "@stride/contract";
 import { createCoachAgent } from "../agents/coachAgent.js";
 import { loadConfig, readStrideMySqlConfig } from "../config/config.js";
-import { MasterPlanSchema } from "../graph/master_plan/schemas.js";
 import {
 	MySqlMasterPlanContextProvider,
 	StrideDataStore,
