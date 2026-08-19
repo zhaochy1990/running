@@ -17,6 +17,7 @@ import {
 } from "../../agents/weekly_plan/schema.js";
 import type { ModelConfig } from "../../config/config.js";
 import type { WeeklyPlanContext } from "../../persistence/index.js";
+import { getLogger } from "../../utils/logger.js";
 import { ModelContractError } from "../master_plan/nodes.js";
 import type { PhaseName, TargetTrainingLoad } from "./contracts.js";
 import { simulateWeeklyPlanLoad } from "./simulation.js";
@@ -203,17 +204,26 @@ export interface ToolLoopDeps {
 	validate: (
 		direct: z.infer<typeof WeeklyPlanDirectResponseSchema>,
 	) => WeeklyPlan;
+	/** Context label for logs; defaults to a generic label. */
+	logLabel?: string;
 }
+
+const toolLoopLogger = getLogger("weekly-plan-tool-loop");
 
 /** Drive a tool-calling loop: execute simulate calls, accept the schema call. */
 export async function runToolLoop(deps: ToolLoopDeps): Promise<WeeklyPlan> {
 	const messages: BaseMessage[] = [...(deps.initialMessages ?? [])];
+	const startedAt = Date.now();
 	for (let attempt = 1; attempt <= deps.maxIterations; attempt++) {
+		toolLoopLogger.info(
+			`${deps.logLabel ?? "weekly-plan"}: tool loop round ${attempt}/${deps.maxIterations} started (${((Date.now() - startedAt) / 1000).toFixed(1)}s elapsed)`,
+		);
 		const response = await deps.invoke(messages);
 		const calls = response.tool_calls ?? [];
 		const workCalls = calls.filter((call) => call.name !== deps.schemaToolName);
 		if (workCalls.length > 0) {
 			messages.push(response);
+			let lastObservation: unknown = null;
 			for (const call of workCalls) {
 				if (call.name !== deps.simulationTool.name) {
 					throw new ModelContractError(
@@ -228,6 +238,7 @@ export async function runToolLoop(deps: ToolLoopDeps): Promise<WeeklyPlan> {
 						error: error instanceof Error ? error.message : "tool failed",
 					};
 				}
+				lastObservation = observation;
 				messages.push(
 					new ToolMessage({
 						content: JSON.stringify(observation),
@@ -235,6 +246,15 @@ export async function runToolLoop(deps: ToolLoopDeps): Promise<WeeklyPlan> {
 					}),
 				);
 			}
+			const reportedDose =
+				typeof lastObservation === "object" &&
+				lastObservation !== null &&
+				"total_dose" in lastObservation
+					? String(lastObservation.total_dose)
+					: "n/a";
+			toolLoopLogger.info(
+				`${deps.logLabel ?? "weekly-plan"}: tool loop round ${attempt}/${deps.maxIterations} executed ${workCalls.length} tool call(s) (${workCalls.map((call) => call.name).join(", ")}), total dose ${reportedDose}`,
+			);
 			continue;
 		}
 		const schemaCall = calls.find((call) => call.name === deps.schemaToolName);
@@ -247,10 +267,17 @@ export async function runToolLoop(deps: ToolLoopDeps): Promise<WeeklyPlan> {
 			const direct = WeeklyPlanDirectResponseSchema.parse(
 				toolCallArgs(schemaCall),
 			);
-			return deps.validate(direct);
+			const plan = deps.validate(direct);
+			toolLoopLogger.info(
+				`${deps.logLabel ?? "weekly-plan"}: tool loop converged at round ${attempt}/${deps.maxIterations} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`,
+			);
+			return plan;
 		} catch (error) {
 			const detail =
 				error instanceof Error ? error.message : "invalid contract";
+			toolLoopLogger.warn(
+				`${deps.logLabel ?? "weekly-plan"}: tool loop round ${attempt}/${deps.maxIterations} schema validation failed (${detail}); feeding feedback back to model`,
+			);
 			messages.push(response);
 			messages.push(
 				new ToolMessage({
@@ -283,9 +310,11 @@ export async function createWeeklyPlanLlm({
 						schema: WeeklyPlanDirectResponseSchema as never,
 					},
 				],
-				{ tool_choice: "required" },
+				{ tool_choice: "auto" },
 			);
+
 			const [systemMessage, userMessage] = weeklyPlanPrompt(input, assets);
+
 			return runToolLoop({
 				invoke: (history) => model.invoke(history),
 				simulationTool,
