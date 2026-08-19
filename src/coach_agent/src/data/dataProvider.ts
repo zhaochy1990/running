@@ -71,6 +71,9 @@ export interface Activity {
 	avgStepLenCm: number | null;
 	ascentM: number | null;
 	descentM: number | null;
+	/** STRIDE-computed activity dose; null until the STRIDE load pipeline runs. */
+	strideDose: number | null;
+	/** STRIDE-computed session classification; never a vendor training label. */
 	strideSessionClass: string | null;
 	temperature: number | null;
 	humidity: number | null;

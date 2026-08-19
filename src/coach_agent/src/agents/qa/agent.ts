@@ -7,6 +7,7 @@ import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
 import { getLogger } from "../../utils/logger.js";
 import { buildResponsesModel } from "../common.js";
 import { createLoggingMiddleware } from "../middleware.js";
+import { createTurnScopeMiddleware } from "../turnScope.js";
 
 const logger = getLogger("coachAgent:qa");
 
@@ -49,7 +50,10 @@ export function getQaSubagent(store: DataProvider, config: ModelConfig) {
 			...runningCalibrationTools,
 		],
 		model: buildResponsesModel(config),
-		middleware: [createLoggingMiddleware("agent:qa")],
+		middleware: [
+			createTurnScopeMiddleware(),
+			createLoggingMiddleware("agent:qa"),
+		],
 		// Skill loaded via SkillsMiddleware from the deep agent's FilesystemBackend
 		// (rooted at `dist/agents/skills/` in coachAgent.ts). The agent reads the
 		// full SKILL.md on demand via read_file. Path is relative to that root.

@@ -16,11 +16,12 @@ import {
 	getMasterPlanGeneratorSubagent,
 	getMasterPlanSubagent,
 } from "./master_plan/agent.js";
-import { ORCHESTRATOR_PROMPT } from "./prompts.js";
 import { createPlanPassthroughMiddleware } from "./masterPlanPassthrough.js";
 import { memoryTools } from "./memory.js";
 import { createLoggingMiddleware } from "./middleware.js";
+import { ORCHESTRATOR_PROMPT } from "./prompts.js";
 import { getQaSubagent } from "./qa/agent.js";
+import { CoachTurnScope, createTurnScopeMiddleware } from "./turnScope.js";
 import {
 	getCoachSubagent,
 	getWeeklyPlanGeneratorSubagent,
@@ -30,8 +31,25 @@ export const CoachContext = z
 	.object({
 		userId: z.string().min(1),
 		asof: z.iso.date(),
+		target: CoachTurnScope.shape.target,
+		reviewContext: CoachTurnScope.shape.reviewContext,
 	})
-	.strict();
+	.strict()
+	.superRefine((value, context) => {
+		const scoped = CoachTurnScope.safeParse({
+			target: value.target,
+			reviewContext: value.reviewContext,
+		});
+		if (!scoped.success) {
+			for (const issue of scoped.error.issues) {
+				context.addIssue({
+					code: "custom",
+					message: issue.message,
+					path: issue.path,
+				});
+			}
+		}
+	});
 export type CoachToolRuntime = ToolRuntime<unknown, typeof CoachContext>;
 
 // Skills live next to the compiled agents (`dist/agents/skills/**`, copied from
@@ -96,6 +114,7 @@ export async function createCoachAgent(
 		],
 		contextSchema: CoachContext,
 		middleware: [
+			createTurnScopeMiddleware(),
 			createPlanPassthroughMiddleware(),
 			createLoggingMiddleware("agent"),
 		],

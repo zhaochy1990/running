@@ -1,9 +1,9 @@
 import { writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { Command } from "@langchain/langgraph";
 import {
 	ASK_USER_QUESTION_KIND,
 	type AskUserQuestionPayload,
+	Command,
 	createCoachAgent,
 	DataProviderWeeklyPlanContextProvider,
 	formatTokenUsageReport,
@@ -115,7 +115,7 @@ function renderQuestion(value: AskUserQuestionPayload): string {
  * （返回 __interrupt__），就把问题打给运动员、读取回答、用 Command({ resume })
  * 恢复，直到没有新的追问为止。
  */
-async function askWithHITL(content: string, thread: string): Promise<void> {
+async function _askWithHITL(content: string, thread: string): Promise<void> {
 	const tokenUsage = new LlmTokenUsageTracker();
 	const cfg = {
 		context: { userId, asof },

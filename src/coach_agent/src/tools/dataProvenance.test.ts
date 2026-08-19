@@ -17,7 +17,7 @@ const provider = {
 test("activity and load tools label STRIDE provenance", async () => {
 	const [activityTool] = createActivitiesTools(provider);
 	const [loadTool] = createTrainingLoadTools(provider);
-	const config = { context: { userId } };
+	const config = { context: { userId, asof: "2026-08-14" } };
 	assert.deepEqual(
 		await activityTool?.invoke({ startDay: "2026-08-01" }, config),
 		{
@@ -51,7 +51,10 @@ test("load tool marks computed STRIDE PMC as available", async () => {
 	} as unknown as DataProvider;
 	const [loadTool] = createTrainingLoadTools(computedProvider);
 	assert.deepEqual(
-		await loadTool?.invoke({ startDay: "2026-08-01" }, { context: { userId } }),
+		await loadTool?.invoke(
+			{ startDay: "2026-08-01" },
+			{ context: { userId, asof: "2026-08-14" } },
+		),
 		{
 			available: true,
 			stride_training_load: [

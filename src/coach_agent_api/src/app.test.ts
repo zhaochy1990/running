@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Command } from "@langchain/langgraph";
+import { Command } from "coach_agent";
 import { createApp } from "./app.js";
 import { AuthError } from "./auth.js";
+import { fingerprintTurn, ThreadBusyError } from "./turns.js";
 
 test("health is public", async () => {
 	const app = createApp({
@@ -61,10 +62,26 @@ test("chat derives user and thread identity from the verified token", async () =
 	assert.deepEqual(invocation, {
 		input: { messages: [{ role: "user", content: "最近状态怎么样？" }] },
 		config: {
-			context: { userId: "athlete-1" },
+			context: {
+				userId: "athlete-1",
+				asof: new Intl.DateTimeFormat("en-CA", {
+					timeZone: "Asia/Shanghai",
+					year: "numeric",
+					month: "2-digit",
+					day: "2-digit",
+				}).format(new Date()),
+			},
 			configurable: {
 				thread_id: "athlete-1:coach:session-1",
 				client_turn_id: "turn-1",
+			},
+			metadata: {
+				client_turn_id: "turn-1",
+				turn_fingerprint: fingerprintTurn({
+					sessionId: "session-1",
+					clientTurnId: "turn-1",
+					message: "最近状态怎么样？",
+				}),
 			},
 		},
 	});
@@ -256,6 +273,130 @@ test("chat replays an identical client turn and conflicts on changed input", asy
 	const conflict = await request("changed");
 	assert.equal(conflict.status, 409);
 	assert.equal(calls, 1);
+});
+
+test("chat carries validated target and review context into request identity and runtime", async () => {
+	let invocation:
+		| { input: unknown; config: Record<string, unknown> }
+		| undefined;
+	const app = createApp({
+		jwtVerifier: {
+			async verify() {
+				return { userId: "athlete-1" };
+			},
+		},
+		coach: {
+			async invoke(input, config) {
+				invocation = { input, config };
+				return { messages: [{ type: "ai", content: "scoped" }] };
+			},
+		},
+	});
+	const target = { kind: "week", folder: "2026-08-17_08-23" };
+	const reviewContext = {
+		kind: "weekly_create",
+		proposal: { folder: target.folder, days: [] },
+	};
+	const response = await app.request("/api/users/me/coach/chat", {
+		method: "POST",
+		headers: {
+			authorization: "Bearer signed",
+			"content-type": "application/json",
+		},
+		body: JSON.stringify({
+			session_id: "session-1",
+			client_turn_id: "turn-scope",
+			message: "解释这个草稿",
+			target,
+			review_context: reviewContext,
+		}),
+	});
+	assert.equal(response.status, 200);
+	const runtimeContext = invocation?.config.context as Record<string, unknown>;
+	assert.deepEqual(runtimeContext.target, target);
+	assert.deepEqual(runtimeContext.reviewContext, reviewContext);
+	assert.ok(invocation);
+	const fingerprint = (invocation.config.metadata as Record<string, unknown>)
+		.turn_fingerprint;
+	assert.equal(
+		fingerprint,
+		fingerprintTurn({
+			sessionId: "session-1",
+			clientTurnId: "turn-scope",
+			message: "解释这个草稿",
+			target,
+			reviewContext,
+		}),
+	);
+});
+
+test("chat rejects review context that does not match the target week", async () => {
+	const app = createApp({
+		jwtVerifier: {
+			async verify() {
+				return { userId: "athlete-1" };
+			},
+		},
+		coach: {
+			async invoke() {
+				throw new Error("must not invoke");
+			},
+		},
+	});
+	const response = await app.request("/api/users/me/coach/chat", {
+		method: "POST",
+		headers: {
+			authorization: "Bearer signed",
+			"content-type": "application/json",
+		},
+		body: JSON.stringify({
+			session_id: "session-1",
+			client_turn_id: "turn-scope",
+			message: "解释这个草稿",
+			target: { kind: "week", folder: "2026-08-17_08-23" },
+			review_context: {
+				kind: "weekly_create",
+				proposal: { folder: "2026-08-24_08-30" },
+			},
+		}),
+	});
+	assert.equal(response.status, 400);
+	assert.deepEqual(await response.json(), { error: "invalid_turn_scope" });
+});
+
+test("chat returns an explicit retryable response when the thread is busy", async () => {
+	const app = createApp({
+		jwtVerifier: {
+			async verify() {
+				return { userId: "athlete-1" };
+			},
+		},
+		coach: {
+			async invoke() {
+				throw new Error("must not invoke");
+			},
+		},
+		turnCoordinator: {
+			async run() {
+				throw new ThreadBusyError("busy");
+			},
+		},
+	});
+	const response = await app.request("/api/users/me/coach/chat", {
+		method: "POST",
+		headers: {
+			authorization: "Bearer signed",
+			"content-type": "application/json",
+		},
+		body: JSON.stringify({
+			session_id: "session-1",
+			client_turn_id: "turn-1",
+			message: "hi",
+		}),
+	});
+	assert.equal(response.status, 429);
+	assert.equal(response.headers.get("retry-after"), "5");
+	assert.deepEqual(await response.json(), { error: "coach_thread_busy" });
 });
 
 test("chat rejects empty interrupt answers", async () => {

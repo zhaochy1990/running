@@ -47,7 +47,7 @@ test("personal best loader preserves label ID and decimal precision contract", a
 			];
 		},
 	} as never);
-	assert.deepEqual(await provider.getPersonalBests("athlete"), [
+	assert.deepEqual(await provider.getPersonalBests("athlete", "2026-08-14"), [
 		{
 			distance: "5K",
 			timeSec: 1170.3,
@@ -63,10 +63,22 @@ test("plan reads are scoped to user, active version, and week start", async () =
 	const provider = new MySqlDataProvider({
 		async query(sql: string, values: unknown[]) {
 			calls.push({ sql, values });
-			return [[{ content: JSON.stringify({ id: calls.length }) }]];
+			const content =
+				calls.length === 1
+					? {
+							id: 1,
+							start_date: "2026-08-01",
+							end_date: "2026-08-31",
+						}
+					: { id: 2 };
+			return [[{ content: JSON.stringify(content) }]];
 		},
 	} as never);
-	assert.deepEqual(await provider.getMasterPlan("athlete"), { id: 1 });
+	assert.deepEqual(await provider.getMasterPlan("athlete", "2026-08-14"), {
+		id: 1,
+		start_date: "2026-08-01",
+		end_date: "2026-08-31",
+	});
 	assert.deepEqual(
 		await provider.getWeeklyPlan("athlete", "2026-07-20_07-26"),
 		{ id: 2 },
@@ -76,7 +88,7 @@ test("plan reads are scoped to user, active version, and week start", async () =
 	assert.ok(weeklyCall);
 	assert.match(
 		masterCall.sql,
-		/user_id = \? AND content_version = 2 AND status = 'active'/,
+		/user_id = \?[\s\S]*content_version = 2[\s\S]*status IN \('active', 'archived'\)/,
 	);
 	assert.deepEqual(masterCall.values, ["athlete"]);
 	assert.deepEqual(weeklyCall.values, ["athlete", "2026-07-20"]);
@@ -115,7 +127,8 @@ test("running calibration omits zone confidence and speed details", async () => 
 		},
 	} as never);
 	assert.deepEqual(
-		(await provider.getLatestRunningCalibration("athlete"))?.paceZones,
+		(await provider.getLatestRunningCalibration("athlete", "2026-08-14"))
+			?.paceZones,
 		[{ name: "threshold", minPaceSPerKm: 270, maxPaceSPerKm: 250 }],
 	);
 	for (const sql of calls.slice(1).map((call) => call.sql)) {
@@ -152,6 +165,7 @@ test("activity reads do not expose vendor-derived metrics to Coach", async () =>
 		"2026-08-01",
 	);
 	assert.equal(activity?.strideSessionClass, "tempo");
+	assert.match(sql, /t.training_dose AS stride_dose/);
 	assert.match(sql, /t.session_class AS stride_session_class/);
 	for (const key of [
 		"trainingLoad",

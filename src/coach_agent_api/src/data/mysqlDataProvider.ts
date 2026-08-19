@@ -47,7 +47,7 @@ export class MySqlDataProvider implements DataProvider {
 
 	/**
 	 * Open a connection pool to the local `stride` MySQL DB and return a store.
-	 * `config` comes from the API-owned `loadStrideDataConfig()` adapter config.
+	 * `config` comes from the API-owned `loadApiConfig().strideDatabase`.
 	 */
 	static create(config: MySqlConfig): MySqlDataProvider {
 		return new MySqlDataProvider(createStridePool(config), { ownsPool: true });
@@ -211,7 +211,7 @@ export class MySqlDataProvider implements DataProvider {
               a.distance_m, a.duration_s, a.avg_pace_s_km, a.best_km_pace,
               a.max_pace, a.avg_hr, a.max_hr, a.avg_cadence, a.max_cadence,
               a.avg_power, a.max_power, a.avg_step_len_cm, a.ascent_m,
-              a.descent_m,
+              a.descent_m, t.training_dose AS stride_dose,
               t.session_class AS stride_session_class, a.temperature,
               a.humidity, a.feels_like, a.wind_speed, a.sport_note, a.sport,
               a.feel, a.vertical_oscillation_mm, a.ground_contact_time_ms,
@@ -391,9 +391,8 @@ export class MySqlDataProvider implements DataProvider {
         LIMIT 1`,
 			[userId, weekStart],
 		);
-		return rows.length === 0
-			? null
-			: parsePlanContent(rows[0]!.content, "weekly_plan");
+		const row = rows[0];
+		return row ? parsePlanContent(row.content, "weekly_plan") : null;
 	}
 
 	async getRaceTarget(userId: string): Promise<RaceTarget | null> {
@@ -483,6 +482,7 @@ function rowToActivity(row: RowDataPacket): Activity {
 		avgStepLenCm: (row.avg_step_len_cm ?? null) as number | null,
 		ascentM: (row.ascent_m ?? null) as number | null,
 		descentM: (row.descent_m ?? null) as number | null,
+		strideDose: (row.stride_dose ?? null) as number | null,
 		strideSessionClass: (row.stride_session_class ?? null) as string | null,
 		temperature: (row.temperature ?? null) as number | null,
 		humidity: (row.humidity ?? null) as number | null,

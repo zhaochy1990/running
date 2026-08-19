@@ -13,6 +13,7 @@ import { getLogger } from "../../utils/logger.js";
 import { buildResponsesModel } from "../common.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { MASTER_PLAN_PROMPT, MASTER_PLAN_READ_PROMPT } from "../prompts.js";
+import { createTurnScopeMiddleware } from "../turnScope.js";
 import { createMasterPlanValidationMiddleware } from "./validationMiddleware.js";
 
 const logger = getLogger("coachAgent:master_plan");
@@ -78,6 +79,7 @@ function createMasterPlanSubagent(
 			? { responseFormat: MasterPlanDirectResponseSchema }
 			: {}),
 		middleware: [
+			createTurnScopeMiddleware(),
 			...(generatesPlan ? [createMasterPlanValidationMiddleware()] : []),
 			createLoggingMiddleware("agent:master_plan"),
 		],

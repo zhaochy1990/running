@@ -44,7 +44,10 @@ test("context provider exposes PB activity label ID without source", async () =>
 		async getRaceHistory() {
 			return [];
 		},
-		async getActiveMasterPlanMetadata() {
+		async getRaceTarget() {
+			return null;
+		},
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 	});
@@ -117,7 +120,10 @@ test("context provider maps canonical injuries and numeric race feel", async () 
 				},
 			];
 		},
-		async getActiveMasterPlanMetadata() {
+		async getRaceTarget() {
+			return null;
+		},
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 	});
@@ -162,6 +168,7 @@ test("context provider excludes trail-labelled outdoor activities from road-run 
 		ascentM: null,
 		descentM: null,
 		strideSessionClass: null,
+		strideDose: null,
 		temperature: null,
 		humidity: null,
 		feelsLike: null,
@@ -250,7 +257,10 @@ test("context provider excludes trail-labelled outdoor activities from road-run 
 		async getRaceHistory() {
 			return [];
 		},
-		async getActiveMasterPlanMetadata() {
+		async getRaceTarget() {
+			return null;
+		},
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 	});
@@ -313,6 +323,7 @@ test("context provider counts STRIDE session class without vendor train kind", a
 		ascentM: null,
 		descentM: null,
 		strideSessionClass: "tempo",
+		strideDose: null,
 		temperature: null,
 		humidity: null,
 		feelsLike: null,
@@ -359,7 +370,10 @@ test("context provider counts STRIDE session class without vendor train kind", a
 		async getRaceHistory() {
 			return [];
 		},
-		async getActiveMasterPlanMetadata() {
+		async getRaceTarget() {
+			return null;
+		},
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 	});
@@ -404,7 +418,10 @@ test("context provider materializes complete zero-run weeks", async () => {
 		async getRaceHistory() {
 			return [];
 		},
-		async getActiveMasterPlanMetadata() {
+		async getRaceTarget() {
+			return null;
+		},
+		async getMasterPlanMetadataForDate() {
 			return null;
 		},
 	});
