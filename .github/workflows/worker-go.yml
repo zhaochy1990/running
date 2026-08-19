@@ -25,6 +25,9 @@ on:
     paths:
       - "src/go/**"
       - "src/coach_contract/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "src/go/internal/api/weekly_plan_schema.json"
       - "tests/fixtures/weekly_plan_contract.json"
       - ".github/workflows/worker-go.yml"
@@ -32,6 +35,9 @@ on:
     paths:
       - "src/go/**"
       - "src/coach_contract/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "src/go/internal/api/weekly_plan_schema.json"
       - "tests/fixtures/weekly_plan_contract.json"
       - ".github/workflows/worker-go.yml"
@@ -57,6 +63,9 @@ jobs:
               - 'src/go/internal/api/weekly_plan_validation.go'
               - 'src/go/internal/api/weekly_plan_contract_parity_test.go'
               - 'src/coach_contract/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
               - 'src/go/internal/api/weekly_plan_schema.json'
               - 'tests/fixtures/weekly_plan_contract.json'
               - '.github/workflows/worker-go.yml'

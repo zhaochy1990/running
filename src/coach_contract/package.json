@@ -15,7 +15,7 @@
     "clean": "rm -rf dist",
     "build": "npm run clean && npm run tsc",
     "generate:weekly-plan-schema": "node scripts/generate-weekly-plan-schema.mjs",
-    "verify:weekly-plan-schema": "npm run generate:weekly-plan-schema && git diff --exit-code -- ../../go/internal/api/weekly_plan_schema.json",
+    "verify:weekly-plan-schema": "npm run generate:weekly-plan-schema && git diff --exit-code -- ../go/internal/api/weekly_plan_schema.json",
     "test": "npm run build && node --test dist/*.test.js dist/master_plan/*.test.js dist/weekly_plan/*.test.js",
     "format": "biome format --write src scripts",
     "lint": "biome lint src scripts",
