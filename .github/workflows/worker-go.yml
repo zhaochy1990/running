@@ -1,8 +1,9 @@
 name: worker-go
 
 # Go async-job CI: `test` runs for Go and shared Weekly Plan contract changes;
-# `contract-parity` additionally checks the canonical Coach schema against the
-# same fixture used by the Go validator. On master, a two-entry matrix publishes
+# `contract-parity` additionally tests the TypeScript Coach workspace and checks
+# the canonical Coach schema against the same fixture used by the Go validator.
+# On master, a two-entry matrix publishes
 # the worker and API images to GHCR
 # + ACR in parallel, but only when src/go/** actually changed — a workflow-only
 # edit must not republish a new CalVer image or bump the deployed version. Images:
@@ -24,6 +25,8 @@ on:
     branches: [master]
     paths:
       - "src/go/**"
+      - "src/coach_agent/**"
+      - "src/coach_agent_api/**"
       - "src/coach_contract/**"
       - "package.json"
       - "pnpm-lock.yaml"
@@ -34,6 +37,8 @@ on:
   pull_request:
     paths:
       - "src/go/**"
+      - "src/coach_agent/**"
+      - "src/coach_agent_api/**"
       - "src/coach_contract/**"
       - "package.json"
       - "pnpm-lock.yaml"
@@ -62,6 +67,8 @@ jobs:
             contract:
               - 'src/go/internal/api/weekly_plan_validation.go'
               - 'src/go/internal/api/weekly_plan_contract_parity_test.go'
+              - 'src/coach_agent/**'
+              - 'src/coach_agent_api/**'
               - 'src/coach_contract/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
@@ -114,6 +121,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build Workspace (contract -> coach_agent)
         run: pnpm -r build
+      - name: Test Coach TypeScript workspace
+        run: pnpm -r test
       - name: Verify generated Weekly Plan JSON Schema
         run: pnpm run verify:weekly-plan-schema
       - name: Verify Weekly Plan contract parity

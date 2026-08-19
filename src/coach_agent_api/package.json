@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:core": "npm --prefix ../coach_agent run build",
+    "build:core": "pnpm --filter @stride/contract build && pnpm --filter coach_agent build",
     "build": "npm run clean && tsc",
     "build:all": "npm run build:core && npm run build",
     "clean": "node scripts/clean.mjs",
@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.10",
-    "coach_agent": "file:../coach_agent",
+    "coach_agent": "workspace:*",
     "convict": "^6.2.5",
     "hono": "^4.10.3",
     "jose": "^6.1.3",

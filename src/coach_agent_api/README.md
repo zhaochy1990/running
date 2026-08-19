@@ -38,4 +38,8 @@ Schema-mapped variables:
 
 The API config is separate from `coach_agent`'s model/agent YAML because that dynamic registry has a different schema and is also reused by future composition roots such as a CLI.
 
-Use Node 24, then run `npm ci`, `npm test`, and `npm start`. `npm run smoke` starts an ephemeral in-process HTTP server with fake dependencies and verifies `/health` without contacting MySQL or an LLM.
+Use Node 24. From the repository root, run `pnpm install`, then use
+`pnpm --filter coach_agent_api test` and `pnpm --filter coach_agent_api start`.
+`pnpm --filter coach_agent_api smoke` starts an ephemeral in-process HTTP
+server with fake dependencies and verifies `/health` without contacting MySQL
+or an LLM.
