@@ -42,6 +42,8 @@ export function createWeeklyPlanGeneratorGraph(
 		.addNode("phase_taper", nodes.phaseTaper)
 		.addNode("phase_recovery", nodes.phaseRecovery)
 		.addNode("phase_unresolvable", nodes.phaseUnresolvable)
+		.addNode("simulate_load", nodes.simulateLoad)
+		.addNode("load_mismatch", nodes.loadMismatch)
 		.addNode("finalize", nodes.finalize)
 		.addEdge(START, "loadWeeklyPlanContext")
 		.addConditionalEdges(
@@ -55,35 +57,41 @@ export function createWeeklyPlanGeneratorGraph(
 		])
 		.addConditionalEdges(
 			"phase_base",
-			(state) => (state.outcome ? END : "finalize"),
-			["finalize", END],
+			(state) => (state.outcome ? END : "simulate_load"),
+			["simulate_load", END],
 		)
 		.addConditionalEdges(
 			"phase_build",
-			(state) => (state.outcome ? END : "finalize"),
-			["finalize", END],
+			(state) => (state.outcome ? END : "simulate_load"),
+			["simulate_load", END],
 		)
 		.addConditionalEdges(
 			"phase_speed",
-			(state) => (state.outcome ? END : "finalize"),
-			["finalize", END],
+			(state) => (state.outcome ? END : "simulate_load"),
+			["simulate_load", END],
 		)
 		.addConditionalEdges(
 			"phase_marathon",
-			(state) => (state.outcome ? END : "finalize"),
-			["finalize", END],
+			(state) => (state.outcome ? END : "simulate_load"),
+			["simulate_load", END],
 		)
 		.addConditionalEdges(
 			"phase_taper",
-			(state) => (state.outcome ? END : "finalize"),
-			["finalize", END],
+			(state) => (state.outcome ? END : "simulate_load"),
+			["simulate_load", END],
 		)
 		.addConditionalEdges(
 			"phase_recovery",
-			(state) => (state.outcome ? END : "finalize"),
-			["finalize", END],
+			(state) => (state.outcome ? END : "simulate_load"),
+			["simulate_load", END],
 		)
 		.addEdge("phase_unresolvable", END)
+		.addConditionalEdges("simulate_load", nodes.evaluateLoadMatch, [
+			...PHASE_NODE_TARGETS,
+			"finalize",
+			"load_mismatch",
+		])
+		.addEdge("load_mismatch", END)
 		.addEdge("finalize", END)
 		.compile();
 }

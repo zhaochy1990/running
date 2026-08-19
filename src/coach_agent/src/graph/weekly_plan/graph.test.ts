@@ -8,6 +8,12 @@ import type {
 } from "../../persistence/index.js";
 import { createWeeklyPlanGeneratorGraph } from "./index.js";
 import type { WeeklyPlanLlm } from "./llm.js";
+import {
+	loadWithinTolerance,
+	MAX_GENERATION_ATTEMPTS,
+	mergeSimulationIntoPlan,
+} from "./nodes.js";
+import { createWeeklyPlanForSimulation } from "./testFixtures.js";
 
 const config: CoachAgentConfig = {
 	models: [],
@@ -34,6 +40,7 @@ function makeWeeklyPlan(overrides: Partial<WeeklyPlan> = {}): WeeklyPlan {
 				notes_md: null,
 				total_distance_m: 8000,
 				total_duration_s: 2700,
+				estimated_dose: null,
 				spec: {
 					schema: "run-workout/v1",
 					name: "easy run",
@@ -64,6 +71,7 @@ function makeWeeklyPlan(overrides: Partial<WeeklyPlan> = {}): WeeklyPlan {
 				notes_md: null,
 				total_distance_m: null,
 				total_duration_s: null,
+				estimated_dose: null,
 				spec: null,
 			},
 		],
@@ -737,4 +745,237 @@ test("weekly plan generator fails with generation_failed when the plan LLM error
 		generation_id: "generation-1",
 		reason: "generation_failed",
 	});
+});
+
+function scaledSimulationPlan(factor: number): WeeklyPlan {
+	const base = createWeeklyPlanForSimulation();
+	return {
+		...base,
+		sessions: base.sessions.map((session) => {
+			const spec = session.spec as unknown as {
+				schema: string;
+				name: string;
+				date: string;
+				note: string | null;
+				blocks: Array<{
+					repeat: number;
+					steps: Array<{
+						step_kind: string;
+						duration: { kind: string; value: number | null };
+						target: unknown;
+						note: string | null;
+						hr_cap_bpm: number | null;
+					}>;
+				}>;
+			};
+			return {
+				...session,
+				total_distance_m: Math.round((session.total_distance_m ?? 0) * factor),
+				spec: {
+					...spec,
+					blocks: spec.blocks.map((block) => ({
+						...block,
+						steps: block.steps.map((step) => ({
+							...step,
+							duration:
+								step.duration.kind === "distance_m"
+									? {
+											kind: "distance_m",
+											value: Math.round((step.duration.value ?? 0) * factor),
+										}
+									: step.duration,
+						})),
+					})),
+				} as WeeklyPlan["sessions"][number]["spec"],
+			};
+		}),
+	} as WeeklyPlan;
+}
+
+function targetFromContext(overrides: SnapshotOverrides = {}) {
+	return buildContext({
+		...overrides,
+		latestCompleteWeekDistanceKm: overrides.latestCompleteWeekDistanceKm ?? 12,
+		latestCompleteWeekDose: overrides.latestCompleteWeekDose ?? 96,
+		recentTrainingWeeks: Array.from({ length: 4 }, (_, index) => ({
+			week_start: `2026-07-${20 + index * 7}`,
+			week_end: `2026-07-${20 + index * 7}`,
+			complete: true,
+			planned: {
+				available: false,
+				total_run_distance_km: null,
+				run_sessions: [],
+			},
+			actual: {
+				total_run_distance_km: 12,
+				total_training_dose: 96,
+				run_days: 5,
+				longest_run: null,
+				quality_stimulus_days: [],
+			},
+		})),
+	});
+}
+
+test("loadWithinTolerance accepts total dose inside the ±10% target band", () => {
+	const simulation = {
+		available: true,
+		total_dose: 440,
+	} as unknown as NonNullable<Parameters<typeof loadWithinTolerance>[0]>;
+	const target = {
+		training_load_low: 400,
+		training_load_high: 432,
+	} as unknown as NonNullable<Parameters<typeof loadWithinTolerance>[1]>;
+	assert.equal(loadWithinTolerance(simulation, target), true);
+	assert.equal(
+		loadWithinTolerance({ ...simulation, total_dose: 360 }, target),
+		true,
+	);
+	assert.equal(
+		loadWithinTolerance({ ...simulation, total_dose: 475.2 }, target),
+		true,
+	);
+});
+
+test("loadWithinTolerance rejects total dose outside the ±10% target band", () => {
+	const simulation = {
+		available: true,
+		total_dose: 359,
+	} as unknown as NonNullable<Parameters<typeof loadWithinTolerance>[0]>;
+	const target = {
+		training_load_low: 400,
+		training_load_high: 432,
+	} as unknown as NonNullable<Parameters<typeof loadWithinTolerance>[1]>;
+	assert.equal(loadWithinTolerance(simulation, target), false);
+	assert.equal(
+		loadWithinTolerance({ ...simulation, total_dose: 476 }, target),
+		false,
+	);
+});
+
+test("loadWithinTolerance is undecidable without simulation or target load", () => {
+	const simulation = {
+		available: false,
+		total_dose: null,
+	} as unknown as NonNullable<Parameters<typeof loadWithinTolerance>[0]>;
+	const target = {
+		training_load_low: 400,
+		training_load_high: 432,
+	} as unknown as NonNullable<Parameters<typeof loadWithinTolerance>[1]>;
+	assert.equal(loadWithinTolerance(simulation, target), null);
+	assert.equal(
+		loadWithinTolerance(
+			{ ...simulation, available: true },
+			{ ...target, training_load_low: null },
+		),
+		null,
+	);
+	assert.equal(loadWithinTolerance(undefined, target), null);
+});
+
+test("mergeSimulationIntoPlan back-fills per-session estimated doses", () => {
+	const plan = makeWeeklyPlan();
+	const simulation = {
+		sessions: [
+			{ session_index: 0, estimated_dose: 52.6 },
+			{ session_index: 1, estimated_dose: 44.0 },
+		],
+	} as unknown as NonNullable<Parameters<typeof mergeSimulationIntoPlan>[1]>;
+	const merged = mergeSimulationIntoPlan(plan, simulation);
+	assert.equal(merged.sessions[0]?.estimated_dose, 52.6);
+	assert.equal(merged.sessions[1]?.estimated_dose, 44);
+});
+
+test("weekly plan generator accepts the plan when total dose stays within 10% of the target", async () => {
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				return targetFromContext();
+			},
+		},
+		fakePlanLlm(createWeeklyPlanForSimulation()),
+	);
+	const { outcome } = await graph.invoke(
+		{ request: { request_id: "request-in-band" } },
+		{ context: runtimeContext },
+	);
+
+	assert.equal(outcome.decision, "completed");
+	if (outcome.decision !== "completed") {
+		throw new Error("unreachable");
+	}
+	assert.equal(outcome.generation_attempts, 1);
+	assert.equal(outcome.simulation.available, true);
+	assert.equal(
+		loadWithinTolerance(outcome.simulation, outcome.target_training_load),
+		true,
+	);
+	assert.ok(
+		outcome.weekly_plan.sessions.some(
+			(session) => session.estimated_dose !== null,
+		),
+	);
+});
+
+test("weekly plan generator bounces the plan back to the phase node when total dose misses the target", async () => {
+	let invocations = 0;
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				return buildContext();
+			},
+		},
+		{
+			async invoke(input) {
+				invocations += 1;
+				if (invocations === 1) {
+					assert.equal(input.previousSimulation, null);
+					return createWeeklyPlanForSimulation();
+				}
+				assert.equal(input.previousSimulation?.attempt, 1);
+				return scaledSimulationPlan(4);
+			},
+		},
+	);
+	const { outcome } = await graph.invoke(
+		{ request: { request_id: "request-bounced" } },
+		{ context: runtimeContext },
+	);
+
+	assert.equal(outcome.decision, "completed");
+	if (outcome.decision !== "completed") {
+		throw new Error("unreachable");
+	}
+	assert.equal(outcome.phase, "build");
+	assert.equal(outcome.generation_attempts, 2);
+	assert.equal(
+		loadWithinTolerance(outcome.simulation, outcome.target_training_load),
+		true,
+	);
+});
+
+test("weekly plan generator fails with load_mismatch_unresolved after exhausting attempts", async () => {
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				return buildContext();
+			},
+		},
+		fakePlanLlm(createWeeklyPlanForSimulation()),
+	);
+	const { outcome } = await graph.invoke(
+		{ request: { request_id: "request-mismatch" } },
+		{ context: runtimeContext },
+	);
+
+	assert.deepEqual(outcome, {
+		decision: "quality_failure",
+		request_id: "request-mismatch",
+		generation_id: "generation-1",
+		reason: "load_mismatch_unresolved",
+	});
+	assert.equal(MAX_GENERATION_ATTEMPTS, 3);
 });

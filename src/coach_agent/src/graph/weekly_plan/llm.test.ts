@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { AIMessage, ToolMessage } from "@langchain/core/messages";
+import { tool } from "@langchain/core/tools";
+import * as z from "zod";
 import type { WeeklyPlan } from "../../agents/weekly_plan/schema.js";
 import type { ModelConfig } from "../../config/config.js";
 import type {
@@ -10,6 +13,9 @@ import type { TargetTrainingLoad } from "./contracts.js";
 import {
 	createWeeklyPlanLlm,
 	loadWeeklyPlanPromptAssets,
+	runToolLoop,
+	SCHEMA_TOOL_NAME,
+	SIMULATION_TOOL_NAME,
 	validateGeneratedWeeklyPlan,
 	weeklyPlanPrompt,
 } from "./llm.js";
@@ -136,6 +142,7 @@ function weeklyPlan(): WeeklyPlan {
 				notes_md: null,
 				total_distance_m: 8000,
 				total_duration_s: 2700,
+				estimated_dose: null,
 				spec: {
 					schema: "run-workout/v1",
 					name: "easy run",
@@ -166,6 +173,7 @@ function weeklyPlan(): WeeklyPlan {
 				notes_md: null,
 				total_distance_m: null,
 				total_duration_s: null,
+				estimated_dose: null,
 				spec: null,
 			},
 		],
@@ -270,4 +278,169 @@ test("validateGeneratedWeeklyPlan rejects total run distance above the anchor ca
 test("createWeeklyPlanLlm exposes an invoke that returns the parsed plan", async () => {
 	const llm = await createWeeklyPlanLlm({ weeklyPlanModel: MODEL });
 	assert.equal(typeof llm.invoke, "function");
+});
+
+function fakeSimulationTool() {
+	return tool(async () => ({ total_dose: 96, available: true }), {
+		name: SIMULATION_TOOL_NAME,
+		description: "test simulation tool",
+		schema: z.strictObject({ plan: z.any() }),
+	});
+}
+
+function schemaToolCall(plan: WeeklyPlan) {
+	return {
+		id: "call-schema",
+		name: SCHEMA_TOOL_NAME,
+		args: JSON.stringify({ disposition: "return_direct", content: plan }),
+		type: "tool_call" as const,
+	};
+}
+
+test("runToolLoop accepts the schema call immediately", async () => {
+	const plan = weeklyPlan();
+	const result = await runToolLoop({
+		invoke: async () =>
+			new AIMessage({
+				content: "",
+				tool_calls: [schemaToolCall(plan) as never],
+			}),
+		simulationTool: fakeSimulationTool(),
+		schemaToolName: SCHEMA_TOOL_NAME,
+		maxIterations: 4,
+		validate: (direct) => direct.content,
+	});
+	assert.deepEqual(result, plan);
+});
+
+test("runToolLoop executes simulation tool calls before the schema call", async () => {
+	const plan = weeklyPlan();
+	let simulated = 0;
+	const simulationTool = tool(
+		async () => {
+			simulated += 1;
+			return { total_dose: 96, available: true };
+		},
+		{
+			name: SIMULATION_TOOL_NAME,
+			description: "test simulation tool",
+			schema: z.strictObject({ plan: z.any() }),
+		},
+	);
+	let round = 0;
+	const result = await runToolLoop({
+		invoke: async (messages) => {
+			round += 1;
+			if (round === 1) {
+				assert.equal(messages.length, 0);
+				return new AIMessage({
+					content: "",
+					tool_calls: [
+						{
+							id: "call-sim",
+							name: SIMULATION_TOOL_NAME,
+							args: JSON.stringify({ plan }),
+							type: "tool_call",
+						} as never,
+					],
+				});
+			}
+			assert.equal(messages.length, 1);
+			assert.ok(ToolMessage.isInstance(messages[0]));
+			return new AIMessage({
+				content: "",
+				tool_calls: [schemaToolCall(plan) as never],
+			});
+		},
+		simulationTool,
+		schemaToolName: SCHEMA_TOOL_NAME,
+		maxIterations: 4,
+		validate: (direct) => direct.content,
+	});
+	assert.equal(simulated, 1);
+	assert.deepEqual(result, plan);
+});
+
+test("runToolLoop feeds schema failures back as a tool message", async () => {
+	let round = 0;
+	await runToolLoop({
+		invoke: async () => {
+			round += 1;
+			if (round === 1) {
+				return new AIMessage({
+					content: "",
+					tool_calls: [
+						{
+							id: "call-bad",
+							name: SCHEMA_TOOL_NAME,
+							args: JSON.stringify({
+								disposition: "return_direct",
+								content: { ...weeklyPlan(), week_name: 42 },
+							}),
+							type: "tool_call",
+						} as never,
+					],
+				});
+			}
+			return new AIMessage({
+				content: "",
+				tool_calls: [schemaToolCall(weeklyPlan()) as never],
+			});
+		},
+		simulationTool: fakeSimulationTool(),
+		schemaToolName: SCHEMA_TOOL_NAME,
+		maxIterations: 4,
+		validate: (direct) => direct.content,
+	});
+	assert.equal(round, 2);
+});
+
+test("runToolLoop rejects unknown tool calls", async () => {
+	await assert.rejects(
+		() =>
+			runToolLoop({
+				invoke: async () =>
+					new AIMessage({
+						content: "",
+						tool_calls: [
+							{
+								id: "call-x",
+								name: "other_tool",
+								args: "{}",
+								type: "tool_call",
+							},
+						],
+					} as never),
+				simulationTool: fakeSimulationTool(),
+				schemaToolName: SCHEMA_TOOL_NAME,
+				maxIterations: 4,
+				validate: (direct) => direct.content,
+			}),
+		/unexpected tool call/,
+	);
+});
+
+test("runToolLoop fails when the model never submits the schema call", async () => {
+	await assert.rejects(
+		() =>
+			runToolLoop({
+				invoke: async () =>
+					new AIMessage({
+						content: "",
+						tool_calls: [
+							{
+								id: "call-sim",
+								name: SIMULATION_TOOL_NAME,
+								args: JSON.stringify({ plan: weeklyPlan() }),
+								type: "tool_call",
+							},
+						],
+					} as never),
+				simulationTool: fakeSimulationTool(),
+				schemaToolName: SCHEMA_TOOL_NAME,
+				maxIterations: 2,
+				validate: (direct) => direct.content,
+			}),
+		/did not converge/,
+	);
 });

@@ -66,6 +66,16 @@
                   }
                 ]
               },
+              "estimated_dose": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "kind": {
                 "type": "string",
                 "const": "run"
@@ -258,6 +268,7 @@
               "notes_md",
               "total_distance_m",
               "total_duration_s",
+              "estimated_dose",
               "kind",
               "spec"
             ],
@@ -305,6 +316,16 @@
                 ]
               },
               "total_duration_s": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "estimated_dose": {
                 "anyOf": [
                   {
                     "type": "number"
@@ -441,6 +462,7 @@
               "notes_md",
               "total_distance_m",
               "total_duration_s",
+              "estimated_dose",
               "kind",
               "spec"
             ],
@@ -488,6 +510,16 @@
                 ]
               },
               "total_duration_s": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "estimated_dose": {
                 "anyOf": [
                   {
                     "type": "number"
@@ -513,6 +545,7 @@
               "notes_md",
               "total_distance_m",
               "total_duration_s",
+              "estimated_dose",
               "kind",
               "spec"
             ],
@@ -560,6 +593,16 @@
                 ]
               },
               "total_duration_s": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "estimated_dose": {
                 "anyOf": [
                   {
                     "type": "number"
@@ -585,6 +628,7 @@
               "notes_md",
               "total_distance_m",
               "total_duration_s",
+              "estimated_dose",
               "kind",
               "spec"
             ],
@@ -641,6 +685,16 @@
                   }
                 ]
               },
+              "estimated_dose": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "kind": {
                 "type": "string",
                 "const": "note"
@@ -657,6 +711,7 @@
               "notes_md",
               "total_distance_m",
               "total_duration_s",
+              "estimated_dose",
               "kind",
               "spec"
             ],

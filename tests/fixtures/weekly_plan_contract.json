@@ -32,7 +32,8 @@
         },
         "notes_md": null,
         "total_distance_m": 8000,
-        "total_duration_s": null
+        "total_duration_s": null,
+        "estimated_dose": null
       },
       {
         "schema": "plan-session/v1",
@@ -60,7 +61,8 @@
         },
         "notes_md": null,
         "total_distance_m": null,
-        "total_duration_s": 1800
+        "total_duration_s": 1800,
+        "estimated_dose": null
       },
       {
         "schema": "plan-session/v1",
@@ -71,7 +73,8 @@
         "spec": null,
         "notes_md": null,
         "total_distance_m": null,
-        "total_duration_s": null
+        "total_duration_s": null,
+        "estimated_dose": null
       }
     ],
     "nutrition": [

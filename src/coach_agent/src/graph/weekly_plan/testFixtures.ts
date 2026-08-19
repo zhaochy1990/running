@@ -78,6 +78,7 @@ function runSession(
 		notes_md: null,
 		total_distance_m: distanceM,
 		total_duration_s: null,
+		estimated_dose: null,
 		kind: "run" as const,
 		spec: {
 			schema: "run-workout/v1" as const,

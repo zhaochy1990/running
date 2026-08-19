@@ -70,6 +70,7 @@ const SessionFields = {
 	notes_md: z.string().nullable(),
 	total_distance_m: NullableNumberSchema,
 	total_duration_s: NullableNumberSchema,
+	estimated_dose: NullableNumberSchema,
 };
 
 const PlannedSessionSchema = z.discriminatedUnion("kind", [
