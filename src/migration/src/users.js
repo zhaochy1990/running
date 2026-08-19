@@ -1,7 +1,7 @@
 // uuid for users that we need to migrate from old system to new system
 export const users = [
     // dehua
-    // "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
+    "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
     // pan
     "5ee229a6-cdc1-4260-84d3-71ec622126c2",
     // dingchentao
