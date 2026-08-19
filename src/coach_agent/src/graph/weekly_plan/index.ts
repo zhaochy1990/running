@@ -6,6 +6,8 @@ export {
 	WeeklyPlanGeneratorRequest,
 } from "@stride/contract";
 export { createWeeklyPlanGeneratorGraph } from "./graph.js";
+export type { WeeklyPlanLlm, WeeklyPlanLlmInput } from "./llm.js";
+export { createWeeklyPlanLlm } from "./llm.js";
 export {
 	GraphInput,
 	GraphOutput,

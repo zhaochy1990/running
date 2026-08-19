@@ -1,7 +1,8 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig, readStrideMySqlConfig } from "../config/config.js";
+import { getAgentConfig, loadConfig, readStrideMySqlConfig } from "../config/config.js";
 import { createWeeklyPlanGeneratorGraph } from "../graph/weekly_plan/index.js";
+import { createWeeklyPlanLlm } from "../graph/weekly_plan/llm.js";
 import {
 	MySqlWeeklyPlanContextProvider,
 	StrideDataStore,
@@ -28,7 +29,10 @@ async function main() {
 	const store = StrideDataStore.create(readStrideMySqlConfig(config));
 	try {
 		const provider = new MySqlWeeklyPlanContextProvider(store);
-		const graph = createWeeklyPlanGeneratorGraph(config, provider);
+		const planLlm = await createWeeklyPlanLlm({
+			weeklyPlanModel: getAgentConfig(config, "generate_weekly_plan"),
+		});
+		const graph = createWeeklyPlanGeneratorGraph(config, provider, planLlm);
 		const generationId = `weekly-plan-${PROFILE}-${Date.now()}`;
 		const result = await graph.invoke(
 			{

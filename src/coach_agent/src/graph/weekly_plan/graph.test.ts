@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { WeeklyPlan } from "../../agents/weekly_plan/schema.js";
 import type { CoachAgentConfig } from "../../config/config.js";
 import type {
 	DailyRecovery,
 	WeeklyPlanContext,
-	WeeklyPlanContextProvider,
 } from "../../persistence/index.js";
 import { createWeeklyPlanGeneratorGraph } from "./index.js";
+import type { WeeklyPlanLlm } from "./llm.js";
 
 const config: CoachAgentConfig = {
 	models: [],
@@ -18,6 +19,78 @@ const config: CoachAgentConfig = {
 		langsmith_api_key_env: "",
 	},
 };
+
+function makeWeeklyPlan(overrides: Partial<WeeklyPlan> = {}): WeeklyPlan {
+	const base: WeeklyPlan = {
+		schema: "weekly-plan/v1",
+		week_name: "2026-08-17_08-23",
+		sessions: [
+			{
+				schema: "plan-session/v1",
+				kind: "run",
+				date: "2026-08-17",
+				session_index: 0,
+				summary: "easy run",
+				notes_md: null,
+				total_distance_m: 8000,
+				total_duration_s: 2700,
+				spec: {
+					schema: "run-workout/v1",
+					name: "easy run",
+					date: "2026-08-17",
+					note: null,
+					blocks: [
+						{
+							repeat: 1,
+							steps: [
+								{
+									step_kind: "work",
+									duration: { kind: "open", value: null },
+									target: { kind: "open", low: null, high: null },
+									note: null,
+									hr_cap_bpm: null,
+								},
+							],
+						},
+					],
+				},
+			},
+			{
+				schema: "plan-session/v1",
+				kind: "rest",
+				date: "2026-08-18",
+				session_index: 0,
+				summary: "rest day",
+				notes_md: null,
+				total_distance_m: null,
+				total_duration_s: null,
+				spec: null,
+			},
+		],
+		nutrition: Array.from({ length: 7 }, (_, index) => ({
+			schema: "plan-nutrition/v1",
+			date: `2026-08-${String(17 + index).padStart(2, "0")}`,
+			kcal_target: 2000,
+			carbs_g: 250,
+			protein_g: 120,
+			fat_g: 60,
+			water_ml: 2000,
+			meals: [],
+			notes_md: null,
+		})),
+		notes_md: null,
+		coach_notes: "test plan",
+	};
+	return { ...base, ...overrides };
+}
+
+function fakePlanLlm(plan: WeeklyPlan = makeWeeklyPlan()): WeeklyPlanLlm {
+	return {
+		async invoke() {
+			return plan;
+		},
+	};
+}
 
 function stableRecovery(): DailyRecovery[] {
 	return Array.from({ length: 10 }, (_, index) => ({
@@ -158,11 +231,15 @@ function buildContext(overrides: SnapshotOverrides = {}): WeeklyPlanContext {
 const runtimeContext = { userId: "athlete-342", generationId: "generation-1" };
 
 test("weekly plan generator computes a maintain target from the 4-week anchor", async () => {
-	const graph = createWeeklyPlanGeneratorGraph(config, {
-		async loadSnapshot() {
-			return buildContext({ latestCompleteWeekDistanceKm: 50 });
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				return buildContext({ latestCompleteWeekDistanceKm: 50 });
+			},
 		},
-	});
+		fakePlanLlm(),
+	);
 	const { outcome } = await graph.invoke(
 		{ request: { request_id: "request-1" } },
 		{ context: runtimeContext },
@@ -245,14 +322,18 @@ test("weekly plan generator computes a maintain target from the 4-week anchor", 
 });
 
 test("weekly plan generator vetoes to 80-90% when recovery deteriorates over 5 days", async () => {
-	const graph = createWeeklyPlanGeneratorGraph(config, {
-		async loadSnapshot() {
-			return buildContext({
-				recoveryHistory: deterioratingRecovery(),
-				latestCompleteWeekDistanceKm: 50,
-			});
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				return buildContext({
+					recoveryHistory: deterioratingRecovery(),
+					latestCompleteWeekDistanceKm: 50,
+				});
+			},
 		},
-	});
+		fakePlanLlm(),
+	);
 	const { outcome } = await graph.invoke(
 		{ request: { request_id: "request-2" } },
 		{ context: runtimeContext },
@@ -295,50 +376,54 @@ test("weekly plan generator vetoes to 80-90% when recovery deteriorates over 5 d
 });
 
 test("weekly plan generator deep-cuts a recovery week at or above the anchor", async () => {
-	const graph = createWeeklyPlanGeneratorGraph(config, {
-		async loadSnapshot() {
-			return buildContext({
-				recoveryWeek: true,
-				latestCompleteWeekDistanceKm: 47,
-				recentTrainingWeeks: [
-					...Array.from({ length: 3 }, (_, index) => ({
-						week_start: `2026-07-${20 + index * 7}`,
-						week_end: `2026-07-${20 + index * 7}`,
-						complete: true,
-						planned: {
-							available: false,
-							total_run_distance_km: null,
-							run_sessions: [],
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				return buildContext({
+					recoveryWeek: true,
+					latestCompleteWeekDistanceKm: 47,
+					recentTrainingWeeks: [
+						...Array.from({ length: 3 }, (_, index) => ({
+							week_start: `2026-07-${20 + index * 7}`,
+							week_end: `2026-07-${20 + index * 7}`,
+							complete: true,
+							planned: {
+								available: false,
+								total_run_distance_km: null,
+								run_sessions: [],
+							},
+							actual: {
+								total_run_distance_km: 47,
+								total_training_dose: 376,
+								run_days: 5,
+								longest_run: null,
+								quality_stimulus_days: [],
+							},
+						})),
+						{
+							week_start: "2026-08-10",
+							week_end: "2026-08-16",
+							complete: true,
+							planned: {
+								available: false,
+								total_run_distance_km: null,
+								run_sessions: [],
+							},
+							actual: {
+								total_run_distance_km: 47,
+								total_training_dose: 376,
+								run_days: 5,
+								longest_run: null,
+								quality_stimulus_days: [],
+							},
 						},
-						actual: {
-							total_run_distance_km: 47,
-							total_training_dose: 376,
-							run_days: 5,
-							longest_run: null,
-							quality_stimulus_days: [],
-						},
-					})),
-					{
-						week_start: "2026-08-10",
-						week_end: "2026-08-16",
-						complete: true,
-						planned: {
-							available: false,
-							total_run_distance_km: null,
-							run_sessions: [],
-						},
-						actual: {
-							total_run_distance_km: 47,
-							total_training_dose: 376,
-							run_days: 5,
-							longest_run: null,
-							quality_stimulus_days: [],
-						},
-					},
-				],
-			});
+					],
+				});
+			},
 		},
-	});
+		fakePlanLlm(),
+	);
 	const { outcome } = await graph.invoke(
 		{ request: { request_id: "request-3" } },
 		{ context: runtimeContext },
@@ -355,52 +440,56 @@ test("weekly plan generator deep-cuts a recovery week at or above the anchor", a
 });
 
 test("weekly plan generator treats an undelivered peak week as its own recovery", async () => {
-	const graph = createWeeklyPlanGeneratorGraph(config, {
-		async loadSnapshot() {
-			return buildContext({
-				recoveryWeek: true,
-				latestCompleteWeekDistanceKm: 66,
-				latestCompleteWeekDose: 369,
-				recentTrainingWeeks: [
-					...Array.from({ length: 3 }, (_, index) => ({
-						week_start: `2026-07-${20 + index * 7}`,
-						week_end: `2026-07-${20 + index * 7}`,
-						complete: true,
-						planned: {
-							available: false,
-							total_run_distance_km: null,
-							run_sessions: [],
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				return buildContext({
+					recoveryWeek: true,
+					latestCompleteWeekDistanceKm: 66,
+					latestCompleteWeekDose: 369,
+					recentTrainingWeeks: [
+						...Array.from({ length: 3 }, (_, index) => ({
+							week_start: `2026-07-${20 + index * 7}`,
+							week_end: `2026-07-${20 + index * 7}`,
+							complete: true,
+							planned: {
+								available: false,
+								total_run_distance_km: null,
+								run_sessions: [],
+							},
+							actual: {
+								total_run_distance_km: 66,
+								total_training_dose: 369,
+								run_days: 5,
+								longest_run: null,
+								quality_stimulus_days: [],
+							},
+						})),
+						{
+							week_start: "2026-08-10",
+							week_end: "2026-08-16",
+							complete: true,
+							planned: {
+								available: true,
+								distance_coverage: "complete",
+								total_run_distance_km: 80,
+								run_sessions: [],
+							},
+							actual: {
+								total_run_distance_km: 66,
+								total_training_dose: 369,
+								run_days: 5,
+								longest_run: null,
+								quality_stimulus_days: [],
+							},
 						},
-						actual: {
-							total_run_distance_km: 66,
-							total_training_dose: 369,
-							run_days: 5,
-							longest_run: null,
-							quality_stimulus_days: [],
-						},
-					})),
-					{
-						week_start: "2026-08-10",
-						week_end: "2026-08-16",
-						complete: true,
-						planned: {
-							available: true,
-							distance_coverage: "complete",
-							total_run_distance_km: 80,
-							run_sessions: [],
-						},
-						actual: {
-							total_run_distance_km: 66,
-							total_training_dose: 369,
-							run_days: 5,
-							longest_run: null,
-							quality_stimulus_days: [],
-						},
-					},
-				],
-			});
+					],
+				});
+			},
 		},
-	});
+		fakePlanLlm(),
+	);
 	const { outcome } = await graph.invoke(
 		{ request: { request_id: "request-4" } },
 		{ context: runtimeContext },
@@ -417,11 +506,15 @@ test("weekly plan generator treats an undelivered peak week as its own recovery"
 });
 
 test("weekly plan generator maps context-provider errors to a typed failure", async () => {
-	const graph = createWeeklyPlanGeneratorGraph(config, {
-		async loadSnapshot() {
-			throw new Error("mysql unavailable");
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				throw new Error("mysql unavailable");
+			},
 		},
-	});
+		fakePlanLlm(),
+	);
 	const { outcome } = await graph.invoke(
 		{ request: { request_id: "request-5" } },
 		{ context: runtimeContext },
@@ -436,11 +529,15 @@ test("weekly plan generator maps context-provider errors to a typed failure", as
 });
 
 test("weekly plan generator rejects unknown request fields", async () => {
-	const graph = createWeeklyPlanGeneratorGraph(config, {
-		async loadSnapshot() {
-			return buildContext();
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				return buildContext();
+			},
 		},
-	});
+		fakePlanLlm(),
+	);
 	await assert.rejects(
 		() =>
 			graph.invoke(
@@ -462,24 +559,28 @@ const CANONICAL_PHASES = [
 
 for (const phase of CANONICAL_PHASES) {
 	test(`weekly plan generator routes the ${phase} phase from stage.phase_name`, async () => {
-		const graph = createWeeklyPlanGeneratorGraph(config, {
-			async loadSnapshot() {
-				return buildContext({
-					trainingPosition: {
-						phase: { name: "marathon" },
-						stage: {
-							week_index: 0,
-							week_start: "2026-08-17",
-							phase_name: phase,
-							is_recovery_week: false,
-							target_weekly_km_low: 30,
-							target_weekly_km_high: 45,
-							key_sessions: [],
+		const graph = createWeeklyPlanGeneratorGraph(
+			config,
+			{
+				async loadSnapshot() {
+					return buildContext({
+						trainingPosition: {
+							phase: { name: "marathon" },
+							stage: {
+								week_index: 0,
+								week_start: "2026-08-17",
+								phase_name: phase,
+								is_recovery_week: false,
+								target_weekly_km_low: 30,
+								target_weekly_km_high: 45,
+								key_sessions: [],
+							},
 						},
-					},
-				});
+					});
+				},
 			},
-		});
+			fakePlanLlm(),
+		);
 		const { outcome } = await graph.invoke(
 			{ request: { request_id: `request-${phase}` } },
 			{ context: runtimeContext },
@@ -491,24 +592,28 @@ for (const phase of CANONICAL_PHASES) {
 }
 
 test("weekly plan generator falls back to phase.name when stage.phase_name is missing", async () => {
-	const graph = createWeeklyPlanGeneratorGraph(config, {
-		async loadSnapshot() {
-			return buildContext({
-				trainingPosition: {
-					phase: { name: "taper" },
-					stage: {
-						week_index: 0,
-						week_start: "2026-08-17",
-						phase_name: null,
-						is_recovery_week: false,
-						target_weekly_km_low: 30,
-						target_weekly_km_high: 45,
-						key_sessions: [],
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				return buildContext({
+					trainingPosition: {
+						phase: { name: "taper" },
+						stage: {
+							week_index: 0,
+							week_start: "2026-08-17",
+							phase_name: null,
+							is_recovery_week: false,
+							target_weekly_km_low: 30,
+							target_weekly_km_high: 45,
+							key_sessions: [],
+						},
 					},
-				},
-			});
+				});
+			},
 		},
-	});
+		fakePlanLlm(),
+	);
 	const { outcome } = await graph.invoke(
 		{ request: { request_id: "request-fallback" } },
 		{ context: runtimeContext },
@@ -519,24 +624,28 @@ test("weekly plan generator falls back to phase.name when stage.phase_name is mi
 });
 
 test("weekly plan generator prefers stage.phase_name over phase.name", async () => {
-	const graph = createWeeklyPlanGeneratorGraph(config, {
-		async loadSnapshot() {
-			return buildContext({
-				trainingPosition: {
-					phase: { name: "base" },
-					stage: {
-						week_index: 0,
-						week_start: "2026-08-17",
-						phase_name: "recovery",
-						is_recovery_week: true,
-						target_weekly_km_low: 30,
-						target_weekly_km_high: 45,
-						key_sessions: [],
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				return buildContext({
+					trainingPosition: {
+						phase: { name: "base" },
+						stage: {
+							week_index: 0,
+							week_start: "2026-08-17",
+							phase_name: "recovery",
+							is_recovery_week: true,
+							target_weekly_km_low: 30,
+							target_weekly_km_high: 45,
+							key_sessions: [],
+						},
 					},
-				},
-			});
+				});
+			},
 		},
-	});
+		fakePlanLlm(),
+	);
 	const { outcome } = await graph.invoke(
 		{ request: { request_id: "request-priority" } },
 		{ context: runtimeContext },
@@ -547,24 +656,28 @@ test("weekly plan generator prefers stage.phase_name over phase.name", async () 
 });
 
 test("weekly plan generator fails with phase_unresolvable when no canonical phase exists", async () => {
-	const graph = createWeeklyPlanGeneratorGraph(config, {
-		async loadSnapshot() {
-			return buildContext({
-				trainingPosition: {
-					phase: { name: "自由训练期" },
-					stage: {
-						week_index: 0,
-						week_start: "2026-08-17",
-						phase_name: null,
-						is_recovery_week: false,
-						target_weekly_km_low: 30,
-						target_weekly_km_high: 45,
-						key_sessions: [],
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				return buildContext({
+					trainingPosition: {
+						phase: { name: "自由训练期" },
+						stage: {
+							week_index: 0,
+							week_start: "2026-08-17",
+							phase_name: null,
+							is_recovery_week: false,
+							target_weekly_km_low: 30,
+							target_weekly_km_high: 45,
+							key_sessions: [],
+						},
 					},
-				},
-			});
+				});
+			},
 		},
-	});
+		fakePlanLlm(),
+	);
 	const { outcome } = await graph.invoke(
 		{ request: { request_id: "request-unresolvable" } },
 		{ context: runtimeContext },
@@ -575,5 +688,53 @@ test("weekly plan generator fails with phase_unresolvable when no canonical phas
 		request_id: "request-unresolvable",
 		generation_id: "generation-1",
 		reason: "phase_unresolvable",
+	});
+});
+
+test("weekly plan generator includes the generated plan in the completed outcome", async () => {
+	const plan = makeWeeklyPlan();
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				return buildContext();
+			},
+		},
+		fakePlanLlm(plan),
+	);
+	const { outcome } = await graph.invoke(
+		{ request: { request_id: "request-generated" } },
+		{ context: runtimeContext },
+	);
+
+	assert.equal(outcome.decision, "completed");
+	assert.equal(outcome.phase, "build");
+	assert.deepEqual(outcome.weekly_plan, plan);
+});
+
+test("weekly plan generator fails with generation_failed when the plan LLM errors", async () => {
+	const graph = createWeeklyPlanGeneratorGraph(
+		config,
+		{
+			async loadSnapshot() {
+				return buildContext();
+			},
+		},
+		{
+			async invoke() {
+				throw new Error("model unavailable");
+			},
+		},
+	);
+	const { outcome } = await graph.invoke(
+		{ request: { request_id: "request-llm-error" } },
+		{ context: runtimeContext },
+	);
+
+	assert.deepEqual(outcome, {
+		decision: "quality_failure",
+		request_id: "request-llm-error",
+		generation_id: "generation-1",
+		reason: "generation_failed",
 	});
 });

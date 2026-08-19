@@ -2,6 +2,7 @@ import { END, START, StateGraph } from "@langchain/langgraph";
 import { WeeklyPlanGeneratorContext } from "@stride/contract";
 import type { CoachAgentConfig } from "../../config/config.js";
 import type { WeeklyPlanContextProvider } from "../../persistence/weeklyPlanContextProvider.js";
+import type { WeeklyPlanLlm } from "./llm.js";
 import {
 	GraphInput,
 	GraphOutput,
@@ -22,8 +23,9 @@ const PHASE_NODE_TARGETS = [
 export function createWeeklyPlanGeneratorGraph(
 	config: CoachAgentConfig,
 	contextProvider: WeeklyPlanContextProvider,
+	planLlm: WeeklyPlanLlm,
 ) {
-	const nodes = new WeeklyPlanGeneratorNodes(config, contextProvider);
+	const nodes = new WeeklyPlanGeneratorNodes(config, contextProvider, planLlm);
 
 	return new StateGraph({
 		state: GraphState,
@@ -51,12 +53,36 @@ export function createWeeklyPlanGeneratorGraph(
 			...PHASE_NODE_TARGETS,
 			"phase_unresolvable",
 		])
-		.addEdge("phase_base", "finalize")
-		.addEdge("phase_build", "finalize")
-		.addEdge("phase_speed", "finalize")
-		.addEdge("phase_marathon", "finalize")
-		.addEdge("phase_taper", "finalize")
-		.addEdge("phase_recovery", "finalize")
+		.addConditionalEdges(
+			"phase_base",
+			(state) => (state.outcome ? END : "finalize"),
+			["finalize", END],
+		)
+		.addConditionalEdges(
+			"phase_build",
+			(state) => (state.outcome ? END : "finalize"),
+			["finalize", END],
+		)
+		.addConditionalEdges(
+			"phase_speed",
+			(state) => (state.outcome ? END : "finalize"),
+			["finalize", END],
+		)
+		.addConditionalEdges(
+			"phase_marathon",
+			(state) => (state.outcome ? END : "finalize"),
+			["finalize", END],
+		)
+		.addConditionalEdges(
+			"phase_taper",
+			(state) => (state.outcome ? END : "finalize"),
+			["finalize", END],
+		)
+		.addConditionalEdges(
+			"phase_recovery",
+			(state) => (state.outcome ? END : "finalize"),
+			["finalize", END],
+		)
 		.addEdge("phase_unresolvable", END)
 		.addEdge("finalize", END)
 		.compile();

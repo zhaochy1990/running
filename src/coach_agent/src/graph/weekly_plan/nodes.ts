@@ -1,6 +1,7 @@
 import { StateSchema } from "@langchain/langgraph";
 import {
 	PHASE_NAMES,
+	type PhaseName,
 	PhaseNameSchema,
 	RecoveryTrendSchema,
 	TargetTrainingLoadSchema,
@@ -9,16 +10,16 @@ import {
 	WeeklyPlanGeneratorRequest,
 } from "@stride/contract";
 import { z } from "zod/v4";
+import { WeeklyPlanSchema } from "../../agents/weekly_plan/schema.js";
 import type { CoachAgentConfig } from "../../config/config.js";
 import type {
 	WeeklyPlanContext,
 	WeeklyPlanContextProvider,
 } from "../../persistence/weeklyPlanContextProvider.js";
 import { getLogger } from "../../utils/logger.js";
+import type { WeeklyPlanLlm } from "./llm.js";
 
 const logger = getLogger("weekly-plan-graph");
-
-export type PhaseName = (typeof PHASE_NAMES)[number];
 
 /** Node names for each canonical phase, keyed by the phase enum value. */
 export const PHASE_NODE_NAMES: Record<PhaseName, string> = {
@@ -55,6 +56,7 @@ export const GraphOutput = new StateSchema({
 	weekly_context: z.custom<WeeklyPlanContext>().optional(),
 	target_training_load: TargetTrainingLoadSchema.optional(),
 	phase: PhaseNameSchema.optional(),
+	weekly_plan: WeeklyPlanSchema.optional(),
 });
 export const GraphState = new StateSchema({
 	request: WeeklyPlanGeneratorRequest,
@@ -62,6 +64,7 @@ export const GraphState = new StateSchema({
 	weekly_context: z.custom<WeeklyPlanContext>().optional(),
 	target_training_load: TargetTrainingLoadSchema.optional(),
 	phase: PhaseNameSchema.optional(),
+	weekly_plan: WeeklyPlanSchema.optional(),
 	outcome: WeeklyPlanGeneratorOutcome.optional(),
 });
 
@@ -70,6 +73,7 @@ export class WeeklyPlanGeneratorNodes {
 	constructor(
 		private readonly config: CoachAgentConfig,
 		private readonly contextProvider: WeeklyPlanContextProvider,
+		private readonly planLlm: WeeklyPlanLlm,
 	) {}
 
 	readonly loadWeeklyPlanContext = async (
@@ -229,10 +233,18 @@ export class WeeklyPlanGeneratorNodes {
 				training_load_low: loadLow,
 				training_load_high: loadHigh,
 				load_ratio_low: canProject
-					? projectEndOfWeekLoadRatio(acuteLoad!, chronicLoad!, loadLow!)
+					? projectEndOfWeekLoadRatio(
+							acuteLoad as number,
+							chronicLoad as number,
+							loadLow as number,
+						)
 					: null,
 				load_ratio_high: canProject
-					? projectEndOfWeekLoadRatio(acuteLoad!, chronicLoad!, loadHigh!)
+					? projectEndOfWeekLoadRatio(
+							acuteLoad as number,
+							chronicLoad as number,
+							loadHigh as number,
+						)
 					: null,
 				remove_quality_stimulus: decision.removeQualityStimulus,
 				details: {
@@ -303,13 +315,41 @@ export class WeeklyPlanGeneratorNodes {
 		}
 		return PHASE_NODE_NAMES[phase];
 	};
-
 	private readonly phaseNode =
-		(phase: PhaseName) => (state: typeof GraphState.State) => {
-			logger.info(
-				`Routing request ${state.request?.request_id} to ${phase} phase skeleton node`,
-			);
-			return { phase };
+		(phase: PhaseName) => async (state: typeof GraphState.State) => {
+			const request = WeeklyPlanGeneratorRequest.parse(state.request);
+			const context = WeeklyPlanGeneratorContext.parse(state.context);
+			const weeklyContext = state.weekly_context;
+			const targetTrainingLoad = state.target_training_load;
+			if (!weeklyContext || !targetTrainingLoad) {
+				throw new Error(
+					"weekly_context and target_training_load are required before phase generation",
+				);
+			}
+			try {
+				const weeklyPlan = await this.planLlm.invoke({
+					phase,
+					weeklyContext,
+					targetTrainingLoad,
+				});
+				logger.info(
+					`Generated weekly plan for request ${request.request_id} in ${phase} phase`,
+				);
+				return { phase, weekly_plan: weeklyPlan };
+			} catch (error) {
+				logger.error(
+					`Weekly plan generation failed for request ${request.request_id} in ${phase} phase: ${error instanceof Error ? error.message : "unknown error"}`,
+				);
+				return {
+					phase,
+					outcome: WeeklyPlanGeneratorOutcome.parse({
+						decision: "quality_failure",
+						request_id: request.request_id,
+						generation_id: context.generationId,
+						reason: "generation_failed",
+					}),
+				};
+			}
 		};
 
 	readonly phaseBase = this.phaseNode("base");
@@ -340,11 +380,15 @@ export class WeeklyPlanGeneratorNodes {
 		const context = WeeklyPlanGeneratorContext.parse(state.context);
 		const targetLoad = state.target_training_load;
 		const phase = state.phase;
+		const weeklyPlan = state.weekly_plan;
 		if (!targetLoad) {
 			throw new Error("target_training_load is missing before finalize");
 		}
 		if (!phase) {
 			throw new Error("phase is missing before finalize");
+		}
+		if (!weeklyPlan) {
+			throw new Error("weekly_plan is missing before finalize");
 		}
 		logger.info(
 			`Finalizing request ${request.request_id} for phase ${phase} with target training load ${JSON.stringify(targetLoad)}`,
@@ -355,6 +399,7 @@ export class WeeklyPlanGeneratorNodes {
 				request_id: request.request_id,
 				generation_id: context.generationId,
 				phase,
+				weekly_plan: weeklyPlan,
 				target_training_load: targetLoad,
 			}),
 		};
