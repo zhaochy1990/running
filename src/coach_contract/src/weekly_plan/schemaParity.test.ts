@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { WeeklyPlanSchema } from "./weekly_plan/schema.js";
+import { WeeklyPlanSchema } from "./schema.js";
 
 type PathPart = string | number;
 type Patch =

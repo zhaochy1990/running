@@ -1,5 +1,5 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
-import { MasterPlanGraphContext } from "./contracts.js";
+import { MasterPlanGraphContext } from "@stride/contract";
 import {
 	createMasterPlanNodes,
 	GraphInput,

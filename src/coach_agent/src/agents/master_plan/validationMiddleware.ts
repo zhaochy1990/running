@@ -1,7 +1,7 @@
 import { HumanMessage } from "@langchain/core/messages";
+import { MasterPlanDirectResponseSchema } from "@stride/contract";
 import { createMiddleware } from "langchain";
 import { z } from "zod/v4";
-import { MasterPlanDirectResponseSchema } from "./schema.js";
 
 const MAX_VALIDATION_RETRIES = 2;
 

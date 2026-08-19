@@ -4,6 +4,10 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { AIMessage, ToolMessage } from "@langchain/core/messages";
+import {
+	MasterPlanDirectResponseSchema,
+	WeeklyPlanDirectResponseSchema,
+} from "@stride/contract";
 import type { ModelConfig } from "../config/config.js";
 import { StrideDataStore } from "../persistence/index.js";
 import { CoachContext } from "./coachAgent.js";
@@ -11,7 +15,6 @@ import {
 	getMasterPlanGeneratorSubagent,
 	getMasterPlanSubagent,
 } from "./master_plan/agent.js";
-import { MasterPlanDirectResponseSchema } from "./master_plan/schema.js";
 import {
 	createPlanPassthroughMiddleware,
 	getDirectPlanTaskResult,
@@ -23,7 +26,6 @@ import {
 	getCoachSubagent,
 	getWeeklyPlanGeneratorSubagent,
 } from "./weekly_plan/agent.js";
-import { WeeklyPlanDirectResponseSchema } from "./weekly_plan/schema.js";
 
 const modelConfig: ModelConfig = {
 	name: "test",

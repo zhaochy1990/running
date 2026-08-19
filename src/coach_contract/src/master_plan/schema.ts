@@ -1,7 +1,7 @@
 import { z } from "zod/v4";
-import { MasterPlanSchema } from "../../graph/master_plan/schemas.js";
+import { MasterPlanSchema } from "./schemas.js";
 
-export type { MasterPlan } from "../../graph/master_plan/schemas.js";
+export type { MasterPlan } from "./schemas.js";
 export { MasterPlanSchema };
 
 export const DirectResponseEnvelopeSchema = z.object({

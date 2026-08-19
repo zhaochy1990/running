@@ -1,9 +1,5 @@
 import { z } from "zod/v4";
-import {
-	addDays,
-	mondayOnOrBefore,
-	weekFolder,
-} from "../../utils/planningDate.js";
+import { addDays, mondayOnOrBefore, weekFolder } from "../date.js";
 
 const DaySchema = z.iso.date();
 const NullableNumberSchema = z.number().nullable();

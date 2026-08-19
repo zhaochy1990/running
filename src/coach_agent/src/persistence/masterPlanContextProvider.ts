@@ -1,14 +1,14 @@
 import {
-	type ContextSnapshot,
-	ContextSnapshotSchema,
-	type MasterPlanContextProvider,
-} from "../graph/master_plan/index.js";
-import {
 	addDays,
 	mondayOnOrBefore as monday,
 	planningStartDate,
 	shanghaiDay,
-} from "../utils/planningDate.js";
+} from "@stride/contract";
+import {
+	type ContextSnapshot,
+	ContextSnapshotSchema,
+	type MasterPlanContextProvider,
+} from "../graph/master_plan/index.js";
 import {
 	isQualityRunningActivity,
 	isRunningActivity,

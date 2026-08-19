@@ -1,3 +1,4 @@
+import { WeeklyPlanDirectResponseSchema } from "@stride/contract";
 import type { ModelConfig } from "../../config/config.js";
 import {
 	MySqlWeeklyPlanContextProvider,
@@ -13,7 +14,6 @@ import { createWeeklyPlanLoadTools } from "../../tools/weeklyPlanLoad.js";
 import { buildResponsesModel } from "../common.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { WeeklyPlanPrompt } from "../prompts.js";
-import { WeeklyPlanDirectResponseSchema } from "./schema.js";
 
 function createWeeklyPlanSubagent(
 	store: StrideDataStore,

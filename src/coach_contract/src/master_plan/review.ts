@@ -1,7 +1,7 @@
 import { z } from "zod/v4";
-import type { AssessmentFacts } from "./assessment.js";
-import type { RuleReport } from "./rules.js";
-import type { SimulationReport } from "./simulation.js";
+import type { AssessmentFacts } from "./assessment-schemas.js";
+import type { RuleReport } from "./rules-schemas.js";
+import type { SimulationReport } from "./simulation-schemas.js";
 
 export const ReviewerTypeSchema = z.enum([
 	"periodization",

@@ -2,12 +2,12 @@ import type {
 	SelectedStrategy,
 	StrategyCandidate,
 	StrategyJudgment,
-} from "./schemas.js";
+} from "@stride/contract";
 import {
 	SelectedStrategySchema,
 	StrategyCandidateSchema,
 	StrategyJudgmentSchema,
-} from "./schemas.js";
+} from "@stride/contract";
 import type { AssessmentFacts, AthleteAssessment } from "./assessment.js";
 
 export const STRATEGY_WEIGHTS = {

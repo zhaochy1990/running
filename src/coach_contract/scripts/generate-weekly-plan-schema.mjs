@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { z } from "zod/v4";
-import { WeeklyPlanSchema } from "../dist/agents/weekly_plan/schema.js";
+import { WeeklyPlanSchema } from "../dist/weekly_plan/schema.js";
 
 const generated = z.toJSONSchema(WeeklyPlanSchema);
 const schema = {

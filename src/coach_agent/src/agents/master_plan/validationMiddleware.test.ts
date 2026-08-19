@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { HumanMessage } from "@langchain/core/messages";
-import { MasterPlanSchema } from "../../graph/master_plan/schemas.js";
+import { MasterPlanSchema } from "@stride/contract";
 import { createTestMasterPlan } from "../../graph/master_plan/testFixtures.js";
 import { createMasterPlanValidationMiddleware } from "./validationMiddleware.js";
 

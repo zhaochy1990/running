@@ -2,7 +2,7 @@ import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { addDays, shanghaiDay } from "../utils/planningDate.js";
+import { addDays, shanghaiDay } from "@stride/contract";
 import type { StrideDataStore, WeeklyFeedback } from "./dataStore.js";
 
 export interface WeeklyFeedbackSource {

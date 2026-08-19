@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { MasterPlanGraphRequest } from "@stride/contract";
+import {
+	AthleteAssessmentSchema,
+	deriveAssessmentFacts,
+} from "./assessment.js";
+import { ContextSnapshotSchema } from "./context.js";
 import {
 	aggregateStrategySelection,
 	mergeCandidatesByStableId,
@@ -9,20 +15,12 @@ import {
 	validateStrategyJudgment,
 } from "./strategy.js";
 import {
-	createTestJudgments,
-	createTestStrategyCandidate,
-} from "./testFixtures.js";
-import {
 	createAssessmentSnapshot,
 	createTestAthleteAssessment,
+	createTestJudgments,
 	createTestRequest,
+	createTestStrategyCandidate,
 } from "./testFixtures.js";
-import {
-	AthleteAssessmentSchema,
-	deriveAssessmentFacts,
-} from "./assessment.js";
-import { ContextSnapshotSchema } from "./context.js";
-import { MasterPlanGraphRequest } from "./contracts.js";
 
 test("candidate reducer is order-independent, keyed by stable ID, and duplicate-safe", () => {
 	const conservative = createTestStrategyCandidate("conservative");

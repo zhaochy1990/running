@@ -1,9 +1,6 @@
 import { MessagesValue, ReducedValue, StateSchema } from "@langchain/langgraph";
+import type { GenInputPayload, MasterPlanContext } from "@stride/contract";
 import { z } from "zod/v4";
-import type {
-	GenInputPayload,
-	MasterPlanContext,
-} from "./master_plan/types.js";
 
 // Structured output of the intent classifier; also the type of the `intent`
 // state channel the orchestrator writes to.

@@ -1,0 +1,12 @@
+{
+  "name": "stride-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Stride monorepo root — pnpm workspace for the TypeScript/Node packages.",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "verify:weekly-plan-schema": "pnpm --filter @stride/contract run verify:weekly-plan-schema"
+  }
+}

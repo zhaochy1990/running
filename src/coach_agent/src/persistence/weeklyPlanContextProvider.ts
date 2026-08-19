@@ -4,7 +4,7 @@ import {
 	planningStartDate,
 	shanghaiDay,
 	weekFolder,
-} from "../utils/planningDate.js";
+} from "@stride/contract";
 import { median } from "../utils/statistics.js";
 import {
 	isQualityRunningActivity,

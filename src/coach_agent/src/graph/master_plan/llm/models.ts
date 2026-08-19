@@ -1,3 +1,9 @@
+import {
+	MasterPlanSchema,
+	ReviewReportSchema,
+	StrategyCandidateSchema,
+	StrategyJudgmentSchema,
+} from "@stride/contract";
 import type { ModelConfig } from "../../../config/config.js";
 import {
 	AthleteAssessmentSchema,
@@ -14,13 +20,7 @@ import {
 	type MasterPlanGraphDependencies,
 	validateSkeletonAgainstStrategy,
 } from "../nodes.js";
-import { ReviewReportSchema } from "../review.js";
 import { runMasterPlanRuleFilter } from "../rules.js";
-import {
-	MasterPlanSchema,
-	StrategyCandidateSchema,
-	StrategyJudgmentSchema,
-} from "../schemas.js";
 import {
 	athleteAssessmentPrompt,
 	goalAssessmentPrompt,

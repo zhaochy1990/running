@@ -1,4 +1,13 @@
 import { StateSchema } from "@langchain/langgraph";
+import {
+	PHASE_NAMES,
+	PhaseNameSchema,
+	RecoveryTrendSchema,
+	TargetTrainingLoadSchema,
+	WeeklyPlanGeneratorContext,
+	WeeklyPlanGeneratorOutcome,
+	WeeklyPlanGeneratorRequest,
+} from "@stride/contract";
 import { z } from "zod/v4";
 import type { CoachAgentConfig } from "../../config/config.js";
 import type {
@@ -6,14 +15,6 @@ import type {
 	WeeklyPlanContextProvider,
 } from "../../persistence/weeklyPlanContextProvider.js";
 import { getLogger } from "../../utils/logger.js";
-import {
-	RecoveryTrendSchema,
-	TargetTrainingLoadSchema,
-	WeeklyPlanGeneratorContext,
-	WeeklyPlanGeneratorOutcome,
-	WeeklyPlanGeneratorRequest,
-} from "./contracts.js";
-import { PHASE_NAMES, PhaseNameSchema } from "../master_plan/schemas.js";
 
 const logger = getLogger("weekly-plan-graph");
 

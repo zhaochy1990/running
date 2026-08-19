@@ -1,10 +1,10 @@
-export type { TargetTrainingLoad } from "./contracts.js";
+export type { TargetTrainingLoad } from "@stride/contract";
 export {
 	TargetTrainingLoadSchema,
 	WeeklyPlanGeneratorContext,
 	WeeklyPlanGeneratorOutcome,
 	WeeklyPlanGeneratorRequest,
-} from "./contracts.js";
+} from "@stride/contract";
 export { createWeeklyPlanGeneratorGraph } from "./graph.js";
 export {
 	GraphInput,

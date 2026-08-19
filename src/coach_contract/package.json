@@ -1,0 +1,36 @@
+{
+  "name": "@stride/contract",
+  "version": "1.0.0",
+  "description": "Stride coach contract schemas — shared graph I/O and artifact contracts (zod).",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "tsc": "node node_modules/typescript/lib/tsc.js",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && npm run tsc",
+    "generate:weekly-plan-schema": "node scripts/generate-weekly-plan-schema.mjs",
+    "verify:weekly-plan-schema": "npm run generate:weekly-plan-schema && git diff --exit-code -- ../../go/internal/api/weekly_plan_schema.json",
+    "test": "npm run build && node --test dist/*.test.js dist/master_plan/*.test.js dist/weekly_plan/*.test.js",
+    "format": "biome format --write src scripts",
+    "lint": "biome lint src scripts",
+    "check": "biome check src scripts",
+    "check:fix": "biome check --write src scripts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.8",
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2"
+  }
+}

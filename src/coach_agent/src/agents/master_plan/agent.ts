@@ -1,3 +1,4 @@
+import { MasterPlanDirectResponseSchema } from "@stride/contract";
 import type { ModelConfig } from "../../config/config.js";
 import {
 	MySqlMasterPlanContextProvider,
@@ -14,7 +15,6 @@ import { getLogger } from "../../utils/logger.js";
 import { buildResponsesModel } from "../common.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { MASTER_PLAN_PROMPT, MASTER_PLAN_READ_PROMPT } from "../prompts.js";
-import { MasterPlanDirectResponseSchema } from "./schema.js";
 import { createMasterPlanValidationMiddleware } from "./validationMiddleware.js";
 
 const logger = getLogger("coachAgent:master_plan");
