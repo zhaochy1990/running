@@ -66,7 +66,7 @@ function makeWeeklyPlan(overrides: Partial<WeeklyPlan> = {}): WeeklyPlan {
 				schema: "plan-session/v1",
 				kind: "rest",
 				date: "2026-08-18",
-				session_index: 0,
+				session_index: 1,
 				summary: "rest day",
 				notes_md: null,
 				total_distance_m: null,
@@ -260,6 +260,8 @@ test("weekly plan generator computes a maintain target from the 4-week anchor", 
 		load_decision: "maintain",
 		training_load_low: 400,
 		training_load_high: 432,
+		target_distance_km_low: 45.45,
+		target_distance_km_high: 60,
 		load_ratio_low: 1.1,
 		load_ratio_high: 1.14,
 		remove_quality_stimulus: false,
@@ -324,6 +326,7 @@ test("weekly plan generator computes a maintain target from the 4-week anchor", 
 				"load_ratio 1.00",
 				"recovery trend: rhr 50.0 -> 50.0, hrv 60.0 -> 60.0 (5-day window)",
 				"load_ratio 1.00: maintain to +8%",
+				"dose density 8 dose/km: target distance range 45.45-60 km",
 			],
 		},
 	});
@@ -352,6 +355,8 @@ test("weekly plan generator vetoes to 80-90% when recovery deteriorates over 5 d
 		details,
 		training_load_low,
 		training_load_high,
+		target_distance_km_low,
+		target_distance_km_high,
 		load_ratio_low,
 		load_ratio_high,
 		load_decision,
@@ -362,6 +367,8 @@ test("weekly plan generator vetoes to 80-90% when recovery deteriorates over 5 d
 			decision: load_decision,
 			low: training_load_low,
 			high: training_load_high,
+			distanceLow: target_distance_km_low,
+			distanceHigh: target_distance_km_high,
 			ratioLow: load_ratio_low,
 			ratioHigh: load_ratio_high,
 			remove: remove_quality_stimulus,
@@ -373,6 +380,8 @@ test("weekly plan generator vetoes to 80-90% when recovery deteriorates over 5 d
 			decision: "decrease",
 			low: 320,
 			high: 360,
+			distanceLow: 40.4,
+			distanceHigh: 55.56,
 			ratioLow: 1,
 			ratioHigh: 1.05,
 			remove: true,
@@ -444,6 +453,8 @@ test("weekly plan generator deep-cuts a recovery week at or above the anchor", a
 	assert.equal(target.load_decision, "recover");
 	assert.equal(target.training_load_low, 263.2);
 	assert.equal(target.training_load_high, 300.8);
+	assert.equal(target.target_distance_km_low, 33.23);
+	assert.equal(target.target_distance_km_high, 46.42);
 	assert.equal(target.remove_quality_stimulus, true);
 });
 

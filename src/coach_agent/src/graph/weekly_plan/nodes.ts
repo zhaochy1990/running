@@ -58,12 +58,17 @@ export function mergeSimulationIntoPlan(
 	plan: WeeklyPlan,
 	simulation: WeeklyPlanSimulationReport,
 ): WeeklyPlan {
-	const doses = simulation.sessions.map((session) => session.estimated_dose);
+	const doses = new Map(
+		simulation.sessions.map((session) => [
+			session.session_index,
+			session.estimated_dose,
+		]),
+	);
 	return {
 		...plan,
-		sessions: plan.sessions.map((session, index) => ({
+		sessions: plan.sessions.map((session) => ({
 			...session,
-			estimated_dose: doses[index] ?? null,
+			estimated_dose: doses.get(session.session_index) ?? null,
 		})),
 	};
 }
@@ -71,7 +76,7 @@ export function mergeSimulationIntoPlan(
 /** Feedback for the next generation attempt when load validation bounced. */
 export function simulationFeedback(
 	state: typeof GraphState.State,
-): WeeklyPlanLlmInput["previousSimulation"] {
+): Exclude<WeeklyPlanLlmInput["previousSimulation"], undefined> {
 	const simulation = state.simulation;
 	if (!simulation) return null;
 	const target = state.target_training_load;
@@ -140,7 +145,7 @@ export class WeeklyPlanGeneratorNodes {
 		private readonly config: CoachAgentConfig,
 		private readonly contextProvider: WeeklyPlanContextProvider,
 		private readonly planLlm: WeeklyPlanLlm,
-	) { }
+	) {}
 
 	readonly loadWeeklyPlanContext = async (
 		state: typeof GraphState.State,
@@ -228,24 +233,24 @@ export class WeeklyPlanGeneratorNodes {
 			asOfDay === null
 				? {}
 				: dailySeries(
-					(weeklyContext?.recovery.history ?? []).map((point) => ({
-						date: point.date,
-						value: point.rhr,
-					})),
-					asOfDay,
-					10,
-				);
+						(weeklyContext?.recovery.history ?? []).map((point) => ({
+							date: point.date,
+							value: point.rhr,
+						})),
+						asOfDay,
+						10,
+					);
 		const hrvByDay =
 			asOfDay === null
 				? {}
 				: dailySeries(
-					(weeklyContext?.recovery.history ?? []).map((point) => ({
-						date: point.date,
-						value: point.hrv,
-					})),
-					asOfDay,
-					10,
-				);
+						(weeklyContext?.recovery.history ?? []).map((point) => ({
+							date: point.date,
+							value: point.hrv,
+						})),
+						asOfDay,
+						10,
+					);
 
 		const rationale: string[] = [];
 		if (anchorDose !== null)
@@ -282,13 +287,31 @@ export class WeeklyPlanGeneratorNodes {
 				"recovery week overridden: previous week was a planned peak week that was not delivered, so recovery already happened",
 			);
 
+		const loadLow =
+			anchorDose === null ? null : round(anchorDose * decision.lowRatio);
+		const loadHigh =
+			anchorDose === null ? null : round(anchorDose * decision.highRatio);
+		const canProject =
+			anchorDose !== null && acuteLoad !== null && chronicLoad !== null;
+		const distanceRange =
+			anchorDose === null
+				? { low: null, high: null, density: null }
+				: projectDistanceRange({
+						anchorDose,
+						anchorKm: anchorKm as number,
+						loadLow,
+						loadHigh,
+						removeQualityStimulus: decision.removeQualityStimulus,
+						phase: resolvePhaseName(weeklyContext),
+					});
+		if (distanceRange.low !== null)
+			rationale.push(
+				`dose density ${distanceRange.density} dose/km: target distance range ${distanceRange.low}-${distanceRange.high} km`,
+			);
 
-		const loadLow = anchorDose === null ? null : round(anchorDose * decision.lowRatio);
-		const loadHigh = anchorDose === null ? null : round(anchorDose * decision.highRatio);
-		const canProject = anchorDose !== null && acuteLoad !== null && chronicLoad !== null;
-
-		logger.info(`Computed target training load for request ${request.request_id}: decision=${decision.decision},
-			ratio: low=${decision.lowRatio} high=${decision.highRatio}`);
+		logger.info(
+			`Computed target training load for request ${request.request_id}: decision=${decision.decision}, training load: (${loadLow} - ${loadHigh}), distance: (${distanceRange.low} - ${distanceRange.high}) km, load ratio: (${decision.lowRatio} - ${decision.highRatio})`,
+		);
 
 		return {
 			target_training_load: TargetTrainingLoadSchema.parse({
@@ -297,19 +320,21 @@ export class WeeklyPlanGeneratorNodes {
 				load_decision: decision.decision,
 				training_load_low: loadLow,
 				training_load_high: loadHigh,
+				target_distance_km_low: distanceRange.low,
+				target_distance_km_high: distanceRange.high,
 				load_ratio_low: canProject
 					? projectEndOfWeekLoadRatio(
-						acuteLoad as number,
-						chronicLoad as number,
-						loadLow as number,
-					)
+							acuteLoad as number,
+							chronicLoad as number,
+							loadLow as number,
+						)
 					: null,
 				load_ratio_high: canProject
 					? projectEndOfWeekLoadRatio(
-						acuteLoad as number,
-						chronicLoad as number,
-						loadHigh as number,
-					)
+							acuteLoad as number,
+							chronicLoad as number,
+							loadHigh as number,
+						)
 					: null,
 				remove_quality_stimulus: decision.removeQualityStimulus,
 				details: {
@@ -317,10 +342,10 @@ export class WeeklyPlanGeneratorNodes {
 						latestWeek === null
 							? null
 							: {
-								week_start: latestWeek.week_start,
-								distance_km: latestWeekDistance,
-								training_load: latestWeekDose,
-							},
+									week_start: latestWeek.week_start,
+									distance_km: latestWeekDistance,
+									training_load: latestWeekDose,
+								},
 					anchor: {
 						training_load_avg4w: anchorDose,
 						distance_km_avg4w: anchorKm,
@@ -328,29 +353,29 @@ export class WeeklyPlanGeneratorNodes {
 					trend: {
 						recovery: recoveryTrend.available
 							? RecoveryTrendSchema.parse({
-								available: true,
-								recent_rhr_avg: recoveryTrend.recent_rhr_avg,
-								prior_rhr_avg: recoveryTrend.prior_rhr_avg,
-								recent_hrv_avg: recoveryTrend.recent_hrv_avg,
-								prior_hrv_avg: recoveryTrend.prior_hrv_avg,
-								rhr_rising: recoveryTrend.rhr_rising,
-								hrv_falling: recoveryTrend.hrv_falling,
-								deteriorating: recoveryTrend.deteriorating,
-								window_days: recoveryTrend.window_days,
-								missing_reason: null,
-							})
+									available: true,
+									recent_rhr_avg: recoveryTrend.recent_rhr_avg,
+									prior_rhr_avg: recoveryTrend.prior_rhr_avg,
+									recent_hrv_avg: recoveryTrend.recent_hrv_avg,
+									prior_hrv_avg: recoveryTrend.prior_hrv_avg,
+									rhr_rising: recoveryTrend.rhr_rising,
+									hrv_falling: recoveryTrend.hrv_falling,
+									deteriorating: recoveryTrend.deteriorating,
+									window_days: recoveryTrend.window_days,
+									missing_reason: null,
+								})
 							: {
-								available: false,
-								recent_rhr_avg: null,
-								prior_rhr_avg: null,
-								recent_hrv_avg: null,
-								prior_hrv_avg: null,
-								rhr_rising: false,
-								hrv_falling: false,
-								deteriorating: false,
-								window_days: 0,
-								missing_reason: recoveryTrend.missing_reason,
-							},
+									available: false,
+									recent_rhr_avg: null,
+									prior_rhr_avg: null,
+									recent_hrv_avg: null,
+									prior_hrv_avg: null,
+									rhr_rising: false,
+									hrv_falling: false,
+									deteriorating: false,
+									window_days: 0,
+									missing_reason: recoveryTrend.missing_reason,
+								},
 						rhr: rhrByDay,
 						hrv: hrvByDay,
 						seven_day_average: {
@@ -378,8 +403,10 @@ export class WeeklyPlanGeneratorNodes {
 			);
 			return "phase_unresolvable";
 		}
+		logger.info("Route the generation request to phase node: " + phase);
 		return PHASE_NODE_NAMES[phase];
 	};
+
 	private readonly phaseNode =
 		(phase: PhaseName) => async (state: typeof GraphState.State) => {
 			const request = WeeklyPlanGeneratorRequest.parse(state.request);
@@ -392,19 +419,30 @@ export class WeeklyPlanGeneratorNodes {
 				);
 			}
 			try {
+				const attempt = (state.generation_attempts ?? 0) + 1;
+				const feedback = simulationFeedback(state);
+				if (feedback === null) {
+					logger.info(
+						`Generating weekly plan for request ${request.request_id} in ${phase} phase (attempt ${attempt}/${MAX_GENERATION_ATTEMPTS})`,
+					);
+				} else {
+					logger.info(
+						`Regenerating weekly plan for request ${request.request_id} in ${phase} phase (attempt ${attempt}/${MAX_GENERATION_ATTEMPTS}) after load mismatch: previous total dose ${formatNumber(feedback.total_dose)} vs target ${formatNumber(feedback.target_training_load_low)}-${formatNumber(feedback.target_training_load_high)}`,
+					);
+				}
 				const weeklyPlan = await this.planLlm.invoke({
 					phase,
 					weeklyContext,
 					targetTrainingLoad,
-					previousSimulation: simulationFeedback(state) ?? null,
+					previousSimulation: feedback ?? null,
 				});
 				logger.info(
-					`Generated weekly plan for request ${request.request_id} in ${phase} phase`,
+					`Generated weekly plan for request ${request.request_id} in ${phase} phase (attempt ${attempt}/${MAX_GENERATION_ATTEMPTS})`,
 				);
 				return {
 					phase,
 					weekly_plan: weeklyPlan,
-					generation_attempts: (state.generation_attempts ?? 0) + 1,
+					generation_attempts: attempt,
 				};
 			} catch (error) {
 				logger.error(
@@ -440,6 +478,10 @@ export class WeeklyPlanGeneratorNodes {
 			throw new Error("weekly_plan is missing before load simulation");
 		}
 		const simulation = simulateWeeklyPlanLoad(weeklyPlan, weeklyContext);
+		const request = WeeklyPlanGeneratorRequest.parse(state.request);
+		logger.info(
+			`Simulated weekly plan load for request ${request.request_id}: total dose ${formatNumber(simulation.total_dose)} (available=${simulation.available}, ${simulation.sessions.length} run sessions, ${simulation.days.length} days)`,
+		);
 		return {
 			simulation,
 			weekly_plan: mergeSimulationIntoPlan(weeklyPlan, simulation),
@@ -454,6 +496,12 @@ export class WeeklyPlanGeneratorNodes {
 		const phase = state.phase;
 		const attempts = state.generation_attempts ?? 1;
 		const inRange = loadWithinTolerance(simulation, target);
+		const low = target?.training_load_low ?? null;
+		const high = target?.training_load_high ?? null;
+		const band =
+			low === null || high === null
+				? "n/a"
+				: `${formatNumber(low * (1 - LOAD_MATCH_TOLERANCE))}-${formatNumber(high * (1 + LOAD_MATCH_TOLERANCE))}`;
 		if (inRange === null) {
 			logger.warn(
 				`Cannot verify total load for request ${request.request_id}: simulation or target load unavailable; keeping the generated plan`,
@@ -462,18 +510,18 @@ export class WeeklyPlanGeneratorNodes {
 		}
 		if (inRange) {
 			logger.info(
-				`Total load ${simulation?.total_dose} within tolerance for request ${request.request_id} after ${attempts} attempt(s)`,
+				`Total load ${formatNumber(simulation?.total_dose)} within tolerance [${band}] for request ${request.request_id}; passing through after ${attempts} attempt(s)`,
 			);
 			return "finalize";
 		}
 		if (attempts >= MAX_GENERATION_ATTEMPTS) {
 			logger.error(
-				`Total load ${simulation?.total_dose} still outside target after ${attempts} attempts for request ${request.request_id}`,
+				`Bouncing request ${request.request_id} to load_mismatch: total dose ${formatNumber(simulation?.total_dose)} still outside tolerance [${band}] after ${attempts}/${MAX_GENERATION_ATTEMPTS} attempts`,
 			);
 			return "load_mismatch";
 		}
 		logger.warn(
-			`Total load ${simulation?.total_dose} outside target tolerance for request ${request.request_id}; regenerating (attempt ${attempts})`,
+			`Bouncing request ${request.request_id} back to ${phase ?? "?"} phase node: total dose ${formatNumber(simulation?.total_dose)} outside tolerance [${band}] (attempt ${attempts}/${MAX_GENERATION_ATTEMPTS})`,
 		);
 		return phase === null || phase === undefined
 			? "load_mismatch"
@@ -484,7 +532,7 @@ export class WeeklyPlanGeneratorNodes {
 		const request = WeeklyPlanGeneratorRequest.parse(state.request);
 		const context = WeeklyPlanGeneratorContext.parse(state.context);
 		logger.error(
-			`Weekly plan load mismatch unresolved for request ${request.request_id}`,
+			`Weekly plan load mismatch unresolved for request ${request.request_id}: total dose ${formatNumber(state.simulation?.total_dose)} vs target ${formatNumber(state.target_training_load?.training_load_low)}-${formatNumber(state.target_training_load?.training_load_high)} after ${state.generation_attempts ?? 1} attempts`,
 		);
 		return {
 			outcome: WeeklyPlanGeneratorOutcome.parse({
@@ -560,6 +608,12 @@ function string(value: unknown): string | null {
 
 function number(value: unknown): number | null {
 	return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatNumber(value: number | null | undefined): string {
+	return value === null || value === undefined
+		? "n/a"
+		: String(Number(value.toFixed(1)));
 }
 
 function round(value: number): number {
@@ -700,6 +754,37 @@ function projectEndOfWeekLoadRatio(
 	return round(acute / chronic);
 }
 
+/** Project a target distance range from the anchor dose density. */
+function projectDistanceRange(opts: {
+	anchorDose: number;
+	anchorKm: number;
+	loadLow: number | null;
+	loadHigh: number | null;
+	removeQualityStimulus: boolean;
+	phase: PhaseName | null;
+}): { low: number | null; high: number | null; density: number | null } {
+	const { anchorDose, anchorKm, loadLow, loadHigh } = opts;
+	if (anchorKm <= 0 || loadLow === null || loadHigh === null) {
+		return { low: null, high: null, density: null };
+	}
+	const density = anchorDose / anchorKm;
+	let highDensity = density * 1.1;
+	let lowDensity = density * 0.9;
+	if (opts.removeQualityStimulus) {
+		highDensity *= 0.9;
+		lowDensity *= 0.9;
+	}
+	if (opts.phase === "taper") {
+		highDensity *= 1.1;
+		lowDensity *= 1.1;
+	}
+	return {
+		low: round(loadLow / highDensity),
+		high: round(loadHigh / lowDensity),
+		density: round(density),
+	};
+}
+
 function hasActivityRestriction(
 	injuries: Array<{ running_restriction: string }>,
 ): boolean {
@@ -714,12 +799,12 @@ interface RecentTrainingWeekWithPlanned {
 	week_start: string;
 	complete: boolean;
 	planned:
-	| {
-		available: true;
-		total_run_distance_km: number | null;
-		run_sessions: unknown[];
-	}
-	| { available: false; total_run_distance_km: null; run_sessions: [] };
+		| {
+				available: true;
+				total_run_distance_km: number | null;
+				run_sessions: unknown[];
+		  }
+		| { available: false; total_run_distance_km: null; run_sessions: [] };
 	actual: { total_run_distance_km: number | null };
 }
 

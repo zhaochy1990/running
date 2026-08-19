@@ -30,7 +30,7 @@ async function main() {
 	try {
 		const provider = new MySqlWeeklyPlanContextProvider(store);
 		const planLlm = await createWeeklyPlanLlm({
-			weeklyPlanModel: getAgentConfig(config, "generate_weekly_plan"),
+			weeklyPlanModel: getAgentConfig(config, "weekly_plan"),
 		});
 		const graph = createWeeklyPlanGeneratorGraph(config, provider, planLlm);
 		const generationId = `weekly-plan-${PROFILE}-${Date.now()}`;

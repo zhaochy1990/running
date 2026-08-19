@@ -51,6 +51,8 @@ export const TargetTrainingLoadSchema = z
 			.nullable(),
 		training_load_low: z.number().nonnegative().nullable(),
 		training_load_high: z.number().nonnegative().nullable(),
+		target_distance_km_low: z.number().nonnegative().nullable(),
+		target_distance_km_high: z.number().nonnegative().nullable(),
 		load_ratio_low: z.number().nullable(),
 		load_ratio_high: z.number().nullable(),
 		remove_quality_stimulus: z.boolean(),

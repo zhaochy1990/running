@@ -213,6 +213,7 @@ export async function runToolLoop(deps: ToolLoopDeps): Promise<WeeklyPlan> {
 		const calls = response.tool_calls ?? [];
 		const workCalls = calls.filter((call) => call.name !== deps.schemaToolName);
 		if (workCalls.length > 0) {
+			messages.push(response);
 			for (const call of workCalls) {
 				if (call.name !== deps.simulationTool.name) {
 					throw new ModelContractError(
@@ -250,6 +251,7 @@ export async function runToolLoop(deps: ToolLoopDeps): Promise<WeeklyPlan> {
 		} catch (error) {
 			const detail =
 				error instanceof Error ? error.message : "invalid contract";
+			messages.push(response);
 			messages.push(
 				new ToolMessage({
 					content: `Invalid weekly plan submission: ${detail}. Fix the plan and submit again.`,

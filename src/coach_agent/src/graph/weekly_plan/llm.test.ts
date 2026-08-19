@@ -105,6 +105,8 @@ function targetTrainingLoad(): TargetTrainingLoad {
 		load_decision: "maintain",
 		training_load_low: 400,
 		training_load_high: 432,
+		target_distance_km_low: null,
+		target_distance_km_high: null,
 		load_ratio_low: 1.1,
 		load_ratio_high: 1.14,
 		remove_quality_stimulus: false,
@@ -345,8 +347,9 @@ test("runToolLoop executes simulation tool calls before the schema call", async 
 					],
 				});
 			}
-			assert.equal(messages.length, 1);
-			assert.ok(ToolMessage.isInstance(messages[0]));
+			assert.equal(messages.length, 2);
+			assert.ok(AIMessage.isInstance(messages[0]));
+			assert.ok(ToolMessage.isInstance(messages[1]));
 			return new AIMessage({
 				content: "",
 				tool_calls: [schemaToolCall(plan) as never],

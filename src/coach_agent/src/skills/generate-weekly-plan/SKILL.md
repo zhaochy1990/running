@@ -105,6 +105,8 @@ description: 根据运动员的活跃主计划、实际完成的训练、STRIDE 
 
 候选计划的周总预估负荷（模拟报告的 `total_dose`）必须落在目标周总负荷区间（user message 中的 `target_training_load.training_load_low` ~ `training_load_high`）的 ±10% 容差内。低于下限或高于上限都需要调整训练安排（距离、强度分布或刺激选择）并重新模拟，直到达标后再提交 `generate_weekly_plan`。当模拟或目标负荷不可用时，保守保留当前安排并记录原因，不要臆造剂量。
 
+同时把周总跑量控制在 `target_training_load.target_distance_km_low` ~ `target_distance_km_high` 区间内（由教练按历史剂量密度与阶段强度分布推算；`remove_quality_stimulus` 或 taper 阶段已体现在该区间中）。若区间缺失（锚点数据不足），以阶段 `target_weekly_km_low/high` 与锚点距离为次选依据。
+
 只有候选计划在最后一次编辑后已经过模拟，才算完成本步骤。返回的 `content` 必须与传给最终模拟调用的 WeeklyPlan 对象逻辑上逐字节相同。
 
 ## 7. 返回 WeeklyPlan
