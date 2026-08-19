@@ -1,4 +1,4 @@
-// Mirrors `src/stride_core/plan_spec.py` + the bits of
+// Legacy Python plan wire types. Mirrors `src/stride_core/plan_spec.py` + the bits of
 // `src/stride_core/workout_spec.py` we read on the frontend.
 //
 // Types mirror the Python `to_dict()` output (the JSON shape of
@@ -122,7 +122,9 @@ export interface PlannedNutrition {
   notes_md: string | null
 }
 
-export interface WeeklyPlanStructured {
+// This is not the TypeScript Coach Agent WeeklyPlanSchema. The legacy Python
+// contract still uses week_folder and includes persistence-only session fields.
+export interface LegacyWeeklyPlanStructured {
   schema: 'weekly-plan/v1'
   week_folder: string
   sessions: PlannedSession[]

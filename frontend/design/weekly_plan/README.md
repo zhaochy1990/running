@@ -9,7 +9,7 @@
 
 ## Story 1: 本周课表当前视图 Tabs
 
-本组页面是本周课表的常规查看态，基于 `season_bundle.json` 中 `2026-05-04_05-10(W1)` 的真实 weekly schema 做静态 Review 样张。顶层页面保留 Weekly Plan 总览区，并拆成 4 个 tab 页面。原“方案”页与“日历”页都与首页信息重复，已合并回首页。
+本组页面是本周课表的常规查看态，基于 `season_bundle.json` 中 `2026-05-04_05-10(W1)` 的 Weekly Plan 样例做静态 Review 样张。样例使用最新 TS Coach Agent 的顶层字段 `week_name`；顶层页面保留 Weekly Plan 总览区，并拆成 4 个 tab 页面。原“方案”页与“日历”页都与首页信息重复，已合并回首页。
 
 ### 1. 本周训练课表
 

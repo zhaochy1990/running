@@ -9,7 +9,7 @@
       "weeks": [
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-05-04_05-10(W1)",
+          "week_name": "2026-05-04_05-10(W1)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -192,7 +192,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-05-11_05-17(W2)",
+          "week_name": "2026-05-11_05-17(W2)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -375,7 +375,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-05-18_05-24(W3)",
+          "week_name": "2026-05-18_05-24(W3)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -558,7 +558,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-05-25_05-31(W4)",
+          "week_name": "2026-05-25_05-31(W4)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -702,7 +702,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-06-01_06-07(W5)",
+          "week_name": "2026-06-01_06-07(W5)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -897,7 +897,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-06-08_06-14(W6)",
+          "week_name": "2026-06-08_06-14(W6)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -1092,7 +1092,7 @@
       "weeks": [
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-06-15_06-21(W1)",
+          "week_name": "2026-06-15_06-21(W1)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -1224,7 +1224,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-06-22_06-28(W2)",
+          "week_name": "2026-06-22_06-28(W2)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -1347,7 +1347,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-06-29_07-05(W3)",
+          "week_name": "2026-06-29_07-05(W3)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -1491,7 +1491,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-07-06_07-12(W4)",
+          "week_name": "2026-07-06_07-12(W4)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -1623,7 +1623,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-07-13_07-19(W5)",
+          "week_name": "2026-07-13_07-19(W5)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -1767,7 +1767,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-07-20_07-26(W6)",
+          "week_name": "2026-07-20_07-26(W6)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -1890,7 +1890,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-07-27_08-02(W7)",
+          "week_name": "2026-07-27_08-02(W7)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -2034,7 +2034,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-08-03_08-09(W8)",
+          "week_name": "2026-08-03_08-09(W8)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -2178,7 +2178,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-08-10_08-16(W9)",
+          "week_name": "2026-08-10_08-16(W9)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -2322,7 +2322,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-08-17_08-23(W10)",
+          "week_name": "2026-08-17_08-23(W10)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -2445,7 +2445,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-08-24_08-30(W11)",
+          "week_name": "2026-08-24_08-30(W11)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -2589,7 +2589,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-08-31_09-06(W12)",
+          "week_name": "2026-08-31_09-06(W12)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -2733,7 +2733,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-09-07_09-13(W13)",
+          "week_name": "2026-09-07_09-13(W13)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -2876,7 +2876,7 @@
       "weeks": [
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-09-14_09-20(W1)",
+          "week_name": "2026-09-14_09-20(W1)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -3065,7 +3065,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-09-21_09-27(W2)",
+          "week_name": "2026-09-21_09-27(W2)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -3314,7 +3314,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-09-28_10-04(W3)",
+          "week_name": "2026-09-28_10-04(W3)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -3527,7 +3527,7 @@
       "weeks": [
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-10-05_10-11(W1)",
+          "week_name": "2026-10-05_10-11(W1)",
           "sessions": [
             {
               "schema": "plan-session/v1",
@@ -3728,7 +3728,7 @@
         },
         {
           "schema": "weekly-plan/v1",
-          "week_folder": "2026-10-12_10-18(W2)",
+          "week_name": "2026-10-12_10-18(W2)",
           "sessions": [
             {
               "schema": "plan-session/v1",
