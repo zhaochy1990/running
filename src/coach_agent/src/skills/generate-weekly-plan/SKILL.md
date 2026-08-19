@@ -49,14 +49,14 @@ description: 根据运动员的活跃主计划、实际完成的训练、STRIDE 
 
 ## 3. 衔接阶段里程碑
 
-读取恰好一条与 `training_position.phase` 匹配的阶段参考。先匹配最具体的，因此任何包含 `marathon` 或 `马拉松` 的阶段即使名字里也有 `build` 或 `建设`，也要用马拉松参考：
+读取恰好一条与 `training_position.phase.name` 匹配的阶段参考。阶段名是固定枚举 `base`、`build`、`speed`、`marathon`、`taper`、`recovery`：
 
-- base/aerobic/foundation/基础期 → `references/base.md`
-- build/progression/threshold/提升期/进展期 → `references/build.md`
-- speed/专项速度/专项速度周期/速度期 → `references/speed.md`
-- marathon/马拉松专项/马拉松专项期 → `references/marathon.md`
-- taper/赛前减量/赛前减量期 → `references/taper.md`
-- recovery/赛后恢复/赛后恢复期 → `references/recovery.md`
+- `base` → `references/base.md`
+- `build` → `references/build.md`
+- `speed` → `references/speed.md`
+- `marathon` → `references/marathon.md`
+- `taper` → `references/taper.md`
+- `recovery` → `references/recovery.md`
 
 选择当前阶段内 `completed_actual: null` 的最近即将到来的里程碑。如果没有即将到来的里程碑，把最近未达成的阶段里程碑作为诊断证据，而不是盲目重排它。选择本周的关键刺激，作为从运动员最近完成的刺激通向所选里程碑的保守衔接。衔接的负荷必须小于或等于里程碑的负荷要求；不要提前完整演练里程碑。如果当前阶段没有里程碑，使用子阶段的 `key_sessions` 和阶段重点。
 

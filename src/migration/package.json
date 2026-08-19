@@ -28,6 +28,7 @@
     "migrate:weekly-plans": "node src/migrate-weekly-plans.js",
     "migrate:running-age": "node src/migrate-running-age.js",
     "migrate:weekly-feedback": "node src/migrate-weekly-feedback.js",
+    "migrate:master-plan-phase-enum": "node src/migrate-master-plan-phase-enum.js",
     "migrate:activity-start-gps": "node src/activity-start-gps-backfill.js",
     "test": "node --test"
   },

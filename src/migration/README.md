@@ -4,7 +4,7 @@ One-off Node.js utilities that copy per-user data into the **Tencent MySQL**
 tables read by the Go worker (`src/go/`). It is a standalone project — it has its
 own `package.json` and does **not** import anything from the rest of the repo.
 
-Nine migrations live here:
+Ten migrations live here:
 
 | Command | Source | Target table(s) |
 |---|---|---|
@@ -17,6 +17,7 @@ Nine migrations live here:
 | `npm run migrate:running-age` (`src/migrate-running-age.js`) | local `data/<uuid>/running_profile.json` | existing `user_profile` rows |
 | `npm run migrate:weekly-feedback` (`src/migrate-weekly-feedback.js`) | local SQLite `weekly_feedback`, with `feedback.md` fallback | `weekly_feedback` |
 | `npm run migrate:activity-start-gps` (`src/activity-start-gps-backfill.js`) | first valid GPS pair from each activity's MySQL `timeseries` rows | existing `activities.start_gps_lat`, `activities.start_gps_lon` |
+| `npm run migrate:master-plan-phase-enum` (`src/migrate-master-plan-phase-enum.js`) | existing `master_plan` rows (in-place normalization) | `master_plan.content` phase names → `base/build/speed/marathon/taper/recovery` + `weeks[].phase_name` back-fill |
 
 ## Production migration status
 

@@ -93,7 +93,7 @@ export function createTestMasterPlan() {
 		total_weeks: 2,
 		phases: [
 			{
-				name: "基础期" as const,
+				name: "base" as const,
 				start_date: "2026-08-10",
 				end_date: "2026-08-16",
 				focus: "建立赛季起点",
@@ -118,7 +118,7 @@ export function createTestMasterPlan() {
 				summary: null,
 			},
 			{
-				name: "赛前减量期" as const,
+				name: "taper" as const,
 				start_date: "2026-08-17",
 				end_date: "2026-08-23",
 				focus: "目标比赛",
@@ -150,7 +150,7 @@ export function createTestMasterPlan() {
 			{
 				week_index: 1,
 				week_start: "2026-08-10",
-				phase_name: "基础期" as const,
+				phase_name: "base" as const,
 				target_weekly_km_low: 70,
 				target_weekly_km_high: 80,
 				key_sessions: [
@@ -173,7 +173,7 @@ export function createTestMasterPlan() {
 			{
 				week_index: 2,
 				week_start: "2026-08-17",
-				phase_name: "赛前减量期" as const,
+				phase_name: "taper" as const,
 				target_weekly_km_low: 42.195,
 				target_weekly_km_high: 50,
 				key_sessions: [

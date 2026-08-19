@@ -18,6 +18,27 @@ const ORDINARY_FILLER_PURPOSE =
 const RACE_DISTANCE_KM = { FM: 42.195, HM: 21.0975 } as const;
 const RACE_TIME = /^(\d+):(\d{2}):(\d{2})$/;
 
+/** Canonical phase names, stored in English in master_plan JSON. */
+export const PHASE_NAMES = [
+	"base",
+	"build",
+	"speed",
+	"marathon",
+	"taper",
+	"recovery",
+] as const;
+export const PhaseNameSchema = z.enum(PHASE_NAMES);
+
+/** UI display mapping: English phase name -> Chinese label. */
+export const PHASE_NAME_CN: Record<(typeof PHASE_NAMES)[number], string> = {
+	base: "基础期",
+	build: "提升期",
+	speed: "专项速度周期",
+	marathon: "马拉松专项期",
+	taper: "赛前减量期",
+	recovery: "赛后恢复期",
+};
+
 export const KeySessionTypeSchema = z.enum([
 	"long_run",
 	"threshold",
@@ -218,14 +239,7 @@ const WorkoutStructureSchema = z
 
 const PhaseSchema = z
 	.object({
-		name: z.enum([
-			"基础期",
-			"提升期",
-			"专项速度周期",
-			"马拉松专项期",
-			"赛前减量期",
-			"赛后恢复期",
-		]),
+		name: PhaseNameSchema,
 		start_date: DaySchema,
 		end_date: DaySchema,
 		focus: z.string(),
@@ -289,7 +303,7 @@ const WeekSchema = z
 	.object({
 		week_index: z.int().positive(),
 		week_start: DaySchema,
-		phase_name: PhaseSchema.shape.name,
+		phase_name: PhaseNameSchema,
 		target_weekly_km_low: z.number().nonnegative(),
 		target_weekly_km_high: z.number().nonnegative(),
 		key_sessions: z

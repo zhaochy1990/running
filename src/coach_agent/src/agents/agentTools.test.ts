@@ -121,18 +121,18 @@ test("weekly-plan skill routes every canonical phase name", async () => {
 		"utf8",
 	);
 	for (const phase of [
-		"基础期",
-		"提升期",
-		"专项速度周期",
-		"马拉松专项期",
-		"赛前减量期",
-		"赛后恢复期",
+		"base",
+		"build",
+		"speed",
+		"marathon",
+		"taper",
+		"recovery",
 	])
 		assert.match(skill, new RegExp(phase));
-	assert.match(skill, /preceding day rest or a short recovery run/);
-	assert.match(skill, /Exceed 12% only for an explicit back-to-back/);
-	assert.match(skill, /Treat recovery as a veto, not an average/);
-	assert.match(skill, /target 80-90% of the actual anchor/);
+	assert.match(skill, /把前一天设为休息日或不超过周距离目标 10% 的短恢复跑/);
+	assert.match(skill, /不要超过 12%/);
+	assert.match(skill, /把恢复视为一票否决/);
+	assert.match(skill, /80-90%/);
 });
 
 const masterPlan = {
@@ -150,7 +150,7 @@ const masterPlan = {
 	total_weeks: 1,
 	phases: [
 		{
-			name: "基础期" as const,
+			name: "base" as const,
 			start_date: "2026-08-10",
 			end_date: "2026-10-18",
 			focus: "基础",
@@ -175,7 +175,7 @@ const masterPlan = {
 		{
 			week_index: 1,
 			week_start: "2026-08-10",
-			phase_name: "基础期" as const,
+			phase_name: "base" as const,
 			target_weekly_km_low: 70,
 			target_weekly_km_high: 80,
 			key_sessions: [],

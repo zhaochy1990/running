@@ -197,7 +197,7 @@ test("recovery weeks reduce expected dose while retaining an auditable daily For
 	const plan: MasterPlan = createTestMasterPlan();
 	plan.weeks[1] = {
 		...plan.weeks[1]!,
-		phase_name: "赛前减量期",
+		phase_name: "taper",
 		target_weekly_km_low: 50,
 		target_weekly_km_high: 60,
 		key_sessions: [

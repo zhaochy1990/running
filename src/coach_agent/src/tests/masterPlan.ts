@@ -77,7 +77,7 @@ const stubPlan = {
 	total_weeks: 1,
 	phases: [
 		{
-			name: "赛前减量期",
+			name: "taper",
 			start_date: "2026-10-12",
 			end_date: "2026-10-18",
 			focus:
@@ -110,7 +110,7 @@ const stubPlan = {
 		{
 			week_index: 1,
 			week_start: "2026-10-12",
-			phase_name: "赛前减量期",
+			phase_name: "taper",
 			target_weekly_km_low: 42.195,
 			target_weekly_km_high: 42.195,
 			key_sessions: [
