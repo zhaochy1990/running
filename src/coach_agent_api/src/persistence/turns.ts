@@ -1,11 +1,20 @@
 import { createHash } from "node:crypto";
 import type { Connection, Pool, RowDataPacket } from "mysql2/promise";
 import mysql from "mysql2/promise";
-import type { ThreadLock, TurnReceipt, TurnReceiptStore } from "../turns.js";
+import {
+	ThreadBusyError,
+	type ThreadLock,
+	type TurnReceipt,
+	type TurnReceiptStore,
+} from "../turns.js";
+import type { MySqlSaver } from "./checkpointer.js";
 import type { MySqlConfig } from "./mysql.js";
 
 export class MySqlTurnReceiptStore implements TurnReceiptStore {
-	constructor(private readonly pool: Pool) {}
+	constructor(
+		private readonly pool: Pool,
+		private readonly checkpointer: MySqlSaver,
+	) {}
 
 	async setup(): Promise<void> {
 		await this.pool.query(`
@@ -46,6 +55,10 @@ export class MySqlTurnReceiptStore implements TurnReceiptStore {
 		};
 	}
 
+	async recover(threadId: string, clientTurnId: string) {
+		return this.checkpointer.recoverTurn(threadId, clientTurnId);
+	}
+
 	async put(
 		threadId: string,
 		clientTurnId: string,
@@ -53,7 +66,9 @@ export class MySqlTurnReceiptStore implements TurnReceiptStore {
 	): Promise<void> {
 		await this.pool.execute(
 			`INSERT INTO coach_turn_receipts
-       (thread_id, client_turn_id, fingerprint, response_json) VALUES (?, ?, ?, ?)`,
+       (thread_id, client_turn_id, fingerprint, response_json) VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         response_json=IF(fingerprint=VALUES(fingerprint), VALUES(response_json), response_json)`,
 			[
 				threadId,
 				clientTurnId,
@@ -104,11 +119,11 @@ async function acquire(
 	lockName: string,
 ): Promise<void> {
 	const [rows] = await connection.query<RowDataPacket[]>(
-		`SELECT GET_LOCK(?, 300) AS acquired`,
+		`SELECT GET_LOCK(?, 0) AS acquired`,
 		[lockName],
 	);
 	if (Number(rows[0]?.acquired) !== 1) {
-		throw new Error("timed out acquiring Coach thread lock");
+		throw new ThreadBusyError("timed out acquiring Coach thread lock");
 	}
 }
 

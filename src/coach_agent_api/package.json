@@ -9,7 +9,7 @@
     "build:all": "npm run build:core && npm run build",
     "clean": "node scripts/clean.mjs",
     "start": "node dist/server.js",
-    "test": "npm run build:all && node --test dist/*.test.js dist/data/*.test.js",
+    "test": "npm run build:all && node --test dist/*.test.js dist/data/*.test.js dist/persistence/*.test.js",
     "test:deepagent": "npm run build:all && node dist/tests/test.js",
     "test:masterplan-graph": "npm run build:all && node dist/tests/test_master_plan.js",
     "test:race-analysis": "npm run build:all && node dist/tests/test_race_analysis.js",
@@ -22,9 +22,6 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.10",
-    "@langchain/core": "1.2.5",
-    "@langchain/langgraph": "^1.4.9",
-    "@langchain/langgraph-checkpoint": "^1.1.3",
     "coach_agent": "file:../coach_agent",
     "convict": "^6.2.5",
     "hono": "^4.10.3",

@@ -11,8 +11,8 @@ import type {
 	Operation,
 	OperationResults,
 	SearchItem,
-} from "@langchain/langgraph-checkpoint";
-import { BaseStore } from "@langchain/langgraph-checkpoint";
+} from "coach_agent";
+import { BaseStore } from "coach_agent";
 import type { Pool, RowDataPacket } from "mysql2/promise";
 
 // Low-collision separator to flatten a namespace path into one string.

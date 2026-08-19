@@ -21,7 +21,7 @@ export async function createPersistence(
 	try {
 		const checkpointer = new MySqlSaver(pool);
 		const store = new MySqlStore(pool);
-		const turnReceipts = new MySqlTurnReceiptStore(pool);
+		const turnReceipts = new MySqlTurnReceiptStore(pool, checkpointer);
 		await checkpointer.setup();
 		await store.setup();
 		await turnReceipts.setup();

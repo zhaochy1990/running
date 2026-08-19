@@ -365,7 +365,7 @@ function recentTrainingWeeks(
 					([date, dayActivities]) => ({
 						date,
 						training_types: unique(
-							dayActivities.map((activity) => activity.trainKind),
+							dayActivities.map((activity) => activity.strideSessionClass),
 						),
 						names: unique(dayActivities.map((activity) => activity.name)),
 						notes: unique(dayActivities.map((activity) => activity.sportNote)),
@@ -442,7 +442,7 @@ function activityShape(activity: Activity) {
 		label_id: activity.labelId,
 		name: activity.name,
 		sport: activity.sport,
-		training_type: activity.trainKind,
+		training_type: activity.strideSessionClass,
 		distance_km:
 			activity.distanceM === null ? null : round(activity.distanceM / 1000, 2),
 		duration_min:

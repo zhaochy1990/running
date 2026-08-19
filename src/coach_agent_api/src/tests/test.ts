@@ -1,9 +1,9 @@
 import { writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { Command } from "@langchain/langgraph";
 import {
 	ASK_USER_QUESTION_KIND,
 	type AskUserQuestionPayload,
+	Command,
 	createCoachAgent,
 	formatTokenUsageReport,
 	LlmTokenUsageTracker,

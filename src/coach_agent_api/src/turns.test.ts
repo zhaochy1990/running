@@ -2,16 +2,22 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	CoordinatedTurnRunner,
+	fingerprintTurn,
 	type ThreadLock,
 	TurnConflictError,
 	type TurnReceipt,
 	type TurnReceiptStore,
+	type TurnRecovery,
 } from "./turns.js";
 
 class MemoryReceipts implements TurnReceiptStore {
 	readonly values = new Map<string, TurnReceipt>();
 	get(threadId: string, turnId: string) {
 		return Promise.resolve(this.values.get(`${threadId}:${turnId}`));
+	}
+	recovery: TurnRecovery | undefined;
+	recover(): Promise<TurnRecovery | undefined> {
+		return Promise.resolve(this.recovery);
 	}
 	put(threadId: string, turnId: string, receipt: TurnReceipt) {
 		this.values.set(`${threadId}:${turnId}`, receipt);
@@ -21,6 +27,70 @@ class MemoryReceipts implements TurnReceiptStore {
 		return Promise.resolve();
 	}
 }
+
+test("a completed checkpoint repairs a missing receipt without invoking", async () => {
+	const receipts = new MemoryReceipts();
+	receipts.recovery = {
+		kind: "complete" as const,
+		receipt: { fingerprint: "a", response: { answer: 1 } },
+	};
+	const runner = new CoordinatedTurnRunner(receipts, new MemoryThreadLock());
+	let calls = 0;
+	assert.deepEqual(
+		await runner.run(
+			{ threadId: "thread", clientTurnId: "turn", fingerprint: "a" },
+			async () => ({ answer: ++calls }),
+		),
+		{ answer: 1 },
+	);
+	assert.equal(calls, 0);
+	assert.deepEqual(receipts.values.get("thread:turn"), {
+		fingerprint: "a",
+		response: { answer: 1 },
+	});
+});
+
+test("an incomplete checkpoint resumes instead of appending the input again", async () => {
+	const receipts = new MemoryReceipts();
+	receipts.recovery = { kind: "incomplete", fingerprint: "a" };
+	const runner = new CoordinatedTurnRunner(receipts, new MemoryThreadLock());
+	let resumed = false;
+	await runner.run(
+		{ threadId: "thread", clientTurnId: "turn", fingerprint: "a" },
+		async (resumeFromCheckpoint) => {
+			resumed = resumeFromCheckpoint;
+			return { answer: 1 };
+		},
+	);
+	assert.equal(resumed, true);
+});
+
+test("a recovered checkpoint with a changed request conflicts", async () => {
+	const receipts = new MemoryReceipts();
+	receipts.recovery = { kind: "incomplete", fingerprint: "old" };
+	const runner = new CoordinatedTurnRunner(receipts, new MemoryThreadLock());
+	let calls = 0;
+	await assert.rejects(
+		runner.run(
+			{ threadId: "thread", clientTurnId: "turn", fingerprint: "new" },
+			async () => ({ answer: ++calls }),
+		),
+		TurnConflictError,
+	);
+	assert.equal(calls, 0);
+});
+
+test("fingerprints are stable across object key order", () => {
+	const left = fingerprintTurn({
+		target: { kind: "week", folder: "W1" },
+		message: "same",
+	});
+	const right = fingerprintTurn({
+		message: "same",
+		target: { folder: "W1", kind: "week" },
+	});
+	assert.equal(left, right);
+});
 
 class MemoryThreadLock implements ThreadLock {
 	private readonly tails = new Map<string, Promise<void>>();

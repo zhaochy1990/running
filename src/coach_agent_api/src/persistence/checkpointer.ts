@@ -10,7 +10,6 @@
  * `SerializerProtocol` (JSON), same bytes the MemorySaver produces.
  */
 
-import type { RunnableConfig } from "@langchain/core/runnables";
 import type {
 	ChannelVersions,
 	Checkpoint,
@@ -18,14 +17,17 @@ import type {
 	CheckpointMetadata,
 	CheckpointTuple,
 	PendingWrite,
-} from "@langchain/langgraph-checkpoint";
+	RunnableConfig,
+} from "coach_agent";
 import {
 	BaseCheckpointSaver,
 	copyCheckpoint,
 	getCheckpointId,
 	WRITES_IDX_MAP,
-} from "@langchain/langgraph-checkpoint";
+} from "coach_agent";
 import type { Pool, RowDataPacket } from "mysql2/promise";
+import { tryToPublicResponse } from "../publicResponse.js";
+import type { TurnRecovery } from "../turns.js";
 
 export class MySqlSaver extends BaseCheckpointSaver {
 	constructor(private readonly pool: Pool) {
@@ -80,6 +82,80 @@ export class MySqlSaver extends BaseCheckpointSaver {
 		const row = rows[0];
 		if (row === undefined) return undefined;
 		return this.rowToTuple(row);
+	}
+
+	async recoverTurn(
+		threadId: string,
+		clientTurnId: string,
+	): Promise<TurnRecovery | undefined> {
+		const [rows] = await this.pool.query<RowDataPacket[]>(
+			`SELECT checkpoint_id, parent_checkpoint_id, checkpoint, metadata, type
+			   FROM checkpoints
+			  WHERE thread_id=? AND checkpoint_ns=''
+			  ORDER BY checkpoint_id DESC`,
+			[threadId],
+		);
+		const decoded = await Promise.all(
+			rows.map(async (row) => ({
+				row,
+				metadata: (await this.serde.loadsTyped("json", row.metadata)) as Record<
+					string,
+					unknown
+				>,
+				checkpoint: (await this.serde.loadsTyped(
+					(row.type as string) ?? "json",
+					row.checkpoint,
+				)) as Checkpoint,
+			})),
+		);
+		const tagged = decoded.filter(
+			(item) =>
+				item.metadata.client_turn_id === clientTurnId &&
+				typeof item.metadata.turn_fingerprint === "string",
+		);
+		const newest = tagged[0];
+		if (!newest) return undefined;
+		const fingerprint = newest.metadata.turn_fingerprint as string;
+		const firstTagged = tagged.at(-1);
+		if (!firstTagged) return undefined;
+		const parentId = firstTagged.row.parent_checkpoint_id;
+		const parent =
+			typeof parentId === "string"
+				? decoded.find((item) => item.row.checkpoint_id === parentId)
+				: undefined;
+		const baselineMessageCount = checkpointMessages(parent?.checkpoint).length;
+		for (const item of tagged) {
+			const itemFingerprint = item.metadata.turn_fingerprint as string;
+			if (itemFingerprint !== fingerprint) continue;
+			const messages = checkpointMessages(item.checkpoint).slice(
+				baselineMessageCount,
+			);
+			const response = tryToPublicResponse({ messages });
+			if (response !== undefined) {
+				return {
+					kind: "complete",
+					receipt: { fingerprint, response },
+				};
+			}
+			const pendingWrites = await this.pendingWrites(
+				threadId,
+				"",
+				item.row.checkpoint_id as string,
+			);
+			const interrupts = pendingWrites
+				.filter(([, channel]) => channel === "__interrupt__")
+				.map(([, , value]) => value);
+			const interruptResponse = tryToPublicResponse({
+				__interrupt__: interrupts.flat(),
+			});
+			if (interruptResponse !== undefined) {
+				return {
+					kind: "complete",
+					receipt: { fingerprint, response: interruptResponse },
+				};
+			}
+		}
+		return { kind: "incomplete", fingerprint };
 	}
 
 	async *list(
@@ -146,7 +222,19 @@ export class MySqlSaver extends BaseCheckpointSaver {
 		const [cType, cBytes] = await this.serde.dumpsTyped(
 			copyCheckpoint(checkpoint),
 		);
-		const [, mBytes] = await this.serde.dumpsTyped(metadata);
+		const clientTurnId = config.metadata?.client_turn_id;
+		const turnFingerprint = config.metadata?.turn_fingerprint;
+		const durableMetadata: CheckpointMetadata<Record<string, unknown>> = {
+			...metadata,
+			...(typeof clientTurnId === "string"
+				? { client_turn_id: clientTurnId }
+				: {}),
+			...(typeof turnFingerprint === "string"
+				? { turn_fingerprint: turnFingerprint }
+				: {}),
+		};
+		const [, durableMetadataBytes] =
+			await this.serde.dumpsTyped(durableMetadata);
 
 		await this.pool.execute(
 			`INSERT INTO checkpoints
@@ -162,11 +250,12 @@ export class MySqlSaver extends BaseCheckpointSaver {
 				parentId,
 				cType,
 				Buffer.from(cBytes),
-				Buffer.from(mBytes),
+				Buffer.from(durableMetadataBytes),
 			],
 		);
 
 		return {
+			...(config.metadata ? { metadata: config.metadata } : {}),
 			configurable: {
 				thread_id: threadId,
 				checkpoint_ns: ns,
@@ -293,4 +382,9 @@ export class MySqlSaver extends BaseCheckpointSaver {
 		}
 		return tuple;
 	}
+}
+
+function checkpointMessages(checkpoint: Checkpoint | undefined): unknown[] {
+	const messages = checkpoint?.channel_values.messages;
+	return Array.isArray(messages) ? messages : [];
 }

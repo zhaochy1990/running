@@ -1,10 +1,12 @@
-import { Command } from "@langchain/langgraph";
+import { CoachTurnScope, Command } from "coach_agent";
 import { Hono } from "hono";
 import type { JwtVerifier } from "./auth.js";
 import { AuthError } from "./auth.js";
+import { toPublicResponse } from "./publicResponse.js";
 import {
 	createInMemoryTurnCoordinator,
 	fingerprintTurn,
+	ThreadBusyError,
 	TurnConflictError,
 	type TurnCoordinator,
 } from "./turns.js";
@@ -46,15 +48,17 @@ export function createApp(dependencies: AppDependencies): Hono {
 		if (!body.ok) return context.json({ error: body.error }, 400);
 		const threadId = `${identity.userId}:coach:${body.value.sessionId}`;
 		try {
+			const fingerprint = fingerprintTurn(body.value);
 			const response = await turnCoordinator.run(
 				{
 					threadId,
 					clientTurnId: body.value.clientTurnId,
-					fingerprint: fingerprintTurn(body.value),
+					fingerprint,
 				},
-				async () => {
-					const input =
-						body.value.resume === undefined
+				async (resumeFromCheckpoint) => {
+					const input = resumeFromCheckpoint
+						? null
+						: body.value.resume === undefined
 							? {
 									messages: [
 										{ role: "user", content: body.value.message as string },
@@ -62,10 +66,21 @@ export function createApp(dependencies: AppDependencies): Hono {
 								}
 							: new Command({ resume: body.value.resume });
 					const result = await dependencies.coach.invoke(input, {
-						context: { userId: identity.userId },
+						context: {
+							userId: identity.userId,
+							asof: shanghaiToday(),
+							...(body.value.target ? { target: body.value.target } : {}),
+							...(body.value.reviewContext
+								? { reviewContext: body.value.reviewContext }
+								: {}),
+						},
 						configurable: {
 							thread_id: threadId,
 							client_turn_id: body.value.clientTurnId,
+						},
+						metadata: {
+							client_turn_id: body.value.clientTurnId,
+							turn_fingerprint: fingerprint,
 						},
 					});
 					return toPublicResponse(result);
@@ -75,6 +90,10 @@ export function createApp(dependencies: AppDependencies): Hono {
 		} catch (error) {
 			if (error instanceof TurnConflictError) {
 				return context.json({ error: "client_turn_id_conflict" }, 409);
+			}
+			if (error instanceof ThreadBusyError) {
+				context.header("Retry-After", "5");
+				return context.json({ error: "coach_thread_busy" }, 429);
 			}
 			throw error;
 		}
@@ -88,6 +107,8 @@ type ChatRequest = {
 	clientTurnId: string;
 	message?: string;
 	resume?: string | string[];
+	target?: Record<string, unknown>;
+	reviewContext?: Record<string, unknown>;
 };
 async function readChatRequest(
 	request: Request,
@@ -103,6 +124,10 @@ async function readChatRequest(
 	const clientTurnId = value.client_turn_id;
 	const message = value.message;
 	const resume = value.resume;
+	const scope = CoachTurnScope.safeParse({
+		target: value.target,
+		reviewContext: value.review_context,
+	});
 	if (typeof sessionId !== "string" || !ID_RE.test(sessionId))
 		return { ok: false, error: "invalid_session_id" };
 	if (typeof clientTurnId !== "string" || !ID_RE.test(clientTurnId))
@@ -119,6 +144,7 @@ async function readChatRequest(
 	if ((message === undefined) === (resume === undefined)) {
 		return { ok: false, error: "message_or_resume_required" };
 	}
+	if (!scope.success) return { ok: false, error: "invalid_turn_scope" };
 	return {
 		ok: true,
 		value: {
@@ -126,6 +152,10 @@ async function readChatRequest(
 			clientTurnId,
 			...(typeof message === "string" ? { message } : {}),
 			...(resume !== undefined ? { resume } : {}),
+			...(scope.data.target ? { target: scope.data.target } : {}),
+			...(scope.data.reviewContext
+				? { reviewContext: scope.data.reviewContext }
+				: {}),
 		},
 	};
 }
@@ -147,43 +177,15 @@ function isValidResume(value: unknown): value is string | string[] {
 	);
 }
 
-function toPublicResponse(result: unknown): Record<string, unknown> {
-	if (!isRecord(result)) throw new Error("coach returned an invalid result");
-	const interrupts = result.__interrupt__;
-	if (Array.isArray(interrupts) && interrupts.length > 0) {
-		const first = interrupts[0];
-		return {
-			status: "needs_input",
-			interrupt: isRecord(first) ? first.value : first,
-		};
-	}
-	const messages = result.messages;
-	if (!Array.isArray(messages)) throw new Error("coach result has no messages");
-	for (let index = messages.length - 1; index >= 0; index -= 1) {
-		const message = messages[index];
-		if (!isAssistantMessage(message)) continue;
-		const text = textContent(message.content);
-		if (text !== undefined) return { status: "completed", message: text };
-	}
-	throw new Error("coach result has no public message");
-}
-
-function textContent(content: unknown): string | undefined {
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return undefined;
-	const texts = content.flatMap((block) =>
-		isRecord(block) && block.type === "text" && typeof block.text === "string"
-			? [block.text]
-			: [],
-	);
-	return texts.length ? texts.join("\n") : undefined;
-}
-function isAssistantMessage(value: unknown): value is Record<string, unknown> {
-	if (!isRecord(value)) return false;
-	if (value.type === "ai") return true;
-	const getType = value._getType;
-	return typeof getType === "function" && getType.call(value) === "ai";
-}
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function shanghaiToday(now: Date = new Date()): string {
+	return new Intl.DateTimeFormat("en-CA", {
+		timeZone: "Asia/Shanghai",
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+	}).format(now);
 }

@@ -11,6 +11,7 @@ import { createWeeklyPlanContextTools } from "../../tools/weeklyPlanContext.js";
 import { buildResponsesModel } from "../common.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { WeeklyPlanPrompt } from "../prompts.js";
+import { createTurnScopeMiddleware } from "../turnScope.js";
 
 function createWeeklyPlanSubagent(
 	store: DataProvider,
@@ -22,7 +23,9 @@ function createWeeklyPlanSubagent(
 	const planTools = createPlanTools(store);
 	const raceTools = createRaceTools(store);
 	const runningCalibrationTools = createRunningCalibrationTools(store);
-	const weeklyPlanContextProvider = new DataProviderWeeklyPlanContextProvider(store);
+	const weeklyPlanContextProvider = new DataProviderWeeklyPlanContextProvider(
+		store,
+	);
 	const weeklyPlanContextTools = createWeeklyPlanContextTools(
 		weeklyPlanContextProvider,
 	);
@@ -45,6 +48,7 @@ function createWeeklyPlanSubagent(
 			? { responseFormat: WeeklyPlanDirectResponseSchema }
 			: {}),
 		middleware: [
+			createTurnScopeMiddleware(),
 			createLoggingMiddleware(
 				generatesPlan ? "agent:generate_weekly_plan" : "agent:weekly_plan",
 			),
