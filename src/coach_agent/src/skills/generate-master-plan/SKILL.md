@@ -87,7 +87,7 @@ description: >-
 字段语义和业务规则：
 
 1. 新计划 `status` 固定为 `draft`，`generated_by` 固定为 `coach_agent`，`version` 固定为 `1`。`goal` 包含赛事名称、`FM`/`HM`、比赛日、目标时间与 `Asia/Shanghai`，地点可选；顶层包含计划日期范围、阶段、周安排、训练原则和 UTC 创建/更新时间。`start_date`、首个 phase 的 `start_date` 和首个 `week_start` 必须都等于上下文中的 `plan_start`。
-2. `phase_name` 只能为 `基础期`、`提升期`、`专项速度周期`、`马拉松专项期`、`赛前减量期`、`赛后恢复期`，并且不同phase不可以重复；
+2. `phase_name` 只能为 `base`、`build`、`speed`、`marathon`、`taper`、`recovery`，并且不同phase不可以重复；对应中文显示名：`base`=基础期、`build`=提升期、`speed`=专项速度周期、`marathon`=马拉松专项期、`taper`=赛前减量期、`recovery`=赛后恢复期；
 3. `distance` 只能为 `FM` 或 `HM`。
 4. milestone `type` 只能为 `race`、`test_run`、`long_run`、`strength_test`、`body_composition`。
 5. `created_at`、`updated_at` 必须为 ISO 8601 UTC（带 `Z` 或 `+00:00`）。`summary` 只用于 `is_completed=true` 的阶段，否则为 `null`。

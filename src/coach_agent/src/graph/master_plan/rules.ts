@@ -52,7 +52,7 @@ const HARD = new Set([
 	"tune_up_race",
 	"race",
 ]);
-const TAPER = "赛前减量期";
+const TAPER = "taper";
 
 export function runMasterPlanRuleFilter(
 	rawPlan: unknown,
@@ -175,7 +175,7 @@ export function runMasterPlanRuleFilter(
 		const exception =
 			week.is_recovery_week ||
 			week.phase_name === TAPER ||
-			week.phase_name === "赛后恢复期";
+			week.phase_name === "recovery";
 		if (!exception) {
 			if (
 				anchor &&

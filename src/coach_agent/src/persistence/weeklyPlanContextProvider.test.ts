@@ -75,7 +75,7 @@ test("weekly context combines all weekly planning evidence", async () => {
 				content: {
 					phases: [
 						{
-							name: "提升期",
+							name: "build",
 							start_date: "2026-08-01",
 							end_date: "2026-08-31",
 							focus: "threshold",
@@ -85,7 +85,7 @@ test("weekly context combines all weekly planning evidence", async () => {
 						{
 							week_index: 3,
 							week_start: "2026-08-10",
-							phase_name: "提升期",
+							phase_name: "build",
 							is_recovery_week: false,
 							target_weekly_km_low: 55,
 							target_weekly_km_high: 60,
@@ -206,7 +206,7 @@ test("weekly context combines all weekly planning evidence", async () => {
 		end_date: "2026-08-15",
 		days: 28,
 	});
-	assert.equal(snapshot.training_position.phase?.name, "提升期");
+	assert.equal(snapshot.training_position.phase?.name, "build");
 	assert.deepEqual(snapshot.training_position.phase?.milestones, [
 		{
 			type: "test_run",

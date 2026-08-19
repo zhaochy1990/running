@@ -1049,7 +1049,7 @@ export function validateSkeletonAgainstStrategy(
 	validatePhaseTimeline(plan);
 	const preRacePhases = plan.phases.filter(
 		(phase) =>
-			phase.start_date <= plan.goal.race_date && phase.name !== "赛后恢复期",
+			phase.start_date <= plan.goal.race_date && phase.name !== "recovery",
 	);
 	if (
 		preRacePhases.length !== selected.candidate.phases.length ||
@@ -1082,8 +1082,8 @@ export function validateSkeletonAgainstStrategy(
 			throw new Error("skeleton weekly volume must fit phase range");
 		const isException =
 			week.is_recovery_week ||
-			week.phase_name === "赛前减量期" ||
-			week.phase_name === "赛后恢复期" ||
+			week.phase_name === "taper" ||
+			week.phase_name === "recovery" ||
 			week.key_sessions.some((session) => session.type === "race");
 		if (
 			!isException &&
@@ -1137,7 +1137,7 @@ export function validateSkeletonAgainstStrategy(
 		plan.goal.distance === "FM" &&
 		selected.candidate.race_week_index >= 3 &&
 		(taperWeeks.length !== 2 ||
-			taperWeeks.some((week) => week.phase_name !== "赛前减量期"))
+			taperWeeks.some((week) => week.phase_name !== "taper"))
 	)
 		throw new Error("FM skeleton must preserve the selected two-week taper");
 	const milestoneCount = plan.phases

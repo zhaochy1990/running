@@ -72,7 +72,7 @@ test("week_phase_alignment catches the known phase/week mismatch", () =>
 		ids(
 			check(
 				mutated((p) => {
-					p.weeks[0]!.phase_name = "赛前减量期";
+					p.weeks[0]!.phase_name = "taper";
 				}),
 			),
 		).includes("week_phase_alignment"),
