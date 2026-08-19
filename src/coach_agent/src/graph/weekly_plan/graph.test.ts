@@ -48,6 +48,7 @@ interface SnapshotOverrides {
 	recentTrainingWeeks?: Array<Record<string, unknown>>;
 	injuries?: Array<{ running_restriction: string }>;
 	recoveryWeek?: boolean;
+	trainingPosition?: Record<string, unknown>;
 }
 
 const BASE_WEEK_KM = 50;
@@ -100,7 +101,7 @@ function buildContext(overrides: SnapshotOverrides = {}): WeeklyPlanContext {
 			heart_rate_zones: [],
 			pace_zones: [],
 		},
-		training_position: {
+		training_position: overrides.trainingPosition ?? {
 			phase: null,
 			stage: {
 				week_index: 0,
@@ -448,4 +449,131 @@ test("weekly plan generator rejects unknown request fields", async () => {
 			),
 		/Unrecognized key/,
 	);
+});
+
+const CANONICAL_PHASES = [
+	"base",
+	"build",
+	"speed",
+	"marathon",
+	"taper",
+	"recovery",
+] as const;
+
+for (const phase of CANONICAL_PHASES) {
+	test(`weekly plan generator routes the ${phase} phase from stage.phase_name`, async () => {
+		const graph = createWeeklyPlanGeneratorGraph(config, {
+			async loadSnapshot() {
+				return buildContext({
+					trainingPosition: {
+						phase: { name: "marathon" },
+						stage: {
+							week_index: 0,
+							week_start: "2026-08-17",
+							phase_name: phase,
+							is_recovery_week: false,
+							target_weekly_km_low: 30,
+							target_weekly_km_high: 45,
+							key_sessions: [],
+						},
+					},
+				});
+			},
+		});
+		const { outcome } = await graph.invoke(
+			{ request: { request_id: `request-${phase}` } },
+			{ context: runtimeContext },
+		);
+
+		assert.equal(outcome.decision, "completed");
+		assert.equal(outcome.phase, phase);
+	});
+}
+
+test("weekly plan generator falls back to phase.name when stage.phase_name is missing", async () => {
+	const graph = createWeeklyPlanGeneratorGraph(config, {
+		async loadSnapshot() {
+			return buildContext({
+				trainingPosition: {
+					phase: { name: "taper" },
+					stage: {
+						week_index: 0,
+						week_start: "2026-08-17",
+						phase_name: null,
+						is_recovery_week: false,
+						target_weekly_km_low: 30,
+						target_weekly_km_high: 45,
+						key_sessions: [],
+					},
+				},
+			});
+		},
+	});
+	const { outcome } = await graph.invoke(
+		{ request: { request_id: "request-fallback" } },
+		{ context: runtimeContext },
+	);
+
+	assert.equal(outcome.decision, "completed");
+	assert.equal(outcome.phase, "taper");
+});
+
+test("weekly plan generator prefers stage.phase_name over phase.name", async () => {
+	const graph = createWeeklyPlanGeneratorGraph(config, {
+		async loadSnapshot() {
+			return buildContext({
+				trainingPosition: {
+					phase: { name: "base" },
+					stage: {
+						week_index: 0,
+						week_start: "2026-08-17",
+						phase_name: "recovery",
+						is_recovery_week: true,
+						target_weekly_km_low: 30,
+						target_weekly_km_high: 45,
+						key_sessions: [],
+					},
+				},
+			});
+		},
+	});
+	const { outcome } = await graph.invoke(
+		{ request: { request_id: "request-priority" } },
+		{ context: runtimeContext },
+	);
+
+	assert.equal(outcome.decision, "completed");
+	assert.equal(outcome.phase, "recovery");
+});
+
+test("weekly plan generator fails with phase_unresolvable when no canonical phase exists", async () => {
+	const graph = createWeeklyPlanGeneratorGraph(config, {
+		async loadSnapshot() {
+			return buildContext({
+				trainingPosition: {
+					phase: { name: "自由训练期" },
+					stage: {
+						week_index: 0,
+						week_start: "2026-08-17",
+						phase_name: null,
+						is_recovery_week: false,
+						target_weekly_km_low: 30,
+						target_weekly_km_high: 45,
+						key_sessions: [],
+					},
+				},
+			});
+		},
+	});
+	const { outcome } = await graph.invoke(
+		{ request: { request_id: "request-unresolvable" } },
+		{ context: runtimeContext },
+	);
+
+	assert.deepEqual(outcome, {
+		decision: "quality_failure",
+		request_id: "request-unresolvable",
+		generation_id: "generation-1",
+		reason: "phase_unresolvable",
+	});
 });

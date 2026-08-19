@@ -13,8 +13,38 @@ import {
 	WeeklyPlanGeneratorOutcome,
 	WeeklyPlanGeneratorRequest,
 } from "./contracts.js";
+import { PHASE_NAMES, PhaseNameSchema } from "../master_plan/schemas.js";
 
 const logger = getLogger("weekly-plan-graph");
+
+export type PhaseName = (typeof PHASE_NAMES)[number];
+
+/** Node names for each canonical phase, keyed by the phase enum value. */
+export const PHASE_NODE_NAMES: Record<PhaseName, string> = {
+	base: "phase_base",
+	build: "phase_build",
+	speed: "phase_speed",
+	marathon: "phase_marathon",
+	taper: "phase_taper",
+	recovery: "phase_recovery",
+};
+
+/** Resolve the target week's phase from the training position: stage.phase_name takes priority, phase.name is the fallback. */
+export function resolvePhaseName(
+	weeklyContext: WeeklyPlanContext | undefined,
+): PhaseName | null {
+	const stage = record(weeklyContext?.training_position.stage);
+	const stagePhase = string(stage?.phase_name);
+	if (isPhaseName(stagePhase)) return stagePhase;
+	const phase = record(weeklyContext?.training_position.phase);
+	const phaseName = string(phase?.name);
+	if (isPhaseName(phaseName)) return phaseName;
+	return null;
+}
+
+function isPhaseName(value: string | null): value is PhaseName {
+	return value !== null && PHASE_NAMES.includes(value as PhaseName);
+}
 
 export const GraphInput = new StateSchema({
 	request: WeeklyPlanGeneratorRequest,
@@ -23,12 +53,14 @@ export const GraphOutput = new StateSchema({
 	outcome: WeeklyPlanGeneratorOutcome,
 	weekly_context: z.custom<WeeklyPlanContext>().optional(),
 	target_training_load: TargetTrainingLoadSchema.optional(),
+	phase: PhaseNameSchema.optional(),
 });
 export const GraphState = new StateSchema({
 	request: WeeklyPlanGeneratorRequest,
 	context: WeeklyPlanGeneratorContext.optional(),
 	weekly_context: z.custom<WeeklyPlanContext>().optional(),
 	target_training_load: TargetTrainingLoadSchema.optional(),
+	phase: PhaseNameSchema.optional(),
 	outcome: WeeklyPlanGeneratorOutcome.optional(),
 });
 
@@ -121,22 +153,28 @@ export class WeeklyPlanGeneratorNodes {
 		const latestRecovery = weeklyContext?.recovery.latest ?? null;
 		const sevenDayAvg = weeklyContext?.recovery.seven_day_average ?? null;
 		const asOfDay = weeklyContext?.as_of.slice(0, 10) ?? null;
-		const rhrByDay = asOfDay === null ? {} : dailySeries(
-			(weeklyContext?.recovery.history ?? []).map((point) => ({
-				date: point.date,
-				value: point.rhr,
-			})),
-			asOfDay,
-			10,
-		);
-		const hrvByDay = asOfDay === null ? {} : dailySeries(
-			(weeklyContext?.recovery.history ?? []).map((point) => ({
-				date: point.date,
-				value: point.hrv,
-			})),
-			asOfDay,
-			10,
-		);
+		const rhrByDay =
+			asOfDay === null
+				? {}
+				: dailySeries(
+						(weeklyContext?.recovery.history ?? []).map((point) => ({
+							date: point.date,
+							value: point.rhr,
+						})),
+						asOfDay,
+						10,
+					);
+		const hrvByDay =
+			asOfDay === null
+				? {}
+				: dailySeries(
+						(weeklyContext?.recovery.history ?? []).map((point) => ({
+							date: point.date,
+							value: point.hrv,
+						})),
+						asOfDay,
+						10,
+					);
 
 		const rationale: string[] = [];
 		if (anchorDose !== null)
@@ -254,21 +292,68 @@ export class WeeklyPlanGeneratorNodes {
 		};
 	};
 
+	readonly routeByPhase = (state: typeof GraphState.State) => {
+		const phase = resolvePhaseName(state.weekly_context);
+		if (phase === null) {
+			logger.error(
+				`Cannot resolve target week phase for request ${state.request?.request_id}: no stage.phase_name or phase.name`,
+			);
+			return "phase_unresolvable";
+		}
+		return PHASE_NODE_NAMES[phase];
+	};
+
+	private readonly phaseNode =
+		(phase: PhaseName) => (state: typeof GraphState.State) => {
+			logger.info(
+				`Routing request ${state.request?.request_id} to ${phase} phase skeleton node`,
+			);
+			return { phase };
+		};
+
+	readonly phaseBase = this.phaseNode("base");
+	readonly phaseBuild = this.phaseNode("build");
+	readonly phaseSpeed = this.phaseNode("speed");
+	readonly phaseMarathon = this.phaseNode("marathon");
+	readonly phaseTaper = this.phaseNode("taper");
+	readonly phaseRecovery = this.phaseNode("recovery");
+
+	readonly phaseUnresolvable = (state: typeof GraphState.State) => {
+		const request = WeeklyPlanGeneratorRequest.parse(state.request);
+		const context = WeeklyPlanGeneratorContext.parse(state.context);
+		logger.error(
+			`No canonical phase for request ${request.request_id}: target week phase is missing or unknown`,
+		);
+		return {
+			outcome: WeeklyPlanGeneratorOutcome.parse({
+				decision: "quality_failure",
+				request_id: request.request_id,
+				generation_id: context.generationId,
+				reason: "phase_unresolvable",
+			}),
+		};
+	};
+
 	readonly finalize = (state: typeof GraphState.State) => {
 		const request = WeeklyPlanGeneratorRequest.parse(state.request);
 		const context = WeeklyPlanGeneratorContext.parse(state.context);
 		const targetLoad = state.target_training_load;
+		const phase = state.phase;
 		if (!targetLoad) {
 			throw new Error("target_training_load is missing before finalize");
 		}
+		if (!phase) {
+			throw new Error("phase is missing before finalize");
+		}
 		logger.info(
-			`Finalizing request ${request.request_id} with target training load ${JSON.stringify(targetLoad)}`,
+			`Finalizing request ${request.request_id} for phase ${phase} with target training load ${JSON.stringify(targetLoad)}`,
 		);
 		return {
 			outcome: WeeklyPlanGeneratorOutcome.parse({
 				decision: "completed",
 				request_id: request.request_id,
 				generation_id: context.generationId,
+				phase,
 				target_training_load: targetLoad,
 			}),
 		};
@@ -279,6 +364,10 @@ function record(value: unknown): Record<string, unknown> | null {
 	return typeof value === "object" && value !== null && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: null;
+}
+
+function string(value: unknown): string | null {
+	return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function number(value: unknown): number | null {

@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { PhaseNameSchema } from "../master_plan/schemas.js";
 
 const identifier = z.string().min(1);
 
@@ -97,6 +98,7 @@ export const WeeklyPlanGeneratorOutcome = z.discriminatedUnion("decision", [
 			decision: z.literal("completed"),
 			request_id: identifier,
 			generation_id: identifier,
+			phase: PhaseNameSchema,
 			target_training_load: TargetTrainingLoadSchema,
 		})
 		.strict(),
@@ -106,6 +108,14 @@ export const WeeklyPlanGeneratorOutcome = z.discriminatedUnion("decision", [
 			request_id: identifier,
 			generation_id: identifier,
 			reason: z.literal("context_snapshot_unavailable"),
+		})
+		.strict(),
+	z
+		.object({
+			decision: z.literal("quality_failure"),
+			request_id: identifier,
+			generation_id: identifier,
+			reason: z.literal("phase_unresolvable"),
 		})
 		.strict(),
 ]);
