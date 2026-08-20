@@ -35,7 +35,12 @@ type IntensityTriple = {
 };
 type Dwell = readonly [minutes: number, intensity: number];
 
-const OPEN_STEP_IF = { warmup: 0.78, recovery: 0.65, cooldown: 0.78 } as const;
+const OPEN_STEP_IF = {
+	warmup: 0.78,
+	work: 0.85,
+	recovery: 0.65,
+	cooldown: 0.78,
+} as const;
 const NORMALIZATION_EXPONENT = 6;
 
 /** Estimate one canonical run-workout/v1 on STRIDE's planned TSS scale. */

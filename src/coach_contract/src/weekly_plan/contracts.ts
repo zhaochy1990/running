@@ -75,8 +75,6 @@ export const TargetTrainingLoadSchema = z
 				trend: z
 					.object({
 						recovery: RecoveryTrendSchema.nullable(),
-						rhr: z.record(z.string(), z.number().nullable()),
-						hrv: z.record(z.string(), z.number().nullable()),
 						seven_day_average: z
 							.object({
 								rhr: z.number().nonnegative().nullable(),

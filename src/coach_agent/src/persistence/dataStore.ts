@@ -167,6 +167,12 @@ export interface UserProfile {
 	weightKg: number | null;
 	runningAgeRange: string | null;
 }
+export interface VendorHrvBaseline {
+	low: number | null;
+	high: number | null;
+	provider: string;
+	date: string;
+}
 export interface UserInjury {
 	description: string;
 	recoveryStatus: string;
@@ -260,6 +266,30 @@ export class StrideDataStore {
 			recoveryStatus: row.recovery_status as string,
 			runningRestriction: row.running_restriction as string,
 		}));
+	}
+
+	async getVendorHrvBaseline(
+		userId: string,
+	): Promise<VendorHrvBaseline | null> {
+		const [rows] = await this.pool.query<RowDataPacket[]>(
+			`SELECT date, baseline_balanced_low, baseline_balanced_upper, provider
+			   FROM daily_hrv
+			  WHERE user_id = ?
+			    AND baseline_balanced_low IS NOT NULL
+			    AND baseline_balanced_upper IS NOT NULL
+			  ORDER BY REPLACE(date, '-', '') DESC
+			  LIMIT 1`,
+			[userId],
+		);
+		const row = rows[0];
+		return row
+			? {
+					low: (row.baseline_balanced_low ?? null) as number | null,
+					high: (row.baseline_balanced_upper ?? null) as number | null,
+					provider: row.provider as string,
+					date: normalizeDay(row.date as string),
+				}
+			: null;
 	}
 
 	async getDailyRecoveryByDateRange(

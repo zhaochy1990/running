@@ -433,7 +433,13 @@ func (p *Provider) syncDashboard(ctx context.Context, client *Client, user strin
 
 	dash, hrvRows, preds := parseDashboard(user, summaryData, weekData)
 	if dash != nil {
-		if err := p.store.UpsertDashboard(ctx, dash); err != nil {
+		var err error
+		if dash.AvgSleepHRV == nil || dash.HRVNormalLow == nil || dash.HRVNormalHigh == nil {
+			err = p.store.UpsertDashboardPreservingNil(ctx, dash)
+		} else {
+			err = p.store.UpsertDashboard(ctx, dash)
+		}
+		if err != nil {
 			return err
 		}
 		res.Health++

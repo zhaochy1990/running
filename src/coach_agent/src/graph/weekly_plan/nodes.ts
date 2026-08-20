@@ -21,12 +21,12 @@ import type {
 	WeeklyPlanContextProvider,
 } from "../../persistence/weeklyPlanContextProvider.js";
 import { getLogger } from "../../utils/logger.js";
-import type { WeeklyPlanLlm, WeeklyPlanLlmInput } from "./llm.js";
 import {
 	simulateWeeklyPlanLoad,
 	type WeeklyPlanSimulationReport,
 	WeeklyPlanSimulationReportSchema,
 } from "./simulation.js";
+import type { WeeklyPlanLLM, WeeklyPlanLlmInput } from "./weeklyPlanNode.js";
 
 const logger = getLogger("weekly-plan-graph");
 
@@ -144,7 +144,7 @@ export class WeeklyPlanGeneratorNodes {
 	constructor(
 		private readonly config: CoachAgentConfig,
 		private readonly contextProvider: WeeklyPlanContextProvider,
-		private readonly planLlm: WeeklyPlanLlm,
+		private readonly planLlm: WeeklyPlanLLM,
 	) {}
 
 	readonly loadWeeklyPlanContext = async (
@@ -224,33 +224,9 @@ export class WeeklyPlanGeneratorNodes {
 			stageTargetKmHigh,
 		);
 		const recoveryTrend = assessRecoveryTrend(
-			weeklyContext?.recovery.history ?? [],
+			weeklyContext?.fitness_state.trend ?? [],
 		);
-		const latestRecovery = weeklyContext?.recovery.latest ?? null;
 		const sevenDayAvg = weeklyContext?.recovery.seven_day_average ?? null;
-		const asOfDay = weeklyContext?.as_of.slice(0, 10) ?? null;
-		const rhrByDay =
-			asOfDay === null
-				? {}
-				: dailySeries(
-						(weeklyContext?.recovery.history ?? []).map((point) => ({
-							date: point.date,
-							value: point.rhr,
-						})),
-						asOfDay,
-						10,
-					);
-		const hrvByDay =
-			asOfDay === null
-				? {}
-				: dailySeries(
-						(weeklyContext?.recovery.history ?? []).map((point) => ({
-							date: point.date,
-							value: point.hrv,
-						})),
-						asOfDay,
-						10,
-					);
 
 		const rationale: string[] = [];
 		if (anchorDose !== null)
@@ -376,8 +352,6 @@ export class WeeklyPlanGeneratorNodes {
 									window_days: 0,
 									missing_reason: recoveryTrend.missing_reason,
 								},
-						rhr: rhrByDay,
-						hrv: hrvByDay,
 						seven_day_average: {
 							rhr: number(sevenDayAvg?.rhr),
 							hrv: number(sevenDayAvg?.hrv),
@@ -719,22 +693,6 @@ function avg(values: Array<number | null>): number | null {
 	const numbers = values.filter((value): value is number => value !== null);
 	if (numbers.length === 0) return null;
 	return round(numbers.reduce((sum, value) => sum + value, 0) / numbers.length);
-}
-
-function dailySeries(
-	points: Array<{ date: string; value: number | null }>,
-	endDay: string,
-	days: number,
-): Record<string, number | null> {
-	const byDate = new Map(points.map((point) => [point.date, point.value]));
-	const series: Record<string, number | null> = {};
-	const end = new Date(`${endDay}T00:00:00Z`);
-	for (let offset = days - 1; offset >= 0; offset -= 1) {
-		const day = new Date(end.getTime() - offset * 86_400_000);
-		const key = day.toISOString().slice(0, 10);
-		series[key] = byDate.has(key) ? byDate.get(key)! : null;
-	}
-	return series;
 }
 
 function projectEndOfWeekLoadRatio(

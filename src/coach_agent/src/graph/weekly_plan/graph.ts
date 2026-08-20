@@ -1,14 +1,14 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
 import { WeeklyPlanGeneratorContext } from "@stride/contract";
-import type { CoachAgentConfig } from "../../config/config.js";
+import { type CoachAgentConfig, getAgentConfig } from "../../config/config.js";
 import type { WeeklyPlanContextProvider } from "../../persistence/weeklyPlanContextProvider.js";
-import type { WeeklyPlanLlm } from "./llm.js";
 import {
 	GraphInput,
 	GraphOutput,
 	GraphState,
 	WeeklyPlanGeneratorNodes,
 } from "./nodes.js";
+import { createWeeklyPlanLlm } from "./weeklyPlanNode.js";
 
 const PHASE_NODE_TARGETS = [
 	"phase_base",
@@ -23,9 +23,10 @@ const PHASE_NODE_TARGETS = [
 export function createWeeklyPlanGeneratorGraph(
 	config: CoachAgentConfig,
 	contextProvider: WeeklyPlanContextProvider,
-	planLlm: WeeklyPlanLlm,
 ) {
-	const nodes = new WeeklyPlanGeneratorNodes(config, contextProvider, planLlm);
+	const llm = createWeeklyPlanLlm(getAgentConfig(config, "weekly_plan"));
+
+	const nodes = new WeeklyPlanGeneratorNodes(config, contextProvider, llm);
 
 	return new StateGraph({
 		state: GraphState,

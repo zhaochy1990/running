@@ -195,9 +195,15 @@ func (s *Store) UpsertDashboardPreservingNil(ctx context.Context, d *Dashboard) 
 	d.UserID = uid
 	updates := map[string]any{"provider": d.Provider, "updated_at": d.UpdatedAt}
 	for key, value := range map[string]any{
-		"rhr": d.RHR, "threshold_hr": d.ThresholdHR,
-		"threshold_pace_s_km": d.ThresholdPaceSKm, "avg_sleep_hrv": d.AvgSleepHRV,
-		"hrv_normal_low": d.HRVNormalLow, "hrv_normal_high": d.HRVNormalHigh,
+		"running_level": d.RunningLevel, "aerobic_score": d.AerobicScore,
+		"lactate_threshold_score":   d.LactateThresholdScore,
+		"anaerobic_endurance_score": d.AnaerobicEnduranceScore,
+		"anaerobic_capacity_score":  d.AnaerobicCapacityScore,
+		"rhr":                       d.RHR, "threshold_hr": d.ThresholdHR,
+		"threshold_pace_s_km": d.ThresholdPaceSKm, "recovery_pct": d.RecoveryPct,
+		"avg_sleep_hrv": d.AvgSleepHRV, "hrv_normal_low": d.HRVNormalLow,
+		"hrv_normal_high": d.HRVNormalHigh, "weekly_distance_m": d.WeeklyDistanceM,
+		"weekly_duration_s": d.WeeklyDurationS,
 	} {
 		if !reflect.ValueOf(value).IsNil() {
 			updates[key] = value

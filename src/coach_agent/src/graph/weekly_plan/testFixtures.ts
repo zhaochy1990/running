@@ -9,11 +9,14 @@ export function createWeeklyPlanSimulationContext(): WeeklyPlanContext {
 		lookback: { start_date: "2026-07-18", end_date: "2026-08-14", days: 28 },
 		user_profile: {
 			age: 47,
+			gender: "male",
 			weight_kg: 68,
 			threshold_pace_s_per_km: 250,
 			threshold_speed_mps: 4,
 			lactate_threshold_hr: 170,
 			rhr_baseline: 50,
+			hrv_baseline_low: 50,
+			hrv_baseline_high: 70,
 			heart_rate_zones: [],
 			pace_zones: [],
 		},
@@ -42,7 +45,6 @@ export function createWeeklyPlanSimulationContext(): WeeklyPlanContext {
 		recovery: {
 			latest: null,
 			seven_day_average: { rhr: null, hrv: null },
-			history: [],
 			provenance: { source: "raw_health_measurements" },
 		},
 	};
