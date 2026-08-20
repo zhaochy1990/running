@@ -19,7 +19,7 @@ src/stitch_design/
 
 视觉基线是 `prompts/foundation.md` 中定义的 **STRIDE Raycast Mobile**：Raycast 深色层级、Inter 界面字体、Geist Mono 运动数据和克制的珊瑚强调色。OpenDesign Raycast 页面是上游参考，仓库内 foundation 是可执行的最终契约。当前生成目标固定为 `MOBILE`，默认使用简体中文界面、Android 优先、390 px 逻辑宽度。
 
-`artifacts/manifest.json` 中的 `designGeneration` 用于迁移追踪。`legacy-*` 页面仍可作为产品流程参考，但不能作为视觉参考；只有按当前 Foundation 重新生成并 review 的页面才能移除 legacy 标记。
+旧设计系统 HTML 不保存在 canonical `artifacts/` 中。页面职责由 `briefs/` 保留；只有按当前 Foundation 重新生成、验证并经人工 hash 批准的页面才能进入 manifest 和 artifacts。
 
 Stitch 当前只稳定持久化结构化 theme 的模式、字体族和核心颜色 overrides；完整字体层级、字距、间距、阴影、focus 和 motion 以注入到 design system 的 `prompts/foundation.md` 为准。修改 Foundation 后运行 `update-design-system`，不要仅根据 Stitch 回读的旧 typography/spacing token 判断同步失败。
 
