@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { AIMessage, ToolMessage } from "@langchain/core/messages";
 import {
@@ -27,6 +27,14 @@ import {
 	getWeeklyPlanGeneratorSubagent,
 } from "./weekly_plan/agent.js";
 
+const TEST_API_KEY_ENV = "COACH_AGENT_TEST_API_KEY";
+const previousTestApiKey = process.env[TEST_API_KEY_ENV];
+process.env[TEST_API_KEY_ENV] = "test-key";
+after(() => {
+	if (previousTestApiKey === undefined) delete process.env[TEST_API_KEY_ENV];
+	else process.env[TEST_API_KEY_ENV] = previousTestApiKey;
+});
+
 const modelConfig: ModelConfig = {
 	name: "test",
 	provider: "openai-compatible",
@@ -35,6 +43,7 @@ const modelConfig: ModelConfig = {
 	endpoint: "http://127.0.0.1:1",
 	auth: "api-key",
 	api_kind: "responses",
+	api_key_env: TEST_API_KEY_ENV,
 	max_tokens: 100,
 	timeout_s: 1,
 };

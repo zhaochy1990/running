@@ -12,10 +12,15 @@ export function buildResponsesModel(model: ModelConfig): ChatOpenAIResponses {
 		);
 	}
 
-	// Agent Maestro accepts any bearer token but still requires a non-empty value.
-	const apiKey =
-		(model.api_key_env ? process.env[model.api_key_env] : undefined) ??
-		"agent-maestro-local";
+	if (!model.api_key_env) {
+		throw new Error(`Model "${model.name}" does not define api_key_env`);
+	}
+	const apiKey = process.env[model.api_key_env];
+	if (!apiKey?.trim()) {
+		throw new Error(
+			`Environment variable "${model.api_key_env}" is required for model "${model.name}"`,
+		);
+	}
 
 	return new ChatOpenAIResponses({
 		model: model.model,

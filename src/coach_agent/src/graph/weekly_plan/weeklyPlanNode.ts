@@ -79,6 +79,7 @@ class WeeklyPlanLLMImplementation implements WeeklyPlanLLM {
                 method: "jsonSchema",
             })
             .invoke([new SystemMessage(system), new HumanMessage(user)]);
+
         if (response.success) {
             logger.info(
                 response.weeklyPlan,

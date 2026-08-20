@@ -1,48 +1,17 @@
-import { Command, END, type GraphNode } from "@langchain/langgraph";
-import { ChatOpenAIResponses } from "@langchain/openai";
 import { SystemMessage } from "@langchain/core/messages";
+import { Command, END, type GraphNode } from "@langchain/langgraph";
 import type { ModelConfig } from "../config/config.js";
+import { getLogger } from "../utils/logger.js";
+import { buildResponsesModel } from "./common.js";
 import {
-	AgentsState,
+	type AgentsState,
 	IntentClassificationSchema,
 	type IntentLabel,
 } from "./state.js";
-import { getLogger } from "../utils/logger.js";
 
 const logger = getLogger("orchestrator");
 
-function buildResponsesModel(model: ModelConfig): ChatOpenAIResponses {
-	if (
-		model.provider !== "openai-compatible" ||
-		model.api_kind !== "responses"
-	) {
-		throw new Error(
-			`ChatOpenAIResponses requires an openai-compatible Responses model; ` +
-				`"${model.name}" is provider=${model.provider} api_kind=${model.api_kind}`,
-		);
-	}
-
-	// Agent Maestro accepts any bearer token but still requires a non-empty value.
-	const apiKey =
-		(model.api_key_env ? process.env[model.api_key_env] : undefined) ??
-		"agent-maestro-local";
-
-	return new ChatOpenAIResponses({
-		model: model.model,
-		apiKey,
-		maxTokens: model.max_tokens,
-		timeout: model.timeout_s * 1000,
-		configuration: { baseURL: model.endpoint },
-		...(model.reasoning_effort
-			? { reasoning: { effort: model.reasoning_effort } }
-			: {}),
-		...(model.temperature !== undefined
-			? { temperature: model.temperature }
-			: {}),
-	});
-}
-
-function getAgentPrompt(agentName: string): string {
+function getAgentPrompt(): string {
 	return `Analyze the user's utterance and classify their intent into one of the following categories. Only output the classification result in a structured format, without providing any answers or training advice.
 - "weekly_plan"：查看或调整某一周的训练计划
 - "master_plan"：查看或调整赛季 / 总体训练计划
@@ -60,7 +29,7 @@ export function getOrchestratorNode(
 	const model = buildResponsesModel(modelConfig);
 	// Create structured LLM that returns an IntentClassification object.
 	const structuredLlm = model.withStructuredOutput(IntentClassificationSchema);
-	const prompt = getAgentPrompt("orchestrator");
+	const prompt = getAgentPrompt();
 
 	const node: GraphNode<typeof AgentsState> = async (state) => {
 		const raw = await structuredLlm.invoke([
