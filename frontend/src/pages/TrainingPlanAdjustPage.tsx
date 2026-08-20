@@ -10,7 +10,6 @@ import {
   getPMC,
   getPlanDays,
   getStrideZones,
-  getTrainingPlan,
   getWeeks,
   sendMasterPlanAdjustMessage,
   type Activity,
@@ -21,7 +20,6 @@ import {
   type MyProfile,
   type PlanDay,
   type StrideZonesResponse,
-  type TrainingPlan,
 } from '../api'
 import { shanghaiDate, shanghaiToday } from '../lib/shanghai'
 import { findCurrentWeek } from '../lib/weeklyPlanView'
@@ -105,7 +103,6 @@ export default function TrainingPlanAdjustPage() {
   const { user } = useUser()
   const navigate = useNavigate()
   const [masterPlan, setMasterPlan] = useState<MasterPlan | null>(null)
-  const [fallbackPlan, setFallbackPlan] = useState<TrainingPlan | null>(null)
   const [profile, setProfile] = useState<MyProfile | null>(null)
   const [loadingPlan, setLoadingPlan] = useState(true)
   const [scanLoading, setScanLoading] = useState(false)
@@ -130,13 +127,21 @@ export default function TrainingPlanAdjustPage() {
     let cancelled = false
     setLoadingPlan(true)
     Promise.all([
-      getCurrentMasterPlan().catch(() => null),
-      getTrainingPlan(user).catch(() => null),
+      getCurrentMasterPlan(user).catch(() => null),
       getMyProfile().catch(() => null),
-    ]).then(([master, fallback, profileData]) => {
+    ]).then(([current, profileData]) => {
       if (cancelled) return
-      setMasterPlan(master)
-      setFallbackPlan(fallback)
+      setMasterPlan(current?.content_version === 2
+        ? {
+            ...current.plan,
+            plan_id: current.plan_id,
+            user_id: user,
+            status: current.status,
+            version: current.revision,
+            created_at: current.created_at,
+            updated_at: current.updated_at,
+          }
+        : null)
       setProfile(profileData)
     }).finally(() => {
       if (!cancelled) setLoadingPlan(false)
@@ -190,7 +195,7 @@ export default function TrainingPlanAdjustPage() {
 
   useEffect(() => loadPlan(), [loadPlan])
 
-  const currentPhases = useMemo(() => toDisplayPhases(masterPlan, fallbackPlan), [masterPlan, fallbackPlan])
+  const currentPhases = useMemo(() => toDisplayPhases(masterPlan), [masterPlan])
   const selectedDiff = useMemo(() => filterSelectedDiff(diff, selectedOpIds), [diff, selectedOpIds])
   const previewPhases = useMemo(
     () => applyDiffToDisplayPhases(currentPhases, selectedDiff),
@@ -343,7 +348,6 @@ export default function TrainingPlanAdjustPage() {
           mode={previewMode}
           onModeChange={setPreviewMode}
           masterPlan={masterPlan}
-          fallbackPlan={fallbackPlan}
           targetProfile={targetProfile}
           diff={selectedDiff}
           summary={diff?.ai_explanation ?? ''}
@@ -391,7 +395,6 @@ function PlanReferencePanel({
   mode,
   onModeChange,
   masterPlan,
-  fallbackPlan,
   targetProfile,
   diff,
   summary,
@@ -402,7 +405,6 @@ function PlanReferencePanel({
   mode: PreviewMode
   onModeChange: (mode: PreviewMode) => void
   masterPlan: MasterPlan | null
-  fallbackPlan: TrainingPlan | null
   targetProfile: TargetProfile
   diff: MasterPlanDiff | null
   summary: string
@@ -425,7 +427,6 @@ function PlanReferencePanel({
           kind="new"
           phases={previewPhases}
           masterPlan={masterPlan}
-          fallbackPlan={fallbackPlan}
           targetProfile={previewTarget}
           targetChanged={targetProfileChanged(targetProfile, previewTarget)}
           summary={summary}
@@ -435,7 +436,6 @@ function PlanReferencePanel({
           kind="current"
           phases={currentPhases}
           masterPlan={masterPlan}
-          fallbackPlan={fallbackPlan}
           targetProfile={targetProfile}
           targetChanged={false}
           summary={summary}
@@ -449,7 +449,6 @@ function PlanReferenceView({
   kind,
   phases,
   masterPlan,
-  fallbackPlan,
   targetProfile,
   targetChanged,
   summary,
@@ -457,7 +456,6 @@ function PlanReferenceView({
   kind: 'current' | 'new'
   phases: DisplayPhase[]
   masterPlan: MasterPlan | null
-  fallbackPlan: TrainingPlan | null
   targetProfile: TargetProfile
   targetChanged: boolean
   summary: string
@@ -471,7 +469,7 @@ function PlanReferenceView({
       <div className="pa-chead">
         <div className={`pa-ctag ${isNew ? 'newt' : ''}`}>{isNew ? '新计划 · 已生成' : '当前计划'}</div>
         <div className="pa-ctitle">{planReferenceTitle(targetProfile, totalWeeks)}{isNew ? '（已调整）' : ''}</div>
-        <div className="pa-cmeta">{planMeta(masterPlan, fallbackPlan, isNew)}</div>
+        <div className="pa-cmeta">{planMeta(masterPlan, isNew)}</div>
       </div>
       <div className="pa-cbody">
         {isNew && <PlanChanges summary={summary} />}
@@ -1034,7 +1032,7 @@ function buildScanState({
   }
 }
 
-function toDisplayPhases(masterPlan: MasterPlan | null, fallbackPlan: TrainingPlan | null): DisplayPhase[] {
+function toDisplayPhases(masterPlan: MasterPlan | null): DisplayPhase[] {
   if (masterPlan?.phases.length) {
     let cursor = 1
     const phases = masterPlan.phases.map((phase) => {
@@ -1063,25 +1061,7 @@ function toDisplayPhases(masterPlan: MasterPlan | null, fallbackPlan: TrainingPl
     }
     return phases
   }
-  let cursor = 1
-  return (fallbackPlan?.phases ?? []).map((phase, index) => {
-    const weekCount = weeksBetween(phase.start, phase.end) || 1
-    const displayPhase = {
-      id: `${index}-${phase.name}`,
-      name: phase.name,
-      start: phase.start,
-      end: phase.end,
-      focus: phase.name,
-      low: null,
-      high: null,
-      weekStart: cursor,
-      weekEnd: cursor + weekCount - 1,
-      weekCount,
-      keySessions: [],
-    }
-    cursor = displayPhase.weekEnd + 1
-    return displayPhase
-  })
+  return []
 }
 
 function filterSelectedDiff(diff: MasterPlanDiff | null, selectedOpIds: Set<string>): MasterPlanDiff | null {
@@ -1226,11 +1206,10 @@ function planReferenceTitle(target: TargetProfile, totalWeeks: number): string {
   return `从现在到${raceName} · ${totalWeeks || '--'} 周`
 }
 
-function planMeta(masterPlan: MasterPlan | null, fallbackPlan: TrainingPlan | null, isNew: boolean): string {
+function planMeta(masterPlan: MasterPlan | null, isNew: boolean): string {
   if (isNew) return 'STRIDE 重新规划 · 基于本次反馈 · 未保存'
-  if (masterPlan) return `训练总纲 · v${masterPlan.version} · ${masterPlan.updated_at.slice(0, 10)}`
-  if (fallbackPlan?.current_phase) return `旧版 plan.md · ${fallbackPlan.current_phase}`
-  return '训练总纲 · 当前版本'
+  if (masterPlan) return `赛季训练计划 · ${masterPlan.updated_at.slice(0, 10)}`
+  return '赛季训练计划 · 当前计划'
 }
 
 function planTotalWeeks(masterPlan: MasterPlan | null, phases: DisplayPhase[]): number {

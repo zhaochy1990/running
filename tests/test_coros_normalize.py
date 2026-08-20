@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from coros_sync.normalize import (
-    COROS_FEEL_MAP,
     COROS_SPORT_MAP,
     COROS_TRAIN_MAP,
     apply_to_detail,
 )
 from stride_core.models import ActivityDetail
-from stride_core.normalize import FeelLevel, NormalizedSport, TrainKind
+from stride_core.normalize import NormalizedSport, TrainKind
 
 
 def _empty_detail(**overrides) -> ActivityDetail:
@@ -56,6 +55,10 @@ class TestSportMap:
         assert COROS_SPORT_MAP.to_normalized(300) == NormalizedSport.SWIM_POOL
         assert COROS_SPORT_MAP.to_normalized(301) == NormalizedSport.SWIM_OPEN
 
+    def test_jump_rope_both_codes_resolve(self):
+        assert COROS_SPORT_MAP.to_normalized(503) == NormalizedSport.JUMP_ROPE
+        assert COROS_SPORT_MAP.to_normalized(901) == NormalizedSport.JUMP_ROPE
+
     def test_unknown_sport_falls_back_to_unknown(self):
         assert COROS_SPORT_MAP.to_normalized(99999) == NormalizedSport.UNKNOWN
 
@@ -85,23 +88,6 @@ class TestTrainMap:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# COROS_FEEL_MAP
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class TestFeelMap:
-    def test_all_codes_in_order(self):
-        assert COROS_FEEL_MAP.to_normalized(1) == FeelLevel.EXCELLENT
-        assert COROS_FEEL_MAP.to_normalized(2) == FeelLevel.GOOD
-        assert COROS_FEEL_MAP.to_normalized(3) == FeelLevel.NORMAL
-        assert COROS_FEEL_MAP.to_normalized(4) == FeelLevel.BAD
-        assert COROS_FEEL_MAP.to_normalized(5) == FeelLevel.AWFUL
-
-    def test_unknown_feel(self):
-        assert COROS_FEEL_MAP.to_normalized(99) == FeelLevel.UNKNOWN
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # apply_to_detail integration
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -113,7 +99,7 @@ class TestApplyToDetail:
         apply_to_detail(detail, raw)
         assert detail.sport == "run_outdoor"
         assert detail.train_kind == "threshold"
-        assert detail.feel == "good"
+        assert detail.feel == 4.0
 
     def test_strength_no_train_no_feel(self):
         detail = _empty_detail(sport_type=800)
@@ -141,7 +127,7 @@ class TestApplyToDetail:
         apply_to_detail(detail, {})
         assert detail.sport == "run_outdoor"
         assert detail.train_kind is None
-        assert detail.feel == "normal"
+        assert detail.feel == 6.0
 
     def test_zero_feel_type_treated_as_no_rating(self):
         # COROS sometimes returns 0 for "no feel rating"; should NOT map to a value.
@@ -174,7 +160,7 @@ class TestUpsertWritesNormalizedColumns:
         # Normalized values
         assert row["sport"] == "run_outdoor"
         assert row["train_kind"] == "threshold"
-        assert row["feel"] == "good"
+        assert row["feel"] == 4.0
         # Original COROS values still present (unchanged)
         assert row["sport_type"] == 100
         assert row["feel_type"] == 2

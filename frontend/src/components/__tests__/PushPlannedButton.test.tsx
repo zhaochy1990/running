@@ -43,6 +43,7 @@ describe('disabledReasonFor', () => {
   it.each<[StructuredStatus, boolean]>([
     ['fresh', false],
     ['authored', false],
+    ['canonical', false],
     ['stale', true],
     ['parse_failed', true],
     ['backfilled', true],
@@ -218,7 +219,7 @@ describe('PushPlannedButton', () => {
     expect(onPush).not.toHaveBeenCalled()
   })
 
-  it('shows "已推送" success label when already pushed', () => {
+  it('shows "已推送手表" success label when already pushed', () => {
     render(
       <PushPlannedButton
         session={makeSession({ scheduled_workout_id: 42 })}
@@ -227,7 +228,7 @@ describe('PushPlannedButton', () => {
         onPush={() => {}}
       />,
     )
-    expect(screen.getByRole('button', { name: '✓ 已推送' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '已推送手表' })).toBeInTheDocument()
   })
 
   it('renders strength push button when canPushStrength=true', () => {

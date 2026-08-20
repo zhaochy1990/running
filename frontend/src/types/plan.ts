@@ -1,4 +1,4 @@
-// Mirrors `src/stride_core/plan_spec.py` + the bits of
+// Legacy Python plan wire types. Mirrors `src/stride_core/plan_spec.py` + the bits of
 // `src/stride_core/workout_spec.py` we read on the frontend.
 //
 // Types mirror the Python `to_dict()` output (the JSON shape of
@@ -79,6 +79,7 @@ export type SessionKind = 'run' | 'strength' | 'rest' | 'cross' | 'note'
 export type StructuredStatus =
   | 'fresh'
   | 'authored'
+  | 'canonical'
   | 'stale'
   | 'parse_failed'
   | 'backfilled'
@@ -121,7 +122,9 @@ export interface PlannedNutrition {
   notes_md: string | null
 }
 
-export interface WeeklyPlanStructured {
+// This is not the TypeScript Coach Agent WeeklyPlanSchema. The legacy Python
+// contract still uses week_folder and includes persistence-only session fields.
+export interface LegacyWeeklyPlanStructured {
   schema: 'weekly-plan/v1'
   week_folder: string
   sessions: PlannedSession[]
@@ -144,13 +147,13 @@ export function isPushable(s: PlannedSession): boolean {
  * (LLM-fresh or author-direct). Both states represent canonical structure
  * the push pipeline can consume safely. */
 export function isFresh(status: StructuredStatus | null | undefined): boolean {
-  return status === 'fresh' || status === 'authored'
+  return status === 'fresh' || status === 'authored' || status === 'canonical'
 }
 
 /** Canonical structured states that allow push to watch. Alias of {@link isFresh}
  * with a more explicit name for new call sites. */
 export function isPushableStatus(status: StructuredStatus | null | undefined): boolean {
-  return status === 'fresh' || status === 'authored'
+  return status === 'fresh' || status === 'authored' || status === 'canonical'
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

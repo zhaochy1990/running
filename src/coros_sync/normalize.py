@@ -13,8 +13,9 @@ Usage from the COROS sync path:
 
 `apply_to_detail` mutates the dataclass in-place — the post-from_api hook
 is the one place that translates COROS-specific encodings (sport_type int,
-trainType int, feelType int) into the provider-agnostic enum values that
-stride_core / stride_server / the frontend speak.
+trainType int, feelType int) into the provider-agnostic normalized values
+(enum-string sport/train_kind, unified 0-10 numeric feel) that stride_core /
+stride_server / the frontend speak.
 """
 
 from __future__ import annotations
@@ -23,7 +24,6 @@ from typing import Any
 
 from stride_core.models import ActivityDetail
 from stride_core.normalize import (
-    FeelLevel,
     Mapper,
     NormalizedSport,
     TrainKind,
@@ -65,6 +65,7 @@ COROS_SPORT_MAP: Mapper[int, NormalizedSport] = Mapper(
         502: NormalizedSport.HIIT,
         503: NormalizedSport.JUMP_ROPE,
         504: NormalizedSport.ROWING,
+        901: NormalizedSport.JUMP_ROPE,
         # Walking / hiking
         600: NormalizedSport.WALK,
         601: NormalizedSport.HIKE,
@@ -110,25 +111,6 @@ COROS_TRAIN_MAP: Mapper[int, TrainKind] = Mapper(
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# COROS feelType (1-5) → FeelLevel
-# ─────────────────────────────────────────────────────────────────────────────
-#
-# COROS `feelType` is the post-run face emoji rating: 1=很好 → 5=很差. Mirror
-# the FeelLevel enum order.
-
-COROS_FEEL_MAP: Mapper[int, FeelLevel] = Mapper(
-    {
-        1: FeelLevel.EXCELLENT,
-        2: FeelLevel.GOOD,
-        3: FeelLevel.NORMAL,
-        4: FeelLevel.BAD,
-        5: FeelLevel.AWFUL,
-    },
-    unknown=FeelLevel.UNKNOWN,
-)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Application helper
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -146,7 +128,11 @@ def apply_to_detail(detail: ActivityDetail, raw_data: dict[str, Any]) -> None:
     Provider-agnostic fields written:
       - `detail.sport`       → NormalizedSport.value (str), e.g. "run_outdoor"
       - `detail.train_kind`  → TrainKind.value (str),       e.g. "interval"
-      - `detail.feel`        → FeelLevel.value (str),       e.g. "good"
+      - `detail.feel`        → unified numeric feel 0-10 (float): COROS
+        `feelType` (1=很好 → 5=很差) scaled ×2, so 1→2.0 … 5→10.0. Note the
+        COROS scale is inverted (low int = good), so a *lower* stored number
+        means a *better* feel; the Garmin adapter stores the same 0-10 scale
+        with the opposite direction (high = good).
 
     Original COROS columns (`sport_type` int, `train_type` localized str,
     `feel_type` int) are left untouched so existing readers (ability.py,
@@ -167,8 +153,7 @@ def apply_to_detail(detail: ActivityDetail, raw_data: dict[str, Any]) -> None:
         if kind is not None:
             detail.train_kind = kind.value
 
-    # feel: only when the user actually rated the run
+    # feel: only when the user actually rated the run. COROS feelType is a
+    # 1-5 emoji rating; store it on the unified 0-10 numeric scale as ×2.
     if detail.feel_type:
-        feel_norm = COROS_FEEL_MAP.to_normalized(detail.feel_type)
-        if feel_norm is not None:
-            detail.feel = feel_norm.value
+        detail.feel = float(detail.feel_type * 2)

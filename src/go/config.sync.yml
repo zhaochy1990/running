@@ -1,0 +1,20 @@
+# Non-secret defaults for stride-sync. The MySQL DSN is a secret and MUST be
+# supplied via environment: STRIDE_SYNC_MYSQL_DSN.
+# Any key is overridable by STRIDE_SYNC_<PATH> (with -/. -> _), e.g.
+#   sync.request-delay -> STRIDE_SYNC_SYNC_REQUEST_DELAY
+#   logger.level       -> STRIDE_SYNC_LOGGER_LEVEL
+
+logger:
+  format: console        # json | console
+  service-name: stride-sync
+  level: debug            # debug | info | warning | error
+  disable-caller: false
+  development: true
+
+mysql:
+  dsn: "root:root_password@tcp(127.0.0.1:3306)/stride"                # via STRIDE_SYNC_MYSQL_DSN, e.g. user:pass@tcp(127.0.0.1:3306)/stride
+
+sync:
+  jobs: 4                # parallel COROS detail-fetch workers (clamped 1..16)
+  request-delay: 500ms   # base per-request spacing; the shared limiter caps the
+                         # aggregate request rate at jobs/request-delay

@@ -11,7 +11,7 @@
 | 项 | 内容 |
 |----|------|
 | 中文名 | 周训练计划（weekly plan） |
-| 输入 | 当前 master plan 阶段、上周 feedback.md、最近身体信号（HRV/RHR/sleep/PMC）、用户文字 request |
+| 输入 | 当前 master plan 阶段、MySQL 上周周反馈、最近身体信号（HRV/RHR/sleep/PMC）、用户文字 request |
 | 输出 | `WeeklyPlan` 结构 + `plan.md` + `plan.json` |
 | 调用频率 | 每周 1 次（下周开始前） |
 | Pipeline | conversation: `week_chat` prompt；generation: `build_generation_graph` with `plan_type="week"` |
@@ -32,7 +32,7 @@
     // S2 不需要 target_race / prs / db_history_weeks 等 strategic 字段
   },
   "prev_plans_md": ["..."],          // 最近 2 周的 plan.md 全文
-  "prev_feedback_md": ["..."],       // 最近 2 周的 feedback.md 全文
+  "prev_feedback_md": ["..."],       // 最近 2 周 canonical weekly_feedback 正文
   "recent_signals": {                // 冻结的 DB snapshot
     "hrv_7d": [62, 60, 58, 56, 55, 54, 54],
     "rhr_7d": [48, 50, 51, 53, 54, 54, 54],
@@ -53,7 +53,7 @@
 |------|------|------|
 | `user_profile.phase` | ✅ | 决定本周强度 / 量结构 |
 | `prev_plans_md` | ✅ | 与上周衔接 |
-| `prev_feedback_md` | ✅ | 上周 RPE / 感受响应 |
+| `prev_feedback_md` | ✅ | 从 MySQL weekly_feedback 获取的上周 RPE / 感受响应 |
 | `recent_signals` | ✅ | HRV/RHR/sleep/PMC 触发降量逻辑 |
 | `target_week_start` | ✅ | 目标周的时间锚点（ISO 周一日期，跟存储无关） |
 | `user_request_md` | optional | 缺省 = autonomous generation，judge 跳过 `request_handling` axis |
@@ -76,15 +76,14 @@
 - 真实：从 `data/zhaochaoyi/logs/` 取过去半年 weekly folders 反向构造
 - 手工：边角 case（伤后第一周、HRV 极端下行、阶段切换）
 
-## S2 L1 Rules（现有 7 条）
+## S2 L1 Rules（现有 6 条）
 
 S2 L1 已实现在 `src/coach/graphs/generation/rule_filter.py`：
 
 | Rule | 严重度 | 检查 |
 |------|--------|------|
 | `schema_validity` | error | `WeeklyPlan.from_dict` 必须过 |
-| `weekly_progression` | error | 周量 ≤ 上周 × 1.10 |
-| `long_run_share` | error | 最长课 ≤ 35% 周量 |
+| `weekly_target_volume` | error | 周量命中本轮生成目标 ±1km |
 | `intensity_distribution` | error | Z4-Z5 ≤ 20% 周时长（80/20） |
 | `rest_days` | error | 每周 ≥ 1 全休 |
 | `injury_conflict` | error | injury list 关键词 vs strength exercise 名匹配 |
@@ -120,7 +119,7 @@ S1 baseline 跑稳后再启动。预计 3-4 天：
 - [ ] 从 `data/zhaochaoyi/logs/` 抽 7 个真实周构造 fixture + 3 个手工 edge case
 - [ ] 跑 baseline，存档 `.omc/eval/baselines/s2_v1.json`
 
-S2 L1 不需新写 —— `rule_filter.py` 已经有 7 条。`schema_validity` 是 L1 已 cover 的，L2 重复仅作双保险。
+S2 L1 不需新写 —— `rule_filter.py` 已经有 6 条。`schema_validity` 是 L1 已 cover 的，L2 重复仅作双保险。
 
 ## 跟其他 doc 的关系
 
@@ -129,4 +128,4 @@ S2 L1 不需新写 —— `rule_filter.py` 已经有 7 条。`schema_validity` �
 - [`coach-eval_S3.md`](coach-eval_S3.md) —— S3 daily Q&A evaluation
 - [`plan-json-schema.md`](plan-json-schema.md) —— S2 plan.json HARD schema gate
 - `src/stride_core/plan_spec.py` —— S2 schema source of truth
-- `src/coach/graphs/generation/rule_filter.py` —— S2 L1 现有 7 条规则
+- `src/coach/graphs/generation/rule_filter.py` —— S2 L1 现有 6 条规则

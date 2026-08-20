@@ -1,0 +1,14 @@
+{
+  "display_name": "gaohan",
+  "dob": "2003-09-25",
+  "sex": "male",
+  "height_cm": 170.0,
+  "weight_kg": 58.0,
+  "target_race": null,
+  "target_distance": null,
+  "target_race_date": null,
+  "target_time": null,
+  "pbs": null,
+  "weekly_mileage_km": null,
+  "constraints": null
+}

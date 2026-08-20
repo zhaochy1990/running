@@ -45,3 +45,13 @@ describe('ZoneChart HR open edges', () => {
     expect(text).toContain('148')
   })
 })
+
+describe('ZoneChart bar widths', () => {
+  it('uses each zone percentage instead of normalizing to the largest zone', () => {
+    const { getByTestId } = render(
+      <ZoneChart zones={[hr(1, null, 133), { ...hr(2, 133, 149), percent: 63 }]} type="hr" />,
+    )
+
+    expect(getByTestId('zone-bar-2')).toHaveStyle({ width: '63%' })
+  })
+})

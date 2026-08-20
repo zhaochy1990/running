@@ -1,6 +1,6 @@
 """Pure-Python rule pre-filter — see plan §7.3.
 
-Runs 7 deterministic safety checks against a freshly generated weekly plan
+Runs deterministic safety checks against a freshly generated weekly plan
 (``WeeklyPlan`` dict from ``stride_core.plan_spec``) before handing off to
 the (expensive) Claude reviewer. Any HARD-rule violation routes back to
 the generator without burning a reviewer round trip.
@@ -17,12 +17,9 @@ from typing import Any
 
 from stride_core.plan_spec import WeeklyPlan
 
-#: Canonical week-over-week UP-step cap. The per-week ``check_weekly_progression``
-#: gate is the authority every other module must satisfy, so this constant is
-#: single-sourced HERE and imported by ``week_schedule`` (the derive ramp that
-#: must emit ≤-cap descriptors) and ``season_rule_filter`` (the cross-phase
-#: aggregate that re-checks the same boundary) — see M1 in the Stage-3b I1 fix.
-#: They cannot drift from the gate they exist to satisfy.
+#: Canonical season-plan week-over-week UP-step cap. Single-sourced here for
+#: ``week_schedule`` and ``season_rule_filter``; the S2 single-week filter does
+#: not enforce a progression cap.
 MAX_WEEKLY_RAMP_RATIO = 1.10
 
 # Canonical injury → contraindicated-exercise keyword map. Single-source for any
@@ -137,30 +134,6 @@ def _total_planned_seconds(plan: WeeklyPlan) -> float:
 # ---------------------------------------------------------------------------
 
 
-def check_weekly_progression(
-    plan: WeeklyPlan, *, prev_week_km: float | None
-) -> list[RuleViolation]:
-    """Weekly mileage must be ≤ prev × 1.10 (or 0.6–0.8 for recovery weeks)."""
-    if prev_week_km is None or prev_week_km <= 0:
-        return []
-    cur_km = _total_run_distance_m(plan) / 1000.0
-    ratio = cur_km / prev_week_km
-    if ratio > MAX_WEEKLY_RAMP_RATIO:
-        return [
-            RuleViolation(
-                rule="weekly_progression",
-                severity="error",
-                message=(
-                    f"weekly mileage jumped {ratio:.2f}x (current {cur_km:.1f}km, "
-                    f"previous {prev_week_km:.1f}km); cap is "
-                    f"{MAX_WEEKLY_RAMP_RATIO:.2f}x"
-                ),
-                details={"current_km": cur_km, "previous_km": prev_week_km, "ratio": ratio},
-            )
-        ]
-    return []
-
-
 def check_weekly_target_volume(
     plan: WeeklyPlan,
     *,
@@ -197,35 +170,6 @@ def check_weekly_target_volume(
             },
         )
     ]
-
-
-def check_long_run_share(plan: WeeklyPlan) -> list[RuleViolation]:
-    """Longest run ≤ 35% of weekly mileage.
-
-    Only enforced when there are at least 2 runs in the week — a single-run
-    week trivially has share=100% and is a valid taper / off-day pattern,
-    not a 80/20 violation.
-    """
-    runs = [s for s in _run_sessions(plan) if (s.total_distance_m or 0) > 0]
-    if len(runs) < 2:
-        return []
-    total_m = _total_run_distance_m(plan)
-    if total_m <= 0:
-        return []
-    longest = max((s.total_distance_m or 0) for s in runs)
-    share = longest / total_m
-    if share > 0.35:
-        return [
-            RuleViolation(
-                rule="long_run_share",
-                severity="error",
-                message=(
-                    f"longest run is {share*100:.0f}% of weekly volume (limit 35%)"
-                ),
-                details={"longest_m": longest, "total_m": total_m, "share": share},
-            )
-        ]
-    return []
 
 
 def check_intensity_distribution(
@@ -377,7 +321,6 @@ def check_ctl_ramp(
 def run_rule_filter(
     plan_dict: dict,
     *,
-    prev_week_km: float | None = None,
     target_weekly_km: float | None = None,
     prev_ctl: float | None = None,
     injuries: Iterable[str] | None = None,
@@ -398,11 +341,9 @@ def run_rule_filter(
     if violations:
         return RuleFilterReport(violations=violations)
     plan = WeeklyPlan.from_dict(plan_dict)
-    violations.extend(check_weekly_progression(plan, prev_week_km=prev_week_km))
     violations.extend(
         check_weekly_target_volume(plan, target_weekly_km=target_weekly_km)
     )
-    violations.extend(check_long_run_share(plan))
     violations.extend(
         check_intensity_distribution(
             plan, z45_pace_threshold_s_km=z45_pace_threshold_s_km

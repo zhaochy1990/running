@@ -20,7 +20,7 @@ allow_insecure_without_key = false
 audience = "app_62978bf2803346878a2e4805"
 
 [auth_service]
-base_url = "https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io"
+base_url = "https://124.221.38.59"
 
 # NOTE: LLM / commentary configuration intentionally lives in
 # `config/coach.{toml,prod.toml}` (loaded via `coach.runtime.config`).

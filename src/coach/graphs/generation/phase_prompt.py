@@ -37,7 +37,7 @@ from stride_core.master_plan import PhaseType
 from coach.schemas.specialist_context import PaceTargets, VolumeTargets
 
 from .phase_specialists import get_specialist
-from .weekly_plan_contract import WEEKLY_HARD_RULES, WEEKLY_PLAN_FIELDS_CONTRACT
+from .weekly_plan_contract import WEEKLY_HARD_RULES, weekly_plan_fields_contract
 
 
 # ---------------------------------------------------------------------------
@@ -73,10 +73,13 @@ class PhaseWeekSpec:
 PHASE_WEEKS_JSON_CONTRACT_SENTINEL = "PHASE_WEEKS_JSON_CONTRACT/v1"
 
 
-def _render_phase_contract(n_weeks: int) -> str:
+def _render_phase_contract(n_weeks: int, *, structured: bool = False) -> str:
     """The phase batch contract = the shared WeeklyPlan field body wrapped in a
     ``{"weeks":[ … × N ]}`` envelope + an explicit "exactly N weeks, week i
     matches spec i" instruction.
+
+    ``structured`` toggles aspirational (spec=null) vs watch-pushable
+    (run/strength carry a structured spec) session bodies.
     """
     return f"""\
 === {PHASE_WEEKS_JSON_CONTRACT_SENTINEL} ===
@@ -91,7 +94,7 @@ def _render_phase_contract(n_weeks: int) -> str:
 `weeks` 数组里第 i 个 WeeklyPlan 必须对应下方「逐周计划表」第 i 行：原样回填该行的
 `week_folder`，里程贴近该行的目标周量，并在该行注入的 volume_targets 预算内分配课程。
 
-{WEEKLY_PLAN_FIELDS_CONTRACT}
+{weekly_plan_fields_contract(structured=structured)}
 
 【批量硬约束】
 - `weeks` 数组长度必须 exactly {n_weeks}（恰好 {n_weeks} 周），不多不少；顺序与逐周表一致。
@@ -209,6 +212,7 @@ def build_phase_system_prompt(
     context_block: str,
     milestone_summary: str | None = None,
     feedback: str | None = None,
+    structured: bool = False,
 ) -> str:
     """Compose the phase-at-once generation system prompt.
 
@@ -243,7 +247,7 @@ def build_phase_system_prompt(
 你是专业马拉松训练教练，负责一次性生成**整个阶段**（共 {n_weeks} 周）的结构化训练计划。\
 当前阶段：{specialist.name}。
 
-{_render_phase_contract(n_weeks)}
+{_render_phase_contract(n_weeks, structured=structured)}
 
 {specialist.guidance}
 

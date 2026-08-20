@@ -38,7 +38,7 @@ LEGACY_DIRECT_SQL_BUDGET: dict[str, int] = {
     "stride_server/coach_adapters/specialist_tools.py": 1,
     "stride_server/coach_adapters/tool_impls/read_impls.py": 4,
     "stride_server/commentary_ai.py": 7,
-    "stride_server/master_plan_generator.py": 9,
+    "stride_server/master_plan_generator.py": 8,
     "stride_server/phase_summary.py": 2,
     "stride_server/routes/ability.py": 1,
     "stride_server/routes/account.py": 2,

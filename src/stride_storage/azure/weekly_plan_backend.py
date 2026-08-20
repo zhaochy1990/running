@@ -187,6 +187,36 @@ class FileWeeklyPlanStore(WeeklyPlanStore):
         value = raw.get("source_hash")
         return str(value) if value is not None else None
 
+    def update_notes(
+        self,
+        user_id: str,
+        folder: str,
+        *,
+        notes_md: str | None,
+        coach_notes: str | None,
+        expected_plan: WeeklyPlan,
+    ) -> bool:
+        key = _week_key(folder)
+        if key is None:
+            return False
+        with self._lock:
+            data = _read_json(_plans_file())
+            bucket = data.get(user_id, {})
+            raw = bucket.get(key)
+            if raw is None:
+                raw = bucket.get(folder)
+            if not isinstance(raw, dict) or not isinstance(raw.get("plan"), dict):
+                return False
+            current = WeeklyPlan.from_dict(raw["plan"])
+            if current != expected_plan:
+                return False
+            raw["plan"] = json.loads(
+                _plan_json(replace(current, notes_md=notes_md, coach_notes=coach_notes))
+            )
+            raw["updated_at"] = _now_iso()
+            _write_json(_plans_file(), data)
+            return True
+
     def get_current_plan(self, user_id: str, on_date: str) -> WeeklyPlan | None:
         rows = _read_json(_plans_file()).get(user_id, {})
         matches = [
@@ -352,6 +382,51 @@ class AzureTableWeeklyPlanStore(WeeklyPlanStore):
                 return None
         value = entity.get("source_hash")
         return str(value) if value is not None else None
+
+    def update_notes(
+        self,
+        user_id: str,
+        folder: str,
+        *,
+        notes_md: str | None,
+        coach_notes: str | None,
+        expected_plan: WeeklyPlan,
+    ) -> bool:
+        from azure.core import MatchConditions
+        from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
+        from azure.data.tables import UpdateMode
+
+        key = _week_key(folder)
+        if key is None:
+            return False
+        table = self._plans.table()
+        try:
+            entity = table.get_entity(partition_key=user_id, row_key=key)
+        except ResourceNotFoundError:
+            try:
+                entity = table.get_entity(partition_key=user_id, row_key=folder)
+            except ResourceNotFoundError:
+                return False
+        current = WeeklyPlan.from_dict(json.loads(entity["plan_json"]))
+        if current != expected_plan:
+            return False
+        updated = replace(current, notes_md=notes_md, coach_notes=coach_notes)
+        payload = dict(entity)
+        payload["plan_json"] = _plan_json(updated)
+        payload["updated_at"] = _now_iso()
+        etag = getattr(entity, "metadata", {}).get("etag")
+        try:
+            table.update_entity(
+                payload,
+                mode=UpdateMode.REPLACE,
+                etag=etag,
+                match_condition=MatchConditions.IfNotModified,
+            )
+        except HttpResponseError as exc:
+            if getattr(exc, "status_code", None) in (409, 412):
+                return False
+            raise
+        return True
 
     def get_current_plan(self, user_id: str, on_date: str) -> WeeklyPlan | None:
         entities = list(

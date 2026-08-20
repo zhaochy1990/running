@@ -1,0 +1,12 @@
+# Copy this file to config.local.yml and replace the local MySQL DSN.
+# config.local.yml is ignored and must not be committed.
+mysql:
+  dsn: "replace-with-local-mysql-dsn"
+
+race-detection:
+  api-kind: "responses"
+  endpoint: "http://127.0.0.1:23333/api/openai/v1"
+  api-key: "local-race-golden"
+  model: "gpt-5.6-luna"
+  timeout: "90s"
+  max-concurrency: 8

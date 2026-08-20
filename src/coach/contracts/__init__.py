@@ -8,6 +8,13 @@ dispatcher / Aggregator) and the domain specialists. No infrastructure imports;
 from __future__ import annotations
 
 from .target import TargetKind, TargetRef
+from .review_context import (
+    MAX_REVIEW_CONTEXT_BYTES,
+    REVIEW_CONTEXT_KEY,
+    ReviewContext,
+    WeeklyCreateReviewContext,
+)
+from .events import CoachEvent, CoachEventStatus, CoachEventType
 from .specialist import (
     ArtifactRef,
     ScopedContext,
@@ -25,6 +32,7 @@ from .resolver import (
     TargetHint,
 )
 from .plan import CallPlan, SpecialistCall
+from .season_impact import SeasonImpact, SeasonImpactLevel
 from .turn import ProposalCard, Turn, TurnResponse
 from .memory import AthleteMemory, MemoryKind, MemoryStatus, MemoryWrite
 from .registry import SpecialistEntry, SpecialistRegistry, SpecialistRunner
@@ -33,6 +41,15 @@ __all__ = [
     # target
     "TargetKind",
     "TargetRef",
+    # review context
+    "MAX_REVIEW_CONTEXT_BYTES",
+    "REVIEW_CONTEXT_KEY",
+    "ReviewContext",
+    "WeeklyCreateReviewContext",
+    # events
+    "CoachEvent",
+    "CoachEventStatus",
+    "CoachEventType",
     # specialist
     "ArtifactRef",
     "ScopedContext",
@@ -51,6 +68,9 @@ __all__ = [
     # plan
     "CallPlan",
     "SpecialistCall",
+    # season impact
+    "SeasonImpact",
+    "SeasonImpactLevel",
     # turn
     "ProposalCard",
     "TurnResponse",

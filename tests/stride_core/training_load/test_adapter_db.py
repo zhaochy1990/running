@@ -389,6 +389,33 @@ def test_backfill_refreshes_calibration_then_recomputes_recent_load_window(db):
     assert summary.load.end == date(2026, 5, 20)
     assert db.fetch_activity_training_load("old_run") is None
     assert db.fetch_activity_training_load("recent_run") is not None
+    assert db.is_training_load_backfill_complete(
+        TRAINING_LOAD_MODEL_VERSION
+    ) is False
+
+
+def test_full_backfill_marks_current_algorithm_complete(db):
+    db.upsert_daily_health(
+        DailyHealth("2026-05-20", None, None, 50, None, None, None, None, None)
+    )
+    db.upsert_activity(
+        _make_activity(
+            "recent_run",
+            "2026-05-20T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+
+    summary = backfill_training_load(
+        db, as_of_date="2026-05-20", load_lookback_days=365
+    )
+
+    assert summary.load.daily_rows_written > 0
+    assert db.is_training_load_backfill_complete(
+        TRAINING_LOAD_MODEL_VERSION
+    ) is True
 
 
 def test_backfill_persist_false_uses_refreshed_calibration_without_writes(db):
@@ -505,7 +532,10 @@ def test_recompute_persists_activity_and_daily_load_idempotently(db):
     assert json.loads(activity_row["reasons_json"]) == []
 
 
-def test_recompute_retains_superseded_daily_model_version(db):
+def test_recompute_overwrites_legacy_daily_row_in_place(db):
+    """Canonical storage: a recompute overwrites the same-date row (one row per
+    date) and stamps it with the current algorithm_version — it does not leave a
+    stale legacy-version row behind."""
     db._conn.execute(
         "INSERT INTO daily_training_load "
         "(date, algorithm_version, training_dose, acute_load, chronic_load) "
@@ -527,27 +557,29 @@ def test_recompute_retains_superseded_daily_model_version(db):
     )
 
     rows = db.query(
-        "SELECT algorithm_version FROM daily_training_load "
-        "WHERE date = '2026-05-01' ORDER BY algorithm_version"
+        "SELECT algorithm_version, training_dose FROM daily_training_load "
+        "WHERE date = '2026-05-01'"
     )
-    assert [row["algorithm_version"] for row in rows] == [1, TRAINING_LOAD_MODEL_VERSION]
+    assert len(rows) == 1
+    assert rows[0]["algorithm_version"] == TRAINING_LOAD_MODEL_VERSION
+    assert rows[0]["training_dose"] != 999
 
 
-def test_fetch_daily_training_load_filters_current_version(db):
-    db._conn.executemany(
+def test_fetch_daily_training_load_returns_canonical_row(db):
+    """The reader surfaces the canonical row regardless of which version stamped
+    it — no current-version filtering."""
+    db._conn.execute(
         "INSERT INTO daily_training_load "
         "(date, algorithm_version, training_dose, acute_load, chronic_load) "
-        "VALUES (?, ?, ?, ?, ?)",
-        [
-            ("2026-05-01", 1, 999, 999, 999),
-            ("2026-05-01", TRAINING_LOAD_MODEL_VERSION, 10, 10, 20),
-        ],
+        "VALUES ('2026-05-01', 1, 10, 10, 20)"
     )
     db._conn.commit()
 
     rows = db.fetch_daily_training_load("2026-05-01", "2026-05-01")
 
-    assert [row["algorithm_version"] for row in rows] == [TRAINING_LOAD_MODEL_VERSION]
+    assert len(rows) == 1
+    assert rows[0]["algorithm_version"] == 1
+    assert rows[0]["training_dose"] == 10
 
 
 def test_recompute_persist_false_returns_summary_without_writes(db):
@@ -619,6 +651,46 @@ def test_recompute_does_not_normalize_raw_trimp_when_threshold_hr_is_unavailable
     assert row["training_dose"] is None
     assert row["excluded_from_pmc"] == 1
     assert "hr_calibration_missing" in json.loads(row["reasons_json"])
+
+
+def test_partial_window_recompute_keeps_readiness_baseline_across_shards(db):
+    start = date(2026, 5, 1)
+    for offset in range(15):
+        day = start + timedelta(days=offset)
+        db.upsert_daily_health(
+            DailyHealth(
+                day.strftime("%Y%m%d"),
+                None,
+                None,
+                50,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+        )
+    current = start + timedelta(days=15)
+    db.upsert_daily_health(
+        DailyHealth(
+            current.strftime("%Y%m%d"),
+            None,
+            None,
+            56,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    )
+
+    recompute_training_load(db, start=start, end=current - timedelta(days=1))
+    recompute_training_load(db, start=current, end=current)
+
+    row = db.fetch_daily_training_load(current.isoformat(), current.isoformat())[0]
+    assert row["readiness_gate"] == "yellow"
+    assert "rhr_elevated" in json.loads(row["readiness_reasons_json"])
 
 
 def test_partial_window_recompute_seeds_atl_ctl_from_prior_day(db):
@@ -889,3 +961,90 @@ def test_build_activity_inputs_fetches_feedback_without_n_plus_one(db, monkeypat
     assert [item.rpe for item in inputs] == [4, 5, 6]
     feedback_queries = [sql for sql in queries if "FROM activity_feedback" in sql]
     assert len(feedback_queries) == 1
+
+
+def test_recompute_reports_monotonic_progress_to_callback(db):
+    """recompute_training_load must drive a ``progress=(processed, total)``
+    callback so the worker's heartbeat can surface backfill progress. The final
+    tick must satisfy processed == total."""
+    for day in range(1, 6):
+        db.upsert_activity(
+            _make_activity(
+                f"run{day}",
+                f"2026-05-0{day}T00:00:00+00:00",
+                samples=_timeseries(hr=170, speed_mps=4.0),
+            ),
+            provider="garmin",
+        )
+
+    ticks: list[tuple[int, int]] = []
+    recompute_training_load(
+        db,
+        start="2026-05-01",
+        end="2026-05-05",
+        progress=lambda processed, total: ticks.append((processed, total)),
+    )
+
+    assert ticks, "progress callback was never invoked"
+    processed_seq = [p for p, _ in ticks]
+    assert processed_seq == sorted(processed_seq), "processed count must be monotonic"
+    totals = {t for _, t in ticks}
+    assert len(totals) == 1, "total must be stable across ticks"
+    final_processed, final_total = ticks[-1]
+    assert final_processed == final_total == 5
+
+
+def test_recompute_progress_callback_is_optional(db):
+    """Omitting ``progress`` keeps the existing behavior — no error."""
+    db.upsert_activity(
+        _make_activity("run1", "2026-05-01T00:00:00+00:00", samples=_timeseries())
+    )
+
+    summary = recompute_training_load(db, start="2026-05-01", end="2026-05-01")
+
+    assert summary.activities_processed == 1
+
+
+def test_recompute_does_not_retain_all_timeseries_in_memory(db):
+    """Backfilling a year of activities must not accumulate every activity's
+    timeseries at once. Processing many activities should not grow peak memory
+    proportionally to the whole corpus — the adapter must stream/release each
+    activity's samples rather than hold the full set simultaneously.
+
+    Behavior-first: we compare peak allocation for a large batch against a small
+    one and require sub-linear growth (a full retain would scale ~N×)."""
+    import tracemalloc
+
+    def _seed(n: int) -> None:
+        db.query("DELETE FROM activities")
+        db.query("DELETE FROM activity_training_load")
+        db.query("DELETE FROM daily_training_load")
+        for i in range(n):
+            d = date(2026, 1, 1) + timedelta(days=i)
+            db.upsert_activity(
+                _make_activity(
+                    f"run{i}",
+                    f"{d.isoformat()}T00:00:00+00:00",
+                    samples=_timeseries(duration_s=3600, hr=170, speed_mps=4.0),
+                ),
+                provider="garmin",
+            )
+
+    def _peak_for(n: int) -> int:
+        _seed(n)
+        tracemalloc.start()
+        recompute_training_load(db, start="2026-01-01", end=(date(2026, 1, 1) + timedelta(days=n - 1)).isoformat())
+        _cur, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        return peak
+
+    small = _peak_for(5)
+    large = _peak_for(40)
+
+    # 8× the activities must not cost anywhere near 8× peak memory if samples are
+    # released per-activity. Allow generous headroom for fixed overhead but fail
+    # on a full-retain (which would scale roughly linearly with N).
+    assert large < small * 4, (
+        f"peak memory grew near-linearly (small={small}, large={large}) — "
+        "timeseries are likely retained for the whole corpus"
+    )

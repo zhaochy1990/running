@@ -109,13 +109,140 @@ describe('master plan API clients', () => {
     vi.restoreAllMocks()
   })
 
-  it('returns null when the current master plan endpoint has no active plan', async () => {
+  it('parses the Markdown current season-plan envelope', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      content_version: 1,
+      status: 'active',
+      plan_id: 'plan-markdown',
+      goal_id: 'goal-1',
+      revision: null,
+      created_at: '2026-05-01T00:00:00Z',
+      updated_at: '2026-06-01T00:00:00Z',
+      plan: '# Markdown season plan',
+    })))
+
+    const result = await getCurrentMasterPlan('user-1')
+
+    expect(result?.content_version).toBe(1)
+    if (result?.content_version !== 1) throw new Error('expected Markdown plan')
+    expect(result.plan).toBe('# Markdown season plan')
+    expect(result.revision).toBeNull()
+  })
+
+  it('parses the structured current season-plan envelope', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      content_version: 2,
+      status: 'active',
+      plan_id: 'plan-structured',
+      goal_id: 'goal-1',
+      revision: 3,
+      created_at: '2026-05-01T00:00:00Z',
+      updated_at: '2026-06-01T00:00:00Z',
+      plan: {
+        goal: { goal_id: 'goal-1', race_name: '目标马拉松', distance: 'FM', race_date: '2026-10-11', target_time: '03:15:00', timezone: 'Asia/Shanghai' },
+        start_date: '2026-05-04',
+        end_date: '2026-10-11',
+        total_weeks: 23,
+        phases: [],
+        milestones: [],
+        weeks: [],
+        training_principles: ['逐步加量'],
+        generated_by: 'planner',
+        current_phase_id: null,
+        current_week_number: null,
+        next_milestone: null,
+      },
+    })))
+
+    const result = await getCurrentMasterPlan('user-1')
+
+    expect(result?.content_version).toBe(2)
+    if (result?.content_version !== 2) throw new Error('expected structured plan')
+    expect(result.plan.goal.goal_id).toBe('goal-1')
+    expect(result.revision).toBe(3)
+  })
+
+  it('returns null only when the current season-plan endpoint returns 404', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ detail: 'not found' }), { status: 404 }))
 
-    await expect(getCurrentMasterPlan()).resolves.toBeNull()
-    expect(fetchMock).toHaveBeenCalledWith('/api/users/me/master-plan/current', { method: 'GET', headers: {}, body: undefined })
+    await expect(getCurrentMasterPlan('user-1')).resolves.toBeNull()
+    expect(fetchMock).toHaveBeenCalledWith('/api/users/user-1/master-plan/current', { method: 'GET', headers: {}, body: undefined })
+  })
+
+  it.each([
+    ['invalid revision', {
+      content_version: 2,
+      status: 'active',
+      plan_id: 'plan-structured',
+      goal_id: 'goal-1',
+      revision: null,
+      created_at: '2026-05-01T00:00:00Z',
+      updated_at: '2026-06-01T00:00:00Z',
+      plan: {},
+    }],
+    ['malformed nested content', {
+      content_version: 2,
+      status: 'active',
+      plan_id: 'plan-structured',
+      goal_id: 'goal-1',
+      revision: 1,
+      created_at: '2026-05-01T00:00:00Z',
+      updated_at: '2026-06-01T00:00:00Z',
+      plan: {
+        goal: { goal_id: 'goal-1' },
+        start_date: '2026-05-04',
+        end_date: '2026-10-11',
+        total_weeks: 23,
+        phases: [{ id: 'phase-with-missing-fields' }],
+        milestones: [],
+        weeks: [],
+        training_principles: ['逐步加量'],
+        generated_by: 'planner',
+        current_phase_id: null,
+        current_week_number: null,
+        next_milestone: null,
+      },
+    }],
+  ])('rejects %s in current season-plan envelopes', async (_case, payload) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(payload)))
+
+    await expect(getCurrentMasterPlan('user-1')).rejects.toThrow('Invalid current season plan')
+  })
+
+  it.each([
+    { status: 'available', unavailable_reason: 'planned_session_uncomputable' },
+    { status: 'unavailable', unavailable_reason: 'unexpected_reason' },
+    { status: 'unavailable', unavailable_reason: null },
+  ])('rejects invalid training-load projection %#', async (projection) => {
+    const plan = {
+      content_version: 2,
+      status: 'active',
+      plan_id: 'plan-structured',
+      goal_id: 'goal-1',
+      revision: 1,
+      created_at: '2026-05-01T00:00:00Z',
+      updated_at: '2026-06-01T00:00:00Z',
+      plan: {
+        goal: { goal_id: 'goal-1', race_name: '目标马拉松', distance: 'FM', race_date: '2026-10-11', target_time: '03:15:00', timezone: 'Asia/Shanghai' },
+        start_date: '2026-05-04', end_date: '2026-10-11', total_weeks: 23,
+        phases: [], milestones: [], weeks: [], training_principles: ['逐步加量'], generated_by: 'planner',
+        current_phase_id: null, current_week_number: null, next_milestone: null,
+        training_load_projection: { ...projection, calculated_at: '2026-05-01T00:00:00Z' },
+      },
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(plan)))
+    await expect(getCurrentMasterPlan('user-1')).rejects.toThrow('Invalid current season plan')
+  })
+
+  it('rejects non-404 current season-plan failures', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(
+      JSON.stringify({ error: 'internal error' }),
+      { status: 500 },
+    ))
+
+    await expect(getCurrentMasterPlan('user-1')).rejects.toMatchObject({ status: 500 })
   })
 
   it('posts adjust messages with history to the active master plan endpoint', async () => {

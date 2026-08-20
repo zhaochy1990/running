@@ -19,7 +19,7 @@ abstract final class Env {
   static const String authUrl = String.fromEnvironment(
     'AUTH_URL',
     defaultValue:
-        'https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io',
+        'https://124.221.38.59',
   );
 
   /// OAuth2 client_id for STRIDE app on the auth-service.

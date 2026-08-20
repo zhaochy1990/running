@@ -1,4 +1,6 @@
 import { refreshAccessToken } from './store/authStore'
+import { apiUrl } from './lib/apiRouting'
+import type { ChatResponse, CoachReviewContext, CoachTargetRef, SessionHistoryResponse } from './types/coachChat'
 import type {
   AbandonedScheduledWorkout,
   PlannedNutrition,
@@ -10,7 +12,6 @@ import type {
 const BASE = '/api'
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
-
 function authHeaders(): HeadersInit {
   const token = sessionStorage.getItem('access_token')
   return token ? { Authorization: `Bearer ${token}` } : {}
@@ -27,6 +28,7 @@ async function apiFetch(
   method: HttpMethod,
   path: string,
   body?: unknown,
+  headers: HeadersInit = {},
 ): Promise<Response> {
   // POST/PUT/PATCH historically always set Content-Type, even when the
   // caller passes no body (e.g. postOnboardingComplete). Preserved.
@@ -35,14 +37,14 @@ async function apiFetch(
   // access_token from sessionStorage, which refreshAccessToken mutates.
   const buildInit = (): RequestInit => ({
     method,
-    headers: { ...authHeaders(), ...(setsJsonHeader ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { ...authHeaders(), ...(setsJsonHeader ? { 'Content-Type': 'application/json' } : {}), ...headers },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
-  let res = await fetch(`${BASE}${path}`, buildInit())
+  let res = await fetch(apiUrl(method, `${BASE}${path}`), buildInit())
   if (res.status === 401) {
     try {
       await refreshAccessToken()
-      res = await fetch(`${BASE}${path}`, buildInit())
+      res = await fetch(apiUrl(method, `${BASE}${path}`), buildInit())
     } catch {
       sessionStorage.clear()
       window.location.href = '/login'
@@ -52,9 +54,18 @@ async function apiFetch(
   return res
 }
 
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(status: number) {
+    super(`API error: ${status}`)
+    this.status = status
+  }
+}
+
 async function fetchJSON<T>(path: string): Promise<T> {
   const res = await apiFetch('GET', path)
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  if (!res.ok) throw new ApiError(res.status)
   return res.json()
 }
 
@@ -65,8 +76,10 @@ async function bodyResult<T>(res: Response): Promise<JsonResult<T>> {
   return { ok: res.ok, status: res.status, data: data as T }
 }
 
-const postJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
-  bodyResult<T>(await apiFetch('POST', path, body))
+const postJSON = async <T>(path: string, body?: unknown, headers?: HeadersInit): Promise<JsonResult<T>> =>
+  bodyResult<T>(await apiFetch('POST', path, body, headers))
+const getJSON = async <T>(path: string): Promise<JsonResult<T>> =>
+  bodyResult<T>(await apiFetch('GET', path))
 const putJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
   bodyResult<T>(await apiFetch('PUT', path, body))
 const patchJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
@@ -83,7 +96,9 @@ export interface MyProfile {
   display_name: string
   profile: Record<string, unknown> | null
   onboarding: {
-    coros_ready: boolean
+    // Python uses the legacy provider-agnostic name; Go uses watch_ready.
+    coros_ready?: boolean
+    watch_ready?: boolean
     profile_ready: boolean
     completed_at: string | null
   }
@@ -91,8 +106,15 @@ export interface MyProfile {
   // it. Currently the /api/users/me/profile route doesn't return this field,
   // so callers should treat `undefined` as "fall back to coros default".
   provider?: string | null
+  running_age_range?: RunningAgeRange
   features?: {
     coach_agent_weekly_plan: boolean
+    coach_chat?: boolean
+    coach_chat_debug?: boolean
+    coach_chat_max_message_chars?: number
+    // When true, onboarding blocks on a full watch-history sync (minutes) before
+    // entering the app; when false/undefined, the fast health-only flow is used.
+    sync_data_at_onboarding?: boolean
   }
 }
 
@@ -100,7 +122,7 @@ export function getMyProfile() {
   return fetchJSON<MyProfile>('/users/me/profile')
 }
 
-export type TargetDistance = '5K' | '10K' | 'HM' | 'FM'
+export type RunningAgeRange = 'unknown' | 'lt_6m' | '6m_1y' | '1y_3y' | '3y_plus'
 
 export interface ProfileIn {
   display_name: string
@@ -108,34 +130,20 @@ export interface ProfileIn {
   sex: string
   height_cm: number
   weight_kg: number
-  // Race goal fields — optional during onboarding, filled later in training
-  // plan setup when the user chooses a target race.
-  target_race?: string
-  target_distance?: TargetDistance
-  target_race_date?: string
-  target_time?: string
-  pbs?: Record<string, string>
-  weekly_mileage_km?: number
-  constraints?: string
+  running_age_range: RunningAgeRange
 }
 
 export type ProfilePatchIn = Partial<ProfileIn>
 
-export function postCorosLogin(email: string, password: string) {
-  return postJSON<{ region?: string; user_id?: string; error?: string; detail?: unknown }>(
-    '/users/me/coros/login',
-    { email, password },
-  )
-}
-
-export function postGarminLogin(
+export function postWatchLogin(
+  provider: 'coros' | 'garmin',
   email: string,
   password: string,
   region: 'cn' | 'global' = 'cn',
 ) {
-  return postJSON<{ region?: string; user_id?: string; error?: string; detail?: unknown }>(
-    '/users/me/garmin/login',
-    { email, password, region },
+  return postJSON<{ ok?: boolean; region?: string; user_id?: string; error?: string }>(
+    '/users/me/watch/login',
+    { provider, email, password, region },
   )
 }
 
@@ -143,33 +151,41 @@ export function postProfile(profile: ProfileIn) {
   return postJSON<{ error?: string; detail?: unknown }>('/users/me/profile', profile)
 }
 
-export type RunningAge = 'lt_6m' | '6m_1y' | '1y_3y' | '3y_plus'
-export type CurrentWeeklyKm = 'lt_20' | '20_40' | '40_60' | '60_plus'
-export type RunningPbDistance = '5K' | '10K' | 'HM' | 'FM'
-
-export interface RunningProfilePb {
-  distance: RunningPbDistance
-  time: string
+export interface InjuryRecord {
+  id: string
+  description: string
+  recovery_status: 'active' | 'recovered'
+  running_restriction: 'none' | 'easy_only' | 'no_running'
+  created_at: string
+  updated_at: string
 }
 
-export interface RunningProfileInput {
-  running_age: RunningAge
-  current_weekly_km: CurrentWeeklyKm
-  pbs: RunningProfilePb[]
-  injuries: string[]
+export interface InjuriesResponse {
+  items: InjuryRecord[]
+  next_cursor: string | null
 }
 
-export interface RunningProfile extends RunningProfileInput {
-  profile_id?: string
-  created_at?: string
-  updated_at?: string
+export type InjuryInput = Pick<InjuryRecord, 'description' | 'recovery_status' | 'running_restriction'>
+
+export function listInjuries(limit = 50, cursor?: string) {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (cursor) params.set('cursor', cursor)
+  return fetchJSON<InjuriesResponse>(`/users/me/injuries?${params.toString()}`)
 }
 
-export function createRunningProfile(profile: RunningProfileInput) {
-  return postJSON<RunningProfile & { error?: string; detail?: unknown }>(
-    '/users/me/running-profile',
-    profile,
+export function createInjury(input: InjuryInput) {
+  return postJSON<InjuryRecord & { error?: string; detail?: unknown }>('/users/me/injuries', input)
+}
+
+export function updateInjury(injuryId: string, input: InjuryInput) {
+  return putJSON<InjuryRecord & { error?: string; detail?: unknown }>(
+    `/users/me/injuries/${encodeURIComponent(injuryId)}`,
+    input,
   )
+}
+
+export function deleteInjury(injuryId: string) {
+  return deleteJSON<Record<string, never>>(`/users/me/injuries/${encodeURIComponent(injuryId)}`)
 }
 
 export function patchMyProfile(patch: ProfilePatchIn) {
@@ -208,8 +224,10 @@ export function disconnectWatch() {
   return deleteJSON<{ ok: boolean; provider: string }>('/users/me/watch')
 }
 
-export function postOnboardingComplete() {
-  return postJSON<{ state?: string; error?: string; detail?: string; progress?: SyncProgress }>('/users/me/onboarding/complete')
+export function postOnboardingComplete(runId: string) {
+  return postJSON<{ state?: string; error?: string; detail?: string }>('/users/me/onboarding/complete', {
+    run_id: runId,
+  })
 }
 
 export interface SyncProgress {
@@ -233,6 +251,30 @@ export interface SyncStatus {
 
 export function getSyncStatus() {
   return fetchJSON<SyncStatus>('/users/me/sync-status')
+}
+
+export interface PipelineRun {
+  run_id: string
+  pipeline_name: string
+  status: 'queued' | 'running' | 'done' | 'failed'
+  current_step: number
+  steps: Array<{ name: string; job_type: string; status: string; job_id?: string }>
+  error_message?: string
+}
+
+export function getPipelineRun(runId: string) {
+  return fetchJSON<PipelineRun>(`/pipelines/${encodeURIComponent(runId)}`)
+}
+
+export interface JobState {
+  job_id: string
+  status: 'queued' | 'running' | 'done' | 'failed'
+  progress_pct: number
+  stage?: string
+}
+
+export function getJobState(jobId: string) {
+  return fetchJSON<JobState>(`/jobs/${encodeURIComponent(jobId)}`)
 }
 
 export interface NotificationReadState {
@@ -270,18 +312,6 @@ export async function markNotificationRead(notificationId: string) {
   const res = await postJSON<NotificationReadState>(`/users/me/notifications/${encoded}/read`)
   if (!res.ok) throw new Error(`mark notification read failed: HTTP ${res.status}`)
   return res.data
-}
-
-// ─── Full sync (training plan setup) ──────────────────────────────────────
-
-export function postFullSync() {
-  return postJSON<{ state?: string; error?: string; detail?: string; progress?: SyncProgress }>(
-    '/users/me/full-sync',
-  )
-}
-
-export function getFullSyncStatus() {
-  return fetchJSON<SyncStatus>('/users/me/full-sync-status')
 }
 
 export interface Activity {
@@ -391,25 +421,25 @@ export interface WeekSummary {
 }
 
 export interface WeekDetail {
-  folder: string
+  week_name: string
   date_from: string
   date_to: string
-  plan?: string
-  feedback?: string
-  feedback_source?: 'db' | 'file' | 'none'
-  feedback_updated_at?: string | null
-  feedback_generated_by?: string | null
+  plan: string | null
+  feedback: string
+  feedback_created_at: string | null
+  feedback_updated_at: string | null
   activities: Activity[]
   total_km: number
   total_duration_s: number
   total_duration_fmt: string
   activity_count: number
-  structured?: {
+  structured: {
     structured_status: StructuredStatus | null
     structured_parsed_at?: string | null
     sessions?: PlannedSessionRow[]
     nutrition?: PlannedNutrition[]
-  }
+    coach_notes?: string | null
+  } | null
   // Multi-variant additions (Step 4 backend additive fields).
   variants_summary?: VariantsSummary
   abandoned_scheduled_workouts?: AbandonedScheduledWorkout[]
@@ -426,6 +456,7 @@ export interface ActivitiesListResponse {
 export interface ActivityMonthlySummary {
   activity_count: number
   total_run_km: number
+  run_duration_s: number
   duration_s: number
 }
 
@@ -483,9 +514,23 @@ export async function getAllActivitiesInRange(
   return getAllActivities(user, opts)
 }
 
-export function triggerSync(user: string, full: boolean = false) {
-  const qs = full ? '?full=true' : ''
-  return fetch(`${BASE}/${user}/sync${qs}`, { method: 'POST', headers: authHeaders() }).then(r => r.json()) as Promise<{ success: boolean; output?: string; error?: string }>
+export interface TriggerSyncOptions {
+  full?: boolean
+  idempotencyKey?: string
+}
+
+export function triggerSync(user: string, options: TriggerSyncOptions | boolean = {}) {
+  const { full = false, idempotencyKey } = typeof options === 'boolean' ? { full: options } : options
+  return postJSON<{
+    run_id: string
+    pipeline_name: string
+    deduplicated?: boolean
+    error?: string
+  }>(
+    `/${encodeURIComponent(user)}/sync`,
+    full ? { mode: 'full' } : { mode: 'incremental' },
+    idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+  )
 }
 
 export function resyncActivity(user: string, labelId: string) {
@@ -501,22 +546,6 @@ export function regenerateCommentary(user: string, labelId: string) {
       generated_at?: string | null
       error?: string
     }>
-}
-
-export interface TrainingPlanPhase {
-  name: string
-  start: string
-  end: string
-}
-
-export interface TrainingPlan {
-  content: string | null
-  phases: TrainingPlanPhase[]
-  current_phase: string | null
-}
-
-export function getTrainingPlan(user: string) {
-  return fetchJSON<TrainingPlan>(`/${user}/training-plan`)
 }
 
 // ---------------------------------------------------------------------------
@@ -609,6 +638,9 @@ export interface MasterPlanWeek {
   actual_avg_hr?: number | null
   actual_run_count?: number
   actual_duration_s?: number
+  actual_training_dose?: number | null
+  actual_training_dose_coverage?: number | null
+  actual_training_dose_status?: 'complete' | 'partial' | 'unknown' | null
 }
 
 export interface MasterPlanTrainingLoadProjection {
@@ -628,15 +660,7 @@ export interface MasterPlan {
   plan_id: string
   user_id: string
   status: string
-  goal?: {
-    goal_id: string
-    race_name?: string
-    distance?: string
-    race_date?: string
-    target_time?: string
-    timezone?: string
-    location?: string | null
-  }
+  goal?: SeasonPlanGoal
   start_date: string
   end_date: string
   phases: MasterPlanPhase[]
@@ -654,6 +678,52 @@ export interface MasterPlan {
   total_weeks: number | null
   next_milestone: MasterPlanNextMilestone | null
 }
+
+export interface SeasonPlanGoal {
+  goal_id: string
+  race_name?: string
+  distance?: string
+  race_date?: string
+  target_time?: string
+  timezone?: string
+  location?: string | null
+}
+
+export interface SeasonPlanContent {
+  goal: SeasonPlanGoal
+  start_date: string
+  end_date: string
+  total_weeks: number
+  phases: MasterPlanPhase[]
+  milestones: MasterPlanMilestone[]
+  weeks: MasterPlanWeek[]
+  training_load_projection?: MasterPlanTrainingLoadProjection | null
+  training_principles: string[]
+  generated_by: string
+  current_phase_id: string | null
+  current_week_number: number | null
+  next_milestone: MasterPlanNextMilestone | null
+}
+
+interface CurrentSeasonPlanBase {
+  status: 'active'
+  plan_id: string
+  goal_id: string
+  created_at: string
+  updated_at: string
+}
+
+export type CurrentSeasonPlan =
+  | (CurrentSeasonPlanBase & {
+      content_version: 1
+      revision: null
+      plan: string
+    })
+  | (CurrentSeasonPlanBase & {
+      content_version: 2
+      revision: number
+      plan: SeasonPlanContent
+    })
 
 export interface MasterPlanDiffOp {
   id: string
@@ -704,14 +774,234 @@ export interface MasterPlanAdjustApplyResponse {
   affected_weeks: MasterPlanAffectedWeek[]
 }
 
-export async function getCurrentMasterPlan(): Promise<MasterPlan | null> {
-  // Route through apiFetch so the 401→refresh→retry path + header/init shape
-  // match every other GET client (and the api.activities test contract).
-  // 404 means "no active plan" → null (not an error); other !ok still throws.
-  const res = await apiFetch('GET', '/users/me/master-plan/current')
+export function parseCurrentSeasonPlan(value: unknown): CurrentSeasonPlan {
+  if (!isRecord(value)) invalidCurrentSeasonPlan()
+  const base = value as Record<string, unknown>
+  if (
+    base.status !== 'active'
+    || !nonEmptyString(base.plan_id)
+    || !nonEmptyString(base.goal_id)
+    || !validTimestamp(base.created_at)
+    || !validTimestamp(base.updated_at)
+  ) {
+    invalidCurrentSeasonPlan()
+  }
+
+  if (base.content_version === 1) {
+    if (base.revision !== null || !nonEmptyString(base.plan)) invalidCurrentSeasonPlan()
+    return base as unknown as CurrentSeasonPlan
+  }
+
+  if (base.content_version === 2) {
+    if (!Number.isInteger(base.revision) || (base.revision as number) < 1) invalidCurrentSeasonPlan()
+    if (!isSeasonPlanContent(base.plan) || base.plan.goal.goal_id !== base.goal_id) invalidCurrentSeasonPlan()
+    return base as unknown as CurrentSeasonPlan
+  }
+
+  return invalidCurrentSeasonPlan()
+}
+
+function isSeasonPlanContent(value: unknown): value is SeasonPlanContent {
+  if (!isRecord(value)) return false
+  return isSeasonPlanGoal(value.goal)
+    && dateOnly(value.start_date)
+    && dateOnly(value.end_date)
+    && Number.isInteger(value.total_weeks)
+    && (value.total_weeks as number) > 0
+    && recordArray(value.phases, isSeasonPlanPhase)
+    && recordArray(value.milestones, isSeasonPlanMilestone)
+    && recordArray(value.weeks, isSeasonPlanWeek)
+    && (value.training_load_projection === undefined || value.training_load_projection === null || isTrainingLoadProjection(value.training_load_projection))
+    && Array.isArray(value.training_principles)
+    && value.training_principles.every(nonEmptyString)
+    && nonEmptyString(value.generated_by)
+    && (value.current_phase_id === null || nonEmptyString(value.current_phase_id))
+    && (value.current_week_number === null || (Number.isInteger(value.current_week_number) && (value.current_week_number as number) > 0))
+    && (value.next_milestone === null || isNextMilestone(value.next_milestone))
+}
+
+function isSeasonPlanGoal(value: unknown): value is SeasonPlanGoal {
+  return isRecord(value)
+    && nonEmptyString(value.goal_id)
+    && typeof value.race_name === 'string'
+    && nonEmptyString(value.distance)
+    && dateOnly(value.race_date)
+    && typeof value.target_time === 'string'
+    && nonEmptyString(value.timezone)
+    && (value.location === undefined || value.location === null || typeof value.location === 'string')
+}
+
+function isSeasonPlanPhase(value: Record<string, unknown>): boolean {
+  return nonEmptyString(value.id)
+    && nonEmptyString(value.name)
+    && dateOnly(value.start_date)
+    && dateOnly(value.end_date)
+    && typeof value.focus === 'string'
+    && finiteNumber(value.weekly_distance_km_low)
+    && finiteNumber(value.weekly_distance_km_high)
+    && stringArray(value.key_session_types)
+    && stringArray(value.milestone_ids)
+    && optionalString(value, 'phase_type')
+    && optionalString(value, 'rhythm')
+    && optionalString(value, 'key_workouts')
+    && optionalStringArray(value, 'monitoring_triggers')
+    && optionalString(value, 'coach_note')
+    && optionalBoolean(value, 'is_completed')
+    && (value.summary === undefined || value.summary === null || isCompletedPhaseSummary(value.summary))
+}
+
+function isCompletedPhaseSummary(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  return finiteNumber(value.total_distance_km)
+    && nonNegativeInteger(value.run_count)
+    && finiteNumber(value.weekly_avg_km)
+    && nullableNumber(value.avg_pace_s_km)
+    && typeof value.avg_pace_fmt === 'string'
+    && nullableNumber(value.avg_hr)
+    && recordArray(value.hr_zone_distribution, (zone) => (
+      nonNegativeInteger(zone.zone_index)
+      && finiteNumber(zone.minutes)
+      && finiteNumber(zone.percent)
+    ))
+}
+
+function isSeasonPlanMilestone(value: Record<string, unknown>): boolean {
+  return nonEmptyString(value.id)
+    && nonEmptyString(value.type)
+    && dateOnly(value.date)
+    && nonEmptyString(value.phase_id)
+    && typeof value.target === 'string'
+    && (value.completed_actual === null || value.completed_actual === undefined || typeof value.completed_actual === 'string')
+    && optionalString(value, 'metric')
+    && (value.target_value === undefined || value.target_value === null || finiteNumber(value.target_value))
+    && (value.comparator === undefined || value.comparator === null || ['<=', '>=', '=='].includes(String(value.comparator)))
+}
+
+function isSeasonPlanWeek(value: Record<string, unknown>): boolean {
+  return Number.isInteger(value.week_index)
+    && (value.week_index as number) > 0
+    && dateOnly(value.week_start)
+    && nonEmptyString(value.phase_id)
+    && nullableNumber(value.target_weekly_km_low)
+    && nullableNumber(value.target_weekly_km_high)
+    && recordArray(value.key_sessions, isSeasonPlanKeySession)
+    && optionalBoolean(value, 'is_recovery_week')
+    && optionalBoolean(value, 'is_taper_week')
+    && optionalNullableNumber(value, 'target_training_dose_low')
+    && optionalNullableNumber(value, 'target_training_dose_high')
+    && (value.week_end === undefined || value.week_end === null || dateOnly(value.week_end))
+    && optionalNullableNumber(value, 'planned_distance_km')
+    && optionalBoolean(value, 'is_completed')
+    && optionalNullableNumber(value, 'actual_distance_km')
+    && optionalNullableNumber(value, 'actual_avg_pace_s_km')
+    && optionalString(value, 'actual_avg_pace_fmt')
+    && optionalNullableNumber(value, 'actual_avg_hr')
+    && optionalNonNegativeInteger(value, 'actual_run_count')
+    && optionalNonNegativeInteger(value, 'actual_duration_s')
+    && optionalNullableNumber(value, 'actual_training_dose')
+    && optionalNullableNumber(value, 'actual_training_dose_coverage')
+    && (
+      value.actual_training_dose_status === undefined
+      || value.actual_training_dose_status === null
+      || ['complete', 'partial', 'unknown'].includes(String(value.actual_training_dose_status))
+    )
+}
+
+function isSeasonPlanKeySession(value: Record<string, unknown>): boolean {
+  return nonEmptyString(value.type)
+    && nullableNumber(value.distance_km)
+    && nullableNumber(value.duration_min)
+    && optionalString(value, 'intensity')
+    && optionalString(value, 'purpose')
+}
+
+function isTrainingLoadProjection(value: unknown): boolean {
+  if (!isRecord(value) || !validTimestamp(value.calculated_at)) return false
+  if (value.status === 'available') return value.unavailable_reason === null
+  return value.status === 'unavailable'
+    && (
+      value.unavailable_reason === 'weekly_skeleton_unavailable'
+      || value.unavailable_reason === 'personal_threshold_unavailable'
+      || value.unavailable_reason === 'planned_session_uncomputable'
+    )
+}
+
+function isNextMilestone(value: unknown): boolean {
+  return isRecord(value)
+    && nonEmptyString(value.id)
+    && dateOnly(value.date)
+    && typeof value.target === 'string'
+    && Number.isInteger(value.days_until)
+}
+
+function recordArray(
+  value: unknown,
+  predicate: (item: Record<string, unknown>) => boolean,
+): boolean {
+  return Array.isArray(value) && value.every((item) => isRecord(item) && predicate(item))
+}
+
+function stringArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+function optionalString(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || value[key] === null || typeof value[key] === 'string'
+}
+
+function optionalStringArray(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || stringArray(value[key])
+}
+
+function optionalBoolean(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || typeof value[key] === 'boolean'
+}
+
+function optionalNullableNumber(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || nullableNumber(value[key])
+}
+
+function optionalNonNegativeInteger(value: Record<string, unknown>, key: string): boolean {
+  return value[key] === undefined || nonNegativeInteger(value[key])
+}
+
+function nonNegativeInteger(value: unknown): boolean {
+  return Number.isInteger(value) && (value as number) >= 0
+}
+
+function finiteNumber(value: unknown): boolean {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function nullableNumber(value: unknown): boolean {
+  return value === null || finiteNumber(value)
+}
+
+function dateOnly(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function validTimestamp(value: unknown): value is string {
+  return nonEmptyString(value) && !Number.isNaN(Date.parse(value))
+}
+
+function invalidCurrentSeasonPlan(): never {
+  throw new Error('Invalid current season plan')
+}
+
+export async function getCurrentMasterPlan(userId: string): Promise<CurrentSeasonPlan | null> {
+  const res = await apiFetch('GET', `/users/${encodeURIComponent(userId)}/master-plan/current`)
   if (res.status === 404) return null
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
-  return res.json()
+  if (!res.ok) throw new ApiError(res.status)
+  return parseCurrentSeasonPlan(await res.json())
 }
 
 export async function getDraftMasterPlan(): Promise<MasterPlan | null> {
@@ -1445,8 +1735,8 @@ export function syncTeamAll(id: string) {
   return postJSON<TeamSyncSummary>(`/teams/${id}/sync-all`)
 }
 
-export function getWeek(user: string, folder: string) {
-  return fetchJSON<WeekDetail>(`/${user}/weeks/${folder}`)
+export function getWeek(user: string, weekName: string) {
+  return fetchJSON<WeekDetail>(`/${user}/weeks/${weekName}`)
 }
 
 export function getWeekStrength(user: string, folder: string) {
@@ -1539,17 +1829,36 @@ export function reparsePlan(user: string, folder: string) {
   return postJSON<ReparsePlanResponse>(`/${user}/plan/reparse?${qs}`)
 }
 
-export function updateWeeklyFeedback(user: string, folder: string, content: string, generatedBy?: string) {
-  return putJSON<{
+export interface WeeklyFeedbackResponse {
     success: boolean
     week: string
-    feedback_source: string
-    feedback_updated_at?: string | null
-    feedback_generated_by?: string | null
-  }>(`/${user}/weeks/${folder}/feedback`, {
-    content,
-    generated_by: generatedBy,
-  })
+    feedback: string
+    has_feedback: boolean
+    created_at: string
+    updated_at: string
+}
+
+interface LegacyWeeklyFeedbackResponse {
+  success: boolean
+  week: string
+  feedback_updated_at?: string | null
+}
+
+export async function updateWeeklyFeedback(user: string, weekName: string, content: string) {
+  const result = await putJSON<WeeklyFeedbackResponse | LegacyWeeklyFeedbackResponse>(`/${user}/weeks/${weekName}/feedback`, { content })
+  if (!result.ok || 'feedback' in result.data) return result as JsonResult<WeeklyFeedbackResponse>
+  const updatedAt = result.data.feedback_updated_at ?? new Date().toISOString()
+  return {
+    ...result,
+    data: {
+      success: result.data.success,
+      week: result.data.week,
+      feedback: content.trim() ? content : '',
+      has_feedback: Boolean(content.trim()),
+      created_at: updatedAt,
+      updated_at: updatedAt,
+    },
+  }
 }
 
 export interface Segment extends Lap {
@@ -1922,4 +2231,185 @@ export interface StrideTrainingLoadResponse {
 
 export function getStrideTrainingLoad(user: string, days = 90) {
   return fetchJSON<StrideTrainingLoadResponse>(`/${user}/stride/training-load?days=${days}`)
+}
+
+// ── Coach chat ──────────────────────────────────────────────────────────────
+// Contract mirrors src/stride_server/routes/coach.py:
+//   POST /api/users/me/coach/chat                     -> ChatResponse
+//   GET  /api/users/me/coach/sessions/{id}/messages   -> SessionHistoryResponse
+// The session is fixed to `web-default` for this slice; the checkpointer
+// thread id is derived server-side as `{user}:coach:{session_id}`.
+
+/** The single web conversation thread for the coach chat page. */
+export const WEB_DEFAULT_SESSION_ID = 'web-default'
+
+/**
+ * Send one coach chat turn.
+ *
+ * `clientTurnId` is REQUIRED by the backend (422 if missing) and drives
+ * server-side idempotency: replaying the same id with the same request returns
+ * the same turn without re-invoking the model; a same-id replay with a
+ * *different* request yields 409 (TurnConflictError). The id is echoed on
+ * `assistant_message.turn_id`. `target` (optional) is the authoritative
+ * TargetRef the turn should act on (the workspace always passes it).
+ * `reviewContext` (optional) anchors the turn to an unapplied review draft so
+ * the coach answers from that draft rather than a saved plan; the server
+ * requires its proposal folder to equal `target.folder`.
+ *
+ * Non-401 failures resolve to `{ ok: false }` per the project postJSON
+ * contract; only an unrecoverable 401 (refresh failed) throws "Session expired".
+ */
+export function sendCoachChatMessage(
+  message: string,
+  clientTurnId: string,
+  sessionId: string = WEB_DEFAULT_SESSION_ID,
+  target?: CoachTargetRef,
+  reviewContext?: CoachReviewContext,
+): Promise<JsonResult<ChatResponse>> {
+  return postJSON<ChatResponse>('/users/me/coach/chat', {
+    session_id: sessionId,
+    message,
+    client_turn_id: clientTurnId,
+    ...(target ? { target } : {}),
+    ...(reviewContext ? { review_context: reviewContext } : {}),
+  })
+}
+
+/**
+ * Load full history for a coach session. The frontend passes only the
+ * `session_id`; the server derives the thread from the JWT.
+ */
+export function fetchCoachHistory(
+  sessionId: string = WEB_DEFAULT_SESSION_ID,
+): Promise<JsonResult<SessionHistoryResponse>> {
+  return getJSON<SessionHistoryResponse>(
+    `/users/me/coach/sessions/${encodeURIComponent(sessionId)}/messages`,
+  )
+}
+
+// ── Coach plan apply ─────────────────────────────────────────────────────────
+// Contract mirrors src/stride_server/routes/coach.py:
+//   POST /api/users/me/coach/plan/{folder}/apply           (weekly diff|create)
+//   POST /api/users/me/coach/master-plan/{plan_id}/apply   (master diff)
+// Both take the raw backend proposal the chat stashed. 409 is not a hard error:
+//   - detail.code === 'season_impact_material' -> needs an explicit weekly-only
+//     acknowledgement (mapped to `needs_ack`, NOT stale).
+//   - detail string containing 'changed'       -> the plan moved (`stale`).
+//   - anything else                            -> `error`.
+
+/**
+ * The apply result surfaced to the workspace. Kept structurally identical to the
+ * coach-workspace `ApplyOutcome` so the adapter can return it verbatim.
+ */
+export type CoachApplyOutcome =
+  | { readonly status: 'ok' }
+  | { readonly status: 'stale' }
+  | { readonly status: 'needs_ack'; readonly seasonImpact: string }
+  | { readonly status: 'error'; readonly message: string }
+
+/** Best-effort string extraction from a FastAPI `detail` payload. */
+function detailText(detail: unknown): string {
+  if (typeof detail === 'string') return detail
+  if (detail && typeof detail === 'object') {
+    const msg = (detail as Record<string, unknown>).message
+    if (typeof msg === 'string') return msg
+  }
+  return ''
+}
+
+async function toApplyOutcome(res: Response): Promise<CoachApplyOutcome> {
+  if (res.ok) return { status: 'ok' }
+  const body = (await res.json().catch(() => ({}))) as { detail?: unknown }
+  const detail = body.detail
+  if (res.status === 409) {
+    if (
+      detail &&
+      typeof detail === 'object' &&
+      (detail as Record<string, unknown>).code === 'season_impact_material'
+    ) {
+      const text =
+        detailText(detail) || '该调整明显偏离赛季计划，需要确认仅改本周'
+      return { status: 'needs_ack', seasonImpact: text }
+    }
+    if (detailText(detail).includes('changed')) {
+      return { status: 'stale' }
+    }
+  }
+  const message = detailText(detail) || `启用失败（${res.status}）`
+  return { status: 'error', message }
+}
+
+/** True when a raw weekly proposal is a create (full plan, no diff ops). */
+function isWeeklyCreateRaw(raw: Readonly<Record<string, unknown>>): boolean {
+  return raw.plan !== undefined || raw.sessions !== undefined || raw.ops === undefined
+}
+
+/**
+ * Apply a stashed weekly proposal. `rawProposal` is the original PlanDiff or
+ * WeeklyPlanCreateProposal — sent under `diff` or `proposal` accordingly.
+ */
+export async function applyCoachWeekProposal(
+  folder: string,
+  rawProposal: Readonly<Record<string, unknown>>,
+  acceptedOpIds: readonly string[],
+  baseRevision: string,
+  impactAcknowledgement?: string,
+): Promise<CoachApplyOutcome> {
+  const isCreate = isWeeklyCreateRaw(rawProposal)
+  const body: Record<string, unknown> = {
+    session_id: WEB_DEFAULT_SESSION_ID,
+    accepted_op_ids: [...acceptedOpIds],
+    base_revision: baseRevision,
+    ...(isCreate ? { proposal: rawProposal } : { diff: rawProposal }),
+    ...(impactAcknowledgement ? { impact_acknowledgement: impactAcknowledgement } : {}),
+  }
+  const res = await apiFetch(
+    'POST',
+    `/users/me/coach/plan/${encodeURIComponent(folder)}/apply`,
+    body,
+  )
+  return toApplyOutcome(res)
+}
+
+/** Apply a stashed master (season) plan diff proposal. */
+export async function applyCoachMasterProposal(
+  planId: string,
+  rawProposal: Readonly<Record<string, unknown>>,
+  acceptedOpIds: readonly string[],
+  baseRevision: string,
+  changeReason: string = 'coach adjustment',
+): Promise<CoachApplyOutcome> {
+  const res = await apiFetch(
+    'POST',
+    `/users/me/coach/master-plan/${encodeURIComponent(planId)}/apply`,
+    {
+      session_id: WEB_DEFAULT_SESSION_ID,
+      diff: rawProposal,
+      accepted_op_ids: [...acceptedOpIds],
+      change_reason: changeReason,
+      base_revision: baseRevision,
+    },
+  )
+  return toApplyOutcome(res)
+}
+
+/** Record that the user abandoned a surfaced proposal as a trusted event. */
+export async function abandonCoachProposal(target: {
+  kind: 'weekly' | 'master'
+  folder?: string
+  planId?: string
+}): Promise<boolean> {
+  const coachTarget: CoachTargetRef = target.kind === 'weekly'
+    ? { kind: 'week', folder: target.folder }
+    : { kind: 'master', plan_id: target.planId }
+  try {
+    const res = await apiFetch('POST', '/users/me/coach/proposals/abandon', {
+      session_id: WEB_DEFAULT_SESSION_ID,
+      target: coachTarget,
+      summary: '用户放弃了本次调整方案',
+    })
+    return res.ok
+  } catch {
+    return false
+  }
 }

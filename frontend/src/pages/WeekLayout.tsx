@@ -21,6 +21,7 @@ import PushAllPlannedButton from '../components/PushAllPlannedButton'
 import VariantComparisonView from '../components/VariantComparisonView'
 import RouteThumbnail from '../components/RouteThumbnail'
 import ViewHead from '../components/ViewHead'
+import HardcodedStrengthPreview, { hasHardcodedStrengthPreview } from '../components/weekly-plan/HardcodedStrengthPreview'
 
 function parseFolderTag(folder: string): { phase: string | null; weekNum: string | null } {
   const m = /\(([^)]+)\)\s*$/.exec(folder)
@@ -55,6 +56,7 @@ export default function WeekLayout() {
   // anyone opening the dashboard from a different timezone.
   const _today = shanghaiToday()
   const needsFeedback = weekDetail ? !weekDetail.feedback?.trim() && weekDetail.activity_count > 0 && weekDetail.date_to < _today : false
+  const hasHardcodedStrength = hasHardcodedStrengthPreview(folder)
 
   // Pull the connected provider once so we can dispatch push capabilities
   // (Garmin doesn't support strength push yet → button shows as "in dev").
@@ -85,16 +87,18 @@ export default function WeekLayout() {
   useEffect(() => {
     if (folder && user) {
       let cancelled = false
+      setPlanDays([])
       getWeek(user, folder)
         .then((data) => {
           if (cancelled) return
           setWeekDetail(data)
-          setActiveTab('plan')
           // Pull structured status from the augmented week response.
           const structured = (data as WeekDetail & {
             structured?: { structured_status?: StructuredStatus }
           }).structured
-          setStructuredStatus(structured?.structured_status ?? 'none')
+          const nextStructuredStatus = structured?.structured_status ?? 'none'
+          setStructuredStatus(nextStructuredStatus)
+          setActiveTab(data.plan ? 'plan' : nextStructuredStatus !== 'none' ? 'calendar' : 'activities')
         })
         .finally(() => {
           if (!cancelled) setLoadedFolder(folder)
@@ -202,7 +206,7 @@ export default function WeekLayout() {
       ) : weekDetail ? (
         <div className="animate-fade-in">
           {(() => {
-            const { phase, weekNum } = parseFolderTag(weekDetail.folder)
+            const { phase, weekNum } = parseFolderTag(weekDetail.week_name)
             const range = formatWeekRange(weekDetail.date_from, weekDetail.date_to)
             const title = weekNum ? `W${weekNum} · ${range}` : range
             return (
@@ -232,9 +236,9 @@ export default function WeekLayout() {
                 方案 ({weekDetail.variants_summary?.total ?? 0})
               </TabButton>
             )}
-            {(strengthData?.sessions.length ?? 0) > 0 && (
+            {((strengthData?.sessions.length ?? 0) > 0 || hasHardcodedStrength) && (
               <TabButton active={activeTab === 'strength'} onClick={() => setActiveTab('strength')} color="green">
-                力量训练 ({strengthData?.sessions.length ?? 0})
+                力量训练 ({strengthData?.sessions.length || 2})
               </TabButton>
             )}
             {structuredStatus !== 'none' && (
@@ -271,7 +275,7 @@ export default function WeekLayout() {
             <VariantComparisonView user={user} folder={folder} />
           )}
           {activeTab === 'strength' && (
-            <StrengthTab data={strengthData} loading={strengthLoading} />
+            hasHardcodedStrength ? <HardcodedStrengthPreview /> : <StrengthTab data={strengthData} loading={strengthLoading} />
           )}
           {activeTab === 'calendar' && (
             <CalendarTab
@@ -294,12 +298,10 @@ export default function WeekLayout() {
           {activeTab === 'feedback' && (
             <FeedbackPanel
               user={user}
-              folder={weekDetail.folder}
+              folder={weekDetail.week_name}
               feedback={weekDetail.feedback}
-              source={weekDetail.feedback_source}
               updatedAt={weekDetail.feedback_updated_at}
-              onSaved={(newDetail) => setWeekDetail(newDetail)}
-              reload={() => folder && user ? getWeek(user, folder).then(setWeekDetail) : undefined}
+              onSaved={(saved) => setWeekDetail((current) => current ? { ...current, ...saved } : current)}
               activities={weekDetail.activities}
               totalKm={weekDetail.total_km}
               totalDurationFmt={weekDetail.total_duration_fmt}
@@ -649,16 +651,14 @@ function TabButton({ active, onClick, color, children }: {
 }
 
 function FeedbackPanel({
-  user, folder, feedback, source, updatedAt, onSaved, reload,
+  user, folder, feedback, updatedAt, onSaved,
   activities, totalKm, totalDurationFmt, activityCount, dateTo,
 }: {
   user: string
   folder: string
   feedback: string | undefined
-  source: 'db' | 'file' | 'none' | undefined
   updatedAt: string | null | undefined
-  onSaved: (detail: WeekDetail) => void
-  reload: () => Promise<unknown> | undefined
+  onSaved: (detail: Pick<WeekDetail, 'feedback' | 'feedback_created_at' | 'feedback_updated_at'>) => void
   activities: Activity[]
   totalKm: number
   totalDurationFmt: string
@@ -709,10 +709,11 @@ function FeedbackPanel({
     try {
       const res = await updateWeeklyFeedback(user, folder, draft)
       if (!res.ok) throw new Error(`保存失败 (${res.status})`)
-      const reloaded = await reload()
-      if (reloaded && typeof reloaded === 'object' && 'folder' in reloaded) {
-        onSaved(reloaded as WeekDetail)
-      }
+      onSaved({
+        feedback: res.data.feedback,
+        feedback_created_at: res.data.created_at,
+        feedback_updated_at: res.data.updated_at,
+      })
       setEditing(false)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '保存失败')
@@ -728,17 +729,12 @@ function FeedbackPanel({
       {/* Header: source badge + edit/save controls */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          {source === 'db' && (
-            <span className="text-[11px] font-mono text-accent-cyan bg-accent-cyan/10 px-2 py-0.5 rounded">
-              已编辑
-            </span>
-          )}
-          {source === 'file' && (
+          {!isEmpty && (
             <span className="text-[11px] font-mono text-text-muted bg-bg-secondary px-2 py-0.5 rounded">
-              来自 feedback.md
+              已保存
             </span>
           )}
-          {updatedAt && source === 'db' && (
+          {updatedAt && (
             <span className="text-[11px] font-mono text-text-muted">
               {updatedAt.replace('T', ' ').slice(0, 19)}
             </span>

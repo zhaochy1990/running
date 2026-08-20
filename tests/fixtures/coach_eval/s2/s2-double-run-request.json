@@ -1,0 +1,74 @@
+{
+  "fixture_id": "s2-double-run-request",
+  "scope": "s2",
+  "description": "Healthy build week where the athlete asks for a same-day double run on Wednesday (morning as planned + an easy 5-6 km recovery run in the afternoon). The plan must honor the second same-day session (session_index 1) while keeping the rest of the week one-session-per-day and within the weekly volume budget.",
+  "tags": ["user_request", "frequency_limit", "build"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-s2-user",
+      "phase": "build",
+      "hr_zones": {"z1": [95, 122], "z2": [122, 141], "z3": [141, 160], "z4": [160, 176], "z5": [176, 190]},
+      "threshold_pace_s_km": 240,
+      "weight_kg": 70,
+      "injuries": []
+    },
+    "current_phase": {"phase_type": "build", "week_index": 2, "total_weeks": 6},
+    "target_week_start": "2026-06-01",
+    "week_folder": "2026-06-01_06-07(S2W2)",
+    "target_weekly_km": 60,
+    "pace_targets": {
+      "easy_pace_low_s_km": 315,
+      "easy_pace_high_s_km": 345,
+      "marathon_pace_s_km": 255,
+      "threshold_pace_s_km": 240,
+      "interval_pace_s_km": 220,
+      "rep_1000m_s_km": 216,
+      "rep_400m_s_km": 205
+    },
+    "volume_targets": {"weekly_km": 60, "long_run_km": 18, "quality_km_budget": 9, "easy_km": 33},
+    "prev_plans_md": ["prev_week_km: 58\nBuild W1 planned 58 km with a Wed threshold session and a Sun 18 km long run."],
+    "prev_feedback_md": ["RPE 6/10. Felt good all week, sleep solid, no niggles. Wanted a bit more easy volume."],
+    "recent_signals": {
+      "hrv_7d": [64, 64, 65, 63, 64, 66, 65],
+      "rhr_7d": [47, 47, 46, 47, 46, 46, 47],
+      "sleep_score_7d": [82, 80, 83, 81, 82, 84, 83],
+      "ctl": 55,
+      "atl": 56,
+      "tsb": -1,
+      "prev_week_km": 58,
+      "as_of_date": "2026-05-31"
+    },
+    "user_request_md": "周三想早晚两练：早上按计划正常跑，下午再加一节 5-6K 极轻松恢复跑（当天两节，都别太快）。其余天保持每天一节就行。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "target_week_start": "2026-06-01",
+      "week_folder": "2026-06-01_06-07(S2W2)",
+      "target_weekly_km": 60,
+      "weekly_km_tolerance_pct": 0.1,
+      "prev_week_km": 58,
+      "prev_ctl": 55,
+      "z45_pace_threshold_s_km": 240,
+      "max_hard_sessions": 2,
+      "min_run_days": 5,
+      "nutrition_daily": true
+    },
+    "soft_rubric": {
+      "schema_validity": {"min_score": 5, "behavior": "valid WeeklyPlan with all dates in the target week; the Wednesday second run is a distinct PlannedSession with session_index 1"},
+      "safety_load": {"min_score": 4, "behavior": "the extra Wednesday run is easy/recovery and does not push weekly volume past the budget"},
+      "progression": {"min_score": 4, "behavior": "connects to the prior 58 km week without a jump"},
+      "phase_fit": {"min_score": 4, "behavior": "keeps build-phase quality + long run structure around the added easy run"},
+      "signal_response": {"min_score": 4, "behavior": "recovery signals are healthy, so honoring the extra easy volume is reasonable"},
+      "weekly_distribution": {"min_score": 4, "behavior": "keeps other days one-session-per-day, keeps a full rest day, and separates hard work from the long run"},
+      "nutrition_alignment": {"min_score": 4, "behavior": "supports the double-run day fueling"},
+      "request_handling": {"min_score": 5, "behavior": "schedules the requested Wednesday same-day second run (session_index 1) as an easy 5-6 km recovery run and notes it, while keeping every other day a single session"}
+    },
+    "anti_patterns": [
+      "ignores the Wednesday double-run request entirely",
+      "merges the two Wednesday runs into a single session instead of two PlannedSessions",
+      "puts the second same-day run on the wrong day",
+      "makes the extra Wednesday run a hard/quality session instead of easy recovery",
+      "adds unrequested double sessions on other days"
+    ]
+  }
+}

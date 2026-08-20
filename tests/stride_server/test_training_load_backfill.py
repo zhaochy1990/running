@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -76,15 +78,27 @@ def test_internal_training_load_users_scans_live_uuid_databases(tmp_path, monkey
     from stride_storage.sqlite.database import Database
 
     clear_server_config_cache()
-    # Both UUID databases must be found even though no alias file exists.
-    for user_id in (USER_UUID, UNALIASED_USER_UUID):
-        with Database(user=user_id):
-            pass
-    # Non-user directories and empty placeholders are not rollout targets.
+    # Both UUID databases have canonical training-load source rows and must be
+    # found even though no alias file exists.
+    with Database(user=USER_UUID) as db:
+        db.upsert_activity(
+            _activity("source-run", "2026-05-20T00:00:00+00:00"),
+            provider="garmin",
+        )
+    with Database(user=UNALIASED_USER_UUID) as db:
+        db.upsert_daily_health(
+            DailyHealth("2026-05-20", None, None, 50, None, None, None, None, None)
+        )
+
+    # Non-user directories, zero-byte placeholders, and canonical databases
+    # whose source tables are empty are not rollout targets.
     (tmp_path / "_jobs_dev").mkdir()
-    empty_dir = tmp_path / "c3d4e5f6-a7b8-4ccc-8abc-345678901234"
-    empty_dir.mkdir()
-    (empty_dir / "coros.db").touch()
+    placeholder_dir = tmp_path / "c3d4e5f6-a7b8-4ccc-8abc-345678901234"
+    placeholder_dir.mkdir()
+    (placeholder_dir / "coros.db").touch()
+    source_free_user = "d4e5f6a7-b8c9-4ddd-8abc-456789012345"
+    with Database(user=source_free_user):
+        pass
 
     app = FastAPI()
     app.include_router(internal_router)
@@ -103,6 +117,126 @@ def test_internal_training_load_users_scans_live_uuid_databases(tmp_path, monkey
         "users": [USER_UUID, UNALIASED_USER_UUID],
         "count": 2,
     }
+
+
+def test_internal_training_load_users_does_not_migrate_legacy_database(
+    tmp_path, monkeypatch,
+):
+    import stride_core.db as core_db_mod
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+
+    from stride_server.config import clear_server_config_cache
+    from stride_server.routes.training_load import internal_router
+
+    clear_server_config_cache()
+    legacy_user = "d4e5f6a7-b8c9-4ddd-8abc-456789012345"
+    legacy_dir = tmp_path / legacy_user
+    legacy_dir.mkdir()
+    legacy_db = legacy_dir / "coros.db"
+    conn = sqlite3.connect(legacy_db)
+    try:
+        conn.execute(
+            "CREATE TABLE legacy_metadata (key TEXT PRIMARY KEY, value TEXT)"
+        )
+        conn.execute("INSERT INTO legacy_metadata VALUES ('source', 'none')")
+        conn.commit()
+        schema_before = conn.execute(
+            "SELECT type, name, sql FROM sqlite_master ORDER BY type, name"
+        ).fetchall()
+    finally:
+        conn.close()
+    database_bytes_before = legacy_db.read_bytes()
+    files_before = sorted(path.name for path in legacy_dir.iterdir())
+
+    app = FastAPI()
+    app.include_router(internal_router)
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get(
+        "/internal/training-load/users",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    conn = sqlite3.connect(f"{legacy_db.resolve().as_uri()}?mode=ro", uri=True)
+    try:
+        schema_after = conn.execute(
+            "SELECT type, name, sql FROM sqlite_master ORDER BY type, name"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"ok": True, "users": [], "count": 0}
+    assert schema_after == schema_before
+    assert legacy_db.read_bytes() == database_bytes_before
+    assert sorted(path.name for path in legacy_dir.iterdir()) == files_before
+
+
+def test_internal_training_load_users_reads_uncheckpointed_wal_source(
+    tmp_path, monkeypatch,
+):
+    import stride_core.db as core_db_mod
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+
+    from stride_server.config import clear_server_config_cache
+    from stride_server.routes.training_load import internal_router
+
+    clear_server_config_cache()
+    wal_dir = tmp_path / USER_UUID
+    wal_dir.mkdir()
+    wal_db = wal_dir / "coros.db"
+    writer = sqlite3.connect(wal_db)
+    try:
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+        writer.execute("PRAGMA wal_autocheckpoint=0")
+        writer.execute("CREATE TABLE activities (id INTEGER PRIMARY KEY)")
+        writer.execute("INSERT INTO activities DEFAULT VALUES")
+        writer.commit()
+
+        app = FastAPI()
+        app.include_router(internal_router)
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get(
+            "/internal/training-load/users",
+            headers={"X-Internal-Token": INTERNAL_TOKEN},
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {"ok": True, "users": [USER_UUID], "count": 1}
+    finally:
+        writer.close()
+
+
+def test_internal_training_load_users_fails_on_unreadable_database(
+    tmp_path, monkeypatch,
+):
+    import stride_core.db as core_db_mod
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+
+    from stride_server.config import clear_server_config_cache
+    from stride_server.routes.training_load import internal_router
+
+    clear_server_config_cache()
+    corrupt_user = "c3d4e5f6-a7b8-4ccc-8abc-345678901234"
+    corrupt_dir = tmp_path / corrupt_user
+    corrupt_dir.mkdir()
+    (corrupt_dir / "coros.db").write_bytes(b"not a sqlite database")
+
+    app = FastAPI()
+    app.include_router(internal_router)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.get(
+        "/internal/training-load/users",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    assert response.status_code == 500
 
 
 def test_internal_training_load_backfill_refreshes_threshold_and_recent_load(tmp_path, monkeypatch):
@@ -197,7 +331,7 @@ def test_internal_training_load_calibration_refresh_updates_threshold_only(tmp_p
         )
 
 
-def test_rollout_backfill_is_idempotent_when_current_version_exists(
+def test_rollout_backfill_skips_only_when_completion_marker_exists(
     tmp_path, monkeypatch
 ):
     import stride_core.db as core_db_mod
@@ -223,9 +357,12 @@ def test_rollout_backfill_is_idempotent_when_current_version_exists(
             (TRAINING_LOAD_MODEL_VERSION,),
         )
         db._conn.commit()
+        db.mark_training_load_backfill_complete(
+            TRAINING_LOAD_MODEL_VERSION, as_of_date="2026-05-20"
+        )
 
     def fail_backfill(*_args, **_kwargs):
-        raise AssertionError("idempotent rollout must not recompute existing v2 rows")
+        raise AssertionError("completed rollout must not recompute canonical rows")
 
     monkeypatch.setattr(route_mod, "backfill_training_load", fail_backfill)
     app = FastAPI()
@@ -243,7 +380,87 @@ def test_rollout_backfill_is_idempotent_when_current_version_exists(
         "user": USER_UUID,
         "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
         "skipped": True,
-        "reason": "algorithm_version_already_present",
+        "reason": "backfill_already_complete",
         "calibration_lookback_days": 180,
         "load_lookback_days": 90,
     }
+
+
+def test_backfill_step_skips_when_completion_marker_exists(tmp_path, monkeypatch):
+    """A verified full-backfill marker skips API-owned shard work."""
+    import stride_core.db as core_db_mod
+    import stride_server.deps as deps_mod
+    import stride_server.routes.training_load as route_mod
+
+    from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+    from stride_server.config import clear_server_config_cache
+    from stride_storage.sqlite.database import Database
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
+    clear_server_config_cache()
+
+    user_dir = tmp_path / USER_UUID
+    user_dir.mkdir(parents=True, exist_ok=True)
+    with Database(user=USER_UUID) as db:
+        db.mark_training_load_backfill_complete(
+            TRAINING_LOAD_MODEL_VERSION, as_of_date="2026-05-20"
+        )
+
+    app = FastAPI()
+    app.include_router(route_mod.internal_router)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.post(
+        "/internal/training-load/backfill/step",
+        json={"user": USER_UUID, "only_if_missing": True},
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["done"] is True
+    assert body["skipped"] is True
+    assert body["reason"] == "backfill_already_complete"
+    assert body["algorithm_version"] == TRAINING_LOAD_MODEL_VERSION
+
+
+def test_internal_training_load_routes_reject_non_uuid_user(tmp_path, monkeypatch):
+    import stride_core.db as core_db_mod
+    import stride_server.deps as deps_mod
+    import stride_server.routes.training_load as route_mod
+
+    from stride_server.config import clear_server_config_cache
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
+    clear_server_config_cache()
+
+    app = FastAPI()
+    app.include_router(route_mod.internal_router)
+    client = TestClient(app, raise_server_exceptions=False)
+    headers = {"X-Internal-Token": INTERNAL_TOKEN}
+    invalid_user = "../escaped-user"
+
+    calibration = client.post(
+        "/internal/training-load/calibration/refresh",
+        params={"user": invalid_user},
+        headers=headers,
+    )
+    backfill = client.post(
+        "/internal/training-load/backfill",
+        params={"user": invalid_user},
+        headers=headers,
+    )
+    shard = client.post(
+        "/internal/training-load/backfill/step",
+        json={"user": invalid_user},
+        headers=headers,
+    )
+
+    assert calibration.status_code == 422
+    assert backfill.status_code == 422
+    assert shard.status_code == 422
+    assert not (tmp_path.parent / "escaped-user").exists()

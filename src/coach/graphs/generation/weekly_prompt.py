@@ -27,7 +27,7 @@ from stride_core.master_plan import PhaseType
 from coach.schemas.specialist_context import PaceTargets, VolumeTargets
 
 from .phase_specialists import get_specialist
-from .weekly_plan_contract import WEEKLY_PLAN_FIELDS_CONTRACT
+from .weekly_plan_contract import weekly_plan_fields_contract
 
 
 # ---------------------------------------------------------------------------
@@ -57,15 +57,19 @@ class WeekMeta:
 WEEKLY_PLAN_JSON_CONTRACT_SENTINEL = "WEEKLY_PLAN_JSON_CONTRACT/v1"
 
 
-# The shared WeeklyPlan field-shape body lives in ``weekly_plan_contract``
-# (reused by the phase-at-once composer). This single-week contract wraps it in
-# this composer's sentinel + the "emit exactly one object, JSON only" envelope.
-_WEEKLY_PLAN_JSON_CONTRACT = f"""\
+def _weekly_plan_json_contract(*, structured: bool = False) -> str:
+    """The single-week contract = the shared WeeklyPlan field body wrapped in
+    this composer's sentinel + the "emit exactly one object, JSON only" envelope.
+
+    ``structured`` toggles aspirational (spec=null) vs watch-pushable
+    (run/strength carry a structured spec) session bodies.
+    """
+    return f"""\
 === {WEEKLY_PLAN_JSON_CONTRACT_SENTINEL} ===
 你必须**只**输出一个合法的 JSON 对象（无 markdown 代码围栏、无解释文字、无前后缀），
 该对象将被 `WeeklyPlan.from_dict` 直接解析。
 
-{WEEKLY_PLAN_FIELDS_CONTRACT}
+{weekly_plan_fields_contract(structured=structured)}
 - 输出**仅** JSON，无任何其他文字。
 === END {WEEKLY_PLAN_JSON_CONTRACT_SENTINEL} ===
 """
@@ -87,6 +91,7 @@ def build_weekly_system_prompt(
     pace_targets: PaceTargets,
     volume_targets: VolumeTargets,
     context_block: str,
+    structured: bool = False,
 ) -> str:
     """Compose the single-week generation system prompt.
 
@@ -94,13 +99,14 @@ def build_weekly_system_prompt(
     default) — the athlete's real pace table and volume budget must always be
     injected. ``context_block`` is a pre-rendered string (continuity signals +
     prior-week tail + injuries) supplied by the caller; pass ``""`` if empty.
+    ``structured`` toggles aspirational (spec=null) vs watch-pushable output.
     """
     specialist = get_specialist(phase)
 
     return f"""\
 你是专业马拉松训练教练，负责生成**单周**结构化训练计划。当前阶段：{specialist.name}。
 
-{_WEEKLY_PLAN_JSON_CONTRACT}
+{_weekly_plan_json_contract(structured=structured)}
 
 {specialist.guidance}
 

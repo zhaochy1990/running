@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { postCorosLogin, postGarminLogin } from '../../api'
+import { postWatchLogin } from '../../api'
 
 type Provider = 'coros' | 'garmin'
 type Region = 'cn' | 'global'
@@ -55,10 +55,7 @@ export default function WatchStep({ onSuccess }: Props) {
     setError('')
     setLoading(true)
     try {
-      const result =
-        provider === 'coros'
-          ? await postCorosLogin(email.trim(), password)
-          : await postGarminLogin(email.trim(), password, region)
+      const result = await postWatchLogin(provider, email.trim(), password, region)
       if (result.ok) {
         onSuccess()
       } else {

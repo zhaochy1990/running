@@ -221,7 +221,7 @@ def test_local_config_generator_max_tokens_is_128k(monkeypatch) -> None:
     assert cfg.for_role("orchestrator").model == "deepseek-v4-flash"
 
 
-def test_copilot_config_uses_responses_models_and_disables_tracing() -> None:
+def test_copilot_config_defaults_to_agent_maestro_and_disables_tracing() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     cfg = load_config(repo_root / "config" / "coach.copilot.toml")
 
@@ -243,8 +243,8 @@ def test_copilot_config_uses_responses_models_and_disables_tracing() -> None:
         assert spec.provider == "openai-compatible"
         assert spec.api_kind == "responses"
         assert spec.auth_mode == "api-key"
-        assert spec.api_key_env == "COPILOT_PROXY_API_KEY"
-        assert spec.endpoint == "http://127.0.0.1:44141/v1"
+        assert spec.api_key_env == "AGENT_MAESTRO_API_KEY"
+        assert spec.endpoint == "http://127.0.0.1:23333/api/openai/v1"
 
     assert cfg.observability.langsmith_enabled is False
 

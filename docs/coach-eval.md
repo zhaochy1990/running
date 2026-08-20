@@ -15,7 +15,7 @@ Coach agent 三个 scope，对应三类用户场景。每个 scope 在 `src/coac
 | Scope | 中文名 | 输入 | 输出 | 调用频率 | Code path |
 |-------|--------|------|------|---------|-----------|
 | **S1** | 赛季备战计划 | 用户目标比赛、当前能力、可用训练时长、周期化偏好 | `MasterPlan` 结构（含 base / build / peak / taper / recovery 阶段，每阶段周量与强度框架） + 配套 markdown | 一个赛季 1 次（夏训 / 冬训 / 备赛周期开始时） | `master_chat` prompt；generation 已接入 `build_generation_graph`，底层 adapter 在 `stride_server/master_plan_generator.py` / `stride_server/coach_adapters/master_plan_adapter.py` |
-| **S2** | 周训练计划 | 当前 master plan 阶段、上周 feedback.md、最近身体信号（HRV/RHR/sleep/PMC）、用户文字 request | `WeeklyPlan` 结构（每日 run / strength / rest / nutrition session） + `plan.md` + `plan.json` | 每周 1 次（下周开始前） | `week_chat` prompt + `build_generation_graph` |
+| **S2** | 周训练计划 | 当前 master plan 阶段、MySQL 上周周反馈、最近身体信号（HRV/RHR/sleep/PMC）、用户文字 request | `WeeklyPlan` 结构（每日 run / strength / rest / nutrition session） + `plan.md` + `plan.json` | 每周 1 次（下周开始前） | `week_chat` prompt + `build_generation_graph` |
 | **S3** | 每日问答 | 用户自由文字问题（"今天该跑长 run 吗"、"为什么 HRV 在掉"、"明天下雨怎么办") + 当前周 plan + DB grounding | 文字回答（**read-only**，不生成 / 不改 plan） | 每天 N 次 | `qa` prompt + conversation graph only（没有 generation pipeline） |
 
 **关键区别**：
@@ -419,7 +419,7 @@ Resolver 是 typed classifier，预期结果（specialist、read/write、compoun
 clarify）可以精确断言，不需要再调用第二个 LLM judge。手动运行：
 
 ```bash
-# 推荐：自动启动本地 Copilot proxy、跑 smoke，再用 orchestrator 模型执行全部 fixture
+# 推荐：通过默认 Agent Maestro orchestrator 模型执行全部 fixture
 scripts/coach-local.sh eval-resolver
 
 # 只跑一条 fixture

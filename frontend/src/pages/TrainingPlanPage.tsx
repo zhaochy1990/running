@@ -1,18 +1,16 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { CoachPlanAppliedBanner } from '../components/CoachPlanAppliedBanner'
 import {
   applyMasterPlanReviewDiff,
   confirmMasterPlan,
   getCurrentMasterPlan,
-  getDraftMasterPlan,
   getMasterPlanById,
-  getMyProfile,
-  getTrainingGoal,
-  getTrainingPlan,
   sendMasterPlanReviewMessage,
   type CompletedPhaseSummary,
+  type CurrentSeasonPlan,
   type MasterPlan,
   type MasterPlanAdjustMessage,
   type MasterPlanDiff,
@@ -20,9 +18,7 @@ import {
   type MasterPlanMilestone,
   type MasterPlanPhase,
   type MasterPlanWeek,
-  type MyProfile,
-  type TrainingGoal,
-  type TrainingPlan,
+  type SeasonPlanContent,
 } from '../api'
 import { shanghaiToday } from '../lib/shanghai'
 import { useUser } from '../UserContextValue'
@@ -53,6 +49,9 @@ interface MileageBar {
   plannedKm: number | null
   plannedDoseLow: number | null
   plannedDoseHigh: number | null
+  actualDose: number | null
+  actualDoseCoverage: number | null
+  actualDoseStatus: 'complete' | 'partial' | 'unknown' | null
   actualKm: number | null
   displayKm: number | null
   heightPct: number
@@ -153,72 +152,56 @@ function formatSlashDate(dateStr: string): string {
   return `${year}/${month}/${day}`
 }
 
-function stringField(raw: Record<string, unknown> | null | undefined, key: string): string {
-  const value = raw?.[key]
-  return typeof value === 'string' ? value.trim() : ''
-}
-
 function distanceLabel(value: string): string {
   const labels: Record<string, string> = { '5K': '5K', '10K': '10K', HM: '半马', FM: '全马', trail: '越野' }
   return labels[value] || value
 }
 
-function targetFrom(goal: TrainingGoal | null, profile: MyProfile | null, plan?: MasterPlan | null): TargetSummary {
-  const rawProfile = profile?.profile ?? null
-  const raceName = goal?.race_name?.trim() || plan?.goal?.race_name || stringField(rawProfile, 'target_race')
-  const distance = goal?.race_distance || plan?.goal?.distance || stringField(rawProfile, 'target_distance')
-  const raceDate = goal?.race_date || plan?.goal?.race_date || stringField(rawProfile, 'target_race_date')
-  const targetTime = goal?.target_finish_time || plan?.goal?.target_time || stringField(rawProfile, 'target_time')
+function targetFromPlan(plan: Pick<SeasonPlanContent, 'goal'>): TargetSummary {
   return {
-    raceName,
-    distance: distanceLabel(distance),
-    raceDate,
-    targetTime,
+    raceName: plan.goal.race_name?.trim() || '',
+    distance: distanceLabel(plan.goal.distance || ''),
+    raceDate: plan.goal.race_date || '',
+    targetTime: plan.goal.target_time || '',
   }
 }
 
-type PageState = 'loading' | 'setup' | 'review' | 'plan'
+type PageState = 'loading' | 'setup' | 'review' | 'plan' | 'error'
+type SeasonPlanView = SeasonPlanContent | MasterPlan
 
 export default function TrainingPlanPage() {
-  const { user } = useUser()
+  const { user, coachChat } = useUser()
   const navigate = useNavigate()
-  const [masterPlan, setMasterPlan] = useState<MasterPlan | null>(null)
+  const [currentPlan, setCurrentPlan] = useState<CurrentSeasonPlan | null>(null)
   const [draftPlan, setDraftPlan] = useState<MasterPlan | null>(null)
-  const [fallbackPlan, setFallbackPlan] = useState<TrainingPlan | null>(null)
   const [target, setTarget] = useState<TargetSummary>(EMPTY_TARGET)
   const [pageState, setPageState] = useState<PageState>('loading')
   const [planTab, setPlanTab] = useState<PlanTab>('overview')
   const [selectedPhaseId, setSelectedPhaseId] = useState<string | null>(null)
   const requestKey = user || ''
   const [loadedKey, setLoadedKey] = useState('')
+  const requestRef = useRef<{ key: string; promise: ReturnType<typeof getCurrentMasterPlan> } | null>(null)
 
-  const loadPlan = useCallback(() => {
+  const loadPlan = useCallback((force = false) => {
     if (!user) return undefined
     let cancelled = false
+    if (force || requestRef.current?.key !== requestKey) {
+      requestRef.current = { key: requestKey, promise: getCurrentMasterPlan(user) }
+    }
+    const request = requestRef.current.promise
 
-    Promise.all([
-      getCurrentMasterPlan().catch(() => null),
-      getDraftMasterPlan().catch(() => null),
-      getTrainingPlan(user).catch(() => null),
-      getTrainingGoal().catch(() => null),
-      getMyProfile().catch(() => null),
-    ]).then(([master, draft, fallback, goal, profile]) => {
-      if (cancelled) return
-      setMasterPlan(master)
-      setDraftPlan(draft)
-      setFallbackPlan(fallback)
-      setTarget(targetFrom(goal, profile, master ?? draft))
-      if (master) {
-        setPageState('plan')
-      } else if (draft) {
-        setPageState('review')
-      } else if (fallback?.content) {
-        setPageState('plan')
-      } else {
-        setPageState('setup')
-      }
+    request.then((plan) => {
+      if (cancelled || requestRef.current?.promise !== request) return
+      setCurrentPlan(plan)
+      setTarget(plan?.content_version === 2 ? targetFromPlan(plan.plan) : EMPTY_TARGET)
+      setPageState(plan ? 'plan' : 'setup')
+    }).catch(() => {
+      if (cancelled || requestRef.current?.promise !== request) return
+      setCurrentPlan(null)
+      setTarget(EMPTY_TARGET)
+      setPageState('error')
     }).finally(() => {
-      if (!cancelled) setLoadedKey(requestKey)
+      if (!cancelled && requestRef.current?.promise === request) setLoadedKey(requestKey)
     })
 
     return () => { cancelled = true }
@@ -252,7 +235,7 @@ export default function TrainingPlanPage() {
             getMasterPlanById(planId)
               .then((plan) => {
                 setDraftPlan(plan)
-                setTarget((prev) => prev.raceName ? prev : targetFrom(null, null, plan))
+                setTarget(targetFromPlan({ goal: plan.goal ?? { goal_id: '' } }))
                 setPageState('review')
               })
               .catch(() => { loadPlan() })
@@ -270,48 +253,73 @@ export default function TrainingPlanPage() {
         onPlanUpdated={setDraftPlan}
         onConfirmed={() => {
           setPageState('loading')
-          loadPlan()
+          loadPlan(true)
         }}
       />
     )
   }
 
-  if (masterPlan) {
-    return (
-      <SeasonOverview
-        plan={masterPlan}
-        target={target}
-        tab={planTab}
-        onTab={setPlanTab}
-        selectedPhaseId={selectedPhaseId}
-        onSelectPhase={setSelectedPhaseId}
-        onAdjust={() => navigate('/plan/adjust')}
-      />
-    )
-  }
-
-  if (fallbackPlan?.content) {
+  if (pageState === 'error') {
     return (
       <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
         <ViewHead
-          eyebrow="训练计划"
-          title="训练总览"
-          lede={fallbackPlan.current_phase ? `当前阶段 · ${fallbackPlan.current_phase}` : '训练总纲'}
+          eyebrow="赛季训练计划 · 读取失败"
+          title="无法读取赛季训练计划"
+          lede="计划数据暂时不可用，请稍后重试。"
         />
+        <button
+          type="button"
+          onClick={() => {
+            setPageState('loading')
+            loadPlan(true)
+          }}
+          className="inline-flex h-10 items-center justify-center rounded-lg border border-border-subtle bg-bg-card px-5 text-sm font-semibold text-text-primary"
+        >
+          重试
+        </button>
+      </div>
+    )
+  }
+
+  if (currentPlan?.content_version === 2) {
+    return (
+      <>
+        <div className="max-w-5xl mx-auto px-4 pt-4 sm:px-8">
+          <CoachPlanAppliedBanner />
+        </div>
+        <SeasonOverview
+          plan={currentPlan.plan}
+          target={target}
+          tab={planTab}
+          onTab={setPlanTab}
+          selectedPhaseId={selectedPhaseId}
+          onSelectPhase={setSelectedPhaseId}
+          onAdjust={() =>
+            navigate(
+              coachChat
+                ? `/coach/master/${encodeURIComponent(currentPlan.plan_id)}/adjust`
+                : '/plan/adjust',
+            )
+          }
+        />
+      </>
+    )
+  }
+
+  if (currentPlan?.content_version === 1) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
+        <ViewHead eyebrow="赛季训练计划 · 已启用" title="赛季训练计划" lede="当前赛季安排" />
         <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 sm:p-6">
           <div className="prose max-w-none">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{fallbackPlan.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{currentPlan.plan}</ReactMarkdown>
           </div>
         </div>
       </div>
     )
   }
 
-  return (
-    <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
-      <ViewHead eyebrow="训练计划" title="训练计划生成中" lede="赛季计划正在后台生成，请稍后刷新页面查看" />
-    </div>
-  )
+  return null
 }
 
 function DraftReviewWorkspace({
@@ -610,7 +618,7 @@ function SeasonOverviewBody({
   selectedPhaseId,
   onSelectPhase,
 }: {
-  plan: MasterPlan
+  plan: SeasonPlanView
   target: TargetSummary
   selectedPhaseId: string | null
   onSelectPhase: (id: string) => void
@@ -682,7 +690,7 @@ function SeasonOverview({
   onSelectPhase,
   onAdjust,
 }: {
-  plan: MasterPlan
+  plan: SeasonPlanView
   target: TargetSummary
   tab: PlanTab
   onTab: (tab: PlanTab) => void
@@ -705,7 +713,7 @@ function SeasonOverview({
       <section className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <p className="font-mono text-[10px] font-semibold tracking-[0.14em] text-text-muted uppercase mb-2">
-            赛季训练计划 · {plan.status === 'active' ? '已启用' : plan.status}
+            赛季训练计划 · {'status' in plan && plan.status !== 'active' ? plan.status : '已启用'}
           </p>
           <h1 className="text-[28px] sm:text-[32px] font-semibold leading-[1.1] text-text-primary break-words">
             {heroTitle}
@@ -777,7 +785,7 @@ function MileageCycleCard({
   currentWeek,
   onSelectPhase,
 }: {
-  plan: MasterPlan
+  plan: SeasonPlanView
   spans: PhaseSpan[]
   totalWeeks: number
   currentWeek: number
@@ -789,11 +797,14 @@ function MileageCycleCard({
   const loadAvailable = plan.training_load_projection?.status === 'available'
     && bars.some((bar) => bar.plannedDoseLow != null && bar.plannedDoseHigh != null)
   const activeMetric: CycleMetric = metric === 'load' && loadAvailable ? 'load' : 'mileage'
-  const maxDose = Math.max(...bars.map((bar) => bar.plannedDoseHigh ?? 0), 1)
+  const maxDose = Math.max(
+    ...bars.flatMap((bar) => [bar.plannedDoseHigh ?? 0, bar.actualDose ?? 0]),
+    1,
+  )
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border-subtle bg-bg-card">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-5 py-4">
+    <section className="overflow-visible rounded-lg border border-border-subtle bg-bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-lg border-b border-border-subtle px-5 py-4">
         <h2 className="text-lg font-semibold text-text-primary">训练周期</h2>
         <div className="inline-flex rounded-lg border border-border-subtle bg-bg-secondary p-0.5" aria-label="训练周期指标">
           <CycleMetricButton active={activeMetric === 'mileage'} onClick={() => setMetric('mileage')}>跑量</CycleMetricButton>
@@ -802,7 +813,7 @@ function MileageCycleCard({
       </div>
       <div className="px-5 py-5 sm:px-6">
         <p className="mb-4 font-mono text-[10px] font-semibold tracking-[0.14em] text-text-muted uppercase">
-          {activeMetric === 'load' ? '预计周负荷（STRIDE DOSE）' : '周跑量（KM/周）'}
+          {activeMetric === 'load' ? '周负荷（STRIDE DOSE）' : '周跑量（KM/周）'}
         </p>
         <div
           className="grid h-40 items-end gap-1.5"
@@ -811,11 +822,18 @@ function MileageCycleCard({
           {bars.map((bar) => {
             const visual = phaseVisual(bar.phase, bar.phaseIndex)
             const hasLoadRange = bar.plannedDoseLow != null && bar.plannedDoseHigh != null
-            const loadHighPct = hasLoadRange
-              ? Math.max(8, Math.round((bar.plannedDoseHigh! / maxDose) * 100))
+            const loadScaleDose = Math.max(bar.plannedDoseHigh ?? 0, bar.actualDose ?? 0)
+            const loadHeightPct = loadScaleDose > 0
+              ? Math.max(8, Math.round((loadScaleDose / maxDose) * 100))
               : 0
-            const loadLowPct = bar.plannedDoseHigh && bar.plannedDoseLow != null
-              ? Math.max(0, Math.min(100, Math.round((bar.plannedDoseLow / bar.plannedDoseHigh) * 100)))
+            const plannedLoadLowPct = loadScaleDose > 0 && bar.plannedDoseLow != null
+              ? Math.max(0, Math.min(100, (bar.plannedDoseLow / loadScaleDose) * 100))
+              : 0
+            const plannedLoadHighPct = loadScaleDose > 0 && bar.plannedDoseHigh != null
+              ? Math.max(0, Math.min(100, (bar.plannedDoseHigh / loadScaleDose) * 100))
+              : 0
+            const actualLoadPct = loadScaleDose > 0 && bar.actualDose != null
+              ? Math.max(0, Math.min(100, (bar.actualDose / loadScaleDose) * 100))
               : 0
             return (
               <button
@@ -824,27 +842,55 @@ function MileageCycleCard({
                 title={bar.title}
                 aria-label={bar.title}
                 onClick={() => onSelectPhase(bar.phase.id)}
-                className={`group relative rounded-t border border-transparent transition-all hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary ${activeMetric === 'load' && !hasLoadRange ? 'min-h-0' : 'min-h-[10px]'} ${bar.isCurrent ? 'ring-2 ring-accent-green ring-offset-2 ring-offset-bg-primary' : ''}`}
+                className={`group relative rounded-t border border-transparent transition-all hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary ${activeMetric === 'load' && !hasLoadRange && bar.actualDose == null ? 'min-h-0' : 'min-h-[10px]'} ${bar.isCurrent ? 'ring-2 ring-accent-green ring-offset-2 ring-offset-bg-primary' : ''}`}
                 style={{
-                  height: activeMetric === 'load' ? loadHighPct + '%' : bar.heightPct + '%',
-                  backgroundColor: `color-mix(in oklab, ${visual.color} 12%, var(--surface))`,
+                  height: activeMetric === 'load' ? loadHeightPct + '%' : bar.heightPct + '%',
+                  backgroundColor: activeMetric === 'load'
+                    ? 'transparent'
+                    : `color-mix(in oklab, ${visual.color} 12%, var(--surface))`,
                   borderColor: bar.isCompleted ? `color-mix(in oklab, ${visual.color} 38%, transparent)` : 'transparent',
                 }}
               >
-                <span
-                  className="absolute inset-x-0 bottom-0 rounded-t"
-                  style={{
-                    height: activeMetric === 'load' ? loadLowPct + '%' : bar.fillPct + '%',
-                    backgroundColor: activeMetric === 'load' ? visual.color : mileageBarFillColor(bar, visual),
-                  }}
-                  aria-hidden="true"
-                />
-                {activeMetric === 'mileage' && bar.plannedLinePct != null && (
-                  <span
-                    className="pointer-events-none absolute left-0 right-0 border-t-2 border-dashed border-text-primary/80"
-                    style={{ bottom: `${bar.plannedLinePct}%` }}
-                    aria-hidden="true"
-                  />
+                {activeMetric === 'load' ? (
+                  <>
+                    {hasLoadRange && (
+                      <span
+                        className="pointer-events-none absolute inset-x-0 rounded-sm border"
+                        style={{
+                          bottom: `${plannedLoadLowPct}%`,
+                          height: `${Math.max(2, plannedLoadHighPct - plannedLoadLowPct)}%`,
+                          borderColor: `color-mix(in oklab, ${visual.color} 48%, transparent)`,
+                          backgroundColor: `color-mix(in oklab, ${visual.color} 16%, var(--surface))`,
+                        }}
+                        aria-hidden="true"
+                      />
+                    )}
+                    {bar.actualDose != null && (
+                      <span
+                        className="pointer-events-none absolute inset-x-[22%] bottom-0 rounded-t-sm"
+                        style={{ height: `${actualLoadPct}%`, backgroundColor: visual.color }}
+                        aria-hidden="true"
+                      />
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <span
+                      className="absolute inset-x-0 bottom-0 rounded-t"
+                      style={{
+                        height: bar.fillPct + '%',
+                        backgroundColor: mileageBarFillColor(bar, visual),
+                      }}
+                      aria-hidden="true"
+                    />
+                    {bar.plannedLinePct != null && (
+                      <span
+                        className="pointer-events-none absolute left-0 right-0 border-t-2 border-dashed border-text-primary/80"
+                        style={{ bottom: `${bar.plannedLinePct}%` }}
+                        aria-hidden="true"
+                      />
+                    )}
+                  </>
                 )}
                 {bar.isCurrent && (
                   <span className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap font-mono text-[10px] font-semibold text-accent-green">
@@ -859,10 +905,10 @@ function MileageCycleCard({
         {activeMetric === 'load' ? (
           <div className="mt-3 space-y-2 font-mono text-[10px] text-text-muted">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-accent-green" />负荷区间下限</span>
-              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm border border-accent-green/30 bg-accent-green/15" />至负荷区间上限</span>
+              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-1.5 rounded-sm bg-accent-green" />实际负荷</span>
+              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-4 rounded-sm border border-accent-green/50 bg-accent-green/15" />计划负荷区间</span>
             </div>
-            <p>STRIDE dose 是根据计划跑量与关键课估算的每周负荷区间。</p>
+            <p>STRIDE dose 对比每周计划负荷区间与实际完成负荷。</p>
           </div>
         ) : (
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-text-muted">
@@ -925,10 +971,11 @@ function MileageTooltip({ bar }: { bar: MileageBar }) {
       </span>
       <span className="grid gap-1.5 font-mono text-[10px] leading-4 text-text-secondary">
         <span className="flex justify-between gap-3"><span>计划跑量</span><span className="text-text-primary">{formatRange(bar.plannedKmLow, bar.plannedKm, 'km')}</span></span>
-        <span className="flex justify-between gap-3"><span>计划负荷</span><span className="text-text-primary">{formatRange(bar.plannedDoseLow, bar.plannedDoseHigh, 'dose')}</span></span>
-        <span className="flex justify-between gap-3"><span>实际跑量</span><span className="text-text-primary">{bar.isCompleted ? formatKm(bar.actualKm ?? 0) : '未完成'}</span></span>
-        <span className="flex justify-between gap-3"><span>实际均配</span><span className="text-text-primary">{bar.isCompleted ? formatPace(bar) : '--'}</span></span>
-        <span className="flex justify-between gap-3"><span>实际均心率</span><span className="text-text-primary">{bar.isCompleted ? formatHr(bar) : '--'}</span></span>
+        <span className="flex justify-between gap-3"><span>计划负荷</span><span className="text-text-primary">{formatDoseRange(bar.plannedDoseLow, bar.plannedDoseHigh)}</span></span>
+        <span className="flex justify-between gap-3"><span>实际负荷</span><span className="text-text-primary">{formatActualDose(bar)}</span></span>
+        <span className="flex justify-between gap-3"><span>实际跑量</span><span className="text-text-primary">{bar.source === 'actual' ? formatKm(bar.actualKm) : bar.isCompleted ? '无跑步记录' : '未完成'}</span></span>
+        <span className="flex justify-between gap-3"><span>实际均配</span><span className="text-text-primary">{bar.source === 'actual' ? formatPace(bar) : '--'}</span></span>
+        <span className="flex justify-between gap-3"><span>实际均心率</span><span className="text-text-primary">{bar.source === 'actual' ? formatHr(bar) : '--'}</span></span>
       </span>
     </span>
   )
@@ -979,7 +1026,7 @@ function SummaryCards({
   currentPhase,
   nextMilestone,
 }: {
-  plan: MasterPlan
+  plan: SeasonPlanView
   target: TargetSummary
   currentWeek: number
   currentPhase: MasterPlanPhase | null
@@ -1213,43 +1260,61 @@ function buildPhaseSpans(phases: MasterPlanPhase[], totalWeeks: number | null): 
   return spans
 }
 
-function buildMileageBars(plan: MasterPlan, spans: PhaseSpan[], totalWeeks: number, currentWeek: number): MileageBar[] {
+function buildMileageBars(plan: SeasonPlanView, spans: PhaseSpan[], totalWeeks: number, currentWeek: number): MileageBar[] {
   if (!spans[0]) return []
   const weeklyTargets = masterPlanWeeksByIndex(plan)
   const raw = spans.flatMap((span) => Array.from({ length: span.weekCount }, (_, localIndex) => {
     const week = span.weekStart + localIndex
     const target = weeklyTargets.get(week)
     const targetPhase = target ? phaseForWeekTarget(target, spans) : null
-    const phase = targetPhase?.phase ?? span.phase
-    const phaseIndex = targetPhase?.index ?? span.index
-    const plannedKmLow = target
-      ? numberOrNull(target.target_weekly_km_low ?? target.target_weekly_km_high)
-      : null
-    const plannedKm = target
+    const effectiveSpan = targetPhase ?? span
+    const phase = effectiveSpan.phase
+    const phaseIndex = effectiveSpan.index
+    const phaseWeekIndex = Math.max(0, week - effectiveSpan.weekStart)
+    const inferredPlannedKm = interpolateWeeklyKm(
+      phase,
+      phaseWeekIndex,
+      effectiveSpan.weekCount,
+    )
+    const explicitPlannedKm = target
       ? numberOrNull(target.planned_distance_km ?? target.target_weekly_km_high ?? target.target_weekly_km_low)
-      : span.phase.is_completed
-        ? null
-        : interpolateWeeklyKm(span.phase, localIndex, span.weekCount)
+      : null
+    const hasExplicitPlannedKm = explicitPlannedKm != null
+    const plannedKm = explicitPlannedKm ?? inferredPlannedKm
+    const plannedKmLow = target
+      ? numberOrNull(target.target_weekly_km_low ?? target.target_weekly_km_high) ?? plannedKm
+      : plannedKm
     const actualKm = numberOrNull(target?.actual_distance_km)
-    const isCompleted = Boolean(target?.is_completed) || actualKm != null
+    const actualRunCount = target?.actual_run_count ?? 0
+    const hasActual = actualRunCount > 0 && actualKm != null
+    const isCompleted = target?.is_completed == null
+      ? week < currentWeek
+      : Boolean(target.is_completed)
+    const completedPhaseEstimate = phase.is_completed
+      ? numberOrNull(phase.summary?.weekly_avg_km)
+      : null
+    const estimatedKm = plannedKm ?? completedPhaseEstimate
     return {
       week,
       plannedKmLow,
       plannedKm,
       plannedDoseLow: numberOrNull(target?.target_training_dose_low),
       plannedDoseHigh: numberOrNull(target?.target_training_dose_high),
-      actualKm,
-      displayKm: isCompleted ? (actualKm ?? 0) : plannedKm,
+      actualDose: numberOrNull(target?.actual_training_dose),
+      actualDoseCoverage: numberOrNull(target?.actual_training_dose_coverage),
+      actualDoseStatus: parseDoseStatus(target?.actual_training_dose_status),
+      actualKm: hasActual ? actualKm : null,
+      displayKm: hasActual ? actualKm : estimatedKm,
       phase,
       phaseIndex,
       weekStart: target?.week_start ?? null,
       weekEnd: target?.week_end ?? null,
       isCompleted,
-      actualAvgPaceSec: numberOrNull(target?.actual_avg_pace_s_km),
-      actualAvgPaceFmt: target?.actual_avg_pace_fmt ?? '',
-      actualAvgHr: numberOrNull(target?.actual_avg_hr),
-      actualRunCount: target?.actual_run_count ?? 0,
-      source: isCompleted ? 'actual' as const : target ? 'planned' as const : 'estimated' as const,
+      actualAvgPaceSec: hasActual ? numberOrNull(target?.actual_avg_pace_s_km) : null,
+      actualAvgPaceFmt: hasActual ? target?.actual_avg_pace_fmt ?? '' : '',
+      actualAvgHr: hasActual ? numberOrNull(target?.actual_avg_hr) : null,
+      actualRunCount,
+      source: hasActual ? 'actual' as const : hasExplicitPlannedKm ? 'planned' as const : 'estimated' as const,
       isRecoveryWeek: Boolean(target?.is_recovery_week),
       isTaperWeek: Boolean(target?.is_taper_week),
     }
@@ -1279,8 +1344,15 @@ function numberOrNull(value: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function masterPlanWeeksByIndex(plan: MasterPlan): Map<number, MasterPlanWeek> {
-  const weeks = (plan.weeks && plan.weeks.length > 0) ? plan.weeks : (plan.weekly_key_sessions ?? [])
+function parseDoseStatus(value: unknown): MileageBar['actualDoseStatus'] {
+  return value === 'complete' || value === 'partial' || value === 'unknown'
+    ? value
+    : null
+}
+
+function masterPlanWeeksByIndex(plan: SeasonPlanView): Map<number, MasterPlanWeek> {
+  const legacyWeeks = 'weekly_key_sessions' in plan ? plan.weekly_key_sessions ?? [] : []
+  const weeks = (plan.weeks && plan.weeks.length > 0) ? plan.weeks : legacyWeeks
   const out = new Map<number, MasterPlanWeek>()
   for (const week of weeks) {
     if (Number.isFinite(week.week_index)) out.set(week.week_index, week)
@@ -1296,7 +1368,7 @@ function phaseForWeekTarget(week: MasterPlanWeek, spans: PhaseSpan[]): PhaseSpan
 
 function mileageBarTitle(bar: Omit<MileageBar, 'heightPct' | 'fillPct' | 'plannedLinePct' | 'isCurrent' | 'title'>): string {
   const sourceLabel = bar.source === 'actual' ? '实际' : bar.source === 'planned' ? '计划' : '估算'
-  const value = bar.source === 'actual' ? formatKm(bar.actualKm ?? 0) : formatKm(bar.plannedKm)
+  const value = bar.source === 'actual' ? formatKm(bar.actualKm) : formatKm(bar.displayKm)
   const labels = []
   if (bar.isRecoveryWeek) labels.push('调整周')
   if (bar.isTaperWeek) labels.push('减量周')
@@ -1307,7 +1379,7 @@ function mileageBarTitle(bar: Omit<MileageBar, 'heightPct' | 'fillPct' | 'planne
 
 function mileageBarFillColor(bar: MileageBar, visual: PhaseVisual): string {
   if (bar.isCurrent) return visual.color
-  if (bar.isCompleted) return visual.color
+  if (bar.source === 'actual') return visual.color
   if (bar.isRecoveryWeek) return `color-mix(in oklab, ${visual.color} 28%, var(--surface))`
   if (bar.isTaperWeek) return `color-mix(in oklab, ${visual.color} 34%, var(--surface))`
   return `color-mix(in oklab, ${visual.color} 42%, var(--surface))`
@@ -1341,7 +1413,7 @@ function findPhaseForDate(phases: MasterPlanPhase[], today: string): MasterPlanP
   }) ?? null
 }
 
-function selectNextMilestone(plan: MasterPlan, today: string): MasterPlanMilestone | null {
+function selectNextMilestone(plan: SeasonPlanView, today: string): MasterPlanMilestone | null {
   if (plan.next_milestone) {
     return {
       id: plan.next_milestone.id,
@@ -1356,7 +1428,7 @@ function selectNextMilestone(plan: MasterPlan, today: string): MasterPlanMilesto
   return sorted.find((milestone) => milestone.date >= today) ?? sorted.at(-1) ?? null
 }
 
-function buildHeroLede(plan: MasterPlan, target: TargetSummary, currentPhase: MasterPlanPhase | null, totalWeeks: number, currentWeek: number): string {
+function buildHeroLede(plan: SeasonPlanView, target: TargetSummary, currentPhase: MasterPlanPhase | null, totalWeeks: number, currentWeek: number): string {
   const parts = [
     `从 ${formatSlashDate(plan.start_date)} 到 ${formatSlashDate(plan.end_date)}，共 ${totalWeeks} 周。`,
     `当前处于第 ${currentWeek} 周${currentPhase ? ` · ${currentPhase.name}` : ''}，`,
@@ -1388,6 +1460,22 @@ function formatRange(low: number | null, high: number | null, suffix: string): s
   if (low == null || high == null) return '--'
   const fmt = (value: number) => value.toFixed(value % 1 === 0 ? 0 : 1)
   return low === high ? fmt(low) + ' ' + suffix : fmt(low) + '-' + fmt(high) + ' ' + suffix
+}
+
+function formatDoseRange(low: number | null, high: number | null): string {
+  if (low == null || high == null) return '--'
+  const roundedLow = Math.round(low)
+  const roundedHigh = Math.round(high)
+  return roundedLow === roundedHigh
+    ? `${roundedLow} dose`
+    : `${roundedLow}-${roundedHigh} dose`
+}
+
+function formatActualDose(bar: MileageBar): string {
+  if (bar.actualDose == null) return '--'
+  const value = `${Math.round(bar.actualDose)} dose`
+  if (bar.actualDoseStatus !== 'partial') return value
+  return bar.isCompleted ? `${value}（数据不完整）` : `${value}（截至目前）`
 }
 
 function formatPace(bar: MileageBar): string {

@@ -1,8 +1,9 @@
-"""Typed proposal for creating a canonical weekly plan.
+"""Typed proposal for creating or fully replacing a canonical weekly plan.
 
-Unlike :class:`PlanDiff`, this proposal carries a complete ``WeeklyPlan``.  It
-is used when no plan exists yet, so week-level notes and nutrition must survive
-the orchestrator round trip until the user explicitly confirms the write.
+Unlike :class:`PlanDiff`, this proposal carries a complete ``WeeklyPlan`` so
+week-level notes and nutrition survive until explicit confirmation. A missing
+``base_revision`` is create-only; a populated revision pins an intentional
+whole-week regeneration to the plan snapshot it replaces.
 """
 
 from __future__ import annotations
@@ -43,6 +44,10 @@ class WeeklyPlanCreateProposal(BaseModel):
     total_distance_km: float = Field(ge=0)
     ai_explanation: str
     created_at: str
+    # Snapshot fingerprint when this full plan replaces an existing week. None
+    # means create-only: if the week appears before apply, the request must 409
+    # rather than silently overwrite it.
+    base_revision: str | None = None
 
     @model_validator(mode="after")
     def _validate_plan(self) -> "WeeklyPlanCreateProposal":

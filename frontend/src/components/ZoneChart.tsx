@@ -98,13 +98,13 @@ export default function ZoneChart({ zones, type }: { zones: Zone[]; type: 'hr' |
   const labels = ZONE_LABELS
   const sourceZones = type === 'pace' ? normalizePaceZones(zones) : zones
   const displayZones = sourceZones.filter((z) => z.zone_index >= 1 && z.zone_index <= labels.length)
-  const maxPercent = Math.max(...displayZones.map((z) => z.percent), 1)
-
   return (
     <div className="space-y-3">
       {displayZones.map((zone, i) => {
         const color = ZONE_COLORS[i] || '#555570'
-        const width = Math.max((zone.percent / maxPercent) * 100, 2)
+        // Zone percentages already describe their share of this activity. Do not
+        // normalize to the largest zone: 63% must render as 63%, not 100%.
+        const width = Math.max(Math.min(zone.percent, 100), 2)
 
         const range = type === 'hr' ? formatHRRange(zone, displayZones) : formatPaceRange(zone, displayZones)
         const rangeUnit = type === 'hr' ? ' bpm' : '/km'
@@ -124,8 +124,9 @@ export default function ZoneChart({ zones, type }: { zones: Zone[]; type: 'hr' |
               </div>
             </div>
             <div className="h-5 bg-bg-secondary rounded-md overflow-hidden">
-              <div
-                className="h-full rounded-md transition-all duration-500 ease-out group-hover:brightness-125"
+                <div
+                  data-testid={`zone-bar-${zone.zone_index}`}
+                  className="h-full rounded-md transition-all duration-500 ease-out group-hover:brightness-125"
                 style={{
                   width: `${width}%`,
                   backgroundColor: color,

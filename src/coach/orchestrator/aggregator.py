@@ -56,6 +56,7 @@ def _proposal_cards(dispatched: list[DispatchResult], resolver_output: ResolverO
                     specialist_id=item.specialist_id,
                     proposal=proposal,
                     target=resolver_output.active_target,
+                    base_revision=proposal.base_revision,
                     summary=(
                         proposal.ai_explanation
                         if multiple and proposal.ai_explanation

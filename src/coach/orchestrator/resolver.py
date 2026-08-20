@@ -82,17 +82,51 @@ def build_resolver_system_prompt(registry: SpecialistRegistry) -> str:
     return render_skill("resolver", {"card_catalog": render_card_catalog(registry)})
 
 
+def _review_context_marker(review_context: dict | None) -> str:
+    """A compact routing hint for an unapplied review draft (never the full plan).
+
+    Only the kind + folder go into the Resolver prompt so a follow-up like "这个
+    课表的训练逻辑是什么" routes to the read/status specialist against the draft
+    under review, instead of being misread as a fresh request. The full draft
+    payload rides the SpecialistTask user context, never this prompt or the
+    cache-stable system prompt.
+    """
+    if not review_context or not isinstance(review_context, dict):
+        return ""
+    if review_context.get("kind") != "weekly_create":
+        return ""
+    proposal = review_context.get("proposal")
+    folder = proposal.get("folder") if isinstance(proposal, dict) else None
+    if not folder:
+        return ""
+    return (
+        "# 当前评审上下文\n"
+        f"用户正在评审一个尚未启用的周训练计划草案（weekly_create，folder={folder}）。"
+        "解释这个课表的内容、训练逻辑或现有安排时，按只读问题处理并以该草案为准；"
+        "明确要求移动、替换、增删或减量时，按 weekly_plan 写操作处理并修改该草案。"
+    )
+
+
 def build_resolver_user_prompt(
-    utterance: str, conversation_window: list[Turn], memory_context: str = ""
+    utterance: str,
+    conversation_window: list[Turn],
+    memory_context: str = "",
+    review_context: dict | None = None,
 ) -> str:
     """User prompt = this turn's utterance + recent window + injected memory.
 
     ``memory_context`` (active long-term facts, §4.0) goes in the *user* turn —
-    per-athlete data never enters the cache-stable system prompt.
+    per-athlete data never enters the cache-stable system prompt. ``review_context``
+    contributes only a compact marker (kind + folder) so routing sees the draft
+    under review; the full draft never enters this prompt.
     """
     parts: list[str] = []
     if memory_context:
         parts.append(memory_context)
+        parts.append("")
+    marker = _review_context_marker(review_context)
+    if marker:
+        parts.append(marker)
         parts.append("")
     if conversation_window:
         parts.append("# 最近对话")
@@ -231,6 +265,7 @@ def resolve(
     conversation_window: list[Turn] | None = None,
     prior_target: TargetRef | None = None,
     memory_context: str = "",
+    review_context: dict | None = None,
     target_resolver: TargetResolverFn | None = None,
 ) -> ResolverOutput:
     """Run the Resolver: LLM intent draft → deterministic target + clarify (§4.1).
@@ -239,10 +274,14 @@ def resolve(
     target to a concrete one (e.g. "本周" → the current week's folder). Writes
     need this before arbitration; explicit reads use it so queries such as
     "下一周计划是什么" do not silently fall back to the current week.
+    ``review_context`` (an unapplied draft under review) contributes only a
+    compact routing marker to the user prompt.
     """
     window = conversation_window or []
     system_prompt = build_resolver_system_prompt(registry)
-    user_prompt = build_resolver_user_prompt(utterance, window, memory_context)
+    user_prompt = build_resolver_user_prompt(
+        utterance, window, memory_context, review_context
+    )
 
     draft = draft_fn(system_prompt, user_prompt)
     logger.debug(

@@ -237,10 +237,10 @@ def test_phase_prompt_carries_weekly_hard_rules_block():
     )
     # the block's framing header
     assert "rule_filter" in prompt
-    # 1. weekly_progression — 1.10x cap
-    assert "1.10" in prompt
-    # 2. long_run_share — 35%
+    assert "独立生成单周计划" in prompt
+    # Season-level long_run_share remains guidance, not an S2 rule_filter gate.
     assert "35%" in prompt
+    assert "不用于独立生成单周计划的 rule_filter" in prompt
     # 3. intensity_distribution — 20% (80/20)
     assert "20%" in prompt
     # 4. rest_days — at least one full rest day
@@ -267,11 +267,8 @@ def test_phase_prompt_hard_rules_block_present_for_all_phases(phase: PhaseType):
     assert WEEKLY_HARD_RULES in prompt
 
 
-def test_phase_prompt_hard_rules_ramp_matches_gate():
-    """Drift-guard: the 1.10 ramp threshold stated in the prompt MUST equal the
-    actual gate constant ``rule_filter.MAX_WEEKLY_RAMP_RATIO``. If the gate
-    changes, this test fails so the prompt can't silently diverge.
-    """
+def test_phase_prompt_keeps_season_transition_ratio():
+    """The season-level transition rule still uses the shared ramp ratio."""
     from coach.graphs.generation.rule_filter import MAX_WEEKLY_RAMP_RATIO
 
     prompt = build_phase_system_prompt(

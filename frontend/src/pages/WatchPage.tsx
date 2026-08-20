@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   disconnectWatch,
   getWatchInfo,
-  postCorosLogin,
-  postGarminLogin,
+  postWatchLogin,
   type WatchInfo,
 } from '../api'
 
@@ -73,9 +72,7 @@ export default function WatchPage({ embedded }: WatchPageProps = {}) {
     setConnecting(true)
     setError('')
     try {
-      const res = connectProvider === 'garmin'
-        ? await postGarminLogin(email.trim(), password.trim(), region)
-        : await postCorosLogin(email.trim(), password.trim())
+      const res = await postWatchLogin(connectProvider, email.trim(), password.trim(), region)
       if (res.ok) {
         setSuccess('绑定成功')
         setConnectProvider(null)
@@ -84,8 +81,7 @@ export default function WatchPage({ embedded }: WatchPageProps = {}) {
         fetchWatch()
         setTimeout(() => setSuccess(''), 3000)
       } else {
-        const detail = res.data?.detail
-        setError(typeof detail === 'string' ? detail : '登录失败，请检查账号密码')
+        setError(res.data.error || '登录失败，请检查账号密码')
       }
     } catch {
       setError('请求失败，请重试')

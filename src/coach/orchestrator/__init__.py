@@ -18,7 +18,13 @@ from .supervisor import build_call_plan, build_specialist_task
 from .dispatcher import DispatchResult, dispatch
 from .aggregator import SynthFn, aggregate
 from .state import OrchestratorState, coach_thread_id, history_to_window, last_human_text
-from .graph import build_orchestrator_graph
+from .idempotency import (
+    MAX_TURN_RECEIPTS,
+    TurnConflictError,
+    assistant_message_id,
+    human_message_id,
+)
+from .graph import build_event_recorder_graph, build_orchestrator_graph
 
 __all__ = [
     # resolver
@@ -42,4 +48,10 @@ __all__ = [
     "history_to_window",
     "last_human_text",
     "build_orchestrator_graph",
+    "build_event_recorder_graph",
+    # idempotency
+    "MAX_TURN_RECEIPTS",
+    "TurnConflictError",
+    "assistant_message_id",
+    "human_message_id",
 ]

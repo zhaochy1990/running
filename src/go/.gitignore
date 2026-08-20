@@ -1,0 +1,12 @@
+# Secrets — never commit.
+.env
+config.local.yml
+
+# Build output.
+/out/
+/stride
+*.exe
+
+# Generated Swagger docs are now committed (ADR 0014, superseding ADR 0012) so
+# `go mod tidy` resolves the tagged swagger import on a fresh checkout.
+# Regenerate with `make swagger`; CI drift-checks the tree is up to date.

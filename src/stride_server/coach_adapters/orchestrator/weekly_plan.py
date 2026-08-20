@@ -21,6 +21,7 @@ lives at the orchestrator level (the ``conversation_window`` arrives in the task
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections.abc import Callable
@@ -31,6 +32,7 @@ from uuid import uuid4
 from langchain_core.messages import AIMessage, HumanMessage
 
 from coach.contracts import (
+    REVIEW_CONTEXT_KEY,
     SpecialistCard,
     SpecialistResult,
     SpecialistRunner,
@@ -38,10 +40,12 @@ from coach.contracts import (
     TargetHint,
     TargetRef,
     Turn,
+    WeeklyCreateReviewContext,
 )
 from coach.graphs.conversation.graph import build_conversation_graph
 from coach.schemas import assistant_parts_from_message
-from stride_core.plan_diff import PlanDiff
+from stride_core.plan_diff import PlanDiff, apply_diff_to_weekly_plan
+from stride_core.plan_revision import weekly_plan_fingerprint
 from stride_core.timefmt import parse_week_folder_dates, today_shanghai
 from stride_core.weekly_plan_proposal import WeeklyPlanCreateProposal
 from stride_core.weekly_plan_proposal import is_supported_weekly_plan_generation
@@ -50,6 +54,7 @@ from ...weekly_plan_store import get_weekly_plan_store
 from ...weekly_plan_generator import WeeklyPlanAlreadyExistsError, build_weekly_plan
 from ...week_generator import week_folder
 from ..toolkit import build_stride_toolkit
+from .weekly_review_revise import revise_weekly_create_proposal
 
 logger = logging.getLogger(__name__)
 
@@ -257,7 +262,7 @@ def _creation_rejection(folder: str) -> str | None:
 
 
 def _requests_generation(objective: str) -> bool:
-    compact = re.sub(r"\s+", "", objective)
+    compact = re.sub(r"\s+", "", objective).lower()
     negated = (
         "不要生成",
         "不生成",
@@ -267,14 +272,43 @@ def _requests_generation(objective: str) -> bool:
     )
     if any(marker in compact for marker in negated):
         return False
-    return any(marker in compact for marker in ("生成", "创建", "新建"))
+    markers = (
+        "生成",
+        "创建",
+        "新建",
+        # Same-day DOUBLE-RUN asks route to a full-week regeneration so the LLM
+        # generator can place the requested second same-day session (the diff
+        # tools can only add strength or overwrite an existing session). Kept
+        # run-double specific so a generic "加一节力量" stays on the diff path.
+        "双跑",
+        "两练",
+        "早晚各",
+        "早晚双",
+        "一天两",
+        "两次跑",
+        "secondrun",
+        "doublerun",
+        "tworuns",
+    )
+    return any(marker in compact for marker in markers)
 
 
-def _create_proposal(user_id: str, folder: str) -> WeeklyPlanCreateProposal:
+def _create_proposal(
+    user_id: str,
+    folder: str,
+    *,
+    existing_plan: Any | None = None,
+    user_request: str | None = None,
+) -> WeeklyPlanCreateProposal:
     week_start = _week_start(folder)
     if week_start is None:
         raise ValueError(f"invalid weekly plan folder {folder!r}")
-    generated = build_weekly_plan(user_id=user_id, week_start=week_start)
+    generated = build_weekly_plan(
+        user_id=user_id,
+        week_start=week_start,
+        allow_existing=existing_plan is not None,
+        user_request=user_request,
+    )
     explanation = (
         f"已生成 {week_start.isoformat()} 开始的一周训练计划，"
         f"目标周跑量约 {generated.total_distance_km:.1f} 公里；确认后才会保存。"
@@ -286,6 +320,11 @@ def _create_proposal(user_id: str, folder: str) -> WeeklyPlanCreateProposal:
         total_distance_km=generated.total_distance_km,
         ai_explanation=explanation,
         created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        base_revision=(
+            weekly_plan_fingerprint(existing_plan)
+            if existing_plan is not None
+            else None
+        ),
     )
 
 
@@ -326,7 +365,138 @@ def make_weekly_plan_runner(
 ) -> SpecialistRunner:
     """Build the weekly_plan runner (wraps the week_chat conversation graph)."""
 
+    def _review_draft(task: SpecialistTask) -> WeeklyPlanCreateProposal | None:
+        """Return the unapplied weekly-create draft under review, if any.
+
+        The draft must be a ``weekly_create`` review context whose folder matches
+        this turn's target — otherwise there is no authoritative draft to revise
+        and the turn falls through to the ordinary saved-plan flow.
+        """
+        review_context = (
+            task.context.data.get(REVIEW_CONTEXT_KEY) if task.context else None
+        )
+        if not isinstance(review_context, dict):
+            return None
+        if review_context.get("kind") != "weekly_create":
+            return None
+        try:
+            draft = WeeklyCreateReviewContext.model_validate(review_context).proposal
+        except Exception:  # noqa: BLE001 — a malformed draft must not crash the turn
+            logger.warning("weekly_plan: review draft failed to validate", exc_info=True)
+            return None
+        target_folder = task.active_target.folder if task.active_target else None
+        if target_folder and target_folder != draft.folder:
+            logger.warning(
+                "weekly_plan: review draft folder %r != target %r — ignoring draft",
+                draft.folder,
+                target_folder,
+            )
+            return None
+        return draft
+
+    def _run_review_turn(
+        task: SpecialistTask, draft: WeeklyPlanCreateProposal
+    ) -> SpecialistResult:
+        """Read/explain or revise the drafted week against the draft itself.
+
+        The draft — not a saved plan — is the authoritative base: a loader
+        feeding the toolkit returns the draft ``WeeklyPlan`` so ``get_week_plan``
+        and every draft tool reference the draft's own sessions. A produced
+        ``PlanDiff`` is projected onto the draft (pure ``revise_weekly_create_proposal``)
+        into a NEW full proposal; a read turn (no diff) returns just the reply.
+        """
+        base_plan = draft.to_weekly_plan()
+
+        def _draft_loader(folder: str | None) -> Any:
+            # The draft is the only plan in scope; serve it for its own folder
+            # (and for a bare/current lookup) and nothing else.
+            if folder is None or folder == draft.folder:
+                return base_plan
+            return None
+
+        # Always construct a draft-wired toolkit for Review. Reusing an injected
+        # ordinary toolkit here could silently make tools read the saved plan.
+        active_toolkit = build_stride_toolkit(
+            user_id, week_plan_loader=_draft_loader
+        )
+        graph = graph_factory(
+            toolkit=active_toolkit, llm=llm, checkpointer=None, scope="week_chat"
+        )
+
+        messages: list[Any] = []
+        if task.context and task.context.notes:
+            messages.append(
+                HumanMessage(content=f"（已知长期背景，供参考）\n{task.context.notes}")
+            )
+        draft_json = json.dumps(base_plan.to_dict(), ensure_ascii=False, separators=(",", ":"))
+        messages.append(
+            HumanMessage(
+                content=(
+                    "【当前正在评审、尚未启用的周训练计划草案 —— 这是权威来源】\n"
+                    f"folder = {draft.folder}（所有 draft 工具的 folder 参数都用这个值）。"
+                    "这是用户此刻正在评审、还没有保存的方案。修改或解释这个课表时，"
+                    "只针对下面的草案，不要读取已保存的周计划。"
+                    "本 Review 必须始终返回可直接审阅的完整课表：禁止调用 regenerate_week "
+                    "输出仅清空全部训练的中间指令；具体约束请用 replace_session、shift_session、"
+                    "reduce_intensity 等生成具体修改。\n"
+                    f"草案 plan JSON：\n{draft_json}"
+                )
+            )
+        )
+        messages.extend(_window_to_messages(task.conversation_window))
+        messages.append(HumanMessage(content=task.objective))
+
+        state_in = {
+            "history": messages,
+            "scope": "week_chat",
+            "user_id": user_id,
+            "thread_id": "",
+            "folder": draft.folder,
+            "plan_id": None,
+            "constraints": [],
+            "last_diff": None,
+            "iteration": 0,
+        }
+        state = graph.invoke(state_in, config={})
+
+        reply = _extract_reply(state.get("history") or [])
+        last_diff = state.get("last_diff")
+        if last_diff is None:
+            # Read / explain turn — no change proposed; keep it proposal-free.
+            return SpecialistResult(status="completed", reply_fragment=reply, proposals=[])
+        try:
+            diff = PlanDiff.model_validate(last_diff)
+            proposal = revise_weekly_create_proposal(draft, diff)
+        except ValueError as exc:
+            logger.warning(
+                "weekly_plan: rejected incomplete review revision: %s", exc
+            )
+            return SpecialistResult(
+                status="needs_clarification",
+                clarification=(
+                    "这次调整只生成了清空指令，没有生成完整替代课表，因此 Review 未被替换。"
+                    "请明确要修改的训练日、课型或强度，我会返回一份可直接审阅的完整方案。"
+                ),
+            )
+        except Exception:  # noqa: BLE001 — a bad diff must not crash the turn
+            logger.warning(
+                "weekly_plan: review revision failed to build a proposal", exc_info=True
+            )
+            return SpecialistResult(
+                status="failed",
+                reply_fragment="修订这份计划时出了点问题，请再试一次。",
+            )
+        if not reply:
+            reply = proposal.ai_explanation
+        return SpecialistResult(
+            status="completed", reply_fragment=reply, proposals=[proposal]
+        )
+
     def _run(task: SpecialistTask) -> SpecialistResult:
+        draft = _review_draft(task)
+        if draft is not None:
+            return _run_review_turn(task, draft)
+
         folder = task.active_target.folder if task.active_target else None
         if not folder:
             # No concrete week to act on — the Resolver should have filled this,
@@ -336,7 +506,8 @@ def make_weekly_plan_runner(
                 clarification="你想调整哪一周的训练？我没找到当前周的计划。",
             )
 
-        if _requests_generation(task.objective):
+        requests_generation = _requests_generation(task.objective)
+        if requests_generation:
             rejection = _creation_rejection(folder)
             if rejection is not None:
                 return SpecialistResult(status="rejected", reply_fragment=rejection)
@@ -350,42 +521,59 @@ def make_weekly_plan_runner(
                 reply_fragment="暂时无法读取训练周，请稍后再试。",
             )
 
-        if existing is None:
-            rejection = _creation_rejection(folder)
-            if rejection is not None:
-                return SpecialistResult(status="rejected", reply_fragment=rejection)
-            if not _requests_generation(task.objective):
-                return SpecialistResult(
-                    status="needs_clarification",
-                    clarification=(
-                        f"目标周 {folder} 还没有训练计划。请先创建并应用这一周的"
-                        "计划，再重新提出这项调整。请明确回复“创建这一周计划”"
-                        "来生成创建提案。"
-                    ),
-                )
+        if requests_generation:
             try:
-                proposal = _create_proposal(user_id, folder)
+                proposal = _create_proposal(
+                    user_id,
+                    folder,
+                    existing_plan=existing,
+                    user_request=task.objective,
+                )
             except WeeklyPlanAlreadyExistsError:
-                # The plan appeared between lookup and generation. Continue as
-                # an adjustment so this race never creates an overwrite proposal.
-                existing = get_weekly_plan_store().get_plan(user_id, folder)
+                # The week appeared between lookup and generation. Regenerate a
+                # full replacement proposal pinned to that newly-created plan.
+                try:
+                    existing = get_weekly_plan_store().get_plan(user_id, folder)
+                    if existing is None:
+                        raise ValueError("target week appeared but cannot be reloaded")
+                    proposal = _create_proposal(
+                        user_id,
+                        folder,
+                        existing_plan=existing,
+                        user_request=task.objective,
+                    )
+                except (ValueError, OSError):
+                    logger.exception(
+                        "weekly_plan: failed to regenerate newly-created week"
+                    )
+                    return SpecialistResult(
+                        status="failed",
+                        reply_fragment="生成周训练计划失败，请稍后再试。",
+                    )
             except (ValueError, OSError):
-                logger.exception("weekly_plan: failed to generate creation proposal")
+                logger.exception("weekly_plan: failed to generate full-week proposal")
                 return SpecialistResult(
                     status="failed",
                     reply_fragment="生成周训练计划失败，请稍后再试。",
                 )
-            else:
-                return SpecialistResult(
-                    status="completed",
-                    reply_fragment=proposal.ai_explanation,
-                    proposals=[proposal],
-                )
-            if existing is None:
-                return SpecialistResult(
-                    status="failed",
-                    reply_fragment="训练周状态刚刚发生变化，请重试。",
-                )
+            return SpecialistResult(
+                status="completed",
+                reply_fragment=proposal.ai_explanation,
+                proposals=[proposal],
+            )
+
+        if existing is None:
+            rejection = _creation_rejection(folder)
+            if rejection is not None:
+                return SpecialistResult(status="rejected", reply_fragment=rejection)
+            return SpecialistResult(
+                status="needs_clarification",
+                clarification=(
+                    f"目标周 {folder} 还没有训练计划。请先创建并应用这一周的"
+                    "计划，再重新提出这项调整。请明确回复“创建这一周计划”"
+                    "来生成创建提案。"
+                ),
+            )
 
         active_toolkit = toolkit or build_stride_toolkit(user_id)
         graph = graph_factory(
@@ -425,7 +613,25 @@ def make_weekly_plan_runner(
         last_diff = state.get("last_diff")
         if last_diff is not None:
             try:
-                proposals.append(PlanDiff.model_validate(last_diff))
+                diff = PlanDiff.model_validate(last_diff)
+                applicable = [op.id for op in diff.ops if op.accepted is not False]
+                projected = apply_diff_to_weekly_plan(existing, diff, applicable)
+                if existing.sessions and not projected.sessions:
+                    logger.warning(
+                        "weekly_plan: rejected diff that removes every session"
+                    )
+                    return SpecialistResult(
+                        status="needs_clarification",
+                        clarification=(
+                            "这次调整只生成了清空指令，没有生成完整替代课表，因此 Review 未被替换。"
+                            "请明确要修改的训练日、课型或强度，我会返回一份可直接审阅的完整方案。"
+                        ),
+                    )
+                proposals.append(
+                    diff.model_copy(
+                        update={"base_revision": weekly_plan_fingerprint(existing)}
+                    )
+                )
             except Exception:  # noqa: BLE001 — a malformed draft must not crash the turn
                 logger.warning("weekly_plan: last_diff did not validate as PlanDiff", exc_info=True)
         # A tool-call-only AIMessage (no accompanying text) leaves an empty reply

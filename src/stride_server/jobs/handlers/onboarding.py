@@ -97,21 +97,17 @@ def handle_calibration(job: JobRecord, *, heartbeat: Any) -> dict[str, Any]:
 
     Personal bests only depend on the synced activities (not on calibration or
     ability), so they're computed here alongside calibration rather than waiting
-    for the backfill step.
+    for the backfill step. Delegates to the shared onboarding compute pass so the
+    synchronous API-process onboarding sync produces identical baselines.
     """
-    from stride_core.pb_records import persist_personal_bests
-    from stride_core.training_load import refresh_training_load_calibration
+    from stride_core.onboarding_compute import compute_onboarding_calibration
     from stride_storage.sqlite.database import Database
 
     uuid = job.partition_key
     heartbeat(stage="calibrating", progress_pct=50)
     with Database(user=uuid) as db:
-        cal = refresh_training_load_calibration(db, lookback_days=180)
+        cal = compute_onboarding_calibration(db)
         heartbeat(stage="personal_bests", progress_pct=60)
-        try:
-            persist_personal_bests(db)
-        except Exception:
-            logger.warning("onboarding PB backfill failed for %s", uuid, exc_info=True)
     return {
         "hrmax_estimate": cal.hrmax_estimate,
         "threshold_hr": cal.threshold_hr,
@@ -126,31 +122,14 @@ def handle_backfill(job: JobRecord, *, heartbeat: Any) -> dict[str, Any]:
     Calibration exists now, so one bounded 365-day pass can warm up the
     42-day chronic-load EWMA without refitting athlete baselines. Ability then
     reads the same persisted calibration. No commentary (expensive; generated
-    lazily elsewhere).
+    lazily elsewhere). Delegates to the shared onboarding compute pass.
     """
-    from datetime import timedelta
-
-    from stride_core.ability_hook import backfill_ability_snapshots
-    from stride_core.timefmt import today_shanghai
-    from stride_core.training_load import recompute_training_load
+    from stride_core.onboarding_compute import compute_onboarding_backfill
     from stride_storage.sqlite.database import Database
 
     uuid = job.partition_key
     heartbeat(stage="training_load", progress_pct=65)
     with Database(user=uuid) as db:
-        as_of = today_shanghai()
-        load = recompute_training_load(
-            db,
-            start=as_of - timedelta(days=365),
-            end=as_of,
-            persist=True,
-        )
+        result = compute_onboarding_backfill(db)
         heartbeat(stage="scoring", progress_pct=70)
-        ability = backfill_ability_snapshots(db, days=180)
-    return {
-        "training_load": {
-            "activities_processed": load.activities_processed,
-            "daily_rows_written": load.daily_rows_written,
-        },
-        "ability": ability,
-    }
+    return result

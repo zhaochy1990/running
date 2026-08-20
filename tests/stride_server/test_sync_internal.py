@@ -7,6 +7,8 @@ on app.state, and exercise the route with TestClient.
 
 from __future__ import annotations
 
+import sqlite3
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -140,6 +142,49 @@ def test_full_flag_forwarded_to_sync_user(monkeypatch):
 
     assert resp.status_code == 200, resp.text
     assert calls == [(USER_UUID, True)]
+
+
+def test_writer_busy_returns_retryable_503(monkeypatch):
+    from stride_server.sqlite_writer import try_user_sqlite_writer
+
+    calls: list[tuple[str, bool]] = []
+
+    class RecordingSource(FakeSource):
+        def sync_user(self, user: str, full: bool = False) -> SyncResult:
+            calls.append((user, full))
+            return SyncResult(activities=1, health=1)
+
+    app = _build_app(monkeypatch, source=RecordingSource())
+    client = TestClient(app, raise_server_exceptions=False)
+
+    with try_user_sqlite_writer(USER_UUID) as acquired:
+        assert acquired is True
+        resp = client.post(
+            f"/internal/sync?user={USER_UUID}",
+            headers={"X-Internal-Token": INTERNAL_TOKEN},
+        )
+
+    assert resp.status_code == 503
+    assert resp.headers["Retry-After"] == "2"
+    assert resp.json()["detail"] == "user SQLite writer is busy; retry sync later"
+    assert calls == []
+
+
+def test_sqlite_lock_from_sync_returns_retryable_503(monkeypatch):
+    class LockedSource(FakeSource):
+        def sync_user(self, user: str, full: bool = False) -> SyncResult:
+            raise sqlite3.OperationalError("database is locked")
+
+    app = _build_app(monkeypatch, source=LockedSource())
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.post(
+        f"/internal/sync?user={USER_UUID}",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    assert resp.status_code == 503
+    assert resp.headers["Retry-After"] == "2"
 
 
 def test_not_logged_in_returns_success_false(monkeypatch):

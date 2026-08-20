@@ -21,11 +21,13 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from coach.contracts import (
+    REVIEW_CONTEXT_KEY,
     SpecialistCard,
     SpecialistResult,
     SpecialistRunner,
     SpecialistTask,
     Turn,
+    WeeklyCreateReviewContext,
 )
 from coach.graphs.conversation.graph import build_conversation_graph
 from coach.schemas import assistant_parts_from_message
@@ -88,6 +90,38 @@ def _window_to_messages(window: list[Turn]) -> list[Any]:
     return messages
 
 
+def _review_draft_message(review_context: dict[str, Any]) -> HumanMessage | None:
+    """Render an unapplied review draft as the authoritative plan for this turn.
+
+    ``review_context`` is the serialised ``WeeklyCreateReviewContext``. The draft
+    is a not-yet-saved weekly-create proposal, so the specialist must answer any
+    question about the week's content from THIS payload and must NOT call
+    ``get_week_plan`` (there is no saved plan to read). Returns ``None`` when the
+    payload isn't a recognised weekly-create draft.
+    """
+    if not isinstance(review_context, dict):
+        return None
+    try:
+        proposal = WeeklyCreateReviewContext.model_validate(review_context).proposal
+    except (TypeError, ValueError):
+        logger.warning("status_insight: review draft failed to validate", exc_info=True)
+        return None
+    payload = json.dumps(proposal.plan, ensure_ascii=False, separators=(",", ":"))
+    explanation = proposal.ai_explanation.strip()
+    lines = [
+        "【当前正在评审、尚未启用的周训练计划草案 —— 这是权威来源】",
+        f"folder = {proposal.folder}。这是用户此刻正在评审的方案，还没有保存成周课表。",
+        "回答关于这个课表内容 / 训练逻辑 / 安排的问题时，只依据下面的草案 JSON，"
+        "不要调用 get_week_plan，也不要读取已保存的周计划。"
+        "计划的 notes_md 已显示在中栏“本周说明”；用户泛问训练逻辑时只需简短提示其查看"
+        "本周说明并回答新增的具体疑问，不要在右栏重复整张日历、逐日表格或完整说明。",
+    ]
+    if explanation:
+        lines.append(f"教练对该草案的说明：{explanation}")
+    lines.append(f"草案 plan JSON：\n{payload}")
+    return HumanMessage(content="\n".join(lines))
+
+
 def _extract_answer(state: dict[str, Any]) -> str:
     history = state.get("history") or []
     for message in reversed(history):
@@ -134,7 +168,19 @@ def make_status_insight_runner(
         # Long-term memory (injected by Memory Load, §4.0) as background context.
         if task.context and task.context.notes:
             messages.append(HumanMessage(content=f"（已知长期背景，供参考）\n{task.context.notes}"))
-        if task.active_target is not None and task.active_target.kind == "master":
+        # An unapplied review draft is the authoritative source for the drafted
+        # week's content — it takes precedence over any saved-plan read path.
+        review_context = (
+            task.context.data.get(REVIEW_CONTEXT_KEY) if task.context else None
+        )
+        draft_message = (
+            _review_draft_message(review_context)
+            if isinstance(review_context, dict)
+            else None
+        )
+        if draft_message is not None:
+            messages.append(draft_message)
+        elif task.active_target is not None and task.active_target.kind == "master":
             messages.append(
                 HumanMessage(
                     content=(

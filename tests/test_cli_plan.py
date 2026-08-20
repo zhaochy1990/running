@@ -25,6 +25,7 @@ from click.testing import CliRunner
 from coros_sync.cli_plan import (
     VariantResult,
     extract_weekly_plan_json,
+    fetch_recent_weekly_feedback,
     run_omc_ask,
     upload_variant,
 )
@@ -32,6 +33,56 @@ from coros_sync.cli_plan import (
 
 WEEK = "2026-05-04_05-10(P1W2)"
 USER = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
+
+
+def test_fetch_recent_weekly_feedback_uses_authenticated_week_detail(monkeypatch):
+    monkeypatch.setattr(
+        "coros_sync.cli_plan.bearer_header",
+        lambda profile: {"Authorization": "Bearer token"},
+    )
+    list_response = MagicMock(status_code=200, text="")
+    list_response.json.return_value = {"weeks": [{"folder": WEEK, "has_feedback": True}]}
+    detail_response = MagicMock(status_code=200, text="")
+    detail_response.json.return_value = {"feedback": "RPE 7, recovered well"}
+    get = MagicMock(side_effect=[list_response, detail_response])
+    monkeypatch.setattr("coros_sync.cli_plan.httpx.get", get)
+    assert fetch_recent_weekly_feedback(
+        prod_url="https://stride.test", profile=USER, exclude_folder="other-week",
+    ) == [(WEEK, "RPE 7, recovered well")]
+    assert get.call_args_list == [
+        ((f"https://stride.test/api/{USER}/weeks",), {
+            "headers": {"Authorization": "Bearer token"}, "timeout": 30.0,
+        }),
+        ((f"https://stride.test/api/{USER}/weeks/{WEEK}",), {
+            "headers": {"Authorization": "Bearer token"}, "timeout": 30.0,
+        }),
+    ]
+
+
+def test_fetch_recent_feedback_filters_before_limit_and_excludes_tagged_target(monkeypatch):
+    monkeypatch.setattr(
+        "coros_sync.cli_plan.bearer_header",
+        lambda profile: {"Authorization": "Bearer token"},
+    )
+    list_response = MagicMock(status_code=200, text="")
+    list_response.json.return_value = {"weeks": [
+        {"folder": "2026-05-25_05-31", "has_feedback": False},
+        {"folder": "2026-05-18_05-24", "has_feedback": False},
+        {"folder": "2026-05-11_05-17", "has_feedback": False},
+        {"folder": "2026-05-04_05-10", "has_feedback": True},
+        {"folder": "2026-04-27_05-03", "has_feedback": True},
+    ]}
+    detail = MagicMock(status_code=200, text="")
+    detail.json.return_value = {"feedback": "older feedback"}
+    monkeypatch.setattr(
+        "coros_sync.cli_plan.httpx.get",
+        MagicMock(side_effect=[list_response, detail]),
+    )
+    assert fetch_recent_weekly_feedback(
+        prod_url="https://stride.test",
+        profile=USER,
+        exclude_folder="2026-05-04_05-10(P1W2)",
+    ) == [("2026-04-27_05-03", "older feedback")]
 
 
 # ── Fixtures: well-formed WeeklyPlan blob ──────────────────────────────

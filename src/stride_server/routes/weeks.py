@@ -258,6 +258,7 @@ def get_week(user: str, folder: str):
         ),
         "sessions": sessions_payload,
         "nutrition": nutrition_payload,
+        "coach_notes": display_plan.coach_notes if display_plan is not None else None,
     }
 
     # Multi-variant summary (Step 2). Additive — old frontends ignore.

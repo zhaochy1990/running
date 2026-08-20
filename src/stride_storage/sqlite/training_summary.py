@@ -12,7 +12,6 @@ from datetime import date
 from typing import Any
 
 from stride_core.timefmt import SHANGHAI_DAY_SQL, sqlite_mixed_date_expr
-from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from .database import Database, HRV_PREFERRED_PER_DATE_SQL
 
@@ -42,6 +41,21 @@ def _category(row: dict[str, Any]) -> str:
     return "cross"
 
 
+def _coerce_feel(value: Any) -> float | None:
+    """Coerce the stored numeric ``feel`` (0-10 scale) to float.
+
+    Existing SQLite databases keep TEXT affinity on ``feel``, so a numeric
+    write can be read back as the string ``"4.0"``. Coerce defensively and
+    return ``None`` for missing or non-numeric values.
+    """
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[str, Any]:
     """Aggregate activities, load, recovery, and plan adherence.
 
@@ -64,10 +78,9 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
                       atl.excluded_from_pmc, af.rpe
                  FROM bounded b
                  LEFT JOIN activity_training_load atl ON atl.label_id = b.label_id
-                   AND atl.algorithm_version = ?
                  LEFT JOIN activity_feedback af ON af.label_id = b.label_id
                 ORDER BY b.shanghai_date, b.label_id""",
-        (date_from, date_to, TRAINING_LOAD_MODEL_VERSION),
+        (date_from, date_to),
     ).fetchall()
 
     running = db.get_running_week_summaries([(0, date_from, date_to)]).get(0, {})
@@ -117,7 +130,7 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
                     ),
                 },
                 "rpe": row.get("rpe"),
-                "feel": row.get("feel") or row.get("feel_type"),
+                "feel": _coerce_feel(row.get("feel")),
             }
         )
 
@@ -139,9 +152,7 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
             available[row["date"]][expected] -= 1
             completed += 1
 
-    all_load_rows = db.fetch_daily_training_load(
-        date_from, date_to, algorithm_version=TRAINING_LOAD_MODEL_VERSION
-    )
+    all_load_rows = db.fetch_daily_training_load(date_from, date_to)
     load_rows = [
         row for row in all_load_rows
         if row["coverage_status"] in {"complete", "partial", "rest_confirmed"}

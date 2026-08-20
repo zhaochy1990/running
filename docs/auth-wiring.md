@@ -39,7 +39,9 @@ prod 启用：revision `stride-app--0000037` 起：
 
 公钥 env set 时，每个 `/api/*` 路由（除 `/api/health`）都要 Bearer。`stride_server/app.py` 在 router 级别套 `Depends(require_bearer)`，只放过 `public` router（仅 `/api/health` 给 Azure liveness probe）。CORS 故意大开（`allow_origins=["*"]`）—— 真正的 authz 边界是 Bearer 层不是 Origin。
 
-已验证：`/api/*`（除 `/api/health`）无 token → 401；valid user token → 200。覆盖读（`/users`, `/weeks`, `/activities`, `/dashboard`, `/health`, `/pmc`, `/stats`, `/training-plan`）和写（`/sync`, `/resync`, `/commentary`）。
+已验证：Python `/api/*`（除 `/api/health`）无 token → 401；valid user token → 200。覆盖读（`/users`, `/weeks`, `/activities`, `/dashboard`, `/health`, `/pmc`, `/stats`）和写（`/sync`, `/resync`, `/commentary`）。
+
+Go `stride api` 使用同一 auth-service 公钥在 Gin middleware 本地验签 JWT，并按 JWT `sub` 做用户隔离。普通 user JWT 只能读取自己的计划，`X-Internal-Token` 可以跨用户读取。配置 `STRIDE_WORKER_API_AUTH_ADMIN_AUDIENCE` 后，独立 audience 且 `role=admin` 的 JWT 可以跨用户读取 `GET /api/users/{user_id}/master-plan/current`，以及 Weekly Plan 的 `/api/{user}/plan/weeks[/{week}]` 和 `/api/{user}/weeks[/{week}]` 四个 GET 路由；同一 admin tier 还可调用窄写入口 `POST /api/{user}/plan/weeks/{week}` 导入经过严格校验的计划。admin audience 必须与普通 `STRIDE_WORKER_API_AUTH_AUDIENCE` 不同，普通 audience 上只有 `role=admin` 不会获得跨用户权限。admin JWT 使用独立 caller tier，除上述明确允许的计划接口外，默认在现有 user/internal 路由返回 403；Weekly Plan feedback PUT 等其它写接口仍明确拒绝 admin。Web 从登录 JWT 的 `sub` 构造动态路径，BFF 默认转发到 Go；后端仍保留 `/api/users/me/master-plan/current` 兼容别名。计划读取不经过 FastAPI `require_bearer`，也不提供其他数据源 fallback。
 
 ### 3. CLI auth (`coros-sync auth` 组)
 
@@ -50,7 +52,7 @@ prod 启用：revision `stride-app--0000037` 起：
 ### 4. 本地 CLI 规范 env
 
 ```bash
-export STRIDE_AUTH_URL="https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io"
+export STRIDE_AUTH_URL="https://124.221.38.59"
 export STRIDE_CLIENT_ID="app_62978bf2803346878a2e4805"
 export STRIDE_PROD_URL="https://stride-app.victoriousdesert-bd552447.southeastasia.azurecontainerapps.io"
 ```
@@ -73,6 +75,27 @@ coros-sync -P zhaochaoyi commentary push <label_id>
 
 已经走 auth-service flow（无 legacy MSAL）。`frontend/src/store/authStore.ts` 处理 login/refresh，用 `sessionStorage`；`frontend/src/api.ts` 每个请求挂 `Authorization: Bearer`（包括 `triggerSync` 和 `resyncActivity`），401 自动 retry 一次。refresh 后仍 401 → redirect `/login`。
 
-### 6. 还没做的（非阻塞 follow-up）
+当前 `authStore.ts` 已经**去掉 dev/prod 分支**（ADR 0017）：两个环境都相对 `/api/auth/*`，
+same-origin 经前门转发，不再用 `VITE_AUTH_BASE_URL` 绝对量直连 auth-service。
+
+> **前门 = stride-web BFF（域名切换已完成）**：用户域名 `stride-running.cn` 已翻到 `stride-web`，
+> 由它的 Node BFF 作为唯一前门，把 `/api/auth/*` 转发到 `AUTH_UPSTREAM_URL`（auth-service），
+> 其它 `/api/*` 按版本化路由表转发到 `PYTHON_API_URL`（stride-app）或 `GO_API_URL`（stride api）。**stride-app 已不再服务 SPA / 不再是 web 前门**：
+> `mount_frontend` / `static.py` 及短暂存在过的 `routes/auth_proxy.py` fallback 反代都已随 ADR 0017
+> 收尾清理移除。浏览器永不直接打 stride-app 的 `/api/auth/*`，所以老后端无需 auth 反代。
+
+
+> **Planned（ADR 0017）**：前端剥离为 `stride-web` 后，`/api/auth/*` **两个环境都经前端 BFF**
+> 转发到 `AUTH_UPSTREAM_URL`，全链路 same-origin。`authStore.ts` 去掉 dev/prod 分支，永远
+> 相对 `/api/auth`；浏览器不再跨域直连 auth-service。届时 auth-service 的 CORS 可收紧为只认
+> BFF 服务端。token 模型（`sessionStorage` + Bearer）不变。
+
+### 6. Go team API 的 auth-service dependency（ADR 0026）
+
+Go team API 不拥有 team / membership 数据。它先在 Go API 边界完成现有 JWT 验证，再把浏览器传入的完整 `Authorization` header **原样转发**给 auth-service；不要提取 token 后重建 header，也不要用 service credential 代替终端用户身份。auth-service 负责 team ownership / membership 的 canonical 授权，Go 只使用返回的 member IDs 查询 MySQL activities / profiles / `team_likes`。
+
+`stride api` 必须配置 `api.auth-service-url`（env override：`STRIDE_WORKER_API_AUTH_SERVICE_URL`）。这个值为空、auth-service 网络不可达、或 auth-service 返回 5xx 时，Go team surface 不能仅凭本地验签继续提供完整功能；所有依赖 auth-service 的 team 请求返回 `503`，不会伪装成空集合。BFF 的 `AUTH_UPSTREAM_URL` 只服务浏览器 `/api/auth/*`，不能替代 Go API 自己到 auth-service 的 server-to-server 地址。
+
+### 7. 还没做的（非阻塞 follow-up）
 
 - 给 auth-service 加 JWKS 端点，公钥轮换变成网络可发现，不用两边同时改 env var

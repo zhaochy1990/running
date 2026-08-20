@@ -27,8 +27,8 @@ The ramp character per phase is the codebase's authoritative spec — see the
 * ``phase_type is None``: neutral ramp-up, treated base-like (documented fallback).
 
 **≤1.10×-safe (HARD invariant)**: consecutive load weeks satisfy
-``load_week[i] <= 1.10 * previous_load_week`` so Stage-3a's
-``run_rule_filter.check_weekly_progression`` (cap 1.10×) never pre-fails on the
+``load_week[i] <= 1.10 * previous_load_week`` so season-level volume validation
+never fails on the
 descriptors emitted here. Deload / taper / recovery weeks step DOWN (always
 safe). The load week after a deload compares to the last load week, not the
 deload trough. When continuity applies, the first week is also held ≤1.10× of
@@ -439,7 +439,7 @@ def derive_phase_weeks(
 
     # HARD continuity cap on the FIRST emitted week: when the prior phase's
     # exit volume is known, no phase may open >1.10× of it — that's exactly
-    # what Stage-3a's ``run_rule_filter.check_weekly_progression`` enforces
+    # what the season-level volume progression rule enforces
     # week-over-week, so a boundary spike here would pre-fail. This cap is HARD
     # and OVERRIDES the band floor (a soft target): when ``prev_phase_end_km <
     # low``, honoring ≤1.10× means the first week may open BELOW the band floor
@@ -521,7 +521,7 @@ def derive_phase_weeks(
     #      under the cap, week by week, toward the band.
     # This forward pass only ever LOWERS values, so it never disturbs the
     # intended down-steps (deload / taper / recovery) and guarantees the HARD
-    # invariant that ``run_rule_filter.check_weekly_progression`` checks.
+    # invariant that the season-level volume progression rule checks.
     #
     # The cap is enforced on the ROUNDED (1-decimal) values that are actually
     # emitted as ``target_weekly_km`` — and that the rule filter sees — not on

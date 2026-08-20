@@ -1,8 +1,11 @@
 import { create } from 'zustand'
 import { setAuthUser, clearAuthUser } from '../telemetry/appInsights'
+import { apiUrl } from '../lib/apiRouting'
 
-const AUTH_BASE = import.meta.env.VITE_AUTH_BASE_URL || ''
-const AUTH_REQUEST_BASE = import.meta.env.DEV ? '' : AUTH_BASE
+// Auth flows through the stride-web BFF same-origin in every environment
+// (ADR 0017), so requests are always relative `/api/auth/*` — no dev/prod
+// branch. VITE_AUTH_BASE_URL is no longer used for request routing; only
+// VITE_AUTH_CLIENT_ID (sent as X-Client-Id) is baked into the bundle.
 const CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID || ''
 
 interface JwtPayload {
@@ -38,7 +41,7 @@ async function refreshAccessToken(): Promise<string> {
   const refreshToken = sessionStorage.getItem('refresh_token')
   if (!refreshToken) throw new Error('No refresh token')
 
-  const res = await fetch(`${AUTH_REQUEST_BASE}/api/auth/refresh`, {
+  const res = await fetch(apiUrl('POST', `/api/auth/refresh`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
     body: JSON.stringify({ refresh_token: refreshToken }),
@@ -118,7 +121,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   ...initialAuth,
 
   login: async (email: string, password: string) => {
-    const res = await fetch(`${AUTH_REQUEST_BASE}/api/auth/login`, {
+    const res = await fetch(apiUrl('POST', `/api/auth/login`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
       body: JSON.stringify({ email, password }),
@@ -163,9 +166,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     const refreshToken = sessionStorage.getItem('refresh_token')
 
-    if (refreshToken && (AUTH_REQUEST_BASE || AUTH_BASE)) {
+    if (refreshToken) {
       try {
-        await fetch(`${AUTH_REQUEST_BASE}/api/auth/logout`, {
+        await fetch(apiUrl('POST', `/api/auth/logout`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
           body: JSON.stringify({ refresh_token: refreshToken }),

@@ -20,11 +20,11 @@ import 'package:stride/features_v2/plan/providers/plan_chat_provider.dart';
 const _folder = '2026-05-04_05-10(W1)';
 
 PlanChatState _stateWithMessages() => const PlanChatState(
-      messages: [
-        ChatMessage(role: 'user', content: '将周三改为休息日'),
-        ChatMessage(role: 'assistant', content: '好的，已为你将周三调整为休息日'),
-      ],
-    );
+  messages: [
+    ChatMessage(role: 'user', content: '将周三改为休息日'),
+    ChatMessage(role: 'assistant', content: '好的，已为你将周三调整为休息日'),
+  ],
+);
 
 PlanChatState _stateWithDiff() {
   const diff = PlanDiffView(
@@ -65,8 +65,7 @@ PlanChatState _stateWithDiff() {
 // ── Fake notifier ─────────────────────────────────────────────────────────────
 
 class _FakePlanChatNotifier extends PlanChatNotifier {
-  _FakePlanChatNotifier(PlanChatState initialState)
-      : super(null, null) {
+  _FakePlanChatNotifier(PlanChatState initialState) : super(null, null) {
     state = initialState;
   }
 
@@ -83,21 +82,16 @@ class _FakePlanChatNotifier extends PlanChatNotifier {
 
 // ── Pump helper ───────────────────────────────────────────────────────────────
 
-Future<void> _pump(
-  WidgetTester tester,
-  PlanChatState initialState,
-) async {
+Future<void> _pump(WidgetTester tester, PlanChatState initialState) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         currentUserIdProvider.overrideWithValue('user-001'),
-        planChatProvider(_folder).overrideWith(
-          (_) => _FakePlanChatNotifier(initialState),
-        ),
+        planChatProvider(
+          _folder,
+        ).overrideWith((_) => _FakePlanChatNotifier(initialState)),
       ],
-      child: const MaterialApp(
-        home: PlanChatScreen(folder: _folder),
-      ),
+      child: const MaterialApp(home: PlanChatScreen(folder: _folder)),
     ),
   );
   await tester.pumpAndSettle();
@@ -107,8 +101,9 @@ Future<void> _pump(
 
 void main() {
   // ── 1. Messages render correctly ─────────────────────────────────────────
-  testWidgets('user and ai bubbles render from injected messages',
-      (tester) async {
+  testWidgets('user and ai bubbles render from injected messages', (
+    tester,
+  ) async {
     await _pump(tester, _stateWithMessages());
 
     // The user message text appears in both the bubble AND the quick-suggestion
@@ -127,7 +122,9 @@ void main() {
   });
 
   // ── 3. Quick suggestion tap fills input ──────────────────────────────────
-  testWidgets('tapping quick suggestion chip fills input field', (tester) async {
+  testWidgets('tapping quick suggestion chip fills input field', (
+    tester,
+  ) async {
     await _pump(tester, const PlanChatState());
 
     // Find and tap the first suggestion chip
@@ -156,14 +153,18 @@ void main() {
   });
 
   // ── 6. Apply FAB hidden when no accepted ops ─────────────────────────────
-  testWidgets('apply FAB is hidden when acceptedOpIds is empty', (tester) async {
+  testWidgets('apply FAB is hidden when acceptedOpIds is empty', (
+    tester,
+  ) async {
     await _pump(tester, _stateWithDiff());
     // No ops accepted → FAB should not show "应用"
     expect(find.textContaining('应用'), findsNothing);
   });
 
   // ── 7. Apply FAB visible when ops accepted ───────────────────────────────
-  testWidgets('apply FAB appears when acceptedOpIds is non-empty', (tester) async {
+  testWidgets('apply FAB appears when acceptedOpIds is non-empty', (
+    tester,
+  ) async {
     const stateWithAccepted = PlanChatState(
       messages: [
         ChatMessage(role: 'user', content: '调整'),
@@ -183,10 +184,11 @@ void main() {
         aiExplanation: '',
         createdAt: '',
       ),
+      baseRevision: 'weekly-sha',
       acceptedOpIds: {'op-1'},
     );
 
     await _pump(tester, stateWithAccepted);
-    expect(find.textContaining('应用 1 项'), findsOneWidget);
+    expect(find.textContaining('应用全部 1 项'), findsOneWidget);
   });
 }

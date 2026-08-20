@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { postProfile, type ProfileIn } from '../../api'
+import { postProfile, type ProfileIn, type RunningAgeRange } from '../../api'
 
 interface FieldError {
   [field: string]: string
@@ -15,6 +15,7 @@ export default function ProfileStep({ onSuccess }: Props) {
   const [sex, setSex] = useState('')
   const [heightCm, setHeightCm] = useState('')
   const [weightKg, setWeightKg] = useState('')
+  const [runningAgeRange, setRunningAgeRange] = useState<RunningAgeRange>('unknown')
   const [fieldErrors, setFieldErrors] = useState<FieldError>({})
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -31,6 +32,7 @@ export default function ProfileStep({ onSuccess }: Props) {
       sex,
       height_cm: parseFloat(heightCm),
       weight_kg: parseFloat(weightKg),
+      running_age_range: runningAgeRange,
     }
 
     try {
@@ -114,6 +116,23 @@ export default function ProfileStep({ onSuccess }: Props) {
               <input type="number" required min="30" max="300" step="0.1" value={weightKg} onChange={(e) => setWeightKg(e.target.value)} className={inputCls('weight_kg')} />
               {fieldErrors.weight_kg && <p className="text-xs text-red-400 mt-1">{fieldErrors.weight_kg}</p>}
             </div>
+          </div>
+          <div>
+            <label htmlFor="onboarding-running-age" className="block text-xs font-mono text-text-muted uppercase tracking-wider mb-1">跑龄</label>
+            <select
+              id="onboarding-running-age"
+              required
+              value={runningAgeRange}
+              onChange={(e) => setRunningAgeRange(e.target.value as RunningAgeRange)}
+              className={inputCls('running_age_range')}
+            >
+              <option value="unknown">不确定 / 暂不透露</option>
+              <option value="lt_6m">不足 6 个月</option>
+              <option value="6m_1y">6 个月至 1 年</option>
+              <option value="1y_3y">1 至 3 年</option>
+              <option value="3y_plus">3 年以上</option>
+            </select>
+            {fieldErrors.running_age_range && <p className="text-xs text-red-400 mt-1">{fieldErrors.running_age_range}</p>}
           </div>
         </section>
 

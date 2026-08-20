@@ -67,11 +67,75 @@ class PlanDiff(BaseModel):
     ops: list[DiffOp]
     ai_explanation: str         # natural-language explanation shown to the user
     created_at: str             # ISO datetime UTC, e.g. "2026-05-12T08:00:00Z"
+    # Snapshot fingerprint of the canonical week this diff was built against.
+    # Persisted inside the proposal so refresh recovery cannot rebind an old diff
+    # to a newer plan revision.
+    base_revision: str | None = None
 
 
 # ---------------------------------------------------------------------------
 # pure apply
 # ---------------------------------------------------------------------------
+
+
+def op_touched_dates(op: "DiffOp") -> set[str]:
+    """All calendar dates a single op reads or writes (source + any target).
+
+    Used by the past-date immutability gate — an op that touches a past Shanghai
+    day is refused regardless of which end (source vs move-target) is in the past.
+    """
+    dates = {op.date}
+    patch = op.spec_patch or {}
+    new_date = patch.get("new_date")
+    if isinstance(new_date, str) and new_date:
+        dates.add(new_date)
+    return dates
+
+
+def past_dated_op_ids(ops: "list[DiffOp]", *, today: str) -> list[str]:
+    """Ids of ops that touch a Shanghai day strictly before ``today``.
+
+    ``today`` is an ISO ``YYYY-MM-DD`` Shanghai day. ISO date strings compare
+    lexicographically, so a plain ``<`` is a correct chronological test.
+    """
+    flagged: list[str] = []
+    for op in ops:
+        if any(d < today for d in op_touched_dates(op)):
+            flagged.append(op.id)
+    return flagged
+
+
+def require_whole_plan_op_ids(
+    ops: "list[DiffOp]", accepted_op_ids: "list[str]"
+) -> list[str]:
+    """Validate a whole-plan apply: ``accepted_op_ids`` must be exactly the set
+    of applicable op ids (``accepted is not False``), order-ignored.
+
+    Raises ``ValueError`` on any unknown id, duplicate id, a rejected op sent for
+    apply, or an applicable op omitted (partial acceptance). Returns the
+    applicable ids in the diff's own op order.
+    """
+    known = {op.id for op in ops}
+    applicable = [op.id for op in ops if op.accepted is not False]
+    applicable_set = set(applicable)
+
+    seen: set[str] = set()
+    for oid in accepted_op_ids:
+        if oid not in known:
+            raise ValueError(f"unknown op id {oid!r}")
+        if oid in seen:
+            raise ValueError(f"duplicate op id {oid!r}")
+        seen.add(oid)
+        if oid not in applicable_set:
+            raise ValueError(f"op {oid!r} was rejected and cannot be applied")
+
+    missing = applicable_set - seen
+    if missing:
+        raise ValueError(
+            "whole-plan apply requires every applicable op; missing: "
+            + ", ".join(sorted(missing))
+        )
+    return applicable
 
 
 def apply_diff_to_weekly_plan(

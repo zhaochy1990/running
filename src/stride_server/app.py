@@ -15,7 +15,6 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -26,7 +25,6 @@ from stride_server.config import load_server_config
 from stride_server.config.models import ServerConfig
 
 from .bearer import load_public_key_from_config, require_bearer, verify_path_user
-from .deps import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +92,6 @@ async def _lifespan(app: FastAPI):
     yield
     # Shutdown: nothing special.
 from .routes import account, ability, activities, body_composition, coach, feedback, generate, health, home, jobs, likes, master_plan, notifications, nutrition_daily, nutrition_meals, nutrition_prefs, onboarding, plan, plan_variants, pbs, predictions, profile, public, review, running_profile, strength, stride, sync, teams, training_goal, training_load, training_plan, users, watch, weeks, workouts
-from .static import mount_frontend
 
 
 def _load_job_pipelines() -> None:
@@ -212,17 +209,11 @@ def create_app(
     app.include_router(notifications.internal_router)
     app.include_router(jobs.internal_router)
 
-    # Curated strength-illustration library — public static assets baked
-    # into the image. Mount BEFORE the SPA fallback so the catch-all in
-    # static.py doesn't swallow these paths.
-    strength_lib_dir = PROJECT_ROOT / "strength_illustrations" / "output"
-    if strength_lib_dir.exists():
-        app.mount(
-            "/strength_illustrations/output",
-            StaticFiles(directory=strength_lib_dir),
-            name="strength_illustrations",
-        )
-
-    # SPA fallback must be last so it doesn't swallow /api/* paths.
-    mount_frontend(app)
+    # NOTE: the SPA and the strength-illustration static assets used to be
+    # served here (mount_frontend + a /strength_illustrations/output mount).
+    # Since ADR 0017 they are owned and served by the stride-web BFF image
+    # (STATIC_DIR + STRENGTH_DIR), which is the single user-facing front door.
+    # stride-app is now a pure /api/* backend behind the BFF; strength_library
+    # still reads strength_illustrations/ on disk to build the image URLs the
+    # BFF then serves same-origin.
     return app

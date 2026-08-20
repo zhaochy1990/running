@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
-import { fetchActivityAbility, getActivity, getPlanDays } from '../../api'
+import { getActivity, getPlanDays } from '../../api'
 import { UserContext } from '../../UserContextValue'
 import ActivityDetailPage from '../ActivityDetailPage'
 
@@ -12,7 +12,6 @@ vi.mock('../../api', () => ({
   resyncActivity: vi.fn(),
   regenerateCommentary: vi.fn(),
   getPlanDays: vi.fn(),
-  fetchActivityAbility: vi.fn(),
   formatDate: (value: string) => value,
   formatTime: (value: string) => value,
   sportColor: () => '#00a85a',
@@ -158,8 +157,6 @@ describe('ActivityDetailPage', () => {
         },
       ],
     })
-    vi.mocked(fetchActivityAbility).mockRejectedValue(new Error('not computed'))
-
     renderActivityDetail()
 
     expect(await screen.findByText('Easy Run')).toBeInTheDocument()
@@ -186,8 +183,6 @@ describe('ActivityDetailPage', () => {
       linked_scheduled_workout: null,
       stride_training_load: null,
     } as unknown as Awaited<ReturnType<typeof getActivity>>)
-    vi.mocked(fetchActivityAbility).mockRejectedValue(new Error('not computed'))
-
     renderActivityDetail()
 
     expect(await screen.findByText('教练简评')).toBeInTheDocument()

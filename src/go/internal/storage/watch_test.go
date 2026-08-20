@@ -1,0 +1,276 @@
+package storage
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+)
+
+func TestCanonicalUserID(t *testing.T) {
+	const canonical = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
+	tests := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"canonical passes", canonical, canonical, false},
+		{"uppercase is lowered", "F10BC353-01AB-4DB1-AF9F-D9305EA9A532", canonical, false},
+		{"coros numeric id rejected", "1234567890", "", true},
+		{"garbage rejected", "not-a-uuid", "", true},
+		{"empty rejected", "", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := canonicalUserID(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for %q, got %q", tt.in, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("canonicalUserID(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWatchModelTableNames(t *testing.T) {
+	cases := map[string]string{
+		Activity{}.TableName():           "activities",
+		Lap{}.TableName():                "laps",
+		TimeseriesPoint{}.TableName():    "timeseries",
+		ActivityWatchZone{}.TableName():  "activity_watch_zones",
+		DailyHealth{}.TableName():        "daily_health",
+		Dashboard{}.TableName():          "dashboard",
+		DailyHRV{}.TableName():           "daily_hrv",
+		RacePrediction{}.TableName():     "race_predictions",
+		SyncMeta{}.TableName():           "sync_meta",
+		ProviderCredential{}.TableName(): "provider_credentials",
+	}
+	for got, want := range cases {
+		if got != want {
+			t.Errorf("TableName = %q, want %q", got, want)
+		}
+	}
+}
+
+func strptr(s string) *string { return &s }
+func fptr(f float64) *float64 { return &f }
+
+// TestWatch_UpsertRoundTrip is gated on a live MySQL (STRIDE_WORKER_TEST_MYSQL_DSN).
+// It exercises AutoMigrateWatch, an activity+children upsert, idempotent
+// re-upsert (children replaced not duplicated), and the sync cursor.
+func TestWatch_UpsertRoundTrip(t *testing.T) {
+	st := openTestStore(t) // skips without the env var
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatalf("automigrate watch: %v", err)
+	}
+
+	const uid = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
+	const label = "test-label-1"
+	a := &Activity{
+		UserID: uid, LabelID: label, SportType: 100,
+		Date:      time.Date(2026, 5, 9, 1, 2, 3, 0, time.UTC),
+		Sport:     strptr("run_outdoor"),
+		DistanceM: fptr(10000),
+		Provider:  "coros", SyncedAt: time.Now().UTC(),
+	}
+	laps := []Lap{{LapIndex: 1, LapType: "autoKm", DistanceM: fptr(1000)}}
+	ts := []TimeseriesPoint{{Timestamp: func() *int64 { v := int64(1); return &v }(), HeartRate: func() *int { v := 140; return &v }()}}
+	zones := []ActivityWatchZone{{ZoneType: "hr", ZoneIndex: 1, ZoneTypeRaw: 0, Percent: fptr(25)}}
+
+	if err := st.UpsertActivity(ctx, a, laps, ts, zones); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	// re-upsert must not duplicate children (delete-then-insert).
+	if err := st.UpsertActivity(ctx, a, laps, ts, zones); err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	var lapCount int64
+	if err := st.db.WithContext(ctx).Model(&Lap{}).
+		Where("user_id = ? AND label_id = ?", uid, label).Count(&lapCount).Error; err != nil {
+		t.Fatalf("count laps: %v", err)
+	}
+	if lapCount != 1 {
+		t.Errorf("lap count after re-upsert = %d, want 1 (children must be replaced)", lapCount)
+	}
+
+	exists, err := st.ActivityExists(ctx, uid, label)
+	if err != nil || !exists {
+		t.Fatalf("ActivityExists = (%v, %v), want (true, nil)", exists, err)
+	}
+
+	if err := st.SetMeta(ctx, uid, "last_label_id", label); err != nil {
+		t.Fatalf("set meta: %v", err)
+	}
+	got, ok, err := st.GetMeta(ctx, uid, "last_label_id")
+	if err != nil || !ok || got != label {
+		t.Fatalf("GetMeta = (%q, %v, %v), want (%q, true, nil)", got, ok, err, label)
+	}
+}
+
+func TestWatchActivityStartGPSRoundTripAndResync(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatalf("automigrate watch: %v", err)
+	}
+
+	uid := fmt.Sprintf("a1b2c3d4-0000-4000-8000-%012d", time.Now().UnixNano()%1_000_000_000_000)
+	activity := &Activity{
+		UserID: uid, LabelID: "gps-activity", SportType: 100,
+		Date: time.Now().UTC(), Provider: "test", SyncedAt: time.Now().UTC(),
+		StartGPSLat: fptr(31.2304), StartGPSLon: fptr(121.4737),
+	}
+	if err := st.UpsertActivity(ctx, activity, nil, nil, nil); err != nil {
+		t.Fatalf("upsert initial GPS: %v", err)
+	}
+	got, err := st.ActivityByID(ctx, uid, activity.LabelID)
+	if err != nil || got == nil {
+		t.Fatalf("read initial GPS = (%+v, %v)", got, err)
+	}
+	if got.StartGPSLat == nil || *got.StartGPSLat != 31.2304 || got.StartGPSLon == nil || *got.StartGPSLon != 121.4737 {
+		t.Fatalf("initial start GPS = (%v, %v)", got.StartGPSLat, got.StartGPSLon)
+	}
+
+	activity.StartGPSLat, activity.StartGPSLon = fptr(39.9042), fptr(116.4074)
+	if err := st.UpsertActivity(ctx, activity, nil, nil, nil); err != nil {
+		t.Fatalf("resync updated GPS: %v", err)
+	}
+	got, err = st.ActivityByID(ctx, uid, activity.LabelID)
+	if err != nil || got == nil || got.StartGPSLat == nil || *got.StartGPSLat != 39.9042 || got.StartGPSLon == nil || *got.StartGPSLon != 116.4074 {
+		t.Fatalf("updated start GPS = (%+v, %v)", got, err)
+	}
+
+	activity.StartGPSLat, activity.StartGPSLon = nil, nil
+	if err := st.UpsertActivityPreservingEmptyChildren(ctx, activity, nil, nil, nil); err != nil {
+		t.Fatalf("resync without detail GPS: %v", err)
+	}
+	got, err = st.ActivityByID(ctx, uid, activity.LabelID)
+	if err != nil || got == nil || got.StartGPSLat == nil || *got.StartGPSLat != 39.9042 || got.StartGPSLon == nil || *got.StartGPSLon != 116.4074 {
+		t.Fatalf("preserved start GPS = (%+v, %v)", got, err)
+	}
+
+	withoutGPS := &Activity{
+		UserID: uid, LabelID: "no-gps-activity", SportType: 402,
+		Date: time.Now().UTC(), Provider: "test", SyncedAt: time.Now().UTC(),
+	}
+	if err := st.UpsertActivity(ctx, withoutGPS, nil, nil, nil); err != nil {
+		t.Fatalf("upsert without GPS: %v", err)
+	}
+	got, err = st.ActivityByID(ctx, uid, withoutGPS.LabelID)
+	if err != nil || got == nil || got.StartGPSLat != nil || got.StartGPSLon != nil {
+		t.Fatalf("no-GPS activity = (%+v, %v), want NULL coordinates", got, err)
+	}
+}
+
+// TestProviderForUser is gated on a live MySQL (STRIDE_WORKER_TEST_MYSQL_DSN).
+// It verifies the binding read: none -> not found; dual-watch -> most-recent wins.
+func TestProviderForUser(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatalf("automigrate watch: %v", err)
+	}
+
+	// Unique per-run uid so leftover credentials from a prior run against a
+	// shared/persistent DB don't break the empty precondition below.
+	uid := fmt.Sprintf("a1b2c3d4-0000-4000-8000-%012d", time.Now().UnixNano()%1_000_000_000_000)
+
+	// No credential yet.
+	if _, found, err := st.ProviderForUser(ctx, uid); err != nil || found {
+		t.Fatalf("ProviderForUser (empty) = (found=%v, %v), want (false, nil)", found, err)
+	}
+
+	// coros first, then garmin later -> most-recent (garmin) wins.
+	if err := st.SaveCredential(ctx, &ProviderCredential{UserID: uid, Provider: "coros", Secret: []byte("{}")}); err != nil {
+		t.Fatalf("save coros: %v", err)
+	}
+	time.Sleep(3 * time.Millisecond)
+	if err := st.SaveCredential(ctx, &ProviderCredential{UserID: uid, Provider: "garmin", Secret: []byte("{}")}); err != nil {
+		t.Fatalf("save garmin: %v", err)
+	}
+
+	name, found, err := st.ProviderForUser(ctx, uid)
+	if err != nil || !found {
+		t.Fatalf("ProviderForUser = (found=%v, %v), want found", found, err)
+	}
+	if name != "garmin" {
+		t.Errorf("ProviderForUser = %q, want garmin (most recent)", name)
+	}
+}
+
+// TestDeleteCredential is gated on a live MySQL. Disconnect removes the row and
+// its binding; deleting again is a no-op.
+func TestDeleteCredential(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatalf("automigrate watch: %v", err)
+	}
+	const uid = "a1b2c3d4-0000-4000-8000-0000000000d1"
+
+	if err := st.SaveCredential(ctx, &ProviderCredential{UserID: uid, Provider: "coros", Secret: []byte("{}")}); err != nil {
+		t.Fatalf("save coros: %v", err)
+	}
+	if err := st.DeleteCredential(ctx, uid, "coros"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if c, err := st.GetCredential(ctx, uid, "coros"); err != nil || c != nil {
+		t.Errorf("credential should be gone: got %v, %v", c, err)
+	}
+	if _, found, err := st.ProviderForUser(ctx, uid); err != nil || found {
+		t.Errorf("binding should be gone after delete: found=%v, err=%v", found, err)
+	}
+	// Deleting a nonexistent row is not an error.
+	if err := st.DeleteCredential(ctx, uid, "coros"); err != nil {
+		t.Errorf("delete must be idempotent: %v", err)
+	}
+}
+
+// TestLatestActivityDevice is gated on a live MySQL. It returns the newest
+// activity's device, skipping rows with no device.
+func TestLatestActivityDevice(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatalf("automigrate watch: %v", err)
+	}
+	// Unique per-run uid so repeated runs against a shared/persistent DB
+	// don't see leftover activities (matches TestPipelineStore_ListByUser).
+	uid := fmt.Sprintf("a1b2c3d4-0000-4000-8000-%012d", time.Now().UnixNano()%1_000_000_000_000)
+
+	if _, ok, err := st.LatestActivityDevice(ctx, uid); err != nil || ok {
+		t.Fatalf("no activity: ok=%v err=%v, want (false, nil)", ok, err)
+	}
+
+	older, newer := "COROS PACE 2", "COROS PACE 3"
+	mkAct := func(label string, date time.Time, device *string) *Activity {
+		return &Activity{UserID: uid, LabelID: label, SportType: 100, Date: date, Device: device, SyncedAt: time.Now().UTC()}
+	}
+	if err := st.UpsertActivity(ctx, mkAct("l1", time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), &older), nil, nil, nil); err != nil {
+		t.Fatalf("upsert l1: %v", err)
+	}
+	if err := st.UpsertActivity(ctx, mkAct("l2", time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC), &newer), nil, nil, nil); err != nil {
+		t.Fatalf("upsert l2: %v", err)
+	}
+	// A later activity with no device must not shadow the newest device-bearing one.
+	if err := st.UpsertActivity(ctx, mkAct("l3", time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC), nil), nil, nil, nil); err != nil {
+		t.Fatalf("upsert l3: %v", err)
+	}
+
+	dev, ok, err := st.LatestActivityDevice(ctx, uid)
+	if err != nil || !ok {
+		t.Fatalf("latest device: ok=%v err=%v", ok, err)
+	}
+	if dev != newer {
+		t.Errorf("device = %q, want %q (newest activity carrying a device)", dev, newer)
+	}
+}

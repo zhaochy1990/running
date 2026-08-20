@@ -20,7 +20,9 @@ from coach.contracts import (
     TargetRef,
     Turn,
     TurnResponse,
+    WeeklyCreateReviewContext,
 )
+from coach.contracts.review_context import MAX_REVIEW_CONTEXT_BYTES
 from stride_core.plan_diff import DiffOp, DiffOpKind, PlanDiff
 from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
 from stride_core.weekly_plan_proposal import WeeklyPlanCreateProposal
@@ -90,6 +92,7 @@ def _week_create_proposal() -> WeeklyPlanCreateProposal:
         total_distance_km=40,
         ai_explanation="创建本周计划",
         created_at="2026-06-22T00:00:00Z",
+        base_revision="existing-week-revision",
     )
 
 
@@ -145,6 +148,16 @@ def test_specialist_result_carries_week_create_proposal() -> None:
     proposal = restored.proposals[0]
     assert isinstance(proposal, WeeklyPlanCreateProposal)
     assert proposal.to_weekly_plan().notes_md == "完整周级说明"
+    assert proposal.base_revision == "existing-week-revision"
+
+
+def test_weekly_review_context_rejects_oversized_payload() -> None:
+    proposal = _week_create_proposal().model_copy(
+        update={"ai_explanation": "x" * (MAX_REVIEW_CONTEXT_BYTES + 1)}
+    )
+
+    with pytest.raises(ValueError, match="review_context exceeds"):
+        WeeklyCreateReviewContext(proposal=proposal)
 
 
 def test_specialist_result_carries_multiple_master_diff_proposals() -> None:

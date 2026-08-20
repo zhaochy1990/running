@@ -55,20 +55,19 @@ const weeks: WeekSummary[] = [
 
 function buildWeekDetail(structuredStatus: StructuredStatus | null): WeekDetail {
   return {
-    folder: FOLDER,
+    week_name: FOLDER,
     date_from: '2026-04-20',
     date_to: '2026-04-26',
     plan: '# Week 0\n\nEasy week.',
-    feedback: undefined,
-    feedback_source: 'none',
+    feedback: '',
+    feedback_created_at: null,
     feedback_updated_at: null,
-    feedback_generated_by: null,
     activities: [],
     total_km: 35,
     total_duration_s: 12600,
     total_duration_fmt: '3:30:00',
     activity_count: 3,
-    structured: structuredStatus !== null ? { structured_status: structuredStatus } : undefined,
+    structured: structuredStatus !== null ? { structured_status: structuredStatus } : null,
   }
 }
 
@@ -152,6 +151,34 @@ describe('WeekLayout — calendar tab', () => {
       expect(screen.getAllByTestId('day-card')).toHaveLength(7)
     })
     expect(screen.queryByTestId('reparse-banner')).not.toBeInTheDocument()
+  })
+
+  it('opens a canonical calendar when legacy markdown is absent', async () => {
+    mocks.getWeek.mockResolvedValue({
+      ...buildWeekDetail('canonical'),
+      plan: undefined,
+    })
+
+    renderAt()
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('day-card')).toHaveLength(7)
+    })
+    expect(screen.getByRole('button', { name: '日历' })).toHaveClass('text-accent-green')
+  })
+
+  it('opens training records when no plan is available', async () => {
+    mocks.getWeek.mockResolvedValue({
+      ...buildWeekDetail(null),
+      plan: undefined,
+    })
+    mocks.getPlanDays.mockResolvedValue({ days: [] })
+
+    renderAt()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '训练记录 (3)' })).toHaveClass('text-accent-green')
+    })
   })
 
   it('shows reparse banner when status=parse_failed and triggers reparsePlan', async () => {

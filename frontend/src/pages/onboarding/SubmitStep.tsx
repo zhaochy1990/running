@@ -1,374 +1,391 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { postOnboardingComplete, getSyncStatus, type ProfileIn, type SyncStatus } from '../../api'
+import {
+  getPipelineRun,
+  getJobState,
+  postOnboardingComplete,
+  triggerSync,
+  ApiError,
+  type JobState,
+  type PipelineRun,
+} from '../../api'
 
 interface Props {
-  profile: ProfileIn
+  userId: string
 }
 
-const MAX_POLL_ATTEMPTS = 120 // 120 * 2s = 4 min (health-only sync is fast)
-const POLL_INTERVAL_MS = 2000
+const POLL_INTERVAL_MS = 5000
+const ONBOARDING_RUN_KEY_PREFIX = 'stride:onboarding-run:'
+const ONBOARDING_START_KEY_PREFIX = 'stride:onboarding-start-key:'
 
-const PROGRESS_STEPS = [
-  {
-    title: '提交任务',
-    description: '连接手表并启动同步',
-    phases: ['queued', 'connecting'],
-  },
-  {
-    title: '健康指标',
-    description: '同步疲劳、训练负荷和仪表盘数据',
-    phases: ['health', 'dashboard', 'health_done'],
-  },
-  {
-    title: '完成',
-    description: '进入训练仪表盘',
-    phases: ['finalizing', 'complete'],
-  },
-]
+type RunView = 'starting' | 'running' | 'failed' | 'done'
+type ActiveJob = JobState & { stepJobId: string }
 
-export default function SubmitStep({ profile }: Props) {
+type StageState = 'pending' | 'active' | 'done' | 'failed'
+
+const STAGES = [
+  { key: 'sync', title: '同步数据', description: '导入手表中的训练与健康数据' },
+  { key: 'calibration', title: '校准训练基线', description: '建立个人心率、配速与训练区间参考' },
+  { key: 'compute', title: '计算训练指标', description: '生成训练负荷与能力指标' },
+] as const
+
+function storageKey(userId: string) {
+  return `${ONBOARDING_RUN_KEY_PREFIX}${userId}`
+}
+
+function startKeyStorageKey(userId: string) {
+  return `${ONBOARDING_START_KEY_PREFIX}${userId}`
+}
+
+function createIdempotencyKey() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function stageForStep(name: string | undefined): number {
+  const normalized = name?.toLowerCase() ?? ''
+  if (normalized.includes('calibration')) return 1
+  if (normalized.includes('compute')) return 2
+  return 0
+}
+
+function stageState(run: PipelineRun | null, stageIndex: number): StageState {
+  if (!run) return stageIndex === 0 ? 'active' : 'pending'
+  if (run.status === 'done') return 'done'
+
+  const source = run.steps.find((step) => stageForStep(step.name) === stageIndex)
+  const sourceStatus = source?.status.toLowerCase()
+  const currentStage = stageForStep(run.steps[run.current_step]?.name)
+
+  if (sourceStatus === 'failed' || (run.status === 'failed' && currentStage === stageIndex)) return 'failed'
+  if (sourceStatus === 'done' || sourceStatus === 'completed' || stageIndex < currentStage) return 'done'
+  if (sourceStatus === 'running' || stageIndex === currentStage) return 'active'
+  return 'pending'
+}
+
+function stateLabel(state: StageState) {
+  switch (state) {
+    case 'done': return '已完成'
+    case 'active': return '进行中'
+    case 'failed': return '失败'
+    default: return '未开始'
+  }
+}
+
+export default function SubmitStep({ userId }: Props) {
   const navigate = useNavigate()
-  const [loading, setLoading] = useState(false)
-  const [started, setStarted] = useState(false)
+  const [run, setRun] = useState<PipelineRun | null>(null)
+  const [activeJob, setActiveJob] = useState<ActiveJob | null>(null)
+  const [activeRunId, setActiveRunId] = useState<string | null>(null)
+  const [view, setView] = useState<RunView>('starting')
   const [error, setError] = useState('')
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
-  const pollAttemptRef = useRef(0)
+  const [finalizing, setFinalizing] = useState(false)
+  const [finalizeError, setFinalizeError] = useState('')
   const mountedRef = useRef(false)
+  const userIdRef = useRef(userId)
+  const generationRef = useRef(0)
+  const runIdRef = useRef<string | null>(null)
+  const currentJobIdRef = useRef<string | null>(null)
+  const startInFlightRef = useRef(false)
 
-  const applyStatus = useCallback((status: SyncStatus) => {
-    setSyncStatus(status)
+  const clearSavedRun = useCallback((forUserId = userId) => {
+    localStorage.removeItem(storageKey(forUserId))
+  }, [userId])
 
-    if (status.state === 'done') {
-      setLoading(false)
-      navigate('/')
-      return
-    }
+  const clearStartKey = useCallback((forUserId = userId) => {
+    localStorage.removeItem(startKeyStorageKey(forUserId))
+  }, [userId])
 
-    if (status.state === 'error') {
-      setError(status.error || '同步出错，请重试')
-      setLoading(false)
-      setStarted(true)
-      return
-    }
-
-    if (status.state === 'running') {
+  const applyRun = useCallback((nextRun: PipelineRun, expectedUserId: string, generation: number) => {
+    if (!mountedRef.current || userIdRef.current !== expectedUserId || generationRef.current !== generation || nextRun.run_id !== runIdRef.current) return
+    setActiveRunId(nextRun.run_id)
+    setRun(nextRun)
+    currentJobIdRef.current = nextRun.steps[nextRun.current_step]?.job_id ?? null
+    if (nextRun.status === 'done') {
+      setView('done')
       setError('')
-      setStarted(true)
-      setLoading(true)
+    } else if (nextRun.status === 'failed') {
+      setView('failed')
+      setError(nextRun.error_message || '数据同步未完成，请重试。')
+    } else {
+      setView('running')
+      setError('')
     }
-  }, [navigate])
+  }, [])
 
-  const checkSyncStatus = useCallback(async () => {
+  const refreshRun = useCallback(async (runId: string, expectedUserId: string, generation: number) => {
     try {
-      const status = await getSyncStatus()
-      if (!mountedRef.current) return
+      const nextRun = await getPipelineRun(runId)
+      if (!mountedRef.current || userIdRef.current !== expectedUserId || generationRef.current !== generation || runId !== runIdRef.current) return 'valid' as const
+      // A saved browser pointer is only valid for an onboarding full-sync run.
+      // Ownership is enforced by the server before this response is returned.
+      if (nextRun.pipeline_name !== 'onboarding') return 'invalid' as const
+      applyRun(nextRun, expectedUserId, generation)
+      const jobId = nextRun.steps[nextRun.current_step]?.job_id
+      if (jobId && nextRun.status !== 'done' && nextRun.status !== 'failed') {
+        if (currentJobIdRef.current !== jobId) setActiveJob(null)
+        try {
+          const job = await getJobState(jobId)
+          if (mountedRef.current && userIdRef.current === expectedUserId && generationRef.current === generation && runId === runIdRef.current) {
+            if (currentJobIdRef.current === jobId) {
+              setActiveJob({ ...job, stepJobId: jobId })
+              if (job.status === 'done' || job.status === 'failed') {
+                void refreshRun(runId, expectedUserId, generation)
+              }
+            }
+          }
+        } catch {
+          // Pipeline state remains authoritative when a transient job read fails.
+        }
+      } else if (mountedRef.current && userIdRef.current === expectedUserId && generationRef.current === generation) {
+        setActiveJob(null)
+      }
+      return 'valid' as const
+    } catch (err) {
+      // A transport failure or 5xx leaves the server-side run ambiguous. Keep its
+      // browser pointer and poll it again rather than creating duplicate full syncs.
+      const status = err instanceof ApiError ? err.status : (err as { status?: unknown })?.status
+      if (typeof status === 'number' && [400, 401, 403, 404].includes(status)) return 'invalid' as const
+      return 'transient' as const
+    }
+  }, [applyRun])
 
-      pollAttemptRef.current += 1
-      applyStatus(status)
-
-      if (status.state === 'running' && pollAttemptRef.current >= MAX_POLL_ATTEMPTS) {
-        setError('同步超时，请刷新页面查看状态')
-        setLoading(false)
+  const refreshActiveJob = useCallback(async (runId: string, jobId: string, expectedUserId: string, generation: number) => {
+    try {
+      const job = await getJobState(jobId)
+      if (!mountedRef.current || userIdRef.current !== expectedUserId || generationRef.current !== generation || runId !== runIdRef.current || currentJobIdRef.current !== jobId) return
+      setActiveJob({ ...job, stepJobId: jobId })
+      if (job.status === 'done' || job.status === 'failed') {
+        // Pipeline advancement is the only time we need to read the run again.
+        void refreshRun(runId, expectedUserId, generation)
       }
     } catch {
-      if (!mountedRef.current) return
-
-      pollAttemptRef.current += 1
-      if (pollAttemptRef.current >= MAX_POLL_ATTEMPTS) {
-        setError('无法获取同步状态，请刷新页面')
-        setLoading(false)
-      }
+      // Keep the last displayed progress and retry the job on the next interval.
     }
-  }, [applyStatus])
+  }, [refreshRun])
+
+  const startNewRun = useCallback(async (expectedUserId = userId, generation = generationRef.current) => {
+    if (startInFlightRef.current || userIdRef.current !== expectedUserId || generationRef.current !== generation) return
+    startInFlightRef.current = true
+    runIdRef.current = null
+    currentJobIdRef.current = null
+    setActiveRunId(null)
+    setRun(null)
+    setActiveJob(null)
+    setView('starting')
+    setError('')
+    setFinalizeError('')
+
+    const startKey = localStorage.getItem(startKeyStorageKey(expectedUserId)) || createIdempotencyKey()
+    localStorage.setItem(startKeyStorageKey(expectedUserId), startKey)
+    try {
+      const result = await triggerSync(expectedUserId, { full: true, idempotencyKey: startKey })
+      if (!mountedRef.current || userIdRef.current !== expectedUserId || generationRef.current !== generation) return
+      if (!result.ok || !result.data.run_id) {
+        setView('failed')
+        setError(result.data.error || '无法启动数据同步，请重试。')
+        return
+      }
+
+      const runId = result.data.run_id
+      runIdRef.current = runId
+      localStorage.setItem(storageKey(expectedUserId), runId)
+      clearStartKey(expectedUserId)
+      setActiveRunId(runId)
+      setView('running')
+      void refreshRun(runId, expectedUserId, generation)
+    } catch {
+      if (mountedRef.current && userIdRef.current === expectedUserId && generationRef.current === generation) {
+        setView('failed')
+        setError('无法启动数据同步，请检查网络后重试。')
+      }
+    } finally {
+      if (userIdRef.current === expectedUserId && generationRef.current === generation) startInFlightRef.current = false
+    }
+  }, [clearStartKey, refreshRun, userId])
 
   useEffect(() => {
     mountedRef.current = true
+    userIdRef.current = userId
+    const generation = ++generationRef.current
+    startInFlightRef.current = false
+    runIdRef.current = null
+    currentJobIdRef.current = null
+    setActiveRunId(null)
+    setRun(null)
+    setActiveJob(null)
+    setView('starting')
+    setError('')
+    setFinalizing(false)
+    setFinalizeError('')
 
-    getSyncStatus()
-      .then((status) => {
-        if (!mountedRef.current) return
-        applyStatus(status)
+    const savedRunId = localStorage.getItem(storageKey(userId))
+    if (!savedRunId) {
+      // Defer the first state update until after this subscription effect has
+      // completed; subsequent retry state changes happen in event callbacks.
+      void Promise.resolve().then(() => startNewRun(userId, generation))
+    } else {
+      runIdRef.current = savedRunId
+      // Keep recovery validation asynchronous; browser storage does not confer
+      // authority over the run and the server response populates UI state.
+      setActiveRunId(savedRunId)
+      void refreshRun(savedRunId, userId, generation).then((result) => {
+        if (!mountedRef.current || userIdRef.current !== userId || generationRef.current !== generation || result !== 'invalid') return
+        // Browser storage is only a recovery pointer. The server decides whether
+        // a run exists and belongs to the current user.
+        clearSavedRun(userId)
+        runIdRef.current = null
+        setActiveRunId(null)
+        void startNewRun(userId, generation)
       })
-      .catch(() => {
-        // Before the user starts onboarding there may be no sync status yet.
-      })
+    }
 
     return () => {
       mountedRef.current = false
     }
-  }, [applyStatus])
+  }, [clearSavedRun, refreshRun, startNewRun, userId])
 
   useEffect(() => {
-    if (!loading) return undefined
-
-    const intervalId = window.setInterval(() => {
-      void checkSyncStatus()
+    if (!activeRunId || run?.status === 'done' || run?.status === 'failed') return undefined
+    const expectedUserId = userId
+    const generation = generationRef.current
+    const jobId = currentJobIdRef.current
+    const interval = window.setInterval(() => {
+      if (jobId) {
+        void refreshActiveJob(activeRunId, jobId, expectedUserId, generation)
+      } else {
+        // The pipeline may still be creating its first step/job.
+        void refreshRun(activeRunId, expectedUserId, generation)
+      }
     }, POLL_INTERVAL_MS)
+    return () => window.clearInterval(interval)
+  }, [activeRunId, refreshActiveJob, refreshRun, run?.status, userId])
 
-    return () => window.clearInterval(intervalId)
-  }, [checkSyncStatus, loading])
+  const retry = () => {
+    clearSavedRun()
+    runIdRef.current = null
+    setActiveRunId(null)
+    void startNewRun(userId, generationRef.current)
+  }
 
-  const handleSubmit = async () => {
-    setError('')
-    setStarted(true)
-    setLoading(true)
-    pollAttemptRef.current = 0
-
+  const finalize = async () => {
+    const expectedUserId = userId
+    const generation = generationRef.current
+    const completedRunId = runIdRef.current
+    if (!completedRunId || finalizing) return
+    setFinalizing(true)
+    setFinalizeError('')
     try {
-      const { ok, data } = await postOnboardingComplete()
-      if (!ok) {
-        setError(data.error || data.detail || '初始化请求失败，请重试')
-        setLoading(false)
+      const result = await postOnboardingComplete(completedRunId)
+      if (!mountedRef.current || userIdRef.current !== expectedUserId || generationRef.current !== generation) return
+      if (!result.ok) {
+        setFinalizeError(result.data.error || result.data.detail || '无法完成初始化，请重试。')
         return
       }
-
-      if ((data as { state?: string }).state === 'already-complete') {
-        navigate('/')
-        return
-      }
-
-      setSyncStatus({
-        state: 'running',
-        progress: data.progress ?? {
-          phase: 'queued',
-          message: '正在同步健康数据，马上就好',
-          percent: 0,
-        },
-      })
+      clearSavedRun(expectedUserId)
+      clearStartKey(expectedUserId)
+      navigate('/', { replace: true })
     } catch {
-      setError('请求失败，请重试')
-      setLoading(false)
+      if (mountedRef.current && userIdRef.current === expectedUserId && generationRef.current === generation) {
+        setFinalizeError('无法完成初始化，请检查网络后重试。')
+      }
+    } finally {
+      if (mountedRef.current && userIdRef.current === expectedUserId && generationRef.current === generation) setFinalizing(false)
     }
   }
 
-  const handleRetry = () => {
-    setError('')
-    handleSubmit()
-  }
-
-  const showProgress = started || loading || syncStatus?.state === 'running' || syncStatus?.state === 'error'
-
-  if (showProgress) {
-    return (
-      <InitializationProgress
-        status={syncStatus}
-        error={error}
-        retrying={loading}
-        onRetry={handleRetry}
-      />
-    )
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-bold text-text-primary">确认并开始</h2>
-        <p className="text-sm text-text-muted mt-1">确认信息后，我们会快速同步你的健康数据</p>
-      </div>
-
-      {error && (
-        <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm text-red-400 flex items-center justify-between gap-3">
-          <span>{error}</span>
-          <button
-            onClick={handleRetry}
-            className="text-xs font-medium text-red-400 underline underline-offset-2 hover:text-red-300 shrink-0"
-          >
-            重试
-          </button>
-        </div>
-      )}
-
-      {/* Summary card */}
-      <div className="bg-bg-base rounded-xl border border-border-subtle p-4 space-y-3 text-sm">
-        <Row label="显示名称" value={profile.display_name} />
-        <Row label="出生日期" value={profile.dob} />
-        <Row label="性别" value={profile.sex === 'male' ? '男' : '女'} />
-        <Row label="身高" value={`${profile.height_cm} cm`} />
-        <Row label="体重" value={`${profile.weight_kg} kg`} />
-      </div>
-
-      <div className="rounded-xl border border-border-subtle bg-accent-green/5 p-4">
-        <p className="text-sm text-text-primary font-medium">接下来会做什么？</p>
-        <ul className="mt-2 space-y-1 text-xs text-text-muted">
-          <li>1. 快速同步近期健康数据（约 10 秒）</li>
-          <li>2. 进入主页浏览你的训练仪表盘</li>
-          <li>3. 稍后在「训练计划」页面设置比赛目标并同步完整历史数据</li>
-        </ul>
-      </div>
-
-      <button
-        onClick={handleSubmit}
-        disabled={loading}
-        className="w-full rounded-lg bg-accent-green/90 px-4 py-2 text-sm font-medium text-bg-base hover:bg-accent-green disabled:opacity-50 transition-colors cursor-pointer flex items-center justify-center gap-2"
-      >
-        {loading ? (
-          <>
-            <span className="w-4 h-4 border-2 border-bg-base/30 border-t-bg-base rounded-full animate-spin" />
-            正在同步...
-          </>
-        ) : (
-          '开始使用 STRIDE'
-        )}
-      </button>
-    </div>
-  )
-}
-
-function InitializationProgress({
-  status,
-  error,
-  retrying,
-  onRetry,
-}: {
-  status: SyncStatus | null
-  error: string
-  retrying: boolean
-  onRetry: () => void
-}) {
-  const failed = Boolean(error) || status?.state === 'error'
-  const progress = status?.progress ?? null
-  const phase = failed ? progress?.failed_phase ?? progress?.phase ?? 'queued' : progress?.phase ?? 'queued'
-  const activeStepIndex = getActiveStepIndex(phase)
-  const percent = clampPercent(failed ? progress?.percent ?? 0 : progress?.percent ?? 6)
-  const message = failed
-    ? error || status?.error || '同步失败，请重试'
-    : progress?.message ?? '正在同步健康数据'
+  const failed = view === 'failed'
+  const done = view === 'done'
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-bold text-text-primary">
-          {failed ? '同步遇到问题' : '正在同步健康数据'}
+          {done ? '数据准备完成' : failed ? '数据同步遇到问题' : '正在准备你的训练数据'}
         </h2>
-        <p className="text-sm text-text-muted mt-1">
-          仅同步近期健康指标，很快就好。
+        <p className="mt-1 text-sm text-text-muted">
+          {done
+            ? '确认进入 STRIDE 后即可开始查看你的训练数据。'
+            : failed
+              ? '未完成的数据不会影响你的账户设置。'
+              : '首次同步会导入历史训练，并完成基础训练指标计算。'}
         </p>
       </div>
 
-      <div className="rounded-xl border border-border-subtle bg-bg-base p-4 space-y-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-text-primary">{message}</p>
-            <p className="text-xs text-text-muted mt-1">
-              {failed ? '请检查手表账号登录状态或网络后重试。' : '请稍候片刻。'}
-            </p>
-          </div>
-          {!failed && (
-            <span className="w-5 h-5 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin shrink-0" />
-          )}
-        </div>
-
-        <div>
-          <div className="flex justify-between text-xs font-mono text-text-muted mb-2">
-            <span>同步进度</span>
-            <span>{percent}%</span>
-          </div>
-          <div className="h-2 rounded-full bg-border-subtle overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${failed ? 'bg-accent-red' : 'bg-accent-green'}`}
-              style={{ width: `${percent}%` }}
-            />
-          </div>
-        </div>
-
-        {typeof progress?.synced_health === 'number' && (
-          <div className="grid grid-cols-2 gap-3 pt-1">
-            <ProgressStat label="健康天数" value={`${progress.synced_health}`} />
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-3">
-        {PROGRESS_STEPS.map((step, index) => {
-          const state = getStepState(index, activeStepIndex, failed)
-          return (
-            <div key={step.title} className="flex gap-3">
-              <div className="pt-0.5">
-                <StepDot state={state} />
+      <ol className="space-y-3" aria-label="数据准备进度">
+        {STAGES.map((stage, index) => {
+           const state = failed && !run ? (index === 0 ? 'failed' : 'pending') : stageState(run, index)
+           const currentJobId = run?.steps[run.current_step]?.job_id
+           const progress = state === 'active' && stageForStep(run?.steps[run.current_step]?.name) === index && activeJob?.stepJobId === currentJobId
+             ? activeJob?.progress_pct
+             : undefined
+           return (
+            <li key={stage.key} className="rounded-lg border border-border-subtle bg-bg-base p-4">
+              <div className="flex gap-3">
+               <StageIcon state={state} />
+               <div className="min-w-0">
+                 <p className="text-sm font-medium text-text-primary">
+                   {stage.title} <span className="text-text-muted">· {stateLabel(state)}</span>
+                 </p>
+                 <p className="mt-0.5 text-xs text-text-muted">{stage.description}</p>
+               </div>
               </div>
-              <div>
-                <p className={`text-sm font-medium ${state === 'pending' ? 'text-text-muted' : 'text-text-primary'}`}>
-                  {step.title}
-                </p>
-                <p className="text-xs text-text-muted mt-0.5">{step.description}</p>
-              </div>
-            </div>
+              {progress !== undefined && (
+                <div className="mt-3 ml-8" aria-label={`${stage.title}进度 ${progress}%`}>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-border-subtle">
+                    <div className="h-full rounded-full bg-accent-green transition-all duration-300" style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+                  </div>
+                  <p className="mt-1 text-right text-xs tabular-nums text-text-muted">{progress}%</p>
+                </div>
+              )}
+            </li>
           )
         })}
-      </div>
+      </ol>
+
+      {failed && (
+        <div role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+          {error || '数据同步未完成，请重试。'}
+        </div>
+      )}
+
+      {done && finalizeError && (
+        <div role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+          {finalizeError}
+        </div>
+      )}
 
       {failed && (
         <button
-          onClick={onRetry}
-          disabled={retrying}
-          className="w-full rounded-lg bg-accent-green/90 px-4 py-2 text-sm font-medium text-bg-base hover:bg-accent-green disabled:opacity-50 transition-colors cursor-pointer"
+          type="button"
+          onClick={retry}
+          className="w-full rounded-lg bg-accent-green px-4 py-2 text-sm font-medium text-bg-base transition-colors hover:bg-accent-green/90"
         >
-          {retrying ? '正在重试...' : '重新同步'}
+          重新同步
+        </button>
+      )}
+
+      {done && (
+        <button
+          type="button"
+          onClick={() => void finalize()}
+          disabled={finalizing}
+          className="w-full rounded-lg bg-accent-green px-4 py-2 text-sm font-medium text-bg-base transition-colors hover:bg-accent-green/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {finalizing ? '正在进入 STRIDE...' : 'Enter STRIDE'}
         </button>
       )}
     </div>
   )
 }
 
-function ProgressStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-card px-3 py-2">
-      <p className="text-[10px] font-mono text-text-muted uppercase tracking-wider">{label}</p>
-      <p className="text-sm font-semibold text-text-primary mt-1">{value}</p>
-    </div>
-  )
-}
-
-function StepDot({ state }: { state: 'done' | 'active' | 'pending' | 'error' }) {
-  if (state === 'done') {
-    return (
-      <span className="flex w-5 h-5 items-center justify-center rounded-full bg-accent-green text-bg-base text-xs">
-        ✓
-      </span>
-    )
-  }
-
-  if (state === 'error') {
-    return (
-      <span className="flex w-5 h-5 items-center justify-center rounded-full bg-accent-red text-bg-base text-xs">
-        !
-      </span>
-    )
-  }
-
-  if (state === 'active') {
-    return (
-      <span className="flex w-5 h-5 items-center justify-center rounded-full border-2 border-accent-green">
-        <span className="w-2 h-2 rounded-full bg-accent-green animate-pulse" />
-      </span>
-    )
-  }
-
-  return <span className="block w-5 h-5 rounded-full border border-border-subtle bg-bg-base" />
-}
-
-function getActiveStepIndex(phase: string) {
-  const index = PROGRESS_STEPS.findIndex((step) => step.phases.includes(phase))
-  return index === -1 ? 0 : index
-}
-
-function getStepState(index: number, activeStepIndex: number, failed: boolean) {
-  if (failed && index === activeStepIndex) return 'error'
-  if (index < activeStepIndex) return 'done'
-  if (index === activeStepIndex) return 'active'
-  return 'pending'
-}
-
-function clampPercent(value: number) {
-  return Math.max(0, Math.min(100, Math.round(value)))
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between items-start gap-4">
-      <span className="text-xs font-mono text-text-muted uppercase tracking-wider shrink-0">{label}</span>
-      <span className="text-text-primary text-right">{value}</span>
-    </div>
-  )
+function StageIcon({ state }: { state: StageState }) {
+  const icon = state === 'done' ? '✓' : state === 'failed' ? '!' : state === 'active' ? '•' : '○'
+  const color = state === 'failed'
+    ? 'border-red-500 text-red-400'
+    : state === 'done'
+      ? 'border-accent-green bg-accent-green text-bg-base'
+      : state === 'active'
+        ? 'border-accent-green text-accent-green'
+        : 'border-border-subtle text-text-muted'
+  return <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs ${color}`}>{icon}</span>
 }

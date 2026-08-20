@@ -681,7 +681,12 @@ def make_season_plan_runner(
                     len(violations),
                     violations,
                 )
-            proposals = valid_proposals
+            proposals = [
+                proposal.model_copy(
+                    update={"base_revision": str(current_plan.version)}
+                )
+                for proposal in valid_proposals
+            ]
 
         if last_diff is not None and not proposals:
             detail = "；".join(invalid_details) or "返回的调整方案格式不完整"

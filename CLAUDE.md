@@ -2,8 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-This project contains the training plans, logs for multiple marathon runners.
-It also contains tools like coros-sync to sync the training data from COROS to the local for further analysis.
+This project contains the training plans and logs for multiple marathon runners.
+User activity and health data are stored in Tencent Cloud MySQL; local files are used for authoring and reviewing training-plan drafts.
 
 ---
 
@@ -11,7 +11,7 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 
 ### Worktree-first development（HARD）
 
-任何可能修改仓库内容的开发任务（含代码、测试、文档、配置、设计和生成文件）开始时，必须先使用项目 skill [`worktree-development`](.claude/skills/worktree-development/SKILL.md) 调用 `EnterWorktree`，创建并切换到该任务专属的全新 Git worktree。探索、实现、测试、验证、review、commit 和 push 都必须在该 worktree 内完成；不得修改启动 checkout。纯只读问答或当前会话已位于本任务专属 worktree 时除外。
+任何可能修改仓库内容的开发任务（含代码、测试、文档、配置、设计和生成文件）开始时，必须先运行项目 skill [`worktree-development`](.claude/skills/worktree-development/SKILL.md) 的唯一可移植入口 `python3 ".claude/skills/worktree-development/scripts/create_worktree.py" <3-5-word-kebab-name>`，为该任务创建专属的全新 linked Git worktree + 分支，并自动完成初始化（athlete DB 快照）。该入口只用 Python 标准库 + `git` CLI，跨 coding agent 可移植（Claude Code / OpenCode / 纯 shell），不依赖任何 agent 专用工具或内置 worktree 工具。脚本无法改变父进程 cwd：解析其 stdout 最后一行 JSON 里的 `worktree_path`，此后所有探索、实现、测试、验证、review、commit、push 都必须在该 worktree 内完成（shell 用 `git -C "<worktree_path>"` 或切 cwd）；不得修改启动 checkout。纯只读问答或当前会话已位于本任务专属 worktree 时除外。
 
 ### Issue tracker
 
@@ -34,7 +34,7 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 | 写 / 改 weekly `plan.json` | [`docs/plan-json-schema.md`](docs/plan-json-schema.md) —— HARD 校验 gate |
 | 写 plan.md 里的力量动作 / 调 strength push | [`docs/strength-training.md`](docs/strength-training.md) |
 | 分析疲劳 / TSB / HRV / 训练负荷 | [`docs/fatigue-metrics.md`](docs/fatigue-metrics.md) |
-| 写 / 更新 feedback.md，引用 RPE 或 feel_type | [`docs/feedback-md.md`](docs/feedback-md.md) |
+| 读 / 写周反馈，引用 RPE 或 feel_type | [`docs/feedback-md.md`](docs/feedback-md.md) |
 | Multi-model A/B/C variants 流程 | [`docs/multi-variant.md`](docs/multi-variant.md) |
 | Commentary 写入 / 推 prod / daily loop | [`docs/working-model.md`](docs/working-model.md) |
 | 跑 coros-sync CLI / 改 sync 代码 / 直查 DB | [`docs/coros-cli.md`](docs/coros-cli.md) |
@@ -82,20 +82,22 @@ Operational rules for Stitch MCP:
 
 ## Storage scope rule (HARD)
 
-**The per-user SQLite databases at `data/{user_id}/coros.db` are reserved for watch-synced 运动数据 only** —— activities, laps, zones, timeseries, daily_health, dashboard, race predictions, ability snapshots, structured planned sessions/nutrition, weekly plan/feedback markdown layer, scheduled workouts。任何不属于这个范围的（notifications, devices, social signals, cross-user state, app-level config 等）**绝不能**加成 SQLite 表。
+**腾讯云 MySQL 是生产环境用户运动与健康数据的 canonical source**，包括 activities、laps、zones、timeseries、daily_health、dashboard、race predictions、ability snapshots、structured planned sessions/nutrition、weekly plans 和 scheduled workouts。`data/{user_id}/coros.db` 仅用于遗留迁移、专项调试或测试 fixture；生成 weekly plan 时不得把它当作数据源，也不得在 MySQL 不可用时静默 fallback 到 SQLite。
 
 用正确的后端：
 
 | Data shape | Backend |
 |------------|---------|
-| Cross-user social signals (likes, comments, follows) | **Azure Table Storage**（canonical pattern：`stride_server/likes_store.py`） |
-| Per-user app preferences not derived from a watch | **Azure Table Storage**（PartitionKey=user_id, RowKey="prefs"） |
-| Push device tokens / FCM-style registrations | **Azure Table Storage** |
-| Bulk binary blobs (photos, video, large export files) | **Azure Blob Storage** |
-| Authoring artifacts (plan.md, feedback.md, TRAINING_PLAN.md) | **Markdown files in `data/{user_id}/logs/`**，经 `sync-data.yml` 同步到 Azure Files |
-| Auth tokens / secrets | **Azure Key Vault** |
+| 用户运动、健康和训练计划数据 | **腾讯云 MySQL**（应用代码经 `src/go/internal/storage/`） |
+| Go API 持久化数据（含跨用户 social signals、preferences、push registrations） | **MySQL**（经 `src/go/internal/storage/`） |
+| Python 服务的跨用户 social signals、preferences、push registrations | **Azure Table Storage**（canonical pattern：`stride_server/likes_store.py`） |
+| Bulk binary blobs (photos, video, large export files) | **Azure Blob Storage**（Python 服务） |
+| Authoring artifacts (plan.md, TRAINING_PLAN.md) | **Markdown files in `data/{user_id}/logs/`**；只有明确批准同步的非草稿内容才可经 `sync-data.yml` 到 Azure Files，weekly plan 草稿遵守下方人工确认门禁 |
+| 周反馈 | rollout 前沿用 legacy `feedback.md`；`STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE=true` 后以 **腾讯云 MySQL `weekly_feedback`** 为唯一来源 |
+| Go API auth tokens / secrets | **MySQL**（经 `src/go/internal/storage/`） |
+| Python/Auth 服务的 auth tokens / secrets | **Azure Key Vault** |
 
-加新 feature 前问：*"这一行来自手表 sync 吗？"* 不是就别加 SQLite 表。
+**Go API 的所有持久化状态统一落 MySQL**，不要为 Go API 新增 Azure Table、Azure Blob、Azure Files 或 Key Vault 存储依赖；Python 服务保留既有 Azure 后端。遗留 SQLite 的迁移或调试任务必须与 weekly plan authoring 流程隔离。
 
 ### 统一数据访问层 `stride_storage`（HARD）
 
@@ -182,9 +184,9 @@ Operational rules for Stitch MCP:
 
 ## Working Model summary
 
-- **Local machine** 是 **author** 环境：Claude Code 在这里跑，产出 weekly `plan.md`、`feedback.md`、refined `activity_commentary`。
-- **Azure Container App (`stride-app`)** 是 **reader** 环境 + **default draft-writer**（GPT-4.1 在 sync 时自动写 commentary 草稿）。
-- Markdown 经 `sync-data.yml` 同步到 prod Azure Files；DB 行经 authenticated API 推。
+- **腾讯云 MySQL** 是生产用户运动、健康和正式训练计划的 canonical data store。
+- **Local machine** 是训练计划的 **author/review** 环境：Claude Code 从腾讯云 MySQL 只读获取最新数据，在 `data/{user_id}/logs/` 生成 `plan.md` / `plan.json` 草稿。
+- 生成阶段只允许读取 prod MySQL；本地草稿不得自动写入 MySQL 或同步到其他远端。只有用户明确表示 review 通过并要求发布当前草稿后，才可通过受支持的 MySQL 写接口写入；确认前禁止创建、覆盖、激活或归档远端 weekly plan。
 
 完整 commentary 规则、daily loop bash、prod/local 不一致排障 → [`docs/working-model.md`](docs/working-model.md)。
 
@@ -195,14 +197,14 @@ Operational rules for Stitch MCP:
 ```
 data/
     zhaochaoyi/                  # per-user data directory
-        coros.db                 # user's SQLite database
+        coros.db                 # legacy/test snapshot; never use for plan generation
         config.json              # user's COROS credentials (git-ignored)
         TRAINING_PLAN.md         # user's overall training plan
         logs/
             2026-04-13_04-19(赛后恢复)/  # format: YYYY-MM-DD_MM-DD(阶段标注)
                 plan.md                  # weekly training plan
                 plan.json                # 结构化版本，server reparse 时优先用
-                feedback.md              # training feedback with RPE
+                feedback.md              # rollout 前兼容来源；marker 后仅用于迁移
     dehua/                       # another user
         ...
 src/                 # tools source code
@@ -213,7 +215,7 @@ docs/                # topic-specific docs（按需 Read，见顶部表）
 
 ### Multi-user Architecture
 
-每个 user 在 `data/{user_id}/` 下隔离（UUID-keyed —— `{user_id}` 是 JWT `sub` UUID），含自己的 SQLite DB、COROS 凭据、训练 logs。CLI 用 `--profile` / `-P` 选用户 —— 传 UUID 或 friendly slug（如 `zhaochaoyi`）经 `data/.slug_aliases.json` 解析到 UUID。API 用 `/{user_id}/` 路径前缀，路径 UUID 与 JWT `sub` 不匹配则拒绝。
+生产用户数据以 JWT `sub` UUID 在腾讯云 MySQL 中隔离。`data/{user_id}/` 保留本地 authoring artifacts、必要配置及遗留/测试数据；CLI 可用 UUID 或 friendly slug（如 `zhaochaoyi`，经 `data/.slug_aliases.json` 解析）选择用户。API 用 `/{user_id}/` 路径前缀，路径 UUID 与 JWT `sub` 不匹配则拒绝。
 
 ---
 
@@ -227,14 +229,25 @@ docs/                # topic-specific docs（按需 Read，见顶部表）
 
 考虑三者交互 —— 跑步日 vs 休息日的差异化碳水、力量后的蛋白时机、恢复周的热量赤字管理。
 
-**关键**：回答任何关于现状 / 负荷 / 疲劳 / 训练指标的问题时，**先**跑 `PYTHONIOENCODING=utf-8 python -m coros_sync -P {username} sync` 确保本地 DB 最新。默认用户 `zhaochaoyi`。
+### Weekly plan generation workflow（HARD）
+
+1. **按需同步所有用户**：如需在生成前刷新 prod 数据，可手动触发 GitHub Actions 的 `.github/workflows/daily-sync.yml`（`Daily auto-sync`）：`gh workflow run daily-sync.yml`。该 workflow 会遍历 `data/.slug_aliases.json` 中的所有 user UUID，触发并等待每个用户的 data pipeline。必须等待 workflow 成功完成；任一用户失败时先报告失败，不得把旧数据误称为最新数据。不要把它与 `.github/workflows/sync-data.yml` 混淆，后者同步 authoring files 到 Azure，不负责刷新 MySQL 运动数据。
+2. **prod MySQL 只读检查**：生成下一周计划期间，允许直接使用非交互 MySQL CLI 对 prod 腾讯云 MySQL 执行只读 SQL，读取目标用户的最新活动、健康、训练负荷和能力基线。连接参数必须且只能从主 checkout 根目录 `.credentials.local` 的 `host`、`port`、`database_name`、`database_readonly_username`、`database_readonly_password` 加载；不得使用 `database_username` / `database_password` 读写账号，也不得在 readonly 账号不可用时回退到任何其他账号。只允许 `SELECT`、`SHOW`、`DESCRIBE` / `DESC`、`EXPLAIN`、`WITH ... SELECT` 等只读语句；禁止多语句输入、存储过程调用、写操作及 schema 变更，并禁止 `INTO OUTFILE` / `INTO DUMPFILE`、`FOR UPDATE`、`LOCK IN SHARE MODE`、`GET_LOCK()` 等写文件或显式加锁形式。
+3. **禁止 SQLite 数据源**：不得运行本地 sync 来准备计划上下文，不得读取 `data/{user_id}/coros.db`，也不得在 MySQL 查询失败、数据缺失或连接不可用时退回 SQLite。此时应停止生成并向用户报告缺失项或连接问题。
+4. **组合 authoring 输入**：当前训练阶段读取本地 `TRAINING_PLAN.md`。rollout completion marker 前，人工反馈沿用 legacy `feedback.md`；marker 后只读取 prod MySQL `weekly_feedback`。运动和健康事实始终只以本轮 prod MySQL 查询结果为准。
+5. **生成本地草稿**：只把结果写到本地 `data/{user_id}/logs/<week>/plan.md` 和 `plan.json`。生成后完成 schema 校验和 review，但不要写入 MySQL、提交/推送 Git 或触发任何远端同步。
+6. **等待人工 review**：为 `plan.md` 和 `plan.json` 分别计算 Git blob hash（未跟踪文件则计算 SHA-256），把两个文件路径及 hash 组成同一份草稿 manifest。向用户展示 manifest 和校验结果，并等待用户明确表示该版本 **review 通过**。仅生成草稿、查看草稿、提出修改意见或完成自动 review 均不构成写入授权；任一文件内容变化都会使之前的 review 通过失效，必须重新生成 manifest 并重新 review。
+7. **review 通过后写入 MySQL**：只有用户明确表示已 review 通过并要求发布已确认 manifest 后，才允许从只读阶段升级为写操作，并通过仓库已有且受支持的 MySQL 写接口发布。写入必须携带预期 plan revision（或等价 CAS 条件），原子地拒绝并发变化；写入前再次核对 manifest、user UUID、week start 和 revision。若没有受支持的发布接口，停止并报告需要先实现接口，禁止用临时脚本或裸 SQL 绕过。若任一项变化、写入冲突或校验失败，停止发布且不得激活新计划。写入成功后回读并核对远端内容与本地已确认 manifest 一致；不一致时立即报告，不得继续覆盖。
+
+MySQL CLI 必须使用 batch/non-interactive 模式。不得把密码放在命令行参数中；应使用权限为 `0600` 的临时 `--defaults-extra-file`，用后立即删除。不得输出、记录或回复 `.credentials.local` 的任何值、DSN、密码或 token；查询结果也不得包含 credential/token/secret 列。若 readonly 凭据缺失、连接失败或权限异常，停止检查并报告，不得改用读写账号。
 
 ### 起草新 weekly plan 前必看的输入
 
 - **当前训练阶段**：本周在整体周期化中的位置（从 TRAINING_PLAN.md）
-- **上周 feedback**：RPE、感知疲劳、上周 feedback.md 记录的问题
-- **近期身体指标**：RHR、HRV 趋势、睡眠质量/时长 —— 经 `coros-sync status` 或 `coros-sync analyze hrv`
-- **最新体测数据**：体重、体脂率、骨骼肌量趋势
+- **上周 feedback**：rollout marker 前读 legacy `feedback.md`，marker 后从腾讯云 MySQL `weekly_feedback` 读取
+- **近期身体指标**：从腾讯云 MySQL 获取 RHR、HRV 趋势、睡眠质量/时长
+- **近期训练执行**：从腾讯云 MySQL 获取活动、训练负荷、完成度及异常信号
+- **最新体测数据**：从腾讯云 MySQL 获取体重、体脂率、骨骼肌量趋势
 
 按这些信号调整训练负荷、营养、恢复。例：HRV 下行或睡眠差 → 降强度、加恢复；体脂停滞 → 重新评估热量赤字。
 

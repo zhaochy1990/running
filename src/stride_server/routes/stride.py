@@ -130,13 +130,9 @@ def get_stride_training_load(
     user: str,
     days: int = Query(90, ge=7, le=365),
 ) -> dict[str, Any]:
-    from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
-
     db = get_db(user)
     try:
-        rows = db.fetch_daily_training_load(
-            algorithm_version=TRAINING_LOAD_MODEL_VERSION, limit=days
-        )
+        rows = db.fetch_daily_training_load(limit=days)
         if not rows:
             return {"current": None, "series": []}
 
@@ -156,9 +152,7 @@ def get_stride_training_load(
         # Never present one as today's measured rest/readiness state.  Partial
         # rows remain eligible because they contain observed activity data, with
         # the coverage caveat exposed to the client.
-        current_row = db.fetch_latest_daily_training_load(
-            algorithm_version=TRAINING_LOAD_MODEL_VERSION
-        )
+        current_row = db.fetch_latest_daily_training_load()
         current = None
         if current_row is not None:
             current = dict(current_row)

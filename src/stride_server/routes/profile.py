@@ -7,10 +7,9 @@ import re
 from datetime import date
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from .. import auth_service_client as auth_client
 from ..bearer import require_bearer
 from ..config.models import ServerConfig
 from ..content_store import read_json, write_json
@@ -194,9 +193,8 @@ class ProfilePatch(BaseModel):
 
 
 @router.get("/api/users/me/profile")
-async def get_profile(
+def get_profile(
     payload: dict = Depends(require_bearer),
-    authorization: str | None = Header(default=None),
     config: ServerConfig = Depends(get_server_config),
 ):
     uuid = payload["sub"]
@@ -208,15 +206,14 @@ async def get_profile(
     from stride_core.registry import read_user_provider
     provider = read_user_provider(uuid)
 
-    # Fetch display name from auth-service (primary source).
-    # Falls back to local profile.json → UUID.
-    bearer = authorization[len("Bearer "):].strip() if authorization and authorization.lower().startswith("bearer ") else None
-    auth_user = await auth_client.get_me(bearer)
-    auth_name = None
-    if isinstance(auth_user, dict):
-        auth_name = auth_user.get("display_name") or auth_user.get("name")
-
-    display_name = auth_name or profile.get("display_name")
+    # display_name source-of-truth is the local profile.json (ADR 0013): POST /
+    # PATCH profile persist it and best-effort mirror it to the auth-service.
+    # We deliberately do NOT call the auth-service here: this endpoint is hit on
+    # every page's app-boot profile gate, and a synchronous auth-service round
+    # trip on the hot path is both redundant and, from the Azure Southeast Asia
+    # deployment to the in-China auth IP, unreachable within the 5s timeout —
+    # which made every profile load take ~5s.
+    display_name = profile.get("display_name")
 
     return {
         "id": uuid,
@@ -226,6 +223,12 @@ async def get_profile(
         "onboarding": onboarding,
         "features": {
             "coach_agent_weekly_plan": uuid in config.plan.coach_agent_weekly_plan_users,
+            "coach_chat": uuid in config.plan.coach_chat_users,
+            "coach_chat_debug": uuid in config.plan.coach_chat_debug_users,
+            "coach_chat_max_message_chars": config.plan.coach_chat_max_message_chars,
+            # Drives onboarding UX: when on, the wizard waits for a full history
+            # sync (minutes) instead of the fast health-only sync.
+            "sync_data_at_onboarding": config.sync.sync_data_at_onboarding,
         },
     }
 

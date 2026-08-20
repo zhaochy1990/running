@@ -7,8 +7,7 @@ feedback=None, max_attempts=3)`` is the phase-at-once replacement for the per-we
   * computes the rule_filter inputs once (the athlete-relative Z4-Z5 threshold
     = ``pace_targets.threshold_pace_s_km``),
   * generates the whole phase via ``generate_specialist_phase`` (PA-T3),
-  * runs ``run_rule_filter`` on each week with ``prev_week_km`` = the prior
-    week's **deterministic target** (``week_metas[i-1].target_weekly_km``),
+  * runs ``run_rule_filter`` on each week against its deterministic target,
   * on any HARD-rule (severity=="error") violation, regenerates the phase WITH
     the specific violations fed back (bounded by ``max_attempts``),
   * after ``max_attempts`` drops the still-violating weeks (keeps the clean
@@ -117,11 +116,7 @@ def _run_session(date_str: str, dist_m: int, summary: str = "run") -> dict:
 
 
 def _clean_plan_dict(week_folder: str) -> dict:
-    """A rule-clean WeeklyPlan: 3 runs (longest 30% share), rest day present.
-
-    Distances 12k/14k/14k → total 40k, longest 14k = 35% exactly (not > 35%),
-    so long_run_share passes. Days Mon/Thu/Sun used → rest days available.
-    """
+    """A rule-clean WeeklyPlan with matching volume and rest days."""
     return {
         "schema": "weekly-plan/v1",
         "week_folder": week_folder,
@@ -149,21 +144,6 @@ def _no_rest_plan_dict(week_folder: str) -> dict:
         "sessions": sessions,
         "nutrition": [],
         "notes_md": "no rest day (violation)",
-    }
-
-
-def _long_run_violation_plan_dict(week_folder: str) -> dict:
-    """A plan that violates long_run_share: longest run is 50% of weekly volume."""
-    return {
-        "schema": "weekly-plan/v1",
-        "week_folder": week_folder,
-        "sessions": [
-            _run_session("2026-06-15", 10000, "easy 10km"),
-            _run_session("2026-06-18", 10000, "easy 10km"),
-            _run_session("2026-06-21", 20000, "长跑 20km (50% share)"),
-        ],
-        "nutrition": [],
-        "notes_md": "long run too big (violation)",
     }
 
 
@@ -257,12 +237,12 @@ def test_persistent_violation_drops_week(patch_db, monkeypatch, caplog):
     metas = _week_metas([40.0, 40.0, 40.0])
     folders = [m.week_folder for m in metas]
 
-    # Week 3 (index 2) ALWAYS violates long_run_share → never fixed → dropped.
+    # Week 3 (index 2) ALWAYS violates rest_days → never fixed → dropped.
     batch = _batch(
         [
             _clean_plan_dict(folders[0]),
             _clean_plan_dict(folders[1]),
-            _long_run_violation_plan_dict(folders[2]),
+            _no_rest_plan_dict(folders[2]),
         ]
     )
     model = FakeBindableLLM([ai_text(batch)])
@@ -298,19 +278,12 @@ def test_parse_failed_degrades_to_empty(patch_db, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# prev_week_km uses the deterministic target, not the generated km
+# Weekly target validation
 # ---------------------------------------------------------------------------
 
 
-def test_prev_week_km_uses_target_not_generated_km(patch_db, monkeypatch):
-    """Week i's progression check uses week_metas[i-1].target_weekly_km.
-
-    Targets are 40km then 43km. The generated km DRIFTS inside the allowed
-    target-volume tolerance: week 1 = 39km, week 2 = 43km. A *generated-km*
-    progression check would see 43/39 = 1.10x+ and trip the 1.10x cap. The
-    *target-based* check sees 43/40 = 1.075x and passes. So
-    generate_phase_validated must return BOTH weeks (no false violation).
-    """
+def test_generated_weeks_are_validated_against_individual_targets(patch_db, monkeypatch):
+    """Each generated week may drift within its own target-volume tolerance."""
     metas = _week_metas([40.0, 43.0])
     folders = [m.week_folder for m in metas]
 
@@ -341,21 +314,12 @@ def test_prev_week_km_uses_target_not_generated_km(patch_db, monkeypatch):
     _install_model(monkeypatch, model)
 
     out = generate_phase_validated(_build_phase(), metas, _context())
-    # If prev_week_km used the generated 39km, week2 (43km) > 1.10x → dropped.
-    # Target-based (43/40 = 1.075x) → both survive.
     assert len(out) == 2
     assert len(model.captured) == 1  # no regen (no false violation)
 
 
-def test_post_deload_week_uses_last_load_target_for_progression(patch_db, monkeypatch):
-    """The per-week rule gate must mirror season/master-plan semantics:
-    recovery weeks are intentional dips, and the following load week is compared
-    to the last load target rather than the recovery trough.
-
-    Targets: 80 -> 86 -> 64(deload) -> 88. Generated weeks match those targets.
-    Comparing week 4 against the 64km trough would falsely trip 1.38x; comparing
-    against the previous load week 86km passes at 1.02x.
-    """
+def test_post_deload_week_is_validated_against_its_own_target(patch_db, monkeypatch):
+    """A post-deload week passes when it matches its deterministic target."""
     metas = _week_metas([80.0, 86.0, 64.0, 88.0])
     folders = [m.week_folder for m in metas]
 
@@ -425,13 +389,13 @@ def test_max_attempts_one_drops_without_regen(patch_db, monkeypatch):
     metas = _week_metas([40.0, 40.0, 40.0])
     folders = [m.week_folder for m in metas]
 
-    # Week 3 (index 2) violates long_run_share. With max_attempts=1 there is no
+    # Week 3 (index 2) violates rest_days. With max_attempts=1 there is no
     # second attempt → it is dropped on the single pass.
     batch = _batch(
         [
             _clean_plan_dict(folders[0]),
             _clean_plan_dict(folders[1]),
-            _long_run_violation_plan_dict(folders[2]),
+            _no_rest_plan_dict(folders[2]),
         ]
     )
     model = FakeBindableLLM([ai_text(batch)])

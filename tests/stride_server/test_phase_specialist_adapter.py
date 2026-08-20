@@ -35,6 +35,7 @@ from stride_core.running_calibration.types import (
 import stride_server.coach_adapters.phase_specialist_adapter as adapter_mod
 from stride_server.coach_adapters.phase_specialist_adapter import (
     build_phase_week_specs,
+    generate_phase_validated,
     generate_specialist_phase,
     parse_phase_batch,
 )
@@ -419,6 +420,28 @@ def test_feedback_carried_in_prompt(patch_db, monkeypatch):
     assert "本次重生成必须逐条修复" in system_prompt
 
 
+def test_user_request_carried_in_user_turn(patch_db, monkeypatch):
+    """An ad-hoc user request rides the USER turn (prompt-role discipline),
+    keeping the static doctrine system prompt cache-stable across athletes."""
+    from langchain_core.messages import HumanMessage
+
+    metas = _week_metas([70.0])
+    folders = [m.week_folder for m in metas]
+    model = FakeBindableLLM([ai_text(_batch(folders))])
+    _install_model(monkeypatch, model)
+
+    request = "周三下午加一节 5K 轻松跑（当天两练）"
+    generate_specialist_phase(
+        _build_phase(), metas, _context(), user_request=request
+    )
+    system_prompt, messages = model.captured[0]
+    user_text = next(
+        m.content for m in messages if isinstance(m, HumanMessage)
+    )
+    assert request in user_text
+    assert request not in system_prompt
+
+
 # ---------------------------------------------------------------------------
 # OPT-B: phase milestone flows into the generation prompt (single-source render)
 # ---------------------------------------------------------------------------
@@ -543,3 +566,199 @@ def test_deload_marker_in_prompt(patch_db, monkeypatch):
     generate_specialist_phase(_build_phase(), metas, _context())
     system_prompt = model.captured[0][0]
     assert "DELOAD" in system_prompt
+
+
+# ---------------------------------------------------------------------------
+# Structured generation (spec-per-session, watch-pushable)
+# ---------------------------------------------------------------------------
+
+
+def _easy_run_spec(date: str, distance_m: int) -> dict:
+    return {
+        "schema": "run-workout/v1",
+        "name": "Easy",
+        "date": date,
+        "note": None,
+        "blocks": [
+            {
+                "repeat": 1,
+                "steps": [
+                    {
+                        "step_kind": "work",
+                        "duration": {"kind": "distance_m", "value": distance_m},
+                        "target": {"kind": "pace_s_km", "low": 360, "high": 330},
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def _clean_week(folder: str, *, tue_spec: bool) -> dict:
+    """A rule-clean single week (rest + all-easy runs, longest ≤35%). ``tue_spec``
+    toggles whether the Tue run carries a spec (False → missing-spec violation)."""
+    runs = [
+        ("2026-06-16", 12000, True),
+        ("2026-06-17", 12000, tue_spec),
+        ("2026-06-18", 8000, True),
+        ("2026-06-20", 16000, True),
+    ]
+    sessions = [
+        {
+            "schema": "plan-session/v1",
+            "date": "2026-06-15",
+            "session_index": 0,
+            "kind": "rest",
+            "summary": "休息",
+            "spec": None,
+            "notes_md": None,
+            "total_distance_m": None,
+            "total_duration_s": None,
+            "scheduled_workout_id": None,
+        }
+    ]
+    for date, dist, has_spec in runs:
+        sessions.append(
+            {
+                "schema": "plan-session/v1",
+                "date": date,
+                "session_index": 0,
+                "kind": "run",
+                "summary": f"easy {dist // 1000}km",
+                "spec": _easy_run_spec(date, dist) if has_spec else None,
+                "notes_md": None,
+                "total_distance_m": dist,
+                "total_duration_s": None,
+                "scheduled_workout_id": None,
+            }
+        )
+    return {
+        "schema": "weekly-plan/v1",
+        "week_folder": folder,
+        "sessions": sessions,
+        "nutrition": [],
+        "notes_md": "x",
+    }
+
+
+def _week_batch(week: dict) -> str:
+    return json.dumps({"schema": "phase-weeks/v1", "weeks": [week]}, ensure_ascii=False)
+
+
+def test_missing_spec_violations_flags_null_run_and_strength():
+    week = {
+        "sessions": [
+            {"date": "2026-06-16", "session_index": 0, "kind": "run", "spec": None},
+            {"date": "2026-06-17", "session_index": 0, "kind": "strength", "spec": None},
+            {"date": "2026-06-18", "session_index": 0, "kind": "rest", "spec": None},
+            {
+                "date": "2026-06-19",
+                "session_index": 0,
+                "kind": "run",
+                "spec": {"schema": "run-workout/v1"},
+            },
+        ]
+    }
+    violations = adapter_mod._missing_spec_violations(week)
+    flagged = {(v.details["date"], v.details["kind"]) for v in violations}
+    assert flagged == {("2026-06-16", "run"), ("2026-06-17", "strength")}
+    assert all(v.rule == "missing_spec" and v.severity == "error" for v in violations)
+
+
+def test_structured_flag_injects_spec_schema_into_prompt(patch_db, monkeypatch):
+    metas = _week_metas([48.0])
+    model = FakeBindableLLM([ai_text(_week_batch(_clean_week(metas[0].week_folder, tue_spec=True)))])
+    _install_model(monkeypatch, model)
+
+    generate_specialist_phase(_build_phase(), metas, _context(), structured=True)
+    system_prompt = model.captured[0][0]
+    assert "run-workout/v1" in system_prompt
+    assert "可直接推手表" in system_prompt
+
+
+def test_structured_missing_spec_triggers_regen_then_returns_specd_week(
+    patch_db, monkeypatch
+):
+    metas = _week_metas([48.0])
+    folder = metas[0].week_folder
+    # attempt 1: Tue run has spec=null → missing_spec violation → regen.
+    # attempt 2: every run carries a spec → clean, returned.
+    model = FakeBindableLLM(
+        [
+            ai_text(_week_batch(_clean_week(folder, tue_spec=False))),
+            ai_text(_week_batch(_clean_week(folder, tue_spec=True))),
+        ]
+    )
+    _install_model(monkeypatch, model)
+
+    weeks = generate_phase_validated(
+        _build_phase(), metas, _context(), structured=True, max_attempts=3
+    )
+
+    assert len(weeks) == 1
+    runs = [s for s in weeks[0]["sessions"] if s["kind"] == "run"]
+    assert runs and all(s["spec"] is not None for s in runs)
+
+
+def test_structured_persistent_missing_spec_drops_week(patch_db, monkeypatch):
+    metas = _week_metas([48.0])
+    folder = metas[0].week_folder
+    model = FakeBindableLLM(
+        [ai_text(_week_batch(_clean_week(folder, tue_spec=False)))]  # reused every attempt
+    )
+    _install_model(monkeypatch, model)
+
+    weeks = generate_phase_validated(
+        _build_phase(), metas, _context(), structured=True, max_attempts=2
+    )
+    # Never emits a spec for Tue → persistently violating → dropped.
+    assert weeks == []
+
+
+def test_structured_false_does_not_require_specs(patch_db, monkeypatch):
+    """The season/master path (structured=False, the default) must accept an
+    aspirational spec=null week — the missing-spec gate is structured-only."""
+    metas = _week_metas([48.0])
+    week = _clean_week(metas[0].week_folder, tue_spec=True)
+    for s in week["sessions"]:
+        s["spec"] = None  # aspirational
+    model = FakeBindableLLM([ai_text(_week_batch(week))])
+    _install_model(monkeypatch, model)
+
+    weeks = generate_phase_validated(_build_phase(), metas, _context())
+
+    assert len(weeks) == 1
+    assert all(s["spec"] is None for s in weeks[0]["sessions"])
+
+
+def test_spec_distance_mismatch_flags_gross_mismatch():
+    week = {
+        "sessions": [
+            {
+                "date": "2026-06-16",
+                "session_index": 0,
+                "kind": "run",
+                "total_distance_m": 4000,
+                "spec": {
+                    "blocks": [
+                        {"repeat": 1, "steps": [{"duration": {"kind": "distance_m", "value": 8000}}]}
+                    ]
+                },
+            },
+            {  # matches → not flagged
+                "date": "2026-06-17",
+                "session_index": 0,
+                "kind": "run",
+                "total_distance_m": 10000,
+                "spec": {
+                    "blocks": [
+                        {"repeat": 1, "steps": [{"duration": {"kind": "distance_m", "value": 10000}}]}
+                    ]
+                },
+            },
+        ]
+    }
+    violations = adapter_mod._spec_distance_mismatch_violations(week)
+    assert len(violations) == 1
+    assert violations[0].details["date"] == "2026-06-16"
+    assert violations[0].rule == "spec_distance_mismatch"

@@ -1,0 +1,76 @@
+# Local/CVM compose for the async-job worker.
+#
+#   Prod (CVM):  docker compose up -d
+#     -> runs rabbitmq + worker; STRIDE_WORKER_MYSQL_DSN points at TencentDB.
+#   Local dev:   docker compose --profile dev up
+#     -> additionally runs a throwaway MySQL 8 so you can test end to end.
+#
+# Secrets/config come from a git-ignored .env (see .env.example).
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    restart: unless-stopped
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+  # Local-only MySQL. Prod uses managed TencentDB, so it is gated behind the
+  # `dev` profile and not started by a plain `docker compose up`.
+  mysql:
+    image: mysql:8.0
+    profiles: ["dev"]
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-devroot}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-stride}
+    command: ["--default-authentication-plugin=mysql_native_password"]
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${MYSQL_ROOT_PASSWORD:-devroot}"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  worker:
+    build: .
+    image: ghcr.io/zhaochy1990/stride-worker:latest
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    # No published ports: the worker has no ingress. /health is reached only by
+    # the in-container Docker HEALTHCHECK on loopback (ADR 0002).
+
+  # HTTP API server (`stride api`, ADR 0012). Unlike the worker it HAS a public
+  # ingress: it publishes port 8080 so internal callers and browsers can create
+  # and poll jobs. Same unified binary as the worker, different subcommand
+  # entrypoint (Dockerfile.api). Secrets (incl. STRIDE_WORKER_API_INTERNAL_TOKEN)
+  # come from .env.
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: ghcr.io/zhaochy1990/stride-api:latest
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  rabbitmq-data:
+  mysql-data:

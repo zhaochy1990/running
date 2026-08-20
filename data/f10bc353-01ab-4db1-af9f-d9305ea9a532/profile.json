@@ -1,8 +1,9 @@
 {
-  "display_name": "zhaochaoyi",
+  "display_name": "Chaoyi",
   "dob": "1990-07-22",
-  "height_cm": 182,
-  "weight_kg": 71.6,
+  "sex": "male",
+  "height_cm": 182.0,
+  "weight_kg": 70.5,
   "target_race": "2026-10 马拉松破 2:50 (目标配速 4:02/km)",
   "手表": "COROS PACE 4",
   "目标配速_km": {
@@ -20,7 +21,7 @@
   "target_time": "2:50:00",
   "target_race_date": "2026-10-18",
   "pbs": {
-    "FM": "2:59:22 (2025-03)",
-    "HM": "1:27:42 (2024-11)"
+    "HM": "1:27:42 (2024-11)",
+    "FM": "2:59:22 (2025-03)"
   }
 }

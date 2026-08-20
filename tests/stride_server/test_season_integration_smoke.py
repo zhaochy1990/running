@@ -20,8 +20,7 @@ The headline contract (load-bearing assertions):
   * ``generate_season`` returns a ``SeasonPlanBundle`` with one ``PhaseWeeks``
     per master-plan phase (4), in order, with the right ``phase_type``s.
   * EVERY generated week, across ALL phases, INDEPENDENTLY passes
-    ``run_rule_filter`` when re-run with the correctly-threaded
-    ``prev_week_km`` — belt-and-suspenders that the assembled artifacts are
+    ``run_rule_filter`` — belt-and-suspenders that the assembled artifacts are
     genuinely rule-clean, not merely un-blocked.
   * ``run_season_rule_filter(bundle, master_plan).ok`` is True — no cross-phase
     errors (volume arc, phase transitions, taper<peak), and no boundary spike
@@ -219,7 +218,7 @@ def _context() -> dict:
 # ---------------------------------------------------------------------------
 # Clean-week builder — honours the per-week threaded target_weekly_km so the
 # generated week tracks the derive ramp (no phase-boundary spike) and passes
-# run_rule_filter: ≥1 rest day, longest run ≤35% of weekly, ≤1.10× progression,
+# run_rule_filter: ≥1 rest day, valid intensity distribution,
 # all sessions aspirational (spec=None). The 4 run sessions sum EXACTLY to
 # total_km (last session absorbs rounding) so the emitted run total equals the
 # floored ≤1.10×-safe ramp target. Includes a threshold touch + an MP/long
@@ -463,32 +462,18 @@ def test_season_integration_all_weeks_rule_clean(db, monkeypatch):
     )
 
     # === HEADLINE: every week across ALL phases independently passes ==========
-    # run_rule_filter, re-run with the correctly threaded prev_week_km, and the
+    # run_rule_filter, re-run with the
     # real athlete-relative Z4-Z5 threshold from the seeded calibration snapshot.
     # This proves the assembled artifacts are genuinely rule-clean, not merely
     # un-blocked by the loop.
     #
-    # IMPORTANT: prev_week_km RESETS at each phase boundary — mirroring exactly
-    # how the real generator gates it (``generate_phase_validated`` computes each
-    # week's prev_week_km from the DETERMINISTIC per-week targets, with week 0 of
-    # every phase having ``prev_week_km=None``). The per-week
-    # ``check_weekly_progression`` gate is WITHIN-phase only; the CROSS-phase
-    # boundary is owned by the season-level ``check_phase_transition`` (against
-    # the prior phase's WORKING volume, Stage-3b I1), asserted separately below.
-    # Threading prev_week_km flat across a boundary would re-impose the
-    # deload-trough-relative cap the I1 fix deliberately removed, contradicting
-    # how the season is actually generated.
+    # Cross-week and cross-phase progression is owned by the season-level rules
+    # and asserted separately below.
     checked = 0
     for pw in bundle.phases:
-        prev_present_km: float | None = None
-        last_load_km: float | None = None
         for week in pw.weeks:
-            cur_km = _week_run_km(week)
-            is_deload = prev_present_km is not None and cur_km < prev_present_km
-            prev_km = prev_present_km if is_deload else last_load_km
             report = run_rule_filter(
                 week,
-                prev_week_km=prev_km,
                 injuries=None,
                 z45_pace_threshold_s_km=_THRESHOLD_PACE_S_KM,
             )
@@ -497,9 +482,6 @@ def test_season_integration_all_weeks_rule_clean(db, monkeypatch):
                 f"independently trips a rule: "
                 f"{[v.rule + ': ' + v.message for v in report.errors()]}"
             )
-            if not is_deload:
-                last_load_km = cur_km
-            prev_present_km = cur_km
             checked += 1
     assert checked == produced, "every produced week must have been re-checked"
 

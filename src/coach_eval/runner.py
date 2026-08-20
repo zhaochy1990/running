@@ -469,6 +469,7 @@ def generate_weekly_plan_from_fixture(state: dict) -> dict:
         pace_targets=pace_targets,
         volume_targets=volume_targets,
         context_block=context_block,
+        structured=True,
     )
     user_text = "请基于上述上下文生成该目标周的 WeeklyPlan JSON。"
     messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_text)]

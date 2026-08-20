@@ -1,0 +1,16 @@
+{
+  "display_name": "Daisy",
+  "dob": "1981-03-07",
+  "sex": "female",
+  "height_cm": 163.0,
+  "weight_kg": 60.0,
+  "target_race": "上海马拉松健康跑",
+  "target_distance": "5K",
+  "target_race_date": "2026-12-06",
+  "target_time": "0:30:00",
+  "pbs": {
+    "5k": "35:00"
+  },
+  "weekly_mileage_km": 10.0,
+  "constraints": null
+}

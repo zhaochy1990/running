@@ -1,0 +1,944 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"reflect"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
+	"go.uber.org/zap"
+
+	"github.com/zhaochy1990/stride/internal/job"
+	"github.com/zhaochy1990/stride/internal/logging"
+	"github.com/zhaochy1990/stride/internal/storage"
+)
+
+// init teaches gin's shared validator to report the json field name (not the Go
+// struct field name) in validation errors, so the 422 detail array on POST
+// profile names fields as the client sent them (display_name, not DisplayName).
+func init() {
+	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		v.RegisterTagNameFunc(func(fld reflect.StructField) string {
+			name := strings.SplitN(fld.Tag.Get("json"), ",", 2)[0]
+			if name == "-" {
+				return ""
+			}
+			return name
+		})
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dependencies (ADR 0013). The user/onboarding surface is a sibling registrar
+// with its own ports, so the ADR 0012 job/pipeline Service stays focused.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// UserStore is the profile + onboarding persistence the handlers need. Satisfied
+// by *storage.Store.
+type UserStore interface {
+	GetUserProfile(ctx context.Context, userID string) (*storage.UserProfile, error)
+	UpsertUserProfile(ctx context.Context, p *storage.UserProfile) error
+	PatchUserProfile(ctx context.Context, userID string, patch storage.UserProfilePatch) (*storage.UserProfile, error)
+	GetUserOnboarding(ctx context.Context, userID string) (*storage.UserOnboarding, error)
+	SetWatchReady(ctx context.Context, userID string) error
+	SetProfileReady(ctx context.Context, userID string) error
+	ProviderForUser(ctx context.Context, userID string) (string, bool, error)
+
+	// Watch status + disconnect (ADR 0018).
+	GetCredential(ctx context.Context, userID, provider string) (*storage.ProviderCredential, error)
+	LatestActivityDevice(ctx context.Context, userID string) (string, bool, error)
+	GetMeta(ctx context.Context, userID, key string) (value string, ok bool, err error)
+	DeleteCredential(ctx context.Context, userID, provider string) error
+	ClearWatchReady(ctx context.Context, userID string) error
+	// FinalizeOnboardingRun conditionally marks a connected user complete after
+	// the API has verified a completed onboarding pipeline. It reports whether
+	// this request wrote the completion marker; no pre-linked run is required.
+	FinalizeOnboardingRun(ctx context.Context, userID, runID string) (bool, error)
+	DeleteUserData(ctx context.Context, userID string) error
+}
+
+// WatchLoginResult is the provider-agnostic outcome of a watch login.
+type WatchLoginResult struct {
+	Success bool
+	UserID  string
+	Region  string
+	Message string
+}
+
+// ProviderLogin authenticates a user with a watch provider and persists their
+// credentials. The concrete adapter (cmd/api) wraps the provider registry, so
+// the api package stays free of provider/registry imports.
+type ProviderLogin interface {
+	Login(ctx context.Context, providerName, userID, email, password, region string) (WatchLoginResult, error)
+}
+
+// ProviderInfo returns a watch provider's static metadata — localized display
+// name and declared capabilities — for the watch status card. The concrete
+// adapter (cmd/api) wraps the provider registry, keeping the api package free of
+// provider/registry imports (ADR 0018). capabilities reflect what the Go adapter
+// actually supports, not the Python set.
+type ProviderInfo interface {
+	Info(providerName string) (displayName string, capabilities []string, err error)
+}
+
+// AuthNameSync best-effort mirrors a display name into the auth-service. May be
+// nil to disable the write-back. Satisfied by *authsvc.Client.
+type AuthNameSync interface {
+	SyncName(ctx context.Context, bearer, name string) error
+}
+
+// AccountDeleter removes the current user's identity from the auth-service.
+type AccountDeleter interface {
+	DeleteAccount(ctx context.Context, bearer string) error
+}
+
+// FeatureConfig holds the config-driven feature flags echoed in the profile
+// response. The coach-* maps are user-id allow-lists (membership = flag true).
+type FeatureConfig struct {
+	SyncDataAtOnboarding      bool
+	CoachAgentWeeklyPlanUsers map[string]bool
+	CoachChatUsers            map[string]bool
+	CoachChatDebugUsers       map[string]bool
+	CoachChatMaxMessageChars  int
+}
+
+func (f FeatureConfig) forUser(uid string) featureFlags {
+	return featureFlags{
+		SyncDataAtOnboarding:     f.SyncDataAtOnboarding,
+		CoachAgentWeeklyPlan:     f.CoachAgentWeeklyPlanUsers[uid],
+		CoachChat:                f.CoachChatUsers[uid],
+		CoachChatDebug:           f.CoachChatDebugUsers[uid],
+		CoachChatMaxMessageChars: f.CoachChatMaxMessageChars,
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registrar
+// ─────────────────────────────────────────────────────────────────────────────
+
+// userRoutes is the profile + onboarding endpoint set. It mounts onto the shared
+// authed group so it reuses the JWT user-tier auth (ADR 0013).
+type userRoutes struct {
+	store         UserStore
+	injuries      InjuryStore
+	providerLogin ProviderLogin
+	providerInfo  ProviderInfo
+	authName      AuthNameSync
+	accountAuth   AccountDeleter
+	features      FeatureConfig
+	runs          RunGetter
+	log           *zap.Logger
+}
+
+func newUserRoutes(store UserStore, injuries InjuryStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, ad AccountDeleter, features FeatureConfig, runs RunGetter, log *zap.Logger) *userRoutes {
+	if log == nil {
+		log = logging.Default()
+	}
+	return &userRoutes{store: store, injuries: injuries, providerLogin: pl, providerInfo: pi, authName: an, accountAuth: ad, features: features, runs: runs, log: log}
+}
+
+// register mounts the routes on the (already authenticated) group. Paths mirror
+// the Python contract so a later browser cutover is just routing, except the
+// unified /watch/login (ADR 0013).
+func (u *userRoutes) register(rg *gin.RouterGroup) {
+	rg.DELETE("/api/users/me", u.deleteAccount)
+	rg.GET("/api/users/me/profile", u.getProfile)
+	rg.POST("/api/users/me/profile", u.postProfile)
+	rg.PATCH("/api/users/me/profile", u.patchProfile)
+	rg.GET("/api/users/me/injuries", u.listInjuries)
+	rg.POST("/api/users/me/injuries", u.createInjury)
+	rg.PUT("/api/users/me/injuries/:injuryId", u.updateInjury)
+	rg.DELETE("/api/users/me/injuries/:injuryId", u.deleteInjury)
+	rg.GET("/api/users/me/watch", u.getWatch)
+	rg.DELETE("/api/users/me/watch", u.deleteWatch)
+	rg.POST("/api/users/me/watch/login", u.watchLogin)
+	rg.POST("/api/users/me/onboarding/complete", u.completeOnboarding)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DTOs
+// ─────────────────────────────────────────────────────────────────────────────
+
+type profileResponse struct {
+	ID              string          `json:"id"`
+	DisplayName     string          `json:"display_name"`
+	RunningAgeRange string          `json:"running_age_range"`
+	Provider        *string         `json:"provider"`
+	Profile         *profileCore    `json:"profile"`
+	Onboarding      onboardingState `json:"onboarding"`
+	Features        featureFlags    `json:"features"`
+}
+
+type profileCore struct {
+	DisplayName     string  `json:"display_name"`
+	DOB             string  `json:"dob"`
+	Sex             string  `json:"sex"`
+	HeightCm        float64 `json:"height_cm"`
+	WeightKg        float64 `json:"weight_kg"`
+	RunningAgeRange string  `json:"running_age_range"`
+}
+
+type onboardingState struct {
+	WatchReady   bool    `json:"watch_ready"`
+	ProfileReady bool    `json:"profile_ready"`
+	CompletedAt  *string `json:"completed_at"`
+}
+
+type featureFlags struct {
+	SyncDataAtOnboarding     bool `json:"sync_data_at_onboarding"`
+	CoachAgentWeeklyPlan     bool `json:"coach_agent_weekly_plan"`
+	CoachChat                bool `json:"coach_chat"`
+	CoachChatDebug           bool `json:"coach_chat_debug"`
+	CoachChatMaxMessageChars int  `json:"coach_chat_max_message_chars"`
+}
+
+// profileInput is the POST profile body — the five onboarding core fields only
+// (race/training-plan goals are set later, ADR 0013).
+type profileInput struct {
+	DisplayName     string  `json:"display_name" binding:"required"`
+	DOB             string  `json:"dob" binding:"required,datetime=2006-01-02"`
+	Sex             string  `json:"sex" binding:"required,oneof=male female other"`
+	HeightCm        float64 `json:"height_cm" binding:"required,gt=0"`
+	WeightKg        float64 `json:"weight_kg" binding:"required,gt=0"`
+	RunningAgeRange string  `json:"running_age_range" binding:"required,oneof=unknown lt_6m 6m_1y 1y_3y 3y_plus"`
+}
+
+// profilePatchInput is the Go-owned core subset of Python's post-onboarding
+// profile PATCH. Pointer fields distinguish omitted values from replacements;
+// decodeProfilePatch rejects explicit null and fields owned by other domains.
+type profilePatchInput struct {
+	DisplayName     *string  `json:"display_name" binding:"omitempty,min=1"`
+	DOB             *string  `json:"dob" binding:"omitempty,datetime=2006-01-02"`
+	Sex             *string  `json:"sex" binding:"omitempty,oneof=male female other"`
+	HeightCm        *float64 `json:"height_cm" binding:"omitempty,gt=0"`
+	WeightKg        *float64 `json:"weight_kg" binding:"omitempty,gt=0"`
+	RunningAgeRange *string  `json:"running_age_range" binding:"omitempty,oneof=unknown lt_6m 6m_1y 1y_3y 3y_plus"`
+}
+
+type profilePatchResponse struct {
+	OK          bool         `json:"ok"`
+	ID          string       `json:"id,omitempty"`
+	DisplayName *string      `json:"display_name,omitempty"`
+	Profile     *profileCore `json:"profile"`
+}
+
+// watchLoginInput is the unified watch-login body.
+type watchLoginInput struct {
+	Provider string `json:"provider" binding:"required,oneof=coros garmin"`
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	Region   string `json:"region" binding:"omitempty,oneof=cn global"`
+}
+
+type watchLoginResponse struct {
+	OK     bool   `json:"ok"`
+	Region string `json:"region,omitempty"`
+	UserID string `json:"user_id,omitempty"`
+}
+
+// watchInfoResponse is the watch status card contract (GET /watch). It mirrors
+// the Python WatchInfo shape so a later browser cutover is just routing (ADR
+// 0018). Nullable string fields are null when no watch is bound or there is no
+// data yet; capabilities is always a (possibly empty) array. logged_in is
+// presence-only.
+type watchInfoResponse struct {
+	Provider            *string  `json:"provider"`
+	ProviderDisplayName *string  `json:"provider_display_name"`
+	LoggedIn            bool     `json:"logged_in"`
+	Email               *string  `json:"email"`
+	Device              *string  `json:"device"`
+	LastSyncAt          *string  `json:"last_sync_at"`
+	Capabilities        []string `json:"capabilities"`
+}
+
+// disconnectWatchResponse is the DELETE /watch success body.
+type disconnectWatchResponse struct {
+	OK       bool   `json:"ok"`
+	Provider string `json:"provider"`
+}
+
+type onboardingCompleteInput struct {
+	RunID string `json:"run_id" binding:"required,uuid4"`
+}
+
+type onboardingCompleteResponse struct {
+	State string `json:"state"`
+}
+
+// validationDetailItem mirrors FastAPI's 422 detail entry so the frontend's
+// per-field error UX works unchanged (ADR 0013).
+type validationDetailItem struct {
+	Loc []string `json:"loc"`
+	Msg string   `json:"msg"`
+}
+
+type validationErrorResponse struct {
+	Detail []validationDetailItem `json:"detail"`
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// getProfile returns the user's profile, onboarding state, watch provider, and
+// feature flags. display_name is read locally (stride is source of truth).
+//
+//	@Summary		Get the current user's profile, onboarding state and features
+//	@Tags			users
+//	@Produce		json
+//	@Success		200	{object}	profileResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/profile [get]
+func (u *userRoutes) getProfile(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+
+	profile, err := u.store.GetUserProfile(ctx, uid)
+	if err != nil {
+		u.log.Error("get profile failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	onb, err := u.store.GetUserOnboarding(ctx, uid)
+	if err != nil {
+		u.log.Error("get onboarding failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	providerName, found, err := u.store.ProviderForUser(ctx, uid)
+	if err != nil {
+		u.log.Error("provider lookup failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+
+	resp := profileResponse{ID: uid, RunningAgeRange: storage.RunningAgeUnknown, Features: u.features.forUser(uid)}
+	if found {
+		resp.Provider = &providerName
+	}
+	if profile != nil {
+		resp.DisplayName = profile.DisplayName
+		resp.RunningAgeRange = profile.RunningAgeRange
+		if resp.RunningAgeRange == "" {
+			resp.RunningAgeRange = storage.RunningAgeUnknown
+		}
+		resp.Profile = &profileCore{
+			DisplayName:     profile.DisplayName,
+			DOB:             profile.DOB,
+			Sex:             profile.Sex,
+			HeightCm:        profile.HeightCm,
+			WeightKg:        profile.WeightKg,
+			RunningAgeRange: resp.RunningAgeRange,
+		}
+	}
+	if onb != nil {
+		resp.Onboarding = onboardingState{
+			WatchReady:   onb.WatchReady,
+			ProfileReady: onb.ProfileReady,
+			CompletedAt:  isoTimePtr(onb.CompletedAt),
+		}
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// postProfile validates and saves the five core profile fields, marks
+// profile_ready, then best-effort mirrors display_name to the auth-service.
+//
+//	@Summary		Save the current user's basic profile
+//	@Description	Persists the five onboarding core fields, marks profile_ready, and best-effort mirrors the display name to the auth-service.
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		profileInput	true	"Profile core fields"
+//	@Success		200		{object}	map[string]bool
+//	@Failure		401		{object}	errorResponse
+//	@Failure		422		{object}	validationErrorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/profile [post]
+func (u *userRoutes) postProfile(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	var in profileInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, validationErrorResponse{Detail: bindingDetail(err)})
+		return
+	}
+	ctx := c.Request.Context()
+
+	if err := u.store.UpsertUserProfile(ctx, &storage.UserProfile{
+		UserID:          uid,
+		DisplayName:     in.DisplayName,
+		DOB:             in.DOB,
+		Sex:             in.Sex,
+		HeightCm:        in.HeightCm,
+		WeightKg:        in.WeightKg,
+		RunningAgeRange: in.RunningAgeRange,
+	}); err != nil {
+		u.log.Error("upsert profile failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if err := u.store.SetProfileReady(ctx, uid); err != nil {
+		u.log.Error("set profile_ready failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+
+	// Best-effort mirror to the auth-service (ADR 0013): the profile is already
+	// saved; a failed push is logged, never fatal.
+	if u.authName != nil {
+		if err := u.authName.SyncName(ctx, bearerFrom(c), in.DisplayName); err != nil {
+			u.log.Warn("auth-service name sync failed (non-fatal)", zapErr(err))
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// patchProfile selectively updates an existing core profile. Fields owned by the
+// separate race-goal and training-preference domains are rejected rather than
+// silently discarded, so this staged endpoint cannot lose Settings edits.
+//
+//	@Summary		Partially update the current user's basic profile
+//	@Description	Updates supplied core profile fields only. Omitted fields are preserved; explicit null and unsupported fields return 422. The profile must already exist.
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		profilePatchInput	true	"Core profile fields to update"
+//	@Success		200		{object}	profilePatchResponse
+//	@Failure		401		{object}	errorResponse
+//	@Failure		404		{object}	map[string]string
+//	@Failure		422		{object}	validationErrorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/profile [patch]
+func (u *userRoutes) patchProfile(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+
+	in, detail := decodeProfilePatch(c)
+	if detail != nil {
+		c.JSON(http.StatusUnprocessableEntity, validationErrorResponse{Detail: detail})
+		return
+	}
+
+	profile, err := u.store.PatchUserProfile(c.Request.Context(), uid, storage.UserProfilePatch{
+		DisplayName:     in.DisplayName,
+		DOB:             in.DOB,
+		Sex:             in.Sex,
+		HeightCm:        in.HeightCm,
+		WeightKg:        in.WeightKg,
+		RunningAgeRange: in.RunningAgeRange,
+	})
+	if err != nil {
+		u.log.Error("patch profile failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if profile == nil {
+		c.JSON(http.StatusNotFound, gin.H{"detail": "Profile not found"})
+		return
+	}
+
+	core := toProfileCore(profile)
+	resp := profilePatchResponse{OK: true, Profile: &core}
+	if hasProfilePatch(in) {
+		resp.ID = uid
+		resp.DisplayName = &profile.DisplayName
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// watchLogin authenticates a watch provider (COROS/Garmin), persists creds, and
+// marks watch_ready. It triggers no sync (deferred to the sync-endpoint port).
+//
+//	@Summary		Connect a watch provider (COROS/Garmin)
+//	@Description	Authenticates the watch account, persists credentials, and marks watch_ready. Provider is selected in the body; region applies to Garmin. Triggers no sync.
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		watchLoginInput	true	"Watch provider credentials"
+//	@Success		200		{object}	watchLoginResponse
+//	@Failure		400		{object}	errorResponse
+//	@Failure		401		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/watch/login [post]
+func (u *userRoutes) watchLogin(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	var in watchLoginInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid request"})
+		return
+	}
+	region := in.Region
+	if in.Provider == "garmin" && region == "" {
+		region = "cn" // deploy targets China-region Garmin users (parity with Python)
+	}
+	ctx := c.Request.Context()
+
+	// Auth + network errors collapse to one generic 400 to avoid account
+	// enumeration; the real cause goes to the log.
+	res, err := u.providerLogin.Login(ctx, in.Provider, uid, in.Email, in.Password, region)
+	if err != nil {
+		u.log.Warn("watch login failed", zap.String("provider", in.Provider), zapErr(err))
+		c.JSON(http.StatusBadRequest, errorResponse{Error: loginFailMessage(in.Provider)})
+		return
+	}
+	if !res.Success {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: firstNonEmpty(res.Message, loginFailMessage(in.Provider))})
+		return
+	}
+	if err := u.store.SetWatchReady(ctx, uid); err != nil {
+		u.log.Error("set watch_ready failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, watchLoginResponse{OK: true, Region: res.Region, UserID: res.UserID})
+}
+
+// completeOnboarding finalizes onboarding only after the caller explicitly
+// submits a verified, completed onboarding pipeline run. It never starts,
+// retries, or re-associates pipeline work.
+//
+//	@Summary		Finalize the current user's onboarding
+//	@Description	Marks onboarding complete after the user explicitly submits a completed run_id. The run must belong to the caller, use the onboarding pipeline, and have finished successfully; profile and watch readiness are also required. A 409 means the run is missing, belongs to another user, is not an onboarding run, or is not done. This endpoint never starts or retries pipeline work.
+//	@Tags			users
+//	@Accept			json
+//	@Produce		json
+//	@Param			body	body		onboardingCompleteInput	true	"Completed onboarding pipeline run"
+//	@Success		200	{object}	onboardingCompleteResponse
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		409	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/onboarding/complete [post]
+func (u *userRoutes) completeOnboarding(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	if u.store == nil || u.runs == nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "onboarding unavailable"})
+		return
+	}
+	var in onboardingCompleteInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid request"})
+		return
+	}
+	ctx := c.Request.Context()
+	onb, err := u.store.GetUserOnboarding(ctx, uid)
+	if err != nil {
+		u.log.Error("get onboarding failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if onb == nil || !onb.ProfileReady || !onb.WatchReady {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "profile and watch connection required"})
+		return
+	}
+	if onb.CompletedAt != nil {
+		c.JSON(http.StatusOK, onboardingCompleteResponse{State: "already-complete"})
+		return
+	}
+	run, err := u.runs.Get(ctx, in.RunID)
+	if err != nil {
+		if job.IsNotFound(err) {
+			c.JSON(http.StatusConflict, errorResponse{Error: "onboarding run is not ready"})
+			return
+		}
+		u.log.Error("get onboarding pipeline failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if run.UserID != uid || run.Name != "onboarding" {
+		c.JSON(http.StatusConflict, errorResponse{Error: "onboarding run is not valid"})
+		return
+	}
+	if run.Status != job.StatusDone {
+		c.JSON(http.StatusConflict, errorResponse{Error: "onboarding run is not ready"})
+		return
+	}
+	if _, err := u.store.FinalizeOnboardingRun(ctx, uid, run.RunID); err != nil {
+		u.log.Error("finalize onboarding failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, onboardingCompleteResponse{State: "complete"})
+}
+
+// getWatch returns the connected watch's status: provider, display name, login
+// state, account email, latest device, last sync time, and declared
+// capabilities. All fields come from the canonical MySQL store; logged_in is
+// presence-only (ADR 0018). No watch bound → 200 with null fields.
+//
+//	@Summary		Get the connected watch's status
+//	@Tags			users
+//	@Produce		json
+//	@Success		200	{object}	watchInfoResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/watch [get]
+func (u *userRoutes) getWatch(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+
+	providerName, found, err := u.store.ProviderForUser(ctx, uid)
+	if err != nil {
+		u.log.Error("watch: provider lookup failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if !found {
+		// No watch bound: all-null, not logged in (parity with Python).
+		c.JSON(http.StatusOK, watchInfoResponse{Capabilities: []string{}})
+		return
+	}
+
+	displayName, capabilities, err := u.providerInfo.Info(providerName)
+	if err != nil {
+		// A bound-but-unknown provider is a server-side inconsistency.
+		u.log.Error("watch: provider info failed", zap.String("provider", providerName), zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if capabilities == nil {
+		capabilities = []string{}
+	}
+
+	cred, err := u.store.GetCredential(ctx, uid, providerName)
+	if err != nil {
+		u.log.Error("watch: credential lookup failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	var email string
+	loggedIn := false
+	if cred != nil {
+		loggedIn = len(cred.Secret) > 0 // presence-only, matches Python is_logged_in
+		if cred.Email != nil {
+			email = *cred.Email
+		}
+	}
+
+	device, _, err := u.store.LatestActivityDevice(ctx, uid)
+	if err != nil {
+		u.log.Error("watch: device lookup failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+
+	lastSync, _, err := u.store.GetMeta(ctx, uid, storage.MetaKeyLastSyncTime)
+	if err != nil {
+		u.log.Error("watch: last_sync lookup failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, watchInfoResponse{
+		Provider:            &providerName,
+		ProviderDisplayName: strPtrOrNil(displayName),
+		LoggedIn:            loggedIn,
+		Email:               strPtrOrNil(email),
+		Device:              strPtrOrNil(device),
+		LastSyncAt:          strPtrOrNil(lastSync),
+		Capabilities:        capabilities,
+	})
+}
+
+// deleteWatch disconnects the user's watch: it deletes the stored credential and
+// atomically clears watch-dependent onboarding state while RETAINING synced data.
+// No watch bound → 400.
+//
+//	@Summary		Disconnect the current user's watch
+//	@Description	Deletes the stored watch credential and clears watch-dependent onboarding state. Synced activity/health data is retained. Returns 400 when no watch is bound.
+//	@Tags			users
+//	@Produce		json
+//	@Success		200	{object}	disconnectWatchResponse
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me/watch [delete]
+func (u *userRoutes) deleteWatch(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+
+	providerName, found, err := u.store.ProviderForUser(ctx, uid)
+	if err != nil {
+		u.log.Error("watch: provider lookup failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if !found {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "no watch connected"})
+		return
+	}
+
+	// The concrete store provides an atomic implementation; test and alternate
+	// stores retain the two-port fallback for compatibility.
+	if atomicStore, ok := u.store.(interface {
+		DisconnectWatch(context.Context, string, string) error
+	}); ok {
+		if err := atomicStore.DisconnectWatch(ctx, uid, providerName); err != nil {
+			u.log.Error("watch: disconnect failed", zapErr(err))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+	} else {
+		if err := u.store.DeleteCredential(ctx, uid, providerName); err != nil {
+			u.log.Error("watch: delete credential failed", zapErr(err))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+		if err := u.store.ClearWatchReady(ctx, uid); err != nil {
+			u.log.Error("watch: clear watch_ready failed", zapErr(err))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, disconnectWatchResponse{OK: true, Provider: providerName})
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// requireUser rejects the internal tier: profile/onboarding endpoints are "me"
+// endpoints and require an end-user JWT.
+func requireUser(c *gin.Context) (string, bool) {
+	caller := callerFrom(c)
+	if caller.Tier != TierUser || caller.UserID == "" {
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "user authentication required"})
+		return "", false
+	}
+	return caller.UserID, true
+}
+
+// bearerFrom extracts the raw JWT from the Authorization header for forwarding
+// to the auth-service.
+func bearerFrom(c *gin.Context) string {
+	const prefix = "Bearer "
+	if h := c.GetHeader("Authorization"); strings.HasPrefix(h, prefix) {
+		return strings.TrimPrefix(h, prefix)
+	}
+	return ""
+}
+
+// isoTimePtr renders an optional instant as an RFC3339 string pointer (null when
+// absent) for JSON parity.
+func isoTimePtr(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	s := t.UTC().Format(time.RFC3339)
+	return &s
+}
+
+// strPtrOrNil returns a pointer to s, or nil when s is empty — so absent watch
+// status fields serialize as JSON null (WatchInfo parity).
+func strPtrOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func loginFailMessage(provider string) string {
+	switch provider {
+	case "garmin":
+		return "Could not authenticate with Garmin"
+	default:
+		return "Could not authenticate with COROS"
+	}
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+func toProfileCore(profile *storage.UserProfile) profileCore {
+	runningAge := profile.RunningAgeRange
+	if runningAge == "" {
+		runningAge = storage.RunningAgeUnknown
+	}
+	return profileCore{
+		DisplayName:     profile.DisplayName,
+		DOB:             profile.DOB,
+		Sex:             profile.Sex,
+		HeightCm:        profile.HeightCm,
+		WeightKg:        profile.WeightKg,
+		RunningAgeRange: runningAge,
+	}
+}
+
+func hasProfilePatch(in profilePatchInput) bool {
+	return in.DisplayName != nil || in.DOB != nil || in.Sex != nil || in.HeightCm != nil || in.WeightKg != nil || in.RunningAgeRange != nil
+}
+
+var profilePatchFields = map[string]bool{
+	"display_name":      true,
+	"dob":               true,
+	"sex":               true,
+	"height_cm":         true,
+	"weight_kg":         true,
+	"running_age_range": true,
+}
+
+// decodeProfilePatch enforces the staged Go contract before gin validation:
+// unknown fields and explicit null are errors, while an empty object is a valid
+// no-op. This avoids silently accepting Python-only profile fields.
+func decodeProfilePatch(c *gin.Context) (profilePatchInput, []validationDetailItem) {
+	var raw map[string]json.RawMessage
+	decoder := json.NewDecoder(c.Request.Body)
+	if err := decoder.Decode(&raw); err != nil || raw == nil {
+		return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body"}, Msg: "invalid request body"}}
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body"}, Msg: "invalid request body"}}
+	}
+
+	for field, value := range raw {
+		if !profilePatchFields[field] {
+			return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body", field}, Msg: "unsupported field"}}
+		}
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body", field}, Msg: "null is not allowed"}}
+		}
+	}
+
+	body, err := json.Marshal(raw)
+	if err != nil {
+		return profilePatchInput{}, []validationDetailItem{{Loc: []string{"body"}, Msg: "invalid request body"}}
+	}
+	var in profilePatchInput
+	if err := binding.JSON.BindBody(body, &in); err != nil {
+		return profilePatchInput{}, bindingDetail(err)
+	}
+	return in, nil
+}
+
+// bindingDetail turns a gin/validator binding error into a FastAPI-shaped detail
+// array. Non-validator errors (malformed JSON, wrong types) collapse to a single
+// body-level item.
+func bindingDetail(err error) []validationDetailItem {
+	var ve validator.ValidationErrors
+	if errors.As(err, &ve) {
+		items := make([]validationDetailItem, 0, len(ve))
+		for _, fe := range ve {
+			items = append(items, validationDetailItem{
+				Loc: []string{"body", fe.Field()},
+				Msg: validationMessage(fe),
+			})
+		}
+		return items
+	}
+	return []validationDetailItem{{Loc: []string{"body"}, Msg: "invalid request body"}}
+}
+
+func validationMessage(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "required":
+		return "field required"
+	case "oneof":
+		return "must be one of: " + fe.Param()
+	case "gt":
+		return "must be greater than " + fe.Param()
+	case "datetime":
+		return "must match format " + fe.Param()
+	default:
+		return "invalid value"
+	}
+}
+
+// deleteAccount removes the auth-service identity first, then atomically clears
+// all user-owned STRIDE rows. Auth-service 401/404 means the external identity
+// is already unavailable and local cleanup can safely continue.
+//
+//	@Summary		Delete the current user's account and data
+//	@Tags			users
+//	@Success		204
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		409	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Failure		503	{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/me [delete]
+func (u *userRoutes) deleteAccount(c *gin.Context) {
+	uid, ok := requireUser(c)
+	if !ok {
+		return
+	}
+	parsedUID, err := uuid.Parse(uid)
+	if err != nil || parsedUID.Version() != 4 || parsedUID.String() != strings.ToLower(uid) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid user identifier"})
+		return
+	}
+	if u.accountAuth == nil {
+		u.log.Error("account deletion auth-service dependency is not configured")
+		c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "auth-service unavailable"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	if err := u.accountAuth.DeleteAccount(ctx, bearerFrom(c)); err != nil {
+		var responseErr interface{ HTTPStatus() int }
+		isResponse := errors.As(err, &responseErr)
+		status := 0
+		if isResponse {
+			status = responseErr.HTTPStatus()
+		}
+		if !isResponse || status >= http.StatusInternalServerError {
+			u.log.Error("auth-service account deletion failed", zapErr(err))
+			c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "auth-service unavailable"})
+			return
+		}
+		if status != http.StatusUnauthorized && status != http.StatusNotFound {
+			u.log.Warn("auth-service rejected account deletion", zap.Int("status", status))
+			c.JSON(status, errorResponse{Error: "auth-service rejected account deletion"})
+			return
+		}
+	}
+
+	if err := u.store.DeleteUserData(ctx, uid); err != nil {
+		u.log.Error("delete user data failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "failed to delete user data"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

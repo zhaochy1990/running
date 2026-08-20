@@ -10,7 +10,6 @@ from stride_storage.sqlite.database import HRV_PREFERRED_PER_DATE_SQL
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL, pace_str
 from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 from stride_core.timefmt import today_shanghai
-from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from ..deps import format_duration, get_db
 
@@ -210,12 +209,8 @@ def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
         "FROM daily_health ORDER BY date DESC LIMIT ?",
         (days,),
     )
-    stride_rows = db.fetch_daily_training_load_with_prior(
-        algorithm_version=TRAINING_LOAD_MODEL_VERSION, limit=days
-    )
-    latest_usable_stride_row = db.fetch_latest_daily_training_load(
-        algorithm_version=TRAINING_LOAD_MODEL_VERSION
-    )
+    stride_rows = db.fetch_daily_training_load_with_prior(limit=days)
+    latest_usable_stride_row = db.fetch_latest_daily_training_load()
     db.close()
 
     records = [dict(r) for r in rows]

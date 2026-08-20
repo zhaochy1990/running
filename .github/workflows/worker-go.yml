@@ -1,0 +1,245 @@
+name: worker-go
+
+# Go async-job CI: `test` runs for Go and shared Weekly Plan contract changes;
+# `contract-parity` additionally checks the canonical Coach schema against the
+# same fixture used by the Go validator. On master, a two-entry matrix publishes
+# the worker and API images to GHCR
+# + ACR in parallel, but only when src/go/** actually changed — a workflow-only
+# edit must not republish a new CalVer image or bump the deployed version. Images:
+# the worker (Dockerfile) + HTTP API server (Dockerfile.api, ADR 0012). CVM pulls
+# (ADR 0002/0004).
+#
+# Both images carry :latest and a shared, version-sortable :<CalVer> =
+# YYYY.M.<run_number>. stride-worker additionally keeps :<sha> for tracing a
+# running container back to a commit; stride-api does not (CalVer -> Actions run
+# -> commit is enough there). After both matrix builds succeed, a separate
+# Renovate job runs against stride-devops (`npx renovate
+# zhaochy1990/stride-devops`) to open a PR bumping STRIDE_{WORKER,API}_IMAGE_TAG to
+# the new CalVer. No poll/runner lives in stride-devops; this workflow drives it
+# on-demand right after publishing.
+# The Tencent CVM is NOT deployed from here: this workflow only publishes images;
+# rollout happens by merging the Renovate PR + running ./up.sh on the CVM.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "src/go/**"
+      - "src/coach_contract/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "src/go/internal/api/weekly_plan_schema.json"
+      - "tests/fixtures/weekly_plan_contract.json"
+      - ".github/workflows/worker-go.yml"
+  pull_request:
+    paths:
+      - "src/go/**"
+      - "src/coach_contract/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "src/go/internal/api/weekly_plan_schema.json"
+      - "tests/fixtures/weekly_plan_contract.json"
+      - ".github/workflows/worker-go.yml"
+
+jobs:
+  # Did Go SOURCE change (not just this workflow file)? Gates build-push so a
+  # workflow-only edit doesn't republish an image / bump the deployed version.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      contract: ${{ steps.filter.outputs.contract }}
+      calver: ${{ steps.calver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            go:
+              - 'src/go/**'
+            contract:
+              - 'src/go/internal/api/weekly_plan_validation.go'
+              - 'src/go/internal/api/weekly_plan_contract_parity_test.go'
+              - 'src/coach_contract/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'src/go/internal/api/weekly_plan_schema.json'
+              - 'tests/fixtures/weekly_plan_contract.json'
+              - '.github/workflows/worker-go.yml'
+      # Compute once before the matrix fans out so both images always share the
+      # same release tag, even if their runners cross a UTC date boundary.
+      - name: Compute CalVer
+        id: calver
+        run: echo "version=$(date -u +%Y.%-m).${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go/go.mod
+          cache-dependency-path: src/go/go.sum
+      - name: Verify formatting
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+
+  contract-parity:
+    if: needs.changes.outputs.contract == 'true'
+    needs: changes
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/coach_contract
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build Workspace (contract -> coach_agent)
+        run: pnpm -r build
+      - name: Verify generated Weekly Plan JSON Schema
+        run: pnpm run verify:weekly-plan-schema
+      - name: Verify Weekly Plan contract parity
+        run: node --test dist/weekly_plan/schemaParity.test.js
+
+  build-push:
+    # Publish only from master, and only when Go source actually changed — a
+    # workflow-only edit must not republish a new CalVer image or open a bump PR.
+    if: >-
+      always() &&
+      github.event_name == 'push' &&
+      needs.changes.outputs.go == 'true' &&
+      needs.test.result == 'success' &&
+      (needs.contract-parity.result == 'success' || needs.contract-parity.result == 'skipped')
+    needs: [test, changes, contract-parity]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      # Let the other image finish if one build fails so diagnostics and caches
+      # from both independent publications remain available.
+      fail-fast: false
+      matrix:
+        include:
+          - name: worker
+            dockerfile: src/go/Dockerfile
+            cache_scope: stride-worker
+            tags: |
+              ghcr.io/${{ github.repository_owner }}/stride-worker:latest
+              ghcr.io/${{ github.repository_owner }}/stride-worker:${{ github.sha }}
+              ghcr.io/${{ github.repository_owner }}/stride-worker:${{ needs.changes.outputs.calver }}
+              ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-worker:latest
+              ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-worker:${{ needs.changes.outputs.calver }}
+          - name: api
+            dockerfile: src/go/Dockerfile.api
+            cache_scope: stride-api
+            tags: |
+              ghcr.io/${{ github.repository_owner }}/stride-api:latest
+              ghcr.io/${{ github.repository_owner }}/stride-api:${{ needs.changes.outputs.calver }}
+              ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-api:latest
+              ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/stride-api:${{ needs.changes.outputs.calver }}
+    name: build-push (${{ matrix.name }})
+    steps:
+      - uses: actions/checkout@v4
+      # BuildKit 0.32 changed provenance to OCI artifact descriptors, which
+      # Aliyun Personal Edition ACR does not accept. Pin the last known-good
+      # version until the registry supports that manifest class.
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=moby/buildkit:v0.31.2
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Also publish to Aliyun ACR (China mirror) so the Tencent CVM can pull
+      # in-region — GHCR's blob CDN is throttled from mainland China. Registry
+      # host is in the ALIYUN_ACR_REGISTRY repo variable; creds in secrets.
+      - name: Log in to Aliyun ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.ALIYUN_ACR_REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: src/go
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ matrix.tags }}
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}
+          cache-to: type=gha,scope=${{ matrix.cache_scope }},mode=max
+
+  renovate:
+    # Join the matrix after both images have landed. A failed matrix child blocks
+    # the version bump so stride-devops never points at a partial release.
+    if: >-
+      github.event_name == 'push' &&
+      needs.changes.outputs.go == 'true' &&
+      needs.build-push.result == 'success'
+    needs: [changes, build-push]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Run Renovate against stride-devops right after the images land, so its
+      # versions.env bump PR opens within seconds (no poll/cron in stride-devops).
+      # Renovate clones stride-devops, reads its renovate.json, sees the new
+      # CalVer tag in GHCR, and opens the PR there. Best effort: a missing token
+      # or Renovate hiccup must NOT fail the image publish.
+      #   RENOVATE_TOKEN  — PAT/App token with contents+pull-requests write on
+      #                     zhaochy1990/stride-devops (Renovate opens the PR there).
+      #   GHCR_READ_TOKEN — read:packages, to list private GHCR tags (may be the
+      #                     same PAT as RENOVATE_TOKEN if it also has that scope).
+      # Pin renovate@41 — the last major that both runs on Node 22 and reliably
+      # detects our GHCR CalVer tags (43.x needs Node >=24 and, on it, stopped
+      # opening bump PRs for the docker deps). Pin Node 22 to match @41's engine.
+      - name: Set up Node 22 for Renovate
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Open version-bump PR in stride-devops (Renovate)
+        continue-on-error: true
+        env:
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+          RENOVATE_HOST_RULES: >-
+            [{"hostType":"docker","matchHost":"ghcr.io","username":"zhaochy1990","password":"${{ secrets.GHCR_READ_TOKEN }}"}]
+          LOG_LEVEL: info
+        run: |
+          if [ -z "$RENOVATE_TOKEN" ]; then
+            echo "RENOVATE_TOKEN not set — skipping Renovate run."
+            exit 0
+          fi
+          # GHCR's tag-list API can lag a few seconds behind the push we just
+          # made; wait so Renovate reliably sees this release's own new tag.
+          sleep 30
+          # Retry transient registry/network failures: 3 attempts, 10s apart.
+          for attempt in 1 2 3; do
+            if npx --yes renovate@41 zhaochy1990/stride-devops; then
+              exit 0
+            fi
+            echo "Renovate attempt ${attempt} failed."
+            [ "${attempt}" -lt 3 ] && sleep 10
+          done
+          echo "Renovate did not succeed after 3 attempts."
+          exit 1

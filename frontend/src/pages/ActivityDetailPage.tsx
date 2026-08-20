@@ -9,7 +9,6 @@ import StrengthView from '../components/StrengthView'
 import ZoneChart from '../components/ZoneChart'
 import HRChart from '../components/HRChart'
 import PaceChart from '../components/PaceChart'
-import ActivityContributionCard from '../components/ActivityContributionCard'
 import ActivityMap from '../components/maps/ActivityMap'
 
 const FEEL_EMOJIS = ['', '😄', '🙂', '😐', '😞', '😫']
@@ -18,7 +17,7 @@ export default function ActivityDetailPage() {
   // Two route shapes share this page:
   //   /activity/:id                                    — owner viewing own activity
   //   /teams/:teamId/activity/:userId/:labelId          — team-mate viewing peer's
-  // In team mode, write actions (resync, regenerate, ability contribution)
+  // In team mode, write actions (resync, regenerate commentary)
   // are hidden because they target the activity owner's DB, which the
   // viewer doesn't own.
   const { id, teamId, userId, labelId } = useParams<{ id?: string; teamId?: string; userId?: string; labelId?: string }>()
@@ -279,12 +278,6 @@ export default function ActivityDetailPage() {
           </div>
         )}
       </div>
-
-      {/* Ability contribution — only for running activities, owner-only
-          (team viewers don't have access to the owner's ability data) */}
-      {!isStrength && user && !isTeamView && (
-        <ActivityContributionCard user={user} activity={activity} />
-      )}
 
       {/* Charts & Zones */}
       {isStrength ? (

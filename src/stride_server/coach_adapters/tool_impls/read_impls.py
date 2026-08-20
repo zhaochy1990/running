@@ -897,8 +897,16 @@ class GetMasterPlanVersionsImpl:
 
 
 class GetWeekPlanImpl:
-    def __init__(self, user_id: str) -> None:
+    def __init__(
+        self,
+        user_id: str,
+        *,
+        plan_loader: Callable[[str | None], Any] | None = None,
+    ) -> None:
         self._user_id = user_id
+        # Review draft write path injects a loader returning the unapplied draft
+        # ``WeeklyPlan`` so read-back reflects the draft, not a saved plan.
+        self._plan_loader = plan_loader
 
     @_tool_safe
     def __call__(self, *, folder: str | None = None) -> ToolResult:
@@ -906,12 +914,15 @@ class GetWeekPlanImpl:
         from stride_server.weekly_plan_store import get_weekly_plan_store
 
         on_date = today_shanghai().isoformat()
-        store = get_weekly_plan_store()
-        canonical_plan = (
-            store.get_plan(self._user_id, folder)
-            if folder
-            else store.get_current_plan(self._user_id, on_date)
-        )
+        if self._plan_loader is not None:
+            canonical_plan = self._plan_loader(folder)
+        else:
+            store = get_weekly_plan_store()
+            canonical_plan = (
+                store.get_plan(self._user_id, folder)
+                if folder
+                else store.get_current_plan(self._user_id, on_date)
+            )
         if canonical_plan is None:
             return ToolResult(
                 ok=True,

@@ -67,7 +67,7 @@ def build_generation_graph(
       ``coach.graphs.generation.master_rule_filter`` instead.
 
     ``rule_filter_kwargs`` flows through to the rule_filter callable
-    (e.g. ``prev_week_km`` / ``injuries`` for S2, or ``target_race`` /
+    (e.g. ``target_weekly_km`` / ``injuries`` for S2, or ``target_race`` /
     ``season_window`` for S1).
     """
     rfk = dict(rule_filter_kwargs or {})

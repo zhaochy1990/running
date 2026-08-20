@@ -267,6 +267,7 @@ class WeeklyPlan:
     sessions: tuple[PlannedSession, ...] = field(default_factory=tuple)
     nutrition: tuple[PlannedNutrition, ...] = field(default_factory=tuple)
     notes_md: str | None = None
+    coach_notes: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -275,6 +276,7 @@ class WeeklyPlan:
             "sessions": [s.to_dict() for s in self.sessions],
             "nutrition": [n.to_dict() for n in self.nutrition],
             "notes_md": self.notes_md,
+            "coach_notes": self.coach_notes,
         }
 
     @classmethod
@@ -284,4 +286,5 @@ class WeeklyPlan:
             sessions=tuple(PlannedSession.from_dict(s) for s in data.get("sessions", [])),
             nutrition=tuple(PlannedNutrition.from_dict(n) for n in data.get("nutrition", [])),
             notes_md=data.get("notes_md"),
+            coach_notes=data.get("coach_notes"),
         )

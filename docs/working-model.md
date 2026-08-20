@@ -4,7 +4,7 @@
 
 ## 分工
 
-- **Local machine** 是 **author** 环境。LLM 工具（Claude Code）在这里跑，读 local state（SQLite + `data/` 下 markdown），产出权威内容：weekly `plan.md`、`feedback.md`、refined `activity_commentary` DB 行，以及临时分析。
+- **Local machine** 是 **author** 环境。LLM 工具在这里运行，产出 weekly `plan.md`、refined `activity_commentary` DB 行和临时分析。rollout marker 前周反馈沿用 legacy `feedback.md`；marker 后直接读写 MySQL `weekly_feedback`，legacy 文件仅用于迁移。
 - **Azure Container App (`stride-app`)** 是 **reader** 环境，**同时也是 default draft-writer**。它服务 dashboard UI 和 read API，数据来自：
   - Markdown 文件经 `sync-data.yml` GitHub Action 同步（push 到 master → `az storage file upload-batch` 到 `authstorage2026/stride-data`）。
   - SQLite 数据（activities、health）两端各自独立从 COROS 同步。
@@ -26,7 +26,7 @@
 #    草稿 commentary（server 在自己的 sync 路径里做，本地只看到 activity 行）。
 PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi sync
 
-# 2. [Claude does its thing] —— refine AOAI 草稿、写 plan/feedback、用本地数据
+# 2. [Claude does its thing] —— refine AOAI 草稿、写 plan；周反馈读写 MySQL
 #    产出更深的 commentary。本地 DB 行必须带正确的 generated_by:
 python -c "
 from stride_core.db import Database
@@ -38,7 +38,7 @@ db.upsert_activity_commentary('<label_id>', '<text>', generated_by='claude-opus-
 #     prod 端 generated_by 保持 NULL，UI badge 空白 / 再 sync 时 AOAI 可能覆盖。
 coros-sync -P zhaochaoyi commentary push <label_id> --generated-by claude-opus-4-7
 
-# 3b. plan.md / feedback.md / TRAINING_PLAN.md / status.md → STRIDE prod via git
+# 3b. plan.md / TRAINING_PLAN.md / status.md → STRIDE prod via git
 git add data/<user-uuid>/logs/<week>/plan.md
 git commit -m "docs: update week plan"
 git push origin master   # sync-data.yml 把 markdown 推到 Azure Files
@@ -46,4 +46,4 @@ git push origin master   # sync-data.yml 把 markdown 推到 Azure Files
 
 ## When something only works locally but not in prod
 
-最大概率：内容是 DB 行，没传播。先查 `activity_commentary`。`plan.md` / `feedback.md` 应该总是经 git push + `sync-data.yml` 传播；如果没有，看 workflow run。
+最大概率：内容是 DB 行，没传播。先查 `activity_commentary`；周反馈查 MySQL `weekly_feedback`。`plan.md` 经 git push + `sync-data.yml` 传播；如果没有，看 workflow run。

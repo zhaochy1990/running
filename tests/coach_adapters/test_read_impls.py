@@ -507,9 +507,9 @@ def test_coach_load_readers_keep_partial_and_skip_unknown_current_state(patched_
     calls = []
     original = Database.fetch_latest_daily_training_load
 
-    def traced_fetch_latest(self, *, algorithm_version, as_of=None):
-        calls.append((algorithm_version, as_of))
-        return original(self, algorithm_version=algorithm_version, as_of=as_of)
+    def traced_fetch_latest(self, *, as_of=None):
+        calls.append(as_of)
+        return original(self, as_of=as_of)
 
     monkeypatch.setattr(Database, "fetch_latest_daily_training_load", traced_fetch_latest)
 
@@ -519,7 +519,7 @@ def test_coach_load_readers_keep_partial_and_skip_unknown_current_state(patched_
     )
     pmc_series = read_impls.GetPmcSeriesImpl("uid")(days=14)
 
-    assert calls == [(TRAINING_LOAD_MODEL_VERSION, None)]
+    assert calls == [None]
     assert snapshot.ok and snapshot.data["stride_training_load"]["date"] == "2026-05-13"
     assert snapshot.data["stride_training_load"]["coverage_status"] == "partial"
     assert health_series.ok and health_series.data["series"] == [

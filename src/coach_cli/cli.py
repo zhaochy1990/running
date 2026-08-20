@@ -82,6 +82,7 @@ _HELP = """\
   /session   列出历史会话，选择并恢复其中一个
   /proposals 查看当前待确认的计划提案
   /apply N   应用第 N 个周计划或赛季计划提案（唯一写入入口）
+  /apply N weekly-only  确认明显偏离赛季计划，但仅修改本周
   /dismiss   放弃当前待选方案
   /help      显示这个帮助
   /exit /quit 退出
@@ -344,18 +345,64 @@ def _friendly_error(exc: Exception) -> str:
     return s
 
 
+def _weekly_review_anchor(
+    proposals: tuple[Proposal, ...],
+) -> tuple[Any, dict[str, Any]] | None:
+    """Build ``(target, review_context)`` for a pending weekly-create draft.
+
+    Mirrors the web review workspace: while an unapplied weekly-create proposal
+    is pending, a follow-up question ("周六力量练什么") must be answered from the
+    in-memory draft — the plan was never saved, so ``get_week_plan`` would find
+    nothing. Re-attaching the proposal as ``review_context`` (anchored to its
+    week ``target``) makes ``status_insight`` answer from the draft JSON instead.
+
+    Returns ``None`` when no weekly-create proposal is pending — an existing-week
+    ``PlanDiff`` / master diff has no review-context contract, and turns without
+    a draft must not be forced onto one. Also returns ``None`` if the draft fails
+    to serialise (e.g. exceeds the review-context size cap) so the REPL degrades
+    to an ordinary turn instead of crashing.
+    """
+    # Lazy import mirrors the file's discipline (coach modules stay off the hot
+    # import path); coach.contracts itself is pure pydantic, no heavy deps.
+    from coach.contracts import TargetRef, WeeklyCreateReviewContext
+
+    for proposal in proposals:
+        if not isinstance(proposal, WeeklyPlanCreateProposal):
+            continue
+        try:
+            review_context = WeeklyCreateReviewContext(
+                proposal=proposal
+            ).model_dump(mode="json")
+        except ValueError:
+            return None
+        return TargetRef(kind="week", folder=proposal.folder), review_context
+    return None
+
+
 def _run_turn(
-    *, user_id: str, session_id: str, message: str, checkpointer: Any
+    *,
+    user_id: str,
+    session_id: str,
+    message: str,
+    checkpointer: Any,
+    target: Any | None = None,
+    review_context: dict[str, Any] | None = None,
 ) -> Any:
     # Lazy import: pulls in azure-identity + langchain, slow to import.
     from stride_server.coach_adapters.orchestrator import run_coach_turn
 
+    # The CLI only renders the TurnResponse; the HTTP layer consumes the stable
+    # assistant_message identity that also rides on the result. ``target`` /
+    # ``review_context`` carry a pending weekly-create draft into follow-up turns
+    # so the drafted week can be discussed before it is applied.
     return run_coach_turn(
         user_id=user_id,
         session_id=session_id,
         message=message,
         checkpointer=checkpointer,
-    )
+        target=target,
+        review_context=review_context,
+    ).turn_response
 
 
 def _apply_result_message(
@@ -387,6 +434,10 @@ def _apply_master_proposal(*, user_id: str, proposal: MasterPlanDiff) -> dict:
         proposal.plan_id,
         CoachMasterApplyRequest(
             diff=proposal,
+            # The apply endpoint requires the request to echo the diff's
+            # optimistic-concurrency handle; the orchestrator already pinned it
+            # onto the proposal, so pass it through instead of dropping it.
+            base_revision=proposal.base_revision,
             accepted_op_ids=[op.id for op in proposal.ops],
             change_reason="coach CLI selected proposal",
         ),
@@ -395,7 +446,10 @@ def _apply_master_proposal(*, user_id: str, proposal: MasterPlanDiff) -> dict:
 
 
 def _apply_week_proposal(
-    *, user_id: str, proposal: PlanDiff | WeeklyPlanCreateProposal
+    *,
+    user_id: str,
+    proposal: PlanDiff | WeeklyPlanCreateProposal,
+    acknowledge_weekly_only: bool = False,
 ) -> dict:
     """Create a week or apply every op in an existing-week adjustment."""
     from stride_server.routes.coach import (
@@ -404,23 +458,41 @@ def _apply_week_proposal(
     )
 
     if isinstance(proposal, WeeklyPlanCreateProposal):
-        body = CoachWeekApplyRequest(proposal=proposal)
+        body = CoachWeekApplyRequest(
+            proposal=proposal,
+            impact_acknowledgement=(
+                "weekly_only" if acknowledge_weekly_only else None
+            ),
+        )
     else:
         body = CoachWeekApplyRequest(
             diff=proposal,
+            # The apply endpoint requires the request to echo the diff's
+            # optimistic-concurrency handle; the orchestrator already pinned it
+            # onto the proposal, so pass it through instead of dropping it.
+            base_revision=proposal.base_revision,
             accepted_op_ids=[
                 op.id for op in proposal.ops if op.accepted is not False
             ],
+            impact_acknowledgement=(
+                "weekly_only" if acknowledge_weekly_only else None
+            ),
         )
     return apply_coach_week_diff(
         proposal.folder, body, payload={"sub": user_id}
     )
 
 
-def _apply_proposal(*, user_id: str, proposal: Proposal) -> dict:
+def _apply_proposal(
+    *, user_id: str, proposal: Proposal, acknowledge_weekly_only: bool = False
+) -> dict:
     if isinstance(proposal, MasterPlanDiff):
         return _apply_master_proposal(user_id=user_id, proposal=proposal)
-    return _apply_week_proposal(user_id=user_id, proposal=proposal)
+    return _apply_week_proposal(
+        user_id=user_id,
+        proposal=proposal,
+        acknowledge_weekly_only=acknowledge_weekly_only,
+    )
 
 
 @dataclass(frozen=True)
@@ -437,7 +509,11 @@ class _CommandOutcome:
 
 
 def _apply_pending(
-    *, user_id: str, state: _ReplState, selected: int
+    *,
+    user_id: str,
+    state: _ReplState,
+    selected: int,
+    acknowledge_weekly_only: bool = False,
 ) -> _CommandOutcome:
     proposals = state.pending_proposals
     if not proposals:
@@ -447,10 +523,24 @@ def _apply_pending(
         click.echo(f"方案编号无效，请输入 1-{len(proposals)}。")
         return _CommandOutcome(True, state)
     proposal = proposals[selected - 1]
+    if acknowledge_weekly_only and isinstance(proposal, MasterPlanDiff):
+        click.echo("weekly-only 仅适用于周计划提案，赛季计划提案未应用。")
+        return _CommandOutcome(True, state)
     try:
-        result = _apply_proposal(user_id=user_id, proposal=proposal)
+        if acknowledge_weekly_only:
+            result = _apply_proposal(
+                user_id=user_id,
+                proposal=proposal,
+                acknowledge_weekly_only=True,
+            )
+        else:
+            result = _apply_proposal(user_id=user_id, proposal=proposal)
     except Exception as exc:  # noqa: BLE001 — keep the REPL alive
         click.echo(f"❌ 应用失败: {_friendly_error(exc)}")
+        if "season_impact_material" in str(exc):
+            click.echo(
+                f"如确认只修改本周，请输入 /apply {selected} weekly-only"
+            )
         return _CommandOutcome(True, state)
     click.echo(_apply_result_message(proposal=proposal, result=result, selected=selected))
     return _CommandOutcome(True, _ReplState(state.session_id))
@@ -490,12 +580,23 @@ def _handle_slash_command(
     if not (line == "/apply" or line.startswith("/apply ")):
         return _CommandOutcome(False, state)
     parts = line.split()
-    if len(parts) != 2 or not parts[1].isascii() or not parts[1].isdigit():
-        click.echo("用法: /apply N（例如 /apply 2）")
+    has_ack = len(parts) == 3 and parts[2] == "weekly-only"
+    if (
+        len(parts) not in (2, 3)
+        or not parts[1].isascii()
+        or not parts[1].isdigit()
+        or (len(parts) == 3 and not has_ack)
+    ):
+        click.echo("用法: /apply N [weekly-only]（例如 /apply 2）")
         return _CommandOutcome(True, state)
     normalized_index = parts[1].lstrip("0") or "0"
     selected = int(normalized_index) if len(normalized_index) <= 9 else 1_000_000_000
-    return _apply_pending(user_id=user_id, state=state, selected=selected)
+    return _apply_pending(
+        user_id=user_id,
+        state=state,
+        selected=selected,
+        acknowledge_weekly_only=has_ack,
+    )
 
 
 def _warn_about_database(*, db_path: Path, profile: str) -> None:
@@ -544,6 +645,15 @@ def _print_repl_banner(*, user_id: str, session_id: str, db_path: Path) -> None:
 def _run_repl_turn(
     *, line: str, user_id: str, state: _ReplState, checkpointer: Any, debug: bool
 ) -> _ReplState:
+    # A pending weekly-create draft rides the next turn as review_context so a
+    # follow-up about the drafted week is answered from it (the plan is not saved
+    # yet). Absent such a draft, the turn carries no anchor (unrelated questions
+    # must not be forced onto a stale draft).
+    anchor = _weekly_review_anchor(state.pending_proposals)
+    anchor_kwargs: dict[str, Any] = {}
+    if anchor is not None:
+        target, review_context = anchor
+        anchor_kwargs = {"target": target, "review_context": review_context}
     try:
         with _Thinking(debug=debug):
             turn = _run_turn(
@@ -551,6 +661,7 @@ def _run_repl_turn(
                 session_id=state.session_id,
                 message=line,
                 checkpointer=checkpointer,
+                **anchor_kwargs,
             )
     except Exception as exc:  # noqa: BLE001 — keep the REPL alive
         click.echo(f"❌ 调用失败: {_friendly_error(exc)}")

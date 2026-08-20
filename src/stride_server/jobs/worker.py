@@ -258,7 +258,12 @@ class JobWorker:
         )
         self._finalize_failed(failed, msg)
 
-    def run_forever(self, *, poll_interval_s: float = 2.0, max_messages: int = 4) -> None:
+    def run_forever(self, *, poll_interval_s: float = 2.0, max_messages: int = 1) -> None:
+        """Poll loop. Defaults to one message per receive so a long-running job
+        (for example, a full onboarding watch sync) doesn't pre-lease a batch and
+        let the other messages' visibility leases expire while it runs — that
+        re-delivers them and duplicates work. One-at-a-time keeps every leased
+        message actively heartbeated."""
         logger.info("job worker started (queue=%s)", self._config.queue_name)
         while True:
             try:

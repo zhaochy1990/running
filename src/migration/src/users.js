@@ -1,0 +1,21 @@
+// uuid for users that we need to migrate from old system to new system
+export const users = [
+    // dehua
+    "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
+    // pan
+    "5ee229a6-cdc1-4260-84d3-71ec622126c2",
+    // dingchentao
+    "7bd56762-3b04-42a6-9d8b-98f595628430",
+    // lvge
+    "0a74ac88-629e-4b8e-97c8-d49ccf5a986b",
+    // renzhen
+    "bffa65bc-4501-41e7-a68c-96da76d5b7bc",
+    // pan's friend
+    "d3438b21-0d9b-4432-96c6-bb5564b74141",
+    // lengjiahao
+    "db2470c4-885b-496f-896a-764c0dedbaea",
+    // gaohan
+    "ba103cff-ad2c-4f9e-9920-983337544a2c",
+    // zhaochaoyi
+    "f10bc353-01ab-4db1-af9f-d9305ea9a532"
+];

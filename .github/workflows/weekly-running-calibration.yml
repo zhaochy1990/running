@@ -1,27 +1,18 @@
 name: Weekly running calibration recompute
 
-# Required GitHub Actions secrets (configured in repo settings):
-#   STRIDE_PROD_URL           — base URL of the deployed stride-app, e.g.
-#                               https://stride-app.<region>.azurecontainerapps.io
-#   STRIDE_INTERNAL_TOKEN     — random 32+ char string. Same value must be set
-#                               on the Azure Container App as STRIDE_INTERNAL_TOKEN
-#                               env var.
-# If either secret is unset the workflow fails so the omission is visible.
+# Required GitHub Actions repository variable and secret:
+#   STRIDE_GO_API_URL          — base URL of the deployed Go API, e.g.
+#                               https://stride-api.<region>.example.com
+#   STRIDE_GO_INTERNAL_TOKEN  — random 32+ char string. The Go API must receive
+#                               the same value as STRIDE_WORKER_API_INTERNAL_TOKEN.
+# If a required secret or variable is unset the workflow fails so the omission is
+# visible.
 
 on:
   schedule:
     # Every Sunday at 04:00 UTC = 12:00 Asia/Shanghai
     - cron: '0 4 * * 0'
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: "refresh = update calibration snapshot only (weekly default); backfill = recompute daily/activity training-load too (heavier, used after schema migrations)"
-        required: true
-        type: choice
-        default: refresh
-        options:
-          - refresh
-          - backfill
+  workflow_dispatch: {}
 
 jobs:
   recompute:
@@ -54,55 +45,40 @@ jobs:
       - name: Recompute running calibration per user
         if: steps.users.outputs.count != '0'
         env:
-          STRIDE_PROD_URL: ${{ secrets.STRIDE_PROD_URL }}
-          INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}
-          # `mode` is only set for workflow_dispatch. Cron runs default to refresh.
-          MODE: ${{ inputs.mode || 'refresh' }}
+          GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}
+          GO_INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}
         run: |
           set -u
-          if [ -z "$STRIDE_PROD_URL" ] || [ -z "$INTERNAL_TOKEN" ]; then
-            echo "::error::STRIDE_PROD_URL or STRIDE_INTERNAL_TOKEN secret missing"
+          if [ -z "$GO_API_URL" ] || [ -z "$GO_INTERNAL_TOKEN" ]; then
+            echo "::error::STRIDE_GO_API_URL repository variable or STRIDE_GO_INTERNAL_TOKEN secret missing"
             exit 1
           fi
+          ENDPOINT="/jobs"
+          TIMEOUT=240
 
-          # refresh = light snapshot-only update; backfill = also re-derive
-          # daily/activity training-load rows with the new calibration (heavier;
-          # use after schema migrations or first rollout of the new algorithm).
-          # TIMEOUT is per-request curl --max-time. refresh used to be 60s, but
-          # a cold-started container + a 180d recompute can exceed that on the
-          # first call, so the whole batch died with curl exit 28. 240s gives
-          # headroom; the retry below absorbs cold starts.
-          case "$MODE" in
-            refresh)  ENDPOINT="/internal/training-load/calibration/refresh"; TIMEOUT=240 ;;
-            backfill) ENDPOINT="/internal/training-load/backfill?load_lookback_days=365"; TIMEOUT=300 ;;
-            *) echo "::error::unknown mode $MODE"; exit 1 ;;
-          esac
-          # The endpoint string already contains a query param for backfill;
-          # append `user=` with the correct separator.
-          case "$ENDPOINT" in
-            *\?*) USER_SEP="&" ;;
-            *)    USER_SEP="?" ;;
-          esac
-
-          echo "## Running calibration $MODE" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Running calibration" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Endpoint: \`$ENDPOINT\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| user | http | response |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|------|----------|" >> "$GITHUB_STEP_SUMMARY"
 
-          # POST once and echo the HTTP status. On a curl-level failure (e.g.
-          # timeout exit 28, DNS, connection refused) curl returns non-zero;
-          # the `|| code="000"` guard turns that into a sentinel status AND
-          # makes the function exit 0, so one user's failure never aborts the
-          # whole batch under GitHub Actions' default `bash -e`.
+          # POST once and echo the HTTP status. Each user/run pair gets a stable
+          # idempotency key, so retrying after a lost response cannot queue a
+          # second calibration. On a curl-level failure the guard turns it into
+          # a sentinel status, so one user's failure never aborts the batch.
           attempt_post() {
+            local url="$1"
+            local user="$2"
             local code
             code=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
               --max-time "$TIMEOUT" \
               -X POST \
-              -H "X-Internal-Token: $INTERNAL_TOKEN" \
-              "$1") || code="000"
+              -H "X-Internal-Token: $GO_INTERNAL_TOKEN" \
+              -H "Content-Type: application/json" \
+              -H "Idempotency-Key: weekly-calibration-${GITHUB_RUN_ID}-${user}" \
+              --data "{\"type\":\"calibration\",\"user_id\":\"$user\",\"input\":{}}" \
+              "$url") || code="000"
             echo "$code"
           }
 
@@ -110,26 +86,26 @@ jobs:
           ok=0
           while read -r user; do
             [ -z "$user" ] && continue
-            url="$STRIDE_PROD_URL$ENDPOINT${USER_SEP}user=$user"
+            url="${GO_API_URL%/}$ENDPOINT"
             echo "==> POST $url"
-            http=$(attempt_post "$url")
+            http=$(attempt_post "$url" "$user")
             # One retry on any transient failure (cold start / timeout / 5xx).
             # Cold-start of the scaled-to-zero container takes ~15s, so wait
             # long enough for it to be up before the second attempt.
-            if [ "$http" != "200" ] && [ "$http" != "204" ]; then
+            if [ "$http" != "200" ] && [ "$http" != "202" ]; then
               echo "  ↻ retrying $user (first attempt HTTP $http)"
               sleep 15
-              http=$(attempt_post "$url")
+              http=$(attempt_post "$url" "$user")
             fi
             body=$(head -c 500 /tmp/resp.json | tr '\n' ' ')
-            if [ "$http" = "200" ] || [ "$http" = "204" ]; then
+            if [ "$http" = "200" ] || [ "$http" = "202" ]; then
               ok=$((ok+1))
               echo "  ✓ $user (HTTP $http)"
               echo "    response: $body"
               echo "| $user | $http | $body |" >> "$GITHUB_STEP_SUMMARY"
             else
               fail=$((fail+1))
-              echo "::warning::$MODE failed for $user (HTTP $http): $body"
+              echo "::warning::Calibration failed for $user (HTTP $http): $body"
               echo "| $user | $http | $body |" >> "$GITHUB_STEP_SUMMARY"
             fi
           done < users.txt

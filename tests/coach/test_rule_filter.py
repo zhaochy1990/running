@@ -1,4 +1,4 @@
-"""US-008 acceptance: rule_filter catches the 7 safety violations from plan §7.3."""
+"""Acceptance tests for deterministic weekly-plan safety checks."""
 
 from __future__ import annotations
 
@@ -113,21 +113,20 @@ def test_clean_plan_passes():
             _rest_session("2026-05-17"),
         ]
     )
-    report = run_rule_filter(plan, prev_week_km=35.0)
+    report = run_rule_filter(plan)
     assert report.ok, [v.rule for v in report.errors()]
 
 
-def test_weekly_progression_jumps_30_percent_fails():
+def test_weekly_progression_does_not_reject_volume_increase():
     plan = _plan_dict(
         [_minimal_run_session(f"2026-05-1{i}", 10000) for i in range(1, 8)]
         + [_rest_session("2026-05-17")]
     )
-    report = run_rule_filter(plan, prev_week_km=40.0)  # 70 km vs prev 40 km = 1.75x
-    assert not report.ok
-    assert any(v.rule == "weekly_progression" for v in report.errors())
+    report = run_rule_filter(plan)
+    assert not any(v.rule == "weekly_progression" for v in report.errors())
 
 
-def test_long_run_share_over_35_percent_fails():
+def test_long_run_share_does_not_reject_week():
     plan = _plan_dict(
         [
             _minimal_run_session("2026-05-11", 5000),
@@ -140,7 +139,7 @@ def test_long_run_share_over_35_percent_fails():
         ]
     )
     report = run_rule_filter(plan)
-    assert any(v.rule == "long_run_share" for v in report.errors())
+    assert not any(v.rule == "long_run_share" for v in report.errors())
 
 
 def test_rest_days_missing_fails():
@@ -204,13 +203,6 @@ def test_injury_conflict_squat_for_knee_pain_fails():
     )
     report = run_rule_filter(plan, injuries=["knee"])
     assert any(v.rule == "injury_conflict" for v in report.errors())
-
-
-def test_no_prev_week_km_skips_progression_rule():
-    plan = _plan_dict([_minimal_run_session("2026-05-11", 50000)])
-    report = run_rule_filter(plan, prev_week_km=None)
-    # Progression rule doesn't fire because we have no baseline
-    assert not any(v.rule == "weekly_progression" for v in report.errors())
 
 
 def test_weekly_target_volume_over_master_target_fails():

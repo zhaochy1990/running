@@ -1,0 +1,19 @@
+{
+  "display_name": "任真",
+  "dob": "1997-02-28",
+  "sex": "male",
+  "height_cm": 175.0,
+  "weight_kg": 70.0,
+  "target_race": "南昌马拉松",
+  "target_distance": "FM",
+  "target_race_date": "2026-11-25",
+  "target_time": "3:00:00",
+  "pbs": {
+    "5k": "19:30",
+    "10k": "41:00",
+    "hm": "1:29:00",
+    "fm": "3:05:00"
+  },
+  "weekly_mileage_km": 60.0,
+  "constraints": "无"
+}

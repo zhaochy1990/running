@@ -1,6 +1,7 @@
 """Tests for SQLite database layer."""
 
 import json
+import sqlite3
 from datetime import timedelta
 
 import pytest
@@ -10,6 +11,66 @@ from stride_core.models import (
 )
 from stride_core.timefmt import today_shanghai
 from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+
+def test_new_database_is_seeded_in_wal_mode(tmp_path) -> None:
+    from stride_storage.sqlite.database import Database
+
+    db_path = tmp_path / "new.db"
+
+    with Database(db_path=db_path) as database:
+        assert database._conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+
+def test_existing_database_keeps_its_journal_mode(tmp_path) -> None:
+    """Opening an Azure-Files-style existing DB must not force a WAL transition."""
+    from stride_storage.sqlite.database import Database
+
+    db_path = tmp_path / "existing.db"
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("PRAGMA journal_mode=DELETE").fetchone()[0] == "delete"
+        conn.execute("CREATE TABLE marker (value TEXT)")
+        conn.execute("INSERT INTO marker VALUES ('preserved')")
+
+    with Database(db_path=db_path) as database:
+        assert database._conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+        assert database._conn.execute("SELECT value FROM marker").fetchone()[0] == "preserved"
+
+
+def test_database_closes_connection_when_initialization_fails(
+    tmp_path, monkeypatch
+) -> None:
+    """A failed schema/migration pass must not leak an SMB writer handle."""
+    from stride_storage.sqlite import database as database_module
+
+    db_path = tmp_path / "existing.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE marker (value TEXT)")
+
+    original_connect = database_module.sqlite3.connect
+    closed_connections: list[sqlite3.Connection] = []
+
+    class TrackingConnection(sqlite3.Connection):
+        def close(self) -> None:
+            closed_connections.append(self)
+            super().close()
+
+    def tracking_connect(*args, **kwargs):
+        return original_connect(*args, factory=TrackingConnection, **kwargs)
+
+    monkeypatch.setattr(database_module.sqlite3, "connect", tracking_connect)
+    monkeypatch.setattr(
+        database_module.Database,
+        "_init_schema",
+        lambda _self: (_ for _ in ()).throw(
+            sqlite3.OperationalError("database is locked")
+        ),
+    )
+
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+        database_module.Database(db_path=db_path)
+
+    assert len(closed_connections) == 1
 
 
 def _make_detail(label_id="test1", sport_type=100, date="20260315", distance=10000):
@@ -119,6 +180,129 @@ class TestDatabaseActivities:
         )
 
         assert summaries[1]["actual_distance_km"] == 12.0
+
+    def test_training_dose_week_summaries_complete_full_coverage(self, db):
+        """Full 7-day window of complete/rest_confirmed → complete, all sports."""
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        rows = [
+            ("2026-05-04", 80, "complete"),
+            ("2026-05-05", 40, "complete"),
+            ("2026-05-06", 0, "rest_confirmed"),
+            ("2026-05-07", 60, "complete"),
+            ("2026-05-08", 30, "complete"),
+            ("2026-05-09", 0, "rest_confirmed"),
+            ("2026-05-10", 50, "complete"),
+        ]
+        db._conn.executemany(
+            "INSERT INTO daily_training_load "
+            "(date, algorithm_version, training_dose, coverage_status) VALUES (?,?,?,?)",
+            [(d, TRAINING_LOAD_MODEL_VERSION, dose, status) for d, dose, status in rows],
+        )
+        db._conn.commit()
+
+        summaries = db.get_training_dose_week_summaries(
+            [(1, "2026-05-04", "2026-05-10")]
+        )
+
+        assert summaries[1] == {
+            "actual_training_dose": 260.0,
+            "actual_training_dose_coverage": 1.0,
+            "dose_status": "complete",
+        }
+
+    def test_training_dose_week_summaries_partial_on_gaps_or_partial_status(self, db):
+        """Missing days or a partial/unknown day downgrade to partial coverage."""
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        db._conn.executemany(
+            "INSERT INTO daily_training_load "
+            "(date, algorithm_version, training_dose, coverage_status) VALUES (?,?,?,?)",
+            [
+                ("2026-05-04", TRAINING_LOAD_MODEL_VERSION, 80, "complete"),
+                ("2026-05-05", TRAINING_LOAD_MODEL_VERSION, 40, "partial"),
+                ("2026-05-06", TRAINING_LOAD_MODEL_VERSION, 999, "unknown"),
+            ],
+        )
+        db._conn.commit()
+
+        summaries = db.get_training_dose_week_summaries(
+            [(1, "2026-05-04", "2026-05-10")]
+        )
+
+        # unknown day contributes no dose; only 2 of 7 expected days available.
+        assert summaries[1] == {
+            "actual_training_dose": 120.0,
+            "actual_training_dose_coverage": round(2 / 7, 3),
+            "dose_status": "partial",
+        }
+
+    def test_training_dose_week_summaries_unknown_when_no_available_day(self, db):
+        """A window with only unknown rows (or none) → unknown, dose None."""
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        db._conn.execute(
+            "INSERT INTO daily_training_load "
+            "(date, algorithm_version, training_dose, coverage_status) "
+            "VALUES ('2026-05-05',?,50,'unknown')",
+            (TRAINING_LOAD_MODEL_VERSION,),
+        )
+        db._conn.commit()
+
+        summaries = db.get_training_dose_week_summaries(
+            [(1, "2026-05-04", "2026-05-10")]
+        )
+
+        assert summaries[1] == {
+            "actual_training_dose": None,
+            "actual_training_dose_coverage": 0.0,
+            "dose_status": "unknown",
+        }
+
+    def test_training_dose_week_summaries_clamped_current_week_full_coverage(self, db):
+        """Current week clamped to today counts a shorter expected window."""
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        db._conn.executemany(
+            "INSERT INTO daily_training_load "
+            "(date, algorithm_version, training_dose, coverage_status) VALUES (?,?,?,?)",
+            [
+                ("2026-05-04", TRAINING_LOAD_MODEL_VERSION, 80, "complete"),
+                ("2026-05-05", TRAINING_LOAD_MODEL_VERSION, 40, "complete"),
+                ("2026-05-06", TRAINING_LOAD_MODEL_VERSION, 60, "complete"),
+            ],
+        )
+        db._conn.commit()
+
+        # date_to clamped to "today" = 2026-05-06 → 3 expected days, all present.
+        summaries = db.get_training_dose_week_summaries(
+            [(2, "2026-05-04", "2026-05-06")]
+        )
+
+        assert summaries[2] == {
+            "actual_training_dose": 180.0,
+            "actual_training_dose_coverage": 1.0,
+            "dose_status": "complete",
+        }
+
+    def test_training_dose_week_summaries_ignores_other_algorithm_version(self, db):
+        """Rows for a different algorithm version are excluded."""
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        db._conn.execute(
+            "INSERT INTO daily_training_load "
+            "(date, algorithm_version, training_dose, coverage_status) "
+            "VALUES ('2026-05-04',?,80,'complete')",
+            (TRAINING_LOAD_MODEL_VERSION - 1,),
+        )
+        db._conn.commit()
+
+        summaries = db.get_training_dose_week_summaries(
+            [(1, "2026-05-04", "2026-05-10")]
+        )
+
+        assert summaries[1]["dose_status"] == "unknown"
+        assert summaries[1]["actual_training_dose"] is None
 
     def test_compact_training_summary_aggregates_range_and_plan(self, db):
         from stride_storage.sqlite.training_summary import get_training_summary
@@ -294,6 +478,68 @@ class TestSyncMeta:
         db.set_meta("key", "v1")
         db.set_meta("key", "v2")
         assert db.get_meta("key") == "v2"
+
+
+def _daily_result(date_str, *, version=None, training_dose=10.0, chronic=30.0):
+    from datetime import date as _date
+
+    from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION as _V
+    from stride_core.training_load.types import DailyLoadResult, LoadCoverageStatus
+
+    y, m, d = (int(p) for p in date_str.split("-"))
+    return DailyLoadResult(
+        date=_date(y, m, d),
+        algorithm_version=version if version is not None else _V,
+        training_dose=training_dose,
+        acute_load=5.0,
+        chronic_load=chronic,
+        form=chronic - 5.0,
+        load_ratio=0.5,
+        coverage_status=LoadCoverageStatus.COMPLETE,
+        readiness_gate="green",
+        readiness_reasons=[],
+    )
+
+
+class TestCanonicalDailyTrainingLoad:
+    def test_upsert_same_date_keeps_single_canonical_row(self, db):
+        db.upsert_daily_training_load(_daily_result("2026-05-01", version=1, training_dose=10.0))
+        db.upsert_daily_training_load(_daily_result("2026-05-01", version=2, training_dose=99.0))
+
+        rows = db.query("SELECT * FROM daily_training_load WHERE date = '2026-05-01'")
+        assert len(rows) == 1
+        # The re-upsert overwrote the canonical row (dose) and updated the audit
+        # column (algorithm_version) to the newer computing version.
+        assert rows[0]["training_dose"] == 99.0
+        assert rows[0]["algorithm_version"] == 2
+
+    def test_fetch_daily_returns_legacy_version_rows(self, db):
+        # A row stamped with an older version is still canonical and readable;
+        # the reader must not filter it out.
+        db.upsert_daily_training_load(_daily_result("2026-05-01", version=1))
+        rows = db.fetch_daily_training_load("2026-05-01", "2026-05-01")
+        assert len(rows) == 1
+        assert rows[0]["algorithm_version"] == 1
+
+
+class TestTrainingLoadBackfillMarker:
+    def test_false_before_mark_then_true_after(self, db):
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        assert db.is_training_load_backfill_complete(TRAINING_LOAD_MODEL_VERSION) is False
+        db.mark_training_load_backfill_complete(
+            TRAINING_LOAD_MODEL_VERSION, as_of_date="2026-05-01"
+        )
+        assert db.is_training_load_backfill_complete(TRAINING_LOAD_MODEL_VERSION) is True
+
+    def test_false_for_other_version(self, db):
+        db.mark_training_load_backfill_complete(2, as_of_date="2026-05-01")
+        assert db.is_training_load_backfill_complete(3) is False
+        assert db.is_training_load_backfill_complete(2) is True
+
+    def test_corrupt_marker_json_reads_false(self, db):
+        db.set_meta("training_load_backfill_complete", "{not-json")
+        assert db.is_training_load_backfill_complete(1) is False
 
 
 class TestWeeklyPlan:

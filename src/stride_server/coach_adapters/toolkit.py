@@ -95,11 +95,19 @@ class StrideToolkit:
 
 
 def build_stride_toolkit(
-    user_id: str, *, master_plan_loader: Callable[[str], Any] | None = None
+    user_id: str,
+    *,
+    master_plan_loader: Callable[[str], Any] | None = None,
+    week_plan_loader: Callable[[str | None], Any] | None = None,
 ) -> Toolkit:
     """Return a :class:`StrideToolkit` (satisfying :class:`Toolkit` Protocol)
     bound to ``user_id``. The instance is cheap to construct (no I/O); each
-    individual tool opens its own short-lived DB connection on call."""
+    individual tool opens its own short-lived DB connection on call.
+
+    ``week_plan_loader``, when supplied, overrides the saved-plan lookup for
+    ``get_week_plan`` and every week-scope draft tool — the Review write path
+    injects the unapplied draft ``WeeklyPlan`` so a diff references the draft's
+    own sessions (there is no saved plan yet)."""
     return StrideToolkit(
         get_training_summary=GetTrainingSummaryImpl(user_id),
         get_recent_activities=GetRecentActivitiesImpl(user_id),
@@ -112,17 +120,21 @@ def build_stride_toolkit(
         get_pbs=GetPbsImpl(user_id),
         get_master_plan_current=GetMasterPlanCurrentImpl(user_id),
         get_master_plan_versions=GetMasterPlanVersionsImpl(user_id),
-        get_week_plan=GetWeekPlanImpl(user_id),
+        get_week_plan=GetWeekPlanImpl(user_id, plan_loader=week_plan_loader),
         get_activity_detail=GetActivityDetailImpl(user_id),
         get_training_environment=GetTrainingEnvironmentImpl(user_id),
         estimate_master_plan_load=EstimateMasterPlanLoadImpl(user_id),
-        swap_sessions=SwapSessionsImpl(user_id),
-        shift_session=ShiftSessionImpl(user_id),
-        reduce_intensity=ReduceIntensityImpl(user_id),
-        replace_session=ReplaceSessionImpl(user_id),
-        add_strength_session=AddStrengthSessionImpl(user_id),
-        change_pace_target=ChangePaceTargetImpl(user_id),
-        regenerate_week=RegenerateWeekImpl(user_id),
+        swap_sessions=SwapSessionsImpl(user_id, plan_loader=week_plan_loader),
+        shift_session=ShiftSessionImpl(user_id, plan_loader=week_plan_loader),
+        reduce_intensity=ReduceIntensityImpl(user_id, plan_loader=week_plan_loader),
+        replace_session=ReplaceSessionImpl(user_id, plan_loader=week_plan_loader),
+        add_strength_session=AddStrengthSessionImpl(
+            user_id, plan_loader=week_plan_loader
+        ),
+        change_pace_target=ChangePaceTargetImpl(
+            user_id, plan_loader=week_plan_loader
+        ),
+        regenerate_week=RegenerateWeekImpl(user_id, plan_loader=week_plan_loader),
         extend_phase=ExtendPhaseImpl(user_id, plan_loader=master_plan_loader),
         compress_phase=CompressPhaseImpl(user_id, plan_loader=master_plan_loader),
         shift_milestone=ShiftMilestoneImpl(user_id, plan_loader=master_plan_loader),

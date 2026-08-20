@@ -1,0 +1,79 @@
+# Non-secret defaults for the async-job worker. Secrets (mysql.dsn, amqp.url)
+# are left empty here and MUST be supplied via environment:
+#   STRIDE_WORKER_MYSQL_DSN, STRIDE_WORKER_AMQP_URL
+# Any key can be overridden by STRIDE_WORKER_<PATH> (with -/. -> _), e.g.
+#   queues.work        -> STRIDE_WORKER_QUEUES_WORK
+#   retry.max-attempts -> STRIDE_WORKER_RETRY_MAX_ATTEMPTS
+#   runtime.prefetch   -> STRIDE_WORKER_RUNTIME_PREFETCH
+#   logger.level       -> STRIDE_WORKER_LOGGER_LEVEL
+
+logger:
+  format: json          # json | console
+  service-name: stride-worker
+  level: info           # debug | info | warning | error
+  disable-caller: false
+  development: false
+
+mysql:
+  dsn: ""               # via STRIDE_WORKER_MYSQL_DSN
+
+amqp:
+  url: ""               # via STRIDE_WORKER_AMQP_URL
+
+queues:
+  work: stride.jobs
+  retry: stride.jobs.retry
+  poison: stride.jobs.poison
+
+retry:
+  max-attempts: 5
+  base-backoff: 5s
+  max-backoff: 5m
+
+runtime:
+  prefetch: 1
+  health-addr: ":8081"
+  data-dir: data          # only for the file-based provider-binding fallback
+
+# Independent race detector (not Coach Agent). The DeepSeek key is secret and
+# must be supplied via STRIDE_WORKER_RACE_DETECTION_API_KEY.
+race-detection:
+  api-kind: "chat-completions"
+  endpoint: "https://api.deepseek.com"
+  api-key: ""
+  model: "deepseek-v4-flash"
+  timeout: 30s
+  max-concurrency: 8
+
+# HTTP API server (`stride api`) — a separate container (ADR 0012), same unified
+# binary as the worker. The worker ignores this section. Secrets stay empty here
+# and come from env:
+#   STRIDE_WORKER_API_INTERNAL_TOKEN
+api:
+  addr: ":8080"
+  cors-origins: []          # e.g. ["https://app.example.com"] for the browser tier
+  internal-token: ""        # via STRIDE_WORKER_API_INTERNAL_TOKEN (secret)
+  swagger-enabled: false    # true in dev/staging; keep false in prod
+  auth:                     # RS256 end-user JWT (must match the auth-service)
+    issuer: ""
+    audience: ""
+    admin-audience: ""      # optional separate admin-dashboard audience
+    public-key-path: ""     # PEM file with the auth-service RSA public key
+  auth-service-url: ""      # in-house auth-service origin for display-name mirror; empty disables (ADR 0013)
+  features:                 # echoed in GET /api/users/me/profile (mirror Python server config)
+    # Coexistence flag only: Go completion never starts work; it requires a
+    # verified successful run_id from generic full sync.
+    sync-data-at-onboarding: true
+
+# "dehua": "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
+# "dingchentao": "7bd56762-3b04-42a6-9d8b-98f595628430",
+# "lvge": "0a74ac88-629e-4zuib8e-97c8-d49ccf5a986b",
+# "renzhen": "bffa65bc-4501-41e7-a68c-96da76d5b7bc"
+# "pan": "5ee229a6-cdc1-4260-84d3-71ec622126c2",
+
+    coach-agent-weekly-plan-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532","bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9", "5ee229a6-cdc1-4260-84d3-71ec622126c2", "7bd56762-3b04-42a6-9d8b-98f595628430", "0a74ac88-629e-4b8e-97c8-d49ccf5a986b", "bffa65bc-4501-41e7-a68c-96da76d5b7bc", "d3438b21-0d9b-4432-96c6-bb5564b74141","db2470c4-885b-496f-896a-764c0dedbaea","ba103cff-ad2c-4f9e-9920-983337544a2c"]
+    coach-chat-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
+    coach-chat-debug-users: ["f10bc353-01ab-4db1-af9f-d9305ea9a532"]
+    coach-chat-max-message-chars: 8000
+# ci: no-op touch to republish with pinned BuildKit v0.31.2 and exercise the
+# Renovate version-bump flow after the Aliyun ACR compatibility failure.

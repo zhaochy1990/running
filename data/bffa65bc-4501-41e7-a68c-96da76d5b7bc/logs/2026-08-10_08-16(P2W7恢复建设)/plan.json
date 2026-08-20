@@ -1,0 +1,56 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-08-10_08-16(P2W7恢复建设)",
+  "sessions": [
+    {
+      "date": "2026-08-10", "session_index": 0, "kind": "run", "summary": "恢复跑 5 km，HR 120-140", "total_distance_m": 5000,
+      "notes_md": "腿沉可改休息。",
+      "spec": {"name": "恢复跑 5K", "date": "2026-08-10", "note": "只为恢复，不产生疲劳感。", "blocks": [{"repeat": 1, "steps": [{"step_kind": "work", "duration": {"kind": "distance_m", "value": 5000}, "target": {"kind": "hr_bpm", "low": 120, "high": 140}, "hr_cap_bpm": 140, "note": "轻松可对话"}]}]}
+    },
+    {
+      "date": "2026-08-11", "session_index": 0, "kind": "run", "summary": "轻松有氧 5 km，HR 125-145", "total_distance_m": 5000,
+      "notes_md": "有氧距离可按反应缩短。",
+      "spec": {"name": "轻松有氧 5K", "date": "2026-08-11", "note": "不跑成中等强度。", "blocks": [{"repeat": 1, "steps": [{"step_kind": "work", "duration": {"kind": "distance_m", "value": 5000}, "target": {"kind": "hr_bpm", "low": 125, "high": 145}, "hr_cap_bpm": 145, "note": "放松有氧"}]}]}
+    },
+    {
+      "date": "2026-08-11", "session_index": 1, "kind": "strength", "summary": "低量力量维持 20 分钟",
+      "notes_md": "轻重量，不产生DOMS。",
+      "spec": {"name": "低量力量维持", "date": "2026-08-11", "note": "动作质量优先。", "exercises": [
+        {"canonical_id": "T1301", "display_name": "高脚杯深蹲", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 60, "note": "轻重量，稳定下蹲", "provider_id": "T1301"},
+        {"canonical_id": "T1010", "display_name": "平板支撑", "sets": 3, "target_kind": "time_s", "target_value": 45, "rest_seconds": 30, "note": "腰背平直，保持呼吸", "provider_id": "T1010"}
+      ]}
+    },
+    {
+      "date": "2026-08-12", "session_index": 0, "kind": "run", "summary": "10 km主段结构，共14 km；当前RHR 53触发默认easy", "total_distance_m": 14000,
+      "notes_md": "当前RHR 53已达到相对46基线+5的降级门槛，10km主段默认easy。仅晨起RHR≤50、无异常疲劳或疼痛且体感≤35℃全部满足时，才做HR受控steady/MP；禁止阈值或VO2。",
+      "spec": {"name": "10K恢复主段", "date": "2026-08-12", "note": "当前状态已触发恢复降级，因此结构化课表固定为easy；恢复全绿时仅可现场自然提到steady，不作为手表必做目标。", "blocks": [
+        {"repeat": 1, "steps": [{"step_kind": "warmup", "duration": {"kind": "distance_m", "value": 2000}, "target": {"kind": "hr_bpm", "low": 120, "high": 140}, "hr_cap_bpm": 140, "note": "轻松热身和动态活动"}]},
+        {"repeat": 1, "steps": [{"step_kind": "work", "duration": {"kind": "distance_m", "value": 10000}, "target": {"kind": "hr_bpm", "low": 125, "high": 145}, "hr_cap_bpm": 145, "note": "当前RHR已触发降级，固定easy；恢复全绿时仅可现场自然提速，绝不进入阈值"}]},
+        {"repeat": 1, "steps": [{"step_kind": "cooldown", "duration": {"kind": "distance_m", "value": 2000}, "target": {"kind": "hr_bpm", "low": 118, "high": 138}, "hr_cap_bpm": 138, "note": "充分放松"}]}
+      ]}
+    },
+    {
+      "date": "2026-08-13", "session_index": 0, "kind": "run", "summary": "恢复跑 4 km，HR 118-140", "total_distance_m": 4000,
+      "notes_md": "只清疲劳，不补强度。",
+      "spec": {"name": "恢复跑 4K", "date": "2026-08-13", "note": "吸收周三训练。", "blocks": [{"repeat": 1, "steps": [{"step_kind": "work", "duration": {"kind": "distance_m", "value": 4000}, "target": {"kind": "hr_bpm", "low": 118, "high": 140}, "hr_cap_bpm": 140, "note": "宁慢勿快"}]}]}
+    },
+    {"date": "2026-08-14", "session_index": 0, "kind": "rest", "summary": "完整休息，为恢复和周六留腿", "spec": null, "notes_md": "不补跑。"},
+    {
+      "date": "2026-08-15", "session_index": 0, "kind": "run", "summary": "关键长距离：14 km 轻松有氧", "total_distance_m": 14000,
+      "notes_md": "全程不加MP段；体感>35℃或恢复黄灯缩至10-12km。",
+      "spec": {"name": "轻松长距离 14K", "date": "2026-08-15", "note": "前5km刻意慢，练补给和稳定输出。", "blocks": [{"repeat": 1, "steps": [{"step_kind": "work", "duration": {"kind": "distance_m", "value": 14000}, "target": {"kind": "hr_bpm", "low": 130, "high": 145}, "hr_cap_bpm": 145, "note": "全程轻松，不加MP段"}]}]}
+    },
+    {"date": "2026-08-16", "session_index": 0, "kind": "rest", "summary": "完整休息 + 轻柔拉伸", "spec": null, "notes_md": "吸收本周训练，不补跑。"}
+  ],
+  "nutrition": [
+    {"date": "2026-08-10", "kcal_target": 2600, "carbs_g": 320, "protein_g": 125, "fat_g": 78, "water_ml": 2800, "notes_md": "恢复日正常三餐，不做激进缺口。"},
+    {"date": "2026-08-11", "kcal_target": 2800, "carbs_g": 370, "protein_g": 130, "fat_g": 78, "water_ml": 3000, "notes_md": "力量后补25-30g蛋白。"},
+    {"date": "2026-08-12", "kcal_target": 3050, "carbs_g": 430, "protein_g": 130, "fat_g": 80, "water_ml": 3500, "notes_md": "当前默认easy仍需正常补碳水；若恢复绿灯执行steady，跑前补易消化碳水，课后及时补糖和蛋白。"},
+    {"date": "2026-08-13", "kcal_target": 2650, "carbs_g": 330, "protein_g": 125, "fat_g": 80, "water_ml": 3000, "notes_md": "恢复日增加蔬果和电解质。"},
+    {"date": "2026-08-14", "kcal_target": 2550, "carbs_g": 310, "protein_g": 125, "fat_g": 78, "water_ml": 2900, "notes_md": "休息恢复，晚餐保留适量主食为长跑储糖。"},
+    {"date": "2026-08-15", "kcal_target": 3200, "carbs_g": 450, "protein_g": 130, "fat_g": 80, "water_ml": 3600, "notes_md": "跑中每35-40分钟补25-30g碳水，每小时补水补钠。"},
+    {"date": "2026-08-16", "kcal_target": 2500, "carbs_g": 300, "protein_g": 125, "fat_g": 78, "water_ml": 2800, "notes_md": "休息恢复，主食适量、蛋白不降。"}
+  ],
+  "notes_md": "Phase 2 W7 recovery，目标约42km，以最近实际51.4km为基线下调约18%。STRIDE acute/chronic在8/3-8/6连续4天高于1.25，8/8回落至1.150（提升期）；当前RHR 53已达到相对46基线+5的降级门槛，每日HRV实测缺失。周三保留10km主段结构但默认easy；仅晨起RHR≤50、无异常疲劳或疼痛且体感≤35℃时，才做HR 140-150、上限152的受控steady/MP，禁止阈值或VO2。周五、周日完整休息。",
+  "coach_notes": "本周重点是恢复。当前RHR 53已触发降级，周三10km主段默认easy；只有恢复绿灯才做HR受控steady/MP，绝不进入阈值或VO2。周六只做14km轻松长距离，其它训练优先缩短或取消，不为周量补跑。"
+}

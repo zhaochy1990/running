@@ -153,15 +153,20 @@ def test_pmc_summary_skips_latest_unknown_placeholder(app_client):
     assert body["stride_summary"]["current_readiness_gate"] == "yellow"
 
 
-def test_pmc_uses_single_latest_stride_algorithm_version(app_client):
+def test_pmc_reads_canonical_row_regardless_of_algorithm_version(app_client):
+    """Daily load is canonical (one row per date). The reader must surface
+    whatever row exists — including a row stamped with a *legacy* algorithm
+    version — instead of filtering to the current version. This proves the
+    reader no longer version-gates: a prod DB whose only backfilled rows carry
+    an older ``algorithm_version`` still renders its PMC."""
     client, tmp_path = app_client
+    legacy_version = TRAINING_LOAD_MODEL_VERSION - 1 or 1
     db = _open_user_db(tmp_path)
     try:
         rows = [
-            ("2026-05-01", 1, 10.0, 1.0, 11.0, 10.0, 0.09, "green", [], "complete"),
-            ("2026-05-02", 1, 20.0, 2.0, 12.0, 10.0, 0.17, "green", [], "complete"),
-            ("2026-05-01", 2, 100.0, 10.0, 30.0, 20.0, 0.33, "yellow", ["v2"], "complete"),
-            ("2026-05-02", 2, 110.0, 12.0, 34.0, 22.0, 0.35, "yellow", ["v2"], "partial"),
+            # One canonical row per date. First date carries a legacy version.
+            ("2026-05-01", legacy_version, 100.0, 10.0, 30.0, 20.0, 0.33, "yellow", ["legacy"], "complete"),
+            ("2026-05-02", TRAINING_LOAD_MODEL_VERSION, 110.0, 12.0, 34.0, 22.0, 0.35, "yellow", ["v2"], "partial"),
         ]
         db._conn.executemany(
             """INSERT INTO daily_training_load
@@ -179,7 +184,11 @@ def test_pmc_uses_single_latest_stride_algorithm_version(app_client):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert [row["date"] for row in body["stride_pmc"]] == ["2026-05-01", "2026-05-02"]
-    assert {row["algorithm_version"] for row in body["stride_pmc"]} == {2}
+    # Both versions readable — reader does not filter by current version.
+    assert {row["algorithm_version"] for row in body["stride_pmc"]} == {
+        legacy_version,
+        TRAINING_LOAD_MODEL_VERSION,
+    }
     assert body["stride_summary"]["date"] == "2026-05-02"
     assert body["stride_summary"]["current_training_dose"] == 110.0
 

@@ -1,0 +1,19 @@
+{
+  "display_name": "驴哥",
+  "dob": "1988-02-04",
+  "sex": "male",
+  "height_cm": 172.0,
+  "weight_kg": 79.0,
+  "target_race": "西安马拉松",
+  "target_distance": "FM",
+  "target_race_date": "2026-10-18",
+  "target_time": "2:50:00",
+  "pbs": {
+    "5K": "19:12",
+    "10K": "39:08",
+    "HM": "1:27:14",
+    "FM": "2:56:02"
+  },
+  "weekly_mileage_km": 100.0,
+  "constraints": "右侧大腿后侧腘绳肌轻微拉伤"
+}

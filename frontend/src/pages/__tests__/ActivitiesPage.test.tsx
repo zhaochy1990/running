@@ -114,6 +114,9 @@ describe('ActivitiesPage', () => {
         offset,
         limit,
         activities: activities.slice(offset, offset + limit),
+        ...(opts?.dateFrom === '2026-05-01' && opts.dateTo === '2026-05-31' && limit === 1
+          ? { monthly_summaries: { '2026-05': { activity_count: 3, total_run_km: 15, run_duration_s: 6000, duration_s: 9600 } } }
+          : {}),
       })
     })
     vi.mocked(getAllActivities).mockImplementation((_user, opts) => {
@@ -139,6 +142,13 @@ describe('ActivitiesPage', () => {
       dateFrom: '2026-05-01',
       dateTo: '2026-05-31',
     })
+  })
+
+  it('uses the server monthly summary for run distance and duration', async () => {
+    renderActivitiesPage()
+
+    expect(await screen.findByText('15.0')).toBeInTheDocument()
+    expect(screen.getByText('1.7')).toBeInTheDocument()
   })
 
   it('requests sport and distance filters from the activity endpoint', async () => {
@@ -223,7 +233,7 @@ describe('ActivitiesPage', () => {
       limit: 2,
       activities: activities.slice(0, 2),
       monthly_summaries: {
-        '2026-05': { activity_count: 4, total_run_km: 27, duration_s: 8100 },
+        '2026-05': { activity_count: 4, total_run_km: 27, run_duration_s: 8100, duration_s: 8100 },
       },
     })
     vi.mocked(getAllActivities).mockResolvedValue(activities)
@@ -285,7 +295,15 @@ describe('ActivitiesPage', () => {
     const syncedActivity = makeActivity({ label_id: 'synced-run', name: 'Synced Run' })
     vi.mocked(getActivities)
       .mockResolvedValueOnce({ total: 0, offset: 0, limit: 25, activities: [] })
+      .mockResolvedValueOnce({ total: 0, offset: 0, limit: 1, activities: [], monthly_summaries: {} })
       .mockResolvedValueOnce({ total: 1, offset: 0, limit: 25, activities: [syncedActivity] })
+      .mockResolvedValueOnce({
+        total: 1,
+        offset: 0,
+        limit: 1,
+        activities: [syncedActivity],
+        monthly_summaries: { '2026-05': { activity_count: 1, total_run_km: 10, run_duration_s: 3000, duration_s: 3000 } },
+      })
     vi.mocked(getAllActivities)
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([syncedActivity])
@@ -310,7 +328,7 @@ describe('ActivitiesPage', () => {
       })
     })
 
-    await waitFor(() => expect(getActivities).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(getActivities).toHaveBeenCalledTimes(4))
     expect(await screen.findByText('Synced Run')).toBeInTheDocument()
   })
 })

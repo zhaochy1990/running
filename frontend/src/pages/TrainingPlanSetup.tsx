@@ -1,23 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import {
-  createRunningProfile,
   createTrainingGoal,
   generateMasterPlan,
-  getFullSyncStatus,
   getMasterPlanJob,
-  postFullSync,
+  getPipelineRun,
+  triggerSync,
+  type PipelineRun,
   type RaceDistance,
-  type CurrentWeeklyKm,
-  type RunningAge,
-  type RunningPbDistance,
   type WeeklyTrainingDays,
   type MasterPlanJob,
   type MasterPlanJobStage,
-  type SyncStatus,
 } from '../api'
+import { useUser } from '../UserContextValue'
 
-type SetupPhase = 'goals' | 'syncing' | 'generating' | 'ready'
+type SetupPhase = 'goals' | 'syncing' | 'generating' | 'ready' | 'failed'
 
+const INCREMENTAL_SYNC_PIPELINE = 'data_sync'
 const POLL_INTERVAL_MS = 1500
 const MAX_POLL_ATTEMPTS = 400 // 400 * 1.5s = 10 min
 const MAX_SYNC_POLL_ATTEMPTS = 900 // 900 * 1.5s = 22.5 min
@@ -31,25 +29,6 @@ const DISTANCE_OPTIONS: { value: RaceDistance; label: string }[] = [
 ]
 
 const WEEKLY_DAY_OPTIONS: WeeklyTrainingDays[] = [3, 4, 5, 6]
-const RUNNING_AGE_OPTIONS: { value: RunningAge; label: string }[] = [
-  { value: 'lt_6m', label: '<6月' },
-  { value: '6m_1y', label: '6-12月' },
-  { value: '1y_3y', label: '1-3年' },
-  { value: '3y_plus', label: '3年以上' },
-]
-const WEEKLY_KM_OPTIONS: { value: CurrentWeeklyKm; label: string }[] = [
-  { value: 'lt_20', label: '<20km' },
-  { value: '20_40', label: '20-40km' },
-  { value: '40_60', label: '40-60km' },
-  { value: '60_plus', label: '60km+' },
-]
-const PB_OPTIONS: { value: RunningPbDistance; label: string }[] = [
-  { value: '5K', label: '5K' },
-  { value: '10K', label: '10K' },
-  { value: 'HM', label: '半马' },
-  { value: 'FM', label: '全马' },
-]
-
 // 5-step vertical stepper, driven by the job `stage`. The 5th step ("完成")
 // is reached when the job is done.
 const GEN_STEPS: { title: string; hint?: string; stages: MasterPlanJobStage[] }[] = [
@@ -74,25 +53,25 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
   const [weeklyDays, setWeeklyDays] = useState<WeeklyTrainingDays | ''>('')
   const [finishOnly, setFinishOnly] = useState(false)
   const [targetTime, setTargetTime] = useState('')
-  const [runningAge, setRunningAge] = useState<RunningAge>('1y_3y')
-  const [currentWeeklyKm, setCurrentWeeklyKm] = useState<CurrentWeeklyKm>('40_60')
-  const [pbDistance, setPbDistance] = useState<RunningPbDistance>('FM')
-  const [pbTime, setPbTime] = useState('')
-  const [injuryFree, setInjuryFree] = useState(true)
-  const [injuryText, setInjuryText] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const { user } = useUser()
 
   // ── Generating state ─────────────────────────────────────────────────────
   const [goalId, setGoalId] = useState<string | null>(null)
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
+  const [syncRun, setSyncRun] = useState<PipelineRun | null>(null)
+  const syncKeyRef = useRef<string | null>(null)
+  const syncRunIdRef = useRef<string | null>(null)
+  const syncGenerationRef = useRef(0)
   const [jobId, setJobId] = useState<string | null>(null)
+  const jobIdRef = useRef<string | null>(null)
   const [job, setJob] = useState<MasterPlanJob | null>(null)
   const [draftPlanId, setDraftPlanId] = useState<string | null>(null)
+  const generationRef = useRef(0)
+  const goalIdRef = useRef<string | null>(null)
   const syncAttemptRef = useRef(0)
   const pollAttemptRef = useRef(0)
-  const handledSyncDoneRef = useRef(false)
-  const handledDoneRef = useRef(false)
+  const phaseRef = useRef<SetupPhase>('goals')
   const mountedRef = useRef(true)
 
   useEffect(() => {
@@ -100,16 +79,32 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
     return () => { mountedRef.current = false }
   }, [])
 
+  const setSetupPhase = useCallback((next: SetupPhase) => {
+    phaseRef.current = next
+    setPhase(next)
+  }, [])
+
   const startGeneration = useCallback(async (nextGoalId?: string | null) => {
-    const gen = await generateMasterPlan(nextGoalId ?? undefined)
+    const generation = ++generationRef.current
+    // A new generation invalidates every previous generation and sync callback.
+    syncGenerationRef.current += 1
+    syncKeyRef.current = null
+    syncRunIdRef.current = null
+    jobIdRef.current = null
+    goalIdRef.current = nextGoalId ?? goalIdRef.current
+    pollAttemptRef.current = 0
+    setJobId(null)
+    setJob(null)
+    setDraftPlanId(null)
+    setSetupPhase('generating')
+
+    const gen = await generateMasterPlan(goalIdRef.current ?? undefined)
+    if (!mountedRef.current || phaseRef.current !== 'generating' || generationRef.current !== generation) return
     if (!gen.ok) {
       const detail = typeof gen.data.detail === 'string' ? gen.data.detail : undefined
       throw new Error(gen.data.error || detail || '生成任务启动失败，请重试')
     }
-    if (!mountedRef.current) return
-    pollAttemptRef.current = 0
-    handledDoneRef.current = false
-    setDraftPlanId(null)
+    jobIdRef.current = gen.data.job_id
     setJobId(gen.data.job_id)
     setJob({
       status: gen.data.status === 'failed' ? 'failed' : 'queued',
@@ -120,44 +115,55 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
       result_plan_id: null,
       error: null,
     })
-    setPhase('generating')
-  }, [])
+  }, [setSetupPhase])
 
-  const startFullSync = useCallback(async (nextGoalId: string | null) => {
-    const existing = await getFullSyncStatus().catch(() => null)
-    if (existing?.state === 'done') {
-      setGoalId(nextGoalId)
-      syncAttemptRef.current = 0
-      handledSyncDoneRef.current = true
-      setSyncStatus(existing)
-      await startGeneration(nextGoalId)
-      return
-    }
-    if (existing?.state === 'running') {
-      if (!mountedRef.current) return
-      setGoalId(nextGoalId)
-      syncAttemptRef.current = 0
-      handledSyncDoneRef.current = false
-      setSyncStatus(existing)
-      setPhase('syncing')
-      return
-    }
-    const sync = await postFullSync()
-    if (!sync.ok) {
-      const detail = typeof sync.data.detail === 'string' ? sync.data.detail : undefined
-      throw new Error(sync.data.error || detail || '历史训练数据同步启动失败，请重试')
-    }
-    if (!mountedRef.current) return
-    setGoalId(nextGoalId)
+  const startIncrementalSync = useCallback(async (nextGoalId: string | null) => {
+    if (!user) throw new Error('无法识别当前用户')
+    const syncGeneration = ++syncGenerationRef.current
+    const key = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    syncKeyRef.current = key
+    syncRunIdRef.current = null
+    // A fresh sync also invalidates a pending generation request or poll.
+    ++generationRef.current
+    jobIdRef.current = null
+    goalIdRef.current = nextGoalId
     syncAttemptRef.current = 0
-    handledSyncDoneRef.current = false
-    setSyncStatus({
-      state: sync.data.state === 'error' ? 'error' : 'running',
-      error: sync.data.error,
-      progress: sync.data.progress ?? null,
+    pollAttemptRef.current = 0
+    setGoalId(nextGoalId)
+    setSyncRun(null)
+    setJobId(null)
+    setJob(null)
+    setDraftPlanId(null)
+    setSetupPhase('syncing')
+
+    let sync
+    try {
+      sync = await triggerSync(user, { full: false, idempotencyKey: key })
+    } catch (err) {
+      if (mountedRef.current && phaseRef.current === 'syncing' && syncGenerationRef.current === syncGeneration && syncKeyRef.current === key) {
+        syncGenerationRef.current += 1
+        syncKeyRef.current = null
+        setError(err instanceof Error ? err.message : '增量同步启动失败，请重试')
+        setSetupPhase('failed')
+      }
+      throw err
+    }
+    if (!mountedRef.current || phaseRef.current !== 'syncing' || syncGenerationRef.current !== syncGeneration || syncKeyRef.current !== key) return
+    if (!sync.ok || !sync.data.run_id || sync.data.pipeline_name !== INCREMENTAL_SYNC_PIPELINE) {
+      syncGenerationRef.current += 1
+      syncKeyRef.current = null
+      setSetupPhase('failed')
+      throw new Error(sync.data.error || '增量同步返回了无效流水线，请重试')
+    }
+    syncRunIdRef.current = sync.data.run_id
+    setSyncRun({
+      run_id: sync.data.run_id,
+      pipeline_name: sync.data.pipeline_name,
+      status: 'queued',
+      current_step: 0,
+      steps: [],
     })
-    setPhase('syncing')
-  }, [startGeneration])
+  }, [setSetupPhase, user])
 
   const handleGoalSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -188,19 +194,7 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
         setSaving(false)
         return
       }
-      const profile = await createRunningProfile({
-        running_age: runningAge,
-        current_weekly_km: currentWeeklyKm,
-        pbs: pbTime.trim() ? [{ distance: pbDistance, time: pbTime.trim() }] : [],
-        injuries: injuryFree ? ['none'] : injuryTokens(injuryText),
-      })
-      if (!profile.ok) {
-        const detail = typeof profile.data.detail === 'string' ? profile.data.detail : undefined
-        setError(profile.data.error || detail || '保存训练背景失败，请重试')
-        setSaving(false)
-        return
-      }
-      await startFullSync(goal.data.goal_id ?? goal.data.id ?? null)
+      await startIncrementalSync(goal.data.goal_id ?? goal.data.id ?? null)
     } catch (err) {
       setError(err instanceof Error ? err.message : '请求失败，请重试')
     } finally {
@@ -209,71 +203,103 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
   }
 
   const pollSync = useCallback(async () => {
+    const runId = syncRunIdRef.current
+    const syncGeneration = syncGenerationRef.current
+    const key = syncKeyRef.current
+    if (!runId || phaseRef.current !== 'syncing' || !key) return
+    syncAttemptRef.current += 1
+    if (syncAttemptRef.current > MAX_SYNC_POLL_ATTEMPTS) {
+      if (syncGenerationRef.current !== syncGeneration || syncKeyRef.current !== key || phaseRef.current !== 'syncing') return
+      syncGenerationRef.current += 1
+      syncKeyRef.current = null
+      syncRunIdRef.current = null
+      setError('增量同步超时，请重试')
+      setSetupPhase('failed')
+      return
+    }
     try {
-      const next = await getFullSyncStatus()
-      if (!mountedRef.current) return
-      syncAttemptRef.current += 1
-      setSyncStatus(next)
-
-      if (next.state === 'done') {
-        if (handledSyncDoneRef.current) return
-        handledSyncDoneRef.current = true
+      const next = await getPipelineRun(runId)
+      if (!mountedRef.current || phaseRef.current !== 'syncing' || syncGenerationRef.current !== syncGeneration || syncKeyRef.current !== key || syncRunIdRef.current !== runId) return
+      if (next.pipeline_name !== INCREMENTAL_SYNC_PIPELINE) {
+        syncGenerationRef.current += 1
+        syncKeyRef.current = null
+        syncRunIdRef.current = null
+        setError('增量同步返回了无效流水线，请重试')
+        setSetupPhase('failed')
+        return
+      }
+      setSyncRun(next)
+      if (next.status === 'done') {
+        // Invalidate this sync before awaiting generation so a late done cannot
+        // start a generation after timeout or retry.
+        syncGenerationRef.current += 1
+        syncKeyRef.current = null
+        syncRunIdRef.current = null
         try {
-          await startGeneration(goalId)
+          await startGeneration(goalIdRef.current)
         } catch (err) {
+          if (!mountedRef.current) return
           setError(err instanceof Error ? err.message : '生成任务启动失败，请重试')
         }
-        return
-      }
-
-      if (next.state === 'error') {
-        setError(next.error || '历史训练数据同步失败，请重试')
-        return
-      }
-
-      if (syncAttemptRef.current >= MAX_SYNC_POLL_ATTEMPTS) {
-        setError('历史训练数据同步超时，请刷新页面查看状态')
+      } else if (next.status === 'failed') {
+        syncGenerationRef.current += 1
+        syncKeyRef.current = null
+        syncRunIdRef.current = null
+        setError(next.error_message || '增量同步失败，请重试')
+        setSetupPhase('failed')
       }
     } catch {
-      if (!mountedRef.current) return
-      syncAttemptRef.current += 1
+      if (!mountedRef.current || phaseRef.current !== 'syncing' || syncGenerationRef.current !== syncGeneration || syncKeyRef.current !== key) return
       if (syncAttemptRef.current >= MAX_SYNC_POLL_ATTEMPTS) {
-        setError('无法获取同步状态，请刷新页面')
+        syncGenerationRef.current += 1
+        syncKeyRef.current = null
+        syncRunIdRef.current = null
+        setError('无法获取同步状态，请重试')
+        setSetupPhase('failed')
       }
     }
-  }, [goalId, startGeneration])
+  }, [setSetupPhase, startGeneration])
 
   const pollJob = useCallback(async () => {
-    if (!jobId) return
+    const currentJobId = jobIdRef.current
+    const generation = generationRef.current
+    if (!currentJobId || phaseRef.current !== 'generating') return
+    pollAttemptRef.current += 1
+    if (pollAttemptRef.current > MAX_POLL_ATTEMPTS) {
+      generationRef.current += 1
+      jobIdRef.current = null
+      setError('生成超时，请重试')
+      return
+    }
     try {
-      const next = await getMasterPlanJob(jobId)
-      if (!mountedRef.current) return
-      pollAttemptRef.current += 1
+      const next = await getMasterPlanJob(currentJobId)
+      if (!mountedRef.current || phaseRef.current !== 'generating' || generationRef.current !== generation || jobIdRef.current !== currentJobId) return
       setJob(next)
 
-      if (next.status === 'done' && next.result_plan_id && !handledDoneRef.current) {
-        handledDoneRef.current = true
+      if (next.status === 'done' && next.result_plan_id) {
+        generationRef.current += 1
+        jobIdRef.current = null
         setDraftPlanId(next.result_plan_id)
-        setPhase('ready')
+        setSetupPhase('ready')
         return
       }
 
       if (next.status === 'failed') {
+        generationRef.current += 1
+        jobIdRef.current = null
         setError(next.error || '生成失败，请重试')
         return
       }
 
-      if (pollAttemptRef.current >= MAX_POLL_ATTEMPTS) {
-        setError('生成超时，请刷新页面查看状态')
-      }
     } catch {
-      if (!mountedRef.current) return
-      pollAttemptRef.current += 1
+      if (!mountedRef.current || phaseRef.current !== 'generating' || generationRef.current !== generation || jobIdRef.current !== currentJobId) return
       if (pollAttemptRef.current >= MAX_POLL_ATTEMPTS) {
-        setError('无法获取生成状态，请刷新页面')
+        generationRef.current += 1
+        jobIdRef.current = null
+        setError('无法获取生成状态，请重试')
       }
     }
-  }, [jobId])
+  }, [setSetupPhase])
 
   useEffect(() => {
     if (phase !== 'syncing') return undefined
@@ -290,7 +316,7 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
   const handleRetry = async () => {
     setError('')
     try {
-      if (phase === 'syncing') await startFullSync(goalId)
+      if (phase === 'syncing' || phase === 'failed') await startIncrementalSync(goalId)
       else await startGeneration(goalId)
     } catch (err) {
       setError(err instanceof Error ? err.message : '请求失败，请重试')
@@ -307,8 +333,8 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
     )
   }
 
-  if (phase === 'syncing') {
-    return <SyncProgressCard status={syncStatus} error={error} onRetry={handleRetry} />
+  if (phase === 'syncing' || phase === 'failed') {
+    return <SyncProgressCard run={syncRun} error={error} onRetry={handleRetry} />
   }
 
   if (phase === 'ready' && draftPlanId) {
@@ -431,66 +457,6 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <SegmentedField
-              label="跑龄"
-              options={RUNNING_AGE_OPTIONS}
-              value={runningAge}
-              onChange={setRunningAge}
-            />
-            <SegmentedField
-              label="近期周跑量"
-              options={WEEKLY_KM_OPTIONS}
-              value={currentWeeklyKm}
-              onChange={setCurrentWeeklyKm}
-            />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-[150px_minmax(0,1fr)]">
-            <SegmentedField
-              label="PB 类型"
-              options={PB_OPTIONS}
-              value={pbDistance}
-              onChange={setPbDistance}
-            />
-            <div>
-              <label htmlFor="master-plan-pb-time" className={labelCls}>PB 成绩（可选）</label>
-              <input
-                id="master-plan-pb-time"
-                type="text"
-                placeholder="例：3:25:00"
-                value={pbTime}
-                onChange={(e) => setPbTime(e.target.value)}
-                className={`${inputCls} font-mono tracking-wider`}
-              />
-            </div>
-          </div>
-
-          <div>
-            <div className="flex items-end justify-between mb-2">
-              <label className="text-xs font-mono text-text-muted uppercase tracking-wider">伤病史</label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={injuryFree}
-                  onChange={(e) => setInjuryFree(e.target.checked)}
-                  className="w-4 h-4 rounded border-border-subtle accent-accent-green"
-                />
-                <span className="text-xs text-text-muted">没有伤病史</span>
-              </label>
-            </div>
-            <input
-              id="master-plan-injuries"
-              aria-label="伤病史"
-              type="text"
-              placeholder="例：跟腱、小腿、膝盖"
-              value={injuryFree ? '' : injuryText}
-              disabled={injuryFree}
-              onChange={(e) => setInjuryText(e.target.value)}
-              className={`${inputCls} disabled:opacity-40 disabled:cursor-not-allowed`}
-            />
-          </div>
-
           {/* 目标完赛时间 + 仅完赛即可 toggle */}
           <div>
             <div className="flex items-end justify-between mb-2">
@@ -537,50 +503,6 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
   )
 }
 
-function SegmentedField<T extends string>({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string
-  options: { value: T; label: string }[]
-  value: T
-  onChange: (value: T) => void
-}) {
-  return (
-    <div>
-      <label className="block text-xs font-mono text-text-muted uppercase tracking-wider mb-2">{label}</label>
-      <div className="grid grid-cols-2 gap-2">
-        {options.map((option) => {
-          const active = value === option.value
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => onChange(option.value)}
-              aria-pressed={active}
-              className={`py-2 px-2 rounded-lg text-sm font-medium border transition-colors ${
-                active
-                  ? 'border-accent-green bg-accent-green/10 text-accent-green font-semibold'
-                  : 'border-border-subtle bg-bg-base text-text-secondary hover:text-text-primary hover:border-border'
-              }`}
-            >
-              {option.label}
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function injuryTokens(value: string): string[] {
-  const cleaned = value.trim()
-  if (!cleaned) return ['none']
-  return cleaned.split(/[，,、\s]+/).map((item) => item.trim()).filter(Boolean).slice(0, 6)
-}
-
 function IntakeFact({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-border-subtle bg-bg-primary p-3">
@@ -590,13 +512,11 @@ function IntakeFact({ label, value }: { label: string; value: string }) {
   )
 }
 
-function SyncProgressCard({ status, error, onRetry }: { status: SyncStatus | null; error: string; onRetry: () => void }) {
-  const failed = Boolean(error) || status?.state === 'error'
-  const progress = status?.progress ?? null
-  const percent = clampPercent(progress?.percent ?? (failed ? 100 : 8))
-  const message = failed
-    ? error || status?.error || '历史训练数据同步失败'
-    : progress?.message || '正在同步历史训练数据'
+function SyncProgressCard({ run, error, onRetry }: { run: PipelineRun | null; error: string; onRetry: () => void }) {
+  const failed = Boolean(error) || run?.status === 'failed'
+  const current = run?.steps[run.current_step]
+  const percent = failed ? 100 : current?.status === 'done' ? 100 : 8
+  const message = failed ? error || run?.error_message || '增量同步失败' : current?.name || '正在同步训练数据'
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -625,9 +545,9 @@ function SyncProgressCard({ status, error, onRetry }: { status: SyncStatus | nul
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
-          <ContextStat label="当前阶段" value={progress?.phase ?? 'queued'} />
-          <ContextStat label="已同步活动" value={progress?.synced_activities != null ? String(progress.synced_activities) : '—'} />
-          <ContextStat label="健康天数" value={progress?.synced_health != null ? String(progress.synced_health) : '—'} />
+          <ContextStat label="当前阶段" value={current?.name ?? 'queued'} />
+          <ContextStat label="运行状态" value={run?.status ?? 'queued'} />
+          <ContextStat label="运行编号" value={run?.run_id ?? '—'} />
         </div>
         {failed && (
           <button

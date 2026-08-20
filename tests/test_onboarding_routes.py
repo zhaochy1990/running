@@ -495,3 +495,163 @@ def test_sync_status_no_files_returns_none_state(app_env):
     )
     assert resp.status_code == 200
     assert resp.json()["state"] is None
+
+
+# --- sync_data_at_onboarding flag: full-history API-process sync ---
+
+
+def _force_flag(monkeypatch, value: bool) -> None:
+    import stride_server.routes.onboarding as ob_mod
+    monkeypatch.setattr(ob_mod, "_sync_data_at_onboarding", lambda: value)
+
+
+def test_complete_full_onboarding_starts_full_sync_task(app_env, monkeypatch):
+    """flag ON: /onboarding/complete schedules the full_onboarding sync (full=False)."""
+    client, token, tmp_path, _ = app_env
+    _force_flag(monkeypatch, True)
+    _set_onboarding(tmp_path, {
+        "coros_ready": True,
+        "profile_ready": True,
+        "completed_at": None,
+        "sync_state": None,
+    })
+
+    with patch("stride_server.routes.onboarding._run_background_sync") as mock_run:
+        resp = client.post(
+            "/api/users/me/onboarding/complete",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["state"] == "running"
+    mock_run.assert_called_once()
+    args, kwargs = mock_run.call_args
+    assert args[0] == USER_UUID
+    assert kwargs["mode"] == "full_onboarding"
+    assert kwargs["full"] is False
+
+    onboarding = json.loads((tmp_path / USER_UUID / "onboarding.json").read_text())
+    assert onboarding["sync_state"] == "running"
+    assert onboarding["completed_at"] is None
+    assert "完整历史" in onboarding["sync_progress"]["message"]
+
+
+def test_complete_full_onboarding_noop_when_running_fresh(app_env, monkeypatch):
+    """flag ON: a genuinely in-flight run is not restarted (no second task)."""
+    client, token, tmp_path, _ = app_env
+    _force_flag(monkeypatch, True)
+    now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    _set_onboarding(tmp_path, {
+        "coros_ready": True,
+        "profile_ready": True,
+        "completed_at": None,
+        "sync_state": "running",
+        "sync_progress": {"phase": "activity_details", "percent": 40, "updated_at": now},
+    })
+
+    with patch("stride_server.routes.onboarding._run_background_sync") as mock_run:
+        resp = client.post(
+            "/api/users/me/onboarding/complete",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["state"] == "running"
+    mock_run.assert_not_called()  # already in flight → idempotent no-op
+
+
+def test_complete_full_onboarding_resumes_after_error(app_env, monkeypatch):
+    """flag ON: a prior errored run is silently restarted (resume)."""
+    client, token, tmp_path, _ = app_env
+    _force_flag(monkeypatch, True)
+    _set_onboarding(tmp_path, {
+        "coros_ready": True,
+        "profile_ready": True,
+        "completed_at": None,
+        "sync_state": "error",
+        "error": "同步失败，请重试",
+    })
+
+    with patch("stride_server.routes.onboarding._run_background_sync") as mock_run:
+        resp = client.post(
+            "/api/users/me/onboarding/complete",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["state"] == "running"
+    mock_run.assert_called_once()
+    _, kwargs = mock_run.call_args
+    assert kwargs["mode"] == "full_onboarding"
+
+    onboarding = json.loads((tmp_path / USER_UUID / "onboarding.json").read_text())
+    assert onboarding["sync_state"] == "running"
+    assert "error" not in onboarding
+
+
+def test_full_onboarding_background_sync_runs_compute_and_completes(app_env, monkeypatch):
+    """mode='full_onboarding' syncs (full=False) then runs the unified compute pass."""
+    client, token, tmp_path, mock_source = app_env
+    _set_onboarding(tmp_path, {
+        "coros_ready": True,
+        "profile_ready": True,
+        "completed_at": None,
+        "sync_state": "running",
+    })
+
+    import stride_server.routes.onboarding as ob_mod
+
+    with patch.object(ob_mod, "_run_onboarding_compute") as mock_compute:
+        ob_mod._run_background_sync(
+            USER_UUID, mock_source, mode="full_onboarding", full=False,
+        )
+
+    # Calibration + backfill pass ran exactly once (not the per-activity chain).
+    mock_compute.assert_called_once()
+
+    # Sync scoped to full activities + health, resumable (full=False).
+    _, kwargs = mock_source.sync_user.call_args
+    assert kwargs["full"] is False
+    assert kwargs["mode"] == "full"
+
+    onboarding = json.loads((tmp_path / USER_UUID / "onboarding.json").read_text())
+    assert onboarding["sync_state"] == "done"
+    assert onboarding["completed_at"] is not None  # gates app entry
+    assert onboarding["sync_progress"]["phase"] == "complete"
+    assert onboarding["sync_progress"]["percent"] == 100
+    assert onboarding["sync_progress"]["synced_activities"] == 5
+    assert onboarding["sync_progress"]["synced_health"] == 7
+
+
+def test_coros_login_skips_worker_pipeline_when_flag_on(app_env, monkeypatch):
+    client, token, tmp_path, _ = app_env
+    _force_flag(monkeypatch, True)
+
+    mock_creds = MagicMock(region="global", user_id="coros-1")
+    with patch("coros_sync.client.CorosClient.login", return_value=mock_creds), \
+         patch("stride_server.routes.onboarding._start_onboarding_pipeline") as mock_pipeline:
+        resp = client.post(
+            "/api/users/me/coros/login",
+            json={"email": "u@e.com", "password": "secret"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert resp.status_code == 200
+    mock_pipeline.assert_not_called()  # no worker → no cross-process SQLite contention
+
+
+def test_coros_login_starts_worker_pipeline_when_flag_off(app_env, monkeypatch):
+    client, token, tmp_path, _ = app_env
+    _force_flag(monkeypatch, False)
+
+    mock_creds = MagicMock(region="global", user_id="coros-1")
+    with patch("coros_sync.client.CorosClient.login", return_value=mock_creds), \
+         patch("stride_server.routes.onboarding._start_onboarding_pipeline") as mock_pipeline:
+        resp = client.post(
+            "/api/users/me/coros/login",
+            json={"email": "u@e.com", "password": "secret"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert resp.status_code == 200
+    mock_pipeline.assert_called_once_with(USER_UUID)

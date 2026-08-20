@@ -10,6 +10,7 @@ import 'package:stride/features_v2/coach/providers/coach_chat_provider.dart';
 Map<String, dynamic> _proposal(String diffId, String label) => {
   'specialist_id': 'season_plan',
   'summary': label,
+  'base_revision': '4',
   'proposal': {
     'diff_id': diffId,
     'plan_id': 'plan-1',
@@ -31,6 +32,11 @@ Map<String, dynamic> _proposal(String diffId, String label) => {
           'weekly_distance_km_high': 54,
         },
       },
+      {
+        'id': '$diffId-rejected',
+        'op': 'replace_phase_focus',
+        'accepted': false,
+      },
     ],
     'ai_explanation': label,
     'created_at': '2026-07-15T00:00:00Z',
@@ -38,10 +44,17 @@ Map<String, dynamic> _proposal(String diffId, String label) => {
 };
 
 class _FakeApi extends StrideApi {
-  _FakeApi() : super(Dio());
+  _FakeApi({this.failFirstChat = false}) : super(Dio());
 
+  final bool failFirstChat;
+  int chatCalls = 0;
+  final List<String> clientTurnIds = [];
   Map<String, dynamic>? appliedDiff;
   List<String>? acceptedOpIds;
+  String? appliedSessionId;
+  String? appliedBaseRevision;
+  Map<String, dynamic>? abandonedTarget;
+  String? abandonedSessionId;
 
   @override
   Future<
@@ -53,7 +66,14 @@ class _FakeApi extends StrideApi {
       List<Map<String, dynamic>> proposals,
     })
   >
-  postCoachChat({required String sessionId, required String message}) async {
+  postCoachChat({
+    required String sessionId,
+    required String message,
+    required String clientTurnId,
+  }) async {
+    chatCalls += 1;
+    clientTurnIds.add(clientTurnId);
+    if (failFirstChat && chatCalls == 1) throw Exception('network dropped');
     return (
       sessionId: sessionId,
       threadId: 'user:coach:$sessionId',
@@ -68,14 +88,40 @@ class _FakeApi extends StrideApi {
 
   @override
   Future<Map<String, dynamic>> applyCoachMasterPlanDiff({
+    required String sessionId,
     required String planId,
     required Map<String, dynamic> diff,
     required List<String> acceptedOpIds,
+    required String baseRevision,
     String changeReason = 'coach adjustment',
   }) async {
+    appliedSessionId = sessionId;
+    appliedBaseRevision = baseRevision;
     appliedDiff = diff;
     this.acceptedOpIds = acceptedOpIds;
-    return {'version': 2};
+    return {'version': 5};
+  }
+
+  @override
+  Future<void> abandonCoachProposal({
+    required String sessionId,
+    required Map<String, dynamic> target,
+    String summary = '用户放弃了本次调整方案',
+  }) async {
+    abandonedSessionId = sessionId;
+    abandonedTarget = target;
+  }
+
+  @override
+  Future<List<({String role, String text})>> getCoachThread(
+    String threadId,
+  ) async {
+    final event = abandonedTarget == null ? '已应用赛季计划调整' : '已放弃本次调整方案';
+    return [
+      (role: 'user', text: '给我两个调整方案'),
+      (role: 'assistant', text: '请选择一个调整方向'),
+      (role: 'event', text: event),
+    ];
   }
 }
 
@@ -108,15 +154,60 @@ void main() {
       state = container.read(coachChatProvider);
       expect(api.appliedDiff?['diff_id'], 'diff-b');
       expect(api.acceptedOpIds, ['diff-b-op']);
+      expect(api.appliedBaseRevision, '4');
+      expect(api.appliedSessionId, startsWith('qa-'));
       expect(state.proposals, isEmpty);
       expect(state.selectedProposalId, isNull);
-      expect(state.messages.last.text, contains('v2'));
+      expect(state.messages.last.role, 'event');
+      expect(state.messages.last.text, '已应用赛季计划调整');
     },
   );
+
+  test(
+    'reuses the same client turn id when a failed message is retried',
+    () async {
+      final api = _FakeApi(failFirstChat: true);
+      final notifier = CoachChatNotifier(
+        api,
+        sessionId: 'qa-test',
+        clientTurnIdFactory: () => 'stable-turn-id',
+      );
+      addTearDown(notifier.dispose);
+
+      await notifier.sendMessage('今天怎么跑？');
+      expect(notifier.state.error, isNotNull);
+      await notifier.sendMessage('今天怎么跑？');
+
+      expect(api.clientTurnIds, ['stable-turn-id', 'stable-turn-id']);
+      expect(
+        notifier.state.messages.where((message) => message.isUser),
+        hasLength(1),
+      );
+    },
+  );
+
+  test('records proposal abandonment and reloads the trusted event', () async {
+    final api = _FakeApi();
+    final notifier = CoachChatNotifier(
+      api,
+      sessionId: 'qa-test',
+      clientTurnIdFactory: () => 'turn-1',
+    );
+    addTearDown(notifier.dispose);
+
+    await notifier.sendMessage('给我两个调整方案');
+    await notifier.dismissProposals();
+
+    expect(api.abandonedSessionId, 'qa-test');
+    expect(api.abandonedTarget, {'kind': 'master', 'plan_id': 'plan-1'});
+    expect(notifier.state.messages.last.role, 'event');
+    expect(notifier.state.messages.last.text, '已放弃本次调整方案');
+  });
 
   testWidgets('shows both proposal cards and applies the selected direction', (
     tester,
   ) async {
+    final semantics = tester.ensureSemantics();
     final api = _FakeApi();
     await tester.pumpWidget(
       ProviderScope(
@@ -138,7 +229,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.appliedDiff?['diff_id'], 'diff-b');
-    expect(find.textContaining('训练计划已更新至 v2'), findsOneWidget);
+    expect(find.text('已应用赛季计划调整'), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp(r'^Coach 事件')), findsOneWidget);
     expect(find.byKey(const Key('coach-proposal-chooser')), findsNothing);
+    semantics.dispose();
   });
 }

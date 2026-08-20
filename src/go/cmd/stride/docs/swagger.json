@@ -1,0 +1,4507 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "HTTP API fronting the STRIDE worker: create and track async jobs and pipeline runs, and manage user profile, onboarding, and watch-provider login.",
+        "title": "STRIDE API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "paths": {
+        "/api/pipelines/{run_id}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reads one asynchronous pipeline run. Web onboarding polls the /api alias with the run_id returned by POST /api/{user}/sync; a done run remains separate from explicit onboarding finalization.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipelines"
+                ],
+                "summary": "Get a pipeline run's status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run id",
+                        "name": "run_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.runStateResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/readyz/onboarding": {
+            "get": {
+                "description": "Returns the static route contract required before the Web BFF enables its Go onboarding route flags. No authentication is required and no user data is returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "catalog"
+                ],
+                "summary": "Web onboarding cutover readiness",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.onboardingReadinessResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/readyz/plan-setup": {
+            "get": {
+                "description": "Returns the static route contract required before the Web BFF enables its Go plan-setup route flags. No authentication is required and no user data is returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "catalog"
+                ],
+                "summary": "Training-plan setup cutover readiness",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.planSetupReadinessResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Delete the current user's account and data",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/injuries": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns active records first, then updated_at descending and id descending. Cursor pagination is opaque and limited to 50 records per page.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "injuries"
+                ],
+                "summary": "List the current user's injury records",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page size (1-50; default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Opaque page cursor",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.injuriesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "injuries"
+                ],
+                "summary": "Create an injury record",
+                "parameters": [
+                    {
+                        "description": "Injury record",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.injuryInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.injuryResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/injuries/{injuryId}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "injuries"
+                ],
+                "summary": "Replace an injury record",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Injury id",
+                        "name": "injuryId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Complete replacement",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.injuryInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.injuryResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "injuries"
+                ],
+                "summary": "Delete an injury record",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Injury id",
+                        "name": "injuryId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/master-plan/current": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "master-plan"
+                ],
+                "summary": "Get the current user's active season training plan",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.currentSeasonPlanEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/onboarding/complete": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks onboarding complete after the user explicitly submits a completed run_id. The run must belong to the caller, use the onboarding pipeline, and have finished successfully; profile and watch readiness are also required. A 409 means the run is missing, belongs to another user, is not an onboarding run, or is not done. This endpoint never starts or retries pipeline work.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Finalize the current user's onboarding",
+                "parameters": [
+                    {
+                        "description": "Completed onboarding pipeline run",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.onboardingCompleteInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.onboardingCompleteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/profile": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get the current user's profile, onboarding state and features",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.profileResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Persists the five onboarding core fields, marks profile_ready, and best-effort mirrors the display name to the auth-service.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Save the current user's basic profile",
+                "parameters": [
+                    {
+                        "description": "Profile core fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.profileInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.validationErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates supplied core profile fields only. Omitted fields are preserved; explicit null and unsupported fields return 422. The profile must already exist.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Partially update the current user's basic profile",
+                "parameters": [
+                    {
+                        "description": "Core profile fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.profilePatchInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.profilePatchResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.validationErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/training-goal": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "training-goal"
+                ],
+                "summary": "Get the current user's active race goal",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.goalResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Edits the active race goal in place. goal_id must match the current active goal. race_date must be a future date in Asia/Shanghai.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "training-goal"
+                ],
+                "summary": "Update the current user's active race goal",
+                "parameters": [
+                    {
+                        "description": "Race goal fields (with goal_id)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.goalUpdateInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.goalResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.validationErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new active race goal and archives the previous active one. race_date must be a future date in Asia/Shanghai.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "training-goal"
+                ],
+                "summary": "Set (create) the current user's race goal",
+                "parameters": [
+                    {
+                        "description": "Race goal fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.goalInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.goalResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.validationErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/watch": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get the connected watch's status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.watchInfoResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes the stored watch credential and clears watch-dependent onboarding state. Synced activity/health data is retained. Returns 400 when no watch is bound.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Disconnect the current user's watch",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.disconnectWatchResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/watch/login": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Authenticates the watch account, persists credentials, and marks watch_ready. Provider is selected in the body; region applies to Garmin. Triggers no sync.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Connect a watch provider (COROS/Garmin)",
+                "parameters": [
+                    {
+                        "description": "Watch provider credentials",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.watchLoginInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.watchLoginResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/{uid}/pipelines": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists the pipeline runs for a user (the subject whose data they operate on), most recent first. A user caller may only list their own runs (uid must equal their JWT sub); an internal caller may list any uid.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipelines"
+                ],
+                "summary": "List a user's pipeline runs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (the subject; JWT sub)",
+                        "name": "uid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.userPipelinesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/{user_id}/master-plan/current": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "master-plan"
+                ],
+                "summary": "Get a user's active season training plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.currentSeasonPlanEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/activities": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a filtered, paginated activity page (newest first) plus run-distance/duration/count summaries for every Shanghai month on the page. A user caller may only list their own activities; an internal caller may list any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "List a user's activities",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size 1–200 (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Exact sport_name filter",
+                        "name": "sport",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "run | strength",
+                        "name": "sport_category",
+                        "in": "query"
+                    },
+                    {
+                        "type": "number",
+                        "description": "Minimum distance in km",
+                        "name": "min_distance_km",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shanghai YYYY-MM-DD lower bound",
+                        "name": "date_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shanghai YYYY-MM-DD upper bound",
+                        "name": "date_to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.activitiesListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/activities/{labelId}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Assembles the activity, objective training load, laps, strength segments, watch-reported zones, and (with ?include=timeseries) the downsampled timeseries. A user caller may only read their own activities; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Get one activity's detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Activity label id",
+                        "name": "labelId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma list; pass 'timeseries' to inline the series",
+                        "name": "include",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.activityDetailResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/health": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the most recent `days` daily-health rows (newest first), the dashboard HRV normal-band snapshot with a per-day trend (oldest first) and its latest-reading date, and the calibrated rhr baseline. A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Daily health rows, HRV snapshot, and rhr baseline",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window 1–365 (default 30)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.healthResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/hrv": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the most recent `days` daily-hrv rows (oldest first) plus a small summary block for the latest reading. A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Per-day HRV detail + latest-reading summary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window 1–365 (default 30)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.hrvResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/plan/weeks": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "weekly-plan"
+                ],
+                "summary": "List a user's active weekly plans",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/plan/weeks/{weekName}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "weekly-plan"
+                ],
+                "summary": "Get a user's active weekly plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shanghai week name (YYYY-MM-DD_MM-DD)",
+                        "name": "weekName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.weeklyPlanDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a new active plan. Replacing one requires replace_existing plus the confirmed active plan id and revision; the prior plan is archived atomically.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "weekly-plan"
+                ],
+                "summary": "Apply a structured Weekly Plan as an administrator",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Target user UUID",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shanghai week name (YYYY-MM-DD_MM-DD)",
+                        "name": "weekName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Structured plan and replacement decision",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.applyWeeklyPlanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.applyWeeklyPlanResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/pmc": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the vendor ATI/CTI/TSB series with ACWR-derived TSB zones and 7-day CTL ramp, plus the STRIDE training-load PMC series and latest-usable summary. A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Performance Management Chart (vendor + STRIDE)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window 14–365 (default 90)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.pmcResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/stride/training-load": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the most recent `days` daily training-load rows (oldest first), projecting missing or unknown dates through Shanghai today as zero-dose assumed rest with canonical ATL/CTL decay. A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "STRIDE daily training load (PMC)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window 7–365 (default 90)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.strideTrainingLoadResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/stride/zones": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the latest calibration snapshot's threshold pace/HR and the derived pace and heart-rate zones (physiological order). Empty threshold + zones when the user has no snapshot. A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "STRIDE calibration threshold + training zones",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.strideZonesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/sync": {
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Starts a pipeline only and returns immediately (202) with a run id; Web clients poll GET /api/pipelines/{run_id}. The pipeline syncs watch data and then computes derived metrics (training load, PMC, personal bests). Mode picks the pipeline: \"incremental\" (default) syncs only new activities and computes only those; \"full\" re-syncs history, recomputes the athlete baseline, and does a full compute. A successful full pipeline does not complete onboarding: the user must explicitly finalize its successful run through POST /api/users/me/onboarding/complete. This is the async Go replacement for the Python POST /api/{user}/sync. A user caller may only sync their own id (path {user} must equal their JWT sub); an internal caller may sync any user (path {user} must be a UUID).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sync"
+                ],
+                "summary": "Trigger a watch-data sync (+ compute) for a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub, or any user UUID for internal callers)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Deduplicates creation; a repeat key returns the existing run (200)",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Optional sync options; omitted mode defaults to incremental",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/api.syncRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Existing run returned for a repeated Idempotency-Key",
+                        "schema": {
+                            "$ref": "#/definitions/api.startPipelineResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "Started",
+                        "schema": {
+                            "$ref": "#/definitions/api.startPipelineResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/weeks/{weekName}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "weekly-plan"
+                ],
+                "summary": "Get a user's week detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shanghai week name (YYYY-MM-DD_MM-DD)",
+                        "name": "weekName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.weekDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/weeks/{weekName}/feedback": {
+            "put": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "weekly-plan"
+                ],
+                "summary": "Save weekly feedback",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shanghai week name (YYYY-MM-DD_MM-DD)",
+                        "name": "weekName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Weekly feedback",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.putWeeklyFeedbackRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.weeklyFeedbackResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jobs": {
+            "get": {
+                "description": "Returns every job type the system supports (hardcoded in the catalog), each with its input JSON schema and an example input. Static system metadata; no auth required.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "catalog"
+                ],
+                "summary": "List supported job types",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.jobCatalogResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a job and publishes it to the worker. Internal callers may target any user and any cataloged job type; user callers may only create user-initiable types and the subject user is derived from their token. Supply an Idempotency-Key header to make retries safe.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jobs"
+                ],
+                "summary": "Enqueue an async job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deduplicates creation; a repeat key returns the existing job (200)",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Job to enqueue",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.createJobRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Existing job returned for a repeated Idempotency-Key",
+                        "schema": {
+                            "$ref": "#/definitions/api.enqueueJobResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "Enqueued",
+                        "schema": {
+                            "$ref": "#/definitions/api.enqueueJobResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/jobs/{job_id}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jobs"
+                ],
+                "summary": "Get a job's status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job id",
+                        "name": "job_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.jobStateResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/pipelines": {
+            "get": {
+                "description": "Returns every pipeline the system supports (hardcoded in the catalog), each with its ordered steps, input JSON schema and an example input. Static system metadata; no auth required.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "catalog"
+                ],
+                "summary": "List supported pipelines",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.pipelineCatalogResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Starts a named pipeline (a linear sequence of jobs). The pipeline name is supplied in the request body. Internal callers may start any cataloged pipeline for any user; user callers may only start user-initiable pipelines for themselves. Supply an Idempotency-Key header to make retries safe.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipelines"
+                ],
+                "summary": "Start a pipeline run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deduplicates creation; a repeat key returns the existing run (200)",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Pipeline name (required) and optional subject user/input",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.startPipelineRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Existing run returned for a repeated Idempotency-Key",
+                        "schema": {
+                            "$ref": "#/definitions/api.startPipelineResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "Started",
+                        "schema": {
+                            "$ref": "#/definitions/api.startPipelineResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/pipelines/{run_id}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reads one asynchronous pipeline run. Web onboarding polls the /api alias with the run_id returned by POST /api/{user}/sync; a done run remains separate from explicit onboarding finalization.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipelines"
+                ],
+                "summary": "Get a pipeline run's status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run id",
+                        "name": "run_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.runStateResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "api.JobCatalogEntry": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "example_input": {
+                    "type": "object"
+                },
+                "input_schema": {
+                    "type": "object"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "watch_sync"
+                },
+                "user_initiable": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.PipelineCatalogEntry": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "example_input": {
+                    "type": "object"
+                },
+                "input_schema": {
+                    "type": "object"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "onboarding"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.PipelineStepInfo"
+                    }
+                },
+                "user_initiable": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.PipelineStepInfo": {
+            "type": "object",
+            "properties": {
+                "continue_on_failure": {
+                    "type": "boolean"
+                },
+                "job_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.activitiesListResponse": {
+            "type": "object",
+            "properties": {
+                "activities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.activityListItem"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "monthly_summaries": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/api.monthlySummaryDTO"
+                    }
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.activityDetailDTO": {
+            "type": "object",
+            "properties": {
+                "aerobic_effect": {
+                    "type": "number"
+                },
+                "anaerobic_effect": {
+                    "type": "number"
+                },
+                "ascent_m": {
+                    "type": "number"
+                },
+                "avg_cadence": {
+                    "type": "integer"
+                },
+                "avg_hr": {
+                    "type": "integer"
+                },
+                "avg_pace_s_km": {
+                    "type": "number"
+                },
+                "calories_kcal": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_fmt": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "number"
+                },
+                "feel_type": {
+                    "type": "integer"
+                },
+                "feels_like": {
+                    "type": "number"
+                },
+                "humidity": {
+                    "type": "number"
+                },
+                "label_id": {
+                    "type": "string"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pace_fmt": {
+                    "type": "string"
+                },
+                "pauses": {
+                    "type": "object"
+                },
+                "sport_name": {
+                    "type": "string"
+                },
+                "sport_note": {
+                    "type": "string"
+                },
+                "sport_type": {
+                    "type": "integer"
+                },
+                "temperature": {
+                    "type": "number"
+                },
+                "train_type": {
+                    "type": "string"
+                },
+                "training_load": {
+                    "type": "number"
+                },
+                "vo2max": {
+                    "type": "number"
+                },
+                "wind_speed": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.activityDetailResponse": {
+            "type": "object",
+            "properties": {
+                "activity": {
+                    "$ref": "#/definitions/api.activityDetailDTO"
+                },
+                "laps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.lapDTO"
+                    }
+                },
+                "linked_scheduled_workout": {
+                    "$ref": "#/definitions/api.linkedScheduledWorkoutDTO"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.segmentDTO"
+                    }
+                },
+                "stride_training_load": {
+                    "$ref": "#/definitions/api.strideTrainingLoadDTO"
+                },
+                "timeseries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.timeseriesDTO"
+                    }
+                },
+                "zones": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.zoneDTO"
+                    }
+                }
+            }
+        },
+        "api.activityListItem": {
+            "type": "object",
+            "properties": {
+                "aerobic_effect": {
+                    "type": "number"
+                },
+                "anaerobic_effect": {
+                    "type": "number"
+                },
+                "ascent_m": {
+                    "type": "number"
+                },
+                "avg_cadence": {
+                    "type": "integer"
+                },
+                "avg_hr": {
+                    "type": "integer"
+                },
+                "avg_pace_s_km": {
+                    "type": "number"
+                },
+                "calories_kcal": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_fmt": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "number"
+                },
+                "feels_like": {
+                    "type": "number"
+                },
+                "humidity": {
+                    "type": "number"
+                },
+                "label_id": {
+                    "type": "string"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pace_fmt": {
+                    "type": "string"
+                },
+                "route_thumb": {
+                    "type": "object"
+                },
+                "sport_name": {
+                    "type": "string"
+                },
+                "sport_type": {
+                    "type": "integer"
+                },
+                "temperature": {
+                    "type": "number"
+                },
+                "train_type": {
+                    "type": "string"
+                },
+                "training_load": {
+                    "type": "number"
+                },
+                "vo2max": {
+                    "type": "number"
+                },
+                "wind_speed": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.applyWeeklyPlanRequest": {
+            "type": "object",
+            "required": [
+                "content"
+            ],
+            "properties": {
+                "content": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "expected_active_plan_id": {
+                    "type": "string"
+                },
+                "expected_active_revision": {
+                    "type": "integer"
+                },
+                "replace_existing": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.applyWeeklyPlanResponse": {
+            "type": "object",
+            "properties": {
+                "plan": {
+                    "$ref": "#/definitions/api.weeklyPlanDetailResponse"
+                },
+                "replaced_plan_id": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.createJobRequest": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "properties": {
+                "input": {
+                    "type": "object"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "watch_sync"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.currentSeasonPlanEnvelope": {
+            "type": "object",
+            "properties": {
+                "content_version": {
+                    "type": "integer",
+                    "enum": [
+                        1,
+                        2
+                    ]
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "goal_id": {
+                    "type": "string"
+                },
+                "plan": {},
+                "plan_id": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer",
+                    "x-nullable": true
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active"
+                    ]
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.disconnectWatchResponse": {
+            "type": "object",
+            "properties": {
+                "ok": {
+                    "type": "boolean"
+                },
+                "provider": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.enqueueJobResponse": {
+            "type": "object",
+            "properties": {
+                "deduplicated": {
+                    "type": "boolean"
+                },
+                "job_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.errorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.featureFlags": {
+            "type": "object",
+            "properties": {
+                "coach_agent_weekly_plan": {
+                    "type": "boolean"
+                },
+                "coach_chat": {
+                    "type": "boolean"
+                },
+                "coach_chat_debug": {
+                    "type": "boolean"
+                },
+                "coach_chat_max_message_chars": {
+                    "type": "integer"
+                },
+                "sync_data_at_onboarding": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.goalInput": {
+            "type": "object",
+            "required": [
+                "race_date",
+                "race_distance",
+                "weekly_training_days"
+            ],
+            "properties": {
+                "available_time_slots": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "race_distance": {
+                    "type": "string",
+                    "enum": [
+                        "5K",
+                        "10K",
+                        "HM",
+                        "FM",
+                        "trail"
+                    ]
+                },
+                "race_location": {
+                    "type": "string"
+                },
+                "race_name": {
+                    "type": "string"
+                },
+                "race_timezone": {
+                    "type": "string"
+                },
+                "strength_willingness": {
+                    "type": "string",
+                    "enum": [
+                        "yes",
+                        "no",
+                        "conditional"
+                    ]
+                },
+                "target_finish_time": {
+                    "type": "string"
+                },
+                "weekly_training_days": {
+                    "type": "integer",
+                    "maximum": 6,
+                    "minimum": 3
+                }
+            }
+        },
+        "api.goalResponse": {
+            "type": "object",
+            "properties": {
+                "available_time_slots": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "goal_id": {
+                    "type": "string"
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "race_distance": {
+                    "type": "string"
+                },
+                "race_location": {
+                    "type": "string"
+                },
+                "race_name": {
+                    "type": "string"
+                },
+                "race_timezone": {
+                    "type": "string"
+                },
+                "strength_willingness": {
+                    "type": "string"
+                },
+                "target_finish_time": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "weekly_training_days": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.goalUpdateInput": {
+            "type": "object",
+            "required": [
+                "goal_id",
+                "race_date",
+                "race_distance",
+                "weekly_training_days"
+            ],
+            "properties": {
+                "available_time_slots": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "goal_id": {
+                    "type": "string"
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "race_distance": {
+                    "type": "string",
+                    "enum": [
+                        "5K",
+                        "10K",
+                        "HM",
+                        "FM",
+                        "trail"
+                    ]
+                },
+                "race_location": {
+                    "type": "string"
+                },
+                "race_name": {
+                    "type": "string"
+                },
+                "race_timezone": {
+                    "type": "string"
+                },
+                "strength_willingness": {
+                    "type": "string",
+                    "enum": [
+                        "yes",
+                        "no",
+                        "conditional"
+                    ]
+                },
+                "target_finish_time": {
+                    "type": "string"
+                },
+                "weekly_training_days": {
+                    "type": "integer",
+                    "maximum": 6,
+                    "minimum": 3
+                }
+            }
+        },
+        "api.healthRecordDTO": {
+            "type": "object",
+            "properties": {
+                "ati": {
+                    "type": "number"
+                },
+                "body_battery_high": {
+                    "type": "integer"
+                },
+                "body_battery_low": {
+                    "type": "integer"
+                },
+                "cti": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_s": {
+                    "type": "number"
+                },
+                "fatigue": {
+                    "type": "number"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "respiration_avg": {
+                    "type": "number"
+                },
+                "rhr": {
+                    "type": "integer"
+                },
+                "sleep_awake_s": {
+                    "type": "integer"
+                },
+                "sleep_deep_s": {
+                    "type": "integer"
+                },
+                "sleep_light_s": {
+                    "type": "integer"
+                },
+                "sleep_rem_s": {
+                    "type": "integer"
+                },
+                "sleep_score": {
+                    "type": "integer"
+                },
+                "sleep_total_s": {
+                    "type": "integer"
+                },
+                "spo2_avg": {
+                    "type": "number"
+                },
+                "stress_avg": {
+                    "type": "integer"
+                },
+                "training_load_ratio": {
+                    "type": "number"
+                },
+                "training_load_state": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.healthResponse": {
+            "type": "object",
+            "properties": {
+                "health": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.healthRecordDTO"
+                    }
+                },
+                "hrv": {
+                    "$ref": "#/definitions/api.hrvSnapshotDTO"
+                },
+                "rhr_baseline": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.hrvDailyRecordDTO": {
+            "type": "object",
+            "properties": {
+                "baseline_low_upper": {
+                    "type": "integer"
+                },
+                "daily_balanced_low": {
+                    "type": "integer"
+                },
+                "daily_balanced_upper": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "feedback_phrase": {
+                    "type": "string"
+                },
+                "last_night_5min_high": {
+                    "type": "integer"
+                },
+                "last_night_avg": {
+                    "type": "integer"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "weekly_avg": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.hrvResponse": {
+            "type": "object",
+            "properties": {
+                "hrv": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.hrvDailyRecordDTO"
+                    }
+                },
+                "summary": {
+                    "$ref": "#/definitions/api.hrvSummaryDTO"
+                }
+            }
+        },
+        "api.hrvSnapshotDTO": {
+            "type": "object",
+            "properties": {
+                "avg_sleep_hrv": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "hrv_normal_high": {
+                    "type": "number"
+                },
+                "hrv_normal_low": {
+                    "type": "number"
+                },
+                "recovery_pct": {
+                    "type": "number"
+                },
+                "trend": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.hrvTrendPointDTO"
+                    }
+                }
+            }
+        },
+        "api.hrvSummaryDTO": {
+            "type": "object",
+            "properties": {
+                "daily_balanced_low": {
+                    "type": "integer"
+                },
+                "daily_balanced_upper": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "last_night_avg": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "weekly_avg": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.hrvTrendPointDTO": {
+            "type": "object",
+            "properties": {
+                "daily_balanced_low": {
+                    "type": "integer"
+                },
+                "daily_balanced_upper": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "last_night_avg": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.injuriesResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.injuryResponse"
+                    }
+                },
+                "next_cursor": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.injuryInput": {
+            "type": "object",
+            "required": [
+                "description",
+                "recovery_status",
+                "running_restriction"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "recovery_status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "recovered"
+                    ]
+                },
+                "running_restriction": {
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "easy_only",
+                        "no_running"
+                    ]
+                }
+            }
+        },
+        "api.injuryResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "recovery_status": {
+                    "type": "string"
+                },
+                "running_restriction": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.jobCatalogResponse": {
+            "type": "object",
+            "properties": {
+                "jobs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.JobCatalogEntry"
+                    }
+                }
+            }
+        },
+        "api.jobStateResponse": {
+            "type": "object",
+            "properties": {
+                "attempts": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "job_type": {
+                    "type": "string"
+                },
+                "progress_pct": {
+                    "type": "integer"
+                },
+                "result_json": {
+                    "type": "string"
+                },
+                "stage": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.lapDTO": {
+            "type": "object",
+            "properties": {
+                "adjusted_pace": {
+                    "type": "number"
+                },
+                "ascent_m": {
+                    "type": "number"
+                },
+                "avg_cadence": {
+                    "type": "integer"
+                },
+                "avg_hr": {
+                    "type": "integer"
+                },
+                "avg_pace": {
+                    "type": "number"
+                },
+                "avg_power": {
+                    "type": "integer"
+                },
+                "descent_m": {
+                    "type": "number"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_fmt": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "number"
+                },
+                "lap_index": {
+                    "type": "integer"
+                },
+                "lap_type": {
+                    "type": "string"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "pace_fmt": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.linkedScheduledWorkoutDTO": {
+            "type": "object",
+            "properties": {
+                "abandoned_by_promote_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.monthlySummaryDTO": {
+            "type": "object",
+            "properties": {
+                "activity_count": {
+                    "type": "integer"
+                },
+                "duration_s": {
+                    "type": "integer"
+                },
+                "run_duration_s": {
+                    "type": "integer"
+                },
+                "total_run_km": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.onboardingCompleteInput": {
+            "type": "object",
+            "required": [
+                "run_id"
+            ],
+            "properties": {
+                "run_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.onboardingCompleteResponse": {
+            "type": "object",
+            "properties": {
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.onboardingReadinessResponse": {
+            "type": "object",
+            "properties": {
+                "contract_version": {
+                    "type": "string"
+                },
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.onboardingRouteContract"
+                    }
+                }
+            }
+        },
+        "api.onboardingRouteContract": {
+            "type": "object",
+            "properties": {
+                "method": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.onboardingState": {
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "type": "string"
+                },
+                "profile_ready": {
+                    "type": "boolean"
+                },
+                "watch_ready": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.pipelineCatalogResponse": {
+            "type": "object",
+            "properties": {
+                "pipelines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.PipelineCatalogEntry"
+                    }
+                }
+            }
+        },
+        "api.pipelineStepResponse": {
+            "type": "object",
+            "properties": {
+                "continue_on_failure": {
+                    "type": "boolean"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "job_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.planSetupReadinessResponse": {
+            "type": "object",
+            "properties": {
+                "contract_version": {
+                    "type": "string"
+                },
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.onboardingRouteContract"
+                    }
+                }
+            }
+        },
+        "api.pmcRecordDTO": {
+            "type": "object",
+            "properties": {
+                "ati": {
+                    "type": "number"
+                },
+                "cti": {
+                    "type": "number"
+                },
+                "ctl_ramp": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "fatigue": {
+                    "type": "number"
+                },
+                "rhr": {
+                    "type": "integer"
+                },
+                "training_load_ratio": {
+                    "type": "number"
+                },
+                "training_load_state": {
+                    "type": "string"
+                },
+                "tsb": {
+                    "type": "number"
+                },
+                "tsb_zone": {
+                    "type": "string"
+                },
+                "tsb_zone_label": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.pmcResponse": {
+            "type": "object",
+            "properties": {
+                "pmc": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.pmcRecordDTO"
+                    }
+                },
+                "stride_pmc": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.stridePMCRecordDTO"
+                    }
+                },
+                "stride_summary": {
+                    "$ref": "#/definitions/api.stridePMCSummaryDTO"
+                },
+                "summary": {
+                    "$ref": "#/definitions/api.pmcSummaryDTO"
+                }
+            }
+        },
+        "api.pmcSummaryDTO": {
+            "type": "object",
+            "properties": {
+                "ctl_ramp": {
+                    "type": "number"
+                },
+                "current_ati": {
+                    "type": "number"
+                },
+                "current_cti": {
+                    "type": "number"
+                },
+                "current_fatigue": {
+                    "type": "number"
+                },
+                "current_rhr": {
+                    "type": "integer"
+                },
+                "current_tsb": {
+                    "type": "number"
+                },
+                "current_tsb_zone": {
+                    "type": "string"
+                },
+                "current_tsb_zone_label": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.profileCore": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "dob": {
+                    "type": "string"
+                },
+                "height_cm": {
+                    "type": "number"
+                },
+                "running_age_range": {
+                    "type": "string"
+                },
+                "sex": {
+                    "type": "string"
+                },
+                "weight_kg": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.profileInput": {
+            "type": "object",
+            "required": [
+                "display_name",
+                "dob",
+                "height_cm",
+                "running_age_range",
+                "sex",
+                "weight_kg"
+            ],
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "dob": {
+                    "type": "string"
+                },
+                "height_cm": {
+                    "type": "number"
+                },
+                "running_age_range": {
+                    "type": "string",
+                    "enum": [
+                        "unknown",
+                        "lt_6m",
+                        "6m_1y",
+                        "1y_3y",
+                        "3y_plus"
+                    ]
+                },
+                "sex": {
+                    "type": "string",
+                    "enum": [
+                        "male",
+                        "female",
+                        "other"
+                    ]
+                },
+                "weight_kg": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.profilePatchInput": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "dob": {
+                    "type": "string"
+                },
+                "height_cm": {
+                    "type": "number"
+                },
+                "running_age_range": {
+                    "type": "string",
+                    "enum": [
+                        "unknown",
+                        "lt_6m",
+                        "6m_1y",
+                        "1y_3y",
+                        "3y_plus"
+                    ]
+                },
+                "sex": {
+                    "type": "string",
+                    "enum": [
+                        "male",
+                        "female",
+                        "other"
+                    ]
+                },
+                "weight_kg": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.profilePatchResponse": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ok": {
+                    "type": "boolean"
+                },
+                "profile": {
+                    "$ref": "#/definitions/api.profileCore"
+                }
+            }
+        },
+        "api.profileResponse": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "features": {
+                    "$ref": "#/definitions/api.featureFlags"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "onboarding": {
+                    "$ref": "#/definitions/api.onboardingState"
+                },
+                "profile": {
+                    "$ref": "#/definitions/api.profileCore"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "running_age_range": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.putWeeklyFeedbackRequest": {
+            "type": "object",
+            "required": [
+                "content"
+            ],
+            "properties": {
+                "content": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.runStateResponse": {
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "type": "integer"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "pipeline_name": {
+                    "type": "string"
+                },
+                "run_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.pipelineStepResponse"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.segmentDTO": {
+            "type": "object",
+            "properties": {
+                "adjusted_pace": {
+                    "type": "number"
+                },
+                "ascent_m": {
+                    "type": "number"
+                },
+                "avg_cadence": {
+                    "type": "integer"
+                },
+                "avg_hr": {
+                    "type": "integer"
+                },
+                "avg_pace": {
+                    "type": "number"
+                },
+                "avg_power": {
+                    "type": "integer"
+                },
+                "descent_m": {
+                    "type": "number"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_fmt": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "number"
+                },
+                "lap_index": {
+                    "type": "integer"
+                },
+                "lap_type": {
+                    "type": "string"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "mode": {
+                    "type": "integer"
+                },
+                "pace_fmt": {
+                    "type": "string"
+                },
+                "seg_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.startPipelineRequest": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "object"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "onboarding"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.startPipelineResponse": {
+            "type": "object",
+            "properties": {
+                "deduplicated": {
+                    "type": "boolean"
+                },
+                "pipeline_name": {
+                    "type": "string"
+                },
+                "run_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.strideHRZoneDTO": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string"
+                },
+                "lower_bpm": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "upper_bpm": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.stridePMCRecordDTO": {
+            "type": "object",
+            "properties": {
+                "acute_load": {
+                    "type": "number"
+                },
+                "algorithm_version": {
+                    "type": "integer"
+                },
+                "chronic_load": {
+                    "type": "number"
+                },
+                "chronic_load_ramp": {
+                    "type": "number"
+                },
+                "coverage_status": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "form": {
+                    "type": "number"
+                },
+                "load_ratio": {
+                    "type": "number"
+                },
+                "readiness_gate": {
+                    "type": "string"
+                },
+                "readiness_reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "training_dose": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.stridePMCSummaryDTO": {
+            "type": "object",
+            "properties": {
+                "chronic_load_ramp": {
+                    "type": "number"
+                },
+                "current_acute_load": {
+                    "type": "number"
+                },
+                "current_chronic_load": {
+                    "type": "number"
+                },
+                "current_coverage_status": {
+                    "type": "string"
+                },
+                "current_form": {
+                    "type": "number"
+                },
+                "current_load_ratio": {
+                    "type": "number"
+                },
+                "current_readiness_gate": {
+                    "type": "string"
+                },
+                "current_readiness_reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "current_training_dose": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.stridePaceZoneDTO": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string"
+                },
+                "lower_pace": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "upper_pace": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.strideThresholdDTO": {
+            "type": "object",
+            "properties": {
+                "as_of_date": {
+                    "type": "string"
+                },
+                "calibration_id": {
+                    "type": "integer"
+                },
+                "hr_bpm": {
+                    "type": "number"
+                },
+                "hr_confidence": {
+                    "type": "string"
+                },
+                "pace_per_km_sec": {
+                    "type": "integer"
+                },
+                "speed_confidence": {
+                    "type": "string"
+                },
+                "speed_mps": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.strideTrainingLoadDTO": {
+            "type": "object",
+            "properties": {
+                "activity_date": {
+                    "type": "string"
+                },
+                "algorithm_version": {
+                    "type": "integer"
+                },
+                "calibration_id": {
+                    "type": "integer"
+                },
+                "cardio_coverage": {
+                    "type": "number"
+                },
+                "cardio_load_raw": {
+                    "type": "number"
+                },
+                "cardio_tss": {
+                    "type": "number"
+                },
+                "coverage_status": {
+                    "type": "string"
+                },
+                "excluded_from_pmc": {
+                    "type": "boolean"
+                },
+                "external_coverage": {
+                    "type": "number"
+                },
+                "external_tss": {
+                    "type": "number"
+                },
+                "high_intensity_coverage": {
+                    "type": "number"
+                },
+                "high_intensity_tss": {
+                    "type": "number"
+                },
+                "label_id": {
+                    "type": "string"
+                },
+                "load_confidence": {
+                    "type": "string"
+                },
+                "mechanical_load": {
+                    "type": "number"
+                },
+                "reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "session_class": {
+                    "type": "string"
+                },
+                "sport": {
+                    "type": "string"
+                },
+                "subjective_internal_load": {
+                    "type": "number"
+                },
+                "training_dose": {
+                    "type": "number"
+                },
+                "training_dose_source": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.strideTrainingLoadRecordDTO": {
+            "type": "object",
+            "properties": {
+                "acute_load": {
+                    "type": "number"
+                },
+                "algorithm_version": {
+                    "type": "integer"
+                },
+                "chronic_load": {
+                    "type": "number"
+                },
+                "coverage_status": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "form": {
+                    "type": "number"
+                },
+                "load_ratio": {
+                    "type": "number"
+                },
+                "readiness_gate": {
+                    "type": "string"
+                },
+                "readiness_reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "training_dose": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.strideTrainingLoadResponse": {
+            "type": "object",
+            "properties": {
+                "current": {
+                    "$ref": "#/definitions/api.strideTrainingLoadRecordDTO"
+                },
+                "series": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.strideTrainingLoadRecordDTO"
+                    }
+                }
+            }
+        },
+        "api.strideZonesResponse": {
+            "type": "object",
+            "properties": {
+                "hr_zones": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.strideHRZoneDTO"
+                    }
+                },
+                "pace_zones": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.stridePaceZoneDTO"
+                    }
+                },
+                "threshold": {
+                    "$ref": "#/definitions/api.strideThresholdDTO"
+                }
+            }
+        },
+        "api.structuredWeekResponse": {
+            "type": "object",
+            "properties": {
+                "coach_notes": {},
+                "nutrition": {},
+                "sessions": {},
+                "structured_status": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.syncRequest": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "enum": [
+                        "all",
+                        "activities",
+                        "health"
+                    ],
+                    "example": "all"
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "full",
+                        "incremental"
+                    ],
+                    "example": "incremental"
+                }
+            }
+        },
+        "api.timeseriesDTO": {
+            "type": "object",
+            "properties": {
+                "adjusted_pace": {
+                    "type": "number"
+                },
+                "altitude": {
+                    "type": "number"
+                },
+                "cadence": {
+                    "type": "integer"
+                },
+                "distance": {
+                    "type": "number"
+                },
+                "gps_lat": {
+                    "type": "number"
+                },
+                "gps_lon": {
+                    "type": "number"
+                },
+                "heart_rate": {
+                    "type": "integer"
+                },
+                "power": {
+                    "type": "integer"
+                },
+                "speed": {
+                    "type": "number"
+                },
+                "timestamp": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.userPipelinesResponse": {
+            "type": "object",
+            "properties": {
+                "pipelines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.runStateResponse"
+                    }
+                }
+            }
+        },
+        "api.validationDetailItem": {
+            "type": "object",
+            "properties": {
+                "loc": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "msg": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.validationErrorResponse": {
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.validationDetailItem"
+                    }
+                }
+            }
+        },
+        "api.watchInfoResponse": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "device": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "last_sync_at": {
+                    "type": "string"
+                },
+                "logged_in": {
+                    "type": "boolean"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "provider_display_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.watchLoginInput": {
+            "type": "object",
+            "required": [
+                "email",
+                "password",
+                "provider"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string",
+                    "enum": [
+                        "coros",
+                        "garmin"
+                    ]
+                },
+                "region": {
+                    "type": "string",
+                    "enum": [
+                        "cn",
+                        "global"
+                    ]
+                }
+            }
+        },
+        "api.watchLoginResponse": {
+            "type": "object",
+            "properties": {
+                "ok": {
+                    "type": "boolean"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.weekActivityResponse": {
+            "type": "object",
+            "properties": {
+                "aerobic_effect": {
+                    "type": "number"
+                },
+                "anaerobic_effect": {
+                    "type": "number"
+                },
+                "ascent_m": {
+                    "type": "number"
+                },
+                "avg_cadence": {
+                    "type": "integer"
+                },
+                "avg_hr": {
+                    "type": "integer"
+                },
+                "avg_pace_s_km": {
+                    "type": "number"
+                },
+                "calories_kcal": {
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_fmt": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "number"
+                },
+                "feel_type": {
+                    "type": "integer"
+                },
+                "feels_like": {
+                    "type": "number"
+                },
+                "humidity": {
+                    "type": "number"
+                },
+                "label_id": {
+                    "type": "string"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pace_fmt": {
+                    "type": "string"
+                },
+                "pauses": {
+                    "type": "object"
+                },
+                "route_thumb": {
+                    "type": "object"
+                },
+                "sport_name": {
+                    "type": "string"
+                },
+                "sport_note": {
+                    "type": "string"
+                },
+                "sport_type": {
+                    "type": "integer"
+                },
+                "temperature": {
+                    "type": "number"
+                },
+                "train_type": {
+                    "type": "string"
+                },
+                "training_load": {
+                    "type": "number"
+                },
+                "vo2max": {
+                    "type": "number"
+                },
+                "wind_speed": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.weekDetailResponse": {
+            "type": "object",
+            "properties": {
+                "activities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.weekActivityResponse"
+                    }
+                },
+                "activity_count": {
+                    "type": "integer"
+                },
+                "date_from": {
+                    "type": "string"
+                },
+                "date_to": {
+                    "type": "string"
+                },
+                "feedback": {
+                    "type": "string"
+                },
+                "feedback_created_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "feedback_updated_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "x-nullable": true
+                },
+                "plan": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "structured": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/api.structuredWeekResponse"
+                        }
+                    ],
+                    "x-nullable": true
+                },
+                "total_duration_fmt": {
+                    "type": "string"
+                },
+                "total_duration_s": {
+                    "type": "number"
+                },
+                "total_km": {
+                    "type": "number"
+                },
+                "week_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.weeklyFeedbackResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "feedback": {
+                    "type": "string"
+                },
+                "has_feedback": {
+                    "type": "boolean"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "week": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.weeklyPlanDetailResponse": {
+            "type": "object",
+            "properties": {
+                "content": {},
+                "content_version": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date_from": {
+                    "type": "string"
+                },
+                "date_to": {
+                    "type": "string"
+                },
+                "master_plan_id": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "week_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.zoneDTO": {
+            "type": "object",
+            "properties": {
+                "duration_s": {
+                    "type": "integer"
+                },
+                "percent": {
+                    "type": "number"
+                },
+                "range_max": {
+                    "type": "number"
+                },
+                "range_min": {
+                    "type": "number"
+                },
+                "range_unit": {
+                    "type": "string"
+                },
+                "zone_index": {
+                    "type": "integer"
+                },
+                "zone_type": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "\"Bearer \u003cJWT\u003e\" for end-user callers (RS256).",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        },
+        "InternalToken": {
+            "description": "Shared secret for server-to-server callers.",
+            "type": "apiKey",
+            "name": "X-Internal-Token",
+            "in": "header"
+        }
+    }
+}

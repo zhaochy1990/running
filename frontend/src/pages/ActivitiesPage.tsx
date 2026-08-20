@@ -7,9 +7,11 @@ import {
   getAllActivities,
   sportNameCN,
   type ActivitiesListResponse,
+  type ActivityMonthlySummary,
   type Activity,
 } from '../api'
 import ViewHead from '../components/ViewHead'
+import { SYNC_COMPLETED_EVENT } from '../lib/syncEvents'
 import { shanghaiToday } from '../lib/shanghai'
 import { useNotificationsStore } from '../store/notificationsStore'
 import { useUser } from '../UserContextValue'
@@ -41,6 +43,7 @@ export default function ActivitiesPage() {
     activities: [],
   })
   const [monthActivities, setMonthActivities] = useState<Activity[]>([])
+  const [monthSummary, setMonthSummary] = useState<ActivityMonthlySummary | undefined>()
   const [loadState, setLoadState] = useState<LoadState>('idle')
   const [error, setError] = useState('')
   const [sportFilter, setSportFilter] = useState<ActivitySportFilter>('all')
@@ -50,6 +53,7 @@ export default function ActivitiesPage() {
   const [appliedRange, setAppliedRange] = useState<{ dateFrom?: string; dateTo?: string }>({})
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(ACTIVITY_PAGE_SIZE)
+  const [manualSyncVersion, setManualSyncVersion] = useState(0)
   const syncRefreshToken = useNotificationsStore((state) => {
     const notification = state.serverNotifications.find((item) => item.id === ONBOARDING_SYNC_NOTIFICATION_ID)
     if (!notification) return ''
@@ -73,6 +77,12 @@ export default function ActivitiesPage() {
   }), [appliedRange, minDistanceKm, monthRange, page, pageSize, sportFilter, user])
 
   useEffect(() => {
+    const refresh = () => setManualSyncVersion((version) => version + 1)
+    window.addEventListener(SYNC_COMPLETED_EVENT, refresh)
+    return () => window.removeEventListener(SYNC_COMPLETED_EVENT, refresh)
+  }, [])
+
+  useEffect(() => {
     if (!user) return
     let cancelled = false
     const queryChanged = previousQueryKeyRef.current !== queryKey
@@ -83,20 +93,16 @@ export default function ActivitiesPage() {
       setError('')
     })
 
-    Promise.all([
-      getActivities(user, {
-        ...appliedRange,
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
-        ...(sportFilter !== 'all' ? { sportCategory: sportFilter } : {}),
-        ...(minDistanceKm > 0 ? { minDistanceKm } : {}),
-      }),
-      getAllActivities(user, { dateFrom: monthRange.dateFrom, dateTo: monthRange.dateTo }),
-    ])
-      .then(([currentActivityPage, currentMonthActivities]) => {
+    getActivities(user, {
+      ...appliedRange,
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+      ...(sportFilter !== 'all' ? { sportCategory: sportFilter } : {}),
+      ...(minDistanceKm > 0 ? { minDistanceKm } : {}),
+    })
+      .then((currentActivityPage) => {
         if (cancelled) return
         setActivityPage(currentActivityPage)
-        setMonthActivities(currentMonthActivities)
         setLoadState('ready')
       })
       .catch((err) => {
@@ -108,7 +114,25 @@ export default function ActivitiesPage() {
     return () => {
       cancelled = true
     }
-  }, [appliedRange, minDistanceKm, monthRange.dateFrom, monthRange.dateTo, page, pageSize, queryKey, sportFilter, syncRefreshToken, user])
+  }, [appliedRange, manualSyncVersion, minDistanceKm, monthRange.dateFrom, monthRange.dateTo, page, pageSize, queryKey, sportFilter, syncRefreshToken, user])
+
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    Promise.all([
+      getAllActivities(user, { dateFrom: monthRange.dateFrom, dateTo: monthRange.dateTo }),
+      getActivities(user, { dateFrom: monthRange.dateFrom, dateTo: monthRange.dateTo, limit: 1 }),
+    ]).then(([activities, response]) => {
+      if (cancelled) return
+      setMonthActivities(activities)
+      setMonthSummary(response.monthly_summaries?.[monthRange.dateFrom.slice(0, 7)])
+    }).catch(() => {
+      // The paginated list remains usable if the independent month summary fails.
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [manualSyncVersion, monthRange.dateFrom, monthRange.dateTo, syncRefreshToken, user])
 
   const summary = useMemo(() => summarizeActivities(monthActivities), [monthActivities])
   const monthGroups = useMemo(
@@ -174,8 +198,8 @@ export default function ActivitiesPage() {
           {`本月统计 · ${monthRange.label}`}
         </div>
         <div className="grid grid-cols-2 overflow-hidden rounded-[11px] border border-border-subtle bg-border-subtle lg:grid-cols-6 gap-px">
-          <SummaryCell label="本月跑量" value={summary.totalRunKm.toFixed(1)} unit="km" />
-          <SummaryCell label="跑步时长" value={formatHoursValue(summary.runDurationS)} unit="h" />
+          <SummaryCell label="本月跑量" value={(monthSummary?.total_run_km ?? summary.totalRunKm).toFixed(1)} unit="km" />
+          <SummaryCell label="跑步时长" value={formatHoursValue(monthSummary?.run_duration_s ?? summary.runDurationS)} unit="h" />
           <SummaryCell label="平均配速" value={formatPaceSeconds(summary.avgPaceSecPerKm)} unit="/km" />
           <SummaryCell label="平均心率" value={summary.avgRunHr == null ? '--' : String(summary.avgRunHr)} unit="bpm" />
           <SummaryCell label="力量训练" value={String(summary.strengthCount)} unit="次" />
