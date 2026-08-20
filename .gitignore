@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+.DS_Store
 
 # Generated BP artifacts (regenerate via spec/_build_*.py)
 spec/*.pdf
