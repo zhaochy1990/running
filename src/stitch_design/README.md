@@ -13,6 +13,8 @@ src/stitch_design/
 │   └── foundation.md      # 每次生成、编辑和 variants 都会注入的基线
 ├── briefs/
 │   └── _template.md       # 单屏需求模板
+├── candidates/
+│   └── manifest.json      # 可提交的待优化候选与 review notes
 └── artifacts/
     └── manifest.json      # screen ID 与本地快照索引
 ```
@@ -20,6 +22,8 @@ src/stitch_design/
 视觉基线是 `prompts/foundation.md` 中定义的 **STRIDE Raycast Mobile**：Raycast 深色层级、Inter 界面字体、Geist Mono 运动数据和克制的珊瑚强调色。OpenDesign Raycast 页面是上游参考，仓库内 foundation 是可执行的最终契约。当前生成目标固定为 `MOBILE`，默认使用简体中文界面、Android 优先、390 px 逻辑宽度。
 
 旧设计系统 HTML 不保存在 canonical `artifacts/` 中。页面职责由 `briefs/` 保留；只有按当前 Foundation 重新生成、验证并经人工 hash 批准的页面才能进入 manifest 和 artifacts。
+
+`candidates/` 保存从 Stitch 下载、尚未批准且需要继续优化的页面。每个候选必须记录 SHA-256、canonical brief、`needs_revision` 和具体 review notes；不得写入批准 hash 或 Confirmed screen。批准后从 candidates 移除，并按双项目流程进入 canonical artifacts。
 
 Stitch 当前只稳定持久化结构化 theme 的模式、字体族和核心颜色 overrides；完整字体层级、字距、间距、阴影、focus 和 motion 以注入到 design system 的 `prompts/foundation.md` 为准。修改 Foundation 后运行 `update-design-system`，不要仅根据 Stitch 回读的旧 typography/spacing token 判断同步失败。
 

@@ -1,0 +1,91 @@
+{
+  "projectId": "12727163079393064568",
+  "deviceType": "MOBILE",
+  "format": "HTML-only candidates",
+  "screens": [
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "024dcd32c21f47189a9e5b20a61f6f17",
+      "slug": "runner-home-active-raycast",
+      "title": "跑者 · STRIDE（今日决策版）",
+      "operation": "export",
+      "status": "candidate",
+      "reviewStatus": "needs_revision",
+      "candidateArtifactSha256": "d1eb0534873be279dcb171e2437d7465cc235d024036ad9f1f6217f9546a2a16",
+      "reviewNotes": ["360/390 viewport and 48px touch checks pass", "needs responsive evidence layout, safe-area variables, Foundation elevation/focus/motion, and removal of Newsreader"],
+      "designGeneration": "raycast-v1",
+      "briefs": ["briefs/runner-home-active.md"],
+      "html": "candidates/024dcd32c21f47189a9e5b20a61f6f17_runner-home-active-raycast.html"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "171bc29d7d5143d795572391f6b5c4ec",
+      "slug": "season-plan-route-map-raycast",
+      "title": "赛季计划 · 交互与目标增强版",
+      "operation": "export",
+      "status": "candidate",
+      "reviewStatus": "needs_revision",
+      "candidateArtifactSha256": "23be873c26b7372befd230d6d075c7a43795020ce6c01135247182304670b996",
+      "reviewNotes": ["360/390 viewport and 48px touch checks pass", "still uses the retired white/green Foundation and requires a full Raycast redesign"],
+      "designGeneration": "raycast-v1",
+      "briefs": ["briefs/season-plan-route-map.md"],
+      "html": "candidates/171bc29d7d5143d795572391f6b5c4ec_season-plan-route-map-raycast.html"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "d95d8dfb510a4721b4ecbc67c1637e4c",
+      "slug": "training-center-active-raycast",
+      "title": "训练中心 · 赛季与本周课表（W08）",
+      "operation": "generate",
+      "status": "candidate",
+      "reviewStatus": "needs_revision",
+      "candidateArtifactSha256": "effe4aa15e2233586258fdec22b66f4ea8ba867978edd1a1900a50b77ff52c9b",
+      "reviewNotes": ["360/390 viewport checks pass; one interactive target is below 48px", "missing required week content and support sections; tokens, safe areas, navigation chrome, focus, and motion need revision"],
+      "designGeneration": "raycast-v1",
+      "briefs": ["briefs/training-center-active.md"],
+      "html": "candidates/d95d8dfb510a4721b4ecbc67c1637e4c_training-center-active-raycast.html"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "b5af5dd652314171a06b178da26cbc2a",
+      "slug": "coach-adjustment-proposal-raycast",
+      "title": "Coach 对话 · 方案调整建议",
+      "operation": "edit",
+      "status": "candidate",
+      "reviewStatus": "needs_revision",
+      "candidateArtifactSha256": "59ce98b781819467f4897a4bbf77d7de78e01281911d293be2e402cc3831fca1",
+      "reviewNotes": ["360/390 viewport checks pass; two interactive targets are below 48px", "needs exact Foundation colors, typography, Geist Mono data spans, elevation, and focus-ring corrections"],
+      "designGeneration": "raycast-v1",
+      "briefs": ["briefs/coach-adjustment-proposal.md"],
+      "html": "candidates/b5af5dd652314171a06b178da26cbc2a_coach-adjustment-proposal-raycast.html"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "aca64191f77d4b56ad3b60ee48c3f238",
+      "slug": "workout-detail-threshold-raycast",
+      "title": "训练详情 · 阈值间歇 · Raycast",
+      "operation": "edit",
+      "status": "candidate",
+      "reviewStatus": "needs_revision",
+      "candidateArtifactSha256": "38188ff916024e01de67c029fadd8c68d174de15e8a332b5e00926b314546066",
+      "reviewNotes": ["360/390 viewport and 48px touch checks pass", "product content is self-consistent; needs language, typography, numeric span, focus, reduced-motion, CTA elevation, and coach-note corrections"],
+      "designGeneration": "raycast-v1",
+      "briefs": ["briefs/workout-detail-threshold.md"],
+      "html": "candidates/aca64191f77d4b56ad3b60ee48c3f238_workout-detail-threshold-raycast.html"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "7c0c5dc3651742efa0ef12b7a5bc03ba",
+      "slug": "weekly-plan-active-raycast",
+      "title": "本周课表 · Raycast",
+      "operation": "generate",
+      "status": "candidate",
+      "reviewStatus": "needs_revision",
+      "candidateArtifactSha256": "3c7a535e1b7fef2b7cf2dc38a6982536dfad6adf6109df593f1c803922a15a49",
+      "reviewNotes": ["360/390 viewport and 48px touch checks pass", "needs full seven-day content, training-load total, semantic schedule rows, correct terminology, safe areas, tokens, focus, and motion"],
+      "designGeneration": "raycast-v1",
+      "briefs": ["briefs/weekly-plan-active.md"],
+      "html": "candidates/7c0c5dc3651742efa0ef12b7a5bc03ba_weekly-plan-active-raycast.html"
+    }
+  ]
+}
