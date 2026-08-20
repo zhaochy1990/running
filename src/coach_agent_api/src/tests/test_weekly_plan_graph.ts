@@ -31,7 +31,7 @@ async function main() {
 		const contextProvider = new DataProviderWeeklyPlanContextProvider(provider);
 		const graph = createWeeklyPlanGeneratorGraph(config, contextProvider);
 		const generationId = `weekly-plan-${PROFILE}-${Date.now()}`;
-		const result = await graph.invoke(
+		await graph.invoke(
 			{
 				request: {
 					request_id: `weekly-plan-${Date.now()}`,
@@ -40,16 +40,6 @@ async function main() {
 			},
 			{ context: { userId: USER_ID, generationId } },
 		);
-		// console.log("--------------------");
-		// console.log(
-		// 	JSON.stringify(result.weekly_context?.training_position, null, 2),
-		// );
-		// console.log(JSON.stringify(result.weekly_context?.fitness_state, null, 2));
-		// console.log(JSON.stringify(result.weekly_context?.absorbed_load, null, 2));
-		// console.log(
-		// 	JSON.stringify(result.weekly_context?.recent_training_weeks, null, 2),
-		// );
-		// console.log(JSON.stringify(result.outcome, null, 2));
 	} finally {
 		await provider.close();
 	}

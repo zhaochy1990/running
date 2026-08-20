@@ -216,6 +216,37 @@ const weeklyPlan = {
 			kind: "rest",
 			spec: null,
 		},
+		{
+			schema: "plan-session/v1" as const,
+			date: "2026-06-16",
+			session_index: 0,
+			summary: "轻松跑",
+			notes_md: null,
+			total_distance_m: 5000,
+			total_duration_s: null,
+			estimated_dose: null,
+			kind: "run",
+			spec: {
+				schema: "run-workout/v1" as const,
+				name: "轻松跑",
+				date: "2026-06-16",
+				note: null,
+				blocks: [
+					{
+						repeat: 1,
+						steps: [
+							{
+								step_kind: "work" as const,
+								duration: { kind: "distance_m" as const, value: 5000 },
+								target: { kind: "pace_s_km" as const, low: 330, high: 360 },
+								note: null,
+								hr_cap_bpm: null,
+							},
+						],
+					},
+				],
+			},
+		},
 	],
 	nutrition: Array.from({ length: 7 }, (_, index) => {
 		const date = `2026-06-${String(15 + index).padStart(2, "0")}`;
