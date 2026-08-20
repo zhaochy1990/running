@@ -20,13 +20,17 @@ test("getVendorHrvBaseline reads the latest non-null daily vendor band", async (
 		},
 	} as never);
 
-	assert.deepEqual(await store.getVendorHrvBaseline("athlete-1"), {
-		low: 28,
-		high: 36,
-		provider: "coros",
-		date: "2026-08-19",
-	});
-	assert.deepEqual(calls[0]?.values, ["athlete-1"]);
+	assert.deepEqual(
+		await store.getVendorHrvBaseline("athlete-1", "2026-08-19"),
+		{
+			low: 28,
+			high: 36,
+			provider: "coros",
+			date: "2026-08-19",
+		},
+	);
+	assert.deepEqual(calls[0]?.values, ["athlete-1", "2026-08-19"]);
 	assert.match(calls[0]?.sql ?? "", /baseline_balanced_low IS NOT NULL/);
-	assert.match(calls[0]?.sql ?? "", /ORDER BY REPLACE\(date, '-', ''\) DESC/);
+	assert.match(calls[0]?.sql ?? "", /JOIN dashboard/);
+	assert.match(calls[0]?.sql ?? "", /REPLACE\(h.date, '-', ''\) <=/);
 });

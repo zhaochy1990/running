@@ -57,8 +57,16 @@ func validateAppliedWeeklyPlan(document map[string]any, expectedWeek string) ([]
 
 	sessions := document["sessions"].([]any)
 	sessionKeys := make(map[string]bool, len(sessions))
+	hasRun := false
+	hasRest := false
 	for _, item := range sessions {
 		session := item.(map[string]any)
+		switch session["kind"] {
+		case "run":
+			hasRun = true
+		case "rest":
+			hasRest = true
+		}
 		date := session["date"].(string)
 		if !dateInRange(date, startDate, weekEnd) {
 			return nil, errors.New("session is outside target week")
@@ -71,6 +79,12 @@ func validateAppliedWeeklyPlan(document map[string]any, expectedWeek string) ([]
 		if spec, ok := session["spec"].(map[string]any); ok && spec["date"] != date {
 			return nil, errors.New("workout date must match session date")
 		}
+	}
+	if !hasRun {
+		return nil, errors.New("weekly plan must contain at least one run session")
+	}
+	if !hasRest {
+		return nil, errors.New("weekly plan must contain at least one rest session")
 	}
 
 	nutritionDates := make(map[string]bool, 7)

@@ -217,7 +217,7 @@ export class MySqlWeeklyPlanContextProvider
 			this.store.getDailyRecoveryByDateRange(userId, start, end),
 			this.store.getUserInjuries(userId),
 			this.store.getLatestRunningCalibration(userId, end),
-			this.store.getVendorHrvBaseline?.(userId) ?? Promise.resolve(null),
+			this.store.getVendorHrvBaseline?.(userId, end) ?? Promise.resolve(null),
 			...recentWeekStarts.map((weekStart) =>
 				this.store.getWeeklyPlan(userId, weekFolder(weekStart)),
 			),

@@ -17,6 +17,7 @@ func validNestedAppliedWeeklyPlan(t *testing.T) map[string]any {
 			"schema": "plan-session/v1", "date": "2026-08-17", "session_index": float64(0),
 			"kind": "run", "summary": "Easy run", "notes_md": nil,
 			"total_distance_m": float64(8000), "total_duration_s": nil,
+			"estimated_dose": nil,
 			"spec": map[string]any{
 				"schema": "run-workout/v1", "name": "Easy run", "date": "2026-08-17", "note": nil,
 				"blocks": []any{map[string]any{
@@ -34,6 +35,7 @@ func validNestedAppliedWeeklyPlan(t *testing.T) map[string]any {
 			"schema": "plan-session/v1", "date": "2026-08-18", "session_index": float64(0),
 			"kind": "strength", "summary": "Strength", "notes_md": nil,
 			"total_distance_m": nil, "total_duration_s": float64(1800),
+			"estimated_dose": nil,
 			"spec": map[string]any{
 				"schema": "strength-workout/v1", "name": "Strength", "date": "2026-08-18", "note": nil,
 				"exercises": []any{map[string]any{
@@ -47,6 +49,7 @@ func validNestedAppliedWeeklyPlan(t *testing.T) map[string]any {
 			"schema": "plan-session/v1", "date": "2026-08-19", "session_index": float64(0),
 			"kind": "rest", "summary": "Rest", "spec": nil, "notes_md": nil,
 			"total_distance_m": nil, "total_duration_s": nil,
+			"estimated_dose": nil,
 		},
 	}
 	nutrition := document["nutrition"].([]any)

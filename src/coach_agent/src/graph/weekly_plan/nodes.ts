@@ -7,12 +7,12 @@ import {
 	type TargetTrainingLoad,
 	TargetTrainingLoadSchema,
 	type WeeklyPlan,
-	WeeklyPlanSchema,
-	type WeeklyPlanSimulationReport,
-	WeeklyPlanSimulationReportSchema,
 	WeeklyPlanGeneratorContext,
 	WeeklyPlanGeneratorOutcome,
 	WeeklyPlanGeneratorRequest,
+	WeeklyPlanSchema,
+	type WeeklyPlanSimulationReport,
+	WeeklyPlanSimulationReportSchema,
 } from "@stride/contract";
 import { z } from "zod/v4";
 import type { CoachAgentConfig } from "../../config/config.js";
@@ -21,9 +21,7 @@ import type {
 	WeeklyPlanContextProvider,
 } from "../../persistence/weeklyPlanContextProvider.js";
 import { getLogger } from "../../utils/logger.js";
-import {
-	simulateWeeklyPlanLoad,
-} from "./simulation.js";
+import { simulateWeeklyPlanLoad } from "./simulation.js";
 import type { WeeklyPlanLLM, WeeklyPlanLlmInput } from "./weeklyPlanNode.js";
 
 const logger = getLogger("weekly-plan-graph");
@@ -58,7 +56,7 @@ export function mergeSimulationIntoPlan(
 ): WeeklyPlan {
 	const doses = new Map(
 		simulation.sessions.map((session) => [
-			session.session_index,
+			`${session.date}:${session.session_index}`,
 			session.estimated_dose,
 		]),
 	);
@@ -66,7 +64,8 @@ export function mergeSimulationIntoPlan(
 		...plan,
 		sessions: plan.sessions.map((session) => ({
 			...session,
-			estimated_dose: doses.get(session.session_index) ?? null,
+			estimated_dose:
+				doses.get(`${session.date}:${session.session_index}`) ?? null,
 		})),
 	};
 }

@@ -270,16 +270,20 @@ export class StrideDataStore {
 
 	async getVendorHrvBaseline(
 		userId: string,
+		asOfDay: string,
 	): Promise<VendorHrvBaseline | null> {
+		assertDay(asOfDay);
 		const [rows] = await this.pool.query<RowDataPacket[]>(
-			`SELECT date, baseline_balanced_low, baseline_balanced_upper, provider
-			   FROM daily_hrv
-			  WHERE user_id = ?
-			    AND baseline_balanced_low IS NOT NULL
-			    AND baseline_balanced_upper IS NOT NULL
-			  ORDER BY REPLACE(date, '-', '') DESC
+			`SELECT h.date, h.baseline_balanced_low, h.baseline_balanced_upper, h.provider
+			   FROM daily_hrv h
+			   JOIN dashboard d ON d.user_id = h.user_id AND d.provider = h.provider
+			  WHERE h.user_id = ?
+			    AND REPLACE(h.date, '-', '') <= REPLACE(?, '-', '')
+			    AND h.baseline_balanced_low IS NOT NULL
+			    AND h.baseline_balanced_upper IS NOT NULL
+			  ORDER BY REPLACE(h.date, '-', '') DESC
 			  LIMIT 1`,
-			[userId],
+			[userId, asOfDay],
 		);
 		const row = rows[0];
 		return row
