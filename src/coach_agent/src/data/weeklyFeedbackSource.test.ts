@@ -5,8 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import {
 	createWeeklyFeedbackSource,
-	LegacyFileWeeklyFeedbackSource,
 	DataProviderWeeklyFeedbackSource,
+	LegacyFileWeeklyFeedbackSource,
 	weeklyFeedbackCutoverComplete,
 } from "./weeklyFeedbackSource.js";
 

@@ -5,6 +5,8 @@ HTTP composition root for `coach_agent`. This package owns transport, JWT authen
 ## Endpoints
 
 - `GET /health` — public liveness probe.
+- `GET /openapi.json` — public OpenAPI 3.1 document.
+- `GET /docs` — public Swagger UI with bearer-token support.
 - `POST /api/users/me/coach/chat` — authenticated Coach turn. The server derives `userId` from the verified RS256 JWT `sub`; request bodies cannot choose a user.
 
 Request body:
@@ -41,5 +43,5 @@ The API config is separate from `coach_agent`'s model/agent YAML because that dy
 Use Node 24. From the repository root, run `pnpm install`, then use
 `pnpm --filter coach_agent_api test` and `pnpm --filter coach_agent_api start`.
 `pnpm --filter coach_agent_api smoke` starts an ephemeral in-process HTTP
-server with fake dependencies and verifies `/health` without contacting MySQL
-or an LLM.
+server with fake dependencies and verifies `/health`, `/openapi.json`, and
+`/docs` without contacting MySQL or an LLM.
