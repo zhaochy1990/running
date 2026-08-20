@@ -10,6 +10,7 @@
       "slug": "runner-home-activity-empty",
       "title": "跑者主页 · 今日活动纯空状态",
       "status": "approved",
+      "designGeneration": "legacy-light",
       "state": {
         "seasonState": "active",
         "weekState": "active",
@@ -17,12 +18,7 @@
         "todayActivityCount": 0
       },
       "briefs": [
-        "briefs/runner-home-active.md",
-        "briefs/runner-home-today-activity-refine.md",
-        "briefs/runner-home-current-status-refine.md",
-        "briefs/runner-home-today-only-refine.md",
-        "briefs/runner-home-restore-adjust-action.md",
-        "briefs/runner-home-activity-empty-text-refine.md"
+        "briefs/runner-home-active.md"
       ],
       "html": "artifacts/3459080105232916290_runner-home-activity-empty.html",
       "approvedAt": "2026-07-16T06:44:00Z",
@@ -37,18 +33,14 @@
       "slug": "training-center-volume-chart",
       "title": "训练中心 · 赛季周训练量",
       "status": "approved",
+      "designGeneration": "legacy-light",
       "state": {
         "seasonState": "active",
         "weekState": "active",
         "currentDay": "thursday"
       },
       "briefs": [
-        "briefs/training-center-active.md",
-        "briefs/training-center-active-refine.md",
-        "briefs/training-center-view-plan-button-refine.md",
-        "briefs/training-center-view-plan-touch-refine.md",
-        "briefs/training-center-volume-chart-refine.md",
-        "briefs/training-center-volume-chart-labels-refine.md"
+        "briefs/training-center-active.md"
       ],
       "html": "artifacts/6693732672102433490_training-center-volume-chart.html",
       "approvedAt": "2026-07-16T06:44:00Z",
@@ -129,6 +121,7 @@
       "slug": "season-plan-route-map-final",
       "title": "赛季训练计划 · 进展期路线图最终版",
       "status": "approved",
+      "designGeneration": "legacy-light",
       "state": {
         "seasonState": "active",
         "currentPhase": "build",

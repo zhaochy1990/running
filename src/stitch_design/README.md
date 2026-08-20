@@ -17,7 +17,13 @@ src/stitch_design/
     └── manifest.json      # screen ID 与本地快照索引
 ```
 
-视觉基线继承 `mobile/DESIGN.md`，STRIDE 品牌差异继承 `mobile/STRIDE_OVERRIDES.md`。当前生成目标固定为 `MOBILE`，默认使用简体中文界面、Android 优先、390 px 逻辑宽度。
+视觉基线是 `prompts/foundation.md` 中定义的 **STRIDE Raycast Mobile**：Raycast 深色层级、Inter 界面字体、Geist Mono 运动数据和克制的珊瑚强调色。OpenDesign Raycast 页面是上游参考，仓库内 foundation 是可执行的最终契约。当前生成目标固定为 `MOBILE`，默认使用简体中文界面、Android 优先、390 px 逻辑宽度。
+
+`artifacts/manifest.json` 中的 `designGeneration` 用于迁移追踪。`legacy-*` 页面仍可作为产品流程参考，但不能作为视觉参考；只有按当前 Foundation 重新生成并 review 的页面才能移除 legacy 标记。
+
+Stitch 当前只稳定持久化结构化 theme 的模式、字体族和核心颜色 overrides；完整字体层级、字距、间距、阴影、focus 和 motion 以注入到 design system 的 `prompts/foundation.md` 为准。修改 Foundation 后运行 `update-design-system`，不要仅根据 Stitch 回读的旧 typography/spacing token 判断同步失败。
+
+设计采用双项目门禁：`STRIDE · Mobile` 保存候选和迭代，`Stride Mobile Confirmed` 只保存用户批准 hash 对应的重建结果。`update-design-system` 会依次同步候选和确认项目的 design system；任何一步失败都必须先修复，不能继续生成正式候选。
 
 ## 初始化
 
@@ -65,8 +71,8 @@ npm run stitch -- screens
 npm run stitch -- generate briefs/home.md --slug home
 npm run stitch -- edit <screen-id> briefs/home-refine.md --slug home-refine
 npm run stitch -- variants <screen-id> briefs/home-variants.md --count 3 --range EXPLORE
-npm run stitch -- export <screen-id> --slug home
-npm run stitch -- publish artifacts/<screen-id>_home.html --title "跑者主页 · 本周课表进行中"
+npm run stitch -- export <screen-id> --slug home --brief briefs/home.md
+npm run stitch -- publish artifacts/<screen-id>_home.html --brief briefs/home.md --title "跑者主页 · 本周课表进行中"
 ```
 
 `generate`、`edit` 和 `variants` 默认只下载 HTML，并更新 `artifacts/manifest.json`。不下载或归档 PNG、JPEG、WebP。只想在 Stitch 中生成时可传 `--no-export`。

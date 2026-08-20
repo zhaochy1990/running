@@ -10,7 +10,7 @@ The runner opens STRIDE in the morning and should understand within five seconds
 
 ## Required Content
 
-- Fixed opaque-white top bar with a menu icon on the left, `STRIDE` wordmark, and a compact watch-sync action on the right using a sync icon, never a bell or notification icon. Show Shanghai-local date `7月14日 周二` and freshness text `08:12 已同步` directly below the top bar.
+- Fixed solid-surface top bar with a menu icon on the left, `STRIDE` wordmark, and a compact watch-sync action on the right using a sync icon, never a bell or notification icon. Show Shanghai-local date `7月14日 周二` and freshness text `08:12 已同步` directly below the top bar.
 - A compact greeting and decision line: `早上好，朝毅` and `恢复正常，可以按计划完成节奏跑`.
 - A restrained evidence strip directly under the decision. Show three supporting metrics with monospace numbers:
   - `HRV 52 ms` with `较基线 +4%`;
@@ -35,10 +35,10 @@ The runner opens STRIDE in the morning and should understand within five seconds
 
 ## Constraints
 
-- Use STRIDE green `#1FAD5B`, never `#00E676`.
+- Apply the current STRIDE Raycast Mobile Foundation without page-specific color or font overrides.
 - Do not show legacy terms such as `训练总纲`, `单周计划`, `TSB`, `ATL`, `CTL`, `Draft`, or English dashboard labels.
 - Do not use status rings, circular gauges, large hero charts, gradients, generic runner illustrations, glass effects, or a grid of equal metric cards.
-- The top bar must be solid `#FFFFFF`; do not use opacity, backdrop blur, translucent surfaces, or frosted-glass styling anywhere.
+- The top bar uses a solid Foundation surface with a quiet divider; no backdrop blur, translucent surface, or frosted-glass treatment.
 - Avoid stacking every section in a separate oversized rounded card. Use typography, thin rules, whitespace, and at most one subtle elevated surface for today's training.
 - Do not expose `发现` as a bottom tab.
 - Do not add promotional banners, subscription upsells, social feed, weather decoration, or nutrition logging to this screen.
@@ -51,4 +51,4 @@ The runner opens STRIDE in the morning and should understand within five seconds
 - Athletic numbers use monospace typography and align cleanly.
 - The page remains usable at 360 px width and with larger system text.
 - Every tap target is at least 48 logical px, and bottom safe-area spacing is present.
-- Status remains understandable in grayscale and does not depend on green alone.
+- Status remains understandable in grayscale and does not depend on color alone.

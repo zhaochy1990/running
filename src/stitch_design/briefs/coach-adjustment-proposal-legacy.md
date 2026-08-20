@@ -28,11 +28,11 @@ Understand why Coach recommends reducing Thursday's workout and either inspect o
 ## Constraints
 
 - Preserve this HTML as an approved legacy Ember snapshot; do not treat it as the current visual baseline.
-- Any future visual edit must use the current white, green, four-tab STRIDE Mobile Foundation.
+- Any future visual edit must use the current STRIDE Raycast Mobile Foundation and four-tab navigation.
 - Applying a proposal remains an explicit confirmation action.
 
 ## Acceptance Checks
 
-- Evidence and recommendation are readable without relying on coral alone.
+- Evidence and recommendation are readable without relying on color alone.
 - The old and proposed workouts are both explicit.
 - Composer and actions meet mobile touch-target requirements.
