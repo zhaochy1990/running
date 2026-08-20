@@ -18,66 +18,54 @@ import type { Activity, DataProvider } from "../data/dataProvider.js";
 import { defineCoachTools } from "./common.js";
 
 const getActivitiesByDateRangeSchema = z.object({
-	startDay: z
-		.string()
-		.regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
-		.describe("查询起始日期（含），格式 YYYY-MM-DD（Asia/Shanghai 日历日）"),
-	endDay: z
-		.string()
-		.regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
-		.optional()
-		.describe(
-			"查询结束日期（含），格式 YYYY-MM-DD，缺省为 runtime context 的 asof",
-		),
+  startDay: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
+    .describe("查询起始日期（含），格式 YYYY-MM-DD（Asia/Shanghai 日历日）"),
+  endDay: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
+    .optional()
+    .describe("查询结束日期（含），格式 YYYY-MM-DD，缺省为 runtime context 的 asof"),
 });
 
-type GetActivitiesByDateRangeInput = z.infer<
-	typeof getActivitiesByDateRangeSchema
->;
+type GetActivitiesByDateRangeInput = z.infer<typeof getActivitiesByDateRangeSchema>;
 
 /** Domain interface — pure business logic, decoupled from LangChain. */
 interface ActivitiesTool {
-	getActivitiesByDateRange(
-		input: GetActivitiesByDateRangeInput,
-		runtime: CoachToolRuntime,
-	): Promise<{
-		activities: Activity[];
-		provenance: { source: "stride"; vendor_derived: false };
-	}>;
+  getActivitiesByDateRange(
+    input: GetActivitiesByDateRangeInput,
+    runtime: CoachToolRuntime,
+  ): Promise<{
+    activities: Activity[];
+    provenance: { source: "stride"; vendor_derived: false };
+  }>;
 }
 
 class ActivitiesToolImpl implements ActivitiesTool {
-	constructor(private readonly store: DataProvider) {}
+  constructor(private readonly store: DataProvider) {}
 
-	async getActivitiesByDateRange(
-		input: GetActivitiesByDateRangeInput,
-		runtime: CoachToolRuntime,
-	): Promise<{
-		activities: Activity[];
-		provenance: { source: "stride"; vendor_derived: false };
-	}> {
-		const userId = runtime.context?.userId;
-		if (!userId) {
-			throw new Error(
-				"get_activities_by_date_range: missing userId in runtime context",
-			);
-		}
-		const asof = runtime.context?.asof;
-		if (!asof) {
-			throw new Error(
-				"get_activities_by_date_range: missing asof in runtime context",
-			);
-		}
-		const endDay = input.endDay ?? asof;
-		return {
-			activities: await this.store.getActivitiesByDateRange(
-				userId,
-				input.startDay,
-				endDay,
-			),
-			provenance: { source: "stride", vendor_derived: false },
-		};
-	}
+  async getActivitiesByDateRange(
+    input: GetActivitiesByDateRangeInput,
+    runtime: CoachToolRuntime,
+  ): Promise<{
+    activities: Activity[];
+    provenance: { source: "stride"; vendor_derived: false };
+  }> {
+    const userId = runtime.context?.userId;
+    if (!userId) {
+      throw new Error("get_activities_by_date_range: missing userId in runtime context");
+    }
+    const asof = runtime.context?.asof;
+    if (!asof) {
+      throw new Error("get_activities_by_date_range: missing asof in runtime context");
+    }
+    const endDay = input.endDay ?? asof;
+    return {
+      activities: await this.store.getActivitiesByDateRange(userId, input.startDay, endDay),
+      provenance: { source: "stride", vendor_derived: false },
+    };
+  }
 }
 
 /**
@@ -89,16 +77,15 @@ class ActivitiesToolImpl implements ActivitiesTool {
  * ```
  */
 export function createActivitiesTools(store: DataProvider): StructuredTool[] {
-	const impl = new ActivitiesToolImpl(store);
-	return defineCoachTools([
-		{
-			name: "get_activities_by_date_range",
-			description:
-				"获取运动员在某个日期区间（Asia/Shanghai 日历日，含起止两端）记录的所有运动，按时间最早在前。" +
-				"startDay 必填；endDay 缺省为 runtime context 的 asof。回答“最近状态/最近跑得怎么样”时，围绕 asof 向前查询，endDay 留空即可。",
-			schema: getActivitiesByDateRangeSchema,
-			handler: (input, runtime) =>
-				impl.getActivitiesByDateRange(input, runtime),
-		},
-	]);
+  const impl = new ActivitiesToolImpl(store);
+  return defineCoachTools([
+    {
+      name: "get_activities_by_date_range",
+      description:
+        "获取运动员在某个日期区间（Asia/Shanghai 日历日，含起止两端）记录的所有运动，按时间最早在前。" +
+        "startDay 必填；endDay 缺省为 runtime context 的 asof。回答“最近状态/最近跑得怎么样”时，围绕 asof 向前查询，endDay 留空即可。",
+      schema: getActivitiesByDateRangeSchema,
+      handler: (input, runtime) => impl.getActivitiesByDateRange(input, runtime),
+    },
+  ]);
 }

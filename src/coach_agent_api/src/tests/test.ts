@@ -1,14 +1,14 @@
 import { writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import {
-	ASK_USER_QUESTION_KIND,
-	type AskUserQuestionPayload,
-	Command,
-	createCoachAgent,
-	formatTokenUsageReport,
-	LlmTokenUsageTracker,
-	loadConfig,
-	MasterPlanSchema,
+  ASK_USER_QUESTION_KIND,
+  type AskUserQuestionPayload,
+  Command,
+  createCoachAgent,
+  formatTokenUsageReport,
+  LlmTokenUsageTracker,
+  loadConfig,
+  MasterPlanSchema,
 } from "coach_agent";
 import { loadApiConfig } from "../config.js";
 import { MySqlDataProvider } from "../data/mysqlDataProvider.js";
@@ -35,68 +35,55 @@ const asof = "2026-08-16";
 
 // 回答来源：交互式从 stdin 读；自动化测试则用 HITL_ANSWERS（\n 分隔）按序喂入，
 // 避免管道 EOF 关闭 readline 的问题。
-const scriptedAnswers = (process.env.HITL_ANSWERS ?? "")
-	.split("\n")
-	.filter((s) => s.length > 0);
+const scriptedAnswers = (process.env.HITL_ANSWERS ?? "").split("\n").filter((s) => s.length > 0);
 let scriptCursor = 0;
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 
 async function readAnswer(): Promise<string> {
-	if (scriptCursor < scriptedAnswers.length) {
-		const answer = scriptedAnswers[scriptCursor++];
-		if (answer === undefined) throw new Error("scripted answer is missing");
-		console.log(`你的回答 > ${answer}   (scripted)`);
-		return answer;
-	}
-	return (await rl.question("你的回答 > ")).trim();
+  if (scriptCursor < scriptedAnswers.length) {
+    const answer = scriptedAnswers[scriptCursor++];
+    if (answer === undefined) throw new Error("scripted answer is missing");
+    console.log(`你的回答 > ${answer}   (scripted)`);
+    return answer;
+  }
+  return (await rl.question("你的回答 > ")).trim();
 }
 
 function printAnswer(res: { messages: Array<{ content: unknown }> }): void {
-	const last = res.messages.at(-1);
-	const content = last?.content;
-	const text = typeof content === "string" ? content : JSON.stringify(content);
-	console.log(`\n===== 最后回答 =====\n${text}`);
+  const last = res.messages.at(-1);
+  const content = last?.content;
+  const text = typeof content === "string" ? content : JSON.stringify(content);
+  console.log(`\n===== 最后回答 =====\n${text}`);
 
-	const rawJson = MasterPlanSchema.parse(
-		typeof content === "string" ? JSON.parse(content) : content,
-	);
+  const rawJson = MasterPlanSchema.parse(typeof content === "string" ? JSON.parse(content) : content);
 
-	const now = new Date();
-	const year = now.getFullYear();
-	const month = String(now.getMonth() + 1).padStart(2, "0");
-	const day = String(now.getDate()).padStart(2, "0");
-	const hour = String(now.getHours()).padStart(2, "0");
-	const minute = String(now.getMinutes()).padStart(2, "0");
-	const second = String(now.getSeconds()).padStart(2, "0");
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const hour = String(now.getHours()).padStart(2, "0");
+  const minute = String(now.getMinutes()).padStart(2, "0");
+  const second = String(now.getSeconds()).padStart(2, "0");
 
-	// YYYY-MM-DD_hh:mm:ss_{userId}.json
-	var outputFileName = `${year}-${month}-${day}_${hour}:${minute}:${second}_${userId}.json`;
+  // YYYY-MM-DD_hh:mm:ss_{userId}.json
+  var outputFileName = `${year}-${month}-${day}_${hour}:${minute}:${second}_${userId}.json`;
 
-	writeFileSync(
-		`./test-output/${outputFileName}`,
-		JSON.stringify(rawJson, null, 2),
-	);
-	console.log(`\n===== 最后回答已写入 ./test-output/${outputFileName} =====`);
+  writeFileSync(`./test-output/${outputFileName}`, JSON.stringify(rawJson, null, 2));
+  console.log(`\n===== 最后回答已写入 ./test-output/${outputFileName} =====`);
 }
 
 /** 把 ask_user_question 的 interrupt payload 渲染成给运动员看的追问文本。 */
 function renderQuestion(value: AskUserQuestionPayload): string {
-	const lines: string[] = [];
-	if (value.header) lines.push(`【${value.header}】`);
-	lines.push(value.question);
-	value.options.forEach((o, i) => {
-		lines.push(
-			`  ${i + 1}. ${o.label}${o.description ? ` —— ${o.description}` : ""}`,
-		);
-	});
-	if (value.options.length) {
-		lines.push(
-			value.allowMultiple
-				? "（可多选，逗号分隔序号，或直接自由作答）"
-				: "（可选一个序号，或直接自由作答）",
-		);
-	}
-	return lines.join("\n");
+  const lines: string[] = [];
+  if (value.header) lines.push(`【${value.header}】`);
+  lines.push(value.question);
+  value.options.forEach((o, i) => {
+    lines.push(`  ${i + 1}. ${o.label}${o.description ? ` —— ${o.description}` : ""}`);
+  });
+  if (value.options.length) {
+    lines.push(value.allowMultiple ? "（可多选，逗号分隔序号，或直接自由作答）" : "（可选一个序号，或直接自由作答）");
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -105,42 +92,36 @@ function renderQuestion(value: AskUserQuestionPayload): string {
  * 恢复，直到没有新的追问为止。
  */
 async function askWithHITL(content: string, thread: string): Promise<void> {
-	const tokenUsage = new LlmTokenUsageTracker();
-	const cfg = {
-		context: { userId, asof },
-		configurable: { thread_id: thread },
-		callbacks: [tokenUsage],
-	};
-	const startTime = Date.now();
-	try {
-		let res = (await agent.invoke(
-			{ messages: [{ role: "user", content }] },
-			cfg,
-		)) as {
-			messages: Array<{ content: unknown }>;
-			__interrupt__?: Array<{ value: AskUserQuestionPayload }>;
-		};
+  const tokenUsage = new LlmTokenUsageTracker();
+  const cfg = {
+    context: { userId, asof },
+    configurable: { thread_id: thread },
+    callbacks: [tokenUsage],
+  };
+  const startTime = Date.now();
+  try {
+    let res = (await agent.invoke({ messages: [{ role: "user", content }] }, cfg)) as {
+      messages: Array<{ content: unknown }>;
+      __interrupt__?: Array<{ value: AskUserQuestionPayload }>;
+    };
 
-		let guard = 0;
-		while (res.__interrupt__?.length && guard++ < 6) {
-			const intr = res.__interrupt__[0]?.value;
-			if (intr?.kind === ASK_USER_QUESTION_KIND) {
-				console.log(`\n----- 教练想追问你 -----\n${renderQuestion(intr)}`);
-				//     } else {
-				//       console.log(`\n----- 教练暂停并请求输入 -----\n${JSON.stringify(intr.value)}`);
-			}
-			const answer = (await readAnswer()).trim();
-			res = (await agent.invoke(
-				new Command({ resume: answer }),
-				cfg,
-			)) as typeof res;
-		}
+    let guard = 0;
+    while (res.__interrupt__?.length && guard++ < 6) {
+      const intr = res.__interrupt__[0]?.value;
+      if (intr?.kind === ASK_USER_QUESTION_KIND) {
+        console.log(`\n----- 教练想追问你 -----\n${renderQuestion(intr)}`);
+        //     } else {
+        //       console.log(`\n----- 教练暂停并请求输入 -----\n${JSON.stringify(intr.value)}`);
+      }
+      const answer = (await readAnswer()).trim();
+      res = (await agent.invoke(new Command({ resume: answer }), cfg)) as typeof res;
+    }
 
-		printAnswer(res);
-	} finally {
-		console.log(`Request took ${Date.now() - startTime} ms`);
-		console.log(`\n${formatTokenUsageReport(tokenUsage.summary())}`);
-	}
+    printAnswer(res);
+  } finally {
+    console.log(`Request took ${Date.now() - startTime} ms`);
+    console.log(`\n${formatTokenUsageReport(tokenUsage.summary())}`);
+  }
 }
 
 // // ── Scenario：生成赛季计划 → Coach 先回看历史比赛 → 若发现跑崩则追问原因 ──
@@ -152,8 +133,8 @@ async function askWithHITL(content: string, thread: string): Promise<void> {
 
 // Test race goal: 2026-10-18 西安马拉松，目标 2:50:00，全马；每周 6 天训练，单次不超过 3 小时，无伤病。
 await askWithHITL(
-	"帮我生成一个新的赛季训练计划，目标是 2026-10-18 西安马拉松 2:50:00。全马；每周可训练 6 天，单次不超过 3 小时，目前无伤病。",
-	"session-master-plan",
+  "帮我生成一个新的赛季训练计划，目标是 2026-10-18 西安马拉松 2:50:00。全马；每周可训练 6 天，单次不超过 3 小时，目前无伤病。",
+  "session-master-plan",
 );
 
 await rl.close();

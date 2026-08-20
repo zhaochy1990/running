@@ -6,9 +6,9 @@ const provider = MySqlDataProvider.create(loadApiConfig().strideDatabase);
 async function main() {}
 
 try {
-	await main();
+  await main();
 } catch (error) {
-	console.error("Error in test_race_analysis.ts:", error);
+  console.error("Error in test_race_analysis.ts:", error);
 } finally {
-	await provider.close();
+  await provider.close();
 }
