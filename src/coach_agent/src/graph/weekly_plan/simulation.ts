@@ -7,11 +7,11 @@ import {
   WeeklyPlanSimulationReportSchema,
 } from "@stride/contract";
 import { z } from "zod/v4";
-
-export type { WeeklyPlanSimulationReport } from "@stride/contract";
 import type { WeeklyPlanContext } from "../../data/weeklyPlanContextProvider.js";
 import { simulatePmcDays } from "../master_plan/simulation.js";
 import { estimatePlannedRunLoad } from "../training_load/plannedRunLoad.js";
+
+export type { WeeklyPlanSimulationReport } from "@stride/contract";
 
 /** Simulate a concrete Monday-Sunday WeeklyPlan using its actual session dates. */
 export function simulateWeeklyPlanLoad(plan: WeeklyPlan, context: WeeklyPlanContext): WeeklyPlanSimulationReport {
