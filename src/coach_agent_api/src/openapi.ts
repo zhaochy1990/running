@@ -97,7 +97,7 @@ export const OPENAPI_DOCUMENT = {
 						type: "object",
 						required: ["message"],
 						properties: {
-							message: { type: "string", minLength: 1, maxLength: 20_000 },
+							message: nonBlankString(20_000),
 						},
 					},
 				],
@@ -111,16 +111,16 @@ export const OPENAPI_DOCUMENT = {
 						properties: {
 							resume: {
 								oneOf: [
-									{ type: "string", minLength: 1, maxLength: 20_000 },
+									// Array items are capped individually; the handler also caps
+									// their combined length at 20,000 characters.
+									nonBlankString(20_000),
 									{
 										type: "array",
+										description:
+											"The combined length of all answers must not exceed 20,000 characters.",
 										minItems: 1,
 										maxItems: 50,
-										items: {
-											type: "string",
-											minLength: 1,
-											maxLength: 2_000,
-										},
+										items: nonBlankString(2_000),
 									},
 								],
 							},
@@ -156,6 +156,8 @@ export const OPENAPI_DOCUMENT = {
 			},
 			ReviewContext: {
 				type: "object",
+				description:
+					"Allowed only with target.kind=week. proposal.folder must equal target.folder. The serialized review_context must not exceed 65,536 bytes.",
 				required: ["kind", "proposal"],
 				properties: {
 					kind: { type: "string", const: "weekly_create" },
@@ -210,4 +212,13 @@ function errorResponse(description: string) {
 
 function nullableString(maxLength: number) {
 	return { type: ["string", "null"], minLength: 1, maxLength };
+}
+
+function nonBlankString(maxLength: number) {
+	return {
+		type: "string",
+		minLength: 1,
+		maxLength,
+		pattern: ".*\\S.*",
+	};
 }

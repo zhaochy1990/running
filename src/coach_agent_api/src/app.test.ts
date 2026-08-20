@@ -70,6 +70,10 @@ test("Swagger UI is served for the OpenAPI document", async () => {
 	const html = await response.text();
 	assert.match(html, /Coach Agent API documentation/);
 	assert.match(html, /\/openapi\.json/);
+	assert.match(html, /swagger-ui-dist@5\.32\.14/);
+	assert.match(html, /persistAuthorization: false/);
+	assert.match(html, /integrity="sha384-/);
+	assert.doesNotMatch(html, /swagger-ui-dist(?!@5\.32\.14)/);
 });
 
 test("chat derives user and thread identity from the verified token", async () => {
