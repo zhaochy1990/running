@@ -6,15 +6,15 @@ import {
 	RecoveryTrendSchema,
 	type TargetTrainingLoad,
 	TargetTrainingLoadSchema,
+	type WeeklyPlan,
+	WeeklyPlanSchema,
+	type WeeklyPlanSimulationReport,
+	WeeklyPlanSimulationReportSchema,
 	WeeklyPlanGeneratorContext,
 	WeeklyPlanGeneratorOutcome,
 	WeeklyPlanGeneratorRequest,
 } from "@stride/contract";
 import { z } from "zod/v4";
-import {
-	type WeeklyPlan,
-	WeeklyPlanSchema,
-} from "../../agents/weekly_plan/schema.js";
 import type { CoachAgentConfig } from "../../config/config.js";
 import type {
 	WeeklyPlanContext,
@@ -23,8 +23,6 @@ import type {
 import { getLogger } from "../../utils/logger.js";
 import {
 	simulateWeeklyPlanLoad,
-	type WeeklyPlanSimulationReport,
-	WeeklyPlanSimulationReportSchema,
 } from "./simulation.js";
 import type { WeeklyPlanLLM, WeeklyPlanLlmInput } from "./weeklyPlanNode.js";
 

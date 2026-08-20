@@ -4,14 +4,15 @@ import { fileURLToPath } from "node:url";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { type StructuredTool, tool } from "@langchain/core/tools";
 import { toJsonSchema } from "@langchain/core/utils/json_schema";
-import type { PhaseName, TargetTrainingLoad } from "@stride/contract";
-import * as z from "zod";
-import { buildResponsesModel } from "../../agents/common.js";
 import {
+	type PhaseName,
+	type TargetTrainingLoad,
 	type WeeklyPlan,
 	WeeklyPlanGenerationSchema,
 	WeeklyPlanSchema,
-} from "../../agents/weekly_plan/schema.js";
+} from "@stride/contract";
+import * as z from "zod";
+import { buildResponsesModel } from "../../agents/common.js";
 import type { ModelConfig } from "../../config/config.js";
 import type { WeeklyPlanContext } from "../../persistence/index.js";
 import { getLogger } from "../../utils/logger.js";

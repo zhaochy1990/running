@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
-import { WeeklyPlanSchema } from "../../agents/weekly_plan/schema.js";
 import { PhaseNameSchema } from "../master_plan/schemas.js";
+import { WeeklyPlanSchema } from "./schema.js";
 import { WeeklyPlanSimulationReportSchema } from "./simulation.js";
 
 export type PhaseName = z.infer<typeof PhaseNameSchema>;

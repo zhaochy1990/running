@@ -12,3 +12,4 @@ export * from "./master_plan/simulation-schemas.js";
 export * from "./master_plan/types.js";
 export * from "./weekly_plan/contracts.js";
 export * from "./weekly_plan/schema.js";
+export * from "./weekly_plan/simulation.js";
