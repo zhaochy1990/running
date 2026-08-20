@@ -1,22 +1,90 @@
 {
-  "displayName": "STRIDE Mobile Foundation",
+  "displayName": "Stride Mobile",
   "theme": {
-    "bodyFont": "GEIST",
-    "colorMode": "LIGHT",
-    "colorVariant": "MONOCHROME",
-    "customColor": "#1FAD5B",
-    "headlineFont": "GEIST",
-    "labelFont": "GEIST",
-    "overrideNeutralColor": "#171717",
-    "overridePrimaryColor": "#1FAD5B",
-    "roundness": "ROUND_EIGHT",
+    "bodyFont": "INTER",
+    "colorMode": "DARK",
+    "colorVariant": "FIDELITY",
+    "customColor": "#FF6363",
+    "headlineFont": "INTER",
+    "labelFont": "INTER",
+    "overrideNeutralColor": "#07080A",
+    "overridePrimaryColor": "#FF6363",
+    "overrideSecondaryColor": "#55B3FF",
+    "overrideTertiaryColor": "#5FC992",
+    "roundness": "ROUND_TWELVE",
+    "typography": {
+      "display": {
+        "fontFamily": "Inter",
+        "fontSize": "40px",
+        "fontWeight": "600",
+        "lineHeight": "44px",
+        "letterSpacing": "0px"
+      },
+      "headline-lg": {
+        "fontFamily": "Inter",
+        "fontSize": "28px",
+        "fontWeight": "600",
+        "lineHeight": "34px",
+        "letterSpacing": "0px"
+      },
+      "headline-md": {
+        "fontFamily": "Inter",
+        "fontSize": "22px",
+        "fontWeight": "600",
+        "lineHeight": "28px",
+        "letterSpacing": "0.2px"
+      },
+      "card-title": {
+        "fontFamily": "Inter",
+        "fontSize": "18px",
+        "fontWeight": "500",
+        "lineHeight": "23px",
+        "letterSpacing": "0.2px"
+      },
+      "body-lg": {
+        "fontFamily": "Inter",
+        "fontSize": "16px",
+        "fontWeight": "500",
+        "lineHeight": "26px",
+        "letterSpacing": "0.2px"
+      },
+      "body-sm": {
+        "fontFamily": "Inter",
+        "fontSize": "14px",
+        "fontWeight": "500",
+        "lineHeight": "20px",
+        "letterSpacing": "0.2px"
+      },
+      "eyebrow": {
+        "fontFamily": "Inter",
+        "fontSize": "12px",
+        "fontWeight": "600",
+        "lineHeight": "16px",
+        "letterSpacing": "0.2px"
+      },
+      "metric-value": {
+        "fontFamily": "Geist Mono",
+        "fontSize": "24px",
+        "fontWeight": "600",
+        "lineHeight": "30px",
+        "letterSpacing": "0.2px"
+      },
+      "metric-unit": {
+        "fontFamily": "Geist Mono",
+        "fontSize": "12px",
+        "fontWeight": "500",
+        "lineHeight": "16px",
+        "letterSpacing": "0.2px"
+      }
+    },
     "spacing": {
-      "xs": "4px",
-      "sm": "8px",
-      "md": "12px",
-      "lg": "16px",
-      "xl": "24px",
-      "2xl": "32px"
+      "base": "8px",
+      "button-height": "50px",
+      "gutter": "12px",
+      "input-height": "48px",
+      "margin-side": "20px",
+      "tab-bar-height": "64px",
+      "touch-target": "48px"
     }
   }
 }

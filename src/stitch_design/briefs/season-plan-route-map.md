@@ -34,21 +34,20 @@ Help the runner understand where they are in the full season, what the current p
 
 ## Constraints
 
-- This is a total redesign. Do not preserve the old dark coral visual treatment, segmented `赛季计划 / 周计划` tabs, race hero card, metric grid, or weekly-volume bar chart.
-- Use the current STRIDE Mobile Foundation: white canvas, near-black text, Geist, and `#1FAD5B` used sparingly. Import Geist Mono and apply it to every number, date, week range, distance, duration, and target time.
+- Apply the current STRIDE Raycast Mobile Foundation. Preserve the route-map hierarchy rather than the former segmented tabs, race hero card, metric grid, or weekly-volume bar chart.
 - Avoid a generic fitness dashboard, excessive bordered cards, gradients, glass, decorative illustrations, rings, and a card-per-metric layout.
 - Do not show `计划`, `首页`, `记录`, `分析`, `Coach` as a five-item bottom bar. Do not expose `Master Plan`, `Draft`, revision IDs, or internal state names.
 - Do not duplicate the weekly plan. This screen explains long-term direction; the primary action navigates to the current week.
 - The back button is exactly 48 px square. The route and phase rows remain readable at 360 px width without horizontal scrolling.
 - Keep at least 160 px bottom padding plus safe area so the race destination can scroll completely above the fixed action area.
-- Import both Geist and Geist Mono. Apply Geist Mono to every number, date, week range, distance, and target time.
+- Use Inter for interface copy and Geist Mono for every number, date, week range, distance, and target time.
 - The back button, every phase row, milestone row, and both secondary actions must each have a full touch target of at least 48 px.
 - If actions are fixed to the bottom, leave at least 160 px plus safe-area bottom padding in the scrollable content so the race destination is never obscured.
 
 ## Acceptance Checks
 
 - In the first viewport, a runner can identify the race date and target time, current week and phase, current phase purpose, next milestone, and the route toward race day.
-- Current, completed, and future phases are distinguishable without relying on green alone.
+- Current, completed, and future phases are distinguishable without relying on color alone.
 - The hierarchy has one dominant season route, not several equally weighted cards.
 - `查看本周课表` is the single primary action; `调整计划` remains visible but secondary.
 - The screen uses the four-destination mobile information architecture only through its back destination, without rendering bottom navigation on this detail screen.

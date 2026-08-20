@@ -28,6 +28,8 @@ interface StitchConfig {
   projectTitle: string;
   projectId: string | null;
   designSystemId: string | null;
+  confirmedProjectId?: string | null;
+  confirmedDesignSystemId?: string | null;
   deviceType: "MOBILE";
   foundationFile: string;
   designSystemFile: string;
@@ -41,8 +43,16 @@ interface ScreenRecord {
   parentScreenId?: string;
   slug: string;
   operation: Operation;
-  brief?: string;
+  status?: "candidate" | "approved";
+  designGeneration?: string;
+  briefs?: string[];
   html?: string;
+  approvedArtifactSha256?: string;
+  approvedAt?: string;
+  confirmedProjectId?: string;
+  confirmedScreenId?: string;
+  confirmedAt?: string;
+  confirmedVerified?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -73,13 +83,13 @@ Commands:
   design-systems [--project <id>]
   create-design-system [file] [--project <id>]
   update-design-system [file] [--design-system <id>] [--project <id>]
-  publish <screen.html> [--title <title>] [--slug <name>] [--project <id>]
+  publish <screen.html> --brief <brief.md> [--title <title>] [--slug <name>] [--project <id>]
   generate <brief.md> [--slug <name>] [--project <id>] [--no-export]
   edit <screen-id> <brief.md> [--slug <name>] [--project <id>] [--no-export]
   variants <screen-id> <brief.md> [--slug <name>] [--count <1-5>]
            [--range <REFINE|EXPLORE|REIMAGINE>]
            [--aspects <LAYOUT,COLOR_SCHEME,...>] [--project <id>] [--no-export]
-  export <screen-id> [--slug <name>] [--project <id>]
+  export <screen-id> [--slug <name>] [--brief <brief.md>] [--project <id>]
 
 Authentication:
   Set STITCH_API_KEY, or set both STITCH_ACCESS_TOKEN and GOOGLE_CLOUD_PROJECT.
@@ -162,6 +172,18 @@ function projectIdFor(config: StitchConfig, flags: Map<string, string | true>): 
   );
 }
 
+function requireCandidateProject(
+  config: StitchConfig,
+  flags: Map<string, string | true>,
+  command: string,
+): string {
+  const projectId = projectIdFor(config, flags);
+  if (projectId !== config.projectId || projectId === config.confirmedProjectId) {
+    throw new Error(`${command} may only write to the configured candidate project ${config.projectId}.`);
+  }
+  return projectId;
+}
+
 function safeSlug(value: string): string {
   const slug = value
     .normalize("NFKD")
@@ -218,11 +240,53 @@ async function updateManifest(
     updatedAt: now,
   };
 
+  if (record.status === "candidate") {
+    delete next.approvedArtifactSha256;
+    delete next.approvedAt;
+    delete next.confirmedProjectId;
+    delete next.confirmedScreenId;
+    delete next.confirmedAt;
+    delete next.confirmedVerified;
+  }
+
+  if (!next.briefs || next.briefs.length === 0) {
+    throw new Error(`Candidate ${record.screenId} requires one canonical brief.`);
+  }
+
   if (index === -1) manifest.screens.push(next);
   else manifest.screens[index] = next;
 
   manifest.projectId = record.projectId;
   await writeJson(manifestPath, manifest);
+}
+
+function candidateRecord(
+  screen: Screen,
+  options: {
+    slug: string;
+    operation: Operation;
+    briefPath?: string;
+    parentScreenId?: string;
+    html?: string;
+  },
+): Omit<ScreenRecord, "createdAt" | "updatedAt"> {
+  return {
+    projectId: screen.projectId,
+    screenId: screen.id,
+    parentScreenId: options.parentScreenId,
+    slug: safeSlug(options.slug),
+    operation: options.operation,
+    status: "candidate",
+    designGeneration: "raycast-v1",
+    briefs: options.briefPath ? [relativeToRoot(options.briefPath)] : undefined,
+    html: options.html,
+    approvedArtifactSha256: undefined,
+    approvedAt: undefined,
+    confirmedProjectId: undefined,
+    confirmedScreenId: undefined,
+    confirmedAt: undefined,
+    confirmedVerified: undefined,
+  };
 }
 
 async function exportScreen(
@@ -252,15 +316,10 @@ async function exportScreen(
   const htmlPath = join(artifactsDir, `${fileBase}.html`);
   await writeFile(htmlPath, await htmlResponse.text(), "utf8");
 
-  await updateManifest(config, {
-    projectId: screen.projectId,
-    screenId: screen.id,
-    parentScreenId: options.parentScreenId,
-    slug: safeSlug(options.slug),
-    operation: options.operation,
-    brief: options.briefPath ? relativeToRoot(options.briefPath) : undefined,
+  await updateManifest(config, candidateRecord(screen, {
+    ...options,
     html: relativeToRoot(htmlPath),
-  });
+  }));
 
   console.log(`HTML: ${relativeToRoot(htmlPath)}`);
 }
@@ -275,14 +334,7 @@ async function recordWithoutExport(
     parentScreenId?: string;
   },
 ): Promise<void> {
-  await updateManifest(config, {
-    projectId: screen.projectId,
-    screenId: screen.id,
-    parentScreenId: options.parentScreenId,
-    slug: safeSlug(options.slug),
-    operation: options.operation,
-    brief: options.briefPath ? relativeToRoot(options.briefPath) : undefined,
-  });
+  await updateManifest(config, candidateRecord(screen, options));
 }
 
 async function maybeExport(
@@ -354,7 +406,16 @@ async function main(): Promise<void> {
     return;
   }
 
-  const projectId = projectIdFor(config, args.flags);
+  const candidateWriteCommands = new Set([
+    "create-design-system",
+    "generate",
+    "edit",
+    "variants",
+    "publish",
+  ]);
+  const projectId = candidateWriteCommands.has(args.command)
+    ? requireCandidateProject(config, args.flags, args.command)
+    : projectIdFor(config, args.flags);
   const project = stitch.project(projectId);
 
   if (args.command === "screens") {
@@ -414,7 +475,15 @@ async function main(): Promise<void> {
     designSystem.theme = { ...designSystem.theme, designMd: foundation };
 
     await project.designSystem(designSystemId).update(designSystem);
-    console.log(`Design system updated: ${designSystemId}`);
+    console.log(`Candidate design system updated: ${designSystemId}`);
+
+    if (config.confirmedProjectId && config.confirmedDesignSystemId) {
+      await stitch
+        .project(config.confirmedProjectId)
+        .designSystem(config.confirmedDesignSystemId)
+        .update(designSystem);
+      console.log(`Confirmed design system updated: ${config.confirmedDesignSystemId}`);
+    }
     return;
   }
 
@@ -424,6 +493,9 @@ async function main(): Promise<void> {
     );
     const title = getFlag(args.flags, "title") ?? basename(inputPath, extname(inputPath));
     const slug = getFlag(args.flags, "slug") ?? safeSlug(title);
+    const briefPath = resolveLocalPath(
+      requireValue(getFlag(args.flags, "brief"), "publish requires --brief <brief.md>."),
+    );
     const published = await project.upload(inputPath, {
       title,
       createScreenInstances: true,
@@ -433,13 +505,12 @@ async function main(): Promise<void> {
     }
 
     for (const screen of published) {
-      await updateManifest(config, {
-        projectId: screen.projectId,
-        screenId: screen.id,
+      await updateManifest(config, candidateRecord(screen, {
         slug,
         operation: "publish",
+        briefPath,
         html: relativeToRoot(inputPath),
-      });
+      }));
       console.log(`Screen published: ${screen.id}`);
     }
     return;
@@ -546,8 +617,10 @@ async function main(): Promise<void> {
   if (args.command === "export") {
     const screenId = requireValue(args.positional[0], "export requires <screen-id>.");
     const slug = getFlag(args.flags, "slug") ?? "screen";
+    const briefFlag = getFlag(args.flags, "brief");
+    const briefPath = briefFlag ? resolveLocalPath(briefFlag) : undefined;
     const screen = await project.getScreen(screenId);
-    await exportScreen(config, screen, { slug, operation: "export" });
+    await exportScreen(config, screen, { slug, operation: "export", briefPath });
     return;
   }
 

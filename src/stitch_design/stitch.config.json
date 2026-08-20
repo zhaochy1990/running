@@ -1,7 +1,9 @@
 {
   "projectTitle": "STRIDE · Mobile",
   "projectId": "12727163079393064568",
-  "designSystemId": "8fe8bdef08b841bd8de2b5c32ad4b772",
+  "designSystemId": "9639466710049134133",
+  "confirmedProjectId": "7939736180256612039",
+  "confirmedDesignSystemId": "10849724626496628336",
   "deviceType": "MOBILE",
   "foundationFile": "prompts/foundation.md",
   "designSystemFile": "design-system.json",

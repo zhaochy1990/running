@@ -10,25 +10,24 @@ The runner uses the `训练` tab to manage the whole training system: understand
 
 ## Required Shell
 
-- Root-tab screen at 390 px logical width with safe areas and a fixed opaque-white top bar.
+- Root-tab screen at 390 px logical width with safe areas and a fixed solid-surface top bar.
 - Top bar: 48 x 48 menu action on the left, centered title `训练`, and an empty 48 px balancing area on the right. Do not show a back button.
 - Four-item bottom navigation in this exact order: `跑者`, `训练`, `数据`, `教练`. `训练` is active. Never show `发现` or `我`.
-- Match the approved runner-home visual language: white canvas, near-black text, Geist Sans, Geist Mono for all athletic numbers, thin rules, quiet surfaces, and STRIDE green `#1FAD5B`.
+- Match the current STRIDE Raycast Mobile Foundation and runner-home information density. Use Inter for interface copy, Geist Mono for athletic values, dark layered surfaces, and restrained coral punctuation.
 
 ## Content Order
 
 ### 1. Season Plan Summary
 
-- Header row: `赛季训练计划` and a compact secondary outline button `查看计划` with a right arrow. The control uses a white background, subtle `#E5E5E5` 1 px border, 8 px radius, near-black label, and an explicit 48 px touch target. Do not style it as a green underlined text link or a filled primary button.
+- Header row: `赛季训练计划` and a compact secondary outline button `查看计划` with a right arrow. The control uses a raised dark surface, Foundation border and elevation, 8 px radius, high-emphasis label, and an explicit 48 px touch target.
 - Goal: `上海马拉松 · 2026.10.25`.
 - Current position: `进展期 · 第 3 / 6 周`.
 - Compact supporting values: `距比赛 103 天` and `赛季 8 / 20 周`.
-- A restrained horizontal phase rail: `基础` completed, `进展` current, then `赛前`, `减量`, `比赛`. Use labels as well as visual state.
-- Replace a standalone phase-dot rail with a compact full-season weekly-volume chart. Do not show both.
+- Use one compact full-season weekly-volume chart as the phase overview; do not add a separate phase-dot rail. The chart labels completed, current, and future phase starts explicitly.
 - Chart title: `周训练量`; subtitle/axis label: `预计周跑量 · km/周`.
-- Show 20 narrow weekly bars across the available width. Use low-saturation phase colors: green for base, cyan for build, blue-gray for pre-race, muted orange for peak, and muted purple for taper/race.
-- Highlight the current bar as `W08 · 当前` using a STRIDE Green outline. Current target value is `38 km`.
-- Only label phase starts under the chart: `W01 基础`, `W07 进展`, `W13 赛前`, `W17 减量`, `W20 比赛`. Do not label every week.
+- Show 20 narrow weekly bars across the available width. Use neutral grays for phase categories; rely on labels, height, and position for distinction.
+- Highlight the current bar as `W08 · 当前` using coral plus an explicit label and outline. Current target value is `38 km`.
+- Only label phase starts under the chart: `W01 基础`, `W07 进展`, `W13 赛前`, `W17 峰值`, `W19 减量`, `W20 比赛`. Do not label every week.
 - The volume rhythm should visually ramp, include recovery dips, peak, and taper. Keep the chart compact at roughly 128-150 px total height.
 - Keep this summary compact. It is context for the week, not a large promotional hero card.
 
@@ -85,6 +84,6 @@ The runner uses the `训练` tab to manage the whole training system: understand
 - Within five seconds, the user can identify season position, current week progress, today's row, and the next key session.
 - The first 390 x 844 viewport shows the season summary, current-week summary, and at least the first several schedule rows.
 - The page clearly differs from `跑者`: it manages the full week and season rather than answering today's readiness question.
-- The selected bottom tab is `训练`; navigation order and style match the approved runner-home HTML.
+- The selected bottom tab is `训练`; navigation structure follows `跑者 / 训练 / 数据 / 教练`, and its visual style follows the current Foundation rather than a legacy HTML snapshot.
 - All numerical training data uses aligned monospace typography.
 - The page remains usable at 360 px width and with larger system text.

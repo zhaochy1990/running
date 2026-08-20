@@ -5,8 +5,8 @@
 ## 设计源
 
 - Stitch 项目 `STRIDE · Mobile`（`12727163079393064568`）是候选设计与迭代项目。
-- Stitch 项目 `Stride Mobile Confirmed`（`12356313034084557001`）只保存由用户已批准 artifact 重建并验证的 screen。
-- Design System `Stride Mobile`（`8fe8bdef08b841bd8de2b5c32ad4b772`）是正式视觉基线。
+- Stitch 项目 `Stride Mobile Confirmed · Raycast`（`7939736180256612039`）只保存由用户已批准 artifact 重建并验证的 screen。
+- 候选 Design System `Stride Mobile`（`9639466710049134133`）承载正式的 STRIDE Raycast Mobile 视觉基线；确认项目使用同一 Foundation 的独立 design system，ID 记录在 `stitch.config.json`。
 - 产品范围、导航和页面状态以 `spec/app_feature.md` 为准。
 - 本地 HTML 和 manifest 是审阅快照，不得代替 Stitch 中的正式设计。
 - 不手改导出的 HTML 作为最终设计；需要修改时必须通过 Stitch SDK `edit` 或 `variants` 回写 Stitch。
@@ -32,7 +32,8 @@
 - Brief 必须声明 route、产品状态、用户目标、必要内容、操作、导航、约束和验收项。
 - 用户文案使用简体中文；标准跑步单位可保留 `km`、`/km`、`bpm`、`min`。
 - 正式底部导航固定为 `跑者 / 训练 / 数据 / 教练`；`发现` 和个人中心位于侧边菜单。
-- STRIDE 主色固定为 `#1FAD5B`，不得重新引入 `#00E676`。
+- 正式视觉固定为 Raycast 深色基线：canvas `#07080A`、surface `#101111`、brand accent `#FF6363`。绿色只表达成功和健康恢复。
+- 页面 brief 只描述页面职责和最终契约；逐次 fix、refine 和 verify prompt 不进入正式归档。
 
 ## 生成与编辑
 
@@ -55,10 +56,12 @@ source "$HOME/.zshrc" && npm run stitch -- variants <screen-id> briefs/<brief>.m
 1. 只在候选项目 `12727163079393064568` 中生成、编辑和迭代 screen。
 2. 将候选 screen 的 HTML artifact 下载到本地，完成视觉验证，并计算该文件的 SHA-256。
 3. 向用户报告候选 screen ID、本地 HTML 路径、SHA-256 和验证结果，然后停止并等待用户明确批准这份 hash 对应的 artifact。
-4. 用户明确批准后，将该 artifact 在 `artifacts/manifest.json` 中标记为 `approved` 并记录获批 SHA-256。重建前必须重新计算本地文件 SHA-256 并与 manifest 严格匹配；只有匹配时才可在确认项目 `12356313034084557001` 中按该 artifact 的文案、结构和视觉重建 screen。Stitch SDK/MCP 不支持跨项目复制或直接导入 HTML，因此使用同一设计系统和完整 artifact 规格高保真重建。
+4. 用户明确批准后，将该 artifact 在 `artifacts/manifest.json` 中标记为 `approved` 并记录获批 SHA-256。重建前必须重新计算本地文件 SHA-256 并与 manifest 严格匹配；只有匹配时才可在确认项目 `7939736180256612039` 中按该 artifact 的文案、结构和视觉重建 screen。Stitch SDK/MCP 不支持跨项目复制或直接导入 HTML，因此使用同一设计系统和完整 artifact 规格高保真重建。
 5. 回读确认项目中的新 screen，核对项目 ID、screen ID、标题、文案、结构和视觉方向；验证通过后将确认项目和 screen ID 写入 manifest，再向用户报告结果。
 
 生成候选、自动检查、查看 artifact、提出修改意见都不构成人工批准。不得原地覆盖已批准 artifact；需要继续迭代时，先清除 manifest 中的批准和确认项目字段，再导出新候选。候选 HTML 的 SHA-256 发生变化后，之前的批准立即失效，manifest 必须恢复为未批准状态，并重新完成视觉验证和人工批准。批准前不得在确认项目中创建或更新 screen。
+
+本门禁引入前归档的 `legacy-*` 页面不补造批准 hash 或确认项目记录；它们只用于历史追踪。任何后续视觉编辑都会产生新的 Raycast candidate，并完整进入上述审批流程。
 
 ## 本地下载（HARD）
 
@@ -97,9 +100,12 @@ source "$HOME/.zshrc" && npm run stitch -- export <screen-id> --slug <slug>
 - 顶部、底部安全区正确；
 - 主要触控目标至少 48 logical px；
 - 状态不只依赖颜色；
-- 数字使用等宽字体；
-- 不出现 `发现` 底部 Tab、旧术语、旧绿色、玻璃效果或无关占位 CTA；
+- 界面文案使用 Inter，运动数字使用 Geist Mono；
+- canvas、surface、文字、边框、accent、语义色和 elevation 符合 `prompts/foundation.md`；
+- 不出现白底 Foundation、`发现` 底部 Tab、旧术语、全局绿色主色、玻璃效果或无关占位 CTA；
 - 加载、空、错误、离线等适用状态有明确设计。
+
+已归档且在 manifest 中标记为 `legacy-*` 的 HTML 只用于历史追踪，不可作为新页面的视觉参考。新设计或视觉编辑完成后不得保留 `legacy-*` 标记。
 
 ## 发布与收尾
 
@@ -110,6 +116,7 @@ source "$HOME/.zshrc" && npm run stitch -- export <screen-id> --slug <slug>
 ```bash
 source "$HOME/.zshrc" && npm run stitch -- publish \
   artifacts/<screen-id>_<slug>.html \
+  --brief briefs/<brief>.md \
   --title "<正式中文页面标题>" \
   --slug <slug>
 ```
