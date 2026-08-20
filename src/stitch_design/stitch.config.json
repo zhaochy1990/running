@@ -1,0 +1,10 @@
+{
+  "projectTitle": "STRIDE · Mobile",
+  "projectId": "12727163079393064568",
+  "designSystemId": "8fe8bdef08b841bd8de2b5c32ad4b772",
+  "deviceType": "MOBILE",
+  "foundationFile": "prompts/foundation.md",
+  "designSystemFile": "design-system.json",
+  "artifactsDir": "artifacts",
+  "manifestFile": "artifacts/manifest.json"
+}
