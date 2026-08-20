@@ -23,6 +23,55 @@ test("health is public", async () => {
 	assert.deepEqual(await response.json(), { status: "ok" });
 });
 
+test("OpenAPI document describes the live routes and bearer authentication", async () => {
+	const app = createApp({
+		jwtVerifier: {
+			async verify() {
+				throw new Error("must not verify");
+			},
+		},
+		coach: {
+			async invoke() {
+				throw new Error("must not invoke");
+			},
+		},
+	});
+	const response = await app.request("/openapi.json");
+	assert.equal(response.status, 200);
+	const document = (await response.json()) as Record<string, unknown>;
+	assert.equal(document.openapi, "3.1.0");
+	const paths = document.paths as Record<string, Record<string, unknown>>;
+	assert.ok(paths["/health"]?.get);
+	const chat = paths["/api/users/me/coach/chat"]?.post as Record<
+		string,
+		unknown
+	>;
+	assert.deepEqual(chat.security, [{ bearerAuth: [] }]);
+	const components = document.components as Record<string, unknown>;
+	assert.ok((components.schemas as Record<string, unknown>).ChatRequest);
+});
+
+test("Swagger UI is served for the OpenAPI document", async () => {
+	const app = createApp({
+		jwtVerifier: {
+			async verify() {
+				throw new Error("must not verify");
+			},
+		},
+		coach: {
+			async invoke() {
+				throw new Error("must not invoke");
+			},
+		},
+	});
+	const response = await app.request("/docs");
+	assert.equal(response.status, 200);
+	assert.match(response.headers.get("content-type") ?? "", /^text\/html/);
+	const html = await response.text();
+	assert.match(html, /Coach Agent API documentation/);
+	assert.match(html, /\/openapi\.json/);
+});
+
 test("chat derives user and thread identity from the verified token", async () => {
 	let invocation:
 		| { input: unknown; config: Record<string, unknown> }

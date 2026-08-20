@@ -1,7 +1,9 @@
+import { swaggerUI } from "@hono/swagger-ui";
 import { CoachTurnScope, Command } from "coach_agent";
 import { Hono } from "hono";
 import type { JwtVerifier } from "./auth.js";
 import { AuthError } from "./auth.js";
+import { OPENAPI_DOCUMENT } from "./openapi.js";
 import { toPublicResponse } from "./publicResponse.js";
 import {
 	createInMemoryTurnCoordinator,
@@ -29,6 +31,15 @@ export function createApp(dependencies: AppDependencies): Hono {
 		dependencies.turnCoordinator ?? createInMemoryTurnCoordinator();
 
 	app.get("/health", (context) => context.json({ status: "ok" }));
+	app.get("/openapi.json", (context) => context.json(OPENAPI_DOCUMENT));
+	app.get(
+		"/docs",
+		swaggerUI({
+			title: "Coach Agent API documentation",
+			url: "/openapi.json",
+			persistAuthorization: true,
+		}),
+	);
 
 	app.post("/api/users/me/coach/chat", async (context) => {
 		let identity: { userId: string };

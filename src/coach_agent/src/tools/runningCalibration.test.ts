@@ -7,10 +7,7 @@ const userId = "athlete-1";
 
 test("get_running_calibration returns the latest threshold and zones for the runtime user", async () => {
 	const provider = {
-		async getLatestRunningCalibration(
-			requestUserId: string,
-			asOfDate: string,
-		) {
+		async getLatestRunningCalibration(requestUserId: string, asOfDate: string) {
 			assert.equal(requestUserId, userId);
 			assert.equal(asOfDate, "2026-08-14");
 			return {
@@ -34,20 +31,20 @@ test("get_running_calibration returns the latest threshold and zones for the run
 	assert.deepEqual(
 		await tool.invoke({}, { context: { userId, asof: "2026-08-14" } }),
 		{
-		asOfDate: "2026-08-08",
-		thresholdHr: 168,
-		thresholdSpeedMps: 3.9,
-		rhrBaseline: 48,
-		thresholdHrConfidence: "high",
-		thresholdSpeedConfidence: "medium",
-		paceZones: [
-			{
-				name: "threshold",
-				minPaceSPerKm: 270,
-				maxPaceSPerKm: 250,
-			},
-		],
-		heartRateZones: [{ name: "threshold", minBpm: 160, maxBpm: 170 }],
+			asOfDate: "2026-08-08",
+			thresholdHr: 168,
+			thresholdSpeedMps: 3.9,
+			rhrBaseline: 48,
+			thresholdHrConfidence: "high",
+			thresholdSpeedConfidence: "medium",
+			paceZones: [
+				{
+					name: "threshold",
+					minPaceSPerKm: 270,
+					maxPaceSPerKm: 250,
+				},
+			],
+			heartRateZones: [{ name: "threshold", minBpm: 160, maxBpm: 170 }],
 		},
 	);
 });

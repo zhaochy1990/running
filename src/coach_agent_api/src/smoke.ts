@@ -29,6 +29,15 @@ try {
 	if (!response.ok || (await response.text()) !== '{"status":"ok"}') {
 		throw new Error("health smoke failed");
 	}
+	const openApi = await fetch(`http://127.0.0.1:${address.port}/openapi.json`);
+	const openApiDocument = (await openApi.json()) as { openapi?: unknown };
+	if (!openApi.ok || openApiDocument.openapi !== "3.1.0") {
+		throw new Error("OpenAPI smoke failed");
+	}
+	const docs = await fetch(`http://127.0.0.1:${address.port}/docs`);
+	if (!docs.ok || !(await docs.text()).includes("/openapi.json")) {
+		throw new Error("Swagger UI smoke failed");
+	}
 	process.stdout.write("COACH_AGENT_API_SMOKE_OK\n");
 } finally {
 	await new Promise<void>((resolve, reject) =>

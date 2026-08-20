@@ -9,8 +9,8 @@ import {
 	WeeklyPlanDirectResponseSchema,
 } from "@stride/contract";
 import type { ModelConfig } from "../config/config.js";
-import { CoachContext } from "./coachAgent.js";
 import type { DataProvider } from "../data/dataProvider.js";
+import { CoachContext } from "./coachAgent.js";
 import {
 	getMasterPlanGeneratorSubagent,
 	getMasterPlanSubagent,
