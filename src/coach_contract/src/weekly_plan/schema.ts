@@ -70,6 +70,7 @@ const SessionFields = {
 	notes_md: z.string().nullable(),
 	total_distance_m: NullableNumberSchema,
 	total_duration_s: NullableNumberSchema,
+	estimated_dose: NullableNumberSchema,
 };
 
 const PlannedSessionSchema = z.discriminatedUnion("kind", [
@@ -120,7 +121,7 @@ export const WeeklyPlanSchema = z
 		schema: z.literal("weekly-plan/v1"),
 		week_name: z.string().min(1),
 		sessions: z.array(PlannedSessionSchema),
-		nutrition: z.array(PlannedNutritionSchema),
+		nutrition: z.array(PlannedNutritionSchema).length(7),
 		notes_md: z.string().nullable(),
 		coach_notes: z.string().nullable(),
 	})
@@ -145,6 +146,20 @@ export const WeeklyPlanSchema = z
 			});
 		}
 		const weekEnd = addDays(weekStart, 6);
+		if (!plan.sessions.some((session) => session.kind === "run")) {
+			context.addIssue({
+				code: "custom",
+				path: ["sessions"],
+				message: "weekly plan must contain at least one run session",
+			});
+		}
+		if (!plan.sessions.some((session) => session.kind === "rest")) {
+			context.addIssue({
+				code: "custom",
+				path: ["sessions"],
+				message: "weekly plan must contain at least one rest session",
+			});
+		}
 		if (mondayOnOrBefore(weekStart) !== weekStart) {
 			context.addIssue({
 				code: "custom",
@@ -209,6 +224,19 @@ export const WeeklyPlanSchema = z
 	});
 
 export type WeeklyPlan = z.infer<typeof WeeklyPlanSchema>;
+
+export const WeeklyPlanGenerationSchema = z.discriminatedUnion("success", [
+	z.strictObject({
+		success: z.literal(true),
+		weeklyPlan: WeeklyPlanSchema,
+		error: z.literal(""),
+	}),
+	z.strictObject({
+		success: z.literal(false),
+		weeklyPlan: z.null(),
+		error: z.string().min(1),
+	}),
+]);
 
 export const WeeklyPlanDirectResponseSchema = z.strictObject({
 	disposition: z.literal("return_direct"),

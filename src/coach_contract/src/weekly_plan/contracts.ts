@@ -1,5 +1,9 @@
 import { z } from "zod/v4";
 import { PhaseNameSchema } from "../master_plan/schemas.js";
+import { WeeklyPlanSchema } from "./schema.js";
+import { WeeklyPlanSimulationReportSchema } from "./simulation.js";
+
+export type PhaseName = z.infer<typeof PhaseNameSchema>;
 
 const identifier = z.string().min(1);
 
@@ -47,6 +51,8 @@ export const TargetTrainingLoadSchema = z
 			.nullable(),
 		training_load_low: z.number().nonnegative().nullable(),
 		training_load_high: z.number().nonnegative().nullable(),
+		target_distance_km_low: z.number().nonnegative().nullable(),
+		target_distance_km_high: z.number().nonnegative().nullable(),
 		load_ratio_low: z.number().nullable(),
 		load_ratio_high: z.number().nullable(),
 		remove_quality_stimulus: z.boolean(),
@@ -69,8 +75,6 @@ export const TargetTrainingLoadSchema = z
 				trend: z
 					.object({
 						recovery: RecoveryTrendSchema.nullable(),
-						rhr: z.record(z.string(), z.number().nullable()),
-						hrv: z.record(z.string(), z.number().nullable()),
 						seven_day_average: z
 							.object({
 								rhr: z.number().nonnegative().nullable(),
@@ -99,7 +103,10 @@ export const WeeklyPlanGeneratorOutcome = z.discriminatedUnion("decision", [
 			request_id: identifier,
 			generation_id: identifier,
 			phase: PhaseNameSchema,
+			weekly_plan: WeeklyPlanSchema,
 			target_training_load: TargetTrainingLoadSchema,
+			simulation: WeeklyPlanSimulationReportSchema,
+			generation_attempts: z.int().positive(),
 		})
 		.strict(),
 	z
@@ -115,7 +122,11 @@ export const WeeklyPlanGeneratorOutcome = z.discriminatedUnion("decision", [
 			decision: z.literal("quality_failure"),
 			request_id: identifier,
 			generation_id: identifier,
-			reason: z.literal("phase_unresolvable"),
+			reason: z.enum([
+				"phase_unresolvable",
+				"generation_failed",
+				"load_mismatch_unresolved",
+			]),
 		})
 		.strict(),
 ]);

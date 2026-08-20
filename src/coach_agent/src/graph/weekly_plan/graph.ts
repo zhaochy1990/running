@@ -1,6 +1,6 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
 import { WeeklyPlanGeneratorContext } from "@stride/contract";
-import type { CoachAgentConfig } from "../../config/config.js";
+import { type CoachAgentConfig, getAgentConfig } from "../../config/config.js";
 import type { WeeklyPlanContextProvider } from "../../persistence/weeklyPlanContextProvider.js";
 import {
 	GraphInput,
@@ -8,6 +8,7 @@ import {
 	GraphState,
 	WeeklyPlanGeneratorNodes,
 } from "./nodes.js";
+import { createWeeklyPlanLlm } from "./weeklyPlanNode.js";
 
 const PHASE_NODE_TARGETS = [
 	"phase_base",
@@ -23,7 +24,9 @@ export function createWeeklyPlanGeneratorGraph(
 	config: CoachAgentConfig,
 	contextProvider: WeeklyPlanContextProvider,
 ) {
-	const nodes = new WeeklyPlanGeneratorNodes(config, contextProvider);
+	const llm = createWeeklyPlanLlm(getAgentConfig(config, "weekly_plan"));
+
+	const nodes = new WeeklyPlanGeneratorNodes(config, contextProvider, llm);
 
 	return new StateGraph({
 		state: GraphState,
@@ -40,6 +43,8 @@ export function createWeeklyPlanGeneratorGraph(
 		.addNode("phase_taper", nodes.phaseTaper)
 		.addNode("phase_recovery", nodes.phaseRecovery)
 		.addNode("phase_unresolvable", nodes.phaseUnresolvable)
+		.addNode("simulate_load", nodes.simulateLoad)
+		.addNode("load_mismatch", nodes.loadMismatch)
 		.addNode("finalize", nodes.finalize)
 		.addEdge(START, "loadWeeklyPlanContext")
 		.addConditionalEdges(
@@ -51,13 +56,43 @@ export function createWeeklyPlanGeneratorGraph(
 			...PHASE_NODE_TARGETS,
 			"phase_unresolvable",
 		])
-		.addEdge("phase_base", "finalize")
-		.addEdge("phase_build", "finalize")
-		.addEdge("phase_speed", "finalize")
-		.addEdge("phase_marathon", "finalize")
-		.addEdge("phase_taper", "finalize")
-		.addEdge("phase_recovery", "finalize")
+		.addConditionalEdges(
+			"phase_base",
+			(state) => (state.outcome ? END : "simulate_load"),
+			["simulate_load", END],
+		)
+		.addConditionalEdges(
+			"phase_build",
+			(state) => (state.outcome ? END : "simulate_load"),
+			["simulate_load", END],
+		)
+		.addConditionalEdges(
+			"phase_speed",
+			(state) => (state.outcome ? END : "simulate_load"),
+			["simulate_load", END],
+		)
+		.addConditionalEdges(
+			"phase_marathon",
+			(state) => (state.outcome ? END : "simulate_load"),
+			["simulate_load", END],
+		)
+		.addConditionalEdges(
+			"phase_taper",
+			(state) => (state.outcome ? END : "simulate_load"),
+			["simulate_load", END],
+		)
+		.addConditionalEdges(
+			"phase_recovery",
+			(state) => (state.outcome ? END : "simulate_load"),
+			["simulate_load", END],
+		)
 		.addEdge("phase_unresolvable", END)
+		.addConditionalEdges("simulate_load", nodes.evaluateLoadMatch, [
+			...PHASE_NODE_TARGETS,
+			"finalize",
+			"load_mismatch",
+		])
+		.addEdge("load_mismatch", END)
 		.addEdge("finalize", END)
 		.compile();
 }

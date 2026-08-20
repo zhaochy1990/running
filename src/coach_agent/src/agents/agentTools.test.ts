@@ -203,6 +203,7 @@ const weeklyPlan = {
 			notes_md: null,
 			total_distance_m: null,
 			total_duration_s: null,
+			estimated_dose: null,
 			kind: "rest",
 			spec: null,
 		},

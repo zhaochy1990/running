@@ -348,7 +348,20 @@ func validAppliedWeeklyPlan(weekName string) string {
 	}
 	document := map[string]any{
 		"schema": "weekly-plan/v1", "week_name": weekName,
-		"sessions": []any{}, "nutrition": nutrition,
+		"sessions": []any{
+			map[string]any{
+				"schema": "plan-session/v1", "date": start, "session_index": 0,
+				"kind": "run", "summary": "Easy run", "spec": nil,
+				"notes_md": nil, "total_distance_m": nil, "total_duration_s": nil,
+				"estimated_dose": nil,
+			},
+			map[string]any{
+				"schema": "plan-session/v1", "date": date.AddDate(0, 0, 1).Format("2006-01-02"),
+				"session_index": 0, "kind": "rest", "summary": "Rest", "spec": nil,
+				"notes_md": nil, "total_distance_m": nil, "total_duration_s": nil,
+				"estimated_dose": nil,
+			},
+		}, "nutrition": nutrition,
 		"notes_md": nil, "coach_notes": nil,
 	}
 	raw, _ := json.Marshal(document)

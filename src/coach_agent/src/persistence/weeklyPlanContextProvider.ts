@@ -39,7 +39,8 @@ type ContextStore = Pick<
 	| "getLatestRunningCalibration"
 	| "getUserInjuries"
 	| "getWeeklyFeedbackByDateRange"
->;
+> &
+	Partial<Pick<StrideDataStore, "getVendorHrvBaseline">>;
 
 export interface WeeklyPlanContextProvider {
 	loadSnapshot(userId: string, asOf: string): Promise<WeeklyPlanContext>;
@@ -100,13 +101,35 @@ export interface AbsorbedLoad {
 
 export interface WeeklyUserProfile {
 	age: number | null;
+	gender: string | null;
 	weight_kg: number | null;
 	threshold_pace_s_per_km: number | null;
 	threshold_speed_mps: number | null;
 	lactate_threshold_hr: number | null;
 	rhr_baseline: number | null;
+	hrv_baseline_low: number | null;
+	hrv_baseline_high: number | null;
 	heart_rate_zones: HeartRateZone[];
 	pace_zones: PaceZone[];
+}
+
+export interface FitnessTrendPoint {
+	date: string;
+	training_dose: number | null;
+	acute_load: number | null;
+	chronic_load: number | null;
+	form: number | null;
+	load_ratio: number | null;
+	coverage_status: string | null;
+	rhr: number | null;
+	hrv: number | null;
+}
+
+export interface WeeklyFitnessState {
+	as_of_date: string;
+	stride_training_load: Record<string, unknown>;
+	trend: FitnessTrendPoint[];
+	provenance: { source: string; vendor_derived: boolean };
 }
 
 export interface WeeklyPlanContext {
@@ -123,7 +146,7 @@ export interface WeeklyPlanContext {
 	recent_training_weeks: RecentTrainingWeek[];
 	absorbed_load: AbsorbedLoad;
 	recent_feedback: Array<Record<string, unknown>>;
-	fitness_state: Record<string, unknown>;
+	fitness_state: WeeklyFitnessState;
 	injury: Array<{
 		description: string;
 		recovery_status: string;
@@ -132,7 +155,6 @@ export interface WeeklyPlanContext {
 	recovery: {
 		latest: DailyRecovery | null;
 		seven_day_average: { rhr: number | null; hrv: number | null };
-		history: DailyRecovery[];
 		provenance: { source: string };
 	};
 }
@@ -184,6 +206,7 @@ export class MySqlWeeklyPlanContextProvider
 			recovery,
 			injuries,
 			calibration,
+			hrvBaseline,
 			...weeklyPlans
 		] = await Promise.all([
 			this.store.getUserProfile(userId),
@@ -194,6 +217,7 @@ export class MySqlWeeklyPlanContextProvider
 			this.store.getDailyRecoveryByDateRange(userId, start, end),
 			this.store.getUserInjuries(userId),
 			this.store.getLatestRunningCalibration(userId, end),
+			this.store.getVendorHrvBaseline?.(userId, end) ?? Promise.resolve(null),
 			...recentWeekStarts.map((weekStart) =>
 				this.store.getWeeklyPlan(userId, weekFolder(weekStart)),
 			),
@@ -210,7 +234,7 @@ export class MySqlWeeklyPlanContextProvider
 			plan_start: planStart,
 			week_name: weekFolder(planStart),
 			lookback: { start_date: start, end_date: end, days: LOOKBACK_DAYS },
-			user_profile: userProfileShape(profile, calibration, end),
+			user_profile: userProfileShape(profile, calibration, hrvBaseline, end),
 			training_position: trainingPosition(plan, planStart),
 			recent_activities: activities
 				.filter((activity) => activityDay(activity) >= start)
@@ -218,7 +242,7 @@ export class MySqlWeeklyPlanContextProvider
 			recent_training_weeks: recentWeeks,
 			absorbed_load: absorbedLoadShape(recentWeeks),
 			recent_feedback: feedback.map(feedbackShape),
-			fitness_state: fitnessShape(loads, end),
+			fitness_state: fitnessShape(loads, recovery, end),
 			injury: injuryShape(injuries),
 			recovery: recoveryShape(recovery, end),
 		};
@@ -440,7 +464,11 @@ function feedbackShape(feedback: WeeklyFeedbackRecord) {
 	};
 }
 
-function fitnessShape(loads: DailyTrainingLoad[], day: string) {
+function fitnessShape(
+	loads: DailyTrainingLoad[],
+	recovery: DailyRecovery[],
+	day: string,
+): WeeklyFitnessState {
 	const latest = loads.at(-1);
 	const available =
 		latest !== undefined &&
@@ -454,7 +482,7 @@ function fitnessShape(loads: DailyTrainingLoad[], day: string) {
 				available: false,
 				missing_reason: "stride_load_not_computed",
 			},
-			trend: [],
+			trend: fitnessTrend(loads, recovery),
 			provenance: { source: "stride", vendor_derived: false },
 		};
 	}
@@ -467,17 +495,35 @@ function fitnessShape(loads: DailyTrainingLoad[], day: string) {
 			form: latest.form,
 			load_ratio: latest.loadRatio,
 		},
-		trend: loads.slice(-14).map((load) => ({
-			date: load.date,
-			training_dose: load.trainingDose,
-			acute_load: load.acuteLoad,
-			chronic_load: load.chronicLoad,
-			form: load.form,
-			load_ratio: load.loadRatio,
-			coverage_status: load.coverageStatus,
-		})),
+		trend: fitnessTrend(loads, recovery),
 		provenance: { source: "stride", vendor_derived: false },
 	};
+}
+
+function fitnessTrend(
+	loads: DailyTrainingLoad[],
+	recovery: DailyRecovery[],
+): FitnessTrendPoint[] {
+	const loadsByDate = new Map(loads.map((load) => [load.date, load]));
+	const recoveryByDate = new Map(recovery.map((point) => [point.date, point]));
+	const dates = [...new Set([...loadsByDate.keys(), ...recoveryByDate.keys()])]
+		.sort()
+		.slice(-14);
+	return dates.map((date) => {
+		const load = loadsByDate.get(date);
+		const point = recoveryByDate.get(date);
+		return {
+			date,
+			training_dose: load?.trainingDose ?? null,
+			acute_load: load?.acuteLoad ?? null,
+			chronic_load: load?.chronicLoad ?? null,
+			form: load?.form ?? null,
+			load_ratio: load?.loadRatio ?? null,
+			coverage_status: load?.coverageStatus ?? null,
+			rhr: point?.rhr ?? null,
+			hrv: point?.hrv ?? null,
+		};
+	});
 }
 
 function injuryShape(injuries: UserInjury[]) {
@@ -503,7 +549,6 @@ function recoveryShape(recovery: DailyRecovery[], asOfDay: string) {
 			rhr: average(recent.map((row) => row.rhr)),
 			hrv: average(recent.map((row) => row.hrv)),
 		},
-		history: measured.slice(-14),
 		provenance: { source: "raw_health_measurements" },
 	};
 }
@@ -511,10 +556,12 @@ function recoveryShape(recovery: DailyRecovery[], asOfDay: string) {
 function userProfileShape(
 	profile: UserProfile | null,
 	calibration: RunningCalibration | null,
+	hrvBaseline: { low: number | null; high: number | null } | null,
 	asOfDay: string,
 ): WeeklyUserProfile {
 	return {
 		age: ageOn(asOfDay, profile?.dob ?? null),
+		gender: profile?.sex ?? null,
 		weight_kg: profile?.weightKg ?? null,
 		threshold_pace_s_per_km:
 			calibration?.thresholdSpeedMps && calibration.thresholdSpeedMps > 0
@@ -523,6 +570,8 @@ function userProfileShape(
 		threshold_speed_mps: calibration?.thresholdSpeedMps ?? null,
 		lactate_threshold_hr: calibration?.thresholdHr ?? null,
 		rhr_baseline: calibration?.rhrBaseline ?? null,
+		hrv_baseline_low: hrvBaseline?.low ?? null,
+		hrv_baseline_high: hrvBaseline?.high ?? null,
 		heart_rate_zones: calibration?.heartRateZones ?? [],
 		pace_zones: calibration?.paceZones ?? [],
 	};

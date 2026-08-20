@@ -188,11 +188,16 @@ test("weekly context combines all weekly planning evidence", async () => {
 				thresholdHr: 170,
 				thresholdSpeedMps: 4,
 				rhrBaseline: 48,
+				hrvBaselineLow: 50,
+				hrvBaselineHigh: 70,
 				thresholdHrConfidence: "high",
 				thresholdSpeedConfidence: "medium",
 				heartRateZones: [{ name: "Z2", minBpm: 130, maxBpm: 145 }],
 				paceZones: [{ name: "Z2", minPaceSPerKm: 330, maxPaceSPerKm: 390 }],
 			};
+		},
+		async getVendorHrvBaseline() {
+			return { low: 50, high: 70, provider: "coros", date: "2026-08-14" };
 		},
 	});
 
@@ -297,6 +302,41 @@ test("weekly context combines all weekly planning evidence", async () => {
 		1.1,
 	);
 	assert.equal("readiness_gate" in snapshot.fitness_state, false);
+	assert.deepEqual(snapshot.fitness_state.trend, [
+		{
+			date: "2026-08-01",
+			training_dose: null,
+			acute_load: null,
+			chronic_load: null,
+			form: null,
+			load_ratio: null,
+			coverage_status: null,
+			rhr: 40,
+			hrv: 100,
+		},
+		{
+			date: "2026-08-13",
+			training_dose: null,
+			acute_load: null,
+			chronic_load: null,
+			form: null,
+			load_ratio: null,
+			coverage_status: null,
+			rhr: 50,
+			hrv: 60,
+		},
+		{
+			date: "2026-08-14",
+			training_dose: 72,
+			acute_load: 66,
+			chronic_load: 60,
+			form: -6,
+			load_ratio: 1.1,
+			coverage_status: "complete",
+			rhr: 52,
+			hrv: 56,
+		},
+	]);
 	assert.deepEqual(snapshot.injury, [
 		{
 			description: "left Achilles",
@@ -305,13 +345,17 @@ test("weekly context combines all weekly planning evidence", async () => {
 		},
 	]);
 	assert.deepEqual(snapshot.recovery.seven_day_average, { rhr: 51, hrv: 58 });
+	assert.equal("history" in snapshot.recovery, false);
 	assert.deepEqual(snapshot.user_profile, {
 		age: 47,
+		gender: "male",
 		weight_kg: 68,
 		threshold_pace_s_per_km: 250,
 		threshold_speed_mps: 4,
 		lactate_threshold_hr: 170,
 		rhr_baseline: 48,
+		hrv_baseline_low: 50,
+		hrv_baseline_high: 70,
 		heart_rate_zones: [{ name: "Z2", minBpm: 130, maxBpm: 145 }],
 		pace_zones: [{ name: "Z2", minPaceSPerKm: 330, maxPaceSPerKm: 390 }],
 	});
@@ -479,11 +523,14 @@ test("weekly context reports unavailable STRIDE load without fallback", async ()
 	});
 	assert.deepEqual(snapshot.user_profile, {
 		age: null,
+		gender: null,
 		weight_kg: null,
 		threshold_pace_s_per_km: null,
 		threshold_speed_mps: null,
 		lactate_threshold_hr: null,
 		rhr_baseline: null,
+		hrv_baseline_low: null,
+		hrv_baseline_high: null,
 		heart_rate_zones: [],
 		pace_zones: [],
 	});

@@ -32,7 +32,8 @@
         },
         "notes_md": null,
         "total_distance_m": 8000,
-        "total_duration_s": null
+        "total_duration_s": null,
+        "estimated_dose": null
       },
       {
         "schema": "plan-session/v1",
@@ -60,7 +61,8 @@
         },
         "notes_md": null,
         "total_distance_m": null,
-        "total_duration_s": 1800
+        "total_duration_s": 1800,
+        "estimated_dose": null
       },
       {
         "schema": "plan-session/v1",
@@ -71,7 +73,8 @@
         "spec": null,
         "notes_md": null,
         "total_distance_m": null,
-        "total_duration_s": null
+        "total_duration_s": null,
+        "estimated_dose": null
       }
     ],
     "nutrition": [
@@ -94,7 +97,7 @@
   "cases": [
     { "name": "canonical nested plan", "valid": true, "patches": [] },
     { "name": "nullable run spec", "valid": true, "patches": [{ "op": "set", "path": ["sessions", 0, "spec"], "value": null }] },
-    { "name": "empty sessions", "valid": true, "patches": [{ "op": "set", "path": ["sessions"], "value": [] }] },
+    { "name": "empty sessions", "valid": false, "patches": [{ "op": "set", "path": ["sessions"], "value": [] }] },
     { "name": "extra top-level field", "valid": false, "patches": [{ "op": "set", "path": ["unexpected"], "value": true }] },
     { "name": "legacy week folder", "valid": false, "patches": [{ "op": "delete", "path": ["week_name"] }, { "op": "set", "path": ["week_folder"], "value": "2026-08-17_08-23" }] },
     { "name": "missing session summary", "valid": false, "patches": [{ "op": "delete", "path": ["sessions", 0, "summary"] }] },

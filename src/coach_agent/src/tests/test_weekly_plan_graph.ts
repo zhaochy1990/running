@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig, readStrideMySqlConfig } from "../config/config.js";
+import { getAgentConfig, loadConfig, readStrideMySqlConfig } from "../config/config.js";
 import { createWeeklyPlanGeneratorGraph } from "../graph/weekly_plan/index.js";
 import {
 	MySqlWeeklyPlanContextProvider,
@@ -39,16 +39,16 @@ async function main() {
 			},
 			{ context: { userId: USER_ID, generationId } },
 		);
-		console.log("--------------------");
-		console.log(
-			JSON.stringify(result.weekly_context?.training_position, null, 2),
-		);
-		console.log(JSON.stringify(result.weekly_context?.fitness_state, null, 2));
-		console.log(JSON.stringify(result.weekly_context?.absorbed_load, null, 2));
-		console.log(
-			JSON.stringify(result.weekly_context?.recent_training_weeks, null, 2),
-		);
-		console.log(JSON.stringify(result.outcome, null, 2));
+		// console.log("--------------------");
+		// console.log(
+		// 	JSON.stringify(result.weekly_context?.training_position, null, 2),
+		// );
+		// console.log(JSON.stringify(result.weekly_context?.fitness_state, null, 2));
+		// console.log(JSON.stringify(result.weekly_context?.absorbed_load, null, 2));
+		// console.log(
+		// 	JSON.stringify(result.weekly_context?.recent_training_weeks, null, 2),
+		// );
+		// console.log(JSON.stringify(result.outcome, null, 2));
 	} finally {
 		await store.close();
 	}

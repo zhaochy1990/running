@@ -115,7 +115,7 @@ models:
 
 agents:
   - name: weekly_plan
-    model: agent_maestro_sol
+    model: agent_maestro_terra
     max_tokens: 65536
     timeout_s: 600
   - name: master_plan

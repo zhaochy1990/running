@@ -8,16 +8,17 @@ Coach 只允许使用：
 
 - STRIDE 自算：`daily_training_load.training_dose / acute_load / chronic_load / form / load_ratio`
 - 手表原始测量：RHR、HRV、心率、配速、睡眠时长
+- **HRV 唯一例外**：允许使用当前手表厂商最新 `daily_hrv.baseline_balanced_low / baseline_balanced_upper` 作为个体 HRV baseline band；必须保留 provider 和日期语义，不得与其他厂商或 STRIDE 自算区间混用。不要依赖 dashboard `hrv_normal_low/high`：COROS 顶层 interval 可能缺失，而逐日 baseline 仍正常。
 
 Coach 禁止读取、引用或回退到手表厂商计算的派生结论：
 
 - `daily_health.fatigue / ati / cti / training_load_ratio / training_load_state`
 - dashboard `recovery_pct / running_level / aerobic_score`
-- 厂商 HRV status / baseline band、训练效果、跑力、比赛预测
+- 厂商 HRV status、训练效果、跑力、比赛预测（HRV baseline band 仅按上条例外允许）
 - 当前 `daily_training_load.readiness_gate/reasons` 和 `ability_snapshot` 的 L2、L3
   recovery、L4（仍依赖 legacy 厂商恢复信号；迁移前 Coach 不使用）
 
-用户问“疲劳/状态”时，用 STRIDE `form / load_ratio` 加原始 RHR/HRV 趋势回答；
+用户问“疲劳/状态”时，用 STRIDE `form / load_ratio` 加原始 RHR/HRV 趋势回答；HRV 趋势可对照同一厂商最新逐日 `baseline_balanced_low/high` baseline band。
 STRIDE 数据缺失时明确说缺失。以下厂商字段说明仅用于 legacy 数据排障和非 Coach
 旧页面维护，不得作为 Coach prompt/context 输入。
 
@@ -74,7 +75,7 @@ for r in rows: print(dict(r))
 
 ## HRV
 
-HRV 当前只有 COROS dashboard 的 snapshot（`avg_sleep_hrv`, `hrv_normal_low`, `hrv_normal_high`）。每日 HRV 趋势需要 COROS sleep detail API（未实现 —— tracked as future feature）。
+HRV 每日趋势来自 `daily_hrv.last_night_avg`；个体 baseline 使用同表最新非空的 `baseline_balanced_low/high`，并保留该行 provider 与日期语义。dashboard 的 `avg_sleep_hrv` / `hrv_normal_low/high` 仅为可能缺失的快照，不作为 Coach baseline 来源。
 
 ## Legacy 综合判断（禁止用于 Coach）
 

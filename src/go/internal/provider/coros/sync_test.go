@@ -15,12 +15,13 @@ const testUID = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
 
 // fakeWriter is an in-memory storage.Writer.
 type fakeWriter struct {
-	activities map[string]*storage.Activity
-	health     map[string]*storage.DailyHealth
-	hrv        map[string]*storage.DailyHRV
-	preds      map[string]*storage.RacePrediction
-	dashboard  *storage.Dashboard
-	meta       map[string]string
+	activities          map[string]*storage.Activity
+	health              map[string]*storage.DailyHealth
+	hrv                 map[string]*storage.DailyHRV
+	preds               map[string]*storage.RacePrediction
+	dashboard           *storage.Dashboard
+	dashboardUpsertMode string
+	meta                map[string]string
 }
 
 func newFakeWriter() *fakeWriter {
@@ -50,10 +51,13 @@ func (f *fakeWriter) UpsertDailyHealth(_ context.Context, h *storage.DailyHealth
 }
 func (f *fakeWriter) UpsertDashboard(_ context.Context, d *storage.Dashboard) error {
 	f.dashboard = d
+	f.dashboardUpsertMode = "replace"
 	return nil
 }
 func (f *fakeWriter) UpsertDashboardPreservingNil(ctx context.Context, d *storage.Dashboard) error {
-	return f.UpsertDashboard(ctx, d)
+	f.dashboard = d
+	f.dashboardUpsertMode = "preserve_nil"
+	return nil
 }
 func (f *fakeWriter) UpsertDailyHRV(_ context.Context, h *storage.DailyHRV) error {
 	f.hrv[h.Date] = h
@@ -93,6 +97,13 @@ func newTestProvider(t *testing.T, h http.Handler, fw storage.Writer) *Provider 
 }
 
 func syncMux(list string) *http.ServeMux {
+	return syncMuxWithDashboard(list, `{"summaryInfo":{"staminaLevel":65,"lthr":165,"ltsp":280,`+
+		`"sleepHrvData":{"avgSleepHrv":55,"sleepHrvAllIntervalList":[10,20,40,70],`+
+		`"sleepHrvList":[{"avgSleepHrv":42,"happenDay":20260516,"sleepHrvIntervalList":[5,26,30,38]}]},`+
+		`"runScoreList":[{"type":1,"duration":10800,"avgPace":257},{"type":4,"duration":2400,"avgPace":240}]}}`)
+}
+
+func syncMuxWithDashboard(list, dashboard string) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/activity/query", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("pageNumber") == "1" {
@@ -108,10 +119,7 @@ func syncMux(list string) *http.ServeMux {
 		writeEnvelope(w, resultSuccess, `{"dayList":[{"date":"2026-05-09","ati":10,"cti":20,"testRhr":45}]}`)
 	})
 	mux.HandleFunc("/dashboard/query", func(w http.ResponseWriter, r *http.Request) {
-		writeEnvelope(w, resultSuccess, `{"summaryInfo":{"staminaLevel":65,"lthr":165,"ltsp":280,`+
-			`"sleepHrvData":{"avgSleepHrv":55,"sleepHrvAllIntervalList":[10,20,40,70],`+
-			`"sleepHrvList":[{"avgSleepHrv":42,"happenDay":20260516,"sleepHrvIntervalList":[5,26,30,38]}]},`+
-			`"runScoreList":[{"type":1,"duration":10800,"avgPace":257},{"type":4,"duration":2400,"avgPace":240}]}}`)
+		writeEnvelope(w, resultSuccess, dashboard)
 	})
 	mux.HandleFunc("/dashboard/detail/query", func(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, resultSuccess, `{"currentWeekRecord":{"distanceRecord":50000,"durationRecord":18000}}`)
@@ -155,6 +163,9 @@ func TestSyncUser_FullFlow(t *testing.T) {
 	if fw.dashboard == nil {
 		t.Fatalf("dashboard not stored")
 	}
+	if fw.dashboardUpsertMode != "replace" {
+		t.Errorf("dashboard upsert mode = %q, want replace when HRV is present", fw.dashboardUpsertMode)
+	}
 	if got := derefInt(fw.dashboard.ThresholdHR); got != 165 {
 		t.Errorf("dashboard threshold_hr = %v, want 165", got)
 	}
@@ -170,6 +181,31 @@ func TestSyncUser_FullFlow(t *testing.T) {
 	}
 	if _, ok := fw.preds["Marathon"]; !ok {
 		t.Errorf("Marathon prediction not stored")
+	}
+}
+
+func TestSyncUser_PreservesStoredDashboardHRVWhenCurrentSnapshotHasNone(t *testing.T) {
+	fw := newFakeWriter()
+	mux := syncMuxWithDashboard(`[]`, `{"summaryInfo":{"staminaLevel":65,"sleepHrvData":{}}}`)
+
+	p := newTestProvider(t, mux, fw)
+	_, err := p.SyncUser(context.Background(), testUID, provider.SyncOptions{
+		Mode: provider.SyncIncremental, Content: provider.ContentAll,
+	})
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if fw.dashboard == nil {
+		t.Fatal("dashboard not stored")
+	}
+	if fw.dashboardUpsertMode != "preserve_nil" {
+		t.Fatalf("dashboard upsert mode = %q, want preserve_nil", fw.dashboardUpsertMode)
+	}
+	if fw.dashboard.RunningLevel == nil || *fw.dashboard.RunningLevel != 65 {
+		t.Fatalf("running level = %v, want 65", fw.dashboard.RunningLevel)
+	}
+	if fw.dashboard.AvgSleepHRV != nil || fw.dashboard.HRVNormalLow != nil || fw.dashboard.HRVNormalHigh != nil {
+		t.Fatalf("expected absent HRV fields, got %+v", fw.dashboard)
 	}
 }
 
