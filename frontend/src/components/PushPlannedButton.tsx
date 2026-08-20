@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import type { PlannedSession, StructuredStatus } from '../types/plan'
-import { isPushable, isPushableStatus } from '../types/plan'
+import { useState } from "react";
+import type { PlannedSession, StructuredStatus } from "../types/plan";
+import { isPushable, isPushableStatus } from "../types/plan";
 
 /**
  * How far (in days) the user may move the session from its planned date via
@@ -8,163 +8,143 @@ import { isPushable, isPushableStatus } from '../types/plan'
  * (`src/stride_server/routes/plan.py`); kept in sync manually because the
  * value is tiny and the friction of a shared constant outweighs the risk.
  */
-const PUSH_DATE_WINDOW_DAYS = 7
+const PUSH_DATE_WINDOW_DAYS = 7;
 
 export interface PushPlannedButtonProps {
-  session: PlannedSession
+  session: PlannedSession;
   /** Whole-week structured status; only `'fresh' | 'authored'` allows pushing. */
-  structuredStatus: StructuredStatus
+  structuredStatus: StructuredStatus;
   /**
    * Whether the connected provider supports `PUSH_RUN_WORKOUT`. When false
    * (or unknown), the run button is hidden entirely instead of disabled,
    * matching the existing pattern for capability-gated controls.
    */
-  canPushRun: boolean
+  canPushRun: boolean;
   /**
    * Whether the connected provider supports `PUSH_STRENGTH_WORKOUT`. When
    * omitted, defaults to `canPushRun` (most providers that handle one
    * workout kind handle both). Strength buttons hide when this is false.
    */
-  canPushStrength?: boolean
+  canPushStrength?: boolean;
   /**
    * Optional override to force-disable (e.g. while a parent operation is
    * already in flight). The component also disables itself while the push
    * promise is unresolved.
    */
-  disabled?: boolean
+  disabled?: boolean;
   /**
    * `targetDate` is the ISO date the user picked in the inline date picker.
    * Always within ±`PUSH_DATE_WINDOW_DAYS` days of the session's planned date.
    * Equals `session.date` when the user accepts the default. Parent forwards
    * this to `pushPlannedSession` as the `target_date` query param.
    */
-  onPush: (session: PlannedSession, targetDate: string) => Promise<void> | void
+  onPush: (session: PlannedSession, targetDate: string) => Promise<void> | void;
 }
 
 interface DisabledReason {
-  disabled: boolean
-  reason: string | null
+  disabled: boolean;
+  reason: string | null;
 }
 
-export function disabledReasonFor(
-  session: PlannedSession,
-  status: StructuredStatus,
-  externalDisabled = false,
-): DisabledReason {
-  if (externalDisabled) return { disabled: true, reason: '操作进行中…' }
+export function disabledReasonFor(session: PlannedSession, status: StructuredStatus, externalDisabled = false): DisabledReason {
+  if (externalDisabled) return { disabled: true, reason: "操作进行中…" };
   if (!isPushable(session)) {
-    return { disabled: true, reason: '该 session 没有完整 spec，无法推送' }
+    return { disabled: true, reason: "该 session 没有完整 spec，无法推送" };
   }
-  if (session.kind !== 'run' && session.kind !== 'strength') {
-    return { disabled: true, reason: '当前仅支持跑步和力量 session 推送' }
+  if (session.kind !== "run" && session.kind !== "strength") {
+    return { disabled: true, reason: "当前仅支持跑步和力量 session 推送" };
   }
-  if (status === 'backfilled') {
-    return { disabled: true, reason: '历史回填，请先在 markdown 视图核对后审核启用' }
+  if (status === "backfilled") {
+    return { disabled: true, reason: "历史回填，请先在 markdown 视图核对后审核启用" };
   }
-  if (status === 'parse_failed') {
-    return { disabled: true, reason: '本周计划暂未结构化，请重新解析' }
+  if (status === "parse_failed") {
+    return { disabled: true, reason: "本周计划暂未结构化，请重新解析" };
   }
-  if (status === 'stale') {
-    return { disabled: true, reason: '结构化已过期，请重新解析' }
+  if (status === "stale") {
+    return { disabled: true, reason: "结构化已过期，请重新解析" };
   }
-  if (status === 'none') {
-    return { disabled: true, reason: '本周无结构化计划' }
+  if (status === "none") {
+    return { disabled: true, reason: "本周无结构化计划" };
   }
   if (!isPushableStatus(status)) {
-    return { disabled: true, reason: `状态 ${status} 不支持推送` }
+    return { disabled: true, reason: `状态 ${status} 不支持推送` };
   }
   if (session.scheduled_workout_id != null) {
-    return { disabled: false, reason: '已推送 — 再次推送会替换手表上的旧条目' }
+    return { disabled: false, reason: "已推送 — 再次推送会替换手表上的旧条目" };
   }
-  return { disabled: false, reason: null }
+  return { disabled: false, reason: null };
 }
 
 /** Shift an ISO YYYY-MM-DD date by `days` (signed). Pure date math — no time
  *  zone shenanigans because we only ever work with calendar dates here. */
 function shiftIsoDate(iso: string, days: number): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  const dt = new Date(Date.UTC(y, m - 1, d))
-  dt.setUTCDate(dt.getUTCDate() + days)
-  return dt.toISOString().slice(0, 10)
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
 }
 
-export default function PushPlannedButton({
-  session,
-  structuredStatus,
-  canPushRun,
-  canPushStrength,
-  disabled = false,
-  onPush,
-}: PushPlannedButtonProps) {
-  const [pushing, setPushing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [pickedDate, setPickedDate] = useState<string>(session.date)
+export default function PushPlannedButton({ session, structuredStatus, canPushRun, canPushStrength, disabled = false, onPush }: PushPlannedButtonProps) {
+  const [pushing, setPushing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickedDate, setPickedDate] = useState<string>(session.date);
 
   // Capability gating per kind:
   //   - Run capability missing → hide entirely (provider doesn't push at all).
   //   - Strength capability missing → render disabled "in development"
   //     placeholder (Garmin path today).
   //   - Other kinds (rest/cross/note) → hide.
-  if (session.kind === 'run' && !canPushRun) return null
-  if (session.kind !== 'run' && session.kind !== 'strength') return null
+  if (session.kind === "run" && !canPushRun) return null;
+  if (session.kind !== "run" && session.kind !== "strength") return null;
 
-  const strengthCap = canPushStrength ?? canPushRun
-  const isStrengthInDev = session.kind === 'strength' && !strengthCap
+  const strengthCap = canPushStrength ?? canPushRun;
+  const isStrengthInDev = session.kind === "strength" && !strengthCap;
 
   const { disabled: gateDisabled, reason } = isStrengthInDev
-    ? { disabled: true, reason: '力量推送正在开发中，敬请期待' }
-    : disabledReasonFor(session, structuredStatus, disabled || pushing)
-  const isPushed = session.scheduled_workout_id != null
-  const label = pushing
-    ? '推送中…'
-    : isStrengthInDev
-      ? '推送到手表'
-      : isPushed
-        ? '已推送手表'
-        : '推送到手表'
+    ? { disabled: true, reason: "力量推送正在开发中，敬请期待" }
+    : disabledReasonFor(session, structuredStatus, disabled || pushing);
+  const isPushed = session.scheduled_workout_id != null;
+  const label = pushing ? "推送中…" : isStrengthInDev ? "推送到手表" : isPushed ? "已推送手表" : "推送到手表";
 
-  const minDate = shiftIsoDate(session.date, -PUSH_DATE_WINDOW_DAYS)
-  const maxDate = shiftIsoDate(session.date, PUSH_DATE_WINDOW_DAYS)
+  const minDate = shiftIsoDate(session.date, -PUSH_DATE_WINDOW_DAYS);
+  const maxDate = shiftIsoDate(session.date, PUSH_DATE_WINDOW_DAYS);
 
   const openPicker = () => {
-    if (gateDisabled) return
-    setError(null)
-    setPickedDate(session.date)
-    setPickerOpen(true)
-  }
+    if (gateDisabled) return;
+    setError(null);
+    setPickedDate(session.date);
+    setPickerOpen(true);
+  };
 
   const cancel = () => {
-    setPickerOpen(false)
-    setPickedDate(session.date)
-  }
+    setPickerOpen(false);
+    setPickedDate(session.date);
+  };
 
   const confirm = async () => {
-    if (gateDisabled) return
+    if (gateDisabled) return;
     // Clamp to the window in case the input was manipulated past min/max.
     if (pickedDate < minDate || pickedDate > maxDate) {
-      setError(`日期需在 ${minDate} 至 ${maxDate} 之间`)
-      return
+      setError(`日期需在 ${minDate} 至 ${maxDate} 之间`);
+      return;
     }
-    setPickerOpen(false)
-    setPushing(true)
-    setError(null)
+    setPickerOpen(false);
+    setPushing(true);
+    setError(null);
     try {
-      await onPush(session, pickedDate)
+      await onPush(session, pickedDate);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '推送失败')
+      setError(e instanceof Error ? e.message : "推送失败");
     } finally {
-      setPushing(false)
+      setPushing(false);
     }
-  }
+  };
 
   if (pickerOpen) {
-    const moved = pickedDate !== session.date
+    const moved = pickedDate !== session.date;
     return (
-      <div
-        className="inline-flex flex-col items-end gap-1"
-        data-testid="push-date-picker"
-      >
+      <div className="inline-flex flex-col items-end gap-1" data-testid="push-date-picker">
         <label className="text-[11px] font-mono text-text-muted">
           推送日期（计划 {session.date}，±{PUSH_DATE_WINDOW_DAYS} 天）
         </label>
@@ -189,10 +169,10 @@ export default function PushPlannedButton({
           <button
             type="button"
             onClick={confirm}
-            aria-label={moved ? `确认推送到 ${pickedDate}` : '确认推送'}
+            aria-label={moved ? `确认推送到 ${pickedDate}` : "确认推送"}
             className="px-2 py-1 text-xs font-medium rounded-lg border border-accent-green/40 text-accent-green hover:bg-accent-green/10 cursor-pointer"
           >
-            {moved ? `推送到 ${pickedDate}` : '确认推送'}
+            {moved ? `推送到 ${pickedDate}` : "确认推送"}
           </button>
         </div>
         {error && (
@@ -201,7 +181,7 @@ export default function PushPlannedButton({
           </p>
         )}
       </div>
-    )
+    );
   }
 
   return (
@@ -213,12 +193,12 @@ export default function PushPlannedButton({
         title={reason ?? undefined}
         aria-label={label}
         className={
-          'px-3 py-1.5 text-xs font-medium rounded-lg border transition-all ' +
+          "px-3 py-1.5 text-xs font-medium rounded-lg border transition-all " +
           (gateDisabled
-            ? 'border-border-subtle text-text-muted cursor-not-allowed opacity-60'
+            ? "border-border-subtle text-text-muted cursor-not-allowed opacity-60"
             : isPushed
-              ? 'border-accent-green bg-accent-green/15 text-accent-green hover:bg-accent-green/25 cursor-pointer'
-              : 'border-accent-green/30 text-accent-green hover:bg-accent-green/10 cursor-pointer')
+              ? "border-accent-green bg-accent-green/15 text-accent-green hover:bg-accent-green/25 cursor-pointer"
+              : "border-accent-green/30 text-accent-green hover:bg-accent-green/10 cursor-pointer")
         }
       >
         {label}
@@ -229,5 +209,5 @@ export default function PushPlannedButton({
         </p>
       )}
     </div>
-  )
+  );
 }

@@ -19,39 +19,39 @@
  *   - `new Date().getFullYear()` etc. for "today"  → use `shanghaiToday()`
  */
 
-const SHANGHAI_YMD = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Shanghai',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-})
+const SHANGHAI_YMD = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
-const SHANGHAI_MD = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Shanghai',
-  month: '2-digit',
-  day: '2-digit',
-})
+const SHANGHAI_MD = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Shanghai",
+  month: "2-digit",
+  day: "2-digit",
+});
 
-const SHANGHAI_ZH_SHORT = new Intl.DateTimeFormat('zh-CN', {
-  timeZone: 'Asia/Shanghai',
-  month: 'numeric',
-  day: 'numeric',
-})
+const SHANGHAI_ZH_SHORT = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  month: "numeric",
+  day: "numeric",
+});
 
-const SHANGHAI_HMS = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Shanghai',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
+const SHANGHAI_HMS = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Shanghai",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
   hour12: false,
-})
+});
 
-const SHANGHAI_HM = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Shanghai',
-  hour: '2-digit',
-  minute: '2-digit',
+const SHANGHAI_HM = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Shanghai",
+  hour: "2-digit",
+  minute: "2-digit",
   hour12: false,
-})
+});
 
 /**
  * Parse the various date-shaped strings the backend hands us into a `Date`
@@ -63,85 +63,91 @@ const SHANGHAI_HM = new Intl.DateTimeFormat('en-GB', {
  * `date_from`/`date_to` as YYYY-MM-DD Shanghai dates.
  */
 function parseToInstant(s: string | null | undefined): Date | null {
-  if (!s) return null
+  if (!s) return null;
   // Full ISO 8601: trust offset if present, otherwise treat as UTC.
-  if (s.includes('T')) {
-    const d = new Date(s)
-    return isNaN(d.getTime()) ? null : d
+  if (s.includes("T")) {
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
   }
   // Compact YYYYMMDD
   if (/^\d{8}$/.test(s)) {
-    const y = +s.slice(0, 4)
-    const m = +s.slice(4, 6)
-    const d = +s.slice(6, 8)
+    const y = +s.slice(0, 4);
+    const m = +s.slice(4, 6);
+    const d = +s.slice(6, 8);
     // Shanghai 00:00 of that day. (+08:00 → UTC y-m-(d-1) 16:00)
-    return new Date(Date.UTC(y, m - 1, d) - 8 * 3600 * 1000)
+    return new Date(Date.UTC(y, m - 1, d) - 8 * 3600 * 1000);
   }
   // YYYY-MM-DD: pin to Shanghai midnight, not the JS default UTC midnight.
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if (m) {
-    return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]) - 8 * 3600 * 1000)
+    return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]) - 8 * 3600 * 1000);
   }
-  const d = new Date(s)
-  return isNaN(d.getTime()) ? null : d
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 /** Return `YYYY-MM-DD` in Asia/Shanghai for any timestamp-shaped input. */
 export function shanghaiDate(s: string | null | undefined): string {
-  const d = parseToInstant(s)
-  if (!d) return ''
-  return SHANGHAI_YMD.format(d)
+  const d = parseToInstant(s);
+  if (!d) return "";
+  return SHANGHAI_YMD.format(d);
 }
 
 /** Return `MM-DD` in Asia/Shanghai (sidebar / mini-list use). */
 export function shanghaiMonthDay(s: string | null | undefined): string {
-  const d = parseToInstant(s)
-  if (!d) return ''
+  const d = parseToInstant(s);
+  if (!d) return "";
   // en-CA emits MM-DD with two digits, matching the previous slice(5, 10).
-  return SHANGHAI_MD.format(d)
+  return SHANGHAI_MD.format(d);
 }
 
 /** Localized short date (e.g. `5月9日`) — display only. */
 export function shanghaiMonthDayCN(s: string | null | undefined): string {
-  const d = parseToInstant(s)
-  if (!d) return ''
-  return SHANGHAI_ZH_SHORT.format(d).replace(/\//g, '/')
+  const d = parseToInstant(s);
+  if (!d) return "";
+  return SHANGHAI_ZH_SHORT.format(d).replace(/\//g, "/");
 }
 
 /** Return `HH:MM:SS` in Asia/Shanghai. */
 export function shanghaiTime(s: string | null | undefined): string {
-  const d = parseToInstant(s)
-  if (!d) return ''
-  return SHANGHAI_HMS.format(d)
+  const d = parseToInstant(s);
+  if (!d) return "";
+  return SHANGHAI_HMS.format(d);
 }
 
 /** Return `HH:MM` in Asia/Shanghai (used in feedback headers). */
 export function shanghaiTimeShort(s: string | null | undefined): string {
-  const d = parseToInstant(s)
-  if (!d) return ''
-  return SHANGHAI_HM.format(d)
+  const d = parseToInstant(s);
+  if (!d) return "";
+  return SHANGHAI_HM.format(d);
 }
 
 /** Today's date as `YYYY-MM-DD` in Asia/Shanghai. Replaces
  * `new Date().getFullYear()` patterns that quietly resolve to browser TZ. */
 export function shanghaiToday(): string {
-  return SHANGHAI_YMD.format(new Date())
+  return SHANGHAI_YMD.format(new Date());
 }
 
 /** Weekday label for a Shanghai-pinned date (周一…周日). */
-const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-const SHANGHAI_DOW = new Intl.DateTimeFormat('en-US', {
-  timeZone: 'Asia/Shanghai',
-  weekday: 'short',
-})
+const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+const SHANGHAI_DOW = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Shanghai",
+  weekday: "short",
+});
 const DOW_MAP: Record<string, number> = {
-  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
-}
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
 export function shanghaiWeekday(s: string | null | undefined): string {
-  const d = parseToInstant(s)
-  if (!d) return ''
-  const idx = DOW_MAP[SHANGHAI_DOW.format(d)] ?? 0
-  return WEEKDAYS[idx]
+  const d = parseToInstant(s);
+  if (!d) return "";
+  const idx = DOW_MAP[SHANGHAI_DOW.format(d)] ?? 0;
+  return WEEKDAYS[idx];
 }
 
 /**
@@ -154,16 +160,16 @@ export function shanghaiWeekday(s: string | null | undefined): string {
  * resolves to that Monday's week.
  */
 export function shanghaiWeekStart(s: string | null | undefined): string {
-  const d = parseToInstant(s)
-  if (!d) return ''
-  const ymd = SHANGHAI_YMD.format(d)
-  const dowIdx = DOW_MAP[SHANGHAI_DOW.format(d)] ?? 0
-  const daysBack = (dowIdx + 6) % 7  // Mon→0, Tue→1, …, Sun→6
-  const [y, m, day] = ymd.split('-').map(Number)
-  const anchor = new Date(Date.UTC(y, m - 1, day))
-  anchor.setUTCDate(anchor.getUTCDate() - daysBack)
-  const yy = anchor.getUTCFullYear()
-  const mm = String(anchor.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(anchor.getUTCDate()).padStart(2, '0')
-  return `${yy}-${mm}-${dd}`
+  const d = parseToInstant(s);
+  if (!d) return "";
+  const ymd = SHANGHAI_YMD.format(d);
+  const dowIdx = DOW_MAP[SHANGHAI_DOW.format(d)] ?? 0;
+  const daysBack = (dowIdx + 6) % 7; // Mon→0, Tue→1, …, Sun→6
+  const [y, m, day] = ymd.split("-").map(Number);
+  const anchor = new Date(Date.UTC(y, m - 1, day));
+  anchor.setUTCDate(anchor.getUTCDate() - daysBack);
+  const yy = anchor.getUTCFullYear();
+  const mm = String(anchor.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(anchor.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }

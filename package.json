@@ -6,7 +6,12 @@
   "description": "Stride monorepo root — pnpm workspace for the TypeScript/Node packages.",
   "scripts": {
     "build": "pnpm -r build",
+    "format": "biome format --write frontend/src frontend/scripts frontend/server/src frontend/vite.config.ts frontend/vitest.config.ts frontend/server/vitest.config.ts src/coach_agent/src src/coach_agent/scripts src/coach_contract/src src/coach_contract/scripts src/stitch_design/cli.ts src/stitch_design/foundation-audit.mjs",
+    "format:check": "biome format frontend/src frontend/scripts frontend/server/src frontend/vite.config.ts frontend/vitest.config.ts frontend/server/vitest.config.ts src/coach_agent/src src/coach_agent/scripts src/coach_contract/src src/coach_contract/scripts src/stitch_design/cli.ts src/stitch_design/foundation-audit.mjs",
     "test": "pnpm -r test",
     "verify:weekly-plan-schema": "pnpm --filter @stride/contract run verify:weekly-plan-schema"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.8"
   }
 }

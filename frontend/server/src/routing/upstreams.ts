@@ -1,5 +1,5 @@
-import type { BffConfig } from '../config.js'
-import type { Upstream } from './table.js'
+import type { BffConfig } from "../config.js";
+import type { Upstream } from "./table.js";
 
 /**
  * Map a resolved upstream to its base URL from config. Routing to `go` while
@@ -9,14 +9,14 @@ import type { Upstream } from './table.js'
  */
 export function baseUrlFor(upstream: Upstream, config: BffConfig): string {
   switch (upstream) {
-    case 'auth':
-      return config.authUpstreamUrl
-    case 'go':
+    case "auth":
+      return config.authUpstreamUrl;
+    case "go":
       if (!config.goApiUrl) {
-        throw new Error('request routed to Go upstream but GO_API_URL is not set')
+        throw new Error("request routed to Go upstream but GO_API_URL is not set");
       }
-      return config.goApiUrl
-    case 'python':
-      return config.pythonApiUrl
+      return config.goApiUrl;
+    case "python":
+      return config.pythonApiUrl;
   }
 }

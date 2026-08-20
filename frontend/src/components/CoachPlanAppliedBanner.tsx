@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 /**
  * A one-time success banner shown after a coach proposal is applied. It reads
@@ -8,20 +8,18 @@ import { useLocation, useNavigate } from 'react-router-dom'
  * re-show it.
  */
 export function CoachPlanAppliedBanner() {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const flagged = Boolean(
-    (location.state as { coachPlanApplied?: unknown } | null)?.coachPlanApplied,
-  )
-  const [visible, setVisible] = useState(flagged)
+  const location = useLocation();
+  const navigate = useNavigate();
+  const flagged = Boolean((location.state as { coachPlanApplied?: unknown } | null)?.coachPlanApplied);
+  const [visible, setVisible] = useState(flagged);
 
   useEffect(() => {
-    if (!flagged) return
+    if (!flagged) return;
     // Strip the flag from history so it never re-fires.
-    navigate(location.pathname + location.search, { replace: true, state: null })
-  }, [flagged, navigate, location.pathname, location.search])
+    navigate(location.pathname + location.search, { replace: true, state: null });
+  }, [flagged, navigate, location.pathname, location.search]);
 
-  if (!visible) return null
+  if (!visible) return null;
 
   return (
     <div
@@ -38,5 +36,5 @@ export function CoachPlanAppliedBanner() {
         知道了
       </button>
     </div>
-  )
+  );
 }

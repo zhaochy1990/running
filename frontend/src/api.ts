@@ -1,20 +1,14 @@
-import { refreshAccessToken } from './store/authStore'
-import { apiUrl } from './lib/apiRouting'
-import type { ChatResponse, CoachReviewContext, CoachTargetRef, SessionHistoryResponse } from './types/coachChat'
-import type {
-  AbandonedScheduledWorkout,
-  PlannedNutrition,
-  PlannedSession,
-  StructuredStatus,
-  VariantsSummary,
-} from './types/plan'
+import { refreshAccessToken } from "./store/authStore";
+import { apiUrl } from "./lib/apiRouting";
+import type { ChatResponse, CoachReviewContext, CoachTargetRef, SessionHistoryResponse } from "./types/coachChat";
+import type { AbandonedScheduledWorkout, PlannedNutrition, PlannedSession, StructuredStatus, VariantsSummary } from "./types/plan";
 
-const BASE = '/api'
+const BASE = "/api";
 
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 function authHeaders(): HeadersInit {
-  const token = sessionStorage.getItem('access_token')
-  return token ? { Authorization: `Bearer ${token}` } : {}
+  const token = sessionStorage.getItem("access_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 /**
@@ -24,182 +18,162 @@ function authHeaders(): HeadersInit {
  * deleteJSON) are thin shells over this — change request-id, abort,
  * telemetry, or error-normalization here once, not in 5 places.
  */
-async function apiFetch(
-  method: HttpMethod,
-  path: string,
-  body?: unknown,
-  headers: HeadersInit = {},
-): Promise<Response> {
+async function apiFetch(method: HttpMethod, path: string, body?: unknown, headers: HeadersInit = {}): Promise<Response> {
   // POST/PUT/PATCH historically always set Content-Type, even when the
   // caller passes no body (e.g. postOnboardingComplete). Preserved.
-  const setsJsonHeader = method === 'POST' || method === 'PUT' || method === 'PATCH'
+  const setsJsonHeader = method === "POST" || method === "PUT" || method === "PATCH";
   // Rebuilt on each attempt because `authHeaders()` reads the *current*
   // access_token from sessionStorage, which refreshAccessToken mutates.
   const buildInit = (): RequestInit => ({
     method,
-    headers: { ...authHeaders(), ...(setsJsonHeader ? { 'Content-Type': 'application/json' } : {}), ...headers },
+    headers: { ...authHeaders(), ...(setsJsonHeader ? { "Content-Type": "application/json" } : {}), ...headers },
     body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
-  let res = await fetch(apiUrl(method, `${BASE}${path}`), buildInit())
+  });
+  let res = await fetch(apiUrl(method, `${BASE}${path}`), buildInit());
   if (res.status === 401) {
     try {
-      await refreshAccessToken()
-      res = await fetch(apiUrl(method, `${BASE}${path}`), buildInit())
+      await refreshAccessToken();
+      res = await fetch(apiUrl(method, `${BASE}${path}`), buildInit());
     } catch {
-      sessionStorage.clear()
-      window.location.href = '/login'
-      throw new Error('Session expired')
+      sessionStorage.clear();
+      window.location.href = "/login";
+      throw new Error("Session expired");
     }
   }
-  return res
+  return res;
 }
 
 export class ApiError extends Error {
-  readonly status: number
+  readonly status: number;
 
   constructor(status: number) {
-    super(`API error: ${status}`)
-    this.status = status
+    super(`API error: ${status}`);
+    this.status = status;
   }
 }
 
 async function fetchJSON<T>(path: string): Promise<T> {
-  const res = await apiFetch('GET', path)
-  if (!res.ok) throw new ApiError(res.status)
-  return res.json()
+  const res = await apiFetch("GET", path);
+  if (!res.ok) throw new ApiError(res.status);
+  return res.json();
 }
 
-type JsonResult<T> = { ok: boolean; status: number; data: T }
+type JsonResult<T> = { ok: boolean; status: number; data: T };
 
 async function bodyResult<T>(res: Response): Promise<JsonResult<T>> {
-  const data = await res.json().catch(() => ({} as T))
-  return { ok: res.ok, status: res.status, data: data as T }
+  const data = await res.json().catch(() => ({}) as T);
+  return { ok: res.ok, status: res.status, data: data as T };
 }
 
 const postJSON = async <T>(path: string, body?: unknown, headers?: HeadersInit): Promise<JsonResult<T>> =>
-  bodyResult<T>(await apiFetch('POST', path, body, headers))
-const getJSON = async <T>(path: string): Promise<JsonResult<T>> =>
-  bodyResult<T>(await apiFetch('GET', path))
-const putJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
-  bodyResult<T>(await apiFetch('PUT', path, body))
-const patchJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
-  bodyResult<T>(await apiFetch('PATCH', path, body))
-const deleteJSON = async <T>(path: string): Promise<JsonResult<T>> =>
-  bodyResult<T>(await apiFetch('DELETE', path))
+  bodyResult<T>(await apiFetch("POST", path, body, headers));
+const getJSON = async <T>(path: string): Promise<JsonResult<T>> => bodyResult<T>(await apiFetch("GET", path));
+const putJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> => bodyResult<T>(await apiFetch("PUT", path, body));
+const patchJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> => bodyResult<T>(await apiFetch("PATCH", path, body));
+const deleteJSON = async <T>(path: string): Promise<JsonResult<T>> => bodyResult<T>(await apiFetch("DELETE", path));
 
 export function getUsers() {
-  return fetchJSON<{ users: string[] }>('/users')
+  return fetchJSON<{ users: string[] }>("/users");
 }
 
 export interface MyProfile {
-  id: string
-  display_name: string
-  profile: Record<string, unknown> | null
+  id: string;
+  display_name: string;
+  profile: Record<string, unknown> | null;
   onboarding: {
     // Python uses the legacy provider-agnostic name; Go uses watch_ready.
-    coros_ready?: boolean
-    watch_ready?: boolean
-    profile_ready: boolean
-    completed_at: string | null
-  }
+    coros_ready?: boolean;
+    watch_ready?: boolean;
+    profile_ready: boolean;
+    completed_at: string | null;
+  };
   // Connected watch provider — `'coros' | 'garmin'` when the backend exposes
   // it. Currently the /api/users/me/profile route doesn't return this field,
   // so callers should treat `undefined` as "fall back to coros default".
-  provider?: string | null
-  running_age_range?: RunningAgeRange
+  provider?: string | null;
+  running_age_range?: RunningAgeRange;
   features?: {
-    coach_agent_weekly_plan: boolean
-    coach_chat?: boolean
-    coach_chat_debug?: boolean
-    coach_chat_max_message_chars?: number
+    coach_agent_weekly_plan: boolean;
+    coach_chat?: boolean;
+    coach_chat_debug?: boolean;
+    coach_chat_max_message_chars?: number;
     // When true, onboarding blocks on a full watch-history sync (minutes) before
     // entering the app; when false/undefined, the fast health-only flow is used.
-    sync_data_at_onboarding?: boolean
-  }
+    sync_data_at_onboarding?: boolean;
+  };
 }
 
 export function getMyProfile() {
-  return fetchJSON<MyProfile>('/users/me/profile')
+  return fetchJSON<MyProfile>("/users/me/profile");
 }
 
-export type RunningAgeRange = 'unknown' | 'lt_6m' | '6m_1y' | '1y_3y' | '3y_plus'
+export type RunningAgeRange = "unknown" | "lt_6m" | "6m_1y" | "1y_3y" | "3y_plus";
 
 export interface ProfileIn {
-  display_name: string
-  dob: string
-  sex: string
-  height_cm: number
-  weight_kg: number
-  running_age_range: RunningAgeRange
+  display_name: string;
+  dob: string;
+  sex: string;
+  height_cm: number;
+  weight_kg: number;
+  running_age_range: RunningAgeRange;
 }
 
-export type ProfilePatchIn = Partial<ProfileIn>
+export type ProfilePatchIn = Partial<ProfileIn>;
 
-export function postWatchLogin(
-  provider: 'coros' | 'garmin',
-  email: string,
-  password: string,
-  region: 'cn' | 'global' = 'cn',
-) {
-  return postJSON<{ ok?: boolean; region?: string; user_id?: string; error?: string }>(
-    '/users/me/watch/login',
-    { provider, email, password, region },
-  )
+export function postWatchLogin(provider: "coros" | "garmin", email: string, password: string, region: "cn" | "global" = "cn") {
+  return postJSON<{ ok?: boolean; region?: string; user_id?: string; error?: string }>("/users/me/watch/login", { provider, email, password, region });
 }
 
 export function postProfile(profile: ProfileIn) {
-  return postJSON<{ error?: string; detail?: unknown }>('/users/me/profile', profile)
+  return postJSON<{ error?: string; detail?: unknown }>("/users/me/profile", profile);
 }
 
 export interface InjuryRecord {
-  id: string
-  description: string
-  recovery_status: 'active' | 'recovered'
-  running_restriction: 'none' | 'easy_only' | 'no_running'
-  created_at: string
-  updated_at: string
+  id: string;
+  description: string;
+  recovery_status: "active" | "recovered";
+  running_restriction: "none" | "easy_only" | "no_running";
+  created_at: string;
+  updated_at: string;
 }
 
 export interface InjuriesResponse {
-  items: InjuryRecord[]
-  next_cursor: string | null
+  items: InjuryRecord[];
+  next_cursor: string | null;
 }
 
-export type InjuryInput = Pick<InjuryRecord, 'description' | 'recovery_status' | 'running_restriction'>
+export type InjuryInput = Pick<InjuryRecord, "description" | "recovery_status" | "running_restriction">;
 
 export function listInjuries(limit = 50, cursor?: string) {
-  const params = new URLSearchParams({ limit: String(limit) })
-  if (cursor) params.set('cursor', cursor)
-  return fetchJSON<InjuriesResponse>(`/users/me/injuries?${params.toString()}`)
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  return fetchJSON<InjuriesResponse>(`/users/me/injuries?${params.toString()}`);
 }
 
 export function createInjury(input: InjuryInput) {
-  return postJSON<InjuryRecord & { error?: string; detail?: unknown }>('/users/me/injuries', input)
+  return postJSON<InjuryRecord & { error?: string; detail?: unknown }>("/users/me/injuries", input);
 }
 
 export function updateInjury(injuryId: string, input: InjuryInput) {
-  return putJSON<InjuryRecord & { error?: string; detail?: unknown }>(
-    `/users/me/injuries/${encodeURIComponent(injuryId)}`,
-    input,
-  )
+  return putJSON<InjuryRecord & { error?: string; detail?: unknown }>(`/users/me/injuries/${encodeURIComponent(injuryId)}`, input);
 }
 
 export function deleteInjury(injuryId: string) {
-  return deleteJSON<Record<string, never>>(`/users/me/injuries/${encodeURIComponent(injuryId)}`)
+  return deleteJSON<Record<string, never>>(`/users/me/injuries/${encodeURIComponent(injuryId)}`);
 }
 
 export function patchMyProfile(patch: ProfilePatchIn) {
   return patchJSON<{
-    ok?: boolean
-    id?: string
-    display_name?: string | null
-    profile?: Record<string, unknown>
-    detail?: unknown
-  }>('/users/me/profile', patch)
+    ok?: boolean;
+    id?: string;
+    display_name?: string | null;
+    profile?: Record<string, unknown>;
+    detail?: unknown;
+  }>("/users/me/profile", patch);
 }
 
 export function deleteMyAccount() {
-  return deleteJSON<{ detail?: unknown }>('/users/me')
+  return deleteJSON<{ detail?: unknown }>("/users/me");
 }
 
 // ---------------------------------------------------------------------------
@@ -207,281 +181,281 @@ export function deleteMyAccount() {
 // ---------------------------------------------------------------------------
 
 export interface WatchInfo {
-  provider: string | null
-  provider_display_name: string | null
-  logged_in: boolean
-  email: string | null
-  device: string | null
-  last_sync_at: string | null
-  capabilities: string[]
+  provider: string | null;
+  provider_display_name: string | null;
+  logged_in: boolean;
+  email: string | null;
+  device: string | null;
+  last_sync_at: string | null;
+  capabilities: string[];
 }
 
 export function getWatchInfo() {
-  return fetchJSON<WatchInfo>('/users/me/watch')
+  return fetchJSON<WatchInfo>("/users/me/watch");
 }
 
 export function disconnectWatch() {
-  return deleteJSON<{ ok: boolean; provider: string }>('/users/me/watch')
+  return deleteJSON<{ ok: boolean; provider: string }>("/users/me/watch");
 }
 
 export function postOnboardingComplete(runId: string) {
-  return postJSON<{ state?: string; error?: string; detail?: string }>('/users/me/onboarding/complete', {
+  return postJSON<{ state?: string; error?: string; detail?: string }>("/users/me/onboarding/complete", {
     run_id: runId,
-  })
+  });
 }
 
 export interface SyncProgress {
-  phase?: string
-  failed_phase?: string
-  message?: string
-  percent?: number
-  current?: number
-  total?: number
-  synced_activities?: number
-  synced_health?: number
-  started_at?: string
-  updated_at?: string
+  phase?: string;
+  failed_phase?: string;
+  message?: string;
+  percent?: number;
+  current?: number;
+  total?: number;
+  synced_activities?: number;
+  synced_health?: number;
+  started_at?: string;
+  updated_at?: string;
 }
 
 export interface SyncStatus {
-  state: 'running' | 'done' | 'error' | null
-  error?: string
-  progress?: SyncProgress | null
+  state: "running" | "done" | "error" | null;
+  error?: string;
+  progress?: SyncProgress | null;
 }
 
 export function getSyncStatus() {
-  return fetchJSON<SyncStatus>('/users/me/sync-status')
+  return fetchJSON<SyncStatus>("/users/me/sync-status");
 }
 
 export interface PipelineRun {
-  run_id: string
-  pipeline_name: string
-  status: 'queued' | 'running' | 'done' | 'failed'
-  current_step: number
-  steps: Array<{ name: string; job_type: string; status: string; job_id?: string }>
-  error_message?: string
+  run_id: string;
+  pipeline_name: string;
+  status: "queued" | "running" | "done" | "failed";
+  current_step: number;
+  steps: Array<{ name: string; job_type: string; status: string; job_id?: string }>;
+  error_message?: string;
 }
 
 export function getPipelineRun(runId: string) {
-  return fetchJSON<PipelineRun>(`/pipelines/${encodeURIComponent(runId)}`)
+  return fetchJSON<PipelineRun>(`/pipelines/${encodeURIComponent(runId)}`);
 }
 
 export interface JobState {
-  job_id: string
-  status: 'queued' | 'running' | 'done' | 'failed'
-  progress_pct: number
-  stage?: string
+  job_id: string;
+  status: "queued" | "running" | "done" | "failed";
+  progress_pct: number;
+  stage?: string;
 }
 
 export function getJobState(jobId: string) {
-  return fetchJSON<JobState>(`/jobs/${encodeURIComponent(jobId)}`)
+  return fetchJSON<JobState>(`/jobs/${encodeURIComponent(jobId)}`);
 }
 
 export interface NotificationReadState {
-  read_ids: string[]
+  read_ids: string[];
 }
 
 export interface ServerNotification {
-  id: string
-  severity?: 'info' | 'success' | 'warning' | 'error'
-  title: string
-  body: string
-  published_at?: string
-  updated_at?: string
-  action_url?: string | null
-  progress_pct?: number | null
-  metadata?: Record<string, unknown>
-  read?: boolean
-  read_at?: string | null
+  id: string;
+  severity?: "info" | "success" | "warning" | "error";
+  title: string;
+  body: string;
+  published_at?: string;
+  updated_at?: string;
+  action_url?: string | null;
+  progress_pct?: number | null;
+  metadata?: Record<string, unknown>;
+  read?: boolean;
+  read_at?: string | null;
 }
 
 export interface NotificationsResponse extends NotificationReadState {
-  notifications: ServerNotification[]
+  notifications: ServerNotification[];
 }
 
 export function getNotificationReadState() {
-  return fetchJSON<NotificationReadState>('/users/me/notifications/read-state')
+  return fetchJSON<NotificationReadState>("/users/me/notifications/read-state");
 }
 
 export function getNotifications() {
-  return fetchJSON<NotificationsResponse>('/users/me/notifications')
+  return fetchJSON<NotificationsResponse>("/users/me/notifications");
 }
 
 export async function markNotificationRead(notificationId: string) {
-  const encoded = encodeURIComponent(notificationId)
-  const res = await postJSON<NotificationReadState>(`/users/me/notifications/${encoded}/read`)
-  if (!res.ok) throw new Error(`mark notification read failed: HTTP ${res.status}`)
-  return res.data
+  const encoded = encodeURIComponent(notificationId);
+  const res = await postJSON<NotificationReadState>(`/users/me/notifications/${encoded}/read`);
+  if (!res.ok) throw new Error(`mark notification read failed: HTTP ${res.status}`);
+  return res.data;
 }
 
 export interface Activity {
-  label_id: string
-  name: string | null
-  sport_type: number
-  sport_name: string
-  date: string
-  distance_m: number
-  distance_km: number
-  duration_s: number
-  duration_fmt: string
-  avg_pace_s_km: number | null
-  pace_fmt: string
-  avg_hr: number | null
-  max_hr: number | null
-  avg_cadence: number | null
-  calories_kcal: number | null
-  training_load: number | null
-  vo2max: number | null
-  train_type: string | null
-  ascent_m: number | null
-  aerobic_effect: number | null
-  anaerobic_effect: number | null
-  temperature: number | null
-  humidity: number | null
-  feels_like: number | null
-  wind_speed: number | null
-  feel_type: number | null
-  sport_note: string | null
-  commentary?: string
-  commentary_generated_by?: string | null
-  commentary_generated_at?: string | null
+  label_id: string;
+  name: string | null;
+  sport_type: number;
+  sport_name: string;
+  date: string;
+  distance_m: number;
+  distance_km: number;
+  duration_s: number;
+  duration_fmt: string;
+  avg_pace_s_km: number | null;
+  pace_fmt: string;
+  avg_hr: number | null;
+  max_hr: number | null;
+  avg_cadence: number | null;
+  calories_kcal: number | null;
+  training_load: number | null;
+  vo2max: number | null;
+  train_type: string | null;
+  ascent_m: number | null;
+  aerobic_effect: number | null;
+  anaerobic_effect: number | null;
+  temperature: number | null;
+  humidity: number | null;
+  feels_like: number | null;
+  wind_speed: number | null;
+  feel_type: number | null;
+  sport_note: string | null;
+  commentary?: string;
+  commentary_generated_by?: string | null;
+  commentary_generated_at?: string | null;
   // Watch-paused intervals (decoded from JSON server-side). Empty list
   // when no pauses or for legacy synced rows.
-  pauses?: Pause[]
+  pauses?: Pause[];
   // Pre-computed route polyline for activity-list thumbnails. Each point
   // is [x, y] in a 0..100 SVG viewport (Y already flipped). Null when
   // the activity has no GPS (indoor/strength) or hasn't been backfilled.
-  route_thumb?: number[][] | null
+  route_thumb?: number[][] | null;
 }
 
 export interface Lap {
-  lap_index: number
-  lap_type: string
-  distance_m: number
-  distance_km: number
-  duration_s: number
-  duration_fmt: string
-  avg_pace: number | null
-  pace_fmt: string
-  adjusted_pace: number | null
-  avg_hr: number | null
-  max_hr: number | null
-  avg_cadence: number | null
-  avg_power: number | null
-  ascent_m: number | null
-  descent_m: number | null
+  lap_index: number;
+  lap_type: string;
+  distance_m: number;
+  distance_km: number;
+  duration_s: number;
+  duration_fmt: string;
+  avg_pace: number | null;
+  pace_fmt: string;
+  adjusted_pace: number | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+  avg_cadence: number | null;
+  avg_power: number | null;
+  ascent_m: number | null;
+  descent_m: number | null;
 }
 
 export interface Zone {
-  zone_type: string
-  zone_index: number
-  range_min: number | null
-  range_max: number | null
-  range_unit: string
-  duration_s: number
-  percent: number
+  zone_type: string;
+  zone_index: number;
+  range_min: number | null;
+  range_max: number | null;
+  range_unit: string;
+  duration_s: number;
+  percent: number;
 }
 
 export interface TimeseriesPoint {
-  timestamp: number | null
-  distance: number | null
-  heart_rate: number | null
-  speed: number | null
-  adjusted_pace: number | null
-  cadence: number | null
-  altitude: number | null
-  power: number | null
+  timestamp: number | null;
+  distance: number | null;
+  heart_rate: number | null;
+  speed: number | null;
+  adjusted_pace: number | null;
+  cadence: number | null;
+  altitude: number | null;
+  power: number | null;
   // WGS84 GPS, decimal degrees. NULL when device had no fix or for indoor
   // activities. Frontend AMap rendering must apply WGS84→GCJ02 transform.
-  gps_lat: number | null
-  gps_lon: number | null
+  gps_lat: number | null;
+  gps_lon: number | null;
 }
 
 // Watch-paused interval. Timestamps are raw COROS centiseconds, same shape
 // as `TimeseriesPoint.timestamp` — convert to elapsed seconds the same way
 // HRChart/PaceChart already do (subtract activity start, divide by 100).
 export interface Pause {
-  start_ts: number | null
-  end_ts: number | null
-  type: number | null
+  start_ts: number | null;
+  end_ts: number | null;
+  type: number | null;
 }
 
 export interface WeekSummary {
-  folder: string
-  date_from: string
-  date_to: string
-  has_plan: boolean
-  has_feedback: boolean
-  has_body_composition: boolean
-  plan_title?: string
-  activity_count: number
-  total_km: number
-  total_duration_s: number
-  total_duration_fmt: string
+  folder: string;
+  date_from: string;
+  date_to: string;
+  has_plan: boolean;
+  has_feedback: boolean;
+  has_body_composition: boolean;
+  plan_title?: string;
+  activity_count: number;
+  total_km: number;
+  total_duration_s: number;
+  total_duration_fmt: string;
 }
 
 export interface WeekDetail {
-  week_name: string
-  date_from: string
-  date_to: string
-  plan: string | null
-  feedback: string
-  feedback_created_at: string | null
-  feedback_updated_at: string | null
-  activities: Activity[]
-  total_km: number
-  total_duration_s: number
-  total_duration_fmt: string
-  activity_count: number
+  week_name: string;
+  date_from: string;
+  date_to: string;
+  plan: string | null;
+  feedback: string;
+  feedback_created_at: string | null;
+  feedback_updated_at: string | null;
+  activities: Activity[];
+  total_km: number;
+  total_duration_s: number;
+  total_duration_fmt: string;
+  activity_count: number;
   structured: {
-    structured_status: StructuredStatus | null
-    structured_parsed_at?: string | null
-    sessions?: PlannedSessionRow[]
-    nutrition?: PlannedNutrition[]
-    coach_notes?: string | null
-  } | null
+    structured_status: StructuredStatus | null;
+    structured_parsed_at?: string | null;
+    sessions?: PlannedSessionRow[];
+    nutrition?: PlannedNutrition[];
+    coach_notes?: string | null;
+  } | null;
   // Multi-variant additions (Step 4 backend additive fields).
-  variants_summary?: VariantsSummary
-  abandoned_scheduled_workouts?: AbandonedScheduledWorkout[]
+  variants_summary?: VariantsSummary;
+  abandoned_scheduled_workouts?: AbandonedScheduledWorkout[];
 }
 
 export interface ActivitiesListResponse {
-  total: number
-  offset: number
-  limit: number
-  activities: Activity[]
-  monthly_summaries?: Record<string, ActivityMonthlySummary>
+  total: number;
+  offset: number;
+  limit: number;
+  activities: Activity[];
+  monthly_summaries?: Record<string, ActivityMonthlySummary>;
 }
 
 export interface ActivityMonthlySummary {
-  activity_count: number
-  total_run_km: number
-  run_duration_s: number
-  duration_s: number
+  activity_count: number;
+  total_run_km: number;
+  run_duration_s: number;
+  duration_s: number;
 }
 
 export function getActivities(
   user: string,
   opts: {
-    dateFrom?: string
-    dateTo?: string
-    limit?: number
-    offset?: number
-    sport?: string
-    sportCategory?: 'run' | 'strength'
-    minDistanceKm?: number
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+    offset?: number;
+    sport?: string;
+    sportCategory?: "run" | "strength";
+    minDistanceKm?: number;
   } = {},
 ) {
-  const params = new URLSearchParams()
-  if (opts.dateFrom) params.set('date_from', opts.dateFrom)
-  if (opts.dateTo) params.set('date_to', opts.dateTo)
-  if (opts.limit != null) params.set('limit', String(opts.limit))
-  if (opts.offset != null) params.set('offset', String(opts.offset))
-  if (opts.sport) params.set('sport', opts.sport)
-  if (opts.sportCategory) params.set('sport_category', opts.sportCategory)
-  if (opts.minDistanceKm != null && opts.minDistanceKm > 0) params.set('min_distance_km', String(opts.minDistanceKm))
-  const qs = params.toString()
-  return fetchJSON<ActivitiesListResponse>(`/${user}/activities${qs ? `?${qs}` : ''}`)
+  const params = new URLSearchParams();
+  if (opts.dateFrom) params.set("date_from", opts.dateFrom);
+  if (opts.dateTo) params.set("date_to", opts.dateTo);
+  if (opts.limit != null) params.set("limit", String(opts.limit));
+  if (opts.offset != null) params.set("offset", String(opts.offset));
+  if (opts.sport) params.set("sport", opts.sport);
+  if (opts.sportCategory) params.set("sport_category", opts.sportCategory);
+  if (opts.minDistanceKm != null && opts.minDistanceKm > 0) params.set("min_distance_km", String(opts.minDistanceKm));
+  const qs = params.toString();
+  return fetchJSON<ActivitiesListResponse>(`/${user}/activities${qs ? `?${qs}` : ""}`);
 }
 
 /**
@@ -491,61 +465,57 @@ export function getActivities(
  * window must paginate. Uses the API's `total` field as the termination
  * signal.
  */
-export async function getAllActivities(
-  user: string,
-  opts: { dateFrom?: string; dateTo?: string } = {},
-): Promise<Activity[]> {
-  const PAGE = 200
-  const all: Activity[] = []
-  let offset = 0
+export async function getAllActivities(user: string, opts: { dateFrom?: string; dateTo?: string } = {}): Promise<Activity[]> {
+  const PAGE = 200;
+  const all: Activity[] = [];
+  let offset = 0;
   while (true) {
-    const page = await getActivities(user, { ...opts, limit: PAGE, offset })
-    all.push(...page.activities)
-    if (page.activities.length === 0 || all.length >= page.total) break
-    offset = all.length
+    const page = await getActivities(user, { ...opts, limit: PAGE, offset });
+    all.push(...page.activities);
+    if (page.activities.length === 0 || all.length >= page.total) break;
+    offset = all.length;
   }
-  return all
+  return all;
 }
 
-export async function getAllActivitiesInRange(
-  user: string,
-  opts: { dateFrom: string; dateTo?: string },
-): Promise<Activity[]> {
-  return getAllActivities(user, opts)
+export async function getAllActivitiesInRange(user: string, opts: { dateFrom: string; dateTo?: string }): Promise<Activity[]> {
+  return getAllActivities(user, opts);
 }
 
 export interface TriggerSyncOptions {
-  full?: boolean
-  idempotencyKey?: string
+  full?: boolean;
+  idempotencyKey?: string;
 }
 
 export function triggerSync(user: string, options: TriggerSyncOptions | boolean = {}) {
-  const { full = false, idempotencyKey } = typeof options === 'boolean' ? { full: options } : options
+  const { full = false, idempotencyKey } = typeof options === "boolean" ? { full: options } : options;
   return postJSON<{
-    run_id: string
-    pipeline_name: string
-    deduplicated?: boolean
-    error?: string
+    run_id: string;
+    pipeline_name: string;
+    deduplicated?: boolean;
+    error?: string;
   }>(
     `/${encodeURIComponent(user)}/sync`,
-    full ? { mode: 'full' } : { mode: 'incremental' },
-    idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
-  )
+    full ? { mode: "full" } : { mode: "incremental" },
+    idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+  );
 }
 
 export function resyncActivity(user: string, labelId: string) {
-  return fetch(`${BASE}/${user}/activities/${labelId}/resync`, { method: 'POST', headers: authHeaders() }).then(r => r.json()) as Promise<{ success: boolean; error?: string }>
+  return fetch(`${BASE}/${user}/activities/${labelId}/resync`, { method: "POST", headers: authHeaders() }).then((r) => r.json()) as Promise<{
+    success: boolean;
+    error?: string;
+  }>;
 }
 
 export function regenerateCommentary(user: string, labelId: string) {
-  return fetch(`${BASE}/${user}/activities/${labelId}/commentary/regenerate`, { method: 'POST', headers: authHeaders() })
-    .then(r => r.json()) as Promise<{
-      success: boolean
-      commentary?: string
-      generated_by?: string | null
-      generated_at?: string | null
-      error?: string
-    }>
+  return fetch(`${BASE}/${user}/activities/${labelId}/commentary/regenerate`, { method: "POST", headers: authHeaders() }).then((r) => r.json()) as Promise<{
+    success: boolean;
+    commentary?: string;
+    generated_by?: string | null;
+    generated_at?: string | null;
+    error?: string;
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -553,882 +523,838 @@ export function regenerateCommentary(user: string, labelId: string) {
 // ---------------------------------------------------------------------------
 
 export interface MasterPlanMilestone {
-  id: string
-  type: string
-  date: string
-  phase_id: string
-  target: string
-  completed_actual: string | null
+  id: string;
+  type: string;
+  date: string;
+  phase_id: string;
+  target: string;
+  completed_actual: string | null;
 }
 
 // One heart-rate zone's share of total in-zone time over a completed phase.
 export interface HrZoneShare {
-  zone_index: number
-  minutes: number
-  percent: number
+  zone_index: number;
+  minutes: number;
+  percent: number;
 }
 
 // Deterministic "actual results" rollup for an already-completed phase (Q2a).
 // Backend computes this once at generation time and caches it on the phase;
 // snake_case to match the FastAPI model_dump() payload.
 export interface CompletedPhaseSummary {
-  total_distance_km: number
-  run_count: number
-  weekly_avg_km: number
-  avg_pace_s_km: number | null
-  avg_pace_fmt: string
-  avg_hr: number | null
-  hr_zone_distribution: HrZoneShare[]
+  total_distance_km: number;
+  run_count: number;
+  weekly_avg_km: number;
+  avg_pace_s_km: number | null;
+  avg_pace_fmt: string;
+  avg_hr: number | null;
+  hr_zone_distribution: HrZoneShare[];
 }
 
 export interface MasterPlanPhase {
-  id: string
-  name: string
-  start_date: string
-  end_date: string
-  focus: string
-  weekly_distance_km_low: number
-  weekly_distance_km_high: number
-  key_session_types: string[]
-  milestone_ids: string[]
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  focus: string;
+  weekly_distance_km_low: number;
+  weekly_distance_km_high: number;
+  key_session_types: string[];
+  milestone_ids: string[];
   // Phase type (base / build / peak / taper / race / recovery), used for the
   // overview color band + short-name mapping. Optional — older plans may omit.
-  phase_type?: string
+  phase_type?: string;
   // Editorial fields rendered on the S1 season overview for the selected
   // phase. Backend now ships these on every phase; treat as optional so
   // legacy plans that predate them still type-check.
-  rhythm?: string                  // 阶段节奏
-  key_workouts?: string            // 关键课型
-  monitoring_triggers?: string[]   // 监控触发
-  coach_note?: string              // 教练引言 (blockquote)
+  rhythm?: string; // 阶段节奏
+  key_workouts?: string; // 关键课型
+  monitoring_triggers?: string[]; // 监控触发
+  coach_note?: string; // 教练引言 (blockquote)
   // True for an already-completed leading phase (e.g. a finished base block
   // carried over from the prior plan). Kept on the timeline for continuity,
   // rendered dimmed + 「已完成」. Optional/false for every other phase.
-  is_completed?: boolean
+  is_completed?: boolean;
   // Deterministic actual-results rollup (Q2a). Present only on is_completed
   // phases; null/absent for active phases and legacy plans.
-  summary?: CompletedPhaseSummary | null
+  summary?: CompletedPhaseSummary | null;
 }
 
 export interface MasterPlanKeySession {
-  type: string
-  distance_km: number | null
-  duration_min: number | null
-  intensity?: string | null
-  purpose?: string | null
+  type: string;
+  distance_km: number | null;
+  duration_min: number | null;
+  intensity?: string | null;
+  purpose?: string | null;
 }
 
 export interface MasterPlanWeek {
-  week_index: number
-  week_start: string
-  week_end?: string | null
-  phase_id: string
-  target_weekly_km_low: number | null
-  target_weekly_km_high: number | null
-  target_training_dose_low?: number | null
-  target_training_dose_high?: number | null
-  key_sessions: MasterPlanKeySession[]
-  is_recovery_week?: boolean
-  is_taper_week?: boolean
-  planned_distance_km?: number | null
-  is_completed?: boolean
-  actual_distance_km?: number | null
-  actual_avg_pace_s_km?: number | null
-  actual_avg_pace_fmt?: string
-  actual_avg_hr?: number | null
-  actual_run_count?: number
-  actual_duration_s?: number
-  actual_training_dose?: number | null
-  actual_training_dose_coverage?: number | null
-  actual_training_dose_status?: 'complete' | 'partial' | 'unknown' | null
+  week_index: number;
+  week_start: string;
+  week_end?: string | null;
+  phase_id: string;
+  target_weekly_km_low: number | null;
+  target_weekly_km_high: number | null;
+  target_training_dose_low?: number | null;
+  target_training_dose_high?: number | null;
+  key_sessions: MasterPlanKeySession[];
+  is_recovery_week?: boolean;
+  is_taper_week?: boolean;
+  planned_distance_km?: number | null;
+  is_completed?: boolean;
+  actual_distance_km?: number | null;
+  actual_avg_pace_s_km?: number | null;
+  actual_avg_pace_fmt?: string;
+  actual_avg_hr?: number | null;
+  actual_run_count?: number;
+  actual_duration_s?: number;
+  actual_training_dose?: number | null;
+  actual_training_dose_coverage?: number | null;
+  actual_training_dose_status?: "complete" | "partial" | "unknown" | null;
 }
 
 export interface MasterPlanTrainingLoadProjection {
-  status: 'available' | 'unavailable'
-  unavailable_reason: 'weekly_skeleton_unavailable' | 'personal_threshold_unavailable' | 'planned_session_uncomputable' | null
-  calculated_at: string
+  status: "available" | "unavailable";
+  unavailable_reason: "weekly_skeleton_unavailable" | "personal_threshold_unavailable" | "planned_session_uncomputable" | null;
+  calculated_at: string;
 }
 
 export interface MasterPlanNextMilestone {
-  id: string
-  date: string
-  target: string
-  days_until: number
+  id: string;
+  date: string;
+  target: string;
+  days_until: number;
 }
 
 export interface MasterPlan {
-  plan_id: string
-  user_id: string
-  status: string
-  goal?: SeasonPlanGoal
-  start_date: string
-  end_date: string
-  phases: MasterPlanPhase[]
-  milestones: MasterPlanMilestone[]
-  weeks?: MasterPlanWeek[]
-  weekly_key_sessions?: MasterPlanWeek[]
-  training_load_projection?: MasterPlanTrainingLoadProjection | null
-  training_principles: string[]
-  generated_by: string
-  version: number
-  created_at: string
-  updated_at: string
-  current_phase_id: string | null
-  current_week_number: number | null
-  total_weeks: number | null
-  next_milestone: MasterPlanNextMilestone | null
+  plan_id: string;
+  user_id: string;
+  status: string;
+  goal?: SeasonPlanGoal;
+  start_date: string;
+  end_date: string;
+  phases: MasterPlanPhase[];
+  milestones: MasterPlanMilestone[];
+  weeks?: MasterPlanWeek[];
+  weekly_key_sessions?: MasterPlanWeek[];
+  training_load_projection?: MasterPlanTrainingLoadProjection | null;
+  training_principles: string[];
+  generated_by: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  current_phase_id: string | null;
+  current_week_number: number | null;
+  total_weeks: number | null;
+  next_milestone: MasterPlanNextMilestone | null;
 }
 
 export interface SeasonPlanGoal {
-  goal_id: string
-  race_name?: string
-  distance?: string
-  race_date?: string
-  target_time?: string
-  timezone?: string
-  location?: string | null
+  goal_id: string;
+  race_name?: string;
+  distance?: string;
+  race_date?: string;
+  target_time?: string;
+  timezone?: string;
+  location?: string | null;
 }
 
 export interface SeasonPlanContent {
-  goal: SeasonPlanGoal
-  start_date: string
-  end_date: string
-  total_weeks: number
-  phases: MasterPlanPhase[]
-  milestones: MasterPlanMilestone[]
-  weeks: MasterPlanWeek[]
-  training_load_projection?: MasterPlanTrainingLoadProjection | null
-  training_principles: string[]
-  generated_by: string
-  current_phase_id: string | null
-  current_week_number: number | null
-  next_milestone: MasterPlanNextMilestone | null
+  goal: SeasonPlanGoal;
+  start_date: string;
+  end_date: string;
+  total_weeks: number;
+  phases: MasterPlanPhase[];
+  milestones: MasterPlanMilestone[];
+  weeks: MasterPlanWeek[];
+  training_load_projection?: MasterPlanTrainingLoadProjection | null;
+  training_principles: string[];
+  generated_by: string;
+  current_phase_id: string | null;
+  current_week_number: number | null;
+  next_milestone: MasterPlanNextMilestone | null;
 }
 
 interface CurrentSeasonPlanBase {
-  status: 'active'
-  plan_id: string
-  goal_id: string
-  created_at: string
-  updated_at: string
+  status: "active";
+  plan_id: string;
+  goal_id: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export type CurrentSeasonPlan =
   | (CurrentSeasonPlanBase & {
-      content_version: 1
-      revision: null
-      plan: string
+      content_version: 1;
+      revision: null;
+      plan: string;
     })
   | (CurrentSeasonPlanBase & {
-      content_version: 2
-      revision: number
-      plan: SeasonPlanContent
-    })
+      content_version: 2;
+      revision: number;
+      plan: SeasonPlanContent;
+    });
 
 export interface MasterPlanDiffOp {
-  id: string
-  op: string
-  phase_id: string | null
-  milestone_id: string | null
-  old_value: Record<string, unknown> | null
-  new_value: Record<string, unknown> | null
-  spec_patch: Record<string, unknown> | null
-  accepted: boolean | null
+  id: string;
+  op: string;
+  phase_id: string | null;
+  milestone_id: string | null;
+  old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown> | null;
+  spec_patch: Record<string, unknown> | null;
+  accepted: boolean | null;
 }
 
 export interface MasterPlanDiff {
-  diff_id: string
-  plan_id: string
-  ops: MasterPlanDiffOp[]
-  ai_explanation: string
-  created_at: string
+  diff_id: string;
+  plan_id: string;
+  ops: MasterPlanDiffOp[];
+  ai_explanation: string;
+  created_at: string;
 }
 
 export interface MasterPlanAdjustMessage {
-  role: 'user' | 'assistant'
-  content: string
+  role: "user" | "assistant";
+  content: string;
 }
 
 export interface MasterPlanAdjustMessageResponse {
-  stage?: 'clarification' | 'assessment' | 'proposal'
-  ai_response: string
-  clarification?: string | null
+  stage?: "clarification" | "assessment" | "proposal";
+  ai_response: string;
+  clarification?: string | null;
   assessment?: {
-    adjustment_request: string
-    verdict: 'reasonable' | 'unreasonable' | 'needs_clarification'
-    rationale: string
-  } | null
-  diff: MasterPlanDiff | null
+    adjustment_request: string;
+    verdict: "reasonable" | "unreasonable" | "needs_clarification";
+    rationale: string;
+  } | null;
+  diff: MasterPlanDiff | null;
 }
 
 export interface MasterPlanAffectedWeek {
-  folder: string
-  reason: string
+  folder: string;
+  reason: string;
 }
 
 export interface MasterPlanAdjustApplyResponse {
-  plan_id: string
-  version: number
-  updated_at: string
-  applied: number
-  affected_weeks: MasterPlanAffectedWeek[]
+  plan_id: string;
+  version: number;
+  updated_at: string;
+  applied: number;
+  affected_weeks: MasterPlanAffectedWeek[];
 }
 
 export function parseCurrentSeasonPlan(value: unknown): CurrentSeasonPlan {
-  if (!isRecord(value)) invalidCurrentSeasonPlan()
-  const base = value as Record<string, unknown>
+  if (!isRecord(value)) invalidCurrentSeasonPlan();
+  const base = value as Record<string, unknown>;
   if (
-    base.status !== 'active'
-    || !nonEmptyString(base.plan_id)
-    || !nonEmptyString(base.goal_id)
-    || !validTimestamp(base.created_at)
-    || !validTimestamp(base.updated_at)
+    base.status !== "active" ||
+    !nonEmptyString(base.plan_id) ||
+    !nonEmptyString(base.goal_id) ||
+    !validTimestamp(base.created_at) ||
+    !validTimestamp(base.updated_at)
   ) {
-    invalidCurrentSeasonPlan()
+    invalidCurrentSeasonPlan();
   }
 
   if (base.content_version === 1) {
-    if (base.revision !== null || !nonEmptyString(base.plan)) invalidCurrentSeasonPlan()
-    return base as unknown as CurrentSeasonPlan
+    if (base.revision !== null || !nonEmptyString(base.plan)) invalidCurrentSeasonPlan();
+    return base as unknown as CurrentSeasonPlan;
   }
 
   if (base.content_version === 2) {
-    if (!Number.isInteger(base.revision) || (base.revision as number) < 1) invalidCurrentSeasonPlan()
-    if (!isSeasonPlanContent(base.plan) || base.plan.goal.goal_id !== base.goal_id) invalidCurrentSeasonPlan()
-    return base as unknown as CurrentSeasonPlan
+    if (!Number.isInteger(base.revision) || (base.revision as number) < 1) invalidCurrentSeasonPlan();
+    if (!isSeasonPlanContent(base.plan) || base.plan.goal.goal_id !== base.goal_id) invalidCurrentSeasonPlan();
+    return base as unknown as CurrentSeasonPlan;
   }
 
-  return invalidCurrentSeasonPlan()
+  return invalidCurrentSeasonPlan();
 }
 
 function isSeasonPlanContent(value: unknown): value is SeasonPlanContent {
-  if (!isRecord(value)) return false
-  return isSeasonPlanGoal(value.goal)
-    && dateOnly(value.start_date)
-    && dateOnly(value.end_date)
-    && Number.isInteger(value.total_weeks)
-    && (value.total_weeks as number) > 0
-    && recordArray(value.phases, isSeasonPlanPhase)
-    && recordArray(value.milestones, isSeasonPlanMilestone)
-    && recordArray(value.weeks, isSeasonPlanWeek)
-    && (value.training_load_projection === undefined || value.training_load_projection === null || isTrainingLoadProjection(value.training_load_projection))
-    && Array.isArray(value.training_principles)
-    && value.training_principles.every(nonEmptyString)
-    && nonEmptyString(value.generated_by)
-    && (value.current_phase_id === null || nonEmptyString(value.current_phase_id))
-    && (value.current_week_number === null || (Number.isInteger(value.current_week_number) && (value.current_week_number as number) > 0))
-    && (value.next_milestone === null || isNextMilestone(value.next_milestone))
+  if (!isRecord(value)) return false;
+  return (
+    isSeasonPlanGoal(value.goal) &&
+    dateOnly(value.start_date) &&
+    dateOnly(value.end_date) &&
+    Number.isInteger(value.total_weeks) &&
+    (value.total_weeks as number) > 0 &&
+    recordArray(value.phases, isSeasonPlanPhase) &&
+    recordArray(value.milestones, isSeasonPlanMilestone) &&
+    recordArray(value.weeks, isSeasonPlanWeek) &&
+    (value.training_load_projection === undefined || value.training_load_projection === null || isTrainingLoadProjection(value.training_load_projection)) &&
+    Array.isArray(value.training_principles) &&
+    value.training_principles.every(nonEmptyString) &&
+    nonEmptyString(value.generated_by) &&
+    (value.current_phase_id === null || nonEmptyString(value.current_phase_id)) &&
+    (value.current_week_number === null || (Number.isInteger(value.current_week_number) && (value.current_week_number as number) > 0)) &&
+    (value.next_milestone === null || isNextMilestone(value.next_milestone))
+  );
 }
 
 function isSeasonPlanGoal(value: unknown): value is SeasonPlanGoal {
-  return isRecord(value)
-    && nonEmptyString(value.goal_id)
-    && typeof value.race_name === 'string'
-    && nonEmptyString(value.distance)
-    && dateOnly(value.race_date)
-    && typeof value.target_time === 'string'
-    && nonEmptyString(value.timezone)
-    && (value.location === undefined || value.location === null || typeof value.location === 'string')
+  return (
+    isRecord(value) &&
+    nonEmptyString(value.goal_id) &&
+    typeof value.race_name === "string" &&
+    nonEmptyString(value.distance) &&
+    dateOnly(value.race_date) &&
+    typeof value.target_time === "string" &&
+    nonEmptyString(value.timezone) &&
+    (value.location === undefined || value.location === null || typeof value.location === "string")
+  );
 }
 
 function isSeasonPlanPhase(value: Record<string, unknown>): boolean {
-  return nonEmptyString(value.id)
-    && nonEmptyString(value.name)
-    && dateOnly(value.start_date)
-    && dateOnly(value.end_date)
-    && typeof value.focus === 'string'
-    && finiteNumber(value.weekly_distance_km_low)
-    && finiteNumber(value.weekly_distance_km_high)
-    && stringArray(value.key_session_types)
-    && stringArray(value.milestone_ids)
-    && optionalString(value, 'phase_type')
-    && optionalString(value, 'rhythm')
-    && optionalString(value, 'key_workouts')
-    && optionalStringArray(value, 'monitoring_triggers')
-    && optionalString(value, 'coach_note')
-    && optionalBoolean(value, 'is_completed')
-    && (value.summary === undefined || value.summary === null || isCompletedPhaseSummary(value.summary))
+  return (
+    nonEmptyString(value.id) &&
+    nonEmptyString(value.name) &&
+    dateOnly(value.start_date) &&
+    dateOnly(value.end_date) &&
+    typeof value.focus === "string" &&
+    finiteNumber(value.weekly_distance_km_low) &&
+    finiteNumber(value.weekly_distance_km_high) &&
+    stringArray(value.key_session_types) &&
+    stringArray(value.milestone_ids) &&
+    optionalString(value, "phase_type") &&
+    optionalString(value, "rhythm") &&
+    optionalString(value, "key_workouts") &&
+    optionalStringArray(value, "monitoring_triggers") &&
+    optionalString(value, "coach_note") &&
+    optionalBoolean(value, "is_completed") &&
+    (value.summary === undefined || value.summary === null || isCompletedPhaseSummary(value.summary))
+  );
 }
 
 function isCompletedPhaseSummary(value: unknown): boolean {
-  if (!isRecord(value)) return false
-  return finiteNumber(value.total_distance_km)
-    && nonNegativeInteger(value.run_count)
-    && finiteNumber(value.weekly_avg_km)
-    && nullableNumber(value.avg_pace_s_km)
-    && typeof value.avg_pace_fmt === 'string'
-    && nullableNumber(value.avg_hr)
-    && recordArray(value.hr_zone_distribution, (zone) => (
-      nonNegativeInteger(zone.zone_index)
-      && finiteNumber(zone.minutes)
-      && finiteNumber(zone.percent)
-    ))
+  if (!isRecord(value)) return false;
+  return (
+    finiteNumber(value.total_distance_km) &&
+    nonNegativeInteger(value.run_count) &&
+    finiteNumber(value.weekly_avg_km) &&
+    nullableNumber(value.avg_pace_s_km) &&
+    typeof value.avg_pace_fmt === "string" &&
+    nullableNumber(value.avg_hr) &&
+    recordArray(value.hr_zone_distribution, (zone) => nonNegativeInteger(zone.zone_index) && finiteNumber(zone.minutes) && finiteNumber(zone.percent))
+  );
 }
 
 function isSeasonPlanMilestone(value: Record<string, unknown>): boolean {
-  return nonEmptyString(value.id)
-    && nonEmptyString(value.type)
-    && dateOnly(value.date)
-    && nonEmptyString(value.phase_id)
-    && typeof value.target === 'string'
-    && (value.completed_actual === null || value.completed_actual === undefined || typeof value.completed_actual === 'string')
-    && optionalString(value, 'metric')
-    && (value.target_value === undefined || value.target_value === null || finiteNumber(value.target_value))
-    && (value.comparator === undefined || value.comparator === null || ['<=', '>=', '=='].includes(String(value.comparator)))
+  return (
+    nonEmptyString(value.id) &&
+    nonEmptyString(value.type) &&
+    dateOnly(value.date) &&
+    nonEmptyString(value.phase_id) &&
+    typeof value.target === "string" &&
+    (value.completed_actual === null || value.completed_actual === undefined || typeof value.completed_actual === "string") &&
+    optionalString(value, "metric") &&
+    (value.target_value === undefined || value.target_value === null || finiteNumber(value.target_value)) &&
+    (value.comparator === undefined || value.comparator === null || ["<=", ">=", "=="].includes(String(value.comparator)))
+  );
 }
 
 function isSeasonPlanWeek(value: Record<string, unknown>): boolean {
-  return Number.isInteger(value.week_index)
-    && (value.week_index as number) > 0
-    && dateOnly(value.week_start)
-    && nonEmptyString(value.phase_id)
-    && nullableNumber(value.target_weekly_km_low)
-    && nullableNumber(value.target_weekly_km_high)
-    && recordArray(value.key_sessions, isSeasonPlanKeySession)
-    && optionalBoolean(value, 'is_recovery_week')
-    && optionalBoolean(value, 'is_taper_week')
-    && optionalNullableNumber(value, 'target_training_dose_low')
-    && optionalNullableNumber(value, 'target_training_dose_high')
-    && (value.week_end === undefined || value.week_end === null || dateOnly(value.week_end))
-    && optionalNullableNumber(value, 'planned_distance_km')
-    && optionalBoolean(value, 'is_completed')
-    && optionalNullableNumber(value, 'actual_distance_km')
-    && optionalNullableNumber(value, 'actual_avg_pace_s_km')
-    && optionalString(value, 'actual_avg_pace_fmt')
-    && optionalNullableNumber(value, 'actual_avg_hr')
-    && optionalNonNegativeInteger(value, 'actual_run_count')
-    && optionalNonNegativeInteger(value, 'actual_duration_s')
-    && optionalNullableNumber(value, 'actual_training_dose')
-    && optionalNullableNumber(value, 'actual_training_dose_coverage')
-    && (
-      value.actual_training_dose_status === undefined
-      || value.actual_training_dose_status === null
-      || ['complete', 'partial', 'unknown'].includes(String(value.actual_training_dose_status))
-    )
+  return (
+    Number.isInteger(value.week_index) &&
+    (value.week_index as number) > 0 &&
+    dateOnly(value.week_start) &&
+    nonEmptyString(value.phase_id) &&
+    nullableNumber(value.target_weekly_km_low) &&
+    nullableNumber(value.target_weekly_km_high) &&
+    recordArray(value.key_sessions, isSeasonPlanKeySession) &&
+    optionalBoolean(value, "is_recovery_week") &&
+    optionalBoolean(value, "is_taper_week") &&
+    optionalNullableNumber(value, "target_training_dose_low") &&
+    optionalNullableNumber(value, "target_training_dose_high") &&
+    (value.week_end === undefined || value.week_end === null || dateOnly(value.week_end)) &&
+    optionalNullableNumber(value, "planned_distance_km") &&
+    optionalBoolean(value, "is_completed") &&
+    optionalNullableNumber(value, "actual_distance_km") &&
+    optionalNullableNumber(value, "actual_avg_pace_s_km") &&
+    optionalString(value, "actual_avg_pace_fmt") &&
+    optionalNullableNumber(value, "actual_avg_hr") &&
+    optionalNonNegativeInteger(value, "actual_run_count") &&
+    optionalNonNegativeInteger(value, "actual_duration_s") &&
+    optionalNullableNumber(value, "actual_training_dose") &&
+    optionalNullableNumber(value, "actual_training_dose_coverage") &&
+    (value.actual_training_dose_status === undefined ||
+      value.actual_training_dose_status === null ||
+      ["complete", "partial", "unknown"].includes(String(value.actual_training_dose_status)))
+  );
 }
 
 function isSeasonPlanKeySession(value: Record<string, unknown>): boolean {
-  return nonEmptyString(value.type)
-    && nullableNumber(value.distance_km)
-    && nullableNumber(value.duration_min)
-    && optionalString(value, 'intensity')
-    && optionalString(value, 'purpose')
+  return (
+    nonEmptyString(value.type) &&
+    nullableNumber(value.distance_km) &&
+    nullableNumber(value.duration_min) &&
+    optionalString(value, "intensity") &&
+    optionalString(value, "purpose")
+  );
 }
 
 function isTrainingLoadProjection(value: unknown): boolean {
-  if (!isRecord(value) || !validTimestamp(value.calculated_at)) return false
-  if (value.status === 'available') return value.unavailable_reason === null
-  return value.status === 'unavailable'
-    && (
-      value.unavailable_reason === 'weekly_skeleton_unavailable'
-      || value.unavailable_reason === 'personal_threshold_unavailable'
-      || value.unavailable_reason === 'planned_session_uncomputable'
-    )
+  if (!isRecord(value) || !validTimestamp(value.calculated_at)) return false;
+  if (value.status === "available") return value.unavailable_reason === null;
+  return (
+    value.status === "unavailable" &&
+    (value.unavailable_reason === "weekly_skeleton_unavailable" ||
+      value.unavailable_reason === "personal_threshold_unavailable" ||
+      value.unavailable_reason === "planned_session_uncomputable")
+  );
 }
 
 function isNextMilestone(value: unknown): boolean {
-  return isRecord(value)
-    && nonEmptyString(value.id)
-    && dateOnly(value.date)
-    && typeof value.target === 'string'
-    && Number.isInteger(value.days_until)
+  return isRecord(value) && nonEmptyString(value.id) && dateOnly(value.date) && typeof value.target === "string" && Number.isInteger(value.days_until);
 }
 
-function recordArray(
-  value: unknown,
-  predicate: (item: Record<string, unknown>) => boolean,
-): boolean {
-  return Array.isArray(value) && value.every((item) => isRecord(item) && predicate(item))
+function recordArray(value: unknown, predicate: (item: Record<string, unknown>) => boolean): boolean {
+  return Array.isArray(value) && value.every((item) => isRecord(item) && predicate(item));
 }
 
 function stringArray(value: unknown): boolean {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 function optionalString(value: Record<string, unknown>, key: string): boolean {
-  return value[key] === undefined || value[key] === null || typeof value[key] === 'string'
+  return value[key] === undefined || value[key] === null || typeof value[key] === "string";
 }
 
 function optionalStringArray(value: Record<string, unknown>, key: string): boolean {
-  return value[key] === undefined || stringArray(value[key])
+  return value[key] === undefined || stringArray(value[key]);
 }
 
 function optionalBoolean(value: Record<string, unknown>, key: string): boolean {
-  return value[key] === undefined || typeof value[key] === 'boolean'
+  return value[key] === undefined || typeof value[key] === "boolean";
 }
 
 function optionalNullableNumber(value: Record<string, unknown>, key: string): boolean {
-  return value[key] === undefined || nullableNumber(value[key])
+  return value[key] === undefined || nullableNumber(value[key]);
 }
 
 function optionalNonNegativeInteger(value: Record<string, unknown>, key: string): boolean {
-  return value[key] === undefined || nonNegativeInteger(value[key])
+  return value[key] === undefined || nonNegativeInteger(value[key]);
 }
 
 function nonNegativeInteger(value: unknown): boolean {
-  return Number.isInteger(value) && (value as number) >= 0
+  return Number.isInteger(value) && (value as number) >= 0;
 }
 
 function finiteNumber(value: unknown): boolean {
-  return typeof value === 'number' && Number.isFinite(value)
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function nullableNumber(value: unknown): boolean {
-  return value === null || finiteNumber(value)
+  return value === null || finiteNumber(value);
 }
 
 function dateOnly(value: unknown): value is string {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function nonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function validTimestamp(value: unknown): value is string {
-  return nonEmptyString(value) && !Number.isNaN(Date.parse(value))
+  return nonEmptyString(value) && !Number.isNaN(Date.parse(value));
 }
 
 function invalidCurrentSeasonPlan(): never {
-  throw new Error('Invalid current season plan')
+  throw new Error("Invalid current season plan");
 }
 
 export async function getCurrentMasterPlan(userId: string): Promise<CurrentSeasonPlan | null> {
-  const res = await apiFetch('GET', `/users/${encodeURIComponent(userId)}/master-plan/current`)
-  if (res.status === 404) return null
-  if (!res.ok) throw new ApiError(res.status)
-  return parseCurrentSeasonPlan(await res.json())
+  const res = await apiFetch("GET", `/users/${encodeURIComponent(userId)}/master-plan/current`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new ApiError(res.status);
+  return parseCurrentSeasonPlan(await res.json());
 }
 
 export async function getDraftMasterPlan(): Promise<MasterPlan | null> {
-  const res = await apiFetch('GET', '/users/me/master-plan/draft')
-  if (res.status === 404) return null
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
-  return res.json()
+  const res = await apiFetch("GET", "/users/me/master-plan/draft");
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
 }
 
 export async function getMasterPlanById(planId: string): Promise<MasterPlan> {
-  const res = await apiFetch('GET', `/users/me/master-plan/${encodeURIComponent(planId)}`)
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
-  return res.json()
+  const res = await apiFetch("GET", `/users/me/master-plan/${encodeURIComponent(planId)}`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
 }
 
-export function sendMasterPlanReviewMessage(
-  planId: string,
-  message: string,
-  history: MasterPlanAdjustMessage[] = [],
-) {
-  return postJSON<MasterPlanAdjustMessageResponse>(
-    `/users/me/master-plan/${encodeURIComponent(planId)}/review/messages`,
-    { message, history },
-  )
+export function sendMasterPlanReviewMessage(planId: string, message: string, history: MasterPlanAdjustMessage[] = []) {
+  return postJSON<MasterPlanAdjustMessageResponse>(`/users/me/master-plan/${encodeURIComponent(planId)}/review/messages`, { message, history });
 }
 
 export interface MasterPlanReviewApplyResponse {
-  plan_id: string
-  version: number
-  updated_at: string
-  applied: number
+  plan_id: string;
+  version: number;
+  updated_at: string;
+  applied: number;
 }
 
-export function applyMasterPlanReviewDiff(
-  planId: string,
-  diff: MasterPlanDiff,
-  acceptedOpIds: string[],
-  changeReason: string,
-) {
-  return postJSON<MasterPlanReviewApplyResponse>(
-    `/users/me/master-plan/${encodeURIComponent(planId)}/review/apply`,
-    {
-      diff,
-      accepted_op_ids: acceptedOpIds,
-      change_reason: changeReason,
-    },
-  )
+export function applyMasterPlanReviewDiff(planId: string, diff: MasterPlanDiff, acceptedOpIds: string[], changeReason: string) {
+  return postJSON<MasterPlanReviewApplyResponse>(`/users/me/master-plan/${encodeURIComponent(planId)}/review/apply`, {
+    diff,
+    accepted_op_ids: acceptedOpIds,
+    change_reason: changeReason,
+  });
 }
 
-export function sendMasterPlanAdjustMessage(
-  planId: string,
-  message: string,
-  history: MasterPlanAdjustMessage[] = [],
-) {
-  return postJSON<MasterPlanAdjustMessageResponse>(
-    `/users/me/master-plan/${encodeURIComponent(planId)}/adjust/messages`,
-    { message, history },
-  )
+export function sendMasterPlanAdjustMessage(planId: string, message: string, history: MasterPlanAdjustMessage[] = []) {
+  return postJSON<MasterPlanAdjustMessageResponse>(`/users/me/master-plan/${encodeURIComponent(planId)}/adjust/messages`, { message, history });
 }
 
-export function applyMasterPlanAdjustDiff(
-  planId: string,
-  diff: MasterPlanDiff,
-  acceptedOpIds: string[],
-  changeReason: string,
-) {
-  return postJSON<MasterPlanAdjustApplyResponse>(
-    `/users/me/master-plan/${encodeURIComponent(planId)}/adjust/apply`,
-    {
-      diff,
-      accepted_op_ids: acceptedOpIds,
-      change_reason: changeReason,
-    },
-  )
+export function applyMasterPlanAdjustDiff(planId: string, diff: MasterPlanDiff, acceptedOpIds: string[], changeReason: string) {
+  return postJSON<MasterPlanAdjustApplyResponse>(`/users/me/master-plan/${encodeURIComponent(planId)}/adjust/apply`, {
+    diff,
+    accepted_op_ids: acceptedOpIds,
+    change_reason: changeReason,
+  });
 }
 
 // ---------------------------------------------------------------------------
 // S1 season-plan generation — training goal → generate → poll → confirm
 // ---------------------------------------------------------------------------
 
-export type RaceDistance = '5K' | '10K' | 'HM' | 'FM' | 'trail'
-export type WeeklyTrainingDays = 3 | 4 | 5 | 6
+export type RaceDistance = "5K" | "10K" | "HM" | "FM" | "trail";
+export type WeeklyTrainingDays = 3 | 4 | 5 | 6;
 
 export interface TrainingGoalInput {
-  type: 'race'
-  race_distance: RaceDistance
-  race_name: string
-  race_date: string                       // YYYY-MM-DD
+  type: "race";
+  race_distance: RaceDistance;
+  race_name: string;
+  race_date: string; // YYYY-MM-DD
   // null = 仅完赛即可 (finish-only). Omit string fields the backend marked
   // optional (available_time_slots / strength_willingness).
-  target_finish_time?: string | null
-  weekly_training_days: WeeklyTrainingDays
+  target_finish_time?: string | null;
+  weekly_training_days: WeeklyTrainingDays;
 }
 
 export interface TrainingGoal extends TrainingGoalInput {
-  goal_id?: string
-  id?: string
-  created_at?: string
-  updated_at?: string
+  goal_id?: string;
+  id?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export function createTrainingGoal(goal: TrainingGoalInput) {
-  return postJSON<TrainingGoal & { error?: string; detail?: unknown }>(
-    '/users/me/training-goal',
-    goal,
-  )
+  return postJSON<TrainingGoal & { error?: string; detail?: unknown }>("/users/me/training-goal", goal);
 }
 
 /** Current training goal, or null when none is set (404). */
 export async function getTrainingGoal(): Promise<TrainingGoal | null> {
-  const res = await apiFetch('GET', '/users/me/training-goal')
-  if (res.status === 404) return null
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
-  return res.json()
+  const res = await apiFetch("GET", "/users/me/training-goal");
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
 }
 
 export interface GenerateMasterPlanResponse {
-  job_id: string
-  status: string
-  eta_seconds: number
+  job_id: string;
+  status: string;
+  eta_seconds: number;
 }
 
 export function generateMasterPlan(goalId?: string) {
-  return postJSON<GenerateMasterPlanResponse & { error?: string; detail?: unknown }>(
-    '/users/me/master-plan/generate',
-    goalId ? { goal_id: goalId } : {},
-  )
+  return postJSON<GenerateMasterPlanResponse & { error?: string; detail?: unknown }>("/users/me/master-plan/generate", goalId ? { goal_id: goalId } : {});
 }
 
-export type MasterPlanJobStatus = 'queued' | 'running' | 'done' | 'failed'
-export type MasterPlanJobStage =
-  | 'reading_history'
-  | 'evaluating'
-  | 'planning_phases'
-  | 'rule_filter'
-  | 'outputting'
+export type MasterPlanJobStatus = "queued" | "running" | "done" | "failed";
+export type MasterPlanJobStage = "reading_history" | "evaluating" | "planning_phases" | "rule_filter" | "outputting";
 
 export interface MasterPlanJobContext {
-  avg_weekly_km?: number
-  max_weekly_km?: number
-  weeks_to_race?: number
-  chronic_load?: number
-  acute_load?: number
-  form?: number
-  fitness_summary?: string
+  avg_weekly_km?: number;
+  max_weekly_km?: number;
+  weeks_to_race?: number;
+  chronic_load?: number;
+  acute_load?: number;
+  form?: number;
+  fitness_summary?: string;
 }
 
 export interface MasterPlanJob {
-  status: MasterPlanJobStatus
-  stage: MasterPlanJobStage | null
-  progress: number                        // 0-100
-  stage_label: string
-  context: MasterPlanJobContext | null
-  result_plan_id: string | null
-  error: string | null
+  status: MasterPlanJobStatus;
+  stage: MasterPlanJobStage | null;
+  progress: number; // 0-100
+  stage_label: string;
+  context: MasterPlanJobContext | null;
+  result_plan_id: string | null;
+  error: string | null;
 }
 
 export function getMasterPlanJob(jobId: string) {
-  return fetchJSON<MasterPlanJob>(
-    `/users/me/master-plan/jobs/${encodeURIComponent(jobId)}`,
-  )
+  return fetchJSON<MasterPlanJob>(`/users/me/master-plan/jobs/${encodeURIComponent(jobId)}`);
 }
 
 /** Promote a DRAFT plan to ACTIVE; returns the promoted plan. */
 export function confirmMasterPlan(planId: string) {
-  return postJSON<MasterPlan & { error?: string; detail?: unknown }>(
-    `/users/me/master-plan/${encodeURIComponent(planId)}/confirm`,
-  )
+  return postJSON<MasterPlan & { error?: string; detail?: unknown }>(`/users/me/master-plan/${encodeURIComponent(planId)}/confirm`);
 }
 
 export interface HealthRecord {
-  date: string
-  ati: number | null
-  cti: number | null
-  rhr: number | null
-  distance_m: number | null
-  duration_s: number | null
-  training_load_ratio: number | null
-  training_load_state: string | null
-  fatigue: number | null
+  date: string;
+  ati: number | null;
+  cti: number | null;
+  rhr: number | null;
+  distance_m: number | null;
+  duration_s: number | null;
+  training_load_ratio: number | null;
+  training_load_state: string | null;
+  fatigue: number | null;
   // Phase 3 Garmin extras (NULL for COROS rows)
-  body_battery_high: number | null
-  body_battery_low: number | null
-  stress_avg: number | null
-  sleep_total_s: number | null
-  sleep_deep_s: number | null
-  sleep_light_s: number | null
-  sleep_rem_s: number | null
-  sleep_awake_s: number | null
-  sleep_score: number | null
-  respiration_avg: number | null
-  spo2_avg: number | null
-  provider: string | null
+  body_battery_high: number | null;
+  body_battery_low: number | null;
+  stress_avg: number | null;
+  sleep_total_s: number | null;
+  sleep_deep_s: number | null;
+  sleep_light_s: number | null;
+  sleep_rem_s: number | null;
+  sleep_awake_s: number | null;
+  sleep_score: number | null;
+  respiration_avg: number | null;
+  spo2_avg: number | null;
+  provider: string | null;
 }
 
 export interface HrvTrendPoint {
-  date: string
-  last_night_avg: number | null
-  status: string | null
+  date: string;
+  last_night_avg: number | null;
+  status: string | null;
   // Per-day watch-reported balanced band — distinct from the user-level
   // `hrv_normal_low/high` snapshot on HRVSnapshot (which is a stable
   // baseline range, while these drift day by day).
-  daily_balanced_low: number | null
-  daily_balanced_upper: number | null
+  daily_balanced_low: number | null;
+  daily_balanced_upper: number | null;
 }
 
 export interface HRVSnapshot {
-  avg_sleep_hrv: number | null
-  hrv_normal_low: number | null
-  hrv_normal_high: number | null
-  recovery_pct: number | null
-  trend: HrvTrendPoint[]
+  avg_sleep_hrv: number | null;
+  hrv_normal_low: number | null;
+  hrv_normal_high: number | null;
+  recovery_pct: number | null;
+  trend: HrvTrendPoint[];
   // Date of the most recent daily_hrv reading. The `avg_sleep_hrv` value is
   // a dashboard snapshot with no date of its own; this is the closest "as-of"
   // the server can attach. Null until the user has any daily_hrv rows.
-  date: string | null
+  date: string | null;
 }
 
 export function getHealth(user: string, days = 30) {
-  return fetchJSON<{ health: HealthRecord[]; hrv: HRVSnapshot; rhr_baseline: number | null }>(`/${user}/health?days=${days}`)
+  return fetchJSON<{ health: HealthRecord[]; hrv: HRVSnapshot; rhr_baseline: number | null }>(`/${user}/health?days=${days}`);
 }
 
 export interface HrvDailyRecord {
-  date: string
-  weekly_avg: number | null
-  last_night_avg: number | null
-  last_night_5min_high: number | null
-  status: string | null
-  baseline_low_upper: number | null
+  date: string;
+  weekly_avg: number | null;
+  last_night_avg: number | null;
+  last_night_5min_high: number | null;
+  status: string | null;
+  baseline_low_upper: number | null;
   // Per-day watch-reported balanced band — see HrvTrendPoint for the same
   // semantics on /api/health. Named `daily_*` not `baseline_*` so callers
   // don't conflate this with `hrv_normal_*` on HRVSnapshot (which is the
   // user-level baseline range, not a per-day threshold).
-  daily_balanced_low: number | null
-  daily_balanced_upper: number | null
-  feedback_phrase: string | null
-  provider: string | null
+  daily_balanced_low: number | null;
+  daily_balanced_upper: number | null;
+  feedback_phrase: string | null;
+  provider: string | null;
 }
 
 export interface HrvSummary {
-  date: string | null
-  last_night_avg: number | null
-  weekly_avg: number | null
-  status: string | null
-  daily_balanced_low: number | null
-  daily_balanced_upper: number | null
+  date: string | null;
+  last_night_avg: number | null;
+  weekly_avg: number | null;
+  status: string | null;
+  daily_balanced_low: number | null;
+  daily_balanced_upper: number | null;
 }
 
 export function getHrv(user: string, days = 30) {
-  return fetchJSON<{ hrv: HrvDailyRecord[]; summary: HrvSummary }>(`/${user}/hrv?days=${days}`)
+  return fetchJSON<{ hrv: HrvDailyRecord[]; summary: HrvSummary }>(`/${user}/hrv?days=${days}`);
 }
 
 export interface PMCRecord {
-  date: string
-  ati: number | null
-  cti: number | null
-  rhr: number | null
-  fatigue: number | null
-  training_load_ratio: number | null
-  training_load_state: string | null
-  tsb: number
-  tsb_zone: string
-  tsb_zone_label: string
-  ctl_ramp: number | null
+  date: string;
+  ati: number | null;
+  cti: number | null;
+  rhr: number | null;
+  fatigue: number | null;
+  training_load_ratio: number | null;
+  training_load_state: string | null;
+  tsb: number;
+  tsb_zone: string;
+  tsb_zone_label: string;
+  ctl_ramp: number | null;
 }
 
 export interface PMCSummary {
-  current_cti: number | null
-  current_ati: number | null
-  current_tsb: number | null
-  current_tsb_zone: string | null
-  current_tsb_zone_label: string | null
-  current_fatigue: number | null
-  current_rhr: number | null
-  ctl_ramp: number | null
-  date: string | null
+  current_cti: number | null;
+  current_ati: number | null;
+  current_tsb: number | null;
+  current_tsb_zone: string | null;
+  current_tsb_zone_label: string | null;
+  current_fatigue: number | null;
+  current_rhr: number | null;
+  ctl_ramp: number | null;
+  date: string | null;
 }
 
 export interface StridePMCRecord {
-  date: string
-  algorithm_version: number
-  training_dose: number | null
-  acute_load: number | null
-  chronic_load: number | null
-  form: number | null
-  load_ratio: number | null
-  coverage_status: string
-  readiness_gate: string | null
-  readiness_reasons: string[]
-  chronic_load_ramp: number | null
+  date: string;
+  algorithm_version: number;
+  training_dose: number | null;
+  acute_load: number | null;
+  chronic_load: number | null;
+  form: number | null;
+  load_ratio: number | null;
+  coverage_status: string;
+  readiness_gate: string | null;
+  readiness_reasons: string[];
+  chronic_load_ramp: number | null;
 }
 
 export interface StridePMCSummary {
-  date: string | null
-  current_training_dose: number | null
-  current_acute_load: number | null
-  current_chronic_load: number | null
-  current_form: number | null
-  current_load_ratio: number | null
-  current_coverage_status: string | null
-  current_readiness_gate: string | null
-  current_readiness_reasons: string[] | null
-  chronic_load_ramp: number | null
+  date: string | null;
+  current_training_dose: number | null;
+  current_acute_load: number | null;
+  current_chronic_load: number | null;
+  current_form: number | null;
+  current_load_ratio: number | null;
+  current_coverage_status: string | null;
+  current_readiness_gate: string | null;
+  current_readiness_reasons: string[] | null;
+  chronic_load_ramp: number | null;
 }
 
 export function getPMC(user: string, days = 90) {
   return fetchJSON<{
-    pmc: PMCRecord[]
-    summary: PMCSummary
-    stride_pmc?: StridePMCRecord[]
-    stride_summary?: StridePMCSummary
-  }>(`/${user}/pmc?days=${days}`)
+    pmc: PMCRecord[];
+    summary: PMCSummary;
+    stride_pmc?: StridePMCRecord[];
+    stride_summary?: StridePMCSummary;
+  }>(`/${user}/pmc?days=${days}`);
 }
 
 export interface BodyCompositionSegment {
-  segment: 'left_arm' | 'right_arm' | 'trunk' | 'left_leg' | 'right_leg'
-  lean_mass_kg: number
-  fat_mass_kg: number
-  lean_pct_of_standard: number | null
-  fat_pct_of_standard: number | null
+  segment: "left_arm" | "right_arm" | "trunk" | "left_leg" | "right_leg";
+  lean_mass_kg: number;
+  fat_mass_kg: number;
+  lean_pct_of_standard: number | null;
+  fat_pct_of_standard: number | null;
 }
 
 export interface BodyCompositionScan {
-  scan_date: string
-  jpg_path: string | null
-  weight_kg: number
-  body_fat_pct: number
-  smm_kg: number
-  fat_mass_kg: number
-  visceral_fat_level: number
-  bmr_kcal: number | null
-  protein_kg: number | null
-  water_l: number | null
-  smi: number | null
-  inbody_score: number | null   // brand-specific reading kept verbatim
-  ingested_at: string
+  scan_date: string;
+  jpg_path: string | null;
+  weight_kg: number;
+  body_fat_pct: number;
+  smm_kg: number;
+  fat_mass_kg: number;
+  visceral_fat_level: number;
+  bmr_kcal: number | null;
+  protein_kg: number | null;
+  water_l: number | null;
+  smi: number | null;
+  inbody_score: number | null; // brand-specific reading kept verbatim
+  ingested_at: string;
   // Derived
-  leg_smm_delta: number | null
-  leg_fat_delta: number | null
-  arm_smm_delta: number | null
-  upper_lower_smm_ratio: number | null
-  left_arm_smm_kg: number | null
-  right_arm_smm_kg: number | null
-  trunk_smm_kg: number | null
-  left_leg_smm_kg: number | null
-  right_leg_smm_kg: number | null
-  left_arm_fat_kg: number | null
-  right_arm_fat_kg: number | null
-  trunk_fat_kg: number | null
-  left_leg_fat_kg: number | null
-  right_leg_fat_kg: number | null
-  left_arm_lean_pct_std: number | null
-  right_arm_lean_pct_std: number | null
-  trunk_lean_pct_std: number | null
-  left_leg_lean_pct_std: number | null
-  right_leg_lean_pct_std: number | null
-  left_arm_fat_pct_std: number | null
-  right_arm_fat_pct_std: number | null
-  trunk_fat_pct_std: number | null
-  left_leg_fat_pct_std: number | null
-  right_leg_fat_pct_std: number | null
-  segments?: BodyCompositionSegment[]
+  leg_smm_delta: number | null;
+  leg_fat_delta: number | null;
+  arm_smm_delta: number | null;
+  upper_lower_smm_ratio: number | null;
+  left_arm_smm_kg: number | null;
+  right_arm_smm_kg: number | null;
+  trunk_smm_kg: number | null;
+  left_leg_smm_kg: number | null;
+  right_leg_smm_kg: number | null;
+  left_arm_fat_kg: number | null;
+  right_arm_fat_kg: number | null;
+  trunk_fat_kg: number | null;
+  left_leg_fat_kg: number | null;
+  right_leg_fat_kg: number | null;
+  left_arm_lean_pct_std: number | null;
+  right_arm_lean_pct_std: number | null;
+  trunk_lean_pct_std: number | null;
+  left_leg_lean_pct_std: number | null;
+  right_leg_lean_pct_std: number | null;
+  left_arm_fat_pct_std: number | null;
+  right_arm_fat_pct_std: number | null;
+  trunk_fat_pct_std: number | null;
+  left_leg_fat_pct_std: number | null;
+  right_leg_fat_pct_std: number | null;
+  segments?: BodyCompositionSegment[];
 }
 
 export interface BodyCompositionCheckpoint {
-  phase: string
-  date: string
-  weight_kg: number
-  body_fat_pct: number
-  smm_kg_min: number
+  phase: string;
+  date: string;
+  weight_kg: number;
+  body_fat_pct: number;
+  smm_kg_min: number;
 }
 
 export interface BodyCompositionDeltas {
-  prev_date: string
-  weight_kg: number
-  body_fat_pct: number
-  smm_kg: number
-  fat_mass_kg: number
-  visceral_fat_level: number
+  prev_date: string;
+  weight_kg: number;
+  body_fat_pct: number;
+  smm_kg: number;
+  fat_mass_kg: number;
+  visceral_fat_level: number;
 }
 
 export interface BodyCompositionSummary {
-  latest: BodyCompositionScan | null
-  deltas: BodyCompositionDeltas | null
-  checkpoints: BodyCompositionCheckpoint[]
+  latest: BodyCompositionScan | null;
+  deltas: BodyCompositionDeltas | null;
+  checkpoints: BodyCompositionCheckpoint[];
 }
 
 export function getBodyComposition(user: string, days?: number) {
-  const qs = days ? `?days=${days}` : ''
-  return fetchJSON<{ scans: BodyCompositionScan[] }>(`/${user}/body-composition${qs}`)
+  const qs = days ? `?days=${days}` : "";
+  return fetchJSON<{ scans: BodyCompositionScan[] }>(`/${user}/body-composition${qs}`);
 }
 
 export function getBodyCompositionSummary(user: string) {
-  return fetchJSON<BodyCompositionSummary>(`/${user}/body-composition/summary`)
+  return fetchJSON<BodyCompositionSummary>(`/${user}/body-composition/summary`);
 }
 
 export function getBodyCompositionScan(user: string, scanDate: string) {
-  return fetchJSON<BodyCompositionScan>(`/${user}/body-composition/${scanDate}`)
+  return fetchJSON<BodyCompositionScan>(`/${user}/body-composition/${scanDate}`);
 }
 
 export type BodyCompositionScanInput = {
-  scan_date: string
-  weight_kg: number
-  body_fat_pct: number
-  smm_kg: number
-  fat_mass_kg: number
-  visceral_fat_level: number
-  bmr_kcal?: number | null
-  protein_kg?: number | null
-  water_l?: number | null
-  smi?: number | null
-  inbody_score?: number | null
+  scan_date: string;
+  weight_kg: number;
+  body_fat_pct: number;
+  smm_kg: number;
+  fat_mass_kg: number;
+  visceral_fat_level: number;
+  bmr_kcal?: number | null;
+  protein_kg?: number | null;
+  water_l?: number | null;
+  smi?: number | null;
+  inbody_score?: number | null;
   segments?: Array<{
-    segment: 'left_arm' | 'right_arm' | 'trunk' | 'left_leg' | 'right_leg'
-    lean_mass_kg: number
-    fat_mass_kg: number
-    lean_pct_of_standard?: number | null
-    fat_pct_of_standard?: number | null
-  }>
-}
+    segment: "left_arm" | "right_arm" | "trunk" | "left_leg" | "right_leg";
+    lean_mass_kg: number;
+    fat_mass_kg: number;
+    lean_pct_of_standard?: number | null;
+    fat_pct_of_standard?: number | null;
+  }>;
+};
 
 export function upsertBodyComposition(user: string, payload: BodyCompositionScanInput): Promise<{ ok: boolean; status: number; data: BodyCompositionScan }> {
-  return postJSON<BodyCompositionScan>(`/${user}/body-composition`, payload)
+  return postJSON<BodyCompositionScan>(`/${user}/body-composition`, payload);
 }
 
 export function getWeeks(user: string) {
-  return fetchJSON<{ weeks: WeekSummary[] }>(`/${user}/weeks`)
+  return fetchJSON<{ weeks: WeekSummary[] }>(`/${user}/weeks`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1436,134 +1362,134 @@ export function getWeeks(user: string) {
 // ---------------------------------------------------------------------------
 
 export interface RaceEstimates {
-  training_s: number | null
-  race_s: number | null
-  best_case_s: number | null
-  race_day_boost_pct?: number
-  best_case_boost_pct?: number
+  training_s: number | null;
+  race_s: number | null;
+  best_case_s: number | null;
+  race_day_boost_pct?: number;
+  best_case_boost_pct?: number;
 }
 
 /** @deprecated Use RaceEstimates — kept for backward compat */
-export type MarathonEstimates = RaceEstimates
+export type MarathonEstimates = RaceEstimates;
 
 export interface L3Dimension {
-  score: number | null
-  evidence: string[]
+  score: number | null;
+  evidence: string[];
   // Live-computed snapshots spread extra diagnostic fields (vo2max_primary, etc.)
-  [key: string]: unknown
+  [key: string]: unknown;
 }
 
 export interface AbilityCurrent {
-  date: string
-  source: 'snapshot' | 'computed'
-  l2_freshness: { total: number | null } | { total: number; breakdown?: Record<string, number> } | null
+  date: string;
+  source: "snapshot" | "computed";
+  l2_freshness: { total: number | null } | { total: number; breakdown?: Record<string, number> } | null;
   l3_dimensions: {
-    aerobic: L3Dimension
-    lt: L3Dimension
-    vo2max: L3Dimension
-    endurance: L3Dimension
-    economy: L3Dimension
-    recovery: L3Dimension
-  }
-  l4_composite: number | null
-  l4_marathon_estimate_s: number | null
-  distance_to_sub_2_50_s: number | null
-  distance_to_target_s?: number | null
+    aerobic: L3Dimension;
+    lt: L3Dimension;
+    vo2max: L3Dimension;
+    endurance: L3Dimension;
+    economy: L3Dimension;
+    recovery: L3Dimension;
+  };
+  l4_composite: number | null;
+  l4_marathon_estimate_s: number | null;
+  distance_to_sub_2_50_s: number | null;
+  distance_to_target_s?: number | null;
   // Target info — HM or FM.
-  target_distance?: 'HM' | 'FM'
-  target_s?: number | null
-  target_label?: string | null
+  target_distance?: "HM" | "FM";
+  target_s?: number | null;
+  target_label?: string | null;
   // Backward compat marathon target fields.
-  marathon_target_s?: number | null
-  marathon_target_label?: string | null
-  marathon_estimates: RaceEstimates
-  half_marathon_estimates?: RaceEstimates
-  evidence_activity_ids: string[]
+  marathon_target_s?: number | null;
+  marathon_target_label?: string | null;
+  marathon_estimates: RaceEstimates;
+  half_marathon_estimates?: RaceEstimates;
+  evidence_activity_ids: string[];
 }
 
 export interface AbilityHistoryPoint {
-  date: string
-  l4_composite: number | null
-  l4_marathon_race_s: number | null
-  l4_hm_race_s?: number | null
+  date: string;
+  l4_composite: number | null;
+  l4_marathon_race_s: number | null;
+  l4_hm_race_s?: number | null;
   l3: {
-    aerobic: number | null
-    lt: number | null
-    vo2max: number | null
-    endurance: number | null
-    economy: number | null
-    recovery: number | null
-  }
+    aerobic: number | null;
+    lt: number | null;
+    vo2max: number | null;
+    endurance: number | null;
+    economy: number | null;
+    recovery: number | null;
+  };
 }
 
 export interface ActivityAbility {
-  label_id: string
-  l1_quality: number | null
-  l1_breakdown: Record<string, number>
-  contribution: Record<string, number>
-  computed_at: string | null
+  label_id: string;
+  l1_quality: number | null;
+  l1_breakdown: Record<string, number>;
+  contribution: Record<string, number>;
+  computed_at: string | null;
 }
 
 export interface AbilityWeights {
-  l4_weights: Record<string, number>
+  l4_weights: Record<string, number>;
 }
 
 export interface PBHistoryPoint {
-  date: string
-  best_so_far_sec: number
-  label_id: string | null
-  source: string | null
-  segment_start_s: number | null
-  segment_end_s: number | null
+  date: string;
+  best_so_far_sec: number;
+  label_id: string | null;
+  source: string | null;
+  segment_start_s: number | null;
+  segment_end_s: number | null;
 }
 
 export interface PBEntry {
-  distance: string            // "1K" | "3K" | "5K" | "10K" | "HM" | "FM"
-  race_type: string | null
-  pb_time_sec: number
-  achieved_at: string         // Shanghai YYYY-MM-DD
-  label_id: string
-  name: string | null
-  source: string | null
-  segment_start_s: number | null
-  segment_end_s: number | null
-  history: PBHistoryPoint[]
+  distance: string; // "1K" | "3K" | "5K" | "10K" | "HM" | "FM"
+  race_type: string | null;
+  pb_time_sec: number;
+  achieved_at: string; // Shanghai YYYY-MM-DD
+  label_id: string;
+  name: string | null;
+  source: string | null;
+  segment_start_s: number | null;
+  segment_end_s: number | null;
+  history: PBHistoryPoint[];
 }
 
 export interface PBsResponse {
-  user_id: string
-  computed_at: string
-  pbs: PBEntry[]
+  user_id: string;
+  computed_at: string;
+  pbs: PBEntry[];
 }
 
 export function fetchPbs(user: string) {
-  return fetchJSON<PBsResponse>(`/${user}/pbs`)
+  return fetchJSON<PBsResponse>(`/${user}/pbs`);
 }
 
 export function fetchAbilityCurrent(user: string, refresh = false) {
-  const qs = refresh ? '?refresh=1' : ''
-  return fetchJSON<AbilityCurrent>(`/${user}/ability/current${qs}`)
+  const qs = refresh ? "?refresh=1" : "";
+  return fetchJSON<AbilityCurrent>(`/${user}/ability/current${qs}`);
 }
 
 export function fetchAbilityHistory(user: string, days = 90) {
-  return fetchJSON<AbilityHistoryPoint[]>(`/${user}/ability/history?days=${days}`)
+  return fetchJSON<AbilityHistoryPoint[]>(`/${user}/ability/history?days=${days}`);
 }
 
 export async function triggerAbilityBackfill(user: string, days = 180) {
   const res = await fetch(`${BASE}/${user}/ability/backfill?days=${days}`, {
-    method: 'POST',
+    method: "POST",
     headers: authHeaders(),
-  })
-  if (!res.ok) throw new Error(`backfill failed: ${res.status}`)
-  return res.json() as Promise<{ days_requested: number; written: number; skipped: number }>
+  });
+  if (!res.ok) throw new Error(`backfill failed: ${res.status}`);
+  return res.json() as Promise<{ days_requested: number; written: number; skipped: number }>;
 }
 
 export function fetchAbilityWeights(user: string) {
-  return fetchJSON<AbilityWeights>(`/${user}/ability/weights`)
+  return fetchJSON<AbilityWeights>(`/${user}/ability/weights`);
 }
 
 export function fetchActivityAbility(user: string, labelId: string) {
-  return fetchJSON<ActivityAbility>(`/${user}/activities/${labelId}/ability`)
+  return fetchJSON<ActivityAbility>(`/${user}/activities/${labelId}/ability`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1571,178 +1497,170 @@ export function fetchActivityAbility(user: string, labelId: string) {
 // ---------------------------------------------------------------------------
 
 export interface Team {
-  id: string
-  name: string
-  description?: string | null
-  owner_user_id: string
-  is_open: boolean
-  member_count?: number
-  created_at?: string
+  id: string;
+  name: string;
+  description?: string | null;
+  owner_user_id: string;
+  is_open: boolean;
+  member_count?: number;
+  created_at?: string;
 }
 
 export interface TeamMember {
-  user_id: string
-  name?: string | null
-  display_name?: string | null
-  email?: string | null
-  role: string
-  joined_at?: string
+  user_id: string;
+  name?: string | null;
+  display_name?: string | null;
+  email?: string | null;
+  role: string;
+  joined_at?: string;
 }
 
 export interface MyTeam {
-  id: string
-  name: string
-  role: string
-  joined_at?: string
+  id: string;
+  name: string;
+  role: string;
+  joined_at?: string;
 }
 
 export interface TeamFeedActivity extends Activity {
-  user_id: string
-  display_name: string
-  like_count?: number
-  you_liked?: boolean
-  top_likers?: string[]
+  user_id: string;
+  display_name: string;
+  like_count?: number;
+  you_liked?: boolean;
+  top_likers?: string[];
 }
 
 export interface ActivityLiker {
-  user_id: string
-  display_name: string
-  created_at: string
+  user_id: string;
+  display_name: string;
+  created_at: string;
 }
 
 export interface ActivityLikes {
-  count: number
-  you_liked: boolean
-  likers: ActivityLiker[]
+  count: number;
+  you_liked: boolean;
+  likers: ActivityLiker[];
 }
 
 export interface ActivityLikeMutation {
-  liked: boolean
-  count: number
-  you_liked: boolean
+  liked: boolean;
+  count: number;
+  you_liked: boolean;
 }
 
 export interface TeamFeed {
-  team_id: string
-  member_count: number
-  activities: TeamFeedActivity[]
+  team_id: string;
+  member_count: number;
+  activities: TeamFeedActivity[];
 }
 
 export function listTeams() {
-  return fetchJSON<{ teams: Team[] }>('/teams')
+  return fetchJSON<{ teams: Team[] }>("/teams");
 }
 
 export function getTeam(id: string) {
-  return fetchJSON<Team>(`/teams/${id}`)
+  return fetchJSON<Team>(`/teams/${id}`);
 }
 
 export function createTeam(payload: { name: string; description?: string }) {
-  return postJSON<Team>('/teams', payload)
+  return postJSON<Team>("/teams", payload);
 }
 
 export function joinTeam(id: string) {
-  return postJSON<Record<string, unknown>>(`/teams/${id}/join`)
+  return postJSON<Record<string, unknown>>(`/teams/${id}/join`);
 }
 
 export function leaveTeam(id: string) {
-  return postJSON<Record<string, unknown>>(`/teams/${id}/leave`)
+  return postJSON<Record<string, unknown>>(`/teams/${id}/leave`);
 }
 
 export function transferTeamOwner(id: string, newOwnerUserId: string) {
-  return postJSON<Team>(`/teams/${id}/transfer-owner`, { new_owner_user_id: newOwnerUserId })
+  return postJSON<Team>(`/teams/${id}/transfer-owner`, { new_owner_user_id: newOwnerUserId });
 }
 
 export function deleteTeam(id: string) {
-  return deleteJSON<Record<string, unknown>>(`/teams/${id}`)
+  return deleteJSON<Record<string, unknown>>(`/teams/${id}`);
 }
 
 export function getTeamMembers(id: string) {
-  return fetchJSON<{ members: TeamMember[] }>(`/teams/${id}/members`)
+  return fetchJSON<{ members: TeamMember[] }>(`/teams/${id}/members`);
 }
 
 export function getTeamFeed(id: string, days = 30) {
-  return fetchJSON<TeamFeed>(`/teams/${id}/feed?days=${days}`)
+  return fetchJSON<TeamFeed>(`/teams/${id}/feed?days=${days}`);
 }
 
-export type MileagePeriod = 'month' | 'week'
+export type MileagePeriod = "month" | "week";
 
 export interface MileageRankingEntry {
-  user_id: string
-  display_name: string
-  total_km: number
-  activity_count: number
+  user_id: string;
+  display_name: string;
+  total_km: number;
+  activity_count: number;
 }
 
 export interface MileageLeaderboardData {
-  team_id: string
-  period: MileagePeriod
-  period_start: string
-  period_end: string
-  rankings: MileageRankingEntry[]
+  team_id: string;
+  period: MileagePeriod;
+  period_start: string;
+  period_end: string;
+  rankings: MileageRankingEntry[];
 }
 
-export function getTeamMileage(id: string, period: MileagePeriod = 'month') {
-  return fetchJSON<MileageLeaderboardData>(`/teams/${id}/mileage?period=${period}`)
+export function getTeamMileage(id: string, period: MileagePeriod = "month") {
+  return fetchJSON<MileageLeaderboardData>(`/teams/${id}/mileage?period=${period}`);
 }
 
 export function getActivityLikes(teamId: string, userId: string, labelId: string) {
-  return fetchJSON<ActivityLikes>(
-    `/teams/${teamId}/activities/${userId}/${labelId}/likes`,
-  )
+  return fetchJSON<ActivityLikes>(`/teams/${teamId}/activities/${userId}/${labelId}/likes`);
 }
 
 export function likeActivity(teamId: string, userId: string, labelId: string) {
-  return postJSON<ActivityLikeMutation>(
-    `/teams/${teamId}/activities/${userId}/${labelId}/likes`,
-  )
+  return postJSON<ActivityLikeMutation>(`/teams/${teamId}/activities/${userId}/${labelId}/likes`);
 }
 
 export function unlikeActivity(teamId: string, userId: string, labelId: string) {
-  return deleteJSON<ActivityLikeMutation>(
-    `/teams/${teamId}/activities/${userId}/${labelId}/likes`,
-  )
+  return deleteJSON<ActivityLikeMutation>(`/teams/${teamId}/activities/${userId}/${labelId}/likes`);
 }
 
 export function listMyTeams() {
-  return fetchJSON<{ teams: MyTeam[] }>('/users/me/teams')
+  return fetchJSON<{ teams: MyTeam[] }>("/users/me/teams");
 }
 
 export interface TeamSyncMemberResult {
-  user_id: string
-  display_name: string
-  status: 'synced' | 'skipped_no_auth' | 'error'
-  new_activities: number
-  new_health: number
-  error: string | null
+  user_id: string;
+  display_name: string;
+  status: "synced" | "skipped_no_auth" | "error";
+  new_activities: number;
+  new_health: number;
+  error: string | null;
 }
 
 export interface TeamSyncTotals {
-  members: number
-  synced: number
-  skipped: number
-  errors: number
-  new_activities: number
-  new_health: number
+  members: number;
+  synced: number;
+  skipped: number;
+  errors: number;
+  new_activities: number;
+  new_health: number;
 }
 
 export interface TeamSyncSummary {
-  team_id: string
-  results: TeamSyncMemberResult[]
-  totals: TeamSyncTotals
+  team_id: string;
+  results: TeamSyncMemberResult[];
+  totals: TeamSyncTotals;
 }
 
 export function syncTeamAll(id: string) {
-  return postJSON<TeamSyncSummary>(`/teams/${id}/sync-all`)
+  return postJSON<TeamSyncSummary>(`/teams/${id}/sync-all`);
 }
 
 export function getWeek(user: string, weekName: string) {
-  return fetchJSON<WeekDetail>(`/${user}/weeks/${weekName}`)
+  return fetchJSON<WeekDetail>(`/${user}/weeks/${weekName}`);
 }
 
 export function getWeekStrength(user: string, folder: string) {
-  return fetchJSON<import('./types/strength').StrengthTabResponse>(
-    `/${user}/weeks/${folder}/strength`,
-  )
+  return fetchJSON<import("./types/strength").StrengthTabResponse>(`/${user}/weeks/${folder}/strength`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1756,165 +1674,156 @@ export function getWeekStrength(user: string, folder: string) {
  *   - `pushable` is server-derived (kind in {RUN, STRENGTH} && spec != null).
  */
 export interface PlannedSessionRow extends PlannedSession {
-  id: number
-  pushable: boolean
+  id: number;
+  pushable: boolean;
 }
 
 export interface PlanDay {
-  date: string
-  sessions: PlannedSessionRow[]
-  nutrition: PlannedNutrition | null
+  date: string;
+  sessions: PlannedSessionRow[];
+  nutrition: PlannedNutrition | null;
 }
 
 export interface PlanDaysResponse {
-  days: PlanDay[]
+  days: PlanDay[];
 }
 
 export interface PlanTodayResponse {
-  date: string
-  sessions: PlannedSessionRow[]
-  nutrition: PlannedNutrition | null
-  planned_vs_actual: Array<{ planned: PlannedSessionRow; actual: Activity | null }>
+  date: string;
+  sessions: PlannedSessionRow[];
+  nutrition: PlannedNutrition | null;
+  planned_vs_actual: Array<{ planned: PlannedSessionRow; actual: Activity | null }>;
 }
 
 export interface PushPlannedSessionResponse {
-  ok: boolean
-  planned_session_id?: number
-  scheduled_workout_id?: number
-  provider?: string
-  provider_workout_id?: string
+  ok: boolean;
+  planned_session_id?: number;
+  scheduled_workout_id?: number;
+  provider?: string;
+  provider_workout_id?: string;
   /** Actual ISO date the workout was scheduled to on the watch. Equals the
    *  planned date when no `target_date` override was supplied. */
-  push_date?: string
+  push_date?: string;
   // 409 carries the actual structured_status so the UI can show the right hint.
-  detail?: { error?: string; structured_status?: StructuredStatus | null } | string
+  detail?: { error?: string; structured_status?: StructuredStatus | null } | string;
 }
 
 export interface ReparsePlanResponse {
-  ok: boolean
-  folder: string
-  structured_status: StructuredStatus
-  parse_error: string | null
+  ok: boolean;
+  folder: string;
+  structured_status: StructuredStatus;
+  parse_error: string | null;
 }
 
 export interface WeeklyPlanStructuredResponse {
-  structured_status: StructuredStatus
-  structured_parsed_at: string | null
-  sessions: PlannedSessionRow[]
-  nutrition: PlannedNutrition[]
+  structured_status: StructuredStatus;
+  structured_parsed_at: string | null;
+  sessions: PlannedSessionRow[];
+  nutrition: PlannedNutrition[];
 }
 
 export function getPlanDays(user: string, from: string, to: string) {
-  const qs = new URLSearchParams({ from, to }).toString()
-  return fetchJSON<PlanDaysResponse>(`/${user}/plan/days?${qs}`)
+  const qs = new URLSearchParams({ from, to }).toString();
+  return fetchJSON<PlanDaysResponse>(`/${user}/plan/days?${qs}`);
 }
 
 export function getPlanToday(user: string) {
-  return fetchJSON<PlanTodayResponse>(`/${user}/plan/today`)
+  return fetchJSON<PlanTodayResponse>(`/${user}/plan/today`);
 }
 
-export function pushPlannedSession(
-  user: string,
-  date: string,
-  sessionIndex: number,
-  targetDate?: string,
-) {
-  const path = `/${user}/plan/sessions/${date}/${sessionIndex}/push`
-  const qs = targetDate ? `?${new URLSearchParams({ target_date: targetDate }).toString()}` : ''
-  return postJSON<PushPlannedSessionResponse>(`${path}${qs}`)
+export function pushPlannedSession(user: string, date: string, sessionIndex: number, targetDate?: string) {
+  const path = `/${user}/plan/sessions/${date}/${sessionIndex}/push`;
+  const qs = targetDate ? `?${new URLSearchParams({ target_date: targetDate }).toString()}` : "";
+  return postJSON<PushPlannedSessionResponse>(`${path}${qs}`);
 }
 
 export function reparsePlan(user: string, folder: string) {
-  const qs = new URLSearchParams({ folder }).toString()
-  return postJSON<ReparsePlanResponse>(`/${user}/plan/reparse?${qs}`)
+  const qs = new URLSearchParams({ folder }).toString();
+  return postJSON<ReparsePlanResponse>(`/${user}/plan/reparse?${qs}`);
 }
 
 export interface WeeklyFeedbackResponse {
-    success: boolean
-    week: string
-    feedback: string
-    has_feedback: boolean
-    created_at: string
-    updated_at: string
+  success: boolean;
+  week: string;
+  feedback: string;
+  has_feedback: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 interface LegacyWeeklyFeedbackResponse {
-  success: boolean
-  week: string
-  feedback_updated_at?: string | null
+  success: boolean;
+  week: string;
+  feedback_updated_at?: string | null;
 }
 
 export async function updateWeeklyFeedback(user: string, weekName: string, content: string) {
-  const result = await putJSON<WeeklyFeedbackResponse | LegacyWeeklyFeedbackResponse>(`/${user}/weeks/${weekName}/feedback`, { content })
-  if (!result.ok || 'feedback' in result.data) return result as JsonResult<WeeklyFeedbackResponse>
-  const updatedAt = result.data.feedback_updated_at ?? new Date().toISOString()
+  const result = await putJSON<WeeklyFeedbackResponse | LegacyWeeklyFeedbackResponse>(`/${user}/weeks/${weekName}/feedback`, { content });
+  if (!result.ok || "feedback" in result.data) return result as JsonResult<WeeklyFeedbackResponse>;
+  const updatedAt = result.data.feedback_updated_at ?? new Date().toISOString();
   return {
     ...result,
     data: {
       success: result.data.success,
       week: result.data.week,
-      feedback: content.trim() ? content : '',
+      feedback: content.trim() ? content : "",
       has_feedback: Boolean(content.trim()),
       created_at: updatedAt,
       updated_at: updatedAt,
     },
-  }
+  };
 }
 
 export interface Segment extends Lap {
-  seg_name: string
-  mode: number | null
+  seg_name: string;
+  mode: number | null;
 }
 
 export interface LinkedScheduledWorkout {
-  id: number
-  abandoned_by_promote_at: string | null
+  id: number;
+  abandoned_by_promote_at: string | null;
 }
 
 export interface ActivityStrideTrainingLoad {
-  label_id: string
-  activity_date: string
-  sport: string | null
-  session_class: string | null
-  algorithm_version: number
-  calibration_id: number | null
-  cardio_load_raw: number | null
-  cardio_tss: number | null
-  external_tss: number | null
-  high_intensity_tss: number | null
-  mechanical_load: number | null
-  subjective_internal_load: number | null
-  training_dose: number | null
-  training_dose_source: string | null
-  cardio_coverage: number
-  external_coverage: number
-  high_intensity_coverage: number
-  coverage_status: string
-  load_confidence: string | null
-  excluded_from_pmc: boolean
-  reasons: string[]
+  label_id: string;
+  activity_date: string;
+  sport: string | null;
+  session_class: string | null;
+  algorithm_version: number;
+  calibration_id: number | null;
+  cardio_load_raw: number | null;
+  cardio_tss: number | null;
+  external_tss: number | null;
+  high_intensity_tss: number | null;
+  mechanical_load: number | null;
+  subjective_internal_load: number | null;
+  training_dose: number | null;
+  training_dose_source: string | null;
+  cardio_coverage: number;
+  external_coverage: number;
+  high_intensity_coverage: number;
+  coverage_status: string;
+  load_confidence: string | null;
+  excluded_from_pmc: boolean;
+  reasons: string[];
 }
 
 export interface ActivityDetailResponse {
-  activity: Activity
-  stride_training_load?: ActivityStrideTrainingLoad | null
-  laps: Lap[]
-  segments: Segment[]
-  zones: Zone[]
-  timeseries: TimeseriesPoint[]
-  linked_scheduled_workout?: LinkedScheduledWorkout | null
+  activity: Activity;
+  stride_training_load?: ActivityStrideTrainingLoad | null;
+  laps: Lap[];
+  segments: Segment[];
+  zones: Zone[];
+  timeseries: TimeseriesPoint[];
+  linked_scheduled_workout?: LinkedScheduledWorkout | null;
 }
 
 export function getActivity(user: string, id: string) {
-  return fetchJSON<ActivityDetailResponse>(
-    `/${user}/activities/${id}?include=timeseries`
-  )
+  return fetchJSON<ActivityDetailResponse>(`/${user}/activities/${id}?include=timeseries`);
 }
 
 export function getTeamActivity(teamId: string, userId: string, labelId: string) {
-  return fetchJSON<ActivityDetailResponse>(
-    `/teams/${teamId}/activities/${userId}/${labelId}`
-  )
+  return fetchJSON<ActivityDetailResponse>(`/teams/${teamId}/activities/${userId}/${labelId}`);
 }
 
 // All date / time formatters route through the canonical Asia/Shanghai
@@ -1922,124 +1831,109 @@ export function getTeamActivity(teamId: string, userId: string, labelId: string)
 // the dashboard renders the same calendar day whether it's opened in
 // Beijing or Berlin. Never reintroduce `d.getMonth()` / `d.getDate()` math
 // here — those use browser-local TZ and quietly drift abroad.
-import {
-  shanghaiDate as _shanghaiDate,
-  shanghaiMonthDay as _shanghaiMonthDay,
-  shanghaiTime as _shanghaiTime,
-} from './lib/shanghai'
+import { shanghaiDate as _shanghaiDate, shanghaiMonthDay as _shanghaiMonthDay, shanghaiTime as _shanghaiTime } from "./lib/shanghai";
 
 export function formatDate(dateStr: string): string {
-  return _shanghaiDate(dateStr) || dateStr
+  return _shanghaiDate(dateStr) || dateStr;
 }
 
 export function formatDateShort(dateStr: string): string {
-  const md = _shanghaiMonthDay(dateStr)
-  if (!md) return dateStr
-  const [m, d] = md.split('-')
-  return `${parseInt(m, 10)}月${parseInt(d, 10)}日`
+  const md = _shanghaiMonthDay(dateStr);
+  if (!md) return dateStr;
+  const [m, d] = md.split("-");
+  return `${parseInt(m, 10)}月${parseInt(d, 10)}日`;
 }
 
 export function formatTime(dateStr: string): string {
-  return _shanghaiTime(dateStr)
+  return _shanghaiTime(dateStr);
 }
 
 export function formatWeekRange(dateFrom: string, dateTo: string): string {
-  const from = _shanghaiMonthDay(dateFrom)
-  const to = _shanghaiMonthDay(dateTo)
-  if (!from || !to) return `${dateFrom} — ${dateTo}`
-  const [fm, fd] = from.split('-')
-  const [tm, td] = to.split('-')
-  return `${parseInt(fm, 10)}/${parseInt(fd, 10)} — ${parseInt(tm, 10)}/${parseInt(td, 10)}`
+  const from = _shanghaiMonthDay(dateFrom);
+  const to = _shanghaiMonthDay(dateTo);
+  if (!from || !to) return `${dateFrom} — ${dateTo}`;
+  const [fm, fd] = from.split("-");
+  const [tm, td] = to.split("-");
+  return `${parseInt(fm, 10)}/${parseInt(fd, 10)} — ${parseInt(tm, 10)}/${parseInt(td, 10)}`;
 }
 
 const SPORT_CN: Record<string, string> = {
-  'Run': '跑步',
-  'Indoor Run': '室内跑',
-  'Trail Run': '越野跑',
-  'Track Run': '田径场跑',
-  'Treadmill': '跑步机',
-  'Strength Training': '力量训练',
-  'Strength': '力量训练',
-  'Walk': '步行',
-  'Hike': '徒步',
-  'Bike': '骑行',
-  'Swim (Pool)': '泳池游泳',
-  'Swim (Open Water)': '开放水域',
-}
+  Run: "跑步",
+  "Indoor Run": "室内跑",
+  "Trail Run": "越野跑",
+  "Track Run": "田径场跑",
+  Treadmill: "跑步机",
+  "Strength Training": "力量训练",
+  Strength: "力量训练",
+  Walk: "步行",
+  Hike: "徒步",
+  Bike: "骑行",
+  "Swim (Pool)": "泳池游泳",
+  "Swim (Open Water)": "开放水域",
+};
 
 const TRAIN_TYPE_CN: Record<string, string> = {
-  'Base': '基础',
-  'Aerobic Endurance': '有氧耐力',
-  'Threshold': '乳酸阈',
-  'Interval': '间歇',
-  'VO2 Max': '最大摄氧',
-  'Anaerobic': '无氧',
-  'Sprint': '冲刺',
-  'Recovery': '恢复',
-}
+  Base: "基础",
+  "Aerobic Endurance": "有氧耐力",
+  Threshold: "乳酸阈",
+  Interval: "间歇",
+  "VO2 Max": "最大摄氧",
+  Anaerobic: "无氧",
+  Sprint: "冲刺",
+  Recovery: "恢复",
+};
 
 export function sportNameCN(name: string): string {
-  return SPORT_CN[name] || name
+  return SPORT_CN[name] || name;
 }
 
 export function trainTypeCN(type: string | null): string {
-  if (!type) return ''
-  return TRAIN_TYPE_CN[type] || type
+  if (!type) return "";
+  return TRAIN_TYPE_CN[type] || type;
 }
 
 export function sportColor(sportName: string): string {
   const colors: Record<string, string> = {
-    'Run': '#00e676',
-    'Indoor Run': '#00e5ff',
-    'Trail Run': '#ffab00',
-    'Track Run': '#b388ff',
-    'Strength Training': '#ff6d00',
-    'Strength': '#ff6d00',
-    'Walk': '#64dd17',
-    'Hike': '#64dd17',
-  }
-  return colors[sportName] || '#8888a0'
+    Run: "#00e676",
+    "Indoor Run": "#00e5ff",
+    "Trail Run": "#ffab00",
+    "Track Run": "#b388ff",
+    "Strength Training": "#ff6d00",
+    Strength: "#ff6d00",
+    Walk: "#64dd17",
+    Hike: "#64dd17",
+  };
+  return colors[sportName] || "#8888a0";
 }
 
 export function trainTypeColor(trainType: string | null): string {
-  if (!trainType) return '#555570'
+  if (!trainType) return "#555570";
   const colors: Record<string, string> = {
-    'Base': '#64dd17',
-    'Aerobic Endurance': '#00e676',
-    'Threshold': '#ffab00',
-    'Interval': '#ff6d00',
-    'VO2 Max': '#ff1744',
-    'Anaerobic': '#ff5252',
-    'Sprint': '#ff1744',
-    'Recovery': '#00e5ff',
-  }
-  return colors[trainType] || '#8888a0'
+    Base: "#64dd17",
+    "Aerobic Endurance": "#00e676",
+    Threshold: "#ffab00",
+    Interval: "#ff6d00",
+    "VO2 Max": "#ff1744",
+    Anaerobic: "#ff5252",
+    Sprint: "#ff1744",
+    Recovery: "#00e5ff",
+  };
+  return colors[trainType] || "#8888a0";
 }
 
 // Re-export from the canonical helper. Pinned to Asia/Shanghai so the
 // weekday label matches the date label, even abroad.
-export { shanghaiWeekday as weekdayCN } from './lib/shanghai'
+export { shanghaiWeekday as weekdayCN } from "./lib/shanghai";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Multi-variant plans (Step 4)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type {
-  PlanVariant,
-  RatingDimension,
-  RatingScore,
-  VariantsResponse,
-} from './types/plan'
+import type { PlanVariant, RatingDimension, RatingScore, VariantsResponse } from "./types/plan";
 
-export function getPlanVariants(
-  user: string,
-  folder: string,
-  includeSuperseded: boolean = false,
-): Promise<VariantsResponse> {
-  const qs = includeSuperseded ? '?include_superseded=true' : ''
-  return fetchJSON<VariantsResponse>(
-    `/${user}/plan/${encodeURIComponent(folder)}/variants${qs}`,
-  )
+export function getPlanVariants(user: string, folder: string, includeSuperseded: boolean = false): Promise<VariantsResponse> {
+  const qs = includeSuperseded ? "?include_superseded=true" : "";
+  return fetchJSON<VariantsResponse>(`/${user}/plan/${encodeURIComponent(folder)}/variants${qs}`);
 }
 
 export async function ratePlanVariant(
@@ -2048,64 +1942,67 @@ export async function ratePlanVariant(
   ratings: Partial<Record<RatingDimension, RatingScore>>,
   comment?: string | null,
 ): Promise<{ ratings: Partial<Record<RatingDimension, RatingScore>>; rating_comment: string | null }> {
-  const body: Record<string, unknown> = { ratings }
-  if (comment !== undefined && comment !== null) body.comment = comment
+  const body: Record<string, unknown> = { ratings };
+  if (comment !== undefined && comment !== null) body.comment = comment;
   const res = await postJSON<{ ratings: Partial<Record<RatingDimension, RatingScore>>; rating_comment: string | null }>(
     `/${user}/plan/variants/${variantId}/rate`,
     body,
-  )
+  );
   if (!res.ok) {
-    throw new Error(`rate failed: HTTP ${res.status}`)
+    throw new Error(`rate failed: HTTP ${res.status}`);
   }
-  return res.data
+  return res.data;
 }
 
 export interface SelectVariantSuccess {
-  ok: true
-  no_change?: boolean
-  week_folder: string
-  selected_variant_id: number
-  dropped_scheduled_workout_ids: number[]
+  ok: true;
+  no_change?: boolean;
+  week_folder: string;
+  selected_variant_id: number;
+  dropped_scheduled_workout_ids: number[];
 }
 
 export interface SelectVariantConflict {
-  status: 409
-  error: 'selection_conflict' | 'concurrent_select'
-  already_pushed_count?: number
-  hint?: string
+  status: 409;
+  error: "selection_conflict" | "concurrent_select";
+  already_pushed_count?: number;
+  hint?: string;
 }
 
 export interface SelectVariantSchemaOutdated {
-  status: 426
-  error: 'variant_schema_outdated'
-  variant_version?: number
-  server_version?: number
+  status: 426;
+  error: "variant_schema_outdated";
+  variant_version?: number;
+  server_version?: number;
 }
 
-export type SelectVariantError = SelectVariantConflict | SelectVariantSchemaOutdated
+export type SelectVariantError = SelectVariantConflict | SelectVariantSchemaOutdated;
 
 /** Promote a variant to canonical. Auto-retries once on
  * 409 concurrent_select with `Retry-After: 1`; surfaces
  * `selection_conflict` (force=false with prior pushes) and 426
  * `variant_schema_outdated` as typed errors via the rejected promise.
  */
-export async function selectPlanVariant(
-  user: string,
-  folder: string,
-  variantId: number,
-  force: boolean = false,
-): Promise<SelectVariantSuccess> {
-  const path = `/${user}/plan/${encodeURIComponent(folder)}/select`
-  const body = { variant_id: variantId, force }
+export async function selectPlanVariant(user: string, folder: string, variantId: number, force: boolean = false): Promise<SelectVariantSuccess> {
+  const path = `/${user}/plan/${encodeURIComponent(folder)}/select`;
+  const body = { variant_id: variantId, force };
 
-  const doPost = async () => postJSON<{ detail?: { error?: string; already_pushed_count?: number; hint?: string; variant_version?: number; server_version?: number }; ok?: boolean; no_change?: boolean; week_folder?: string; selected_variant_id?: number; dropped_scheduled_workout_ids?: number[] }>(path, body)
+  const doPost = async () =>
+    postJSON<{
+      detail?: { error?: string; already_pushed_count?: number; hint?: string; variant_version?: number; server_version?: number };
+      ok?: boolean;
+      no_change?: boolean;
+      week_folder?: string;
+      selected_variant_id?: number;
+      dropped_scheduled_workout_ids?: number[];
+    }>(path, body);
 
-  let res = await doPost()
+  let res = await doPost();
 
   // Auto-retry once on concurrent_select 409.
-  if (res.status === 409 && res.data?.detail?.error === 'concurrent_select') {
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    res = await doPost()
+  if (res.status === 409 && res.data?.detail?.error === "concurrent_select") {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    res = await doPost();
   }
 
   if (res.ok) {
@@ -2115,62 +2012,55 @@ export async function selectPlanVariant(
       week_folder: res.data?.week_folder ?? folder,
       selected_variant_id: res.data?.selected_variant_id ?? variantId,
       dropped_scheduled_workout_ids: res.data?.dropped_scheduled_workout_ids ?? [],
-    }
+    };
   }
 
-  const detail = res.data?.detail ?? {}
+  const detail = res.data?.detail ?? {};
   if (res.status === 409) {
     const err: SelectVariantConflict = {
       status: 409,
-      error: (detail.error === 'concurrent_select' ? 'concurrent_select' : 'selection_conflict'),
+      error: detail.error === "concurrent_select" ? "concurrent_select" : "selection_conflict",
       already_pushed_count: detail.already_pushed_count,
       hint: detail.hint,
-    }
-    throw err
+    };
+    throw err;
   }
   if (res.status === 426) {
     const err: SelectVariantSchemaOutdated = {
       status: 426,
-      error: 'variant_schema_outdated',
+      error: "variant_schema_outdated",
       variant_version: detail.variant_version,
       server_version: detail.server_version,
-    }
-    throw err
+    };
+    throw err;
   }
-  throw new Error(`select failed: HTTP ${res.status}`)
+  throw new Error(`select failed: HTTP ${res.status}`);
 }
 
-export async function deletePlanVariants(
-  user: string,
-  folder: string,
-): Promise<{ deleted_variants: number }> {
-  const res = await deleteJSON<{ deleted_variants: number }>(
-    `/${user}/plan/${encodeURIComponent(folder)}/variants`,
-  )
+export async function deletePlanVariants(user: string, folder: string): Promise<{ deleted_variants: number }> {
+  const res = await deleteJSON<{ deleted_variants: number }>(`/${user}/plan/${encodeURIComponent(folder)}/variants`);
   if (!res.ok) {
-    throw new Error(`delete variants failed: HTTP ${res.status}`)
+    throw new Error(`delete variants failed: HTTP ${res.status}`);
   }
-  return res.data
+  return res.data;
 }
 
 /** Helper used by VariantComparisonView — sums total_distance_m across
  * run sessions and converts to km (rounded to 1 decimal). */
 export function totalRunKm(variant: PlanVariant): number {
-  const m = variant.sessions
-    .filter(s => s.kind === 'run' && typeof s.total_distance_m === 'number')
-    .reduce((sum, s) => sum + (s.total_distance_m ?? 0), 0)
-  return Math.round(m / 100) / 10
+  const m = variant.sessions.filter((s) => s.kind === "run" && typeof s.total_distance_m === "number").reduce((sum, s) => sum + (s.total_distance_m ?? 0), 0);
+  return Math.round(m / 100) / 10;
 }
 
 /** Helper — total kcal target across all days in this variant. */
 export function totalKcalTarget(variant: PlanVariant): number {
-  return variant.nutrition.reduce((sum, n) => sum + (n.kcal_target ?? 0), 0)
+  return variant.nutrition.reduce((sum, n) => sum + (n.kcal_target ?? 0), 0);
 }
 
 /** Helper — average overall rating, or null if no overall rating yet. */
 export function overallRating(variant: PlanVariant): RatingScore | null {
-  const v = variant.ratings.overall
-  return typeof v === 'number' ? (v as RatingScore) : null
+  const v = variant.ratings.overall;
+  return typeof v === "number" ? (v as RatingScore) : null;
 }
 
 // =============================================================
@@ -2178,59 +2068,59 @@ export function overallRating(variant: PlanVariant): RatingScore | null {
 // =============================================================
 
 export interface StrideThreshold {
-  speed_mps: number | null
-  pace_per_km_sec: number | null
-  hr_bpm: number | null
-  speed_confidence: string | null
-  hr_confidence: string | null
-  as_of_date: string
-  calibration_id: number
+  speed_mps: number | null;
+  pace_per_km_sec: number | null;
+  hr_bpm: number | null;
+  speed_confidence: string | null;
+  hr_confidence: string | null;
+  as_of_date: string;
+  calibration_id: number;
 }
 
 export interface StridePaceZone {
-  name: string             // 'Z1' | 'Z2' | 'Z3' | 'Z4' | 'Z5'
-  label: string            // '轻松' / '有氧' / ...
-  lower_pace: string | null  // 'M:SS' /km (slower edge)
-  upper_pace: string | null  // 'M:SS' /km (faster edge)
+  name: string; // 'Z1' | 'Z2' | 'Z3' | 'Z4' | 'Z5'
+  label: string; // '轻松' / '有氧' / ...
+  lower_pace: string | null; // 'M:SS' /km (slower edge)
+  upper_pace: string | null; // 'M:SS' /km (faster edge)
 }
 
 export interface StrideHrZone {
-  name: string
-  label: string
-  lower_bpm: number | null
-  upper_bpm: number | null
+  name: string;
+  label: string;
+  lower_bpm: number | null;
+  upper_bpm: number | null;
 }
 
 export interface StrideZonesResponse {
-  threshold: StrideThreshold | null
-  pace_zones: StridePaceZone[]
-  hr_zones: StrideHrZone[]
+  threshold: StrideThreshold | null;
+  pace_zones: StridePaceZone[];
+  hr_zones: StrideHrZone[];
 }
 
 export function getStrideZones(user: string) {
-  return fetchJSON<StrideZonesResponse>(`/${user}/stride/zones`)
+  return fetchJSON<StrideZonesResponse>(`/${user}/stride/zones`);
 }
 
 export interface StrideTrainingLoadRecord {
-  date: string
-  algorithm_version: number
-  training_dose: number | null
-  acute_load: number | null
-  chronic_load: number | null
-  form: number | null
-  load_ratio: number | null
-  coverage_status: string
-  readiness_gate: string | null
-  readiness_reasons: string[]
+  date: string;
+  algorithm_version: number;
+  training_dose: number | null;
+  acute_load: number | null;
+  chronic_load: number | null;
+  form: number | null;
+  load_ratio: number | null;
+  coverage_status: string;
+  readiness_gate: string | null;
+  readiness_reasons: string[];
 }
 
 export interface StrideTrainingLoadResponse {
-  current: StrideTrainingLoadRecord | null
-  series: StrideTrainingLoadRecord[]
+  current: StrideTrainingLoadRecord | null;
+  series: StrideTrainingLoadRecord[];
 }
 
 export function getStrideTrainingLoad(user: string, days = 90) {
-  return fetchJSON<StrideTrainingLoadResponse>(`/${user}/stride/training-load?days=${days}`)
+  return fetchJSON<StrideTrainingLoadResponse>(`/${user}/stride/training-load?days=${days}`);
 }
 
 // ── Coach chat ──────────────────────────────────────────────────────────────
@@ -2241,7 +2131,7 @@ export function getStrideTrainingLoad(user: string, days = 90) {
 // thread id is derived server-side as `{user}:coach:{session_id}`.
 
 /** The single web conversation thread for the coach chat page. */
-export const WEB_DEFAULT_SESSION_ID = 'web-default'
+export const WEB_DEFAULT_SESSION_ID = "web-default";
 
 /**
  * Send one coach chat turn.
@@ -2266,25 +2156,21 @@ export function sendCoachChatMessage(
   target?: CoachTargetRef,
   reviewContext?: CoachReviewContext,
 ): Promise<JsonResult<ChatResponse>> {
-  return postJSON<ChatResponse>('/users/me/coach/chat', {
+  return postJSON<ChatResponse>("/users/me/coach/chat", {
     session_id: sessionId,
     message,
     client_turn_id: clientTurnId,
     ...(target ? { target } : {}),
     ...(reviewContext ? { review_context: reviewContext } : {}),
-  })
+  });
 }
 
 /**
  * Load full history for a coach session. The frontend passes only the
  * `session_id`; the server derives the thread from the JWT.
  */
-export function fetchCoachHistory(
-  sessionId: string = WEB_DEFAULT_SESSION_ID,
-): Promise<JsonResult<SessionHistoryResponse>> {
-  return getJSON<SessionHistoryResponse>(
-    `/users/me/coach/sessions/${encodeURIComponent(sessionId)}/messages`,
-  )
+export function fetchCoachHistory(sessionId: string = WEB_DEFAULT_SESSION_ID): Promise<JsonResult<SessionHistoryResponse>> {
+  return getJSON<SessionHistoryResponse>(`/users/me/coach/sessions/${encodeURIComponent(sessionId)}/messages`);
 }
 
 // ── Coach plan apply ─────────────────────────────────────────────────────────
@@ -2302,46 +2188,41 @@ export function fetchCoachHistory(
  * coach-workspace `ApplyOutcome` so the adapter can return it verbatim.
  */
 export type CoachApplyOutcome =
-  | { readonly status: 'ok' }
-  | { readonly status: 'stale' }
-  | { readonly status: 'needs_ack'; readonly seasonImpact: string }
-  | { readonly status: 'error'; readonly message: string }
+  | { readonly status: "ok" }
+  | { readonly status: "stale" }
+  | { readonly status: "needs_ack"; readonly seasonImpact: string }
+  | { readonly status: "error"; readonly message: string };
 
 /** Best-effort string extraction from a FastAPI `detail` payload. */
 function detailText(detail: unknown): string {
-  if (typeof detail === 'string') return detail
-  if (detail && typeof detail === 'object') {
-    const msg = (detail as Record<string, unknown>).message
-    if (typeof msg === 'string') return msg
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object") {
+    const msg = (detail as Record<string, unknown>).message;
+    if (typeof msg === "string") return msg;
   }
-  return ''
+  return "";
 }
 
 async function toApplyOutcome(res: Response): Promise<CoachApplyOutcome> {
-  if (res.ok) return { status: 'ok' }
-  const body = (await res.json().catch(() => ({}))) as { detail?: unknown }
-  const detail = body.detail
+  if (res.ok) return { status: "ok" };
+  const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
+  const detail = body.detail;
   if (res.status === 409) {
-    if (
-      detail &&
-      typeof detail === 'object' &&
-      (detail as Record<string, unknown>).code === 'season_impact_material'
-    ) {
-      const text =
-        detailText(detail) || '该调整明显偏离赛季计划，需要确认仅改本周'
-      return { status: 'needs_ack', seasonImpact: text }
+    if (detail && typeof detail === "object" && (detail as Record<string, unknown>).code === "season_impact_material") {
+      const text = detailText(detail) || "该调整明显偏离赛季计划，需要确认仅改本周";
+      return { status: "needs_ack", seasonImpact: text };
     }
-    if (detailText(detail).includes('changed')) {
-      return { status: 'stale' }
+    if (detailText(detail).includes("changed")) {
+      return { status: "stale" };
     }
   }
-  const message = detailText(detail) || `启用失败（${res.status}）`
-  return { status: 'error', message }
+  const message = detailText(detail) || `启用失败（${res.status}）`;
+  return { status: "error", message };
 }
 
 /** True when a raw weekly proposal is a create (full plan, no diff ops). */
 function isWeeklyCreateRaw(raw: Readonly<Record<string, unknown>>): boolean {
-  return raw.plan !== undefined || raw.sessions !== undefined || raw.ops === undefined
+  return raw.plan !== undefined || raw.sessions !== undefined || raw.ops === undefined;
 }
 
 /**
@@ -2355,20 +2236,16 @@ export async function applyCoachWeekProposal(
   baseRevision: string,
   impactAcknowledgement?: string,
 ): Promise<CoachApplyOutcome> {
-  const isCreate = isWeeklyCreateRaw(rawProposal)
+  const isCreate = isWeeklyCreateRaw(rawProposal);
   const body: Record<string, unknown> = {
     session_id: WEB_DEFAULT_SESSION_ID,
     accepted_op_ids: [...acceptedOpIds],
     base_revision: baseRevision,
     ...(isCreate ? { proposal: rawProposal } : { diff: rawProposal }),
     ...(impactAcknowledgement ? { impact_acknowledgement: impactAcknowledgement } : {}),
-  }
-  const res = await apiFetch(
-    'POST',
-    `/users/me/coach/plan/${encodeURIComponent(folder)}/apply`,
-    body,
-  )
-  return toApplyOutcome(res)
+  };
+  const res = await apiFetch("POST", `/users/me/coach/plan/${encodeURIComponent(folder)}/apply`, body);
+  return toApplyOutcome(res);
 }
 
 /** Apply a stashed master (season) plan diff proposal. */
@@ -2377,39 +2254,29 @@ export async function applyCoachMasterProposal(
   rawProposal: Readonly<Record<string, unknown>>,
   acceptedOpIds: readonly string[],
   baseRevision: string,
-  changeReason: string = 'coach adjustment',
+  changeReason: string = "coach adjustment",
 ): Promise<CoachApplyOutcome> {
-  const res = await apiFetch(
-    'POST',
-    `/users/me/coach/master-plan/${encodeURIComponent(planId)}/apply`,
-    {
-      session_id: WEB_DEFAULT_SESSION_ID,
-      diff: rawProposal,
-      accepted_op_ids: [...acceptedOpIds],
-      change_reason: changeReason,
-      base_revision: baseRevision,
-    },
-  )
-  return toApplyOutcome(res)
+  const res = await apiFetch("POST", `/users/me/coach/master-plan/${encodeURIComponent(planId)}/apply`, {
+    session_id: WEB_DEFAULT_SESSION_ID,
+    diff: rawProposal,
+    accepted_op_ids: [...acceptedOpIds],
+    change_reason: changeReason,
+    base_revision: baseRevision,
+  });
+  return toApplyOutcome(res);
 }
 
 /** Record that the user abandoned a surfaced proposal as a trusted event. */
-export async function abandonCoachProposal(target: {
-  kind: 'weekly' | 'master'
-  folder?: string
-  planId?: string
-}): Promise<boolean> {
-  const coachTarget: CoachTargetRef = target.kind === 'weekly'
-    ? { kind: 'week', folder: target.folder }
-    : { kind: 'master', plan_id: target.planId }
+export async function abandonCoachProposal(target: { kind: "weekly" | "master"; folder?: string; planId?: string }): Promise<boolean> {
+  const coachTarget: CoachTargetRef = target.kind === "weekly" ? { kind: "week", folder: target.folder } : { kind: "master", plan_id: target.planId };
   try {
-    const res = await apiFetch('POST', '/users/me/coach/proposals/abandon', {
+    const res = await apiFetch("POST", "/users/me/coach/proposals/abandon", {
       session_id: WEB_DEFAULT_SESSION_ID,
       target: coachTarget,
-      summary: '用户放弃了本次调整方案',
-    })
-    return res.ok
+      summary: "用户放弃了本次调整方案",
+    });
+    return res.ok;
   } catch {
-    return false
+    return false;
   }
 }

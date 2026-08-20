@@ -1,120 +1,111 @@
-import type { Zone } from '../api'
+import type { Zone } from "../api";
 
-const ZONE_COLORS = ['#00c853', '#64dd17', '#ffab00', '#ff6d00', '#ff1744', '#c2185b']
-const ZONE_LABELS = [
-  'Z1 积极恢复区',
-  'Z2 有氧耐力区',
-  'Z3 有氧动力区',
-  'Z4 乳酸阈区',
-  'Z5 速度耐力区',
-  'Z6 无氧动力区',
-]
+const ZONE_COLORS = ["#00c853", "#64dd17", "#ffab00", "#ff6d00", "#ff1744", "#c2185b"];
+const ZONE_LABELS = ["Z1 积极恢复区", "Z2 有氧耐力区", "Z3 有氧动力区", "Z4 乳酸阈区", "Z5 速度耐力区", "Z6 无氧动力区"];
 
 // COROS pace API returns 7 zones (extra split at 100% of threshold pace),
 // but the COROS app displays 6. Merge API Z4 (94-100%) and Z5 (100-102%)
 // into one "乳酸阈区" (94-102%), then relabel Z6→Z5 and Z7→Z6.
 function normalizePaceZones(zones: Zone[]): Zone[] {
-  if (zones.length < 7) return zones
-  const byIdx = new Map(zones.map((z) => [z.zone_index, z]))
-  const z4 = byIdx.get(4)
-  const z5 = byIdx.get(5)
-  const z6 = byIdx.get(6)
-  const z7 = byIdx.get(7)
-  if (!z4 || !z5 || !z6 || !z7) return zones
+  if (zones.length < 7) return zones;
+  const byIdx = new Map(zones.map((z) => [z.zone_index, z]));
+  const z4 = byIdx.get(4);
+  const z5 = byIdx.get(5);
+  const z6 = byIdx.get(6);
+  const z7 = byIdx.get(7);
+  if (!z4 || !z5 || !z6 || !z7) return zones;
   const merged: Zone = {
-    zone_type: 'pace',
+    zone_type: "pace",
     zone_index: 4,
     range_min: z5.range_min, // faster end (smaller ms/km)
     range_max: z4.range_max, // slower end
-    range_unit: 'pace',
+    range_unit: "pace",
     duration_s: z4.duration_s + z5.duration_s,
     percent: z4.percent + z5.percent,
-  }
-  return [
-    byIdx.get(1)!,
-    byIdx.get(2)!,
-    byIdx.get(3)!,
-    merged,
-    { ...z6, zone_index: 5 },
-    { ...z7, zone_index: 6 },
-  ]
+  };
+  return [byIdx.get(1)!, byIdx.get(2)!, byIdx.get(3)!, merged, { ...z6, zone_index: 5 }, { ...z7, zone_index: 6 }];
 }
 
 function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = seconds % 60
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
   if (m >= 60) {
-    const h = Math.floor(m / 60)
-    const rm = m % 60
-    return `${h}h${rm}m`
+    const h = Math.floor(m / 60);
+    const rm = m % 60;
+    return `${h}h${rm}m`;
   }
-  return s > 0 ? `${m}m${s}s` : `${m}m`
+  return s > 0 ? `${m}m${s}s` : `${m}m`;
 }
 
 function formatHRRange(zone: Zone, zones: Zone[]): string {
-  const min = zone.range_min != null ? Math.round(zone.range_min) : null
-  const max = zone.range_max != null ? Math.round(zone.range_max) : null
-  if (min == null && max == null) return ''
+  const min = zone.range_min != null ? Math.round(zone.range_min) : null;
+  const max = zone.range_max != null ? Math.round(zone.range_max) : null;
+  if (min == null && max == null) return "";
   // STRIDE-derived zones leave the outer edges open (recovery has no low bound,
   // the fastest zone no high bound). Provider rows carry both bounds.
-  if (min == null) return `< ${max}`
-  if (max == null) return `≥ ${min}`
-  const maxIdx = Math.max(...zones.map((z) => z.zone_index))
+  if (min == null) return `< ${max}`;
+  if (max == null) return `≥ ${min}`;
+  const maxIdx = Math.max(...zones.map((z) => z.zone_index));
   if (zone.zone_index === 1) {
-    const z2 = zones.find((z) => z.zone_index === 2)
+    const z2 = zones.find((z) => z.zone_index === 2);
     if (z2?.range_min != null && Math.round(z2.range_min) === min) {
-      return `< ${min}`
+      return `< ${min}`;
     }
   }
-  if (zone.zone_index === maxIdx) return `≥ ${min}`
-  return `${min}–${max}`
+  if (zone.zone_index === maxIdx) return `≥ ${min}`;
+  return `${min}–${max}`;
 }
 
 function formatPaceRange(zone: Zone, zones: Zone[]): string {
   const toPace = (msPerKm: number) => {
-    const s = Math.round(msPerKm / 1000)
-    return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
-  }
+    const s = Math.round(msPerKm / 1000);
+    return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+  };
   // range_min is the faster edge (smaller ms/km), range_max the slower edge.
   // STRIDE-derived zones leave one edge open: recovery has no slow bound (→
   // slower than its fast edge), the fastest zone no fast bound.
-  if (zone.range_min == null && zone.range_max == null) return ''
-  if (zone.range_min == null) return `< ${toPace(zone.range_max!)}`
-  if (zone.range_max == null) return `> ${toPace(zone.range_min)}`
-  const minPace = toPace(zone.range_min)
-  const maxPace = toPace(zone.range_max)
-  const maxIdx = Math.max(...zones.map((z) => z.zone_index))
+  if (zone.range_min == null && zone.range_max == null) return "";
+  if (zone.range_min == null) return `< ${toPace(zone.range_max!)}`;
+  if (zone.range_max == null) return `> ${toPace(zone.range_min)}`;
+  const minPace = toPace(zone.range_min);
+  const maxPace = toPace(zone.range_max);
+  const maxIdx = Math.max(...zones.map((z) => z.zone_index));
   if (zone.zone_index === 1) {
-    const z2 = zones.find((z) => z.zone_index === 2)
+    const z2 = zones.find((z) => z.zone_index === 2);
     if (z2?.range_min != null && Math.round(z2.range_min) === Math.round(zone.range_min)) {
-      return `> ${maxPace}`
+      return `> ${maxPace}`;
     }
   }
-  if (zone.zone_index === maxIdx) return `< ${minPace}`
-  return `${minPace}–${maxPace}`
+  if (zone.zone_index === maxIdx) return `< ${minPace}`;
+  return `${minPace}–${maxPace}`;
 }
 
-export default function ZoneChart({ zones, type }: { zones: Zone[]; type: 'hr' | 'pace' }) {
-  const labels = ZONE_LABELS
-  const sourceZones = type === 'pace' ? normalizePaceZones(zones) : zones
-  const displayZones = sourceZones.filter((z) => z.zone_index >= 1 && z.zone_index <= labels.length)
+export default function ZoneChart({ zones, type }: { zones: Zone[]; type: "hr" | "pace" }) {
+  const labels = ZONE_LABELS;
+  const sourceZones = type === "pace" ? normalizePaceZones(zones) : zones;
+  const displayZones = sourceZones.filter((z) => z.zone_index >= 1 && z.zone_index <= labels.length);
   return (
     <div className="space-y-3">
       {displayZones.map((zone, i) => {
-        const color = ZONE_COLORS[i] || '#555570'
+        const color = ZONE_COLORS[i] || "#555570";
         // Zone percentages already describe their share of this activity. Do not
         // normalize to the largest zone: 63% must render as 63%, not 100%.
-        const width = Math.max(Math.min(zone.percent, 100), 2)
+        const width = Math.max(Math.min(zone.percent, 100), 2);
 
-        const range = type === 'hr' ? formatHRRange(zone, displayZones) : formatPaceRange(zone, displayZones)
-        const rangeUnit = type === 'hr' ? ' bpm' : '/km'
+        const range = type === "hr" ? formatHRRange(zone, displayZones) : formatPaceRange(zone, displayZones);
+        const rangeUnit = type === "hr" ? " bpm" : "/km";
 
         return (
           <div key={zone.zone_index} className="group">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-mono text-text-muted">
                 {labels[i] || `Z${zone.zone_index}`}
-                {range && <span className="text-text-muted/70 ml-1.5">({range}{rangeUnit})</span>}
+                {range && (
+                  <span className="text-text-muted/70 ml-1.5">
+                    ({range}
+                    {rangeUnit})
+                  </span>
+                )}
               </span>
               <div className="flex items-center gap-3">
                 <span className="text-xs font-mono text-text-secondary">{formatDuration(zone.duration_s)}</span>
@@ -124,9 +115,9 @@ export default function ZoneChart({ zones, type }: { zones: Zone[]; type: 'hr' |
               </div>
             </div>
             <div className="h-5 bg-bg-secondary rounded-md overflow-hidden">
-                <div
-                  data-testid={`zone-bar-${zone.zone_index}`}
-                  className="h-full rounded-md transition-all duration-500 ease-out group-hover:brightness-125"
+              <div
+                data-testid={`zone-bar-${zone.zone_index}`}
+                className="h-full rounded-md transition-all duration-500 ease-out group-hover:brightness-125"
                 style={{
                   width: `${width}%`,
                   backgroundColor: color,
@@ -135,8 +126,8 @@ export default function ZoneChart({ zones, type }: { zones: Zone[]; type: 'hr' |
               />
             </div>
           </div>
-        )
+        );
       })}
     </div>
-  )
+  );
 }

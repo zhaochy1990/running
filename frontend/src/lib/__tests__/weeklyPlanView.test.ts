@@ -1,18 +1,18 @@
-import { describe, expect, it } from 'vitest'
-import type { Activity } from '../../api'
-import { actualRunDistanceKm, actualStrengthStats, findCurrentWeek, formatDurationClock } from '../weeklyPlanView'
+import { describe, expect, it } from "vitest";
+import type { Activity } from "../../api";
+import { actualRunDistanceKm, actualStrengthStats, findCurrentWeek, formatDurationClock } from "../weeklyPlanView";
 
 function activity(overrides: Partial<Activity>): Activity {
   return {
-    label_id: 'activity',
+    label_id: "activity",
     name: null,
     sport_type: 100,
-    sport_name: 'Run',
-    date: '2026-07-13T00:00:00+08:00',
+    sport_name: "Run",
+    date: "2026-07-13T00:00:00+08:00",
     distance_m: 8000,
     distance_km: 8,
     duration_s: 3000,
-    duration_fmt: '50m',
+    duration_fmt: "50m",
     avg_pace_s_km: 375,
     pace_fmt: "6'15\"",
     avg_hr: 140,
@@ -32,41 +32,41 @@ function activity(overrides: Partial<Activity>): Activity {
     feel_type: null,
     sport_note: null,
     ...overrides,
-  }
+  };
 }
 
-describe('weeklyPlanView', () => {
-  it('selects the week covering today instead of the first future week', () => {
-    const nextWeek = { date_from: '2026-07-20', date_to: '2026-07-26', folder: 'next' }
-    const currentWeek = { date_from: '2026-07-13', date_to: '2026-07-19', folder: 'current' }
+describe("weeklyPlanView", () => {
+  it("selects the week covering today instead of the first future week", () => {
+    const nextWeek = { date_from: "2026-07-20", date_to: "2026-07-26", folder: "next" };
+    const currentWeek = { date_from: "2026-07-13", date_to: "2026-07-19", folder: "current" };
 
-    expect(findCurrentWeek([nextWeek, currentWeek], '2026-07-16')).toBe(currentWeek)
-  })
+    expect(findCurrentWeek([nextWeek, currentWeek], "2026-07-16")).toBe(currentWeek);
+  });
 
-  it('does not substitute a future week when the current week is missing', () => {
-    const nextWeek = { date_from: '2026-07-20', date_to: '2026-07-26', folder: 'next' }
+  it("does not substitute a future week when the current week is missing", () => {
+    const nextWeek = { date_from: "2026-07-20", date_to: "2026-07-26", folder: "next" };
 
-    expect(findCurrentWeek([nextWeek], '2026-07-16')).toBeNull()
-  })
+    expect(findCurrentWeek([nextWeek], "2026-07-16")).toBeNull();
+  });
 
-  it('only counts running distance toward weekly mileage completion', () => {
+  it("only counts running distance toward weekly mileage completion", () => {
     const activities = [
-      activity({ label_id: 'run', distance_km: 8 }),
-      activity({ label_id: 'strength', sport_type: 402, sport_name: 'Strength Training', distance_km: 1.2 }),
-      activity({ label_id: 'ride', sport_type: 200, sport_name: 'Bike', distance_km: 25 }),
-    ]
+      activity({ label_id: "run", distance_km: 8 }),
+      activity({ label_id: "strength", sport_type: 402, sport_name: "Strength Training", distance_km: 1.2 }),
+      activity({ label_id: "ride", sport_type: 200, sport_name: "Bike", distance_km: 25 }),
+    ];
 
-    expect(actualRunDistanceKm(activities)).toBe(8)
-  })
+    expect(actualRunDistanceKm(activities)).toBe(8);
+  });
 
-  it('summarizes actual strength count and duration', () => {
+  it("summarizes actual strength count and duration", () => {
     const activities = [
-      activity({ label_id: 'run', duration_s: 3600 }),
-      activity({ label_id: 'strength-1', sport_type: 402, sport_name: 'Strength Training', duration_s: 1800 }),
-      activity({ label_id: 'strength-2', sport_type: 800, sport_name: 'Strength', duration_s: 2750 }),
-    ]
+      activity({ label_id: "run", duration_s: 3600 }),
+      activity({ label_id: "strength-1", sport_type: 402, sport_name: "Strength Training", duration_s: 1800 }),
+      activity({ label_id: "strength-2", sport_type: 800, sport_name: "Strength", duration_s: 2750 }),
+    ];
 
-    expect(actualStrengthStats(activities)).toEqual({ count: 2, durationS: 4550 })
-    expect(formatDurationClock(4550)).toBe('01:15:50')
-  })
-})
+    expect(actualStrengthStats(activities)).toEqual({ count: 2, durationS: 4550 });
+    expect(formatDurationClock(4550)).toBe("01:15:50");
+  });
+});

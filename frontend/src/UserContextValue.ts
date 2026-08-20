@@ -1,20 +1,20 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext } from "react";
 
 export interface UserContextType {
-  user: string
-  displayName: string
-  profileReady?: boolean
-  onboardingCompletedAt?: string | null
-  coachAgentWeeklyPlan?: boolean
-  coachChat?: boolean
-  coachChatDebug?: boolean
-  coachChatMaxMessageChars?: number
-  refresh: () => Promise<void>
+  user: string;
+  displayName: string;
+  profileReady?: boolean;
+  onboardingCompletedAt?: string | null;
+  coachAgentWeeklyPlan?: boolean;
+  coachChat?: boolean;
+  coachChatDebug?: boolean;
+  coachChatMaxMessageChars?: number;
+  refresh: () => Promise<void>;
 }
 
 export const UserContext = createContext<UserContextType>({
-  user: '',
-  displayName: '',
+  user: "",
+  displayName: "",
   profileReady: false,
   onboardingCompletedAt: null,
   coachAgentWeeklyPlan: false,
@@ -22,8 +22,8 @@ export const UserContext = createContext<UserContextType>({
   coachChatDebug: false,
   coachChatMaxMessageChars: undefined,
   refresh: async () => {},
-})
+});
 
 export function useUser() {
-  return useContext(UserContext)
+  return useContext(UserContext);
 }

@@ -7,9 +7,9 @@ const store = StrideDataStore.create(readStrideMySqlConfig(config));
 async function main() {}
 
 try {
-	await main();
+  await main();
 } catch (err) {
-	console.error("Error in test_race_analysis.ts:", err);
+  console.error("Error in test_race_analysis.ts:", err);
 } finally {
-	await store.close();
+  await store.close();
 }

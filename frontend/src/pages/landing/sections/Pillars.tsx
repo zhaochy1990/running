@@ -1,17 +1,17 @@
-import { useReveal } from '../useReveal'
+import { useReveal } from "../useReveal";
 
 const CheckIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M20 6 9 17l-5-5"></path>
   </svg>
-)
+);
 
 export default function Pillars() {
-  const secHeadRef = useReveal<HTMLDivElement>()
-  const pillar1Ref = useReveal<HTMLDivElement>()
-  const pillar2Ref = useReveal<HTMLDivElement>()
-  const pillar3Ref = useReveal<HTMLDivElement>()
-  const synthRef = useReveal<HTMLDivElement>()
+  const secHeadRef = useReveal<HTMLDivElement>();
+  const pillar1Ref = useReveal<HTMLDivElement>();
+  const pillar2Ref = useReveal<HTMLDivElement>();
+  const pillar3Ref = useReveal<HTMLDivElement>();
+  const synthRef = useReveal<HTMLDivElement>();
 
   return (
     <section className="pillars" id="pillars">
@@ -37,9 +37,18 @@ export default function Pillars() {
             <h3>跑步</h3>
             <p>周期化的跑量与强度分配,把每一次轻松跑、节奏跑、间歇都放在该出现的位置。</p>
             <ul>
-              <li><CheckIcon />周期化跑量与长距离</li>
-              <li><CheckIcon />配速分区 · 间歇 / 节奏跑</li>
-              <li><CheckIcon />根据训练反馈灵活调整</li>
+              <li>
+                <CheckIcon />
+                周期化跑量与长距离
+              </li>
+              <li>
+                <CheckIcon />
+                配速分区 · 间歇 / 节奏跑
+              </li>
+              <li>
+                <CheckIcon />
+                根据训练反馈灵活调整
+              </li>
             </ul>
           </div>
 
@@ -60,9 +69,18 @@ export default function Pillars() {
             <h3>力量</h3>
             <p>跑者专项力量与稳定性训练,我们始终认为应该通过力量训练来增强跑步能力,把受伤的概率压到最低。</p>
             <ul>
-              <li><CheckIcon />根据你的目标制定跑者专项力量训练</li>
-              <li><CheckIcon />根据你的伤病史调整训练动作，降低伤病风险</li>
-              <li><CheckIcon />不同备赛周期训练重点不同</li>
+              <li>
+                <CheckIcon />
+                根据你的目标制定跑者专项力量训练
+              </li>
+              <li>
+                <CheckIcon />
+                根据你的伤病史调整训练动作，降低伤病风险
+              </li>
+              <li>
+                <CheckIcon />
+                不同备赛周期训练重点不同
+              </li>
             </ul>
           </div>
 
@@ -78,23 +96,37 @@ export default function Pillars() {
             <h3>饮食</h3>
             <p>跟着训练负荷走的营养与补给建议,练得动、恢复得快,把吃进去的每一口都用在刀刃上。</p>
             <ul>
-              <li><CheckIcon />按负荷配比碳水 / 蛋白</li>
-              <li><CheckIcon />赛前储备与补给方案</li>
-              <li><CheckIcon />日常恢复营养建议</li>
+              <li>
+                <CheckIcon />
+                按负荷配比碳水 / 蛋白
+              </li>
+              <li>
+                <CheckIcon />
+                赛前储备与补给方案
+              </li>
+              <li>
+                <CheckIcon />
+                日常恢复营养建议
+              </li>
             </ul>
           </div>
         </div>
 
         <div className="synth reveal" ref={synthRef}>
           <div className="synth-eq">
-            <span className="node">跑步</span><span className="op">+</span>
-            <span className="node">力量</span><span className="op">+</span>
-            <span className="node">饮食</span><span className="op">=</span>
+            <span className="node">跑步</span>
+            <span className="op">+</span>
+            <span className="node">力量</span>
+            <span className="op">+</span>
+            <span className="node">饮食</span>
+            <span className="op">=</span>
             <span className="res">整体变强 · 无伤 PB</span>
           </div>
-          <div className="synth-note">三个维度,一套系统。<b>系统性地把你练得更强、更稳、更耐练</b>——这才是 STRIDE 把你带到 PB 的方式。</div>
+          <div className="synth-note">
+            三个维度,一套系统。<b>系统性地把你练得更强、更稳、更耐练</b>——这才是 STRIDE 把你带到 PB 的方式。
+          </div>
         </div>
       </div>
     </section>
-  )
+  );
 }

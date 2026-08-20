@@ -1,49 +1,49 @@
-import { describe, it, expect } from 'vitest'
-import { routeNameFor } from '../routeNames'
+import { describe, it, expect } from "vitest";
+import { routeNameFor } from "../routeNames";
 
-describe('routeNameFor', () => {
-  it('maps the home route', () => {
-    expect(routeNameFor('/')).toBe('Home')
-  })
+describe("routeNameFor", () => {
+  it("maps the home route", () => {
+    expect(routeNameFor("/")).toBe("Home");
+  });
 
   it.each([
-    ['/health', 'Health'],
-    ['/body-composition', 'BodyComposition'],
-    ['/coach', 'Coach Chat'],
-    ['/plan', 'Training Plan'],
-    ['/plan/adjust', 'Training Plan Adjust'],
-    ['/activities', 'Activity List'],
-    ['/ability', 'Ability'],
-    ['/status', 'Status'],
-    ['/login', 'Login'],
-    ['/register', 'Register'],
-    ['/onboarding', 'Onboarding'],
-  ])('maps %s to %s', (path, expected) => {
-    expect(routeNameFor(path)).toBe(expected)
-  })
+    ["/health", "Health"],
+    ["/body-composition", "BodyComposition"],
+    ["/coach", "Coach Chat"],
+    ["/plan", "Training Plan"],
+    ["/plan/adjust", "Training Plan Adjust"],
+    ["/activities", "Activity List"],
+    ["/ability", "Ability"],
+    ["/status", "Status"],
+    ["/login", "Login"],
+    ["/register", "Register"],
+    ["/onboarding", "Onboarding"],
+  ])("maps %s to %s", (path, expected) => {
+    expect(routeNameFor(path)).toBe(expected);
+  });
 
-  it('collapses /week/:folder regardless of folder value', () => {
-    expect(routeNameFor('/week/2026-04-27_05-03(P1W2)')).toBe('Week View')
-    expect(routeNameFor('/week/2026-04-20_04-26(W0)')).toBe('Week View')
-  })
+  it("collapses /week/:folder regardless of folder value", () => {
+    expect(routeNameFor("/week/2026-04-27_05-03(P1W2)")).toBe("Week View");
+    expect(routeNameFor("/week/2026-04-20_04-26(W0)")).toBe("Week View");
+  });
 
-  it('collapses /activity/:id regardless of id value', () => {
-    expect(routeNameFor('/activity/abc123')).toBe('Activity Detail')
-    expect(routeNameFor('/activity/xyz789')).toBe('Activity Detail')
-  })
+  it("collapses /activity/:id regardless of id value", () => {
+    expect(routeNameFor("/activity/abc123")).toBe("Activity Detail");
+    expect(routeNameFor("/activity/xyz789")).toBe("Activity Detail");
+  });
 
-  it('names Coach plan-adjust workspaces without leaking target ids', () => {
-    expect(routeNameFor('/coach/week/2026-07-13_07-19/adjust')).toBe('Coach Weekly Plan Adjust')
-    expect(routeNameFor('/coach/master/plan-9/adjust')).toBe('Coach Master Plan Adjust')
-  })
+  it("names Coach plan-adjust workspaces without leaking target ids", () => {
+    expect(routeNameFor("/coach/week/2026-07-13_07-19/adjust")).toBe("Coach Weekly Plan Adjust");
+    expect(routeNameFor("/coach/master/plan-9/adjust")).toBe("Coach Master Plan Adjust");
+  });
 
-  it('falls through to raw pathname for unknown routes', () => {
-    expect(routeNameFor('/something/else')).toBe('/something/else')
-    expect(routeNameFor('/admin')).toBe('/admin')
-  })
+  it("falls through to raw pathname for unknown routes", () => {
+    expect(routeNameFor("/something/else")).toBe("/something/else");
+    expect(routeNameFor("/admin")).toBe("/admin");
+  });
 
-  it('does not collapse nested unknown sub-routes under known prefixes', () => {
+  it("does not collapse nested unknown sub-routes under known prefixes", () => {
     // /week/foo/bar is not /week/:folder; should fall through
-    expect(routeNameFor('/week/foo/bar')).toBe('/week/foo/bar')
-  })
-})
+    expect(routeNameFor("/week/foo/bar")).toBe("/week/foo/bar");
+  });
+});

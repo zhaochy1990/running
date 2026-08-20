@@ -34,15 +34,7 @@ expect(designSystem.theme.typography["body-lg"].fontWeight === "500", "body weig
 expect(designSystem.theme.typography["metric-value"].fontFamily === "Geist Mono", "metrics must use Geist Mono");
 expect(designSystem.theme.spacing["touch-target"] === "48px", "touch target must be 48px");
 
-for (const token of [
-  "#07080A",
-  "#101111",
-  "#FF6363",
-  "Inter",
-  "Geist Mono",
-  "rgba(255,255,255,0.06)",
-  "cubic-bezier(0.2,0,0,1)",
-]) {
+for (const token of ["#07080A", "#101111", "#FF6363", "Inter", "Geist Mono", "rgba(255,255,255,0.06)", "cubic-bezier(0.2,0,0,1)"]) {
   expect(foundation.includes(token), `foundation is missing ${token}`);
 }
 

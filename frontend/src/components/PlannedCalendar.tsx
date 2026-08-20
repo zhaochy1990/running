@@ -1,67 +1,67 @@
-import { useState } from 'react'
-import type { PlannedNutrition, PlannedSession, StructuredStatus } from '../types/plan'
-import { weekdayCN, formatDateShort } from '../api'
-import PushPlannedButton from './PushPlannedButton'
-import SessionDetailModal from './SessionDetailModal'
+import { useState } from "react";
+import type { PlannedNutrition, PlannedSession, StructuredStatus } from "../types/plan";
+import { weekdayCN, formatDateShort } from "../api";
+import PushPlannedButton from "./PushPlannedButton";
+import SessionDetailModal from "./SessionDetailModal";
 
 export interface PlannedCalendarProps {
   /** ISO YYYY-MM-DD strings, length 7, ascending. */
-  weekDates: string[]
-  sessions: PlannedSession[]
-  nutrition: PlannedNutrition[]
-  structuredStatus: StructuredStatus
-  canPushRun: boolean
+  weekDates: string[];
+  sessions: PlannedSession[];
+  nutrition: PlannedNutrition[];
+  structuredStatus: StructuredStatus;
+  canPushRun: boolean;
   /** Optional; defaults to `canPushRun` inside `PushPlannedButton`. */
-  canPushStrength?: boolean
+  canPushStrength?: boolean;
   /** Forwarded to each row's `PushPlannedButton` to lock individual pushes
    * while a batch operation (e.g. "推送全部") is in flight. */
-  pushDisabled?: boolean
+  pushDisabled?: boolean;
   /**
    * Called when the user confirms an individual session push. `targetDate` is
    * the ISO date selected in the inline date picker — always within ±7 days
    * of `s.date`. Forward it to `pushPlannedSession` as `target_date`.
    */
-  onPush: (s: PlannedSession, targetDate: string) => Promise<void> | void
+  onPush: (s: PlannedSession, targetDate: string) => Promise<void> | void;
 }
 
-const KIND_ICON: Record<PlannedSession['kind'], string> = {
-  run: '🏃',
-  strength: '💪',
-  rest: '😴',
-  cross: '🚴',
-  note: '📝',
-}
+const KIND_ICON: Record<PlannedSession["kind"], string> = {
+  run: "🏃",
+  strength: "💪",
+  rest: "😴",
+  cross: "🚴",
+  note: "📝",
+};
 
-const KIND_LABEL: Record<PlannedSession['kind'], string> = {
-  run: '跑步',
-  strength: '力量',
-  rest: '休息',
-  cross: '交叉',
-  note: '说明',
-}
+const KIND_LABEL: Record<PlannedSession["kind"], string> = {
+  run: "跑步",
+  strength: "力量",
+  rest: "休息",
+  cross: "交叉",
+  note: "说明",
+};
 
-const KIND_COLOR: Record<PlannedSession['kind'], string> = {
-  run: '#00a85a',
-  strength: '#e68a00',
-  rest: '#8888a0',
-  cross: '#0097a7',
-  note: '#7c4dff',
-}
+const KIND_COLOR: Record<PlannedSession["kind"], string> = {
+  run: "#00a85a",
+  strength: "#e68a00",
+  rest: "#8888a0",
+  cross: "#0097a7",
+  note: "#7c4dff",
+};
 
 function fmtKm(m: number | null): string {
-  if (m == null) return '—'
-  return `${(m / 1000).toFixed(1)} km`
+  if (m == null) return "—";
+  return `${(m / 1000).toFixed(1)} km`;
 }
 
 function fmtMin(s: number | null): string {
-  if (s == null) return '—'
-  return `${Math.round(s / 60)} min`
+  if (s == null) return "—";
+  return `${Math.round(s / 60)} min`;
 }
 
 function fmtPaceSecKm(s: number | null | undefined): string {
-  if (s == null) return '—'
-  const total = Math.round(s)
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}/km`
+  if (s == null) return "—";
+  const total = Math.round(s);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}/km`;
 }
 
 // Surface the headline target for the session by looking at WORK steps only.
@@ -70,53 +70,53 @@ function fmtPaceSecKm(s: number | null | undefined): string {
 // easy HR range. Work-step targets are the right thing to show — that's
 // what the user is actually trying to hit.
 function paceTargetText(s: PlannedSession): string | null {
-  if (!s.spec || s.spec.schema !== 'run-workout/v1') return null
+  if (!s.spec || s.spec.schema !== "run-workout/v1") return null;
   for (const block of s.spec.blocks) {
     for (const step of block.steps) {
-      if (step.step_kind !== 'work') continue
-      if (step.target.kind === 'pace_s_km' && step.target.low != null && step.target.high != null) {
-        return `${fmtPaceSecKm(step.target.high)} – ${fmtPaceSecKm(step.target.low)}`
+      if (step.step_kind !== "work") continue;
+      if (step.target.kind === "pace_s_km" && step.target.low != null && step.target.high != null) {
+        return `${fmtPaceSecKm(step.target.high)} – ${fmtPaceSecKm(step.target.low)}`;
       }
     }
   }
-  return null
+  return null;
 }
 
 function hrTargetText(s: PlannedSession): string | null {
-  if (!s.spec || s.spec.schema !== 'run-workout/v1') return null
+  if (!s.spec || s.spec.schema !== "run-workout/v1") return null;
   for (const block of s.spec.blocks) {
     for (const step of block.steps) {
-      if (step.step_kind !== 'work') continue
-      if (step.target.kind === 'hr_bpm' && step.target.low != null && step.target.high != null) {
-        return `${Math.round(step.target.low)}–${Math.round(step.target.high)} bpm`
+      if (step.step_kind !== "work") continue;
+      if (step.target.kind === "hr_bpm" && step.target.low != null && step.target.high != null) {
+        return `${Math.round(step.target.low)}–${Math.round(step.target.high)} bpm`;
       }
     }
   }
-  return null
+  return null;
 }
 
 // HR ceiling layered onto a work step (e.g., tempo with pace target plus
 // "HR ≤167"). Surfaces as "HR ≤N" so the user sees the guardrail even when
 // the primary target is pace.
 function hrCapText(s: PlannedSession): string | null {
-  if (!s.spec || s.spec.schema !== 'run-workout/v1') return null
+  if (!s.spec || s.spec.schema !== "run-workout/v1") return null;
   for (const block of s.spec.blocks) {
     for (const step of block.steps) {
-      if (step.step_kind !== 'work') continue
+      if (step.step_kind !== "work") continue;
       if (step.hr_cap_bpm != null) {
-        return `HR ≤${Math.round(step.hr_cap_bpm)}`
+        return `HR ≤${Math.round(step.hr_cap_bpm)}`;
       }
     }
   }
-  return null
+  return null;
 }
 
 function rpeText(s: PlannedSession): string | null {
   // RPE is conventionally encoded inside `notes_md` as "RPE N". Best-effort
   // surface: look for "RPE <num>" anywhere in summary or notes.
-  const haystack = `${s.summary} ${s.notes_md ?? ''}`
-  const m = /RPE\s*(\d+(?:\.\d+)?)/i.exec(haystack)
-  return m ? `RPE ${m[1]}` : null
+  const haystack = `${s.summary} ${s.notes_md ?? ""}`;
+  const m = /RPE\s*(\d+(?:\.\d+)?)/i.exec(haystack);
+  return m ? `RPE ${m[1]}` : null;
 }
 
 export default function PlannedCalendar({
@@ -129,31 +129,28 @@ export default function PlannedCalendar({
   pushDisabled,
   onPush,
 }: PlannedCalendarProps) {
-  const [selectedSession, setSelectedSession] = useState<PlannedSession | null>(null)
+  const [selectedSession, setSelectedSession] = useState<PlannedSession | null>(null);
 
-  if (structuredStatus === 'parse_failed' || structuredStatus === 'none') {
+  if (structuredStatus === "parse_failed" || structuredStatus === "none") {
     return (
-      <div
-        data-testid="planned-calendar-empty"
-        className="bg-bg-card border border-border-subtle rounded-2xl p-6 text-center text-sm text-text-muted"
-      >
+      <div data-testid="planned-calendar-empty" className="bg-bg-card border border-border-subtle rounded-2xl p-6 text-center text-sm text-text-muted">
         本周计划暂未结构化，请重新解析后查看日历视图
       </div>
-    )
+    );
   }
 
-  const sessionsByDate = new Map<string, PlannedSession[]>()
+  const sessionsByDate = new Map<string, PlannedSession[]>();
   for (const s of sessions) {
-    const list = sessionsByDate.get(s.date) ?? []
-    list.push(s)
-    sessionsByDate.set(s.date, list)
+    const list = sessionsByDate.get(s.date) ?? [];
+    list.push(s);
+    sessionsByDate.set(s.date, list);
   }
-  const nutritionByDate = new Map<string, PlannedNutrition>()
-  for (const n of nutrition) nutritionByDate.set(n.date, n)
+  const nutritionByDate = new Map<string, PlannedNutrition>();
+  for (const n of nutrition) nutritionByDate.set(n.date, n);
 
   return (
     <div data-testid="planned-calendar" className="space-y-3">
-      {structuredStatus === 'backfilled' && (
+      {structuredStatus === "backfilled" && (
         <div
           data-testid="backfill-banner"
           role="alert"
@@ -162,7 +159,7 @@ export default function PlannedCalendar({
           历史回填的计划，请先在 markdown 视图核对后审核启用 — 推送到手表的按钮已禁用
         </div>
       )}
-      {structuredStatus === 'stale' && (
+      {structuredStatus === "stale" && (
         <div
           data-testid="stale-banner"
           role="alert"
@@ -174,10 +171,8 @@ export default function PlannedCalendar({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
         {weekDates.map((date) => {
-          const daySessions = (sessionsByDate.get(date) ?? []).slice().sort(
-            (a, b) => a.session_index - b.session_index,
-          )
-          const dayNutrition = nutritionByDate.get(date) ?? null
+          const daySessions = (sessionsByDate.get(date) ?? []).slice().sort((a, b) => a.session_index - b.session_index);
+          const dayNutrition = nutritionByDate.get(date) ?? null;
 
           return (
             <div
@@ -188,19 +183,17 @@ export default function PlannedCalendar({
             >
               <div className="flex items-baseline justify-between border-b border-border-subtle pb-1.5">
                 <span className="text-xs font-mono text-text-muted">{weekdayCN(date)}</span>
-                <span className="text-xs font-mono text-text-secondary">
-                  {formatDateShort(date)}
-                </span>
+                <span className="text-xs font-mono text-text-secondary">{formatDateShort(date)}</span>
               </div>
 
               {daySessions.length === 0 ? (
                 <p className="text-xs font-mono text-text-muted">无计划</p>
               ) : (
                 daySessions.map((s) => {
-                  const pace = paceTargetText(s)
-                  const hr = hrTargetText(s)
-                  const hrCap = hrCapText(s)
-                  const rpe = rpeText(s)
+                  const pace = paceTargetText(s);
+                  const hr = hrTargetText(s);
+                  const hrCap = hrCapText(s);
+                  const rpe = rpeText(s);
                   return (
                     <div
                       key={`${s.date}-${s.session_index}`}
@@ -210,9 +203,9 @@ export default function PlannedCalendar({
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          setSelectedSession(s)
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSelectedSession(s);
                         }
                       }}
                     >
@@ -222,7 +215,7 @@ export default function PlannedCalendar({
                           className="text-[10px] font-mono px-1.5 py-0.5 rounded"
                           style={{
                             color: KIND_COLOR[s.kind],
-                            backgroundColor: KIND_COLOR[s.kind] + '15',
+                            backgroundColor: KIND_COLOR[s.kind] + "15",
                           }}
                         >
                           {KIND_LABEL[s.kind]}
@@ -230,18 +223,14 @@ export default function PlannedCalendar({
                       </div>
                       <p className="text-xs text-text-primary leading-snug">{s.summary}</p>
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] font-mono text-text-muted">
-                        {s.total_distance_m != null && (
-                          <span>距离 {fmtKm(s.total_distance_m)}</span>
-                        )}
-                        {s.total_duration_s != null && (
-                          <span>时长 {fmtMin(s.total_duration_s)}</span>
-                        )}
+                        {s.total_distance_m != null && <span>距离 {fmtKm(s.total_distance_m)}</span>}
+                        {s.total_duration_s != null && <span>时长 {fmtMin(s.total_duration_s)}</span>}
                         {pace && <span>配速 {pace}</span>}
                         {hr && <span>HR {hr}</span>}
                         {hrCap && !hr && <span>{hrCap}</span>}
                         {rpe && <span>{rpe}</span>}
                       </div>
-                      {(s.kind === 'run' || s.kind === 'strength') && (
+                      {(s.kind === "run" || s.kind === "strength") && (
                         <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                           <PushPlannedButton
                             session={s}
@@ -254,30 +243,22 @@ export default function PlannedCalendar({
                         </div>
                       )}
                     </div>
-                  )
+                  );
                 })
               )}
 
               {dayNutrition?.kcal_target != null && (
-                <p
-                  data-testid="nutrition-row"
-                  className="text-[11px] font-mono text-text-muted mt-auto pt-1.5 border-t border-border-subtle"
-                >
+                <p data-testid="nutrition-row" className="text-[11px] font-mono text-text-muted mt-auto pt-1.5 border-t border-border-subtle">
                   营养 {Math.round(dayNutrition.kcal_target)} kcal
                   {dayNutrition.protein_g != null && ` · 蛋 ${Math.round(dayNutrition.protein_g)}g`}
                 </p>
               )}
             </div>
-          )
+          );
         })}
       </div>
 
-      {selectedSession && (
-        <SessionDetailModal
-          session={selectedSession}
-          onClose={() => setSelectedSession(null)}
-        />
-      )}
+      {selectedSession && <SessionDetailModal session={selectedSession} onClose={() => setSelectedSession(null)} />}
     </div>
-  )
+  );
 }

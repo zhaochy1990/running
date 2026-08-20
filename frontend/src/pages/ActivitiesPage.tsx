@@ -1,20 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 
-import {
-  formatDateShort,
-  getActivities,
-  getAllActivities,
-  sportNameCN,
-  type ActivitiesListResponse,
-  type ActivityMonthlySummary,
-  type Activity,
-} from '../api'
-import ViewHead from '../components/ViewHead'
-import { SYNC_COMPLETED_EVENT } from '../lib/syncEvents'
-import { shanghaiToday } from '../lib/shanghai'
-import { useNotificationsStore } from '../store/notificationsStore'
-import { useUser } from '../UserContextValue'
+import { formatDateShort, getActivities, getAllActivities, sportNameCN, type ActivitiesListResponse, type ActivityMonthlySummary, type Activity } from "../api";
+import ViewHead from "../components/ViewHead";
+import { SYNC_COMPLETED_EVENT } from "../lib/syncEvents";
+import { shanghaiToday } from "../lib/shanghai";
+import { useNotificationsStore } from "../store/notificationsStore";
+import { useUser } from "../UserContextValue";
 import {
   ACTIVITY_PAGE_SIZE,
   ACTIVITY_PAGE_SIZE_OPTIONS,
@@ -26,163 +18,162 @@ import {
   summarizeActivities,
   type ActivitySportFilter,
   visiblePageItems,
-} from './activitiesPageModel'
+} from "./activitiesPageModel";
 
-type LoadState = 'idle' | 'loading' | 'error' | 'ready'
+type LoadState = "idle" | "loading" | "error" | "ready";
 
-const ONBOARDING_SYNC_NOTIFICATION_ID = 'onboarding-progress'
+const ONBOARDING_SYNC_NOTIFICATION_ID = "onboarding-progress";
 
 export default function ActivitiesPage() {
-  const { user } = useUser()
-  const previousQueryKeyRef = useRef<string | null>(null)
-  const monthRange = useMemo(() => monthRangeFromShanghaiToday(shanghaiToday()), [])
+  const { user } = useUser();
+  const previousQueryKeyRef = useRef<string | null>(null);
+  const monthRange = useMemo(() => monthRangeFromShanghaiToday(shanghaiToday()), []);
   const [activityPage, setActivityPage] = useState<ActivitiesListResponse>({
     total: 0,
     offset: 0,
     limit: ACTIVITY_PAGE_SIZE,
     activities: [],
-  })
-  const [monthActivities, setMonthActivities] = useState<Activity[]>([])
-  const [monthSummary, setMonthSummary] = useState<ActivityMonthlySummary | undefined>()
-  const [loadState, setLoadState] = useState<LoadState>('idle')
-  const [error, setError] = useState('')
-  const [sportFilter, setSportFilter] = useState<ActivitySportFilter>('all')
-  const [minDistanceKm, setMinDistanceKm] = useState(0)
-  const [draftFrom, setDraftFrom] = useState('')
-  const [draftTo, setDraftTo] = useState('')
-  const [appliedRange, setAppliedRange] = useState<{ dateFrom?: string; dateTo?: string }>({})
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(ACTIVITY_PAGE_SIZE)
-  const [manualSyncVersion, setManualSyncVersion] = useState(0)
+  });
+  const [monthActivities, setMonthActivities] = useState<Activity[]>([]);
+  const [monthSummary, setMonthSummary] = useState<ActivityMonthlySummary | undefined>();
+  const [loadState, setLoadState] = useState<LoadState>("idle");
+  const [error, setError] = useState("");
+  const [sportFilter, setSportFilter] = useState<ActivitySportFilter>("all");
+  const [minDistanceKm, setMinDistanceKm] = useState(0);
+  const [draftFrom, setDraftFrom] = useState("");
+  const [draftTo, setDraftTo] = useState("");
+  const [appliedRange, setAppliedRange] = useState<{ dateFrom?: string; dateTo?: string }>({});
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(ACTIVITY_PAGE_SIZE);
+  const [manualSyncVersion, setManualSyncVersion] = useState(0);
   const syncRefreshToken = useNotificationsStore((state) => {
-    const notification = state.serverNotifications.find((item) => item.id === ONBOARDING_SYNC_NOTIFICATION_ID)
-    if (!notification) return ''
-    const notificationState = notification.metadata?.state
-    if (notificationState === 'failed') return ''
-    return [
-      notification.updatedAt ?? notification.publishedAt,
-      notification.progressPct ?? '',
-      notification.body,
-    ].join('|')
-  })
+    const notification = state.serverNotifications.find((item) => item.id === ONBOARDING_SYNC_NOTIFICATION_ID);
+    if (!notification) return "";
+    const notificationState = notification.metadata?.state;
+    if (notificationState === "failed") return "";
+    return [notification.updatedAt ?? notification.publishedAt, notification.progressPct ?? "", notification.body].join("|");
+  });
 
-  const queryKey = useMemo(() => JSON.stringify({
-    appliedRange,
-    minDistanceKm,
-    monthRange,
-    page,
-    pageSize,
-    sportFilter,
-    user,
-  }), [appliedRange, minDistanceKm, monthRange, page, pageSize, sportFilter, user])
-
-  useEffect(() => {
-    const refresh = () => setManualSyncVersion((version) => version + 1)
-    window.addEventListener(SYNC_COMPLETED_EVENT, refresh)
-    return () => window.removeEventListener(SYNC_COMPLETED_EVENT, refresh)
-  }, [])
+  const queryKey = useMemo(
+    () =>
+      JSON.stringify({
+        appliedRange,
+        minDistanceKm,
+        monthRange,
+        page,
+        pageSize,
+        sportFilter,
+        user,
+      }),
+    [appliedRange, minDistanceKm, monthRange, page, pageSize, sportFilter, user],
+  );
 
   useEffect(() => {
-    if (!user) return
-    let cancelled = false
-    const queryChanged = previousQueryKeyRef.current !== queryKey
-    previousQueryKeyRef.current = queryKey
+    const refresh = () => setManualSyncVersion((version) => version + 1);
+    window.addEventListener(SYNC_COMPLETED_EVENT, refresh);
+    return () => window.removeEventListener(SYNC_COMPLETED_EVENT, refresh);
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const queryChanged = previousQueryKeyRef.current !== queryKey;
+    previousQueryKeyRef.current = queryKey;
     void Promise.resolve().then(() => {
-      if (cancelled) return
-      if (queryChanged) setLoadState('loading')
-      setError('')
-    })
+      if (cancelled) return;
+      if (queryChanged) setLoadState("loading");
+      setError("");
+    });
 
     getActivities(user, {
       ...appliedRange,
       limit: pageSize,
       offset: (page - 1) * pageSize,
-      ...(sportFilter !== 'all' ? { sportCategory: sportFilter } : {}),
+      ...(sportFilter !== "all" ? { sportCategory: sportFilter } : {}),
       ...(minDistanceKm > 0 ? { minDistanceKm } : {}),
     })
       .then((currentActivityPage) => {
-        if (cancelled) return
-        setActivityPage(currentActivityPage)
-        setLoadState('ready')
+        if (cancelled) return;
+        setActivityPage(currentActivityPage);
+        setLoadState("ready");
       })
       .catch((err) => {
-        if (cancelled) return
-        setError(err instanceof Error ? err.message : String(err))
-        setLoadState((current) => (queryChanged || current !== 'ready' ? 'error' : current))
-      })
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setLoadState((current) => (queryChanged || current !== "ready" ? "error" : current));
+      });
 
     return () => {
-      cancelled = true
-    }
-  }, [appliedRange, manualSyncVersion, minDistanceKm, monthRange.dateFrom, monthRange.dateTo, page, pageSize, queryKey, sportFilter, syncRefreshToken, user])
+      cancelled = true;
+    };
+  }, [appliedRange, manualSyncVersion, minDistanceKm, monthRange.dateFrom, monthRange.dateTo, page, pageSize, queryKey, sportFilter, syncRefreshToken, user]);
 
   useEffect(() => {
-    if (!user) return
-    let cancelled = false
+    if (!user) return;
+    let cancelled = false;
     Promise.all([
       getAllActivities(user, { dateFrom: monthRange.dateFrom, dateTo: monthRange.dateTo }),
       getActivities(user, { dateFrom: monthRange.dateFrom, dateTo: monthRange.dateTo, limit: 1 }),
-    ]).then(([activities, response]) => {
-      if (cancelled) return
-      setMonthActivities(activities)
-      setMonthSummary(response.monthly_summaries?.[monthRange.dateFrom.slice(0, 7)])
-    }).catch(() => {
-      // The paginated list remains usable if the independent month summary fails.
-    })
+    ])
+      .then(([activities, response]) => {
+        if (cancelled) return;
+        setMonthActivities(activities);
+        setMonthSummary(response.monthly_summaries?.[monthRange.dateFrom.slice(0, 7)]);
+      })
+      .catch(() => {
+        // The paginated list remains usable if the independent month summary fails.
+      });
     return () => {
-      cancelled = true
-    }
-  }, [manualSyncVersion, monthRange.dateFrom, monthRange.dateTo, syncRefreshToken, user])
+      cancelled = true;
+    };
+  }, [manualSyncVersion, monthRange.dateFrom, monthRange.dateTo, syncRefreshToken, user]);
 
-  const summary = useMemo(() => summarizeActivities(monthActivities), [monthActivities])
+  const summary = useMemo(() => summarizeActivities(monthActivities), [monthActivities]);
   const monthGroups = useMemo(
     () => groupActivitiesByMonth(activityPage.activities, activityPage.monthly_summaries),
     [activityPage.activities, activityPage.monthly_summaries],
-  )
-  const totalPages = Math.max(1, Math.ceil(activityPage.total / (activityPage.limit || ACTIVITY_PAGE_SIZE)))
-  const currentPage = Math.min(
-    Math.max(1, Math.floor(activityPage.offset / (activityPage.limit || ACTIVITY_PAGE_SIZE)) + 1),
-    totalPages,
-  )
-  const loading = loadState === 'idle' || loadState === 'loading'
+  );
+  const totalPages = Math.max(1, Math.ceil(activityPage.total / (activityPage.limit || ACTIVITY_PAGE_SIZE)));
+  const currentPage = Math.min(Math.max(1, Math.floor(activityPage.offset / (activityPage.limit || ACTIVITY_PAGE_SIZE)) + 1), totalPages);
+  const loading = loadState === "idle" || loadState === "loading";
 
   const updateSportFilter = (nextSportFilter: ActivitySportFilter) => {
-    setPage(1)
-    setSportFilter(nextSportFilter)
-  }
+    setPage(1);
+    setSportFilter(nextSportFilter);
+  };
 
   const updateMinDistanceKm = (nextMinDistanceKm: number) => {
-    setPage(1)
-    setMinDistanceKm(nextMinDistanceKm)
-  }
+    setPage(1);
+    setMinDistanceKm(nextMinDistanceKm);
+  };
 
   const updatePageSize = (nextPageSize: number) => {
-    setPage(1)
-    setPageSize(nextPageSize)
-  }
+    setPage(1);
+    setPageSize(nextPageSize);
+  };
 
   const applyDateRange = () => {
-    const from = draftFrom.trim()
-    const to = draftTo.trim()
-    setPage(1)
+    const from = draftFrom.trim();
+    const to = draftTo.trim();
+    setPage(1);
     if (from && to && from > to) {
-      setDraftFrom(to)
-      setDraftTo(from)
-      setAppliedRange({ dateFrom: to, dateTo: from })
-      return
+      setDraftFrom(to);
+      setDraftTo(from);
+      setAppliedRange({ dateFrom: to, dateTo: from });
+      return;
     }
     setAppliedRange({
       ...(from ? { dateFrom: from } : {}),
       ...(to ? { dateTo: to } : {}),
-    })
-  }
+    });
+  };
 
   const resetDateRange = () => {
-    setDraftFrom('')
-    setDraftTo('')
-    setPage(1)
-    setAppliedRange({})
-  }
+    setDraftFrom("");
+    setDraftTo("");
+    setPage(1);
+    setAppliedRange({});
+  };
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
@@ -194,21 +185,21 @@ export default function ActivitiesPage() {
       />
 
       <section className="mb-5">
-        <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.1em] text-text-muted">
-          {`本月统计 · ${monthRange.label}`}
-        </div>
+        <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.1em] text-text-muted">{`本月统计 · ${monthRange.label}`}</div>
         <div className="grid grid-cols-2 overflow-hidden rounded-[11px] border border-border-subtle bg-border-subtle lg:grid-cols-6 gap-px">
           <SummaryCell label="本月跑量" value={(monthSummary?.total_run_km ?? summary.totalRunKm).toFixed(1)} unit="km" />
           <SummaryCell label="跑步时长" value={formatHoursValue(monthSummary?.run_duration_s ?? summary.runDurationS)} unit="h" />
           <SummaryCell label="平均配速" value={formatPaceSeconds(summary.avgPaceSecPerKm)} unit="/km" />
-          <SummaryCell label="平均心率" value={summary.avgRunHr == null ? '--' : String(summary.avgRunHr)} unit="bpm" />
+          <SummaryCell label="平均心率" value={summary.avgRunHr == null ? "--" : String(summary.avgRunHr)} unit="bpm" />
           <SummaryCell label="力量训练" value={String(summary.strengthCount)} unit="次" />
           <SummaryCell label="力量时长" value={String(Math.round(summary.strengthDurationS / 60))} unit="min" />
         </div>
       </section>
 
       <section className="mb-4 flex flex-wrap items-center gap-2.5 rounded-[11px] border border-border-subtle bg-bg-card px-3 py-2.5">
-        <label className="sr-only" htmlFor="activity-sport-filter">活动类型</label>
+        <label className="sr-only" htmlFor="activity-sport-filter">
+          活动类型
+        </label>
         <select
           id="activity-sport-filter"
           aria-label="活动类型"
@@ -221,7 +212,9 @@ export default function ActivitiesPage() {
           <option value="strength">类型 · 力量训练</option>
         </select>
 
-        <label className="sr-only" htmlFor="activity-distance-filter">距离下限</label>
+        <label className="sr-only" htmlFor="activity-distance-filter">
+          距离下限
+        </label>
         <select
           id="activity-distance-filter"
           aria-label="距离下限"
@@ -231,14 +224,16 @@ export default function ActivitiesPage() {
         >
           {[0, 5, 10, 15, 20, 25, 30, 35, 40].map((distance) => (
             <option key={distance} value={distance}>
-              {distance === 0 ? '距离 · 全部' : `距离 · >= ${distance} km`}
+              {distance === 0 ? "距离 · 全部" : `距离 · >= ${distance} km`}
             </option>
           ))}
         </select>
 
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-[11px] tracking-[0.04em] text-text-muted">时间</span>
-          <label className="sr-only" htmlFor="activity-from">开始日期</label>
+          <label className="sr-only" htmlFor="activity-from">
+            开始日期
+          </label>
           <input
             id="activity-from"
             aria-label="开始日期"
@@ -248,7 +243,9 @@ export default function ActivitiesPage() {
             className="h-9 rounded-[7px] border border-border bg-bg-primary px-2.5 font-mono text-xs text-text-primary outline-none transition-colors hover:border-text-muted focus:border-accent-green"
           />
           <span className="font-mono text-xs text-text-muted">-&gt;</span>
-          <label className="sr-only" htmlFor="activity-to">结束日期</label>
+          <label className="sr-only" htmlFor="activity-to">
+            结束日期
+          </label>
           <input
             id="activity-to"
             aria-label="结束日期"
@@ -280,19 +277,15 @@ export default function ActivitiesPage() {
         </div>
       )}
 
-      {loadState === 'error' && (
-        <div className="rounded-lg border border-accent-red/30 bg-accent-red/10 px-4 py-3 font-mono text-sm text-accent-red">
-          加载失败：{error}
-        </div>
+      {loadState === "error" && (
+        <div className="rounded-lg border border-accent-red/30 bg-accent-red/10 px-4 py-3 font-mono text-sm text-accent-red">加载失败：{error}</div>
       )}
 
-      {!loading && loadState !== 'error' && activityPage.activities.length === 0 && (
-        <div className="rounded-[11px] border border-dashed border-border-subtle px-7 py-8 text-center text-xs text-text-muted">
-          该范围暂无活动记录。
-        </div>
+      {!loading && loadState !== "error" && activityPage.activities.length === 0 && (
+        <div className="rounded-[11px] border border-dashed border-border-subtle px-7 py-8 text-center text-xs text-text-muted">该范围暂无活动记录。</div>
       )}
 
-      {!loading && loadState !== 'error' && activityPage.activities.length > 0 && (
+      {!loading && loadState !== "error" && activityPage.activities.length > 0 && (
         <>
           <div className="space-y-4">
             {monthGroups.map((group) => (
@@ -312,18 +305,19 @@ export default function ActivitiesPage() {
         </>
       )}
     </div>
-  )
+  );
 }
 
 function SummaryCell({ label, value, unit }: { label: string; value: string; unit: string }) {
   return (
     <div className="bg-bg-card px-4 py-3">
       <div className="font-mono text-[19px] font-semibold tracking-normal text-text-primary">
-        {value}<span className="ml-1 text-[11px] font-medium text-text-muted">{unit}</span>
+        {value}
+        <span className="ml-1 text-[11px] font-medium text-text-muted">{unit}</span>
       </div>
       <div className="mt-1 text-[10px] uppercase tracking-[0.08em] text-text-muted">{label}</div>
     </div>
-  )
+  );
 }
 
 function MonthSection({
@@ -331,15 +325,15 @@ function MonthSection({
   activities,
   summary,
 }: {
-  label: string
-  activities: Activity[]
-  summary?: NonNullable<ActivitiesListResponse['monthly_summaries']>[string]
+  label: string;
+  activities: Activity[];
+  summary?: NonNullable<ActivitiesListResponse["monthly_summaries"]>[string];
 }) {
-  const fallbackSummary = summarizeActivities(activities)
-  const activityCount = summary?.activity_count ?? activities.length
-  const totalRunKm = summary?.total_run_km ?? fallbackSummary.totalRunKm
-  const durationS = summary?.duration_s ?? activities.reduce((sum, activity) => sum + activity.duration_s, 0)
-  const duration = formatHoursMinutes(durationS)
+  const fallbackSummary = summarizeActivities(activities);
+  const activityCount = summary?.activity_count ?? activities.length;
+  const totalRunKm = summary?.total_run_km ?? fallbackSummary.totalRunKm;
+  const durationS = summary?.duration_s ?? activities.reduce((sum, activity) => sum + activity.duration_s, 0);
+  const duration = formatHoursMinutes(durationS);
 
   return (
     <section>
@@ -355,17 +349,17 @@ function MonthSection({
         ))}
       </div>
     </section>
-  )
+  );
 }
 
 function ActivityRow({ activity }: { activity: Activity }) {
   const metrics = [
-    { label: '距离', value: activity.distance_km > 0 ? `${formatNumber(activity.distance_km)} km` : '--' },
-    { label: '配速', value: activity.avg_pace_s_km ? `${activity.pace_fmt || formatPaceSeconds(activity.avg_pace_s_km)}/km` : '--' },
-    { label: 'HR 均', value: activity.avg_hr == null ? '--' : String(activity.avg_hr) },
-    { label: '步频', value: activity.avg_cadence == null ? '--' : String(Math.round(activity.avg_cadence)) },
-    { label: '用时', value: activity.duration_fmt || formatHoursMinutes(activity.duration_s) },
-  ]
+    { label: "距离", value: activity.distance_km > 0 ? `${formatNumber(activity.distance_km)} km` : "--" },
+    { label: "配速", value: activity.avg_pace_s_km ? `${activity.pace_fmt || formatPaceSeconds(activity.avg_pace_s_km)}/km` : "--" },
+    { label: "HR 均", value: activity.avg_hr == null ? "--" : String(activity.avg_hr) },
+    { label: "步频", value: activity.avg_cadence == null ? "--" : String(Math.round(activity.avg_cadence)) },
+    { label: "用时", value: activity.duration_fmt || formatHoursMinutes(activity.duration_s) },
+  ];
 
   return (
     <Link
@@ -376,14 +370,12 @@ function ActivityRow({ activity }: { activity: Activity }) {
         {activityIconLabel(activity)}
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-sm font-medium text-text-primary lg:text-[13px]">
-          {activity.name || sportNameCN(activity.sport_name)}
-        </span>
+        <span className="block truncate text-sm font-medium text-text-primary lg:text-[13px]">{activity.name || sportNameCN(activity.sport_name)}</span>
         <span className="mt-0.5 block truncate font-mono text-[10px] font-normal text-text-muted">
           {formatDateShort(activity.date)} · {sportNameCN(activity.sport_name)}
         </span>
         <span className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[11px] text-text-secondary sm:grid-cols-3 lg:hidden">
-          {metrics.slice(0, 4).map(metric => (
+          {metrics.slice(0, 4).map((metric) => (
             <span key={metric.label} className="min-w-0">
               <span className="mr-1 text-[9px] uppercase tracking-[0.08em] text-text-muted">{metric.label}</span>
               {metric.value}
@@ -391,7 +383,7 @@ function ActivityRow({ activity }: { activity: Activity }) {
           ))}
         </span>
       </span>
-      {metrics.map(metric => (
+      {metrics.map((metric) => (
         <span key={metric.label} className="hidden text-right font-mono text-xs text-text-primary lg:block">
           <span className="mb-0.5 block text-[9px] uppercase tracking-[0.08em] text-text-muted">{metric.label}</span>
           {metric.value}
@@ -399,7 +391,7 @@ function ActivityRow({ activity }: { activity: Activity }) {
       ))}
       <span className="font-mono text-sm text-text-muted">-&gt;</span>
     </Link>
-  )
+  );
 }
 
 function Pager({
@@ -412,17 +404,17 @@ function Pager({
   onPageChange,
   onPageSizeChange,
 }: {
-  page: number
-  totalPages: number
-  total: number
-  start: number
-  shown: number
-  pageSize: number
-  onPageChange: (page: number) => void
-  onPageSizeChange: (pageSize: number) => void
+  page: number;
+  totalPages: number;
+  total: number;
+  start: number;
+  shown: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
 }) {
-  if (totalPages <= 1) return null
-  const pageItems = visiblePageItems(page, totalPages)
+  if (totalPages <= 1) return null;
+  const pageItems = visiblePageItems(page, totalPages);
 
   return (
     <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -436,7 +428,9 @@ function Pager({
             className="h-8 rounded-[7px] border border-border-subtle bg-bg-card px-2.5 pr-7 font-mono text-xs font-medium text-text-primary outline-none transition-colors hover:border-border focus:border-accent-green"
           >
             {ACTIVITY_PAGE_SIZE_OPTIONS.map((option) => (
-              <option key={option} value={option}>{option}</option>
+              <option key={option} value={option}>
+                {option}
+              </option>
             ))}
           </select>
         </label>
@@ -454,12 +448,12 @@ function Pager({
           上一页
         </button>
         {pageItems.map((pageItem) => {
-          if (typeof pageItem !== 'number') {
+          if (typeof pageItem !== "number") {
             return (
               <span key={pageItem} className="grid h-8 min-w-8 place-items-center font-mono text-xs text-text-muted">
                 ...
               </span>
-            )
+            );
           }
 
           return (
@@ -469,13 +463,13 @@ function Pager({
               onClick={() => onPageChange(pageItem)}
               className={`min-w-8 rounded-[7px] border px-2.5 py-1.5 font-mono text-xs font-medium transition-colors ${
                 pageItem === page
-                  ? 'border-text-primary bg-text-primary text-bg-card'
-                  : 'border-border-subtle bg-bg-card text-text-secondary hover:border-border hover:text-text-primary'
+                  ? "border-text-primary bg-text-primary text-bg-card"
+                  : "border-border-subtle bg-bg-card text-text-secondary hover:border-border hover:text-text-primary"
               }`}
             >
               {pageItem}
             </button>
-          )
+          );
         })}
         <button
           type="button"
@@ -487,13 +481,13 @@ function Pager({
         </button>
       </div>
     </div>
-  )
+  );
 }
 
 function formatHoursValue(seconds: number): string {
-  return (Math.round((seconds / 3600) * 10) / 10).toFixed(1)
+  return (Math.round((seconds / 3600) * 10) / 10).toFixed(1);
 }
 
 function formatNumber(value: number): string {
-  return value.toFixed(2).replace(/\.00$/, '')
+  return value.toFixed(2).replace(/\.00$/, "");
 }

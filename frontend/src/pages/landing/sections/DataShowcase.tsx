@@ -1,31 +1,31 @@
-import { useReveal } from '../useReveal'
+import { useReveal } from "../useReveal";
 
 // Weekly mileage bars data
 const WEEK_DATA = [
-  { km: 38, day: 'W6' },
-  { km: 45, day: 'W7' },
-  { km: 42, day: 'W8' },
-  { km: 52, day: 'W9' },
-  { km: 48, day: 'W10' },
-  { km: 58, day: 'W11', peak: true },
-  { km: 54, day: 'W12' },
-]
-const WEEK_MAX = 60
+  { km: 38, day: "W6" },
+  { km: 45, day: "W7" },
+  { km: 42, day: "W8" },
+  { km: 52, day: "W9" },
+  { km: 48, day: "W10" },
+  { km: 58, day: "W11", peak: true },
+  { km: 54, day: "W12" },
+];
+const WEEK_MAX = 60;
 
 // Load rings data
 const RINGS_DATA = [
-  { label: '强度', value: 72, sub: '阈值跑 ·1次', color: '#00a85a' },
-  { label: '有氧', value: 88, sub: '轻松跑 ·4次', color: '#0097a7' },
-  { label: '恢复', value: 64, sub: '休息 ·2天', color: '#e68a00' },
-]
-const RING_CIRCUMFERENCE = 2 * Math.PI * 30
+  { label: "强度", value: 72, sub: "阈值跑 ·1次", color: "#00a85a" },
+  { label: "有氧", value: 88, sub: "轻松跑 ·4次", color: "#0097a7" },
+  { label: "恢复", value: 64, sub: "休息 ·2天", color: "#e68a00" },
+];
+const RING_CIRCUMFERENCE = 2 * Math.PI * 30;
 
 export default function DataShowcase() {
-  const secHeadRef = useReveal<HTMLDivElement>()
-  const panel1Ref = useReveal<HTMLDivElement>()
-  const panel2Ref = useReveal<HTMLDivElement>()
-  const panel3Ref = useReveal<HTMLDivElement>()
-  const panel4Ref = useReveal<HTMLDivElement>()
+  const secHeadRef = useReveal<HTMLDivElement>();
+  const panel1Ref = useReveal<HTMLDivElement>();
+  const panel2Ref = useReveal<HTMLDivElement>();
+  const panel3Ref = useReveal<HTMLDivElement>();
+  const panel4Ref = useReveal<HTMLDivElement>();
 
   return (
     <section className="showcase" id="data">
@@ -40,18 +40,20 @@ export default function DataShowcase() {
           {/* Weekly mileage bars */}
           <div className="panel reveal" ref={panel1Ref}>
             <div className="panel-head">
-              <div><div className="pt">周里程趋势</div><div className="ph" style={{ marginTop: '3px' }}>最近 7 周 · 公里</div></div>
+              <div>
+                <div className="pt">周里程趋势</div>
+                <div className="ph" style={{ marginTop: "3px" }}>
+                  最近 7 周 · 公里
+                </div>
+              </div>
               <span className="pill">↑ 周环比 +6%</span>
             </div>
             <div className="week-bars">
               {WEEK_DATA.map((w, i) => (
-                <div key={i} className={`wb${w.peak ? ' peak' : ''}`}>
+                <div key={i} className={`wb${w.peak ? " peak" : ""}`}>
                   <div className="km">{w.km}</div>
                   <div className="col">
-                    <div
-                      className="fill"
-                      style={{ transform: `scaleY(${(w.km / WEEK_MAX).toFixed(3)})` }}
-                    ></div>
+                    <div className="fill" style={{ transform: `scaleY(${(w.km / WEEK_MAX).toFixed(3)})` }}></div>
                   </div>
                   <div className="d">{w.day}</div>
                 </div>
@@ -62,7 +64,12 @@ export default function DataShowcase() {
           {/* Pace progression */}
           <div className="panel reveal" ref={panel2Ref}>
             <div className="panel-head">
-              <div><div className="pt">平均配速进步</div><div className="ph" style={{ marginTop: '3px' }}>10K 配速 · 越低越好</div></div>
+              <div>
+                <div className="pt">平均配速进步</div>
+                <div className="ph" style={{ marginTop: "3px" }}>
+                  10K 配速 · 越低越好
+                </div>
+              </div>
               <span className="pill">−14"/km</span>
             </div>
             <div className="pace-wrap">
@@ -83,19 +90,29 @@ export default function DataShowcase() {
                 <circle className="pace-pt" cx="400" cy="108" r="3.4"></circle>
                 <circle className="pace-pt" cx="480" cy="124" r="3.4"></circle>
               </svg>
-              <div className="pace-labels"><span>3月</span><span>4月</span><span>5月</span><span>6月</span></div>
+              <div className="pace-labels">
+                <span>3月</span>
+                <span>4月</span>
+                <span>5月</span>
+                <span>6月</span>
+              </div>
             </div>
           </div>
 
           {/* Load rings */}
           <div className="panel reveal" ref={panel3Ref}>
             <div className="panel-head">
-              <div><div className="pt">本周负荷平衡</div><div className="ph" style={{ marginTop: '3px' }}>强度 / 有氧 / 恢复</div></div>
+              <div>
+                <div className="pt">本周负荷平衡</div>
+                <div className="ph" style={{ marginTop: "3px" }}>
+                  强度 / 有氧 / 恢复
+                </div>
+              </div>
               <span className="pill">平衡良好</span>
             </div>
             <div className="rings">
               {RINGS_DATA.map((r, i) => {
-                const off = RING_CIRCUMFERENCE * (1 - r.value / 100)
+                const off = RING_CIRCUMFERENCE * (1 - r.value / 100);
                 return (
                   <div key={i} className="ring">
                     <svg viewBox="0 0 84 84">
@@ -112,12 +129,14 @@ export default function DataShowcase() {
                         strokeDasharray={String(RING_CIRCUMFERENCE)}
                         strokeDashoffset={String(off)}
                       />
-                      <text x="42" y="46" textAnchor="middle" className="rv" transform="rotate(90 42 42)">{r.value}%</text>
+                      <text x="42" y="46" textAnchor="middle" className="rv" transform="rotate(90 42 42)">
+                        {r.value}%
+                      </text>
                     </svg>
                     <div className="rl">{r.label}</div>
                     <div className="rs">{r.sub}</div>
                   </div>
-                )
+                );
               })}
             </div>
           </div>
@@ -125,7 +144,12 @@ export default function DataShowcase() {
           {/* Split table */}
           <div className="panel reveal" ref={panel4Ref}>
             <div className="panel-head">
-              <div><div className="pt">长距离分段</div><div className="ph" style={{ marginTop: '3px' }}>周日 · 21.1 KM</div></div>
+              <div>
+                <div className="pt">长距离分段</div>
+                <div className="ph" style={{ marginTop: "3px" }}>
+                  周日 · 21.1 KM
+                </div>
+              </div>
               <span className="pill">负分段达成</span>
             </div>
             <table className="splits">
@@ -138,15 +162,43 @@ export default function DataShowcase() {
                 </tr>
               </thead>
               <tbody>
-                <tr><td className="km">1–5</td><td className="barcell"><div className="minib" style={{ width: '70%' }}></div></td><td className="r">4'52"</td><td className="r">148</td></tr>
-                <tr><td className="km">6–10</td><td className="barcell"><div className="minib" style={{ width: '78%' }}></div></td><td className="r">4'45"</td><td className="r">154</td></tr>
-                <tr><td className="km">11–15</td><td className="barcell"><div className="minib" style={{ width: '86%' }}></div></td><td className="r">4'38"</td><td className="r">161</td></tr>
-                <tr><td className="km">16–21</td><td className="barcell"><div className="minib" style={{ width: '96%' }}></div></td><td className="r">4'29"</td><td className="r">168</td></tr>
+                <tr>
+                  <td className="km">1–5</td>
+                  <td className="barcell">
+                    <div className="minib" style={{ width: "70%" }}></div>
+                  </td>
+                  <td className="r">4'52"</td>
+                  <td className="r">148</td>
+                </tr>
+                <tr>
+                  <td className="km">6–10</td>
+                  <td className="barcell">
+                    <div className="minib" style={{ width: "78%" }}></div>
+                  </td>
+                  <td className="r">4'45"</td>
+                  <td className="r">154</td>
+                </tr>
+                <tr>
+                  <td className="km">11–15</td>
+                  <td className="barcell">
+                    <div className="minib" style={{ width: "86%" }}></div>
+                  </td>
+                  <td className="r">4'38"</td>
+                  <td className="r">161</td>
+                </tr>
+                <tr>
+                  <td className="km">16–21</td>
+                  <td className="barcell">
+                    <div className="minib" style={{ width: "96%" }}></div>
+                  </td>
+                  <td className="r">4'29"</td>
+                  <td className="r">168</td>
+                </tr>
               </tbody>
             </table>
           </div>
         </div>
       </div>
     </section>
-  )
+  );
 }

@@ -5,12 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  StitchError,
-  stitch,
-  type Project,
-  type Screen,
-} from "@google/stitch-sdk";
+import { StitchError, stitch, type Project, type Screen } from "@google/stitch-sdk";
 
 const rootDir = dirname(fileURLToPath(import.meta.url));
 const configPath = join(rootDir, "stitch.config.json");
@@ -172,11 +167,7 @@ function projectIdFor(config: StitchConfig, flags: Map<string, string | true>): 
   );
 }
 
-function requireCandidateProject(
-  config: StitchConfig,
-  flags: Map<string, string | true>,
-  command: string,
-): string {
+function requireCandidateProject(config: StitchConfig, flags: Map<string, string | true>, command: string): string {
   const projectId = projectIdFor(config, flags);
   if (projectId !== config.projectId || projectId === config.confirmedProjectId) {
     throw new Error(`${command} may only write to the configured candidate project ${config.projectId}.`);
@@ -198,16 +189,9 @@ function slugFromBrief(briefPath: string): string {
   return safeSlug(basename(briefPath, extname(briefPath)));
 }
 
-async function composePrompt(
-  config: StitchConfig,
-  briefPath: string,
-  mode: "generate" | "edit" | "variants",
-): Promise<string> {
+async function composePrompt(config: StitchConfig, briefPath: string, mode: "generate" | "edit" | "variants"): Promise<string> {
   const foundationPath = resolveLocalPath(config.foundationFile);
-  const [foundation, brief] = await Promise.all([
-    readFile(foundationPath, "utf8"),
-    readFile(briefPath, "utf8"),
-  ]);
+  const [foundation, brief] = await Promise.all([readFile(foundationPath, "utf8"), readFile(briefPath, "utf8")]);
 
   const contract = {
     generate: "Create exactly one complete mobile screen that satisfies this brief.",
@@ -218,20 +202,13 @@ async function composePrompt(
   return `${foundation.trim()}\n\n# Current Screen Brief\n\n${brief.trim()}\n\n# Task\n\n${contract}`;
 }
 
-async function updateManifest(
-  config: StitchConfig,
-  record: Omit<ScreenRecord, "createdAt" | "updatedAt">,
-): Promise<void> {
+async function updateManifest(config: StitchConfig, record: Omit<ScreenRecord, "createdAt" | "updatedAt">): Promise<void> {
   const manifestPath = resolveLocalPath(config.manifestFile);
   const manifest = await readJson<ArtifactManifest>(manifestPath);
   const now = new Date().toISOString();
-  const index = manifest.screens.findIndex(
-    (item) => item.projectId === record.projectId && item.screenId === record.screenId,
-  );
+  const index = manifest.screens.findIndex((item) => item.projectId === record.projectId && item.screenId === record.screenId);
   const existing = index === -1 ? undefined : manifest.screens[index];
-  const definedRecord = Object.fromEntries(
-    Object.entries(record).filter(([, value]) => value !== undefined),
-  ) as typeof record;
+  const definedRecord = Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined)) as typeof record;
   const next: ScreenRecord = {
     ...existing,
     ...definedRecord,
@@ -316,10 +293,13 @@ async function exportScreen(
   const htmlPath = join(artifactsDir, `${fileBase}.html`);
   await writeFile(htmlPath, await htmlResponse.text(), "utf8");
 
-  await updateManifest(config, candidateRecord(screen, {
-    ...options,
-    html: relativeToRoot(htmlPath),
-  }));
+  await updateManifest(
+    config,
+    candidateRecord(screen, {
+      ...options,
+      html: relativeToRoot(htmlPath),
+    }),
+  );
 
   console.log(`HTML: ${relativeToRoot(htmlPath)}`);
 }
@@ -366,9 +346,7 @@ async function main(): Promise<void> {
 
   if (args.command === "doctor") {
     const hasApiKey = Boolean(process.env.STITCH_API_KEY);
-    const hasOauth = Boolean(
-      process.env.STITCH_ACCESS_TOKEN && process.env.GOOGLE_CLOUD_PROJECT,
-    );
+    const hasOauth = Boolean(process.env.STITCH_ACCESS_TOKEN && process.env.GOOGLE_CLOUD_PROJECT);
     console.log(`Node: ${process.versions.node}`);
     console.log(`Device: ${config.deviceType}`);
     console.log(`Project: ${config.projectId ?? "not configured"}`);
@@ -406,16 +384,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  const candidateWriteCommands = new Set([
-    "create-design-system",
-    "generate",
-    "edit",
-    "variants",
-    "publish",
-  ]);
-  const projectId = candidateWriteCommands.has(args.command)
-    ? requireCandidateProject(config, args.flags, args.command)
-    : projectIdFor(config, args.flags);
+  const candidateWriteCommands = new Set(["create-design-system", "generate", "edit", "variants", "publish"]);
+  const projectId = candidateWriteCommands.has(args.command) ? requireCandidateProject(config, args.flags, args.command) : projectIdFor(config, args.flags);
   const project = stitch.project(projectId);
 
   if (args.command === "screens") {
@@ -439,18 +409,14 @@ async function main(): Promise<void> {
       return;
     }
     for (const system of systems) {
-      const title = String(
-        system.data?.designSystem?.displayName ?? system.data?.displayName ?? "Untitled",
-      );
+      const title = String(system.data?.designSystem?.displayName ?? system.data?.displayName ?? "Untitled");
       console.log(`${system.id}\t${title}`);
     }
     return;
   }
 
   if (args.command === "create-design-system") {
-    const inputPath = resolveLocalPath(
-      args.positional[0] ?? config.designSystemFile,
-    );
+    const inputPath = resolveLocalPath(args.positional[0] ?? config.designSystemFile);
     const designSystem = await readJson<DesignSystemSpec>(inputPath);
     const foundation = await readFile(resolveLocalPath(config.foundationFile), "utf8");
     designSystem.theme = { ...designSystem.theme, designMd: foundation };
@@ -467,9 +433,7 @@ async function main(): Promise<void> {
       getFlag(args.flags, "design-system") ?? config.designSystemId ?? undefined,
       "No design system is configured. Pass --design-system <id>.",
     );
-    const inputPath = resolveLocalPath(
-      args.positional[0] ?? config.designSystemFile,
-    );
+    const inputPath = resolveLocalPath(args.positional[0] ?? config.designSystemFile);
     const designSystem = await readJson<DesignSystemSpec>(inputPath);
     const foundation = await readFile(resolveLocalPath(config.foundationFile), "utf8");
     designSystem.theme = { ...designSystem.theme, designMd: foundation };
@@ -478,24 +442,17 @@ async function main(): Promise<void> {
     console.log(`Candidate design system updated: ${designSystemId}`);
 
     if (config.confirmedProjectId && config.confirmedDesignSystemId) {
-      await stitch
-        .project(config.confirmedProjectId)
-        .designSystem(config.confirmedDesignSystemId)
-        .update(designSystem);
+      await stitch.project(config.confirmedProjectId).designSystem(config.confirmedDesignSystemId).update(designSystem);
       console.log(`Confirmed design system updated: ${config.confirmedDesignSystemId}`);
     }
     return;
   }
 
   if (args.command === "publish") {
-    const inputPath = resolveLocalPath(
-      requireValue(args.positional[0], "publish requires <screen.html>."),
-    );
+    const inputPath = resolveLocalPath(requireValue(args.positional[0], "publish requires <screen.html>."));
     const title = getFlag(args.flags, "title") ?? basename(inputPath, extname(inputPath));
     const slug = getFlag(args.flags, "slug") ?? safeSlug(title);
-    const briefPath = resolveLocalPath(
-      requireValue(getFlag(args.flags, "brief"), "publish requires --brief <brief.md>."),
-    );
+    const briefPath = resolveLocalPath(requireValue(getFlag(args.flags, "brief"), "publish requires --brief <brief.md>."));
     const published = await project.upload(inputPath, {
       title,
       createScreenInstances: true,
@@ -505,21 +462,22 @@ async function main(): Promise<void> {
     }
 
     for (const screen of published) {
-      await updateManifest(config, candidateRecord(screen, {
-        slug,
-        operation: "publish",
-        briefPath,
-        html: relativeToRoot(inputPath),
-      }));
+      await updateManifest(
+        config,
+        candidateRecord(screen, {
+          slug,
+          operation: "publish",
+          briefPath,
+          html: relativeToRoot(inputPath),
+        }),
+      );
       console.log(`Screen published: ${screen.id}`);
     }
     return;
   }
 
   if (args.command === "generate") {
-    const briefPath = resolveLocalPath(
-      requireValue(args.positional[0], "generate requires <brief.md>."),
-    );
+    const briefPath = resolveLocalPath(requireValue(args.positional[0], "generate requires <brief.md>."));
     const slug = getFlag(args.flags, "slug") ?? slugFromBrief(briefPath);
     const prompt = await composePrompt(config, briefPath, "generate");
     console.log(`Generating ${slug} in project ${project.id}...`);
@@ -535,9 +493,7 @@ async function main(): Promise<void> {
 
   if (args.command === "edit") {
     const screenId = requireValue(args.positional[0], "edit requires <screen-id>.");
-    const briefPath = resolveLocalPath(
-      requireValue(args.positional[1], "edit requires <brief.md> after <screen-id>."),
-    );
+    const briefPath = resolveLocalPath(requireValue(args.positional[1], "edit requires <brief.md> after <screen-id>."));
     const slug = getFlag(args.flags, "slug") ?? slugFromBrief(briefPath);
     const prompt = await composePrompt(config, briefPath, "edit");
     const source = await project.getScreen(screenId);
@@ -555,9 +511,7 @@ async function main(): Promise<void> {
 
   if (args.command === "variants") {
     const screenId = requireValue(args.positional[0], "variants requires <screen-id>.");
-    const briefPath = resolveLocalPath(
-      requireValue(args.positional[1], "variants requires <brief.md> after <screen-id>."),
-    );
+    const briefPath = resolveLocalPath(requireValue(args.positional[1], "variants requires <brief.md> after <screen-id>."));
     const baseSlug = getFlag(args.flags, "slug") ?? slugFromBrief(briefPath);
     const count = Number.parseInt(getFlag(args.flags, "count") ?? "3", 10);
     if (!Number.isInteger(count) || count < 1 || count > 5) {
@@ -569,18 +523,12 @@ async function main(): Promise<void> {
       throw new Error("--range must be REFINE, EXPLORE, or REIMAGINE.");
     }
 
-    const allowedAspects = [
-      "LAYOUT",
-      "COLOR_SCHEME",
-      "IMAGES",
-      "TEXT_FONT",
-      "TEXT_CONTENT",
-    ] as const;
+    const allowedAspects = ["LAYOUT", "COLOR_SCHEME", "IMAGES", "TEXT_FONT", "TEXT_CONTENT"] as const;
     const aspects = (getFlag(args.flags, "aspects") ?? "LAYOUT,COLOR_SCHEME")
       .split(",")
       .map((value) => value.trim().toUpperCase())
       .filter((value) => value.length > 0);
-    if (aspects.some((value) => !allowedAspects.includes(value as typeof allowedAspects[number]))) {
+    if (aspects.some((value) => !allowedAspects.includes(value as (typeof allowedAspects)[number]))) {
       throw new Error(`--aspects must use: ${allowedAspects.join(", ")}.`);
     }
 

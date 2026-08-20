@@ -1,45 +1,45 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { listTeams, listMyTeams, joinTeam, type Team, type MyTeam } from '../../api'
-import ViewHead from '../../components/ViewHead'
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { listTeams, listMyTeams, joinTeam, type Team, type MyTeam } from "../../api";
+import ViewHead from "../../components/ViewHead";
 
 export default function TeamsListPage() {
-  const navigate = useNavigate()
-  const [teams, setTeams] = useState<Team[]>([])
-  const [myTeams, setMyTeams] = useState<MyTeam[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [joining, setJoining] = useState<string | null>(null)
+  const navigate = useNavigate();
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [myTeams, setMyTeams] = useState<MyTeam[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [joining, setJoining] = useState<string | null>(null);
 
   const loadAll = () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
     Promise.all([listTeams(), listMyTeams()])
       .then(([all, mine]) => {
-        setTeams(all.teams)
-        setMyTeams(mine.teams)
+        setTeams(all.teams);
+        setMyTeams(mine.teams);
       })
-      .catch((e) => setError(e?.message || '加载团队失败'))
-      .finally(() => setLoading(false))
-  }
+      .catch((e) => setError(e?.message || "加载团队失败"))
+      .finally(() => setLoading(false));
+  };
 
-  useEffect(loadAll, [])
+  useEffect(loadAll, []);
 
-  const myTeamIds = new Set(myTeams.map((t) => t.id))
+  const myTeamIds = new Set(myTeams.map((t) => t.id));
 
   const handleJoin = async (id: string) => {
-    setJoining(id)
+    setJoining(id);
     try {
-      const res = await joinTeam(id)
-      if (!res.ok) throw new Error(`加入失败 (${res.status})`)
-      loadAll()
+      const res = await joinTeam(id);
+      if (!res.ok) throw new Error(`加入失败 (${res.status})`);
+      loadAll();
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : '加入失败'
-      setError(msg)
+      const msg = e instanceof Error ? e.message : "加入失败";
+      setError(msg);
     } finally {
-      setJoining(null)
+      setJoining(null);
     }
-  }
+  };
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8">
@@ -49,7 +49,7 @@ export default function TeamsListPage() {
         lede="你参与的所有训练团队 · 邀请 / 创建 / 退出"
         actions={
           <button
-            onClick={() => navigate('/teams/new')}
+            onClick={() => navigate("/teams/new")}
             className="px-4 py-2 text-sm font-medium rounded-lg border border-accent-red/40 text-accent-red hover:bg-accent-red/10 transition-all"
           >
             + 创建团队
@@ -57,11 +57,7 @@ export default function TeamsListPage() {
         }
       />
 
-      {error && (
-        <div className="mb-4 px-4 py-3 rounded-lg border border-accent-red/30 bg-accent-red/5 text-sm text-accent-red font-mono">
-          {error}
-        </div>
-      )}
+      {error && <div className="mb-4 px-4 py-3 rounded-lg border border-accent-red/30 bg-accent-red/5 text-sm text-accent-red font-mono">{error}</div>}
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
@@ -96,17 +92,13 @@ export default function TeamsListPage() {
             ) : (
               <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
                 {teams.map((t) => {
-                  const isMember = myTeamIds.has(t.id)
+                  const isMember = myTeamIds.has(t.id);
                   return (
                     <div key={t.id} className="p-4 rounded-xl border border-border-subtle bg-bg-card hover:bg-bg-card-hover transition-all">
                       <button onClick={() => navigate(`/teams/${t.id}`)} className="block w-full text-left">
                         <p className="text-sm font-semibold text-text-primary">{t.name}</p>
-                        {t.description && (
-                          <p className="text-xs text-text-secondary mt-1 line-clamp-2">{t.description}</p>
-                        )}
-                        <p className="text-xs font-mono text-text-muted mt-2">
-                          {t.member_count ?? 0} 名成员
-                        </p>
+                        {t.description && <p className="text-xs text-text-secondary mt-1 line-clamp-2">{t.description}</p>}
+                        <p className="text-xs font-mono text-text-muted mt-2">{t.member_count ?? 0} 名成员</p>
                       </button>
                       <div className="mt-3">
                         {isMember ? (
@@ -117,12 +109,12 @@ export default function TeamsListPage() {
                             disabled={joining === t.id}
                             className="text-xs font-medium px-3 py-1.5 rounded border border-accent-red/40 text-accent-red hover:bg-accent-red/10 disabled:opacity-50"
                           >
-                            {joining === t.id ? '加入中...' : '加入'}
+                            {joining === t.id ? "加入中..." : "加入"}
                           </button>
                         )}
                       </div>
                     </div>
-                  )
+                  );
                 })}
               </div>
             )}
@@ -130,5 +122,5 @@ export default function TeamsListPage() {
         </div>
       )}
     </div>
-  )
+  );
 }
