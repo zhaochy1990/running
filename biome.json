@@ -10,6 +10,8 @@
       "frontend/server/vitest.config.ts",
       "src/coach_agent/src/**/*.{js,ts,json}",
       "src/coach_agent/scripts/**/*.{js,mjs}",
+      "src/coach_agent_api/src/**/*.{js,ts,json}",
+      "src/coach_agent_api/scripts/**/*.{js,mjs}",
       "src/coach_contract/src/**/*.{js,ts,json}",
       "src/coach_contract/scripts/**/*.{js,mjs}",
       "src/stitch_design/cli.ts",

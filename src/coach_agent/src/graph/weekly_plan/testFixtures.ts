@@ -1,5 +1,5 @@
 import type { WeeklyPlan } from "@stride/contract";
-import type { WeeklyPlanContext } from "../../persistence/weeklyPlanContextProvider.js";
+import type { WeeklyPlanContext } from "../../data/weeklyPlanContextProvider.js";
 
 export function createWeeklyPlanSimulationContext(): WeeklyPlanContext {
   return {
@@ -118,6 +118,18 @@ export function createWeeklyPlanForSimulation(): WeeklyPlan {
         low: 140,
         high: 150,
       }),
+      {
+        schema: "plan-session/v1",
+        date: "2026-08-18",
+        session_index: 0,
+        summary: "rest",
+        notes_md: null,
+        total_distance_m: null,
+        total_duration_s: null,
+        estimated_dose: null,
+        kind: "rest",
+        spec: null,
+      },
     ],
     nutrition: nutrition(),
     notes_md: null,

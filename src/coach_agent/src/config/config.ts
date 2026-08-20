@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
-import { deepMerge } from "./deepMerge.js";
-import type { CoachAgentConfig, PartialCoachAgentConfig, ModelConfig, DataStoreConfig } from "./types.js";
 import { getLogger } from "../utils/logger.js";
+import { deepMerge } from "./deepMerge.js";
+import type { CoachAgentConfig, ModelConfig, PartialCoachAgentConfig } from "./types.js";
 
 export type * from "./types.js";
 
@@ -69,18 +69,6 @@ export function getAgentConfig(config: CoachAgentConfig, agentName: string): Mod
   return model;
 }
 
-/**
- * Resolve the local `stride` MySQL connection settings from the `data_store`
- * block of the coach config. Parallels {@link getAgentConfig}: a pure read of
- * the already-loaded config that throws if the section is missing.
- */
-export function readStrideMySqlConfig(config: CoachAgentConfig): DataStoreConfig {
-  if (!config.data_store) {
-    throw new Error("`data_store` is not defined in the coach config");
-  }
-  return config.data_store;
-}
-
 // Resolve the path to the config file based on the provided options and environment variables.
 function resolveConfigFiles(options: LoadConfigOptions = {}): ResolvedConfigFiles {
   const repoRoot = findRepoRoot(options.cwd ?? process.cwd());
@@ -117,7 +105,7 @@ function readConfigFile(configPath: string): PartialCoachAgentConfig {
 }
 
 function findRepoRoot(startDir: string = process.cwd()): string {
-  let currentDir = resolve(startDir);
+  const currentDir = resolve(startDir);
   const moduleDir = dirname(fileURLToPath(import.meta.url));
 
   for (const candidate of [currentDir, moduleDir]) {

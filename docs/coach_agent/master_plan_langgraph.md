@@ -728,7 +728,7 @@ src/coach_agent/src/graph/master_plan/
 
 `context/` 只定义 `MasterPlanContextProvider` port、snapshot schema 和纯领域协议，不包含 MySQL adapter、SQL 或 repository implementation。
 
-MySQL adapter 位于 `src/coach_agent/src/persistence/masterPlanContextProvider.ts`，实现 Kernel port，并复用或扩展 `StrideDataStore`/persistence 的语义方法。Graph 与 tool adapter 都不拥有 SQL。
+MySQL adapter 位于 `src/coach_agent_api/src/data/mysqlDataProvider.ts`，实现核心 package 的只读 `DataProvider` interface；Context Provider 位于 `src/coach_agent/src/data/masterPlanContextProvider.ts`，只负责把领域数据聚合为 Kernel snapshot。Graph 与 tool adapter 都不拥有 SQL。
 
 所有生成、评估、策略、review 和 revision prompt/doctrine 归 Kernel 的 `prompts/` 与 `doctrine/` 单源维护。Master Plan Conversational Subagent 只保留 intake、clarification 和 outcome explanation 规则；现有 Deep Agent `generate-master-plan` skill 的训练学内容迁移完成后删除，不能与 Kernel 维护两套生成 doctrine。
 

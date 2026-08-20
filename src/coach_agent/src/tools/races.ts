@@ -1,6 +1,6 @@
 /**
  * Race / history tools —— 供教练回看运动员的比赛与长距离表现，判断历史比赛
- * 是否“跑崩”，从 `stride` MySQL DB（`activities` / `personal_bests`）读取。
+ * 是否“跑崩”，通过 DataProvider 读取活动与 PB。
  *
  * 与 activities / trainingLoad 工具同构：领域类（纯、可单测）+ `defineCoachTools`
  * 适配器。`userId` 从 `runtime.context` 读取，绝不作为工具入参。
@@ -9,7 +9,7 @@
 import type { StructuredTool } from "@langchain/core/tools";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
-import type { PersonalBest, RaceEffort, StrideDataStore } from "../persistence/index.js";
+import type { DataProvider, PersonalBest, RaceEffort } from "../data/dataProvider.js";
 import { defineCoachTools } from "./common.js";
 
 const getRaceHistorySchema = z.object({
@@ -21,8 +21,8 @@ type GetRaceHistoryInput = z.infer<typeof getRaceHistorySchema>;
 
 const getPersonalBestsSchema = z.object({});
 
-class MySQLRaceTool {
-  constructor(private readonly store: StrideDataStore) {}
+class RaceToolImpl {
+  constructor(private readonly store: DataProvider) {}
 
   async getRaceHistory(input: GetRaceHistoryInput, runtime: CoachToolRuntime): Promise<RaceEffort[]> {
     const userId = runtime.context?.userId;
@@ -61,8 +61,8 @@ class MySQLRaceTool {
  * tools: [...createRaceTools(store)]
  * ```
  */
-export function createRaceTools(store: StrideDataStore): StructuredTool[] {
-  const impl = new MySQLRaceTool(store);
+export function createRaceTools(store: DataProvider): StructuredTool[] {
+  const impl = new RaceToolImpl(store);
   return defineCoachTools([
     {
       name: "get_race_history",

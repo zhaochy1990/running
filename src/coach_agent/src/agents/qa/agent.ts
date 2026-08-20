@@ -1,17 +1,18 @@
-import { buildResponsesModel } from "../common.js";
+import type { ModelConfig } from "../../config/config.js";
+import type { DataProvider } from "../../data/dataProvider.js";
 import { createActivitiesTools } from "../../tools/activities.js";
-import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
 import { createRaceTools } from "../../tools/races.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
-import { createLoggingMiddleware } from "../middleware.js";
-import type { StrideDataStore } from "../../persistence/index.js";
-import type { ModelConfig } from "../../config/config.js";
+import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
 import { getLogger } from "../../utils/logger.js";
+import { buildResponsesModel } from "../common.js";
+import { createLoggingMiddleware } from "../middleware.js";
+import { createTurnScopeMiddleware } from "../turnScope.js";
 
 const logger = getLogger("coachAgent:qa");
 
 // TODO: 关于跑步知识需要外接知识库
-export function getQaSubagent(store: StrideDataStore, config: ModelConfig) {
+export function getQaSubagent(store: DataProvider, config: ModelConfig) {
   const activitiesTools = createActivitiesTools(store);
   const trainingLoadTools = createTrainingLoadTools(store);
   const raceTools = createRaceTools(store);
@@ -23,8 +24,8 @@ export function getQaSubagent(store: StrideDataStore, config: ModelConfig) {
 3. 跑步知识（跑步技巧、训练方法、运动科学知识）
 
 工具与数据：
-- get_activities_by_date_range：拿某段时间的每次跑步明细，其中 strideDose 是这次训练的 STRIDE 负荷值（TSS-scaled，1h 阈值≈100）。
-- get_daily_training_load：拿每天的负荷（长期负荷 chronicLoad、短期负荷 acuteLoad、负荷比 loadRatio、form=chronic−acute、就绪度 readinessGate）。
+- get_activities_by_date_range：返回 activities 与 provenance；活动明细包含原始测量和 STRIDE 自算 session class，不包含厂商训练负荷或训练类型。
+- get_daily_training_load：返回 available、stride_training_load 与 provenance；包含每天的 STRIDE 长期负荷 chronicLoad、短期负荷 acuteLoad、负荷比 loadRatio、form=chronic−acute。available=false 时必须说明 missing_reason。
 - get_personal_bests：拿标准距离的个人最好成绩。
 - get_running_calibration：拿 STRIDE 计算的乳酸阈值心率、阈值速度、心率区间与配速区间。
 
@@ -41,7 +42,7 @@ export function getQaSubagent(store: StrideDataStore, config: ModelConfig) {
     systemPrompt: QA_SUBAGENT_PROMPT,
     tools: [...activitiesTools, ...trainingLoadTools, ...raceTools, ...runningCalibrationTools],
     model: buildResponsesModel(config),
-    middleware: [createLoggingMiddleware("agent:qa")],
+    middleware: [createTurnScopeMiddleware(), createLoggingMiddleware("agent:qa")],
     // Skill loaded via SkillsMiddleware from the deep agent's FilesystemBackend
     // (rooted at `dist/agents/skills/` in coachAgent.ts). The agent reads the
     // full SKILL.md on demand via read_file. Path is relative to that root.

@@ -1,7 +1,7 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
 import { WeeklyPlanGeneratorContext } from "@stride/contract";
 import { type CoachAgentConfig, getAgentConfig } from "../../config/config.js";
-import type { WeeklyPlanContextProvider } from "../../persistence/weeklyPlanContextProvider.js";
+import type { WeeklyPlanContextProvider } from "../../data/weeklyPlanContextProvider.js";
 import { GraphInput, GraphOutput, GraphState, WeeklyPlanGeneratorNodes } from "./nodes.js";
 import { createWeeklyPlanLlm } from "./weeklyPlanNode.js";
 

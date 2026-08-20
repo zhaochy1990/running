@@ -1,48 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { StrideDataStore } from "../persistence/index.js";
+import type { DataProvider } from "../data/dataProvider.js";
 import { createRunningCalibrationTools } from "./runningCalibration.js";
 
 const userId = "athlete-1";
 
 test("get_running_calibration returns the latest threshold and zones for the runtime user", async () => {
-  const calls: Array<{ sql: string; values: unknown[] }> = [];
-  const pool = {
-    async query(sql: string, values: unknown[]) {
-      calls.push({ sql, values });
-      if (sql.includes("running_calibration_snapshot")) {
-        return [
-          [
-            {
-              id: 42,
-              as_of_date: "2026-08-08",
-              threshold_hr: 168,
-              threshold_speed_mps: 3.9,
-              rhr_baseline: 48,
-              threshold_hr_confidence: "high",
-              threshold_speed_confidence: "medium",
-            },
-          ],
-        ];
-      }
-      if (sql.includes("running_calibration_pace_zone")) {
-        return [
-          [
-            {
-              name: "threshold",
-              min_pace_s_per_km: 270,
-              max_pace_s_per_km: 250,
-              min_speed_mps: 3.7,
-              max_speed_mps: 4,
-              confidence: "medium",
-            },
-          ],
-        ];
-      }
-      return [[{ name: "threshold", min_bpm: 160, max_bpm: 170, confidence: "high" }]];
+  const provider = {
+    async getLatestRunningCalibration(requestUserId: string, asOfDate: string) {
+      assert.equal(requestUserId, userId);
+      assert.equal(asOfDate, "2026-08-14");
+      return {
+        asOfDate: "2026-08-08",
+        thresholdHr: 168,
+        thresholdSpeedMps: 3.9,
+        rhrBaseline: 48,
+        thresholdHrConfidence: "high",
+        thresholdSpeedConfidence: "medium",
+        paceZones: [{ name: "threshold", minPaceSPerKm: 270, maxPaceSPerKm: 250 }],
+        heartRateZones: [{ name: "threshold", minBpm: 160, maxBpm: 170 }],
+      };
     },
-  };
-  const [tool] = createRunningCalibrationTools(new StrideDataStore(pool as never));
+  } as DataProvider;
+  const [tool] = createRunningCalibrationTools(provider);
 
   assert.ok(tool);
   assert.equal(tool.name, "get_running_calibration");
@@ -62,28 +42,15 @@ test("get_running_calibration returns the latest threshold and zones for the run
     ],
     heartRateZones: [{ name: "threshold", minBpm: 160, maxBpm: 170 }],
   });
-  assert.deepEqual(
-    calls.map((call) => call.values),
-    [
-      [userId, "2026-08-14"],
-      [userId, 42],
-      [userId, 42],
-    ],
-  );
-  assert.match(calls[0]?.sql ?? "", /as_of_date <= \?/);
-  const zoneQueries = calls.slice(1).map((call) => call.sql);
-  for (const field of ["confidence", "min_speed_mps", "max_speed_mps"]) {
-    assert.ok(zoneQueries.every((sql) => !sql.includes(field)));
-  }
 });
 
 test("get_running_calibration returns null without a computed calibration", async () => {
-  const pool = {
-    async query() {
-      return [[]];
+  const provider = {
+    async getLatestRunningCalibration() {
+      return null;
     },
-  };
-  const [tool] = createRunningCalibrationTools(new StrideDataStore(pool as never));
+  } as unknown as DataProvider;
+  const [tool] = createRunningCalibrationTools(provider);
 
   assert.ok(tool);
   assert.equal(await tool.invoke({}, { context: { userId, asof: "2026-08-14" } }), null);

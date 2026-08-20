@@ -1,13 +1,3 @@
-import type { MySqlConfig } from "../persistence/mysql.js";
-
-/**
- * Connection settings for the local `stride` MySQL DB (watch-sync data read by
- * StrideDataStore). Same shape as the persistence-layer `MySqlConfig` — reused
- * here as the single source of truth so the two can't drift. Loaded from the
- * `data_store` block of the coach config via `readStrideMySqlConfig`.
- */
-export type DataStoreConfig = MySqlConfig;
-
 export type ModelProvider = "openai-compatible" | "azure-openai";
 export type ModelAuth = "api-key" | "managed-identity";
 export type ModelApiKind = "chat-completions" | "responses";
@@ -52,7 +42,6 @@ export interface CoachAgentConfig {
   models: ModelConfig[];
   agents: RoleConfig[];
   observability: ObservabilityConfig;
-  data_store?: DataStoreConfig;
 }
 
 export type PartialCoachAgentConfig = DeepPartial<CoachAgentConfig>;
