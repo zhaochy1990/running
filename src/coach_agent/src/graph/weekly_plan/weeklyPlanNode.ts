@@ -6,7 +6,7 @@ import { toJsonSchema } from "@langchain/core/utils/json_schema";
 import { type PhaseName, type TargetTrainingLoad, type WeeklyPlan, WeeklyPlanGenerationSchema, WeeklyPlanSchema } from "@stride/contract";
 import { buildResponsesModel } from "../../agents/common.js";
 import type { ModelConfig } from "../../config/config.js";
-import type { WeeklyPlanContext } from "../../persistence/index.js";
+import type { WeeklyPlanContext } from "../../data/weeklyPlanContextProvider.js";
 import { getLogger } from "../../utils/logger.js";
 import { ModelContractError } from "../master_plan/nodes.js";
 import { acceptedLoadBand } from "./loadTolerance.js";
