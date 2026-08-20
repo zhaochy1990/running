@@ -137,11 +137,7 @@
       },
       "operation": "publish",
       "briefs": [
-        "briefs/season-plan-reimagine.md",
-        "briefs/season-plan-route-map-refine.md",
-        "briefs/season-plan-route-map-final-fix.md",
-        "briefs/season-plan-geist-mono-fix.md",
-        "briefs/season-plan-interaction-fix.md"
+        "briefs/season-plan-route-map.md"
       ],
       "html": "artifacts/2218376841549577363_season-plan-route-map-final.html",
       "approvedAt": "2026-08-20T06:44:03.385Z",
