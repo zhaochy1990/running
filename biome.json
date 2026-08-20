@@ -1,0 +1,38 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
+  "files": {
+    "includes": [
+      "frontend/src/**/*.{js,jsx,ts,tsx,json}",
+      "frontend/scripts/**/*.{js,cjs,mjs}",
+      "frontend/server/src/**/*.{js,ts,json}",
+      "frontend/vite.config.ts",
+      "frontend/vitest.config.ts",
+      "frontend/server/vitest.config.ts",
+      "src/coach_agent/src/**/*.{js,ts,json}",
+      "src/coach_agent/scripts/**/*.{js,mjs}",
+      "src/coach_contract/src/**/*.{js,ts,json}",
+      "src/coach_contract/scripts/**/*.{js,mjs}",
+      "src/stitch_design/cli.ts",
+      "src/stitch_design/foundation-audit.mjs",
+      "!!.worktrees"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "lineWidth": 160
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}
