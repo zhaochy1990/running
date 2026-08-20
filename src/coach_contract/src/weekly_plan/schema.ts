@@ -121,7 +121,7 @@ export const WeeklyPlanSchema = z
 		schema: z.literal("weekly-plan/v1"),
 		week_name: z.string().min(1),
 		sessions: z.array(PlannedSessionSchema),
-		nutrition: z.array(PlannedNutritionSchema),
+		nutrition: z.array(PlannedNutritionSchema).length(7),
 		notes_md: z.string().nullable(),
 		coach_notes: z.string().nullable(),
 	})

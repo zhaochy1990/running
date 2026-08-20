@@ -36,7 +36,7 @@ export const GENERATE_WEEKLY_PLAN_SYSTEM_PROMPT = `你是一名马拉松教练�
 运动员的训练状态，包括：
 - acute_training_load：急性训练负荷（单位：PMC）
 - chronic_training_load：慢性训练负荷（单位：PMC）
-- form：训练状态（急性负荷-慢性负荷，单位：PMC）
+- form：训练状态（慢性负荷-急性负荷，单位：PMC）
 - load_ratio：负荷比（单位：%）
 - rhr：静息心率
 - hrv：心率变异性

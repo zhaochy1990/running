@@ -142,7 +142,7 @@ export class WeeklyPlanGeneratorNodes {
 		private readonly config: CoachAgentConfig,
 		private readonly contextProvider: WeeklyPlanContextProvider,
 		private readonly planLlm: WeeklyPlanLLM,
-	) {}
+	) { }
 
 	readonly loadWeeklyPlanContext = async (
 		state: typeof GraphState.State,
@@ -270,13 +270,13 @@ export class WeeklyPlanGeneratorNodes {
 			anchorDose === null
 				? { low: null, high: null, density: null }
 				: projectDistanceRange({
-						anchorDose,
-						anchorKm: anchorKm as number,
-						loadLow,
-						loadHigh,
-						removeQualityStimulus: decision.removeQualityStimulus,
-						phase: resolvePhaseName(weeklyContext),
-					});
+					anchorDose,
+					anchorKm: anchorKm as number,
+					loadLow,
+					loadHigh,
+					removeQualityStimulus: decision.removeQualityStimulus,
+					phase: resolvePhaseName(weeklyContext),
+				});
 		if (distanceRange.low !== null)
 			rationale.push(
 				`dose density ${distanceRange.density} dose/km: target distance range ${distanceRange.low}-${distanceRange.high} km`,
@@ -297,17 +297,17 @@ export class WeeklyPlanGeneratorNodes {
 				target_distance_km_high: distanceRange.high,
 				load_ratio_low: canProject
 					? projectEndOfWeekLoadRatio(
-							acuteLoad as number,
-							chronicLoad as number,
-							loadLow as number,
-						)
+						acuteLoad as number,
+						chronicLoad as number,
+						loadLow as number,
+					)
 					: null,
 				load_ratio_high: canProject
 					? projectEndOfWeekLoadRatio(
-							acuteLoad as number,
-							chronicLoad as number,
-							loadHigh as number,
-						)
+						acuteLoad as number,
+						chronicLoad as number,
+						loadHigh as number,
+					)
 					: null,
 				remove_quality_stimulus: decision.removeQualityStimulus,
 				details: {
@@ -315,10 +315,10 @@ export class WeeklyPlanGeneratorNodes {
 						latestWeek === null
 							? null
 							: {
-									week_start: latestWeek.week_start,
-									distance_km: latestWeekDistance,
-									training_load: latestWeekDose,
-								},
+								week_start: latestWeek.week_start,
+								distance_km: latestWeekDistance,
+								training_load: latestWeekDose,
+							},
 					anchor: {
 						training_load_avg4w: anchorDose,
 						distance_km_avg4w: anchorKm,
@@ -326,29 +326,29 @@ export class WeeklyPlanGeneratorNodes {
 					trend: {
 						recovery: recoveryTrend.available
 							? RecoveryTrendSchema.parse({
-									available: true,
-									recent_rhr_avg: recoveryTrend.recent_rhr_avg,
-									prior_rhr_avg: recoveryTrend.prior_rhr_avg,
-									recent_hrv_avg: recoveryTrend.recent_hrv_avg,
-									prior_hrv_avg: recoveryTrend.prior_hrv_avg,
-									rhr_rising: recoveryTrend.rhr_rising,
-									hrv_falling: recoveryTrend.hrv_falling,
-									deteriorating: recoveryTrend.deteriorating,
-									window_days: recoveryTrend.window_days,
-									missing_reason: null,
-								})
+								available: true,
+								recent_rhr_avg: recoveryTrend.recent_rhr_avg,
+								prior_rhr_avg: recoveryTrend.prior_rhr_avg,
+								recent_hrv_avg: recoveryTrend.recent_hrv_avg,
+								prior_hrv_avg: recoveryTrend.prior_hrv_avg,
+								rhr_rising: recoveryTrend.rhr_rising,
+								hrv_falling: recoveryTrend.hrv_falling,
+								deteriorating: recoveryTrend.deteriorating,
+								window_days: recoveryTrend.window_days,
+								missing_reason: null,
+							})
 							: {
-									available: false,
-									recent_rhr_avg: null,
-									prior_rhr_avg: null,
-									recent_hrv_avg: null,
-									prior_hrv_avg: null,
-									rhr_rising: false,
-									hrv_falling: false,
-									deteriorating: false,
-									window_days: 0,
-									missing_reason: recoveryTrend.missing_reason,
-								},
+								available: false,
+								recent_rhr_avg: null,
+								prior_rhr_avg: null,
+								recent_hrv_avg: null,
+								prior_hrv_avg: null,
+								rhr_rising: false,
+								hrv_falling: false,
+								deteriorating: false,
+								window_days: 0,
+								missing_reason: recoveryTrend.missing_reason,
+							},
 						seven_day_average: {
 							rhr: number(sevenDayAvg?.rhr),
 							hrv: number(sevenDayAvg?.hrv),
@@ -440,6 +440,8 @@ export class WeeklyPlanGeneratorNodes {
 
 	/** Deterministically simulate the generated plan, back-fill session doses. */
 	readonly simulateLoad = (state: typeof GraphState.State) => {
+		logger.info(`Simulating weekly plan load for request ${state.request?.request_id}`);
+
 		const weeklyContext = state.weekly_context;
 		const weeklyPlan = state.weekly_plan;
 		if (!weeklyContext) {
@@ -754,12 +756,12 @@ interface RecentTrainingWeekWithPlanned {
 	week_start: string;
 	complete: boolean;
 	planned:
-		| {
-				available: true;
-				total_run_distance_km: number | null;
-				run_sessions: unknown[];
-		  }
-		| { available: false; total_run_distance_km: null; run_sessions: [] };
+	| {
+		available: true;
+		total_run_distance_km: number | null;
+		run_sessions: unknown[];
+	}
+	| { available: false; total_run_distance_km: null; run_sessions: [] };
 	actual: { total_run_distance_km: number | null };
 }
 
