@@ -10,7 +10,6 @@ import { createRaceTools } from "../../tools/races.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
 import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
 import { createWeeklyPlanContextTools } from "../../tools/weeklyPlanContext.js";
-import { createWeeklyPlanLoadTools } from "../../tools/weeklyPlanLoad.js";
 import { buildResponsesModel } from "../common.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { WeeklyPlanPrompt } from "../prompts.js";
@@ -29,10 +28,6 @@ function createWeeklyPlanSubagent(
 	const weeklyPlanContextTools = createWeeklyPlanContextTools(
 		weeklyPlanContextProvider,
 	);
-	const weeklyPlanLoadTools = createWeeklyPlanLoadTools(
-		weeklyPlanContextProvider,
-	);
-
 	return {
 		name: generatesPlan ? "generate_weekly_plan" : "weekly_plan",
 		description: generatesPlan
@@ -46,7 +41,6 @@ function createWeeklyPlanSubagent(
 			...trainingLoadTools,
 			...raceTools,
 			...runningCalibrationTools,
-			...(generatesPlan ? weeklyPlanLoadTools : []),
 		],
 		model: buildResponsesModel(config),
 		...(generatesPlan

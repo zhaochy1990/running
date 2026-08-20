@@ -93,21 +93,11 @@ description: 根据运动员的活跃主计划、实际完成的训练、STRIDE 
 
 在 `coach_notes` 中简洁记录：实际完整周锚点、选定的周目标与负荷决策、阶段/里程碑衔接、轮换决策，以及会触发减少或取消质量训练的恢复信号。对于恢复周，说明哪个证据支持深度削减而非维持区间（最近完整周 vs 锚点、`load_ratio`、form、恢复趋势）。
 
-## 6. 模拟最终候选计划
+## 6. 负荷校验
 
-在候选计划的训练、营养和 `coach_notes` 全部定稿后，用完整候选计划调用 `simulate_weekly_plan_load`。以报告作为计划剂量的权威数值与 PMC 预测；不要手工估算剂量、CTL、ATL、Form 或负荷比。
-
-当 `available: true` 时，检查总剂量、每个每日负荷比/Form 转变、最大训练占比和 `safety_issues`。修正不安全的安排或剂量，然后再次模拟完整的修正候选计划。把 `preexisting_overreach_persists_without_planned_load` 当作恢复约束而不是候选计划错误：选择最保守的恢复安排，记录在 `coach_notes` 中，不要增加会延长过度负荷的训练量。当唯一缺失的原因是运动员校准或初始 PMC 状态不可用时，保留保守目标并在 `coach_notes` 中记录该限制。任何缺失的训练结构、无法计算的计划训练、结构化距离不匹配或安全问题，都需要修正候选计划并再次模拟。
-
-把模拟报告 `sessions` 中每条训练的 `estimated_dose` 回填到计划里对应的 session 字段；模拟不可用的 session 填 `null`。模拟报告是每条训练剂量的权威数值，不要在计划里手工编造剂量。
-
-## 7. 负荷校验
-
-候选计划的周总预估负荷（模拟报告的 `total_dose`）必须落在目标周总负荷区间（user message 中的 `target_training_load.training_load_low` ~ `training_load_high`）的 ±10% 容差内。低于下限或高于上限都需要调整训练安排（距离、强度分布或刺激选择）并重新模拟，直到达标后再提交 `generate_weekly_plan`。当模拟或目标负荷不可用时，保守保留当前安排并记录原因，不要臆造剂量。
+不要手工估算训练剂量、CTL、ATL、Form 或负荷比，也不要填写 `estimated_dose`；所有 session 的 `estimated_dose` 返回 `null`。模型不调用负荷模拟工具。
 
 同时把周总跑量控制在 `target_training_load.target_distance_km_low` ~ `target_distance_km_high` 区间内（由教练按历史剂量密度与阶段强度分布推算；`remove_quality_stimulus` 或 taper 阶段已体现在该区间中）。若区间缺失（锚点数据不足），以阶段 `target_weekly_km_low/high` 与锚点距离为次选依据。
-
-只有候选计划在最后一次编辑后已经过模拟，才算完成本步骤。返回的 `content` 必须与传给最终模拟调用的 WeeklyPlan 对象逻辑上逐字节相同。
 
 ## 7. 返回 WeeklyPlan
 

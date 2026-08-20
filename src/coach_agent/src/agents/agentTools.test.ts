@@ -108,7 +108,7 @@ test("weekly-plan reader and generator keep distinct contracts", () => {
 		!reader.tools.some((tool) => tool.name === "simulate_weekly_plan_load"),
 	);
 	assert.ok(
-		generator.tools.some((tool) => tool.name === "simulate_weekly_plan_load"),
+		!generator.tools.some((tool) => tool.name === "simulate_weekly_plan_load"),
 	);
 	assert.ok(
 		generator.middleware.every(
