@@ -11,6 +11,7 @@ The runner uses the `训练` tab to manage the whole training system: understand
 ## Required Shell
 
 - Root-tab screen at 390 px logical width with safe areas and a fixed solid-surface top bar.
+- The shell, header, and bottom navigation use `width: 100%` with a 390 px maximum; they must not force a 390 px minimum width on a 360 px viewport.
 - Top bar: 48 x 48 menu action on the left, centered title `训练`, and an empty 48 px balancing area on the right. Do not show a back button.
 - Four-item bottom navigation in this exact order: `跑者`, `训练`, `数据`, `教练`. `训练` is active. Never show `发现` or `我`.
 - Match the current STRIDE Raycast Mobile Foundation and runner-home information density. Use Inter for interface copy, Geist Mono for athletic values, dark layered surfaces, and restrained coral punctuation.
@@ -20,6 +21,7 @@ The runner uses the `训练` tab to manage the whole training system: understand
 ### 1. Season Plan Summary
 
 - Header row: `赛季训练计划` and a compact secondary outline button `查看计划` with a right arrow. The control uses a raised dark surface, Foundation border and elevation, 8 px radius, high-emphasis label, and an explicit 48 px touch target.
+- The actual semantic `查看计划` button element, not only an invisible wrapper, must have `min-height: 48px` and at least 48 px width.
 - Goal: `上海马拉松 · 2026.10.25`.
 - Current position: `进展期 · 第 3 / 6 周`.
 - Compact supporting values: `距比赛 103 天` and `赛季 8 / 20 周`.
@@ -52,15 +54,16 @@ The runner uses the `训练` tab to manage the whole training system: understand
 
 - Compact section `下周安排`.
 - Show `周日 23:59 自动生成草稿`.
+- Do not expose the English label `DRAFT`; the Chinese sentence already communicates the state.
 - Explain current condition: `还需完成本周并提交 1 条训练反馈`.
 - Do not show a fake enabled generation CTA while conditions are unmet.
 
 ### 4. Review, History, and Nutrition
 
 - Two compact navigable rows:
-  - `上周复盘` with `完成率 80% · 3 条洞察`;
+  - `上周复盘` with `完成率 80% · 3 条洞察` and no English `Completion` label;
   - `历史课表` with `查看已完成的训练周`.
-- One compact nutrition row: `今日营养` with `力量日 · 蛋白 120 g · 碳水 260 g` and an entry to daily nutrition advice.
+- One compact nutrition row: `今日营养` with `力量日 · 蛋白 120 g · 碳水 260 g` and an entry to daily nutrition advice. Do not use the English label `Power Day`.
 
 ## Actions
 
@@ -76,6 +79,9 @@ The runner uses the `训练` tab to manage the whole training system: understand
 - Do not expand only today's workout; the full seven-day schedule is the main work area.
 - Do not use legacy terms `训练总纲`, `单周计划`, `周计划 Draft`, `TSB`, `ATL`, or `CTL`.
 - Do not use status rings, radar charts, large circular progress, dashboard metric-card grids, gradients, glass effects, illustrations, floating action buttons, or oversized rounded cards.
+- Do not use backdrop blur or translucent fixed navigation surfaces.
+- Header and bottom navigation use opaque `#07080A` or `#101111`; do not emit `backdrop-blur`, `filter: blur`, `shadow-sm`, or a single-layer generic drop shadow anywhere.
+- `查看计划`, each schedule action including the today play affordance, and every bottom-navigation destination have semantic hit areas of at least 48 px.
 - Avoid excessive card stacking. Prefer section headers, thin dividers, row states, whitespace, and at most one quiet surface around the active week.
 - Do not show social content, activity records, subscription upsells, or unavailable features.
 
@@ -87,3 +93,5 @@ The runner uses the `训练` tab to manage the whole training system: understand
 - The selected bottom tab is `训练`; navigation structure follows `跑者 / 训练 / 数据 / 教练`, and its visual style follows the current Foundation rather than a legacy HTML snapshot.
 - All numerical training data uses aligned monospace typography.
 - The page remains usable at 360 px width and with larger system text.
+- No visible user-facing label uses `DRAFT`, `Completion`, or `Power Day`.
+- Browser inspection at both 360 px and 390 px must report zero interactive elements below 48 px in either dimension and `documentElement.scrollWidth === innerWidth`.
