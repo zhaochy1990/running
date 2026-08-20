@@ -55,6 +55,98 @@
       "operation": "export",
       "createdAt": "2026-07-16T06:44:52.239Z",
       "updatedAt": "2026-07-16T06:44:52.239Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "feef2ca21d294d5ead2a7348c0ce9de7",
+      "sourceDesignScreenId": "37a9244be34d480da86d615494935637",
+      "slug": "coach-adjustment-proposal",
+      "title": "Coach 对话 · 方案调整建议",
+      "status": "approved",
+      "designGeneration": "legacy-ember",
+      "state": {
+        "conversationState": "active",
+        "proposalState": "ready",
+        "proposalTarget": "weekly_plan"
+      },
+      "briefs": [
+        "briefs/coach-adjustment-proposal-legacy.md"
+      ],
+      "html": "artifacts/feef2ca21d294d5ead2a7348c0ce9de7_coach-adjustment-proposal.html",
+      "approvedAt": "2026-08-11T10:04:43Z",
+      "operation": "edit",
+      "createdAt": "2026-08-11T08:25:22Z",
+      "updatedAt": "2026-08-11T10:04:43Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "fef851f0fb5b42bf8d73e7d87c9f5cfc",
+      "sourceDesignScreenId": "814398c82042485b94c98acf6acea69e",
+      "slug": "weekly-plan-active",
+      "title": "计划 · 周计划",
+      "status": "approved",
+      "designGeneration": "legacy-ember",
+      "state": {
+        "seasonState": "active",
+        "weekState": "active",
+        "currentDay": "thursday"
+      },
+      "briefs": [
+        "briefs/weekly-plan-active-legacy.md"
+      ],
+      "html": "artifacts/fef851f0fb5b42bf8d73e7d87c9f5cfc_weekly-plan-active.html",
+      "approvedAt": "2026-08-14T07:48:17Z",
+      "operation": "edit",
+      "createdAt": "2026-08-11T08:25:22Z",
+      "updatedAt": "2026-08-14T07:48:17Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "7fa4684f11d64ceaac6198b84e11f90c",
+      "sourceDesignScreenId": "3dd373e0aef64a1c981f3c43c92cc3d7",
+      "slug": "workout-detail-threshold",
+      "title": "训练详情 · 结构化课表（补给优化版）",
+      "status": "approved",
+      "designGeneration": "legacy-ember",
+      "state": {
+        "weekState": "active",
+        "workoutType": "threshold",
+        "watchState": "connected"
+      },
+      "briefs": [
+        "briefs/workout-detail-threshold-legacy.md"
+      ],
+      "html": "artifacts/7fa4684f11d64ceaac6198b84e11f90c_workout-detail-threshold.html",
+      "approvedAt": "2026-08-20T05:36:26Z",
+      "operation": "edit",
+      "createdAt": "2026-08-14T07:48:17Z",
+      "updatedAt": "2026-08-20T05:36:26Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "2218376841549577363",
+      "sourceDesignScreenId": "171bc29d7d5143d795572391f6b5c4ec",
+      "slug": "season-plan-route-map-final",
+      "title": "赛季训练计划 · 进展期路线图最终版",
+      "status": "approved",
+      "state": {
+        "seasonState": "active",
+        "currentPhase": "build",
+        "currentWeek": 7,
+        "totalWeeks": 23
+      },
+      "operation": "publish",
+      "briefs": [
+        "briefs/season-plan-reimagine.md",
+        "briefs/season-plan-route-map-refine.md",
+        "briefs/season-plan-route-map-final-fix.md",
+        "briefs/season-plan-geist-mono-fix.md",
+        "briefs/season-plan-interaction-fix.md"
+      ],
+      "html": "artifacts/2218376841549577363_season-plan-route-map-final.html",
+      "approvedAt": "2026-08-20T06:44:03.385Z",
+      "createdAt": "2026-08-20T06:44:03.385Z",
+      "updatedAt": "2026-08-20T06:44:03.385Z"
     }
   ]
 }
