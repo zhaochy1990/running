@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  getPlanDays,
   getMyProfile,
   getWeek,
   getWeeks,
@@ -12,6 +11,7 @@ import {
   type WeekDetail,
   type WeekSummary,
 } from "../api";
+import { buildPlanDaysFromWeekDetail } from "../types/plan";
 import type { PlannedSession, StructuredStatus } from "../types/plan";
 import type { StrengthTabResponse } from "../types/strength";
 import { useUser } from "../UserContextValue";
@@ -91,8 +91,11 @@ export function useCoachWeeklyPlan(): CoachWeeklyPlanState {
         setWeek(weekResponse);
         setStrength(strengthResponse);
         setStructuredStatus(weekResponse.structured?.structured_status ?? "none");
-        const days = await getPlanDays(user, weekResponse.date_from, weekResponse.date_to);
-        if (!cancelled) setPlanDays(days.days);
+        // Build the calendar from the Go `/weeks` detail (canonical MySQL
+        // source for sessions + nutrition). The legacy Python `/plan/days`
+        // endpoint returns empty rows, so routing the coach view through it
+        // blanks the calendar — mirror WeekLayout's Go-only approach.
+        if (!cancelled) setPlanDays(buildPlanDaysFromWeekDetail(weekResponse));
         if (!cancelled) {
           setLoadedFolder(folder);
           setError(null);
@@ -139,8 +142,9 @@ export function useCoachWeeklyPlan(): CoachWeeklyPlanState {
               : `推送失败 (${response.status})`;
         throw new Error(message);
       }
-      const refreshed = await getPlanDays(user, week.date_from, week.date_to);
-      setPlanDays(refreshed.days);
+      // Refresh from the Go week detail (same canonical source as the initial
+      // load) so the calendar doesn't revert to empty Python /plan/days rows.
+      setPlanDays(buildPlanDaysFromWeekDetail(week));
     },
     [user, week],
   );
