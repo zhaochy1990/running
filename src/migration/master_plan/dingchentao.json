@@ -1,0 +1,3473 @@
+{
+  "status": "draft",
+  "goal": {
+    "race_name": "西安马拉松",
+    "distance": "FM",
+    "race_date": "2026-10-18",
+    "target_time": "2:47:00",
+    "timezone": "Asia/Shanghai",
+    "location": "西安"
+  },
+  "start_date": "2026-05-04",
+  "end_date": "2026-11-01",
+  "total_weeks": 26,
+  "phases": [
+    {
+      "name": "基础期",
+      "start_date": "2026-05-04",
+      "end_date": "2026-06-14",
+      "focus": "重建真低强度有氧占比，稳定脚踝与胫骨，并逐步引入马拉松配速和阈值刺激。",
+      "weekly_distance_km_low": 62,
+      "weekly_distance_km_high": 98,
+      "key_session_types": [
+        "race_pace",
+        "threshold",
+        "long_run",
+        "time_trial"
+      ],
+      "milestones": [
+        {
+          "type": "long_run",
+          "date": "2026-05-24",
+          "target": "26km 长跑全程心率不高于 145 bpm，验证真低强度纪律。",
+          "completed_actual": null
+        },
+        {
+          "type": "test_run",
+          "date": "2026-06-14",
+          "target": "10km 计时测试；观察 165 bpm 时配速能否达到 4:00/km 或更快。",
+          "completed_actual": null
+        }
+      ],
+      "key_workouts": "周三 MP/巡航间歇，周末 Z2 长跑；W6 以 10km 计时测试收尾。",
+      "monitoring_triggers": [
+        "胫骨或脚踝晨起疼痛达到 3/10 时跳过强度课。",
+        "一周内两次轻松跑平均心率高于 148 bpm 时，下周用交叉训练替代一次轻松跑。",
+        "静息心率高于 50 bpm 持续三天，或 HRV 下降 20%，增加休息并取消下一次强度课。"
+      ],
+      "coach_note": "这一阶段不追求跑量纪录，首要任务是把轻松日真正跑轻松，并让伤病敏感部位稳定下来。",
+      "strength": {
+        "sessions_per_week": 2,
+        "focus": "踝关节稳定、胫骨前肌、小腿离心力量、髋臀与核心。",
+        "timing": "周一和周四轻松跑后完成，避免安排在质量课或长跑前一天。"
+      },
+      "recovery": {
+        "focus": "日均睡眠至少 7.5 小时，长跑后及时补充碳水和蛋白，并执行小腿与髋部放松。",
+        "sleep_target_hours": "7.5-8.0",
+        "adjustment_trigger": "连续三晚睡眠少于 6 小时或出现两个红灯指标时，当周跑量降低 30% 并删除一次质量课。"
+      },
+      "is_completed": true,
+      "summary": "该训练阶段已按时间结束；后续阶段已根据最新训练记录和当前状态重新生成。"
+    },
+    {
+      "name": "提升期",
+      "start_date": "2026-06-15",
+      "end_date": "2026-07-19",
+      "focus": "叠加山坡、节奏与长跑刺激，发展下肢力量耐力，并以半马测试校准最终目标。",
+      "weekly_distance_km_low": 75,
+      "weekly_distance_km_high": 110,
+      "key_session_types": [
+        "hill",
+        "tempo",
+        "long_run",
+        "time_trial"
+      ],
+      "milestones": [
+        {
+          "type": "test_run",
+          "date": "2026-07-12",
+          "target": "半马计时测试进入 1:22-1:24；1:22 以内才解锁 A 目标配速。",
+          "completed_actual": null
+        }
+      ],
+      "key_workouts": "周二山坡重复、周四节奏跑、周末渐进长跑；W10 减量后完成半马测试。",
+      "monitoring_triggers": [
+        "高冲击训练后 24 小时必须用软地恢复或休息，胫骨疼痛达到 3/10 时取消山坡课。",
+        "半马测试慢于 1:24 时维持 B/C 目标，不启用 A 目标 MP。",
+        "高温超过 32°C 时取消室外高强度，改至清晨或室内。"
+      ],
+      "coach_note": "力量耐力的进步必须建立在脚踝和胫骨无反复的前提下，半马测试只用于校准，不需要额外参赛。",
+      "strength": {
+        "sessions_per_week": 2,
+        "focus": "延续踝稳定、单腿力量、后链和核心训练。",
+        "timing": "周一和周五跑后完成，至少与山坡、节奏和长跑间隔 24 小时。"
+      },
+      "recovery": {
+        "focus": "保证睡眠、热环境补水与电解质，并在山坡和长跑后安排软地恢复。",
+        "sleep_target_hours": "7.5-8.0",
+        "adjustment_trigger": "HRV 下降 20%、静息心率升高 5 bpm 持续三天或脚踝不稳时，取消下一次质量课并下调周量。"
+      },
+      "is_completed": true,
+      "summary": "该训练阶段已按时间结束；后续阶段已根据最新训练记录和当前状态重新生成。"
+    },
+    {
+      "name": "专项速度周期",
+      "start_date": "2026-07-20",
+      "end_date": "2026-09-13",
+      "focus": "在近期减量后重建稳定跑量、长跑耐力与跑姿力量；保留可控阈值刺激。 提高乳酸阈值和跑步经济性，将长跑延长到30公里，同时安排恢复周。",
+      "weekly_distance_km_low": 68,
+      "weekly_distance_km_high": 115,
+      "key_session_types": [
+        "坡跑",
+        "有氧间歇",
+        "渐进长跑",
+        "阈值跑",
+        "阈值间歇"
+      ],
+      "milestones": [
+        {
+          "type": "long_run",
+          "date": "2026-08-30",
+          "target": "完成28公里渐进长跑，末6公里4:15-4:25/公里，动作稳定且无疼痛",
+          "completed_actual": null
+        },
+        {
+          "type": "test_run",
+          "date": "2026-09-06",
+          "target": "30公里渐进长跑末8公里4:08-4:15/公里，后段心率漂移不超过5%",
+          "completed_actual": null
+        }
+      ],
+      "key_workouts": "每周1次可控质量课和1次长跑，其余跑量以轻松跑完成。 第一周安排阈值课和30公里渐进长跑；第二周恢复，仅保留24公里轻松长跑作为战略关键课。",
+      "monitoring_triggers": [
+        "静息心率连续2天高于基线5次/分或HRV较个人近期均值下降15%时，取消质量课",
+        "出现改变跑姿的疼痛时立即停止跑步并评估",
+        "阈值段无法在不超过170次/分下维持4:05/公里时，下调后续强度",
+        "周跑量增幅超过10%或Form低于-15时，不再追加跑量"
+      ],
+      "coach_note": "当前无伤病且近期周量多在60-83公里；先恢复连续性，不追求过快加量。 目标2:47较当前全马PB约提升3分44秒，属于积极目标；本阶段以阈值控制和恢复质量判断能否继续推进。",
+      "strength": {
+        "sessions_per_week": 2,
+        "focus": "维持最大力量，加入低量弹跳、单腿稳定和小腿耐力",
+        "timing": "质量跑后完成主要力量；第二次安排在轻松跑后，恢复周减半组数"
+      },
+      "recovery": {
+        "focus": "关键课前提高碳水摄入，课后30-60分钟补给；泡沫轴和轻度活动恢复",
+        "sleep_target_hours": "8-9小时",
+        "adjustment_trigger": "关键课连续两次未达标、睡眠不足6.5小时或腿部沉重持续48小时，下一周按恢复周执行"
+      },
+      "is_completed": false,
+      "summary": null
+    },
+    {
+      "name": "马拉松专项期",
+      "start_date": "2026-09-14",
+      "end_date": "2026-10-04",
+      "focus": "建立目标马拉松配速3:58/公里附近的耐力、补给能力和后程动作稳定性。",
+      "weekly_distance_km_low": 86,
+      "weekly_distance_km_high": 94,
+      "key_session_types": [
+        "阈值跑",
+        "有氧间歇",
+        "含马拉松配速的长跑"
+      ],
+      "milestones": [
+        {
+          "type": "long_run",
+          "date": "2026-09-27",
+          "target": "32公里中连续16公里3:54-3:58/公里，心率不超过158次/分，完成全套补给",
+          "completed_actual": null
+        },
+        {
+          "type": "long_run",
+          "date": "2026-10-04",
+          "target": "34公里含2×8公里马拉松配速，后组配速衰减不超过3%且无异常疼痛",
+          "completed_actual": null
+        }
+      ],
+      "key_workouts": "三次专项长跑分别完成12、16、16公里马拉松配速累计量；周中用阈值或有氧间歇维持速度储备。",
+      "monitoring_triggers": [
+        "马拉松配速段心率持续超过158次/分或后半配速衰减超过5%时，立即降至4:05-4:15/公里",
+        "若9月27日专项长跑不能受控完成，将比赛目标调整为2:47-2:50更稳妥",
+        "长跑后48小时仍有局部疼痛或明显跛行时，取消下一次质量课"
+      ],
+      "coach_note": "当前阈值配速校准约3:58/公里且置信度中等，目标马配接近该水平；必须用专项长跑验证，不以单次PB推断。",
+      "strength": {
+        "sessions_per_week": 1,
+        "focus": "低容量维持臀腿、提踵和核心力量，不做到力竭",
+        "timing": "安排在周二质量跑后；不得放在专项长跑前48小时内"
+      },
+      "recovery": {
+        "focus": "长跑每小时摄入60-90克碳水、400-700毫升液体并按出汗量补钠；强化睡眠与软组织恢复",
+        "sleep_target_hours": "8-9小时",
+        "adjustment_trigger": "体重训练后下降超过2%、胃肠不适影响进食或恢复指标连续3天下降时，减少20%跑量并优先补液补能"
+      },
+      "is_completed": false,
+      "summary": null
+    },
+    {
+      "name": "赛前减量期",
+      "start_date": "2026-10-05",
+      "end_date": "2026-10-18",
+      "focus": "逐步降低跑量但保留目标配速刺激，消除疲劳并完成比赛准备。",
+      "weekly_distance_km_low": 52,
+      "weekly_distance_km_high": 72,
+      "key_session_types": [
+        "短阈值",
+        "马拉松配速长跑",
+        "比赛"
+      ],
+      "milestones": [
+        {
+          "type": "race",
+          "date": "2026-10-18",
+          "target": "西安马拉松2:47:00；平均配速约3:58/公里",
+          "completed_actual": null
+        }
+      ],
+      "key_workouts": "减量首周保留短阈值与24公里专项长跑；比赛周完成10公里目标配速唤醒和正式比赛。",
+      "monitoring_triggers": [
+        "比赛周出现发热、胸痛、明显跛行或急性伤病时不参赛并就医",
+        "减量期感觉异常疲劳时减少轻松跑，不追加测试课"
+      ],
+      "coach_note": "比赛前半程控制在约1:22:30-1:23:00；30公里前不主动提速，依据气温、风况和专项验证结果执行A/B目标。",
+      "strength": {
+        "sessions_per_week": 0,
+        "focus": "仅做10-15分钟徒手激活、足踝活动和核心唤醒",
+        "timing": "减量首周可在轻松跑后做一次轻量激活；比赛周不做正式力量训练"
+      },
+      "recovery": {
+        "focus": "保持正常碳水与蛋白质摄入，赛前36-48小时提高碳水；减少久站并保证睡眠",
+        "sleep_target_hours": "8-9小时",
+        "adjustment_trigger": "出现睡眠连续两晚不足6小时、感染症状或疼痛≥3/10时，取消非必要训练并重新评估参赛目标"
+      },
+      "is_completed": false,
+      "summary": null
+    },
+    {
+      "name": "赛后恢复期",
+      "start_date": "2026-10-19",
+      "end_date": "2026-11-01",
+      "focus": "恢复肌肉骨骼与神经疲劳，逐步恢复轻松跑，不安排任何质量课。",
+      "weekly_distance_km_low": 18,
+      "weekly_distance_km_high": 40,
+      "key_session_types": [
+        "步行",
+        "恢复跑",
+        "低强度交叉训练"
+      ],
+      "milestones": [
+        {
+          "type": "body_composition",
+          "date": "2026-11-01",
+          "target": "复核体重、主观恢复、静息心率与疼痛状态，决定下一周期起点",
+          "completed_actual": null
+        }
+      ],
+      "key_workouts": "赛后前3天以步行和休息为主；无痛后从20-40分钟恢复跑开始，第二周逐步增加。",
+      "monitoring_triggers": [
+        "疼痛影响步态、尿色异常、胸闷或极度疲劳时停止训练并及时就医",
+        "静息心率未回到个人基线附近或下肢酸痛超过7天时，延长恢复期"
+      ],
+      "coach_note": "赛后两周不安排阈值、间歇、长跑或正式力量课。",
+      "strength": {
+        "sessions_per_week": 0,
+        "focus": "仅做无痛范围内的关节活动、呼吸和轻度核心激活",
+        "timing": "首周不做正式力量；第二周仅在完全无痛时进行徒手激活"
+      },
+      "recovery": {
+        "focus": "优先睡眠、补液、碳水和蛋白质补充；采用步行与轻柔活动促进恢复",
+        "sleep_target_hours": "8-10小时",
+        "adjustment_trigger": "若肌肉酸痛、肿胀或疲劳未逐日改善，则暂停跑步并将恢复期延长7天"
+      },
+      "is_completed": false,
+      "summary": null
+    }
+  ],
+  "weeks": [
+    {
+      "week_index": 1,
+      "week_start": "2026-05-04",
+      "phase_name": "基础期",
+      "target_weekly_km_low": 75,
+      "target_weekly_km_high": 75,
+      "key_sessions": [
+        {
+          "type": "race_pace",
+          "distance_km": 12,
+          "duration_min": null,
+          "intensity": "3km Z2 + 4km MP @ 3:56-4:00/km（HR 160-168）+ 5km Z2",
+          "purpose": "建立 B 目标马拉松配速肌肉记忆和糖原经济性。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W1 马拉松配速入门",
+            "date": "2026-05-06",
+            "note": "MP 段心率不超过 168 bpm。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 145
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 4000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 240,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 168
+                  },
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 5000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 22,
+          "duration_min": null,
+          "intensity": "Z2；前 70% HR 不高于 145，后 30% 可渐进但不高于 152",
+          "purpose": "重建有氧底盘并练习低强度纪律。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W1 低强度长跑",
+            "date": "2026-05-09",
+            "note": "心率优先于配速。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 15400
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 145
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 6600
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 135,
+                      "high": 152
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 2,
+      "week_start": "2026-05-11",
+      "phase_name": "基础期",
+      "target_weekly_km_low": 82,
+      "target_weekly_km_high": 82,
+      "key_sessions": [
+        {
+          "type": "race_pace",
+          "distance_km": 12,
+          "duration_min": null,
+          "intensity": "3km Z2 + 4km MP @ 3:56-4:00/km（HR 160-168）+ 5km Z2",
+          "purpose": "巩固可控的马拉松配速输出。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W2 马拉松配速巩固",
+            "date": "2026-05-13",
+            "note": "高温时以心率和 RPE 为准。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 145
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 4000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 240,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 168
+                  },
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 5000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 24,
+          "duration_min": null,
+          "intensity": "Z2；前 70% HR 不高于 145，后 30% 不高于 152",
+          "purpose": "延长低强度耐力时间。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W2 有氧长跑",
+            "date": "2026-05-16",
+            "note": "软地优先。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 16800
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 145
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 7200
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 135,
+                      "high": 152
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 3,
+      "week_start": "2026-05-18",
+      "phase_name": "基础期",
+      "target_weekly_km_low": 88,
+      "target_weekly_km_high": 88,
+      "key_sessions": [
+        {
+          "type": "race_pace",
+          "distance_km": 13,
+          "duration_min": null,
+          "intensity": "3km Z2 + 6km MP @ 3:56-4:00/km + 4km Z2",
+          "purpose": "渐进延长 MP 工作段。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W3 进阶马拉松配速跑",
+            "date": "2026-05-20",
+            "note": "MP 段心率上限 168 bpm。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 145
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 6000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 240,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 168
+                  },
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 4000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 26,
+          "duration_min": null,
+          "intensity": "全程 HR 不高于 145 bpm",
+          "purpose": "完成阶段首个低强度纪律检查点。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W3 低强度纪律检查长跑",
+            "date": "2026-05-24",
+            "note": "手表仅显示心率和时间。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 26000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 4,
+      "week_start": "2026-05-25",
+      "phase_name": "基础期",
+      "target_weekly_km_low": 62,
+      "target_weekly_km_high": 62,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 20,
+          "duration_min": null,
+          "intensity": "Z2，HR 130-145 bpm",
+          "purpose": "减量周保留轻松有氧耐力，不做强度测试。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W4 减量周长跑",
+            "date": "2026-05-30",
+            "note": "全程舒适，出现疼痛立即缩短。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 20000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": true
+    },
+    {
+      "week_index": 5,
+      "week_start": "2026-06-01",
+      "phase_name": "基础期",
+      "target_weekly_km_low": 92,
+      "target_weekly_km_high": 92,
+      "key_sessions": [
+        {
+          "type": "threshold",
+          "distance_km": null,
+          "duration_min": 55,
+          "intensity": "4×1km @ 3:48-3:54/km，组间慢跑 60 秒",
+          "purpose": "在稳定有氧基础上首次引入受控巡航间歇。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W5 巡航间歇",
+            "date": "2026-06-03",
+            "note": "工作段 HR 168-175 bpm；胫骨不适时取消。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 900
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 145
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 4,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 1000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 234,
+                      "high": 228
+                    },
+                    "hr_cap_bpm": 175
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 60
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 150
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 900
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 28,
+          "duration_min": null,
+          "intensity": "前 70% HR 不高于 145，后 30% 不高于 152",
+          "purpose": "恢复增量并继续建立耐力。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W5 渐进有氧长跑",
+            "date": "2026-06-06",
+            "note": "气温超过 25°C 时按计划补水和电解质。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 19600
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 145
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 8400
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 135,
+                      "high": 152
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 6,
+      "week_start": "2026-06-08",
+      "phase_name": "基础期",
+      "target_weekly_km_low": 98,
+      "target_weekly_km_high": 98,
+      "key_sessions": [
+        {
+          "type": "threshold",
+          "distance_km": null,
+          "duration_min": 60,
+          "intensity": "5×1km @ 3:48-3:54/km，组间慢跑 60 秒",
+          "purpose": "巩固受控阈值刺激。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W6 巡航间歇",
+            "date": "2026-06-10",
+            "note": "保持动作放松，不做冲刺。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 900
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 145
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 5,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 1000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 234,
+                      "high": 228
+                    },
+                    "hr_cap_bpm": 175
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 60
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 150
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 900
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 30,
+          "duration_min": null,
+          "intensity": "Z2 为主，HR 不高于 148 bpm",
+          "purpose": "完成基础期峰值耐力课。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W6 基础期峰值长跑",
+            "date": "2026-06-13",
+            "note": "若影响次日计时测试则缩短，不追求里程。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 30000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 148
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "time_trial",
+          "distance_km": 10,
+          "duration_min": null,
+          "intensity": "自主配速；重点观察 HR 165 bpm 时能否达到 4:00/km 或更快",
+          "purpose": "校准基础期成效并决定是否按期进入提升期。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W6 10km 计时测试",
+            "date": "2026-06-14",
+            "note": "有疼痛或恢复红灯时延期。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 10000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 160,
+                      "high": 175
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 7,
+      "week_start": "2026-06-15",
+      "phase_name": "提升期",
+      "target_weekly_km_low": 95,
+      "target_weekly_km_high": 95,
+      "key_sessions": [
+        {
+          "type": "hill",
+          "distance_km": null,
+          "duration_min": 60,
+          "intensity": "8×60秒上坡，慢跑下坡恢复",
+          "purpose": "发展跑姿力量和小腿耐力，避免平地高速冲击。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W7 山坡力量跑",
+            "date": "2026-06-16",
+            "note": "脚踝不稳或胫骨疼痛时取消。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 1200
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 148
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 8,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 60
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 170,
+                      "high": 182
+                    }
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 120
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 150
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 960
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "tempo",
+          "distance_km": null,
+          "duration_min": 70,
+          "intensity": "4×8分钟 @ 4:00/km，组间慢跑 2 分钟",
+          "purpose": "发展接近马拉松专项的持续节奏能力。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W7 节奏重复",
+            "date": "2026-06-18",
+            "note": "工作段 HR 165-170 bpm。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 900
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 148
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 4,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 480
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 242,
+                      "high": 238
+                    },
+                    "hr_cap_bpm": 170
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 120
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 150
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 900
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 28,
+          "duration_min": null,
+          "intensity": "前段 5:00-5:15/km，末 5km 渐进到 4:20-4:30/km",
+          "purpose": "建立力量耐力和长跑末段控制。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W7 渐进长跑",
+            "date": "2026-06-20",
+            "note": "末段不超过 Z3。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 23000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 315,
+                      "high": 300
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 5000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 270,
+                      "high": 260
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 8,
+      "week_start": "2026-06-22",
+      "phase_name": "提升期",
+      "target_weekly_km_low": 102,
+      "target_weekly_km_high": 102,
+      "key_sessions": [
+        {
+          "type": "hill",
+          "distance_km": null,
+          "duration_min": 65,
+          "intensity": "9×75秒上坡，慢跑下坡恢复",
+          "purpose": "渐进发展力量耐力。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W8 山坡重复",
+            "date": "2026-06-23",
+            "note": "全程保持稳定落地。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 1200
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 148
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 9,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 75
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 170,
+                      "high": 182
+                    }
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 135
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 150
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 810
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "tempo",
+          "distance_km": null,
+          "duration_min": 80,
+          "intensity": "5×8分钟 @ 4:00/km，组间慢跑 2 分钟",
+          "purpose": "延长稳态工作总时间。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W8 节奏重复",
+            "date": "2026-06-25",
+            "note": "最后一组仍需保持动作完整。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 900
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 148
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 5,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 480
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 242,
+                      "high": 238
+                    },
+                    "hr_cap_bpm": 170
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 120
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 150
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 900
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 31,
+          "duration_min": null,
+          "intensity": "前 25km @ 5:00-5:15/km，末 6km @ 4:20-4:30/km",
+          "purpose": "扩大长跑体积并维持末段稳定。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W8 渐进长跑",
+            "date": "2026-06-27",
+            "note": "高温时按心率下调配速。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 25000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 315,
+                      "high": 300
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 6000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 270,
+                      "high": 260
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 9,
+      "week_start": "2026-06-29",
+      "phase_name": "提升期",
+      "target_weekly_km_low": 108,
+      "target_weekly_km_high": 108,
+      "key_sessions": [
+        {
+          "type": "hill",
+          "distance_km": null,
+          "duration_min": 70,
+          "intensity": "10×90秒上坡，慢跑下坡恢复",
+          "purpose": "完成山坡力量耐力峰值刺激。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W9 山坡峰值课",
+            "date": "2026-06-30",
+            "note": "避免冲刺式落地。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 1200
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 148
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 10,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 90
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 170,
+                      "high": 182
+                    }
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 150
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 150
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 600
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "tempo",
+          "distance_km": null,
+          "duration_min": 80,
+          "intensity": "5×8分钟 @ 4:00/km，组间慢跑 2 分钟",
+          "purpose": "巩固阈下持续能力。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W9 节奏耐力课",
+            "date": "2026-07-02",
+            "note": "心率控制在 165-170 bpm。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 900
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 148
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 5,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 480
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 242,
+                      "high": 238
+                    },
+                    "hr_cap_bpm": 170
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 120
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 150
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 900
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 34,
+          "duration_min": null,
+          "intensity": "前 26km @ 5:00-5:15/km，末 8km @ 4:20-4:30/km",
+          "purpose": "完成提升期峰值长跑并演练补给。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W9 峰值渐进长跑",
+            "date": "2026-07-04",
+            "note": "每 30-40 分钟补充约 30g 碳水。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 26000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 315,
+                      "high": 300
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 8000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 270,
+                      "high": 260
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 10,
+      "week_start": "2026-07-06",
+      "phase_name": "提升期",
+      "target_weekly_km_low": 75,
+      "target_weekly_km_high": 75,
+      "key_sessions": [
+        {
+          "type": "time_trial",
+          "distance_km": 21.0975,
+          "duration_min": null,
+          "intensity": "自主计时；目标 1:22-1:24（约 3:53-3:59/km）",
+          "purpose": "决定最终赛事目标和后续 MP 配速通道。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W10 半马计时测试",
+            "date": "2026-07-12",
+            "note": "1:22 内解锁 A 目标；1:22-1:24 维持 B 目标。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 21097.5
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 239,
+                      "high": 233
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": true
+    },
+    {
+      "week_index": 11,
+      "week_start": "2026-07-13",
+      "phase_name": "提升期",
+      "target_weekly_km_low": 110,
+      "target_weekly_km_high": 110,
+      "key_sessions": [
+        {
+          "type": "hill",
+          "distance_km": null,
+          "duration_min": 55,
+          "intensity": "8×60秒受控上坡，慢跑下坡恢复",
+          "purpose": "半马测试后以受控力量刺激恢复训练节奏。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W11 受控山坡跑",
+            "date": "2026-07-16",
+            "note": "若半马后仍有疲劳则取消。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 1200
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 148
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 8,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 60
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 165,
+                      "high": 178
+                    }
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 120
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 150
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 660
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 30,
+          "duration_min": null,
+          "intensity": "Z2，HR 130-148 bpm",
+          "purpose": "半马后恢复并过渡到专项速度周期。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W11 过渡长跑",
+            "date": "2026-07-18",
+            "note": "不做末段加速。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 30000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 148
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 12,
+      "week_start": "2026-07-20",
+      "phase_name": "专项速度周期",
+      "target_weekly_km_low": 95,
+      "target_weekly_km_high": 95,
+      "key_sessions": [
+        {
+          "type": "race_pace",
+          "distance_km": 16,
+          "duration_min": null,
+          "intensity": "3km 热身 + 6km MP @ 3:56-4:00/km + 4km Z2 + 3km 放松",
+          "purpose": "半马后重新建立受控 MP 输出。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W12 MP 过渡课",
+            "date": "2026-07-23",
+            "note": "根据半马结果选择 B 或已解锁的 A 目标。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 148
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 6000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 240,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 168
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 4000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 148
+                    }
+                  },
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 30,
+          "duration_min": null,
+          "intensity": "Z2，HR 130-148 bpm",
+          "purpose": "半马后调整周维持专项耐力。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W12 调整长跑",
+            "date": "2026-07-25",
+            "note": "不嵌入 MP 段。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 30000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 148
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 13,
+      "week_start": "2026-07-27",
+      "phase_name": "专项速度周期",
+      "target_weekly_km_low": 108,
+      "target_weekly_km_high": 108,
+      "key_sessions": [
+        {
+          "type": "vo2max",
+          "distance_km": null,
+          "duration_min": 55,
+          "intensity": "5×1km @ 3:25-3:35/km，组间慢跑 90 秒",
+          "purpose": "发展 VO2max 和高速动作经济性。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W13 VO2max 间歇",
+            "date": "2026-07-28",
+            "note": "工作段 HR 175-182 bpm。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 900
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 148
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 5,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 1000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 215,
+                      "high": 205
+                    },
+                    "hr_cap_bpm": 182
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 90
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 155
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 900
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 18,
+          "duration_min": null,
+          "intensity": "3km 热身 + 8km MP @ 3:56-4:00/km + 4km Z2 + 3km 放松",
+          "purpose": "延长独立 MP 工作段。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W13 MP 专项课",
+            "date": "2026-07-30",
+            "note": "MP 段心率上限 168 bpm。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 148
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 8000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 240,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 168
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 4000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 148
+                    }
+                  },
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 32,
+          "duration_min": null,
+          "intensity": "24km Z2 + 8km MP @ 3:56-4:00/km（同一长跑内）",
+          "purpose": "开始把马拉松配速嵌入长跑。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W13 含 MP 长跑",
+            "date": "2026-08-01",
+            "note": "补给和比赛鞋均采用已验证方案。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 24000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 148
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 8000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 240,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 168
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 14,
+      "week_start": "2026-08-03",
+      "phase_name": "专项速度周期",
+      "target_weekly_km_low": 115,
+      "target_weekly_km_high": 115,
+      "key_sessions": [
+        {
+          "type": "tempo",
+          "distance_km": null,
+          "duration_min": 80,
+          "intensity": "3×3km @ 3:50/km，组间慢跑 3 分钟",
+          "purpose": "完成阶段阈值稳定性检查点。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W14 3×3km 节奏测试",
+            "date": "2026-08-04",
+            "note": "以三组配速稳定和动作完整为通过标准。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 148
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 3,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 232,
+                      "high": 228
+                    },
+                    "hr_cap_bpm": 175
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "time_s",
+                      "value": 180
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 150
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 20,
+          "duration_min": null,
+          "intensity": "3km 热身 + 10km MP @ 3:56-4:00/km + 4km Z2 + 3km 放松",
+          "purpose": "把独立 MP 段提高到 10km。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W14 10km MP 专项课",
+            "date": "2026-08-06",
+            "note": "高温时允许按规则放慢，但心率不得超过 168 bpm。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 125,
+                      "high": 148
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 10000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 240,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 168
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 4000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 148
+                    }
+                  },
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 120,
+                      "high": 145
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 34,
+          "duration_min": null,
+          "intensity": "24km Z2 + 10km MP @ 3:56-4:00/km（同一长跑内）",
+          "purpose": "继续增加疲劳状态下的 MP 工作量。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W14 专项长跑",
+            "date": "2026-08-08",
+            "note": "MP 段心率不高于 168 bpm。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 24000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 148
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 10000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 240,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 168
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 15,
+      "week_start": "2026-08-10",
+      "phase_name": "专项速度周期",
+      "target_weekly_km_low": 82,
+      "target_weekly_km_high": 82,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 26,
+          "duration_min": null,
+          "intensity": "Z2，HR 130-148 bpm",
+          "purpose": "减量周保留耐力，不安排速度或 MP 工作段。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "W15 减量长跑",
+            "date": "2026-08-15",
+            "note": "全程舒适。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 26000
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 130,
+                      "high": 148
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": true
+    },
+    {
+      "week_index": 16,
+      "week_start": "2026-08-17",
+      "phase_name": "专项速度周期",
+      "target_weekly_km_low": 72,
+      "target_weekly_km_high": 78,
+      "key_sessions": [
+        {
+          "type": "threshold",
+          "distance_km": 15,
+          "duration_min": 68,
+          "intensity": "3公里热身；4×2公里阈值跑，配速3:56-4:05/公里，组间慢跑500米；2公里放松。",
+          "purpose": "重建阈值耐力并校准当前能力。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "4×2公里阈值跑",
+            "date": "2026-08-18",
+            "note": "阈值段心率控制在158-170次/分。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 330,
+                      "high": 285
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 4,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 2000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 245,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 170
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 500
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 2000
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 26,
+          "duration_min": 122,
+          "intensity": "前20公里轻松跑4:45-5:20/公里，末6公里稳态4:15-4:30/公里。",
+          "purpose": "恢复长距离耐力和后程跑姿稳定。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "26公里渐进长跑",
+            "date": "2026-08-23",
+            "note": "全程练习饮水，末段不冲刺。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 20000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 320,
+                      "high": 285
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 6000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 270,
+                      "high": 255
+                    },
+                    "hr_cap_bpm": 158
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 17,
+      "week_start": "2026-08-24",
+      "phase_name": "专项速度周期",
+      "target_weekly_km_low": 78,
+      "target_weekly_km_high": 84,
+      "key_sessions": [
+        {
+          "type": "hill",
+          "distance_km": 14,
+          "duration_min": 68,
+          "intensity": "3公里热身；10×300米上坡强跑，慢跑下坡300米恢复；5公里放松。",
+          "purpose": "提升跑姿力量、足踝刚度和跑步经济性。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "10×300米坡跑",
+            "date": "2026-08-25",
+            "note": "选择4%-6%缓坡，动作优先，不全力冲刺。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 330,
+                      "high": 285
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 10,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 300
+                    },
+                    "target": {
+                      "kind": "hr_bpm",
+                      "low": 160,
+                      "high": 168
+                    }
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 300
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 5000
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 28,
+          "duration_min": 133,
+          "intensity": "前22公里轻松跑4:45-5:20/公里，末6公里4:15-4:25/公里。",
+          "purpose": "延长有氧耐力并练习疲劳下的节奏控制。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "28公里渐进长跑",
+            "date": "2026-08-30",
+            "note": "每小时补充50-70克碳水。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 22000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 320,
+                      "high": 285
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 6000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 265,
+                      "high": 255
+                    },
+                    "hr_cap_bpm": 158
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 18,
+      "week_start": "2026-08-31",
+      "phase_name": "专项速度周期",
+      "target_weekly_km_low": 82,
+      "target_weekly_km_high": 88,
+      "key_sessions": [
+        {
+          "type": "threshold",
+          "distance_km": 16,
+          "duration_min": 75,
+          "intensity": "3公里热身；3×3公里阈值跑3:56-4:05/公里，组间慢跑1公里；1公里放松。",
+          "purpose": "提高持续阈值能力。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "3×3公里阈值跑",
+            "date": "2026-09-01",
+            "note": "配速均匀，末组不超过170次/分。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 330,
+                      "high": 285
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 3,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 245,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 170
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 1000
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 1000
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 30,
+          "duration_min": 140,
+          "intensity": "前22公里4:45-5:15/公里，末8公里4:08-4:15/公里。",
+          "purpose": "建立30公里耐力并评估后段心率漂移。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "30公里渐进长跑",
+            "date": "2026-09-06",
+            "note": "末8公里心率漂移目标不超过5%。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 22000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 315,
+                      "high": 285
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 8000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 255,
+                      "high": 248
+                    },
+                    "hr_cap_bpm": 158
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 19,
+      "week_start": "2026-09-07",
+      "phase_name": "专项速度周期",
+      "target_weekly_km_low": 68,
+      "target_weekly_km_high": 74,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 24,
+          "duration_min": 124,
+          "intensity": "全程轻松跑4:50-5:30/公里，心率以134-148次/分为主。",
+          "purpose": "恢复周维持有氧耐力并吸收前三周训练。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "24公里轻松长跑",
+            "date": "2026-09-13",
+            "note": "不加入加速段。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 24000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 330,
+                      "high": 290
+                    },
+                    "hr_cap_bpm": 148
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": true
+    },
+    {
+      "week_index": 20,
+      "week_start": "2026-09-14",
+      "phase_name": "马拉松专项期",
+      "target_weekly_km_low": 86,
+      "target_weekly_km_high": 92,
+      "key_sessions": [
+        {
+          "type": "threshold",
+          "distance_km": 16,
+          "duration_min": 70,
+          "intensity": "3公里热身；4×2公里阈值跑3:56-4:05/公里，组间慢跑500米；3公里放松。",
+          "purpose": "维持阈值能力，为专项长跑提供速度余量。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "4×2公里阈值维持",
+            "date": "2026-09-15",
+            "note": "保持可控，避免影响周日长跑。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 330,
+                      "high": 285
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 4,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 2000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 245,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 170
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 500
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 30,
+          "duration_min": 132,
+          "intensity": "6公里轻松；6公里马配3:56-4:00/公里；3公里轻松；6公里马配；9公里轻松。",
+          "purpose": "首次累计12公里目标专项刺激并测试补给。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "30公里含2×6公里马配",
+            "date": "2026-09-20",
+            "note": "马配段心率不超过158次/分；每小时60-80克碳水。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 6000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 315,
+                      "high": 285
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 6000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 240,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 158
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 315,
+                      "high": 285
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 6000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 240,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 158
+                  },
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 9000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 320,
+                      "high": 290
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 21,
+      "week_start": "2026-09-21",
+      "phase_name": "马拉松专项期",
+      "target_weekly_km_low": 90,
+      "target_weekly_km_high": 94,
+      "key_sessions": [
+        {
+          "type": "interval",
+          "distance_km": 16,
+          "duration_min": 69,
+          "intensity": "3公里热身；6×1.2公里3:35-3:45/公里，组间慢跑400米；3.4公里放松。",
+          "purpose": "提高有氧功率和跑步经济性。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "6×1.2公里有氧间歇",
+            "date": "2026-09-22",
+            "note": "控制总负荷，不进入冲刺状态。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 330,
+                      "high": 285
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 6,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 1200
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 225,
+                      "high": 215
+                    }
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 400
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3400
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 32,
+          "duration_min": 137,
+          "intensity": "8公里轻松；16公里3:54-3:58/公里；8公里轻松。",
+          "purpose": "验证目标马拉松配速的连续耐力、心率和补给耐受。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "32公里含连续16公里马配",
+            "date": "2026-09-27",
+            "note": "使用比赛鞋与计划补给；马配段心率上限158次/分。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 8000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 315,
+                      "high": 285
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 16000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 238,
+                      "high": 234
+                    },
+                    "hr_cap_bpm": 158
+                  },
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 8000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 320,
+                      "high": 290
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 22,
+      "week_start": "2026-09-28",
+      "phase_name": "马拉松专项期",
+      "target_weekly_km_low": 88,
+      "target_weekly_km_high": 94,
+      "key_sessions": [
+        {
+          "type": "threshold",
+          "distance_km": 18,
+          "duration_min": 78,
+          "intensity": "3公里热身；3×4公里4:00-4:05/公里，组间1公里轻松跑。",
+          "purpose": "在峰值周维持长阈值耐力，但控制在阈值下沿。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "3×4公里可控阈值跑",
+            "date": "2026-09-29",
+            "note": "若周日专项长跑残余疲劳明显，改为12公里轻松跑。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 330,
+                      "high": 285
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 3,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 4000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 245,
+                      "high": 240
+                    },
+                    "hr_cap_bpm": 168
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 1000
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 34,
+          "duration_min": 148,
+          "intensity": "8公里轻松；8公里马配3:54-3:58/公里；2公里轻松；8公里马配；8公里轻松。",
+          "purpose": "完成峰值专项长跑，检验疲劳下的目标配速和补给策略。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "34公里含2×8公里马配",
+            "date": "2026-10-04",
+            "note": "比赛装备全流程演练；若疲劳异常，缩短为28-30公里。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 8000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 315,
+                      "high": 285
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 8000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 238,
+                      "high": 234
+                    },
+                    "hr_cap_bpm": 158
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 2000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 320,
+                      "high": 290
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 8000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 238,
+                      "high": 234
+                    },
+                    "hr_cap_bpm": 158
+                  },
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 8000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 320,
+                      "high": 290
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 23,
+      "week_start": "2026-10-05",
+      "phase_name": "赛前减量期",
+      "target_weekly_km_low": 66,
+      "target_weekly_km_high": 72,
+      "key_sessions": [
+        {
+          "type": "threshold",
+          "distance_km": 14,
+          "duration_min": 63,
+          "intensity": "3公里热身；3×2公里3:58-4:05/公里，组间慢跑500米；3.5公里放松。",
+          "purpose": "减量期保留阈值感觉，不制造新疲劳。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "3×2公里短阈值",
+            "date": "2026-10-06",
+            "note": "训练结束时应感觉仍可完成一组。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 330,
+                      "high": 285
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 3,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 2000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 245,
+                      "high": 238
+                    },
+                    "hr_cap_bpm": 168
+                  },
+                  {
+                    "step_kind": "recovery",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 500
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              },
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3500
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "long_run",
+          "distance_km": 24,
+          "duration_min": 103,
+          "intensity": "7公里轻松；10公里3:54-3:58/公里；7公里轻松。",
+          "purpose": "最后一次中等专项刺激，确认比赛节奏。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "24公里含10公里马配",
+            "date": "2026-10-11",
+            "note": "不做超量补课；装备与早餐按比赛方案执行。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 7000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 315,
+                      "high": 285
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 10000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 238,
+                      "high": 234
+                    },
+                    "hr_cap_bpm": 158
+                  },
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 7000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 320,
+                      "high": 290
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 24,
+      "week_start": "2026-10-12",
+      "phase_name": "赛前减量期",
+      "target_weekly_km_low": 58,
+      "target_weekly_km_high": 58,
+      "key_sessions": [
+        {
+          "type": "race_pace",
+          "distance_km": 16,
+          "duration_min": 67,
+          "intensity": "3公里热身；连续10公里目标马配3:56-4:00/公里；3公里放松。",
+          "purpose": "比赛周完成规定的马拉松配速激活并确认动作、装备与节奏。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "比赛周10公里马配激活",
+            "date": "2026-10-13",
+            "note": "目标配速段保持受控；如有异常疲劳或疼痛，立即终止并转为轻松跑。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "warmup",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 330,
+                      "high": 290
+                    }
+                  },
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 10000
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 240,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 158
+                  },
+                  {
+                    "step_kind": "cooldown",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 3000
+                    },
+                    "target": {
+                      "kind": "open",
+                      "low": null,
+                      "high": null
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "race",
+          "distance_km": 42.195,
+          "duration_min": 167,
+          "intensity": "目标均速约3:58/公里；前5公里4:00-4:02/公里，5-30公里约3:56-4:00/公里，30公里后按状态维持或渐进。",
+          "purpose": "完成西安马拉松2:47:00目标。",
+          "workout_structure": {
+            "schema": "run-workout/v1",
+            "name": "西安马拉松",
+            "date": "2026-10-18",
+            "note": "前半程约1:23:30；按天气调整，前30公里避免超目标配速。",
+            "blocks": [
+              {
+                "repeat": 1,
+                "steps": [
+                  {
+                    "step_kind": "work",
+                    "duration": {
+                      "kind": "distance_m",
+                      "value": 42195
+                    },
+                    "target": {
+                      "kind": "pace_s_km",
+                      "low": 240,
+                      "high": 236
+                    },
+                    "hr_cap_bpm": 168
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "is_recovery_week": false
+    },
+    {
+      "week_index": 25,
+      "week_start": "2026-10-19",
+      "phase_name": "赛后恢复期",
+      "target_weekly_km_low": 18,
+      "target_weekly_km_high": 26,
+      "key_sessions": [],
+      "is_recovery_week": true
+    },
+    {
+      "week_index": 26,
+      "week_start": "2026-10-26",
+      "phase_name": "赛后恢复期",
+      "target_weekly_km_low": 30,
+      "target_weekly_km_high": 40,
+      "key_sessions": [],
+      "is_recovery_week": true
+    }
+  ],
+  "training_principles": [
+    "每周跑6天、周一休跑；未列为关键课的里程分配到轻松跑，主要控制在4:45-5:30/公里或心率低于148次/分。",
+    "每周最多2节关键跑课；专项长跑内的马拉松配速段属于同一节长跑，不另行加课。",
+    "恢复周最多保留1节战略关键课，其余训练均为轻松跑或恢复活动。",
+    "目标2:47:00较当前全马PB 2:50:44提升约2.2%，具挑战性；以9月27日和10月4日专项长跑作为目标确认门槛。",
+    "轻松跑与恢复跑不得为凑配速而加速；周跑量取区间下限起步，只有睡眠、疼痛和恢复指标正常才接近上限。",
+    "长跑补给从每小时60克碳水起，逐步测试至60-90克；饮水和钠摄入按气温、出汗率及胃肠耐受个体化。",
+    "无阻断计划生成的关键信息缺口；后续可补充比赛日预计气温与海拔、个人出汗率、补给耐受、力量器械条件和训练时段，以进一步细化执行。"
+  ],
+  "generated_by": "coach_agent",
+  "version": 1,
+  "created_at": "2026-08-15T01:40:02Z",
+  "updated_at": "2026-08-15T14:15:00Z"
+}
