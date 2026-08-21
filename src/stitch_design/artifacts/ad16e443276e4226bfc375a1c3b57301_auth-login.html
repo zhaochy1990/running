@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>STRIDE - 登录</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "background": "#07080A",
+                "canvas": "#07080A",
+                "surface": "#101111",
+                "surface-container-low": "#1B1C1E",
+                "surface-container-highest": "#1B1C1E",
+                "on-surface": "#F9F9F9",
+                "on-surface-variant": "#9C9C9D",
+                "secondary": "#CECECE",
+                "disabled": "#6A6B6C",
+                "raycast-coral": "#FF6363",
+                "stride-coral": "#FF6363",
+                "focus-blue": "#55B3FF",
+                "success-green": "#5FC992",
+                "on-background": "#F9F9F9",
+                "surface-container-lowest": "#07080A",
+                "error": "#FF6363",
+                "error-container": "#FF6363"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.25rem",
+                "lg": "0.5rem",
+                "xl": "0.75rem",
+                "full": "9999px"
+        },
+        "spacing": {
+                "section": "32px",
+                "lg": "16px",
+                "md": "12px",
+                "margin-mobile": "20px",
+                "xxl": "24px",
+                "xs": "4px",
+                "sm": "8px",
+                "xl": "20px"
+        },
+        "fontFamily": {
+                "label": [
+                        "Inter"
+                ],
+                "body-compact": [
+                        "Inter"
+                ],
+                "card-title": [
+                        "Inter"
+                ],
+                "display": [
+                        "Inter"
+                ],
+                "body": [
+                        "Inter"
+                ],
+                "screen-title": [
+                        "Inter"
+                ],
+                "data-tabular": [
+                        "Geist Mono"
+                ]
+        },
+        "fontSize": {
+                "label": [
+                        "12px",
+                        {
+                                "lineHeight": "16px",
+                                "letterSpacing": "0.4px",
+                                "fontWeight": "500"
+                        }
+                ],
+                "body-compact": [
+                        "14px",
+                        {
+                                "lineHeight": "20px",
+                                "fontWeight": "500"
+                        }
+                ],
+                "card-title": [
+                        "18px",
+                        {
+                                "lineHeight": "23px",
+                                "fontWeight": "600"
+                        }
+                ],
+                "display": [
+                        "40px",
+                        {
+                                "lineHeight": "44px",
+                                "letterSpacing": "0.4px",
+                                "fontWeight": "600"
+                        }
+                ],
+                "body": [
+                        "16px",
+                        {
+                                "lineHeight": "26px",
+                                "letterSpacing": "0.2px",
+                                "fontWeight": "500"
+                        }
+                ],
+                "screen-title": [
+                        "24px",
+                        {
+                                "lineHeight": "29px",
+                                "letterSpacing": "0.2px",
+                                "fontWeight": "600"
+                        }
+                ],
+                "data-tabular": [
+                        "16px",
+                        {
+                                "lineHeight": "24px",
+                                "fontWeight": "500"
+                        }
+                ]
+        },
+        boxShadow: {
+            'raised': 'rgba(255, 255, 255, 0.05) 0 1px 0 inset, rgba(0, 0, 0, 0.28) 0 1.2px 2.4px, 0 0 0 1px rgba(255, 255, 255, 0.06)',
+        }
+},
+    },
+  }
+</script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            -webkit-tap-highlight-color: transparent;
+        }
+        .focus-ring:focus-within,
+        .focus-visible-ring:focus-visible {
+            box-shadow: 0 0 0 1px #55B3FF, 0 0 0 4px rgba(85,179,255,0.45);
+            border-color: transparent;
+            outline: none;
+        }
+        .border-standard {
+            border-color: rgba(255,255,255,0.06);
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, ::before, ::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface flex flex-col min-h-[844px] font-body selection:bg-raycast-coral/30 selection:text-raycast-coral mx-auto w-full max-w-[390px] overflow-y-auto overflow-x-hidden relative">
+<!-- Status Bar Area Padding -->
+<div class="h-safe-top pt-[env(safe-area-inset-top)] shrink-0"></div>
+<!-- Fixed Top Bar -->
+<header class="px-4 h-[48px] flex items-center shrink-0 justify-between w-full relative">
+<a aria-label="返回" class="flex items-center justify-center w-[48px] h-[48px] -ml-2 text-on-surface hover:text-white transition-colors z-10 focus-visible-ring rounded-full" href="/v2/auth/start">
+<span class="material-symbols-outlined text-[24px]">arrow_back</span>
+</a>
+<div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+<div class="w-6 h-6 rounded-md bg-raycast-coral flex items-center justify-center text-background font-bold text-xs mr-2">S</div>
+<span class="font-screen-title text-lg tracking-wide">STRIDE</span>
+</div>
+<div class="w-[48px]"></div>
+</header>
+<!-- Main Content Container -->
+<main class="flex-grow px-margin-mobile flex flex-col pt-8 pb-4 w-full animate-in fade-in duration-200 h-full">
+<!-- Identity -->
+<div class="mb-4 shrink-0">
+<h1 class="font-display text-display text-white mb-2">
+                欢迎回来<span class="text-raycast-coral">.</span>
+</h1>
+<p class="font-body text-body text-on-surface-variant">
+                继续你的训练计划
+            </p>
+</div>
+<!-- Credential Switch (Segmented Control) -->
+<div aria-label="登录方式" class="flex bg-[#1b1c1e] p-1 rounded-lg mb-4 h-[56px] items-center relative shadow-raised shrink-0 border border-standard" id="segmentControl" role="tablist">
+<button aria-controls="formEmail" aria-selected="true" class="flex-1 h-[48px] flex flex-col items-center justify-center text-sm font-medium rounded-md bg-[#101111] text-white shadow-raised border border-standard transition-all duration-200 relative focus-visible-ring form-control" id="btnEmail" role="tab">
+<span>邮箱登录</span>
+<div class="absolute bottom-1 w-1 h-1 rounded-full bg-raycast-coral" id="markerEmail"></div>
+</button>
+<button aria-controls="formMobile" aria-selected="false" class="flex-1 h-[48px] flex flex-col items-center justify-center text-sm font-medium rounded-md text-on-surface-variant hover:text-on-surface transition-all duration-200 relative focus-visible-ring form-control" id="btnMobile" role="tab">
+<span>手机号登录</span>
+<div class="absolute bottom-1 w-1 h-1 rounded-full bg-transparent" id="markerMobile"></div>
+</button>
+</div>
+<!-- Forms Container -->
+<div class="relative w-full shrink-0">
+<!-- Email Form -->
+<form action="javascript:void(0)" class="space-y-4 transition-all duration-300 w-full opacity-100 translate-x-0" id="formEmail" novalidate="">
+<div class="space-y-2">
+<label class="font-label text-label text-on-surface-variant" for="email">邮箱</label>
+<div class="relative group focus-ring rounded-[8px] border border-standard bg-[#07080A] overflow-hidden transition-all duration-200 shadow-raised">
+<input class="w-full h-[48px] px-4 bg-transparent border-none focus:ring-0 font-body text-white placeholder:text-on-surface-variant/50 form-control" id="email" placeholder="runner@example.com" required="" type="email"/>
+</div>
+</div>
+<div class="space-y-2">
+<label class="font-label text-label text-on-surface-variant" for="password">密码</label>
+<div class="relative group focus-ring rounded-[8px] border border-standard bg-[#07080A] overflow-hidden transition-all duration-200 flex items-center shadow-raised">
+<input class="flex-grow h-[48px] px-4 bg-transparent border-none focus:ring-0 font-body text-white placeholder:text-on-surface-variant/50 form-control" id="password" placeholder="输入密码" required="" type="password"/>
+<button aria-label="显示密码" aria-pressed="false" class="w-[48px] h-[48px] flex items-center justify-center text-on-surface-variant hover:text-white transition-colors focus:outline-none focus-visible-ring rounded-r-[8px] form-control" id="togglePassword" type="button">
+<span class="material-symbols-outlined text-[20px]">visibility</span>
+</button>
+</div>
+<div class="flex justify-end mt-1">
+<a class="h-[48px] flex items-center font-body-compact text-sm text-on-surface-variant hover:text-white transition-colors px-2 -mr-2 action-link focus-visible-ring rounded-md form-control" href="/v2/auth/forgot-password" id="linkForgotPassword">
+                            忘记密码？
+                        </a>
+</div>
+</div>
+</form>
+<!-- Mobile Form (Hidden by default) -->
+<form action="javascript:void(0)" aria-hidden="true" class="hidden space-y-4 transition-all duration-300 w-full absolute top-0 left-0 opacity-0 translate-x-full pointer-events-none" id="formMobile" inert="" novalidate="">
+<div class="space-y-2">
+<label class="font-label text-label text-on-surface-variant" for="phone">手机号</label>
+<div class="relative group focus-ring rounded-[8px] border border-standard bg-[#07080A] overflow-hidden transition-all duration-200 flex shadow-raised">
+<div class="h-[48px] px-4 flex items-center border-r border-standard text-on-surface-variant font-data-tabular">
+                                +86
+                            </div>
+<input class="w-full h-[48px] px-4 bg-transparent border-none focus:ring-0 font-body text-white placeholder:text-on-surface-variant/50 form-control" disabled="" id="phone" placeholder="请输入手机号" required="" type="tel"/>
+</div>
+</div>
+<div class="space-y-2">
+<label class="font-label text-label text-on-surface-variant" for="code">验证码</label>
+<div class="flex gap-2">
+<div class="relative group focus-ring rounded-[8px] border border-standard bg-[#07080A] overflow-hidden transition-all duration-200 flex-grow shadow-raised">
+<input class="w-full h-[48px] px-4 bg-transparent border-none focus:ring-0 font-data-tabular tabular-nums text-white placeholder:text-on-surface-variant/50 tracking-[0.2em] form-control" disabled="" id="code" inputmode="numeric" maxlength="6" placeholder="6 位验证码" required="" type="text"/>
+</div>
+<button aria-label="获取验证码" class="h-[48px] px-4 min-w-[120px] bg-[#1b1c1e] border border-standard rounded-lg text-white font-body-compact text-sm whitespace-nowrap hover:bg-[#101111] transition-colors shadow-raised focus-visible-ring form-control" disabled="" id="btnSendCode" type="button">
+                                获取验证码
+                            </button>
+</div>
+</div>
+</form>
+</div>
+<!-- Fixed Height Error Slot -->
+<div aria-live="assertive" class="h-[52px] w-full flex items-center justify-center shrink-0 my-2" role="alert">
+<div class="hidden flex items-center gap-2 p-3 bg-error-container/10 border border-error/20 rounded-lg text-error font-body-compact w-full justify-center transition-all duration-300" id="errorMessage">
+<span class="material-symbols-outlined text-[20px]">error</span>
+<span id="errorText"></span>
+</div>
+</div>
+<!-- Primary Action -->
+<div class="mb-4 shrink-0 mt-auto">
+<button class="w-full h-[52px] bg-on-background text-surface-container-lowest font-body font-medium rounded-full flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed focus-visible-ring form-control" id="btnSubmit" type="button">
+<span>登录</span>
+</button>
+</div>
+<!-- Secondary Link -->
+<div class="flex justify-center mb-4 shrink-0">
+<a class="h-[48px] flex items-center justify-center px-4 font-body text-on-surface-variant hover:text-white transition-colors action-link focus-visible-ring rounded-md form-control" href="/v2/auth/register" id="linkCreateAccount">
+                还没有账号？<span class="text-white ml-1">创建账号</span>
+</a>
+</div>
+</main>
+<!-- Bottom Actions Area -->
+<footer class="px-margin-mobile pt-4 pb-[calc(env(safe-area-inset-bottom)+24px)] border-t border-standard w-full text-center shrink-0 bg-background">
+<p class="font-label text-label text-on-surface-variant/60 flex flex-wrap items-center justify-center h-auto">
+            登录即表示你同意
+            <a class="text-on-surface-variant hover:text-white transition-colors h-[48px] inline-flex items-center justify-center px-2 underline decoration-white/20 underline-offset-4 focus-visible-ring rounded-md" href="https://stride-running.cn/terms">《服务条款》</a>
+            和
+            <a class="text-on-surface-variant hover:text-white transition-colors h-[48px] inline-flex items-center justify-center px-2 underline decoration-white/20 underline-offset-4 focus-visible-ring rounded-md" href="https://stride-running.cn/privacy">《隐私政策》</a>
+</p>
+</footer>
+<!-- Simple Interactivity -->
+<script>
+        function resolveNextRoute(rawNext) {
+            const defaultRoute = '/v2/home';
+            if (!rawNext) return defaultRoute;
+            if (rawNext === 'onboarding') return '/v2/onboarding/brand';
+            
+            let pathnamePart = rawNext.split(/[?#]/)[0];
+            
+            let decoded = pathnamePart;
+            let prev = '';
+            let iterations = 0;
+            
+            try {
+                while (decoded !== prev && iterations < 10) {
+                    prev = decoded;
+                    decoded = decodeURIComponent(decoded);
+                    iterations++;
+                }
+                if (decoded !== prev) return defaultRoute;
+            } catch (e) {
+                return defaultRoute;
+            }
+            
+            if (/(^|\/)\.{1,2}(\/|$)/.test(decoded) ||
+                /[\x00-\x1F]/.test(decoded) || 
+                decoded.includes('\\') || 
+                decoded.includes(':/') || 
+                decoded.includes('//')) {
+                return defaultRoute;
+            }
+            
+            try {
+                const url = new URL(rawNext, 'http://trusted');
+                if (url.origin !== 'http://trusted') return defaultRoute;
+                if (!url.pathname.startsWith('/v2/')) return defaultRoute;
+                
+                return url.pathname + url.search + url.hash;
+            } catch (e) {
+                return defaultRoute;
+            }
+        }
+
+        // Check URL state for offline mode
+        const urlParams = new URLSearchParams(window.location.search);
+        const isOffline = urlParams.get('state') === 'offline';
+        const isServiceError = urlParams.get('state') === 'service-error';
+        const rawNextParam = urlParams.get('next');
+        const nextRoute = resolveNextRoute(rawNextParam);
+        
+        const errorMessageDiv = document.getElementById('errorMessage');
+        const errorTextSpan = document.getElementById('errorText');
+
+        if (isOffline) {
+            errorTextSpan.textContent = '网络连接异常，请稍后重试';
+            errorMessageDiv.querySelector('.material-symbols-outlined').textContent = 'wifi_off';
+            errorMessageDiv.classList.remove('hidden');
+        }
+
+        function showError(message, icon = 'error') {
+            errorTextSpan.textContent = message;
+            errorMessageDiv.querySelector('.material-symbols-outlined').textContent = icon;
+            errorMessageDiv.classList.remove('hidden');
+        }
+
+        function hideError() {
+            errorMessageDiv.classList.add('hidden');
+        }
+
+        // Tab Switching
+        const btnEmail = document.getElementById('btnEmail');
+        const btnMobile = document.getElementById('btnMobile');
+        const formEmail = document.getElementById('formEmail');
+        const formMobile = document.getElementById('formMobile');
+        const markerEmail = document.getElementById('markerEmail');
+        const markerMobile = document.getElementById('markerMobile');
+        
+        const activeClass = ['bg-[#101111]', 'text-white', 'shadow-raised', 'border', 'border-standard'];
+        const inactiveClass = ['text-on-surface-variant', 'hover:text-on-surface', 'bg-transparent'];
+
+        function setFormDescendantsDisabled(form, disabled) {
+            const controls = form.querySelectorAll('.form-control');
+            controls.forEach(ctrl => {
+                if (disabled) {
+                    ctrl.setAttribute('disabled', 'true');
+                    ctrl.setAttribute('tabindex', '-1');
+                    if (ctrl.tagName === 'A') {
+                        ctrl.setAttribute('aria-disabled', 'true');
+                        ctrl.classList.add('pointer-events-none', 'opacity-50');
+                    }
+                } else {
+                    ctrl.removeAttribute('disabled');
+                    ctrl.removeAttribute('tabindex');
+                    if (ctrl.tagName === 'A') {
+                        ctrl.removeAttribute('aria-disabled');
+                        ctrl.classList.remove('pointer-events-none', 'opacity-50');
+                    }
+                }
+            });
+        }
+
+        function switchTab(isEmail) {
+            formEmail.classList.toggle('hidden', !isEmail);
+            formMobile.classList.toggle('hidden', isEmail);
+            
+            if (isOffline) {
+                showError('网络连接异常，请稍后重试', 'wifi_off');
+            } else {
+                hideError();
+            }
+
+            if (isEmail) {
+                btnEmail.classList.remove(...inactiveClass);
+                btnEmail.classList.add(...activeClass);
+                btnEmail.setAttribute('aria-selected', 'true');
+                markerEmail.classList.replace('bg-transparent', 'bg-raycast-coral');
+                
+                btnMobile.classList.remove(...activeClass);
+                btnMobile.classList.add(...inactiveClass);
+                btnMobile.setAttribute('aria-selected', 'false');
+                markerMobile.classList.replace('bg-raycast-coral', 'bg-transparent');
+                
+                formEmail.classList.remove('opacity-0', '-translate-x-full', 'pointer-events-none', 'absolute', 'top-0', 'left-0');
+                formEmail.classList.add('opacity-100', 'translate-x-0', 'relative');
+                formEmail.removeAttribute('inert');
+                formEmail.removeAttribute('aria-hidden');
+                setFormDescendantsDisabled(formEmail, false);
+                
+                formMobile.classList.remove('opacity-100', 'translate-x-0', 'relative');
+                formMobile.classList.add('opacity-0', 'translate-x-full', 'pointer-events-none', 'absolute', 'top-0', 'left-0');
+                formMobile.setAttribute('inert', '');
+                formMobile.setAttribute('aria-hidden', 'true');
+                setFormDescendantsDisabled(formMobile, true);
+            } else {
+                btnMobile.classList.remove(...inactiveClass);
+                btnMobile.classList.add(...activeClass);
+                btnMobile.setAttribute('aria-selected', 'true');
+                markerMobile.classList.replace('bg-transparent', 'bg-raycast-coral');
+                
+                btnEmail.classList.remove(...activeClass);
+                btnEmail.classList.add(...inactiveClass);
+                btnEmail.setAttribute('aria-selected', 'false');
+                markerEmail.classList.replace('bg-raycast-coral', 'bg-transparent');
+                
+                formMobile.classList.remove('opacity-0', 'translate-x-full', 'pointer-events-none', 'absolute', 'top-0', 'left-0');
+                formMobile.classList.add('opacity-100', 'translate-x-0', 'relative');
+                formMobile.removeAttribute('inert');
+                formMobile.removeAttribute('aria-hidden');
+                setFormDescendantsDisabled(formMobile, false);
+                if (smsTimeLeft > 0) {
+                    btnSendCode.setAttribute('disabled', 'true');
+                }
+                
+                formEmail.classList.remove('opacity-100', 'translate-x-0', 'relative');
+                formEmail.classList.add('opacity-0', '-translate-x-full', 'pointer-events-none', 'absolute', 'top-0', 'left-0');
+                formEmail.setAttribute('inert', '');
+                formEmail.setAttribute('aria-hidden', 'true');
+                setFormDescendantsDisabled(formEmail, true);
+            }
+        }
+
+        btnEmail.addEventListener('click', () => switchTab(true));
+        btnMobile.addEventListener('click', () => switchTab(false));
+
+        // Password Toggle
+        const passwordInput = document.getElementById('password');
+        const toggleBtn = document.getElementById('togglePassword');
+        const toggleIcon = toggleBtn.querySelector('.material-symbols-outlined');
+
+        toggleBtn.addEventListener('click', () => {
+            const isPassword = passwordInput.getAttribute('type') === 'password';
+            passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
+            toggleIcon.textContent = isPassword ? 'visibility_off' : 'visibility';
+            toggleBtn.setAttribute('aria-pressed', isPassword ? 'true' : 'false');
+            toggleBtn.setAttribute('aria-label', isPassword ? '隐藏密码' : '显示密码');
+        });
+        
+        // SMS Code Logic
+        const btnSendCode = document.getElementById('btnSendCode');
+        let countdownInt;
+        let smsTimeLeft = 0;
+        
+        btnSendCode.addEventListener('click', () => {
+            if (btnSendCode.hasAttribute('disabled')) return;
+            
+            const phoneVal = document.getElementById('phone').value;
+            if (!validatePhone(phoneVal)) {
+                showError('请输入有效手机号');
+                return;
+            }
+
+            if (isServiceError || isOffline) {
+                showError('网络连接异常，请稍后重试', 'wifi_off');
+                return;
+            }
+            
+            if (!isOffline) {
+                hideError();
+            }
+
+            btnSendCode.setAttribute('disabled', 'true');
+            btnSendCode.classList.add('opacity-50', 'cursor-not-allowed');
+            smsTimeLeft = 52;
+            
+            const updateBtn = () => {
+                const text = `${smsTimeLeft} 秒后重发`;
+                btnSendCode.innerHTML = `<span class="font-data-tabular tabular-nums">${smsTimeLeft}</span> 秒后重发`;
+                btnSendCode.setAttribute('aria-label', text);
+            };
+            
+            updateBtn();
+            
+            countdownInt = setInterval(() => {
+                smsTimeLeft--;
+                if (smsTimeLeft <= 0) {
+                    clearInterval(countdownInt);
+                    const isMobileActive = btnMobile.getAttribute('aria-selected') === 'true';
+                    if (!submitBtn.hasAttribute('aria-busy') && isMobileActive) {
+                        btnSendCode.removeAttribute('disabled');
+                        btnSendCode.classList.remove('opacity-50', 'cursor-not-allowed');
+                    }
+                    btnSendCode.textContent = '获取验证码';
+                    btnSendCode.setAttribute('aria-label', '获取验证码');
+                } else {
+                    updateBtn();
+                }
+            }, 1000);
+        });
+
+        // Form Submission logic
+        const submitBtn = document.getElementById('btnSubmit');
+        const allFormControls = document.querySelectorAll('.form-control');
+
+        function validateEmail(email) {
+            const parts = email.split('@');
+            if (parts.length !== 2) return false;
+            if (parts[0].length === 0 || parts[1].length === 0) return false;
+            return parts[1].includes('.');
+        }
+
+        function validatePhone(phone) {
+            return /^1\d{10}$/.test(phone);
+        }
+        
+        function validateSmsCode(code) {
+            return /^\d{6}$/.test(code);
+        }
+
+        function handleLogin(e) {
+            e.preventDefault();
+            if (submitBtn.hasAttribute('disabled')) return;
+            
+            hideError();
+
+            const isEmailMode = btnEmail.getAttribute('aria-selected') === 'true';
+            
+            if (isEmailMode) {
+                const emailVal = document.getElementById('email').value;
+                const passVal = document.getElementById('password').value;
+                if (!validateEmail(emailVal) || !passVal) {
+                    showError('邮箱或密码错误');
+                    return;
+                }
+            } else {
+                 const phoneVal = document.getElementById('phone').value;
+                 const codeVal = document.getElementById('code').value;
+                 if(!validatePhone(phoneVal) || !validateSmsCode(codeVal)){
+                      showError('验证码错误或已过期');
+                      return;
+                 }
+            }
+
+            if (isOffline) {
+                 showError('网络连接异常，请稍后重试', 'wifi_off');
+                 return;
+            }
+
+            // Loading state
+            const originalContent = submitBtn.innerHTML;
+            submitBtn.setAttribute('aria-live', 'polite');
+            submitBtn.setAttribute('aria-busy', 'true');
+            submitBtn.innerHTML = `<span class="animate-spin h-5 w-5 border-2 border-surface-container-lowest border-t-transparent rounded-full"></span> <span>登录中…</span>`;
+            
+            allFormControls.forEach(ctrl => {
+                ctrl.setAttribute('disabled', 'true');
+                ctrl.setAttribute('tabindex', '-1');
+                if (ctrl.tagName === 'A') {
+                    ctrl.setAttribute('aria-disabled', 'true');
+                    ctrl.classList.add('pointer-events-none', 'opacity-50');
+                }
+            });
+
+            setTimeout(() => {
+                if (isServiceError) {
+                    submitBtn.innerHTML = originalContent;
+                    submitBtn.removeAttribute('aria-busy');
+                    
+                    showError('服务暂时不可用，请稍后重试', 'error');
+                    
+                    // Restore controls only for active tab
+                    btnEmail.removeAttribute('disabled');
+                    btnEmail.removeAttribute('tabindex');
+                    btnMobile.removeAttribute('disabled');
+                    btnMobile.removeAttribute('tabindex');
+                    submitBtn.removeAttribute('disabled');
+                    submitBtn.removeAttribute('tabindex');
+                    
+                    const createAccountLink = document.getElementById('linkCreateAccount');
+                    createAccountLink.removeAttribute('disabled');
+                    createAccountLink.removeAttribute('tabindex');
+                    createAccountLink.removeAttribute('aria-disabled');
+                    createAccountLink.classList.remove('pointer-events-none', 'opacity-50');
+
+                    const forgotPasswordLink = document.getElementById('linkForgotPassword');
+
+                    if (isEmailMode) {
+                        forgotPasswordLink.removeAttribute('disabled');
+                        forgotPasswordLink.removeAttribute('tabindex');
+                        forgotPasswordLink.removeAttribute('aria-disabled');
+                        forgotPasswordLink.classList.remove('pointer-events-none', 'opacity-50');
+                        setFormDescendantsDisabled(formEmail, false);
+                    } else {
+                        setFormDescendantsDisabled(formMobile, false);
+                        if (smsTimeLeft > 0) {
+                            btnSendCode.setAttribute('disabled', 'true');
+                        }
+                    }
+                } else {
+                    submitBtn.innerHTML = `<span class="material-symbols-outlined text-[20px]">check</span> <span>登录成功</span>`;
+                    submitBtn.removeAttribute('aria-busy');
+                    submitBtn.setAttribute('data-next-route', nextRoute);
+                    
+                    setTimeout(() => {
+                        if (window.location.protocol === 'file:') {
+                            document.body.setAttribute('data-navigated-to', nextRoute);
+                            window.location.hash = '#' + nextRoute;
+                        } else {
+                            window.location.assign(nextRoute);
+                        }
+                    }, 500);
+                }
+            }, 2000);
+        }
+
+        formEmail.addEventListener('submit', handleLogin);
+        formMobile.addEventListener('submit', handleLogin);
+        submitBtn.addEventListener('click', handleLogin);
+
+        // Handle Enter key for submission
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const activeForm = btnEmail.getAttribute('aria-selected') === 'true' ? formEmail : formMobile;
+                const submitEvent = new Event('submit', { cancelable: true, bubbles: true });
+                activeForm.dispatchEvent(submitEvent);
+            }
+        });
+
+    </script>
+</body></html>
