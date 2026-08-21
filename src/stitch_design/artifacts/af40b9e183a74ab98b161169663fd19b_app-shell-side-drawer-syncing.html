@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
+<title>STRIDE - Side Navigation Drawer</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-background": "#e3e2e5",
+                        "error-container": "#93000a",
+                        "on-surface": "#e3e2e5",
+                        "on-secondary-fixed": "#001d33",
+                        "surface-container-lowest": "#0d0e10",
+                        "on-primary-fixed-variant": "#8f0d1c",
+                        "error": "#ffb4ab",
+                        "tertiary-container": "#3eaa76",
+                        "primary-fixed": "#ffdad7",
+                        "on-primary-fixed": "#410006",
+                        "tertiary-fixed-dim": "#71dba2",
+                        "on-surface-variant": "#e1bfbc",
+                        "on-tertiary-container": "#003821",
+                        "surface-container-low": "#1b1c1e",
+                        "on-tertiary-fixed": "#002112",
+                        "surface-bright": "#38393c",
+                        "primary": "#ffb3af",
+                        "on-secondary-fixed-variant": "#004a76",
+                        "on-tertiary": "#003921",
+                        "surface-container-highest": "#343537",
+                        "on-primary-container": "#67000e",
+                        "on-error": "#690005",
+                        "surface-container": "#1f2022",
+                        "outline": "#a88988",
+                        "on-secondary": "#003353",
+                        "secondary": "#97cbff",
+                        "surface": "#121316",
+                        "secondary-fixed": "#cee5ff",
+                        "inverse-surface": "#e3e2e5",
+                        "secondary-fixed-dim": "#97cbff",
+                        "on-secondary-container": "#002c49",
+                        "surface-tint": "#ffb3af",
+                        "secondary-container": "#2f97e1",
+                        "outline-variant": "#59413f",
+                        "tertiary": "#71dba2",
+                        "primary-container": "#ff6363",
+                        "inverse-primary": "#b12a30",
+                        "inverse-on-surface": "#2f3033",
+                        "surface-variant": "#343537",
+                        "surface-container-high": "#292a2c",
+                        "on-error-container": "#ffdad6",
+                        "surface-dim": "#121316",
+                        "primary-fixed-dim": "#ffb3af",
+                        "on-primary": "#68000e",
+                        "background": "#121316",
+                        "tertiary-fixed": "#8df8bd",
+                        "on-tertiary-fixed-variant": "#005232"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "xxl": "24px",
+                        "xs": "4px",
+                        "sm": "8px",
+                        "lg": "16px",
+                        "md": "12px",
+                        "xl": "20px",
+                        "section": "32px",
+                        "margin-mobile": "20px",
+                        "safe-top": "env(safe-area-inset-top)",
+                        "safe-bottom": "env(safe-area-inset-bottom)"
+                    },
+                    fontFamily: {
+                        "label": ["Geist", "sans-serif"],
+                        "body": ["Geist", "sans-serif"],
+                        "body-compact": ["Geist", "sans-serif"],
+                        "display": ["Geist", "sans-serif"],
+                        "screen-title": ["Geist", "sans-serif"],
+                        "data-tabular": ["Geist Mono", "monospace"],
+                        "card-title": ["Geist", "sans-serif"]
+                    },
+                    fontSize: {
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.4px", "fontWeight": "500" }],
+                        "body": ["16px", { "lineHeight": "26px", "letterSpacing": "0.2px", "fontWeight": "500" }],
+                        "body-compact": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+                        "display": ["40px", { "lineHeight": "44px", "letterSpacing": "0.4px", "fontWeight": "600" }],
+                        "screen-title": ["24px", { "lineHeight": "29px", "letterSpacing": "0.2px", "fontWeight": "600" }],
+                        "data-tabular": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+                        "card-title": ["18px", { "lineHeight": "23px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Custom scrollbar for webkit */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+    </style>
+<style>
+    html, body {
+      width: 100%;
+      max-width: 390px;
+      height: 100dvh;
+      min-height: 100dvh;
+      margin: 0 auto;
+      overflow: hidden;
+      background-color: #07080A; /* Opaque dark background */
+    }
+  </style>
+</head>
+<body class="text-on-surface antialiased relative">
+<!-- ========================================== -->
+<!-- UNDERLYING PAGE (Mocked "Runner" Home)     -->
+<!-- ========================================== -->
+<div aria-hidden="true" class="w-full h-full flex flex-col relative" inert="">
+<main class="flex-1 w-full relative pt-[env(safe-area-inset-top)] px-margin-mobile">
+<!-- Mock Top App Bar -->
+<header class="flex justify-between items-center h-14 w-full sticky top-0 bg-[#07080A] z-10 border-b border-white/5"><button class="w-12 h-12 flex items-center justify-start text-primary active:scale-95 transition-transform"><span class="material-symbols-outlined">menu</span></button><h1 class="font-screen-title text-screen-title font-bold text-primary tracking-tight">跑者</h1><button class="w-12 h-12 flex items-center justify-end text-on-surface-variant active:scale-95 transition-transform"><span class="material-symbols-outlined">history</span></button></header>
+<!-- Mock Content -->
+<div class="mt-6"><div class="bg-[#101111] rounded-xl border border-white/5 p-4 flex items-center justify-between"><div class="flex flex-col"><span class="text-label text-on-surface-variant opacity-60 uppercase tracking-wider">今日状态</span><span class="text-body font-semibold text-on-surface">良好 · 准备好出发</span></div><div class="w-10 h-10 rounded-full bg-tertiary/20 flex items-center justify-center text-tertiary"><span class="material-symbols-outlined">bolt</span></div></div></div>
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="absolute bottom-0 w-full z-10 bg-[#07080A] border-t border-white/5 flex justify-around items-center h-[calc(64px+env(safe-area-inset-bottom))] px-4 pb-[env(safe-area-inset-bottom)]">
+<!-- 跑者 (Active) -->
+<button class="flex flex-col items-center justify-center text-primary font-bold active:scale-90 transition-all duration-200 hover:text-primary/80 w-16 h-16 pointer-events-auto">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">person</span>
+<span class="font-label text-label">跑者</span>
+</button>
+<!-- 训练 (Inactive) -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant/60 active:scale-90 transition-all duration-200 hover:text-primary/80 w-16 h-16 pointer-events-auto">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">fitness_center</span>
+<span class="font-label text-label">训练</span>
+</button>
+<!-- 数据 (Inactive) -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant/60 active:scale-90 transition-all duration-200 hover:text-primary/80 w-16 h-16 pointer-events-auto">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">leaderboard</span>
+<span class="font-label text-label">数据</span>
+</button>
+<!-- 教练 (Inactive) -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant/60 active:scale-90 transition-all duration-200 hover:text-primary/80 w-16 h-16 pointer-events-auto">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">smart_toy</span>
+<span class="font-label text-label">教练</span>
+</button>
+</nav>
+</div>
+<!-- ========================================== -->
+<!-- SCRIM OVERLAY                              -->
+<!-- ========================================== -->
+<button aria-label="关闭菜单遮罩" class="absolute inset-0 bg-black/60 z-40 w-full h-full cursor-default border-none"></button>
+<!-- ========================================== -->
+<!-- SIDE NAVIGATION DRAWER                     -->
+<!-- ========================================== -->
+<aside aria-label="账户与应用菜单" aria-modal="true" class="absolute top-0 left-0 bottom-0 w-[88%] max-w-[344px] h-[100dvh] bg-[#101111] z-50 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] border-r border-white/5" role="dialog">
+<!-- Drawer Header -->
+<div class="h-[72px] px-margin-mobile flex items-center justify-between shrink-0">
+<div class="flex items-center space-x-3">
+<div class="w-12 h-12 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-card-title text-card-title font-bold shadow-inner">
+                        赵
+                    </div>
+<div class="flex flex-col">
+<span class="font-body-compact text-body-compact text-on-surface font-semibold">赵朝义</span>
+<span class="font-label text-label text-on-surface-variant opacity-80">zhao***@gmail.com</span>
+</div>
+</div>
+<button aria-label="关闭菜单" autofocus="" class="w-12 h-12 flex-none flex items-center justify-center rounded-lg hover:bg-white/5 active:scale-[0.98] transition-all text-primary-container">
+<span class="material-symbols-outlined text-[24px]">close</span>
+</button>
+</div>
+<!-- Connected Device Sub-header -->
+<div class="px-4 shrink-0">
+<button class="w-full min-h-[48px] flex items-center justify-between px-2 py-2 rounded-lg hover:bg-white/5 active:scale-[0.98] transition-all text-primary-container">
+<div class="flex items-center space-x-3">
+<div class="w-10 h-10 rounded-lg bg-[#38393c] flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-[20px]">watch</span>
+</div>
+<div class="flex flex-col text-left">
+<span class="font-body-compact text-body-compact font-semibold">COROS PACE 3</span>
+<span class="font-label text-label flex items-center text-tertiary">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary mr-1.5"></span>
+                                已连接
+                            </span>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-data-tabular text-[11px] text-on-surface-variant opacity-60">正在同步</span>
+</div>
+</button>
+</div>
+<!-- Navigation List (Tightened Vertical Density) -->
+<div class="overflow-y-auto flex flex-col py-0 pb-2">
+<div class="px-margin-mobile pt-2 pb-1"><span class="text-[12px] leading-[16px] font-medium text-[#9C9C9D] uppercase tracking-wider">账户</span></div><button class="w-full h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group shrink-0">
+<div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">person</span><span class="font-body-compact">个人中心</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span>
+</button>
+<button class="w-full h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group shrink-0">
+<div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">explore</span><span class="font-body-compact">发现</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span>
+</button>
+<div class="h-px bg-white/5 mx-4 my-1 shrink-0"></div>
+<div class="px-margin-mobile pt-2 pb-1"><span class="text-[12px] leading-[16px] font-medium text-[#9C9C9D] uppercase tracking-wider">设备与提醒</span></div><button class="w-full h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group shrink-0">
+<div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">watch</span><span class="font-body-compact">手表管理</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span>
+</button>
+<button class="w-full h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group shrink-0">
+<div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">sync</span><span class="font-body-compact">同步手表数据</span></div><span class="font-data-tabular text-[13px] text-on-surface-variant opacity-60">08:42</span>
+</button>
+<button class="w-full h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group shrink-0">
+<div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">notifications</span><span class="font-body-compact">通知设置</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span>
+</button>
+<div class="h-px bg-white/5 mx-4 my-1 shrink-0"></div>
+<div class="px-margin-mobile pt-2 pb-1"><span class="text-[12px] leading-[16px] font-medium text-[#9C9C9D] uppercase tracking-wider">支持与应用</span></div><button class="w-full h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group shrink-0">
+<div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">chat_bubble</span><span class="font-body-compact">意见反馈</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span>
+</button>
+<button class="w-full h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group shrink-0">
+<div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">help</span><span class="font-body-compact">常见问题</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span>
+</button>
+<button class="w-full h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group shrink-0">
+<div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">system_update</span><span class="font-body-compact">检查更新</span></div><span class="font-data-tabular text-[13px] text-on-surface-variant opacity-60">v1.0.0</span>
+</button>
+<button class="w-full h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group shrink-0">
+<div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">info</span><span class="font-body-compact">关于 STRIDE</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span>
+</button>
+</div>
+<!-- Footer: Logout -->
+<div class="shrink-0 pb-6 px-4 bg-[#101111] pt-1">
+<button class="w-full h-[48px] flex items-center justify-center space-x-3 rounded-lg hover:bg-primary-container/10 active:scale-[0.98] transition-all text-primary-container">
+<span class="material-symbols-outlined text-[22px]">logout</span>
+<span class="font-body-compact text-body-compact font-semibold">退出登录</span>
+</button>
+<div class="text-center mt-3">
+<p class="font-label text-[10px] text-on-surface-variant opacity-40 uppercase tracking-widest">STRIDE · 跑得更聪明</p>
+</div>
+</div>
+</aside>
+</body></html>

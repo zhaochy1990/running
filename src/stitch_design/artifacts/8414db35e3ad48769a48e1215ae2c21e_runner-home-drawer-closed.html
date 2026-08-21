@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>Runner Home - STRIDE</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Geist+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "on-tertiary-fixed-variant": "#005232",
+                "on-secondary-fixed-variant": "#004a76",
+                "surface-container-highest": "#343535",
+                "secondary-fixed": "#cee5ff",
+                "primary-container": "#ff6363",
+                "on-secondary-fixed": "#001d33",
+                "inverse-primary": "#b12a30",
+                "surface-bright": "#393939",
+                "tertiary-fixed-dim": "#71dba2",
+                "surface-tint": "#ffb3af",
+                "on-error-container": "#ffdad6",
+                "surface": "#131413",
+                "primary": "#ffb3af",
+                "on-surface": "#e4e2e1",
+                "background": "#131413",
+                "on-primary-fixed-variant": "#8f0d1c",
+                "on-primary-fixed": "#410006",
+                "tertiary": "#71dba2",
+                "outline": "#a88988",
+                "on-secondary": "#003353",
+                "secondary-container": "#2f97e1",
+                "outline-variant": "#59413f",
+                "on-primary-container": "#67000e",
+                "on-surface-variant": "#e1bfbc",
+                "primary-fixed": "#ffdad7",
+                "error": "#ffb4ab",
+                "on-tertiary-fixed": "#002112",
+                "tertiary-container": "#3eaa76",
+                "inverse-surface": "#e4e2e1",
+                "tertiary-fixed": "#8df8bd",
+                "surface-variant": "#343535",
+                "surface-container": "#1f2020",
+                "on-error": "#690005",
+                "secondary-fixed-dim": "#97cbff",
+                "primary-fixed-dim": "#ffb3af",
+                "on-secondary-container": "#002c49",
+                "on-tertiary": "#003921",
+                "surface-container-low": "#1b1c1c",
+                "error-container": "#93000a",
+                "on-primary": "#68000e",
+                "surface-container-high": "#292a2a",
+                "surface-dim": "#131413",
+                "surface-container-lowest": "#0d0e0e",
+                "on-tertiary-container": "#003821",
+                "inverse-on-surface": "#303030",
+                "secondary": "#97cbff",
+                "on-background": "#e4e2e1"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.25rem",
+                "lg": "0.5rem",
+                "xl": "0.75rem",
+                "full": "9999px"
+        },
+        "spacing": {
+                "gutter-module": "12px",
+                "touch-target-min": "48px",
+                "stack-gap-lg": "24px",
+                "margin-edge": "20px",
+                "stack-gap-md": "16px",
+                "stack-gap-sm": "8px"
+        },
+        "fontFamily": {
+                "headline-sm": [
+                        "Inter"
+                ],
+                "body-md": [
+                        "Inter"
+                ],
+                "label-caps": [
+                        "Inter"
+                ],
+                "data-sm": [
+                        "Geist Mono"
+                ],
+                "data-lg": [
+                        "Geist Mono"
+                ],
+                "body-lg": [
+                        "Inter"
+                ],
+                "headline-md": [
+                        "Inter"
+                ],
+                "display-lg": [
+                        "Geist Mono"
+                ]
+        },
+        "fontSize": {
+                "headline-sm": [
+                        "18px",
+                        {
+                                "lineHeight": "24px",
+                                "fontWeight": "600"
+                        }
+                ],
+                "body-md": [
+                        "14px",
+                        {
+                                "lineHeight": "20px",
+                                "fontWeight": "500"
+                        }
+                ],
+                "label-caps": [
+                        "11px",
+                        {
+                                "lineHeight": "16px",
+                                "letterSpacing": "0.05em",
+                                "fontWeight": "700"
+                        }
+                ],
+                "data-sm": [
+                        "12px",
+                        {
+                                "lineHeight": "16px",
+                                "fontWeight": "500"
+                        }
+                ],
+                "data-lg": [
+                        "18px",
+                        {
+                                "lineHeight": "24px",
+                                "fontWeight": "500"
+                        }
+                ],
+                "body-lg": [
+                        "16px",
+                        {
+                                "lineHeight": "24px",
+                                "fontWeight": "500"
+                        }
+                ],
+                "headline-md": [
+                        "24px",
+                        {
+                                "lineHeight": "32px",
+                                "letterSpacing": "-0.01em",
+                                "fontWeight": "600"
+                        }
+                ],
+                "display-lg": [
+                        "36px",
+                        {
+                                "lineHeight": "40px",
+                                "letterSpacing": "-0.02em",
+                                "fontWeight": "600"
+                        }
+                ]
+        }
+},
+    },
+  }
+</script>
+<style>
+        .elevation-ring {
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+        }
+        .elevation-raised {
+            box-shadow: inset 0 1px 0 0 rgba(255,255,255,0.05), 0 1px 2px 0 rgba(0,0,0,0.5);
+        }
+        body {
+            font-feature-settings: "ss03" 1;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
+    </style>
+<style>
+    body {
+      min-height: 100dvh;
+      max-width: 390px;
+      min-width: 360px;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body class="bg-[#07080A] text-on-surface font-body-md min-h-[100dvh] flex flex-col antialiased overflow-x-hidden relative">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full max-w-[390px] min-w-[360px] pt-[env(safe-area-inset-top)] bg-[#07080A] border-b border-white/5 z-50">
+<div class="h-[48px] flex justify-between items-center px-2">
+<button aria-label="Menu" class="w-[48px] h-[48px] flex items-center justify-center text-on-surface hover:opacity-80 active:scale-95 transition-transform duration-100">
+<span class="material-symbols-outlined text-[24px]" data-icon="menu">menu</span>
+</button>
+<h1 class="text-headline-md font-headline-md tracking-tighter text-on-surface">STRIDE</h1>
+<button aria-label="Sync Watch" class="w-[48px] h-[48px] flex items-center justify-center text-on-surface hover:opacity-80 active:scale-95 transition-transform duration-100">
+<span class="material-symbols-outlined text-[24px]" data-icon="sync">sync</span>
+</button>
+</div>
+</header>
+<!-- Main Content -->
+<main class="flex-1 pt-[calc(48px+env(safe-area-inset-top))] pb-[calc(56px+env(safe-area-inset-bottom))] px-margin-edge flex flex-col gap-[12px] h-full mt-2">
+<!-- Header Section -->
+<div class="flex flex-col gap-1">
+<div class="text-[12px] font-data-sm text-on-surface-variant uppercase tracking-wider flex items-center">
+<span class="font-body-md">7月14日 周二</span><span class="mx-1">·</span>08:12 已同步
+            </div>
+<h2 class="text-display-lg font-display-lg text-on-surface tracking-tighter mt-1 leading-[1.1]">早上好，朝毅</h2>
+<p class="text-[15px] font-body-lg text-on-surface-variant mt-1 leading-snug">恢复正常，可以按计划完成节奏跑</p>
+</div>
+<!-- Evidence Strip -->
+<div class="flex items-center justify-between py-2 elevation-ring bg-white/5 rounded-lg px-2 mt-1 shrink-0">
+<div class="flex flex-col items-center flex-1 min-w-0">
+<span class="text-[10px] text-on-surface-variant uppercase tracking-wider mb-1 truncate">HRV</span>
+<span class="text-[20px] font-data-lg text-on-surface whitespace-nowrap">52<span class="text-[11px] text-on-surface-variant ml-0.5">ms</span></span>
+<span class="text-[10px] text-tertiary mt-0.5 whitespace-nowrap">较基线 +4%</span>
+</div>
+<div class="w-[1px] h-8 bg-white/10 shrink-0 mx-1"></div>
+<div class="flex flex-col items-center flex-1 min-w-0">
+<span class="text-[10px] text-on-surface-variant uppercase tracking-wider mb-1 truncate">静息心率</span>
+<span class="text-[20px] font-data-lg text-on-surface whitespace-nowrap">48<span class="text-[11px] text-on-surface-variant ml-0.5">bpm</span></span>
+<span class="text-[10px] text-on-surface-variant mt-0.5 whitespace-nowrap">正常</span>
+</div>
+<div class="w-[1px] h-8 bg-white/10 shrink-0 mx-1"></div>
+<div class="flex flex-col items-center flex-1 min-w-0">
+<span class="text-[10px] text-on-surface-variant uppercase tracking-wider mb-1 truncate">当前状态</span>
+<span class="text-[20px] font-data-lg text-on-surface whitespace-nowrap">-8%</span>
+<span class="text-[10px] text-on-surface-variant mt-0.5 whitespace-nowrap">维持区</span>
+</div>
+</div>
+<!-- Today's Activity -->
+<div class="flex flex-col gap-1 mt-1 shrink-0">
+<div class="flex items-center justify-between">
+<h3 class="text-headline-sm font-headline-sm text-on-surface">今日活动</h3>
+<button class="h-[32px] px-2 flex items-center justify-center text-[#FF6363] text-[13px] font-medium hover:opacity-80 transition-opacity">全部活动</button>
+</div>
+<div class="text-[14px] font-body-md text-on-surface-variant">今天暂无活动</div>
+</div>
+<!-- Today's Training Card -->
+<div class="flex flex-col gap-2 mt-1 shrink-0">
+<h3 class="text-headline-sm font-headline-sm text-on-surface">今日训练</h3>
+<div class="bg-surface-container-low rounded-lg p-3 elevation-ring flex flex-col gap-2">
+<div class="flex justify-between items-start">
+<div>
+<div class="flex items-center gap-2 mb-1.5">
+<span class="bg-tertiary/10 text-tertiary px-1.5 py-[2px] rounded text-[10px] font-bold tracking-wide">关键课</span>
+</div>
+<h4 class="text-[22px] font-headline-md text-on-surface leading-tight">节奏跑 · 8 km</h4>
+<p class="text-[13px] font-data-sm text-on-surface-variant mt-1">18:30 · 约 48 min</p>
+</div>
+</div>
+<div class="flex justify-between items-center bg-black/20 rounded p-2 text-[13px] font-data-sm mt-1">
+<div class="flex flex-col">
+<span class="text-on-surface-variant text-[10px] mb-0.5">配速目标</span>
+<span class="text-[#FF6363]">5:15–5:25 /km</span>
+</div>
+<div class="flex flex-col text-right">
+<span class="text-on-surface-variant text-[10px] mb-0.5">目标心率</span>
+<span class="text-on-surface">Z3 · 150–162 bpm</span>
+</div>
+</div>
+<p class="text-[13px] font-body-md text-on-surface-variant italic mt-1.5 leading-snug">“安排在今晚：恢复正常，且距周日长跑超过 72 小时。”</p>
+</div>
+</div>
+<!-- Actions -->
+<div class="flex flex-col gap-2 mt-auto pt-2 pb-2 shrink-0">
+<button class="w-full h-[48px] bg-[#F9F9F9] text-[#18191A] rounded-full text-[15px] font-semibold elevation-raised active:bg-gray-300 transition-colors flex items-center justify-center">
+                查看训练详情
+            </button>
+<button class="w-full h-[48px] text-on-surface-variant text-[15px] font-medium hover:text-on-surface transition-colors flex items-center justify-center elevation-ring rounded-full">
+                调整今天安排
+            </button>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full max-w-[390px] min-w-[360px] z-50 bg-[#101111] border-t border-white/10 pb-[env(safe-area-inset-bottom)]">
+<div class="flex justify-around items-center h-[56px] px-2">
+<a class="flex flex-col items-center justify-center text-[#FF6363] hover:bg-white/5 w-full h-full rounded-lg active:scale-95 transition-transform duration-100" href="#">
+<span class="material-symbols-outlined mb-0.5 text-[22px]" data-icon="directions_run" style="font-variation-settings: 'FILL' 1;">directions_run</span>
+<span class="text-[10px] font-label-caps">跑者</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-white/5 w-full h-full rounded-lg active:scale-95 transition-transform duration-100" href="#">
+<span class="material-symbols-outlined mb-0.5 text-[22px]" data-icon="fitness_center">fitness_center</span>
+<span class="text-[10px] font-label-caps">训练</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-white/5 w-full h-full rounded-lg active:scale-95 transition-transform duration-100" href="#">
+<span class="material-symbols-outlined mb-0.5 text-[22px]" data-icon="bar_chart">bar_chart</span>
+<span class="text-[10px] font-label-caps">数据</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-white/5 w-full h-full rounded-lg active:scale-95 transition-transform duration-100" href="#">
+<span class="material-symbols-outlined mb-0.5 text-[22px]" data-icon="psychology">psychology</span>
+<span class="text-[10px] font-label-caps">教练</span>
+</a>
+</div>
+</nav>
+</body></html>

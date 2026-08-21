@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>STRIDE - Side Navigation Drawer</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary-fixed-dim": "#ffb3af",
+                        "primary-fixed": "#ffdad7",
+                        "on-surface": "#e3e2e5",
+                        "on-secondary-container": "#002c49",
+                        "on-primary": "#68000e",
+                        "surface-bright": "#38393c",
+                        "secondary-container": "#2f97e1",
+                        "on-secondary-fixed": "#001d33",
+                        "on-background": "#e3e2e5",
+                        "inverse-surface": "#e3e2e5",
+                        "on-error": "#690005",
+                        "inverse-primary": "#b12a30",
+                        "tertiary-container": "#3eaa76",
+                        "surface-container-high": "#292a2c",
+                        "outline": "#a88988",
+                        "background": "#121316",
+                        "surface-tint": "#ffb3af",
+                        "primary": "#ffb3af",
+                        "surface-variant": "#343537",
+                        "secondary": "#97cbff",
+                        "tertiary-fixed": "#8df8bd",
+                        "outline-variant": "#59413f",
+                        "on-tertiary-fixed-variant": "#005232",
+                        "on-secondary": "#003353",
+                        "tertiary": "#71dba2",
+                        "surface-container": "#1f2022",
+                        "on-tertiary-fixed": "#002112",
+                        "surface-container-low": "#1b1c1e",
+                        "surface-dim": "#121316",
+                        "on-primary-container": "#67000e",
+                        "on-primary-fixed-variant": "#8f0d1c",
+                        "on-error-container": "#ffdad6",
+                        "inverse-on-surface": "#2f3033",
+                        "primary-container": "#ff6363",
+                        "on-surface-variant": "#e1bfbc",
+                        "tertiary-fixed-dim": "#71dba2",
+                        "error": "#ffb4ab",
+                        "surface-container-highest": "#343537",
+                        "surface": "#121316",
+                        "secondary-fixed": "#cee5ff",
+                        "surface-container-lowest": "#0d0e10",
+                        "on-primary-fixed": "#410006",
+                        "on-tertiary-container": "#003821",
+                        "on-tertiary": "#003921",
+                        "error-container": "#93000a",
+                        "on-secondary-fixed-variant": "#004a76",
+                        "secondary-fixed-dim": "#97cbff"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "xxl": "24px",
+                        "xs": "4px",
+                        "margin-mobile": "20px",
+                        "lg": "16px",
+                        "md": "12px",
+                        "xl": "20px",
+                        "sm": "8px",
+                        "section": "32px",
+                        "safe": "env(safe-area-inset-bottom)"
+                    },
+                    fontFamily: {
+                        "label": ["Inter"],
+                        "body": ["Inter"],
+                        "body-compact": ["Inter"],
+                        "display": ["Inter"],
+                        "screen-title": ["Inter"],
+                        "data-tabular": ["Geist Mono"],
+                        "card-title": ["Inter"]
+                    },
+                    fontSize: {
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.4px", "fontWeight": "500" }],
+                        "body": ["16px", { "lineHeight": "26px", "letterSpacing": "0.2px", "fontWeight": "500" }],
+                        "body-compact": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+                        "display": ["40px", { "lineHeight": "44px", "letterSpacing": "0.4px", "fontWeight": "600" }],
+                        "screen-title": ["24px", { "lineHeight": "29px", "letterSpacing": "0.2px", "fontWeight": "600" }],
+                        "data-tabular": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+                        "card-title": ["18px", { "lineHeight": "23px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Custom scrollbar for webkit */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface antialiased w-full h-screen overflow-hidden flex justify-center items-center">
+<!-- Mobile Device Simulator Container (390px max width) -->
+<div class="relative w-full max-w-[390px] h-full h-screen sm:h-[844px] sm:max-h-[884px] sm:rounded-[40px] sm:border-8 sm:border-surface-container-highest overflow-hidden shadow-2xl bg-background flex flex-col mx-auto">
+<!-- ========================================== -->
+<!-- UNDERLYING PAGE (Mocked "Runner" Home)     -->
+<!-- ========================================== -->
+<main class="flex-1 w-full relative pt-12 px-margin-mobile">
+<!-- Mock Top App Bar -->
+<header class="flex justify-between items-center h-14 w-full sticky top-0 bg-background/80 backdrop-blur-md z-10 border-b border-white/5"><button class="w-12 h-12 flex items-center justify-start text-primary active:scale-95 transition-transform"><span class="material-symbols-outlined">menu</span></button><h1 class="font-screen-title text-screen-title font-bold text-primary tracking-tight">跑者</h1><button class="w-12 h-12 flex items-center justify-end text-on-surface-variant active:scale-95 transition-transform"><span class="material-symbols-outlined">history</span></button></header>
+<!-- Mock Content -->
+<div class="mt-6 px-margin-mobile"><div class="bg-surface-container rounded-xl border border-white/5 p-4 flex items-center justify-between"><div class="flex flex-col"><span class="text-label text-on-surface-variant opacity-60 uppercase tracking-wider">今日状态</span><span class="text-body font-semibold text-on-surface">良好 · 准备好出发</span></div><div class="w-10 h-10 rounded-full bg-tertiary/20 flex items-center justify-center text-tertiary"><span class="material-symbols-outlined">bolt</span></div></div></div>
+</main>
+<!-- Bottom Navigation Bar (from Shared Components JSON) -->
+<nav class="fixed sm:absolute bottom-0 w-full z-10 bg-surface-container-lowest/80 dark:bg-surface-container-lowest/80 backdrop-blur-md border-t border-white/5 flex justify-around items-center h-16 px-4 pb-safe pointer-events-none">
+<!-- 跑者 (Active) -->
+<button class="flex flex-col items-center justify-center text-primary font-bold active:scale-90 transition-all duration-200 hover:text-primary/80 w-16 h-full pointer-events-auto">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">person</span>
+<span class="font-label text-label">跑者</span>
+</button>
+<!-- 训练 (Inactive) -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant/60 active:scale-90 transition-all duration-200 hover:text-primary/80 w-16 h-full pointer-events-auto">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">fitness_center</span>
+<span class="font-label text-label">训练</span>
+</button>
+<!-- 数据 (Inactive) -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant/60 active:scale-90 transition-all duration-200 hover:text-primary/80 w-16 h-full pointer-events-auto">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">leaderboard</span>
+<span class="font-label text-label">数据</span>
+</button>
+<!-- 教练 (Inactive) -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant/60 active:scale-90 transition-all duration-200 hover:text-primary/80 w-16 h-full pointer-events-auto">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">smart_toy</span>
+<span class="font-label text-label">教练</span>
+</button>
+</nav>
+<!-- ========================================== -->
+<!-- SCRIM OVERLAY                              -->
+<!-- ========================================== -->
+<div class="absolute inset-0 bg-black/60 z-40 transition-opacity duration-300"></div>
+<!-- ========================================== -->
+<!-- SIDE NAVIGATION DRAWER                     -->
+<!-- ========================================== -->
+<aside class="absolute top-0 left-0 bottom-0 w-[320px] bg-surface-container-lowest z-50 flex flex-col shadow-[20px_0_40px_rgba(0,0,0,0.5)] transform translate-x-0 transition-transform duration-300 ease-out border-r border-white/5" style="width: 88%; max-width: 344px; background-color: #101111; border-right: 1px solid rgba(255,255,255,0.06);">
+<!-- Drawer Header (72px) -->
+<div class="h-[72px] px-margin-mobile flex items-center justify-between pt-safe mt-4 sm:mt-0 shrink-0">
+<div class="flex items-center space-x-3">
+<div class="w-12 h-12 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-card-title text-card-title font-bold shadow-inner">
+                        赵
+                    </div>
+<div class="flex flex-col">
+<span class="font-body-compact text-body-compact text-on-surface font-semibold">赵朝义</span>
+<span class="font-label text-label text-on-surface-variant opacity-80">zhao***@gmail.com</span>
+</div>
+</div>
+<button aria-label="关闭菜单" class="w-full min-h-[48px] flex items-center justify-center space-x-3 rounded-lg hover:bg-primary-container/10 active:scale-[0.98] transition-all text-primary-container border border-transparent hover:border-primary-container/20">
+<span class="material-symbols-outlined text-[24px]">close</span>
+</button>
+</div>
+<!-- Connected Device Sub-header -->
+<div class="px-4 mt-2 mb-4 shrink-0">
+<button class="w-full min-h-[48px] flex items-center justify-center space-x-3 rounded-lg hover:bg-primary-container/10 active:scale-[0.98] transition-all text-primary-container border border-transparent hover:border-primary-container/20">
+<div class="flex items-center space-x-3">
+<div class="w-10 h-10 rounded-lg bg-surface-bright flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-[20px]">watch</span>
+</div>
+<div class="flex flex-col">
+<span class="font-body-compact text-body-compact font-semibold">COROS PACE 3</span>
+<span class="font-label text-label flex items-center text-tertiary">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary mr-1.5 shadow-[0_0_8px_rgba(113,219,162,0.4)]"></span>
+                                已连接
+                            </span>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="font-data-tabular text-[11px] text-on-surface-variant opacity-60 mt-4 group-hover:opacity-100 transition-opacity">上次同步 08:42</span>
+</div>
+</button>
+</div>
+<!-- Scrollable Navigation List -->
+<div class="flex-1 overflow-y-auto pb-safe"><div class="flex flex-col py-2"><button class="w-full min-h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group"><div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">person</span><span class="font-body-compact">个人中心</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span></button><button class="w-full min-h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group"><div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">explore</span><span class="font-body-compact">发现</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span></button><div class="h-px bg-white/5 mx-4 my-1"></div><button class="w-full min-h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group"><div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">watch</span><span class="font-body-compact">手表管理</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span></button><button class="w-full min-h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group"><div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">sync</span><span class="font-body-compact">同步手表数据</span></div><span class="font-data-tabular text-[13px] text-on-surface-variant opacity-60">08:42</span></button><button class="w-full min-h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group"><div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">notifications</span><span class="font-body-compact">通知设置</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span></button><div class="h-px bg-white/5 mx-4 my-1"></div><button class="w-full min-h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group"><div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">chat_bubble</span><span class="font-body-compact">意见反馈</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span></button><button class="w-full min-h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group"><div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">help</span><span class="font-body-compact">常见问题</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span></button><button class="w-full min-h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group"><div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">system_update</span><span class="font-body-compact">检查更新</span></div><span class="font-data-tabular text-[13px] text-on-surface-variant opacity-60">v1.0.0</span></button><button class="w-full min-h-[48px] px-margin-mobile flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors text-left group"><div class="flex items-center space-x-4 text-on-surface group-hover:text-primary"><span class="material-symbols-outlined text-[22px]">info</span><span class="font-body-compact">关于 STRIDE</span></div><span class="material-symbols-outlined text-[18px] opacity-40">chevron_right</span></button></div></div>
+<!-- Footer: Logout -->
+<div class="shrink-0 mt-auto pt-4 pb-8 px-4 border-t border-white/5 bg-surface-container-lowest">
+<button class="w-full min-h-[48px] flex items-center justify-center space-x-3 rounded-lg hover:bg-primary-container/10 active:scale-[0.98] transition-all text-primary-container border border-transparent hover:border-primary-container/20">
+<span class="material-symbols-outlined text-[22px]">logout</span>
+<span class="font-body-compact text-body-compact font-semibold">退出登录</span>
+</button>
+<div class="text-center mt-4">
+<p class="font-label text-[10px] text-on-surface-variant opacity-40 uppercase tracking-widest">STRIDE · 跑得更聪明</p>
+</div>
+</div>
+</aside>
+</div>
+</body></html>
