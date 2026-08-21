@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import WeekLayout from "../WeekLayout";
 import { buildPlanDaysFromWeekDetail, mergeStructuredIntoPlanDays } from "../../types/plan";
-import type { WeekDetail, WeekSummary, PlannedSessionRow } from "../../api";
+import type { WeekDetail, WeekSummary, PlannedSessionRow, PlanDay } from "../../api";
 import type { StructuredStatus } from "../../types/plan";
 
 // Hoisted mocks for the api module. The calendar tab now reads entirely from
@@ -202,7 +202,7 @@ describe("WeekLayout — calendar tab", () => {
     // The calendar is built entirely from weekDetail.structured, so a MySQL-only
     // week with no Azure plan-days rows still renders its sessions.
     const structuredWeek = buildWeekDetail("canonical");
-    structuredWeek.plan = undefined;
+    structuredWeek.plan = null;
     structuredWeek.structured = {
       structured_status: "canonical",
       sessions: [buildStructuredSession("Structured Easy 10km")],
@@ -255,8 +255,8 @@ describe("buildPlanDaysFromWeekDetail", () => {
 
 describe("mergeStructuredIntoPlanDays", () => {
   it("keeps existing (Azure/Python) rows and fills gaps from structured", () => {
-    const existing = [
-      { date: "2026-04-20", sessions: [{ schema: "plan-session/v1", id: 1, date: "2026-04-20", session_index: 0, kind: "run", summary: "Azure Easy", spec: null, notes_md: null, total_distance_m: 10000, total_duration_s: 3600, pushable: true }], nutrition: null },
+    const existing: PlanDay[] = [
+      { date: "2026-04-20", sessions: [{ schema: "plan-session/v1", id: 1, date: "2026-04-20", session_index: 0, kind: "run", summary: "Azure Easy", spec: null, notes_md: null, total_distance_m: 10000, total_duration_s: 3600, pushable: true, scheduled_workout_id: null }], nutrition: null },
       { date: "2026-04-21", sessions: [], nutrition: null },
     ];
     const structured = {
