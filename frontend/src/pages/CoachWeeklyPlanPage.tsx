@@ -6,7 +6,7 @@ import WeeklyFeedbackTab from "../components/weekly-plan/WeeklyFeedbackTab";
 import WeeklyPlanSummary from "../components/weekly-plan/WeeklyPlanSummary";
 import WeeklyPlanTabs, { type CoachWeeklyPlanTab } from "../components/weekly-plan/WeeklyPlanTabs";
 import WeeklyRecordsTab from "../components/weekly-plan/WeeklyRecordsTab";
-import WeeklyScheduleTab, { hardcodedWeekDays } from "../components/weekly-plan/WeeklyScheduleTab";
+import WeeklyScheduleTab from "../components/weekly-plan/WeeklyScheduleTab";
 import WeeklyStrengthTab from "../components/weekly-plan/WeeklyStrengthTab";
 import HardcodedStrengthPreview, { hasHardcodedStrengthPreview } from "../components/weekly-plan/HardcodedStrengthPreview";
 import { useCoachWeeklyPlan } from "../hooks/useCoachWeeklyPlan";
@@ -38,7 +38,6 @@ export default function CoachWeeklyPlanPage({ initialTab = "schedule" }: CoachWe
         <CoachWeeklyPlanEmptyState />
       </div>
     );
-  const displayDays = hardcodedWeekDays(week.week_name, planDays) ?? planDays;
 
   const planTitle = weeks.find((item) => item.folder === week.week_name)?.plan_title;
   const hasHardcodedStrength = hasHardcodedStrengthPreview(week.week_name);
@@ -49,7 +48,7 @@ export default function CoachWeeklyPlanPage({ initialTab = "schedule" }: CoachWe
       <CoachPlanAppliedBanner />
       <WeeklyPlanSummary
         week={week}
-        days={displayDays}
+        days={planDays}
         planTitle={planTitle}
         onAdjust={() => navigate(`/coach/week/${encodeURIComponent(week.week_name)}/adjust`)}
       />
@@ -60,7 +59,7 @@ export default function CoachWeeklyPlanPage({ initialTab = "schedule" }: CoachWe
         {activeTab === "schedule" && (
           <WeeklyScheduleTab
             week={week}
-            days={displayDays}
+            days={planDays}
             structuredStatus={structuredStatus}
             canPushRun={canPushRun}
             canPushStrength={canPushStrength}
