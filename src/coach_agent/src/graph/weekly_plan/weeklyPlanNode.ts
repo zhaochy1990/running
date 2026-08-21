@@ -9,6 +9,7 @@ import type { ModelConfig } from "../../config/config.js";
 import type { WeeklyPlanContext } from "../../persistence/index.js";
 import { getLogger } from "../../utils/logger.js";
 import { ModelContractError } from "../master_plan/nodes.js";
+import { acceptedLoadBand } from "./loadTolerance.js";
 import { GENERATE_WEEKLY_PLAN_SYSTEM_PROMPT } from "./prompt.js";
 
 const logger = getLogger("weekly-plan-llm");
@@ -81,17 +82,7 @@ async function buildSystemPrompt(phase: PhaseName): Promise<string> {
   return `${GENERATE_WEEKLY_PLAN_SYSTEM_PROMPT}\n\n# 输出 JSON Schema\n\n以下 schema 与 API response format 完全相同，必须据此生成完整结果：\n\n${outputSchema}\n\n# 阶段参考：${phase}\n\n${reference}`;
 }
 
-function buildUserPrompt(input: WeeklyPlanLlmInput): string {
-  //     const retryHint =
-  //         input.previousSimulation === null || input.previousSimulation === undefined
-  //             ? ""
-  //             : `
-
-  // 上一轮生成未通过负荷校验，根据以下模拟反馈重新生成：
-  // - 第 ${input.previousSimulation.attempt} 次生成：周总预估负荷 ${formatDose(input.previousSimulation.total_dose)}；
-  // - 目标周总负荷区间 ${formatDose(input.previousSimulation.target_training_load_low)} ~ ${formatDose(input.previousSimulation.target_training_load_high)}（±10% 容差）；
-  // - 调整训练安排使周总预估负荷进入目标区间，并在提交前自检目标跑量区间。`;
-  //     return `基于下面的数据给用户生成Weekly Training Plan，${JSON.stringify(weeklyPlanUserPayload(input))}\n${retryHint}`;
+export function buildUserPrompt(input: WeeklyPlanLlmInput): string {
   const targetTrainingLoad = {
     target_distance_km_low: input.targetTrainingLoad.target_distance_km_low,
     target_distance_km_high: input.targetTrainingLoad.target_distance_km_high,
@@ -137,6 +128,25 @@ function buildUserPrompt(input: WeeklyPlanLlmInput): string {
 
   const phase = input.weeklyContext.training_position.phase;
   const recentTrainingWeeks = input.weeklyContext.recent_training_weeks;
+  const previousSimulation = input.previousSimulation;
+  const accepted =
+    previousSimulation?.target_training_load_low === null ||
+    previousSimulation?.target_training_load_low === undefined ||
+    previousSimulation.target_training_load_high === null
+      ? null
+      : acceptedLoadBand(previousSimulation.target_training_load_low, previousSimulation.target_training_load_high);
+  const retryFeedback =
+    previousSimulation === null || previousSimulation === undefined
+      ? undefined
+      : {
+          instruction: "上一轮计划未通过负荷校验。根据确定性模拟结果调整训练安排，使周总预估负荷进入验收区间，并重新检查目标跑量区间。",
+          previous_attempt: previousSimulation.attempt,
+          previous_total_dose: previousSimulation.total_dose,
+          target_training_load_low: previousSimulation.target_training_load_low,
+          target_training_load_high: previousSimulation.target_training_load_high,
+          accepted_total_dose_low: accepted?.low ?? null,
+          accepted_total_dose_high: accepted?.high ?? null,
+        };
 
   return JSON.stringify({
     targetWeek,
@@ -146,11 +156,8 @@ function buildUserPrompt(input: WeeklyPlanLlmInput): string {
     phase,
     recentTrainingWeeks,
     injury: input.weeklyContext.injury,
+    ...(retryFeedback === undefined ? {} : { retryFeedback }),
   });
-}
-
-function formatDose(value: number | null | undefined): string {
-  return value === null || value === undefined ? "n/a" : String(Math.round(value));
 }
 
 export function validateGeneratedWeeklyPlan(plan: WeeklyPlan, input: WeeklyPlanLlmInput): WeeklyPlan {
@@ -176,10 +183,6 @@ export function validateGeneratedWeeklyPlan(plan: WeeklyPlan, input: WeeklyPlanL
   }
 
   return plan;
-}
-
-function record(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
 function number(value: unknown): number | null {

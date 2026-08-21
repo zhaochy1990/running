@@ -18,6 +18,7 @@ import { z } from "zod/v4";
 import type { CoachAgentConfig } from "../../config/config.js";
 import type { WeeklyPlanContext, WeeklyPlanContextProvider } from "../../persistence/weeklyPlanContextProvider.js";
 import { getLogger } from "../../utils/logger.js";
+import { acceptedLoadBand, LOAD_MATCH_TOLERANCE } from "./loadTolerance.js";
 import { simulateWeeklyPlanLoad } from "./simulation.js";
 import type { WeeklyPlanLLM, WeeklyPlanLlmInput } from "./weeklyPlanNode.js";
 
@@ -26,8 +27,7 @@ const logger = getLogger("weekly-plan-graph");
 /** Max full regeneration attempts before load mismatch becomes a failure. */
 export const MAX_GENERATION_ATTEMPTS = 3;
 
-/** Relative tolerance around the target weekly load band. */
-export const LOAD_MATCH_TOLERANCE = 0.1;
+export { LOAD_MATCH_TOLERANCE } from "./loadTolerance.js";
 
 /** True when the simulated total dose falls inside the target band ± tolerance. */
 export function loadWithinTolerance(
@@ -40,7 +40,8 @@ export function loadWithinTolerance(
   const low = target.training_load_low;
   const high = target.training_load_high;
   if (low === null || high === null) return null;
-  return simulation.total_dose >= low * (1 - tolerance) && simulation.total_dose <= high * (1 + tolerance);
+  const accepted = acceptedLoadBand(low, high, tolerance);
+  return simulation.total_dose >= accepted.low && simulation.total_dose <= accepted.high;
 }
 
 /** Copy deterministic per-session doses from the simulation report into the plan. */
@@ -388,7 +389,8 @@ export class WeeklyPlanGeneratorNodes {
     const inRange = loadWithinTolerance(simulation, target);
     const low = target?.training_load_low ?? null;
     const high = target?.training_load_high ?? null;
-    const band = low === null || high === null ? "n/a" : `${formatNumber(low * (1 - LOAD_MATCH_TOLERANCE))}-${formatNumber(high * (1 + LOAD_MATCH_TOLERANCE))}`;
+    const accepted = low === null || high === null ? null : acceptedLoadBand(low, high);
+    const band = accepted === null ? "n/a" : `${formatNumber(accepted.low)}-${formatNumber(accepted.high)}`;
     if (inRange === null) {
       logger.warn(`Cannot verify total load for request ${request.request_id}: simulation or target load unavailable; keeping the generated plan`);
       return "finalize";
