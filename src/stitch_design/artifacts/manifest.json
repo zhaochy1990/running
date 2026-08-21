@@ -384,6 +384,27 @@
       "html": "artifacts/4aac2a7b9b5c471bac23545055fa4c87_training-center-active.html",
       "createdAt": "2026-08-21T01:07:54.720Z",
       "updatedAt": "2026-08-21T01:07:54.720Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "ad16e443276e4226bfc375a1c3b57301",
+      "parentScreenId": "8159c733e70c49ddb96288d062955dd6",
+      "title": "登录 · STRIDE",
+      "slug": "auth-login",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "state": {
+        "authState": "signed_out",
+        "credentialMethod": "email_password",
+        "alternateMethod": "cellphone_sms"
+      },
+      "briefs": [
+        "briefs/auth-login.md"
+      ],
+      "html": "artifacts/ad16e443276e4226bfc375a1c3b57301_auth-login.html",
+      "createdAt": "2026-08-20T13:57:38.721Z",
+      "updatedAt": "2026-08-20T13:58:23.817Z"
     }
   ]
 }
