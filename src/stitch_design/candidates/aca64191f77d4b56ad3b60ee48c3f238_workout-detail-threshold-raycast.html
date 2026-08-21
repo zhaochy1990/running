@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
+<title>Workout Detail</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;family=Geist+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+                "on-surface-variant": "#e1bfbc",
+                "inverse-primary": "#b12a30",
+                "secondary": "#97cbff",
+                "on-secondary": "#003353",
+                "surface-container": "#1f2022",
+                "on-primary-fixed-variant": "#8f0d1c",
+                "surface-container-lowest": "#0d0e10",
+                "inverse-surface": "#e3e2e5",
+                "tertiary-fixed": "#8df8bd",
+                "surface-container-highest": "#343537",
+                "inverse-on-surface": "#2f3033",
+                "on-error": "#690005",
+                "error": "#ffb4ab",
+                "tertiary-fixed-dim": "#71dba2",
+                "primary-fixed-dim": "#ffb3af",
+                "primary-container": "#ff6363",
+                "tertiary-container": "#3eaa76",
+                "on-tertiary": "#003921",
+                "tertiary": "#71dba2",
+                "surface-tint": "#ffb3af",
+                "on-primary-container": "#67000e",
+                "surface-container-low": "#1b1c1e",
+                "secondary-container": "#2f97e1",
+                "surface-container-high": "#292a2c",
+                "secondary-fixed": "#cee5ff",
+                "on-tertiary-fixed-variant": "#005232",
+                "on-primary": "#68000e",
+                "error-container": "#93000a",
+                "surface-bright": "#38393c",
+                "surface": "#121316",
+                "primary": "#ffb3af",
+                "on-tertiary-fixed": "#002112",
+                "secondary-fixed-dim": "#97cbff",
+                "outline-variant": "#59413f",
+                "on-primary-fixed": "#410006",
+                "on-surface": "#e3e2e5",
+                "on-error-container": "#ffdad6",
+                "background": "#07080A",
+                "primary-fixed": "#ffdad7",
+                "on-tertiary-container": "#003821",
+                "on-secondary-fixed": "#001d33",
+                "on-background": "#e3e2e5",
+                "surface-dim": "#121316",
+                "surface-variant": "#343537",
+                "on-secondary-container": "#002c49",
+                "outline": "#a88988",
+                "on-secondary-fixed-variant": "#004a76",
+                "raycast-coral": "#FF6363",
+                "obsidian-surface": "#101111",
+                "muted": "#9C9C9D"
+        },
+        "borderRadius": {
+                "DEFAULT": "0.25rem",
+                "lg": "0.5rem",
+                "xl": "0.75rem",
+                "full": "9999px"
+        },
+        "spacing": {
+                "xl": "20px",
+                "section": "32px",
+                "xxl": "24px",
+                "xs": "4px",
+                "margin-mobile": "20px",
+                "lg": "16px",
+                "sm": "8px",
+                "md": "12px",
+                "button-height": "48px",
+                "touch-target-min": "48px"
+        },
+        "fontFamily": {
+                "label": ["Inter"],
+                "screen-title": ["Inter"],
+                "body": ["Inter"],
+                "display": ["Inter"],
+                "data-tabular": ["Geist Mono", "monospace"],
+                "card-title": ["Inter"],
+                "body-compact": ["Inter"]
+        }
+      }
+    }
+  }
+</script>
+<style>
+        body {
+            background-color: #07080A;
+            color: #F9F9F9;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            min-height: max(884px, 100dvh);
+            overflow-x: hidden;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        ::-webkit-scrollbar {
+            display: none;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
+
+        .border-subtle {
+            border-color: rgba(255, 255, 255, 0.06);
+        }
+    </style>
+</head>
+<body class="font-body text-body pb-24 selection:bg-raycast-coral selection:text-white font-medium">
+<!-- Top Navigation -->
+<header class="fixed top-0 w-full z-50 bg-[#07080A] flex justify-center h-[48px] border-b border-subtle transition-opacity duration-200 mt-[env(safe-area-inset-top)]">
+<div class="w-full max-w-[390px] flex justify-between items-center px-4 h-full">
+<button class="flex items-center gap-1 text-muted hover:text-white transition-colors w-12 h-12 justify-center -ml-3">
+<span class="material-symbols-outlined" data-icon="arrow_back_ios_new">arrow_back_ios_new</span>
+</button>
+<button class="text-muted hover:text-white transition-colors flex items-center justify-center w-12 h-12 -mr-3">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+</header>
+<main class="pt-[calc(48px+20px)] px-4 w-full max-w-[390px] mx-auto space-y-8">
+<!-- Workout Summary -->
+<section class="space-y-1">
+<h1 class="font-screen-title text-[22px] leading-[28px] text-white tracking-tight">阈值间歇跑</h1>
+<p class="font-label text-[12px] leading-[16px] text-muted">周四 · 重点训练</p>
+<div class="font-data-tabular tabular-nums text-[16px] leading-[24px] text-muted mt-2">
+                约 1:08<span class="mx-2 text-white/20">•</span>14.0 km<span class="mx-2 text-white/20">•</span>230 TL
+            </div>
+</section>
+<!-- Execution Details -->
+<section class="flex flex-wrap gap-2">
+<div class="bg-obsidian-surface border border-subtle rounded-full px-3 py-1.5 flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-muted" data-icon="route">route</span>
+<span class="font-body text-[12px] leading-[16px] text-white">城市平路</span>
+</div>
+<div class="bg-obsidian-surface border border-subtle rounded-full px-3 py-1.5 flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-muted" data-icon="steps">steps</span>
+<span class="font-body text-[12px] leading-[16px] text-white">Endorphin Speed 3</span>
+</div>
+<div class="bg-obsidian-surface border border-subtle rounded-full px-3 py-1.5 flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-tertiary" data-icon="watch">watch</span>
+<span class="font-body text-[12px] leading-[16px] text-white">已连接 COROS</span>
+</div>
+</section>
+<!-- Structured Segments -->
+<section class="space-y-3">
+<!-- Segment 1: Warmup -->
+<div class="flex bg-obsidian-surface rounded-xl border border-subtle overflow-hidden">
+<div class="w-1.5 bg-surface-variant shrink-0"></div>
+<div class="flex-1 p-4 flex flex-col gap-1">
+<div class="flex justify-between items-center">
+<span class="font-card-title text-[15px] text-white font-semibold">1 热身</span>
+<span class="font-data-tabular tabular-nums text-[16px] leading-[24px] text-white">2.0 km</span>
+</div>
+<div class="flex items-center gap-4 text-muted font-data-tabular tabular-nums text-[12px] leading-[16px]">
+<span>配速 5'30”–6'00” /km</span>
+<span>心率 Z1–Z2</span>
+</div>
+</div>
+</div>
+<!-- Repeat Group -->
+<div class="border border-subtle rounded-xl overflow-hidden bg-transparent">
+<div class="bg-[#1B1C1E] border-b border-subtle px-4 py-2 flex justify-between items-center">
+<span class="font-label text-[12px] leading-[16px] text-white font-medium flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px]" data-icon="repeat">repeat</span>
+                        重复 <span class="font-data-tabular tabular-nums">4</span> 次
+                    </span>
+</div>
+<div class="p-3 space-y-3 bg-[#0A0B0D]">
+<!-- Segment 2: Work -->
+<div class="flex bg-obsidian-surface rounded-xl border border-subtle overflow-hidden">
+<div class="w-1.5 bg-raycast-coral shrink-0"></div>
+<div class="flex-1 p-4 flex flex-col gap-1">
+<div class="flex justify-between items-center">
+<span class="font-card-title text-[15px] text-raycast-coral font-semibold">2 阈值跑</span>
+<span class="font-data-tabular tabular-nums text-[16px] leading-[24px] text-raycast-coral font-semibold">2.0 km</span>
+</div>
+<div class="flex items-center gap-4 text-white font-data-tabular tabular-nums text-[12px] leading-[16px]">
+<span>配速 3'45”–4'00” /km</span>
+<span>心率 Z4</span>
+</div>
+</div>
+</div>
+<!-- Segment 3: Recovery -->
+<div class="flex bg-obsidian-surface rounded-xl border border-subtle overflow-hidden">
+<div class="w-1.5 bg-surface-variant shrink-0"></div>
+<div class="flex-1 p-4 flex flex-col gap-1">
+<div class="flex justify-between items-center">
+<span class="font-card-title text-[15px] text-muted font-semibold">3 恢复</span>
+<span class="font-data-tabular tabular-nums text-[16px] leading-[24px] text-muted">500 m / 3:00</span>
+</div>
+<div class="flex items-center gap-4 text-muted font-data-tabular tabular-nums text-[12px] leading-[16px]">
+<span>轻松慢跑</span>
+<span>心率 Z1–Z2</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Segment 4: Cooldown -->
+<div class="flex bg-obsidian-surface rounded-xl border border-subtle overflow-hidden">
+<div class="w-1.5 bg-surface-variant shrink-0"></div>
+<div class="flex-1 p-4 flex flex-col gap-1">
+<div class="flex justify-between items-center">
+<span class="font-card-title text-[15px] text-white font-semibold">4 冷身</span>
+<span class="font-data-tabular tabular-nums text-[16px] leading-[24px] text-white">2.0 km</span>
+</div>
+<div class="flex items-center gap-4 text-muted font-data-tabular tabular-nums text-[12px] leading-[16px]">
+<span>配速 5'40”–6'10” /km</span>
+<span>心率 Z1</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Coach Note -->
+<section class="bg-[#151111] rounded-xl p-5 border border-raycast-coral/30">
+<h3 class="font-card-title text-[15px] text-raycast-coral font-semibold mb-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]" data-icon="tips_and_updates">tips_and_updates</span>
+                教练叮嘱
+            </h3>
+<p class="font-body text-[16px] leading-[26px] text-white/90 mb-3">
+                前两组压住节奏，最后两组再逐步推进。若第三组后呼吸无法在恢复段稳定，立即停止第四组并转为冷身，不要硬顶。
+            </p>
+<ul class="space-y-1">
+<li class="font-body text-[16px] leading-[26px] text-muted flex items-start gap-1.5">
+<span class="text-raycast-coral mt-1">•</span> <span class="font-data-tabular">前 15 分钟</span>不追配速
+                </li>
+<li class="font-body text-[16px] leading-[26px] text-muted flex items-start gap-1.5">
+<span class="text-raycast-coral mt-1">•</span> 恢复段必须慢下来
+                </li>
+<li class="font-body text-[16px] leading-[26px] text-muted flex items-start gap-1.5">
+<span class="text-raycast-coral mt-1">•</span> 疼痛超过 <span class="font-data-tabular">3/10</span> 立即停止
+                </li>
+</ul>
+</section>
+<!-- Fueling Details -->
+<section>
+<div class="bg-obsidian-surface rounded-xl p-4 border border-subtle flex flex-col gap-2">
+<span class="font-label text-[12px] leading-[16px] text-muted">补给建议</span>
+<p class="font-body text-[16px] text-white leading-[1.6]">
+            训练前 <span class="font-data-tabular tabular-nums text-white">60–90 分钟</span>补充 <span class="font-data-tabular tabular-nums text-white">40–60g</span> 碳水；若天气炎热或出汗较多，提前补充水和电解质。训练中按口渴和出汗情况小口补水，并携带 <span class="font-data-tabular tabular-nums text-white">1 包</span>能量胶备用。
+        </p>
+</div>
+</section>
+<!-- Bottom Actions -->
+<section class="pt-4 space-y-4 pb-[env(safe-area-inset-bottom)]">
+<button class="w-full bg-[#F9F9F9] text-[#18191A] font-card-title text-[16px] h-[50px] rounded-full flex items-center justify-center gap-2 hover:bg-white transition-colors active:scale-[0.98] shadow-[inset_0_1px_0_rgba(255,255,255,1),0_2px_4px_rgba(0,0,0,0.4)]">
+                同步到运动手表
+            </button>
+<div class="text-center">
+<a class="font-label text-[13px] text-muted hover:text-white transition-colors flex items-center justify-center min-h-[48px] gap-1 mx-auto w-fit" href="#">
+                    和 Coach 讨论这堂训练
+                    <span class="material-symbols-outlined text-[16px]" data-icon="arrow_forward">arrow_forward</span>
+</a>
+</div>
+</section>
+</main>
+</body></html>

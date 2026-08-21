@@ -107,6 +107,8 @@ source "$HOME/.zshrc" && npm run stitch -- export <screen-id> --slug <slug> --br
 
 canonical artifacts 只允许保存通过当前 Raycast Foundation 人工批准的 HTML；旧设计和未批准候选均不得归档。
 
+需要跨会话继续优化的未批准页面可以提交到 `candidates/`，但必须满足：状态为 `candidate`、review 状态为 `needs_revision`、记录匹配本地 HTML 的 SHA-256、canonical brief 和具体 findings，且没有 approved/Confirmed 字段。它们不是 canonical artifacts。
+
 ## 发布与收尾
 
 1. 对最终 screen 再执行一次 `export`，验证可通过 ID 重新获取。

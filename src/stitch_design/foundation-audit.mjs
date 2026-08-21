@@ -7,10 +7,11 @@ import { fileURLToPath } from "node:url";
 const root = dirname(fileURLToPath(import.meta.url));
 const readJson = async (path) => JSON.parse(await readFile(join(root, path), "utf8"));
 
-const [config, designSystem, manifest, foundation, briefFiles] = await Promise.all([
+const [config, designSystem, manifest, candidateManifest, foundation, briefFiles] = await Promise.all([
   readJson("stitch.config.json"),
   readJson("design-system.json"),
   readJson("artifacts/manifest.json"),
+  readJson("candidates/manifest.json"),
   readFile(join(root, "prompts/foundation.md"), "utf8"),
   readdir(join(root, "briefs")),
 ]);
@@ -48,6 +49,9 @@ for (const screen of manifest.screens) {
   }
 
   if (screen.status === "candidate") {
+    const html = screen.html ? await readFile(join(root, screen.html)) : null;
+    const actualHash = html ? createHash("sha256").update(html).digest("hex") : "";
+    expect(screen.candidateArtifactSha256 === actualHash, `candidate ${screen.screenId} hash does not match its HTML`);
     expect(!screen.approvedArtifactSha256, `candidate ${screen.screenId} has an approved hash`);
     expect(!screen.confirmedScreenId, `candidate ${screen.screenId} has a confirmed screen`);
   }
@@ -63,12 +67,35 @@ for (const screen of manifest.screens) {
   }
 }
 
+for (const screen of candidateManifest.screens) {
+  expect(screen.status === "candidate", `candidate ${screen.screenId} has invalid status`);
+  expect(screen.reviewStatus === "needs_revision", `candidate ${screen.screenId} must remain needs_revision until approval`);
+  expect(Array.isArray(screen.reviewNotes) && screen.reviewNotes.length > 0, `candidate ${screen.screenId} has no review notes`);
+  expect(Array.isArray(screen.briefs) && screen.briefs.length > 0, `candidate ${screen.screenId} has no canonical brief`);
+  const html = screen.html ? await readFile(join(root, screen.html)) : null;
+  const actualHash = html ? createHash("sha256").update(html).digest("hex") : "";
+  expect(Boolean(html), `candidate ${screen.screenId} HTML is missing`);
+  expect(screen.candidateArtifactSha256 === actualHash, `candidate ${screen.screenId} hash does not match its HTML`);
+  expect(!screen.approvedArtifactSha256, `candidate ${screen.screenId} has an approved hash`);
+  expect(!screen.confirmedScreenId, `candidate ${screen.screenId} has a confirmed screen`);
+  for (const brief of screen.briefs ?? []) {
+    expect(existsSync(join(root, brief)), `candidate ${screen.screenId} brief ${brief} is missing`);
+  }
+}
+
 const artifactFiles = (await readdir(join(root, "artifacts"))).filter((name) => name.endsWith(".html"));
 const referencedArtifacts = new Set(
   manifest.screens.flatMap((screen) => screen.html ? [basename(screen.html)] : []),
 );
 const orphanArtifacts = artifactFiles.filter((name) => !referencedArtifacts.has(name));
 expect(orphanArtifacts.length === 0, `orphan HTML artifacts are not allowed: ${orphanArtifacts.join(", ")}`);
+
+const candidateFiles = (await readdir(join(root, "candidates"))).filter((name) => name.endsWith(".html"));
+const referencedCandidates = new Set(
+  candidateManifest.screens.flatMap((screen) => screen.html ? [basename(screen.html)] : []),
+);
+const orphanCandidates = candidateFiles.filter((name) => !referencedCandidates.has(name));
+expect(orphanCandidates.length === 0, `orphan candidate HTML files are not allowed: ${orphanCandidates.join(", ")}`);
 
 const processBriefs = briefFiles.filter((name) => /(?:^|[-_])(fix|refine|verify)(?:[-_.]|$)/i.test(name));
 expect(processBriefs.length === 0, `process briefs must not be archived: ${processBriefs.join(", ")}`);
@@ -91,4 +118,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`Foundation audit passed: ${manifest.screens.length} candidate/approved screens tracked.`);
+console.log(`Foundation audit passed: ${manifest.screens.length} approved and ${candidateManifest.screens.length} review candidates tracked.`);

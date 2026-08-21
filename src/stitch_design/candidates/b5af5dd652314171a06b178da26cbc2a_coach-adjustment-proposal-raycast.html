@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>STRIDE - AI Coach</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">tailwind.config = {darkMode: "class", theme: {extend: {colors: {"canvas": "#07080A", "surface": "#101111", "surface-container": "#1B1B1C", "surface-container-high": "#232425", "divider": "#2A2A2B", "ink-primary": "#F2F2F2", "ink-secondary": "#A1A1A5", "ink-muted": "#6E6E73", "primary-container": "#FF6363", "coral-wash": "#2A1719", "outline-variant": "#59413f", "success-mint": "#69D3A7"}, borderRadius: {DEFAULT: "0.25rem", lg: "0.5rem", xl: "0.75rem", "2xl": "1rem", full: "9999px"}, spacing: {"margin-mobile": "20px", unit: "8px", "touch-target-min": "48px", gutter: "8px", "button-height": "48px", xxl: "24px", xs: "4px", xl: "20px", section: "32px", sm: "8px", md: "12px", lg: "16px"}, fontFamily: {"body-main": ["Inter", "sans-serif"], "data-tabular": ["Geist Mono", "monospace"], "label-nav": ["Inter", "sans-serif"], "label-metadata": ["Inter", "sans-serif"], "title-card": ["Inter", "sans-serif"], "headline-screen": ["Inter", "sans-serif"]}, fontSize: {"body-main": ["15px", {lineHeight: "22px", fontWeight: "500"}], "data-tabular": ["14px", {lineHeight: "18px", fontWeight: "500"}], "label-metadata": ["13px", {lineHeight: "16px", fontWeight: "500"}], "label-nav": ["11px", {lineHeight: "14px", fontWeight: "500"}], "title-card": ["17px", {lineHeight: "22px", fontWeight: "600"}], "headline-screen": ["17px", {lineHeight: "22px", fontWeight: "600"}]}}}};</script>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+            font-feature-settings: "calt" 1, "kern" 1, "liga" 1, "ss03" 1;
+        }
+        .font-geist-mono { font-family: 'Geist Mono', monospace; }
+        /* Scrollbar hiding for clean aesthetic */
+        ::-webkit-scrollbar { display: none; }
+        * { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .focus-ring:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 1px #55B3FF, 0 0 0 5px rgba(85,179,255,0.45);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-canvas text-ink-primary min-h-screen flex flex-col max-w-[390px] mx-auto relative overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full max-w-[390px] bg-canvas z-50 flex justify-between items-center px-margin-mobile h-button-height border-b border-divider" style="height: calc(48px + env(safe-area-inset-top, 0px)); padding-top: env(safe-area-inset-top, 0px);">
+<div class="flex items-center gap-3 w-10">
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center overflow-hidden">
+<img alt="教练头像" class="w-full h-full object-cover" data-alt="A stylized, minimalist avatar for an AI running coach. High-contrast monochromatic color scheme with intense subtle red glowing accents on a pitch-black background, conveying deep technical intelligence and elite athleticism. Professional, serious dark UI context." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAcNfWUc8fZMue3lsGOG9Z6-d-FuFvB44GNCidHO8FgMcI3Y24ophEFsnvP92H5j2Xa2BBJTvvyaPHhK6HviSroIIGf0iEm7sRkZw8GnaDiG7Ur3PShvyKArwatukw1OXbYUq0HCY5b457nsjacJkuhtks-aLP_PWCeHc6GyU_pRxsiL4iqEhvvkRKZewv0uV38uj3zq0t3LTSc5FgZ6acwES7mReugFvadsNK3RZc7_VINlRVgaFG5f5KJsFUJZDHYhs9B8RhmPFLG"/>
+</div>
+</div>
+<div class="flex flex-col items-center justify-center flex-1">
+<h1 class="font-headline-screen text-headline-screen text-ink-primary">Coach</h1>
+<span class="font-label-metadata text-label-metadata text-success-mint flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-success-mint"></span>
+                在线 · 已读取今日状态
+            </span>
+</div>
+<div class="w-10 flex justify-end">
+<button aria-label="历史记录" class="w-11 h-11 flex items-center justify-center text-ink-secondary hover:text-ink-primary transition-colors focus-ring rounded-full">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">history</span>
+</button>
+</div>
+</header>
+<!-- Chat Transcript Area -->
+<main class="flex-1 overflow-y-auto pt-[80px] pb-[160px] px-margin-mobile flex flex-col gap-6" style="padding-top: calc(48px + env(safe-area-inset-top, 0px));">
+<!-- Date Divider -->
+<div class="flex justify-center my-2">
+<span class="px-3 py-1 bg-surface-container rounded-full font-label-metadata text-label-metadata text-ink-muted">今天</span>
+</div>
+<!-- User Message -->
+<div class="flex flex-col items-end gap-1">
+<div class="bg-surface-container border border-divider rounded-t-2xl rounded-l-2xl rounded-br-sm px-4 py-3 max-w-[85%] text-ink-primary font-body-main text-body-main">
+                这两天腿有点沉，周四的节奏跑还要照常吗？
+            </div>
+</div>
+<!-- Coach Message 1 -->
+<div class="flex flex-col items-start gap-1">
+<div class="flex items-end gap-2">
+<div class="bg-surface border border-divider rounded-t-2xl rounded-r-2xl rounded-bl-sm px-4 py-3 max-w-[85%] text-ink-primary font-body-main text-body-main">
+                    明白你的感受。从你的身体指标看，连续的高强度训练确实积累了一些疲劳。
+                </div>
+</div>
+</div>
+<!-- Evidence Capsule -->
+<div class="flex flex-wrap gap-2 ml-4 mb-2 max-w-[85%]">
+<div class="flex items-center gap-1.5 bg-coral-wash px-2.5 py-1.5 rounded-full border border-outline-variant">
+<span class="material-symbols-outlined text-primary-container text-[14px]">monitor_heart</span>
+<span class="font-label-metadata text-label-metadata text-ink-secondary">HRV 较基线</span>
+<span class="font-geist-mono text-data-tabular text-primary-container">-8%</span>
+</div>
+<div class="flex items-center gap-1.5 bg-surface-container px-2.5 py-1.5 rounded-full border border-divider">
+<span class="material-symbols-outlined text-ink-muted text-[14px]">favorite</span>
+<span class="font-label-metadata text-label-metadata text-ink-secondary">静息心率</span>
+<span class="font-geist-mono text-data-tabular text-ink-primary">52 bpm</span>
+</div>
+<div class="flex items-center gap-1.5 bg-surface-container px-2.5 py-1.5 rounded-full border border-divider">
+<span class="material-symbols-outlined text-ink-muted text-[14px]">bedtime</span>
+<span class="font-label-metadata text-label-metadata text-ink-secondary">昨晚睡眠</span>
+<span class="font-geist-mono text-data-tabular text-ink-primary">6h 12m</span>
+</div>
+<div class="flex items-center gap-1.5 bg-coral-wash px-2.5 py-1.5 rounded-full border border-outline-variant">
+<span class="material-symbols-outlined text-primary-container text-[14px]">trending_up</span>
+<span class="font-label-metadata text-label-metadata text-ink-secondary">近 7 天负荷</span>
+<span class="font-geist-mono text-data-tabular text-primary-container">+12%</span>
+</div>
+</div>
+<!-- Coach Message 2 -->
+<div class="flex flex-col items-start gap-1">
+<div class="bg-surface border border-divider px-4 py-3 max-w-[85%] text-ink-primary font-body-main text-body-main ml-4 rounded-2xl">
+                我建议将周四的节奏跑降级，以确保更好的恢复。目前的身体信号不建议进行过大的强度刺激。
+            </div>
+</div>
+<!-- Proposal Card -->
+<div class="bg-surface border border-divider p-4 ml-4 max-w-[90%] relative overflow-hidden rounded-2xl">
+<div class="absolute top-0 left-0 w-1 h-full bg-primary-container"></div>
+<h3 class="font-title-card text-title-card text-ink-primary mb-3 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-container text-[18px]">edit_calendar</span>
+        建议调整周四训练
+    </h3>
+<div class="bg-surface-container rounded-lg p-3 mb-3 border border-divider flex items-center justify-between">
+<div class="flex flex-col">
+<span class="font-label-metadata text-label-metadata text-ink-muted line-through">节奏跑 · 3 × 10分钟</span>
+</div>
+<span class="material-symbols-outlined text-ink-muted text-[16px]">arrow_forward</span>
+<div class="flex flex-col text-right">
+<span class="font-body-main text-body-main text-primary-container font-medium">轻松跑 · 45分钟</span>
+</div>
+</div>
+<p class="font-label-metadata text-label-metadata text-ink-secondary mb-4 flex items-start gap-1">
+<span class="material-symbols-outlined text-ink-muted text-[14px] mt-0.5">info</span>
+        保留周总量，降低高强度刺激
+    </p>
+<div class="flex gap-2">
+<button class="flex-1 min-h-[48px] rounded-lg bg-surface-container border border-divider font-body-main text-body-main text-ink-primary flex items-center justify-center hover:bg-surface-container-high transition-colors focus-ring">
+        查看详情
+    </button>
+<button class="flex-1 min-h-[48px] rounded-lg bg-ink-primary text-canvas font-body-main text-body-main font-semibold flex items-center justify-center hover:opacity-90 transition-opacity focus-ring">
+        应用到计划
+    </button>
+</div>
+</div>
+<!-- Coach Continuation -->
+<div class="flex flex-col items-start gap-1">
+<div class="bg-surface border border-divider px-4 py-3 max-w-[85%] text-ink-primary font-body-main text-body-main ml-4 mb-4 rounded-2xl">
+                如果晨间状态恢复，我会在周六重新安排质量课。
+            </div>
+</div>
+</main>
+<!-- Bottom Pinned Chat Composer -->
+<div class="fixed bottom-[64px] left-0 w-full max-w-[390px] bg-canvas border-t border-divider p-3 pb-safe z-40 mx-auto right-0" style="bottom: calc(64px + env(safe-area-inset-bottom, 0px));">
+<div class="flex items-end gap-2">
+<button aria-label="添加附件" class="w-12 h-12 flex-shrink-0 flex items-center justify-center rounded-full bg-surface-container border border-divider text-ink-primary hover:bg-surface-container-high transition-colors focus-ring mb-0.5">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">add</span>
+</button>
+<div class="flex-1 relative bg-surface-container border border-divider rounded-2xl overflow-hidden focus-within:ring-1 focus-within:ring-[#55B3FF] transition-all">
+<textarea class="w-full bg-transparent border-none text-body-main font-body-main text-ink-primary placeholder-ink-muted focus:ring-0 resize-none px-4 py-3 min-h-[48px] max-h-[120px] scrollbar-hide block focus:outline-none" placeholder="问问 Coach..." rows="1" style="field-sizing: content;"></textarea>
+<div class="absolute right-1.5 bottom-1.5 flex items-center justify-center">
+<button aria-label="发送消息" class="w-10 h-10 flex items-center justify-center rounded-full bg-ink-primary text-canvas hover:opacity-90 transition-colors focus-ring">
+<span class="material-symbols-outlined text-[18px]">send</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full max-w-[390px] mx-auto right-0 z-50 flex justify-around items-center px-unit pb-safe h-[64px] bg-surface border-t border-divider" style="padding-bottom: env(safe-area-inset-bottom, 0px); height: calc(64px + env(safe-area-inset-bottom, 0px));">
+<button aria-label="跑者" class="flex flex-col items-center justify-center text-ink-muted hover:text-ink-primary transition-colors w-16 min-h-[48px] focus-ring rounded-lg">
+<span class="material-symbols-outlined text-[24px] mb-1" style="font-variation-settings: 'FILL' 0;">person</span>
+<span class="font-label-nav text-label-nav">跑者</span>
+</button>
+<button aria-label="训练" class="flex flex-col items-center justify-center text-ink-muted hover:text-ink-primary transition-colors w-16 min-h-[48px] focus-ring rounded-lg">
+<span class="material-symbols-outlined text-[24px] mb-1" style="font-variation-settings: 'FILL' 0;">calendar_today</span>
+<span class="font-label-nav text-label-nav">训练</span>
+</button>
+<button aria-label="数据" class="flex flex-col items-center justify-center text-ink-muted hover:text-ink-primary transition-colors w-16 min-h-[48px] focus-ring rounded-lg">
+<span class="material-symbols-outlined text-[24px] mb-1" style="font-variation-settings: 'FILL' 0;">insights</span>
+<span class="font-label-nav text-label-nav">数据</span>
+</button>
+<button aria-current="page" aria-label="教练" class="flex flex-col items-center justify-center text-ink-primary w-16 min-h-[48px] focus-ring rounded-lg">
+<span class="material-symbols-outlined text-[24px] mb-1 text-primary-container" style="font-variation-settings: 'FILL' 1;">chat_bubble</span>
+<span class="font-label-nav text-label-nav font-bold">教练</span>
+</button>
+</nav>
+</body></html>
