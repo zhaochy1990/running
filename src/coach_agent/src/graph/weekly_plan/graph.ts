@@ -43,8 +43,8 @@ export function createWeeklyPlanGeneratorGraph(config: CoachAgentConfig, context
     .addEdge("phase_unresolvable", END)
     // TODO: skip training plan re-generation even if the load is out of range.
     // .addConditionalEdges("simulate_load", nodes.evaluateLoadMatch, [...PHASE_NODE_TARGETS, "finalize", "load_mismatch"])
-    .addEdge("simulate_load", "finalize")
     // .addEdge("load_mismatch", END)
+    .addEdge("simulate_load", "finalize")
     .addEdge("finalize", END)
     .compile();
 }
