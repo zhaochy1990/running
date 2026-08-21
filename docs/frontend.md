@@ -43,6 +43,7 @@ React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。
 - `GET /api/{user}/weeks` / `GET /api/{user}/weeks/{week_name}`（Go `cmd/api`）—— training-week summary/detail；详情使用规范化 `week_name`
 - `GET /api/{user}/plan/weeks` / `GET /api/{user}/plan/weeks/{week_name}`（Go `cmd/api`）—— active 本周课表元数据列表与详情；新接口以规范化周名称替代 legacy folder
 - `GET /api/users/{user_id}/master-plan/current` —— Go/MySQL 按用户统一返回当前赛季训练计划；Web 从登录 JWT 的 `sub` 构造 `user_id`。普通用户只能读取自己的 `user_id`，admin JWT 和 internal token 可跨用户读取；`/api/users/me/master-plan/current` 仅作为后端兼容别名保留。`content_version=1` 的 `plan` 是 Markdown 且 `revision=null`，`content_version=2` 的 `plan` 是结构化内容且 `revision>=1`。只有 404 表示尚无计划；其他失败由 Web 显示读取错误。
+- `POST /api/users/{user_id}/master-plans`（Go `cmd/api`）—— admin dashboard 将校验通过的 structured Master Plan 应用到指定用户。仅 admin JWT（TierAdmin）可用。替换激活计划必须带 `replace_existing: true` 以及管理员确认过的 `expected_active_plan_id` + `expected_active_revision`，服务端原子归档旧行并插入 revision 1 新行；未带则 `409 master_plan_exists`，revision 不匹配则 `409 master_plan_changed`。请求 `content` 里的 `goal.goal_id` 必须是 UUID。
 - `GET /api/{user}/dashboard` / `/health` / `/pmc` / `/stats` —— fitness & health (`routes/health.py`)
 - `POST /api/{user}/sync` —— 经配置的 `DataSource` 触发完整 sync (`routes/sync.py`)
 - `POST /api/users/me/coach/chat` —— 固定 session 的 Coach 对话；请求带 `client_turn_id`，计划工作区额外带 typed `target`

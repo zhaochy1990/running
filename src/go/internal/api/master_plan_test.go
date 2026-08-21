@@ -62,6 +62,32 @@ func (f *fakeMasterPlanStore) TrainingDoseWeekSummaries(_ context.Context, _ str
 	return f.dose, nil
 }
 
+func (f *fakeMasterPlanStore) ApplyStructuredMasterPlan(_ context.Context, userID, goalID, content string, replacement *storage.MasterPlanReplacement) (*storage.MasterPlan, *storage.MasterPlan, error) {
+	var replaced *storage.MasterPlan
+	if active, ok := f.current[userID]; ok && active != nil {
+		if replacement == nil {
+			return nil, nil, storage.ErrMasterPlanExists
+		}
+		if active.PlanID != replacement.PlanID || active.Revision == nil || *active.Revision != replacement.Revision {
+			return nil, nil, storage.ErrMasterPlanConflict
+		}
+		replaced = active
+	} else if replacement != nil {
+		return nil, nil, storage.ErrMasterPlanConflict
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	revision := int64(1)
+	activeFlag := int8(1)
+	created := &storage.MasterPlan{
+		PlanID: uuid.NewString(), UserID: userID, GoalID: goalID,
+		ContentVersion: storage.MasterPlanContentStructured, Content: content,
+		Status: storage.MasterPlanStatusActive, ActiveFlag: &activeFlag,
+		Revision: &revision, CreatedAt: now, UpdatedAt: now,
+	}
+	f.current[userID] = created
+	return created, replaced, nil
+}
+
 // --- harness -----------------------------------------------------------------
 
 type mpHarness struct {

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -31,6 +32,7 @@ type MasterPlanStore interface {
 	GetCurrentMasterPlan(ctx context.Context, userID string) (*storage.MasterPlan, error)
 	RunningWeekSummaries(ctx context.Context, userID string, windows []storage.WeekWindow) (map[int]storage.RunningWeekSummary, error)
 	TrainingDoseWeekSummaries(ctx context.Context, userID string, windows []storage.WeekWindow) (map[int]storage.TrainingDoseWeekSummary, error)
+	ApplyStructuredMasterPlan(ctx context.Context, userID, goalID, content string, replacement *storage.MasterPlanReplacement) (*storage.MasterPlan, *storage.MasterPlan, error)
 }
 
 type masterPlanRoutes struct {
@@ -53,6 +55,141 @@ func (m *masterPlanRoutes) register(rg *gin.RouterGroup) {
 	}
 	rg.GET("/api/users/me/master-plan/current", m.getCurrent)
 	rg.GET("/api/users/:user_id/master-plan/current", m.getCurrentForUser)
+}
+
+// registerAdminWrites mounts the narrow administrator-only master plan
+// import path on the parent authenticated group. The handler still verifies
+// TierAdmin so user and internal callers cannot use it.
+func (m *masterPlanRoutes) registerAdminWrites(rg *gin.RouterGroup) {
+	if m.store == nil {
+		return
+	}
+	rg.POST("/api/users/:user_id/master-plans", m.apply)
+}
+
+type applyMasterPlanRequest struct {
+	Content                map[string]any `json:"content" binding:"required"`
+	ReplaceExisting        bool           `json:"replace_existing"`
+	ExpectedActivePlanID   *string        `json:"expected_active_plan_id"`
+	ExpectedActiveRevision *int64         `json:"expected_active_revision"`
+}
+
+type applyMasterPlanResponse struct {
+	Success        bool                      `json:"success"`
+	Plan           currentSeasonPlanEnvelope `json:"plan"`
+	ReplacedPlanID *string                   `json:"replaced_plan_id"`
+}
+
+// apply imports a validated structured Master Plan for an existing athlete.
+// A caller must explicitly identify the active plan it confirmed replacing;
+// the store then archives that exact revision and inserts the new active row
+// atomically.
+//
+//	@Summary		Apply a structured Master Plan as an administrator
+//	@Description	Creates a new active master plan. Replacing one requires replace_existing plus the confirmed active plan id and revision; the prior plan is archived atomically.
+//	@Tags			master-plan
+//	@Accept			json
+//	@Produce		json
+//	@Param			user_id	path		string					 true	"Target user UUID"
+//	@Param			body		body		applyMasterPlanRequest true	"Structured plan and replacement decision"
+//	@Success		201			{object}	applyMasterPlanResponse
+//	@Failure		400			{object}	errorResponse
+//	@Failure		401			{object}	errorResponse
+//	@Failure		403			{object}	errorResponse
+//	@Failure		409			{object}	errorResponse
+//	@Failure		413			{object}	errorResponse
+//	@Failure		422			{object}	errorResponse
+//	@Failure		500			{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/{user_id}/master-plans [post]
+func (m *masterPlanRoutes) apply(c *gin.Context) {
+	if callerFrom(c).Tier != TierAdmin {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+	uid := c.Param("user_id")
+	if _, err := uuid.Parse(uid); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user"})
+		return
+	}
+
+	var request applyMasterPlanRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "master_plan_too_large"})
+			return
+		}
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+	exp, err := parseReplacementExpectation(request.ReplaceExisting, request.ExpectedActivePlanID, request.ExpectedActiveRevision)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_replacement"})
+		return
+	}
+	var replacement *storage.MasterPlanReplacement
+	if exp != nil {
+		replacement = &storage.MasterPlanReplacement{PlanID: exp.PlanID, Revision: exp.Revision}
+	}
+	content, goalID, err := validateAppliedMasterPlan(request.Content)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+
+	created, replaced, err := m.store.ApplyStructuredMasterPlan(c.Request.Context(), uid, goalID, string(content), replacement)
+	if errors.Is(err, storage.ErrMasterPlanExists) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "master_plan_exists"})
+		return
+	}
+	if errors.Is(err, storage.ErrMasterPlanConflict) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "master_plan_changed"})
+		return
+	}
+	if err != nil {
+		m.log.Error("apply master plan failed", zapErr(err), zap.String("user_id", uid))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	envelope, _, _, err := buildCurrentEnvelope(created, timefmt.ShanghaiToday(), m.log)
+	if err != nil {
+		m.log.Error("applied master plan is invalid", zapErr(err), zap.String("plan_id", created.PlanID))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	var replacedID *string
+	if replaced != nil {
+		replacedID = &replaced.PlanID
+	}
+	c.JSON(http.StatusCreated, applyMasterPlanResponse{
+		Success:        true,
+		Plan:           envelope,
+		ReplacedPlanID: replacedID,
+	})
+}
+
+func validateAppliedMasterPlan(content map[string]any) ([]byte, string, error) {
+	goal, ok := content["goal"].(map[string]any)
+	if !ok {
+		return nil, "", errors.New("goal is required")
+	}
+	goalID, ok := goal["goal_id"].(string)
+	if !ok || strings.TrimSpace(goalID) == "" {
+		return nil, "", errors.New("goal.goal_id is required")
+	}
+	if _, err := uuid.Parse(goalID); err != nil {
+		return nil, "", errors.New("goal.goal_id must be a UUID")
+	}
+
+	jsonBytes, err := json.Marshal(content)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to marshal content: %w", err)
+	}
+	if len(jsonBytes) > 10*1024*1024 {
+		return nil, "", errors.New("content exceeds 10MB limit")
+	}
+	return jsonBytes, goalID, nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

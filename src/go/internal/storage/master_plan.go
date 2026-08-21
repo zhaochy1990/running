@@ -2,11 +2,30 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// ErrMasterPlanExists is returned when a caller attempts to apply a plan
+// without explicitly allowing replacement of the active plan.
+var ErrMasterPlanExists = errors.New("storage: active master plan already exists")
+
+// ErrMasterPlanConflict means the active plan changed after an administrator
+// confirmed a specific plan revision for replacement.
+var ErrMasterPlanConflict = errors.New("storage: active master plan changed")
+
+// MasterPlanReplacement is the active row revision an administrator reviewed
+// and explicitly confirmed replacing.
+type MasterPlanReplacement struct {
+	PlanID   string
+	Revision int64
+}
 
 // AutoMigrateMasterPlan creates or reconciles the steady-state master_plan
 // schema. An existing non-final table fails closed: the destructive
@@ -90,4 +109,104 @@ func validateCurrentMasterPlan(p *MasterPlan, userID string) error {
 		return fmt.Errorf("storage: master_plan current invariant: unsupported content_version %d", p.ContentVersion)
 	}
 	return nil
+}
+
+// ApplyStructuredMasterPlan inserts a new active structured master plan for an
+// athlete. Replacing an active row requires its exact plan ID and revision; that
+// row is archived in the same transaction before the new active row is inserted.
+// All rows for the user are locked so the active transition is serialized. The new
+// plan has its own identity and therefore starts at revision 1.
+func (s *Store) ApplyStructuredMasterPlan(
+	ctx context.Context, userID, goalID, content string, replacement *MasterPlanReplacement,
+) (*MasterPlan, *MasterPlan, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := uuid.Parse(goalID); err != nil {
+		return nil, nil, fmt.Errorf("storage: invalid goal_id: %w", err)
+	}
+	if strings.TrimSpace(content) == "" {
+		return nil, nil, fmt.Errorf("storage: content cannot be empty")
+	}
+
+	var created *MasterPlan
+	var replaced *MasterPlan
+	apply := func() error {
+		created = nil
+		replaced = nil
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var rows []MasterPlan
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("user_id = ?", uid).
+				Order("revision DESC, created_at DESC").
+				Find(&rows).Error; err != nil {
+				return fmt.Errorf("storage: lock master plans: %w", err)
+			}
+
+			for i := range rows {
+				if rows[i].Status == MasterPlanStatusActive {
+					replaced = &rows[i]
+				}
+			}
+			if replaced == nil {
+				if replacement != nil {
+					return ErrMasterPlanConflict
+				}
+			} else if replacement == nil {
+				return ErrMasterPlanExists
+			} else if replaced.PlanID != replacement.PlanID || replaced.Revision != nil && *replaced.Revision != replacement.Revision {
+				return ErrMasterPlanConflict
+			}
+
+			now := time.Now().UTC().Truncate(time.Millisecond)
+			if replaced != nil {
+				result := tx.Model(&MasterPlan{}).
+					Where("plan_id = ? AND user_id = ? AND status = ?", replaced.PlanID, uid, MasterPlanStatusActive).
+					Updates(map[string]any{
+						"status":      MasterPlanStatusArchived,
+						"active_flag": nil,
+						"updated_at":  now,
+					})
+				if result.Error != nil {
+					return fmt.Errorf("storage: archive prior master plan: %w", result.Error)
+				}
+				if result.RowsAffected != 1 {
+					return ErrMasterPlanConflict
+				}
+				replaced.Status = MasterPlanStatusArchived
+				replaced.ActiveFlag = nil
+				replaced.UpdatedAt = now
+			}
+
+			revision := int64(1)
+			activeFlag := int8(1)
+			row := &MasterPlan{
+				PlanID: uuid.NewString(), UserID: uid, GoalID: goalID,
+				ContentVersion: MasterPlanContentStructured, Content: content,
+				Status: MasterPlanStatusActive, ActiveFlag: &activeFlag,
+				Revision: &revision, CreatedAt: now, UpdatedAt: now,
+			}
+			if err := tx.Create(row).Error; err != nil {
+				if isDuplicateKey(err) {
+					return ErrMasterPlanExists
+				}
+				return fmt.Errorf("storage: create master plan: %w", err)
+			}
+			created = row
+			return nil
+		})
+	}
+	err = apply()
+	// Two first-time applies can both lock the empty key range before either
+	// inserts. InnoDB resolves that insert race by deadlocking one transaction.
+	// Retry it once so the loser observes the winner's active row and returns the
+	// stable domain conflict instead of leaking a transient 500 to the caller.
+	if number, ok := mysqlErrNo(err); ok && number == 1213 {
+		err = apply()
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return created, replaced, nil
 }
