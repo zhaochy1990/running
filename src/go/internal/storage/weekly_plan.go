@@ -246,7 +246,7 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 			activeSlot := WeeklyPlanStatusActive
 			row := &WeeklyPlan{
 				PlanID: uuid.NewString(), UserID: uid, WeekStart: weekStart,
-				MasterPlanID: masterPlanID,
+				MasterPlanID:   masterPlanID,
 				ContentVersion: WeeklyPlanContentStructured, Content: content,
 				Status: WeeklyPlanStatusActive, StatusSlot: &activeSlot,
 				Revision: 1, CreatedAt: now, UpdatedAt: now,
