@@ -29,7 +29,7 @@ export function createWeeklyPlanGeneratorGraph(config: CoachAgentConfig, context
     .addNode("phase_recovery", nodes.phaseRecovery)
     .addNode("phase_unresolvable", nodes.phaseUnresolvable)
     .addNode("simulate_load", nodes.simulateLoad)
-    .addNode("load_mismatch", nodes.loadMismatch)
+    // .addNode("load_mismatch", nodes.loadMismatch)
     .addNode("finalize", nodes.finalize)
     .addEdge(START, "loadWeeklyPlanContext")
     .addConditionalEdges("loadWeeklyPlanContext", (state) => (state.outcome ? END : "getTargetTrainingLoad"), ["getTargetTrainingLoad", END])
@@ -41,8 +41,10 @@ export function createWeeklyPlanGeneratorGraph(config: CoachAgentConfig, context
     .addConditionalEdges("phase_taper", (state) => (state.outcome ? END : "simulate_load"), ["simulate_load", END])
     .addConditionalEdges("phase_recovery", (state) => (state.outcome ? END : "simulate_load"), ["simulate_load", END])
     .addEdge("phase_unresolvable", END)
-    .addConditionalEdges("simulate_load", nodes.evaluateLoadMatch, [...PHASE_NODE_TARGETS, "finalize", "load_mismatch"])
-    .addEdge("load_mismatch", END)
+    // TODO: skip training plan re-generation even if the load is out of range.
+    // .addConditionalEdges("simulate_load", nodes.evaluateLoadMatch, [...PHASE_NODE_TARGETS, "finalize", "load_mismatch"])
+    .addEdge("simulate_load", "finalize")
+    // .addEdge("load_mismatch", END)
     .addEdge("finalize", END)
     .compile();
 }

@@ -41,11 +41,10 @@ class WeeklyPlanLLMImplementation implements WeeklyPlanLLM {
 
     const system = await buildSystemPrompt(input.phase);
     const user = buildUserPrompt(input);
-    const response = await buildResponsesModel(this.config)
-      .withStructuredOutput(WeeklyPlanGenerationSchema, {
-        method: "jsonSchema",
-      })
-      .invoke([new SystemMessage(system), new HumanMessage(user)]);
+    const model = buildResponsesModel(this.config).withStructuredOutput(toJsonSchema(WeeklyPlanGenerationSchema), {
+      method: "jsonSchema",
+    });
+    const response = await model.invoke([new SystemMessage(system), new HumanMessage(user)]);
 
     if (response.success) {
       logger.info(response.weeklyPlan, "successfully generated WeeklyPlan. Position, before validation");

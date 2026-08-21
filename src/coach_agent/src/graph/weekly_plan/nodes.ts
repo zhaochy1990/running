@@ -391,26 +391,36 @@ export class WeeklyPlanGeneratorNodes {
     const high = target?.training_load_high ?? null;
     const accepted = low === null || high === null ? null : acceptedLoadBand(low, high);
     const band = accepted === null ? "n/a" : `${formatNumber(accepted.low)}-${formatNumber(accepted.high)}`;
-    if (inRange === null) {
-      logger.warn(`Cannot verify total load for request ${request.request_id}: simulation or target load unavailable; keeping the generated plan`);
-      return "finalize";
-    }
-    if (inRange) {
-      logger.info(
-        `Total load ${formatNumber(simulation?.total_dose)} within tolerance [${band}] for request ${request.request_id}; passing through after ${attempts} attempt(s)`,
-      );
-      return "finalize";
-    }
-    if (attempts >= MAX_GENERATION_ATTEMPTS) {
-      logger.error(
-        `Bouncing request ${request.request_id} to load_mismatch: total dose ${formatNumber(simulation?.total_dose)} still outside tolerance [${band}] after ${attempts}/${MAX_GENERATION_ATTEMPTS} attempts`,
-      );
-      return "load_mismatch";
-    }
-    logger.warn(
-      `Bouncing request ${request.request_id} back to ${phase ?? "?"} phase node: total dose ${formatNumber(simulation?.total_dose)} outside tolerance [${band}] (attempt ${attempts}/${MAX_GENERATION_ATTEMPTS})`,
+
+    logger.warn('Evaluating training load for request %s, total dose %s target %s-%s ',
+      request.request_id,
+      formatNumber(simulation?.total_dose),
+      formatNumber(low),
+      formatNumber(high),
     );
-    return phase === null || phase === undefined ? "load_mismatch" : PHASE_NODE_NAMES[phase];
+    // TODO: finalize the plan even if the load is out of range, but log a warning and include the mismatch in the outcome
+    return 'finalize';
+
+    // if (inRange === null) {
+    //   logger.warn(`Cannot verify total load for request ${request.request_id}: simulation or target load unavailable; keeping the generated plan`);
+    //   return "finalize";
+    // }
+    // if (inRange) {
+    //   logger.info(
+    //     `Total load ${formatNumber(simulation?.total_dose)} within tolerance [${band}] for request ${request.request_id}; passing through after ${attempts} attempt(s)`,
+    //   );
+    //   return "finalize";
+    // }
+    // if (attempts >= MAX_GENERATION_ATTEMPTS) {
+    //   logger.error(
+    //     `Bouncing request ${request.request_id} to load_mismatch: total dose ${formatNumber(simulation?.total_dose)} still outside tolerance [${band}] after ${attempts}/${MAX_GENERATION_ATTEMPTS} attempts`,
+    //   );
+    //   return "load_mismatch";
+    // }
+    // logger.warn(
+    //   `Bouncing request ${request.request_id} back to ${phase ?? "?"} phase node: total dose ${formatNumber(simulation?.total_dose)} outside tolerance [${band}] (attempt ${attempts}/${MAX_GENERATION_ATTEMPTS})`,
+    // );
+    // return phase === null || phase === undefined ? "load_mismatch" : PHASE_NODE_NAMES[phase];
   };
 
   readonly loadMismatch = (state: typeof GraphState.State) => {

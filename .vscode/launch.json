@@ -12,7 +12,8 @@
             "cwd": "${workspaceFolder}/src/coach_agent",
             "runtimeArgs": [
                 "run",
-                "test:weekly-plan-graph"
+                "test:weekly-plan-graph",
+                "zhaochaoyi"
             ],
             "skipFiles": [
                 "<node_internals>/**"

@@ -23,20 +23,6 @@ models:
     extra:
       thinking:
         type: enabled
-    generator:
-      max_tokens: 65536
-      timeout_s: 600
-      reasoning_effort: max
-      extra: {}
-    reviewer:
-      max_tokens: 8192
-      timeout_s: 300
-    commentary:
-      max_tokens: 2048
-      timeout_s: 120
-    orchestrator:
-      max_tokens: 4096
-      timeout_s: 120
 
   - name: deepseekv4flash
     provider: openai-compatible
@@ -52,88 +38,27 @@ models:
     extra:
       thinking:
         type: enabled
-    generator:
-      max_tokens: 65536
-      timeout_s: 600
-      reasoning_effort: max
-      extra: {}
-    reviewer:
-      max_tokens: 8192
-      timeout_s: 300
-    commentary:
-      max_tokens: 2048
-      timeout_s: 120
-    orchestrator:
-      max_tokens: 4096
-      timeout_s: 120
 
-  # Agent Maestro — the canonical LOCAL provider (see AGENTS.md). It exposes the
-  # VS Code Language Model API through an OpenAI-compatible Responses endpoint at
-  # 127.0.0.1:23333. The service accepts any bearer token, but the runtime still
-  # requires AGENT_MAESTRO_API_KEY to hold a non-empty value.
-  # Sol — deep reasoning tier. Complex reasoning over large codebases and
-  # long-running agentic work. Used by generator + reviewer.
-  - name: agent_maestro_sol
-    provider: openai-compatible
-    model: gpt-5.6-sol
-    deployment: gpt-5.6-sol
-    endpoint: http://127.0.0.1:23333/api/openai/v1
-    api_key_env: AGENT_MAESTRO_API_KEY
-    auth: api-key
-    api_kind: responses
-    reasoning_effort: high
-    max_tokens: 16384
-    timeout_s: 300
-
-  # Luna — fast / cost-efficient tier. Quick responses for smaller, faster
-  # tasks. Used by read-only status Q&A + commentary.
-  - name: agent_maestro_luna
-    provider: openai-compatible
-    model: gpt-5.6-luna
-    deployment: gpt-5.6-luna
-    endpoint: http://127.0.0.1:23333/api/openai/v1
-    api_key_env: AGENT_MAESTRO_API_KEY
-    auth: api-key
-    api_kind: responses
-    reasoning_effort: medium
-    max_tokens: 4096
-    timeout_s: 120
-
-  # Terra — balanced everyday interactive + agentic coding tier. General-purpose
-  # middle option between Luna (fast) and Sol (deep).
-  - name: agent_maestro_terra
-    provider: openai-compatible
-    model: gpt-5.6-terra
-    deployment: gpt-5.6-terra
-    endpoint: http://127.0.0.1:23333/api/openai/v1
-    api_key_env: AGENT_MAESTRO_API_KEY
-    auth: api-key
-    api_kind: responses
-    reasoning_effort: medium
-    max_tokens: 8192
-    timeout_s: 180
 
 agents:
   - name: weekly_plan
-    model: agent_maestro_terra
+    model: deepseekv4flash
     max_tokens: 65536
     timeout_s: 600
   - name: master_plan
-    model: agent_maestro_sol
+    model: deepseekv4flash
     max_tokens: 65536
     timeout_s: 600  
   - name: reviewer
-    model: agent_maestro_terra
+    model: deepseekv4flash
     max_tokens: 16384
     timeout_s: 300
   - name: commentary
-    model: agent_maestro_sol
+    model: deepseekv4flash
   - name: orchestrator
-    # model: agent_maestro_sol
-    # model: agent_maestro_terra
-    model: agent_maestro_luna
+    model: deepseekv4flash
   - name: qa
-    model: agent_maestro_sol
+    model: deepseekv4flash
 
 observability:
   langsmith_enabled: false

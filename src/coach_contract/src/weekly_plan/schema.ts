@@ -225,18 +225,45 @@ export const WeeklyPlanSchema = z
 
 export type WeeklyPlan = z.infer<typeof WeeklyPlanSchema>;
 
-export const WeeklyPlanGenerationSchema = z.discriminatedUnion("success", [
-  z.strictObject({
-    success: z.literal(true),
-    weeklyPlan: WeeklyPlanSchema,
-    error: z.literal(""),
-  }),
-  z.strictObject({
-    success: z.literal(false),
-    weeklyPlan: z.null(),
-    error: z.string().min(1),
-  }),
-]);
+export const WeeklyPlanGenerationSchema = z
+  .strictObject({
+    success: z.boolean(),
+    weeklyPlan: WeeklyPlanSchema.nullable(),
+    error: z.string(),
+  })
+  .superRefine((result, context) => {
+    if (result.success) {
+      if (result.weeklyPlan === null) {
+        context.addIssue({
+          code: "custom",
+          path: ["weeklyPlan"],
+          message: "weeklyPlan must be set when success is true",
+        });
+      }
+      if (result.error !== "") {
+        context.addIssue({
+          code: "custom",
+          path: ["error"],
+          message: "error must be empty when success is true",
+        });
+      }
+    } else {
+      if (result.weeklyPlan !== null) {
+        context.addIssue({
+          code: "custom",
+          path: ["weeklyPlan"],
+          message: "weeklyPlan must be null when success is false",
+        });
+      }
+      if (result.error.trim() === "") { // 建议加上 trim，防止AI输出空格字符串
+        context.addIssue({
+          code: "custom",
+          path: ["error"],
+          message: "error must be non‑empty when success is false",
+        });
+      }
+    }
+  });
 
 export const WeeklyPlanDirectResponseSchema = z.strictObject({
   disposition: z.literal("return_direct"),
