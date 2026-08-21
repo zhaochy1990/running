@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+/* Self-hosted font assets shared with stride-web's Master Plan surface.
+   Consumers must serve these at /fonts/ (already done by frontend & admin-dashboard). */
+@font-face { font-family: 'Outfit'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('/fonts/outfit-latin.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400 600; font-display: swap; src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Newsreader'; font-style: normal; font-weight: 400 600; font-display: swap; src: url('/fonts/newsreader-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Newsreader'; font-style: italic; font-weight: 400; font-display: swap; src: url('/fonts/newsreader-italic-latin.woff2') format('woff2'); }
+
+@theme {
+  --color-bg-primary: #f8f9fb;
+  --color-bg-secondary: #f0f1f5;
+  --color-bg-card: #ffffff;
+  --color-bg-card-hover: #f5f6fa;
+  --color-bg-elevated: #eef0f5;
+  --color-border: #d8dae5;
+  --color-border-subtle: #e8eaf0;
+  --color-text-primary: #1a1c2e;
+  --color-text-secondary: #555570;
+  --color-text-muted: #8888a0;
+  --color-accent-green: #00a85a;
+  --color-accent-green-dim: #009950;
+  --color-accent-cyan: #0097a7;
+  --color-accent-amber: #e68a00;
+  --color-accent-red: #d32f2f;
+  --color-accent-purple: #7c4dff;
+  --color-green-soft: #e6f7ee;
+  --color-green-edge: #c8e8d6;
+  --color-cyan-soft: #e0f4f7;
+  --color-amber-soft: #fdf2dd;
+  --color-red-soft: #fde8e8;
+  --color-purple-soft: #ede7ff;
+  --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  --font-editorial: 'Newsreader', 'Iowan Old Style', 'Charter', Georgia, serif;
+}
+
+:root {
+  --surface: var(--color-bg-card);
+  --elevated: var(--color-bg-elevated);
+  --border-subtle: var(--color-border-subtle);
+  --muted: var(--color-text-secondary);
+  --faint: var(--color-text-muted);
+  --green: var(--color-accent-green);
+  --green-soft: #e6f7ee;
+  --green-edge: #c8e8d6;
+  --cyan: #0097a7;
+  --teal-deep: #006874;
+  --cyan-soft: #e0f4f7;
+  --cyan-edge: #b9e3ea;
+  --amber: #e68a00;
+  --amber-soft: #fdf2dd;
+  --amber-edge: #f6e0a8;
+  --red: #d32f2f;
+  --red-soft: #fde8e8;
+  --red-edge: #f3c8c8;
+  --purple: #7c4dff;
+  --purple-soft: #ede7ff;
+  --purple-edge: #d4c8ff;
+}
+
+.master-plan-surface {
+  font-family: var(--font-display);
+  color: var(--color-text-primary);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }

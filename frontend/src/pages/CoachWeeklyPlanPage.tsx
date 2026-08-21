@@ -8,7 +8,6 @@ import WeeklyPlanTabs, { type CoachWeeklyPlanTab } from "../components/weekly-pl
 import WeeklyRecordsTab from "../components/weekly-plan/WeeklyRecordsTab";
 import WeeklyScheduleTab from "../components/weekly-plan/WeeklyScheduleTab";
 import WeeklyStrengthTab from "../components/weekly-plan/WeeklyStrengthTab";
-import HardcodedStrengthPreview, { hasHardcodedStrengthPreview } from "../components/weekly-plan/HardcodedStrengthPreview";
 import { useCoachWeeklyPlan } from "../hooks/useCoachWeeklyPlan";
 
 export interface CoachWeeklyPlanPageProps {
@@ -40,8 +39,7 @@ export default function CoachWeeklyPlanPage({ initialTab = "schedule" }: CoachWe
     );
 
   const planTitle = weeks.find((item) => item.folder === week.week_name)?.plan_title;
-  const hasHardcodedStrength = hasHardcodedStrengthPreview(week.week_name);
-  const strengthCount = hasHardcodedStrength ? 2 : (strength?.sessions.length ?? 0);
+  const strengthCount = strength?.sessions.length ?? 0;
 
   return (
     <div className="mx-auto max-w-[1180px] space-y-6 px-4 py-6 sm:px-8 sm:py-8">
@@ -66,8 +64,8 @@ export default function CoachWeeklyPlanPage({ initialTab = "schedule" }: CoachWe
             onPush={pushSession}
           />
         )}
-        {activeTab === "strength" && (hasHardcodedStrength ? <HardcodedStrengthPreview /> : <WeeklyStrengthTab data={strength} days={planDays} />)}
-        {activeTab === "records" && <WeeklyRecordsTab days={displayDays} activities={week.activities} />}
+        {activeTab === "strength" && <WeeklyStrengthTab data={strength} days={planDays} />}
+        {activeTab === "records" && <WeeklyRecordsTab days={planDays} activities={week.activities} />}
         {activeTab === "feedback" && <WeeklyFeedbackTab initialValue={week.feedback ?? ""} days={planDays} onSave={saveFeedback} />}
       </div>
     </div>
