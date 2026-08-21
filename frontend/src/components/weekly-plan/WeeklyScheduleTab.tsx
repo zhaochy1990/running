@@ -34,45 +34,6 @@ const KIND_STYLE: Record<PlannedSession["kind"], string> = {
 
 const HARDCODED_STRENGTH_FOLDER = "2026-08-03_08-09";
 
-function session(
-  date: string,
-  sessionIndex: number,
-  kind: PlannedSession["kind"],
-  summary: string,
-  durationS: number | null,
-  distanceM: number | null,
-  notesMd: string,
-): PlanDay["sessions"][number] {
-  return {
-    id: sessionIndex,
-    pushable: false,
-    schema: "plan-session/v1",
-    date,
-    session_index: sessionIndex,
-    kind,
-    summary,
-    spec: null,
-    notes_md: notesMd,
-    total_duration_s: durationS,
-    total_distance_m: distanceM,
-    scheduled_workout_id: null,
-  };
-}
-
-function nutrition(date: string, kcal: number, carbs: number, protein: number, water: number, notesMd: string): PlannedNutrition {
-  return {
-    schema: "plan-nutrition/v1",
-    date,
-    kcal_target: kcal,
-    carbs_g: carbs,
-    protein_g: protein,
-    fat_g: null,
-    water_ml: water,
-    meals: [],
-    notes_md: notesMd,
-  };
-}
-
 export default function WeeklyScheduleTab({ week, days, structuredStatus, canPushRun, canPushStrength, onPush }: WeeklyScheduleTabProps) {
   if (days.length === 0 && !week.plan?.trim()) return <CoachWeeklyPlanEmptyState />;
 

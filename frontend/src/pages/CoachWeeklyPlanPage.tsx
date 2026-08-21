@@ -67,7 +67,7 @@ export default function CoachWeeklyPlanPage({ initialTab = "schedule" }: CoachWe
           />
         )}
         {activeTab === "strength" && (hasHardcodedStrength ? <HardcodedStrengthPreview /> : <WeeklyStrengthTab data={strength} days={planDays} />)}
-        {activeTab === "records" && <WeeklyRecordsTab days={displayDays} activities={week.activities} />}
+        {activeTab === "records" && <WeeklyRecordsTab days={planDays} activities={week.activities} />}
         {activeTab === "feedback" && <WeeklyFeedbackTab initialValue={week.feedback ?? ""} days={planDays} onSave={saveFeedback} />}
       </div>
     </div>
