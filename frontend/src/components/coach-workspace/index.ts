@@ -6,12 +6,12 @@
  *   /coach/week/:folder/adjust    -> WeeklyPlanAdjustWorkspace
  *   /coach/master/:planId/adjust  -> MasterPlanAdjustWorkspace
  */
-export { WeeklyPlanAdjustWorkspace } from './WeeklyPlanAdjustWorkspace'
-export { MasterPlanAdjustWorkspace } from './MasterPlanAdjustWorkspace'
-export { PlanAdjustIntakeWorkspace } from './PlanAdjustIntakeWorkspace'
-export { WorkspaceLayout } from './WorkspaceLayout'
-export { DiffReview } from './DiffReview'
-export { CreateReview } from './CreateReview'
+export { WeeklyPlanAdjustWorkspace } from "./WeeklyPlanAdjustWorkspace";
+export { MasterPlanAdjustWorkspace } from "./MasterPlanAdjustWorkspace";
+export { PlanAdjustIntakeWorkspace } from "./PlanAdjustIntakeWorkspace";
+export { WorkspaceLayout } from "./WorkspaceLayout";
+export { DiffReview } from "./DiffReview";
+export { CreateReview } from "./CreateReview";
 export type {
   ApplyOutcome,
   ApplyProposalRequest,
@@ -27,4 +27,4 @@ export type {
   WeeklyDiffProposal,
   WeeklyProposal,
   WorkspaceProposal,
-} from './types'
+} from "./types";

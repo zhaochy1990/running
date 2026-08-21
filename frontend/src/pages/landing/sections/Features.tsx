@@ -1,10 +1,10 @@
-import { useReveal } from '../useReveal'
+import { useReveal } from "../useReveal";
 
 export default function Features() {
-  const secHeadRef = useReveal<HTMLDivElement>()
-  const feat1Ref = useReveal<HTMLDivElement>()
-  const feat2Ref = useReveal<HTMLDivElement>()
-  const feat3Ref = useReveal<HTMLDivElement>()
+  const secHeadRef = useReveal<HTMLDivElement>();
+  const feat1Ref = useReveal<HTMLDivElement>();
+  const feat2Ref = useReveal<HTMLDivElement>();
+  const feat3Ref = useReveal<HTMLDivElement>();
 
   return (
     <section id="features">
@@ -53,5 +53,5 @@ export default function Features() {
         </div>
       </div>
     </section>
-  )
+  );
 }

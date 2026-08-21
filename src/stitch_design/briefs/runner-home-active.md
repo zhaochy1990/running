@@ -16,6 +16,7 @@ The runner opens STRIDE in the morning and should understand within five seconds
   - `HRV 52 ms` with `较基线 +4%`;
   - `静息心率 48 bpm` with `正常`;
   - `当前状态 -8%` with `维持区`.
+- At 360 px and with larger system text, the three evidence items use a shrink-safe grid or responsive stack; values and statuses do not overlap or clip.
 - `今日活动` section only, positioned above `今日训练`. For this pending-workout screen, use the compact text-only zero state `今天暂无活动`. Do not place a sync action in this section; watch sync remains available only in the top bar.
 - A visible `全部活动` text action.
 - The strongest section is `今日训练`, directly displaying `节奏跑 · 8 km`, scheduled `18:30`, estimated `48 min`, target `5:15–5:25 /km`, heart-rate target `Z3 · 150–162 bpm`. Include a small `关键课` marker and a concise coach reason: `安排在今晚：恢复正常，且距周日长跑超过 72 小时。`
@@ -39,6 +40,11 @@ The runner opens STRIDE in the morning and should understand within five seconds
 - Do not show legacy terms such as `训练总纲`, `单周计划`, `TSB`, `ATL`, `CTL`, `Draft`, or English dashboard labels.
 - Do not use status rings, circular gauges, large hero charts, gradients, generic runner illustrations, glass effects, or a grid of equal metric cards.
 - The top bar uses a solid Foundation surface with a quiet divider; no backdrop blur, translucent surface, or frosted-glass treatment.
+- `全部活动` is a semantic control with a minimum 48 px hit area even when its visible label remains compact.
+- Buttons and raised surfaces use the Foundation ring/raised elevation; do not use a standalone generic `shadow-sm`.
+- Do not use `shadow-xl`, `shadow-black/*`, or any free-floating card drop shadow. The training card uses the exact paired ring/raised elevation from Foundation.
+- Apply `env(safe-area-inset-top)` to the fixed header and `env(safe-area-inset-bottom)` to the bottom navigation; do not substitute hard-coded safe-area pixels.
+- Enable Inter OpenType features `calt`, `kern`, `liga`, and `ss03` globally. Geist Mono athletic values use tabular numerals.
 - Avoid stacking every section in a separate oversized rounded card. Use typography, thin rules, whitespace, and at most one subtle elevated surface for today's training.
 - Do not expose `发现` as a bottom tab.
 - Do not add promotional banners, subscription upsells, social feed, weather decoration, or nutrition logging to this screen.
@@ -51,4 +57,6 @@ The runner opens STRIDE in the morning and should understand within five seconds
 - Athletic numbers use monospace typography and align cleanly.
 - The page remains usable at 360 px width and with larger system text.
 - Every tap target is at least 48 logical px, and bottom safe-area spacing is present.
+- The page canvas and fixed shell use `width: 100%` with a 390 px maximum so the page does not overflow at 360 px.
+- Browser review confirms the evidence strip remains readable at 360 px and with enlarged text, and both safe areas are derived from environment variables.
 - Status remains understandable in grayscale and does not depend on color alone.

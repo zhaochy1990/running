@@ -11,100 +11,87 @@
  *   master -> /coach/master/:planId/adjust
  * The target pages are wired by the main thread; this card owns the handoff.
  */
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from "react-router-dom";
 
-import { stashProposal } from '../lib/coachProposalStorage'
-import { fingerprintProposal } from './coach-workspace/draftRevision'
-import { projectWeeklyCreate } from './coach-workspace/weeklyCreateProjection'
-import type {
-  DiffChange,
-  ProposalTargetKey,
-  WorkspaceProposal,
-} from './coach-workspace/types'
-import type { CoachActiveTarget, CoachProposalCard, CoachSeasonImpact, CoachTargetRef } from '../types/coachChat'
+import { stashProposal } from "../lib/coachProposalStorage";
+import { fingerprintProposal } from "./coach-workspace/draftRevision";
+import { projectWeeklyCreate } from "./coach-workspace/weeklyCreateProjection";
+import type { DiffChange, ProposalTargetKey, WorkspaceProposal } from "./coach-workspace/types";
+import type { CoachActiveTarget, CoachProposalCard, CoachSeasonImpact, CoachTargetRef } from "../types/coachChat";
 
 export interface CoachProposalUpgradeCardProps {
-  userId: string
-  proposal?: CoachProposalCard
-  activeTarget?: CoachActiveTarget | null
+  userId: string;
+  proposal?: CoachProposalCard;
+  activeTarget?: CoachActiveTarget | null;
   /** Chat message id the workspace conversation should resume from. */
-  contextAnchor?: string
+  contextAnchor?: string;
 }
 
 interface Resolved {
-  targetKey: ProposalTargetKey
-  path: string
-  isWeekly: boolean
+  targetKey: ProposalTargetKey;
+  path: string;
+  isWeekly: boolean;
 }
 
 function str(value: unknown): string | undefined {
-  return typeof value === 'string' && value ? value : undefined
+  return typeof value === "string" && value ? value : undefined;
 }
 
 /** Resolve the plan surface from the raw proposal / active target. */
-function resolveTarget(
-  userId: string,
-  proposal: CoachProposalCard | undefined,
-  activeTarget: CoachActiveTarget | null | undefined,
-): Resolved | null {
-  const ref: CoachTargetRef | undefined =
-    (proposal?.target as CoachTargetRef | undefined) ?? activeTarget ?? undefined
-  const rawProposal = proposal?.proposal ?? {}
+function resolveTarget(userId: string, proposal: CoachProposalCard | undefined, activeTarget: CoachActiveTarget | null | undefined): Resolved | null {
+  const ref: CoachTargetRef | undefined = (proposal?.target as CoachTargetRef | undefined) ?? activeTarget ?? undefined;
+  const rawProposal = proposal?.proposal ?? {};
 
-  const planId = str(ref?.plan_id) ?? str(rawProposal.plan_id as unknown)
-  const folder = str(ref?.folder) ?? str(rawProposal.folder as unknown)
-  const isMaster = ref?.kind === 'master' || (!!planId && !folder)
+  const planId = str(ref?.plan_id) ?? str(rawProposal.plan_id as unknown);
+  const folder = str(ref?.folder) ?? str(rawProposal.folder as unknown);
+  const isMaster = ref?.kind === "master" || (!!planId && !folder);
 
   if (isMaster) {
-    if (!planId) return null
+    if (!planId) return null;
     return {
-      targetKey: { userId, kind: 'master', planId },
+      targetKey: { userId, kind: "master", planId },
       path: `/coach/master/${encodeURIComponent(planId)}/adjust`,
       isWeekly: false,
-    }
+    };
   }
-  if (!folder) return null
+  if (!folder) return null;
   return {
-    targetKey: { userId, kind: 'weekly', folder },
+    targetKey: { userId, kind: "weekly", folder },
     path: `/coach/week/${encodeURIComponent(folder)}/adjust`,
     isWeekly: true,
-  }
+  };
 }
 
 function summarizeValue(value: unknown): string | null {
-  if (value == null) return null
-  if (typeof value === 'string') return value
-  if (typeof value === 'object') {
-    const summary = (value as Record<string, unknown>).summary
-    if (typeof summary === 'string') return summary
+  if (value == null) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    const summary = (value as Record<string, unknown>).summary;
+    if (typeof summary === "string") return summary;
     try {
-      return JSON.stringify(value)
+      return JSON.stringify(value);
     } catch {
-      return null
+      return null;
     }
   }
-  return String(value)
+  return String(value);
 }
 
 /** Map raw diff ops into the workspace `DiffChange[]` (best-effort, defensive). */
 function toDiffChanges(ops: unknown): DiffChange[] {
-  if (!Array.isArray(ops)) return []
+  if (!Array.isArray(ops)) return [];
   return ops.map((op, i) => {
-    const o = (op ?? {}) as Record<string, unknown>
-    const changeTypeRaw = str(o.op) ?? str(o.kind) ?? 'update'
-    const changeType: DiffChange['changeType'] = changeTypeRaw.includes('add')
-      ? 'add'
-      : changeTypeRaw.includes('remove')
-        ? 'remove'
-        : 'update'
+    const o = (op ?? {}) as Record<string, unknown>;
+    const changeTypeRaw = str(o.op) ?? str(o.kind) ?? "update";
+    const changeType: DiffChange["changeType"] = changeTypeRaw.includes("add") ? "add" : changeTypeRaw.includes("remove") ? "remove" : "update";
     return {
       opId: str(o.id) ?? `op-${i}`,
       label: str(o.label) ?? str(o.op) ?? str(o.kind) ?? `变更 ${i + 1}`,
       changeType,
       oldValue: summarizeValue(o.old_value),
       newValue: summarizeValue(o.new_value),
-    }
-  })
+    };
+  });
 }
 
 /**
@@ -122,35 +109,31 @@ function normalizeProposal(
   baseRevision: string,
   seasonImpact: CoachSeasonImpact | null | undefined,
 ): WorkspaceProposal | null {
-  if (!raw) return null
-  const ops = raw.ops
-  const rawRevision = str(raw.base_revision)
-  const isCreate = isWeekly && (raw.plan !== undefined || raw.days !== undefined || ops === undefined)
-  const revisionsMatch = isCreate
-    ? (rawRevision ?? '') === baseRevision
-    : Boolean(baseRevision) && rawRevision === baseRevision
-  if (!revisionsMatch) return null
+  if (!raw) return null;
+  const ops = raw.ops;
+  const rawRevision = str(raw.base_revision);
+  const isCreate = isWeekly && (raw.plan !== undefined || raw.days !== undefined || ops === undefined);
+  const revisionsMatch = isCreate ? (rawRevision ?? "") === baseRevision : Boolean(baseRevision) && rawRevision === baseRevision;
+  if (!revisionsMatch) return null;
 
   if (!isWeekly) {
     return {
-      proposalType: 'master_diff',
+      proposalType: "master_diff",
       summary,
       baseRevision,
       changes: toDiffChanges(ops),
-    }
+    };
   }
   // Weekly: a create proposal carries a full plan (no diff ops); otherwise it
   // is a weekly diff.
   if (isCreate) {
-    const opIds = Array.isArray(raw.op_ids)
-      ? raw.op_ids.filter((x): x is string => typeof x === 'string')
-      : []
-    const { days, strength, nutrition, notesMd } = projectWeeklyCreate(raw.plan ?? raw.days ?? raw)
+    const opIds = Array.isArray(raw.op_ids) ? raw.op_ids.filter((x): x is string => typeof x === "string") : [];
+    const { days, strength, nutrition, notesMd } = projectWeeklyCreate(raw.plan ?? raw.days ?? raw);
     // A full create proposal must contain a reviewable calendar. Never replace
     // the current Review with an intermediate "remove everything" marker.
-    if (days.length === 0) return null
+    if (days.length === 0) return null;
     return {
-      proposalType: 'weekly_create',
+      proposalType: "weekly_create",
       summary,
       baseRevision,
       opIds,
@@ -158,46 +141,32 @@ function normalizeProposal(
       strength,
       nutrition,
       notesMd,
-    }
+    };
   }
-  const isMaterial = seasonImpact?.level === 'material'
+  const isMaterial = seasonImpact?.level === "material";
   return {
-    proposalType: 'weekly_diff',
+    proposalType: "weekly_diff",
     summary,
     baseRevision,
     changes: toDiffChanges(ops),
     // Only material impact gates apply.
-    seasonImpact: isMaterial ? seasonImpact.reasons.join('；') || '该调整明显偏离赛季计划' : null,
-    seasonImpactProjection: seasonImpact
-      ? { level: seasonImpact.level, reasons: seasonImpact.reasons }
-      : null,
-  }
+    seasonImpact: isMaterial ? seasonImpact.reasons.join("；") || "该调整明显偏离赛季计划" : null,
+    seasonImpactProjection: seasonImpact ? { level: seasonImpact.level, reasons: seasonImpact.reasons } : null,
+  };
 }
 
-export default function CoachProposalUpgradeCard({
-  userId,
-  proposal,
-  activeTarget,
-  contextAnchor = '',
-}: CoachProposalUpgradeCardProps) {
-  const navigate = useNavigate()
-  const resolved = resolveTarget(userId, proposal, activeTarget)
-  if (!resolved) return null
+export default function CoachProposalUpgradeCard({ userId, proposal, activeTarget, contextAnchor = "" }: CoachProposalUpgradeCardProps) {
+  const navigate = useNavigate();
+  const resolved = resolveTarget(userId, proposal, activeTarget);
+  if (!resolved) return null;
 
-  const summary =
-    str(proposal?.summary) ?? (resolved.isWeekly ? '本周课表调整方案' : '赛季训练计划调整方案')
-  const rawProposalBody = proposal?.proposal
-  const normalized = normalizeProposal(
-    resolved.isWeekly,
-    rawProposalBody,
-    summary,
-    str(proposal?.base_revision) ?? '',
-    proposal?.season_impact,
-  )
+  const summary = str(proposal?.summary) ?? (resolved.isWeekly ? "本周课表调整方案" : "赛季训练计划调整方案");
+  const rawProposalBody = proposal?.proposal;
+  const normalized = normalizeProposal(resolved.isWeekly, rawProposalBody, summary, str(proposal?.base_revision) ?? "", proposal?.season_impact);
   // Malformed or empty proposal bodies are not actionable. The Coach reply
   // remains visible, but no card can wipe the current Review.
-  if (rawProposalBody && !normalized) return null
-  const hasProposal = normalized !== null
+  if (rawProposalBody && !normalized) return null;
+  const hasProposal = normalized !== null;
 
   const onSelect = () => {
     if (normalized) {
@@ -207,7 +176,7 @@ export default function CoachProposalUpgradeCard({
           contextAnchor,
           proposal: normalized,
           rawProposal: rawProposalBody ?? {},
-        })
+        });
       } catch {
         /* sessionStorage unavailable — the workspace can refetch */
       }
@@ -217,29 +186,27 @@ export default function CoachProposalUpgradeCard({
     // stash when this card is selected again with a revised draft (task #30).
     // Weekly-diff and master proposals keep the existing no-state contract.
     const navState =
-      resolved.isWeekly && normalized?.proposalType === 'weekly_create' && rawProposalBody
+      resolved.isWeekly && normalized?.proposalType === "weekly_create" && rawProposalBody
         ? { state: { draftRevision: fingerprintProposal(rawProposalBody) } }
-        : undefined
+        : undefined;
     if (navState) {
-      navigate(resolved.path, navState)
+      navigate(resolved.path, navState);
     } else {
-      navigate(resolved.path)
+      navigate(resolved.path);
     }
-  }
+  };
 
   return (
     <div className="rounded-lg border border-accent-green/30 bg-accent-green/5 px-3.5 py-3">
-      <p className="text-xs font-mono uppercase tracking-wide text-accent-green/80">
-        {resolved.isWeekly ? '本周课表' : '赛季训练计划'}
-      </p>
+      <p className="text-xs font-mono uppercase tracking-wide text-accent-green/80">{resolved.isWeekly ? "本周课表" : "赛季训练计划"}</p>
       <p className="mt-1 text-sm text-text-primary">{summary}</p>
       <button
         type="button"
         onClick={onSelect}
         className="mt-2.5 rounded-md bg-accent-green-dim px-3 py-1.5 text-sm font-medium text-black transition-colors hover:bg-accent-green focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green"
       >
-        {hasProposal ? '查看调整方案' : '打开计划审阅工作区'}
+        {hasProposal ? "查看调整方案" : "打开计划审阅工作区"}
       </button>
     </div>
-  )
+  );
 }

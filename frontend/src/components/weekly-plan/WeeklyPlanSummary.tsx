@@ -1,29 +1,26 @@
-import { formatWeekRange, type PlanDay, type WeekDetail } from '../../api'
-import { computeWeekPlanIntensity } from '../../lib/planIntensity'
-import { actualRunDistanceKm, actualStrengthStats, formatDurationClock, weeklyPlanStats } from '../../lib/weeklyPlanView'
+import { formatWeekRange, type PlanDay, type WeekDetail } from "../../api";
+import { computeWeekPlanIntensity } from "../../lib/planIntensity";
+import { actualRunDistanceKm, actualStrengthStats, formatDurationClock, weeklyPlanStats } from "../../lib/weeklyPlanView";
 
-const HARDCODED_STRENGTH_FOLDER = '2026-08-03_08-09'
+const HARDCODED_STRENGTH_FOLDER = "2026-08-03_08-09";
 
 export interface WeeklyPlanSummaryProps {
-  readonly week: WeekDetail
-  readonly days: readonly PlanDay[]
-  readonly planTitle?: string
+  readonly week: WeekDetail;
+  readonly days: readonly PlanDay[];
+  readonly planTitle?: string;
   /** When provided, the "调整本周" CTA is enabled and calls this on click. */
-  readonly onAdjust?: () => void
+  readonly onAdjust?: () => void;
 }
 
 export default function WeeklyPlanSummary({ week, days, planTitle, onAdjust }: WeeklyPlanSummaryProps) {
-  const stats = weeklyPlanStats(days)
-  const plannedIntensity = computeWeekPlanIntensity(stats.sessions)
-  const actualRunKm = actualRunDistanceKm(week.activities)
-  const actualStrength = actualStrengthStats(week.activities)
-  const strengthCount = week.week_name === HARDCODED_STRENGTH_FOLDER ? 2 : stats.strengthCount
-  const displayPlanTitle = planTitle?.trim() === '本周训练重点' ? undefined : planTitle
-  const coachNotes = week.structured?.coach_notes?.trim()
-    || '优先完成关键课，其余训练按恢复状态灵活降级。训练后的真实体感会用于后续 Coach 调整。'
-  const completion = stats.plannedRunKm > 0
-    ? Math.min(100, Math.round((actualRunKm / stats.plannedRunKm) * 100))
-    : 0
+  const stats = weeklyPlanStats(days);
+  const plannedIntensity = computeWeekPlanIntensity(stats.sessions);
+  const actualRunKm = actualRunDistanceKm(week.activities);
+  const actualStrength = actualStrengthStats(week.activities);
+  const strengthCount = week.week_name === HARDCODED_STRENGTH_FOLDER ? 2 : stats.strengthCount;
+  const displayPlanTitle = planTitle?.trim() === "本周训练重点" ? undefined : planTitle;
+  const coachNotes = week.structured?.coach_notes?.trim() || "优先完成关键课，其余训练按恢复状态灵活降级。训练后的真实体感会用于后续 Coach 调整。";
+  const completion = stats.plannedRunKm > 0 ? Math.min(100, Math.round((actualRunKm / stats.plannedRunKm) * 100)) : 0;
 
   return (
     <section className="space-y-5">
@@ -31,16 +28,26 @@ export default function WeeklyPlanSummary({ week, days, planTitle, onAdjust }: W
         <div>
           <p className="font-mono text-[11px] font-bold uppercase tracking-[0.18em] text-accent-green">Coach Agent · Weekly Plan</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-text-primary">本周课表</h1>
-          <p className="mt-2 text-sm text-text-muted">{formatWeekRange(week.date_from, week.date_to)}{displayPlanTitle ? ` · ${displayPlanTitle}` : ''}</p>
+          <p className="mt-2 text-sm text-text-muted">
+            {formatWeekRange(week.date_from, week.date_to)}
+            {displayPlanTitle ? ` · ${displayPlanTitle}` : ""}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <div className="hidden rounded-xl border border-border-subtle bg-bg-card px-4 py-2.5 sm:block">
             <p className="font-mono text-[10px] tracking-wider text-text-muted">实际跑量</p>
-            <p className="mt-1 font-mono text-lg font-bold text-text-primary">{actualRunKm.toFixed(1)} <span className="text-xs font-normal text-text-muted">km</span></p>
+            <p className="mt-1 font-mono text-lg font-bold text-text-primary">
+              {actualRunKm.toFixed(1)} <span className="text-xs font-normal text-text-muted">km</span>
+            </p>
           </div>
           <div className="hidden rounded-xl border border-border-subtle bg-bg-card px-4 py-2.5 sm:block">
             <p className="font-mono text-[10px] tracking-wider text-text-muted">完成度</p>
-            <div className="mt-1 flex items-center gap-2"><span className="font-mono text-lg font-bold text-text-primary">{completion}%</span><span className="h-1.5 w-14 overflow-hidden rounded-full bg-bg-secondary"><span className="block h-full rounded-full bg-accent-green" style={{ width: `${completion}%` }} /></span></div>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="font-mono text-lg font-bold text-text-primary">{completion}%</span>
+              <span className="h-1.5 w-14 overflow-hidden rounded-full bg-bg-secondary">
+                <span className="block h-full rounded-full bg-accent-green" style={{ width: `${completion}%` }} />
+              </span>
+            </div>
           </div>
           {onAdjust ? (
             <button
@@ -51,7 +58,14 @@ export default function WeeklyPlanSummary({ week, days, planTitle, onAdjust }: W
               调整本周
             </button>
           ) : (
-            <button type="button" disabled title="本周调整流程暂未开放" className="rounded-lg bg-accent-green px-4 py-2.5 text-sm font-bold text-white opacity-60">调整本周</button>
+            <button
+              type="button"
+              disabled
+              title="本周调整流程暂未开放"
+              className="rounded-lg bg-accent-green px-4 py-2.5 text-sm font-bold text-white opacity-60"
+            >
+              调整本周
+            </button>
           )}
         </div>
       </div>
@@ -74,23 +88,29 @@ export default function WeeklyPlanSummary({ week, days, planTitle, onAdjust }: W
         </div>
         <aside className="rounded-2xl border border-green-edge bg-green-soft p-5">
           <p className="text-xs font-bold uppercase tracking-wider text-accent-green">本周训练重点</p>
-          <p className="mt-3 text-lg font-bold leading-7 text-text-primary">{stats.runCount} 次跑步 + {strengthCount} 次力量维护</p>
+          <p className="mt-3 text-lg font-bold leading-7 text-text-primary">
+            {stats.runCount} 次跑步 + {strengthCount} 次力量维护
+          </p>
           <p className="mt-3 font-editorial text-sm italic leading-6 text-text-secondary">“{coachNotes}”</p>
           <div className="mt-4 space-y-1 border-t border-green-edge pt-3 text-xs text-text-secondary">
-            <p>实际完成 {week.activity_count} 次 · 跑步 {actualRunKm.toFixed(1)} km · {week.total_duration_fmt}</p>
-            <p>力量训练 {actualStrength.count} 次 · {formatDurationClock(actualStrength.durationS)}</p>
+            <p>
+              实际完成 {week.activity_count} 次 · 跑步 {actualRunKm.toFixed(1)} km · {week.total_duration_fmt}
+            </p>
+            <p>
+              力量训练 {actualStrength.count} 次 · {formatDurationClock(actualStrength.durationS)}
+            </p>
           </div>
         </aside>
       </div>
     </section>
-  )
+  );
 }
 
 function Metric({ label, value, accent = false }: Readonly<{ label: string; value: string; accent?: boolean }>) {
   return (
     <div role="group" aria-label={label} className="rounded-xl bg-bg-secondary p-3">
       <p className="text-[11px] text-text-muted">{label}</p>
-      <p className={`mt-1 font-mono text-sm font-bold ${accent ? 'text-accent-green' : 'text-text-primary'}`}>{value}</p>
+      <p className={`mt-1 font-mono text-sm font-bold ${accent ? "text-accent-green" : "text-text-primary"}`}>{value}</p>
     </div>
-  )
+  );
 }

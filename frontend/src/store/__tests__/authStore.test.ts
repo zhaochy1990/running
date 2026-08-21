@@ -1,67 +1,64 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 function makeJwt(payload: Record<string, unknown>): string {
-  const encoded = btoa(JSON.stringify(payload))
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-  return `header.${encoded}.signature`
+  const encoded = btoa(JSON.stringify(payload)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  return `header.${encoded}.signature`;
 }
 
-describe('authStore same-origin auth (via stride-web BFF, ADR 0017)', () => {
+describe("authStore same-origin auth (via stride-web BFF, ADR 0017)", () => {
   beforeEach(() => {
-    vi.resetModules()
-    sessionStorage.clear()
-    vi.stubEnv('VITE_AUTH_BASE_URL', 'https://auth.example.test')
-    vi.stubEnv('VITE_AUTH_CLIENT_ID', 'app_test')
-    vi.stubEnv('VITE_DEV_AUTH_PROXY', 'https://auth.example.test')
-  })
+    vi.resetModules();
+    sessionStorage.clear();
+    vi.stubEnv("VITE_AUTH_BASE_URL", "https://auth.example.test");
+    vi.stubEnv("VITE_AUTH_CLIENT_ID", "app_test");
+    vi.stubEnv("VITE_DEV_AUTH_PROXY", "https://auth.example.test");
+  });
 
   afterEach(() => {
-    vi.unstubAllEnvs()
-    vi.restoreAllMocks()
-    sessionStorage.clear()
-  })
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    sessionStorage.clear();
+  });
 
-  it('posts login to the relative /api/auth path (BFF proxies to the auth upstream)', async () => {
-    const accessToken = makeJwt({ sub: 'user-1', exp: Math.floor(Date.now() / 1000) + 3600 })
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ access_token: accessToken, refresh_token: 'refresh-token' }), {
+  it("posts login to the relative /api/auth path (BFF proxies to the auth upstream)", async () => {
+    const accessToken = makeJwt({ sub: "user-1", exp: Math.floor(Date.now() / 1000) + 3600 });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ access_token: accessToken, refresh_token: "refresh-token" }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { "Content-Type": "application/json" },
       }),
-    )
+    );
 
-    const { useAuthStore } = await import('../authStore')
+    const { useAuthStore } = await import("../authStore");
 
-    await useAuthStore.getState().login('runner@example.test', 'password')
+    await useAuthStore.getState().login("runner@example.test", "password");
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Client-Id': 'app_test' },
-      body: JSON.stringify({ email: 'runner@example.test', password: 'password' }),
-    })
-  })
+    expect(fetchMock).toHaveBeenCalledWith("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Client-Id": "app_test" },
+      body: JSON.stringify({ email: "runner@example.test", password: "password" }),
+    });
+  });
 
-  it('stays relative even with VITE_AUTH_BASE_URL set (no dev/prod branch anymore)', async () => {
-    vi.resetModules()
-    vi.stubEnv('VITE_DEV_AUTH_PROXY', '')
-    const accessToken = makeJwt({ sub: 'user-1', exp: Math.floor(Date.now() / 1000) + 3600 })
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ access_token: accessToken, refresh_token: 'refresh-token' }), {
+  it("stays relative even with VITE_AUTH_BASE_URL set (no dev/prod branch anymore)", async () => {
+    vi.resetModules();
+    vi.stubEnv("VITE_DEV_AUTH_PROXY", "");
+    const accessToken = makeJwt({ sub: "user-1", exp: Math.floor(Date.now() / 1000) + 3600 });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ access_token: accessToken, refresh_token: "refresh-token" }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { "Content-Type": "application/json" },
       }),
-    )
+    );
 
-    const { useAuthStore } = await import('../authStore')
+    const { useAuthStore } = await import("../authStore");
 
-    await useAuthStore.getState().login('runner@example.test', 'password')
+    await useAuthStore.getState().login("runner@example.test", "password");
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Client-Id': 'app_test' },
-      body: JSON.stringify({ email: 'runner@example.test', password: 'password' }),
-    })
-  })
-})
+    expect(fetchMock).toHaveBeenCalledWith("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Client-Id": "app_test" },
+      body: JSON.stringify({ email: "runner@example.test", password: "password" }),
+    });
+  });
+});

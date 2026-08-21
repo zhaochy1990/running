@@ -1,229 +1,239 @@
-import { create } from 'zustand'
-import { setAuthUser, clearAuthUser } from '../telemetry/appInsights'
-import { apiUrl } from '../lib/apiRouting'
+import { create } from "zustand";
+import { setAuthUser, clearAuthUser } from "../telemetry/appInsights";
+import { apiUrl } from "../lib/apiRouting";
 
 // Auth flows through the stride-web BFF same-origin in every environment
 // (ADR 0017), so requests are always relative `/api/auth/*` — no dev/prod
 // branch. VITE_AUTH_BASE_URL is no longer used for request routing; only
 // VITE_AUTH_CLIENT_ID (sent as X-Client-Id) is baked into the bundle.
-const CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID || ''
+const CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID || "";
 
 interface JwtPayload {
-  sub: string
-  exp: number
-  role?: string
+  sub: string;
+  exp: number;
+  role?: string;
 }
 
 function decodeJwt(token: string): JwtPayload {
-  const base64Url = token.split('.')[1]
-  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+  const base64Url = token.split(".")[1];
+  const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
   const json = decodeURIComponent(
     atob(base64)
-      .split('')
-      .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-      .join(''),
-  )
-  return JSON.parse(json)
+      .split("")
+      .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+      .join(""),
+  );
+  return JSON.parse(json);
 }
 
-let refreshTimer: ReturnType<typeof setTimeout> | null = null
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearBrowserSession() {
   if (refreshTimer) {
-    clearTimeout(refreshTimer)
-    refreshTimer = null
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
   }
-  void clearAuthUser()
-  sessionStorage.clear()
+  void clearAuthUser();
+  sessionStorage.clear();
 }
 
 async function refreshAccessToken(): Promise<string> {
-  const refreshToken = sessionStorage.getItem('refresh_token')
-  if (!refreshToken) throw new Error('No refresh token')
+  const refreshToken = sessionStorage.getItem("refresh_token");
+  if (!refreshToken) throw new Error("No refresh token");
 
-  const res = await fetch(apiUrl('POST', `/api/auth/refresh`), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
+  const res = await fetch(apiUrl("POST", `/api/auth/refresh`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Client-Id": CLIENT_ID },
     body: JSON.stringify({ refresh_token: refreshToken }),
-  })
+  });
 
-  if (!res.ok) throw new Error('Refresh failed')
+  if (!res.ok) throw new Error("Refresh failed");
 
-  const data = await res.json()
-  sessionStorage.setItem('access_token', data.access_token)
-  sessionStorage.setItem('refresh_token', data.refresh_token)
-  return data.access_token as string
+  const data = await res.json();
+  sessionStorage.setItem("access_token", data.access_token);
+  sessionStorage.setItem("refresh_token", data.refresh_token);
+  return data.access_token as string;
 }
 
 function scheduleTokenRefresh() {
-  if (refreshTimer) clearTimeout(refreshTimer)
-  const token = sessionStorage.getItem('access_token')
-  if (!token) return
+  if (refreshTimer) clearTimeout(refreshTimer);
+  const token = sessionStorage.getItem("access_token");
+  if (!token) return;
 
   try {
-    const payload = decodeJwt(token)
-    const msUntilExpiry = payload.exp * 1000 - Date.now()
-    const delay = Math.max(msUntilExpiry - 60_000, 1_000)
+    const payload = decodeJwt(token);
+    const msUntilExpiry = payload.exp * 1000 - Date.now();
+    const delay = Math.max(msUntilExpiry - 60_000, 1_000);
     refreshTimer = setTimeout(async () => {
       try {
-        await refreshAccessToken()
-        scheduleTokenRefresh()
-      } catch { /* will redirect on next 401 */ }
-    }, delay)
-  } catch { /* invalid token */ }
+        await refreshAccessToken();
+        scheduleTokenRefresh();
+      } catch {
+        /* will redirect on next 401 */
+      }
+    }, delay);
+  } catch {
+    /* invalid token */
+  }
 }
 
 interface AuthState {
-  accessToken: string | null
-  userId: string | null
-  isAuthenticated: boolean
-  hydrated: boolean
-  login: (email: string, password: string) => Promise<void>
-  registerSuccess: (access_token: string, refresh_token: string) => void
-  logout: () => Promise<void>
-  clearSession: () => void
-  hydrate: () => void
+  accessToken: string | null;
+  userId: string | null;
+  isAuthenticated: boolean;
+  hydrated: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  registerSuccess: (access_token: string, refresh_token: string) => void;
+  logout: () => Promise<void>;
+  clearSession: () => void;
+  hydrate: () => void;
 }
 
 export function useUserId(): string | null {
-  return useAuthStore((s) => s.userId)
+  return useAuthStore((s) => s.userId);
 }
 
 // Read auth state from sessionStorage synchronously so the very first render
 // has the correct isAuthenticated value. If this ran in a useEffect (deferred
 // to after first render) ProtectedRoute would redirect to /login first and
 // the original deep-link URL would be lost on refresh.
-function readPersistedAuth(): Pick<AuthState, 'accessToken' | 'userId' | 'isAuthenticated' | 'hydrated'> {
-  if (typeof window === 'undefined') {
-    return { accessToken: null, userId: null, isAuthenticated: false, hydrated: true }
+function readPersistedAuth(): Pick<AuthState, "accessToken" | "userId" | "isAuthenticated" | "hydrated"> {
+  if (typeof window === "undefined") {
+    return { accessToken: null, userId: null, isAuthenticated: false, hydrated: true };
   }
-  const accessToken = sessionStorage.getItem('access_token')
-  const refreshToken = sessionStorage.getItem('refresh_token')
+  const accessToken = sessionStorage.getItem("access_token");
+  const refreshToken = sessionStorage.getItem("refresh_token");
   if (accessToken && refreshToken) {
     try {
-      const payload = decodeJwt(accessToken)
+      const payload = decodeJwt(accessToken);
       if (payload.exp * 1000 > Date.now()) {
         return {
           accessToken,
           userId: payload.sub,
           isAuthenticated: true,
           hydrated: true,
-        }
+        };
       }
-    } catch { /* fall through to unauthenticated */ }
+    } catch {
+      /* fall through to unauthenticated */
+    }
   }
-  return { accessToken: null, userId: null, isAuthenticated: false, hydrated: true }
+  return { accessToken: null, userId: null, isAuthenticated: false, hydrated: true };
 }
 
-const initialAuth = readPersistedAuth()
+const initialAuth = readPersistedAuth();
 
 export const useAuthStore = create<AuthState>((set) => ({
   ...initialAuth,
 
   login: async (email: string, password: string) => {
-    const res = await fetch(apiUrl('POST', `/api/auth/login`), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
+    const res = await fetch(apiUrl("POST", `/api/auth/login`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Client-Id": CLIENT_ID },
       body: JSON.stringify({ email, password }),
-    })
+    });
 
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      throw { status: res.status, error: data.error }
+      const data = await res.json().catch(() => ({}));
+      throw { status: res.status, error: data.error };
     }
 
-    const { access_token, refresh_token } = await res.json()
-    const payload = decodeJwt(access_token)
+    const { access_token, refresh_token } = await res.json();
+    const payload = decodeJwt(access_token);
 
-    sessionStorage.setItem('access_token', access_token)
-    sessionStorage.setItem('refresh_token', refresh_token)
+    sessionStorage.setItem("access_token", access_token);
+    sessionStorage.setItem("refresh_token", refresh_token);
 
     set({
       accessToken: access_token,
       userId: payload.sub,
       isAuthenticated: true,
       hydrated: true,
-    })
+    });
 
-    void setAuthUser(payload.sub)
-    scheduleTokenRefresh()
+    void setAuthUser(payload.sub);
+    scheduleTokenRefresh();
   },
 
   registerSuccess: (access_token: string, refresh_token: string) => {
-    const payload = decodeJwt(access_token)
-    sessionStorage.setItem('access_token', access_token)
-    sessionStorage.setItem('refresh_token', refresh_token)
+    const payload = decodeJwt(access_token);
+    sessionStorage.setItem("access_token", access_token);
+    sessionStorage.setItem("refresh_token", refresh_token);
     set({
       accessToken: access_token,
       userId: payload.sub,
       isAuthenticated: true,
       hydrated: true,
-    })
-    void setAuthUser(payload.sub)
-    scheduleTokenRefresh()
+    });
+    void setAuthUser(payload.sub);
+    scheduleTokenRefresh();
   },
 
   logout: async () => {
-    const refreshToken = sessionStorage.getItem('refresh_token')
+    const refreshToken = sessionStorage.getItem("refresh_token");
 
     if (refreshToken) {
       try {
-        await fetch(apiUrl('POST', `/api/auth/logout`), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
+        await fetch(apiUrl("POST", `/api/auth/logout`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Client-Id": CLIENT_ID },
           body: JSON.stringify({ refresh_token: refreshToken }),
-        })
-      } catch { /* best-effort: server-side revocation may fail; local cleanup still runs */ }
+        });
+      } catch {
+        /* best-effort: server-side revocation may fail; local cleanup still runs */
+      }
     }
 
-    clearBrowserSession()
+    clearBrowserSession();
     set({
       accessToken: null,
       userId: null,
       isAuthenticated: false,
       hydrated: true,
-    })
+    });
   },
 
   clearSession: () => {
-    clearBrowserSession()
+    clearBrowserSession();
     set({
       accessToken: null,
       userId: null,
       isAuthenticated: false,
       hydrated: true,
-    })
+    });
   },
 
   hydrate: () => {
-    const accessToken = sessionStorage.getItem('access_token')
-    const refreshToken = sessionStorage.getItem('refresh_token')
+    const accessToken = sessionStorage.getItem("access_token");
+    const refreshToken = sessionStorage.getItem("refresh_token");
 
     if (accessToken && refreshToken) {
       try {
-        const payload = decodeJwt(accessToken)
+        const payload = decodeJwt(accessToken);
         if (payload.exp * 1000 > Date.now()) {
           set({
             accessToken,
             userId: payload.sub,
             isAuthenticated: true,
             hydrated: true,
-          })
-          void setAuthUser(payload.sub)
-          scheduleTokenRefresh()
-          return
+          });
+          void setAuthUser(payload.sub);
+          scheduleTokenRefresh();
+          return;
         }
-      } catch { /* invalid token, fall through */ }
+      } catch {
+        /* invalid token, fall through */
+      }
     }
 
-    clearBrowserSession()
+    clearBrowserSession();
     set({
       accessToken: null,
       userId: null,
       isAuthenticated: false,
       hydrated: true,
-    })
+    });
   },
-}))
+}));
 
-export { refreshAccessToken }
+export { refreshAccessToken };

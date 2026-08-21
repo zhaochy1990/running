@@ -5,189 +5,191 @@
  * (uses `fetchJSON`) and `postOnboardingComplete` (uses `postJSON`),
  * which is enough since all 5 wrappers share the same retry shape.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const refreshMock = vi.hoisted(() => vi.fn())
+const refreshMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../store/authStore', () => ({
+vi.mock("../store/authStore", () => ({
   refreshAccessToken: refreshMock,
-}))
+}));
 
 // Import after the vi.mock registration (vi.mock auto-hoists, but
 // being explicit keeps the read order obvious).
-import { getPipelineRun, getUsers, postOnboardingComplete, triggerSync, updateWeeklyFeedback } from '../api'
+import { getPipelineRun, getUsers, postOnboardingComplete, triggerSync, updateWeeklyFeedback } from "../api";
 
 function resp(status: number, body: unknown = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
-  })
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 beforeEach(() => {
-  sessionStorage.clear()
-  sessionStorage.setItem('access_token', 'tok-old')
-  refreshMock.mockReset()
-})
+  sessionStorage.clear();
+  sessionStorage.setItem("access_token", "tok-old");
+  refreshMock.mockReset();
+});
 
 afterEach(() => {
-  vi.unstubAllGlobals()
-})
+  vi.unstubAllGlobals();
+});
 
-describe('api 401-refresh', () => {
-  it('retries the original request after a successful token refresh', async () => {
+describe("api 401-refresh", () => {
+  it("retries the original request after a successful token refresh", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(resp(401))
-      .mockResolvedValueOnce(resp(200, { users: ['zhaochaoyi'] }))
-    vi.stubGlobal('fetch', fetchMock)
-    refreshMock.mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(resp(200, { users: ["zhaochaoyi"] }));
+    vi.stubGlobal("fetch", fetchMock);
+    refreshMock.mockResolvedValueOnce(undefined);
 
-    await expect(getUsers()).resolves.toEqual({ users: ['zhaochaoyi'] })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(refreshMock).toHaveBeenCalledTimes(1)
+    await expect(getUsers()).resolves.toEqual({ users: ["zhaochaoyi"] });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(refreshMock).toHaveBeenCalledTimes(1);
     // Both calls hit the same URL with the same method.
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/users')
-    expect(fetchMock.mock.calls[1][0]).toBe('/api/users')
-  })
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/users");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/users");
+  });
 
   it('clears the session and throws "Session expired" when refresh fails', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(resp(401))
-    vi.stubGlobal('fetch', fetchMock)
-    refreshMock.mockRejectedValueOnce(new Error('refresh denied'))
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(401));
+    vi.stubGlobal("fetch", fetchMock);
+    refreshMock.mockRejectedValueOnce(new Error("refresh denied"));
 
-    await expect(getUsers()).rejects.toThrow('Session expired')
-    expect(sessionStorage.length).toBe(0)
+    await expect(getUsers()).rejects.toThrow("Session expired");
+    expect(sessionStorage.length).toBe(0);
     // We don't assert on window.location.href — jsdom's behavior around
     // navigation is awkward and the user-visible side effect is the
     // sessionStorage clear + the thrown error, which the redirect just
     // hangs off of.
-  })
+  });
 
-  it('propagates non-401 errors without retrying', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(resp(500, { error: 'boom' }))
-    vi.stubGlobal('fetch', fetchMock)
+  it("propagates non-401 errors without retrying", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(500, { error: "boom" }));
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(getUsers()).rejects.toThrow('API error: 500')
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(refreshMock).not.toHaveBeenCalled()
-  })
+    await expect(getUsers()).rejects.toThrow("API error: 500");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(refreshMock).not.toHaveBeenCalled();
+  });
 
-  it('posts a completed pipeline run when finalizing onboarding', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(resp(200, { state: 'complete' }))
-    vi.stubGlobal('fetch', fetchMock)
+  it("posts a completed pipeline run when finalizing onboarding", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(200, { state: "complete" }));
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(postOnboardingComplete('run-123')).resolves.toEqual({
+    await expect(postOnboardingComplete("run-123")).resolves.toEqual({
       ok: true,
       status: 200,
-      data: { state: 'complete' },
-    })
+      data: { state: "complete" },
+    });
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/users/me/onboarding/complete',
+      "/api/users/me/onboarding/complete",
       expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ run_id: 'run-123' }),
+        method: "POST",
+        headers: expect.objectContaining({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ run_id: "run-123" }),
       }),
-    )
-  })
+    );
+  });
 
-  it('starts incremental sync and polls one pipeline run', async () => {
+  it("starts incremental sync and polls one pipeline run", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(resp(202, { run_id: 'run-1', pipeline_name: 'data_sync' }))
-      .mockResolvedValueOnce(resp(200, { run_id: 'run-1', pipeline_name: 'data_sync', status: 'done', current_step: 0, steps: [] }))
-    vi.stubGlobal('fetch', fetchMock)
+      .mockResolvedValueOnce(resp(202, { run_id: "run-1", pipeline_name: "data_sync" }))
+      .mockResolvedValueOnce(resp(200, { run_id: "run-1", pipeline_name: "data_sync", status: "done", current_step: 0, steps: [] }));
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(triggerSync('user-1', { full: false, idempotencyKey: 'attempt-1' })).resolves.toMatchObject({
+    await expect(triggerSync("user-1", { full: false, idempotencyKey: "attempt-1" })).resolves.toMatchObject({
       ok: true,
-      data: { run_id: 'run-1' },
-    })
-    await expect(getPipelineRun('run-1')).resolves.toMatchObject({ status: 'done' })
+      data: { run_id: "run-1" },
+    });
+    await expect(getPipelineRun("run-1")).resolves.toMatchObject({ status: "done" });
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      '/api/user-1/sync',
-      expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'Idempotency-Key': 'attempt-1' }), body: JSON.stringify({ mode: 'incremental' }) }),
-    )
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      '/api/pipelines/run-1',
-      expect.objectContaining({ method: 'GET' }),
-    )
-  })
+      "/api/user-1/sync",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "Idempotency-Key": "attempt-1" }),
+        body: JSON.stringify({ mode: "incremental" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/pipelines/run-1", expect.objectContaining({ method: "GET" }));
+  });
 
-  it('retries onboarding completion with the original POST request after a 401', async () => {
+  it("retries onboarding completion with the original POST request after a 401", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(resp(401))
-      .mockResolvedValueOnce(resp(200, { state: 'done' }))
-    vi.stubGlobal('fetch', fetchMock)
-    refreshMock.mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(resp(200, { state: "done" }));
+    vi.stubGlobal("fetch", fetchMock);
+    refreshMock.mockResolvedValueOnce(undefined);
 
-    const out = await postOnboardingComplete('run-123')
-    expect(out).toEqual({ ok: true, status: 200, data: { state: 'done' } })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const out = await postOnboardingComplete("run-123");
+    expect(out).toEqual({ ok: true, status: 200, data: { state: "done" } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     for (const [url, init] of fetchMock.mock.calls) {
-      expect(url).toBe('/api/users/me/onboarding/complete')
-      expect(init.method).toBe('POST')
-      expect(init.headers).toMatchObject({ 'Content-Type': 'application/json' })
-      expect(init.body).toBe(JSON.stringify({ run_id: 'run-123' }))
+      expect(url).toBe("/api/users/me/onboarding/complete");
+      expect(init.method).toBe("POST");
+      expect(init.headers).toMatchObject({ "Content-Type": "application/json" });
+      expect(init.body).toBe(JSON.stringify({ run_id: "run-123" }));
     }
-  })
+  });
 
-  it('sends an idempotency key when starting a full sync', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(resp(202, { run_id: 'run-1', pipeline_name: 'onboarding' }))
-    vi.stubGlobal('fetch', fetchMock)
+  it("sends an idempotency key when starting a full sync", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(202, { run_id: "run-1", pipeline_name: "onboarding" }));
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(triggerSync('user-1', { full: true, idempotencyKey: 'start-key' })).resolves.toMatchObject({ ok: true })
+    await expect(triggerSync("user-1", { full: true, idempotencyKey: "start-key" })).resolves.toMatchObject({ ok: true });
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/user-1/sync',
+      "/api/user-1/sync",
       expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({ 'Content-Type': 'application/json', 'Idempotency-Key': 'start-key' }),
-        body: JSON.stringify({ mode: 'full' }),
+        method: "POST",
+        headers: expect.objectContaining({ "Content-Type": "application/json", "Idempotency-Key": "start-key" }),
+        body: JSON.stringify({ mode: "full" }),
       }),
-    )
-  })
+    );
+  });
 
-  it('uses the canonical Go weekly-feedback request and response contract', async () => {
+  it("uses the canonical Go weekly-feedback request and response contract", async () => {
     const payload = {
       success: true,
-      week: '2026-08-10_08-16',
-      feedback: '完成良好',
+      week: "2026-08-10_08-16",
+      feedback: "完成良好",
       has_feedback: true,
-      created_at: '2026-08-16T10:00:00Z',
-      updated_at: '2026-08-16T11:00:00Z',
-    }
-    const fetchMock = vi.fn().mockResolvedValueOnce(resp(200, payload))
-    vi.stubGlobal('fetch', fetchMock)
+      created_at: "2026-08-16T10:00:00Z",
+      updated_at: "2026-08-16T11:00:00Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(200, payload));
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(updateWeeklyFeedback('user-1', payload.week, payload.feedback)).resolves.toEqual({
+    await expect(updateWeeklyFeedback("user-1", payload.week, payload.feedback)).resolves.toEqual({
       ok: true,
       status: 200,
       data: payload,
-    })
+    });
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/user-1/weeks/2026-08-10_08-16/feedback',
-      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ content: '完成良好' }) }),
-    )
-  })
+      "/api/user-1/weeks/2026-08-10_08-16/feedback",
+      expect.objectContaining({ method: "PUT", body: JSON.stringify({ content: "完成良好" }) }),
+    );
+  });
 
-  it('normalizes the Python weekly-feedback response during manual cutover', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(resp(200, {
-      success: true,
-      week: '2026-08-10_08-16',
-      feedback_updated_at: '2026-08-16T11:00:00Z',
-    }))
-    vi.stubGlobal('fetch', fetchMock)
-    await expect(updateWeeklyFeedback('user-1', '2026-08-10_08-16', 'legacy window')).resolves.toMatchObject({
+  it("normalizes the Python weekly-feedback response during manual cutover", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      resp(200, {
+        success: true,
+        week: "2026-08-10_08-16",
+        feedback_updated_at: "2026-08-16T11:00:00Z",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(updateWeeklyFeedback("user-1", "2026-08-10_08-16", "legacy window")).resolves.toMatchObject({
       ok: true,
       data: {
-        feedback: 'legacy window',
+        feedback: "legacy window",
         has_feedback: true,
-        created_at: '2026-08-16T11:00:00Z',
-        updated_at: '2026-08-16T11:00:00Z',
+        created_at: "2026-08-16T11:00:00Z",
+        updated_at: "2026-08-16T11:00:00Z",
       },
-    })
-  })
-})
+    });
+  });
+});

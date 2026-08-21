@@ -6,7 +6,10 @@ export default function LandingFooter({ onLogin }: { onLogin: () => void }) {
           <div className="foot-brand">
             <a className="brand" href="#top">
               <div className="brand-mark">S</div>
-              <div><div className="brand-name">STRIDE</div><div className="brand-sub">训练中心</div></div>
+              <div>
+                <div className="brand-name">STRIDE</div>
+                <div className="brand-sub">训练中心</div>
+              </div>
             </a>
             <p>以目标赛事为导向,从比赛日倒推。跑步、力量、饮食,一套系统,助你无伤 PB。</p>
           </div>
@@ -25,8 +28,40 @@ export default function LandingFooter({ onLogin }: { onLogin: () => void }) {
           </div>
           <div className="foot-col">
             <h4>账户</h4>
-            <button type="button" onClick={onLogin} style={{ display: 'block', fontSize: '13px', color: '#aeb3c4', marginBottom: '10px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>登录</button>
-            <button type="button" onClick={onLogin} style={{ display: 'block', fontSize: '13px', color: '#aeb3c4', marginBottom: '10px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>创建档案</button>
+            <button
+              type="button"
+              onClick={onLogin}
+              style={{
+                display: "block",
+                fontSize: "13px",
+                color: "#aeb3c4",
+                marginBottom: "10px",
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              登录
+            </button>
+            <button
+              type="button"
+              onClick={onLogin}
+              style={{
+                display: "block",
+                fontSize: "13px",
+                color: "#aeb3c4",
+                marginBottom: "10px",
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              创建档案
+            </button>
             <a href="#">订阅方案</a>
             <a href="#">联系我们</a>
           </div>
@@ -37,5 +72,5 @@ export default function LandingFooter({ onLogin }: { onLogin: () => void }) {
         </div>
       </div>
     </footer>
-  )
+  );
 }

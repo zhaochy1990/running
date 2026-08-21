@@ -1,75 +1,72 @@
-import { useEffect, useState } from 'react'
-import {
-  ResponsiveContainer, AreaChart, Area, LineChart, Line,
-  XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Legend,
-} from 'recharts'
-import { getBodyComposition, getBodyCompositionSummary, type BodyCompositionScan, type BodyCompositionSummary } from '../api'
-import { useUser } from '../UserContextValue'
-import ViewHead from '../components/ViewHead'
-import BodyCompositionEntryModal from './BodyCompositionEntryModal'
+import { useEffect, useState } from "react";
+import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Legend } from "recharts";
+import { getBodyComposition, getBodyCompositionSummary, type BodyCompositionScan, type BodyCompositionSummary } from "../api";
+import { useUser } from "../UserContextValue";
+import ViewHead from "../components/ViewHead";
+import BodyCompositionEntryModal from "./BodyCompositionEntryModal";
 
-const AXIS_TICK = { fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#8888a0' }
+const AXIS_TICK = { fontSize: 10, fontFamily: "JetBrains Mono", fill: "#8888a0" };
 const TOOLTIP_STYLE = {
-  contentStyle: { background: '#ffffff', border: '1px solid #d8dae5', borderRadius: 8, fontFamily: 'JetBrains Mono', fontSize: 12, color: '#1a1c2e' },
-  labelStyle: { color: '#8888a0' },
-}
-const GRID_STYLE = { stroke: '#e8eaf0', strokeDasharray: '3 3' }
+  contentStyle: { background: "#ffffff", border: "1px solid #d8dae5", borderRadius: 8, fontFamily: "JetBrains Mono", fontSize: 12, color: "#1a1c2e" },
+  labelStyle: { color: "#8888a0" },
+};
+const GRID_STYLE = { stroke: "#e8eaf0", strokeDasharray: "3 3" };
 
 function formatDateShort(iso: string): string {
   // "2026-04-23" → "4/23"
-  if (!iso || iso.length < 10) return iso
-  return `${parseInt(iso.slice(5, 7), 10)}/${parseInt(iso.slice(8, 10), 10)}`
+  if (!iso || iso.length < 10) return iso;
+  return `${parseInt(iso.slice(5, 7), 10)}/${parseInt(iso.slice(8, 10), 10)}`;
 }
 
 function deltaColor(delta: number | null | undefined, inverse = false): string {
-  if (delta == null) return '#8888a0'
-  if (delta === 0) return '#8888a0'
-  const good = inverse ? delta < 0 : delta > 0
-  return good ? '#00a85a' : '#d32f2f'
+  if (delta == null) return "#8888a0";
+  if (delta === 0) return "#8888a0";
+  const good = inverse ? delta < 0 : delta > 0;
+  return good ? "#00a85a" : "#d32f2f";
 }
 
-function formatDelta(v: number | null | undefined, unit = ''): string {
-  if (v == null) return ''
-  const s = v > 0 ? `+${v}` : `${v}`
-  return `${s}${unit}`
+function formatDelta(v: number | null | undefined, unit = ""): string {
+  if (v == null) return "";
+  const s = v > 0 ? `+${v}` : `${v}`;
+  return `${s}${unit}`;
 }
 
 export default function BodyCompositionPage() {
-  const { user } = useUser()
-  const [scans, setScans] = useState<BodyCompositionScan[]>([])
-  const [summary, setSummary] = useState<BodyCompositionSummary | null>(null)
-  const requestKey = user || ''
-  const [loadedKey, setLoadedKey] = useState('')
-  const loading = Boolean(requestKey && loadedKey !== requestKey)
-  const [showEntry, setShowEntry] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
+  const { user } = useUser();
+  const [scans, setScans] = useState<BodyCompositionScan[]>([]);
+  const [summary, setSummary] = useState<BodyCompositionSummary | null>(null);
+  const requestKey = user || "";
+  const [loadedKey, setLoadedKey] = useState("");
+  const loading = Boolean(requestKey && loadedKey !== requestKey);
+  const [showEntry, setShowEntry] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    if (!user) return
-    let cancelled = false
+    if (!user) return;
+    let cancelled = false;
     Promise.all([getBodyComposition(user), getBodyCompositionSummary(user)])
       .then(([list, sum]) => {
-        if (cancelled) return
-        setScans(list.scans)
-        setSummary(sum)
+        if (cancelled) return;
+        setScans(list.scans);
+        setSummary(sum);
       })
       .finally(() => {
-        if (!cancelled) setLoadedKey(requestKey)
-      })
+        if (!cancelled) setLoadedKey(requestKey);
+      });
     return () => {
-      cancelled = true
-    }
-  }, [requestKey, user, refreshKey])
+      cancelled = true;
+    };
+  }, [requestKey, user, refreshKey]);
 
   // Charts want oldest-first
   const chartData = [...scans].reverse().map((s) => ({
     ...s,
     dateLabel: formatDateShort(s.scan_date),
-  }))
+  }));
 
-  const latest = summary?.latest
-  const deltas = summary?.deltas
-  const checkpoints = summary?.checkpoints ?? []
+  const latest = summary?.latest;
+  const deltas = summary?.deltas;
+  const checkpoints = summary?.checkpoints ?? [];
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 sm:px-8 sm:py-8">
@@ -80,11 +77,7 @@ export default function BodyCompositionPage() {
       ) : (
         <div className="animate-fade-in">
           <div className="flex items-start justify-between gap-4">
-            <ViewHead
-              eyebrow="体测记录"
-              title="身体成分趋势"
-              lede={`Body Composition — ${scans.length} 次扫描`}
-            />
+            <ViewHead eyebrow="体测记录" title="身体成分趋势" lede={`Body Composition — ${scans.length} 次扫描`} />
             <button
               type="button"
               onClick={() => setShowEntry(true)}
@@ -105,41 +98,43 @@ export default function BodyCompositionPage() {
               {/* Top row: 5 metric cards */}
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                 <MetricCard
-                  label="体重" sublabel="Weight"
-                  value={latest.weight_kg.toFixed(1)} unit="kg"
+                  label="体重"
+                  sublabel="Weight"
+                  value={latest.weight_kg.toFixed(1)}
+                  unit="kg"
                   color="#0097a7"
                   delta={deltas?.weight_kg}
                   deltaUnit="kg"
                   // Weight going down is good when in deficit
                   inverse
                 />
+                <MetricCard label="骨骼肌" sublabel="SMM" value={latest.smm_kg.toFixed(1)} unit="kg" color="#00a85a" delta={deltas?.smm_kg} deltaUnit="kg" />
                 <MetricCard
-                  label="骨骼肌" sublabel="SMM"
-                  value={latest.smm_kg.toFixed(1)} unit="kg"
-                  color="#00a85a"
-                  delta={deltas?.smm_kg}
-                  deltaUnit="kg"
-                />
-                <MetricCard
-                  label="体脂率" sublabel="Body Fat %"
-                  value={latest.body_fat_pct.toFixed(1)} unit="%"
-                  color={latest.body_fat_pct > 22 ? '#e68a00' : latest.body_fat_pct > 18 ? '#0097a7' : '#00a85a'}
+                  label="体脂率"
+                  sublabel="Body Fat %"
+                  value={latest.body_fat_pct.toFixed(1)}
+                  unit="%"
+                  color={latest.body_fat_pct > 22 ? "#e68a00" : latest.body_fat_pct > 18 ? "#0097a7" : "#00a85a"}
                   delta={deltas?.body_fat_pct}
                   deltaUnit="%"
                   inverse
                 />
                 <MetricCard
-                  label="脂肪量" sublabel="Fat Mass"
-                  value={latest.fat_mass_kg.toFixed(1)} unit="kg"
+                  label="脂肪量"
+                  sublabel="Fat Mass"
+                  value={latest.fat_mass_kg.toFixed(1)}
+                  unit="kg"
                   color="#e68a00"
                   delta={deltas?.fat_mass_kg}
                   deltaUnit="kg"
                   inverse
                 />
                 <MetricCard
-                  label="内脏脂肪" sublabel="Visceral Fat"
-                  value={String(latest.visceral_fat_level)} unit="级"
-                  color={latest.visceral_fat_level <= 5 ? '#00a85a' : latest.visceral_fat_level <= 9 ? '#e68a00' : '#d32f2f'}
+                  label="内脏脂肪"
+                  sublabel="Visceral Fat"
+                  value={String(latest.visceral_fat_level)}
+                  unit="级"
+                  color={latest.visceral_fat_level <= 5 ? "#00a85a" : latest.visceral_fat_level <= 9 ? "#e68a00" : "#d32f2f"}
                   delta={deltas?.visceral_fat_level}
                   deltaUnit="级"
                   inverse
@@ -148,7 +143,7 @@ export default function BodyCompositionPage() {
 
               {/* 2x2 trend grid */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-                <ChartCard title="体重趋势" subtitle={`Weight — 目标 ${checkpoints.map(c => c.weight_kg).join(' / ')} kg`}>
+                <ChartCard title="体重趋势" subtitle={`Weight — 目标 ${checkpoints.map((c) => c.weight_kg).join(" / ")} kg`}>
                   <ResponsiveContainer width="100%" height={220}>
                     <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
                       <defs>
@@ -158,20 +153,28 @@ export default function BodyCompositionPage() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid {...GRID_STYLE} />
-                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                      <YAxis domain={['dataMin - 1', 'dataMax + 1']} tick={AXIS_TICK} tickFormatter={formatTick} axisLine={false} tickLine={false} width={40} />
-                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v} kg`, '体重']} />
+                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: "#d8dae5" }} tickLine={false} />
+                      <YAxis domain={["dataMin - 1", "dataMax + 1"]} tick={AXIS_TICK} tickFormatter={formatTick} axisLine={false} tickLine={false} width={40} />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v} kg`, "体重"]} />
                       {checkpoints.map((c, i) => (
                         <ReferenceLine
                           key={c.phase}
                           y={c.weight_kg}
-                          stroke={['#7c4dff', '#0097a7', '#00a85a'][i] ?? '#8888a0'}
+                          stroke={["#7c4dff", "#0097a7", "#00a85a"][i] ?? "#8888a0"}
                           strokeDasharray="4 4"
                           strokeOpacity={0.6}
-                          label={{ value: `${c.phase} ${c.weight_kg}`, position: 'right', fill: '#8888a0', fontSize: 9, fontFamily: 'JetBrains Mono' }}
+                          label={{ value: `${c.phase} ${c.weight_kg}`, position: "right", fill: "#8888a0", fontSize: 9, fontFamily: "JetBrains Mono" }}
                         />
                       ))}
-                      <Area type="monotone" dataKey="weight_kg" stroke="#0097a7" strokeWidth={2} fill="url(#gradWeight)" dot={{ r: 3, fill: '#0097a7' }} activeDot={{ r: 5 }} />
+                      <Area
+                        type="monotone"
+                        dataKey="weight_kg"
+                        stroke="#0097a7"
+                        strokeWidth={2}
+                        fill="url(#gradWeight)"
+                        dot={{ r: 3, fill: "#0097a7" }}
+                        activeDot={{ r: 5 }}
+                      />
                     </AreaChart>
                   </ResponsiveContainer>
                 </ChartCard>
@@ -186,16 +189,37 @@ export default function BodyCompositionPage() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid {...GRID_STYLE} />
-                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                      <YAxis domain={['dataMin - 0.3', 'dataMax + 0.3']} tick={AXIS_TICK} tickFormatter={formatTick} axisLine={false} tickLine={false} width={40} />
-                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v} kg`, 'SMM']} />
-                      <ReferenceLine y={30.5} stroke="#d32f2f" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: '下限 30.5', position: 'right', fill: '#d32f2f', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
-                      <Area type="monotone" dataKey="smm_kg" stroke="#00a85a" strokeWidth={2} fill="url(#gradSMM)" dot={{ r: 3, fill: '#00a85a' }} activeDot={{ r: 5 }} />
+                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: "#d8dae5" }} tickLine={false} />
+                      <YAxis
+                        domain={["dataMin - 0.3", "dataMax + 0.3"]}
+                        tick={AXIS_TICK}
+                        tickFormatter={formatTick}
+                        axisLine={false}
+                        tickLine={false}
+                        width={40}
+                      />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v} kg`, "SMM"]} />
+                      <ReferenceLine
+                        y={30.5}
+                        stroke="#d32f2f"
+                        strokeDasharray="4 4"
+                        strokeOpacity={0.5}
+                        label={{ value: "下限 30.5", position: "right", fill: "#d32f2f", fontSize: 10, fontFamily: "JetBrains Mono" }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="smm_kg"
+                        stroke="#00a85a"
+                        strokeWidth={2}
+                        fill="url(#gradSMM)"
+                        dot={{ r: 3, fill: "#00a85a" }}
+                        activeDot={{ r: 5 }}
+                      />
                     </AreaChart>
                   </ResponsiveContainer>
                 </ChartCard>
 
-                <ChartCard title="体脂率" subtitle={`Body Fat % — 目标 ${checkpoints.map(c => c.body_fat_pct).join(' / ')}%`}>
+                <ChartCard title="体脂率" subtitle={`Body Fat % — 目标 ${checkpoints.map((c) => c.body_fat_pct).join(" / ")}%`}>
                   <ResponsiveContainer width="100%" height={220}>
                     <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
                       <defs>
@@ -205,19 +229,34 @@ export default function BodyCompositionPage() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid {...GRID_STYLE} />
-                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                      <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} tick={AXIS_TICK} tickFormatter={formatTick} axisLine={false} tickLine={false} width={40} />
-                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v}%`, '体脂率']} />
+                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: "#d8dae5" }} tickLine={false} />
+                      <YAxis
+                        domain={["dataMin - 0.5", "dataMax + 0.5"]}
+                        tick={AXIS_TICK}
+                        tickFormatter={formatTick}
+                        axisLine={false}
+                        tickLine={false}
+                        width={40}
+                      />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v}%`, "体脂率"]} />
                       {checkpoints.map((c, i) => (
                         <ReferenceLine
                           key={c.phase}
                           y={c.body_fat_pct}
-                          stroke={['#7c4dff', '#0097a7', '#00a85a'][i] ?? '#8888a0'}
+                          stroke={["#7c4dff", "#0097a7", "#00a85a"][i] ?? "#8888a0"}
                           strokeDasharray="4 4"
                           strokeOpacity={0.5}
                         />
                       ))}
-                      <Area type="monotone" dataKey="body_fat_pct" stroke="#e68a00" strokeWidth={2} fill="url(#gradBF)" dot={{ r: 3, fill: '#e68a00' }} activeDot={{ r: 5 }} />
+                      <Area
+                        type="monotone"
+                        dataKey="body_fat_pct"
+                        stroke="#e68a00"
+                        strokeWidth={2}
+                        fill="url(#gradBF)"
+                        dot={{ r: 3, fill: "#e68a00" }}
+                        activeDot={{ r: 5 }}
+                      />
                     </AreaChart>
                   </ResponsiveContainer>
                 </ChartCard>
@@ -232,10 +271,25 @@ export default function BodyCompositionPage() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid {...GRID_STYLE} />
-                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                      <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} tick={AXIS_TICK} tickFormatter={formatTick} axisLine={false} tickLine={false} width={40} />
-                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v} kg`, '脂肪量']} />
-                      <Area type="monotone" dataKey="fat_mass_kg" stroke="#d32f2f" strokeWidth={2} fill="url(#gradFat)" dot={{ r: 3, fill: '#d32f2f' }} activeDot={{ r: 5 }} />
+                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: "#d8dae5" }} tickLine={false} />
+                      <YAxis
+                        domain={["dataMin - 0.5", "dataMax + 0.5"]}
+                        tick={AXIS_TICK}
+                        tickFormatter={formatTick}
+                        axisLine={false}
+                        tickLine={false}
+                        width={40}
+                      />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v} kg`, "脂肪量"]} />
+                      <Area
+                        type="monotone"
+                        dataKey="fat_mass_kg"
+                        stroke="#d32f2f"
+                        strokeWidth={2}
+                        fill="url(#gradFat)"
+                        dot={{ r: 3, fill: "#d32f2f" }}
+                        activeDot={{ r: 5 }}
+                      />
                     </AreaChart>
                   </ResponsiveContainer>
                 </ChartCard>
@@ -269,18 +323,21 @@ export default function BodyCompositionPage() {
                         <tr
                           key={s.scan_date}
                           className="border-b border-border-subtle hover:bg-bg-card-hover transition-colors animate-fade-in opacity-0"
-                          style={{ animationDelay: `${i * 40}ms`, animationFillMode: 'forwards' }}
+                          style={{ animationDelay: `${i * 40}ms`, animationFillMode: "forwards" }}
                         >
                           <td className="py-2 px-3 text-text-secondary">{s.scan_date}</td>
                           <td className="py-2 px-3 text-right">{s.weight_kg.toFixed(1)}</td>
                           <td className="py-2 px-3 text-right text-accent-green">{s.smm_kg.toFixed(1)}</td>
                           <td className="py-2 px-3 text-right">{s.body_fat_pct.toFixed(1)}</td>
                           <td className="py-2 px-3 text-right">{s.fat_mass_kg.toFixed(1)}</td>
-                          <td className="py-2 px-3 text-right" style={{ color: s.visceral_fat_level <= 5 ? '#00a85a' : s.visceral_fat_level <= 9 ? '#e68a00' : '#d32f2f' }}>
+                          <td
+                            className="py-2 px-3 text-right"
+                            style={{ color: s.visceral_fat_level <= 5 ? "#00a85a" : s.visceral_fat_level <= 9 ? "#e68a00" : "#d32f2f" }}
+                          >
                             {s.visceral_fat_level}
                           </td>
-                          <td className="py-2 px-3 text-right text-text-muted">{s.bmr_kcal ?? '—'}</td>
-                          <td className="py-2 px-3 text-right text-text-muted">{s.inbody_score ?? '—'}</td>
+                          <td className="py-2 px-3 text-right text-text-muted">{s.bmr_kcal ?? "—"}</td>
+                          <td className="py-2 px-3 text-right text-text-muted">{s.inbody_score ?? "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -296,20 +353,35 @@ export default function BodyCompositionPage() {
               existingDates={new Set(scans.map((s) => s.scan_date))}
               onClose={() => setShowEntry(false)}
               onSaved={() => {
-                setShowEntry(false)
-                setRefreshKey((k) => k + 1)
+                setShowEntry(false);
+                setRefreshKey((k) => k + 1);
               }}
             />
           )}
         </div>
       )}
     </div>
-  )
+  );
 }
 
-function MetricCard({ label, sublabel, value, unit, color, delta, deltaUnit, inverse }: {
-  label: string; sublabel: string; value: string; unit: string; color: string
-  delta?: number | null; deltaUnit?: string; inverse?: boolean
+function MetricCard({
+  label,
+  sublabel,
+  value,
+  unit,
+  color,
+  delta,
+  deltaUnit,
+  inverse,
+}: {
+  label: string;
+  sublabel: string;
+  value: string;
+  unit: string;
+  color: string;
+  delta?: number | null;
+  deltaUnit?: string;
+  inverse?: boolean;
 }) {
   return (
     <div className="bg-bg-card border border-border-subtle rounded-xl p-4 hover:bg-bg-card-hover transition-all duration-200">
@@ -326,11 +398,11 @@ function MetricCard({ label, sublabel, value, unit, color, delta, deltaUnit, inv
       </p>
       {delta != null && (
         <p className="text-xs font-mono mt-1" style={{ color: deltaColor(delta, inverse) }}>
-          {formatDelta(delta, deltaUnit ?? '')} <span className="text-text-muted">vs 上次</span>
+          {formatDelta(delta, deltaUnit ?? "")} <span className="text-text-muted">vs 上次</span>
         </p>
       )}
     </div>
-  )
+  );
 }
 
 function ChartCard({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
@@ -342,84 +414,84 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle: str
       </div>
       {children}
     </div>
-  )
+  );
 }
 
-type Mode = 'lean' | 'fat'
-type ChartRow = BodyCompositionScan & { dateLabel: string }
+type Mode = "lean" | "fat";
+type ChartRow = BodyCompositionScan & { dateLabel: string };
 
 const SEGMENTS: { key: string; label: string; color: string }[] = [
-  { key: 'left_arm',  label: '左臂',  color: '#7c4dff' },
-  { key: 'right_arm', label: '右臂',  color: '#0097a7' },
-  { key: 'trunk',     label: '躯干',  color: '#e68a00' },
-  { key: 'left_leg',  label: '左腿',  color: '#d32f2f' },
-  { key: 'right_leg', label: '右腿',  color: '#00a85a' },
-]
+  { key: "left_arm", label: "左臂", color: "#7c4dff" },
+  { key: "right_arm", label: "右臂", color: "#0097a7" },
+  { key: "trunk", label: "躯干", color: "#e68a00" },
+  { key: "left_leg", label: "左腿", color: "#d32f2f" },
+  { key: "right_leg", label: "右腿", color: "#00a85a" },
+];
 
 function pctStdColor(pct: number | null | undefined): string {
-  if (pct == null) return '#8888a0'
-  if (pct >= 100) return '#00a85a'
-  if (pct >= 85) return '#e68a00'
-  return '#d32f2f'
+  if (pct == null) return "#8888a0";
+  if (pct >= 100) return "#00a85a";
+  if (pct >= 85) return "#e68a00";
+  return "#d32f2f";
 }
 
-const ARM_SEGS = SEGMENTS.filter(s => s.key === 'left_arm' || s.key === 'right_arm')
-const TRUNK_SEGS = SEGMENTS.filter(s => s.key === 'trunk')
-const LEG_SEGS = SEGMENTS.filter(s => s.key === 'left_leg' || s.key === 'right_leg')
+const ARM_SEGS = SEGMENTS.filter((s) => s.key === "left_arm" || s.key === "right_arm");
+const TRUNK_SEGS = SEGMENTS.filter((s) => s.key === "trunk");
+const LEG_SEGS = SEGMENTS.filter((s) => s.key === "left_leg" || s.key === "right_leg");
 
 function formatTick(v: number | string): string {
-  return Number(v).toFixed(1)
+  return Number(v).toFixed(1);
 }
 
 function SegmentTrendChart({
-  chartData, segs, mode, modeUnit, yDomainPad,
+  chartData,
+  segs,
+  mode,
+  modeUnit,
+  yDomainPad,
 }: {
-  chartData: ChartRow[]; segs: typeof SEGMENTS; mode: Mode
-  modeUnit: string; yDomainPad: number
+  chartData: ChartRow[];
+  segs: typeof SEGMENTS;
+  mode: Mode;
+  modeUnit: string;
+  yDomainPad: number;
 }) {
-  const fieldByMode = (seg: string) => mode === 'lean' ? `${seg}_smm_kg` : `${seg}_fat_kg`
+  const fieldByMode = (seg: string) => (mode === "lean" ? `${seg}_smm_kg` : `${seg}_fat_kg`);
 
   // Compute numeric Y domain ourselves so we don't hit dataMin/dataMax string arithmetic
-  const values: number[] = []
+  const values: number[] = [];
   for (const row of chartData) {
     for (const s of segs) {
-      const v = (row as unknown as Record<string, number | null>)[fieldByMode(s.key)]
-      if (typeof v === 'number') values.push(v)
+      const v = (row as unknown as Record<string, number | null>)[fieldByMode(s.key)];
+      if (typeof v === "number") values.push(v);
     }
   }
-  const yMin = values.length ? Math.min(...values) - yDomainPad : 0
-  const yMax = values.length ? Math.max(...values) + yDomainPad : 1
+  const yMin = values.length ? Math.min(...values) - yDomainPad : 0;
+  const yMax = values.length ? Math.max(...values) + yDomainPad : 1;
 
   // Build a dataKey → segment key map so we can look up pct_std for the hovered row
-  const segKeyByDataKey: Record<string, string> = {}
-  for (const s of segs) segKeyByDataKey[fieldByMode(s.key)] = s.key
+  const segKeyByDataKey: Record<string, string> = {};
+  for (const s of segs) segKeyByDataKey[fieldByMode(s.key)] = s.key;
 
   return (
     <ResponsiveContainer width="100%" height={220}>
       <LineChart data={chartData} margin={{ top: 5, right: 10, bottom: 0, left: 5 }}>
         <CartesianGrid {...GRID_STYLE} />
-        <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-        <YAxis
-          domain={[yMin, yMax]}
-          tick={AXIS_TICK}
-          tickFormatter={formatTick}
-          axisLine={false}
-          tickLine={false}
-          width={40}
-        />
+        <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: "#d8dae5" }} tickLine={false} />
+        <YAxis domain={[yMin, yMax]} tick={AXIS_TICK} tickFormatter={formatTick} axisLine={false} tickLine={false} width={40} />
         <Tooltip
           {...TOOLTIP_STYLE}
           formatter={(v, name, item) => {
-            const dataKey = (item as { dataKey?: string }).dataKey
-            const segKey = dataKey ? segKeyByDataKey[dataKey] : undefined
-            const payload = (item as { payload?: Record<string, number | null> }).payload
-            const pctField = mode === 'lean' ? 'lean_pct_std' : 'fat_pct_std'
-            const pct = segKey && payload ? payload[`${segKey}_${pctField}`] : null
-            const suffix = typeof pct === 'number' ? ` (${pct.toFixed(1)}%)` : ''
-            return [`${v} ${modeUnit}${suffix}`, name as string]
+            const dataKey = (item as { dataKey?: string }).dataKey;
+            const segKey = dataKey ? segKeyByDataKey[dataKey] : undefined;
+            const payload = (item as { payload?: Record<string, number | null> }).payload;
+            const pctField = mode === "lean" ? "lean_pct_std" : "fat_pct_std";
+            const pct = segKey && payload ? payload[`${segKey}_${pctField}`] : null;
+            const suffix = typeof pct === "number" ? ` (${pct.toFixed(1)}%)` : "";
+            return [`${v} ${modeUnit}${suffix}`, name as string];
           }}
         />
-        <Legend wrapperStyle={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} />
+        <Legend wrapperStyle={{ fontSize: 11, fontFamily: "JetBrains Mono" }} />
         {segs.map((s) => (
           <Line
             key={s.key}
@@ -434,14 +506,14 @@ function SegmentTrendChart({
         ))}
       </LineChart>
     </ResponsiveContainer>
-  )
+  );
 }
 
 function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest: BodyCompositionScan }) {
-  const [mode, setMode] = useState<Mode>('lean')
+  const [mode, setMode] = useState<Mode>("lean");
 
-  const modeLabel = mode === 'lean' ? '肌肉量 (kg)' : '脂肪量 (kg)'
-  const modeUnit = 'kg'
+  const modeLabel = mode === "lean" ? "肌肉量 (kg)" : "脂肪量 (kg)";
+  const modeUnit = "kg";
 
   const latestRows = SEGMENTS.map((s) => ({
     seg: s.label,
@@ -451,7 +523,7 @@ function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest:
     leanPct: (latest as unknown as Record<string, number | null>)[`${s.key}_lean_pct_std`] ?? null,
     fatPct: (latest as unknown as Record<string, number | null>)[`${s.key}_fat_pct_std`] ?? null,
     color: s.color,
-  }))
+  }));
 
   return (
     <div className="space-y-4">
@@ -462,15 +534,17 @@ function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest:
             <p className="text-xs font-mono text-text-muted">Segmental Trends — {modeLabel}</p>
           </div>
           <div className="flex gap-1 p-1 bg-bg-secondary rounded-lg">
-            {([
-              ['lean', '肌肉量'],
-              ['fat', '脂肪量'],
-            ] as const).map(([k, label]) => (
+            {(
+              [
+                ["lean", "肌肉量"],
+                ["fat", "脂肪量"],
+              ] as const
+            ).map(([k, label]) => (
               <button
                 key={k}
                 onClick={() => setMode(k)}
                 className={`px-3 py-1.5 text-xs font-mono font-medium rounded-md transition-all ${
-                  mode === k ? 'bg-accent-amber/15 text-accent-amber' : 'text-text-muted hover:text-text-secondary'
+                  mode === k ? "bg-accent-amber/15 text-accent-amber" : "text-text-muted hover:text-text-secondary"
                 }`}
               >
                 {label}
@@ -497,8 +571,7 @@ function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest:
         {latest.leg_smm_delta != null && Math.abs(latest.leg_smm_delta) > 0.2 && (
           <div className="mt-3 px-3 py-2 bg-accent-amber/10 border border-accent-amber/30 rounded-lg">
             <p className="text-xs font-mono text-accent-amber">
-              ⚠ 最新扫描左右腿肌肉量差 {formatDelta(latest.leg_smm_delta, ' kg')}（右 − 左）。
-              仅是肌肉量差异；功能性耐力以单腿测试为准。
+              ⚠ 最新扫描左右腿肌肉量差 {formatDelta(latest.leg_smm_delta, " kg")}（右 − 左）。 仅是肌肉量差异；功能性耐力以单腿测试为准。
             </p>
           </div>
         )}
@@ -523,18 +596,22 @@ function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest:
             </thead>
             <tbody>
               {latestRows.map((r, i) => (
-                <tr key={r.key} className="border-b border-border-subtle animate-fade-in opacity-0" style={{ animationDelay: `${i * 30}ms`, animationFillMode: 'forwards' }}>
+                <tr
+                  key={r.key}
+                  className="border-b border-border-subtle animate-fade-in opacity-0"
+                  style={{ animationDelay: `${i * 30}ms`, animationFillMode: "forwards" }}
+                >
                   <td className="py-2 px-3">
                     <span className="inline-block w-2 h-2 rounded-full mr-2 align-middle" style={{ backgroundColor: r.color }} />
                     {r.seg}
                   </td>
-                  <td className="py-2 px-3 text-right">{r.lean != null ? r.lean.toFixed(2) : '—'}</td>
+                  <td className="py-2 px-3 text-right">{r.lean != null ? r.lean.toFixed(2) : "—"}</td>
                   <td className="py-2 px-3 text-right" style={{ color: pctStdColor(r.leanPct) }}>
-                    {r.leanPct != null ? `${r.leanPct.toFixed(1)}%` : '—'}
+                    {r.leanPct != null ? `${r.leanPct.toFixed(1)}%` : "—"}
                   </td>
-                  <td className="py-2 px-3 text-right">{r.fat != null ? r.fat.toFixed(1) : '—'}</td>
+                  <td className="py-2 px-3 text-right">{r.fat != null ? r.fat.toFixed(1) : "—"}</td>
                   <td className="py-2 px-3 text-right" style={{ color: fatPctStdColor(r.fatPct) }}>
-                    {r.fatPct != null ? `${r.fatPct.toFixed(1)}%` : '—'}
+                    {r.fatPct != null ? `${r.fatPct.toFixed(1)}%` : "—"}
                   </td>
                 </tr>
               ))}
@@ -543,13 +620,13 @@ function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest:
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 // For FAT % standard, higher = more fat (bad); inverse rubric vs lean
 function fatPctStdColor(pct: number | null | undefined): string {
-  if (pct == null) return '#8888a0'
-  if (pct <= 120) return '#00a85a'
-  if (pct <= 150) return '#e68a00'
-  return '#d32f2f'
+  if (pct == null) return "#8888a0";
+  if (pct <= 120) return "#00a85a";
+  if (pct <= 150) return "#e68a00";
+  return "#d32f2f";
 }

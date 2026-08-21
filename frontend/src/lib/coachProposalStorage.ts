@@ -11,61 +11,50 @@
  * caller's object is never mutated.
  */
 
-import type {
-  ProposalTargetKey,
-  StashedProposal,
-  WorkspaceProposal,
-} from '../components/coach-workspace/types'
+import type { ProposalTargetKey, StashedProposal, WorkspaceProposal } from "../components/coach-workspace/types";
 
-const KEY_PREFIX = 'coach:proposal'
+const KEY_PREFIX = "coach:proposal";
 
 /** Build the storage key for a target. Master keys on planId, weekly on folder. */
 function storageKey(target: ProposalTargetKey): string {
-  const surface = target.kind === 'master' ? `master:${target.planId ?? ''}` : `weekly:${target.folder ?? ''}`
-  return `${KEY_PREFIX}:${target.userId}:${surface}`
+  const surface = target.kind === "master" ? `master:${target.planId ?? ""}` : `weekly:${target.folder ?? ""}`;
+  return `${KEY_PREFIX}:${target.userId}:${surface}`;
 }
 
 /** True when two target keys refer to the exact same plan surface. */
 function sameTarget(a: ProposalTargetKey, b: ProposalTargetKey): boolean {
-  return (
-    a.userId === b.userId &&
-    a.kind === b.kind &&
-    (a.folder ?? null) === (b.folder ?? null) &&
-    (a.planId ?? null) === (b.planId ?? null)
-  )
+  return a.userId === b.userId && a.kind === b.kind && (a.folder ?? null) === (b.folder ?? null) && (a.planId ?? null) === (b.planId ?? null);
 }
 
 function isTargetKey(value: unknown): value is ProposalTargetKey {
-  if (typeof value !== 'object' || value === null) return false
-  const t = value as Record<string, unknown>
-  return typeof t.userId === 'string' && (t.kind === 'weekly' || t.kind === 'master')
+  if (typeof value !== "object" || value === null) return false;
+  const t = value as Record<string, unknown>;
+  return typeof t.userId === "string" && (t.kind === "weekly" || t.kind === "master");
 }
 
 function isStashedProposal(value: unknown): value is StashedProposal {
-  if (typeof value !== 'object' || value === null) return false
-  const s = value as Record<string, unknown>
-  if (!isTargetKey(s.target)) return false
-  if (typeof s.contextAnchor !== 'string') return false
-  if (typeof s.rawProposal !== 'object' || s.rawProposal === null) return false
-  const raw = s.rawProposal as Record<string, unknown>
-  const p = s.proposal as Record<string, unknown> | undefined
-  if (typeof p !== 'object' || p === null) return false
-  if (typeof p.baseRevision !== 'string') return false
+  if (typeof value !== "object" || value === null) return false;
+  const s = value as Record<string, unknown>;
+  if (!isTargetKey(s.target)) return false;
+  if (typeof s.contextAnchor !== "string") return false;
+  if (typeof s.rawProposal !== "object" || s.rawProposal === null) return false;
+  const raw = s.rawProposal as Record<string, unknown>;
+  const p = s.proposal as Record<string, unknown> | undefined;
+  if (typeof p !== "object" || p === null) return false;
+  if (typeof p.baseRevision !== "string") return false;
 
-  const rawRevision = raw.base_revision
+  const rawRevision = raw.base_revision;
   const revisionMatches =
-    typeof rawRevision === 'string'
-      ? rawRevision.length > 0 && rawRevision === p.baseRevision
-      : rawRevision == null && p.baseRevision === ''
-  if (!revisionMatches) return false
+    typeof rawRevision === "string" ? rawRevision.length > 0 && rawRevision === p.baseRevision : rawRevision == null && p.baseRevision === "";
+  if (!revisionMatches) return false;
 
-  if (p.proposalType === 'weekly_create') {
+  if (p.proposalType === "weekly_create") {
     // A create Review without calendar rows is an intermediate regeneration
     // marker, not an actionable plan. Purge it instead of blanking the middle.
-    return Array.isArray(p.days) && p.days.length > 0
+    return Array.isArray(p.days) && p.days.length > 0;
   }
-  if (p.baseRevision.length === 0) return false
-  return p.proposalType === 'weekly_diff' || p.proposalType === 'master_diff'
+  if (p.baseRevision.length === 0) return false;
+  return p.proposalType === "weekly_diff" || p.proposalType === "master_diff";
 }
 
 /**
@@ -73,8 +62,8 @@ function isStashedProposal(value: unknown): value is StashedProposal {
  * surface. The input is not mutated.
  */
 export function stashProposal(entry: Readonly<StashedProposal>): void {
-  const key = storageKey(entry.target)
-  sessionStorage.setItem(key, JSON.stringify(entry))
+  const key = storageKey(entry.target);
+  sessionStorage.setItem(key, JSON.stringify(entry));
 }
 
 /**
@@ -82,30 +71,28 @@ export function stashProposal(entry: Readonly<StashedProposal>): void {
  * stored JSON is corrupt, or the embedded target does not match. A bad entry is
  * purged so it cannot poison future reads.
  */
-export function readStashedProposal<P extends WorkspaceProposal = WorkspaceProposal>(
-  target: ProposalTargetKey,
-): StashedProposal<P> | null {
-  const key = storageKey(target)
-  const raw = sessionStorage.getItem(key)
-  if (raw === null) return null
+export function readStashedProposal<P extends WorkspaceProposal = WorkspaceProposal>(target: ProposalTargetKey): StashedProposal<P> | null {
+  const key = storageKey(target);
+  const raw = sessionStorage.getItem(key);
+  if (raw === null) return null;
 
-  let parsed: unknown
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw)
+    parsed = JSON.parse(raw);
   } catch {
-    sessionStorage.removeItem(key)
-    return null
+    sessionStorage.removeItem(key);
+    return null;
   }
 
   if (!isStashedProposal(parsed) || !sameTarget(parsed.target, target)) {
-    sessionStorage.removeItem(key)
-    return null
+    sessionStorage.removeItem(key);
+    return null;
   }
 
-  return parsed as StashedProposal<P>
+  return parsed as StashedProposal<P>;
 }
 
 /** Remove the stashed proposal for `target`. No-op when absent. */
 export function clearStashedProposal(target: ProposalTargetKey): void {
-  sessionStorage.removeItem(storageKey(target))
+  sessionStorage.removeItem(storageKey(target));
 }

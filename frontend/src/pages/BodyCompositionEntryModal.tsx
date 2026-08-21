@@ -1,32 +1,32 @@
-import { useState } from 'react'
-import { shanghaiToday } from '../lib/shanghai'
-import { upsertBodyComposition, type BodyCompositionScanInput } from '../api'
+import { useState } from "react";
+import { shanghaiToday } from "../lib/shanghai";
+import { upsertBodyComposition, type BodyCompositionScanInput } from "../api";
 
 type SegmentRow = {
-  segment: 'left_arm' | 'right_arm' | 'trunk' | 'left_leg' | 'right_leg'
-  lean_mass_kg: string
-  fat_mass_kg: string
-  lean_pct_of_standard: string
-  fat_pct_of_standard: string
-}
+  segment: "left_arm" | "right_arm" | "trunk" | "left_leg" | "right_leg";
+  lean_mass_kg: string;
+  fat_mass_kg: string;
+  lean_pct_of_standard: string;
+  fat_pct_of_standard: string;
+};
 
-const SEGMENT_KEYS: SegmentRow['segment'][] = ['left_arm', 'right_arm', 'trunk', 'left_leg', 'right_leg']
-const SEGMENT_LABELS: Record<SegmentRow['segment'], string> = {
-  left_arm: '左臂',
-  right_arm: '右臂',
-  trunk: '躯干',
-  left_leg: '左腿',
-  right_leg: '右腿',
-}
+const SEGMENT_KEYS: SegmentRow["segment"][] = ["left_arm", "right_arm", "trunk", "left_leg", "right_leg"];
+const SEGMENT_LABELS: Record<SegmentRow["segment"], string> = {
+  left_arm: "左臂",
+  right_arm: "右臂",
+  trunk: "躯干",
+  left_leg: "左腿",
+  right_leg: "右腿",
+};
 
 const makeBlankSegments = (): SegmentRow[] =>
   SEGMENT_KEYS.map((s) => ({
     segment: s,
-    lean_mass_kg: '',
-    fat_mass_kg: '',
-    lean_pct_of_standard: '',
-    fat_pct_of_standard: '',
-  }))
+    lean_mass_kg: "",
+    fat_mass_kg: "",
+    lean_pct_of_standard: "",
+    fat_pct_of_standard: "",
+  }));
 
 export default function BodyCompositionEntryModal({
   user,
@@ -34,63 +34,63 @@ export default function BodyCompositionEntryModal({
   onClose,
   onSaved,
 }: {
-  user: string
-  existingDates: Set<string>
-  onClose: () => void
-  onSaved: () => void
+  user: string;
+  existingDates: Set<string>;
+  onClose: () => void;
+  onSaved: () => void;
 }) {
-  const [scanDate, setScanDate] = useState(shanghaiToday())
-  const [weight, setWeight] = useState('')
-  const [bf, setBf] = useState('')
-  const [smm, setSmm] = useState('')
-  const [fatMass, setFatMass] = useState('')
-  const [vfl, setVfl] = useState('')
-  const [showOptional, setShowOptional] = useState(false)
-  const [bmr, setBmr] = useState('')
-  const [protein, setProtein] = useState('')
-  const [water, setWater] = useState('')
-  const [smi, setSmi] = useState('')
-  const [inbodyScore, setInbodyScore] = useState('')
-  const [showSegments, setShowSegments] = useState(false)
-  const [segments, setSegments] = useState<SegmentRow[]>(makeBlankSegments())
-  const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
+  const [scanDate, setScanDate] = useState(shanghaiToday());
+  const [weight, setWeight] = useState("");
+  const [bf, setBf] = useState("");
+  const [smm, setSmm] = useState("");
+  const [fatMass, setFatMass] = useState("");
+  const [vfl, setVfl] = useState("");
+  const [showOptional, setShowOptional] = useState(false);
+  const [bmr, setBmr] = useState("");
+  const [protein, setProtein] = useState("");
+  const [water, setWater] = useState("");
+  const [smi, setSmi] = useState("");
+  const [inbodyScore, setInbodyScore] = useState("");
+  const [showSegments, setShowSegments] = useState(false);
+  const [segments, setSegments] = useState<SegmentRow[]>(makeBlankSegments());
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   function validate(): { ok: true; payload: BodyCompositionScanInput } | { ok: false; message: string } {
-    const num = (v: string) => (v.trim() === '' ? null : Number(v))
+    const num = (v: string) => (v.trim() === "" ? null : Number(v));
     const required: Array<[string, string, number, number]> = [
-      ['weight_kg', weight, 30, 150],
-      ['body_fat_pct', bf, 3, 50],
-      ['smm_kg', smm, 10, 60],
-      ['fat_mass_kg', fatMass, 0, 80],
-      ['visceral_fat_level', vfl, 1, 20],
-    ]
+      ["weight_kg", weight, 30, 150],
+      ["body_fat_pct", bf, 3, 50],
+      ["smm_kg", smm, 10, 60],
+      ["fat_mass_kg", fatMass, 0, 80],
+      ["visceral_fat_level", vfl, 1, 20],
+    ];
     for (const [name, raw, lo, hi] of required) {
-      const v = num(raw)
+      const v = num(raw);
       if (v == null || Number.isNaN(v) || v < lo || v > hi) {
-        return { ok: false, message: `${name} 必填且需在 [${lo}, ${hi}]` }
+        return { ok: false, message: `${name} 必填且需在 [${lo}, ${hi}]` };
       }
     }
 
     // Segment all-or-none rule. A row is "full" when both lean+fat are
     // numeric, "empty" when both are blank, otherwise "partial".
     const segState = segments.map((s) => {
-      const lean = num(s.lean_mass_kg)
-      const fat = num(s.fat_mass_kg)
-      const leanOk = lean != null && !Number.isNaN(lean)
-      const fatOk = fat != null && !Number.isNaN(fat)
-      if (leanOk && fatOk) return 'full'
-      if (!leanOk && !fatOk) return 'empty'
-      return 'partial'
-    })
-    if (segState.some((s) => s === 'partial')) {
-      return { ok: false, message: '节段每行的肌肉量和脂肪量必须同时填写' }
+      const lean = num(s.lean_mass_kg);
+      const fat = num(s.fat_mass_kg);
+      const leanOk = lean != null && !Number.isNaN(lean);
+      const fatOk = fat != null && !Number.isNaN(fat);
+      if (leanOk && fatOk) return "full";
+      if (!leanOk && !fatOk) return "empty";
+      return "partial";
+    });
+    if (segState.some((s) => s === "partial")) {
+      return { ok: false, message: "节段每行的肌肉量和脂肪量必须同时填写" };
     }
-    const fullCount = segState.filter((s) => s === 'full').length
+    const fullCount = segState.filter((s) => s === "full").length;
     if (fullCount > 0 && fullCount < 5) {
-      return { ok: false, message: '节段数据必须 5 个都填，或者全部留空' }
+      return { ok: false, message: "节段数据必须 5 个都填，或者全部留空" };
     }
-    let segmentPayload: BodyCompositionScanInput['segments'] = undefined
+    let segmentPayload: BodyCompositionScanInput["segments"] = undefined;
     if (fullCount === 5) {
       segmentPayload = segments.map((s) => ({
         segment: s.segment,
@@ -98,7 +98,7 @@ export default function BodyCompositionEntryModal({
         fat_mass_kg: num(s.fat_mass_kg)!,
         lean_pct_of_standard: num(s.lean_pct_of_standard),
         fat_pct_of_standard: num(s.fat_pct_of_standard),
-      }))
+      }));
     }
 
     return {
@@ -117,34 +117,34 @@ export default function BodyCompositionEntryModal({
         inbody_score: num(inbodyScore),
         segments: segmentPayload,
       },
-    }
+    };
   }
 
   async function handleSubmit() {
-    setError(null)
-    const result = validate()
+    setError(null);
+    const result = validate();
     if (!result.ok) {
-      setError(result.message)
-      return
+      setError(result.message);
+      return;
     }
     if (existingDates.has(scanDate)) {
-      if (!window.confirm(`该日期 ${scanDate} 已有数据，覆盖？`)) return
+      if (!window.confirm(`该日期 ${scanDate} 已有数据，覆盖？`)) return;
     }
-    setSubmitting(true)
+    setSubmitting(true);
     try {
-      const res = await upsertBodyComposition(user, result.payload)
+      const res = await upsertBodyComposition(user, result.payload);
       if (!res.ok) {
-        const detail = (res.data as { detail?: unknown } | null)?.detail
-        const msg = typeof detail === 'string' ? detail : JSON.stringify(detail ?? res.data)
-        setError(`提交失败 (${res.status})：${msg}`)
-        return
+        const detail = (res.data as { detail?: unknown } | null)?.detail;
+        const msg = typeof detail === "string" ? detail : JSON.stringify(detail ?? res.data);
+        setError(`提交失败 (${res.status})：${msg}`);
+        return;
       }
-      onSaved()
+      onSaved();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setError(`提交失败：${msg}`)
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`提交失败：${msg}`);
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
   }
 
@@ -154,7 +154,9 @@ export default function BodyCompositionEntryModal({
       aria-modal="true"
       aria-label="录入体测数据"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div className="bg-bg-card border border-border rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 shadow-xl">
         <div className="flex items-start justify-between mb-4">
@@ -162,7 +164,9 @@ export default function BodyCompositionEntryModal({
             <h2 className="text-base font-semibold text-text-primary">录入体测数据</h2>
             <p className="text-xs font-mono text-text-muted">Body Composition Manual Entry</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="关闭" className="text-text-muted hover:text-text-primary text-lg leading-none">×</button>
+          <button type="button" onClick={onClose} aria-label="关闭" className="text-text-muted hover:text-text-primary text-lg leading-none">
+            ×
+          </button>
         </div>
 
         <div className="space-y-4">
@@ -194,11 +198,21 @@ export default function BodyCompositionEntryModal({
           <details open={showOptional} onToggle={(e) => setShowOptional((e.target as HTMLDetailsElement).open)}>
             <summary className="cursor-pointer text-xs font-mono text-text-muted mb-2">可选指标 (5)</summary>
             <div className="grid grid-cols-2 gap-3 mt-3">
-              <Field label="BMR (kcal)"><input type="number" value={bmr} onChange={(e) => setBmr(e.target.value)} className={inputCls} /></Field>
-              <Field label="蛋白质 (kg)"><input type="number" step="0.1" value={protein} onChange={(e) => setProtein(e.target.value)} className={inputCls} /></Field>
-              <Field label="水分 (L)"><input type="number" step="0.1" value={water} onChange={(e) => setWater(e.target.value)} className={inputCls} /></Field>
-              <Field label="SMI"><input type="number" step="0.1" value={smi} onChange={(e) => setSmi(e.target.value)} className={inputCls} /></Field>
-              <Field label="InBody Score"><input type="number" value={inbodyScore} onChange={(e) => setInbodyScore(e.target.value)} className={inputCls} /></Field>
+              <Field label="BMR (kcal)">
+                <input type="number" value={bmr} onChange={(e) => setBmr(e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="蛋白质 (kg)">
+                <input type="number" step="0.1" value={protein} onChange={(e) => setProtein(e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="水分 (L)">
+                <input type="number" step="0.1" value={water} onChange={(e) => setWater(e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="SMI">
+                <input type="number" step="0.1" value={smi} onChange={(e) => setSmi(e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="InBody Score">
+                <input type="number" value={inbodyScore} onChange={(e) => setInbodyScore(e.target.value)} className={inputCls} />
+              </Field>
             </div>
           </details>
 
@@ -219,7 +233,7 @@ export default function BodyCompositionEntryModal({
                   {segments.map((s, i) => (
                     <tr key={s.segment}>
                       <td className="py-1 px-2">{SEGMENT_LABELS[s.segment]}</td>
-                      {(['lean_mass_kg', 'fat_mass_kg', 'lean_pct_of_standard', 'fat_pct_of_standard'] as const).map((field) => (
+                      {(["lean_mass_kg", "fat_mass_kg", "lean_pct_of_standard", "fat_pct_of_standard"] as const).map((field) => (
                         <td key={field} className="py-1 px-2">
                           <input
                             type="number"
@@ -227,8 +241,8 @@ export default function BodyCompositionEntryModal({
                             aria-label={`${SEGMENT_LABELS[s.segment]} ${field}`}
                             value={s[field]}
                             onChange={(e) => {
-                              const v = e.target.value
-                              setSegments((prev) => prev.map((row, idx) => idx === i ? { ...row, [field]: v } : row))
+                              const v = e.target.value;
+                              setSegments((prev) => prev.map((row, idx) => (idx === i ? { ...row, [field]: v } : row)));
                             }}
                             className={`${inputCls} text-xs`}
                           />
@@ -241,33 +255,42 @@ export default function BodyCompositionEntryModal({
             </div>
           </details>
 
-          {error && (
-            <div className="px-3 py-2 rounded-md bg-accent-red/10 border border-accent-red/30 text-xs font-mono text-accent-red">
-              {error}
-            </div>
-          )}
+          {error && <div className="px-3 py-2 rounded-md bg-accent-red/10 border border-accent-red/30 text-xs font-mono text-accent-red">{error}</div>}
 
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} disabled={submitting} className="px-4 py-2 text-xs font-mono rounded-md bg-bg-secondary text-text-secondary hover:bg-bg-card-hover">取消</button>
-            <button type="button" onClick={handleSubmit} disabled={submitting} className="px-4 py-2 text-xs font-mono rounded-md bg-accent-amber/15 text-accent-amber hover:bg-accent-amber/25 disabled:opacity-50">
-              {submitting ? '保存中…' : '保存'}
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="px-4 py-2 text-xs font-mono rounded-md bg-bg-secondary text-text-secondary hover:bg-bg-card-hover"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="px-4 py-2 text-xs font-mono rounded-md bg-accent-amber/15 text-accent-amber hover:bg-accent-amber/25 disabled:opacity-50"
+            >
+              {submitting ? "保存中…" : "保存"}
             </button>
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }
 
-const inputCls = 'w-full px-2 py-1 text-sm bg-bg-secondary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-accent-amber'
+const inputCls = "w-full px-2 py-1 text-sm bg-bg-secondary border border-border-subtle rounded text-text-primary focus:outline-none focus:border-accent-amber";
 
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <label className="block">
       <span className="block text-xs font-mono text-text-muted mb-1">
-        {label}{required && <span className="text-accent-red ml-0.5">*</span>}
+        {label}
+        {required && <span className="text-accent-red ml-0.5">*</span>}
       </span>
       {children}
     </label>
-  )
+  );
 }

@@ -1,37 +1,37 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { useAuthStore } from '../../store/authStore'
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuthStore } from "../../store/authStore";
 
 export default function LoginModal({ onClose }: { onClose: () => void }) {
-  const { login } = useAuthStore()
-  const navigate = useNavigate()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const { login } = useAuthStore();
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
+      if (e.key === "Escape") onClose();
     }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
+    e.preventDefault();
+    setError("");
+    setLoading(true);
     try {
-      await login(email, password)
-      navigate('/')
+      await login(email, password);
+      navigate("/");
     } catch (err: unknown) {
-      const x = err as { status?: number; error?: string }
-      if (x.status === 401) setError('邮箱或密码错误')
-      else if (x.error === 'user_disabled') setError('账号已被禁用')
-      else setError('登录失败,请重试')
+      const x = err as { status?: number; error?: string };
+      if (x.status === 401) setError("邮箱或密码错误");
+      else if (x.error === "user_disabled") setError("账号已被禁用");
+      else setError("登录失败,请重试");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
@@ -42,7 +42,9 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
       role="dialog"
       aria-modal="true"
       aria-label="登录 STRIDE"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div className="lg-modal">
         <button className="lg-close" type="button" aria-label="关闭" onClick={onClose}>
@@ -76,25 +78,28 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
                     <stop offset="1" stopColor="#3ee08a" />
                   </linearGradient>
                 </defs>
-                <path
-                  className="lg-route-line"
-                  d="M0,92 C60,92 78,40 130,40 C180,40 196,86 250,86 C300,86 320,22 372,30 C420,38 440,70 520,58"
-                />
+                <path className="lg-route-line" d="M0,92 C60,92 78,40 130,40 C180,40 196,86 250,86 C300,86 320,22 372,30 C420,38 440,70 520,58" />
                 <circle className="lg-route-dot" cx="520" cy="58" r="5" />
               </svg>
             </div>
 
             <div className="lg-bp-stats">
               <div className="s">
-                <div className="v">42.2<span className="u">km</span></div>
+                <div className="v">
+                  42.2<span className="u">km</span>
+                </div>
                 <div className="l">最近长距</div>
               </div>
               <div className="s">
-                <div className="v">4'38"<span className="u">/km</span></div>
+                <div className="v">
+                  4'38"<span className="u">/km</span>
+                </div>
                 <div className="l">平均配速</div>
               </div>
               <div className="s">
-                <div className="v">26<span className="u">周</span></div>
+                <div className="v">
+                  26<span className="u">周</span>
+                </div>
                 <div className="l">当前周期</div>
               </div>
             </div>
@@ -148,7 +153,7 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
               {error && <div className="lg-error">{error}</div>}
 
               <button className="lg-submit" type="submit" disabled={loading}>
-                {loading ? '登录中…' : '登录'}
+                {loading ? "登录中…" : "登录"}
                 {!loading && (
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M5 12h14M13 6l6 6-6 6" />
@@ -167,5 +172,5 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
         </main>
       </div>
     </div>
-  )
+  );
 }

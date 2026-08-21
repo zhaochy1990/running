@@ -27,30 +27,24 @@ import * as z from "zod";
 export const ASK_USER_QUESTION_KIND = "ask_user_question";
 
 const optionSchema = z.object({
-	label: z.string().describe("候选答案的简短文字，如“腿部抽筋”"),
-	description: z.string().optional().describe("对该候选答案的补充说明"),
+  label: z.string().describe("候选答案的简短文字，如“腿部抽筋”"),
+  description: z.string().optional().describe("对该候选答案的补充说明"),
 });
 
 const askUserQuestionSchema = z.object({
-	question: z.string().describe("要向运动员提出的完整、具体的问题"),
-	header: z.string().optional().describe("问题的简短标题（可选，≤ 12 字）"),
-	options: z
-		.array(optionSchema)
-		.optional()
-		.describe("建议的候选答案（可选）；即使给了候选项，运动员仍可自由作答"),
-	allowMultiple: z
-		.boolean()
-		.optional()
-		.describe("是否允许运动员选择多个候选项，默认 false"),
+  question: z.string().describe("要向运动员提出的完整、具体的问题"),
+  header: z.string().optional().describe("问题的简短标题（可选，≤ 12 字）"),
+  options: z.array(optionSchema).optional().describe("建议的候选答案（可选）；即使给了候选项，运动员仍可自由作答"),
+  allowMultiple: z.boolean().optional().describe("是否允许运动员选择多个候选项，默认 false"),
 });
 
 /** interrupt 抛给调用方的结构（供 CLI/前端渲染追问界面）。 */
 export interface AskUserQuestionPayload {
-	kind: typeof ASK_USER_QUESTION_KIND;
-	question: string;
-	header: string | null;
-	options: Array<{ label: string; description?: string | undefined }>;
-	allowMultiple: boolean;
+  kind: typeof ASK_USER_QUESTION_KIND;
+  question: string;
+  header: string | null;
+  options: Array<{ label: string; description?: string | undefined }>;
+  allowMultiple: boolean;
 }
 
 /**
@@ -62,28 +56,26 @@ export interface AskUserQuestionPayload {
  * ```
  */
 export const askUserQuestionTool = tool(
-	(input: z.infer<typeof askUserQuestionSchema>) => {
-		const payload: AskUserQuestionPayload = {
-			kind: ASK_USER_QUESTION_KIND,
-			question: input.question,
-			header: input.header ?? null,
-			options: input.options ?? [],
-			allowMultiple: input.allowMultiple ?? false,
-		};
-		// 暂停整张图，等待调用方 Command({ resume }) 注入用户回答。
-		const answer = interrupt(payload) as unknown;
-		const text = Array.isArray(answer)
-			? answer.map((a) => String(a)).join("；")
-			: String(answer ?? "");
-		return `运动员的回答：${text || "（未作答）"}`;
-	},
-	{
-		name: "ask_user_question",
-		description:
-			"当你无法仅凭现有数据得出可靠结论、需要运动员本人澄清时，用它向运动员追问一个问题并等待回答。" +
-			"可给出候选答案 options（每项 label + 可选 description）帮助运动员作答，运动员也可自由回答。" +
-			"典型场景：数据显示某次比赛异常（如跑崩/严重掉速），但真正原因（心肺、抽筋、补给、配速策略等）无法从数据判断时，向运动员追问当时的具体情况。" +
-			"一次只问一个核心问题，问题要具体。",
-		schema: askUserQuestionSchema,
-	},
+  (input: z.infer<typeof askUserQuestionSchema>) => {
+    const payload: AskUserQuestionPayload = {
+      kind: ASK_USER_QUESTION_KIND,
+      question: input.question,
+      header: input.header ?? null,
+      options: input.options ?? [],
+      allowMultiple: input.allowMultiple ?? false,
+    };
+    // 暂停整张图，等待调用方 Command({ resume }) 注入用户回答。
+    const answer = interrupt(payload) as unknown;
+    const text = Array.isArray(answer) ? answer.map((a) => String(a)).join("；") : String(answer ?? "");
+    return `运动员的回答：${text || "（未作答）"}`;
+  },
+  {
+    name: "ask_user_question",
+    description:
+      "当你无法仅凭现有数据得出可靠结论、需要运动员本人澄清时，用它向运动员追问一个问题并等待回答。" +
+      "可给出候选答案 options（每项 label + 可选 description）帮助运动员作答，运动员也可自由回答。" +
+      "典型场景：数据显示某次比赛异常（如跑崩/严重掉速），但真正原因（心肺、抽筋、补给、配速策略等）无法从数据判断时，向运动员追问当时的具体情况。" +
+      "一次只问一个核心问题，问题要具体。",
+    schema: askUserQuestionSchema,
+  },
 );

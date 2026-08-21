@@ -1,19 +1,39 @@
-import { useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
-  ResponsiveContainer, Area, BarChart, Bar, Cell, ComposedChart,
-  LineChart, Line,
-  XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine, ReferenceArea,
-} from 'recharts'
+  ResponsiveContainer,
+  Area,
+  BarChart,
+  Bar,
+  Cell,
+  ComposedChart,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  Legend,
+  ReferenceLine,
+  ReferenceArea,
+} from "recharts";
 import {
-  getAllActivitiesInRange, getHealth, getHrv, getStrideZones, getStrideTrainingLoad,
-  type Activity, type HealthRecord, type HRVSnapshot, type HrvDailyRecord,
-  type StrideZonesResponse, type StrideTrainingLoadResponse,
-} from '../api'
-import { useUser } from '../UserContextValue'
-import { aggregateWeeklyDose } from '../lib/weeklyLoad'
-import { shanghaiDate, shanghaiToday, shanghaiWeekStart, shanghaiWeekday } from '../lib/shanghai'
-import ViewHead from '../components/ViewHead'
+  getAllActivitiesInRange,
+  getHealth,
+  getHrv,
+  getStrideZones,
+  getStrideTrainingLoad,
+  type Activity,
+  type HealthRecord,
+  type HRVSnapshot,
+  type HrvDailyRecord,
+  type StrideZonesResponse,
+  type StrideTrainingLoadResponse,
+} from "../api";
+import { useUser } from "../UserContextValue";
+import { aggregateWeeklyDose } from "../lib/weeklyLoad";
+import { shanghaiDate, shanghaiToday, shanghaiWeekStart, shanghaiWeekday } from "../lib/shanghai";
+import ViewHead from "../components/ViewHead";
 
 // Form (Chronic − Acute) zone palette. Green anchors 提升期 (the productive
 // stress band); race-ready teal, over-taper amber, 维持期 neutral grey,
@@ -33,38 +53,35 @@ import ViewHead from '../components/ViewHead'
 // conflicts with the everyday meaning of "normal training" so we use 提升期
 // (clearer: this is the band where fitness goes up).
 const FORM_ZONE_COLOR = {
-  over_taper: '#ffab00',
-  race_ready: '#0097a7',
-  transition: '#8888a0',
-  productive: '#00a85a',
-  overload: '#d32f2f',
-} as const
-type FormZone = keyof typeof FORM_ZONE_COLOR
+  over_taper: "#ffab00",
+  race_ready: "#0097a7",
+  transition: "#8888a0",
+  productive: "#00a85a",
+  overload: "#d32f2f",
+} as const;
+type FormZone = keyof typeof FORM_ZONE_COLOR;
 
 const FORM_ZONE_LABEL: Record<FormZone, string> = {
-  over_taper: '减量过多',
-  race_ready: '比赛就绪',
-  transition: '维持期',
-  productive: '提升期',
-  overload: '过度负荷',
-}
+  over_taper: "减量过多",
+  race_ready: "比赛就绪",
+  transition: "维持期",
+  productive: "提升期",
+  overload: "过度负荷",
+};
 
-function classifyForm(
-  form: number | null | undefined,
-  chronic: number | null | undefined,
-): FormZone | null {
-  if (form == null || chronic == null || chronic <= 0) return null
-  const r = form / chronic
-  if (r > 0.25) return 'over_taper'
-  if (r >= 0.10) return 'race_ready'
-  if (r >= -0.10) return 'transition'
-  if (r >= -0.25) return 'productive'
-  return 'overload'
+function classifyForm(form: number | null | undefined, chronic: number | null | undefined): FormZone | null {
+  if (form == null || chronic == null || chronic <= 0) return null;
+  const r = form / chronic;
+  if (r > 0.25) return "over_taper";
+  if (r >= 0.1) return "race_ready";
+  if (r >= -0.1) return "transition";
+  if (r >= -0.25) return "productive";
+  return "overload";
 }
 
 function formColor(form: number | null, chronic: number | null | undefined): string {
-  const zone = classifyForm(form, chronic)
-  return zone ? FORM_ZONE_COLOR[zone] : '#8888a0'
+  const zone = classifyForm(form, chronic);
+  return zone ? FORM_ZONE_COLOR[zone] : "#8888a0";
 }
 
 // Readiness gate is produced by `src/stride_core/training_load/core.py` as
@@ -72,29 +89,29 @@ function formColor(form: number | null, chronic: number | null | undefined): str
 // gate doesn't look like a STOP signal.
 function readinessColor(gate: string | null): string {
   const map: Record<string, string> = {
-    green: '#00a85a',
-    yellow: '#e68a00',
-    red: '#d32f2f',
-  }
-  return gate ? (map[gate] ?? '#8888a0') : '#8888a0'
+    green: "#00a85a",
+    yellow: "#e68a00",
+    red: "#d32f2f",
+  };
+  return gate ? (map[gate] ?? "#8888a0") : "#8888a0";
 }
 
 function readinessLabel(gate: string | null): string {
   const map: Record<string, string> = {
-    green: '可进行强度训练',
-    yellow: '注意，建议减量',
-    red: '建议停训恢复',
-  }
-  return gate ? (map[gate] ?? gate) : '—'
+    green: "可进行强度训练",
+    yellow: "注意，建议减量",
+    red: "建议停训恢复",
+  };
+  return gate ? (map[gate] ?? gate) : "—";
 }
 
 function readinessGateLabel(gate: string | null): string {
   const map: Record<string, string> = {
-    green: '绿灯',
-    yellow: '黄灯',
-    red: '红灯',
-  }
-  return gate ? (map[gate] ?? gate) : '—'
+    green: "绿灯",
+    yellow: "黄灯",
+    red: "红灯",
+  };
+  return gate ? (map[gate] ?? gate) : "—";
 }
 
 // 16-week activity heatmap (Task: 16-week heatmap). Bucket fixed thresholds
@@ -102,70 +119,70 @@ function readinessGateLabel(gate: string | null): string {
 // the project's typical training-dose ranges — Z2 8km ≈ 35-45, Z4 interval
 // ≈ 60-90, marathon race ≥ 120.
 export function heatmapBucket(dose: number | null): 0 | 1 | 2 | 3 | 4 {
-  if (dose == null || dose <= 0) return 0
-  if (dose <= 40) return 1
-  if (dose <= 80) return 2
-  if (dose <= 120) return 3
-  return 4
+  if (dose == null || dose <= 0) return 0;
+  if (dose <= 40) return 1;
+  if (dose <= 80) return 2;
+  if (dose <= 120) return 3;
+  return 4;
 }
 
 // Orange gradient matching the existing Dose color (#e68a00) family —
 // Tailwind orange-200/300/400/700 give 4 visually distinct active levels
 // plus a neutral slate-100 for empty days.
 export const HEATMAP_COLORS = [
-  '#f0f1f4',  // 0 = observed rest / zero dose
-  '#fed7aa',  // 1 = light  (1–40)
-  '#fdba74',  // 2 = mid    (41–80)
-  '#fb923c',  // 3 = dark   (81–120)
-  '#c2410c',  // 4 = deepest (>120)
-] as const
+  "#f0f1f4", // 0 = observed rest / zero dose
+  "#fed7aa", // 1 = light  (1–40)
+  "#fdba74", // 2 = mid    (41–80)
+  "#fb923c", // 3 = dark   (81–120)
+  "#c2410c", // 4 = deepest (>120)
+] as const;
 
-const HEATMAP_UNKNOWN_COLOR = '#f8fafc'
-const HEATMAP_ABSENT_COLOR = '#ffffff'
-const HEATMAP_GRID_STROKE = '#e8eaf0'
-const HEATMAP_UNKNOWN_STROKE = '#cbd5e1'
+const HEATMAP_UNKNOWN_COLOR = "#f8fafc";
+const HEATMAP_ABSENT_COLOR = "#ffffff";
+const HEATMAP_GRID_STROKE = "#e8eaf0";
+const HEATMAP_UNKNOWN_STROKE = "#cbd5e1";
 
-type HeatmapDayState = 'active' | 'rest' | 'unknown' | 'absent' | 'future'
+type HeatmapDayState = "active" | "rest" | "unknown" | "absent" | "future";
 
-const AXIS_TICK = { fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#8888a0' }
+const AXIS_TICK = { fontSize: 10, fontFamily: "JetBrains Mono", fill: "#8888a0" };
 const TOOLTIP_STYLE = {
-  contentStyle: { background: '#ffffff', border: '1px solid #d8dae5', borderRadius: 8, fontFamily: 'JetBrains Mono', fontSize: 12, color: '#1a1c2e' },
-  labelStyle: { color: '#8888a0' },
-}
-const GRID_STYLE = { stroke: '#e8eaf0', strokeDasharray: '3 3' }
+  contentStyle: { background: "#ffffff", border: "1px solid #d8dae5", borderRadius: 8, fontFamily: "JetBrains Mono", fontSize: 12, color: "#1a1c2e" },
+  labelStyle: { color: "#8888a0" },
+};
+const GRID_STYLE = { stroke: "#e8eaf0", strokeDasharray: "3 3" };
 
-type DaysWindow = 14 | 30 | 60 | 90
+type DaysWindow = 14 | 30 | 60 | 90;
 
 function formatDateShort(iso: string): string {
-  if (!iso || iso.length < 10) return iso
-  return `${parseInt(iso.slice(5, 7), 10)}/${parseInt(iso.slice(8, 10), 10)}`
+  if (!iso || iso.length < 10) return iso;
+  return `${parseInt(iso.slice(5, 7), 10)}/${parseInt(iso.slice(8, 10), 10)}`;
 }
 
 export default function TrainingStatusPage() {
-  const { user } = useUser()
-  const [days, setDays] = useState<DaysWindow>(30)
-  const [health, setHealth] = useState<{ health: HealthRecord[]; rhr_baseline: number | null; hrv_snapshot: HRVSnapshot | null } | null>(null)
-  const [hrv, setHrv] = useState<{ hrv: HrvDailyRecord[] } | null>(null)
-  const [zones, setZones] = useState<StrideZonesResponse | null>(null)
-  const [load, setLoad] = useState<StrideTrainingLoadResponse | null>(null)
-  const [activities, setActivities] = useState<Activity[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { user } = useUser();
+  const [days, setDays] = useState<DaysWindow>(30);
+  const [health, setHealth] = useState<{ health: HealthRecord[]; rhr_baseline: number | null; hrv_snapshot: HRVSnapshot | null } | null>(null);
+  const [hrv, setHrv] = useState<{ hrv: HrvDailyRecord[] } | null>(null);
+  const [zones, setZones] = useState<StrideZonesResponse | null>(null);
+  const [load, setLoad] = useState<StrideTrainingLoadResponse | null>(null);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return
-    let cancelled = false
-    setLoaded(false)
-    setError(null)
+    if (!user) return;
+    let cancelled = false;
+    setLoaded(false);
+    setError(null);
     // The 16-week activity heatmap needs 112 days; the 8-week trend chart
     // needs ≥ 56. Fetch the larger of {window, 112}.
-    const loadFetchDays = Math.max(days, 112)
+    const loadFetchDays = Math.max(days, 112);
     // Fetch activities for the same window so the daily-dose tooltip can show
     // the per-day training summary (distance / pace / HR). Pages through the
     // 200-cap server limit transparently.
-    const today = new Date()
-    const from = new Date(today.getTime() - loadFetchDays * 86400000)
-    const dateFrom = from.toISOString().slice(0, 10)
+    const today = new Date();
+    const from = new Date(today.getTime() - loadFetchDays * 86400000);
+    const dateFrom = from.toISOString().slice(0, 10);
     Promise.all([
       getHealth(user, 90),
       getHrv(user, 90),
@@ -174,42 +191,44 @@ export default function TrainingStatusPage() {
       getAllActivitiesInRange(user, { dateFrom }),
     ])
       .then(([h, hv, z, ld, acts]) => {
-        if (cancelled) return
-        setHealth({ health: h.health, rhr_baseline: h.rhr_baseline, hrv_snapshot: h.hrv ?? null })
-        setHrv({ hrv: hv.hrv })
-        setZones(z)
-        setLoad(ld)
-        setActivities(acts)
+        if (cancelled) return;
+        setHealth({ health: h.health, rhr_baseline: h.rhr_baseline, hrv_snapshot: h.hrv ?? null });
+        setHrv({ hrv: hv.hrv });
+        setZones(z);
+        setLoad(ld);
+        setActivities(acts);
       })
       .catch((e) => {
-        if (!cancelled) setError(String(e))
+        if (!cancelled) setError(String(e));
       })
       .finally(() => {
-        if (!cancelled) setLoaded(true)
-      })
-    return () => { cancelled = true }
-  }, [user, days])
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, days]);
 
   // Group activities by Shanghai-local day so the daily-dose tooltip can list
   // each workout for the hovered date. Multiple activities per day (e.g. AM run
   // + PM strength) all get rendered.
   const activitiesByDate = useMemo(() => {
-    const m = new Map<string, Activity[]>()
+    const m = new Map<string, Activity[]>();
     for (const a of activities) {
-      const key = shanghaiDate(a.date)
-      const arr = m.get(key)
-      if (arr) arr.push(a)
-      else m.set(key, [a])
+      const key = shanghaiDate(a.date);
+      const arr = m.get(key);
+      if (arr) arr.push(a);
+      else m.set(key, [a]);
     }
-    return m
-  }, [activities])
+    return m;
+  }, [activities]);
 
   if (!loaded) {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="w-6 h-6 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
       </div>
-    )
+    );
   }
 
   return (
@@ -219,11 +238,7 @@ export default function TrainingStatusPage() {
         <TimeRangeToggle value={days} onChange={setDays} />
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-4 text-sm font-mono">
-          加载失败：{error}
-        </div>
-      )}
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-4 text-sm font-mono">加载失败：{error}</div>}
 
       <MetricsRow health={health} hrv={hrv} zones={zones} />
       <TrendsRow health={health} hrv={hrv} days={days} />
@@ -231,11 +246,11 @@ export default function TrainingStatusPage() {
       <TrainingLoadSection load={load} dailyWindowDays={days} activitiesByDate={activitiesByDate} />
       <DataStatusFooter zones={zones} load={load} />
     </div>
-  )
+  );
 }
 
 function TimeRangeToggle({ value, onChange }: { value: DaysWindow; onChange: (d: DaysWindow) => void }) {
-  const opts: DaysWindow[] = [14, 30, 60, 90]
+  const opts: DaysWindow[] = [14, 30, 60, 90];
   return (
     <div className="inline-flex rounded-md border border-border-subtle bg-bg-card p-0.5">
       {opts.map((d) => (
@@ -243,28 +258,32 @@ function TimeRangeToggle({ value, onChange }: { value: DaysWindow; onChange: (d:
           key={d}
           type="button"
           onClick={() => onChange(d)}
-          className={`px-3 py-1 text-xs font-mono rounded ${
-            value === d ? 'bg-accent-green/15 text-accent-green' : 'text-text-muted hover:text-text-primary'
-          }`}
+          className={`px-3 py-1 text-xs font-mono rounded ${value === d ? "bg-accent-green/15 text-accent-green" : "text-text-muted hover:text-text-primary"}`}
         >
           {d}d
         </button>
       ))}
     </div>
-  )
+  );
 }
 
 // === Task 8: MetricsRow ===
 function MetricCard({
-  label, sublabel, value, unit, baseline, color, help,
+  label,
+  sublabel,
+  value,
+  unit,
+  baseline,
+  color,
+  help,
 }: {
-  label: string
-  sublabel: string
-  value: string
-  unit: string
-  baseline?: string | null
-  color: string
-  help?: React.ReactNode
+  label: string;
+  sublabel: string;
+  value: string;
+  unit: string;
+  baseline?: string | null;
+  color: string;
+  help?: React.ReactNode;
 }) {
   return (
     <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 flex flex-col gap-1 overflow-visible">
@@ -272,7 +291,9 @@ function MetricCard({
         <div className="text-xs font-mono text-text-muted">{label}</div>
         {help && (
           <div className="group relative">
-            <div className="w-4 h-4 rounded-full border border-border-subtle text-[10px] font-mono text-text-muted cursor-help flex items-center justify-center hover:border-text-secondary hover:text-text-secondary transition-colors">?</div>
+            <div className="w-4 h-4 rounded-full border border-border-subtle text-[10px] font-mono text-text-muted cursor-help flex items-center justify-center hover:border-text-secondary hover:text-text-secondary transition-colors">
+              ?
+            </div>
             <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity absolute right-0 top-6 z-50 w-64 bg-bg-card border border-border-subtle rounded-lg p-3 shadow-lg text-xs text-text-primary font-normal leading-relaxed whitespace-pre-line pointer-events-none">
               {help}
             </div>
@@ -281,81 +302,111 @@ function MetricCard({
       </div>
       <div className="text-[10px] font-mono text-text-faint">{sublabel}</div>
       <div className="flex items-baseline gap-1 mt-1">
-        <span className="text-2xl font-mono font-medium" style={{ color }}>{value}</span>
+        <span className="text-2xl font-mono font-medium" style={{ color }}>
+          {value}
+        </span>
         <span className="text-xs font-mono text-text-muted">{unit}</span>
       </div>
-      {baseline != null && (
-        <div className="text-[10px] font-mono text-text-muted mt-0.5">{baseline}</div>
-      )}
+      {baseline != null && <div className="text-[10px] font-mono text-text-muted mt-0.5">{baseline}</div>}
     </div>
-  )
+  );
 }
 
 function MetricsRow({
-  health, hrv, zones,
+  health,
+  hrv,
+  zones,
 }: {
-  health: { health: HealthRecord[]; rhr_baseline: number | null; hrv_snapshot: HRVSnapshot | null } | null
-  hrv: { hrv: HrvDailyRecord[] } | null
-  zones: StrideZonesResponse | null
+  health: { health: HealthRecord[]; rhr_baseline: number | null; hrv_snapshot: HRVSnapshot | null } | null;
+  hrv: { hrv: HrvDailyRecord[] } | null;
+  zones: StrideZonesResponse | null;
 }) {
-  const latestRhrRow = health?.health.find((r) => r.rhr != null) ?? null
-  const latestRhr = latestRhrRow?.rhr ?? null
+  const latestRhrRow = health?.health.find((r) => r.rhr != null) ?? null;
+  const latestRhr = latestRhrRow?.rhr ?? null;
   const latestRhrDate = latestRhrRow?.date
     ? formatDateShort(
         latestRhrRow.date.length === 8
           ? `${latestRhrRow.date.slice(0, 4)}-${latestRhrRow.date.slice(4, 6)}-${latestRhrRow.date.slice(6, 8)}`
           : latestRhrRow.date,
       )
-    : null
-  const rhrBaseline = health?.rhr_baseline ?? null
-  const latestHrvRow = hrv?.hrv.slice().reverse().find((r) => r.last_night_avg != null) ?? null
-  const latestHrv = latestHrvRow?.last_night_avg ?? null
-  const latestHrvDate = latestHrvRow?.date ? formatDateShort(latestHrvRow.date) : null
-  const hrvLow = health?.hrv_snapshot?.hrv_normal_low ?? null
-  const hrvHigh = health?.hrv_snapshot?.hrv_normal_high ?? null
-  const hrvBaseline = hrvLow != null && hrvHigh != null ? `正常 ${hrvLow}-${hrvHigh} ms` : null
-  const threshold = zones?.threshold
+    : null;
+  const rhrBaseline = health?.rhr_baseline ?? null;
+  const latestHrvRow =
+    hrv?.hrv
+      .slice()
+      .reverse()
+      .find((r) => r.last_night_avg != null) ?? null;
+  const latestHrv = latestHrvRow?.last_night_avg ?? null;
+  const latestHrvDate = latestHrvRow?.date ? formatDateShort(latestHrvRow.date) : null;
+  const hrvLow = health?.hrv_snapshot?.hrv_normal_low ?? null;
+  const hrvHigh = health?.hrv_snapshot?.hrv_normal_high ?? null;
+  const hrvBaseline = hrvLow != null && hrvHigh != null ? `正常 ${hrvLow}-${hrvHigh} ms` : null;
+  const threshold = zones?.threshold;
 
-  const pacePerKm = threshold?.pace_per_km_sec
-  const paceStr = pacePerKm != null ? `${Math.floor(pacePerKm / 60)}:${String(pacePerKm % 60).padStart(2, '0')}` : '—'
-  const hrStr = threshold?.hr_bpm != null ? String(Math.round(threshold.hr_bpm)) : '—'
+  const pacePerKm = threshold?.pace_per_km_sec;
+  const paceStr = pacePerKm != null ? `${Math.floor(pacePerKm / 60)}:${String(pacePerKm % 60).padStart(2, "0")}` : "—";
+  const hrStr = threshold?.hr_bpm != null ? String(Math.round(threshold.hr_bpm)) : "—";
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       <MetricCard
-        label="静息心率(RHR)" sublabel={latestRhrDate ? `${latestRhrDate} · 手表读数` : '手表读数'}
-        value={latestRhr != null ? String(latestRhr) : '—'}
+        label="静息心率(RHR)"
+        sublabel={latestRhrDate ? `${latestRhrDate} · 手表读数` : "手表读数"}
+        value={latestRhr != null ? String(latestRhr) : "—"}
         unit="bpm"
         baseline={rhrBaseline != null ? `基线 ${rhrBaseline} bpm` : null}
         color="#0097a7"
-        help={<><strong>清晨静息心率</strong>。反映心血管恢复与自主神经平衡。{'\n\n'}使用方法：{'\n'}• 接近基线 = 恢复良好{'\n'}• 高出基线 3+ bpm 持续 3 天 = 疲劳累积{'\n'}• 高出 8+ = 生病 / 过劳，立即休息{'\n'}• 基线按过去 90 天 RHR 低 10 分位动态计算</>}
+        help={
+          <>
+            <strong>清晨静息心率</strong>。反映心血管恢复与自主神经平衡。{"\n\n"}使用方法：{"\n"}• 接近基线 = 恢复良好{"\n"}• 高出基线 3+ bpm 持续 3 天 =
+            疲劳累积{"\n"}• 高出 8+ = 生病 / 过劳，立即休息{"\n"}• 基线按过去 90 天 RHR 低 10 分位动态计算
+          </>
+        }
       />
       <MetricCard
-        label="心率变异性(HRV)" sublabel={latestHrvDate ? `${latestHrvDate} · 手表读数` : '手表读数'}
-        value={latestHrv != null ? String(latestHrv) : '—'}
+        label="心率变异性(HRV)"
+        sublabel={latestHrvDate ? `${latestHrvDate} · 手表读数` : "手表读数"}
+        value={latestHrv != null ? String(latestHrv) : "—"}
         unit="ms"
         baseline={hrvBaseline}
         color="#7a4dd4"
-        help={<><strong>睡眠心率变异性</strong>。反映副交感神经恢复程度。{'\n\n'}使用方法：{'\n'}• 在正常范围内稳定 = 恢复充分{'\n'}• 下降 10% = 黄灯，注意{'\n'}• 下降 20%+ = 红灯，跳过高质量{'\n'}• 高于上限 = 深度恢复 / 副交感活跃{'\n'}• 正常范围按 dashboard 个人 baseline</>}
+        help={
+          <>
+            <strong>睡眠心率变异性</strong>。反映副交感神经恢复程度。{"\n\n"}使用方法：{"\n"}• 在正常范围内稳定 = 恢复充分{"\n"}• 下降 10% = 黄灯，注意{"\n"}•
+            下降 20%+ = 红灯，跳过高质量{"\n"}• 高于上限 = 深度恢复 / 副交感活跃{"\n"}• 正常范围按 dashboard 个人 baseline
+          </>
+        }
       />
       <MetricCard
-        label="阈值配速" sublabel="STRIDE Threshold Pace"
+        label="阈值配速"
+        sublabel="STRIDE Threshold Pace"
         value={paceStr}
         unit="/km"
         baseline={threshold?.speed_confidence ? `置信 ${threshold.speed_confidence}` : null}
         color="#00a85a"
-        help={<><strong>STRIDE 自研阈值配速</strong>。乳酸阈附近的可持续配速，是所有 6 个配速区间的锚点。{'\n\n'}使用方法：{'\n'}• 节奏跑配速 ≈ 阈值 ± 5 s/km{'\n'}• 长距离配速 = 阈值 + 30 ~ 60 s/km{'\n'}• 由近 90 天 HR-pace 回归 + tempo 段落识别得出{'\n'}• 置信度低 = 样本不足，需要更多 tempo / LT 课</>}
+        help={
+          <>
+            <strong>STRIDE 自研阈值配速</strong>。乳酸阈附近的可持续配速，是所有 6 个配速区间的锚点。{"\n\n"}使用方法：{"\n"}• 节奏跑配速 ≈ 阈值 ± 5 s/km{"\n"}•
+            长距离配速 = 阈值 + 30 ~ 60 s/km{"\n"}• 由近 90 天 HR-pace 回归 + tempo 段落识别得出{"\n"}• 置信度低 = 样本不足，需要更多 tempo / LT 课
+          </>
+        }
       />
       <MetricCard
-        label="阈值心率" sublabel="STRIDE Threshold HR"
+        label="阈值心率"
+        sublabel="STRIDE Threshold HR"
         value={hrStr}
         unit="bpm"
         baseline={threshold?.hr_confidence ? `置信 ${threshold.hr_confidence}` : null}
         color="#d97706"
-        help={<><strong>STRIDE 自研阈值心率</strong>。乳酸阈附近的可持续心率，是 6 个心率区间的锚点。{'\n\n'}使用方法：{'\n'}• 比赛全马目标 HR ≈ 阈值 − 5{'\n'}• 节奏跑 HR = 阈值 ± 3{'\n'}• 间歇课 HR 可短暂超过 阈值 + 5{'\n'}• 置信度低 = 缺少结构化课次</>}
+        help={
+          <>
+            <strong>STRIDE 自研阈值心率</strong>。乳酸阈附近的可持续心率，是 6 个心率区间的锚点。{"\n\n"}使用方法：{"\n"}• 比赛全马目标 HR ≈ 阈值 − 5{"\n"}•
+            节奏跑 HR = 阈值 ± 3{"\n"}• 间歇课 HR 可短暂超过 阈值 + 5{"\n"}• 置信度低 = 缺少结构化课次
+          </>
+        }
       />
     </div>
-  )
+  );
 }
 
 // === Task 9: TrendsRow ===
@@ -366,25 +417,25 @@ function ChartCard({ title, sublabel, children }: { title: string; sublabel: str
       <div className="text-[10px] font-mono text-text-faint mb-2">{sublabel}</div>
       {children}
     </div>
-  )
+  );
 }
 
 function EmptyChart({ text }: { text: string }) {
-  return (
-    <div className="flex items-center justify-center h-[200px] text-xs font-mono text-text-muted">{text}</div>
-  )
+  return <div className="flex items-center justify-center h-[200px] text-xs font-mono text-text-muted">{text}</div>;
 }
 
 function TrendsRow({
-  health, hrv, days,
+  health,
+  hrv,
+  days,
 }: {
-  health: { health: HealthRecord[]; rhr_baseline: number | null; hrv_snapshot: HRVSnapshot | null } | null
-  hrv: { hrv: HrvDailyRecord[] } | null
-  days: DaysWindow
+  health: { health: HealthRecord[]; rhr_baseline: number | null; hrv_snapshot: HRVSnapshot | null } | null;
+  hrv: { hrv: HrvDailyRecord[] } | null;
+  days: DaysWindow;
 }) {
-  const rhrBaseline = health?.rhr_baseline ?? null
-  const hrvLow = health?.hrv_snapshot?.hrv_normal_low ?? null
-  const hrvHigh = health?.hrv_snapshot?.hrv_normal_high ?? null
+  const rhrBaseline = health?.rhr_baseline ?? null;
+  const hrvLow = health?.hrv_snapshot?.hrv_normal_low ?? null;
+  const hrvHigh = health?.hrv_snapshot?.hrv_normal_high ?? null;
 
   const rhrData = (health?.health ?? [])
     .slice()
@@ -393,9 +444,9 @@ function TrendsRow({
     .slice(-days)
     .map((r) => ({
       date: r.date,
-      dateLabel: formatDateShort(r.date.length === 8 ? `${r.date.slice(0,4)}-${r.date.slice(4,6)}-${r.date.slice(6,8)}` : r.date),
+      dateLabel: formatDateShort(r.date.length === 8 ? `${r.date.slice(0, 4)}-${r.date.slice(4, 6)}-${r.date.slice(6, 8)}` : r.date),
       rhr: r.rhr,
-    }))
+    }));
 
   const hrvData = (hrv?.hrv ?? [])
     .slice()
@@ -405,7 +456,7 @@ function TrendsRow({
       date: r.date,
       dateLabel: formatDateShort(r.date),
       hrv: r.last_night_avg,
-    }))
+    }));
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
@@ -419,10 +470,7 @@ function TrendsRow({
               <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
               <YAxis
                 tick={AXIS_TICK}
-                domain={[
-                  (min: number) => Math.floor(Math.min(min, rhrBaseline ?? min) - 2),
-                  (max: number) => Math.ceil(Math.max(max, rhrBaseline ?? max) + 2),
-                ]}
+                domain={[(min: number) => Math.floor(Math.min(min, rhrBaseline ?? min) - 2), (max: number) => Math.ceil(Math.max(max, rhrBaseline ?? max) + 2)]}
               />
               <Tooltip {...TOOLTIP_STYLE} />
               {rhrBaseline != null && (
@@ -431,10 +479,18 @@ function TrendsRow({
                   stroke="#0097a7"
                   strokeDasharray="4 3"
                   strokeOpacity={0.6}
-                  label={{ value: `基线 ${rhrBaseline}`, position: 'insideTopRight', fontSize: 9, fill: '#0097a7' }}
+                  label={{ value: `基线 ${rhrBaseline}`, position: "insideTopRight", fontSize: 9, fill: "#0097a7" }}
                 />
               )}
-              <Line type="monotone" dataKey="rhr" name="静息心率" stroke="#0097a7" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
+              <Line
+                type="monotone"
+                dataKey="rhr"
+                name="静息心率"
+                stroke="#0097a7"
+                strokeWidth={1.5}
+                dot={false}
+                activeDot={{ r: 3, fill: "#0097a7", stroke: "#fff", strokeWidth: 2 }}
+              />
             </LineChart>
           </ResponsiveContainer>
         )}
@@ -449,10 +505,7 @@ function TrendsRow({
               <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
               <YAxis
                 tick={AXIS_TICK}
-                domain={[
-                  (min: number) => Math.floor(Math.min(min, hrvLow ?? min) - 5),
-                  (max: number) => Math.ceil(Math.max(max, hrvHigh ?? max) + 5),
-                ]}
+                domain={[(min: number) => Math.floor(Math.min(min, hrvLow ?? min) - 5), (max: number) => Math.ceil(Math.max(max, hrvHigh ?? max) + 5)]}
               />
               <Tooltip {...TOOLTIP_STYLE} />
               {hrvLow != null && hrvHigh != null && (
@@ -461,16 +514,24 @@ function TrendsRow({
                   y2={hrvHigh}
                   fill="#7a4dd4"
                   fillOpacity={0.1}
-                  label={{ value: `正常 ${hrvLow}–${hrvHigh}`, position: 'insideTopRight', fontSize: 9, fill: '#7a4dd4' }}
+                  label={{ value: `正常 ${hrvLow}–${hrvHigh}`, position: "insideTopRight", fontSize: 9, fill: "#7a4dd4" }}
                 />
               )}
-              <Line type="monotone" dataKey="hrv" name="心率变异性" stroke="#7a4dd4" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#7a4dd4', stroke: '#fff', strokeWidth: 2 }} />
+              <Line
+                type="monotone"
+                dataKey="hrv"
+                name="心率变异性"
+                stroke="#7a4dd4"
+                strokeWidth={1.5}
+                dot={false}
+                activeDot={{ r: 3, fill: "#7a4dd4", stroke: "#fff", strokeWidth: 2 }}
+              />
             </LineChart>
           </ResponsiveContainer>
         )}
       </ChartCard>
     </div>
-  )
+  );
 }
 
 // === Task 10: ZonesRow ===
@@ -481,7 +542,7 @@ function EmptyZones() {
       <br />
       需先完成一定次数的跑步活动
     </div>
-  )
+  );
 }
 
 // Format a zone bound pair into a single "区间" string, always small → large.
@@ -490,18 +551,15 @@ function EmptyZones() {
 // 4:48 – 5:36), for HR that means bpm rising. Open-ended zones — recovery has
 // no slow cap, the fastest zone has no fast cap — render with ≥ / ≤ relative
 // to the only bound present.
-function formatZoneRange<T extends string | number>(
-  smaller: T | null,
-  larger: T | null,
-): string {
-  if (smaller != null && larger != null) return `${smaller} – ${larger}`
-  if (smaller != null) return `≥ ${smaller}`
-  if (larger != null) return `≤ ${larger}`
-  return '—'
+function formatZoneRange<T extends string | number>(smaller: T | null, larger: T | null): string {
+  if (smaller != null && larger != null) return `${smaller} – ${larger}`;
+  if (smaller != null) return `≥ ${smaller}`;
+  if (larger != null) return `≤ ${larger}`;
+  return "—";
 }
 
 function ZonesRow({ zones }: { zones: StrideZonesResponse | null }) {
-  const hasData = !!zones?.threshold && zones.pace_zones.length > 0 && zones.hr_zones.length > 0
+  const hasData = !!zones?.threshold && zones.pace_zones.length > 0 && zones.hr_zones.length > 0;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
@@ -555,73 +613,75 @@ function ZonesRow({ zones }: { zones: StrideZonesResponse | null }) {
         )}
       </ChartCard>
     </div>
-  )
+  );
 }
 
 // === Task 11: TrainingLoadSection ===
-function LoadStat({ label, value, color, help }: {
-  label: string; value: string; color: string; help?: React.ReactNode
-}) {
+function LoadStat({ label, value, color, help }: { label: string; value: string; color: string; help?: React.ReactNode }) {
   return (
     <div className="flex flex-col overflow-visible">
       <div className="flex items-center gap-1.5">
         <div className="text-[10px] font-mono text-text-faint">{label}</div>
         {help && (
           <div className="group relative">
-            <div className="w-3.5 h-3.5 rounded-full border border-border-subtle text-[9px] font-mono text-text-muted cursor-help flex items-center justify-center hover:border-text-secondary hover:text-text-secondary transition-colors">?</div>
+            <div className="w-3.5 h-3.5 rounded-full border border-border-subtle text-[9px] font-mono text-text-muted cursor-help flex items-center justify-center hover:border-text-secondary hover:text-text-secondary transition-colors">
+              ?
+            </div>
             <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity absolute left-0 top-5 z-50 w-64 bg-bg-card border border-border-subtle rounded-lg p-3 shadow-lg text-xs text-text-primary font-normal leading-relaxed whitespace-pre-line pointer-events-none">
               {help}
             </div>
           </div>
         )}
       </div>
-      <div className="text-lg font-mono font-medium" style={{ color }}>{value}</div>
+      <div className="text-lg font-mono font-medium" style={{ color }}>
+        {value}
+      </div>
     </div>
-  )
+  );
 }
 
 // Map COROS/Garmin English sport_name strings to Chinese display labels for
 // the tooltip. Substring matching is robust to variants ("Indoor Run", "Trail
 // Run", "Track Run" all collapse to 跑步).
 const SPORT_NAME_CN: Array<[RegExp, string]> = [
-  [/run|treadmill/i, '跑步'],
-  [/strength|gym/i, '力量训练'],
-  [/bike|cycling/i, '骑行'],
-  [/swim/i, '游泳'],
-  [/walk/i, '步行'],
-  [/hike/i, '徒步'],
-  [/ski|snowboard/i, '滑雪'],
-  [/hiit/i, 'HIIT'],
-  [/row/i, '划船'],
-  [/jump rope/i, '跳绳'],
-  [/cardio/i, '有氧'],
-]
+  [/run|treadmill/i, "跑步"],
+  [/strength|gym/i, "力量训练"],
+  [/bike|cycling/i, "骑行"],
+  [/swim/i, "游泳"],
+  [/walk/i, "步行"],
+  [/hike/i, "徒步"],
+  [/ski|snowboard/i, "滑雪"],
+  [/hiit/i, "HIIT"],
+  [/row/i, "划船"],
+  [/jump rope/i, "跳绳"],
+  [/cardio/i, "有氧"],
+];
 
 function chineseSportName(name: string | null | undefined): string {
-  const s = name ?? ''
+  const s = name ?? "";
   for (const [re, cn] of SPORT_NAME_CN) {
-    if (re.test(s)) return cn
+    if (re.test(s)) return cn;
   }
-  return s || '训练'
+  return s || "训练";
 }
 
 // Distance-based sports show distance + avg pace + avg HR; strength / HIIT /
 // gym etc. show duration + avg HR (pace is meaningless without distance).
 function isDistanceSport(name: string | null | undefined): boolean {
-  return /run|bike|cycling|swim|walk|hike|treadmill|row/i.test(name ?? '')
+  return /run|bike|cycling|swim|walk|hike|treadmill|row/i.test(name ?? "");
 }
 
 // Convert duration seconds into a compact "1h43min" / "43min" / "8h" form
 // (the user-requested shape — backend's HH:MM:SS reads as a stopwatch, not a
 // human summary).
 function formatDurationHuman(seconds: number | null | undefined): string {
-  if (!seconds || seconds <= 0) return '—'
-  const total = Math.round(seconds)
-  const h = Math.floor(total / 3600)
-  const m = Math.floor((total % 3600) / 60)
-  if (h > 0 && m > 0) return `${h}h${m}min`
-  if (h > 0) return `${h}h`
-  return `${m}min`
+  if (!seconds || seconds <= 0) return "—";
+  const total = Math.round(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  if (h > 0 && m > 0) return `${h}h${m}min`;
+  if (h > 0) return `${h}h`;
+  return `${m}min`;
 }
 
 // Custom tooltip for the daily Dose bar chart — shows STRIDE training_dose
@@ -630,57 +690,49 @@ function formatDurationHuman(seconds: number | null | undefined): string {
 // (力量训练 etc.) render as "力量训练 1h43min · 平均心率 145". Rest days
 // (no activity rows) show "休息日".
 function DailyDoseTooltip({
-  active, payload, activitiesByDate,
+  active,
+  payload,
+  activitiesByDate,
 }: {
-  active?: boolean
-  payload?: Array<{ payload: { date: string; training_dose: number | null; coverage_status?: string; dayState?: HeatmapDayState } }>
-  label?: string
-  activitiesByDate: Map<string, Activity[]>
+  active?: boolean;
+  payload?: Array<{ payload: { date: string; training_dose: number | null; coverage_status?: string; dayState?: HeatmapDayState } }>;
+  label?: string;
+  activitiesByDate: Map<string, Activity[]>;
 }) {
-  if (!active || !payload || payload.length === 0) return null
-  const row = payload[0].payload
-  const dayState = row.dayState ?? (
-    row.coverage_status === 'unknown'
-      ? 'unknown'
-      : row.coverage_status
-        ? 'rest'
-        : 'absent'
-  )
-  const acts = activitiesByDate.get(row.date) ?? []
-  const dayLabel = `${formatDateShort(row.date)} · ${shanghaiWeekday(row.date)}`
+  if (!active || !payload || payload.length === 0) return null;
+  const row = payload[0].payload;
+  const dayState = row.dayState ?? (row.coverage_status === "unknown" ? "unknown" : row.coverage_status ? "rest" : "absent");
+  const acts = activitiesByDate.get(row.date) ?? [];
+  const dayLabel = `${formatDateShort(row.date)} · ${shanghaiWeekday(row.date)}`;
   const doseLabel = (() => {
-    if (dayState === 'unknown') return '数据未确认'
-    if (dayState === 'absent') return '历史无记录'
-    return row.training_dose != null ? row.training_dose.toFixed(0) : '—'
-  })()
+    if (dayState === "unknown") return "数据未确认";
+    if (dayState === "absent") return "历史无记录";
+    return row.training_dose != null ? row.training_dose.toFixed(0) : "—";
+  })();
   return (
-    <div style={{ ...TOOLTIP_STYLE.contentStyle, padding: '8px 10px', lineHeight: 1.4 }}>
-      <div style={{ color: '#8888a0', marginBottom: 4 }}>{dayLabel}</div>
-      <div style={{ color: '#e68a00', fontWeight: 600 }}>
-        训练负荷: {doseLabel}
-      </div>
+    <div style={{ ...TOOLTIP_STYLE.contentStyle, padding: "8px 10px", lineHeight: 1.4 }}>
+      <div style={{ color: "#8888a0", marginBottom: 4 }}>{dayLabel}</div>
+      <div style={{ color: "#e68a00", fontWeight: 600 }}>训练负荷: {doseLabel}</div>
       {acts.map((a) => {
-        const sport = chineseSportName(a.sport_name)
-        const hr = a.avg_hr ?? '—'
+        const sport = chineseSportName(a.sport_name);
+        const hr = a.avg_hr ?? "—";
         if (isDistanceSport(a.sport_name)) {
-          const pace = (a.pace_fmt || '—').replace('/km', '')
+          const pace = (a.pace_fmt || "—").replace("/km", "");
           return (
             <div key={a.label_id} style={{ marginTop: 4 }}>
               {sport} {a.distance_km}km · 平均配速 {pace} · 平均心率 {hr}
             </div>
-          )
+          );
         }
         return (
           <div key={a.label_id} style={{ marginTop: 4 }}>
             {sport} {formatDurationHuman(a.duration_s)} · 平均心率 {hr}
           </div>
-        )
+        );
       })}
-      {acts.length === 0 && dayState === 'rest' && (
-        <div style={{ marginTop: 4, color: '#8888a0' }}>休息日</div>
-      )}
+      {acts.length === 0 && dayState === "rest" && <div style={{ marginTop: 4, color: "#8888a0" }}>休息日</div>}
     </div>
-  )
+  );
 }
 
 // === 16-week training activity heatmap ===
@@ -690,65 +742,62 @@ function DailyDoseTooltip({
 // as dashed outlines. Tooltip body reuses DailyDoseTooltip (mounted at the
 // cursor via position:fixed, since this isn't a Recharts chart).
 
-const HEATMAP_CELL = 18
-const HEATMAP_GAP = 3
-const HEATMAP_DAY_LABEL_W = 28
-const HEATMAP_MONTH_LABEL_H = 12
-const HEATMAP_STEP = HEATMAP_CELL + HEATMAP_GAP  // 21
+const HEATMAP_CELL = 18;
+const HEATMAP_GAP = 3;
+const HEATMAP_DAY_LABEL_W = 28;
+const HEATMAP_MONTH_LABEL_H = 12;
+const HEATMAP_STEP = HEATMAP_CELL + HEATMAP_GAP; // 21
 
 function addDays(isoDate: string, days: number): string {
   // isoDate is YYYY-MM-DD (Shanghai-local day). Build the next instant by
   // anchoring at Shanghai midnight (UTC-08 of the same wall date) and adding
   // `days * 86400000` ms. Result is still YYYY-MM-DD via shanghaiDate().
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate)
-  if (!m) return ''
-  const utcAnchor = Date.UTC(+m[1], +m[2] - 1, +m[3]) - 8 * 3600 * 1000
-  return shanghaiDate(new Date(utcAnchor + days * 86400000).toISOString())
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+  if (!m) return "";
+  const utcAnchor = Date.UTC(+m[1], +m[2] - 1, +m[3]) - 8 * 3600 * 1000;
+  return shanghaiDate(new Date(utcAnchor + days * 86400000).toISOString());
 }
 
 type HeatmapCell = {
-  date: string
-  weekIdx: number  // 0..weeks-1
-  dayIdx: number   // 0=Mon .. 6=Sun
-  dose: number | null
-  dayState: HeatmapDayState
-  isFuture: boolean
-  isToday: boolean
-}
+  date: string;
+  weekIdx: number; // 0..weeks-1
+  dayIdx: number; // 0=Mon .. 6=Sun
+  dose: number | null;
+  dayState: HeatmapDayState;
+  isFuture: boolean;
+  isToday: boolean;
+};
 
 export function ActivityHeatmap({
   weeks,
   series,
   activitiesByDate,
 }: {
-  weeks: number
-  series: StrideTrainingLoadResponse['series']
-  activitiesByDate: Map<string, Activity[]>
+  weeks: number;
+  series: StrideTrainingLoadResponse["series"];
+  activitiesByDate: Map<string, Activity[]>;
 }) {
-  const [hovered, setHovered] = useState<{ date: string; x: number; y: number } | null>(null)
+  const [hovered, setHovered] = useState<{ date: string; x: number; y: number } | null>(null);
 
-  const seriesByDate = useMemo(
-    () => new Map(series.map((r) => [r.date, r])),
-    [series],
-  )
+  const seriesByDate = useMemo(() => new Map(series.map((r) => [r.date, r])), [series]);
 
   const cells: HeatmapCell[] = useMemo(() => {
-    const todayCN = shanghaiToday()
-    const thisMonday = shanghaiWeekStart(todayCN)
-    const firstMonday = addDays(thisMonday, -(weeks - 1) * 7)
-    const out: HeatmapCell[] = []
+    const todayCN = shanghaiToday();
+    const thisMonday = shanghaiWeekStart(todayCN);
+    const firstMonday = addDays(thisMonday, -(weeks - 1) * 7);
+    const out: HeatmapCell[] = [];
     for (let w = 0; w < weeks; w++) {
       for (let d = 0; d < 7; d++) {
-        const date = addDays(firstMonday, w * 7 + d)
-        const row = seriesByDate.get(date)
-        const isFuture = date > todayCN
-        const dose = row?.coverage_status === 'unknown' ? null : row?.training_dose ?? null
+        const date = addDays(firstMonday, w * 7 + d);
+        const row = seriesByDate.get(date);
+        const isFuture = date > todayCN;
+        const dose = row?.coverage_status === "unknown" ? null : (row?.training_dose ?? null);
         const dayState: HeatmapDayState = (() => {
-          if (isFuture) return 'future'
-          if (!row) return 'absent'
-          if (row.coverage_status === 'unknown') return 'unknown'
-          return dose != null && dose > 0 ? 'active' : 'rest'
-        })()
+          if (isFuture) return "future";
+          if (!row) return "absent";
+          if (row.coverage_status === "unknown") return "unknown";
+          return dose != null && dose > 0 ? "active" : "rest";
+        })();
         out.push({
           date,
           weekIdx: w,
@@ -757,44 +806,37 @@ export function ActivityHeatmap({
           dayState,
           isFuture,
           isToday: date === todayCN,
-        })
+        });
       }
     }
-    return out
-  }, [weeks, seriesByDate])
+    return out;
+  }, [weeks, seriesByDate]);
 
   // Build month-label markers: for each column whose Monday's month differs
   // from the previous column's Monday's month, label that column with the
   // month number.
   const monthLabels = useMemo(() => {
-    const out: Array<{ weekIdx: number; label: string }> = []
-    let lastMonth = ''
+    const out: Array<{ weekIdx: number; label: string }> = [];
+    let lastMonth = "";
     for (let w = 0; w < weeks; w++) {
-      const monday = cells[w * 7].date
-      const month = monday.slice(5, 7)
+      const monday = cells[w * 7].date;
+      const month = monday.slice(5, 7);
       if (month !== lastMonth) {
-        out.push({ weekIdx: w, label: `${parseInt(month, 10)}月` })
-        lastMonth = month
+        out.push({ weekIdx: w, label: `${parseInt(month, 10)}月` });
+        lastMonth = month;
       }
     }
-    return out
-  }, [weeks, cells])
+    return out;
+  }, [weeks, cells]);
 
-  const svgW = HEATMAP_DAY_LABEL_W + weeks * HEATMAP_STEP
-  const svgH = HEATMAP_MONTH_LABEL_H + 7 * HEATMAP_STEP
+  const svgW = HEATMAP_DAY_LABEL_W + weeks * HEATMAP_STEP;
+  const svgH = HEATMAP_MONTH_LABEL_H + 7 * HEATMAP_STEP;
 
   return (
     <div>
-      <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">
-        16 周训练热力图 · 16-Week Activity Heatmap
-      </p>
+      <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">16 周训练热力图 · 16-Week Activity Heatmap</p>
       <div style={{ height: 180 }}>
-        <svg
-          width="100%"
-          viewBox={`0 0 ${svgW} ${svgH}`}
-          preserveAspectRatio="xMinYMid meet"
-          style={{ maxHeight: '100%' }}
-        >
+        <svg width="100%" viewBox={`0 0 ${svgW} ${svgH}`} preserveAspectRatio="xMinYMid meet" style={{ maxHeight: "100%" }}>
           {/* Month labels */}
           {monthLabels.map(({ weekIdx, label }) => (
             <text
@@ -810,44 +852,37 @@ export function ActivityHeatmap({
           ))}
           {/* Day-of-week labels: Mon (row 0), Wed (row 2), Fri (row 4) */}
           {[
-            { y: 0, label: '周一' },
-            { y: 2, label: '周三' },
-            { y: 4, label: '周五' },
+            { y: 0, label: "周一" },
+            { y: 2, label: "周三" },
+            { y: 4, label: "周五" },
           ].map(({ y, label }) => (
-            <text
-              key={`d-${y}`}
-              x={0}
-              y={HEATMAP_MONTH_LABEL_H + y * HEATMAP_STEP + HEATMAP_CELL - 4}
-              fontSize={10}
-              fontFamily="JetBrains Mono"
-              fill="#8888a0"
-            >
+            <text key={`d-${y}`} x={0} y={HEATMAP_MONTH_LABEL_H + y * HEATMAP_STEP + HEATMAP_CELL - 4} fontSize={10} fontFamily="JetBrains Mono" fill="#8888a0">
               {label}
             </text>
           ))}
           {/* Cells */}
           {cells.map((c) => {
-            const x = HEATMAP_DAY_LABEL_W + c.weekIdx * HEATMAP_STEP
-            const y = HEATMAP_MONTH_LABEL_H + c.dayIdx * HEATMAP_STEP
-            const bucket = heatmapBucket(c.dose)
+            const x = HEATMAP_DAY_LABEL_W + c.weekIdx * HEATMAP_STEP;
+            const y = HEATMAP_MONTH_LABEL_H + c.dayIdx * HEATMAP_STEP;
+            const bucket = heatmapBucket(c.dose);
             const fill = (() => {
-              if (c.dayState === 'future') return 'transparent'
-              if (c.dayState === 'unknown') return HEATMAP_UNKNOWN_COLOR
-              if (c.dayState === 'absent') return HEATMAP_ABSENT_COLOR
-              return HEATMAP_COLORS[bucket]
-            })()
+              if (c.dayState === "future") return "transparent";
+              if (c.dayState === "unknown") return HEATMAP_UNKNOWN_COLOR;
+              if (c.dayState === "absent") return HEATMAP_ABSENT_COLOR;
+              return HEATMAP_COLORS[bucket];
+            })();
             const stroke = (() => {
-              if (c.isToday) return '#1a1c2e'
-              if (c.dayState === 'unknown') return HEATMAP_UNKNOWN_STROKE
-              if (c.dayState === 'absent' || c.dayState === 'future') return HEATMAP_GRID_STROKE
-              return 'none'
-            })()
+              if (c.isToday) return "#1a1c2e";
+              if (c.dayState === "unknown") return HEATMAP_UNKNOWN_STROKE;
+              if (c.dayState === "absent" || c.dayState === "future") return HEATMAP_GRID_STROKE;
+              return "none";
+            })();
             const strokeDash = (() => {
-              if (c.dayState === 'future') return '2 2'
-              if (c.dayState === 'unknown') return '3 2'
-              if (c.dayState === 'absent') return '1 3'
-              return undefined
-            })()
+              if (c.dayState === "future") return "2 2";
+              if (c.dayState === "unknown") return "3 2";
+              if (c.dayState === "absent") return "1 3";
+              return undefined;
+            })();
             return (
               <rect
                 key={c.date}
@@ -861,77 +896,88 @@ export function ActivityHeatmap({
                 rx={3}
                 fill={fill}
                 stroke={stroke}
-                strokeWidth={c.dayState === 'active' || c.dayState === 'rest' ? (c.isToday ? 1 : 0) : 1}
+                strokeWidth={c.dayState === "active" || c.dayState === "rest" ? (c.isToday ? 1 : 0) : 1}
                 strokeDasharray={strokeDash}
-                onMouseEnter={c.isFuture ? undefined : (e) => {
-                  setHovered({ date: c.date, x: e.clientX, y: e.clientY })
-                }}
-                onMouseMove={c.isFuture ? undefined : (e) => {
-                  setHovered({ date: c.date, x: e.clientX, y: e.clientY })
-                }}
+                onMouseEnter={
+                  c.isFuture
+                    ? undefined
+                    : (e) => {
+                        setHovered({ date: c.date, x: e.clientX, y: e.clientY });
+                      }
+                }
+                onMouseMove={
+                  c.isFuture
+                    ? undefined
+                    : (e) => {
+                        setHovered({ date: c.date, x: e.clientX, y: e.clientY });
+                      }
+                }
                 onMouseLeave={c.isFuture ? undefined : () => setHovered(null)}
               />
-            )
+            );
           })}
         </svg>
         {/* Legend */}
         <div className="flex items-center justify-start gap-1.5 mt-2 ml-1 text-[10px] font-mono text-text-muted">
           <span>少</span>
           {HEATMAP_COLORS.map((color, i) => (
-            <span
-              key={i}
-              className="inline-block w-3 h-3 rounded-sm"
-              style={{ backgroundColor: color }}
-            />
+            <span key={i} className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
           ))}
           <span>多</span>
         </div>
       </div>
       {/* Tooltip rendered via Portal into document.body so it isn't trapped
           by any ancestor transform / filter that would re-anchor position:fixed. */}
-      {hovered && (() => {
-        const hoveredCell = cells.find((c) => c.date === hovered.date)
-        const hoveredRow = seriesByDate.get(hovered.date)
-        return createPortal(
-          <div
-            style={{
-              position: 'fixed',
-              left: hovered.x + 12,
-              top: hovered.y + 12,
-              zIndex: 50,
-              pointerEvents: 'none',
-            }}
-          >
-            <DailyDoseTooltip
-              active={true}
-              payload={[{
-                payload: {
-                  date: hovered.date,
-                  training_dose: hoveredCell?.dose ?? null,
-                  coverage_status: hoveredRow?.coverage_status,
-                  dayState: hoveredCell?.dayState,
-                },
-              }]}
-              activitiesByDate={activitiesByDate}
-            />
-          </div>,
-          document.body,
-        )
-      })()}
+      {hovered &&
+        (() => {
+          const hoveredCell = cells.find((c) => c.date === hovered.date);
+          const hoveredRow = seriesByDate.get(hovered.date);
+          return createPortal(
+            <div
+              style={{
+                position: "fixed",
+                left: hovered.x + 12,
+                top: hovered.y + 12,
+                zIndex: 50,
+                pointerEvents: "none",
+              }}
+            >
+              <DailyDoseTooltip
+                active={true}
+                payload={[
+                  {
+                    payload: {
+                      date: hovered.date,
+                      training_dose: hoveredCell?.dose ?? null,
+                      coverage_status: hoveredRow?.coverage_status,
+                      dayState: hoveredCell?.dayState,
+                    },
+                  },
+                ]}
+                activitiesByDate={activitiesByDate}
+              />
+            </div>,
+            document.body,
+          );
+        })()}
     </div>
-  )
+  );
 }
 
-function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
-  load: StrideTrainingLoadResponse | null
-  dailyWindowDays: number
-  activitiesByDate: Map<string, Activity[]>
+function TrainingLoadSection({
+  load,
+  dailyWindowDays,
+  activitiesByDate,
+}: {
+  load: StrideTrainingLoadResponse | null;
+  dailyWindowDays: number;
+  activitiesByDate: Map<string, Activity[]>;
 }) {
-  const cur = load?.current
+  const cur = load?.current;
   // Daily chart respects the user's window; weekly chart always uses the
   // full series the parent fetched (≥ 56 days) so all 8 buckets fill.
-  const rawSeries = (load?.series ?? []).map((row) => (
-    row.coverage_status === 'unknown'
+  const rawSeries = (load?.series ?? []).map((row) =>
+    row.coverage_status === "unknown"
       ? {
           ...row,
           training_dose: null,
@@ -940,28 +986,29 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
           form: null,
           load_ratio: null,
         }
-      : row
-  ))
+      : row,
+  );
   const series = rawSeries.slice(-dailyWindowDays).map((r) => ({
     ...r,
     dateLabel: formatDateShort(r.date),
-  }))
+  }));
   const weeklySeries = useMemo(
-    () => aggregateWeeklyDose(rawSeries).map((b) => ({
-      ...b,
-      totalDose: b.totalDose == null ? null : Math.round(b.totalDose * 10) / 10,
-    })),
+    () =>
+      aggregateWeeklyDose(rawSeries).map((b) => ({
+        ...b,
+        totalDose: b.totalDose == null ? null : Math.round(b.totalDose * 10) / 10,
+      })),
     [rawSeries],
-  )
+  );
 
   const stateLabel = (() => {
-    const ratio = cur?.load_ratio
-    if (ratio == null) return '—'
-    if (ratio < 0.8) return '恢复期'
-    if (ratio < 1.0) return '维持期'
-    if (ratio < 1.3) return '提升期'
-    return '过度负荷'
-  })()
+    const ratio = cur?.load_ratio;
+    if (ratio == null) return "—";
+    if (ratio < 0.8) return "恢复期";
+    if (ratio < 1.0) return "维持期";
+    if (ratio < 1.3) return "提升期";
+    return "过度负荷";
+  })();
 
   return (
     <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 mb-6">
@@ -973,39 +1020,70 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
             <LoadStat
               label="训练负荷(Dose)"
-              value={cur.training_dose?.toFixed(0) ?? '—'}
+              value={cur.training_dose?.toFixed(0) ?? "—"}
               color="#e68a00"
-              help={<><strong>当日 STRIDE 客观训练剂量</strong>。基于配速 × 心率区间累积的应激分。{'\n\n'}使用方法：{'\n'}• 是 Acute / Chronic 的输入；单日值高 = 当天硬课{'\n'}• 日累计 → 7 天平均 = Acute Load{'\n'}• 用于横向跨课次量化训练应激而非主观 RPE</>}
+              help={
+                <>
+                  <strong>当日 STRIDE 客观训练剂量</strong>。基于配速 × 心率区间累积的应激分。{"\n\n"}使用方法：{"\n"}• 是 Acute / Chronic 的输入；单日值高 =
+                  当天硬课{"\n"}• 日累计 → 7 天平均 = Acute Load{"\n"}• 用于横向跨课次量化训练应激而非主观 RPE
+                </>
+              }
             />
             <LoadStat
               label="急性负荷(Acute)"
-              value={cur.acute_load?.toFixed(1) ?? '—'}
+              value={cur.acute_load?.toFixed(1) ?? "—"}
               color="#d97706"
-              help={<><strong>近 7 天指数加权训练剂量</strong>。代表当前训练应激强度。{'\n\n'}使用方法：{'\n'}• 高于慢性负荷 → 负荷累积期{'\n'}• 低于慢性负荷 → 恢复 / 减量期{'\n'}• 单日突增 = 比赛或高质量课{'\n'}• 与慢性负荷波浪式交替为健康节奏</>}
+              help={
+                <>
+                  <strong>近 7 天指数加权训练剂量</strong>。代表当前训练应激强度。{"\n\n"}使用方法：{"\n"}• 高于慢性负荷 → 负荷累积期{"\n"}• 低于慢性负荷 → 恢复
+                  / 减量期{"\n"}• 单日突增 = 比赛或高质量课{"\n"}• 与慢性负荷波浪式交替为健康节奏
+                </>
+              }
             />
             <LoadStat
               label="慢性负荷(Chronic)"
-              value={cur.chronic_load?.toFixed(1) ?? '—'}
+              value={cur.chronic_load?.toFixed(1) ?? "—"}
               color="#0097a7"
-              help={<><strong>近 42 天指数加权训练剂量</strong>。代表长期体能基线。{'\n\n'}使用方法：{'\n'}• 缓慢上升 = 健康进步{'\n'}• 持平 = 维持期{'\n'}• 下降 = 体能流失，需加量{'\n'}• 上升过快（每周 +8 以上）= 易受伤</>}
+              help={
+                <>
+                  <strong>近 42 天指数加权训练剂量</strong>。代表长期体能基线。{"\n\n"}使用方法：{"\n"}• 缓慢上升 = 健康进步{"\n"}• 持平 = 维持期{"\n"}• 下降 =
+                  体能流失，需加量{"\n"}• 上升过快（每周 +8 以上）= 易受伤
+                </>
+              }
             />
             <LoadStat
               label="竞技状态(Form)"
-              value={cur.form != null ? (cur.form > 0 ? `+${cur.form.toFixed(1)}` : cur.form.toFixed(1)) : '—'}
-              color={classifyForm(cur.form, cur.chronic_load) === 'overload' ? '#d32f2f' : '#00a85a'}
-              help={<><strong>Form = 慢性负荷 − 急性负荷</strong>。衡量已从近期训练中恢复多少。{'\n\n'}阈值按当日慢性负荷 (CTL) 比例划分：{'\n'}• +10% ~ +25% × CTL = 比赛就绪，竞技甜区{'\n'}• −10% ~ +10% × CTL = 维持期，acute ≈ chronic，体能持平{'\n'}• −25% ~ −10% × CTL = 提升期，acute &gt; chronic，驱动体能进步{'\n'}• 低于 −25% × CTL = 过度负荷，必须减量{'\n'}• 高于 +25% × CTL = 减量过多，开始流失体能</>}
+              value={cur.form != null ? (cur.form > 0 ? `+${cur.form.toFixed(1)}` : cur.form.toFixed(1)) : "—"}
+              color={classifyForm(cur.form, cur.chronic_load) === "overload" ? "#d32f2f" : "#00a85a"}
+              help={
+                <>
+                  <strong>Form = 慢性负荷 − 急性负荷</strong>。衡量已从近期训练中恢复多少。{"\n\n"}阈值按当日慢性负荷 (CTL) 比例划分：{"\n"}• +10% ~ +25% × CTL
+                  = 比赛就绪，竞技甜区{"\n"}• −10% ~ +10% × CTL = 维持期，acute ≈ chronic，体能持平{"\n"}• −25% ~ −10% × CTL = 提升期，acute &gt;
+                  chronic，驱动体能进步{"\n"}• 低于 −25% × CTL = 过度负荷，必须减量{"\n"}• 高于 +25% × CTL = 减量过多，开始流失体能
+                </>
+              }
             />
             <LoadStat
               label="负荷比(Ratio)"
-              value={cur.load_ratio?.toFixed(2) ?? '—'}
+              value={cur.load_ratio?.toFixed(2) ?? "—"}
               color="#7a4dd4"
-              help={<><strong>ACWR = 急性 / 慢性</strong>。衡量近期负荷相对长期基线。{'\n\n'}使用方法：{'\n'}• 0.8 – 1.1 = 健康训练区{'\n'}• 高于 1.2 = 过度应激，减量{'\n'}• 高于 1.5 = 极高风险，强制休息{'\n'}• 低于 0.7 = 流失体能，需加量{'\n'}• 4 周块均值 ≈ 1.0 为理想周期化</>}
+              help={
+                <>
+                  <strong>ACWR = 急性 / 慢性</strong>。衡量近期负荷相对长期基线。{"\n\n"}使用方法：{"\n"}• 0.8 – 1.1 = 健康训练区{"\n"}• 高于 1.2 =
+                  过度应激，减量{"\n"}• 高于 1.5 = 极高风险，强制休息{"\n"}• 低于 0.7 = 流失体能，需加量{"\n"}• 4 周块均值 ≈ 1.0 为理想周期化
+                </>
+              }
             />
             <LoadStat
               label="状态"
               value={stateLabel}
               color="#1a1c2e"
-              help={<><strong>由负荷比衍生的状态分类</strong>，给出今日训练决策参考。{'\n\n'}阈值：{'\n'}• 恢复期：ratio &lt; 0.8{'\n'}• 维持期：0.8 – 1.0（持平）{'\n'}• 提升期：1.0 – 1.3（驱动进步）{'\n'}• 过度负荷：&gt; 1.3</>}
+              help={
+                <>
+                  <strong>由负荷比衍生的状态分类</strong>，给出今日训练决策参考。{"\n\n"}阈值：{"\n"}• 恢复期：ratio &lt; 0.8{"\n"}• 维持期：0.8 – 1.0（持平）
+                  {"\n"}• 提升期：1.0 – 1.3（驱动进步）{"\n"}• 过度负荷：&gt; 1.3
+                </>
+              }
             />
           </div>
           <div className="text-[11px] font-mono text-text-muted mb-2 flex items-center flex-wrap gap-x-1">
@@ -1014,12 +1092,10 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
               className="px-1.5 py-0.5 rounded font-semibold"
               style={{ color: readinessColor(cur.readiness_gate), backgroundColor: `${readinessColor(cur.readiness_gate)}15` }}
             >
-              {cur.readiness_gate ? readinessGateLabel(cur.readiness_gate) : '—'}
+              {cur.readiness_gate ? readinessGateLabel(cur.readiness_gate) : "—"}
               {cur.readiness_gate && ` · ${readinessLabel(cur.readiness_gate)}`}
             </span>
-            {cur.readiness_reasons.length > 0 && (
-              <span className="text-text-faint">· {cur.readiness_reasons.join(' · ')}</span>
-            )}
+            {cur.readiness_reasons.length > 0 && <span className="text-text-faint">· {cur.readiness_reasons.join(" · ")}</span>}
           </div>
           {series.length > 0 && (
             <>
@@ -1048,9 +1124,27 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
                     <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
                     <YAxis tick={AXIS_TICK} />
                     <Tooltip {...TOOLTIP_STYLE} />
-                    <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'JetBrains Mono' }} />
-                    <Area type="monotone" dataKey="chronic_load" name="慢性负荷" stroke="#00a85a" strokeWidth={2} fill="url(#gradTrainingLoadChronic)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#fff', strokeWidth: 2 }} />
-                    <Line type="monotone" dataKey="acute_load" name="急性负荷" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
+                    <Legend wrapperStyle={{ fontSize: 10, fontFamily: "JetBrains Mono" }} />
+                    <Area
+                      type="monotone"
+                      dataKey="chronic_load"
+                      name="慢性负荷"
+                      stroke="#00a85a"
+                      strokeWidth={2}
+                      fill="url(#gradTrainingLoadChronic)"
+                      dot={false}
+                      activeDot={{ r: 3, fill: "#00a85a", stroke: "#fff", strokeWidth: 2 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="acute_load"
+                      name="急性负荷"
+                      stroke="#0097a7"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 3"
+                      dot={false}
+                      activeDot={{ r: 3, fill: "#0097a7", stroke: "#fff", strokeWidth: 2 }}
+                    />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -1065,11 +1159,11 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
                     <Tooltip
                       {...TOOLTIP_STYLE}
                       formatter={(v: unknown, _name, ctx) => {
-                        if (typeof v !== 'number') return [`${v}`, '竞技状态']
-                        const row = (ctx as { payload?: { chronic_load?: number | null } } | undefined)?.payload
-                        const zone = classifyForm(v, row?.chronic_load)
-                        const label = zone ? FORM_ZONE_LABEL[zone] : '—'
-                        return [`${v > 0 ? '+' : ''}${v.toFixed(1)} (${label})`, '竞技状态']
+                        if (typeof v !== "number") return [`${v}`, "竞技状态"];
+                        const row = (ctx as { payload?: { chronic_load?: number | null } } | undefined)?.payload;
+                        const zone = classifyForm(v, row?.chronic_load);
+                        const label = zone ? FORM_ZONE_LABEL[zone] : "—";
+                        return [`${v > 0 ? "+" : ""}${v.toFixed(1)} (${label})`, "竞技状态"];
                       }}
                     />
                     <ReferenceLine y={0} stroke="#8888a0" strokeWidth={1} />
@@ -1081,13 +1175,15 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
                   </BarChart>
                 </ResponsiveContainer>
                 <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-3 ml-1">
-                  {([
-                    ['race_ready', '比赛就绪 (+10% ~ +25% × CTL)'],
-                    ['transition', '维持期 (±10% × CTL)'],
-                    ['productive', '提升期 (−25% ~ −10% × CTL)'],
-                    ['overload', '过度负荷 (< −25% × CTL)'],
-                    ['over_taper', '减量过多 (> +25% × CTL)'],
-                  ] as const).map(([zone, label]) => (
+                  {(
+                    [
+                      ["race_ready", "比赛就绪 (+10% ~ +25% × CTL)"],
+                      ["transition", "维持期 (±10% × CTL)"],
+                      ["productive", "提升期 (−25% ~ −10% × CTL)"],
+                      ["overload", "过度负荷 (< −25% × CTL)"],
+                      ["over_taper", "减量过多 (> +25% × CTL)"],
+                    ] as const
+                  ).map(([zone, label]) => (
                     <span key={zone} className="flex items-center gap-1.5 text-xs font-mono text-text-secondary">
                       <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: FORM_ZONE_COLOR[zone] }} />
                       {label}
@@ -1112,13 +1208,13 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
                       <Tooltip
                         {...TOOLTIP_STYLE}
                         labelFormatter={(label: unknown, payload) => {
-                          const row = payload?.[0]?.payload as { weekStart?: string } | undefined
-                          return row?.weekStart ? `周一 ${row.weekStart}` : `${label}`
+                          const row = payload?.[0]?.payload as { weekStart?: string } | undefined;
+                          return row?.weekStart ? `周一 ${row.weekStart}` : `${label}`;
                         }}
                         formatter={(value: unknown, _name, ctx) => {
-                          const row = (ctx as { payload?: { activeDays?: number } } | undefined)?.payload
-                          const dose = typeof value === 'number' ? value.toFixed(1) : '数据不完整'
-                          return [`${dose}（${row?.activeDays ?? 0} 天）`, '周剂量']
+                          const row = (ctx as { payload?: { activeDays?: number } } | undefined)?.payload;
+                          const dose = typeof value === "number" ? value.toFixed(1) : "数据不完整";
+                          return [`${dose}（${row?.activeDays ?? 0} 天）`, "周剂量"];
                         }}
                       />
                       <Line
@@ -1127,40 +1223,29 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
                         name="周剂量"
                         stroke="#e68a00"
                         strokeWidth={2}
-                        dot={{ r: 3.5, fill: '#e68a00', stroke: '#fff', strokeWidth: 1.5 }}
-                        activeDot={{ r: 5, fill: '#e68a00', stroke: '#fff', strokeWidth: 2 }}
+                        dot={{ r: 3.5, fill: "#e68a00", stroke: "#fff", strokeWidth: 1.5 }}
+                        activeDot={{ r: 5, fill: "#e68a00", stroke: "#fff", strokeWidth: 2 }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
-                <ActivityHeatmap
-                  weeks={16}
-                  series={rawSeries}
-                  activitiesByDate={activitiesByDate}
-                />
+                <ActivityHeatmap weeks={16} series={rawSeries} activitiesByDate={activitiesByDate} />
               </div>
             </>
           )}
         </>
       )}
     </div>
-  )
+  );
 }
 
 // === Task 12: DataStatusFooter ===
-function DataStatusFooter({
-  zones, load,
-}: {
-  zones: StrideZonesResponse | null
-  load: StrideTrainingLoadResponse | null
-}) {
+function DataStatusFooter({ zones, load }: { zones: StrideZonesResponse | null; load: StrideTrainingLoadResponse | null }) {
   return (
     <div className="text-[10px] font-mono text-text-faint border-t border-border-subtle pt-3 mt-4 space-y-0.5">
-      <div>
-        Calibration: {zones?.threshold?.as_of_date ?? '—'} · 来源：STRIDE 自研算法
-      </div>
-      <div>Training load latest: {load?.current?.date ?? '—'}</div>
+      <div>Calibration: {zones?.threshold?.as_of_date ?? "—"} · 来源：STRIDE 自研算法</div>
+      <div>Training load latest: {load?.current?.date ?? "—"}</div>
       <div>RHR / HRV: 来自手表原始读数（COROS / Garmin）</div>
     </div>
-  )
+  );
 }

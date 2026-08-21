@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -34,15 +34,7 @@ expect(designSystem.theme.typography["body-lg"].fontWeight === "500", "body weig
 expect(designSystem.theme.typography["metric-value"].fontFamily === "Geist Mono", "metrics must use Geist Mono");
 expect(designSystem.theme.spacing["touch-target"] === "48px", "touch target must be 48px");
 
-for (const token of [
-  "#07080A",
-  "#101111",
-  "#FF6363",
-  "Inter",
-  "Geist Mono",
-  "rgba(255,255,255,0.06)",
-  "cubic-bezier(0.2,0,0,1)",
-]) {
+for (const token of ["#07080A", "#101111", "#FF6363", "Inter", "Geist Mono", "rgba(255,255,255,0.06)", "cubic-bezier(0.2,0,0,1)"]) {
   expect(foundation.includes(token), `foundation is missing ${token}`);
 }
 
@@ -70,6 +62,13 @@ for (const screen of manifest.screens) {
     expect(screen.confirmedVerified === true, `approved screen ${screen.screenId} is not confirmed as verified`);
   }
 }
+
+const artifactFiles = (await readdir(join(root, "artifacts"))).filter((name) => name.endsWith(".html"));
+const referencedArtifacts = new Set(
+  manifest.screens.flatMap((screen) => screen.html ? [basename(screen.html)] : []),
+);
+const orphanArtifacts = artifactFiles.filter((name) => !referencedArtifacts.has(name));
+expect(orphanArtifacts.length === 0, `orphan HTML artifacts are not allowed: ${orphanArtifacts.join(", ")}`);
 
 const processBriefs = briefFiles.filter((name) => /(?:^|[-_])(fix|refine|verify)(?:[-_.]|$)/i.test(name));
 expect(processBriefs.length === 0, `process briefs must not be archived: ${processBriefs.join(", ")}`);

@@ -24,16 +24,16 @@ import { getLogger } from "../utils/logger.js";
 
 /** Best-effort tool name from a bound tool (ClientTool has `name`; ServerTool is opaque). */
 function toolName(tool: unknown): string {
-	return (tool as { name?: string })?.name ?? "<unknown>";
+  return (tool as { name?: string })?.name ?? "<unknown>";
 }
 
 function valueSize(value: unknown): number | null {
-	if (typeof value === "string") return value.length;
-	try {
-		return JSON.stringify(value)?.length ?? null;
-	} catch {
-		return null;
-	}
+  if (typeof value === "string") return value.length;
+  try {
+    return JSON.stringify(value)?.length ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -41,74 +41,74 @@ function valueSize(value: unknown): number | null {
  * `"agent:qa"`), so main-agent and subagent turns stay filterable in the logs.
  */
 export function createLoggingMiddleware(scope = "agent") {
-	const log = getLogger(scope);
+  const log = getLogger(scope);
 
-	return createMiddleware({
-		name: `LoggingMiddleware(${scope})`,
+  return createMiddleware({
+    name: `LoggingMiddleware(${scope})`,
 
-		// One LLM call: what tools were bound → what the model decided to call.
-		wrapModelCall: async (request, handler) => {
-			const startedAt = Date.now();
-			const messageCount = Object.keys(request.messages).length;
-			const lastMessage = request.messages[messageCount - 1];
-			log.info(
-				{
-					type: lastMessage?.type,
-					contentChars: valueSize(lastMessage?.content),
-					totalMessages: messageCount,
-					boundTools: request.tools.map(toolName).join(", "),
-				},
-				"message sent to LLM,",
-			);
+    // One LLM call: what tools were bound → what the model decided to call.
+    wrapModelCall: async (request, handler) => {
+      const startedAt = Date.now();
+      const messageCount = Object.keys(request.messages).length;
+      const lastMessage = request.messages[messageCount - 1];
+      log.info(
+        {
+          type: lastMessage?.type,
+          contentChars: valueSize(lastMessage?.content),
+          totalMessages: messageCount,
+          boundTools: request.tools.map(toolName).join(", "),
+        },
+        "message sent to LLM,",
+      );
 
-			const response = await handler(request);
+      const response = await handler(request);
 
-			const toolCalls = response.tool_calls ?? [];
-			log.info(
-				{
-					ms: Date.now() - startedAt,
-					toolCalls: toolCalls.map((call) => call.name).join(", "),
-					done: toolCalls.length === 0,
-				},
-				"response received from LLM,",
-			);
-			return response;
-		},
+      const toolCalls = response.tool_calls ?? [];
+      log.info(
+        {
+          ms: Date.now() - startedAt,
+          toolCalls: toolCalls.map((call) => call.name).join(", "),
+          done: toolCalls.length === 0,
+        },
+        "response received from LLM,",
+      );
+      return response;
+    },
 
-		// One tool execution: name + latency (arg keys only, never values).
-		wrapToolCall: async (request, handler) => {
-			const startedAt = Date.now();
-			const name = request.toolCall.name;
-			log.info(
-				{
-					tool: name,
-					argKeys: Object.keys(request.toolCall.args ?? {}),
-				},
-				"tool call request,",
-			);
+    // One tool execution: name + latency (arg keys only, never values).
+    wrapToolCall: async (request, handler) => {
+      const startedAt = Date.now();
+      const name = request.toolCall.name;
+      log.info(
+        {
+          tool: name,
+          argKeys: Object.keys(request.toolCall.args ?? {}),
+        },
+        "tool call request,",
+      );
 
-			try {
-				const result = await handler(request);
-				log.info(
-					{
-						tool: name,
-						ms: Date.now() - startedAt,
-						resultChars: valueSize(result),
-					},
-					"after tool execution,",
-				);
-				return result;
-			} catch (error) {
-				log.warn(
-					{
-						tool: name,
-						ms: Date.now() - startedAt,
-						err: (error as Error).message,
-					},
-					"tool ✗",
-				);
-				throw error;
-			}
-		},
-	});
+      try {
+        const result = await handler(request);
+        log.info(
+          {
+            tool: name,
+            ms: Date.now() - startedAt,
+            resultChars: valueSize(result),
+          },
+          "after tool execution,",
+        );
+        return result;
+      } catch (error) {
+        log.warn(
+          {
+            tool: name,
+            ms: Date.now() - startedAt,
+            err: (error as Error).message,
+          },
+          "tool ✗",
+        );
+        throw error;
+      }
+    },
+  });
 }

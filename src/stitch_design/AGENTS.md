@@ -61,7 +61,7 @@ source "$HOME/.zshrc" && npm run stitch -- variants <screen-id> briefs/<brief>.m
 
 生成候选、自动检查、查看 artifact、提出修改意见都不构成人工批准。不得原地覆盖已批准 artifact；需要继续迭代时，先清除 manifest 中的批准和确认项目字段，再导出新候选。候选 HTML 的 SHA-256 发生变化后，之前的批准立即失效，manifest 必须恢复为未批准状态，并重新完成视觉验证和人工批准。批准前不得在确认项目中创建或更新 screen。
 
-本门禁引入前归档的 `legacy-*` 页面不补造批准 hash 或确认项目记录；它们只用于历史追踪。任何后续视觉编辑都会产生新的 Raycast candidate，并完整进入上述审批流程。
+旧设计系统页面不再保存在 canonical artifacts 或 manifest 中。需要迁移的页面从 canonical brief 重新生成 Raycast candidate，并完整进入上述审批流程。
 
 ## 本地下载（HARD）
 
@@ -73,7 +73,7 @@ source "$HOME/.zshrc" && npm run stitch -- variants <screen-id> briefs/<brief>.m
 示例：
 
 ```bash
-source "$HOME/.zshrc" && npm run stitch -- export <screen-id> --slug <slug>
+source "$HOME/.zshrc" && npm run stitch -- export <screen-id> --slug <slug> --brief briefs/<brief>.md
 ```
 
 下载规则：
@@ -105,7 +105,7 @@ source "$HOME/.zshrc" && npm run stitch -- export <screen-id> --slug <slug>
 - 不出现白底 Foundation、`发现` 底部 Tab、旧术语、全局绿色主色、玻璃效果或无关占位 CTA；
 - 加载、空、错误、离线等适用状态有明确设计。
 
-已归档且在 manifest 中标记为 `legacy-*` 的 HTML 只用于历史追踪，不可作为新页面的视觉参考。新设计或视觉编辑完成后不得保留 `legacy-*` 标记。
+canonical artifacts 只允许保存通过当前 Raycast Foundation 人工批准的 HTML；旧设计和未批准候选均不得归档。
 
 ## 发布与收尾
 

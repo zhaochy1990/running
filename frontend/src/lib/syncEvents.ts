@@ -1,1 +1,1 @@
-export const SYNC_COMPLETED_EVENT = 'stride:sync-completed'
+export const SYNC_COMPLETED_EVENT = "stride:sync-completed";

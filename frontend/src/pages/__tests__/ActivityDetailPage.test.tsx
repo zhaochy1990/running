@@ -1,12 +1,12 @@
-import { render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-import { getActivity, getPlanDays } from '../../api'
-import { UserContext } from '../../UserContextValue'
-import ActivityDetailPage from '../ActivityDetailPage'
+import { getActivity, getPlanDays } from "../../api";
+import { UserContext } from "../../UserContextValue";
+import ActivityDetailPage from "../ActivityDetailPage";
 
-vi.mock('../../api', () => ({
+vi.mock("../../api", () => ({
   getActivity: vi.fn(),
   getTeamActivity: vi.fn(),
   resyncActivity: vi.fn(),
@@ -14,24 +14,24 @@ vi.mock('../../api', () => ({
   getPlanDays: vi.fn(),
   formatDate: (value: string) => value,
   formatTime: (value: string) => value,
-  sportColor: () => '#00a85a',
-  trainTypeColor: () => '#0097a7',
+  sportColor: () => "#00a85a",
+  trainTypeColor: () => "#0097a7",
   sportNameCN: (value: string) => value,
-  trainTypeCN: (value: string | null) => value ?? '',
-}))
+  trainTypeCN: (value: string | null) => value ?? "",
+}));
 
 const activity = {
-  label_id: 'run1',
-  name: 'Easy Run',
+  label_id: "run1",
+  name: "Easy Run",
   sport_type: 402,
-  sport_name: 'Strength',
-  date: '2026-05-19T06:30:00+08:00',
+  sport_name: "Strength",
+  date: "2026-05-19T06:30:00+08:00",
   distance_m: 0,
   distance_km: 0,
   duration_s: 3600,
-  duration_fmt: '01:00:00',
+  duration_fmt: "01:00:00",
   avg_pace_s_km: null,
-  pace_fmt: '—',
+  pace_fmt: "—",
   avg_hr: 145,
   max_hr: 170,
   avg_cadence: null,
@@ -50,26 +50,26 @@ const activity = {
   sport_note: null,
   pauses: [],
   route_thumb: null,
-}
+};
 
 function renderActivityDetail() {
   return render(
-    <UserContext.Provider value={{ user: 'test-user', displayName: 'Test User', refresh: async () => {} }}>
-      <MemoryRouter initialEntries={['/activity/run1']}>
+    <UserContext.Provider value={{ user: "test-user", displayName: "Test User", refresh: async () => {} }}>
+      <MemoryRouter initialEntries={["/activity/run1"]}>
         <Routes>
           <Route path="/activity/:id" element={<ActivityDetailPage />} />
         </Routes>
       </MemoryRouter>
     </UserContext.Provider>,
-  )
+  );
 }
 
-describe('ActivityDetailPage', () => {
+describe("ActivityDetailPage", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-  })
+    vi.clearAllMocks();
+  });
 
-  it('labels provider load as watch load and renders STRIDE load when present', async () => {
+  it("labels provider load as watch load and renders STRIDE load when present", async () => {
     vi.mocked(getActivity).mockResolvedValue({
       activity,
       laps: [],
@@ -78,10 +78,10 @@ describe('ActivityDetailPage', () => {
       timeseries: [],
       linked_scheduled_workout: null,
       stride_training_load: {
-        label_id: 'run1',
-        activity_date: '2026-05-19',
-        sport: 'run_outdoor',
-        session_class: 'easy',
+        label_id: "run1",
+        activity_date: "2026-05-19",
+        sport: "run_outdoor",
+        session_class: "easy",
         algorithm_version: 1,
         calibration_id: null,
         cardio_load_raw: 70.5,
@@ -91,40 +91,40 @@ describe('ActivityDetailPage', () => {
         mechanical_load: 10.3,
         subjective_internal_load: null,
         training_dose: 86.4,
-        training_dose_source: 'conservative_fusion+high_intensity',
+        training_dose_source: "conservative_fusion+high_intensity",
         cardio_coverage: 1.0,
         external_coverage: 1.0,
         high_intensity_coverage: 1.0,
-        coverage_status: 'complete',
-        load_confidence: 'high',
+        coverage_status: "complete",
+        load_confidence: "high",
         excluded_from_pmc: false,
-        reasons: ['gps_ok'],
+        reasons: ["gps_ok"],
       },
-    } as unknown as Awaited<ReturnType<typeof getActivity>>)
-    vi.mocked(getPlanDays).mockResolvedValue({ days: [] })
+    } as unknown as Awaited<ReturnType<typeof getActivity>>);
+    vi.mocked(getPlanDays).mockResolvedValue({ days: [] });
 
-    renderActivityDetail()
+    renderActivityDetail();
 
-    expect(await screen.findByText('Easy Run')).toBeInTheDocument()
-    expect(screen.getByText('手表负荷')).toBeInTheDocument()
-    expect(screen.getByText('STRIDE 客观负荷')).toBeInTheDocument()
-    expect(screen.getByText('训练剂量')).toBeInTheDocument()
-    expect(screen.getByText('86.4')).toBeInTheDocument()
-    expect(screen.getByText('高强度加成')).toBeInTheDocument()
-    expect(screen.getByText('12.3')).toBeInTheDocument()
-    expect(screen.getByText('gps_ok')).toBeInTheDocument()
-  })
+    expect(await screen.findByText("Easy Run")).toBeInTheDocument();
+    expect(screen.getByText("手表负荷")).toBeInTheDocument();
+    expect(screen.getByText("STRIDE 客观负荷")).toBeInTheDocument();
+    expect(screen.getByText("训练剂量")).toBeInTheDocument();
+    expect(screen.getByText("86.4")).toBeInTheDocument();
+    expect(screen.getByText("高强度加成")).toBeInTheDocument();
+    expect(screen.getByText("12.3")).toBeInTheDocument();
+    expect(screen.getByText("gps_ok")).toBeInTheDocument();
+  });
 
-  it('does not fetch or render plan comparison on activity detail', async () => {
+  it("does not fetch or render plan comparison on activity detail", async () => {
     vi.mocked(getActivity).mockResolvedValue({
       activity: {
         ...activity,
         sport_type: 100,
-        sport_name: 'Run',
+        sport_name: "Run",
         distance_m: 10,
         distance_km: 10,
         avg_pace_s_km: 300,
-        pace_fmt: '5:00/km',
+        pace_fmt: "5:00/km",
       },
       laps: [],
       segments: [],
@@ -132,20 +132,20 @@ describe('ActivityDetailPage', () => {
       timeseries: [],
       linked_scheduled_workout: null,
       stride_training_load: null,
-    } as unknown as Awaited<ReturnType<typeof getActivity>>)
+    } as unknown as Awaited<ReturnType<typeof getActivity>>);
     vi.mocked(getPlanDays).mockResolvedValue({
       days: [
         {
-          date: '2026-05-19',
+          date: "2026-05-19",
           sessions: [
             {
               id: 1,
               pushable: false,
-              schema: 'plan-session/v1',
-              date: '2026-05-19',
+              schema: "plan-session/v1",
+              date: "2026-05-19",
               session_index: 0,
-              kind: 'run',
-              summary: 'Easy 10K',
+              kind: "run",
+              summary: "Easy 10K",
               spec: null,
               notes_md: null,
               total_distance_m: 10000,
@@ -156,25 +156,25 @@ describe('ActivityDetailPage', () => {
           nutrition: null,
         },
       ],
-    })
-    renderActivityDetail()
+    });
+    renderActivityDetail();
 
-    expect(await screen.findByText('Easy Run')).toBeInTheDocument()
-    expect(getPlanDays).not.toHaveBeenCalled()
-    expect(screen.queryByTestId('plan-vs-actual-card')).not.toBeInTheDocument()
-    expect(screen.queryByText('训练计划对照')).not.toBeInTheDocument()
-  })
+    expect(await screen.findByText("Easy Run")).toBeInTheDocument();
+    expect(getPlanDays).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("plan-vs-actual-card")).not.toBeInTheDocument();
+    expect(screen.queryByText("训练计划对照")).not.toBeInTheDocument();
+  });
 
-  it('shows the regenerate commentary action when commentary is missing', async () => {
+  it("shows the regenerate commentary action when commentary is missing", async () => {
     vi.mocked(getActivity).mockResolvedValue({
       activity: {
         ...activity,
         sport_type: 100,
-        sport_name: 'Run',
+        sport_name: "Run",
         distance_m: 10,
         distance_km: 10,
         avg_pace_s_km: 300,
-        pace_fmt: '5:00/km',
+        pace_fmt: "5:00/km",
       },
       laps: [],
       segments: [],
@@ -182,11 +182,11 @@ describe('ActivityDetailPage', () => {
       timeseries: [],
       linked_scheduled_workout: null,
       stride_training_load: null,
-    } as unknown as Awaited<ReturnType<typeof getActivity>>)
-    renderActivityDetail()
+    } as unknown as Awaited<ReturnType<typeof getActivity>>);
+    renderActivityDetail();
 
-    expect(await screen.findByText('教练简评')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '重新生成' })).toBeInTheDocument()
-    expect(screen.getByText('（暂无点评 — 点击"重新生成"让 AI 写一条）')).toBeInTheDocument()
-  })
-})
+    expect(await screen.findByText("教练简评")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新生成" })).toBeInTheDocument();
+    expect(screen.getByText('（暂无点评 — 点击"重新生成"让 AI 写一条）')).toBeInTheDocument();
+  });
+});

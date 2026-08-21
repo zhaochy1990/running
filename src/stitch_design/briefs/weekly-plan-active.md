@@ -22,12 +22,11 @@ Review the active week, identify today's key workout, and understand the rest of
 
 ## Navigation
 
-- This archived screen uses legacy `赛季计划 / 周计划` tabs and five-item navigation.
-- Future revisions must use current terminology `赛季训练计划 / 本周课表` and the four-tab navigation.
+- Use current terminology `赛季训练计划 / 本周课表` and the four-item navigation `跑者 / 训练 / 数据 / 教练`, with `训练` active.
 
 ## Constraints
 
-- Preserve this HTML as an approved legacy Ember snapshot; do not treat it as the current visual baseline.
+- Apply the current STRIDE Raycast Mobile Foundation without preserving legacy Ember styling.
 - Do not introduce draft terminology or imply that an active plan still needs activation.
 
 ## Acceptance Checks

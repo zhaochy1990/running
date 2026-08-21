@@ -1,34 +1,34 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { useEffect, useState } from 'react'
-import { useAuthStore } from './store/authStore'
-import { UserProvider } from './UserContext'
-import AppLayout from './components/AppLayout'
-import WeeklyPlanRoute from './pages/WeeklyPlanRoute'
-import ActivityDetailPage from './pages/ActivityDetailPage'
-import HealthPage from './pages/HealthPage'
-import BodyCompositionPage from './pages/BodyCompositionPage'
-import TrainingPlanPage from './pages/TrainingPlanPage'
-import TrainingPlanAdjustPage from './pages/TrainingPlanAdjustPage'
-import ActivitiesPage from './pages/ActivitiesPage'
-import AbilityPage from './pages/AbilityPage'
-import TrainingStatusPage from './pages/TrainingStatusPage'
-import RegisterPage from './pages/RegisterPage'
-import OnboardingWizard from './pages/OnboardingWizard'
-import TeamsListPage from './pages/teams/TeamsListPage'
-import TeamDetailPage from './pages/teams/TeamDetailPage'
-import CreateTeamPage from './pages/teams/CreateTeamPage'
-import UserCenterPage from './pages/UserCenterPage'
-import CoachChatPage from './pages/CoachChatPage'
-import WeeklyPlanAdjustPage from './pages/WeeklyPlanAdjustPage'
-import MasterPlanAdjustPage from './pages/MasterPlanAdjustPage'
-import { useUser } from './UserContextValue'
-import { getMyProfile } from './api'
-import LandingPage from './pages/landing/LandingPage'
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useAuthStore } from "./store/authStore";
+import { UserProvider } from "./UserContext";
+import AppLayout from "./components/AppLayout";
+import WeeklyPlanRoute from "./pages/WeeklyPlanRoute";
+import ActivityDetailPage from "./pages/ActivityDetailPage";
+import HealthPage from "./pages/HealthPage";
+import BodyCompositionPage from "./pages/BodyCompositionPage";
+import TrainingPlanPage from "./pages/TrainingPlanPage";
+import TrainingPlanAdjustPage from "./pages/TrainingPlanAdjustPage";
+import ActivitiesPage from "./pages/ActivitiesPage";
+import AbilityPage from "./pages/AbilityPage";
+import TrainingStatusPage from "./pages/TrainingStatusPage";
+import RegisterPage from "./pages/RegisterPage";
+import OnboardingWizard from "./pages/OnboardingWizard";
+import TeamsListPage from "./pages/teams/TeamsListPage";
+import TeamDetailPage from "./pages/teams/TeamDetailPage";
+import CreateTeamPage from "./pages/teams/CreateTeamPage";
+import UserCenterPage from "./pages/UserCenterPage";
+import CoachChatPage from "./pages/CoachChatPage";
+import WeeklyPlanAdjustPage from "./pages/WeeklyPlanAdjustPage";
+import MasterPlanAdjustPage from "./pages/MasterPlanAdjustPage";
+import { useUser } from "./UserContextValue";
+import { getMyProfile } from "./api";
+import LandingPage from "./pages/landing/LandingPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  if (!isAuthenticated) return <Navigate to="/login" replace />
-  return <>{children}</>
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <>{children}</>;
 }
 
 // `loading` = profile fetch in flight; `error` = the fetch itself failed
@@ -38,64 +38,69 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 // "onboarding needed" — otherwise a transient error on app open bounces an
 // already-onboarded user to /onboarding, which reads as an unexpected error
 // screen before the retry succeeds and lands them home.
-type GateState = 'loading' | 'error' | 'onboarding' | 'ready'
+type GateState = "loading" | "error" | "onboarding" | "ready";
 function OnboardingGate({ children }: { children: React.ReactNode }) {
-  const [gateState, setGateState] = useState<GateState>('loading')
+  const [gateState, setGateState] = useState<GateState>("loading");
   // Bumping this re-triggers the fetch effect (used by the retry button).
-  const [attempt, setAttempt] = useState(0)
-  const location = useLocation()
+  const [attempt, setAttempt] = useState(0);
+  const location = useLocation();
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
     getMyProfile()
       .then((p) => {
-        if (!cancelled) setGateState(p.onboarding.completed_at ? 'ready' : 'onboarding')
+        if (!cancelled) setGateState(p.onboarding.completed_at ? "ready" : "onboarding");
       })
       .catch(() => {
-        if (!cancelled) setGateState('error')
-      })
-    return () => { cancelled = true }
-  }, [attempt])
-  if (gateState === 'loading') {
+        if (!cancelled) setGateState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attempt]);
+  if (gateState === "loading") {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="w-5 h-5 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
       </div>
-    )
+    );
   }
-  if (gateState === 'error') {
+  if (gateState === "error") {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-4 px-6 text-center">
         <p className="text-sm text-text-muted font-mono">加载失败，请检查网络后重试</p>
         <button
           type="button"
-          onClick={() => { setGateState('loading'); setAttempt((n) => n + 1) }}
+          onClick={() => {
+            setGateState("loading");
+            setAttempt((n) => n + 1);
+          }}
           className="px-4 py-2 rounded-md border border-accent-green/40 text-accent-green text-sm font-mono hover:bg-accent-green/10 transition-colors"
         >
           重试
         </button>
       </div>
-    )
+    );
   }
-  if (gateState === 'onboarding' && !location.pathname.startsWith('/onboarding')) {
-    return <Navigate to="/onboarding" replace />
+  if (gateState === "onboarding" && !location.pathname.startsWith("/onboarding")) {
+    return <Navigate to="/onboarding" replace />;
   }
-  return <>{children}</>
+  return <>{children}</>;
 }
 
 // Coach chat is whitelist-gated (profile.features.coach_chat). Until the
 // profile is loaded we show a spinner (avoids a flash / premature redirect);
 // once ready, a non-whitelisted user visiting /coach directly goes home.
 function CoachChatGate({ children }: { children: React.ReactNode }) {
-  const { profileReady, coachChat } = useUser()
+  const { profileReady, coachChat } = useUser();
   if (!profileReady) {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-green/30 border-t-accent-green" />
       </div>
-    )
+    );
   }
-  if (!coachChat) return <Navigate to="/" replace />
-  return <>{children}</>
+  if (!coachChat) return <Navigate to="/" replace />;
+  return <>{children}</>;
 }
 
 function Dashboard() {
@@ -105,9 +110,30 @@ function Dashboard() {
         <Routes>
           <Route element={<AppLayout />}>
             <Route path="/" element={<WeeklyPlanRoute />} />
-            <Route path="/coach" element={<CoachChatGate><CoachChatPage /></CoachChatGate>} />
-            <Route path="/coach/week/:folder/adjust" element={<CoachChatGate><WeeklyPlanAdjustPage /></CoachChatGate>} />
-            <Route path="/coach/master/:planId/adjust" element={<CoachChatGate><MasterPlanAdjustPage /></CoachChatGate>} />
+            <Route
+              path="/coach"
+              element={
+                <CoachChatGate>
+                  <CoachChatPage />
+                </CoachChatGate>
+              }
+            />
+            <Route
+              path="/coach/week/:folder/adjust"
+              element={
+                <CoachChatGate>
+                  <WeeklyPlanAdjustPage />
+                </CoachChatGate>
+              }
+            />
+            <Route
+              path="/coach/master/:planId/adjust"
+              element={
+                <CoachChatGate>
+                  <MasterPlanAdjustPage />
+                </CoachChatGate>
+              }
+            />
             <Route path="/week/:folder" element={<WeeklyPlanRoute />} />
             <Route path="/activity/:id" element={<ActivityDetailPage />} />
             <Route path="/teams/:teamId/activity/:userId/:labelId" element={<ActivityDetailPage />} />
@@ -128,26 +154,26 @@ function Dashboard() {
         </Routes>
       </UserProvider>
     </OnboardingGate>
-  )
+  );
 }
 
 function AppOrLanding() {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   if (!isAuthenticated) {
     return (
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
-    )
+    );
   }
-  return <Dashboard />
+  return <Dashboard />;
 }
 
 function LoginEntry() {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
-  if (isAuthenticated) return <Navigate to="/" replace />
-  return <LandingPage initialLoginOpen />
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  if (isAuthenticated) return <Navigate to="/" replace />;
+  return <LandingPage initialLoginOpen />;
 }
 
 export default function AppRoutes() {
@@ -155,10 +181,15 @@ export default function AppRoutes() {
     <Routes>
       <Route path="/login" element={<LoginEntry />} />
       <Route path="/register" element={<RegisterPage />} />
-      <Route path="/onboarding" element={
-        <ProtectedRoute><OnboardingWizard /></ProtectedRoute>
-      } />
+      <Route
+        path="/onboarding"
+        element={
+          <ProtectedRoute>
+            <OnboardingWizard />
+          </ProtectedRoute>
+        }
+      />
       <Route path="/*" element={<AppOrLanding />} />
     </Routes>
-  )
+  );
 }

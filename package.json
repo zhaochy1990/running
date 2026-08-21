@@ -6,7 +6,12 @@
   "description": "Stride monorepo root — pnpm workspace for the TypeScript/Node packages.",
   "scripts": {
     "build": "pnpm -r build",
+    "format": "biome format --write",
+    "format:check": "biome format",
     "test": "pnpm -r test",
     "verify:weekly-plan-schema": "pnpm --filter @stride/contract run verify:weekly-plan-schema"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.8"
   }
 }

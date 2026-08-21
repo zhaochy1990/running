@@ -1,17 +1,35 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { getActivity, getTeamActivity, resyncActivity, regenerateCommentary, formatDate, formatTime, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type ActivityStrideTrainingLoad, type Lap, type Segment, type Zone, type TimeseriesPoint, type LinkedScheduledWorkout } from '../api'
-import { useUser } from '../UserContextValue'
-import SegmentView from '../components/SegmentView'
-import StrengthView from '../components/StrengthView'
-import ZoneChart from '../components/ZoneChart'
-import HRChart from '../components/HRChart'
-import PaceChart from '../components/PaceChart'
-import ActivityMap from '../components/maps/ActivityMap'
+import { useCallback, useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  getActivity,
+  getTeamActivity,
+  resyncActivity,
+  regenerateCommentary,
+  formatDate,
+  formatTime,
+  sportColor,
+  trainTypeColor,
+  sportNameCN,
+  trainTypeCN,
+  type Activity,
+  type ActivityStrideTrainingLoad,
+  type Lap,
+  type Segment,
+  type Zone,
+  type TimeseriesPoint,
+  type LinkedScheduledWorkout,
+} from "../api";
+import { useUser } from "../UserContextValue";
+import SegmentView from "../components/SegmentView";
+import StrengthView from "../components/StrengthView";
+import ZoneChart from "../components/ZoneChart";
+import HRChart from "../components/HRChart";
+import PaceChart from "../components/PaceChart";
+import ActivityMap from "../components/maps/ActivityMap";
 
-const FEEL_EMOJIS = ['', '😄', '🙂', '😐', '😞', '😫']
+const FEEL_EMOJIS = ["", "😄", "🙂", "😐", "😞", "😫"];
 
 export default function ActivityDetailPage() {
   // Two route shapes share this page:
@@ -20,113 +38,113 @@ export default function ActivityDetailPage() {
   // In team mode, write actions (resync, regenerate commentary)
   // are hidden because they target the activity owner's DB, which the
   // viewer doesn't own.
-  const { id, teamId, userId, labelId } = useParams<{ id?: string; teamId?: string; userId?: string; labelId?: string }>()
-  const { user } = useUser()
-  const isTeamView = Boolean(teamId && userId && labelId)
-  const activityId = isTeamView ? labelId : id
-  const [activity, setActivity] = useState<Activity | null>(null)
-  const [laps, setLaps] = useState<Lap[]>([])
-  const [segments, setSegments] = useState<Segment[]>([])
-  const [zones, setZones] = useState<Zone[]>([])
-  const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([])
-  const [strideTrainingLoad, setStrideTrainingLoad] = useState<ActivityStrideTrainingLoad | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
-  const [regenerating, setRegenerating] = useState(false)
-  const [regenError, setRegenError] = useState<string | null>(null)
-  const [hoverElapsed, setHoverElapsed] = useState<number | null>(null)
-  const [linkedSw, setLinkedSw] = useState<LinkedScheduledWorkout | null>(null)
+  const { id, teamId, userId, labelId } = useParams<{ id?: string; teamId?: string; userId?: string; labelId?: string }>();
+  const { user } = useUser();
+  const isTeamView = Boolean(teamId && userId && labelId);
+  const activityId = isTeamView ? labelId : id;
+  const [activity, setActivity] = useState<Activity | null>(null);
+  const [laps, setLaps] = useState<Lap[]>([]);
+  const [segments, setSegments] = useState<Segment[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([]);
+  const [strideTrainingLoad, setStrideTrainingLoad] = useState<ActivityStrideTrainingLoad | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenError, setRegenError] = useState<string | null>(null);
+  const [hoverElapsed, setHoverElapsed] = useState<number | null>(null);
+  const [linkedSw, setLinkedSw] = useState<LinkedScheduledWorkout | null>(null);
 
   const fetchDetail = useCallback(() => {
     if (isTeamView) {
-      return getTeamActivity(teamId!, userId!, labelId!)
+      return getTeamActivity(teamId!, userId!, labelId!);
     }
-    if (!id || !user) return Promise.reject(new Error('missing id or user'))
-    return getActivity(user, id)
-  }, [id, isTeamView, labelId, teamId, user, userId])
+    if (!id || !user) return Promise.reject(new Error("missing id or user"));
+    return getActivity(user, id);
+  }, [id, isTeamView, labelId, teamId, user, userId]);
 
   const loadActivity = useCallback(() => {
-    if (!activityId) return
-    if (!isTeamView && !user) return
+    if (!activityId) return;
+    if (!isTeamView && !user) return;
     fetchDetail().then((data) => {
-      setActivity(data.activity)
-      setLaps(data.laps)
-      setSegments(data.segments || [])
-      setZones(data.zones)
-      setTimeseries(data.timeseries)
-      setStrideTrainingLoad(data.stride_training_load ?? null)
-      setLinkedSw(data.linked_scheduled_workout ?? null)
-    })
-  }, [activityId, fetchDetail, isTeamView, user])
+      setActivity(data.activity);
+      setLaps(data.laps);
+      setSegments(data.segments || []);
+      setZones(data.zones);
+      setTimeseries(data.timeseries);
+      setStrideTrainingLoad(data.stride_training_load ?? null);
+      setLinkedSw(data.linked_scheduled_workout ?? null);
+    });
+  }, [activityId, fetchDetail, isTeamView, user]);
 
   useEffect(() => {
-    if (!activityId) return
-    if (!isTeamView && !user) return
-    setLoading(true)
+    if (!activityId) return;
+    if (!isTeamView && !user) return;
+    setLoading(true);
     fetchDetail()
       .then((data) => {
-        setActivity(data.activity)
-        setLaps(data.laps)
-        setSegments(data.segments || [])
-        setZones(data.zones)
-        setTimeseries(data.timeseries)
-        setStrideTrainingLoad(data.stride_training_load ?? null)
-        setLinkedSw(data.linked_scheduled_workout ?? null)
+        setActivity(data.activity);
+        setLaps(data.laps);
+        setSegments(data.segments || []);
+        setZones(data.zones);
+        setTimeseries(data.timeseries);
+        setStrideTrainingLoad(data.stride_training_load ?? null);
+        setLinkedSw(data.linked_scheduled_workout ?? null);
       })
-      .finally(() => setLoading(false))
-  }, [activityId, fetchDetail, isTeamView, user])
+      .finally(() => setLoading(false));
+  }, [activityId, fetchDetail, isTeamView, user]);
 
   const handleResync = async () => {
-    if (isTeamView || !id || !user || syncing) return
-    setSyncing(true)
+    if (isTeamView || !id || !user || syncing) return;
+    setSyncing(true);
     try {
-      const res = await resyncActivity(user, id)
+      const res = await resyncActivity(user, id);
       if (res.success) {
-        loadActivity()
+        loadActivity();
       }
     } finally {
-      setSyncing(false)
+      setSyncing(false);
     }
-  }
+  };
 
   const handleRegenerate = async () => {
-    if (isTeamView || !id || !user || regenerating) return
-    setRegenerating(true)
-    setRegenError(null)
+    if (isTeamView || !id || !user || regenerating) return;
+    setRegenerating(true);
+    setRegenError(null);
     try {
-      const res = await regenerateCommentary(user, id)
+      const res = await regenerateCommentary(user, id);
       if (res.success) {
-        loadActivity()
+        loadActivity();
       } else {
-        setRegenError(res.error || '重新生成失败')
+        setRegenError(res.error || "重新生成失败");
       }
     } catch (e) {
-      setRegenError(e instanceof Error ? e.message : 'unknown error')
+      setRegenError(e instanceof Error ? e.message : "unknown error");
     } finally {
-      setRegenerating(false)
+      setRegenerating(false);
     }
-  }
+  };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="w-6 h-6 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
       </div>
-    )
+    );
   }
 
   if (!activity) {
-    return <div className="text-text-muted text-center py-20">未找到该训练记录</div>
+    return <div className="text-text-muted text-center py-20">未找到该训练记录</div>;
   }
 
-  const isStrength = [402, 800].includes(activity.sport_type)
-  const hrZones = zones.filter((z) => z.zone_type === 'heartRate')
-  const paceZones = zones.filter((z) => z.zone_type === 'pace')
-  const sharedStartTs = timeseries.find((p) => p.timestamp != null)?.timestamp ?? undefined
+  const isStrength = [402, 800].includes(activity.sport_type);
+  const hrZones = zones.filter((z) => z.zone_type === "heartRate");
+  const paceZones = zones.filter((z) => z.zone_type === "pace");
+  const sharedStartTs = timeseries.find((p) => p.timestamp != null)?.timestamp ?? undefined;
   // Show map only for outdoor activities with enough GPS samples. Indoor /
   // treadmill / strength activities skip the card entirely (no SDK load).
-  const hasGpsTrack = !isStrength && timeseries.some((p) => p.gps_lat != null && p.gps_lon != null)
-  const showCommentaryCard = !isTeamView || Boolean(activity.commentary || activity.commentary_generated_by)
+  const hasGpsTrack = !isStrength && timeseries.some((p) => p.gps_lat != null && p.gps_lon != null);
+  const showCommentaryCard = !isTeamView || Boolean(activity.commentary || activity.commentary_generated_by);
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
@@ -141,9 +159,7 @@ export default function ActivityDetailPage() {
           className="mb-6 rounded-2xl border border-accent-red/30 bg-accent-red/10 px-4 py-3 text-sm font-mono text-accent-red"
         >
           <div className="font-semibold mb-1">⚠️ 本训练已被新计划取代</div>
-          <div className="text-xs">
-            请到 COROS 手动删除以避免与新推送训练重复
-          </div>
+          <div className="text-xs">请到 COROS 手动删除以避免与新推送训练重复</div>
         </div>
       )}
 
@@ -156,7 +172,7 @@ export default function ActivityDetailPage() {
                 className="inline-block text-[11px] font-mono font-medium px-2.5 py-1 rounded-lg"
                 style={{
                   color: sportColor(activity.sport_name),
-                  backgroundColor: sportColor(activity.sport_name) + '15',
+                  backgroundColor: sportColor(activity.sport_name) + "15",
                 }}
               >
                 {sportNameCN(activity.sport_name)}
@@ -166,16 +182,14 @@ export default function ActivityDetailPage() {
                   className="inline-block text-[11px] font-mono font-medium px-2.5 py-1 rounded-lg"
                   style={{
                     color: trainTypeColor(activity.train_type),
-                    backgroundColor: trainTypeColor(activity.train_type) + '15',
+                    backgroundColor: trainTypeColor(activity.train_type) + "15",
                   }}
                 >
                   {trainTypeCN(activity.train_type)}
                 </span>
               )}
             </div>
-            <h1 className="text-xl font-bold text-text-primary tracking-tight">
-              {activity.name || sportNameCN(activity.sport_name)}
-            </h1>
+            <h1 className="text-xl font-bold text-text-primary tracking-tight">{activity.name || sportNameCN(activity.sport_name)}</h1>
             <p className="text-sm font-mono text-text-muted mt-1">
               {formatDate(activity.date)} {formatTime(activity.date)}
             </p>
@@ -187,10 +201,14 @@ export default function ActivityDetailPage() {
               className="inline-flex items-center gap-1.5 text-xs font-mono text-text-muted hover:text-accent-green transition-colors px-3 py-1.5 rounded-lg border border-border-subtle hover:border-accent-green/30 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               title="从手表重新同步此活动"
             >
-              <svg className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              <svg className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
               </svg>
-              {syncing ? '同步中...' : '重新同步'}
+              {syncing ? "同步中..." : "重新同步"}
             </button>
           )}
         </div>
@@ -202,13 +220,7 @@ export default function ActivityDetailPage() {
             highlighting in both directions. */}
         {hasGpsTrack && sharedStartTs != null && (
           <div className="mt-6">
-            <ActivityMap
-              points={timeseries}
-              pauses={activity.pauses ?? []}
-              startTs={sharedStartTs}
-              hoverElapsed={hoverElapsed}
-              onHover={setHoverElapsed}
-            />
+            <ActivityMap points={timeseries} pauses={activity.pauses ?? []} startTs={sharedStartTs} hoverElapsed={hoverElapsed} onHover={setHoverElapsed} />
           </div>
         )}
 
@@ -217,31 +229,29 @@ export default function ActivityDetailPage() {
           {!isStrength && <BigMetric label="距离" value={`${activity.distance_km}`} unit="km" color="#00a85a" />}
           <BigMetric label="时长" value={activity.duration_fmt} color="#0097a7" />
           {!isStrength && <BigMetric label="平均配速" value={activity.pace_fmt} color="#00a85a" />}
-          <BigMetric label="平均心率" value={activity.avg_hr ? `${activity.avg_hr}` : '—'} unit="bpm" color="#d32f2f" />
-          <BigMetric label="最大心率" value={activity.max_hr ? `${activity.max_hr}` : '—'} unit="bpm" color="#c62828" />
-          <BigMetric label="卡路里" value={activity.calories_kcal ? `${activity.calories_kcal}` : '—'} unit="kcal" color="#e68a00" />
+          <BigMetric label="平均心率" value={activity.avg_hr ? `${activity.avg_hr}` : "—"} unit="bpm" color="#d32f2f" />
+          <BigMetric label="最大心率" value={activity.max_hr ? `${activity.max_hr}` : "—"} unit="bpm" color="#c62828" />
+          <BigMetric label="卡路里" value={activity.calories_kcal ? `${activity.calories_kcal}` : "—"} unit="kcal" color="#e68a00" />
         </div>
 
         {/* Secondary Metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4 mt-4 pt-4 border-t border-border-subtle">
-          {!isStrength && <SmallMetric label="步频" value={activity.avg_cadence ? `${activity.avg_cadence} spm` : '—'} />}
-          {!isStrength && <SmallMetric label="累计爬升" value={activity.ascent_m ? `${activity.ascent_m} m` : '—'} />}
-          <SmallMetric label="手表负荷" value={activity.training_load ? `${activity.training_load.toFixed(0)}` : '—'} />
-          {!isStrength && <SmallMetric label="最大摄氧量" value={activity.vo2max ? `${activity.vo2max.toFixed(1)}` : '—'} />}
-          <SmallMetric label="有氧效果" value={activity.aerobic_effect ? `${activity.aerobic_effect.toFixed(1)}` : '—'} />
-          <SmallMetric label="无氧效果" value={activity.anaerobic_effect ? `${activity.anaerobic_effect.toFixed(1)}` : '—'} />
+          {!isStrength && <SmallMetric label="步频" value={activity.avg_cadence ? `${activity.avg_cadence} spm` : "—"} />}
+          {!isStrength && <SmallMetric label="累计爬升" value={activity.ascent_m ? `${activity.ascent_m} m` : "—"} />}
+          <SmallMetric label="手表负荷" value={activity.training_load ? `${activity.training_load.toFixed(0)}` : "—"} />
+          {!isStrength && <SmallMetric label="最大摄氧量" value={activity.vo2max ? `${activity.vo2max.toFixed(1)}` : "—"} />}
+          <SmallMetric label="有氧效果" value={activity.aerobic_effect ? `${activity.aerobic_effect.toFixed(1)}` : "—"} />
+          <SmallMetric label="无氧效果" value={activity.anaerobic_effect ? `${activity.anaerobic_effect.toFixed(1)}` : "—"} />
         </div>
 
-        {strideTrainingLoad && (
-          <StrideTrainingLoadPanel load={strideTrainingLoad} />
-        )}
+        {strideTrainingLoad && <StrideTrainingLoadPanel load={strideTrainingLoad} />}
 
         {/* Weather */}
         {activity.temperature != null && (
           <div className="flex items-center gap-6 mt-4 pt-4 border-t border-border-subtle">
             <div className="flex items-center gap-1.5 text-sm font-mono text-text-secondary">
               <span className="text-xs text-text-muted uppercase tracking-wider mr-1">天气</span>
-              <span style={{ color: activity.temperature >= 25 ? '#d32f2f' : activity.temperature >= 15 ? '#e68a00' : '#0097a7' }}>
+              <span style={{ color: activity.temperature >= 25 ? "#d32f2f" : activity.temperature >= 15 ? "#e68a00" : "#0097a7" }}>
                 {activity.temperature}°C
               </span>
               {activity.feels_like != null && activity.feels_like !== activity.temperature && (
@@ -268,11 +278,7 @@ export default function ActivityDetailPage() {
           <div className="mt-4 pt-4 border-t border-border-subtle">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs text-text-muted uppercase tracking-wider">训练反馈</span>
-              {activity.feel_type != null && (
-                <span className="text-lg leading-none">
-                  {FEEL_EMOJIS[activity.feel_type] || ''}
-                </span>
-              )}
+              {activity.feel_type != null && <span className="text-lg leading-none">{FEEL_EMOJIS[activity.feel_type] || ""}</span>}
             </div>
             <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{activity.sport_note}</p>
           </div>
@@ -285,13 +291,19 @@ export default function ActivityDetailPage() {
         (timeseries.length > 0 || hrZones.length > 0) && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
             {timeseries.length > 0 && (
-              <div className="lg:col-span-2 bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-1 opacity-0" style={{ animationFillMode: 'forwards' }}>
+              <div
+                className="lg:col-span-2 bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-1 opacity-0"
+                style={{ animationFillMode: "forwards" }}
+              >
                 <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">心率曲线</h3>
                 <HRChart data={timeseries} />
               </div>
             )}
             {hrZones.length > 0 && (
-              <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-2 opacity-0" style={{ animationFillMode: 'forwards' }}>
+              <div
+                className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-2 opacity-0"
+                style={{ animationFillMode: "forwards" }}
+              >
                 <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">心率区间</h3>
                 <ZoneChart zones={hrZones} type="hr" />
               </div>
@@ -303,11 +315,17 @@ export default function ActivityDetailPage() {
         <>
           {timeseries.length > 0 && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-              <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-1 opacity-0" style={{ animationFillMode: 'forwards' }}>
+              <div
+                className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-1 opacity-0"
+                style={{ animationFillMode: "forwards" }}
+              >
                 <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">心率曲线</h3>
                 <HRChart data={timeseries} startTs={sharedStartTs} hoverElapsed={hoverElapsed} onHover={setHoverElapsed} />
               </div>
-              <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-2 opacity-0" style={{ animationFillMode: 'forwards' }}>
+              <div
+                className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-2 opacity-0"
+                style={{ animationFillMode: "forwards" }}
+              >
                 <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">配速曲线</h3>
                 <PaceChart data={timeseries} startTs={sharedStartTs} hoverElapsed={hoverElapsed} onHover={setHoverElapsed} />
               </div>
@@ -316,13 +334,19 @@ export default function ActivityDetailPage() {
           {(hrZones.length > 0 || paceZones.length > 0) && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
               {hrZones.length > 0 && (
-                <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-3 opacity-0" style={{ animationFillMode: 'forwards' }}>
+                <div
+                  className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-3 opacity-0"
+                  style={{ animationFillMode: "forwards" }}
+                >
                   <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">心率区间</h3>
                   <ZoneChart zones={hrZones} type="hr" />
                 </div>
               )}
               {paceZones.length > 0 && (
-                <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-4 opacity-0" style={{ animationFillMode: 'forwards' }}>
+                <div
+                  className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-4 opacity-0"
+                  style={{ animationFillMode: "forwards" }}
+                >
                   <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">配速区间</h3>
                   <ZoneChart zones={paceZones} type="pace" />
                 </div>
@@ -334,7 +358,10 @@ export default function ActivityDetailPage() {
 
       {/* Coach commentary */}
       {showCommentaryCard && (
-        <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 mb-6 animate-fade-in stagger-5 opacity-0" style={{ animationFillMode: 'forwards' }}>
+        <div
+          className="bg-bg-card border border-border-subtle rounded-2xl p-5 mb-6 animate-fade-in stagger-5 opacity-0"
+          style={{ animationFillMode: "forwards" }}
+        >
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold text-text-secondary tracking-wide">教练简评</h3>
@@ -342,8 +369,8 @@ export default function ActivityDetailPage() {
                 <span
                   className="inline-flex items-center text-[10px] font-mono px-2 py-0.5 rounded-md"
                   style={{
-                    color: '#7c4dff',
-                    backgroundColor: '#7c4dff15',
+                    color: "#7c4dff",
+                    backgroundColor: "#7c4dff15",
                   }}
                   title={activity.commentary_generated_at ? `生成于 ${activity.commentary_generated_at}` : undefined}
                 >
@@ -358,16 +385,18 @@ export default function ActivityDetailPage() {
                 className="inline-flex items-center gap-1.5 text-xs font-mono text-text-muted hover:text-accent-amber transition-colors px-3 py-1.5 rounded-lg border border-border-subtle hover:border-accent-amber/30 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 title="让 AOAI 重新生成评论（覆盖现有）"
               >
-                <svg className={`w-3.5 h-3.5 ${regenerating ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                <svg className={`w-3.5 h-3.5 ${regenerating ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  />
                 </svg>
-                {regenerating ? '生成中...' : '重新生成'}
+                {regenerating ? "生成中..." : "重新生成"}
               </button>
             )}
           </div>
-          {regenError && (
-            <p className="text-xs font-mono text-accent-red mb-3">{regenError}</p>
-          )}
+          {regenError && <p className="text-xs font-mono text-accent-red mb-3">{regenError}</p>}
           {activity.commentary ? (
             <div className="prose max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{activity.commentary}</ReactMarkdown>
@@ -380,15 +409,13 @@ export default function ActivityDetailPage() {
 
       {/* Segments & Laps */}
       {(segments.length > 0 || laps.length > 0) && (
-        <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-5 opacity-0" style={{ animationFillMode: 'forwards' }}>
-          <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">
-            分段数据
-          </h3>
+        <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-5 opacity-0" style={{ animationFillMode: "forwards" }}>
+          <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">分段数据</h3>
           {isStrength ? <StrengthView segments={segments} /> : <SegmentView segments={segments} laps={laps} />}
         </div>
       )}
     </div>
-  )
+  );
 }
 
 function BigMetric({ label, value, unit, color }: { label: string; value: string; unit?: string; color: string }) {
@@ -396,11 +423,13 @@ function BigMetric({ label, value, unit, color }: { label: string; value: string
     <div>
       <p className="text-xs font-mono text-text-muted uppercase tracking-wider mb-1">{label}</p>
       <div className="flex items-baseline gap-1">
-        <span className="text-lg font-bold font-mono" style={{ color }}>{value}</span>
+        <span className="text-lg font-bold font-mono" style={{ color }}>
+          {value}
+        </span>
         {unit && <span className="text-xs text-text-muted font-mono">{unit}</span>}
       </div>
     </div>
-  )
+  );
 }
 
 function SmallMetric({ label, value }: { label: string; value: string }) {
@@ -409,16 +438,16 @@ function SmallMetric({ label, value }: { label: string; value: string }) {
       <p className="text-xs font-mono text-text-muted uppercase tracking-wider">{label}</p>
       <p className="text-sm font-mono text-text-secondary mt-0.5">{value}</p>
     </div>
-  )
+  );
 }
 
 function formatLoadValue(value: number | null | undefined, digits = 1): string {
-  return value == null ? '—' : value.toFixed(digits)
+  return value == null ? "—" : value.toFixed(digits);
 }
 
 function StrideTrainingLoadPanel({ load }: { load: ActivityStrideTrainingLoad }) {
-  const reasons = load.reasons.length > 0 ? load.reasons : ['无触发']
-  const included = !load.excluded_from_pmc
+  const reasons = load.reasons.length > 0 ? load.reasons : ["无触发"];
+  const included = !load.excluded_from_pmc;
   return (
     <div className="mt-4 pt-4 border-t border-border-subtle">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -429,11 +458,11 @@ function StrideTrainingLoadPanel({ load }: { load: ActivityStrideTrainingLoad })
         <span
           className="text-[11px] font-mono px-2.5 py-1 rounded-lg"
           style={{
-            color: included ? '#00a85a' : '#e68a00',
-            backgroundColor: included ? '#00a85a15' : '#e68a0015',
+            color: included ? "#00a85a" : "#e68a00",
+            backgroundColor: included ? "#00a85a15" : "#e68a0015",
           }}
         >
-          {included ? '计入PMC' : '未计入PMC'}
+          {included ? "计入PMC" : "未计入PMC"}
         </span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
@@ -442,8 +471,8 @@ function StrideTrainingLoadPanel({ load }: { load: ActivityStrideTrainingLoad })
         <SmallMetric label="External TSS" value={formatLoadValue(load.external_tss)} />
         <SmallMetric label="高强度加成" value={formatLoadValue(load.high_intensity_tss)} />
         <SmallMetric label="机械负荷" value={formatLoadValue(load.mechanical_load)} />
-        <SmallMetric label="置信度" value={load.load_confidence || '—'} />
-        <SmallMetric label="分类" value={load.session_class || '—'} />
+        <SmallMetric label="置信度" value={load.load_confidence || "—"} />
+        <SmallMetric label="分类" value={load.session_class || "—"} />
       </div>
       <div className="flex flex-wrap gap-1.5 mt-3">
         {reasons.map((reason) => (
@@ -453,5 +482,5 @@ function StrideTrainingLoadPanel({ load }: { load: ActivityStrideTrainingLoad })
         ))}
       </div>
     </div>
-  )
+  );
 }
