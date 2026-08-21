@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>STRIDE - Runner Home</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-container-lowest": "#0d0e0e",
+                        "on-error": "#690005",
+                        "tertiary-fixed": "#8df8bd",
+                        "on-primary-container": "#67000e",
+                        "surface-variant": "#343535",
+                        "primary-container": "#ff6363",
+                        "on-secondary-fixed-variant": "#004a76",
+                        "surface-bright": "#393939",
+                        "surface-container-highest": "#343535",
+                        "surface-container-low": "#1b1c1c",
+                        "inverse-surface": "#e4e2e1",
+                        "surface-dim": "#131413",
+                        "on-background": "#e4e2e1",
+                        "surface-container": "#1f2020",
+                        "on-tertiary-fixed-variant": "#005232",
+                        "outline": "#a88988",
+                        "on-secondary-fixed": "#001d33",
+                        "surface-container-high": "#292a2a",
+                        "primary-fixed": "#ffdad7",
+                        "on-surface": "#e4e2e1",
+                        "background": "#131413",
+                        "on-surface-variant": "#e1bfbc",
+                        "secondary-fixed": "#cee5ff",
+                        "error-container": "#93000a",
+                        "inverse-primary": "#b12a30",
+                        "error": "#ffb4ab",
+                        "surface": "#131413",
+                        "tertiary": "#71dba2",
+                        "on-tertiary": "#003921",
+                        "primary-fixed-dim": "#ffb3af",
+                        "tertiary-fixed-dim": "#71dba2",
+                        "on-tertiary-fixed": "#002112",
+                        "on-error-container": "#ffdad6",
+                        "on-primary-fixed-variant": "#8f0d1c",
+                        "tertiary-container": "#3eaa76",
+                        "on-primary": "#68000e",
+                        "on-secondary": "#003353",
+                        "on-secondary-container": "#002c49",
+                        "primary": "#ffb3af",
+                        "secondary-container": "#2f97e1",
+                        "outline-variant": "#59413f",
+                        "secondary": "#97cbff",
+                        "inverse-on-surface": "#303030",
+                        "secondary-fixed-dim": "#97cbff",
+                        "surface-tint": "#ffb3af",
+                        "on-tertiary-container": "#003821",
+                        "on-primary-fixed": "#410006",
+                        "stride-coral": "#ff6363",
+                        "canvas-bg": "#07080a",
+                        "success-green": "#5FC992",
+                        "card-bg": "#101111"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px",
+                        "12px": "12px"
+                    },
+                    spacing: {
+                        "touch-target-min": "48px",
+                        "stack-gap-md": "16px",
+                        "stack-gap-lg": "24px",
+                        "stack-gap-sm": "8px",
+                        "margin-edge": "20px",
+                        "gutter-module": "12px"
+                    },
+                    fontFamily: {
+                        "headline-sm": ["Inter", "sans-serif"],
+                        "headline-md": ["Inter", "sans-serif"],
+                        "label-caps": ["Inter", "sans-serif"],
+                        "display-lg": ["Geist Mono", "monospace"],
+                        "body-lg": ["Inter", "sans-serif"],
+                        "body-md": ["Inter", "sans-serif"],
+                        "data-lg": ["Geist Mono", "monospace"],
+                        "data-sm": ["Geist Mono", "monospace"]
+                    },
+                    fontSize: {
+                        "headline-sm": ["18px", { lineHeight: "24px", fontWeight: "600" }],
+                        "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.01em", fontWeight: "600" }],
+                        "label-caps": ["11px", { lineHeight: "16px", letterSpacing: "0.05em", fontWeight: "700" }],
+                        "display-lg": ["36px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "600" }],
+                        "body-lg": ["16px", { lineHeight: "25.6px", fontWeight: "500" }], // 1.6 LH for Chinese
+                        "body-md": ["14px", { lineHeight: "22.4px", fontWeight: "500" }], // 1.6 LH for Chinese
+                        "data-lg": ["18px", { lineHeight: "24px", fontWeight: "500" }],
+                        "data-sm": ["12px", { lineHeight: "16px", fontWeight: "500" }]
+                    },
+                    boxShadow: {
+                        'ring-standard': '0 0 0 1px rgb(27, 28, 30), inset 0 0 0 1px rgb(7, 8, 10)',
+                        'ring-raised': '0 4px 12px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06)'
+                    }
+                }
+            }
+        }
+    </script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @font-face {
+            font-family: 'Geist Mono';
+            src: local('Courier New'), monospace; 
+        }
+        
+        body {
+            background-color: #07080a;
+            color: #e4e2e1;
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            max-width: 390px;
+            margin: 0 auto;
+            position: relative;
+            min-height: 100vh;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
+    </style>
+<style>
+    body {
+      min-height: max(844px, 100dvh);
+    }
+  </style>
+</head>
+<body class="overflow-x-hidden">
+<!-- Shared Component: TopAppBar -->
+<header class="fixed top-0 max-w-[390px] w-full z-50 bg-[#101111] border-b border-white/5 flex justify-between items-center px-margin-edge h-[64px]">
+<button aria-label="Menu" class="w-touch-target-min h-touch-target-min flex items-center justify-start text-on-surface hover:opacity-80 transition-opacity">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<div class="text-headline-md font-headline-md tracking-tighter text-on-surface">STRIDE</div>
+<button aria-label="Sync Watch" class="w-touch-target-min h-touch-target-min flex items-center justify-end text-on-surface hover:opacity-80 transition-opacity">
+<span class="material-symbols-outlined" data-icon="watch_button_press">watch_button_press</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="pt-[72px] px-margin-edge pb-[72px] flex flex-col gap-stack-md">
+<!-- Header Section -->
+<section class="flex flex-col gap-1 mt-2">
+<div class="flex items-center gap-2 text-on-surface-variant text-data-sm font-data-sm uppercase tracking-wider">
+<span>7月14日 周二</span>
+<span class="w-[3px] h-[3px] rounded-full bg-surface-variant"></span>
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">sync</span>
+                    08:12 已同步
+                </span>
+</div>
+<h1 class="text-display-lg font-display-lg text-on-surface mt-1 mb-1">早上好，朝毅</h1>
+<!-- Decision Banner -->
+<div class="bg-card-bg rounded-lg p-3 border border-white/5 shadow-ring-raised border-l-[3px] border-l-stride-coral">
+<p class="text-body-lg font-body-lg text-on-surface">恢复正常，可以按计划完成节奏跑</p>
+</div>
+</section>
+<!-- Evidence Strip (Flat Row) -->
+<section class="bg-card-bg rounded-[12px] p-3 border border-white/5 shadow-ring-raised flex flex-row items-center justify-between">
+<div class="flex-1 flex flex-col justify-center border-r border-white/5 pl-2">
+<span class="text-on-surface-variant text-label-caps font-label-caps">HRV</span>
+<div class="mt-1">
+<div class="text-data-lg font-data-lg text-on-surface">52 <span class="text-data-sm text-on-surface-variant">ms</span></div>
+<div class="text-success-green text-data-sm font-data-sm">+4%</div>
+</div>
+</div>
+<div class="flex-1 flex flex-col justify-center border-r border-white/5 pl-4">
+<span class="text-on-surface-variant text-label-caps font-label-caps">静息心率</span>
+<div class="mt-1">
+<div class="text-data-lg font-data-lg text-on-surface">48 <span class="text-data-sm text-on-surface-variant">bpm</span></div>
+<div class="text-on-surface-variant text-data-sm font-data-sm">正常</div>
+</div>
+</div>
+<div class="flex-1 flex flex-col justify-center pl-4">
+<span class="text-on-surface-variant text-label-caps font-label-caps">当前状态</span>
+<div class="mt-1">
+<div class="text-data-lg font-data-lg text-on-surface">-8%</div>
+<div class="text-on-surface-variant text-data-sm font-data-sm">维持区</div>
+</div>
+</div>
+</section>
+<!-- Today's Activity -->
+<section class="flex flex-col gap-1">
+<div class="flex justify-between items-center">
+<h2 class="text-headline-sm font-headline-sm text-on-surface">今日活动</h2>
+<button class="text-on-surface-variant text-body-md font-body-md h-[32px] flex items-center hover:text-on-surface transition-colors">全部活动</button>
+</div>
+<div class="border-b border-white/5 pb-3">
+<p class="text-on-surface-variant text-body-md font-body-md">今天暂无活动</p>
+</div>
+</section>
+<!-- Today's Workout -->
+<section class="flex flex-col gap-2 mb-2">
+<h2 class="text-headline-sm font-headline-sm text-on-surface">今日训练</h2>
+<div class="bg-card-bg rounded-[12px] p-4 border border-white/5 shadow-ring-raised flex flex-col gap-3">
+<div class="flex justify-between items-start">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-2">
+<h3 class="text-headline-md font-headline-md text-on-surface">节奏跑 · 8 km</h3>
+<span class="bg-stride-coral/10 text-stride-coral text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">关键课</span>
+</div>
+<span class="text-on-surface-variant text-body-md font-body-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">schedule</span> 18:30 · 48 min
+                        </span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-y-2 gap-x-4 py-2 border-y border-white/5">
+<div>
+<div class="text-on-surface-variant text-label-caps font-label-caps mb-1">配速区间</div>
+<div class="text-data-lg font-data-lg text-on-surface">5:15–5:25 <span class="text-data-sm text-on-surface-variant">/km</span></div>
+</div>
+<div>
+<div class="text-on-surface-variant text-label-caps font-label-caps mb-1">目标心率</div>
+<div class="text-data-lg font-data-lg text-on-surface">Z3 <span class="text-data-sm text-on-surface-variant">150-162 bpm</span></div>
+</div>
+</div>
+<div class="flex gap-3 items-start bg-canvas-bg/50 p-2.5 rounded-lg border border-white/5">
+<span class="material-symbols-outlined text-stride-coral text-[18px] shrink-0 mt-0.5">tips_and_updates</span>
+<p class="text-on-surface-variant text-body-md font-body-md leading-snug">安排在今晚：恢复正常，且距周日长跑超过 72 小时。</p>
+</div>
+<div class="flex flex-col gap-2 mt-1">
+<button class="w-full h-[52px] bg-[#e4e2e1] text-[#07080a] rounded-full text-body-lg font-body-lg font-semibold hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center">
+                        查看训练详情
+                    </button>
+<button class="w-full h-[48px] bg-transparent border border-white/10 text-on-surface-variant rounded-full text-body-md font-body-md hover:bg-white/5 active:scale-[0.98] transition-all flex items-center justify-center">
+                        调整今天安排
+                    </button>
+</div>
+</div>
+</section>
+</main>
+<!-- Shared Component: BottomNavBar -->
+<nav class="fixed bottom-0 left-0 max-w-[390px] w-full z-50 flex justify-around items-center px-margin-edge h-[56px] border-t border-white/5 bg-[#101111]" style="padding-bottom: env(safe-area-inset-bottom);">
+<!-- Active Tab: 跑者 (Runner) based on semantic hierarchy for a Runner Home screen -->
+<button class="flex flex-col items-center justify-center text-stride-coral h-full w-full max-w-[80px] hover:bg-white/5 transition-colors group">
+<span class="material-symbols-outlined group-active:scale-95 transition-transform duration-100" data-icon="directions_run" style="font-variation-settings: 'FILL' 1;">directions_run</span>
+<span class="text-label-caps font-label-caps mt-1 group-active:scale-95 transition-transform duration-100">跑者</span>
+</button>
+<!-- Inactive Tabs -->
+<button class="flex flex-col items-center justify-center text-on-surface-variant h-full w-full max-w-[80px] hover:bg-white/5 transition-colors group">
+<span class="material-symbols-outlined group-active:scale-95 transition-transform duration-100" data-icon="fitness_center">fitness_center</span>
+<span class="text-label-caps font-label-caps mt-1 group-active:scale-95 transition-transform duration-100">训练</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant h-full w-full max-w-[80px] hover:bg-white/5 transition-colors group">
+<span class="material-symbols-outlined group-active:scale-95 transition-transform duration-100" data-icon="bar_chart">bar_chart</span>
+<span class="text-label-caps font-label-caps mt-1 group-active:scale-95 transition-transform duration-100">数据</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant h-full w-full max-w-[80px] hover:bg-white/5 transition-colors group">
+<span class="material-symbols-outlined group-active:scale-95 transition-transform duration-100" data-icon="psychology">psychology</span>
+<span class="text-label-caps font-label-caps mt-1 group-active:scale-95 transition-transform duration-100">教练</span>
+</button>
+</nav>
+</body></html>

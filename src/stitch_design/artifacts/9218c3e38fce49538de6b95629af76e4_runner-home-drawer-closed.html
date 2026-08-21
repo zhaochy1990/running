@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>STRIDE - 跑者</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "outline": "#a88988",
+                        "surface-container-low": "#1b1c1e",
+                        "surface-bright": "#38393c",
+                        "on-primary-container": "#67000e",
+                        "primary": "#ffb3af",
+                        "on-secondary": "#003353",
+                        "tertiary": "#71dba2",
+                        "on-tertiary-fixed": "#002112",
+                        "background": "#121316",
+                        "on-tertiary-fixed-variant": "#005232",
+                        "surface-container-lowest": "#0d0e10",
+                        "surface-variant": "#343537",
+                        "on-surface": "#e3e2e5",
+                        "surface-container-high": "#292a2c",
+                        "on-secondary-fixed": "#001d33",
+                        "on-primary-fixed-variant": "#8f0d1c",
+                        "on-surface-variant": "#e1bfbc",
+                        "surface": "#121316",
+                        "on-primary-fixed": "#410006",
+                        "secondary-container": "#2f97e1",
+                        "outline-variant": "#59413f",
+                        "inverse-on-surface": "#2f3033",
+                        "tertiary-fixed-dim": "#71dba2",
+                        "surface-dim": "#121316",
+                        "secondary-fixed": "#cee5ff",
+                        "inverse-primary": "#b12a30",
+                        "on-secondary-fixed-variant": "#004a76",
+                        "on-secondary-container": "#002c49",
+                        "on-error-container": "#ffdad6",
+                        "surface-container": "#1f2022",
+                        "error-container": "#93000a",
+                        "secondary-fixed-dim": "#97cbff",
+                        "on-background": "#e3e2e5",
+                        "surface-container-highest": "#343537",
+                        "on-tertiary": "#003921",
+                        "tertiary-fixed": "#8df8bd",
+                        "secondary": "#97cbff",
+                        "surface-tint": "#ffb3af",
+                        "primary-container": "#ff6363",
+                        "on-tertiary-container": "#003821",
+                        "primary-fixed": "#ffdad7",
+                        "inverse-surface": "#e3e2e5",
+                        "error": "#ffb4ab",
+                        "on-error": "#690005",
+                        "tertiary-container": "#3eaa76",
+                        "primary-fixed-dim": "#ffb3af",
+                        "on-primary": "#68000e"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "xxl": "24px",
+                        "xl": "20px",
+                        "md": "12px",
+                        "lg": "16px",
+                        "section": "32px",
+                        "xs": "4px",
+                        "margin-mobile": "20px",
+                        "sm": "8px",
+                        "touch-target": "48px",
+                        "tab-bar-height": "80px"
+                    },
+                    fontFamily: {
+                        "body-compact": ["Inter"],
+                        "display": ["Inter"],
+                        "screen-title": ["Inter"],
+                        "card-title": ["Inter"],
+                        "label": ["Inter"],
+                        "data-tabular": ["Geist Mono", "monospace"],
+                        "body": ["Inter"]
+                    },
+                    fontSize: {
+                        "body-compact": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+                        "display": ["40px", { "lineHeight": "44px", "letterSpacing": "0.4px", "fontWeight": "600" }],
+                        "screen-title": ["24px", { "lineHeight": "29px", "letterSpacing": "0.2px", "fontWeight": "600" }],
+                        "card-title": ["18px", { "lineHeight": "23px", "fontWeight": "600" }],
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.4px", "fontWeight": "500" }],
+                        "data-tabular": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+                        "body": ["16px", { "lineHeight": "26px", "letterSpacing": "0.2px", "fontWeight": "500" }],
+                        "headline-md": ["28px", { "lineHeight": "36px", "fontWeight": "700" }],
+                        "headline-md-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "700" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "800" }],
+                        "headline-lg-mobile": ["28px", { "lineHeight": "36px", "fontWeight": "800" }],
+                        "eyebrow": ["10px", { "lineHeight": "14px", "fontWeight": "600", "letterSpacing": "0.5px" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #07080A;
+            color: #F9F9F9;
+        }
+
+        .canvas-bg {
+            background-color: #07080A;
+        }
+
+        .surface-bg {
+            background-color: #101111;
+        }
+
+        .raised-surface {
+            background-color: #1B1C1E;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .subtle-border {
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        /* Hide scrollbar for clean UI */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+
+        * {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="canvas-bg font-body antialiased flex flex-col h-[100dvh] overflow-hidden">
+<!-- JSON Anchor: TopAppBar -->
+<header class="bg-[#101111] font-headline-md text-headline-md-mobile flex-shrink-0 z-50 border-b border-outline-variant/30 flex justify-between items-center px-4 h-touch-target w-full pt-[env(safe-area-inset-top)]">
+<button aria-label="打开菜单" class="w-touch-target h-touch-target flex items-center justify-start text-on-surface-variant hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#55B3FF] rounded">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<h1 class="font-headline-lg text-headline-lg-mobile font-black tracking-tighter text-primary">STRIDE</h1>
+<button aria-label="同步手表数据" class="w-touch-target h-touch-target flex items-center justify-end text-on-surface-variant hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#55B3FF] rounded">
+<span class="material-symbols-outlined" data-icon="sync">sync</span>
+</button>
+</header>
+<main class="flex-1 overflow-y-auto px-margin-mobile flex flex-col gap-5 pt-4 pb-4">
+<!-- Header & Greeting -->
+<section class="flex flex-col gap-2">
+<div class="flex items-center gap-2">
+<p class="font-data-tabular tabular-nums text-label text-on-surface-variant">7月14日 周二</p>
+<div class="w-[1px] h-3 bg-outline-variant"></div>
+<p class="font-data-tabular tabular-nums text-label text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">sync_saved_locally</span>
+                    08:12 已同步
+                </p>
+</div>
+<h2 class="font-display text-[32px] leading-[36px] font-semibold text-on-surface">早上好，朝毅</h2>
+<!-- Decision -->
+<div class="mt-1">
+<p class="font-body text-[15px] leading-[22px] text-on-surface border-l-2 border-primary pl-3 py-1">
+                    恢复正常，可以按计划完成节奏跑
+                </p>
+</div>
+</section>
+<!-- Evidence Strip -->
+<section class="surface-bg subtle-border rounded-lg p-3 grid grid-cols-3 gap-2">
+<div class="flex flex-col gap-1">
+<span class="font-label text-[11px] text-on-surface-variant">HRV</span>
+<div class="flex items-baseline gap-1">
+<span class="font-data-tabular tabular-nums text-[20px] font-semibold text-on-surface">52</span>
+<span class="font-label text-[10px] text-on-surface-variant">ms</span>
+</div>
+<span class="font-data-tabular tabular-nums text-[11px] text-tertiary">较基线 +4%</span>
+</div>
+<div class="flex flex-col gap-1 border-l border-outline-variant/30 pl-2">
+<span class="font-label text-[11px] text-on-surface-variant">静息心率</span>
+<div class="flex items-baseline gap-1">
+<span class="font-data-tabular tabular-nums text-[20px] font-semibold text-on-surface">48</span>
+<span class="font-label text-[10px] text-on-surface-variant">bpm</span>
+</div>
+<span class="font-label text-[11px] text-on-surface-variant">正常</span>
+</div>
+<div class="flex flex-col gap-1 border-l border-outline-variant/30 pl-2">
+<span class="font-label text-[11px] text-on-surface-variant">当前状态</span>
+<div class="flex items-baseline gap-1">
+<span class="font-data-tabular tabular-nums text-[20px] font-semibold text-on-surface">-8%</span>
+</div>
+<span class="font-label text-[11px] text-on-surface-variant">维持区</span>
+</div>
+</section>
+<!-- Activity Section -->
+<section class="flex flex-col gap-2">
+<div class="flex justify-between items-center">
+<h3 class="font-card-title text-[16px] text-on-surface">今日活动</h3>
+<button class="h-touch-target px-2 flex items-center justify-center font-body-compact text-[13px] text-on-surface-variant hover:text-on-surface transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#55B3FF] rounded">
+                    全部活动
+                </button>
+</div>
+<div class="surface-bg subtle-border rounded-lg p-4 flex items-center justify-center">
+<p class="font-body-compact text-[13px] text-on-surface-variant">今天暂无活动</p>
+</div>
+</section>
+<!-- Training Section -->
+<section class="raised-surface rounded-xl p-4 flex flex-col gap-3">
+<!-- Header -->
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-1.5">
+<div class="w-1.5 h-1.5 rounded-full bg-primary"></div>
+<span class="font-label text-[11px] text-primary uppercase tracking-widest">关键课</span>
+</div>
+<h3 class="font-screen-title text-[20px] leading-[24px] text-on-surface">节奏跑 · <span class="font-data-tabular tabular-nums">8 km</span></h3>
+<p class="font-body-compact text-[13px] text-on-surface-variant flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px]">schedule</span>
+<span class="font-data-tabular tabular-nums">18:30</span> | 约 <span class="font-data-tabular tabular-nums">48 min</span>
+</p>
+</div>
+<!-- Targets -->
+<div class="grid grid-cols-2 gap-3 py-2 border-y border-outline-variant/30">
+<div class="flex flex-col gap-1">
+<span class="font-label text-[11px] text-on-surface-variant">配速区间</span>
+<span class="font-data-tabular tabular-nums text-[15px] text-on-surface">5:15-5:25 <span class="font-label text-[10px] text-on-surface-variant">/km</span></span>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-label text-[11px] text-on-surface-variant">心率区间</span>
+<span class="font-data-tabular tabular-nums text-[15px] text-on-surface">Z3 · 150-162 <span class="font-label text-[10px] text-on-surface-variant">bpm</span></span>
+</div>
+</div>
+<!-- Coach Note -->
+<div class="flex gap-2 items-start bg-[#101111] p-3 rounded-lg subtle-border">
+<span class="material-symbols-outlined text-primary text-[18px] mt-0.5">psychology</span>
+<p class="font-body-compact text-[12px] leading-[18px] text-on-surface-variant">
+                    "安排在今晚：恢复正常，且距周日长跑超过 <span class="font-data-tabular tabular-nums">72 小时</span>。"
+                </p>
+</div>
+<!-- Actions -->
+<div class="flex flex-col gap-2 mt-1">
+<button class="w-full h-[52px] bg-[#E3E2E5] text-[#18191A] font-body-compact text-[15px] font-semibold rounded-full flex items-center justify-center hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-[#55B3FF] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1B1C1E]">
+                    查看训练详情
+                </button>
+<button class="w-full h-touch-target font-body-compact text-[14px] text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#55B3FF] rounded-lg">
+                    调整今天安排
+                </button>
+</div>
+</section>
+</main>
+<!-- JSON Anchor: BottomNavBar (Mobile Only) -->
+<nav class="bg-[#101111] font-eyebrow text-eyebrow flex-shrink-0 w-full z-50 border-t border-outline-variant/30 flex justify-around items-center h-tab-bar-height w-full px-2 pb-[env(safe-area-inset-bottom)]">
+<!-- Active: 跑者 -->
+<button aria-label="跑者" class="w-touch-target h-touch-target flex flex-col items-center justify-center text-primary font-bold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#55B3FF] rounded">
+<span class="material-symbols-outlined fill mb-1 text-[24px]" data-icon="person">person</span>
+<span>跑者</span>
+</button>
+<!-- Inactive: 训练 -->
+<button aria-label="训练" class="w-touch-target h-touch-target flex flex-col items-center justify-center text-on-surface-variant hover:text-on-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-[#55B3FF] rounded">
+<span class="material-symbols-outlined mb-1 text-[24px]" data-icon="fitness_center">fitness_center</span>
+<span>训练</span>
+</button>
+<!-- Inactive: 数据 -->
+<button aria-label="数据" class="w-touch-target h-touch-target flex flex-col items-center justify-center text-on-surface-variant hover:text-on-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-[#55B3FF] rounded">
+<span class="material-symbols-outlined mb-1 text-[24px]" data-icon="analytics">analytics</span>
+<span>数据</span>
+</button>
+<!-- Inactive: 教练 -->
+<button aria-label="教练" class="w-touch-target h-touch-target flex flex-col items-center justify-center text-on-surface-variant hover:text-on-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-[#55B3FF] rounded">
+<span class="material-symbols-outlined mb-1 text-[24px]" data-icon="smart_toy">smart_toy</span>
+<span>教练</span>
+</button>
+</nav>
+</body></html>

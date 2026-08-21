@@ -2,5 +2,388 @@
   "projectId": "12727163079393064568",
   "deviceType": "MOBILE",
   "format": "HTML-only",
-  "screens": []
+  "screens": [
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "917018ad268a4c9397fdaf48cdf0b5a5",
+      "slug": "app-shell-side-drawer-open",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/app-shell-side-drawer-open.md"
+      ],
+      "html": "artifacts/917018ad268a4c9397fdaf48cdf0b5a5_app-shell-side-drawer-open.html",
+      "createdAt": "2026-08-20T13:53:31.592Z",
+      "updatedAt": "2026-08-20T13:53:31.592Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "5f95a719e8f64717a22aa7b0180a639f",
+      "slug": "app-shell-side-drawer-open",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/app-shell-side-drawer-open.md"
+      ],
+      "html": "artifacts/5f95a719e8f64717a22aa7b0180a639f_app-shell-side-drawer-open.html",
+      "createdAt": "2026-08-20T14:06:45.392Z",
+      "updatedAt": "2026-08-20T14:06:45.392Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "861a4fbacc134e07a9cac67c5b64c1da",
+      "slug": "app-shell-side-drawer-open",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/app-shell-side-drawer-open.md"
+      ],
+      "html": "artifacts/861a4fbacc134e07a9cac67c5b64c1da_app-shell-side-drawer-open.html",
+      "createdAt": "2026-08-20T14:18:49.584Z",
+      "updatedAt": "2026-08-20T14:18:49.584Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "07e7b730bb8745ad848c98bdc8345f7a",
+      "slug": "app-shell-side-drawer-open",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/app-shell-side-drawer-open.md"
+      ],
+      "html": "artifacts/07e7b730bb8745ad848c98bdc8345f7a_app-shell-side-drawer-open.html",
+      "createdAt": "2026-08-20T14:22:44.222Z",
+      "updatedAt": "2026-08-20T14:22:44.222Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "af40b9e183a74ab98b161169663fd19b",
+      "slug": "app-shell-side-drawer-syncing",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/app-shell-side-drawer-syncing.md"
+      ],
+      "html": "artifacts/af40b9e183a74ab98b161169663fd19b_app-shell-side-drawer-syncing.html",
+      "createdAt": "2026-08-20T14:39:37.222Z",
+      "updatedAt": "2026-08-20T14:39:37.222Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "91ebdd56aa0f42d098e042aa6c8e65c6",
+      "slug": "app-shell-side-drawer-syncing-alt",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/app-shell-side-drawer-syncing.md"
+      ],
+      "html": "artifacts/91ebdd56aa0f42d098e042aa6c8e65c6_app-shell-side-drawer-syncing-alt.html",
+      "createdAt": "2026-08-20T14:39:43.927Z",
+      "updatedAt": "2026-08-20T14:39:43.927Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "8a2dee92998540ffbcb1abefb49b43e8",
+      "slug": "app-shell-side-drawer-sync-complete",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/app-shell-side-drawer-sync-complete.md"
+      ],
+      "html": "artifacts/8a2dee92998540ffbcb1abefb49b43e8_app-shell-side-drawer-sync-complete.html",
+      "createdAt": "2026-08-20T14:52:20.348Z",
+      "updatedAt": "2026-08-20T14:52:20.348Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "8150b9379ebc4954a34897d35ae336cc",
+      "slug": "app-shell-side-drawer-sync-failed",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/app-shell-side-drawer-sync-failed.md"
+      ],
+      "html": "artifacts/8150b9379ebc4954a34897d35ae336cc_app-shell-side-drawer-sync-failed.html",
+      "createdAt": "2026-08-20T14:57:55.137Z",
+      "updatedAt": "2026-08-20T14:57:55.137Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "261173f909654422b4a91083bf77f03f",
+      "slug": "runner-home-drawer-closed",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/261173f909654422b4a91083bf77f03f_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T15:05:10.302Z",
+      "updatedAt": "2026-08-20T15:05:10.302Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "9218c3e38fce49538de6b95629af76e4",
+      "slug": "runner-home-drawer-closed",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/9218c3e38fce49538de6b95629af76e4_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T15:16:58.456Z",
+      "updatedAt": "2026-08-20T15:33:56.222Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "8e63493a001243abac5f179c2f47b246",
+      "slug": "runner-home-drawer-closed",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/8e63493a001243abac5f179c2f47b246_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T15:43:56.375Z",
+      "updatedAt": "2026-08-20T15:43:56.375Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "1663cbabe9bb45abb316c09a896e5163",
+      "slug": "app-shell-side-drawer-logout-confirm",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/app-shell-side-drawer-logout-confirm.md"
+      ],
+      "html": "artifacts/1663cbabe9bb45abb316c09a896e5163_app-shell-side-drawer-logout-confirm.html",
+      "createdAt": "2026-08-20T16:01:41.649Z",
+      "updatedAt": "2026-08-20T16:01:41.649Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "3c6c39c5dc874fcb9c7ea114c6266a85",
+      "slug": "app-shell-side-drawer-logout-confirm",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/app-shell-side-drawer-logout-confirm.md"
+      ],
+      "html": "artifacts/3c6c39c5dc874fcb9c7ea114c6266a85_app-shell-side-drawer-logout-confirm.html",
+      "createdAt": "2026-08-20T16:06:43.089Z",
+      "updatedAt": "2026-08-20T16:06:43.089Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "448da4cfbcaf49acb0bfd5e5d0bb9987",
+      "slug": "runner-home-drawer-closed",
+      "operation": "generate",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/448da4cfbcaf49acb0bfd5e5d0bb9987_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T16:14:04.238Z",
+      "updatedAt": "2026-08-20T16:14:04.238Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "548d87db9d704bd5bdce5befacc55cbc",
+      "parentScreenId": "448da4cfbcaf49acb0bfd5e5d0bb9987",
+      "slug": "runner-home-drawer-closed",
+      "operation": "edit",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/548d87db9d704bd5bdce5befacc55cbc_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T16:18:49.759Z",
+      "updatedAt": "2026-08-20T16:18:49.759Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "16665728408752824860",
+      "slug": "runner-home-drawer-closed",
+      "operation": "publish",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/548d87db9d704bd5bdce5befacc55cbc_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T16:42:37.993Z",
+      "updatedAt": "2026-08-20T16:42:37.993Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "fe31c737f1714833b45e3a4b60469bf9",
+      "slug": "runner-home-drawer-closed",
+      "operation": "generate",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/fe31c737f1714833b45e3a4b60469bf9_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T16:49:41.404Z",
+      "updatedAt": "2026-08-20T16:49:41.404Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "209883e4a6804ae4a96c050b84a6b3e6",
+      "parentScreenId": "fe31c737f1714833b45e3a4b60469bf9",
+      "slug": "runner-home-drawer-closed",
+      "operation": "edit",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/209883e4a6804ae4a96c050b84a6b3e6_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T16:55:36.345Z",
+      "updatedAt": "2026-08-20T16:55:36.345Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "8414db35e3ad48769a48e1215ae2c21e",
+      "parentScreenId": "209883e4a6804ae4a96c050b84a6b3e6",
+      "slug": "runner-home-drawer-closed",
+      "operation": "edit",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/8414db35e3ad48769a48e1215ae2c21e_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T17:15:49.305Z",
+      "updatedAt": "2026-08-20T17:15:49.305Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "6e241b9e34b44e6681e653acf6d96f74",
+      "slug": "runner-home-drawer-closed",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/6e241b9e34b44e6681e653acf6d96f74_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T17:41:48.852Z",
+      "updatedAt": "2026-08-20T17:41:48.852Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "4f4bb9ad329f4613a07125ec7c4098a3",
+      "slug": "runner-home-drawer-closed",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/4f4bb9ad329f4613a07125ec7c4098a3_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T17:55:55.172Z",
+      "updatedAt": "2026-08-20T17:58:32.710Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "c5ad23defc8648eb9688c3683be6d09b",
+      "slug": "runner-home-drawer-closed",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/c5ad23defc8648eb9688c3683be6d09b_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T18:02:10.080Z",
+      "updatedAt": "2026-08-20T18:02:10.080Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "bda3c39c449d4cb6ab18dbf4cf81c96a",
+      "parentScreenId": "8414db35e3ad48769a48e1215ae2c21e",
+      "slug": "runner-home-drawer-closed",
+      "operation": "edit",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/bda3c39c449d4cb6ab18dbf4cf81c96a_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T18:12:09.384Z",
+      "updatedAt": "2026-08-20T18:12:09.384Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "544e3e9ce92f4bbcbaea2520b2327459",
+      "slug": "runner-home-drawer-closed",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/544e3e9ce92f4bbcbaea2520b2327459_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T18:59:11.783Z",
+      "updatedAt": "2026-08-20T18:59:11.783Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "737fbbe4420c48b5b4dd52168c1f1a46",
+      "slug": "runner-home-drawer-closed",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/737fbbe4420c48b5b4dd52168c1f1a46_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T19:34:35.581Z",
+      "updatedAt": "2026-08-20T19:34:35.581Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "5f6e1865415f4d06a3b4cd04c26e4771",
+      "slug": "runner-home-drawer-closed",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/runner-home-active.md"
+      ],
+      "html": "artifacts/5f6e1865415f4d06a3b4cd04c26e4771_runner-home-drawer-closed.html",
+      "createdAt": "2026-08-20T19:43:22.392Z",
+      "updatedAt": "2026-08-20T19:43:22.392Z"
+    },
+    {
+      "projectId": "12727163079393064568",
+      "screenId": "4aac2a7b9b5c471bac23545055fa4c87",
+      "slug": "training-center-active",
+      "operation": "export",
+      "status": "candidate",
+      "designGeneration": "raycast-v1",
+      "briefs": [
+        "briefs/training-center-active.md"
+      ],
+      "html": "artifacts/4aac2a7b9b5c471bac23545055fa4c87_training-center-active.html",
+      "createdAt": "2026-08-21T01:07:54.720Z",
+      "updatedAt": "2026-08-21T01:07:54.720Z"
+    }
+  ]
 }
