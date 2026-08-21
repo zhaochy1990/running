@@ -281,6 +281,48 @@ func TestApplyStructuredWeeklyPlanCreatesAndReplacesAtomically(t *testing.T) {
 	}
 }
 
+func TestApplyStructuredWeeklyPlanLinksActiveMasterPlan(t *testing.T) {
+	store := openTestStore(t)
+	migrateWeeklyPlan(t, store)
+	migrateMasterPlan(t, store)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	weekStart := "2026-08-17"
+	content := "{\"schema\":\"weekly-plan/v1\",\"week_name\":\"2026-08-17_08-23\",\"sessions\":[],\"nutrition\":[]}"
+
+	seedPlan(t, store, structuredPlan(userID))
+	got, err := store.GetCurrentMasterPlan(ctx, userID)
+	if err != nil || got == nil {
+		t.Fatalf("seed active master plan: got=%+v err=%v", got, err)
+	}
+
+	plan, _, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, nil)
+	if err != nil || plan == nil {
+		t.Fatalf("apply: %+v err=%v", plan, err)
+	}
+	if plan.MasterPlanID == nil || *plan.MasterPlanID != got.PlanID {
+		t.Fatalf("weekly plan master_plan_id=%v, want %q", plan.MasterPlanID, got.PlanID)
+	}
+}
+
+func TestApplyStructuredWeeklyPlanNoMasterPlanLeavesNil(t *testing.T) {
+	store := openTestStore(t)
+	migrateWeeklyPlan(t, store)
+	migrateMasterPlan(t, store)
+	ctx := context.Background()
+	userID := uuid.NewString()
+	weekStart := "2026-08-17"
+	content := "{\"schema\":\"weekly-plan/v1\",\"week_name\":\"2026-08-17_08-23\",\"sessions\":[],\"nutrition\":[]}"
+
+	plan, _, err := store.ApplyStructuredWeeklyPlan(ctx, userID, weekStart, content, nil)
+	if err != nil || plan == nil {
+		t.Fatalf("apply: %+v err=%v", plan, err)
+	}
+	if plan.MasterPlanID != nil {
+		t.Fatalf("weekly plan master_plan_id=%v, want nil", *plan.MasterPlanID)
+	}
+}
+
 func TestApplyStructuredWeeklyPlanRejectsNonMonday(t *testing.T) {
 	store := openTestStore(t)
 	migrateWeeklyPlan(t, store)

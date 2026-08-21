@@ -186,6 +186,17 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 	apply := func() error {
 		created = nil
 		replaced = nil
+		// Link the new weekly plan to the athlete's active master plan. When the
+		// user has no active master plan the link stays nil by design.
+		masterPlan, err := s.GetCurrentMasterPlan(ctx, uid)
+		if err != nil {
+			return fmt.Errorf("storage: resolve active master plan: %w", err)
+		}
+		var masterPlanID *string
+		if masterPlan != nil {
+			id := masterPlan.PlanID
+			masterPlanID = &id
+		}
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			var rows []WeeklyPlan
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -235,6 +246,7 @@ func (s *Store) ApplyStructuredWeeklyPlan(
 			activeSlot := WeeklyPlanStatusActive
 			row := &WeeklyPlan{
 				PlanID: uuid.NewString(), UserID: uid, WeekStart: weekStart,
+				MasterPlanID: masterPlanID,
 				ContentVersion: WeeklyPlanContentStructured, Content: content,
 				Status: WeeklyPlanStatusActive, StatusSlot: &activeSlot,
 				Revision: 1, CreatedAt: now, UpdatedAt: now,
