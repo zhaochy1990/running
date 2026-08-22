@@ -33,6 +33,7 @@ type MasterPlanStore interface {
 	RunningWeekSummaries(ctx context.Context, userID string, windows []storage.WeekWindow) (map[int]storage.RunningWeekSummary, error)
 	TrainingDoseWeekSummaries(ctx context.Context, userID string, windows []storage.WeekWindow) (map[int]storage.TrainingDoseWeekSummary, error)
 	ApplyStructuredMasterPlan(ctx context.Context, userID, goalID, content string, replacement *storage.MasterPlanReplacement) (*storage.MasterPlan, *storage.MasterPlan, error)
+	UpdateActiveMasterPlan(ctx context.Context, userID, goalID, content string, expectation *storage.MasterPlanReplacement) (*storage.MasterPlan, error)
 }
 
 type masterPlanRoutes struct {
@@ -58,13 +59,14 @@ func (m *masterPlanRoutes) register(rg *gin.RouterGroup) {
 }
 
 // registerAdminWrites mounts the narrow administrator-only master plan
-// import path on the parent authenticated group. The handler still verifies
-// TierAdmin so user and internal callers cannot use it.
+// import/update paths on the parent authenticated group. The handlers still
+// verify TierAdmin so user and internal callers cannot use them.
 func (m *masterPlanRoutes) registerAdminWrites(rg *gin.RouterGroup) {
 	if m.store == nil {
 		return
 	}
 	rg.POST("/api/users/:user_id/master-plan", m.apply)
+	rg.PATCH("/api/users/:user_id/master-plan", m.update)
 }
 
 type applyMasterPlanRequest struct {
@@ -78,6 +80,17 @@ type applyMasterPlanResponse struct {
 	Success        bool                      `json:"success"`
 	Plan           currentSeasonPlanEnvelope `json:"plan"`
 	ReplacedPlanID *string                   `json:"replaced_plan_id"`
+}
+
+type updateMasterPlanRequest struct {
+	Content                map[string]any `json:"content" binding:"required"`
+	ExpectedActivePlanID   *string        `json:"expected_active_plan_id"`
+	ExpectedActiveRevision *int64         `json:"expected_active_revision"`
+}
+
+type updateMasterPlanResponse struct {
+	Success bool                      `json:"success"`
+	Plan    currentSeasonPlanEnvelope `json:"plan"`
 }
 
 // apply imports a validated structured Master Plan for an existing athlete.
@@ -166,6 +179,85 @@ func (m *masterPlanRoutes) apply(c *gin.Context) {
 		Plan:           envelope,
 		ReplacedPlanID: replacedID,
 	})
+}
+
+// update revises the athlete's active structured Master Plan in place: the plan
+// keeps its plan_id and the revision is bumped by one. The caller must confirm
+// the exact active plan id + revision it is editing, so a concurrent apply or
+// update between fetch and PATCH surfaces as 409 instead of a lost update.
+//
+//	@Summary		Update the active structured Master Plan
+//	@Description	Revises the active master plan in place (same plan_id, revision + 1). Only the admin JWT tier may call it. Requires expected_active_plan_id plus expected_active_revision of the plan being edited; a stale identity returns 409.
+//	@Tags			master-plan
+//	@Accept			json
+//	@Produce		json
+//	@Param			user_id	path		string					 true	"Target user UUID"
+//	@Param			body		body		updateMasterPlanRequest true	"Replacement content and the confirmed active plan identity"
+//	@Success		200			{object}	updateMasterPlanResponse
+//	@Failure		400			{object}	errorResponse
+//	@Failure		401			{object}	errorResponse
+//	@Failure		403			{object}	errorResponse
+//	@Failure		404			{object}	errorResponse
+//	@Failure		409			{object}	errorResponse
+//	@Failure		413			{object}	errorResponse
+//	@Failure		422			{object}	errorResponse
+//	@Failure		500			{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/users/{user_id}/master-plan [patch]
+func (m *masterPlanRoutes) update(c *gin.Context) {
+	if callerFrom(c).Tier != TierAdmin {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+	uid := c.Param("user_id")
+	if _, err := uuid.Parse(uid); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user"})
+		return
+	}
+
+	var request updateMasterPlanRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		if isBodyTooLarge(err) {
+			c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "master_plan_too_large"})
+			return
+		}
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+	exp, err := parseReplacementExpectation(true, request.ExpectedActivePlanID, request.ExpectedActiveRevision)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_replacement"})
+		return
+	}
+	content, goalID, err := validateAppliedMasterPlan(request.Content)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+
+	updated, err := m.store.UpdateActiveMasterPlan(c.Request.Context(), uid, goalID, string(content), &storage.MasterPlanReplacement{
+		PlanID: exp.PlanID, Revision: exp.Revision,
+	})
+	if errors.Is(err, storage.ErrMasterPlanNotFound) {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "master_plan_not_found"})
+		return
+	}
+	if errors.Is(err, storage.ErrMasterPlanConflict) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "master_plan_changed"})
+		return
+	}
+	if err != nil {
+		m.log.Error("update master plan failed", zapErr(err), zap.String("user_id", uid))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	envelope, _, _, err := buildCurrentEnvelope(updated, timefmt.ShanghaiToday(), m.log)
+	if err != nil {
+		m.log.Error("updated master plan is invalid", zapErr(err), zap.String("plan_id", updated.PlanID))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, updateMasterPlanResponse{Success: true, Plan: envelope})
 }
 
 // validateAppliedMasterPlan enforces the canonical content_version=2 contract

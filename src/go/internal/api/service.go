@@ -245,7 +245,7 @@ func (s *Service) Router() *gin.Engine {
 	authenticated := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
 	// Plan routes explicitly admit the separate admin JWT tier. The master-plan
 	// /me handler still rejects it; only the narrow Weekly/Master Plan import
-	// routes may mutate data outside the default-deny child group below.
+	// and update routes may mutate data outside the default-deny child group below.
 	s.masterPlan.register(authenticated)
 	s.masterPlan.registerAdminWrites(authenticated)
 	s.weeklyPlan.registerReads(authenticated)

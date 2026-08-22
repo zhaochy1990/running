@@ -1239,6 +1239,25 @@ definitions:
       timestamp:
         type: integer
     type: object
+  api.updateMasterPlanRequest:
+    properties:
+      content:
+        additionalProperties: {}
+        type: object
+      expected_active_plan_id:
+        type: string
+      expected_active_revision:
+        type: integer
+    required:
+    - content
+    type: object
+  api.updateMasterPlanResponse:
+    properties:
+      plan:
+        $ref: '#/definitions/api.currentSeasonPlanEnvelope'
+      success:
+        type: boolean
+    type: object
   api.userPipelinesResponse:
     properties:
       pipelines:
@@ -2225,6 +2244,69 @@ paths:
       tags:
       - pipelines
   /api/users/{user_id}/master-plan:
+    patch:
+      consumes:
+      - application/json
+      description: Revises the active master plan in place (same plan_id, revision
+        + 1). Only the admin JWT tier may call it. Requires expected_active_plan_id
+        plus expected_active_revision of the plan being edited; a stale identity returns
+        409.
+      parameters:
+      - description: Target user UUID
+        in: path
+        name: user_id
+        required: true
+        type: string
+      - description: Replacement content and the confirmed active plan identity
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.updateMasterPlanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.updateMasterPlanResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update the active structured Master Plan
+      tags:
+      - master-plan
     post:
       consumes:
       - application/json

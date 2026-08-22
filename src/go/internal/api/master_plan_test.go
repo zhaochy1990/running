@@ -88,6 +88,23 @@ func (f *fakeMasterPlanStore) ApplyStructuredMasterPlan(_ context.Context, userI
 	return created, replaced, nil
 }
 
+func (f *fakeMasterPlanStore) UpdateActiveMasterPlan(_ context.Context, userID, goalID, content string, expectation *storage.MasterPlanReplacement) (*storage.MasterPlan, error) {
+	active, ok := f.current[userID]
+	if !ok || active == nil {
+		return nil, storage.ErrMasterPlanNotFound
+	}
+	if expectation == nil || active.PlanID != expectation.PlanID || active.Revision == nil || *active.Revision != expectation.Revision {
+		return nil, storage.ErrMasterPlanConflict
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	newRevision := *active.Revision + 1
+	active.GoalID = goalID
+	active.Content = content
+	active.Revision = &newRevision
+	active.UpdatedAt = now
+	return active, nil
+}
+
 // --- harness -----------------------------------------------------------------
 
 type mpHarness struct {

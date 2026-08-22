@@ -154,6 +154,108 @@ func TestApplyStructuredMasterPlanRejectsStaleReplacement(t *testing.T) {
 	}
 }
 
+func TestUpdateActiveMasterPlanBumpsRevisionInPlace(t *testing.T) {
+	st := openTestStore(t)
+	migrateMasterPlan(t, st)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	goalID := uuid.NewString()
+	content := `{"goal":{"goal_id":"` + goalID + `","target_time":"3:30:00"},"phases":[],"milestones":[],"weeks":[]}`
+
+	active, _, err := st.ApplyStructuredMasterPlan(ctx, userID, goalID, content, nil)
+	if err != nil {
+		t.Fatalf("first apply: %v", err)
+	}
+
+	updatedContent := `{"goal":{"goal_id":"` + goalID + `","target_time":"3:25:00"},"phases":[],"milestones":[],"weeks":[]}`
+	updated, err := st.UpdateActiveMasterPlan(ctx, userID, goalID, updatedContent, &MasterPlanReplacement{PlanID: active.PlanID, Revision: *active.Revision})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if updated.PlanID != active.PlanID {
+		t.Fatalf("plan_id changed: %s -> %s", active.PlanID, updated.PlanID)
+	}
+	if updated.Revision == nil || *updated.Revision != 2 {
+		t.Fatalf("revision = %v, want 2", updated.Revision)
+	}
+	if updated.Content != updatedContent {
+		t.Fatalf("content not updated")
+	}
+
+	// exactly one row remains (no archive), still active, same identity.
+	var rows []MasterPlan
+	if err := st.db.WithContext(ctx).Where("user_id = ?", userID).Find(&rows).Error; err != nil {
+		t.Fatalf("load rows: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Status != MasterPlanStatusActive {
+		t.Fatalf("rows = %+v, want single active row", rows)
+	}
+
+	current, err := st.GetCurrentMasterPlan(ctx, userID)
+	if err != nil || current == nil || current.PlanID != active.PlanID {
+		t.Fatalf("current = %+v, err=%v", current, err)
+	}
+}
+
+func TestUpdateActiveMasterPlanConflicts(t *testing.T) {
+	st := openTestStore(t)
+	migrateMasterPlan(t, st)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	goalID := uuid.NewString()
+	content := `{"goal":{"goal_id":"` + goalID + `","target_time":"3:30:00"},"phases":[],"milestones":[],"weeks":[]}`
+
+	// no active plan -> not found
+	if _, err := st.UpdateActiveMasterPlan(ctx, userID, goalID, content, &MasterPlanReplacement{PlanID: uuid.NewString(), Revision: 1}); !errors.Is(err, ErrMasterPlanNotFound) {
+		t.Fatalf("no active: err = %v, want ErrMasterPlanNotFound", err)
+	}
+	// nil expectation -> rejected
+	if _, err := st.UpdateActiveMasterPlan(ctx, userID, goalID, content, nil); err == nil {
+		t.Fatalf("nil expectation must fail")
+	}
+
+	active, _, err := st.ApplyStructuredMasterPlan(ctx, userID, goalID, content, nil)
+	if err != nil {
+		t.Fatalf("first apply: %v", err)
+	}
+	// stale revision -> conflict
+	if _, err := st.UpdateActiveMasterPlan(ctx, userID, goalID, content, &MasterPlanReplacement{PlanID: active.PlanID, Revision: *active.Revision + 1}); !errors.Is(err, ErrMasterPlanConflict) {
+		t.Fatalf("stale: err = %v, want ErrMasterPlanConflict", err)
+	}
+	// wrong plan id -> conflict
+	if _, err := st.UpdateActiveMasterPlan(ctx, userID, goalID, content, &MasterPlanReplacement{PlanID: uuid.NewString(), Revision: *active.Revision}); !errors.Is(err, ErrMasterPlanConflict) {
+		t.Fatalf("wrong plan id: err = %v, want ErrMasterPlanConflict", err)
+	}
+}
+
+func TestUpdateActiveMasterPlanRejectsMarkdown(t *testing.T) {
+	st := openTestStore(t)
+	migrateMasterPlan(t, st)
+	ctx := context.Background()
+
+	userID := uuid.NewString()
+	goalID := uuid.NewString()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	activeFlag := int8(1)
+
+	markdownPlan := &MasterPlan{
+		PlanID: uuid.NewString(), UserID: userID, GoalID: goalID,
+		ContentVersion: MasterPlanContentMarkdown, Content: "# Test Plan\n\nSome text",
+		Status: MasterPlanStatusActive, ActiveFlag: &activeFlag,
+		Revision: nil, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := st.db.WithContext(ctx).Create(markdownPlan).Error; err != nil {
+		t.Fatalf("seed markdown plan: %v", err)
+	}
+
+	content := `{"goal":{"goal_id":"` + goalID + `","target_time":"3:30:00"},"phases":[],"milestones":[],"weeks":[]}`
+	if _, err := st.UpdateActiveMasterPlan(ctx, userID, goalID, content, &MasterPlanReplacement{PlanID: markdownPlan.PlanID, Revision: 1}); !errors.Is(err, ErrMasterPlanConflict) {
+		t.Fatalf("markdown update: err = %v, want ErrMasterPlanConflict", err)
+	}
+}
+
 func TestApplyStructuredMasterPlanInvalidMarkdownReplacement(t *testing.T) {
 	st := openTestStore(t)
 	migrateMasterPlan(t, st)

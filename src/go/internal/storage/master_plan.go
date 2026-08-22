@@ -20,6 +20,10 @@ var ErrMasterPlanExists = errors.New("storage: active master plan already exists
 // confirmed a specific plan revision for replacement.
 var ErrMasterPlanConflict = errors.New("storage: active master plan changed")
 
+// ErrMasterPlanNotFound is returned when an update targets a user with no
+// active master plan to modify.
+var ErrMasterPlanNotFound = errors.New("storage: active master plan not found")
+
 // MasterPlanReplacement is the active row revision an administrator reviewed
 // and explicitly confirmed replacing.
 type MasterPlanReplacement struct {
@@ -209,4 +213,90 @@ func (s *Store) ApplyStructuredMasterPlan(
 		return nil, nil, err
 	}
 	return created, replaced, nil
+}
+
+// UpdateActiveMasterPlan revises the athlete's active structured master plan in
+// place: the same plan_id keeps its identity and only the content, goal and
+// revision (revision + 1) change. The caller must supply the exact active plan
+// id + revision it confirmed editing (optimistic concurrency); a mismatch, a
+// nil-revision legacy markdown active row, or a missing active plan all fail
+// closed. All rows for the user are locked so the revision bump is serialized
+// against concurrent applies and updates.
+func (s *Store) UpdateActiveMasterPlan(
+	ctx context.Context, userID, goalID, content string, expectation *MasterPlanReplacement,
+) (*MasterPlan, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := uuid.Parse(goalID); err != nil {
+		return nil, fmt.Errorf("storage: invalid goal_id: %w", err)
+	}
+	if strings.TrimSpace(content) == "" {
+		return nil, fmt.Errorf("storage: content cannot be empty")
+	}
+	if expectation == nil {
+		return nil, fmt.Errorf("storage: update requires the confirmed active plan id and revision")
+	}
+
+	var updated *MasterPlan
+	update := func() error {
+		updated = nil
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var rows []MasterPlan
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("user_id = ?", uid).
+				Order("revision DESC, created_at DESC").
+				Find(&rows).Error; err != nil {
+				return fmt.Errorf("storage: lock master plans: %w", err)
+			}
+
+			var active *MasterPlan
+			for i := range rows {
+				if rows[i].Status == MasterPlanStatusActive {
+					active = &rows[i]
+				}
+			}
+			if active == nil {
+				return ErrMasterPlanNotFound
+			}
+			if active.PlanID != expectation.PlanID || active.Revision == nil || *active.Revision != expectation.Revision {
+				return ErrMasterPlanConflict
+			}
+
+			now := time.Now().UTC().Truncate(time.Millisecond)
+			newRevision := *active.Revision + 1
+			result := tx.Model(&MasterPlan{}).
+				Where("plan_id = ? AND user_id = ? AND status = ? AND revision = ?", active.PlanID, uid, MasterPlanStatusActive, active.Revision).
+				Updates(map[string]any{
+					"goal_id":    goalID,
+					"content":    content,
+					"revision":   newRevision,
+					"updated_at": now,
+				})
+			if result.Error != nil {
+				return fmt.Errorf("storage: update master plan: %w", result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return ErrMasterPlanConflict
+			}
+			active.GoalID = goalID
+			active.Content = content
+			active.Revision = &newRevision
+			active.UpdatedAt = now
+			updated = active
+			return nil
+		})
+	}
+	err = update()
+	// Mirror the apply path: a concurrent update/apply on the same user rows can
+	// deadlock inside InnoDB; retry once so the loser re-reads the current active
+	// row and returns the stable domain conflict instead of a transient 500.
+	if number, ok := mysqlErrNo(err); ok && number == 1213 {
+		err = update()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
 }
