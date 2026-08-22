@@ -165,7 +165,7 @@ func (s *Store) ApplyStructuredMasterPlan(
 
 			now := time.Now().UTC().Truncate(time.Millisecond)
 			if replaced != nil {
-			result := tx.Model(&MasterPlan{}).
+				result := tx.Model(&MasterPlan{}).
 					Where("plan_id = ? AND user_id = ? AND status = ? AND revision = ?", replaced.PlanID, uid, MasterPlanStatusActive, replaced.Revision).
 					Updates(map[string]any{
 						"status":      MasterPlanStatusArchived,
