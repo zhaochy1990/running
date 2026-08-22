@@ -57,7 +57,7 @@ jobs:
   check-a-cancelled:
     runs-on: ubuntu-latest
     needs: [matrix-a]
-    if: !cancelled() && needs.matrix-a.result == 'success'
+    if: ${{ !cancelled() && needs.matrix-a.result == 'success' }}
     steps:
       - run: echo "check-a-cancelled ran; result=${{ needs.matrix-a.result }}"
 
