@@ -160,7 +160,7 @@ func (m *masterPlanRoutes) apply(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		m.log.Error("apply master plan failed", zapErr(err), zap.String("user_id", uid))
+		m.log.Error("apply structured master plan failed", zapErr(err), zap.String("user_id", uid))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
