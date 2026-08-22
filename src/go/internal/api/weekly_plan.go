@@ -130,18 +130,21 @@ func (w *weeklyPlanRoutes) apply(c *gin.Context) {
 
 	var request applyWeeklyPlanRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		var maxBytesError *http.MaxBytesError
-		if errors.As(err, &maxBytesError) {
+		if isBodyTooLarge(err) {
 			c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "weekly_plan_too_large"})
 			return
 		}
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
-	replacement, err := weeklyPlanReplacement(request)
+	exp, err := parseReplacementExpectation(request.ReplaceExisting, request.ExpectedActivePlanID, request.ExpectedActiveRevision)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_replacement"})
 		return
+	}
+	var replacement *storage.WeeklyPlanReplacement
+	if exp != nil {
+		replacement = &storage.WeeklyPlanReplacement{PlanID: exp.PlanID, Revision: exp.Revision}
 	}
 	content, err := validateAppliedWeeklyPlan(request.Content, weekName)
 	if err != nil {
@@ -187,23 +190,41 @@ func (w *weeklyPlanRoutes) apply(c *gin.Context) {
 	})
 }
 
-func weeklyPlanReplacement(request applyWeeklyPlanRequest) (*storage.WeeklyPlanReplacement, error) {
-	if !request.ReplaceExisting {
-		if request.ExpectedActivePlanID != nil || request.ExpectedActiveRevision != nil {
+// isBodyTooLarge reports whether a binding failure came from the ingress body
+// cap (limitBody), so plan import handlers answer 413 instead of 422.
+func isBodyTooLarge(err error) bool {
+	var maxBytesError *http.MaxBytesError
+	return errors.As(err, &maxBytesError)
+}
+
+// planReplacementExpectation is the active-row (plan id, revision) an
+// administrator explicitly confirmed replacing.
+type planReplacementExpectation struct {
+	PlanID   string
+	Revision int64
+}
+
+// parseReplacementExpectation validates the replace_existing +
+// expected_active_plan_id/revision contract shared by the weekly and master plan
+// import handlers. A nil result with nil error means "apply without
+// replacement".
+func parseReplacementExpectation(replaceExisting bool, expectedPlanID *string, expectedRevision *int64) (*planReplacementExpectation, error) {
+	if !replaceExisting {
+		if expectedPlanID != nil || expectedRevision != nil {
 			return nil, errors.New("replacement expectation requires replace_existing")
 		}
 		return nil, nil
 	}
-	if request.ExpectedActivePlanID == nil || strings.TrimSpace(*request.ExpectedActivePlanID) == "" ||
-		request.ExpectedActiveRevision == nil || *request.ExpectedActiveRevision < 1 {
+	if expectedPlanID == nil || strings.TrimSpace(*expectedPlanID) == "" ||
+		expectedRevision == nil || *expectedRevision < 1 {
 		return nil, errors.New("replacement expectation is incomplete")
 	}
-	planID, err := uuid.Parse(*request.ExpectedActivePlanID)
+	planID, err := uuid.Parse(*expectedPlanID)
 	if err != nil {
 		return nil, errors.New("replacement plan id is invalid")
 	}
-	return &storage.WeeklyPlanReplacement{
-		PlanID: planID.String(), Revision: *request.ExpectedActiveRevision,
+	return &planReplacementExpectation{
+		PlanID: planID.String(), Revision: *expectedRevision,
 	}, nil
 }
 

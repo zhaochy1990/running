@@ -62,6 +62,49 @@ func (f *fakeMasterPlanStore) TrainingDoseWeekSummaries(_ context.Context, _ str
 	return f.dose, nil
 }
 
+func (f *fakeMasterPlanStore) ApplyStructuredMasterPlan(_ context.Context, userID, goalID, content string, replacement *storage.MasterPlanReplacement) (*storage.MasterPlan, *storage.MasterPlan, error) {
+	var replaced *storage.MasterPlan
+	if active, ok := f.current[userID]; ok && active != nil {
+		if replacement == nil {
+			return nil, nil, storage.ErrMasterPlanExists
+		}
+		if active.PlanID != replacement.PlanID || active.Revision == nil || *active.Revision != replacement.Revision {
+			return nil, nil, storage.ErrMasterPlanConflict
+		}
+		replaced = active
+	} else if replacement != nil {
+		return nil, nil, storage.ErrMasterPlanConflict
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	revision := int64(1)
+	activeFlag := int8(1)
+	created := &storage.MasterPlan{
+		PlanID: uuid.NewString(), UserID: userID, GoalID: goalID,
+		ContentVersion: storage.MasterPlanContentStructured, Content: content,
+		Status: storage.MasterPlanStatusActive, ActiveFlag: &activeFlag,
+		Revision: &revision, CreatedAt: now, UpdatedAt: now,
+	}
+	f.current[userID] = created
+	return created, replaced, nil
+}
+
+func (f *fakeMasterPlanStore) UpdateActiveMasterPlan(_ context.Context, userID, goalID, content string, expectation *storage.MasterPlanReplacement) (*storage.MasterPlan, error) {
+	active, ok := f.current[userID]
+	if !ok || active == nil {
+		return nil, storage.ErrMasterPlanNotFound
+	}
+	if expectation == nil || active.PlanID != expectation.PlanID || active.Revision == nil || *active.Revision != expectation.Revision {
+		return nil, storage.ErrMasterPlanConflict
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	newRevision := *active.Revision + 1
+	active.GoalID = goalID
+	active.Content = content
+	active.Revision = &newRevision
+	active.UpdatedAt = now
+	return active, nil
+}
+
 // --- harness -----------------------------------------------------------------
 
 type mpHarness struct {
