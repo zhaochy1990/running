@@ -299,7 +299,8 @@ export class WeeklyPlanGeneratorNodes {
       logger.error(`Cannot resolve target week phase for request ${state.request?.request_id}: no stage.phase_name or phase.name`);
       return "phase_unresolvable";
     }
-    logger.info("Route the generation request to phase node: " + phase);
+    logger.info(`Route the generation request to phase node: ${phase}, user: ${state.context?.userId}, request ${state.request?.request_id}`);
+    
     return PHASE_NODE_NAMES[phase];
   };
 
@@ -730,13 +731,13 @@ function decideTargetLoad(input: LoadDecisionInput): LoadDecision {
       rationale: ["load_ratio unavailable: maintain at anchor"],
     };
   }
-  if (input.loadRatio > 1.25) {
+  if (input.loadRatio > 1.45) {
     return {
       decision: "decrease",
       lowRatio: 0.8,
       highRatio: 0.9,
       removeQualityStimulus: true,
-      rationale: ["load_ratio > 1.25: cut to 80-90% of anchor"],
+      rationale: ["load_ratio > 1.45: cut to 80-90% of anchor"],
     };
   }
   if (input.loadRatio >= 1.1 || input.highCost) {

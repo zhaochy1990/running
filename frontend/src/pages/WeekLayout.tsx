@@ -7,7 +7,6 @@ import {
   getWeek,
   getWeekStrength,
   updateWeeklyFeedback,
-  getPlanDays,
   pushPlannedSession,
   reparsePlan,
   formatWeekRange,
@@ -28,6 +27,7 @@ import {
 import { shanghaiDate, shanghaiMonthDay, shanghaiToday } from "../lib/shanghai";
 import { findCurrentWeek } from "../lib/weeklyPlanView";
 import type { PlannedNutrition, StructuredStatus } from "../types/plan";
+import { buildPlanDaysFromWeekDetail, buildWeekDates } from "../types/plan";
 import type { StrengthTabResponse } from "../types/strength";
 import { useUser } from "../UserContextValue";
 import PlannedCalendar from "../components/PlannedCalendar";
@@ -127,22 +127,13 @@ export default function WeekLayout() {
     }
   }, [folder, user]);
 
-  // Load the calendar payload for the active week.
+  // Build the calendar payload for the active week directly from the Go
+  // `/weeks` detail response. The structured plan is the canonical MySQL source
+  // for both sessions and nutrition, so the calendar no longer depends on the
+  // legacy `/plan/days` Python/Azure endpoint.
   useEffect(() => {
     if (!folder || !user || !weekDetail) return;
-    let cancelled = false;
-    getPlanDays(user, weekDetail.date_from, weekDetail.date_to)
-      .then((data) => {
-        if (cancelled) return;
-        setPlanDays(data.days);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setPlanDays([]);
-      });
-    return () => {
-      cancelled = true;
-    };
+    setPlanDays(buildPlanDaysFromWeekDetail(weekDetail));
   }, [folder, user, weekDetail]);
 
   // Load the strength-tab payload for the active week.
@@ -186,8 +177,7 @@ export default function WeekLayout() {
       }
       // Refresh calendar payload to surface the new scheduled_workout_id.
       if (weekDetail) {
-        const refreshed = await getPlanDays(user, weekDetail.date_from, weekDetail.date_to);
-        setPlanDays(refreshed.days);
+        setPlanDays(buildPlanDaysFromWeekDetail(weekDetail));
       }
     },
     [user, weekDetail],
@@ -206,8 +196,7 @@ export default function WeekLayout() {
       setStructuredStatus(res.data.structured_status);
       // Pull fresh calendar data after the reparse.
       if (weekDetail) {
-        const refreshed = await getPlanDays(user, weekDetail.date_from, weekDetail.date_to);
-        setPlanDays(refreshed.days);
+        setPlanDays(buildPlanDaysFromWeekDetail(weekDetail));
       }
     } catch (e) {
       setReparseError(e instanceof Error ? e.message : "重新解析失败");
@@ -332,34 +321,6 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
   );
 }
 
-function buildWeekDates(dateFrom: string, dateTo: string): string[] {
-  // `dateFrom`/`dateTo` are Shanghai-local YYYY-MM-DD (week-folder format).
-  // Parse the bare strings as Shanghai dates and iterate by day — we
-  // deliberately do NOT use `new Date(yyyy_mm_dd)` because that parses as
-  // UTC midnight and would drift by one day for non-Shanghai browsers.
-  const out: string[] = [];
-  const parse = (s: string): [number, number, number] | null => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-    return m ? [+m[1], +m[2], +m[3]] : null;
-  };
-  const from = parse(dateFrom);
-  const to = parse(dateTo);
-  if (!from || !to) return out;
-  // Use UTC date arithmetic to walk day-by-day; the resulting numbers are
-  // calendar values, not instants, so TZ never enters the picture.
-  let cur = Date.UTC(from[0], from[1] - 1, from[2]);
-  const end = Date.UTC(to[0], to[1] - 1, to[2]);
-  while (cur <= end && out.length < 31) {
-    const d = new Date(cur);
-    const y = d.getUTCFullYear();
-    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-    const day = String(d.getUTCDate()).padStart(2, "0");
-    out.push(`${y}-${m}-${day}`);
-    cur += 24 * 3600 * 1000;
-  }
-  return out;
-}
-
 function CalendarTab({
   user,
   weekDetail,
@@ -421,16 +382,15 @@ function CalendarTab({
       setBatchBusy(busy);
       // Refresh the calendar once when the batch finishes so new
       // scheduled_workout_id values surface in the per-row buttons.
-      if (!busy && user) {
+       if (!busy && user) {
         try {
-          const refreshed = await getPlanDays(user, weekDetail.date_from, weekDetail.date_to);
-          setPlanDays(refreshed.days);
+          setPlanDays(buildPlanDaysFromWeekDetail(weekDetail));
         } catch {
           /* surface as per-row error in PushAllPlannedButton results */
         }
       }
     },
-    [user, weekDetail.date_from, weekDetail.date_to, setPlanDays],
+    [user, weekDetail, setPlanDays],
   );
 
   return (

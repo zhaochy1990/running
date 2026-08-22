@@ -32,8 +32,6 @@ const KIND_STYLE: Record<PlannedSession["kind"], string> = {
   note: "bg-amber-soft text-accent-amber",
 };
 
-
-
 export default function WeeklyScheduleTab({ week, days, structuredStatus, canPushRun, canPushStrength, onPush }: WeeklyScheduleTabProps) {
   if (days.length === 0 && !week.plan?.trim()) return <CoachWeeklyPlanEmptyState />;
 

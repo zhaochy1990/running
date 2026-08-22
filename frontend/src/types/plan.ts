@@ -5,6 +5,8 @@
 // `WeeklyPlan.from_dict` / `to_dict`). Keep this file in lockstep with
 // `plan_spec.py` — when fields are added/removed there, mirror here.
 
+import type { PlanDay, PlannedSessionRow, WeekDetail } from "../api";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // workout_spec primitives
 // ─────────────────────────────────────────────────────────────────────────────
@@ -134,6 +136,86 @@ const PUSHABLE_KINDS: ReadonlySet<SessionKind> = new Set(["run", "strength"]);
 /** True iff the session has a complete spec the push pipeline can consume. */
 export function isPushable(s: PlannedSession): boolean {
   return PUSHABLE_KINDS.has(s.kind) && s.spec != null;
+}
+
+/**
+ * Merge structured-plan sessions/nutrition (from the `/weeks/{id}` Go backend,
+ * which reads MySQL) into a calendar `PlanDay[]`. `days` rows win on the same
+ * `date`/`session_index` key so any pre-existing state (e.g. push/scheduled
+ * info) survives; structured sessions fill the gaps. This is the basis of the
+ * Go-only calendar (see {@link buildPlanDaysFromWeekDetail}).
+ *
+ * Structured sessions lack `id`/`pushable`, so we synthesize them.
+ */
+export function mergeStructuredIntoPlanDays(
+  days: PlanDay[],
+  structured: WeekDetail["structured"],
+): PlanDay[] {
+  if (!structured) return days;
+  const structuredSessions = structured.sessions ?? [];
+  const structuredNutrition = new Map<string, PlannedNutrition>(
+    (structured.nutrition ?? []).map((n) => [n.date, n]),
+  );
+  const out = days.map((day) => {
+    const byKey = new Map<string, PlannedSessionRow>(
+      day.sessions.map((s) => [`${s.date}/${s.session_index}`, s]),
+    );
+    for (const s of structuredSessions) {
+      if (s.date !== day.date) continue;
+      const key = `${s.date}/${s.session_index}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, { ...s, id: 0, pushable: isPushable(s) });
+      }
+    }
+    const sessions = Array.from(byKey.values()).sort(
+      (a, b) => a.session_index - b.session_index,
+    );
+    const nutrition = day.nutrition ?? structuredNutrition.get(day.date) ?? null;
+    return { date: day.date, sessions, nutrition };
+  });
+  return out;
+}
+
+/**
+ * Build the calendar `PlanDay[]` for a week entirely from the Go `/weeks/{id}`
+ * detail response (`weekDetail.structured`) — the canonical MySQL source for
+ * both sessions and nutrition. Replaces the legacy `/plan/days` Python/Azure
+ * endpoint for the calendar tab. Structured sessions lack `id`/`pushable`, so
+ * we synthesize them.
+ */
+export function buildPlanDaysFromWeekDetail(weekDetail: WeekDetail): PlanDay[] {
+  const dates = buildWeekDates(weekDetail.date_from, weekDetail.date_to);
+  const empty: PlanDay[] = dates.map((d) => ({ date: d, sessions: [], nutrition: null }));
+  return mergeStructuredIntoPlanDays(empty, weekDetail.structured);
+}
+
+/** Build an inclusive list of Shanghai-local YYYY-MM-DD dates for a week. */
+export function buildWeekDates(dateFrom: string, dateTo: string): string[] {
+  // `dateFrom`/`dateTo` are Shanghai-local YYYY-MM-DD (week-folder format).
+  // Parse the bare strings as Shanghai dates and iterate by day — we
+  // deliberately do NOT use `new Date(yyyy_mm_dd)` because that parses as
+  // UTC midnight and would drift by one day for non-Shanghai browsers.
+  const out: string[] = [];
+  const parse = (s: string): [number, number, number] | null => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    return m ? [+m[1], +m[2], +m[3]] : null;
+  };
+  const from = parse(dateFrom);
+  const to = parse(dateTo);
+  if (!from || !to) return out;
+  // Use UTC date arithmetic to walk day-by-day; the resulting numbers are
+  // calendar values, not instants, so TZ never enters the picture.
+  let cur = Date.UTC(from[0], from[1] - 1, from[2]);
+  const end = Date.UTC(to[0], to[1] - 1, to[2]);
+  while (cur <= end && out.length < 31) {
+    const d = new Date(cur);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(d.getUTCDate()).padStart(2, "0");
+    out.push(`${y}-${m}-${day}`);
+    cur += 24 * 3600 * 1000;
+  }
+  return out;
 }
 
 /** True iff the surrounding week's structured layer is safe to push from

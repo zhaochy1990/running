@@ -7,6 +7,8 @@ import { loadConfig, readStrideMySqlConfig } from "../config/config.js";
 import { MySqlMasterPlanContextProvider, StrideDataStore } from "../persistence/index.js";
 import { ASK_USER_QUESTION_KIND, type AskUserQuestionPayload } from "../tools/askUserQuestions.js";
 import { formatTokenUsageReport, LlmTokenUsageTracker } from "../utils/tokenUsage.js";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const usernameMap: Record<string, string> = {
   pan: "5ee229a6-cdc1-4260-84d3-71ec622126c2",
@@ -31,8 +33,13 @@ function requireUserId(): { userId: string; username: string } {
   return { userId, username };
 }
 
+const PROFILE = 'prod';
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 const { userId, username } = requireUserId();
-const config = loadConfig();
+const config = loadConfig({
+    cwd: repoRoot,
+    configFile: join(repoRoot, "config", `coach.${PROFILE}.yaml`),
+  });
 const store = StrideDataStore.create(readStrideMySqlConfig(config));
 const agent = await createCoachAgent(store, config);
 const masterPlanContextProvider = new MySqlMasterPlanContextProvider(store);
@@ -158,9 +165,11 @@ async function askWithHITL(content: string, thread: string): Promise<void> {
 //   "帮我生成一个新的赛季训练计划，目标是明年上海马拉松 sub-3:10。",
 //   "sess-master",
 // );
+const prompt = `帮助用户生成赛季训练计划。使用已保存的比赛目标：${raceTarget.race_distance}，比赛日期 ${raceTarget.race_date}，目标成绩 ${raceTarget.target_finish_time}，目标比赛 ${raceTarget.race_name}，每周可以用来训练的天数 ${raceTarget.weekly_training_days} 天。根据用户档案和训练记录处理伤病及其他约束。`;
+console.log(`\n===== 生成赛季训练计划 =====\n${prompt}`);
 
 await askWithHITL(
-  `帮助用户生成赛季训练计划。使用已保存的比赛目标：${raceTarget.race_distance}，比赛日期 ${raceTarget.race_date}，目标成绩 ${raceTarget.target_finish_time}，目标比赛 ${raceTarget.race_name}，每周训练 ${raceTarget.weekly_training_days} 天。根据用户档案和训练记录处理伤病及其他约束。`,
+  prompt,
   "session-master-plan",
 );
 
