@@ -12,6 +12,9 @@
       "src/coach_agent/scripts/**/*.{js,mjs}",
       "src/coach_contract/src/**/*.{js,ts,json}",
       "src/coach_contract/scripts/**/*.{js,mjs}",
+      "src/plan_views/src/**/*.{js,ts,json,tsx}",
+      "src/plan_views/vite.config.ts",
+      "src/plan_views/vitest.config.ts",
       "src/stitch_design/cli.ts",
       "src/stitch_design/foundation-audit.mjs",
       "!!.worktrees"

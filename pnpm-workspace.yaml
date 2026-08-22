@@ -1,3 +1,7 @@
 packages:
   - src/coach_agent
   - src/coach_contract
+  - src/plan_views
+  - frontend
+allowBuilds:
+  esbuild: set this to true or false

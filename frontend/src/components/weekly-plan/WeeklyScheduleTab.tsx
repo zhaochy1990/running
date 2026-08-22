@@ -32,8 +32,6 @@ const KIND_STYLE: Record<PlannedSession["kind"], string> = {
   note: "bg-amber-soft text-accent-amber",
 };
 
-const HARDCODED_STRENGTH_FOLDER = "2026-08-03_08-09";
-
 export default function WeeklyScheduleTab({ week, days, structuredStatus, canPushRun, canPushStrength, onPush }: WeeklyScheduleTabProps) {
   if (days.length === 0 && !week.plan?.trim()) return <CoachWeeklyPlanEmptyState />;
 
@@ -78,7 +76,7 @@ export default function WeeklyScheduleTab({ week, days, structuredStatus, canPus
                         canPushRun={canPushRun}
                         canPushStrength={canPushStrength}
                         onPush={onPush}
-                        hidePush={week.week_name === HARDCODED_STRENGTH_FOLDER && day.date !== "2026-08-06" && day.date !== "2026-08-09"}
+                        hidePush={false}
                       />
                     ))
                   )}

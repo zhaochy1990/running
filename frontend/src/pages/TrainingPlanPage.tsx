@@ -24,9 +24,8 @@ import { shanghaiToday } from "../lib/shanghai";
 import { useUser } from "../UserContextValue";
 import TrainingPlanSetup from "./TrainingPlanSetup";
 import ViewHead from "../components/ViewHead";
-import WeeksGrid from "../components/WeeksGrid";
-
-type PlanTab = "overview" | "weeks";
+import { MasterPlanView } from "@stride/plan-views";
+import "@stride/plan-views/style.css";
 
 interface TargetSummary {
   raceName: string;
@@ -176,8 +175,6 @@ export default function TrainingPlanPage() {
   const [draftPlan, setDraftPlan] = useState<MasterPlan | null>(null);
   const [target, setTarget] = useState<TargetSummary>(EMPTY_TARGET);
   const [pageState, setPageState] = useState<PageState>("loading");
-  const [planTab, setPlanTab] = useState<PlanTab>("overview");
-  const [selectedPhaseId, setSelectedPhaseId] = useState<string | null>(null);
   const requestKey = user || "";
   const [loadedKey, setLoadedKey] = useState("");
   const requestRef = useRef<{ key: string; promise: ReturnType<typeof getCurrentMasterPlan> } | null>(null);
@@ -289,14 +286,11 @@ export default function TrainingPlanPage() {
         <div className="max-w-5xl mx-auto px-4 pt-4 sm:px-8">
           <CoachPlanAppliedBanner />
         </div>
-        <SeasonOverview
+        <MasterPlanView
           plan={currentPlan.plan}
-          target={target}
-          tab={planTab}
-          onTab={setPlanTab}
-          selectedPhaseId={selectedPhaseId}
-          onSelectPhase={setSelectedPhaseId}
-          onAdjust={() => navigate(coachChat ? `/coach/master/${encodeURIComponent(currentPlan.plan_id)}/adjust` : "/plan/adjust")}
+          actions={{
+            onAdjust: () => navigate(coachChat ? `/coach/master/${encodeURIComponent(currentPlan.plan_id)}/adjust` : "/plan/adjust"),
+          }}
         />
       </>
     );
@@ -637,94 +631,6 @@ function SeasonOverviewBody({
 
       {trainingPrinciples.length > 0 && <TrainingPrinciples principles={trainingPrinciples} />}
     </div>
-  );
-}
-
-function SeasonOverview({
-  plan,
-  target,
-  tab,
-  onTab,
-  selectedPhaseId,
-  onSelectPhase,
-  onAdjust,
-}: {
-  plan: SeasonPlanView;
-  target: TargetSummary;
-  tab: PlanTab;
-  onTab: (tab: PlanTab) => void;
-  selectedPhaseId: string | null;
-  onSelectPhase: (id: string) => void;
-  onAdjust: () => void;
-}) {
-  const today = shanghaiToday();
-  const phases = plan.phases ?? EMPTY_PHASES;
-  const spans = useMemo(() => buildPhaseSpans(phases, plan.total_weeks), [phases, plan.total_weeks]);
-  const totalWeeks = plan.total_weeks ?? spans.at(-1)?.weekEnd ?? weeksBetween(plan.start_date, plan.end_date);
-  const currentWeek = plan.current_week_number ?? currentWeekNumber(plan.start_date, today, totalWeeks);
-  const currentPhaseId = plan.current_phase_id ?? findPhaseForDate(phases, today)?.id ?? phases[0]?.id ?? null;
-  const currentSpan = spans.find((span) => span.phase.id === currentPhaseId) ?? spans[0] ?? null;
-  const heroTitle = target.raceName || "赛季训练计划";
-  const heroLede = buildHeroLede(plan, target, currentSpan?.phase ?? null, totalWeeks, currentWeek);
-
-  return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
-      <section className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <p className="font-mono text-[10px] font-semibold tracking-[0.14em] text-text-muted uppercase mb-2">
-            赛季训练计划 · {"status" in plan && plan.status !== "active" ? plan.status : "已启用"}
-          </p>
-          <h1 className="text-[28px] sm:text-[32px] font-semibold leading-[1.1] text-text-primary break-words">{heroTitle}</h1>
-          <p className="mt-3 max-w-[920px] text-sm leading-6 text-text-secondary">{heroLede}</p>
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-3">
-          <button
-            type="button"
-            disabled
-            title="版本历史暂未开放"
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-border-subtle bg-bg-card px-4 text-sm font-semibold text-text-secondary opacity-70"
-          >
-            <HistoryIcon />
-            版本历史
-          </button>
-          <button
-            type="button"
-            onClick={onAdjust}
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent-green px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-green-dim"
-          >
-            <RefreshIcon />
-            调整计划
-          </button>
-        </div>
-      </section>
-
-      <div className="mb-6 flex flex-wrap gap-2">
-        <PlanTabButton active={tab === "overview"} onClick={() => onTab("overview")}>
-          赛季总览
-        </PlanTabButton>
-        <PlanTabButton active={tab === "weeks"} onClick={() => onTab("weeks")}>
-          训练周列表
-        </PlanTabButton>
-      </div>
-
-      {tab === "weeks" ? <WeeksGrid /> : <SeasonOverviewBody plan={plan} target={target} selectedPhaseId={selectedPhaseId} onSelectPhase={onSelectPhase} />}
-    </div>
-  );
-}
-
-function PlanTabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${
-        active
-          ? "border-border-subtle bg-bg-card text-text-primary shadow-sm"
-          : "border-transparent bg-transparent text-text-muted hover:border-border-subtle hover:bg-bg-card hover:text-text-primary"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -1385,17 +1291,6 @@ function selectNextMilestone(plan: SeasonPlanView, today: string): MasterPlanMil
   return sorted.find((milestone) => milestone.date >= today) ?? sorted.at(-1) ?? null;
 }
 
-function buildHeroLede(plan: SeasonPlanView, target: TargetSummary, currentPhase: MasterPlanPhase | null, totalWeeks: number, currentWeek: number): string {
-  const parts = [
-    `从 ${formatSlashDate(plan.start_date)} 到 ${formatSlashDate(plan.end_date)}，共 ${totalWeeks} 周。`,
-    `当前处于第 ${currentWeek} 周${currentPhase ? ` · ${currentPhase.name}` : ""}，`,
-  ];
-  if (currentPhase?.focus) parts.push(`重点是 ${currentPhase.focus}。`);
-  else parts.push("重点随训练阶段推进动态更新。");
-  if (target.raceDate && target.distance) parts.push(`目标赛事：${target.distance} · ${formatSlashDate(target.raceDate)}。`);
-  return parts.join("");
-}
-
 function formatDistanceBand(phase: MasterPlanPhase): string {
   return `${formatDistanceValue(phase)} km/w`;
 }
@@ -1454,25 +1349,6 @@ function RadioCheckIcon({ color }: { color: string }) {
     <svg className="mt-1 h-4 w-4 flex-none" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.4} aria-hidden="true">
       <circle cx="12" cy="12" r="8" />
       <circle cx="12" cy="12" r="3" fill={color} stroke="none" />
-    </svg>
-  );
-}
-
-function HistoryIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-      <path d="M3 12a9 9 0 1 0 3-6.7" />
-      <path d="M3 3v6h6" />
-      <path d="M12 7v5l3 2" />
-    </svg>
-  );
-}
-
-function RefreshIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-      <path d="M21 3v6h-6" />
     </svg>
   );
 }
