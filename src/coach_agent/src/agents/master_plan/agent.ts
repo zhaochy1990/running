@@ -49,7 +49,10 @@ function createMasterPlanSubagent(store: StrideDataStore, config: ModelConfig, g
     tools,
     model: buildResponsesModel(config),
     ...(generatesPlan ? { responseFormat: MasterPlanDirectResponseSchema } : {}),
-    middleware: [...(generatesPlan ? [createMasterPlanValidationMiddleware()] : []), createLoggingMiddleware("agent:master_plan")],
+    middleware: [
+      // ...(generatesPlan ? [createMasterPlanValidationMiddleware()] : []),
+       createLoggingMiddleware("agent:master_plan")
+    ],
     // Skill loaded via SkillsMiddleware from the deep agent's FilesystemBackend
     // (rooted at `dist/agents/skills/` in coachAgent.ts). The agent reads the
     // full SKILL.md on demand via read_file. Path is relative to that root.
