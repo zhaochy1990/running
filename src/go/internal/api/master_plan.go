@@ -57,9 +57,9 @@ func (m *masterPlanRoutes) register(rg *gin.RouterGroup) {
 	rg.GET("/api/users/:user_id/master-plan/current", m.getCurrentForUser)
 }
 
-// registerAdminWrites mounts the narrow administrator-only master plan
-// import path on the parent authenticated group. The handler still verifies
-// TierAdmin so user and internal callers cannot use it.
+// registerAdminWrites mounts the master plan import path on the parent
+// authenticated group. The handler allows admins to target any athlete and a
+// user to import only their own plan; internal callers stay denied.
 func (m *masterPlanRoutes) registerAdminWrites(rg *gin.RouterGroup) {
 	if m.store == nil {
 		return
@@ -85,8 +85,8 @@ type applyMasterPlanResponse struct {
 // the store then archives that exact revision and inserts the new active row
 // atomically.
 //
-//	@Summary		Apply a structured Master Plan as an administrator
-//	@Description	Creates a new active master plan. Replacing one requires replace_existing plus the confirmed active plan id and revision; the prior plan is archived atomically.
+//	@Summary		Apply a structured Master Plan
+//	@Description	Creates a new active master plan. Admins may apply to any athlete; a user may apply only to their own user id. Replacing one requires replace_existing plus the confirmed active plan id and revision; the prior plan is archived atomically.
 //	@Tags			master-plan
 //	@Accept			json
 //	@Produce		json
@@ -103,13 +103,24 @@ type applyMasterPlanResponse struct {
 //	@Security		BearerAuth
 //	@Router			/api/users/{user_id}/master-plans [post]
 func (m *masterPlanRoutes) apply(c *gin.Context) {
-	if callerFrom(c).Tier != TierAdmin {
-		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
-		return
-	}
 	uid := c.Param("user_id")
 	if _, err := uuid.Parse(uid); err != nil {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user"})
+		return
+	}
+	caller := callerFrom(c)
+	switch caller.Tier {
+	case TierAdmin:
+		// Admins may apply to any athlete.
+	case TierUser:
+		// A user may apply only to themselves.
+		if uid != caller.UserID {
+			c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+			return
+		}
+	default:
+		// Internal and anonymous callers cannot import plans.
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
 		return
 	}
 

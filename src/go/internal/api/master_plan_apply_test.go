@@ -169,9 +169,17 @@ func TestApplyMasterPlanHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("user tier forbidden", func(t *testing.T) {
+	t.Run("user applies own plan", func(t *testing.T) {
 		userID, goalID := uuid.NewString(), uuid.NewString()
 		w := doApply(t, h, h.bearer(t, userID), userID, applyRequestBody(mustAppliedContent(t, goalID), false, nil, nil))
+		if w.Code != http.StatusCreated {
+			t.Fatalf("code = %d, want 201 (%s)", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("user cannot apply another user", func(t *testing.T) {
+		userID, otherID, goalID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+		w := doApply(t, h, h.bearer(t, userID), otherID, applyRequestBody(mustAppliedContent(t, goalID), false, nil, nil))
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("code = %d, want 403 (%s)", w.Code, w.Body.String())
 		}

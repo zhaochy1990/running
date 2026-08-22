@@ -1061,7 +1061,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates a new active master plan. Replacing one requires replace_existing plus the confirmed active plan id and revision; the prior plan is archived atomically.",
+                "description": "Creates a new active master plan. Admins may apply to any athlete; a user may apply only to their own user id. Replacing one requires replace_existing plus the confirmed active plan id and revision; the prior plan is archived atomically.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1071,7 +1071,7 @@ const docTemplate = `{
                 "tags": [
                     "master-plan"
                 ],
-                "summary": "Apply a structured Master Plan as an administrator",
+                "summary": "Apply a structured Master Plan",
                 "parameters": [
                     {
                         "type": "string",
