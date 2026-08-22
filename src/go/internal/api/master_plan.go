@@ -247,7 +247,7 @@ func (m *masterPlanRoutes) update(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		m.log.Error("update master plan failed", zapErr(err), zap.String("user_id", uid))
+		m.log.Error("update active master plan failed", zapErr(err), zap.String("user_id", uid))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
