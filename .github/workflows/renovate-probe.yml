@@ -1,0 +1,92 @@
+name: renovate-probe
+on: workflow_dispatch
+
+jobs:
+  # dependency that gets SKIPPED (stands in for contract-parity)
+  dep:
+    runs-on: ubuntu-latest
+    if: ${{ false }}
+    steps:
+      - run: echo never-runs
+
+  # matrix job with a status override, standing in for build-push.
+  # Matrix A uses !cancelled(), Matrix B uses always() — to compare.
+  matrix-a:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        name: [a1, a2]
+    if: >-
+      !cancelled() &&
+      needs.dep.result == 'skipped'
+    needs: dep
+    steps:
+      - run: echo "child-a ${{ matrix.name }}"
+
+  matrix-b:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        name: [b1, b2]
+    if: >-
+      always() &&
+      needs.dep.result == 'skipped'
+    needs: dep
+    steps:
+      - run: echo "child-b ${{ matrix.name }}"
+
+  # non-matrix job with the same override, to isolate matrix behavior
+  single:
+    runs-on: ubuntu-latest
+    if: >-
+      !cancelled() &&
+      needs.dep.result == 'skipped'
+    needs: dep
+    steps:
+      - run: echo "single-ran"
+
+  # --- dependent jobs: what does needs.<matrix>.result report? ---
+
+  check-a-plain:
+    runs-on: ubuntu-latest
+    needs: [matrix-a]
+    if: needs.matrix-a.result == 'success'
+    steps:
+      - run: echo "check-a-plain ran; result=${{ needs.matrix-a.result }}"
+
+  check-a-cancelled:
+    runs-on: ubuntu-latest
+    needs: [matrix-a]
+    if: !cancelled() && needs.matrix-a.result == 'success'
+    steps:
+      - run: echo "check-a-cancelled ran; result=${{ needs.matrix-a.result }}"
+
+  check-b-plain:
+    runs-on: ubuntu-latest
+    needs: [matrix-b]
+    if: needs.matrix-b.result == 'success'
+    steps:
+      - run: echo "check-b-plain ran; result=${{ needs.matrix-b.result }}"
+
+  check-b-always:
+    runs-on: ubuntu-latest
+    needs: [matrix-b]
+    if: always() && needs.matrix-b.result == 'success'
+    steps:
+      - run: echo "check-b-always ran; result=${{ needs.matrix-b.result }}"
+
+  check-single-plain:
+    runs-on: ubuntu-latest
+    needs: [single]
+    if: needs.single.result == 'success'
+    steps:
+      - run: echo "check-single-plain ran; result=${{ needs.single.result }}"
+
+  # renovate-style: same shape as the real renovate job
+  check-renovate-style:
+    runs-on: ubuntu-latest
+    needs: [matrix-a]
+    if: >-
+      needs.matrix-a.result == 'success'
+    steps:
+      - run: echo "renovate-style ran; result=${{ needs.matrix-a.result }}"
