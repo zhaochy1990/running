@@ -130,8 +130,7 @@ func (w *weeklyPlanRoutes) apply(c *gin.Context) {
 
 	var request applyWeeklyPlanRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		var maxBytesError *http.MaxBytesError
-		if errors.As(err, &maxBytesError) {
+		if isBodyTooLarge(err) {
 			c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "weekly_plan_too_large"})
 			return
 		}
@@ -189,6 +188,13 @@ func (w *weeklyPlanRoutes) apply(c *gin.Context) {
 		Plan:           weeklyPlanDetailResponse{weeklyPlanMetadataResponse: metadata, Content: document},
 		ReplacedPlanID: replacedID,
 	})
+}
+
+// isBodyTooLarge reports whether a binding failure came from the ingress body
+// cap (limitBody), so plan import handlers answer 413 instead of 422.
+func isBodyTooLarge(err error) bool {
+	var maxBytesError *http.MaxBytesError
+	return errors.As(err, &maxBytesError)
 }
 
 // planReplacementExpectation is the active-row (plan id, revision) an

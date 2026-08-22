@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -29,7 +30,7 @@ func doApply(t *testing.T, h *mpHarness, headers map[string]string, userID strin
 	if err != nil {
 		t.Fatalf("marshal body: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/users/"+userID+"/master-plans", bytes.NewReader(raw))
+	req := httptest.NewRequest(http.MethodPost, "/api/users/"+userID+"/master-plan", bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/json")
 	for k, v := range headers {
 		req.Header.Set(k, v)
@@ -141,6 +142,15 @@ func TestApplyMasterPlanHandler(t *testing.T) {
 		}
 	})
 
+	t.Run("invalid structure", func(t *testing.T) {
+		userID := uuid.NewString()
+		content := map[string]any{"goal": map[string]any{"goal_id": uuid.NewString()}}
+		w := doApply(t, h, admin, userID, applyRequestBody(content, false, nil, nil))
+		if w.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("code = %d, want 422 (%s)", w.Code, w.Body.String())
+		}
+	})
+
 	t.Run("exists without replacement", func(t *testing.T) {
 		userID, goalID := uuid.NewString(), uuid.NewString()
 		if w := doApply(t, h, admin, userID, applyRequestBody(mustAppliedContent(t, goalID), false, nil, nil)); w.Code != http.StatusCreated {
@@ -169,19 +179,21 @@ func TestApplyMasterPlanHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("user applies own plan", func(t *testing.T) {
+	t.Run("user tier forbidden", func(t *testing.T) {
 		userID, goalID := uuid.NewString(), uuid.NewString()
 		w := doApply(t, h, h.bearer(t, userID), userID, applyRequestBody(mustAppliedContent(t, goalID), false, nil, nil))
-		if w.Code != http.StatusCreated {
-			t.Fatalf("code = %d, want 201 (%s)", w.Code, w.Body.String())
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("code = %d, want 403 (%s)", w.Code, w.Body.String())
 		}
 	})
 
-	t.Run("user cannot apply another user", func(t *testing.T) {
-		userID, otherID, goalID := uuid.NewString(), uuid.NewString(), uuid.NewString()
-		w := doApply(t, h, h.bearer(t, userID), otherID, applyRequestBody(mustAppliedContent(t, goalID), false, nil, nil))
-		if w.Code != http.StatusForbidden {
-			t.Fatalf("code = %d, want 403 (%s)", w.Code, w.Body.String())
+	t.Run("too large", func(t *testing.T) {
+		userID, goalID := uuid.NewString(), uuid.NewString()
+		body := applyRequestBody(mustAppliedContent(t, goalID), false, nil, nil)
+		body["padding"] = strings.Repeat("x", maxRequestBytes)
+		w := doApply(t, h, admin, userID, body)
+		if w.Code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("code = %d, want 413 (%s)", w.Code, w.Body.String())
 		}
 	})
 

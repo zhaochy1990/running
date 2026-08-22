@@ -2224,57 +2224,14 @@ paths:
       summary: List a user's pipeline runs
       tags:
       - pipelines
-  /api/users/{user_id}/master-plan/current:
-    get:
-      parameters:
-      - description: User id (JWT sub)
-        in: path
-        name: user_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.currentSeasonPlanEnvelope'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - InternalToken: []
-      - BearerAuth: []
-      summary: Get a user's active season training plan
-      tags:
-      - master-plan
-  /api/users/{user_id}/master-plans:
+  /api/users/{user_id}/master-plan:
     post:
       consumes:
       - application/json
-      description: Creates a new active master plan. Admins may apply to any athlete;
-        a user may apply only to their own user id. Replacing one requires replace_existing
-        plus the confirmed active plan id and revision; the prior plan is archived
-        atomically.
+      description: Creates a new active master plan for an athlete. Only the admin
+        JWT tier may call it; user and internal callers are denied. Replacing one
+        requires replace_existing plus the confirmed active plan id and revision;
+        the prior plan is archived atomically.
       parameters:
       - description: Target user UUID
         in: path
@@ -2324,7 +2281,50 @@ paths:
             $ref: '#/definitions/api.errorResponse'
       security:
       - BearerAuth: []
-      summary: Apply a structured Master Plan
+      summary: Apply a structured Master Plan as an administrator
+      tags:
+      - master-plan
+  /api/users/{user_id}/master-plan/current:
+    get:
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.currentSeasonPlanEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Get a user's active season training plan
       tags:
       - master-plan
   /api/users/me:

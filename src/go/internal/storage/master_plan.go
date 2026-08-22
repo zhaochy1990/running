@@ -155,14 +155,14 @@ func (s *Store) ApplyStructuredMasterPlan(
 				}
 			} else if replacement == nil {
 				return ErrMasterPlanExists
-			} else if replaced.PlanID != replacement.PlanID || replaced.Revision != nil && *replaced.Revision != replacement.Revision {
+			} else if replaced.PlanID != replacement.PlanID || replaced.Revision == nil || *replaced.Revision != replacement.Revision {
 				return ErrMasterPlanConflict
 			}
 
 			now := time.Now().UTC().Truncate(time.Millisecond)
 			if replaced != nil {
-				result := tx.Model(&MasterPlan{}).
-					Where("plan_id = ? AND user_id = ? AND status = ?", replaced.PlanID, uid, MasterPlanStatusActive).
+			result := tx.Model(&MasterPlan{}).
+					Where("plan_id = ? AND user_id = ? AND status = ? AND revision = ?", replaced.PlanID, uid, MasterPlanStatusActive, replaced.Revision).
 					Updates(map[string]any{
 						"status":      MasterPlanStatusArchived,
 						"active_flag": nil,

@@ -57,14 +57,14 @@ func (m *masterPlanRoutes) register(rg *gin.RouterGroup) {
 	rg.GET("/api/users/:user_id/master-plan/current", m.getCurrentForUser)
 }
 
-// registerAdminWrites mounts the master plan import path on the parent
-// authenticated group. The handler allows admins to target any athlete and a
-// user to import only their own plan; internal callers stay denied.
+// registerAdminWrites mounts the narrow administrator-only master plan
+// import path on the parent authenticated group. The handler still verifies
+// TierAdmin so user and internal callers cannot use it.
 func (m *masterPlanRoutes) registerAdminWrites(rg *gin.RouterGroup) {
 	if m.store == nil {
 		return
 	}
-	rg.POST("/api/users/:user_id/master-plans", m.apply)
+	rg.POST("/api/users/:user_id/master-plan", m.apply)
 }
 
 type applyMasterPlanRequest struct {
@@ -85,8 +85,8 @@ type applyMasterPlanResponse struct {
 // the store then archives that exact revision and inserts the new active row
 // atomically.
 //
-//	@Summary		Apply a structured Master Plan
-//	@Description	Creates a new active master plan. Admins may apply to any athlete; a user may apply only to their own user id. Replacing one requires replace_existing plus the confirmed active plan id and revision; the prior plan is archived atomically.
+//	@Summary		Apply a structured Master Plan as an administrator
+//	@Description	Creates a new active master plan for an athlete. Only the admin JWT tier may call it; user and internal callers are denied. Replacing one requires replace_existing plus the confirmed active plan id and revision; the prior plan is archived atomically.
 //	@Tags			master-plan
 //	@Accept			json
 //	@Produce		json
@@ -101,33 +101,21 @@ type applyMasterPlanResponse struct {
 //	@Failure		422			{object}	errorResponse
 //	@Failure		500			{object}	errorResponse
 //	@Security		BearerAuth
-//	@Router			/api/users/{user_id}/master-plans [post]
+//	@Router			/api/users/{user_id}/master-plan [post]
 func (m *masterPlanRoutes) apply(c *gin.Context) {
+	if callerFrom(c).Tier != TierAdmin {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
 	uid := c.Param("user_id")
 	if _, err := uuid.Parse(uid); err != nil {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user"})
 		return
 	}
-	caller := callerFrom(c)
-	switch caller.Tier {
-	case TierAdmin:
-		// Admins may apply to any athlete.
-	case TierUser:
-		// A user may apply only to themselves.
-		if uid != caller.UserID {
-			c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
-			return
-		}
-	default:
-		// Internal and anonymous callers cannot import plans.
-		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
-		return
-	}
 
 	var request applyMasterPlanRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		var maxBytesError *http.MaxBytesError
-		if errors.As(err, &maxBytesError) {
+		if isBodyTooLarge(err) {
 			c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "master_plan_too_large"})
 			return
 		}
@@ -180,6 +168,11 @@ func (m *masterPlanRoutes) apply(c *gin.Context) {
 	})
 }
 
+// validateAppliedMasterPlan enforces the canonical content_version=2 contract
+// at the API seam before anything is written: goal.goal_id must be a UUID and
+// the content must satisfy the same structural rules the current-plan reader
+// applies (validateStructuredPlanDoc). A plan that would fail to serve is
+// rejected with 422 instead of being committed and then erroring on read.
 func validateAppliedMasterPlan(content map[string]any) ([]byte, string, error) {
 	goal, ok := content["goal"].(map[string]any)
 	if !ok {
@@ -197,8 +190,12 @@ func validateAppliedMasterPlan(content map[string]any) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to marshal content: %w", err)
 	}
-	if len(jsonBytes) > 10*1024*1024 {
-		return nil, "", errors.New("content exceeds 10MB limit")
+	var parsed mpContent
+	if err := json.Unmarshal(jsonBytes, &parsed); err != nil {
+		return nil, "", errors.New("content is not valid structured master plan JSON")
+	}
+	if err := validateStructuredPlanDoc(content, parsed); err != nil {
+		return nil, "", err
 	}
 	return jsonBytes, goalID, nil
 }
