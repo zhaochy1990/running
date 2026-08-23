@@ -113,6 +113,9 @@ export class MySqlDataProvider implements DataProvider {
   async getDailyRecoveryByDateRange(userId: string, startDay: string, endDay: string): Promise<DailyRecovery[]> {
     assertDay(startDay);
     assertDay(endDay);
+    if (startDay > endDay) {
+      throw new Error(`startDay (${startDay}) must not be after endDay (${endDay})`);
+    }
     const [rows] = await this.pool.query<RowDataPacket[]>(
       `SELECT h.date, h.rhr, MAX(v.last_night_avg) AS hrv FROM daily_health h LEFT JOIN daily_hrv v ON v.user_id = h.user_id AND REPLACE(v.date, '-', '') = REPLACE(h.date, '-', '') WHERE h.user_id = ? AND REPLACE(h.date, '-', '') BETWEEN REPLACE(?, '-', '') AND REPLACE(?, '-', '') GROUP BY h.date, h.rhr ORDER BY h.date ASC`,
       [userId, startDay, endDay],

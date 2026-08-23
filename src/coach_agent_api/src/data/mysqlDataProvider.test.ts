@@ -156,3 +156,18 @@ test("activity reads do not expose vendor-derived metrics to Coach", async () =>
     assert.equal(Object.hasOwn(activity ?? {}, key), false);
   }
 });
+
+test("date-range reads reject a reversed start>end interval before querying", async () => {
+  let queried = false;
+  const provider = new MySqlDataProvider({
+    async query() {
+      queried = true;
+      return [[], []];
+    },
+  } as never);
+  await assert.rejects(
+    provider.getDailyRecoveryByDateRange("athlete", "2026-08-10", "2026-08-01"),
+    /startDay \(2026-08-10\) must not be after endDay \(2026-08-01\)/,
+  );
+  assert.equal(queried, false, "should reject without hitting the database");
+});
