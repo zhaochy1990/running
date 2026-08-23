@@ -6,8 +6,8 @@ import {
   loadConfig,
   MasterPlanGraphRequest,
 } from "coach_agent";
-import { loadApiConfig } from "../config.js";
-import { MySqlDataProvider } from "../data/mysqlDataProvider.js";
+import { loadApiConfig } from "../src/config.js";
+import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";
 
 type Profile = "local" | "prod";
 const PROFILE = "local" as Profile;

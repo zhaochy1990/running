@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Command } from "coach_agent";
-import { createApp } from "./app.js";
-import { AuthError } from "./auth.js";
-import { fingerprintTurn, ThreadBusyError } from "./turns.js";
+import { createApp } from "../src/app.js";
+import { AuthError } from "../src/auth.js";
+import { fingerprintTurn, ThreadBusyError } from "../src/turns.js";
 
 test("health is public", async () => {
   const app = createApp({

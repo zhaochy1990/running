@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { createApp } from "./app.js";
+import { createApp } from "../src/app.js";
 
 const app = createApp({
   jwtVerifier: {

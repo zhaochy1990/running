@@ -5,42 +5,33 @@ import {
   type AskUserQuestionPayload,
   Command,
   createCoachAgent,
-  DataProviderWeeklyPlanContextProvider,
   formatTokenUsageReport,
   LlmTokenUsageTracker,
   loadConfig,
+  MasterPlanSchema,
 } from "coach_agent";
-import { loadApiConfig } from "../config.js";
-import { MySqlDataProvider } from "../data/mysqlDataProvider.js";
+import { loadApiConfig } from "../src/config.js";
+import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";
 
-const usernameMap: Record<string, string> = {
-  // pan: "5ee229a6-cdc1-4260-84d3-71ec622126c2",
-  dingchentao: "7bd56762-3b04-42a6-9d8b-98f595628430",
-  lvge: "0a74ac88-629e-4b8e-97c8-d49ccf5a986b",
-  dehua: "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
-  renzhen: "bffa65bc-4501-41e7-a68c-96da76d5b7bc",
-  zhaochaoyi: "f10bc353-01ab-4db1-af9f-d9305ea9a532",
-};
-
-function requireUserId(): { userId: string; username: string } {
-  const username = process.argv[2];
-  if (!username) {
-    console.error("Missing username. Usage: npm run test:deepagent -- <user>");
-    process.exit(1);
-  }
-  const userId = usernameMap[username];
-  if (!userId) {
-    console.error(`Unknown username: ${username}. Valid usernames: ${Object.keys(usernameMap).join(", ")}`);
-    process.exit(1);
-  }
-  return { userId, username };
-}
-
-const asof = "2026-08-16";
-const { userId, username } = requireUserId();
 const config = loadConfig();
-const provider = MySqlDataProvider.create(loadApiConfig().strideDatabase);
-const agent = await createCoachAgent(provider, config);
+const store = MySqlDataProvider.create(loadApiConfig().strideDatabase);
+const agent = await createCoachAgent(store, config);
+
+const userId = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
+const asof = "2026-08-16";
+// const userId = "11c2e582-5a85-4633-81d2-df7e37ad7b48";
+
+// await agent.invoke({
+//   messages: [{ role: "user", content: "帮我生成下周的训练计划" }],
+// }, cfg);
+
+// await agent.invoke({
+//   messages: [{ role: "user", content: "我这周练的怎么样？" }],
+// }, cfg);
+
+// await agent.invoke({
+//   messages: [{ role: "user", content: "我这周的训练计划是什么？" }],
+// }, cfg);
 
 // 回答来源：交互式从 stdin 读；自动化测试则用 HITL_ANSWERS（\n 分隔）按序喂入，
 // 避免管道 EOF 关闭 readline 的问题。
@@ -64,7 +55,7 @@ function printAnswer(res: { messages: Array<{ content: unknown }> }): void {
   const text = typeof content === "string" ? content : JSON.stringify(content);
   console.log(`\n===== 最后回答 =====\n${text}`);
 
-  const rawJson = typeof content === "string" ? JSON.parse(content) : content;
+  const rawJson = MasterPlanSchema.parse(typeof content === "string" ? JSON.parse(content) : content);
 
   const now = new Date();
   const year = now.getFullYear();
@@ -75,9 +66,9 @@ function printAnswer(res: { messages: Array<{ content: unknown }> }): void {
   const second = String(now.getSeconds()).padStart(2, "0");
 
   // YYYY-MM-DD_hh:mm:ss_{userId}.json
-  var outputFileName = `${year}-${month}-${day}_${hour}:${minute}:${second}_${username}.json`;
+  var outputFileName = `${year}-${month}-${day}_${hour}:${minute}:${second}_${userId}.json`;
 
-  writeFileSync(`./test-output/weekly-plan/${outputFileName}`, JSON.stringify(rawJson, null, 2));
+  writeFileSync(`./test-output/${outputFileName}`, JSON.stringify(rawJson, null, 2));
   console.log(`\n===== 最后回答已写入 ./test-output/${outputFileName} =====`);
 }
 
@@ -100,7 +91,7 @@ function renderQuestion(value: AskUserQuestionPayload): string {
  * （返回 __interrupt__），就把问题打给运动员、读取回答、用 Command({ resume })
  * 恢复，直到没有新的追问为止。
  */
-async function _askWithHITL(content: string, thread: string): Promise<void> {
+async function askWithHITL(content: string, thread: string): Promise<void> {
   const tokenUsage = new LlmTokenUsageTracker();
   const cfg = {
     context: { userId, asof },
@@ -133,14 +124,18 @@ async function _askWithHITL(content: string, thread: string): Promise<void> {
   }
 }
 
-const contextProvider = new DataProviderWeeklyPlanContextProvider(provider);
-const ctx = await contextProvider.loadSnapshot(userId, asof);
+// // ── Scenario：生成赛季计划 → Coach 先回看历史比赛 → 若发现跑崩则追问原因 ──
+// await askWithHITL(
+//   "生成赛季计划 → 分析历史比赛 → 追问跑崩原因",
+//   "帮我生成一个新的赛季训练计划，目标是明年上海马拉松 sub-3:10。",
+//   "sess-master",
+// );
 
-ctx.recent_activities = [];
-console.log(ctx.recent_training_weeks);
-// console.log(ctx["injury_and_recovery"].recovery);
-
-// await askWithHITL("帮我生成下周的训练计划", "session-weekly-plan");
+// Test race goal: 2026-10-18 西安马拉松，目标 2:50:00，全马；每周 6 天训练，单次不超过 3 小时，无伤病。
+await askWithHITL(
+  "帮我生成一个新的赛季训练计划，目标是 2026-10-18 西安马拉松 2:50:00。全马；每周可训练 6 天，单次不超过 3 小时，目前无伤病。",
+  "session-master-plan",
+);
 
 await rl.close();
-await provider.close();
+await store.close();

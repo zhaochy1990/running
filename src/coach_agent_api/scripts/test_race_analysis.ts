@@ -1,5 +1,5 @@
-import { loadApiConfig } from "../config.js";
-import { MySqlDataProvider } from "../data/mysqlDataProvider.js";
+import { loadApiConfig } from "../src/config.js";
+import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";
 
 const provider = MySqlDataProvider.create(loadApiConfig().strideDatabase);
 

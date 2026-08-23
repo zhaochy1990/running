@@ -8,7 +8,7 @@ import {
   type TurnReceipt,
   type TurnReceiptStore,
   type TurnRecovery,
-} from "./turns.js";
+} from "../src/turns.js";
 
 class MemoryReceipts implements TurnReceiptStore {
   readonly values = new Map<string, TurnReceipt>();

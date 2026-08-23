@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Checkpoint, CheckpointMetadata } from "coach_agent";
-import { MySqlSaver } from "./checkpointer.js";
+import { MySqlSaver } from "../../src/persistence/checkpointer.js";
 
 function checkpoint(messages: unknown[]): Checkpoint {
   return {

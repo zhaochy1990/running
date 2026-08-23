@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { loadApiConfig } from "./config.js";
+import { loadApiConfig } from "../src/config.js";
 
 const BASE_YAML = [
   "api:",

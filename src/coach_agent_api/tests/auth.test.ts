@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { exportSPKI, generateKeyPair, SignJWT } from "jose";
-import { AuthError, createJwtVerifier } from "./auth.js";
+import { AuthError, createJwtVerifier } from "../src/auth.js";
 
 test("RS256 verifier returns the authenticated subject", async () => {
   const { privateKey, publicKey } = await generateKeyPair("RS256");

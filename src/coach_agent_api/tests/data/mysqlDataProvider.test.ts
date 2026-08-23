@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MySqlDataProvider } from "./mysqlDataProvider.js";
+import { MySqlDataProvider } from "../../src/data/mysqlDataProvider.js";
 
 test("getVendorHrvBaseline reads the latest non-null daily vendor band", async () => {
   const calls: Array<{ sql: string; values: unknown[] }> = [];
