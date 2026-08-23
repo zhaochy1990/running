@@ -116,10 +116,13 @@ func validateCurrentMasterPlan(p *MasterPlan, userID string) error {
 }
 
 // ApplyStructuredMasterPlan inserts a new active structured master plan for an
-// athlete. Replacing an active row requires its exact plan ID and revision; that
-// row is archived in the same transaction before the new active row is inserted.
-// All rows for the user are locked so the active transition is serialized. The new
-// plan has its own identity and therefore starts at revision 1.
+// athlete. Replacing an active row requires its exact plan ID (and, for a
+// structured content_version 2 row, its exact revision); that row is archived in
+// the same transaction before the new active row is inserted. A legacy markdown
+// (content_version 1) active row has a NULL revision — it carries no revision
+// concept, so only the plan ID is confirmed for replacement. All rows for the
+// user are locked so the active transition is serialized. The new plan has its
+// own identity and therefore starts at revision 1.
 func (s *Store) ApplyStructuredMasterPlan(
 	ctx context.Context, userID, goalID, content string, replacement *MasterPlanReplacement,
 ) (*MasterPlan, *MasterPlan, error) {
@@ -159,19 +162,33 @@ func (s *Store) ApplyStructuredMasterPlan(
 				}
 			} else if replacement == nil {
 				return ErrMasterPlanExists
-			} else if replaced.PlanID != replacement.PlanID || replaced.Revision == nil || *replaced.Revision != replacement.Revision {
+			} else if replaced.PlanID != replacement.PlanID {
+				return ErrMasterPlanConflict
+			} else if replaced.Revision != nil && *replaced.Revision != replacement.Revision {
+				// A structured (content_version 2) row requires an exact revision
+				// match so a stale confirm surfaces as 409. A legacy markdown
+				// (content_version 1) row has a NULL revision — it has no revision
+				// concept, so the plan ID confirmation above is sufficient and the
+				// caller's sentinel revision is not compared.
 				return ErrMasterPlanConflict
 			}
 
 			now := time.Now().UTC().Truncate(time.Millisecond)
 			if replaced != nil {
-				result := tx.Model(&MasterPlan{}).
-					Where("plan_id = ? AND user_id = ? AND status = ? AND revision = ?", replaced.PlanID, uid, MasterPlanStatusActive, replaced.Revision).
-					Updates(map[string]any{
-						"status":      MasterPlanStatusArchived,
-						"active_flag": nil,
-						"updated_at":  now,
-					})
+				archiveQuery := tx.Model(&MasterPlan{}).
+					Where("plan_id = ? AND user_id = ? AND status = ?", replaced.PlanID, uid, MasterPlanStatusActive)
+				if replaced.Revision != nil {
+					archiveQuery = archiveQuery.Where("revision = ?", *replaced.Revision)
+				} else {
+					// Legacy markdown rows store NULL revision; SQL "= NULL" never
+					// matches, so archive with an explicit IS NULL predicate.
+					archiveQuery = archiveQuery.Where("revision IS NULL")
+				}
+				result := archiveQuery.Updates(map[string]any{
+					"status":      MasterPlanStatusArchived,
+					"active_flag": nil,
+					"updated_at":  now,
+				})
 				if result.Error != nil {
 					return fmt.Errorf("storage: archive prior master plan: %w", result.Error)
 				}
