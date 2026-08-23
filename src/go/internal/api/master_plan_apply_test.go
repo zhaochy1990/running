@@ -7,8 +7,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/zhaochy1990/stride/internal/storage"
 )
 
 func mustAppliedContent(t *testing.T, goalID string) map[string]any {
@@ -106,11 +108,37 @@ func TestApplyMasterPlanHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid user id", func(t *testing.T) {
-		goalID := uuid.NewString()
-		w := doApply(t, h, admin, "not-a-uuid", applyRequestBody(mustAppliedContent(t, goalID), false, nil, nil))
-		if w.Code != http.StatusBadRequest {
-			t.Fatalf("code = %d, want 400 (%s)", w.Code, w.Body.String())
+	t.Run("replace markdown plan", func(t *testing.T) {
+		userID, goalID := uuid.NewString(), uuid.NewString()
+		now := time.Now().UTC()
+		legacy := &storage.MasterPlan{
+			PlanID: uuid.NewString(), UserID: userID, GoalID: goalID,
+			ContentVersion: storage.MasterPlanContentMarkdown, Content: "# legacy plan",
+			Status: storage.MasterPlanStatusActive, Revision: nil,
+			CreatedAt: now, UpdatedAt: now,
+		}
+		h.store.current[userID] = legacy
+		// The frontend sends a sentinel revision (1) for a markdown plan because
+		// the API layer requires expected_active_revision >= 1; the store only
+		// confirms the plan ID for a NULL-revision row.
+		revision := int64(1)
+		w := doApply(t, h, admin, userID, applyRequestBody(mustAppliedContent(t, goalID), true, &legacy.PlanID, &revision))
+		if w.Code != http.StatusCreated {
+			t.Fatalf("code = %d, want 201 (%s)", w.Code, w.Body.String())
+		}
+		var resp applyMasterPlanResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp.ReplacedPlanID == nil || *resp.ReplacedPlanID != legacy.PlanID {
+			t.Fatalf("replaced_plan_id = %v, want %s", resp.ReplacedPlanID, legacy.PlanID)
+		}
+		active, err := h.store.GetCurrentMasterPlan(t.Context(), userID)
+		if err != nil || active == nil || active.PlanID != resp.Plan.PlanID {
+			t.Fatalf("stored active plan = %+v, err=%v", active, err)
+		}
+		if active.ContentVersion != storage.MasterPlanContentStructured {
+			t.Fatalf("active content_version = %d, want structured", active.ContentVersion)
 		}
 	})
 

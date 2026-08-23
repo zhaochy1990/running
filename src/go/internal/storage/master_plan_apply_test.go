@@ -256,7 +256,7 @@ func TestUpdateActiveMasterPlanRejectsMarkdown(t *testing.T) {
 	}
 }
 
-func TestApplyStructuredMasterPlanInvalidMarkdownReplacement(t *testing.T) {
+func TestApplyStructuredMasterPlanReplacesMarkdown(t *testing.T) {
 	st := openTestStore(t)
 	migrateMasterPlan(t, st)
 	ctx := context.Background()
@@ -277,9 +277,52 @@ func TestApplyStructuredMasterPlanInvalidMarkdownReplacement(t *testing.T) {
 		t.Fatalf("seed markdown plan: %v", err)
 	}
 
+	// A legacy markdown row has a NULL revision; the caller confirms the plan
+	// ID and supplies a sentinel revision (the API layer requires >= 1). The
+	// store must archive the markdown row and insert the new structured row.
 	updatedContent := `{"goal":{"goal_id":"` + goalID + `","target_time":"3:30:00"},"phases":[],"milestones":[],"weeks":[]}`
-	_, _, err := st.ApplyStructuredMasterPlan(ctx, userID, goalID, updatedContent, &MasterPlanReplacement{PlanID: markdownPlan.PlanID, Revision: 1})
-	if !errors.Is(err, ErrMasterPlanConflict) {
-		t.Fatalf("markdown replacement: err = %v, want ErrMasterPlanConflict", err)
+	created, replaced, err := st.ApplyStructuredMasterPlan(ctx, userID, goalID, updatedContent, &MasterPlanReplacement{PlanID: markdownPlan.PlanID, Revision: 1})
+	if err != nil {
+		t.Fatalf("markdown replacement: err = %v, want nil", err)
+	}
+	if created == nil || created.ContentVersion != MasterPlanContentStructured || created.Status != MasterPlanStatusActive {
+		t.Fatalf("created row = %+v, want active structured", created)
+	}
+	if created.Revision == nil || *created.Revision != 1 {
+		t.Fatalf("created revision = %v, want 1", created.Revision)
+	}
+	if created.Content != updatedContent {
+		t.Fatalf("created content = %q, want %q", created.Content, updatedContent)
+	}
+	if replaced == nil || replaced.PlanID != markdownPlan.PlanID || replaced.Status != MasterPlanStatusArchived || replaced.ActiveFlag != nil {
+		t.Fatalf("replaced row = %+v, want archived markdown %s", replaced, markdownPlan.PlanID)
+	}
+
+	// The markdown row is now archived with its revision still NULL; the new
+	// structured row is the single active plan.
+	current, err := st.GetCurrentMasterPlan(ctx, userID)
+	if err != nil {
+		t.Fatalf("get current: %v", err)
+	}
+	if current.PlanID != created.PlanID || current.ContentVersion != MasterPlanContentStructured {
+		t.Fatalf("current = %+v, want the new structured plan", current)
+	}
+
+	// The archived markdown row must still exist (revision NULL) so its history
+	// is preserved.
+	var archived []MasterPlan
+	if err := st.db.WithContext(ctx).
+		Where("plan_id = ? AND status = ?", markdownPlan.PlanID, MasterPlanStatusArchived).
+		Find(&archived).Error; err != nil {
+		t.Fatalf("load archived: %v", err)
+	}
+	if len(archived) != 1 || archived[0].Revision != nil {
+		t.Fatalf("archived markdown row = %+v, want 1 row with NULL revision", archived)
+	}
+
+	// A wrong plan ID must still conflict (the sentinel revision does not
+	// bypass the identity check).
+	if _, _, err := st.ApplyStructuredMasterPlan(ctx, userID, goalID, updatedContent, &MasterPlanReplacement{PlanID: uuid.NewString(), Revision: 1}); !errors.Is(err, ErrMasterPlanConflict) {
+		t.Fatalf("wrong plan id: err = %v, want ErrMasterPlanConflict", err)
 	}
 }

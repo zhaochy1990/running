@@ -68,7 +68,13 @@ func (f *fakeMasterPlanStore) ApplyStructuredMasterPlan(_ context.Context, userI
 		if replacement == nil {
 			return nil, nil, storage.ErrMasterPlanExists
 		}
-		if active.PlanID != replacement.PlanID || active.Revision == nil || *active.Revision != replacement.Revision {
+		// Mirrors the real store: a markdown (NULL revision) active row is
+		// replaced on plan ID match alone; a structured row also requires an
+		// exact revision match.
+		if active.PlanID != replacement.PlanID {
+			return nil, nil, storage.ErrMasterPlanConflict
+		}
+		if active.Revision != nil && *active.Revision != replacement.Revision {
 			return nil, nil, storage.ErrMasterPlanConflict
 		}
 		replaced = active
