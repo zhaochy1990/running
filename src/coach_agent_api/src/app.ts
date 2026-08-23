@@ -1,4 +1,5 @@
 import { swaggerUI } from "@hono/swagger-ui";
+import { shanghaiDay } from "@stride/contract";
 import { CoachTurnScope, Command } from "coach_agent";
 import { Hono } from "hono";
 import type { JwtVerifier } from "./auth.js";
@@ -94,7 +95,7 @@ export function createApp(dependencies: AppDependencies): Hono {
           const result = await dependencies.coach.invoke(input, {
             context: {
               userId: identity.userId,
-              asof: shanghaiToday(),
+              asof: shanghaiDay(new Date().toISOString()),
               ...(body.value.target ? { target: body.value.target } : {}),
               ...(body.value.reviewContext ? { reviewContext: body.value.reviewContext } : {}),
             },
@@ -185,13 +186,4 @@ function isValidResume(value: unknown): value is string | string[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function shanghaiToday(now: Date = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
 }
