@@ -8,14 +8,20 @@
       "screenId": "917018ad268a4c9397fdaf48cdf0b5a5",
       "slug": "app-shell-side-drawer-open",
       "operation": "export",
-      "status": "candidate",
+      "status": "approved",
       "designGeneration": "raycast-v1",
       "briefs": [
         "briefs/app-shell-side-drawer-open.md"
       ],
       "html": "artifacts/917018ad268a4c9397fdaf48cdf0b5a5_app-shell-side-drawer-open.html",
       "createdAt": "2026-08-20T13:53:31.592Z",
-      "updatedAt": "2026-08-20T13:53:31.592Z"
+      "updatedAt": "2026-08-20T13:53:31.592Z",
+      "approvedArtifactSha256": "5418c7b0e10659db515d1b081ca7a169e012a4c05cc06ce3d0571a7156c9d2e5",
+      "approvedAt": "2026-08-23T06:17:19Z",
+      "confirmedProjectId": "7939736180256612039",
+      "confirmedScreenId": "2b1d5f2bcd7a47dfa7d31ecc40117c02",
+      "confirmedAt": "2026-08-23T06:38:47Z",
+      "confirmedVerified": true
     },
     {
       "projectId": "12727163079393064568",
@@ -50,70 +56,92 @@
       "screenId": "07e7b730bb8745ad848c98bdc8345f7a",
       "slug": "app-shell-side-drawer-open",
       "operation": "export",
-      "status": "candidate",
+      "status": "approved",
       "designGeneration": "raycast-v1",
       "briefs": [
         "briefs/app-shell-side-drawer-open.md"
       ],
       "html": "artifacts/07e7b730bb8745ad848c98bdc8345f7a_app-shell-side-drawer-open.html",
       "createdAt": "2026-08-20T14:22:44.222Z",
-      "updatedAt": "2026-08-20T14:22:44.222Z"
+      "updatedAt": "2026-08-20T14:22:44.222Z",
+      "approvedArtifactSha256": "97703c5b70209afa56bc430370c901c0a3cf6563277ce81807478acace1f52b5",
+      "approvedAt": "2026-08-23T06:17:19Z"
     },
     {
       "projectId": "12727163079393064568",
       "screenId": "af40b9e183a74ab98b161169663fd19b",
       "slug": "app-shell-side-drawer-syncing",
       "operation": "export",
-      "status": "candidate",
+      "status": "approved",
       "designGeneration": "raycast-v1",
       "briefs": [
         "briefs/app-shell-side-drawer-syncing.md"
       ],
       "html": "artifacts/af40b9e183a74ab98b161169663fd19b_app-shell-side-drawer-syncing.html",
       "createdAt": "2026-08-20T14:39:37.222Z",
-      "updatedAt": "2026-08-20T14:39:37.222Z"
+      "updatedAt": "2026-08-20T14:39:37.222Z",
+      "approvedArtifactSha256": "e5eedd7f6dd85120374b95b3ddfea78c186a4be38450dc21f79b9ad63c940e21",
+      "approvedAt": "2026-08-23T06:17:19Z",
+      "confirmedProjectId": "7939736180256612039",
+      "confirmedScreenId": "e12e63e2cedd433fb58035ba3aed033d",
+      "confirmedAt": "2026-08-23T06:38:47Z",
+      "confirmedVerified": true
     },
     {
       "projectId": "12727163079393064568",
       "screenId": "91ebdd56aa0f42d098e042aa6c8e65c6",
       "slug": "app-shell-side-drawer-syncing-alt",
       "operation": "export",
-      "status": "candidate",
+      "status": "approved",
       "designGeneration": "raycast-v1",
       "briefs": [
         "briefs/app-shell-side-drawer-syncing.md"
       ],
       "html": "artifacts/91ebdd56aa0f42d098e042aa6c8e65c6_app-shell-side-drawer-syncing-alt.html",
       "createdAt": "2026-08-20T14:39:43.927Z",
-      "updatedAt": "2026-08-20T14:39:43.927Z"
+      "updatedAt": "2026-08-20T14:39:43.927Z",
+      "approvedArtifactSha256": "02e9dfe4afa42c1094ef1b48e9d05489933f7e962f941ec30e914fafc6fc38ab",
+      "approvedAt": "2026-08-23T06:17:19Z"
     },
     {
       "projectId": "12727163079393064568",
       "screenId": "8a2dee92998540ffbcb1abefb49b43e8",
       "slug": "app-shell-side-drawer-sync-complete",
       "operation": "export",
-      "status": "candidate",
+      "status": "approved",
       "designGeneration": "raycast-v1",
       "briefs": [
         "briefs/app-shell-side-drawer-sync-complete.md"
       ],
       "html": "artifacts/8a2dee92998540ffbcb1abefb49b43e8_app-shell-side-drawer-sync-complete.html",
       "createdAt": "2026-08-20T14:52:20.348Z",
-      "updatedAt": "2026-08-20T14:52:20.348Z"
+      "updatedAt": "2026-08-20T14:52:20.348Z",
+      "approvedArtifactSha256": "cdbe79948f4ce63f7a32bbd8961f60f8f316496f5778295a25af3a404826faf2",
+      "approvedAt": "2026-08-23T06:17:19Z",
+      "confirmedProjectId": "7939736180256612039",
+      "confirmedScreenId": "703ae5b0071c42ebb0b1636bcd126221",
+      "confirmedAt": "2026-08-23T06:38:47Z",
+      "confirmedVerified": true
     },
     {
       "projectId": "12727163079393064568",
       "screenId": "8150b9379ebc4954a34897d35ae336cc",
       "slug": "app-shell-side-drawer-sync-failed",
       "operation": "export",
-      "status": "candidate",
+      "status": "approved",
       "designGeneration": "raycast-v1",
       "briefs": [
         "briefs/app-shell-side-drawer-sync-failed.md"
       ],
       "html": "artifacts/8150b9379ebc4954a34897d35ae336cc_app-shell-side-drawer-sync-failed.html",
       "createdAt": "2026-08-20T14:57:55.137Z",
-      "updatedAt": "2026-08-20T14:57:55.137Z"
+      "updatedAt": "2026-08-20T14:57:55.137Z",
+      "approvedArtifactSha256": "e3f55af3d25c479e3b9c1c6007e175bc8961d5610d40677ea5e8e7e9821a9d6d",
+      "approvedAt": "2026-08-23T06:17:19Z",
+      "confirmedProjectId": "7939736180256612039",
+      "confirmedScreenId": "8e7e9be3170d47fea07c34c02fc58978",
+      "confirmedAt": "2026-08-23T06:38:47Z",
+      "confirmedVerified": true
     },
     {
       "projectId": "12727163079393064568",
@@ -162,14 +190,20 @@
       "screenId": "1663cbabe9bb45abb316c09a896e5163",
       "slug": "app-shell-side-drawer-logout-confirm",
       "operation": "export",
-      "status": "candidate",
+      "status": "approved",
       "designGeneration": "raycast-v1",
       "briefs": [
         "briefs/app-shell-side-drawer-logout-confirm.md"
       ],
       "html": "artifacts/1663cbabe9bb45abb316c09a896e5163_app-shell-side-drawer-logout-confirm.html",
+      "approvedArtifactSha256": "a9f3e2b2efb506eaed35aa86e4e6df9a83d5c2c62c342f1cb1485f7ee8028a24",
+      "approvedAt": "2026-08-23T05:49:36Z",
+      "confirmedProjectId": "7939736180256612039",
+      "confirmedScreenId": "623ffd6425d04b1da5d6feb9b78d5df9",
+      "confirmedAt": "2026-08-23T05:53:09Z",
+      "confirmedVerified": true,
       "createdAt": "2026-08-20T16:01:41.649Z",
-      "updatedAt": "2026-08-20T16:01:41.649Z"
+      "updatedAt": "2026-08-23T05:53:09Z"
     },
     {
       "projectId": "12727163079393064568",
@@ -392,7 +426,7 @@
       "title": "登录 · STRIDE",
       "slug": "auth-login",
       "operation": "export",
-      "status": "candidate",
+      "status": "approved",
       "designGeneration": "raycast-v1",
       "state": {
         "authState": "signed_out",
@@ -404,7 +438,9 @@
       ],
       "html": "artifacts/ad16e443276e4226bfc375a1c3b57301_auth-login.html",
       "createdAt": "2026-08-20T13:57:38.721Z",
-      "updatedAt": "2026-08-20T13:58:23.817Z"
+      "updatedAt": "2026-08-23T05:47:29.000Z",
+      "approvedArtifactSha256": "d66d5c6eb8f0a9c5baa8bac24ff7e15b87a05416115937d8252833845e45a58d",
+      "approvedAt": "2026-08-23T05:47:29.000Z"
     }
   ]
 }

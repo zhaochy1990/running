@@ -1,0 +1,45 @@
+<view class="bind-page">
+  <view class="header">
+    <view class="title">绑定账号</view>
+    <view class="subtitle">将你的微信与 STRIDE 账号关联</view>
+  </view>
+
+  <view class="form">
+    <view class="input-group">
+      <view class="label">邮箱</view>
+      <input
+        class="input"
+        type="text"
+        placeholder="请输入注册邮箱"
+        value="{{email}}"
+        bindinput="onEmailInput"
+      />
+    </view>
+
+    <view class="input-group">
+      <view class="label">密码</view>
+      <input
+        class="input"
+        type="password"
+        placeholder="请输入密码"
+        value="{{password}}"
+        bindinput="onPasswordInput"
+      />
+    </view>
+
+    <view wx:if="{{errorMsg}}" class="error-msg">{{errorMsg}}</view>
+
+    <button
+      class="bind-btn {{loading ? 'disabled' : ''}}"
+      bindtap="onBindTap"
+      disabled="{{loading}}"
+    >
+      {{loading ? '绑定中...' : '绑定账号'}}
+    </button>
+
+    <view class="tips">
+      绑定后，你可以通过微信直接登录 STRIDE。
+      账号数据（训练计划、活动记录等）完全互通。
+    </view>
+  </view>
+</view>

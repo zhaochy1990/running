@@ -1,0 +1,6 @@
+<view class="page">
+  <view class="hero card">
+    <view class="hero-title">{{greeting}}</view>
+    <view class="hero-subtitle">今天也要加油跑</view>
+  </view>
+</view>

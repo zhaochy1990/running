@@ -1,0 +1,83 @@
+.bind-page {
+  min-height: 100vh;
+  padding: 120rpx 48rpx 48rpx;
+  box-sizing: border-box;
+  background: var(--color-bg);
+}
+
+.header {
+  margin-bottom: 64rpx;
+}
+
+.title {
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  margin-bottom: 16rpx;
+}
+
+.subtitle {
+  font-size: var(--font-size-md);
+  color: var(--color-text-secondary);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 32rpx;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.input {
+  height: 96rpx;
+  padding: 0 24rpx;
+  background: var(--color-card);
+  border: 2rpx solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+}
+
+.input:focus {
+  border-color: var(--color-accent);
+}
+
+.error-msg {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  margin-top: -8rpx;
+}
+
+.bind-btn {
+  margin-top: 16rpx;
+  height: 96rpx;
+  line-height: 96rpx;
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  border: none;
+}
+
+.bind-btn.disabled {
+  opacity: 0.6;
+}
+
+.tips {
+  margin-top: 24rpx;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-tertiary);
+  line-height: 1.6;
+}

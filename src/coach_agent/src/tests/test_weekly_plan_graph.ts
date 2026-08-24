@@ -7,7 +7,7 @@ import { MySqlWeeklyPlanContextProvider, StrideDataStore } from "../persistence/
 
 type Profile = "local" | "prod";
 const PROFILE = "prod" as Profile;
-const AS_OF = new Date("2026-08-16").toISOString();
+const AS_OF = new Date("2026-08-23").toISOString();
 
 const usernameMap: Record<string, string> = {
   // pan: "5ee229a6-cdc1-4260-84d3-71ec622126c2",
@@ -16,6 +16,7 @@ const usernameMap: Record<string, string> = {
   dehua: "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
   renzhen: "bffa65bc-4501-41e7-a68c-96da76d5b7bc",
   zhaochaoyi: "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+  huzhengjie: "5177ff88-c0b7-4b3d-8c4e-80387af503e6",
 };
 
 function requireUserId(): { userId: string; username: string } {

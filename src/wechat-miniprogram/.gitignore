@@ -1,0 +1,11 @@
+# 微信开发者工具生成
+miniprogram_npm/
+node_modules/
+dist/
+build/
+
+# 个人配置
+project.private.config.json
+
+# 日志
+*.log

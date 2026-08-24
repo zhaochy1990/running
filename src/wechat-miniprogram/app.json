@@ -1,0 +1,48 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/bind/bind",
+    "pages/plan/plan",
+    "pages/activities/activities",
+    "pages/health/health",
+    "pages/coach/coach",
+    "pages/profile/profile"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTitleText": "STRIDE",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f7f7f8"
+  },
+  "tabBar": {
+    "color": "#8a8a8e",
+    "selectedColor": "#1c1c1e",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "今日"
+      },
+      {
+        "pagePath": "pages/plan/plan",
+        "text": "计划"
+      },
+      {
+        "pagePath": "pages/activities/activities",
+        "text": "活动"
+      },
+      {
+        "pagePath": "pages/health/health",
+        "text": "健康"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}
