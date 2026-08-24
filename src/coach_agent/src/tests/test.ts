@@ -17,6 +17,7 @@ const usernameMap: Record<string, string> = {
   dehua: "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
   renzhen: "bffa65bc-4501-41e7-a68c-96da76d5b7bc",
   zhaochaoyi: "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+  huzhengjie: "5177ff88-c0b7-4b3d-8c4e-80387af503e6",
 };
 
 function requireUserId(): { userId: string; username: string } {
@@ -90,7 +91,6 @@ function printAnswer(res: { messages: Array<{ content: unknown }> }): void {
   const text = typeof content === "string" ? content : JSON.stringify(content);
   console.log(`\n===== 最后回答 =====\n${text}`);
 
-  const rawJson = MasterPlanSchema.parse(typeof content === "string" ? JSON.parse(content) : content);
 
   const now = new Date();
   const year = now.getFullYear();
@@ -103,8 +103,10 @@ function printAnswer(res: { messages: Array<{ content: unknown }> }): void {
   // YYYY-MM-DD_hh:mm:ss_{userId}.json
   var outputFileName = `${year}-${month}-${day}_${hour}:${minute}:${second}_${username}.json`;
 
-  writeFileSync(`./test-output/master-plan/${outputFileName}`, JSON.stringify(rawJson, null, 2));
+  writeFileSync(`./test-output/master-plan/${outputFileName}`, text);
   console.log(`\n===== 最后回答已写入 ./test-output/${outputFileName} =====`);
+  const rawJson = MasterPlanSchema.parse(typeof content === "string" ? JSON.parse(content) : content);
+  writeFileSync(`./test-output/master-plan/${outputFileName}`, JSON.stringify(rawJson, null, 2));
 }
 
 /** 把 ask_user_question 的 interrupt payload 渲染成给运动员看的追问文本。 */
@@ -165,7 +167,7 @@ async function askWithHITL(content: string, thread: string): Promise<void> {
 //   "帮我生成一个新的赛季训练计划，目标是明年上海马拉松 sub-3:10。",
 //   "sess-master",
 // );
-const prompt = `帮助用户生成赛季训练计划。使用已保存的比赛目标：${raceTarget.race_distance}，比赛日期 ${raceTarget.race_date}，目标成绩 ${raceTarget.target_finish_time}，目标比赛 ${raceTarget.race_name}，每周可以用来训练的天数 ${raceTarget.weekly_training_days} 天。根据用户档案和训练记录处理伤病及其他约束。`;
+const prompt = `帮助用户生成赛季训练计划，这个用户希望增加马拉松专项期，夏天已经跑了很多有氧了，不想要有氧基础期，生成赛季训练计划之后就结束并返回，不要问用户问题。使用已保存的比赛目标：${raceTarget.race_distance}，比赛日期 ${raceTarget.race_date}，目标成绩 ${raceTarget.target_finish_time}，目标比赛 ${raceTarget.race_name}，每周可以用来训练的天数 ${raceTarget.weekly_training_days} 天。根据用户档案和训练记录处理伤病及其他约束。`;
 console.log(`\n===== 生成赛季训练计划 =====\n${prompt}`);
 
 await askWithHITL(

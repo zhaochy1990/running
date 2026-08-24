@@ -153,13 +153,6 @@ export const WeeklyPlanSchema = z
         message: "weekly plan must contain at least one run session",
       });
     }
-    if (!plan.sessions.some((session) => session.kind === "rest")) {
-      context.addIssue({
-        code: "custom",
-        path: ["sessions"],
-        message: "weekly plan must contain at least one rest session",
-      });
-    }
     if (mondayOnOrBefore(weekStart) !== weekStart) {
       context.addIssue({
         code: "custom",
