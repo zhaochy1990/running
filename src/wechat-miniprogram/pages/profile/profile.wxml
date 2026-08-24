@@ -1,0 +1,10 @@
+<view class="page">
+  <view class="card">
+    <view class="text-lg font-semibold">{{ user?.name || '跑步爱好者' }}</view>
+    <view wx:if="{{user?.email}}" class="text-sm text-secondary">{{user.email}}</view>
+  </view>
+
+  <view class="card" bindtap="onLogout">
+    <view class="logout-text">退出登录</view>
+  </view>
+</view>

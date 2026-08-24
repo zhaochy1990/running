@@ -1,0 +1,9 @@
+.page {
+  padding: var(--spacing-lg);
+}
+
+.logout-text {
+  color: var(--color-danger);
+  font-size: var(--font-size-md);
+  text-align: center;
+}
