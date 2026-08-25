@@ -6,6 +6,7 @@
 package garmin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -186,7 +187,26 @@ func (c *Client) connectapi(ctx context.Context, path string, params url.Values)
 	if len(params) > 0 {
 		u += "?" + params.Encode()
 	}
-	raw, status, bearer, err := c.doGet(ctx, u)
+	return c.retryAuth(ctx, path, func() ([]byte, int, string, error) {
+		return c.doGet(ctx, u)
+	})
+}
+
+// postJSON issues an authenticated POST with a JSON body to
+// connectapi.{domain}{path} (the workout-service endpoints), refreshing the
+// bearer on 401 and retrying transient failures. Returns the raw JSON body.
+func (c *Client) postJSON(ctx context.Context, path string, body any) (json.RawMessage, error) {
+	u := "https://connectapi." + c.domain + path
+	return c.retryAuth(ctx, path, func() ([]byte, int, string, error) {
+		return c.doPost(ctx, u, body)
+	})
+}
+
+// retryAuth issues one authenticated request via fn, force-refreshing the
+// OAuth2 bearer once if the server rejects it (401) and retrying, then
+// classifies the final status. fn returns (body, status, bearer, err).
+func (c *Client) retryAuth(ctx context.Context, path string, fn func() ([]byte, int, string, error)) (json.RawMessage, error) {
+	raw, status, bearer, err := fn()
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +218,7 @@ func (c *Client) connectapi(ctx context.Context, path string, params url.Values)
 			if err := c.forceRefresh(ctx, bearer); err != nil {
 				return nil, err
 			}
-			raw, status, _, err = c.doGet(ctx, u)
+			raw, status, _, err = fn()
 			if err != nil {
 				return nil, err
 			}
@@ -267,6 +287,80 @@ func (c *Client) doGet(ctx context.Context, u string) ([]byte, int, string, erro
 		var se *httpx.StatusError
 		if errors.As(err, &se) {
 			return []byte(se.Body), se.Code, bearer, nil // exhausted 5xx/429: surface status to connectapi
+		}
+		return nil, 0, bearer, err
+	}
+	return raw, status, bearer, nil
+}
+
+// doPost performs one authenticated POST with a JSON body, ensuring a live
+// bearer beforehand, and returns the body + status without interpreting it.
+// Transient failures are retried in place (httpx); the body is re-armed for
+// each attempt via GetBody.
+func (c *Client) doPost(ctx context.Context, u string, body any) ([]byte, int, string, error) {
+	if err := c.ensureBearer(ctx); err != nil {
+		return nil, 0, "", err
+	}
+	c.mu.RLock()
+	bearer := c.oauth2.authHeader()
+	c.mu.RUnlock()
+
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, 0, bearer, fmt.Errorf("garmin: encode body: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(buf))
+	if err != nil {
+		return nil, 0, bearer, err
+	}
+	req.Header.Set("Authorization", bearer)
+	req.Header.Set("User-Agent", connectUserAgent)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	var raw []byte
+	var status int
+	err = httpx.Do(ctx, func() error {
+		if c.limiter != nil {
+			if err := c.limiter.Wait(ctx); err != nil {
+				return err
+			}
+		}
+		// Re-arm the body for a retry (http.NewRequestWithContext sets GetBody
+		// for a *bytes.Reader, so this is safe to call repeatedly).
+		if req.GetBody != nil {
+			b, e := req.GetBody()
+			if e != nil {
+				return e
+			}
+			req.Body = b
+		}
+		resp, e := c.http.Do(req)
+		if e != nil {
+			for {
+				urlErr, ok := e.(*url.Error)
+				if !ok {
+					break
+				}
+				e = urlErr.Err
+			}
+			return fmt.Errorf("garmin: POST request failed: %w", e)
+		}
+		defer resp.Body.Close()
+		b, e := io.ReadAll(resp.Body)
+		if e != nil {
+			return fmt.Errorf("garmin: read response: %w", e) // %w keeps io.ErrUnexpectedEOF retryable
+		}
+		if httpx.RetryableStatus(resp.StatusCode) {
+			return &httpx.StatusError{Code: resp.StatusCode, Body: string(b)}
+		}
+		raw, status = b, resp.StatusCode // success / 3xx / 4xx (incl 401): stop, let caller classify
+		return nil
+	})
+	if err != nil {
+		var se *httpx.StatusError
+		if errors.As(err, &se) {
+			return []byte(se.Body), se.Code, bearer, nil // exhausted 5xx/429: surface status to retryAuth
 		}
 		return nil, 0, bearer, err
 	}
@@ -420,4 +514,21 @@ func (c *Client) GetRacePredictions(ctx context.Context) (json.RawMessage, error
 // GetLactateThreshold returns the latest running lactate-threshold speed + HR.
 func (c *Client) GetLactateThreshold(ctx context.Context) (json.RawMessage, error) {
 	return c.connectapi(ctx, "/biometric-service/biometric/latestLactateThreshold", nil)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Workout endpoints (push scope). Paths verified against garminconnect
+// upload_workout / schedule_workout (POST /workout-service/...).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// UploadWorkout uploads a workout template to the workout library and returns
+// the raw JSON body (carries the new workoutId).
+func (c *Client) UploadWorkout(ctx context.Context, workout map[string]any) (json.RawMessage, error) {
+	return c.postJSON(ctx, "/workout-service/workout", workout)
+}
+
+// ScheduleWorkout places an uploaded workout template onto the calendar for
+// date (ISO YYYY-MM-DD). The watch picks it up on next sync.
+func (c *Client) ScheduleWorkout(ctx context.Context, workoutID int, date string) (json.RawMessage, error) {
+	return c.postJSON(ctx, fmt.Sprintf("/workout-service/schedule/%d", workoutID), map[string]any{"date": date})
 }

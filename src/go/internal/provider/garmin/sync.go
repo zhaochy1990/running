@@ -83,8 +83,10 @@ func WithProviderRequestDelay(d time.Duration) ProviderOption {
 	return func(p *Provider) { p.delay = d }
 }
 
-// Info declares the Garmin provider capabilities: HRV detail, sleep, and body
-// battery (the Garmin-native signals COROS lacks). Push/exercise stay unsupported.
+// Info declares the Garmin provider capabilities: HRV detail, sleep, body
+// battery (the Garmin-native signals COROS lacks), and run-workout push
+// (mirrors garmin_sync.adapter._GARMIN_INFO). Strength push / delete / schedule
+// query / exercise catalog stay unsupported (BaseProvider → FeatureNotSupported).
 func (p *Provider) Info() provider.ProviderInfo {
 	return provider.ProviderInfo{
 		Name:        providerName,
@@ -94,6 +96,7 @@ func (p *Provider) Info() provider.ProviderInfo {
 			provider.CapSyncHRVDetail:   true,
 			provider.CapSyncSleep:       true,
 			provider.CapSyncBodyBattery: true,
+			provider.CapPushRunWorkout:  true,
 		},
 	}
 }
