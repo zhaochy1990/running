@@ -131,6 +131,13 @@ type Config struct {
 	MasterPlanStore MasterPlanStore
 	WeeklyPlanStore WeeklyPlanStore
 
+	// WorkoutPusher pushes normalized workouts to the user's bound watch
+	// provider (satisfied by the cmd-layer adapter over registry).
+	WorkoutPusher WorkoutPusher
+	// ScheduledWorkoutStore records device execution state after a push
+	// (satisfied by *storage.Store).
+	ScheduledWorkoutStore ScheduledWorkoutStore
+
 	Auth           *Authenticator
 	CORSOrigins    []string
 	SwaggerEnabled bool
@@ -211,7 +218,7 @@ func NewService(cfg Config) *Service {
 		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),
 		strideMetrics:           newStrideRoutes(cfg.StrideStore, log),
 		masterPlan:              newMasterPlanRoutes(cfg.MasterPlanStore, log),
-		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, log),
+		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
 		swaggerEnabled:          cfg.SwaggerEnabled,

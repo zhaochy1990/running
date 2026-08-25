@@ -914,6 +914,21 @@ definitions:
       running_age_range:
         type: string
     type: object
+  api.pushPlannedSessionResponse:
+    properties:
+      ok:
+        type: boolean
+      planned_session_id:
+        type: integer
+      provider:
+        type: string
+      provider_workout_id:
+        type: string
+      push_date:
+        type: string
+      scheduled_workout_id:
+        type: integer
+    type: object
   api.putWeeklyFeedbackRequest:
     properties:
       content:
@@ -1700,6 +1715,73 @@ paths:
       summary: Per-day HRV detail + latest-reading summary
       tags:
       - metrics
+  /api/{user}/plan/sessions/{date}/{sessionIndex}/push:
+    post:
+      consumes:
+      - application/json
+      description: Finds the planned session in the active structured weekly plan,
+        translates its spec to the bound watch provider, clears prior [STRIDE] watch
+        entries (best-effort), pushes, and records a scheduled_workout row. target_date
+        optionally moves the session within ±7 days of the planned date.
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Planned session date (ISO YYYY-MM-DD)
+        in: path
+        name: date
+        required: true
+        type: string
+      - description: Session index within the day (0-based)
+        in: path
+        name: sessionIndex
+        required: true
+        type: integer
+      - description: Optional ISO YYYY-MM-DD date to actually push to (within ±7 days
+          of the planned date)
+        in: query
+        name: target_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.pushPlannedSessionResponse'
+        "400":
+          description: Unsupported kind / missing spec / bad target_date / provider
+            lacks capability
+          schema:
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: No planned session found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Structured plan not fresh
+          schema:
+            type: object
+        "502":
+          description: Upstream watch service rejected the push
+          schema:
+            type: object
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Push a planned run/strength session to the user's watch
+      tags:
+      - weekly-plan
   /api/{user}/plan/weeks:
     get:
       parameters:

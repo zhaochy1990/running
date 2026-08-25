@@ -32,15 +32,17 @@ type WeeklyPlanStore interface {
 }
 
 type weeklyPlanRoutes struct {
-	store WeeklyPlanStore
-	log   *zap.Logger
+	store   WeeklyPlanStore
+	pusher  WorkoutPusher
+	swstore ScheduledWorkoutStore
+	log     *zap.Logger
 }
 
-func newWeeklyPlanRoutes(store WeeklyPlanStore, log *zap.Logger) *weeklyPlanRoutes {
+func newWeeklyPlanRoutes(store WeeklyPlanStore, pusher WorkoutPusher, swstore ScheduledWorkoutStore, log *zap.Logger) *weeklyPlanRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &weeklyPlanRoutes{store: store, log: log}
+	return &weeklyPlanRoutes{store: store, pusher: pusher, swstore: swstore, log: log}
 }
 
 // registerReads mounts the Weekly Plan read surface on the shared authenticated
@@ -63,6 +65,11 @@ func (w *weeklyPlanRoutes) registerWrites(rg *gin.RouterGroup) {
 		return
 	}
 	rg.PUT("/api/:user/weeks/:weekName/feedback", w.putFeedback)
+	// Watch-workout push is a user-scoped mutation (pushes to the user's watch
+	// + records device execution state) — user/internal tier only, no admin.
+	if w.pusher != nil && w.swstore != nil {
+		rg.POST("/api/:user/plan/sessions/:date/:sessionIndex/push", w.pushPlannedSession)
+	}
 }
 
 // registerAdminWrites mounts the narrow administrator-only plan import path on

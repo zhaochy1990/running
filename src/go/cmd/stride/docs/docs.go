@@ -1545,6 +1545,102 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/{user}/plan/sessions/{date}/{sessionIndex}/push": {
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Finds the planned session in the active structured weekly plan, translates its spec to the bound watch provider, clears prior [STRIDE] watch entries (best-effort), pushes, and records a scheduled_workout row. target_date optionally moves the session within ±7 days of the planned date.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "weekly-plan"
+                ],
+                "summary": "Push a planned run/strength session to the user's watch",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Planned session date (ISO YYYY-MM-DD)",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Session index within the day (0-based)",
+                        "name": "sessionIndex",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Optional ISO YYYY-MM-DD date to actually push to (within ±7 days of the planned date)",
+                        "name": "target_date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.pushPlannedSessionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Unsupported kind / missing spec / bad target_date / provider lacks capability",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No planned session found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Structured plan not fresh",
+                        "schema": {
+                            "type": "object"
+                        }
+                    },
+                    "502": {
+                        "description": "Upstream watch service rejected the push",
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        },
         "/api/{user}/plan/weeks": {
             "get": {
                 "security": [
@@ -3875,6 +3971,29 @@ const docTemplate = `{
                 },
                 "running_age_range": {
                     "type": "string"
+                }
+            }
+        },
+        "api.pushPlannedSessionResponse": {
+            "type": "object",
+            "properties": {
+                "ok": {
+                    "type": "boolean"
+                },
+                "planned_session_id": {
+                    "type": "integer"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "provider_workout_id": {
+                    "type": "string"
+                },
+                "push_date": {
+                    "type": "string"
+                },
+                "scheduled_workout_id": {
+                    "type": "integer"
                 }
             }
         },

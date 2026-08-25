@@ -325,7 +325,7 @@ export const API_ROUTES: readonly ApiRoute[] = [
     method: "POST",
     path: "/api/:user/plan/sessions/:date/:sessionIndex/push",
     env: "STRIDE_ROUTE_POST_USER_PLAN_SESSIONS_DATE_SESSIONINDEX_PUSH",
-    goReady: false,
+    goReady: true,
   },
   // ✗ not called
   { method: "POST", path: "/api/:user/plan/weeks/generate", env: "STRIDE_ROUTE_POST_USER_PLAN_WEEKS_GENERATE", goReady: false },

@@ -94,6 +94,11 @@ func runAPI() error {
 	if err := store.AutoMigrateTeamLikes(ctx); err != nil {
 		return err
 	}
+	// scheduled_workout rows back the watch workout-push API (device execution
+	// state: pushed workouts + provider ids).
+	if err := store.AutoMigrateScheduledWorkout(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ (publisher only; no consumer) ---
 	topo := mq.Topology{Work: cfg.Queues.Work, Retry: cfg.Queues.Retry, Poison: cfg.Queues.Poison}
@@ -117,6 +122,14 @@ func runAPI() error {
 	authClient := authsvc.New(cfg.API.AuthServiceURL, 5*time.Second)
 	providerLogin := providerLoginAdapter{store: store, delay: watchRequestDelay}
 	providerInfo := providerInfoAdapter{store: store, delay: watchRequestDelay}
+	// File-based provider-binding fallback (registry.ProviderName) reads
+	// data/<uid>/config.json; MySQL is the primary binding, so a missing file
+	// harmlessly resolves to the default provider.
+	dataDir := os.Getenv("STRIDE_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "data"
+	}
+	workoutPush := workoutPushAdapter{store: store, delay: watchRequestDelay, dataDir: dataDir}
 	features := api.FeatureConfig{
 		SyncDataAtOnboarding:      cfg.API.Features.SyncDataAtOnboarding,
 		CoachAgentWeeklyPlanUsers: toUserSet(cfg.API.Features.CoachAgentWeeklyPlanUsers),
@@ -155,6 +168,8 @@ func runAPI() error {
 		StrideStore:             store,
 		MasterPlanStore:         store,
 		WeeklyPlanStore:         store,
+		WorkoutPusher:           workoutPush,
+		ScheduledWorkoutStore:   store,
 		Auth:                    authn,
 		CORSOrigins:             cfg.API.CORSOrigins,
 		SwaggerEnabled:          cfg.API.SwaggerEnabled,
