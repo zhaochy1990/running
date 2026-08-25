@@ -16,6 +16,30 @@ interface RequestResult<T> {
   header: Record<string, string>;
 }
 
+interface WxRequestResponse {
+  data: unknown;
+  statusCode: number;
+  header: Record<string, string>;
+  errMsg?: string;
+}
+
+// wx.request 在当前模拟器/基础库环境只返回 RequestTask（不返回 Promise），
+// 直接 `await wx.request(...)` 拿到的是 RequestTask 对象（没有 statusCode/data）。
+// 这里用 success/fail 回调显式包一层 Promise，保证所有环境都能拿到响应。
+function wxRequest(options: RequestOptions): Promise<WxRequestResponse> {
+  return new Promise((resolve, reject) => {
+    wx.request({
+      url: options.url,
+      method: options.method,
+      data: options.data,
+      header: options.header,
+      timeout: options.timeout,
+      success: (res) => resolve(res as unknown as WxRequestResponse),
+      fail: (err) => reject(err),
+    } as WechatMiniprogram.RequestOption);
+  });
+}
+
 // 正在进行中的 token 刷新 promise（防止并发刷新）
 let refreshPromise: Promise<string> | null = null;
 
@@ -34,7 +58,7 @@ async function refreshToken(): Promise<string> {
     }
 
     try {
-      const res = await wx.request({
+      const res = await wxRequest({
         url: `${AUTH_BASE_URL}/api/auth/refresh`,
         method: 'POST',
         data: { refresh_token: refreshToken },
@@ -113,7 +137,7 @@ export async function request<TResponse, TData = unknown>(
   }
 
   const execute = async (): Promise<TResponse> => {
-    const res = await wx.request<never>({
+    const res = await wxRequest({
       url: fullUrl,
       method,
       data,
@@ -134,7 +158,7 @@ export async function request<TResponse, TData = unknown>(
         const newToken = await refreshToken();
         headers.Authorization = `Bearer ${newToken}`;
 
-        const retryRes = await wx.request<never>({
+        const retryRes = await wxRequest({
           url: fullUrl,
           method,
           data,

@@ -1,5 +1,5 @@
 import { wechatLogin, hasValidToken } from './services/auth';
-import { userStore } from './store';
+import { userStore } from './store/index';
 
 App<IAppOption>({
   globalData: {
@@ -53,7 +53,10 @@ App<IAppOption>({
       }
     } catch (err) {
       // 登录失败 → 跳绑定页让用户手动操作
-      console.error('[auth] wechat login failed:', err);
+      console.error(
+        '[auth] wechat login failed:',
+        err instanceof Error ? err.message : err,
+      );
       wx.reLaunch({
         url: '/pages/bind/bind',
       });

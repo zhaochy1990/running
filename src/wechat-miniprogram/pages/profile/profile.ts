@@ -1,8 +1,9 @@
 import { userStore } from '../../store/index';
+import type { UserProfile } from '../../types/api';
 
 Page({
   data: {
-    user: null,
+    user: null as UserProfile | null,
   },
 
   onShow() {

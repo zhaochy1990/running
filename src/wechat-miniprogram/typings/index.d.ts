@@ -7,4 +7,6 @@ interface IAppOption {
     userInfo?: WechatMiniprogram.UserInfo;
     systemInfo?: WechatMiniprogram.SystemInfo;
   };
+  // app.ts 里定义的自定义方法（onLaunch 中调用）
+  checkAuth: () => Promise<void>;
 }

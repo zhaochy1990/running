@@ -1,0 +1,153 @@
+<!DOCTYPE html><html class="dark" lang="zh-CN" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport">
+<title>STRIDE Login</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-container-high": "#292a2c",
+                        "error-container": "#93000a",
+                        "on-error-container": "#ffdad6",
+                        "surface-container": "#1f2022",
+                        "on-secondary": "#003353",
+                        "surface-variant": "#343537",
+                        "inverse-on-surface": "#2f3033",
+                        "secondary-fixed-dim": "#97cbff",
+                        "tertiary-fixed-dim": "#71dba2",
+                        "secondary-fixed": "#cee5ff",
+                        "surface-bright": "#38393c",
+                        "on-primary": "#68000e",
+                        "outline-variant": "#59413f",
+                        "tertiary": "#71dba2",
+                        "surface-container-lowest": "#0d0e10",
+                        "on-error": "#690005",
+                        "on-primary-fixed-variant": "#8f0d1c",
+                        "error": "#ffb4ab",
+                        "on-secondary-fixed": "#001d33",
+                        "on-surface": "#e3e2e5",
+                        "primary-fixed": "#ffdad7",
+                        "on-tertiary-container": "#003821",
+                        "tertiary-container": "#3eaa76",
+                        "surface": "#121316",
+                        "secondary-container": "#2f97e1",
+                        "primary-fixed-dim": "#ffb3af",
+                        "secondary": "#97cbff",
+                        "inverse-surface": "#e3e2e5",
+                        "on-secondary-fixed-variant": "#004a76",
+                        "background": "#07080A",
+                        "primary": "#ffb3af",
+                        "on-tertiary-fixed": "#002112",
+                        "on-primary-fixed": "#410006",
+                        "surface-container-low": "#1b1c1e",
+                        "on-primary-container": "#67000e",
+                        "surface-tint": "#ffb3af",
+                        "primary-container": "#FF6363",
+                        "on-tertiary-fixed-variant": "#005232",
+                        "tertiary-fixed": "#8df8bd",
+                        "on-surface-variant": "#e1bfbc",
+                        "on-tertiary": "#003921",
+                        "on-secondary-container": "#002c49",
+                        "surface-container-highest": "#343537",
+                        "outline": "#a88988",
+                        "inverse-primary": "#b12a30",
+                        "on-background": "#F9F9F9",
+                        "surface-dim": "#101111"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "2xl": "1rem",
+                        "3xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                    fontFamily: {
+                        "headline": ["Inter", "sans-serif"],
+                        "display": ["Inter", "sans-serif"],
+                        "body": ["Inter", "sans-serif"],
+                        "label": ["Inter", "sans-serif"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #07080A; }
+        .input-ring:focus-within {
+            box-shadow: 0 0 0 2px #FF6363;
+            border-color: transparent;
+        }
+    </style>
+<style>
+        body {
+            min-height: max(884px, 100dvh);
+        }
+    </style>
+</head>
+<body class="bg-[#07080A] text-on-background min-h-screen flex flex-col antialiased pb-safe overflow-x-hidden w-[390px] mx-auto relative md:w-full md:justify-center md:items-center">
+<div class="flex-1 flex flex-col justify-center px-4 py-8 w-full md:max-w-[390px]">
+<!-- Header -->
+<div class="mb-10 flex flex-col items-center text-center">
+<div class="w-20 h-20 rounded-[24px] bg-[#1F2022] flex items-center justify-center mb-6 shadow-sm border border-white/5">
+<span class="material-symbols-outlined text-[40px] text-primary-container" style="font-variation-settings: 'FILL' 1;">sprint</span>
+</div>
+<h1 class="font-headline text-[24px] leading-[32px] font-bold text-white tracking-wider mb-2">STRIDE</h1>
+<p class="font-body text-[15px] leading-[22px] text-[#A0A0A0] font-medium tracking-[0.2px]">登录以同步您的训练数据并绑定微信</p>
+</div>
+<!-- Floating Card Form -->
+<div class="bg-[#141517] rounded-3xl p-6 shadow-lg border border-white/5">
+<div class="flex mb-8 border-b border-white/10 relative"><button class="flex-1 py-4 text-[15px] font-bold text-white relative transition-colors" type="button">
+                    邮箱登录
+                    <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-1 bg-[#FF6363] rounded-full"></div>
+                </button>
+                <button class="flex-1 py-4 text-[15px] font-medium text-[#8A8B8C] hover:text-white transition-colors" type="button">
+                    手机号登录
+                </button></div>
+<form class="space-y-6">
+<!-- Email -->
+<div class="space-y-2">
+<label class="block font-label text-[13px] leading-[16px] font-medium text-[#D1D1D1] tracking-[0.4px] ml-1" for="email">邮箱</label>
+<div class="relative rounded-2xl bg-[#1D1E20] border border-transparent flex items-center input-ring transition-shadow duration-200 ease-out">
+<span class="material-symbols-outlined absolute left-4 text-[#7A7A7B] text-[20px]">mail</span>
+<input class="w-full bg-transparent border-none text-[16px] text-white placeholder-[#7A7A7B] pl-12 pr-4 py-4 rounded-2xl focus:ring-0" id="email" placeholder="hello@example.com" type="email">
+</div>
+</div>
+<!-- Password -->
+<div class="space-y-2">
+<div class="flex justify-between items-center ml-1">
+<label class="font-label text-[13px] leading-[16px] font-medium text-[#D1D1D1] tracking-[0.4px]" for="password">密码</label>
+<a class="font-label text-[13px] leading-[16px] font-medium text-[#55B3FF] hover:opacity-80 transition-opacity" href="#">忘记密码？</a>
+</div>
+<div class="relative rounded-2xl bg-[#1D1E20] border border-transparent flex items-center input-ring transition-shadow duration-200 ease-out">
+<span class="material-symbols-outlined absolute left-4 text-[#7A7A7B] text-[20px]">lock</span>
+<input class="w-full bg-transparent border-none text-[16px] text-white placeholder-[#7A7A7B] pl-12 pr-12 py-4 rounded-2xl focus:ring-0" id="password" placeholder="••••••••" type="password">
+<button class="absolute right-4 text-[#7A7A7B] hover:text-white transition-colors flex items-center justify-center" type="button">
+<span class="material-symbols-outlined text-[20px]">visibility_off</span>
+</button>
+</div>
+</div>
+<!-- Actions -->
+<div class="pt-6">
+<button class="w-full h-14 rounded-2xl bg-[#FF6363] text-white font-body text-[17px] font-medium flex items-center justify-center space-x-2 active:scale-[0.98] transition-all duration-200 shadow-lg shadow-[#FF6363]/20 hover:shadow-[#FF6363]/40" type="button">
+<span class="">登录</span>
+</button>
+</div>
+</form>
+</div>
+<!-- Terms -->
+<div class="mt-10 text-center">
+<p class="font-body text-[13px] leading-[18px] tracking-[0.2px] text-[#6A6B6C]">
+                登录即代表您同意我们的<br>
+<a class="hover:text-white transition-colors underline underline-offset-2 decoration-white/20 text-on-surface" href="#">服务条款</a> 和 <a class="hover:text-white transition-colors underline underline-offset-2 decoration-white/20 text-on-surface" href="#">隐私政策</a>
+</p>
+</div>
+</div>
+
+
+</body></html>

@@ -14,7 +14,8 @@ export type Env = typeof ENV[keyof typeof ENV];
 export const CURRENT_ENV: Env = ENV.DEV;
 
 const API_BASE_URLS: Record<Env, string> = {
-  [ENV.DEV]: 'http://127.0.0.1:3100',
+  // DEV 走本地 BFF（stride-web，:8080）——与 Web 端本地前门一致，转发到 STRIDE 数据面
+  [ENV.DEV]: 'http://127.0.0.1:8080',
   [ENV.STAGING]: 'https://staging.stride.run',
   [ENV.PROD]: 'https://stride.run',
 };
@@ -24,11 +25,12 @@ export const API_BASE_URL = API_BASE_URLS[CURRENT_ENV];
 // auth-service 地址 —— 独立 IDaaS，走自己的前门（腾讯云网关；Caddy 把
 // /oauth/*、/api/auth/*、/api/users/me 路由到 auth-backend）。
 // 与 API_BASE_URL（STRIDE 数据面）分离：小程序只把 auth-service 端点打到这里。
+// DEV 直接复用已部署的 auth 前门（本地没有 auth-service 实例；token_exchange 已上线）。
 // 注意：正式版微信要求 request 合法域名必须是已备案的 https 域名（IP 不允许），
 // 上线前需要给 auth-service 配一个正式域名（或扩展 BFF 代理 /oauth/* 与 auth 的
 // /api/users/me），并把该域名加入小程序后台 request 合法域名。
 const AUTH_BASE_URLS: Record<Env, string> = {
-  [ENV.DEV]: 'http://127.0.0.1:3100',
+  [ENV.DEV]: 'http://127.0.0.1:3001',
   [ENV.STAGING]: 'https://124.221.38.59',
   [ENV.PROD]: 'https://124.221.38.59',
 };
@@ -37,7 +39,12 @@ export const AUTH_BASE_URL = AUTH_BASE_URLS[CURRENT_ENV];
 
 // 客户端标识 —— OAuth2 public client（token_exchange 时随请求体发送 client_id 即可，
 // 不需要 client secret；public client 的 secret 无法在客户端代码里保密）。
-export const CLIENT_ID = 'app_43290db46d71409caa36fc4d';
+const client_ids: Record<Env, string> = {
+  [ENV.DEV]: 'app_43290db46d71409caa36fc4d',
+  [ENV.STAGING]: '',
+  [ENV.PROD]: '',
+}
+export const CLIENT_ID = client_ids[CURRENT_ENV];
 
 // 存储 key 常量
 export const STORAGE_KEYS = {

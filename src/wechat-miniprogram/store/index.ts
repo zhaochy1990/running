@@ -1,1 +1,5 @@
-export { userStore } from './user';
+import { userStore } from './user';
+
+export {
+  userStore
+};
