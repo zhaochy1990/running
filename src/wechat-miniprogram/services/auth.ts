@@ -1,55 +1,95 @@
-import { http } from './request';
-import { STORAGE_KEYS } from '../constants/config';
-import type { UserProfile, WechatLoginResponse } from '../types/api';
+import { http, ApiError } from './request';
+import { AUTH_BASE_URL, CLIENT_ID, STORAGE_KEYS } from '../constants/config';
+import { ApiErrorCode } from '../types/api';
+import type { AuthTokenResponse, UserProfile, WechatLoginResult } from '../types/api';
 
-// 微信登录 → 后端换 JWT
-// 后端需实现 POST /api/auth/wechat-login，接收 { code }，返回：
-//   - 已绑定：access_token + refresh_token + user（wechat_bound=true）
-//   - 未绑定：needs_binding=true，临时 token 或 state 供下一步绑定用
-export async function wechatLogin(): Promise<WechatLoginResponse> {
+// auth-service 端点（独立 IDaaS 前门，见 constants/config.ts 的 AUTH_BASE_URL）。
+// 微信登录/绑定走 RFC 8693 token_exchange grant（POST /oauth/token）：
+//   grant_type=token_exchange
+//   client_id=<应用 public client id>（在请求体里，不需要 client secret）
+//   subject_token=wx.login() 的 code
+//   subject_token_type=wechat_mini_program
+// 绑定流程在登录参数基础上追加 email + password。
+// 成功返回标准 token 响应（无 user 对象）；用户信息通过 GET /api/users/me 获取。
+const TOKEN_ENDPOINT = `${AUTH_BASE_URL}/oauth/token`;
+const ME_ENDPOINT = `${AUTH_BASE_URL}/api/users/me`;
+
+// 绑定页展示用的 auth-service 错误码 → 中文文案
+const BIND_ERROR_MESSAGES: Record<string, string> = {
+  [ApiErrorCode.INVALID_CREDENTIALS]: '邮箱或密码错误',
+  [ApiErrorCode.WECHAT_ALREADY_BOUND]: '该微信已绑定其他账号',
+  [ApiErrorCode.WECHAT_NEEDS_BINDING]: '该微信未绑定任何账号，请先绑定',
+  [ApiErrorCode.WECHAT_INVALID_CODE]: '微信登录失败，请重试',
+  [ApiErrorCode.WECHAT_NOT_CONFIGURED]: '微信登录未配置',
+};
+
+// 用 wx.login() 的 code 发起 token_exchange；extra 用于绑定流程追加 email/password。
+async function exchangeWechatCode(extra: Record<string, string> = {}): Promise<AuthTokenResponse> {
   const { code } = await wx.login();
   if (!code) {
     throw new Error('wx.login 返回空 code');
   }
 
-  const response = await http.post<WechatLoginResponse>(
-    '/api/auth/wechat-login',
-    { code },
+  return http.post<AuthTokenResponse>(
+    TOKEN_ENDPOINT,
+    {
+      grant_type: 'token_exchange',
+      client_id: CLIENT_ID,
+      subject_token: code,
+      subject_token_type: 'wechat_mini_program',
+      ...extra,
+    },
     { auth: false },
   );
-
-  // 已绑定 → 存 token
-  if (!response.needs_binding && response.access_token) {
-    persistTokens(response.access_token, response.refresh_token, response.expires_in);
-    persistUser(response.user);
-  }
-
-  return response;
 }
 
-// 微信绑定已有账号
-// 后端需实现 POST /api/auth/wechat-bind，接收 { code, email, password }
+// 用刚换到的 access token 拉取当前用户（Bearer 自动附加；401 会走刷新重试）。
+async function fetchMe(): Promise<UserProfile> {
+  return http.get<UserProfile>(ME_ENDPOINT);
+}
+
+// 登录成功后的收尾：存 token + 拉用户信息并缓存。
+async function persistSession(tokens: AuthTokenResponse): Promise<UserProfile> {
+  persistTokens(tokens.access_token, tokens.refresh_token, tokens.expires_in);
+  const user = await fetchMe();
+  persistUser(user);
+  return user;
+}
+
+// 微信登录：
+// - 已绑定账号 → ok=true + user
+// - 微信未绑定任何账号 → ok=false + needsBinding=true（上层跳绑定页）
+// - 其它错误 → 抛错（上层统一走绑定页兜底）
+export async function wechatLogin(): Promise<WechatLoginResult> {
+  try {
+    const tokens = await exchangeWechatCode();
+    const user = await persistSession(tokens);
+    return { ok: true, user };
+  } catch (err) {
+    if (err instanceof ApiError && err.code === ApiErrorCode.WECHAT_NEEDS_BINDING) {
+      return { ok: false, needsBinding: true };
+    }
+    throw err;
+  }
+}
+
+// 微信绑定已有账号（同一个 token_exchange grant，追加 email + password）。
+// 成功后已登录并返回用户信息；失败抛中文错误（绑定页展示）。
 export async function wechatBindAccount(
   email: string,
   password: string,
-): Promise<WechatLoginResponse> {
-  const { code } = await wx.login();
-  if (!code) {
-    throw new Error('wx.login 返回空 code');
+): Promise<WechatLoginResult> {
+  try {
+    const tokens = await exchangeWechatCode({ email, password });
+    const user = await persistSession(tokens);
+    return { ok: true, user };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      const message = BIND_ERROR_MESSAGES[err.code ?? ''] || err.message;
+      throw new Error(message);
+    }
+    throw err;
   }
-
-  const response = await http.post<WechatLoginResponse>(
-    '/api/auth/wechat-bind',
-    { code, email, password },
-    { auth: false },
-  );
-
-  if (response.access_token) {
-    persistTokens(response.access_token, response.refresh_token, response.expires_in);
-    persistUser(response.user);
-  }
-
-  return response;
 }
 
 // 检查本地是否有有效 token

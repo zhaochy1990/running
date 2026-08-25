@@ -1,4 +1,4 @@
-import { userStore } from '../../store';
+import { userStore } from '../../store/index';
 
 Page({
   data: {

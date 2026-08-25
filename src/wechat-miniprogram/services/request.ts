@@ -1,5 +1,5 @@
 import { ApiErrorResponse } from '../types/api';
-import { API_BASE_URL, CLIENT_ID, REQUEST_TIMEOUT, STORAGE_KEYS } from '../constants/config';
+import { API_BASE_URL, AUTH_BASE_URL, CLIENT_ID, REQUEST_TIMEOUT, STORAGE_KEYS } from '../constants/config';
 
 interface RequestOptions<T = unknown> {
   url: string;
@@ -35,7 +35,7 @@ async function refreshToken(): Promise<string> {
 
     try {
       const res = await wx.request({
-        url: `${API_BASE_URL}/api/auth/refresh`,
+        url: `${AUTH_BASE_URL}/api/auth/refresh`,
         method: 'POST',
         data: { refresh_token: refreshToken },
         header: {
@@ -77,11 +77,12 @@ export class ApiError extends Error {
   public detail: string;
 
   constructor(statusCode: number, body: ApiErrorResponse) {
-    super(body.detail || `Request failed with status ${statusCode}`);
+    // STRIDE 数据面错误体为 {detail, code}；auth-service 错误体为 {error, message}。
+    super(body.message || body.detail || `Request failed with status ${statusCode}`);
     this.name = 'ApiError';
     this.statusCode = statusCode;
-    this.code = body.code;
-    this.detail = body.detail;
+    this.code = body.code || body.error;
+    this.detail = body.detail || body.message || '';
   }
 }
 
