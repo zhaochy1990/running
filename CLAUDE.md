@@ -15,7 +15,7 @@ User activity and health data are stored in Tencent Cloud MySQL; local files are
 
 ### Issue tracker
 
-Issues and PRDs are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
+Issues and PRDs are tracked in the shared tracker repo `zhaochy1990/stride-devops` (project label `project:running`, all gh calls with `-R`). See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
