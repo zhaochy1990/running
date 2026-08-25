@@ -22,6 +22,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -207,6 +208,30 @@ func (w RunWorkout) Validate() error {
 	return nil
 }
 
+// RunWorkoutFromJSON parses a schema-anchored "run-workout/v1" JSON payload
+// (the same shape Python's NormalizedRunWorkout.from_dict consumes) and
+// validates it. The schema discriminator is required — a missing or wrong
+// schema is rejected rather than guessed.
+func RunWorkoutFromJSON(data []byte) (*RunWorkout, error) {
+	var head struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(data, &head); err != nil {
+		return nil, fmt.Errorf("parse run workout: %w", err)
+	}
+	if head.Schema != RunWorkoutSchema {
+		return nil, fmt.Errorf("unexpected run workout schema %q, want %q", head.Schema, RunWorkoutSchema)
+	}
+	var w RunWorkout
+	if err := json.Unmarshal(data, &w); err != nil {
+		return nil, fmt.Errorf("parse run workout: %w", err)
+	}
+	if err := w.Validate(); err != nil {
+		return nil, err
+	}
+	return &w, nil
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Strength
 // ─────────────────────────────────────────────────────────────────────────────
@@ -262,6 +287,28 @@ func (w StrengthWorkout) Validate() error {
 		}
 	}
 	return nil
+}
+
+// StrengthWorkoutFromJSON parses a schema-anchored "strength-workout/v1" JSON
+// payload and validates it. See RunWorkoutFromJSON.
+func StrengthWorkoutFromJSON(data []byte) (*StrengthWorkout, error) {
+	var head struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(data, &head); err != nil {
+		return nil, fmt.Errorf("parse strength workout: %w", err)
+	}
+	if head.Schema != StrengthWorkoutSchema {
+		return nil, fmt.Errorf("unexpected strength workout schema %q, want %q", head.Schema, StrengthWorkoutSchema)
+	}
+	var w StrengthWorkout
+	if err := json.Unmarshal(data, &w); err != nil {
+		return nil, fmt.Errorf("parse strength workout: %w", err)
+	}
+	if err := w.Validate(); err != nil {
+		return nil, err
+	}
+	return &w, nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

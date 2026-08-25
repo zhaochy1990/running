@@ -437,6 +437,7 @@ describe("API_ROUTES manifest integrity", () => {
         "GET /api/users/:user/pipelines",
         "GET /api/users/me/injuries",
         "POST /api/users/me/onboarding/complete",
+        "POST /api/:user/plan/sessions/:date/:sessionIndex/push",
         "POST /api/teams",
         "POST /api/teams/:teamId/activities/:userId/:labelId/likes",
         "POST /api/teams/:teamId/join",
