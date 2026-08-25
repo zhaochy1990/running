@@ -43,7 +43,7 @@ App<IAppOption>({
       // 调微信登录换 JWT
       const result = await wechatLogin();
 
-      if (!result.needs_binding && result.user) {
+      if (result.ok) {
         userStore.setUser(result.user);
       } else {
         // 未绑定 → 跳绑定页

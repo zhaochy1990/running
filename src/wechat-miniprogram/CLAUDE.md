@@ -128,20 +128,24 @@ src/wechat-miniprogram/
 ### 认证流程
 
 1. 启动时调用 `wx.login()` 获取 `code`
-2. 调用后端 `/api/auth/wechat-login` 换 JWT
-3. JWT 存入 `wx.setStorageSync('token', ...)`
-4. 后续请求自动带 token
+2. 调 auth-service 的 `POST /oauth/token`（RFC 8693 `token_exchange` grant）换 token 对
+3. access/refresh token 存入 `wx.setStorageSync('token', ...)`
+4. 用户信息经 `GET /api/users/me`（auth-service）获取并缓存，`wechat_bound` 暴露绑定状态
+5. 后续 STRIDE 数据请求自动带 `Authorization: Bearer`，401 经 `/api/auth/refresh` 刷新重试
 
 **后端依赖（auth-service）**：
 
 | 端点 | 请求 | 响应 | 说明 |
 |------|------|------|------|
-| `POST /api/auth/wechat-login` | `{ code }` | `{ access_token, refresh_token, expires_in, user, needs_binding }` | 微信 code 登录；`needs_binding=true` 表示该微信未绑定任何账号，需跳绑定页 |
-| `POST /api/auth/wechat-bind` | `{ code, email, password }` | 同上 | 将微信绑定到已有 STRIDE 账号，绑定成功后直接登录 |
+| `POST /oauth/token` | `grant_type=token_exchange` + `client_id`（请求体）+ `subject_token`（wx.login code）+ `subject_token_type=wechat_mini_program` | 已绑定：`200` 标准 token 响应 `{ access_token, refresh_token, token_type, expires_in, scope }`；未绑定：`400 {error:"wechat_needs_binding"}` | 微信 code 登录（public client，`client_id` 在 body，**不需要** client secret / Basic auth） |
+| `POST /oauth/token`（绑定） | 同上 + `email` + `password` | 成功：`200` token 响应（已绑定并登录）；密码错：`401 invalid_credentials`；已被其它账号绑定：`409 wechat_already_bound` | 将微信绑定到已有 STRIDE 账号 |
+| `GET /api/users/me` | `Authorization: Bearer <access_token>` | `{ id, email, name, avatar_url, wechat_bound, ... }` | 登录/绑定成功后拉用户信息；token 响应里**没有** user 对象 |
+| `POST /api/auth/refresh` | `X-Client-Id` + `{ refresh_token }` | 新的 access + refresh token | 401 自动刷新（`services/request.ts`） |
 
-这两个端点目前**尚未在 auth-service 实现**，需要单独开后端任务。auth-service 在数据库层需要为 user 增加 `wechat_openid` / `wechat_unionid` 字段。BFF 层 `/api/auth/*` 已统一代理到 auth 上游，小程序请求直接走同样的路由即可，不需要改 BFF。
-
-> 后端未就绪时的临时开发方案：把 Web 端登录拿到的 token 手动 `wx.setStorageSync('token', ...)` 注入，绕过微信登录流程。
+> 微信 appid/secret 由 auth-service 在 Application 上按应用配置（admin API），小程序端无需感知。
+> auth-service 是独立 IDaaS，走 `AUTH_BASE_URL`（腾讯云网关）；STRIDE 数据面走 `API_BASE_URL`。
+> auth-service 错误体为 `{error, message}`（STRIDE 数据面为 `{detail, code}`），`request.ts` 的 `ApiError` 两者都兼容。
+> 正式版微信 request 合法域名必须是有备案的 https 域名（IP 不允许）——上线前需要给 auth-service 配正式域名并加入小程序后台白名单。
 
 ### 类型共享
 

@@ -1,5 +1,5 @@
 import { wechatBindAccount } from '../../services/auth';
-import { userStore } from '../../store';
+import { userStore } from '../../store/index';
 
 interface BindPageData {
   email: string;
@@ -40,7 +40,7 @@ Page({
 
     try {
       const result = await wechatBindAccount(email, password);
-      if (result.user) {
+      if (result.ok) {
         userStore.setUser(result.user);
       }
 

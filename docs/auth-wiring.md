@@ -18,7 +18,7 @@ STRIDE 不自己跑 auth。集成外部 in-house auth service（OAuth2 + JWT RS2
 |--------|--------|---------|
 | `POST /api/auth/register`, `/login`, `/refresh`, `/logout` | `X-Client-Id: <app>` | 用户 auth flow —— 返回 access + refresh token |
 | `GET /api/users/me`, `/accounts` | `Authorization: Bearer <jwt>` | 当前用户信息 |
-| `POST /oauth/token`, `/revoke`, `/introspect` | `Authorization: Basic <client_id:secret>` | M2M + token lifecycle |
+| `POST /oauth/token`, `/revoke`, `/introspect` | `Authorization: Basic <client_id:secret>`（`token_exchange` 例外：public client 用 body 里的 `client_id`，无需 Basic） | M2M + token lifecycle + 微信小程序登录/绑定 |
 | `GET /health` | none | health |
 
 ## STRIDE 端 current wiring（prod 已启用）
