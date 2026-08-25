@@ -261,17 +261,10 @@ type ScheduledWorkoutSummary struct {
 	IsStrideManaged   bool   // heuristic: name has the "[STRIDE]" prefix
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Workout specs (placeholders; the real port lands with push support)
-// ─────────────────────────────────────────────────────────────────────────────
-
-// RunWorkout is a placeholder so the full Provider contract compiles. The
-// complete port of stride_core.workout_spec.NormalizedRunWorkout is deferred
-// until run-workout push is implemented.
-type RunWorkout struct{}
-
-// StrengthWorkout is a placeholder; see RunWorkout.
-type StrengthWorkout struct{}
+// RunWorkout / StrengthWorkout (the normalized workout specs) live in
+// workout_spec.go — the Go port of stride_core.workout_spec. The Provider
+// methods below consume those provider-agnostic specs; adapters translate them
+// to provider payloads at push time.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Errors

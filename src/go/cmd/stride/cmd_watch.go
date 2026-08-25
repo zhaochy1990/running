@@ -45,6 +45,7 @@ func newWatchCmd() *cobra.Command {
 		newWatchImportCredsCmd(),
 		newWatchSyncCmd(),
 		newWatchStatusCmd(),
+		newWatchWorkoutCmd(),
 	)
 	return c
 }

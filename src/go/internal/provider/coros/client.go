@@ -247,7 +247,7 @@ func (f *flexString) UnmarshalJSON(b []byte) error {
 func (c *Client) Login(ctx context.Context, email, password string) (Credentials, error) {
 	hash := HashPassword(password)
 	env, err := c.doJSON(ctx, c.bases["global"]+"/account/login",
-		map[string]any{"account": email, "accountType": 2, "pwd": hash}, "")
+		map[string]any{"account": email, "accountType": 2, "pwd": hash}, "", false, false)
 	if err != nil {
 		return Credentials{}, err
 	}
@@ -297,7 +297,7 @@ func (c *Client) relogin(ctx context.Context) error {
 		return &AuthError{msg: "no stored credentials; run login"}
 	}
 	env, err := c.doJSON(ctx, c.bases["global"]+"/account/login",
-		map[string]any{"account": c.creds.Email, "accountType": 2, "pwd": c.creds.PwdHash}, "")
+		map[string]any{"account": c.creds.Email, "accountType": 2, "pwd": c.creds.PwdHash}, "", false, false)
 	if err != nil {
 		return err
 	}
@@ -407,7 +407,7 @@ func (c *Client) doParams(ctx context.Context, method, rawURL string, params url
 	return c.send(req, classifyCodes)
 }
 
-func (c *Client) doJSON(ctx context.Context, rawURL string, body any, token string) (apiEnvelope, error) {
+func (c *Client) doJSON(ctx context.Context, rawURL string, body any, token string, yf, classifyCodes bool) (apiEnvelope, error) {
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return apiEnvelope{}, err
@@ -420,11 +420,16 @@ func (c *Client) doJSON(ctx context.Context, rawURL string, body any, token stri
 	if token != "" {
 		req.Header.Set("accesstoken", token)
 	}
+	// The training/workout endpoints require the per-user yfheader; the auth
+	// endpoints (login/relogin) do not.
+	if yf {
+		req.Header.Set("yfheader", fmt.Sprintf(`{"userId":"%s"}`, c.userID()))
+	}
 	// The auth endpoints (login/relogin) inspect the result code themselves and
 	// must keep returning a permanent AuthError on failure, so they opt OUT of
 	// COROS-code retry (classifyCodes=false); a wrong password must not be
 	// retried or reclassified as a transient APIError.
-	return c.send(req, false)
+	return c.send(req, classifyCodes)
 }
 
 // send issues one request through the shared retry policy so transient transport
@@ -509,4 +514,96 @@ func (c *Client) GetDashboard(ctx context.Context) (json.RawMessage, error) {
 // GetDashboardDetail returns the current-week dashboard record payload.
 func (c *Client) GetDashboardDetail(ctx context.Context) (json.RawMessage, error) {
 	return c.request(ctx, http.MethodGet, "/dashboard/detail/query", nil, false)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Workout / training-schedule endpoints (push scope)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// postJSON issues an authenticated POST with a JSON body and the per-user
+// yfheader (required by the training/workout endpoints), transparently
+// refreshing the token once on expiry/invalid/wrong-region, and returns the
+// response envelope's data payload.
+//
+// Unlike the read path (request), COROS business codes are NOT blindly retried:
+// schedule/update and exercise/add are writes, so a non-success answer surfaces
+// immediately instead of being re-sent (a re-send could double-apply a workout
+// the user already received). Transport failures and HTTP 429/5xx still go
+// through the shared retry policy inside send.
+func (c *Client) postJSON(ctx context.Context, path string, body any) (json.RawMessage, error) {
+	token, region := c.currentToken()
+	if token == "" {
+		return nil, &AuthError{msg: "not logged in; run login"}
+	}
+	if err := c.waitLimit(ctx); err != nil {
+		return nil, err
+	}
+	env, err := c.doJSON(ctx, c.base(region)+path, body, token, true, false)
+	if err != nil {
+		return nil, err
+	}
+	if isTokenCode(env.code()) {
+		if err := c.refresh(ctx, token); err != nil {
+			return nil, err
+		}
+		token, region = c.currentToken()
+		env, err = c.doJSON(ctx, c.base(region)+path, body, token, true, false)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if code := env.code(); code != "" && code != resultSuccess {
+		return nil, &APIError{Code: code, Message: string(env.Message)}
+	}
+	return env.Data, nil
+}
+
+// QuerySchedule returns the training schedule for a date range (data payload).
+// COROS dates are YYYYMMDD.
+func (c *Client) QuerySchedule(ctx context.Context, startDate, endDate string) (json.RawMessage, error) {
+	return c.request(ctx, http.MethodGet, "/training/schedule/query",
+		url.Values{"startDate": {startDate}, "endDate": {endDate}, "supportRestExercise": {"1"}}, false)
+}
+
+// CalculateWorkout POSTs a program to the calculate endpoint (data payload).
+func (c *Client) CalculateWorkout(ctx context.Context, program, entity map[string]any) (json.RawMessage, error) {
+	return c.postJSON(ctx, "/training/program/calculate", program)
+}
+
+// UpdateSchedule pushes entities + programs onto the watch schedule (data payload).
+func (c *Client) UpdateSchedule(ctx context.Context, entities, programs, versionObjects []any, pbVersion int) (json.RawMessage, error) {
+	return c.postJSON(ctx, "/training/schedule/update", map[string]any{
+		"entities":       entities,
+		"programs":       programs,
+		"versionObjects": versionObjects,
+		"pbVersion":      pbVersion,
+	})
+}
+
+// DeleteScheduledWorkout removes one schedule entity (status=3 delete). The
+// entity fields come from QuerySchedule; planID is the schedule plan id.
+func (c *Client) DeleteScheduledWorkout(ctx context.Context, entity map[string]any, planID string) (json.RawMessage, error) {
+	return c.postJSON(ctx, "/training/schedule/update", map[string]any{
+		"versionObjects": []any{map[string]any{
+			"id":            firstNonEmpty(entity, "idInPlan", "planProgramId"),
+			"labelId":       firstNonEmpty(entity, "id", ""),
+			"planProgramId": firstNonEmpty(entity, "planProgramId", "idInPlan"),
+			"planId":        planID,
+			"status":        3,
+		}},
+		"pbVersion": 2,
+	})
+}
+
+// QueryExercises returns the exercise library for a sport type (data payload).
+// sportType: 4=strength (default), 1=running.
+func (c *Client) QueryExercises(ctx context.Context, sportType int) (json.RawMessage, error) {
+	return c.request(ctx, http.MethodGet, "/training/exercise/query",
+		url.Values{"userId": {c.userID()}, "sportType": {fmt.Sprint(sportType)}}, true)
+}
+
+// AddExercise creates a custom exercise in the library and returns the created
+// exercise payload (carrying the new id).
+func (c *Client) AddExercise(ctx context.Context, exercise map[string]any) (json.RawMessage, error) {
+	return c.postJSON(ctx, "/training/exercise/add", exercise)
 }

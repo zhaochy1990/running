@@ -64,14 +64,23 @@ func WithProviderRequestDelay(d time.Duration) ProviderOption {
 	return func(p *Provider) { p.delay = d }
 }
 
-// Info declares the COROS provider capabilities. v1 advertises only HRV detail;
-// push/exercise stay unsupported (BaseProvider → FeatureNotSupported).
+// Info declares the COROS provider capabilities. v2 adds run + strength
+// workout push, delete, schedule query, and the exercise catalog (mirroring
+// coros_sync.adapter._COROS_INFO + the methods implemented in workout_push.go).
 func (p *Provider) Info() provider.ProviderInfo {
 	return provider.ProviderInfo{
-		Name:         providerName,
-		DisplayName:  "高驰",
-		Regions:      []string{"global", "cn", "eu"},
-		Capabilities: provider.Capabilities{provider.CapSyncHRVDetail: true},
+		Name:        providerName,
+		DisplayName: "高驰",
+		Regions:     []string{"global", "cn", "eu"},
+		Capabilities: provider.Capabilities{
+			provider.CapSyncHRVDetail:       true,
+			provider.CapPushRunWorkout:      true,
+			provider.CapPushStrengthWorkout: true,
+			provider.CapDeleteWorkout:       true,
+			provider.CapQuerySchedule:       true,
+			provider.CapExerciseCatalog:     true,
+			provider.CapCustomExercise:      true,
+		},
 	}
 }
 
