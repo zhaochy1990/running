@@ -1,6 +1,6 @@
 # CLAUDE.md — `stride_storage`
 
-在本包内写 / 改代码前必读。这是 STRIDE 的统一数据访问层；总览见同目录 `README.md`，全局规则见仓库根 `CLAUDE.md` 的 *Storage scope rule* 段。
+在本包内写 / 改代码前必读。这是 STRIDE 的统一数据访问层；总览见同目录 `README.md`，全局规则见仓库根 `AGENTS.md` 的 *Storage scope rule* 段。
 
 ## HARD 规则
 

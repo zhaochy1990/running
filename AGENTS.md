@@ -1,6 +1,26 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file is the **single source of agent instructions** for this repository. It
+provides guidance to coding agents (Claude Code, Codex, OpenCode, and any other
+agent) when working with code here. `CLAUDE.md` (and any other agent-specific
+instruction file) references this file instead of duplicating rules, so there is
+exactly **one** set of instructions to follow.
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in the shared tracker repo `zhaochy1990/stride-devops` (project label `project:running`, all gh calls with `-R`). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the canonical labels `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 
 ---
 
@@ -38,11 +58,7 @@ python3 ".claude/skills/worktree-development/scripts/create_worktree.py" <3-5-wo
 | Multi-model A/B/C variants 流程 | [`docs/multi-variant.md`](docs/multi-variant.md) |
 | Commentary 写入 / 推 prod / daily loop | [`docs/working-model.md`](docs/working-model.md) |
 | 跑 coros-sync CLI / 改 sync 代码 / 直查 DB | [`docs/coros-cli.md`](docs/coros-cli.md) |
-| 改 `src/coach/*` 或 `src/stride_server/coach_*` | [`docs/coach-agent.md`](docs/coach-agent.md) |
-| 加 / 改 coach agent 评估（框架 / L1+L2+L3、Judge graph、CLI、目录约定） | [`docs/coach-eval.md`](docs/coach-eval.md) |
-| 改 S1 赛季备战计划评估（fixture / L1 master_rule_filter / S1 judge axes） | [`docs/coach-eval_S1.md`](docs/coach-eval_S1.md) |
-| 改 S2 周训练计划评估（fixture / L1 rule_filter / S2 judge axes） | [`docs/coach-eval_S2.md`](docs/coach-eval_S2.md) |
-| 改 S3 每日问答评估（fixture / metric_traceability / S3 judge axes） | [`docs/coach-eval_S3.md`](docs/coach-eval_S3.md) |
+| 改 Coach Agent（TS，`src/coach_agent/*`） | [`src/coach_agent/AGENTS.md`](src/coach_agent/AGENTS.md) —— TS Coach Agent 为准 |
 | Auth wiring / Bearer / 401 排障 | [`docs/auth-wiring.md`](docs/auth-wiring.md) |
 | Docker / CI/CD / reparse webhook | [`docs/deployment.md`](docs/deployment.md) |
 | Frontend pages / API 路由清单 | [`docs/frontend.md`](docs/frontend.md) |
@@ -72,40 +88,6 @@ For both Web UI and mobile UI, we need to use the Stitch MCP to design with Stit
 
 ---
 
-## Local Coach provider（Agent Maestro）
-
-`config/coach.copilot.toml` 通过本机 Agent Maestro 的 OpenAI-compatible
-Responses API（`http://127.0.0.1:23333/api/openai/v1`）运行 Coach：
-`gpt-5.6-luna` 处理编排和只读 `status_insight`，`gpt-5.6-sol` 处理计划生成和
-reviewer。Agent Maestro 必须已在 VS Code 中启动；日常直接运行：
-
-```bash
-scripts/coach-local.sh coach
-scripts/coach-local.sh eval-resolver
-```
-
-脚本自动加载 `config/coach.copilot.toml`（LLM）以及 `config/server.toml` +
-`server.local.toml` + `server.coach-cli.toml`（基础设施），并为 Coach runtime
-生成非空的临时随机 bearer 值。生成 weekly plan 时，活动和健康数据必须从 prod
-腾讯云 MySQL 只读获取，不得读取本地 SQLite；checkpoint 仍使用本地数据。生成阶段
-不得对 prod MySQL 执行写操作，草稿通过人工 review 后才可按下方流程发布。
-
-周总结必须优先走 `get_training_summary` 单次聚合工具，避免反复扩大活动明细请求。
-
-跑长会话前可先验证 Agent Maestro 的 Responses 端点可用：
-
-```bash
-scripts/coach-local.sh smoke            # 默认 gpt-5.6-sol
-scripts/coach-local.sh smoke gpt-5.6-luna
-```
-
-`smoke` 必须输出 `HELLO_WORLD_OK model=... endpoint=.../responses`；非 200
-说明 Agent Maestro 未启动或该模型在 VS Code Language Model 中不可用。脚本不
-启动 / 停止 / 授权任何进程，也不持久化凭据 —— Agent Maestro 由 VS Code 扩展
-自行管理。prompt、response、token 均不写入日志、回复或仓库文件。
-
----
-
 ## Storage scope rule (HARD)
 
 **腾讯云 MySQL 是生产环境用户运动与健康数据的 canonical source**，包括 activities、laps、zones、timeseries、daily_health、dashboard、race predictions、ability snapshots、structured planned sessions/nutrition、weekly plans 和 scheduled workouts。`data/{user_id}/coros.db` 仅用于遗留迁移、专项调试或测试 fixture；生成 weekly plan 时不得把它当作数据源，也不得在 MySQL 不可用时静默 fallback 到 SQLite。
@@ -127,7 +109,7 @@ scripts/coach-local.sh smoke gpt-5.6-luna
 
 ### SQL ownership rule (HARD)
 
-只有各运行时的 storage 包允许直接写 SQL 读取 / 修改数据库：Python `src/stride_storage/`、Go `src/go/internal/storage/`、TypeScript Coach `src/coach_agent/src/persistence/`。其它包（`stride_server/`、`coach/`、`stride_core/`、Coach graph / tools、routes、adapters、scripts 等）需要数据时必须调用对应 storage 包暴露的 API / repository / store 方法；缺方法就先在 storage 层增加一个语义明确的方法，并补 storage 层测试。
+只有各运行时的 storage 包允许直接写 SQL 读取 / 修改数据库：Python `src/stride_storage/`、Go `src/go/internal/storage/`、TypeScript Coach `src/coach_agent/src/persistence/`。其它包（`stride_server/`、`stride_core/`、Coach graph / tools、routes、adapters、scripts 等）需要数据时必须调用对应 storage 包暴露的 API / repository / store 方法；缺方法就先在 storage 层增加一个语义明确的方法，并补 storage 层测试。
 
 禁止在非 storage 包里新增：`db._conn.execute(...)`、`conn.execute(...)`、裸 SQL 字符串查询表、或为了绕开缺失 API 直接打开 SQLite 连接。例外只限：已有 legacy 代码的迁移前状态；`src/migration/` 下不进入应用运行时的一次性数据迁移脚本；以及下方 weekly plan authoring 流程中使用 prod readonly 账号执行的临时 MySQL CLI 查询。一次性迁移必须默认 dry-run，只处理 `src/migration/src/users.js` 中的真实用户，写入采用条件更新或等价幂等策略，支持限定范围和限流，并在提交前完成本地 dry-run、有限写入、源数据回读比对与重复运行验证。weekly plan CLI 例外不得写入应用代码或持久化为脚本。改到其它 legacy 代码时要顺手收敛到 storage API，不能扩大直接 SQL 面。
 
@@ -140,7 +122,7 @@ scripts/coach-local.sh smoke gpt-5.6-luna
 - Python: `src/stride_core/timefmt.py` —— `utc_iso_to_shanghai_iso()`, `today_shanghai()`, `SHANGHAI_DAY_SQL`, `shanghai_day_to_utc_range()`, `shanghai_week_range()`, `SHANGHAI_TZ`
 - TypeScript: `frontend/src/lib/shanghai.ts` —— `shanghaiDate()`, `shanghaiMonthDay()`, `shanghaiTime()`, `shanghaiToday()`, `shanghaiWeekday()`
 
-**禁用 patterns**（CI 经 `tests/test_timezone_invariants.py` grep）：
+**禁用 patterns**（由 `tests/test_timezone_invariants.py` 校验）：
 
 | 别这么写 | 用这个 |
 |---|---|
@@ -201,16 +183,43 @@ scripts/coach-local.sh smoke gpt-5.6-luna
 ## Working Model summary
 
 - **腾讯云 MySQL** 是生产用户运动、健康和正式训练计划的 canonical data store。
-- **Local machine** 是训练计划的 **author/review** 环境：OpenCode 从 prod MySQL 只读获取最新数据，在 `data/{user_id}/logs/` 生成 `plan.md` / `plan.json` 草稿。
+- **Local machine** 是训练计划的 **author/review** 环境：coding agent 从 prod MySQL 只读获取最新数据，在 `data/{user_id}/logs/` 生成 `plan.md` / `plan.json` 草稿。
 - 生成阶段只允许读取 prod MySQL；本地草稿不得自动写入 MySQL 或同步到其他远端。只有用户明确表示 review 通过并要求发布当前草稿后，才可通过受支持的 MySQL 写接口写入；确认前禁止创建、覆盖、激活或归档远端 weekly plan。
 
 完整 commentary 规则、daily loop bash、prod/local 不一致排障 → [`docs/working-model.md`](docs/working-model.md)。
 
 ---
 
+## Folder Structure
+
+```
+data/
+    zhaochaoyi/                  # per-user data directory
+        coros.db                 # legacy/test snapshot; never use for plan generation
+        config.json              # user's COROS credentials (git-ignored)
+        TRAINING_PLAN.md         # user's overall training plan
+        logs/
+            2026-04-13_04-19(赛后恢复)/  # format: YYYY-MM-DD_MM-DD(阶段标注)
+                plan.md                  # weekly training plan
+                plan.json                # 结构化版本，server reparse 时优先用
+                feedback.md              # rollout 前兼容来源；marker 后仅用于迁移
+    dehua/                       # another user
+        ...
+src/                 # tools source code
+tests/               # tests
+frontend/            # React + Vite frontend (STRIDE dashboard)
+docs/                # topic-specific docs（按需 Read，见顶部表）
+```
+
 ### Multi-user Architecture
 
 生产用户数据以 JWT `sub` UUID 在腾讯云 MySQL 中隔离。`data/{user_id}/` 保留本地 authoring artifacts、必要配置及遗留/测试数据；CLI 可用 UUID 或 friendly slug（如 `zhaochaoyi`，经 `data/.slug_aliases.json` 解析）选择用户。API 用 `/{user_id}/` 路径前缀，路径 UUID 与 JWT `sub` 不匹配则拒绝。
+
+---
+
+## 体测报告（Body Composition Report）
+
+体测报告含核心指标：Weight / Body Fat Percentage / Body Fat Mass / Skeletal Muscle Mass。用来追踪减脂 vs 增肌、监控体能与训练进度、长期趋势对比。
 
 ---
 
@@ -287,19 +296,6 @@ STRIDE `training_dose` 是 TSS-scaled（1h 阈值 = 100 分），`form = chronic
 - **过度负荷 (< −25% CTL) 触发**：连续 3 天落入，下周必须减 15-20%；连续 5 天则当周强插一个完整休息日
 
 完整 Form / CTL 含义、PMC 公式 → `src/stride_core/training_load/core.py` + `frontend/src/pages/TrainingStatusPage.tsx::classifyForm`。
-
-### Prompt role discipline（HARD）
-
-任何 coach LLM 调用，**system 与 user prompt 按职责切分**，不要把两类内容混在一条消息里：
-
-| Turn | 装什么 | 性质 |
-|------|--------|------|
-| **System** | 人设 + 不变规则 + 输出 schema/格式契约（"你是谁 / 按什么规矩办 / 输出长什么样"）| 跨用户、跨调用**逐字节相同** |
-| **User** | 本轮任务 + 输入数据（这名 athlete 的 goal / profile / history / fitness、本轮算出的 plan_start / race_date、conditional context blocks、以及"开始生成"的指令）| 每轮变 |
-
-**为什么是 HARD**：把 per-athlete 数据塞进 system 会让那一大块静态 doctrine 前缀每次都不同 → **prompt cache 永远命中不了**，白烧 input token。规则文本若需引用本轮值（如 `plan_start`），在 system 里**引用 user message 里的字段名**（"the `plan_start` given in the user message"），**不要**把具体值插值进 system。
-
-**Canonical 实现**：`stride_server/master_plan_generator.py::build_master_prompts(...) -> (system, user)` —— S1 master-plan 的参考实现。system 由 `coach/skills/master_plan_planner/SKILL.md`（无运行时 `${...}` 占位符）渲染；user 由同目录 `user_prompt.md` 渲染。加新 LLM 调用（S2/S3）或改 prompt 时复用这个划分，别回退到"全塞 system"。回归不变量见 `tests/stride_server/test_master_plan_generator.py::TestPromptRoleSplit`。
 
 ---
 
