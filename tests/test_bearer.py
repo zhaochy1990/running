@@ -156,6 +156,30 @@ def test_audience_check_when_configured(monkeypatch, rsa_keypair):
     assert exc.value.status_code == 401
 
 
+def test_accepts_any_configured_audience(monkeypatch, rsa_keypair):
+    # The auth-service stamps `aud = client_id`; the data plane accepts every
+    # first-party client (web frontend + WeChat mini-program) via a
+    # comma-separated audience list.
+    private_pem, public_pem = rsa_keypair
+    _reset_module_state(
+        monkeypatch,
+        {
+            "STRIDE_AUTH_PUBLIC_KEY_PEM": public_pem,
+            "STRIDE_AUTH_AUDIENCE": "web-client,mini-program-client",
+        },
+    )
+    from stride_server.bearer import require_bearer
+
+    for aud in ("web-client", "mini-program-client"):
+        token = _issue(private_pem, aud=aud)
+        assert require_bearer(authorization=f"Bearer {token}")["aud"] == aud
+
+    bad = _issue(private_pem, aud="other-client")
+    with pytest.raises(HTTPException) as exc:
+        require_bearer(authorization=f"Bearer {bad}")
+    assert exc.value.status_code == 401
+
+
 def test_pem_path_env(tmp_path, monkeypatch, rsa_keypair):
     _, public_pem = rsa_keypair
     path = tmp_path / "pub.pem"

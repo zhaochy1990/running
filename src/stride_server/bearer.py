@@ -154,7 +154,11 @@ def require_bearer(
     token = authorization[len("Bearer ") :].strip()
 
     issuer = cfg.auth.issuer
-    audience = cfg.auth.audience or None
+    # The auth-service stamps every access token with `aud = client_id`, so the
+    # STRIDE data plane must accept every legitimate first-party client. Config
+    # lists them comma-separated (e.g. the web frontend client + the WeChat
+    # mini-program client).
+    audiences = [a.strip() for a in (cfg.auth.audience or "").split(",") if a.strip()]
 
     try:
         claims = jwt.decode(
@@ -162,8 +166,8 @@ def require_bearer(
             public_key,
             algorithms=["RS256"],
             issuer=issuer,
-            audience=audience,
-            options={"verify_aud": audience is not None},
+            audience=audiences,
+            options={"verify_aud": bool(audiences)},
         )
     except jwt.InvalidTokenError as exc:
         raise HTTPException(

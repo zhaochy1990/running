@@ -41,7 +41,7 @@ var ErrUnauthorized = errors.New("unauthorized")
 type JWTVerifier struct {
 	key           *rsa.PublicKey
 	issuer        string
-	audience      string
+	audiences     []string
 	adminAudience string
 }
 
@@ -74,18 +74,23 @@ func NewJWTVerifierFromKeyWithAdmin(key *rsa.PublicKey, issuer, audience, adminA
 
 func newJWTVerifier(key *rsa.PublicKey, issuer, audience, adminAudience string) (*JWTVerifier, error) {
 	adminAudience = strings.TrimSpace(adminAudience)
-	if adminAudience != "" && adminAudience == strings.TrimSpace(audience) {
+	// Comma-separated user audiences: the auth-service stamps `aud = client_id`,
+	// so every first-party client (web frontend + WeChat mini-program) must be
+	// accepted. The admin audience is separate and must not collide with the
+	// user audiences.
+	audiences := splitAudiences(audience)
+	if adminAudience != "" && containsString(audiences, adminAudience) {
 		return nil, errors.New("api: admin audience must differ from user audience")
 	}
-	return &JWTVerifier{key: key, issuer: issuer, audience: audience, adminAudience: adminAudience}, nil
+	return &JWTVerifier{key: key, issuer: issuer, audiences: audiences, adminAudience: adminAudience}, nil
 }
 
 // Verify checks signature (RS256 only), issuer, an allowed audience, expiry, and
 // the non-empty subject. Admin authority is granted only when both the dedicated
 // admin audience and role=admin are present; role alone is never sufficient.
 func (v *JWTVerifier) Verify(tokenString string) (Caller, error) {
-	audiences := []string{v.audience}
-	if v.adminAudience != "" && v.adminAudience != v.audience {
+	audiences := append([]string{}, v.audiences...)
+	if v.adminAudience != "" && !containsString(v.audiences, v.adminAudience) {
 		audiences = append(audiences, v.adminAudience)
 	}
 	token, err := jwt.Parse(
@@ -131,6 +136,20 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// splitAudiences parses a comma-separated audience list. The auth-service stamps
+// `aud = client_id`, so the STRIDE data plane accepts every legitimate
+// first-party client (web frontend + WeChat mini-program).
+func splitAudiences(raw string) []string {
+	var out []string
+	for _, s := range strings.Split(raw, ",") {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // Authenticator resolves the tier of a request. The internal tier is a shared

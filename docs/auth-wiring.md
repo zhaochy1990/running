@@ -35,6 +35,14 @@ prod 启用：revision `stride-app--0000037` 起：
 - `STRIDE_AUTH_PUBLIC_KEY_PEM` → secretref `auth-public-pem`（从 `authstorage2026/jwt-keys/public.pem` 下载）
 - `STRIDE_AUTH_AUDIENCE=app_62978bf2803346878a2e4805`（STRIDE frontend client_id 复用）
 
+> **多客户端 audience（含微信小程序）**：auth-service 给每个 access token 打 `aud = client_id`，
+> 所以数据面必须接受每一个合法第一方客户端。当前同时接入 Web 前端（`app_62978bf2803346878a2e4805`）
+> 与微信小程序（`app_43290db46d71409caa36fc4d`，唯一配置了 WeChat appid/secret 的应用）。
+> 两者通过**逗号分隔**写进同一个 `STRIDE_AUTH_AUDIENCE`（Python `stride_server/bearer.py` 与
+> Go `stride api` 的 `api.auth.audience` 都支持逗号分隔多值，且只认白名单内的 audience）。
+> 小程序 token 的 `aud = app_43290...`，若数据面 audience 漏掉它会报
+> `Invalid token: Audience doesn't match`。
+
 ### 2. 受保护端点
 
 公钥 env set 时，每个 `/api/*` 路由（除 `/api/health`）都要 Bearer。`stride_server/app.py` 在 router 级别套 `Depends(require_bearer)`，只放过 `public` router（仅 `/api/health` 给 Azure liveness probe）。CORS 故意大开（`allow_origins=["*"]`）—— 真正的 authz 边界是 Bearer 层不是 Origin。
