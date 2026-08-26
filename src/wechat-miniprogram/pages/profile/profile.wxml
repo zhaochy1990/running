@@ -1,10 +1,52 @@
 <view class="page">
-  <view class="card">
-    <view class="text-lg font-semibold">{{ user.name ? user.name : '跑步爱好者' }}</view>
-    <view wx:if="{{user.email}}" class="text-sm text-secondary">{{user.email}}</view>
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onMenuTap">
+        <image class="top-bar__icon" src="/assets/icons/person.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">我的</view>
+        <view class="top-bar__subtitle">个人中心</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
   </view>
 
-  <view class="card" bindtap="onLogout">
-    <view class="logout-text">退出登录</view>
+  <!-- 内容 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- 头像资料 -->
+    <view class="card profile-card" bindtap="onEditProfile">
+      <view class="profile-avatar">
+        <image wx:if="{{avatarUrl}}" class="profile-avatar__img" src="{{avatarUrl}}" mode="aspectFit" />
+        <image wx:else class="profile-avatar__placeholder" src="/assets/icons/person.svg" mode="aspectFit" />
+      </view>
+      <view class="profile-info">
+        <view class="profile-info__name">{{name}}</view>
+        <view wx:if="{{email}}" class="profile-info__email">{{email}}</view>
+        <view class="profile-info__tag">STRIDE 会员</view>
+      </view>
+      <image class="profile-chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+    </view>
+
+    <!-- 菜单 -->
+    <view class="card menu-card">
+      <view
+        wx:for="{{rows}}"
+        wx:key="key"
+        class="menu-row"
+        data-key="{{item.key}}"
+        bindtap="onRowTap"
+      >
+        <image class="menu-row__icon" src="{{item.iconPath}}" mode="aspectFit" />
+        <view class="menu-row__title">{{item.title}}</view>
+        <image class="menu-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+    </view>
+
+    <!-- 退出登录 -->
+    <button class="logout-btn" bindtap="onLogout">退出登录</button>
+
+    <view class="version">STRIDE · 微信小程序</view>
   </view>
 </view>

@@ -1,3 +1,218 @@
+/* ============================================================
+   健康页 —— 深色 STRIDE 主题（与 today.html / login 一致）
+   ============================================================ */
+
 .page {
-  padding: var(--spacing-lg);
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #07080a;
+  display: flex;
+  flex-direction: column;
+}
+
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: #07080a;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.top-bar__inner {
+  height: 128rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.top-bar__btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top-bar__btn--spacer {
+  width: 88rpx;
+}
+
+.top-bar__icon {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+.top-bar__title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-bar__title {
+  font-size: 40rpx;
+  line-height: 48rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: #ffb3af;
+}
+
+.top-bar__subtitle {
+  font-size: 24rpx;
+  line-height: 32rpx;
+  color: rgba(225, 191, 188, 0.8);
+}
+
+.content {
+  padding: 0 40rpx 48rpx;
+}
+
+.card {
+  background: #101111;
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-radius: 24rpx;
+  padding: 32rpx;
+  margin-bottom: 48rpx;
+}
+
+.section-title {
+  font-size: 32rpx;
+  line-height: 52rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+  margin-bottom: 24rpx;
+}
+
+/* ---------- 状态 hero ---------- */
+
+.hero-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.hero-card__badge {
+  align-self: flex-start;
+  font-size: 24rpx;
+  font-weight: 700;
+  padding: 8rpx 20rpx;
+  border-radius: 12rpx;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.hero-card__title {
+  font-size: 48rpx;
+  line-height: 60rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+}
+
+.hero-card__sub {
+  font-size: 26rpx;
+  color: #9c9c9d;
+}
+
+/* ---------- 指标 ---------- */
+
+.metric-card {
+  padding: 24rpx;
+}
+
+.metric-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24rpx 8rpx;
+}
+
+.metric {
+  width: 50%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 8rpx 0;
+}
+
+.metric__value {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric__label {
+  font-size: 22rpx;
+  color: #9c9c9d;
+  margin-top: 4rpx;
+}
+
+.metric__sub {
+  font-size: 20rpx;
+  color: #9c9c9d;
+  margin-top: 4rpx;
+}
+
+/* ---------- form 趋势柱状图 ---------- */
+
+.trend-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.trend-card__label {
+  font-size: 24rpx;
+  color: #9c9c9d;
+  margin-bottom: 20rpx;
+}
+
+.trend-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6rpx;
+  height: 180rpx;
+}
+
+.trend-bar {
+  flex: 1;
+  border-radius: 4rpx 4rpx 0 0;
+}
+
+.trend-bar--pos {
+  background: #5fc992;
+}
+
+.trend-bar--neg {
+  background: #ff6363;
+}
+
+.trend-baseline {
+  width: 100%;
+  height: 1rpx;
+  background: rgba(255, 255, 255, 0.12);
+  margin-top: 8rpx;
+}
+
+/* ---------- 按钮 ---------- */
+
+.readiness-btn {
+  width: 100%;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin: 0;
+  padding: 0;
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.03);
+  color: #e3e2e5;
+  font-size: 28rpx;
+  text-align: center;
+}
+
+.readiness-btn::after {
+  border: none;
 }

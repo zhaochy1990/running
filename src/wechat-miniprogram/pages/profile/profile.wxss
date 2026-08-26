@@ -1,9 +1,212 @@
+/* ============================================================
+   我的页 —— 深色 STRIDE 主题（与 today.html / login 一致）
+   ============================================================ */
+
 .page {
-  padding: var(--spacing-lg);
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #07080a;
+  display: flex;
+  flex-direction: column;
 }
 
-.logout-text {
-  color: var(--color-danger);
-  font-size: var(--font-size-md);
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: #07080a;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.top-bar__inner {
+  height: 128rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.top-bar__btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top-bar__btn--spacer {
+  width: 88rpx;
+}
+
+.top-bar__icon {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+.top-bar__title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-bar__title {
+  font-size: 40rpx;
+  line-height: 48rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: #ffb3af;
+}
+
+.top-bar__subtitle {
+  font-size: 24rpx;
+  line-height: 32rpx;
+  color: rgba(225, 191, 188, 0.8);
+}
+
+.content {
+  padding: 0 40rpx 48rpx;
+}
+
+.card {
+  background: #101111;
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-radius: 24rpx;
+  padding: 32rpx;
+  margin-bottom: 48rpx;
+}
+
+/* ---------- 头像资料 ---------- */
+
+.profile-card {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.profile-avatar {
+  width: 128rpx;
+  height: 128rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.profile-avatar__img {
+  width: 128rpx;
+  height: 128rpx;
+}
+
+.profile-avatar__placeholder {
+  width: 64rpx;
+  height: 64rpx;
+}
+
+.profile-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.profile-info__name {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+}
+
+.profile-info__email {
+  font-size: 24rpx;
+  color: #9c9c9d;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-info__tag {
+  align-self: flex-start;
+  font-size: 20rpx;
+  color: #ff6363;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  background: rgba(255, 99, 99, 0.1);
+}
+
+.profile-chevron {
+  width: 40rpx;
+  height: 40rpx;
+  flex-shrink: 0;
+}
+
+/* ---------- 菜单 ---------- */
+
+.menu-card {
+  padding: 8rpx 0;
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding: 28rpx 28rpx 28rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+}
+
+.menu-row:last-child {
+  border-bottom: none;
+}
+
+.menu-row__icon {
+  width: 44rpx;
+  height: 44rpx;
+  flex-shrink: 0;
+}
+
+.menu-row__title {
+  flex: 1;
+  font-size: 30rpx;
+  color: #e3e2e5;
+}
+
+.menu-row__chevron {
+  width: 40rpx;
+  height: 40rpx;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+/* ---------- 退出登录 ---------- */
+
+.logout-btn {
+  width: 100%;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin: 0;
+  padding: 0;
+  border: 1rpx solid rgba(255, 99, 99, 0.4);
+  border-radius: 20rpx;
+  background: rgba(255, 99, 99, 0.08);
+  color: #ff6363;
+  font-size: 28rpx;
+  font-weight: 600;
   text-align: center;
+}
+
+.logout-btn::after {
+  border: none;
+}
+
+.version {
+  text-align: center;
+  font-size: 22rpx;
+  color: #6a6b6c;
+  margin-top: 48rpx;
 }

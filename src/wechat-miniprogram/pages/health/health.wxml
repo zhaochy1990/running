@@ -1,6 +1,56 @@
 <view class="page">
-  <view class="card">
-    <view class="text-lg font-semibold">健康趋势</view>
-    <view class="text-sm text-secondary">即将上线</view>
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onMenuTap">
+        <image class="top-bar__icon" src="/assets/icons/favorite.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">健康状态</view>
+        <view class="top-bar__subtitle">疲劳与恢复</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <!-- 内容 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- 状态 hero -->
+    <view class="card hero-card">
+      <view class="hero-card__badge" style="color: {{formColor}};">{{formZone}}</view>
+      <view class="hero-card__title">{{heroText}}</view>
+      <view class="hero-card__sub">{{heroSub}}</view>
+    </view>
+
+    <!-- 负荷指标 -->
+    <view class="section-title">训练负荷</view>
+    <view class="card metric-card">
+      <view class="metric-grid">
+        <view wx:for="{{stats}}" wx:key="label" class="metric">
+          <view class="metric__value">{{item.value}}</view>
+          <view class="metric__label">{{item.label}}</view>
+          <view wx:if="{{item.sub}}" class="metric__sub">{{item.sub}}</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- form 趋势柱状图 -->
+    <view class="section-title">近况</view>
+    <view class="card trend-card">
+      <view class="trend-card__label">form(急性-慢性) 近 14 天</view>
+      <view class="trend-chart">
+        <view
+          wx:for="{{trend}}"
+          wx:for-item="form"
+          wx:key="index"
+          class="trend-bar {{form >= 0 ? 'trend-bar--pos' : 'trend-bar--neg'}}"
+          style="height: {{form >= 0 ? form * 6 : -form * 6}}%;"
+        ></view>
+      </view>
+      <view class="trend-baseline"></view>
+    </view>
+
+    <!-- 提示 -->
+    <button class="readiness-btn" bindtap="onReadinessTap">查看完整趋势</button>
   </view>
 </view>

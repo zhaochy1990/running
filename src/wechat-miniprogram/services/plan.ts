@@ -12,6 +12,9 @@ import { http } from './request';
 import type {
   PlannedNutrition,
   PlannedSession,
+  PlanDayRowView,
+  PlanSessionRowView,
+  PlanWeekView,
   TodayNutritionView,
   TodayView,
   TodayWeekDay,
@@ -222,4 +225,79 @@ export function buildDayView(plan: WeeklyPlanDetail | null, dateYmd: string): To
 /** 组装「今天」的视图模型。 */
 export function buildTodayView(plan: WeeklyPlanDetail | null): TodayView {
   return buildDayView(plan, shanghaiToday());
+}
+
+// ---------------------------------------------------------------------------
+// 计划页视图模型
+// ---------------------------------------------------------------------------
+
+const CN_WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+function planSessionRow(s: PlannedSession): PlanSessionRowView {
+  const title =
+    (s.spec && 'name' in s.spec && s.spec.name) ||
+    s.summary ||
+    (s.kind === 'rest' ? '休息' : s.kind);
+
+  let iconPath = '/assets/icons/schedule.svg';
+  if (s.kind === 'run') iconPath = '/assets/icons/directions_run.svg';
+  else if (s.kind === 'strength') iconPath = '/assets/icons/fitness_center.svg';
+  else if (s.kind === 'rest') iconPath = '/assets/icons/schedule.svg';
+
+  return {
+    sessionIndex: s.session_index,
+    kind: s.kind,
+    title,
+    note: firstLine(s.notes_md),
+    distanceKm: s.total_distance_m != null ? fmtKm(s.total_distance_m) : '',
+    duration: fmtHms(s.total_duration_s),
+    isRest: s.kind === 'rest',
+    iconPath,
+  };
+}
+
+function daySummary(sessions: PlannedSession[]): string {
+  const meaningful = sessions.filter((s) => s.kind !== 'rest' && s.kind !== 'note');
+  if (meaningful.length === 0) return '休息';
+  const parts = meaningful.map((s) => {
+    if (s.kind === 'strength') return '力量';
+    if (s.kind === 'cross') return '交叉';
+    return s.total_distance_m != null ? `${(s.total_distance_m / 1000).toFixed(1)}km` : s.kind;
+  });
+  return parts.join(' · ');
+}
+
+/** 组装「计划」页周视图：展开周一到周日，每列列出当天结构化 session。 */
+export function buildPlanWeekView(plan: WeeklyPlanDetail | null, anchorYmd: string): PlanWeekView {
+  const weekStart = shanghaiWeekStart(anchorYmd);
+  const weekDays = buildWeekDays(anchorYmd);
+  const content =
+    plan && typeof plan.content === 'object' && plan.content !== null
+      ? (plan.content as WeeklyPlanContentStructured)
+      : null;
+
+  const sessions = content?.sessions ?? [];
+  const byDate = new Map<string, PlannedSession[]>();
+  for (const s of sessions) {
+    if (!byDate.has(s.date)) byDate.set(s.date, []);
+    byDate.get(s.date)!.push(s);
+  }
+
+  const days: PlanDayRowView[] = weekDays.map((w, i) => {
+    const daySessions = (byDate.get(w.date) ?? []).slice().sort(
+      (a, b) => a.session_index - b.session_index,
+    );
+    return {
+      date: w.date,
+      weekdayLabel: CN_WEEKDAYS[i],
+      dayNumber: w.dayNumber,
+      isToday: w.isToday,
+      sessions: daySessions.map(planSessionRow),
+      summary: daySummary(daySessions),
+    };
+  });
+
+  const endYmd = weekDays[6]?.date ?? weekStart;
+  const weekTitle = `${weekStart.slice(5)} ~ ${endYmd.slice(5)}`;
+  return { weekTitle, days };
 }

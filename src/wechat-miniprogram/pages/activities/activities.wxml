@@ -1,6 +1,68 @@
 <view class="page">
-  <view class="card">
-    <view class="text-lg font-semibold">活动记录</view>
-    <view class="text-sm text-secondary">即将上线</view>
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onMenuTap">
+        <image class="top-bar__icon" src="/assets/icons/directions_run.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">活动记录</view>
+        <view class="top-bar__subtitle">最近训练</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <!-- 内容 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- 月概览 -->
+    <view class="card summary-card">
+      <view class="summary-card__label">本月</view>
+      <view class="summary-card__stats">
+        <view class="summary-stat">
+          <view class="summary-stat__value">{{summary.count}}</view>
+          <view class="summary-stat__label">活动</view>
+        </view>
+        <view class="summary-stat">
+          <view class="summary-stat__value">{{summary.km}}</view>
+          <view class="summary-stat__label">跑量(km)</view>
+        </view>
+        <view class="summary-stat">
+          <view class="summary-stat__value">{{summary.duration}}</view>
+          <view class="summary-stat__label">时长</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 活动列表 -->
+    <view class="section-title">最近活动</view>
+    <view class="card activity-list">
+      <view
+        wx:for="{{rows}}"
+        wx:key="labelId"
+        class="activity"
+        data-id="{{item.labelId}}"
+        bindtap="onActivityTap"
+      >
+        <view class="activity__icon">
+          <image class="activity__icon-img" src="{{item.iconPath}}" mode="aspectFit" />
+        </view>
+        <view class="activity__info">
+          <view class="activity__name">{{item.name}}</view>
+          <view class="activity__date">{{item.date}}</view>
+          <view class="activity__meta">
+            <text wx:if="{{item.distanceKm !== '—'}}">{{item.distanceKm}} km</text>
+            <text wx:if="{{item.duration !== '—'}}"> · {{item.duration}}</text>
+            <text wx:if="{{item.pace !== '—'}}"> · {{item.pace}}</text>
+          </view>
+        </view>
+        <view class="activity__right">
+          <view wx:if="{{item.load !== '—'}}" class="activity__load">{{item.load}}</view>
+          <view class="activity__load-label">负荷</view>
+        </view>
+      </view>
+    </view>
+
+    <button class="load-more" bindtap="onRefresh">刷新</button>
   </view>
 </view>

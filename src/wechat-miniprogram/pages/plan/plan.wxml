@@ -1,6 +1,58 @@
 <view class="page">
-  <view class="card">
-    <view class="text-lg font-semibold">训练计划</view>
-    <view class="text-sm text-secondary">即将上线</view>
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onMenuTap">
+        <image class="top-bar__icon" src="/assets/icons/calendar_month.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">训练计划</view>
+        <view class="top-bar__subtitle">{{weekTitle}}</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <!-- 内容 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- 本周概览 -->
+    <view class="card week-hero">
+      <view class="week-hero__label">本周安排</view>
+      <view class="week-hero__title">{{weekSubtitle}}</view>
+      <view class="week-hero__range">{{weekTitle}}</view>
+    </view>
+
+    <!-- 周一到周日训练列表 -->
+    <view class="section-title">本周课表</view>
+    <view class="card plan-list">
+      <view
+        wx:for="{{days}}"
+        wx:key="date"
+        class="plan-day"
+        data-date="{{item.date}}"
+        bindtap="onDayTap"
+      >
+        <view class="plan-day__head">
+          <view class="plan-day__weekday">{{item.weekdayLabel}}</view>
+          <view class="plan-day__num {{item.isToday ? 'plan-day__num--today' : ''}}">{{item.dayNumber}}</view>
+          <view wx:if="{{item.isToday}}" class="plan-day__today-tag">今天</view>
+        </view>
+        <view class="plan-day__body">
+          <view wx:if="{{item.sessions.length}}" class="plan-day__sessions">
+            <view wx:for="{{item.sessions}}" wx:for-item="sess" wx:key="sessionIndex" class="plan-session">
+              <image class="plan-session__icon" src="{{sess.iconPath}}" mode="aspectFit" />
+              <view class="plan-session__info">
+                <view class="plan-session__title">{{sess.title}}</view>
+                <view class="plan-session__meta">
+                  <text wx:if="{{sess.distanceKm}}">{{sess.distanceKm}} km</text>
+                  <text wx:if="{{sess.duration}}"> · {{sess.duration}}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+          <view wx:else class="plan-day__rest">休息日</view>
+        </view>
+      </view>
+    </view>
   </view>
 </view>

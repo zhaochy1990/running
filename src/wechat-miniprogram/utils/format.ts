@@ -25,3 +25,24 @@ export function fmtDose(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '—';
   return value.toFixed(1);
 }
+
+/** 配速 `M:SS/km`。null/非法 → '—'。 */
+export function fmtPace(secondsPerKm: number | null | undefined): string {
+  if (secondsPerKm == null || !Number.isFinite(secondsPerKm) || secondsPerKm <= 0) return '—';
+  const s = Math.round(secondsPerKm);
+  const m = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${m}:${String(ss).padStart(2, '0')}/km`;
+}
+
+/** 自然时长：1 小时内 `M:SS`，超过则 `H:MM:SS`。null/非法 → '—'。 */
+export function fmtDurationShort(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return '—';
+  const total = Math.round(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const ss = String(s).padStart(2, '0');
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${ss}`;
+  return `${m}:${ss}`;
+}

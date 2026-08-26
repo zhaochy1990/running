@@ -1,3 +1,7 @@
 {
-  "navigationBarTitleText": "计划"
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "计划",
+  "navigationBarBackgroundColor": "#07080A",
+  "navigationBarTextStyle": "white",
+  "backgroundColor": "#07080A"
 }

@@ -171,3 +171,32 @@ export interface TodayView {
   workout: TodayWorkoutView | null;
   nutrition: TodayNutritionView | null;
 }
+
+// ---------------------------------------------------------------------------
+// 「计划」周视图模型
+// ---------------------------------------------------------------------------
+
+export interface PlanSessionRowView {
+  sessionIndex: number;
+  kind: SessionKind;
+  title: string;
+  note: string;
+  distanceKm: string;
+  duration: string;
+  isRest: boolean;
+  iconPath: string;
+}
+
+export interface PlanDayRowView {
+  date: string;
+  weekdayLabel: string;
+  dayNumber: number;
+  isToday: boolean;
+  sessions: PlanSessionRowView[];
+  summary: string;
+}
+
+export interface PlanWeekView {
+  weekTitle: string;
+  days: PlanDayRowView[];
+}
