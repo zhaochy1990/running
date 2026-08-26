@@ -76,3 +76,49 @@ func TestStrengthWorkoutFromJSON(t *testing.T) {
 		t.Errorf("exercise = %+v", ex)
 	}
 }
+
+func TestRunWorkoutFromJSONAcceptsMissingSchema(t *testing.T) {
+	// Stored weekly-plan content strips the schema discriminator (see
+	// api.stripStoredWeeklyPlanMetadata), so the push path must parse a
+	// schema-less run spec and normalize the discriminator back in.
+	raw := `{
+		"name": "Easy 10K",
+		"date": "2026-05-01",
+		"blocks": [{"repeat": 1, "steps": [{
+			"step_kind": "work",
+			"duration": {"kind": "distance_m", "value": 10000},
+			"target": {"kind": "pace_s_km", "low": 340, "high": 320}
+		}]}]
+	}`
+	w, err := RunWorkoutFromJSON([]byte(raw))
+	if err != nil {
+		t.Fatalf("parse schema-less run workout: %v", err)
+	}
+	if w.Schema != RunWorkoutSchema {
+		t.Errorf("schema = %q, want normalized %q", w.Schema, RunWorkoutSchema)
+	}
+	if w.Name != "Easy 10K" {
+		t.Errorf("name = %q", w.Name)
+	}
+}
+
+func TestStrengthWorkoutFromJSONAcceptsMissingSchema(t *testing.T) {
+	raw := `{
+		"name": "力量训练",
+		"date": "2026-05-04",
+		"exercises": [{
+			"canonical_id": "squat", "display_name": "深蹲", "sets": 3,
+			"target_kind": "reps", "target_value": 12, "rest_seconds": 90
+		}]
+	}`
+	w, err := StrengthWorkoutFromJSON([]byte(raw))
+	if err != nil {
+		t.Fatalf("parse schema-less strength workout: %v", err)
+	}
+	if w.Schema != StrengthWorkoutSchema {
+		t.Errorf("schema = %q, want normalized %q", w.Schema, StrengthWorkoutSchema)
+	}
+	if w.Name != "力量训练" || len(w.Exercises) != 1 {
+		t.Errorf("parsed = %+v", w)
+	}
+}

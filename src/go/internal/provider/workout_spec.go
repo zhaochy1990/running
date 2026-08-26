@@ -208,10 +208,14 @@ func (w RunWorkout) Validate() error {
 	return nil
 }
 
-// RunWorkoutFromJSON parses a schema-anchored "run-workout/v1" JSON payload
-// (the same shape Python's NormalizedRunWorkout.from_dict consumes) and
-// validates it. The schema discriminator is required — a missing or wrong
-// schema is rejected rather than guessed.
+// RunWorkoutFromJSON parses a "run-workout/v1" JSON payload (the same shape
+// Python's NormalizedRunWorkout.from_dict consumes) and validates it.
+//
+// The schema discriminator is authoring-time metadata that the weekly-plan
+// apply path strips from stored content (api.stripStoredWeeklyPlanMetadata). So
+// a missing schema is tolerated and normalized to "run-workout/v1" — this keeps
+// the push path consuming stored specs unchanged. A present-but-wrong schema is
+// still rejected to catch cross-type authoring mistakes.
 func RunWorkoutFromJSON(data []byte) (*RunWorkout, error) {
 	var head struct {
 		Schema string `json:"schema"`
@@ -219,13 +223,14 @@ func RunWorkoutFromJSON(data []byte) (*RunWorkout, error) {
 	if err := json.Unmarshal(data, &head); err != nil {
 		return nil, fmt.Errorf("parse run workout: %w", err)
 	}
-	if head.Schema != RunWorkoutSchema {
+	if head.Schema != "" && head.Schema != RunWorkoutSchema {
 		return nil, fmt.Errorf("unexpected run workout schema %q, want %q", head.Schema, RunWorkoutSchema)
 	}
 	var w RunWorkout
 	if err := json.Unmarshal(data, &w); err != nil {
 		return nil, fmt.Errorf("parse run workout: %w", err)
 	}
+	w.Schema = RunWorkoutSchema // normalize stored specs that omitted the discriminator
 	if err := w.Validate(); err != nil {
 		return nil, err
 	}
@@ -289,8 +294,9 @@ func (w StrengthWorkout) Validate() error {
 	return nil
 }
 
-// StrengthWorkoutFromJSON parses a schema-anchored "strength-workout/v1" JSON
-// payload and validates it. See RunWorkoutFromJSON.
+// StrengthWorkoutFromJSON parses a "strength-workout/v1" JSON payload and
+// validates it. See RunWorkoutFromJSON — a missing schema is tolerated and
+// normalized, a present-but-wrong schema is still rejected.
 func StrengthWorkoutFromJSON(data []byte) (*StrengthWorkout, error) {
 	var head struct {
 		Schema string `json:"schema"`
@@ -298,13 +304,14 @@ func StrengthWorkoutFromJSON(data []byte) (*StrengthWorkout, error) {
 	if err := json.Unmarshal(data, &head); err != nil {
 		return nil, fmt.Errorf("parse strength workout: %w", err)
 	}
-	if head.Schema != StrengthWorkoutSchema {
+	if head.Schema != "" && head.Schema != StrengthWorkoutSchema {
 		return nil, fmt.Errorf("unexpected strength workout schema %q, want %q", head.Schema, StrengthWorkoutSchema)
 	}
 	var w StrengthWorkout
 	if err := json.Unmarshal(data, &w); err != nil {
 		return nil, fmt.Errorf("parse strength workout: %w", err)
 	}
+	w.Schema = StrengthWorkoutSchema // normalize stored specs that omitted the discriminator
 	if err := w.Validate(); err != nil {
 		return nil, err
 	}

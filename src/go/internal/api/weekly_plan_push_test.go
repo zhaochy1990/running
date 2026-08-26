@@ -217,6 +217,30 @@ func seedPushablePlan(h *pushHarness, userID, weekStart string) {
 	}}
 }
 
+// structuredPlanContentStoredShape returns the same plan as
+// structuredPlanContent but with each session spec's `schema` discriminator
+// removed. This mirrors api.stripStoredWeeklyPlanMetadata, which strips the
+// schema key from stored weekly-plan content at apply time, so push must accept
+// schema-less specs.
+func structuredPlanContentStoredShape(weekStart string) string {
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(structuredPlanContent(weekStart)), &doc); err != nil {
+		panic(err)
+	}
+	for _, item := range doc["sessions"].([]any) {
+		session := item.(map[string]any)
+		if spec, ok := session["spec"].(map[string]any); ok {
+			delete(spec, "schema")
+			session["spec"] = spec
+		}
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		panic(err)
+	}
+	return string(raw)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -271,6 +295,40 @@ func TestPushPlannedSessionStrengthSuccess(t *testing.T) {
 	resp := h.post(t, userID, "/api/"+userID+"/plan/sessions/"+weekStart+"/1/push", h.bearer(t, userID))
 	if resp.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if h.pusher.strCalls != 1 {
+		t.Errorf("strCalls = %d, want 1", h.pusher.strCalls)
+	}
+}
+
+func TestPushPlannedSessionAcceptsStoredSpecWithoutSchema(t *testing.T) {
+	// Regression: the weekly-plan apply path strips the spec.schema discriminator
+	// before storage, so the push endpoint must accept schema-less stored specs
+	// (previously it 400'd with "unexpected run workout schema \"\"").
+	h := newPushHarness(t)
+	userID := "user-push-stored"
+	weekStart := "2026-08-10"
+	h.store.plans[userID] = []storage.WeeklyPlan{{
+		PlanID: "plan-stored", UserID: userID, WeekStart: weekStart,
+		ContentVersion: storage.WeeklyPlanContentStructured,
+		Content:        structuredPlanContentStoredShape(weekStart),
+		Status:         storage.WeeklyPlanStatusActive,
+		Revision:       1,
+	}}
+
+	// Run session spec without schema.
+	resp := h.post(t, userID, "/api/"+userID+"/plan/sessions/"+weekStart+"/0/push", h.bearer(t, userID))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("run push status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if h.pusher.runCalls != 1 {
+		t.Errorf("runCalls = %d, want 1", h.pusher.runCalls)
+	}
+
+	// Strength session spec without schema.
+	resp = h.post(t, userID, "/api/"+userID+"/plan/sessions/"+weekStart+"/1/push", h.bearer(t, userID))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("strength push status=%d body=%s", resp.Code, resp.Body.String())
 	}
 	if h.pusher.strCalls != 1 {
 		t.Errorf("strCalls = %d, want 1", h.pusher.strCalls)
