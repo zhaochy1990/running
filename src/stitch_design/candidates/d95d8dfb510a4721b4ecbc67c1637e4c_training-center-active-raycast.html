@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>STRIDE - 训练</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "error": "#ffb4ab",
+                        "tertiary-container": "#3eaa76",
+                        "tertiary-fixed-dim": "#71dba2",
+                        "on-background": "#e3e2e5",
+                        "surface-variant": "#343537",
+                        "surface-tint": "#ffb3af",
+                        "surface-container-lowest": "#0d0e10",
+                        "on-secondary": "#003353",
+                        "secondary": "#97cbff",
+                        "primary": "#ffb3af",
+                        "tertiary-fixed": "#8df8bd",
+                        "surface-dim": "#121316",
+                        "on-surface-variant": "#e1bfbc",
+                        "secondary-fixed-dim": "#97cbff",
+                        "on-tertiary-fixed": "#002112",
+                        "surface-container-low": "#1b1c1e",
+                        "surface-bright": "#38393c",
+                        "on-primary-fixed-variant": "#8f0d1c",
+                        "surface": "#121316",
+                        "secondary-container": "#2f97e1",
+                        "on-secondary-container": "#002c49",
+                        "inverse-surface": "#e3e2e5",
+                        "background": "#121316",
+                        "error-container": "#93000a",
+                        "on-tertiary-fixed-variant": "#005232",
+                        "inverse-on-surface": "#2f3033",
+                        "primary-container": "#ff6363",
+                        "inverse-primary": "#b12a30",
+                        "on-surface": "#e3e2e5",
+                        "primary-fixed": "#ffdad7",
+                        "outline-variant": "#59413f",
+                        "tertiary": "#71dba2",
+                        "on-primary-container": "#67000e",
+                        "surface-container": "#1f2022",
+                        "outline": "#a88988",
+                        "on-secondary-fixed": "#001d33",
+                        "on-tertiary-container": "#003821",
+                        "on-error": "#690005",
+                        "primary-fixed-dim": "#ffb3af",
+                        "secondary-fixed": "#cee5ff",
+                        "surface-container-high": "#292a2c",
+                        "on-secondary-fixed-variant": "#004a76",
+                        "on-primary-fixed": "#410006",
+                        "on-tertiary": "#003921",
+                        "on-primary": "#68000e",
+                        "on-error-container": "#ffdad6",
+                        "surface-container-highest": "#343537"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "section": "32px",
+                        "xs": "4px",
+                        "sm": "8px",
+                        "xl": "20px",
+                        "md": "12px",
+                        "margin-mobile": "20px",
+                        "lg": "16px",
+                        "xxl": "24px",
+                        "touch-target": "48px",
+                        "tab-bar-height": "64px"
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"],
+                        "screen-title": ["Inter", "sans-serif"],
+                        "body-compact": ["Inter", "sans-serif"],
+                        "card-title": ["Inter", "sans-serif"],
+                        "body": ["Inter", "sans-serif"],
+                        "label": ["Inter", "sans-serif"],
+                        "data-tabular": ["Geist Mono", "monospace"]
+                    },
+                    fontSize: {
+                        "display": ["40px", { "lineHeight": "44px", "letterSpacing": "0.4px", "fontWeight": "600" }],
+                        "screen-title": ["24px", { "lineHeight": "29px", "letterSpacing": "0.2px", "fontWeight": "600" }],
+                        "body-compact": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+                        "card-title": ["18px", { "lineHeight": "23px", "fontWeight": "600" }],
+                        "body": ["16px", { "lineHeight": "26px", "letterSpacing": "0.2px", "fontWeight": "500" }],
+                        "label": ["12px", { "lineHeight": "16px", "letterSpacing": "0.4px", "fontWeight": "500" }],
+                        "data-tabular": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "0", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["28px", { "lineHeight": "36px", "letterSpacing": "0", "fontWeight": "400" }],
+                        "headline-md": ["28px", { "lineHeight": "36px", "letterSpacing": "0", "fontWeight": "400" }],
+                        "headline-md-mobile": ["24px", { "lineHeight": "32px", "letterSpacing": "0", "fontWeight": "400" }],
+                        "eyebrow": ["12px", { "lineHeight": "16px", "letterSpacing": "0.5px", "fontWeight": "500" }]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body { background-color: #07080A; }
+        .glass-card {
+            background-color: #101111;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .raised-card {
+            background-color: #1B1C1E;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .coral-accent { color: #FF6363; }
+        .green-accent { color: #71dba2; }
+        .inset-shadow-active:active {
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+            background-color: #141517;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="text-on-background font-body min-h-screen flex flex-col pb-tab-bar-height antialiased md:w-[390px] md:mx-auto relative">
+<!-- TopAppBar -->
+<header class="bg-surface dark:bg-surface-dim font-headline-md text-headline-md-mobile docked full-width top-0 sticky z-50 border-b border-outline-variant dark:border-outline flat no shadows flex justify-between items-center px-margin-side h-touch-target w-full">
+<button class="w-12 h-12 flex items-center justify-start text-primary dark:text-inverse-primary hover:opacity-80 transition-opacity duration-200 focus:outline-none focus:ring-2 focus:ring-[#55B3FF] rounded-lg">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<h1 class="font-headline-lg text-headline-lg-mobile font-black tracking-tighter text-primary dark:text-inverse-primary">STRIDE</h1>
+<div class="w-12 h-12 flex items-center justify-end">
+<!-- Trailing action omitted based on intent -->
+</div>
+</header>
+<main class="flex-1 px-margin-mobile pt-sm pb-section flex flex-col gap-section">
+<!-- Season Plan Summary -->
+<section class="glass-card rounded-xl p-lg flex flex-col gap-md">
+<div class="flex justify-between items-center h-10">
+<h2 class="font-card-title text-card-title text-on-surface">赛季训练计划</h2>
+<button class="text-label font-label text-on-surface-variant hover:text-on-surface transition-colors flex items-center gap-xs px-2 py-1 bg-surface-container-low rounded">
+                    查看计划
+                    <span class="material-symbols-outlined text-[16px]" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+<div class="flex flex-col gap-xs">
+<div class="text-body-compact font-body-compact text-on-surface">上海马拉松 · 2026.10.25</div>
+<div class="flex flex-wrap gap-x-md gap-y-xs text-label font-label text-on-surface-variant">
+<span>进展期 · 第 3 / 6 周</span>
+<span>距比赛 <span class="font-data-tabular">103</span> 天</span>
+<span>赛季 <span class="font-data-tabular">8 / 20</span> 周</span>
+</div>
+</div>
+<!-- Weekly Volume Chart (Simplified Representation) -->
+<div class="pt-sm border-t border-white/5 relative">
+<div class="flex items-end h-24 gap-[2px] w-full">
+<!-- Base -->
+<div class="w-[4.8%] bg-surface-variant rounded-t-sm" style="height: 20%"></div>
+<div class="w-[4.8%] bg-surface-variant rounded-t-sm" style="height: 30%"></div>
+<div class="w-[4.8%] bg-surface-variant rounded-t-sm" style="height: 40%"></div>
+<div class="w-[4.8%] bg-surface-variant rounded-t-sm" style="height: 35%"></div>
+<div class="w-[4.8%] bg-surface-variant rounded-t-sm" style="height: 45%"></div>
+<div class="w-[4.8%] bg-surface-variant rounded-t-sm" style="height: 55%"></div>
+<!-- Progression -->
+<div class="w-[4.8%] bg-surface-variant rounded-t-sm" style="height: 50%"></div>
+<div class="w-[4.8%] bg-primary-container rounded-t-sm relative" style="height: 60%"> <!-- W08 Current -->
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 text-label font-label text-primary-container whitespace-nowrap">38 km</div>
+</div>
+<div class="w-[4.8%] bg-surface-container-highest rounded-t-sm" style="height: 70%"></div>
+<div class="w-[4.8%] bg-surface-container-highest rounded-t-sm" style="height: 65%"></div>
+<div class="w-[4.8%] bg-surface-container-highest rounded-t-sm" style="height: 80%"></div>
+<div class="w-[4.8%] bg-surface-container-highest rounded-t-sm" style="height: 85%"></div>
+<!-- Pre-race -->
+<div class="w-[4.8%] bg-surface-container-highest rounded-t-sm" style="height: 75%"></div>
+<div class="w-[4.8%] bg-surface-container-highest rounded-t-sm" style="height: 90%"></div>
+<div class="w-[4.8%] bg-surface-container-highest rounded-t-sm" style="height: 95%"></div>
+<div class="w-[4.8%] bg-surface-container-highest rounded-t-sm" style="height: 85%"></div>
+<!-- Peak -->
+<div class="w-[4.8%] bg-surface-container-highest rounded-t-sm" style="height: 100%"></div>
+<div class="w-[4.8%] bg-surface-container-highest rounded-t-sm" style="height: 100%"></div>
+<!-- Taper / Race -->
+<div class="w-[4.8%] bg-surface-container-highest rounded-t-sm" style="height: 60%"></div>
+<div class="w-[4.8%] bg-surface-container-highest rounded-t-sm" style="height: 30%"></div>
+</div>
+<div class="flex justify-between text-[10px] text-on-surface-variant mt-2 font-mono opacity-80">
+<span>W01 基础</span>
+<span class="text-primary-container font-bold">W08 当前</span>
+<span>W13 赛前</span>
+<span>W20 比赛</span>
+</div>
+</div>
+</section>
+<!-- Current Week Schedule -->
+<section class="flex flex-col gap-md">
+<div class="flex justify-between items-end">
+<h2 class="font-card-title text-card-title text-on-surface">本周课表</h2>
+<div class="text-label font-label text-on-surface-variant">7月13日–19日</div>
+</div>
+<div class="glass-card rounded-xl p-md flex gap-lg text-body-compact font-body-compact">
+<div class="flex flex-col gap-1">
+<span class="text-on-surface-variant text-label font-label">课次</span>
+<span class="font-data-tabular">3 / 5 课</span>
+</div>
+<div class="flex flex-col gap-1">
+<span class="text-on-surface-variant text-label font-label">里程</span>
+<span class="font-data-tabular">22.4 / 38 km</span>
+</div>
+<div class="flex flex-col gap-1">
+<span class="text-on-surface-variant text-label font-label">时长</span>
+<span class="font-data-tabular">3h05 / 5h10</span>
+</div>
+</div>
+<!-- Schedule Rows -->
+<div class="flex flex-col gap-[2px]">
+<!-- Mon (Rest) -->
+<div class="raised-card rounded-lg p-md flex items-center justify-between h-touch-target">
+<div class="flex items-center gap-md w-24">
+<span class="text-label font-label text-on-surface-variant w-8">周一</span>
+<div class="w-1.5 h-1.5 rounded-full bg-surface-variant"></div>
+</div>
+<div class="text-body-compact font-body-compact text-on-surface-variant flex-1">休息日</div>
+<span class="material-symbols-outlined text-[20px] text-on-surface-variant" data-icon="check_circle" data-weight="fill">check_circle</span>
+</div>
+<!-- Tue (Completed) -->
+<div class="raised-card rounded-lg p-md flex items-center justify-between h-touch-target">
+<div class="flex items-center gap-md w-24">
+<span class="text-label font-label text-on-surface-variant w-8">周二</span>
+<div class="w-1.5 h-1.5 rounded-full bg-tertiary-container"></div>
+</div>
+<div class="flex flex-col flex-1">
+<span class="text-body-compact font-body-compact text-on-surface">轻松跑</span>
+<span class="font-data-tabular text-[12px] text-on-surface-variant">8.0 km · 5:30/km</span>
+</div>
+<span class="material-symbols-outlined text-[20px] text-tertiary-container" data-icon="check_circle" data-weight="fill">check_circle</span>
+</div>
+<!-- Wed (Completed) -->
+<div class="raised-card rounded-lg p-md flex items-center justify-between h-touch-target">
+<div class="flex items-center gap-md w-24">
+<span class="text-label font-label text-on-surface-variant w-8">周三</span>
+<div class="w-1.5 h-1.5 rounded-full bg-tertiary-container"></div>
+</div>
+<div class="flex flex-col flex-1">
+<span class="text-body-compact font-body-compact text-on-surface">间歇跑</span>
+<span class="font-data-tabular text-[12px] text-on-surface-variant">6x800m · 10.2 km</span>
+</div>
+<span class="material-symbols-outlined text-[20px] text-tertiary-container" data-icon="check_circle" data-weight="fill">check_circle</span>
+</div>
+<!-- Thu (Today, Active) -->
+<div class="bg-surface-container-high border border-primary-container/30 rounded-lg p-md flex flex-col gap-sm shadow-[0_0_15px_rgba(255,99,99,0.1)]">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-md w-24">
+<span class="text-label font-label text-primary-container font-bold w-8">周四</span>
+<div class="w-1.5 h-1.5 rounded-full bg-primary-container shadow-[0_0_8px_rgba(255,99,99,0.8)]"></div>
+</div>
+<div class="flex flex-col flex-1">
+<span class="text-body-compact font-body-compact text-on-surface">节奏跑</span>
+</div>
+<div class="text-[12px] text-primary-container border border-primary-container/50 px-2 py-0.5 rounded">今日</div>
+</div>
+<div class="pl-[60px] flex justify-between items-center">
+<span class="font-data-tabular text-on-surface text-[14px]">8.0 km · 4:45/km</span>
+</div>
+</div>
+<!-- CTAs for Today -->
+<div class="flex gap-md pt-sm">
+<button class="flex-1 bg-[#e3e2e5] text-[#121316] h-[48px] rounded-full font-body-compact text-body-compact font-bold hover:bg-white active:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-[#55B3FF]">推送到手表</button>
+<button class="flex-1 raised-card text-on-surface h-[48px] rounded-full font-body-compact text-body-compact inset-shadow-active transition-all focus:outline-none focus:ring-2 focus:ring-[#55B3FF]">调整本周</button>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="bg-surface dark:bg-surface-container-low text-primary dark:text-inverse-primary font-eyebrow text-eyebrow fixed bottom-0 w-full z-50 pb-safe bg-surface/95 backdrop-blur-md shadow-sm flex justify-around items-center h-tab-bar-height w-full px-base" style="border-top: none;">
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-container scale-95 active:scale-90 transition-transform duration-150 w-16 h-full rounded-lg focus:outline-none focus:ring-2 focus:ring-[#55B3FF]">
+<span class="material-symbols-outlined mb-1" data-icon="person">person</span>
+            跑者
+        </button>
+<button class="flex flex-col items-center justify-center text-primary dark:text-primary-fixed-dim font-bold hover:bg-surface-container-high dark:hover:bg-surface-container scale-95 active:scale-90 transition-transform duration-150 w-16 h-full rounded-lg focus:outline-none focus:ring-2 focus:ring-[#55B3FF]">
+<span class="material-symbols-outlined mb-1" data-icon="fitness_center" data-weight="fill">fitness_center</span>
+            训练
+        </button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-container scale-95 active:scale-90 transition-transform duration-150 w-16 h-full rounded-lg focus:outline-none focus:ring-2 focus:ring-[#55B3FF]">
+<span class="material-symbols-outlined mb-1" data-icon="analytics">analytics</span>
+            数据
+        </button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-container-high dark:hover:bg-surface-container scale-95 active:scale-90 transition-transform duration-150 w-16 h-full rounded-lg focus:outline-none focus:ring-2 focus:ring-[#55B3FF]">
+<span class="material-symbols-outlined mb-1" data-icon="smart_toy">smart_toy</span>
+            教练
+        </button>
+</nav>
+</body></html>
