@@ -15,9 +15,9 @@ export const CURRENT_ENV: Env = ENV.DEV;
 
 const API_BASE_URLS: Record<Env, string> = {
   // DEV 走本地 BFF（stride-web，:8080）——与 Web 端本地前门一致，转发到 STRIDE 数据面
-  [ENV.DEV]: 'http://127.0.0.1:8080',
+  [ENV.DEV]: 'http://127.0.0.1:3000',
   [ENV.STAGING]: 'https://staging.stride.run',
-  [ENV.PROD]: 'https://stride.run',
+  [ENV.PROD]: 'https://124.221.38.59',
 };
 
 export const API_BASE_URL = API_BASE_URLS[CURRENT_ENV];
@@ -42,7 +42,7 @@ export const AUTH_BASE_URL = AUTH_BASE_URLS[CURRENT_ENV];
 const client_ids: Record<Env, string> = {
   [ENV.DEV]: 'app_43290db46d71409caa36fc4d',
   [ENV.STAGING]: '',
-  [ENV.PROD]: '',
+  [ENV.PROD]: 'app_895073719c0147368b8feed3',
 }
 export const CLIENT_ID = client_ids[CURRENT_ENV];
 
