@@ -18,7 +18,15 @@ class UserStore {
 
   private listeners = new Set<Listener>();
 
+  // 认证流程 settle（不管成功还是跳转登录页）时 resolve。数据页 await 后再发
+  // 数据请求，避免首屏请求在异步登录完成前发出（无 token / 过期 token）被 401。
+  private authReadyResolve: (() => void) | undefined;
+  readonly authReady: Promise<void>;
+
   constructor() {
+    this.authReady = new Promise<void>((resolve) => {
+      this.authReadyResolve = resolve;
+    });
     this.hydrate();
   }
 
@@ -37,6 +45,11 @@ class UserStore {
     return { ...this.state };
   }
 
+  // 数据页用：等认证流程 settle 后再取 user / 发请求，避免 401（先认证后取数）。
+  waitForAuth(): Promise<void> {
+    return this.authReady;
+  }
+
   setUser(user: UserProfile): void {
     this.state.user = user;
     this.state.isAuthenticated = hasValidToken();
@@ -45,6 +58,9 @@ class UserStore {
 
   setLoading(loading: boolean): void {
     this.state.isLoading = loading;
+    if (!loading) {
+      this.authReadyResolve?.();
+    }
     this.emit();
   }
 

@@ -102,7 +102,14 @@ Page<IndexPageData, IndexPageHandlers>({
       selectedDate: today,
     });
 
-    this.fetchPlan();
+    // 先等认证流程 settle，再取 userId / 拉真实 weekly plan —— 否则首屏请求会在
+    // 异步登录完成前发出（无 token / 过期 token），被数据面 401。
+    userStore.waitForAuth().then(() => {
+      const { user, isAuthenticated } = userStore.getState();
+      if (!isAuthenticated || !user) return;
+      userId = user.id;
+      this.fetchPlan();
+    });
   },
 
   onShow() {

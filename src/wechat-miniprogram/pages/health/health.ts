@@ -130,14 +130,19 @@ Page<HealthPageData, HealthPageHandlers>({
   },
 
   onLoad() {
-    const user = userStore.getState().user;
-    userId = user?.id ?? '';
     current = null;
     this.setData({
       statusBarHeight: statusBarHeight(),
       contentPaddingTop: contentPaddingTopRpx(),
     });
-    this.fetch();
+
+    // 先等认证流程 settle 再拉真实健康/负荷数据，避免首屏请求在登录完成前发出被 401。
+    userStore.waitForAuth().then(() => {
+      const { user, isAuthenticated } = userStore.getState();
+      if (!isAuthenticated || !user) return;
+      userId = user.id;
+      this.fetch();
+    });
   },
 
   async fetch() {

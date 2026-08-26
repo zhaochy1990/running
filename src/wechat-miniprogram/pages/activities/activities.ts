@@ -115,7 +115,14 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
       statusBarHeight: statusBarHeight(),
       contentPaddingTop: contentPaddingTopRpx(),
     });
-    this.fetch();
+
+    // 先等认证流程 settle 再拉真实活动，避免首屏请求在登录完成前发出被 401。
+    userStore.waitForAuth().then(() => {
+      const { user, isAuthenticated } = userStore.getState();
+      if (!isAuthenticated || !user) return;
+      userId = user.id;
+      this.fetch();
+    });
   },
 
   onShow() {

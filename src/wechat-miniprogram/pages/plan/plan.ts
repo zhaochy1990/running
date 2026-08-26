@@ -61,8 +61,6 @@ Page<PlanPageData, PlanPageHandlers>({
 
   onLoad() {
     const today = shanghaiToday();
-    const user = userStore.getState().user;
-    userId = user?.id ?? '';
     fetchedPlan = null;
 
     this.setData({
@@ -71,7 +69,13 @@ Page<PlanPageData, PlanPageHandlers>({
       todayYmd: today,
     });
 
-    this.fetchPlan();
+    // 先等认证流程 settle 再拉真实课表，避免首屏请求在登录完成前发出被 401。
+    userStore.waitForAuth().then(() => {
+      const { user, isAuthenticated } = userStore.getState();
+      if (!isAuthenticated || !user) return;
+      userId = user.id;
+      this.fetchPlan();
+    });
   },
 
   onShow() {
