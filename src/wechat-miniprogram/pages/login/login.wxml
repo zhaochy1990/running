@@ -53,7 +53,8 @@
           <image class="login-input-icon" src="/assets/icons/lock.svg" mode="aspectFit" />
           <input
             class="login-input login-input-with-action"
-            type="{{showPassword ? 'text' : 'password'}}"
+            type="text"
+            password="{{!showPassword}}"
             placeholder="••••••••"
             placeholder-class="login-placeholder"
             value="{{password}}"
