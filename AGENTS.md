@@ -125,22 +125,6 @@ Operational rules for Stitch MCP:
 
 **Go API 的所有持久化状态统一落 MySQL**，不要为 Go API 新增 Azure Table、Azure Blob、Azure Files 或 Key Vault 存储依赖；Python 服务保留既有 Azure 后端。遗留 SQLite 的迁移或调试任务必须与 weekly plan authoring 流程隔离。likes_store 是 Python two-backend 文件（dev JSON / prod Azure Table）+ `DefaultAzureCredential`，不要把它用于 Go API。
 
-### 统一数据访问层 `stride_storage`（HARD）
-
-所有持久化**实现**现在归一在独立包 **`src/stride_storage/`**（数据访问层）。分三个 import 层级（`.importlinter` Contract 5 强制）：
-
-| Tier | 路径 | 装什么 | 谁能 import |
-|------|------|--------|-------------|
-| A `interfaces/` | `stride_storage.interfaces` | 纯 Protocol + frozen config dataclass（无 sqlite/azure import）| 任何包 |
-| B `sqlite/` · `content/` | `stride_storage.sqlite` / `.content` | `Database`、state_stores、calibration connector、content 原语；依赖 `sqlite3` + `stride_core` 纯域 | `stride_server` 等 |
-| C `azure/` · `keyvault/` · `factories/` · `coach_persistence/` | 同名子包 | 仅 Azure SDK（Table/Blob/Key Vault）、coach 持久化 | `stride_server` |
-
-**加新 store / 改存储实现**：放进 `stride_storage` 对应 tier，复用共享原语 —— `azure/credentials.py::get_credential`（唯一 `DefaultAzureCredential`）、`azure/table_backend.py::AzureTableConnection`、`azure/blob_backend.py::get_container_client`、`azure/backend_select.py::choose_backend`、`keyvault/secret_client.py::get_secret_client`。**不要**再各自 new `DefaultAzureCredential()` 或重写 dev/prod 后端选择。canonical 样板：likes（`interfaces/likes.py` + `azure/likes_backend.py`），two-backend（dev JSON / prod Azure Table）。
-
-**config 加载留 server 侧**：`stride_storage` 的 backend 工厂只接收 resolved config dataclass（如 `LikesStorageConfig`）；`ServerConfig` 解析 + 缓存仍在 `stride_server`（避免 `stride_storage → stride_server` 成环）。
-
-**过渡期 shim**：`stride_core.db` / `stride_core.state_stores` / `stride_server.likes_store` 等旧路径现为薄 re-export shim，consumer 暂可照旧 import；增量 cutover 到 `stride_storage.*` 后删除。新代码直接 import `stride_storage.*`。
-
 ### SQL ownership rule (HARD)
 
 只有各运行时的 storage 包允许直接写 SQL 读取 / 修改数据库：Python `src/stride_storage/`、Go `src/go/internal/storage/`、TypeScript Coach `src/coach_agent/src/persistence/`。其它包（`stride_server/`、`stride_core/`、Coach graph / tools、routes、adapters、scripts 等）需要数据时必须调用对应 storage 包暴露的 API / repository / store 方法；缺方法就先在 storage 层增加一个语义明确的方法，并补 storage 层测试。
@@ -330,24 +314,6 @@ STRIDE `training_dose` 是 TSS-scaled（1h 阈值 = 100 分），`form = chronic
 - **过度负荷 (< −25% CTL) 触发**：连续 3 天落入，下周必须减 15-20%；连续 5 天则当周强插一个完整休息日
 
 完整 Form / CTL 含义、PMC 公式 → `src/stride_core/training_load/core.py` + `frontend/src/pages/TrainingStatusPage.tsx::classifyForm`。
-
-### plan.md 篇幅控制（精简原则）
-
-- 目标长度 **80-150 行**。超过 200 行 = 过度啰嗦，必须精简。
-- **保留**：“为什么这么跑”的简要理由 —— inline 括号 / 半句带过，不要多段铺陈
-- **删除**：
-  - 多个备选方案的对比论证（“为什么选 C 不选 A 或 B”）—— 直接给最终决策；备选方案讨论放 commit message
-  - 重复 TRAINING_PLAN.md 已有的内容（区间定义、阶段定义、温度规则等）—— 引用即可
-  - 大块“教练思路”或“决策推演”段落 —— 决定就是决定，不要再论证
-  - 多版本演进记录（V1→V2→V3）—— git history 已经记录
-- **优先表格**：每日表、距离决策矩阵、监控触发表、营养时机表等。表格信息密度高于段落。
-- **执行视角** > 解释视角：plan.md 是给未来某天的“我”看的执行清单，不是给读者讲训练学。
-
-不要“已推送到 COROS 手表的训练”这个章节。生成后检查内容，剔除或合并重复。
-
-### plan.json 同步必须（HARD）
-
-每次写完 plan.md 必须**同时**写一个 schema-valid 的 `plan.json` 放在同目录，并经本地 `WeeklyPlan.from_dict` 校验通过才能 commit。完整 schema、字段、枚举、校验脚本 → [`docs/plan-json-schema.md`](docs/plan-json-schema.md)。
 
 ---
 
