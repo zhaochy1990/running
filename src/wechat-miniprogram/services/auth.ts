@@ -48,6 +48,14 @@ async function fetchMe(): Promise<UserProfile> {
   return http.get<UserProfile>(ME_ENDPOINT);
 }
 
+// 启动时主动向 auth-service 验证本地 token 是否仍被服务端接受（GET /api/users/me）。
+// 本地「未过期」但服务端已失效/吊销的 token 会在这里返回 401 —— request.ts 会先尝试
+// refresh，refresh 也失败则清 token 并抛 session_expired。用于启动时确认登录态，
+// 避免「token 已无效却仍停留在首页」的假登录态。
+export function validateSession(): Promise<UserProfile> {
+  return fetchMe();
+}
+
 // 登录成功后的收尾：存 token + 拉用户信息并缓存。
 async function persistSession(tokens: AuthTokenResponse): Promise<UserProfile> {
   persistTokens(tokens.access_token, tokens.refresh_token, tokens.expires_in);

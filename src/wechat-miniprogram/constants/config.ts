@@ -11,7 +11,7 @@ export type Env = typeof ENV[keyof typeof ENV];
 
 // 当前环境 —— 开发期改这里，正式发布前切到 PROD
 // 也可通过微信开发者工具的条件编译区分体验版/正式版
-export const CURRENT_ENV: Env = ENV.DEV;
+export const CURRENT_ENV: Env = ENV.PROD;
 
 const API_BASE_URLS: Record<Env, string> = {
   // DEV 走本地 BFF（stride-web，:8080）——与 Web 端本地前门一致，转发到 STRIDE 数据面

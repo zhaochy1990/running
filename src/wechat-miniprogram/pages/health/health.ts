@@ -139,7 +139,10 @@ Page<HealthPageData, HealthPageHandlers>({
     // 先等认证流程 settle 再拉真实健康/负荷数据，避免首屏请求在登录完成前发出被 401。
     userStore.waitForAuth().then(() => {
       const { user, isAuthenticated } = userStore.getState();
-      if (!isAuthenticated || !user) return;
+      if (!isAuthenticated || !user) {
+        wx.reLaunch({ url: '/pages/login/login' });
+        return;
+      }
       userId = user.id;
       this.fetch();
     });

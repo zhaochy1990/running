@@ -43,6 +43,24 @@ function wxRequest(options: RequestOptions): Promise<WxRequestResponse> {
 // 正在进行中的 token 刷新 promise（防止并发刷新）
 let refreshPromise: Promise<string> | null = null;
 
+// 会话失效兜底：清本地 token 并 reLaunch 到登录页。
+// 模块级 guard 避免多个并发 401 触发重复 reLaunch。
+let redirectingToLogin = false;
+function handleSessionExpired(): void {
+  wx.removeStorageSync(STORAGE_KEYS.TOKEN);
+  wx.removeStorageSync(STORAGE_KEYS.REFRESH_TOKEN);
+  wx.removeStorageSync(STORAGE_KEYS.TOKEN_EXPIRES_AT);
+  wx.removeStorageSync(STORAGE_KEYS.USER_INFO);
+  if (redirectingToLogin) return;
+  redirectingToLogin = true;
+  wx.reLaunch({
+    url: '/pages/login/login',
+    complete: () => {
+      redirectingToLogin = false;
+    },
+  });
+}
+
 async function getToken(): Promise<string | undefined> {
   const res = wx.getStorageSync(STORAGE_KEYS.TOKEN);
   return res || undefined;
@@ -52,12 +70,12 @@ async function refreshToken(): Promise<string> {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
-    const refreshToken = wx.getStorageSync(STORAGE_KEYS.REFRESH_TOKEN);
-    if (!refreshToken) {
-      throw new Error('no_refresh_token');
-    }
-
     try {
+      const refreshToken = wx.getStorageSync(STORAGE_KEYS.REFRESH_TOKEN);
+      if (!refreshToken) {
+        throw new Error('no_refresh_token');
+      }
+
       const res = await wxRequest({
         url: `${AUTH_BASE_URL}/api/auth/refresh`,
         method: 'POST',
@@ -177,10 +195,8 @@ export async function request<TResponse, TData = unknown>(
         );
       } catch (err) {
         if (err instanceof ApiError) throw err;
-        // 刷新失败 → 清 token，由上层处理（跳转绑定页等）
-        wx.removeStorageSync(STORAGE_KEYS.TOKEN);
-        wx.removeStorageSync(STORAGE_KEYS.REFRESH_TOKEN);
-        wx.removeStorageSync(STORAGE_KEYS.TOKEN_EXPIRES_AT);
+        // 刷新失败 → 清 token 并回登录页（会话已失效），避免停留在业务页面的空态
+        handleSessionExpired();
         throw new ApiError(401, { detail: 'Session expired', code: 'session_expired' });
       }
     }

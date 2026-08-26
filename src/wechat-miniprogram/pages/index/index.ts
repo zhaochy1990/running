@@ -106,7 +106,12 @@ Page<IndexPageData, IndexPageHandlers>({
     // 异步登录完成前发出（无 token / 过期 token），被数据面 401。
     userStore.waitForAuth().then(() => {
       const { user, isAuthenticated } = userStore.getState();
-      if (!isAuthenticated || !user) return;
+      if (!isAuthenticated || !user) {
+        // 会话失效/未绑定：正常情况下 checkAuth 会发起 reLaunch 到登录页，这里兜底，
+        // 避免「token 已无效却停留在本周训练首页」的空态。
+        wx.reLaunch({ url: '/pages/login/login' });
+        return;
+      }
       userId = user.id;
       this.fetchPlan();
     });
