@@ -415,29 +415,6 @@
   flex-shrink: 0;
   white-space: nowrap;
 }
-
-/* ---------- 空态 ---------- */
-
-.empty-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 64rpx 32rpx;
-}
-
-.empty-card__title {
-  font-size: 32rpx;
-  font-weight: 600;
-  color: #e3e2e5;
-}
-
-.empty-card__sub {
-  font-size: 24rpx;
-  color: #9c9c9d;
-  margin-top: 12rpx;
-}
-
 .content__tail {
   height: 24rpx;
 }

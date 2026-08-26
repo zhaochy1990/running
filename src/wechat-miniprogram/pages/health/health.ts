@@ -73,24 +73,6 @@ function heroTitleFor(record: StrideTrainingLoadRecord): { text: string; sub: st
   return { text: '状态待观察', sub: '继续跟踪身体信号' };
 }
 
-function demoData(): { stats: HealthStat[]; trend: number[]; formZone: string; formColor: string; heroText: string; heroSub: string } {
-  // 示意：慢性 70 / 急性 75 / form 5（ratio≈1.07 → 维持期）
-  const cf = classifyForm(75 / 70);
-  return {
-    stats: [
-      { value: '70', label: '慢性负荷' },
-      { value: '75', label: '急性负荷' },
-      { value: '+5', label: 'form' },
-      { value: '62', label: '静息心率' },
-    ],
-    trend: [6, 8, 5, 10, 7, 4, 9, 6, 3, 5, 8, 4, 7, 5],
-    formZone: cf.zone,
-    formColor: cf.color,
-    heroText: '今天状态良好',
-    heroSub: '可按计划完成训练',
-  };
-}
-
 function buildFromRecord(record: StrideTrainingLoadRecord | null): {
   stats: HealthStat[];
   trend: number[];
@@ -99,7 +81,22 @@ function buildFromRecord(record: StrideTrainingLoadRecord | null): {
   heroText: string;
   heroSub: string;
 } {
-  if (!record) return demoData();
+  if (!record) {
+    const cf = classifyForm(null);
+    return {
+      stats: [
+        { value: '—', label: '慢性负荷' },
+        { value: '—', label: '急性负荷' },
+        { value: '—', label: 'form' },
+        { value: cf.zone, label: '状态', sub: cf.text },
+      ],
+      trend: [],
+      formZone: cf.zone,
+      formColor: cf.color,
+      heroText: '状态待评估',
+      heroSub: '数据不足，正在积累训练样本',
+    };
+  }
   const ratio = record.load_ratio;
   const cf = classifyForm(ratio);
   const hero = heroTitleFor(record);
@@ -123,10 +120,10 @@ Page<HealthPageData, HealthPageHandlers>({
     statusBarHeight: 0,
     contentPaddingTop: 232,
     loading: true,
-    formZone: '维持期',
-    formColor: '#FFB3AF',
-    heroText: '今天状态良好',
-    heroSub: '可按计划完成训练',
+    formZone: '待评估',
+    formColor: '#9C9C9D',
+    heroText: '',
+    heroSub: '',
     stats: [],
     trend: [],
     hasData: false,
@@ -145,8 +142,7 @@ Page<HealthPageData, HealthPageHandlers>({
 
   async fetch() {
     if (!userId) {
-      const demo = demoData();
-      this.setData({ ...demo, loading: false, hasData: true });
+      this.render();
       return;
     }
     try {
@@ -164,7 +160,7 @@ Page<HealthPageData, HealthPageHandlers>({
     const v = buildFromRecord(current);
     this.setData({
       ...v,
-      hasData: loaded,
+      hasData: loaded && !!current,
       loading: false,
     });
   },

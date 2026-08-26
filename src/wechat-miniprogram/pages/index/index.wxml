@@ -85,7 +85,7 @@
         <text class="workout__cta-text">和教练聊一聊</text>
       </button>
     </view>
-    <view wx:else class="card empty-card">
+    <view wx:else class="empty-card">
       <view class="empty-card__title">今日无训练安排</view>
       <view class="empty-card__sub">好好休息，或查看本周计划</view>
     </view>
@@ -126,7 +126,7 @@
         <view class="note-box__text">{{nutrition.note}}</view>
       </view>
     </view>
-    <view wx:else class="card empty-card">
+    <view wx:else class="empty-card">
       <view class="empty-card__title">今日暂无营养建议</view>
       <view class="empty-card__sub">生成周计划后同步展示</view>
     </view>
