@@ -1,0 +1,231 @@
+<!DOCTYPE html><html class="dark" lang="zh-CN" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
+<title>STRIDE - 训练日历</title>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&amp;family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "inverse-surface": "#e3e2e5",
+                      "surface-variant": "#343537",
+                      "tertiary": "#71dba2",
+                      "primary-fixed": "#ffdad7",
+                      "tertiary-container": "#3eaa76",
+                      "error": "#ffb4ab",
+                      "error-container": "#93000a",
+                      "secondary-fixed": "#cee5ff",
+                      "on-secondary-fixed-variant": "#004a76",
+                      "surface-dim": "#121316",
+                      "on-background": "#e3e2e5",
+                      "surface-bright": "#38393c",
+                      "on-primary": "#68000e",
+                      "on-surface-variant": "#e1bfbc",
+                      "surface-container-lowest": "#0d0e10",
+                      "surface-tint": "#ffb3af",
+                      "inverse-primary": "#b12a30",
+                      "tertiary-fixed": "#8df8bd",
+                      "outline": "#a88988",
+                      "on-tertiary": "#003921",
+                      "secondary-container": "#2f97e1",
+                      "surface": "#121316",
+                      "secondary-fixed-dim": "#97cbff",
+                      "on-primary-fixed": "#410006",
+                      "on-primary-container": "#67000e",
+                      "on-error-container": "#ffdad6",
+                      "on-tertiary-container": "#003821",
+                      "surface-container-highest": "#343537",
+                      "tertiary-fixed-dim": "#71dba2",
+                      "primary": "#ffb3af",
+                      "surface-container-low": "#1b1c1e",
+                      "on-primary-fixed-variant": "#8f0d1c",
+                      "outline-variant": "#59413f",
+                      "on-secondary-container": "#002c49",
+                      "on-tertiary-fixed": "#002112",
+                      "on-error": "#690005",
+                      "on-tertiary-fixed-variant": "#005232",
+                      "primary-fixed-dim": "#ffb3af",
+                      "inverse-on-surface": "#2f3033",
+                      "surface-container-high": "#292a2c",
+                      "surface-container": "#1f2022",
+                      "secondary": "#97cbff",
+                      "on-surface": "#e3e2e5",
+                      "on-secondary-fixed": "#001d33",
+                      "primary-container": "#ff6363",
+                      "on-secondary": "#003353",
+                      "background": "#121316"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {},
+              "fontFamily": {
+                      "headline": [
+                              "Inter"
+                      ],
+                      "display": [
+                              "Inter"
+                      ],
+                      "body": [
+                              "Inter"
+                      ],
+                      "label": [
+                              "Inter"
+                      ],
+                      "mono": [
+                              "Geist Mono", "monospace"
+                      ]
+              },
+              "fontSize": {}
+      },
+          },
+        }
+    </script>
+<style>
+        body {
+            background-color: #07080A; /* Canvas role */
+            color: #F9F9F9; /* Primary text */
+            font-feature-settings: "calt" 1, "kern" 1, "liga" 1, "ss03" 1;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        .font-mono-data {
+            font-family: 'Geist Mono', monospace;
+            font-variant-numeric: tabular-nums;
+        }
+        
+        .card-surface {
+            background-color: #101111; /* Standard surface */
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px;
+        }
+        
+        .raised-surface {
+            background-color: #1B1C1E; /* Raised surface */
+            box-shadow: rgba(255,255,255,0.05) 0 1px 0 inset, rgba(0,0,0,0.28) 0 1.2px 2.4px, 0 0 0 1px rgba(255,255,255,0.06);
+            border-radius: 8px;
+        }
+        
+        .brand-coral {
+            color: #FF6363;
+        }
+        
+        .bg-brand-coral {
+            background-color: #FF6363;
+        }
+        
+        .text-muted {
+            color: #9C9C9D;
+        }
+        
+        .divider {
+            background-color: rgba(255,255,255,0.04);
+        }
+        
+        /* Interactive Controls Hover/Active states */
+        .interactive-element {
+            transition: opacity 150ms cubic-bezier(0.2,0,0,1), transform 150ms cubic-bezier(0.2,0,0,1);
+        }
+        .interactive-element:active {
+            opacity: 0.7;
+            transform: scale(0.98);
+        }
+        
+        /* Focus ring */
+        .focus-ring:focus {
+            outline: none;
+            box-shadow: 0 0 0 1px #55B3FF, 0 0 0 4px rgba(85,179,255,0.45);
+        }
+        
+        /* Safe area padding for bottom nav */
+        .pb-safe {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col font-body">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 border-b border-white/5 bg-background">
+<div class="flex justify-between items-center h-16 px-5 w-full">
+<button aria-label="Menu" class="interactive-element hover:opacity-80 transition-opacity duration-150 active:scale-95 ease-[cubic-bezier(0.2,0,0,1)] text-primary dark:text-primary">
+<span class="material-symbols-outlined text-[24px]">menu</span>
+</button>
+<div class="flex flex-col items-center justify-center">
+  <h1 class="font-headline text-[20px] leading-[24px] font-bold tracking-[0.4px] text-primary dark:text-primary">本周训练</h1>
+  <span class="font-label text-[12px] leading-[16px] text-on-surface-variant/80">(2026年7月)</span>
+</div>
+<button aria-label="Notifications" class="interactive-element hover:opacity-80 transition-opacity duration-150 active:scale-95 ease-[cubic-bezier(0.2,0,0,1)] text-primary dark:text-primary">
+<span class="material-symbols-outlined text-[24px]">notifications</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 pt-20 pb-32 px-5 max-w-[390px] mx-auto w-full">
+<!-- Calendar Header -->
+
+<!-- Calendar Grid -->
+<div class="card-surface p-4 mb-6"><div class="flex justify-between items-center gap-1"><div class="flex-1 flex flex-col items-center gap-2 py-2 rounded-lg hover:bg-white/5 interactive-element"><span class="text-[10px] text-muted uppercase">Mon</span><span class="font-mono-data text-[16px]">13</span></div><div class="flex-1 flex flex-col items-center gap-2 py-2 rounded-lg hover:bg-white/5 interactive-element"><span class="text-[10px] text-muted uppercase">Tue</span><span class="font-mono-data text-[16px]">14</span></div><div class="flex-1 flex flex-col items-center gap-2 py-2 rounded-lg hover:bg-white/5 interactive-element"><span class="text-[10px] text-muted uppercase">Wed</span><span class="font-mono-data text-[16px]">15</span></div><div class="flex-1 flex flex-col items-center gap-2 py-2 rounded-lg bg-brand-coral text-[#101111] font-bold interactive-element"><span class="text-[10px] uppercase opacity-80">Thu</span><span class="font-mono-data text-[16px]">16</span></div><div class="flex-1 flex flex-col items-center gap-2 py-2 rounded-lg hover:bg-white/5 interactive-element"><span class="text-[10px] text-muted uppercase">Fri</span><span class="font-mono-data text-[16px]">17</span></div><div class="flex-1 flex flex-col items-center gap-2 py-2 rounded-lg hover:bg-white/5 interactive-element"><span class="text-[10px] text-muted uppercase">Sat</span><span class="font-mono-data text-[16px]">18</span></div><div class="flex-1 flex flex-col items-center gap-2 py-2 rounded-lg hover:bg-white/5 interactive-element"><span class="text-[10px] text-muted uppercase">Sun</span><span class="font-mono-data text-[16px]">19</span></div></div></div>
+<!-- Selected Date Detail (Today) -->
+<h3 class="font-headline text-[16px] leading-[26px] font-semibold mb-3">今日安排 · 7月16日</h3>
+<div class="card-surface p-4 mb-8 flex flex-col gap-3"><div class="flex justify-between items-center mb-6"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center"><span class="material-symbols-outlined text-[20px] text-[#5FC992]">directions_run</span></div><h4 class="font-headline text-[20px] font-bold">渐加速跑</h4></div><div class="flex gap-2"><button class="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center"><span class="material-symbols-outlined text-[18px] text-muted">watch</span></button><button class="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center"><span class="material-symbols-outlined text-[18px] text-muted">more_horiz</span></button></div></div><div class="mb-6"><p class="text-[12px] text-muted mb-4">课表内容</p><div class="flex items-end h-16 gap-1"><div class="flex-1 bg-[#2f97e1]/60 h-[40%] rounded-t-sm"></div><div class="flex-1 bg-[#2f97e1] h-[60%] rounded-t-sm"></div><div class="flex-1 bg-[#2f97e1] h-[70%] rounded-t-sm"></div><div class="flex-1 bg-[#2f97e1] h-[80%] rounded-t-sm"></div><div class="flex-1 bg-[#2f97e1] h-[90%] rounded-t-sm"></div><div class="flex-1 bg-[#2f97e1] h-[90%] rounded-t-sm"></div><div class="flex-1 bg-[#2f97e1] h-[90%] rounded-t-sm"></div><div class="flex-1 bg-[#2f97e1] h-[90%] rounded-t-sm"></div></div><div class="w-full h-px bg-white/10 mt-1"></div></div><div class="flex justify-between items-end gap-2 mb-6 text-center w-full px-2">
+<div class="flex flex-col items-center flex-1 min-w-0">
+<span class="font-mono-data text-[18px] font-bold whitespace-nowrap overflow-hidden">10.71</span>
+<span class="text-[10px] text-muted whitespace-nowrap">距离(公里)</span>
+</div>
+<div class="flex flex-col items-center flex-1 min-w-0">
+<span class="font-mono-data text-[18px] font-bold whitespace-nowrap overflow-hidden">00:51:21</span>
+<span class="text-[10px] text-muted whitespace-nowrap">总时长</span>
+</div>
+<div class="flex flex-col items-center flex-1 min-w-0">
+<span class="font-mono-data text-[18px] font-bold whitespace-nowrap overflow-hidden">30.8</span>
+<span class="text-[10px] text-muted whitespace-nowrap">训练负荷</span>
+</div>
+</div><div class="mb-4 p-3 rounded-lg bg-white/5 border-l-2 border-brand-coral/50">
+<p class="text-[10px] text-muted uppercase mb-1 tracking-[0.4px]">教练备注</p>
+<p class="text-[12px] leading-[18px] text-on-surface/90">本节课重点在于维持间歇段的配速稳定性，心率控制在 Z4 区间。若感不适可适当延长恢复时间。</p>
+</div><button class="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg bg-brand-coral text-[#101111] hover:opacity-80 active:scale-[0.98] transition-all duration-150 mt-2">
+<span class="material-symbols-outlined text-[20px]">forum</span>
+<span class="font-headline text-[14px] font-semibold">和教练聊一聊</span>
+</button></div><h3 class="font-headline text-[16px] leading-[26px] font-semibold mb-3">今日饮食营养</h3><div class="card-surface p-4 mb-8 flex flex-col gap-4"><div class="flex justify-between items-end gap-2 mb-4 text-center w-full px-2"><div class="flex flex-col items-center flex-1 min-w-0"><span class="font-mono-data text-[18px] font-bold whitespace-nowrap overflow-hidden">3100</span><span class="text-[10px] text-muted whitespace-nowrap">目标热量(kcal)</span></div><div class="flex flex-col items-center flex-1 min-w-0"><span class="font-mono-data text-[18px] font-bold whitespace-nowrap overflow-hidden">360</span><span class="text-[10px] text-muted whitespace-nowrap">碳水(g)</span></div><div class="flex flex-col items-center flex-1 min-w-0"><span class="font-mono-data text-[18px] font-bold whitespace-nowrap overflow-hidden">145</span><span class="text-[10px] text-muted whitespace-nowrap">蛋白质(g)</span></div></div><div class="flex justify-between items-end gap-2 mb-6 text-center w-full px-2"><div class="flex flex-col items-center flex-1 min-w-0"><span class="font-mono-data text-[18px] font-bold whitespace-nowrap overflow-hidden">85</span><span class="text-[10px] text-muted whitespace-nowrap">脂肪(g)</span></div><div class="flex flex-col items-center flex-1 min-w-0"><span class="font-mono-data text-[18px] font-bold whitespace-nowrap overflow-hidden">3200</span><span class="text-[10px] text-muted whitespace-nowrap">饮水(ml)</span></div><div class="flex-1"></div></div><div class="flex flex-col gap-3"><div class="flex justify-between items-center p-3 rounded-lg bg-white/5"><div class="flex flex-col"><span class="text-[14px] font-semibold">早餐：全麦贝果鸡蛋</span><span class="text-[10px] text-muted">07:00</span><span class="font-label text-[12px] text-on-surface-variant/80 mt-1">全麦贝果1个、鸡蛋2个、牛油果半颗、牛奶200ml</span></div><span class="font-mono-data text-[14px] text-primary">700 kcal</span></div><div class="flex justify-between items-center p-3 rounded-lg bg-white/5"><div class="flex flex-col"><span class="text-[14px] font-semibold">午餐：米饭鸡胸蔬菜</span><span class="text-[10px] text-muted">12:30</span><span class="font-label text-[12px] text-on-surface-variant/80 mt-1">米饭200g、鸡胸肉150g、胡萝卜、豆角</span></div><span class="font-mono-data text-[14px] text-primary">900 kcal</span></div><div class="flex justify-between items-center p-3 rounded-lg bg-white/5"><div class="flex flex-col"><span class="text-[14px] font-semibold">跑前加餐：香蕉面包</span><span class="text-[10px] text-muted">跑前60分钟</span><span class="font-label text-[12px] text-on-surface-variant/80 mt-1">香蕉1根、全麦面包1片、果酱少量</span></div><span class="font-mono-data text-[14px] text-primary">400 kcal</span></div><div class="flex justify-between items-center p-3 rounded-lg bg-white/5"><div class="flex flex-col"><span class="text-[14px] font-semibold">晚餐：三文鱼红薯蔬菜</span><span class="text-[10px] text-muted">18:30</span><span class="font-label text-[12px] text-on-surface-variant/80 mt-1">三文鱼170g、红薯250g、芦笋、叶菜</span></div><span class="font-mono-data text-[14px] text-primary">1100 kcal</span></div></div><div class="p-3 rounded-lg bg-white/5 border-l-2 border-brand-coral/50"><p class="text-[10px] text-muted uppercase mb-1 tracking-[0.4px]">营养建议</p><p class="text-[12px] leading-[18px] text-on-surface/90">质量训练日保证训练前能量，训练后补充蛋白质与碳水。</p></div></div>
+<!-- Selected Date Detail (Past Date Example) -->
+<!-- Primary Action -->
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 h-[84px] pb-safe border-t border-white/5 bg-surface">
+<div class="flex justify-around items-center w-full px-2 h-full">
+<button class="flex flex-col items-center justify-center text-primary-container dark:text-primary-container hover:text-on-surface dark:hover:text-on-surface active:opacity-70 transition-all duration-150 ease-[cubic-bezier(0.2,0,0,1)] w-16 h-full">
+<span class="material-symbols-outlined mb-1 text-[24px]" style="font-variation-settings: 'FILL' 1;">today</span>
+<span class="font-label text-[12px] leading-[16px] font-medium tracking-[0.4px]">今日</span>
+</button>
+<button class="flex flex-col items-center justify-center text-outline dark:text-outline hover:text-on-surface dark:hover:text-on-surface active:opacity-70 transition-all duration-150 ease-[cubic-bezier(0.2,0,0,1)] w-16 h-full">
+<span class="material-symbols-outlined mb-1 text-[24px]">calendar_month</span>
+<span class="font-label text-[12px] leading-[16px] font-medium tracking-[0.4px]">计划</span>
+</button>
+<button class="flex flex-col items-center justify-center text-outline dark:text-outline hover:text-on-surface dark:hover:text-on-surface active:opacity-70 transition-all duration-150 ease-[cubic-bezier(0.2,0,0,1)] w-16 h-full">
+<span class="material-symbols-outlined mb-1 text-[24px]">history</span>
+<span class="font-label text-[12px] leading-[16px] font-medium tracking-[0.4px]">记录</span>
+</button>
+<button class="flex flex-col items-center justify-center text-outline dark:text-outline hover:text-on-surface dark:hover:text-on-surface active:opacity-70 transition-all duration-150 ease-[cubic-bezier(0.2,0,0,1)] w-16 h-full">
+<span class="material-symbols-outlined mb-1 text-[24px]">smart_toy</span>
+<span class="font-label text-[12px] leading-[16px] font-medium tracking-[0.4px]">教练</span>
+</button>
+</div>
+</nav>
+
+
+</body></html>
