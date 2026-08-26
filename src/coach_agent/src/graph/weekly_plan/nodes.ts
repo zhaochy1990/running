@@ -16,9 +16,8 @@ import {
 } from "@stride/contract";
 import { z } from "zod/v4";
 import type { CoachAgentConfig } from "../../config/config.js";
-import type { WeeklyPlanContext, WeeklyPlanContextProvider } from "../../persistence/weeklyPlanContextProvider.js";
+import type { WeeklyPlanContext, WeeklyPlanContextProvider } from "../../data/weeklyPlanContextProvider.js";
 import { getLogger } from "../../utils/logger.js";
-import { acceptedLoadBand, LOAD_MATCH_TOLERANCE } from "./loadTolerance.js";
 import { simulateWeeklyPlanLoad } from "./simulation.js";
 import type { WeeklyPlanLLM, WeeklyPlanLlmInput } from "./weeklyPlanNode.js";
 
@@ -27,7 +26,8 @@ const logger = getLogger("weekly-plan-graph");
 /** Max full regeneration attempts before load mismatch becomes a failure. */
 export const MAX_GENERATION_ATTEMPTS = 3;
 
-export { LOAD_MATCH_TOLERANCE } from "./loadTolerance.js";
+/** Relative tolerance around the target weekly load band. */
+export const LOAD_MATCH_TOLERANCE = 0.1;
 
 /** True when the simulated total dose falls inside the target band ± tolerance. */
 export function loadWithinTolerance(
@@ -40,8 +40,7 @@ export function loadWithinTolerance(
   const low = target.training_load_low;
   const high = target.training_load_high;
   if (low === null || high === null) return null;
-  const accepted = acceptedLoadBand(low, high, tolerance);
-  return simulation.total_dose >= accepted.low && simulation.total_dose <= accepted.high;
+  return simulation.total_dose >= low * (1 - tolerance) && simulation.total_dose <= high * (1 + tolerance);
 }
 
 /** Copy deterministic per-session doses from the simulation report into the plan. */
@@ -299,8 +298,7 @@ export class WeeklyPlanGeneratorNodes {
       logger.error(`Cannot resolve target week phase for request ${state.request?.request_id}: no stage.phase_name or phase.name`);
       return "phase_unresolvable";
     }
-    logger.info(`Route the generation request to phase node: ${phase}, user: ${state.context?.userId}, request ${state.request?.request_id}`);
-    
+    logger.info("Route the generation request to phase node: " + phase);
     return PHASE_NODE_NAMES[phase];
   };
 
@@ -390,38 +388,27 @@ export class WeeklyPlanGeneratorNodes {
     const inRange = loadWithinTolerance(simulation, target);
     const low = target?.training_load_low ?? null;
     const high = target?.training_load_high ?? null;
-    const accepted = low === null || high === null ? null : acceptedLoadBand(low, high);
-    const band = accepted === null ? "n/a" : `${formatNumber(accepted.low)}-${formatNumber(accepted.high)}`;
-
-    logger.warn('Evaluating training load for request %s, total dose %s target %s-%s ',
-      request.request_id,
-      formatNumber(simulation?.total_dose),
-      formatNumber(low),
-      formatNumber(high),
+    const band = low === null || high === null ? "n/a" : `${formatNumber(low * (1 - LOAD_MATCH_TOLERANCE))}-${formatNumber(high * (1 + LOAD_MATCH_TOLERANCE))}`;
+    if (inRange === null) {
+      logger.warn(`Cannot verify total load for request ${request.request_id}: simulation or target load unavailable; keeping the generated plan`);
+      return "finalize";
+    }
+    if (inRange) {
+      logger.info(
+        `Total load ${formatNumber(simulation?.total_dose)} within tolerance [${band}] for request ${request.request_id}; passing through after ${attempts} attempt(s)`,
+      );
+      return "finalize";
+    }
+    if (attempts >= MAX_GENERATION_ATTEMPTS) {
+      logger.error(
+        `Bouncing request ${request.request_id} to load_mismatch: total dose ${formatNumber(simulation?.total_dose)} still outside tolerance [${band}] after ${attempts}/${MAX_GENERATION_ATTEMPTS} attempts`,
+      );
+      return "load_mismatch";
+    }
+    logger.warn(
+      `Bouncing request ${request.request_id} back to ${phase ?? "?"} phase node: total dose ${formatNumber(simulation?.total_dose)} outside tolerance [${band}] (attempt ${attempts}/${MAX_GENERATION_ATTEMPTS})`,
     );
-    // TODO: finalize the plan even if the load is out of range, but log a warning and include the mismatch in the outcome
-    return 'finalize';
-
-    // if (inRange === null) {
-    //   logger.warn(`Cannot verify total load for request ${request.request_id}: simulation or target load unavailable; keeping the generated plan`);
-    //   return "finalize";
-    // }
-    // if (inRange) {
-    //   logger.info(
-    //     `Total load ${formatNumber(simulation?.total_dose)} within tolerance [${band}] for request ${request.request_id}; passing through after ${attempts} attempt(s)`,
-    //   );
-    //   return "finalize";
-    // }
-    // if (attempts >= MAX_GENERATION_ATTEMPTS) {
-    //   logger.error(
-    //     `Bouncing request ${request.request_id} to load_mismatch: total dose ${formatNumber(simulation?.total_dose)} still outside tolerance [${band}] after ${attempts}/${MAX_GENERATION_ATTEMPTS} attempts`,
-    //   );
-    //   return "load_mismatch";
-    // }
-    // logger.warn(
-    //   `Bouncing request ${request.request_id} back to ${phase ?? "?"} phase node: total dose ${formatNumber(simulation?.total_dose)} outside tolerance [${band}] (attempt ${attempts}/${MAX_GENERATION_ATTEMPTS})`,
-    // );
-    // return phase === null || phase === undefined ? "load_mismatch" : PHASE_NODE_NAMES[phase];
+    return phase === null || phase === undefined ? "load_mismatch" : PHASE_NODE_NAMES[phase];
   };
 
   readonly loadMismatch = (state: typeof GraphState.State) => {
@@ -731,13 +718,13 @@ function decideTargetLoad(input: LoadDecisionInput): LoadDecision {
       rationale: ["load_ratio unavailable: maintain at anchor"],
     };
   }
-  if (input.loadRatio > 1.45) {
+  if (input.loadRatio > 1.25) {
     return {
       decision: "decrease",
       lowRatio: 0.8,
       highRatio: 0.9,
       removeQualityStimulus: true,
-      rationale: ["load_ratio > 1.45: cut to 80-90% of anchor"],
+      rationale: ["load_ratio > 1.25: cut to 80-90% of anchor"],
     };
   }
   if (input.loadRatio >= 1.1 || input.highCost) {

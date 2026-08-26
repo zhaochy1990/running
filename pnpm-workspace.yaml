@@ -1,3 +1,4 @@
 packages:
   - src/coach_agent
+  - src/coach_agent_api
   - src/coach_contract

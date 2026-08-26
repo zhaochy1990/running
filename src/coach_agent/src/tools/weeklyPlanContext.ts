@@ -1,7 +1,7 @@
 import type { StructuredTool } from "@langchain/core/tools";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
-import type { WeeklyPlanContextProvider } from "../persistence/weeklyPlanContextProvider.js";
+import type { WeeklyPlanContextProvider } from "../data/weeklyPlanContextProvider.js";
 import { defineCoachTools } from "./common.js";
 
 const getWeeklyPlanContextSchema = z.object({});

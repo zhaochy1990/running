@@ -1,13 +1,13 @@
 import type { StructuredTool } from "@langchain/core/tools";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
-import type { RunningCalibration, StrideDataStore } from "../persistence/index.js";
+import type { DataProvider, RunningCalibration } from "../data/dataProvider.js";
 import { defineCoachTools } from "./common.js";
 
 const getRunningCalibrationSchema = z.object({});
 
-class MySQLRunningCalibrationTool {
-  constructor(private readonly store: StrideDataStore) {}
+class RunningCalibrationToolImpl {
+  constructor(private readonly store: DataProvider) {}
 
   async getRunningCalibration(_input: z.infer<typeof getRunningCalibrationSchema>, runtime: CoachToolRuntime): Promise<RunningCalibration | null> {
     const userId = runtime.context?.userId;
@@ -23,8 +23,8 @@ class MySQLRunningCalibrationTool {
 }
 
 /** Build the canonical running-threshold and zone query tool. */
-export function createRunningCalibrationTools(store: StrideDataStore): StructuredTool[] {
-  const impl = new MySQLRunningCalibrationTool(store);
+export function createRunningCalibrationTools(store: DataProvider): StructuredTool[] {
+  const impl = new RunningCalibrationToolImpl(store);
   return defineCoachTools([
     {
       name: "get_running_calibration",

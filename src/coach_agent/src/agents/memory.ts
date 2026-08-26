@@ -6,7 +6,7 @@
  * checkpointer, which is per-thread conversation state).
  */
 
-import { tool, type ToolRuntime } from "@langchain/core/tools";
+import { type ToolRuntime, tool } from "@langchain/core/tools";
 import { getStore } from "@langchain/langgraph";
 import * as z from "zod";
 import type { CoachContext } from "./coachAgent.js";
@@ -17,9 +17,6 @@ const rememberSchema = z.object({
 
 const rememberAthleteFact = tool(
   async (input, runtime: ToolRuntime<unknown, typeof CoachContext>) => {
-    console.log(`[memory] rememberAthleteFact called with input:`, input);
-    console.log(`[memory] runtime.context:`, runtime.context);
-
     const userId = runtime.context?.userId;
     const note = input.note;
 
@@ -31,7 +28,6 @@ const rememberAthleteFact = tool(
       savedAt: new Date().toISOString(),
     });
 
-    console.log(`[memory] saved for ${userId}: ${note}`);
     return `已记住：${note}`;
   },
   {
@@ -44,10 +40,7 @@ const rememberAthleteFact = tool(
 const recallSchema = z.object({});
 
 const recallAthleteFacts = tool(
-  async (input, runtime: ToolRuntime<unknown, typeof CoachContext>) => {
-    console.log(`[memory] recallAthleteFacts called with input:`, input);
-    console.log(`[memory] runtime.context:`, runtime.context);
-
+  async (_input, runtime: ToolRuntime<unknown, typeof CoachContext>) => {
     const store = getStore();
     if (!store) {
       throw new Error("recall_athlete_facts: no store configured");
@@ -56,7 +49,6 @@ const recallAthleteFacts = tool(
     const userId = runtime.context?.userId;
     const items = await store.search(["athlete_memory", userId]);
     const notes = items.map((i) => (i.value as { note?: string }).note).filter((n): n is string => Boolean(n));
-    console.log(`[memory] recalled ${notes.length} for ${userId}`);
     return notes.length > 0 ? notes.join("\n") : "（暂无长期记忆）";
   },
   {

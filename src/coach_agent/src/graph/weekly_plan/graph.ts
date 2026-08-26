@@ -1,7 +1,7 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
 import { WeeklyPlanGeneratorContext } from "@stride/contract";
 import { type CoachAgentConfig, getAgentConfig } from "../../config/config.js";
-import type { WeeklyPlanContextProvider } from "../../persistence/weeklyPlanContextProvider.js";
+import type { WeeklyPlanContextProvider } from "../../data/weeklyPlanContextProvider.js";
 import { GraphInput, GraphOutput, GraphState, WeeklyPlanGeneratorNodes } from "./nodes.js";
 import { createWeeklyPlanLlm } from "./weeklyPlanNode.js";
 
@@ -29,7 +29,7 @@ export function createWeeklyPlanGeneratorGraph(config: CoachAgentConfig, context
     .addNode("phase_recovery", nodes.phaseRecovery)
     .addNode("phase_unresolvable", nodes.phaseUnresolvable)
     .addNode("simulate_load", nodes.simulateLoad)
-    // .addNode("load_mismatch", nodes.loadMismatch)
+    .addNode("load_mismatch", nodes.loadMismatch)
     .addNode("finalize", nodes.finalize)
     .addEdge(START, "loadWeeklyPlanContext")
     .addConditionalEdges("loadWeeklyPlanContext", (state) => (state.outcome ? END : "getTargetTrainingLoad"), ["getTargetTrainingLoad", END])
@@ -41,10 +41,8 @@ export function createWeeklyPlanGeneratorGraph(config: CoachAgentConfig, context
     .addConditionalEdges("phase_taper", (state) => (state.outcome ? END : "simulate_load"), ["simulate_load", END])
     .addConditionalEdges("phase_recovery", (state) => (state.outcome ? END : "simulate_load"), ["simulate_load", END])
     .addEdge("phase_unresolvable", END)
-    // TODO: skip training plan re-generation even if the load is out of range.
-    // .addConditionalEdges("simulate_load", nodes.evaluateLoadMatch, [...PHASE_NODE_TARGETS, "finalize", "load_mismatch"])
-    // .addEdge("load_mismatch", END)
-    .addEdge("simulate_load", "finalize")
+    .addConditionalEdges("simulate_load", nodes.evaluateLoadMatch, [...PHASE_NODE_TARGETS, "finalize", "load_mismatch"])
+    .addEdge("load_mismatch", END)
     .addEdge("finalize", END)
     .compile();
 }

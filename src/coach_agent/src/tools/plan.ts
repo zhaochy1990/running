@@ -1,9 +1,9 @@
-/** Read-only master and weekly plan tools backed by the shared `stride` MySQL DB. */
+/** Read-only master and weekly plan tools backed by DataProvider. */
 
 import type { StructuredTool } from "@langchain/core/tools";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
-import type { MasterPlanDocument, StrideDataStore, WeeklyPlanDocument } from "../persistence/index.js";
+import type { DataProvider, MasterPlanDocument, WeeklyPlanDocument } from "../data/dataProvider.js";
 import { defineCoachTools } from "./common.js";
 
 const WEEK_NAME_RE = /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}$/;
@@ -18,7 +18,7 @@ export interface PlanStore {
   getWeeklyPlan(userId: string, weekName: string): Promise<WeeklyPlanDocument | null>;
 }
 
-class MySQLPlanTool {
+class PlanToolImpl {
   constructor(private readonly store: PlanStore) {}
 
   async getMasterPlan(_input: z.infer<typeof getMasterPlanSchema>, runtime: CoachToolRuntime): Promise<MasterPlanDocument | null> {
@@ -36,8 +36,8 @@ class MySQLPlanTool {
   }
 }
 
-export function createPlanTools(store: StrideDataStore): StructuredTool[] {
-  const impl = new MySQLPlanTool(store);
+export function createPlanTools(store: DataProvider): StructuredTool[] {
+  const impl = new PlanToolImpl(store);
   return defineCoachTools([
     {
       name: "get_master_plan",

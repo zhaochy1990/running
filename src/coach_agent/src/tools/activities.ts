@@ -1,10 +1,8 @@
 /**
- * Athlete activity tools — read watch-synced training data from the shared
- * `stride` MySQL DB.
+ * Athlete activity tools — read watch-synced training data through DataProvider.
  *
  * Layered on purpose:
- *   - `MySQLActivitiesTool` = domain logic (pure, LangChain-agnostic, unit-test
- *     with a fake `StrideDataStore`).
+ *   - `ActivitiesToolImpl` = domain logic (pure and LangChain-agnostic).
  *   - `createActivitiesTools(store)` = adapter that binds the store and turns each
  *     domain method into a LangChain tool via the generic {@link defineCoachTools}
  *     factory — no hand-written `tool(...)` boilerplate.
@@ -16,7 +14,7 @@
 import type { StructuredTool } from "@langchain/core/tools";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
-import type { Activity, StrideDataStore } from "../persistence/index.js";
+import type { Activity, DataProvider } from "../data/dataProvider.js";
 import { defineCoachTools } from "./common.js";
 
 const getActivitiesByDateRangeSchema = z.object({
@@ -35,14 +33,25 @@ type GetActivitiesByDateRangeInput = z.infer<typeof getActivitiesByDateRangeSche
 
 /** Domain interface — pure business logic, decoupled from LangChain. */
 interface ActivitiesTool {
-  getActivitiesByDateRange(input: GetActivitiesByDateRangeInput, runtime: CoachToolRuntime): Promise<Activity[]>;
+  getActivitiesByDateRange(
+    input: GetActivitiesByDateRangeInput,
+    runtime: CoachToolRuntime,
+  ): Promise<{
+    activities: Activity[];
+    provenance: { source: "stride"; vendor_derived: false };
+  }>;
 }
 
-/** MySQL-backed implementation (reads the `stride` activities table). */
-class MySQLActivitiesTool implements ActivitiesTool {
-  constructor(private readonly store: StrideDataStore) {}
+class ActivitiesToolImpl implements ActivitiesTool {
+  constructor(private readonly store: DataProvider) {}
 
-  async getActivitiesByDateRange(input: GetActivitiesByDateRangeInput, runtime: CoachToolRuntime): Promise<Activity[]> {
+  async getActivitiesByDateRange(
+    input: GetActivitiesByDateRangeInput,
+    runtime: CoachToolRuntime,
+  ): Promise<{
+    activities: Activity[];
+    provenance: { source: "stride"; vendor_derived: false };
+  }> {
     const userId = runtime.context?.userId;
     if (!userId) {
       throw new Error("get_activities_by_date_range: missing userId in runtime context");
@@ -52,7 +61,10 @@ class MySQLActivitiesTool implements ActivitiesTool {
       throw new Error("get_activities_by_date_range: missing asof in runtime context");
     }
     const endDay = input.endDay ?? asof;
-    return this.store.getActivitiesByDateRange(userId, input.startDay, endDay);
+    return {
+      activities: await this.store.getActivitiesByDateRange(userId, input.startDay, endDay),
+      provenance: { source: "stride", vendor_derived: false },
+    };
   }
 }
 
@@ -64,8 +76,8 @@ class MySQLActivitiesTool implements ActivitiesTool {
  * tools: [...createActivitiesTools(store)]
  * ```
  */
-export function createActivitiesTools(store: StrideDataStore): StructuredTool[] {
-  const impl = new MySQLActivitiesTool(store);
+export function createActivitiesTools(store: DataProvider): StructuredTool[] {
+  const impl = new ActivitiesToolImpl(store);
   return defineCoachTools([
     {
       name: "get_activities_by_date_range",

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { StrideDataStore } from "../persistence/index.js";
+import type { DataProvider } from "../data/dataProvider.js";
 import { createActivitiesTools } from "./activities.js";
 import { createRaceTools } from "./races.js";
 import { createTrainingLoadTools } from "./trainingLoad.js";
@@ -17,7 +17,7 @@ test("date-range tools default their inclusive end to context.asof", async () =>
       loadCalls.push(args);
       return [];
     },
-  } as unknown as StrideDataStore;
+  } as unknown as DataProvider;
   const [activities] = createActivitiesTools(store);
   const [loads] = createTrainingLoadTools(store);
   assert.ok(activities);
@@ -36,7 +36,7 @@ test("date-range tools require asof even when an explicit end is supplied", asyn
     async getActivitiesByDateRange() {
       return [];
     },
-  } as unknown as StrideDataStore;
+  } as unknown as DataProvider;
   const [activities] = createActivitiesTools(store);
   assert.ok(activities);
 
@@ -55,7 +55,7 @@ test("race-history tools bound results to context.asof", async () => {
       pbCalls.push(args);
       return [];
     },
-  } as unknown as StrideDataStore;
+  } as unknown as DataProvider;
   const [raceHistory, personalBests] = createRaceTools(store);
   assert.ok(raceHistory);
   assert.ok(personalBests);
@@ -76,7 +76,7 @@ test("race-history tools require context.asof", async () => {
     async getPersonalBests() {
       return [];
     },
-  } as unknown as StrideDataStore;
+  } as unknown as DataProvider;
   const [raceHistory, personalBests] = createRaceTools(store);
   assert.ok(raceHistory);
   assert.ok(personalBests);

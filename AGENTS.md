@@ -86,7 +86,7 @@ python3 ".claude/skills/worktree-development/scripts/create_worktree.py" <3-5-wo
 
 ### SQL ownership rule (HARD)
 
-只有各运行时的 storage 包允许直接写 SQL 读取 / 修改数据库：Python `src/stride_storage/`、Go `src/go/internal/storage/`、TypeScript Coach `src/coach_agent/src/persistence/`。其它包（`stride_server/`、`stride_core/`、Coach graph / tools、routes、adapters、scripts 等）需要数据时必须调用对应 storage 包暴露的 API / repository / store 方法；缺方法就先在 storage 层增加一个语义明确的方法，并补 storage 层测试。
+只有各运行时的 storage 包允许直接写 SQL 读取 / 修改数据库：Python `src/stride_storage/`、Go `src/go/internal/storage/`、TypeScript Coach API `src/coach_agent_api/src/data/`（只读 `DataProvider` adapter）与 `src/coach_agent_api/src/persistence/`（checkpoint/store/turn receipt 写入与 thread lock）。`src/coach_agent/` 核心只定义只读 `DataProvider` interface，不依赖数据库客户端。其它包（`stride_server/`、`coach/`、`stride_core/`、Coach graph / tools、routes、scripts 等）需要数据时必须调用对应 storage 包暴露的 API / repository / store 方法；缺方法就先在 storage 层增加一个语义明确的方法，并补 storage 层测试。
 
 禁止在非 storage 包里新增：`db._conn.execute(...)`、`conn.execute(...)`、裸 SQL 字符串查询表、或为了绕开缺失 API 直接打开 SQLite 连接。例外只限：已有 legacy 代码的迁移前状态；`src/migration/` 下不进入应用运行时的一次性数据迁移脚本；以及下方 weekly plan authoring 流程中使用 prod readonly 账号执行的临时 MySQL CLI 查询。一次性迁移必须默认 dry-run，只处理 `src/migration/src/users.js` 中的真实用户，写入采用条件更新或等价幂等策略，支持限定范围和限流，并在提交前完成本地 dry-run、有限写入、源数据回读比对与重复运行验证。weekly plan CLI 例外不得写入应用代码或持久化为脚本。改到其它 legacy 代码时要顺手收敛到 storage API，不能扩大直接 SQL 面。
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { WeeklyPlanContext } from "../persistence/index.js";
+import type { WeeklyPlanContext } from "../data/weeklyPlanContextProvider.js";
 import { createWeeklyPlanContextTools } from "./weeklyPlanContext.js";
 
 test("get_weekly_plan_context loads the runtime user's bounded snapshot", async () => {

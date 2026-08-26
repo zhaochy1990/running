@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { AIMessage, ToolMessage } from "@langchain/core/messages";
 import { MasterPlanDirectResponseSchema, WeeklyPlanDirectResponseSchema } from "@stride/contract";
 import type { ModelConfig } from "../config/config.js";
-import { StrideDataStore } from "../persistence/index.js";
+import type { DataProvider } from "../data/dataProvider.js";
 import { CoachContext } from "./coachAgent.js";
 import { getMasterPlanGeneratorSubagent, getMasterPlanSubagent } from "./master_plan/agent.js";
 import { createPlanPassthroughMiddleware, getDirectPlanTaskResult, getMasterPlanTaskResult } from "./masterPlanPassthrough.js";
@@ -58,7 +58,7 @@ test("coach context requires a strict Shanghai asof day", () => {
 
 test("master-plan agent has a machine-enforced structured output contract", () => {
   assert.match(MASTER_PLAN_PROMPT, /结构化输出/);
-  const store = new StrideDataStore({} as never);
+  const store = {} as DataProvider;
   const generator = getMasterPlanGeneratorSubagent(store, modelConfig);
   const reader = getMasterPlanSubagent(store, modelConfig);
   assert.equal(generator.responseFormat, MasterPlanDirectResponseSchema);
@@ -69,7 +69,7 @@ test("master-plan agent has a machine-enforced structured output contract", () =
 });
 
 test("weekly-plan reader and generator keep distinct contracts", () => {
-  const store = new StrideDataStore({} as never);
+  const store = {} as DataProvider;
   const reader = getCoachSubagent(store, modelConfig);
   const generator = getWeeklyPlanGeneratorSubagent(store, modelConfig);
   for (const subagent of [reader, generator]) {
@@ -165,6 +165,37 @@ const weeklyPlan = {
       estimated_dose: null,
       kind: "rest",
       spec: null,
+    },
+    {
+      schema: "plan-session/v1" as const,
+      date: "2026-06-16",
+      session_index: 0,
+      summary: "轻松跑",
+      notes_md: null,
+      total_distance_m: 5000,
+      total_duration_s: null,
+      estimated_dose: null,
+      kind: "run",
+      spec: {
+        schema: "run-workout/v1" as const,
+        name: "轻松跑",
+        date: "2026-06-16",
+        note: null,
+        blocks: [
+          {
+            repeat: 1,
+            steps: [
+              {
+                step_kind: "work" as const,
+                duration: { kind: "distance_m" as const, value: 5000 },
+                target: { kind: "pace_s_km" as const, low: 330, high: 360 },
+                note: null,
+                hr_cap_bpm: null,
+              },
+            ],
+          },
+        ],
+      },
     },
   ],
   nutrition: Array.from({ length: 7 }, (_, index) => {
@@ -622,7 +653,7 @@ test("orchestrator does not replay a generator result after a later tool call", 
 });
 
 test("all athlete-facing subagents expose PB and running-calibration tools", () => {
-  const store = new StrideDataStore({} as never);
+  const store = {} as DataProvider;
   const subagents = [getQaSubagent(store, modelConfig), getCoachSubagent(store, modelConfig), getMasterPlanSubagent(store, modelConfig)];
 
   for (const subagent of subagents) {

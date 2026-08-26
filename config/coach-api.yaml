@@ -1,0 +1,25 @@
+# Coach API infrastructure defaults. Environment files and then environment
+# variables override this file.
+api:
+  host: 0.0.0.0
+  port: 8080
+
+auth:
+  public_key_pem: ""
+  public_key_path: ""
+  issuer: auth-service
+  audience: ""
+
+stride_database:
+  host: ""
+  port: 3306
+  user: ""
+  password: ""
+  database: ""
+
+persistence_database:
+  host: ""
+  port: 3306
+  user: ""
+  password: ""
+  database: coach_agent
