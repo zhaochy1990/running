@@ -6,7 +6,7 @@
 .login-page {
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 64rpx 32rpx calc(64rpx + env(safe-area-inset-bottom));
+  padding: 48rpx 32rpx calc(48rpx + env(safe-area-inset-bottom));
   background: #07080a;
   display: flex;
   flex-direction: column;
@@ -18,39 +18,39 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 80rpx;
+  margin-bottom: 56rpx;
 }
 
 .login-brand {
-  width: 160rpx;
-  height: 160rpx;
-  border-radius: 48rpx;
+  width: 144rpx;
+  height: 144rpx;
+  border-radius: 40rpx;
   background: #1f2022;
   border: 1rpx solid rgba(255, 255, 255, 0.05);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 24rpx;
+  margin-bottom: 16rpx;
   box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.2);
 }
 
 .login-brand-icon {
-  width: 80rpx;
-  height: 80rpx;
+  width: 68rpx;
+  height: 68rpx;
 }
 
 .login-title {
-  font-size: 48rpx;
-  line-height: 64rpx;
+  font-size: 44rpx;
+  line-height: 60rpx;
   font-weight: 700;
   color: #ffffff;
   letter-spacing: 6rpx;
-  margin-bottom: 8rpx;
+  margin-bottom: 6rpx;
 }
 
 .login-subtitle {
-  font-size: 30rpx;
-  line-height: 44rpx;
+  font-size: 28rpx;
+  line-height: 40rpx;
   font-weight: 500;
   color: #a0a0a0;
   letter-spacing: 1rpx;
@@ -63,7 +63,7 @@
   background: #141517;
   border-radius: 48rpx;
   border: 1rpx solid rgba(255, 255, 255, 0.05);
-  padding: 48rpx;
+  padding: 40rpx;
   box-shadow: 0 16rpx 48rpx rgba(0, 0, 0, 0.35);
 }
 
@@ -72,13 +72,13 @@
 .login-tabs {
   display: flex;
   border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
-  margin-bottom: 48rpx;
+  margin-bottom: 32rpx;
 }
 
 .login-tab {
   flex: 1;
   position: relative;
-  padding: 32rpx 0;
+  padding: 24rpx 0;
   text-align: center;
   font-size: 30rpx;
   font-weight: 500;
@@ -110,7 +110,7 @@
 }
 
 .login-field {
-  margin-bottom: 48rpx;
+  margin-bottom: 36rpx;
 }
 
 .login-field-head {
@@ -147,7 +147,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  height: 96rpx;
+  height: 92rpx;
   background: #1d1e20;
   border: 2rpx solid transparent;
   border-radius: 32rpx;
@@ -167,7 +167,7 @@
 
 .login-input {
   flex: 1;
-  height: 96rpx;
+  height: 92rpx;
   padding: 0 32rpx 0 96rpx;
   font-size: 32rpx;
   color: #f9f9f9;
@@ -248,21 +248,21 @@
 /* ---------- 主按钮 ---------- */
 
 .login-actions {
-  padding-top: 32rpx;
+  padding-top: 24rpx;
 }
 
 .login-cta {
-  height: 112rpx;
-  line-height: 112rpx;
+  height: 92rpx;
+  line-height: 92rpx;
   margin: 0;
   padding: 0;
-  border-radius: 32rpx;
+  border-radius: 26rpx;
   background: #ff6363;
   color: #ffffff;
-  font-size: 34rpx;
+  font-size: 32rpx;
   font-weight: 500;
   text-align: center;
-  box-shadow: 0 12rpx 32rpx rgba(255, 99, 99, 0.2);
+  box-shadow: 0 10rpx 24rpx rgba(255, 99, 99, 0.18);
 }
 
 .login-cta::after {
@@ -276,7 +276,8 @@
 /* ---------- 法务条款 ---------- */
 
 .login-terms {
-  margin-top: 80rpx;
+  margin-top: auto;
+  padding-top: 48rpx;
   text-align: center;
 }
 

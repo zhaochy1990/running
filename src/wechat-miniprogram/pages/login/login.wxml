@@ -79,7 +79,7 @@
           class="login-cta {{loading ? 'login-cta-disabled' : ''}}"
           bindtap="onLoginTap"
           disabled="{{loading}}"
-        >{{loading ? '登录中...' : '登录'}}</button>
+        >{{loading ? '登录中...' : '立即登录'}}</button>
       </view>
     </view>
 
