@@ -72,7 +72,7 @@
 /* ---------- 内容 ---------- */
 
 .content {
-  padding: 0 40rpx 48rpx;
+  padding: 0 40rpx calc(140rpx + env(safe-area-inset-bottom));
 }
 
 .card {

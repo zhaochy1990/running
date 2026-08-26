@@ -1,6 +1,45 @@
-<view class="page">
-  <view class="card">
-    <view class="text-lg font-semibold">Coach 问答</view>
-    <view class="text-sm text-secondary">即将上线</view>
+<view class="coach">
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onMenuTap">
+        <image class="top-bar__icon" src="/assets/icons/tab_coach_off.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">教练</view>
+        <view class="top-bar__subtitle">AI 训练助手</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <!-- 对话区 + 输入栏 -->
+  <view class="coach-body" style="padding-top: {{contentPaddingTop}}rpx;">
+    <scroll-view class="coach-list" scroll-y scroll-with-animation scroll-into-view="{{scrollIntoId}}">
+      <view
+        wx:for="{{messages}}"
+        wx:key="id"
+        id="msg-{{item.id}}"
+        class="coach-msg {{item.role === 'user' ? 'coach-msg--user' : 'coach-msg--assistant'}}"
+      >
+        <view class="coach-msg__bubble">{{item.content}}</view>
+      </view>
+    </scroll-view>
+
+    <view class="coach-input">
+      <input
+        class="coach-input__field"
+        value="{{input}}"
+        placeholder="问问教练…"
+        placeholder-class="coach-input__placeholder"
+        confirm-type="send"
+        bindinput="onInput"
+        bindconfirm="onSend"
+      />
+      <view
+        class="coach-input__send {{sending ? 'coach-input__send--disabled' : ''}}"
+        bindtap="onSend"
+      >发送</view>
+    </view>
   </view>
 </view>

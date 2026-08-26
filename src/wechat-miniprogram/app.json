@@ -10,16 +10,17 @@
   ],
   "window": {
     "backgroundTextStyle": "light",
-    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarBackgroundColor": "#07080A",
     "navigationBarTitleText": "STRIDE",
-    "navigationBarTextStyle": "black",
-    "backgroundColor": "#f7f7f8"
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#07080A"
   },
   "tabBar": {
-    "color": "#8a8a8e",
-    "selectedColor": "#1c1c1e",
-    "backgroundColor": "#ffffff",
-    "borderStyle": "white",
+    "custom": true,
+    "color": "#9a8f90",
+    "selectedColor": "#ff6363",
+    "backgroundColor": "#121316",
+    "borderStyle": "black",
     "list": [
       {
         "pagePath": "pages/index/index",
@@ -31,15 +32,11 @@
       },
       {
         "pagePath": "pages/activities/activities",
-        "text": "活动"
+        "text": "记录"
       },
       {
-        "pagePath": "pages/health/health",
-        "text": "健康"
-      },
-      {
-        "pagePath": "pages/profile/profile",
-        "text": "我的"
+        "pagePath": "pages/coach/coach",
+        "text": "教练"
       }
     ]
   },
