@@ -1,0 +1,151 @@
+<view class="login-page">
+  <!-- Header：品牌标识 + STRIDE + 副标题（对应 design/login_1.html、login_2.html 头部） -->
+  <view class="login-header">
+    <view class="login-brand">
+      <image class="login-brand-icon" src="/assets/icons/sprint.svg" mode="aspectFit" />
+    </view>
+    <view class="login-title">STRIDE</view>
+    <view class="login-subtitle">登录以同步训练数据并绑定微信</view>
+  </view>
+
+  <!-- 表单卡片 -->
+  <view class="login-card">
+    <!-- 分段切换：邮箱登录 / 手机号登录 -->
+    <view class="login-tabs">
+      <view
+        class="login-tab {{tab === 'email' ? 'login-tab-active' : ''}}"
+        data-tab="email"
+        bindtap="onSwitchTab"
+      >邮箱登录</view>
+      <view
+        class="login-tab {{tab === 'phone' ? 'login-tab-active' : ''}}"
+        data-tab="phone"
+        bindtap="onSwitchTab"
+      >手机号登录</view>
+    </view>
+
+    <!-- 邮箱登录 -->
+    <view wx:if="{{tab === 'email'}}" class="login-form">
+      <view class="login-field">
+        <view class="login-label">邮箱</view>
+        <view class="login-input-wrap {{focusField === 'email' ? 'login-input-focused' : ''}}">
+          <image class="login-input-icon" src="/assets/icons/mail.svg" mode="aspectFit" />
+          <input
+            class="login-input"
+            type="text"
+            placeholder="hello@example.com"
+            placeholder-class="login-placeholder"
+            value="{{email}}"
+            data-field="email"
+            bindinput="onEmailInput"
+            bindfocus="onFieldFocus"
+            bindblur="onFieldBlur"
+          />
+        </view>
+      </view>
+
+      <view class="login-field">
+        <view class="login-field-head">
+          <view class="login-label">密码</view>
+          <view class="login-forgot" bindtap="onForgotPasswordTap">忘记密码？</view>
+        </view>
+        <view class="login-input-wrap {{focusField === 'password' ? 'login-input-focused' : ''}}">
+          <image class="login-input-icon" src="/assets/icons/lock.svg" mode="aspectFit" />
+          <input
+            class="login-input login-input-with-action"
+            type="{{showPassword ? 'text' : 'password'}}"
+            placeholder="••••••••"
+            placeholder-class="login-placeholder"
+            value="{{password}}"
+            data-field="password"
+            bindinput="onPasswordInput"
+            bindfocus="onFieldFocus"
+            bindblur="onFieldBlur"
+          />
+          <view class="login-input-action" bindtap="onTogglePassword">
+            <image
+              class="login-input-action-icon"
+              src="{{showPassword ? '/assets/icons/visibility.svg' : '/assets/icons/visibility_off.svg'}}"
+              mode="aspectFit"
+            />
+          </view>
+        </view>
+      </view>
+
+      <view wx:if="{{errorMsg}}" class="login-error">{{errorMsg}}</view>
+
+      <view class="login-actions">
+        <button
+          class="login-cta {{loading ? 'login-cta-disabled' : ''}}"
+          bindtap="onLoginTap"
+          disabled="{{loading}}"
+        >{{loading ? '登录中...' : '登录'}}</button>
+      </view>
+    </view>
+
+    <!-- 手机号登录 -->
+    <view wx:if="{{tab === 'phone'}}" class="login-form">
+      <view class="login-field">
+        <view class="login-label">手机号</view>
+        <view class="login-input-wrap {{focusField === 'phone' ? 'login-input-focused' : ''}}">
+          <view class="login-country-code">+86</view>
+          <input
+            class="login-input login-input-phone"
+            type="number"
+            maxlength="11"
+            placeholder="请输入手机号"
+            placeholder-class="login-placeholder"
+            value="{{phone}}"
+            data-field="phone"
+            bindinput="onPhoneInput"
+            bindfocus="onFieldFocus"
+            bindblur="onFieldBlur"
+          />
+        </view>
+      </view>
+
+      <view class="login-field">
+        <view class="login-label">验证码</view>
+        <view class="login-input-wrap {{focusField === 'code' ? 'login-input-focused' : ''}}">
+          <image class="login-input-icon" src="/assets/icons/verified_user.svg" mode="aspectFit" />
+          <input
+            class="login-input login-input-with-code"
+            type="number"
+            maxlength="6"
+            placeholder="请输入验证码"
+            placeholder-class="login-placeholder"
+            value="{{code}}"
+            data-field="code"
+            bindinput="onCodeInput"
+            bindfocus="onFieldFocus"
+            bindblur="onFieldBlur"
+          />
+          <view
+            class="login-code-btn {{codeCountdown > 0 ? 'login-code-btn-disabled' : ''}}"
+            bindtap="onGetCode"
+          >{{codeCountdown > 0 ? codeCountdown + ' 秒后重发' : '获取验证码'}}</view>
+        </view>
+      </view>
+
+      <view wx:if="{{errorMsg}}" class="login-error">{{errorMsg}}</view>
+
+      <view class="login-actions">
+        <button
+          class="login-cta {{loading ? 'login-cta-disabled' : ''}}"
+          bindtap="onLoginTap"
+          disabled="{{loading}}"
+        >{{loading ? '登录中...' : '立即登录'}}</button>
+      </view>
+    </view>
+  </view>
+
+  <!-- 法务条款 -->
+  <view class="login-terms">
+    <view class="login-terms-text">登录即代表您同意我们的</view>
+    <view class="login-terms-links">
+      <text class="login-terms-link" bindtap="onTermsTap">服务条款</text>
+      <text class="login-terms-sep">和</text>
+      <text class="login-terms-link" bindtap="onPrivacyTap">隐私政策</text>
+    </view>
+  </view>
+</view>

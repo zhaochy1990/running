@@ -46,9 +46,9 @@ App<IAppOption>({
       if (result.ok) {
         userStore.setUser(result.user);
       } else {
-        // 未绑定 → 跳绑定页
+        // 未绑定 → 跳登录页（邮箱登录即绑定已有 STRIDE 账号）
         wx.reLaunch({
-          url: '/pages/bind/bind',
+          url: '/pages/login/login',
         });
       }
     } catch (err) {
@@ -58,7 +58,7 @@ App<IAppOption>({
         err instanceof Error ? err.message : err,
       );
       wx.reLaunch({
-        url: '/pages/bind/bind',
+        url: '/pages/login/login',
       });
     } finally {
       userStore.setLoading(false);

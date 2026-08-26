@@ -21,6 +21,7 @@ src/wechat-miniprogram/
 ├── app.wxss                     # 全局样式
 │
 ├── pages/                       # 页面（每页面四件套：.ts / .wxml / .wxss / .json）
+│   ├── login/                   # 登录页（微信未绑定账号入口；设计稿 design/login_*.html）
 │   ├── index/                   # 首页 —— 今日训练 + 状态概览
 │   ├── plan/                    # 周训练计划
 │   ├── activities/              # 活动列表
@@ -67,7 +68,7 @@ src/wechat-miniprogram/
 │
 ├── assets/                      # 静态资源
 │   ├── images/
-│   └── icons/
+│   └── icons/                   # Material 风格 SVG 图标（登录页等）
 │
 └── styles/                      # 样式抽离
     ├── variables.wxss           # CSS 变量 / 设计令牌
