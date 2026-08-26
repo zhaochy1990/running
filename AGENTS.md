@@ -82,12 +82,6 @@ auth 现在**同源经 BFF**（`authStore.ts` 不再有 dev/prod 分支，永远
 
 ---
 
-## UI design
-
-For both Web UI and mobile UI, we need to use the Stitch MCP to design with Stitch.
-
----
-
 ## Storage scope rule (HARD)
 
 **腾讯云 MySQL 是生产环境用户运动与健康数据的 canonical source**，包括 activities、laps、zones、timeseries、daily_health、dashboard、race predictions、ability snapshots、structured planned sessions/nutrition、weekly plans 和 scheduled workouts。`data/{user_id}/coros.db` 仅用于遗留迁移、专项调试或测试 fixture；生成 weekly plan 时不得把它当作数据源，也不得在 MySQL 不可用时静默 fallback 到 SQLite。
