@@ -1,6 +1,135 @@
 <view class="page">
-  <view class="hero card">
-    <view class="hero-title">{{greeting}}</view>
-    <view class="hero-subtitle">今天也要加油跑</view>
+  <!-- 自定义顶部栏（自定义导航：菜单在左，标题居中，右侧为胶囊保留区） -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onMenuTap">
+        <image class="top-bar__icon" src="/assets/icons/menu.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">本周训练</view>
+        <view class="top-bar__subtitle">{{weekSubtitle}}</view>
+      </view>
+      <!-- 右侧留白给系统胶囊按钮 -->
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <!-- 内容 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- 周历 -->
+    <view class="card week-card">
+      <view
+        wx:for="{{weekDays}}"
+        wx:key="date"
+        class="week-day {{item.isToday ? 'week-day--today' : ''}}"
+        data-date="{{item.date}}"
+        bindtap="onDayTap"
+      >
+        <view class="week-day__label">{{item.label}}</view>
+        <view class="week-day__num">{{item.dayNumber}}</view>
+      </view>
+    </view>
+
+    <!-- 今日训练 -->
+    <view class="section-title">今日安排 · {{todayLabel}}</view>
+    <view wx:if="{{workout}}" class="card workout-card">
+      <!-- 头部：图标 + 标题 + 操作 -->
+      <view class="workout__head">
+        <view class="workout__title-wrap">
+          <view class="workout__icon">
+            <image class="workout__icon-img" src="{{workout.iconPath}}" mode="aspectFit" />
+          </view>
+          <view class="workout__title">{{workout.title}}</view>
+        </view>
+        <view class="workout__actions">
+          <view class="workout__action" bindtap="onWatchTap">
+            <image class="workout__action-icon" src="/assets/icons/watch.svg" mode="aspectFit" />
+          </view>
+          <view class="workout__action" bindtap="onMoreTap">
+            <image class="workout__action-icon" src="/assets/icons/more_horiz.svg" mode="aspectFit" />
+          </view>
+        </view>
+      </view>
+
+      <!-- 强度柱状图 -->
+      <view wx:if="{{workout.isRunning}}" class="workout__chart-block">
+        <view class="workout__label">课表内容</view>
+        <view class="workout__chart">
+          <view
+            wx:for="{{workout.intensityBars}}"
+            wx:key="index"
+            class="workout__bar {{item.dim ? 'workout__bar--dim' : ''}}"
+            style="height: {{item.pct}}%;"
+          ></view>
+        </view>
+        <view class="workout__chart-baseline"></view>
+      </view>
+
+      <!-- 指标 -->
+      <view class="stat-row">
+        <view wx:for="{{workout.stats}}" wx:key="label" class="stat">
+          <view class="stat__value">{{item.value}}</view>
+          <view class="stat__label">{{item.label}}</view>
+        </view>
+      </view>
+
+      <!-- 教练备注 -->
+      <view wx:if="{{workout.coachNote}}" class="note-box">
+        <view class="note-box__title">教练备注</view>
+        <view class="note-box__text">{{workout.coachNote}}</view>
+      </view>
+
+      <!-- 和教练聊一聊 -->
+      <button class="workout__cta" bindtap="onCoachTap">
+        <image class="workout__cta-icon" src="/assets/icons/forum.svg" mode="aspectFit" />
+        <text class="workout__cta-text">和教练聊一聊</text>
+      </button>
+    </view>
+    <view wx:else class="card empty-card">
+      <view class="empty-card__title">今日无训练安排</view>
+      <view class="empty-card__sub">好好休息，或查看本周计划</view>
+    </view>
+
+    <!-- 今日营养 -->
+    <view class="section-title">今日饮食营养</view>
+    <view wx:if="{{nutrition}}" class="card nutrition-card">
+      <!-- 宏量营养目标 -->
+      <view class="stat-row">
+        <view wx:for="{{nutrition.targetsTop}}" wx:key="label" class="stat">
+          <view class="stat__value">{{item.value}}</view>
+          <view class="stat__label">{{item.label}}</view>
+        </view>
+      </view>
+      <view class="stat-row stat-row--second">
+        <view wx:for="{{nutrition.targetsBottom}}" wx:key="label" class="stat">
+          <view class="stat__value">{{item.value}}</view>
+          <view class="stat__label">{{item.label}}</view>
+        </view>
+        <view class="stat stat--spacer"></view>
+      </view>
+
+      <!-- 餐次 -->
+      <view class="meal-list">
+        <view wx:for="{{nutrition.meals}}" wx:key="index" class="meal">
+          <view class="meal__info">
+            <view class="meal__name">{{item.name}}</view>
+            <view wx:if="{{item.timeHint}}" class="meal__time">{{item.timeHint}}</view>
+            <view wx:if="{{item.detail}}" class="meal__detail">{{item.detail}}</view>
+          </view>
+          <view class="meal__kcal">{{item.kcal}}</view>
+        </view>
+      </view>
+
+      <!-- 营养建议 -->
+      <view wx:if="{{nutrition.note}}" class="note-box">
+        <view class="note-box__title">营养建议</view>
+        <view class="note-box__text">{{nutrition.note}}</view>
+      </view>
+    </view>
+    <view wx:else class="card empty-card">
+      <view class="empty-card__title">今日暂无营养建议</view>
+      <view class="empty-card__sub">生成周计划后同步展示</view>
+    </view>
+    <view class="content__tail"></view>
   </view>
 </view>
