@@ -44,71 +44,6 @@ interface IndexPageHandlers {
 let fetchedPlan: WeeklyPlanDetail | null = null;
 let userId = '';
 
-// 默认数据源取不到时按设计稿渲染的占位内容（design/today.html 示例数据）。
-const DEMO_WORKOUT: TodayWorkoutView = {
-  title: '渐加速跑',
-  sessionKind: 'run',
-  iconPath: '/assets/icons/directions_run.svg',
-  isRunning: true,
-  intensityBars: [
-    { pct: 40, dim: true },
-    { pct: 60, dim: false },
-    { pct: 70, dim: false },
-    { pct: 80, dim: false },
-    { pct: 90, dim: false },
-    { pct: 90, dim: false },
-    { pct: 90, dim: false },
-    { pct: 90, dim: false },
-  ],
-  stats: [
-    { value: '10.71', label: '距离(公里)' },
-    { value: '00:51:21', label: '总时长' },
-    { value: '30.8', label: '训练负荷' },
-  ],
-  coachNote:
-    '本节课重点在于维持间歇段的配速稳定性，心率控制在 Z4 区间。若感不适可适当延长恢复时间。',
-  note: '',
-};
-
-const DEMO_NUTRITION: TodayNutritionView = {
-  targetsTop: [
-    { value: '3100', label: '目标热量(kcal)' },
-    { value: '360', label: '碳水(g)' },
-    { value: '145', label: '蛋白质(g)' },
-  ],
-  targetsBottom: [
-    { value: '85', label: '脂肪(g)' },
-    { value: '3200', label: '饮水(ml)' },
-  ],
-  meals: [
-    {
-      name: '早餐：全麦贝果鸡蛋',
-      timeHint: '07:00',
-      detail: '全麦贝果1个、鸡蛋2个、牛油果半颗、牛奶200ml',
-      kcal: '700 kcal',
-    },
-    {
-      name: '午餐：米饭鸡胸蔬菜',
-      timeHint: '12:30',
-      detail: '米饭200g、鸡胸肉150g、胡萝卜、豆角',
-      kcal: '900 kcal',
-    },
-    {
-      name: '跑前加餐：香蕉面包',
-      timeHint: '跑前60分钟',
-      detail: '香蕉1根、全麦面包1片、果酱少量',
-      kcal: '400 kcal',
-    },
-    {
-      name: '晚餐：三文鱼红薯蔬菜',
-      timeHint: '18:30',
-      detail: '三文鱼170g、红薯250g、芦笋、叶菜',
-      kcal: '1100 kcal',
-    },
-  ],
-  note: '质量训练日保证训练前能量，训练后补充蛋白质与碳水。',
-};
-
 function todayLabelOf(ymd: string): string {
   return `${Number(ymd.slice(5, 7))}月${Number(ymd.slice(8))}日`;
 }
@@ -148,22 +83,23 @@ Page<IndexPageData, IndexPageHandlers>({
     todayYmd: '',
     selectedDate: '',
     todayLabel: '',
-    workout: DEMO_WORKOUT,
-    nutrition: DEMO_NUTRITION,
+    workout: null,
+    nutrition: null,
     loading: true,
   },
 
   onLoad() {
     const today = shanghaiToday();
-    const weekStart = shanghaiWeekStart(today);
     const user = userStore.getState().user;
     userId = user?.id ?? '';
 
-    const view = buildDemoView(today, weekStart);
+    const view = buildDayView(null, today);
     this.setData({
       statusBarHeight: statusBarHeight(),
       contentPaddingTop: contentPaddingTopRpx(),
       ...view,
+      todayYmd: today,
+      selectedDate: today,
     });
 
     this.fetchPlan();
@@ -187,7 +123,7 @@ Page<IndexPageData, IndexPageHandlers>({
       const today = shanghaiToday();
       this.renderDay(this.data.selectedDate || today, this.data.selectedDate === today);
     } catch {
-      // 拉取失败（未生成计划 / 网络问题）时保留设计稿占位内容。
+      // 拉取失败（未生成计划 / 网络问题）时保持空态，由界面展示空态卡片。
     } finally {
       this.setData({ loading: false });
     }
@@ -201,8 +137,8 @@ Page<IndexPageData, IndexPageHandlers>({
         weekDays: buildWeekDays(dateYmd),
         weekSubtitle: weekSubtitle(shanghaiWeekStart(dateYmd)),
         todayLabel: todayLabelOf(dateYmd),
-        workout: isToday ? DEMO_WORKOUT : null,
-        nutrition: isToday ? DEMO_NUTRITION : null,
+        workout: null,
+        nutrition: null,
       });
       return;
     }
@@ -244,25 +180,3 @@ Page<IndexPageData, IndexPageHandlers>({
   },
 });
 
-function buildDemoView(
-  today: string,
-  weekStart: string,
-): {
-  weekDays: TodayWeekDay[];
-  weekSubtitle: string;
-  todayYmd: string;
-  selectedDate: string;
-  todayLabel: string;
-  workout: TodayWorkoutView | null;
-  nutrition: TodayNutritionView | null;
-} {
-  return {
-    weekDays: buildWeekDays(today),
-    weekSubtitle: weekSubtitle(weekStart),
-    todayYmd: today,
-    selectedDate: today,
-    todayLabel: todayLabelOf(today),
-    workout: DEMO_WORKOUT,
-    nutrition: DEMO_NUTRITION,
-  };
-}

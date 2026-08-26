@@ -99,19 +99,6 @@ function summaryFrom(activities: Activity[]): Summary {
   };
 }
 
-function demoRows(): { rows: ActivityRow[]; summary: Summary } {
-  const activities: Activity[] = [
-    { label_id: 'a1', name: '晨跑 · 节奏', sport_name: 'Run', sport_type: 2, date: '2026-08-26', distance_m: 8200, distance_km: 8.2, duration_s: 2525, duration_fmt: '0:42:05', avg_pace_s_km: 308, pace_fmt: '5:08/km', avg_hr: 152, max_hr: 168, avg_cadence: null, calories_kcal: null, training_load: 52.1, vo2max: null, train_type: 'Threshold' },
-    { label_id: 'a2', name: '渐加速跑', sport_name: 'Run', sport_type: 2, date: '2026-08-25', distance_m: 10710, distance_km: 10.71, duration_s: 3081, duration_fmt: '0:51:21', avg_pace_s_km: 288, pace_fmt: '4:48/km', avg_hr: 160, max_hr: 175, avg_cadence: null, calories_kcal: null, training_load: 68.3, vo2max: null, train_type: 'Interval' },
-    { label_id: 'a3', name: '恢复跑', sport_name: 'Run', sport_type: 2, date: '2026-08-24', distance_m: 5500, distance_km: 5.5, duration_s: 2040, duration_fmt: '0:34:00', avg_pace_s_km: 371, pace_fmt: '6:11/km', avg_hr: 132, max_hr: 145, avg_cadence: null, calories_kcal: null, training_load: 24.6, vo2max: null, train_type: 'Recovery' },
-    { label_id: 'a4', name: '力量训练', sport_name: 'Strength Training', sport_type: 5, date: '2026-08-24', distance_m: 0, distance_km: 0, duration_s: 2700, duration_fmt: '0:45:00', avg_pace_s_km: null, pace_fmt: '', avg_hr: null, max_hr: null, avg_cadence: null, calories_kcal: null, training_load: 18.2, vo2max: null, train_type: null },
-  ];
-  return {
-    rows: activities.map(toRow),
-    summary: summaryFrom(activities),
-  };
-}
-
 Page<ActivitiesPageData, ActivitiesPageHandlers>({
   data: {
     statusBarHeight: 0,
@@ -124,12 +111,9 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
   onLoad() {
     const user = userStore.getState().user;
     userId = user?.id ?? '';
-    const demo = demoRows();
     this.setData({
       statusBarHeight: statusBarHeight(),
       contentPaddingTop: contentPaddingTopRpx(),
-      rows: demo.rows,
-      summary: demo.summary,
     });
     this.fetch();
   },
@@ -148,9 +132,8 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     }
     try {
       const res = await getActivities(userId, { limit: 20 });
-      const rows = res.activities.map(toRow);
       this.setData({
-        rows: rows.length ? rows : this.data.rows,
+        rows: res.activities.map(toRow),
         summary: summaryFrom(res.activities),
         loading: false,
       });

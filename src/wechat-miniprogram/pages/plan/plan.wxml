@@ -24,7 +24,7 @@
 
     <!-- 周一到周日训练列表 -->
     <view class="section-title">本周课表</view>
-    <view class="card plan-list">
+    <view wx:if="{{hasPlan}}" class="card plan-list">
       <view
         wx:for="{{days}}"
         wx:key="date"
@@ -53,6 +53,10 @@
           <view wx:else class="plan-day__rest">休息日</view>
         </view>
       </view>
+    </view>
+    <view wx:else class="empty-card">
+      <view class="empty-card__title">本周暂无训练计划</view>
+      <view class="empty-card__sub">生成周计划后可查看</view>
     </view>
   </view>
 </view>

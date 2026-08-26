@@ -36,7 +36,7 @@
 
     <!-- 活动列表 -->
     <view class="section-title">最近活动</view>
-    <view class="card activity-list">
+    <view wx:if="{{rows.length}}" class="card activity-list">
       <view
         wx:for="{{rows}}"
         wx:key="labelId"
@@ -61,6 +61,10 @@
           <view class="activity__load-label">负荷</view>
         </view>
       </view>
+    </view>
+    <view wx:else class="empty-card">
+      <view class="empty-card__title">暂无活动记录</view>
+      <view class="empty-card__sub">完成一次训练后同步展示</view>
     </view>
 
     <button class="load-more" bindtap="onRefresh">刷新</button>

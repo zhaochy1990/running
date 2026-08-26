@@ -15,42 +15,48 @@
 
   <!-- 内容 -->
   <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
-    <!-- 状态 hero -->
-    <view class="card hero-card">
-      <view class="hero-card__badge" style="color: {{formColor}};">{{formZone}}</view>
-      <view class="hero-card__title">{{heroText}}</view>
-      <view class="hero-card__sub">{{heroSub}}</view>
-    </view>
+    <block wx:if="{{hasData}}">
+      <!-- 状态 hero -->
+      <view class="card hero-card">
+        <view class="hero-card__badge" style="color: {{formColor}};">{{formZone}}</view>
+        <view class="hero-card__title">{{heroText}}</view>
+        <view class="hero-card__sub">{{heroSub}}</view>
+      </view>
 
-    <!-- 负荷指标 -->
-    <view class="section-title">训练负荷</view>
-    <view class="card metric-card">
-      <view class="metric-grid">
-        <view wx:for="{{stats}}" wx:key="label" class="metric">
-          <view class="metric__value">{{item.value}}</view>
-          <view class="metric__label">{{item.label}}</view>
-          <view wx:if="{{item.sub}}" class="metric__sub">{{item.sub}}</view>
+      <!-- 负荷指标 -->
+      <view class="section-title">训练负荷</view>
+      <view class="card metric-card">
+        <view class="metric-grid">
+          <view wx:for="{{stats}}" wx:key="label" class="metric">
+            <view class="metric__value">{{item.value}}</view>
+            <view class="metric__label">{{item.label}}</view>
+            <view wx:if="{{item.sub}}" class="metric__sub">{{item.sub}}</view>
+          </view>
         </view>
       </view>
-    </view>
 
-    <!-- form 趋势柱状图 -->
-    <view class="section-title">近况</view>
-    <view class="card trend-card">
-      <view class="trend-card__label">form(急性-慢性) 近 14 天</view>
-      <view class="trend-chart">
-        <view
-          wx:for="{{trend}}"
-          wx:for-item="form"
-          wx:key="index"
-          class="trend-bar {{form >= 0 ? 'trend-bar--pos' : 'trend-bar--neg'}}"
-          style="height: {{form >= 0 ? form * 6 : -form * 6}}%;"
-        ></view>
+      <!-- form 趋势柱状图 -->
+      <view class="section-title">近况</view>
+      <view class="card trend-card">
+        <view class="trend-card__label">form(急性-慢性) 近 14 天</view>
+        <view class="trend-chart">
+          <view
+            wx:for="{{trend}}"
+            wx:for-item="form"
+            wx:key="index"
+            class="trend-bar {{form >= 0 ? 'trend-bar--pos' : 'trend-bar--neg'}}"
+            style="height: {{form >= 0 ? form * 6 : -form * 6}}%;"
+          ></view>
+        </view>
+        <view class="trend-baseline"></view>
       </view>
-      <view class="trend-baseline"></view>
-    </view>
 
-    <!-- 提示 -->
-    <button class="readiness-btn" bindtap="onReadinessTap">查看完整趋势</button>
+      <!-- 提示 -->
+      <button class="readiness-btn" bindtap="onReadinessTap">查看完整趋势</button>
+    </block>
+    <view wx:else class="empty-card">
+      <view class="empty-card__title">暂无健康数据</view>
+      <view class="empty-card__sub">持续训练后更新</view>
+    </view>
   </view>
 </view>
