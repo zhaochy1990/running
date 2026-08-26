@@ -56,7 +56,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Tests (pytest + lint-imports + vitest) run on every PR via
+      # Frontend/Web-BFF tests (vitest) run on every PR via
       # .github/workflows/ci.yml. Master is reached only via merged PR
       # so re-running them here would be wasted minutes — deploy.yml
       # is intentionally build-and-ship only.
