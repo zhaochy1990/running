@@ -18,7 +18,7 @@ Page({
       success: (res) => {
         if (res.confirm) {
           userStore.clear();
-          wx.reLaunch({ url: '/pages/bind/bind' });
+          wx.reLaunch({ url: '/pages/login/login' });
         }
       },
     });
