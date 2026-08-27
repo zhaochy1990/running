@@ -6,9 +6,11 @@
   "scripts": {
     "build:core": "pnpm --filter @stride/contract build && pnpm --filter coach_agent build",
     "build": "npm run clean && tsc",
+    "tsc": "pnpm clean && tsc",
     "build:all": "npm run build:core && npm run build",
     "clean": "node scripts/clean.mjs",
     "start": "node dist/src/server.js",
+    "dev": "pnpm tsc && pnpm start",
     "test": "npm run build:all && node --test dist/tests/*.test.js dist/tests/data/*.test.js dist/tests/persistence/*.test.js",
     "test:deepagent": "npm run build:all && node dist/scripts/test.js",
     "test:masterplan-graph": "npm run build:all && node dist/scripts/test_master_plan.js",

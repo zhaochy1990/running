@@ -1,9 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { isAbsolute, resolve } from "node:path";
 import convict from "convict";
 import { parse } from "yaml";
-import type { MySqlConfig } from "./persistence/mysql.js";
+import type { ApiConfig, LoadApiConfigOptions, MySqlConfig, RawApiConfig } from "./dto/config.js";
 
 const DEFAULT_ENVIRONMENT = "local";
 const BASE_CONFIG_FILE = "coach-api.yaml";
@@ -24,34 +23,6 @@ convict.addFormat({
   },
 });
 
-interface RawApiConfig {
-  api: {
-    host: string;
-    port: number;
-  };
-  auth: {
-    public_key_pem: string;
-    public_key_path: string;
-    issuer: string;
-    audience: string;
-  };
-  stride_database: MySqlConfig;
-  persistence_database: MySqlConfig;
-}
-
-export interface ApiConfig {
-  host: string;
-  port: number;
-  strideDatabase: MySqlConfig;
-  persistenceDatabase: MySqlConfig;
-  auth: { publicKeyPem: string; issuer: string; audience?: string };
-}
-
-export interface LoadApiConfigOptions {
-  cwd?: string;
-  env?: NodeJS.ProcessEnv;
-}
-
 const requiredString = (value: unknown): void => {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error("must be a non-empty string");
@@ -71,13 +42,13 @@ const schema: convict.Schema<RawApiConfig> = {
       doc: "HTTP bind address",
       format: requiredString,
       default: "0.0.0.0",
-      env: "STRIDE_COACH_API_HOST",
+      env: "HOST",
     },
     port: {
       doc: "HTTP listen port",
       format: "active-port",
       default: 8080,
-      env: "STRIDE_COACH_API_PORT",
+      env: "PORT",
     },
   },
   auth: {
@@ -124,20 +95,18 @@ const schema: convict.Schema<RawApiConfig> = {
 };
 
 export function loadApiConfig(options: LoadApiConfigOptions = {}): ApiConfig {
-  const repoRoot = findRepoRoot(options.cwd ?? process.cwd());
   const env = normalizeAuthEnvironment(options.env ?? process.env);
   const environment = env.STRIDE_COACH_ENV ?? env.NODE_ENV ?? DEFAULT_ENVIRONMENT;
   if (!ENVIRONMENT_PATTERN.test(environment)) {
     throw new Error(`Invalid Coach API environment name: ${environment}`);
   }
 
-  const configDir = join(repoRoot, "config");
-  const baseConfigPath = join(configDir, BASE_CONFIG_FILE);
-  if (!existsSync(baseConfigPath)) {
-    throw new Error(`Coach API base config not found: ${baseConfigPath}`);
+  if (!existsSync(BASE_CONFIG_FILE)) {
+    throw new Error(`Coach API base config not found: ${BASE_CONFIG_FILE}`);
   }
-  const environmentConfigPath = join(configDir, `coach-api.${environment}.yaml`);
-  const configFiles = [baseConfigPath];
+
+  const environmentConfigPath = `coach-api.${environment}.yaml`;
+  const configFiles = [BASE_CONFIG_FILE];
   if (existsSync(environmentConfigPath)) {
     configFiles.push(environmentConfigPath);
   }
@@ -146,7 +115,7 @@ export function loadApiConfig(options: LoadApiConfigOptions = {}): ApiConfig {
   config.loadFile(configFiles);
   config.validate({ allowed: "strict" });
   const raw = config.getProperties();
-  const publicKeyPem = resolvePublicKey(raw.auth, repoRoot);
+  const publicKeyPem = resolvePublicKey(raw.auth);
 
   return {
     host: raw.api.host,
@@ -181,38 +150,33 @@ function normalizeAuthEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const normalized = { ...env };
   const hasPem = Boolean(env.STRIDE_AUTH_PUBLIC_KEY_PEM);
   const hasPath = Boolean(env.STRIDE_AUTH_PUBLIC_KEY_PATH);
+
   if (hasPem && hasPath) {
     throw new Error("Set only one of STRIDE_AUTH_PUBLIC_KEY_PEM or STRIDE_AUTH_PUBLIC_KEY_PATH");
   }
-  if (hasPem) normalized.STRIDE_AUTH_PUBLIC_KEY_PATH = "";
-  if (hasPath) normalized.STRIDE_AUTH_PUBLIC_KEY_PEM = "";
+  if (hasPem) {
+    normalized.STRIDE_AUTH_PUBLIC_KEY_PATH = "";
+  }
+  if (hasPath) {
+    normalized.STRIDE_AUTH_PUBLIC_KEY_PEM = "";
+  }
   return normalized;
 }
 
-function resolvePublicKey(auth: RawApiConfig["auth"], repoRoot: string): string {
+function resolvePublicKey(auth: RawApiConfig["auth"]): string {
   if (auth.public_key_pem && auth.public_key_path) {
     throw new Error("Configure only one of auth.public_key_pem or auth.public_key_path");
   }
-  if (auth.public_key_pem) return auth.public_key_pem;
+
+  if (auth.public_key_pem) {
+    return auth.public_key_pem;
+  }
+
   if (!auth.public_key_path) {
     throw new Error("auth.public_key_pem or auth.public_key_path must be configured");
   }
-  const keyPath = isAbsolute(auth.public_key_path) ? auth.public_key_path : resolve(repoRoot, auth.public_key_path);
-  return readFileSync(keyPath, "utf8");
-}
 
-function findRepoRoot(startDir: string): string {
-  const moduleDir = dirname(fileURLToPath(import.meta.url));
-  for (const candidate of [resolve(startDir), moduleDir]) {
-    let currentDir = candidate;
-    while (true) {
-      if (existsSync(join(currentDir, ".root")) && existsSync(join(currentDir, "config"))) {
-        return currentDir;
-      }
-      const parentDir = dirname(currentDir);
-      if (parentDir === currentDir) break;
-      currentDir = parentDir;
-    }
-  }
-  throw new Error(`Unable to find repository root from ${resolve(startDir)}`);
+  const keyPath = isAbsolute(auth.public_key_path) ? auth.public_key_path : resolve(process.cwd(), auth.public_key_path);
+
+  return readFileSync(keyPath, "utf8");
 }

@@ -2,8 +2,77 @@
     // Use IntelliSense to learn about possible attributes.
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    //
+    // coach_agent_api debugging. It is an ESM + TypeScript package compiled by
+    // `tsc` to `dist/` (sourceMap: true in each package's tsconfig), so the
+    // Node debugger resolves `.map` files and you can step through the original
+    // TS. `outFiles` must cover ALL three workspace packages so a breakpoint in
+    // @stride/contract or coach_agent source also binds.
+    //
+    // Prerequisites before F5:
+    //   - Node 24 (`node -v`).
+    //   - MySQL from `src/go/docker-compose.yml` dev profile is up:
+    //       docker compose --profile dev up -d
+    //     The API eagerly connects to MySQL at startup, including for /health.
+    //   - The persistence database `coach_agent` exists (docker dev only creates
+    //     `stride`). Create it once if missing:
+    //       docker exec -i <mysql-container> mysql -uroot -pdevroot -e 'CREATE DATABASE IF NOT EXISTS coach_agent'
+    //   - JWT public key `config/auth-public.pem` (committed; already on disk).
     "version": "0.2.0",
     "configurations": [
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "coach-agent-api: Debug",
+            "program": "${workspaceFolder}/src/coach_agent_api/dist/src/server.js",
+            "cwd": "${workspaceFolder}/src/coach_agent_api",
+            "envFile": "${workspaceFolder}/.vscode/.env.local",
+            "runtimeArgs": [
+                "--enable-source-maps"
+            ],
+            "preLaunchTask": "coach-agent-api: build:all",
+            "sourceMaps": true,
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "outFiles": [
+                "${workspaceFolder}/src/coach_agent_api/dist/**/*.js",
+                "${workspaceFolder}/src/coach_agent/dist/**/*.js",
+                "${workspaceFolder}/src/coach_contract/dist/**/*.js"
+            ],
+            "env": {
+                "STRIDE_COACH_ENV": "local"
+            },
+            "console": "integratedTerminal",
+            "autoAttachChildProcesses": true
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "coach-agent-api: Debug (hot reload)",
+            "program": "${workspaceFolder}/src/coach_agent_api/dist/src/server.js",
+            "cwd": "${workspaceFolder}/src/coach_agent_api",
+            "envFile": "${workspaceFolder}/.vscode/.env.local",
+            "runtimeArgs": [
+                "--enable-source-maps",
+                "--watch"
+            ],
+            "preLaunchTask": "coach-agent-api: tsc watch (all)",
+            "sourceMaps": true,
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "outFiles": [
+                "${workspaceFolder}/src/coach_agent_api/dist/**/*.js",
+                "${workspaceFolder}/src/coach_agent/dist/**/*.js",
+                "${workspaceFolder}/src/coach_contract/dist/**/*.js"
+            ],
+            "env": {
+                "STRIDE_COACH_ENV": "local"
+            },
+            "console": "integratedTerminal",
+            "autoAttachChildProcesses": true
+        },
         {
             "type": "node",
             "request": "launch",
@@ -20,6 +89,26 @@
             ],
             "outFiles": [
                 "${workspaceFolder}/src/coach_agent/dist/**/*.js"
+            ],
+            "sourceMaps": true,
+            "console": "integratedTerminal",
+            "autoAttachChildProcesses": true
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "test:api",
+            "runtimeExecutable": "pnpm",
+            "cwd": "${workspaceFolder}/src/coach_agent_api",
+            "runtimeArgs": [
+                "run",
+                "dev"
+            ],
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "outFiles": [
+                "${workspaceFolder}/src/coach_agent_api/dist/**/*.js"
             ],
             "sourceMaps": true,
             "console": "integratedTerminal",

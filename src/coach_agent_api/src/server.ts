@@ -7,9 +7,15 @@ import { createCoachApiRuntime } from "./runtime.js";
 const logger = pino({ name: "coach-agent-api" });
 const apiConfig = loadApiConfig();
 const runtime = await createCoachApiRuntime(apiConfig, loadConfig());
-const server = serve({ fetch: runtime.app.fetch, hostname: apiConfig.host, port: apiConfig.port }, (info) => {
-  logger.info({ host: info.address, port: info.port }, "coach agent API listening");
-});
+const server = serve(
+  { 
+    fetch: runtime.app.fetch,
+    port: apiConfig.port 
+  },
+  () => {
+    logger.info("Coach Agent API listening on http://127.0.0.1:%d", apiConfig.port);
+  }
+);
 
 let closing = false;
 async function shutdown(signal: string): Promise<void> {

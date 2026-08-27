@@ -68,6 +68,8 @@ tests/e2e/.shots/
 *.json.bak.*
 frontend/.env.local
 frontend/.env.*.local
+.vscode/.env.local
+.vscode/.env.*.local
 frontend/test-results/
 # Anchored: only ignore a top-level `evaluation/` directory (local scratch).
 # Without the leading `/`, this rule eats `src/coach/graphs/evaluation/` and

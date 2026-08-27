@@ -1,8 +1,8 @@
 import { type CoachAgentConfig, createCoachAgent } from "coach_agent";
 import { createApp } from "./app.js";
 import { createJwtVerifier } from "./auth.js";
-import type { ApiConfig } from "./config.js";
 import { MySqlDataProvider } from "./data/mysqlDataProvider.js";
+import type { ApiConfig } from "./dto/config.js";
 import { createPersistence, type Persistence } from "./persistence/index.js";
 
 export interface CoachApiRuntime {

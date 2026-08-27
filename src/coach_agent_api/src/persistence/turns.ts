@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import type { Connection, Pool, RowDataPacket } from "mysql2/promise";
 import mysql from "mysql2/promise";
+import type { MySqlConfig } from "../dto/config.js";
 import { ThreadBusyError, type ThreadLock, type TurnReceipt, type TurnReceiptStore } from "../turns.js";
 import type { MySqlSaver } from "./checkpointer.js";
-import type { MySqlConfig } from "./mysql.js";
 
 export class MySqlTurnReceiptStore implements TurnReceiptStore {
   constructor(

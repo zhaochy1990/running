@@ -1,0 +1,17 @@
+# Local defaults for src/go/docker-compose.yml.
+auth:
+  public_key_path: auth-public.pem
+
+stride_database:
+  host: "127.0.0.1"
+  port: 3306
+  user: "root"
+  password: "root_password"
+  database: "stride"
+
+persistence_database:
+  host: "127.0.0.1"
+  port: 3306
+  user: "root"
+  password: "root_password"
+  database: "coach_agent"

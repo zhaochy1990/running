@@ -1,13 +1,6 @@
 import type { Pool } from "mysql2/promise";
 import mysql from "mysql2/promise";
-
-export interface MySqlConfig {
-  host: string;
-  port: number;
-  user: string;
-  password: string;
-  database: string;
-}
+import type { MySqlConfig } from "../dto/config.js";
 
 /** Reject anything that isn't a plain identifier (defends the DDL interpolation). */
 function assertIdentifier(name: string): string {
