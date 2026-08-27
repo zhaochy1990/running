@@ -22,6 +22,25 @@ test("RS256 verifier returns the authenticated subject", async () => {
   });
 });
 
+test("RS256 verifier accepts any of the configured array audiences", async () => {
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const verifier = await createJwtVerifier({
+    publicKeyPem: await exportSPKI(publicKey),
+    issuer: "auth-service",
+    audience: ["stride-web", "stride-admin"],
+  });
+  const token = await new SignJWT({})
+    .setProtectedHeader({ alg: "RS256" })
+    .setSubject("athlete-2")
+    .setIssuer("auth-service")
+    .setAudience("stride-admin")
+    .setExpirationTime("5m")
+    .sign(privateKey);
+  assert.deepEqual(await verifier.verify(`Bearer ${token}`), {
+    userId: "athlete-2",
+  });
+});
+
 test("verifier rejects missing tokens", async () => {
   const { publicKey } = await generateKeyPair("RS256");
   const verifier = await createJwtVerifier({

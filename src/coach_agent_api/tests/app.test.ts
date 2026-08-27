@@ -3,7 +3,10 @@ import test from "node:test";
 import { Command } from "coach_agent";
 import { createApp } from "../src/app.js";
 import { AuthError } from "../src/auth.js";
-import { fingerprintTurn, ThreadBusyError } from "../src/turns.js";
+import { ThreadBusyError } from "../src/turn/errors.js";
+import { createInMemoryTurnCoordinator } from "../src/turn/index.js";
+
+const fingerprintTurn = (payload: unknown) => createInMemoryTurnCoordinator().getFingerprint(payload);
 
 test("health is public", async () => {
   const app = createApp({
@@ -12,7 +15,7 @@ test("health is public", async () => {
         throw new AuthError("no");
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke() {
         throw new Error("must not invoke");
       },
@@ -30,7 +33,7 @@ test("OpenAPI document describes the live routes and bearer authentication", asy
         throw new Error("must not verify");
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke() {
         throw new Error("must not invoke");
       },
@@ -55,7 +58,7 @@ test("Swagger UI is served for the OpenAPI document", async () => {
         throw new Error("must not verify");
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke() {
         throw new Error("must not invoke");
       },
@@ -82,7 +85,7 @@ test("chat derives user and thread identity from the verified token", async () =
         return { userId: "athlete-1" };
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke(input, config) {
         invocation = { input, config };
         return { messages: [{ type: "ai", content: "训练状态稳定。" }] };
@@ -106,6 +109,8 @@ test("chat derives user and thread identity from the verified token", async () =
   assert.deepEqual(await response.json(), {
     status: "completed",
     message: "训练状态稳定。",
+    session_id: "session-1",
+    client_turn_id: "turn-1",
   });
   assert.deepEqual(invocation, {
     input: { messages: [{ role: "user", content: "最近状态怎么样？" }] },
@@ -142,7 +147,7 @@ test("chat never exposes a tool message as the public answer", async () => {
         return { userId: "athlete-1" };
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke() {
         return {
           messages: [
@@ -168,6 +173,8 @@ test("chat never exposes a tool message as the public answer", async () => {
   assert.deepEqual(await response.json(), {
     status: "completed",
     message: "安全回答",
+    session_id: "session-1",
+    client_turn_id: "turn-1",
   });
 });
 
@@ -179,7 +186,7 @@ test("chat resumes an interrupt without requiring a new message", async () => {
         return { userId: "athlete-1" };
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke(value) {
         input = value;
         return { messages: [{ type: "ai", content: "继续处理" }] };
@@ -211,7 +218,7 @@ test("chat accepts multi-select interrupt answers", async () => {
         return { userId: "athlete-1" };
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke(value) {
         input = value;
         return { messages: [{ type: "ai", content: "继续处理" }] };
@@ -242,7 +249,7 @@ test("chat fails closed without a valid bearer token", async () => {
         throw new AuthError("missing");
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke() {
         throw new Error("must not invoke");
       },
@@ -263,7 +270,7 @@ test("chat validates the public request contract before invoking Coach", async (
         return { userId: "athlete-1" };
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke() {
         called = true;
         return {};
@@ -294,7 +301,7 @@ test("chat replays an identical client turn and conflicts on changed input", asy
         return { userId: "athlete-1" };
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke() {
         calls += 1;
         return { messages: [{ type: "ai", content: `answer-${calls}` }] };
@@ -331,7 +338,7 @@ test("chat carries validated target and review context into request identity and
         return { userId: "athlete-1" };
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke(input, config) {
         invocation = { input, config };
         return { messages: [{ type: "ai", content: "scoped" }] };
@@ -382,7 +389,7 @@ test("chat rejects review context that does not match the target week", async ()
         return { userId: "athlete-1" };
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke() {
         throw new Error("must not invoke");
       },
@@ -416,12 +423,15 @@ test("chat returns an explicit retryable response when the thread is busy", asyn
         return { userId: "athlete-1" };
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke() {
         throw new Error("must not invoke");
       },
     },
     turnCoordinator: {
+      getFingerprint() {
+        return "fingerprint";
+      },
       async run() {
         throw new ThreadBusyError("busy");
       },
@@ -451,7 +461,7 @@ test("chat rejects empty interrupt answers", async () => {
         return { userId: "athlete-1" };
       },
     },
-    coach: {
+    coachInvoker: {
       async invoke() {
         throw new Error("must not invoke");
       },

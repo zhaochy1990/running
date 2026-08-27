@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { InMemoryStore, MemorySaver } from "@langchain/langgraph";
 import type { BaseCheckpointSaver, BaseStore } from "@langchain/langgraph-checkpoint";
 import { getLogger } from "@stride/common";
-import { createDeepAgent, FilesystemBackend } from "deepagents";
+import { createDeepAgent, FilesystemBackend, type DeepAgent } from "deepagents";
 import type { ToolRuntime } from "langchain";
 import { z } from "zod/v4";
 import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
@@ -57,7 +57,11 @@ export interface CoachAgentOptions {
   store?: BaseStore;
 }
 
-export async function createCoachAgent(dataProvider: DataProvider, config: CoachAgentConfig, options: CoachAgentOptions = {}) {
+export interface CoachAgent {
+  invoke(input: unknown, invocationConfig: Record<string, unknown>): Promise<unknown>;
+}
+
+export async function createCoachAgent(dataProvider: DataProvider, config: CoachAgentConfig, options: CoachAgentOptions = {}): Promise<DeepAgent> {
   const modelConfig = getAgentConfig(config, "orchestrator");
   const model = buildResponsesModel(modelConfig);
 
@@ -70,7 +74,7 @@ export async function createCoachAgent(dataProvider: DataProvider, config: Coach
 
   logger.info(`creating orchestrator with model ${modelConfig.name} (${modelConfig.model})`);
 
-  return createDeepAgent({
+  const agent = createDeepAgent({
     model,
     systemPrompt: ORCHESTRATOR_PROMPT,
     tools: memoryTools,
@@ -83,4 +87,7 @@ export async function createCoachAgent(dataProvider: DataProvider, config: Coach
     checkpointer: options.checkpointer ?? new MemorySaver(),
     store: options.store ?? new InMemoryStore(),
   });
+
+  // TODO: fix DeepAgent typing to allow custom context and tools
+  return agent as unknown as DeepAgent;
 }

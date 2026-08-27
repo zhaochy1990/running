@@ -4,6 +4,7 @@ import { createJwtVerifier } from "./auth.js";
 import { MySqlDataProvider } from "./data/mysqlDataProvider.js";
 import type { ApiConfig } from "./dto/config.js";
 import { createPersistence, type Persistence } from "./persistence/index.js";
+import { CoachInvokerImpl } from "./coach/coachInvoker.js";
 
 export interface CoachApiRuntime {
   app: ReturnType<typeof createApp>;
@@ -16,21 +17,17 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
   let persistence: Persistence | undefined;
   try {
     persistence = await createPersistence(apiConfig.persistenceDatabase);
-    const activePersistence = persistence;
-    const coach = await createCoachAgent(dataProvider, coachConfig, {
-      checkpointer: activePersistence.checkpointer,
-      store: activePersistence.store,
-    });
-    const jwtVerifier = await createJwtVerifier(apiConfig.auth);
+    const coachInvoker = new CoachInvokerImpl(dataProvider, coachConfig);
+    await coachInvoker.initialize();
+
+    const jwtVerifier = createJwtVerifier(apiConfig.auth);
     return {
       app: createApp({
         jwtVerifier,
-        turnCoordinator: activePersistence.turnCoordinator,
-        coach: {
-          invoke: (input, invocationConfig) => coach.invoke(input as never, invocationConfig as never),
-        },
+        turnCoordinator: persistence.turnCoordinator,
+        coachInvoker: coachInvoker,
       }),
-      close: () => Promise.all([dataProvider.close(), activePersistence.close()]).then(() => undefined),
+      close: () => Promise.all([dataProvider.close(), persistence?.close()]).then(() => undefined),
     };
   } catch (error) {
     await Promise.allSettled([dataProvider.close(), ...(persistence ? [persistence.close()] : [])]);

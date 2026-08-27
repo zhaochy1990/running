@@ -18,7 +18,7 @@ export interface ApiConfig {
   port: number;
   strideDatabase: MySqlConfig;
   persistenceDatabase: MySqlConfig;
-  auth: { publicKeyPem: string; issuer: string; audience?: string };
+  auth: { publicKeyPem: string; issuer: string; audience?: string | string[] };
 }
 
 export interface LoadApiConfigOptions {

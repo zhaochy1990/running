@@ -161,19 +161,23 @@ export const OPENAPI_DOCUMENT = {
       },
       CompletedChatResponse: {
         type: "object",
-        required: ["status", "message"],
+        required: ["status", "message", "session_id", "client_turn_id"],
         properties: {
           status: { type: "string", const: "completed" },
           message: { type: "string" },
+          session_id: { $ref: "#/components/schemas/TurnIdentifier" },
+          client_turn_id: { $ref: "#/components/schemas/TurnIdentifier" },
         },
         additionalProperties: false,
       },
       NeedsInputChatResponse: {
         type: "object",
-        required: ["status", "interrupt"],
+        required: ["status", "interrupt", "session_id", "client_turn_id"],
         properties: {
           status: { type: "string", const: "needs_input" },
           interrupt: {},
+          session_id: { $ref: "#/components/schemas/TurnIdentifier" },
+          client_turn_id: { $ref: "#/components/schemas/TurnIdentifier" },
         },
         additionalProperties: false,
       },

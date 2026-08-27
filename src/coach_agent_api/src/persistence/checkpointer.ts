@@ -14,7 +14,7 @@ import type { ChannelVersions, Checkpoint, CheckpointListOptions, CheckpointMeta
 import { BaseCheckpointSaver, copyCheckpoint, getCheckpointId, WRITES_IDX_MAP } from "coach_agent";
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import { tryToPublicResponse } from "../publicResponse.js";
-import type { TurnRecovery } from "../turns.js";
+import type { TurnRecovery } from "../turn/receiptStore.js";
 
 export class MySqlSaver extends BaseCheckpointSaver {
   constructor(private readonly pool: Pool) {

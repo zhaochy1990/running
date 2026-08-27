@@ -1,6 +1,6 @@
 import type { Pool } from "mysql2/promise";
 import type { MySqlConfig } from "../dto/config.js";
-import { CoordinatedTurnRunner } from "../turns.js";
+import { CoordinatedTurnRunner } from "../turn/coordinator.js";
 import { MySqlSaver } from "./checkpointer.js";
 import { createPool, ensureDatabase } from "./mysql.js";
 import { MySqlStore } from "./store.js";

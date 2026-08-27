@@ -1,8 +1,8 @@
 import { swaggerUI } from "@hono/swagger-ui";
-import type { Hono } from "hono";
+import type { Env, Hono } from "hono";
 import { OPENAPI_DOCUMENT } from "../openapi.js";
 
-export function registerSwaggerRoutes(app: Hono): void {
+export function registerSwaggerRoutes<E extends Env>(app: Hono<E>): void {
   app.get("/openapi.json", (context) => context.json(OPENAPI_DOCUMENT));
   app.get(
     "/docs",

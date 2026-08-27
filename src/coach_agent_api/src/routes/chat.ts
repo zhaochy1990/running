@@ -3,41 +3,31 @@ import { shanghaiDay } from "@stride/contract";
 import { CoachTurnScope, Command } from "coach_agent";
 import type { Hono } from "hono";
 import type { CoachInvoker } from "../app.js";
-import type { JwtVerifier } from "../auth.js";
-import { AuthError } from "../auth.js";
+import type { AuthEnv } from "../auth.js";
+import type { ChatRequest } from "../dto/chat.js";
 import { toPublicResponse } from "../publicResponse.js";
-import { fingerprintTurn, ThreadBusyError, TurnConflictError, type TurnCoordinator } from "../turns.js";
+import type { TurnCoordinator } from "../turn/coordinator.js";
+import { ThreadBusyError, TurnConflictError } from "../turn/errors.js";
 
-const logger = getLogger("coach-agent-api:chat-routes");
-
+const logger = getLogger("routes/chat");
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 export function registerChatRoutes(
-  app: Hono,
+  app: Hono<AuthEnv>,
   dependencies: {
-    jwtVerifier: JwtVerifier;
     coach: CoachInvoker;
     turnCoordinator: TurnCoordinator;
   },
 ): void {
   app.post("/api/users/me/coach/chat", async (context) => {
-    logger.info('123');
-    let identity: { userId: string };
-    try {
-      identity = await dependencies.jwtVerifier.verify(context.req.header("authorization"));
-    } catch (error) {
-      if (error instanceof AuthError) {
-        context.header("WWW-Authenticate", "Bearer");
-        return context.json({ error: "unauthorized" }, 401);
-      }
-      throw error;
-    }
-
+    const userId = context.get("userId");
     const body = await readChatRequest(context.req.raw);
+    logger.info(body, `chat request from user ${userId}`);
+
     if (!body.ok) return context.json({ error: body.error }, 400);
-    const threadId = `${identity.userId}:coach:${body.value.sessionId}`;
+    const threadId = `${userId}:coach:${body.value.sessionId}`;
     try {
-      const fingerprint = fingerprintTurn(body.value);
+      const fingerprint = dependencies.turnCoordinator.getFingerprint(body.value);
       const response = await dependencies.turnCoordinator.run(
         {
           threadId,
@@ -54,7 +44,7 @@ export function registerChatRoutes(
               : new Command({ resume: body.value.resume });
           const result = await dependencies.coach.invoke(input, {
             context: {
-              userId: identity.userId,
+              userId,
               asof: shanghaiDay(new Date().toISOString()),
               ...(body.value.target ? { target: body.value.target } : {}),
               ...(body.value.reviewContext ? { reviewContext: body.value.reviewContext } : {}),
@@ -71,7 +61,7 @@ export function registerChatRoutes(
           return toPublicResponse(result);
         },
       );
-      return context.json(response);
+      return context.json({ ...response, session_id: body.value.sessionId, client_turn_id: body.value.clientTurnId });
     } catch (error) {
       if (error instanceof TurnConflictError) {
         return context.json({ error: "client_turn_id_conflict" }, 409);
@@ -85,22 +75,17 @@ export function registerChatRoutes(
   });
 }
 
-type ChatRequest = {
-  sessionId: string;
-  clientTurnId: string;
-  message?: string;
-  resume?: string | string[];
-  target?: Record<string, unknown>;
-  reviewContext?: Record<string, unknown>;
-};
 async function readChatRequest(request: Request): Promise<{ ok: true; value: ChatRequest } | { ok: false; error: string }> {
   let value: unknown;
   try {
     value = await request.json();
-  } catch {
+  } catch (e) {
+    logger.info("invalid json in request body, error: %s", (e as Error).name);
     return { ok: false, error: "invalid_json" };
   }
+
   if (!isRecord(value)) return { ok: false, error: "invalid_request" };
+
   const sessionId = value.session_id;
   const clientTurnId = value.client_turn_id;
   const message = value.message;

@@ -1,4 +1,8 @@
-import { importSPKI, jwtVerify } from "jose";
+import { getLogger } from "@stride/common";
+import type { MiddlewareHandler } from "hono";
+import { verify } from "hono/jwt";
+
+const logger = getLogger("auth");
 
 export interface JwtVerifier {
   verify(authorization: string | undefined): Promise<{ userId: string }>;
@@ -6,23 +10,54 @@ export interface JwtVerifier {
 
 export class AuthError extends Error {}
 
-export async function createJwtVerifier(options: { publicKeyPem: string; issuer: string; audience?: string }): Promise<JwtVerifier> {
-  const publicKey = await importSPKI(options.publicKeyPem, "RS256");
+/** Context variables available to routes behind the auth middleware. */
+export type AuthEnv = {
+  Variables: {
+    userId: string;
+  };
+};
+
+/**
+ * Hono middleware that verifies the bearer token before the handler runs.
+ * On success it stores the authenticated `userId` on the context. On failure it
+ * responds 401 with `WWW-Authenticate: Bearer` and short-circuits, so the
+ * route handler never runs without a valid identity.
+ */
+export function createAuthMiddleware(jwtVerifier: JwtVerifier): MiddlewareHandler<AuthEnv> {
+  return async (context, next) => {
+    try {
+      const identity = await jwtVerifier.verify(context.req.header("authorization"));
+      context.set("userId", identity.userId);
+    } catch (error) {
+      if (error instanceof AuthError) {
+        context.header("WWW-Authenticate", "Bearer");
+        return context.json({ error: "unauthorized" }, 401);
+      }
+      throw error;
+    }
+    await next();
+  };
+}
+
+export function createJwtVerifier(options: { publicKeyPem: string; issuer: string; audience?: string | string[] }): JwtVerifier {
   return {
     async verify(authorization) {
       const token = bearerToken(authorization);
       try {
-        const { payload } = await jwtVerify(token, publicKey, {
-          algorithms: ["RS256"],
-          issuer: options.issuer,
-          ...(options.audience ? { audience: options.audience } : {}),
+        const payload = await verify(token, options.publicKeyPem, {
+          alg: "RS256",
+          iss: options.issuer,
+          ...(options.audience ? { aud: options.audience } : {}),
         });
         if (typeof payload.sub !== "string" || payload.sub.length === 0) {
           throw new AuthError("token is missing sub");
         }
         return { userId: payload.sub };
-      } catch (error) {
-        if (error instanceof AuthError) throw error;
+      } catch (error: unknown) {
+        logger.info("invalid bearer token: %s", (error as Error).name);
+        if (error instanceof AuthError) {
+          throw error;
+        }
         throw new AuthError("invalid bearer token");
       }
     },

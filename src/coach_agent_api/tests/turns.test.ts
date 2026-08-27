@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  CoordinatedTurnRunner,
-  fingerprintTurn,
-  type ThreadLock,
-  TurnConflictError,
-  type TurnReceipt,
-  type TurnReceiptStore,
-  type TurnRecovery,
-} from "../src/turns.js";
+import { CoordinatedTurnRunner } from "../src/turn/coordinator.js";
+import { TurnConflictError } from "../src/turn/errors.js";
+import type { TurnReceipt } from "../src/turn/receipt.js";
+import type { ThreadLock, TurnReceiptStore, TurnRecovery } from "../src/turn/receiptStore.js";
 
 class MemoryReceipts implements TurnReceiptStore {
   readonly values = new Map<string, TurnReceipt>();
@@ -69,11 +64,12 @@ test("a recovered checkpoint with a changed request conflicts", async () => {
 });
 
 test("fingerprints are stable across object key order", () => {
-  const left = fingerprintTurn({
+  const runner = new CoordinatedTurnRunner(new MemoryReceipts(), new MemoryThreadLock());
+  const left = runner.getFingerprint({
     target: { kind: "week", folder: "W1" },
     message: "same",
   });
-  const right = fingerprintTurn({
+  const right = runner.getFingerprint({
     message: "same",
     target: { folder: "W1", kind: "week" },
   });
