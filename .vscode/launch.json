@@ -49,54 +49,6 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "coach-agent-api: Debug (hot reload)",
-            "program": "${workspaceFolder}/src/coach_agent_api/dist/src/server.js",
-            "cwd": "${workspaceFolder}/src/coach_agent_api",
-            "envFile": "${workspaceFolder}/.vscode/.env.local",
-            "runtimeArgs": [
-                "--enable-source-maps",
-                "--watch"
-            ],
-            "preLaunchTask": "coach-agent-api: tsc watch (all)",
-            "sourceMaps": true,
-            "skipFiles": [
-                "<node_internals>/**"
-            ],
-            "outFiles": [
-                "${workspaceFolder}/src/coach_agent_api/dist/**/*.js",
-                "${workspaceFolder}/src/coach_agent/dist/**/*.js",
-                "${workspaceFolder}/src/coach_contract/dist/**/*.js"
-            ],
-            "env": {
-                "STRIDE_COACH_ENV": "local"
-            },
-            "console": "integratedTerminal",
-            "autoAttachChildProcesses": true
-        },
-        {
-            "type": "node",
-            "request": "launch",
-            "name": "test:weekly-plan-graph",
-            "runtimeExecutable": "npm",
-            "cwd": "${workspaceFolder}/src/coach_agent",
-            "runtimeArgs": [
-                "run",
-                "test:weekly-plan-graph",
-                "zhaochaoyi"
-            ],
-            "skipFiles": [
-                "<node_internals>/**"
-            ],
-            "outFiles": [
-                "${workspaceFolder}/src/coach_agent/dist/**/*.js"
-            ],
-            "sourceMaps": true,
-            "console": "integratedTerminal",
-            "autoAttachChildProcesses": true
-        },
-        {
-            "type": "node",
-            "request": "launch",
             "name": "test:api",
             "runtimeExecutable": "pnpm",
             "cwd": "${workspaceFolder}/src/coach_agent_api",
