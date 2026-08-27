@@ -1,4 +1,5 @@
 import { StateSchema } from "@langchain/langgraph";
+import { getLogger } from "@stride/common";
 import {
   PHASE_NAMES,
   type PhaseName,
@@ -17,7 +18,6 @@ import {
 import { z } from "zod/v4";
 import type { CoachAgentConfig } from "../../config/config.js";
 import type { WeeklyPlanContext, WeeklyPlanContextProvider } from "../../data/weeklyPlanContextProvider.js";
-import { getLogger } from "../../utils/logger.js";
 import { simulateWeeklyPlanLoad } from "./simulation.js";
 import type { WeeklyPlanLLM, WeeklyPlanLlmInput } from "./weeklyPlanNode.js";
 

@@ -1,4 +1,4 @@
-import { getLogger, type Logger } from "./logger.js";
+import { getLogger, type Logger } from "@stride/common";
 
 const perfLogger = getLogger("performance");
 

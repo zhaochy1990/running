@@ -1,7 +1,7 @@
 import { SystemMessage } from "@langchain/core/messages";
 import { Command, END, type GraphNode } from "@langchain/langgraph";
+import { getLogger } from "@stride/common";
 import type { ModelConfig } from "../config/config.js";
-import { getLogger } from "../utils/logger.js";
 import { buildResponsesModel } from "./common.js";
 import { type AgentsState, IntentClassificationSchema, type IntentLabel } from "./state.js";
 

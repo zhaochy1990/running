@@ -1,4 +1,5 @@
 import { END, ReducedValue, Send, StateSchema } from "@langchain/langgraph";
+import { getLogger } from "@stride/common";
 import {
   addDays,
   adjudicateMasterPlanReviews,
@@ -24,7 +25,6 @@ import {
   StrategyJudgmentSchema,
 } from "@stride/contract";
 import { z } from "zod/v4";
-import { getLogger } from "../../utils/logger.js";
 import { measureExecutionTimeAsync } from "../../utils/performance.js";
 import {
   type AssessmentFacts,

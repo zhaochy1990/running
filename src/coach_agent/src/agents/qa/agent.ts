@@ -1,10 +1,10 @@
+import { getLogger } from "@stride/common";
 import type { ModelConfig } from "../../config/config.js";
 import type { DataProvider } from "../../data/dataProvider.js";
 import { createActivitiesTools } from "../../tools/activities.js";
 import { createRaceTools } from "../../tools/races.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
 import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
-import { getLogger } from "../../utils/logger.js";
 import { buildResponsesModel } from "../common.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { createTurnScopeMiddleware } from "../turnScope.js";

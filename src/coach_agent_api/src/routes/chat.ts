@@ -1,3 +1,4 @@
+import { getLogger } from "@stride/common";
 import { shanghaiDay } from "@stride/contract";
 import { CoachTurnScope, Command } from "coach_agent";
 import type { Hono } from "hono";
@@ -7,6 +8,7 @@ import { AuthError } from "../auth.js";
 import { toPublicResponse } from "../publicResponse.js";
 import { fingerprintTurn, ThreadBusyError, TurnConflictError, type TurnCoordinator } from "../turns.js";
 
+const logger = getLogger("coach-agent-api:chat-routes");
 
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
@@ -19,6 +21,7 @@ export function registerChatRoutes(
   },
 ): void {
   app.post("/api/users/me/coach/chat", async (context) => {
+    logger.info('123');
     let identity: { userId: string };
     try {
       identity = await dependencies.jwtVerifier.verify(context.req.header("authorization"));

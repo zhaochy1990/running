@@ -14,6 +14,8 @@
       "src/coach_agent_api/scripts/**/*.{js,mjs}",
       "src/coach_contract/src/**/*.{js,ts,json}",
       "src/coach_contract/scripts/**/*.{js,mjs}",
+      "src/stride-common/src/**/*.{js,ts,json}",
+      "src/stride-common/scripts/**/*.{js,mjs}",
       "src/stitch_design/cli.ts",
       "src/stitch_design/foundation-audit.mjs",
       "!!.worktrees"

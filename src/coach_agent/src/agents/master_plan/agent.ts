@@ -1,3 +1,4 @@
+import { getLogger } from "@stride/common";
 import { MasterPlanDirectResponseSchema } from "@stride/contract";
 import type { ModelConfig } from "../../config/config.js";
 import type { DataProvider } from "../../data/dataProvider.js";
@@ -9,7 +10,6 @@ import { createPlanTools } from "../../tools/plan.js";
 import { createRaceTools } from "../../tools/races.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
 import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
-import { getLogger } from "../../utils/logger.js";
 import { buildResponsesModel } from "../common.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { MASTER_PLAN_PROMPT, MASTER_PLAN_READ_PROMPT } from "../prompts.js";

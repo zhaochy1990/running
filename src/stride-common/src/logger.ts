@@ -1,5 +1,5 @@
 /**
- * Structured logging for the coach agent, backed by pino.
+ * Structured logging for STRIDE Node services, backed by pino.
  *
  * A single root logger is configured once (level, redaction, dev pretty-print);
  * every module takes a namespaced child via {@link getLogger}, mirroring the

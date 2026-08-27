@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getLogger } from "@stride/common";
 import { parse } from "yaml";
-import { getLogger } from "../utils/logger.js";
 import { deepMerge } from "./deepMerge.js";
 import type { CoachAgentConfig, ModelConfig, PartialCoachAgentConfig } from "./types.js";
 

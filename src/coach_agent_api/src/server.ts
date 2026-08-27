@@ -8,13 +8,13 @@ const logger = pino({ name: "coach-agent-api" });
 const apiConfig = loadApiConfig();
 const runtime = await createCoachApiRuntime(apiConfig, loadConfig());
 const server = serve(
-  { 
+  {
     fetch: runtime.app.fetch,
-    port: apiConfig.port 
+    port: apiConfig.port,
   },
   () => {
     logger.info("Coach Agent API listening on http://127.0.0.1:%d", apiConfig.port);
-  }
+  },
 );
 
 let closing = false;

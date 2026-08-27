@@ -19,8 +19,8 @@
  * {@link createLoggingMiddleware} to tag each scope distinctly.
  */
 
+import { getLogger } from "@stride/common";
 import { createMiddleware } from "langchain";
-import { getLogger } from "../utils/logger.js";
 
 /** Best-effort tool name from a bound tool (ClientTool has `name`; ServerTool is opaque). */
 function toolName(tool: unknown): string {
