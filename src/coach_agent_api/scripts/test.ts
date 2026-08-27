@@ -12,13 +12,16 @@ import {
 } from "coach_agent";
 import { loadApiConfig } from "../src/config.js";
 import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";
+import { shanghaiDay } from '@stride/contract';
 
 const config = loadConfig();
 const store = MySqlDataProvider.create(loadApiConfig().strideDatabase);
 const agent = await createCoachAgent(store, config);
 
 const userId = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
-const asof = "2026-08-16";
+const asof = shanghaiDay(new Date().toISOString());
+
+console.log("ASOF:", asof.toString(), "USER_ID:", userId);
 // const userId = "11c2e582-5a85-4633-81d2-df7e37ad7b48";
 
 // await agent.invoke({
@@ -132,10 +135,12 @@ async function askWithHITL(content: string, thread: string): Promise<void> {
 // );
 
 // Test race goal: 2026-10-18 西安马拉松，目标 2:50:00，全马；每周 6 天训练，单次不超过 3 小时，无伤病。
-await askWithHITL(
-  "帮我生成一个新的赛季训练计划，目标是 2026-10-18 西安马拉松 2:50:00。全马；每周可训练 6 天，单次不超过 3 小时，目前无伤病。",
-  "session-master-plan",
-);
+// await askWithHITL(
+//   "帮我生成一个新的赛季训练计划，目标是 2026-10-18 西安马拉松 2:50:00。全马；每周可训练 6 天，单次不超过 3 小时，目前无伤病。",
+//   "session-master-plan",
+// );
+
+await askWithHITL("今天是哪天？", "123");
 
 await rl.close();
 await store.close();

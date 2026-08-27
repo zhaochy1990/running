@@ -11,7 +11,6 @@ const app = createApp({
     async invoke() {
       return { messages: [{ type: "ai", content: "SMOKE_OK" }] };
     },
-    async initialize() {}
   },
 });
 const server = createServer(async (request, response) => {

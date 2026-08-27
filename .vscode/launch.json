@@ -23,38 +23,32 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "coach-agent-api: Debug",
-            "program": "${workspaceFolder}/src/coach_agent_api/dist/src/server.js",
-            "cwd": "${workspaceFolder}/src/coach_agent_api",
-            "envFile": "${workspaceFolder}/.vscode/.env.local",
-            "runtimeArgs": [
-                "--enable-source-maps"
-            ],
-            "preLaunchTask": "coach-agent-api: build:all",
-            "sourceMaps": true,
-            "skipFiles": [
-                "<node_internals>/**"
-            ],
-            "outFiles": [
-                "${workspaceFolder}/src/coach_agent_api/dist/**/*.js",
-                "${workspaceFolder}/src/coach_agent/dist/**/*.js",
-                "${workspaceFolder}/src/coach_contract/dist/**/*.js"
-            ],
-            "env": {
-                "STRIDE_COACH_ENV": "local"
-            },
-            "console": "integratedTerminal",
-            "autoAttachChildProcesses": true
-        },
-        {
-            "type": "node",
-            "request": "launch",
             "name": "test:api",
             "runtimeExecutable": "pnpm",
             "cwd": "${workspaceFolder}/src/coach_agent_api",
             "runtimeArgs": [
                 "run",
                 "dev"
+            ],
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "outFiles": [
+                "${workspaceFolder}/src/coach_agent_api/dist/**/*.js"
+            ],
+            "sourceMaps": true,
+            "console": "integratedTerminal",
+            "autoAttachChildProcesses": true
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "tests:coach_agent",
+            "runtimeExecutable": "pnpm",
+            "cwd": "${workspaceFolder}/src/coach_agent_api",
+            "runtimeArgs": [
+                "run",
+                "test:deepagent"
             ],
             "skipFiles": [
                 "<node_internals>/**"

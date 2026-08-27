@@ -17,7 +17,7 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
   let persistence: Persistence | undefined;
   try {
     persistence = await createPersistence(apiConfig.persistenceDatabase);
-    const coachInvoker = new CoachInvokerImpl(dataProvider, coachConfig);
+    const coachInvoker = new CoachInvokerImpl(dataProvider, coachConfig, persistence);
     await coachInvoker.initialize();
 
     const jwtVerifier = createJwtVerifier(apiConfig.auth);

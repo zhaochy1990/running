@@ -1,14 +1,13 @@
-import type { CoachAgentConfig, DataProvider, createCoachAgent } from "coach_agent";
+import { createCoachAgent, type CoachAgentConfig, type DataProvider } from "coach_agent";
 import { type DeepAgent } from "deepagents";
 import type { Persistence } from "../persistence/index.js";
 
 export interface CoachInvoker {
-  initialize(): Promise<void>;
   invoke(input: unknown, config: Record<string, unknown>): Promise<unknown>;
 }
 
 export class CoachInvokerImpl implements CoachInvoker {
-  private agent: DeepAgent;
+  private agent!: DeepAgent;
   private readonly dataProvider: DataProvider;
   private readonly coachConfig: CoachAgentConfig;
   private readonly persistence: Persistence;
@@ -25,8 +24,8 @@ export class CoachInvokerImpl implements CoachInvoker {
 
   public async initialize(): Promise<void> {
     const coach = await createCoachAgent(this.dataProvider, this.coachConfig, {
-      checkpointer: this.activePersistence.checkpointer,
-      store: this.activePersistence.store,
+      checkpointer: this.persistence.checkpointer,
+      store: this.persistence.store,
     });
     this.agent = coach;
   }

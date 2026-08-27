@@ -2,7 +2,7 @@ import { getLogger } from "@stride/common";
 import { shanghaiDay } from "@stride/contract";
 import { CoachTurnScope, Command } from "coach_agent";
 import type { Hono } from "hono";
-import type { CoachInvoker } from "../app.js";
+import type { CoachInvoker } from "../coach/coachInvoker.js";
 import type { AuthEnv } from "../auth.js";
 import type { ChatRequest } from "../dto/chat.js";
 import { toPublicResponse } from "../publicResponse.js";
