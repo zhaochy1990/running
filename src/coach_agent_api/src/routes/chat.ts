@@ -7,6 +7,7 @@ import { AuthError } from "../auth.js";
 import { toPublicResponse } from "../publicResponse.js";
 import { fingerprintTurn, ThreadBusyError, TurnConflictError, type TurnCoordinator } from "../turns.js";
 
+
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
 export function registerChatRoutes(
