@@ -5,7 +5,8 @@ export interface Activity {
   label_id: string;
   name: string | null;
   sport_type: number;
-  sport_name: string;
+  /** 可为 null：后端（Go/Python）对个别活动（如未标注运动类型的历史数据）返回 null */
+  sport_name: string | null;
   /** 上海本地 YYYY-MM-DD（后端在序列化前已转上海时区） */
   date: string;
   distance_m: number;
@@ -23,9 +24,18 @@ export interface Activity {
   train_type: string | null;
 }
 
+export interface ActivityMonthlySummary {
+  activity_count: number;
+  total_run_km: number;
+  run_duration_s: number;
+  duration_s: number;
+}
+
 export interface ActivitiesListResponse {
   total: number;
   offset: number;
   limit: number;
   activities: Activity[];
+  /** 本页可见各上海月份的聚合（键为 YYYY-MM），可选——旧后端可能不返回 */
+  monthly_summaries?: Record<string, ActivityMonthlySummary>;
 }

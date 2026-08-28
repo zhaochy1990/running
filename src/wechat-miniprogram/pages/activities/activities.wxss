@@ -207,6 +207,30 @@
   margin-top: 2rpx;
 }
 
+/* ---------- 空态 ---------- */
+
+.empty-card {
+  padding: 64rpx 32rpx;
+  border: 1rpx dashed rgba(255, 255, 255, 0.12);
+  border-radius: 24rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 48rpx;
+}
+
+.empty-card__title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.empty-card__sub {
+  font-size: 24rpx;
+  color: #9c9c9d;
+}
+
 /* ---------- 刷新按钮 ---------- */
 
 .load-more {

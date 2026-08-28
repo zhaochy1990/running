@@ -54,6 +54,7 @@
             <text wx:if="{{item.distanceKm !== '—'}}">{{item.distanceKm}} km</text>
             <text wx:if="{{item.duration !== '—'}}"> · {{item.duration}}</text>
             <text wx:if="{{item.pace !== '—'}}"> · {{item.pace}}</text>
+            <text wx:if="{{item.avgHr !== '—'}}"> · {{item.avgHr}} bpm</text>
           </view>
         </view>
         <view class="activity__right">
