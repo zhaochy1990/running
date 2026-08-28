@@ -13,6 +13,7 @@
     "dev": "pnpm tsc && pnpm start",
     "test": "npm run build:all && node --test dist/tests/*.test.js dist/tests/data/*.test.js dist/tests/persistence/*.test.js",
     "test:deepagent": "pnpm -r tsc && node dist/scripts/test.js",
+    "test:deepagent:qa": "pnpm -r tsc && node dist/scripts/deep_agent_qa.js",
     "test:masterplan-graph": "npm run build:all && node dist/scripts/test_master_plan.js",
     "test:race-analysis": "npm run build:all && node dist/scripts/test_race_analysis.js",
     "test:weekly-plan": "npm run build:all && node dist/scripts/test_weekly_plan.js",

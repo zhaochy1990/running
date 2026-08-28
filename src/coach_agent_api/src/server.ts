@@ -1,5 +1,5 @@
 import { serve } from "@hono/node-server";
-import { loadConfig } from "coach_agent";
+import { flushLangfuse, loadConfig } from "coach_agent";
 import pino from "pino";
 import { loadApiConfig } from "./config.js";
 import { createCoachApiRuntime } from "./runtime.js";
@@ -27,6 +27,8 @@ async function shutdown(signal: string): Promise<void> {
       server.close((error) => (error ? reject(error) : resolve()));
     });
     await runtime.close();
+    // Flush any buffered Langfuse spans before the process exits.
+    await flushLangfuse();
   } catch (error) {
     logger.error({ error, signal }, "shutdown failed");
     process.exitCode = 1;

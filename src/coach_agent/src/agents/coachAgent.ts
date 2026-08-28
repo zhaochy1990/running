@@ -3,12 +3,13 @@ import { fileURLToPath } from "node:url";
 import { InMemoryStore, MemorySaver } from "@langchain/langgraph";
 import type { BaseCheckpointSaver, BaseStore } from "@langchain/langgraph-checkpoint";
 import { getLogger } from "@stride/common";
-import { createDeepAgent, FilesystemBackend, type DeepAgent } from "deepagents";
+import { createDeepAgent, type DeepAgent, FilesystemBackend } from "deepagents";
 import type { ToolRuntime } from "langchain";
 import { z } from "zod/v4";
 import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
 import { buildResponsesModel } from "./common.js";
+import { withLangfuseInvokeTracing } from "./langfuse.js";
 import { getMasterPlanGeneratorSubagent, getMasterPlanSubagent } from "./master_plan/agent.js";
 import { createPlanPassthroughMiddleware } from "./masterPlanPassthrough.js";
 import { memoryTools } from "./memory.js";
@@ -89,5 +90,6 @@ export async function createCoachAgent(dataProvider: DataProvider, config: Coach
   });
 
   // TODO: fix DeepAgent typing to allow custom context and tools
-  return agent as unknown as DeepAgent;
+  // Wrap `invoke` so Langfuse traces every turn (orchestrator + subagents).
+  return withLangfuseInvokeTracing(agent as never) as unknown as DeepAgent;
 }
