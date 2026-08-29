@@ -147,6 +147,54 @@ type DailyTrainingLoad struct {
 
 func (DailyTrainingLoad) TableName() string { return "daily_training_load" }
 
+// AbilitySnapshot is one long-form ability dimension row for a Shanghai day
+// (table "ability_snapshot"). Mirrors the Python SQLite column set plus a user_id
+// tenant key. level ∈ {meta,L2,L3,L4}, dimension ∈ {model_version,total,aerobic,
+// lt,vo2max,endurance,economy,recovery,composite,marathon_*_s,hm_*_s}.
+type AbilitySnapshot struct {
+	ID                  uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	UserID              string    `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_ability,priority:1"`
+	Date                string    `gorm:"column:date;type:varchar(16);not null;uniqueIndex:uq_ability,priority:2"`
+	Level               string    `gorm:"column:level;type:varchar(8);not null;uniqueIndex:uq_ability,priority:3"`
+	Dimension           string    `gorm:"column:dimension;type:varchar(32);not null;uniqueIndex:uq_ability,priority:4"`
+	Value               *float64  `gorm:"column:value"`
+	EvidenceActivityIDs *string   `gorm:"column:evidence_activity_ids;type:longtext"`
+	ComputedAt          time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
+}
+
+func (AbilitySnapshot) TableName() string { return "ability_snapshot" }
+
+// ActivityAbility is one activity's L1 quality + contribution (table
+// "activity_ability"). PK (user_id, label_id).
+type ActivityAbility struct {
+	UserID       string    `gorm:"column:user_id;type:char(36);primaryKey"`
+	LabelID      string    `gorm:"column:label_id;type:varchar(191);primaryKey"`
+	L1Quality    *float64  `gorm:"column:l1_quality"`
+	L1Breakdown  *string   `gorm:"column:l1_breakdown;type:longtext"`
+	Contribution *string   `gorm:"column:contribution;type:longtext"`
+	ComputedAt   time.Time `gorm:"column:computed_at;type:datetime(6);not null"`
+}
+
+func (ActivityAbility) TableName() string { return "activity_ability" }
+
+// Vo2MaxPB is one per-race-type best VDOT PB row (table "vo2max_pb"), the
+// PB-memory channel input for compute_l3_vo2max. Unique per (race_type, label_id)
+// like Python; the reader picks the highest vdot per race_type.
+type Vo2MaxPB struct {
+	ID        uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	UserID    string    `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_vo2max_pb,priority:1"`
+	RaceType  string    `gorm:"column:race_type;type:varchar(16);not null;uniqueIndex:uq_vo2max_pb,priority:2"`
+	DistanceM *float64  `gorm:"column:distance_m"`
+	DurationS *float64  `gorm:"column:duration_s"`
+	Vdot      *float64  `gorm:"column:vdot"`
+	PBDate    string    `gorm:"column:pb_date;type:varchar(16)"`
+	LabelID   string    `gorm:"column:label_id;type:varchar(191);not null;uniqueIndex:uq_vo2max_pb,priority:3"`
+	EvenPaced bool      `gorm:"column:even_paced;not null;default:true"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:datetime(6);not null"`
+}
+
+func (Vo2MaxPB) TableName() string { return "vo2max_pb" }
+
 // computeModels is the set of onboarding-compute derived models, migrated
 // alongside the watch models by AutoMigrateWatch.
 func computeModels() []any {
@@ -157,5 +205,8 @@ func computeModels() []any {
 		&PersonalBest{},
 		&ActivityTrainingLoad{},
 		&DailyTrainingLoad{},
+		&AbilitySnapshot{},
+		&ActivityAbility{},
+		&Vo2MaxPB{},
 	}
 }

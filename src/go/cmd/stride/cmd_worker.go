@@ -197,4 +197,5 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	reg.MustRegister(racehandler.BackfillJobType, racehandler.NewBackfill(store, raceDetector, raceConcurrency))
 	reg.MustRegister(compute.CalibrationJobType, compute.NewCalibration(store))
 	reg.MustRegister(compute.ComputeJobType, compute.NewCompute(store))
+	reg.MustRegister(compute.AbilityJobType, compute.NewAbility(store))
 }

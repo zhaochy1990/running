@@ -30,6 +30,10 @@ const (
 	// + the latest calibration. Mode-aware (full|incremental). Internal-only: it is
 	// the compute step of the data_sync / onboarding pipelines.
 	JobTypeCompute = "compute"
+	// JobTypeAbility computes + persists the 4-layer ability snapshot for a
+	// Shanghai day. Mode-aware (full|backfill). Internal-only: it is a step of the
+	// sync pipelines (ability failure must not fail the sync).
+	JobTypeAbility = "ability"
 	// JobTypeRaceDetection classifies synced HM/FM-distance outdoor/track runs.
 	// It is optional inside sync pipelines: terminal failure remains observable
 	// on the step while the pipeline advances to deterministic compute.
@@ -117,6 +121,13 @@ func Jobs() []JobSpec {
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"mode":{"type":"string","enum":["full","incremental"],"default":"full"},"label_ids":{"type":"array","items":{"type":"string"},"description":"Incremental only: the activities this sync produced."}},"additionalProperties":true}`),
 			ExampleInput:  json.RawMessage(`{"mode":"incremental","label_ids":["a1b2"]}`),
 		},
+		{
+			Type:          JobTypeAbility,
+			UserInitiable: false,
+			Description:   "Compute + persist the 4-layer ability snapshot (L1 quality / L2 freshness / L3 six dimensions / L4 composite + marathon/half estimates) for the subject athlete. Mode-aware: full computes the current Shanghai day; backfill seeds the last `days` days. Internal-only.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"mode":{"type":"string","enum":["full","backfill"],"default":"full"},"days":{"type":"integer","minimum":1,"maximum":365},"ref_date":{"type":"string","format":"date"}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"mode":"backfill","days":180}`),
+		},
 	}
 }
 
@@ -137,6 +148,7 @@ func Pipelines() []PipelineSpec {
 					{Name: "race_detection", JobType: JobTypeRaceDetection, ContinueOnFailure: true},
 					{Name: "calibration", JobType: JobTypeCalibration},
 					{Name: "compute", JobType: JobTypeCompute},
+					{Name: "ability", JobType: JobTypeAbility, ContinueOnFailure: true},
 				},
 			},
 			UserInitiable: true,
@@ -151,6 +163,7 @@ func Pipelines() []PipelineSpec {
 					{Name: "sync", JobType: JobTypeWatchSync},
 					{Name: "race_detection", JobType: JobTypeRaceDetection, ContinueOnFailure: true},
 					{Name: "compute", JobType: JobTypeCompute},
+					{Name: "ability", JobType: JobTypeAbility, ContinueOnFailure: true},
 				},
 			},
 			UserInitiable: true,
