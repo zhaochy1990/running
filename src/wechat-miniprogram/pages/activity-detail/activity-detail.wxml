@@ -1,0 +1,159 @@
+<view class="page">
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">活动详情</view>
+        <view class="top-bar__subtitle">{{header.sportLabel}}</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <!-- 内容 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- 加载态 -->
+    <view wx:if="{{loading}}" class="state-card">
+      <view class="spinner"></view>
+      <view class="state-card__text">加载中…</view>
+    </view>
+
+    <!-- 未找到 -->
+    <view wx:elif="{{notFound}}" class="state-card">
+      <view class="state-card__title">未找到该训练记录</view>
+      <view class="state-card__text">可能已删除或同步发生错误</view>
+      <view class="state-card__btn" bindtap="onBack">返回</view>
+    </view>
+
+    <block wx:else>
+      <!-- 头图卡片 -->
+      <view class="card header-card">
+        <view class="header-card__tags">
+          <view class="tag tag--sport">{{header.sportLabel}}</view>
+          <view wx:if="{{header.trainTypeLabel}}" class="tag tag--type">{{header.trainTypeLabel}}</view>
+        </view>
+        <view class="header-card__title">{{header.name}}<text wx:if="{{header.feelEmoji}}" class="header-card__emoji">{{header.feelEmoji}}</text></view>
+        <view class="header-card__date">{{header.dateLabel}}</view>
+      </view>
+
+      <!-- 主指标 -->
+      <view wx:if="{{metrics.length}}" class="card">
+        <view class="card-title">核心数据</view>
+        <view class="metric-grid">
+          <view wx:for="{{metrics}}" wx:key="label" class="metric">
+            <view class="metric__value" style="{{item.color ? 'color:' + item.color : ''}}">{{item.value}}<text wx:if="{{item.unit}}" class="metric__unit">{{item.unit}}</text></view>
+            <view class="metric__label">{{item.label}}</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 次指标 -->
+      <view wx:if="{{secondary.length}}" class="card">
+        <view class="card-title">更多数据</view>
+        <view class="metric-grid metric-grid--secondary">
+          <view wx:for="{{secondary}}" wx:key="label" class="metric">
+            <view class="metric__value metric__value--secondary">{{item.value}}</view>
+            <view class="metric__label">{{item.label}}</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- STRIDE 客观负荷 -->
+      <view wx:if="{{strideLoad}}" class="card">
+        <view class="card-title">STRIDE 客观负荷</view>
+        <view class="load-panel">
+          <view class="load-panel__badge {{strideLoad.included ? 'load-panel__badge--in' : 'load-panel__badge--out'}}">
+            {{strideLoad.included ? '计入PMC' : '未计入PMC'}}
+          </view>
+          <view class="load-grid">
+            <view wx:for="{{strideLoad.items}}" wx:key="label" class="load-item">
+              <view class="load-item__value">{{item.value}}</view>
+              <view class="load-item__label">{{item.label}}</view>
+            </view>
+          </view>
+          <view class="load-reasons">
+            <view wx:for="{{strideLoad.reasons}}" wx:key="*this" class="load-reason">{{item}}</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 区间分布 -->
+      <view wx:if="{{hasZones}}" class="card">
+        <view class="card-title">区间分布</view>
+        <block wx:if="{{hrZones.length}}">
+          <view class="zone-group-title">心率区间</view>
+          <view wx:for="{{hrZones}}" wx:key="key" class="zone-row">
+            <view class="zone-row__label">{{item.label}}</view>
+            <view class="zone-row__bar"><view class="zone-row__fill" style="width: {{item.percent}}%;"></view></view>
+            <view class="zone-row__duration">{{item.duration}}</view>
+          </view>
+        </block>
+        <block wx:if="{{paceZones.length}}">
+          <view class="zone-group-title" wx:if="{{hrZones.length}}">配速区间</view>
+          <view wx:for="{{paceZones}}" wx:key="key" class="zone-row">
+            <view class="zone-row__label">{{item.label}}</view>
+            <view class="zone-row__bar"><view class="zone-row__fill" style="width: {{item.percent}}%;"></view></view>
+            <view class="zone-row__duration">{{item.duration}}</view>
+          </view>
+        </block>
+      </view>
+
+      <!-- 分段 / 圈速 -->
+      <view wx:if="{{hasSegments}}" class="card">
+        <view class="card-title">{{isStrength ? '动作组' : '分段数据'}}</view>
+        <block wx:if="{{!isStrength}}">
+          <view class="lap-head">
+            <view class="lap-head__cell lap-head__cell--idx">#</view>
+            <view class="lap-head__cell">距离</view>
+            <view class="lap-head__cell">配速</view>
+            <view class="lap-head__cell">心率</view>
+            <view class="lap-head__cell">用时</view>
+          </view>
+          <view wx:for="{{laps}}" wx:key="index" class="lap-row">
+            <view class="lap-row__cell lap-row__cell--idx">{{item.index}}</view>
+            <view class="lap-row__cell">{{item.distanceKm}}</view>
+            <view class="lap-row__cell">{{item.pace}}</view>
+            <view class="lap-row__cell">{{item.hr}}</view>
+            <view class="lap-row__cell">{{item.duration}}</view>
+          </view>
+        </block>
+        <block wx:else>
+          <view wx:for="{{segments}}" wx:key="key" class="segment-row">
+            <view class="segment-row__name">{{item.name}}</view>
+            <view class="segment-row__meta">
+              <text>{{item.sets}} 组</text>
+              <text> · {{item.duration}}</text>
+              <text wx:if="{{item.avgHr !== '—'}}"> · {{item.avgHr}} bpm</text>
+            </view>
+          </view>
+        </block>
+      </view>
+
+      <!-- 训练反馈 -->
+      <view wx:if="{{sportNote}}" class="card">
+        <view class="card-title">训练反馈{{header.feelEmoji ? ' ' + header.feelEmoji : ''}}</view>
+        <view class="note-text">{{sportNote}}</view>
+      </view>
+
+      <!-- 教练简评 -->
+      <view wx:if="{{hasCommentary}}" class="card">
+        <view class="card-title">教练简评</view>
+        <view class="note-text">{{commentary}}</view>
+      </view>
+
+      <!-- 天气 -->
+      <view wx:if="{{weather.length}}" class="card">
+        <view class="card-title">环境</view>
+        <view class="weather-row">
+          <view wx:for="{{weather}}" wx:key="label" class="weather-item">
+            <view class="weather-item__label">{{item.label}}</view>
+            <view class="weather-item__value">{{item.value}}</view>
+          </view>
+        </view>
+      </view>
+    </block>
+  </view>
+</view>

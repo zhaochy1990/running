@@ -1,7 +1,7 @@
-// 活动列表服务层。
+// 活动列表 + 详情服务层。
 
 import { http } from './request';
-import type { ActivitiesListResponse } from '../types/activity';
+import type { ActivitiesListResponse, ActivityDetailResponse } from '../types/activity';
 
 /** 拉取用户活动列表（默认最近 20 条）。 */
 export function getActivities(
@@ -15,5 +15,17 @@ export function getActivities(
   const qs = parts.length > 0 ? `?${parts.join('&')}` : '';
   return http.get<ActivitiesListResponse>(
     `/api/${encodeURIComponent(userId)}/activities${qs}`,
+  );
+}
+
+/** 拉取单个活动详情（默认不含 timeseries；图表需要时传 includeTimeseries）。 */
+export function getActivityDetail(
+  userId: string,
+  labelId: string,
+  opts: { includeTimeseries?: boolean } = {},
+): Promise<ActivityDetailResponse> {
+  const qs = opts.includeTimeseries ? '?include=timeseries' : '';
+  return http.get<ActivityDetailResponse>(
+    `/api/${encodeURIComponent(userId)}/activities/${encodeURIComponent(labelId)}${qs}`,
   );
 }

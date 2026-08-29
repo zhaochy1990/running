@@ -1,6 +1,6 @@
 import { getActivities } from '../../services/activities';
 import { fmtDurationShort, fmtKm, fmtPace, fmtDose } from '../../utils/format';
-import { shanghaiToday } from '../../utils/date';
+import { shanghaiToday, shanghaiWeekdayLabel } from '../../utils/date';
 import { userStore } from '../../store/index';
 import type { Activity, ActivitiesListResponse } from '../../types/activity';
 
@@ -82,13 +82,15 @@ function displayName(a: Activity): string {
   return s || '活动';
 }
 
-// 「2026-08-28」→「8月28日」；date 缺失/非法时兜底返回原串或空串，绝不抛错。
+// 「2026-08-28」/「2026-08-28T08:30:00+08:00」→「8月28日 周三」；缺失/非法时兜底返回原串或空串，绝不抛错。
 function formatDateLabel(ymd: string | null | undefined): string {
-  if (!ymd || ymd.length < 10) return ymd || '';
-  const m = Number(ymd.slice(5, 7));
-  const d = Number(ymd.slice(8));
-  if (!Number.isFinite(m) || !Number.isFinite(d)) return ymd.slice(0, 10);
-  return `${m}月${d}日`;
+  if (!ymd) return '';
+  const datePart = String(ymd).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
+  const m = Number(datePart.slice(5, 7));
+  const d = Number(datePart.slice(8));
+  const weekday = shanghaiWeekdayLabel(datePart);
+  return weekday ? `${m}月${d}日 ${weekday}` : `${m}月${d}日`;
 }
 
 function toRow(a: Activity): ActivityRow {
@@ -166,7 +168,7 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
   onShow() {
     const tabBar = this.getTabBar && this.getTabBar();
     if (tabBar) {
-      tabBar.setData({ selected: 2 });
+      tabBar.setData({ selected: 1 });
     }
   },
 
@@ -198,8 +200,11 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     this.fetch();
   },
 
-  onActivityTap() {
-    // 活动详情页（pages/activity-detail）尚未实现，先占位。
-    wx.showToast({ title: '详情页建设中', icon: 'none' });
+  onActivityTap(e: WechatMiniprogram.TouchEvent) {
+    const labelId = e.currentTarget.dataset.id as string;
+    if (!labelId) return;
+    wx.navigateTo({
+      url: `/pages/activity-detail/activity-detail?labelId=${encodeURIComponent(labelId)}`,
+    });
   },
 });

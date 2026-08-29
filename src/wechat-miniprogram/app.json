@@ -4,6 +4,7 @@
     "pages/login/login",
     "pages/plan/plan",
     "pages/activities/activities",
+    "pages/activity-detail/activity-detail",
     "pages/health/health",
     "pages/coach/coach",
     "pages/profile/profile"
@@ -24,11 +25,7 @@
     "list": [
       {
         "pagePath": "pages/index/index",
-        "text": "今日"
-      },
-      {
-        "pagePath": "pages/plan/plan",
-        "text": "计划"
+        "text": "训练"
       },
       {
         "pagePath": "pages/activities/activities",
@@ -37,6 +34,10 @@
       {
         "pagePath": "pages/coach/coach",
         "text": "教练"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我"
       }
     ]
   },

@@ -17,9 +17,10 @@ function normalizePaceZones(zones: Zone[]): Zone[] {
   const merged: Zone = {
     zone_type: "pace",
     zone_index: 4,
-    range_min: z5.range_min, // faster end (smaller ms/km)
-    range_max: z4.range_max, // slower end
-    range_unit: "pace",
+    // Go watch / COROS 数据约定：range_min=较慢边（更大 ms/km）、range_max=较快边（更小 ms/km）。
+    range_min: z4.range_min, // 较慢边（更大 ms/km）
+    range_max: z5.range_max, // 较快边（更小 ms/km）
+    range_unit: "ms/km",
     duration_s: z4.duration_s + z5.duration_s,
     percent: z4.percent + z5.percent,
   };
@@ -61,22 +62,33 @@ function formatPaceRange(zone: Zone, zones: Zone[]): string {
     const s = Math.round(msPerKm / 1000);
     return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
   };
-  // range_min is the faster edge (smaller ms/km), range_max the slower edge.
-  // STRIDE-derived zones leave one edge open: recovery has no slow bound (→
-  // slower than its fast edge), the fastest zone no fast bound.
+  // 仅高驰以 ms/km（或 Web 内部 `pace` 标记，同为 ms/km 量级)表达的配速区间做换算；
+  // 佳明等其他表不套用（其 pace 若上报为 m/s，误除以 1000 会错）。
+  if (zone.range_unit !== "ms/km" && zone.range_unit !== "pace") {
+    const lo = zone.range_min != null ? `${zone.range_min}` : "";
+    const hi = zone.range_max != null ? `${zone.range_max}` : "";
+    if (lo && hi) return `${lo}–${hi}`;
+    if (lo) return `< ${lo}`;
+    if (hi) return `> ${hi}`;
+    return "";
+  }
+  // STRIDE-derived zones leave one edge open (recovery no slow bound, fastest no
+  // fast bound). Provider rows carry both bounds.
   if (zone.range_min == null && zone.range_max == null) return "";
   if (zone.range_min == null) return `< ${toPace(zone.range_max!)}`;
   if (zone.range_max == null) return `> ${toPace(zone.range_min)}`;
+  // Go watch / COROS 数据约定：range_min=较慢边（更大 ms/km）、range_max=较快边（更小 ms/km）。
+  // 开放边都用区间自己的慢边（range_min）。
   const minPace = toPace(zone.range_min);
   const maxPace = toPace(zone.range_max);
   const maxIdx = Math.max(...zones.map((z) => z.zone_index));
   if (zone.zone_index === 1) {
     const z2 = zones.find((z) => z.zone_index === 2);
     if (z2?.range_min != null && Math.round(z2.range_min) === Math.round(zone.range_min)) {
-      return `> ${maxPace}`;
+      return `> ${minPace}`; // 恢复区开放慢边
     }
   }
-  if (zone.zone_index === maxIdx) return `< ${minPace}`;
+  if (zone.zone_index === maxIdx) return `< ${minPace}`; // 最快区开放快边
   return `${minPace}–${maxPace}`;
 }
 

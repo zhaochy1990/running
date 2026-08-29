@@ -1,0 +1,431 @@
+/* ============================================================
+   活动详情页 —— 深色 STRIDE 主题（与活动列表 / 今日页一致）
+   ============================================================ */
+
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #07080a;
+  display: flex;
+  flex-direction: column;
+}
+
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: #07080a;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.top-bar__inner {
+  height: 128rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.top-bar__btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top-bar__btn--spacer {
+  width: 88rpx;
+}
+
+.top-bar__icon {
+  width: 44rpx;
+  height: 44rpx;
+}
+
+/* 返回箭头：复用 chevron_right，旋转 180° 指向左 */
+.top-bar__icon--back {
+  transform: rotate(180deg);
+}
+
+.top-bar__title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-bar__title {
+  font-size: 40rpx;
+  line-height: 48rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: #ffb3af;
+}
+
+.top-bar__subtitle {
+  font-size: 24rpx;
+  line-height: 32rpx;
+  color: rgba(225, 191, 188, 0.8);
+}
+
+.content {
+  padding: 0 40rpx calc(60rpx + env(safe-area-inset-bottom));
+}
+
+.card {
+  background: #101111;
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-radius: 24rpx;
+  padding: 32rpx;
+  margin-bottom: 32rpx;
+}
+
+.card-title {
+  font-size: 26rpx;
+  line-height: 40rpx;
+  font-weight: 600;
+  letter-spacing: 1rpx;
+  color: #9c9c9d;
+  text-transform: uppercase;
+  margin-bottom: 24rpx;
+}
+
+/* ---------- 状态卡 ---------- */
+
+.state-card {
+  padding: 96rpx 32rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.spinner {
+  width: 56rpx;
+  height: 56rpx;
+  border: 4rpx solid rgba(255, 179, 175, 0.3);
+  border-top-color: #ffb3af;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.state-card__title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.state-card__text {
+  font-size: 24rpx;
+  color: #9c9c9d;
+}
+
+.state-card__btn {
+  margin-top: 16rpx;
+  padding: 16rpx 48rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  border-radius: 999rpx;
+  color: #e3e2e5;
+  font-size: 26rpx;
+}
+
+/* ---------- 头图卡 ---------- */
+
+.header-card__tags {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+}
+
+.tag {
+  font-size: 20rpx;
+  font-weight: 500;
+  padding: 6rpx 18rpx;
+  border-radius: 999rpx;
+}
+
+.tag--sport {
+  color: #00e676;
+  background: rgba(0, 230, 118, 0.12);
+}
+
+.tag--type {
+  color: #ff6d00;
+  background: rgba(255, 109, 0, 0.12);
+}
+
+.header-card__title {
+  font-size: 40rpx;
+  line-height: 56rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.header-card__emoji {
+  font-size: 32rpx;
+}
+
+.header-card__date {
+  font-size: 24rpx;
+  color: #9c9c9d;
+  margin-top: 8rpx;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 指标网格 ---------- */
+
+.metric-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20rpx 24rpx;
+}
+
+.metric {
+  flex: 0 0 calc(33.33% - 16rpx);
+  min-width: 0;
+}
+
+.metric__value {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metric__value--secondary {
+  font-size: 30rpx;
+  color: #e3e2e5;
+}
+
+.metric__unit {
+  font-size: 22rpx;
+  font-weight: 400;
+  color: #9c9c9d;
+  margin-left: 2rpx;
+}
+
+.metric__label {
+  font-size: 22rpx;
+  color: #9c9c9d;
+  margin-top: 4rpx;
+}
+
+/* ---------- STRIDE 负荷 ---------- */
+
+.load-panel__badge {
+  align-self: flex-start;
+  font-size: 20rpx;
+  padding: 6rpx 18rpx;
+  border-radius: 999rpx;
+  margin-bottom: 20rpx;
+}
+
+.load-panel__badge--in {
+  color: #00e676;
+  background: rgba(0, 230, 118, 0.12);
+}
+
+.load-panel__badge--out {
+  color: #ffb300;
+  background: rgba(255, 179, 0, 0.12);
+}
+
+.load-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx 24rpx;
+}
+
+.load-item {
+  flex: 0 0 calc(33.33% - 16rpx);
+  min-width: 0;
+}
+
+.load-item__value {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+  font-variant-numeric: tabular-nums;
+}
+
+.load-item__label {
+  font-size: 20rpx;
+  color: #9c9c9d;
+  margin-top: 4rpx;
+}
+
+.load-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 20rpx;
+}
+
+.load-reason {
+  font-size: 20rpx;
+  color: #9c9c9d;
+  padding: 6rpx 16rpx;
+  border-radius: 12rpx;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ---------- 区间分布 ---------- */
+
+.zone-group-title {
+  font-size: 24rpx;
+  color: #c3c2c5;
+  font-weight: 600;
+  margin: 16rpx 0 16rpx;
+}
+
+.zone-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.zone-row:last-child {
+  margin-bottom: 0;
+}
+
+.zone-row__label {
+  width: 180rpx;
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: #e3e2e5;
+  font-variant-numeric: tabular-nums;
+}
+
+.zone-row__bar {
+  flex: 1;
+  height: 16rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.zone-row__fill {
+  height: 100%;
+  border-radius: 999rpx;
+  background: #ffb3af;
+}
+
+.zone-row__duration {
+  width: 120rpx;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 22rpx;
+  color: #9c9c9d;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 分段 / 圈速 ---------- */
+
+.lap-head,
+.lap-row {
+  display: flex;
+  align-items: center;
+  padding: 12rpx 0;
+}
+
+.lap-head {
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 8rpx;
+}
+
+.lap-head__cell,
+.lap-row__cell {
+  flex: 1;
+  text-align: center;
+  font-size: 22rpx;
+  min-width: 0;
+}
+
+.lap-head__cell {
+  color: #9c9c9d;
+  font-weight: 500;
+}
+
+.lap-row__cell {
+  color: #e3e2e5;
+  font-variant-numeric: tabular-nums;
+}
+
+.lap-head__cell--idx,
+.lap-row__cell--idx {
+  flex: 0 0 60rpx;
+}
+
+.segment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+}
+
+.segment-row:last-child {
+  border-bottom: none;
+}
+
+.segment-row__name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.segment-row__meta {
+  font-size: 24rpx;
+  color: #9c9c9d;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* ---------- 备注 ---------- */
+
+.note-text {
+  font-size: 28rpx;
+  line-height: 44rpx;
+  color: #d5d4d7;
+  white-space: pre-wrap;
+}
+
+/* ---------- 天气 ---------- */
+
+.weather-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx 40rpx;
+}
+
+.weather-item__label {
+  font-size: 20rpx;
+  color: #9c9c9d;
+  text-transform: uppercase;
+  letter-spacing: 1rpx;
+}
+
+.weather-item__value {
+  font-size: 28rpx;
+  color: #e3e2e5;
+  margin-top: 4rpx;
+}

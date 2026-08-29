@@ -28,6 +28,7 @@ import {
   shanghaiWeekStart,
   weekFolderName,
   shanghaiToday,
+  shanghaiWeekdayLabel,
   weekSubtitle,
 } from '../utils/date';
 import { fmtDose, fmtHms, fmtKm } from '../utils/format';
@@ -231,8 +232,6 @@ export function buildTodayView(plan: WeeklyPlanDetail | null): TodayView {
 // 计划页视图模型
 // ---------------------------------------------------------------------------
 
-const CN_WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-
 function planSessionRow(s: PlannedSession): PlanSessionRowView {
   const title =
     (s.spec && 'name' in s.spec && s.spec.name) ||
@@ -283,13 +282,13 @@ export function buildPlanWeekView(plan: WeeklyPlanDetail | null, anchorYmd: stri
     byDate.get(s.date)!.push(s);
   }
 
-  const days: PlanDayRowView[] = weekDays.map((w, i) => {
+  const days: PlanDayRowView[] = weekDays.map((w) => {
     const daySessions = (byDate.get(w.date) ?? []).slice().sort(
       (a, b) => a.session_index - b.session_index,
     );
     return {
       date: w.date,
-      weekdayLabel: CN_WEEKDAYS[i],
+      weekdayLabel: shanghaiWeekdayLabel(w.date),
       dayNumber: w.dayNumber,
       isToday: w.isToday,
       sessions: daySessions.map(planSessionRow),

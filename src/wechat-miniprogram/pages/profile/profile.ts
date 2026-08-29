@@ -66,6 +66,11 @@ Page<ProfilePageData, ProfilePageHandlers>({
   },
 
   onShow() {
+    const tabBar = this.getTabBar && this.getTabBar();
+    if (tabBar) {
+      tabBar.setData({ selected: 3 });
+    }
+
     const state = userStore.getState();
     const user = state.user;
     this.setData({

@@ -48,6 +48,15 @@ function shanghaiDowOfYmd(ymd: string): number {
   return epochToShanghaiDow(shanghaiYmdToEpoch(ymd));
 }
 
+// 按 dow（0=周日 … 6=周六）索引的中文星期标签。
+const CN_WEEKDAYS_BY_DOW = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+/** 上海 YYYY-MM-DD → 中文星期（'周日' … '周六'）；非法输入返回 ''。 */
+export function shanghaiWeekdayLabel(ymd: string | null | undefined): string {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return '';
+  return CN_WEEKDAYS_BY_DOW[shanghaiDowOfYmd(ymd)];
+}
+
 /** 给定上海 YYYY-MM-DD，返回该周周一（ISO 周起点）的 YYYY-MM-DD。 */
 export function shanghaiWeekStart(ymd: string): string {
   const dow = shanghaiDowOfYmd(ymd); // 0=Sun … 6=Sat
@@ -94,4 +103,21 @@ export function weekSubtitle(weekStartYmd: string): string {
   const year = weekStartYmd.slice(0, 4);
   const month = Number(weekStartYmd.slice(5, 7));
   return `(${year}年${month}月)`;
+}
+
+/**
+ * 后端返回的活动 `date` 是上海 ISO 时间串（如 `2026-08-28T08:30:00+08:00`），
+ * 也兼容 `YYYY-MM-DD`。取其上海日期部分 `YYYY-MM-DD`，非法则返回空串。
+ */
+export function shanghaiDateFromIso(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const datePart = iso.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : '';
+}
+
+/** 取上海 ISO 时间串的时刻部分 `HH:MM`（如 `08:30`），非法/缺失则返回空串。 */
+export function shanghaiTimeFromIso(iso: string | null | undefined): string {
+  if (!iso || iso.length < 16) return '';
+  const time = iso.slice(11, 16);
+  return /^\d{2}:\d{2}$/.test(time) ? time : '';
 }
