@@ -90,8 +90,8 @@ func ComputeContribution(priorL3, posteriorL3 map[string]float64) map[string]flo
 	return out
 }
 
-// scaledBoost mirrors ability._scaled_boost.
-func scaledBoost(trainingS, maxBoost, floorS, rangeS float64) float64 {
+// ScaledBoost mirrors ability._scaled_boost.
+func ScaledBoost(trainingS, maxBoost, floorS, rangeS float64) float64 {
 	if trainingS <= 0 || trainingS <= floorS {
 		return 0.0
 	}

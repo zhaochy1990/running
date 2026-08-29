@@ -66,13 +66,13 @@ func TestVdotFromScoreRoundTrip(t *testing.T) {
 
 // TestScaledBoostEndpoints verifies the linear race-day boost decay.
 func TestScaledBoostEndpoints(t *testing.T) {
-	if got := scaledBoost(7200, RaceDayBoostMax, TheoreticalMinMarathonS, BoostNormalizeRangeS); got != 0 {
+	if got := ScaledBoost(7200, RaceDayBoostMax, TheoreticalMinMarathonS, BoostNormalizeRangeS); got != 0 {
 		t.Errorf("at theoretical min, boost %v, want 0", got)
 	}
-	if got := scaledBoost(14400, RaceDayBoostMax, TheoreticalMinMarathonS, BoostNormalizeRangeS); math.Abs(got-RaceDayBoostMax) > 1e-9 {
+	if got := ScaledBoost(14400, RaceDayBoostMax, TheoreticalMinMarathonS, BoostNormalizeRangeS); math.Abs(got-RaceDayBoostMax) > 1e-9 {
 		t.Errorf("at max range, boost %v, want %v", got, RaceDayBoostMax)
 	}
-	if got := scaledBoost(0, RaceDayBoostMax, TheoreticalMinMarathonS, BoostNormalizeRangeS); got != 0 {
+	if got := ScaledBoost(0, RaceDayBoostMax, TheoreticalMinMarathonS, BoostNormalizeRangeS); got != 0 {
 		t.Errorf("training_s 0, boost %v, want 0", got)
 	}
 }

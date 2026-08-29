@@ -52,6 +52,7 @@ func ComputeL3Aerobic(activities []Activity, targetHR int) (float64, []string, m
 		p := *pace
 		if bestPace == nil || p < *bestPace {
 			bestPace = &p
+			bestLabel = "" // reset on every pace improvement (Python sets None)
 			if a.LabelID != "" {
 				bestLabel = a.LabelID
 			}
@@ -151,17 +152,31 @@ func bestSustainedPaceSKm(laps []Lap, minSeconds float64, sportType int) (*float
 	durs := make([]float64, n)
 	dists := make([]float64, n)
 	isRest := make([]bool, n)
+	// Legacy heuristic when sport unknown (Python sport_type None path): one
+	// global km_scale over all dists, mirroring _best_sustained_pace_s_km.
+	kmScale := false
+	if sportType == 0 {
+		allSmall := true
+		anySet := false
+		for _, lp := range laps {
+			if lp.DistanceM > 0 {
+				anySet = true
+				if lp.DistanceM >= 200 {
+					allSmall = false
+					break
+				}
+			}
+		}
+		kmScale = anySet && allSmall
+	}
 	for i, lp := range laps {
 		durs[i] = lp.DurationS
 		if sportType != 0 {
 			dists[i] = dstToKm(lp.DistanceM, float64(sportType))
+		} else if kmScale {
+			dists[i] = lp.DistanceM
 		} else {
-			// Legacy heuristic when sport unknown (Python sport_type None path).
-			if lp.DistanceM > 0 && lp.DistanceM < 200 {
-				dists[i] = lp.DistanceM
-			} else {
-				dists[i] = lp.DistanceM / 1000.0
-			}
+			dists[i] = lp.DistanceM / 1000.0
 		}
 		isRest[i] = isRestLap(lp)
 	}

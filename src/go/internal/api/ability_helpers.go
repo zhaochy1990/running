@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"math"
 	"sort"
 
 	"github.com/zhaochy1990/stride/internal/compute/ability"
@@ -72,9 +73,8 @@ func pivotSnapshotRows(rows []storage.AbilitySnapshot, date string) map[string]a
 		l3[k] = map[string]any{"score": nil, "evidence": []string{}}
 	}
 	var l4Composite, l2Total *float64
-	var marathonS, hmS map[string]int
-	marathonS = map[string]int{"training_s": 0, "race_s": 0, "best_case_s": 0}
-	hmS = map[string]int{"training_s": 0, "race_s": 0, "best_case_s": 0}
+	var marTrain, marRace, marBest *int
+	var hmTrain, hmRace, hmBest *int
 	var evidence []string
 
 	for _, r := range dayRows {
@@ -88,41 +88,28 @@ func pivotSnapshotRows(rows []storage.AbilitySnapshot, date string) map[string]a
 		if r.Level == "L2" && r.Dimension == "total" {
 			l2Total = r.Value
 		}
+		intVal := func(v *float64) *int {
+			if v == nil {
+				return nil
+			}
+			iv := int(*v) // Python int() truncates toward zero
+			return &iv
+		}
 		switch r.Dimension {
 		case "marathon_training_s":
-			if r.Value != nil {
-				marathonS["training_s"] = int(*r.Value)
-			}
+			marTrain = intVal(r.Value)
 		case "marathon_race_s":
-			if r.Value != nil {
-				marathonS["race_s"] = int(*r.Value)
-			}
+			marRace = intVal(r.Value)
 		case "marathon_best_case_s":
-			if r.Value != nil {
-				marathonS["best_case_s"] = int(*r.Value)
-			}
+			marBest = intVal(r.Value)
 		case "hm_training_s":
-			if r.Value != nil {
-				hmS["training_s"] = int(*r.Value)
-			}
+			hmTrain = intVal(r.Value)
 		case "hm_race_s":
-			if r.Value != nil {
-				hmS["race_s"] = int(*r.Value)
-			}
+			hmRace = intVal(r.Value)
 		case "hm_best_case_s":
-			if r.Value != nil {
-				hmS["best_case_s"] = int(*r.Value)
-			}
+			hmBest = intVal(r.Value)
 		}
 		evidence = append(evidence, ev...)
-	}
-
-	var l2 *any
-	if l2Total != nil {
-		v := any(*l2Total)
-		l2 = &v
-	} else {
-		l2 = nil
 	}
 
 	var l4CompositeVal any
@@ -130,20 +117,44 @@ func pivotSnapshotRows(rows []storage.AbilitySnapshot, date string) map[string]a
 		l4CompositeVal = *l4Composite
 	}
 
-	raceS := nilOrNil(marathonS["race_s"])
+	// l2_freshness is null when no L2 total row exists (Python emits None).
+	var l2Freshness any
+	if l2Total != nil {
+		l2Freshness = map[string]any{"total": *l2Total}
+	}
 
 	return map[string]any{
 		"model_version":           ability.AbilityModelVersion,
 		"date":                    date,
 		"source":                  "snapshot",
-		"l2_freshness":            map[string]any{"total": l2},
+		"l2_freshness":            l2Freshness,
 		"l3_dimensions":           l3,
 		"l4_composite":            l4CompositeVal,
-		"l4_marathon_estimate_s":  raceS,
-		"distance_to_sub_2_50_s":  sub250(raceS),
-		"marathon_estimates":      map[string]any{"training_s": marathonS["training_s"], "race_s": marathonS["race_s"], "best_case_s": marathonS["best_case_s"]},
-		"half_marathon_estimates": map[string]any{"training_s": hmS["training_s"], "race_s": hmS["race_s"], "best_case_s": hmS["best_case_s"]},
+		"l4_marathon_estimate_s":  marRace,
+		"distance_to_sub_2_50_s":  sub250(marRace),
+		"marathon_estimates":      pivotEstimates(marTrain, marRace, marBest, ability.TheoreticalMinMarathonS, ability.BoostNormalizeRangeS),
+		"half_marathon_estimates": pivotEstimates(hmTrain, hmRace, hmBest, ability.TheoreticalMinHMS, ability.BoostNormalizeRangeHMS),
 		"evidence_activity_ids":   dedupeEvidence(evidence),
+	}
+}
+
+// pivotEstimates builds a race/half estimates block from the persisted scalar
+// rows, including the boost fields Python's snapshot reader emits. floorS/rangeS
+// pick the marathon vs half-marathon boost decay anchors.
+func pivotEstimates(trainingS, raceS, bestS *int, floorS, rangeS float64) map[string]any {
+	raceBoost, bestBoost := 0.0, 0.0
+	if trainingS != nil {
+		raceBoost = ability.ScaledBoost(float64(*trainingS), ability.RaceDayBoostMax, floorS, rangeS)
+		bestBoost = ability.ScaledBoost(float64(*trainingS), ability.BestCaseBoostMax, floorS, rangeS)
+	}
+	return map[string]any{
+		"training_s":              trainingS,
+		"race_s":                  raceS,
+		"best_case_s":             bestS,
+		"race_day_boost_max":      ability.RaceDayBoostMax,
+		"best_case_boost_max":     ability.BestCaseBoostMax,
+		"race_day_boost_applied":  roundN(raceBoost, 4),
+		"best_case_boost_applied": roundN(bestBoost, 4),
 	}
 }
 
@@ -247,19 +258,11 @@ func nextMetaVersion(rows []storage.AbilitySnapshot) *float64 {
 	return nil
 }
 
-func nilOrNil(v int) any {
-	if v == 0 {
+func sub250(raceS *int) any {
+	if raceS == nil || *raceS == 0 {
 		return nil
 	}
-	return v
-}
-
-func sub250(raceS any) any {
-	r, ok := raceS.(int)
-	if !ok || r == 0 {
-		return nil
-	}
-	return r - 10200
+	return *raceS - 10200
 }
 
 func dedupeEvidence(ev []string) []string {
@@ -277,4 +280,10 @@ func dedupeEvidence(ev []string) []string {
 
 func sortDates(dates []string) {
 	sort.Strings(dates)
+}
+
+// roundN rounds to N decimal places (Python round(x, n)).
+func roundN(x float64, n int) float64 {
+	p := math.Pow(10, float64(n))
+	return math.Round(x*p) / p
 }

@@ -95,8 +95,8 @@ func ComputeAbilitySnapshot(src *Source, date string, hrMax *int) *Snapshot {
 	var marathonRaceS, marathonBestS *int
 	raceBoost, bestBoost := 0.0, 0.0
 	if marathonTrainingS != nil {
-		raceBoost = scaledBoost(float64(*marathonTrainingS), RaceDayBoostMax, TheoreticalMinMarathonS, BoostNormalizeRangeS)
-		bestBoost = scaledBoost(float64(*marathonTrainingS), BestCaseBoostMax, TheoreticalMinMarathonS, BoostNormalizeRangeS)
+		raceBoost = ScaledBoost(float64(*marathonTrainingS), RaceDayBoostMax, TheoreticalMinMarathonS, BoostNormalizeRangeS)
+		bestBoost = ScaledBoost(float64(*marathonTrainingS), BestCaseBoostMax, TheoreticalMinMarathonS, BoostNormalizeRangeS)
 		v := roundToInt(float64(*marathonTrainingS) * (1.0 - raceBoost))
 		marathonRaceS = &v
 		v2 := roundToInt(float64(*marathonTrainingS) * (1.0 - bestBoost))
@@ -111,8 +111,8 @@ func ComputeAbilitySnapshot(src *Source, date string, hrMax *int) *Snapshot {
 	var hmRaceS, hmBestS *int
 	hmRaceBoost, hmBestBoost := 0.0, 0.0
 	if hmTrainingS != nil {
-		hmRaceBoost = scaledBoost(float64(*hmTrainingS), RaceDayBoostMax, TheoreticalMinHMS, BoostNormalizeRangeHMS)
-		hmBestBoost = scaledBoost(float64(*hmTrainingS), BestCaseBoostMax, TheoreticalMinHMS, BoostNormalizeRangeHMS)
+		hmRaceBoost = ScaledBoost(float64(*hmTrainingS), RaceDayBoostMax, TheoreticalMinHMS, BoostNormalizeRangeHMS)
+		hmBestBoost = ScaledBoost(float64(*hmTrainingS), BestCaseBoostMax, TheoreticalMinHMS, BoostNormalizeRangeHMS)
 		v := roundToInt(float64(*hmTrainingS) * (1.0 - hmRaceBoost))
 		hmRaceS = &v
 		v2 := roundToInt(float64(*hmTrainingS) * (1.0 - hmBestBoost))

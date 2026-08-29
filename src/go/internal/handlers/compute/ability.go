@@ -34,9 +34,10 @@ type abilityInput struct {
 
 // AbilityStore is the read+write surface the ability handler needs:
 // the Source loader (activities/health/dashboard/pbs/calibration) + the snapshot,
-// activity-ability, and vo2max_pb writes.
+// activity-ability, vo2max_pb writes, and personal_bests (to seed vo2max_pb).
 type AbilityStore interface {
 	abilitysource.Reader
+	PersonalBests(ctx context.Context, userID string) ([]storage.PersonalBest, error)
 	ReplaceAbilitySnapshot(ctx context.Context, userID string, rows []storage.AbilitySnapshot) error
 	UpsertActivityAbility(ctx context.Context, userID string, row *storage.ActivityAbility) error
 	UpsertVo2MaxPB(ctx context.Context, userID string, row *storage.Vo2MaxPB) error
@@ -80,9 +81,18 @@ func runAbility(ctx context.Context, store AbilityStore, user string, in ability
 		return 0, job.NewPermanentError("bad_date", err)
 	}
 
+	// Seed vo2max_pb from the PB detector's personal_bests so the PB-memory
+	// channel in compute_l3_vo2max has data (best-effort; the keep-higher-vdot
+	// guard makes this idempotent). Done once, before the day loop.
+	if err := seedVo2MaxPBs(ctx, store, user); err != nil {
+		return 0, err
+	}
+
 	if in.Mode == "backfill" && in.Days > 1 {
+		// Python post_ability_backfill iterates range(days+1) — days days back
+		// plus the anchor day, inclusive. Mirror that (start..end inclusive).
 		count := 0
-		for i := 0; i < in.Days; i++ {
+		for i := 0; i <= in.Days; i++ {
 			day := ref.AddDate(0, 0, -i)
 			if _, err := computeAndPersist(ctx, store, user, day); err != nil {
 				return count, err
@@ -201,4 +211,67 @@ func jsonOrNil(ev []string) *string {
 	}
 	s := string(b)
 	return &s
+}
+
+// seedVo2MaxPBs derives a per-race-type best VDOT from the PB detector's
+// personal_bests and upserts vo2max_pb rows, fueling the PB-memory channel in
+// compute_l3_vo2max. The keep-higher-vdot guard makes re-runs idempotent. Only
+// the canonical race distances populate a VDOT (1K/3K display PBs are skipped).
+func seedVo2MaxPBs(ctx context.Context, store AbilityStore, user string) error {
+	pbs, err := store.PersonalBests(ctx, user)
+	if err != nil {
+		return err
+	}
+	for i := range pbs {
+		pb := &pbs[i]
+		raceType := pb.Distance
+		if raceType != "5K" && raceType != "10K" && raceType != "HM" && raceType != "FM" {
+			continue
+		}
+		distM := raceDistanceM(raceType)
+		if distM <= 0 || pb.PBTimeSec <= 0 {
+			continue
+		}
+		raceTypeArg := raceType
+		if raceType == "FM" {
+			raceTypeArg = "full"
+		}
+		vdot := ability.ComputePBVdotForSegment(raceTypeArg, distM, pb.PBTimeSec)
+		if vdot == nil {
+			continue
+		}
+		row := &storage.Vo2MaxPB{
+			RaceType:  raceType,
+			DistanceM: ptrF(distM),
+			DurationS: ptrF(pb.PBTimeSec),
+			Vdot:      vdot,
+			PBDate:    strOrEmpty(pb.AchievedAt),
+			EvenPaced: true,
+		}
+		if err := store.UpsertVo2MaxPB(ctx, user, row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func raceDistanceM(raceType string) float64 {
+	switch raceType {
+	case "5K":
+		return 5000
+	case "10K":
+		return 10000
+	case "HM":
+		return 21097.5
+	case "FM":
+		return 42195
+	}
+	return 0
+}
+
+func strOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

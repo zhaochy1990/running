@@ -5,8 +5,10 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -49,8 +51,10 @@ func (s *Store) UpsertActivityAbility(ctx context.Context, userID string, row *A
 }
 
 // UpsertVo2MaxPB inserts or updates a vo2max_pb row on (user_id, race_type,
-// label_id), keeping only the higher vdot (DO UPDATE ... WHERE excluded.vdot >
-// vo2max_pb.vdot), mirroring Python's upsert_vo2max_pb.
+// label_id), keeping only the higher vdot — mirroring Python's
+// upsert_vo2max_pb ("ON CONFLICT ... DO UPDATE WHERE excluded.vdot >
+// vo2max_pb.vdot"). MySQL's ON DUPLICATE KEY UPDATE can't express that WHERE,
+// so do a read-modify-write.
 func (s *Store) UpsertVo2MaxPB(ctx context.Context, userID string, row *Vo2MaxPB) error {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -60,12 +64,22 @@ func (s *Store) UpsertVo2MaxPB(ctx context.Context, userID string, row *Vo2MaxPB
 	if row.UpdatedAt.IsZero() {
 		row.UpdatedAt = time.Now().UTC()
 	}
-	return s.db.WithContext(ctx).
-		Clauses(clause.OnConflict{
-			Columns: []clause.Column{
-				{Name: "user_id"}, {Name: "race_type"}, {Name: "label_id"},
-			},
-			DoUpdates: clause.AssignmentColumns([]string{"distance_m", "duration_s", "vdot", "pb_date", "even_paced", "updated_at"}),
-		}).
-		Create(row).Error
+	where := s.db.WithContext(ctx).Where("user_id = ? AND race_type = ? AND label_id = ?", uid, row.RaceType, row.LabelID)
+	var existing Vo2MaxPB
+	err = where.First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return s.db.WithContext(ctx).Create(row).Error
+	}
+	if err != nil {
+		return err
+	}
+	// Only overwrite when the new candidate strictly improves vdot (or the
+	// existing row has no vdot yet), matching the Python guard.
+	if existing.Vdot != nil && row.Vdot != nil && *row.Vdot <= *existing.Vdot {
+		return nil
+	}
+	return where.Updates(map[string]any{
+		"distance_m": row.DistanceM, "duration_s": row.DurationS, "vdot": row.Vdot,
+		"pb_date": row.PBDate, "even_paced": row.EvenPaced, "updated_at": row.UpdatedAt,
+	}).Error
 }
