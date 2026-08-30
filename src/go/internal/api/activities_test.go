@@ -37,6 +37,8 @@ type fakeActivityStore struct {
 	lapsErr   error
 	zones     []storage.ActivityWatchZone
 	zonesErr  error
+	calibrated []storage.ActivityZone
+	calibErr   error
 	load      *storage.ActivityTrainingLoad
 	loadErr   error
 	series    []storage.TimeseriesPoint
@@ -76,6 +78,10 @@ func (f *fakeActivityStore) ActivityLapsByType(_ context.Context, _, _, lapType 
 
 func (f *fakeActivityStore) ActivityWatchZones(_ context.Context, _, _ string) ([]storage.ActivityWatchZone, error) {
 	return f.zones, f.zonesErr
+}
+
+func (f *fakeActivityStore) ActivityZones(_ context.Context, _, _ string) ([]storage.ActivityZone, error) {
+	return f.calibrated, f.calibErr
 }
 
 func (f *fakeActivityStore) ActivityTrainingLoad(_ context.Context, _, _ string) (*storage.ActivityTrainingLoad, error) {
@@ -360,6 +366,35 @@ func baseDetailStore() *fakeActivityStore {
 			"type2":  {{LapIndex: 0, LapType: "type2", ExerciseType: iptr(3), Mode: iptr(1)}},
 		},
 		zones: []storage.ActivityWatchZone{{ZoneType: "hr", ZoneIndex: 1, DurationS: iptr(60)}},
+	}
+}
+
+func TestActivityDetail_GarminFallback_ServesCalibratedZones(t *testing.T) {
+	// Garmin has no watch zones: the detail must fall back to the STRIDE-calibrated
+	// activity_zones the compute job wrote (ADR 0019 source selection).
+	f := baseDetailStore()
+	f.zones = nil
+	f.calibrated = []storage.ActivityZone{
+		{ZoneType: "pace", ZoneIndex: 1, RangeMin: fptr(360000), RangeMax: nil, RangeUnit: strptr("pace"), DurationS: iptr(0), Percent: fptr(0)},
+		{ZoneType: "heartRate", ZoneIndex: 2, RangeMin: fptr(120), RangeMax: fptr(132), RangeUnit: strptr("bpm"), DurationS: iptr(60), Percent: fptr(50)},
+	}
+	h := newActivityHarness(t, f)
+	w := h.do(http.MethodGet, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", w.Code)
+	}
+	var resp activityDetailResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Zones) != 2 {
+		t.Fatalf("zones = %d, want 2 (calibrated fallback)", len(resp.Zones))
+	}
+	if resp.Zones[0].ZoneType != "pace" || resp.Zones[0].RangeMin == nil || *resp.Zones[0].RangeMin != 360000 {
+		t.Fatalf("pace zone = %+v, want range_min 360000", resp.Zones[0])
+	}
+	if resp.Zones[1].RangeUnit == nil || *resp.Zones[1].RangeUnit != "bpm" || resp.Zones[1].DurationS == nil || *resp.Zones[1].DurationS != 60 {
+		t.Fatalf("hr zone = %+v, want bpm unit + 60s", resp.Zones[1])
 	}
 }
 

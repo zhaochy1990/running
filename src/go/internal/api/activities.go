@@ -37,6 +37,7 @@ type ActivityStore interface {
 	ActivityByID(ctx context.Context, userID, labelID string) (*storage.Activity, error)
 	ActivityLapsByType(ctx context.Context, userID, labelID, lapType string) ([]storage.Lap, error)
 	ActivityWatchZones(ctx context.Context, userID, labelID string) ([]storage.ActivityWatchZone, error)
+	ActivityZones(ctx context.Context, userID, labelID string) ([]storage.ActivityZone, error)
 	ActivityTrainingLoad(ctx context.Context, userID, labelID string) (*storage.ActivityTrainingLoad, error)
 	ActivityTimeseries(ctx context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error)
 }
@@ -185,9 +186,22 @@ func assembleActivityDetail(ctx context.Context, store ActivityStore, userID, la
 	if err != nil {
 		return nil, false, err
 	}
-	zones, err := store.ActivityWatchZones(ctx, userID, labelID)
+	watchZones, err := store.ActivityWatchZones(ctx, userID, labelID)
 	if err != nil {
 		return nil, false, err
+	}
+	var zones []zoneDTO
+	if len(watchZones) > 0 {
+		zones = toZoneDTOs(watchZones)
+	} else {
+		// Providers with no watch zones (Garmin) fall back to the STRIDE-calibrated
+		// zones the compute job wrote post-sync (ADR 0019: the API picks the zone
+		// source at read time).
+		calibrated, err := store.ActivityZones(ctx, userID, labelID)
+		if err != nil {
+			return nil, false, err
+		}
+		zones = toActivityZoneDTOs(calibrated)
 	}
 	load, err := store.ActivityTrainingLoad(ctx, userID, labelID)
 	if err != nil {
@@ -199,7 +213,7 @@ func assembleActivityDetail(ctx context.Context, store ActivityStore, userID, la
 		StrideTrainingLoad:     toStrideTrainingLoad(load),
 		Laps:                   toLapDTOs(laps),
 		Segments:               toSegmentDTOs(segs),
-		Zones:                  toZoneDTOs(zones),
+		Zones:                  zones,
 		LinkedScheduledWorkout: nil,
 	}
 	if includeTimeseries {
@@ -635,6 +649,24 @@ func toSegmentDTOs(segs []storage.Lap) []segmentDTO {
 func toZoneDTOs(zones []storage.ActivityWatchZone) []zoneDTO {
 	out := make([]zoneDTO, len(zones))
 	for i, z := range zones {
+		out[i] = zoneDTO{
+			ZoneType:  z.ZoneType,
+			ZoneIndex: z.ZoneIndex,
+			RangeMin:  z.RangeMin,
+			RangeMax:  z.RangeMax,
+			RangeUnit: z.RangeUnit,
+			DurationS: z.DurationS,
+			Percent:   z.Percent,
+		}
+	}
+	return out
+}
+
+// toActivityZoneDTOs mirrors toZoneDTOs for the STRIDE-calibrated activity_zones
+// table (same zoneDTO shape, separate source table per ADR 0019).
+func toActivityZoneDTOs(rows []storage.ActivityZone) []zoneDTO {
+	out := make([]zoneDTO, len(rows))
+	for i, z := range rows {
 		out[i] = zoneDTO{
 			ZoneType:  z.ZoneType,
 			ZoneIndex: z.ZoneIndex,

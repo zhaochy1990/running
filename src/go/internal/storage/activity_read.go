@@ -263,6 +263,23 @@ func (s *Store) ActivityWatchZones(ctx context.Context, userID, labelID string) 
 	return rows, nil
 }
 
+// ActivityZones returns one activity's STRIDE-calibrated zone rows (the compute
+// job's output, ADR 0019). The detail API serves watch zones when present and
+// falls back to these for providers like Garmin that report no watch zones.
+func (s *Store) ActivityZones(ctx context.Context, userID, labelID string) ([]ActivityZone, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []ActivityZone
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ? AND label_id = ?", uid, labelID).
+		Order("zone_type, zone_index").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // ActivityTrainingLoad returns one activity's objective training-load row, or
 // (nil, nil) when absent. Mirrors db.fetch_activity_training_load(label_id).
 func (s *Store) ActivityTrainingLoad(ctx context.Context, userID, labelID string) (*ActivityTrainingLoad, error) {

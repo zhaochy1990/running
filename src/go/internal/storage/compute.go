@@ -126,6 +126,34 @@ func (s *Store) ReplaceCalibrationZones(ctx context.Context, userID string, snap
 	})
 }
 
+// ReplaceActivityZones replaces one activity's STRIDE-calibrated zone rows in a
+// transaction (delete-then-insert), mirroring the Python post-sync handler which
+// clears `zones` before reinserting so a recompute never leaves stale rows. The
+// unique (user_id, label_id, zone_type, zone_index) index guarantees each zone
+// appears once.
+func (s *Store) ReplaceActivityZones(ctx context.Context, userID, labelID string, rows []ActivityZone) error {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	for i := range rows {
+		rows[i].UserID = uid
+		rows[i].LabelID = labelID
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ? AND label_id = ?", uid, labelID).
+			Delete(&ActivityZone{}).Error; err != nil {
+			return err
+		}
+		if len(rows) > 0 {
+			if err := tx.CreateInBatches(&rows, 100).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // ReplacePersonalBests replaces a user's entire personal-bests set in one
 // transaction (delete-then-insert), mirroring Python persist_personal_bests
 // which rewrites the cached PB table wholesale.

@@ -283,9 +283,9 @@ function normalizePaceZones(zones: Zone[]): Zone[] {
 
 function formatZoneRange(z: Zone, peers: Zone[]): string {
   if (z.zone_type === 'pace') {
-    if (z.range_unit === 'ms/km') {
-      // 高驰（COROS）配速以 ms/km 表达，转成「分钟:秒/公里」；
-      // 佳明等其他表不落此单位，不套用 COROS 换算。
+    // 高驰 watch 区间为 ms/km；STRIDE calibration（activity_zones 表）为 pace（值仍是 ms/km），
+    // 两者同为 ms/km 量级，统一按「分钟:秒/公里」转换。佳明若以 m/s 等其它单位上报则不走这里。
+    if (z.range_unit === 'ms/km' || z.range_unit === 'pace') {
       const r = formatPaceRange(z, peers);
       return r ? `${r}/km` : `Z${z.zone_index + 1}`;
     }
@@ -318,10 +318,10 @@ function toZoneBar(z: Zone, peers: Zone[]): ZoneBar {
 
 function buildZones(zones: Zone[]): { hrZones: ZoneBar[]; paceZones: ZoneBar[]; hasZones: boolean } {
   // 手表上报区间本身就是完整分区（含开放边界的最快/最慢区），每个 zone_index 一行，
-  // 开放边由 formatHRRange/formatPaceRange 处理；配速只对高驰（ms/km）做 7→6 归一化合并阈值区。
+  // 开放边由 formatHRRange/formatPaceRange 处理；配速只对高驰（ms/km）或 STRIDE（pace）做 7→6 归一化合并阈值区。
   const hr = zones.filter((z) => z.zone_type === 'heartRate');
   const paceRaw = zones.filter((z) => z.zone_type === 'pace');
-  const isCorosPace = paceRaw.length > 0 && paceRaw.every((z) => z.range_unit === 'ms/km');
+  const isCorosPace = paceRaw.length > 0 && paceRaw.every((z) => z.range_unit === 'ms/km' || z.range_unit === 'pace');
   const pace = isCorosPace ? normalizePaceZones(paceRaw) : paceRaw;
   const hrZones = hr.map((z) => toZoneBar(z, hr));
   const paceZones = pace.map((z) => toZoneBar(z, pace));

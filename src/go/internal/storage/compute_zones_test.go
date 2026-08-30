@@ -89,6 +89,61 @@ func TestReplaceCalibrationZones_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestReplaceActivityZones_RoundTrip is gated on a live MySQL
+// (STRIDE_WORKER_TEST_MYSQL_DSN). It writes STRIDE-calibrated zone rows for one
+// activity into activity_zones, re-replaces them (must not duplicate), then
+// reads them back and spot-checks the values.
+func TestReplaceActivityZones_RoundTrip(t *testing.T) {
+	st := openTestStore(t) // skips without the env var
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatalf("automigrate watch: %v", err)
+	}
+
+	const uid = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
+	const label = "2026-08-30-12345"
+	rows := []ActivityZone{
+		{ZoneType: "pace", ZoneIndex: 1, RangeMin: fptr(360000), RangeMax: nil, RangeUnit: sptr("pace"), DurationS: intPtrT(0), Percent: fptr(0)},
+		{ZoneType: "pace", ZoneIndex: 2, RangeMin: fptr(300000), RangeMax: fptr(360000), RangeUnit: sptr("pace"), DurationS: intPtrT(60), Percent: fptr(50)},
+		{ZoneType: "heartRate", ZoneIndex: 1, RangeMin: nil, RangeMax: fptr(120), RangeUnit: sptr("bpm"), DurationS: intPtrT(0), Percent: fptr(0)},
+	}
+	if err := st.ReplaceActivityZones(ctx, uid, label, rows); err != nil {
+		t.Fatalf("replace zones: %v", err)
+	}
+	// Re-replace must not duplicate (delete-then-insert).
+	if err := st.ReplaceActivityZones(ctx, uid, label, rows); err != nil {
+		t.Fatalf("re-replace zones: %v", err)
+	}
+
+	got, err := st.ActivityZones(ctx, uid, label)
+	if err != nil {
+		t.Fatalf("read zones: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("zones = %d, want 3", len(got))
+	}
+	var p2 *ActivityZone
+	for i := range got {
+		if got[i].ZoneType == "pace" && got[i].ZoneIndex == 2 {
+			p2 = &got[i]
+		}
+	}
+	if p2 == nil {
+		t.Fatal("missing pace zone 2")
+	}
+	if p2.RangeMin == nil || *p2.RangeMin != 300000 || p2.RangeMax == nil || *p2.RangeMax != 360000 {
+		t.Errorf("pace Z2 ranges = %v/%v, want 300000/360000", p2.RangeMin, p2.RangeMax)
+	}
+	if p2.RangeUnit == nil || *p2.RangeUnit != "pace" {
+		t.Errorf("pace Z2 unit = %v, want pace", p2.RangeUnit)
+	}
+	if p2.DurationS == nil || *p2.DurationS != 60 {
+		t.Errorf("pace Z2 duration = %v, want 60", p2.DurationS)
+	}
+}
+
+func intPtrT(v int) *int { return &v }
+
 func keysOf(m map[string]map[string]any) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
