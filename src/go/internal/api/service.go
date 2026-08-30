@@ -126,6 +126,14 @@ type Config struct {
 	HealthStore HealthStore
 	StrideStore StrideStore
 
+	// AbilityStore and PredictionStore back the ability-score / race-prediction
+	// read surfaces. AbilityBackfillJobType is the job type POST
+	// /api/{user}/ability/backfill enqueues (injected from catalog for the same
+	// decoupling as WatchSyncJobType). Leave zero to run without them.
+	AbilityStore           AbilityStore
+	PredictionStore        PredictionStore
+	AbilityBackfillJobType string
+
 	// Master-plan read surface (ADR 0024) — a sibling registrar sharing the auth
 	// path. Leave zero to run without the master-plan endpoints (e.g. in tests).
 	MasterPlanStore MasterPlanStore
@@ -176,6 +184,8 @@ type Service struct {
 
 	healthMetrics *healthRoutes
 	strideMetrics *strideRoutes
+	ability       *abilityRoutes
+	predictions   *predictionRoutes
 	masterPlan    *masterPlanRoutes
 	weeklyPlan    *weeklyPlanRoutes
 
@@ -217,6 +227,8 @@ func NewService(cfg Config) *Service {
 		teams:                   newTeamRoutes(cfg.TeamAuth, cfg.TeamStore, cfg.ActivityStore, log),
 		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),
 		strideMetrics:           newStrideRoutes(cfg.StrideStore, log),
+		ability:                 newAbilityRoutes(cfg.AbilityStore, cfg.Enqueuer, cfg.AbilityBackfillJobType, log),
+		predictions:             newPredictionRoutes(cfg.PredictionStore, log),
 		masterPlan:              newMasterPlanRoutes(cfg.MasterPlanStore, log),
 		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, log),
 		auth:                    cfg.Auth,
@@ -276,6 +288,8 @@ func (s *Service) Router() *gin.Engine {
 	s.goals.register(authed)
 	s.healthMetrics.register(authed)
 	s.strideMetrics.register(authed)
+	s.ability.register(authed)
+	s.predictions.register(authed)
 	s.weeklyPlan.registerWrites(authed)
 	return r
 }
