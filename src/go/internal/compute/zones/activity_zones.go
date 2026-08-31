@@ -240,5 +240,5 @@ func sumValues(m map[string]float64) float64 {
 	return total
 }
 
-func intPtr(v int) *int     { return &v }
+func intPtr(v int) *int           { return &v }
 func floatPtr(v float64) *float64 { return &v }

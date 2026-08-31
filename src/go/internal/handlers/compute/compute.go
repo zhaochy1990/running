@@ -28,9 +28,9 @@ const trainingLoadLookbackDays = 365
 
 // Heartbeat percent bands for the compute stages.
 const (
-	pctTrainingLoad   = 66
-	pctActivityZones  = 83
-	pctPersonalBests  = 99
+	pctTrainingLoad  = 66
+	pctActivityZones = 83
+	pctPersonalBests = 99
 )
 
 // ComputeStore is the read+write surface the compute job needs. It READS the
@@ -333,14 +333,14 @@ func toStorageActivityZones(user string, rows []zones.Zone) []storage.ActivityZo
 	out := make([]storage.ActivityZone, len(rows))
 	for i, z := range rows {
 		out[i] = storage.ActivityZone{
-			UserID:     user,
-			ZoneType:   z.ZoneType,
-			ZoneIndex:  z.ZoneIndex,
-			RangeMin:   z.RangeMin,
-			RangeMax:   z.RangeMax,
-			RangeUnit:  z.RangeUnit,
-			DurationS:  z.DurationS,
-			Percent:    z.Percent,
+			UserID:    user,
+			ZoneType:  z.ZoneType,
+			ZoneIndex: z.ZoneIndex,
+			RangeMin:  z.RangeMin,
+			RangeMax:  z.RangeMax,
+			RangeUnit: z.RangeUnit,
+			DurationS: z.DurationS,
+			Percent:   z.Percent,
 		}
 	}
 	return out

@@ -18,20 +18,20 @@ const testUser = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
 type fakeStore struct {
 	acts   []storage.Activity
 	health []storage.DailyHealth
-	ts     []storage.TimeseriesPoint          // returned by ActivityTimeseries
+	ts     []storage.TimeseriesPoint           // returned by ActivityTimeseries
 	snap   *storage.RunningCalibrationSnapshot // returned by LatestRunningCalibrationSnapshot
 	prior  *storage.DailyTrainingLoad          // returned by DailyTrainingLoadBefore
 	pbs    []storage.PersonalBest              // existing PBs
 
 	// recorded calls
-	snapUpserted        bool
-	zonesReplaced       bool
-	activityUpserts     int
-	dailyUpserts        int
-	dailyRows           []storage.DailyTrainingLoad
-	pbReplaced          bool
-	pbUpserted          bool
-	priorReadForDate    string
+	snapUpserted         bool
+	zonesReplaced        bool
+	activityUpserts      int
+	dailyUpserts         int
+	dailyRows            []storage.DailyTrainingLoad
+	pbReplaced           bool
+	pbUpserted           bool
+	priorReadForDate     string
 	activityZonesWritten []storage.ActivityZone
 }
 
@@ -107,8 +107,8 @@ func (f *fakeStore) UpsertPersonalBests(_ context.Context, _ string, _ []storage
 }
 
 func floatPtr(f float64) *float64 { return &f }
-func intPtr(v int) *int             { return &v }
-func int64Ptr(v int64) *int64       { return &v }
+func intPtr(v int) *int           { return &v }
+func int64Ptr(v int64) *int64     { return &v }
 
 func runningActivity(label string, day time.Time) storage.Activity {
 	return storage.Activity{

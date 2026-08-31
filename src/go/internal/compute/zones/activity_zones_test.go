@@ -248,9 +248,9 @@ func TestComputeActivityTimeInZoneWithComputeTrainingZones(t *testing.T) {
 		t.Fatalf("zone counts = %d/%d, want 6/6", len(zs.PaceZones), len(zs.HeartRateZones))
 	}
 	samples := []Sample{
-		{DwellS: 100, SpeedMps: f64ptr(3.0), HRBpm: f64ptr(125)},  // easy
-		{DwellS: 50, SpeedMps: f64ptr(4.2), HRBpm: f64ptr(165)},   // repetition
-		{DwellS: 50, SpeedMps: f64ptr(2.0), HRBpm: f64ptr(105)},   // recovery
+		{DwellS: 100, SpeedMps: f64ptr(3.0), HRBpm: f64ptr(125)}, // easy
+		{DwellS: 50, SpeedMps: f64ptr(4.2), HRBpm: f64ptr(165)},  // repetition
+		{DwellS: 50, SpeedMps: f64ptr(2.0), HRBpm: f64ptr(105)},  // recovery
 	}
 	rows := ComputeActivityTimeInZone(samples, zs.PaceZones, zs.HeartRateZones)
 	if len(rows) != 12 {

@@ -29,20 +29,20 @@ const (
 // value (or error) and records the (userID, labelID, params) it was called with
 // so a handler test can assert the request was forwarded verbatim.
 type fakeActivityStore struct {
-	page      *storage.ActivityPage
-	pageErr   error
-	activity  *storage.Activity
-	actErr    error
-	laps      map[string][]storage.Lap // keyed by lap_type
-	lapsErr   error
-	zones     []storage.ActivityWatchZone
-	zonesErr  error
+	page       *storage.ActivityPage
+	pageErr    error
+	activity   *storage.Activity
+	actErr     error
+	laps       map[string][]storage.Lap // keyed by lap_type
+	lapsErr    error
+	zones      []storage.ActivityWatchZone
+	zonesErr   error
 	calibrated []storage.ActivityZone
 	calibErr   error
-	load      *storage.ActivityTrainingLoad
-	loadErr   error
-	series    []storage.TimeseriesPoint
-	seriesErr error
+	load       *storage.ActivityTrainingLoad
+	loadErr    error
+	series     []storage.TimeseriesPoint
+	seriesErr  error
 
 	// captured inputs
 	gotListUser string
