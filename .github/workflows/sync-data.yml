@@ -1,8 +1,8 @@
 name: Sync Training Data
 
 # Required GitHub Actions secrets (configured in repo settings):
-#   STRIDE_PROD_URL          — base URL of the deployed stride-app, e.g.
-#                              https://stride-app.<region>.azurecontainerapps.io
+#   STRIDE_PROD_URL          — base URL of the deployed prod API, e.g.
+#                              https://api.stride-running.cn
 #   STRIDE_INTERNAL_TOKEN    — random 32+ char string. Same value must be set on
 #                              the Azure Container App as STRIDE_INTERNAL_TOKEN
 #                              env var (e.g. via `az containerapp update

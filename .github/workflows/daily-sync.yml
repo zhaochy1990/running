@@ -2,7 +2,7 @@ name: Daily auto-sync
 
 # Required GitHub Actions repository variable and secret:
 #   STRIDE_GO_API_URL         — base URL of the deployed Go API, e.g.
-#                               https://stride-api.<domain>
+#                               https://api.stride-running.cn
 #   STRIDE_GO_INTERNAL_TOKEN  — random 32+ char string. The Go API must receive
 #                               the same value as STRIDE_WORKER_API_INTERNAL_TOKEN.
 # If either value is unset the workflow fails so the omission is visible.

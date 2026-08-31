@@ -12,7 +12,7 @@ abstract final class Env {
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue:
-        'https://stride-app.victoriousdesert-bd552447.southeastasia.azurecontainerapps.io',
+        'https://api.stride-running.cn',
   );
 
   /// auth-service base URL — `/api/auth/login`, `/refresh`, `/logout`.

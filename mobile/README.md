@@ -9,7 +9,7 @@ Cross-platform mobile app for the STRIDE running training project. **Android v1*
 > finalization handshake. Web is the supported onboarding surface until mobile is
 > redesigned and verified against the Go contract.
 
-This is a client of the existing FastAPI backend at `https://stride-app.<region>.azurecontainerapps.io/api/*` (auth via `https://auth-backend.<region>.azurecontainerapps.io/api/auth/*`). No new backend endpoints required for v1 reads — push notifications (S13a) add a few.
+This is a client of the existing FastAPI backend at `https://api.stride-running.cn/api/*` (auth via `https://auth-backend.<region>.azurecontainerapps.io/api/auth/*`). No new backend endpoints required for v1 reads — push notifications (S13a) add a few.
 
 ## Quick reference
 

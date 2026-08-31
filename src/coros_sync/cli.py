@@ -355,7 +355,7 @@ def commentary() -> None:
     "--url",
     default=None,
     envvar="STRIDE_PROD_URL",
-    help="STRIDE server base URL (e.g. https://stride-app.xxx.azurecontainerapps.io). "
+    help="STRIDE server base URL (e.g. https://api.stride-running.cn). "
          "Defaults to $STRIDE_PROD_URL.",
 )
 @click.option(
@@ -376,7 +376,7 @@ def push_commentary_cmd(
     Example:
 
       coros-sync -P zhaochaoyi commentary push 476939007924666668 \\
-        --url https://stride-app.xxx.azurecontainerapps.io \\
+        --url https://api.stride-running.cn \\
         --generated-by claude-opus-4-7
     """
     if not url:
