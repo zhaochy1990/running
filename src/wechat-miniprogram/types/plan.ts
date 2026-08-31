@@ -141,6 +141,14 @@ export interface TodayWorkoutView {
   stats: ViewStat[];
   coachNote: string;
   note: string;
+  /** session 在当天的索引，用于推送 API */
+  sessionIndex: number;
+  /** session 所属日期 YYYY-MM-DD */
+  date: string;
+  /** 关联的已排课训练 ID，null 表示未推送 */
+  scheduledWorkoutId: number | null;
+  /** 是否有完整 spec 可推送到手表 */
+  hasSpec: boolean;
 }
 
 export interface TodayMealView {
@@ -185,6 +193,10 @@ export interface PlanSessionRowView {
   duration: string;
   isRest: boolean;
   iconPath: string;
+  /** 关联的已排课训练 ID，null 表示未推送 */
+  scheduledWorkoutId: number | null;
+  /** 是否有完整 spec 可推送到手表（run/strength 且 spec 非空） */
+  hasSpec: boolean;
 }
 
 export interface PlanDayRowView {

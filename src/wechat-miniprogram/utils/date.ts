@@ -121,3 +121,46 @@ export function shanghaiTimeFromIso(iso: string | null | undefined): string {
   const time = iso.slice(11, 16);
   return /^\d{2}:\d{2}$/.test(time) ? time : '';
 }
+
+/**
+ * 生成推送日期选项（±7 天共 15 天）。
+ * 今天/明天/后天用中文标签，其他显示「周X MM/DD」。
+ */
+export interface PushDateOption {
+  label: string;
+  value: string; // YYYY-MM-DD
+}
+
+export function buildPushDateOptions(plannedDate: string): PushDateOption[] {
+  const today = shanghaiToday();
+  const todayEpoch = shanghaiYmdToEpoch(today);
+  const plannedEpoch = shanghaiYmdToEpoch(plannedDate);
+  const out: PushDateOption[] = [];
+
+  for (let i = -7; i <= 7; i++) {
+    const date = epochToShanghaiYmd(plannedEpoch + i * DAY_MS);
+    const dayDiff = Math.round((shanghaiYmdToEpoch(date) - todayEpoch) / DAY_MS);
+
+    let label: string;
+    if (dayDiff === 0) {
+      label = '今天';
+    } else if (dayDiff === 1) {
+      label = '明天';
+    } else if (dayDiff === 2) {
+      label = '后天';
+    } else if (dayDiff === -1) {
+      label = '昨天';
+    } else {
+      const wd = shanghaiWeekdayLabel(date);
+      const md = date.slice(5);
+      label = `${wd} ${md}`;
+    }
+
+    if (date === plannedDate) {
+      label = `${label}（计划日）`;
+    }
+
+    out.push({ label, value: date });
+  }
+  return out;
+}

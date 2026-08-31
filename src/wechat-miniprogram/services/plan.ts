@@ -40,6 +40,27 @@ export function getWeeklyPlan(userId: string, weekName: string): Promise<WeeklyP
   );
 }
 
+/** 推送计划 session 到用户绑定的手表。target_date 可选，范围 ±7 天。 */
+export interface PushPlannedSessionResponse {
+  ok: boolean;
+  planned_session_id: number;
+  scheduled_workout_id: number;
+  provider: string;
+  provider_workout_id: string;
+  push_date: string;
+}
+
+export function pushPlannedSession(
+  userId: string,
+  date: string,
+  sessionIndex: number,
+  targetDate?: string,
+): Promise<PushPlannedSessionResponse> {
+  const path = `/api/${encodeURIComponent(userId)}/plan/sessions/${encodeURIComponent(date)}/${sessionIndex}/push`;
+  const qs = targetDate ? `?target_date=${encodeURIComponent(targetDate)}` : '';
+  return http.post<PushPlannedSessionResponse>(`${path}${qs}`);
+}
+
 /** 当前（上海）周的目录名。 */
 export function currentWeekName(): string {
   const today = shanghaiToday();
@@ -78,6 +99,8 @@ function buildWorkoutView(
     { value: fmtDose(trainingDoseOf(session)), label: '训练负荷' },
   ];
 
+  const hasSpec = (session.kind === 'run' || session.kind === 'strength') && session.spec != null;
+
   return {
     title,
     sessionKind: session.kind,
@@ -87,6 +110,10 @@ function buildWorkoutView(
     stats,
     coachNote,
     note: firstLine(session.notes_md),
+    sessionIndex: session.session_index,
+    date: session.date,
+    scheduledWorkoutId: session.scheduled_workout_id,
+    hasSpec,
   };
 }
 
@@ -243,6 +270,8 @@ function planSessionRow(s: PlannedSession): PlanSessionRowView {
   else if (s.kind === 'strength') iconPath = '/assets/icons/fitness_center.svg';
   else if (s.kind === 'rest') iconPath = '/assets/icons/schedule.svg';
 
+  const hasSpec = (s.kind === 'run' || s.kind === 'strength') && s.spec != null;
+
   return {
     sessionIndex: s.session_index,
     kind: s.kind,
@@ -252,6 +281,8 @@ function planSessionRow(s: PlannedSession): PlanSessionRowView {
     duration: fmtHms(s.total_duration_s),
     isRest: s.kind === 'rest',
     iconPath,
+    scheduledWorkoutId: s.scheduled_workout_id,
+    hasSpec,
   };
 }
 

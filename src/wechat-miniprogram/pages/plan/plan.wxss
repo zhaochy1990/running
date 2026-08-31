@@ -211,6 +211,28 @@
   font-variant-numeric: tabular-nums;
 }
 
+.plan-session__push {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  font-weight: 600;
+  color: #00e676;
+  background: rgba(0, 230, 118, 0.1);
+  border: 1rpx solid rgba(0, 230, 118, 0.3);
+  border-radius: 999rpx;
+  padding: 8rpx 20rpx;
+  margin-left: 12rpx;
+  transition: opacity 0.15s ease;
+}
+
+.plan-session__push:active {
+  opacity: 0.7;
+}
+
+.plan-session__push--done {
+  background: rgba(0, 230, 118, 0.2);
+  border-color: rgba(0, 230, 118, 0.5);
+}
+
 .plan-day__rest {
   font-size: 26rpx;
   color: #9c9c9d;

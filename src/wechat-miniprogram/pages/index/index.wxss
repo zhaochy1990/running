@@ -211,6 +211,11 @@
   height: 36rpx;
 }
 
+.workout__action--pushed {
+  background: rgba(0, 230, 118, 0.15);
+  border: 1rpx solid rgba(0, 230, 118, 0.4);
+}
+
 /* ---------- 强度柱状图 ---------- */
 
 .workout__chart-block {
