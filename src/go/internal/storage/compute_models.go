@@ -195,6 +195,28 @@ type Vo2MaxPB struct {
 
 func (Vo2MaxPB) TableName() string { return "vo2max_pb" }
 
+// ActivityZone is one per-activity STRIDE-calibrated zone row (table
+// "activity_zones"). Computed post-sync by the compute job from the activity's
+// timeseries and the calibration snapshot as-of its date (ADR 0019: calibrated
+// zones live separately from activity_watch_zones, and the API picks which
+// source to serve at read time). Mirrors the Python SQLite `zones` table plus a
+// user_id tenant key; the zone shape matches ActivityWatchZone so the API can
+// serve either source through the same DTO.
+type ActivityZone struct {
+	ID        uint64   `gorm:"column:id;primaryKey;autoIncrement"`
+	UserID    string   `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_activity_zones,priority:1"`
+	LabelID   string   `gorm:"column:label_id;type:varchar(191);not null;uniqueIndex:uq_activity_zones,priority:2"`
+	ZoneType  string   `gorm:"column:zone_type;type:varchar(32);not null;uniqueIndex:uq_activity_zones,priority:3"`
+	ZoneIndex int      `gorm:"column:zone_index;not null;uniqueIndex:uq_activity_zones,priority:4"`
+	RangeMin  *float64 `gorm:"column:range_min"`
+	RangeMax  *float64 `gorm:"column:range_max"`
+	RangeUnit *string  `gorm:"column:range_unit;type:varchar(16)"`
+	DurationS *int     `gorm:"column:duration_s"`
+	Percent   *float64 `gorm:"column:percent"`
+}
+
+func (ActivityZone) TableName() string { return "activity_zones" }
+
 // computeModels is the set of onboarding-compute derived models, migrated
 // alongside the watch models by AutoMigrateWatch.
 func computeModels() []any {
@@ -208,5 +230,6 @@ func computeModels() []any {
 		&AbilitySnapshot{},
 		&ActivityAbility{},
 		&Vo2MaxPB{},
+		&ActivityZone{},
 	}
 }

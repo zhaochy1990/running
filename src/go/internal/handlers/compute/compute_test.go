@@ -18,19 +18,21 @@ const testUser = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
 type fakeStore struct {
 	acts   []storage.Activity
 	health []storage.DailyHealth
+	ts     []storage.TimeseriesPoint           // returned by ActivityTimeseries
 	snap   *storage.RunningCalibrationSnapshot // returned by LatestRunningCalibrationSnapshot
 	prior  *storage.DailyTrainingLoad          // returned by DailyTrainingLoadBefore
 	pbs    []storage.PersonalBest              // existing PBs
 
 	// recorded calls
-	snapUpserted     bool
-	zonesReplaced    bool
-	activityUpserts  int
-	dailyUpserts     int
-	dailyRows        []storage.DailyTrainingLoad
-	pbReplaced       bool
-	pbUpserted       bool
-	priorReadForDate string
+	snapUpserted         bool
+	zonesReplaced        bool
+	activityUpserts      int
+	dailyUpserts         int
+	dailyRows            []storage.DailyTrainingLoad
+	pbReplaced           bool
+	pbUpserted           bool
+	priorReadForDate     string
+	activityZonesWritten []storage.ActivityZone
 }
 
 // --- calibration inputs (calibrationsource.Reader) ---
@@ -38,7 +40,7 @@ func (f *fakeStore) ActivitiesInWindow(_ context.Context, _, _ string, _, _ time
 	return f.acts, nil
 }
 func (f *fakeStore) ActivityTimeseries(_ context.Context, _, _ string) ([]storage.TimeseriesPoint, error) {
-	return nil, nil
+	return f.ts, nil
 }
 func (f *fakeStore) ActivityLaps(_ context.Context, _, _ string) ([]storage.Lap, error) {
 	return nil, nil
@@ -59,6 +61,9 @@ func (f *fakeStore) ReplaceCalibrationZones(_ context.Context, _ string, _ uint6
 
 // --- compute reads ---
 func (f *fakeStore) LatestRunningCalibrationSnapshot(_ context.Context, _ string) (*storage.RunningCalibrationSnapshot, error) {
+	return f.snap, nil
+}
+func (f *fakeStore) LatestRunningCalibrationSnapshotForVersion(_ context.Context, _ string, _ int, _ string) (*storage.RunningCalibrationSnapshot, error) {
 	return f.snap, nil
 }
 func (f *fakeStore) AllRunningActivities(_ context.Context, _ string) ([]storage.Activity, error) {
@@ -83,6 +88,10 @@ func (f *fakeStore) ReplaceActivityTrainingLoad(_ context.Context, _ string, row
 	f.activityUpserts++
 	return nil
 }
+func (f *fakeStore) ReplaceActivityZones(_ context.Context, _, _ string, rows []storage.ActivityZone) error {
+	f.activityZonesWritten = append([]storage.ActivityZone(nil), rows...)
+	return nil
+}
 func (f *fakeStore) ReplaceDailyTrainingLoad(_ context.Context, _ string, rows []storage.DailyTrainingLoad) error {
 	f.dailyUpserts++
 	f.dailyRows = append([]storage.DailyTrainingLoad(nil), rows...)
@@ -98,6 +107,8 @@ func (f *fakeStore) UpsertPersonalBests(_ context.Context, _ string, _ []storage
 }
 
 func floatPtr(f float64) *float64 { return &f }
+func intPtr(v int) *int           { return &v }
+func int64Ptr(v int64) *int64     { return &v }
 
 func runningActivity(label string, day time.Time) storage.Activity {
 	return storage.Activity{
@@ -174,6 +185,82 @@ func TestCompute_Incremental_OnlyNewAndUpsertsPBs(t *testing.T) {
 	// Prior-state read seeds the PMC from the day before the earliest new activity.
 	if f.priorReadForDate != "2026-03-01" {
 		t.Fatalf("prior-state read date = %q, want the new activity's Shanghai day", f.priorReadForDate)
+	}
+}
+
+func TestCompute_Incremental_WritesStrideZones(t *testing.T) {
+	day := time.Date(2026, 3, 1, 6, 0, 0, 0, time.UTC)
+	thr, thrSpeed := 150.0, 3.7
+	f := &fakeStore{
+		snap: &storage.RunningCalibrationSnapshot{
+			ID:                       7,
+			ThresholdHR:              &thr,
+			ThresholdSpeedMps:        &thrSpeed,
+			ThresholdHRConfidence:    "high",
+			ThresholdSpeedConfidence: "high",
+		},
+		acts: []storage.Activity{runningActivity("new-1", day)},
+		// Timestamps are centiseconds; Speed is stored as s/km pace.
+		ts: []storage.TimeseriesPoint{
+			{Timestamp: int64Ptr(0), HeartRate: intPtr(125), Speed: floatPtr(345)},   // 2.90 m/s → easy; 125 bpm → easy
+			{Timestamp: int64Ptr(100), HeartRate: intPtr(165), Speed: floatPtr(222)}, // 4.50 m/s → repetition; 165 bpm → repetition
+		},
+	}
+	if _, err := runJob(t, NewCompute(f), `{"mode":"incremental","label_ids":["new-1"]}`); err != nil {
+		t.Fatalf("compute incremental: %v", err)
+	}
+	if len(f.activityZonesWritten) == 0 {
+		t.Fatal("expected STRIDE zone rows to be written for the running activity")
+	}
+	if len(f.activityZonesWritten) != 12 {
+		t.Fatalf("zone rows = %d, want 12 (6 pace + 6 HR)", len(f.activityZonesWritten))
+	}
+	var pEasy, hEasy *storage.ActivityZone
+	for i := range f.activityZonesWritten {
+		z := &f.activityZonesWritten[i]
+		if z.ZoneType == "pace" && z.ZoneIndex == 2 {
+			pEasy = z
+		}
+		if z.ZoneType == "heartRate" && z.ZoneIndex == 2 {
+			hEasy = z
+		}
+	}
+	if pEasy == nil || hEasy == nil {
+		t.Fatal("missing easy zone rows")
+	}
+	if pEasy.RangeUnit == nil || *pEasy.RangeUnit != "pace" || pEasy.DurationS == nil || *pEasy.DurationS != 1 {
+		t.Errorf("pace easy = unit %v dur %v, want pace/1s", pEasy.RangeUnit, pEasy.DurationS)
+	}
+	if hEasy.RangeUnit == nil || *hEasy.RangeUnit != "bpm" || hEasy.DurationS == nil || *hEasy.DurationS != 1 {
+		t.Errorf("hr easy = unit %v dur %v, want bpm/1s", hEasy.RangeUnit, hEasy.DurationS)
+	}
+	// One easy + one repetition sample → 50% each within pace and HR.
+	if pEasy.Percent == nil || *pEasy.Percent != 50.0 {
+		t.Errorf("pace easy percent = %v, want 50.0", pEasy.Percent)
+	}
+}
+
+func TestCompute_Full_WritesStrideZones(t *testing.T) {
+	// Full mode must also write STRIDE zones (backfill over the trailing-year
+	// window), not just training load / daily PMC / PBs.
+	day := time.Date(2026, 3, 1, 6, 0, 0, 0, time.UTC)
+	thr, thrSpeed := 150.0, 3.7
+	f := &fakeStore{
+		snap: &storage.RunningCalibrationSnapshot{
+			ID: 7, ThresholdHR: &thr, ThresholdSpeedMps: &thrSpeed,
+			ThresholdHRConfidence: "high", ThresholdSpeedConfidence: "high",
+		},
+		acts: []storage.Activity{runningActivity("old-1", day)},
+		ts: []storage.TimeseriesPoint{
+			{Timestamp: int64Ptr(0), HeartRate: intPtr(125), Speed: floatPtr(345)},
+			{Timestamp: int64Ptr(100), HeartRate: intPtr(165), Speed: floatPtr(222)},
+		},
+	}
+	if _, err := runJob(t, NewCompute(f), `{"mode":"full"}`); err != nil {
+		t.Fatalf("compute full: %v", err)
+	}
+	if len(f.activityZonesWritten) != 12 {
+		t.Fatalf("full zone rows = %d, want 12 (6 pace + 6 HR)", len(f.activityZonesWritten))
 	}
 }
 

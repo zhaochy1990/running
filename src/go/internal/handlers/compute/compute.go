@@ -9,9 +9,12 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/zhaochy1990/stride/internal/compute/calibration"
 	"github.com/zhaochy1990/stride/internal/compute/pb"
 	"github.com/zhaochy1990/stride/internal/compute/trainingload"
 	"github.com/zhaochy1990/stride/internal/compute/trainingloadsource"
+	"github.com/zhaochy1990/stride/internal/compute/watchmap"
+	"github.com/zhaochy1990/stride/internal/compute/zones"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/provider"
 	"github.com/zhaochy1990/stride/internal/storage"
@@ -26,19 +29,25 @@ const trainingLoadLookbackDays = 365
 // Heartbeat percent bands for the compute stages.
 const (
 	pctTrainingLoad  = 66
+	pctActivityZones = 83
 	pctPersonalBests = 99
 )
 
 // ComputeStore is the read+write surface the compute job needs. It READS the
 // latest calibration snapshot (the calibration job owns writes) and reads the
-// activity/health inputs; it writes per-activity load, daily PMC and PBs.
+// activity/health inputs; it writes per-activity load, STRIDE-calibrated zones,
+// daily PMC and PBs.
 type ComputeStore interface {
 	// LatestRunningCalibrationSnapshot supplies the baseline the load model needs.
 	LatestRunningCalibrationSnapshot(ctx context.Context, userID string) (*storage.RunningCalibrationSnapshot, error)
+	// LatestRunningCalibrationSnapshotForVersion supplies the as-of snapshot for
+	// per-activity STRIDE zone boundaries.
+	LatestRunningCalibrationSnapshotForVersion(ctx context.Context, userID string, algorithmVersion int, asOf string) (*storage.RunningCalibrationSnapshot, error)
 	// trainingloadsource.Reader = ActivitiesInWindow + ActivityTimeseries.
 	trainingloadsource.Reader
 	AllRunningActivities(ctx context.Context, userID string) ([]storage.Activity, error)
 	ReplaceActivityTrainingLoad(ctx context.Context, userID string, rows []storage.ActivityTrainingLoad) error
+	ReplaceActivityZones(ctx context.Context, userID, labelID string, rows []storage.ActivityZone) error
 	ReplaceDailyTrainingLoad(ctx context.Context, userID string, rows []storage.DailyTrainingLoad) error
 	DailyTrainingLoadBefore(ctx context.Context, userID, date string) (*storage.DailyTrainingLoad, error)
 	AllDailyHealth(ctx context.Context, userID string) ([]storage.DailyHealth, error)
@@ -108,13 +117,17 @@ func NewCompute(store ComputeStore) job.Handler {
 // a zero EWMA seed, and the full personal-bests set (replace-all).
 func runFull(ctx context.Context, store ComputeStore, user string, cal trainingload.CalibrationSnapshot, asOf time.Time, hb job.Heartbeat) (string, error) {
 	start := asOf.AddDate(0, 0, -trainingLoadLookbackDays)
-	results, err := loadAndComputeActivity(ctx, store, user, start, asOf, cal)
+	results, acts, err := loadAndComputeActivity(ctx, store, user, start, asOf, cal)
 	if err != nil {
 		return "", err
 	}
 	if err := store.ReplaceActivityTrainingLoad(ctx, user, mapActivityRows(user, results)); err != nil {
 		return "", err
 	}
+	if err := computeActivityZonesFor(ctx, store, user, acts); err != nil {
+		return "", err
+	}
+	_ = hb("activity_zones", pctActivityZones)
 	daily, err := computeDaily(ctx, store, user, results, start, asOf, nil)
 	if err != nil {
 		return "", err
@@ -186,13 +199,17 @@ func runIncremental(ctx context.Context, store ComputeStore, user string, labelI
 
 	// Per-activity load over [minDay, asOf] (new + any recent existing) — upserted
 	// by (user, label_id), leaving older rows untouched.
-	results, err := loadAndComputeActivity(ctx, store, user, minDay, asOf, cal)
+	results, acts, err := loadAndComputeActivity(ctx, store, user, minDay, asOf, cal)
 	if err != nil {
 		return "", err
 	}
 	if err := store.ReplaceActivityTrainingLoad(ctx, user, mapActivityRows(user, results)); err != nil {
 		return "", err
 	}
+	if err := computeActivityZonesFor(ctx, store, user, acts); err != nil {
+		return "", err
+	}
+	_ = hb("activity_zones", pctActivityZones)
 
 	// Daily PMC: seed from the last computed day before minDay so the EWMA
 	// continues, then recompute only [minDay, asOf] and upsert that tail.
@@ -220,18 +237,113 @@ func runIncremental(ctx context.Context, store ComputeStore, user string, labelI
 	return string(out), nil
 }
 
-// loadAndComputeActivity loads every activity in [start, end] (with timeseries)
-// and computes its training load.
-func loadAndComputeActivity(ctx context.Context, store ComputeStore, user string, start, end time.Time, cal trainingload.CalibrationSnapshot) ([]trainingload.ActivityLoadResult, error) {
+// loadAndComputeActivity loads every activity in [start, end] (with timeseries),
+// computes its training load, and returns both the results and the loaded inputs
+// (the caller reuses the samples for the STRIDE zone step, so the heavy
+// timeseries fetch is not duplicated).
+func loadAndComputeActivity(ctx context.Context, store ComputeStore, user string, start, end time.Time, cal trainingload.CalibrationSnapshot) ([]trainingload.ActivityLoadResult, []trainingload.ActivityInput, error) {
 	acts, err := trainingloadsource.Load(ctx, store, user, "", start, end)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	results := make([]trainingload.ActivityLoadResult, len(acts))
 	for i, a := range acts {
 		results[i] = trainingload.ComputeActivityLoad(a, cal)
 	}
-	return results, nil
+	return results, acts, nil
+}
+
+// computeActivityZonesFor writes STRIDE-calibrated zone rows (ADR 0019) for each
+// running activity in acts, mirroring the Python post-sync ActivityZonesHandler:
+// zone boundaries come from the calibration snapshot as-of the activity's
+// Shanghai day, classified over the activity's timeseries samples. Non-running
+// activities, activities with no samples, and activities with no as-of snapshot
+// are skipped without error.
+func computeActivityZonesFor(ctx context.Context, store ComputeStore, user string, acts []trainingload.ActivityInput) error {
+	for i := range acts {
+		a := &acts[i]
+		if !watchmap.IsRunningSport(a.Sport) || len(a.Samples) == 0 {
+			continue
+		}
+		snap, err := store.LatestRunningCalibrationSnapshotForVersion(ctx, user, calibration.ModelVersion, timefmt.ShanghaiDayStr(a.ActivityDate))
+		if err != nil {
+			return err
+		}
+		if snap == nil {
+			continue
+		}
+		zs := calibration.ComputeTrainingZones(toCalibrationSnapshot(snap))
+		if len(zs.PaceZones) == 0 && len(zs.HeartRateZones) == 0 {
+			continue
+		}
+		rows := toStorageActivityZones(user, zones.ComputeActivityTimeInZone(toZoneSamples(a.Samples), zs.PaceZones, zs.HeartRateZones))
+		if err := store.ReplaceActivityZones(ctx, user, a.LabelID, rows); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// toCalibrationSnapshot maps a persisted snapshot row onto the pure-compute
+// calibration.Snapshot the zone math needs.
+func toCalibrationSnapshot(s *storage.RunningCalibrationSnapshot) calibration.Snapshot {
+	return calibration.Snapshot{
+		ThresholdHR:              s.ThresholdHR,
+		ThresholdSpeedMps:        s.ThresholdSpeedMps,
+		ThresholdHRConfidence:    calibration.Confidence(s.ThresholdHRConfidence),
+		ThresholdSpeedConfidence: calibration.Confidence(s.ThresholdSpeedConfidence),
+		RHRBaseline:              s.RHRBaseline,
+		ObservedMaxHR:            s.ObservedMaxHR,
+		HRMaxEstimate:            s.HRMaxEstimate,
+		HRMaxConfidence:          calibration.Confidence(s.HRMaxConfidence),
+		HighHRReference:          s.HighHRReference,
+		CriticalPowerW:           s.CriticalPowerW,
+		CriticalSpeedMps:         s.CriticalSpeedMps,
+		DPrimeM:                  s.DPrimeM,
+		RiegelK:                  s.RiegelK,
+		EnduranceIndex:           s.EnduranceIndex,
+		SpeedIndex:               s.SpeedIndex,
+		SpeedDurationConfidence:  calibration.Confidence(s.SpeedDurationConfidence),
+		AlgorithmVersion:         s.AlgorithmVersion,
+	}
+}
+
+// toZoneSamples maps trainingload samples (which carry watchmap-normalized
+// elapsed / speed / HR) onto the zone-classifier sample shape, computing dwell
+// from the elapsed seconds first.
+func toZoneSamples(samples []trainingload.Sample) []zones.Sample {
+	out := make([]zones.Sample, len(samples))
+	if len(samples) == 0 {
+		return out
+	}
+	elapsed := make([]*float64, len(samples))
+	for i, s := range samples {
+		elapsed[i] = s.ElapsedS
+	}
+	dwell := zones.DwellSeconds(elapsed)
+	for i, s := range samples {
+		out[i] = zones.Sample{DwellS: dwell[i], SpeedMps: s.SpeedMps, HRBpm: s.HeartRateBpm}
+	}
+	return out
+}
+
+// toStorageActivityZones stamps the tenant key on the compute rows (LabelID is
+// stamped by ReplaceActivityZones).
+func toStorageActivityZones(user string, rows []zones.Zone) []storage.ActivityZone {
+	out := make([]storage.ActivityZone, len(rows))
+	for i, z := range rows {
+		out[i] = storage.ActivityZone{
+			UserID:    user,
+			ZoneType:  z.ZoneType,
+			ZoneIndex: z.ZoneIndex,
+			RangeMin:  z.RangeMin,
+			RangeMax:  z.RangeMax,
+			RangeUnit: z.RangeUnit,
+			DurationS: z.DurationS,
+			Percent:   z.Percent,
+		}
+	}
+	return out
 }
 
 // computeDaily builds the daily PMC series for [start, end] from the given
