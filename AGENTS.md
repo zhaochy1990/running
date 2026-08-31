@@ -150,6 +150,10 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 
 完整 commentary 规则、daily loop bash、prod/local 不一致排障 → [`docs/working-model.md`](docs/working-model.md)。
 
+### Prod API endpoint（HARD）
+
+生产面向 client 的 API 根为 **`https://api.stride-running.cn`**。所有部署、脚本、CLI（`coros-sync` 等）和前端指向生产 API 时统一用它；`STRIDE_PROD_URL` / `STRIDE_GO_API_URL` 在生产也以它为值。**不要沿用旧 Azure `stride-app.*.azurecontainerapps.io` 地址**。完整配置见 [`docs/deployment.md`](docs/deployment.md)。
+
 ---
 
 ## Folder Structure

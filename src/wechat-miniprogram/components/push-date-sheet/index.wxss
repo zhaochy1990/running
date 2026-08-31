@@ -1,0 +1,88 @@
+/* 推送日期选择底部弹层 —— 深色 STRIDE 主题 */
+
+.sheet-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.sheet {
+  width: 100%;
+  box-sizing: border-box;
+  background: #16171a;
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 24rpx 32rpx calc(32rpx + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  animation: sheet-up 0.2s ease;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.sheet__handle {
+  width: 72rpx;
+  height: 8rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 auto 24rpx;
+}
+
+.sheet__title {
+  font-size: 32rpx;
+  line-height: 44rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+  text-align: center;
+  margin-bottom: 24rpx;
+}
+
+.sheet__list {
+  max-height: 560rpx;
+}
+
+.sheet__item {
+  padding: 28rpx 24rpx;
+  border-radius: 16rpx;
+  background: rgba(255, 255, 255, 0.04);
+  margin-bottom: 16rpx;
+  transition: opacity 0.15s ease;
+}
+
+.sheet__item:active {
+  opacity: 0.7;
+}
+
+.sheet__item-text {
+  font-size: 30rpx;
+  color: #e3e2e5;
+}
+
+.sheet__cancel {
+  margin-top: 24rpx;
+  padding: 28rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.06);
+  text-align: center;
+  font-size: 30rpx;
+  color: #9c9c9d;
+}
+
+.sheet__cancel:active {
+  opacity: 0.7;
+}

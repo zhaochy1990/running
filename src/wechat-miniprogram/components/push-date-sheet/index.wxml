@@ -1,0 +1,18 @@
+<view wx:if="{{show}}" class="sheet-mask" catchtouchmove="noop" bindtap="onClose">
+  <view class="sheet" catchtap="noop">
+    <view class="sheet__handle"></view>
+    <view wx:if="{{title}}" class="sheet__title">{{title}}</view>
+    <scroll-view scroll-y class="sheet__list">
+      <view
+        wx:for="{{options}}"
+        wx:key="value"
+        class="sheet__item"
+        data-value="{{item.value}}"
+        bindtap="onSelect"
+      >
+        <text class="sheet__item-text">{{item.label}}</text>
+      </view>
+    </scroll-view>
+    <view class="sheet__cancel" bindtap="onClose">取消</view>
+  </view>
+</view>

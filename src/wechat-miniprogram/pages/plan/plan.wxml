@@ -68,4 +68,12 @@
       <view class="empty-card__sub">生成周计划后可查看</view>
     </view>
   </view>
+
+  <!-- 推送日期选择弹层 -->
+  <push-date-sheet
+    show="{{pushSheetVisible}}"
+    options="{{pushOptions}}"
+    bindselect="onPushDateSelect"
+    bindclose="onPushDateClose"
+  />
 </view>

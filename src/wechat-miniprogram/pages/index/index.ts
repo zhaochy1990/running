@@ -24,6 +24,10 @@ import type {
 // 界面状态
 // ---------------------------------------------------------------------------
 
+interface PushDateSelectEvent {
+  detail: { value: string };
+}
+
 interface IndexPageData {
   statusBarHeight: number;
   contentPaddingTop: number;
@@ -35,6 +39,9 @@ interface IndexPageData {
   workout: TodayWorkoutView | null;
   nutrition: TodayNutritionView | null;
   loading: boolean;
+  /** 推送日期弹层可见性（±7 天共 15 个选项，需滚动列表承载） */
+  pushSheetVisible: boolean;
+  pushOptions: Array<{ label: string; value: string }>;
 }
 
 interface IndexPageHandlers {
@@ -45,6 +52,8 @@ interface IndexPageHandlers {
   onCoachTap(): void;
   onWatchTap(): void;
   onMoreTap(): void;
+  onPushDateSelect(e: PushDateSelectEvent): void;
+  onPushDateClose(): void;
 }
 
 // 页面实例上的非渲染状态（模块级避免与 data 串扰，同 login 页 codeTimer 模式）
@@ -93,6 +102,8 @@ Page<IndexPageData, IndexPageHandlers>({
     workout: null,
     nutrition: null,
     loading: true,
+    pushSheetVisible: false,
+    pushOptions: [],
   },
 
   onLoad() {
@@ -190,7 +201,7 @@ Page<IndexPageData, IndexPageHandlers>({
     wx.showToast({ title: '暂未开放', icon: 'none' });
   },
 
-  async onWatchTap() {
+  onWatchTap() {
     const { workout } = this.data;
     if (!workout || !workout.hasSpec) {
       wx.showToast({ title: '该训练暂不支持推送', icon: 'none' });
@@ -201,20 +212,22 @@ Page<IndexPageData, IndexPageHandlers>({
       return;
     }
 
-    const options = buildPushDateOptions(workout.date);
-    const labels = options.map((o) => o.label);
+    // 打开推送日期选择弹层（±7 天共 15 个选项，用组件承载，见 components/push-date-sheet）
+    this.setData({
+      pushOptions: buildPushDateOptions(workout.date),
+      pushSheetVisible: true,
+    });
+  },
 
-    const res = await new Promise<WechatMiniprogram.ShowActionSheetSuccessCallbackResult>((resolve, reject) => {
-      wx.showActionSheet({
-        itemList: labels,
-        success: resolve,
-        fail: reject,
-      });
-    }).catch(() => null);
+  onMoreTap() {
+    wx.showToast({ title: '暂未开放', icon: 'none' });
+  },
 
-    if (!res) return; // 用户取消
-
-    const targetDate = options[res.tapIndex].value;
+  async onPushDateSelect(e: PushDateSelectEvent) {
+    const targetDate = e.detail.value;
+    const { workout } = this.data;
+    this.setData({ pushSheetVisible: false });
+    if (!workout || !targetDate) return;
 
     wx.showLoading({ title: '推送中...', mask: true });
     try {
@@ -232,8 +245,8 @@ Page<IndexPageData, IndexPageHandlers>({
     }
   },
 
-  onMoreTap() {
-    wx.showToast({ title: '暂未开放', icon: 'none' });
+  onPushDateClose() {
+    this.setData({ pushSheetVisible: false });
   },
 });
 

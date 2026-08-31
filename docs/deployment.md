@@ -193,7 +193,7 @@ Python season-plan generation is unchanged and outside this Go profile, injury, 
 
 要工作必须配两件事：
 
-- **GitHub Actions secrets**：`STRIDE_PROD_URL`（如 `https://stride-app.<region>.azurecontainerapps.io`）和 `STRIDE_INTERNAL_TOKEN`（随机 32+ 字符）
+- **GitHub Actions secrets**：`STRIDE_PROD_URL`（如 `https://api.stride-running.cn`）和 `STRIDE_INTERNAL_TOKEN`（随机 32+ 字符）
 - **Azure Container App env var**：相同 `STRIDE_INTERNAL_TOKEN` 值，如 `az containerapp update --name stride-app --resource-group rg-running-prod --set-env-vars STRIDE_INTERNAL_TOKEN=<value>`
 
 server 端没设 → route 返 401；两端都没设 → workflow step 静默跳过。

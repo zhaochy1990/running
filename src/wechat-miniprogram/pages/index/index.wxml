@@ -135,4 +135,12 @@
     </view>
     <view class="content__tail"></view>
   </view>
+
+  <!-- 推送日期选择弹层 -->
+  <push-date-sheet
+    show="{{pushSheetVisible}}"
+    options="{{pushOptions}}"
+    bindselect="onPushDateSelect"
+    bindclose="onPushDateClose"
+  />
 </view>

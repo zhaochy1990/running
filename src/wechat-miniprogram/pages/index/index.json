@@ -3,5 +3,8 @@
   "navigationBarTitleText": "今日",
   "navigationBarBackgroundColor": "#07080A",
   "navigationBarTextStyle": "white",
-  "backgroundColor": "#07080A"
+  "backgroundColor": "#07080A",
+  "usingComponents": {
+    "push-date-sheet": "/components/push-date-sheet/index"
+  }
 }
