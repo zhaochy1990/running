@@ -7,6 +7,7 @@ import {
   MasterPlanGraphRequest,
 } from "coach_agent";
 import { loadApiConfig } from "../src/config.js";
+import { coachAgentConfigFiles, coachApiConfigFiles } from "../src/configPaths.js";
 import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";
 
 type Profile = "local" | "prod";
@@ -14,10 +15,10 @@ const PROFILE = "local" as Profile;
 const USER_ID = "11c2e582-5a85-4633-81d2-df7e37ad7b48";
 const AS_OF = new Date("2026-08-07").toISOString();
 
-export const config = loadConfig();
+export const config = loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) });
 const modelConfig = getAgentConfig(config, "master_plan");
 const reviewerConfig = getAgentConfig(config, "reviewer");
-const store = MySqlDataProvider.create(loadApiConfig().strideDatabase);
+const store = MySqlDataProvider.create(loadApiConfig({ configFiles: coachApiConfigFiles(import.meta.url) }).strideDatabase);
 
 const provider = new DataProviderMasterPlanContextProvider(store);
 

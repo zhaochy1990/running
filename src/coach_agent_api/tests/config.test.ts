@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -29,11 +29,22 @@ const BASE_YAML = [
   "",
 ].join("\n");
 
+/** Absolute config file paths for `loadApiConfig` in the temp repo (`<root>/config/`). */
+function apiConfigFiles(root: string, env: string): string[] {
+  const configDir = join(root, "config");
+  const files = [join(configDir, "coach-api.yaml")];
+  const overlay = join(configDir, `coach-api.${env}.yaml`);
+  if (existsSync(overlay)) {
+    files.push(overlay);
+  }
+  return files;
+}
+
 test("loads base YAML when the selected environment has no overlay", () => {
-  withConfigRepo({ "coach-api.yaml": BASE_YAML }, (cwd) => {
+  withConfigRepo({ "coach-api.yaml": BASE_YAML }, (root) => {
     const config = loadApiConfig({
-      cwd,
-      env: { STRIDE_COACH_ENV: "test" },
+      configFiles: apiConfigFiles(root, "dev"),
+      env: { STRIDE_COACH_ENV: "dev" },
     });
     assert.equal(config.host, "base-host");
     assert.equal(config.port, 8081);
@@ -63,9 +74,9 @@ test("environment YAML overrides base and environment variables override both", 
         "",
       ].join("\n"),
     },
-    (cwd) => {
+    (root) => {
       const config = loadApiConfig({
-        cwd,
+        configFiles: apiConfigFiles(root, "staging"),
         env: {
           STRIDE_COACH_ENV: "staging",
           STRIDE_COACH_API_HOST: "env-host",
@@ -86,23 +97,23 @@ test("an environment PEM replaces a YAML key path", () => {
     {
       "coach-api.yaml": BASE_YAML.replace(
         "  public_key_pem: base-public-key\n" + '  public_key_path: ""',
-        '  public_key_pem: ""\n' + "  public_key_path: config/public.pem",
+        '  public_key_pem: ""\n' + "  public_key_path: public.pem",
       ),
       "public.pem": "path-public-key",
     },
-    (cwd) => {
+    (root) => {
       assert.equal(
         loadApiConfig({
-          cwd,
-          env: { STRIDE_COACH_ENV: "test" },
+          configFiles: apiConfigFiles(root, "dev"),
+          env: { STRIDE_COACH_ENV: "dev" },
         }).auth.publicKeyPem,
         "path-public-key",
       );
       assert.equal(
         loadApiConfig({
-          cwd,
+          configFiles: apiConfigFiles(root, "dev"),
           env: {
-            STRIDE_COACH_ENV: "test",
+            STRIDE_COACH_ENV: "dev",
             STRIDE_AUTH_PUBLIC_KEY_PEM: "env-public-key",
           },
         }).auth.publicKeyPem,
@@ -113,19 +124,22 @@ test("an environment PEM replaces a YAML key path", () => {
 });
 
 test("rejects unknown YAML keys in strict mode", () => {
-  withConfigRepo({ "coach-api.yaml": `${BASE_YAML}unknown_setting: true\n` }, (cwd) => {
-    assert.throws(() => loadApiConfig({ cwd, env: { STRIDE_COACH_ENV: "test" } }), /configuration param 'unknown_setting' not declared/);
+  withConfigRepo({ "coach-api.yaml": `${BASE_YAML}unknown_setting: true\n` }, (root) => {
+    assert.throws(
+      () => loadApiConfig({ configFiles: apiConfigFiles(root, "dev"), env: { STRIDE_COACH_ENV: "dev" } }),
+      /configuration param 'unknown_setting' not declared/,
+    );
   });
 });
 
 test("rejects invalid ports and ambiguous JWT key environment variables", () => {
-  withConfigRepo({ "coach-api.yaml": BASE_YAML }, (cwd) => {
+  withConfigRepo({ "coach-api.yaml": BASE_YAML }, (root) => {
     assert.throws(
       () =>
         loadApiConfig({
-          cwd,
+          configFiles: apiConfigFiles(root, "dev"),
           env: {
-            STRIDE_COACH_ENV: "test",
+            STRIDE_COACH_ENV: "dev",
             STRIDE_COACH_API_PORT: "70000",
           },
         }),
@@ -134,9 +148,9 @@ test("rejects invalid ports and ambiguous JWT key environment variables", () => 
     assert.throws(
       () =>
         loadApiConfig({
-          cwd,
+          configFiles: apiConfigFiles(root, "dev"),
           env: {
-            STRIDE_COACH_ENV: "test",
+            STRIDE_COACH_ENV: "dev",
             STRIDE_AUTH_PUBLIC_KEY_PEM: "pem",
             STRIDE_AUTH_PUBLIC_KEY_PATH: "config/public.pem",
           },
@@ -151,25 +165,30 @@ test("fails closed when required database or JWT settings are absent", () => {
     {
       "coach-api.yaml": BASE_YAML.replace("  password: stride-password", '  password: ""'),
     },
-    (cwd) => {
-      assert.throws(() => loadApiConfig({ cwd, env: { STRIDE_COACH_ENV: "test" } }), /stride_database.password: must be a non-empty string/);
+    (root) => {
+      assert.throws(
+        () => loadApiConfig({ configFiles: apiConfigFiles(root, "dev"), env: { STRIDE_COACH_ENV: "dev" } }),
+        /stride_database.password: must be a non-empty string/,
+      );
     },
   );
   withConfigRepo(
     {
       "coach-api.yaml": BASE_YAML.replace("  public_key_pem: base-public-key", '  public_key_pem: ""'),
     },
-    (cwd) => {
-      assert.throws(() => loadApiConfig({ cwd, env: { STRIDE_COACH_ENV: "test" } }), /auth.public_key_pem or auth.public_key_path must be configured/);
+    (root) => {
+      assert.throws(
+        () => loadApiConfig({ configFiles: apiConfigFiles(root, "dev"), env: { STRIDE_COACH_ENV: "dev" } }),
+        /auth.public_key_pem or auth.public_key_path must be configured/,
+      );
     },
   );
 });
 
-function withConfigRepo(files: Record<string, string>, run: (cwd: string) => void): void {
+function withConfigRepo(files: Record<string, string>, run: (root: string) => void): void {
   const root = mkdtempSync(join(tmpdir(), "coach-api-config-"));
   try {
     mkdirSync(join(root, "config"));
-    writeFileSync(join(root, ".root"), "");
     for (const [name, content] of Object.entries(files)) {
       writeFileSync(join(root, "config", name), content);
     }

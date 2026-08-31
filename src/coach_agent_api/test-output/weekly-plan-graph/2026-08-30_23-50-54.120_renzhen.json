@@ -1,0 +1,538 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_name": "2026-08-31_09-06",
+  "sessions": [
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-08-31",
+      "session_index": 0,
+      "summary": "力量训练：基础下肢与核心力量",
+      "notes_md": "以可控重量完成，动作幅度完整；不追求力竭，为周二轻松跑保留下肢状态。",
+      "total_distance_m": null,
+      "total_duration_s": 2700,
+      "estimated_dose": null,
+      "kind": "strength",
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "基础力量 A",
+        "date": "2026-08-31",
+        "note": "从热身开始，每个动作间休息 60-90 秒。",
+        "exercises": [
+          {
+            "canonical_id": "goblet_squat",
+            "display_name": "高脚杯深蹲",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 60,
+            "note": "中慢速下蹲，膝盖对齐脚尖",
+            "provider_id": null
+          },
+          {
+            "canonical_id": "romanian_deadlift",
+            "display_name": "罗马尼亚硬拉",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 8,
+            "rest_seconds": 75,
+            "note": "髋关节主导，保持背部中立",
+            "provider_id": null
+          },
+          {
+            "canonical_id": "step_up",
+            "display_name": "台阶蹬伸",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 8,
+            "rest_seconds": 60,
+            "note": "每侧 8 次",
+            "provider_id": null
+          },
+          {
+            "canonical_id": "glute_bridge",
+            "display_name": "臀桥",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 45,
+            "note": "顶峰收缩 2 秒",
+            "provider_id": null
+          },
+          {
+            "canonical_id": "side_plank",
+            "display_name": "侧桥",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 30,
+            "rest_seconds": 45,
+            "note": "每侧 30 秒，保持髋部不塌",
+            "provider_id": null
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-01",
+      "session_index": 1,
+      "summary": "轻松有氧跑 10 km",
+      "notes_md": "保持可对话强度，HR 控制在 easy 区；如晨起 RHR 明显高于近期均值可缩短至 8 km。",
+      "total_distance_m": 10000,
+      "total_duration_s": 3300,
+      "estimated_dose": 55.3635,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "轻松有氧跑",
+        "date": "2026-09-01",
+        "note": "地面平缓优先，避免连续坡度。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 10000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 135,
+                  "high": 148
+                },
+                "note": "轻松有氧，能说完整句子",
+                "hr_cap_bpm": 148
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-02",
+      "session_index": 2,
+      "summary": "有氧进阶跑 13 km：3×8 min 马拉松配速 + 放松冲刺",
+      "notes_md": "替代连续阈值课；先完成 3×8 min 马拉松配速，最后做 4×20s 放松冲刺。如周三晨起疲劳，可将马拉松配速段降为轻松有氧。",
+      "total_distance_m": 13000,
+      "total_duration_s": 4280,
+      "estimated_dose": 77.6862,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "有氧进阶 + 放松冲刺",
+        "date": "2026-09-02",
+        "note": "质量刺激轮换：避免连续阈值；马拉松配速区间 264-304 s/km。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 4000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 135,
+                  "high": 148
+                },
+                "note": "轻松热身",
+                "hr_cap_bpm": 148
+              }
+            ]
+          },
+          {
+            "repeat": 3,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "time_s",
+                  "value": 480
+                },
+                "target": {
+                  "kind": "pace_s_km",
+                  "low": 264,
+                  "high": 304
+                },
+                "note": "马拉松配速段落，保持稳定",
+                "hr_cap_bpm": 158
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {
+                  "kind": "time_s",
+                  "value": 120
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": null,
+                  "high": 134
+                },
+                "note": "轻松慢跑恢复",
+                "hr_cap_bpm": 134
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "cooldown",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 2000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": null,
+                  "high": 134
+                },
+                "note": "冷身慢跑",
+                "hr_cap_bpm": 134
+              }
+            ]
+          },
+          {
+            "repeat": 4,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "time_s",
+                  "value": 20
+                },
+                "target": {
+                  "kind": "open",
+                  "low": null,
+                  "high": null
+                },
+                "note": "放松冲刺，不发力全力，保持良好跑姿",
+                "hr_cap_bpm": null
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {
+                  "kind": "time_s",
+                  "value": 60
+                },
+                "target": {
+                  "kind": "open",
+                  "low": null,
+                  "high": null
+                },
+                "note": "步行或轻松慢跑恢复",
+                "hr_cap_bpm": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-03",
+      "session_index": 3,
+      "summary": "恢复跑 6 km",
+      "notes_md": "控心率上限；也可替换为 40-50 分钟椭圆机/单车，若下肢酸痛明显。",
+      "total_distance_m": 6000,
+      "total_duration_s": 2520,
+      "estimated_dose": 36.2328,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "恢复跑",
+        "date": "2026-09-03",
+        "note": "维持轻松，不赶配速。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 6000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": null,
+                  "high": 134
+                },
+                "note": "恢复区间，鼻腔呼吸或能说话",
+                "hr_cap_bpm": 134
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-04",
+      "session_index": 4,
+      "summary": "轻松有氧跑 8 km",
+      "notes_md": "安排在力量课同一天；建议先跑 8 km，再做力量，注意总时长与补水。",
+      "total_distance_m": 8000,
+      "total_duration_s": 2640,
+      "estimated_dose": 44.2908,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "轻松有氧跑",
+        "date": "2026-09-04",
+        "note": "平缓路线，控制心率。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 8000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 135,
+                  "high": 148
+                },
+                "note": "轻松有氧，可对话",
+                "hr_cap_bpm": 148
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-04",
+      "session_index": 5,
+      "summary": "力量训练：跑者耐久与防伤",
+      "notes_md": "与轻松跑同天，优先保证动作质量；如跑步后疲劳明显，可减少 1 组。",
+      "total_distance_m": null,
+      "total_duration_s": 2400,
+      "estimated_dose": null,
+      "kind": "strength",
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "跑者力量 B",
+        "date": "2026-09-04",
+        "note": "每个动作完成后休息 45-75 秒。",
+        "exercises": [
+          {
+            "canonical_id": "reverse_lunge",
+            "display_name": "反向弓步",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 60,
+            "note": "每侧 10 次，保持躯干稳定",
+            "provider_id": null
+          },
+          {
+            "canonical_id": "calf_raise",
+            "display_name": "提踵",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 15,
+            "rest_seconds": 45,
+            "note": "慢速下放，感受小腿发力",
+            "provider_id": null
+          },
+          {
+            "canonical_id": "dead_bug",
+            "display_name": "死虫式",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 45,
+            "note": "每侧 10 次，腰部尽量贴地",
+            "provider_id": null
+          },
+          {
+            "canonical_id": "single_leg_rdl",
+            "display_name": "单腿罗马尼亚硬拉",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 8,
+            "rest_seconds": 60,
+            "note": "每侧 8 次，髋部保持水平",
+            "provider_id": null
+          },
+          {
+            "canonical_id": "back_extension",
+            "display_name": "背伸展",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 45,
+            "note": "控制幅度，不要过度后伸",
+            "provider_id": null
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-05",
+      "session_index": 6,
+      "summary": "长跑前短恢复跑 6 km",
+      "notes_md": "保持非常轻松，不超过周距离目标 10%（约 6 km），为周日长跑留力。",
+      "total_distance_m": 6000,
+      "total_duration_s": 2520,
+      "estimated_dose": 36.2328,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "恢复跑",
+        "date": "2026-09-05",
+        "note": "长跑前一天控量，保持轻松。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 6000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": null,
+                  "high": 134
+                },
+                "note": "恢复区间，不抢配速",
+                "hr_cap_bpm": 134
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-06",
+      "session_index": 7,
+      "summary": "轻松长距离 21 km",
+      "notes_md": "全程可对话；如晨起 RHR 明显偏高、或出现关节疼痛，可在 16 km 处结束。",
+      "total_distance_m": 21000,
+      "total_duration_s": 7560,
+      "estimated_dose": 116.2634,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "轻松长距离",
+        "date": "2026-09-06",
+        "note": "以稳固耐力和体感为主，不硬顶配速。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 21000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 135,
+                  "high": 148
+                },
+                "note": "全程轻松有氧，保持可对话",
+                "hr_cap_bpm": 148
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "nutrition": [
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-08-31",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "均衡饮食；力量训练日保证蛋白质摄入。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-01",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "轻松跑日正常饮食，跑后补充碳水和蛋白质。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-02",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "质量课前 2-3 小时补充碳水，课后 30 分钟内补充恢复餐。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-03",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "恢复日以清淡均衡为主，避免暴饮暴食。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-04",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "跑步+力量同一天，注意两餐之间的碳水和蛋白质补充。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-05",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "长跑前一天可适当增加碳水，避免油腻和过量纤维。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-06",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "长跑日注意全程补水和跑后恢复餐。"
+    }
+  ],
+  "notes_md": "本周为 base 阶段收尾周：采用 1Q1L，安排 6 次跑步 + 2 次力量。周跑量目标 64 km，训练剂量预估 268，落在目标区间 266.19-287.49 内。",
+  "coach_notes": "近期 RHR 7 日均值 68.6 高于基线 47，恢复尚未完全，因此本周不安排阈值间歇或超过 21 km 的长距离；质量课用有氧进阶+放松冲刺替代连续 tempo。若周三晨起 RHR 仍高于 65 或身体疲劳，可跳过 8min 马拉松段落，继续轻松跑。"
+}

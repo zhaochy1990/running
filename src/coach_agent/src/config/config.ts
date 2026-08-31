@@ -1,41 +1,31 @@
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { getLogger } from "@stride/common";
-import { parse } from "yaml";
-import { deepMerge } from "./deepMerge.js";
-import type { CoachAgentConfig, ModelConfig, PartialCoachAgentConfig } from "./types.js";
+import { getLogger, loadConfig as loadWithConvict } from "@stride/common";
+import type { CoachAgentConfig, ModelConfig } from "./types.js";
+
+const logger = getLogger("config");
 
 export type * from "./types.js";
 
-// default env is "local" if STRIDE_COACH_ENV and NODE_ENV are not set
-const ENV = process.env.STRIDE_COACH_ENV ?? process.env.NODE_ENV ?? "local";
-const DEFAULT_CONFIG_FILE = "coach.yaml";
-const TARGET_ENV_CONFIG_FILE = `coach.${ENV}.yaml`;
-const logger = getLogger("config");
-
-interface ResolvedConfigFiles {
-  defaultConfigFile?: string;
-  targetEnvConfigFile?: string;
-}
+/**
+ * Convict schema for the coach config. The model registry is dynamic, so the
+ * array items are declared as opaque (validated only at the `Array` level) and
+ * the loader runs leniently (`strict: false`) so unknown per-model metadata is
+ * preserved rather than rejected.
+ */
+const coachSchema = {
+  models: { format: Array, default: [] },
+  agents: { format: Array, default: [] },
+  observability: { default: {} },
+};
 
 export interface LoadConfigOptions {
-  cwd?: string;
-  /** Explicit config file path; when provided it is merged on top of the default config (like the env-specific file). */
-  configFile?: string;
+  /** Absolute paths to the YAML config file(s), merged in order (later wins). */
+  configFiles: string[];
 }
 
-export function loadConfig(options: LoadConfigOptions = {}): CoachAgentConfig {
-  const configFiles = resolveConfigFiles(options);
-  const defaultConfig = configFiles.defaultConfigFile ? readConfigFile(configFiles.defaultConfigFile) : {};
-  const targetEnvConfigFile = options.configFile ?? configFiles.targetEnvConfigFile;
-  const targetEnvConfig = targetEnvConfigFile ? readConfigFile(targetEnvConfigFile) : {};
-
-  logger.info(`Loading coach config for env "${ENV}"`);
-  logger.info(`  default config: ${configFiles.defaultConfigFile ?? "(none)"}`);
-  logger.info(`  target env config: ${targetEnvConfigFile ?? "(none)"}${options.configFile ? " (explicit)" : ""}`);
-
-  return deepMerge(defaultConfig, targetEnvConfig) as CoachAgentConfig;
+export function loadConfig(options: LoadConfigOptions): CoachAgentConfig {
+  logger.info({ configFiles: options.configFiles }, "Loading coach config");
+  // The coach registry is dynamic; the convicted output is trusted to match the shape.
+  return loadWithConvict({ schema: coachSchema, configFiles: options.configFiles, strict: false }) as unknown as CoachAgentConfig;
 }
 
 export function getAgentConfig(config: CoachAgentConfig, agentName: string): ModelConfig {
@@ -67,74 +57,4 @@ export function getAgentConfig(config: CoachAgentConfig, agentName: string): Mod
   }
 
   return model;
-}
-
-// Resolve the path to the config file based on the provided options and environment variables.
-function resolveConfigFiles(options: LoadConfigOptions = {}): ResolvedConfigFiles {
-  const repoRoot = findRepoRoot(options.cwd ?? process.cwd());
-  const configDir = join(repoRoot, "config");
-
-  const defaultConfigPath = join(configDir, DEFAULT_CONFIG_FILE);
-  const targetEnvConfigPath = join(configDir, TARGET_ENV_CONFIG_FILE);
-  const configFiles: ResolvedConfigFiles = {};
-
-  if (existsSync(defaultConfigPath)) {
-    configFiles.defaultConfigFile = defaultConfigPath;
-  }
-
-  if (existsSync(targetEnvConfigPath)) {
-    configFiles.targetEnvConfigFile = targetEnvConfigPath;
-  }
-
-  if (!configFiles.defaultConfigFile && !configFiles.targetEnvConfigFile) {
-    throw new Error(`No config file found. Tried ${defaultConfigPath} and ${targetEnvConfigPath}`);
-  }
-
-  return configFiles;
-}
-
-function readConfigFile(configPath: string): PartialCoachAgentConfig {
-  const rawConfig = readFileSync(configPath, "utf8");
-  const parsedConfig: unknown = parse(rawConfig);
-
-  if (!isRecord(parsedConfig)) {
-    throw new Error(`Config file must contain a YAML mapping: ${configPath}`);
-  }
-
-  return parsedConfig as PartialCoachAgentConfig;
-}
-
-function findRepoRoot(startDir: string = process.cwd()): string {
-  const currentDir = resolve(startDir);
-  const moduleDir = dirname(fileURLToPath(import.meta.url));
-
-  for (const candidate of [currentDir, moduleDir]) {
-    const found = findRepoRootFrom(candidate);
-    if (found) {
-      return found;
-    }
-  }
-
-  throw new Error(`Unable to find repository root from ${currentDir}`);
-}
-
-function findRepoRootFrom(startDir: string): string | undefined {
-  let currentDir = resolve(startDir);
-
-  while (true) {
-    if (existsSync(join(currentDir, "config")) && existsSync(join(currentDir, ".root"))) {
-      return currentDir;
-    }
-
-    const parentDir = dirname(currentDir);
-    if (parentDir === currentDir) {
-      return undefined;
-    }
-
-    currentDir = parentDir;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

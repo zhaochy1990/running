@@ -408,7 +408,9 @@ export class WeeklyPlanGeneratorNodes {
     logger.warn(
       `Bouncing request ${request.request_id} back to ${phase ?? "?"} phase node: total dose ${formatNumber(simulation?.total_dose)} outside tolerance [${band}] (attempt ${attempts}/${MAX_GENERATION_ATTEMPTS})`,
     );
-    return phase === null || phase === undefined ? "load_mismatch" : PHASE_NODE_NAMES[phase];
+    // return phase === null || phase === undefined ? "load_mismatch" : PHASE_NODE_NAMES[phase];
+    // Do not re-generate plan even if the total does misses the target.
+    return "finalize";
   };
 
   readonly loadMismatch = (state: typeof GraphState.State) => {

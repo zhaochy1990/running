@@ -17,7 +17,7 @@ const API_BASE_URLS: Record<Env, string> = {
   // DEV 走本地 BFF（stride-web，:8080）——与 Web 端本地前门一致，转发到 STRIDE 数据面
   [ENV.DEV]: 'http://127.0.0.1:3000',
   [ENV.STAGING]: 'https://staging.stride.run',
-  [ENV.PROD]: 'https://124.221.38.59',
+  [ENV.PROD]: 'https://api.stride-running.cn',
 };
 
 export const API_BASE_URL = API_BASE_URLS[CURRENT_ENV];
@@ -32,7 +32,7 @@ export const API_BASE_URL = API_BASE_URLS[CURRENT_ENV];
 const AUTH_BASE_URLS: Record<Env, string> = {
   [ENV.DEV]: 'http://127.0.0.1:3001',
   [ENV.STAGING]: 'https://124.221.38.59',
-  [ENV.PROD]: 'https://124.221.38.59',
+  [ENV.PROD]: 'https://api.stride-running.cn',
 };
 
 export const AUTH_BASE_URL = AUTH_BASE_URLS[CURRENT_ENV];

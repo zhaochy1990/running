@@ -22,7 +22,9 @@ export interface ApiConfig {
 }
 
 export interface LoadApiConfigOptions {
-  cwd?: string;
+  /** Absolute paths to the YAML config file(s), loaded in order (later wins). */
+  configFiles: string[];
+  /** Environment used by convict for env-var overrides. Defaults to `process.env`. */
   env?: NodeJS.ProcessEnv;
 }
 

@@ -1,0 +1,523 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_name": "2026-08-31_09-06",
+  "sessions": [
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-08-31",
+      "session_index": 0,
+      "summary": "恢复跑 6 km，HR <134，放松为主",
+      "notes_md": "恢复周开始，不补上周未完成的 32 km 长跑；身体不适可改为步行。",
+      "total_distance_m": 6000,
+      "total_duration_s": 2040,
+      "estimated_dose": 34.656,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "恢复跑 6 km",
+        "date": "2026-08-31",
+        "note": "全程放松，保持能聊天强度。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 6000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": null,
+                  "high": 134
+                },
+                "note": "恢复跑：心率不超过 134，不适可缩短。",
+                "hr_cap_bpm": 134
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-01",
+      "session_index": 1,
+      "summary": "轻松有氧跑 10 km，HR 134-147",
+      "notes_md": "轻松配速，不添加任何质量段落。",
+      "total_distance_m": 10000,
+      "total_duration_s": 3300,
+      "estimated_dose": 52.7179,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "轻松有氧跑 10 km",
+        "date": "2026-09-01",
+        "note": "保持轻松有氧，不进入阈值区间。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 10000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 134,
+                  "high": 147
+                },
+                "note": "轻松有氧，呼吸平稳。",
+                "hr_cap_bpm": 147
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-02",
+      "session_index": 2,
+      "summary": "休息",
+      "notes_md": "完全休息日，可轻松散步，不安排跑步。",
+      "total_distance_m": 0,
+      "total_duration_s": 0,
+      "estimated_dose": null,
+      "kind": "rest",
+      "spec": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-03",
+      "session_index": 3,
+      "summary": "轻松跑 8 km，HR 134-147",
+      "notes_md": "恢复周不添加质量刺激。",
+      "total_distance_m": 8000,
+      "total_duration_s": 2640,
+      "estimated_dose": 42.1743,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "轻松跑 8 km",
+        "date": "2026-09-03",
+        "note": "保持轻松有氧。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 8000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 134,
+                  "high": 147
+                },
+                "note": "轻松跑，不进入阈值区间。",
+                "hr_cap_bpm": 147
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-04",
+      "session_index": 4,
+      "summary": "恢复跑 8 km，HR <134",
+      "notes_md": "保持低强度，促进恢复。",
+      "total_distance_m": 8000,
+      "total_duration_s": 2720,
+      "estimated_dose": 46.208,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "恢复跑 8 km",
+        "date": "2026-09-04",
+        "note": "轻松恢复，不追求配速。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 8000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": null,
+                  "high": 134
+                },
+                "note": "恢复跑：心率不超过 134。",
+                "hr_cap_bpm": 134
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-05",
+      "session_index": 5,
+      "summary": "长距离轻松跑 16 km，HR 134-147",
+      "notes_md": "轻松长距离，不安排 MP/HMP/阈值段落；可练习补水与能量胶。",
+      "total_distance_m": 16000,
+      "total_duration_s": 5400,
+      "estimated_dose": 84.3487,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "长距离轻松跑 16 km",
+        "date": "2026-09-05",
+        "note": "恢复周长跑，控制在上限心率内，不追求配速。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 16000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 134,
+                  "high": 147
+                },
+                "note": "稳定有氧，后半段如疲劳可降速，保持心率上限内。",
+                "hr_cap_bpm": 147
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-06",
+      "session_index": 6,
+      "summary": "恢复跑 6 km，HR <134",
+      "notes_md": "周末轻松收尾，不额外加量。",
+      "total_distance_m": 6000,
+      "total_duration_s": 2040,
+      "estimated_dose": 34.656,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "恢复跑 6 km",
+        "date": "2026-09-06",
+        "note": "轻松恢复，帮助清除疲劳。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 6000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": null,
+                  "high": 134
+                },
+                "note": "恢复跑：心率不超过 134。",
+                "hr_cap_bpm": 134
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "nutrition": [
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-08-31",
+      "kcal_target": 2400,
+      "carbs_g": 290,
+      "protein_g": 150,
+      "fat_g": 72,
+      "water_ml": 2500,
+      "meals": [
+        {
+          "name": "早餐",
+          "time_hint": "07:30",
+          "kcal": 620,
+          "carbs_g": 80,
+          "protein_g": 35,
+          "fat_g": 20,
+          "items_md": "燕麦、鸡蛋、牛奶、香蕉"
+        },
+        {
+          "name": "午餐",
+          "time_hint": "12:00",
+          "kcal": 880,
+          "carbs_g": 105,
+          "protein_g": 55,
+          "fat_g": 26,
+          "items_md": "米饭、鸡胸肉、绿叶蔬菜、橄榄油"
+        },
+        {
+          "name": "晚餐",
+          "time_hint": "18:30",
+          "kcal": 900,
+          "carbs_g": 105,
+          "protein_g": 60,
+          "fat_g": 26,
+          "items_md": "糙米/红薯、三文鱼、西兰花"
+        }
+      ],
+      "notes_md": "恢复周开始，本日为低强度恢复跑，均衡饮食即可。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-01",
+      "kcal_target": 2400,
+      "carbs_g": 290,
+      "protein_g": 150,
+      "fat_g": 72,
+      "water_ml": 2500,
+      "meals": [
+        {
+          "name": "早餐",
+          "time_hint": "07:30",
+          "kcal": 620,
+          "carbs_g": 80,
+          "protein_g": 35,
+          "fat_g": 20,
+          "items_md": "燕麦、鸡蛋、牛奶、蓝莓"
+        },
+        {
+          "name": "午餐",
+          "time_hint": "12:00",
+          "kcal": 880,
+          "carbs_g": 105,
+          "protein_g": 55,
+          "fat_g": 26,
+          "items_md": "牛肉糙米碗、蔬菜、牛油果"
+        },
+        {
+          "name": "晚餐",
+          "time_hint": "18:30",
+          "kcal": 900,
+          "carbs_g": 105,
+          "protein_g": 60,
+          "fat_g": 26,
+          "items_md": "意面、鸡腿肉、西兰花"
+        }
+      ],
+      "notes_md": "轻松跑日，训练后 30-60 分钟内补充蛋白质和碳水。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-02",
+      "kcal_target": 2400,
+      "carbs_g": 290,
+      "protein_g": 150,
+      "fat_g": 72,
+      "water_ml": 2500,
+      "meals": [
+        {
+          "name": "早餐",
+          "time_hint": "07:30",
+          "kcal": 620,
+          "carbs_g": 80,
+          "protein_g": 35,
+          "fat_g": 20,
+          "items_md": "全麦吐司、鸡蛋、牛奶、苹果"
+        },
+        {
+          "name": "午餐",
+          "time_hint": "12:00",
+          "kcal": 880,
+          "carbs_g": 105,
+          "protein_g": 55,
+          "fat_g": 26,
+          "items_md": "米饭、瘦猪肉、蔬菜"
+        },
+        {
+          "name": "晚餐",
+          "time_hint": "18:30",
+          "kcal": 900,
+          "carbs_g": 105,
+          "protein_g": 60,
+          "fat_g": 26,
+          "items_md": "土豆、鱼、菠菜"
+        }
+      ],
+      "notes_md": "完全休息日，保持蛋白质摄入，不要过度限制热量。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-03",
+      "kcal_target": 2400,
+      "carbs_g": 290,
+      "protein_g": 150,
+      "fat_g": 72,
+      "water_ml": 2500,
+      "meals": [
+        {
+          "name": "早餐",
+          "time_hint": "07:30",
+          "kcal": 620,
+          "carbs_g": 80,
+          "protein_g": 35,
+          "fat_g": 20,
+          "items_md": "燕麦、酸奶、鸡蛋、猕猴桃"
+        },
+        {
+          "name": "午餐",
+          "time_hint": "12:00",
+          "kcal": 880,
+          "carbs_g": 105,
+          "protein_g": 55,
+          "fat_g": 26,
+          "items_md": "糙米、虾、芦笋"
+        },
+        {
+          "name": "晚餐",
+          "time_hint": "18:30",
+          "kcal": 900,
+          "carbs_g": 105,
+          "protein_g": 60,
+          "fat_g": 26,
+          "items_md": "红薯、鸡胸肉、彩椒"
+        }
+      ],
+      "notes_md": "恢复周训练量较低，保持均衡即可。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-04",
+      "kcal_target": 2400,
+      "carbs_g": 290,
+      "protein_g": 150,
+      "fat_g": 72,
+      "water_ml": 2500,
+      "meals": [
+        {
+          "name": "早餐",
+          "time_hint": "07:30",
+          "kcal": 620,
+          "carbs_g": 80,
+          "protein_g": 35,
+          "fat_g": 20,
+          "items_md": "燕麦、鸡蛋、牛奶、橙子"
+        },
+        {
+          "name": "午餐",
+          "time_hint": "12:00",
+          "kcal": 880,
+          "carbs_g": 105,
+          "protein_g": 55,
+          "fat_g": 26,
+          "items_md": "米饭、豆腐、牛肉、蔬菜"
+        },
+        {
+          "name": "晚餐",
+          "time_hint": "18:30",
+          "kcal": 900,
+          "carbs_g": 105,
+          "protein_g": 60,
+          "fat_g": 26,
+          "items_md": "南瓜、三文鱼、四季豆"
+        }
+      ],
+      "notes_md": "恢复跑日，注意补水。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-05",
+      "kcal_target": 2400,
+      "carbs_g": 290,
+      "protein_g": 150,
+      "fat_g": 72,
+      "water_ml": 2500,
+      "meals": [
+        {
+          "name": "早餐",
+          "time_hint": "07:30",
+          "kcal": 620,
+          "carbs_g": 80,
+          "protein_g": 35,
+          "fat_g": 20,
+          "items_md": "燕麦、鸡蛋、牛奶、香蕉"
+        },
+        {
+          "name": "午餐",
+          "time_hint": "12:00",
+          "kcal": 880,
+          "carbs_g": 105,
+          "protein_g": 55,
+          "fat_g": 26,
+          "items_md": "米饭、鸡胸肉、蔬菜"
+        },
+        {
+          "name": "晚餐",
+          "time_hint": "18:30",
+          "kcal": 900,
+          "carbs_g": 105,
+          "protein_g": 60,
+          "fat_g": 26,
+          "items_md": "意面、鱼、西兰花"
+        }
+      ],
+      "notes_md": "长距离轻松跑日，跑步中可练习补水/能量胶，但无需碳水负荷。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-06",
+      "kcal_target": 2400,
+      "carbs_g": 290,
+      "protein_g": 150,
+      "fat_g": 72,
+      "water_ml": 2500,
+      "meals": [
+        {
+          "name": "早餐",
+          "time_hint": "07:30",
+          "kcal": 620,
+          "carbs_g": 80,
+          "protein_g": 35,
+          "fat_g": 20,
+          "items_md": "燕麦、鸡蛋、牛奶、蓝莓"
+        },
+        {
+          "name": "午餐",
+          "time_hint": "12:00",
+          "kcal": 880,
+          "carbs_g": 105,
+          "protein_g": 55,
+          "fat_g": 26,
+          "items_md": "糙米、瘦猪肉、蔬菜"
+        },
+        {
+          "name": "晚餐",
+          "time_hint": "18:30",
+          "kcal": 900,
+          "carbs_g": 105,
+          "protein_g": 60,
+          "fat_g": 26,
+          "items_md": "红薯、虾、菠菜"
+        }
+      ],
+      "notes_md": "恢复跑日，注意补水和睡眠。"
+    }
+  ],
+  "notes_md": "本周为恢复周，不安排质量刺激。近几周负荷偏高，恢复指标 RHR 上升、HRV 下降，且 remove_quality_stimulus 已启用，因此本周只保留轻松有氧、恢复跑和一次轻松长距离。上周未完成的 32 km 长跑不作为本周补量目标。",
+  "coach_notes": "本周目标跑量约 54 km，训练剂量约 249 PMC，处于目标区间内。未安排 MP/HMP/阈值段落。下一步里程碑为 09-13 阈值 2×20 分钟，建议本周以恢复为主，下周再根据晨脉、HRV 和主观疲劳评估是否恢复质量训练。"
+}

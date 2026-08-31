@@ -1,16 +1,11 @@
 # Production credentials and endpoints are injected through the schema-mapped
 # environment variables; keep fail-closed empty values in the checked-in file.
 auth:
-  public_key_pem: ""
-  public_key_path: ""
-
+  public_key_path: auth-public.pem
+  
 stride_database:
-  host: ""
-  user: ""
-  password: ""
-  database: ""
-
-persistence_database:
-  host: ""
-  user: ""
-  password: ""
+  host: sh-cynosdbmysql-grp-pbo3j68k.sql.tencentcdb.com
+  port: 25272
+  user: stride_reader
+  password: qweasdZXC@123
+  database: stride

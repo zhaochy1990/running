@@ -11,11 +11,12 @@ import {
   MasterPlanSchema,
 } from "coach_agent";
 import { loadApiConfig } from "../src/config.js";
+import { coachAgentConfigFiles, coachApiConfigFiles } from "../src/configPaths.js";
 import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";
 import { shanghaiDay } from '@stride/contract';
 
-const config = loadConfig();
-const store = MySqlDataProvider.create(loadApiConfig().strideDatabase);
+const config = loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) });
+const store = MySqlDataProvider.create(loadApiConfig({ configFiles: coachApiConfigFiles(import.meta.url) }).strideDatabase);
 const agent = await createCoachAgent(store, config);
 
 const userId = "f10bc353-01ab-4db1-af9f-d9305ea9a532";

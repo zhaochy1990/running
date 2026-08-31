@@ -3,11 +3,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createWeeklyPlanGeneratorGraph, DataProviderWeeklyPlanContextProvider, loadConfig } from "coach_agent";
 import { loadApiConfig } from "../src/config.js";
+import { coachAgentConfigFiles, coachApiConfigFiles } from "../src/configPaths.js";
 import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";
 
 type Profile = "local" | "prod";
 const PROFILE = "prod" as Profile;
-const AS_OF = new Date("2026-08-16").toISOString();
+const AS_OF = new Date("2026-08-30").toISOString();
 
 const usernameMap: Record<string, string> = {
   // pan: "5ee229a6-cdc1-4260-84d3-71ec622126c2",
@@ -16,6 +17,7 @@ const usernameMap: Record<string, string> = {
   dehua: "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
   renzhen: "bffa65bc-4501-41e7-a68c-96da76d5b7bc",
   zhaochaoyi: "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+  huzhengjie: "5177ff88-c0b7-4b3d-8c4e-80387af503e6"
 };
 
 function requireUserId(): { userId: string; username: string } {
@@ -32,8 +34,8 @@ function requireUserId(): { userId: string; username: string } {
   return { userId, username };
 }
 
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
-const outputDir = join(repoRoot, "src", "coach_agent", "test-output", "weekly-plan-graph");
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const outputDir = join(repoRoot, '..', "test-output", "weekly-plan-graph");
 
 function savePlan(plan: unknown, username: string): string {
   const timestamp = new Date().toISOString().replaceAll(":", "-").replace("T", "_").replace("Z", "");
@@ -45,11 +47,10 @@ function savePlan(plan: unknown, username: string): string {
 
 async function main() {
   const { userId, username } = requireUserId();
-  const config = loadConfig({
-    cwd: repoRoot,
-    configFile: join(repoRoot, "config", `coach.${PROFILE}.yaml`),
-  });
-  const provider = MySqlDataProvider.create(loadApiConfig().strideDatabase);
+  const config = loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) });
+  const datasourceConfig = loadApiConfig({ configFiles: coachApiConfigFiles(import.meta.url) }).strideDatabase;
+
+  const provider = MySqlDataProvider.create(datasourceConfig);
   try {
     const contextProvider = new DataProviderWeeklyPlanContextProvider(provider);
     const graph = createWeeklyPlanGeneratorGraph(config, contextProvider);
@@ -64,11 +65,16 @@ async function main() {
       { context: { userId, generationId } },
     );
     if (result.outcome.decision !== "completed" || !result.outcome.weekly_plan) {
+      console.log(`Weekly plan generation failed: ${JSON.stringify(result.outcome)}`);
       throw new Error(`Weekly plan generation failed: ${JSON.stringify(result.outcome)}`);
     }
     const outputPath = savePlan(result.outcome.weekly_plan, username);
     console.log(`Generated weekly plan written to ${outputPath}`);
-  } finally {
+  } 
+  catch(e) {
+    console.log(e)
+  }
+  finally {
     await provider.close();
   }
 }

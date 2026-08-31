@@ -25,11 +25,11 @@ Supply `resume` instead of `message` to continue a human-in-the-loop interrupt; 
 
 ## Configuration
 
-The API uses Convict with this precedence:
+The API loads config via Convict (shared wrapper in `@stride/common`). Callers resolve the absolute config file path(s) and pass them in; the loader does no repo-root discovery. Files merge in order:
 
 `schema defaults < config/coach-api.yaml < config/coach-api.<environment>.yaml < environment variables`
 
-`STRIDE_COACH_ENV`, then `NODE_ENV`, selects the environment; it defaults to `local`. Unknown YAML keys and invalid or missing required values fail at startup. The checked-in local overlay targets `src/go/docker-compose.yml`; production secrets remain environment-only.
+`STRIDE_COACH_ENV` selects the environment; it defaults to `local` and must be one of `local`, `dev`, `staging`, or `prod`. Unknown YAML keys, unsupported environments, and invalid or missing required values fail at startup. The checked-in local overlay targets `src/go/docker-compose.yml`; production secrets remain environment-only.
 
 Schema-mapped variables:
 

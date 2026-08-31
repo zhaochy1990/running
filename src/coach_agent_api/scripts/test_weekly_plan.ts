@@ -11,6 +11,7 @@ import {
   loadConfig,
 } from "coach_agent";
 import { loadApiConfig } from "../src/config.js";
+import { coachAgentConfigFiles, coachApiConfigFiles } from "../src/configPaths.js";
 import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";
 
 const usernameMap: Record<string, string> = {
@@ -38,8 +39,8 @@ function requireUserId(): { userId: string; username: string } {
 
 const asof = "2026-08-16";
 const { userId, username } = requireUserId();
-const config = loadConfig();
-const provider = MySqlDataProvider.create(loadApiConfig().strideDatabase);
+const config = loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) });
+const provider = MySqlDataProvider.create(loadApiConfig({ configFiles: coachApiConfigFiles(import.meta.url) }).strideDatabase);
 const agent = await createCoachAgent(provider, config);
 
 // 回答来源：交互式从 stdin 读；自动化测试则用 HITL_ANSWERS（\n 分隔）按序喂入，

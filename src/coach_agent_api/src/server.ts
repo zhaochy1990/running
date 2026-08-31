@@ -2,11 +2,12 @@ import { serve } from "@hono/node-server";
 import { flushLangfuse, loadConfig } from "coach_agent";
 import pino from "pino";
 import { loadApiConfig } from "./config.js";
+import { coachAgentConfigFiles, coachApiConfigFiles } from "./configPaths.js";
 import { createCoachApiRuntime } from "./runtime.js";
 
 const logger = pino({ name: "coach-agent-api" });
-const apiConfig = loadApiConfig();
-const runtime = await createCoachApiRuntime(apiConfig, loadConfig());
+const apiConfig = loadApiConfig({ configFiles: coachApiConfigFiles(import.meta.url) });
+const runtime = await createCoachApiRuntime(apiConfig, loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) }));
 const server = serve(
   {
     fetch: runtime.app.fetch,

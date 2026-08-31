@@ -1,17 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
+import { loadConfig } from "@stride/common";
 import convict from "convict";
-import { parse } from "yaml";
 import type { ApiConfig, LoadApiConfigOptions, MySqlConfig, RawApiConfig } from "./dto/config.js";
-
-const DEFAULT_ENVIRONMENT = "local";
-const BASE_CONFIG_FILE = "coach-api.yaml";
-const ENVIRONMENT_PATTERN = /^[A-Za-z0-9_-]+$/;
-
-convict.addParser({
-  extension: ["yaml", "yml"],
-  parse,
-});
 
 convict.addFormat({
   name: "active-port",
@@ -42,13 +33,13 @@ const schema: convict.Schema<RawApiConfig> = {
       doc: "HTTP bind address",
       format: requiredString,
       default: "0.0.0.0",
-      env: "HOST",
+      env: "STRIDE_COACH_API_HOST",
     },
     port: {
       doc: "HTTP listen port",
       format: "active-port",
       default: 8080,
-      env: "PORT",
+      env: "STRIDE_COACH_API_PORT",
     },
   },
   auth: {
@@ -60,7 +51,7 @@ const schema: convict.Schema<RawApiConfig> = {
       sensitive: true,
     },
     public_key_path: {
-      doc: "RS256 public key path, relative to the repository root",
+      doc: "RS256 public key path, relative to the config file's directory",
       format: String,
       default: "",
       env: "STRIDE_AUTH_PUBLIC_KEY_PATH",
@@ -94,28 +85,11 @@ const schema: convict.Schema<RawApiConfig> = {
   }),
 };
 
-export function loadApiConfig(options: LoadApiConfigOptions = {}): ApiConfig {
-  const env = normalizeAuthEnvironment(options.env ?? process.env);
-  const environment = env.STRIDE_COACH_ENV ?? env.NODE_ENV ?? DEFAULT_ENVIRONMENT;
-  if (!ENVIRONMENT_PATTERN.test(environment)) {
-    throw new Error(`Invalid Coach API environment name: ${environment}`);
-  }
-
-  if (!existsSync(BASE_CONFIG_FILE)) {
-    throw new Error(`Coach API base config not found: ${BASE_CONFIG_FILE}`);
-  }
-
-  const environmentConfigPath = `coach-api.${environment}.yaml`;
-  const configFiles = [BASE_CONFIG_FILE];
-  if (existsSync(environmentConfigPath)) {
-    configFiles.push(environmentConfigPath);
-  }
-
-  const config = convict<RawApiConfig>(schema, { env, args: [] });
-  config.loadFile(configFiles);
-  config.validate({ allowed: "strict" });
-  const raw = config.getProperties();
-  const publicKeyPem = resolvePublicKey(raw.auth);
+export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
+  const rawEnv = normalizeAuthEnvironment(options.env ?? process.env);
+  const raw = loadConfig({ schema, configFiles: options.configFiles, env: rawEnv, strict: true });
+  const configDir = dirname(options.configFiles[0] ?? "");
+  const publicKeyPem = resolvePublicKey(raw.auth, configDir);
 
   return {
     host: raw.api.host,
@@ -163,7 +137,7 @@ function normalizeAuthEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return normalized;
 }
 
-function resolvePublicKey(auth: RawApiConfig["auth"]): string {
+function resolvePublicKey(auth: RawApiConfig["auth"], configDir: string): string {
   if (auth.public_key_pem && auth.public_key_path) {
     throw new Error("Configure only one of auth.public_key_pem or auth.public_key_path");
   }
@@ -176,7 +150,7 @@ function resolvePublicKey(auth: RawApiConfig["auth"]): string {
     throw new Error("auth.public_key_pem or auth.public_key_path must be configured");
   }
 
-  const keyPath = isAbsolute(auth.public_key_path) ? auth.public_key_path : resolve(process.cwd(), auth.public_key_path);
+  const keyPath = isAbsolute(auth.public_key_path) ? auth.public_key_path : resolve(configDir, auth.public_key_path);
 
   return readFileSync(keyPath, "utf8");
 }

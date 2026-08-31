@@ -1,0 +1,441 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_name": "2026-08-31_09-06",
+  "sessions": [
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-08-31",
+      "session_index": 0,
+      "summary": "休息",
+      "notes_md": "恢复指标尚未回到安全区间，本周一安排完全休息。",
+      "total_distance_m": null,
+      "total_duration_s": null,
+      "estimated_dose": null,
+      "kind": "rest",
+      "spec": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-01",
+      "session_index": 1,
+      "summary": "轻松有氧跑 10K",
+      "notes_md": "取消质量刺激；保持轻松强度，体感应为可对话、无喘促。",
+      "total_distance_m": 10000,
+      "total_duration_s": 3200,
+      "estimated_dose": 51.0911,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "轻松有氧跑 10K",
+        "date": "2026-09-01",
+        "note": "恢复周保守进行；不添加间歇、节奏或马拉松配速段落。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 1500
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 135.58,
+                  "high": 149.13
+                },
+                "note": "轻松有氧热身",
+                "hr_cap_bpm": 149
+              },
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 8000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 135.58,
+                  "high": 149.13
+                },
+                "note": "保持可对话的轻松强度",
+                "hr_cap_bpm": 149
+              },
+              {
+                "step_kind": "cooldown",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 500
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 135.58,
+                  "high": 149.13
+                },
+                "note": "放松慢跑",
+                "hr_cap_bpm": 149
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-02",
+      "session_index": 2,
+      "summary": "恢复跑 8K",
+      "notes_md": "心率控制在恢复区间，不要进入轻松心率上限。",
+      "total_distance_m": 8000,
+      "total_duration_s": 2880,
+      "estimated_dose": 34.496,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "恢复跑 8K",
+        "date": "2026-09-02",
+        "note": "以恢复心率为上限，确保促进恢复而非累积疲劳。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 800
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 120,
+                  "high": 135.58
+                },
+                "note": "恢复热身",
+                "hr_cap_bpm": 135
+              },
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 6400
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 120,
+                  "high": 135.58
+                },
+                "note": "恢复跑主段",
+                "hr_cap_bpm": 135
+              },
+              {
+                "step_kind": "cooldown",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 800
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 120,
+                  "high": 135.58
+                },
+                "note": "放松",
+                "hr_cap_bpm": 135
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-03",
+      "session_index": 3,
+      "summary": "轻松有氧跑 12K",
+      "notes_md": "允许在轻松心率区间中低段运行，不追求配速。",
+      "total_distance_m": 12000,
+      "total_duration_s": 3840,
+      "estimated_dose": 61.3094,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "轻松有氧跑 12K",
+        "date": "2026-09-03",
+        "note": "维持稳定有氧节奏；不增加任何质量刺激。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 2000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 135.58,
+                  "high": 149.13
+                },
+                "note": "轻松有氧热身",
+                "hr_cap_bpm": 149
+              },
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 9000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 135.58,
+                  "high": 149.13
+                },
+                "note": "轻松有氧主段",
+                "hr_cap_bpm": 149
+              },
+              {
+                "step_kind": "cooldown",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 1000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 135.58,
+                  "high": 149.13
+                },
+                "note": "放松慢跑",
+                "hr_cap_bpm": 149
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-04",
+      "session_index": 4,
+      "summary": "恢复跑 8K",
+      "notes_md": "长跑前最后一次恢复跑，保持低强度。",
+      "total_distance_m": 8000,
+      "total_duration_s": 2880,
+      "estimated_dose": 34.496,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "恢复跑 8K",
+        "date": "2026-09-04",
+        "note": "为周日有氧长跑留出恢复空间。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 800
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 120,
+                  "high": 135.58
+                },
+                "note": "恢复热身",
+                "hr_cap_bpm": 135
+              },
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 6400
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 120,
+                  "high": 135.58
+                },
+                "note": "恢复跑主段",
+                "hr_cap_bpm": 135
+              },
+              {
+                "step_kind": "cooldown",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 800
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 120,
+                  "high": 135.58
+                },
+                "note": "放松",
+                "hr_cap_bpm": 135
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-05",
+      "session_index": 5,
+      "summary": "休息",
+      "notes_md": "有氧长跑前一天完全休息，避免过量累积。",
+      "total_distance_m": null,
+      "total_duration_s": null,
+      "estimated_dose": null,
+      "kind": "rest",
+      "spec": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-09-06",
+      "session_index": 6,
+      "summary": "有氧长跑 18K（无MP）",
+      "notes_md": "原定28km含12km MP的里程碑推迟。本周仅进行无马拉松配速段落的有氧长跑。",
+      "total_distance_m": 18000,
+      "total_duration_s": 5760,
+      "estimated_dose": 91.964,
+      "kind": "run",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "有氧长跑 18K（无MP）",
+        "date": "2026-09-06",
+        "note": "不安排比赛配速或任何加速段；保持轻松有氧强度，如恢复指标进一步恶化可减至14K或取消。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 2000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 135.58,
+                  "high": 149.13
+                },
+                "note": "轻松有氧热身",
+                "hr_cap_bpm": 149
+              },
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 14000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 135.58,
+                  "high": 149.13
+                },
+                "note": "稳定有氧长跑，不含MP段落",
+                "hr_cap_bpm": 149
+              },
+              {
+                "step_kind": "cooldown",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 2000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 135.58,
+                  "high": 149.13
+                },
+                "note": "放松慢跑",
+                "hr_cap_bpm": 149
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "nutrition": [
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-08-31",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "休息日仍保持规律补水和优质蛋白摄入，不因跑量少而过度限制热量。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-01",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "运动后优先补充碳水与蛋白质组合，帮助恢复。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-02",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "恢复跑当日保持正常饮食，注意补水和电解质。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-03",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "12K轻松跑前后注意碳水补充，训练后摄入蛋白质。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-04",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "保持恢复跑当日饮食清淡，减少高脂、高刺激性食物。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-05",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "长跑前一天可适当增加碳水储备，但不强迫加量。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-09-06",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "长跑日注意补水与赛中补给，跑后补充蛋白质和碳水。"
+    }
+  ],
+  "notes_md": "恢复周：取消质量刺激，总跑量控制在56km，以轻松有氧和恢复跑为主；若HRV继续下降或RHR持续升高，优先减量而不硬顶负荷。",
+  "coach_notes": "本周执行恢复性保守计划。主要原因：静息心率从51.6升至53.4，HRV从39.0降至31.0，尤其8/29长跑后HRV低至26，恢复恶化形成否决条件；因此按remove_quality_stimulus=true取消所有质量刺激。原定9/6的28km含12km MP里程碑推迟，改为18km无MP有氧长跑。周总跑量56km，落在目标区间52.97-72.83km并靠近下限，符合削减至80-90%锚点的要求。待HRV改善且RHR接近基线后，可在下周评估是否插入短MP段落；不追补本周被取消的强度。"
+}
