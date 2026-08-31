@@ -212,6 +212,7 @@ jobs:
             "GO_API_URL=$GO_API_URL"
             "PUBLIC_DIRECT_BASE_URL=${PUBLIC_DIRECT_BASE_URL:-}"
             "STRIDE_ROUTE_DELETE_USERS_ME=go"
+            "STRIDE_ROUTE_POST_USER_PLAN_SESSIONS_DATE_SESSIONINDEX_PUSH=go"
             "${ONBOARDING_GO_ROUTE_VARS[@]}"
             "${PLAN_SETUP_GO_ROUTE_VARS[@]}"
           )
