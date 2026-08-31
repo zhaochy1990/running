@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -103,7 +104,12 @@ func (w *weeklyPlanRoutes) pushPlannedSession(c *gin.Context) {
 		return
 	}
 	if plan == nil {
-		c.JSON(http.StatusNotFound, errorResponse{Error: "Planned session not found"})
+		w.log.Warn("push: no active weekly plan for date",
+			zap.String("user", user),
+			zap.String("date", date),
+			zap.String("week_start", weekStart),
+			zap.Int("session_index", sessionIndex))
+		c.JSON(http.StatusNotFound, gin.H{"detail": "Planned session not found"})
 		return
 	}
 	if plan.ContentVersion != storage.WeeklyPlanContentStructured {
@@ -122,7 +128,19 @@ func (w *weeklyPlanRoutes) pushPlannedSession(c *gin.Context) {
 		return
 	}
 	if !ok {
-		c.JSON(http.StatusNotFound, errorResponse{Error: "Planned session not found"})
+		// Diagnostic: count sessions + list (date, session_index, kind) tuples so
+		// we can tell at a glance whether the mismatch is a wrong date, wrong
+		// index, malformed rows silently skipped by findPlanSession, etc.
+		summary := sessionIndexDebugSummary(plan.Content, date, sessionIndex)
+		w.log.Warn("push: session not found in plan",
+			zap.String("user", user),
+			zap.String("date", date),
+			zap.String("week_start", weekStart),
+			zap.Int("session_index", sessionIndex),
+			zap.String("plan_id", plan.PlanID),
+			zap.Int8("content_version", plan.ContentVersion),
+			zap.String("sessions_summary", summary))
+		c.JSON(http.StatusNotFound, gin.H{"detail": "Planned session not found"})
 		return
 	}
 	if kind != "run" && kind != "strength" {
@@ -376,6 +394,51 @@ func findPlanSession(content, date string, sessionIndex int) (kind, specJSON str
 		}
 	}
 	return "", "", false, nil
+}
+
+// sessionIndexDebugSummary produces a compact one-line summary of every session
+// in the plan (date / index / kind), plus the count of malformed rows that
+// findPlanSession would silently skip. Used only in 404 warn logs — never on
+// the happy path, since it re-parses the whole document.
+func sessionIndexDebugSummary(content, wantedDate string, wantedIndex int) string {
+	var document struct {
+		Sessions []json.RawMessage `json:"sessions"`
+	}
+	if err := json.Unmarshal([]byte(content), &document); err != nil {
+		return "<unparseable content>"
+	}
+	malformed := 0
+	parts := make([]string, 0, len(document.Sessions))
+	for i, raw := range document.Sessions {
+		var s struct {
+			Date         string `json:"date"`
+			SessionIndex *int   `json:"session_index"`
+			Kind         string `json:"kind"`
+		}
+		if err := json.Unmarshal(raw, &s); err != nil {
+			malformed++
+			parts = append(parts, fmt.Sprintf("#%d:<malformed>", i))
+			continue
+		}
+		idx := "null"
+		if s.SessionIndex != nil {
+			idx = fmt.Sprintf("%d", *s.SessionIndex)
+		}
+		parts = append(parts, fmt.Sprintf("%s/%s/%s", s.Date, idx, s.Kind))
+	}
+	matched := "(no match)"
+	for i, raw := range document.Sessions {
+		var s struct {
+			Date         string `json:"date"`
+			SessionIndex int    `json:"session_index"`
+		}
+		if json.Unmarshal(raw, &s) == nil && s.Date == wantedDate && s.SessionIndex == wantedIndex {
+			matched = fmt.Sprintf("(matched row #%d)", i)
+			break
+		}
+	}
+	return fmt.Sprintf("total=%d malformed=%d wanted=%s/%d %s sessions=[%s]",
+		len(document.Sessions), malformed, wantedDate, wantedIndex, matched, strings.Join(parts, " "))
 }
 
 // weekStartForDate returns the Shanghai Monday (YYYY-MM-DD) of the week
