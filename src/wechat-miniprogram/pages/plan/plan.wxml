@@ -48,6 +48,15 @@
                   <text wx:if="{{sess.duration}}"> · {{sess.duration}}</text>
                 </view>
               </view>
+              <view
+                wx:if="{{sess.hasSpec}}"
+                class="plan-session__push {{sess.scheduledWorkoutId ? 'plan-session__push--done' : ''}}"
+                data-date="{{item.date}}"
+                data-index="{{sess.sessionIndex}}"
+                catchtap="onPushSession"
+              >
+                {{sess.scheduledWorkoutId ? '已推送' : '推送'}}
+              </view>
             </view>
           </view>
           <view wx:else class="plan-day__rest">休息日</view>

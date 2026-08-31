@@ -42,7 +42,10 @@
           <view class="workout__title">{{workout.title}}</view>
         </view>
         <view class="workout__actions">
-          <view class="workout__action" bindtap="onWatchTap">
+          <view
+            class="workout__action {{workout.scheduledWorkoutId ? 'workout__action--pushed' : ''}}"
+            bindtap="onWatchTap"
+          >
             <image class="workout__action-icon" src="/assets/icons/watch.svg" mode="aspectFit" />
           </view>
           <view class="workout__action" bindtap="onMoreTap">

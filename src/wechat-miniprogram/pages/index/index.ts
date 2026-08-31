@@ -1,5 +1,11 @@
-import { buildDayView, currentWeekName, getWeeklyPlan } from '../../services/plan';
 import {
+  buildDayView,
+  currentWeekName,
+  getWeeklyPlan,
+  pushPlannedSession,
+} from '../../services/plan';
+import {
+  buildPushDateOptions,
   buildWeekDays,
   shanghaiToday,
   shanghaiWeekStart,
@@ -11,6 +17,7 @@ import type {
   TodayWeekDay,
   TodayWorkoutView,
   WeeklyPlanDetail,
+  WeeklyPlanContentStructured,
 } from '../../types/plan';
 
 // ---------------------------------------------------------------------------
@@ -183,12 +190,67 @@ Page<IndexPageData, IndexPageHandlers>({
     wx.showToast({ title: '暂未开放', icon: 'none' });
   },
 
-  onWatchTap() {
-    wx.showToast({ title: '暂未开放', icon: 'none' });
+  async onWatchTap() {
+    const { workout } = this.data;
+    if (!workout || !workout.hasSpec) {
+      wx.showToast({ title: '该训练暂不支持推送', icon: 'none' });
+      return;
+    }
+    if (!userId) {
+      wx.showToast({ title: '请先登录', icon: 'none' });
+      return;
+    }
+
+    const options = buildPushDateOptions(workout.date);
+    const labels = options.map((o) => o.label);
+
+    const res = await new Promise<WechatMiniprogram.ShowActionSheetSuccessCallbackResult>((resolve, reject) => {
+      wx.showActionSheet({
+        itemList: labels,
+        success: resolve,
+        fail: reject,
+      });
+    }).catch(() => null);
+
+    if (!res) return; // 用户取消
+
+    const targetDate = options[res.tapIndex].value;
+
+    wx.showLoading({ title: '推送中...', mask: true });
+    try {
+      const result = await pushPlannedSession(userId, workout.date, workout.sessionIndex, targetDate);
+      // 更新本地计划数据中的 scheduled_workout_id
+      updateSessionScheduledId(workout.date, workout.sessionIndex, result.scheduled_workout_id);
+      // 重新渲染当前日期
+      this.renderDay(this.data.selectedDate, this.data.selectedDate === this.data.todayYmd);
+      wx.showToast({ title: '推送成功', icon: 'success' });
+    } catch (err: any) {
+      const msg = err?.detail || err?.message || '推送失败';
+      wx.showToast({ title: msg.length > 15 ? '推送失败' : msg, icon: 'none' });
+    } finally {
+      wx.hideLoading();
+    }
   },
 
   onMoreTap() {
     wx.showToast({ title: '暂未开放', icon: 'none' });
   },
 });
+
+// 更新 fetchedPlan 中指定 session 的 scheduled_workout_id，推送成功后调用
+function updateSessionScheduledId(date: string, sessionIndex: number, scheduledId: number) {
+  if (!fetchedPlan) return;
+  const content =
+    typeof fetchedPlan.content === 'object' && fetchedPlan.content !== null
+      ? (fetchedPlan.content as WeeklyPlanContentStructured)
+      : null;
+  if (!content || !Array.isArray(content.sessions)) return;
+
+  const session = content.sessions.find(
+    (s) => s.date === date && s.session_index === sessionIndex,
+  );
+  if (session) {
+    session.scheduled_workout_id = scheduledId;
+  }
+}
 
