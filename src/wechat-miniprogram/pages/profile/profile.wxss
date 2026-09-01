@@ -183,6 +183,19 @@
   opacity: 0.6;
 }
 
+.menu-row--disabled {
+  opacity: 0.6;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.menu-row__icon--spin {
+  animation: spin 1.2s linear infinite;
+}
+
 /* ---------- 退出登录 ---------- */
 
 .logout-btn {
