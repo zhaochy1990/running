@@ -17,7 +17,7 @@
     //   - The persistence database `coach_agent` exists (docker dev only creates
     //     `stride`). Create it once if missing:
     //       docker exec -i <mysql-container> mysql -uroot -pdevroot -e 'CREATE DATABASE IF NOT EXISTS coach_agent'
-    //   - JWT public key `config/auth-public.pem` (committed; already on disk).
+    //   - JWT public key `src/coach_agent_api/config/auth-public.pem` (committed; already on disk).
     "version": "0.2.0",
     "configurations": [
         {
@@ -84,6 +84,34 @@
                 "LANGFUSE_SECRET_KEY":"sk-lf-f9ed8da7-a7e0-4c92-8e07-8034aa3ea482",
                 "LANGFUSE_BASE_URL":"http://localhost:4000"
             }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "weekly-plan-graph",
+            "runtimeExecutable": "pnpm",
+            "cwd": "${workspaceFolder}/src/coach_agent_api",
+            "runtimeArgs": [
+                "run",
+                "test:weekly-plan-graph",
+                "zhaochaoyi"
+            ],
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "outFiles": [
+                "${workspaceFolder}/src/coach_agent_api/dist/**/*.js"
+            ],
+            "sourceMaps": true,
+            "console": "integratedTerminal",
+            "autoAttachChildProcesses": true,
+            "env": {
+                "LANGFUSE_PUBLIC_KEY":"pk-lf-eaa02a6b-43d1-4736-8f8b-9b673e4f3300",
+                "LANGFUSE_SECRET_KEY":"sk-lf-f9ed8da7-a7e0-4c92-8e07-8034aa3ea482",
+                "LANGFUSE_BASE_URL":"http://localhost:4000",
+                "STRIDE_COACH_ENV":"prod",
+            },
+            "nodeVersionHint": 24
         }
     ]
 }

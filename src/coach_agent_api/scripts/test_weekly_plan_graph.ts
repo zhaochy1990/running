@@ -5,10 +5,12 @@ import { createWeeklyPlanGeneratorGraph, DataProviderWeeklyPlanContextProvider, 
 import { loadApiConfig } from "../src/config.js";
 import { coachAgentConfigFiles, coachApiConfigFiles } from "../src/configPaths.js";
 import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";
+import { getLogger } from "@stride/common";
 
 type Profile = "local" | "prod";
 const PROFILE = "prod" as Profile;
 const AS_OF = new Date("2026-08-30").toISOString();
+const logger = getLogger("test-weekly-plan-graph");
 
 const usernameMap: Record<string, string> = {
   // pan: "5ee229a6-cdc1-4260-84d3-71ec622126c2",
@@ -49,6 +51,7 @@ async function main() {
   const { userId, username } = requireUserId();
   const config = loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) });
   const datasourceConfig = loadApiConfig({ configFiles: coachApiConfigFiles(import.meta.url) }).strideDatabase;
+  logger.info("Starting weekly plan graph test, datasource config: %s", datasourceConfig.host);
 
   const provider = MySqlDataProvider.create(datasourceConfig);
   try {
