@@ -42,6 +42,20 @@
         <view class="menu-row__title">{{item.title}}</view>
         <image class="menu-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
       </view>
+
+      <!-- 同步数据（有同步中状态） -->
+      <view class="menu-row {{syncing ? 'menu-row--disabled' : ''}}" bindtap="onSyncTap">
+        <image class="menu-row__icon {{syncing ? 'menu-row__icon--spin' : ''}}" src="/assets/icons/sync.svg" mode="aspectFit" />
+        <view class="menu-row__title">{{syncing ? '同步中...' : '同步数据'}}</view>
+        <image wx:if="{{!syncing}}" class="menu-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+
+      <!-- 隐私与权限 -->
+      <view class="menu-row" data-key="privacy" bindtap="onRowTap">
+        <image class="menu-row__icon" src="/assets/icons/lock.svg" mode="aspectFit" />
+        <view class="menu-row__title">隐私与权限</view>
+        <image class="menu-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
     </view>
 
     <!-- 退出登录 -->
