@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/zhaochy1990/x/logger"
 )
 
 // Tier is which authenticated caller class made a request.
@@ -170,6 +171,7 @@ func NewAuthenticator(internalToken string, verifier *JWTVerifier) *Authenticato
 func (a *Authenticator) authenticate(c *gin.Context) (Caller, error) {
 	if tok := c.GetHeader("X-Internal-Token"); tok != "" {
 		if a.internalToken != "" && subtle.ConstantTimeCompare([]byte(tok), []byte(a.internalToken)) == 1 {
+			logger.S().Info("Call with internal token")
 			return Caller{Tier: TierInternal}, nil
 		}
 		return Caller{}, ErrUnauthorized

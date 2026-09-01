@@ -83,3 +83,4 @@ data/*/testing/**
 src/coach_agent/.env
 config/coach.prod.yaml
 src/coach_agent/test-output
+src/go/config.prod.yml

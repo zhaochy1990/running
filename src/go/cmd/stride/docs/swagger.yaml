@@ -1507,6 +1507,158 @@ info:
   title: STRIDE API
   version: "1.0"
 paths:
+  /api/{user}/ability/backfill:
+    post:
+      description: Enqueues an ability compute job that recomputes + persists the
+        ability_snapshot for the last `days` days (default 180, max 365), returning
+        {job_id, days_requested}.
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Days to backfill 7–365 (default 180)
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Backfill ability snapshots
+      tags:
+      - ability
+  /api/{user}/ability/current:
+    get:
+      description: Reads the pre-computed ability_snapshot rows for today; when none
+        exist (or ?refresh=1) it live-computes from the source without persisting.
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Force a live compute
+        in: query
+        name: refresh
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Today's ability snapshot
+      tags:
+      - ability
+  /api/{user}/ability/history:
+    get:
+      description: Pivoted per-day ability history (date, l4_composite, l4_marathon_race_s,
+        l4_hm_race_s, l3 scores) over the last `days` days, oldest first. Days missing
+        from the snapshot table are absent (no synthesis).
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Window 1–365 (default 90)
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Ability history
+      tags:
+      - ability
+  /api/{user}/ability/weights:
+    get:
+      description: Returns the L4 composite weights so the frontend can render the
+        weighting without duplicating constants.
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Ability L4 weights
+      tags:
+      - ability
   /api/{user}/activities:
     get:
       description: Returns a filtered, paginated activity page (newest first) plus
@@ -1576,6 +1728,53 @@ paths:
       summary: List a user's activities
       tags:
       - activities
+  /api/{user}/activities/{label_id}/ability:
+    get:
+      description: Returns an activity's L1 quality, breakdown and contribution. 404
+        when no row exists (the per-activity ability pipeline hasn't computed it).
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Activity label id
+        in: path
+        name: label_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Single-activity ability
+      tags:
+      - ability
   /api/{user}/activities/{labelId}:
     get:
       description: Assembles the activity, objective training load, laps, strength
@@ -1968,6 +2167,90 @@ paths:
       - InternalToken: []
       - BearerAuth: []
       summary: Performance Management Chart (vendor + STRIDE)
+      tags:
+      - metrics
+  /api/{user}/race-predictions:
+    get:
+      description: Predicts finish times for the four canonical distances from the
+        latest ability_snapshot VO2max, via Daniels tables (FM/HM) and a bisection
+        solver (5K/10K). Returns 404 when the user has no ability snapshot.
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Race time predictions (5K/10K/HM/FM)
+      tags:
+      - metrics
+  /api/{user}/race-predictions/history:
+    get:
+      description: Historical per-distance predicted finish times for each day that
+        has a current-model ability snapshot, sorted oldest-first. Days missing from
+        the snapshot table are absent (no synthesis).
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Window 1–365 (default 180)
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Race prediction history
       tags:
       - metrics
   /api/{user}/stride/training-load:

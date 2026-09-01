@@ -119,11 +119,16 @@ type applyWeeklyPlanResponse struct {
 //	@Security		BearerAuth
 //	@Router			/api/{user}/plan/weeks/{weekName} [post]
 func (w *weeklyPlanRoutes) apply(c *gin.Context) {
-	if callerFrom(c).Tier != TierAdmin {
+	user := c.Param("user")
+	w.log.Sugar().Infof("Call weekly plan apply with Tier %v, user: %v", callerFrom(c).Tier, user)
+	if callerFrom(c).Tier == TierAdmin || callerFrom(c).Tier == TierInternal {
+		w.log.Sugar().Infof("Apply weekly plan from Admin tier or internal token")
+	} else if callerFrom(c).Tier == TierUser && callerFrom(c).UserID != user {
+		w.log.Sugar().Warnf("User %v does not have permission to apply weekly plan for user %v", callerFrom(c).UserID, user)
 		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
 		return
 	}
-	user := c.Param("user")
+
 	if _, err := uuid.Parse(user); err != nil {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user"})
 		return
@@ -138,14 +143,17 @@ func (w *weeklyPlanRoutes) apply(c *gin.Context) {
 	var request applyWeeklyPlanRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		if isBodyTooLarge(err) {
+			w.log.Warn("apply weekly plan body too large", zapErr(err), zap.String("user_id", user), zap.String("week_name", weekName))
 			c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "weekly_plan_too_large"})
 			return
 		}
+		w.log.Warn("apply weekly plan bind failed", zapErr(err), zap.String("user_id", user), zap.String("week_name", weekName))
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
 	exp, err := parseReplacementExpectation(request.ReplaceExisting, request.ExpectedActivePlanID, request.ExpectedActiveRevision)
 	if err != nil {
+		w.log.Warn("apply weekly plan invalid replacement expectation", zapErr(err), zap.String("user_id", user), zap.String("week_name", weekName))
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_replacement"})
 		return
 	}
@@ -155,6 +163,7 @@ func (w *weeklyPlanRoutes) apply(c *gin.Context) {
 	}
 	content, err := validateAppliedWeeklyPlan(request.Content, weekName)
 	if err != nil {
+		w.log.Warn("apply weekly plan content invalid", zapErr(err), zap.String("user_id", user), zap.String("week_name", weekName))
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
@@ -282,13 +291,16 @@ func (w *weeklyPlanRoutes) putFeedback(c *gin.Context) {
 	if err := c.ShouldBindJSON(&request); err != nil {
 		var maxBytesError *http.MaxBytesError
 		if errors.As(err, &maxBytesError) {
+			w.log.Warn("put weekly feedback body too large", zapErr(err), zap.String("user_id", user), zap.String("week_name", weekName))
 			c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "weekly_feedback_too_large"})
 			return
 		}
+		w.log.Warn("put weekly feedback bind failed", zapErr(err), zap.String("user_id", user), zap.String("week_name", weekName))
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
 	if request.Content == nil {
+		w.log.Warn("put weekly feedback missing content", zap.String("user_id", user), zap.String("week_name", weekName))
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}

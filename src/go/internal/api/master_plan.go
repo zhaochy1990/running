@@ -129,14 +129,17 @@ func (m *masterPlanRoutes) apply(c *gin.Context) {
 	var request applyMasterPlanRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		if isBodyTooLarge(err) {
+			m.log.Warn("apply master plan body too large", zapErr(err), zap.String("user_id", uid))
 			c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "master_plan_too_large"})
 			return
 		}
+		m.log.Warn("apply master plan bind failed", zapErr(err), zap.String("user_id", uid))
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
 	exp, err := parseReplacementExpectation(request.ReplaceExisting, request.ExpectedActivePlanID, request.ExpectedActiveRevision)
 	if err != nil {
+		m.log.Warn("apply master plan invalid replacement expectation", zapErr(err), zap.String("user_id", uid))
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_replacement"})
 		return
 	}
@@ -146,6 +149,7 @@ func (m *masterPlanRoutes) apply(c *gin.Context) {
 	}
 	content, goalID, err := validateAppliedMasterPlan(request.Content)
 	if err != nil {
+		m.log.Warn("apply master plan content invalid", zapErr(err), zap.String("user_id", uid))
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
@@ -218,19 +222,23 @@ func (m *masterPlanRoutes) update(c *gin.Context) {
 	var request updateMasterPlanRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		if isBodyTooLarge(err) {
+			m.log.Warn("update master plan body too large", zapErr(err), zap.String("user_id", uid))
 			c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "master_plan_too_large"})
 			return
 		}
+		m.log.Warn("update master plan bind failed", zapErr(err), zap.String("user_id", uid))
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
 	exp, err := parseReplacementExpectation(true, request.ExpectedActivePlanID, request.ExpectedActiveRevision)
 	if err != nil {
+		m.log.Warn("update master plan invalid replacement expectation", zapErr(err), zap.String("user_id", uid))
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_replacement"})
 		return
 	}
 	content, goalID, err := validateAppliedMasterPlan(request.Content)
 	if err != nil {
+		m.log.Warn("update master plan content invalid", zapErr(err), zap.String("user_id", uid))
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
