@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
-	"github.com/zhaochy1990/x/logger"
+	"github.com/zhaochy1990/stride/internal/logging"
 )
 
 const weeklyPlanSchemaURL = "https://stride-running.cn/schemas/weekly-plan-v1.json"
@@ -85,7 +85,7 @@ func validateAppliedWeeklyPlan(document map[string]any, expectedWeek string) ([]
 		return nil, errors.New("weekly plan must contain at least one run session")
 	}
 	if !hasRest {
-		logger.S().Warnf("Weekly plan does not have rest session.")
+		logging.Default().Sugar().Warnf("Weekly plan does not have rest session.")
 	}
 
 	nutritionDates := make(map[string]bool, 7)

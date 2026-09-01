@@ -25,7 +25,11 @@ export class CoordinatedTurnRunner implements TurnCoordinator {
         if (existing.fingerprint === request.fingerprint) {
           return existing.response as T;
         }
+        // Same client_turn_id but a different fingerprint means the idempotency
+        // key was reused with mutated input: a client bug, not a retry. Treat it
+        // as a conflict so we never silently re-invoke the coach.
         logger.warn("client_turn_id was reused with a different request");
+        throw new TurnConflictError("client_turn_id was reused with a different request");
       }
 
       const recovered = await this.receipts.recover(request.threadId, request.clientTurnId);

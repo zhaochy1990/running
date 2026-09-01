@@ -439,11 +439,43 @@ func TestAdminApplyRejectsStaleReplacementConfirmation(t *testing.T) {
 	}
 }
 
-func TestWeeklyPlanApplyIsAdminOnlyAndValidatesContent(t *testing.T) {
-	h := newWeeklyPlanHarness(t)
+func TestWeeklyPlanApplyPermissionAndValidatesContent(t *testing.T) {
 	userID := "d31c2cbc-c3f5-4a10-92d0-73fa3281a003"
 	path := "/api/" + userID + "/plan/weeks/2026-08-17_08-23"
 	validBody := "{\"content\":" + validAppliedWeeklyPlan("2026-08-17_08-23") + "}"
+
+	// Permission model: admin + internal tokens + a user acting on their own
+	// account may apply a weekly plan. Only a user acting on a *different*
+	// account is denied. Each case gets a fresh harness so success/conflict
+	// state does not leak between subtests.
+	permission := []struct {
+		name   string
+		header func(*testing.T, *weeklyPlanHarness) map[string]string
+		status int
+	}{
+		{name: "unauthenticated", header: func(*testing.T, *weeklyPlanHarness) map[string]string { return nil }, status: http.StatusUnauthorized},
+		{name: "admin", header: func(t *testing.T, h *weeklyPlanHarness) map[string]string { return h.adminBearer(t, "admin") }, status: http.StatusCreated},
+		{name: "internal", header: func(*testing.T, *weeklyPlanHarness) map[string]string { return internalHdr() }, status: http.StatusCreated},
+		{name: "user self", header: func(t *testing.T, h *weeklyPlanHarness) map[string]string { return h.bearer(t, userID) }, status: http.StatusCreated},
+		{name: "user acting on another account", header: func(t *testing.T, h *weeklyPlanHarness) map[string]string {
+			return h.bearer(t, "d31c2cbc-c3f5-4a10-92d0-73fa3281a0ff")
+		}, status: http.StatusForbidden},
+		{name: "admin audience without admin role", header: func(t *testing.T, h *weeklyPlanHarness) map[string]string {
+			return h.bearerWithClaims(t, userID, testAdminAudience, "user")
+		}, status: http.StatusUnauthorized},
+	}
+	for _, test := range permission {
+		t.Run(test.name, func(t *testing.T) {
+			h := newWeeklyPlanHarness(t)
+			resp := h.doBody(http.MethodPost, path, test.header(t, h), strings.NewReader(validBody))
+			if resp.Code != test.status {
+				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+			}
+		})
+	}
+
+	// Content validation: these are reachable by an allowed caller (admin) and
+	// must be rejected before the store is touched.
 	duplicateSessions := validAppliedWeeklyPlan("2026-08-17_08-23")
 	var duplicateDocument map[string]any
 	_ = json.Unmarshal([]byte(duplicateSessions), &duplicateDocument)
@@ -452,29 +484,24 @@ func TestWeeklyPlanApplyIsAdminOnlyAndValidatesContent(t *testing.T) {
 		map[string]any{"schema": "plan-session/v1", "date": "2026-08-17", "session_index": 0},
 	}
 	duplicateRaw, _ := json.Marshal(duplicateDocument)
-	tests := []struct {
-		name    string
-		headers map[string]string
-		body    string
-		status  int
-		error   string
+	validation := []struct {
+		name   string
+		body   string
+		status int
+		error  string
 	}{
-		{name: "unauthenticated", body: validBody, status: http.StatusUnauthorized, error: "unauthorized"},
-		{name: "user", headers: h.bearer(t, userID), body: validBody, status: http.StatusForbidden, error: "forbidden"},
-		{name: "admin role on user audience", headers: h.bearerWithClaims(t, userID, testAudience, "admin"), body: validBody, status: http.StatusForbidden, error: "forbidden"},
-		{name: "admin audience without admin role", headers: h.bearerWithClaims(t, userID, testAdminAudience, "user"), body: validBody, status: http.StatusUnauthorized, error: "unauthorized"},
-		{name: "internal", headers: internalHdr(), body: validBody, status: http.StatusForbidden, error: "forbidden"},
-		{name: "wrong week", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-24_08-30") + "}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
-		{name: "missing arrays", headers: h.adminBearer(t, "admin"), body: "{\"content\":{\"schema\":\"weekly-plan/v1\",\"week_name\":\"2026-08-17_08-23\"}}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
-		{name: "legacy week folder", headers: h.adminBearer(t, "admin"), body: strings.Replace(validBody, "week_name", "week_folder", 1), status: http.StatusUnprocessableEntity, error: "invalid_content"},
-		{name: "duplicate sessions", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + string(duplicateRaw) + "}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
-		{name: "replacement missing expectation", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-17_08-23") + ",\"replace_existing\":true}", status: http.StatusUnprocessableEntity, error: "invalid_replacement"},
-		{name: "replacement invalid plan id", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-17_08-23") + ",\"replace_existing\":true,\"expected_active_plan_id\":\"not-a-uuid\",\"expected_active_revision\":1}", status: http.StatusUnprocessableEntity, error: "invalid_replacement"},
-		{name: "too large", headers: h.adminBearer(t, "admin"), body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-17_08-23") + ",\"padding\":\"" + strings.Repeat("x", maxRequestBytes) + "\"}", status: http.StatusRequestEntityTooLarge, error: "weekly_plan_too_large"},
+		{name: "wrong week", body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-24_08-30") + "}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
+		{name: "missing arrays", body: "{\"content\":{\"schema\":\"weekly-plan/v1\",\"week_name\":\"2026-08-17_08-23\"}}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
+		{name: "legacy week folder", body: strings.Replace(validBody, "week_name", "week_folder", 1), status: http.StatusUnprocessableEntity, error: "invalid_content"},
+		{name: "duplicate sessions", body: "{\"content\":" + string(duplicateRaw) + "}", status: http.StatusUnprocessableEntity, error: "invalid_content"},
+		{name: "replacement missing expectation", body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-17_08-23") + ",\"replace_existing\":true}", status: http.StatusUnprocessableEntity, error: "invalid_replacement"},
+		{name: "replacement invalid plan id", body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-17_08-23") + ",\"replace_existing\":true,\"expected_active_plan_id\":\"not-a-uuid\",\"expected_active_revision\":1}", status: http.StatusUnprocessableEntity, error: "invalid_replacement"},
+		{name: "too large", body: "{\"content\":" + validAppliedWeeklyPlan("2026-08-17_08-23") + ",\"padding\":\"" + strings.Repeat("x", maxRequestBytes) + "\"}", status: http.StatusRequestEntityTooLarge, error: "weekly_plan_too_large"},
 	}
-	for _, test := range tests {
+	for _, test := range validation {
 		t.Run(test.name, func(t *testing.T) {
-			resp := h.doBody(http.MethodPost, path, test.headers, strings.NewReader(test.body))
+			h := newWeeklyPlanHarness(t)
+			resp := h.doBody(http.MethodPost, path, h.adminBearer(t, "admin"), strings.NewReader(test.body))
 			if resp.Code != test.status || resp.Body.String() != "{\"error\":\""+test.error+"\"}" {
 				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
 			}
