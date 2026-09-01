@@ -60,7 +60,7 @@ Go `stride api` 使用同一 auth-service 公钥在 Gin middleware 本地验签 
 ### 4. 本地 CLI 规范 env
 
 ```bash
-export STRIDE_AUTH_URL="https://124.221.38.59"
+export STRIDE_AUTH_URL="https://api.stride-running.cn"
 export STRIDE_CLIENT_ID="app_62978bf2803346878a2e4805"
 export STRIDE_PROD_URL="https://api.stride-running.cn"
 ```

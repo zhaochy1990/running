@@ -10,7 +10,7 @@ if (!internaltoken) {
 async function backfillRacePrediction(uid) {
     console.log('backfilling race prediction for user:', uid);
 
-    const api = 'https://124.221.38.59/jobs';
+    const api = 'https://api.stride-running.cn/jobs';
 
     const resp = await axios.post(api, { type: 'race_detection_backfill', user_id: uid }, {
         headers: {

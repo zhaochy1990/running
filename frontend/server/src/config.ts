@@ -25,7 +25,7 @@ export interface BffConfig {
   readonly viteDevServerUrl: string | null;
   /**
    * Interim (ADR 0017): the browser-facing base URL for Tencent-bound endpoints
-   * (the Tencent Caddy gateway, e.g. `https://124.221.38.59`). When set, the BFF
+   * (the Tencent Caddy gateway, e.g. `https://api.stride-running.cn`). When set, the BFF
    * injects it + the route manifest into the SPA so the browser calls Tencent
    * endpoints DIRECT (one in-country hop) instead of proxying them cross-border
    * through this Azure BFF. Empty → everything stays relative/same-origin via the

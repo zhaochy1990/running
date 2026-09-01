@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { apiUrl } from "../apiRouting";
 
-const TENCENT = "https://124.221.38.59";
+const TENCENT = "https://api.stride-running.cn";
 
 function setRouting(cfg: unknown): void {
   (window as unknown as { __STRIDE_ROUTING__?: unknown }).__STRIDE_ROUTING__ = cfg;

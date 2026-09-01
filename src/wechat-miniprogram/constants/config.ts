@@ -31,7 +31,7 @@ export const API_BASE_URL = API_BASE_URLS[CURRENT_ENV];
 // /api/users/me），并把该域名加入小程序后台 request 合法域名。
 const AUTH_BASE_URLS: Record<Env, string> = {
   [ENV.DEV]: 'http://127.0.0.1:3001',
-  [ENV.STAGING]: 'https://124.221.38.59',
+  [ENV.STAGING]: 'https://api.stride-running.cn',
   [ENV.PROD]: 'https://api.stride-running.cn',
 };
 
