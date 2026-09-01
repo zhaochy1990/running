@@ -10,8 +10,8 @@
  * `SerializerProtocol` (JSON), same bytes the MemorySaver produces.
  */
 
-import type { ChannelVersions, Checkpoint, CheckpointListOptions, CheckpointMetadata, CheckpointTuple, PendingWrite, RunnableConfig } from "coach_agent";
-import { BaseCheckpointSaver, copyCheckpoint, getCheckpointId, WRITES_IDX_MAP } from "coach_agent";
+import type { ChannelVersions, Checkpoint, CheckpointListOptions, CheckpointMetadata, CheckpointTuple, PendingWrite, RunnableConfig } from "@stride/coach-agent";
+import { BaseCheckpointSaver, copyCheckpoint, getCheckpointId, WRITES_IDX_MAP } from "@stride/coach-agent";
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import { tryToPublicResponse } from "../publicResponse.js";
 import type { TurnRecovery } from "../turn/receiptStore.js";

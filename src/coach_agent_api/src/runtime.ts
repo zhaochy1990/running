@@ -1,4 +1,4 @@
-import { type CoachAgentConfig, createCoachAgent } from "coach_agent";
+import { type CoachAgentConfig, createCoachAgent } from "@stride/coach-agent";
 import { createApp } from "./app.js";
 import { createJwtVerifier } from "./auth.js";
 import { MySqlDataProvider } from "./data/mysqlDataProvider.js";

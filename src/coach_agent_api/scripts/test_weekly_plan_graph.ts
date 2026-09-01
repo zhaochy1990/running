@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createWeeklyPlanGeneratorGraph, DataProviderWeeklyPlanContextProvider, loadConfig } from "coach_agent";
+import { createWeeklyPlanGeneratorGraph, DataProviderWeeklyPlanContextProvider, loadConfig } from "@stride/coach-agent";
 import { loadApiConfig } from "../src/config.js";
 import { coachAgentConfigFiles, coachApiConfigFiles } from "../src/configPaths.js";
 import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";

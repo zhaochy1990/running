@@ -9,7 +9,7 @@ import {
   formatTokenUsageReport,
   LlmTokenUsageTracker,
   loadConfig,
-} from "coach_agent";
+} from "@stride/coach-agent";
 import { loadApiConfig } from "../src/config.js";
 import { coachAgentConfigFiles, coachApiConfigFiles } from "../src/configPaths.js";
 import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";

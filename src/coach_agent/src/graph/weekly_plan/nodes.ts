@@ -174,7 +174,11 @@ export class WeeklyPlanGeneratorNodes {
       latestWeekDistance,
       stageTargetKmHigh,
     );
-    const recoveryTrend = assessRecoveryTrend(weeklyContext?.fitness_state.trend ?? []);
+    const recoveryTrend = assessRecoveryTrend(
+      weeklyContext?.fitness_state.trend ?? [],
+      weeklyContext?.user_profile.rhr_baseline ?? null,
+      weeklyContext?.user_profile.hrv_baseline_low ?? null,
+    );
     const sevenDayAvg = weeklyContext?.recovery.seven_day_average ?? null;
 
     const rationale: string[] = [];
@@ -258,7 +262,9 @@ export class WeeklyPlanGeneratorNodes {
                   recent_hrv_avg: recoveryTrend.recent_hrv_avg,
                   prior_hrv_avg: recoveryTrend.prior_hrv_avg,
                   rhr_rising: recoveryTrend.rhr_rising,
+                  rhr_rising_deviation: recoveryTrend.rhr_rising_deviation,
                   hrv_falling: recoveryTrend.hrv_falling,
+                  hrv_below_baseline: recoveryTrend.hrv_below_baseline,
                   deteriorating: recoveryTrend.deteriorating,
                   window_days: recoveryTrend.window_days,
                   missing_reason: null,
@@ -270,7 +276,9 @@ export class WeeklyPlanGeneratorNodes {
                   recent_hrv_avg: null,
                   prior_hrv_avg: null,
                   rhr_rising: false,
+                  rhr_rising_deviation: false,
                   hrv_falling: false,
+                  hrv_below_baseline: false,
                   deteriorating: false,
                   window_days: 0,
                   missing_reason: recoveryTrend.missing_reason,
@@ -511,14 +519,18 @@ interface RecoveryTrendAssessment {
   recent_hrv_avg: number | null;
   prior_hrv_avg: number | null;
   rhr_rising: boolean;
+  rhr_rising_deviation: boolean;
   hrv_falling: boolean;
+  hrv_below_baseline: boolean;
   deteriorating: boolean;
   window_days: number;
 }
 
 const RECOVERY_WINDOW_DAYS = 5;
+const RHR_DEVIATION_THRESHOLD = 5; // bpm: small day-to-day swings are normal, only a sustained shift matters
+const HRV_BELOW_BASELINE_FRACTION = 0.1; // must sit >=10% under the user's HRV baseline_low (individual-scaled, not vs a noisy prior window)
 
-function assessRecoveryTrend(history: RecoveryPoint[]): RecoveryTrendAssessment {
+export function assessRecoveryTrend(history: RecoveryPoint[], rhrBaseline: number | null, hrvBaselineLow: number | null): RecoveryTrendAssessment {
   const withReadings = history.filter((point) => point.rhr !== null && point.hrv !== null);
   if (withReadings.length < RECOVERY_WINDOW_DAYS * 2) {
     return {
@@ -529,7 +541,9 @@ function assessRecoveryTrend(history: RecoveryPoint[]): RecoveryTrendAssessment 
       recent_hrv_avg: null,
       prior_hrv_avg: null,
       rhr_rising: false,
+      rhr_rising_deviation: false,
       hrv_falling: false,
+      hrv_below_baseline: false,
       deteriorating: false,
       window_days: 0,
     };
@@ -541,7 +555,9 @@ function assessRecoveryTrend(history: RecoveryPoint[]): RecoveryTrendAssessment 
   const priorHrvAvg = mean(prior.map((point) => point.hrv));
   const recentHrvAvg = mean(recent.map((point) => point.hrv));
   const rhrRising = recentRhrAvg > priorRhrAvg;
+  const rhrRisingDeviation = recentRhrAvg - priorRhrAvg >= RHR_DEVIATION_THRESHOLD;
   const hrvFalling = recentHrvAvg < priorHrvAvg;
+  const hrvBelowBaseline = hrvBaselineLow !== null && recentHrvAvg <= hrvBaselineLow * (1 - HRV_BELOW_BASELINE_FRACTION);
   return {
     available: true,
     missing_reason: null,
@@ -550,8 +566,10 @@ function assessRecoveryTrend(history: RecoveryPoint[]): RecoveryTrendAssessment 
     recent_hrv_avg: round(recentHrvAvg),
     prior_hrv_avg: round(priorHrvAvg),
     rhr_rising: rhrRising,
+    rhr_rising_deviation: rhrRisingDeviation,
     hrv_falling: hrvFalling,
-    deteriorating: rhrRising && hrvFalling,
+    hrv_below_baseline: hrvBelowBaseline,
+    deteriorating: rhrRisingDeviation || hrvBelowBaseline,
     window_days: RECOVERY_WINDOW_DAYS,
   };
 }

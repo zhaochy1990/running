@@ -1,4 +1,4 @@
-import { createCoachAgent, type CoachAgentConfig, type DataProvider } from "coach_agent";
+import { createCoachAgent, type CoachAgentConfig, type DataProvider } from "@stride/coach-agent";
 import { type DeepAgent } from "deepagents";
 import type { Persistence } from "../persistence/index.js";
 

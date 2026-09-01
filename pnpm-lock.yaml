@@ -90,15 +90,15 @@ importers:
       '@hono/swagger-ui':
         specifier: ^0.6.1
         version: 0.6.1(hono@4.13.2)
+      '@stride/coach-agent':
+        specifier: workspace:*
+        version: link:../coach_agent
       '@stride/common':
         specifier: workspace:*
         version: link:../stride-common
       '@stride/contract':
         specifier: workspace:*
         version: link:../coach_contract
-      coach_agent:
-        specifier: workspace:*
-        version: link:../coach_agent
       convict:
         specifier: ^6.2.5
         version: 6.2.5

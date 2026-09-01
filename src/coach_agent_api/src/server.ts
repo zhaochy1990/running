@@ -1,5 +1,5 @@
 import { serve } from "@hono/node-server";
-import { flushLangfuse, loadConfig } from "coach_agent";
+import { flushLangfuse, loadConfig } from "@stride/coach-agent";
 import pino from "pino";
 import { loadApiConfig } from "./config.js";
 import { coachAgentConfigFiles, coachApiConfigFiles } from "./configPaths.js";

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Command } from "coach_agent";
+import { Command } from "@stride/coach-agent";
 import { createApp } from "../src/app.js";
 import { AuthError } from "../src/auth.js";
 import { ThreadBusyError } from "../src/turn/errors.js";

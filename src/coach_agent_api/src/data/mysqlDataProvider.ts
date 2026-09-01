@@ -17,7 +17,7 @@ import type {
   VendorHrvBaseline,
   WeeklyFeedback,
   WeeklyPlanDocument,
-} from "coach_agent";
+} from "@stride/coach-agent";
 import type { Pool, RowDataPacket } from "mysql2/promise";
 import type { MySqlConfig } from "../dto/config.js";
 import { createStridePool } from "../persistence/mysql.js";

@@ -6,8 +6,8 @@
  * (namespace-prefix) / listNamespaces. No vector search or TTL (add later).
  */
 
-import type { Item, Operation, OperationResults, SearchItem } from "coach_agent";
-import { BaseStore } from "coach_agent";
+import type { Item, Operation, OperationResults, SearchItem } from "@stride/coach-agent";
+import { BaseStore } from "@stride/coach-agent";
 import type { Pool, RowDataPacket } from "mysql2/promise";
 
 // Low-collision separator to flatten a namespace path into one string.
