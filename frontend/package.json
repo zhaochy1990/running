@@ -11,6 +11,7 @@
     "smoke:web:local": "cross-env STRIDE_LOCAL_URL=http://127.0.0.1:5174 node scripts/local-smoke.cjs",
     "smoke:weekly-feedback:local": "node scripts/weekly-feedback-smoke.cjs",
     "smoke:plan:fixture": "node scripts/current-plan-smoke.cjs",
+    "smoke:prod:crawl": "node scripts/prod-page-crawl.cjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
