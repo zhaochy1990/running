@@ -1,7 +1,29 @@
-# Marathon-specific phase
+# 丹尼尔斯训练法｜马拉松专项期（Quality / Specific Phase）
 
-- Goal: turn threshold fitness into marathon-pace durability, fueling tolerance, and late-run stability.
-- Preferred stimuli: sustained MP, MP/HMP progression, long threshold/cruise blocks, and long runs with an embedded MP segment.
-- Standalone hard 200 m or 400 m maximal-speed repetitions are out of phase. Relaxed strides with full recovery may maintain mechanics.
-- An MP long run counts as Q+L. Pair it with at most one distinct threshold stimulus, and use 1Q1L when recent load or recovery is marginal.
-- Milestone bridge: progress MP duration inside the long run gradually; the weekly rehearsal stays below the next milestone's distance and MP volume. Practice fueling on the specific long run.
+## 阶段核心目标
+将前期积累的乳酸阈值能力，转化为马拉松配速专属耐力；提升长距离奔跑中的体能耐受、运动补给适配性，解决比赛后程掉速、体能崩盘问题，筑牢全程配速稳定性，完成从基础耐力向马拉松专项竞速能力的转化。
+
+## 核心训练刺激（专项优先）
+本阶段训练重心全面倾斜至马拉松专项适配训练，核心刺激以四类内容为主：持续稳态马拉松配速（MP）跑、马拉松配速/半马配速（MP/HMP）递进式段落跑、长时长阈值巡航跑、嵌入马拉松配速片段的长距离慢跑。
+
+## 强度训练取舍规则（关键修正）
+1. 高强度极速重复跑（独立大剂量200m/400m全速R跑主课）不再作为专项训练内容，大幅弱化极速无氧训练权重，避免过度消耗体能、挤占专项适配训练负荷。
+2. 可保留完全恢复的放松加速跑，用于维持标准跑姿、激活神经肌肉状态，防止动作僵化。
+3. 间歇跑（I）、阈值跑（T）仅做小剂量维持，不新增训练量、不提升强度，仅保留基础速度与耐力底力，所有训练资源优先供给马拉松配速专项训练。
+
+## 周训练负荷管控规则（1Q1L核心准则）
+1. 嵌入马拉松配速的专项长距离跑，统一归类为周长距离课（L课）。该 L 课本身具备高强度专项刺激效果，但**不替代**每周的独立质量课（Q）。
+2. 常规负荷状态下，每周 = 1 节独立质量课（Q）＋ 1 次长距离课（L）；若近期训练负荷偏高、身体恢复状态一般，严格执行 1Q1L：Q 降为轻量阈值/间歇维持（20–30 min T 或 6–8×800 m 小剂量），但仍须存在，杜绝多重高强度叠加导致疲劳堆积。
+
+## 进阶推进逻辑（阶段性里程碑）
+循序渐进提升长距离跑中的马拉松配速（MP）持续时长与总里程，每周专项训练的MP总量、奔跑距离，均低于下一阶段的目标阈值，稳步进阶不冒进。同时，所有专项长距离训练必须实战演练比赛补给方案，适配长距离体能消耗节奏，养成固定补给习惯。
+
+## 典型专项训练内容
+1. 纯马拉松配速段落课：分段式MP配速训练，如4×3km标准马拉松配速跑，组间短距离慢跑恢复；或6–10km连续稳态MP配速跑，打磨目标配速体感。
+2. MP混合专项长距离：总里程26–32km，前半程以轻松跑（E）配速打底蓄力，后半程嵌入大段MP配速（经典组合：16km E跑+12km MP跑），模拟比赛后程疲劳状态下的配速维持能力。
+3. 阈值维持训练：20–30分钟持续稳态T配速跑，保留乳酸耐受能力，支撑长距离配速稳定。
+4. 间歇维持训练：小剂量I配速间歇，6–8×800m 或 3–4×1200m，仅保留最大摄氧量基础能力，不加大负荷。
+5. 速度维持训练：少量400m重复跑轻量化训练，仅用于维持步频与神经敏感度。
+
+## 阶段核心禁忌
+本阶段周跑量维持周期峰值，严禁继续堆高总跑量；摒弃35km以上超长纯慢跑训练，丹尼尔斯体系核心逻辑为：带精准MP配速刺激的长距离，远优于无强度的超长距离慢跑，可有效避免过度训练、慢性疲劳堆积与运动损伤。

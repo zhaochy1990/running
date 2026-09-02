@@ -77,9 +77,12 @@ export function createWeeklyPlanLlm(config: ModelConfig): WeeklyPlanLLM {
 async function buildSystemPrompt(phase: PhaseName): Promise<string> {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const referencesDir = resolve(moduleDir, "../../skills/generate-weekly-plan/references");
-  const reference = await readFile(resolve(referencesDir, `${phase}.md`), "utf8");
+  const [daniels, reference] = await Promise.all([
+    readFile(resolve(referencesDir, "daniels.md"), "utf8"),
+    readFile(resolve(referencesDir, `${phase}.md`), "utf8"),
+  ]);
   const outputSchema = JSON.stringify(toJsonSchema(WeeklyPlanGenerationSchema), null, 2);
-  return `${GENERATE_WEEKLY_PLAN_SYSTEM_PROMPT}\n\n# 输出 JSON Schema\n\n以下 schema 与 API response format 完全相同，必须据此生成完整结果：\n\n${outputSchema}\n\n# 阶段参考：${phase}\n\n${reference}`;
+  return `${GENERATE_WEEKLY_PLAN_SYSTEM_PROMPT}\n\n# 输出 JSON Schema\n\n以下 schema 与 API response format 完全相同，必须据此生成完整结果：\n\n${outputSchema}\n\n# 强度与课型映射（Daniels）\n\n${daniels}\n\n# 阶段参考：${phase}\n\n${reference}`;
 }
 
 export function buildUserPrompt(input: WeeklyPlanLlmInput): string {
