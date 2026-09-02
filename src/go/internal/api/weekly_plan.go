@@ -32,11 +32,11 @@ type WeeklyPlanStore interface {
 }
 
 type weeklyPlanRoutes struct {
-	store   WeeklyPlanStore
-	pusher  WorkoutPusher
-	swstore ScheduledWorkoutStore
+	store    WeeklyPlanStore
+	pusher   WorkoutPusher
+	swstore  ScheduledWorkoutStore
 	bodyComp BodyCompositionStore
-	log     *zap.Logger
+	log      *zap.Logger
 }
 
 func newWeeklyPlanRoutes(store WeeklyPlanStore, pusher WorkoutPusher, swstore ScheduledWorkoutStore, bodyComp BodyCompositionStore, log *zap.Logger) *weeklyPlanRoutes {

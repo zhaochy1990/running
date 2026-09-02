@@ -39,8 +39,8 @@ func (s *Service) listPipelines(c *gin.Context) {
 }
 
 const (
-	onboardingContractVersion    = "web-onboarding-v2"
-	planSetupContractVersion     = "plan-setup-v1"
+	onboardingContractVersion      = "web-onboarding-v2"
+	planSetupContractVersion       = "plan-setup-v1"
 	bodyCompositionContractVersion = "body-composition-v1"
 )
 

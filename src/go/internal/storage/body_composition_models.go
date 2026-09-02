@@ -9,21 +9,21 @@ import "time"
 // instant — stored as varchar so ordering is bytewise-lexicographic and
 // timezone-free, matching the Python contract.
 type BodyCompositionScanRecord struct {
-	ID               string     `gorm:"column:id;type:char(36);primaryKey"`
-	UserID           string     `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_user_scan_date,priority:1;index:idx_user_scan_date_desc,priority:1"`
-	ScanDate         string     `gorm:"column:scan_date;type:varchar(16);not null;uniqueIndex:uq_user_scan_date,priority:2;index:idx_user_scan_date_desc,priority:2,sort:desc"`
-	WeightKg         float64    `gorm:"column:weight_kg;type:double;not null"`
-	BodyFatPct       float64    `gorm:"column:body_fat_pct;type:double;not null"`
-	SmmKg            float64    `gorm:"column:smm_kg;type:double;not null"`
-	FatMassKg        float64    `gorm:"column:fat_mass_kg;type:double;not null"`
-	VisceralFatLevel int        `gorm:"column:visceral_fat_level;type:int;not null"`
-	JpgPath          *string    `gorm:"column:jpg_path;type:varchar(512)"`
-	BmrKcal          *int       `gorm:"column:bmr_kcal;type:int"`
-	ProteinKg        *float64   `gorm:"column:protein_kg;type:double"`
-	WaterL           *float64   `gorm:"column:water_l;type:double"`
-	Smi              *float64   `gorm:"column:smi;type:double"`
-	InbodyScore      *int       `gorm:"column:inbody_score;type:int"`
-	IngestedAt       time.Time  `gorm:"column:ingested_at;type:datetime(6);autoCreateTime:false"`
+	ID               string                         `gorm:"column:id;type:char(36);primaryKey"`
+	UserID           string                         `gorm:"column:user_id;type:char(36);not null;uniqueIndex:uq_user_scan_date,priority:1;index:idx_user_scan_date_desc,priority:1"`
+	ScanDate         string                         `gorm:"column:scan_date;type:varchar(16);not null;uniqueIndex:uq_user_scan_date,priority:2;index:idx_user_scan_date_desc,priority:2,sort:desc"`
+	WeightKg         float64                        `gorm:"column:weight_kg;type:double;not null"`
+	BodyFatPct       float64                        `gorm:"column:body_fat_pct;type:double;not null"`
+	SmmKg            float64                        `gorm:"column:smm_kg;type:double;not null"`
+	FatMassKg        float64                        `gorm:"column:fat_mass_kg;type:double;not null"`
+	VisceralFatLevel int                            `gorm:"column:visceral_fat_level;type:int;not null"`
+	JpgPath          *string                        `gorm:"column:jpg_path;type:varchar(512)"`
+	BmrKcal          *int                           `gorm:"column:bmr_kcal;type:int"`
+	ProteinKg        *float64                       `gorm:"column:protein_kg;type:double"`
+	WaterL           *float64                       `gorm:"column:water_l;type:double"`
+	Smi              *float64                       `gorm:"column:smi;type:double"`
+	InbodyScore      *int                           `gorm:"column:inbody_score;type:int"`
+	IngestedAt       time.Time                      `gorm:"column:ingested_at;type:datetime(6);autoCreateTime:false"`
 	Segments         []BodyCompositionSegmentRecord `gorm:"foreignKey:ScanID;references:ID"`
 }
 

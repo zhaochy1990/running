@@ -34,11 +34,11 @@ import (
 // PhaseCheckpoint mirrors the Python PHASE_CHECKPOINTS constant — hardcoded
 // 2026 season targets for weight, body fat, and minimum skeletal muscle mass.
 type PhaseCheckpoint struct {
-	Phase     string  `json:"phase"`
-	Date      string  `json:"date"`
-	WeightKg  float64 `json:"weight_kg"`
+	Phase      string  `json:"phase"`
+	Date       string  `json:"date"`
+	WeightKg   float64 `json:"weight_kg"`
 	BodyFatPct float64 `json:"body_fat_pct"`
-	SmmKgMin  float64 `json:"smm_kg_min"`
+	SmmKgMin   float64 `json:"smm_kg_min"`
 }
 
 // seasonPhaseCheckpoints are the 2026 race-prep body composition targets.
@@ -110,31 +110,31 @@ type bodyCompositionScanDTO struct {
 	InbodyScore      *int     `json:"inbody_score"`
 	IngestedAt       string   `json:"ingested_at"`
 	// Derived — deltas / ratios
-	LegSmmDelta       *float64 `json:"leg_smm_delta"`
-	LegFatDelta       *float64 `json:"leg_fat_delta"`
-	ArmSmmDelta       *float64 `json:"arm_smm_delta"`
+	LegSmmDelta        *float64 `json:"leg_smm_delta"`
+	LegFatDelta        *float64 `json:"leg_fat_delta"`
+	ArmSmmDelta        *float64 `json:"arm_smm_delta"`
 	UpperLowerSmmRatio *float64 `json:"upper_lower_smm_ratio"`
 	// Derived — per-segment flat fields (for easy chart access)
-	LeftArmSmmKg      *float64 `json:"left_arm_smm_kg"`
-	RightArmSmmKg     *float64 `json:"right_arm_smm_kg"`
-	TrunkSmmKg        *float64 `json:"trunk_smm_kg"`
-	LeftLegSmmKg      *float64 `json:"left_leg_smm_kg"`
-	RightLegSmmKg     *float64 `json:"right_leg_smm_kg"`
-	LeftArmFatKg      *float64 `json:"left_arm_fat_kg"`
-	RightArmFatKg     *float64 `json:"right_arm_fat_kg"`
-	TrunkFatKg        *float64 `json:"trunk_fat_kg"`
-	LeftLegFatKg      *float64 `json:"left_leg_fat_kg"`
-	RightLegFatKg     *float64 `json:"right_leg_fat_kg"`
-	LeftArmLeanPctStd *float64 `json:"left_arm_lean_pct_std"`
+	LeftArmSmmKg       *float64 `json:"left_arm_smm_kg"`
+	RightArmSmmKg      *float64 `json:"right_arm_smm_kg"`
+	TrunkSmmKg         *float64 `json:"trunk_smm_kg"`
+	LeftLegSmmKg       *float64 `json:"left_leg_smm_kg"`
+	RightLegSmmKg      *float64 `json:"right_leg_smm_kg"`
+	LeftArmFatKg       *float64 `json:"left_arm_fat_kg"`
+	RightArmFatKg      *float64 `json:"right_arm_fat_kg"`
+	TrunkFatKg         *float64 `json:"trunk_fat_kg"`
+	LeftLegFatKg       *float64 `json:"left_leg_fat_kg"`
+	RightLegFatKg      *float64 `json:"right_leg_fat_kg"`
+	LeftArmLeanPctStd  *float64 `json:"left_arm_lean_pct_std"`
 	RightArmLeanPctStd *float64 `json:"right_arm_lean_pct_std"`
-	TrunkLeanPctStd   *float64 `json:"trunk_lean_pct_std"`
-	LeftLegLeanPctStd *float64 `json:"left_leg_lean_pct_std"`
+	TrunkLeanPctStd    *float64 `json:"trunk_lean_pct_std"`
+	LeftLegLeanPctStd  *float64 `json:"left_leg_lean_pct_std"`
 	RightLegLeanPctStd *float64 `json:"right_leg_lean_pct_std"`
-	LeftArmFatPctStd  *float64 `json:"left_arm_fat_pct_std"`
-	RightArmFatPctStd *float64 `json:"right_arm_fat_pct_std"`
-	TrunkFatPctStd    *float64 `json:"trunk_fat_pct_std"`
-	LeftLegFatPctStd  *float64 `json:"left_leg_fat_pct_std"`
-	RightLegFatPctStd *float64 `json:"right_leg_fat_pct_std"`
+	LeftArmFatPctStd   *float64 `json:"left_arm_fat_pct_std"`
+	RightArmFatPctStd  *float64 `json:"right_arm_fat_pct_std"`
+	TrunkFatPctStd     *float64 `json:"trunk_fat_pct_std"`
+	LeftLegFatPctStd   *float64 `json:"left_leg_fat_pct_std"`
+	RightLegFatPctStd  *float64 `json:"right_leg_fat_pct_std"`
 	// Segments array (repeated data, matches Python contract)
 	Segments []bodyCompositionSegmentDTO `json:"segments"`
 }
@@ -153,9 +153,9 @@ type bodyCompositionDeltasDTO struct {
 }
 
 type bodyCompositionSummaryResponse struct {
-	Latest      *bodyCompositionScanDTO  `json:"latest"`
+	Latest      *bodyCompositionScanDTO   `json:"latest"`
 	Deltas      *bodyCompositionDeltasDTO `json:"deltas"`
-	Checkpoints []PhaseCheckpoint        `json:"checkpoints"`
+	Checkpoints []PhaseCheckpoint         `json:"checkpoints"`
 }
 
 type bodyCompositionScanInput struct {
@@ -510,4 +510,3 @@ func (b *bodyCompositionRoutes) upsert(c *gin.Context) {
 	dto := toScanDTO(result)
 	c.JSON(http.StatusOK, dto)
 }
-
