@@ -3,8 +3,8 @@ import { useNavigate, Link, Navigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import { apiUrl } from "../lib/apiRouting";
 
-// Auth flows through the stride-web BFF same-origin (ADR 0017): always relative
-// `/api/auth/*`. Only VITE_AUTH_CLIENT_ID (X-Client-Id) is baked into the bundle.
+// Auth hits the API gateway directly via the SPA's baked API origin
+// (src/lib/apiRouting.ts). Only VITE_AUTH_CLIENT_ID (X-Client-Id) is baked in.
 const CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID || "";
 
 interface PasswordRule {

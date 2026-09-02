@@ -51,7 +51,8 @@ race-detection:
 #   STRIDE_WORKER_API_INTERNAL_TOKEN
 api:
   addr: ":8080"
-  cors-origins: []          # e.g. ["https://app.example.com"] for the browser tier
+  cors-origins:
+    - "https://stride-running.cn"   # static SPA container browser origin (Caddy routes /api to the backends)
   internal-token: ""        # via STRIDE_WORKER_API_INTERNAL_TOKEN (secret)
   swagger-enabled: false    # true in dev/staging; keep false in prod
   auth:                     # RS256 end-user JWT (must match the auth-service)

@@ -1,8 +1,8 @@
 name: Deploy Web
 
-# stride-web (ADR 0017): static Vite SPA + Node/Hono BFF, built and shipped
-# independently of the Python backend (deploy.yml). Frontend-only changes no
-# longer rebuild the Python image or run the training-load backfill.
+# stride-web (static SPA container, no BFF): the frontend is a static nginx
+# container; Caddy is the single ingress that routes /api/* to the backends.
+# Built and shipped independently of the Python backend (deploy.yml).
 
 on:
   push:
@@ -42,10 +42,6 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION"
-          # CalVer (YYYY.M.<run_number>) — a version-sortable tag that Renovate
-          # tracks in stride-devops/versions.env (the immutable :$VERSION sha tag
-          # is what Azure deploys; the CalVer tag is only for the ACR/GHCR pin).
-          # Matches worker-go.yml's scheme so all app images bump the same way.
           CALVER="$(date -u +%Y.%-m).${{ github.run_number }}"
           echo "calver=$CALVER" >> "$GITHUB_OUTPUT"
           echo "CalVer: $CALVER"
@@ -56,9 +52,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Frontend unit tests (vitest) run on every PR via ci.yml. Master is
-      # reached only via merged PR, so this workflow is build-and-ship only.
 
       - name: Azure Login (OIDC)
         uses: azure/login@v3
@@ -79,14 +72,16 @@ jobs:
           echo "AMAP_KEY=$AMAP_KEY" >> "$GITHUB_ENV"
           echo "AMAP_SECURITY_CODE=$AMAP_SECURITY_CODE" >> "$GITHUB_ENV"
 
+      # VITE_API_BASE_URL is the prod gateway the browser calls directly
+      # (cross-origin; CORS must allow the SPA origin https://stride-running.cn).
       - name: Build image (Dockerfile.web)
         run: |
           docker build -f Dockerfile.web \
-            --build-arg VITE_AUTH_BASE_URL=${{ vars.VITE_AUTH_BASE_URL }} \
             --build-arg VITE_AUTH_CLIENT_ID=${{ vars.VITE_AUTH_CLIENT_ID }} \
             --build-arg VITE_APPLICATIONINSIGHTS_CONNECTION_STRING="${{ vars.VITE_APPLICATIONINSIGHTS_CONNECTION_STRING }}" \
             --build-arg VITE_AMAP_KEY="$AMAP_KEY" \
             --build-arg VITE_AMAP_SECURITY_CODE="$AMAP_SECURITY_CODE" \
+            --build-arg VITE_API_BASE_URL=https://api.stride-running.cn \
             -t ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
             -t ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.calver }} \
             -t ${{ env.GHCR_IMAGE }}:latest \
@@ -99,171 +94,28 @@ jobs:
           docker push ${{ env.GHCR_IMAGE }}:latest
 
       - name: Deploy to Container Apps (stride-web)
-        env:
-          PYTHON_API_URL: ${{ vars.STRIDE_PYTHON_API_URL }}
-          AUTH_UPSTREAM_URL: ${{ vars.STRIDE_AUTH_UPSTREAM_URL }}
-          GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}
-          PUBLIC_DIRECT_BASE_URL: ${{ vars.STRIDE_WEB_PUBLIC_DIRECT_BASE_URL }}
         run: |
           set -euo pipefail
           if ! az containerapp show --name ${{ env.APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} >/dev/null 2>&1; then
             echo "::error::${{ env.APP_NAME }} does not exist. Bootstrap it once (Container App + GHCR pull credential + custom domain) before this workflow can deploy."
             exit 1
           fi
-          if [ -z "${PYTHON_API_URL:-}" ] || [ -z "${AUTH_UPSTREAM_URL:-}" ] || [ -z "${GO_API_URL:-}" ]; then
-            echo "::error::STRIDE_PYTHON_API_URL, STRIDE_AUTH_UPSTREAM_URL, and STRIDE_GO_API_URL repo vars are required."
-            exit 1
-          fi
 
-          # Web onboarding v2 is one atomic Go lifecycle. Keep the exact route
-          # set source-controlled and deploy it in one ACA revision.
-          ONBOARDING_GO_ROUTE_VARS=(
-            STRIDE_ROUTE_GET_USERS_ME_PROFILE=go
-            STRIDE_ROUTE_POST_USERS_ME_PROFILE=go
-            STRIDE_ROUTE_PATCH_USERS_ME_PROFILE=go
-            STRIDE_ROUTE_GET_USERS_ME_INJURIES=go
-            STRIDE_ROUTE_POST_USERS_ME_INJURIES=go
-            STRIDE_ROUTE_PUT_USERS_ME_INJURIES_INJURYID=go
-            STRIDE_ROUTE_DELETE_USERS_ME_INJURIES_INJURYID=go
-            STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN=go
-            STRIDE_ROUTE_POST_USER_SYNC=go
-            STRIDE_ROUTE_GET_PIPELINES_RUNID=go
-            STRIDE_ROUTE_GET_JOBS_JOBID=go
-            STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE=go
-          )
-          PLAN_SETUP_GO_ROUTE_VARS=(
-            STRIDE_ROUTE_GET_USERS_ME_TRAINING_GOAL=go
-            STRIDE_ROUTE_POST_USERS_ME_TRAINING_GOAL=go
-            STRIDE_ROUTE_POST_USER_SYNC=go
-            STRIDE_ROUTE_GET_PIPELINES_RUNID=go
-          )
-          if [ "${#ONBOARDING_GO_ROUTE_VARS[@]}" -ne 12 ] \
-            || [ "$(printf '%s\n' "${ONBOARDING_GO_ROUTE_VARS[@]}" | grep -Ec '^STRIDE_ROUTE_[A-Z0-9_]+=go$')" -ne 12 ]; then
-            echo "::error::Web onboarding v2 Go cutover must contain exactly twelve route variables."
-            exit 1
-          fi
-          if [ "${#PLAN_SETUP_GO_ROUTE_VARS[@]}" -ne 4 ] \
-            || [ "$(printf '%s\n' "${PLAN_SETUP_GO_ROUTE_VARS[@]}" | grep -Ec '^STRIDE_ROUTE_[A-Z0-9_]+=go$')" -ne 4 ]; then
-            echo "::error::plan-setup-v1 Go cutover must contain exactly four route variables."
-            exit 1
-          fi
-
-          # Verify the deployed Go revision before changing the BFF route flags.
-          # These endpoints are intentionally public and static: they prove
-          # reachability and capability versions without accepting, reading, or
-          # printing user credentials, JWTs, or internal tokens. Do not follow
-          # redirects: each configured origin must attest to its own contract.
-          # When browser-direct routing is enabled, verify the Tencent gateway's
-          # static readiness endpoints too; do not probe authenticated or
-          # mutating gateway routes here.
-          readiness_bodies=()
-          cleanup_readiness_bodies() {
-            rm -f "${readiness_bodies[@]}"
-          }
-          trap cleanup_readiness_bodies EXIT
-          verify_readiness_contract() {
-            local readiness_url="$1"
-            local expected_version="$2"
-            local expected_routes_json="$3"
-            local readiness_body
-            local readiness_status
-            readiness_body=$(mktemp)
-            readiness_bodies+=("$readiness_body")
-            if ! readiness_status=$(curl --silent --connect-timeout 10 --max-time 30 \
-              --output "$readiness_body" --write-out '%{http_code}' \
-              "$readiness_url"); then
-              echo "::error::Go readiness endpoint was unreachable; refusing Web route cutover."
-              exit 1
-            fi
-            if [ "$readiness_status" != "200" ]; then
-              echo "::error::Go readiness endpoint did not return HTTP 200; refusing Web route cutover."
-              exit 1
-            fi
-            if ! python3 - "$readiness_body" "$expected_version" "$expected_routes_json" <<'PY'
-          import json
-          import sys
-
-          with open(sys.argv[1], encoding="utf-8") as response:
-              payload = json.load(response)
-          expected = {(route["method"], route["path"]) for route in json.loads(sys.argv[3])}
-          actual = {(route.get("method"), route.get("path")) for route in payload.get("routes", [])}
-          if payload.get("contract_version") != sys.argv[2] or actual != expected:
-              raise SystemExit(1)
-          PY
-            then
-              echo "::error::Go readiness contract is incomplete or incompatible; refusing Web route cutover."
-              exit 1
-            fi
-          }
-          ONBOARDING_ROUTES_JSON='[{"method":"GET","path":"/api/users/me/profile"},{"method":"POST","path":"/api/users/me/profile"},{"method":"PATCH","path":"/api/users/me/profile"},{"method":"POST","path":"/api/users/me/watch/login"},{"method":"GET","path":"/api/users/me/injuries"},{"method":"POST","path":"/api/users/me/injuries"},{"method":"PUT","path":"/api/users/me/injuries/:injuryId"},{"method":"DELETE","path":"/api/users/me/injuries/:injuryId"},{"method":"POST","path":"/api/:user/sync"},{"method":"GET","path":"/api/pipelines/:run_id"},{"method":"GET","path":"/api/jobs/:job_id"},{"method":"POST","path":"/api/users/me/onboarding/complete"}]'
-          PLAN_SETUP_ROUTES_JSON='[{"method":"GET","path":"/api/users/me/training-goal"},{"method":"POST","path":"/api/users/me/training-goal"},{"method":"POST","path":"/api/:user/sync"},{"method":"GET","path":"/api/pipelines/:run_id"}]'
-          verify_readiness_contract "${GO_API_URL%/}/api/readyz/onboarding" "web-onboarding-v2" "$ONBOARDING_ROUTES_JSON"
-          verify_readiness_contract "${GO_API_URL%/}/api/readyz/plan-setup" "plan-setup-v1" "$PLAN_SETUP_ROUTES_JSON"
-
-          if [ -n "${PUBLIC_DIRECT_BASE_URL:-}" ]; then
-            verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/api/readyz/onboarding" "web-onboarding-v2" "$ONBOARDING_ROUTES_JSON"
-            verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/api/readyz/plan-setup" "plan-setup-v1" "$PLAN_SETUP_ROUTES_JSON"
-          fi
-          echo "Go onboarding v2 and plan-setup v1 readiness contracts verified."
-
-          ENV_VAR_CANDIDATES=(
-            "PYTHON_API_URL=$PYTHON_API_URL"
-            "AUTH_UPSTREAM_URL=$AUTH_UPSTREAM_URL"
-            "GO_API_URL=$GO_API_URL"
-            "PUBLIC_DIRECT_BASE_URL=${PUBLIC_DIRECT_BASE_URL:-}"
-            "STRIDE_ROUTE_DELETE_USERS_ME=go"
-            "STRIDE_ROUTE_POST_USER_PLAN_SESSIONS_DATE_SESSIONINDEX_PUSH=go"
-            "${ONBOARDING_GO_ROUTE_VARS[@]}"
-            "${PLAN_SETUP_GO_ROUTE_VARS[@]}"
-          )
-          ENV_VARS=()
-          for assignment in "${ENV_VAR_CANDIDATES[@]}"; do
-            name="${assignment%%=*}"
-            value="${assignment#*=}"
-            duplicate=false
-            if [ "${#ENV_VARS[@]}" -gt 0 ]; then
-              for existing in "${ENV_VARS[@]}"; do
-                if [ "${existing%%=*}" = "$name" ]; then
-                  if [ "${existing#*=}" != "$value" ]; then
-                    echo "::error::Conflicting values configured for $name."
-                    exit 1
-                  fi
-                  duplicate=true
-                  break
-                fi
-              done
-            fi
-            if [ "$duplicate" = true ]; then
-              continue
-            fi
-            ENV_VARS+=("$assignment")
-          done
-
-          # PUBLIC_DIRECT_BASE_URL (ADR 0017 interim): set to the Tencent Caddy
-          # gateway to make the browser call Tencent-bound (auth + Go) endpoints
-          # direct instead of proxying them cross-border through this Azure BFF.
-          # Empty/unset → same-origin via BFF; setting it every time clears stale
-          # values and keeps the repo variable authoritative.
-          # Discover existing ACA route overrides and remove only those not in
-          # this workflow's authoritative production set. This prevents stale
-          # STRIDE_ROUTE_* values from surviving incremental environment edits.
-          DEPLOYED_ROUTE_ENVS=$(az containerapp show \
+          # The static container reads no BFF env. Purge the BFF-era variables
+          # (upstream URLs + STRIDE_ROUTE_* route flags) that no longer apply.
+          DEPLOYED_ENVS=$(az containerapp show \
             --name ${{ env.APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --query "properties.template.containers[0].env[].name" \
             -o tsv)
-          EXPECTED_ROUTE_ENVS=$(printf '%s\n' "${ENV_VARS[@]}" | sed -n 's/^\(STRIDE_ROUTE_[A-Z0-9_]*\)=.*/\1/p' | sort -u)
-          STALE_ROUTE_ENVS=()
-          while IFS= read -r route_name; do
-            [ -z "$route_name" ] && continue
-            case "$route_name" in
-              STRIDE_ROUTE_*) ;;
-              *) continue ;;
+          STALE_ENVS=()
+          while IFS= read -r name; do
+            [ -z "$name" ] && continue
+            case "$name" in
+              PYTHON_API_URL|AUTH_UPSTREAM_URL|GO_API_URL|PUBLIC_DIRECT_BASE_URL) STALE_ENVS+=("$name") ;;
+              STRIDE_ROUTE_*) STALE_ENVS+=("$name") ;;
             esac
-            if ! grep -F -x -q "$route_name" <<<"$EXPECTED_ROUTE_ENVS"; then
-              STALE_ROUTE_ENVS+=("$route_name")
-            fi
-          done <<<"$DEPLOYED_ROUTE_ENVS"
+          done <<<"$DEPLOYED_ENVS"
 
           UPDATE_ARGS=(
             az containerapp update
@@ -274,46 +126,13 @@ jobs:
             --max-replicas 1
             --cpu 0.5
             --memory 1.0Gi
-            --set-env-vars "${ENV_VARS[@]}"
           )
-          if [ "${#STALE_ROUTE_ENVS[@]}" -gt 0 ]; then
-            UPDATE_ARGS+=(--remove-env-vars "${STALE_ROUTE_ENVS[@]}")
+          if [ "${#STALE_ENVS[@]}" -gt 0 ]; then
+            UPDATE_ARGS+=(--remove-env-vars "${STALE_ENVS[@]}")
           fi
           "${UPDATE_ARGS[@]}"
 
-          # Verify the deployed ACA template, not just the local command arguments.
-          # Do not print values: route flags are non-secret, but this pattern
-          # remains safe if the deployment env grows to include sensitive settings.
-          DEPLOYED_ROUTE_ENVS=$(az containerapp show \
-            --name ${{ env.APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query "properties.template.containers[0].env[].name" \
-            -o tsv)
-          ACTUAL_ROUTE_ENVS=$(printf '%s\n' "$DEPLOYED_ROUTE_ENVS" | sed -n '/^STRIDE_ROUTE_[A-Z0-9_]*$/p' | sort -u)
-          if ! diff -u <(printf '%s\n' "$EXPECTED_ROUTE_ENVS") <(printf '%s\n' "$ACTUAL_ROUTE_ENVS"); then
-            echo "::error::Deployed ACA route env set does not exactly match the authoritative set."
-            exit 1
-          fi
-          for route in "${ENV_VARS[@]}"; do
-            case "$route" in
-              STRIDE_ROUTE_*=*) ;;
-              *) continue ;;
-            esac
-            route_name="${route%=*}"
-            route_value=$(az containerapp show \
-              --name ${{ env.APP_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --query "properties.template.containers[0].env[?name=='$route_name'].value | [0]" \
-              -o tsv)
-            if [ "$route_value" != "go" ]; then
-              echo "::error::Deployed $route_name is not configured for the expected Go cutover."
-              exit 1
-            fi
-          done
-
       - name: Wait for new revision to reach Running
-        # In single-revision mode ACA keeps the prior revision serving when the
-        # new one fails to boot, so check the new revision rather than its FQDN.
         run: |
           set -e
           LATEST=$(az containerapp show \
@@ -356,20 +175,8 @@ jobs:
             --tail 100 || true
           exit 1
 
-      # Aliyun ACR mirror (ADR 0017): the SAME image tagged + pushed to ACR so it
-      # is pullable from mainland China (readies the "re-place BFF to Tencent"
-      # escape hatch). Build-once: re-tag the local image, never rebuild.
-      #
-      # Namespace is `stride`, matching the Go images (worker-go.yml pushes
-      # `${ALIYUN_ACR_REGISTRY}/stride/stride-api` + `/stride/stride-worker`); the
-      # web image sits alongside them as `stride/stride-web`. No separate
-      # namespace variable — it's hardcoded, same as the Go workflow.
-      #
-      # Runs LAST, after deployment + revision readiness, and with `if: always()` so a mirror
-      # misconfiguration can never block the authoritative GHCR deploy (Azure
-      # pulls from GHCR). Still loud: unset registry → skip with warning;
-      # registry set but creds incomplete → fail the job (red) so a broken
-      # dual-publish is visible without stranding the deploy.
+      # Aliyun ACR mirror: the SAME image tagged + pushed to ACR so it is pullable
+      # from mainland China. Runs LAST, after deploy + readiness, `if: always()`.
       - name: Mirror image to Aliyun ACR
         if: always()
         env:
@@ -395,11 +202,6 @@ jobs:
           docker push "$ACR_IMAGE:${{ steps.version.outputs.calver }}"
           docker push "$ACR_IMAGE:latest"
 
-      # Open a version-bump PR in stride-devops the moment the CalVer image lands
-      # (same as worker-go.yml). Renovate reads stride-devops/renovate.json, sees
-      # the new ghcr.io/zhaochy1990/stride-web CalVer tag, and PRs the versions.env
-      # bump. Best-effort: a missing token / Renovate hiccup must NOT fail the
-      # deploy. Needs RENOVATE_TOKEN (+ optional GHCR_READ_TOKEN) repo secrets.
       - name: Set up Node 22 for Renovate
         if: always()
         uses: actions/setup-node@v4
@@ -418,8 +220,6 @@ jobs:
             echo "RENOVATE_TOKEN not set — skipping Renovate run."
             exit 0
           fi
-          # GHCR's tag-list API can lag a few seconds behind the push — wait so
-          # Renovate reliably sees this release's own new CalVer tag.
           sleep 30
           for attempt in 1 2 3; do
             if npx --yes renovate@41 zhaochy1990/stride-devops; then

@@ -1,17 +1,39 @@
 const { spawn } = require("node:child_process");
 const { createServer } = require("node:http");
 const { once } = require("node:events");
-const { chromium } = require("playwright");
+const { readFile } = require("node:fs/promises");
 const fs = require("node:fs");
 const path = require("node:path");
+const { chromium } = require("playwright");
+
+// Self-contained fixture smoke for the season-plan current endpoint. The frontend
+// is a static container (no BFF-ish proxy). We build the SPA with a relative API
+// base (VITE_API_BASE_URL unset), serve the built dist, and run a tiny API server
+// on the SAME origin that fakes /api/users/me/profile + the master-plan current
+// endpoint. This exercises the four client states (structured / Markdown / none /
+// read-error) without any BFF or real upstream.
 
 const frontendRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(frontendRoot, "..");
-const systemChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const host = "127.0.0.1";
-const fixturePort = 18083;
-const bffPort = 18082;
-const bffBase = `http://${host}:${bffPort}`;
+const port = 18083;
+const base = `http://${host}:${port}`;
+const distDir = path.join(frontendRoot, "dist");
+const systemChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".webp": "image/webp",
+  ".map": "application/json",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+};
 
 const structuredPlan = {
   content_version: 2,
@@ -24,7 +46,7 @@ const structuredPlan = {
   plan: {
     goal: {
       goal_id: "fixture-goal",
-      race_name: "BFF 结构化测试马拉松",
+      race_name: "Fixture 结构化测试马拉松",
       distance: "FM",
       race_date: "2026-10-11",
       target_time: "03:15:00",
@@ -79,7 +101,7 @@ const markdownPlan = {
   revision: null,
   created_at: "2026-05-01T00:00:00Z",
   updated_at: "2026-08-10T00:00:00Z",
-  plan: "# BFF Markdown 赛季计划\n\n- 保持有氧基础\n- 每周安排一次长跑",
+  plan: "# Fixture Markdown 赛季计划\n\n- 保持有氧基础\n- 每周安排一次长跑",
 };
 
 function json(res, status, body) {
@@ -96,26 +118,50 @@ function requestMode(req) {
   }
 }
 
-function createFixtureServer() {
+async function serveStatic(req, res) {
+  let pathname = new URL(req.url, base).pathname;
+  if (pathname === "/") pathname = "/index.html";
+  const filePath = path.normalize(path.join(distDir, pathname));
+  if (!filePath.startsWith(distDir)) {
+    json(res, 403, { detail: "forbidden" });
+    return;
+  }
+  try {
+    const data = await readFile(filePath);
+    res.writeHead(200, { "content-type": MIME[path.extname(filePath)] || "application/octet-stream" });
+    res.end(data);
+  } catch {
+    // SPA fallback for client-side routes (/plan, /week/..., etc.).
+    const html = await readFile(path.join(distDir, "index.html"));
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(html);
+  }
+}
+
+function createAppServer() {
   return createServer((req, res) => {
-    if (req.method === "GET" && req.url === "/api/users/me/profile") {
-      return json(res, 200, {
-        id: "fixture-user",
-        display_name: "Fixture Runner",
-        profile: {},
-        onboarding: { watch_ready: true, profile_ready: true, completed_at: "2026-05-01T00:00:00Z" },
-        features: { coach_agent_weekly_plan: false, coach_chat: false },
-      });
+    const pathname = new URL(req.url, base).pathname;
+    if (pathname.startsWith("/api/")) {
+      if (req.method === "GET" && pathname === "/api/users/me/profile") {
+        return json(res, 200, {
+          id: "fixture-user",
+          display_name: "Fixture Runner",
+          profile: {},
+          onboarding: { watch_ready: true, profile_ready: true, completed_at: "2026-05-01T00:00:00Z" },
+          features: { coach_agent_weekly_plan: false, coach_chat: false },
+        });
+      }
+      if (req.method === "GET" && pathname === "/api/users/fixture-user/master-plan/current") {
+        const mode = requestMode(req);
+        if (mode === "structured") return json(res, 200, structuredPlan);
+        if (mode === "markdown") return json(res, 200, markdownPlan);
+        if (mode === "none") return json(res, 404, { detail: "not found" });
+        if (mode === "error") return json(res, 500, { error: "fixture error" });
+        return json(res, 400, { error: "unknown fixture mode" });
+      }
+      return json(res, 404, { detail: "fixture route not found" });
     }
-    if (req.method === "GET" && req.url === "/api/users/fixture-user/master-plan/current") {
-      const mode = requestMode(req);
-      if (mode === "structured") return json(res, 200, structuredPlan);
-      if (mode === "markdown") return json(res, 200, markdownPlan);
-      if (mode === "none") return json(res, 404, { detail: "not found" });
-      if (mode === "error") return json(res, 500, { error: "fixture error" });
-      return json(res, 400, { error: "unknown fixture mode" });
-    }
-    return json(res, 404, { detail: "fixture route not found" });
+    return serveStatic(req, res);
   });
 }
 
@@ -133,18 +179,6 @@ async function launchBrowser() {
   }
 }
 
-async function waitForBff(child) {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    if (child.exitCode != null) throw new Error(`fixture BFF exited with ${child.exitCode}`);
-    try {
-      const response = await fetch(`${bffBase}/healthz`);
-      if (response.ok) return;
-    } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error("fixture BFF did not become ready");
-}
-
 async function assertScenario(browser, mode, assertion) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const currentRequests = [];
@@ -158,7 +192,7 @@ async function assertScenario(browser, mode, assertion) {
     },
     { jwt: fixtureJwt(mode) },
   );
-  await page.goto(`${bffBase}/plan`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${base}/plan`, { waitUntil: "domcontentloaded" });
   await assertion(page);
   if (currentRequests.length !== 1) {
     throw new Error(`${mode}: expected one current-plan request, got ${currentRequests.length}`);
@@ -166,43 +200,39 @@ async function assertScenario(browser, mode, assertion) {
   await page.close();
 }
 
-async function main() {
-  const fixture = createFixtureServer();
-  fixture.listen(fixturePort, host);
-  await once(fixture, "listening");
+function runViteBuild() {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["node_modules/vite/bin/vite.js", "build"], {
+      cwd: frontendRoot,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, VITE_API_BASE_URL: "" },
+    });
+    let output = "";
+    child.stdout.on("data", (c) => (output += c.toString()));
+    child.stderr.on("data", (c) => (output += c.toString()));
+    child.on("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`vite build failed (${code}):\n${output}`));
+    });
+  });
+}
 
-  const bff = spawn(process.execPath, ["server/dist/index.js"], {
-    cwd: frontendRoot,
-    stdio: ["ignore", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      PORT: String(bffPort),
-      STATIC_DIR: path.join(frontendRoot, "dist"),
-      STRENGTH_DIR: path.join(repoRoot, "strength_illustrations", "output"),
-      PYTHON_API_URL: `http://${host}:${fixturePort}`,
-      GO_API_URL: `http://${host}:${fixturePort}`,
-      AUTH_UPSTREAM_URL: `http://${host}:${fixturePort}`,
-      STRIDE_ROUTE_GET_USERS_USER_ID_MASTER_PLAN_CURRENT: "go",
-    },
-  });
-  let bffOutput = "";
-  bff.stdout.on("data", (chunk) => {
-    bffOutput += chunk.toString();
-  });
-  bff.stderr.on("data", (chunk) => {
-    bffOutput += chunk.toString();
-  });
+async function main() {
+  await runViteBuild();
+
+  const app = createAppServer();
+  app.listen(port, host);
+  await once(app, "listening");
 
   let browser;
   try {
-    await waitForBff(bff);
     browser = await launchBrowser();
     await assertScenario(browser, "structured", async (page) => {
-      await page.getByRole("heading", { name: "BFF 结构化测试马拉松" }).waitFor();
+      await page.getByRole("heading", { name: "Fixture 结构化测试马拉松" }).waitFor();
       if (await page.getByText(/revision|修订号|v7/i).count()) throw new Error("structured: revision is visible");
     });
     await assertScenario(browser, "markdown", async (page) => {
-      await page.getByRole("heading", { name: "BFF Markdown 赛季计划" }).waitFor();
+      await page.getByRole("heading", { name: "Fixture Markdown 赛季计划" }).waitFor();
       await page.getByText("保持有氧基础").waitFor();
     });
     await assertScenario(browser, "none", async (page) => {
@@ -216,11 +246,10 @@ async function main() {
     });
     console.log("Current plan fixture smoke OK: structured, Markdown, no-plan, read-error");
   } catch (error) {
-    throw new Error(`${error instanceof Error ? error.message : String(error)}\nBFF output:\n${bffOutput}`);
+    throw new Error(error instanceof Error ? error.message : String(error));
   } finally {
     if (browser) await browser.close();
-    bff.kill("SIGTERM");
-    fixture.close();
+    app.close();
   }
 }
 

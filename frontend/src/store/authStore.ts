@@ -2,10 +2,10 @@ import { create } from "zustand";
 import { setAuthUser, clearAuthUser } from "../telemetry/appInsights";
 import { apiUrl } from "../lib/apiRouting";
 
-// Auth flows through the stride-web BFF same-origin in every environment
-// (ADR 0017), so requests are always relative `/api/auth/*` — no dev/prod
-// branch. VITE_AUTH_BASE_URL is no longer used for request routing; only
-// VITE_AUTH_CLIENT_ID (sent as X-Client-Id) is baked into the bundle.
+// Auth calls the API gateway (api.stride-running.cn) directly — the SPA's API
+// origin is baked via VITE_API_BASE_URL (src/lib/apiRouting.ts). In local dev
+// the origin is empty so requests stay relative and the Vite proxy forwards
+// them server-side. VITE_AUTH_CLIENT_ID (sent as X-Client-Id) is baked in.
 const CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID || "";
 
 interface JwtPayload {

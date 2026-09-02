@@ -11,12 +11,16 @@ Multi-stage build (`Dockerfile`)：
 
 `.dockerignore` 排除 `data/` 但放行 `data/*/TRAINING_PLAN.md`，让默认 training plans 进 image。
 
-## Planned：前端剥离为 `stride-web`（见 ADR 0017）
+## 前端：独立静态容器 `stride-web`（ADR 0017 演进）
 
-> 设计已定、尚未实施。完整取舍见 [`docs/adr/0017-frontend-bff-strangler-split.md`](adr/0017-frontend-bff-strangler-split.md)。
+> 前端已从共享镜像拆出，成为独立静态容器（**不再有 Node/Hono BFF**）。完整取舍见
+> [`docs/adr/0017-frontend-bff-strangler-split.md`](adr/0017-frontend-bff-strangler-split.md)
+>（下文带 `STRIDE_ROUTE_*` 路由 flag / readiness contract 的 BFF 内部细节已随 BFF 移除，不再适用）。
 
-目标态把前端从这个共享镜像里拆出去，成为独立服务/容器 **`stride-web`** = 静态 Vite SPA +
-一个 Node/Hono **前端 BFF**（唯一前门；页面仍 CSR，不做 SSR）。届时：
+目标态：**`stride-web` = 静态 Vite SPA**（无 BFF、不做 SSR）；Caddy 是唯一流量入口，
+`stride-running.cn` → 前端容器，`api.stride-running.cn` → 各后端（Go/Python/auth）。SPA 的
+API origin 由构建期 `VITE_API_BASE_URL` 烘焙（`src/lib/apiRouting.ts`），浏览器跨域直连
+`api.stride-running.cn`，网关须对 `https://stride-running.cn` 放行 CORS。届时：
 
 - **两份镜像、两条 workflow**。新 `deploy-web.yml` 构建 `Dockerfile.web`，一次构建后 tag 推到
   **GHCR + 阿里云 ACR 两个 registry**，部署到新 Container App `stride-web`；它拥有 `VITE_*` +
