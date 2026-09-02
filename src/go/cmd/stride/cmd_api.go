@@ -172,6 +172,7 @@ func runAPI() error {
 		GoalStore:               store,
 		HealthStore:             store,
 		StrideStore:             store,
+		PBStore:                 store,
 		BodyCompositionStore:    store,
 		AbilityStore:            store,
 		PredictionStore:         store,

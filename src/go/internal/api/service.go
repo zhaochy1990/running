@@ -123,8 +123,14 @@ type Config struct {
 	// (ADR 0023) — two sibling registrars sharing the auth path. HealthStore
 	// serves /health, /hrv, /pmc; StrideStore serves /stride/zones and
 	// /stride/training-load. Leave zero to run without them (e.g. in tests).
-	HealthStore          HealthStore
-	StrideStore          StrideStore
+	HealthStore HealthStore
+	StrideStore StrideStore
+	// PBStore backs the personal-best read surface (GET /api/{user}/pbs), a
+	// sibling registrar sharing the auth path. Leave zero to run without it.
+	PBStore PBStore
+	// BodyCompositionStore backs the body-composition read/write surface
+	// (list / summary / single / upsert). User-entered (OCR/manual), not
+	// watch-synced. Leave zero to run without it (e.g. in tests).
 	BodyCompositionStore BodyCompositionStore
 
 	// AbilityStore and PredictionStore back the ability-score / race-prediction
@@ -185,6 +191,7 @@ type Service struct {
 
 	healthMetrics   *healthRoutes
 	strideMetrics   *strideRoutes
+	pbs             *pbsRoutes
 	bodyComposition *bodyCompositionRoutes
 	ability         *abilityRoutes
 	predictions     *predictionRoutes
@@ -229,6 +236,7 @@ func NewService(cfg Config) *Service {
 		teams:                   newTeamRoutes(cfg.TeamAuth, cfg.TeamStore, cfg.ActivityStore, log),
 		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),
 		strideMetrics:           newStrideRoutes(cfg.StrideStore, log),
+		pbs:                     newPbsRoutes(cfg.PBStore, log),
 		bodyComposition:         newBodyCompositionRoutes(cfg.BodyCompositionStore, log),
 		ability:                 newAbilityRoutes(cfg.AbilityStore, cfg.Enqueuer, cfg.AbilityBackfillJobType, log),
 		predictions:             newPredictionRoutes(cfg.PredictionStore, log),
@@ -292,6 +300,7 @@ func (s *Service) Router() *gin.Engine {
 	s.goals.register(authed)
 	s.healthMetrics.register(authed)
 	s.strideMetrics.register(authed)
+	s.pbs.register(authed)
 	s.bodyComposition.register(authed)
 	s.ability.register(authed)
 	s.predictions.register(authed)

@@ -4,38 +4,22 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const devAuthProxy = env.VITE_DEV_AUTH_PROXY || env.VITE_AUTH_BASE_URL || "";
-  const devApiProxy = env.VITE_DEV_API_PROXY || "";
-  // When the BFF fronts Vite (high-fidelity dev, ADR 0017), the page is served
-  // from the BFF's origin but HMR must connect straight to Vite. Setting
-  // VITE_HMR_CLIENT_PORT points the browser's HMR websocket at Vite directly so
-  // the BFF never has to proxy the websocket upgrade.
-  const hmrClientPort = env.VITE_HMR_CLIENT_PORT ? Number(env.VITE_HMR_CLIENT_PORT) : undefined;
+  // The frontend is a static container; in local dev the SPA uses relative /api/*
+  // and the Vite server proxies them to the API gateway (server-side, so no
+  // browser CORS). The SPA itself never hardcodes the gateway in dev — see
+  // src/lib/apiRouting.ts (VITE_API_BASE_URL, baked only in the prod build).
+  const devApiProxy = env.VITE_DEV_API_PROXY || "https://api.stride-running.cn";
+  // Strength illustrations are baked into the static frontend container. In local
+  // dev, serve them from the prod frontend host (the static container) so the
+  // SPA's relative /strength_illustrations/* URLs resolve.
+  const devStrengthProxy = env.VITE_DEV_STRENGTH_PROXY || "https://stride-running.cn";
 
   return {
     plugins: [react(), tailwindcss()],
     server: {
-      ...(hmrClientPort ? { hmr: { clientPort: hmrClientPort } } : {}),
       proxy: {
-        ...(devAuthProxy
-          ? {
-              "/api/auth": {
-                target: devAuthProxy,
-                changeOrigin: true,
-                secure: true,
-              },
-            }
-          : {}),
-        "/api": devApiProxy ? { target: devApiProxy, changeOrigin: true, secure: true } : "http://localhost:8080",
-        ...(devApiProxy
-          ? {
-              "/strength_illustrations": {
-                target: devApiProxy,
-                changeOrigin: true,
-                secure: true,
-              },
-            }
-          : {}),
+        "/api": { target: devApiProxy, changeOrigin: true, secure: true },
+        "/strength_illustrations": { target: devStrengthProxy, changeOrigin: true, secure: true },
       },
     },
   };

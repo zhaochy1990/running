@@ -6,11 +6,12 @@
 
 React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。共享 sidebar navigation 用 `AppLayout`。
 
-> **当前部署（ADR 0017）**：前端已拆为独立服务/容器 `stride-web` = 静态 SPA + Node/Hono
-> 前端 BFF。页面仍 CSR，token 模型不变。BFF 用版本化 TS **API 路由表** 把 `/api/*` 分流到
-> Python（`stride-app`）或 Go（Tencent `stride api`），`/api/auth/*` 也经 BFF 走 auth 上游。默认
-> 为 same-origin；配置 `PUBLIC_DIRECT_BASE_URL` 时，SPA 可按同一 manifest 直连 Tencent-bound
-> auth/Go routes。`stride-app` 现在是 API-only，以下 FastAPI+SPA 说明只保留为历史 fallback。
+> **当前部署**：前端是**静态容器 `stride-web`**（无 Node/Hono BFF）。Caddy 是唯一流量入口：
+> `stride-running.cn` → 前端容器（静态 SPA），`api.stride-running.cn` → 各后端
+> （Go/Python/auth）。页面仍 CSR，token 模型不变。SPA 的 API origin 由构建期
+> `VITE_API_BASE_URL` 烘焙（`src/lib/apiRouting.ts`）；浏览器跨域直连 `api.stride-running.cn`，
+> 网关需对 `https://stride-running.cn` 放行 CORS。`stride-app` 现在是 API-only，以下
+> FastAPI+SPA 说明只保留为历史 fallback。
 
 ## Pages
 
@@ -53,7 +54,7 @@ React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。
 - `POST /api/users/me/coach/master-plan/{plan_id}/apply` —— 整单启用赛季训练计划调整，校验 plan version；`session_id` 绑定 trusted event 会话
 - `POST /api/users/me/coach/proposals/abandon` —— 记录用户放弃调整方案的 trusted event；`session_id` 决定写入的长期会话
 
-当前赛季计划的无凭据浏览器回归使用真实 BFF 路由和本地 fixture 上游：`cd frontend && npm run smoke:plan:fixture`。它覆盖结构化、Markdown、404 创建页和读取错误四种状态。
+当前赛季计划的无凭据浏览器回归用自包含 fixture（本地静态 SPA + 本地 fixture API，无需 BFF/上游）：`cd frontend && npm run smoke:plan:fixture`。它覆盖结构化、Markdown、404 创建页和读取错误四种状态。
 
 ## Profile cutover target
 

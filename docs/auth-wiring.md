@@ -86,17 +86,12 @@ coros-sync -P zhaochaoyi commentary push <label_id>
 当前 `authStore.ts` 已经**去掉 dev/prod 分支**（ADR 0017）：两个环境都相对 `/api/auth/*`，
 same-origin 经前门转发，不再用 `VITE_AUTH_BASE_URL` 绝对量直连 auth-service。
 
-> **前门 = stride-web BFF（域名切换已完成）**：用户域名 `stride-running.cn` 已翻到 `stride-web`，
-> 由它的 Node BFF 作为唯一前门，把 `/api/auth/*` 转发到 `AUTH_UPSTREAM_URL`（auth-service），
-> 其它 `/api/*` 按版本化路由表转发到 `PYTHON_API_URL`（stride-app）或 `GO_API_URL`（stride api）。**stride-app 已不再服务 SPA / 不再是 web 前门**：
-> `mount_frontend` / `static.py` 及短暂存在过的 `routes/auth_proxy.py` fallback 反代都已随 ADR 0017
-> 收尾清理移除。浏览器永不直接打 stride-app 的 `/api/auth/*`，所以老后端无需 auth 反代。
-
-
-> **Planned（ADR 0017）**：前端剥离为 `stride-web` 后，`/api/auth/*` **两个环境都经前端 BFF**
-> 转发到 `AUTH_UPSTREAM_URL`，全链路 same-origin。`authStore.ts` 去掉 dev/prod 分支，永远
-> 相对 `/api/auth`；浏览器不再跨域直连 auth-service。届时 auth-service 的 CORS 可收紧为只认
-> BFF 服务端。token 模型（`sessionStorage` + Bearer）不变。
+> **前门 = Caddy 流量入口（前端为静态容器，无 BFF）**：`stride-running.cn` → 前端静态容器
+> （nginx 托管 SPA），`api.stride-running.cn` → 各后端（Go/Python/auth）。SPA 的 API origin 由
+> 构建期 `VITE_API_BASE_URL` 烘焙（`src/lib/apiRouting.ts`），浏览器跨域直连
+> `api.stride-running.cn`（含 `/api/auth/*`）。前端容器**不再代理任何 `/api/*`**。因此
+> `api.stride-running.cn`（网关）须对 `https://stride-running.cn` 放行 CORS（预检 OPTIONS +
+> `Authorization`/`Content-Type`/`X-Client-Id` 头）。token 模型（`sessionStorage` + Bearer）不变。
 
 ### 6. Go team API 的 auth-service dependency（ADR 0026）
 

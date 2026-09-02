@@ -1,6 +1,11 @@
 # 前端剥离为 stride-web 服务：Node BFF 拥有 Python→Go 的 strangler 路由
 
-> **Status:** accepted。**Supersedes ADR 0012 的一个具体决定** —— 0012 记录的
+> **Status:** accepted, **但已演进**。strangler 拆分（前端独立容器）按本 ADR 落地后，BFF 层已随
+> 架构演进移除：前端现在是**静态容器**（nginx），Caddy 是唯一流量入口（`stride-running.cn` →
+> 前端容器，`api.stride-running.cn` → 各后端）。下文关于 Node/Hono BFF、`STRIDE_ROUTE_*` 路由表、
+> `PUBLIC_DIRECT_BASE_URL` 的细节仅作历史记录，不再适用。
+
+> **原 Status:** accepted。**Supersedes ADR 0012 的一个具体决定** —— 0012 记录的
 > "we want the browser/app to call the Go API directly"（拒绝 proxy user traffic
 > through a fronting service）在浏览器路径上被本 ADR 反转：浏览器不再直连 Go，而是
 > 只跟 `stride-web` 的 BFF 同源对话，由 BFF 服务端路由到 Python 或 Go。ADR 0012 的

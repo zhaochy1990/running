@@ -502,14 +502,14 @@ export function triggerSync(user: string, options: TriggerSyncOptions | boolean 
 }
 
 export function resyncActivity(user: string, labelId: string) {
-  return fetch(`${BASE}/${user}/activities/${labelId}/resync`, { method: "POST", headers: authHeaders() }).then((r) => r.json()) as Promise<{
+  return fetch(apiUrl("POST", `${BASE}/${user}/activities/${labelId}/resync`), { method: "POST", headers: authHeaders() }).then((r) => r.json()) as Promise<{
     success: boolean;
     error?: string;
   }>;
 }
 
 export function regenerateCommentary(user: string, labelId: string) {
-  return fetch(`${BASE}/${user}/activities/${labelId}/commentary/regenerate`, { method: "POST", headers: authHeaders() }).then((r) => r.json()) as Promise<{
+  return fetch(apiUrl("POST", `${BASE}/${user}/activities/${labelId}/commentary/regenerate`), { method: "POST", headers: authHeaders() }).then((r) => r.json()) as Promise<{
     success: boolean;
     commentary?: string;
     generated_by?: string | null;
@@ -1476,7 +1476,7 @@ export function fetchAbilityHistory(user: string, days = 90) {
 }
 
 export async function triggerAbilityBackfill(user: string, days = 180) {
-  const res = await fetch(`${BASE}/${user}/ability/backfill?days=${days}`, {
+  const res = await fetch(apiUrl("POST", `${BASE}/${user}/ability/backfill?days=${days}`), {
     method: "POST",
     headers: authHeaders(),
   });

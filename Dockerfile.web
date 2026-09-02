@@ -1,12 +1,10 @@
-# stride-web image (ADR 0017): static Vite SPA + Node/Hono BFF, the single
-# front door. Built and deployed independently of the Python backend image.
+# stride-web image: static Vite SPA (no Node/Hono BFF). Caddy is the single
+# ingress that routes /api/* to the backends; this container only serves the
+# built SPA + strength illustration assets.
 #
 #   docker build -f Dockerfile.web -t stride-web \
-#     --build-arg VITE_AUTH_CLIENT_ID=... --build-arg VITE_AMAP_KEY=... . \
-#   docker run -p 8080:8080 \
-#     -e PYTHON_API_URL=https://stride-app... \
-#     -e AUTH_UPSTREAM_URL=https://auth... \
-#     stride-web
+#     --build-arg VITE_AUTH_CLIENT_ID=... --build-arg VITE_AMAP_KEY=... \
+#     --build-arg VITE_API_BASE_URL=https://api.stride-running.cn .
 
 # ---- Stage 1: build the SPA (Vite) ----
 FROM node:24-alpine AS spa-build
@@ -17,91 +15,34 @@ COPY frontend/ ./
 
 # Vite bakes VITE_* into the bundle at build time — no runtime injection path.
 # (AMap key/securityJsCode are gated by the AMap console domain whitelist, not
-# secrecy; sourced from stride-kv-common AKV in CI.) NOTE: VITE_AUTH_BASE_URL is
-# no longer used for request routing (auth goes same-origin via the BFF), but is
-# kept as a build arg for backward compatibility / the Vite dev-proxy fallback.
-ARG VITE_AUTH_BASE_URL
+# secrecy; sourced from stride-kv-common AKV in CI.)
+# VITE_API_BASE_URL: the API gateway the browser calls directly (cross-origin;
+# CORS must allow the SPA origin). Defaults to the prod gateway.
 ARG VITE_AUTH_CLIENT_ID
 ARG VITE_APPLICATIONINSIGHTS_CONNECTION_STRING
 ARG VITE_AMAP_KEY
 ARG VITE_AMAP_SECURITY_CODE
 ARG VITE_GO_ONBOARDING=true
-ENV VITE_AUTH_BASE_URL=$VITE_AUTH_BASE_URL \
-    VITE_AUTH_CLIENT_ID=$VITE_AUTH_CLIENT_ID \
+ARG VITE_API_BASE_URL=https://api.stride-running.cn
+ENV VITE_AUTH_CLIENT_ID=$VITE_AUTH_CLIENT_ID \
     VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=$VITE_APPLICATIONINSIGHTS_CONNECTION_STRING \
     VITE_AMAP_KEY=$VITE_AMAP_KEY \
     VITE_AMAP_SECURITY_CODE=$VITE_AMAP_SECURITY_CODE \
-    VITE_GO_ONBOARDING=$VITE_GO_ONBOARDING
+    VITE_GO_ONBOARDING=$VITE_GO_ONBOARDING \
+    VITE_API_BASE_URL=$VITE_API_BASE_URL
 
 RUN npm run build
 
-# ---- Stage 2: build the BFF (tsc) ----
-FROM node:24-alpine AS bff-build
-WORKDIR /app/server
-COPY frontend/server/package.json frontend/server/package-lock.json ./
-RUN npm ci
-COPY frontend/server/ ./
-RUN npm run build
-# Re-resolve to production-only deps for the runtime image.
-RUN npm ci --omit=dev
+# ---- Stage 2: runtime (nginx static) ----
+FROM nginx:1.27-alpine
+WORKDIR /usr/share/nginx/html
 
-# ---- Stage 3: runtime ----
-FROM node:24-alpine
-WORKDIR /app/server
-ENV NODE_ENV=production
+# Built SPA + strength illustration library (served same-origin relative to the
+# SPA host — Caddy routes /strength_illustrations/* to this container).
+COPY --from=spa-build /app/frontend/dist /usr/share/nginx/html
+COPY strength_illustrations/output /usr/share/nginx/html/strength_illustrations/output
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
-# BFF: compiled output + production node_modules.
-COPY --from=bff-build /app/server/dist ./dist
-COPY --from=bff-build /app/server/node_modules ./node_modules
-COPY --from=bff-build /app/server/package.json ./package.json
-
-# Served static: built SPA + strength illustration library (moved into the web
-# image per ADR 0017 — the Python API returns relative /strength_illustrations
-# URLs the browser fetches here, same-origin).
-COPY --from=spa-build /app/frontend/dist /app/web/dist
-COPY strength_illustrations/output /app/web/strength_illustrations/output
-
-# Absolute static roots (serveStatic + readFileSync accept absolute paths).
-# PYTHON_API_URL / AUTH_UPSTREAM_URL / GO_API_URL are injected at deploy time;
-# the BFF fails fast at boot if the required ones are missing.
-ENV STATIC_DIR=/app/web/dist \
-    STRENGTH_DIR=/app/web/strength_illustrations/output \
-    PORT=8080 \
-    STRIDE_ROUTE_GET_USERS_USER_ID_MASTER_PLAN_CURRENT=go \
-    STRIDE_ROUTE_GET_USER_WEEKS=go \
-    STRIDE_ROUTE_GET_USER_WEEKS_WEEKNAME=go \
-    STRIDE_ROUTE_GET_USERS_ME_TRAINING_GOAL=go \
-    STRIDE_ROUTE_POST_USERS_ME_TRAINING_GOAL=go \
-    STRIDE_ROUTE_PUT_USERS_ME_TRAINING_GOAL=go \
-    STRIDE_ROUTE_GET_USERS_ME_PROFILE=go \
-    STRIDE_ROUTE_POST_USERS_ME_PROFILE=go \
-    STRIDE_ROUTE_PATCH_USERS_ME_PROFILE=go \
-    STRIDE_ROUTE_GET_USERS_ME_INJURIES=go \
-    STRIDE_ROUTE_POST_USERS_ME_INJURIES=go \
-    STRIDE_ROUTE_PUT_USERS_ME_INJURIES_INJURYID=go \
-    STRIDE_ROUTE_DELETE_USERS_ME_INJURIES_INJURYID=go \
-    STRIDE_ROUTE_GET_USERS_ME_WATCH=go \
-    STRIDE_ROUTE_DELETE_USERS_ME_WATCH=go \
-    STRIDE_ROUTE_DELETE_USERS_ME=go \
-    STRIDE_ROUTE_POST_USERS_ME_WATCH_LOGIN=go \
-    STRIDE_ROUTE_POST_USER_SYNC=go \
-    STRIDE_ROUTE_GET_PIPELINES_RUNID=go \
-    STRIDE_ROUTE_GET_JOBS_JOBID=go \
-    STRIDE_ROUTE_POST_USERS_ME_ONBOARDING_COMPLETE=go \
-    STRIDE_ROUTE_GET_USERS_USER_PIPELINES=go \
-    STRIDE_ROUTE_GET_USER_ACTIVITIES=go \
-    STRIDE_ROUTE_GET_USER_ACTIVITIES_LABELID=go \
-    STRIDE_ROUTE_GET_USER_HEALTH=go \
-    STRIDE_ROUTE_GET_USER_HRV=go \
-    STRIDE_ROUTE_GET_USER_PMC=go \
-    STRIDE_ROUTE_GET_USER_STRIDE_TRAINING_LOAD=go \
-    STRIDE_ROUTE_GET_USER_STRIDE_ZONES=go \
-    STRIDE_ROUTE_GET_USER_ABILITY_CURRENT=go \
-    STRIDE_ROUTE_GET_USER_ABILITY_HISTORY=go \
-    STRIDE_ROUTE_GET_USER_ABILITY_WEIGHTS=go \
-    STRIDE_ROUTE_POST_USER_ABILITY_BACKFILL=go \
-    STRIDE_ROUTE_GET_USER_RACE_PREDICTIONS=go \
-    STRIDE_ROUTE_GET_USER_RACE_PREDICTIONS_HISTORY=go
-
+# Keep the ingress target port at 8080 (matches the previous BFF container, so
+# the ACA ingress port doesn't change).
 EXPOSE 8080
-CMD ["node", "dist/index.js"]
