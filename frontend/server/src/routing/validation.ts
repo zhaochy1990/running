@@ -4,6 +4,7 @@ import {
   hasPartialWeeklyFeedbackGoCutover,
   WEEKLY_FEEDBACK_GO_ROUTE_ENVS,
   hasPartialWebOnboardingGoCutover,
+  hasPartialBodyCompositionGoCutover,
   unsupportedGoRoutes,
 } from "./table.js";
 
@@ -25,6 +26,9 @@ export function validateRouteConfiguration(env: NodeJS.ProcessEnv = process.env,
   }
   if (hasPartialWeeklyFeedbackGoCutover(env)) {
     throw new Error("stride-web BFF: weekly-feedback PUT requires both week readers on Go");
+  }
+  if (hasPartialBodyCompositionGoCutover(env)) {
+    throw new Error("stride-web BFF: body-composition Go routes must be enabled as an atomic set");
   }
   if (
     env.STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE?.trim().toLowerCase() === "true" &&

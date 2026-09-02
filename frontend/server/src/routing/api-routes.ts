@@ -269,13 +269,13 @@ export const API_ROUTES: readonly ApiRoute[] = [
 
   // ── Body composition ────────────────────────────────────────────────────
   // ✓ /body-composition · scans list
-  { method: "GET", path: "/api/:user/body-composition", env: "STRIDE_ROUTE_GET_USER_BODY_COMPOSITION", goReady: false },
-  // ✗ wrapper (getBodyCompositionScan) exists, no non-test caller
-  { method: "GET", path: "/api/:user/body-composition/:scanDate", env: "STRIDE_ROUTE_GET_USER_BODY_COMPOSITION_SCANDATE", goReady: false },
+  { method: "GET", path: "/api/:user/body-composition", env: "STRIDE_ROUTE_GET_USER_BODY_COMPOSITION", goReady: true },
+  // ✓ /body-composition · single scan by date
+  { method: "GET", path: "/api/:user/body-composition/:scanDate", env: "STRIDE_ROUTE_GET_USER_BODY_COMPOSITION_SCANDATE", goReady: true },
   // ✓ /body-composition · summary + deltas
-  { method: "GET", path: "/api/:user/body-composition/summary", env: "STRIDE_ROUTE_GET_USER_BODY_COMPOSITION_SUMMARY", goReady: false },
+  { method: "GET", path: "/api/:user/body-composition/summary", env: "STRIDE_ROUTE_GET_USER_BODY_COMPOSITION_SUMMARY", goReady: true },
   // ✓ /body-composition · add / edit a body scan
-  { method: "POST", path: "/api/:user/body-composition", env: "STRIDE_ROUTE_POST_USER_BODY_COMPOSITION", goReady: false },
+  { method: "POST", path: "/api/:user/body-composition", env: "STRIDE_ROUTE_POST_USER_BODY_COMPOSITION", goReady: true },
 
   // ── Ability / PBs / race predictions ────────────────────────────────────
   // ✓ /ability · current ability snapshot   [go-ready]

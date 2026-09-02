@@ -1,4 +1,10 @@
-"""Body-composition scans — read trends + upsert writes from local CLI / web form."""
+"""Body-composition scans — read trends + upsert writes from local CLI / web form.
+
+DEPRECATED — migrated to Go (MySQL). The BFF routes /api/:user/body-composition*
+to the Go API server. This Python router is kept as a fallback and for internal
+Python callers (master-plan generator, commentary AI, etc.) which read from the
+local SQLite store directly.
+"""
 
 from __future__ import annotations
 

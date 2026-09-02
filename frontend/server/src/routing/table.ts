@@ -81,6 +81,21 @@ export const WEEKLY_FEEDBACK_GO_ROUTE_ENVS = [
   "STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK",
 ] as const;
 
+/** Body composition routes are cut over atomically — all four or none. */
+export const BODY_COMPOSITION_GO_ROUTE_ENVS = [
+  "STRIDE_ROUTE_GET_USER_BODY_COMPOSITION",
+  "STRIDE_ROUTE_GET_USER_BODY_COMPOSITION_SCANDATE",
+  "STRIDE_ROUTE_GET_USER_BODY_COMPOSITION_SUMMARY",
+  "STRIDE_ROUTE_POST_USER_BODY_COMPOSITION",
+] as const;
+
+export const BODY_COMPOSITION_GO_ROUTE_CONTRACT = [
+  { method: "GET", path: "/api/:user/body-composition", env: "STRIDE_ROUTE_GET_USER_BODY_COMPOSITION" },
+  { method: "GET", path: "/api/:user/body-composition/:scanDate", env: "STRIDE_ROUTE_GET_USER_BODY_COMPOSITION_SCANDATE" },
+  { method: "GET", path: "/api/:user/body-composition/summary", env: "STRIDE_ROUTE_GET_USER_BODY_COMPOSITION_SUMMARY" },
+  { method: "POST", path: "/api/:user/body-composition", env: "STRIDE_ROUTE_POST_USER_BODY_COMPOSITION" },
+] as const;
+
 /** Prefix under which the in-house auth-service is reached (same-origin via BFF). */
 export const AUTH_PREFIX = "/api/auth";
 
@@ -173,4 +188,8 @@ export function hasPartialPlanSetupGoCutover(env: NodeJS.ProcessEnv = process.en
 export function hasPartialWeeklyFeedbackGoCutover(env: NodeJS.ProcessEnv = process.env): boolean {
   const putEnabled = env.STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK?.trim().toLowerCase() === GO_ENV_VALUE;
   return putEnabled && hasPartialGoCutover(WEEKLY_FEEDBACK_GO_ROUTE_ENVS, env);
+}
+
+export function hasPartialBodyCompositionGoCutover(env: NodeJS.ProcessEnv = process.env): boolean {
+  return hasPartialGoCutover(BODY_COMPOSITION_GO_ROUTE_ENVS, env);
 }

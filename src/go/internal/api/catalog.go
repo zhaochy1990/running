@@ -39,8 +39,9 @@ func (s *Service) listPipelines(c *gin.Context) {
 }
 
 const (
-	onboardingContractVersion = "web-onboarding-v2"
-	planSetupContractVersion  = "plan-setup-v1"
+	onboardingContractVersion    = "web-onboarding-v2"
+	planSetupContractVersion     = "plan-setup-v1"
+	bodyCompositionContractVersion = "body-composition-v1"
 )
 
 type onboardingRouteContract struct {
@@ -106,12 +107,40 @@ func (s *Service) planSetupReadiness(c *gin.Context) {
 	})
 }
 
+var bodyCompositionRouteContracts = []onboardingRouteContract{
+	{Method: http.MethodGet, Path: "/api/:user/body-composition"},
+	{Method: http.MethodGet, Path: "/api/:user/body-composition/summary"},
+	{Method: http.MethodGet, Path: "/api/:user/body-composition/:scan_date"},
+	{Method: http.MethodPost, Path: "/api/:user/body-composition"},
+}
+
+// bodyCompositionReadiness is the public, static deployment contract for the
+// body-composition cutover.
+//
+//	@Summary		Body-composition cutover readiness
+//	@Description	Returns the static route contract required before the Web BFF enables its Go body-composition route flags. No authentication is required and no user data is returned.
+//	@Tags			catalog
+//	@Produce		json
+//	@Success		200	{object}	bodyCompositionReadinessResponse
+//	@Router			/api/readyz/body-composition [get]
+func (s *Service) bodyCompositionReadiness(c *gin.Context) {
+	c.JSON(http.StatusOK, bodyCompositionReadinessResponse{
+		ContractVersion: bodyCompositionContractVersion,
+		Routes:          append([]onboardingRouteContract(nil), bodyCompositionRouteContracts...),
+	})
+}
+
 type onboardingReadinessResponse struct {
 	ContractVersion string                    `json:"contract_version"`
 	Routes          []onboardingRouteContract `json:"routes"`
 }
 
 type planSetupReadinessResponse struct {
+	ContractVersion string                    `json:"contract_version"`
+	Routes          []onboardingRouteContract `json:"routes"`
+}
+
+type bodyCompositionReadinessResponse struct {
 	ContractVersion string                    `json:"contract_version"`
 	Routes          []onboardingRouteContract `json:"routes"`
 }

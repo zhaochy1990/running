@@ -35,14 +35,15 @@ type weeklyPlanRoutes struct {
 	store   WeeklyPlanStore
 	pusher  WorkoutPusher
 	swstore ScheduledWorkoutStore
+	bodyComp BodyCompositionStore
 	log     *zap.Logger
 }
 
-func newWeeklyPlanRoutes(store WeeklyPlanStore, pusher WorkoutPusher, swstore ScheduledWorkoutStore, log *zap.Logger) *weeklyPlanRoutes {
+func newWeeklyPlanRoutes(store WeeklyPlanStore, pusher WorkoutPusher, swstore ScheduledWorkoutStore, bodyComp BodyCompositionStore, log *zap.Logger) *weeklyPlanRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &weeklyPlanRoutes{store: store, pusher: pusher, swstore: swstore, log: log}
+	return &weeklyPlanRoutes{store: store, pusher: pusher, swstore: swstore, bodyComp: bodyComp, log: log}
 }
 
 // registerReads mounts the Weekly Plan read surface on the shared authenticated
@@ -498,6 +499,16 @@ func (w *weeklyPlanRoutes) listSummaries(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
+
+	// hasBodyComp is per-user (any scan at all), not per-week. In the
+	// Python/SQLite world this was derived from week folder contents
+	// (body-composition.* files); in the MySQL world body composition is its
+	// own table, so we treat it as a user-level capability flag.
+	hasBodyComp := false
+	if w.bodyComp != nil {
+		hasBodyComp, _ = w.bodyComp.HasBodyComposition(c.Request.Context(), user)
+	}
+
 	weeks := make([]weekSummaryResponse, 0, len(rows))
 	for _, row := range rows {
 		start, err := time.Parse("2006-01-02", row.WeekStart)
@@ -522,7 +533,7 @@ func (w *weeklyPlanRoutes) listSummaries(c *gin.Context) {
 		}
 		weeks = append(weeks, weekSummaryResponse{
 			Folder: folder, DateFrom: row.WeekStart, DateTo: end.Format("2006-01-02"),
-			HasPlan: hasPlan, HasFeedback: row.HasFeedback, HasBodyComposition: false,
+			HasPlan: hasPlan, HasFeedback: row.HasFeedback, HasBodyComposition: hasBodyComp,
 			PlanSource: planSource, PlanTitle: planTitle,
 			ActivityCount: row.ActivityCount, TotalKM: row.TotalKM,
 			TotalDurationS: row.TotalDurationS, TotalDurationFmt: apifmt.DurationFmt(&row.TotalDurationS),

@@ -137,6 +137,12 @@ jobs:
             STRIDE_ROUTE_POST_USER_SYNC=go
             STRIDE_ROUTE_GET_PIPELINES_RUNID=go
           )
+          BODY_COMPOSITION_GO_ROUTE_VARS=(
+            STRIDE_ROUTE_GET_USER_BODY_COMPOSITION=go
+            STRIDE_ROUTE_GET_USER_BODY_COMPOSITION_SCANDATE=go
+            STRIDE_ROUTE_GET_USER_BODY_COMPOSITION_SUMMARY=go
+            STRIDE_ROUTE_POST_USER_BODY_COMPOSITION=go
+          )
           if [ "${#ONBOARDING_GO_ROUTE_VARS[@]}" -ne 12 ] \
             || [ "$(printf '%s\n' "${ONBOARDING_GO_ROUTE_VARS[@]}" | grep -Ec '^STRIDE_ROUTE_[A-Z0-9_]+=go$')" -ne 12 ]; then
             echo "::error::Web onboarding v2 Go cutover must contain exactly twelve route variables."
@@ -145,6 +151,11 @@ jobs:
           if [ "${#PLAN_SETUP_GO_ROUTE_VARS[@]}" -ne 4 ] \
             || [ "$(printf '%s\n' "${PLAN_SETUP_GO_ROUTE_VARS[@]}" | grep -Ec '^STRIDE_ROUTE_[A-Z0-9_]+=go$')" -ne 4 ]; then
             echo "::error::plan-setup-v1 Go cutover must contain exactly four route variables."
+            exit 1
+          fi
+          if [ "${#BODY_COMPOSITION_GO_ROUTE_VARS[@]}" -ne 4 ] \
+            || [ "$(printf '%s\n' "${BODY_COMPOSITION_GO_ROUTE_VARS[@]}" | grep -Ec '^STRIDE_ROUTE_[A-Z0-9_]+=go$')" -ne 4 ]; then
+            echo "::error::body-composition-v1 Go cutover must contain exactly four route variables."
             exit 1
           fi
 
@@ -197,14 +208,17 @@ jobs:
           }
           ONBOARDING_ROUTES_JSON='[{"method":"GET","path":"/api/users/me/profile"},{"method":"POST","path":"/api/users/me/profile"},{"method":"PATCH","path":"/api/users/me/profile"},{"method":"POST","path":"/api/users/me/watch/login"},{"method":"GET","path":"/api/users/me/injuries"},{"method":"POST","path":"/api/users/me/injuries"},{"method":"PUT","path":"/api/users/me/injuries/:injuryId"},{"method":"DELETE","path":"/api/users/me/injuries/:injuryId"},{"method":"POST","path":"/api/:user/sync"},{"method":"GET","path":"/api/pipelines/:run_id"},{"method":"GET","path":"/api/jobs/:job_id"},{"method":"POST","path":"/api/users/me/onboarding/complete"}]'
           PLAN_SETUP_ROUTES_JSON='[{"method":"GET","path":"/api/users/me/training-goal"},{"method":"POST","path":"/api/users/me/training-goal"},{"method":"POST","path":"/api/:user/sync"},{"method":"GET","path":"/api/pipelines/:run_id"}]'
+          BODY_COMPOSITION_ROUTES_JSON='[{"method":"GET","path":"/api/:user/body-composition"},{"method":"GET","path":"/api/:user/body-composition/summary"},{"method":"GET","path":"/api/:user/body-composition/:scan_date"},{"method":"POST","path":"/api/:user/body-composition"}]'
           verify_readiness_contract "${GO_API_URL%/}/api/readyz/onboarding" "web-onboarding-v2" "$ONBOARDING_ROUTES_JSON"
           verify_readiness_contract "${GO_API_URL%/}/api/readyz/plan-setup" "plan-setup-v1" "$PLAN_SETUP_ROUTES_JSON"
+          verify_readiness_contract "${GO_API_URL%/}/api/readyz/body-composition" "body-composition-v1" "$BODY_COMPOSITION_ROUTES_JSON"
 
           if [ -n "${PUBLIC_DIRECT_BASE_URL:-}" ]; then
             verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/api/readyz/onboarding" "web-onboarding-v2" "$ONBOARDING_ROUTES_JSON"
             verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/api/readyz/plan-setup" "plan-setup-v1" "$PLAN_SETUP_ROUTES_JSON"
+            verify_readiness_contract "${PUBLIC_DIRECT_BASE_URL%/}/api/readyz/body-composition" "body-composition-v1" "$BODY_COMPOSITION_ROUTES_JSON"
           fi
-          echo "Go onboarding v2 and plan-setup v1 readiness contracts verified."
+          echo "Go onboarding v2, plan-setup v1, and body-composition v1 readiness contracts verified."
 
           ENV_VAR_CANDIDATES=(
             "PYTHON_API_URL=$PYTHON_API_URL"
@@ -215,6 +229,7 @@ jobs:
             "STRIDE_ROUTE_POST_USER_PLAN_SESSIONS_DATE_SESSIONINDEX_PUSH=go"
             "${ONBOARDING_GO_ROUTE_VARS[@]}"
             "${PLAN_SETUP_GO_ROUTE_VARS[@]}"
+            "${BODY_COMPOSITION_GO_ROUTE_VARS[@]}"
           )
           ENV_VARS=()
           for assignment in "${ENV_VAR_CANDIDATES[@]}"; do

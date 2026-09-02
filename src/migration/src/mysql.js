@@ -9,6 +9,8 @@
 // The upsert mirrors the Go store's clause.OnConflict{UpdateAll:true}
 // (src/go/internal/storage/watch.go :: SaveCredential).
 
+import { createHash } from "node:crypto";
+
 import mysql from "mysql2/promise";
 
 import {
@@ -533,4 +535,111 @@ export async function ensureRunningAgeColumn(conn) {
     return true;
   }
   return false;
+}
+
+// ── body_composition (body-composition migration) ────────────────────────────
+
+const BODY_COMP_SCAN_COLUMNS = [
+  "id",
+  "user_id",
+  "scan_date",
+  "jpg_path",
+  "weight_kg",
+  "body_fat_pct",
+  "smm_kg",
+  "fat_mass_kg",
+  "visceral_fat_level",
+  "bmr_kcal",
+  "protein_kg",
+  "water_l",
+  "smi",
+  "inbody_score",
+  "ingested_at",
+];
+
+const BODY_COMP_SCAN_PK = ["user_id", "scan_date"];
+
+const BODY_COMP_SEGMENT_COLUMNS = [
+  "id",
+  "scan_id",
+  "segment",
+  "lean_mass_kg",
+  "fat_mass_kg",
+  "lean_pct_of_standard",
+  "fat_pct_of_standard",
+];
+
+const BODY_COMP_SEGMENT_PK = ["scan_id", "segment"];
+
+const BODY_COMP_SCAN_UPSERT_SQL = buildUpsertSql(
+  "user_body_composition_scan",
+  BODY_COMP_SCAN_COLUMNS,
+  BODY_COMP_SCAN_PK,
+);
+
+const BODY_COMP_SEGMENT_UPSERT_SQL = buildUpsertSql(
+  "user_body_composition_segment",
+  BODY_COMP_SEGMENT_COLUMNS,
+  BODY_COMP_SEGMENT_PK,
+);
+
+/**
+ * Transactional upsert of a body-composition scan + its segments.
+ * The scan row is upserted first (generating/finding the id), then all
+ * existing segments for that scan are deleted and replaced with the new set.
+ * This mirrors the Go store's UpsertBodyCompositionScan behavior.
+ *
+ * @param {import("mysql2/promise").Connection} conn
+ * @param {{user_id: string, scan_date: string, segments: Array}} row
+ */
+export async function upsertBodyCompositionScan(conn, row) {
+  const scanId = deterministicId(row.user_id, row.scan_date);
+  const scanValues = BODY_COMP_SCAN_COLUMNS.map((c) => {
+    if (c === "id") return scanId;
+    return row[c] === undefined ? null : row[c];
+  });
+
+  await conn.beginTransaction();
+  try {
+    await conn.execute(BODY_COMP_SCAN_UPSERT_SQL, scanValues);
+
+    // Replace segments atomically: delete existing, then insert new
+    await conn.execute(
+      "DELETE FROM user_body_composition_segment WHERE scan_id = ?",
+      [scanId],
+    );
+
+    for (const seg of row.segments || []) {
+      const segId = deterministicId(scanId, seg.segment);
+      const segValues = BODY_COMP_SEGMENT_COLUMNS.map((c) => {
+        if (c === "id") return segId;
+        if (c === "scan_id") return scanId;
+        return seg[c] === undefined ? null : seg[c];
+      });
+      await conn.execute(BODY_COMP_SEGMENT_UPSERT_SQL, segValues);
+    }
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  }
+}
+
+// Deterministic UUID v5-style ID: SHA-1 of namespace + name, formatted as UUID.
+// We don't need cryptographic strength, just deterministic ids so re-runs of
+// the migration are idempotent (same input → same id → ON DUPLICATE KEY UPDATE).
+function deterministicId(...parts) {
+  const hash = createHash("sha1").update(parts.join("|")).digest("hex");
+  return (
+    hash.slice(0, 8) +
+    "-" +
+    hash.slice(8, 12) +
+    "-4" +
+    hash.slice(13, 16) +
+    "-" +
+    hash.slice(16, 20) +
+    "-" +
+    hash.slice(20, 32)
+  );
 }
