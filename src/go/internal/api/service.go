@@ -125,6 +125,9 @@ type Config struct {
 	// /stride/training-load. Leave zero to run without them (e.g. in tests).
 	HealthStore HealthStore
 	StrideStore StrideStore
+	// PBStore backs the personal-best read surface (GET /api/{user}/pbs), a
+	// sibling registrar sharing the auth path. Leave zero to run without it.
+	PBStore PBStore
 
 	// AbilityStore and PredictionStore back the ability-score / race-prediction
 	// read surfaces. AbilityBackfillJobType is the job type POST
@@ -184,6 +187,7 @@ type Service struct {
 
 	healthMetrics *healthRoutes
 	strideMetrics *strideRoutes
+	pbs           *pbsRoutes
 	ability       *abilityRoutes
 	predictions   *predictionRoutes
 	masterPlan    *masterPlanRoutes
@@ -227,6 +231,7 @@ func NewService(cfg Config) *Service {
 		teams:                   newTeamRoutes(cfg.TeamAuth, cfg.TeamStore, cfg.ActivityStore, log),
 		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),
 		strideMetrics:           newStrideRoutes(cfg.StrideStore, log),
+		pbs:                     newPbsRoutes(cfg.PBStore, log),
 		ability:                 newAbilityRoutes(cfg.AbilityStore, cfg.Enqueuer, cfg.AbilityBackfillJobType, log),
 		predictions:             newPredictionRoutes(cfg.PredictionStore, log),
 		masterPlan:              newMasterPlanRoutes(cfg.MasterPlanStore, log),
@@ -288,6 +293,7 @@ func (s *Service) Router() *gin.Engine {
 	s.goals.register(authed)
 	s.healthMetrics.register(authed)
 	s.strideMetrics.register(authed)
+	s.pbs.register(authed)
 	s.ability.register(authed)
 	s.predictions.register(authed)
 	s.weeklyPlan.registerWrites(authed)

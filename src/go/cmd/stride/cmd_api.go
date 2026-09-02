@@ -166,6 +166,7 @@ func runAPI() error {
 		GoalStore:               store,
 		HealthStore:             store,
 		StrideStore:             store,
+		PBStore:                 store,
 		AbilityStore:            store,
 		PredictionStore:         store,
 		AbilityBackfillJobType:  catalog.JobTypeAbility,
