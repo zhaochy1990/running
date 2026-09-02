@@ -186,7 +186,10 @@ async function main() {
   const verbose = values.verbose;
   const limit = values.limit ? parseInt(values.limit, 10) : Infinity;
 
-  const userIds = selectUserIds(REAL_USERS, values.user);
+  const { ids: userIds, rejected: rejectedUsers } = selectUserIds(REAL_USERS, values.user);
+  if (rejectedUsers.length > 0) {
+    console.error(`Ignoring non-allowlisted: ${rejectedUsers.join(", ")}`);
+  }
   if (userIds.length === 0) {
     console.error("No matching real users. Use --user <uuid> or check the allowlist.");
     process.exit(1);
@@ -197,7 +200,9 @@ async function main() {
     const mysqlCfg = parseMysqlConfig(process.env);
     conn = await connect(mysqlCfg);
     if (values["ensure-schema"]) {
-      await ensureSchema(conn, splitSqlStatements(schemaDDL()));
+      for (const stmt of splitSqlStatements(schemaDDL())) {
+        await ensureSchema(conn, stmt);
+      }
     }
   }
 
