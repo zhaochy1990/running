@@ -37,6 +37,12 @@ Multi-stage build (`Dockerfile`)：
   - `STRIDE_ROUTE_DELETE_TEAMS_TEAMID_ACTIVITIES_USERID_LABELID_LIKES`
 
   四项一起设为 `go` 或一起清除；Go/MySQL likes 不 backfill、不 dual-write 到 legacy Azure，回滚不会同步两边历史。完整 flag 清单见 `frontend/.env.web.local.example`。
+- **Ability / race-prediction cutover**：`/api/{user}/ability/{current,history,weights,backfill}` 与
+  `/api/{user}/race-predictions(+history)` 已由 Go 实现（对应 `ability.go` / `predictions.go`），六个
+  `STRIDE_ROUTE_*` flag 在 `Dockerfile.web` 中默认设为 `go`（与 health/hrv/pmc/zones 一类独立 Go 路由一致，
+  不设 deploy-web.yml ACA override）。`/api/{user}/pbs` Go 未实现，保持 Python。Web 与移动端都经同
+  一前门 `api.stride-running.cn`，BFF 按该 manifest 分流到 Go。移动端请求路径中的 user id 为 JWT `sub`
+  （来自 `/api/users/me/profile` 的 `id`），通过 Go 的 `authorizeUser` 租户检查。
 - **`strength_illustrations/` 搬进 `stride-web` 镜像**（前端拥有 UI 插图资源）。
 - **分阶段 cutover（已完成）**：`stride-web` 先上新 host 验证 → 翻 `stride-running.cn` 到
   `stride-web`（同一 `stride-env`、同 static IP 的 hostname rebind，DNS 不变）→ backend 收尾部署里

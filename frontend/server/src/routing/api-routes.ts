@@ -278,20 +278,20 @@ export const API_ROUTES: readonly ApiRoute[] = [
   { method: "POST", path: "/api/:user/body-composition", env: "STRIDE_ROUTE_POST_USER_BODY_COMPOSITION", goReady: false },
 
   // ── Ability / PBs / race predictions ────────────────────────────────────
-  // ✓ /ability · current ability snapshot
-  { method: "GET", path: "/api/:user/ability/current", env: "STRIDE_ROUTE_GET_USER_ABILITY_CURRENT", goReady: false },
-  // ✓ /ability · ability history chart
-  { method: "GET", path: "/api/:user/ability/history", env: "STRIDE_ROUTE_GET_USER_ABILITY_HISTORY", goReady: false },
-  // ✓ /ability · ability layer weights
-  { method: "GET", path: "/api/:user/ability/weights", env: "STRIDE_ROUTE_GET_USER_ABILITY_WEIGHTS", goReady: false },
-  // ✓ /ability · backfill ability history
-  { method: "POST", path: "/api/:user/ability/backfill", env: "STRIDE_ROUTE_POST_USER_ABILITY_BACKFILL", goReady: false },
-  // ✓ /ability · personal bests
+  // ✓ /ability · current ability snapshot   [go-ready]
+  { method: "GET", path: "/api/:user/ability/current", env: "STRIDE_ROUTE_GET_USER_ABILITY_CURRENT", goReady: true },
+  // ✓ /ability · ability history chart   [go-ready]
+  { method: "GET", path: "/api/:user/ability/history", env: "STRIDE_ROUTE_GET_USER_ABILITY_HISTORY", goReady: true },
+  // ✓ /ability · ability layer weights   [go-ready]
+  { method: "GET", path: "/api/:user/ability/weights", env: "STRIDE_ROUTE_GET_USER_ABILITY_WEIGHTS", goReady: true },
+  // ✓ /ability · backfill ability history   [go-ready]
+  { method: "POST", path: "/api/:user/ability/backfill", env: "STRIDE_ROUTE_POST_USER_ABILITY_BACKFILL", goReady: true },
+  // ✓ /ability · personal bests (Go does not expose /pbs → stays on Python)
   { method: "GET", path: "/api/:user/pbs", env: "STRIDE_ROUTE_GET_USER_PBS", goReady: false },
-  // ✗ not called
-  { method: "GET", path: "/api/:user/race-predictions", env: "STRIDE_ROUTE_GET_USER_RACE_PREDICTIONS", goReady: false },
-  // ✗ not called
-  { method: "GET", path: "/api/:user/race-predictions/history", env: "STRIDE_ROUTE_GET_USER_RACE_PREDICTIONS_HISTORY", goReady: false },
+  // ✗ not called by web; used by mobile E5 成绩预测 screen   [go-ready]
+  { method: "GET", path: "/api/:user/race-predictions", env: "STRIDE_ROUTE_GET_USER_RACE_PREDICTIONS", goReady: true },
+  // ✗ not called by web; used by mobile E5 trend   [go-ready]
+  { method: "GET", path: "/api/:user/race-predictions/history", env: "STRIDE_ROUTE_GET_USER_RACE_PREDICTIONS_HISTORY", goReady: true },
 
   // ── Nutrition ───────────────────────────────────────────────────────────
   // ✗ not called

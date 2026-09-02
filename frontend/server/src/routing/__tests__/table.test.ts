@@ -394,8 +394,18 @@ describe("API_ROUTES manifest integrity", () => {
     expect(dockerfile).toContain("STRIDE_ROUTE_GET_USER_WEEKS_WEEKNAME=go");
     expect(dockerfile).not.toContain("STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK=go");
 
+    // Ability + race-prediction cutover is baked into the web image, like the
+    // health/hrv/pmc/zones routes — not a deploy-web.yml override.
+    expect(dockerfile).toContain("STRIDE_ROUTE_GET_USER_ABILITY_CURRENT=go");
+    expect(dockerfile).toContain("STRIDE_ROUTE_GET_USER_ABILITY_HISTORY=go");
+    expect(dockerfile).toContain("STRIDE_ROUTE_GET_USER_ABILITY_WEIGHTS=go");
+    expect(dockerfile).toContain("STRIDE_ROUTE_POST_USER_ABILITY_BACKFILL=go");
+    expect(dockerfile).toContain("STRIDE_ROUTE_GET_USER_RACE_PREDICTIONS=go");
+    expect(dockerfile).toContain("STRIDE_ROUTE_GET_USER_RACE_PREDICTIONS_HISTORY=go");
+
     const deployment = readFileSync(new URL("../../../../../.github/workflows/deploy-web.yml", import.meta.url), "utf8");
     expect(deployment).not.toContain("STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK=go");
+    expect(deployment).not.toContain("STRIDE_ROUTE_GET_USER_ABILITY_CURRENT=go");
   });
 
   it("goReady endpoints are exactly the ones the Go API implements", () => {
@@ -404,24 +414,29 @@ describe("API_ROUTES manifest integrity", () => {
       .sort();
     expect(goReady).toEqual(
       [
-        "DELETE /api/users/me",
-        "DELETE /api/users/me/injuries/:injuryId",
         "DELETE /api/teams/:teamId",
         "DELETE /api/teams/:teamId/activities/:userId/:labelId/likes",
+        "DELETE /api/users/me",
+        "DELETE /api/users/me/injuries/:injuryId",
         "DELETE /api/users/me/watch",
+        "GET /api/:user/ability/current",
+        "GET /api/:user/ability/history",
+        "GET /api/:user/ability/weights",
         "GET /api/:user/activities",
         "GET /api/:user/activities/:labelId",
         "GET /api/:user/health",
         "GET /api/:user/hrv",
-        "GET /api/:user/pmc",
         "GET /api/:user/plan/weeks",
         "GET /api/:user/plan/weeks/:weekName",
+        "GET /api/:user/pmc",
+        "GET /api/:user/race-predictions",
+        "GET /api/:user/race-predictions/history",
         "GET /api/:user/stride/training-load",
         "GET /api/:user/stride/zones",
         "GET /api/:user/weeks",
         "GET /api/:user/weeks/:weekName",
-        "GET /api/pipelines/:run_id",
         "GET /api/jobs/:job_id",
+        "GET /api/pipelines/:run_id",
         "GET /api/teams",
         "GET /api/teams/:teamId",
         "GET /api/teams/:teamId/activities/:userId/:labelId",
@@ -429,29 +444,30 @@ describe("API_ROUTES manifest integrity", () => {
         "GET /api/teams/:teamId/feed",
         "GET /api/teams/:teamId/members",
         "GET /api/teams/:teamId/mileage",
+        "GET /api/users/:user/pipelines",
         "GET /api/users/:user_id/master-plan/current",
+        "GET /api/users/me/injuries",
         "GET /api/users/me/profile",
         "GET /api/users/me/teams",
         "GET /api/users/me/training-goal",
         "GET /api/users/me/watch",
-        "GET /api/users/:user/pipelines",
-        "GET /api/users/me/injuries",
-        "POST /api/users/me/onboarding/complete",
+        "PATCH /api/users/me/profile",
+        "POST /api/:user/ability/backfill",
         "POST /api/:user/plan/sessions/:date/:sessionIndex/push",
+        "POST /api/:user/sync",
         "POST /api/teams",
         "POST /api/teams/:teamId/activities/:userId/:labelId/likes",
         "POST /api/teams/:teamId/join",
         "POST /api/teams/:teamId/leave",
         "POST /api/teams/:teamId/transfer-owner",
         "POST /api/users/me/injuries",
+        "POST /api/users/me/onboarding/complete",
         "POST /api/users/me/profile",
-        "POST /api/users/me/watch/login",
         "POST /api/users/me/training-goal",
-        "POST /api/:user/sync",
-        "PUT /api/users/me/injuries/:injuryId",
-        "PATCH /api/users/me/profile",
-        "PUT /api/users/me/training-goal",
+        "POST /api/users/me/watch/login",
         "PUT /api/:user/weeks/:weekName/feedback",
+        "PUT /api/users/me/injuries/:injuryId",
+        "PUT /api/users/me/training-goal",
       ].sort(),
     );
   });
