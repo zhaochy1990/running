@@ -40,7 +40,7 @@ STRIDE 的配速/心率区间已经等价于 Daniels 的强度体系。编写任
 | Phase I 基础 | `base` | E 为主 + strides + 轻度坡跑 |
 | Phase II 早期速度 | `speed` | R 重复 + 少量 I + hills |
 | Phase III 过渡 | `build` / `speed` | I 间歇为主 |
-| Phase IV 专项 | `marathon` | T 巡航间歇 + M 长跑 |
+| Phase IV 专项 | `marathon` | T 巡航间歇 + 纯MP段落质量课 + M 长跑 |
 
 STRIDE 的 `base` / `build` / `speed` / `marathon` / `taper` / `recovery` 已覆盖 Daniels 的阶段推进；本表仅用于把 Daniels 课型对应到当前阶段，不要据此重排 master plan 的阶段或里程碑。
 
