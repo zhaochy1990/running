@@ -75,6 +75,12 @@ func runAPI() error {
 	if err := store.AutoMigrateInjuries(ctx); err != nil {
 		return err
 	}
+	// user_body_composition_scan + user_body_composition_segment tables for
+	// the body-composition read/write surface. User-entered (OCR/manual), not
+	// watch-synced. The worker does not need these.
+	if err := store.AutoMigrateBodyComposition(ctx); err != nil {
+		return err
+	}
 	// race_goal table for the training-goal surface (ADR 0021). The worker does
 	// not need this.
 	if err := store.AutoMigrateGoals(ctx); err != nil {
@@ -167,6 +173,7 @@ func runAPI() error {
 		HealthStore:             store,
 		StrideStore:             store,
 		PBStore:                 store,
+		BodyCompositionStore:    store,
 		AbilityStore:            store,
 		PredictionStore:         store,
 		AbilityBackfillJobType:  catalog.JobTypeAbility,

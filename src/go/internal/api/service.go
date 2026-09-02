@@ -128,6 +128,10 @@ type Config struct {
 	// PBStore backs the personal-best read surface (GET /api/{user}/pbs), a
 	// sibling registrar sharing the auth path. Leave zero to run without it.
 	PBStore PBStore
+	// BodyCompositionStore backs the body-composition read/write surface
+	// (list / summary / single / upsert). User-entered (OCR/manual), not
+	// watch-synced. Leave zero to run without it (e.g. in tests).
+	BodyCompositionStore BodyCompositionStore
 
 	// AbilityStore and PredictionStore back the ability-score / race-prediction
 	// read surfaces. AbilityBackfillJobType is the job type POST
@@ -185,13 +189,14 @@ type Service struct {
 	activities *activityRoutes
 	teams      *teamRoutes
 
-	healthMetrics *healthRoutes
-	strideMetrics *strideRoutes
-	pbs           *pbsRoutes
-	ability       *abilityRoutes
-	predictions   *predictionRoutes
-	masterPlan    *masterPlanRoutes
-	weeklyPlan    *weeklyPlanRoutes
+	healthMetrics   *healthRoutes
+	strideMetrics   *strideRoutes
+	pbs             *pbsRoutes
+	bodyComposition *bodyCompositionRoutes
+	ability         *abilityRoutes
+	predictions     *predictionRoutes
+	masterPlan      *masterPlanRoutes
+	weeklyPlan      *weeklyPlanRoutes
 
 	auth           *Authenticator
 	corsOrigins    []string
@@ -232,10 +237,11 @@ func NewService(cfg Config) *Service {
 		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),
 		strideMetrics:           newStrideRoutes(cfg.StrideStore, log),
 		pbs:                     newPbsRoutes(cfg.PBStore, log),
+		bodyComposition:         newBodyCompositionRoutes(cfg.BodyCompositionStore, log),
 		ability:                 newAbilityRoutes(cfg.AbilityStore, cfg.Enqueuer, cfg.AbilityBackfillJobType, log),
 		predictions:             newPredictionRoutes(cfg.PredictionStore, log),
 		masterPlan:              newMasterPlanRoutes(cfg.MasterPlanStore, log),
-		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, log),
+		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, cfg.BodyCompositionStore, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
 		swaggerEnabled:          cfg.SwaggerEnabled,
@@ -265,6 +271,7 @@ func (s *Service) Router() *gin.Engine {
 	// It contains no user or deployment-secret data.
 	r.GET("/api/readyz/onboarding", s.onboardingReadiness)
 	r.GET("/api/readyz/plan-setup", s.planSetupReadiness)
+	r.GET("/api/readyz/body-composition", s.bodyCompositionReadiness)
 
 	authenticated := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
 	// Plan routes explicitly admit the separate admin JWT tier. The master-plan
@@ -294,6 +301,7 @@ func (s *Service) Router() *gin.Engine {
 	s.healthMetrics.register(authed)
 	s.strideMetrics.register(authed)
 	s.pbs.register(authed)
+	s.bodyComposition.register(authed)
 	s.ability.register(authed)
 	s.predictions.register(authed)
 	s.weeklyPlan.registerWrites(authed)
