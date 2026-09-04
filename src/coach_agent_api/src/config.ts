@@ -56,6 +56,12 @@ const schema: convict.Schema<RawApiConfig> = {
       default: "",
       env: "STRIDE_AUTH_PUBLIC_KEY_PATH",
     },
+    auth_service_url: {
+      doc: "Auth service origin; the RS256 public key is fetched from <url>/api/system/public-key at startup",
+      format: String,
+      default: "",
+      env: "STRIDE_AUTH_SERVICE_URL",
+    },
     issuer: {
       doc: "Expected JWT issuer",
       format: requiredString,
@@ -98,6 +104,7 @@ export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
     persistenceDatabase: raw.persistence_database,
     auth: {
       publicKeyPem,
+      authServiceUrl: raw.auth.auth_service_url,
       issuer: raw.auth.issuer,
       ...(raw.auth.audience ? { audience: raw.auth.audience } : {}),
     },
@@ -124,33 +131,45 @@ function normalizeAuthEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const normalized = { ...env };
   const hasPem = Boolean(env.STRIDE_AUTH_PUBLIC_KEY_PEM);
   const hasPath = Boolean(env.STRIDE_AUTH_PUBLIC_KEY_PATH);
+  const hasUrl = Boolean(env.STRIDE_AUTH_SERVICE_URL);
 
-  if (hasPem && hasPath) {
-    throw new Error("Set only one of STRIDE_AUTH_PUBLIC_KEY_PEM or STRIDE_AUTH_PUBLIC_KEY_PATH");
+  if ([hasPem, hasPath, hasUrl].filter(Boolean).length > 1) {
+    throw new Error("Set only one of STRIDE_AUTH_PUBLIC_KEY_PEM, STRIDE_AUTH_PUBLIC_KEY_PATH, or STRIDE_AUTH_SERVICE_URL");
   }
   if (hasPem) {
     normalized.STRIDE_AUTH_PUBLIC_KEY_PATH = "";
+    normalized.STRIDE_AUTH_SERVICE_URL = "";
   }
   if (hasPath) {
     normalized.STRIDE_AUTH_PUBLIC_KEY_PEM = "";
+    normalized.STRIDE_AUTH_SERVICE_URL = "";
+  }
+  if (hasUrl) {
+    normalized.STRIDE_AUTH_PUBLIC_KEY_PEM = "";
+    normalized.STRIDE_AUTH_PUBLIC_KEY_PATH = "";
   }
   return normalized;
 }
 
 function resolvePublicKey(auth: RawApiConfig["auth"], configDir: string): string {
-  if (auth.public_key_pem && auth.public_key_path) {
-    throw new Error("Configure only one of auth.public_key_pem or auth.public_key_path");
+  const sources = [auth.public_key_pem, auth.public_key_path, auth.auth_service_url].filter(Boolean);
+  if (sources.length > 1) {
+    throw new Error("Configure only one of auth.public_key_pem, auth.public_key_path, or auth.auth_service_url");
   }
 
   if (auth.public_key_pem) {
     return auth.public_key_pem;
   }
 
-  if (!auth.public_key_path) {
-    throw new Error("auth.public_key_pem or auth.public_key_path must be configured");
+  if (auth.public_key_path) {
+    const keyPath = isAbsolute(auth.public_key_path) ? auth.public_key_path : resolve(configDir, auth.public_key_path);
+    return readFileSync(keyPath, "utf8");
   }
 
-  const keyPath = isAbsolute(auth.public_key_path) ? auth.public_key_path : resolve(configDir, auth.public_key_path);
+  // No static key: fetch from the auth-service at startup (runtime.ts).
+  if (auth.auth_service_url) {
+    return "";
+  }
 
-  return readFileSync(keyPath, "utf8");
+  throw new Error("auth.public_key_pem, auth.public_key_path, or auth.auth_service_url must be configured");
 }

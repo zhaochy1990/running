@@ -64,6 +64,25 @@ export function createJwtVerifier(options: { publicKeyPem: string; issuer: strin
   };
 }
 
+/**
+ * Fetch the Auth service's RS256 public key (PEM, PKIX) at startup. The key is
+ * published at `/api/system/public-key` so any service can verify JWTs without
+ * sharing a file or secret.
+ */
+export async function fetchAuthPublicKey(authServiceUrl: string): Promise<string> {
+  const url = new URL("/api/system/public-key", authServiceUrl).toString();
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`auth-service public key fetch failed (${response.status})`);
+  }
+  const body = (await response.json()) as { publickey?: string };
+  const key = body.publickey;
+  if (!key?.startsWith("-----BEGIN")) {
+    throw new Error("auth-service returned an unexpected public-key payload");
+  }
+  return key;
+}
+
 function bearerToken(authorization: string | undefined): string {
   if (!authorization?.toLowerCase().startsWith("bearer ")) {
     throw new AuthError("missing bearer token");

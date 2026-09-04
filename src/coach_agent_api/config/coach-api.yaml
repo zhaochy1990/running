@@ -7,6 +7,9 @@ api:
 auth:
   public_key_pem: ""
   public_key_path: ""
+  # When set, the RS256 public key is fetched from <url>/api/system/public-key
+  # at startup (only one of public_key_pem / public_key_path / auth_service_url).
+  auth_service_url: ""
   issuer: auth-service
   audience: ""
 

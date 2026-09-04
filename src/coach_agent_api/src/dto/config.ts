@@ -6,6 +6,7 @@ export interface RawApiConfig {
   auth: {
     public_key_pem: string;
     public_key_path: string;
+    auth_service_url: string;
     issuer: string;
     audience: string;
   };
@@ -18,7 +19,7 @@ export interface ApiConfig {
   port: number;
   strideDatabase: MySqlConfig;
   persistenceDatabase: MySqlConfig;
-  auth: { publicKeyPem: string; issuer: string; audience?: string | string[] };
+  auth: { publicKeyPem: string; authServiceUrl: string; issuer: string; audience?: string | string[] };
 }
 
 export interface LoadApiConfigOptions {

@@ -155,7 +155,7 @@ test("rejects invalid ports and ambiguous JWT key environment variables", () => 
             STRIDE_AUTH_PUBLIC_KEY_PATH: "config/public.pem",
           },
         }),
-      /Set only one of STRIDE_AUTH_PUBLIC_KEY_PEM or STRIDE_AUTH_PUBLIC_KEY_PATH/,
+      /Set only one of STRIDE_AUTH_PUBLIC_KEY_PEM, STRIDE_AUTH_PUBLIC_KEY_PATH, or STRIDE_AUTH_SERVICE_URL/,
     );
   });
 });
@@ -179,7 +179,44 @@ test("fails closed when required database or JWT settings are absent", () => {
     (root) => {
       assert.throws(
         () => loadApiConfig({ configFiles: apiConfigFiles(root, "dev"), env: { STRIDE_COACH_ENV: "dev" } }),
-        /auth.public_key_pem or auth.public_key_path must be configured/,
+        /auth.public_key_pem, auth.public_key_path, or auth.auth_service_url must be configured/,
+      );
+    },
+  );
+});
+
+test("an auth_service_url defers the key to startup and replaces a YAML path", () => {
+  withConfigRepo(
+    {
+      "coach-api.yaml": BASE_YAML.replace(
+        "  public_key_pem: base-public-key\n" + '  public_key_path: ""',
+        '  public_key_pem: ""\n' + "  public_key_path: public.pem",
+      ),
+      "public.pem": "file-public-key",
+    },
+    (root) => {
+      const config = loadApiConfig({
+        configFiles: apiConfigFiles(root, "dev"),
+        env: { STRIDE_COACH_ENV: "dev", STRIDE_AUTH_SERVICE_URL: "https://auth.example.com" },
+      });
+      assert.equal(config.auth.publicKeyPem, "");
+      assert.equal(config.auth.authServiceUrl, "https://auth.example.com");
+    },
+  );
+});
+
+test("rejects more than one JWT key source", () => {
+  withConfigRepo(
+    {
+      "coach-api.yaml": BASE_YAML.replace(
+        '  public_key_path: ""',
+        "  public_key_path: public.pem\n  auth_service_url: https://auth.example.com",
+      ),
+    },
+    (root) => {
+      assert.throws(
+        () => loadApiConfig({ configFiles: apiConfigFiles(root, "dev"), env: { STRIDE_COACH_ENV: "dev" } }),
+        /Configure only one of auth.public_key_pem, auth.public_key_path, or auth.auth_service_url/,
       );
     },
   );
