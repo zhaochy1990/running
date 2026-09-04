@@ -90,6 +90,11 @@ export const OPENAPI_DOCUMENT = {
             required: ["message"],
             properties: {
               message: nonBlankString(20_000),
+              timestamp: {
+                type: "string",
+                description: "ISO-8601 timestamp for the message. Defaults to the server's current Asia/Shanghai time when omitted.",
+                example: "2026-05-09T14:30:00+08:00",
+              },
             },
           },
         ],

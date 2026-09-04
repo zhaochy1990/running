@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { planningStartDate, shanghaiDay, weekFolder } from "./date.js";
+import { planningStartDate, shanghaiDay, shanghaiIso, weekFolder } from "./date.js";
 
 test("planning start is the first Monday on or after asof", () => {
   assert.equal(planningStartDate("2026-05-04"), "2026-05-04");
@@ -13,6 +13,12 @@ test("Shanghai day preserves calendar dates and normalizes instants", () => {
   assert.equal(shanghaiDay("2026-05-01"), "2026-05-01");
   assert.equal(shanghaiDay("2026-05-01T16:30:00Z"), "2026-05-02");
   assert.throws(() => shanghaiDay("2026-02-30"), /invalid Shanghai date/);
+});
+
+test("Shanghai iso renders an instant as Beijing wall time", () => {
+  assert.equal(shanghaiIso("2026-05-09T06:30:00Z"), "2026-05-09T14:30:00.000+08:00");
+  assert.match(shanghaiIso(), /\+08:00$/);
+  assert.throws(() => shanghaiIso("not-a-date"), /invalid instant/);
 });
 
 test("week folder is derived from an authoritative Monday", () => {

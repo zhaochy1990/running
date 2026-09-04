@@ -2155,11 +2155,13 @@ export function sendCoachChatMessage(
   sessionId: string = WEB_DEFAULT_SESSION_ID,
   target?: CoachTargetRef,
   reviewContext?: CoachReviewContext,
+  timestamp?: string,
 ): Promise<JsonResult<ChatResponse>> {
   return postJSON<ChatResponse>("/users/me/coach/chat", {
     session_id: sessionId,
     message,
     client_turn_id: clientTurnId,
+    ...(timestamp ? { timestamp } : {}),
     ...(target ? { target } : {}),
     ...(reviewContext ? { review_context: reviewContext } : {}),
   });

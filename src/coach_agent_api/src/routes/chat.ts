@@ -1,6 +1,6 @@
 import { CoachTurnScope, Command } from "@stride/coach-agent";
 import { getLogger } from "@stride/common";
-import { shanghaiDay } from "@stride/contract";
+import { shanghaiDay, shanghaiIso } from "@stride/contract";
 import type { Hono } from "hono";
 import type { AuthEnv } from "../auth.js";
 import type { CoachInvoker } from "../coach/coachInvoker.js";
@@ -11,6 +11,7 @@ import { ThreadBusyError, TurnConflictError } from "../turn/errors.js";
 
 const logger = getLogger("routes/chat");
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+const ISO_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
 export function registerChatRoutes(
   app: Hono<AuthEnv>,
@@ -39,7 +40,15 @@ export function registerChatRoutes(
             ? null
             : body.value.resume === undefined
               ? {
-                  messages: [{ role: "user", content: body.value.message as string }],
+                  messages: [
+                    {
+                      role: "user",
+                      content: JSON.stringify({
+                        timestamp: body.value.timestamp ?? shanghaiIso(),
+                        message: body.value.message as string,
+                      }),
+                    },
+                  ],
                 }
               : new Command({ resume: body.value.resume });
           const result = await dependencies.coach.invoke(input, {
@@ -89,6 +98,7 @@ async function readChatRequest(request: Request): Promise<{ ok: true; value: Cha
   const sessionId = value.session_id;
   const clientTurnId = value.client_turn_id;
   const message = value.message;
+  const timestamp = value.timestamp;
   const resume = value.resume;
   const scope = CoachTurnScope.safeParse({
     target: value.target,
@@ -98,6 +108,8 @@ async function readChatRequest(request: Request): Promise<{ ok: true; value: Cha
   if (typeof clientTurnId !== "string" || !ID_RE.test(clientTurnId)) return { ok: false, error: "invalid_client_turn_id" };
   if (message !== undefined && (typeof message !== "string" || message.trim().length === 0 || message.length > 20_000))
     return { ok: false, error: "invalid_message" };
+  if (timestamp !== undefined && (typeof timestamp !== "string" || !ISO_TIMESTAMP_RE.test(timestamp) || Number.isNaN(new Date(timestamp).valueOf())))
+    return { ok: false, error: "invalid_timestamp" };
   if (resume !== undefined && !isValidResume(resume)) return { ok: false, error: "invalid_resume" };
   if ((message === undefined) === (resume === undefined)) {
     return { ok: false, error: "message_or_resume_required" };
@@ -109,6 +121,7 @@ async function readChatRequest(request: Request): Promise<{ ok: true; value: Cha
       sessionId,
       clientTurnId,
       ...(typeof message === "string" ? { message } : {}),
+      ...(typeof timestamp === "string" ? { timestamp } : {}),
       ...(resume !== undefined ? { resume } : {}),
       ...(scope.data.target ? { target: scope.data.target } : {}),
       ...(scope.data.reviewContext ? { reviewContext: scope.data.reviewContext } : {}),

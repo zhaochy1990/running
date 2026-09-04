@@ -1,5 +1,18 @@
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Format an instant (or now) as a full ISO-8601 timestamp in Asia/Shanghai.
+ * The intermediate UTC shift is relabelled +08:00 so the string reads as the
+ * local time the user experiences, e.g. "2026-05-09T14:30:00.000+08:00".
+ */
+export function shanghaiIso(value: string | Date = new Date()): string {
+  const instant = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(instant.valueOf())) {
+    throw new Error(`invalid instant: ${value}`);
+  }
+  return new Date(instant.getTime() + 8 * 3_600_000).toISOString().replace("Z", "+08:00");
+}
+
 /** Normalize an ISO instant or Shanghai calendar day to YYYY-MM-DD. */
 export function shanghaiDay(value: string): string {
   if (DAY_RE.test(value)) {

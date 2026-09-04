@@ -102,6 +102,7 @@ test("chat derives user and thread identity from the verified token", async () =
       session_id: "session-1",
       client_turn_id: "turn-1",
       message: "最近状态怎么样？",
+      timestamp: "2026-05-09T14:30:00+08:00",
       user_id: "attacker",
     }),
   });
@@ -113,7 +114,11 @@ test("chat derives user and thread identity from the verified token", async () =
     client_turn_id: "turn-1",
   });
   assert.deepEqual(invocation, {
-    input: { messages: [{ role: "user", content: "最近状态怎么样？" }] },
+    input: {
+      messages: [
+        { role: "user", content: '{"timestamp":"2026-05-09T14:30:00+08:00","message":"最近状态怎么样？"}' },
+      ],
+    },
     config: {
       context: {
         userId: "athlete-1",
@@ -134,6 +139,7 @@ test("chat derives user and thread identity from the verified token", async () =
           sessionId: "session-1",
           clientTurnId: "turn-1",
           message: "最近状态怎么样？",
+          timestamp: "2026-05-09T14:30:00+08:00",
         }),
       },
     },
@@ -291,6 +297,75 @@ test("chat validates the public request contract before invoking Coach", async (
   });
   assert.equal(response.status, 400);
   assert.equal(called, false);
+});
+
+test("chat rejects a malformed timestamp", async () => {
+  let called = false;
+  const app = createApp({
+    jwtVerifier: {
+      async verify() {
+        return { userId: "athlete-1" };
+      },
+    },
+    coachInvoker: {
+      async invoke() {
+        called = true;
+        return {};
+      },
+    },
+  });
+  const response = await app.request("/api/users/me/coach/chat", {
+    method: "POST",
+    headers: {
+      authorization: "Bearer signed",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      session_id: "session-1",
+      client_turn_id: "turn-1",
+      message: "hi",
+      timestamp: "not-a-date",
+    }),
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "invalid_timestamp" });
+  assert.equal(called, false);
+});
+
+test("chat defaults the message timestamp to Asia/Shanghai time", async () => {
+  let input: unknown;
+  const app = createApp({
+    jwtVerifier: {
+      async verify() {
+        return { userId: "athlete-1" };
+      },
+    },
+    coachInvoker: {
+      async invoke(value) {
+        input = value;
+        return { messages: [{ type: "ai", content: "ok" }] };
+      },
+    },
+  });
+  const response = await app.request("/api/users/me/coach/chat", {
+    method: "POST",
+    headers: {
+      authorization: "Bearer signed",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      session_id: "session-1",
+      client_turn_id: "turn-1",
+      message: "hi",
+    }),
+  });
+  assert.equal(response.status, 200);
+  const raw = (input as { messages: { content: string }[] }).messages[0]!.content;
+  const content = JSON.parse(raw) as { timestamp: string; message: string };
+  assert.equal(content.message, "hi");
+  assert.notEqual(content.timestamp, undefined);
+  assert.match(content.timestamp, /\+08:00$/);
+  assert.equal(new Date(content.timestamp).valueOf() <= Date.now(), true);
 });
 
 test("chat replays an identical client turn and conflicts on changed input", async () => {
