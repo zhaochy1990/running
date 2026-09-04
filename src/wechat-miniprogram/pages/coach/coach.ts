@@ -1,9 +1,12 @@
 import { sendCoachChatMessage } from '../../services/coach';
+import { markdownToHtml } from '../../utils/markdown';
 
 interface CoachMessage {
   id: number;
   role: 'user' | 'assistant';
   content: string;
+  // assistant 消息渲染用（GFM→HTML，经 <mp-html> 渲染）；user 消息保持纯文本。
+  html?: string;
 }
 
 interface CoachPageData {
@@ -13,6 +16,9 @@ interface CoachPageData {
   input: string;
   sending: boolean;
   scrollIntoId: string;
+  // mp-html 样式：容器兜底颜色/字重 + 结构化 tag 样式（深色主题）。
+  containerStyle: string;
+  tagStyle: Record<string, string>;
 }
 
 interface CoachPageHandlers {
@@ -47,14 +53,9 @@ function contentPaddingTopRpx(): number {
 }
 
 function welcomeMessages(): CoachMessage[] {
-  return [
-    {
-      id: ++seq,
-      role: 'assistant',
-      content:
-        '你好，我是你的 AI 教练。可以问我今天的训练安排、疲劳状态、配速建议，或复盘某次训练。',
-    },
-  ];
+  const content =
+    '你好，我是你的 AI 教练。可以问我今天的训练安排、疲劳状态、配速建议，或复盘某次训练。';
+  return [{ id: ++seq, role: 'assistant', content, html: markdownToHtml(content) }];
 }
 
 Page<CoachPageData, CoachPageHandlers>({
@@ -65,6 +66,24 @@ Page<CoachPageData, CoachPageHandlers>({
     input: '',
     sending: false,
     scrollIntoId: '',
+    containerStyle: 'color:#e3e2e5;font-size:13px;line-height:20px;',
+    tagStyle: {
+      p: 'margin:0 0 10px;color:#e3e2e5;',
+      ul: 'margin:0 0 10px;padding-left:20px;color:#e3e2e5;',
+      ol: 'margin:0 0 10px;padding-left:20px;color:#e3e2e5;',
+      li: 'margin:0 0 4px;color:#e3e2e5;',
+      h1: 'margin:10px 0 6px;color:#e3e2e5;',
+      h2: 'margin:10px 0 6px;color:#e3e2e5;',
+      h3: 'margin:10px 0 6px;color:#e3e2e5;',
+      h4: 'margin:10px 0 6px;color:#e3e2e5;font-weight:600;',
+      h5: 'margin:10px 0 6px;color:#e3e2e5;font-weight:600;',
+      h6: 'margin:10px 0 6px;color:#e3e2e5;font-weight:600;',
+      blockquote:
+        'margin:0 0 10px;padding-left:10px;border-left:3px solid rgba(255,255,255,0.18);color:#b8b8bc;',
+      pre: 'margin:0 0 10px;padding:10px;background:#25262a;border-radius:8px;overflow-x:auto;color:#e3e2e5;',
+      code: 'font-family:monospace;background:rgba(255,255,255,0.08);border-radius:4px;padding:0 4px;color:#e3e2e5;',
+      a: 'color:#ffb3af;',
+    },
   },
 
   onLoad() {
@@ -102,13 +121,18 @@ Page<CoachPageData, CoachPageHandlers>({
     let reply = '收到。让我结合你的近期训练和身体状态，再给你具体建议。';
     try {
       const res = await sendCoachChatMessage(text);
-      const content = res.assistant_message?.content;
+      const content = res.status === 'completed' ? res.message : undefined;
       if (content && content.trim()) reply = content.trim();
     } catch {
       // 后端不可用时保留默认回复，保证可预览。
     }
 
-    const assistantMsg: CoachMessage = { id: ++seq, role: 'assistant', content: reply };
+    const assistantMsg: CoachMessage = {
+      id: ++seq,
+      role: 'assistant',
+      content: reply,
+      html: markdownToHtml(reply),
+    };
     this.setData({
       messages: [...this.data.messages, assistantMsg],
       sending: false,

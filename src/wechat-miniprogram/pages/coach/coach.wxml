@@ -22,7 +22,16 @@
         id="msg-{{item.id}}"
         class="coach-msg {{item.role === 'user' ? 'coach-msg--user' : 'coach-msg--assistant'}}"
       >
-        <view class="coach-msg__bubble">{{item.content}}</view>
+        <view class="coach-msg__bubble">
+          <text wx:if="{{item.role === 'user'}}">{{item.content}}</text>
+          <mp-html
+            wx:else
+            content="{{item.html}}"
+            containerStyle="{{containerStyle}}"
+            tagStyle="{{tagStyle}}"
+            selectable="{{true}}"
+          />
+        </view>
       </view>
     </scroll-view>
 
