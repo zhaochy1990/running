@@ -1,5 +1,5 @@
-import { createCoachAgent, type CoachAgentConfig, type DataProvider } from "@stride/coach-agent";
-import { type DeepAgent } from "deepagents";
+import { type CoachAgentConfig, createCoachAgent, type DataProvider } from "@stride/coach-agent";
+import type { DeepAgent } from "deepagents";
 import type { Persistence } from "../persistence/index.js";
 
 export interface CoachInvoker {

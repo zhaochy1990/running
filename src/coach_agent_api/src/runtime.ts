@@ -1,10 +1,10 @@
-import { type CoachAgentConfig, createCoachAgent } from "@stride/coach-agent";
+import type { CoachAgentConfig } from "@stride/coach-agent";
 import { createApp } from "./app.js";
 import { createJwtVerifier } from "./auth.js";
+import { CoachInvokerImpl } from "./coach/coachInvoker.js";
 import { MySqlDataProvider } from "./data/mysqlDataProvider.js";
 import type { ApiConfig } from "./dto/config.js";
 import { createPersistence, type Persistence } from "./persistence/index.js";
-import { CoachInvokerImpl } from "./coach/coachInvoker.js";
 
 export interface CoachApiRuntime {
   app: ReturnType<typeof createApp>;
