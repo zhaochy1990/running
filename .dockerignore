@@ -21,3 +21,13 @@ profile
 # Go worker/services module is built by its own src/go/Dockerfile; keep it out
 # of the Python image (Dockerfile:34 `COPY src/ ./src/`). See docs/adr/0004.
 src/go/
+
+# TypeScript workspace build artifacts (rebuilt in Docker)
+src/*/dist/
+src/*/node_modules/
+
+# Worktrees (never copy into image)
+.worktrees/
+
+# Local dev config overlay (gitignored already but explicit for clarity)
+src/coach_agent_api/config/coach-api.local.yaml
