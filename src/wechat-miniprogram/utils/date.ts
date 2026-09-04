@@ -123,13 +123,18 @@ export function shanghaiTimeFromIso(iso: string | null | undefined): string {
 }
 
 /**
- * 生成推送日期选项（±7 天共 15 天）。
+ * 生成推送日期选项 —— 从今天起往后（不再出现今天以前的日期）。
  * 今天/明天/后天用中文标签，其他显示「周X MM/DD」。
+ * 默认选中（selected）训练对应的计划日；计划日早于今天（任务已过期）时退回今天。
  */
 export interface PushDateOption {
   label: string;
   value: string; // YYYY-MM-DD
+  /** 是否为默认选中项（计划日；过期时回退到今天） */
+  selected?: boolean;
 }
+
+const PUSH_DATE_FORWARD_DAYS = 7; // 今天起共 8 个可选日（含今天）
 
 export function buildPushDateOptions(plannedDate: string): PushDateOption[] {
   const today = shanghaiToday();
@@ -137,19 +142,23 @@ export function buildPushDateOptions(plannedDate: string): PushDateOption[] {
   const plannedEpoch = shanghaiYmdToEpoch(plannedDate);
   const out: PushDateOption[] = [];
 
-  for (let i = -7; i <= 7; i++) {
-    const date = epochToShanghaiYmd(plannedEpoch + i * DAY_MS);
-    const dayDiff = Math.round((shanghaiYmdToEpoch(date) - todayEpoch) / DAY_MS);
+  // 计划日落在今天（含）之后的可见范围内才提升为默认；否则回退今天。
+  const plannedVisible =
+    !Number.isNaN(plannedEpoch) && plannedEpoch >= todayEpoch;
+  const defaultEpoch = plannedVisible && plannedEpoch <= todayEpoch + PUSH_DATE_FORWARD_DAYS * DAY_MS
+    ? plannedEpoch
+    : todayEpoch;
+
+  for (let i = 0; i <= PUSH_DATE_FORWARD_DAYS; i++) {
+    const date = epochToShanghaiYmd(todayEpoch + i * DAY_MS);
 
     let label: string;
-    if (dayDiff === 0) {
+    if (i === 0) {
       label = '今天';
-    } else if (dayDiff === 1) {
+    } else if (i === 1) {
       label = '明天';
-    } else if (dayDiff === 2) {
+    } else if (i === 2) {
       label = '后天';
-    } else if (dayDiff === -1) {
-      label = '昨天';
     } else {
       const wd = shanghaiWeekdayLabel(date);
       const md = date.slice(5);
@@ -160,7 +169,7 @@ export function buildPushDateOptions(plannedDate: string): PushDateOption[] {
       label = `${label}（计划日）`;
     }
 
-    out.push({ label, value: date });
+    out.push({ label, value: date, selected: date === epochToShanghaiYmd(defaultEpoch) });
   }
   return out;
 }

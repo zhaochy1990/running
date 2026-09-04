@@ -6,11 +6,12 @@
       <view
         wx:for="{{options}}"
         wx:key="value"
-        class="sheet__item"
+        class="sheet__item {{item.selected ? 'sheet__item--selected' : ''}}"
         data-value="{{item.value}}"
         bindtap="onSelect"
       >
         <text class="sheet__item-text">{{item.label}}</text>
+        <text wx:if="{{item.selected}}" class="sheet__item-check">✓</text>
       </view>
     </scroll-view>
     <view class="sheet__cancel" bindtap="onClose">取消</view>

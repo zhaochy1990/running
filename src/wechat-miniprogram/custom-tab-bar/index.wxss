@@ -37,7 +37,7 @@
 }
 
 .tab-item__text {
-  font-size: 22rpx;
+  font-size: 19rpx;
   line-height: 30rpx;
   font-weight: 500;
   color: #9a8f90;

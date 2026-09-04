@@ -55,7 +55,7 @@
 }
 
 .top-bar__title {
-  font-size: 40rpx;
+  font-size: 34rpx;
   line-height: 48rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
@@ -63,7 +63,7 @@
 }
 
 .top-bar__subtitle {
-  font-size: 24rpx;
+  font-size: 20rpx;
   line-height: 32rpx;
   color: rgba(225, 191, 188, 0.8);
 }
@@ -103,7 +103,7 @@
   max-width: 82%;
   padding: 20rpx 24rpx;
   border-radius: 24rpx;
-  font-size: 28rpx;
+  font-size: 24rpx;
   line-height: 40rpx;
   color: #e3e2e5;
   word-break: break-word;
@@ -139,7 +139,7 @@
   padding: 0 24rpx;
   background: #1b1c1e;
   border-radius: 36rpx;
-  font-size: 28rpx;
+  font-size: 24rpx;
   color: #e3e2e5;
 }
 
@@ -155,7 +155,7 @@
   border-radius: 36rpx;
   background: #ff6363;
   color: #101111;
-  font-size: 28rpx;
+  font-size: 24rpx;
   font-weight: 600;
 }
 

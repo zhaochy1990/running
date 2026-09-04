@@ -56,7 +56,7 @@
 }
 
 .top-bar__title {
-  font-size: 40rpx;
+  font-size: 34rpx;
   line-height: 48rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
@@ -64,7 +64,7 @@
 }
 
 .top-bar__subtitle {
-  font-size: 24rpx;
+  font-size: 20rpx;
   line-height: 32rpx;
   color: rgba(225, 191, 188, 0.8);
 }
@@ -84,7 +84,7 @@
 }
 
 .section-title {
-  font-size: 32rpx;
+  font-size: 27rpx;
   line-height: 52rpx;
   font-weight: 600;
   color: #e3e2e5;
@@ -100,21 +100,21 @@
 }
 
 .week-hero__label {
-  font-size: 24rpx;
+  font-size: 20rpx;
   color: #9c9c9d;
   text-transform: uppercase;
   letter-spacing: 1rpx;
 }
 
 .week-hero__title {
-  font-size: 44rpx;
+  font-size: 37rpx;
   line-height: 56rpx;
   font-weight: 700;
   color: #e3e2e5;
 }
 
 .week-hero__range {
-  font-size: 24rpx;
+  font-size: 20rpx;
   color: #9c9c9d;
   font-variant-numeric: tabular-nums;
 }
@@ -142,13 +142,13 @@
 }
 
 .plan-day__weekday {
-  font-size: 26rpx;
+  font-size: 22rpx;
   font-weight: 600;
   color: #e3e2e5;
 }
 
 .plan-day__num {
-  font-size: 26rpx;
+  font-size: 22rpx;
   color: #9c9c9d;
   font-variant-numeric: tabular-nums;
 }
@@ -162,7 +162,7 @@
 }
 
 .plan-day__today-tag {
-  font-size: 20rpx;
+  font-size: 17rpx;
   color: #ff6363;
   margin-left: 4rpx;
 }
@@ -199,13 +199,13 @@
 }
 
 .plan-session__title {
-  font-size: 30rpx;
+  font-size: 26rpx;
   font-weight: 600;
   color: #e3e2e5;
 }
 
 .plan-session__meta {
-  font-size: 24rpx;
+  font-size: 20rpx;
   color: #9c9c9d;
   margin-top: 4rpx;
   font-variant-numeric: tabular-nums;
@@ -213,7 +213,7 @@
 
 .plan-session__push {
   flex-shrink: 0;
-  font-size: 22rpx;
+  font-size: 19rpx;
   font-weight: 600;
   color: #00e676;
   background: rgba(0, 230, 118, 0.1);
@@ -234,7 +234,7 @@
 }
 
 .plan-day__rest {
-  font-size: 26rpx;
+  font-size: 22rpx;
   color: #9c9c9d;
   padding: 12rpx 16rpx;
 }

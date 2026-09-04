@@ -117,13 +117,13 @@ page {
 }
 
 .empty-card__title {
-  font-size: 32rpx;
+  font-size: 27rpx;
   font-weight: 600;
   color: #e3e2e5;
 }
 
 .empty-card__sub {
-  font-size: 24rpx;
+  font-size: 20rpx;
   color: #9c9c9d;
   margin-top: 12rpx;
 }

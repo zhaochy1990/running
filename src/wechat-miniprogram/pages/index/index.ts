@@ -4,6 +4,7 @@ import {
   getWeeklyPlan,
   pushPlannedSession,
 } from '../../services/plan';
+import { getActivities } from '../../services/activities';
 import {
   buildPushDateOptions,
   buildWeekDays,
@@ -11,7 +12,9 @@ import {
   shanghaiWeekStart,
   weekSubtitle,
 } from '../../utils/date';
+import { fmtDose, fmtDurationShort, fmtKm, fmtPace } from '../../utils/format';
 import { userStore } from '../../store/index';
+import type { Activity } from '../../types/activity';
 import type {
   TodayNutritionView,
   TodayWeekDay,
@@ -19,6 +22,50 @@ import type {
   WeeklyPlanDetail,
   WeeklyPlanContentStructured,
 } from '../../types/plan';
+
+// ---------------------------------------------------------------------------
+// 今日活动行（复用活动页 .activity 行样式）
+// ---------------------------------------------------------------------------
+
+interface TodayActivityRow {
+  labelId: string;
+  name: string;
+  iconPath: string;
+  distanceKm: string;
+  duration: string;
+  pace: string;
+  avgHr: string;
+  load: string;
+}
+
+function iconPathForSport(sportName: string | null | undefined): string {
+  const n = (sportName || '').toLowerCase();
+  if (n.includes('strength')) return '/assets/icons/fitness_center.svg';
+  if (n.includes('run') || n.includes('treadmill') || n.includes('trail')) {
+    return '/assets/icons/directions_run.svg';
+  }
+  return '/assets/icons/schedule.svg';
+}
+
+function displayName(a: Activity): string {
+  const n = a.name && a.name.trim();
+  if (n) return n;
+  const s = a.sport_name && a.sport_name.trim();
+  return s || '活动';
+}
+
+function toTodayActivityRow(a: Activity): TodayActivityRow {
+  return {
+    labelId: a.label_id,
+    name: displayName(a),
+    iconPath: iconPathForSport(a.sport_name),
+    distanceKm: a.distance_km != null && a.distance_km > 0 ? fmtKm(a.distance_m) : '—',
+    duration: fmtDurationShort(a.duration_s),
+    pace: fmtPace(a.avg_pace_s_km),
+    avgHr: a.avg_hr != null ? `${Math.round(a.avg_hr)}` : '—',
+    load: fmtDose(a.training_load),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // 界面状态
@@ -38,6 +85,8 @@ interface IndexPageData {
   todayLabel: string;
   workout: TodayWorkoutView | null;
   nutrition: TodayNutritionView | null;
+  /** 选中日的实际活动记录（无记录时为空数组，卡片不展示） */
+  todayActivities: TodayActivityRow[];
   loading: boolean;
   /** 推送日期弹层可见性（±7 天共 15 个选项，需滚动列表承载） */
   pushSheetVisible: boolean;
@@ -52,6 +101,7 @@ interface IndexPageHandlers {
   onCoachTap(): void;
   onWatchTap(): void;
   onMoreTap(): void;
+  onTodayActivityTap(e: WechatMiniprogram.TouchEvent): void;
   onPushDateSelect(e: PushDateSelectEvent): void;
   onPushDateClose(): void;
 }
@@ -101,6 +151,7 @@ Page<IndexPageData, IndexPageHandlers>({
     todayLabel: '',
     workout: null,
     nutrition: null,
+    todayActivities: [],
     loading: true,
     pushSheetVisible: false,
     pushOptions: [],
@@ -150,16 +201,16 @@ Page<IndexPageData, IndexPageHandlers>({
     try {
       const plan = await getWeeklyPlan(userId, currentWeekName());
       fetchedPlan = plan;
-      const today = shanghaiToday();
-      this.renderDay(this.data.selectedDate || today, this.data.selectedDate === today);
     } catch {
       // 拉取失败（未生成计划 / 网络问题）时保持空态，由界面展示空态卡片。
     } finally {
+      const today = shanghaiToday();
+      this.renderDay(this.data.selectedDate || today, this.data.selectedDate === today);
       this.setData({ loading: false });
     }
   },
 
-  // 渲染指定日期（上海 YYYY-MM-DD）。
+  // 渲染指定日期（上海 YYYY-MM-DD），并拉取当天的实际活动记录。
   renderDay(dateYmd: string, isToday: boolean) {
     if (!fetchedPlan) {
       this.setData({
@@ -169,19 +220,35 @@ Page<IndexPageData, IndexPageHandlers>({
         todayLabel: todayLabelOf(dateYmd),
         workout: null,
         nutrition: null,
+        todayActivities: [],
       });
-      return;
+    } else {
+      const view = buildDayView(fetchedPlan, dateYmd);
+      this.setData({
+        selectedDate: dateYmd,
+        weekDays: buildWeekDays(dateYmd),
+        weekSubtitle: weekSubtitle(shanghaiWeekStart(dateYmd)),
+        todayLabel: todayLabelOf(dateYmd),
+        workout: view.workout,
+        nutrition: view.nutrition,
+        todayActivities: [],
+      });
     }
+    this.fetchDayActivities(dateYmd);
+  },
 
-    const view = buildDayView(fetchedPlan, dateYmd);
-    this.setData({
-      selectedDate: dateYmd,
-      weekDays: buildWeekDays(dateYmd),
-      weekSubtitle: weekSubtitle(shanghaiWeekStart(dateYmd)),
-      todayLabel: todayLabelOf(dateYmd),
-      workout: view.workout,
-      nutrition: view.nutrition,
-    });
+  // 拉取指定日（上海 YYYY-MM-DD）的实际活动记录；无记录则空数组（卡片不展示）。
+  async fetchDayActivities(dateYmd: string) {
+    if (!userId) return;
+    try {
+      const res = await getActivities(userId, { dateFrom: dateYmd, dateTo: dateYmd, limit: 20 });
+      // 防止用户快速切换日期后写入过期数据。
+      if (this.data.selectedDate !== dateYmd) return;
+      this.setData({ todayActivities: res.activities.map(toTodayActivityRow) });
+    } catch {
+      // 拉取失败时保持空态，由页面不展示「今日活动」卡片。
+      if (this.data.selectedDate === dateYmd) this.setData({ todayActivities: [] });
+    }
   },
 
   // --- 交互 ---
@@ -221,6 +288,14 @@ Page<IndexPageData, IndexPageHandlers>({
 
   onMoreTap() {
     wx.showToast({ title: '暂未开放', icon: 'none' });
+  },
+
+  onTodayActivityTap(e: WechatMiniprogram.TouchEvent) {
+    const labelId = e.currentTarget.dataset.id as string;
+    if (!labelId) return;
+    wx.navigateTo({
+      url: `/pages/activity-detail/activity-detail?labelId=${encodeURIComponent(labelId)}`,
+    });
   },
 
   async onPushDateSelect(e: PushDateSelectEvent) {

@@ -44,7 +44,7 @@
 }
 
 .sheet__title {
-  font-size: 32rpx;
+  font-size: 27rpx;
   line-height: 44rpx;
   font-weight: 700;
   color: #e3e2e5;
@@ -68,9 +68,31 @@
   opacity: 0.7;
 }
 
+.sheet__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sheet__item--selected {
+  background: rgba(0, 187, 255, 0.16);
+}
+
+.sheet__item--selected .sheet__item-text {
+  color: #3fd2ff;
+  font-weight: 600;
+}
+
 .sheet__item-text {
-  font-size: 30rpx;
+  font-size: 26rpx;
   color: #e3e2e5;
+}
+
+.sheet__item-check {
+  font-size: 26rpx;
+  line-height: 1;
+  color: #3fd2ff;
+  font-weight: 700;
 }
 
 .sheet__cancel {
@@ -79,7 +101,7 @@
   border-radius: 20rpx;
   background: rgba(255, 255, 255, 0.06);
   text-align: center;
-  font-size: 30rpx;
+  font-size: 26rpx;
   color: #9c9c9d;
 }
 

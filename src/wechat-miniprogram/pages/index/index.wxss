@@ -57,7 +57,7 @@
 }
 
 .top-bar__title {
-  font-size: 40rpx;
+  font-size: 34rpx;
   line-height: 48rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
@@ -65,7 +65,7 @@
 }
 
 .top-bar__subtitle {
-  font-size: 24rpx;
+  font-size: 20rpx;
   line-height: 32rpx;
   color: rgba(225, 191, 188, 0.8);
 }
@@ -85,7 +85,7 @@
 }
 
 .section-title {
-  font-size: 32rpx;
+  font-size: 27rpx;
   line-height: 52rpx;
   font-weight: 600;
   color: #e3e2e5;
@@ -117,13 +117,13 @@
 }
 
 .week-day__label {
-  font-size: 20rpx;
+  font-size: 17rpx;
   text-transform: uppercase;
   color: #9c9c9d;
 }
 
 .week-day__num {
-  font-size: 32rpx;
+  font-size: 27rpx;
   font-weight: 700;
   color: #e3e2e5;
   font-variant-numeric: tabular-nums;
@@ -180,7 +180,7 @@
 }
 
 .workout__title {
-  font-size: 40rpx;
+  font-size: 34rpx;
   line-height: 44rpx;
   font-weight: 700;
   color: #e3e2e5;
@@ -223,7 +223,7 @@
 }
 
 .workout__label {
-  font-size: 24rpx;
+  font-size: 20rpx;
   color: #9c9c9d;
   margin-bottom: 16rpx;
 }
@@ -283,7 +283,7 @@
 }
 
 .stat__value {
-  font-size: 36rpx;
+  font-size: 31rpx;
   font-weight: 700;
   color: #e3e2e5;
   font-variant-numeric: tabular-nums;
@@ -293,7 +293,7 @@
 }
 
 .stat__label {
-  font-size: 20rpx;
+  font-size: 17rpx;
   color: #9c9c9d;
   white-space: nowrap;
   overflow: hidden;
@@ -310,7 +310,7 @@
 }
 
 .note-box__title {
-  font-size: 20rpx;
+  font-size: 17rpx;
   text-transform: uppercase;
   letter-spacing: 1rpx;
   color: #9c9c9d;
@@ -318,7 +318,7 @@
 }
 
 .note-box__text {
-  font-size: 24rpx;
+  font-size: 20rpx;
   line-height: 36rpx;
   color: rgba(227, 226, 229, 0.9);
 }
@@ -359,7 +359,7 @@
 }
 
 .workout__cta-text {
-  font-size: 28rpx;
+  font-size: 24rpx;
   font-weight: 600;
   color: #101111;
 }
@@ -394,32 +394,102 @@
 }
 
 .meal__name {
-  font-size: 28rpx;
+  font-size: 24rpx;
   font-weight: 600;
   color: #e3e2e5;
 }
 
 .meal__time {
-  font-size: 20rpx;
+  font-size: 17rpx;
   color: #9c9c9d;
   margin-top: 4rpx;
 }
 
 .meal__detail {
-  font-size: 24rpx;
+  font-size: 20rpx;
   line-height: 34rpx;
   color: rgba(225, 191, 188, 0.8);
   margin-top: 8rpx;
 }
 
 .meal__kcal {
-  font-size: 28rpx;
+  font-size: 24rpx;
   font-weight: 700;
   color: #ffb3af;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
   white-space: nowrap;
 }
+/* ---------- 今日活动卡片 ---------- */
+
+.activity {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx 24rpx 24rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+}
+
+.activity:last-child {
+  border-bottom: none;
+}
+
+.activity__icon {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.activity__icon-img {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+.activity__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.activity__name {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.activity__meta {
+  font-size: 20rpx;
+  color: #9c9c9d;
+  margin-top: 6rpx;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity__right {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.activity__load {
+  font-size: 27rpx;
+  font-weight: 700;
+  color: #ffb3af;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity__load-label {
+  font-size: 17rpx;
+  color: #9c9c9d;
+  margin-top: 2rpx;
+}
+
 .content__tail {
   height: 24rpx;
 }

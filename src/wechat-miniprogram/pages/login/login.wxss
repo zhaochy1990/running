@@ -40,7 +40,7 @@
 }
 
 .login-title {
-  font-size: 44rpx;
+  font-size: 37rpx;
   line-height: 60rpx;
   font-weight: 700;
   color: #ffffff;
@@ -49,7 +49,7 @@
 }
 
 .login-subtitle {
-  font-size: 28rpx;
+  font-size: 24rpx;
   line-height: 40rpx;
   font-weight: 500;
   color: #a0a0a0;
@@ -80,7 +80,7 @@
   position: relative;
   padding: 24rpx 0;
   text-align: center;
-  font-size: 30rpx;
+  font-size: 26rpx;
   font-weight: 500;
   color: #8a8b8c;
 }
@@ -121,7 +121,7 @@
 }
 
 .login-label {
-  font-size: 26rpx;
+  font-size: 22rpx;
   line-height: 32rpx;
   font-weight: 500;
   color: #d1d1d1;
@@ -134,7 +134,7 @@
 }
 
 .login-forgot {
-  font-size: 26rpx;
+  font-size: 22rpx;
   line-height: 32rpx;
   font-weight: 500;
   color: #55b3ff;
@@ -169,7 +169,7 @@
   flex: 1;
   height: 92rpx;
   padding: 0 32rpx 0 96rpx;
-  font-size: 32rpx;
+  font-size: 27rpx;
   color: #f9f9f9;
   background: transparent;
   border: none;
@@ -211,7 +211,7 @@
   display: flex;
   align-items: center;
   padding: 0 24rpx 0 32rpx;
-  font-size: 30rpx;
+  font-size: 26rpx;
   font-weight: 500;
   color: #a0a0a0;
   border-right: 1rpx solid rgba(255, 255, 255, 0.1);
@@ -224,7 +224,7 @@
   top: 50%;
   transform: translateY(-50%);
   padding: 20rpx 32rpx;
-  font-size: 28rpx;
+  font-size: 24rpx;
   font-weight: 500;
   line-height: 40rpx;
   color: #ff6363;
@@ -239,7 +239,7 @@
 /* ---------- 错误提示 ---------- */
 
 .login-error {
-  font-size: 26rpx;
+  font-size: 22rpx;
   line-height: 36rpx;
   color: #ff6363;
   margin: -16rpx 0 32rpx;
@@ -259,7 +259,7 @@
   border-radius: 26rpx;
   background: #ff6363;
   color: #ffffff;
-  font-size: 32rpx;
+  font-size: 27rpx;
   font-weight: 500;
   text-align: center;
   box-shadow: 0 10rpx 24rpx rgba(255, 99, 99, 0.18);
@@ -282,7 +282,7 @@
 }
 
 .login-terms-text {
-  font-size: 26rpx;
+  font-size: 22rpx;
   line-height: 36rpx;
   color: #6a6b6c;
   letter-spacing: 1rpx;
@@ -290,7 +290,7 @@
 
 .login-terms-links {
   margin-top: 8rpx;
-  font-size: 26rpx;
+  font-size: 22rpx;
   line-height: 36rpx;
   color: #6a6b6c;
 }

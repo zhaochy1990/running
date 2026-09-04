@@ -54,7 +54,7 @@
 }
 
 .top-bar__title {
-  font-size: 40rpx;
+  font-size: 34rpx;
   line-height: 48rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
@@ -62,7 +62,7 @@
 }
 
 .top-bar__subtitle {
-  font-size: 24rpx;
+  font-size: 20rpx;
   line-height: 32rpx;
   color: rgba(225, 191, 188, 0.8);
 }
@@ -118,13 +118,13 @@
 }
 
 .profile-info__name {
-  font-size: 40rpx;
+  font-size: 34rpx;
   font-weight: 700;
   color: #e3e2e5;
 }
 
 .profile-info__email {
-  font-size: 24rpx;
+  font-size: 20rpx;
   color: #9c9c9d;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -133,7 +133,7 @@
 
 .profile-info__tag {
   align-self: flex-start;
-  font-size: 20rpx;
+  font-size: 17rpx;
   color: #ff6363;
   padding: 4rpx 12rpx;
   border-radius: 8rpx;
@@ -172,7 +172,7 @@
 
 .menu-row__title {
   flex: 1;
-  font-size: 30rpx;
+  font-size: 26rpx;
   color: #e3e2e5;
 }
 
@@ -208,7 +208,7 @@
   border-radius: 20rpx;
   background: rgba(255, 99, 99, 0.08);
   color: #ff6363;
-  font-size: 28rpx;
+  font-size: 24rpx;
   font-weight: 600;
   text-align: center;
 }
@@ -219,7 +219,7 @@
 
 .version {
   text-align: center;
-  font-size: 22rpx;
+  font-size: 19rpx;
   color: #6a6b6c;
   margin-top: 48rpx;
 }

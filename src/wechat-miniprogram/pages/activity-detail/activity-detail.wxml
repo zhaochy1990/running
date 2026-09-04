@@ -6,8 +6,8 @@
         <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
       </view>
       <view class="top-bar__title-wrap">
-        <view class="top-bar__title">活动详情</view>
-        <view class="top-bar__subtitle">{{header.sportLabel}}</view>
+        <view class="top-bar__title">{{header.name || '活动详情'}}</view>
+        <view wx:if="{{header.dateLabel}}" class="top-bar__subtitle">{{header.dateLabel}}</view>
       </view>
       <view class="top-bar__btn top-bar__btn--spacer"></view>
     </view>
@@ -29,14 +29,25 @@
     </view>
 
     <block wx:else>
-      <!-- 头图卡片 -->
-      <view class="card header-card">
-        <view class="header-card__tags">
-          <view class="tag tag--sport">{{header.sportLabel}}</view>
-          <view wx:if="{{header.trainTypeLabel}}" class="tag tag--type">{{header.trainTypeLabel}}</view>
+      <!-- 轨迹地图 -->
+      <view wx:if="{{hasMap}}" class="card">
+        <view class="route-map-wrap">
+          <map
+            class="route-map"
+            latitude="{{mapLatitude}}"
+            longitude="{{mapLongitude}}"
+            scale="13"
+            include-points="{{mapFitPoints}}"
+            polyline="{{mapPolylines}}"
+            circles="{{mapCircles}}"
+            show-location="{{false}}"
+          />
+          <view class="map-toggle">
+            <view class="map-toggle__btn {{mapColoring === 'pace' ? 'map-toggle__btn--on' : ''}}" data-coloring="pace" bindtap="onColoringChange">配速</view>
+            <view class="map-toggle__btn {{mapColoring === 'hr' ? 'map-toggle__btn--on' : ''}}" data-coloring="hr" bindtap="onColoringChange">HR</view>
+            <view class="map-toggle__btn {{mapColoring === 'none' ? 'map-toggle__btn--on' : ''}}" data-coloring="none" bindtap="onColoringChange">无色</view>
+          </view>
         </view>
-        <view class="header-card__title">{{header.name}}<text wx:if="{{header.feelEmoji}}" class="header-card__emoji">{{header.feelEmoji}}</text></view>
-        <view class="header-card__date">{{header.dateLabel}}</view>
       </view>
 
       <!-- 主指标 -->

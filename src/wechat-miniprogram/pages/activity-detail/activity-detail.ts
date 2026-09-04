@@ -1,6 +1,7 @@
 import { getActivityDetail } from '../../services/activities';
 import { fmtDurationShort, fmtKm, fmtHms, fmtDose } from '../../utils/format';
 import { shanghaiDateFromIso, shanghaiTimeFromIso } from '../../utils/date';
+import { wgs84ToGcj02 } from '../../utils/coord';
 import { userStore } from '../../store/index';
 import type {
   Activity,
@@ -9,6 +10,8 @@ import type {
   Lap,
   Segment,
   Zone,
+  TimeseriesPoint,
+  Pause,
 } from '../../types/activity';
 
 // ---------------------------------------------------------------------------
@@ -56,6 +59,30 @@ interface WeatherItem {
   value: string;
 }
 
+// —— 轨迹地图（原生 <map>，腾讯瓦片）——
+type MapColoring = 'none' | 'hr' | 'pace';
+
+interface MapPoint {
+  latitude: number;
+  longitude: number;
+  pace: number | null; // s/km，lower = faster
+  hr: number | null;
+}
+
+interface MapPolyline {
+  points: Array<{ latitude: number; longitude: number }>;
+  color: string;
+  width: number;
+}
+
+interface MapCircle {
+  latitude: number;
+  longitude: number;
+  color: string;
+  fillColor: string;
+  radius: number;
+}
+
 interface HeaderView {
   sportLabel: string;
   name: string;
@@ -91,11 +118,20 @@ interface ActivityDetailPageData {
   hasCommentary: boolean;
   commentary: string;
   weather: WeatherItem[];
+  // —— 轨迹地图 ——
+  hasMap: boolean;
+  mapLatitude: number;
+  mapLongitude: number;
+  mapPolylines: MapPolyline[];
+  mapCircles: MapCircle[];
+  mapFitPoints: Array<{ latitude: number; longitude: number }>;
+  mapColoring: MapColoring;
 }
 
 interface ActivityDetailPageHandlers {
   fetch(): Promise<void>;
   onBack(): void;
+  onColoringChange(e: { currentTarget: { dataset: { coloring: MapColoring } } }): void;
 }
 
 const FEEL_EMOJIS = ['', '😄', '🙂', '😐', '😞', '😫'];
@@ -136,6 +172,16 @@ const METRIC_COLORS = {
 
 let userId = '';
 let labelId = '';
+
+// —— 轨迹地图常量 / 状态 ——
+const MAP_GREEN = '#00a85a';
+const MAP_AMBER = '#e68a00';
+const MAP_RED = '#d32f2f';
+const MAX_MAP_PTS = 600; // 抽稀后点上限
+const MAP_CHUNK = 8; // 每段 bin 成多长（条）
+
+// 按 pause 分段的 GCJ 轨迹点（模块级缓存，供着色切换时重建）。
+let mapSegments: MapPoint[][] = [];
 
 // ---------------------------------------------------------------------------
 // 纯格式化 helpers
@@ -408,6 +454,187 @@ function buildStrideLoad(load: ActivityStrideTrainingLoad | null | undefined): S
   };
 }
 
+// ---------------------------------------------------------------------------
+// 轨迹地图：WGS84→GCJ02 + pause 分段 + 配速/心率 bin 着色
+// ---------------------------------------------------------------------------
+
+// 线性插值两个 hex 颜色，t ∈ [0,1]。
+function lerpColor(a: string, b: string, t: number): string {
+  const tt = Math.max(0, Math.min(1, t));
+  const ar = parseInt(a.slice(1, 3), 16);
+  const ag = parseInt(a.slice(3, 5), 16);
+  const ab = parseInt(a.slice(5, 7), 16);
+  const br = parseInt(b.slice(1, 3), 16);
+  const bg = parseInt(b.slice(3, 5), 16);
+  const bb = parseInt(b.slice(5, 7), 16);
+  const r = Math.round(ar + (br - ar) * tt);
+  const g = Math.round(ag + (bg - ag) * tt);
+  const bl = Math.round(ab + (bb - ab) * tt);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${bl.toString(16).padStart(2, '0')}`;
+}
+
+// 3 停渐变：绿 → 橙 → 红。活动相对——同一原始 HR 值在两次活动里颜色可不同。
+function gradient3(t: number): string {
+  const tt = Math.max(0, Math.min(1, t));
+  if (tt < 0.5) return lerpColor(MAP_GREEN, MAP_AMBER, tt * 2);
+  return lerpColor(MAP_AMBER, MAP_RED, (tt - 0.5) * 2);
+}
+
+// 把 timeseries 按 pause 间隙切成 GCJ 分段。pause 与 timeseries timestamp 同为厘秒。
+function buildMapSegments(timeseries: TimeseriesPoint[], pauses: Pause[] | undefined): MapPoint[][] {
+  const windows = (pauses || [])
+    .filter((w) => w.start_ts != null && w.end_ts != null)
+    .map((w) => ({ start: w.start_ts!, end: w.end_ts! }))
+    .sort((a, b) => a.start - b.start);
+
+  const segs: MapPoint[][] = [];
+  let cur: MapPoint[] = [];
+  let pw = 0;
+  for (const p of timeseries) {
+    const ts = p.timestamp;
+    if (ts == null || p.gps_lat == null || p.gps_lon == null) continue;
+    while (pw < windows.length && windows[pw].end < ts) pw++;
+    const inPause = pw < windows.length && windows[pw].start <= ts && ts <= windows[pw].end;
+    if (inPause) {
+      if (cur.length) {
+        segs.push(cur);
+        cur = [];
+      }
+      continue;
+    }
+    const g = wgs84ToGcj02(p.gps_lon, p.gps_lat);
+    cur.push({ latitude: g.latitude, longitude: g.longitude, pace: p.adjusted_pace ?? p.speed, hr: p.heart_rate });
+  }
+  if (cur.length) segs.push(cur);
+  return segs;
+}
+
+// 把一个 chunk 的均值 metric 映射成颜色。
+function buildColoredLine(
+  chunk: MapPoint[],
+  coloring: MapColoring,
+  paceMin: number,
+  paceMax: number,
+  hrMin: number,
+  hrMax: number,
+): MapPolyline {
+  let sum = 0;
+  let n = 0;
+  for (const p of chunk) {
+    const v = coloring === 'hr' ? p.hr : p.pace;
+    if (v != null && v > 0) {
+      sum += v;
+      n++;
+    }
+  }
+  const avg = n > 0 ? sum / n : null;
+  let color = MAP_GREEN;
+  if (avg != null) {
+    if (coloring === 'hr') {
+      const range = hrMax - hrMin;
+      const t = range > 0 ? (avg - hrMin) / range : 0;
+      color = gradient3(t);
+    } else {
+      // 配速：慢（大 s/km）→ 绿，快（小 s/km）→ 红（与 HR 反向）。
+      const range = paceMax - paceMin;
+      const t = range > 0 ? (paceMax - avg) / range : 0;
+      color = gradient3(t);
+    }
+  }
+  return { points: chunk.map((p) => ({ latitude: p.latitude, longitude: p.longitude })), color, width: 5 };
+}
+
+// 依据当前着色模式重建 polyline / circles / 自适应视野。无有效 GPS（<20 点）时不渲染。
+function computeMapView(coloring: MapColoring): {
+  hasMap: boolean;
+  mapLatitude: number;
+  mapLongitude: number;
+  mapPolylines: MapPolyline[];
+  mapCircles: MapCircle[];
+  mapFitPoints: Array<{ latitude: number; longitude: number }>;
+} {
+  const noMap = { hasMap: false, mapLatitude: 0, mapLongitude: 0, mapPolylines: [], mapCircles: [], mapFitPoints: [] };
+
+  let count = 0;
+  let paceMin = Infinity;
+  let paceMax = -Infinity;
+  let hrMin = Infinity;
+  let hrMax = -Infinity;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+  for (const seg of mapSegments) {
+    for (const p of seg) {
+      count++;
+      if (p.pace != null && p.pace > 0) {
+        if (p.pace < paceMin) paceMin = p.pace;
+        if (p.pace > paceMax) paceMax = p.pace;
+      }
+      if (p.hr != null && p.hr > 0) {
+        if (p.hr < hrMin) hrMin = p.hr;
+        if (p.hr > hrMax) hrMax = p.hr;
+      }
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+  }
+  if (count < 20) return noMap;
+
+  const stride = count > MAX_MAP_PTS ? Math.ceil(count / MAX_MAP_PTS) : 1;
+  const polylines: MapPolyline[] = [];
+  for (const seg of mapSegments) {
+    const decim = seg.filter((_, i) => i % stride === 0);
+    if (decim.length < 2) continue;
+    if (coloring === 'none') {
+      polylines.push({ points: decim.map((p) => ({ latitude: p.latitude, longitude: p.longitude })), color: MAP_GREEN, width: 5 });
+      continue;
+    }
+    for (let i = 0; i < decim.length; i += MAP_CHUNK) {
+      const chunk = decim.slice(i, i + MAP_CHUNK);
+      if (chunk.length < 2) {
+        // 末尾孤立点并入上一条 polyline，避免单点线段。
+        if (polylines.length) polylines[polylines.length - 1].points.push(...chunk.map((p) => ({ latitude: p.latitude, longitude: p.longitude })));
+        break;
+      }
+      polylines.push(buildColoredLine(chunk, coloring, paceMin, paceMax, hrMin, hrMax));
+    }
+  }
+
+  // 起终点圆点：用 <map> 的 circles 属性，避免 marker 需要 iconPath 图片素材。
+  const circles: MapCircle[] = [];
+  const firstSeg = mapSegments[0];
+  const endSeg = mapSegments[mapSegments.length - 1];
+  if (firstSeg && firstSeg.length) {
+    const s = firstSeg[0];
+    circles.push({ latitude: s.latitude, longitude: s.longitude, color: MAP_GREEN, fillColor: MAP_GREEN, radius: 18 });
+  }
+  if (endSeg && endSeg.length) {
+    const e = endSeg[endSeg.length - 1];
+    if (!firstSeg || !firstSeg.length || e.latitude !== firstSeg[0].latitude || e.longitude !== firstSeg[0].longitude) {
+      circles.push({ latitude: e.latitude, longitude: e.longitude, color: '#1a1c2e', fillColor: '#1a1c2e', radius: 18 });
+    }
+  }
+
+  // 四周扩 15% 跨度（最小 ~0.002° ≈ 200m），让轨迹在视野内居中、四周留白不贴边。
+  const padLat = Math.max((maxLat - minLat) * 0.15, 0.002);
+  const padLng = Math.max((maxLng - minLng) * 0.15, 0.002);
+
+  return {
+    hasMap: true,
+    mapLatitude: (minLat + maxLat) / 2,
+    mapLongitude: (minLng + maxLng) / 2,
+    mapPolylines: polylines,
+    mapCircles: circles,
+    mapFitPoints: [
+      { latitude: minLat - padLat, longitude: minLng - padLng },
+      { latitude: maxLat + padLat, longitude: maxLng + padLng },
+    ],
+  };
+}
+
 function buildWeather(a: Activity): WeatherItem[] {
   const out: WeatherItem[] = [];
   if (a.temperature != null) {
@@ -449,6 +676,20 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
   const strideLoad = buildStrideLoad(detail.stride_training_load);
   const sportNote = a.sport_note || '';
 
+  // 轨迹地图：力量训练无 GPS，不渲染；默认按配速着色。
+  let mapView: ReturnType<typeof computeMapView> = {
+    hasMap: false,
+    mapLatitude: 0,
+    mapLongitude: 0,
+    mapPolylines: [],
+    mapCircles: [],
+    mapFitPoints: [],
+  };
+  if (!isStrength) {
+    mapSegments = buildMapSegments(detail.timeseries || [], detail.activity.pauses);
+    mapView = computeMapView('pace');
+  }
+
   return {
     isStrength,
     header: {
@@ -471,6 +712,8 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
     hasCommentary: Boolean(a.commentary && a.commentary.trim()),
     commentary: a.commentary || '',
     weather: buildWeather(a),
+    ...mapView,
+    mapColoring: 'pace',
   };
 }
 
@@ -498,7 +741,7 @@ function contentPaddingTopRpx(): number {
     statusPx = sys.statusBarHeight;
     width = sys.windowWidth || 375;
   }
-  return Math.round((statusPx * 750) / width) + 128 + 24;
+  return Math.round((statusPx * 750) / width) + 128 + 8;
 }
 
 Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
@@ -522,6 +765,13 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     hasCommentary: false,
     commentary: '',
     weather: [],
+    hasMap: false,
+    mapLatitude: 0,
+    mapLongitude: 0,
+    mapPolylines: [],
+    mapCircles: [],
+    mapFitPoints: [],
+    mapColoring: 'pace',
   },
 
   onLoad(options: Record<string, string | undefined>) {
@@ -556,7 +806,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
       return;
     }
     try {
-      const detail = await getActivityDetail(userId, labelId);
+      const detail = await getActivityDetail(userId, labelId, { includeTimeseries: true });
       this.setData({
         ...buildView(detail),
         loading: false,
@@ -570,5 +820,12 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
 
   onBack() {
     wx.navigateBack();
+  },
+
+  onColoringChange(e: { currentTarget: { dataset: { coloring: MapColoring } } }) {
+    const coloring = e.currentTarget.dataset.coloring;
+    if (coloring === this.data.mapColoring) return;
+    const view = computeMapView(coloring);
+    this.setData({ mapColoring: coloring, ...view });
   },
 });

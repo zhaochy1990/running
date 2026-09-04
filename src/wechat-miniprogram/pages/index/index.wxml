@@ -30,6 +30,35 @@
       </view>
     </view>
 
+    <!-- 今日活动：仅当天有实际运动记录时展示，位于「今日安排」上方 -->
+    <view wx:if="{{todayActivities.length}}" class="section-title">今日活动 · {{todayLabel}}</view>
+    <view wx:if="{{todayActivities.length}}" class="card">
+      <view
+        wx:for="{{todayActivities}}"
+        wx:key="labelId"
+        class="activity"
+        data-id="{{item.labelId}}"
+        bindtap="onTodayActivityTap"
+      >
+        <view class="activity__icon">
+          <image class="activity__icon-img" src="{{item.iconPath}}" mode="aspectFit" />
+        </view>
+        <view class="activity__info">
+          <view class="activity__name">{{item.name}}</view>
+          <view class="activity__meta">
+            <text wx:if="{{item.distanceKm !== '—'}}">{{item.distanceKm}} km</text>
+            <text wx:if="{{item.duration !== '—'}}"> · {{item.duration}}</text>
+            <text wx:if="{{item.pace !== '—'}}"> · {{item.pace}}</text>
+            <text wx:if="{{item.avgHr !== '—'}}"> · {{item.avgHr}} bpm</text>
+          </view>
+        </view>
+        <view class="activity__right">
+          <view wx:if="{{item.load !== '—'}}" class="activity__load">{{item.load}}</view>
+          <view class="activity__load-label">负荷</view>
+        </view>
+      </view>
+    </view>
+
     <!-- 今日训练 -->
     <view class="section-title">今日安排 · {{todayLabel}}</view>
     <view wx:if="{{workout}}" class="card workout-card">
