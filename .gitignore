@@ -84,5 +84,6 @@ src/coach_agent/.env
 config/coach.prod.yaml
 src/coach_agent/test-output
 src/go/config.prod.yml
+src/coach_agent_api/config/coach-api.local.yaml
 src/coach_agent_api/config/coach-api.prod.yaml
 src/coach_agent_api/test-output
