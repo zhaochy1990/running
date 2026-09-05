@@ -59,3 +59,52 @@ function isAssistantMessage(value: unknown): value is Record<string, unknown> {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+// ── Session history ──────────────────────────────────────────────────────────
+
+/** One renderable turn in a session history: user bubbles + assistant replies. */
+export interface SessionHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/**
+ * Flatten a thread's LangChain messages into a minified user/assistant history
+ * suitable for a chat client. Tool / system / reasoning messages are dropped;
+ * assistant messages that still carry tool calls are intermediate graph steps
+ * and are skipped. User messages were stored JSON-wrapped
+ * (`{ timestamp, message }`, see routes/chat.ts), so we unwrap to the raw text.
+ */
+export function toPublicHistory(messages: unknown[]): SessionHistoryMessage[] {
+  const out: SessionHistoryMessage[] = [];
+  for (const message of messages) {
+    if (isHumanMessage(message)) {
+      out.push({ role: "user", content: decodeUserMessage(message) });
+      continue;
+    }
+    if (isAssistantMessage(message) && !hasToolCalls(message)) {
+      const text = textContent(message.content);
+      if (text !== undefined) out.push({ role: "assistant", content: text });
+    }
+  }
+  return out;
+}
+
+function isHumanMessage(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) return false;
+  if (value.type === "human") return true;
+  const getType = value._getType;
+  return typeof getType === "function" && getType.call(value) === "human";
+}
+
+function decodeUserMessage(value: Record<string, unknown>): string {
+  const text = textContent(value.content) ?? "";
+  try {
+    const parsed = JSON.parse(text);
+    if (isRecord(parsed) && typeof parsed.message === "string") return parsed.message;
+  } catch {
+    // not the wrapped JSON shape; return raw text
+  }
+  return text;
+}
+

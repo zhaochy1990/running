@@ -1,4 +1,4 @@
-import { sendCoachChatMessage } from '../../services/coach';
+import { sendCoachChatMessage, fetchCoachHistory, type CoachHistoryMessage } from '../../services/coach';
 import { markdownToHtml } from '../../utils/markdown';
 
 interface CoachMessage {
@@ -7,6 +7,9 @@ interface CoachMessage {
   content: string;
   // assistant 消息渲染用（GFM→HTML，经 <mp-html> 渲染）；user 消息保持纯文本。
   html?: string;
+  // user 消息：本轮 client_turn_id（重试时复用）；failed 表示发送失败需重试。
+  clientTurnId?: string;
+  failed?: boolean;
 }
 
 interface CoachPageData {
@@ -24,11 +27,15 @@ interface CoachPageData {
 interface CoachPageHandlers {
   onInput(e: WechatMiniprogram.Input): void;
   onSend(): Promise<void>;
+  onRetry(e: WechatMiniprogram.TouchEvent): void;
   onMenuTap(): void;
 }
 
 let seq = 0;
-
+let turnSeq = 0;
+function nextClientTurnId(): string {
+  return `mini-${Date.now()}-${++turnSeq}`;
+}
 function statusBarHeight(): number {
   try {
     return wx.getWindowInfo().statusBarHeight || 0;
@@ -56,6 +63,16 @@ function welcomeMessages(): CoachMessage[] {
   const content =
     '你好，我是你的 AI 教练。可以问我今天的训练安排、疲劳状态、配速建议，或复盘某次训练。';
   return [{ id: ++seq, role: 'assistant', content, html: markdownToHtml(content) }];
+}
+
+function toCoachMessage(m: CoachHistoryMessage): CoachMessage {
+  const msg: CoachMessage = {
+    id: ++seq,
+    role: m.role === 'user' ? 'user' : 'assistant',
+    content: m.content,
+  };
+  if (m.role === 'assistant') msg.html = markdownToHtml(m.content);
+  return msg;
 }
 
 Page<CoachPageData, CoachPageHandlers>({
@@ -86,11 +103,21 @@ Page<CoachPageData, CoachPageHandlers>({
     },
   },
 
-  onLoad() {
-    const msgs = this.data.messages;
+  async onLoad() {
+    let msgs = this.data.messages;
+    try {
+      const history = await fetchCoachHistory();
+      if (history && Array.isArray(history.messages) && history.messages.length) {
+        seq = 0;
+        msgs = history.messages.map(toCoachMessage);
+      }
+    } catch {
+      // 历史拉取失败（后端未配置/网络异常）时保留欢迎语。
+    }
     this.setData({
       statusBarHeight: statusBarHeight(),
       contentPaddingTop: contentPaddingTopRpx(),
+      messages: msgs,
       scrollIntoId: `msg-${msgs[msgs.length - 1].id}`,
     });
   },
@@ -110,34 +137,60 @@ Page<CoachPageData, CoachPageHandlers>({
     const text = this.data.input.trim();
     if (!text || this.data.sending) return;
 
-    const userMsg: CoachMessage = { id: ++seq, role: 'user', content: text };
+    const clientTurnId = nextClientTurnId();
+    const userMsg: CoachMessage = { id: ++seq, role: 'user', content: text, clientTurnId };
     this.setData({
       messages: [...this.data.messages, userMsg],
       input: '',
       sending: true,
       scrollIntoId: `msg-${userMsg.id}`,
     });
+    await this.doSend(text, clientTurnId, userMsg.id);
+  },
 
-    let reply = '收到。让我结合你的近期训练和身体状态，再给你具体建议。';
+  onRetry(e: WechatMiniprogram.TouchEvent) {
+    if (this.data.sending) return;
+    const id = e.currentTarget.dataset.id as number;
+    const msg = this.data.messages.find((m) => m.id === id);
+    if (!msg || msg.role !== 'user' || !msg.clientTurnId) return;
+    // 重试复用上一轮的 client_turn_id：服务端幂等，命中则返回同 turn，不重开生成。
+    void this.doSend(msg.content, msg.clientTurnId, msg.id);
+  },
+
+  // 发一条消息（新发送 or 重试）。成功后追加 assistant 回复并清除失败态；
+  // 失败给该 user 消息打 failed 标记，展示重试按钮。
+  async doSend(text: string, clientTurnId: string, userMsgId: number) {
+    this.setData({ sending: true });
     try {
-      const res = await sendCoachChatMessage(text);
+      const res = await sendCoachChatMessage(text, 'mini-default', clientTurnId);
       const content = res.status === 'completed' ? res.message : undefined;
-      if (content && content.trim()) reply = content.trim();
+      if (!content || !content.trim()) {
+        throw new Error('no_answer');
+      }
+      const assistantMsg: CoachMessage = {
+        id: ++seq,
+        role: 'assistant',
+        content,
+        html: markdownToHtml(content),
+      };
+      const messages = this.data.messages.map((m) =>
+        m.id === userMsgId ? { ...m, failed: false } : m,
+      );
+      this.setData({
+        messages: [...messages, assistantMsg],
+        sending: false,
+        scrollIntoId: `msg-${assistantMsg.id}`,
+      });
     } catch {
-      // 后端不可用时保留默认回复，保证可预览。
+      const messages = this.data.messages.map((m) =>
+        m.id === userMsgId ? { ...m, failed: true } : m,
+      );
+      this.setData({
+        messages,
+        sending: false,
+        scrollIntoId: `msg-${userMsgId}`,
+      });
     }
-
-    const assistantMsg: CoachMessage = {
-      id: ++seq,
-      role: 'assistant',
-      content: reply,
-      html: markdownToHtml(reply),
-    };
-    this.setData({
-      messages: [...this.data.messages, assistantMsg],
-      sending: false,
-      scrollIntoId: `msg-${assistantMsg.id}`,
-    });
   },
 
   onMenuTap() {

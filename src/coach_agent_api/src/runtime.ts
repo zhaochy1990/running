@@ -41,6 +41,7 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
         jwtVerifier,
         turnCoordinator: persistence.turnCoordinator,
         coachInvoker: coachInvoker,
+        checkpointer: persistence.checkpointer,
       }),
       close: () => Promise.all([dataProvider.close(), persistence?.close()]).then(() => undefined),
     };

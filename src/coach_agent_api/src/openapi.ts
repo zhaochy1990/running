@@ -67,6 +67,36 @@ export const OPENAPI_DOCUMENT = {
         },
       },
     },
+    "/api/users/me/coach/sessions/{session_id}/messages": {
+      get: {
+        tags: ["Coach"],
+        operationId: "getCoachSessionMessages",
+        summary: "Load the conversation history for a Coach session",
+        description:
+          "The authenticated JWT subject determines the user; only session_id is passed, the thread is derived server-side.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "session_id",
+            in: "path",
+            required: true,
+            schema: { $ref: "#/components/schemas/TurnIdentifier" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "The session history (user and assistant turns only).",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/SessionHistoryResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The session_id is invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -163,6 +193,28 @@ export const OPENAPI_DOCUMENT = {
       },
       ChatResponse: {
         oneOf: [{ $ref: "#/components/schemas/CompletedChatResponse" }, { $ref: "#/components/schemas/NeedsInputChatResponse" }],
+      },
+      SessionHistoryResponse: {
+        type: "object",
+        required: ["session_id", "thread_id", "messages"],
+        properties: {
+          session_id: { $ref: "#/components/schemas/TurnIdentifier" },
+          thread_id: { type: "string" },
+          messages: {
+            type: "array",
+            items: { $ref: "#/components/schemas/SessionHistoryMessage" },
+          },
+        },
+        additionalProperties: false,
+      },
+      SessionHistoryMessage: {
+        type: "object",
+        required: ["role", "content"],
+        properties: {
+          role: { type: "string", enum: ["user", "assistant"] },
+          content: { type: "string" },
+        },
+        additionalProperties: false,
       },
       CompletedChatResponse: {
         type: "object",

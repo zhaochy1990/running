@@ -32,6 +32,12 @@
             selectable="{{true}}"
           />
         </view>
+        <view
+          wx:if="{{item.role === 'user' && item.failed}}"
+          class="coach-msg__retry"
+          data-id="{{item.id}}"
+          bindtap="onRetry"
+        >发送失败，点击重试</view>
       </view>
     </scroll-view>
 

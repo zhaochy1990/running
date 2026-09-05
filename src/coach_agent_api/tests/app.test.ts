@@ -556,3 +556,154 @@ test("chat rejects empty interrupt answers", async () => {
   });
   assert.equal(response.status, 400);
 });
+
+// ── Session history ─────────────────────────────────────────────────────────
+
+import type { CheckpointTuple } from "@stride/coach-agent";
+import { toPublicHistory } from "../src/publicResponse.js";
+
+type StubMessage = Record<string, unknown> & { content: unknown };
+
+function stubCheckpointer(messages: StubMessage[]) {
+  return {
+    async getTuple() {
+      return {
+        checkpoint: { channel_values: { messages } },
+      } as unknown as CheckpointTuple;
+    },
+  };
+}
+
+test("history requires a valid bearer token", async () => {
+  const app = createApp({
+    jwtVerifier: {
+      async verify() {
+        throw new AuthError("missing");
+      },
+    },
+    coachInvoker: {
+      async invoke() {
+        throw new Error("must not invoke");
+      },
+    },
+    checkpointer: stubCheckpointer([]),
+  });
+  const response = await app.request("/api/users/me/coach/sessions/session-1/messages", { method: "GET" });
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.get("www-authenticate"), "Bearer");
+});
+
+test("history derives the thread from the verified token and maps messages", async () => {
+  let requestedThread: string | undefined;
+  const app = createApp({
+    jwtVerifier: {
+      async verify() {
+        return { userId: "athlete-1" };
+      },
+    },
+    coachInvoker: {
+      async invoke() {
+        throw new Error("must not invoke");
+      },
+    },
+    checkpointer: {
+      async getTuple(config) {
+        requestedThread = config.configurable.thread_id;
+        return {
+          checkpoint: {
+            channel_values: {
+              messages: [
+                { type: "human", content: '{"timestamp":"2026-05-09T14:30:00+08:00","message":"最近状态怎么样？"}' },
+                { type: "ai", content: "训练状态稳定。" },
+                { type: "ai", tool_calls: [{ name: "x" }], content: "工具调用中间步骤" },
+                { type: "tool", content: "私密工具输出" },
+              ],
+            },
+          },
+        } as unknown as CheckpointTuple;
+      },
+    },
+  });
+  const response = await app.request("/api/users/me/coach/sessions/session-2/messages", {
+    method: "GET",
+    headers: { authorization: "Bearer signed" },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(requestedThread, "athlete-1:coach:session-2");
+  assert.deepEqual(await response.json(), {
+    session_id: "session-2",
+    thread_id: "athlete-1:coach:session-2",
+    messages: [
+      { role: "user", content: "最近状态怎么样？" },
+      { role: "assistant", content: "训练状态稳定。" },
+    ],
+  });
+});
+
+test("history returns an empty list when the thread has no checkpoint", async () => {
+  const app = createApp({
+    jwtVerifier: {
+      async verify() {
+        return { userId: "athlete-1" };
+      },
+    },
+    coachInvoker: {
+      async invoke() {
+        throw new Error("must not invoke");
+      },
+    },
+    checkpointer: {
+      async getTuple() {
+        return undefined;
+      },
+    },
+  });
+  const response = await app.request("/api/users/me/coach/sessions/session-1/messages", {
+    method: "GET",
+    headers: { authorization: "Bearer signed" },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    session_id: "session-1",
+    thread_id: "athlete-1:coach:session-1",
+    messages: [],
+  });
+});
+
+test("history rejects an invalid session id", async () => {
+  const app = createApp({
+    jwtVerifier: {
+      async verify() {
+        return { userId: "athlete-1" };
+      },
+    },
+    coachInvoker: {
+      async invoke() {
+        throw new Error("must not invoke");
+      },
+    },
+    checkpointer: stubCheckpointer([]),
+  });
+  const response = await app.request("/api/users/me/coach/sessions/bad%20id/messages", {
+    method: "GET",
+    headers: { authorization: "Bearer signed" },
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "invalid_session_id" });
+});
+
+test("toPublicHistory unwraps user JSON, skips tool reasoning, and joins text blocks", () => {
+  assert.deepEqual(
+    toPublicHistory([
+      { type: "human", content: '{"message":"a"}' },
+      { type: "ai", content: [{ type: "text", text: "line1" }, { type: "text", text: "line2" }] },
+      { type: "ai", tool_calls: [{ name: "x" }], content: "intermediate" },
+      { type: "human", content: "plain not json" },
+    ]),
+    [
+      { role: "user", content: "a" },
+      { role: "assistant", content: "line1\nline2" },
+      { role: "user", content: "plain not json" },
+    ],
+  );
+});

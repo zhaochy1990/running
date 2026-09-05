@@ -5,8 +5,7 @@
 // 模型输出里的 <script> / onerror 等不会成为标记。
 //
 // 支持子集：段落 / 标题 / 加粗 / 斜体 / 行内 code / 围栏代码块 / 无序·有序列表 /
-// 引用 / 分割线 / 链接。默认不解析 GFM 表格（coach 回复罕见；
-// 需要时各端统一换 marked.js 再补）。
+// 引用 / 分割线 / 链接 / GFM 表格。原始 HTML 一律 inert。
 
 function escapeHtml(s: string): string {
   return s
@@ -39,6 +38,48 @@ function isBlockStart(line: string): boolean {
   );
 }
 
+// GFM 表格。仅当 `| a | b |`（含 `|`）的下一个非空行是 `| --- |` 分隔行时才判定
+// 为表格；身体行吸收后续含 `|` 的连续行。单元格内容经 escape+inline 渲染，避免注入。
+function parseTable(lines: string[], i: number): { html: string; next: number } | null {
+  const header = lines[i].trim();
+  const delim = (lines[i + 1] || '').trim();
+  if (!header.startsWith('|') || !delim.startsWith('|')) return null;
+
+  const stripCells = (s: string): string[] =>
+    s.replace(/^\|/, '').replace(/\|$/, '').split('|');
+  const delimCells = stripCells(delim).map((s) => s.trim());
+  if (!delimCells.length || !delimCells.every((c) => /^:?-+:?$/.test(c))) return null;
+
+  const aligns = delimCells.map((c) => {
+    const left = c.startsWith(':');
+    const right = c.endsWith(':');
+    return left && right ? 'center' : left ? 'left' : right ? 'right' : '';
+  });
+
+  const renderRow = (raw: string, tag: 'th' | 'td'): string =>
+    `<tr>${stripCells(raw)
+      .map((s, idx) => {
+        const a = aligns[idx] || '';
+        const style = a ? ` style="text-align:${a};"` : '';
+        return `<${tag}${style}>${inline(escapeHtml(s.trim()))}</${tag}>`;
+      })
+      .join('')}</tr>`;
+
+  const body: string[] = [];
+  let j = i + 2;
+  while (j < lines.length) {
+    const t = lines[j].trim();
+    if (!t || !t.includes('|')) break;
+    body.push(renderRow(lines[j], 'td'));
+    j += 1;
+  }
+
+  return {
+    html: `<table><thead>${renderRow(header, 'th')}</thead><tbody>${body.join('')}</tbody></table>`,
+    next: j,
+  };
+}
+
 export function markdownToHtml(src: string): string {
   if (!src) return '';
   const lines = src.replace(/\r\n?/g, '\n').split('\n');
@@ -51,6 +92,16 @@ export function markdownToHtml(src: string): string {
     if (t === '') {
       i += 1;
       continue;
+    }
+
+    // GFM 表格
+    if (t.startsWith('|')) {
+      const tbl = parseTable(lines, i);
+      if (tbl) {
+        out.push(tbl.html);
+        i = tbl.next;
+        continue;
+      }
     }
 
     // 围栏代码块
@@ -136,6 +187,8 @@ export function demoMarkdown(): void {
     ['`code`', '<p><code>code</code></p>'],
     ['<script>alert(1)</script>', '<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>'],
     ['第一行\n**加粗**\n\n# H2', '<p>第一行<br/><strong>加粗</strong></p><h1>H2</h1>'],
+    ['| a | b |\n| --- | --- |\n| 1 | 2 |', '<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>'],
+    ['| k | v |\n| :- | -: |\n| x | y |', '<table><thead><tr><th style="text-align:left;">k</th><th style="text-align:right;">v</th></tr></thead><tbody><tr><td style="text-align:left;">x</td><td style="text-align:right;">y</td></tr></tbody></table>'],
   ];
   for (const [input, expected] of cases) {
     const got = markdownToHtml(input);
