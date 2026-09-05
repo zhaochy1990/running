@@ -107,4 +107,3 @@ function decodeUserMessage(value: Record<string, unknown>): string {
   }
   return text;
 }
-

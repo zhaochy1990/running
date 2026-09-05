@@ -72,8 +72,7 @@ export const OPENAPI_DOCUMENT = {
         tags: ["Coach"],
         operationId: "getCoachSessionMessages",
         summary: "Load the conversation history for a Coach session",
-        description:
-          "The authenticated JWT subject determines the user; only session_id is passed, the thread is derived server-side.",
+        description: "The authenticated JWT subject determines the user; only session_id is passed, the thread is derived server-side.",
         security: [{ bearerAuth: [] }],
         parameters: [
           {

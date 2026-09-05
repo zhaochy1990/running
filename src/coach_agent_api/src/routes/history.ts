@@ -1,5 +1,5 @@
-import type { Hono } from "hono";
 import type { CheckpointTuple } from "@stride/coach-agent";
+import type { Hono } from "hono";
 import type { AuthEnv } from "../auth.js";
 import { toPublicHistory } from "../publicResponse.js";
 
@@ -15,10 +15,7 @@ export interface ThreadHistoryReader {
  * The client passes only `session_id`; the thread is derived from the JWT as
  * `{sub}:coach:{session_id}` so a client can't reach another user's thread.
  */
-export function registerHistoryRoutes(
-  app: Hono<AuthEnv>,
-  dependencies: { checkpointer: ThreadHistoryReader },
-): void {
+export function registerHistoryRoutes(app: Hono<AuthEnv>, dependencies: { checkpointer: ThreadHistoryReader }): void {
   app.get("/api/users/me/coach/sessions/:sessionId/messages", async (context) => {
     const userId = context.get("userId");
     const sessionId = context.req.param("sessionId");
