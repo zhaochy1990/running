@@ -168,3 +168,43 @@ test("an interrupt checkpoint recovers the needs-input response", async () => {
     },
   });
 });
+
+test("listThreadsForUser groups by thread prefix and returns first-user-message previews", async () => {
+  const latest = checkpoint([
+    { type: "human", content: '{"message":"最近状态怎么样？"}' },
+    { type: "ai", content: "训练状态稳定。" },
+  ]);
+  const pool = {
+    async query(sql: string) {
+      // Group-by listing query (has GROUP BY / MAX(created_at)).
+      if (sql.includes("GROUP BY thread_id")) {
+        return [
+          [
+            { thread_id: "athlete-1:coach:session-2", updated_at: "2026-05-10T09:00:00+08:00" },
+            { thread_id: "athlete-1:coach:session-1", updated_at: "2026-05-09T09:00:00+08:00" },
+          ],
+        ];
+      }
+      // Per-thread getTuple: return the latest checkpoint row.
+      if (sql.includes("ORDER BY checkpoint_id DESC LIMIT 1")) {
+        return [
+          [
+            {
+              checkpoint_id: "latest",
+              parent_checkpoint_id: null,
+              checkpoint: Buffer.from(JSON.stringify(latest)),
+              metadata: Buffer.from(JSON.stringify({ source: "loop", step: 1, parents: {} })),
+              type: "json",
+            },
+          ],
+        ];
+      }
+      return [[]];
+    },
+  } as never;
+  const saver = new MySqlSaver(pool);
+  assert.deepEqual(await saver.listThreadsForUser("athlete-1"), [
+    { sessionId: "session-2", updatedAt: "2026-05-10T09:00:00+08:00", preview: "最近状态怎么样？" },
+    { sessionId: "session-1", updatedAt: "2026-05-09T09:00:00+08:00", preview: "最近状态怎么样？" },
+  ]);
+});

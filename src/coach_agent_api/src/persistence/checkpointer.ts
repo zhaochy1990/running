@@ -21,7 +21,7 @@ import type {
 } from "@stride/coach-agent";
 import { BaseCheckpointSaver, copyCheckpoint, getCheckpointId, WRITES_IDX_MAP } from "@stride/coach-agent";
 import type { Pool, RowDataPacket } from "mysql2/promise";
-import { tryToPublicResponse } from "../publicResponse.js";
+import { tryToPublicResponse, toPublicHistory } from "../publicResponse.js";
 import type { TurnRecovery } from "../turn/receiptStore.js";
 
 export class MySqlSaver extends BaseCheckpointSaver {
@@ -57,6 +57,49 @@ export class MySqlSaver extends BaseCheckpointSaver {
         PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
       ) ENGINE=InnoDB
     `);
+  }
+
+  /**
+   * List every coach thread belonging to a user, newest first, with a preview
+   * derived from the thread's first user message and the latest checkpoint time.
+   *
+   * Threads are stored as `{user}:coach:{session_id}`. Grouping on that prefix
+   * gives one row per session; the preview avoids a per-thread checkpoint decode
+   * by reading only the newest checkpoint's messages (history accumulates in the
+   * same thread, so the first user text is still present).
+   */
+  async listThreadsForUser(
+    userId: string,
+  ): Promise<{ sessionId: string; updatedAt: string | null; preview: string }[]> {
+    const prefix = `${userId}:coach:`;
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT thread_id, MAX(created_at) AS updated_at
+         FROM checkpoints
+        WHERE thread_id LIKE ?
+        GROUP BY thread_id
+        ORDER BY updated_at DESC`,
+      [`${escapeLike(prefix)}%`],
+    );
+    const out: { sessionId: string; updatedAt: string | null; preview: string }[] = [];
+    for (const row of rows) {
+      const threadId = row.thread_id as string;
+      const sessionId = threadId.slice(prefix.length);
+      if (!sessionId) continue;
+      let preview = "";
+      const tuple = await this.getTuple({ configurable: { thread_id: threadId } });
+      const messages = tuple?.checkpoint?.channel_values?.messages;
+      if (Array.isArray(messages)) {
+        const history = toPublicHistory(messages);
+        const firstUser = history.find((message) => message.role === "user");
+        preview = firstUser?.content ?? "";
+      }
+      out.push({
+        sessionId,
+        updatedAt: (row.updated_at as string | null) ?? null,
+        preview,
+      });
+    }
+    return out;
   }
 
   async getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined> {
@@ -286,4 +329,9 @@ export class MySqlSaver extends BaseCheckpointSaver {
 function checkpointMessages(checkpoint: Checkpoint | undefined): unknown[] {
   const messages = checkpoint?.channel_values.messages;
   return Array.isArray(messages) ? messages : [];
+}
+
+/** Escape LIKE wildcards so a user id / prefix can't match unintended rows. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }

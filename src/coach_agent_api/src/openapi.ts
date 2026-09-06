@@ -67,6 +67,27 @@ export const OPENAPI_DOCUMENT = {
         },
       },
     },
+    "/api/users/me/coach/sessions": {
+      get: {
+        tags: ["Coach"],
+        operationId: "listCoachSessions",
+        summary: "List the caller's Coach sessions (chat history)",
+        description:
+          "Returns one entry per Coach conversation, newest first, with a preview derived from the session's first user message. Pairs with the per-session messages endpoint.",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": {
+            description: "The caller's Coach sessions.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/SessionListResponse" },
+              },
+            },
+          },
+          "401": errorResponse("The bearer token is missing or invalid."),
+        },
+      },
+    },
     "/api/users/me/coach/sessions/{session_id}/messages": {
       get: {
         tags: ["Coach"],
@@ -192,6 +213,27 @@ export const OPENAPI_DOCUMENT = {
       },
       ChatResponse: {
         oneOf: [{ $ref: "#/components/schemas/CompletedChatResponse" }, { $ref: "#/components/schemas/NeedsInputChatResponse" }],
+      },
+      SessionListResponse: {
+        type: "object",
+        required: ["sessions"],
+        properties: {
+          sessions: {
+            type: "array",
+            items: { $ref: "#/components/schemas/SessionListEntry" },
+          },
+        },
+        additionalProperties: false,
+      },
+      SessionListEntry: {
+        type: "object",
+        required: ["session_id", "updated_at", "preview"],
+        properties: {
+          session_id: { $ref: "#/components/schemas/TurnIdentifier" },
+          updated_at: { type: ["string", "null"], description: "ISO-8601 timestamp of the session's latest message." },
+          preview: { type: "string", description: "The session's first user message, empty when none yet." },
+        },
+        additionalProperties: false,
       },
       SessionHistoryResponse: {
         type: "object",

@@ -5,7 +5,7 @@ import { type AuthEnv, createAuthMiddleware, type JwtVerifier } from "./auth.js"
 import type { CoachInvoker } from "./coach/coachInvoker.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerHealthRoutes } from "./routes/health.js";
-import { registerHistoryRoutes, type ThreadHistoryReader } from "./routes/history.js";
+import { registerHistoryRoutes, registerSessionListRoutes, type ThreadHistoryReader, type ThreadSessionReader } from "./routes/history.js";
 import { registerSwaggerRoutes } from "./routes/swagger.js";
 import type { TurnCoordinator } from "./turn/coordinator.js";
 import { createInMemoryTurnCoordinator } from "./turn/index.js";
@@ -37,6 +37,8 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
 
   if (dependencies.checkpointer) {
     app.use("/api/users/me/coach/sessions/*", createAuthMiddleware(dependencies.jwtVerifier));
+    app.use("/api/users/me/coach/sessions", createAuthMiddleware(dependencies.jwtVerifier));
+    registerSessionListRoutes(app, { checkpointer: dependencies.checkpointer as unknown as ThreadSessionReader });
     registerHistoryRoutes(app, { checkpointer: dependencies.checkpointer });
   }
 

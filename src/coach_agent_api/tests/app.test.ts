@@ -692,6 +692,62 @@ test("history rejects an invalid session id", async () => {
   assert.deepEqual(await response.json(), { error: "invalid_session_id" });
 });
 
+test("session list requires a valid bearer token", async () => {
+  const app = createApp({
+    jwtVerifier: {
+      async verify() {
+        throw new AuthError("missing");
+      },
+    },
+    coachInvoker: {
+      async invoke() {
+        throw new Error("must not invoke");
+      },
+    },
+    checkpointer: stubCheckpointer([]),
+  });
+  const response = await app.request("/api/users/me/coach/sessions", { method: "GET" });
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.get("www-authenticate"), "Bearer");
+});
+
+test("session list scopes threads to the caller and maps session_id/preview", async () => {
+  let requestedUser: string | undefined;
+  const app = createApp({
+    jwtVerifier: {
+      async verify() {
+        return { userId: "athlete-1" };
+      },
+    },
+    coachInvoker: {
+      async invoke() {
+        throw new Error("must not invoke");
+      },
+    },
+    checkpointer: {
+      async listThreadsForUser(userId: string) {
+        requestedUser = userId;
+        return [
+          { sessionId: "session-2", updatedAt: "2026-05-10T09:00:00+08:00", preview: "最近状态怎么样？" },
+          { sessionId: "session-1", updatedAt: "2026-05-09T09:00:00+08:00", preview: "明天该怎么跑？" },
+        ];
+      },
+    } as never,
+  });
+  const response = await app.request("/api/users/me/coach/sessions", {
+    method: "GET",
+    headers: { authorization: "Bearer signed" },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(requestedUser, "athlete-1");
+  assert.deepEqual(await response.json(), {
+    sessions: [
+      { session_id: "session-2", updated_at: "2026-05-10T09:00:00+08:00", preview: "最近状态怎么样？" },
+      { session_id: "session-1", updated_at: "2026-05-09T09:00:00+08:00", preview: "明天该怎么跑？" },
+    ],
+  });
+});
+
 test("toPublicHistory unwraps user JSON, skips tool reasoning, and joins text blocks", () => {
   assert.deepEqual(
     toPublicHistory([

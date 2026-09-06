@@ -61,3 +61,23 @@ export function fetchCoachHistory(sessionId = 'mini-default'): Promise<CoachHist
     `${COACH_BASE_URL}/api/users/me/coach/sessions/${encodeURIComponent(sessionId)}/messages`,
   );
 }
+
+// GET /api/users/me/coach/sessions —— 列出当前用户所有教练会话（历史抽屉用）。
+// 每项含 session_id、updated_at、preview（首条用户消息，可为空）。
+export interface CoachSessionSummary {
+  session_id: string;
+  updated_at?: string | null;
+  preview?: string;
+}
+
+export interface CoachSessionsResponse {
+  sessions: CoachSessionSummary[];
+}
+
+/**
+ * 拉取当前用户的教练会话列表（新→旧）。供历史抽屉展示；
+ * 后端未部署/网络异常时由调用方回退到本地列表，不阻塞会话功能。
+ */
+export function fetchCoachSessions(): Promise<CoachSessionsResponse> {
+  return http.get<CoachSessionsResponse>(`${COACH_BASE_URL}/api/users/me/coach/sessions`);
+}

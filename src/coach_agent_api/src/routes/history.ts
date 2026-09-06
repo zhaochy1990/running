@@ -10,6 +10,35 @@ export interface ThreadHistoryReader {
   getTuple(config: { configurable: { thread_id: string } }): Promise<CheckpointTuple | undefined>;
 }
 
+/** Narrow checkpointer surface the sessions-list route needs; `MySqlSaver` satisfies it. */
+export interface ThreadSessionReader {
+  listThreadsForUser(userId: string): Promise<{ sessionId: string; updatedAt: string | null; preview: string }[]>;
+}
+
+/**
+ * GET /api/users/me/coach/sessions.
+ * Lists the caller's coach threads (one entry per session) newest first. This is
+ * the source for a chat-history drawer; the client passes the returned
+ * `session_id` to the per-session messages route.
+ */
+export function registerSessionListRoutes(
+  app: Hono<AuthEnv>,
+  dependencies: { checkpointer: ThreadSessionReader },
+): void {
+  app.get("/api/users/me/coach/sessions", async (context) => {
+    const userId = context.get("userId");
+    const threads = await dependencies.checkpointer.listThreadsForUser(userId);
+    return context.json({
+      sessions: threads.map((thread) => ({
+        session_id: thread.sessionId,
+        updated_at: thread.updatedAt,
+        preview: thread.preview,
+      })),
+    });
+  });
+}
+
+
 /**
  * GET /api/users/me/coach/sessions/{session_id}/messages.
  * The client passes only `session_id`; the thread is derived from the JWT as

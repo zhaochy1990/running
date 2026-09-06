@@ -51,7 +51,7 @@ export const REQUEST_TIMEOUT = 15000;
 
 // Coach 对话超时（毫秒）。coach turn 是 LLM 编排，可能明显慢于普通读接口，
 // 单独放宽（微信 60s 上限），避免快速误判失败落兜底文案。
-export const COACH_REQUEST_TIMEOUT = 2000;
+export const COACH_REQUEST_TIMEOUT = 120000;
 
 // token 过期前多少秒提前刷新
 export const TOKEN_REFRESH_LEAD_SECONDS = 60;
