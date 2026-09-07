@@ -108,6 +108,10 @@ Page<ProfilePageData, ProfilePageHandlers>({
 
   onRowTap(e: WechatMiniprogram.TouchEvent) {
     const key = e.currentTarget.dataset.key as string;
+    if (key === 'watch') {
+      wx.navigateTo({ url: '/pages/watch/watch' });
+      return;
+    }
     wx.showToast({ title: `「${key}」建设中`, icon: 'none' });
   },
 

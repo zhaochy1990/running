@@ -7,7 +7,8 @@
     "pages/activity-detail/activity-detail",
     "pages/health/health",
     "pages/coach/coach",
-    "pages/profile/profile"
+    "pages/profile/profile",
+    "pages/watch/watch"
   ],
   "window": {
     "backgroundTextStyle": "light",

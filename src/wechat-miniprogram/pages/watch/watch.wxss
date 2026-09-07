@@ -1,0 +1,447 @@
+/* ============================================================
+   手表管理页 —— 深色 STRIDE 主题（与 profile / activity-detail 一致）
+   ============================================================ */
+
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #07080a;
+  display: flex;
+  flex-direction: column;
+}
+
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: #07080a;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.top-bar__inner {
+  height: 128rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.top-bar__btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top-bar__btn--spacer {
+  width: 88rpx;
+}
+
+.top-bar__icon {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+.top-bar__icon--back {
+  transform: rotate(180deg);
+}
+
+.top-bar__title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-bar__title {
+  font-size: 34rpx;
+  line-height: 48rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: #ffb3af;
+}
+
+.top-bar__subtitle {
+  font-size: 20rpx;
+  line-height: 32rpx;
+  color: rgba(225, 191, 188, 0.8);
+}
+
+.content {
+  padding: 0 40rpx 48rpx;
+}
+
+/* ---------- 卡片 ---------- */
+
+.card {
+  background: #101111;
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-radius: 24rpx;
+  padding: 32rpx;
+  margin-bottom: 48rpx;
+}
+
+.card--danger {
+  border-color: rgba(255, 99, 99, 0.3);
+  background: rgba(255, 99, 99, 0.05);
+}
+
+.card__label {
+  font-size: 20rpx;
+  letter-spacing: 2rpx;
+  text-transform: uppercase;
+  color: #9c9c9d;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.card__label--danger {
+  color: #ff6363;
+}
+
+/* ---------- 提示条 ---------- */
+
+.banner {
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  font-size: 24rpx;
+  margin-bottom: 32rpx;
+}
+
+.banner--error {
+  background: rgba(255, 99, 99, 0.1);
+  border: 1rpx solid rgba(255, 99, 99, 0.2);
+  color: #ff6363;
+}
+
+.banner--success {
+  background: rgba(95, 201, 146, 0.1);
+  border: 1rpx solid rgba(95, 201, 146, 0.3);
+  color: #5fc992;
+}
+
+/* ---------- 当前绑定 ---------- */
+
+.watch-brand {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding-bottom: 24rpx;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
+}
+
+.watch-brand__icon-wrap {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 20rpx;
+  background: rgba(95, 201, 146, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.watch-brand__icon {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+.watch-brand__meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.watch-brand__name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.watch-brand__email {
+  font-size: 20rpx;
+  color: #9c9c9d;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watch-status {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 20rpx;
+  color: #5fc992;
+  flex-shrink: 0;
+}
+
+.watch-status__dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #5fc992;
+}
+
+.watch-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 0 0;
+  font-size: 24rpx;
+}
+
+.watch-meta-row__label {
+  color: #9c9c9d;
+}
+
+.watch-meta-row__value {
+  color: #e3e2e5;
+}
+
+.watch-caps {
+  padding-top: 20rpx;
+  border-top: 1rpx solid rgba(255, 255, 255, 0.06);
+  margin-top: 16rpx;
+}
+
+.watch-caps__label {
+  font-size: 20rpx;
+  color: #9c9c9d;
+}
+
+.watch-caps__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
+.watch-caps__tag {
+  font-size: 18rpx;
+  padding: 8rpx 14rpx;
+  border-radius: 8rpx;
+  background: #07080a;
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  color: #9c9c9d;
+}
+
+/* ---------- 未绑定空态 ---------- */
+
+.watch-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48rpx 0 32rpx;
+  gap: 8rpx;
+}
+
+.watch-empty__icon {
+  font-size: 72rpx;
+  opacity: 0.3;
+}
+
+.watch-empty__title {
+  font-size: 26rpx;
+  color: #9c9c9d;
+}
+
+.watch-empty__sub {
+  font-size: 22rpx;
+  color: #6a6b6c;
+}
+
+/* ---------- 绑定：provider 选择 ---------- */
+
+.provider-grid {
+  display: flex;
+  gap: 24rpx;
+  margin-top: 8rpx;
+}
+
+.provider-btn {
+  flex: 1;
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-radius: 20rpx;
+  padding: 32rpx 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.provider-btn:active {
+  border-color: rgba(95, 201, 146, 0.5);
+  background: rgba(95, 201, 146, 0.05);
+}
+
+.provider-btn__name {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+}
+
+.provider-btn__sub {
+  font-size: 22rpx;
+  color: #9c9c9d;
+}
+
+/* ---------- 绑定表单 ---------- */
+
+.bind-form__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+}
+
+.bind-form__title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.bind-form__switch {
+  font-size: 22rpx;
+  color: #9c9c9d;
+}
+
+.bind-form__switch:active {
+  color: #e3e2e5;
+}
+
+.field {
+  margin-bottom: 24rpx;
+}
+
+.field__input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 88rpx;
+  line-height: 88rpx;
+  padding: 0 24rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-radius: 16rpx;
+  background: #07080a;
+  color: #e3e2e5;
+  font-size: 26rpx;
+}
+
+.field__input--picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.field__chevron {
+  width: 32rpx;
+  height: 32rpx;
+  opacity: 0.5;
+}
+
+.field__placeholder {
+  color: #6a6b6c;
+}
+
+/* ---------- 按钮 ---------- */
+
+.btn {
+  height: 88rpx;
+  line-height: 88rpx;
+  padding: 0;
+  margin: 0;
+  border-radius: 16rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  text-align: center;
+}
+
+.btn::after {
+  border: none;
+}
+
+.btn--full {
+  width: 100%;
+}
+
+.btn--primary {
+  background: #5fc992;
+  color: #07080a;
+}
+
+.btn--primary[disabled] {
+  background: rgba(95, 201, 146, 0.4);
+  color: rgba(7, 8, 10, 0.5);
+}
+
+.btn--danger {
+  background: #ff6363;
+  color: #fff;
+}
+
+.btn--danger[disabled] {
+  background: rgba(255, 99, 99, 0.4);
+}
+
+.btn--outline-danger {
+  border: 1rpx solid rgba(255, 99, 99, 0.4);
+  background: rgba(255, 99, 99, 0.08);
+  color: #ff6363;
+}
+
+.btn--ghost {
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  background: #101111;
+  color: #9c9c9d;
+}
+
+.disconnect-desc {
+  font-size: 22rpx;
+  color: #9c9c9d;
+  line-height: 34rpx;
+  margin-bottom: 24rpx;
+}
+
+.disconnect-confirm {
+  display: flex;
+  gap: 24rpx;
+}
+
+.disconnect-confirm .btn {
+  flex: 1;
+}
+
+/* ---------- 加载态 ---------- */
+
+.state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+  padding: 96rpx 0;
+}
+
+.state-card__text {
+  font-size: 24rpx;
+  color: #9c9c9d;
+}
+
+.spinner {
+  width: 48rpx;
+  height: 48rpx;
+  border: 4rpx solid rgba(95, 201, 146, 0.3);
+  border-top-color: #5fc992;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
