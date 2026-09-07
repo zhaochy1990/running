@@ -53,6 +53,27 @@ export interface Activity {
   verticalRatioPct: number | null;
   pauses: unknown | null;
   provider: string;
+  /** Per-activity laps/segments; `[]` when the watch did not record any */
+  laps: ActivityLap[];
+}
+
+/** One lap/segment of a watch activity. Field names mirror the `laps` table. */
+export interface ActivityLap {
+  lapIndex: number;
+  lapType: string | null;
+  distanceM: number | null;
+  durationS: number | null;
+  avgPace: number | null;
+  adjustedPace: number | null;
+  avgHr: number | null;
+  maxHr: number | null;
+  avgCadence: number | null;
+  avgPower: number | null;
+  ascentM: number | null;
+  descentM: number | null;
+  exerciseType: number | null;
+  exerciseNameKey: string | null;
+  mode: number | null;
 }
 
 export interface DailyTrainingLoad {

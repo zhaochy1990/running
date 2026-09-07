@@ -2,6 +2,7 @@
 import type {
   ActiveMasterPlanMetadata,
   Activity,
+  ActivityLap,
   DailyRecovery,
   DailyTrainingLoad,
   DataProvider,
@@ -203,7 +204,33 @@ export class MySqlDataProvider implements DataProvider {
         ORDER BY a.date ASC`,
       [userId, startDay, endDay],
     );
-    return rows.map(rowToActivity);
+    const activities = rows.map(rowToActivity);
+    if (activities.length === 0) {
+      return [];
+    }
+    // Fetch every activity's laps in one pass and group by label_id so the
+    // response carries per-segment data without N+1 queries.
+    const labelIds = [...new Set(rows.map((row) => row.label_id as string))];
+    const placeholders = labelIds.map(() => "?").join(", ");
+    const [lapRows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT label_id, lap_index, lap_type, distance_m, duration_s, avg_pace,
+              adjusted_pace, avg_hr, max_hr, avg_cadence, avg_power, ascent_m,
+              descent_m, exercise_type, exercise_name_key, mode
+         FROM laps
+        WHERE user_id = ? AND label_id IN (${placeholders})
+        ORDER BY label_id, lap_index, lap_type`,
+      [userId, ...labelIds],
+    );
+    const lapsByLabel = new Map<string, ActivityLap[]>();
+    for (const row of lapRows) {
+      const list = lapsByLabel.get(row.label_id as string) ?? [];
+      list.push(rowToActivityLap(row));
+      lapsByLabel.set(row.label_id as string, list);
+    }
+    return activities.map((activity) => ({
+      ...activity,
+      laps: lapsByLabel.get(activity.labelId) ?? [],
+    }));
   }
 
   /**
@@ -432,6 +459,27 @@ function rowToActivity(row: RowDataPacket): Activity {
     verticalRatioPct: (row.vertical_ratio_pct ?? null) as number | null,
     pauses: (row.pauses ?? null) as unknown | null,
     provider: row.provider as string,
+    laps: [],
+  };
+}
+
+function rowToActivityLap(row: RowDataPacket): ActivityLap {
+  return {
+    lapIndex: row.lap_index as number,
+    lapType: (row.lap_type ?? null) as string | null,
+    distanceM: (row.distance_m ?? null) as number | null,
+    durationS: (row.duration_s ?? null) as number | null,
+    avgPace: (row.avg_pace ?? null) as number | null,
+    adjustedPace: (row.adjusted_pace ?? null) as number | null,
+    avgHr: (row.avg_hr ?? null) as number | null,
+    maxHr: (row.max_hr ?? null) as number | null,
+    avgCadence: (row.avg_cadence ?? null) as number | null,
+    avgPower: (row.avg_power ?? null) as number | null,
+    ascentM: (row.ascent_m ?? null) as number | null,
+    descentM: (row.descent_m ?? null) as number | null,
+    exerciseType: (row.exercise_type ?? null) as number | null,
+    exerciseNameKey: (row.exercise_name_key ?? null) as string | null,
+    mode: (row.mode ?? null) as number | null,
   };
 }
 

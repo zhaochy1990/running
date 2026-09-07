@@ -129,6 +129,9 @@ test("activity reads do not expose vendor-derived metrics to Coach", async () =>
   let sql = "";
   const provider = new MySqlDataProvider({
     async query(query: string) {
+      if (query.includes("FROM laps")) {
+        return [[], []];
+      }
       sql = query;
       return [
         [
@@ -150,11 +153,51 @@ test("activity reads do not expose vendor-derived metrics to Coach", async () =>
   } as never);
   const [activity] = await provider.getActivitiesByDateRange("athlete", "2026-08-01", "2026-08-01");
   assert.equal(activity?.strideSessionClass, "tempo");
+  assert.deepEqual(activity?.laps, []);
   assert.match(sql, /t.training_dose AS stride_dose/);
   assert.match(sql, /t.session_class AS stride_session_class/);
   for (const key of ["trainingLoad", "vo2max", "aerobicEffect", "anaerobicEffect", "trainKind"]) {
     assert.equal(Object.hasOwn(activity ?? {}, key), false);
   }
+});
+
+test("activity reads attach laps grouped by label_id", async () => {
+  const calls: Array<{ sql: string }> = [];
+  const provider = new MySqlDataProvider({
+    async query(query: string) {
+      calls.push({ sql: query });
+      if (query.includes("FROM laps")) {
+        return [
+          [
+            {
+              label_id: "run-1",
+              lap_index: 1,
+              lap_type: "autoKm",
+              distance_m: 1000,
+              duration_s: 300,
+              avg_pace: 300,
+              avg_hr: 160,
+            },
+            {
+              label_id: "run-1",
+              lap_index: 2,
+              lap_type: "autoKm",
+              distance_m: 1000,
+              duration_s: 320,
+              avg_pace: 320,
+              avg_hr: 162,
+            },
+          ],
+          [],
+        ];
+      }
+      return [[{ user_id: "athlete", label_id: "run-1", date: new Date("2026-08-01T00:00:00Z"), provider: "coros" }], []];
+    },
+  } as never);
+  const [activity] = await provider.getActivitiesByDateRange("athlete", "2026-08-01", "2026-08-01");
+  assert.equal(activity?.laps?.length, 2);
+  assert.equal(activity?.laps?.[1]?.lapIndex, 2);
+  assert.match(calls[1]?.sql ?? "", /FROM laps[\s\S]*label_id IN \(\?\)/);
 });
 
 test("date-range reads reject a reversed start>end interval before querying", async () => {

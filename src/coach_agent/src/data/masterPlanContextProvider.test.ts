@@ -175,6 +175,7 @@ test("context provider excludes trail-labelled outdoor activities from road-run 
     verticalRatioPct: null,
     pauses: null,
     provider: "coros",
+    laps: [],
   };
   const road = {
     ...trail,
@@ -325,6 +326,7 @@ test("context provider counts STRIDE session class without vendor train kind", a
     verticalRatioPct: null,
     pauses: null,
     provider: "coros",
+    laps: [],
   };
   const provider = new DataProviderMasterPlanContextProvider({
     async getUserProfile() {

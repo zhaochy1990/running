@@ -82,7 +82,7 @@ export function createActivitiesTools(store: DataProvider): StructuredTool[] {
     {
       name: "get_activities_by_date_range",
       description:
-        "获取运动员在某个日期区间（Asia/Shanghai 日历日，含起止两端）记录的所有运动，按时间最早在前。" +
+        "获取运动员在某个日期区间（Asia/Shanghai 日历日，含起止两端）记录的所有运动，按时间最早在前；每条运动附带分段数据（`laps`，分段可能为空）。" +
         "startDay 必填；endDay 缺省为 runtime context 的 asof。回答“最近状态/最近跑得怎么样”时，围绕 asof 向前查询，endDay 留空即可。",
       schema: getActivitiesByDateRangeSchema,
       handler: (input, runtime) => impl.getActivitiesByDateRange(input, runtime),

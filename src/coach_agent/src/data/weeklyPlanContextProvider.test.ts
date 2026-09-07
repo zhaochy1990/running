@@ -37,6 +37,7 @@ const activity: Activity = {
   verticalRatioPct: null,
   pauses: null,
   provider: "coros",
+  laps: [],
 };
 
 function providerUsingMySqlFeedback(store: ConstructorParameters<typeof DataProviderWeeklyPlanContextProvider>[0]): DataProviderWeeklyPlanContextProvider {
