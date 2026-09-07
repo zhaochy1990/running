@@ -200,6 +200,7 @@
   transition: transform 0.28s ease;
   display: flex;
   flex-direction: column;
+  padding-bottom: calc(120rpx + env(safe-area-inset-bottom));
 }
 
 .drawer--open {
@@ -208,7 +209,9 @@
 
 .drawer__header {
   padding: 24rpx 32rpx;
+  padding-bottom: 8rpx;
   border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
 }
 
 .drawer__footer {
@@ -216,9 +219,9 @@
   align-items: center;
   gap: 20rpx;
   padding: 24rpx 32rpx;
-  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
   background: #121316;
   border-top: 1rpx solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
 }
 
 .drawer__search {
@@ -266,6 +269,7 @@
 
 .drawer__list {
   flex: 1;
+  height: 0;
   min-height: 0;
   padding: 16rpx 0;
 }
