@@ -1,0 +1,154 @@
+<view class="page">
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">手表管理</view>
+        <view class="top-bar__subtitle">管理你的运动手表绑定</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <!-- 内容 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- 加载态 -->
+    <view wx:if="{{loading}}" class="state-card">
+      <view class="spinner"></view>
+      <view class="state-card__text">加载中…</view>
+    </view>
+
+    <block wx:else>
+      <!-- 错误 / 成功提示 -->
+      <view wx:if="{{error}}" class="banner banner--error">{{error}}</view>
+      <view wx:if="{{success}}" class="banner banner--success">{{success}}</view>
+
+      <!-- 当前绑定 -->
+      <view class="card">
+        <view class="card__label">当前绑定</view>
+
+        <view wx:if="{{connected}}" class="watch-body">
+          <view class="watch-brand">
+            <view class="watch-brand__icon-wrap">
+              <image class="watch-brand__icon" src="/assets/icons/watch.svg" mode="aspectFit" />
+            </view>
+            <view class="watch-brand__meta">
+              <view class="watch-brand__name">{{watch.provider_display_name || watch.provider}}</view>
+              <view class="watch-brand__email">{{watch.email || '—'}}</view>
+            </view>
+            <view class="watch-status">
+              <view class="watch-status__dot"></view>
+              <text>已连接</text>
+            </view>
+          </view>
+
+          <view wx:if="{{watch.device}}" class="watch-meta-row">
+            <text class="watch-meta-row__label">设备型号</text>
+            <text class="watch-meta-row__value">{{watch.device}}</text>
+          </view>
+          <view wx:if="{{watch.last_sync_at}}" class="watch-meta-row">
+            <text class="watch-meta-row__label">最后同步</text>
+            <text class="watch-meta-row__value">{{watch.last_sync_at}}</text>
+          </view>
+          <view wx:if="{{watch.capabilities.length}}" class="watch-caps">
+            <text class="watch-caps__label">支持功能</text>
+            <view class="watch-caps__list">
+              <text wx:for="{{watch.capabilities}}" wx:key="*this" class="watch-caps__tag">{{item}}</text>
+            </view>
+          </view>
+        </view>
+
+        <view wx:else class="watch-empty">
+          <text class="watch-empty__icon">⌚</text>
+          <text class="watch-empty__title">未绑定手表</text>
+          <text class="watch-empty__sub">绑定手表后可同步训练数据</text>
+        </view>
+      </view>
+
+      <!-- 已连接：解除绑定 -->
+      <view wx:if="{{connected}}" class="card card--danger">
+        <view class="card__label card__label--danger">解除绑定</view>
+        <view class="disconnect-desc">解除绑定将清除手表登录凭据。已同步的训练数据不会被删除，但无法再同步新数据。</view>
+
+        <view wx:if="{{showDisconnectConfirm}}" class="disconnect-confirm">
+          <button class="btn btn--danger" bindtap="onConfirmDisconnect" disabled="{{disconnecting}}">
+            {{disconnecting ? '解除中...' : '确认解除'}}
+          </button>
+          <button class="btn btn--ghost" bindtap="onCancelDisconnect" disabled="{{disconnecting}}">取消</button>
+        </view>
+        <button wx:else class="btn btn--outline-danger" bindtap="onDisconnectTap">解除绑定</button>
+      </view>
+
+      <!-- 未连接：绑定 -->
+      <view wx:else class="card">
+        <view class="card__label">绑定手表</view>
+
+        <view wx:if="{{!connectProvider}}" class="provider-grid">
+          <view class="provider-btn" data-provider="coros" bindtap="onSelectProvider">
+            <view class="provider-btn__name">COROS</view>
+            <view class="provider-btn__sub">高驰</view>
+          </view>
+          <view class="provider-btn" data-provider="garmin" bindtap="onSelectProvider">
+            <view class="provider-btn__name">Garmin</view>
+            <view class="provider-btn__sub">佳明</view>
+          </view>
+        </view>
+
+        <view wx:else class="bind-form">
+          <view class="bind-form__header">
+            <text class="bind-form__title">{{connectProvider === 'coros' ? 'COROS 高驰' : 'Garmin 佳明'}}</text>
+            <view class="bind-form__switch" bindtap="onBackToProviders">换一个</view>
+          </view>
+
+          <view class="field">
+            <input
+              class="field__input"
+              type="text"
+              placeholder="{{connectProvider === 'coros' ? '邮箱或手机号' : '邮箱'}}"
+              placeholder-class="field__placeholder"
+              value="{{email}}"
+              bindinput="onEmailInput"
+            />
+          </view>
+          <view class="field">
+            <input
+              class="field__input"
+              type="text"
+              password="true"
+              placeholder="密码"
+              placeholder-class="field__placeholder"
+              value="{{password}}"
+              bindinput="onPasswordInput"
+            />
+          </view>
+
+          <picker
+            wx:if="{{connectProvider === 'garmin'}}"
+            mode="selector"
+            range="{{regionOptions}}"
+            value="{{regionIndex}}"
+            bindchange="onRegionChange"
+          >
+            <view class="field">
+              <view class="field__input field__input--picker">
+                <text>{{regionOptions[regionIndex]}}</text>
+                <image class="field__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+              </view>
+            </view>
+          </picker>
+
+          <button
+            class="btn btn--primary btn--full"
+            bindtap="onConnect"
+            disabled="{{connecting || !email || !password}}"
+          >
+            {{connecting ? '连接中...' : '绑定'}}
+          </button>
+        </view>
+      </view>
+    </block>
+  </view>
+</view>
