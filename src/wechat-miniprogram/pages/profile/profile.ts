@@ -1,5 +1,6 @@
 import { userStore } from '../../store/index';
 import { triggerSync, pollPipeline } from '../../services/sync';
+import { uploadAvatar, updateProfile } from '../../services/profile';
 import type { UserProfile } from '../../types/api';
 import type { PollPipelineHandle } from '../../services/sync';
 
@@ -18,6 +19,12 @@ interface ProfilePageData {
   avatarUrl: string;
   rows: MenuRow[];
   syncing: boolean;
+  // 资料编辑 sheet
+  editVisible: boolean;
+  editAvatarTemp: string;
+  editAvatarUrl: string;
+  editName: string;
+  saving: boolean;
 }
 
 interface ProfilePageHandlers {
@@ -25,6 +32,10 @@ interface ProfilePageHandlers {
   onRowTap(e: WechatMiniprogram.TouchEvent): void;
   onLogout(): void;
   onEditProfile(): void;
+  onCloseEdit(): void;
+  onChooseAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl: string }>): void;
+  onNameInput(e: WechatMiniprogram.Input): void;
+  onSaveProfile(): void;
   onSyncTap(): void;
   startSync(userId: string): Promise<void>;
   /** 当前同步任务的轮询句柄，存实例上以避免模块级状态在多实例间串扰。 */
@@ -70,6 +81,11 @@ Page<ProfilePageData, ProfilePageHandlers>({
     avatarUrl: '',
     rows: MENU_ROWS,
     syncing: false,
+    editVisible: false,
+    editAvatarTemp: '',
+    editAvatarUrl: '',
+    editName: '',
+    saving: false,
   },
 
   onShow() {
@@ -116,7 +132,61 @@ Page<ProfilePageData, ProfilePageHandlers>({
   },
 
   onEditProfile() {
-    wx.showToast({ title: '资料编辑建设中', icon: 'none' });
+    this.setData({
+      editVisible: true,
+      editAvatarTemp: '',
+      editAvatarUrl: this.data.avatarUrl,
+      editName: this.data.name,
+    });
+  },
+
+  onCloseEdit() {
+    if (this.data.saving) return;
+    this.setData({ editVisible: false });
+  },
+
+  noop() {
+    // 阻止 sheet 内点击冒泡到 mask（catchtap 已拦截，这里留空占位）。
+  },
+
+  onChooseAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl: string }>) {
+    this.setData({ editAvatarTemp: e.detail.avatarUrl });
+  },
+
+  onNameInput(e: WechatMiniprogram.Input) {
+    this.setData({ editName: e.detail.value });
+  },
+
+  async onSaveProfile() {
+    if (this.data.saving) return;
+    this.setData({ saving: true });
+    try {
+      let patch: { name?: string; avatar_url?: string } = {};
+      const name = this.data.editName.trim();
+      if (name) {
+        patch.name = name;
+      }
+      let avatarUrl = this.data.avatarUrl;
+      // 只在新选头像时上传（chooseAvatar 返回的是会话内临时路径，必须先传再丢）。
+      if (this.data.editAvatarTemp) {
+        avatarUrl = await uploadAvatar(this.data.editAvatarTemp);
+        patch.avatar_url = avatarUrl;
+      }
+      const updated = await updateProfile(patch);
+      userStore.setUser(updated);
+      this.setData({
+        editVisible: false,
+        name: updated.name || name,
+        avatarUrl: updated.avatar_url || avatarUrl,
+        user: updated,
+      });
+      wx.showToast({ title: '已保存', icon: 'success' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '保存失败';
+      wx.showToast({ title: msg.length > 15 ? '保存失败' : msg, icon: 'none' });
+    } finally {
+      this.setData({ saving: false });
+    }
   },
 
   onSyncTap() {

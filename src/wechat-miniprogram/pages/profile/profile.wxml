@@ -63,4 +63,38 @@
 
     <view class="version">STRIDE · 微信小程序</view>
   </view>
+
+  <!-- 资料编辑 sheet（chooseAvatar + 昵称） -->
+  <view wx:if="{{editVisible}}" class="edit-mask" bindtap="onCloseEdit">
+    <view class="edit-sheet" catchtap="noop">
+      <view class="edit-sheet__title">编辑资料</view>
+
+      <view class="edit-avatar">
+        <button class="edit-avatar__btn" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+          <image
+            class="edit-avatar__img"
+            src="{{editAvatarTemp || editAvatarUrl || '/assets/icons/person.svg'}}"
+            mode="aspectFill"
+          />
+        </button>
+        <view class="edit-avatar__hint">点击更换头像</view>
+      </view>
+
+      <view class="edit-field">
+        <view class="edit-field__label">昵称</view>
+        <input
+          class="edit-field__input"
+          type="nickname"
+          placeholder="请输入昵称"
+          value="{{editName}}"
+          bindinput="onNameInput"
+        />
+      </view>
+
+      <view class="edit-actions">
+        <button class="edit-btn edit-btn--ghost" bindtap="onCloseEdit" disabled="{{saving}}">取消</button>
+        <button class="edit-btn edit-btn--primary" bindtap="onSaveProfile" disabled="{{saving}}">{{saving ? '保存中...' : '保存'}}</button>
+      </view>
+    </view>
+  </view>
 </view>

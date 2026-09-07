@@ -1,4 +1,5 @@
-import { sendCoachChatMessage, fetchCoachHistory, fetchCoachSessions, type CoachHistoryMessage } from '../../services/coach';
+import { sendCoachChatMessage, fetchCoachHistory, fetchCoachSessions } from '../../services/coach';
+import type { CoachHistoryMessage } from '../../services/coach';
 import { markdownToHtml } from '../../utils/markdown';
 
 interface CoachMessage {

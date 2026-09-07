@@ -62,12 +62,13 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 | Go API 持久化数据（含跨用户 social signals、preferences、push registrations） | **MySQL**（经 `src/go/internal/storage/`） |
 | Python 服务的跨用户 social signals、preferences、push registrations | **Azure Table Storage**（canonical pattern：`stride_server/likes_store.py`） |
 | Bulk binary blobs (photos, video, large export files) | **Azure Blob Storage**（Python 服务） |
+| 用户头像图片文件（avatar image） | **腾讯云 COS**（对象存储 + CDN；经应用侧媒体上传接口，DB 只存 `avatar_url`） |
 | Authoring artifacts (plan.md, TRAINING_PLAN.md) | **Markdown files in `data/{user_id}/logs/`**；只有明确批准同步的非草稿内容才可经 `sync-data.yml` 到 Azure Files，weekly plan 草稿遵守下方人工 review 门禁 |
 | 周反馈 | rollout 前沿用 legacy `feedback.md`；`STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE=true` 后以 **腾讯云 MySQL `weekly_feedback`** 为唯一来源 |
 | Go API auth tokens / secrets | **MySQL**（经 `src/go/internal/storage/`） |
 | Python/Auth 服务的 auth tokens / secrets | **Azure Key Vault** |
 
-**Go API 的所有持久化状态统一落 MySQL**，不要为 Go API 新增 Azure Table、Azure Blob、Azure Files 或 Key Vault 存储依赖；Python 服务保留既有 Azure 后端。遗留 SQLite 的迁移或调试任务必须与 weekly plan authoring 流程隔离。likes_store 是 Python two-backend 文件（dev JSON / prod Azure Table）+ `DefaultAzureCredential`，不要把它用于 Go API。
+**Go API 的所有持久化状态统一落 MySQL**，不要为 Go API 新增 Azure Table、Azure Blob、Azure Files 或 Key Vault 存储依赖；**唯一例外是用户头像图片文件**——头像二进制不经 MySQL，存腾讯云 COS（对象存储 + CDN），MySQL / auth-service 身份只存 `avatar_url` 字段。Python 服务保留既有 Azure 后端。遗留 SQLite 的迁移或调试任务必须与 weekly plan authoring 流程隔离。likes_store 是 Python two-backend 文件（dev JSON / prod Azure Table）+ `DefaultAzureCredential`，不要把它用于 Go API。
 
 ### SQL ownership rule (HARD)
 

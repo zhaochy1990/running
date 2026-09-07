@@ -63,15 +63,6 @@
   <view wx:if="{{drawerOpen}}" class="drawer-mask" bindtap="onCloseDrawer"></view>
   <view class="drawer {{drawerOpen ? 'drawer--open' : ''}}" catchtap="noop">
     <view class="drawer__header" style="padding-top: calc({{statusBarHeight}}px + 24rpx);">
-      <view class="drawer__header-top">
-        <view class="drawer__search" bindtap="onSearchTap">
-          <image class="drawer__search-icon" src="/assets/icons/search.svg" mode="aspectFit" />
-          <text class="drawer__search-placeholder">搜索对话</text>
-        </view>
-        <view class="drawer__compose" bindtap="onNewConversation">
-          <image class="drawer__compose-icon" src="/assets/icons/compose.svg" mode="aspectFit" />
-        </view>
-      </view>
       <view class="drawer__title">历史对话</view>
     </view>
     <scroll-view scroll-y class="drawer__list">
@@ -88,7 +79,16 @@
         <text class="drawer__item-title">{{item.title}}</text>
         <text wx:if="{{item.id === currentSessionId}}" class="drawer__item-current">当前</text>
       </view>
-      <view wx:if="{{sessions.length === 0}}" class="drawer__empty">还没有对话，点右上角新建</view>
+      <view wx:if="{{sessions.length === 0}}" class="drawer__empty">还没有对话，点下方新建</view>
     </scroll-view>
+    <view class="drawer__footer">
+      <view class="drawer__search" bindtap="onSearchTap">
+        <image class="drawer__search-icon" src="/assets/icons/search.svg" mode="aspectFit" />
+        <text class="drawer__search-placeholder">搜索对话</text>
+      </view>
+      <view class="drawer__compose" bindtap="onNewConversation">
+        <image class="drawer__compose-icon" src="/assets/icons/compose.svg" mode="aspectFit" />
+      </view>
+    </view>
   </view>
 </view>

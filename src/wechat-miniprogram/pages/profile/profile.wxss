@@ -223,3 +223,115 @@
   color: #6a6b6c;
   margin-top: 48rpx;
 }
+
+/* ---------- 资料编辑 sheet ---------- */
+
+.edit-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-end;
+}
+
+.edit-sheet {
+  width: 100%;
+  background: #101111;
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 48rpx 40rpx 64rpx;
+  box-sizing: border-box;
+}
+
+.edit-sheet__title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+  text-align: center;
+  margin-bottom: 40rpx;
+}
+
+.edit-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 40rpx;
+}
+
+.edit-avatar__btn {
+  width: 160rpx;
+  height: 160rpx;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.edit-avatar__btn::after {
+  border: none;
+}
+
+.edit-avatar__img {
+  width: 160rpx;
+  height: 160rpx;
+}
+
+.edit-avatar__hint {
+  font-size: 22rpx;
+  color: #9c9c9d;
+}
+
+.edit-field {
+  margin-bottom: 48rpx;
+}
+
+.edit-field__label {
+  font-size: 24rpx;
+  color: #9c9c9d;
+  margin-bottom: 16rpx;
+}
+
+.edit-field__input {
+  height: 88rpx;
+  padding: 0 28rpx;
+  border-radius: 16rpx;
+  background: #1c1d1f;
+  color: #e3e2e5;
+  font-size: 28rpx;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 24rpx;
+}
+
+.edit-btn {
+  flex: 1;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: 20rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  text-align: center;
+}
+
+.edit-btn::after {
+  border: none;
+}
+
+.edit-btn--ghost {
+  background: #1c1d1f;
+  color: #9c9c9d;
+}
+
+.edit-btn--primary {
+  background: #ff6363;
+  color: #fff;
+}
