@@ -5,7 +5,7 @@
  * gate lands later. Mock data for now.
  */
 
-import { tool, type ToolRuntime } from "@langchain/core/tools";
+import { type ToolRuntime, tool } from "@langchain/core/tools";
 import * as z from "zod";
 import type { CoachContext } from "../coachAgent.js";
 

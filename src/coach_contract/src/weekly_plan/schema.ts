@@ -248,7 +248,8 @@ export const WeeklyPlanGenerationSchema = z
           message: "weeklyPlan must be null when success is false",
         });
       }
-      if (result.error.trim() === "") { // 建议加上 trim，防止AI输出空格字符串
+      if (result.error.trim() === "") {
+        // 建议加上 trim，防止AI输出空格字符串
         context.addIssue({
           code: "custom",
           path: ["error"],

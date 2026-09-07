@@ -1,12 +1,12 @@
 import {
   addDays,
-  DailySimulationSchema,
-  SessionSimulationSchema,
+  type DailySimulationSchema,
+  type SessionSimulationSchema,
   type WeeklyPlan,
   type WeeklyPlanSimulationReport,
   WeeklyPlanSimulationReportSchema,
 } from "@stride/contract";
-import { z } from "zod/v4";
+import type { z } from "zod/v4";
 import type { WeeklyPlanContext } from "../../data/weeklyPlanContextProvider.js";
 import { simulatePmcDays } from "../master_plan/simulation.js";
 import { estimatePlannedRunLoad } from "../training_load/plannedRunLoad.js";

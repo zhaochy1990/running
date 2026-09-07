@@ -1,7 +1,7 @@
 import type { GraphNode } from "@langchain/langgraph";
-import { getAgentConfig, type CoachAgentConfig } from "../config/config.js";
-import { AgentsState } from "./state.js";
+import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
 import { getOrchestratorNode } from "./orchestrator.js";
+import type { AgentsState } from "./state.js";
 
 export function getAgentNode(agentName: string, config: CoachAgentConfig): GraphNode<typeof AgentsState> {
   const agentConfig = getAgentConfig(config, agentName);

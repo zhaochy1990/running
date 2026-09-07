@@ -19,8 +19,8 @@
  * resume 值可为字符串（自由作答）或字符串数组（多选的 label）。
  */
 
-import { interrupt } from "@langchain/langgraph";
 import { tool } from "@langchain/core/tools";
+import { interrupt } from "@langchain/langgraph";
 import * as z from "zod";
 
 /** interrupt payload 的判别字段 —— 调用方据此识别“这是一次向用户的追问”。 */

@@ -21,7 +21,7 @@ import type {
 } from "@stride/coach-agent";
 import { BaseCheckpointSaver, copyCheckpoint, getCheckpointId, WRITES_IDX_MAP } from "@stride/coach-agent";
 import type { Pool, RowDataPacket } from "mysql2/promise";
-import { tryToPublicResponse, toPublicHistory } from "../publicResponse.js";
+import { toPublicHistory, tryToPublicResponse } from "../publicResponse.js";
 import type { TurnRecovery } from "../turn/receiptStore.js";
 
 export class MySqlSaver extends BaseCheckpointSaver {
@@ -68,9 +68,7 @@ export class MySqlSaver extends BaseCheckpointSaver {
    * by reading only the newest checkpoint's messages (history accumulates in the
    * same thread, so the first user text is still present).
    */
-  async listThreadsForUser(
-    userId: string,
-  ): Promise<{ sessionId: string; updatedAt: string | null; preview: string }[]> {
+  async listThreadsForUser(userId: string): Promise<{ sessionId: string; updatedAt: string | null; preview: string }[]> {
     const prefix = `${userId}:coach:`;
     const [rows] = await this.pool.query<RowDataPacket[]>(
       `SELECT thread_id, MAX(created_at) AS updated_at

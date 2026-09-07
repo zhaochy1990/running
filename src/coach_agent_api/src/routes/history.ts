@@ -21,10 +21,7 @@ export interface ThreadSessionReader {
  * the source for a chat-history drawer; the client passes the returned
  * `session_id` to the per-session messages route.
  */
-export function registerSessionListRoutes(
-  app: Hono<AuthEnv>,
-  dependencies: { checkpointer: ThreadSessionReader },
-): void {
+export function registerSessionListRoutes(app: Hono<AuthEnv>, dependencies: { checkpointer: ThreadSessionReader }): void {
   app.get("/api/users/me/coach/sessions", async (context) => {
     const userId = context.get("userId");
     const threads = await dependencies.checkpointer.listThreadsForUser(userId);
@@ -37,7 +34,6 @@ export function registerSessionListRoutes(
     });
   });
 }
-
 
 /**
  * GET /api/users/me/coach/sessions/{session_id}/messages.
