@@ -12,9 +12,26 @@ interface AvatarUploadResponse {
   avatar_url: string;
 }
 
-// 上传头像临时文件到 auth-service；成功返回公开 avatar_url。
-export async function uploadAvatar(filePath: string): Promise<string> {
+// wx.uploadFile 只接受本地文件路径。chooseAvatar 对「微信头像」返回的是
+// https://thirdwx.qlogo.cn/... 远端 URL（而非本地临时路径），需先下载到本地
+// 临时路径再上传；相册/拍摄返回的本地临时路径则直接上传。
+async function toLocalPath(src: string): Promise<string> {
+  // 本地临时路径：新格式 wxfile://tmp_xxx，模拟器老格式 http://tmp/xxx
+  if (src.startsWith('wxfile://') || src.includes('/tmp/')) return src;
+  // 其余按远端 URL 处理（微信头像 CDN），先下载到本地临时路径
+  return new Promise((resolve, reject) => {
+    wx.downloadFile({
+      url: src,
+      success: (res) => resolve(res.tempFilePath),
+      fail: (err) => reject(new Error(err.errMsg || '下载头像失败')),
+    });
+  });
+}
+
+// 上传头像到 auth-service（auth-service 写 COS）；成功返回公开 avatar_url。
+export async function uploadAvatar(avatarUrl: string): Promise<string> {
   const token = wx.getStorageSync(STORAGE_KEYS.TOKEN) as string | undefined;
+  const filePath = await toLocalPath(avatarUrl);
 
   return new Promise((resolve, reject) => {
     wx.uploadFile({

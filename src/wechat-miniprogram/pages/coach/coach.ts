@@ -33,6 +33,9 @@ interface CoachPageData {
   input: string;
   sending: boolean;
   scrollIntoId: string;
+  // 键盘高度（px）>0 时把输入栏垫到键盘上方，避免页面被 adjust-position 顶出屏幕。
+  keyboardPaddedStyle: string;
+  keyboardHeight: number;
   // 会话抽屉
   drawerOpen: boolean;
   sessions: CoachSession[];
@@ -44,6 +47,8 @@ interface CoachPageData {
 
 interface CoachPageHandlers {
   onInput(e: WechatMiniprogram.Input): void;
+  onKeyboardHeightChange(e: WechatMiniprogram.InputKeyboardHeightChange): void;
+  onBlur(): void;
   onSend(): Promise<void>;
   onRetry(e: WechatMiniprogram.TouchEvent): void;
   onMenuTap(): void;
@@ -157,6 +162,8 @@ Page<CoachPageData, CoachPageHandlers>({
     input: '',
     sending: false,
     scrollIntoId: '',
+    keyboardHeight: 0,
+    keyboardPaddedStyle: '',
     drawerOpen: false,
     sessions: [],
     currentSessionId: DEFAULT_SESSION_ID,
@@ -252,6 +259,23 @@ Page<CoachPageData, CoachPageHandlers>({
 
   onInput(e: WechatMiniprogram.Input) {
     this.setData({ input: e.detail.value });
+  },
+
+  onKeyboardHeightChange(e: WechatMiniprogram.InputKeyboardHeightChange) {
+    const h = e.detail?.height || 0;
+    if (h === this.data.keyboardHeight) return;
+    this.setData({
+      keyboardHeight: h,
+      // 键盘打开时用实心 padding 顶起输入栏（覆盖底部 tabBar 预留的 calc(120rpx+…)，因为 tabBar 已让位给键盘）；
+      // 关闭时清空，回落到底部 tabBar 的常规预留。
+      keyboardPaddedStyle: h > 0 ? `padding-bottom:${h}px;` : '',
+    });
+  },
+
+  // 键盘收起时，微信走 blur 而非 keyboardheightchange=0，这里兜底清掉顶起的 padding，
+  // 否则输入栏会停在半空回不到页面底部。
+  onBlur() {
+    this.setData({ keyboardHeight: 0, keyboardPaddedStyle: '' });
   },
 
   async onSend() {

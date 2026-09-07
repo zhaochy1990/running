@@ -33,9 +33,11 @@ interface ProfilePageHandlers {
   onLogout(): void;
   onEditProfile(): void;
   onCloseEdit(): void;
+  noop(): void;
   onChooseAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl: string }>): void;
   onNameInput(e: WechatMiniprogram.Input): void;
-  onSaveProfile(): void;
+  onSaveName(): void;
+  saveAvatar(): void;
   onSyncTap(): void;
   startSync(userId: string): Promise<void>;
   /** 当前同步任务的轮询句柄，存实例上以避免模块级状态在多实例间串扰。 */
@@ -150,40 +152,49 @@ Page<ProfilePageData, ProfilePageHandlers>({
   },
 
   onChooseAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl: string }>) {
+    // 选完头像立即保存，但不关 sheet、不弹提示——用户可能还要继续授权昵称。
     this.setData({ editAvatarTemp: e.detail.avatarUrl });
+    void this.saveAvatar();
   },
 
   onNameInput(e: WechatMiniprogram.Input) {
     this.setData({ editName: e.detail.value });
   },
 
-  async onSaveProfile() {
-    if (this.data.saving) return;
+  // 昵称在输入结束（失焦）时保存，无需点按钮；空值不提交。不弹提示。
+  async onSaveName() {
+    const name = this.data.editName.trim();
+    if (!name || name === this.data.name || this.data.saving) return;
     this.setData({ saving: true });
     try {
-      let patch: { name?: string; avatar_url?: string } = {};
-      const name = this.data.editName.trim();
-      if (name) {
-        patch.name = name;
-      }
-      let avatarUrl = this.data.avatarUrl;
-      // 只在新选头像时上传（chooseAvatar 返回的是会话内临时路径，必须先传再丢）。
-      if (this.data.editAvatarTemp) {
-        avatarUrl = await uploadAvatar(this.data.editAvatarTemp);
-        patch.avatar_url = avatarUrl;
-      }
-      const updated = await updateProfile(patch);
+      const updated = await updateProfile({ name });
       userStore.setUser(updated);
-      this.setData({
-        editVisible: false,
-        name: updated.name || name,
-        avatarUrl: updated.avatar_url || avatarUrl,
-        user: updated,
-      });
-      wx.showToast({ title: '已保存', icon: 'success' });
+      this.setData({ name: updated.name || name, user: updated });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '保存失败';
       wx.showToast({ title: msg.length > 15 ? '保存失败' : msg, icon: 'none' });
+    } finally {
+      this.setData({ saving: false });
+    }
+  },
+
+  // 只保存头像（选完即存），不关 sheet、不弹成功提示。
+  async saveAvatar() {
+    if (this.data.saving || !this.data.editAvatarTemp) return;
+    this.setData({ saving: true });
+    try {
+      const avatarUrl = await uploadAvatar(this.data.editAvatarTemp);
+      const updated = await updateProfile({ avatar_url: avatarUrl });
+      userStore.setUser(updated);
+      this.setData({
+        avatarUrl: updated.avatar_url || avatarUrl,
+        editAvatarUrl: updated.avatar_url || avatarUrl,
+        editAvatarTemp: '',
+        user: updated,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '头像保存失败';
+      wx.showToast({ title: msg.length > 15 ? '头像保存失败' : msg, icon: 'none' });
     } finally {
       this.setData({ saving: false });
     }

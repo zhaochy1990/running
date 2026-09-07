@@ -15,7 +15,7 @@
   </view>
 
   <!-- 对话区 + 输入栏 -->
-  <view class="coach-body" style="padding-top: {{contentPaddingTop}}rpx;">
+  <view class="coach-body" style="padding-top: {{contentPaddingTop}}rpx; {{keyboardPaddedStyle}}">
     <scroll-view class="coach-list" scroll-y scroll-with-animation scroll-into-view="{{scrollIntoId}}">
       <view
         wx:for="{{messages}}"
@@ -49,6 +49,10 @@
         placeholder="问问教练…"
         placeholder-class="coach-input__placeholder"
         confirm-type="send"
+        adjust-position="{{false}}"
+        cursor-spacing="{{16}}"
+        bindkeyboardheightchange="onKeyboardHeightChange"
+        bindblur="onBlur"
         bindinput="onInput"
         bindconfirm="onSend"
       />

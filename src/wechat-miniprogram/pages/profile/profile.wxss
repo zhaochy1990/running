@@ -239,7 +239,8 @@
   width: 100%;
   background: #101111;
   border-radius: 32rpx 32rpx 0 0;
-  padding: 48rpx 40rpx 64rpx;
+  /* 底部留出 custom tabBar(120rpx) + 安全区 + 余量，避免昵称输入框被 tabBar 挡住。 */
+  padding: 48rpx 40rpx calc(120rpx + env(safe-area-inset-bottom) + 48rpx);
   box-sizing: border-box;
 }
 

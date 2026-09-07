@@ -88,12 +88,9 @@
           placeholder="请输入昵称"
           value="{{editName}}"
           bindinput="onNameInput"
+          bindblur="onSaveName"
         />
-      </view>
-
-      <view class="edit-actions">
-        <button class="edit-btn edit-btn--ghost" bindtap="onCloseEdit" disabled="{{saving}}">取消</button>
-        <button class="edit-btn edit-btn--primary" bindtap="onSaveProfile" disabled="{{saving}}">{{saving ? '保存中...' : '保存'}}</button>
+        <view class="edit-field__hint">昵称输入后失焦自动保存</view>
       </view>
     </view>
   </view>
