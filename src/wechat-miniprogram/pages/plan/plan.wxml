@@ -71,6 +71,7 @@
 
   <!-- 推送日期选择弹层 -->
   <push-date-sheet
+    wx:if="{{pushSheetVisible}}"
     show="{{pushSheetVisible}}"
     options="{{pushOptions}}"
     bindselect="onPushDateSelect"

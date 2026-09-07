@@ -6,5 +6,8 @@
   "backgroundColor": "#07080A",
   "usingComponents": {
     "push-date-sheet": "/components/push-date-sheet/index"
+  },
+  "componentPlaceholder": {
+    "push-date-sheet": "view"
   }
 }
