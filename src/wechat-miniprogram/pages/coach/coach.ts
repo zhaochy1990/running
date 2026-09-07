@@ -324,7 +324,7 @@ Page<CoachPageData, CoachPageHandlers>({
   // 发一条消息（新发送 or 重试）。成功后追加 assistant 回复并清除失败态；
   // 失败给该 user 消息打 failed 标记，展示重试按钮。
   async doSend(text: string, clientTurnId: string, userMsgId: number) {
-    this.setData({ sending: true });
+    this.setData({ sending: true, scrollIntoId: 'msg-thinking' });
     try {
       const res = await sendCoachChatMessage(text, this.data.currentSessionId, clientTurnId);
       const content = res.status === 'completed' ? res.message : undefined;
