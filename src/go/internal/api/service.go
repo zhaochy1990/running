@@ -280,6 +280,7 @@ func (s *Service) Router() *gin.Engine {
 	s.masterPlan.register(authenticated)
 	s.masterPlan.registerAdminWrites(authenticated)
 	s.weeklyPlan.registerReads(authenticated)
+	s.weeklyPlan.registerDraftWrites(authenticated)
 	s.weeklyPlan.registerAdminWrites(authenticated)
 
 	// Existing routes accept only the original user/internal tiers. Keeping this

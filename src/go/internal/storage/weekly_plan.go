@@ -27,7 +27,19 @@ type WeeklyPlanReplacement struct {
 }
 
 func (s *Store) AutoMigrateWeeklyPlan(ctx context.Context) error {
-	if err := s.db.WithContext(ctx).AutoMigrate(&WeeklyPlan{}); err != nil {
+	db := s.db.WithContext(ctx)
+	// ADR 0030 narrows the status_slot check: only the single active row per
+	// (user_id, week_start) carries a non-null slot, and every draft/archived
+	// row is NULL so drafts may be many. GORM AutoMigrate won't rewrite an
+	// existing CHECK constraint, so drop the old one before reconciling so a
+	// deployed table adopts the relaxed rule instead of rejecting draft rows.
+	m := db.Migrator()
+	if m.HasTable(&WeeklyPlan{}) && m.HasConstraint(&WeeklyPlan{}, "ck_weekly_plan_status_slot_v2") {
+		if err := m.DropConstraint(&WeeklyPlan{}, "ck_weekly_plan_status_slot_v2"); err != nil {
+			return fmt.Errorf("storage: drop old weekly_plan status_slot constraint: %w", err)
+		}
+	}
+	if err := db.AutoMigrate(&WeeklyPlan{}); err != nil {
 		return fmt.Errorf("storage: automigrate weekly_plan: %w", err)
 	}
 	return nil

@@ -34,6 +34,10 @@ type MasterPlanStore interface {
 	TrainingDoseWeekSummaries(ctx context.Context, userID string, windows []storage.WeekWindow) (map[int]storage.TrainingDoseWeekSummary, error)
 	ApplyStructuredMasterPlan(ctx context.Context, userID, goalID, content string, replacement *storage.MasterPlanReplacement) (*storage.MasterPlan, *storage.MasterPlan, error)
 	UpdateActiveMasterPlan(ctx context.Context, userID, goalID, content string, expectation *storage.MasterPlanReplacement) (*storage.MasterPlan, error)
+	InsertMasterPlanDraft(ctx context.Context, userID, goalID, content, draftID string) (*storage.MasterPlan, bool, error)
+	GetMasterPlanDraft(ctx context.Context, userID, planID string) (*storage.MasterPlan, error)
+	ActivateMasterPlanDraft(ctx context.Context, userID, planID string) (*storage.MasterPlan, *storage.MasterPlan, error)
+	AbandonMasterPlanDraft(ctx context.Context, userID, planID string) (*storage.MasterPlan, error)
 }
 
 type masterPlanRoutes struct {
@@ -56,6 +60,12 @@ func (m *masterPlanRoutes) register(rg *gin.RouterGroup) {
 	}
 	rg.GET("/api/users/me/master-plan/current", m.getCurrent)
 	rg.GET("/api/users/:user_id/master-plan/current", m.getCurrentForUser)
+	// Draft lifecycle (ADR 0030): insert is internal-only (worker), read/activate/
+	// abandon are user endpoints keyed by draft id.
+	rg.POST("/api/users/:user_id/master-plan/drafts", m.insertDraft)
+	rg.GET("/api/users/:user_id/master-plan/drafts/:plan_id", m.getDraft)
+	rg.POST("/api/users/:user_id/master-plan/drafts/:plan_id/activate", m.activateDraft)
+	rg.POST("/api/users/:user_id/master-plan/drafts/:plan_id/abandon", m.abandonDraft)
 }
 
 // registerAdminWrites mounts the narrow administrator-only master plan
@@ -266,6 +276,289 @@ func (m *masterPlanRoutes) update(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, updateMasterPlanResponse{Success: true, Plan: envelope})
+}
+
+// ── Draft lifecycle (ADR 0030) ──────────────────────────────────────────────
+
+type insertMasterPlanDraftRequest struct {
+	DraftID string         `json:"draft_id" binding:"required"`
+	Content map[string]any `json:"content" binding:"required"`
+}
+
+type draftIDResponse struct {
+	Success bool   `json:"success"`
+	PlanID  string `json:"plan_id"`
+	Status  string `json:"status"`
+}
+
+type masterPlanDraftResponse struct {
+	PlanID         string    `json:"plan_id"`
+	GoalID         string    `json:"goal_id"`
+	Status         string    `json:"status"`
+	Revision       *int64    `json:"revision"`
+	ContentVersion int8      `json:"content_version"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	Plan           any       `json:"plan"`
+}
+
+type activateMasterPlanDraftResponse struct {
+	Success            bool                      `json:"success"`
+	Plan               currentSeasonPlanEnvelope `json:"plan"`
+	ReplacedActivePlan *string                   `json:"replaced_plan_id"`
+}
+
+// insertDraft persists a season plan draft. Internal token only (the plan-job
+// worker), idempotent by draft_id; it never activates.
+//
+//	@Summary		Insert a season training plan draft
+//	@Description	Internal-only. Persists a structured season plan as a draft, idempotent by draft_id. Never activates.
+//	@Tags			master-plan
+//	@Accept			json
+//	@Produce		json
+//	@Param			user_id	path		string							true	"Target user UUID"
+//	@Param			body		body		insertMasterPlanDraftRequest true	"Draft id and structured content"
+//	@Success		201		{object}	draftIDResponse
+//	@Success		200		{object}	draftIDResponse
+//	@Failure		401		{object}	errorResponse
+//	@Failure		403		{object}	errorResponse
+//	@Failure		413		{object}	errorResponse
+//	@Failure		422		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		InternalToken
+//	@Router			/api/users/{user_id}/master-plan/drafts [post]
+func (m *masterPlanRoutes) insertDraft(c *gin.Context) {
+	if callerFrom(c).Tier != TierInternal {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+	uid := c.Param("user_id")
+	if _, err := uuid.Parse(uid); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user"})
+		return
+	}
+	var request insertMasterPlanDraftRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		if isBodyTooLarge(err) {
+			c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "master_plan_too_large"})
+			return
+		}
+		m.log.Warn("insert master plan draft bind failed", zapErr(err), zap.String("user_id", uid))
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+	content, goalID, err := validateAppliedMasterPlan(request.Content)
+	if err != nil {
+		m.log.Warn("insert master plan draft content invalid", zapErr(err), zap.String("user_id", uid))
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+	created, isNew, err := m.store.InsertMasterPlanDraft(c.Request.Context(), uid, goalID, string(content), request.DraftID)
+	if errors.Is(err, storage.ErrMasterPlanDraftConflict) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "draft_conflict"})
+		return
+	}
+	if err != nil {
+		m.log.Error("insert master plan draft failed", zapErr(err), zap.String("user_id", uid))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	status := http.StatusCreated
+	if !isNew {
+		status = http.StatusOK
+	}
+	c.JSON(status, draftIDResponse{Success: true, PlanID: created.PlanID, Status: created.Status})
+}
+
+// getDraft reads a draft by id. User callers are scoped to their own subject.
+//
+//	@Summary		Get a season plan draft
+//	@Tags			master-plan
+//	@Produce		json
+//	@Param			user_id	path	string	true	"User id (JWT sub)"
+//	@Param			plan_id	path	string	true	"Draft plan id"
+//	@Success		200	{object}	masterPlanDraftResponse
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		403	{object}	errorResponse
+//	@Failure		404	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/users/{user_id}/master-plan/drafts/{plan_id} [get]
+func (m *masterPlanRoutes) getDraft(c *gin.Context) {
+	uid := c.Param("user_id")
+	if _, err := uuid.Parse(uid); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user"})
+		return
+	}
+	caller := callerFrom(c)
+	if caller.Tier == TierUser && uid != caller.UserID {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+	row, err := m.store.GetMasterPlanDraft(c.Request.Context(), uid, c.Param("plan_id"))
+	if err != nil {
+		m.log.Error("get master plan draft failed", zapErr(err), zap.String("plan_id", c.Param("plan_id")))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if row == nil || row.Status != storage.MasterPlanStatusDraft {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "master_plan_draft_not_found"})
+		return
+	}
+	if err := validateMasterPlanDraftRow(row); err != nil {
+		m.log.Error("master plan draft is invalid", zapErr(err), zap.String("plan_id", row.PlanID))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, buildMasterPlanDraftResponse(row, m.log))
+}
+
+// activateDraft archives the current active plan and promotes the chosen draft.
+//
+//	@Summary		Activate a season plan draft
+//	@Tags			master-plan
+//	@Accept			json
+//	@Produce		json
+//	@Param			user_id	path	string	true	"User id (JWT sub)"
+//	@Param			plan_id	path	string	true	"Draft plan id"
+//	@Success		200	{object}	activateMasterPlanDraftResponse
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		403	{object}	errorResponse
+//	@Failure		404	{object}	errorResponse
+//	@Failure		409	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/users/{user_id}/master-plan/drafts/{plan_id}/activate [post]
+func (m *masterPlanRoutes) activateDraft(c *gin.Context) {
+	uid := c.Param("user_id")
+	if _, err := uuid.Parse(uid); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user"})
+		return
+	}
+	caller := callerFrom(c)
+	if caller.Tier == TierUser && uid != caller.UserID {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+	activated, replaced, err := m.store.ActivateMasterPlanDraft(c.Request.Context(), uid, c.Param("plan_id"))
+	if errors.Is(err, storage.ErrMasterPlanDraftNotFound) {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "master_plan_draft_not_found"})
+		return
+	}
+	if errors.Is(err, storage.ErrMasterPlanDraftConflict) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "master_plan_changed"})
+		return
+	}
+	if err != nil {
+		m.log.Error("activate master plan draft failed", zapErr(err), zap.String("plan_id", c.Param("plan_id")))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	envelope, _, _, err := buildCurrentEnvelope(activated, timefmt.ShanghaiToday(), m.log)
+	if err != nil {
+		m.log.Error("activated master plan is invalid", zapErr(err), zap.String("plan_id", activated.PlanID))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	var replacedID *string
+	if replaced != nil {
+		replacedID = &replaced.PlanID
+	}
+	c.JSON(http.StatusOK, activateMasterPlanDraftResponse{Success: true, Plan: envelope, ReplacedActivePlan: replacedID})
+}
+
+// abandonDraft archives a draft.
+//
+//	@Summary		Abandon a season plan draft
+//	@Tags			master-plan
+//	@Accept			json
+//	@Produce		json
+//	@Param			user_id	path	string	true	"User id (JWT sub)"
+//	@Param			plan_id	path	string	true	"Draft plan id"
+//	@Success		200	{object}	draftIDResponse
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		403	{object}	errorResponse
+//	@Failure		404	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/users/{user_id}/master-plan/drafts/{plan_id}/abandon [post]
+func (m *masterPlanRoutes) abandonDraft(c *gin.Context) {
+	uid := c.Param("user_id")
+	if _, err := uuid.Parse(uid); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user"})
+		return
+	}
+	caller := callerFrom(c)
+	if caller.Tier == TierUser && uid != caller.UserID {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+	abandoned, err := m.store.AbandonMasterPlanDraft(c.Request.Context(), uid, c.Param("plan_id"))
+	if errors.Is(err, storage.ErrMasterPlanDraftNotFound) {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "master_plan_draft_not_found"})
+		return
+	}
+	if err != nil {
+		m.log.Error("abandon master plan draft failed", zapErr(err), zap.String("plan_id", c.Param("plan_id")))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, draftIDResponse{Success: true, PlanID: abandoned.PlanID, Status: abandoned.Status})
+}
+
+// validateMasterPlanDraftRow checks the stored identity/content of a draft row
+// before serving it, mirroring the strictness of the current-plan reader.
+func validateMasterPlanDraftRow(row *storage.MasterPlan) error {
+	if row == nil {
+		return fmt.Errorf("draft row is nil")
+	}
+	if _, err := uuid.Parse(row.PlanID); err != nil {
+		return fmt.Errorf("draft plan_id is invalid")
+	}
+	if _, err := uuid.Parse(row.GoalID); err != nil {
+		return fmt.Errorf("draft goal_id is invalid")
+	}
+	if row.Status != storage.MasterPlanStatusDraft {
+		return fmt.Errorf("row is not a draft (status=%s)", row.Status)
+	}
+	if row.ContentVersion != storage.MasterPlanContentStructured {
+		return fmt.Errorf("draft must be structured (content_version=%d)", row.ContentVersion)
+	}
+	if row.Revision == nil || *row.Revision < 1 {
+		return fmt.Errorf("draft revision must be positive")
+	}
+	if strings.TrimSpace(row.Content) == "" {
+		return fmt.Errorf("draft content is empty")
+	}
+	return nil
+}
+
+// buildMasterPlanDraftResponse reshapes a stored draft into the metadata plus
+// structured body consumed by the review card.
+func buildMasterPlanDraftResponse(row *storage.MasterPlan, log *zap.Logger) masterPlanDraftResponse {
+	resp := masterPlanDraftResponse{
+		PlanID: row.PlanID, GoalID: row.GoalID, Status: row.Status,
+		Revision: row.Revision, ContentVersion: row.ContentVersion,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(row.Content), &doc); err == nil {
+		if goal, ok := doc["goal"].(map[string]any); ok {
+			if embeddedGoal := asString(goal["goal_id"]); embeddedGoal != "" && embeddedGoal != row.GoalID {
+				log.Warn("master plan draft embedded goal_id drift", zap.String("plan_id", row.PlanID))
+			}
+		}
+		resp.Plan = doc
+	} else {
+		resp.Plan = row.Content
+	}
+	return resp
 }
 
 // validateAppliedMasterPlan enforces the canonical content_version=2 contract

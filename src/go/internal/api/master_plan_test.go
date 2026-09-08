@@ -23,6 +23,7 @@ import (
 
 type fakeMasterPlanStore struct {
 	current    map[string]*storage.MasterPlan
+	drafts     map[string][]*storage.MasterPlan
 	currentUID string
 	running    map[int]storage.RunningWeekSummary
 	dose       map[int]storage.TrainingDoseWeekSummary
@@ -109,6 +110,72 @@ func (f *fakeMasterPlanStore) UpdateActiveMasterPlan(_ context.Context, userID, 
 	active.Revision = &newRevision
 	active.UpdatedAt = now
 	return active, nil
+}
+
+func (f *fakeMasterPlanStore) InsertMasterPlanDraft(_ context.Context, userID, goalID, content, draftID string) (*storage.MasterPlan, bool, error) {
+	if f.drafts == nil {
+		f.drafts = map[string][]*storage.MasterPlan{}
+	}
+	for _, d := range f.drafts[userID] {
+		if d.PlanID == draftID {
+			return d, false, nil
+		}
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	revision := int64(1)
+	draft := &storage.MasterPlan{
+		PlanID: draftID, UserID: userID, GoalID: goalID,
+		ContentVersion: storage.MasterPlanContentStructured, Content: content,
+		Status: storage.MasterPlanStatusDraft, Revision: &revision,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	f.drafts[userID] = append(f.drafts[userID], draft)
+	return draft, true, nil
+}
+
+func (f *fakeMasterPlanStore) GetMasterPlanDraft(_ context.Context, userID, planID string) (*storage.MasterPlan, error) {
+	for _, d := range f.drafts[userID] {
+		if d.PlanID == planID {
+			return d, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fakeMasterPlanStore) ActivateMasterPlanDraft(_ context.Context, userID, planID string) (*storage.MasterPlan, *storage.MasterPlan, error) {
+	var draft *storage.MasterPlan
+	for _, d := range f.drafts[userID] {
+		if d.PlanID == planID {
+			draft = d
+		}
+	}
+	if draft == nil || draft.Status != storage.MasterPlanStatusDraft {
+		return nil, nil, storage.ErrMasterPlanDraftNotFound
+	}
+	var replaced *storage.MasterPlan
+	if active, ok := f.current[userID]; ok && active != nil {
+		replaced = active
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	activeFlag := int8(1)
+	draft.Status = storage.MasterPlanStatusActive
+	draft.ActiveFlag = &activeFlag
+	draft.UpdatedAt = now
+	f.current[userID] = draft
+	return draft, replaced, nil
+}
+
+func (f *fakeMasterPlanStore) AbandonMasterPlanDraft(_ context.Context, userID, planID string) (*storage.MasterPlan, error) {
+	for i, d := range f.drafts[userID] {
+		if d.PlanID == planID {
+			if d.Status != storage.MasterPlanStatusDraft {
+				return nil, storage.ErrMasterPlanDraftNotFound
+			}
+			f.drafts[userID][i].Status = storage.MasterPlanStatusArchived
+			return f.drafts[userID][i], nil
+		}
+	}
+	return nil, storage.ErrMasterPlanDraftNotFound
 }
 
 // --- harness -----------------------------------------------------------------
