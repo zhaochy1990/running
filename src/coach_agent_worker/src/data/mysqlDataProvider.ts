@@ -20,8 +20,8 @@ import type {
   WeeklyPlanDocument,
 } from "@stride/coach-agent";
 import type { Pool, RowDataPacket } from "mysql2/promise";
-import type { MySqlConfig } from "../dto/config.js";
-import { createStridePool } from "../persistence/mysql.js";
+import type { MySqlConfig } from "../config.js";
+import { createStridePool } from "../db/mysql.js";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 

@@ -1,0 +1,41 @@
+{
+  "name": "@stride/coach-agent-worker",
+  "version": "0.1.0",
+  "description": "Standalone TS worker for training plan jobs (Plan Job): consumes its own queue, runs the plan kernels with streaming progress, inserts plan drafts via the Go internal API.",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "tsc": "node node_modules/typescript/lib/tsc.js",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && npm run tsc",
+    "start": "node dist/src/main.js",
+    "dev": "pnpm build && pnpm start",
+    "test": "npm run build && node --test dist/tests/*.test.js dist/tests/job/*.test.js dist/tests/storage/*.test.js dist/tests/queue/*.test.js dist/tests/kernel/*.test.js dist/tests/goClient/*.test.js dist/tests/data/*.test.js",
+    "format": "biome format --write src tests",
+    "check": "biome check src tests",
+    "check:fix": "biome check --write src tests"
+  },
+  "dependencies": {
+    "@stride/coach-agent": "workspace:*",
+    "@stride/common": "workspace:*",
+    "@stride/contract": "workspace:*",
+    "amqplib": "^0.10.7",
+    "convict": "^6.2.5",
+    "mysql2": "^3.23.2",
+    "pino": "^10.3.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.8",
+    "@types/amqplib": "^0.10.8",
+    "@types/convict": "^6.1.6",
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2"
+  }
+}

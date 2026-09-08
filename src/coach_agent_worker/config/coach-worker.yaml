@@ -1,0 +1,35 @@
+# Plan-job worker infrastructure defaults. Environment files and then
+# environment variables override this file (see `config.ts` for the env map).
+worker:
+  # amqp_url comes from PLAN_WORKER_AMQP_URL (secret; never in YAML).
+  queues:
+    work: plan.jobs
+    retry: plan.jobs.retry
+    poison: plan.jobs.poison
+  retry:
+    max_attempts: 2
+    base_backoff_ms: 10000
+    max_backoff_ms: 60000
+  consumer:
+    prefetch: 1
+  stale_running_ms: 900000
+  reconcile_interval_ms: 30000
+
+stride_database:
+  host: "127.0.0.1"
+  port: 3306
+  user: "root"
+  password: "root_password"
+  database: "stride"
+
+persistence_database:
+  host: "127.0.0.1"
+  port: 3306
+  user: "root"
+  password: "root_password"
+  database: "coach_agent"
+
+# Go internal API (X-Internal-Token) for plan-draft inserts.
+go_api:
+  base_url: "http://127.0.0.1:8080"
+  internal_token: ""

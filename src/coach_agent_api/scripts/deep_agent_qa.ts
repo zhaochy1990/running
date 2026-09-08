@@ -12,7 +12,7 @@ import {
 } from "@stride/coach-agent";
 import { loadApiConfig } from "../src/config.js";
 import { coachAgentConfigFiles, coachApiConfigFiles } from "../src/configPaths.js";
-import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";
+import { MySqlDataProvider } from "@stride/coach-agent-worker";
 import { shanghaiDay } from '@stride/contract';
 
 const config = loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) });

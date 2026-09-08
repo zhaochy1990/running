@@ -89,6 +89,14 @@ const schema: convict.Schema<RawApiConfig> = {
     password: "COACH_AGENT_MYSQL_PASSWORD",
     database: "COACH_AGENT_MYSQL_DATABASE",
   }),
+  plan_jobs: {
+    amqp_url: { format: requiredString, default: "amqp://guest:guest@127.0.0.1:5672/", env: "STRIDE_COACH_PLAN_JOBS_AMQP_URL", sensitive: true },
+    queues: {
+      work: { format: String, default: "plan.jobs", env: "STRIDE_COACH_PLAN_JOBS_QUEUES_WORK" },
+      retry: { format: String, default: "plan.jobs.retry", env: "STRIDE_COACH_PLAN_JOBS_QUEUES_RETRY" },
+      poison: { format: String, default: "plan.jobs.poison", env: "STRIDE_COACH_PLAN_JOBS_QUEUES_POISON" },
+    },
+  },
 };
 
 export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
@@ -102,6 +110,7 @@ export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
     port: raw.api.port,
     strideDatabase: raw.stride_database,
     persistenceDatabase: raw.persistence_database,
+    planJobs: { amqpUrl: raw.plan_jobs.amqp_url, queues: raw.plan_jobs.queues },
     auth: {
       publicKeyPem,
       authServiceUrl: raw.auth.auth_service_url,

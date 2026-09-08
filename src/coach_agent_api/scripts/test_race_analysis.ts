@@ -1,6 +1,6 @@
 import { loadApiConfig } from "../src/config.js";
 import { coachAgentConfigFiles, coachApiConfigFiles } from "../src/configPaths.js";
-import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";
+import { MySqlDataProvider } from "@stride/coach-agent-worker";
 
 const provider = MySqlDataProvider.create(loadApiConfig({ configFiles: coachApiConfigFiles(import.meta.url) }).strideDatabase);
 

@@ -6,6 +6,7 @@ import type { CoachInvoker } from "./coach/coachInvoker.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerHistoryRoutes, registerSessionListRoutes, type ThreadHistoryReader, type ThreadSessionReader } from "./routes/history.js";
+import { type PlanJobsService, registerPlanJobRoutes } from "./routes/planJobs.js";
 import { registerSwaggerRoutes } from "./routes/swagger.js";
 import type { TurnCoordinator } from "./turn/coordinator.js";
 import { createInMemoryTurnCoordinator } from "./turn/index.js";
@@ -16,6 +17,8 @@ export interface AppDependencies {
   turnCoordinator?: TurnCoordinator;
   /** When provided, exposes per-session conversation history (GET .../sessions/{id}/messages). */
   checkpointer?: ThreadHistoryReader;
+  /** When provided, exposes the deterministic plan-job enqueue/poll endpoints. */
+  planJobs?: PlanJobsService;
 }
 
 export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
@@ -34,6 +37,13 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
     coach: dependencies.coachInvoker,
     turnCoordinator,
   });
+
+  if (dependencies.planJobs) {
+    registerPlanJobRoutes(app, {
+      planJobs: dependencies.planJobs,
+      auth: createAuthMiddleware(dependencies.jwtVerifier),
+    });
+  }
 
   if (dependencies.checkpointer) {
     app.use("/api/users/me/coach/sessions/*", createAuthMiddleware(dependencies.jwtVerifier));

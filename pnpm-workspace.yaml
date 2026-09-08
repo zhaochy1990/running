@@ -1,6 +1,7 @@
 packages:
   - src/coach_agent
   - src/coach_agent_api
+  - src/coach_agent_worker
   - src/coach_contract
   - src/stride-common
 minimumReleaseAgeExclude:
