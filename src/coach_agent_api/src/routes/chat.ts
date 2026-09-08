@@ -6,22 +6,22 @@ import { type SSEStreamingApi, streamSSE } from "hono/streaming";
 import type { AuthEnv } from "../auth.js";
 import type { CoachInvoker } from "../coach/coachInvoker.js";
 import type { ChatRequest } from "../dto/chat.js";
+import type { TurnRequest } from "../dto/turn.js";
 import { toPublicResponse } from "../publicResponse.js";
 import type { TurnCoordinator } from "../turn/coordinator.js";
 import { ThreadBusyError, TurnConflictError } from "../turn/errors.js";
-import { type CoachStreamEmitter, collectCoachStream, sseMessage } from "./stream.js";
+import { type CoachStreamEmitter, collectCoachStream } from "./stream.js";
 
 const logger = getLogger("routes/chat");
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const ISO_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
-export function registerChatRoutes(
-  app: Hono<AuthEnv>,
-  dependencies: {
-    coach: CoachInvoker;
-    turnCoordinator: TurnCoordinator;
-  },
-): void {
+interface ChatDependencies {
+  coach: CoachInvoker;
+  turnCoordinator: TurnCoordinator;
+}
+
+export function registerChatRoutes(app: Hono<AuthEnv>, dependencies: ChatDependencies): void {
   app.post("/api/users/me/coach/chat", async (context) => {
     const userId = context.get("userId");
     const body = await readChatRequest(context.req.raw);
@@ -29,23 +29,29 @@ export function registerChatRoutes(
 
     if (!body.ok) return context.json({ error: body.error }, 400);
 
+    const threadId = `${userId}:coach:${body.value.sessionId}`;
     if (acceptsStream(context.req.raw)) {
       return streamSSE(context, async (stream) => {
-        await streamChat(dependencies, stream, body.value, userId);
+        await streamChat(dependencies, stream, body.value, userId, threadId);
       });
     }
 
-    const threadId = `${userId}:coach:${body.value.sessionId}`;
     try {
-      const response = await runTurn(dependencies, body.value, userId, threadId);
+      const response = await runTurn(dependencies, body.value, threadId, async (resumeFromCheckpoint, turn) => {
+        const input = buildInput(body.value, resumeFromCheckpoint);
+        const config = buildConfig(body.value, userId, threadId, turn.fingerprint);
+        const result = await dependencies.coach.invoke(input, config);
+        return toPublicResponse(result);
+      });
       return context.json({ ...response, session_id: body.value.sessionId, client_turn_id: body.value.clientTurnId });
     } catch (error) {
-      if (error instanceof TurnConflictError) {
-        return context.json({ error: "client_turn_id_conflict" }, 409);
+      const { kind } = classifyTurnError(error);
+      if (kind === "client_turn_id_conflict") {
+        return context.json({ error: kind }, 409);
       }
-      if (error instanceof ThreadBusyError) {
+      if (kind === "coach_thread_busy") {
         context.header("Retry-After", "5");
-        return context.json({ error: "coach_thread_busy" }, 429);
+        return context.json({ error: kind }, 429);
       }
       throw error;
     }
@@ -53,41 +59,39 @@ export function registerChatRoutes(
 }
 
 function acceptsStream(request: Request): boolean {
-  const accept = request.headers.get("accept");
-  return accept !== null && accept.toLowerCase().includes("text/event-stream");
+  return request.headers.get("accept")?.toLowerCase().includes("text/event-stream") ?? false;
 }
 
-/** Run one turn under the per-thread lock with a fresh invocation. */
+/**
+ * Run one turn under the per-thread lock with the given invocation. Shared by
+ * the sync and streaming paths so both keep identical lock / idempotency /
+ * receipt semantics from the turn coordinator.
+ */
 async function runTurn(
-  dependencies: { coach: CoachInvoker; turnCoordinator: TurnCoordinator },
+  dependencies: ChatDependencies,
   body: ChatRequest,
-  userId: string,
   threadId: string,
+  work: (resumeFromCheckpoint: boolean, turn: TurnRequest) => Promise<Record<string, unknown>>,
 ): Promise<Record<string, unknown>> {
-  const turn = { threadId, clientTurnId: body.clientTurnId, fingerprint: dependencies.turnCoordinator.getFingerprint(body) };
-  return dependencies.turnCoordinator.run(turn, (resumeFromCheckpoint) =>
-    invokeCoach(dependencies, body, userId, threadId, turn.fingerprint, resumeFromCheckpoint),
-  );
+  const turn: TurnRequest = {
+    threadId,
+    clientTurnId: body.clientTurnId,
+    fingerprint: dependencies.turnCoordinator.getFingerprint(body),
+  };
+  return dependencies.turnCoordinator.run(turn, (resumeFromCheckpoint) => work(resumeFromCheckpoint, turn));
 }
 
 /** SSE variant: emit status events during the run, then a single `done` event. */
-async function streamChat(
-  dependencies: { coach: CoachInvoker; turnCoordinator: TurnCoordinator },
-  stream: SSEStreamingApi,
-  body: ChatRequest,
-  userId: string,
-): Promise<void> {
-  const threadId = `${userId}:coach:${body.sessionId}`;
+async function streamChat(dependencies: ChatDependencies, stream: SSEStreamingApi, body: ChatRequest, userId: string, threadId: string): Promise<void> {
   const turnId = body.clientTurnId;
   const emit = async (event: "status" | "done" | "error", data: Record<string, unknown>) => {
-    await stream.writeSSE(sseMessage(event, data));
+    await stream.writeSSE({ event, data: JSON.stringify(data) });
   };
   const emitStatus: CoachStreamEmitter = (status) =>
     emit("status", { turn_id: turnId, phase: status.phase, ...(status.subagent ? { subagent: status.subagent } : {}) });
 
   try {
-    const turn = { threadId, clientTurnId: turnId, fingerprint: dependencies.turnCoordinator.getFingerprint(body) };
-    const response = await dependencies.turnCoordinator.run(turn, async (resumeFromCheckpoint) => {
+    const response = await runTurn(dependencies, body, threadId, async (resumeFromCheckpoint, turn) => {
       const input = buildInput(body, resumeFromCheckpoint);
       const config = buildConfig(body, userId, threadId, turn.fingerprint);
       const run = await dependencies.coach.streamEvents(input, config);
@@ -95,24 +99,10 @@ async function streamChat(
     });
     await emit("done", { turn_id: turnId, ...response });
   } catch (error) {
-    const payload = toErrorPayload(error);
+    const { kind, message } = classifyTurnError(error);
     logger.error({ error, threadId }, "coach streaming turn failed");
-    await emit("error", { turn_id: turnId, ...payload });
+    await emit("error", { turn_id: turnId, code: kind, message });
   }
-}
-
-async function invokeCoach(
-  dependencies: { coach: CoachInvoker },
-  body: ChatRequest,
-  userId: string,
-  threadId: string,
-  fingerprint: string,
-  resumeFromCheckpoint: boolean,
-): Promise<Record<string, unknown>> {
-  const input = buildInput(body, resumeFromCheckpoint);
-  const config = buildConfig(body, userId, threadId, fingerprint);
-  const result = await dependencies.coach.invoke(input, config);
-  return toPublicResponse(result);
 }
 
 /** Same turn input for the sync and streaming invocations (shared lock/idempotency semantics). */
@@ -151,11 +141,11 @@ function buildConfig(body: ChatRequest, userId: string, threadId: string, finger
   };
 }
 
-function toErrorPayload(error: unknown): { code: string; message: string } {
-  if (error instanceof TurnConflictError) return { code: "client_turn_id_conflict", message: error.message };
-  if (error instanceof ThreadBusyError) return { code: "coach_thread_busy", message: error.message };
-  const message = error instanceof Error ? error.message : "coach turn failed";
-  return { code: "coach_turn_failed", message };
+/** The two public failure surfaces share one classification of turn errors. */
+function classifyTurnError(error: unknown): { kind: string; message: string } {
+  if (error instanceof TurnConflictError) return { kind: "client_turn_id_conflict", message: error.message };
+  if (error instanceof ThreadBusyError) return { kind: "coach_thread_busy", message: error.message };
+  return { kind: "coach_turn_failed", message: error instanceof Error ? error.message : "coach turn failed" };
 }
 
 async function readChatRequest(request: Request): Promise<{ ok: true; value: ChatRequest } | { ok: false; error: string }> {

@@ -124,6 +124,41 @@ test("streaming chat replays an identical client turn without re-invoking", asyn
   assert.equal(replay.filter((event) => event.event === "status").length, 0);
 });
 
+test("streaming chat ignores a failing subagent status iterable and still emits done", async () => {
+  const app = createApp({
+    jwtVerifier: {
+      async verify() {
+        return { userId: "athlete-1" };
+      },
+    },
+    coachInvoker: {
+      async invoke() {
+        throw new Error("must not invoke");
+      },
+      async streamEvents() {
+        return {
+          output: Promise.resolve({ messages: [{ type: "ai", content: "仍在回答" }] }),
+          subagents: (async function* () {
+            throw new Error("status stream blew up");
+            yield { name: "qa_agent" };
+          })(),
+        };
+      },
+    },
+  });
+  const response = await chatRequest(
+    { session_id: "session-1", client_turn_id: "turn-1", message: "hi" },
+    SSE_ACCEPT,
+  )(app);
+  assert.equal(response.status, 200);
+  const events = parseSse(await response.text());
+  const done = events.filter((event) => event.event === "done");
+  // The run's final state is authoritative; a subagent-status failure is
+  // non-fatal, so the turn still completes with a single done event.
+  assert.equal(done.length, 1);
+  assert.equal(done[0]?.data.message, "仍在回答");
+});
+
 test("streaming chat emits an error event when the coach fails", async () => {
   const app = createApp({
     jwtVerifier: {

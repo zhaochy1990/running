@@ -1,6 +1,9 @@
 import { createServer } from "node:http";
 import { createApp } from "../src/app.js";
 
+const neverStream = () => {
+  throw new Error("must not stream");
+};
 const app = createApp({
   jwtVerifier: {
     async verify() {
@@ -11,9 +14,7 @@ const app = createApp({
     async invoke() {
       return { messages: [{ type: "ai", content: "SMOKE_OK" }] };
     },
-    async streamEvents() {
-      throw new Error("must not stream");
-    },
+    streamEvents: neverStream,
   },
 });
 const server = createServer(async (request, response) => {
