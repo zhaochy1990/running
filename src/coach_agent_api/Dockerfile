@@ -15,6 +15,7 @@ COPY src/stride-common/package.json ./src/stride-common/package.json
 COPY src/coach_contract/package.json ./src/coach_contract/package.json
 COPY src/coach_agent/package.json ./src/coach_agent/package.json
 COPY src/coach_agent_api/package.json ./src/coach_agent_api/package.json
+COPY src/coach_agent_worker/package.json ./src/coach_agent_worker/package.json
 
 RUN pnpm install --frozen-lockfile
 
@@ -23,6 +24,7 @@ COPY src/stride-common/ ./src/stride-common/
 COPY src/coach_contract/ ./src/coach_contract/
 COPY src/coach_agent/ ./src/coach_agent/
 COPY src/coach_agent_api/ ./src/coach_agent_api/
+COPY src/coach_agent_worker/ ./src/coach_agent_worker/
 
 RUN pnpm --filter coach_agent_api run build:all
 
@@ -43,6 +45,7 @@ COPY src/stride-common/package.json ./src/stride-common/package.json
 COPY src/coach_contract/package.json ./src/coach_contract/package.json
 COPY src/coach_agent/package.json ./src/coach_agent/package.json
 COPY src/coach_agent_api/package.json ./src/coach_agent_api/package.json
+COPY src/coach_agent_worker/package.json ./src/coach_agent_worker/package.json
 
 RUN pnpm install --prod --frozen-lockfile
 
@@ -51,6 +54,7 @@ COPY --from=build /repo/src/stride-common/dist ./src/stride-common/dist
 COPY --from=build /repo/src/coach_contract/dist ./src/coach_contract/dist
 COPY --from=build /repo/src/coach_agent/dist ./src/coach_agent/dist
 COPY --from=build /repo/src/coach_agent_api/dist ./src/coach_agent_api/dist
+COPY --from=build /repo/src/coach_agent_worker/dist ./src/coach_agent_worker/dist
 
 # ---- Config files ----
 COPY src/coach_agent_api/config/ ./src/coach_agent_api/config/

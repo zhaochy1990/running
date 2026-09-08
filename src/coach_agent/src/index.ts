@@ -36,6 +36,7 @@ export type {
   WeeklyPlanContextProvider,
 } from "./data/weeklyPlanContextProvider.js";
 export { DataProviderWeeklyPlanContextProvider } from "./data/weeklyPlanContextProvider.js";
+export { FrozenMasterPlanContextProvider } from "./graph/master_plan/context.js";
 export {
   createMasterPlanGraph,
   MasterPlanGraphRequest,

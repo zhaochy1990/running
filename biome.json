@@ -12,6 +12,8 @@
       "src/coach_agent/scripts/**/*.{js,mjs}",
       "src/coach_agent_api/src/**/*.{js,ts,json}",
       "src/coach_agent_api/scripts/**/*.{js,mjs}",
+      "src/coach_agent_worker/src/**/*.{js,ts,json}",
+      "src/coach_agent_worker/tests/**/*.{js,ts,json}",
       "src/coach_contract/src/**/*.{js,ts,json}",
       "src/coach_contract/scripts/**/*.{js,mjs}",
       "src/stride-common/src/**/*.{js,ts,json}",

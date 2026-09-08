@@ -67,6 +67,66 @@ export const OPENAPI_DOCUMENT = {
         },
       },
     },
+    "/api/users/me/coach/plan-jobs": {
+      post: {
+        tags: ["Coach"],
+        operationId: "createPlanJob",
+        summary: "Enqueue a training-plan job (deterministic)",
+        description:
+          "Submits a directly-provided kernel request (server-side zod re-validation) as a plan job. Returns the job id and an estimated duration; poll the job id to follow progress. Idempotent by idempotency_key.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/PlanJobEnqueueRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "The plan job was enqueued.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PlanJobEnqueueResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The request body or kernel request is invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+        },
+      },
+    },
+    "/api/users/me/coach/plan-jobs/{job_id}": {
+      get: {
+        tags: ["Coach"],
+        operationId: "getPlanJob",
+        summary: "Poll a training-plan job",
+        description: "Returns the job's status, stage, progress, error code and, when done, the resulting draft id.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "job_id",
+            in: "path",
+            required: true,
+            schema: { $ref: "#/components/schemas/TurnIdentifier" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "The job's current state.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PlanJobPollResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The job_id is invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "404": errorResponse("The plan job was not found."),
+        },
+      },
+    },
     "/api/users/me/coach/sessions": {
       get: {
         tags: ["Coach"],
@@ -283,6 +343,51 @@ export const OPENAPI_DOCUMENT = {
         type: "object",
         required: ["error"],
         properties: { error: { type: "string" } },
+        additionalProperties: false,
+      },
+      PlanJobEnqueueRequest: {
+        type: "object",
+        required: ["job_type", "request"],
+        properties: {
+          job_type: {
+            type: "string",
+            enum: ["generate_master_plan"],
+          },
+          request: {
+            type: "object",
+            description: "The kernel request (MasterPlanGraphRequest). Re-validated server-side.",
+            additionalProperties: true,
+          },
+          idempotency_key: {
+            type: "string",
+            description: "Deduplicates enqueue: at most one job per (user, key).",
+            maxLength: 128,
+          },
+        },
+        additionalProperties: false,
+      },
+      PlanJobEnqueueResponse: {
+        type: "object",
+        required: ["job_id", "job_type", "estimated_duration_seconds"],
+        properties: {
+          job_id: { $ref: "#/components/schemas/TurnIdentifier" },
+          job_type: { type: "string" },
+          estimated_duration_seconds: { type: "integer", minimum: 0 },
+        },
+        additionalProperties: false,
+      },
+      PlanJobPollResponse: {
+        type: "object",
+        required: ["job_id", "job_type", "status", "stage", "progress_pct", "error_code", "result_draft_id"],
+        properties: {
+          job_id: { $ref: "#/components/schemas/TurnIdentifier" },
+          job_type: { type: "string" },
+          status: { type: "string", enum: ["queued", "running", "done", "failed"] },
+          stage: { type: "string" },
+          progress_pct: { type: "integer", minimum: 0, maximum: 100 },
+          error_code: { type: ["string", "null"] },
+          result_draft_id: { type: ["string", "null"] },
+        },
         additionalProperties: false,
       },
     },

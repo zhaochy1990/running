@@ -26,3 +26,11 @@ persistence_database:
   user: "root"
   password: "root_password"
   database: "coach_agent"
+
+# Plan-job broker used by the deterministic enqueue endpoint.
+plan_jobs:
+  # amqp_url comes from STRIDE_COACH_PLAN_JOBS_AMQP_URL (secret; never in YAML).
+  queues:
+    work: plan.jobs
+    retry: plan.jobs.retry
+    poison: plan.jobs.poison

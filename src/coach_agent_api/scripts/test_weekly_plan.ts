@@ -12,7 +12,7 @@ import {
 } from "@stride/coach-agent";
 import { loadApiConfig } from "../src/config.js";
 import { coachAgentConfigFiles, coachApiConfigFiles } from "../src/configPaths.js";
-import { MySqlDataProvider } from "../src/data/mysqlDataProvider.js";
+import { MySqlDataProvider } from "@stride/coach-agent-worker";
 
 const usernameMap: Record<string, string> = {
   // pan: "5ee229a6-cdc1-4260-84d3-71ec622126c2",

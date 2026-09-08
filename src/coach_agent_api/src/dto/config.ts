@@ -12,6 +12,7 @@ export interface RawApiConfig {
   };
   stride_database: MySqlConfig;
   persistence_database: MySqlConfig;
+  plan_jobs: { amqp_url: string; queues: { work: string; retry: string; poison: string } };
 }
 
 export interface ApiConfig {
@@ -19,6 +20,7 @@ export interface ApiConfig {
   port: number;
   strideDatabase: MySqlConfig;
   persistenceDatabase: MySqlConfig;
+  planJobs: { amqpUrl: string; queues: { work: string; retry: string; poison: string } };
   auth: { publicKeyPem: string; authServiceUrl: string; issuer: string; audience?: string | string[] };
 }
 

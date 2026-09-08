@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:core": "pnpm --filter @stride/common build && pnpm --filter @stride/contract build && pnpm --filter @stride/coach-agent build",
+    "build:core": "pnpm --filter @stride/common build && pnpm --filter @stride/contract build && pnpm --filter @stride/coach-agent build && pnpm --filter @stride/coach-agent-worker build",
     "build": "npm run clean && tsc",
     "tsc": "pnpm clean && tsc",
     "build:all": "npm run build:core && npm run build",
@@ -29,6 +29,7 @@
     "@stride/common": "workspace:*",
     "@stride/contract": "workspace:*",
     "@stride/coach-agent": "workspace:*",
+    "@stride/coach-agent-worker": "workspace:*",
     "convict": "^6.2.5",
     "deepagents": "^1.12.4",
     "hono": "^4.10.3",

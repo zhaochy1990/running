@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./test-fixtures": {
+      "types": "./dist/graph/master_plan/testFixtures.d.ts",
+      "import": "./dist/graph/master_plan/testFixtures.js"
     }
   },
   "scripts": {
