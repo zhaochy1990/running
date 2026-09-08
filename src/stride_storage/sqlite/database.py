@@ -1617,7 +1617,9 @@ class Database:
                       avg_cadence, calories_kcal, training_load, vo2max, train_type,
                       ascent_m, aerobic_effect, anaerobic_effect,
                       temperature, humidity, feels_like, wind_speed,
-                      route_thumb_json
+                      route_thumb_json,
+                      (SELECT atl.training_dose FROM activity_training_load atl
+                        WHERE atl.label_id = activities.label_id) AS stride_training_dose
                  FROM activities {where}
                 ORDER BY date DESC, label_id DESC
                 LIMIT ? OFFSET ?""",

@@ -293,6 +293,7 @@ func TestActivityList_MonthlyRoundingAndItem(t *testing.T) {
 			MonthlySummaries: map[string]storage.ActivityMonthly{
 				"2026-01": {ActivityCount: 1, TotalRunKm: 5.234, RunDurationS: 1830, DurationS: 1830},
 			},
+			StrideDoses: map[string]*float64{"act-1": fptr(72.5)},
 		},
 	})
 	w := h.do(http.MethodGet, "/api/"+activityUserA+"/activities", h.bearer(t, activityUserA))
@@ -328,6 +329,9 @@ func TestActivityList_MonthlyRoundingAndItem(t *testing.T) {
 	}
 	if !strings.HasPrefix(it.Date, "2026-01-15") {
 		t.Fatalf("date = %q, want Shanghai 2026-01-15…", it.Date)
+	}
+	if it.StrideDose == nil || *it.StrideDose != 72.5 {
+		t.Fatalf("stride_training_dose = %v, want 72.5", it.StrideDose)
 	}
 }
 

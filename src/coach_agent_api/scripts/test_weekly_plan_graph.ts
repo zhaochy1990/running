@@ -9,7 +9,7 @@ import { getLogger } from "@stride/common";
 
 type Profile = "local" | "prod";
 const PROFILE = "prod" as Profile;
-const AS_OF = new Date("2026-08-30").toISOString();
+const AS_OF = new Date("2026-09-06").toISOString();
 const logger = getLogger("test-weekly-plan-graph");
 
 const usernameMap: Record<string, string> = {

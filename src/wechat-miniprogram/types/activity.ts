@@ -19,7 +19,10 @@ export interface Activity {
   max_hr: number | null;
   avg_cadence: number | null;
   calories_kcal: number | null;
+  /** 手表厂商上报的负荷（COROS/Garmin training_load）；仅供展示时与 STRIDE 负荷区分 */
   training_load: number | null;
+  /** STRIDE 自身计算的 PMC 训练剂量（activity_training_load.training_dose），列表页展示用 */
+  stride_training_dose?: number | null;
   vo2max: number | null;
   train_type: string | null;
 

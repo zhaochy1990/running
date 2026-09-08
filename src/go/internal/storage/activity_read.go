@@ -72,6 +72,10 @@ type ActivityPage struct {
 	Total            int64
 	Rows             []Activity
 	MonthlySummaries map[string]ActivityMonthly
+	// StrideDoses maps label_id → the STRIDE-computed training_dose for each
+	// row. Unlike activities.training_load (watch-reported), this is STRIDE's
+	// own PMC dose. Absent key / nil value means "no STRIDE dose".
+	StrideDoses map[string]*float64
 }
 
 // ListActivities returns a filtered, paginated activity page (newest first) plus
@@ -103,7 +107,37 @@ func (s *Store) ListActivities(ctx context.Context, userID string, p ActivityLis
 		return nil, err
 	}
 
-	return &ActivityPage{Total: total, Rows: rows, MonthlySummaries: summaries}, nil
+	strideDoses, err := s.strideActivityDoses(ctx, uid, rows)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ActivityPage{Total: total, Rows: rows, MonthlySummaries: summaries, StrideDoses: strideDoses}, nil
+}
+
+// strideActivityDoses returns the STRIDE-computed training_dose per label_id
+// for the given activity rows. Unlike activities.training_load (watch-reported),
+// this is STRIDE's own PMC dose. Rows without a computed dose are absent from
+// the map.
+func (s *Store) strideActivityDoses(ctx context.Context, uid string, rows []Activity) (map[string]*float64, error) {
+	if len(rows) == 0 {
+		return map[string]*float64{}, nil
+	}
+	ids := make([]string, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.LabelID)
+	}
+	var loads []ActivityTrainingLoad
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ? AND label_id IN ?", uid, ids).
+		Find(&loads).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]*float64, len(loads))
+	for _, l := range loads {
+		out[l.LabelID] = l.TrainingDose
+	}
+	return out, nil
 }
 
 // activityListScope applies the tenant key plus the optional sport / category /

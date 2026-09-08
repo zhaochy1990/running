@@ -103,7 +103,8 @@ function toRow(a: Activity): ActivityRow {
     duration: fmtDurationShort(a.duration_s),
     pace: fmtPace(a.avg_pace_s_km),
     avgHr: a.avg_hr != null ? `${Math.round(a.avg_hr)}` : '—',
-    load: fmtDose(a.training_load),
+    // 优先展示 STRIDE 自身计算的负荷（training_dose）；缺失时回退到手表上报值。
+    load: fmtDose(a.stride_training_dose ?? a.training_load),
   };
 }
 

@@ -336,6 +336,7 @@ type activityListItem struct {
 	AvgCadence      *int            `json:"avg_cadence"`
 	CaloriesKcal    *int            `json:"calories_kcal"`
 	TrainingLoad    *float64        `json:"training_load"`
+	StrideDose      *float64        `json:"stride_training_dose"`
 	VO2Max          *float64        `json:"vo2max"`
 	TrainType       *string         `json:"train_type"`
 	AscentM         *float64        `json:"ascent_m"`
@@ -521,7 +522,7 @@ type activityDetailResponse struct {
 func toActivitiesListResponse(page *storage.ActivityPage, offset, limit int) activitiesListResponse {
 	items := make([]activityListItem, len(page.Rows))
 	for i := range page.Rows {
-		items[i] = toActivityListItem(&page.Rows[i])
+		items[i] = toActivityListItem(&page.Rows[i], page.StrideDoses)
 	}
 	summaries := make(map[string]monthlySummaryDTO, len(page.MonthlySummaries))
 	for month, m := range page.MonthlySummaries {
@@ -541,7 +542,7 @@ func toActivitiesListResponse(page *storage.ActivityPage, offset, limit int) act
 	}
 }
 
-func toActivityListItem(a *storage.Activity) activityListItem {
+func toActivityListItem(a *storage.Activity, strides map[string]*float64) activityListItem {
 	return activityListItem{
 		LabelID:         a.LabelID,
 		Name:            a.Name,
@@ -556,6 +557,7 @@ func toActivityListItem(a *storage.Activity) activityListItem {
 		AvgCadence:      a.AvgCadence,
 		CaloriesKcal:    a.CaloriesKcal,
 		TrainingLoad:    a.TrainingLoad,
+		StrideDose:      strides[a.LabelID],
 		VO2Max:          a.VO2Max,
 		TrainType:       a.TrainType,
 		AscentM:         a.AscentM,

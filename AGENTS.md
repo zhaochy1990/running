@@ -6,6 +6,8 @@ agent) when working with code here. `CLAUDE.md` (and any other agent-specific
 instruction file) references this file instead of duplicating rules, so there is
 exactly **one** set of instructions to follow.
 
+除非特别说明，否则一律用中文回复用户，不管用户发送的是中文还是英文
+
 ---
 
 ## Agent skills
@@ -26,7 +28,7 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 
 ## Go HTTP 服务（HARD）
 
-`src/go/` 是 Go 模块（`github.com/zhaochy1990/stride`，Tencent 部署的 async-job worker + sync CLIs）。**所有 Go HTTP 服务统一用 [gin](https://github.com/gin-gonic/gin)**（`cmd/api`、`internal/health` liveness 探针，以及后续任何 HTTP server / handler），不要用 chi / echo / 裸 `net/http` router —— 无例外。
+`src/go/` 是 Go 模块（`github.com/zhaochy1990/stride`，Tencent 部署的 async-job worker + sync CLIs + **承载全部客户端请求的 API server**）。`src/go/internal/api/` 是**唯一面向客户端（小程序 / Web / 手机）的生产 API**，为 `https://api.stride-running.cn` 提供后端；**所有 HTTP 请求一律走 Go API，不再有 Python API 承担客户端请求**。**所有 Go HTTP 服务统一用 [gin](https://github.com/gin-gonic/gin)**（`cmd/api`、`internal/health` liveness 探针，以及后续任何 HTTP server / handler），不要用 chi / echo / 裸 `net/http` router —— 无例外。
 
 ---
 
@@ -42,7 +44,7 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 | 读 / 写周反馈，引用 RPE 或 feel_type | [`docs/feedback-md.md`](docs/feedback-md.md) |
 | Multi-model A/B/C variants 流程 | [`docs/multi-variant.md`](docs/multi-variant.md) |
 | Commentary 写入 / 推 prod / daily loop | [`docs/working-model.md`](docs/working-model.md) |
-| 跑 coros-sync CLI / 改 sync 代码 / 直查 DB | [`docs/coros-cli.md`](docs/coros-cli.md) |
+| 跑 coros-sync CLI / 改 sync 代码 / 直查 DB | [`docs/coros-cli.md`](docs/coros-cli.md)（`src/coros_sync/` 待删除，勿新增依赖） |
 | 改 Coach Agent（TS，`src/coach_agent/*`） | [`src/coach_agent/AGENTS.md`](src/coach_agent/AGENTS.md) —— TS Coach Agent 为准 |
 | Auth wiring / Bearer / 401 排障 | [`docs/auth-wiring.md`](docs/auth-wiring.md) |
 | Docker / CI/CD / reparse webhook | [`docs/deployment.md`](docs/deployment.md) |
@@ -60,19 +62,18 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 |------------|---------|
 | 用户运动、健康和训练计划数据 | **腾讯云 MySQL**（应用代码经 `src/go/internal/storage/`） |
 | Go API 持久化数据（含跨用户 social signals、preferences、push registrations） | **MySQL**（经 `src/go/internal/storage/`） |
-| Python 服务的跨用户 social signals、preferences、push registrations | **Azure Table Storage**（canonical pattern：`stride_server/likes_store.py`） |
-| Bulk binary blobs (photos, video, large export files) | **Azure Blob Storage**（Python 服务） |
+| Bulk binary blobs (photos, video, large export files) | **Azure Blob Storage**（经非客户端 Python 运行时，见下） |
 | 用户头像图片文件（avatar image） | **腾讯云 COS**（对象存储 + CDN；经应用侧媒体上传接口，DB 只存 `avatar_url`） |
 | Authoring artifacts (plan.md, TRAINING_PLAN.md) | **Markdown files in `data/{user_id}/logs/`**；只有明确批准同步的非草稿内容才可经 `sync-data.yml` 到 Azure Files，weekly plan 草稿遵守下方人工 review 门禁 |
 | 周反馈 | rollout 前沿用 legacy `feedback.md`；`STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE=true` 后以 **腾讯云 MySQL `weekly_feedback`** 为唯一来源 |
 | Go API auth tokens / secrets | **MySQL**（经 `src/go/internal/storage/`） |
-| Python/Auth 服务的 auth tokens / secrets | **Azure Key Vault** |
+| Python（非 API 运行时，如 worker / coach）的 auth tokens / secrets | **Azure Key Vault** |
 
-**Go API 的所有持久化状态统一落 MySQL**，不要为 Go API 新增 Azure Table、Azure Blob、Azure Files 或 Key Vault 存储依赖；**唯一例外是用户头像图片文件**——头像二进制不经 MySQL，存腾讯云 COS（对象存储 + CDN），MySQL / auth-service 身份只存 `avatar_url` 字段。Python 服务保留既有 Azure 后端。遗留 SQLite 的迁移或调试任务必须与 weekly plan authoring 流程隔离。likes_store 是 Python two-backend 文件（dev JSON / prod Azure Table）+ `DefaultAzureCredential`，不要把它用于 Go API。
+**Go API 的所有持久化状态统一落 MySQL**，不要为 Go API 新增 Azure Table、Azure Blob、Azure Files 或 Key Vault 存储依赖；**唯一例外是用户头像图片文件**——头像二进制不经 MySQL，存腾讯云 COS（对象存储 + CDN），MySQL / auth-service 身份只存 `avatar_url` 字段。**Python 仓库内包 `stride_server/`、`stride_storage/`、`stride_core/`、`coros_sync/` 全部标记为待删除（legacy / to-be-removed）**：不再承担任何来自小程序 / Web / 手机的客户端请求，也不应在新增代码中被依赖；新代码一律走 Go API → MySQL。这些包仅在迁移、遗留 CLI、测试 fixture 等暂时保留的路径里使用（如 `garmin_sync/` 仍引用 `coros_sync/`）。`src/coach_cli/` 已删除，不要引用。遗留 SQLite 的迁移或调试任务必须与 weekly plan authoring 流程隔离。likes_store 是 Python two-backend 文件（dev JSON / prod Azure Table）+ `DefaultAzureCredential`，不要把它用于 Go API。
 
 ### SQL ownership rule (HARD)
 
-只有各运行时的 storage 包允许直接写 SQL 读取 / 修改数据库：Python `src/stride_storage/`、Go `src/go/internal/storage/`、TypeScript Coach API `src/coach_agent_api/src/data/`（只读 `DataProvider` adapter）与 `src/coach_agent_api/src/persistence/`（checkpoint/store/turn receipt 写入与 thread lock）、训练计划任务 worker `src/coach_agent_worker/src/storage/`（计划任务状态表读写）。`src/coach_agent/` 核心只定义只读 `DataProvider` interface，不依赖数据库客户端。其它包（`stride_server/`、`coach/`、`stride_core/`、Coach graph / tools、routes、scripts 等）需要数据时必须调用对应 storage 包暴露的 API / repository / store 方法；缺方法就先在 storage 层增加一个语义明确的方法，并补 storage 层测试。
+只有各运行时的 storage 包允许直接写 SQL 读取 / 修改数据库：Python `src/stride_storage/`（**待删除**，仅遗留路径使用；客户端请求不经过 Python）、Go `src/go/internal/storage/`（**客户端请求唯一数据路径**）、TypeScript Coach API `src/coach_agent_api/src/data/`（只读 `DataProvider` adapter）与 `src/coach_agent_api/src/persistence/`（checkpoint/store/turn receipt 写入与 thread lock）、训练计划任务 worker `src/coach_agent_worker/src/storage/`（计划任务状态表读写）。`src/coach_agent/` 核心只定义只读 `DataProvider` interface，不依赖数据库客户端。其它包（`stride_server/`〔待删除〕、`coach/`、`stride_core/`〔待删除〕、Coach graph / tools、routes、scripts 等）需要数据时必须调用对应 storage 包暴露的 API / repository / store 方法；缺方法就先在 storage 层增加一个语义明确的方法，并补 storage 层测试。
 
 禁止在非 storage 包里新增：`db._conn.execute(...)`、`conn.execute(...)`、裸 SQL 字符串查询表、或为了绕开缺失 API 直接打开 SQLite 连接。例外只限：已有 legacy 代码的迁移前状态；`src/migration/` 下不进入应用运行时的一次性数据迁移脚本；以及下方 weekly plan authoring 流程中使用 prod readonly 账号执行的临时 MySQL CLI 查询。一次性迁移必须默认 dry-run，只处理 `src/migration/src/users.js` 中的真实用户，写入采用条件更新或等价幂等策略，支持限定范围和限流，并在提交前完成本地 dry-run、有限写入、源数据回读比对与重复运行验证。weekly plan CLI 例外不得写入应用代码或持久化为脚本。改到其它 legacy 代码时要顺手收敛到 storage API，不能扩大直接 SQL 面。
 
@@ -95,7 +96,7 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 | `activity.date.slice(0, 10)` in React | `shanghaiDate(activity.date)` from `lib/shanghai` |
 | `new Date().getFullYear()` 等表示"今天" | `shanghaiToday()` |
 
-**API 边界规则**：`stride_server/routes/` 下的路由 MUST 在每个 activity 行序列化前对 `date` 跑 `utc_iso_to_shanghai_iso()`。这就是 frontend `.slice(0, 10)` "刚好能用"的原因 —— offset 转过，instant 保留。
+**API 边界规则**：Go API 的 activity 序列化（`src/go/internal/api/`，经 `internal/apifmt`）MUST 在每个 activity 行输出前把 `date` 转成上海 ISO（等价于 Python 的 `utc_iso_to_shanghai_iso()`）。这就是 frontend `.slice(0, 10)` "刚好能用"的原因 —— offset 转过，instant 保留。`stride_server/`（Python FastAPI 客户端 API 层）**标为待删除**，不承担客户端请求。
 
 `tests/test_timezone_invariants.py` 失败时几乎总是 fix 是 import + 用上面 helper 之一，不是把文件加 whitelist。该 test 里的 `WHITELIST` dict 是给真正操作 Shanghai-local 列（`weekly_plan.date_from`、`daily_health.date` YYYYMMDD）的文件 —— 顺手加项需要 code-review 理由。
 
@@ -153,7 +154,7 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 
 ### Prod API endpoint（HARD）
 
-生产面向 client 的 API 根为 **`https://api.stride-running.cn`**。所有部署、脚本、CLI（`coros-sync` 等）和前端指向生产 API 时统一用它；`STRIDE_PROD_URL` / `STRIDE_GO_API_URL` 在生产也以它为值。**不要沿用旧 Azure `stride-app.*.azurecontainerapps.io` 地址**。完整配置见 [`docs/deployment.md`](docs/deployment.md)。
+**生产唯一面向所有客户端（小程序、Web、手机/APP）的 API 前门是 `https://api.stride-running.cn`，由 Go API（`src/go/internal/api/`）承担，数据落腾讯云 MySQL。不再有承担客户端请求的 Python API。** 所有小程序、Web、手机端请求、部署、脚本、CLI（`coros-sync` 等）和前端指向生产 API 时统一用它；`STRIDE_PROD_URL` / `STRIDE_GO_API_URL` 在生产也以它为值。**不要沿用旧 Azure `stride-app.*.azurecontainerapps.io` 地址，也不要新增/依赖任何独立的 Python FastAPI 客户端 API。** 完整配置见 [`docs/deployment.md`](docs/deployment.md)。
 
 ---
 
