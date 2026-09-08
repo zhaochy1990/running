@@ -11,6 +11,9 @@ const app = createApp({
     async invoke() {
       return { messages: [{ type: "ai", content: "SMOKE_OK" }] };
     },
+    async streamEvents() {
+      throw new Error("must not stream");
+    },
   },
 });
 const server = createServer(async (request, response) => {

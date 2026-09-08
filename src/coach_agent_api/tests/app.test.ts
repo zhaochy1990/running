@@ -19,6 +19,9 @@ test("health is public", async () => {
       async invoke() {
         throw new Error("must not invoke");
       },
+      async streamEvents() {
+        throw new Error("must not stream");
+      },
     },
   });
   const response = await app.request("/health");
@@ -36,6 +39,9 @@ test("OpenAPI document describes the live routes and bearer authentication", asy
     coachInvoker: {
       async invoke() {
         throw new Error("must not invoke");
+      },
+      async streamEvents() {
+        throw new Error("must not stream");
       },
     },
   });
@@ -61,6 +67,9 @@ test("Swagger UI is served for the OpenAPI document", async () => {
     coachInvoker: {
       async invoke() {
         throw new Error("must not invoke");
+      },
+      async streamEvents() {
+        throw new Error("must not stream");
       },
     },
   });
@@ -89,6 +98,9 @@ test("chat derives user and thread identity from the verified token", async () =
       async invoke(input, config) {
         invocation = { input, config };
         return { messages: [{ type: "ai", content: "训练状态稳定。" }] };
+      },
+      async streamEvents() {
+        throw new Error("must not stream");
       },
     },
   });
@@ -162,6 +174,9 @@ test("chat never exposes a tool message as the public answer", async () => {
           ],
         };
       },
+      async streamEvents() {
+        throw new Error("must not stream");
+      },
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -197,6 +212,9 @@ test("chat resumes an interrupt without requiring a new message", async () => {
         input = value;
         return { messages: [{ type: "ai", content: "继续处理" }] };
       },
+      async streamEvents() {
+        throw new Error("must not stream");
+      },
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -229,6 +247,9 @@ test("chat accepts multi-select interrupt answers", async () => {
         input = value;
         return { messages: [{ type: "ai", content: "继续处理" }] };
       },
+      async streamEvents() {
+        throw new Error("must not stream");
+      },
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -259,6 +280,9 @@ test("chat fails closed without a valid bearer token", async () => {
       async invoke() {
         throw new Error("must not invoke");
       },
+      async streamEvents() {
+        throw new Error("must not stream");
+      },
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -280,6 +304,9 @@ test("chat validates the public request contract before invoking Coach", async (
       async invoke() {
         called = true;
         return {};
+      },
+      async streamEvents() {
+        throw new Error("must not stream");
       },
     },
   });
@@ -311,6 +338,9 @@ test("chat rejects a malformed timestamp", async () => {
       async invoke() {
         called = true;
         return {};
+      },
+      async streamEvents() {
+        throw new Error("must not stream");
       },
     },
   });
@@ -344,6 +374,9 @@ test("chat defaults the message timestamp to Asia/Shanghai time", async () => {
       async invoke(value) {
         input = value;
         return { messages: [{ type: "ai", content: "ok" }] };
+      },
+      async streamEvents() {
+        throw new Error("must not stream");
       },
     },
   });
@@ -381,6 +414,9 @@ test("chat replays an identical client turn and conflicts on changed input", asy
         calls += 1;
         return { messages: [{ type: "ai", content: `answer-${calls}` }] };
       },
+      async streamEvents() {
+        throw new Error("must not stream");
+      },
     },
   });
   const request = (message: string) =>
@@ -417,6 +453,9 @@ test("chat carries validated target and review context into request identity and
       async invoke(input, config) {
         invocation = { input, config };
         return { messages: [{ type: "ai", content: "scoped" }] };
+      },
+      async streamEvents() {
+        throw new Error("must not stream");
       },
     },
   });
@@ -468,6 +507,9 @@ test("chat rejects review context that does not match the target week", async ()
       async invoke() {
         throw new Error("must not invoke");
       },
+      async streamEvents() {
+        throw new Error("must not stream");
+      },
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -501,6 +543,9 @@ test("chat returns an explicit retryable response when the thread is busy", asyn
     coachInvoker: {
       async invoke() {
         throw new Error("must not invoke");
+      },
+      async streamEvents() {
+        throw new Error("must not stream");
       },
     },
     turnCoordinator: {
@@ -539,6 +584,9 @@ test("chat rejects empty interrupt answers", async () => {
     coachInvoker: {
       async invoke() {
         throw new Error("must not invoke");
+      },
+      async streamEvents() {
+        throw new Error("must not stream");
       },
     },
   });
@@ -585,6 +633,9 @@ test("history requires a valid bearer token", async () => {
       async invoke() {
         throw new Error("must not invoke");
       },
+      async streamEvents() {
+        throw new Error("must not stream");
+      },
     },
     checkpointer: stubCheckpointer([]),
   });
@@ -604,6 +655,9 @@ test("history derives the thread from the verified token and maps messages", asy
     coachInvoker: {
       async invoke() {
         throw new Error("must not invoke");
+      },
+      async streamEvents() {
+        throw new Error("must not stream");
       },
     },
     checkpointer: {
@@ -651,6 +705,9 @@ test("history returns an empty list when the thread has no checkpoint", async ()
       async invoke() {
         throw new Error("must not invoke");
       },
+      async streamEvents() {
+        throw new Error("must not stream");
+      },
     },
     checkpointer: {
       async getTuple() {
@@ -681,6 +738,9 @@ test("history rejects an invalid session id", async () => {
       async invoke() {
         throw new Error("must not invoke");
       },
+      async streamEvents() {
+        throw new Error("must not stream");
+      },
     },
     checkpointer: stubCheckpointer([]),
   });
@@ -703,6 +763,9 @@ test("session list requires a valid bearer token", async () => {
       async invoke() {
         throw new Error("must not invoke");
       },
+      async streamEvents() {
+        throw new Error("must not stream");
+      },
     },
     checkpointer: stubCheckpointer([]),
   });
@@ -722,6 +785,9 @@ test("session list scopes threads to the caller and maps session_id/preview", as
     coachInvoker: {
       async invoke() {
         throw new Error("must not invoke");
+      },
+      async streamEvents() {
+        throw new Error("must not stream");
       },
     },
     checkpointer: {

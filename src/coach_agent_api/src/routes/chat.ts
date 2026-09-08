@@ -2,12 +2,14 @@ import { CoachTurnScope, Command } from "@stride/coach-agent";
 import { getLogger } from "@stride/common";
 import { shanghaiDay, shanghaiIso } from "@stride/contract";
 import type { Hono } from "hono";
+import { type SSEStreamingApi, streamSSE } from "hono/streaming";
 import type { AuthEnv } from "../auth.js";
 import type { CoachInvoker } from "../coach/coachInvoker.js";
 import type { ChatRequest } from "../dto/chat.js";
 import { toPublicResponse } from "../publicResponse.js";
 import type { TurnCoordinator } from "../turn/coordinator.js";
 import { ThreadBusyError, TurnConflictError } from "../turn/errors.js";
+import { type CoachStreamEmitter, collectCoachStream, sseMessage } from "./stream.js";
 
 const logger = getLogger("routes/chat");
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -26,50 +28,16 @@ export function registerChatRoutes(
     logger.info(body, `chat request from user ${userId}`);
 
     if (!body.ok) return context.json({ error: body.error }, 400);
+
+    if (acceptsStream(context.req.raw)) {
+      return streamSSE(context, async (stream) => {
+        await streamChat(dependencies, stream, body.value, userId);
+      });
+    }
+
     const threadId = `${userId}:coach:${body.value.sessionId}`;
     try {
-      const fingerprint = dependencies.turnCoordinator.getFingerprint(body.value);
-      const response = await dependencies.turnCoordinator.run(
-        {
-          threadId,
-          clientTurnId: body.value.clientTurnId,
-          fingerprint,
-        },
-        async (resumeFromCheckpoint) => {
-          const input = resumeFromCheckpoint
-            ? null
-            : body.value.resume === undefined
-              ? {
-                  messages: [
-                    {
-                      role: "user",
-                      content: JSON.stringify({
-                        timestamp: body.value.timestamp ?? shanghaiIso(),
-                        message: body.value.message as string,
-                      }),
-                    },
-                  ],
-                }
-              : new Command({ resume: body.value.resume });
-          const result = await dependencies.coach.invoke(input, {
-            context: {
-              userId,
-              asof: shanghaiDay(new Date().toISOString()),
-              ...(body.value.target ? { target: body.value.target } : {}),
-              ...(body.value.reviewContext ? { reviewContext: body.value.reviewContext } : {}),
-            },
-            configurable: {
-              thread_id: threadId,
-              client_turn_id: body.value.clientTurnId,
-            },
-            metadata: {
-              client_turn_id: body.value.clientTurnId,
-              turn_fingerprint: fingerprint,
-            },
-          });
-          return toPublicResponse(result);
-        },
-      );
+      const response = await runTurn(dependencies, body.value, userId, threadId);
       return context.json({ ...response, session_id: body.value.sessionId, client_turn_id: body.value.clientTurnId });
     } catch (error) {
       if (error instanceof TurnConflictError) {
@@ -82,6 +50,112 @@ export function registerChatRoutes(
       throw error;
     }
   });
+}
+
+function acceptsStream(request: Request): boolean {
+  const accept = request.headers.get("accept");
+  return accept !== null && accept.toLowerCase().includes("text/event-stream");
+}
+
+/** Run one turn under the per-thread lock with a fresh invocation. */
+async function runTurn(
+  dependencies: { coach: CoachInvoker; turnCoordinator: TurnCoordinator },
+  body: ChatRequest,
+  userId: string,
+  threadId: string,
+): Promise<Record<string, unknown>> {
+  const turn = { threadId, clientTurnId: body.clientTurnId, fingerprint: dependencies.turnCoordinator.getFingerprint(body) };
+  return dependencies.turnCoordinator.run(turn, (resumeFromCheckpoint) =>
+    invokeCoach(dependencies, body, userId, threadId, turn.fingerprint, resumeFromCheckpoint),
+  );
+}
+
+/** SSE variant: emit status events during the run, then a single `done` event. */
+async function streamChat(
+  dependencies: { coach: CoachInvoker; turnCoordinator: TurnCoordinator },
+  stream: SSEStreamingApi,
+  body: ChatRequest,
+  userId: string,
+): Promise<void> {
+  const threadId = `${userId}:coach:${body.sessionId}`;
+  const turnId = body.clientTurnId;
+  const emit = async (event: "status" | "done" | "error", data: Record<string, unknown>) => {
+    await stream.writeSSE(sseMessage(event, data));
+  };
+  const emitStatus: CoachStreamEmitter = (status) =>
+    emit("status", { turn_id: turnId, phase: status.phase, ...(status.subagent ? { subagent: status.subagent } : {}) });
+
+  try {
+    const turn = { threadId, clientTurnId: turnId, fingerprint: dependencies.turnCoordinator.getFingerprint(body) };
+    const response = await dependencies.turnCoordinator.run(turn, async (resumeFromCheckpoint) => {
+      const input = buildInput(body, resumeFromCheckpoint);
+      const config = buildConfig(body, userId, threadId, turn.fingerprint);
+      const run = await dependencies.coach.streamEvents(input, config);
+      return await collectCoachStream(run, emitStatus);
+    });
+    await emit("done", { turn_id: turnId, ...response });
+  } catch (error) {
+    const payload = toErrorPayload(error);
+    logger.error({ error, threadId }, "coach streaming turn failed");
+    await emit("error", { turn_id: turnId, ...payload });
+  }
+}
+
+async function invokeCoach(
+  dependencies: { coach: CoachInvoker },
+  body: ChatRequest,
+  userId: string,
+  threadId: string,
+  fingerprint: string,
+  resumeFromCheckpoint: boolean,
+): Promise<Record<string, unknown>> {
+  const input = buildInput(body, resumeFromCheckpoint);
+  const config = buildConfig(body, userId, threadId, fingerprint);
+  const result = await dependencies.coach.invoke(input, config);
+  return toPublicResponse(result);
+}
+
+/** Same turn input for the sync and streaming invocations (shared lock/idempotency semantics). */
+function buildInput(body: ChatRequest, resumeFromCheckpoint: boolean): unknown {
+  if (resumeFromCheckpoint) return null;
+  if (body.resume !== undefined) return new Command({ resume: body.resume });
+  return {
+    messages: [
+      {
+        role: "user",
+        content: JSON.stringify({
+          timestamp: body.timestamp ?? shanghaiIso(),
+          message: body.message as string,
+        }),
+      },
+    ],
+  };
+}
+
+function buildConfig(body: ChatRequest, userId: string, threadId: string, fingerprint: string): Record<string, unknown> {
+  return {
+    context: {
+      userId,
+      asof: shanghaiDay(new Date().toISOString()),
+      ...(body.target ? { target: body.target } : {}),
+      ...(body.reviewContext ? { reviewContext: body.reviewContext } : {}),
+    },
+    configurable: {
+      thread_id: threadId,
+      client_turn_id: body.clientTurnId,
+    },
+    metadata: {
+      client_turn_id: body.clientTurnId,
+      turn_fingerprint: fingerprint,
+    },
+  };
+}
+
+function toErrorPayload(error: unknown): { code: string; message: string } {
+  if (error instanceof TurnConflictError) return { code: "client_turn_id_conflict", message: error.message };
+  if (error instanceof ThreadBusyError) return { code: "coach_thread_busy", message: error.message };
+  const message = error instanceof Error ? error.message : "coach turn failed";
+  return { code: "coach_turn_failed", message };
 }
 
 async function readChatRequest(request: Request): Promise<{ ok: true; value: ChatRequest } | { ok: false; error: string }> {
