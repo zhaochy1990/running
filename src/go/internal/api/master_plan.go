@@ -60,10 +60,20 @@ func (m *masterPlanRoutes) register(rg *gin.RouterGroup) {
 	}
 	rg.GET("/api/users/me/master-plan/current", m.getCurrent)
 	rg.GET("/api/users/:user_id/master-plan/current", m.getCurrentForUser)
-	// Draft lifecycle (ADR 0030): insert is internal-only (worker), read/activate/
-	// abandon are user endpoints keyed by draft id.
-	rg.POST("/api/users/:user_id/master-plan/drafts", m.insertDraft)
+	// Draft read (ADR 0030) stays on the read surface: verified admin/internal
+	// callers may inspect any user's draft, mirroring getCurrentForUser.
 	rg.GET("/api/users/:user_id/master-plan/drafts/:plan_id", m.getDraft)
+}
+
+// registerDraftWrites mounts the Season Plan draft mutations on the default-deny
+// child group so an admin-dashboard token cannot mutate an athlete's draft.
+// Insert is internal-token-only (the plan-job worker); activate/abandon are
+// user-scoped (authorizeUser-style self check inside the handlers).
+func (m *masterPlanRoutes) registerDraftWrites(rg *gin.RouterGroup) {
+	if m.store == nil {
+		return
+	}
+	rg.POST("/api/users/:user_id/master-plan/drafts", m.insertDraft)
 	rg.POST("/api/users/:user_id/master-plan/drafts/:plan_id/activate", m.activateDraft)
 	rg.POST("/api/users/:user_id/master-plan/drafts/:plan_id/abandon", m.abandonDraft)
 }
@@ -412,7 +422,7 @@ func (m *masterPlanRoutes) getDraft(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	c.JSON(http.StatusOK, buildMasterPlanDraftResponse(row, m.log))
+	c.JSON(http.StatusOK, buildMasterPlanDraftResponse(row))
 }
 
 // activateDraft archives the current active plan and promotes the chosen draft.
@@ -512,21 +522,11 @@ func (m *masterPlanRoutes) abandonDraft(c *gin.Context) {
 	c.JSON(http.StatusOK, draftIDResponse{Success: true, PlanID: abandoned.PlanID, Status: abandoned.Status})
 }
 
-// validateMasterPlanDraftRow checks the stored identity/content of a draft row
-// before serving it, mirroring the strictness of the current-plan reader.
+// validateMasterPlanDraftRow guards the response path against a corrupt stored
+// draft that would otherwise fail to serve. Status is checked by getDraft
+// (mapped to 404) before this runs; the row is already keyed by plan_id/uuid so
+// those need no re-validation.
 func validateMasterPlanDraftRow(row *storage.MasterPlan) error {
-	if row == nil {
-		return fmt.Errorf("draft row is nil")
-	}
-	if _, err := uuid.Parse(row.PlanID); err != nil {
-		return fmt.Errorf("draft plan_id is invalid")
-	}
-	if _, err := uuid.Parse(row.GoalID); err != nil {
-		return fmt.Errorf("draft goal_id is invalid")
-	}
-	if row.Status != storage.MasterPlanStatusDraft {
-		return fmt.Errorf("row is not a draft (status=%s)", row.Status)
-	}
 	if row.ContentVersion != storage.MasterPlanContentStructured {
 		return fmt.Errorf("draft must be structured (content_version=%d)", row.ContentVersion)
 	}
@@ -541,7 +541,7 @@ func validateMasterPlanDraftRow(row *storage.MasterPlan) error {
 
 // buildMasterPlanDraftResponse reshapes a stored draft into the metadata plus
 // structured body consumed by the review card.
-func buildMasterPlanDraftResponse(row *storage.MasterPlan, log *zap.Logger) masterPlanDraftResponse {
+func buildMasterPlanDraftResponse(row *storage.MasterPlan) masterPlanDraftResponse {
 	resp := masterPlanDraftResponse{
 		PlanID: row.PlanID, GoalID: row.GoalID, Status: row.Status,
 		Revision: row.Revision, ContentVersion: row.ContentVersion,
@@ -549,11 +549,6 @@ func buildMasterPlanDraftResponse(row *storage.MasterPlan, log *zap.Logger) mast
 	}
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(row.Content), &doc); err == nil {
-		if goal, ok := doc["goal"].(map[string]any); ok {
-			if embeddedGoal := asString(goal["goal_id"]); embeddedGoal != "" && embeddedGoal != row.GoalID {
-				log.Warn("master plan draft embedded goal_id drift", zap.String("plan_id", row.PlanID))
-			}
-		}
 		resp.Plan = doc
 	} else {
 		resp.Plan = row.Content

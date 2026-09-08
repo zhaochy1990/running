@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -227,7 +228,11 @@ func (h *mpHarness) bearerWithClaims(t *testing.T, sub, audience, role string) m
 }
 
 func (h *mpHarness) do(method, path string, headers map[string]string) *httptest.ResponseRecorder {
-	r := httptest.NewRequest(method, path, nil)
+	return h.doBody(method, path, headers, nil)
+}
+
+func (h *mpHarness) doBody(method, path string, headers map[string]string, body io.Reader) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(method, path, body)
 	for k, v := range headers {
 		r.Header.Set(k, v)
 	}

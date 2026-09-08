@@ -115,3 +115,19 @@ func TestWeeklyPlanDraftLifecycle(t *testing.T) {
 		t.Fatalf("get abandoned code = %d, want 404 (%s)", resp.Code, resp.Body.String())
 	}
 }
+
+func TestWeeklyPlanDraftAdminCannotMutate(t *testing.T) {
+	h := newWeeklyPlanHarness(t)
+	userID := "8f22e4c5-3d6a-4b32-a11e-3c6a9d0b7f11"
+	weekName := "2026-08-17_08-23"
+	ins := "{\"draft_id\":\"draft-admin\",\"content\":" + validAppliedWeeklyPlan(weekName) + "}"
+	resp := h.doBody(http.MethodPost, "/api/"+userID+"/plan/weeks/"+weekName+"/drafts", internalHeaders(), strings.NewReader(ins))
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("insert code = %d (%s)", resp.Code, resp.Body.String())
+	}
+	admin := h.adminBearer(t, "admin-user")
+	resp = h.do(http.MethodPost, "/api/"+userID+"/plan/drafts/draft-admin/activate", admin)
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("admin activate code = %d, want 403 (%s)", resp.Code, resp.Body.String())
+	}
+}

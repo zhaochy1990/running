@@ -1,10 +1,10 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,48 +12,29 @@ import (
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
-func mustDraftInsertBody(t *testing.T, draftID, goalID string) map[string]any {
-	t.Helper()
-	content := mustAppliedContent(t, goalID)
-	return map[string]any{"draft_id": draftID, "content": content}
-}
-
-func doJSON(t *testing.T, h *mpHarness, method, path, body string, headers map[string]string) *httptest.ResponseRecorder {
-	t.Helper()
-	var reader *bytes.Reader
-	if body == "" {
-		reader = bytes.NewReader(nil)
-	} else {
-		reader = bytes.NewReader([]byte(body))
-	}
-	req := httptest.NewRequest(method, path, reader)
-	req.Header.Set("Content-Type", "application/json")
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	w := httptest.NewRecorder()
-	h.svc.Router().ServeHTTP(w, req)
-	return w
-}
-
 func internalHeaders() map[string]string {
 	return map[string]string{"X-Internal-Token": testToken}
+}
+
+// postJSON issues a JSON-bodied request on the master-plan harness. A nil body
+// sends no request body (the plain h.do call covers GET/activate/abandon).
+func (h *mpHarness) postJSON(method, path string, body any, headers map[string]string) *httptest.ResponseRecorder {
+	raw, _ := json.Marshal(body)
+	return h.doBody(method, path, headers, strings.NewReader(string(raw)))
 }
 
 func TestMasterPlanDraftInsertRequiresInternalToken(t *testing.T) {
 	h := newMPHarness(t)
 	userID, goalID, draftID := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	body := map[string]any{"draft_id": draftID, "content": mustAppliedContent(t, goalID)}
-	raw, _ := json.Marshal(body)
+	payload := map[string]any{"draft_id": draftID, "content": mustAppliedContent(t, goalID)}
 
 	// User JWT is forbidden.
-	user := h.bearer(t, userID)
-	w := doJSON(t, h, "POST", "/api/users/"+userID+"/master-plan/drafts", string(raw), user)
+	w := h.postJSON(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts", payload, h.bearer(t, userID))
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("user insert code = %d, want 403 (%s)", w.Code, w.Body.String())
 	}
 	// Internal token succeeds.
-	w = doJSON(t, h, "POST", "/api/users/"+userID+"/master-plan/drafts", string(raw), internalHeaders())
+	w = h.postJSON(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts", payload, internalHeaders())
 	if w.Code != http.StatusCreated {
 		t.Fatalf("internal insert code = %d, want 201 (%s)", w.Code, w.Body.String())
 	}
@@ -66,30 +47,27 @@ func TestMasterPlanDraftInsertRequiresInternalToken(t *testing.T) {
 	}
 
 	// Idempotent replay returns 200 (not 201).
-	w2 := doJSON(t, h, "POST", "/api/users/"+userID+"/master-plan/drafts", string(raw), internalHeaders())
-	if w2.Code != http.StatusOK {
-		t.Fatalf("replay code = %d, want 200 (%s)", w2.Code, w2.Body.String())
+	w = h.postJSON(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts", payload, internalHeaders())
+	if w.Code != http.StatusOK {
+		t.Fatalf("replay code = %d, want 200 (%s)", w.Code, w.Body.String())
 	}
 }
 
 func TestMasterPlanDraftLifecycle(t *testing.T) {
 	h := newMPHarness(t)
 	userID, goalID := uuid.NewString(), uuid.NewString()
-	user := h.bearer(t, userID)
 	base := "/api/users/" + userID + "/master-plan/drafts"
 
-	// Insert two drafts as internal token.
 	draftIDs := []string{uuid.NewString(), uuid.NewString()}
 	for _, id := range draftIDs {
-		raw, _ := json.Marshal(map[string]any{"draft_id": id, "content": mustAppliedContent(t, goalID)})
-		w := doJSON(t, h, "POST", base, string(raw), internalHeaders())
+		w := h.postJSON(http.MethodPost, base, map[string]any{"draft_id": id, "content": mustAppliedContent(t, goalID)}, internalHeaders())
 		if w.Code != http.StatusCreated {
 			t.Fatalf("insert %s code = %d (%s)", id, w.Code, w.Body.String())
 		}
 	}
 
 	// Read the second draft as the user.
-	w := doJSON(t, h, "GET", base+"/"+draftIDs[1], "", user)
+	w := h.do(http.MethodGet, base+"/"+draftIDs[1], h.bearer(t, userID))
 	if w.Code != http.StatusOK {
 		t.Fatalf("get draft code = %d (%s)", w.Code, w.Body.String())
 	}
@@ -102,7 +80,7 @@ func TestMasterPlanDraftLifecycle(t *testing.T) {
 	}
 
 	// Activate the second draft as the user.
-	w = doJSON(t, h, "POST", base+"/"+draftIDs[1]+"/activate", "", user)
+	w = h.do(http.MethodPost, base+"/"+draftIDs[1]+"/activate", h.bearer(t, userID))
 	if w.Code != http.StatusOK {
 		t.Fatalf("activate code = %d (%s)", w.Code, w.Body.String())
 	}
@@ -115,7 +93,7 @@ func TestMasterPlanDraftLifecycle(t *testing.T) {
 	}
 
 	// The sibling draft remains draft.
-	w = doJSON(t, h, "GET", base+"/"+draftIDs[0], "", user)
+	w = h.do(http.MethodGet, base+"/"+draftIDs[0], h.bearer(t, userID))
 	if w.Code != http.StatusOK {
 		t.Fatalf("get sibling code = %d (%s)", w.Code, w.Body.String())
 	}
@@ -128,12 +106,11 @@ func TestMasterPlanDraftLifecycle(t *testing.T) {
 	}
 
 	// Abandon the first draft.
-	w = doJSON(t, h, "POST", base+"/"+draftIDs[0]+"/abandon", "", user)
+	w = h.do(http.MethodPost, base+"/"+draftIDs[0]+"/abandon", h.bearer(t, userID))
 	if w.Code != http.StatusOK {
 		t.Fatalf("abandon code = %d (%s)", w.Code, w.Body.String())
 	}
-	// It no longer resolves as a draft.
-	w = doJSON(t, h, "GET", base+"/"+draftIDs[0], "", user)
+	w = h.do(http.MethodGet, base+"/"+draftIDs[0], h.bearer(t, userID))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("get abandoned code = %d, want 404 (%s)", w.Code, w.Body.String())
 	}
@@ -142,8 +119,8 @@ func TestMasterPlanDraftLifecycle(t *testing.T) {
 func TestMasterPlanDraftInsertRejectsInvalidContent(t *testing.T) {
 	h := newMPHarness(t)
 	userID := uuid.NewString()
-	raw, _ := json.Marshal(map[string]any{"draft_id": uuid.NewString(), "content": map[string]any{}})
-	w := doJSON(t, h, "POST", "/api/users/"+userID+"/master-plan/drafts", string(raw), internalHeaders())
+	w := h.postJSON(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts",
+		map[string]any{"draft_id": uuid.NewString(), "content": map[string]any{}}, internalHeaders())
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("code = %d, want 422 (%s)", w.Code, w.Body.String())
 	}
@@ -152,8 +129,24 @@ func TestMasterPlanDraftInsertRejectsInvalidContent(t *testing.T) {
 func TestMasterPlanDraftActivateNotFound(t *testing.T) {
 	h := newMPHarness(t)
 	userID := uuid.NewString()
-	w := doJSON(t, h, "POST", "/api/users/"+userID+"/master-plan/drafts/"+uuid.NewString()+"/activate", "", h.bearer(t, userID))
+	w := h.do(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts/"+uuid.NewString()+"/activate", h.bearer(t, userID))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("code = %d, want 404 (%s)", w.Code, w.Body.String())
+	}
+}
+
+func TestMasterPlanDraftAdminCannotMutate(t *testing.T) {
+	h := newMPHarness(t)
+	userID, goalID := uuid.NewString(), uuid.NewString()
+	draftID := uuid.NewString()
+	w := h.postJSON(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts",
+		map[string]any{"draft_id": draftID, "content": mustAppliedContent(t, goalID)}, internalHeaders())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("insert code = %d (%s)", w.Code, w.Body.String())
+	}
+	admin := h.bearerWithClaims(t, uuid.NewString(), testAdminAudience, "admin")
+	w = h.do(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts/"+draftID+"/activate", admin)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("admin activate code = %d, want 403 (%s)", w.Code, w.Body.String())
 	}
 }
