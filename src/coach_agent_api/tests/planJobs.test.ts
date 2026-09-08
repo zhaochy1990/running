@@ -5,6 +5,11 @@ import { createApp } from "../src/app.js";
 import { AuthError } from "../src/auth.js";
 import type { PlanJobsService } from "../src/routes/planJobs.js";
 
+/** streamEvents stub for tests that must never stream. */
+const neverStream = () => {
+  throw new Error("must not stream");
+};
+
 const REQUEST = {
   request_id: "req-1",
   requested_mode: "new_season",
@@ -89,6 +94,7 @@ function appFor(planJobs: PlanJobsService) {
       async invoke() {
         throw new Error("must not invoke coach");
       },
+      streamEvents: neverStream,
     },
     planJobs,
   });
@@ -168,6 +174,7 @@ test("enqueue requires a bearer token", async () => {
       async invoke() {
         throw new Error("must not invoke coach");
       },
+      streamEvents: neverStream,
     },
     planJobs: service,
   });
@@ -262,7 +269,12 @@ test("poll of an unknown or foreign job is a 404", async () => {
 test("plan-job routes are absent when no planJobs service is wired", async () => {
   const app = createApp({
     jwtVerifier: { async verify() { return { userId: "u" }; } },
-    coachInvoker: { async invoke() { throw new Error("unused"); } },
+    coachInvoker: {
+      async invoke() {
+        throw new Error("unused");
+      },
+      streamEvents: neverStream,
+    },
   });
   const response = await app.request("/api/users/me/coach/plan-jobs/job-1", { headers: { authorization: "Bearer x" } });
   assert.equal(response.status, 404);
