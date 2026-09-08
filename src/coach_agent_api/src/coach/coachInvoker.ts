@@ -2,8 +2,19 @@ import { type CoachAgentConfig, createCoachAgent, type DataProvider } from "@str
 import type { DeepAgent } from "deepagents";
 import type { Persistence } from "../persistence/index.js";
 
+/**
+ * The minimal surface of a deepagents `streamEvents(..., { version: "v3" })`
+ * run that the SSE adapter needs: the final state snapshot and the nested
+ * subagent handles (each carrying its agent `name`).
+ */
+export interface CoachStreamSource {
+  output: Promise<unknown>;
+  subagents: AsyncIterable<{ name: string }>;
+}
+
 export interface CoachInvoker {
   invoke(input: unknown, config: Record<string, unknown>): Promise<unknown>;
+  streamEvents(input: unknown, config: Record<string, unknown>): Promise<CoachStreamSource>;
 }
 
 export class CoachInvokerImpl implements CoachInvoker {
@@ -20,6 +31,11 @@ export class CoachInvokerImpl implements CoachInvoker {
 
   invoke(input: unknown, invocationConfig: Record<string, unknown>) {
     return this.agent.invoke(input as never, invocationConfig as never);
+  }
+
+  streamEvents(input: unknown, invocationConfig: Record<string, unknown>) {
+    const v3Config = { ...invocationConfig, version: "v3" as const };
+    return this.agent.streamEvents(input as never, v3Config as never);
   }
 
   public async initialize(): Promise<void> {
