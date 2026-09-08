@@ -42,6 +42,19 @@ const PHASE_LABEL: Record<string, string> = {
 let streamAbort: CoachStreamHandle | null = null;
 let streamBuffer = '';
 let streamFlushTimer: number | null = null;
+// 流式气泡 id 自增：scroll-into-view 只在值变化时滚动，打字机文本不断变长，需跟着滚。
+let streamScrollTick = 0;
+
+/** needs_input 时后端 interrupt 里的可展示文本（AskUserQuestionPayload 的 question 优先）。 */
+function interruptText(interrupt: unknown): string | undefined {
+  if (typeof interrupt === 'string') return interrupt;
+  if (interrupt && typeof interrupt === 'object') {
+    const o = interrupt as Record<string, unknown>;
+    if (typeof o.question === 'string' && o.question) return o.question;
+    if (typeof o.header === 'string' && o.header) return o.header;
+  }
+  return undefined;
+}
 
 interface CoachPageData {
   statusBarHeight: number;
@@ -55,6 +68,8 @@ interface CoachPageData {
   streaming: boolean;
   streamPhase: string;
   streamText: string;
+  // 流式气泡 id（随打字机变长自增，drive scroll-into-view 跟随）。
+  streamScrollId: string;
   // 键盘高度（px）>0 时把输入栏垫到键盘上方，避免页面被 adjust-position 顶出屏幕。
   keyboardPaddedStyle: string;
   keyboardHeight: number;
@@ -201,6 +216,7 @@ Page<CoachPageData, CoachPageHandlers>({
     streaming: false,
     streamPhase: '',
     streamText: '',
+    streamScrollId: 'msg-streaming',
     scrollIntoId: '',
     keyboardHeight: 0,
     keyboardPaddedStyle: '',
@@ -432,6 +448,7 @@ Page<CoachPageData, CoachPageHandlers>({
       streaming: true,
       streamPhase: '正在分析…',
       streamText: '',
+      streamScrollId: 'msg-streaming',
       scrollIntoId: 'msg-streaming',
     });
     streamAbort = sendCoachChatStream(
@@ -457,7 +474,8 @@ Page<CoachPageData, CoachPageHandlers>({
           streamFlushTimer = null;
           const text = this.data.streamText + streamBuffer;
           streamBuffer = '';
-          this.setData({ streamText: text });
+          const sid = `msg-streaming-${++streamScrollTick}`;
+          this.setData({ streamText: text, streamScrollId: sid, scrollIntoId: sid });
         }, 16);
       }
     } else {
@@ -474,7 +492,9 @@ Page<CoachPageData, CoachPageHandlers>({
       streamFlushTimer = null;
     }
     streamBuffer = '';
-    const content = done.status === 'completed' ? done.message : undefined;
+    // completed → 正文 done.message；needs_input → interrupt 是追问 payload
+    // （AskUserQuestionPayload 含 question），渲染成 assistant 追问，不算失败。
+    const content = done.status === 'completed' ? done.message : interruptText(done.interrupt);
     if (!content || !content.trim()) {
       this.failStream({ code: 'empty', message: 'no_answer' }, userMsgId);
       return;

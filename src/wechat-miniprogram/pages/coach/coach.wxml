@@ -48,7 +48,7 @@
         >发送失败，点击重试</view>
       </view>
       <!-- 流式回复气泡：阶段指示 + 纯文本打字机；done 后才进入 messages 渲染富文本 -->
-      <view wx:if="{{streaming}}" id="msg-streaming" class="coach-msg coach-msg--assistant">
+      <view wx:if="{{streaming}}" id="{{streamScrollId}}" class="coach-msg coach-msg--assistant">
         <view class="coach-msg__bubble coach-msg__streaming">
           <text wx:if="{{streamPhase}}" class="coach-msg__phase">{{streamPhase}}</text>
           <view class="coach-msg__stream-text-wrap">

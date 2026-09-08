@@ -2,20 +2,10 @@
 
 import { http, getToken, refreshToken, handleSessionExpired } from './request';
 import { SseParser, type SseEvent } from '../utils/sse';
-import { COACH_BASE_URL, COACH_REQUEST_TIMEOUT, CLIENT_ID } from '../constants/config';
+import { COACH_BASE_URL, CLIENT_ID } from '../constants/config';
 
 // coach_agent_api 对话端点（见 constants/config.ts 的 COACH_BASE_URL）。
 const COACH_CHAT_ENDPOINT = `${COACH_BASE_URL}/api/users/me/coach/chat`;
-
-// 后端 POST /api/users/me/coach/chat 的响应（字段子集，TS coach_agent_api）。
-// 完成的回答在顶层 `message`（GFM markdown）；`status` 为 completed 时才有
-// `message`，needs_input 时携带 `interrupt`（本文只消费 completed）。
-export interface CoachChatResponse {
-  status?: string;
-  message?: string;
-  session_id?: string;
-  client_turn_id?: string;
-}
 
 /**
  * 教练对话的权威目标引用（后端 `CoachTargetRef`）。首页「和教练聊一聊」把
@@ -31,30 +21,6 @@ export interface CoachSessionTarget {
 }
 
 let turnCounter = 0;
-
-/**
- * 发送一轮 Coach 对话。client_turn_id 由后端要求（缺失 422），
- * 用于服务端幂等：同一 id + 同一请求重放返回同一 turn，不重复调模型。
- * 重试失败消息时传入同一 clientTurnId，避免重开一轮生成。
- * 可选 target：把本轮焦点锚定到具体计划 session（见 CoachSessionTarget）。
- */
-export function sendCoachChatMessage(
-  message: string,
-  sessionId = 'mini-default',
-  clientTurnId = `mini-${Date.now()}-${++turnCounter}`,
-  target?: CoachSessionTarget,
-): Promise<CoachChatResponse> {
-  return http.post<CoachChatResponse>(
-    COACH_CHAT_ENDPOINT,
-    {
-      session_id: sessionId,
-      message,
-      client_turn_id: clientTurnId,
-      ...(target ? { target } : {}),
-    },
-    { timeout: COACH_REQUEST_TIMEOUT },
-  );
-}
 
 // ── 跨 tab 交接（首页「和教练聊一聊」→ 教练 tab）─────────────────────────────
 // switchTab 不能携带 query，因此把待挂载的 target + 展示标签暂存到本地，
@@ -144,7 +110,6 @@ export function sendCoachChatStream(
   target?: CoachSessionTarget,
   callbacks: CoachStreamCallbacks = {},
 ): CoachStreamHandle {
-  const parser = new SseParser();
   let task: ReturnType<typeof wx.request> | null = null;
   let disposed = false;
   let retried = false;
@@ -182,6 +147,8 @@ export function sendCoachChatStream(
 
   const attempt = (token: string): void => {
     if (disposed) return;
+    // parser 每次 attempt 新建：401 刷新重试后不残留上一轮未清空的字节缓冲。
+    const parser = new SseParser();
     let cancelled = false;
     let sawChunk = false;
     let statusCode = 0;
@@ -250,8 +217,12 @@ export function sendCoachChatStream(
             );
           }
         }
-        // 兜底：2xx 到达却没解析出 done/error（流被截断 / 空响应），按失败处理，
-        // 避免页面一直停在流式状态。
+        // 兜底：2xx 到达却没解析出 done/error —— 先 flush 残余字节，恢复被截断的
+        // done/error 事件；仍没有才算失败，避免页面一直停在流式状态。
+        if (!terminalReached) {
+          const residual = parser.flush();
+          for (const ev of residual) dispatch(ev);
+        }
         if (!terminalReached) failOnce('empty', '未收到回复');
       },
       fail: (err) => {
