@@ -4,7 +4,7 @@
 
 本仓库对 coding agent（Claude Code / Codex / OpenCode / 其它）只维护**一份**权威指令，统一住在 **`AGENTS.md`**。`CLAUDE.md` 不再重复那些规则，只做引用，避免多份指令互相冲突或漂移。
 
-请以 [`AGENTS.md`](AGENTS.md) 为准 —— 所有 HARD 规则、topic-specific docs 对照表、storage scope / timezone / athlete baseline / coach / training plan / worktree-first 等约束都在那里。
+请以 [`AGENTS.md`](AGENTS.md) 为准 —— 所有 HARD 规则、topic-specific docs 对照表、storage scope / timezone / athlete baseline / coach / training plan 等约束都在那里。
 
 按任务类型对应的文档入口（见 `AGENTS.md` 的 *Topic-specific docs* 表）：
 

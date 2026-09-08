@@ -7,6 +7,10 @@ import { ThreadBusyError } from "../src/turn/errors.js";
 import { createInMemoryTurnCoordinator } from "../src/turn/index.js";
 
 const fingerprintTurn = (payload: unknown) => createInMemoryTurnCoordinator().getFingerprint(payload);
+/** streamEvents stub for tests that must never stream. */
+const neverStream = () => {
+  throw new Error("must not stream");
+};
 
 test("health is public", async () => {
   const app = createApp({
@@ -19,6 +23,7 @@ test("health is public", async () => {
       async invoke() {
         throw new Error("must not invoke");
       },
+      streamEvents: neverStream,
     },
   });
   const response = await app.request("/health");
@@ -37,6 +42,7 @@ test("OpenAPI document describes the live routes and bearer authentication", asy
       async invoke() {
         throw new Error("must not invoke");
       },
+      streamEvents: neverStream,
     },
   });
   const response = await app.request("/openapi.json");
@@ -62,6 +68,7 @@ test("Swagger UI is served for the OpenAPI document", async () => {
       async invoke() {
         throw new Error("must not invoke");
       },
+      streamEvents: neverStream,
     },
   });
   const response = await app.request("/docs");
@@ -90,6 +97,7 @@ test("chat derives user and thread identity from the verified token", async () =
         invocation = { input, config };
         return { messages: [{ type: "ai", content: "训练状态稳定。" }] };
       },
+      streamEvents: neverStream,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -162,6 +170,7 @@ test("chat never exposes a tool message as the public answer", async () => {
           ],
         };
       },
+      streamEvents: neverStream,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -197,6 +206,7 @@ test("chat resumes an interrupt without requiring a new message", async () => {
         input = value;
         return { messages: [{ type: "ai", content: "继续处理" }] };
       },
+      streamEvents: neverStream,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -229,6 +239,7 @@ test("chat accepts multi-select interrupt answers", async () => {
         input = value;
         return { messages: [{ type: "ai", content: "继续处理" }] };
       },
+      streamEvents: neverStream,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -259,6 +270,7 @@ test("chat fails closed without a valid bearer token", async () => {
       async invoke() {
         throw new Error("must not invoke");
       },
+      streamEvents: neverStream,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -281,6 +293,7 @@ test("chat validates the public request contract before invoking Coach", async (
         called = true;
         return {};
       },
+      streamEvents: neverStream,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -312,6 +325,7 @@ test("chat rejects a malformed timestamp", async () => {
         called = true;
         return {};
       },
+      streamEvents: neverStream,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -345,6 +359,7 @@ test("chat defaults the message timestamp to Asia/Shanghai time", async () => {
         input = value;
         return { messages: [{ type: "ai", content: "ok" }] };
       },
+      streamEvents: neverStream,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -381,6 +396,7 @@ test("chat replays an identical client turn and conflicts on changed input", asy
         calls += 1;
         return { messages: [{ type: "ai", content: `answer-${calls}` }] };
       },
+      streamEvents: neverStream,
     },
   });
   const request = (message: string) =>
@@ -418,6 +434,7 @@ test("chat carries validated target and review context into request identity and
         invocation = { input, config };
         return { messages: [{ type: "ai", content: "scoped" }] };
       },
+      streamEvents: neverStream,
     },
   });
   const target = { kind: "week", folder: "2026-08-17_08-23" };
@@ -468,6 +485,7 @@ test("chat rejects review context that does not match the target week", async ()
       async invoke() {
         throw new Error("must not invoke");
       },
+      streamEvents: neverStream,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -502,6 +520,7 @@ test("chat returns an explicit retryable response when the thread is busy", asyn
       async invoke() {
         throw new Error("must not invoke");
       },
+      streamEvents: neverStream,
     },
     turnCoordinator: {
       getFingerprint() {
@@ -540,6 +559,7 @@ test("chat rejects empty interrupt answers", async () => {
       async invoke() {
         throw new Error("must not invoke");
       },
+      streamEvents: neverStream,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -585,6 +605,7 @@ test("history requires a valid bearer token", async () => {
       async invoke() {
         throw new Error("must not invoke");
       },
+      streamEvents: neverStream,
     },
     checkpointer: stubCheckpointer([]),
   });
@@ -605,6 +626,7 @@ test("history derives the thread from the verified token and maps messages", asy
       async invoke() {
         throw new Error("must not invoke");
       },
+      streamEvents: neverStream,
     },
     checkpointer: {
       async getTuple(config) {
@@ -651,6 +673,7 @@ test("history returns an empty list when the thread has no checkpoint", async ()
       async invoke() {
         throw new Error("must not invoke");
       },
+      streamEvents: neverStream,
     },
     checkpointer: {
       async getTuple() {
@@ -681,6 +704,7 @@ test("history rejects an invalid session id", async () => {
       async invoke() {
         throw new Error("must not invoke");
       },
+      streamEvents: neverStream,
     },
     checkpointer: stubCheckpointer([]),
   });
@@ -703,6 +727,7 @@ test("session list requires a valid bearer token", async () => {
       async invoke() {
         throw new Error("must not invoke");
       },
+      streamEvents: neverStream,
     },
     checkpointer: stubCheckpointer([]),
   });
@@ -723,6 +748,7 @@ test("session list scopes threads to the caller and maps session_id/preview", as
       async invoke() {
         throw new Error("must not invoke");
       },
+      streamEvents: neverStream,
     },
     checkpointer: {
       async listThreadsForUser(userId: string) {
