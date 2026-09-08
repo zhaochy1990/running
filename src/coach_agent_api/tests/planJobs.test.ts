@@ -143,7 +143,7 @@ test("an unknown job_type is rejected", async () => {
   assert.equal(enqueued.length, 0);
 });
 
-test("a valid but not-yet-wired job_type is rejected, not enqueued", async () => {
+test("a not-in-the-wired-enum job_type is rejected, not enqueued", async () => {
   const { service, enqueued } = fakePlanJobs();
   const app = appFor(service);
   const response = await app.request("/api/users/me/coach/plan-jobs", {
@@ -152,7 +152,7 @@ test("a valid but not-yet-wired job_type is rejected, not enqueued", async () =>
     body: JSON.stringify({ job_type: "generate_weekly_plan", request: REQUEST }),
   });
   assert.equal(response.status, 400);
-  assert.deepEqual(await response.json(), { error: "unsupported_job_type" });
+  assert.deepEqual(await response.json(), { error: "invalid_job_type" });
   assert.equal(enqueued.length, 0);
 });
 

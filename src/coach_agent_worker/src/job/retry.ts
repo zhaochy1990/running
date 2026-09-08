@@ -11,14 +11,6 @@ export function decideFailure(attempts: number, maxAttempts: number, baseBackoff
   if (attempts >= maxAttempts) {
     return { outcome: "poison" };
   }
-  let delay = baseBackoffMs;
-  for (let i = 1; i < attempts; i++) {
-    delay *= 2;
-    if (delay >= maxBackoffMs) {
-      delay = maxBackoffMs;
-      break;
-    }
-  }
-  if (delay > maxBackoffMs) delay = maxBackoffMs;
+  const delay = Math.min(baseBackoffMs * 2 ** (attempts - 1), maxBackoffMs);
   return { outcome: "retry", delayMs: delay };
 }

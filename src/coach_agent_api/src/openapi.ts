@@ -351,7 +351,7 @@ export const OPENAPI_DOCUMENT = {
         properties: {
           job_type: {
             type: "string",
-            enum: ["generate_master_plan", "generate_weekly_plan", "adjust_master_plan", "adjust_weekly_plan"],
+            enum: ["generate_master_plan"],
           },
           request: {
             type: "object",

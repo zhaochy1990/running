@@ -10,7 +10,16 @@ export const PLAN_JOB_STATUSES = ["queued", "running", "done", "failed"] as cons
 export type PlanJobStatus = (typeof PLAN_JOB_STATUSES)[number];
 
 /** 生成/结构调整 × 赛季训练计划/本周课表。本期仅 `generate_master_plan` 接入 kernel。 */
-export const PLAN_JOB_TYPES = ["generate_master_plan", "generate_weekly_plan", "adjust_master_plan", "adjust_weekly_plan"] as const;
+/**
+ * The four job types (生成/结构调整 × 赛季训练计划/本周课表) share one state machine
+ * (ADR 0030), but only `generate_master_plan` has a wired kernel in this slice.
+ * The enum is intentionally narrow to match what the worker can actually run:
+ * add a type here (plus a per-type request-schema check in the coach route) when
+ * its kernel lands. The enqueue endpoint re-validates the request against the
+ * master-plan schema, so a type that needs a different input would misfire until
+ * its own validation is wired.
+ */
+export const PLAN_JOB_TYPES = ["generate_master_plan"] as const;
 export type PlanJobType = (typeof PLAN_JOB_TYPES)[number];
 
 /**
@@ -19,9 +28,6 @@ export type PlanJobType = (typeof PLAN_JOB_TYPES)[number];
  */
 export const PLAN_JOB_ESTIMATED_DURATIONS_SECONDS: Record<PlanJobType, number> = {
   generate_master_plan: 300,
-  generate_weekly_plan: 120,
-  adjust_master_plan: 300,
-  adjust_weekly_plan: 120,
 };
 
 export interface PlanJob {

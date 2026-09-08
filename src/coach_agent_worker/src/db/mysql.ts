@@ -1,6 +1,12 @@
 import mysql from "mysql2/promise";
 import type { MySqlConfig } from "../config.js";
 
+// NOTE: this module is DB bootstrap/provisioning (create-database + pool factory),
+// not table read/write. AGENTS.md's SQL-ownership rule governs the storage seams;
+// the plan_jobs table is owned by `storage/planJobs.ts` and the coach data reads by
+// `data/mysqlDataProvider.ts`. `ensureDatabase`'s CREATE DATABASE runs once at
+// service start, before any storage code, so it is outside that read/write rule.
+
 /** Reject anything that isn't a plain identifier (defends the DDL interpolation). */
 function assertIdentifier(name: string): string {
   if (!/^[A-Za-z0-9_]+$/.test(name)) {

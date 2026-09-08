@@ -44,8 +44,4 @@ export class MonotonicProgress {
     this.state = { stage: anchor.stage, progressPct: anchor.progressPct };
     return this.state;
   }
-
-  snapshot(): StageProgress {
-    return { ...this.state };
-  }
 }

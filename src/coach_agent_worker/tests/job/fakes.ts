@@ -1,6 +1,6 @@
 import type { PlanJob, PlanJobMessage } from "../../src/job/model.js";
 import { isTerminal } from "../../src/job/model.js";
-import { IdempotencyConflictError, type PlanJobStore, type QueuePublisher } from "../../src/job/ports.js";
+import { type ClaimResult, IdempotencyConflictError, type PlanJobStore, type QueuePublisher } from "../../src/job/ports.js";
 
 /** In-memory PlanJobStore test double (mirrors Go's fake store seam). */
 export class FakePlanJobStore implements PlanJobStore {
@@ -30,31 +30,31 @@ export class FakePlanJobStore implements PlanJobStore {
     this.rows.set(job.jobId, structuredClone(job));
   }
 
-  async claim(jobId: string, now: Date): Promise<{ job: PlanJob; claimed: boolean }> {
+  async claim(jobId: string, now: Date): Promise<ClaimResult> {
     if (this.faultClaim) throw new Error("store unavailable");
     this.claims.push(jobId);
     const row = this.rows.get(jobId);
-    if (!row || row.status !== "queued") return { job: row ? structuredClone(row) : emptyJob(jobId), claimed: false };
+    if (!row || row.status !== "queued") return { claimed: false };
     row.status = "running";
     row.attempts += 1;
     row.heartbeatAt = now;
     row.updatedAt = now;
     this.rows.set(jobId, structuredClone(row));
-    return { job: structuredClone(row), claimed: true };
+    return { claimed: true, job: structuredClone(row) };
   }
 
-  async reclaimRunning(jobId: string, now: Date, maxAttempts: number): Promise<{ job: PlanJob; claimed: boolean }> {
+  async reclaimRunning(jobId: string, now: Date, maxAttempts: number): Promise<ClaimResult> {
     if (this.faultClaim) throw new Error("store unavailable");
     this.reclaims.push(jobId);
     const row = this.rows.get(jobId);
     if (!row || row.status !== "running" || row.attempts >= maxAttempts) {
-      return { job: row ? structuredClone(row) : emptyJob(jobId), claimed: false };
+      return { claimed: false };
     }
     row.attempts += 1;
     row.heartbeatAt = now;
     row.updatedAt = now;
     this.rows.set(jobId, structuredClone(row));
-    return { job: structuredClone(row), claimed: true };
+    return { claimed: true, job: structuredClone(row) };
   }
 
   async failStaleRunning(olderThan: Date, now: Date, errorCode: string): Promise<number> {
@@ -94,27 +94,6 @@ export class FakePlanJobStore implements PlanJobStore {
     };
     return { ...base, ...overrides };
   }
-}
-
-function emptyJob(jobId: string): PlanJob {
-  return {
-    jobId,
-    userId: "",
-    jobType: "generate_master_plan",
-    status: "queued",
-    attempts: 0,
-    stage: "",
-    progressPct: 0,
-    inputJson: "",
-    resultJson: null,
-    errorCode: null,
-    errorMessage: null,
-    idempotencyKey: null,
-    heartbeatAt: null,
-    createdAt: new Date(0),
-    updatedAt: new Date(0),
-    completedAt: null,
-  };
 }
 
 /** Records every publish for assertions; `failPublish` simulates a broker outage. */

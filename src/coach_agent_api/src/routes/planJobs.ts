@@ -19,13 +19,6 @@ export interface PlanJobsService {
 
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
-/**
- * Job types the worker currently has a registered handler for. The enqueue
- * endpoint only accepts these — enqueueing an unwired type would produce a job
- * that fails `no_handler` on arrival. Extend as more kernels are wired.
- */
-const WIRED_JOB_TYPES = new Set<string>(["generate_master_plan"]);
-
 export function registerPlanJobRoutes(app: Hono<AuthEnv>, dependencies: { planJobs: PlanJobsService; auth: MiddlewareHandler<AuthEnv> }): void {
   app.post("/api/users/me/coach/plan-jobs", dependencies.auth, async (context) => {
     const userId = context.get("userId");
@@ -87,9 +80,6 @@ async function readEnqueueRequest(
   const jobType = value.job_type;
   if (typeof jobType !== "string" || !(PLAN_JOB_TYPES as readonly string[]).includes(jobType)) {
     return { ok: false, error: "invalid_job_type" };
-  }
-  if (!WIRED_JOB_TYPES.has(jobType)) {
-    return { ok: false, error: "unsupported_job_type" };
   }
   const idempotencyKey = value.idempotency_key;
   if (idempotencyKey !== undefined && (typeof idempotencyKey !== "string" || idempotencyKey.length === 0 || idempotencyKey.length > 128)) {

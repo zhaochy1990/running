@@ -8,16 +8,14 @@ test("maps each master-plan kernel node to a monotonic stage/progress anchor", (
   assert.deepEqual(progress.observe("assess_goal"), { stage: "evaluating", progressPct: 28 });
   assert.deepEqual(progress.observe("expand_skeleton"), { stage: "planning_phases", progressPct: 68 });
   assert.deepEqual(progress.observe("finalize"), { stage: "outputting", progressPct: 99 });
-  assert.deepEqual(progress.snapshot(), { stage: "outputting", progressPct: 99 });
 });
 
 test("never regresses even if the stream reports an earlier node out of order", () => {
   const progress = new MonotonicProgress();
-  progress.observe("expand_skeleton"); // 68
-  progress.observe("assess_athlete"); // 20 — ignored
-  progress.observe("finalize"); // 99
-  progress.observe("initialize"); // 10 — ignored
-  assert.deepEqual(progress.snapshot(), { stage: "outputting", progressPct: 99 });
+  assert.deepEqual(progress.observe("expand_skeleton"), { stage: "planning_phases", progressPct: 68 });
+  assert.equal(progress.observe("assess_athlete"), null); // 20 < 68 → ignored
+  assert.deepEqual(progress.observe("finalize"), { stage: "outputting", progressPct: 99 });
+  assert.equal(progress.observe("initialize"), null); // 10 < 99 → ignored
 });
 
 test("fan-out node keys with a Send index map to their base node", () => {
@@ -30,5 +28,7 @@ test("unknown nodes are ignored", () => {
   const progress = new MonotonicProgress();
   assert.equal(progress.observe("__start__"), null);
   assert.equal(progress.observe("mystery_node"), null);
-  assert.deepEqual(progress.snapshot(), { stage: "", progressPct: 0 });
+  assert.deepEqual(progress.observe("assess_goal"), { stage: "evaluating", progressPct: 28 });
+  assert.equal(progress.observe("mystery_node"), null);
+  assert.equal(progress.observe("initialize"), null); // 10 < 28 → regressive
 });

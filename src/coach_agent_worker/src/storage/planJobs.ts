@@ -1,6 +1,6 @@
 import type { Pool, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import type { PlanJob, PlanJobStatus } from "../job/model.js";
-import { IdempotencyConflictError, type PlanJobStore } from "../job/ports.js";
+import { type ClaimResult, IdempotencyConflictError, type PlanJobStore } from "../job/ports.js";
 
 interface PlanJobRow extends RowDataPacket {
   job_id: string;
@@ -124,7 +124,7 @@ export class MySqlPlanJobStore implements PlanJobStore {
     );
   }
 
-  async claim(jobId: string, now: Date): Promise<{ job: PlanJob; claimed: boolean }> {
+  async claim(jobId: string, now: Date): Promise<ClaimResult> {
     const [result] = await this.pool.execute<ResultSetHeader>(
       `UPDATE plan_jobs SET status='running', attempts=attempts+1, heartbeat_at=?,
          updated_at=?, error_code=NULL, error_message=NULL
@@ -132,13 +132,12 @@ export class MySqlPlanJobStore implements PlanJobStore {
       [now, now, jobId],
     );
     if (result.affectedRows === 0) {
-      const existing = await this.get(jobId);
-      return { job: existing ?? stubJob(jobId), claimed: false };
+      return { claimed: false };
     }
-    return { job: await this.claimedRow(jobId), claimed: true };
+    return { claimed: true, job: await this.claimedRow(jobId) };
   }
 
-  async reclaimRunning(jobId: string, now: Date, maxAttempts: number): Promise<{ job: PlanJob; claimed: boolean }> {
+  async reclaimRunning(jobId: string, now: Date, maxAttempts: number): Promise<ClaimResult> {
     // `attempts < ?` is the CAS guard: two concurrent redeliveries serialize on
     // the row lock, and the second finds the budget exhausted. It is also the
     // redelivery bound — once attempts reach max, only the reconcile can retire
@@ -149,17 +148,16 @@ export class MySqlPlanJobStore implements PlanJobStore {
       [now, jobId, maxAttempts],
     );
     if (result.affectedRows === 0) {
-      const existing = await this.get(jobId);
-      return { job: existing ?? stubJob(jobId), claimed: false };
+      return { claimed: false };
     }
-    return { job: await this.claimedRow(jobId), claimed: true };
+    return { claimed: true, job: await this.claimedRow(jobId) };
   }
 
   async failStaleRunning(olderThan: Date, now: Date, errorCode: string): Promise<number> {
     const [result] = await this.pool.execute<ResultSetHeader>(
       `UPDATE plan_jobs SET status='failed', error_code=?, error_message=?, completed_at=?, updated_at=?
        WHERE status='running' AND heartbeat_at IS NOT NULL AND heartbeat_at < ?`,
-      [errorCode, `no heartbeat since ${olderThan.toISOString()}`, now, olderThan],
+      [errorCode, `no heartbeat since ${olderThan.toISOString()}`, now, now, olderThan],
     );
     return result.affectedRows;
   }
@@ -196,28 +194,6 @@ function toDomain(row: PlanJobRow): PlanJob {
     createdAt: asDate(row.created_at) ?? new Date(0),
     updatedAt: asDate(row.updated_at) ?? new Date(0),
     completedAt: asDate(row.completed_at),
-  };
-}
-
-function stubJob(jobId: string): PlanJob {
-  const epoch = new Date(0);
-  return {
-    jobId,
-    userId: "",
-    jobType: "generate_master_plan",
-    status: "queued",
-    attempts: 0,
-    stage: "",
-    progressPct: 0,
-    inputJson: "",
-    resultJson: null,
-    errorCode: null,
-    errorMessage: null,
-    idempotencyKey: null,
-    heartbeatAt: null,
-    createdAt: epoch,
-    updatedAt: epoch,
-    completedAt: null,
   };
 }
 

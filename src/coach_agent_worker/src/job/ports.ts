@@ -1,5 +1,8 @@
 import type { PlanJob, PlanJobMessage } from "./model.js";
 
+/** Result of a claim/reclaim: `job` is only present when the claim succeeded. */
+export type ClaimResult = { claimed: true; job: PlanJob } | { claimed: false };
+
 /**
  * Durable plan-job state. Implemented by `storage/planJobs.ts` over MySQL;
  * the dispatcher/enqueuer only depend on this port (mirrors Go `job.Store`).
@@ -12,14 +15,14 @@ export interface PlanJobStore {
    * Atomically transition a queued job to running (attempts + 1) and return
    * false when another delivery already claimed or terminated it.
    */
-  claim(jobId: string, now: Date): Promise<{ job: PlanJob; claimed: boolean }>;
+  claim(jobId: string, now: Date): Promise<ClaimResult>;
   /**
    * Reclaim a running job whose message was redelivered after a crash (or a
    * nacked infra fault): the previous holder is gone, so this pointer takes it
    * over (attempts + 1). CAS-guarded by the attempts budget — `maxAttempts` is
    * the redelivery bound (Spec/ADR 0030 "重投上限 2 次").
    */
-  reclaimRunning(jobId: string, now: Date, maxAttempts: number): Promise<{ job: PlanJob; claimed: boolean }>;
+  reclaimRunning(jobId: string, now: Date, maxAttempts: number): Promise<ClaimResult>;
   /**
    * Reconcile backstop: fail every running job whose heartbeat is older than
    * `olderThan`, tagged with `errorCode`. Returns how many were failed.

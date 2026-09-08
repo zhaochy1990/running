@@ -49,9 +49,10 @@ test("claim is a queued→running CAS guarded by attempts+1", async () => {
     },
   } as never;
   const store = new MySqlPlanJobStore(pool);
-  const { job, claimed } = await store.claim("job-1", new Date("2026-09-01T00:00:00.000Z"));
-  assert.equal(claimed, true);
-  assert.equal(job.jobId, "job-1");
+  const result = await store.claim("job-1", new Date("2026-09-01T00:00:00.000Z"));
+  assert.equal(result.claimed, true);
+  assert.ok(result.claimed);
+  assert.equal(result.job.jobId, "job-1");
   assert.match(executed[0]?.sql ?? "", /attempts=attempts\+1/);
   assert.match(executed[0]?.sql ?? "", /AND status='queued'/);
 });
@@ -93,7 +94,8 @@ test("create translates a duplicate (user, idempotency_key) into a conflict carr
   });
 });
 
-test("failStaleRunning updates only expired running rows", async () => {
+test("failStaleRunning binds one value per placeholder (incl. updated_at=now)", async () => {
+  const now = new Date("2026-09-01T00:05:00.000Z");
   const executed: Array<{ sql: string; values: unknown[] }> = [];
   const pool = {
     async execute(sql: string, values: unknown[]) {
@@ -102,7 +104,15 @@ test("failStaleRunning updates only expired running rows", async () => {
     },
   } as never;
   const store = new MySqlPlanJobStore(pool);
-  const failed = await store.failStaleRunning(new Date("2026-09-01T00:00:00.000Z"), new Date("2026-09-01T00:05:00.000Z"), "heartbeat_timeout");
+  const failed = await store.failStaleRunning(new Date("2026-09-01T00:00:00.000Z"), now, "heartbeat_timeout");
   assert.equal(failed, 2);
   assert.match(executed[0]?.sql ?? "", /heartbeat_at IS NOT NULL AND heartbeat_at < \?/);
+  // 5 placeholders (error_code, error_message, completed_at, updated_at, heartbeat_at) —
+  // a bind-count mismatch makes mysql2 reject the statement every cycle.
+  const placeholders = (executed[0]?.sql.match(/\?/g) ?? []).length;
+  assert.equal(executed[0]?.values.length, 5);
+  assert.equal(placeholders, executed[0]!.values.length);
+  // completed_at and updated_at are both bound to `now`, not to the cutoff.
+  assert.equal(executed[0]?.values[2], now);
+  assert.equal(executed[0]?.values[3], now);
 });
