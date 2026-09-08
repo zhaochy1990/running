@@ -134,6 +134,73 @@ func (f *fakeWeeklyPlanStore) GetActiveWeeklyPlan(_ context.Context, userID, wee
 	return nil, nil
 }
 
+func (f *fakeWeeklyPlanStore) InsertWeeklyPlanDraft(_ context.Context, userID, weekStart, content, draftID string) (*storage.WeeklyPlan, bool, error) {
+	for i := range f.plans[userID] {
+		if f.plans[userID][i].PlanID == draftID {
+			copy := f.plans[userID][i]
+			return &copy, false, nil
+		}
+	}
+	now := f.now
+	draft := storage.WeeklyPlan{
+		PlanID: draftID, UserID: userID, WeekStart: weekStart,
+		ContentVersion: storage.WeeklyPlanContentStructured, Content: content,
+		Status: storage.WeeklyPlanStatusDraft, Revision: 1,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	f.plans[userID] = append(f.plans[userID], draft)
+	return &draft, true, nil
+}
+
+func (f *fakeWeeklyPlanStore) GetWeeklyPlanDraft(_ context.Context, userID, planID string) (*storage.WeeklyPlan, error) {
+	for i := range f.plans[userID] {
+		if f.plans[userID][i].PlanID == planID {
+			copy := f.plans[userID][i]
+			return &copy, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fakeWeeklyPlanStore) ActivateWeeklyPlanDraft(_ context.Context, userID, weekStart, planID string) (*storage.WeeklyPlan, *storage.WeeklyPlan, error) {
+	var draft *storage.WeeklyPlan
+	var replaced *storage.WeeklyPlan
+	for i := range f.plans[userID] {
+		if f.plans[userID][i].Status == storage.WeeklyPlanStatusActive {
+			copy := f.plans[userID][i]
+			replaced = &copy
+		}
+	}
+	for i := range f.plans[userID] {
+		if f.plans[userID][i].PlanID == planID {
+			draft = &f.plans[userID][i]
+		}
+	}
+	if draft == nil || draft.Status != storage.WeeklyPlanStatusDraft {
+		return nil, nil, storage.ErrWeeklyPlanDraftNotFound
+	}
+	activeSlot := storage.WeeklyPlanStatusActive
+	draft.Status = storage.WeeklyPlanStatusActive
+	draft.StatusSlot = &activeSlot
+	draft.UpdatedAt = f.now
+	return draft, replaced, nil
+}
+
+func (f *fakeWeeklyPlanStore) AbandonWeeklyPlanDraft(_ context.Context, userID, planID string) (*storage.WeeklyPlan, error) {
+	for i := range f.plans[userID] {
+		if f.plans[userID][i].PlanID == planID {
+			if f.plans[userID][i].Status != storage.WeeklyPlanStatusDraft {
+				return nil, storage.ErrWeeklyPlanDraftNotFound
+			}
+			f.plans[userID][i].Status = storage.WeeklyPlanStatusArchived
+			f.plans[userID][i].StatusSlot = nil
+			copy := f.plans[userID][i]
+			return &copy, nil
+		}
+	}
+	return nil, storage.ErrWeeklyPlanDraftNotFound
+}
+
 type weeklyPlanHarness struct {
 	svc   *Service
 	store *fakeWeeklyPlanStore

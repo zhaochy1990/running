@@ -17,10 +17,8 @@ func migrateWeeklyPlan(t *testing.T, store *Store) {
 }
 
 func weeklyPlanRow(userID, weekStart, status string) *WeeklyPlan {
-	slot := status
-	if status == WeeklyPlanStatusArchived {
-		slot = ""
-	}
+	// ADR 0030: only the single active row per (user, week) carries a status_slot
+	// ('active'); drafts and archived rows are NULL so drafts may be many.
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	row := &WeeklyPlan{
 		PlanID: uuid.NewString(), UserID: userID, WeekStart: weekStart,
@@ -28,7 +26,8 @@ func weeklyPlanRow(userID, weekStart, status string) *WeeklyPlan {
 		Content:        `{"sessions":[],"nutrition":[]}`,
 		Status:         status, Revision: 1, CreatedAt: now, UpdatedAt: now,
 	}
-	if slot != "" {
+	if status == WeeklyPlanStatusActive {
+		slot := status
 		row.StatusSlot = &slot
 	}
 	return row
@@ -194,20 +193,21 @@ func TestListWeekActivitiesUsesShanghaiDatesAndChronologicalOrder(t *testing.T) 
 	}
 }
 
-func TestWeeklyPlanStatusSlotsAreUniquePerWeek(t *testing.T) {
+func TestWeeklyPlanActiveSlotIsUniquePerWeek(t *testing.T) {
 	store := openTestStore(t)
 	migrateWeeklyPlan(t, store)
 	userID := uuid.NewString()
 
+	// ADR 0030: status_slot is only set on the single active row, so the unique
+	// index constrains exactly one active per (user, week) while drafts and
+	// archived rows (NULL status_slot) may be many.
 	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusActive))
 	if err := store.db.Create(weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusActive)).Error; !isDuplicateKey(err) {
 		t.Fatalf("second active must be duplicate key, got %v", err)
 	}
 
 	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusDraft))
-	if err := store.db.Create(weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusDraft)).Error; !isDuplicateKey(err) {
-		t.Fatalf("second draft must be duplicate key, got %v", err)
-	}
+	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusDraft))
 
 	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusArchived))
 	seedWeeklyPlan(t, store, weeklyPlanRow(userID, "2026-07-27", WeeklyPlanStatusArchived))

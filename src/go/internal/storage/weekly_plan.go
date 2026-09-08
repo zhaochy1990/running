@@ -27,7 +27,33 @@ type WeeklyPlanReplacement struct {
 }
 
 func (s *Store) AutoMigrateWeeklyPlan(ctx context.Context) error {
-	if err := s.db.WithContext(ctx).AutoMigrate(&WeeklyPlan{}); err != nil {
+	db := s.db.WithContext(ctx)
+	// ADR 0030 narrows the status_slot check: only the single active row per
+	// (user_id, week_start) carries a non-null slot, and every draft/archived
+	// row is NULL so drafts may be many. GORM AutoMigrate won't rewrite an
+	// existing CHECK constraint, so drop the old one before reconciling so a
+	// deployed table adopts the relaxed rule instead of rejecting draft rows.
+	m := db.Migrator()
+	if m.HasTable(&WeeklyPlan{}) && m.HasConstraint(&WeeklyPlan{}, "ck_weekly_plan_status_slot_v2") {
+		// Drop the old CHECK first: it rejects craft/archived rows whose slot is
+		// anything but their own status, so it must be gone before we normalize
+		// those rows to NULL. AutoMigrate re-creates the relaxed rule below.
+		if err := m.DropConstraint(&WeeklyPlan{}, "ck_weekly_plan_status_slot_v2"); err != nil {
+			return fmt.Errorf("storage: drop old weekly_plan status_slot constraint: %w", err)
+		}
+		// Normalize pre-existing draft/archived rows: the old check allowed
+		// status_slot = status for drafts, which the relaxed rule rejects
+		// (drafts must now be NULL). Without this the re-ADD below fails on the
+		// residual rows and leaves the table with no constraint.
+		normalize := db.Model(&WeeklyPlan{}).
+			Where("status <> ?", WeeklyPlanStatusActive).
+			Where("status_slot IS NOT NULL").
+			Updates(map[string]any{"status_slot": nil})
+		if normalize.Error != nil {
+			return fmt.Errorf("storage: normalize weekly_plan status_slot: %w", normalize.Error)
+		}
+	}
+	if err := db.AutoMigrate(&WeeklyPlan{}); err != nil {
 		return fmt.Errorf("storage: automigrate weekly_plan: %w", err)
 	}
 	return nil

@@ -29,6 +29,10 @@ type WeeklyPlanStore interface {
 	ApplyStructuredWeeklyPlan(ctx context.Context, userID, weekStart, content string, replacement *storage.WeeklyPlanReplacement) (*storage.WeeklyPlan, *storage.WeeklyPlan, error)
 	GetWeeklyFeedback(ctx context.Context, userID, weekStart string) (*storage.WeeklyFeedback, error)
 	PutWeeklyFeedback(ctx context.Context, userID, weekStart, content string) (storage.WeeklyFeedback, error)
+	InsertWeeklyPlanDraft(ctx context.Context, userID, weekStart, content, draftID string) (*storage.WeeklyPlan, bool, error)
+	GetWeeklyPlanDraft(ctx context.Context, userID, planID string) (*storage.WeeklyPlan, error)
+	ActivateWeeklyPlanDraft(ctx context.Context, userID, weekStart, planID string) (*storage.WeeklyPlan, *storage.WeeklyPlan, error)
+	AbandonWeeklyPlanDraft(ctx context.Context, userID, planID string) (*storage.WeeklyPlan, error)
 }
 
 type weeklyPlanRoutes struct {
@@ -57,6 +61,20 @@ func (w *weeklyPlanRoutes) registerReads(rg *gin.RouterGroup) {
 	rg.GET("/api/:user/plan/weeks/:weekName", w.detail)
 	rg.GET("/api/:user/weeks", w.listSummaries)
 	rg.GET("/api/:user/weeks/:weekName", w.weekDetail)
+	// Draft read (ADR 0030): user-scoped, keyed by draft id.
+	rg.GET("/api/:user/plan/drafts/:plan_id", w.getDraft)
+}
+
+// registerDraftWrites mounts the panel of draft mutations. Insert is an
+// internal-token-only endpoint (the plan-job worker); activate/abandon are
+// user endpoints that authorize via authorizeUser (user-scoped or internal).
+func (w *weeklyPlanRoutes) registerDraftWrites(rg *gin.RouterGroup) {
+	if w.store == nil {
+		return
+	}
+	rg.POST("/api/:user/plan/weeks/:weekName/drafts", w.insertDraft)
+	rg.POST("/api/:user/plan/drafts/:plan_id/activate", w.activateDraft)
+	rg.POST("/api/:user/plan/drafts/:plan_id/abandon", w.abandonDraft)
 }
 
 // registerWrites keeps Weekly Plan mutations on the default-deny route group,
@@ -205,6 +223,266 @@ func (w *weeklyPlanRoutes) apply(c *gin.Context) {
 		Plan:           weeklyPlanDetailResponse{weeklyPlanMetadataResponse: metadata, Content: document},
 		ReplacedPlanID: replacedID,
 	})
+}
+
+// ── Draft lifecycle (ADR 0030) ─────────────────────────────────────────────
+
+type insertWeeklyPlanDraftRequest struct {
+	DraftID string         `json:"draft_id" binding:"required"`
+	Content map[string]any `json:"content" binding:"required"`
+}
+
+type weeklyDraftIDResponse struct {
+	Success  bool   `json:"success"`
+	PlanID   string `json:"plan_id"`
+	WeekName string `json:"week_name"`
+	Status   string `json:"status"`
+}
+
+type weeklyPlanDraftResponse struct {
+	weeklyPlanMetadataResponse
+	Content any `json:"content"`
+}
+
+type activateWeeklyPlanDraftResponse struct {
+	Success            bool                     `json:"success"`
+	Plan               weeklyPlanDetailResponse `json:"plan"`
+	ReplacedActivePlan *string                  `json:"replaced_plan_id"`
+}
+
+// insertDraft persists a this-week schedule draft. Internal token only (the
+// plan-job worker), idempotent by draft_id; it never activates.
+//
+//	@Summary		Insert a weekly plan draft
+//	@Description	Internal-only. Persists a structured weekly plan as a draft, idempotent by draft_id. Never activates.
+//	@Tags			weekly-plan
+//	@Accept			json
+//	@Produce		json
+//	@Param			user		path	string								true	"User id (JWT sub)"
+//	@Param			weekName	path	string								true	"Shanghai week name (YYYY-MM-DD_MM-DD)"
+//	@Param			body		body		insertWeeklyPlanDraftRequest true	"Draft id and structured content"
+//	@Success		201		{object}	weeklyDraftIDResponse
+//	@Success		200		{object}	weeklyDraftIDResponse
+//	@Failure		401		{object}	errorResponse
+//	@Failure		403		{object}	errorResponse
+//	@Failure		413		{object}	errorResponse
+//	@Failure		422		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		InternalToken
+//	@Router			/api/{user}/plan/weeks/{weekName}/drafts [post]
+func (w *weeklyPlanRoutes) insertDraft(c *gin.Context) {
+	if callerFrom(c).Tier != TierInternal {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+	user := c.Param("user")
+	if _, err := uuid.Parse(user); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user"})
+		return
+	}
+	weekName := c.Param("weekName")
+	weekStart, _, ok := weekIdentity(weekName)
+	if !ok {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_week_name"})
+		return
+	}
+	var request insertWeeklyPlanDraftRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		if isBodyTooLarge(err) {
+			c.JSON(http.StatusRequestEntityTooLarge, errorResponse{Error: "weekly_plan_too_large"})
+			return
+		}
+		w.log.Warn("insert weekly plan draft bind failed", zapErr(err), zap.String("user_id", user))
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+	content, err := validateAppliedWeeklyPlan(request.Content, weekName)
+	if err != nil {
+		w.log.Warn("insert weekly plan draft content invalid", zapErr(err), zap.String("user_id", user))
+		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
+		return
+	}
+	created, isNew, err := w.store.InsertWeeklyPlanDraft(c.Request.Context(), user, weekStart, string(content), request.DraftID)
+	if errors.Is(err, storage.ErrWeeklyPlanDraftConflict) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "draft_conflict"})
+		return
+	}
+	if err != nil {
+		w.log.Error("insert weekly plan draft failed", zapErr(err), zap.String("user_id", user))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	status := http.StatusCreated
+	if !isNew {
+		status = http.StatusOK
+	}
+	c.JSON(status, weeklyDraftIDResponse{Success: true, PlanID: created.PlanID, WeekName: weekName, Status: created.Status})
+}
+
+// getDraft reads a draft by id. User callers are scoped to their own subject.
+//
+//	@Summary		Get a weekly plan draft
+//	@Tags			weekly-plan
+//	@Produce		json
+//	@Param			user		path	string	true	"User id (JWT sub)"
+//	@Param			plan_id	path	string	true	"Draft plan id"
+//	@Success		200	{object}	weeklyPlanDraftResponse
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		403	{object}	errorResponse
+//	@Failure		404	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/{user}/plan/drafts/{plan_id} [get]
+func (w *weeklyPlanRoutes) getDraft(c *gin.Context) {
+	user := c.Param("user")
+	if !authorizeUser(c, user) {
+		return
+	}
+	row, err := w.store.GetWeeklyPlanDraft(c.Request.Context(), user, c.Param("plan_id"))
+	if err != nil {
+		w.log.Error("get weekly plan draft failed", zapErr(err), zap.String("plan_id", c.Param("plan_id")))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if row == nil {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "weekly_plan_draft_not_found"})
+		return
+	}
+	if row.Status != storage.WeeklyPlanStatusDraft {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "weekly_plan_draft_not_found"})
+		return
+	}
+	metadata, err := weeklyPlanMetadata(*row)
+	if err != nil {
+		w.log.Error("weekly plan draft has invalid identity", zapErr(err), zap.String("plan_id", row.PlanID))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	var content any = row.Content
+	if row.ContentVersion == storage.WeeklyPlanContentStructured {
+		var document map[string]any
+		if err := json.Unmarshal([]byte(row.Content), &document); err != nil {
+			w.log.Error("weekly plan draft content is invalid JSON", zapErr(err), zap.String("plan_id", row.PlanID))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+		content = document
+	}
+	c.JSON(http.StatusOK, weeklyPlanDraftResponse{weeklyPlanMetadataResponse: metadata, Content: content})
+}
+
+// activateDraft archives the current active plan for the week and promotes the
+// chosen draft. The week is resolved from the draft row so the endpoint is
+// keyed purely by plan_id.
+//
+//	@Summary		Activate a weekly plan draft
+//	@Tags			weekly-plan
+//	@Accept			json
+//	@Produce		json
+//	@Param			user		path	string	true	"User id (JWT sub)"
+//	@Param			plan_id	path	string	true	"Draft plan id"
+//	@Success		200	{object}	activateWeeklyPlanDraftResponse
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		403	{object}	errorResponse
+//	@Failure		404	{object}	errorResponse
+//	@Failure		409	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/{user}/plan/drafts/{plan_id}/activate [post]
+func (w *weeklyPlanRoutes) activateDraft(c *gin.Context) {
+	user := c.Param("user")
+	if !authorizeUser(c, user) {
+		return
+	}
+	draft, err := w.store.GetWeeklyPlanDraft(c.Request.Context(), user, c.Param("plan_id"))
+	if err != nil {
+		w.log.Error("get weekly plan draft before activate failed", zapErr(err), zap.String("plan_id", c.Param("plan_id")))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if draft == nil || draft.Status != storage.WeeklyPlanStatusDraft {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "weekly_plan_draft_not_found"})
+		return
+	}
+	activated, replaced, err := w.store.ActivateWeeklyPlanDraft(c.Request.Context(), user, draft.WeekStart, draft.PlanID)
+	if errors.Is(err, storage.ErrWeeklyPlanDraftNotFound) {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "weekly_plan_draft_not_found"})
+		return
+	}
+	if errors.Is(err, storage.ErrWeeklyPlanDraftConflict) {
+		c.JSON(http.StatusConflict, errorResponse{Error: "weekly_plan_changed"})
+		return
+	}
+	if err != nil {
+		w.log.Error("activate weekly plan draft failed", zapErr(err), zap.String("plan_id", c.Param("plan_id")))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	metadata, err := weeklyPlanMetadata(*activated)
+	if err != nil {
+		w.log.Error("activated weekly plan has invalid identity", zapErr(err), zap.String("plan_id", activated.PlanID))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	var document map[string]any
+	if err := json.Unmarshal([]byte(activated.Content), &document); err != nil {
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	var replacedID *string
+	if replaced != nil {
+		replacedID = &replaced.PlanID
+	}
+	c.JSON(http.StatusOK, activateWeeklyPlanDraftResponse{
+		Success:            true,
+		Plan:               weeklyPlanDetailResponse{weeklyPlanMetadataResponse: metadata, Content: document},
+		ReplacedActivePlan: replacedID,
+	})
+}
+
+// abandonDraft archives a draft.
+//
+//	@Summary		Abandon a weekly plan draft
+//	@Tags			weekly-plan
+//	@Accept			json
+//	@Produce		json
+//	@Param			user		path	string	true	"User id (JWT sub)"
+//	@Param			plan_id	path	string	true	"Draft plan id"
+//	@Success		200	{object}	weeklyDraftIDResponse
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		403	{object}	errorResponse
+//	@Failure		404	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/{user}/plan/drafts/{plan_id}/abandon [post]
+func (w *weeklyPlanRoutes) abandonDraft(c *gin.Context) {
+	user := c.Param("user")
+	if !authorizeUser(c, user) {
+		return
+	}
+	abandoned, err := w.store.AbandonWeeklyPlanDraft(c.Request.Context(), user, c.Param("plan_id"))
+	if errors.Is(err, storage.ErrWeeklyPlanDraftNotFound) {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "weekly_plan_draft_not_found"})
+		return
+	}
+	if err != nil {
+		w.log.Error("abandon weekly plan draft failed", zapErr(err), zap.String("plan_id", c.Param("plan_id")))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	metadata, err := weeklyPlanMetadata(*abandoned)
+	if err != nil {
+		w.log.Error("abandoned weekly plan has invalid identity", zapErr(err), zap.String("plan_id", abandoned.PlanID))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, weeklyDraftIDResponse{Success: true, PlanID: abandoned.PlanID, WeekName: metadata.WeekName, Status: abandoned.Status})
 }
 
 // isBodyTooLarge reports whether a binding failure came from the ingress body

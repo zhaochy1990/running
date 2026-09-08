@@ -286,6 +286,12 @@ func (s *Service) Router() *gin.Engine {
 	// default deny prevents an admin-dashboard token from silently inheriting
 	// user or server-to-server capabilities.
 	authed := authenticated.Group("", rejectAdminCaller)
+	// Plan-draft mutations are user-scoped (or internal-token for insert), so
+	// they live behind default-deny: an admin-dashboard token must not activate
+	// or abandon an athlete's draft. Draft reads stay on the authenticated group
+	// above, where verified admin/internal callers may inspect any user.
+	s.masterPlan.registerDraftWrites(authed)
+	s.weeklyPlan.registerDraftWrites(authed)
 	authed.POST("/jobs", s.createJob)
 	authed.GET("/jobs/:job_id", s.getJob)
 	authed.GET("/api/jobs/:job_id", s.getJob)
