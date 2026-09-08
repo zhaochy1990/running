@@ -1,5 +1,5 @@
-import { sendCoachChatMessage, fetchCoachHistory, fetchCoachSessions, takePendingCoachContext } from '../../services/coach';
-import type { CoachHistoryMessage, CoachSessionTarget, PendingCoachContext } from '../../services/coach';
+import { sendCoachChatStream, fetchCoachHistory, fetchCoachSessions, takePendingCoachContext } from '../../services/coach';
+import type { CoachHistoryMessage, CoachSessionTarget, PendingCoachContext, CoachStreamEvent, CoachDone, CoachStreamHandle } from '../../services/coach';
 import { markdownToHtml } from '../../utils/markdown';
 
 interface CoachMessage {
@@ -30,6 +30,19 @@ const CURRENT_SESSION_KEY = 'coach.currentSessionId';
 const DEFAULT_SESSION_ID = 'mini-default';
 const PLACEHOLDER_TITLE = '新对话';
 
+// 服务端 status 事件的 phase → 提示文案。
+const PHASE_LABEL: Record<string, string> = {
+  analyzing_intent: '正在分析…',
+  in_subagent: '正在查询训练数据…',
+  running_tool: '正在查询训练数据…',
+  generating_response: '正在生成回复…',
+};
+
+// 当前流式的运行期状态（单会话单流；放 module 级避免给 Page 实例加自定义属性带来的 TS 收窄问题）。
+let streamAbort: CoachStreamHandle | null = null;
+let streamBuffer = '';
+let streamFlushTimer: number | null = null;
+
 interface CoachPageData {
   statusBarHeight: number;
   contentPaddingTop: number;
@@ -37,6 +50,11 @@ interface CoachPageData {
   input: string;
   sending: boolean;
   scrollIntoId: string;
+  // 流式回复：streaming 时展示流式气泡；streamPhase 为阶段文案（无正文时显示）；
+  // streamText 为累积纯文本（打字机）。done 后转入 messages 的完整 markdown 消息。
+  streaming: boolean;
+  streamPhase: string;
+  streamText: string;
   // 键盘高度（px）>0 时把输入栏垫到键盘上方，避免页面被 adjust-position 顶出屏幕。
   keyboardPaddedStyle: string;
   keyboardHeight: number;
@@ -71,6 +89,11 @@ interface CoachPageHandlers {
   startContextSession(pending: PendingCoachContext): void;
   currentSessionTarget(): CoachSessionTarget | undefined;
   contextHintOf(session: CoachSession | undefined): string;
+  // 流式回调（事件驱动，页面内以 this. 调用）。
+  handleStreamEvent(ev: CoachStreamEvent): void;
+  finishStream(done: CoachDone, userMsgId: number): void;
+  failStream(error: { code: string; message: string }, userMsgId: number): void;
+  resetStream(): void;
 }
 
 let seq = 0;
@@ -175,6 +198,9 @@ Page<CoachPageData, CoachPageHandlers>({
     messages: welcomeMessages(),
     input: '',
     sending: false,
+    streaming: false,
+    streamPhase: '',
+    streamText: '',
     scrollIntoId: '',
     keyboardHeight: 0,
     keyboardPaddedStyle: '',
@@ -255,8 +281,14 @@ Page<CoachPageData, CoachPageHandlers>({
     }
   },
 
+  onUnload() {
+    // 离开页面时中止在途流式请求，避免后台继续占用连接/接收 chunk。
+    this.resetStream();
+  },
+
   /** 首页「和教练聊一聊」：新建会话并挂 target，展示上下文提示条。 */
   startContextSession(pending: PendingCoachContext) {
+    this.resetStream();
     const newSession: CoachSession = {
       id: nextSessionId(),
       title: PLACEHOLDER_TITLE,
@@ -304,6 +336,7 @@ Page<CoachPageData, CoachPageHandlers>({
    * 加载失败（后端未配置/网络异常）时也保留欢迎语，便于继续提问。
    */
   async loadSession(sessionId: string) {
+    this.resetStream();
     try {
       const history = await fetchCoachHistory(sessionId);
       // 等待网络期间用户可能已切换会话（或首页移交新建了会话），丢弃过期结果。
@@ -389,41 +422,115 @@ Page<CoachPageData, CoachPageHandlers>({
     void this.doSend(msg.content, msg.clientTurnId, msg.id);
   },
 
-  // 发一条消息（新发送 or 重试）。成功后追加 assistant 回复并清除失败态；
-  // 失败给该 user 消息打 failed 标记，展示重试按钮。
+  // 发一条消息（新发送 or 重试）。改为流式：立即展示流式气泡（阶段指示 + 打字机），
+  // 收到的分段先以纯文本累积，done 后才把完整 markdown 渲染成富文本（mp-html）。
+  // DB 幂等仍由 clientTurnId 承担：失败重试复用同一 id，服务端返回同 turn。
   async doSend(text: string, clientTurnId: string, userMsgId: number) {
-    this.setData({ sending: true, scrollIntoId: 'msg-thinking' });
-    try {
-      const res = await sendCoachChatMessage(text, this.data.currentSessionId, clientTurnId, this.currentSessionTarget());
-      const content = res.status === 'completed' ? res.message : undefined;
-      if (!content || !content.trim()) {
-        throw new Error('no_answer');
+    this.resetStream();
+    this.setData({
+      sending: true,
+      streaming: true,
+      streamPhase: '正在分析…',
+      streamText: '',
+      scrollIntoId: 'msg-streaming',
+    });
+    streamAbort = sendCoachChatStream(
+      text,
+      this.data.currentSessionId,
+      clientTurnId,
+      this.currentSessionTarget(),
+      {
+        onEvent: (ev) => this.handleStreamEvent(ev),
+        onComplete: (done) => this.finishStream(done, userMsgId),
+        onError: (error) => this.failStream(error, userMsgId),
+      },
+    );
+  },
+
+  /** 流式事件：status 更新阶段文案；delta 累积纯文本（打字机）。 */
+  handleStreamEvent(ev: CoachStreamEvent) {
+    if (ev.kind === 'delta') {
+      // 轻量节流：同一帧内的多个 delta 合并成一次 setData，避免每 token 都刷一次 WXML。
+      streamBuffer += ev.delta;
+      if (streamFlushTimer == null) {
+        streamFlushTimer = setTimeout(() => {
+          streamFlushTimer = null;
+          const text = this.data.streamText + streamBuffer;
+          streamBuffer = '';
+          this.setData({ streamText: text });
+        }, 16);
       }
-      const assistantMsg: CoachMessage = {
-        id: ++seq,
-        role: 'assistant',
-        content,
-        html: markdownToHtml(content),
-      };
-      const messages = this.data.messages.map((m) =>
-        m.id === userMsgId ? { ...m, failed: false } : m,
-      );
-      this.setData({
-        messages: [...messages, assistantMsg],
-        sending: false,
-        scrollIntoId: `msg-${assistantMsg.id}`,
-      });
-    } catch {
-      const messages = this.data.messages.map((m) =>
-        m.id === userMsgId ? { ...m, failed: true } : m,
-      );
-      this.setData({
-        messages,
-        sending: false,
-        scrollIntoId: `msg-${userMsgId}`,
-      });
+    } else {
+      const label = PHASE_LABEL[ev.phase] ?? '正在生成回复…';
+      if (this.data.streamPhase !== label) this.setData({ streamPhase: label });
     }
   },
+
+  /** 流结束：把完整 markdown 一次性渲染为富文本，转入消息列表。 */
+  finishStream(done: CoachDone, userMsgId: number) {
+    streamAbort = null;
+    if (streamFlushTimer != null) {
+      clearTimeout(streamFlushTimer);
+      streamFlushTimer = null;
+    }
+    streamBuffer = '';
+    const content = done.status === 'completed' ? done.message : undefined;
+    if (!content || !content.trim()) {
+      this.failStream({ code: 'empty', message: 'no_answer' }, userMsgId);
+      return;
+    }
+    const assistantMsg: CoachMessage = {
+      id: ++seq,
+      role: 'assistant',
+      content,
+      html: markdownToHtml(content),
+    };
+    const messages = this.data.messages.map((m) =>
+      m.id === userMsgId ? { ...m, failed: false } : m,
+    );
+    this.setData({
+      messages: [...messages, assistantMsg],
+      sending: false,
+      streaming: false,
+      streamPhase: '',
+      streamText: '',
+      scrollIntoId: `msg-${assistantMsg.id}`,
+    });
+  },
+
+  /** 流失败：清掉流式气泡，给该 user 消息打 failed 标记以展示重试按钮。 */
+  failStream(error: { code: string; message: string }, userMsgId: number) {
+    streamAbort = null;
+    if (streamFlushTimer != null) {
+      clearTimeout(streamFlushTimer);
+      streamFlushTimer = null;
+    }
+    streamBuffer = '';
+    const messages = this.data.messages.map((m) =>
+      m.id === userMsgId ? { ...m, failed: true } : m,
+    );
+    this.setData({
+      messages,
+      sending: false,
+      streaming: false,
+      streamPhase: '',
+      streamText: '',
+      scrollIntoId: `msg-${userMsgId}`,
+    });
+  },
+
+  /** 中止在途流 + 清流式状态（切会话 / 新建 / 卸载时调用）。 */
+  resetStream() {
+    streamAbort?.abort();
+    streamAbort = null;
+    if (streamFlushTimer != null) {
+      clearTimeout(streamFlushTimer);
+      streamFlushTimer = null;
+    }
+    streamBuffer = '';
+    this.setData({ sending: false, streaming: false, streamPhase: '', streamText: '' });
+  },
+
 
   onMenuTap() {
     this.setData({ drawerOpen: true });
@@ -442,6 +549,7 @@ Page<CoachPageData, CoachPageHandlers>({
   },
 
   onNewConversation() {
+    this.resetStream();
     const newSession: CoachSession = { id: nextSessionId(), title: PLACEHOLDER_TITLE };
     const sessions = [newSession, ...this.data.sessions];
     writeSessions(sessions);
