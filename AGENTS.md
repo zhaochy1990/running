@@ -28,7 +28,7 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 
 ## Go HTTP 服务（HARD）
 
-`src/go/` 是 Go 模块（`github.com/zhaochy1990/stride`，Tencent 部署的 async-job worker + sync CLIs + **承载全部客户端请求的 API server**）。`src/go/internal/api/` 是**唯一面向客户端（小程序 / Web / 手机）的生产 API**，为 `https://api.stride-running.cn` 提供后端；**所有 HTTP 请求一律走 Go API，不再有 Python API 承担客户端请求**。**所有 Go HTTP 服务统一用 [gin](https://github.com/gin-gonic/gin)**（`cmd/api`、`internal/health` liveness 探针，以及后续任何 HTTP server / handler），不要用 chi / echo / 裸 `net/http` router —— 无例外。
+`src/go/` 是 Go 模块（`github.com/zhaochy1990/stride`，Tencent 部署的 async-job worker + sync CLIs + **承载全部客户端请求的 API server**）。`src/go/internal/api/` 是**唯一面向客户端（小程序 / Web / 手机）的生产 API**，为 `https://api.stride-running.cn` 提供后端；**所有 HTTP 请求一律走 Go API，不再有 Python API 承担客户端请求**。**唯一例外是 `coach_agent_api`（TS）承担的教练对话**：Caddy 网关把 `/api/users/me/coach/*` 分流到该 TS 服务，Go API 不实现这些路由（见上方 Prod API endpoint）。**所有 Go HTTP 服务统一用 [gin](https://github.com/gin-gonic/gin)**（`cmd/api`、`internal/health` liveness 探针，以及后续任何 HTTP server / handler），不要用 chi / echo / 裸 `net/http` router —— 无例外。
 
 ---
 
@@ -155,6 +155,8 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 ### Prod API endpoint（HARD）
 
 **生产唯一面向所有客户端（小程序、Web、手机/APP）的 API 前门是 `https://api.stride-running.cn`，由 Go API（`src/go/internal/api/`）承担，数据落腾讯云 MySQL。不再有承担客户端请求的 Python API。** 所有小程序、Web、手机端请求、部署、脚本、CLI（`coros-sync` 等）和前端指向生产 API 时统一用它；`STRIDE_PROD_URL` / `STRIDE_GO_API_URL` 在生产也以它为值。**不要沿用旧 Azure `stride-app.*.azurecontainerapps.io` 地址，也不要新增/依赖任何独立的 Python FastAPI 客户端 API。** 完整配置见 [`docs/deployment.md`](docs/deployment.md)。
+
+**所有客户端请求统一经过 Caddy 网关**：`api.stride-running.cn` 由 Caddy 反代并**按路径分流**——`/api/users/me/coach/*`（教练对话：`chat`、`sessions`、`sessions/{id}/messages` 等）路由到 **TypeScript `coach_agent_api` 服务**（镜像 `stride-coach-api`，核心 `coach_agent` / `coach_contract`），其余 STRIDE 数据面请求路由到 Go API。**教练对话接口不经过 Go API，Go API 不实现也不代理 `/api/users/me/coach/*`**；小程序 / Web 教练 tab 的 `COACH_BASE_URL` 在生产即为 `https://api.stride-running.cn`，由 Caddy 按 coach 前缀转发到 TS 服务。改 coach 对话契约时同步改 `coach_agent_api`，不要往 Go API 加同类路由。
 
 ---
 

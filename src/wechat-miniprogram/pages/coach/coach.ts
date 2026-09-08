@@ -1,5 +1,5 @@
-import { sendCoachChatMessage, fetchCoachHistory, fetchCoachSessions } from '../../services/coach';
-import type { CoachHistoryMessage } from '../../services/coach';
+import { sendCoachChatMessage, fetchCoachHistory, fetchCoachSessions, takePendingCoachContext } from '../../services/coach';
+import type { CoachHistoryMessage, CoachSessionTarget, PendingCoachContext } from '../../services/coach';
 import { markdownToHtml } from '../../utils/markdown';
 
 interface CoachMessage {
@@ -17,6 +17,10 @@ interface CoachMessage {
 interface CoachSession {
   id: string;
   title: string;
+  /** 该会话锚定的计划 session（首页「和教练聊一聊」移交）；随每轮消息发送。 */
+  target?: CoachSessionTarget;
+  /** 展示标签，如「轻松跑 12km · 9月8日」。 */
+  contextLabel?: string;
 }
 
 // 本地存储 key
@@ -40,6 +44,8 @@ interface CoachPageData {
   drawerOpen: boolean;
   sessions: CoachSession[];
   currentSessionId: string;
+  // 顶部上下文提示条：存在时表示当前会话锚定了一项计划训练。
+  contextHint: string;
   // mp-html 样式：容器兜底颜色/字重 + 结构化 tag 样式（深色主题）。
   containerStyle: string;
   tagStyle: Record<string, string>;
@@ -54,9 +60,17 @@ interface CoachPageHandlers {
   onMenuTap(): void;
   onCloseDrawer(): void;
   onSearchTap(): void;
+  onClearContext(): void;
   onNewConversation(): void;
   onSelectSession(e: WechatMiniprogram.TouchEvent): void;
   noop(): void;
+  // 内部方法（以 this. 调用，需在接口中声明以便类型收窄）。
+  loadSessions(): Promise<void>;
+  loadSession(sessionId: string): Promise<void>;
+  doSend(text: string, clientTurnId: string, userMsgId: number): Promise<void>;
+  startContextSession(pending: PendingCoachContext): void;
+  currentSessionTarget(): CoachSessionTarget | undefined;
+  contextHintOf(session: CoachSession | undefined): string;
 }
 
 let seq = 0;
@@ -167,6 +181,7 @@ Page<CoachPageData, CoachPageHandlers>({
     drawerOpen: false,
     sessions: [],
     currentSessionId: DEFAULT_SESSION_ID,
+    contextHint: '',
     containerStyle: 'color:#e3e2e5;font-size:13px;line-height:20px;',
     tagStyle: {
       p: 'margin:0 0 10px;color:#e3e2e5;',
@@ -190,11 +205,13 @@ Page<CoachPageData, CoachPageHandlers>({
   onLoad() {
     const sessions = readSessions();
     const currentSessionId = readCurrentSessionId();
+    const current = sessions.find((s) => s.id === currentSessionId);
     this.setData({
       statusBarHeight: statusBarHeight(),
       contentPaddingTop: contentPaddingTopRpx(),
       sessions,
       currentSessionId,
+      contextHint: this.contextHintOf(current),
     });
     void this.loadSessions();
     void this.loadSession(currentSessionId);
@@ -231,6 +248,55 @@ Page<CoachPageData, CoachPageHandlers>({
     if (tabBar) {
       tabBar.setData({ selected: 2 });
     }
+    // 首页「和教练聊一聊」移交的上下文：新建会话并锚定 target。
+    const pending = takePendingCoachContext();
+    if (pending) {
+      this.startContextSession(pending);
+    }
+  },
+
+  /** 首页「和教练聊一聊」：新建会话并挂 target，展示上下文提示条。 */
+  startContextSession(pending: PendingCoachContext) {
+    const newSession: CoachSession = {
+      id: nextSessionId(),
+      title: PLACEHOLDER_TITLE,
+      target: pending.target,
+      contextLabel: pending.label,
+    };
+    const sessions = [newSession, ...this.data.sessions];
+    writeSessions(sessions);
+    writeCurrentSessionId(newSession.id);
+    seq = 0;
+    this.setData({
+      sessions,
+      currentSessionId: newSession.id,
+      messages: welcomeMessages(),
+      scrollIntoId: '',
+      drawerOpen: false,
+      contextHint: this.contextHintOf(newSession),
+    });
+  },
+
+  /** 当前会话锚定的计划 session；无则 undefined（普通对话）。 */
+  currentSessionTarget(): CoachSessionTarget | undefined {
+    const s = this.data.sessions.find((x) => x.id === this.data.currentSessionId);
+    return s?.target;
+  },
+
+  /** 上下文提示条文案；无标签返回空（不显示）。 */
+  contextHintOf(session: CoachSession | undefined): string {
+    if (!session?.contextLabel) return '';
+    return `正在围绕「${session.contextLabel}」对话`;
+  },
+
+  /** 清空当前会话的 target：不再围绕该训练对话，后续消息不带 target。 */
+  onClearContext() {
+    const id = this.data.currentSessionId;
+    const sessions = this.data.sessions.map((s) =>
+      s.id === id ? { ...s, target: undefined, contextLabel: undefined } : s,
+    );
+    writeSessions(sessions);
+    this.setData({ sessions, contextHint: '' });
   },
 
   /**
@@ -240,6 +306,8 @@ Page<CoachPageData, CoachPageHandlers>({
   async loadSession(sessionId: string) {
     try {
       const history = await fetchCoachHistory(sessionId);
+      // 等待网络期间用户可能已切换会话（或首页移交新建了会话），丢弃过期结果。
+      if (this.data.currentSessionId !== sessionId) return;
       let msgs = this.data.messages;
       if (history && Array.isArray(history.messages) && history.messages.length) {
         seq = 0;
@@ -326,7 +394,7 @@ Page<CoachPageData, CoachPageHandlers>({
   async doSend(text: string, clientTurnId: string, userMsgId: number) {
     this.setData({ sending: true, scrollIntoId: 'msg-thinking' });
     try {
-      const res = await sendCoachChatMessage(text, this.data.currentSessionId, clientTurnId);
+      const res = await sendCoachChatMessage(text, this.data.currentSessionId, clientTurnId, this.currentSessionTarget());
       const content = res.status === 'completed' ? res.message : undefined;
       if (!content || !content.trim()) {
         throw new Error('no_answer');
@@ -385,6 +453,7 @@ Page<CoachPageData, CoachPageHandlers>({
       messages: welcomeMessages(),
       scrollIntoId: '',
       drawerOpen: false,
+      contextHint: '',
     });
   },
 
@@ -392,7 +461,8 @@ Page<CoachPageData, CoachPageHandlers>({
     const id = e.currentTarget.dataset.id as string;
     if (!id) return;
     writeCurrentSessionId(id);
-    this.setData({ currentSessionId: id, drawerOpen: false });
+    const selected = this.data.sessions.find((s) => s.id === id);
+    this.setData({ currentSessionId: id, drawerOpen: false, contextHint: this.contextHintOf(selected) });
     void this.loadSession(id);
   },
 });

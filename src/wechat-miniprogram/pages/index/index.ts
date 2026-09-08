@@ -5,6 +5,7 @@ import {
   pushPlannedSession,
 } from '../../services/plan';
 import { getActivities } from '../../services/activities';
+import { setPendingCoachContext } from '../../services/coach';
 import {
   buildPushDateOptions,
   buildWeekDays,
@@ -96,6 +97,7 @@ interface IndexPageData {
 interface IndexPageHandlers {
   fetchPlan(): Promise<void>;
   renderDay(dateYmd: string, isToday: boolean): void;
+  fetchDayActivities(dateYmd: string): Promise<void>;
   onMenuTap(): void;
   onDayTap(e: WechatMiniprogram.TouchEvent): void;
   onCoachTap(): void;
@@ -264,8 +266,20 @@ Page<IndexPageData, IndexPageHandlers>({
   },
 
   onCoachTap() {
-    // 跳转教练问答页（pages/coach/coach 尚未实现，先 toast 占位）
-    wx.showToast({ title: '暂未开放', icon: 'none' });
+    const { workout } = this.data;
+    if (!workout || !workout.date) {
+      wx.showToast({ title: '今日暂无训练安排', icon: 'none' });
+      return;
+    }
+    // 把当前计划 session 作为权威 target 交给教练对话，让 coach 聚焦这次训练。
+    // switchTab 不能带 query，改经 storage 交接（教练页 onShow 消费）。
+    const d = workout.date;
+    const label = `${workout.title} · ${Number(d.slice(5, 7))}月${Number(d.slice(8))}日`;
+    setPendingCoachContext({
+      target: { kind: 'session', date: workout.date, session_index: workout.sessionIndex },
+      label,
+    });
+    wx.switchTab({ url: '/pages/coach/coach' });
   },
 
   onWatchTap() {

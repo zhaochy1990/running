@@ -15,59 +15,62 @@
 
   <!-- 内容 -->
   <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
-    <!-- 月概览 -->
-    <view class="card summary-card">
-      <view class="summary-card__label">本月</view>
-      <view class="summary-card__stats">
-        <view class="summary-stat">
-          <view class="summary-stat__value">{{summary.count}}</view>
-          <view class="summary-stat__label">活动</view>
-        </view>
-        <view class="summary-stat">
-          <view class="summary-stat__value">{{summary.km}}</view>
-          <view class="summary-stat__label">跑量(km)</view>
-        </view>
-        <view class="summary-stat">
-          <view class="summary-stat__value">{{summary.duration}}</view>
-          <view class="summary-stat__label">时长</view>
-        </view>
-      </view>
-    </view>
-
-    <!-- 活动列表 -->
-    <view class="section-title">最近活动</view>
-    <view wx:if="{{rows.length}}" class="card activity-list">
-      <view
-        wx:for="{{rows}}"
-        wx:key="labelId"
-        class="activity"
-        data-id="{{item.labelId}}"
-        bindtap="onActivityTap"
-      >
-        <view class="activity__icon">
-          <image class="activity__icon-img" src="{{item.iconPath}}" mode="aspectFit" />
-        </view>
-        <view class="activity__info">
-          <view class="activity__name">{{item.name}}</view>
-          <view class="activity__date">{{item.date}}</view>
-          <view class="activity__meta">
-            <text wx:if="{{item.distanceKm !== '—'}}">{{item.distanceKm}} km</text>
-            <text wx:if="{{item.duration !== '—'}}"> · {{item.duration}}</text>
-            <text wx:if="{{item.pace !== '—'}}"> · {{item.pace}}</text>
-            <text wx:if="{{item.avgHr !== '—'}}"> · {{item.avgHr}} bpm</text>
+    <!-- 按月折叠的活动记录（合并「本月概览 + 活动列表」为一张卡片） -->
+    <view wx:if="{{monthGroups.length}}" class="card month-list">
+      <view wx:for="{{monthGroups}}" wx:key="monthKey" class="month-group">
+        <view
+          class="month-group__header"
+          data-month="{{item.monthKey}}"
+          bindtap="onMonthHeaderTap"
+        >
+          <view class="month-group__title-wrap">
+            <view class="month-group__title">{{item.label}}</view>
+            <view class="month-group__summary">{{item.count}} 次 · {{item.km}} km · {{item.duration}}</view>
           </view>
+          <image
+            class="month-group__chevron {{item.expanded ? 'is-expanded' : ''}}"
+            src="/assets/icons/chevron_right.svg"
+            mode="aspectFit"
+          />
         </view>
-        <view class="activity__right">
-          <view wx:if="{{item.load !== '—'}}" class="activity__load">{{item.load}}</view>
-          <view class="activity__load-label">负荷</view>
+        <view wx:if="{{item.expanded}}" class="month-group__body">
+          <view
+            wx:for="{{item.rows}}"
+            wx:for-item="row"
+            wx:key="labelId"
+            class="activity"
+            data-id="{{row.labelId}}"
+            bindtap="onActivityTap"
+          >
+            <view class="activity__icon">
+              <image class="activity__icon-img" src="{{row.iconPath}}" mode="aspectFit" />
+            </view>
+            <view class="activity__info">
+              <view class="activity__name">{{row.name}}</view>
+              <view class="activity__date">{{row.date}}</view>
+              <view class="activity__meta">
+                <text wx:if="{{row.distanceKm !== '—'}}">{{row.distanceKm}} km</text>
+                <text wx:if="{{row.duration !== '—'}}"> · {{row.duration}}</text>
+                <text wx:if="{{row.pace !== '—'}}"> · {{row.pace}}</text>
+                <text wx:if="{{row.avgHr !== '—'}}"> · {{row.avgHr}} bpm</text>
+              </view>
+            </view>
+            <view class="activity__right">
+              <view wx:if="{{row.load !== '—'}}" class="activity__load">{{row.load}}</view>
+              <view class="activity__load-label">负荷</view>
+            </view>
+          </view>
+          <view wx:if="{{!item.rows.length}}" class="month-group__empty">本月暂无活动</view>
         </view>
       </view>
     </view>
-    <view wx:else class="empty-card">
-      <view class="empty-card__title">暂无活动记录</view>
+    <view wx:elif="{{!loading}}" class="empty-card">
+      <view class="empty-card__title">{{emptyTitle}}</view>
       <view class="empty-card__sub">完成一次训练后同步展示</view>
     </view>
 
-    <button class="load-more" bindtap="onRefresh">刷新</button>
+    <view wx:if="{{hasMore && monthGroups.length}}" class="load-more" bindtap="onLoadMore">
+      {{loadingMore ? '加载中...' : '加载更早的记录'}}
+    </view>
   </view>
 </view>

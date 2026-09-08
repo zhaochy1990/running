@@ -46,7 +46,10 @@
       <!-- 同步数据（有同步中状态） -->
       <view class="menu-row {{syncing ? 'menu-row--disabled' : ''}}" bindtap="onSyncTap">
         <image class="menu-row__icon {{syncing ? 'menu-row__icon--spin' : ''}}" src="/assets/icons/sync.svg" mode="aspectFit" />
-        <view class="menu-row__title">{{syncing ? '同步中...' : '同步数据'}}</view>
+        <view class="menu-row__body">
+          <view class="menu-row__title">{{syncing ? '同步中...' : '同步数据'}}</view>
+          <view wx:if="{{!syncing}}" class="menu-row__subtitle">{{lastSyncText}}</view>
+        </view>
         <image wx:if="{{!syncing}}" class="menu-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
       </view>
 

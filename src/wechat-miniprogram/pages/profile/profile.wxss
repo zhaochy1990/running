@@ -176,6 +176,27 @@
   color: #e3e2e5;
 }
 
+.menu-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.menu-row__body .menu-row__title {
+  flex: none;
+}
+
+.menu-row__subtitle {
+  font-size: 19rpx;
+  line-height: 1.4;
+  color: #9c9c9d;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .menu-row__chevron {
   width: 40rpx;
   height: 40rpx;

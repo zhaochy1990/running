@@ -1,6 +1,7 @@
 import { userStore } from '../../store/index';
 import { triggerSync, pollPipeline } from '../../services/sync';
 import { uploadAvatar, updateProfile } from '../../services/profile';
+import { getWatchInfo } from '../../services/watch';
 import type { UserProfile } from '../../types/api';
 import type { PollPipelineHandle } from '../../services/sync';
 
@@ -19,6 +20,7 @@ interface ProfilePageData {
   avatarUrl: string;
   rows: MenuRow[];
   syncing: boolean;
+  lastSyncText: string;
   // 资料编辑 sheet
   editVisible: boolean;
   editAvatarTemp: string;
@@ -40,6 +42,7 @@ interface ProfilePageHandlers {
   saveAvatar(): void;
   onSyncTap(): void;
   startSync(userId: string): Promise<void>;
+  refreshLastSync(): Promise<void>;
   /** 当前同步任务的轮询句柄，存实例上以避免模块级状态在多实例间串扰。 */
   _pollHandle?: PollPipelineHandle;
 }
@@ -50,6 +53,17 @@ function statusBarHeight(): number {
   } catch {
     return wx.getSystemInfoSync().statusBarHeight || 0;
   }
+}
+
+function relativeTime(ms: number): string {
+  if (ms < 0) ms = 0;
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return '刚刚';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
 }
 
 function contentPaddingTopRpx(): number {
@@ -83,6 +97,7 @@ Page<ProfilePageData, ProfilePageHandlers>({
     avatarUrl: '',
     rows: MENU_ROWS,
     syncing: false,
+    lastSyncText: '未同步',
     editVisible: false,
     editAvatarTemp: '',
     editAvatarUrl: '',
@@ -104,6 +119,25 @@ Page<ProfilePageData, ProfilePageHandlers>({
       email: user?.email || '',
       avatarUrl: user?.avatar_url || '',
     });
+    void this.refreshLastSync();
+  },
+
+  async refreshLastSync() {
+    if (!this.data.user?.id) {
+      this.setData({ lastSyncText: '未同步' });
+      return;
+    }
+    try {
+      const info = await getWatchInfo();
+      const lastSync = info.last_sync_at;
+      this.setData({
+        lastSyncText: lastSync
+          ? `上次同步 ${relativeTime(Date.now() - Date.parse(lastSync))}`
+          : '未同步',
+      });
+    } catch {
+      // 保留上次值；临时网络错误不打断页面。
+    }
   },
 
   onLoad() {
@@ -224,6 +258,7 @@ Page<ProfilePageData, ProfilePageHandlers>({
       const poll = pollPipeline(res.run_id);
       this._pollHandle = poll;
       await poll.promise;
+      await this.refreshLastSync();
       wx.showToast({ title: '同步成功', icon: 'success' });
     } catch (err: unknown) {
       if (err instanceof Error && err.message === 'cancelled') {

@@ -16,6 +16,13 @@
 
   <!-- 对话区 + 输入栏 -->
   <view class="coach-body" style="padding-top: {{contentPaddingTop}}rpx; {{keyboardPaddedStyle}}">
+    <!-- 上下文提示条：首页「和教练聊一聊」移交训练上下文时显示；右侧 × 清除 target -->
+    <view wx:if="{{contextHint}}" class="coach-context-hint">
+      <text class="coach-context-hint__text">{{contextHint}}</text>
+      <view class="coach-context-hint__close" bindtap="onClearContext" aria-label="不再围绕该训练对话">
+        <text class="coach-context-hint__close-icon">×</text>
+      </view>
+    </view>
     <scroll-view class="coach-list" scroll-y scroll-with-animation scroll-into-view="{{scrollIntoId}}">
       <view
         wx:for="{{messages}}"

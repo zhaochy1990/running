@@ -16,17 +16,32 @@ export interface CoachChatResponse {
   client_turn_id?: string;
 }
 
+/**
+ * 教练对话的权威目标引用（后端 `CoachTargetRef`）。首页「和教练聊一聊」把
+ * 具体计划 session 作为上下文挂到一次对话：target 随每轮消息发送，服务端经
+ * <coach_turn_scope> 注入模型，使其聚焦该 session（date + session_index）。
+ */
+export interface CoachSessionTarget {
+  kind: 'master' | 'week' | 'session';
+  plan_id?: string | null;
+  folder?: string | null;
+  date?: string | null;
+  session_index?: number | null;
+}
+
 let turnCounter = 0;
 
 /**
  * 发送一轮 Coach 对话。client_turn_id 由后端要求（缺失 422），
  * 用于服务端幂等：同一 id + 同一请求重放返回同一 turn，不重复调模型。
  * 重试失败消息时传入同一 clientTurnId，避免重开一轮生成。
+ * 可选 target：把本轮焦点锚定到具体计划 session（见 CoachSessionTarget）。
  */
 export function sendCoachChatMessage(
   message: string,
   sessionId = 'mini-default',
   clientTurnId = `mini-${Date.now()}-${++turnCounter}`,
+  target?: CoachSessionTarget,
 ): Promise<CoachChatResponse> {
   return http.post<CoachChatResponse>(
     COACH_CHAT_ENDPOINT,
@@ -34,9 +49,44 @@ export function sendCoachChatMessage(
       session_id: sessionId,
       message,
       client_turn_id: clientTurnId,
+      ...(target ? { target } : {}),
     },
     { timeout: COACH_REQUEST_TIMEOUT },
   );
+}
+
+// ── 跨 tab 交接（首页「和教练聊一聊」→ 教练 tab）─────────────────────────────
+// switchTab 不能携带 query，因此把待挂载的 target + 展示标签暂存到本地，
+// 教练页 onShow 消费后清除。
+const PENDING_CONTEXT_KEY = 'coach.pendingContext';
+
+/** 首页「和教练聊一聊」交给教练页的上下文：机器可读 target + 展示标签。 */
+export interface PendingCoachContext {
+  target: CoachSessionTarget;
+  /** 展示用，如「轻松跑 12km · 9月8日」；为空则只显示日期。 */
+  label: string;
+}
+
+export function setPendingCoachContext(context: PendingCoachContext): void {
+  try {
+    wx.setStorageSync(PENDING_CONTEXT_KEY, context);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 取走待挂载上下文（仅一次）：教练页创建会话并挂 target 后调用。 */
+export function takePendingCoachContext(): PendingCoachContext | null {
+  try {
+    const v = wx.getStorageSync(PENDING_CONTEXT_KEY);
+    if (v && typeof v === 'object' && v.target && typeof v.target.kind === 'string') {
+      wx.removeStorageSync(PENDING_CONTEXT_KEY);
+      return v as PendingCoachContext;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 // GET /api/users/me/coach/sessions/{session_id}/messages 的历史行（stride-coach-api）。

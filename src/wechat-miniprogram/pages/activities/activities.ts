@@ -16,6 +16,17 @@ interface ActivityRow {
   load: string;
 }
 
+/** 一组可折叠的月份：头部展示该月汇总，展开后展示活动列表。 */
+interface MonthGroup {
+  monthKey: string; // YYYY-MM
+  label: string; // 如「2026年3月」
+  expanded: boolean;
+  count: string;
+  km: string;
+  duration: string;
+  rows: ActivityRow[];
+}
+
 interface Summary {
   count: number;
   km: string;
@@ -26,18 +37,35 @@ interface ActivitiesPageData {
   statusBarHeight: number;
   contentPaddingTop: number;
   loading: boolean;
-  summary: Summary;
-  rows: ActivityRow[];
+  /** 本月（上海）YYYY-MM，默认展开该月份 */
+  currentMonth: string;
+  /** 按月份折叠的分组列表（月份倒序） */
+  monthGroups: MonthGroup[];
+  /** 完全没有活动记录时的空态标题 */
+  emptyTitle: string;
+  /** 后端总记录数 */
+  total: number;
+  /** 已加载记录数 */
+  loadedCount: number;
+  /** 是否还有更早的记录可加载 */
+  hasMore: boolean;
+  /** 正在加载更早记录 */
+  loadingMore: boolean;
 }
 
 interface ActivitiesPageHandlers {
   fetch(): Promise<void>;
   onMenuTap(): void;
-  onRefresh(): void;
   onActivityTap(e: WechatMiniprogram.TouchEvent): void;
+  onMonthHeaderTap(e: WechatMiniprogram.TouchEvent): void;
+  onLoadMore(): void;
+  onPullDownRefresh(): void;
 }
 
 let userId = '';
+
+// 每次拉取的活动条数（分页步长）。
+const PAGE_SIZE = 100;
 
 function statusBarHeight(): number {
   try {
@@ -137,13 +165,104 @@ function summaryFrom(res: ActivitiesListResponse, monthKey: string): Summary {
   return summarizeActivities(monthActivities);
 }
 
+// 「2026-03」→「2026年3月」；非法输入原样返回，绝不抛错。
+function monthLabel(monthKey: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!m) return monthKey;
+  return `${m[1]}年${Number(m[2])}月`;
+}
+
+// 把一页活动按上海月份分组（倒序），默认本月展开。月份汇总优先用后端整月统计。
+function buildMonthGroups(res: ActivitiesListResponse, currentMonth: string): MonthGroup[] {
+  const byMonth = new Map<string, Activity[]>();
+  for (const a of res.activities) {
+    const key = (a.date || '').slice(0, 7);
+    if (!key) continue;
+    const arr = byMonth.get(key);
+    if (arr) {
+      arr.push(a);
+    } else {
+      byMonth.set(key, [a]);
+    }
+  }
+
+  return Array.from(byMonth.keys())
+    .sort()
+    .reverse()
+    .map((monthKey) => {
+      const acts = byMonth.get(monthKey)!;
+      const s = summaryFrom(res, monthKey);
+      return {
+        monthKey,
+        label: monthLabel(monthKey),
+        expanded: monthKey === currentMonth,
+        count: String(s.count),
+        km: s.km,
+        duration: s.duration,
+        rows: acts.map(toRow),
+      };
+    });
+}
+
+// 把下一页（更早）活动合并进已有分组：先建的月份组按倒序排在后面，
+// 已有组追加行、新月份新增组（折叠）。月份汇总优先用后端整月统计（幂等），缺失时用本页该月活动兜底。
+function mergeMonthGroups(existing: MonthGroup[], res: ActivitiesListResponse): MonthGroup[] {
+  const groups = existing.map((g) => ({ ...g, rows: [...g.rows] }));
+  const byMonth = new Map<string, MonthGroup>();
+  for (const g of groups) byMonth.set(g.monthKey, g);
+
+  for (const a of res.activities) {
+    const monthKey = (a.date || '').slice(0, 7);
+    if (!monthKey) continue;
+    let g = byMonth.get(monthKey);
+    if (!g) {
+      g = {
+        monthKey,
+        label: monthLabel(monthKey),
+        expanded: false,
+        count: '0',
+        km: '—',
+        duration: '—',
+        rows: [],
+      };
+      byMonth.set(monthKey, g);
+      groups.push(g);
+    }
+    g.rows.push(toRow(a));
+  }
+
+  const summaries = res.monthly_summaries ?? {};
+  for (const g of groups) {
+    const ms = summaries[g.monthKey];
+    if (ms) {
+      g.count = String(ms.activity_count);
+      g.km = ms.total_run_km > 0 ? ms.total_run_km.toFixed(1) : '—';
+      g.duration = ms.duration_s > 0 ? fmtDurationShort(ms.duration_s) : '—';
+    } else {
+      const acts = res.activities.filter((a) => (a.date || '').slice(0, 7) === g.monthKey);
+      if (acts.length) {
+        const s = summarizeActivities(acts);
+        g.count = String(s.count);
+        g.km = s.km;
+        g.duration = s.duration;
+      }
+    }
+  }
+  return groups;
+}
+
 Page<ActivitiesPageData, ActivitiesPageHandlers>({
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,
     loading: true,
-    summary: { count: 0, km: '—', duration: '—' },
-    rows: [],
+    currentMonth: '',
+    monthGroups: [],
+    emptyTitle: '暂无活动记录',
+    total: 0,
+    loadedCount: 0,
+    hasMore: false,
+    loadingMore: false,
   },
 
   onLoad() {
@@ -152,6 +271,7 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     this.setData({
       statusBarHeight: statusBarHeight(),
       contentPaddingTop: contentPaddingTopRpx(),
+      currentMonth: shanghaiToday().slice(0, 7),
     });
 
     // 先等认证流程 settle 再拉真实活动，避免首屏请求在登录完成前发出被 401。
@@ -179,16 +299,21 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
       return;
     }
     try {
-      const res = await getActivities(userId, { limit: 20 });
-      const monthKey = shanghaiToday().slice(0, 7);
+      // 拉最近一页活动，跨月份分组展示；月份汇总由后端整月统计给出。
+      const res = await getActivities(userId, { limit: PAGE_SIZE, offset: 0 });
+      const monthGroups = buildMonthGroups(res, this.data.currentMonth);
       this.setData({
-        rows: res.activities.map(toRow),
-        summary: summaryFrom(res, monthKey),
+        monthGroups,
+        total: res.total,
+        loadedCount: res.activities.length,
+        hasMore: res.activities.length < res.total,
+        emptyTitle: '暂无活动记录',
         loading: false,
+        loadingMore: false,
       });
     } catch {
       // 拉取失败时保持空态，由界面展示空态卡片。
-      this.setData({ loading: false });
+      this.setData({ loading: false, loadingMore: false });
     }
   },
 
@@ -196,9 +321,8 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     wx.showToast({ title: '暂未开放', icon: 'none' });
   },
 
-  onRefresh() {
-    this.setData({ loading: true });
-    this.fetch();
+  onPullDownRefresh() {
+    this.fetch().finally(() => wx.stopPullDownRefresh());
   },
 
   onActivityTap(e: WechatMiniprogram.TouchEvent) {
@@ -207,5 +331,33 @@ Page<ActivitiesPageData, ActivitiesPageHandlers>({
     wx.navigateTo({
       url: `/pages/activity-detail/activity-detail?labelId=${encodeURIComponent(labelId)}`,
     });
+  },
+
+  onMonthHeaderTap(e: WechatMiniprogram.TouchEvent) {
+    const key = e.currentTarget.dataset.month as string;
+    if (!key) return;
+    const monthGroups = this.data.monthGroups.map((g) =>
+      g.monthKey === key ? { ...g, expanded: !g.expanded } : g,
+    );
+    this.setData({ monthGroups });
+  },
+
+  async onLoadMore() {
+    if (!userId || this.data.loadingMore || !this.data.hasMore) return;
+    this.setData({ loadingMore: true });
+    try {
+      const res = await getActivities(userId, { limit: PAGE_SIZE, offset: this.data.loadedCount });
+      const loadedCount = this.data.loadedCount + res.activities.length;
+      this.setData({
+        monthGroups: mergeMonthGroups(this.data.monthGroups, res),
+        total: res.total,
+        loadedCount,
+        hasMore: loadedCount < res.total,
+        loadingMore: false,
+      });
+    } catch {
+      // 加载失败仅停止 loading 态，保留已加载内容。
+      this.setData({ loadingMore: false });
+    }
   },
 });
