@@ -84,18 +84,31 @@ async function runTurn(
 /** SSE variant: emit status events during the run, then a single `done` event. */
 async function streamChat(dependencies: ChatDependencies, stream: SSEStreamingApi, body: ChatRequest, userId: string, threadId: string): Promise<void> {
   const turnId = body.clientTurnId;
-  const emit = async (event: "status" | "done" | "error", data: Record<string, unknown>) => {
+  const emit = async (event: "status" | "text_delta" | "done" | "error", data: Record<string, unknown>) => {
     await stream.writeSSE({ event, data: JSON.stringify(data) });
   };
-  const emitStatus: CoachStreamEmitter = (status) =>
-    emit("status", { turn_id: turnId, phase: status.phase, ...(status.subagent ? { subagent: status.subagent } : {}) });
+  // Map each adapter event to its SSE wire form; every event carries the
+  // client turn id so the front end can correlate retries.
+  const emitStreamEvent: CoachStreamEmitter = (streamEvent) => {
+    if (streamEvent.kind === "text_delta") {
+      return emit("text_delta", { turn_id: turnId, delta: streamEvent.delta });
+    }
+    const { phase, subagent, tool, toolStatus } = streamEvent;
+    return emit("status", {
+      turn_id: turnId,
+      phase,
+      ...(subagent !== undefined ? { subagent } : {}),
+      ...(tool !== undefined ? { tool } : {}),
+      ...(toolStatus !== undefined ? { tool_status: toolStatus } : {}),
+    });
+  };
 
   try {
     const response = await runTurn(dependencies, body, threadId, async (resumeFromCheckpoint, turn) => {
       const input = buildInput(body, resumeFromCheckpoint);
       const config = buildConfig(body, userId, threadId, turn.fingerprint);
       const run = await dependencies.coach.streamEvents(input, config);
-      return await collectCoachStream(run, emitStatus);
+      return await collectCoachStream(run, emitStreamEvent);
     });
     await emit("done", { turn_id: turnId, ...response });
   } catch (error) {

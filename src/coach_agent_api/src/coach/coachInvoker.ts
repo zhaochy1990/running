@@ -4,12 +4,44 @@ import type { Persistence } from "../persistence/index.js";
 
 /**
  * The minimal surface of a deepagents `streamEvents(..., { version: "v3" })`
- * run that the SSE adapter needs: the final state snapshot and the nested
- * subagent handles (each carrying its agent `name`).
+ * run that the SSE adapter needs. Each projection mirrors the langgraph v3
+ * projection of the same name, narrowed to the fields the stream maps:
+ *
+ * - `messages` — the outer agent's AI message lifecycles; `text` yields
+ *   per-token deltas, and the final text is the reply (L1).
+ * - `toolCalls` — tool invocations with a `status` that resolves to the call's
+ *   terminal state so the adapter can emit a matching end event (L2).
+ * - `subagents` — nested agent invocations; their tools / delegates feed L2
+ *   status (their own messages are an intermediate tool result, not the reply).
+ * - `output` — the final state, mapped to the `done` event.
  */
-export interface CoachStreamSource {
+export interface CoachStreamSource extends CoachStreamNode {
   output: Promise<unknown>;
-  subagents: AsyncIterable<{ name: string }>;
+  messages: AsyncIterable<CoachStreamMessage>;
+}
+
+/** One AI message lifecycle: `text` yields incremental text deltas. */
+export interface CoachStreamMessage {
+  text: AsyncIterable<string>;
+}
+
+/** One tool invocation; `status` resolves when the call leaves `"running"`. */
+export interface CoachStreamToolCall {
+  name: string;
+  status: Promise<ToolCallStatus>;
+}
+
+export type ToolCallStatus = "running" | "finished" | "error";
+
+/** The L2 status surface shared by the root run and its nested subagents. */
+export interface CoachStreamNode {
+  toolCalls: AsyncIterable<CoachStreamToolCall>;
+  subagents: AsyncIterable<CoachStreamSubagent>;
+}
+
+/** A nested agent invocation (e.g. the QA subagent) and its own L2 projections. */
+export interface CoachStreamSubagent extends CoachStreamNode {
+  name: string;
 }
 
 export interface CoachInvoker {
