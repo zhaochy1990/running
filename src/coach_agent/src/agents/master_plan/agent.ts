@@ -1,5 +1,5 @@
 import { getLogger } from "@stride/common";
-import { MasterPlanDirectResponseSchema } from "@stride/contract";
+import { PlanProposalDirectResponseSchema } from "@stride/contract";
 import type { ModelConfig } from "../../config/config.js";
 import type { DataProvider } from "../../data/dataProvider.js";
 import { DataProviderMasterPlanContextProvider } from "../../data/masterPlanContextProvider.js";
@@ -50,11 +50,13 @@ function createMasterPlanSubagent(store: DataProvider, config: ModelConfig, gene
     systemPrompt: generatesPlan ? MASTER_PLAN_PROMPT : MASTER_PLAN_READ_PROMPT,
     tools,
     model: buildResponsesModel(config),
-    ...(generatesPlan ? { responseFormat: MasterPlanDirectResponseSchema } : {}),
+    ...(generatesPlan ? { responseFormat: PlanProposalDirectResponseSchema } : {}),
     middleware: [createTurnScopeMiddleware(), ...(generatesPlan ? [createMasterPlanValidationMiddleware()] : []), createLoggingMiddleware("agent:master_plan")],
     // Skill loaded via SkillsMiddleware from the deep agent's FilesystemBackend
     // (rooted at `dist/agents/skills/` in coachAgent.ts). The agent reads the
     // full SKILL.md on demand via read_file. Path is relative to that root.
-    skills: generatesPlan ? ["/generate-master-plan/"] : ["/analyze-activity/", "/analyze-race/"],
+    // Proposal drafting only reads bounded context and drafts a kernel request;
+    // plan generation runs in the async worker, so the generation SKILL is not loaded here.
+    skills: generatesPlan ? [] : ["/analyze-activity/", "/analyze-race/"],
   };
 }

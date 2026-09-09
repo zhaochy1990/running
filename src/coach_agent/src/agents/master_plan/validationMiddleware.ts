@@ -1,36 +1,41 @@
 import { HumanMessage } from "@langchain/core/messages";
-import { MasterPlanDirectResponseSchema } from "@stride/contract";
+import { PlanProposalDirectResponseSchema } from "@stride/contract";
 import { createMiddleware } from "langchain";
 import { z } from "zod/v4";
 
 const MAX_VALIDATION_RETRIES = 2;
 
 const ValidationStateSchema = z.object({
-  _masterPlanValidationRetries: z.int().nonnegative().default(0),
+  _masterPlanProposalRetries: z.int().nonnegative().default(0),
 });
 
-/** Enforce Zod cross-field refinements that provider JSON Schema cannot express. */
+/**
+ * Enforce Zod cross-field refinements of the drafted plan proposal (kernel
+ * request) that provider JSON Schema cannot express. The proposal is the
+ * generator subagent's only output; a structurally invalid kernel request must
+ * be corrected before it can be confirmed and enqueued.
+ */
 export function createMasterPlanValidationMiddleware() {
   return createMiddleware({
     name: "MasterPlanValidationMiddleware",
     stateSchema: ValidationStateSchema,
-    beforeAgent: () => ({ _masterPlanValidationRetries: 0 }),
+    beforeAgent: () => ({ _masterPlanProposalRetries: 0 }),
     afterModel: {
       canJumpTo: ["model"],
       hook: (state) => {
         if (state.structuredResponse === undefined) return;
-        const parsed = MasterPlanDirectResponseSchema.safeParse(state.structuredResponse);
+        const parsed = PlanProposalDirectResponseSchema.safeParse(state.structuredResponse);
         if (parsed.success) return;
 
         const issues = formatIssues(parsed.error.issues);
-        if (state._masterPlanValidationRetries >= MAX_VALIDATION_RETRIES)
-          throw new Error(`Master plan failed canonical validation after ${MAX_VALIDATION_RETRIES + 1} attempts: ${issues}`);
+        if (state._masterPlanProposalRetries >= MAX_VALIDATION_RETRIES)
+          throw new Error(`Master plan proposal failed canonical validation after ${MAX_VALIDATION_RETRIES + 1} attempts: ${issues}`);
 
         return {
-          _masterPlanValidationRetries: state._masterPlanValidationRetries + 1,
+          _masterPlanProposalRetries: state._masterPlanProposalRetries + 1,
           messages: [
             new HumanMessage(
-              `The proposed Master Plan failed canonical cross-field validation. Correct every issue and return the complete response again. Do not omit unchanged fields. Issues: ${issues}`,
+              `The drafted plan proposal failed canonical cross-field validation. Correct every issue and return the complete response again. Do not omit unchanged fields. Issues: ${issues}`,
             ),
           ],
           jumpTo: "model" as const,

@@ -1,5 +1,11 @@
 import { AIMessage } from "@langchain/core/messages";
-import { DirectResponseEnvelopeSchema, planningStartDate, WeeklyPlanDirectResponseSchema, weekFolder } from "@stride/contract";
+import {
+  DirectResponseEnvelopeSchema,
+  PlanProposalDirectResponseSchema,
+  planningStartDate,
+  WeeklyPlanDirectResponseSchema,
+  weekFolder,
+} from "@stride/contract";
 import { createMiddleware } from "langchain";
 
 type MessageLike = {
@@ -36,10 +42,16 @@ function getPlanTaskResult(messages: readonly MessageLike[], acceptedSubagents: 
     );
   if (generatorCall === undefined) return undefined;
   try {
-    const schema = generatorCall.args?.subagent_type === "generate_weekly_plan" ? WeeklyPlanDirectResponseSchema : DirectResponseEnvelopeSchema;
+    const subagentType = generatorCall.args?.subagent_type;
+    const schema =
+      subagentType === "generate_weekly_plan"
+        ? WeeklyPlanDirectResponseSchema
+        : subagentType === "generate_master_plan"
+          ? PlanProposalDirectResponseSchema
+          : DirectResponseEnvelopeSchema;
     const envelope = schema.safeParse(JSON.parse(result.content));
     if (!envelope.success) return undefined;
-    if (generatorCall.args?.subagent_type === "generate_weekly_plan") {
+    if (subagentType === "generate_weekly_plan") {
       if (expectedWeeklyPlanStart === undefined) return undefined;
       const content = envelope.data.content as { week_name?: unknown };
       if (content.week_name !== weekFolder(expectedWeeklyPlanStart)) return undefined;
