@@ -58,7 +58,7 @@ export class CoordinatedTurnRunner implements TurnCoordinator {
   }
 
   private stableJson(value: unknown): string {
-    if (Array.isArray(value)) return `[${value.map(this.stableJson).join(",")}]`;
+    if (Array.isArray(value)) return `[${value.map((item) => this.stableJson(item)).join(",")}]`;
     if (value !== null && typeof value === "object") {
       return `{${Object.entries(value as Record<string, unknown>)
         .filter(([, item]) => item !== undefined)

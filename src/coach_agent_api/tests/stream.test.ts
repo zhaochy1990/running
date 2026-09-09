@@ -93,6 +93,7 @@ test("streaming chat returns text/event-stream with status and done events", asy
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
+      async appendThreadMessage() { throw new Error("must not append"); },
       async streamEvents() {
         streamed += 1;
         return qaStream();
@@ -129,6 +130,7 @@ test("text_delta events accumulate to the done message", async () => {
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
+      async appendThreadMessage() { throw new Error("must not append"); },
       async streamEvents() { return qaStream(); },
     },
   });
@@ -147,6 +149,7 @@ test("every tool call emits a start and a matching end running_tool event carryi
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
+      async appendThreadMessage() { throw new Error("must not append"); },
       async streamEvents() { return qaStream(); },
     },
   });
@@ -164,6 +167,7 @@ test("a failing tool still emits a running_tool end event with tool_status error
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
+      async appendThreadMessage() { throw new Error("must not append"); },
       async streamEvents() {
         return source({
           output: Promise.resolve({ messages: [{ type: "ai", content: "回答" }] }),
@@ -194,6 +198,7 @@ test("done carries usage aggregated across multiple messages", async () => {
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
+      async appendThreadMessage() { throw new Error("must not append"); },
       async streamEvents() {
         return source({
           output: Promise.resolve({
@@ -220,6 +225,7 @@ test("QA multi-tool flow emits events in a reasonable order: intent → subagent
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
+      async appendThreadMessage() { throw new Error("must not append"); },
       async streamEvents() { return qaStream(); },
     },
   });
@@ -255,6 +261,7 @@ test("streaming chat replays an identical client turn without re-invoking", asyn
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
+      async appendThreadMessage() { throw new Error("must not append"); },
       async streamEvents() {
         streamed += 1;
         return qaStream();
@@ -279,6 +286,7 @@ test("streaming chat ignores a failing status iterable and still emits done", as
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
+      async appendThreadMessage() { throw new Error("must not append"); },
       async streamEvents() {
         return source({
           output: Promise.resolve({ messages: [{ type: "ai", content: "仍在回答" }] }),
@@ -305,6 +313,7 @@ test("streaming chat emits an error event when the coach fails", async () => {
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
+      async appendThreadMessage() { throw new Error("must not append"); },
       async streamEvents() { throw new Error("model blew up"); },
     },
   });
@@ -325,6 +334,7 @@ test("streaming chat emits an error event on a client_turn_id conflict", async (
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
+      async appendThreadMessage() { throw new Error("must not append"); },
       async streamEvents() {
         streamed += 1;
         return source({ output: Promise.resolve({ messages: [{ type: "ai", content: "first" }] }) });
@@ -346,6 +356,7 @@ test("requests without the SSE accept header keep the sync JSON path", async () 
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
       async invoke() { return { messages: [{ type: "ai", content: "同步回答" }] }; },
+      async appendThreadMessage() { throw new Error("must not append"); },
       async streamEvents() {
         streamed += 1;
         return source({ output: Promise.resolve({ messages: [{ type: "ai", content: "should not stream" }] }) });
@@ -369,6 +380,7 @@ test("streaming chat keeps executing and writes the receipt after the client dis
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
+      async appendThreadMessage() { throw new Error("must not append"); },
       async streamEvents() {
         streamed += 1;
         return source({
@@ -400,6 +412,7 @@ test("streaming chat runs the turn under the per-thread lock and releases it aft
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
       async invoke() { return { messages: [{ type: "ai", content: "同步回答" }] }; },
+      async appendThreadMessage() { throw new Error("must not append"); },
       async streamEvents() {
         return source({ output: Promise.resolve({ messages: [{ type: "ai", content: "done" }] }) });
       },

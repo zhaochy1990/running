@@ -11,6 +11,10 @@ const fingerprintTurn = (payload: unknown) => createInMemoryTurnCoordinator().ge
 const neverStream = () => {
   throw new Error("must not stream");
 };
+/** appendThreadMessage stub for tests that must never append. */
+const neverAppend = async () => {
+  throw new Error("must not append");
+};
 
 test("health is public", async () => {
   const app = createApp({
@@ -24,6 +28,7 @@ test("health is public", async () => {
         throw new Error("must not invoke");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/health");
@@ -43,6 +48,7 @@ test("OpenAPI document describes the live routes and bearer authentication", asy
         throw new Error("must not invoke");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/openapi.json");
@@ -69,6 +75,7 @@ test("Swagger UI is served for the OpenAPI document", async () => {
         throw new Error("must not invoke");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/docs");
@@ -98,6 +105,7 @@ test("chat derives user and thread identity from the verified token", async () =
         return { messages: [{ type: "ai", content: "训练状态稳定。" }] };
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -171,6 +179,7 @@ test("chat never exposes a tool message as the public answer", async () => {
         };
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -207,6 +216,7 @@ test("chat resumes an interrupt without requiring a new message", async () => {
         return { messages: [{ type: "ai", content: "继续处理" }] };
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -240,6 +250,7 @@ test("chat accepts multi-select interrupt answers", async () => {
         return { messages: [{ type: "ai", content: "继续处理" }] };
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -271,6 +282,7 @@ test("chat fails closed without a valid bearer token", async () => {
         throw new Error("must not invoke");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -294,6 +306,7 @@ test("chat validates the public request contract before invoking Coach", async (
         return {};
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -326,6 +339,7 @@ test("chat rejects a malformed timestamp", async () => {
         return {};
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -360,6 +374,7 @@ test("chat defaults the message timestamp to Asia/Shanghai time", async () => {
         return { messages: [{ type: "ai", content: "ok" }] };
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -397,6 +412,7 @@ test("chat replays an identical client turn and conflicts on changed input", asy
         return { messages: [{ type: "ai", content: `answer-${calls}` }] };
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const request = (message: string) =>
@@ -435,6 +451,7 @@ test("chat carries validated target and review context into request identity and
         return { messages: [{ type: "ai", content: "scoped" }] };
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const target = { kind: "week", folder: "2026-08-17_08-23" };
@@ -486,6 +503,7 @@ test("chat rejects review context that does not match the target week", async ()
         throw new Error("must not invoke");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -521,6 +539,7 @@ test("chat returns an explicit retryable response when the thread is busy", asyn
         throw new Error("must not invoke");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
     turnCoordinator: {
       getFingerprint() {
@@ -560,6 +579,7 @@ test("chat rejects empty interrupt answers", async () => {
         throw new Error("must not invoke");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/api/users/me/coach/chat", {
@@ -606,6 +626,7 @@ test("history requires a valid bearer token", async () => {
         throw new Error("must not invoke");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
     checkpointer: stubCheckpointer([]),
   });
@@ -627,6 +648,7 @@ test("history derives the thread from the verified token and maps messages", asy
         throw new Error("must not invoke");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
     checkpointer: {
       async getTuple(config) {
@@ -674,6 +696,7 @@ test("history returns an empty list when the thread has no checkpoint", async ()
         throw new Error("must not invoke");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
     checkpointer: {
       async getTuple() {
@@ -705,6 +728,7 @@ test("history rejects an invalid session id", async () => {
         throw new Error("must not invoke");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
     checkpointer: stubCheckpointer([]),
   });
@@ -728,6 +752,7 @@ test("session list requires a valid bearer token", async () => {
         throw new Error("must not invoke");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
     checkpointer: stubCheckpointer([]),
   });
@@ -749,6 +774,7 @@ test("session list scopes threads to the caller and maps session_id/preview", as
         throw new Error("must not invoke");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
     checkpointer: {
       async listThreadsForUser(userId: string) {

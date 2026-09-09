@@ -47,6 +47,13 @@ export interface CoachStreamSubagent extends CoachStreamNode {
 export interface CoachInvoker {
   invoke(input: unknown, config: Record<string, unknown>): Promise<unknown>;
   streamEvents(input: unknown, config: Record<string, unknown>): Promise<CoachStreamSource>;
+  /**
+   * Append a message to an existing thread without running any graph node
+   * (ADR 0030: the chat layer writes the plan-job confirmation message).
+   * Backed by LangGraph `updateState`, so the message flows through the
+   * messages-channel reducer and lands in the checkpointer.
+   */
+  appendThreadMessage(threadId: string, message: unknown): Promise<void>;
 }
 
 export class CoachInvokerImpl implements CoachInvoker {
@@ -68,6 +75,17 @@ export class CoachInvokerImpl implements CoachInvoker {
   streamEvents(input: unknown, invocationConfig: Record<string, unknown>) {
     const v3Config = { ...invocationConfig, version: "v3" as const };
     return this.agent.streamEvents(input as never, v3Config as never);
+  }
+
+  appendThreadMessage(threadId: string, message: unknown) {
+    // ReactAgent marks updateState `@internal`/`never` in its type surface, but
+    // the compiled graph exposes the standard LangGraph updateState at runtime.
+    const updateState = (
+      this.agent as unknown as {
+        updateState(config: Record<string, unknown>, values: Record<string, unknown>): Promise<unknown>;
+      }
+    ).updateState.bind(this.agent);
+    return updateState({ configurable: { thread_id: threadId } }, { messages: [message] }) as Promise<void>;
   }
 
   public async initialize(): Promise<void> {

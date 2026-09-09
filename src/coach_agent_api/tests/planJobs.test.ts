@@ -9,6 +9,10 @@ import type { PlanJobsService } from "../src/routes/planJobs.js";
 const neverStream = () => {
   throw new Error("must not stream");
 };
+/** appendThreadMessage stub for tests that must never append. */
+const neverAppend = async () => {
+  throw new Error("must not append");
+};
 
 const REQUEST = {
   request_id: "req-1",
@@ -95,6 +99,7 @@ function appFor(planJobs: PlanJobsService) {
         throw new Error("must not invoke coach");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
     planJobs,
   });
@@ -175,6 +180,7 @@ test("enqueue requires a bearer token", async () => {
         throw new Error("must not invoke coach");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
     planJobs: service,
   });
@@ -274,6 +280,7 @@ test("plan-job routes are absent when no planJobs service is wired", async () =>
         throw new Error("unused");
       },
       streamEvents: neverStream,
+      appendThreadMessage: neverAppend,
     },
   });
   const response = await app.request("/api/users/me/coach/plan-jobs/job-1", { headers: { authorization: "Bearer x" } });

@@ -67,6 +67,36 @@ export const OPENAPI_DOCUMENT = {
         },
       },
     },
+    "/api/users/me/coach/plan-proposals/confirm": {
+      post: {
+        tags: ["Coach"],
+        operationId: "confirmPlanProposal",
+        summary: "Confirm a drafted plan proposal (deterministic)",
+        description:
+          "Enqueues the plan job for a drafted proposal and appends a confirmation message (job_id + job_type) to the conversation thread. Re-validates the kernel request server-side; idempotent by client_turn_id.",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/PlanProposalConfirmRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "The plan job was enqueued and the confirmation message appended.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PlanProposalConfirmResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The request body or kernel request is invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+        },
+      },
+    },
     "/api/users/me/coach/plan-jobs": {
       post: {
         tags: ["Coach"],
@@ -272,7 +302,11 @@ export const OPENAPI_DOCUMENT = {
         additionalProperties: false,
       },
       ChatResponse: {
-        oneOf: [{ $ref: "#/components/schemas/CompletedChatResponse" }, { $ref: "#/components/schemas/NeedsInputChatResponse" }],
+        oneOf: [
+          { $ref: "#/components/schemas/CompletedChatResponse" },
+          { $ref: "#/components/schemas/NeedsInputChatResponse" },
+          { $ref: "#/components/schemas/GenerationProposedChatResponse" },
+        ],
       },
       SessionListResponse: {
         type: "object",
@@ -309,13 +343,40 @@ export const OPENAPI_DOCUMENT = {
         additionalProperties: false,
       },
       SessionHistoryMessage: {
-        type: "object",
-        required: ["role", "content"],
-        properties: {
-          role: { type: "string", enum: ["user", "assistant"] },
-          content: { type: "string" },
-        },
-        additionalProperties: false,
+        oneOf: [
+          {
+            type: "object",
+            required: ["role", "content"],
+            properties: {
+              role: { type: "string", enum: ["user", "assistant"] },
+              content: { type: "string" },
+            },
+            additionalProperties: false,
+          },
+          {
+            type: "object",
+            required: ["role", "kind", "summary", "job_type", "proposal"],
+            properties: {
+              role: { type: "string", const: "assistant" },
+              kind: { type: "string", const: "generation_proposed" },
+              summary: { type: "string" },
+              job_type: { type: "string" },
+              proposal: { type: "object", additionalProperties: true },
+            },
+            additionalProperties: false,
+          },
+          {
+            type: "object",
+            required: ["role", "kind", "job_id", "job_type"],
+            properties: {
+              role: { type: "string", const: "assistant" },
+              kind: { type: "string", const: "plan_job" },
+              job_id: { $ref: "#/components/schemas/TurnIdentifier" },
+              job_type: { type: "string" },
+            },
+            additionalProperties: false,
+          },
+        ],
       },
       CompletedChatResponse: {
         type: "object",
@@ -334,6 +395,19 @@ export const OPENAPI_DOCUMENT = {
         properties: {
           status: { type: "string", const: "needs_input" },
           interrupt: {},
+          session_id: { $ref: "#/components/schemas/TurnIdentifier" },
+          client_turn_id: { $ref: "#/components/schemas/TurnIdentifier" },
+        },
+        additionalProperties: false,
+      },
+      GenerationProposedChatResponse: {
+        type: "object",
+        required: ["status", "summary", "job_type", "proposal", "session_id", "client_turn_id"],
+        properties: {
+          status: { type: "string", const: "generation_proposed" },
+          summary: { type: "string" },
+          job_type: { type: "string" },
+          proposal: { type: "object", additionalProperties: true },
           session_id: { $ref: "#/components/schemas/TurnIdentifier" },
           client_turn_id: { $ref: "#/components/schemas/TurnIdentifier" },
         },
@@ -387,6 +461,30 @@ export const OPENAPI_DOCUMENT = {
           progress_pct: { type: "integer", minimum: 0, maximum: 100 },
           error_code: { type: ["string", "null"] },
           result_draft_id: { type: ["string", "null"] },
+        },
+        additionalProperties: false,
+      },
+      PlanProposalConfirmRequest: {
+        type: "object",
+        required: ["session_id", "client_turn_id", "job_type", "request"],
+        properties: {
+          session_id: { $ref: "#/components/schemas/TurnIdentifier" },
+          client_turn_id: { $ref: "#/components/schemas/TurnIdentifier" },
+          job_type: { type: "string", enum: ["generate_master_plan"] },
+          request: {
+            type: "object",
+            description: "The kernel request (MasterPlanGraphRequest). Re-validated server-side.",
+            additionalProperties: true,
+          },
+        },
+        additionalProperties: false,
+      },
+      PlanProposalConfirmResponse: {
+        type: "object",
+        required: ["job_id", "job_type"],
+        properties: {
+          job_id: { $ref: "#/components/schemas/TurnIdentifier" },
+          job_type: { type: "string" },
         },
         additionalProperties: false,
       },
