@@ -49,9 +49,9 @@ export const STORAGE_KEYS = {
 // 网络请求超时（毫秒）
 export const REQUEST_TIMEOUT = 15000;
 
-// Coach 对话超时（毫秒）。coach turn 是 LLM 编排，可能明显慢于普通读接口，
-// 单独放宽（微信 60s 上限），避免快速误判失败落兜底文案。
-export const COACH_REQUEST_TIMEOUT = 120000;
+// Coach 对话超时（毫秒）。coach turn 是 LLM 编排（起草轮次含多次 LLM 调用），
+// 可能明显慢于普通读接口；设为微信 wx.request 上限 60s，避免过早误判失败。
+export const COACH_REQUEST_TIMEOUT = 60000;
 
 // token 过期前多少秒提前刷新
 export const TOKEN_REFRESH_LEAD_SECONDS = 60;

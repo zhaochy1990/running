@@ -2,7 +2,7 @@
 
 import { http, getToken, refreshToken, handleSessionExpired } from './request';
 import { SseParser, type SseEvent } from '../utils/sse';
-import { COACH_BASE_URL, CLIENT_ID } from '../constants/config';
+import { COACH_BASE_URL, CLIENT_ID, COACH_REQUEST_TIMEOUT } from '../constants/config';
 
 // coach_agent_api 对话端点（见 constants/config.ts 的 COACH_BASE_URL）。
 const COACH_CHAT_ENDPOINT = `${COACH_BASE_URL}/api/users/me/coach/chat`;
@@ -74,6 +74,10 @@ export interface CoachDone {
   status?: string;
   message?: string;
   interrupt?: unknown;
+  /** generation_proposed：确认卡片携带的提案摘要与 kernel 请求。 */
+  summary?: string;
+  job_type?: string;
+  proposal?: unknown;
 }
 
 export interface CoachStreamCallbacks {
@@ -179,6 +183,7 @@ export function sendCoachChatStream(
     reqTask = wx.request({
       url: COACH_CHAT_ENDPOINT,
       method: 'POST',
+      timeout: COACH_REQUEST_TIMEOUT,
       data: {
         session_id: sessionId,
         message,
@@ -266,10 +271,15 @@ export function sendCoachChatStream(
 }
 
 // GET /api/users/me/coach/sessions/{session_id}/messages 的历史行（stride-coach-api）。
-// 只含 user / assistant 两种气泡；assistant 正文即 GFM markdown。
+// 普通气泡含 user / assistant + content；计划卡片含 role=assistant + kind。
 export interface CoachHistoryMessage {
   role: 'user' | 'assistant';
-  content: string;
+  content?: string;
+  kind?: 'generation_proposed' | 'plan_job';
+  summary?: string;
+  job_type?: string;
+  proposal?: unknown;
+  job_id?: string;
 }
 
 export interface CoachHistoryResponse {
@@ -306,4 +316,39 @@ export interface CoachSessionsResponse {
  */
 export function fetchCoachSessions(): Promise<CoachSessionsResponse> {
   return http.get<CoachSessionsResponse>(`${COACH_BASE_URL}/api/users/me/coach/sessions`);
+}
+
+// ── 计划任务（Plan Job）─────────────────────────────────────────────────────
+// 确认卡片确认后，确定性端点入队为训练计划任务，前端轮询 GET /plan-jobs/{id}
+// 拿 status/stage/progress/error_code/result_draft_id；完成态经 Go 草稿端点查看/启用/放弃。
+
+export type PlanJobStatus = 'queued' | 'running' | 'done' | 'failed';
+
+export interface PlanJobPoll {
+  job_id: string;
+  job_type: string;
+  status: PlanJobStatus;
+  stage: string;
+  progress_pct: number;
+  error_code: string | null;
+  result_draft_id: string | null;
+}
+
+export function fetchPlanJob(jobId: string): Promise<PlanJobPoll> {
+  return http.get<PlanJobPoll>(`${COACH_BASE_URL}/api/users/me/coach/plan-jobs/${encodeURIComponent(jobId)}`);
+}
+
+export interface PlanProposalConfirmResult {
+  job_id: string;
+  job_type: string;
+}
+
+/** 运动员在确认卡片上点「确认生成」：确定性端点复验提案、入队并追加确认消息。 */
+export function confirmPlanProposal(input: {
+  session_id: string;
+  client_turn_id: string;
+  job_type: string;
+  request: unknown;
+}): Promise<PlanProposalConfirmResult> {
+  return http.post<PlanProposalConfirmResult>(`${COACH_BASE_URL}/api/users/me/coach/plan-proposals/confirm`, input);
 }
