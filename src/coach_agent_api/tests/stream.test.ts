@@ -64,14 +64,21 @@ function chatRequest(body: Record<string, unknown>, headers: Record<string, stri
     });
 }
 
-/** The QA scenario from the acceptance criteria: intent → subagent → tool start → tool end → ... → generating → text stream → done. */
+/** The QA scenario from the acceptance criteria: subagent → tool start → tool end → ... → analyzing → text stream → done. */
 function qaStream(): CoachStreamSource {
   const outputMessage = { type: "ai", content: "本周负荷稳定，建议维持。", usage_metadata: { input_tokens: 120, output_tokens: 9, total_tokens: 129 } };
+  // The reply is generated after the tool results come back, so the text
+  // deltas start once the subagent's tools have reported — same as a real run.
+  let toolsDone: () => void = () => {};
+  const afterTools = new Promise<void>((resolve) => {
+    toolsDone = resolve;
+  });
   return source({
     output: Promise.resolve({ messages: [outputMessage] }),
     // The reply is the outer agent's message; the subagent's own text is an
     // intermediate tool result and is not streamed.
     messages: (async function* () {
+      await afterTools;
       yield message(["本周负荷稳定", "，建议维持。"]);
     })(),
     subagents: subagents([
@@ -80,6 +87,7 @@ function qaStream(): CoachStreamSource {
         toolCalls: (async function* () {
           yield tool("get_daily_training_load");
           yield tool("get_activities_by_date_range");
+          toolsDone();
         })(),
         subagents: emptyIterable(),
       },
@@ -140,6 +148,108 @@ test("text_delta events accumulate to the done message", async () => {
   assert.ok(deltas.length > 0, "at least one text_delta event");
   const accumulated = deltas.map((event) => event.data.delta as string).join("");
   assert.equal(accumulated, done?.data.message);
+});
+
+test("text_delta events are emitted while the run is still executing, not replayed after it ends", async () => {
+  // Mirrors langgraph's real projections: `subagents` / `toolCalls` are channels
+  // that only close when the whole run closes, while `run.output` resolves at run
+  // end. Draining status before text would therefore withhold every delta until
+  // the run had finished and then replay them all at once (no progressive text).
+  const order: string[] = [];
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const app = createApp({
+    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    coachInvoker: {
+      async invoke() { throw new Error("must not invoke"); },
+      async streamEvents() {
+        return source({
+          output: sleep(80).then(() => {
+            order.push("output");
+            return { messages: [{ type: "ai", content: "流式回复" }] };
+          }),
+          messages: (async function* () {
+            for (const chunk of ["流式", "回复"]) {
+              order.push("delta");
+              yield message([chunk]);
+              await sleep(20);
+            }
+          })(),
+          subagents: (async function* () {
+            await sleep(200);
+            yield subagent("qa_agent");
+          })(),
+        });
+      },
+    },
+  });
+  const response = await chatRequest({ session_id: "session-1", client_turn_id: "turn-1", message: "hi" }, SSE_ACCEPT)(app);
+  const events = parseSse(await response.text());
+
+  assert.ok(order.includes("delta") && order.includes("output"), `both drains ran: ${order.join(",")}`);
+  assert.ok(
+    order.indexOf("delta") < order.indexOf("output"),
+    `deltas are emitted while the run is still executing: ${order.join(",")}`,
+  );
+  const deltas = events.filter((event) => event.event === "text_delta");
+  const doneIndex = events.findIndex((event) => event.event === "done");
+  assert.equal(deltas.map((event) => event.data.delta).join(""), "流式回复");
+  assert.ok(events.findIndex((event) => event.event === "text_delta") < doneIndex, "text precedes done");
+});
+
+test("analyzing is emitted once the last tool call lands, before the reply text starts", async () => {
+  // A real turn: the root agent's `task` call stays in flight for the whole
+  // subagent run, and only then does the model compose the reply. The phase must
+  // flip when the tool lands — not when the first token arrives, which can be
+  // many seconds later.
+  const order: string[] = [];
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const app = createApp({
+    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    coachInvoker: {
+      async invoke() { throw new Error("must not invoke"); },
+      async streamEvents() {
+        return source({
+          output: sleep(420).then(() => ({ messages: [{ type: "ai", content: "本周负荷稳定。" }] })),
+          toolCalls: (async function* () {
+            yield tool("task", sleep(120).then(() => "finished" as const));
+          })(),
+          subagents: subagents([
+            {
+              name: "qa_agent",
+              toolCalls: (async function* () {
+                yield tool("get_daily_training_load", sleep(20).then(() => "finished" as const));
+              })(),
+              subagents: emptyIterable(),
+            },
+          ]),
+          messages: (async function* () {
+            await sleep(300);
+            order.push("text-start");
+            yield message(["本周负荷稳定。"]);
+          })(),
+        });
+      },
+    },
+  });
+  const response = await chatRequest({ session_id: "session-1", client_turn_id: "turn-1", message: "hi" }, SSE_ACCEPT)(app);
+
+  // Read incrementally so we can tell *when* `analyzing` reached the client.
+  const reader = response.body?.getReader();
+  assert.ok(reader, "the SSE response is streamed");
+  const decoder = new TextDecoder();
+  let raw = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    raw += decoder.decode(value, { stream: true });
+    if (!order.includes("analyzing") && raw.includes('"phase":"analyzing"')) order.push("analyzing");
+  }
+
+  assert.ok(order.includes("analyzing") && order.includes("text-start"), `both markers seen: ${order.join(",")}`);
+  assert.ok(order.indexOf("analyzing") < order.indexOf("text-start"), `analyzing arrives before the reply text starts: ${order.join(",")}`);
+  const events = parseSse(raw);
+  assert.equal(events.filter((event) => event.event === "text_delta").map((event) => event.data.delta).join(""), "本周负荷稳定。");
+  assert.equal(events.at(-1)?.event, "done");
 });
 
 test("every tool call emits a start and a matching end running_tool event carrying the tool name", async () => {
@@ -215,7 +325,7 @@ test("done carries usage aggregated across multiple messages", async () => {
   assert.deepEqual(done?.data.usage, { input_tokens: 12, output_tokens: 8, total_tokens: 20 });
 });
 
-test("QA multi-tool flow emits events in a reasonable order: intent → subagent → tool → generating → text → done", async () => {
+test("QA multi-tool flow emits events in a reasonable order: subagent → tool → analyzing → text → done", async () => {
   const app = createApp({
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
@@ -233,20 +343,23 @@ test("QA multi-tool flow emits events in a reasonable order: intent → subagent
     return (event.data.phase as string) ?? event.event;
   });
 
-  const intent = labels.indexOf("analyzing_intent");
   const inSubagent = labels.indexOf("in_subagent");
   const firstTool = labels.indexOf("running_tool");
-  const generating = labels.indexOf("generating_response");
+  const analyzing = labels.indexOf("analyzing");
   const firstText = labels.indexOf("text");
   const done = labels.indexOf("done");
 
-  assert.ok(intent >= 0, "analyzing_intent emitted");
-  assert.ok(inSubagent > intent, "in_subagent after analyzing_intent");
+  assert.ok(inSubagent >= 0, "in_subagent emitted");
   assert.ok(firstTool > inSubagent, "running_tool after in_subagent");
-  assert.ok(generating > firstTool, "generating_response after tools");
-  assert.ok(firstText > generating, "text after generating_response");
+  assert.ok(analyzing > firstTool, "analyzing after tools");
+  assert.ok(firstText > analyzing, "text after analyzing");
   assert.ok(done > firstText, "done after the text stream");
   assert.equal(done, labels.length - 1, "done is the last event");
+  // The first status a client sees is the data-query phase; the removed
+  // `analyzing_intent` / `generating_response` phases never appear.
+  const firstStatusPhase = events.find((event) => event.event === "status")?.data.phase;
+  assert.ok(firstStatusPhase === "in_subagent" || firstStatusPhase === "running_tool", `first status is a query phase, got ${String(firstStatusPhase)}`);
+  assert.ok(!labels.includes("analyzing_intent") && !labels.includes("generating_response"), "removed phases are not emitted");
 });
 
 test("streaming chat replays an identical client turn without re-invoking", async () => {

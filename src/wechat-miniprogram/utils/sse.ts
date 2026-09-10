@@ -174,7 +174,7 @@ export function demoSse(): void {
   // 切在 chunk 中间，验证跨 chunk 不丢事件、不炸码元。
   const raw =
     'event: status\n' +
-    'data: {"turn_id":"t1","phase":"analyzing_intent"}\n\n' +
+    'data: {"turn_id":"t1","phase":"running_tool","tool_status":"running"}\n\n' +
     'event: done\n' +
     'data: {"turn_id":"t1","status":"completed","message":"你好，正在分析"}\n\n';
 
@@ -184,7 +184,7 @@ export function demoSse(): void {
 
   if (collect.length !== 2) throw new Error(`demoSse: expect 2 events, got ${collect.length}`);
   if (collect[0].event !== 'status') throw new Error(`demoSse: first event ${collect[0].event}`);
-  if (JSON.parse(collect[0].data).phase !== 'analyzing_intent') throw new Error('demoSse: phase mismatch');
+  if (JSON.parse(collect[0].data).phase !== 'running_tool') throw new Error('demoSse: phase mismatch');
   if (collect[1].event !== 'done') throw new Error(`demoSse: second event ${collect[1].event}`);
   const done = JSON.parse(collect[1].data);
   if (done.message !== '你好，正在分析') throw new Error(`demoSse: message mismatch ${done.message}`);

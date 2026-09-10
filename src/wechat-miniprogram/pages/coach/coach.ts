@@ -30,12 +30,12 @@ const CURRENT_SESSION_KEY = 'coach.currentSessionId';
 const DEFAULT_SESSION_ID = 'mini-default';
 const PLACEHOLDER_TITLE = '新对话';
 
-// 服务端 status 事件的 phase → 提示文案。
+// 服务端 status 事件的 phase → 提示文案。用户可见的就两个阶段：数据查询（工具 /
+// 子 agent 在取数）→ 取数结束、模型开始出正文时切「正在分析」。
 const PHASE_LABEL: Record<string, string> = {
-  analyzing_intent: '正在分析…',
-  in_subagent: '正在查询训练数据…',
-  running_tool: '正在查询训练数据…',
-  generating_response: '正在生成回复…',
+  in_subagent: '正在查询数据…',
+  running_tool: '正在查询数据…',
+  analyzing: '正在分析…',
 };
 
 // 当前流式的运行期状态（单会话单流；放 module 级避免给 Page 实例加自定义属性带来的 TS 收窄问题）。
@@ -446,7 +446,9 @@ Page<CoachPageData, CoachPageHandlers>({
     this.setData({
       sending: true,
       streaming: true,
-      streamPhase: '正在分析…',
+      // 空文案：真实阶段由服务端 status 事件驱动（无工具调用的轮次没有查询阶段，
+      // 直接跳到「正在分析」）。
+      streamPhase: '',
       streamText: '',
       streamScrollId: 'msg-streaming',
       scrollIntoId: 'msg-streaming',
@@ -479,7 +481,7 @@ Page<CoachPageData, CoachPageHandlers>({
         }, 16);
       }
     } else {
-      const label = PHASE_LABEL[ev.phase] ?? '正在生成回复…';
+      const label = PHASE_LABEL[ev.phase] ?? '正在分析…';
       if (this.data.streamPhase !== label) this.setData({ streamPhase: label });
     }
   },

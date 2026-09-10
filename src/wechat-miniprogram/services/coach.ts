@@ -62,7 +62,7 @@ export function takePendingCoachContext(): PendingCoachContext | null {
 // done（完整 message）、error。小程序用 wx.request + enableChunked + onChunkReceived
 // 接收分块，经 utils/sse 解析。
 
-export type CoachPhase = 'analyzing_intent' | 'in_subagent' | 'running_tool' | 'generating_response';
+export type CoachPhase = 'in_subagent' | 'running_tool' | 'analyzing';
 
 export type CoachStreamEvent =
   | { kind: 'status'; phase: CoachPhase; subagent?: string; tool?: string; toolStatus?: string }

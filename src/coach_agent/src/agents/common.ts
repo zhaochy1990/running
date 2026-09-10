@@ -60,6 +60,7 @@ export function buildChatModel(config: ModelConfig): ChatOpenAI {
       thinking: {
         type: "disabled",
       },
+      stream_options: { include_usage: true },
     },
 
     // TypeScript 特有：禁用 TS 的 Responses API 预设，使 extraBody 生效并切换回普通模式

@@ -4,10 +4,13 @@
  * Maps a deepagents v3 `streamEvents` run into the SSE event contract the
  * client consumes:
  *
- * - `status` — phases the coach entered (`analyzing_intent`, `in_subagent`,
- *   `running_tool`, `generating_response`). `running_tool` is emitted once
- *   when a tool starts and once when it leaves `running`, so every invocation
- *   has a matching start and end event.
+ * - `status` — phases the coach entered (`in_subagent`, `running_tool`,
+ *   `analyzing`). `running_tool` is emitted once when a tool starts and once
+ *   when it leaves `running`, so every invocation has a matching start and end
+ *   event. `analyzing` marks the switch from fetching data to composing the
+ *   reply: it is emitted when the last of the root agent's tool calls lands
+ *   (see {@link toolPhases}), and for a turn that calls no tool at all when the
+ *   reply text starts.
  * - `text_delta` — successive chunks of the final reply text (L1), which the
  *   client concatenates to the message in `done`.
  * - `done` — the same public response as the sync path (full message, usage),
@@ -17,11 +20,18 @@
  * is authoritative, so a hung or rejecting iterable must not fail the turn nor
  * delay `done` past the drain bound.
  */
-import type { CoachStreamMessage, CoachStreamNode, CoachStreamSource, CoachStreamToolCall, ToolCallStatus } from "../coach/coachInvoker.js";
+import type {
+  CoachStreamMessage,
+  CoachStreamNode,
+  CoachStreamSource,
+  CoachStreamSubagent,
+  CoachStreamToolCall,
+  ToolCallStatus,
+} from "../coach/coachInvoker.js";
 import { toPublicResponse } from "../publicResponse.js";
 
 /** Phase labels a `status` event can carry. */
-export type CoachStatusPhase = "analyzing_intent" | "in_subagent" | "running_tool" | "generating_response";
+export type CoachStatusPhase = "in_subagent" | "running_tool" | "analyzing";
 
 /** A single event the adapter emits: either a phase status or a text delta. */
 export type CoachStreamEvent =
@@ -29,6 +39,13 @@ export type CoachStreamEvent =
   | { kind: "text_delta"; delta: string };
 
 export type CoachStreamEmitter = (event: CoachStreamEvent) => Promise<void>;
+
+/** Per-subtree tool call status emitter (see {@link toolPhases}). */
+interface StatusPhases {
+  readonly started: (tool: string) => Promise<void>;
+  readonly finished: (tool: string, toolStatus: ToolCallStatus) => Promise<void>;
+  readonly analyzing: () => Promise<void>;
+}
 
 /**
  * How long to wait for nested status / text events to drain after the run has
@@ -40,67 +57,132 @@ const DRAIN_TIMEOUT_MS = 5_000;
 
 /**
  * Drive a v3 run to completion while emitting status and text_delta events, and
- * return the public response for the `done` event. `analyzing_intent` is emitted
- * before anything else so every stream carries at least one status event.
+ * return the public response for the `done` event.
  */
 export async function collectCoachStream(run: CoachStreamSource, emit: CoachStreamEmitter): Promise<Record<string, unknown>> {
-  await emit({ kind: "status", phase: "analyzing_intent" });
+  // The drain is raced against the bound below, and the run's channels can
+  // close under it, so events that resolve afterwards must never land after
+  // `done` (a late write would either trail the terminal event or throw on the
+  // closed SSE stream).
+  let settled = false;
+  const safeEmit: CoachStreamEmitter = (event) => (settled ? Promise.resolve() : emit(event));
 
   // Emit L2 statuses (tools, subagents) and the L1 reply text, then flush.
   // Rejecting or hung iterables must not fail the turn (run.output is
   // authoritative) nor delay `done` past the drain bound.
-  const drain = drainRoot(run, emit).catch(() => {});
+  const drain = drainRoot(run, safeEmit).catch(() => {});
   const output = await run.output;
   await Promise.race([drain, sleep(DRAIN_TIMEOUT_MS)]);
+  settled = true;
   return withUsage(toPublicResponse(output), output);
 }
 
 /**
- * Drive the root run: its subagent / tool statuses first (they feed the reply),
- * then the reply text from `run.messages` — the outer agent's final message.
- * A subagent's own messages are an intermediate tool result (Surfaced as L3
- * tool detail later), never the reply, so only its subagents and tools are
- * drained for L2 status.
+ * Drive the root run: its subagent / tool statuses and the reply text from
+ * `run.messages` — the outer agent's final message — merge into one event
+ * stream as the run progresses. A subagent's own messages are an intermediate
+ * tool result (surfaced as L3 tool detail later), never the reply, so only its
+ * subagents and tools are drained for L2 status.
  */
 async function drainRoot(run: CoachStreamSource, emit: CoachStreamEmitter): Promise<void> {
-  await drainStatus(run, emit);
-  await drainText(run.messages, emit);
-}
-
-/** Emit a node's tool and nested-subagent status events (L2), no text. */
-async function drainStatus(node: CoachStreamNode, emit: CoachStreamEmitter): Promise<void> {
-  await drainToolCalls(node.toolCalls, emit);
-  for await (const subagent of node.subagents) {
-    await emit({ kind: "status", phase: "in_subagent", subagent: subagent.name });
-    await drainStatus(subagent, emit);
-  }
-}
-
-/** Emit a start event when a tool begins, then its matching end event. */
-async function drainToolCalls(toolCalls: AsyncIterable<CoachStreamToolCall>, emit: CoachStreamEmitter): Promise<void> {
-  for await (const call of toolCalls) {
-    await emit({ kind: "status", phase: "running_tool", tool: call.name, toolStatus: "running" });
-    const status = await call.status.catch(() => "error" as const);
-    await emit({ kind: "status", phase: "running_tool", tool: call.name, toolStatus: status });
-  }
+  // Status and text must drain concurrently. The run's `toolCalls` / `subagents`
+  // projections are channels that only close when the whole run ends, so
+  // awaiting status first would keep `run.messages` unconsumed until the reply
+  // had already been generated — every `text_delta` would then be replayed in a
+  // single burst right before `done` (the stream looks non-streaming).
+  const phases = toolPhases(emit, true);
+  await Promise.all([drainStatus(run, emit, phases), drainText(run.messages, emit, phases)]);
 }
 
 /**
- * Stream the reply text as `text_delta`, preceded once by `generating_response`.
+ * Emits the `running_tool` status of one subtree's tool calls, and — for the
+ * root subtree only — owns the `analyzing` transition.
+ *
+ * Root tool calls are what "fetching data" means: a `task` call stays in flight
+ * for a whole subagent run, so the moment no root tool call is pending is
+ * exactly the moment the coach stops gathering data and starts composing the
+ * reply — well before the first reply token arrives. Nested tool calls are
+ * emitted as L2 detail without driving the phase (they are already covered by
+ * the `task` call that spawned them, and a subagent's own projections are less
+ * predictable than the root agent's).
+ */
+function toolPhases(emit: CoachStreamEmitter, drivesPhase: boolean): StatusPhases {
+  let inFlight = 0;
+  let analyzing = false;
+  const analyzingStatus = async (): Promise<void> => {
+    if (analyzing) return;
+    analyzing = true;
+    await emit({ kind: "status", phase: "analyzing" });
+  };
+  return {
+    analyzing: analyzingStatus,
+    async started(tool: string): Promise<void> {
+      inFlight += 1;
+      analyzing = false;
+      await emit({ kind: "status", phase: "running_tool", tool, toolStatus: "running" });
+    },
+    async finished(tool: string, toolStatus: ToolCallStatus): Promise<void> {
+      inFlight -= 1;
+      await emit({ kind: "status", phase: "running_tool", tool, toolStatus });
+      if (drivesPhase && inFlight === 0) await analyzingStatus();
+    },
+  };
+}
+
+/** Emit a node's tool and nested-subagent status events (L2), no text. */
+async function drainStatus(node: CoachStreamNode, emit: CoachStreamEmitter, phases: StatusPhases): Promise<void> {
+  // Tool calls and subagents are independent projections that both only close
+  // with the run, so they must drain concurrently: awaiting the tool channel
+  // first would withhold every subagent status until the run was over.
+  await Promise.all([drainToolCalls(node.toolCalls, phases), drainSubagents(node.subagents, emit)]);
+}
+
+/** Emit each subagent as it is entered, then drain its subtree. */
+async function drainSubagents(subagents: AsyncIterable<CoachStreamSubagent>, emit: CoachStreamEmitter): Promise<void> {
+  const drains: Promise<void>[] = [];
+  for await (const subagent of subagents) {
+    await emit({ kind: "status", phase: "in_subagent", subagent: subagent.name });
+    // Started but not awaited: sibling subagents may be running concurrently,
+    // and each one streams its own status. A failing status iterable is
+    // non-fatal (the reply is the run's authoritative output), so it is dropped
+    // here rather than surfacing as an unhandled rejection.
+    drains.push(drainStatus(subagent, emit, toolPhases(emit, false)).catch(() => {}));
+  }
+  await Promise.all(drains);
+}
+
+/** Emit a start event when a tool begins, then its matching end event. */
+async function drainToolCalls(toolCalls: AsyncIterable<CoachStreamToolCall>, phases: StatusPhases): Promise<void> {
+  const endings: Promise<void>[] = [];
+  for await (const call of toolCalls) {
+    await phases.started(call.name);
+    // Deliberately not awaited inside the loop: sibling tool calls run in
+    // parallel and must report their own end, in their own time. Status
+    // emission is best-effort, so a failure is dropped instead of failing the
+    // turn (and instead of surfacing as an unhandled rejection here).
+    endings.push(
+      call.status
+        .catch(() => "error" as const)
+        .then((status) => phases.finished(call.name, status))
+        .catch(() => {}),
+    );
+  }
+  await Promise.all(endings);
+}
+
+/**
+ * Stream the reply text as `text_delta`, preceded by `analyzing` when the phase
+ * has not already flipped there (a turn that calls no tool never does).
  * ponytail: the outer agent produces exactly one text reply (the orchestrator
  * uses structured output, tool calls carry no text), so the sum of these deltas
  * equals `done.message`. If a turn ever emits a second text AI message, restrict
  * this to the final message.
  */
-async function drainText(messages: AsyncIterable<CoachStreamMessage>, emit: CoachStreamEmitter): Promise<void> {
-  let generating = false;
+async function drainText(messages: AsyncIterable<CoachStreamMessage>, emit: CoachStreamEmitter, phases: StatusPhases): Promise<void> {
   for await (const message of messages) {
     for await (const delta of message.text) {
       if (delta.length === 0) continue;
-      if (!generating) {
-        generating = true;
-        await emit({ kind: "status", phase: "generating_response" });
-      }
+      await phases.analyzing();
       await emit({ kind: "text_delta", delta });
     }
   }
