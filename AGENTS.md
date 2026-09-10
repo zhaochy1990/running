@@ -64,7 +64,7 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 | Go API 持久化数据（含跨用户 social signals、preferences、push registrations） | **MySQL**（经 `src/go/internal/storage/`） |
 | Bulk binary blobs (photos, video, large export files) | **Azure Blob Storage**（经非客户端 Python 运行时，见下） |
 | 用户头像图片文件（avatar image） | **腾讯云 COS**（对象存储 + CDN；经应用侧媒体上传接口，DB 只存 `avatar_url`） |
-| Authoring artifacts (plan.md, TRAINING_PLAN.md) | **Markdown files in `data/{user_id}/logs/`**；只有明确批准同步的非草稿内容才可经 `sync-data.yml` 到 Azure Files，weekly plan 草稿遵守下方人工 review 门禁 |
+| Authoring artifacts (plan.md, TRAINING_PLAN.md) | **Markdown files in `data/{user_id}/logs/`**（仅本地，不同步到任何远端）；weekly plan 草稿遵守下方人工 review 门禁，发布走受支持的 MySQL 写接口 |
 | 周反馈 | rollout 前沿用 legacy `feedback.md`；`STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE=true` 后以 **腾讯云 MySQL `weekly_feedback`** 为唯一来源 |
 | Go API auth tokens / secrets | **MySQL**（经 `src/go/internal/storage/`） |
 | Python（非 API 运行时，如 worker / coach）的 auth tokens / secrets | **Azure Key Vault** |
@@ -205,7 +205,7 @@ docs/                # topic-specific docs（按需 Read，见顶部表）
 
 ### Weekly plan generation workflow（HARD）
 
-1. **按需同步所有用户**：如需在生成前刷新 prod 数据，可手动触发 GitHub Actions 的 `.github/workflows/daily-sync.yml`（`Daily auto-sync`）：`gh workflow run daily-sync.yml`。该 workflow 会遍历 `data/.slug_aliases.json` 中的所有 user UUID，触发并等待每个用户的 data pipeline。必须等待 workflow 成功完成；任一用户失败时先报告失败，不得把旧数据误称为最新数据。不要把它与 `.github/workflows/sync-data.yml` 混淆，后者同步 authoring files 到 Azure，不负责刷新 MySQL 运动数据。
+1. **按需同步所有用户**：如需在生成前刷新 prod 数据，可手动触发 GitHub Actions 的 `.github/workflows/daily-sync.yml`（`Daily auto-sync`）：`gh workflow run daily-sync.yml`。该 workflow 会遍历 `data/.slug_aliases.json` 中的所有 user UUID，触发并等待每个用户的 data pipeline。必须等待 workflow 成功完成；任一用户失败时先报告失败，不得把旧数据误称为最新数据。
 2. **prod MySQL 只读检查**：生成下一周计划期间，允许直接使用非交互 MySQL CLI 对 prod 腾讯云 MySQL 执行只读 SQL，读取目标用户的最新活动、健康、训练负荷和能力基线。连接参数必须且只能从主 checkout 根目录 `.credentials.local` 的 `host`、`port`、`database_name`、`database_readonly_username`、`database_readonly_password` 加载；不得使用 `database_username` / `database_password` 读写账号，也不得在 readonly 账号不可用时回退到任何其他账号。只允许 `SELECT`、`SHOW`、`DESCRIBE` / `DESC`、`EXPLAIN`、`WITH ... SELECT` 等只读语句；禁止多语句输入、存储过程调用、写操作及 schema 变更，并禁止 `INTO OUTFILE` / `INTO DUMPFILE`、`FOR UPDATE`、`LOCK IN SHARE MODE`、`GET_LOCK()` 等写文件或显式加锁形式。
 3. **禁止 SQLite 数据源**：不得运行本地 sync 来准备计划上下文，不得读取 `data/{user_id}/coros.db`，也不得在 MySQL 查询失败、数据缺失或连接不可用时退回 SQLite。此时应停止生成并向用户报告缺失项或连接问题。
 4. **组合 authoring 输入**：当前训练阶段读取本地 `TRAINING_PLAN.md`。rollout completion marker 前，人工反馈沿用 legacy `feedback.md`；marker 后只读取 prod MySQL `weekly_feedback`。运动和健康事实始终只以本轮 prod MySQL 查询结果为准。

@@ -175,11 +175,15 @@ commit 前必须用已人工审阅 manifest 的 hash 重新核对 Azure 源和 M
 `STRIDE_GO_API_URL` repository variable、`STRIDE_GO_INTERNAL_TOKEN` secret，以及按
 workflow run 和用户固定的 `Idempotency-Key`；因此网络重试不会重复入队。API 返回 `202`（或幂等重放的 `200`）后完成。该 workflow 只调用 Go API，不提供 Python backfill fallback。Go API 的 `STRIDE_WORKER_API_INTERNAL_TOKEN` 必须与 `STRIDE_GO_INTERNAL_TOKEN` 同值。
 
-### `.github/workflows/sync-data.yml` —— 同步 training-log markdown 到 prod Azure Files
+### `.github/workflows/sync-data.yml` —— 已删除（不再同步到 Azure Files）
 
-触发：push 到 `master` 且 `data/*/logs/**`、`data/*/TRAINING_PLAN.md`、`data/*/status.md` 中任一变更。经 `az storage file upload-batch` 推到 `authstorage2026` 上 `stride-data` share（RG `rg-common-prod`）。
+该 workflow 曾把 `data/*/logs/**` 的 markdown / json / 体测图片、`TRAINING_PLAN.md`、`status.md`、
+`profile.json`、`data/privacy.md` 上传到 `authstorage2026`（RG `rg-common-prod`），并在 plan 变更后
+调 `POST /internal/plan/reparse` 回填 `WeeklyPlanStore`。不再部署到 Azure 后该路径废弃，workflow
+已移除。
 
-这就是 `plan.md` 不重建镜像也能在 prod 出现的原因：它经 `sync-data.yml` 落到 Azure Files，不在 image 里。完成下方人工 rollout 后，周反馈改由 MySQL `weekly_feedback` 提供，并应从同步 workflow 移除 `feedback.md`。
+后果：`git push` authoring artifacts **不再**向任何远端传播 —— `data/` 下的内容只存在于本地
+checkout。weekly plan 的发布走受支持的 MySQL 写接口（见 `AGENTS.md`）。
 
 ## Weekly feedback manual rollout
 
@@ -190,9 +194,9 @@ ADR 0028 的生产启用必须由人工完成，本仓库部署 workflow 不自�
 3. 使用同一 manifest/hash 显式 `--commit`，等待单事务写入和 readback verification 成功。失败时保持 BFF 不变。
 4. 在同一个 BFF revision 中确认两个 week GET 已指向 Go，再设置 `STRIDE_ROUTE_PUT_USER_WEEKS_WEEKNAME_FEEDBACK=go` 和 `STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE=true`。BFF 会拒绝只切 PUT，也会在 completion marker 存在后拒绝任一路由回退。
 5. 用真实用户验证 list、detail、非空保存、清空和 reload；确认 `sport_note` 未拼接到周反馈。
-6. 验证成功后，将同名 GitHub Actions repository variable `STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE` 设为 `true`，使 `sync-data.yml` 只同步 `plan.md`。不要通过恢复 Python PUT 回滚；需要回滚时先制定 MySQL 数据一致性方案。
+6. 验证成功后，将同名 GitHub Actions repository variable `STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE` 设为 `true`。不要通过恢复 Python PUT 回滚；需要回滚时先制定 MySQL 数据一致性方案。
 
-**DB-row 内容**（如 `activity_commentary`）**不**在 `sync-data.yml` 覆盖范围内（住在 SQLite 不是 markdown）。用 `coros-sync -P <user> commentary push <label_id> --url $STRIDE_PROD_URL`，POST 到 server 的 `/api/{user}/activities/{label_id}/commentary`。
+**DB-row 内容**（如 `activity_commentary`）**不**住在 markdown 里。用 `coros-sync -P <user> commentary push <label_id> --url $STRIDE_PROD_URL`，POST 到 server 的 `/api/{user}/activities/{label_id}/commentary`。
 
 ### Season-plan generation scope
 
@@ -200,10 +204,9 @@ Python season-plan generation is unchanged and outside this Go profile, injury, 
 
 ### Structured-plan reparse webhook
 
-迁移期每次 push `data/*/logs/*/plan.md` 或 `plan.json` 后，`sync-data.yml` 调 `POST /internal/plan/reparse?user=&folder=`，header `X-Internal-Token: $STRIDE_INTERNAL_TOKEN`，把旧 authoring artifact 导入 `WeeklyPlanStore`（prod `strideweeklyplan`）。新计划直接生成并保存为 `WeeklyPlan`，不再创建或 review `plan.md`；SQLite 也不保存新的结构化周计划。
-首次上线 `strideweeklyplan` 后，手工触发一次 `sync-data.yml` 的
-`workflow_dispatch`。workflow 会先幂等创建 Azure Table，再枚举全部历史
-`plan.json` 并通过同一 webhook 回填；普通 push 仍只处理本次变更的周目录。
+迁移期每次 push `data/*/logs/*/plan.md` 或 `plan.json` 后，曾由 `sync-data.yml` 调 `POST /internal/plan/reparse?user=&folder=`（header `X-Internal-Token`），把旧 authoring artifact 导入 `WeeklyPlanStore`（prod `strideweeklyplan`）。**该 workflow 已随 Azure 部署一并删除**，此 webhook 现在无自动触发者。新计划直接生成并保存为 `WeeklyPlan`，不再创建或 review `plan.md`；SQLite 也不保存新的结构化周计划。
+历史回填（首次上线 `strideweeklyplan` 时）靠 `sync-data.yml` 的 `workflow_dispatch`：先幂等创建 Azure Table，再枚举全部历史
+`plan.json` 并通过同一 webhook 回填。该入口已消失，若日后需要回填须另建受支持的一次性脚本。
 
 要工作必须配两件事：
 
