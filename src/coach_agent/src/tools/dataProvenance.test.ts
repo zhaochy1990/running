@@ -6,7 +6,7 @@ import { createTrainingLoadTools } from "./trainingLoad.js";
 
 const userId = "athlete-1";
 const provider = {
-  async getActivitiesByDateRange() {
+  async getActivitySummariesByDateRange() {
     return [];
   },
   async getDailyTrainingLoadByDateRange() {
@@ -20,11 +20,13 @@ test("activity and load tools label STRIDE provenance", async () => {
   const config = { context: { userId, asof: "2026-08-14" } };
   assert.deepEqual(await activityTool?.invoke({ startDay: "2026-08-01" }, config), {
     activities: [],
+    truncated: false,
     provenance: { source: "stride", vendor_derived: false },
   });
   assert.deepEqual(await loadTool?.invoke({ startDay: "2026-08-01" }, config), {
     available: false,
     stride_training_load: [],
+    truncated: false,
     missing_reason: "stride_load_not_computed",
     provenance: { source: "stride", vendor_derived: false },
   });
@@ -60,6 +62,7 @@ test("load tool marks computed STRIDE PMC as available", async () => {
         coverageStatus: "complete",
       },
     ],
+    truncated: false,
     provenance: { source: "stride", vendor_derived: false },
   });
 });

@@ -1,12 +1,11 @@
+import { ChatOpenAI, ChatOpenAIResponses } from "@langchain/openai";
 import { getLogger } from "@stride/common";
-import { ChatOpenAIResponses, ChatOpenAI } from "@langchain/openai";
 import type { ModelConfig } from "../config/config.js";
 
 const logger = getLogger("coachAgent:model");
 
-export function buildModel(config: ModelConfig): ChatOpenAI | ChatOpenAIResponses {
-  logger.info(config, "build model config");
-
+/** Config comes from leniently-parsed YAML, so the runtime presence of the key env var is not type-guaranteed. */
+function resolveApiKey(config: ModelConfig): string {
   if (!config.api_key_env) {
     throw new Error(`Model "${config.name}" does not define api_key_env`);
   }
@@ -14,6 +13,11 @@ export function buildModel(config: ModelConfig): ChatOpenAI | ChatOpenAIResponse
   if (!apiKey?.trim()) {
     throw new Error(`Environment variable "${config.api_key_env}" is required for model "${config.name}"`);
   }
+  return apiKey;
+}
+
+export function buildModel(config: ModelConfig): ChatOpenAI | ChatOpenAIResponses {
+  logger.info(config, "build model config");
 
   if (config.api_kind === "responses") {
     return buildResponsesModel(config);
@@ -33,7 +37,7 @@ export function buildResponsesModel(config: ModelConfig): ChatOpenAIResponses {
 
   return new ChatOpenAIResponses({
     model: config.model,
-    apiKey: process.env[config.api_key_env],
+    apiKey: resolveApiKey(config),
     maxTokens: config.max_tokens,
     timeout: config.timeout_s * 1000,
     configuration: { baseURL: config.endpoint },
@@ -48,7 +52,7 @@ export function buildResponsesModel(config: ModelConfig): ChatOpenAIResponses {
 export function buildChatModel(config: ModelConfig): ChatOpenAI {
   var res = new ChatOpenAI({
     model: config.model,
-    apiKey: process.env[config.api_key_env],
+    apiKey: resolveApiKey(config),
     maxTokens: config.max_tokens,
     timeout: config.timeout_s * 1000,
 

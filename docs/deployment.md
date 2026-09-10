@@ -71,14 +71,14 @@ On every `stride api` boot, startup runs `AutoMigrateTeamLikes` after the core/u
 
 每天 00:00 Asia/Shanghai（GitHub Actions 可能延迟）从 `data/.slug_aliases.json` 枚举用户，调用 Go API 的 `POST /api/{uuid}/sync` 并传入 `{"mode":"incremental"}`。它使用仓库变量 `STRIDE_GO_API_URL` 和专属 secret `STRIDE_GO_INTERNAL_TOKEN`；部署 Go API 时必须将同一个 secret 注入为 `STRIDE_WORKER_API_INTERNAL_TOKEN`，否则内部认证会返回 401。Python 的 `STRIDE_INTERNAL_TOKEN` 不可用于 Go 服务。workflow 为每个用户 / 上海日期使用幂等键，并轮询 `GET /api/pipelines/{run_id}`；只有 pipeline 到达 `done` 才计为成功。
 
-### `.github/workflows/deploy.yml` —— 重建 + 重部署容器
+### `.github/workflows/deploy.yml` —— 已删除（不再部署到 Azure）
 
-触发：push 到 `master` 且 `src/coros_sync/**`、`src/stride_core/**`、`src/stride_server/**`、`src/coach/**`、`config/**`、`frontend/**`、`Dockerfile`、`.github/workflows/deploy.yml`、`pyproject.toml` 中任一变更。
+该 workflow 曾把 Python `stride-app` / `stride-job-worker` 重建并部署到 Azure Container Apps。
+客户端请求已全部由腾讯云 Go API 承担，Azure 部署路径废弃，workflow 已移除。下方保留的
+training-load 回填契约仍由 Python API 实现，仅作为实现说明，不再与任何部署流程绑定。
 
-Pipeline：Build Docker image → Push to GHCR → Azure Login (OIDC) → Deploy to Azure Container Apps → Health check。
-
-训练负荷算法升级时，deploy 在新 revision 通过 health check 后调用受内部 token
-保护的 `/internal/training-load/users`。服务端从生产 Azure Files 挂载盘枚举所有
+训练负荷算法升级时，由部署方手动调用受内部 token 保护的
+`/internal/training-load/users`。服务端枚举所有
 UUID 目录中的 `coros.db`（不依赖可能滞后的 `.slug_aliases.json`）。365 天扫描（约
 1.2M 条 timeseries）不能放进单个 ACA 请求，也不能交给另一个直接打开 SQLite 的
 worker；deploy 因此按用户串行 POST `/internal/training-load/backfill/step`，每次只推进

@@ -24,7 +24,9 @@ COPY src/coach_contract/ ./src/coach_contract/
 COPY src/coach_agent/ ./src/coach_agent/
 COPY src/coach_agent_worker/ ./src/coach_agent_worker/
 
-RUN pnpm --filter @stride/coach-agent-worker run build
+# `...` also builds the workspace deps (@stride/common, @stride/contract,
+# @stride/coach-agent) — tsc resolves their types from dist/.
+RUN pnpm --filter @stride/coach-agent-worker... run build
 
 # =============================================================================
 FROM node:24-alpine AS runtime

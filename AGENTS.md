@@ -269,4 +269,4 @@ STRIDE `training_dose` 是 TSS-scaled（1h 阈值 = 100 分），`form = chronic
 
 ---
 
-(AGENTS.md 在 `deploy.yml` 触发路径里但纯文档修改不影响 runtime —— build 在 no-code-change delta 上 skip。)
+(纯文档修改不触发任何 build —— 镜像 workflow 只监听 `src/go/**`、`src/coach_*`、`frontend/**` 等代码路径。)

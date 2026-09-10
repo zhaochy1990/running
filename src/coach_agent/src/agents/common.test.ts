@@ -17,7 +17,7 @@ const MODEL: ModelConfig = {
 };
 
 test("buildResponsesModel requires api_key_env", () => {
-  assert.throws(() => buildResponsesModel(MODEL), /Model "test-responses" does not define api_key_env/);
+  assert.throws(() => buildResponsesModel({ ...MODEL, api_key_env: "" }), /Model "test-responses" does not define api_key_env/);
 });
 
 test("buildResponsesModel requires the configured API key environment variable", () => {

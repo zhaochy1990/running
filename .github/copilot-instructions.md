@@ -46,9 +46,9 @@ This repository combines a COROS sync CLI, a source-agnostic data layer, a FastA
 - `frontend/` is a React + Vite + TypeScript SPA. `frontend/src/api.ts` calls `/api`, attaches `Authorization: Bearer` from `sessionStorage`, and retries once after refreshing tokens via `authStore.ts`. Vite proxies `/api` to the backend on port 8080 in dev.
 - `data/{user_uuid}/` contains per-user SQLite DBs, COROS credentials, profiles, training plans, and weekly logs. Friendly slugs such as `zhaochaoyi` are resolved via `data/.slug_aliases.json`; API paths use UUIDs and enforce `{user}` == JWT `sub`.
 
-Deployment has two separate data paths:
+Deployment notes:
 
-- Code/frontend changes trigger `.github/workflows/deploy.yml`, which builds the frontend, builds the Docker image, pushes to GHCR, deploys Azure Container Apps, and checks `/api/health`.
+- Azure Container Apps deploy was retired (`.github/workflows/deploy.yml` removed). Code and frontend changes are shipped by the Go/TS image workflows (`.github/workflows/worker-go.yml`, `.github/workflows/coach-agent-api.yml`) and `.github/workflows/deploy-web.yml`.
 - Markdown/profile data changes trigger `.github/workflows/sync-data.yml`, which uploads weekly `plan.md`, body-composition photos and data files, `TRAINING_PLAN.md`, `status.md`, and `profile.json` to Azure Files. Weekly feedback is canonical in MySQL; legacy `feedback.md` is migration-only. SQLite-only rows such as `activity_commentary` are not covered by this workflow; push them through the CLI/API.
 
 ## Key conventions
