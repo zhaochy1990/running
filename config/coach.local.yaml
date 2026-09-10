@@ -20,9 +20,6 @@ models:
     max_tokens: 4096
     timeout_s: 120
     reasoning_effort: high
-    extra:
-      thinking:
-        type: enabled
 
   - name: deepseekv4flash
     provider: openai-compatible
@@ -35,12 +32,22 @@ models:
     max_tokens: 4096
     timeout_s: 120
     reasoning_effort: high
-    extra:
-      thinking:
-        type: enabled
 
 
 agents:
+  - name: qa
+    model: deepseekv4flash
+    thinking: disabled
+    reasoning_effort: low
+    api_kind: chat-completions
+    max_tokens: 16384
+    timeout_s: 60
+  - name: orchestrator
+    model: deepseekv4flash
+    api_kind: chat-completions
+    max_tokens: 4096
+    timeout_s: 60
+
   - name: weekly_plan
     model: deepseekv4flash
     max_tokens: 65536
@@ -55,10 +62,8 @@ agents:
     timeout_s: 300
   - name: commentary
     model: deepseekv4flash
-  - name: orchestrator
-    model: deepseekv4flash
-  - name: qa
-    model: deepseekv4flash
+ 
+
 
 observability:
   langsmith_enabled: false

@@ -14,6 +14,7 @@ const MODEL: ModelConfig = {
   endpoint: "http://127.0.0.1:1/v1",
   auth: "api-key",
   api_kind: "responses",
+  api_key_env: "COACH_AGENT_TEST_API_KEY",
   max_tokens: 1024,
   timeout_s: 1,
 };

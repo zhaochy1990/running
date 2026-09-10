@@ -6,7 +6,12 @@ export interface DataProvider {
   getDailyRecoveryByDateRange(userId: string, startDay: string, endDay: string): Promise<DailyRecovery[]>;
   getWeeklyFeedbackByDateRange(userId: string, startDay: string, endDay: string): Promise<WeeklyFeedback[]>;
   getMasterPlanMetadataForDate(userId: string, day: string): Promise<ActiveMasterPlanMetadata | null>;
+  /** 区间内活动按 date 升序，不含 `laps`（列表/问答用；避免拉整段分段数据）。 */
+  getActivitySummariesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]>;
+  /** 全量活动（含 `laps` 分段），供 master/weekly context 等需要完整数据的调用方。 */
   getActivitiesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]>;
+  /** 单条运动的完整明细（含 `laps` 分段）；不存在返回 null。列表查询用 getActivitySummariesByDateRange。 */
+  getActivityDetail(userId: string, labelId: string): Promise<Activity | null>;
   getDailyTrainingLoadByDateRange(userId: string, startDay: string, endDay: string): Promise<DailyTrainingLoad[]>;
   getRaceHistory(userId: string, options: { asOfDate: string; minDistanceKm?: number; limit?: number }): Promise<RaceEffort[]>;
   getPersonalBests(userId: string, asOfDate: string): Promise<PersonalBest[]>;

@@ -12,6 +12,7 @@ const MODEL: ModelConfig = {
   auth: "api-key",
   api_kind: "responses",
   max_tokens: 1024,
+  api_key_env: "COACH_AGENT_TEST_API_KEY",
   timeout_s: 1,
 };
 

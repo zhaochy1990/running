@@ -181,7 +181,10 @@ export class MySqlDataProvider implements DataProvider {
    * `YYYY-MM-DD` Shanghai dates; `userId` is the JWT-`sub` UUID. A single day is
    * `startDay === endDay`.
    */
-  async getActivitiesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]> {
+  /**
+   * 区间内活动按 date 升序，`laps` 恒为空（列表查询用，不碰 laps 表）。
+   */
+  async getActivitySummariesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]> {
     assertDay(startDay);
     assertDay(endDay);
     if (startDay > endDay) {
@@ -204,13 +207,21 @@ export class MySqlDataProvider implements DataProvider {
         ORDER BY a.date ASC`,
       [userId, startDay, endDay],
     );
-    const activities = rows.map(rowToActivity);
+    return rows.map(rowToActivity);
+  }
+
+  /**
+   * 全量活动（含 `laps` 分段）——给 master/weekly context 等需要完整数据的调用方。
+   * 列表/问答场景请用 `getActivitySummariesByDateRange`。
+   */
+  async getActivitiesByDateRange(userId: string, startDay: string, endDay: string): Promise<Activity[]> {
+    const activities = await this.getActivitySummariesByDateRange(userId, startDay, endDay);
     if (activities.length === 0) {
       return [];
     }
     // Fetch every activity's laps in one pass and group by label_id so the
     // response carries per-segment data without N+1 queries.
-    const labelIds = [...new Set(rows.map((row) => row.label_id as string))];
+    const labelIds = [...new Set(activities.map((a) => a.labelId))];
     const placeholders = labelIds.map(() => "?").join(", ");
     const [lapRows] = await this.pool.query<RowDataPacket[]>(
       `SELECT label_id, lap_index, lap_type, distance_m, duration_s, avg_pace,
@@ -231,6 +242,46 @@ export class MySqlDataProvider implements DataProvider {
       ...activity,
       laps: lapsByLabel.get(activity.labelId) ?? [],
     }));
+  }
+
+  /**
+   * 单条运动的完整明细（含 `laps` 分段），按 `label_id` 精确取。列表查询请用
+   * `getActivitySummariesByDateRange`；这里只处理一条，避免把整个日期区间的大段数据拉进上下文。
+   */
+  async getActivityDetail(userId: string, labelId: string): Promise<Activity | null> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT a.user_id, a.label_id, a.name, a.sport_name, a.date,
+              a.distance_m, a.duration_s, a.avg_pace_s_km, a.best_km_pace,
+              a.max_pace, a.avg_hr, a.max_hr, a.avg_cadence, a.max_cadence,
+              a.avg_power, a.max_power, a.avg_step_len_cm, a.ascent_m,
+              a.descent_m, t.training_dose AS stride_dose,
+              t.session_class AS stride_session_class, a.temperature,
+              a.humidity, a.feels_like, a.wind_speed, a.sport_note, a.sport,
+              a.feel, a.vertical_oscillation_mm, a.ground_contact_time_ms,
+              a.vertical_ratio_pct, a.pauses, a.provider
+         FROM activities a
+         LEFT JOIN activity_training_load t
+           ON t.user_id = a.user_id AND t.label_id = a.label_id
+        WHERE a.user_id = ? AND a.label_id = ?
+        LIMIT 1`,
+      [userId, labelId],
+    );
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+    const activity = rowToActivity(row);
+    const [lapRows] = await this.pool.query<RowDataPacket[]>(
+      `SELECT label_id, lap_index, lap_type, distance_m, duration_s, avg_pace,
+              adjusted_pace, avg_hr, max_hr, avg_cadence, avg_power, ascent_m,
+              descent_m, exercise_type, exercise_name_key, mode
+         FROM laps
+        WHERE user_id = ? AND label_id = ?
+        ORDER BY lap_index, lap_type`,
+      [userId, labelId],
+    );
+    activity.laps = lapRows.map(rowToActivityLap);
+    return activity;
   }
 
   /**

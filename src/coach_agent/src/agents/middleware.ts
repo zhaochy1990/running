@@ -37,6 +37,22 @@ function valueSize(value: unknown): number | null {
 }
 
 /**
+ * Detect whether an LLM response still carries reasoning (chain-of-thought).
+ * DeepSeek thinking mode ON → the Responses API message contains `reasoning`
+ * blocks (`content` items with `type: "reasoning"`) and/or
+ * `additional_kwargs.reasoning`. OFF → neither. Metadata only, no content (HARD
+ * privacy rule: prompts/response text never hit logs).
+ */
+function reasoningSignature(response: unknown): { reasoningBlocks: number; reasoningKwargs: boolean } {
+  const content = (response as { content?: unknown })?.content;
+  const reasoningBlocks = Array.isArray(content)
+    ? content.filter((c) => c && typeof c === "object" && (c as { type?: string }).type === "reasoning").length
+    : 0;
+  const reasoningKwargs = Boolean((response as { additional_kwargs?: Record<string, unknown> })?.additional_kwargs?.reasoning);
+  return { reasoningBlocks, reasoningKwargs };
+}
+
+/**
  * Build a logging middleware scoped to a logger namespace (e.g. `"agent"`,
  * `"agent:qa"`), so main-agent and subagent turns stay filterable in the logs.
  */
@@ -64,11 +80,15 @@ export function createLoggingMiddleware(scope = "agent") {
       const response = await handler(request);
 
       const toolCalls = response.tool_calls ?? [];
+      const reasoning = reasoningSignature(response);
       log.info(
         {
           ms: Date.now() - startedAt,
           toolCalls: toolCalls.map((call) => call.name).join(", "),
           done: toolCalls.length === 0,
+          // thinking-mode evidence: >0 means DeepSeek still returned reasoning → thinking NOT off
+          reasoningBlocks: reasoning.reasoningBlocks,
+          reasoningKwargs: reasoning.reasoningKwargs,
         },
         "response received from LLM,",
       );

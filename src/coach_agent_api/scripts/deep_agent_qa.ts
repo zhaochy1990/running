@@ -13,7 +13,7 @@ import {
 import { loadApiConfig } from "../src/config.js";
 import { coachAgentConfigFiles, coachApiConfigFiles } from "../src/configPaths.js";
 import { MySqlDataProvider } from "@stride/coach-agent-worker";
-import { shanghaiDay } from '@stride/contract';
+import { shanghaiDay, shanghaiIso } from '@stride/contract';
 
 const config = loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) });
 const store = MySqlDataProvider.create(loadApiConfig({ configFiles: coachApiConfigFiles(import.meta.url) }).strideDatabase);
@@ -32,7 +32,13 @@ const cfg = {
     configurable: { thread_id: thread },
   };
 const startTime = Date.now();
-const res = await agent.invoke({ messages: [{ role: "user", content:"我这周练的怎么样？" }] }, cfg);
+const input ={ 
+  messages: [{ 
+    role: "user", 
+    content: JSON.stringify({timestamp:  shanghaiIso(),message: "我昨天跑的怎么样？"}), 
+  }] 
+};
+const res = await agent.invoke(input, cfg);
 const endTime = Date.now();
 console.log(`\n===== 耗时 ${endTime - startTime} ms =====`);
 

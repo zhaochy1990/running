@@ -214,3 +214,50 @@ test("date-range reads reject a reversed start>end interval before querying", as
   );
   assert.equal(queried, false, "should reject without hitting the database");
 });
+
+test("activity detail reads a single activity with its laps, scoped by user and label", async () => {
+  const calls: Array<{ sql: string; values: unknown[] }> = [];
+  const provider = new MySqlDataProvider({
+    async query(query: string, values: unknown[]) {
+      calls.push({ sql: query, values });
+      if (query.includes("FROM laps")) {
+        return [[{ label_id: "run-1", lap_index: 1, lap_type: "autoKm", distance_m: 1000, duration_s: 300, avg_pace: 300, avg_hr: 160 }], []];
+      }
+      return [[{ user_id: "athlete", label_id: "run-1", date: new Date("2026-08-01T00:00:00Z"), provider: "coros" }], []];
+    },
+  } as never);
+
+  const activity = await provider.getActivityDetail("athlete", "run-1");
+  assert.equal(activity?.labelId, "run-1");
+  assert.equal(activity?.laps?.length, 1);
+  assert.equal(activity?.laps?.[0]?.lapIndex, 1);
+  assert.match(calls[0]?.sql ?? "", /WHERE a\.user_id = \? AND a\.label_id = \?/);
+  assert.deepEqual(calls[0]?.values, ["athlete", "run-1"]);
+  assert.deepEqual(calls[1]?.values, ["athlete", "run-1"]);
+});
+
+test("activity detail returns null for an unknown label within the user's scope", async () => {
+  const provider = new MySqlDataProvider({
+    async query() {
+      return [[], []];
+    },
+  } as never);
+  assert.equal(await provider.getActivityDetail("athlete", "missing"), null);
+});
+
+test("activity summaries never touch the laps table", async () => {
+  const calls: string[] = [];
+  const provider = new MySqlDataProvider({
+    async query(query: string) {
+      calls.push(query);
+      return [[{ user_id: "athlete", label_id: "run-1", date: new Date("2026-08-01T00:00:00Z"), provider: "coros" }], []];
+    },
+  } as never);
+
+  const [activity] = await provider.getActivitySummariesByDateRange("athlete", "2026-08-01", "2026-08-01");
+  assert.equal(activity?.labelId, "run-1");
+  assert.deepEqual(activity?.laps, []);
+  assert.equal(calls.length, 1, "summaries should make exactly one query");
+  assert.match(calls[0] ?? "", / FROM activities /);
+  assert.doesNotMatch(calls[0] ?? "", / FROM laps /);
+});

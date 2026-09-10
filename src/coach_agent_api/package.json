@@ -10,7 +10,7 @@
     "build:all": "npm run build:core && npm run build",
     "clean": "node scripts/clean.mjs",
     "start": "node dist/src/server.js",
-    "dev": "pnpm tsc && pnpm start",
+    "dev": "pnpm build:all && pnpm start",
     "test": "npm run build:all && node --test dist/tests/*.test.js dist/tests/data/*.test.js dist/tests/persistence/*.test.js",
     "test:deepagent": "pnpm -r tsc && node dist/scripts/test.js",
     "test:deepagent:qa": "pnpm -r tsc && node dist/scripts/deep_agent_qa.js",

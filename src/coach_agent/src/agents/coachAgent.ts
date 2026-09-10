@@ -8,7 +8,7 @@ import type { ToolRuntime } from "langchain";
 import { z } from "zod/v4";
 import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
-import { buildResponsesModel } from "./common.js";
+import { buildModel } from "./common.js";
 import { withLangfuseInvokeTracing } from "./langfuse.js";
 import { getMasterPlanGeneratorSubagent, getMasterPlanSubagent } from "./master_plan/agent.js";
 import { createPlanPassthroughMiddleware } from "./masterPlanPassthrough.js";
@@ -64,7 +64,7 @@ export interface CoachAgent {
 
 export async function createCoachAgent(dataProvider: DataProvider, config: CoachAgentConfig, options: CoachAgentOptions = {}): Promise<DeepAgent> {
   const modelConfig = getAgentConfig(config, "orchestrator");
-  const model = buildResponsesModel(modelConfig);
+  const model = buildModel(modelConfig);
 
   const qaSubagent = getQaSubagent(dataProvider, getAgentConfig(config, "qa"));
   const weeklySubagent = getCoachSubagent(dataProvider, getAgentConfig(config, "weekly_plan"));
@@ -79,7 +79,8 @@ export async function createCoachAgent(dataProvider: DataProvider, config: Coach
     model,
     systemPrompt: ORCHESTRATOR_PROMPT,
     tools: memoryTools,
-    subagents: [qaSubagent, weeklySubagent, weeklyPlanGenerator, masterSubagent, masterPlanGenerator],
+    subagents: [qaSubagent],
+    // subagents: [qaSubagent, weeklySubagent, weeklyPlanGenerator, masterSubagent, masterPlanGenerator],
     contextSchema: CoachContext,
     middleware: [createTurnScopeMiddleware(), createPlanPassthroughMiddleware(), createLoggingMiddleware("agent")],
     // Skill paths are virtual (for example `/generate-master-plan/SKILL.md`).

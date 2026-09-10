@@ -39,22 +39,24 @@ export function getAgentConfig(config: CoachAgentConfig, agentName: string): Mod
     throw new Error(`Model "${agentConfig.model}" is not defined in the coach config`);
   }
 
-  // override the model's base settings with any per-agent overrides
+  // Return a copy so per-agent overrides never leak back into the shared model
+  // entry (multiple roles may reference the same `models[].name`).
+  const resolved: ModelConfig = { ...model };
   if (agentConfig.max_tokens !== undefined) {
-    model.max_tokens = agentConfig.max_tokens;
+    resolved.max_tokens = agentConfig.max_tokens;
   }
   if (agentConfig.timeout_s !== undefined) {
-    model.timeout_s = agentConfig.timeout_s;
+    resolved.timeout_s = agentConfig.timeout_s;
   }
   if (agentConfig.reasoning_effort !== undefined) {
-    model.reasoning_effort = agentConfig.reasoning_effort;
+    resolved.reasoning_effort = agentConfig.reasoning_effort;
   }
   if (agentConfig.thinking !== undefined) {
-    model.thinking = agentConfig.thinking;
+    resolved.thinking = agentConfig.thinking;
   }
   if (agentConfig.response_format !== undefined) {
-    model.response_format = agentConfig.response_format;
+    resolved.response_format = agentConfig.response_format;
   }
 
-  return model;
+  return resolved;
 }

@@ -1,7 +1,7 @@
 export type ModelProvider = "openai-compatible" | "azure-openai";
 export type ModelAuth = "api-key" | "managed-identity";
 export type ModelApiKind = "chat-completions" | "responses";
-export type ReasoningEffort = "high" | "max";
+export type ReasoningEffort = "low" | "medium" | "high" | "max";
 
 export interface ModelConfig {
   name: string;
@@ -9,7 +9,7 @@ export interface ModelConfig {
   model: string;
   deployment: string;
   endpoint: string;
-  api_key_env?: string;
+  api_key_env: string;
   api_version?: string;
   auth: ModelAuth;
   api_kind: ModelApiKind;
@@ -17,7 +17,8 @@ export interface ModelConfig {
   max_tokens: number;
   timeout_s: number;
   reasoning_effort?: ReasoningEffort;
-  thinking?: "enabled";
+  /** DeepSeek 思考模式开关。缺省 = 保持模型默认（思考模式打开，effort 默认 high）。 */
+  thinking?: "enabled" | "disabled";
   response_format?: "json_object";
 }
 
@@ -27,7 +28,8 @@ export interface RoleConfig {
   max_tokens?: number;
   timeout_s?: number;
   reasoning_effort?: ReasoningEffort;
-  thinking?: "enabled";
+  /** DeepSeek 思考模式开关；缺省 = 模型默认（思考开、effort high）。 */
+  thinking?: "enabled" | "disabled";
   response_format?: "json_object";
 }
 
