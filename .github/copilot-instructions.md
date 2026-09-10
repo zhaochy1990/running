@@ -48,7 +48,7 @@ This repository combines a COROS sync CLI, a source-agnostic data layer, a FastA
 
 Deployment notes:
 
-- Azure Container Apps deploy was retired (`.github/workflows/deploy.yml` removed). Code and frontend changes are shipped by the Go/TS image workflows (`.github/workflows/worker-go.yml`, `.github/workflows/coach-agent-api.yml`) and `.github/workflows/deploy-web.yml`.
+- Azure Container Apps deploy was retired: `.github/workflows/deploy.yml` and `.github/workflows/deploy-web.yml` are removed. Code, frontend and coach-service changes are shipped by `.github/workflows/worker-go.yml` and `.github/workflows/coach-agent-api.yml`.
 - Markdown/profile data changes trigger `.github/workflows/sync-data.yml`, which uploads weekly `plan.md`, body-composition photos and data files, `TRAINING_PLAN.md`, `status.md`, and `profile.json` to Azure Files. Weekly feedback is canonical in MySQL; legacy `feedback.md` is migration-only. SQLite-only rows such as `activity_commentary` are not covered by this workflow; push them through the CLI/API.
 
 ## Key conventions

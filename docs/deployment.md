@@ -11,8 +11,12 @@ Multi-stage build (`Dockerfile`)：
 
 `.dockerignore` 排除 `data/` 但放行 `data/*/TRAINING_PLAN.md`，让默认 training plans 进 image。
 
-## 前端：独立静态容器 `stride-web`（ADR 0017 演进）
+## 前端：独立静态容器 `stride-web`（ADR 0017 演进）—— Azure 部署已废弃
 
+> **已废弃（2026-09）**：不再部署到 Azure。`.github/workflows/deploy-web.yml` 已删除，本节
+> 保留用于理解历史 cutover 决策；`stride-web` 镜像现在仅由 `Dockerfile.web` 定义，不再有
+> Azure Container App / ACA route-flag override 流程。
+>
 > 前端已从共享镜像拆出，成为独立静态容器（**不再有 Node/Hono BFF**）。完整取舍见
 > [`docs/adr/0017-frontend-bff-strangler-split.md`](adr/0017-frontend-bff-strangler-split.md)
 >（下文带 `STRIDE_ROUTE_*` 路由 flag / readiness contract 的 BFF 内部细节已随 BFF 移除，不再适用）。
@@ -22,7 +26,7 @@ Multi-stage build (`Dockerfile`)：
 API origin 由构建期 `VITE_API_BASE_URL` 烘焙（`src/lib/apiRouting.ts`），浏览器跨域直连
 `api.stride-running.cn`，网关须对 `https://stride-running.cn` 放行 CORS。届时：
 
-- **两份镜像、两条 workflow**。新 `deploy-web.yml` 构建 `Dockerfile.web`，一次构建后 tag 推到
+- **两份镜像、两条 workflow**。`deploy-web.yml`（已删除）曾构建 `Dockerfile.web`，一次构建后 tag 推到
   **GHCR + 阿里云 ACR 两个 registry**，部署到新 Container App `stride-web`；它拥有 `VITE_*` +
   AMap 的 Key Vault build-arg。**Azure Container App 从 GHCR 拉取（authoritative）**，ACR 是为
   大陆拉取 / 未来搬到 Tencent 预备的镜像镜像。既有 `deploy.yml` 收敛为 Python-only：去掉
@@ -44,7 +48,7 @@ API origin 由构建期 `VITE_API_BASE_URL` 烘焙（`src/lib/apiRouting.ts`）�
 - **Ability / race-prediction cutover**：`/api/{user}/ability/{current,history,weights,backfill}` 与
   `/api/{user}/race-predictions(+history)` 已由 Go 实现（对应 `ability.go` / `predictions.go`），六个
   `STRIDE_ROUTE_*` flag 在 `Dockerfile.web` 中默认设为 `go`（与 health/hrv/pmc/zones 一类独立 Go 路由一致，
-  不设 deploy-web.yml ACA override）。`/api/{user}/pbs` Go 未实现，保持 Python。Web 与移动端都经同
+  不设 deploy-web.yml ACA override，该 workflow 已删除）。`/api/{user}/pbs` Go 未实现，保持 Python。Web 与移动端都经同
   一前门 `api.stride-running.cn`，BFF 按该 manifest 分流到 Go。移动端请求路径中的 user id 为 JWT `sub`
   （来自 `/api/users/me/profile` 的 `id`），通过 Go 的 `authorizeUser` 租户检查。
 - **`strength_illustrations/` 搬进 `stride-web` 镜像**（前端拥有 UI 插图资源）。
@@ -146,8 +150,8 @@ found, while a failed candidate remains absent and causes the job to retry/fail.
 Web 从登录 JWT 的 `sub` 构造 `GET /api/users/{user_id}/master-plan/current`，并通过 BFF 的动态路由转发到 Go；`GET /api/users/me/master-plan/current` 仅作为后端兼容别名保留。该接口从
 MySQL `master_plan` 的唯一 active 行读取，并按 `content_version` 返回 Markdown 或结构化
 内容；不得 fallback 到 Python、Azure、文件或 SQLite。Web 镜像在 `Dockerfile.web` 中把
-`STRIDE_ROUTE_GET_USERS_USER_ID_MASTER_PLAN_CURRENT=go` 设为默认值，`deploy-web.yml` 不提供
-额外 readiness gate，因此发布顺序由人工负责。
+`STRIDE_ROUTE_GET_USERS_USER_ID_MASTER_PLAN_CURRENT=go` 设为默认值；`deploy-web.yml`（已删除）
+未提供额外 readiness gate，发布顺序由人工负责。
 
 `master_plan.version` 改名为 `revision` 是停机式破坏性迁移：
 
