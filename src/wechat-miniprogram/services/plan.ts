@@ -331,3 +331,32 @@ export function buildPlanWeekView(plan: WeeklyPlanDetail | null, anchorYmd: stri
   const weekTitle = `${weekStart.slice(5)} ~ ${endYmd.slice(5)}`;
   return { weekTitle, days };
 }
+
+// ---------------------------------------------------------------------------
+// 赛季计划草稿（ADR 0030）：查看 / 启用 / 放弃
+// ---------------------------------------------------------------------------
+// 草稿由 plan-job worker 经 Go 内部端点插入；运动员在聊天卡片完成态经这些
+// 用户端端点查看、显式启用或放弃。启用事务：归档当前 active → 草稿置 active。
+
+export interface MasterPlanDraft {
+  plan_id: string;
+  goal_id: string;
+  status: string;
+  revision?: number | null;
+  content_version: number;
+  created_at: string;
+  updated_at: string;
+  plan: unknown;
+}
+
+export function getMasterPlanDraft(userId: string, planId: string): Promise<MasterPlanDraft> {
+  return http.get<MasterPlanDraft>(`/api/${encodeURIComponent(userId)}/master-plan/drafts/${encodeURIComponent(planId)}`);
+}
+
+export function activateMasterPlanDraft(userId: string, planId: string): Promise<{ success: boolean }> {
+  return http.post<{ success: boolean }>(`/api/${encodeURIComponent(userId)}/master-plan/drafts/${encodeURIComponent(planId)}/activate`);
+}
+
+export function abandonMasterPlanDraft(userId: string, planId: string): Promise<{ success: boolean }> {
+  return http.post<{ success: boolean }>(`/api/${encodeURIComponent(userId)}/master-plan/drafts/${encodeURIComponent(planId)}/abandon`);
+}

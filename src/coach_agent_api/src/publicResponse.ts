@@ -1,3 +1,5 @@
+import { PlanJobConfirmationSchema, PlanProposalSchema } from "@stride/contract";
+
 /** Convert a LangGraph Coach result into the API's intentionally small contract. */
 export function toPublicResponse(result: unknown): Record<string, unknown> {
   const response = tryToPublicResponse(result);
@@ -31,9 +33,23 @@ export function tryToPublicResponse(result: unknown): Record<string, unknown> | 
     // An AI tool-call message is an intermediate graph step, not a reply.
     if (hasToolCalls(message)) return undefined;
     const text = textContent(message.content);
-    if (text !== undefined) return { status: "completed", message: text };
+    if (text !== undefined) return textToPublicResponse(text);
   }
   return undefined;
+}
+
+/** Interpret an assistant text as a plain reply or a structured plan-proposal card. */
+function textToPublicResponse(text: string): Record<string, unknown> {
+  const proposal = tryPlanProposalContent(text);
+  if (proposal !== undefined) {
+    return {
+      status: "generation_proposed",
+      summary: proposal.summary,
+      job_type: proposal.kind,
+      proposal: proposal.request,
+    };
+  }
+  return { status: "completed", message: text };
 }
 
 function hasToolCalls(message: Record<string, unknown>): boolean {
@@ -60,13 +76,55 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// ── Plan proposal / job confirmation cards ───────────────────────────────────
+
+/** Structured proposal card content (generation_proposed). */
+export interface GenerationProposedHistoryMessage {
+  role: "assistant";
+  kind: "generation_proposed";
+  summary: string;
+  job_type: string;
+  proposal: unknown;
+}
+
+/** Enqueue confirmation card content (job_id + job_type). */
+export interface PlanJobHistoryMessage {
+  role: "assistant";
+  kind: "plan_job";
+  job_id: string;
+  job_type: string;
+}
+
+function tryPlanProposalContent(text: string): { kind: string; summary: string; request: unknown } | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const parsed = PlanProposalSchema.safeParse(value);
+  return parsed.success ? { kind: parsed.data.kind, summary: parsed.data.summary, request: parsed.data.request } : undefined;
+}
+
+function tryPlanJobConfirmationContent(text: string): { job_id: string; job_type: string } | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const parsed = PlanJobConfirmationSchema.safeParse(value);
+  return parsed.success ? { job_id: parsed.data.job_id, job_type: parsed.data.job_type } : undefined;
+}
+
 // ── Session history ──────────────────────────────────────────────────────────
 
-/** One renderable turn in a session history: user bubbles + assistant replies. */
-export interface SessionHistoryMessage {
-  role: "user" | "assistant";
-  content: string;
-}
+/** One renderable turn in a session history: user bubbles + assistant replies + cards. */
+export type SessionHistoryMessage =
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: string }
+  | GenerationProposedHistoryMessage
+  | PlanJobHistoryMessage;
 
 /**
  * Flatten a thread's LangChain messages into a minified user/assistant history
@@ -74,6 +132,8 @@ export interface SessionHistoryMessage {
  * assistant messages that still carry tool calls are intermediate graph steps
  * and are skipped. User messages were stored JSON-wrapped
  * (`{ timestamp, message }`, see routes/chat.ts), so we unwrap to the raw text.
+ * Assistant texts that carry a structured plan proposal or a plan-job
+ * confirmation render as cards (generation_proposed / plan_job).
  */
 export function toPublicHistory(messages: unknown[]): SessionHistoryMessage[] {
   const out: SessionHistoryMessage[] = [];
@@ -84,7 +144,24 @@ export function toPublicHistory(messages: unknown[]): SessionHistoryMessage[] {
     }
     if (isAssistantMessage(message) && !hasToolCalls(message)) {
       const text = textContent(message.content);
-      if (text !== undefined) out.push({ role: "assistant", content: text });
+      if (text === undefined) continue;
+      const proposal = tryPlanProposalContent(text);
+      if (proposal !== undefined) {
+        out.push({
+          role: "assistant",
+          kind: "generation_proposed",
+          summary: proposal.summary,
+          job_type: proposal.kind,
+          proposal: proposal.request,
+        });
+        continue;
+      }
+      const confirmation = tryPlanJobConfirmationContent(text);
+      if (confirmation !== undefined) {
+        out.push({ role: "assistant", kind: "plan_job", job_id: confirmation.job_id, job_type: confirmation.job_type });
+        continue;
+      }
+      out.push({ role: "assistant", content: text });
     }
   }
   return out;

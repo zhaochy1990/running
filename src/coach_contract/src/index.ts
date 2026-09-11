@@ -1,6 +1,16 @@
 export * from "./date.js";
 export * from "./master_plan/assessment-schemas.js";
 export * from "./master_plan/contracts.js";
+export {
+  PLAN_JOB_CONFIRMATION_KIND,
+  PLAN_PROPOSAL_KINDS,
+  type PlanJobConfirmation,
+  PlanJobConfirmationSchema,
+  type PlanProposal,
+  PlanProposalDirectResponseSchema,
+  type PlanProposalKind,
+  PlanProposalSchema,
+} from "./master_plan/proposal.js";
 export * from "./master_plan/review.js";
 export * from "./master_plan/rules-schemas.js";
 export {

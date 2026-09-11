@@ -7,6 +7,7 @@ import { registerChatRoutes } from "./routes/chat.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerHistoryRoutes, registerSessionListRoutes, type ThreadHistoryReader, type ThreadSessionReader } from "./routes/history.js";
 import { type PlanJobsService, registerPlanJobRoutes } from "./routes/planJobs.js";
+import { createPlanProposalConfirmService, type PlanProposalConfirmService, registerPlanProposalConfirmRoutes } from "./routes/planProposalConfirm.js";
 import { registerSwaggerRoutes } from "./routes/swagger.js";
 import type { TurnCoordinator } from "./turn/coordinator.js";
 import { createInMemoryTurnCoordinator } from "./turn/index.js";
@@ -19,6 +20,8 @@ export interface AppDependencies {
   checkpointer?: ThreadHistoryReader;
   /** When provided, exposes the deterministic plan-job enqueue/poll endpoints. */
   planJobs?: PlanJobsService;
+  /** When provided, exposes the plan-proposal confirmation endpoint (enqueue + thread append). */
+  planProposalConfirm?: PlanProposalConfirmService;
 }
 
 export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
@@ -41,6 +44,17 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
   if (dependencies.planJobs) {
     registerPlanJobRoutes(app, {
       planJobs: dependencies.planJobs,
+      auth: createAuthMiddleware(dependencies.jwtVerifier),
+    });
+    const confirm =
+      dependencies.planProposalConfirm ??
+      createPlanProposalConfirmService({
+        planJobs: dependencies.planJobs,
+        coach: dependencies.coachInvoker,
+        turnCoordinator,
+      });
+    registerPlanProposalConfirmRoutes(app, {
+      confirm,
       auth: createAuthMiddleware(dependencies.jwtVerifier),
     });
   }

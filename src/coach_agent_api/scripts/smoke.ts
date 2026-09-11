@@ -15,6 +15,9 @@ const app = createApp({
       return { messages: [{ type: "ai", content: "SMOKE_OK" }] };
     },
     streamEvents: neverStream,
+    async appendThreadMessage() {
+      throw new Error("must not append");
+    },
   },
 });
 const server = createServer(async (request, response) => {

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { AIMessage, ToolMessage } from "@langchain/core/messages";
-import { MasterPlanDirectResponseSchema, WeeklyPlanDirectResponseSchema } from "@stride/contract";
+import { PlanProposalDirectResponseSchema, WeeklyPlanDirectResponseSchema } from "@stride/contract";
 import type { ModelConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
 import { CoachContext } from "./coachAgent.js";
@@ -61,10 +61,10 @@ test("master-plan agent has a machine-enforced structured output contract", () =
   const store = {} as DataProvider;
   const generator = getMasterPlanGeneratorSubagent(store, modelConfig);
   const reader = getMasterPlanSubagent(store, modelConfig);
-  assert.equal(generator.responseFormat, MasterPlanDirectResponseSchema);
+  assert.equal(generator.responseFormat, PlanProposalDirectResponseSchema);
   assert.equal(reader.responseFormat, undefined);
-  assert.ok(generator.skills.includes("/generate-master-plan/"));
-  assert.ok(!reader.skills.includes("/generate-master-plan/"));
+  assert.deepEqual(generator.skills, []);
+  assert.deepEqual(reader.skills, ["/analyze-activity/", "/analyze-race/"]);
   assert.ok(!generator.tools.some((tool) => tool.name === "get_current_time"));
 });
 
@@ -95,6 +95,42 @@ test("weekly-plan skill routes every canonical phase name", async () => {
   assert.match(skill, /把恢复视为一票否决/);
   assert.match(skill, /80-90%/);
 });
+
+const proposalRequest = {
+  request_id: "proposal-1",
+  requested_mode: "new_season",
+  requested_modifiers: [],
+  goals: [{ race_name: "测试马拉松", distance: "FM", race_date: "2026-10-18", target_time: "2:50:00", finish_only: false, priority: "A" }],
+  availability: {
+    weekly_run_days_max: 6,
+    available_training_windows: [],
+    unavailable_days: [],
+    max_session_duration_min: 180,
+    allows_double_sessions: false,
+    preferred_long_run_day: "saturday",
+    strength_sessions_per_week: 2,
+    strength_available_days: [],
+  },
+  injury_declarations: [],
+  environment_constraints: [],
+  travel_constraints: [],
+  preferences: [],
+  prohibited_arrangements: [],
+  active_plan_action: "none",
+  user_confirmations: {
+    intake_complete: true,
+    goals_confirmed: true,
+    availability_confirmed: true,
+    injury_history_confirmed: true,
+    constraints_confirmed: true,
+  },
+};
+
+const masterProposal = {
+  kind: "generate_master_plan",
+  summary: "生成一份全马训练计划",
+  request: proposalRequest,
+};
 
 const masterPlan = {
   status: "draft" as const,
@@ -221,7 +257,7 @@ function directResponse(content: unknown): string {
 }
 
 test("orchestrator extracts a validated master plan from its direct envelope", () => {
-  const content = JSON.stringify(masterPlan);
+  const content = JSON.stringify(masterProposal);
   const result = getMasterPlanTaskResult([
     {
       type: "ai",
@@ -237,7 +273,7 @@ test("orchestrator extracts a validated master plan from its direct envelope", (
       type: "tool",
       name: "task",
       tool_call_id: "task-1",
-      content: directResponse(masterPlan),
+      content: directResponse(masterProposal),
     },
   ]);
 
@@ -324,7 +360,7 @@ test("passthrough middleware skips the model only for a direct envelope", async 
       messages: [
         taskCall,
         new ToolMessage({
-          content: directResponse(masterPlan),
+          content: directResponse(masterProposal),
           tool_call_id: "task-1",
         }),
       ],
@@ -334,7 +370,7 @@ test("passthrough middleware skips the model only for a direct envelope", async 
   );
   assert.equal(handlerCalls, 0);
   assert.ok(AIMessage.isInstance(direct));
-  assert.equal(direct.content, JSON.stringify(masterPlan));
+  assert.equal(direct.content, JSON.stringify(masterProposal));
 
   const weeklyTaskCall = new AIMessage({
     content: "",
@@ -409,7 +445,7 @@ test("passthrough middleware skips the model only for a direct envelope", async 
 });
 
 test("orchestrator forwards the runtime task result when ToolMessage omits name", () => {
-  const content = JSON.stringify(masterPlan);
+  const content = JSON.stringify(masterProposal);
   const result = getMasterPlanTaskResult([
     new AIMessage({
       content: "",
@@ -423,7 +459,7 @@ test("orchestrator forwards the runtime task result when ToolMessage omits name"
       ],
     }),
     new ToolMessage({
-      content: directResponse(masterPlan),
+      content: directResponse(masterProposal),
       tool_call_id: "task-1",
     }),
   ]);
@@ -432,7 +468,7 @@ test("orchestrator forwards the runtime task result when ToolMessage omits name"
 });
 
 test("orchestrator forwards the envelope content without revalidating it", () => {
-  const plan = { ...masterPlan, total_weeks: 2 };
+  const plan = { ...masterProposal, summary: "改过的摘要" };
   const content = JSON.stringify(plan);
   const result = getMasterPlanTaskResult([
     {
@@ -466,7 +502,7 @@ test("orchestrator does not bypass the model for unrelated or invalid task resul
         type: "tool",
         name: "task",
         tool_call_id: "task-1",
-        content: directResponse(masterPlan),
+        content: directResponse(masterProposal),
       },
     ]),
     undefined,
@@ -531,7 +567,7 @@ test("orchestrator does not bypass the model for unrelated or invalid task resul
         type: "tool",
         status: "error",
         tool_call_id: "task-1",
-        content: directResponse(masterPlan),
+        content: directResponse(masterProposal),
       },
     ]),
     undefined,
@@ -602,7 +638,7 @@ test("orchestrator does not bypass the model for unrelated or invalid task resul
 });
 
 test("orchestrator only forwards an immediately preceding generator task result", () => {
-  const content = JSON.stringify(masterPlan);
+  const content = JSON.stringify(masterProposal);
   assert.equal(
     getMasterPlanTaskResult([
       {
@@ -623,7 +659,7 @@ test("orchestrator only forwards an immediately preceding generator task result"
 });
 
 test("orchestrator does not replay a generator result after a later tool call", () => {
-  const content = JSON.stringify(masterPlan);
+  const content = JSON.stringify(masterProposal);
   assert.equal(
     getMasterPlanTaskResult([
       {

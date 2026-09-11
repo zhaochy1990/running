@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { HumanMessage } from "@langchain/core/messages";
-import { MasterPlanSchema } from "@stride/contract";
-import { createTestMasterPlan } from "../../graph/master_plan/testFixtures.js";
+import { PlanProposalDirectResponseSchema, PlanProposalSchema } from "@stride/contract";
+import { createTestRequest } from "../../graph/master_plan/testFixtures.js";
 import { createMasterPlanValidationMiddleware } from "./validationMiddleware.js";
 
 function afterModelHook() {
@@ -11,64 +11,71 @@ function afterModelHook() {
   return afterModel.hook;
 }
 
-function invalidMasterPlan() {
-  const invalid = MasterPlanSchema.parse(createTestMasterPlan());
-  const firstWeek = invalid.weeks[0];
-  assert.ok(firstWeek);
-  const firstSession = firstWeek.key_sessions[0];
-  assert.ok(firstSession);
-  firstWeek.is_recovery_week = true;
-  firstWeek.key_sessions.push({ ...firstSession });
-  return invalid;
+function validProposal() {
+  return PlanProposalDirectResponseSchema.parse({
+    disposition: "return_direct",
+    content: {
+      kind: "generate_master_plan",
+      summary: "生成一份全马训练计划",
+      request: createTestRequest(),
+    },
+  });
 }
 
-test("canonical master-plan middleware accepts fully refined responses", async () => {
+/** A proposal whose kernel request violates a cross-field refinement (two A goals). */
+function invalidProposal() {
+  const proposal = validProposal();
+  proposal.content.request.goals.push({
+    race_name: "上海马拉松",
+    distance: "FM",
+    race_date: "2026-11-29",
+    target_time: "3:00:00",
+    finish_only: false,
+    priority: "A",
+  });
+  return proposal;
+}
+
+test("canonical proposal middleware accepts fully refined responses", async () => {
   const result = await afterModelHook()(
     {
       messages: [],
-      structuredResponse: {
-        disposition: "return_direct",
-        content: createTestMasterPlan(),
-      },
-      _masterPlanValidationRetries: 0,
+      structuredResponse: validProposal(),
+      _masterPlanProposalRetries: 0,
     } as never,
     {} as never,
   );
   assert.equal(result, undefined);
 });
 
-test("canonical master-plan middleware retries Zod cross-field failures", async () => {
-  const invalid = invalidMasterPlan();
+test("canonical proposal middleware retries Zod cross-field failures", async () => {
   const result = await afterModelHook()(
     {
       messages: [],
-      structuredResponse: {
-        disposition: "return_direct",
-        content: invalid,
-      },
-      _masterPlanValidationRetries: 0,
+      structuredResponse: invalidProposal(),
+      _masterPlanProposalRetries: 0,
     } as never,
     {} as never,
   );
   assert.ok(result);
   assert.equal(result.jumpTo, "model");
-  assert.equal(result._masterPlanValidationRetries, 1);
+  assert.equal(result._masterPlanProposalRetries, 1);
   assert.ok(HumanMessage.isInstance(result.messages?.[0]));
 });
 
-test("canonical master-plan middleware caps invalid retries", () => {
-  const invalid = invalidMasterPlan();
+test("canonical proposal middleware caps invalid retries", () => {
   assert.throws(() =>
     afterModelHook()(
       {
         messages: [],
-        structuredResponse: {
-          disposition: "return_direct",
-          content: invalid,
-        },
-        _masterPlanValidationRetries: 2,
+        structuredResponse: invalidProposal(),
+        _masterPlanProposalRetries: 2,
       } as never,
       {} as never,
     ),
   );
+});
+
+test("PlanProposalSchema rejects a non-proposal envelope", () => {
+  assert.equal(PlanProposalSchema.safeParse({ foo: "bar" }).success, false);
 });

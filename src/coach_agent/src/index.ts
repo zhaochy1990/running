@@ -1,3 +1,4 @@
+export { AIMessage } from "@langchain/core/messages";
 export type { RunnableConfig } from "@langchain/core/runnables";
 export { Command } from "@langchain/langgraph";
 export type {
