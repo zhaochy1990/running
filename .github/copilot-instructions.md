@@ -48,7 +48,7 @@ This repository combines a COROS sync CLI, a source-agnostic data layer, a FastA
 
 Deployment notes:
 
-- Azure Container Apps deploy was retired: `.github/workflows/deploy.yml` and `.github/workflows/deploy-web.yml` are removed. Code, frontend and coach-service changes are shipped by `.github/workflows/worker-go.yml` and `.github/workflows/coach-agent-api.yml`.
+- Azure Container Apps deploy was retired. `.github/workflows/ci.yml` runs on pull requests only (frontend, Go, coach workspace, Weekly Plan contract parity, and a build-only docker dry run). `.github/workflows/release.yml` runs on every push to master and publishes the changed artifacts to Aliyun ACR; GHCR and Renovate are no longer used. See `docs/adr/0031-ci-two-pipelines-acr-only.md`.
 - Markdown/profile data is no longer synced anywhere: `.github/workflows/sync-data.yml` (Azure Files upload) was retired together with the Azure deploys. Authoring artifacts live only in the local checkout.
 
 ## Key conventions

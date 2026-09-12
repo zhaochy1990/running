@@ -1,0 +1,190 @@
+name: Release
+
+# Runs on every push to master and deliberately has NO on.push.paths: change
+# detection is path-based and lives in .github/release-packages.json, so this
+# workflow has to see the whole push. A path filter here would also hide a push
+# that touched two artifacts at once, which is exactly the case this design
+# exists to handle — one release, one version commit, one deploy PR.
+#
+# Replaces worker-go.yml and coach-agent-api.yml, each of which had its own
+# path-gated trigger, its own CalVer computation from github.run_number, and its
+# own copy of the Renovate job. Overlapping path lists meant a single push could
+# start both of them, and they would race to push to master.
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write # commit-versions pushes a commit
+
+# Two runs committing versions.json concurrently would race.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # ── 1. bump-versions ───────────────────────────────────────────────────────
+  # Works out the next version of every artifact this push touched. Writes
+  # nothing and commits nothing; its output is what the build tags images with.
+  bump-versions:
+    name: Bump versions
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.bump.outputs.changed }}
+      packages: ${{ steps.bump.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # required: change detection diffs against github.event.before
+          fetch-depth: 0
+      - id: bump
+        uses: zhaochy1990/configurations/calver-release@v1
+        with:
+          phase: bump-versions
+          base: ${{ github.event.before }}
+
+  # ── 2. test ────────────────────────────────────────────────────────────────
+  # The same checks defined once in ci.yml, run in full: release.yml only gets
+  # here when at least one artifact is about to be published, and
+  # contract-parity can be broken by a change that cuts no artifact at all.
+  test:
+    name: Checks
+    needs: bump-versions
+    if: needs.bump-versions.outputs.changed != ''
+    uses: ./.github/workflows/ci.yml
+    with:
+      full: true
+
+  # ── 3. build ───────────────────────────────────────────────────────────────
+  # One leg per changed artifact, in parallel. Each pushes only to Aliyun ACR:
+  # GHCR is no longer published to, and `:latest` is no longer pushed at all —
+  # versions.env pins exact tags and nothing consumes a floating one.
+  build:
+    name: Build & push (${{ matrix.name }})
+    needs: [bump-versions, test]
+    if: needs.bump-versions.outputs.changed != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      # Let the other images finish if one fails, so diagnostics from both
+      # independent publications remain available.
+      fail-fast: false
+      matrix:
+        include:
+          - name: stride-worker
+            context: src/go
+            file: src/go/Dockerfile
+          - name: stride-api
+            context: src/go
+            file: src/go/Dockerfile.api
+          - name: stride-coach-api
+            context: .
+            file: src/coach_agent_api/Dockerfile
+          - name: stride-coach-worker
+            context: .
+            file: src/coach_agent_worker/Dockerfile
+          - name: stride-web
+            context: .
+            file: Dockerfile.web
+            build-args: |
+              VITE_AUTH_CLIENT_ID=${{ vars.VITE_AUTH_CLIENT_ID }}
+              VITE_AMAP_KEY=${{ vars.VITE_AMAP_KEY }}
+              VITE_AMAP_SECURITY_CODE=${{ vars.VITE_AMAP_SECURITY_CODE }}
+              VITE_API_BASE_URL=https://api.stride-running.cn
+    steps:
+      - name: Did this artifact change?
+        id: gate
+        env:
+          CHANGED: ${{ needs.bump-versions.outputs.changed }}
+          NAME: ${{ matrix.name }}
+        run: |
+          case ",$CHANGED," in
+            *",$NAME,"*) echo "build=true" >> "$GITHUB_OUTPUT" ;;
+            *)           echo "build=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Version
+        id: version
+        if: steps.gate.outputs.build == 'true'
+        env:
+          PACKAGES: ${{ needs.bump-versions.outputs.packages }}
+          NAME: ${{ matrix.name }}
+        run: |
+          echo "value=$(printf '%s' "$PACKAGES" | jq -r --arg n "$NAME" '.[] | select(.name==$n) | .version')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.build == 'true'
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.gate.outputs.build == 'true'
+        with:
+          # BuildKit 0.32 changed provenance to OCI artifact descriptors, which
+          # Aliyun Personal Edition ACR does not accept. Pin the last known-good
+          # version until the registry supports that manifest class.
+          driver-opts: image=moby/buildkit:v0.31.2
+
+      # Aliyun ACR only, from here on. It is a private registry, and it is what
+      # both the Tencent CVM (tencent/) and the local e2e stack (local/) pull
+      # from — GHCR's blob CDN is throttled from mainland China anyway.
+      - name: Login to Aliyun ACR
+        if: steps.gate.outputs.build == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.ALIYUN_ACR_REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+
+      - name: Build and push
+        if: steps.gate.outputs.build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: true
+          build-args: ${{ matrix.build-args }}
+          tags: ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/${{ matrix.name }}:${{ steps.version.outputs.value }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max
+
+  # ── 4. commit-versions ─────────────────────────────────────────────────────
+  # Only now, with every image pushed, record the versions. Handed phase 1's
+  # plan verbatim, so it can never record a version that was not built. A failed
+  # build leaves versions.json untouched, and the next push recomputes the same
+  # numbers — the only residue is orphaned image tags nothing references.
+  commit-versions:
+    name: Commit versions
+    needs: [bump-versions, build]
+    if: needs.bump-versions.outputs.changed != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: zhaochy1990/configurations/calver-release@v1
+        with:
+          phase: commit-versions
+          packages: ${{ needs.bump-versions.outputs.packages }}
+          base-branch: master
+
+  # ── 5. open the deploy PR ──────────────────────────────────────────────────
+  # The deploy manifest (stride-devops/versions.env) is owned by stride-devops,
+  # so the workflow that edits it lives there too. This just hands over the
+  # plan. Merging that PR remains the explicit production release approval.
+  pin-images:
+    name: Open deploy PR in stride-devops
+    needs: [bump-versions, commit-versions]
+    if: needs.bump-versions.outputs.changed != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch pin-images
+        env:
+          # PAT with actions:write (or `repo`) on zhaochy1990/stride-devops.
+          GH_TOKEN: ${{ secrets.DEVOPS_DISPATCH_TOKEN }}
+          PACKAGES: ${{ needs.bump-versions.outputs.packages }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "DEVOPS_DISPATCH_TOKEN not set — skipping the deploy PR." >&2
+            exit 1
+          fi
+          gh workflow run pin-images.yml \
+            -R zhaochy1990/stride-devops \
+            -f packages="$PACKAGES"

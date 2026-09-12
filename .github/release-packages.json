@@ -1,0 +1,44 @@
+{
+  "_comment": "One entry per artifact. paths are derived from each Dockerfile's COPY: a path belongs here only if changing it changes the built image. They drive version bumps, not test triggers.",
+  "packages": [
+    {
+      "name": "stride-worker",
+      "paths": ["src/go/**"]
+    },
+    {
+      "name": "stride-api",
+      "paths": ["src/go/**"]
+    },
+    {
+      "name": "stride-coach-api",
+      "paths": [
+        "src/coach_agent_api/**",
+        "src/coach_agent_worker/**",
+        "src/coach_agent/**",
+        "src/coach_contract/**",
+        "src/stride-common/**",
+        "config/**",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "package.json"
+      ]
+    },
+    {
+      "name": "stride-coach-worker",
+      "paths": [
+        "src/coach_agent_worker/**",
+        "src/coach_agent/**",
+        "src/coach_contract/**",
+        "src/stride-common/**",
+        "config/**",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "package.json"
+      ]
+    },
+    {
+      "name": "stride-web",
+      "paths": ["frontend/**", "strength_illustrations/**", "Dockerfile.web"]
+    }
+  ]
+}
