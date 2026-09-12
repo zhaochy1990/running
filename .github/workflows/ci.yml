@@ -1,32 +1,105 @@
 name: CI
 
+# Pull requests only. Pushes to master go through release.yml, which calls this
+# workflow via workflow_call so the checks are defined exactly once.
+#
+# `full: true` (used by release.yml) runs every check regardless of what
+# changed: release.yml only calls this when at least one artifact is about to be
+# published, and contract-parity in particular is cross-cutting — it can be
+# broken by a change that cuts no Go artifact at all.
 on:
   pull_request:
-  workflow_dispatch:
+    branches: [master]
+  workflow_call:
+    inputs:
+      full:
+        description: Run every check regardless of which paths changed.
+        type: boolean
+        default: false
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      go: ${{ steps.filter.outputs.go }}
+      coach: ${{ steps.filter.outputs.coach }}
+      contract: ${{ steps.filter.outputs.contract }}
+    steps:
+      - uses: actions/checkout@v4
+      # These are CHECK triggers, deliberately separate from the artifact paths
+      # in .github/release-packages.json. A path belongs here if changing it can
+      # break the check; it belongs there if changing it changes an image.
+      # contract-parity is the clearest case: src/coach_contract/** breaks it
+      # without changing any Go image.
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+              - 'Dockerfile.web'
+            go:
+              - 'src/go/**'
+            coach:
+              - 'src/coach_agent_api/**'
+              - 'src/coach_agent_worker/**'
+              - 'src/coach_agent/**'
+              - 'src/coach_contract/**'
+              - 'src/stride-common/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+            contract:
+              - 'src/go/internal/api/weekly_plan_validation.go'
+              - 'src/go/internal/api/weekly_plan_contract_parity_test.go'
+              - 'src/coach_agent/**'
+              - 'src/coach_agent_api/**'
+              - 'src/coach_contract/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'src/go/internal/api/weekly_plan_schema.json'
+              - 'tests/fixtures/weekly_plan_contract.json'
+
+  # Did any ARTIFACT change? Drives the docker dry run below via the manifest,
+  # so it stays the single source of truth for "what changes an image".
+  artifacts:
+    name: Detect Artifacts
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.plan.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        uses: zhaochy1990/configurations/calver-release@v1
+        with:
+          phase: bump-versions
+          # paths-filter decides from the pull_request event (merge-base aware).
+          base: ''
+
   frontend:
     name: Frontend (vitest + prod build)
+    needs: changes
+    if: inputs.full || needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install
-        run: |
-          cd frontend
-          npm install
+        run: npm install
+        working-directory: frontend
 
       - name: Run frontend tests
-        run: |
-          cd frontend
-          npm run test
+        run: npm run test
+        working-directory: frontend
 
       # The production Dockerfile invokes `npm run build` (= `tsc -b && vite
       # build`), which applies project-reference strictness (e.g.
@@ -34,7 +107,145 @@ jobs:
       # same build here closes the gap that let PR #33 ship an unused-import
       # TS6133 error to deploy and broke prod for three back-to-back PRs.
       - name: Build frontend (matches prod Dockerfile)
-        run: |
-          cd frontend
-          npm run build
+        run: npm run build
+        working-directory: frontend
 
+  go:
+    name: Go (gofmt + vet + test)
+    needs: changes
+    if: inputs.full || needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go/go.mod
+          cache-dependency-path: src/go/go.sum
+      - name: Verify formatting
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+
+  coach:
+    name: Coach workspace (biome + vitest)
+    needs: changes
+    if: inputs.full || needs.changes.outputs.coach == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint (biome check)
+        run: pnpm --filter coach_agent_api check
+      - name: Test
+        run: pnpm --filter coach_agent_api test
+      - name: Worker Lint (biome check)
+        run: pnpm --filter @stride/coach-agent-worker check
+      - name: Worker Test
+        run: pnpm --filter @stride/coach-agent-worker test
+
+  contract-parity:
+    name: Weekly Plan contract parity
+    needs: changes
+    if: inputs.full || needs.changes.outputs.contract == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/coach_contract
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build Workspace (contract -> coach_agent)
+        run: pnpm -r build
+      - name: Test Coach TypeScript workspace
+        run: pnpm -r test
+      - name: Verify generated Weekly Plan JSON Schema
+        run: pnpm run verify:weekly-plan-schema
+      - name: Verify Weekly Plan contract parity
+        run: node --test dist/weekly_plan/schemaParity.test.js
+
+  # Catches a broken Dockerfile before merge. The old CI only ever ran this on
+  # push, i.e. after the release workflow had already built and published the
+  # real image — so on pull requests it never ran at all.
+  docker-dry-run:
+    name: Docker dry run (${{ matrix.name }})
+    needs: artifacts
+    if: needs.artifacts.outputs.changed != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: stride-worker
+            context: src/go
+            file: src/go/Dockerfile
+          - name: stride-api
+            context: src/go
+            file: src/go/Dockerfile.api
+          - name: stride-coach-api
+            context: .
+            file: src/coach_agent_api/Dockerfile
+          - name: stride-coach-worker
+            context: .
+            file: src/coach_agent_worker/Dockerfile
+          - name: stride-web
+            context: .
+            file: Dockerfile.web
+            build-args: |
+              VITE_AUTH_CLIENT_ID=${{ vars.VITE_AUTH_CLIENT_ID }}
+              VITE_AMAP_KEY=${{ vars.VITE_AMAP_KEY }}
+              VITE_AMAP_SECURITY_CODE=${{ vars.VITE_AMAP_SECURITY_CODE }}
+              VITE_API_BASE_URL=https://api.stride-running.cn
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Did this artifact change?
+        id: gate
+        env:
+          CHANGED: ${{ needs.artifacts.outputs.changed }}
+          NAME: ${{ matrix.name }}
+        run: |
+          case ",$CHANGED," in
+            *",$NAME,"*) echo "build=true" >> "$GITHUB_OUTPUT" ;;
+            *)           echo "build=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.gate.outputs.build == 'true'
+        with:
+          # BuildKit 0.32 changed provenance to OCI artifact descriptors, which
+          # Aliyun Personal Edition ACR does not accept. Pin the last known-good
+          # version until the registry supports that manifest class.
+          driver-opts: image=moby/buildkit:v0.31.2
+
+      - uses: docker/build-push-action@v6
+        if: steps.gate.outputs.build == 'true'
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: false
+          build-args: ${{ matrix.build-args }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max

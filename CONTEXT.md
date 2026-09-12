@@ -216,17 +216,20 @@ _Avoid_: 训练目标、training goal、比赛类型以外的目标（fat_loss/h
 （前端从 Python 后端剥离为独立服务/容器的表层词汇；设计与取舍见 `docs/adr/0017`。）
 
 **stride-web**：
-承载浏览器前端的独立服务与容器 —— 静态 SPA + 前端 BFF 合一，是用户流量的唯一前门；与只服务 `/api` 的后端 `stride-app` 相对。
-_Avoid_: 前端容器、frontend app（后者只是其一部分）
+承载浏览器前端的独立服务与容器 —— 静态 SPA（nginx），是用户流量的唯一前门；与只服务
+`/api` 的后端服务相对。ADR 0017 最初设计的前端 BFF 层已随架构演进移除：Caddy 是唯一入口，
+把 `/api/*` 路由到各后端，`stride-web` 只服务构建好的 SPA 与插图资源。
+_Avoid_: 前端容器、frontend app（后者只是其一部分）、BFF
 
-**前端 BFF（Backend-for-Frontend）**：
-`stride-web` 内的 Node/Hono 服务端层：服务静态资源，并把浏览器发来的同源 `/api/*`（含 `/api/auth/*`）按路由表转发到某个上游；页面仍客户端渲染，它不做 SSR。
-_Avoid_: SSR 服务、网关、nginx 代理
+## 发布（Release）
 
-**API 路由表**：
-前端 BFF 里版本化的 path→上游映射（前缀/glob，缺省 Python）；把一个 endpoint 从 Python 切到 Go 就是改这张表一行 + 配套前端 contract 改动。它是 Python→Go strangler 的切换点。
-_Avoid_: 反向代理规则、nginx location、gateway route
+**Artifact（制品）**：
+一个可独立构建、独立定版、独立部署的容器镜像。STRIDE 当前有五个：`stride-worker`、
+`stride-api`、`stride-coach-api`、`stride-coach-worker`、`stride-web`。版本号属于制品，
+不属于源码目录、也不属于 pnpm workspace 包；两个制品共享同一份源码时，它们的版本号始终相等。
+_Avoid_: package（那指 pnpm workspace 包）、service、组件、模块
 
-**上游（Upstream）**：
-前端 BFF 转发目标之一：`PYTHON_API_URL`（stride-app）、`GO_API_URL`（stride api）、`AUTH_UPSTREAM_URL`（auth-service）。
-_Avoid_: 后端、origin、target
+**发布计划（Release Plan）**：
+一次 push 中所有需要重新定版的制品及其新版本号的集合。它是构建与记录的输入：构建只构建计划
+里的制品，`versions.json` 只记录计划里的版本号。
+_Avoid_: 变更集、changelog、release notes

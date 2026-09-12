@@ -56,9 +56,10 @@ API origin 由构建期 `VITE_API_BASE_URL` 烘焙（`src/lib/apiRouting.ts`）�
   `stride-web`（同一 `stride-env`、同 static IP 的 hostname rebind，DNS 不变）→ backend 收尾部署里
   移除 `mount_frontend` / `static.py`（及短暂的 `routes/auth_proxy.py` fallback）。`stride-app`
   现在是纯 `/api/*` 后端，不再服务 SPA。
-- **ACR push 复用 Go 服务已有的 ACR**（`worker-go.yml` 同款 `ALIYUN_ACR_REGISTRY` var +
-  `ALIYUN_ACR_USERNAME`/`ALIYUN_ACR_PASSWORD` secrets），namespace 硬编码 `stride`，镜像即
-  `${ALIYUN_ACR_REGISTRY}/stride/stride-web`（与 `stride/stride-api`、`stride/stride-worker` 并列）。
+- **ACR push 复用 Go 服务已有的 ACR**（`ALIYUN_ACR_REGISTRY` var +
+  `ALIYUN_ACR_USERNAME`/`ALIYUN_ACR_PASSWORD` secrets，与 `release.yml` 同款），namespace
+  硬编码 `stride`，镜像即 `${ALIYUN_ACR_REGISTRY}/stride/stride-web`（与 `stride/stride-api`、
+  `stride/stride-worker` 并列）。
    ACR mirror 步骤放在 deploy + 新 revision 进入 `Running` 之后、`if: always()`，misconfig 只让 job 变红不阻断部署。
 
 ### Go team API runtime and schema startup
@@ -105,11 +106,30 @@ API 内按 user 互斥 watch 数据写入与 training-load shard。每片成功�
 onboarding handlers 直接写 per-user SQLite 是独立的历史架构债，本次只移除专用
 `training_load_backfill` worker writer，不能把 worker 描述为全局 SQLite 零写入。
 
-### `.github/workflows/worker-go.yml` —— 发布 Go worker + API 镜像
+### `.github/workflows/release.yml` —— 制品发布（PR 检查见 `ci.yml`）
 
-`src/go/**` 变更 push 到 `master` 且 Go 测试通过后，workflow 统一计算本次 CalVer，并用两项 matrix 在独立 runner 上并行构建 `stride-worker` 和 `stride-api`。两个镜像分别推送到 GHCR 与阿里云 ACR；worker 额外保留 commit SHA tag。两项构建使用独立 BuildKit GHA cache scope，避免并发导出缓存互相覆盖。只有整个 matrix 成功后，独立的 Renovate job 才更新 `stride-devops` 中两项镜像版本，避免部署指向只发布了一半的 release。仅修改 workflow 本身会运行测试，但不会重新发布镜像。
-阿里云个人版 ACR 不支持 BuildKit 0.32 默认生成的 OCI artifact provenance，
-因此 workflow 将 BuildKit 固定为最后确认可同时推送 GHCR 与 ACR 的 `v0.31.2`。
+一次 push 到 `master` 走三个阶段，由共享的 `zhaochy1990/configurations/calver-release`
+composite action 驱动（见 ADR 0031）：
+
+1. **bump-versions** —— 按 `.github/release-packages.json` 的路径判据算出本次 push 触及的
+   制品及其下一个 CalVer（`YYYY.M.MICRO`，逐制品递增，跨月归 1）。**不写文件、不提交。**
+2. **build** —— `stride-worker` / `stride-api` / `stride-coach-api` / `stride-coach-worker` /
+   `stride-web` 中变更的那些，在独立 runner 上并行构建，镜像推送到**阿里云 ACR**。
+   每个用独立的 BuildKit GHA cache scope，避免并发导出缓存互相覆盖。
+3. **commit-versions** —— 全部构建成功后，把本次发布计划写进仓库根的 `versions.json`，
+   一个 commit。交给它的是阶段 1 的原样结果，不会重算——构建期间若有别的 push 落地，
+   重算会记下一个没有任何镜像存在的版本号。
+
+随后 `pin-images` job 把发布计划 dispatch 给 `stride-devops` 的 `pin-images.yml`，由后者在
+固定分支 `deploy/pin-images` 上累加更新整栈的 `versions.env` 并开 PR。合并那个 PR + 在 CVM
+跑 `./up.sh` 才是上线。
+
+**不再推 GHCR，也不再推 `:latest`。** `versions.env` 锁定精确 tag，没有任何消费方读浮动 tag。
+阿里云个人版 ACR 不支持 BuildKit 0.32 默认生成的 OCI artifact provenance，因此
+BuildKit 固定为最后确认可用的 `v0.31.2`。
+
+构建失败时 `versions.json` 保持不动，下次 push 会算出同样的版本号重新构建；残留只是几个
+没有任何清单引用的孤儿镜像 tag。
 
 #### Race detection worker configuration
 
@@ -218,7 +238,7 @@ server 端没设 → route 返 401；两端都没设 → workflow step 静默跳
 ## Infrastructure
 
 - **Container**：Azure Container Apps（`stride-app` in `rg-running-prod`）
-- **Registry**：GitHub Container Registry（`ghcr.io`）
+- **Registry**：阿里云 ACR（`crpi-*`，namespace `stride`）。GHCR 已不再发布（ADR 0031）
 - **Storage**：Azure Files share `stride-data` on `authstorage2026`（RG `rg-common-prod`），挂到 `/app/data` —— 含 per-user SQLite databases / credentials / logs / training plans
 - **Auth**：Entra ID OIDC for deployment；独立 auth-service（见 [auth-wiring.md](./auth-wiring.md)）做 API-level authn/authz
 
