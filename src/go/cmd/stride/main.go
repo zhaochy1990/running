@@ -47,6 +47,16 @@ const watchRequestDelay = 500 * time.Millisecond
 // -j 4). The adapter clamps it to a safe range.
 const watchJobs = 4
 
+// appVersion is the image's CalVer tag, injected by the Dockerfile as
+// APP_VERSION at build time. Falls back to "dev" for a local `go run`, where
+// there is no image and therefore no version to name.
+func appVersion() string {
+	if v := os.Getenv("APP_VERSION"); v != "" {
+		return v
+	}
+	return "dev"
+}
+
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

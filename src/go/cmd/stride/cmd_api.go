@@ -207,6 +207,7 @@ func runAPI() error {
 	baseURL := fmt.Sprintf("http://%s:%s", host, port)
 
 	log.Info("api server listening",
+		zap.String("version", appVersion()),
 		zap.String("addr", cfg.API.Addr),
 		zap.String("port", port),
 		zap.String("url", baseURL),

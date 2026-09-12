@@ -70,6 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.plan.outputs.changed }}
+      packages: ${{ steps.plan.outputs.packages }}
     steps:
       - uses: actions/checkout@v4
       - id: plan
@@ -190,50 +191,60 @@ jobs:
   # push, i.e. after the release workflow had already built and published the
   # real image — so on pull requests it never ran at all.
   docker-dry-run:
-    name: Docker dry run (${{ matrix.name }})
+    name: Docker dry run (${{ matrix.artifact.name }})
     needs: artifacts
     if: needs.artifacts.outputs.changed != ''
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: stride-worker
-            context: src/go
-            file: src/go/Dockerfile
-          - name: stride-api
-            context: src/go
-            file: src/go/Dockerfile.api
-          - name: stride-coach-api
-            context: .
-            file: src/coach_agent_api/Dockerfile
-          - name: stride-coach-worker
-            context: .
-            file: src/coach_agent_worker/Dockerfile
-          - name: stride-web
-            context: .
-            file: Dockerfile.web
-            build-args: |
-              VITE_AUTH_CLIENT_ID=${{ vars.VITE_AUTH_CLIENT_ID }}
-              VITE_AMAP_KEY=${{ vars.VITE_AMAP_KEY }}
-              VITE_AMAP_SECURITY_CODE=${{ vars.VITE_AMAP_SECURITY_CODE }}
-              VITE_API_BASE_URL=https://api.stride-running.cn
+        artifact: ${{ fromJSON(needs.artifacts.outputs.packages) }}
     steps:
+      # Every leg is an artifact that actually changed, so the matrix comes from
+      # the release plan rather than a static list. A static five-entry matrix with
+      # a per-leg skip gate reports each unchanged artifact as a green check, which
+      # reads as "{n} images built" when it means "{n} did nothing".
+      - id: cfg
+        name: Resolve build config
+        env:
+          NAME: ${{ matrix.artifact.name }}
+          # A dry run has no version yet, but it takes the same build-arg path a
+          # release does: a Dockerfile that only accepted APP_VERSION on a
+          # release build would otherwise break after merge.
+          VERSION: ci
+          VITE_AUTH_CLIENT_ID: ${{ vars.VITE_AUTH_CLIENT_ID }}
+          VITE_AMAP_KEY: ${{ vars.VITE_AMAP_KEY }}
+          VITE_AMAP_SECURITY_CODE: ${{ vars.VITE_AMAP_SECURITY_CODE }}
+        run: |
+          set -euo pipefail
+          case "$NAME" in
+            stride-worker)       context=src/go; file=src/go/Dockerfile ;;
+            stride-api)          context=src/go; file=src/go/Dockerfile.api ;;
+            stride-coach-api)    context=.;     file=src/coach_agent_api/Dockerfile ;;
+            stride-coach-worker) context=.;     file=src/coach_agent_worker/Dockerfile ;;
+            stride-web)          context=.;     file=Dockerfile.web ;;
+            *) echo "unknown artifact: $NAME" >&2; exit 1 ;;
+          esac
+          {
+            echo "context=$context"
+            echo "file=$file"
+            echo "args<<__BUILD_ARGS__"
+            echo "APP_VERSION=$VERSION"
+            if [ "$NAME" = "stride-web" ]; then
+              # Vite bakes these into the bundle at build time; there is no
+              # runtime injection path.
+              echo "VITE_AUTH_CLIENT_ID=$VITE_AUTH_CLIENT_ID"
+              echo "VITE_AMAP_KEY=$VITE_AMAP_KEY"
+              echo "VITE_AMAP_SECURITY_CODE=$VITE_AMAP_SECURITY_CODE"
+              echo "VITE_API_BASE_URL=https://api.stride-running.cn"
+            fi
+            echo "__BUILD_ARGS__"
+          } >> "$GITHUB_OUTPUT"
+
+
       - uses: actions/checkout@v4
 
-      - name: Did this artifact change?
-        id: gate
-        env:
-          CHANGED: ${{ needs.artifacts.outputs.changed }}
-          NAME: ${{ matrix.name }}
-        run: |
-          case ",$CHANGED," in
-            *",$NAME,"*) echo "build=true" >> "$GITHUB_OUTPUT" ;;
-            *)           echo "build=false" >> "$GITHUB_OUTPUT" ;;
-          esac
-
       - uses: docker/setup-buildx-action@v3
-        if: steps.gate.outputs.build == 'true'
         with:
           # BuildKit 0.32 changed provenance to OCI artifact descriptors, which
           # Aliyun Personal Edition ACR does not accept. Pin the last known-good
@@ -241,11 +252,10 @@ jobs:
           driver-opts: image=moby/buildkit:v0.31.2
 
       - uses: docker/build-push-action@v6
-        if: steps.gate.outputs.build == 'true'
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.file }}
+          context: ${{ steps.cfg.outputs.context }}
+          file: ${{ steps.cfg.outputs.file }}
           push: false
-          build-args: ${{ matrix.build-args }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,scope=${{ matrix.name }},mode=max
+          build-args: ${{ steps.cfg.outputs.args }}
+          cache-from: type=gha,scope=${{ matrix.artifact.name }}
+          cache-to: type=gha,scope=${{ matrix.artifact.name }},mode=max

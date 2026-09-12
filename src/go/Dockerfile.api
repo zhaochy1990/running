@@ -18,6 +18,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -tags swagger -trimpath -ldflags="-s -w" -
 
 # --- runtime ---
 FROM alpine:3.20
+# The CalVer tag the release workflow built this image under. Reported in the
+# startup log so a running container can be traced back without shelling in.
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
 RUN apk add --no-cache ca-certificates wget && adduser -D -u 10001 api
 # zap's ISO8601 time encoder formats in the local zone; pin UTC (ADR 0002).
 ENV TZ=UTC
