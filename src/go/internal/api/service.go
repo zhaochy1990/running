@@ -70,10 +70,10 @@ type RunIdemLookup interface {
 
 // Config wires a Service.
 type Config struct {
-	Enqueuer  Enqueuer
-	Jobs      JobGetter
-	JobsIdem  JobIdemLookup
-	Pipelines PipelineStarter
+	Enqueuer      Enqueuer
+	Jobs          JobGetter
+	JobsIdem      JobIdemLookup
+	Pipelines     PipelineStarter
 	Runs          RunGetter
 	RunsList      RunLister
 	RunsAdminList RunAdminLister
@@ -171,10 +171,10 @@ type Config struct {
 
 // Service holds the wired dependencies and builds the gin router.
 type Service struct {
-	enq       Enqueuer
-	jobs      JobGetter
-	jobsIdem  JobIdemLookup
-	pipelines PipelineStarter
+	enq           Enqueuer
+	jobs          JobGetter
+	jobsIdem      JobIdemLookup
+	pipelines     PipelineStarter
 	runs          RunGetter
 	runsList      RunLister
 	runsAdminList RunAdminLister
