@@ -148,6 +148,45 @@ func (f *fakeRuns) PipelineRunsByUser(_ context.Context, userID string) ([]*job.
 	return out, nil
 }
 
+// ListAllPipelineRuns returns the seeded runs matching the non-empty options,
+// newest-first (insertion order is reversed, mirroring created_at DESC), with
+// the total matching count before pagination.
+func (f *fakeRuns) ListAllPipelineRuns(_ context.Context, opts job.PipelineListOptions) ([]*job.PipelineRun, int64, error) {
+	matches := []*job.PipelineRun{}
+	for _, r := range f.order {
+		if opts.UserID != "" && r.UserID != opts.UserID {
+			continue
+		}
+		if opts.PipelineName != "" && r.Name != opts.PipelineName {
+			continue
+		}
+		if opts.Status != "" && string(r.Status) != opts.Status {
+			continue
+		}
+		matches = append(matches, r)
+	}
+	total := int64(len(matches))
+	for i, j := 0, len(matches)-1; i < j; i, j = i+1, j-1 {
+		matches[i], matches[j] = matches[j], matches[i]
+	}
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	offset := opts.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(matches) {
+		return []*job.PipelineRun{}, total, nil
+	}
+	end := offset + limit
+	if end > len(matches) {
+		end = len(matches)
+	}
+	return matches[offset:end], total, nil
+}
+
 func (f *fakeRuns) PipelineRunByIdempotencyKey(_ context.Context, pk, key string) (*job.PipelineRun, error) {
 	if r, ok := f.byIdem[jkey(pk, key)]; ok {
 		return r, nil

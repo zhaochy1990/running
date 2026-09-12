@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -164,4 +165,97 @@ func (s *Service) listUserPipelines(c *gin.Context) {
 		pipelines[i] = toRunStateResponse(r)
 	}
 	c.JSON(http.StatusOK, userPipelinesResponse{Pipelines: pipelines})
+}
+
+// adminOrInternal reports whether the caller is an administrator (separate
+// admin JWT audience + role=admin) or a trusted server-to-server caller
+// (X-Internal-Token) — the two classes the admin pipeline-status surface admits.
+func adminOrInternal(c *gin.Context) bool {
+	tier := callerFrom(c).Tier
+	return tier == TierAdmin || tier == TierInternal
+}
+
+// listAdminPipelineRuns godoc
+//
+//	@Summary		List pipeline runs (admin)
+//	@Description	Lists pipeline runs across all users, newest first. Admin JWT or internal token only; user callers are denied. Filters by status / user_id / pipeline_name, paginated with limit+offset; total is the count matching the filters (before pagination).
+//	@Tags			pipelines
+//	@Produce		json
+//	@Param			status			query		string	false	"Filter by run status (queued|running|done|failed)"
+//	@Param			user_id			query		string	false	"Filter by subject user id"
+//	@Param			pipeline_name	query		string	false	"Filter by pipeline name"
+//	@Param			limit			query		int		false	"Page size (default 50, max 200)"
+//	@Param			offset			query		int		false	"Page offset"
+//	@Success		200				{object}	pipelineRunsAdminResponse
+//	@Failure		401				{object}	errorResponse
+//	@Failure		403				{object}	errorResponse
+//	@Failure		500				{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/admin/pipeline-runs [get]
+func (s *Service) listAdminPipelineRuns(c *gin.Context) {
+	if !adminOrInternal(c) {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	runs, total, err := s.runsAdminList.ListAllPipelineRuns(c.Request.Context(), job.PipelineListOptions{
+		UserID:       c.Query("user_id"),
+		PipelineName: c.Query("pipeline_name"),
+		Status:       c.Query("status"),
+		Limit:        limit,
+		Offset:       offset,
+	})
+	if err != nil {
+		s.log.Error("list admin pipeline runs failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	resp := pipelineRunsAdminResponse{
+		Runs:   make([]runStateResponse, len(runs)),
+		Total:  total,
+		Limit:  limit,
+		Offset: offset,
+	}
+	for i, r := range runs {
+		resp.Runs[i] = toRunStateResponse(r)
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// getAdminPipelineRun godoc
+//
+//	@Summary		Get a pipeline run (admin)
+//	@Description	Reads one pipeline run regardless of owner. Admin JWT or internal token only; user callers are denied. A missing run returns 404.
+//	@Tags			pipelines
+//	@Produce		json
+//	@Param			run_id	path		string	true	"Run id"
+//	@Success		200		{object}	runStateResponse
+//	@Failure		401		{object}	errorResponse
+//	@Failure		403		{object}	errorResponse
+//	@Failure		404		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/admin/pipeline-runs/{run_id} [get]
+func (s *Service) getAdminPipelineRun(c *gin.Context) {
+	if !adminOrInternal(c) {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+
+	runID := c.Param("run_id")
+	run, err := s.runs.Get(c.Request.Context(), runID)
+	if job.IsNotFound(err) {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "not found"})
+		return
+	}
+	if err != nil {
+		s.log.Error("get admin pipeline run failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, toRunStateResponse(run))
 }

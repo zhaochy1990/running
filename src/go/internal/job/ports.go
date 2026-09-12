@@ -36,6 +36,17 @@ type Publisher interface {
 	PublishPoison(ctx context.Context, m Message) error
 }
 
+// PipelineListOptions filters a global pipeline-run listing (admin surface).
+// Empty string fields are no-ops; Limit/Offset page newest-first by created_at.
+// A non-positive Limit falls back to a default and is capped by the store.
+type PipelineListOptions struct {
+	UserID       string
+	PipelineName string
+	Status       string
+	Limit        int
+	Offset       int
+}
+
 // ErrNotFound is returned by Store.Get / PipelineStore.Get when the row is absent.
 type ErrNotFound struct{ Key string }
 

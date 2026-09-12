@@ -7,6 +7,145 @@
         "version": "1.0"
     },
     "paths": {
+        "/api/admin/pipeline-runs": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists pipeline runs across all users, newest first. Admin JWT or internal token only; user callers are denied. Filters by status / user_id / pipeline_name, paginated with limit+offset; total is the count matching the filters (before pagination).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipelines"
+                ],
+                "summary": "List pipeline runs (admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by run status (queued|running|done|failed)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by subject user id",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by pipeline name",
+                        "name": "pipeline_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.pipelineRunsAdminResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/pipeline-runs/{run_id}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reads one pipeline run regardless of owner. Admin JWT or internal token only; user callers are denied. A missing run returns 404.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pipelines"
+                ],
+                "summary": "Get a pipeline run (admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run id",
+                        "name": "run_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.runStateResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/pipelines/{run_id}": {
             "get": {
                 "security": [
@@ -57,6 +196,26 @@
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/readyz/body-composition": {
+            "get": {
+                "description": "Returns the static route contract required before the Web BFF enables its Go body-composition route flags. No authentication is required and no user data is returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "catalog"
+                ],
+                "summary": "Body-composition cutover readiness",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.bodyCompositionReadinessResponse"
                         }
                     }
                 }
@@ -1226,6 +1385,319 @@
                 }
             }
         },
+        "/api/users/{user_id}/master-plan/drafts": {
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    }
+                ],
+                "description": "Internal-only. Persists a structured season plan as a draft, idempotent by draft_id. Never activates.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "master-plan"
+                ],
+                "summary": "Insert a season training plan draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Target user UUID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Draft id and structured content",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.insertMasterPlanDraftRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.draftIDResponse"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.draftIDResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/{user_id}/master-plan/drafts/{plan_id}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "master-plan"
+                ],
+                "summary": "Get a season plan draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Draft plan id",
+                        "name": "plan_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.masterPlanDraftResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/{user_id}/master-plan/drafts/{plan_id}/abandon": {
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "master-plan"
+                ],
+                "summary": "Abandon a season plan draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Draft plan id",
+                        "name": "plan_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.draftIDResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/{user_id}/master-plan/drafts/{plan_id}/activate": {
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "master-plan"
+                ],
+                "summary": "Activate a season plan draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Draft plan id",
+                        "name": "plan_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.activateMasterPlanDraftResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/{user}/ability/backfill": {
             "post": {
                 "security": [
@@ -1708,6 +2180,231 @@
                 }
             }
         },
+        "/api/{user}/body-composition": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns scans newest-first, each with derived fields and per-segment breakdown. A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "body-composition"
+                ],
+                "summary": "List body-composition scans",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Only return scans from the most recent N days (1-3650)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.bodyCompositionListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates or replaces a scan keyed by (user, scan_date). When segments are provided, all existing segments for the scan are replaced atomically. A user caller may only write their own data; an internal caller may write any user.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "body-composition"
+                ],
+                "summary": "Upsert a body-composition scan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Scan data",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.bodyCompositionScanInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.bodyCompositionScanDTO"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/body-composition/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the latest scan, deltas from the previous scan, and the season phase checkpoints. A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "body-composition"
+                ],
+                "summary": "Body-composition summary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.bodyCompositionSummaryResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/body-composition/{scan_date}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns one scan by date with its five-segment breakdown and derived fields. A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "body-composition"
+                ],
+                "summary": "Get a single body-composition scan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Scan date (YYYY-MM-DD)",
+                        "name": "scan_date",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.bodyCompositionScanDTO"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/{user}/health": {
             "get": {
                 "security": [
@@ -1829,6 +2526,292 @@
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/pbs": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the best-effort personal bests for 1K, 3K, 5K, 10K, HM and FM, read from the persisted personal_bests table (populated post-sync). Only distances present are returned, in canonical order. A user caller may only read their own data; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Personal bests",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.pbsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/plan/drafts/{plan_id}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "weekly-plan"
+                ],
+                "summary": "Get a weekly plan draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Draft plan id",
+                        "name": "plan_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.weeklyPlanDraftResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/plan/drafts/{plan_id}/abandon": {
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "weekly-plan"
+                ],
+                "summary": "Abandon a weekly plan draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Draft plan id",
+                        "name": "plan_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.weeklyDraftIDResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/plan/drafts/{plan_id}/activate": {
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "weekly-plan"
+                ],
+                "summary": "Activate a weekly plan draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Draft plan id",
+                        "name": "plan_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.activateWeeklyPlanDraftResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -2134,6 +3117,95 @@
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/plan/weeks/{weekName}/drafts": {
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    }
+                ],
+                "description": "Internal-only. Persists a structured weekly plan as a draft, idempotent by draft_id. Never activates.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "weekly-plan"
+                ],
+                "summary": "Insert a weekly plan draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Shanghai week name (YYYY-MM-DD_MM-DD)",
+                        "name": "weekName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Draft id and structured content",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.insertWeeklyPlanDraftRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.weeklyDraftIDResponse"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.weeklyDraftIDResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -3047,6 +4119,26 @@
                 }
             }
         },
+        "api.PhaseCheckpoint": {
+            "type": "object",
+            "properties": {
+                "body_fat_pct": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "smm_kg_min": {
+                    "type": "number"
+                },
+                "weight_kg": {
+                    "type": "number"
+                }
+            }
+        },
         "api.PipelineCatalogEntry": {
             "type": "object",
             "properties": {
@@ -3085,6 +4177,34 @@
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "api.activateMasterPlanDraftResponse": {
+            "type": "object",
+            "properties": {
+                "plan": {
+                    "$ref": "#/definitions/api.currentSeasonPlanEnvelope"
+                },
+                "replaced_plan_id": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.activateWeeklyPlanDraftResponse": {
+            "type": "object",
+            "properties": {
+                "plan": {
+                    "$ref": "#/definitions/api.weeklyPlanDetailResponse"
+                },
+                "replaced_plan_id": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
                 }
             }
         },
@@ -3307,6 +4427,9 @@
                 "sport_type": {
                     "type": "integer"
                 },
+                "stride_training_dose": {
+                    "type": "number"
+                },
                 "temperature": {
                     "type": "number"
                 },
@@ -3394,6 +4517,296 @@
                 }
             }
         },
+        "api.bodyCompositionDeltasDTO": {
+            "type": "object",
+            "properties": {
+                "body_fat_pct": {
+                    "type": "number"
+                },
+                "fat_mass_kg": {
+                    "type": "number"
+                },
+                "prev_date": {
+                    "type": "string"
+                },
+                "smm_kg": {
+                    "type": "number"
+                },
+                "visceral_fat_level": {
+                    "type": "integer"
+                },
+                "weight_kg": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.bodyCompositionListResponse": {
+            "type": "object",
+            "properties": {
+                "scans": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.bodyCompositionScanDTO"
+                    }
+                }
+            }
+        },
+        "api.bodyCompositionReadinessResponse": {
+            "type": "object",
+            "properties": {
+                "contract_version": {
+                    "type": "string"
+                },
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.onboardingRouteContract"
+                    }
+                }
+            }
+        },
+        "api.bodyCompositionScanDTO": {
+            "type": "object",
+            "properties": {
+                "arm_smm_delta": {
+                    "type": "number"
+                },
+                "bmr_kcal": {
+                    "type": "integer"
+                },
+                "body_fat_pct": {
+                    "type": "number"
+                },
+                "fat_mass_kg": {
+                    "type": "number"
+                },
+                "inbody_score": {
+                    "type": "integer"
+                },
+                "ingested_at": {
+                    "type": "string"
+                },
+                "jpg_path": {
+                    "type": "string"
+                },
+                "left_arm_fat_kg": {
+                    "type": "number"
+                },
+                "left_arm_fat_pct_std": {
+                    "type": "number"
+                },
+                "left_arm_lean_pct_std": {
+                    "type": "number"
+                },
+                "left_arm_smm_kg": {
+                    "description": "Derived — per-segment flat fields (for easy chart access)",
+                    "type": "number"
+                },
+                "left_leg_fat_kg": {
+                    "type": "number"
+                },
+                "left_leg_fat_pct_std": {
+                    "type": "number"
+                },
+                "left_leg_lean_pct_std": {
+                    "type": "number"
+                },
+                "left_leg_smm_kg": {
+                    "type": "number"
+                },
+                "leg_fat_delta": {
+                    "type": "number"
+                },
+                "leg_smm_delta": {
+                    "description": "Derived — deltas / ratios",
+                    "type": "number"
+                },
+                "protein_kg": {
+                    "type": "number"
+                },
+                "right_arm_fat_kg": {
+                    "type": "number"
+                },
+                "right_arm_fat_pct_std": {
+                    "type": "number"
+                },
+                "right_arm_lean_pct_std": {
+                    "type": "number"
+                },
+                "right_arm_smm_kg": {
+                    "type": "number"
+                },
+                "right_leg_fat_kg": {
+                    "type": "number"
+                },
+                "right_leg_fat_pct_std": {
+                    "type": "number"
+                },
+                "right_leg_lean_pct_std": {
+                    "type": "number"
+                },
+                "right_leg_smm_kg": {
+                    "type": "number"
+                },
+                "scan_date": {
+                    "type": "string"
+                },
+                "segments": {
+                    "description": "Segments array (repeated data, matches Python contract)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.bodyCompositionSegmentDTO"
+                    }
+                },
+                "smi": {
+                    "type": "number"
+                },
+                "smm_kg": {
+                    "type": "number"
+                },
+                "trunk_fat_kg": {
+                    "type": "number"
+                },
+                "trunk_fat_pct_std": {
+                    "type": "number"
+                },
+                "trunk_lean_pct_std": {
+                    "type": "number"
+                },
+                "trunk_smm_kg": {
+                    "type": "number"
+                },
+                "upper_lower_smm_ratio": {
+                    "type": "number"
+                },
+                "visceral_fat_level": {
+                    "type": "integer"
+                },
+                "water_l": {
+                    "type": "number"
+                },
+                "weight_kg": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.bodyCompositionScanInput": {
+            "type": "object",
+            "required": [
+                "body_fat_pct",
+                "fat_mass_kg",
+                "scan_date",
+                "smm_kg",
+                "visceral_fat_level",
+                "weight_kg"
+            ],
+            "properties": {
+                "bmr_kcal": {
+                    "type": "integer"
+                },
+                "body_fat_pct": {
+                    "type": "number"
+                },
+                "fat_mass_kg": {
+                    "type": "number"
+                },
+                "inbody_score": {
+                    "type": "integer"
+                },
+                "jpg_path": {
+                    "type": "string"
+                },
+                "protein_kg": {
+                    "type": "number"
+                },
+                "scan_date": {
+                    "type": "string"
+                },
+                "segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.bodyCompositionSegmentInput"
+                    }
+                },
+                "smi": {
+                    "type": "number"
+                },
+                "smm_kg": {
+                    "type": "number"
+                },
+                "visceral_fat_level": {
+                    "type": "integer"
+                },
+                "water_l": {
+                    "type": "number"
+                },
+                "weight_kg": {
+                    "type": "number"
+                }
+            }
+        },
+        "api.bodyCompositionSegmentDTO": {
+            "type": "object",
+            "properties": {
+                "fat_mass_kg": {
+                    "type": "number"
+                },
+                "fat_pct_of_standard": {
+                    "type": "number"
+                },
+                "lean_mass_kg": {
+                    "type": "number"
+                },
+                "lean_pct_of_standard": {
+                    "type": "number"
+                },
+                "segment": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.bodyCompositionSegmentInput": {
+            "type": "object",
+            "required": [
+                "fat_mass_kg",
+                "lean_mass_kg",
+                "segment"
+            ],
+            "properties": {
+                "fat_mass_kg": {
+                    "type": "number"
+                },
+                "fat_pct_of_standard": {
+                    "type": "number"
+                },
+                "lean_mass_kg": {
+                    "type": "number"
+                },
+                "lean_pct_of_standard": {
+                    "type": "number"
+                },
+                "segment": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.bodyCompositionSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "checkpoints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.PhaseCheckpoint"
+                    }
+                },
+                "deltas": {
+                    "$ref": "#/definitions/api.bodyCompositionDeltasDTO"
+                },
+                "latest": {
+                    "$ref": "#/definitions/api.bodyCompositionScanDTO"
+                }
+            }
+        },
         "api.createJobRequest": {
             "type": "object",
             "required": [
@@ -3455,6 +4868,20 @@
                 },
                 "provider": {
                     "type": "string"
+                }
+            }
+        },
+        "api.draftIDResponse": {
+            "type": "object",
+            "properties": {
+                "plan_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
                 }
             }
         },
@@ -3921,6 +5348,38 @@
                 }
             }
         },
+        "api.insertMasterPlanDraftRequest": {
+            "type": "object",
+            "required": [
+                "content",
+                "draft_id"
+            ],
+            "properties": {
+                "content": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "draft_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.insertWeeklyPlanDraftRequest": {
+            "type": "object",
+            "required": [
+                "content",
+                "draft_id"
+            ],
+            "properties": {
+                "content": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "draft_id": {
+                    "type": "string"
+                }
+            }
+        },
         "api.jobCatalogResponse": {
             "type": "object",
             "properties": {
@@ -4040,6 +5499,33 @@
                 }
             }
         },
+        "api.masterPlanDraftResponse": {
+            "type": "object",
+            "properties": {
+                "content_version": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "goal_id": {
+                    "type": "string"
+                },
+                "plan": {},
+                "plan_id": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "api.monthlySummaryDTO": {
             "type": "object",
             "properties": {
@@ -4115,6 +5601,62 @@
                 }
             }
         },
+        "api.pbEntryDTO": {
+            "type": "object",
+            "properties": {
+                "achieved_at": {
+                    "type": "string"
+                },
+                "distance": {
+                    "type": "string"
+                },
+                "history": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": {}
+                    }
+                },
+                "label_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pb_time_sec": {
+                    "type": "number"
+                },
+                "race_type": {
+                    "type": "string"
+                },
+                "segment_end_s": {
+                    "type": "number"
+                },
+                "segment_start_s": {
+                    "type": "number"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.pbsResponse": {
+            "type": "object",
+            "properties": {
+                "computed_at": {
+                    "type": "string"
+                },
+                "pbs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.pbEntryDTO"
+                    }
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
         "api.pipelineCatalogResponse": {
             "type": "object",
             "properties": {
@@ -4123,6 +5665,26 @@
                     "items": {
                         "$ref": "#/definitions/api.PipelineCatalogEntry"
                     }
+                }
+            }
+        },
+        "api.pipelineRunsAdminResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "runs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.runStateResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
@@ -5199,6 +6761,23 @@
                 }
             }
         },
+        "api.weeklyDraftIDResponse": {
+            "type": "object",
+            "properties": {
+                "plan_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "week_name": {
+                    "type": "string"
+                }
+            }
+        },
         "api.weeklyFeedbackResponse": {
             "type": "object",
             "properties": {
@@ -5223,6 +6802,42 @@
             }
         },
         "api.weeklyPlanDetailResponse": {
+            "type": "object",
+            "properties": {
+                "content": {},
+                "content_version": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date_from": {
+                    "type": "string"
+                },
+                "date_to": {
+                    "type": "string"
+                },
+                "master_plan_id": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "week_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.weeklyPlanDraftResponse": {
             "type": "object",
             "properties": {
                 "content": {},

@@ -95,6 +95,16 @@ type userPipelinesResponse struct {
 	Pipelines []runStateResponse `json:"pipelines"`
 }
 
+// pipelineRunsAdminResponse is the GET /api/admin/pipeline-runs body: pipeline
+// runs across all users, newest first, with the total matching the filters
+// (before pagination) so the admin UI can page.
+type pipelineRunsAdminResponse struct {
+	Runs   []runStateResponse `json:"runs"`
+	Total  int64              `json:"total"`
+	Limit  int                `json:"limit"`
+	Offset int                `json:"offset"`
+}
+
 // errorResponse is the uniform error envelope.
 type errorResponse struct {
 	Error string `json:"error"`
