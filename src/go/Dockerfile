@@ -13,6 +13,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/stride 
 
 # --- runtime ---
 FROM alpine:3.20
+# The CalVer tag the release workflow built this image under. Reported in the
+# startup log so a running container can be traced back without shelling in.
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
 RUN apk add --no-cache ca-certificates wget && adduser -D -u 10001 worker
 # zap's ISO8601 time encoder formats in the local zone; pin UTC so log lines
 # read UTC (ADR 0002). MySQL timestamps are UTC regardless (forced via DSN).

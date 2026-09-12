@@ -131,6 +131,7 @@ func runWorker() error {
 	}, health.WithLogger(log))
 
 	log.Info("worker starting",
+		zap.String("version", appVersion()),
 		zap.String("work_queue", cfg.Queues.Work),
 		zap.Int("prefetch", cfg.Runtime.Prefetch),
 		zap.Int("max_attempts", cfg.Retry.MaxAttempts),

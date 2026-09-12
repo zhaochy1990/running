@@ -87,11 +87,6 @@ jobs:
           - name: stride-web
             context: .
             file: Dockerfile.web
-            build-args: |
-              VITE_AUTH_CLIENT_ID=${{ vars.VITE_AUTH_CLIENT_ID }}
-              VITE_AMAP_KEY=${{ vars.VITE_AMAP_KEY }}
-              VITE_AMAP_SECURITY_CODE=${{ vars.VITE_AMAP_SECURITY_CODE }}
-              VITE_API_BASE_URL=https://api.stride-running.cn
     steps:
       - name: Did this artifact change?
         id: gate
@@ -112,6 +107,31 @@ jobs:
           NAME: ${{ matrix.name }}
         run: |
           echo "value=$(printf '%s' "$PACKAGES" | jq -r --arg n "$NAME" '.[] | select(.name==$n) | .version')" >> "$GITHUB_OUTPUT"
+
+      # APP_VERSION is the version this image is being published under, so the
+      # startup log can name it. stride-web additionally needs the Vite build
+      # args, which are baked into the bundle (there is no runtime injection).
+      - name: Build arguments
+        id: args
+        if: steps.gate.outputs.build == 'true'
+        env:
+          NAME: ${{ matrix.name }}
+          VERSION: ${{ steps.version.outputs.value }}
+          VITE_AUTH_CLIENT_ID: ${{ vars.VITE_AUTH_CLIENT_ID }}
+          VITE_AMAP_KEY: ${{ vars.VITE_AMAP_KEY }}
+          VITE_AMAP_SECURITY_CODE: ${{ vars.VITE_AMAP_SECURITY_CODE }}
+        run: |
+          {
+            echo "value<<__BUILD_ARGS__"
+            echo "APP_VERSION=$VERSION"
+            if [ "$NAME" = "stride-web" ]; then
+              echo "VITE_AUTH_CLIENT_ID=$VITE_AUTH_CLIENT_ID"
+              echo "VITE_AMAP_KEY=$VITE_AMAP_KEY"
+              echo "VITE_AMAP_SECURITY_CODE=$VITE_AMAP_SECURITY_CODE"
+              echo "VITE_API_BASE_URL=https://api.stride-running.cn"
+            fi
+            echo "__BUILD_ARGS__"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         if: steps.gate.outputs.build == 'true'
@@ -142,7 +162,7 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
           push: true
-          build-args: ${{ matrix.build-args }}
+          build-args: ${{ steps.args.outputs.value }}
           tags: ${{ vars.ALIYUN_ACR_REGISTRY }}/stride/${{ matrix.name }}:${{ steps.version.outputs.value }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,scope=${{ matrix.name }},mode=max
