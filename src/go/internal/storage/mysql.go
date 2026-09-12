@@ -174,6 +174,13 @@ func (s *Store) PipelineRunsByUser(ctx context.Context, userID string) ([]*job.P
 	return (&pipelineStore{db: s.db}).listByUser(ctx, userID)
 }
 
+// ListAllPipelineRuns returns pipeline runs across all users (admin surface),
+// newest first, filtered by the non-empty options and paginated. Used by the
+// admin pipeline-status endpoint.
+func (s *Store) ListAllPipelineRuns(ctx context.Context, opts job.PipelineListOptions) ([]*job.PipelineRun, int64, error) {
+	return (&pipelineStore{db: s.db}).listAll(ctx, opts)
+}
+
 // mysqlErrNo returns the MySQL server error number if err is (or wraps) a
 // *mysql.MySQLError, following the %w chain.
 func mysqlErrNo(err error) (uint16, bool) {
@@ -388,6 +395,69 @@ func (s *pipelineStore) listByUser(ctx context.Context, userID string) ([]*job.P
 		runs = append(runs, r)
 	}
 	return runs, nil
+}
+
+// defaultPipelineRunsPage is the page size when a listing omits limit.
+const defaultPipelineRunsPage = 50
+
+// maxPipelineRunsPage caps a global listing page so the admin endpoint can
+// never trigger an unbounded full-table scan.
+const maxPipelineRunsPage = 200
+
+// listAll returns pipeline runs across all users (admin surface), newest first,
+// filtered by the non-empty options and paginated by Limit/Offset. It also
+// returns the total row count matching the filters (before pagination) so
+// callers can page. A non-positive Limit falls back to defaultPipelineRunsPage
+// and is capped at maxPipelineRunsPage; a negative Offset is treated as 0.
+func (s *pipelineStore) listAll(ctx context.Context, opts job.PipelineListOptions) ([]*job.PipelineRun, int64, error) {
+	base := s.db.WithContext(ctx).Model(&pipelineRunModel{})
+	if opts.UserID != "" {
+		base = base.Where("user_id = ?", opts.UserID)
+	}
+	if opts.PipelineName != "" {
+		base = base.Where("name = ?", opts.PipelineName)
+	}
+	if opts.Status != "" {
+		base = base.Where("status = ?", opts.Status)
+	}
+
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultPipelineRunsPage
+	}
+	if limit > maxPipelineRunsPage {
+		limit = maxPipelineRunsPage
+	}
+	offset := opts.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	var models []pipelineRunModel
+	// Session(&gorm.Session{}) clones the filtered query with a fresh statement
+	// so the Count's select clauses cannot leak into the Find.
+	err := base.Session(&gorm.Session{}).
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&models).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	runs := make([]*job.PipelineRun, 0, len(models))
+	for i := range models {
+		r, err := models[i].toDomain()
+		if err != nil {
+			return nil, 0, err
+		}
+		runs = append(runs, r)
+	}
+	return runs, total, nil
 }
 
 func (s *pipelineStore) Update(ctx context.Context, r *job.PipelineRun) error {

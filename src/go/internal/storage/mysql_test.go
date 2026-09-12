@@ -218,6 +218,108 @@ func TestPipelineStore_ListByUser(t *testing.T) {
 	}
 }
 
+func TestPipelineStore_ListAll(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	tag := time.Now().UTC().Format("150405.000000")
+	uid := "la-user-" + tag
+	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Microsecond)
+
+	mk := func(id, name, status string, at time.Time) *job.PipelineRun {
+		return &job.PipelineRun{
+			RunID: id, UserID: uid, CreatedBy: uid, Name: name,
+			Status: job.Status(status), CreatedAt: at, UpdatedAt: at,
+		}
+	}
+	runs := st.Pipelines()
+	// Three runs for the same user with distinct names/statuses, ascending created_at.
+	for i, r := range []*job.PipelineRun{
+		mk("la-old-"+tag, "la-onb-"+tag, "done", base),
+		mk("la-fail-"+tag, "la-onb-"+tag, "failed", base.Add(time.Minute)),
+		mk("la-sync-"+tag, "la-sync-"+tag, "running", base.Add(2*time.Minute)),
+	} {
+		if err := runs.Create(ctx, r); err != nil {
+			t.Fatalf("create %d: %v", i, err)
+		}
+	}
+
+	// Unfiltered query sees every run ever (shared DB), so assert presence of
+	// our runs within the default page rather than an exact count.
+	all, total, err := st.ListAllPipelineRuns(ctx, job.PipelineListOptions{})
+	if err != nil {
+		t.Fatalf("list all: %v", err)
+	}
+	if total < 3 {
+		t.Fatalf("unfiltered total = %d, want >= 3", total)
+	}
+	seen := map[string]bool{}
+	for _, r := range all {
+		seen[r.RunID] = true
+	}
+	for _, id := range []string{"la-old-" + tag, "la-fail-" + tag, "la-sync-" + tag} {
+		if !seen[id] {
+			t.Fatalf("unfiltered page missing run %q (have %d runs)", id, len(all))
+		}
+	}
+
+	// Scoped to our unique user → deterministic count + ordering.
+	got, total, err := st.ListAllPipelineRuns(ctx, job.PipelineListOptions{UserID: uid})
+	if err != nil {
+		t.Fatalf("list user: %v", err)
+	}
+	if total != 3 || len(got) != 3 {
+		t.Fatalf("user total/len = %d/%d, want 3/3", total, len(got))
+	}
+	if got[0].RunID != "la-sync-"+tag || got[2].RunID != "la-old-"+tag {
+		t.Fatalf("order = [%s, %s, %s], want newest first", got[0].RunID, got[1].RunID, got[2].RunID)
+	}
+
+	// Filter by status.
+	failed, total, err := st.ListAllPipelineRuns(ctx, job.PipelineListOptions{UserID: uid, Status: "failed"})
+	if err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+	if total != 1 || len(failed) != 1 || failed[0].RunID != "la-fail-"+tag {
+		t.Fatalf("failed filter: total/len/first = %d/%d/%q, want 1/1/%q", total, len(failed), failed[0].RunID, "la-fail-"+tag)
+	}
+
+	// Filter by pipeline name.
+	onb, total, err := st.ListAllPipelineRuns(ctx, job.PipelineListOptions{UserID: uid, PipelineName: "la-onb-" + tag})
+	if err != nil {
+		t.Fatalf("list by name: %v", err)
+	}
+	if total != 2 || len(onb) != 2 {
+		t.Fatalf("name filter: total/len = %d/%d, want 2/2", total, len(onb))
+	}
+
+	// Combined filters.
+	combo, total, err := st.ListAllPipelineRuns(ctx, job.PipelineListOptions{UserID: uid, PipelineName: "la-onb-" + tag, Status: "failed"})
+	if err != nil {
+		t.Fatalf("combined: %v", err)
+	}
+	if total != 1 || len(combo) != 1 || combo[0].RunID != "la-fail-"+tag {
+		t.Fatalf("combined: total/len = %d/%d, want 1/1", total, len(combo))
+	}
+
+	// Pagination: page 2 of size 1 → the middle run, total stays 3.
+	page, total, err := st.ListAllPipelineRuns(ctx, job.PipelineListOptions{UserID: uid, Limit: 1, Offset: 1})
+	if err != nil {
+		t.Fatalf("paged: %v", err)
+	}
+	if total != 3 || len(page) != 1 || page[0].RunID != "la-fail-"+tag {
+		t.Fatalf("paged: total/len/first = %d/%d/%q, want 3/1/%q", total, len(page), page[0].RunID, "la-fail-"+tag)
+	}
+
+	// Offset beyond the end → empty page with the correct total.
+	beyond, total, err := st.ListAllPipelineRuns(ctx, job.PipelineListOptions{UserID: uid, Limit: 1, Offset: 100})
+	if err != nil {
+		t.Fatalf("beyond: %v", err)
+	}
+	if total != 3 || len(beyond) != 0 {
+		t.Fatalf("beyond: total/len = %d/%d, want 3/0", total, len(beyond))
+	}
+}
+
 func TestForceUTCDSN(t *testing.T) {
 	out, err := forceUTCDSN("user:pass@tcp(h:3306)/db")
 	if err != nil {

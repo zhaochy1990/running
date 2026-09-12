@@ -57,6 +57,12 @@ type RunLister interface {
 	PipelineRunsByUser(ctx context.Context, userID string) ([]*job.PipelineRun, error)
 }
 
+// RunAdminLister lists pipeline runs across all users (admin surface), newest
+// first, filtered + paginated, with the total matching count.
+type RunAdminLister interface {
+	ListAllPipelineRuns(ctx context.Context, opts job.PipelineListOptions) ([]*job.PipelineRun, int64, error)
+}
+
 // RunIdemLookup resolves a run by its idempotency key.
 type RunIdemLookup interface {
 	PipelineRunByIdempotencyKey(ctx context.Context, userID, key string) (*job.PipelineRun, error)
@@ -68,9 +74,10 @@ type Config struct {
 	Jobs      JobGetter
 	JobsIdem  JobIdemLookup
 	Pipelines PipelineStarter
-	Runs      RunGetter
-	RunsList  RunLister
-	RunsIdem  RunIdemLookup
+	Runs          RunGetter
+	RunsList      RunLister
+	RunsAdminList RunAdminLister
+	RunsIdem      RunIdemLookup
 
 	// JobUserInitiable maps job type -> may a user create it; a type absent from
 	// the map is unknown (rejected 400). PipelineUserInitiable is the same for
@@ -168,9 +175,10 @@ type Service struct {
 	jobs      JobGetter
 	jobsIdem  JobIdemLookup
 	pipelines PipelineStarter
-	runs      RunGetter
-	runsList  RunLister
-	runsIdem  RunIdemLookup
+	runs          RunGetter
+	runsList      RunLister
+	runsAdminList RunAdminLister
+	runsIdem      RunIdemLookup
 
 	jobUserInitiable      map[string]bool
 	pipelineUserInitiable map[string]bool
@@ -222,6 +230,7 @@ func NewService(cfg Config) *Service {
 		pipelines:               cfg.Pipelines,
 		runs:                    cfg.Runs,
 		runsList:                cfg.RunsList,
+		runsAdminList:           cfg.RunsAdminList,
 		runsIdem:                cfg.RunsIdem,
 		jobUserInitiable:        cfg.JobUserInitiable,
 		pipelineUserInitiable:   cfg.PipelineUserInitiable,
@@ -281,6 +290,11 @@ func (s *Service) Router() *gin.Engine {
 	s.masterPlan.registerAdminWrites(authenticated)
 	s.weeklyPlan.registerReads(authenticated)
 	s.weeklyPlan.registerAdminWrites(authenticated)
+	// Admin pipeline-status surface: global list + any-run detail. Mounted on
+	// the authenticated group (NOT the rejectAdminCaller child) so the admin
+	// JWT tier can use them; the handlers admit admin OR internal and deny users.
+	authenticated.GET("/api/admin/pipeline-runs", s.listAdminPipelineRuns)
+	authenticated.GET("/api/admin/pipeline-runs/:run_id", s.getAdminPipelineRun)
 
 	// Existing routes accept only the original user/internal tiers. Keeping this
 	// default deny prevents an admin-dashboard token from silently inheriting

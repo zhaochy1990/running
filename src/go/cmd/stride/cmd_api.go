@@ -151,6 +151,7 @@ func runAPI() error {
 		Pipelines:               orch,
 		Runs:                    store.Pipelines(),
 		RunsList:                store,
+		RunsAdminList:           store,
 		RunsIdem:                store,
 		JobUserInitiable:        catalog.JobUserInitiable(),
 		PipelineUserInitiable:   catalog.PipelineUserInitiable(),
