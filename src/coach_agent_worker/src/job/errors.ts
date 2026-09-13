@@ -51,6 +51,8 @@ export const ERROR_CODES = {
   KERNEL_NOT_COMPLETED: "kernel_not_completed",
   /** Athlete has no active race goal to attach the generated plan to. */
   NO_ACTIVE_RACE_GOAL: "no_active_race_goal",
+  /** Weekly kernel produced a week other than the current/next Shanghai week. */
+  WEEK_NOT_SUPPORTED: "week_not_supported",
   /** Go draft insert endpoint rejected the generated content. */
   DRAFT_REJECTED: "draft_rejected",
   /** Stale-running reconcile: no heartbeat for too long. */

@@ -12,8 +12,8 @@ import {
   createTestStrategyCandidate,
 } from "@stride/coach-agent/test-fixtures";
 import { asPermanent, ERROR_CODES } from "../../src/job/errors.js";
-import { createMasterPlanJobHandler, type MasterPlanHandlerDeps } from "../../src/kernel/masterHandler.js";
-import { toMasterPlanGraphShim } from "../../src/kernel/masterKernel.js";
+import { createMasterPlanJobHandler, type MasterPlanHandlerDeps } from "../../src/kernel/master/handler.js";
+import { toMasterPlanGraphShim } from "../../src/kernel/master/kernel.js";
 import { FakePlanJobStore } from "../job/fakes.js";
 
 const GOAL_ID = "11111111-2222-3333-4444-555555555555";

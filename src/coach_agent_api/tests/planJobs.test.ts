@@ -155,10 +155,50 @@ test("a not-in-the-wired-enum job_type is rejected, not enqueued", async () => {
   const response = await app.request("/api/users/me/coach/plan-jobs", {
     method: "POST",
     headers: { authorization: "Bearer x", "content-type": "application/json" },
-    body: JSON.stringify({ job_type: "generate_weekly_plan", request: REQUEST }),
+    body: JSON.stringify({ job_type: "restructure_master_plan", request: REQUEST }),
   });
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "invalid_job_type" });
+  assert.equal(enqueued.length, 0);
+});
+
+test("a weekly-plan job is re-validated against the weekly schema and enqueued", async () => {
+  const { service, enqueued } = fakePlanJobs();
+  const app = appFor(service);
+  const response = await app.request("/api/users/me/coach/plan-jobs", {
+    method: "POST",
+    headers: { authorization: "Bearer x", "content-type": "application/json" },
+    body: JSON.stringify({ job_type: "generate_weekly_plan", request: { request_id: "req-1" } }),
+  });
+  assert.equal(response.status, 201);
+  assert.equal(enqueued.length, 1);
+  assert.equal(enqueued[0]?.jobType, "generate_weekly_plan");
+  assert.deepEqual(JSON.parse(enqueued[0]!.inputJson), { request_id: "req-1" });
+});
+
+test("a weekly-plan job carrying a master-plan request is rejected by the per-type gate", async () => {
+  const { service, enqueued } = fakePlanJobs();
+  const app = appFor(service);
+  const response = await app.request("/api/users/me/coach/plan-jobs", {
+    method: "POST",
+    headers: { authorization: "Bearer x", "content-type": "application/json" },
+    body: JSON.stringify({ job_type: "generate_weekly_plan", request: REQUEST }),
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "invalid_request" });
+  assert.equal(enqueued.length, 0);
+});
+
+test("a master-plan job carrying a weekly request is rejected by the per-type gate", async () => {
+  const { service, enqueued } = fakePlanJobs();
+  const app = appFor(service);
+  const response = await app.request("/api/users/me/coach/plan-jobs", {
+    method: "POST",
+    headers: { authorization: "Bearer x", "content-type": "application/json" },
+    body: JSON.stringify({ job_type: "generate_master_plan", request: { request_id: "req-1" } }),
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "invalid_request" });
   assert.equal(enqueued.length, 0);
 });
 

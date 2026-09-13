@@ -1,7 +1,25 @@
 import { type MasterPlan, MasterPlanGraphOutcome, type MasterPlanGraphRequest } from "@stride/contract";
-import { newPermanentError } from "../job/errors.js";
-import type { Heartbeat } from "../job/ports.js";
-import { MonotonicProgress } from "./progress.js";
+import { newPermanentError } from "../../job/errors.js";
+import type { Heartbeat } from "../../job/ports.js";
+import { MonotonicProgress, type StageProgress } from "../progress.js";
+
+/** Master-plan kernel nodes → stage/progress anchors (in graph execution order). */
+export const MASTER_PLAN_NODES: Record<string, StageProgress> = {
+  initialize: { stage: "reading_history", progressPct: 10 },
+  assess_athlete: { stage: "evaluating", progressPct: 20 },
+  assess_goal: { stage: "evaluating", progressPct: 28 },
+  strategy_worker: { stage: "planning_phases", progressPct: 40 },
+  dispatch_judges: { stage: "planning_phases", progressPct: 42 },
+  judge_worker: { stage: "planning_phases", progressPct: 55 },
+  select_strategy: { stage: "planning_phases", progressPct: 60 },
+  expand_skeleton: { stage: "planning_phases", progressPct: 68 },
+  simulate_load: { stage: "rule_filter", progressPct: 72 },
+  filter_rules: { stage: "rule_filter", progressPct: 76 },
+  validate_selected: { stage: "rule_filter", progressPct: 80 },
+  review_worker: { stage: "outputting", progressPct: 88 },
+  adjudicate_reviews: { stage: "outputting", progressPct: 92 },
+  finalize: { stage: "outputting", progressPct: 99 },
+};
 
 /**
  * Shape of the compiled master-plan graph the runner depends on. A real graph
@@ -37,7 +55,7 @@ export async function runMasterKernel(
   hb: Heartbeat,
 ): Promise<{ plan: MasterPlan; revision: number }> {
   const stream = await graph.stream({ request }, { context: runtime, streamMode: ["updates"] });
-  const progress = new MonotonicProgress();
+  const progress = new MonotonicProgress(MASTER_PLAN_NODES);
   let outcomeRaw: unknown = null;
 
   for await (const rawChunk of stream) {
