@@ -12,7 +12,7 @@ import {
   createTestStrategyCandidate,
 } from "@stride/coach-agent/test-fixtures";
 import { asPermanent } from "../../src/job/errors.js";
-import { runMasterKernel, toMasterPlanGraphShim } from "../../src/kernel/masterKernel.js";
+import { runMasterKernel, toMasterPlanGraphShim } from "../../src/kernel/master/kernel.js";
 
 const runtime = { userId: "athlete-1", generationId: "plan-job-1" };
 const request = MasterPlanGraphRequest.parse(createTestRequest());

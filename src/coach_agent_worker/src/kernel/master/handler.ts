@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { MasterPlanGraphRequest } from "@stride/contract";
-import { ERROR_CODES, type Handler, newPermanentError } from "../job/errors.js";
-import type { PlanJob } from "../job/model.js";
+import { ERROR_CODES, type Handler, newPermanentError } from "../../job/errors.js";
+import type { PlanJob } from "../../job/model.js";
 import { masterPlanToDraftContent } from "./contentTransform.js";
-import { type MasterPlanGraphShim, runMasterKernel } from "./masterKernel.js";
+import { type MasterPlanGraphShim, runMasterKernel } from "./kernel.js";
 
 export interface MasterPlanHandlerDeps {
   graph: MasterPlanGraphShim;

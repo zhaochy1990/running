@@ -10,10 +10,11 @@ interface InsertDraftResponse {
 }
 
 /**
- * Minimal client for the Go internal plan-draft insert endpoint
- * (`POST /api/users/{user_id}/master-plan/drafts`, X-Internal-Token).
- * Insert-only and idempotent by draft_id; the worker never touches plan
- * tables directly (Go stays the single writer — ADR 0006/0030).
+ * Minimal client for the Go internal plan-draft insert endpoints
+ * (`POST /api/users/{user_id}/master-plan/drafts` and
+ * `POST /api/users/{user_id}/plan/weeks/{weekName}/drafts`,
+ * X-Internal-Token). Insert-only and idempotent by draft_id; the worker never
+ * touches plan tables directly (Go stays the single writer — ADR 0006/0030).
  */
 export class GoDraftClient {
   constructor(
@@ -27,8 +28,22 @@ export class GoDraftClient {
    * existing plan id. Rejected content or config errors are permanent
    * (re-validating/re-running cannot fix them); 5xx faults are retryable.
    */
-  async insertMasterPlanDraft(userId: string, draftId: string, content: unknown): Promise<string> {
-    const response = await this.fetchImpl(`${this.baseUrl}/api/users/${userId}/master-plan/drafts`, {
+  insertMasterPlanDraft(userId: string, draftId: string, content: unknown): Promise<string> {
+    return this.insertDraftTo(`/api/users/${userId}/master-plan/drafts`, draftId, content);
+  }
+
+  /**
+   * Insert a this-week schedule draft for a Shanghai week. Idempotent by
+   * `draftId`; error handling matches the master-plan insert. Note the weekly
+   * route has no `users` segment (`/api/:user/plan/weeks/:weekName/drafts`),
+   * unlike the master route (`/api/users/:user_id/master-plan/drafts`).
+   */
+  insertWeeklyPlanDraft(userId: string, weekName: string, draftId: string, content: unknown): Promise<string> {
+    return this.insertDraftTo(`/api/${userId}/plan/weeks/${weekName}/drafts`, draftId, content);
+  }
+
+  private async insertDraftTo(path: string, draftId: string, content: unknown): Promise<string> {
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -42,7 +57,7 @@ export class GoDraftClient {
       if (typeof body.plan_id !== "string" || body.plan_id.length === 0) {
         throw new Error("go draft insert returned no plan_id");
       }
-      logger.info({ draftId, status: response.status, planId: body.plan_id }, "plan draft inserted via Go internal endpoint");
+      logger.info({ draftId, status: response.status, planId: body.plan_id, path }, "plan draft inserted via Go internal endpoint");
       return body.plan_id;
     }
 

@@ -351,17 +351,31 @@ export const OPENAPI_DOCUMENT = {
         properties: {
           job_type: {
             type: "string",
-            enum: ["generate_master_plan"],
+            enum: ["generate_master_plan", "generate_weekly_plan"],
           },
           request: {
             type: "object",
-            description: "The kernel request (MasterPlanGraphRequest). Re-validated server-side.",
+            description:
+              "The kernel request, schema depends on job_type (MasterPlanGraphRequest for generate_master_plan, WeeklyPlanGeneratorRequest for generate_weekly_plan). Re-validated server-side.",
             additionalProperties: true,
           },
           idempotency_key: {
             type: "string",
             description: "Deduplicates enqueue: at most one job per (user, key).",
             maxLength: 128,
+          },
+        },
+        additionalProperties: false,
+      },
+      WeeklyPlanGeneratorRequest: {
+        type: "object",
+        required: ["request_id"],
+        properties: {
+          request_id: { type: "string", minLength: 1 },
+          requested_as_of: {
+            type: "string",
+            format: "date-time",
+            description: "ISO-8601 instant; the graph targets the current or next Asia/Shanghai week.",
           },
         },
         additionalProperties: false,

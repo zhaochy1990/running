@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { MasterPlanSchema } from "@stride/coach-agent";
 import { createTestMasterPlan } from "@stride/coach-agent/test-fixtures";
-import { masterPlanToDraftContent } from "../../src/kernel/contentTransform.js";
+import { WeeklyPlanSchema } from "@stride/contract";
+import { masterPlanToDraftContent } from "../../src/kernel/master/contentTransform.js";
+import { weeklyPlanToDraftContent } from "../../src/kernel/weekly/contentTransform.js";
+import { buildWeeklyPlan } from "./weeklyFixtures.js";
 
 const GOAL_ID = "11111111-2222-3333-4444-555555555555";
 
@@ -108,4 +111,17 @@ test("weeks are linked to phases by name via the generated phase ids", () => {
   for (const milestone of content.milestones) {
     assert.ok(phaseById.has(milestone.phase_id), `milestone references unknown phase id ${milestone.phase_id}`);
   }
+});
+
+test("weeklyPlanToDraftContent round-trips the canonical weekly-plan/v1 doc", () => {
+  const content = weeklyPlanToDraftContent(buildWeeklyPlan("2026-08-17"));
+  assert.equal(WeeklyPlanSchema.safeParse(content).success, true);
+  assert.equal(content.week_name, "2026-08-17_08-23");
+});
+
+test("weeklyPlanToDraftContent is deterministic", () => {
+  const plan = buildWeeklyPlan("2026-08-17");
+  const first = JSON.stringify(weeklyPlanToDraftContent(plan));
+  const second = JSON.stringify(weeklyPlanToDraftContent(plan));
+  assert.equal(first, second);
 });
