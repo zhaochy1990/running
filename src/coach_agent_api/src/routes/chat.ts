@@ -93,11 +93,10 @@ async function streamChat(dependencies: ChatDependencies, stream: SSEStreamingAp
     if (streamEvent.kind === "text_delta") {
       return emit("text_delta", { turn_id: turnId, delta: streamEvent.delta });
     }
-    const { phase, subagent, tool, toolStatus } = streamEvent;
+    const { phase, tool, toolStatus } = streamEvent;
     return emit("status", {
       turn_id: turnId,
       phase,
-      ...(subagent !== undefined ? { subagent } : {}),
       ...(tool !== undefined ? { tool } : {}),
       ...(toolStatus !== undefined ? { tool_status: toolStatus } : {}),
     });

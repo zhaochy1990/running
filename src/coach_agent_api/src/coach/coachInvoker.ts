@@ -1,47 +1,14 @@
 import { type CoachAgentConfig, createCoachAgent, type DataProvider } from "@stride/coach-agent";
-import type { DeepAgent } from "deepagents";
 import type { Persistence } from "../persistence/index.js";
 
 /**
- * The minimal surface of a deepagents `streamEvents(..., { version: "v3" })`
- * run that the SSE adapter needs. Each projection mirrors the langgraph v3
- * projection of the same name, narrowed to the fields the stream maps:
- *
- * - `messages` — the outer agent's AI message lifecycles; `text` yields
- *   per-token deltas, and the final text is the reply (L1).
- * - `toolCalls` — tool invocations with a `status` that resolves to the call's
- *   terminal state so the adapter can emit a matching end event (L2).
- * - `subagents` — nested agent invocations; their tools / delegates feed L2
- *   status (their own messages are an intermediate tool result, not the reply).
- * - `output` — the final state, mapped to the `done` event.
+ * One LangGraph stream chunk: `[stream_mode, payload]`. The adapter requests
+ * `stream_mode: ["messages", "values"]` on the plain graph:
+ * - `messages` payloads are `[message, metadata]` tuples (AI/tool messages).
+ * - `values` payloads are full state snapshots (the last is the final state).
  */
-export interface CoachStreamSource extends CoachStreamNode {
-  output: Promise<unknown>;
-  messages: AsyncIterable<CoachStreamMessage>;
-}
-
-/** One AI message lifecycle: `text` yields incremental text deltas. */
-export interface CoachStreamMessage {
-  text: AsyncIterable<string>;
-}
-
-/** One tool invocation; `status` resolves when the call leaves `"running"`. */
-export interface CoachStreamToolCall {
-  name: string;
-  status: Promise<ToolCallStatus>;
-}
-
-export type ToolCallStatus = "running" | "finished" | "error";
-
-/** The L2 status surface shared by the root run and its nested subagents. */
-export interface CoachStreamNode {
-  toolCalls: AsyncIterable<CoachStreamToolCall>;
-  subagents: AsyncIterable<CoachStreamSubagent>;
-}
-
-/** A nested agent invocation (e.g. the QA subagent) and its own L2 projections. */
-export interface CoachStreamSubagent extends CoachStreamNode {
-  name: string;
+export interface CoachStreamSource {
+  events: AsyncIterable<readonly [string, unknown]>;
 }
 
 export interface CoachInvoker {
@@ -49,8 +16,14 @@ export interface CoachInvoker {
   streamEvents(input: unknown, config: Record<string, unknown>): Promise<CoachStreamSource>;
 }
 
+/** Minimal surface of the compiled coach graph the invoker drives. */
+interface CoachGraph {
+  invoke(input: unknown, config?: Record<string, unknown>): Promise<unknown>;
+  stream(input: unknown, config?: Record<string, unknown>): Promise<AsyncIterable<readonly [string, unknown]>>;
+}
+
 export class CoachInvokerImpl implements CoachInvoker {
-  private agent!: DeepAgent;
+  private agent!: CoachGraph;
   private readonly dataProvider: DataProvider;
   private readonly coachConfig: CoachAgentConfig;
   private readonly persistence: Persistence;
@@ -62,12 +35,12 @@ export class CoachInvokerImpl implements CoachInvoker {
   }
 
   invoke(input: unknown, invocationConfig: Record<string, unknown>) {
-    return this.agent.invoke(input as never, invocationConfig as never);
+    return this.agent.invoke(input, invocationConfig);
   }
 
-  streamEvents(input: unknown, invocationConfig: Record<string, unknown>) {
-    const v3Config = { ...invocationConfig, version: "v3" as const };
-    return this.agent.streamEvents(input as never, v3Config as never);
+  async streamEvents(input: unknown, invocationConfig: Record<string, unknown>) {
+    const events = await this.agent.stream(input, { ...invocationConfig, streamMode: ["messages", "values"] });
+    return { events };
   }
 
   public async initialize(): Promise<void> {
@@ -75,6 +48,6 @@ export class CoachInvokerImpl implements CoachInvoker {
       checkpointer: this.persistence.checkpointer,
       store: this.persistence.store,
     });
-    this.agent = coach;
+    this.agent = coach as unknown as CoachGraph;
   }
 }

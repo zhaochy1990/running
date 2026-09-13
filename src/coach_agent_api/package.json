@@ -31,7 +31,6 @@
     "@stride/coach-agent": "workspace:*",
     "@stride/coach-agent-worker": "workspace:*",
     "convict": "^6.2.5",
-    "deepagents": "^1.12.4",
     "hono": "^4.10.3",
     "mysql2": "^3.23.2",
     "pino": "^10.3.1",

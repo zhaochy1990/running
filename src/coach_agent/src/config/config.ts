@@ -57,6 +57,9 @@ export function getAgentConfig(config: CoachAgentConfig, agentName: string): Mod
   if (agentConfig.response_format !== undefined) {
     resolved.response_format = agentConfig.response_format;
   }
+  if (agentConfig.api_kind !== undefined) {
+    resolved.api_kind = agentConfig.api_kind;
+  }
 
   return resolved;
 }

@@ -11,7 +11,7 @@ import { CoachContext } from "./coachAgent.js";
 import { getMasterPlanGeneratorSubagent, getMasterPlanSubagent } from "./master_plan/agent.js";
 import { createPlanPassthroughMiddleware, getDirectPlanTaskResult, getMasterPlanTaskResult } from "./masterPlanPassthrough.js";
 import { MASTER_PLAN_PROMPT } from "./prompts.js";
-import { getQaSubagent } from "./qa/agent.js";
+import { getQaTools } from "./qa/agent.js";
 import { getCoachSubagent, getWeeklyPlanGeneratorSubagent } from "./weekly_plan/agent.js";
 
 const TEST_API_KEY_ENV = "COACH_AGENT_TEST_API_KEY";
@@ -652,13 +652,19 @@ test("orchestrator does not replay a generator result after a later tool call", 
   );
 });
 
-test("all athlete-facing subagents expose PB and running-calibration tools", () => {
+test("all athlete-facing agents expose PB and running-calibration tools", () => {
   const store = {} as DataProvider;
-  const subagents = [getQaSubagent(store, modelConfig), getCoachSubagent(store, modelConfig), getMasterPlanSubagent(store, modelConfig)];
+  const coachSubagent = getCoachSubagent(store, modelConfig);
+  const masterSubagent = getMasterPlanSubagent(store, modelConfig);
+  const toolSets = [
+    { name: "qa", tools: getQaTools(store) },
+    { name: coachSubagent.name, tools: coachSubagent.tools },
+    { name: masterSubagent.name, tools: masterSubagent.tools },
+  ];
 
-  for (const subagent of subagents) {
-    const toolNames = subagent.tools.map((tool) => tool.name);
-    assert.ok(toolNames.includes("get_personal_bests"), `${subagent.name} lacks PB tool`);
-    assert.ok(toolNames.includes("get_running_calibration"), `${subagent.name} lacks calibration tool`);
+  for (const { name, tools } of toolSets) {
+    const toolNames = tools.map((tool) => tool.name);
+    assert.ok(toolNames.includes("get_personal_bests"), `${name} lacks PB tool`);
+    assert.ok(toolNames.includes("get_running_calibration"), `${name} lacks calibration tool`);
   }
 });

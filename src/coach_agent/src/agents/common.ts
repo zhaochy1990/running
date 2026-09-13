@@ -17,7 +17,7 @@ function resolveApiKey(config: ModelConfig): string {
 }
 
 export function buildModel(config: ModelConfig): ChatOpenAI | ChatOpenAIResponses {
-  logger.info(config, "build model config");
+  logger.info({ model: config.model, api_kind: config.api_kind, thinking: config.thinking, reasoning_effort: config.reasoning_effort }, "build model config");
 
   if (config.api_kind === "responses") {
     return buildResponsesModel(config);
@@ -50,7 +50,18 @@ export function buildResponsesModel(config: ModelConfig): ChatOpenAIResponses {
 }
 
 export function buildChatModel(config: ModelConfig): ChatOpenAI {
-  var res = new ChatOpenAI({
+  // DeepSeek 的思考开关只在 Chat Completions 生效（extra_body）；Responses API 不认。
+  // 注意：`stream_options` 只能在 `stream: true` 时携带，否则 DeepSeek 报 400；
+  // 这里刻意不放它，避免非流式调用（如意图分类器的 structured output）失败。
+  const modelKwargs: Record<string, unknown> = {};
+  if (config.thinking === "disabled" || config.thinking === "enabled") {
+    modelKwargs.thinking = { type: config.thinking };
+  }
+  if (config.thinking === "enabled" && config.reasoning_effort !== undefined) {
+    modelKwargs.reasoning_effort = config.reasoning_effort;
+  }
+
+  return new ChatOpenAI({
     model: config.model,
     apiKey: resolveApiKey(config),
     maxTokens: config.max_tokens,
@@ -60,17 +71,10 @@ export function buildChatModel(config: ModelConfig): ChatOpenAI {
       baseURL: config.endpoint,
     },
 
-    modelKwargs: {
-      thinking: {
-        type: "disabled",
-      },
-      stream_options: { include_usage: true },
-    },
+    modelKwargs,
 
     // TypeScript 特有：禁用 TS 的 Responses API 预设，使 extraBody 生效并切换回普通模式
     useResponsesApi: false,
     temperature: config.temperature ?? 0.4,
   });
-
-  return res;
 }

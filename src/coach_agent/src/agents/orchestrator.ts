@@ -21,7 +21,9 @@ Provide classification including intent.
 export function getOrchestratorNode(modelConfig: ModelConfig, routes: Partial<Record<IntentLabel, string>> = {}): GraphNode<typeof AgentsState> {
   const model = buildModel(modelConfig);
   // Create structured LLM that returns an IntentClassification object.
-  const structuredLlm = model.withStructuredOutput(IntentClassificationSchema);
+  // DeepSeek Chat Completions does not support the `json_schema` response_format,
+  // so force function-calling (tool-calling) mode for the structured decode.
+  const structuredLlm = model.withStructuredOutput(IntentClassificationSchema, { method: "functionCalling" });
   const prompt = getAgentPrompt();
 
   const node: GraphNode<typeof AgentsState> = async (state) => {
@@ -37,8 +39,9 @@ export function getOrchestratorNode(modelConfig: ModelConfig, routes: Partial<Re
     }
 
     // Route inside the node via Command goto — the graph injects the
-    // intent→node table; unrouted intents fall through to END.
-    const goto = routes[classification.intent] ?? END;
+    // intent→node table; unrouted intents fall through to the `other` node
+    // (which produces a reply) and only hit END when no `other` route exists.
+    const goto = routes[classification.intent] ?? routes.other ?? END;
     return new Command({
       update: { intent: classification, llmCalls: 1 },
       goto,

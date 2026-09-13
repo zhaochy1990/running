@@ -1,24 +1,21 @@
 import { getLogger } from "@stride/common";
+import { createAgent } from "langchain";
 import type { ModelConfig } from "../../config/config.js";
 import type { DataProvider } from "../../data/dataProvider.js";
 import { createActivitiesTools } from "../../tools/activities.js";
 import { createRaceTools } from "../../tools/races.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
 import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
-import { buildChatModel, buildResponsesModel } from "../common.js";
+import { buildModel } from "../common.js";
+import { CoachContext } from "../context.js";
 import { createLoggingMiddleware } from "../middleware.js";
+import { loadSkillMarkdown } from "../skillLoader.js";
 import { createTurnScopeMiddleware } from "../turnScope.js";
 
 const logger = getLogger("coachAgent:qa");
 
 // TODO: 关于跑步知识需要外接知识库
-export function getQaSubagent(store: DataProvider, config: ModelConfig) {
-  const activitiesTools = createActivitiesTools(store);
-  const trainingLoadTools = createTrainingLoadTools(store);
-  const raceTools = createRaceTools(store);
-  const runningCalibrationTools = createRunningCalibrationTools(store);
-
-  const QA_SUBAGENT_PROMPT = `你是 STRIDE 跑步教练的训练问答专家，你可以回答用户关于训练的问题。包括下面几类：
+const QA_SUBAGENT_PROMPT = `你是 STRIDE 跑步教练的训练问答专家，你可以回答用户关于训练的问题。包括下面几类：
 1. 今天/最近跑得怎么样？（今天的跑步数据、最近的训练状态）
 2. 训练状态、疲劳与负荷（训练负荷、疲劳状态、恢复情况）
 3. 跑步知识（跑步技巧、训练方法、运动科学知识）
@@ -35,18 +32,23 @@ export function getQaSubagent(store: DataProvider, config: ModelConfig) {
 你不对运动员的训练计划进行修改或调整，也不提供个性化训练建议。你只回答运动员关于训练的问题，并且只依据工具数据说话。
     `;
 
-  logger.info(`creating qa subagent with model ${config.name} (${config.model})`);
+/** qa 子代理使用的只读工具集（供测试复用）。 */
+export function getQaTools(store: DataProvider) {
+  return [...createActivitiesTools(store), ...createTrainingLoadTools(store), ...createRaceTools(store), ...createRunningCalibrationTools(store)];
+}
 
-  return {
-    name: "training_question",
-    description: "回答关于运动员自己训练的问题：今天/最近跑得怎么样、训练状态、疲劳与负荷、跑步知识。",
-    systemPrompt: QA_SUBAGENT_PROMPT,
-    tools: [...activitiesTools, ...trainingLoadTools, ...raceTools, ...runningCalibrationTools],
-    model: buildChatModel(config),
+/** qa 业务节点：一个内层 ReAct agent，最终 AIMessage 写回外层 messages。 */
+export function getQaAgent(store: DataProvider, config: ModelConfig) {
+  logger.info(`creating qa agent with model ${config.name} (${config.model})`);
+
+  // 无 deepagents FilesystemBackend 后，把 SKILL.md 正文直接内联进系统提示。
+  const systemPrompt = `${QA_SUBAGENT_PROMPT}\n\n${loadSkillMarkdown("analyze-activity")}`;
+
+  return createAgent({
+    model: buildModel(config),
+    tools: getQaTools(store),
+    systemPrompt,
+    contextSchema: CoachContext,
     middleware: [createTurnScopeMiddleware(), createLoggingMiddleware("agent:qa")],
-    // Skill loaded via SkillsMiddleware from the deep agent's FilesystemBackend
-    // (rooted at `dist/agents/skills/` in coachAgent.ts). The agent reads the
-    // full SKILL.md on demand via read_file. Path is relative to that root.
-    skills: ["/analyze-activity/"],
-  };
+  });
 }
