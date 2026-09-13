@@ -48,7 +48,6 @@
     "@opentelemetry/sdk-trace-node": "^2.10.0",
     "@stride/common": "workspace:*",
     "@stride/contract": "workspace:*",
-    "deepagents": "^1.12.2",
     "langchain": "^1.5.5",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"

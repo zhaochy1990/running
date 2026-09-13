@@ -31,6 +31,7 @@ export interface RoleConfig {
   /** DeepSeek 思考模式开关；缺省 = 模型默认（思考开、effort high）。 */
   thinking?: "enabled" | "disabled";
   response_format?: "json_object";
+  api_kind?: ModelApiKind;
 }
 
 export interface ObservabilityConfig {

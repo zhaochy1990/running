@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createApp } from "../src/app.js";
-import type { CoachStreamSource, CoachStreamSubagent, CoachStreamToolCall } from "../src/coach/coachInvoker.js";
+import type { CoachStreamSource } from "../src/coach/coachInvoker.js";
 
 const SSE_ACCEPT = { accept: "text/event-stream" };
 
@@ -9,29 +9,43 @@ function emptyIterable<T>(): AsyncIterable<T> {
   return (async function* () {})();
 }
 
-function message(text: string[]): { text: AsyncIterable<string> } {
-  return { text: (async function* () { for (const chunk of text) yield chunk; })() };
+interface MessageLike {
+  _getType?: () => string;
+  content?: unknown;
+  tool_calls?: Array<{ id?: string; name?: string }>;
+  tool_call_id?: string;
+  status?: string;
 }
 
-function tool(name: string, status: CoachStreamToolCall["status"] = Promise.resolve("finished")): CoachStreamToolCall {
-  return { name, status };
+function ai(content: string, toolCalls: Array<{ id?: string; name?: string }> = []): MessageLike {
+  return { _getType: () => "ai", content, tool_calls: toolCalls };
 }
 
-function subagent(name: string): CoachStreamSubagent {
-  return { name, toolCalls: emptyIterable(), subagents: emptyIterable() };
+function toolResult(toolCallId: string, status: "success" | "error" = "success"): MessageLike {
+  return { _getType: () => "tool", content: "ok", tool_call_id: toolCallId, status };
 }
 
-function subagents(list: CoachStreamSubagent[]): AsyncIterable<CoachStreamSubagent> {
-  return (async function* () {
-    for (const item of list) yield item;
-  })();
+/** A `messages` stream chunk: `["messages", [message, metadata]]`. */
+function msgChunk(message: MessageLike, meta: Record<string, unknown> = {}): [string, [MessageLike, Record<string, unknown>]] {
+  return ["messages", [message, meta]];
+}
+
+/** A `values` stream chunk: `["values", state]`. */
+function valuesChunk(state: Record<string, unknown>): [string, Record<string, unknown>] {
+  return ["values", state];
 }
 
 /**
- * Build a CoachStreamSource from parts.
+ * Build a CoachStreamSource from raw `[mode, payload]` chunks.
  */
-function source(overrides: Partial<CoachStreamSource>): CoachStreamSource {
-  return { output: Promise.resolve({ messages: [] }), messages: emptyIterable(), toolCalls: emptyIterable(), subagents: emptyIterable(), ...overrides };
+function source(events: AsyncIterable<readonly [string, unknown]> = emptyIterable()): CoachStreamSource {
+  return { events };
+}
+
+function eventsFrom(chunks: Array<[string, unknown]>): AsyncIterable<readonly [string, unknown]> {
+  return (async function* () {
+    for (const chunk of chunks) yield chunk;
+  })();
 }
 
 interface SseEvent {
@@ -64,35 +78,18 @@ function chatRequest(body: Record<string, unknown>, headers: Record<string, stri
     });
 }
 
-/** The QA scenario from the acceptance criteria: subagent → tool start → tool end → ... → analyzing → text stream → done. */
+/** The QA scenario: tool start → tool end → analyzing → text stream → done. */
 function qaStream(): CoachStreamSource {
   const outputMessage = { type: "ai", content: "本周负荷稳定，建议维持。", usage_metadata: { input_tokens: 120, output_tokens: 9, total_tokens: 129 } };
-  // The reply is generated after the tool results come back, so the text
-  // deltas start once the subagent's tools have reported — same as a real run.
-  let toolsDone: () => void = () => {};
-  const afterTools = new Promise<void>((resolve) => {
-    toolsDone = resolve;
-  });
-  return source({
-    output: Promise.resolve({ messages: [outputMessage] }),
-    // The reply is the outer agent's message; the subagent's own text is an
-    // intermediate tool result and is not streamed.
-    messages: (async function* () {
-      await afterTools;
-      yield message(["本周负荷稳定", "，建议维持。"]);
-    })(),
-    subagents: subagents([
-      {
-        name: "qa_agent",
-        toolCalls: (async function* () {
-          yield tool("get_daily_training_load");
-          yield tool("get_activities_by_date_range");
-          toolsDone();
-        })(),
-        subagents: emptyIterable(),
-      },
+  return source(
+    eventsFrom([
+      msgChunk(ai("", [{ id: "t1", name: "get_daily_training_load" }, { id: "t2", name: "get_activities_by_date_range" }])),
+      msgChunk(toolResult("t1")),
+      msgChunk(toolResult("t2")),
+      msgChunk(ai("本周负荷稳定，建议维持。")),
+      valuesChunk({ messages: [outputMessage] }),
     ]),
-  });
+  );
 }
 
 test("streaming chat returns text/event-stream with status and done events", async () => {
@@ -115,8 +112,7 @@ test("streaming chat returns text/event-stream with status and done events", asy
   const statuses = events.filter((event) => event.event === "status");
   const done = events.filter((event) => event.event === "done");
 
-  assert.ok(statuses.some((event) => event.data.phase === "in_subagent"), "an in_subagent status event is present");
-  assert.ok(statuses.some((event) => event.data.subagent === "qa_agent"), "in_subagent carries the subagent name");
+  assert.ok(statuses.some((event) => event.data.phase === "running_tool"), "a running_tool status event is present");
   assert.equal(done.length, 1);
   assert.deepEqual(done[0]?.data, {
     turn_id: "turn-1",
@@ -151,10 +147,8 @@ test("text_delta events accumulate to the done message", async () => {
 });
 
 test("text_delta events are emitted while the run is still executing, not replayed after it ends", async () => {
-  // Mirrors langgraph's real projections: `subagents` / `toolCalls` are channels
-  // that only close when the whole run closes, while `run.output` resolves at run
-  // end. Draining status before text would therefore withhold every delta until
-  // the run had finished and then replay them all at once (no progressive text).
+  // The events stream yields text messages as they happen, and the adapter
+  // drains them immediately — so deltas land before the terminal values chunk.
   const order: string[] = [];
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const app = createApp({
@@ -162,34 +156,25 @@ test("text_delta events are emitted while the run is still executing, not replay
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
-        return source({
-          output: sleep(80).then(() => {
-            order.push("output");
-            return { messages: [{ type: "ai", content: "流式回复" }] };
-          }),
-          messages: (async function* () {
+        return source(
+          (async function* () {
             for (const chunk of ["流式", "回复"]) {
               order.push("delta");
-              yield message([chunk]);
+              yield msgChunk(ai(chunk));
               await sleep(20);
             }
+            order.push("output");
+            yield valuesChunk({ messages: [{ type: "ai", content: "流式回复" }] });
           })(),
-          subagents: (async function* () {
-            await sleep(200);
-            yield subagent("qa_agent");
-          })(),
-        });
+        );
       },
     },
   });
   const response = await chatRequest({ session_id: "session-1", client_turn_id: "turn-1", message: "hi" }, SSE_ACCEPT)(app);
   const events = parseSse(await response.text());
 
-  assert.ok(order.includes("delta") && order.includes("output"), `both drains ran: ${order.join(",")}`);
-  assert.ok(
-    order.indexOf("delta") < order.indexOf("output"),
-    `deltas are emitted while the run is still executing: ${order.join(",")}`,
-  );
+  assert.ok(order.includes("delta") && order.includes("output"), `both drained: ${order.join(",")}`);
+  assert.ok(order.indexOf("delta") < order.indexOf("output"), `deltas emitted before the run ends: ${order.join(",")}`);
   const deltas = events.filter((event) => event.event === "text_delta");
   const doneIndex = events.findIndex((event) => event.event === "done");
   assert.equal(deltas.map((event) => event.data.delta).join(""), "流式回复");
@@ -197,10 +182,6 @@ test("text_delta events are emitted while the run is still executing, not replay
 });
 
 test("analyzing is emitted once the last tool call lands, before the reply text starts", async () => {
-  // A real turn: the root agent's `task` call stays in flight for the whole
-  // subagent run, and only then does the model compose the reply. The phase must
-  // flip when the tool lands — not when the first token arrives, which can be
-  // many seconds later.
   const order: string[] = [];
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const app = createApp({
@@ -208,26 +189,16 @@ test("analyzing is emitted once the last tool call lands, before the reply text 
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
-        return source({
-          output: sleep(420).then(() => ({ messages: [{ type: "ai", content: "本周负荷稳定。" }] })),
-          toolCalls: (async function* () {
-            yield tool("task", sleep(120).then(() => "finished" as const));
-          })(),
-          subagents: subagents([
-            {
-              name: "qa_agent",
-              toolCalls: (async function* () {
-                yield tool("get_daily_training_load", sleep(20).then(() => "finished" as const));
-              })(),
-              subagents: emptyIterable(),
-            },
-          ]),
-          messages: (async function* () {
+        return source(
+          (async function* () {
+            yield msgChunk(ai("", [{ id: "t1", name: "get_daily_training_load" }]));
+            yield msgChunk(toolResult("t1")); // last tool lands → analyzing fires
             await sleep(300);
             order.push("text-start");
-            yield message(["本周负荷稳定。"]);
+            yield msgChunk(ai("本周负荷稳定。"));
+            yield valuesChunk({ messages: [{ type: "ai", content: "本周负荷稳定。" }] });
           })(),
-        });
+        );
       },
     },
   });
@@ -265,8 +236,8 @@ test("every tool call emits a start and a matching end running_tool event carryi
   const toolEvents = events.filter((event) => event.event === "status" && event.data.phase === "running_tool");
 
   const names = toolEvents.map((event) => event.data.tool as string);
-  assert.deepEqual(names, ["get_daily_training_load", "get_daily_training_load", "get_activities_by_date_range", "get_activities_by_date_range"]);
-  assert.deepEqual(toolEvents.map((event) => event.data.tool_status), ["running", "finished", "running", "finished"]);
+  assert.deepEqual(names, ["get_daily_training_load", "get_activities_by_date_range", "get_daily_training_load", "get_activities_by_date_range"]);
+  assert.deepEqual(toolEvents.map((event) => event.data.tool_status), ["running", "running", "finished", "finished"]);
 });
 
 test("a failing tool still emits a running_tool end event with tool_status error", async () => {
@@ -275,19 +246,14 @@ test("a failing tool still emits a running_tool end event with tool_status error
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
-        return source({
-          output: Promise.resolve({ messages: [{ type: "ai", content: "回答" }] }),
-          messages: (async function* () { yield message(["回答"]); })(),
-          subagents: subagents([
-            {
-              name: "qa_agent",
-              toolCalls: (async function* () {
-                yield tool("get_daily_training_load", Promise.reject(new Error("boom")));
-              })(),
-              subagents: emptyIterable(),
-            },
+        return source(
+          eventsFrom([
+            msgChunk(ai("", [{ id: "t1", name: "get_daily_training_load" }])),
+            msgChunk(toolResult("t1", "error")),
+            msgChunk(ai("回答")),
+            valuesChunk({ messages: [{ type: "ai", content: "回答" }] }),
           ]),
-        });
+        );
       },
     },
   });
@@ -305,15 +271,17 @@ test("done carries usage aggregated across multiple messages", async () => {
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
-        return source({
-          output: Promise.resolve({
-            messages: [
-              { type: "ai", content: "x", usage_metadata: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } },
-              { type: "ai", content: "y", usage_metadata: { input_tokens: 2, output_tokens: 3 } },
-            ],
-          }),
-          messages: (async function* () { yield message(["y"]); })(),
-        });
+        return source(
+          eventsFrom([
+            msgChunk(ai("y")),
+            valuesChunk({
+              messages: [
+                { type: "ai", content: "x", usage_metadata: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } },
+                { type: "ai", content: "y", usage_metadata: { input_tokens: 2, output_tokens: 3 } },
+              ],
+            }),
+          ]),
+        );
       },
     },
   });
@@ -325,7 +293,7 @@ test("done carries usage aggregated across multiple messages", async () => {
   assert.deepEqual(done?.data.usage, { input_tokens: 12, output_tokens: 8, total_tokens: 20 });
 });
 
-test("QA multi-tool flow emits events in a reasonable order: subagent → tool → analyzing → text → done", async () => {
+test("QA multi-tool flow emits events in a reasonable order: tool → analyzing → text → done", async () => {
   const app = createApp({
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
     coachInvoker: {
@@ -336,29 +304,22 @@ test("QA multi-tool flow emits events in a reasonable order: subagent → tool �
   const response = await chatRequest({ session_id: "session-1", client_turn_id: "turn-1", message: "hi" }, SSE_ACCEPT)(app);
   const events = parseSse(await response.text());
 
-  // Condense to the label that matters for ordering.
   const labels = events.map((event) => {
     if (event.event === "done") return "done";
     if (event.event === "text_delta") return "text";
     return (event.data.phase as string) ?? event.event;
   });
 
-  const inSubagent = labels.indexOf("in_subagent");
   const firstTool = labels.indexOf("running_tool");
   const analyzing = labels.indexOf("analyzing");
   const firstText = labels.indexOf("text");
   const done = labels.indexOf("done");
 
-  assert.ok(inSubagent >= 0, "in_subagent emitted");
-  assert.ok(firstTool > inSubagent, "running_tool after in_subagent");
+  assert.ok(firstTool >= 0, "running_tool emitted");
   assert.ok(analyzing > firstTool, "analyzing after tools");
   assert.ok(firstText > analyzing, "text after analyzing");
   assert.ok(done > firstText, "done after the text stream");
   assert.equal(done, labels.length - 1, "done is the last event");
-  // The first status a client sees is the data-query phase; the removed
-  // `analyzing_intent` / `generating_response` phases never appear.
-  const firstStatusPhase = events.find((event) => event.event === "status")?.data.phase;
-  assert.ok(firstStatusPhase === "in_subagent" || firstStatusPhase === "running_tool", `first status is a query phase, got ${String(firstStatusPhase)}`);
   assert.ok(!labels.includes("analyzing_intent") && !labels.includes("generating_response"), "removed phases are not emitted");
 });
 
@@ -387,32 +348,6 @@ test("streaming chat replays an identical client turn without re-invoking", asyn
   assert.equal(replay.filter((event) => event.event === "status").length, 0);
 });
 
-test("streaming chat ignores a failing status iterable and still emits done", async () => {
-  const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
-    coachInvoker: {
-      async invoke() { throw new Error("must not invoke"); },
-      async streamEvents() {
-        return source({
-          output: Promise.resolve({ messages: [{ type: "ai", content: "仍在回答" }] }),
-          subagents: (async function* () {
-            throw new Error("status stream blew up");
-            yield subagent("qa_agent");
-          })(),
-        });
-      },
-    },
-  });
-  const response = await chatRequest({ session_id: "session-1", client_turn_id: "turn-1", message: "hi" }, SSE_ACCEPT)(app);
-  assert.equal(response.status, 200);
-  const events = parseSse(await response.text());
-  const done = events.filter((event) => event.event === "done");
-  // The run's final state is authoritative; a subagent-status failure is
-  // non-fatal, so the turn still completes with a single done event.
-  assert.equal(done.length, 1);
-  assert.equal(done[0]?.data.message, "仍在回答");
-});
-
 test("streaming chat emits an error event when the coach fails", async () => {
   const app = createApp({
     jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
@@ -428,7 +363,6 @@ test("streaming chat emits an error event when the coach fails", async () => {
   assert.ok(error, "an error event is emitted");
   assert.equal(error?.data.code, "coach_turn_failed");
   assert.equal(error?.data.turn_id, "turn-1");
-  // The connection is closed by the stream ending after the error event.
   assert.equal(events.at(-1)?.event, "error");
 });
 
@@ -440,7 +374,7 @@ test("streaming chat emits an error event on a client_turn_id conflict", async (
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
         streamed += 1;
-        return source({ output: Promise.resolve({ messages: [{ type: "ai", content: "first" }] }) });
+        return source(eventsFrom([valuesChunk({ messages: [{ type: "ai", content: "first" }] })]));
       },
     },
   });
@@ -461,7 +395,7 @@ test("requests without the SSE accept header keep the sync JSON path", async () 
       async invoke() { return { messages: [{ type: "ai", content: "同步回答" }] }; },
       async streamEvents() {
         streamed += 1;
-        return source({ output: Promise.resolve({ messages: [{ type: "ai", content: "should not stream" }] }) });
+        return source(eventsFrom([valuesChunk({ messages: [{ type: "ai", content: "should not stream" }] })]));
       },
     },
   });
@@ -484,11 +418,12 @@ test("streaming chat keeps executing and writes the receipt after the client dis
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
         streamed += 1;
-        return source({
-          output: new Promise((resolve) =>
-            setTimeout(() => resolve({ messages: [{ type: "ai", content: "完整回复" }] }), 50),
-          ),
-        });
+        return source(
+          (async function* () {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            yield valuesChunk({ messages: [{ type: "ai", content: "完整回复" }] });
+          })(),
+        );
       },
     },
   });
@@ -514,7 +449,7 @@ test("streaming chat runs the turn under the per-thread lock and releases it aft
     coachInvoker: {
       async invoke() { return { messages: [{ type: "ai", content: "同步回答" }] }; },
       async streamEvents() {
-        return source({ output: Promise.resolve({ messages: [{ type: "ai", content: "done" }] }) });
+        return source(eventsFrom([valuesChunk({ messages: [{ type: "ai", content: "done" }] })]));
       },
     },
   });
