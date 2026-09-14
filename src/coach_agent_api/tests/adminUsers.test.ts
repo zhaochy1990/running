@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Pool } from "mysql2/promise";
 import { createApp } from "../src/app.js";
-import { AuthError } from "../src/auth.js";
+import { AuthError, type JwtIdentity } from "../src/auth.js";
 import type { CoachDataDeleter } from "../src/persistence/deletion.js";
 import { MySqlCoachDataDeleter } from "../src/persistence/deletion.js";
 
@@ -15,7 +15,7 @@ const neverInvoke = {
   },
 };
 
-function appFor(verify: (header: string | undefined) => Promise<{ userId: string; isAdmin?: boolean }>, deleter: CoachDataDeleter) {
+function appFor(verify: (header: string | undefined) => Promise<JwtIdentity>, deleter: CoachDataDeleter) {
   return createApp({
     jwtVerifier: { verify },
     coachInvoker: neverInvoke,
