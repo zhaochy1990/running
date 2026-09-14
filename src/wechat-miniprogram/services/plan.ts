@@ -143,6 +143,10 @@ function buildNutritionView(nutrition: PlannedNutrition | null): TodayNutritionV
     kcal: meal.kcal != null ? `${Math.round(meal.kcal)} kcal` : '—',
   }));
 
+  // 无任何目标值且无餐次 = 当天没有饮食安排，整块隐藏（空态也不展示）。
+  const hasTargets = [...targetsTop, ...targetsBottom].some((t) => t.value !== '—');
+  if (meals.length === 0 && !hasTargets) return null;
+
   return {
     targetsTop,
     targetsBottom,

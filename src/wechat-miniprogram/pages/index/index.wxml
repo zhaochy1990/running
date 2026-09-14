@@ -122,8 +122,8 @@
       <view class="empty-card__sub">好好休息，或查看本周计划</view>
     </view>
 
-    <!-- 今日营养 -->
-    <view class="section-title">今日饮食营养</view>
+    <!-- 今日营养：无饮食安排时整块隐藏 -->
+    <view wx:if="{{nutrition}}" class="section-title">今日饮食营养</view>
     <view wx:if="{{nutrition}}" class="card nutrition-card">
       <!-- 宏量营养目标 -->
       <view class="stat-row">
@@ -157,10 +157,6 @@
         <view class="note-box__title">营养建议</view>
         <view class="note-box__text">{{nutrition.note}}</view>
       </view>
-    </view>
-    <view wx:else class="empty-card">
-      <view class="empty-card__title">今日暂无营养建议</view>
-      <view class="empty-card__sub">生成周计划后同步展示</view>
     </view>
     <view class="content__tail"></view>
   </view>
