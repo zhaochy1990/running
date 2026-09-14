@@ -2,8 +2,8 @@
  * Plan Job domain model — the durable record of one async training-plan task.
  *
  * Mirrors the Go async-job worker's domain (`src/go/internal/job/job.go`): the
- * broker carries only a pointer message; the full state lives in the coach
- * persistence DB (see `storage/planJobs.ts`).
+ * broker carries only a pointer message; the full state lives in Go's `jobs`
+ * table, read and written through the internal API (ADR 0033).
  */
 
 export const PLAN_JOB_STATUSES = ["queued", "running", "done", "failed"] as const;
@@ -55,6 +55,32 @@ export interface PlanJob {
 
 export function isTerminal(status: PlanJobStatus): boolean {
   return status === "done" || status === "failed";
+}
+
+/**
+ * A compare-and-set state change — the shared contract with Go's
+ * `job.JobTransition` (ADR 0033). Every field is optional and only the ones
+ * present are written, so a caller sends just the delta it owns.
+ *
+ * `attemptsDelta` rather than an absolute `attempts` because claim/reclaim are
+ * counter CAS operations; `attemptsLt` is the redelivery budget guard checked
+ * against the *current* row; `clearError` is explicit rather than implied by
+ * `to`, so the contract never hides behaviour behind a status value.
+ */
+export interface JobTransition {
+  /** Expected current status; a mismatch fails with JobStateChangedError. */
+  from?: PlanJobStatus;
+  to: PlanJobStatus;
+  attemptsDelta?: number;
+  attemptsLt?: number;
+  stage?: string;
+  progressPct?: number;
+  errorCode?: string;
+  errorMessage?: string;
+  clearError?: boolean;
+  resultJson?: string;
+  heartbeatAt?: Date;
+  completedAt?: Date;
 }
 
 /** Pointer message published to the broker (mirrors Go `job.Message`). */

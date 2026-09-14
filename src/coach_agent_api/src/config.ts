@@ -103,6 +103,15 @@ const schema: convict.Schema<RawApiConfig> = {
       poison: { format: String, default: "plan.jobs.poison", env: "STRIDE_COACH_PLAN_JOBS_QUEUES_POISON" },
     },
   },
+  go_api: {
+    base_url: {
+      doc: "Go API origin; plan-job rows are created and polled through its internal endpoints",
+      format: requiredString,
+      default: "http://127.0.0.1:8080",
+      env: "STRIDE_COACH_GO_API_BASE_URL",
+    },
+    internal_token: { format: requiredString, default: "", env: "STRIDE_COACH_GO_API_INTERNAL_TOKEN", sensitive: true },
+  },
 };
 
 export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
@@ -117,6 +126,7 @@ export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
     strideDatabase: raw.stride_database,
     persistenceDatabase: raw.persistence_database,
     planJobs: { amqpUrl: raw.plan_jobs.amqp_url, queues: raw.plan_jobs.queues },
+    goApi: { baseUrl: raw.go_api.base_url, internalToken: raw.go_api.internal_token },
     auth: {
       publicKeyPem,
       authServiceUrl: raw.auth.auth_service_url,

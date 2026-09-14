@@ -10,6 +10,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -38,6 +39,27 @@ type JobGetter interface {
 // JobIdemLookup resolves a job by its idempotency key (dedup + conflict replay).
 type JobIdemLookup interface {
 	JobByIdempotencyKey(ctx context.Context, userID, key string) (*job.Job, error)
+}
+
+// JobCreator persists a job row without publishing (the internal plan-job
+// surface, ADR 0033 — the caller owns the broker pointer).
+type JobCreator interface {
+	Create(ctx context.Context, j *job.Job) error
+}
+
+// JobTransitioner applies a compare-and-set state change to a job row (ADR 0033).
+type JobTransitioner interface {
+	TransitionJob(ctx context.Context, jobID string, tr job.JobTransition) (*job.Job, error)
+}
+
+// JobStaleRunner fails running jobs whose heartbeat is older than a window.
+type JobStaleRunner interface {
+	FailStaleRunningJobs(ctx context.Context, olderThan, now time.Time, errorCode string) (int64, error)
+}
+
+// JobAdminLister lists standalone jobs across all users (admin async surface).
+type JobAdminLister interface {
+	ListAllJobs(ctx context.Context, opts job.PipelineListOptions) ([]*job.Job, int64, error)
 }
 
 // PipelineStarter starts a pipeline run (store-first) with an idempotency key.
@@ -70,14 +92,18 @@ type RunIdemLookup interface {
 
 // Config wires a Service.
 type Config struct {
-	Enqueuer      Enqueuer
-	Jobs          JobGetter
-	JobsIdem      JobIdemLookup
-	Pipelines     PipelineStarter
-	Runs          RunGetter
-	RunsList      RunLister
-	RunsAdminList RunAdminLister
-	RunsIdem      RunIdemLookup
+	Enqueuer       Enqueuer
+	Jobs           JobGetter
+	JobsIdem       JobIdemLookup
+	JobsCreate     JobCreator
+	JobsTransition JobTransitioner
+	JobsStale      JobStaleRunner
+	JobsAdminList  JobAdminLister
+	Pipelines      PipelineStarter
+	Runs           RunGetter
+	RunsList       RunLister
+	RunsAdminList  RunAdminLister
+	RunsIdem       RunIdemLookup
 
 	// JobUserInitiable maps job type -> may a user create it; a type absent from
 	// the map is unknown (rejected 400). PipelineUserInitiable is the same for
@@ -171,14 +197,18 @@ type Config struct {
 
 // Service holds the wired dependencies and builds the gin router.
 type Service struct {
-	enq           Enqueuer
-	jobs          JobGetter
-	jobsIdem      JobIdemLookup
-	pipelines     PipelineStarter
-	runs          RunGetter
-	runsList      RunLister
-	runsAdminList RunAdminLister
-	runsIdem      RunIdemLookup
+	enq            Enqueuer
+	jobs           JobGetter
+	jobsIdem       JobIdemLookup
+	jobsCreate     JobCreator
+	jobsTransition JobTransitioner
+	jobsStale      JobStaleRunner
+	jobsAdminList  JobAdminLister
+	pipelines      PipelineStarter
+	runs           RunGetter
+	runsList       RunLister
+	runsAdminList  RunAdminLister
+	runsIdem       RunIdemLookup
 
 	jobUserInitiable      map[string]bool
 	pipelineUserInitiable map[string]bool
@@ -227,6 +257,10 @@ func NewService(cfg Config) *Service {
 		enq:                     cfg.Enqueuer,
 		jobs:                    cfg.Jobs,
 		jobsIdem:                cfg.JobsIdem,
+		jobsCreate:              cfg.JobsCreate,
+		jobsTransition:          cfg.JobsTransition,
+		jobsStale:               cfg.JobsStale,
+		jobsAdminList:           cfg.JobsAdminList,
 		pipelines:               cfg.Pipelines,
 		runs:                    cfg.Runs,
 		runsList:                cfg.RunsList,
@@ -299,6 +333,8 @@ func (s *Service) Router() *gin.Engine {
 	// JWT tier can use them; the handlers admit admin OR internal and deny users.
 	authenticated.GET("/api/admin/pipeline-runs", s.listAdminPipelineRuns)
 	authenticated.GET("/api/admin/pipeline-runs/:run_id", s.getAdminPipelineRun)
+	// Unified admin async view: pipeline runs + standalone plan jobs together.
+	authenticated.GET("/api/admin/async-runs", s.listAdminAsyncRuns)
 
 	// Existing routes accept only the original user/internal tiers. Keeping this
 	// default deny prevents an admin-dashboard token from silently inheriting
@@ -313,6 +349,12 @@ func (s *Service) Router() *gin.Engine {
 	authed.POST("/jobs", s.createJob)
 	authed.GET("/jobs/:job_id", s.getJob)
 	authed.GET("/api/jobs/:job_id", s.getJob)
+	// Internal plan-job surface (ADR 0033): the TS worker + Coach API keep the
+	// jobs table as the single async state store through Go, never directly.
+	authed.POST("/api/internal/jobs", s.createInternalJob)
+	authed.GET("/api/internal/jobs/:job_id", s.getInternalJob)
+	authed.POST("/api/internal/jobs/:job_id/transition", s.transitionJob)
+	authed.POST("/api/internal/jobs/stale-running", s.failStaleRunningJobs)
 	authed.POST("/pipelines", s.startPipeline)
 	authed.GET("/pipelines/:run_id", s.getPipelineRun)
 	authed.GET("/api/pipelines/:run_id", s.getPipelineRun)

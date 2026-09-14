@@ -34,3 +34,9 @@ plan_jobs:
     work: plan.jobs
     retry: plan.jobs.retry
     poison: plan.jobs.poison
+
+# Go API internal endpoints: plan-job rows are created and polled there, because
+# Go owns the `jobs` table (ADR 0033).
+go_api:
+  base_url: "http://127.0.0.1:8080"
+  # internal_token comes from STRIDE_COACH_GO_API_INTERNAL_TOKEN (secret).

@@ -37,11 +37,14 @@ type jobModel struct {
 	// IdempotencyKey is NULL for keyless jobs (pipeline steps, retries). MySQL &
 	// SQLite treat NULLs as distinct, so many keyless rows coexist while a set
 	// key is unique for a user (uq_jobs_user_idem).
-	IdempotencyKey *string    `gorm:"column:idempotency_key;type:varchar(191);uniqueIndex:uq_jobs_user_idem,priority:2"`
-	PipelineRunID  string     `gorm:"column:pipeline_run_id;type:char(36);index"`
-	CreatedAt      time.Time  `gorm:"column:created_at;type:datetime(6);autoCreateTime:false"`
-	UpdatedAt      time.Time  `gorm:"column:updated_at;type:datetime(6);autoUpdateTime:false"`
-	CompletedAt    *time.Time `gorm:"column:completed_at;type:datetime(6)"`
+	IdempotencyKey *string `gorm:"column:idempotency_key;type:varchar(191);uniqueIndex:uq_jobs_user_idem,priority:2"`
+	PipelineRunID  string  `gorm:"column:pipeline_run_id;type:char(36);index"`
+	// HeartbeatAt is the last progress heartbeat a handler stamped (ADR 0033).
+	// NULL for pipeline step jobs and jobs that have never run.
+	HeartbeatAt *time.Time `gorm:"column:heartbeat_at;type:datetime(6)"`
+	CreatedAt   time.Time  `gorm:"column:created_at;type:datetime(6);autoCreateTime:false"`
+	UpdatedAt   time.Time  `gorm:"column:updated_at;type:datetime(6);autoUpdateTime:false"`
+	CompletedAt *time.Time `gorm:"column:completed_at;type:datetime(6)"`
 }
 
 func (jobModel) TableName() string { return "jobs" }
@@ -78,6 +81,7 @@ func toJobModel(j *job.Job) *jobModel {
 		ErrorMessage:   j.ErrorMessage,
 		IdempotencyKey: nullIfEmpty(j.IdempotencyKey),
 		PipelineRunID:  j.PipelineRunID,
+		HeartbeatAt:    j.HeartbeatAt,
 		CreatedAt:      j.CreatedAt,
 		UpdatedAt:      j.UpdatedAt,
 		CompletedAt:    j.CompletedAt,
@@ -100,6 +104,7 @@ func (m *jobModel) toDomain() *job.Job {
 		ErrorMessage:   m.ErrorMessage,
 		IdempotencyKey: derefString(m.IdempotencyKey),
 		PipelineRunID:  m.PipelineRunID,
+		HeartbeatAt:    m.HeartbeatAt,
 		CreatedAt:      m.CreatedAt,
 		UpdatedAt:      m.UpdatedAt,
 		CompletedAt:    m.CompletedAt,

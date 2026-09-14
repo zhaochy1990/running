@@ -16,7 +16,7 @@
     "build": "npm run clean && npm run tsc",
     "start": "node dist/src/main.js",
     "dev": "pnpm build && pnpm start",
-    "test": "npm run build && node --test dist/tests/*.test.js dist/tests/job/*.test.js dist/tests/storage/*.test.js dist/tests/queue/*.test.js dist/tests/kernel/*.test.js dist/tests/goClient/*.test.js dist/tests/data/*.test.js",
+    "test": "npm run build && node --test dist/tests/*.test.js dist/tests/job/*.test.js dist/tests/queue/*.test.js dist/tests/kernel/*.test.js dist/tests/goClient/*.test.js dist/tests/data/*.test.js",
     "format": "biome format --write src tests",
     "check": "biome check src tests",
     "check:fix": "biome check --write src tests"

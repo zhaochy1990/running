@@ -26,6 +26,9 @@ const BASE_YAML = [
   "  user: coach-writer",
   "  password: coach-password",
   "  database: coach_agent",
+  "go_api:",
+  "  base_url: http://go-api-base:8080",
+  "  internal_token: base-internal-token",
   "",
 ].join("\n");
 
@@ -56,6 +59,8 @@ test("loads base YAML when the selected environment has no overlay", () => {
       password: "stride-password",
       database: "stride",
     });
+    // The Go internal API is where plan-job rows live now (ADR 0033).
+    assert.deepEqual(config.goApi, { baseUrl: "http://go-api-base:8080", internalToken: "base-internal-token" });
   });
 });
 

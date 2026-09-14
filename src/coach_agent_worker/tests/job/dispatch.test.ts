@@ -71,7 +71,7 @@ test("duplicate pointer for a terminal job is dropped", async () => {
   };
   await dispatcher(store, publisher, new Map([["generate_master_plan", handler]])).dispatch(msg("job-1"));
   assert.equal(calls, 0);
-  assert.deepEqual(store.claims, []);
+  assert.deepEqual(store.transitions, []);
 });
 
 test("orphan pointer is dropped without a handler call", async () => {
@@ -165,7 +165,13 @@ test("redelivered pointer for a running job resumes it (worker crash recovery)",
   };
   await dispatcher(store, publisher, new Map([["generate_master_plan", handler]]), () => clock).dispatch(msg("job-1"));
   assert.equal(calls, 1);
-  assert.deepEqual(store.reclaims, ["job-1"]);
+  // The reclaim is a running→running counter CAS carrying the budget guard, so
+  // two concurrent redeliveries cannot both slip past the local attempts check.
+  const reclaim = store.transitions[0]!;
+  assert.equal(reclaim.change.from, "running");
+  assert.equal(reclaim.change.to, "running");
+  assert.equal(reclaim.change.attemptsDelta, 1);
+  assert.equal(reclaim.change.attemptsLt, POLICY.maxAttempts);
   const done = store.rows.get("job-1")!;
   assert.equal(done.status, "done");
   assert.equal(done.attempts, 2);
@@ -182,7 +188,7 @@ test("redelivered pointer beyond the attempts budget is dropped (left for the re
   };
   await dispatcher(store, publisher, new Map([["generate_master_plan", handler]]), () => new Date()).dispatch(msg("job-1"));
   assert.equal(calls, 0);
-  assert.deepEqual(store.reclaims, []);
+  assert.deepEqual(store.transitions, []);
 });
 
 test("store fault during claim propagates as an infra fault (nack/requeue)", async () => {

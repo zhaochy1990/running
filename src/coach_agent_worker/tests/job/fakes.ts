@@ -1,24 +1,25 @@
-import type { PlanJob, PlanJobMessage } from "../../src/job/model.js";
+import type { JobTransition, PlanJob, PlanJobMessage } from "../../src/job/model.js";
 import { isTerminal } from "../../src/job/model.js";
-import { type ClaimResult, IdempotencyConflictError, type PlanJobStore, type QueuePublisher } from "../../src/job/ports.js";
+import { JobStateChangedError, type PlanJobStore, type QueuePublisher } from "../../src/job/ports.js";
 
-/** In-memory PlanJobStore test double (mirrors Go's fake store seam). */
+/** In-memory PlanJobStore test double (mirrors Go's compare-and-set semantics). */
 export class FakePlanJobStore implements PlanJobStore {
   rows = new Map<string, PlanJob>();
-  claims: string[] = [];
-  reclaims: string[] = [];
-  /** When set, claim/reclaim throw (infra fault). */
+  /** Every transition applied, in order — assertions read guards from here. */
+  transitions: Array<{ jobId: string; change: JobTransition }> = [];
+  /** When set, transitions throw (infra fault). */
   faultClaim = false;
 
-  async create(job: PlanJob): Promise<void> {
+  async create(job: PlanJob): Promise<{ jobId: string; created: boolean }> {
     if (job.idempotencyKey !== null) {
       for (const existing of this.rows.values()) {
         if (existing.userId === job.userId && existing.idempotencyKey === job.idempotencyKey) {
-          throw new IdempotencyConflictError(existing.jobId);
+          return { jobId: existing.jobId, created: false };
         }
       }
     }
     this.rows.set(job.jobId, structuredClone(job));
+    return { jobId: job.jobId, created: true };
   }
 
   async get(jobId: string): Promise<PlanJob | null> {
@@ -26,35 +27,31 @@ export class FakePlanJobStore implements PlanJobStore {
     return row ? structuredClone(row) : null;
   }
 
-  async update(job: PlanJob): Promise<void> {
-    this.rows.set(job.jobId, structuredClone(job));
-  }
-
-  async claim(jobId: string, now: Date): Promise<ClaimResult> {
+  async transition(jobId: string, change: JobTransition): Promise<PlanJob> {
     if (this.faultClaim) throw new Error("store unavailable");
-    this.claims.push(jobId);
+    this.transitions.push({ jobId, change: structuredClone(change) });
     const row = this.rows.get(jobId);
-    if (!row || row.status !== "queued") return { claimed: false };
-    row.status = "running";
-    row.attempts += 1;
-    row.heartbeatAt = now;
-    row.updatedAt = now;
-    this.rows.set(jobId, structuredClone(row));
-    return { claimed: true, job: structuredClone(row) };
-  }
+    if (!row) throw new JobStateChangedError(jobId);
+    if (change.from !== undefined && row.status !== change.from) throw new JobStateChangedError(jobId);
+    if (change.attemptsLt !== undefined && row.attempts >= change.attemptsLt) throw new JobStateChangedError(jobId);
 
-  async reclaimRunning(jobId: string, now: Date, maxAttempts: number): Promise<ClaimResult> {
-    if (this.faultClaim) throw new Error("store unavailable");
-    this.reclaims.push(jobId);
-    const row = this.rows.get(jobId);
-    if (!row || row.status !== "running" || row.attempts >= maxAttempts) {
-      return { claimed: false };
+    row.status = change.to;
+    if (change.attemptsDelta !== undefined) row.attempts += change.attemptsDelta;
+    if (change.clearError === true) {
+      row.errorCode = null;
+      row.errorMessage = null;
     }
-    row.attempts += 1;
-    row.heartbeatAt = now;
-    row.updatedAt = now;
+    if (change.stage !== undefined) row.stage = change.stage;
+    if (change.progressPct !== undefined) row.progressPct = change.progressPct;
+    if (change.errorCode !== undefined && change.clearError !== true) row.errorCode = change.errorCode;
+    if (change.errorMessage !== undefined && change.clearError !== true) row.errorMessage = change.errorMessage;
+    if (change.resultJson !== undefined) row.resultJson = change.resultJson;
+    if (change.heartbeatAt !== undefined) row.heartbeatAt = change.heartbeatAt;
+    row.updatedAt = change.heartbeatAt ?? new Date("2026-09-01T00:00:01.000Z");
+    if (isTerminal(change.to)) row.completedAt = change.completedAt ?? row.updatedAt;
+
     this.rows.set(jobId, structuredClone(row));
-    return { claimed: true, job: structuredClone(row) };
+    return structuredClone(row);
   }
 
   async failStaleRunning(olderThan: Date, now: Date, errorCode: string): Promise<number> {

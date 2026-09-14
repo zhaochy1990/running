@@ -49,20 +49,23 @@ type syncRequest struct {
 
 // jobStateResponse is the GET /jobs/{job_id} body.
 type jobStateResponse struct {
-	JobID        string     `json:"job_id"`
-	UserID       string     `json:"user_id,omitempty"`
-	CreatedBy    string     `json:"created_by,omitempty"`
-	JobType      string     `json:"job_type"`
-	Status       string     `json:"status"`
-	ProgressPct  int        `json:"progress_pct"`
-	Stage        string     `json:"stage,omitempty"`
-	Attempts     int        `json:"attempts"`
-	ResultJSON   string     `json:"result_json,omitempty"`
-	ErrorCode    string     `json:"error_code,omitempty"`
-	ErrorMessage string     `json:"error_message,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	JobID          string     `json:"job_id"`
+	UserID         string     `json:"user_id,omitempty"`
+	CreatedBy      string     `json:"created_by,omitempty"`
+	JobType        string     `json:"job_type"`
+	Status         string     `json:"status"`
+	ProgressPct    int        `json:"progress_pct"`
+	Stage          string     `json:"stage,omitempty"`
+	Attempts       int        `json:"attempts"`
+	InputJSON      string     `json:"input_json,omitempty"`
+	ResultJSON     string     `json:"result_json,omitempty"`
+	ErrorCode      string     `json:"error_code,omitempty"`
+	ErrorMessage   string     `json:"error_message,omitempty"`
+	IdempotencyKey string     `json:"idempotency_key,omitempty"`
+	HeartbeatAt    *time.Time `json:"heartbeat_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 }
 
 // pipelineStepResponse is one step in a run's aggregate state.
@@ -150,20 +153,23 @@ type pipelineCatalogResponse struct {
 
 func toJobStateResponse(j *job.Job) jobStateResponse {
 	return jobStateResponse{
-		JobID:        j.ID,
-		UserID:       j.UserID,
-		CreatedBy:    j.CreatedBy,
-		JobType:      j.Type,
-		Status:       string(j.Status),
-		ProgressPct:  j.ProgressPct,
-		Stage:        j.Stage,
-		Attempts:     j.Attempts,
-		ResultJSON:   j.ResultJSON,
-		ErrorCode:    j.ErrorCode,
-		ErrorMessage: j.ErrorMessage,
-		CreatedAt:    j.CreatedAt,
-		UpdatedAt:    j.UpdatedAt,
-		CompletedAt:  j.CompletedAt,
+		JobID:          j.ID,
+		UserID:         j.UserID,
+		CreatedBy:      j.CreatedBy,
+		JobType:        j.Type,
+		Status:         string(j.Status),
+		ProgressPct:    j.ProgressPct,
+		Stage:          j.Stage,
+		Attempts:       j.Attempts,
+		InputJSON:      j.InputJSON,
+		ResultJSON:     j.ResultJSON,
+		ErrorCode:      j.ErrorCode,
+		ErrorMessage:   j.ErrorMessage,
+		IdempotencyKey: j.IdempotencyKey,
+		HeartbeatAt:    j.HeartbeatAt,
+		CreatedAt:      j.CreatedAt,
+		UpdatedAt:      j.UpdatedAt,
+		CompletedAt:    j.CompletedAt,
 	}
 }
 
