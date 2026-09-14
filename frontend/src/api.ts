@@ -1811,7 +1811,6 @@ export interface ActivityStrideTrainingLoad {
 export interface ActivityDetailResponse {
   activity: Activity;
   stride_training_load?: ActivityStrideTrainingLoad | null;
-  laps: Lap[];
   segments: Segment[];
   zones: Zone[];
   timeseries: TimeseriesPoint[];

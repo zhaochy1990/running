@@ -37,7 +37,7 @@ ActivityDetailV2 _makeDetail({
       commentaryGeneratedBy: commentaryGeneratedBy,
       sportNote: sportNote,
     ),
-    laps: const [
+    segments: const [
       LapV2(
         lapIndex: 0,
         distanceKm: 1.0,

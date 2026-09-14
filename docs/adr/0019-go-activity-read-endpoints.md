@@ -30,3 +30,18 @@ The Go `cmd/api` has ported the write/onboarding/watch surface (ADR 0013, 0018) 
 - **Cutover is gated on the zone semantic gap.** Flipping `upstream:'go'` for the detail route before the calibrated-zone projection lands would silently change the zone numbers the UI shows. The list route has no such gap and can cut over independently.
 - **`internal/apifmt` is now the home for API presentation format.** Future ported read endpoints (dashboard, laps, splits) must reuse it rather than re-implementing metre→km / pace / duration formatting, per the no-duplicate-helpers rule.
 - **Tests are layered:** pure `apifmt` unit tests; `internal/api` handler-contract tests against a fake `ActivityStore` (auth tiers, param parsing/clamping, null/empty invariants, `include` toggle, downsample); and MySQL-gated `internal/storage` integration tests (filter/order/paginate, monthly summaries incl. the TZ boundary, date window, laps-by-type, zone order, training-load presence) — all green against MySQL 8.4.
+
+## Amendment — activity detail drops `laps`, `segments` is the single lap table
+
+The detail body no longer carries a `laps[]` array: `segments[]` is the one lap/segment table every client reads (web `SegmentView`, mini-program 圈速表, mobile v2 splits). This **diverges from the Python contract** above (`laps` = `autoKm`, `segments` = `type2`) and from the `exact Python JSON` goal of this ADR.
+
+Why: commit `d8576bf3` had already repointed `laps` at the `type2` family (the derived `autoKm` tier was blank on ~72% of activities, so only `type2` had usable distance/pace/HR/cadence). With both arrays reading `type2`, the payload shipped the same rows twice and `laps` only differed when `type2` fell short. One array removes the duplication.
+
+Family selection moved into `pickSegments(activity, load)` (`internal/api/activities.go`):
+
+- **strength** (`sport_type ∈ {402, 800}` or `sport = 'strength'`) → `type2` always (its exercise groups carry no distance, so a distance check would wrongly reject them);
+- otherwise `type2` when it holds ≥2 laps with distance;
+- otherwise `autoKm` (Garmin writes no `type2`; a COROS activity with auto-lap off has a single lap) when that holds ≥2 laps with distance;
+- else empty.
+
+`autoMile` / `type12` stay unread. The `activityDetailResponse` DTO drops `Laps`; `lapDTO` survives as the shape `segmentDTO` embeds. Clients updated: `frontend/` (`api.ts` type, `ActivityDetailPage`, `SegmentView` flattened), `src/wechat-miniprogram/` (`types/activity.ts`, 圈速表 source), `mobile/` (v2 `ActivityDetailV2.segments`; the dead legacy `ActivityDetailResponse.laps` field removed). Swagger regenerated per ADR 0014.

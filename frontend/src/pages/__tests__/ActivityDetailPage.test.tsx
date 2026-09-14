@@ -72,7 +72,6 @@ describe("ActivityDetailPage", () => {
   it("labels provider load as watch load and renders STRIDE load when present", async () => {
     vi.mocked(getActivity).mockResolvedValue({
       activity,
-      laps: [],
       segments: [],
       zones: [],
       timeseries: [],
@@ -126,7 +125,6 @@ describe("ActivityDetailPage", () => {
         avg_pace_s_km: 300,
         pace_fmt: "5:00/km",
       },
-      laps: [],
       segments: [],
       zones: [],
       timeseries: [],
@@ -176,7 +174,6 @@ describe("ActivityDetailPage", () => {
         avg_pace_s_km: 300,
         pace_fmt: "5:00/km",
       },
-      laps: [],
       segments: [],
       zones: [],
       timeseries: [],

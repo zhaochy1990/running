@@ -15,7 +15,6 @@ import {
   trainTypeCN,
   type Activity,
   type ActivityStrideTrainingLoad,
-  type Lap,
   type Segment,
   type Zone,
   type TimeseriesPoint,
@@ -43,7 +42,6 @@ export default function ActivityDetailPage() {
   const isTeamView = Boolean(teamId && userId && labelId);
   const activityId = isTeamView ? labelId : id;
   const [activity, setActivity] = useState<Activity | null>(null);
-  const [laps, setLaps] = useState<Lap[]>([]);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([]);
@@ -68,7 +66,6 @@ export default function ActivityDetailPage() {
     if (!isTeamView && !user) return;
     fetchDetail().then((data) => {
       setActivity(data.activity);
-      setLaps(data.laps);
       setSegments(data.segments || []);
       setZones(data.zones);
       setTimeseries(data.timeseries);
@@ -84,7 +81,6 @@ export default function ActivityDetailPage() {
     fetchDetail()
       .then((data) => {
         setActivity(data.activity);
-        setLaps(data.laps);
         setSegments(data.segments || []);
         setZones(data.zones);
         setTimeseries(data.timeseries);
@@ -407,11 +403,11 @@ export default function ActivityDetailPage() {
         </div>
       )}
 
-      {/* Segments & Laps */}
-      {(segments.length > 0 || laps.length > 0) && (
+      {/* Segments */}
+      {segments.length > 0 && (
         <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-5 opacity-0" style={{ animationFillMode: "forwards" }}>
           <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">分段数据</h3>
-          {isStrength ? <StrengthView segments={segments} /> : <SegmentView segments={segments} laps={laps} />}
+          {isStrength ? <StrengthView segments={segments} /> : <SegmentView segments={segments} />}
         </div>
       )}
     </div>

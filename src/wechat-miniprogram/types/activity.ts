@@ -51,7 +51,7 @@ export interface Pause {
   type: number | null;
 }
 
-/** 自动公里分段（lap_type 'autoKm'）或力量段（'type2'）。 */
+/** 分段行 —— 与后端 `segments` 数组同形（`type2` 手表圈/间歇组，或回落 `autoKm`）。 */
 export interface Lap {
   lap_index: number;
   lap_type: string;
@@ -131,7 +131,6 @@ export interface ActivityStrideTrainingLoad {
 export interface ActivityDetailResponse {
   activity: Activity;
   stride_training_load?: ActivityStrideTrainingLoad | null;
-  laps: Lap[];
   segments: Segment[];
   zones: Zone[];
   /** 仅在请求 include=timeseries 时返回；否则缺失/空数组。 */

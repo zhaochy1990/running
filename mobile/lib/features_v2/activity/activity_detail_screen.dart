@@ -101,7 +101,7 @@ class _DetailBody extends StatelessWidget {
           _ChartCard(
             eyebrow: '配速 PACE',
             stats: [
-              _HeaderStat(label: '最快', value: _fastestPace(detail.laps, act)),
+              _HeaderStat(label: '最快', value: _fastestPace(detail.segments, act)),
               _HeaderStat(label: '平均', value: _avgPace(act)),
             ],
             chart: TimeseriesChart(
@@ -144,10 +144,10 @@ class _DetailBody extends StatelessWidget {
           const SizedBox(height: StrideTokens.spaceLg),
 
           // 6. Splits table
-          if (detail.laps.isNotEmpty) ...[
+          if (detail.segments.isNotEmpty) ...[
             const _SectionHeader(title: '分段配速'),
             const SizedBox(height: StrideTokens.spaceSm),
-            _Card(child: LapTable(laps: detail.laps)),
+            _Card(child: LapTable(laps: detail.segments)),
             const SizedBox(height: StrideTokens.spaceLg),
           ],
 

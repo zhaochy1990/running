@@ -283,7 +283,6 @@ class Segment {
 class ActivityDetailResponse {
   const ActivityDetailResponse({
     required this.activity,
-    required this.laps,
     required this.segments,
     required this.zones,
     required this.timeseries,
@@ -293,7 +292,6 @@ class ActivityDetailResponse {
       _$ActivityDetailResponseFromJson(json);
 
   final Activity activity;
-  final List<Lap> laps;
   final List<Segment> segments;
   final List<Zone> zones;
   final List<TimeseriesPoint> timeseries;

@@ -169,38 +169,46 @@ func (a *activityRoutes) detail(c *gin.Context) {
 // lapFamilyLoader fetches one lap family (lap_type) for an activity.
 type lapFamilyLoader func(lapType string) ([]storage.Lap, error)
 
-// splitLapsFor picks the lap family that carries an activity's distance splits,
-// plus the strength-segment family.
+// pickSegments returns the activity's segment rows — the single table the
+// detail API exposes (the old `laps` array was merged into it).
 //
-// `type2` is COROS's own lap table — the laps the watch recorded: 1 km / 500 m
-// auto splits, a workout's interval reps (400/800 m), or the exercise groups of
-// a strength session. It is the only family COROS fills distance, pace, HR and
-// cadence in consistently, and on run activities its lap distances sum to the
-// activity distance (ratio 0.995–1.0 across prod).
+// `type2` is COROS's own lap table: the watch's laps (1 km / 500 m auto splits),
+// a workout's interval reps (400/800 m), or the exercise groups of a strength
+// session. It is the only family COROS fills distance, pace, HR and cadence in
+// consistently, and on run activities its lap distances sum to the activity
+// distance (ratio 0.995–1.0 across prod).
 //
-// COROS also returns derived tiers ('autoKm' 1 km, 'autoMile' 5 km, 'type12'
-// 10 km) for the same activity. They are deliberately ignored: they are the same
-// laps re-grouped, their distance/pace come back as 0 on a share of activities,
-// and which tier is filled is not consistent. Garmin writes no `type2` at all —
-// its auto laps land in 'autoKm' — so that family is used as a fallback when
-// `type2` has fewer than two laps carrying a distance.
-func splitLapsFor(load lapFamilyLoader) (laps, segments []storage.Lap, err error) {
-	segments, err = load("type2")
+// A strength session always uses `type2` (its exercise groups carry no
+// distance, so hasDistanceSplits would wrongly reject them). Otherwise `type2`
+// is used when it is a real split table (≥2 laps with distance); when it is not
+// — Garmin writes no `type2`, and a COROS activity with auto-lap off has a
+// single lap — the derived `autoKm` tier is used instead. COROS's other derived
+// tiers ('autoMile' 5 km, 'type12' 10 km) are never read: they are the same laps
+// re-grouped, their distance/pace come back as 0 on a share of activities, and
+// which tier is filled is not consistent.
+func pickSegments(a *storage.Activity, load lapFamilyLoader) ([]storage.Lap, error) {
+	segs, err := load("type2")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	laps = segments
-	if hasDistanceSplits(laps) {
-		return laps, segments, nil
+	if isStrengthActivity(a) || hasDistanceSplits(segs) {
+		return segs, nil
 	}
-	laps, err = load("autoKm")
+	km, err := load("autoKm")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	if !hasDistanceSplits(laps) {
-		laps = nil
+	if !hasDistanceSplits(km) {
+		return nil, nil
 	}
-	return laps, segments, nil
+	return km, nil
+}
+
+// isStrengthActivity reports whether an activity is a strength session, whose
+// `type2` family holds exercise groups (no distance) rather than distance laps.
+// Mirrors the sport branch of storage.strengthActivityPredicate on a loaded row.
+func isStrengthActivity(a *storage.Activity) bool {
+	return a.SportType == 402 || a.SportType == 800 || (a.Sport != nil && *a.Sport == "strength")
 }
 
 // hasDistanceSplits reports whether a lap family is usable as a split table: at
@@ -232,7 +240,7 @@ func assembleActivityDetail(ctx context.Context, store ActivityStore, userID, la
 		return nil, false, nil
 	}
 
-	laps, segs, err := splitLapsFor(
+	segs, err := pickSegments(activity,
 		func(lapType string) ([]storage.Lap, error) {
 			return store.ActivityLapsByType(ctx, userID, labelID, lapType)
 		},
@@ -265,7 +273,6 @@ func assembleActivityDetail(ctx context.Context, store ActivityStore, userID, la
 	resp := &activityDetailResponse{
 		Activity:               toActivityDetail(activity),
 		StrideTrainingLoad:     toStrideTrainingLoad(load),
-		Laps:                   toLapDTOs(laps),
 		Segments:               toSegmentDTOs(segs),
 		Zones:                  zones,
 		LinkedScheduledWorkout: nil,
@@ -465,8 +472,8 @@ type activityDetailDTO struct {
 	Pauses          json.RawMessage `json:"pauses" swaggertype:"object"`
 }
 
-// lapDTO is one distance split (lap_type 'autoKm'). Derived
-// distance_km/duration_fmt/pace_fmt are always present.
+// lapDTO is the row shape shared by every segment (segmentDTO embeds it).
+// Derived distance_km/duration_fmt/pace_fmt are always present.
 type lapDTO struct {
 	LapIndex     int      `json:"lap_index"`
 	LapType      string   `json:"lap_type"`
@@ -557,13 +564,13 @@ type linkedScheduledWorkoutDTO struct {
 }
 
 // activityDetailResponse is the GET /api/{user}/activities/{labelId} body.
-// timeseries is omitted unless ?include=timeseries was passed (M1 mobile
-// contract); stride_training_load and linked_scheduled_workout are always
-// present (null when absent).
+// `segments` is the activity's single lap/segment table (the old `laps` array
+// was merged into it). timeseries is omitted unless ?include=timeseries was
+// passed (M1 mobile contract); stride_training_load and linked_scheduled_workout
+// are always present (null when absent).
 type activityDetailResponse struct {
 	Activity               activityDetailDTO          `json:"activity"`
 	StrideTrainingLoad     *strideTrainingLoadDTO     `json:"stride_training_load"`
-	Laps                   []lapDTO                   `json:"laps"`
 	Segments               []segmentDTO               `json:"segments"`
 	Zones                  []zoneDTO                  `json:"zones"`
 	Timeseries             *[]timeseriesDTO           `json:"timeseries,omitempty"`
@@ -681,14 +688,6 @@ func toLapDTO(l *storage.Lap) lapDTO {
 		AscentM:      l.AscentM,
 		DescentM:     l.DescentM,
 	}
-}
-
-func toLapDTOs(laps []storage.Lap) []lapDTO {
-	out := make([]lapDTO, len(laps))
-	for i := range laps {
-		out[i] = toLapDTO(&laps[i])
-	}
-	return out
 }
 
 func toSegmentDTOs(segs []storage.Lap) []segmentDTO {

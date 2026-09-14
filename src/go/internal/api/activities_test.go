@@ -381,9 +381,9 @@ func baseDetailStore() *fakeActivityStore {
 	}
 }
 
-// COROS: the watch's own lap table (type2) is the split source; the derived
+// COROS: the watch's own lap table (type2) is the segment source; the derived
 // autoKm tier is not read at all.
-func TestActivityDetail_LapsComeFromType2(t *testing.T) {
+func TestActivityDetail_SegmentsComeFromType2(t *testing.T) {
 	h := newActivityHarness(t, baseDetailStore())
 	w := h.do(http.MethodGet, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA))
 	if w.Code != http.StatusOK {
@@ -391,8 +391,8 @@ func TestActivityDetail_LapsComeFromType2(t *testing.T) {
 	}
 	var resp activityDetailResponse
 	mustJSON(t, w, &resp)
-	if len(resp.Laps) != 2 || resp.Laps[0].LapType != "type2" {
-		t.Fatalf("laps = %+v, want the two type2 laps", resp.Laps)
+	if len(resp.Segments) != 2 || resp.Segments[0].LapType != "type2" {
+		t.Fatalf("segments = %+v, want the two type2 laps", resp.Segments)
 	}
 	if got := strings.Join(h.store.gotLapTypes, ","); got != "type2" {
 		t.Fatalf("queried lap types = %q, want only type2", got)
@@ -400,7 +400,7 @@ func TestActivityDetail_LapsComeFromType2(t *testing.T) {
 }
 
 // Garmin writes no type2: its auto laps live in autoKm, which must be used.
-func TestActivityDetail_LapsFallBackToAutoKm(t *testing.T) {
+func TestActivityDetail_SegmentsFallBackToAutoKm(t *testing.T) {
 	store := baseDetailStore()
 	store.laps["type2"] = nil
 	h := newActivityHarness(t, store)
@@ -410,8 +410,8 @@ func TestActivityDetail_LapsFallBackToAutoKm(t *testing.T) {
 	}
 	var resp activityDetailResponse
 	mustJSON(t, w, &resp)
-	if len(resp.Laps) != 2 || resp.Laps[0].LapType != "autoKm" {
-		t.Fatalf("laps = %+v, want the autoKm laps", resp.Laps)
+	if len(resp.Segments) != 2 || resp.Segments[0].LapType != "autoKm" {
+		t.Fatalf("segments = %+v, want the autoKm laps", resp.Segments)
 	}
 	if got := strings.Join(h.store.gotLapTypes, ","); got != "type2,autoKm" {
 		t.Fatalf("queried lap types = %q, want type2 then autoKm", got)
@@ -419,9 +419,9 @@ func TestActivityDetail_LapsFallBackToAutoKm(t *testing.T) {
 }
 
 // A single-lap type2 family is not a split table (auto-lap off), and COROS's
-// zero-distance derived tiers must never be served: laps end up empty, not a
-// table of 0.00 km rows.
-func TestActivityDetail_LapsEmptyWhenNoUsableFamily(t *testing.T) {
+// zero-distance derived tiers must never be served: segments end up empty, not
+// a table of 0.00 km rows.
+func TestActivityDetail_SegmentsEmptyWhenNoUsableFamily(t *testing.T) {
 	store := baseDetailStore()
 	store.laps["type2"] = []storage.Lap{{LapIndex: 0, LapType: "type2", DistanceM: fptr(12274), DurationS: fptr(3711)}}
 	store.laps["autoKm"] = []storage.Lap{{LapIndex: 0, LapType: "autoKm", DistanceM: fptr(0), DurationS: fptr(180)}}
@@ -434,8 +434,33 @@ func TestActivityDetail_LapsEmptyWhenNoUsableFamily(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got := string(raw["laps"]); got != "[]" {
-		t.Fatalf("laps = %s, want []", got)
+	if got := string(raw["segments"]); got != "[]" {
+		t.Fatalf("segments = %s, want []", got)
+	}
+}
+
+// A strength session's type2 family is exercise groups with no distance: it
+// must NOT be rejected by the distance-split check (or it would fall through to
+// autoKm and lose the groups).
+func TestActivityDetail_StrengthSegmentsKeptWithoutDistance(t *testing.T) {
+	store := baseDetailStore()
+	store.activity = &storage.Activity{LabelID: "act-1", SportType: 402, Date: time.Date(2026, 1, 15, 2, 0, 0, 0, time.UTC)}
+	store.laps["type2"] = []storage.Lap{
+		{LapIndex: 0, LapType: "type2", ExerciseNameKey: strptr("T1004"), DurationS: fptr(60)},
+		{LapIndex: 1, LapType: "type2", ExerciseType: iptr(4), DurationS: fptr(30)},
+	}
+	h := newActivityHarness(t, store)
+	w := h.do(http.MethodGet, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", w.Code)
+	}
+	var resp activityDetailResponse
+	mustJSON(t, w, &resp)
+	if len(resp.Segments) != 2 {
+		t.Fatalf("segments = %+v, want the two strength groups", resp.Segments)
+	}
+	if got := strings.Join(h.store.gotLapTypes, ","); got != "type2" {
+		t.Fatalf("queried lap types = %q, want only type2", got)
 	}
 }
 
@@ -484,8 +509,8 @@ func TestActivityDetail_NoInclude_OmitsTimeseries(t *testing.T) {
 	if _, present := raw["timeseries"]; present {
 		t.Fatalf("timeseries key must be omitted without include")
 	}
-	// laps/segments/zones are [] (never null); training-load + linked workout are null.
-	for _, k := range []string{"laps", "segments", "zones"} {
+	// segments/zones are [] (never null); training-load + linked workout are null.
+	for _, k := range []string{"segments", "zones"} {
 		if strings.HasPrefix(string(raw[k]), "[") == false {
 			t.Fatalf("%s = %s, want a JSON array", k, raw[k])
 		}

@@ -283,7 +283,9 @@
 .lap-row {
   display: flex;
   align-items: center;
-  padding: 12rpx 0;
+  padding: 12rpx;
+  margin: 0 -12rpx;
+  border-radius: 10rpx;
 }
 
 .lap-head {
@@ -311,7 +313,49 @@
 
 .lap-head__cell--idx,
 .lap-row__cell--idx {
-  flex: 0 0 60rpx;
+  flex: 0 0 96rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 最快 / 最慢圈：整行底色 + 圈数徽标 */
+.lap-row--fastest {
+  background: rgba(255, 59, 48, 0.18);
+}
+
+.lap-row--slowest {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.lap-row__tag {
+  margin-right: 8rpx;
+  padding: 0 8rpx;
+  border-radius: 6rpx;
+  font-size: 16rpx;
+  line-height: 28rpx;
+  font-weight: 600;
+  color: #07080a;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.lap-row__tag--fastest {
+  color: #ffffff;
+  background: #ff3b30;
+}
+
+/* 配速相对上一圈：绿 ↗ 变快，红 ↘ 变慢 */
+.lap-row__trend {
+  margin-left: 6rpx;
+  font-size: 20rpx;
+}
+
+.lap-row__trend--up {
+  color: #34c759;
+}
+
+.lap-row__trend--down {
+  color: #ff453a;
 }
 
 .segment-row {

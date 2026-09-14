@@ -2,6 +2,7 @@ import { getActivityDetail } from '../../services/activities';
 import { fmtDurationShort, fmtKm, fmtHms } from '../../utils/format';
 import { shanghaiDateFromIso, shanghaiTimeFromIso } from '../../utils/date';
 import { wgs84ToGcj02 } from '../../utils/coord';
+import { lapPaceMarks } from '../../utils/lapRows';
 import { userStore } from '../../store/index';
 import type {
   Activity,
@@ -37,6 +38,15 @@ interface LapRow {
   duration: string;
   distanceKm: string;
   pace: string;
+  /** 配速后的箭头（与上一圈比较）：'' | '↗' | '↘' */
+  paceArrow: string;
+  /** 箭头着色：'' | 'up' | 'down' */
+  paceTrend: string;
+  /** 整行高亮：'' | 'lap-row--fastest' | 'lap-row--slowest' */
+  rowClass: string;
+  /** 圈数徽标 */
+  tag: string;
+  tagClass: string;
   hr: string;
   cadence: string;
 }
@@ -359,15 +369,21 @@ function buildZones(zones: Zone[]): { hrZones: ZoneBar[]; paceZones: ZoneBar[]; 
   return { hrZones, paceZones, hasZones: hrZones.length > 0 || paceZones.length > 0 };
 }
 
-function toLapRow(lap: Lap, index: number): LapRow {
-  return {
+function buildLapRows(rawLaps: Lap[]): LapRow[] {
+  const marks = lapPaceMarks(rawLaps);
+  return rawLaps.map((lap, index) => ({
     index: `${index + 1}`,
     duration: lap.duration_fmt || '—',
     distanceKm: lap.distance_km != null && lap.distance_km > 0 ? `${lap.distance_km.toFixed(2)}` : '—',
     pace: lap.pace_fmt || '—',
+    paceArrow: marks[index].arrow,
+    paceTrend: marks[index].trend,
+    rowClass: marks[index].rowClass,
+    tag: marks[index].tag,
+    tagClass: marks[index].tagClass,
     hr: intStr(lap.avg_hr),
     cadence: intStr(lap.avg_cadence),
-  };
+  }));
 }
 
 function isRestSegment(seg: Segment): boolean {
@@ -635,8 +651,8 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
     segments = buildStrengthSegments(detail.segments || []);
     hasSegments = segments.length > 0;
   } else {
-    // v1 只展示自动公里圈速表；type2 分段合并到圈速的可预览阶段再补。
-    laps = (detail.laps || []).map((lap, i) => toLapRow(lap, i));
+    // v1 只展示圈速表；圈速即后端 `segments`（type2 手表圈/间歇组，回落 autoKm）。
+    laps = buildLapRows(detail.segments || []);
     hasSegments = laps.length > 0;
   }
 

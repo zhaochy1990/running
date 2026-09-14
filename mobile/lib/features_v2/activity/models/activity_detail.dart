@@ -211,7 +211,7 @@ class ActivityDetailV2 {
       activity: ActivityV2.fromJson(
         (json['activity'] as Map<String, dynamic>?) ?? {},
       ),
-      laps: ((json['laps'] as List?) ?? [])
+      segments: ((json['segments'] as List?) ?? [])
           .cast<Map<String, dynamic>>()
           .map(LapV2.fromJson)
           .toList(growable: false),
@@ -226,13 +226,13 @@ class ActivityDetailV2 {
   }
   const ActivityDetailV2({
     required this.activity,
-    required this.laps,
+    required this.segments,
     required this.zones,
     this.trainingDose,
   });
 
   final ActivityV2 activity;
-  final List<LapV2> laps;
+  final List<LapV2> segments;
   final List<ZoneV2> zones;
   final num? trainingDose;
 }

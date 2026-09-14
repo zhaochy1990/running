@@ -102,6 +102,8 @@ definitions:
         type: integer
       avg_pace_s_km:
         type: number
+      avg_step_len_cm:
+        type: number
       calories_kcal:
         type: integer
       date:
@@ -151,10 +153,6 @@ definitions:
     properties:
       activity:
         $ref: '#/definitions/api.activityDetailDTO'
-      laps:
-        items:
-          $ref: '#/definitions/api.lapDTO'
-        type: array
       linked_scheduled_workout:
         $ref: '#/definitions/api.linkedScheduledWorkoutDTO'
       segments:
@@ -1003,39 +1001,6 @@ definitions:
     required:
     - to
     type: object
-  api.lapDTO:
-    properties:
-      adjusted_pace:
-        type: number
-      ascent_m:
-        type: number
-      avg_cadence:
-        type: integer
-      avg_hr:
-        type: integer
-      avg_pace:
-        type: number
-      avg_power:
-        type: integer
-      descent_m:
-        type: number
-      distance_km:
-        type: number
-      distance_m:
-        type: number
-      duration_fmt:
-        type: string
-      duration_s:
-        type: number
-      lap_index:
-        type: integer
-      lap_type:
-        type: string
-      max_hr:
-        type: integer
-      pace_fmt:
-        type: string
-    type: object
   api.linkedScheduledWorkoutDTO:
     properties:
       abandoned_by_promote_at:
@@ -1804,6 +1769,8 @@ definitions:
       avg_hr:
         type: integer
       avg_pace_s_km:
+        type: number
+      avg_step_len_cm:
         type: number
       calories_kcal:
         type: integer
@@ -3558,6 +3525,50 @@ paths:
       summary: Get a pipeline run (admin)
       tags:
       - pipelines
+  /api/admin/users/{user_id}:
+    delete:
+      description: 'Deletes the user''s auth identity, coach data, STRIDE data, and
+        on-disk data directory in order. Only the admin JWT tier may call it. The
+        endpoint is idempotent: replaying it finishes a partially completed cleanup.
+        A user who still owns a team is rejected with 409.'
+      parameters:
+      - description: Target user UUID
+        in: path
+        name: user_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a user and all their data as an administrator
+      tags:
+      - admin
   /api/internal/jobs:
     post:
       consumes:

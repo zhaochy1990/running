@@ -94,11 +94,14 @@
             <view class="lap-head__cell">平均心率</view>
             <view class="lap-head__cell">平均步频</view>
           </view>
-          <view wx:for="{{laps}}" wx:key="index" class="lap-row">
-            <view class="lap-row__cell lap-row__cell--idx">{{item.index}}</view>
+          <view wx:for="{{laps}}" wx:key="index" class="lap-row {{item.rowClass}}">
+            <view class="lap-row__cell lap-row__cell--idx">
+              <text wx:if="{{item.tag}}" class="lap-row__tag {{item.tagClass}}">{{item.tag}}</text>
+              <text>{{item.index}}</text>
+            </view>
             <view class="lap-row__cell">{{item.duration}}</view>
             <view class="lap-row__cell">{{item.distanceKm}}</view>
-            <view class="lap-row__cell">{{item.pace}}</view>
+            <view class="lap-row__cell">{{item.pace}}<text wx:if="{{item.paceArrow}}" class="lap-row__trend lap-row__trend--{{item.paceTrend}}">{{item.paceArrow}}</text></view>
             <view class="lap-row__cell">{{item.hr}}</view>
             <view class="lap-row__cell">{{item.cadence}}</view>
           </view>
