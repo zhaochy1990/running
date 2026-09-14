@@ -240,6 +240,17 @@ describe("LoginModal", () => {
     expect(await screen.findByText(message)).toBeInTheDocument();
   });
 
+  it("guides an unregistered phone to register instead of logging in", async () => {
+    mocks.sendSmsCode.mockRejectedValueOnce({ status: 404, error: "phone_not_registered" });
+    renderModal();
+    switchToPhoneTab();
+    fireEvent.change(screen.getByLabelText("手机号"), { target: { value: "13800138000" } });
+    fireEvent.click(screen.getByRole("button", { name: "获取验证码" }));
+
+    expect(await screen.findByText("该手机号尚未注册,请先创建账号")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /立即注册/ })).toHaveAttribute("href", "/register");
+  });
+
   it("clears the previous error when switching tabs", async () => {
     mocks.login.mockRejectedValue({ status: 401 });
     renderModal();

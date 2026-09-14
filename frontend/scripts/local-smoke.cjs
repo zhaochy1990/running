@@ -63,7 +63,13 @@ function watchAuthPage(target, issues, responses) {
     if (url.includes("/api/auth/")) {
       responses.push(`${response.status()} ${sanitizeUrl(url)}`);
       if (response.status() >= 400) {
-        issues.push(`HTTP ${response.status()}: ${sanitizeUrl(url)}`);
+        // The web login form's unregistered-phone guard (login_only) returns
+        // 404 on sms/send by design; the smoke asserts the UI handles it, so it
+        // is not a browser issue.
+        const expectedGuard = response.status() === 404 && url.includes("/api/auth/sms/send");
+        if (!expectedGuard) {
+          issues.push(`HTTP ${response.status()}: ${sanitizeUrl(url)}`);
+        }
       }
     }
   });
@@ -72,16 +78,40 @@ function watchAuthPage(target, issues, responses) {
 // Phone + SMS verification-code login. Requires a backend running in SMS test
 // mode (fixed code 123456, no Tencent call) — see STRIDE_SMS_TEST_MODE and
 // stride-devops/local/docker-compose.yml. A fresh page means a fresh
-// sessionStorage, so this exercises login-or-register independently of the
-// email session above.
+// sessionStorage, so this exercises phone login independently of the email
+// session above.
+//
+// The web login form refuses unbound phones at send time (login_only), so the
+// smoke first binds a phone through the API's login-or-register flow, then logs
+// in with it, and separately asserts the unbound-phone guard guides to register.
+const AUTH_CLIENT_ID = process.env.STRIDE_AUTH_CLIENT_ID || "app_62978bf2803346878a2e4805";
+
+async function registerPhoneViaApi(request, appUrl, phone) {
+  const headers = { "Content-Type": "application/json", "X-Client-Id": AUTH_CLIENT_ID };
+  const send = await request.post(`${appUrl}/api/auth/sms/send`, { headers, data: { phone } });
+  if (!send.ok()) throw new Error(`phone registration sms/send failed: ${send.status()}`);
+  const verify = await request.post(`${appUrl}/api/auth/sms/verify`, { headers, data: { phone, code: "123456" } });
+  if (!verify.ok()) throw new Error(`phone registration sms/verify failed: ${verify.status()}`);
+}
+
 async function phoneLoginSmoke(browser, appUrl, issues, responses) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const registeredPhone = `138${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}`;
+  const unregisteredPhone = `139${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}`;
+  await registerPhoneViaApi(page.request, appUrl, registeredPhone);
   watchAuthPage(page, issues, responses);
-  const phone = `138${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}`;
   await page.goto(`${appUrl}/login`, { waitUntil: "domcontentloaded" });
   const dialog = page.getByRole("dialog", { name: "登录 STRIDE" });
   await dialog.getByRole("button", { name: "手机号" }).click();
-  await dialog.getByLabel("手机号").fill(phone);
+
+  // An unbound phone is refused at send time and guided to registration.
+  await dialog.getByLabel("手机号").fill(unregisteredPhone);
+  await dialog.getByRole("button", { name: "获取验证码" }).click();
+  await dialog.getByText("该手机号尚未注册,请先创建账号").waitFor({ timeout: 20_000 });
+  await dialog.getByRole("link", { name: /立即注册/ }).waitFor({ timeout: 5_000 });
+
+  // A bound phone sends a code and logs in.
+  await dialog.getByLabel("手机号").fill(registeredPhone);
   await dialog.getByRole("button", { name: "获取验证码" }).click();
   await dialog.getByRole("button", { name: /重新获取\(\d+s\)/ }).waitFor({ timeout: 20_000 });
   await dialog.getByLabel("验证码").fill("123456");
@@ -92,7 +122,7 @@ async function phoneLoginSmoke(browser, appUrl, issues, responses) {
   // Let any follow-up auth traffic settle so failures land in `issues`.
   await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
   await page.close();
-  console.log(`Phone login OK (new phone ${phone} auto-registered)`);
+  console.log(`Phone login OK (bound phone ${registeredPhone}); unbound ${unregisteredPhone} guided to register`);
 }
 
 function shanghaiToday() {

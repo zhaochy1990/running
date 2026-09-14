@@ -28,6 +28,7 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   sms_send_cooldown: "发送过于频繁,请稍后再试",
   sms_daily_limit: "今日验证码次数已达上限",
   sms_not_configured: "短信服务未配置,请使用邮箱登录",
+  phone_not_registered: "该手机号尚未注册,请先创建账号",
   service_unavailable: "服务暂时不可用,请稍后再试",
   invalid_invite_code: "邀请码无效",
   invite_code_already_used: "邀请码已被使用",
@@ -47,6 +48,7 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
   const [countdown, setCountdown] = useState(0);
   const [sendingCode, setSendingCode] = useState(false);
   const [error, setError] = useState("");
+  const [phoneUnregistered, setPhoneUnregistered] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -68,6 +70,7 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
     if (next === tab) return;
     setTab(next);
     setError("");
+    setPhoneUnregistered(false);
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -89,6 +92,7 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
   async function handleSendCode() {
     if (countdown > 0 || sendingCode) return;
     setError("");
+    setPhoneUnregistered(false);
     if (!PHONE_RE.test(phone)) {
       setError("请输入正确的手机号");
       return;
@@ -99,7 +103,12 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
       setCountdown(CODE_RESEND_SECONDS);
     } catch (err: unknown) {
       const x = err as AuthError;
-      setError(AUTH_ERROR_MESSAGES[x.error ?? ""] ?? "验证码发送失败,请重试");
+      if (x.error === "phone_not_registered") {
+        setPhoneUnregistered(true);
+        setError(AUTH_ERROR_MESSAGES.phone_not_registered);
+      } else {
+        setError(AUTH_ERROR_MESSAGES[x.error ?? ""] ?? "验证码发送失败,请重试");
+      }
     } finally {
       setSendingCode(false);
     }
@@ -333,6 +342,14 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
                 )}
 
                 {error && <div className="lg-error">{error}</div>}
+
+                {phoneUnregistered && (
+                  <p className="lg-swap">
+                    <Link to="/register" onClick={onClose}>
+                      创建训练档案,立即注册 →
+                    </Link>
+                  </p>
+                )}
 
                 {submitButton}
               </form>

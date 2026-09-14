@@ -169,7 +169,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     const res = await fetch(apiUrl("POST", `/api/auth/sms/send`), {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Client-Id": CLIENT_ID },
-      body: JSON.stringify({ phone }),
+      // login_only: the web login form must not silently register an unbound
+      // phone — the backend rejects it with phone_not_registered so the UI can
+      // guide the user to sign up instead.
+      body: JSON.stringify({ phone, login_only: true }),
     });
 
     const data = await res.json().catch(() => ({}));

@@ -76,7 +76,7 @@ describe("authStore auth calls (frontend static container → Caddy-internal API
     expect(fetchMock).toHaveBeenCalledWith("/api/auth/sms/send", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Client-Id": "app_test" },
-      body: JSON.stringify({ phone: "13800138000" }),
+      body: JSON.stringify({ phone: "13800138000", login_only: true }),
     });
   });
 
