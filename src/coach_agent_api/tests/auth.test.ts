@@ -22,6 +22,7 @@ test("RS256 verifier returns the authenticated subject", async () => {
     .sign(privateKey);
   assert.deepEqual(await verifier.verify(`Bearer ${token}`), {
     userId: "athlete-1",
+    isAdmin: false,
   });
 });
 
@@ -41,6 +42,7 @@ test("RS256 verifier accepts any of the configured array audiences", async () =>
     .sign(privateKey);
   assert.deepEqual(await verifier.verify(`Bearer ${token}`), {
     userId: "athlete-2",
+    isAdmin: false,
   });
 });
 
@@ -77,4 +79,46 @@ test("verifier rejects missing tokens", async () => {
     issuer: "auth-service",
   });
   await assert.rejects(() => verifier.verify(undefined), AuthError);
+});
+
+// Admin classification must match the Go API (TierAdmin): the admin audience
+// alone is not enough — the token also needs role=admin.
+async function adminVerifier() {
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  return {
+    privateKey,
+    verifier: await createJwtVerifier({
+      publicKeyPem: await exportSPKI(publicKey),
+      issuer: "auth-service",
+      adminAudience: "stride-admin",
+    }),
+  };
+}
+
+async function signAdminToken(privateKey: CryptoKey, claims: Record<string, unknown>, audience: string) {
+  return new SignJWT(claims)
+    .setProtectedHeader({ alg: "RS256" })
+    .setSubject("admin-1")
+    .setIssuer("auth-service")
+    .setAudience(audience)
+    .setExpirationTime("5m")
+    .sign(privateKey);
+}
+
+test("admin audience plus role=admin is classified as admin", async () => {
+  const { privateKey, verifier } = await adminVerifier();
+  const token = await signAdminToken(privateKey, { role: "admin" }, "stride-admin");
+  assert.deepEqual(await verifier.verify(`Bearer ${token}`), { userId: "admin-1", isAdmin: true });
+});
+
+test("admin audience without role=admin is rejected", async () => {
+  const { privateKey, verifier } = await adminVerifier();
+  const token = await signAdminToken(privateKey, { role: "user" }, "stride-admin");
+  await assert.rejects(() => verifier.verify(`Bearer ${token}`), AuthError);
+});
+
+test("a non-admin audience is not classified as admin", async () => {
+  const { privateKey, verifier } = await adminVerifier();
+  const token = await signAdminToken(privateKey, { role: "admin" }, "stride-web");
+  assert.deepEqual(await verifier.verify(`Bearer ${token}`), { userId: "admin-1", isAdmin: false });
 });

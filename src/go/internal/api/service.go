@@ -290,6 +290,10 @@ func (s *Service) Router() *gin.Engine {
 	s.masterPlan.registerAdminWrites(authenticated)
 	s.weeklyPlan.registerReads(authenticated)
 	s.weeklyPlan.registerAdminWrites(authenticated)
+	// Draft activation admits the admin tier (apply a generated draft); the
+	// remaining draft mutations stay on the default-deny group below.
+	s.weeklyPlan.registerDraftActivates(authenticated)
+	s.masterPlan.registerDraftActivates(authenticated)
 	// Admin pipeline-status surface: global list + any-run detail. Mounted on
 	// the authenticated group (NOT the rejectAdminCaller child) so the admin
 	// JWT tier can use them; the handlers admit admin OR internal and deny users.

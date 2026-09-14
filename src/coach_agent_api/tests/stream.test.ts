@@ -95,7 +95,7 @@ function qaStream(): CoachStreamSource {
 test("streaming chat returns text/event-stream with status and done events", async () => {
   let streamed = 0;
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
@@ -130,7 +130,7 @@ test("streaming chat returns text/event-stream with status and done events", asy
 
 test("text_delta events accumulate to the done message", async () => {
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() { return qaStream(); },
@@ -152,7 +152,7 @@ test("text_delta events are emitted while the run is still executing, not replay
   const order: string[] = [];
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
@@ -185,7 +185,7 @@ test("analyzing is emitted once the last tool call lands, before the reply text 
   const order: string[] = [];
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
@@ -225,7 +225,7 @@ test("analyzing is emitted once the last tool call lands, before the reply text 
 
 test("every tool call emits a start and a matching end running_tool event carrying the tool name", async () => {
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() { return qaStream(); },
@@ -242,7 +242,7 @@ test("every tool call emits a start and a matching end running_tool event carryi
 
 test("a failing tool still emits a running_tool end event with tool_status error", async () => {
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
@@ -267,7 +267,7 @@ test("a failing tool still emits a running_tool end event with tool_status error
 
 test("done carries usage aggregated across multiple messages", async () => {
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
@@ -295,7 +295,7 @@ test("done carries usage aggregated across multiple messages", async () => {
 
 test("QA multi-tool flow emits events in a reasonable order: tool → analyzing → text → done", async () => {
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() { return qaStream(); },
@@ -326,7 +326,7 @@ test("QA multi-tool flow emits events in a reasonable order: tool → analyzing 
 test("streaming chat replays an identical client turn without re-invoking", async () => {
   let streamed = 0;
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
@@ -350,7 +350,7 @@ test("streaming chat replays an identical client turn without re-invoking", asyn
 
 test("streaming chat emits an error event when the coach fails", async () => {
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() { throw new Error("model blew up"); },
@@ -369,7 +369,7 @@ test("streaming chat emits an error event when the coach fails", async () => {
 test("streaming chat emits an error event on a client_turn_id conflict", async () => {
   let streamed = 0;
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
@@ -390,7 +390,7 @@ test("streaming chat emits an error event on a client_turn_id conflict", async (
 test("requests without the SSE accept header keep the sync JSON path", async () => {
   let streamed = 0;
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { return { messages: [{ type: "ai", content: "同步回答" }] }; },
       async streamEvents() {
@@ -413,7 +413,7 @@ test("requests without the SSE accept header keep the sync JSON path", async () 
 test("streaming chat keeps executing and writes the receipt after the client disconnects", async () => {
   let streamed = 0;
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { throw new Error("must not invoke"); },
       async streamEvents() {
@@ -445,7 +445,7 @@ test("streaming chat keeps executing and writes the receipt after the client dis
 
 test("streaming chat runs the turn under the per-thread lock and releases it after done", async () => {
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "athlete-1" }; } },
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
     coachInvoker: {
       async invoke() { return { messages: [{ type: "ai", content: "同步回答" }] }; },
       async streamEvents() {

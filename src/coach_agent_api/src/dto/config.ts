@@ -9,6 +9,7 @@ export interface RawApiConfig {
     auth_service_url: string;
     issuer: string;
     audience: string;
+    admin_audience: string;
   };
   stride_database: MySqlConfig;
   persistence_database: MySqlConfig;
@@ -21,7 +22,7 @@ export interface ApiConfig {
   strideDatabase: MySqlConfig;
   persistenceDatabase: MySqlConfig;
   planJobs: { amqpUrl: string; queues: { work: string; retry: string; poison: string } };
-  auth: { publicKeyPem: string; authServiceUrl: string; issuer: string; audience?: string | string[] };
+  auth: { publicKeyPem: string; authServiceUrl: string; issuer: string; audience?: string | string[]; adminAudience?: string };
 }
 
 export interface LoadApiConfigOptions {

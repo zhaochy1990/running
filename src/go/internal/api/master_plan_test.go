@@ -134,6 +134,16 @@ func (f *fakeMasterPlanStore) InsertMasterPlanDraft(_ context.Context, userID, g
 	return draft, true, nil
 }
 
+func (f *fakeMasterPlanStore) ListMasterPlanDrafts(_ context.Context, userID string) ([]storage.MasterPlan, error) {
+	var drafts []storage.MasterPlan
+	for _, d := range f.drafts[userID] {
+		if d.Status == storage.MasterPlanStatusDraft {
+			drafts = append(drafts, *d)
+		}
+	}
+	return drafts, nil
+}
+
 func (f *fakeMasterPlanStore) GetMasterPlanDraft(_ context.Context, userID, planID string) (*storage.MasterPlan, error) {
 	for _, d := range f.drafts[userID] {
 		if d.PlanID == planID {

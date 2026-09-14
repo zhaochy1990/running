@@ -87,7 +87,7 @@ function appFor(planJobs: PlanJobsService) {
   return createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -306,9 +306,88 @@ test("poll of an unknown or foreign job is a 404", async () => {
   assert.equal(invalid.status, 400);
 });
 
+// ── Admin Dashboard surface (cross-user) ────────────────────────────────────
+
+function adminAppFor(planJobs: PlanJobsService, isAdmin: boolean) {
+  return createApp({
+    jwtVerifier: { async verify() { return { userId: "admin-1", isAdmin }; } },
+    coachInvoker: {
+      async invoke() {
+        throw new Error("must not invoke coach");
+      },
+      streamEvents: neverStream,
+    },
+    planJobs,
+  });
+}
+
+test("an admin token enqueues for the path user, not itself", async () => {
+  const { service, enqueued } = fakePlanJobs();
+  const response = await adminAppFor(service, true).request("/api/admin/users/athlete-9/coach/plan-jobs", {
+    method: "POST",
+    headers: { authorization: "Bearer x", "content-type": "application/json" },
+    body: JSON.stringify({ job_type: "generate_weekly_plan", request: { request_id: "req-1" } }),
+  });
+  assert.equal(response.status, 201);
+  assert.equal(enqueued.length, 1);
+  assert.equal(enqueued[0]?.userId, "athlete-9");
+});
+
+test("a non-admin token is refused on the admin plan-job surface", async () => {
+  const { service, enqueued } = fakePlanJobs();
+  const app = adminAppFor(service, false);
+  const enqueue = await app.request("/api/admin/users/athlete-9/coach/plan-jobs", {
+    method: "POST",
+    headers: { authorization: "Bearer x", "content-type": "application/json" },
+    body: JSON.stringify({ job_type: "generate_weekly_plan", request: { request_id: "req-1" } }),
+  });
+  assert.equal(enqueue.status, 403);
+  const poll = await app.request("/api/admin/users/athlete-9/coach/plan-jobs/job-1", {
+    headers: { authorization: "Bearer x" },
+  });
+  assert.equal(poll.status, 403);
+  assert.equal(enqueued.length, 0);
+});
+
+test("an admin polls another athlete's job", async () => {
+  const job: PlanJob = {
+    jobId: "job-admin",
+    userId: "athlete-9",
+    jobType: "generate_weekly_plan",
+    status: "done",
+    attempts: 1,
+    stage: "outputting",
+    progressPct: 100,
+    inputJson: "{}",
+    resultJson: JSON.stringify({ draft_id: "draft-admin" }),
+    errorCode: null,
+    errorMessage: null,
+    idempotencyKey: null,
+    heartbeatAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    completedAt: new Date(),
+  };
+  const { service } = fakePlanJobs({ async get(userId, jobId) { return jobId === "job-admin" && userId === "athlete-9" ? job : null; } });
+  const app = adminAppFor(service, true);
+  const response = await app.request("/api/admin/users/athlete-9/coach/plan-jobs/job-admin", {
+    headers: { authorization: "Bearer x" },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    job_id: "job-admin",
+    job_type: "generate_weekly_plan",
+    status: "done",
+    stage: "outputting",
+    progress_pct: 100,
+    error_code: null,
+    result_draft_id: "draft-admin",
+  });
+});
+
 test("plan-job routes are absent when no planJobs service is wired", async () => {
   const app = createApp({
-    jwtVerifier: { async verify() { return { userId: "u" }; } },
+    jwtVerifier: { async verify() { return { userId: "u", isAdmin: false }; } },
     coachInvoker: {
       async invoke() {
         throw new Error("unused");

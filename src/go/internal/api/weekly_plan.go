@@ -30,6 +30,7 @@ type WeeklyPlanStore interface {
 	GetWeeklyFeedback(ctx context.Context, userID, weekStart string) (*storage.WeeklyFeedback, error)
 	PutWeeklyFeedback(ctx context.Context, userID, weekStart, content string) (storage.WeeklyFeedback, error)
 	InsertWeeklyPlanDraft(ctx context.Context, userID, weekStart, content, draftID string) (*storage.WeeklyPlan, bool, error)
+	ListWeeklyPlanDrafts(ctx context.Context, userID string) ([]storage.WeeklyPlan, error)
 	GetWeeklyPlanDraft(ctx context.Context, userID, planID string) (*storage.WeeklyPlan, error)
 	ActivateWeeklyPlanDraft(ctx context.Context, userID, weekStart, planID string) (*storage.WeeklyPlan, *storage.WeeklyPlan, error)
 	AbandonWeeklyPlanDraft(ctx context.Context, userID, planID string) (*storage.WeeklyPlan, error)
@@ -61,20 +62,33 @@ func (w *weeklyPlanRoutes) registerReads(rg *gin.RouterGroup) {
 	rg.GET("/api/:user/plan/weeks/:weekName", w.detail)
 	rg.GET("/api/:user/weeks", w.listSummaries)
 	rg.GET("/api/:user/weeks/:weekName", w.weekDetail)
-	// Draft read (ADR 0030): user-scoped, keyed by draft id.
+	// Draft reads (ADR 0030): user-scoped, keyed by draft id or listed per user.
+	rg.GET("/api/:user/plan/drafts", w.listDrafts)
 	rg.GET("/api/:user/plan/drafts/:plan_id", w.getDraft)
 }
 
 // registerDraftWrites mounts the panel of draft mutations. Insert is an
-// internal-token-only endpoint (the plan-job worker); activate/abandon are
-// user endpoints that authorize via authorizeUser (user-scoped or internal).
+// internal-token-only endpoint (the plan-job worker); abandon is a user
+// endpoint that authorizes via authorizeUser (user-scoped or internal).
+// Activation is NOT here — it is mounted on the parent authenticated group so
+// a verified admin may apply a generated draft (registerDraftActivates).
 func (w *weeklyPlanRoutes) registerDraftWrites(rg *gin.RouterGroup) {
 	if w.store == nil {
 		return
 	}
 	rg.POST("/api/:user/plan/weeks/:weekName/drafts", w.insertDraft)
-	rg.POST("/api/:user/plan/drafts/:plan_id/activate", w.activateDraft)
 	rg.POST("/api/:user/plan/drafts/:plan_id/abandon", w.abandonDraft)
+}
+
+// registerDraftActivates mounts draft activation on the parent authenticated
+// group so the Admin Dashboard can apply a draft an admin just generated for an
+// athlete. The handler still scopes user-tier callers to their own subject, so
+// widening the group only admits TierAdmin/TierInternal.
+func (w *weeklyPlanRoutes) registerDraftActivates(rg *gin.RouterGroup) {
+	if w.store == nil {
+		return
+	}
+	rg.POST("/api/:user/plan/drafts/:plan_id/activate", w.activateDraft)
 }
 
 // registerWrites keeps Weekly Plan mutations on the default-deny route group,
@@ -319,6 +333,46 @@ func (w *weeklyPlanRoutes) insertDraft(c *gin.Context) {
 	c.JSON(status, weeklyDraftIDResponse{Success: true, PlanID: created.PlanID, WeekName: weekName, Status: created.Status})
 }
 
+// listDrafts returns a user's pending weekly-plan drafts, metadata only. The
+// Admin Dashboard uses it to offer drafts alongside active plans in the week
+// picker; content is fetched per draft by getDraft.
+//
+//	@Summary		List a user's weekly plan drafts
+//	@Tags			weekly-plan
+//	@Produce		json
+//	@Param			user	path	string	true	"User id (JWT sub)"
+//	@Success		200	{object}	map[string]interface{}
+//	@Failure		400	{object}	errorResponse
+//	@Failure		401	{object}	errorResponse
+//	@Failure		403	{object}	errorResponse
+//	@Failure		500	{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/{user}/plan/drafts [get]
+func (w *weeklyPlanRoutes) listDrafts(c *gin.Context) {
+	user := c.Param("user")
+	if !authorizeUser(c, user) {
+		return
+	}
+	rows, err := w.store.ListWeeklyPlanDrafts(c.Request.Context(), user)
+	if err != nil {
+		w.log.Error("list weekly plan drafts failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	drafts := make([]weeklyPlanMetadataResponse, 0, len(rows))
+	for _, row := range rows {
+		item, err := weeklyPlanMetadata(row)
+		if err != nil {
+			w.log.Error("weekly plan draft has invalid identity", zapErr(err), zap.String("plan_id", row.PlanID))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+		drafts = append(drafts, item)
+	}
+	c.JSON(http.StatusOK, gin.H{"drafts": drafts})
+}
+
 // getDraft reads a draft by id. User callers are scoped to their own subject.
 //
 //	@Summary		Get a weekly plan draft
@@ -408,7 +462,19 @@ func (w *weeklyPlanRoutes) activateDraft(c *gin.Context) {
 		c.JSON(http.StatusNotFound, errorResponse{Error: "weekly_plan_draft_not_found"})
 		return
 	}
-	activated, replaced, err := w.store.ActivateWeeklyPlanDraft(c.Request.Context(), user, draft.WeekStart, draft.PlanID)
+	// week_start is a DATE column but the driver reads it back as RFC3339
+	// (storage forces parseTime=true), and the store's activate expects the
+	// canonical YYYY-MM-DD. Normalize the round-tripped value before handing it
+	// back.
+	weekStart, err := parseStoredWeekStart(draft.WeekStart)
+	if err != nil {
+		w.log.Error("weekly plan draft has invalid week_start", zapErr(err), zap.String("plan_id", draft.PlanID))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	activated, replaced, err := w.store.ActivateWeeklyPlanDraft(
+		c.Request.Context(), user, weekStart.Format("2006-01-02"), draft.PlanID,
+	)
 	if errors.Is(err, storage.ErrWeeklyPlanDraftNotFound) {
 		c.JSON(http.StatusNotFound, errorResponse{Error: "weekly_plan_draft_not_found"})
 		return

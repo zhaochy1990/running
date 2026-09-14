@@ -135,18 +135,69 @@ func TestMasterPlanDraftActivateNotFound(t *testing.T) {
 	}
 }
 
-func TestMasterPlanDraftAdminCannotMutate(t *testing.T) {
+// An admin JWT may apply (activate) a draft an admin just generated, but may
+// not insert one directly (internal-token-only) or discard an athlete's draft.
+func TestMasterPlanDraftAdminActivatesButCannotInsertOrAbandon(t *testing.T) {
 	h := newMPHarness(t)
 	userID, goalID := uuid.NewString(), uuid.NewString()
 	draftID := uuid.NewString()
-	w := h.postJSON(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts",
-		map[string]any{"draft_id": draftID, "content": mustAppliedContent(t, goalID)}, internalHeaders())
+	admin := h.bearerWithClaims(t, uuid.NewString(), testAdminAudience, "admin")
+	body := map[string]any{"draft_id": draftID, "content": mustAppliedContent(t, goalID)}
+
+	w := h.postJSON(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts", body, admin)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("admin insert code = %d, want 403 (%s)", w.Code, w.Body.String())
+	}
+	w = h.postJSON(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts", body, internalHeaders())
 	if w.Code != http.StatusCreated {
 		t.Fatalf("insert code = %d (%s)", w.Code, w.Body.String())
 	}
-	admin := h.bearerWithClaims(t, uuid.NewString(), testAdminAudience, "admin")
 	w = h.do(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts/"+draftID+"/activate", admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin activate code = %d, want 200 (%s)", w.Code, w.Body.String())
+	}
+
+	draftID2 := uuid.NewString()
+	if w := h.postJSON(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts",
+		map[string]any{"draft_id": draftID2, "content": mustAppliedContent(t, goalID)}, internalHeaders()); w.Code != http.StatusCreated {
+		t.Fatalf("insert2 code = %d (%s)", w.Code, w.Body.String())
+	}
+	w = h.do(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts/"+draftID2+"/abandon", admin)
 	if w.Code != http.StatusForbidden {
-		t.Fatalf("admin activate code = %d, want 403 (%s)", w.Code, w.Body.String())
+		t.Fatalf("admin abandon code = %d, want 403 (%s)", w.Code, w.Body.String())
+	}
+}
+
+// The Admin Dashboard lists a user's season-plan drafts; a user-tier caller is
+// still scoped to their own subject.
+func TestMasterPlanDraftList(t *testing.T) {
+	h := newMPHarness(t)
+	userID, goalID := uuid.NewString(), uuid.NewString()
+	draftID := uuid.NewString()
+	if w := h.postJSON(http.MethodPost, "/api/users/"+userID+"/master-plan/drafts",
+		map[string]any{"draft_id": draftID, "content": mustAppliedContent(t, goalID)}, internalHeaders()); w.Code != http.StatusCreated {
+		t.Fatalf("insert code = %d (%s)", w.Code, w.Body.String())
+	}
+
+	admin := h.bearerWithClaims(t, uuid.NewString(), testAdminAudience, "admin")
+	w := h.do(http.MethodGet, "/api/users/"+userID+"/master-plan/drafts", admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("admin list code = %d (%s)", w.Code, w.Body.String())
+	}
+	var body struct {
+		Drafts []struct {
+			PlanID string `json:"plan_id"`
+			Status string `json:"status"`
+		} `json:"drafts"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal drafts: %v", err)
+	}
+	if len(body.Drafts) != 1 || body.Drafts[0].PlanID != draftID || body.Drafts[0].Status != "draft" {
+		t.Fatalf("drafts = %+v", body.Drafts)
+	}
+
+	if w := h.do(http.MethodGet, "/api/users/"+userID+"/master-plan/drafts", h.bearer(t, uuid.NewString())); w.Code != http.StatusForbidden {
+		t.Fatalf("foreign user list code = %d, want 403 (%s)", w.Code, w.Body.String())
 	}
 }
