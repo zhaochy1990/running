@@ -1,12 +1,11 @@
 import { getActivityDetail } from '../../services/activities';
-import { fmtDurationShort, fmtKm, fmtHms, fmtDose } from '../../utils/format';
+import { fmtDurationShort, fmtKm, fmtHms } from '../../utils/format';
 import { shanghaiDateFromIso, shanghaiTimeFromIso } from '../../utils/date';
 import { wgs84ToGcj02 } from '../../utils/coord';
 import { userStore } from '../../store/index';
 import type {
   Activity,
   ActivityDetailResponse,
-  ActivityStrideTrainingLoad,
   Lap,
   Segment,
   Zone,
@@ -35,10 +34,11 @@ interface ZoneBar {
 
 interface LapRow {
   index: string;
+  duration: string;
   distanceKm: string;
   pace: string;
   hr: string;
-  duration: string;
+  cadence: string;
 }
 
 interface ExerciseGroup {
@@ -47,11 +47,6 @@ interface ExerciseGroup {
   sets: number;
   duration: string;
   avgHr: string;
-}
-
-interface LoadItem {
-  label: string;
-  value: string;
 }
 
 interface WeatherItem {
@@ -91,13 +86,6 @@ interface HeaderView {
   feelEmoji: string;
 }
 
-interface StrideLoadView {
-  included: boolean;
-  items: LoadItem[];
-  reasons: string[];
-  sessionClass: string;
-}
-
 interface ActivityDetailPageData {
   statusBarHeight: number;
   contentPaddingTop: number;
@@ -106,8 +94,6 @@ interface ActivityDetailPageData {
   isStrength: boolean;
   header: HeaderView;
   metrics: Metric[];
-  secondary: Metric[];
-  strideLoad: StrideLoadView | null;
   hasZones: boolean;
   hrZones: ZoneBar[];
   paceZones: ZoneBar[];
@@ -167,7 +153,6 @@ const METRIC_COLORS = {
   duration: '#0097a7',
   pace: '#00e676',
   hr: '#ff5252',
-  calories: '#ffb300',
 };
 
 let userId = '';
@@ -231,29 +216,29 @@ function isStrengthActivity(a: Activity): boolean {
 // 主/次指标
 // ---------------------------------------------------------------------------
 
-function buildMetrics(a: Activity, isStrength: boolean): { metrics: Metric[]; secondary: Metric[] } {
+function buildMetrics(a: Activity, isStrength: boolean): Metric[] {
   const metrics: Metric[] = [];
-  const secondary: Metric[] = [];
 
   if (!isStrength) {
     metrics.push(metric('距离', a.distance_km > 0 ? `${a.distance_km}` : '—', 'km', METRIC_COLORS.run));
     metrics.push(metric('平均配速', a.pace_fmt || '—', undefined, METRIC_COLORS.pace));
   }
-  metrics.push(metric('时长', a.duration_fmt || fmtHms(a.duration_s), undefined, METRIC_COLORS.duration));
   metrics.push(metric('平均心率', intStr(a.avg_hr), 'bpm', METRIC_COLORS.hr));
+  metrics.push(metric('训练负荷', decimalStr(a.training_load, 0)));
+  metrics.push(metric('时长', a.duration_fmt || fmtHms(a.duration_s), undefined, METRIC_COLORS.duration));
   metrics.push(metric('最大心率', intStr(a.max_hr), 'bpm', METRIC_COLORS.hr));
-  metrics.push(metric('卡路里', intStr(a.calories_kcal), 'kcal', METRIC_COLORS.calories));
-
   if (!isStrength) {
-    secondary.push(metric('步频', `${intStr(a.avg_cadence)}`, 'spm'));
-    secondary.push(metric('累计爬升', `${intStr(a.ascent_m)}`, 'm'));
+    metrics.push(metric('平均步幅', stepLenM(a.avg_step_len_cm), 'm'));
+    metrics.push(metric('平均步频', intStr(a.avg_cadence), 'spm'));
+    metrics.push(metric('累计爬升', intStr(a.ascent_m), 'm'));
   }
-  secondary.push(metric('手表负荷', decimalStr(a.training_load, 0)));
-  if (!isStrength) secondary.push(metric('最大摄氧量', decimalStr(a.vo2max)));
-  secondary.push(metric('有氧效果', decimalStr(a.aerobic_effect)));
-  secondary.push(metric('无氧效果', decimalStr(a.anaerobic_effect)));
 
-  return { metrics, secondary };
+  return metrics;
+}
+
+/** 步幅 cm → m（保留两位），缺失返回 '—'。 */
+function stepLenM(cm: number | null | undefined): string {
+  return cm == null || !Number.isFinite(cm) ? '—' : (cm / 100).toFixed(2);
 }
 
 // ---------------------------------------------------------------------------
@@ -377,10 +362,11 @@ function buildZones(zones: Zone[]): { hrZones: ZoneBar[]; paceZones: ZoneBar[]; 
 function toLapRow(lap: Lap, index: number): LapRow {
   return {
     index: `${index + 1}`,
+    duration: lap.duration_fmt || '—',
     distanceKm: lap.distance_km != null && lap.distance_km > 0 ? `${lap.distance_km.toFixed(2)}` : '—',
     pace: lap.pace_fmt || '—',
     hr: intStr(lap.avg_hr),
-    duration: lap.duration_fmt || '—',
+    cadence: intStr(lap.avg_cadence),
   };
 }
 
@@ -432,27 +418,8 @@ function buildStrengthSegments(segments: Segment[]): ExerciseGroup[] {
 }
 
 // ---------------------------------------------------------------------------
-// STRIDE 客观负荷 / 天气
+// 天气
 // ---------------------------------------------------------------------------
-
-function buildStrideLoad(load: ActivityStrideTrainingLoad | null | undefined): StrideLoadView | null {
-  if (!load) return null;
-  const items: LoadItem[] = [
-    { label: '训练剂量', value: fmtDose(load.training_dose) },
-    { label: 'Cardio TSS', value: fmtDose(load.cardio_tss) },
-    { label: 'External TSS', value: fmtDose(load.external_tss) },
-    { label: '高强度加成', value: fmtDose(load.high_intensity_tss) },
-    { label: '机械负荷', value: fmtDose(load.mechanical_load) },
-    { label: '置信度', value: load.load_confidence || '—' },
-    { label: '分类', value: load.session_class || '—' },
-  ];
-  return {
-    included: !load.excluded_from_pmc,
-    items,
-    reasons: load.reasons.length > 0 ? load.reasons : ['无触发'],
-    sessionClass: load.session_class || '—',
-  };
-}
 
 // ---------------------------------------------------------------------------
 // 轨迹地图：WGS84→GCJ02 + pause 分段 + 配速/心率 bin 着色
@@ -658,7 +625,7 @@ function buildWeather(a: Activity): WeatherItem[] {
 function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageData> {
   const a = detail.activity;
   const isStrength = isStrengthActivity(a);
-  const { metrics, secondary } = buildMetrics(a, isStrength);
+  const metrics = buildMetrics(a, isStrength);
   const { hrZones, paceZones, hasZones } = buildZones(detail.zones || []);
 
   let laps: LapRow[] = [];
@@ -673,7 +640,6 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
     hasSegments = laps.length > 0;
   }
 
-  const strideLoad = buildStrideLoad(detail.stride_training_load);
   const sportNote = a.sport_note || '';
 
   // 轨迹地图：力量训练无 GPS，不渲染；默认按配速着色。
@@ -700,8 +666,6 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
       feelEmoji: feelEmoji(a.feel_type),
     },
     metrics,
-    secondary,
-    strideLoad,
     hasZones,
     hrZones,
     paceZones,
@@ -753,8 +717,6 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     isStrength: false,
     header: { sportLabel: '', name: '', dateLabel: '', trainTypeLabel: '', feelEmoji: '' },
     metrics: [],
-    secondary: [],
-    strideLoad: null,
     hasZones: false,
     hrZones: [],
     paceZones: [],

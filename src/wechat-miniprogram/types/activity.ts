@@ -18,6 +18,8 @@ export interface Activity {
   avg_hr: number | null;
   max_hr: number | null;
   avg_cadence: number | null;
+  /** 手表上报的平均步幅（cm）；NULL 表示设备未上报 */
+  avg_step_len_cm?: number | null;
   calories_kcal: number | null;
   /** 手表厂商上报的负荷（COROS/Garmin training_load）；仅供展示时与 STRIDE 负荷区分 */
   training_load: number | null;

@@ -50,43 +50,13 @@
         </view>
       </view>
 
-      <!-- 主指标 -->
+      <!-- 主指标：距离/配速/心率 + 负荷/时长/最大心率 + 步幅/步频/爬升 一卡三行 -->
       <view wx:if="{{metrics.length}}" class="card">
         <view class="card-title">核心数据</view>
         <view class="metric-grid">
           <view wx:for="{{metrics}}" wx:key="label" class="metric">
             <view class="metric__value" style="{{item.color ? 'color:' + item.color : ''}}">{{item.value}}<text wx:if="{{item.unit}}" class="metric__unit">{{item.unit}}</text></view>
             <view class="metric__label">{{item.label}}</view>
-          </view>
-        </view>
-      </view>
-
-      <!-- 次指标 -->
-      <view wx:if="{{secondary.length}}" class="card">
-        <view class="card-title">更多数据</view>
-        <view class="metric-grid metric-grid--secondary">
-          <view wx:for="{{secondary}}" wx:key="label" class="metric">
-            <view class="metric__value metric__value--secondary">{{item.value}}</view>
-            <view class="metric__label">{{item.label}}</view>
-          </view>
-        </view>
-      </view>
-
-      <!-- STRIDE 客观负荷 -->
-      <view wx:if="{{strideLoad}}" class="card">
-        <view class="card-title">STRIDE 客观负荷</view>
-        <view class="load-panel">
-          <view class="load-panel__badge {{strideLoad.included ? 'load-panel__badge--in' : 'load-panel__badge--out'}}">
-            {{strideLoad.included ? '计入PMC' : '未计入PMC'}}
-          </view>
-          <view class="load-grid">
-            <view wx:for="{{strideLoad.items}}" wx:key="label" class="load-item">
-              <view class="load-item__value">{{item.value}}</view>
-              <view class="load-item__label">{{item.label}}</view>
-            </view>
-          </view>
-          <view class="load-reasons">
-            <view wx:for="{{strideLoad.reasons}}" wx:key="*this" class="load-reason">{{item}}</view>
           </view>
         </view>
       </view>
@@ -117,18 +87,20 @@
         <view class="card-title">{{isStrength ? '动作组' : '分段数据'}}</view>
         <block wx:if="{{!isStrength}}">
           <view class="lap-head">
-            <view class="lap-head__cell lap-head__cell--idx">#</view>
+            <view class="lap-head__cell lap-head__cell--idx">圈数</view>
+            <view class="lap-head__cell">时间</view>
             <view class="lap-head__cell">距离</view>
-            <view class="lap-head__cell">配速</view>
-            <view class="lap-head__cell">心率</view>
-            <view class="lap-head__cell">用时</view>
+            <view class="lap-head__cell">平均配速</view>
+            <view class="lap-head__cell">平均心率</view>
+            <view class="lap-head__cell">平均步频</view>
           </view>
           <view wx:for="{{laps}}" wx:key="index" class="lap-row">
             <view class="lap-row__cell lap-row__cell--idx">{{item.index}}</view>
+            <view class="lap-row__cell">{{item.duration}}</view>
             <view class="lap-row__cell">{{item.distanceKm}}</view>
             <view class="lap-row__cell">{{item.pace}}</view>
             <view class="lap-row__cell">{{item.hr}}</view>
-            <view class="lap-row__cell">{{item.duration}}</view>
+            <view class="lap-row__cell">{{item.cadence}}</view>
           </view>
         </block>
         <block wx:else>
