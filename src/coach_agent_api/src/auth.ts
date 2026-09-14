@@ -65,12 +65,7 @@ export function createAdminMiddleware(): MiddlewareHandler<AuthEnv> {
   };
 }
 
-export function createJwtVerifier(options: {
-  publicKeyPem: string;
-  issuer: string;
-  audience?: string | string[];
-  adminAudience?: string;
-}): JwtVerifier {
+export function createJwtVerifier(options: { publicKeyPem: string; issuer: string; audience?: string | string[]; adminAudience?: string }): JwtVerifier {
   return {
     async verify(authorization) {
       const token = bearerToken(authorization);

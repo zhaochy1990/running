@@ -283,15 +283,14 @@ test("two live season plans covering the same day stay undecidable", async () =>
   const provider = new MySqlDataProvider({
     async query() {
       const content = JSON.stringify({ start_date: "2026-04-27", end_date: "2026-11-15", phases: [], weeks: [], milestones: [] });
-      return [[
-        { plan_id: "plan-a", revision: 1, status: "active", content },
-        { plan_id: "plan-b", revision: 1, status: "active", content },
-      ]];
+      return [
+        [
+          { plan_id: "plan-a", revision: 1, status: "active", content },
+          { plan_id: "plan-b", revision: 1, status: "active", content },
+        ],
+      ];
     },
   } as never);
 
-  await assert.rejects(
-    () => provider.getMasterPlanMetadataForDate("athlete-1", "2026-09-14"),
-    /multiple master plans cover 2026-09-14/,
-  );
+  await assert.rejects(() => provider.getMasterPlanMetadataForDate("athlete-1", "2026-09-14"), /multiple master plans cover 2026-09-14/);
 });

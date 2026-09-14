@@ -1,6 +1,6 @@
 import { MasterPlanGraphRequest, PLAN_JOB_TYPES, type PlanJob, type PlanJobType, WeeklyPlanGeneratorRequest } from "@stride/coach-agent-worker";
 import type { Context, Hono, MiddlewareHandler } from "hono";
-import { createAdminMiddleware, type AuthEnv } from "../auth.js";
+import { type AuthEnv, createAdminMiddleware } from "../auth.js";
 
 /**
  * Deterministic plan-job surface (ADR 0030): enqueue a directly-submitted
