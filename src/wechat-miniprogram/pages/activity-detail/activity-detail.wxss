@@ -311,8 +311,16 @@
   justify-content: center;
 }
 
+/* 心率列同样留出箭头位；箭头与配速列同尺寸，两列视觉对齐 */
+.lap-row__cell--hr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* 箭头右侧也给固定位，有箭头 / 没箭头的圈，配速都停在同一列 */
-.lap-head__cell--pace {
+.lap-head__cell--pace,
+.lap-head__cell--hr {
   padding-right: 26rpx;
   box-sizing: border-box;
 }

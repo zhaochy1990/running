@@ -4,6 +4,8 @@ import type { Segment } from '../types/activity';
 export interface LapPaceMark {
   /** '' = 无走向（首圈 / 本圈或上一圈没有配速 / 配速持平） */
   trend: '' | 'up' | 'down';
+  /** 心率走向（与上一「有圈号」圈比较）：'' = 无 / 持平，'up' = 心率升高，'down' = 心率降低 */
+  hrTrend: '' | 'up' | 'down';
   /** 恢复圈（组间停顿）：不计圈号、不比箭头、不参与最快 / 最慢 */
   rest: boolean;
   /** 整行样式 class */
@@ -48,17 +50,23 @@ export function lapPaceMarks(laps: Segment[]): LapPaceMark[] {
     if (laps[fast].avg_pace === laps[slow].avg_pace) fast = slow = -1;
   }
 
+  // 心率趋势沿用同一套「上一有圈号圈」规则（跨过恢复圈），方向 = 数据方向：升高 up / 降低 down。
+  const dir = (cur: number | null | undefined, prev: number | null | undefined): '' | 'up' | 'down' =>
+    cur == null || prev == null || cur === prev ? '' : cur > prev ? 'up' : 'down';
+
   let prevActive = -1;
   return laps.map((lap, i): LapPaceMark => {
     if (rest[i]) {
-      return { trend: '', rest: true, rowClass: 'lap-row--rest', tagClass: '', tag: '' };
+      return { trend: '', hrTrend: '', rest: true, rowClass: 'lap-row--rest', tagClass: '', tag: '' };
     }
     const cur = lap.avg_pace;
     const prev = prevActive >= 0 ? laps[prevActive].avg_pace : null;
+    const prevHr = prevActive >= 0 ? laps[prevActive].avg_hr : null;
     prevActive = i;
     const trend = cur == null || prev == null || cur === prev ? '' : cur < prev ? 'up' : 'down';
     return {
       trend,
+      hrTrend: dir(lap.avg_hr, prevHr),
       rest: false,
       rowClass: i === fast ? 'lap-row--fastest' : i === slow ? 'lap-row--slowest' : '',
       tagClass: i === fast ? 'lap-row__tag--fastest' : '',

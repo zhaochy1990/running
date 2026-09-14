@@ -41,6 +41,8 @@ interface LapRow {
   paceSec: string;
   /** 配速走向（与上一圈比较）→ /assets/icons/trend_{{trend}}.svg：'' | 'up' | 'down' */
   paceTrend: string;
+  /** 心率走向（与上一圈比较）：'' | 'up' | 'down' */
+  hrTrend: string;
   /** 整行高亮：'' | 'lap-row--fastest' | 'lap-row--slowest' */
   rowClass: string;
   /** 圈数徽标 */
@@ -381,6 +383,7 @@ function buildLapRows(segs: Segment[]): LapRow[] {
       paceMin,
       paceSec,
       paceTrend: marks[i].trend,
+      hrTrend: marks[i].hrTrend,
       rowClass: marks[i].rowClass,
       tag: marks[i].tag,
       tagClass: marks[i].tagClass,

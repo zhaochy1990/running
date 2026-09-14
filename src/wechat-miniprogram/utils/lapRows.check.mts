@@ -5,8 +5,8 @@
 import type { Segment } from '../types/activity';
 import { lapPaceMarks } from './lapRows.ts';
 
-const lap = (km: number | null, pace: number | null, segName = '训练'): Segment =>
-  ({ distance_km: km, avg_pace: pace, seg_name: segName, mode: 2 }) as Segment;
+const lap = (km: number | null, pace: number | null, segName = '训练', hr: number | null = null): Segment =>
+  ({ distance_km: km, avg_pace: pace, avg_hr: hr, seg_name: segName, mode: 2 }) as Segment;
 const rest = (km: number | null, pace: number | null): Segment => lap(km, pace, '恢复');
 // exercise_type=0 的恢复圈后端会回落成 seg_name「训练」，靠原始 mode 3 认出来
 const restMode = (km: number | null, pace: number | null): Segment =>
@@ -94,5 +94,16 @@ eq(
 
 // 圈数太少（< 3 可排名圈）或配速缺失时不标最快 / 最慢eq(lapPaceMarks([lap(1, 300), lap(1, 320)]).map((m) => m.tag), ['', ''], 'min rankable laps');
 eq(lapPaceMarks([lap(1, null), lap(1, null), lap(1, null)]).map((m) => m.tag), ['', '', ''], 'missing pace');
+
+// 心率走向：与配速同一套「上一有圈号圈」规则，方向 = 数据方向（升高 up / 降低 down）
+const hrTrend = lapPaceMarks([
+  lap(1, 300, '训练', 140),
+  lap(1, 290, '训练', 152),
+  lap(1, 290, '训练', 152),
+  lap(1, 320, '训练', 138),
+  rest(0.05, 2500),
+  lap(1, 300, '训练', 150),
+]);
+eq(hrTrend.map((m) => m.hrTrend), ['', 'up', '', 'down', '', 'up'], 'hr arrows');
 
 console.log('lapRows.check: OK');

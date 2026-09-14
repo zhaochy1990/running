@@ -91,7 +91,7 @@
             <view class="lap-head__cell">时间</view>
             <view class="lap-head__cell">距离</view>
             <view class="lap-head__cell lap-head__cell--pace">平均配速</view>
-            <view class="lap-head__cell">平均心率</view>
+            <view class="lap-head__cell lap-head__cell--hr">平均心率</view>
             <view class="lap-head__cell">平均步频</view>
           </view>
           <view wx:for="{{laps}}" wx:key="index" class="lap-row {{item.rowClass}}">
@@ -110,7 +110,12 @@
                 <image wx:if="{{item.paceTrend}}" class="lap-row__trend" src="/assets/icons/trend_{{item.paceTrend}}.svg" mode="aspectFit" />
               </view>
             </view>
-            <view class="lap-row__cell">{{item.hr}}</view>
+            <view class="lap-row__cell lap-row__cell--hr">
+              <text>{{item.hr}}</text>
+              <view class="lap-row__trend-slot">
+                <image wx:if="{{item.hrTrend}}" class="lap-row__trend" src="/assets/icons/trend_{{item.hrTrend}}.svg" mode="aspectFit" />
+              </view>
+            </view>
             <view class="lap-row__cell">{{item.cadence}}</view>
           </view>
         </block>
