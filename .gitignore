@@ -87,3 +87,5 @@ src/go/config.prod.yml
 src/coach_agent_api/config/coach-api.local.yaml
 src/coach_agent_api/config/coach-api.prod.yaml
 src/coach_agent_api/test-output
+# Agent worktrees
+.worktrees/
