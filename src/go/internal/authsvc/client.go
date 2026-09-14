@@ -26,18 +26,31 @@ type Client struct {
 	http    *http.Client
 }
 
-// ResponseError reports a non-success response from the auth-service.
+// ResponseError reports a non-success response from the auth-service. Code is
+// the auth-service's stable machine-readable error type (e.g. "user_owns_teams",
+// "last_admin") and Message its human-readable text; both are empty when the
+// response carried no envelope. They let the API surface the precise rejection
+// reason instead of collapsing every 4xx into one generic error.
 type ResponseError struct {
 	StatusCode int
 	Method     string
 	Path       string
+	Code       string
+	Message    string
 }
 
 func (e *ResponseError) Error() string {
+	if e.Code != "" {
+		return fmt.Sprintf("authsvc: %s %s returned %d (%s)", e.Method, e.Path, e.StatusCode, e.Code)
+	}
 	return fmt.Sprintf("authsvc: %s %s returned %d", e.Method, e.Path, e.StatusCode)
 }
 
 func (e *ResponseError) HTTPStatus() int { return e.StatusCode }
+
+// ErrorCode returns the auth-service's stable error type, if the response body
+// carried one (e.g. "user_owns_teams", "last_admin").
+func (e *ResponseError) ErrorCode() string { return e.Code }
 
 // StatusCode returns the auth-service status carried by err, if any.
 func StatusCode(err error) (int, bool) {
@@ -179,10 +192,21 @@ func (c *Client) SyncName(ctx context.Context, bearer, name string) error {
 // not configured or unavailable so a still-loginable identity is never left
 // behind after STRIDE data has been erased.
 func (c *Client) DeleteAccount(ctx context.Context, bearer string) error {
+	return c.deleteIdentity(ctx, "/api/users/me", bearer)
+}
+
+// AdminDeleteAccount deletes an arbitrary user's identity through the
+// auth-service admin endpoint, forwarding the administrator's bearer. A 404
+// means the identity is already gone and is returned as a typed ResponseError so
+// the caller can treat it as idempotent success.
+func (c *Client) AdminDeleteAccount(ctx context.Context, adminBearer, userID string) error {
+	return c.deleteIdentity(ctx, "/admin/users/"+url.PathEscape(userID), adminBearer)
+}
+
+func (c *Client) deleteIdentity(ctx context.Context, path, bearer string) error {
 	if strings.TrimSpace(c.baseURL) == "" {
 		return errors.New("authsvc: base URL is not configured")
 	}
-	const path = "/api/users/me"
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, strings.TrimRight(c.baseURL, "/")+path, nil)
 	if err != nil {
 		return err
@@ -196,9 +220,28 @@ func (c *Client) DeleteAccount(ctx context.Context, bearer string) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
-		return &ResponseError{StatusCode: resp.StatusCode, Method: http.MethodDelete, Path: path}
+		return newResponseError(resp, http.MethodDelete, path)
 	}
 	return nil
+}
+
+// newResponseError builds a ResponseError, decoding the auth-service's
+// {"error","message"} envelope when present (bounded to maxResponseBody).
+func newResponseError(resp *http.Response, method, path string) *ResponseError {
+	out := &ResponseError{StatusCode: resp.StatusCode, Method: method, Path: path}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody+1))
+	if err != nil || len(body) > maxResponseBody {
+		return out
+	}
+	var envelope struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &envelope) == nil {
+		out.Code = envelope.Error
+		out.Message = envelope.Message
+	}
+	return out
 }
 
 // ListTeams returns all open teams. authorizationHeader is forwarded unchanged.

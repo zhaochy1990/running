@@ -50,6 +50,42 @@ func TestDeleteAccount_RequiresConfiguredBaseURL(t *testing.T) {
 	}
 }
 
+func TestAdminDeleteAccount_EscapesIDAndForwardsBearer(t *testing.T) {
+	var gotPath, gotAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotAuth = r.URL.EscapedPath(), r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	if err := New(server.URL, time.Second).AdminDeleteAccount(context.Background(), "admin-token", "user/../id"); err != nil {
+		t.Fatalf("AdminDeleteAccount: %v", err)
+	}
+	if gotPath != "/admin/users/user%2F..%2Fid" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	if gotAuth != "Bearer admin-token" {
+		t.Fatalf("authorization = %q", gotAuth)
+	}
+}
+
+func TestAdminDeleteAccount_ParsesErrorEnvelope(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"user_owns_teams","message":"User still owns 1 team(s)"}`))
+	}))
+	defer server.Close()
+
+	err := New(server.URL, time.Second).AdminDeleteAccount(context.Background(), "admin-token", "uid")
+	var responseErr *ResponseError
+	if !errors.As(err, &responseErr) {
+		t.Fatalf("err = %v, want ResponseError", err)
+	}
+	if responseErr.HTTPStatus() != http.StatusConflict || responseErr.ErrorCode() != "user_owns_teams" {
+		t.Fatalf("responseErr = %+v", responseErr)
+	}
+}
+
 func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
 	server := httptest.NewServer(handler)

@@ -474,11 +474,15 @@ func TestDeleteUserData_RemovesOwnedRowsAndPreservesOtherUsers(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
 	for _, migrate := range []func(context.Context) error{
-		st.AutoMigrateWatch,
+		st.AutoMigrateWatch, // includes the onboarding-compute models
 		st.AutoMigrateUsers,
 		st.AutoMigrateGoals,
 		st.AutoMigrateMasterPlan,
 		st.AutoMigrateWeeklyPlan,
+		st.AutoMigrateWeeklyFeedback,
+		st.AutoMigrateBodyComposition,
+		st.AutoMigrateTeamLikes,
+		st.AutoMigrateScheduledWorkout,
 	} {
 		if err := migrate(ctx); err != nil {
 			t.Fatalf("migrate: %v", err)
@@ -530,5 +534,140 @@ func TestDeleteUserData_RemovesOwnedRowsAndPreservesOtherUsers(t *testing.T) {
 	}
 	if profile, err := st.GetUserProfile(ctx, keptUID); err != nil || profile == nil {
 		t.Fatalf("other user's profile was removed: %v, %v", profile, err)
+	}
+}
+
+// TestDeleteUserData_CoversSensitiveTables guards the tables the model list
+// used to miss, including the two without a user_id column: body-composition
+// segments (deleted via scan_id) and team_likes (deleted by owner/liker). The
+// "user data table list" regression this protects against is a new user-owned
+// table silently surviving account deletion.
+func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	for _, migrate := range []func(context.Context) error{
+		st.AutoMigrateUsers,
+		st.AutoMigrateWatch, // includes the onboarding-compute models
+		st.AutoMigrateGoals,
+		st.AutoMigrateMasterPlan,
+		st.AutoMigrateWeeklyPlan,
+		st.AutoMigrateBodyComposition,
+		st.AutoMigrateWeeklyFeedback,
+		st.AutoMigrateTeamLikes,
+		st.AutoMigrateScheduledWorkout,
+	} {
+		if err := migrate(ctx); err != nil {
+			t.Fatalf("migrate: %v", err)
+		}
+	}
+
+	deletedUID, keptUID := uuid.NewString(), uuid.NewString()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	if err := st.UpsertUserProfile(ctx, &UserProfile{UserID: deletedUID, DisplayName: "doomed"}); err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+
+	// Direct user_id tables.
+	for _, uid := range []string{deletedUID, keptUID} {
+		if err := st.db.Create(&AbilitySnapshot{UserID: uid, Date: "2026-01-01", Level: "total", Dimension: "aerobic", ComputedAt: now}).Error; err != nil {
+			t.Fatalf("seed ability snapshot: %v", err)
+		}
+		if err := st.db.Create(&ActivityAbility{UserID: uid, LabelID: "act-" + uid, ComputedAt: now}).Error; err != nil {
+			t.Fatalf("seed activity ability: %v", err)
+		}
+		if err := st.db.Create(&Vo2MaxPB{UserID: uid, RaceType: "5K", LabelID: "pb-" + uid, UpdatedAt: now}).Error; err != nil {
+			t.Fatalf("seed vo2max: %v", err)
+		}
+		if err := st.db.Create(&ActivityZone{UserID: uid, LabelID: "zone-" + uid, ZoneType: "hr", ZoneIndex: 1}).Error; err != nil {
+			t.Fatalf("seed activity zone: %v", err)
+		}
+		if err := st.db.Create(&ScheduledWorkout{UserID: uid, Date: "2026-01-01", Kind: "run", Name: "easy", SpecJSON: "{}", Status: "draft", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+			t.Fatalf("seed scheduled workout: %v", err)
+		}
+		if err := st.db.Create(&WeeklyFeedback{UserID: uid, WeekStart: "2026-01-05", ContentMD: "ok", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+			t.Fatalf("seed weekly feedback: %v", err)
+		}
+	}
+
+	// Body-composition scan + segment (segment has scan_id, not user_id).
+	scanIDs := map[string]string{}
+	for _, uid := range []string{deletedUID, keptUID} {
+		scanID := uuid.NewString()
+		scanIDs[uid] = scanID
+		if err := st.db.Create(&BodyCompositionScanRecord{
+			ID: scanID, UserID: uid, ScanDate: "2026-01-01", WeightKg: 70, BodyFatPct: 15,
+			SmmKg: 32, FatMassKg: 10, VisceralFatLevel: 5, IngestedAt: now,
+		}).Error; err != nil {
+			t.Fatalf("seed scan: %v", err)
+		}
+		if err := st.db.Create(&BodyCompositionSegmentRecord{
+			ID: uuid.NewString(), ScanID: scanID, Segment: "trunk", LeanMassKg: 25, FatMassKg: 5,
+		}).Error; err != nil {
+			t.Fatalf("seed segment: %v", err)
+		}
+	}
+
+	// team_likes: one received by the deleted user, one given by them, and an
+	// unrelated like between two other identities that must survive.
+	likes := []TeamLike{
+		{TeamID: "t1", OwnerUserID: deletedUID, LabelID: "a1", LikerUserID: keptUID, LikerDisplayName: "keeper", CreatedAt: now},
+		{TeamID: "t1", OwnerUserID: keptUID, LabelID: "a2", LikerUserID: deletedUID, LikerDisplayName: "doomed", CreatedAt: now},
+		{TeamID: "t1", OwnerUserID: keptUID, LabelID: "a3", LikerUserID: keptUID, LikerDisplayName: "keeper", CreatedAt: now},
+	}
+	for i := range likes {
+		if err := st.db.Create(&likes[i]).Error; err != nil {
+			t.Fatalf("seed like: %v", err)
+		}
+	}
+
+	if err := st.DeleteUserData(ctx, deletedUID); err != nil {
+		t.Fatalf("DeleteUserData: %v", err)
+	}
+
+	count := func(model any, query string, args ...any) int64 {
+		t.Helper()
+		var n int64
+		if err := st.db.Model(model).Where(query, args...).Count(&n).Error; err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		return n
+	}
+	if n := count(&AbilitySnapshot{}, "user_id = ?", deletedUID); n != 0 {
+		t.Errorf("ability_snapshot rows survived: %d", n)
+	}
+	if n := count(&ActivityAbility{}, "user_id = ?", deletedUID); n != 0 {
+		t.Errorf("activity_ability rows survived: %d", n)
+	}
+	if n := count(&Vo2MaxPB{}, "user_id = ?", deletedUID); n != 0 {
+		t.Errorf("vo2max_pb rows survived: %d", n)
+	}
+	if n := count(&ActivityZone{}, "user_id = ?", deletedUID); n != 0 {
+		t.Errorf("activity_zones rows survived: %d", n)
+	}
+	if n := count(&ScheduledWorkout{}, "user_id = ?", deletedUID); n != 0 {
+		t.Errorf("scheduled_workout rows survived: %d", n)
+	}
+	if n := count(&WeeklyFeedback{}, "user_id = ?", deletedUID); n != 0 {
+		t.Errorf("weekly_feedback rows survived: %d", n)
+	}
+	if n := count(&BodyCompositionScanRecord{}, "user_id = ?", deletedUID); n != 0 {
+		t.Errorf("body composition scans survived: %d", n)
+	}
+	if n := count(&BodyCompositionSegmentRecord{}, "scan_id = ?", scanIDs[deletedUID]); n != 0 {
+		t.Errorf("body composition segments survived: %d", n)
+	}
+	if n := count(&TeamLike{}, "owner_user_id = ? OR liker_user_id = ?", deletedUID, deletedUID); n != 0 {
+		t.Errorf("team_likes rows survived: %d", n)
+	}
+
+	// The other user's rows must be untouched.
+	if n := count(&AbilitySnapshot{}, "user_id = ?", keptUID); n != 1 {
+		t.Errorf("other user's ability snapshots = %d, want 1", n)
+	}
+	if n := count(&BodyCompositionSegmentRecord{}, "scan_id = ?", scanIDs[keptUID]); n != 1 {
+		t.Errorf("other user's segments = %d, want 1", n)
+	}
+	if n := count(&TeamLike{}, "owner_user_id = ? OR liker_user_id = ?", keptUID, keptUID); n != 1 {
+		t.Errorf("other user's likes = %d, want 1 (likes involving the deleted user are removed)", n)
 	}
 }

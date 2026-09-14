@@ -143,6 +143,11 @@ type API struct {
 	// AuthServiceURL is the in-house auth-service origin used to mirror a user's
 	// display name (ADR 0013). Empty disables the best-effort write-back.
 	AuthServiceURL string `mapstructure:"auth-service-url"`
+	// CoachServiceURL is the TypeScript coach-service origin. The API drives its
+	// account-erasure endpoint when deleting a user (admin and self-delete).
+	// Empty disables coach cleanup, which is only acceptable in environments
+	// without the coach service.
+	CoachServiceURL string `mapstructure:"coach-service-url"`
 	// Features are the config-driven flags echoed in GET /api/users/me/profile,
 	// mirroring the Python server config (ADR 0013).
 	Features APIFeatures `mapstructure:"features"`

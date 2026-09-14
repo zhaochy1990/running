@@ -3,6 +3,8 @@ import { logger } from "hono/logger";
 import { requestId } from "hono/request-id";
 import { type AuthEnv, createAuthMiddleware, type JwtVerifier } from "./auth.js";
 import type { CoachInvoker } from "./coach/coachInvoker.js";
+import type { CoachDataDeleter } from "./persistence/deletion.js";
+import { registerAdminUserRoutes } from "./routes/adminUsers.js";
 import { registerChatRoutes } from "./routes/chat.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerHistoryRoutes, registerSessionListRoutes, type ThreadHistoryReader, type ThreadSessionReader } from "./routes/history.js";
@@ -19,6 +21,8 @@ export interface AppDependencies {
   checkpointer?: ThreadHistoryReader;
   /** When provided, exposes the deterministic plan-job enqueue/poll endpoints. */
   planJobs?: PlanJobsService;
+  /** When provided, exposes the admin/self coach-data erasure endpoint. */
+  coachDataDeleter?: CoachDataDeleter;
 }
 
 export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
@@ -50,6 +54,13 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
     app.use("/api/users/me/coach/sessions", createAuthMiddleware(dependencies.jwtVerifier));
     registerSessionListRoutes(app, { checkpointer: dependencies.checkpointer as unknown as ThreadSessionReader });
     registerHistoryRoutes(app, { checkpointer: dependencies.checkpointer });
+  }
+
+  if (dependencies.coachDataDeleter) {
+    registerAdminUserRoutes(app, {
+      deleter: dependencies.coachDataDeleter,
+      auth: createAuthMiddleware(dependencies.jwtVerifier),
+    });
   }
 
   return app;

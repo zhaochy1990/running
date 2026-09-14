@@ -25,12 +25,14 @@ import (
 	"github.com/zhaochy1990/stride/internal/api"
 	"github.com/zhaochy1990/stride/internal/authsvc"
 	"github.com/zhaochy1990/stride/internal/catalog"
+	"github.com/zhaochy1990/stride/internal/coachsvc"
 	"github.com/zhaochy1990/stride/internal/config"
 	"github.com/zhaochy1990/stride/internal/health"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/mq"
 	"github.com/zhaochy1990/stride/internal/pipeline"
 	"github.com/zhaochy1990/stride/internal/storage"
+	"github.com/zhaochy1990/stride/internal/userdata"
 )
 
 func newAPICmd() *cobra.Command {
@@ -100,6 +102,10 @@ func runAPI() error {
 	if err := store.AutoMigrateTeamLikes(ctx); err != nil {
 		return err
 	}
+	// user_deletion_audit records every account-erasure attempt (admin or self).
+	if err := store.AutoMigrateUserDeletionAudit(ctx); err != nil {
+		return err
+	}
 	// scheduled_workout rows back the watch workout-push API (device execution
 	// state: pushed workouts + provider ids).
 	if err := store.AutoMigrateScheduledWorkout(ctx); err != nil {
@@ -126,6 +132,9 @@ func runAPI() error {
 
 	// User/onboarding and team surfaces share one auth-service client.
 	authClient := authsvc.New(cfg.API.AuthServiceURL, 5*time.Second)
+	// Coach cleanup goes through the TypeScript coach service, forwarding the
+	// caller's bearer (admin token or the user's own).
+	coachClient := coachsvc.New(cfg.API.CoachServiceURL, 10*time.Second)
 	providerLogin := providerLoginAdapter{store: store, delay: watchRequestDelay}
 	providerInfo := providerInfoAdapter{store: store, delay: watchRequestDelay}
 	// File-based provider-binding fallback (registry.ProviderName) reads
@@ -170,6 +179,10 @@ func runAPI() error {
 		ProviderInfo:            providerInfo,
 		AuthNameSync:            authClient,
 		AccountDeleter:          authClient,
+		AdminAccountDeleter:     authClient,
+		CoachDataDeleter:        coachClient,
+		UserDataDirRemover:      userdata.NewRemover(dataDir),
+		DeletionAuditStore:      store,
 		Features:                features,
 		ActivityStore:           store,
 		TeamAuth:                authClient,

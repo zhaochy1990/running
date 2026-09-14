@@ -138,6 +138,16 @@ type Config struct {
 	AccountDeleter AccountDeleter
 	Features       FeatureConfig
 
+	// Account-erasure orchestration (admin delete + self-delete). AdminAccountDeleter
+	// forwards an administrator bearer to the auth-service admin endpoint;
+	// CoachDataDeleter drives the coach service; UserDataDirRemover clears the
+	// on-disk data directory; DeletionAuditStore records the per-step trail. All
+	// are optional for tests that never exercise deletion.
+	AdminAccountDeleter AdminAccountDeleter
+	CoachDataDeleter    CoachDataDeleter
+	UserDataDirRemover  UserDataDirRemover
+	DeletionAuditStore  DeletionAuditStore
+
 	// ActivityStore backs the activity read surface (ADR 0019) — a sibling
 	// registrar sharing the auth path. Leave zero to run without the activity
 	// endpoints (e.g. in tests that never hit them).
@@ -224,6 +234,8 @@ type Service struct {
 	users *userRoutes
 	goals *goalRoutes
 
+	adminUsers *adminUserRoutes
+
 	activities *activityRoutes
 	teams      *teamRoutes
 
@@ -253,6 +265,7 @@ func NewService(cfg Config) *Service {
 	if log == nil {
 		log = logging.Default()
 	}
+	eraser := newAccountEraser(cfg.UserStore, cfg.AccountDeleter, cfg.AdminAccountDeleter, cfg.CoachDataDeleter, cfg.UserDataDirRemover, cfg.DeletionAuditStore, log)
 	return &Service{
 		enq:                     cfg.Enqueuer,
 		jobs:                    cfg.Jobs,
@@ -273,8 +286,9 @@ func NewService(cfg Config) *Service {
 		syncPipelineIncremental: cfg.SyncPipelineIncremental,
 		jobCatalog:              cfg.JobCatalog,
 		pipelineCatalog:         cfg.PipelineCatalog,
-		users:                   newUserRoutes(cfg.UserStore, cfg.InjuryStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.AccountDeleter, cfg.Features, cfg.Runs, log),
+		users:                   newUserRoutes(cfg.UserStore, cfg.InjuryStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, eraser, cfg.Features, cfg.Runs, log),
 		goals:                   newGoalRoutes(cfg.GoalStore, log),
+		adminUsers:              newAdminUserRoutes(eraser, log),
 		activities:              newActivityRoutes(cfg.ActivityStore, log),
 		teams:                   newTeamRoutes(cfg.TeamAuth, cfg.TeamStore, cfg.ActivityStore, log),
 		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),
@@ -335,6 +349,9 @@ func (s *Service) Router() *gin.Engine {
 	authenticated.GET("/api/admin/pipeline-runs/:run_id", s.getAdminPipelineRun)
 	// Unified admin async view: pipeline runs + standalone plan jobs together.
 	authenticated.GET("/api/admin/async-runs", s.listAdminAsyncRuns)
+	// Administrator account erasure: mounted on the parent group so the admin JWT
+	// tier can enter; the handler rejects user/internal callers itself.
+	s.adminUsers.register(authenticated)
 
 	// Existing routes accept only the original user/internal tiers. Keeping this
 	// default deny prevents an admin-dashboard token from silently inheriting
