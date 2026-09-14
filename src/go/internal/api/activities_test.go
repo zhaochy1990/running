@@ -365,11 +365,77 @@ func TestActivityDetail_NotFound_404(t *testing.T) {
 func baseDetailStore() *fakeActivityStore {
 	return &fakeActivityStore{
 		activity: &storage.Activity{LabelID: "act-1", SportType: 100, Date: time.Date(2026, 1, 15, 2, 0, 0, 0, time.UTC)},
+		// COROS shape: 'type2' is the watch's own lap table (distances filled),
+		// alongside the derived 'autoKm' tier of the same run.
 		laps: map[string][]storage.Lap{
-			"autoKm": {{LapIndex: 0, LapType: "autoKm", DistanceM: fptr(1000), DurationS: fptr(300), AvgPace: fptr(300)}},
-			"type2":  {{LapIndex: 0, LapType: "type2", ExerciseType: iptr(3), Mode: iptr(1)}},
+			"type2": {
+				{LapIndex: 0, LapType: "type2", DistanceM: fptr(1000), DurationS: fptr(300), AvgPace: fptr(300)},
+				{LapIndex: 1, LapType: "type2", DistanceM: fptr(1000), DurationS: fptr(295), AvgPace: fptr(295)},
+			},
+			"autoKm": {
+				{LapIndex: 0, LapType: "autoKm", DistanceM: fptr(1000), DurationS: fptr(300), AvgPace: fptr(300)},
+				{LapIndex: 1, LapType: "autoKm", DistanceM: fptr(1000), DurationS: fptr(295), AvgPace: fptr(295)},
+			},
 		},
 		zones: []storage.ActivityWatchZone{{ZoneType: "hr", ZoneIndex: 1, DurationS: iptr(60)}},
+	}
+}
+
+// COROS: the watch's own lap table (type2) is the split source; the derived
+// autoKm tier is not read at all.
+func TestActivityDetail_LapsComeFromType2(t *testing.T) {
+	h := newActivityHarness(t, baseDetailStore())
+	w := h.do(http.MethodGet, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", w.Code)
+	}
+	var resp activityDetailResponse
+	mustJSON(t, w, &resp)
+	if len(resp.Laps) != 2 || resp.Laps[0].LapType != "type2" {
+		t.Fatalf("laps = %+v, want the two type2 laps", resp.Laps)
+	}
+	if got := strings.Join(h.store.gotLapTypes, ","); got != "type2" {
+		t.Fatalf("queried lap types = %q, want only type2", got)
+	}
+}
+
+// Garmin writes no type2: its auto laps live in autoKm, which must be used.
+func TestActivityDetail_LapsFallBackToAutoKm(t *testing.T) {
+	store := baseDetailStore()
+	store.laps["type2"] = nil
+	h := newActivityHarness(t, store)
+	w := h.do(http.MethodGet, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", w.Code)
+	}
+	var resp activityDetailResponse
+	mustJSON(t, w, &resp)
+	if len(resp.Laps) != 2 || resp.Laps[0].LapType != "autoKm" {
+		t.Fatalf("laps = %+v, want the autoKm laps", resp.Laps)
+	}
+	if got := strings.Join(h.store.gotLapTypes, ","); got != "type2,autoKm" {
+		t.Fatalf("queried lap types = %q, want type2 then autoKm", got)
+	}
+}
+
+// A single-lap type2 family is not a split table (auto-lap off), and COROS's
+// zero-distance derived tiers must never be served: laps end up empty, not a
+// table of 0.00 km rows.
+func TestActivityDetail_LapsEmptyWhenNoUsableFamily(t *testing.T) {
+	store := baseDetailStore()
+	store.laps["type2"] = []storage.Lap{{LapIndex: 0, LapType: "type2", DistanceM: fptr(12274), DurationS: fptr(3711)}}
+	store.laps["autoKm"] = []storage.Lap{{LapIndex: 0, LapType: "autoKm", DistanceM: fptr(0), DurationS: fptr(180)}}
+	h := newActivityHarness(t, store)
+	w := h.do(http.MethodGet, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA))
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", w.Code)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := string(raw["laps"]); got != "[]" {
+		t.Fatalf("laps = %s, want []", got)
 	}
 }
 
@@ -439,7 +505,7 @@ func TestActivityDetail_NoInclude_OmitsTimeseries(t *testing.T) {
 		t.Fatalf("pauses = %s, want []", resp.Activity.Pauses)
 	}
 	// segment carries seg_name + mode.
-	if len(resp.Segments) != 1 || resp.Segments[0].SegName == "" {
+	if len(resp.Segments) != 2 || resp.Segments[0].SegName == "" {
 		t.Fatalf("segment seg_name not populated: %+v", resp.Segments)
 	}
 }

@@ -166,6 +166,60 @@ func (a *activityRoutes) detail(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// lapFamilyLoader fetches one lap family (lap_type) for an activity.
+type lapFamilyLoader func(lapType string) ([]storage.Lap, error)
+
+// splitLapsFor picks the lap family that carries an activity's distance splits,
+// plus the strength-segment family.
+//
+// `type2` is COROS's own lap table — the laps the watch recorded: 1 km / 500 m
+// auto splits, a workout's interval reps (400/800 m), or the exercise groups of
+// a strength session. It is the only family COROS fills distance, pace, HR and
+// cadence in consistently, and on run activities its lap distances sum to the
+// activity distance (ratio 0.995–1.0 across prod).
+//
+// COROS also returns derived tiers ('autoKm' 1 km, 'autoMile' 5 km, 'type12'
+// 10 km) for the same activity. They are deliberately ignored: they are the same
+// laps re-grouped, their distance/pace come back as 0 on a share of activities,
+// and which tier is filled is not consistent. Garmin writes no `type2` at all —
+// its auto laps land in 'autoKm' — so that family is used as a fallback when
+// `type2` has fewer than two laps carrying a distance.
+func splitLapsFor(load lapFamilyLoader) (laps, segments []storage.Lap, err error) {
+	segments, err = load("type2")
+	if err != nil {
+		return nil, nil, err
+	}
+	laps = segments
+	if hasDistanceSplits(laps) {
+		return laps, segments, nil
+	}
+	laps, err = load("autoKm")
+	if err != nil {
+		return nil, nil, err
+	}
+	if !hasDistanceSplits(laps) {
+		laps = nil
+	}
+	return laps, segments, nil
+}
+
+// hasDistanceSplits reports whether a lap family is usable as a split table: at
+// least two of its laps carry a positive distance. A single-lap family is not a
+// split table, and a family whose distances are all zero (COROS's derived tiers,
+// strength exercise groups) must not be served as one.
+func hasDistanceSplits(laps []storage.Lap) bool {
+	withDistance := 0
+	for i := range laps {
+		if laps[i].DistanceM != nil && *laps[i].DistanceM > 0 {
+			withDistance++
+			if withDistance >= 2 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // assembleActivityDetail is the shared MySQL-backed detail assembler used by
 // both the owner-scoped activity route and the team-authorized activity route.
 // found=false distinguishes an absent activity from a storage failure.
@@ -178,11 +232,11 @@ func assembleActivityDetail(ctx context.Context, store ActivityStore, userID, la
 		return nil, false, nil
 	}
 
-	laps, err := store.ActivityLapsByType(ctx, userID, labelID, "autoKm")
-	if err != nil {
-		return nil, false, err
-	}
-	segs, err := store.ActivityLapsByType(ctx, userID, labelID, "type2")
+	laps, segs, err := splitLapsFor(
+		func(lapType string) ([]storage.Lap, error) {
+			return store.ActivityLapsByType(ctx, userID, labelID, lapType)
+		},
+	)
 	if err != nil {
 		return nil, false, err
 	}
@@ -391,6 +445,7 @@ type activityDetailDTO struct {
 	AvgHR           *int            `json:"avg_hr"`
 	MaxHR           *int            `json:"max_hr"`
 	AvgCadence      *int            `json:"avg_cadence"`
+	AvgStepLenCm    *float64        `json:"avg_step_len_cm"`
 	CaloriesKcal    *int            `json:"calories_kcal"`
 	TrainingLoad    *float64        `json:"training_load"`
 	VO2Max          *float64        `json:"vo2max"`
@@ -587,6 +642,7 @@ func toActivityDetail(a *storage.Activity) activityDetailDTO {
 		AvgHR:           a.AvgHR,
 		MaxHR:           a.MaxHR,
 		AvgCadence:      a.AvgCadence,
+		AvgStepLenCm:    a.AvgStepLenCm,
 		CaloriesKcal:    a.CaloriesKcal,
 		TrainingLoad:    a.TrainingLoad,
 		VO2Max:          a.VO2Max,

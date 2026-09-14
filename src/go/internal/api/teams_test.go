@@ -500,7 +500,7 @@ func TestTeamDetailUsesMembershipAndSharedAssembler(t *testing.T) {
 		}
 		var resp activityDetailResponse
 		mustJSON(t, w, &resp)
-		if !h.activities.tsCalled || resp.Timeseries == nil || len(*resp.Timeseries) != 1 || strings.Join(h.activities.gotLapTypes, ",") != "autoKm,type2" {
+		if !h.activities.tsCalled || resp.Timeseries == nil || len(*resp.Timeseries) != 1 || strings.Join(h.activities.gotLapTypes, ",") != "type2,autoKm" {
 			t.Fatalf("assembler resp=%+v store=%+v", resp, h.activities)
 		}
 	})
