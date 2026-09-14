@@ -2,11 +2,47 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
 
+// Client-side pre-checks mirror the mini-program's rules (11-digit mainland
+// phone, 6-digit code). They save a doomed round-trip; the server still owns
+// the real validation.
+const PHONE_RE = /^1\d{10}$/;
+const CODE_RE = /^\d{6}$/;
+
+// Aligned with the backend's sms/send cooldown window.
+const CODE_RESEND_SECONDS = 60;
+
+type LoginTab = "email" | "phone";
+
+interface AuthError {
+  status?: number;
+  error?: string;
+}
+
+// auth-service apperror codes → user-facing copy.
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+  sms_code_invalid: "验证码错误",
+  sms_code_expired: "验证码已过期,请重新获取",
+  sms_attempts_exceeded: "尝试次数过多,请重新获取验证码",
+  sms_send_cooldown: "发送过于频繁,请稍后再试",
+  sms_daily_limit: "今日验证码次数已达上限",
+  sms_not_configured: "短信服务未配置,请使用邮箱登录",
+  invalid_invite_code: "邀请码无效",
+  invite_code_already_used: "邀请码已被使用",
+  user_disabled: "账号已被禁用",
+};
+
 export default function LoginModal({ onClose }: { onClose: () => void }) {
-  const { login } = useAuthStore();
+  const { login, sendSmsCode, loginWithPhone } = useAuthStore();
   const navigate = useNavigate();
+  const [tab, setTab] = useState<LoginTab>("email");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+  const [inviteRequired, setInviteRequired] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [sendingCode, setSendingCode] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -18,6 +54,19 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  // One timer per remaining second; the cleanup stops it when the modal closes.
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setTimeout(() => setCountdown((seconds) => seconds - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown]);
+
+  function switchTab(next: LoginTab) {
+    if (next === tab) return;
+    setTab(next);
+    setError("");
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
@@ -26,14 +75,78 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
       await login(email, password);
       navigate("/");
     } catch (err: unknown) {
-      const x = err as { status?: number; error?: string };
+      const x = err as AuthError;
       if (x.status === 401) setError("邮箱或密码错误");
-      else if (x.error === "user_disabled") setError("账号已被禁用");
-      else setError("登录失败,请重试");
+      else setError(AUTH_ERROR_MESSAGES[x.error ?? ""] ?? "登录失败,请重试");
     } finally {
       setLoading(false);
     }
   }
+
+  async function handleSendCode() {
+    if (countdown > 0 || sendingCode) return;
+    setError("");
+    if (!PHONE_RE.test(phone)) {
+      setError("请输入正确的手机号");
+      return;
+    }
+    setSendingCode(true);
+    try {
+      await sendSmsCode(phone);
+      setCountdown(CODE_RESEND_SECONDS);
+    } catch (err: unknown) {
+      const x = err as AuthError;
+      setError(AUTH_ERROR_MESSAGES[x.error ?? ""] ?? "验证码发送失败,请重试");
+    } finally {
+      setSendingCode(false);
+    }
+  }
+
+  async function handlePhoneSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!PHONE_RE.test(phone)) {
+      setError("请输入正确的手机号");
+      return;
+    }
+    if (!CODE_RE.test(code)) {
+      setError("请输入 6 位验证码");
+      return;
+    }
+    setLoading(true);
+    try {
+      await loginWithPhone(phone, code, inviteCode);
+      navigate("/");
+    } catch (err: unknown) {
+      setPhoneError(err as AuthError);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function setPhoneError(x: AuthError) {
+    // Invalid or already-used invites keep the field open so the user can fix
+    // it. A brand-new phone under an invite-gated deployment is rejected with a
+    // generic bad_request ("invite_code is required") *before* the SMS code is
+    // consumed — that is the backend's "new phone, needs an invite" signal.
+    if (x.error === "invalid_invite_code" || x.error === "invite_code_already_used" || x.error === "bad_request") {
+      setInviteRequired(true);
+      setError(x.error === "bad_request" ? "请输入邀请码" : AUTH_ERROR_MESSAGES[x.error]);
+      return;
+    }
+    setError(AUTH_ERROR_MESSAGES[x.error ?? ""] ?? "登录失败,请重试");
+  }
+
+  const submitButton = (
+    <button className="lg-submit" type="submit" disabled={loading}>
+      {loading ? "登录中…" : "登录"}
+      {!loading && (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 12h14M13 6l6 6-6 6" />
+        </svg>
+      )}
+    </button>
+  );
 
   return (
     <div
@@ -120,47 +233,121 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
 
             {/* OAuth buttons and divider intentionally omitted */}
 
-            <form onSubmit={handleSubmit}>
-              <div className="lg-field">
-                <label htmlFor="lgEmail">邮箱</label>
-                <input
-                  id="lgEmail"
-                  type="email"
-                  dir="ltr"
-                  placeholder="you@runner.com"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              <div className="lg-field">
-                <div className="lg-row">
-                  <label htmlFor="lgPw">密码</label>
-                  {/* 忘记密码链接 intentionally omitted */}
-                </div>
-                <input
-                  id="lgPw"
-                  type="password"
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-
-              {error && <div className="lg-error">{error}</div>}
-
-              <button className="lg-submit" type="submit" disabled={loading}>
-                {loading ? "登录中…" : "登录"}
-                {!loading && (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M5 12h14M13 6l6 6-6 6" />
-                  </svg>
-                )}
+            <div className="lg-tabs" role="tablist" aria-label="登录方式">
+              <button
+                type="button"
+                role="tab"
+                id="lgTabEmail"
+                aria-selected={tab === "email"}
+                className={tab === "email" ? "lg-tab active" : "lg-tab"}
+                onClick={() => switchTab("email")}
+              >
+                邮箱
               </button>
-            </form>
+              <button
+                type="button"
+                role="tab"
+                id="lgTabPhone"
+                aria-selected={tab === "phone"}
+                className={tab === "phone" ? "lg-tab active" : "lg-tab"}
+                onClick={() => switchTab("phone")}
+              >
+                手机号
+              </button>
+            </div>
+
+            {tab === "email" ? (
+              <form onSubmit={handleSubmit}>
+                <div className="lg-field">
+                  <label htmlFor="lgEmail">邮箱</label>
+                  <input
+                    id="lgEmail"
+                    type="email"
+                    dir="ltr"
+                    placeholder="you@runner.com"
+                    autoComplete="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+                <div className="lg-field">
+                  <div className="lg-row">
+                    <label htmlFor="lgPw">密码</label>
+                    {/* 忘记密码链接 intentionally omitted */}
+                  </div>
+                  <input
+                    id="lgPw"
+                    type="password"
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
+
+                {error && <div className="lg-error">{error}</div>}
+
+                {submitButton}
+              </form>
+            ) : (
+              <form onSubmit={handlePhoneSubmit}>
+                <div className="lg-field">
+                  <label htmlFor="lgPhone">手机号</label>
+                  <input
+                    id="lgPhone"
+                    type="tel"
+                    inputMode="numeric"
+                    dir="ltr"
+                    placeholder="138 0000 0000"
+                    autoComplete="tel"
+                    required
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+                </div>
+                <div className="lg-field">
+                  <label htmlFor="lgCode">验证码</label>
+                  <div className="lg-code-row">
+                    <input
+                      id="lgCode"
+                      type="text"
+                      inputMode="numeric"
+                      dir="ltr"
+                      placeholder="6 位数字"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      required
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                    />
+                    <button type="button" className="lg-code-btn" onClick={handleSendCode} disabled={countdown > 0 || sendingCode}>
+                      {sendingCode ? "发送中…" : countdown > 0 ? `重新获取(${countdown}s)` : "获取验证码"}
+                    </button>
+                  </div>
+                </div>
+
+                {inviteRequired && (
+                  <div className="lg-field">
+                    <label htmlFor="lgInvite">邀请码</label>
+                    <input
+                      id="lgInvite"
+                      type="text"
+                      dir="ltr"
+                      placeholder="请输入邀请码"
+                      autoComplete="off"
+                      value={inviteCode}
+                      onChange={(e) => setInviteCode(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {error && <div className="lg-error">{error}</div>}
+
+                {submitButton}
+              </form>
+            )}
 
             <p className="lg-swap">
               还没有账号? <Link to="/register">创建训练档案 →</Link>

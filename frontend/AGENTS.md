@@ -9,4 +9,6 @@
 
 `smoke:web:local` 从仓库根目录 `.credentials.local` 读取真实账号；如果当前 checkout 是 git worktree 且 worktree 根目录没有 `.credentials.local`，去主仓库目录找同名文件。不能把 email / password / token 打到回复或日志里。它必须完成登录、打开 `/activities`、并点进一个 `/activity/:id` 详情页确认数据可见。登录失败先查浏览器 console/network。
 
+改了**手机号 + 验证码登录**时，还要跑手机号这一段：`npm run smoke:web:local:sms`（= `smoke:web:local` + `STRIDE_SMS_TEST_MODE=1`）。它只在后端处于 SMS 测试模式（固定码 `123456`，不发真短信）时可用 —— 即把 Vite 代理指到 stride-devops 的本地栈（`VITE_DEV_API_PROXY=http://localhost:5173`，auth-backend 默认已开 `AUTH_SMS_TEST_MODE=true`）。它用一个随机新手机号走完发送 → 倒计时 → 验证 → 自动注册，所以每跑一次都会新建一个账号。不开 `STRIDE_SMS_TEST_MODE` 时该段自动跳过（默认代理是 prod，真短信的码脚本读不到）。
+
 auth 经同一 API 网关：SPA 的 API origin 由构建期 `VITE_API_BASE_URL` 烘焙（`src/lib/apiRouting.ts`）。本地 dev 该值为空 → 相对 `/api/auth` → Vite 代理到网关；生产构建烘焙为 `https://api.stride-running.cn`，浏览器直接跨域调用网关（网关必须对 `https://stride-running.cn` 放行 CORS）。

@@ -84,6 +84,8 @@ interface AuthState {
   hydrated: boolean;
   login: (email: string, password: string) => Promise<void>;
   registerSuccess: (access_token: string, refresh_token: string) => void;
+  sendSmsCode: (phone: string) => Promise<void>;
+  loginWithPhone: (phone: string, code: string, inviteCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   clearSession: () => void;
   hydrate: () => void;
@@ -123,6 +125,23 @@ function readPersistedAuth(): Pick<AuthState, "accessToken" | "userId" | "isAuth
 
 const initialAuth = readPersistedAuth();
 
+// Persist a freshly issued token pair and flip the store into the authenticated
+// state. `login`, `registerSuccess` and `loginWithPhone` all do exactly this,
+// so it lives in one place.
+function applySession(set: (partial: Partial<AuthState>) => void, accessToken: string, refreshToken: string) {
+  const payload = decodeJwt(accessToken);
+  sessionStorage.setItem("access_token", accessToken);
+  sessionStorage.setItem("refresh_token", refreshToken);
+  set({
+    accessToken,
+    userId: payload.sub,
+    isAuthenticated: true,
+    hydrated: true,
+  });
+  void setAuthUser(payload.sub);
+  scheduleTokenRefresh();
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   ...initialAuth,
 
@@ -139,34 +158,43 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
 
     const { access_token, refresh_token } = await res.json();
-    const payload = decodeJwt(access_token);
-
-    sessionStorage.setItem("access_token", access_token);
-    sessionStorage.setItem("refresh_token", refresh_token);
-
-    set({
-      accessToken: access_token,
-      userId: payload.sub,
-      isAuthenticated: true,
-      hydrated: true,
-    });
-
-    void setAuthUser(payload.sub);
-    scheduleTokenRefresh();
+    applySession(set, access_token, refresh_token);
   },
 
   registerSuccess: (access_token: string, refresh_token: string) => {
-    const payload = decodeJwt(access_token);
-    sessionStorage.setItem("access_token", access_token);
-    sessionStorage.setItem("refresh_token", refresh_token);
-    set({
-      accessToken: access_token,
-      userId: payload.sub,
-      isAuthenticated: true,
-      hydrated: true,
+    applySession(set, access_token, refresh_token);
+  },
+
+  sendSmsCode: async (phone: string) => {
+    const res = await fetch(apiUrl("POST", `/api/auth/sms/send`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Client-Id": CLIENT_ID },
+      body: JSON.stringify({ phone }),
     });
-    void setAuthUser(payload.sub);
-    scheduleTokenRefresh();
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw { status: res.status, error: data.error };
+    }
+  },
+
+  loginWithPhone: async (phone: string, code: string, inviteCode?: string) => {
+    const body: { phone: string; code: string; invite_code?: string } = { phone, code };
+    if (inviteCode) body.invite_code = inviteCode;
+
+    const res = await fetch(apiUrl("POST", `/api/auth/sms/verify`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Client-Id": CLIENT_ID },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw { status: res.status, error: data.error };
+    }
+
+    const { access_token, refresh_token } = await res.json();
+    applySession(set, access_token, refresh_token);
   },
 
   logout: async () => {

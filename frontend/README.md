@@ -23,19 +23,24 @@ For frontend changes, run a real local login and data-page smoke before
 calling the work done:
 
 ```bash
-npm run dev:frontend:local
+npm run dev:web:local
 ```
 
 In another terminal:
 
 ```bash
-npm run smoke:local
+npm run smoke:web:local
 ```
 
-`smoke:local` reads the real test credentials from repository-root
+`smoke:web:local` reads the real test credentials from repository-root
 `.credentials.local` and does not print the email, password, or tokens. It
 verifies login, `/activities`, and one `/activity/:id` detail page. If Vite is
-not on `http://127.0.0.1:5173`, set `STRIDE_LOCAL_URL` to the actual local URL.
+not on `http://127.0.0.1:5174`, set `STRIDE_LOCAL_URL` to the actual local URL.
+
+When the frontend is pointed at a backend in SMS test mode (the stride-devops
+local stack), run `npm run smoke:web:local:sms` instead — it adds a phone +
+verification-code login pass (fixed code `123456`) that also covers first-time
+auto-registration.
 
 ## Telemetry caveats
 
