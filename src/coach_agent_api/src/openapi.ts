@@ -127,6 +127,70 @@ export const OPENAPI_DOCUMENT = {
         },
       },
     },
+    "/api/admin/users/{user_id}/coach/plan-jobs": {
+      post: {
+        tags: ["Admin"],
+        operationId: "adminCreatePlanJob",
+        summary: "Enqueue a training-plan job for an athlete (admin)",
+        description:
+          "Admin dashboard surface: starts a plan job for the user in the path (not the caller). Requires an admin-audience token with role=admin; user and internal callers are refused.",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "user_id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/PlanJobEnqueueRequest" },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "The plan job was enqueued.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PlanJobEnqueueResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The request body or kernel request is invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("The caller is not a verified admin."),
+        },
+      },
+    },
+    "/api/admin/users/{user_id}/coach/plan-jobs/{job_id}": {
+      get: {
+        tags: ["Admin"],
+        operationId: "adminGetPlanJob",
+        summary: "Poll an athlete's training-plan job (admin)",
+        description: "Admin dashboard surface: returns one athlete's job state. Requires an admin-audience token with role=admin.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "user_id", in: "path", required: true, schema: { type: "string" } },
+          {
+            name: "job_id",
+            in: "path",
+            required: true,
+            schema: { $ref: "#/components/schemas/TurnIdentifier" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "The job's current state.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/PlanJobPollResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The job_id is invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("The caller is not a verified admin."),
+          "404": errorResponse("The plan job was not found."),
+        },
+      },
+    },
     "/api/users/me/coach/sessions": {
       get: {
         tags: ["Coach"],

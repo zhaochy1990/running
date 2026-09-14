@@ -7,7 +7,7 @@ const neverStream = () => {
 const app = createApp({
   jwtVerifier: {
     async verify() {
-      return { userId: "smoke-user" };
+      return { userId: "smoke-user", isAdmin: false };
     },
   },
   coachInvoker: {

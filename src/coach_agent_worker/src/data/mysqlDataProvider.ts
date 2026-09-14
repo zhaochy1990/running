@@ -158,7 +158,8 @@ export class MySqlDataProvider implements DataProvider {
 	         FROM master_plan
 	        WHERE user_id = ?
 	          AND content_version = 2
-	          AND status IN ('active', 'archived')`,
+	          AND status IN ('active', 'archived')
+	        ORDER BY created_at DESC, plan_id DESC`,
       [userId],
     );
     const matches = rows
@@ -169,10 +170,15 @@ export class MySqlDataProvider implements DataProvider {
         content: parsePlanContent(row.content, "master_plan"),
       }))
       .filter((plan) => masterPlanContainsDay(plan.content, day));
-    if (matches.length > 1) {
+    // Replacing a season plan archives the superseded row over the same dates,
+    // so overlapping archived rows are normal and must not be treated as
+    // ambiguous: the active plan is the athlete's current one. Only two live
+    // candidates make the target week genuinely undecidable.
+    const active = matches.filter((plan) => plan.status === "active");
+    if (active.length > 1) {
       throw new Error(`multiple master plans cover ${day} for ${userId}`);
     }
-    return matches[0] ?? null;
+    return active[0] ?? matches[0] ?? null;
   }
 
   /**

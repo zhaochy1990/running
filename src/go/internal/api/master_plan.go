@@ -35,6 +35,7 @@ type MasterPlanStore interface {
 	ApplyStructuredMasterPlan(ctx context.Context, userID, goalID, content string, replacement *storage.MasterPlanReplacement) (*storage.MasterPlan, *storage.MasterPlan, error)
 	UpdateActiveMasterPlan(ctx context.Context, userID, goalID, content string, expectation *storage.MasterPlanReplacement) (*storage.MasterPlan, error)
 	InsertMasterPlanDraft(ctx context.Context, userID, goalID, content, draftID string) (*storage.MasterPlan, bool, error)
+	ListMasterPlanDrafts(ctx context.Context, userID string) ([]storage.MasterPlan, error)
 	GetMasterPlanDraft(ctx context.Context, userID, planID string) (*storage.MasterPlan, error)
 	ActivateMasterPlanDraft(ctx context.Context, userID, planID string) (*storage.MasterPlan, *storage.MasterPlan, error)
 	AbandonMasterPlanDraft(ctx context.Context, userID, planID string) (*storage.MasterPlan, error)
@@ -60,21 +61,33 @@ func (m *masterPlanRoutes) register(rg *gin.RouterGroup) {
 	}
 	rg.GET("/api/users/me/master-plan/current", m.getCurrent)
 	rg.GET("/api/users/:user_id/master-plan/current", m.getCurrentForUser)
-	// Draft read (ADR 0030) stays on the read surface: verified admin/internal
-	// callers may inspect any user's draft, mirroring getCurrentForUser.
+	// Draft reads (ADR 0030) stay on the read surface: verified admin/internal
+	// callers may inspect any user's drafts, mirroring getCurrentForUser.
+	rg.GET("/api/users/:user_id/master-plan/drafts", m.listDrafts)
 	rg.GET("/api/users/:user_id/master-plan/drafts/:plan_id", m.getDraft)
 }
 
+// registerDraftActivates mounts season-plan draft activation on the parent
+// authenticated group so the Admin Dashboard can apply a draft an admin just
+// generated for an athlete. The handler still scopes user-tier callers to their
+// own subject, so widening the group only admits TierAdmin/TierInternal.
+func (m *masterPlanRoutes) registerDraftActivates(rg *gin.RouterGroup) {
+	if m.store == nil {
+		return
+	}
+	rg.POST("/api/users/:user_id/master-plan/drafts/:plan_id/activate", m.activateDraft)
+}
+
 // registerDraftWrites mounts the Season Plan draft mutations on the default-deny
-// child group so an admin-dashboard token cannot mutate an athlete's draft.
-// Insert is internal-token-only (the plan-job worker); activate/abandon are
-// user-scoped (authorizeUser-style self check inside the handlers).
+// child group so an admin-dashboard token cannot spawn or discard an athlete's
+// draft. Insert is internal-token-only (the plan-job worker); abandon is
+// user-scoped (self check inside the handler). Activation is mounted separately
+// on the parent group — see registerDraftActivates.
 func (m *masterPlanRoutes) registerDraftWrites(rg *gin.RouterGroup) {
 	if m.store == nil {
 		return
 	}
 	rg.POST("/api/users/:user_id/master-plan/drafts", m.insertDraft)
-	rg.POST("/api/users/:user_id/master-plan/drafts/:plan_id/activate", m.activateDraft)
 	rg.POST("/api/users/:user_id/master-plan/drafts/:plan_id/abandon", m.abandonDraft)
 }
 
@@ -378,6 +391,63 @@ func (m *masterPlanRoutes) insertDraft(c *gin.Context) {
 		status = http.StatusOK
 	}
 	c.JSON(status, draftIDResponse{Success: true, PlanID: created.PlanID, Status: created.Status})
+}
+
+// listDrafts returns a user's pending season-plan drafts, metadata only. The
+// Admin Dashboard uses it to offer drafts alongside the active plan; content is
+// fetched per draft by getDraft.
+//
+//	@Summary		List a user's season plan drafts
+//	@Tags			master-plan
+//	@Produce		json
+//	@Param			user_id	path	string	true	"User id (JWT sub)"
+//	@Success		200		{object}	map[string]interface{}
+//	@Failure		400		{object}	errorResponse
+//	@Failure		401		{object}	errorResponse
+//	@Failure		403		{object}	errorResponse
+//	@Failure		500		{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/users/{user_id}/master-plan/drafts [get]
+func (m *masterPlanRoutes) listDrafts(c *gin.Context) {
+	uid := c.Param("user_id")
+	if _, err := uuid.Parse(uid); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user"})
+		return
+	}
+	caller := callerFrom(c)
+	if caller.Tier == TierUser && uid != caller.UserID {
+		c.JSON(http.StatusForbidden, errorResponse{Error: "forbidden"})
+		return
+	}
+	rows, err := m.store.ListMasterPlanDrafts(c.Request.Context(), uid)
+	if err != nil {
+		m.log.Error("list master plan drafts failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	type draftMetadata struct {
+		PlanID         string    `json:"plan_id"`
+		GoalID         string    `json:"goal_id"`
+		Status         string    `json:"status"`
+		Revision       *int64    `json:"revision"`
+		ContentVersion int8      `json:"content_version"`
+		CreatedAt      time.Time `json:"created_at"`
+		UpdatedAt      time.Time `json:"updated_at"`
+	}
+	drafts := make([]draftMetadata, 0, len(rows))
+	for _, row := range rows {
+		drafts = append(drafts, draftMetadata{
+			PlanID:         row.PlanID,
+			GoalID:         row.GoalID,
+			Status:         row.Status,
+			Revision:       row.Revision,
+			ContentVersion: row.ContentVersion,
+			CreatedAt:      row.CreatedAt,
+			UpdatedAt:      row.UpdatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"drafts": drafts})
 }
 
 // getDraft reads a draft by id. User callers are scoped to their own subject.

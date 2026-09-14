@@ -74,6 +74,12 @@ const schema: convict.Schema<RawApiConfig> = {
       default: "",
       env: "STRIDE_AUTH_AUDIENCE",
     },
+    admin_audience: {
+      doc: "Audience identifying the admin dashboard token; grants the cross-user plan-job surface",
+      format: String,
+      default: "",
+      env: "STRIDE_AUTH_ADMIN_AUDIENCE",
+    },
   },
   stride_database: databaseSchema({
     host: "STRIDE_COACH_DATA_HOST",
@@ -116,6 +122,7 @@ export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
       authServiceUrl: raw.auth.auth_service_url,
       issuer: raw.auth.issuer,
       ...(raw.auth.audience ? { audience: raw.auth.audience } : {}),
+      ...(raw.auth.admin_audience ? { adminAudience: raw.auth.admin_audience } : {}),
     },
   };
 }

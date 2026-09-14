@@ -1,6 +1,6 @@
 import { MasterPlanGraphRequest, PLAN_JOB_TYPES, type PlanJob, type PlanJobType, WeeklyPlanGeneratorRequest } from "@stride/coach-agent-worker";
-import type { Hono, MiddlewareHandler } from "hono";
-import type { AuthEnv } from "../auth.js";
+import type { Context, Hono, MiddlewareHandler } from "hono";
+import { type AuthEnv, createAdminMiddleware } from "../auth.js";
 
 /**
  * Deterministic plan-job surface (ADR 0030): enqueue a directly-submitted
@@ -22,26 +22,44 @@ const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 export function registerPlanJobRoutes(app: Hono<AuthEnv>, dependencies: { planJobs: PlanJobsService; auth: MiddlewareHandler<AuthEnv> }): void {
   app.post("/api/users/me/coach/plan-jobs", dependencies.auth, async (context) => {
     const userId = context.get("userId");
-    const body = await readEnqueueRequest(context.req.raw);
-    if (!body.ok) return context.json({ error: body.error }, 400);
-    const { jobType, inputJson, idempotencyKey } = body.value;
-    const { jobId, estimatedDurationSeconds } = await dependencies.planJobs.enqueue({
-      userId,
-      jobType,
-      inputJson,
-      ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
-    });
-    return context.json({ job_id: jobId, job_type: jobType, estimated_duration_seconds: estimatedDurationSeconds }, 201);
+    return enqueueFor(context, dependencies.planJobs, userId);
   });
 
   app.get("/api/users/me/coach/plan-jobs/:job_id", dependencies.auth, async (context) => {
-    const userId = context.get("userId");
-    const jobId = context.req.param("job_id");
-    if (!ID_RE.test(jobId)) return context.json({ error: "invalid_job_id" }, 400);
-    const job = await dependencies.planJobs.get(userId, jobId);
-    if (job === null) return context.json({ error: "plan_job_not_found" }, 404);
-    return context.json(toPollResponse(job));
+    return pollFor(context, dependencies.planJobs, context.get("userId"));
   });
+
+  // Admin Dashboard surface: start / poll a plan job on behalf of any athlete.
+  // Cross-user by construction, so it requires a verified admin-audience token
+  // (the `rejectAdminCaller` inverse of Go's default-deny groups).
+  const admin = createAdminMiddleware();
+  app.post("/api/admin/users/:user_id/coach/plan-jobs", dependencies.auth, admin, async (context) => {
+    return enqueueFor(context, dependencies.planJobs, context.req.param("user_id"));
+  });
+  app.get("/api/admin/users/:user_id/coach/plan-jobs/:job_id", dependencies.auth, admin, async (context) => {
+    return pollFor(context, dependencies.planJobs, context.req.param("user_id"));
+  });
+}
+
+async function enqueueFor(context: Context<AuthEnv>, planJobs: PlanJobsService, userId: string): Promise<Response> {
+  const body = await readEnqueueRequest(context.req.raw);
+  if (!body.ok) return context.json({ error: body.error }, 400);
+  const { jobType, inputJson, idempotencyKey } = body.value;
+  const { jobId, estimatedDurationSeconds } = await planJobs.enqueue({
+    userId,
+    jobType,
+    inputJson,
+    ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+  });
+  return context.json({ job_id: jobId, job_type: jobType, estimated_duration_seconds: estimatedDurationSeconds }, 201);
+}
+
+async function pollFor(context: Context<AuthEnv>, planJobs: PlanJobsService, userId: string): Promise<Response> {
+  const jobId = context.req.param("job_id") ?? "";
+  if (!ID_RE.test(jobId)) return context.json({ error: "invalid_job_id" }, 400);
+  const job = await planJobs.get(userId, jobId);
+  if (job === null) return context.json({ error: "plan_job_not_found" }, 404);
+  return context.json(toPollResponse(job));
 }
 
 function toPollResponse(job: PlanJob): Record<string, unknown> {

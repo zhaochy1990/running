@@ -70,6 +70,7 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
       publicKeyPem: await resolvePublicKeyPem(apiConfig.auth),
       issuer: apiConfig.auth.issuer,
       ...(apiConfig.auth.audience ? { audience: apiConfig.auth.audience } : {}),
+      ...(apiConfig.auth.adminAudience ? { adminAudience: apiConfig.auth.adminAudience } : {}),
     });
     return {
       app: createApp({

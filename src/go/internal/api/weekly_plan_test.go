@@ -31,6 +31,7 @@ type fakeWeeklyPlanStore struct {
 	lastMasterPlanID string
 	lastDateFrom     string
 	lastDateTo       string
+	lastWeekStart    string
 	feedback         map[string]storage.WeeklyFeedback
 	now              time.Time
 }
@@ -152,6 +153,16 @@ func (f *fakeWeeklyPlanStore) InsertWeeklyPlanDraft(_ context.Context, userID, w
 	return &draft, true, nil
 }
 
+func (f *fakeWeeklyPlanStore) ListWeeklyPlanDrafts(_ context.Context, userID string) ([]storage.WeeklyPlan, error) {
+	var drafts []storage.WeeklyPlan
+	for _, plan := range f.plans[userID] {
+		if plan.Status == storage.WeeklyPlanStatusDraft {
+			drafts = append(drafts, plan)
+		}
+	}
+	return drafts, nil
+}
+
 func (f *fakeWeeklyPlanStore) GetWeeklyPlanDraft(_ context.Context, userID, planID string) (*storage.WeeklyPlan, error) {
 	for i := range f.plans[userID] {
 		if f.plans[userID][i].PlanID == planID {
@@ -163,6 +174,7 @@ func (f *fakeWeeklyPlanStore) GetWeeklyPlanDraft(_ context.Context, userID, plan
 }
 
 func (f *fakeWeeklyPlanStore) ActivateWeeklyPlanDraft(_ context.Context, userID, weekStart, planID string) (*storage.WeeklyPlan, *storage.WeeklyPlan, error) {
+	f.lastWeekStart = weekStart
 	var draft *storage.WeeklyPlan
 	var replaced *storage.WeeklyPlan
 	for i := range f.plans[userID] {

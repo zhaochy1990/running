@@ -4,8 +4,18 @@ import { verify } from "hono/jwt";
 
 const logger = getLogger("auth");
 
+export interface JwtIdentity {
+  userId: string;
+  /**
+   * True when the token carries the admin audience AND `role=admin`. Mirrors
+   * the Go API's TierAdmin rule (`internal/api/auth.go`) so both services agree
+   * on who the admin-dashboard token belongs to.
+   */
+  isAdmin: boolean;
+}
+
 export interface JwtVerifier {
-  verify(authorization: string | undefined): Promise<{ userId: string }>;
+  verify(authorization: string | undefined): Promise<JwtIdentity>;
 }
 
 export class AuthError extends Error {}
@@ -14,6 +24,7 @@ export class AuthError extends Error {}
 export type AuthEnv = {
   Variables: {
     userId: string;
+    isAdmin: boolean;
   };
 };
 
@@ -28,6 +39,7 @@ export function createAuthMiddleware(jwtVerifier: JwtVerifier): MiddlewareHandle
     try {
       const identity = await jwtVerifier.verify(context.req.header("authorization"));
       context.set("userId", identity.userId);
+      context.set("isAdmin", identity.isAdmin);
     } catch (error) {
       if (error instanceof AuthError) {
         context.header("WWW-Authenticate", "Bearer");
@@ -39,7 +51,21 @@ export function createAuthMiddleware(jwtVerifier: JwtVerifier): MiddlewareHandle
   };
 }
 
-export function createJwtVerifier(options: { publicKeyPem: string; issuer: string; audience?: string | string[] }): JwtVerifier {
+/**
+ * Admin-only gate for the cross-user plan-job surface the Admin Dashboard uses.
+ * Runs after createAuthMiddleware, so an unauthenticated request is already a
+ * 401; anything that is not a verified admin token is a 403.
+ */
+export function createAdminMiddleware(): MiddlewareHandler<AuthEnv> {
+  return async (context, next) => {
+    if (!context.get("isAdmin")) {
+      return context.json({ error: "forbidden" }, 403);
+    }
+    await next();
+  };
+}
+
+export function createJwtVerifier(options: { publicKeyPem: string; issuer: string; audience?: string | string[]; adminAudience?: string }): JwtVerifier {
   return {
     async verify(authorization) {
       const token = bearerToken(authorization);
@@ -52,7 +78,7 @@ export function createJwtVerifier(options: { publicKeyPem: string; issuer: strin
         if (typeof payload.sub !== "string" || payload.sub.length === 0) {
           throw new AuthError("token is missing sub");
         }
-        return { userId: payload.sub };
+        return { userId: payload.sub, isAdmin: isAdminPayload(payload, options.adminAudience) };
       } catch (error: unknown) {
         logger.info("invalid bearer token: %s", (error as Error).name);
         if (error instanceof AuthError) {
@@ -62,6 +88,17 @@ export function createJwtVerifier(options: { publicKeyPem: string; issuer: strin
       }
     },
   };
+}
+
+/** Mirrors the Go verifier: admin audience without `role=admin` is rejected. */
+function isAdminPayload(payload: Record<string, unknown>, adminAudience: string | undefined): boolean {
+  if (!adminAudience) return false;
+  const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  if (!audiences.includes(adminAudience)) return false;
+  if (payload.role !== "admin") {
+    throw new AuthError("admin audience requires admin role");
+  }
+  return true;
 }
 
 /**

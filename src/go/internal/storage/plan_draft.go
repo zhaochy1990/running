@@ -109,6 +109,25 @@ func (s *Store) GetMasterPlanDraft(ctx context.Context, userID, planID string) (
 	return &row, nil
 }
 
+// ListMasterPlanDrafts returns a user's pending season-plan drafts, newest
+// first. Only the metadata columns are selected; content is loaded by
+// GetMasterPlanDraft for the single draft being viewed.
+func (s *Store) ListMasterPlanDrafts(ctx context.Context, userID string) ([]MasterPlan, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []MasterPlan
+	if err := s.db.WithContext(ctx).
+		Select("plan_id", "user_id", "content_version", "goal_id", "status", "revision", "created_at", "updated_at").
+		Where("user_id = ? AND status = ?", uid, MasterPlanStatusDraft).
+		Order("created_at DESC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // ActivateMasterPlanDraft archives the user's current active season plan (if
 // any) and promotes the chosen draft to active, all in one transaction. Sibling
 // drafts stay draft. All rows for the user are locked so the active transition
@@ -334,6 +353,24 @@ func (s *Store) GetWeeklyPlanDraft(ctx context.Context, userID, planID string) (
 		return nil, err
 	}
 	return &row, nil
+}
+
+// ListWeeklyPlanDrafts returns a user's pending weekly-plan drafts, newest week
+// first. Metadata only — content is loaded per draft by GetWeeklyPlanDraft.
+func (s *Store) ListWeeklyPlanDrafts(ctx context.Context, userID string) ([]WeeklyPlan, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []WeeklyPlan
+	if err := s.db.WithContext(ctx).
+		Select("plan_id", "user_id", "master_plan_id", "week_start", "content_version", "status", "revision", "created_at", "updated_at").
+		Where("user_id = ? AND status = ?", uid, WeeklyPlanStatusDraft).
+		Order("week_start DESC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
 
 // ActivateWeeklyPlanDraft archives the user's current active plan for the week

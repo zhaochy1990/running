@@ -89,7 +89,7 @@ test("chat derives user and thread identity from the verified token", async () =
     jwtVerifier: {
       async verify(header) {
         assert.equal(header, "Bearer signed");
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -158,7 +158,7 @@ test("chat never exposes a tool message as the public answer", async () => {
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -198,7 +198,7 @@ test("chat resumes an interrupt without requiring a new message", async () => {
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -231,7 +231,7 @@ test("chat accepts multi-select interrupt answers", async () => {
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -285,7 +285,7 @@ test("chat validates the public request contract before invoking Coach", async (
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -317,7 +317,7 @@ test("chat rejects a malformed timestamp", async () => {
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -351,7 +351,7 @@ test("chat defaults the message timestamp to Asia/Shanghai time", async () => {
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -388,7 +388,7 @@ test("chat replays an identical client turn and conflicts on changed input", asy
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -426,7 +426,7 @@ test("chat carries validated target and review context into request identity and
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -478,7 +478,7 @@ test("chat rejects review context that does not match the target week", async ()
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -513,7 +513,7 @@ test("chat returns an explicit retryable response when the thread is busy", asyn
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -552,7 +552,7 @@ test("chat rejects empty interrupt answers", async () => {
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -619,7 +619,7 @@ test("history derives the thread from the verified token and maps messages", asy
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -666,7 +666,7 @@ test("history returns an empty list when the thread has no checkpoint", async ()
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -697,7 +697,7 @@ test("history rejects an invalid session id", async () => {
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
@@ -741,7 +741,7 @@ test("session list scopes threads to the caller and maps session_id/preview", as
   const app = createApp({
     jwtVerifier: {
       async verify() {
-        return { userId: "athlete-1" };
+        return { userId: "athlete-1", isAdmin: false };
       },
     },
     coachInvoker: {
