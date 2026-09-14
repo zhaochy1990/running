@@ -172,10 +172,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       body: JSON.stringify({ phone }),
     });
 
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw { status: res.status, error: data.error };
-    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw { status: res.status, error: data.error };
+    // The endpoint answers {status:"ok"}. A non-JSON 200 (e.g. a misrouted
+    // proxy serving the SPA fallback) must not be mistaken for a sent code —
+    // otherwise the UI starts a countdown that never delivered an SMS.
+    if (data.status !== "ok") throw { status: res.status, error: "unexpected_response" };
   },
 
   loginWithPhone: async (phone: string, code: string, inviteCode?: string) => {

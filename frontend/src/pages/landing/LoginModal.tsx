@@ -4,8 +4,10 @@ import { useAuthStore } from "../../store/authStore";
 
 // Client-side pre-checks mirror the mini-program's rules (11-digit mainland
 // phone, 6-digit code). They save a doomed round-trip; the server still owns
-// the real validation.
-const PHONE_RE = /^1\d{10}$/;
+// the real validation. The phone pattern matches the auth backend's
+// `phoneNumberRe` (`^1[3-9]\d{9}$`) so a locally-valid number is never the
+// reason a request comes back as a generic bad_request.
+const PHONE_RE = /^1[3-9]\d{9}$/;
 const CODE_RE = /^\d{6}$/;
 
 // Aligned with the backend's sms/send cooldown window.
@@ -26,6 +28,7 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   sms_send_cooldown: "发送过于频繁,请稍后再试",
   sms_daily_limit: "今日验证码次数已达上限",
   sms_not_configured: "短信服务未配置,请使用邮箱登录",
+  service_unavailable: "服务暂时不可用,请稍后再试",
   invalid_invite_code: "邀请码无效",
   invite_code_already_used: "邀请码已被使用",
   user_disabled: "账号已被禁用",
@@ -233,25 +236,11 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
 
             {/* OAuth buttons and divider intentionally omitted */}
 
-            <div className="lg-tabs" role="tablist" aria-label="登录方式">
-              <button
-                type="button"
-                role="tab"
-                id="lgTabEmail"
-                aria-selected={tab === "email"}
-                className={tab === "email" ? "lg-tab active" : "lg-tab"}
-                onClick={() => switchTab("email")}
-              >
+            <div className="lg-tabs">
+              <button type="button" aria-pressed={tab === "email"} className={tab === "email" ? "lg-tab active" : "lg-tab"} onClick={() => switchTab("email")}>
                 邮箱
               </button>
-              <button
-                type="button"
-                role="tab"
-                id="lgTabPhone"
-                aria-selected={tab === "phone"}
-                className={tab === "phone" ? "lg-tab active" : "lg-tab"}
-                onClick={() => switchTab("phone")}
-              >
+              <button type="button" aria-pressed={tab === "phone"} className={tab === "phone" ? "lg-tab active" : "lg-tab"} onClick={() => switchTab("phone")}>
                 手机号
               </button>
             </div>

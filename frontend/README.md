@@ -37,10 +37,24 @@ npm run smoke:web:local
 verifies login, `/activities`, and one `/activity/:id` detail page. If Vite is
 not on `http://127.0.0.1:5174`, set `STRIDE_LOCAL_URL` to the actual local URL.
 
-When the frontend is pointed at a backend in SMS test mode (the stride-devops
-local stack), run `npm run smoke:web:local:sms` instead — it adds a phone +
-verification-code login pass (fixed code `123456`) that also covers first-time
-auto-registration.
+To exercise phone + verification-code login against a backend in SMS test mode
+(the stride-devops local stack), point the dev proxy at that stack's auth
+backend and run the SMS smoke:
+
+```bash
+# .env.web.local
+VITE_DEV_API_PROXY=http://localhost:3001   # local auth-backend; 5173 is the static SPA (no /api)
+```
+
+```bash
+npm run smoke:web:local:sms
+```
+
+`STRIDE_SMS_TEST_MODE=1` makes the script run **only** the phone pass (fixed code
+`123456`), including first-time auto-registration — the local setup has no
+`.credentials.local` account and does not proxy the data plane, so the email and
+data-page passes are skipped. Without the flag the script is the unchanged
+email + data-page smoke.
 
 ## Telemetry caveats
 

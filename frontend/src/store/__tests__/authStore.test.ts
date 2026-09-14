@@ -96,6 +96,25 @@ describe("authStore auth calls (frontend static container → Caddy-internal API
     });
   });
 
+  it("rejects a 200 sms/send response that is not the ok envelope", async () => {
+    // A misrouted proxy can answer 200 with the SPA's HTML fallback; that must
+    // not be mistaken for "code sent" (the UI would start a countdown and then
+    // fail at verify).
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("<!doctype html><html></html>", {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      }),
+    );
+
+    const { useAuthStore } = await import("../authStore");
+
+    await expect(useAuthStore.getState().sendSmsCode("13800138000")).rejects.toEqual({
+      status: 200,
+      error: "unexpected_response",
+    });
+  });
+
   it("verifies a phone code without invite_code and applies the session", async () => {
     const accessToken = makeJwt({ sub: "user-9", exp: Math.floor(Date.now() / 1000) + 3600 });
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(

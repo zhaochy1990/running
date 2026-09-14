@@ -31,7 +31,7 @@ function renderModal() {
 }
 
 function switchToPhoneTab() {
-  fireEvent.click(screen.getByRole("tab", { name: "手机号" }));
+  fireEvent.click(screen.getByRole("button", { name: "手机号" }));
 }
 
 afterEach(() => {
@@ -80,12 +80,13 @@ describe("LoginModal", () => {
 
   it("defaults to the email tab and swaps the form to phone on tab switch", () => {
     renderModal();
-    expect(screen.getByRole("tab", { name: "邮箱" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "邮箱" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText("邮箱")).toBeInTheDocument();
 
     switchToPhoneTab();
 
-    expect(screen.getByRole("tab", { name: "手机号" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "手机号" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "邮箱" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByLabelText("邮箱")).not.toBeInTheDocument();
     expect(screen.getByLabelText("手机号")).toBeInTheDocument();
     expect(screen.getByLabelText("验证码")).toBeInTheDocument();
@@ -132,6 +133,18 @@ describe("LoginModal", () => {
     renderModal();
     switchToPhoneTab();
     fireEvent.change(screen.getByLabelText("手机号"), { target: { value: "138" } });
+    fireEvent.click(screen.getByRole("button", { name: "获取验证码" }));
+
+    expect(await screen.findByText("请输入正确的手机号")).toBeInTheDocument();
+    expect(mocks.sendSmsCode).not.toHaveBeenCalled();
+  });
+
+  it("rejects an 11-digit phone with an invalid prefix locally", async () => {
+    // The backend's rule is ^1[3-9]\d{9}$; a bare 11-digit check would let
+    // 10000000000 through and turn the ensuing bad_request into an invite prompt.
+    renderModal();
+    switchToPhoneTab();
+    fireEvent.change(screen.getByLabelText("手机号"), { target: { value: "10000000000" } });
     fireEvent.click(screen.getByRole("button", { name: "获取验证码" }));
 
     expect(await screen.findByText("请输入正确的手机号")).toBeInTheDocument();
@@ -201,6 +214,7 @@ describe("LoginModal", () => {
     ["sms_code_expired", "验证码已过期,请重新获取"],
     ["sms_attempts_exceeded", "尝试次数过多,请重新获取验证码"],
     ["sms_not_configured", "短信服务未配置,请使用邮箱登录"],
+    ["service_unavailable", "服务暂时不可用,请稍后再试"],
     ["user_disabled", "账号已被禁用"],
   ])("maps %s to its message", async (error, message) => {
     mocks.loginWithPhone.mockRejectedValueOnce({ status: 400, error });
