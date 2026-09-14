@@ -1,63 +1,46 @@
-import type { Lap } from '../types/activity';
+import type { Segment } from '../types/activity';
 
-/** 单圈配速标记：与上一同类圈的走向 + 全场最快 / 最慢高亮。 */
+/** 单圈配速标记：与上一圈的走向 + 全场最快 / 最慢高亮（恢复圈两者都没有）。 */
 export interface LapPaceMark {
-  /** '' = 无走向（首圈 / 本类圈只有这一圈 / 配速缺失 / 配速持平） */
+  /** '' = 无走向（首圈 / 本圈或上一圈没有配速 / 配速持平） */
   trend: '' | 'up' | 'down';
-  /** ↗ / ↘，无走向时为空 */
-  arrow: string;
-  /** 整行高亮 class */
-  rowClass: '' | 'lap-row--fastest' | 'lap-row--slowest';
+  /** 恢复圈（组间停顿）：不计圈号、不比箭头、不参与最快 / 最慢 */
+  rest: boolean;
+  /** 整行样式 class */
+  rowClass: '' | 'lap-row--fastest' | 'lap-row--slowest' | 'lap-row--rest';
   /** 圈数徽标 class */
   tagClass: '' | 'lap-row__tag--fastest';
   /** 圈数徽标文字 */
   tag: '' | '最快' | '最慢';
 }
 
-const ARROW: Record<'up' | 'down', string> = { up: '↗', down: '↘' };
-
-/** 同类圈：两圈距离相差不超过较大者的这个比例（800m 快圈与 400m 慢圈不同类）。 */
-const SAME_CLASS_TOLERANCE = 0.25;
-
-/** 可排名圈少于这个数就不标最快 / 最慢。 */
+/** 有配速的圈少于这个数就不标最快 / 最慢。 */
 const MIN_RANKABLE_LAPS = 3;
 
-function distanceOf(lap: Lap): number {
-  return lap.distance_km != null && lap.distance_km > 0 ? lap.distance_km : 0;
-}
+/** 后端 SegmentName 给停顿圈起的名字（exercise_type 4/3 → 恢复 / 休息） */
+const REST_SEG_NAMES = ['恢复', '休息'];
 
-/** 中位圈距离（只看有效距离）；不足一圈返回 0。 */
-function midDistance(laps: Lap[]): number {
-  const ds = laps
-    .map(distanceOf)
-    .filter((d) => d > 0)
-    .sort((a, b) => a - b);
-  return ds.length ? ds[ds.length >> 1] : 0;
-}
-
-function sameClass(a: Lap, b: Lap): boolean {
-  const da = distanceOf(a);
-  const db = distanceOf(b);
-  return da > 0 && db > 0 && Math.abs(da - db) <= Math.max(da, db) * SAME_CLASS_TOLERANCE;
-}
+/** COROS 原始圈类型：3 = 恢复圈（一部分圈 exercise_type 为 0，seg_name 会回落成「训练」） */
+const REST_MODE = 3;
 
 /**
  * 计算圈速表每圈的配速箭头与最快 / 最慢高亮。
  *
- * 两个判断都只收「真跑出来的圈」：间歇课收尾的 13m 残圈、两组之间的 30m 停顿，
- * 配速动辄 40'+/km，收进来它们就永远是全场最快 / 最慢。
+ * - 恢复圈（seg_name 恢复 / 休息，或原始 mode 3）不计圈号、不比箭头、不参与最快 / 最慢。
+ * - 箭头：本圈配速 vs 上一「有圈号」圈的配速（跨过中间的恢复圈）。
+ * - 最快 / 最慢：所有有配速的普通圈一起排（含 400m 慢跑圈、收尾残圈），按配速
+ *   s/km 比，不按 duration_s —— 距离不同的圈比时间会得出反的结论。
  */
-export function lapPaceMarks(laps: Lap[]): LapPaceMark[] {
-  const median = midDistance(laps);
-  // 距离不到中位圈一半的算残圈 / 停顿
-  const isRealLap = (lap: Lap) => median > 0 && distanceOf(lap) * 2 >= median && lap.avg_pace != null;
+export function lapPaceMarks(laps: Segment[]): LapPaceMark[] {
+  const rest = laps.map((lap) => REST_SEG_NAMES.includes(lap.seg_name) || lap.mode === REST_MODE);
 
-  const rankable = laps.map((lap, i) => (isRealLap(lap) ? i : -1)).filter((i) => i >= 0);
+  const active = laps.map((_, i) => (rest[i] ? -1 : i)).filter((i) => i >= 0);
+  const paced = active.filter((i) => laps[i].avg_pace != null);
+
   let fast = -1;
   let slow = -1;
-  if (rankable.length >= MIN_RANKABLE_LAPS) {
-    // 按配速（s/km，越小越快）比，不按 duration_s —— 距离不同的圈比时间会得出反的结论
-    for (const i of rankable) {
+  if (paced.length >= MIN_RANKABLE_LAPS) {
+    for (const i of paced) {
       if (fast < 0 || (laps[i].avg_pace as number) < (laps[fast].avg_pace as number)) fast = i;
       if (slow < 0 || (laps[i].avg_pace as number) > (laps[slow].avg_pace as number)) slow = i;
     }
@@ -65,24 +48,18 @@ export function lapPaceMarks(laps: Lap[]): LapPaceMark[] {
     if (laps[fast].avg_pace === laps[slow].avg_pace) fast = slow = -1;
   }
 
-  return laps.map((lap, i) => {
-    // 箭头跟「上一圈同类圈」比，不跟紧邻的上一行比：间歇课 800m 快圈之间夹着
-    // 400m 慢圈和休息圈，跟紧邻行比会得到一路 ↗↘ 噪声，甚至整片没有箭头。
-    let ref = -1;
-    if (isRealLap(lap)) {
-      for (let j = i - 1; j >= 0; j--) {
-        if (isRealLap(laps[j]) && sameClass(lap, laps[j])) {
-          ref = j;
-          break;
-        }
-      }
+  let prevActive = -1;
+  return laps.map((lap, i): LapPaceMark => {
+    if (rest[i]) {
+      return { trend: '', rest: true, rowClass: 'lap-row--rest', tagClass: '', tag: '' };
     }
-    const prev = ref >= 0 ? (laps[ref].avg_pace as number) : null;
     const cur = lap.avg_pace;
+    const prev = prevActive >= 0 ? laps[prevActive].avg_pace : null;
+    prevActive = i;
     const trend = cur == null || prev == null || cur === prev ? '' : cur < prev ? 'up' : 'down';
     return {
       trend,
-      arrow: trend ? ARROW[trend] : '',
+      rest: false,
       rowClass: i === fast ? 'lap-row--fastest' : i === slow ? 'lap-row--slowest' : '',
       tagClass: i === fast ? 'lap-row__tag--fastest' : '',
       tag: i === fast ? '最快' : i === slow ? '最慢' : '',

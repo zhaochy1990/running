@@ -1,5 +1,5 @@
 import { getActivityDetail } from '../../services/activities';
-import { fmtDurationShort, fmtKm, fmtHms } from '../../utils/format';
+import { fmtDurationShort, fmtKm, fmtHms, fmtPaceQuote, fmtPaceQuoteParts } from '../../utils/format';
 import { shanghaiDateFromIso, shanghaiTimeFromIso } from '../../utils/date';
 import { wgs84ToGcj02 } from '../../utils/coord';
 import { lapPaceMarks } from '../../utils/lapRows';
@@ -7,7 +7,6 @@ import { userStore } from '../../store/index';
 import type {
   Activity,
   ActivityDetailResponse,
-  Lap,
   Segment,
   Zone,
   TimeseriesPoint,
@@ -37,10 +36,10 @@ interface LapRow {
   index: string;
   duration: string;
   distanceKm: string;
-  pace: string;
-  /** 配速后的箭头（与上一圈比较）：'' | '↗' | '↘' */
-  paceArrow: string;
-  /** 箭头着色：'' | 'up' | 'down' */
+  /** 平均配速拆成分钟 / `'SS"` 两段，便于按 `'` 对齐 */
+  paceMin: string;
+  paceSec: string;
+  /** 配速走向（与上一圈比较）→ /assets/icons/trend_{{trend}}.svg：'' | 'up' | 'down' */
   paceTrend: string;
   /** 整行高亮：'' | 'lap-row--fastest' | 'lap-row--slowest' */
   rowClass: string;
@@ -231,7 +230,7 @@ function buildMetrics(a: Activity, isStrength: boolean): Metric[] {
 
   if (!isStrength) {
     metrics.push(metric('距离', a.distance_km > 0 ? `${a.distance_km}` : '—', 'km', METRIC_COLORS.run));
-    metrics.push(metric('平均配速', a.pace_fmt || '—', undefined, METRIC_COLORS.pace));
+    metrics.push(metric('平均配速', fmtPaceQuote(a.avg_pace_s_km), undefined, METRIC_COLORS.pace));
   }
   metrics.push(metric('平均心率', intStr(a.avg_hr), 'bpm', METRIC_COLORS.hr));
   metrics.push(metric('训练负荷', decimalStr(a.training_load, 0)));
@@ -369,21 +368,26 @@ function buildZones(zones: Zone[]): { hrZones: ZoneBar[]; paceZones: ZoneBar[]; 
   return { hrZones, paceZones, hasZones: hrZones.length > 0 || paceZones.length > 0 };
 }
 
-function buildLapRows(rawLaps: Lap[]): LapRow[] {
-  const marks = lapPaceMarks(rawLaps);
-  return rawLaps.map((lap, index) => ({
-    index: `${index + 1}`,
-    duration: lap.duration_fmt || '—',
-    distanceKm: lap.distance_km != null && lap.distance_km > 0 ? `${lap.distance_km.toFixed(2)}` : '—',
-    pace: lap.pace_fmt || '—',
-    paceArrow: marks[index].arrow,
-    paceTrend: marks[index].trend,
-    rowClass: marks[index].rowClass,
-    tag: marks[index].tag,
-    tagClass: marks[index].tagClass,
-    hr: intStr(lap.avg_hr),
-    cadence: intStr(lap.avg_cadence),
-  }));
+function buildLapRows(segs: Segment[]): LapRow[] {
+  const marks = lapPaceMarks(segs);
+  let lapNo = 0;
+  return segs.map((seg, i) => {
+    const [paceMin, paceSec] = fmtPaceQuoteParts(seg.avg_pace);
+    return {
+      // 恢复圈不占圈号
+      index: marks[i].rest ? '恢复' : `${++lapNo}`,
+      duration: seg.duration_fmt || '—',
+      distanceKm: seg.distance_km != null && seg.distance_km > 0 ? `${seg.distance_km.toFixed(2)}` : '—',
+      paceMin,
+      paceSec,
+      paceTrend: marks[i].trend,
+      rowClass: marks[i].rowClass,
+      tag: marks[i].tag,
+      tagClass: marks[i].tagClass,
+      hr: intStr(seg.avg_hr),
+      cadence: intStr(seg.avg_cadence),
+    };
+  });
 }
 
 function isRestSegment(seg: Segment): boolean {

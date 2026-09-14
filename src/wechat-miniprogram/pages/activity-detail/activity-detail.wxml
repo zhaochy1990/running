@@ -90,18 +90,26 @@
             <view class="lap-head__cell lap-head__cell--idx">圈数</view>
             <view class="lap-head__cell">时间</view>
             <view class="lap-head__cell">距离</view>
-            <view class="lap-head__cell">平均配速</view>
+            <view class="lap-head__cell lap-head__cell--pace">平均配速</view>
             <view class="lap-head__cell">平均心率</view>
             <view class="lap-head__cell">平均步频</view>
           </view>
           <view wx:for="{{laps}}" wx:key="index" class="lap-row {{item.rowClass}}">
             <view class="lap-row__cell lap-row__cell--idx">
-              <text wx:if="{{item.tag}}" class="lap-row__tag {{item.tagClass}}">{{item.tag}}</text>
-              <text>{{item.index}}</text>
+              <text class="lap-row__num">{{item.index}}</text>
+              <view class="lap-row__tag-slot">
+                <text wx:if="{{item.tag}}" class="lap-row__tag {{item.tagClass}}">{{item.tag}}</text>
+              </view>
             </view>
             <view class="lap-row__cell">{{item.duration}}</view>
             <view class="lap-row__cell">{{item.distanceKm}}</view>
-            <view class="lap-row__cell">{{item.pace}}<text wx:if="{{item.paceArrow}}" class="lap-row__trend lap-row__trend--{{item.paceTrend}}">{{item.paceArrow}}</text></view>
+            <view class="lap-row__cell lap-row__cell--pace">
+              <text class="lap-row__pace-mm">{{item.paceMin}}</text>
+              <text class="lap-row__pace-ss">{{item.paceSec}}</text>
+              <view class="lap-row__trend-slot">
+                <image wx:if="{{item.paceTrend}}" class="lap-row__trend" src="/assets/icons/trend_{{item.paceTrend}}.svg" mode="aspectFit" />
+              </view>
+            </view>
             <view class="lap-row__cell">{{item.hr}}</view>
             <view class="lap-row__cell">{{item.cadence}}</view>
           </view>

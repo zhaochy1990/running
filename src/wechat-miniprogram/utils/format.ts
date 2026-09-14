@@ -35,6 +35,18 @@ export function fmtPace(secondsPerKm: number | null | undefined): string {
   return `${m}:${String(ss).padStart(2, '0')}/km`;
 }
 
+/** 配速拆成对齐用的两段（按 `'` 对齐）：分钟 + `'SS"`。null/非法 → ['—', '']。 */
+export function fmtPaceQuoteParts(secondsPerKm: number | null | undefined): [string, string] {
+  if (secondsPerKm == null || !Number.isFinite(secondsPerKm) || secondsPerKm <= 0) return ['—', ''];
+  const s = Math.round(secondsPerKm);
+  return [`${Math.floor(s / 60)}`, `'${String(s % 60).padStart(2, '0')}"`];
+}
+
+/** 配速 `M'SS"`（如 4'30"）。null/非法 → '—'。 */
+export function fmtPaceQuote(secondsPerKm: number | null | undefined): string {
+  return fmtPaceQuoteParts(secondsPerKm).join('');
+}
+
 /** 自然时长：1 小时内 `M:SS`，超过则 `H:MM:SS`。null/非法 → '—'。 */
 export function fmtDurationShort(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return '—';
