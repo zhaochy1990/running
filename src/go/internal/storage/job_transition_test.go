@@ -137,18 +137,28 @@ func TestFailStaleRunningJobsBackstop(t *testing.T) {
 	}
 	// The shared DB may hold other users' stale rows, so only the test's own
 	// jobs are asserted for state; count must at least cover them.
-	if count < 2 {
-		t.Fatalf("count = %d, want >= 2", count)
+	if count < 1 {
+		t.Fatalf("count = %d, want >= 1", count)
 	}
-	for _, id := range []string{"stale", "no-heartbeat"} {
+	j, err := store.Jobs().Get(ctx, "stale")
+	if err != nil || j.Status != job.StatusFailed || j.ErrorCode != "stale_running" {
+		t.Fatalf("stale after = %+v err=%v", j, err)
+	}
+	// A running row with no heartbeat has not opted into the heartbeat contract —
+	// pipeline step jobs never stamp one, so the plan-job reconcile must leave
+	// them alone (ADR 0033).
+	for _, id := range []string{"no-heartbeat", "fresh"} {
 		j, err := store.Jobs().Get(ctx, id)
-		if err != nil || j.Status != job.StatusFailed || j.ErrorCode != "stale_running" {
-			t.Fatalf("job %s after = %+v err=%v", id, j, err)
+		if err != nil {
+			t.Fatalf("get %s: %v", id, err)
+		}
+		if j.Status != job.StatusRunning {
+			t.Fatalf("%s after = %+v, want still running", id, j)
 		}
 	}
-	j, _ := store.Jobs().Get(ctx, "fresh")
-	if j == nil || j.Status != job.StatusRunning {
-		t.Fatalf("fresh after = %+v, want still running", j)
+	done, _ := store.Jobs().Get(ctx, "done")
+	if done.Status != job.StatusDone {
+		t.Fatalf("done after = %+v, want still done", done)
 	}
 }
 

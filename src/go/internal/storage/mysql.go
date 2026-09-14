@@ -467,12 +467,17 @@ func (s *jobStore) listAll(ctx context.Context, opts job.PipelineListOptions) ([
 	return jobs, total, nil
 }
 
-// failStaleRunning fails every running job whose heartbeat is older than
-// olderThan, tagging it with errorCode (the stale-running reconcile backstop,
+// failStaleRunning fails running jobs whose heartbeat is older than olderThan,
+// tagging them with errorCode (the plan-job stale-running reconcile backstop,
 // ADR 0033).
+//
+// Only rows that have actually stamped a heartbeat are eligible. Pipeline step
+// jobs never set one (see jobModel.HeartbeatAt), so treating a NULL heartbeat as
+// stale would let the plan-job worker's reconcile retire another worker's
+// in-flight jobs — it fails only what opted into the heartbeat contract.
 func (s *jobStore) failStaleRunning(ctx context.Context, olderThan, now time.Time, errorCode string) (int64, error) {
 	result := s.db.WithContext(ctx).Model(&jobModel{}).
-		Where("status = ? AND (heartbeat_at IS NULL OR heartbeat_at < ?)", string(job.StatusRunning), olderThan).
+		Where("status = ? AND heartbeat_at IS NOT NULL AND heartbeat_at < ?", string(job.StatusRunning), olderThan).
 		Updates(map[string]any{
 			"status":        string(job.StatusFailed),
 			"error_code":    errorCode,

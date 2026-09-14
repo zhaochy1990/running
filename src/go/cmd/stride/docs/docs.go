@@ -308,7 +308,7 @@ const docTemplate = `{
                         "InternalToken": []
                     }
                 ],
-                "description": "Internal-only. Fails every running job whose heartbeat is older than older_than, tagged with error_code. Returns how many were failed.",
+                "description": "Internal-only. Fails running jobs whose heartbeat is older than older_than, tagged with error_code. Jobs that have never stamped a heartbeat are left alone. Returns how many were failed.",
                 "consumes": [
                     "application/json"
                 ],
@@ -430,7 +430,7 @@ const docTemplate = `{
                         "InternalToken": []
                     }
                 ],
-                "description": "Internal-only. Applies a compare-and-set state change: From is the expected current status (nil = unconditional), To the new one, plus optional stage/progress/error/heartbeat deltas. 409 when the From guard fails.",
+                "description": "Internal-only. Applies a compare-and-set state change: From is the expected current status (nil = unconditional), AttemptsLT an extra guard on the current attempts, To the new one, plus optional attempts/delta progress/error/heartbeat fields. 409 when a guard fails.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6043,6 +6043,15 @@ const docTemplate = `{
             "properties": {
                 "attempts": {
                     "type": "integer"
+                },
+                "attempts_delta": {
+                    "type": "integer"
+                },
+                "attempts_lt": {
+                    "type": "integer"
+                },
+                "clear_error": {
+                    "type": "boolean"
                 },
                 "completed_at": {
                     "type": "string"

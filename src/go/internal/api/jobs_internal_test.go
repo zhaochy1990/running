@@ -202,11 +202,17 @@ func TestFailStaleRunningJobs(t *testing.T) {
 
 	stale := &job.Job{ID: "stale", UserID: "u-1", Type: "generate_weekly_plan", Status: job.StatusRunning, HeartbeatAt: ptrTime(now.Add(-10 * time.Minute))}
 	fresh := &job.Job{ID: "fresh", UserID: "u-1", Type: "generate_weekly_plan", Status: job.StatusRunning, HeartbeatAt: ptrTime(now.Add(-1 * time.Minute))}
+	// A pipeline step job: running, long past any window, but it never stamps a
+	// heartbeat — the plan-job reconcile must not retire it (ADR 0033).
+	pipelineStep := &job.Job{ID: "pipeline-step", UserID: "u-1", Type: "onboarding", PipelineRunID: "run-1", Status: job.StatusRunning}
 	if err := h.jobs.Create(t.Context(), stale); err != nil {
 		t.Fatalf("seed stale: %v", err)
 	}
 	if err := h.jobs.Create(t.Context(), fresh); err != nil {
 		t.Fatalf("seed fresh: %v", err)
+	}
+	if err := h.jobs.Create(t.Context(), pipelineStep); err != nil {
+		t.Fatalf("seed pipeline step: %v", err)
 	}
 
 	body := `{"older_than":"` + now.Add(-2*time.Minute).Format(time.RFC3339) + `","error_code":"stale_running"}`
@@ -231,6 +237,10 @@ func TestFailStaleRunningJobs(t *testing.T) {
 	freshAfter, _ := h.jobs.Get(t.Context(), "fresh")
 	if freshAfter == nil || freshAfter.Status != job.StatusRunning {
 		t.Fatalf("fresh after = %+v", freshAfter)
+	}
+	stepAfter, _ := h.jobs.Get(t.Context(), "pipeline-step")
+	if stepAfter == nil || stepAfter.Status != job.StatusRunning {
+		t.Fatalf("pipeline step after = %+v, want still running", stepAfter)
 	}
 }
 

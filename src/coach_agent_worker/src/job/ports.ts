@@ -20,8 +20,10 @@ export interface PlanJobStore {
    */
   transition(jobId: string, change: JobTransition): Promise<PlanJob>;
   /**
-   * Reconcile backstop: fail every running job whose heartbeat is older than
-   * `olderThan`, tagged with `errorCode`. Returns how many were failed.
+   * Reconcile backstop: fail running jobs whose heartbeat is older than
+   * `olderThan`, tagged with `errorCode`. Only jobs that have stamped a
+   * heartbeat are eligible — Go's pipeline step jobs share the table and never
+   * stamp one, so this must not reach them. Returns how many were failed.
    */
   failStaleRunning(olderThan: Date, now: Date, errorCode: string): Promise<number>;
 }

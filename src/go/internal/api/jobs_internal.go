@@ -92,7 +92,10 @@ func (s *Service) createInternalJob(c *gin.Context) {
 		UpdatedAt:      now,
 	}
 	if err := s.jobsCreate.Create(ctx, j); err != nil {
-		if errors.Is(err, job.ErrConflict) {
+		// A conflict is only replayable as an idempotent hit when a key was
+		// supplied: without one the clash is on job_id, and looking up an empty
+		// key would hand back some unrelated row for the caller to poll.
+		if errors.Is(err, job.ErrConflict) && body.IdempotencyKey != "" {
 			existing, lookupErr := s.jobsIdem.JobByIdempotencyKey(ctx, body.UserID, body.IdempotencyKey)
 			if lookupErr != nil {
 				s.log.Error("internal job conflict resolve failed", zapErr(lookupErr))
@@ -228,11 +231,13 @@ type staleRunningRequest struct {
 	ErrorCode string     `json:"error_code" binding:"required"`
 }
 
-// failStaleRunningJobs fails every running job whose heartbeat is older than
-// older_than (the plan-job worker's stale-running reconcile backstop).
+// failStaleRunningJobs fails running jobs whose heartbeat is older than
+// older_than (the plan-job worker's stale-running reconcile backstop). Only jobs
+// that have stamped a heartbeat are eligible, so it cannot retire pipeline step
+// jobs belonging to another worker.
 //
 //	@Summary		Fail stale running jobs (internal)
-//	@Description	Internal-only. Fails every running job whose heartbeat is older than older_than, tagged with error_code. Returns how many were failed.
+//	@Description	Internal-only. Fails running jobs whose heartbeat is older than older_than, tagged with error_code. Jobs that have never stamped a heartbeat are left alone. Returns how many were failed.
 //	@Tags			jobs
 //	@Accept			json
 //	@Produce		json
