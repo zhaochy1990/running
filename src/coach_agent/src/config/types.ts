@@ -7,7 +7,7 @@ export interface ModelConfig {
   name: string;
   provider: ModelProvider;
   model: string;
-  deployment: string;
+  deployment?: string;
   endpoint: string;
   api_key_env: string;
   api_version?: string;

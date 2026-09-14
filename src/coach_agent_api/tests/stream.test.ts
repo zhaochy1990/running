@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createApp } from "../src/app.js";
 import type { CoachStreamSource } from "../src/coach/coachInvoker.js";
+import { collectCoachStream } from "../src/routes/stream.js";
 
 const SSE_ACCEPT = { accept: "text/event-stream" };
 
@@ -460,4 +461,16 @@ test("streaming chat runs the turn under the per-thread lock and releases it aft
   // sync request on the same thread must not be serialized behind a stale lock.
   const sync = await chatRequest({ session_id: "session-1", client_turn_id: "turn-2", message: "after" })(app);
   assert.equal(sync.status, 200);
+});
+
+test("done waits for a turn slower than the old 5s drain bound and returns the reply", async () => {
+  // Regression: the adapter used to race the whole stream against a 5s bound and
+  // build `done` from the last snapshot — a >5s turn returned a partial state with
+  // no reply and the route emitted an error instead of the answer.
+  const events = (async function* () {
+    await new Promise((resolve) => setTimeout(resolve, 5_100));
+    yield valuesChunk({ messages: [{ type: "ai", content: "慢回复" }] });
+  })();
+  const response = await collectCoachStream({ events }, async () => {});
+  assert.equal(response.message, "慢回复");
 });

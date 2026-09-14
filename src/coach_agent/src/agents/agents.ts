@@ -29,7 +29,9 @@ function makeAgentNode(agent: InnerAgent): GraphNode<typeof AgentsState> {
 export function getAgentNode(agentName: string, config: CoachAgentConfig, dataProvider: DataProvider): GraphNode<typeof AgentsState> {
   if (agentName === "orchestrator") {
     const agentConfig = getAgentConfig(config, "orchestrator");
-    return getOrchestratorNode(agentConfig, { training_question: "qa", other: "other" });
+    // weekly_plan / master_plan 尚未接线，当前把全部意图统一交给 qa；分类结果仍写入
+    // state.intent 供观测，后续接入对应 subagent 时在这里改回各自的落点。
+    return getOrchestratorNode(agentConfig, { training_question: "qa", weekly_plan: "qa", master_plan: "qa", other: "qa" });
   }
 
   if (agentName === "qa") {

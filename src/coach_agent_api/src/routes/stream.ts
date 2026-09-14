@@ -15,9 +15,9 @@
  *   emitted once the run reaches its final state.
  *
  * The graph is a plain intent-router (no deepagents subagents), so there is no
- * `subagents` projection and no `in_subagent` phase. `run.output` is
- * authoritative, so a hung or rejecting iterable must not fail the turn nor
- * delay `done` past the drain bound.
+ * `subagents` projection and no `in_subagent` phase. The final state arrives as
+ * a `values` chunk on the same stream, so the run must be drained to completion
+ * before `done` is built — a partial snapshot has no reply message.
  */
 import type { CoachStreamSource } from "../coach/coachInvoker.js";
 import { toPublicResponse } from "../publicResponse.js";
@@ -48,40 +48,31 @@ interface StatusPhases {
 }
 
 /**
- * How long to wait for the stream to drain after the run has produced its final
- * state before emitting `done`. Real runs drain in milliseconds; the bound only
- * guards against a hung iterable so the connection is never left open without a
- * terminal event.
- */
-const DRAIN_TIMEOUT_MS = 5_000;
-
-/**
  * Drive a single-pass graph stream to completion while emitting status and
- * text_delta events, and return the public response for the `done` event.
+ * text_delta events, and return the public response for the `done` event. The
+ * stream is authoritative: the last `values` chunk is the final state, so we
+ * drain until it ends rather than bounding the wait — bounding it yields a
+ * partial state with no reply and turns a slow-but-successful turn into an
+ * error. A rejecting iterable is non-fatal only if a state was already seen.
  */
 export async function collectCoachStream(run: CoachStreamSource, emit: CoachStreamEmitter): Promise<Record<string, unknown>> {
-  // The drain is raced against the bound below; events that resolve afterwards
-  // must never land after `done` (a late write would trail the terminal event).
-  let settled = false;
-  const safeEmit: CoachStreamEmitter = (event) => (settled ? Promise.resolve() : emit(event));
-
-  const phases = toolPhases(safeEmit);
+  const phases = toolPhases(emit);
   const pendingTools = new Map<string, string>();
   let output: unknown;
 
-  const drain = (async () => {
+  try {
     for await (const chunk of run.events) {
       const [mode, payload] = chunk;
       if (mode === "messages") {
-        await handleMessage(payload, safeEmit, phases, pendingTools);
+        await handleMessage(payload, emit, phases, pendingTools);
       } else if (mode === "values") {
         output = payload;
       }
     }
-  })().catch(() => {});
+  } catch (error) {
+    if (output === undefined) throw error;
+  }
 
-  await Promise.race([drain, sleep(DRAIN_TIMEOUT_MS)]);
-  settled = true;
   return withUsage(toPublicResponse(output), output);
 }
 
@@ -196,8 +187,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readCount(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -163,19 +163,7 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 ## Folder Structure
 
 ```
-data/
-    zhaochaoyi/                  # per-user data directory
-        coros.db                 # legacy/test snapshot; never use for plan generation
-        config.json              # user's COROS credentials (git-ignored)
-        TRAINING_PLAN.md         # user's overall training plan
-        logs/
-            2026-04-13_04-19(赛后恢复)/  # format: YYYY-MM-DD_MM-DD(阶段标注)
-                plan.md                  # weekly training plan
-                plan.json                # 结构化版本，server reparse 时优先用
-                feedback.md              # rollout 前兼容来源；marker 后仅用于迁移
-    dehua/                       # another user
-        ...
-src/                 # tools source code
+src/                 # source code
 tests/               # tests
 frontend/            # React + Vite frontend (STRIDE dashboard)
 docs/                # topic-specific docs（按需 Read，见顶部表）
@@ -185,88 +173,3 @@ docs/                # topic-specific docs（按需 Read，见顶部表）
 
 生产用户数据以 JWT `sub` UUID 在腾讯云 MySQL 中隔离。`data/{user_id}/` 保留本地 authoring artifacts、必要配置及遗留/测试数据；CLI 可用 UUID 或 friendly slug（如 `zhaochaoyi`，经 `data/.slug_aliases.json` 解析）选择用户。API 用 `/{user_id}/` 路径前缀，路径 UUID 与 JWT `sub` 不匹配则拒绝。
 
----
-
-## 体测报告（Body Composition Report）
-
-体测报告含核心指标：Weight / Body Fat Percentage / Body Fat Mass / Skeletal Muscle Mass。用来追踪减脂 vs 增肌、监控体能与训练进度、长期趋势对比。
-
----
-
-## Training Plan (plan.md)
-
-每个 weekly plan.md 必须覆盖三大成分：
-
-1. **Running**：每日跑步安排、配速目标、心率区间、周里程目标
-2. **Strength & Conditioning**：力量、核心、柔韧/灵活性，含具体动作与组×次（COROS T-code 见 [`docs/strength-training.md`](docs/strength-training.md)）
-3. **Nutrition**：基于体测数据的热量目标、宏量营养拆分（蛋白/碳水/脂肪）、餐食建议
-
-考虑三者交互 —— 跑步日 vs 休息日的差异化碳水、力量后的蛋白时机、恢复周的热量赤字管理。
-
-### Weekly plan generation workflow（HARD）
-
-1. **按需同步所有用户**：如需在生成前刷新 prod 数据，可手动触发 GitHub Actions 的 `.github/workflows/daily-sync.yml`（`Daily auto-sync`）：`gh workflow run daily-sync.yml`。该 workflow 会遍历 `data/.slug_aliases.json` 中的所有 user UUID，触发并等待每个用户的 data pipeline。必须等待 workflow 成功完成；任一用户失败时先报告失败，不得把旧数据误称为最新数据。
-2. **prod MySQL 只读检查**：生成下一周计划期间，允许直接使用非交互 MySQL CLI 对 prod 腾讯云 MySQL 执行只读 SQL，读取目标用户的最新活动、健康、训练负荷和能力基线。连接参数必须且只能从主 checkout 根目录 `.credentials.local` 的 `host`、`port`、`database_name`、`database_readonly_username`、`database_readonly_password` 加载；不得使用 `database_username` / `database_password` 读写账号，也不得在 readonly 账号不可用时回退到任何其他账号。只允许 `SELECT`、`SHOW`、`DESCRIBE` / `DESC`、`EXPLAIN`、`WITH ... SELECT` 等只读语句；禁止多语句输入、存储过程调用、写操作及 schema 变更，并禁止 `INTO OUTFILE` / `INTO DUMPFILE`、`FOR UPDATE`、`LOCK IN SHARE MODE`、`GET_LOCK()` 等写文件或显式加锁形式。
-3. **禁止 SQLite 数据源**：不得运行本地 sync 来准备计划上下文，不得读取 `data/{user_id}/coros.db`，也不得在 MySQL 查询失败、数据缺失或连接不可用时退回 SQLite。此时应停止生成并向用户报告缺失项或连接问题。
-4. **组合 authoring 输入**：当前训练阶段读取本地 `TRAINING_PLAN.md`。rollout completion marker 前，人工反馈沿用 legacy `feedback.md`；marker 后只读取 prod MySQL `weekly_feedback`。运动和健康事实始终只以本轮 prod MySQL 查询结果为准。
-5. **生成本地草稿**：只把结果写到本地 `data/{user_id}/logs/<week>/plan.md` 和 `plan.json`。生成后完成 schema 校验和 review，但不要写入 MySQL、提交/推送 Git 或触发任何远端同步。
-6. **等待人工 review**：为 `plan.md` 和 `plan.json` 分别计算 Git blob hash（未跟踪文件则计算 SHA-256），把两个文件路径及 hash 组成同一份草稿 manifest。向用户展示 manifest 和校验结果，并等待用户明确表示该版本 **review 通过**。仅生成草稿、查看草稿、提出修改意见或完成自动 review 均不构成写入授权；任一文件内容变化都会使之前的 review 通过失效，必须重新生成 manifest 并重新 review。
-7. **review 通过后写入 MySQL**：只有用户明确表示已 review 通过并要求发布已确认 manifest 后，才允许从只读阶段升级为写操作，并通过仓库已有且受支持的 MySQL 写接口发布。写入必须携带预期 plan revision（或等价 CAS 条件），原子地拒绝并发变化；写入前再次核对 manifest、user UUID、week start 和 revision。若没有受支持的发布接口，停止并报告需要先实现接口，禁止用临时脚本或裸 SQL 绕过。若任一项变化、写入冲突或校验失败，停止发布且不得激活新计划。写入成功后回读并核对远端内容与本地已确认 manifest 一致；不一致时立即报告，不得继续覆盖。
-
-MySQL CLI 必须使用 batch/non-interactive 模式。不得把密码放在命令行参数中；应使用权限为 `0600` 的临时 `--defaults-extra-file`，用后立即删除。不得输出、记录或回复 `.credentials.local` 的任何值、DSN、密码或 token；查询结果也不得包含 credential/token/secret 列。若 readonly 凭据缺失、连接失败或权限异常，停止检查并报告，不得改用读写账号。
-
-### 起草新 weekly plan 前必看的输入
-
-- **当前训练阶段**：本周在整体周期化中的位置（从 TRAINING_PLAN.md）
-- **上周 feedback**：rollout marker 前读 legacy `feedback.md`，marker 后从腾讯云 MySQL `weekly_feedback` 读取
-- **近期身体指标**：从腾讯云 MySQL 获取 RHR、HRV 趋势、睡眠质量/时长
-- **近期训练执行**：从腾讯云 MySQL 获取活动、训练负荷、完成度及异常信号
-- **最新体测数据**：从腾讯云 MySQL 获取体重、体脂率、骨骼肌量趋势
-
-按这些信号调整训练负荷、营养、恢复。例：HRV 下行或睡眠差 → 降强度、加恢复；体脂停滞 → 重新评估热量赤字。
-
-### 训练负荷分布约束（HARD）
-
-STRIDE `training_dose` 是 TSS-scaled（1h 阈值 = 100 分），`form = chronic − acute`。Form zone 按**当日 chronic（CTL）比例**分类，**不要**用经典 TrainingPeaks 固定 TSB 阈值（那是为 CTL 80-120 校准的，跑者 CTL 通常 40-70）：
-
-| Form / CTL | ratio = acute/chronic | Zone |
-|---|---|---|
-| > +25% | < 0.75 | 减量过多（detraining）|
-| +10% ~ +25% | 0.75 ~ 0.90 | 比赛就绪（race-ready）|
-| −10% ~ +10% | 0.90 ~ 1.10 | 维持期（acute ≈ chronic，体能持平）|
-| −25% ~ −10% | 1.10 ~ 1.25 | 提升期（acute > chronic，驱动体能进步）|
-| < −25% | > 1.25 | 过度负荷（overreach）|
-
-**每个 weekly plan.md 必须在顶部 metadata 区显式声明**：
-
-1. **本周 phase 定位**：base / build / peak / taper / recovery / race
-2. **期望 form 分布**：本周 form 落在哪个 zone 占主导（如"base 阶段：维持期 40% + 提升期 40% + 比赛就绪 20%"）
-
-**Phase 与 Form 分布对应关系**：
-
-| Phase | 期望 form 分布 | 周量 ramp |
-|---|---|---|
-| Base（基础期）| 维持期 40-50% + 提升期 30-40% + 比赛就绪 10-20% | chronic 缓慢上行 |
-| Build（进展期）| **提升期 50-60%** + 维持期 20-30% + 比赛就绪 10% | chronic 明显上行 |
-| Peak（赛前期）| 提升期 40% + 维持期 30% + 比赛就绪 30% | chronic 持平或微降 |
-| Taper（减量周）| 比赛就绪 60-70% + 维持期 20-30% | acute 下降 |
-| Recovery（恢复周）| 比赛就绪 70% + 维持期 30% + 偶尔减量过多 | chronic 主动下行 |
-
-**Anti-patterns（避免）**：
-
-- **"Spike + flat" 节奏**：周内 1-2 个 200+ dose 硬课 + 3 个零 dose 天 → acute 暴涨后被零日清零，form 停在维持期。提升期 form 需要 acute **持续** 高于 chronic 5+ 天 → 靠每天都有 dose，不是靠单日 spike。
-- **三个零 dose 天/周**（Mon 力量 + Thu mobility + Sun rest）：acute 每周必然被两次清零。**力量日 + 短 jog**（30-40 min）或 **mobility 日 + shake-out**（5K easy）把零日填到 ≤2 个/周。
-- **Tue / Fri 易漏跑**：这两天是 form 进入提升期的 hinge —— 每砍一次直接退回维持期。Plan 时把这两天列为"硬性必跑"。
-- **单日长跑占周量 > 35%**：长距 dose 占比过高即"spike + flat"的根因。Long run dose / weekly dose 目标 < 33%。
-
-**Plan 设计 heuristic**：
-
-- **周 dose 目标 ≈ chronic × 7**（如 chronic 70 → 周 dose 490 才能维持；想推到提升期需要 ≥ chronic × 7.7 ≈ 540+）
-- **build phase 周 ramp**：weekly dose 周-周递增 5-8%，4 周 ramp + 1 周 recovery（3:1 周期）
-- **过度负荷 (< −25% CTL) 触发**：连续 3 天落入，下周必须减 15-20%；连续 5 天则当周强插一个完整休息日
-
-完整 Form / CTL 含义、PMC 公式 → `src/stride_core/training_load/core.py` + `frontend/src/pages/TrainingStatusPage.tsx::classifyForm`。
-
----
-
-(纯文档修改不触发任何 build —— 镜像 workflow 只监听 `src/go/**`、`src/coach_*`、`frontend/**` 等代码路径。)

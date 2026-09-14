@@ -76,5 +76,6 @@ export function buildChatModel(config: ModelConfig): ChatOpenAI {
     // TypeScript 特有：禁用 TS 的 Responses API 预设，使 extraBody 生效并切换回普通模式
     useResponsesApi: false,
     temperature: config.temperature ?? 0.4,
+    // outputVersion: "v1",
   });
 }

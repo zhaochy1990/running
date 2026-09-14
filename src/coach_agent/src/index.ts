@@ -50,3 +50,4 @@ export {
   formatTokenUsageReport,
   LlmTokenUsageTracker,
 } from "./utils/tokenUsage.js";
+export { buildModel } from "./agents/common.js";

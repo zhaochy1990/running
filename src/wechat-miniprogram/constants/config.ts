@@ -22,7 +22,7 @@ const AUTH_BASE_URLS: Record<Env, string> = {
 const COACH_BASE_URLS: Record<Env, string> = {
   [ENV.DEV]: 'http://127.0.0.1:8888',
   [ENV.STAGING]: 'https://api.stride-running.cn',
-  [ENV.PROD]: 'https://api.stride-running.cn',
+  [ENV.PROD]: 'http://127.0.0.1:8888',
 };
 const client_ids: Record<Env, string> = {
   [ENV.DEV]: 'app_43290db46d71409caa36fc4d',

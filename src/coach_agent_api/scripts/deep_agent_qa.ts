@@ -35,7 +35,7 @@ const startTime = Date.now();
 const input ={ 
   messages: [{ 
     role: "user", 
-    content: JSON.stringify({timestamp:  shanghaiIso(),message: "我昨天跑的怎么样？"}), 
+    content: JSON.stringify({timestamp:  shanghaiIso(),message: "我今天晚上跑的怎么样？"}), 
   }] 
 };
 const res = await agent.invoke(input, cfg);

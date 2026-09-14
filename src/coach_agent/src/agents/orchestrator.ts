@@ -14,6 +14,15 @@ function getAgentPrompt(): string {
 - "training_question"：关于训练状态、疲劳、指标或跑步知识的问答
 - "other"：不属于以上任何一类
 
+判断依据是用户的**意图**，不是句中出现了「周 / 计划」：问训练跑得怎样、状态如何属于 training_question，只有想查看或修改已写好的计划才是 weekly_plan。
+示例（message → intent）：
+- "我这周跑的怎么样？" → training_question
+- "最近状态怎么样，累不累？" → training_question
+- "帮我看下这周的训练计划" → weekly_plan
+- "下周计划调整一下，周三改成休息" → weekly_plan
+- "帮我看下赛季计划" → master_plan
+- "今天天气怎么样" → other
+
 Provide classification including intent.
         `;
 }

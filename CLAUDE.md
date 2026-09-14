@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+除非特别说明，否则一律用中文回复用户，不管用户发送的是中文还是英文
+
 > **单一 agent 指令来源：[`AGENTS.md`](AGENTS.md)。**
 
 本仓库对 coding agent（Claude Code / Codex / OpenCode / 其它）只维护**一份**权威指令，统一住在 **`AGENTS.md`**。`CLAUDE.md` 不再重复那些规则，只做引用，避免多份指令互相冲突或漂移。
