@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -70,6 +71,110 @@ func (f *fakeJobs) JobByIdempotencyKey(_ context.Context, userID, key string) (*
 		return j, nil
 	}
 	return nil, &job.ErrNotFound{Key: jkey(userID, key)}
+}
+
+// Create persists a job row directly (the internal create endpoint, ADR 0033).
+func (f *fakeJobs) Create(_ context.Context, j *job.Job) error {
+	if _, ok := f.byID[j.ID]; ok {
+		return job.ErrConflict
+	}
+	if j.IdempotencyKey != "" {
+		if _, ok := f.byIdem[jkey(j.UserID, j.IdempotencyKey)]; ok {
+			return job.ErrConflict
+		}
+	}
+	f.byID[j.ID] = j
+	if j.IdempotencyKey != "" {
+		f.byIdem[jkey(j.UserID, j.IdempotencyKey)] = j
+	}
+	return nil
+}
+
+// TransitionJob applies a compare-and-set state change (ADR 0033).
+func (f *fakeJobs) TransitionJob(_ context.Context, jobID string, tr job.JobTransition) (*job.Job, error) {
+	j, ok := f.byID[jobID]
+	if !ok {
+		return nil, &job.ErrNotFound{Key: jobID}
+	}
+	if tr.From != nil && string(j.Status) != string(*tr.From) {
+		return nil, job.ErrStateChanged
+	}
+	if tr.AttemptsLT != nil && j.Attempts >= *tr.AttemptsLT {
+		return nil, job.ErrStateChanged
+	}
+	now := time.Now().UTC()
+	j.Status = tr.To
+	if tr.Attempts != nil {
+		j.Attempts = *tr.Attempts
+	}
+	if tr.AttemptsDelta != nil {
+		j.Attempts += *tr.AttemptsDelta
+	}
+	if tr.ClearError {
+		j.ErrorCode, j.ErrorMessage = "", ""
+	}
+	if tr.Stage != nil {
+		j.Stage = *tr.Stage
+	}
+	if tr.ProgressPct != nil {
+		j.ProgressPct = *tr.ProgressPct
+	}
+	if tr.ErrorCode != nil && !tr.ClearError {
+		j.ErrorCode = *tr.ErrorCode
+	}
+	if tr.ErrorMessage != nil && !tr.ClearError {
+		j.ErrorMessage = *tr.ErrorMessage
+	}
+	if tr.ResultJSON != nil {
+		j.ResultJSON = *tr.ResultJSON
+	}
+	if tr.HeartbeatAt != nil {
+		j.HeartbeatAt = tr.HeartbeatAt
+	}
+	if tr.CompletedAt != nil {
+		j.CompletedAt = tr.CompletedAt
+	} else if tr.To.Terminal() {
+		j.CompletedAt = &now
+	}
+	j.UpdatedAt = now
+	return j, nil
+}
+
+// FailStaleRunningJobs fails running jobs whose heartbeat is stale (ADR 0033).
+func (f *fakeJobs) FailStaleRunningJobs(_ context.Context, olderThan, now time.Time, errorCode string) (int64, error) {
+	var count int64
+	for _, j := range f.byID {
+		if j.Status == job.StatusRunning && (j.HeartbeatAt == nil || j.HeartbeatAt.Before(olderThan)) {
+			j.Status = job.StatusFailed
+			j.ErrorCode = errorCode
+			j.CompletedAt = &now
+			j.UpdatedAt = now
+			count++
+		}
+	}
+	return count, nil
+}
+
+// ListAllJobs lists standalone jobs matching the filters (ADR 0033).
+func (f *fakeJobs) ListAllJobs(_ context.Context, opts job.PipelineListOptions) ([]*job.Job, int64, error) {
+	var out []*job.Job
+	for _, j := range f.byID {
+		if j.PipelineRunID != "" {
+			continue
+		}
+		if opts.UserID != "" && j.UserID != opts.UserID {
+			continue
+		}
+		if opts.PipelineName != "" && j.Type != opts.PipelineName {
+			continue
+		}
+		if opts.Status != "" && string(j.Status) != opts.Status {
+			continue
+		}
+		out = append(out, j)
+	}
+	sort.Slice(out, func(i, k int) bool { return out[i].CreatedAt.After(out[k].CreatedAt) })
+	return out, int64(len(out)), nil
 }
 
 type fakeRuns struct {
@@ -222,6 +327,10 @@ func newHarness(t *testing.T) *harness {
 		Enqueuer:                jobs,
 		Jobs:                    jobs,
 		JobsIdem:                jobs,
+		JobsCreate:              jobs,
+		JobsTransition:          jobs,
+		JobsStale:               jobs,
+		JobsAdminList:           jobs,
 		Pipelines:               runs,
 		Runs:                    runs,
 		RunsList:                runs,

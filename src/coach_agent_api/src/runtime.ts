@@ -1,7 +1,7 @@
 import type { CoachAgentConfig } from "@stride/coach-agent";
 import {
+  GoJobClient,
   MySqlDataProvider,
-  MySqlPlanJobStore,
   PLAN_JOB_ESTIMATED_DURATIONS_SECONDS,
   PlanJobEnqueuer,
   PlanJobQueue,
@@ -43,11 +43,12 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
     await coachInvoker.initialize();
 
     // Deterministic plan-job enqueue (ADR 0030): store-first via the worker's
-    // domain engine, so the chat service and the worker share one implementation.
+    // domain engine. The store is the Go job API (ADR 0033) — Go owns the `jobs`
+    // row, so the coach API persists state through it and owns only the broker
+    // pointer, exactly as Go's own StoreEnqueuer does for its queues.
     await planJobQueue.declareTopology(apiConfig.planJobs.queues);
     planJobPublisher = await RabbitPublisher.create(planJobQueue, apiConfig.planJobs.queues);
-    const planJobStore = new MySqlPlanJobStore(persistence.pool);
-    await planJobStore.setup();
+    const planJobStore = new GoJobClient(apiConfig.goApi.baseUrl, apiConfig.goApi.internalToken);
     const enqueuer = new PlanJobEnqueuer(planJobStore, planJobPublisher);
     const planJobs: PlanJobsService = {
       enqueue: ({ userId, jobType, inputJson, idempotencyKey }) =>
@@ -60,6 +61,8 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
           },
           PLAN_JOB_ESTIMATED_DURATIONS_SECONDS[jobType as PlanJobType],
         ),
+      // The row is Go's, so the ownership check is ours: a job id alone must not
+      // let one athlete read another's job through this route.
       get: async (userId, jobId) => {
         const job = await planJobStore.get(jobId);
         return job !== null && job.userId === userId ? job : null;

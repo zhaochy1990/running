@@ -55,6 +55,10 @@ export const ERROR_CODES = {
   WEEK_NOT_SUPPORTED: "week_not_supported",
   /** Go draft insert endpoint rejected the generated content. */
   DRAFT_REJECTED: "draft_rejected",
+  /** Go job state API rejected a transition as malformed/forbidden. */
+  JOB_STATE_REJECTED: "job_state_rejected",
+  /** Go job state API no longer has the row (retired or never created). */
+  JOB_NOT_FOUND: "job_not_found",
   /** Stale-running reconcile: no heartbeat for too long. */
   HEARTBEAT_TIMEOUT: "heartbeat_timeout",
 } as const;

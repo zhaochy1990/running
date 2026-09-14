@@ -18,11 +18,9 @@ export interface WorkerConfig {
   staleRunningMs: number;
   /** How often the stale-running reconcile + heartbeat log run. */
   reconcileIntervalMs: number;
-  /** A live run this young is "fresh" (owner alive) at redelivery. */
+  /** Athlete data DB (read-only). */
   strideDatabase: MySqlConfig;
-  /** Coach persistence DB — home of the plan_jobs table. */
-  persistenceDatabase: MySqlConfig;
-  /** Go API internal insert endpoint (X-Internal-Token). */
+  /** Go API internal endpoints (X-Internal-Token): draft inserts + job state. */
   goApi: { baseUrl: string; internalToken: string };
 }
 
@@ -36,7 +34,6 @@ interface RawWorkerConfig {
     reconcile_interval_ms: number;
   };
   stride_database: MySqlConfig;
-  persistence_database: MySqlConfig;
   go_api: { base_url: string; internal_token: string };
 }
 
@@ -90,7 +87,6 @@ const schema: convict.Schema<RawWorkerConfig> = {
     reconcile_interval_ms: { format: positiveInt, default: 30_000, env: "PLAN_WORKER_RECONCILE_INTERVAL_MS" },
   },
   stride_database: databaseSchema("PLAN_WORKER_STRIDE_DATABASE"),
-  persistence_database: databaseSchema("PLAN_WORKER_PERSISTENCE_DATABASE"),
   go_api: {
     base_url: { format: requiredString, default: "http://127.0.0.1:8080", env: "PLAN_WORKER_GO_API_BASE_URL" },
     internal_token: { format: requiredString, default: "", env: "PLAN_WORKER_GO_API_INTERNAL_TOKEN", sensitive: true },
@@ -111,7 +107,6 @@ export function loadWorkerConfig(options: { configFiles: string[]; env?: NodeJS.
     staleRunningMs: raw.worker.stale_running_ms,
     reconcileIntervalMs: raw.worker.reconcile_interval_ms,
     strideDatabase: raw.stride_database,
-    persistenceDatabase: raw.persistence_database,
     goApi: { baseUrl: raw.go_api.base_url, internalToken: raw.go_api.internal_token },
   };
 }

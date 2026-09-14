@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PlanJob, PlanJobType } from "./model.js";
-import { IdempotencyConflictError, type PlanJobStore, type QueuePublisher } from "./ports.js";
+import type { PlanJobStore, QueuePublisher } from "./ports.js";
 
 export interface EnqueueSpec {
   jobType: PlanJobType;
@@ -50,37 +50,28 @@ export class PlanJobEnqueuer {
       updatedAt: now,
       completedAt: null,
     };
-    try {
-      await this.store.create(job);
-    } catch (error) {
-      if (error instanceof IdempotencyConflictError) {
-        return { jobId: error.jobId, estimatedDurationSeconds };
-      }
-      throw error;
+    const created = await this.store.create(job);
+    if (!created.created) {
+      // A repeated idempotency key already has a row and, in the normal case, a
+      // pointer in flight or done: publishing again would double-run the kernel.
+      return { jobId: created.jobId, estimatedDurationSeconds };
     }
     try {
-      await this.publisher.publishWork({ jobId, userId: spec.userId });
+      await this.publisher.publishWork({ jobId: created.jobId, userId: spec.userId });
     } catch (error) {
-      await this.failClosed(job, error);
+      await this.failClosed(created.jobId, error);
     }
-    return { jobId, estimatedDurationSeconds };
+    return { jobId: created.jobId, estimatedDurationSeconds };
   }
 
   /** Publish failure: durably mark the row failed so the pointer cannot execute. */
-  private async failClosed(job: PlanJob, publishError: unknown): Promise<void> {
-    const now = this.now();
-    job.status = "failed";
-    job.errorCode = "publish_failed";
-    job.errorMessage = publishError instanceof Error ? publishError.message : String(publishError);
-    job.completedAt = now;
-    job.updatedAt = now;
+  private async failClosed(jobId: string, publishError: unknown): Promise<void> {
+    const reason = publishError instanceof Error ? publishError.message : String(publishError);
     try {
-      await this.store.update(job);
-    } catch (updateError) {
-      throw new Error(
-        `job publish failure could not be durably closed: ${publishError instanceof Error ? publishError.message : String(publishError)}; ${updateError instanceof Error ? updateError.message : String(updateError)}`,
-      );
+      await this.store.transition(jobId, { from: "queued", to: "failed", errorCode: "publish_failed", errorMessage: reason });
+    } catch (closeError) {
+      throw new Error(`job publish failure could not be durably closed: ${reason}; ${closeError instanceof Error ? closeError.message : String(closeError)}`);
     }
-    throw new Error(`plan-job publish failed: ${job.jobId}`);
+    throw new Error(`plan-job publish failed: ${jobId}`);
   }
 }

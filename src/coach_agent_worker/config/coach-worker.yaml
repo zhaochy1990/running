@@ -22,14 +22,8 @@ stride_database:
   password: "root_password"
   database: "stride"
 
-persistence_database:
-  host: "127.0.0.1"
-  port: 3306
-  user: "root"
-  password: "root_password"
-  database: "coach_agent"
-
-# Go internal API (X-Internal-Token) for plan-draft inserts.
+# Go internal API (X-Internal-Token): plan-draft inserts and plan-job state
+# transitions (the worker holds no plan-job table of its own — ADR 0033).
 go_api:
   base_url: "http://127.0.0.1:8080"
   internal_token: ""

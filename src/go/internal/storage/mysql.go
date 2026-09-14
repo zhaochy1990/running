@@ -181,6 +181,26 @@ func (s *Store) ListAllPipelineRuns(ctx context.Context, opts job.PipelineListOp
 	return (&pipelineStore{db: s.db}).listAll(ctx, opts)
 }
 
+// TransitionJob applies a compare-and-set state change to a job row (ADR 0033).
+// Returns job.ErrNotFound when the row is absent and job.ErrStateChanged when
+// the From guard does not match.
+func (s *Store) TransitionJob(ctx context.Context, jobID string, tr job.JobTransition) (*job.Job, error) {
+	return (&jobStore{db: s.db}).transition(ctx, jobID, tr)
+}
+
+// ListAllJobs lists standalone jobs (pipeline_run_id empty) across all users,
+// newest first, filtered and paginated. Together with ListAllPipelineRuns this
+// is the unified admin async-run surface (ADR 0033).
+func (s *Store) ListAllJobs(ctx context.Context, opts job.PipelineListOptions) ([]*job.Job, int64, error) {
+	return (&jobStore{db: s.db}).listAll(ctx, opts)
+}
+
+// FailStaleRunningJobs fails every running job whose heartbeat is older than
+// olderThan, tagged with errorCode. Returns how many rows were failed (ADR 0033).
+func (s *Store) FailStaleRunningJobs(ctx context.Context, olderThan, now time.Time, errorCode string) (int64, error) {
+	return (&jobStore{db: s.db}).failStaleRunning(ctx, olderThan, now, errorCode)
+}
+
 // mysqlErrNo returns the MySQL server error number if err is (or wraps) a
 // *mysql.MySQLError, following the %w chain.
 func mysqlErrNo(err error) (uint16, bool) {
@@ -320,6 +340,150 @@ func (s *jobStore) Claim(ctx context.Context, jobID string, now time.Time) (*job
 		return nil, false, err
 	}
 	return claimed, claimed != nil, nil
+}
+
+// transition applies a compare-and-set state change (ADR 0033). From guards the
+// update against a concurrent writer; a nil From updates unconditionally. The
+// row is re-read and returned on success.
+func (s *jobStore) transition(ctx context.Context, jobID string, tr job.JobTransition) (*job.Job, error) {
+	updates := map[string]any{
+		"status":     string(tr.To),
+		"updated_at": time.Now().UTC().Truncate(time.Millisecond),
+	}
+	if tr.Attempts != nil {
+		updates["attempts"] = *tr.Attempts
+	}
+	if tr.AttemptsDelta != nil && *tr.AttemptsDelta != 0 {
+		// Expressed as an expression, not a value, so concurrent claims serialize
+		// on the row lock instead of racing a read-modify-write.
+		updates["attempts"] = gorm.Expr("attempts + ?", *tr.AttemptsDelta)
+	}
+	if tr.ClearError {
+		updates["error_code"] = nil
+		updates["error_message"] = nil
+	}
+	if tr.Stage != nil {
+		updates["stage"] = *tr.Stage
+	}
+	if tr.ProgressPct != nil {
+		updates["progress_pct"] = *tr.ProgressPct
+	}
+	if tr.ErrorCode != nil && !tr.ClearError {
+		updates["error_code"] = *tr.ErrorCode
+	}
+	if tr.ErrorMessage != nil && !tr.ClearError {
+		updates["error_message"] = *tr.ErrorMessage
+	}
+	if tr.ResultJSON != nil {
+		updates["result_json"] = *tr.ResultJSON
+	}
+	if tr.HeartbeatAt != nil {
+		updates["heartbeat_at"] = *tr.HeartbeatAt
+	}
+	if tr.CompletedAt != nil {
+		updates["completed_at"] = *tr.CompletedAt
+	} else if tr.To.Terminal() {
+		// A terminal transition must stamp completed_at even if the caller did
+		// not supply it, so stale-running and completion audits stay coherent.
+		updates["completed_at"] = updates["updated_at"]
+	}
+
+	query := s.db.WithContext(ctx).Model(&jobModel{}).Where("id = ?", jobID)
+	if tr.From != nil {
+		query = query.Where("status = ?", string(*tr.From))
+	}
+	if tr.AttemptsLT != nil {
+		query = query.Where("attempts < ?", *tr.AttemptsLT)
+	}
+	result := query.Updates(updates)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		// Distinguish a missing row from a CAS mismatch so the API can answer
+		// 404 vs 409 correctly.
+		var m jobModel
+		err := s.db.WithContext(ctx).Where("id = ?", jobID).First(&m).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, &job.ErrNotFound{Key: jobID}
+		}
+		if err != nil {
+			return nil, err
+		}
+		return nil, job.ErrStateChanged
+	}
+
+	var updated jobModel
+	if err := s.db.WithContext(ctx).Where("id = ?", jobID).First(&updated).Error; err != nil {
+		return nil, err
+	}
+	return updated.toDomain(), nil
+}
+
+// listAll lists standalone jobs (not owned by a pipeline run) across all users,
+// newest first, filtered and paginated like pipeline runs (the unified admin
+// async surface, ADR 0033).
+func (s *jobStore) listAll(ctx context.Context, opts job.PipelineListOptions) ([]*job.Job, int64, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultPipelineRunsPage
+	}
+	if limit > maxPipelineRunsPage {
+		limit = maxPipelineRunsPage
+	}
+	offset := opts.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	base := s.db.WithContext(ctx).Model(&jobModel{}).Where("pipeline_run_id = ''")
+	if opts.UserID != "" {
+		base = base.Where("user_id = ?", opts.UserID)
+	}
+	if opts.PipelineName != "" {
+		base = base.Where("job_type = ?", opts.PipelineName)
+	}
+	if opts.Status != "" {
+		base = base.Where("status = ?", opts.Status)
+	}
+
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var rows []jobModel
+	if err := base.Session(&gorm.Session{}).
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	jobs := make([]*job.Job, len(rows))
+	for i := range rows {
+		jobs[i] = rows[i].toDomain()
+	}
+	return jobs, total, nil
+}
+
+// failStaleRunning fails every running job whose heartbeat is older than
+// olderThan, tagging it with errorCode (the stale-running reconcile backstop,
+// ADR 0033).
+func (s *jobStore) failStaleRunning(ctx context.Context, olderThan, now time.Time, errorCode string) (int64, error) {
+	result := s.db.WithContext(ctx).Model(&jobModel{}).
+		Where("status = ? AND (heartbeat_at IS NULL OR heartbeat_at < ?)", string(job.StatusRunning), olderThan).
+		Updates(map[string]any{
+			"status":        string(job.StatusFailed),
+			"error_code":    errorCode,
+			"error_message": "stale running job failed by reconcile",
+			"completed_at":  now,
+			"updated_at":    now,
+		})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
 }
 
 // --- job.PipelineStore ---------------------------------------------------

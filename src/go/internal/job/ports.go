@@ -64,6 +64,11 @@ func IsNotFound(err error) bool {
 // API) react by returning the existing record instead of a new one.
 var ErrConflict = errors.New("conflict: duplicate idempotency key")
 
+// ErrStateChanged is returned by a transition when its From guard does not match
+// the row's current status — another writer moved the job first (ADR 0033). The
+// caller reacts by re-reading and retrying or giving up.
+var ErrStateChanged = errors.New("job state changed")
+
 // PublishFailedError reports a publish failure after the job was durably marked
 // terminal. The job must never be executed if the broker delivery was ambiguous.
 type PublishFailedError struct {

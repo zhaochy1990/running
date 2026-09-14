@@ -6,11 +6,11 @@ import { startReconcileTimer } from "./app/reconcile.js";
 import { loadWorkerConfig } from "./config.js";
 import { coachAgentConfigFiles, workerConfigFiles } from "./configPaths.js";
 import { MySqlDataProvider } from "./data/mysqlDataProvider.js";
-import { createPool, createStridePool, ensureDatabase } from "./db/mysql.js";
+import { createStridePool } from "./db/mysql.js";
 import { GoDraftClient } from "./goClient/draftClient.js";
+import { GoJobClient } from "./goClient/jobClient.js";
 import { PlanJobDispatcher } from "./job/dispatch.js";
 import { PlanJobQueue, RabbitConsumer, RabbitPublisher } from "./queue/rabbit.js";
-import { MySqlPlanJobStore } from "./storage/planJobs.js";
 
 const logger = getLogger("plan-job/main");
 
@@ -23,16 +23,15 @@ async function main(): Promise<void> {
   const workerConfig = loadWorkerConfig({ configFiles: workerConfigFiles(import.meta.url) });
   const coachConfig = loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) });
 
-  await ensureDatabase(workerConfig.persistenceDatabase);
-  const persistencePool = createPool(workerConfig.persistenceDatabase);
   const stridePool = createStridePool(workerConfig.strideDatabase);
 
   const queue = await PlanJobQueue.connect(workerConfig.amqpUrl);
   await queue.declareTopology(workerConfig.queues);
   const publisher = await RabbitPublisher.create(queue, workerConfig.queues);
 
-  const store = new MySqlPlanJobStore(persistencePool);
-  await store.setup();
+  // Job state lives in Go's `jobs` table; the worker reports transitions through
+  // the Go internal API rather than writing it (ADR 0033).
+  const store = new GoJobClient(workerConfig.goApi.baseUrl, workerConfig.goApi.internalToken);
 
   const dataProvider = new MySqlDataProvider(stridePool);
   const draftClient = new GoDraftClient(workerConfig.goApi.baseUrl, workerConfig.goApi.internalToken);
@@ -63,7 +62,7 @@ async function main(): Promise<void> {
     clearInterval(reconcileTimer);
     await publisher.close().catch(() => undefined);
     await queue.close().catch(() => undefined);
-    await Promise.allSettled([persistencePool.end(), stridePool.end()]);
+    await stridePool.end();
   };
   process.once("SIGINT", () => void shutdown("SIGINT"));
   process.once("SIGTERM", () => void shutdown("SIGTERM"));

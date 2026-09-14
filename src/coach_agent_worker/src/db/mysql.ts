@@ -3,9 +3,11 @@ import type { MySqlConfig } from "../config.js";
 
 // NOTE: this module is DB bootstrap/provisioning (create-database + pool factory),
 // not table read/write. AGENTS.md's SQL-ownership rule governs the storage seams;
-// the plan_jobs table is owned by `storage/planJobs.ts` and the coach data reads by
-// `data/mysqlDataProvider.ts`. `ensureDatabase`'s CREATE DATABASE runs once at
-// service start, before any storage code, so it is outside that read/write rule.
+// the only table this runtime reads is the athlete `stride` data behind
+// `data/mysqlDataProvider.ts` — plan-job *state* is Go's `jobs` table and is
+// reached through the internal API, never a pool from here (ADR 0033).
+// `ensureDatabase`'s CREATE DATABASE runs once at service start, before any
+// storage code, so it is outside that read/write rule.
 
 /** Reject anything that isn't a plain identifier (defends the DDL interpolation). */
 function assertIdentifier(name: string): string {
@@ -31,12 +33,12 @@ export async function ensureDatabase(config: MySqlConfig): Promise<void> {
 }
 
 /**
- * Pool for the coach persistence DB (plan_jobs + LangGraph checkpoints). No
- * `timezone: "Z"`: it must match the chat service's persistence pool (same
- * database, shared mysql2 session convention) so enqueue-side and worker-side
- * plan_jobs timestamps serialize identically. The plan_jobs heartbeat window
- * is compared in-SQL on the same pool, so the round-trip is internally
- * consistent; these are internal job timestamps, not user-facing data.
+ * Pool for the coach persistence DB (LangGraph checkpoints). No `timezone: "Z"`:
+ * it must match the chat service's persistence pool (same database, shared
+ * mysql2 session convention) so checkpoint timestamps serialize identically.
+ * Plan-job state is no longer read here at all — Go owns `jobs` and is reached
+ * through the internal API (ADR 0033), so nothing in the worker compares
+ * heartbeats in SQL any more.
  */
 export function createPool(config: MySqlConfig): mysql.Pool {
   return mysql.createPool({

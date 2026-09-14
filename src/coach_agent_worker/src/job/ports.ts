@@ -1,28 +1,24 @@
-import type { PlanJob, PlanJobMessage } from "./model.js";
-
-/** Result of a claim/reclaim: `job` is only present when the claim succeeded. */
-export type ClaimResult = { claimed: true; job: PlanJob } | { claimed: false };
+import type { JobTransition, PlanJob, PlanJobMessage } from "./model.js";
 
 /**
- * Durable plan-job state. Implemented by `storage/planJobs.ts` over MySQL;
- * the dispatcher/enqueuer only depend on this port (mirrors Go `job.Store`).
+ * Durable plan-job state. Implemented by `goClient/jobClient.ts`, which reports
+ * every change to the Go API — Go owns the `jobs` table and is its single
+ * writer (ADR 0006/0033), so this port has no SQL of its own.
  */
 export interface PlanJobStore {
-  create(job: PlanJob): Promise<void>;
+  /**
+   * Persist a queued job row without publishing. Idempotent on
+   * (userId, idempotencyKey): a replayed key returns the existing row with
+   * `created: false`, and the caller must not publish a second pointer.
+   */
+  create(job: PlanJob): Promise<{ jobId: string; created: boolean }>;
   get(jobId: string): Promise<PlanJob | null>;
-  update(job: PlanJob): Promise<void>;
   /**
-   * Atomically transition a queued job to running (attempts + 1) and return
-   * false when another delivery already claimed or terminated it.
+   * Apply a compare-and-set state change and return the updated row. Throws
+   * `JobStateChangedError` when a guard (`from` / `attemptsLt`) fails — the
+   * caller lost the race and must not treat its write as applied.
    */
-  claim(jobId: string, now: Date): Promise<ClaimResult>;
-  /**
-   * Reclaim a running job whose message was redelivered after a crash (or a
-   * nacked infra fault): the previous holder is gone, so this pointer takes it
-   * over (attempts + 1). CAS-guarded by the attempts budget — `maxAttempts` is
-   * the redelivery bound (Spec/ADR 0030 "重投上限 2 次").
-   */
-  reclaimRunning(jobId: string, now: Date, maxAttempts: number): Promise<ClaimResult>;
+  transition(jobId: string, change: JobTransition): Promise<PlanJob>;
   /**
    * Reconcile backstop: fail every running job whose heartbeat is older than
    * `olderThan`, tagged with `errorCode`. Returns how many were failed.
@@ -30,13 +26,14 @@ export interface PlanJobStore {
   failStaleRunning(olderThan: Date, now: Date, errorCode: string): Promise<number>;
 }
 
-/** Raised by `create` when (user_id, idempotency_key) already exists. */
-export class IdempotencyConflictError extends Error {
-  readonly jobId: string;
-  constructor(jobId: string) {
-    super("conflict: duplicate plan-job idempotency key");
-    this.name = "IdempotencyConflictError";
-    this.jobId = jobId;
+/**
+ * Raised by `transition` when a guard failed: the row is no longer in the state
+ * the caller expected (another delivery claimed it, or a reconcile retired it).
+ */
+export class JobStateChangedError extends Error {
+  constructor(readonly jobId: string) {
+    super(`conflict: plan-job state changed under us (${jobId})`);
+    this.name = "JobStateChangedError";
   }
 }
 

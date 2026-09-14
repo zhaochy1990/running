@@ -275,6 +275,54 @@ definitions:
       success:
         type: boolean
     type: object
+  api.asyncRunResponse:
+    properties:
+      attempts:
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      current_step:
+        type: integer
+      error_message:
+        type: string
+      kind:
+        type: string
+      name:
+        type: string
+      progress_pct:
+        type: integer
+      run_id:
+        type: string
+      stage:
+        type: string
+      status:
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/api.pipelineStepResponse'
+        type: array
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  api.asyncRunsAdminResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      runs:
+        items:
+          $ref: '#/definitions/api.asyncRunResponse'
+        type: array
+      total:
+        type: integer
+    type: object
   api.bodyCompositionDeltasDTO:
     properties:
       body_fat_pct:
@@ -468,6 +516,31 @@ definitions:
         $ref: '#/definitions/api.bodyCompositionDeltasDTO'
       latest:
         $ref: '#/definitions/api.bodyCompositionScanDTO'
+    type: object
+  api.createInternalJobRequest:
+    properties:
+      idempotency_key:
+        type: string
+      input_json:
+        type: string
+      job_id:
+        type: string
+      job_type:
+        type: string
+      user_id:
+        type: string
+    required:
+    - job_id
+    - job_type
+    type: object
+  api.createInternalJobResponse:
+    properties:
+      created:
+        description: Created is false when the idempotency key resolved to an existing
+          job.
+        type: boolean
+      job_id:
+        type: string
     type: object
   api.createJobRequest:
     properties:
@@ -876,6 +949,12 @@ definitions:
         type: string
       error_message:
         type: string
+      heartbeat_at:
+        type: string
+      idempotency_key:
+        type: string
+      input_json:
+        type: string
       job_id:
         type: string
       job_type:
@@ -892,6 +971,31 @@ definitions:
         type: string
       user_id:
         type: string
+    type: object
+  api.jobTransitionRequest:
+    properties:
+      attempts:
+        type: integer
+      completed_at:
+        type: string
+      error_code:
+        type: string
+      error_message:
+        type: string
+      from:
+        type: string
+      heartbeat_at:
+        type: string
+      progress_pct:
+        type: integer
+      result_json:
+        type: string
+      stage:
+        type: string
+      to:
+        type: string
+    required:
+    - to
     type: object
   api.lapDTO:
     properties:
@@ -1325,6 +1429,16 @@ definitions:
         type: string
       seg_name:
         type: string
+    type: object
+  api.staleRunningRequest:
+    properties:
+      error_code:
+        type: string
+      older_than:
+        type: string
+    required:
+    - error_code
+    - older_than
     type: object
   api.startPipelineRequest:
     properties:
@@ -3296,6 +3410,57 @@ paths:
       summary: Save weekly feedback
       tags:
       - weekly-plan
+  /api/admin/async-runs:
+    get:
+      description: Lists pipeline runs and standalone jobs together, newest first.
+        Admin JWT or internal token only. Filters by status / user_id / name, paginated
+        with limit+offset; total is the count matching the filters (before pagination).
+      parameters:
+      - description: Filter by status (queued|running|done|failed)
+        in: query
+        name: status
+        type: string
+      - description: Filter by subject user id
+        in: query
+        name: user_id
+        type: string
+      - description: Filter by pipeline name or job type
+        in: query
+        name: name
+        type: string
+      - description: Page size (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.asyncRunsAdminResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: List async runs (admin)
+      tags:
+      - jobs
   /api/admin/pipeline-runs:
     get:
       description: Lists pipeline runs across all users, newest first. Admin JWT or
@@ -3387,6 +3552,187 @@ paths:
       summary: Get a pipeline run (admin)
       tags:
       - pipelines
+  /api/internal/jobs:
+    post:
+      consumes:
+      - application/json
+      description: Internal-only. Persists a queued job row and returns it without
+        publishing a broker pointer — the caller publishes. Idempotent on (user_id,
+        idempotency_key); a repeat key returns the existing job with created=false.
+      parameters:
+      - description: Job row to persist
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.createInternalJobRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Existing job for a repeated idempotency key
+          schema:
+            $ref: '#/definitions/api.createInternalJobResponse'
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.createInternalJobResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      summary: Create a job row (internal, no publish)
+      tags:
+      - jobs
+  /api/internal/jobs/{job_id}:
+    get:
+      description: Internal-only. Returns the full job row including input_json, for
+        the plan-job worker (ADR 0033).
+      parameters:
+      - description: Job id
+        in: path
+        name: job_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.jobStateResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      summary: Get a job row (internal)
+      tags:
+      - jobs
+  /api/internal/jobs/{job_id}/transition:
+    post:
+      consumes:
+      - application/json
+      description: 'Internal-only. Applies a compare-and-set state change: From is
+        the expected current status (nil = unconditional), To the new one, plus optional
+        stage/progress/error/heartbeat deltas. 409 when the From guard fails.'
+      parameters:
+      - description: Job id
+        in: path
+        name: job_id
+        required: true
+        type: string
+      - description: State transition
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.jobTransitionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.jobStateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      summary: Transition a job (internal)
+      tags:
+      - jobs
+  /api/internal/jobs/stale-running:
+    post:
+      consumes:
+      - application/json
+      description: Internal-only. Fails every running job whose heartbeat is older
+        than older_than, tagged with error_code. Returns how many were failed.
+      parameters:
+      - description: Reconcile window and error code
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.staleRunningRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      summary: Fail stale running jobs (internal)
+      tags:
+      - jobs
   /api/pipelines/{run_id}:
     get:
       description: Reads one asynchronous pipeline run. Web onboarding polls the /api

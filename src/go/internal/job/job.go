@@ -51,9 +51,44 @@ type Job struct {
 	// PipelineRunID links this job back to the PipelineRun that spawned it, so
 	// the orchestrator can advance the run on completion. Empty for standalone jobs.
 	PipelineRunID string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	CompletedAt   *time.Time
+	// HeartbeatAt is the last time a handler reported progress. Standalone
+	// long-running jobs (e.g. plan jobs, ADR 0033) use it as the stale-running
+	// reconcile key when a worker crashes mid-run; pipeline step jobs don't
+	// stamp it.
+	HeartbeatAt *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	CompletedAt *time.Time
+}
+
+// JobTransition is a compare-and-set state change applied to a single job row
+// (ADR 0033). From is the expected current status — nil means unconditional;
+// a mismatch fails with ErrStateChanged. To is the new status. Pointer fields
+// only update the columns they name, so the caller sends just the delta.
+//
+// AttemptsDelta and AttemptsLT exist because the plan-job worker's claim and
+// reclaim are counter CAS operations (`attempts = attempts + 1` guarded by a
+// redelivery budget), not absolute writes — expressing them as Attempts would
+// make the read-modify-write race. ClearError is explicit rather than implied
+// by To, so the shared contract does not hide behaviour behind a status.
+type JobTransition struct {
+	From          *Status
+	To            Status
+	Attempts      *int
+	AttemptsDelta *int
+	// AttemptsLT guards the write on the *current* attempts being below this
+	// value (the redelivery budget); a violation fails with ErrStateChanged.
+	AttemptsLT   *int
+	Stage        *string
+	ProgressPct  *int
+	ErrorCode    *string
+	ErrorMessage *string
+	// ClearError nulls error_code and error_message. Takes precedence over
+	// ErrorCode/ErrorMessage, which are ignored when it is set.
+	ClearError  bool
+	ResultJSON  *string
+	HeartbeatAt *time.Time
+	CompletedAt *time.Time
 }
 
 // PipelineStep is one node in a linear pipeline.

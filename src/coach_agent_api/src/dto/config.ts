@@ -14,6 +14,7 @@ export interface RawApiConfig {
   stride_database: MySqlConfig;
   persistence_database: MySqlConfig;
   plan_jobs: { amqp_url: string; queues: { work: string; retry: string; poison: string } };
+  go_api: { base_url: string; internal_token: string };
 }
 
 export interface ApiConfig {
@@ -22,6 +23,8 @@ export interface ApiConfig {
   strideDatabase: MySqlConfig;
   persistenceDatabase: MySqlConfig;
   planJobs: { amqpUrl: string; queues: { work: string; retry: string; poison: string } };
+  /** Go API internal endpoints (X-Internal-Token): plan-job create/poll (ADR 0033). */
+  goApi: { baseUrl: string; internalToken: string };
   auth: { publicKeyPem: string; authServiceUrl: string; issuer: string; audience?: string | string[]; adminAudience?: string };
 }
 

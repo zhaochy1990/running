@@ -7,6 +7,84 @@
         "version": "1.0"
     },
     "paths": {
+        "/api/admin/async-runs": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists pipeline runs and standalone jobs together, newest first. Admin JWT or internal token only. Filters by status / user_id / name, paginated with limit+offset; total is the count matching the filters (before pagination).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jobs"
+                ],
+                "summary": "List async runs (admin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by status (queued|running|done|failed)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by subject user id",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by pipeline name or job type",
+                        "name": "name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.asyncRunsAdminResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/pipeline-runs": {
             "get": {
                 "security": [
@@ -133,6 +211,279 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/internal/jobs": {
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    }
+                ],
+                "description": "Internal-only. Persists a queued job row and returns it without publishing a broker pointer — the caller publishes. Idempotent on (user_id, idempotency_key); a repeat key returns the existing job with created=false.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jobs"
+                ],
+                "summary": "Create a job row (internal, no publish)",
+                "parameters": [
+                    {
+                        "description": "Job row to persist",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.createInternalJobRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Existing job for a repeated idempotency key",
+                        "schema": {
+                            "$ref": "#/definitions/api.createInternalJobResponse"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.createInternalJobResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/internal/jobs/stale-running": {
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    }
+                ],
+                "description": "Internal-only. Fails every running job whose heartbeat is older than older_than, tagged with error_code. Returns how many were failed.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jobs"
+                ],
+                "summary": "Fail stale running jobs (internal)",
+                "parameters": [
+                    {
+                        "description": "Reconcile window and error code",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.staleRunningRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/internal/jobs/{job_id}": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    }
+                ],
+                "description": "Internal-only. Returns the full job row including input_json, for the plan-job worker (ADR 0033).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jobs"
+                ],
+                "summary": "Get a job row (internal)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job id",
+                        "name": "job_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.jobStateResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/internal/jobs/{job_id}/transition": {
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    }
+                ],
+                "description": "Internal-only. Applies a compare-and-set state change: From is the expected current status (nil = unconditional), To the new one, plus optional stage/progress/error/heartbeat deltas. 409 when the From guard fails.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "jobs"
+                ],
+                "summary": "Transition a job (internal)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job id",
+                        "name": "job_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "State transition",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.jobTransitionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.jobStateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -4637,6 +4988,79 @@
                 }
             }
         },
+        "api.asyncRunResponse": {
+            "type": "object",
+            "properties": {
+                "attempts": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "type": "integer"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "progress_pct": {
+                    "type": "integer"
+                },
+                "run_id": {
+                    "type": "string"
+                },
+                "stage": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.pipelineStepResponse"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.asyncRunsAdminResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "runs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.asyncRunResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "api.bodyCompositionDeltasDTO": {
             "type": "object",
             "properties": {
@@ -4924,6 +5348,42 @@
                 },
                 "latest": {
                     "$ref": "#/definitions/api.bodyCompositionScanDTO"
+                }
+            }
+        },
+        "api.createInternalJobRequest": {
+            "type": "object",
+            "required": [
+                "job_id",
+                "job_type"
+            ],
+            "properties": {
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "input_json": {
+                    "type": "string"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "job_type": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.createInternalJobResponse": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "description": "Created is false when the idempotency key resolved to an existing job.",
+                    "type": "boolean"
+                },
+                "job_id": {
+                    "type": "string"
                 }
             }
         },
@@ -5532,6 +5992,15 @@
                 "error_message": {
                     "type": "string"
                 },
+                "heartbeat_at": {
+                    "type": "string"
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "input_json": {
+                    "type": "string"
+                },
                 "job_id": {
                     "type": "string"
                 },
@@ -5554,6 +6023,44 @@
                     "type": "string"
                 },
                 "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.jobTransitionRequest": {
+            "type": "object",
+            "required": [
+                "to"
+            ],
+            "properties": {
+                "attempts": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "from": {
+                    "type": "string"
+                },
+                "heartbeat_at": {
+                    "type": "string"
+                },
+                "progress_pct": {
+                    "type": "integer"
+                },
+                "result_json": {
+                    "type": "string"
+                },
+                "stage": {
+                    "type": "string"
+                },
+                "to": {
                     "type": "string"
                 }
             }
@@ -6207,6 +6714,21 @@
                     "type": "string"
                 },
                 "seg_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.staleRunningRequest": {
+            "type": "object",
+            "required": [
+                "error_code",
+                "older_than"
+            ],
+            "properties": {
+                "error_code": {
+                    "type": "string"
+                },
+                "older_than": {
                     "type": "string"
                 }
             }
