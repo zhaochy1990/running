@@ -13,6 +13,88 @@ function sanitizeUrl(url) {
   return url.replace(/[?].*/, "");
 }
 
+// Collect the signals that mean "the browser hit a real problem" for a page:
+// console errors, uncaught page errors, failed API requests and >=400 API
+// responses. Each page (email session + phone session) gets its own wiring.
+function watchPage(target, issues, responses) {
+  target.on("console", (msg) => {
+    if (msg.type() === "error") {
+      issues.push(`console error: ${msg.text().slice(0, 300)}`);
+    }
+  });
+  target.on("pageerror", (error) => {
+    issues.push(`page error: ${error.message.slice(0, 300)}`);
+  });
+  target.on("requestfailed", (request) => {
+    const url = request.url();
+    if (request.failure()?.errorText === "net::ERR_ABORTED") {
+      return;
+    }
+    if (url.includes("/api/") || url.includes("/auth/")) {
+      issues.push(`request failed: ${sanitizeUrl(url)} ${request.failure()?.errorText || ""}`);
+    }
+  });
+  target.on("response", (response) => {
+    const url = response.url();
+    if (url.includes("/api/auth/") || url.includes("/api/users") || url.includes("/activities")) {
+      responses.push(`${response.status()} ${sanitizeUrl(url)}`);
+      if (response.status() >= 400) {
+        issues.push(`HTTP ${response.status()}: ${sanitizeUrl(url)}`);
+      }
+    }
+  });
+}
+
+// Auth-scoped diagnostics for the phone pass. In SMS test mode the local auth
+// backend sits at a different origin than the (unproxied) data plane, so only
+// auth traffic and uncaught JS count as failures here — the post-login dashboard
+// 404s are expected and must not fail the SMS smoke.
+function watchAuthPage(target, issues, responses) {
+  target.on("pageerror", (error) => {
+    issues.push(`page error: ${error.message.slice(0, 300)}`);
+  });
+  target.on("requestfailed", (request) => {
+    if (request.url().includes("/api/auth/")) {
+      issues.push(`request failed: ${sanitizeUrl(request.url())} ${request.failure()?.errorText || ""}`);
+    }
+  });
+  target.on("response", (response) => {
+    const url = response.url();
+    if (url.includes("/api/auth/")) {
+      responses.push(`${response.status()} ${sanitizeUrl(url)}`);
+      if (response.status() >= 400) {
+        issues.push(`HTTP ${response.status()}: ${sanitizeUrl(url)}`);
+      }
+    }
+  });
+}
+
+// Phone + SMS verification-code login. Requires a backend running in SMS test
+// mode (fixed code 123456, no Tencent call) — see STRIDE_SMS_TEST_MODE and
+// stride-devops/local/docker-compose.yml. A fresh page means a fresh
+// sessionStorage, so this exercises login-or-register independently of the
+// email session above.
+async function phoneLoginSmoke(browser, appUrl, issues, responses) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  watchAuthPage(page, issues, responses);
+  const phone = `138${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}`;
+  await page.goto(`${appUrl}/login`, { waitUntil: "domcontentloaded" });
+  const dialog = page.getByRole("dialog", { name: "登录 STRIDE" });
+  await dialog.getByRole("button", { name: "手机号" }).click();
+  await dialog.getByLabel("手机号").fill(phone);
+  await dialog.getByRole("button", { name: "获取验证码" }).click();
+  await dialog.getByRole("button", { name: /重新获取\(\d+s\)/ }).waitFor({ timeout: 20_000 });
+  await dialog.getByLabel("验证码").fill("123456");
+  await dialog.getByRole("button", { name: /^登录$/ }).click();
+  await page.waitForURL((url) => !url.pathname.endsWith("/login"), { timeout: 20_000 });
+  const hasToken = await page.evaluate(() => Boolean(sessionStorage.getItem("access_token")));
+  if (!hasToken) throw new Error("phone login completed without access_token");
+  // Let any follow-up auth traffic settle so failures land in `issues`.
+  await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+  await page.close();
+  console.log(`Phone login OK (new phone ${phone} auto-registered)`);
+}
+
 function shanghaiToday() {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Shanghai",
@@ -38,7 +120,6 @@ function assertCurrentWeekUrl(url) {
 }
 
 async function main() {
-  const { email, password } = loadLocalCredentials();
   let browser;
   try {
     browser = await chromium.launch({ headless: true });
@@ -48,36 +129,27 @@ async function main() {
     }
     browser = await chromium.launch({ headless: true, executablePath: systemChrome });
   }
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const issues = [];
   const responses = [];
 
-  page.on("console", (msg) => {
-    if (msg.type() === "error") {
-      issues.push(`console error: ${msg.text().slice(0, 300)}`);
+  // SMS test mode: only the phone pass is meaningful. It runs against the local
+  // auth backend (`VITE_DEV_API_PROXY=http://localhost:3001`), where there is no
+  // local .credentials.local account and no proxied data plane — so the
+  // email + data-page pass cannot run and is skipped.
+  if (process.env.STRIDE_SMS_TEST_MODE === "1") {
+    await phoneLoginSmoke(browser, appUrl, issues, responses);
+    await browser.close();
+    if (issues.length > 0) {
+      throw new Error(`local SMS smoke found browser issues:\n${issues.join("\n")}`);
     }
-  });
-  page.on("pageerror", (error) => {
-    issues.push(`page error: ${error.message.slice(0, 300)}`);
-  });
-  page.on("requestfailed", (request) => {
-    const url = request.url();
-    if (request.failure()?.errorText === "net::ERR_ABORTED") {
-      return;
-    }
-    if (url.includes("/api/") || url.includes("/auth/")) {
-      issues.push(`request failed: ${sanitizeUrl(url)} ${request.failure()?.errorText || ""}`);
-    }
-  });
-  page.on("response", (response) => {
-    const url = response.url();
-    if (url.includes("/api/auth/login") || url.includes("/api/users") || url.includes("/activities")) {
-      responses.push(`${response.status()} ${sanitizeUrl(url)}`);
-      if (response.status() >= 400) {
-        issues.push(`HTTP ${response.status()}: ${sanitizeUrl(url)}`);
-      }
-    }
-  });
+    console.log(`Local SMS smoke OK: ${appUrl}`);
+    console.log(`Responses checked: ${responses.length}`);
+    return;
+  }
+
+  const { email, password } = loadLocalCredentials();
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  watchPage(page, issues, responses);
 
   await page.goto(`${appUrl}/login`, { waitUntil: "domcontentloaded" });
   // Login is now a modal overlay on the landing page; scope to the dialog so the
@@ -187,6 +259,7 @@ async function main() {
     }
   }
   await page.screenshot({ path: weeklyScreenshotPath, fullPage: false });
+
   await browser.close();
 
   if (issues.length > 0) {
