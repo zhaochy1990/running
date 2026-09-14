@@ -27,6 +27,37 @@ export const OPENAPI_DOCUMENT = {
         },
       },
     },
+    "/api/admin/users/{user_id}/coach-data": {
+      delete: {
+        tags: ["Coach"],
+        operationId: "deleteCoachDataForUser",
+        summary: "Delete a user's Coach data",
+        description:
+          "Administrator or self only: an administrator token may delete any user's Coach data; a regular token may delete only its own. Removes checkpoints, checkpoint writes, turn receipts, long-term memory, and plan jobs. Idempotent.",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "user_id",
+            in: "path",
+            required: true,
+            schema: { $ref: "#/components/schemas/TurnIdentifier" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Per-table deletion counts.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/CoachDataDeletionResponse" },
+              },
+            },
+          },
+          "400": errorResponse("The user_id is invalid."),
+          "401": errorResponse("The bearer token is missing or invalid."),
+          "403": errorResponse("A regular caller may delete only their own data."),
+        },
+      },
+    },
     "/api/users/me/coach/chat": {
       post: {
         tags: ["Coach"],
@@ -407,6 +438,19 @@ export const OPENAPI_DOCUMENT = {
         type: "object",
         required: ["error"],
         properties: { error: { type: "string" } },
+        additionalProperties: false,
+      },
+      CoachDataDeletionResponse: {
+        type: "object",
+        required: ["user_id", "deleted"],
+        properties: {
+          user_id: { $ref: "#/components/schemas/TurnIdentifier" },
+          deleted: {
+            type: "object",
+            description: "Affected row count per coach table.",
+            additionalProperties: { type: "integer", minimum: 0 },
+          },
+        },
         additionalProperties: false,
       },
       PlanJobEnqueueRequest: {

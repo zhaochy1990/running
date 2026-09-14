@@ -12,6 +12,7 @@ import { createApp } from "./app.js";
 import { createJwtVerifier, fetchAuthPublicKey } from "./auth.js";
 import { CoachInvokerImpl } from "./coach/coachInvoker.js";
 import type { ApiConfig } from "./dto/config.js";
+import { MySqlCoachDataDeleter } from "./persistence/deletion.js";
 import { createPersistence, type Persistence } from "./persistence/index.js";
 import type { PlanJobsService } from "./routes/planJobs.js";
 
@@ -82,6 +83,7 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
         coachInvoker: coachInvoker,
         checkpointer: persistence.checkpointer,
         planJobs,
+        coachDataDeleter: new MySqlCoachDataDeleter(persistence.pool),
       }),
       close: () => Promise.all([dataProvider.close(), persistence?.close(), planJobPublisher?.close(), planJobQueue.close()]).then(() => undefined),
     };
