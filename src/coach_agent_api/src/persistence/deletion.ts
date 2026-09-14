@@ -1,11 +1,14 @@
 /**
  * Account-erasure support for the coach persistence database.
  *
- * Deletes the five coach-owned shapes for one user: conversation checkpoints,
- * pending checkpoint writes, turn receipts, long-term memory (the `store`
- * table), and plan jobs. Thread-scoped rows are keyed by the canonical
+ * Deletes the four coach-owned shapes for one user: conversation checkpoints,
+ * pending checkpoint writes, turn receipts, and long-term memory (the `store`
+ * table). Thread-scoped rows are keyed by the canonical
  * `{userId}:coach:{sessionId}` thread id, so they are removed by prefix; the
  * user id is LIKE-escaped so a crafted id cannot widen the match.
+ *
+ * Plan-job state is NOT here: ADR 0033 moved it onto the Go `jobs` table, which
+ * stride-api's DeleteUserData already removes.
  *
  * This lives in the persistence layer because it writes SQL directly (AGENTS.md
  * SQL ownership). The admin route only drives it.
@@ -37,7 +40,6 @@ export class MySqlCoachDataDeleter implements CoachDataDeleter {
       coach_turn_receipts: await this.delete("DELETE FROM coach_turn_receipts WHERE thread_id LIKE ?", [`${threadPrefix}%`]),
       // Long-term memory: the exact namespace plus any nested suffix namespaces.
       store: await this.delete("DELETE FROM store WHERE ns = ? OR ns LIKE ?", [memoryExact, `${memoryPrefix}${SEP}%`]),
-      plan_jobs: await this.delete("DELETE FROM plan_jobs WHERE user_id = ?", [userId]),
     };
   }
 

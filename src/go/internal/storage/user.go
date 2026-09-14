@@ -247,6 +247,22 @@ func (s *Store) DisconnectWatch(ctx context.Context, userID, providerName string
 	})
 }
 
+// userOwnedDeletionModels is every table whose rows are removed by a plain
+// `WHERE user_id = ?` delete. The list is package-level so the account-erasure
+// guard test can enumerate it; tables needing special SQL (body-composition
+// segments, team likes) and the created_by-provenance tables (jobs,
+// pipeline_runs) are handled separately in DeleteUserData.
+var userOwnedDeletionModels = []any{
+	&RunningCalibrationPaceZone{}, &RunningCalibrationHRZone{},
+	&RunningCalibrationSnapshot{}, &ActivityTrainingLoad{}, &DailyTrainingLoad{},
+	&PersonalBest{}, &Race{}, &ActivityWatchZone{}, &ActivityZone{}, &TimeseriesPoint{}, &Lap{}, &Activity{},
+	&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{}, &SyncMeta{},
+	&ProviderCredential{}, &WeeklyPlan{}, &WeeklyFeedback{}, &MasterPlan{}, &RaceGoal{},
+	&AbilitySnapshot{}, &ActivityAbility{}, &Vo2MaxPB{},
+	&ScheduledWorkout{}, &BodyCompositionScanRecord{},
+	&UserOnboarding{}, &UserProfile{}, &InjuryRecord{},
+}
+
 // DeleteUserData removes every row owned by userID in one transaction. The
 // explicit model list is intentional: this schema has no cross-table cascade,
 // and keeping deletion in storage makes new user-owned tables visible in review.
@@ -256,16 +272,7 @@ func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
 		return err
 	}
 
-	models := []any{
-		&RunningCalibrationPaceZone{}, &RunningCalibrationHRZone{},
-		&RunningCalibrationSnapshot{}, &ActivityTrainingLoad{}, &DailyTrainingLoad{},
-		&PersonalBest{}, &Race{}, &ActivityWatchZone{}, &ActivityZone{}, &TimeseriesPoint{}, &Lap{}, &Activity{},
-		&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{}, &SyncMeta{},
-		&ProviderCredential{}, &WeeklyPlan{}, &WeeklyFeedback{}, &MasterPlan{}, &RaceGoal{},
-		&AbilitySnapshot{}, &ActivityAbility{}, &Vo2MaxPB{},
-		&ScheduledWorkout{}, &BodyCompositionScanRecord{},
-		&UserOnboarding{}, &UserProfile{}, &InjuryRecord{},
-	}
+	models := userOwnedDeletionModels
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// The body-composition segment table has no user_id column, so it must be

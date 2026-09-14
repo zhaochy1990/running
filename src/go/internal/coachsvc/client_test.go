@@ -14,7 +14,7 @@ func TestDeleteCoachData_ForwardsBearerAndDecodesCounts(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath, gotAuth = r.URL.Path, r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"deleted":{"checkpoints":4,"plan_jobs":2}}`))
+		_, _ = w.Write([]byte(`{"deleted":{"checkpoints":4,"store":2}}`))
 	}))
 	defer server.Close()
 
@@ -28,7 +28,7 @@ func TestDeleteCoachData_ForwardsBearerAndDecodesCounts(t *testing.T) {
 	if gotAuth != "Bearer bearer" {
 		t.Fatalf("authorization = %q", gotAuth)
 	}
-	if counts["checkpoints"] != 4 || counts["plan_jobs"] != 2 {
+	if counts["checkpoints"] != 4 || counts["store"] != 2 {
 		t.Fatalf("counts = %v", counts)
 	}
 }

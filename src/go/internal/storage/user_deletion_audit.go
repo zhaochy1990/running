@@ -51,6 +51,9 @@ const (
 	DeletionStepFiles  = "files"
 )
 
+// maxAuditErrorRunes bounds the stored error text (MySQL column is varchar(1000)).
+const maxAuditErrorRunes = 1000
+
 // AutoMigrateUserDeletionAudit creates/updates the user_deletion_audit table.
 func (s *Store) AutoMigrateUserDeletionAudit(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).AutoMigrate(&UserDeletionAudit{}); err != nil {
@@ -92,8 +95,11 @@ func (s *Store) FinishUserDeletionAudit(ctx context.Context, auditID, status, er
 	if errorMessage == "" {
 		updates["error_message"] = nil
 	} else {
-		if len(errorMessage) > 1000 {
-			errorMessage = errorMessage[:1000]
+		// Truncate by runes, not bytes: a byte slice can cut a multi-byte UTF-8
+		// character in half, which MySQL strict mode rejects, leaving the audit
+		// row stuck at pending instead of partial.
+		if runes := []rune(errorMessage); len(runes) > maxAuditErrorRunes {
+			errorMessage = string(runes[:maxAuditErrorRunes])
 		}
 		updates["error_message"] = errorMessage
 	}

@@ -116,6 +116,22 @@ jobs:
     needs: changes
     if: inputs.full || needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
+    # MySQL backs the storage integration tests. Those tests are run selectively
+    # below (the full storage package has unrelated pre-existing failures when a
+    # DB is attached); without this service every storage test silently skips.
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: stride_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
     defaults:
       run:
         working-directory: src/go
@@ -131,6 +147,13 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+      - name: Account-erasure storage tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/storage/...
+          -run 'TestDeleteUserData|TestUserDeletionAudit'
+          -count=1 -v
 
   coach:
     name: Coach workspace (biome + vitest)

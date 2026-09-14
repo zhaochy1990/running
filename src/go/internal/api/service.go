@@ -286,7 +286,7 @@ func NewService(cfg Config) *Service {
 		syncPipelineIncremental: cfg.SyncPipelineIncremental,
 		jobCatalog:              cfg.JobCatalog,
 		pipelineCatalog:         cfg.PipelineCatalog,
-		users:                   newUserRoutes(cfg.UserStore, cfg.InjuryStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, cfg.AccountDeleter, eraser, cfg.Features, cfg.Runs, log),
+		users:                   newUserRoutes(cfg.UserStore, cfg.InjuryStore, cfg.ProviderLogin, cfg.ProviderInfo, cfg.AuthNameSync, eraser, cfg.Features, cfg.Runs, log),
 		goals:                   newGoalRoutes(cfg.GoalStore, log),
 		adminUsers:              newAdminUserRoutes(eraser, log),
 		activities:              newActivityRoutes(cfg.ActivityStore, log),

@@ -133,18 +133,17 @@ type userRoutes struct {
 	providerLogin ProviderLogin
 	providerInfo  ProviderInfo
 	authName      AuthNameSync
-	accountAuth   AccountDeleter
 	eraser        *accountEraser
 	features      FeatureConfig
 	runs          RunGetter
 	log           *zap.Logger
 }
 
-func newUserRoutes(store UserStore, injuries InjuryStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, ad AccountDeleter, eraser *accountEraser, features FeatureConfig, runs RunGetter, log *zap.Logger) *userRoutes {
+func newUserRoutes(store UserStore, injuries InjuryStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, eraser *accountEraser, features FeatureConfig, runs RunGetter, log *zap.Logger) *userRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &userRoutes{store: store, injuries: injuries, providerLogin: pl, providerInfo: pi, authName: an, accountAuth: ad, eraser: eraser, features: features, runs: runs, log: log}
+	return &userRoutes{store: store, injuries: injuries, providerLogin: pl, providerInfo: pi, authName: an, eraser: eraser, features: features, runs: runs, log: log}
 }
 
 // register mounts the routes on the (already authenticated) group. Paths mirror

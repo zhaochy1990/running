@@ -115,7 +115,7 @@ func (e *accountEraser) erase(ctx context.Context, subject, actor, bearer string
 
 	if err := e.deleteIdentity(ctx, bearer, subject, asAdmin); err != nil {
 		if cause := classifyIdentityError(err, asAdmin); cause != nil {
-			return e.fail(ctx, auditID, storage.DeletionStepAuth, cause)
+			return e.fail(ctx, auditID, storage.DeletionStepAuth, cause, nil)
 		}
 	}
 	e.mark(ctx, auditID, storage.DeletionStepAuth)
@@ -125,17 +125,17 @@ func (e *accountEraser) erase(ctx context.Context, subject, actor, bearer string
 		counts, err := e.coach.DeleteCoachData(ctx, bearer, subject)
 		if err != nil {
 			if cause := classifyCoachError(err); cause != nil {
-				return e.fail(ctx, auditID, storage.DeletionStepCoach, cause)
+				return e.fail(ctx, auditID, storage.DeletionStepCoach, cause, nil)
 			}
 		}
 		coachCounts = counts
+		e.mark(ctx, auditID, storage.DeletionStepCoach)
 	}
-	e.mark(ctx, auditID, storage.DeletionStepCoach)
 
 	if err := e.store.DeleteUserData(ctx, subject); err != nil {
 		return e.fail(ctx, auditID, storage.DeletionStepStride, &eraseError{
 			Status: http.StatusInternalServerError, Code: "delete_failed", Message: "failed to delete user data", Err: err,
-		})
+		}, coachCounts)
 	}
 	e.mark(ctx, auditID, storage.DeletionStepStride)
 
@@ -143,7 +143,7 @@ func (e *accountEraser) erase(ctx context.Context, subject, actor, bearer string
 		if _, err := e.files.RemoveUserDir(subject); err != nil {
 			return e.fail(ctx, auditID, storage.DeletionStepFiles, &eraseError{
 				Status: http.StatusInternalServerError, Code: "delete_failed", Message: "failed to delete user data directory", Err: err,
-			})
+			}, coachCounts)
 		}
 	}
 	e.mark(ctx, auditID, storage.DeletionStepFiles)
@@ -198,9 +198,9 @@ func (e *accountEraser) mark(ctx context.Context, auditID, step string) {
 	}
 }
 
-func (e *accountEraser) fail(ctx context.Context, auditID, step string, cause *eraseError) error {
+func (e *accountEraser) fail(ctx context.Context, auditID, step string, cause *eraseError, coachCounts map[string]int64) error {
 	cause.Step = step
-	e.finish(ctx, auditID, storage.DeletionStatusPartial, cause.Error(), nil)
+	e.finish(ctx, auditID, storage.DeletionStatusPartial, cause.Error(), coachCounts)
 	return cause
 }
 

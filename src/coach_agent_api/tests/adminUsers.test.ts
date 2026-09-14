@@ -28,7 +28,7 @@ function recordingDeleter() {
   const deleter: CoachDataDeleter = {
     async deleteForUser(userId) {
       calls.push(userId);
-      return { checkpoints: 1, plan_jobs: 2 };
+      return { checkpoints: 1, checkpoint_writes: 2, coach_turn_receipts: 3, store: 4 };
     },
   };
   return { deleter, calls };
@@ -45,7 +45,7 @@ test("admin may delete any user's coach data", async () => {
   );
   const response = await request(app, "athlete-1");
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { user_id: "athlete-1", deleted: { checkpoints: 1, plan_jobs: 2 } });
+  assert.deepEqual(await response.json(), { user_id: "athlete-1", deleted: { checkpoints: 1, checkpoint_writes: 2, coach_turn_receipts: 3, store: 4 } });
   assert.deepEqual(calls, ["athlete-1"]);
 });
 
@@ -98,7 +98,7 @@ test("deleter escapes LIKE wildcards and returns per-table counts", async () => 
   } as unknown as Pool;
   const deleter = new MySqlCoachDataDeleter(pool);
   const counts = await deleter.deleteForUser("user_with%wild_");
-  assert.equal(Object.keys(counts).length, 5);
+  assert.equal(Object.keys(counts).length, 4);
   assert.equal(counts.checkpoints, 3);
   const threadParams = executed.filter((e) => e.sql.includes("checkpoints") || e.sql.includes("checkpoint_writes") || e.sql.includes("receipts")).map((e) => e.params[0]);
   for (const param of threadParams) {
@@ -107,5 +107,4 @@ test("deleter escapes LIKE wildcards and returns per-table counts", async () => 
   const storeParams = executed.find((e) => e.sql.includes("FROM store"))?.params ?? [];
   assert.equal(storeParams[0], "athlete_memory\u001fuser_with%wild_");
   assert.equal(storeParams[1], "athlete\\_memory\u001fuser\\_with\\%wild\\_\u001f%");
-  assert.deepEqual(executed.find((e) => e.sql.includes("plan_jobs"))?.params, ["user_with%wild_"]);
 });
