@@ -161,6 +161,8 @@ export interface TodayMealView {
 export interface TodayNutritionView {
   targetsTop: ViewStat[];
   targetsBottom: ViewStat[];
+  /** 有任一量化目标（热量/碳水/蛋白/脂肪/饮水）时才渲染指标区 */
+  hasTargets: boolean;
   meals: TodayMealView[];
   note: string;
 }

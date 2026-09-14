@@ -125,23 +125,25 @@
     <!-- 今日营养：无饮食安排时整块隐藏 -->
     <view wx:if="{{nutrition}}" class="section-title">今日饮食营养</view>
     <view wx:if="{{nutrition}}" class="card nutrition-card">
-      <!-- 宏量营养目标 -->
-      <view class="stat-row">
-        <view wx:for="{{nutrition.targetsTop}}" wx:key="label" class="stat">
-          <view class="stat__value">{{item.value}}</view>
-          <view class="stat__label">{{item.label}}</view>
+      <!-- 宏量营养目标：全部为空时整段隐藏 -->
+      <block wx:if="{{nutrition.hasTargets}}">
+        <view class="stat-row">
+          <view wx:for="{{nutrition.targetsTop}}" wx:key="label" class="stat">
+            <view class="stat__value">{{item.value}}</view>
+            <view class="stat__label">{{item.label}}</view>
+          </view>
         </view>
-      </view>
-      <view class="stat-row stat-row--second">
-        <view wx:for="{{nutrition.targetsBottom}}" wx:key="label" class="stat">
-          <view class="stat__value">{{item.value}}</view>
-          <view class="stat__label">{{item.label}}</view>
+        <view class="stat-row stat-row--second">
+          <view wx:for="{{nutrition.targetsBottom}}" wx:key="label" class="stat">
+            <view class="stat__value">{{item.value}}</view>
+            <view class="stat__label">{{item.label}}</view>
+          </view>
+          <view class="stat stat--spacer"></view>
         </view>
-        <view class="stat stat--spacer"></view>
-      </view>
+      </block>
 
-      <!-- 餐次 -->
-      <view class="meal-list">
+      <!-- 餐次：无餐次时整段隐藏 -->
+      <view wx:if="{{nutrition.meals.length}}" class="meal-list">
         <view wx:for="{{nutrition.meals}}" wx:key="index" class="meal">
           <view class="meal__info">
             <view class="meal__name">{{item.name}}</view>

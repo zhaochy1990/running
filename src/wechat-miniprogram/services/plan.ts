@@ -143,15 +143,19 @@ function buildNutritionView(nutrition: PlannedNutrition | null): TodayNutritionV
     kcal: meal.kcal != null ? `${Math.round(meal.kcal)} kcal` : '—',
   }));
 
-  // 无任何目标值且无餐次 = 当天没有饮食安排，整块隐藏（空态也不展示）。
+  const note = firstLine(nutrition.notes_md);
   const hasTargets = [...targetsTop, ...targetsBottom].some((t) => t.value !== '—');
-  if (meals.length === 0 && !hasTargets) return null;
+
+  // 无目标值、无餐次、且无建议 = 当天没有饮食安排，整块隐藏（空态也不展示）。
+  // 注意：生成计划常只写 notes_md（无量化目标/餐次），此时同样要展示。
+  if (meals.length === 0 && !hasTargets && !note) return null;
 
   return {
     targetsTop,
     targetsBottom,
+    hasTargets,
     meals,
-    note: firstLine(nutrition.notes_md),
+    note,
   };
 }
 
