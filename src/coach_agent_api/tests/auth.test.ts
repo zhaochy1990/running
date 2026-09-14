@@ -122,3 +122,30 @@ test("a non-admin audience is not classified as admin", async () => {
   const token = await signAdminToken(privateKey, { role: "admin" }, "stride-web");
   assert.deepEqual(await verifier.verify(`Bearer ${token}`), { userId: "admin-1", isAdmin: false });
 });
+
+test("verifier with only an admin audience still accepts ordinary user tokens", async () => {
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const verifier = createJwtVerifier({
+    publicKeyPem: await exportSPKI(publicKey),
+    issuer: "auth-service",
+    // No user audience: the coach service relies on issuer + signature only.
+    adminAudience: "stride-admin",
+  });
+  const userToken = await new SignJWT({})
+    .setProtectedHeader({ alg: "RS256" })
+    .setSubject("athlete-1")
+    .setIssuer("auth-service")
+    .setAudience("app_miniprogram")
+    .setExpirationTime("5m")
+    .sign(privateKey);
+  assert.deepEqual(await verifier.verify(`Bearer ${userToken}`), { userId: "athlete-1", isAdmin: false });
+
+  const adminToken = await new SignJWT({ role: "admin" })
+    .setProtectedHeader({ alg: "RS256" })
+    .setSubject("admin-1")
+    .setIssuer("auth-service")
+    .setAudience("stride-admin")
+    .setExpirationTime("5m")
+    .sign(privateKey);
+  assert.deepEqual(await verifier.verify(`Bearer ${adminToken}`), { userId: "admin-1", isAdmin: true });
+});
