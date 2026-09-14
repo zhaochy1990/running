@@ -134,16 +134,17 @@ type userRoutes struct {
 	providerInfo  ProviderInfo
 	authName      AuthNameSync
 	accountAuth   AccountDeleter
+	eraser        *accountEraser
 	features      FeatureConfig
 	runs          RunGetter
 	log           *zap.Logger
 }
 
-func newUserRoutes(store UserStore, injuries InjuryStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, ad AccountDeleter, features FeatureConfig, runs RunGetter, log *zap.Logger) *userRoutes {
+func newUserRoutes(store UserStore, injuries InjuryStore, pl ProviderLogin, pi ProviderInfo, an AuthNameSync, ad AccountDeleter, eraser *accountEraser, features FeatureConfig, runs RunGetter, log *zap.Logger) *userRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &userRoutes{store: store, injuries: injuries, providerLogin: pl, providerInfo: pi, authName: an, accountAuth: ad, features: features, runs: runs, log: log}
+	return &userRoutes{store: store, injuries: injuries, providerLogin: pl, providerInfo: pi, authName: an, accountAuth: ad, eraser: eraser, features: features, runs: runs, log: log}
 }
 
 // register mounts the routes on the (already authenticated) group. Paths mirror
@@ -885,9 +886,10 @@ func validationMessage(fe validator.FieldError) string {
 	}
 }
 
-// deleteAccount removes the auth-service identity first, then atomically clears
-// all user-owned STRIDE rows. Auth-service 401/404 means the external identity
-// is already unavailable and local cleanup can safely continue.
+// deleteAccount removes the auth-service identity first, then clears all
+// user-owned STRIDE and coach data through the shared eraser. Auth-service
+// 401/404 means the external identity is already unavailable and local cleanup
+// can safely continue.
 //
 //	@Summary		Delete the current user's account and data
 //	@Tags			users
@@ -909,36 +911,28 @@ func (u *userRoutes) deleteAccount(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid user identifier"})
 		return
 	}
-	if u.accountAuth == nil {
-		u.log.Error("account deletion auth-service dependency is not configured")
+	if u.eraser == nil {
+		u.log.Error("account deletion eraser is not configured")
 		c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "auth-service unavailable"})
 		return
 	}
 
 	ctx := c.Request.Context()
-	if err := u.accountAuth.DeleteAccount(ctx, bearerFrom(c)); err != nil {
-		var responseErr interface{ HTTPStatus() int }
-		isResponse := errors.As(err, &responseErr)
-		status := 0
-		if isResponse {
-			status = responseErr.HTTPStatus()
-		}
-		if !isResponse || status >= http.StatusInternalServerError {
-			u.log.Error("auth-service account deletion failed", zapErr(err))
-			c.JSON(http.StatusServiceUnavailable, errorResponse{Error: "auth-service unavailable"})
-			return
-		}
-		if status != http.StatusUnauthorized && status != http.StatusNotFound {
-			u.log.Warn("auth-service rejected account deletion", zap.Int("status", status))
-			c.JSON(status, errorResponse{Error: "auth-service rejected account deletion"})
-			return
-		}
-	}
-
-	if err := u.store.DeleteUserData(ctx, uid); err != nil {
-		u.log.Error("delete user data failed", zapErr(err))
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: "failed to delete user data"})
+	if err := u.eraser.erase(ctx, uid, uid, bearerFrom(c), false); err != nil {
+		writeEraseError(c, u.log, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// writeEraseError maps a cleanup failure to its HTTP status and stable code.
+func writeEraseError(c *gin.Context, log *zap.Logger, err error) {
+	var cause *eraseError
+	if errors.As(err, &cause) {
+		log.Warn("account erasure failed", zap.String("step", cause.Step), zap.Int("status", cause.Status), zapErr(err))
+		c.JSON(cause.Status, errorResponse{Error: cause.Code})
+		return
+	}
+	log.Error("account erasure failed", zapErr(err))
+	c.JSON(http.StatusInternalServerError, errorResponse{Error: "failed to delete user data"})
 }

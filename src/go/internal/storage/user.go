@@ -259,13 +259,35 @@ func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
 	models := []any{
 		&RunningCalibrationPaceZone{}, &RunningCalibrationHRZone{},
 		&RunningCalibrationSnapshot{}, &ActivityTrainingLoad{}, &DailyTrainingLoad{},
-		&PersonalBest{}, &Race{}, &ActivityWatchZone{}, &TimeseriesPoint{}, &Lap{}, &Activity{},
+		&PersonalBest{}, &Race{}, &ActivityWatchZone{}, &ActivityZone{}, &TimeseriesPoint{}, &Lap{}, &Activity{},
 		&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{}, &SyncMeta{},
-		&ProviderCredential{}, &WeeklyPlan{}, &MasterPlan{}, &RaceGoal{},
+		&ProviderCredential{}, &WeeklyPlan{}, &WeeklyFeedback{}, &MasterPlan{}, &RaceGoal{},
+		&AbilitySnapshot{}, &ActivityAbility{}, &Vo2MaxPB{},
+		&ScheduledWorkout{}, &BodyCompositionScanRecord{},
 		&UserOnboarding{}, &UserProfile{}, &InjuryRecord{},
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// The body-composition segment table has no user_id column, so it must be
+		// deleted through the scan it belongs to. Order matters: resolve the
+		// user's scan ids first, then delete the child segments, then the scans
+		// (in models above). A naive "delete scans first" leaves orphan segments
+		// with an empty subquery and nothing to match.
+		if err := tx.Exec(
+			"DELETE FROM user_body_composition_segment WHERE scan_id IN (SELECT id FROM user_body_composition_scan WHERE user_id = ?)",
+			uid,
+		).Error; err != nil {
+			return fmt.Errorf("storage: delete body composition segments: %w", err)
+		}
+
+		// team_likes has no user_id column either. A user is referenced in two
+		// directions: as the activity owner (likes received) and as the liker
+		// (likes given). Delete both, otherwise the redundant liker_display_name
+		// column keeps surfacing a deleted user's name to teammates.
+		if err := tx.Where("owner_user_id = ? OR liker_user_id = ?", uid, uid).Delete(&TeamLike{}).Error; err != nil {
+			return fmt.Errorf("storage: delete team likes: %w", err)
+		}
+
 		for _, model := range models {
 			if err := tx.Where("user_id = ?", uid).Delete(model).Error; err != nil {
 				return fmt.Errorf("storage: delete user data from %s: %w", tx.Statement.Table, err)
