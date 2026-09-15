@@ -46,7 +46,7 @@
             bindblur="onSaveName"
           />
         </view>
-        <view class="field-row">
+        <view class="field-row field-row--last">
           <view class="field-row__label">邮箱</view>
           <view class="field-row__value field-row__value--muted">{{email || '未绑定'}}</view>
         </view>
@@ -63,16 +63,20 @@
         </view>
 
         <block wx:else>
-        <picker class="field-row field-row--picker" mode="selector" range="{{sexOptions}}" value="{{sexIndex}}" bindchange="onSexChange">
-          <view class="field-row__label">性别</view>
-          <view class="field-row__value {{sexIndex < 0 ? 'field-row__value--muted' : ''}}">{{sexIndex >= 0 ? sexOptions[sexIndex] : '请选择'}}</view>
-          <image class="field-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+        <picker mode="selector" range="{{sexOptions}}" value="{{sexIndex}}" bindchange="onSexChange">
+          <view class="field-row">
+            <view class="field-row__label">性别</view>
+            <view class="field-row__value {{sexIndex < 0 ? 'field-row__value--muted' : ''}}">{{sexIndex >= 0 ? sexOptions[sexIndex] : '请选择'}}</view>
+            <image class="field-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+          </view>
         </picker>
 
-        <picker class="field-row field-row--picker" mode="date" value="{{dob}}" start="1900-01-01" end="{{today}}" bindchange="onDobChange">
-          <view class="field-row__label">生日</view>
-          <view class="field-row__value {{dob ? '' : 'field-row__value--muted'}}">{{dob || '请选择'}}</view>
-          <image class="field-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+        <picker mode="date" value="{{dob}}" start="1900-01-01" end="{{today}}" bindchange="onDobChange">
+          <view class="field-row">
+            <view class="field-row__label">生日</view>
+            <view class="field-row__value {{dob ? '' : 'field-row__value--muted'}}">{{dob || '请选择'}}</view>
+            <image class="field-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+          </view>
         </picker>
 
         <view class="field-row">
@@ -101,10 +105,12 @@
           <view class="field-row__unit">kg</view>
         </view>
 
-        <picker class="field-row field-row--picker" mode="selector" range="{{ageOptions}}" value="{{ageIndex}}" bindchange="onAgeChange">
-          <view class="field-row__label">跑步年限</view>
-          <view class="field-row__value">{{ageOptions[ageIndex]}}</view>
-          <image class="field-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+        <picker mode="selector" range="{{ageOptions}}" value="{{ageIndex}}" bindchange="onAgeChange">
+          <view class="field-row field-row--last">
+            <view class="field-row__label">跑步年限</view>
+            <view class="field-row__value">{{ageOptions[ageIndex]}}</view>
+            <image class="field-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+          </view>
         </picker>
 
         <button wx:if="{{!hasProfile}}" class="save-btn" bindtap="onSaveBody" disabled="{{saving}}">保存</button>

@@ -122,7 +122,9 @@
   padding: 24rpx 0 48rpx;
 }
 
-.hero__avatar-btn {
+/* 小程序基础库默认 `wx-button:not([size=mini]){width:184px}` 特异度高于单类选择器，
+   故用 .hero .hero__avatar-btn 提升特异度，才能得到预期的圆形尺寸。 */
+.hero .hero__avatar-btn {
   width: 176rpx;
   height: 176rpx;
   padding: 0;
@@ -180,7 +182,7 @@
   border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
 }
 
-.field-row:last-child {
+.field-row--last {
   border-bottom: none;
 }
 
@@ -255,7 +257,8 @@
   color: #9c9c9d;
 }
 
-.save-btn {
+/* 同 hero 头像按钮：提升特异度以压过基础库按钮默认 width:184px。 */
+.card .save-btn {
   width: 100%;
   height: 88rpx;
   line-height: 88rpx;
