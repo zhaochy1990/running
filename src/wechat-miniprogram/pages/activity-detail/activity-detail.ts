@@ -61,7 +61,8 @@ interface ExerciseGroup {
 }
 
 interface WeatherItem {
-  label: string;
+  key: string;
+  icon: string;
   value: string;
 }
 
@@ -81,12 +82,30 @@ interface MapPolyline {
   width: number;
 }
 
-interface MapCircle {
+// 起终点 + 圈号都用原生 <map> 的 marker 画（iconPath 必须是图片，不吃 svg）：
+// 起终点直接拿图标 png 当图标，圈号靠 label（1×1 透明 png 占位）。
+interface MapMarker {
+  id: number;
   latitude: number;
   longitude: number;
-  color: string;
-  fillColor: string;
-  radius: number;
+  iconPath: string;
+  width: number;
+  height: number;
+  anchor: { x: number; y: number };
+  label?: {
+    content: string;
+    color: string;
+    fontSize: number;
+    bgColor: string;
+    borderColor: string;
+    borderWidth: number;
+    borderRadius: number;
+    padding: number;
+    anchorX: number;
+    anchorY: number;
+    textAlign: 'center';
+  };
+  zIndex: number;
 }
 
 interface HeaderView {
@@ -120,7 +139,7 @@ interface ActivityDetailPageData {
   mapLatitude: number;
   mapLongitude: number;
   mapPolylines: MapPolyline[];
-  mapCircles: MapCircle[];
+  mapMarkers: MapMarker[];
   mapFitPoints: Array<{ latitude: number; longitude: number }>;
   mapColoring: MapColoring;
 }
@@ -534,16 +553,15 @@ function buildColoredLine(
   return { points: chunk.map((p) => ({ latitude: p.latitude, longitude: p.longitude })), color, width: 5 };
 }
 
-// 依据当前着色模式重建 polyline / circles / 自适应视野。无有效 GPS（<20 点）时不渲染。
+// 依据当前着色模式重建 polyline / 自适应视野。无有效 GPS（<20 点）时不渲染。
 function computeMapView(coloring: MapColoring): {
   hasMap: boolean;
   mapLatitude: number;
   mapLongitude: number;
   mapPolylines: MapPolyline[];
-  mapCircles: MapCircle[];
   mapFitPoints: Array<{ latitude: number; longitude: number }>;
 } {
-  const noMap = { hasMap: false, mapLatitude: 0, mapLongitude: 0, mapPolylines: [], mapCircles: [], mapFitPoints: [] };
+  const noMap = { hasMap: false, mapLatitude: 0, mapLongitude: 0, mapPolylines: [], mapFitPoints: [] };
 
   let count = 0;
   let paceMin = Infinity;
@@ -593,31 +611,15 @@ function computeMapView(coloring: MapColoring): {
     }
   }
 
-  // 起终点圆点：用 <map> 的 circles 属性，避免 marker 需要 iconPath 图片素材。
-  const circles: MapCircle[] = [];
-  const firstSeg = mapSegments[0];
-  const endSeg = mapSegments[mapSegments.length - 1];
-  if (firstSeg && firstSeg.length) {
-    const s = firstSeg[0];
-    circles.push({ latitude: s.latitude, longitude: s.longitude, color: MAP_GREEN, fillColor: MAP_GREEN, radius: 18 });
-  }
-  if (endSeg && endSeg.length) {
-    const e = endSeg[endSeg.length - 1];
-    if (!firstSeg || !firstSeg.length || e.latitude !== firstSeg[0].latitude || e.longitude !== firstSeg[0].longitude) {
-      circles.push({ latitude: e.latitude, longitude: e.longitude, color: '#1a1c2e', fillColor: '#1a1c2e', radius: 18 });
-    }
-  }
-
-  // 四周扩 15% 跨度（最小 ~0.002° ≈ 200m），让轨迹在视野内居中、四周留白不贴边。
-  const padLat = Math.max((maxLat - minLat) * 0.15, 0.002);
-  const padLng = Math.max((maxLng - minLng) * 0.15, 0.002);
+  // 四周扩 10% 跨度（最小 ~0.0008° ≈ 90m），让轨迹在视野内居中、四周留白不贴边。
+  const padLat = Math.max((maxLat - minLat) * 0.1, 0.0008);
+  const padLng = Math.max((maxLng - minLng) * 0.1, 0.0008);
 
   return {
     hasMap: true,
     mapLatitude: (minLat + maxLat) / 2,
     mapLongitude: (minLng + maxLng) / 2,
     mapPolylines: polylines,
-    mapCircles: circles,
     mapFitPoints: [
       { latitude: minLat - padLat, longitude: minLng - padLng },
       { latitude: maxLat + padLat, longitude: maxLng + padLng },
@@ -625,18 +627,108 @@ function computeMapView(coloring: MapColoring): {
   };
 }
 
+// 1×1 透明 png：marker 的 iconPath 必填，但视觉只需要 label。
+const TRANSPARENT_ICON = '/assets/icons/map_dot.png';
+
+// 徽标样式（深绿底 + STRIDE 绿描边 + 白字）。尺寸对齐 RQ：约占地图宽度 6%，
+// anchorX/Y 取一半直径，让圆牌盖在轨迹点上。
+const LAP_BADGE_LABEL = {
+  color: '#ffffff',
+  fontSize: 8,
+  bgColor: '#0b3d24',
+  borderColor: '#00e676',
+  borderWidth: 1,
+  borderRadius: 20,
+  padding: 2,
+  anchorX: -8,
+  anchorY: -7,
+  textAlign: 'center' as const,
+};
+
+// 起终点用图标 png（而非圆点）：起点 ▶ 绿、终点 ■ 红。
+// marker 的 icon 恒在 marker 的 label 之下，所以圈号会压在起终点上——正是想要的层叠。
+const START_ICON = '/assets/icons/map_start.png';
+const END_ICON = '/assets/icons/map_end.png';
+
+function buildEndpointMarkers(): MapMarker[] {
+  const first = mapSegments[0];
+  const last = mapSegments[mapSegments.length - 1];
+  const start = first && first.length ? first[0] : null;
+  const e = last && last.length ? last[last.length - 1] : null;
+  const markers: MapMarker[] = [];
+  const push = (id: number, p: MapPoint, iconPath: string) => {
+    markers.push({
+      id,
+      latitude: p.latitude,
+      longitude: p.longitude,
+      iconPath,
+      width: 20,
+      height: 20,
+      anchor: { x: 0.5, y: 0.5 },
+      zIndex: 1,
+    });
+  };
+  if (start) push(0, start, START_ICON);
+  // 绕圈跑回起点时终点会和起点重合，不重叉。
+  if (e && (!start || e.latitude !== start.latitude || e.longitude !== start.longitude)) push(-1, e, END_ICON);
+  return markers;
+}
+
+// 画 RQ 风格圈号：每圈结束处一个编号徽标。
+// 用「累计距离占总距离的比例」把圈边界映射到 timeseries 点，避开两处单位不一致
+// （timeseries.distance 实测 cm，segment.distance_m 为 m）。恢复圈不计号、不打点。
+function buildLapMarkers(segments: Segment[], timeseries: TimeseriesPoint[]): MapMarker[] {
+  const pts: Array<{ d: number; lat: number; lon: number }> = [];
+  for (const p of timeseries) {
+    if (p.distance == null || p.gps_lat == null || p.gps_lon == null) continue;
+    pts.push({ d: p.distance, lat: p.gps_lat, lon: p.gps_lon });
+  }
+  if (pts.length < 2) return [];
+  const totalTs = pts[pts.length - 1].d - pts[0].d;
+  const totalLap = segments.reduce((s, x) => s + (x.distance_m ?? 0), 0);
+  if (totalTs <= 0 || totalLap <= 0) return [];
+
+  const marks = lapPaceMarks(segments);
+  const markers: MapMarker[] = [];
+  let cum = 0;
+  let lapNo = 0;
+  let cursor = 0;
+  for (let i = 0; i < segments.length; i++) {
+    cum += segments[i].distance_m ?? 0;
+    if (marks[i].rest) continue;
+    lapNo += 1;
+    const target = pts[0].d + (cum / totalLap) * totalTs;
+    while (cursor < pts.length - 1 && pts[cursor].d < target) cursor++;
+    const g = wgs84ToGcj02(pts[cursor].lon, pts[cursor].lat);
+    markers.push({
+      id: lapNo,
+      latitude: g.latitude,
+      longitude: g.longitude,
+      iconPath: TRANSPARENT_ICON,
+      width: 1,
+      height: 1,
+      anchor: { x: 0.5, y: 0.5 },
+      label: { ...LAP_BADGE_LABEL, content: `${lapNo}` },
+      zIndex: 100 + lapNo,
+    });
+  }
+  return markers;
+}
+
 function buildWeather(a: Activity): WeatherItem[] {
   const out: WeatherItem[] = [];
   if (a.temperature != null) {
     let value = `${a.temperature}°C`;
     if (a.feels_like != null && a.feels_like !== a.temperature) {
-      value += `（体感 ${a.feels_like}°C）`;
+      value += `（体感 ${a.feels_like}°）`;
     }
-    out.push({ label: '温度', value });
+    out.push({ key: 'temp', icon: '/assets/icons/device_thermostat.svg', value });
   }
-  if (a.humidity != null) out.push({ label: '湿度', value: `${a.humidity}%` });
+  if (a.humidity != null) {
+    out.push({ key: 'humidity', icon: '/assets/icons/water_drop.svg', value: `${a.humidity}%` });
+  }
   if (a.wind_speed != null && a.wind_speed > 0) {
-    out.push({ label: '风速', value: `${a.wind_speed} km/h` });
+    out.push({ key: 'wind', icon: '/assets/icons/air.svg', value: `${a.wind_speed} km/h` });
   }
   return out;
 }
@@ -671,12 +763,16 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
     mapLatitude: 0,
     mapLongitude: 0,
     mapPolylines: [],
-    mapCircles: [],
     mapFitPoints: [],
   };
+  let mapMarkers: MapMarker[] = [];
   if (!isStrength) {
     mapSegments = buildMapSegments(detail.timeseries || [], detail.activity.pauses);
     mapView = computeMapView('pace');
+    if (mapView.hasMap) {
+      // 起终点排数组最前：marker 的 icon 恒在 label 之下，圈号会压在图标上。
+      mapMarkers = [...buildEndpointMarkers(), ...buildLapMarkers(detail.segments || [], detail.timeseries || [])];
+    }
   }
 
   return {
@@ -700,6 +796,7 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
     commentary: a.commentary || '',
     weather: buildWeather(a),
     ...mapView,
+    mapMarkers,
     mapColoring: 'pace',
   };
 }
@@ -754,7 +851,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     mapLatitude: 0,
     mapLongitude: 0,
     mapPolylines: [],
-    mapCircles: [],
+    mapMarkers: [],
     mapFitPoints: [],
     mapColoring: 'pace',
   },

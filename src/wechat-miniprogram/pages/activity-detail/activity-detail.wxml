@@ -30,7 +30,7 @@
 
     <block wx:else>
       <!-- 轨迹地图 -->
-      <view wx:if="{{hasMap}}" class="card">
+      <view wx:if="{{hasMap}}" class="map-card">
         <view class="route-map-wrap">
           <map
             class="route-map"
@@ -39,15 +39,22 @@
             scale="13"
             include-points="{{mapFitPoints}}"
             polyline="{{mapPolylines}}"
-            circles="{{mapCircles}}"
+            markers="{{mapMarkers}}"
             show-location="{{false}}"
           />
-          <view class="map-toggle">
-            <view class="map-toggle__btn {{mapColoring === 'pace' ? 'map-toggle__btn--on' : ''}}" data-coloring="pace" bindtap="onColoringChange">配速</view>
-            <view class="map-toggle__btn {{mapColoring === 'hr' ? 'map-toggle__btn--on' : ''}}" data-coloring="hr" bindtap="onColoringChange">HR</view>
-            <view class="map-toggle__btn {{mapColoring === 'none' ? 'map-toggle__btn--on' : ''}}" data-coloring="none" bindtap="onColoringChange">无色</view>
-          </view>
-        </view>
+          <view class="map-overlay">
+            <view wx:if="{{weather.length}}" class="env-line">
+              <view wx:for="{{weather}}" wx:key="key" class="env-item">
+                <image class="env-item__icon" src="{{item.icon}}" mode="aspectFit" />
+                <text>{{item.value}}</text>
+              </view>
+            </view>
+            <view class="map-toggle">
+              <view class="map-toggle__btn {{mapColoring === 'pace' ? 'map-toggle__btn--on' : ''}}" data-coloring="pace" bindtap="onColoringChange">配速</view>
+              <view class="map-toggle__btn {{mapColoring === 'hr' ? 'map-toggle__btn--on' : ''}}" data-coloring="hr" bindtap="onColoringChange">HR</view>
+              <view class="map-toggle__btn {{mapColoring === 'none' ? 'map-toggle__btn--on' : ''}}" data-coloring="none" bindtap="onColoringChange">无色</view>
+            </view>
+          </view>        </view>
       </view>
 
       <!-- 主指标：距离/配速/心率 + 负荷/时长/最大心率 + 步幅/步频/爬升 一卡三行 -->
@@ -141,17 +148,6 @@
       <view wx:if="{{hasCommentary}}" class="card">
         <view class="card-title">教练简评</view>
         <view class="note-text">{{commentary}}</view>
-      </view>
-
-      <!-- 天气 -->
-      <view wx:if="{{weather.length}}" class="card">
-        <view class="card-title">环境</view>
-        <view class="weather-row">
-          <view wx:for="{{weather}}" wx:key="label" class="weather-item">
-            <view class="weather-item__label">{{item.label}}</view>
-            <view class="weather-item__value">{{item.value}}</view>
-          </view>
-        </view>
       </view>
     </block>
   </view>
