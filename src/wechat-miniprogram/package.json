@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node utils/lapRows.check.mts"
+    "test": "node utils/lapRows.check.mts && node utils/curve.check.mts"
   },
   "keywords": [],
   "author": "",

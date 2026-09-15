@@ -8,7 +8,7 @@
 ///       --dart-define=API_BASE_URL=http://10.0.2.2:8000 \
 ///       --dart-define=AUTH_URL=http://10.0.2.2:8001
 abstract final class Env {
-  /// STRIDE backend (FastAPI) base URL — all `/api/*` calls.
+  /// STRIDE backend base URL — all `/api/*` calls.
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue:

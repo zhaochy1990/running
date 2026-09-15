@@ -198,19 +198,27 @@
   gap: 20rpx 24rpx;
 }
 
+/* 三栏指标：每格水平居中，数值 / 单位 / 标签按同一基线对齐 */
 .metric {
   flex: 0 0 calc(33.33% - 16rpx);
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: center;
 }
 
 .metric__value {
   font-size: 31rpx;
+  line-height: 44rpx;
   font-weight: 700;
   color: #e3e2e5;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .metric__unit {
@@ -222,17 +230,19 @@
 
 .metric__label {
   font-size: 19rpx;
+  line-height: 28rpx;
   color: #9c9c9d;
   margin-top: 4rpx;
 }
 
 /* ---------- 区间分布 ---------- */
 
-.zone-group-title {
-  font-size: 20rpx;
-  color: #c3c2c5;
-  font-weight: 600;
-  margin: 16rpx 0 16rpx;
+/* 区间卡片顶部的走势曲线（canvas 2d，宽高必须显式给；配色由 uCharts 按区间生成） */
+.curve {
+  display: block;
+  width: 100%;
+  height: 240rpx;
+  margin-bottom: 20rpx;
 }
 
 .zone-row {

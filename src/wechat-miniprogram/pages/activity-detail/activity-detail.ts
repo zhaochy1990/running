@@ -2,6 +2,18 @@ import { getActivityDetail } from '../../services/activities';
 import { fmtDurationShort, fmtKm, fmtHms, fmtPaceQuote, fmtPaceQuoteParts } from '../../utils/format';
 import { shanghaiDateFromIso, shanghaiTimeFromIso } from '../../utils/date';
 import { wgs84ToGcj02 } from '../../utils/coord';
+import {
+  buildHrSeries,
+  buildPaceSeries,
+  downsample,
+  zoneBands,
+  zoneColor,
+  CURVE_FALLBACK_COLOR,
+  type CurveChartSpec,
+  type CurvePoint,
+  type ZoneBand,
+} from '../../utils/curve';
+import { createCurveChart, hrChartSpec, paceChartSpec, type CurveChart } from '../../utils/curveChart';
 import { lapPaceMarks } from '../../utils/lapRows';
 import { userStore } from '../../store/index';
 import type {
@@ -30,6 +42,8 @@ interface ZoneBar {
   label: string; // 区间文字，如「< 130」/「130 - 140」
   percent: number; // 0-100
   duration: string;
+  /** 区间条颜色（与曲线同一档配色） */
+  color: string;
 }
 
 interface LapRow {
@@ -124,9 +138,11 @@ interface ActivityDetailPageData {
   isStrength: boolean;
   header: HeaderView;
   metrics: Metric[];
-  hasZones: boolean;
   hrZones: ZoneBar[];
   paceZones: ZoneBar[];
+  /** 区间卡片里的走势曲线是否需要渲染 */
+  hasHrCurve: boolean;
+  hasPaceCurve: boolean;
   laps: LapRow[];
   segments: ExerciseGroup[];
   hasSegments: boolean;
@@ -146,6 +162,9 @@ interface ActivityDetailPageData {
 
 interface ActivityDetailPageHandlers {
   fetch(): Promise<void>;
+  drawCurves(): void;
+  onHrCurveTouch(e: unknown): void;
+  onPaceCurveTouch(e: unknown): void;
   onBack(): void;
   onColoringChange(e: { currentTarget: { dataset: { coloring: MapColoring } } }): void;
 }
@@ -197,6 +216,18 @@ const MAP_CHUNK = 8; // 每段 bin 成多长（条）
 
 // 按 pause 分段的 GCJ 轨迹点（模块级缓存，供着色切换时重建）。
 let mapSegments: MapPoint[][] = [];
+
+// —— 曲线（区间卡片里的心率 / 配速走势，uCharts 渲染）——
+
+// 采集到的序列 / 档位 / 图表实例（模块级，不过 setData）。
+let hrSeries: CurvePoint[] = [];
+let paceSeries: CurvePoint[] = [];
+let hrBands: ZoneBand[] = [];
+let paceBands: ZoneBand[] = [];
+let hrChart: CurveChart | null = null;
+let paceChart: CurveChart | null = null;
+let hrSpec: CurveChartSpec | null = null;
+let paceSpec: CurveChartSpec | null = null;
 
 // ---------------------------------------------------------------------------
 // 纯格式化 helpers
@@ -374,19 +405,39 @@ function toZoneBar(z: Zone, peers: Zone[]): ZoneBar {
     label: formatZoneRange(z, peers),
     percent,
     duration: z.duration_s != null && z.duration_s > 0 ? fmtDurationShort(z.duration_s) : '—',
+    color: CURVE_FALLBACK_COLOR,
   };
 }
 
-function buildZones(zones: Zone[]): { hrZones: ZoneBar[]; paceZones: ZoneBar[]; hasZones: boolean } {
+// 手表配速区间单位是 ms/km，曲线是 s/km，比色前先换算（非 ms/km 单位不动）。
+function paceZoneToSeconds(z: Zone): Zone {
+  if (z.range_unit !== 'ms/km' && z.range_unit !== 'pace') return z;
+  const toSec = (v: number | null) => (v == null ? null : v / 1000);
+  return { ...z, range_min: toSec(z.range_min), range_max: toSec(z.range_max) };
+}
+
+function buildZones(zones: Zone[]): {
+  hrZones: ZoneBar[];
+  paceZones: ZoneBar[];
+  hrBands: ZoneBand[];
+  paceBands: ZoneBand[];
+} {
   // 手表上报区间本身就是完整分区（含开放边界的最快/最慢区），每个 zone_index 一行，
   // 开放边由 formatHRRange/formatPaceRange 处理；配速只对高驰（ms/km）或 STRIDE（pace）做 7→6 归一化合并阈值区。
   const hr = zones.filter((z) => z.zone_type === 'heartRate');
   const paceRaw = zones.filter((z) => z.zone_type === 'pace');
   const isCorosPace = paceRaw.length > 0 && paceRaw.every((z) => z.range_unit === 'ms/km' || z.range_unit === 'pace');
   const pace = isCorosPace ? normalizePaceZones(paceRaw) : paceRaw;
-  const hrZones = hr.map((z) => toZoneBar(z, hr));
-  const paceZones = pace.map((z) => toZoneBar(z, pace));
-  return { hrZones, paceZones, hasZones: hrZones.length > 0 || paceZones.length > 0 };
+  const colorize = (list: Zone[], peers: Zone[]): ZoneBar[] =>
+    list.map((z, i) => ({ ...toZoneBar(z, peers), color: zoneColor(i) }));
+  const hrZones = colorize(hr, hr);
+  const paceZones = colorize(pace, pace);
+  return {
+    hrZones,
+    paceZones,
+    hrBands: zoneBands(hr),
+    paceBands: zoneBands(pace.map(paceZoneToSeconds)),
+  };
 }
 
 function buildLapRows(segs: Segment[]): LapRow[] {
@@ -734,6 +785,18 @@ function buildWeather(a: Activity): WeatherItem[] {
 }
 
 // ---------------------------------------------------------------------------
+// 走势曲线：抽稀后的序列交给 uCharts 渲染（配置见 utils/curveChart.ts）
+// ---------------------------------------------------------------------------
+
+function pixelRatio(): number {
+  try {
+    return wx.getWindowInfo().pixelRatio || 2;
+  } catch {
+    return 2;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 组装视图
 // ---------------------------------------------------------------------------
 
@@ -741,7 +804,11 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
   const a = detail.activity;
   const isStrength = isStrengthActivity(a);
   const metrics = buildMetrics(a, isStrength);
-  const { hrZones, paceZones, hasZones } = buildZones(detail.zones || []);
+  const { hrZones, paceZones, hrBands: hrBandList, paceBands: paceBandList } = buildZones(detail.zones || []);
+  hrSeries = downsample(buildHrSeries(detail.timeseries || []));
+  paceSeries = downsample(buildPaceSeries(detail.timeseries || []));
+  hrBands = hrBandList;
+  paceBands = paceBandList;
 
   let laps: LapRow[] = [];
   let segments: ExerciseGroup[] = [];
@@ -785,9 +852,10 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
       feelEmoji: feelEmoji(a.feel_type),
     },
     metrics,
-    hasZones,
     hrZones,
     paceZones,
+    hasHrCurve: hrSeries.length > 1,
+    hasPaceCurve: paceSeries.length > 1,
     laps,
     segments,
     hasSegments,
@@ -837,9 +905,10 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     isStrength: false,
     header: { sportLabel: '', name: '', dateLabel: '', trainTypeLabel: '', feelEmoji: '' },
     metrics: [],
-    hasZones: false,
     hrZones: [],
     paceZones: [],
+    hasHrCurve: false,
+    hasPaceCurve: false,
     laps: [],
     segments: [],
     hasSegments: false,
@@ -889,15 +958,58 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     }
     try {
       const detail = await getActivityDetail(userId, labelId, { includeTimeseries: true });
-      this.setData({
-        ...buildView(detail),
-        loading: false,
-        notFound: false,
-      });
+      this.setData(
+        {
+          ...buildView(detail),
+          loading: false,
+          notFound: false,
+        },
+        // canvas 节点要等 view 层渲染出来才拿得到
+        () => wx.nextTick(() => this.drawCurves()),
+      );
     } catch {
       // 详情不存在（404）或网络失败都归到「未找到」空态。
       this.setData({ loading: false, notFound: true });
     }
+  },
+
+  /** 用 uCharts 画区间卡片里的心率 / 配速折线。 */
+  drawCurves() {
+    hrSpec = hrChartSpec(hrSeries, hrBands);
+    paceSpec = paceChartSpec(paceSeries, paceBands);
+    const targets: Array<{ spec: CurveChartSpec; store: (c: CurveChart) => void }> = [
+      {
+        spec: hrSpec,
+        store: (c) => {
+          hrChart = c;
+        },
+      },
+      {
+        spec: paceSpec,
+        store: (c) => {
+          paceChart = c;
+        },
+      },
+    ];
+    for (const { spec, store } of targets) {
+      if (spec.series.length < 2) continue;
+      wx.createSelectorQuery()
+        .in(this)
+        .select(spec.id)
+        .fields({ node: true, size: true }, (res) => {
+          if (!res || !res.node || !res.width || !res.height) return;
+          store(createCurveChart(spec, res.node, res.width, res.height, pixelRatio()));
+        })
+        .exec();
+    }
+  },
+
+  onHrCurveTouch(e: unknown) {
+    if (hrChart && hrSpec) hrChart.showToolTip(e, { formatter: (item, time) => hrSpec!.tooltip(item.data, time) });
+  },
+
+  onPaceCurveTouch(e: unknown) {
+    if (paceChart && paceSpec) paceChart.showToolTip(e, { formatter: (item, time) => paceSpec!.tooltip(item.data, time) });
   },
 
   onBack() {

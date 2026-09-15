@@ -59,7 +59,6 @@
 
       <!-- 主指标：距离/配速/心率 + 负荷/时长/最大心率 + 步幅/步频/爬升 一卡三行 -->
       <view wx:if="{{metrics.length}}" class="card">
-        <view class="card-title">核心数据</view>
         <view class="metric-grid">
           <view wx:for="{{metrics}}" wx:key="label" class="metric">
             <view class="metric__value" style="{{item.color ? 'color:' + item.color : ''}}">{{item.value}}<text wx:if="{{item.unit}}" class="metric__unit">{{item.unit}}</text></view>
@@ -68,25 +67,40 @@
         </view>
       </view>
 
-      <!-- 区间分布 -->
-      <view wx:if="{{hasZones}}" class="card">
-        <view class="card-title">区间分布</view>
-        <block wx:if="{{hrZones.length}}">
-          <view class="zone-group-title">心率区间</view>
-          <view wx:for="{{hrZones}}" wx:key="key" class="zone-row">
-            <view class="zone-row__label">{{item.label}}</view>
-            <view class="zone-row__bar"><view class="zone-row__fill" style="width: {{item.percent}}%;"></view></view>
-            <view class="zone-row__duration">{{item.duration}}</view>
-          </view>
-        </block>
-        <block wx:if="{{paceZones.length}}">
-          <view class="zone-group-title" wx:if="{{hrZones.length}}">配速区间</view>
-          <view wx:for="{{paceZones}}" wx:key="key" class="zone-row">
-            <view class="zone-row__label">{{item.label}}</view>
-            <view class="zone-row__bar"><view class="zone-row__fill" style="width: {{item.percent}}%;"></view></view>
-            <view class="zone-row__duration">{{item.duration}}</view>
-          </view>
-        </block>
+      <!-- 心率区间 -->
+      <view wx:if="{{hrZones.length || hasHrCurve}}" class="card">
+        <view class="card-title">心率区间</view>
+        <canvas
+          wx:if="{{hasHrCurve}}"
+          type="2d"
+          id="hr-curve"
+          class="curve"
+          bindtouchstart="onHrCurveTouch"
+          bindtouchmove="onHrCurveTouch"
+        ></canvas>
+        <view wx:for="{{hrZones}}" wx:key="key" class="zone-row">
+          <view class="zone-row__label">{{item.label}}</view>
+          <view class="zone-row__bar"><view class="zone-row__fill" style="width: {{item.percent}}%; background: {{item.color}};"></view></view>
+          <view class="zone-row__duration">{{item.duration}}</view>
+        </view>
+      </view>
+
+      <!-- 配速区间 -->
+      <view wx:if="{{paceZones.length || hasPaceCurve}}" class="card">
+        <view class="card-title">配速区间</view>
+        <canvas
+          wx:if="{{hasPaceCurve}}"
+          type="2d"
+          id="pace-curve"
+          class="curve"
+          bindtouchstart="onPaceCurveTouch"
+          bindtouchmove="onPaceCurveTouch"
+        ></canvas>
+        <view wx:for="{{paceZones}}" wx:key="key" class="zone-row">
+          <view class="zone-row__label">{{item.label}}</view>
+          <view class="zone-row__bar"><view class="zone-row__fill" style="width: {{item.percent}}%; background: {{item.color}};"></view></view>
+          <view class="zone-row__duration">{{item.duration}}</view>
+        </view>
       </view>
 
       <!-- 分段 / 圈速 -->
