@@ -1,6 +1,5 @@
 import { userStore } from '../../store/index';
 import { triggerSync, pollPipeline } from '../../services/sync';
-import { uploadAvatar, updateProfile } from '../../services/profile';
 import { getWatchInfo } from '../../services/watch';
 import type { UserProfile } from '../../types/api';
 import type { PollPipelineHandle } from '../../services/sync';
@@ -21,25 +20,13 @@ interface ProfilePageData {
   rows: MenuRow[];
   syncing: boolean;
   lastSyncText: string;
-  // 资料编辑 sheet
-  editVisible: boolean;
-  editAvatarTemp: string;
-  editAvatarUrl: string;
-  editName: string;
-  saving: boolean;
 }
 
 interface ProfilePageHandlers {
   onMenuTap(): void;
   onRowTap(e: WechatMiniprogram.TouchEvent): void;
   onLogout(): void;
-  onEditProfile(): void;
-  onCloseEdit(): void;
-  noop(): void;
-  onChooseAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl: string }>): void;
-  onNameInput(e: WechatMiniprogram.Input): void;
-  onSaveName(): void;
-  saveAvatar(): void;
+  onOpenProfileEdit(): void;
   onSyncTap(): void;
   startSync(userId: string): Promise<void>;
   refreshLastSync(): Promise<void>;
@@ -82,7 +69,6 @@ function contentPaddingTopRpx(): number {
 }
 
 const MENU_ROWS: MenuRow[] = [
-  { key: 'profile', title: '个人资料', iconPath: '/assets/icons/person.svg' },
   { key: 'plan', title: '我的训练计划', iconPath: '/assets/icons/calendar_month.svg' },
   { key: 'watch', title: '手表管理', iconPath: '/assets/icons/schedule.svg' },
 ];
@@ -98,11 +84,6 @@ Page<ProfilePageData, ProfilePageHandlers>({
     rows: MENU_ROWS,
     syncing: false,
     lastSyncText: '未同步',
-    editVisible: false,
-    editAvatarTemp: '',
-    editAvatarUrl: '',
-    editName: '',
-    saving: false,
   },
 
   onShow() {
@@ -167,71 +148,8 @@ Page<ProfilePageData, ProfilePageHandlers>({
     wx.showToast({ title: `「${key}」建设中`, icon: 'none' });
   },
 
-  onEditProfile() {
-    this.setData({
-      editVisible: true,
-      editAvatarTemp: '',
-      editAvatarUrl: this.data.avatarUrl,
-      editName: this.data.name,
-    });
-  },
-
-  onCloseEdit() {
-    if (this.data.saving) return;
-    this.setData({ editVisible: false });
-  },
-
-  noop() {
-    // 阻止 sheet 内点击冒泡到 mask（catchtap 已拦截，这里留空占位）。
-  },
-
-  onChooseAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl: string }>) {
-    // 选完头像立即保存，但不关 sheet、不弹提示——用户可能还要继续授权昵称。
-    this.setData({ editAvatarTemp: e.detail.avatarUrl });
-    void this.saveAvatar();
-  },
-
-  onNameInput(e: WechatMiniprogram.Input) {
-    this.setData({ editName: e.detail.value });
-  },
-
-  // 昵称在输入结束（失焦）时保存，无需点按钮；空值不提交。不弹提示。
-  async onSaveName() {
-    const name = this.data.editName.trim();
-    if (!name || name === this.data.name || this.data.saving) return;
-    this.setData({ saving: true });
-    try {
-      const updated = await updateProfile({ name });
-      userStore.setUser(updated);
-      this.setData({ name: updated.name || name, user: updated });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '保存失败';
-      wx.showToast({ title: msg.length > 15 ? '保存失败' : msg, icon: 'none' });
-    } finally {
-      this.setData({ saving: false });
-    }
-  },
-
-  // 只保存头像（选完即存），不关 sheet、不弹成功提示。
-  async saveAvatar() {
-    if (this.data.saving || !this.data.editAvatarTemp) return;
-    this.setData({ saving: true });
-    try {
-      const avatarUrl = await uploadAvatar(this.data.editAvatarTemp);
-      const updated = await updateProfile({ avatar_url: avatarUrl });
-      userStore.setUser(updated);
-      this.setData({
-        avatarUrl: updated.avatar_url || avatarUrl,
-        editAvatarUrl: updated.avatar_url || avatarUrl,
-        editAvatarTemp: '',
-        user: updated,
-      });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '头像保存失败';
-      wx.showToast({ title: msg.length > 15 ? '头像保存失败' : msg, icon: 'none' });
-    } finally {
-      this.setData({ saving: false });
-    }
+  onOpenProfileEdit() {
+    wx.navigateTo({ url: '/pages/profile-edit/profile-edit' });
   },
 
   onSyncTap() {

@@ -28,7 +28,8 @@ src/wechat-miniprogram/
 │   ├── activity-detail/         # 活动详情
 │   ├── health/                  # 健康 & 疲劳趋势
 │   ├── coach/                   # Coach 问答
-│   └── profile/                 # 个人中心
+│   ├── profile/                 # 个人中心
+│   └── profile-edit/            # 个人资料设置页（头像 / 昵称 / 身体数据）
 │
 ├── components/                  # 可复用组件
 │   ├── ui/                      # 基础 UI 组件

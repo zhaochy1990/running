@@ -16,7 +16,7 @@
   <!-- 内容 -->
   <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
     <!-- 头像资料 -->
-    <view class="card profile-card" bindtap="onEditProfile">
+    <view class="card profile-card" bindtap="onOpenProfileEdit">
       <view class="profile-avatar">
         <image wx:if="{{avatarUrl}}" class="profile-avatar__img" src="{{avatarUrl}}" mode="aspectFit" />
         <image wx:else class="profile-avatar__placeholder" src="/assets/icons/person.svg" mode="aspectFit" />
@@ -65,36 +65,5 @@
     <button class="logout-btn" bindtap="onLogout">退出登录</button>
 
     <view class="version">STRIDE · 微信小程序</view>
-  </view>
-
-  <!-- 资料编辑 sheet（chooseAvatar + 昵称） -->
-  <view wx:if="{{editVisible}}" class="edit-mask" bindtap="onCloseEdit">
-    <view class="edit-sheet" catchtap="noop">
-      <view class="edit-sheet__title">编辑资料</view>
-
-      <view class="edit-avatar">
-        <button class="edit-avatar__btn" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
-          <image
-            class="edit-avatar__img"
-            src="{{editAvatarTemp || editAvatarUrl || '/assets/icons/person.svg'}}"
-            mode="aspectFill"
-          />
-        </button>
-        <view class="edit-avatar__hint">点击更换头像</view>
-      </view>
-
-      <view class="edit-field">
-        <view class="edit-field__label">昵称</view>
-        <input
-          class="edit-field__input"
-          type="nickname"
-          placeholder="请输入昵称"
-          value="{{editName}}"
-          bindinput="onNameInput"
-          bindblur="onSaveName"
-        />
-        <view class="edit-field__hint">昵称输入后失焦自动保存</view>
-      </view>
-    </view>
   </view>
 </view>

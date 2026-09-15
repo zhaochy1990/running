@@ -8,6 +8,7 @@
     "pages/health/health",
     "pages/coach/coach",
     "pages/profile/profile",
+    "pages/profile-edit/profile-edit",
     "pages/watch/watch"
   ],
   "window": {

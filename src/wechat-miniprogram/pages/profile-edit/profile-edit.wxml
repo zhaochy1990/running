@@ -1,0 +1,115 @@
+<view class="page">
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">个人资料</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <!-- 内容 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- 加载态 -->
+    <view wx:if="{{loading}}" class="state-card">
+      <view class="spinner"></view>
+      <view class="state-card__text">加载中…</view>
+    </view>
+
+    <block wx:else>
+      <view wx:if="{{error}}" class="banner banner--error">{{error}}</view>
+
+      <!-- 身份 header：大头像 + 昵称 -->
+      <view class="hero">
+        <button class="hero__avatar-btn" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+          <image wx:if="{{avatarUrl}}" class="hero__avatar" src="{{avatarUrl}}" mode="aspectFill" />
+          <image wx:else class="hero__avatar hero__avatar--placeholder" src="/assets/icons/person.svg" mode="aspectFit" />
+        </button>
+        <view class="hero__name">{{name || 'STRIDE 跑者'}}</view>
+        <view class="hero__hint">点击更换头像</view>
+      </view>
+
+      <!-- 身份字段（auth-service） -->
+      <view class="card">
+        <view class="field-row">
+          <view class="field-row__label">昵称</view>
+          <input
+            class="field-row__input"
+            type="nickname"
+            placeholder="请输入昵称"
+            value="{{name}}"
+            bindinput="onNameInput"
+            bindblur="onSaveName"
+          />
+        </view>
+        <view class="field-row">
+          <view class="field-row__label">邮箱</view>
+          <view class="field-row__value field-row__value--muted">{{email || '未绑定'}}</view>
+        </view>
+      </view>
+
+      <!-- 身体数据（数据面 profile） -->
+      <view class="card">
+        <view wx:if="{{!hasProfile && !creating}}" class="body-entry" bindtap="onStartCreate">
+          <view class="body-entry__text">
+            <view class="body-entry__title">完善身体数据</view>
+            <view class="body-entry__sub">填写后用于训练强度与健康建议</view>
+          </view>
+          <image class="field-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+        </view>
+
+        <block wx:else>
+        <picker class="field-row field-row--picker" mode="selector" range="{{sexOptions}}" value="{{sexIndex}}" bindchange="onSexChange">
+          <view class="field-row__label">性别</view>
+          <view class="field-row__value {{sexIndex < 0 ? 'field-row__value--muted' : ''}}">{{sexIndex >= 0 ? sexOptions[sexIndex] : '请选择'}}</view>
+          <image class="field-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+        </picker>
+
+        <picker class="field-row field-row--picker" mode="date" value="{{dob}}" start="1900-01-01" end="{{today}}" bindchange="onDobChange">
+          <view class="field-row__label">生日</view>
+          <view class="field-row__value {{dob ? '' : 'field-row__value--muted'}}">{{dob || '请选择'}}</view>
+          <image class="field-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+        </picker>
+
+        <view class="field-row">
+          <view class="field-row__label">身高</view>
+          <input
+            class="field-row__input field-row__input--num"
+            type="digit"
+            placeholder="请输入"
+            value="{{heightCm}}"
+            bindinput="onHeightInput"
+            bindblur="onHeightBlur"
+          />
+          <view class="field-row__unit">cm</view>
+        </view>
+
+        <view class="field-row">
+          <view class="field-row__label">体重</view>
+          <input
+            class="field-row__input field-row__input--num"
+            type="digit"
+            placeholder="请输入"
+            value="{{weightKg}}"
+            bindinput="onWeightInput"
+            bindblur="onWeightBlur"
+          />
+          <view class="field-row__unit">kg</view>
+        </view>
+
+        <picker class="field-row field-row--picker" mode="selector" range="{{ageOptions}}" value="{{ageIndex}}" bindchange="onAgeChange">
+          <view class="field-row__label">跑步年限</view>
+          <view class="field-row__value">{{ageOptions[ageIndex]}}</view>
+          <image class="field-row__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+        </picker>
+
+        <button wx:if="{{!hasProfile}}" class="save-btn" bindtap="onSaveBody" disabled="{{saving}}">保存</button>
+        </block>
+      </view>
+    </block>
+  </view>
+</view>

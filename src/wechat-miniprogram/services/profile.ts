@@ -69,3 +69,63 @@ export async function updateProfile(patch: {
 export function fetchMe(): Promise<UserProfile> {
   return http.get<UserProfile>(ME_ENDPOINT);
 }
+
+// ── 数据面 profile（身体数据 + display_name 的 source of truth，ADR 0013）──
+// 与 auth-service 身份端点区分：昵称/头像走上面 ME_ENDPOINT，身体数据走这里。
+const PROFILE_ENDPOINT = '/api/users/me/profile';
+
+/** 跑龄档位（与 Go profileInput 的 oneof 一致）。 */
+export type RunningAgeRange = 'unknown' | 'lt_6m' | '6m_1y' | '1y_3y' | '3y_plus';
+
+/** 数据面 profile 核心字段（GET /api/users/me/profile 的 `profile`）。 */
+export interface ProfileCore {
+  display_name: string;
+  dob: string;
+  sex: string;
+  height_cm: number;
+  weight_kg: number;
+  running_age_range: RunningAgeRange;
+}
+
+/** GET /api/users/me/profile 响应（只取小程序用到的字段）。 */
+export interface MyProfileData {
+  id: string;
+  display_name: string;
+  running_age_range: RunningAgeRange;
+  profile: ProfileCore | null;
+}
+
+/** PATCH 可提交的字段子集（省略即不变）。 */
+export interface ProfilePatch {
+  display_name?: string;
+  dob?: string;
+  sex?: string;
+  height_cm?: number;
+  weight_kg?: number;
+  running_age_range?: RunningAgeRange;
+}
+
+/** POST 整表字段（profile 不存在时建立）。 */
+export interface ProfileInput {
+  display_name: string;
+  dob: string;
+  sex: string;
+  height_cm: number;
+  weight_kg: number;
+  running_age_range: RunningAgeRange;
+}
+
+/** 读取当前用户数据面 profile（`profile` 可能为 null，表示尚未建立）。 */
+export function getMyProfile(): Promise<MyProfileData> {
+  return http.get<MyProfileData>(PROFILE_ENDPOINT);
+}
+
+/** 建立 profile（整表 POST；已存在时后端为 upsert）。 */
+export function postMyProfile(input: ProfileInput): Promise<{ ok: boolean }> {
+  return http.post<{ ok: boolean }, ProfileInput>(PROFILE_ENDPOINT, input);
+}
+
+/** 逐字段更新已有 profile（不存在时后端返回 404）。 */
+export function patchMyProfile(patch: ProfilePatch): Promise<{ ok: boolean; profile: ProfileCore }> {
+  return http.patch<{ ok: boolean; profile: ProfileCore }, ProfilePatch>(PROFILE_ENDPOINT, patch);
+}
