@@ -93,6 +93,12 @@ func runAPI() error {
 	if err := store.AutoMigrateMasterPlan(ctx); err != nil {
 		return err
 	}
+	// legal_documents table for the compliance-declaration surface (admin
+	// maintenance + the public read the app uses before login). The worker does
+	// not need this.
+	if err := store.AutoMigrateLegalDocuments(ctx); err != nil {
+		return err
+	}
 	if err := store.AutoMigrateWeeklyPlan(ctx); err != nil {
 		return err
 	}
@@ -197,6 +203,7 @@ func runAPI() error {
 		AbilityBackfillJobType:  catalog.JobTypeAbility,
 		MasterPlanStore:         store,
 		WeeklyPlanStore:         store,
+		LegalDocumentStore:      store,
 		WorkoutPusher:           workoutPush,
 		ScheduledWorkoutStore:   store,
 		Auth:                    authn,
