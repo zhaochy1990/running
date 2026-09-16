@@ -107,6 +107,79 @@ func TestComputeParkLoopFoldsToSingleLap(t *testing.T) {
 	withinViewport(t, points)
 }
 
+// chordLoopTrace models the venue pattern that dominated a real athlete's
+// history: a small (~400x400 m) loop with a chord cut across the middle — a
+// shortcut through the park taken every lap. The chord puts roughly a fifth of
+// the trace inside the centre of the box, which the original density cap read as
+// "this route crosses its own area" and refused to fold.
+func chordLoopTrace(laps int) []Sample {
+	latPerMeter := 1 / 111_000.0
+	lonPerMeter := 1 / (111_000 * math.Cos(trackLat0*math.Pi/180))
+
+	// Waypoints walked in order; p3 -> p4 is the chord, running from the west
+	// edge through the middle and back out to the north-west.
+	const samplesPerLap = 200
+	shape := [][2]float64{
+		{200, 100}, {150, -190}, {-60, -200}, {-200, -40},
+		{30, 20}, {-120, 180}, {170, 160},
+	}
+	edges := make([]float64, len(shape))
+	var perimeter float64
+	for i := range shape {
+		a, b := shape[i], shape[(i+1)%len(shape)]
+		edges[i] = math.Hypot(b[0]-a[0], b[1]-a[1])
+		perimeter += edges[i]
+	}
+
+	samples := make([]Sample, 0, laps*samplesPerLap)
+	for lap := range laps {
+		for i := range samplesPerLap {
+			want := perimeter * float64(i) / float64(samplesPerLap)
+			var xM, yM float64
+			for e := range shape {
+				if want <= edges[e] || e == len(shape)-1 {
+					a, b := shape[e], shape[(e+1)%len(shape)]
+					t := want / edges[e]
+					xM, yM = a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t
+					break
+				}
+				want -= edges[e]
+			}
+			samples = append(samples, Sample{
+				Lat: trackLat0 + (yM+1.2*math.Sin(float64(lap)*0.8+float64(i)))*latPerMeter,
+				Lon: trackLon0 + (xM+1.2*math.Cos(float64(lap)*0.6+float64(i)))*lonPerMeter,
+				OK:  true,
+			})
+		}
+	}
+	return samples
+}
+
+// A loop with a chord through the middle is still a loop: it must fold to one
+// lap rather than rendering every traverse of the chord as a criss-cross.
+func TestComputeChordLoopFoldsToSingleLap(t *testing.T) {
+	points, ok := Compute(chordLoopTrace(15))
+	if !ok {
+		t.Fatal("Compute returned no polyline for a chord loop")
+	}
+	if points[0] != points[len(points)-1] {
+		t.Fatalf("chord loop should fold to a closed footprint, got %+v ... %+v", points[0], points[len(points)-1])
+	}
+	// One lap of a ~400x400 m loop inscribed in the 90-unit viewport draws a few
+	// hundred units; each unfolded traverse of the chord adds another crossing.
+	if got := polylineLengthOf(points); got > 500 {
+		t.Fatalf("polyline length %.0f — chord loop aliased instead of folding", got)
+	}
+	// Looser than the pure-loop bound: the angular sector covering the chord
+	// averages perimeter points with interior ones, so a folded chord loop
+	// legitimately takes one longer step (a notch where the chord ran). The
+	// length bound above is what actually catches aliasing.
+	if got := maxSegment(points); got > 50 {
+		t.Fatalf("max segment %.1f exceeds 50", got)
+	}
+	withinViewport(t, points)
+}
+
 func polylineLengthOf(points []Point) float64 {
 	var total float64
 	for i := 1; i < len(points); i++ {
@@ -194,14 +267,14 @@ func TestComputeOpenRouteStaysOpen(t *testing.T) {
 	withinViewport(t, points)
 }
 
-// A compact switchback out-and-back covers many angles in a small box, but it is
-// not a loop: closing it would draw a phantom edge across the turnaround.
-func TestComputeCompactSwitchbackStaysOpen(t *testing.T) {
+// switchbackTrace sweeps up and down a 280 m stretch `reps` times, drifting 4 m
+// sideways per pass — a shuttle or hill-repeat pattern in a compact box.
+func switchbackTrace(reps int) []Sample {
 	latPerMeter := 1 / 111_000.0
 	lonPerMeter := 1 / (111_000 * math.Cos(trackLat0*math.Pi/180))
 
-	samples := make([]Sample, 0, 12*40)
-	for rep := range 12 {
+	samples := make([]Sample, 0, reps*40)
+	for rep := range reps {
 		for i := range 40 {
 			xM := -140 + float64(i)*(280.0/39)
 			yM := float64(rep) * 4
@@ -215,13 +288,25 @@ func TestComputeCompactSwitchbackStaysOpen(t *testing.T) {
 			})
 		}
 	}
+	return samples
+}
 
-	points, ok := Compute(samples)
+// A compact route crossed only a few times must stay an OPEN polyline: it never
+// goes around the box, so folding it would invent an outline (and a phantom edge
+// at each turnaround). This is the guard on repeatedRoutePathToPerimeter.
+//
+// Note this deliberately no longer covers a MANY-pass sweep (~12 reps): that
+// crosses its box more than any loop does and now folds, like any other repeated
+// route. Folding it costs almost nothing — a 4 m drift over 280 m renders as the
+// same flat band either way — whereas leaving a chord-loop unfolded renders an
+// unreadable tangle. See repeatedRouteMaxCenterDensity.
+func TestComputeCompactSinglePassRouteStaysOpen(t *testing.T) {
+	points, ok := Compute(switchbackTrace(4))
 	if !ok {
-		t.Fatal("Compute returned no polyline for a switchback route")
+		t.Fatal("Compute returned no polyline for a compact sweep")
 	}
 	if points[0] == points[len(points)-1] {
-		t.Fatalf("switchback route should not be closed: %+v", points[0])
+		t.Fatalf("a route crossed only a few times should not be closed: %+v", points[0])
 	}
 }
 

@@ -3,12 +3,13 @@
 //
 // The geometry is a port of the Python reference implementation
 // (stride_storage/sqlite/database.py: compute_route_thumbnail and its helpers).
-// The branch order matches it, but the two have deliberately diverged on two
-// points: this port drops invalid samples (see validSample), and it raised the
-// compact-route bounding-box cap off the Python value of 600 m (see
-// repeatedRouteMaxBBoxM). The Python stack is legacy and being removed; this is
-// the production path. Do not "restore parity" on either point without checking
-// the tests that pin them.
+// The branch order matches it; three things deliberately do NOT. This port drops
+// invalid samples (see validSample), and it retuned the compact-route limits
+// because the Python values misrender real running venues (see
+// repeatedRoutePathToPerimeter and repeatedRouteMaxCenterDensity, which carry
+// the measurements). The Python stack is legacy and being removed; this is the
+// production path, and each divergence is pinned by a test. Do not "restore
+// parity" without reading those tests.
 //
 // Everything here is pure: no clock, no I/O, no database.
 package thumbnail
@@ -19,8 +20,9 @@ import (
 	"strings"
 )
 
-// Constants mirrored from the Python reference. Do not retune one side only —
-// the two implementations must agree or activity thumbnails drift by sport.
+// Constants inherited from the Python reference. The ones without a comment are
+// unchanged and still match it; the ones with one were retuned against real
+// traces and no longer do (see the package doc).
 const (
 	// TargetPoints caps the polyline length handed to the renderer and stored
 	// in route_thumb_json.
@@ -42,11 +44,28 @@ const (
 	// bounding-box perimeter) instead of one clean lap. Measured over real
 	// traces, repeated loops bound at 1842 m while genuine point-to-point routes
 	// start at 7148 m — a 4x gap, so 3000 m sits clear of both.
-	repeatedRouteMaxBBoxM         = 3000.0
-	repeatedRouteMinBBoxM         = 20.0
-	repeatedRoutePathToPerimeter  = 3.0
+	repeatedRouteMaxBBoxM = 3000.0
+	repeatedRouteMinBBoxM = 20.0
+	// repeatedRoutePathToPerimeter is the repetition itself: the trace must cover
+	// more than this many times its own bounding-box perimeter. The Python
+	// original used 3.0, which misses a real venue pattern — a 3.6 km run of ~2.5
+	// laps around a 400 m park sits at 2.25 and rendered as a tangle. Combined
+	// with a low centre density, going around the box more than twice without
+	// cutting across it already means "loop", so 2.0 is both safe and enough.
+	// The open-route guards are density and angle coverage, not this.
+	repeatedRoutePathToPerimeter = 2.0
+	// repeatedRouteMinAngleCoverage rejects a trace that follows one line: such a
+	// route cannot be a loop no matter how often it is repeated.
 	repeatedRouteMinAngleCoverage = 0.75
-	repeatedRouteMaxCenterDensity = 0.08
+	// repeatedRouteMaxCenterDensity rejects a trace that spends its time crossing
+	// the middle of its own bounding box rather than going around it. The Python
+	// original used 0.08, which real running venues defeat: of eight sampled
+	// repeated loops, five cut a chord across the interior every lap, putting them
+	// at 0.11-0.20 and misclassifying every one as a scribble. The cost is
+	// deliberately biased towards folding — an unfolded loop renders as an
+	// unreadable tangle, while a needlessly folded route still renders as a
+	// recognisable outline of the area it covered.
+	repeatedRouteMaxCenterDensity = 0.35
 )
 
 // Sample is one GPS fix from the activity time series. OK=false marks a missing
