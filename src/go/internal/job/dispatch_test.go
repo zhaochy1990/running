@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -69,6 +70,100 @@ func (s *fakeStore) Claim(_ context.Context, id string, now time.Time) (*Job, bo
 	j.UpdatedAt = now
 	cp := *j
 	return &cp, true, nil
+}
+
+func (s *fakeStore) RenewLease(_ context.Context, id string, now time.Time) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j, ok := s.rows[id]
+	if !ok || j.Status != StatusRunning {
+		return false, nil
+	}
+	j.HeartbeatAt = &now
+	j.UpdatedAt = now
+	return true, nil
+}
+
+func (s *fakeStore) ListStaleRunning(_ context.Context, olderThan time.Time, limit int) ([]*Job, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*Job
+	for _, j := range s.rows {
+		if j.Status != StatusRunning || !leaseIsStale(j, olderThan) {
+			continue
+		}
+		cp := *j
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, k int) bool { return leaseTime(out[i]).Before(leaseTime(out[k])) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *fakeStore) TransitionJob(_ context.Context, id string, tr JobTransition) (*Job, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j, ok := s.rows[id]
+	if !ok {
+		return nil, &ErrNotFound{Key: id}
+	}
+	if tr.From != nil && j.Status != *tr.From {
+		return nil, ErrStateChanged
+	}
+	if tr.AttemptsLT != nil && j.Attempts >= *tr.AttemptsLT {
+		return nil, ErrStateChanged
+	}
+	if tr.LeaseBefore != nil && !leaseIsStale(j, *tr.LeaseBefore) {
+		return nil, ErrStateChanged
+	}
+	if tr.Attempts != nil {
+		j.Attempts = *tr.Attempts
+	}
+	if tr.AttemptsDelta != nil {
+		j.Attempts += *tr.AttemptsDelta
+	}
+	if tr.ClearError {
+		j.ErrorCode, j.ErrorMessage = "", ""
+	}
+	if tr.Stage != nil {
+		j.Stage = *tr.Stage
+	}
+	if tr.ProgressPct != nil {
+		j.ProgressPct = *tr.ProgressPct
+	}
+	if tr.ErrorCode != nil && !tr.ClearError {
+		j.ErrorCode = *tr.ErrorCode
+	}
+	if tr.ErrorMessage != nil && !tr.ClearError {
+		j.ErrorMessage = *tr.ErrorMessage
+	}
+	if tr.ResultJSON != nil {
+		j.ResultJSON = *tr.ResultJSON
+	}
+	if tr.HeartbeatAt != nil {
+		j.HeartbeatAt = tr.HeartbeatAt
+	}
+	if tr.CompletedAt != nil {
+		j.CompletedAt = tr.CompletedAt
+	}
+	j.Status = tr.To
+	j.UpdatedAt = time.Now().UTC()
+	cp := *j
+	return &cp, nil
+}
+
+// leaseTime is a job's lease instant: heartbeat_at, falling back to updated_at.
+func leaseTime(j *Job) time.Time {
+	if j.HeartbeatAt != nil {
+		return *j.HeartbeatAt
+	}
+	return j.UpdatedAt
+}
+
+func leaseIsStale(j *Job, olderThan time.Time) bool {
+	return leaseTime(j).Before(olderThan)
 }
 
 func (s *fakeStore) snapshot(id string) *Job {
@@ -480,5 +575,146 @@ func TestDispatch_Heartbeat_PersistsProgress(t *testing.T) {
 	got := store.snapshot("j1")
 	if got.Stage != "phase-2" {
 		t.Fatalf("stage = %q, want phase-2", got.Stage)
+	}
+}
+
+// A handler may run for minutes with no progress callback. The lease renewer
+// must independently prove the job is alive so another replica never reclaims
+// it mid-flight.
+func TestDispatch_RenewsLeaseWhileHandlerRuns(t *testing.T) {
+	seed := &Job{ID: "j1", UserID: "u1", Type: "slow", Status: StatusQueued,
+		UpdatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	store := newFakeStore(seed)
+	reg := NewRegistry()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	reg.MustRegister("slow", func(context.Context, *Job, Heartbeat) (string, error) {
+		close(started)
+		<-release
+		return "", nil
+	})
+	d := NewDispatcher(store, reg, &fakePublisher{}, NopLifecycle{}, testPolicy(),
+		WithClock(fixedNow()), WithLease(30*time.Millisecond))
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- d.Dispatch(context.Background(), Message{JobID: "j1"}) }()
+	<-started
+
+	deadline := time.Now().Add(2 * time.Second)
+	for store.snapshot("j1").HeartbeatAt == nil {
+		if time.Now().After(deadline) {
+			close(release)
+			t.Fatal("lease was never renewed while the handler ran")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	close(release)
+	if err := <-errCh; err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+}
+
+func TestReclaimStale_RequeuesExpiredLease(t *testing.T) {
+	seed := &Job{ID: "j1", UserID: "u1", Type: "greet", Status: StatusRunning, Attempts: 1,
+		UpdatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	store := newFakeStore(seed)
+	reg := NewRegistry()
+	reg.MustRegister("greet", func(context.Context, *Job, Heartbeat) (string, error) { return "", nil })
+	pub := &fakePublisher{}
+	d := NewDispatcher(store, reg, pub, NopLifecycle{}, testPolicy(), WithClock(fixedNow()))
+
+	n, err := d.ReclaimStale(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("reclaim: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("moved = %d, want 1", n)
+	}
+	got := store.snapshot("j1")
+	if got.Status != StatusQueued {
+		t.Fatalf("status = %s, want queued", got.Status)
+	}
+	if got.HeartbeatAt == nil {
+		t.Fatal("reclaim must stamp a fresh lease on the requeued job")
+	}
+	if len(pub.work) != 1 || pub.work[0].JobID != "j1" {
+		t.Fatalf("want the job republished to the work queue, got %+v", pub.work)
+	}
+}
+
+func TestReclaimStale_FailsWhenBudgetSpent(t *testing.T) {
+	seed := &Job{ID: "j1", UserID: "u1", Type: "greet", Status: StatusRunning, Attempts: 3,
+		UpdatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	store := newFakeStore(seed)
+	reg := NewRegistry()
+	reg.MustRegister("greet", func(context.Context, *Job, Heartbeat) (string, error) { return "", nil })
+	pub := &fakePublisher{}
+	life := &recordingLifecycle{}
+	d := NewDispatcher(store, reg, pub, life, testPolicy(), WithClock(fixedNow()))
+
+	n, err := d.ReclaimStale(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("reclaim: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("moved = %d, want 1", n)
+	}
+	got := store.snapshot("j1")
+	if got.Status != StatusFailed {
+		t.Fatalf("status = %s, want failed", got.Status)
+	}
+	if got.ErrorCode != "stale_running" {
+		t.Fatalf("error_code = %q, want stale_running", got.ErrorCode)
+	}
+	if len(life.failed) != 1 || life.failed[0] != "j1" {
+		t.Fatalf("OnJobFailed not fired for the owning run: %v", life.failed)
+	}
+	if len(pub.work) != 0 {
+		t.Fatal("a terminally failed job must not be republished")
+	}
+}
+
+func TestReclaimStale_LeavesFreshLease(t *testing.T) {
+	seed := &Job{ID: "j1", UserID: "u1", Type: "greet", Status: StatusRunning,
+		UpdatedAt: fixedNow()()}
+	store := newFakeStore(seed)
+	reg := NewRegistry()
+	reg.MustRegister("greet", func(context.Context, *Job, Heartbeat) (string, error) { return "", nil })
+	pub := &fakePublisher{}
+	d := NewDispatcher(store, reg, pub, NopLifecycle{}, testPolicy(), WithClock(fixedNow()))
+
+	n, err := d.ReclaimStale(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("reclaim: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("moved = %d, want 0", n)
+	}
+	if got := store.snapshot("j1"); got.Status != StatusRunning {
+		t.Fatalf("status = %s, want running", got.Status)
+	}
+}
+
+// The jobs table is shared with the TS plan-job worker. This worker must only
+// reclaim job types it can actually run.
+func TestReclaimStale_SkipsForeignJobType(t *testing.T) {
+	seed := &Job{ID: "j1", UserID: "u1", Type: "generate_weekly_plan", Status: StatusRunning,
+		UpdatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	store := newFakeStore(seed)
+	pub := &fakePublisher{}
+	d := NewDispatcher(store, NewRegistry(), pub, NopLifecycle{}, testPolicy(), WithClock(fixedNow()))
+
+	n, err := d.ReclaimStale(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("reclaim: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("moved = %d, want 0", n)
+	}
+	if got := store.snapshot("j1"); got.Status != StatusRunning {
+		t.Fatalf("foreign job status = %s, want untouched running", got.Status)
+	}
+	if len(pub.work) != 0 {
+		t.Fatal("must not publish for a job type it cannot run")
 	}
 }

@@ -66,6 +66,15 @@ type Runtime struct {
 	// binding fallback (registry.ProviderName). Empty is fine — the MySQL
 	// binding is primary and an absent file resolves to the default provider.
 	DataDir string `mapstructure:"data-dir"`
+	// ClaimLease is how long a running job's lease may go unrenewed before
+	// another worker may reclaim it (requeue, or fail once the attempt budget is
+	// spent). It must comfortably exceed the renewal tick (lease/3).
+	ClaimLease time.Duration `mapstructure:"claim-lease" validate:"required"`
+	// ReclaimInterval is how often a worker sweeps for expired-lease jobs.
+	ReclaimInterval time.Duration `mapstructure:"reclaim-interval" validate:"required"`
+	// DrainTimeout bounds how long shutdown waits for the in-flight job to
+	// unwind before exiting; the lease reclaim covers anything still running.
+	DrainTimeout time.Duration `mapstructure:"drain-timeout" validate:"required"`
 }
 
 // RaceDetection configures the independent activity classifier. The API key is

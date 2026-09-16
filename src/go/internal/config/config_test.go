@@ -27,6 +27,9 @@ retry:
 runtime:
   prefetch: 1
   health-addr: ":8081"
+  claim-lease: 2m
+  reclaim-interval: 30s
+  drain-timeout: 30s
 race-detection:
   api-kind: chat-completions
   endpoint: https://api.deepseek.com
@@ -64,6 +67,9 @@ func TestMustLoadFrom_FileValues(t *testing.T) {
 	if cfg.Runtime.Prefetch != 1 || cfg.Runtime.HealthAddr != ":8081" {
 		t.Errorf("runtime = %+v", cfg.Runtime)
 	}
+	if cfg.Runtime.ClaimLease != 2*time.Minute || cfg.Runtime.ReclaimInterval != 30*time.Second || cfg.Runtime.DrainTimeout != 30*time.Second {
+		t.Errorf("runtime lease knobs = %+v", cfg.Runtime)
+	}
 	if cfg.RaceDetection.APIKind != "chat-completions" || cfg.RaceDetection.Model != "deepseek-v4-flash" || cfg.RaceDetection.MaxConcurrency != 8 {
 		t.Errorf("race detection = %+v", cfg.RaceDetection)
 	}
@@ -100,7 +106,7 @@ amqp:
   url: ""
 queues: {work: w, retry: r, poison: p}
 retry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}
-runtime: {prefetch: 1, health-addr: ":8081"}
+runtime: {prefetch: 1, health-addr: ":8081", claim-lease: 2m, reclaim-interval: 30s, drain-timeout: 30s}
 race-detection: {api-kind: chat-completions, endpoint: "https://api.deepseek.com", api-key: test, model: deepseek-v4-flash, timeout: 30s, max-concurrency: 8}
 `
 	t.Setenv("STRIDE_WORKER_MYSQL_DSN", "d")
@@ -118,7 +124,7 @@ mysql: {dsn: ""}
 amqp: {url: "amqp://x"}
 queues: {work: w, retry: r, poison: p}
 retry: {max-attempts: 3, base-backoff: 1s, max-backoff: 10s}
-runtime: {prefetch: 1, health-addr: ":8081"}
+runtime: {prefetch: 1, health-addr: ":8081", claim-lease: 2m, reclaim-interval: 30s, drain-timeout: 30s}
 race-detection: {api-kind: chat-completions, endpoint: "https://api.deepseek.com", api-key: test, model: deepseek-v4-flash, timeout: 30s, max-concurrency: 8}
 `
 	defer func() {

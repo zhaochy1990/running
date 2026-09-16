@@ -144,9 +144,8 @@ func TestFailStaleRunningJobsBackstop(t *testing.T) {
 	if err != nil || j.Status != job.StatusFailed || j.ErrorCode != "stale_running" {
 		t.Fatalf("stale after = %+v err=%v", j, err)
 	}
-	// A running row with no heartbeat has not opted into the heartbeat contract —
-	// pipeline step jobs never stamp one, so the plan-job reconcile must leave
-	// them alone (ADR 0033).
+	// A running row with no heartbeat never opted into the heartbeat contract, so
+	// the plan-job reconcile must leave it alone (ADR 0033).
 	for _, id := range []string{"no-heartbeat", "fresh"} {
 		j, err := store.Jobs().Get(ctx, id)
 		if err != nil {
@@ -159,6 +158,66 @@ func TestFailStaleRunningJobsBackstop(t *testing.T) {
 	done, _ := store.Jobs().Get(ctx, "done")
 	if done.Status != job.StatusDone {
 		t.Fatalf("done after = %+v, want still done", done)
+	}
+}
+
+// RenewLease / ListStaleRunning / the LeaseBefore guard together form the
+// stale-running reclaim's durable half. These run against CI's MySQL.
+func TestRenewLeaseAndListStaleRunning(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	userID := "lease-user"
+	cleanupJobs(t, store, userID)
+	defer cleanupJobs(t, store, userID)
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	old := now.Add(-10 * time.Minute)
+	hb := func(at time.Time) *time.Time { return &at }
+	seed := func(id string, status job.Status, hbAt *time.Time, updated time.Time) {
+		if err := store.Jobs().Create(ctx, &job.Job{
+			ID: id, UserID: userID, Type: "watch_sync", Status: status, HeartbeatAt: hbAt,
+			CreatedAt: updated, UpdatedAt: updated,
+		}); err != nil {
+			t.Fatalf("seed %s: %v", id, err)
+		}
+	}
+	seed("lease-stale", job.StatusRunning, nil, old)       // NULL heartbeat falls back to updated_at
+	seed("lease-expired", job.StatusRunning, hb(old), old) // heartbeat older than the cutoff
+	seed("lease-fresh", job.StatusRunning, hb(now), now)   // live worker
+	seed("lease-queued", job.StatusQueued, nil, old)       // not running
+
+	stale, err := store.Jobs().ListStaleRunning(ctx, now.Add(-5*time.Minute), 1000)
+	if err != nil {
+		t.Fatalf("list stale: %v", err)
+	}
+	found := map[string]bool{}
+	for _, j := range stale {
+		found[j.ID] = true
+	}
+	if !found["lease-stale"] || !found["lease-expired"] {
+		t.Fatalf("stale set missing expired rows: %v", found)
+	}
+	if found["lease-fresh"] || found["lease-queued"] {
+		t.Fatalf("stale set must exclude fresh/queued rows: %v", found)
+	}
+
+	// RenewLease refreshes a running job and refuses a non-running one.
+	if ok, err := store.Jobs().RenewLease(ctx, "lease-stale", now); err != nil || !ok {
+		t.Fatalf("renew lease = %v, %v; want true", ok, err)
+	}
+	if got, err := store.Jobs().Get(ctx, "lease-stale"); err != nil || got.HeartbeatAt == nil {
+		t.Fatalf("lease not stamped: %+v err=%v", got, err)
+	}
+	if ok, err := store.Jobs().RenewLease(ctx, "lease-queued", now); err != nil || ok {
+		t.Fatalf("renew on queued = %v, %v; want false", ok, err)
+	}
+
+	// The LeaseBefore guard refuses a reclaim once the lease is fresh.
+	fresh := now.Add(-time.Minute)
+	if _, err := store.Jobs().TransitionJob(ctx, "lease-stale", job.JobTransition{
+		From: ptr(job.StatusRunning), To: job.StatusQueued, LeaseBefore: &fresh,
+	}); !errors.Is(err, job.ErrStateChanged) {
+		t.Fatalf("guard err = %v, want ErrStateChanged", err)
 	}
 }
 

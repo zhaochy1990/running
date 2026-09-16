@@ -34,6 +34,13 @@ runtime:
   prefetch: 1
   health-addr: ":8081"
   data-dir: data          # only for the file-based provider-binding fallback
+  # Lease/claim recovery. A running job's lease is renewed at a third of
+  # claim-lease; another worker may requeue it once the lease expires (worker
+  # died mid-job), or fail it when its attempt budget is spent. drain-timeout
+  # bounds how long SIGTERM waits for the in-flight job to unwind.
+  claim-lease: 2m
+  reclaim-interval: 30s
+  drain-timeout: 30s
 
 # Independent race detector (not Coach Agent). The DeepSeek key is secret and
 # must be supplied via STRIDE_WORKER_RACE_DETECTION_API_KEY.

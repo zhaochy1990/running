@@ -342,6 +342,44 @@ func (s *jobStore) Claim(ctx context.Context, jobID string, now time.Time) (*job
 	return claimed, claimed != nil, nil
 }
 
+// RenewLease stamps liveness on a still-running job. It is a targeted
+// compare-and-set, not a full-row save, so a renewer can never resurrect a job
+// another writer has already moved to a terminal state.
+func (s *jobStore) RenewLease(ctx context.Context, jobID string, now time.Time) (bool, error) {
+	result := s.db.WithContext(ctx).Model(&jobModel{}).
+		Where("id = ? AND status = ?", jobID, string(job.StatusRunning)).
+		Updates(map[string]any{"heartbeat_at": now, "updated_at": now})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+// ListStaleRunning returns running jobs whose lease is older than olderThan,
+// soonest-to-expire first. The lease is heartbeat_at, falling back to updated_at
+// when heartbeat_at is NULL — jobs that predate the lease contract.
+func (s *jobStore) ListStaleRunning(ctx context.Context, olderThan time.Time, limit int) ([]*job.Job, error) {
+	var rows []jobModel
+	err := s.db.WithContext(ctx).
+		Where("status = ? AND COALESCE(heartbeat_at, updated_at) < ?", string(job.StatusRunning), olderThan).
+		Order("COALESCE(heartbeat_at, updated_at) ASC").
+		Limit(limit).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	jobs := make([]*job.Job, len(rows))
+	for i := range rows {
+		jobs[i] = rows[i].toDomain()
+	}
+	return jobs, nil
+}
+
+// TransitionJob is the job.Store face of transition.
+func (s *jobStore) TransitionJob(ctx context.Context, jobID string, tr job.JobTransition) (*job.Job, error) {
+	return s.transition(ctx, jobID, tr)
+}
+
 // transition applies a compare-and-set state change (ADR 0033). From guards the
 // update against a concurrent writer; a nil From updates unconditionally. The
 // row is re-read and returned on success.
@@ -394,6 +432,11 @@ func (s *jobStore) transition(ctx context.Context, jobID string, tr job.JobTrans
 	}
 	if tr.AttemptsLT != nil {
 		query = query.Where("attempts < ?", *tr.AttemptsLT)
+	}
+	if tr.LeaseBefore != nil {
+		// Re-check the lease at write time so a worker that renewed after the
+		// stale scan is never disturbed by the reclaim.
+		query = query.Where("COALESCE(heartbeat_at, updated_at) < ?", *tr.LeaseBefore)
 	}
 	result := query.Updates(updates)
 	if result.Error != nil {
@@ -471,10 +514,10 @@ func (s *jobStore) listAll(ctx context.Context, opts job.PipelineListOptions) ([
 // tagging them with errorCode (the plan-job stale-running reconcile backstop,
 // ADR 0033).
 //
-// Only rows that have actually stamped a heartbeat are eligible. Pipeline step
-// jobs never set one (see jobModel.HeartbeatAt), so treating a NULL heartbeat as
-// stale would let the plan-job worker's reconcile retire another worker's
-// in-flight jobs — it fails only what opted into the heartbeat contract.
+// Only rows that have actually stamped a heartbeat are eligible. A NULL
+// heartbeat means the creator never opted into the heartbeat contract, so
+// treating it as stale would let this backstop retire a row it does not own; it
+// fails only what opted in.
 func (s *jobStore) failStaleRunning(ctx context.Context, olderThan, now time.Time, errorCode string) (int64, error) {
 	result := s.db.WithContext(ctx).Model(&jobModel{}).
 		Where("status = ? AND heartbeat_at IS NOT NULL AND heartbeat_at < ?", string(job.StatusRunning), olderThan).
