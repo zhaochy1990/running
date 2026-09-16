@@ -69,6 +69,14 @@ export default function LandingFooter({ onLogin }: { onLogin: () => void }) {
         <div className="foot-bottom">
           <span>STRIDE © 2026 · BUILT FOR RUNNERS</span>
           <span>隐私 · 条款 · Cookie</span>
+          <a
+            href="https://beian.miit.gov.cn/"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "inherit" }}
+          >
+            沪ICP备2026042481号-1
+          </a>
         </div>
       </div>
     </footer>
