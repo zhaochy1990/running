@@ -1,13 +1,14 @@
 // Package thumbnail turns an activity's GPS time series into a small route
 // thumbnail: a normalized polyline, plus a PNG rendering of that polyline.
 //
-// The geometry is a faithful port of the Python reference implementation
+// The geometry is a port of the Python reference implementation
 // (stride_storage/sqlite/database.py: compute_route_thumbnail and its helpers).
-// For a trace whose fixes are all valid the two agree exactly, including the
-// serialized polyline; they differ only in that this port drops invalid samples
-// (see validSample), which the issue that ordered the port requires and the
-// Python version does not do. Keep the constants and the branch order in sync
-// with that file.
+// The branch order matches it, but the two have deliberately diverged on two
+// points: this port drops invalid samples (see validSample), and it raised the
+// compact-route bounding-box cap off the Python value of 600 m (see
+// repeatedRouteMaxBBoxM). The Python stack is legacy and being removed; this is
+// the production path. Do not "restore parity" on either point without checking
+// the tests that pin them.
 //
 // Everything here is pure: no clock, no I/O, no database.
 package thumbnail
@@ -33,8 +34,15 @@ const (
 	// all (indoor, treadmill, GPS-failed activities).
 	MinGPSSamples = 10
 
-	repeatedRouteMinPathM         = 1200.0
-	repeatedRouteMaxBBoxM         = 600.0
+	repeatedRouteMinPathM = 1200.0
+	// repeatedRouteMaxBBoxM caps how large a "compact" loop may be. The Python
+	// original used 600 m, which misclassifies real park loops: a 32 km run of
+	// ~15 laps around a 615x481 m park sat 2.5% over the cap, fell through to
+	// uniform distance sampling, and rendered as a dense scribble (~15x its own
+	// bounding-box perimeter) instead of one clean lap. Measured over real
+	// traces, repeated loops bound at 1842 m while genuine point-to-point routes
+	// start at 7148 m — a 4x gap, so 3000 m sits clear of both.
+	repeatedRouteMaxBBoxM         = 3000.0
 	repeatedRouteMinBBoxM         = 20.0
 	repeatedRoutePathToPerimeter  = 3.0
 	repeatedRouteMinAngleCoverage = 0.75

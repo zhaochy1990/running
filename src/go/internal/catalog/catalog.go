@@ -133,9 +133,9 @@ func Jobs() []JobSpec {
 		{
 			Type:          JobTypeRouteThumbnailsBackfill,
 			UserInitiable: false,
-			Description:   "One-time all-history route-thumbnail backfill for one athlete, for activities synced before the feature existed. Same work as the pipeline step, exposed as its own job type so an operator can run it on demand. Internal-only.",
-			InputSchema:   json.RawMessage(`{"type":"object","additionalProperties":false}`),
-			ExampleInput:  json.RawMessage(`{}`),
+			Description:   "All-history route-thumbnail backfill for one athlete: fills in activities that have no thumbnail yet. Pass {\"force\":true} to also regenerate activities that already have one, which is what a rendering-algorithm change needs — the default selection skips finished work on purpose. Internal-only.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"force":{"type":"boolean","default":false,"description":"Regenerate activities that already have a thumbnail instead of only filling the gaps. Object keys are per-activity, so this overwrites in place."}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"force":true}`),
 		},
 		{
 			Type:          JobTypeCompute,

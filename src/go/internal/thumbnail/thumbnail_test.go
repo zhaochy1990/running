@@ -37,6 +37,76 @@ func trackTrace(laps, samplesPerLap int) []Sample {
 	return samples
 }
 
+// parkLoopTrace builds a synthetic multi-lap trace around an irregular
+// park-sized loop (~615x481 m). Modelled on a real 32 km run of ~15 laps that
+// the original 600 m compact-route cap misclassified, aliasing the trace into a
+// dense scribble instead of one lap.
+func parkLoopTrace(laps, samplesPerLap int) []Sample {
+	latPerMeter := 1 / 111_000.0
+	lonPerMeter := 1 / (111_000 * math.Cos(trackLat0*math.Pi/180))
+
+	// Irregular pentagon spanning 614 m east-west and 480 m north-south.
+	shape := [][2]float64{
+		{307, 0}, {95, -240}, {-307, -60}, {-180, 240}, {150, 200},
+	}
+	// Cumulative edge lengths, for even sampling around the perimeter.
+	edges := make([]float64, len(shape))
+	var perimeter float64
+	for i := range shape {
+		a, b := shape[i], shape[(i+1)%len(shape)]
+		edges[i] = math.Hypot(b[0]-a[0], b[1]-a[1])
+		perimeter += edges[i]
+	}
+
+	samples := make([]Sample, 0, laps*samplesPerLap)
+	for lap := range laps {
+		for i := range samplesPerLap {
+			// Walk the perimeter by arc length, so laps are evenly covered.
+			want := perimeter * float64(i) / float64(samplesPerLap)
+			var xM, yM float64
+			for e := range shape {
+				if want <= edges[e] || e == len(shape)-1 {
+					a, b := shape[e], shape[(e+1)%len(shape)]
+					t := want / edges[e]
+					xM, yM = a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t
+					break
+				}
+				want -= edges[e]
+			}
+			samples = append(samples, Sample{
+				Lat: trackLat0 + (yM+1.5*math.Sin(float64(lap)*0.9+float64(i)))*latPerMeter,
+				Lon: trackLon0 + (xM+1.5*math.Cos(float64(lap)*0.7+float64(i)))*lonPerMeter,
+				OK:  true,
+			})
+		}
+	}
+	return samples
+}
+
+// A loop repeated many times around a park is the common case, not just an oval
+// track. With the compact-route cap too low, the trace falls through to uniform
+// distance sampling and aliases into a dense scribble whose drawn length is an
+// order of magnitude larger than the loop it is meant to show.
+func TestComputeParkLoopFoldsToSingleLap(t *testing.T) {
+	points, ok := Compute(parkLoopTrace(15, 200))
+	if !ok {
+		t.Fatal("Compute returned no polyline for a park loop")
+	}
+	if points[0] != points[len(points)-1] {
+		t.Fatalf("park loop should fold to a closed footprint, got %+v ... %+v", points[0], points[len(points)-1])
+	}
+	// One lap of a ~615x481 m loop inscribed in the 90-unit viewport draws a
+	// perimeter in the low hundreds. A scribble that re-crosses the box ~15
+	// times lands in the thousands.
+	if got := polylineLengthOf(points); got > 500 {
+		t.Fatalf("polyline length %.0f — trace aliased instead of folding to one lap", got)
+	}
+	if got := maxSegment(points); got > 20 {
+		t.Fatalf("max segment %.1f exceeds 20", got)
+	}
+	withinViewport(t, points)
+}
+
 func polylineLengthOf(points []Point) float64 {
 	var total float64
 	for i := 1; i < len(points); i++ {
