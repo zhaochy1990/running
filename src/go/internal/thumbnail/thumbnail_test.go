@@ -112,16 +112,22 @@ func TestComputeParkLoopFoldsToSingleLap(t *testing.T) {
 // shortcut through the park taken every lap. The chord puts roughly a fifth of
 // the trace inside the centre of the box, which the original density cap read as
 // "this route crosses its own area" and refused to fold.
-func chordLoopTrace(laps int) []Sample {
+func chordLoopTrace(laps int, withChord bool) []Sample {
 	latPerMeter := 1 / 111_000.0
 	lonPerMeter := 1 / (111_000 * math.Cos(trackLat0*math.Pi/180))
 
-	// Waypoints walked in order; p3 -> p4 is the chord, running from the west
-	// edge through the middle and back out to the north-west.
 	const samplesPerLap = 200
+	// The outer boundary is IDENTICAL with and without the chord — that is the
+	// whole point: only the extra leg changes, so any difference in the folded
+	// outline is the chord leaking into the footprint.
+	v3 := [2]float64{-195, -50} // boundary vertex the detour leaves from
+	in := [2]float64{-30, -20}  // well inside the loop
 	shape := [][2]float64{
-		{200, 100}, {150, -190}, {-60, -200}, {-200, -40},
-		{30, 20}, {-120, 180}, {170, 160},
+		{190, 110}, {150, -190}, {-70, -200}, v3, {-110, 180}, {170, 150},
+	}
+	if withChord {
+		// Out to the interior point and straight back, appended after v3.
+		shape = append(shape[:4:4], append([][2]float64{in, v3}, shape[4:]...)...)
 	}
 	edges := make([]float64, len(shape))
 	var perimeter float64
@@ -158,7 +164,7 @@ func chordLoopTrace(laps int) []Sample {
 // A loop with a chord through the middle is still a loop: it must fold to one
 // lap rather than rendering every traverse of the chord as a criss-cross.
 func TestComputeChordLoopFoldsToSingleLap(t *testing.T) {
-	points, ok := Compute(chordLoopTrace(15))
+	points, ok := Compute(chordLoopTrace(15, true))
 	if !ok {
 		t.Fatal("Compute returned no polyline for a chord loop")
 	}
@@ -170,14 +176,49 @@ func TestComputeChordLoopFoldsToSingleLap(t *testing.T) {
 	if got := polylineLengthOf(points); got > 500 {
 		t.Fatalf("polyline length %.0f — chord loop aliased instead of folding", got)
 	}
-	// Looser than the pure-loop bound: the angular sector covering the chord
-	// averages perimeter points with interior ones, so a folded chord loop
-	// legitimately takes one longer step (a notch where the chord ran). The
-	// length bound above is what actually catches aliasing.
-	if got := maxSegment(points); got > 50 {
-		t.Fatalf("max segment %.1f exceeds 50", got)
+	if got := maxSegment(points); got > 20 {
+		t.Fatalf("max segment %.1f exceeds 20", got)
 	}
 	withinViewport(t, points)
+}
+
+// The shortcut must not change the shape. Folding a chord loop and the same
+// loop walked without the chord has to land on the same outline — if the chord
+// were averaged into the perimeter it would pull the footprint inwards wherever
+// it ran, drawing a dent that is not part of the venue.
+func TestComputeChordDoesNotDistortLoopFootprint(t *testing.T) {
+	withChord, ok := Compute(chordLoopTrace(15, true))
+	if !ok {
+		t.Fatal("no polyline for the chord loop")
+	}
+	loopOnly, ok := Compute(chordLoopTrace(15, false))
+	if !ok {
+		t.Fatal("no polyline for the loop without the chord")
+	}
+
+	// Hausdorff-style: the farthest any point of one outline sits from the other.
+	// A bounding-box comparison cannot see this — averaging the chord into the
+	// perimeter dents the outline locally without changing its extent.
+	oneWay := func(a, b []Point) float64 {
+		worst := 0.0
+		for _, p := range a {
+			nearest := math.Inf(1)
+			for _, q := range b {
+				nearest = math.Min(nearest, math.Hypot(p.X-q.X, p.Y-q.Y))
+			}
+			worst = math.Max(worst, nearest)
+		}
+		return worst
+	}
+	deviation := math.Max(oneWay(withChord, loopOnly), oneWay(loopOnly, withChord))
+	t.Logf("max outline deviation between chord and loop-only: %.1f viewbox units", deviation)
+
+	// Measured: 3.1 with the envelope, 21.8 when the sector mean is used instead
+	// (i.e. with keepFraction at 0). 6 leaves room below the broken behaviour
+	// while still being far tighter than the ~90-unit outline it guards.
+	if deviation > 6.0 {
+		t.Fatalf("chord distorted the footprint by %.1f units (want <= 6)", deviation)
+	}
 }
 
 func polylineLengthOf(points []Point) float64 {
