@@ -196,9 +196,10 @@ func (s *Store) ListAllJobs(ctx context.Context, opts job.PipelineListOptions) (
 }
 
 // FailStaleRunningJobs fails every running job whose heartbeat is older than
-// olderThan, tagged with errorCode. Returns how many rows were failed (ADR 0033).
-func (s *Store) FailStaleRunningJobs(ctx context.Context, olderThan, now time.Time, errorCode string) (int64, error) {
-	return (&jobStore{db: s.db}).failStaleRunning(ctx, olderThan, now, errorCode)
+// olderThan and whose job_type is in jobTypes, tagged with errorCode. An empty
+// jobTypes matches every type. Returns how many rows were failed (ADR 0033).
+func (s *Store) FailStaleRunningJobs(ctx context.Context, olderThan, now time.Time, errorCode string, jobTypes []string) (int64, error) {
+	return (&jobStore{db: s.db}).failStaleRunning(ctx, olderThan, now, errorCode, jobTypes)
 }
 
 // mysqlErrNo returns the MySQL server error number if err is (or wraps) a
@@ -342,22 +343,10 @@ func (s *jobStore) Claim(ctx context.Context, jobID string, now time.Time) (*job
 	return claimed, claimed != nil, nil
 }
 
-// RenewLease stamps liveness on a still-running job. It is a targeted
-// compare-and-set, not a full-row save, so a renewer can never resurrect a job
-// another writer has already moved to a terminal state.
-func (s *jobStore) RenewLease(ctx context.Context, jobID string, now time.Time) (bool, error) {
-	result := s.db.WithContext(ctx).Model(&jobModel{}).
-		Where("id = ? AND status = ?", jobID, string(job.StatusRunning)).
-		Updates(map[string]any{"heartbeat_at": now, "updated_at": now})
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected > 0, nil
-}
-
 // ListStaleRunning returns running jobs whose lease is older than olderThan,
-// soonest-to-expire first. The lease is heartbeat_at, falling back to updated_at
-// when heartbeat_at is NULL — jobs that predate the lease contract.
+// longest-expired first, at most limit. The lease is heartbeat_at, falling back
+// to updated_at when heartbeat_at is NULL (jobs predating the lease contract).
+// It is the read half of the stale-running reclaim.
 func (s *jobStore) ListStaleRunning(ctx context.Context, olderThan time.Time, limit int) ([]*job.Job, error) {
 	var rows []jobModel
 	err := s.db.WithContext(ctx).
@@ -510,24 +499,27 @@ func (s *jobStore) listAll(ctx context.Context, opts job.PipelineListOptions) ([
 	return jobs, total, nil
 }
 
-// failStaleRunning fails running jobs whose heartbeat is older than olderThan,
-// tagging them with errorCode (the plan-job stale-running reconcile backstop,
-// ADR 0033).
+// failStaleRunning fails running jobs whose heartbeat is older than olderThan
+// and whose job_type is in jobTypes, tagging them with errorCode (the plan-job
+// stale-running reconcile backstop, ADR 0033).
 //
-// Only rows that have actually stamped a heartbeat are eligible. A NULL
-// heartbeat means the creator never opted into the heartbeat contract, so
-// treating it as stale would let this backstop retire a row it does not own; it
-// fails only what opted in.
-func (s *jobStore) failStaleRunning(ctx context.Context, olderThan, now time.Time, errorCode string) (int64, error) {
-	result := s.db.WithContext(ctx).Model(&jobModel{}).
-		Where("status = ? AND heartbeat_at IS NOT NULL AND heartbeat_at < ?", string(job.StatusRunning), olderThan).
-		Updates(map[string]any{
-			"status":        string(job.StatusFailed),
-			"error_code":    errorCode,
-			"error_message": "stale running job failed by reconcile",
-			"completed_at":  now,
-			"updated_at":    now,
-		})
+// Only rows that have actually stamped a heartbeat are eligible: a NULL
+// heartbeat never opted into the heartbeat contract. jobTypes is the caller's
+// own scope — the plan-job worker passes its plan types so this backstop never
+// retires a Go-owned row, which also stamps a heartbeat (ADR 0034).
+func (s *jobStore) failStaleRunning(ctx context.Context, olderThan, now time.Time, errorCode string, jobTypes []string) (int64, error) {
+	query := s.db.WithContext(ctx).Model(&jobModel{}).
+		Where("status = ? AND heartbeat_at IS NOT NULL AND heartbeat_at < ?", string(job.StatusRunning), olderThan)
+	if len(jobTypes) > 0 {
+		query = query.Where("job_type IN ?", jobTypes)
+	}
+	result := query.Updates(map[string]any{
+		"status":        string(job.StatusFailed),
+		"error_code":    errorCode,
+		"error_message": "stale running job failed by reconcile",
+		"completed_at":  now,
+		"updated_at":    now,
+	})
 	if result.Error != nil {
 		return 0, result.Error
 	}

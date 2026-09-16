@@ -229,15 +229,19 @@ func (s *Service) transitionJob(c *gin.Context) {
 type staleRunningRequest struct {
 	OlderThan *time.Time `json:"older_than" binding:"required"`
 	ErrorCode string     `json:"error_code" binding:"required"`
+	// JobTypes optionally scopes the sweep to the caller's own job types. The
+	// plan-job worker passes its plan types so this backstop never retires a Go
+	// job, which now also stamps a heartbeat (ADR 0034).
+	JobTypes []string `json:"job_types,omitempty"`
 }
 
 // failStaleRunningJobs fails running jobs whose heartbeat is older than
-// older_than (the plan-job worker's stale-running reconcile backstop). Only jobs
-// that have stamped a heartbeat are eligible, so it cannot retire pipeline step
-// jobs belonging to another worker.
+// older_than (the plan-job worker's stale-running reconcile backstop). It is
+// scoped by job_types so it never touches a Go-owned row that the Go dispatcher
+// reclaims: plan jobs and pipeline step jobs share the table (ADR 0033/0034).
 //
 //	@Summary		Fail stale running jobs (internal)
-//	@Description	Internal-only. Fails running jobs whose heartbeat is older than older_than, tagged with error_code. Jobs that have never stamped a heartbeat are left alone. Returns how many were failed.
+//	@Description	Internal-only. Fails running jobs whose heartbeat is older than older_than and whose job_type is in job_types, tagged with error_code. Jobs that have never stamped a heartbeat are left alone. Returns how many were failed.
 //	@Tags			jobs
 //	@Accept			json
 //	@Produce		json
@@ -260,7 +264,7 @@ func (s *Service) failStaleRunningJobs(c *gin.Context) {
 		return
 	}
 	count, err := s.jobsStale.FailStaleRunningJobs(
-		c.Request.Context(), *body.OlderThan, time.Now().UTC().Truncate(time.Millisecond), body.ErrorCode,
+		c.Request.Context(), *body.OlderThan, time.Now().UTC().Truncate(time.Millisecond), body.ErrorCode, body.JobTypes,
 	)
 	if err != nil {
 		s.log.Error("fail stale running jobs failed", zapErr(err))

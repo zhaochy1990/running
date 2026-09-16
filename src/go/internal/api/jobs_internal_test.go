@@ -202,9 +202,11 @@ func TestFailStaleRunningJobs(t *testing.T) {
 
 	stale := &job.Job{ID: "stale", UserID: "u-1", Type: "generate_weekly_plan", Status: job.StatusRunning, HeartbeatAt: ptrTime(now.Add(-10 * time.Minute))}
 	fresh := &job.Job{ID: "fresh", UserID: "u-1", Type: "generate_weekly_plan", Status: job.StatusRunning, HeartbeatAt: ptrTime(now.Add(-1 * time.Minute))}
-	// A pipeline step job: running, long past any window, but it never stamps a
-	// heartbeat — the plan-job reconcile must not retire it (ADR 0033).
-	pipelineStep := &job.Job{ID: "pipeline-step", UserID: "u-1", Type: "onboarding", PipelineRunID: "run-1", Status: job.StatusRunning}
+	// A Go pipeline step job that did stamp a heartbeat (the dispatcher renews
+	// it, ADR 0034): stale, but not the plan-job worker's to retire.
+	pipelineStep := &job.Job{ID: "pipeline-step", UserID: "u-1", Type: "onboarding", PipelineRunID: "run-1", Status: job.StatusRunning, HeartbeatAt: ptrTime(now.Add(-10 * time.Minute))}
+	// A running row that never stamped a heartbeat is never eligible.
+	noHeartbeat := &job.Job{ID: "no-heartbeat", UserID: "u-1", Type: "generate_weekly_plan", Status: job.StatusRunning}
 	if err := h.jobs.Create(t.Context(), stale); err != nil {
 		t.Fatalf("seed stale: %v", err)
 	}
@@ -214,8 +216,11 @@ func TestFailStaleRunningJobs(t *testing.T) {
 	if err := h.jobs.Create(t.Context(), pipelineStep); err != nil {
 		t.Fatalf("seed pipeline step: %v", err)
 	}
+	if err := h.jobs.Create(t.Context(), noHeartbeat); err != nil {
+		t.Fatalf("seed no-heartbeat: %v", err)
+	}
 
-	body := `{"older_than":"` + now.Add(-2*time.Minute).Format(time.RFC3339) + `","error_code":"stale_running"}`
+	body := `{"older_than":"` + now.Add(-2*time.Minute).Format(time.RFC3339) + `","error_code":"stale_running","job_types":["generate_weekly_plan","generate_master_plan"]}`
 	resp := h.do(http.MethodPost, "/api/internal/jobs/stale-running", body, internalHdr())
 	if resp.Code != http.StatusOK {
 		t.Fatalf("reconcile code = %d (%s)", resp.Code, resp.Body.String())
@@ -240,7 +245,11 @@ func TestFailStaleRunningJobs(t *testing.T) {
 	}
 	stepAfter, _ := h.jobs.Get(t.Context(), "pipeline-step")
 	if stepAfter == nil || stepAfter.Status != job.StatusRunning {
-		t.Fatalf("pipeline step after = %+v, want still running", stepAfter)
+		t.Fatalf("pipeline step after = %+v, want still running (scoped out by job_types)", stepAfter)
+	}
+	noHbAfter, _ := h.jobs.Get(t.Context(), "no-heartbeat")
+	if noHbAfter == nil || noHbAfter.Status != job.StatusRunning {
+		t.Fatalf("no-heartbeat after = %+v, want still running", noHbAfter)
 	}
 }
 

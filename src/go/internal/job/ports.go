@@ -14,11 +14,6 @@ type Store interface {
 	// Claim atomically transitions a queued job to running and returns false when
 	// another delivery has already claimed or terminated it.
 	Claim(ctx context.Context, jobID string, now time.Time) (*Job, bool, error)
-	// RenewLease stamps heartbeat_at/updated_at on a still-running job. It is a
-	// targeted compare-and-set so a renewer can never resurrect a job another
-	// writer has already moved to a terminal state. Returns whether the row was
-	// still running.
-	RenewLease(ctx context.Context, jobID string, now time.Time) (bool, error)
 	// ListStaleRunning returns running jobs whose lease is older than olderThan,
 	// soonest-to-expire first, at most limit. The lease is heartbeat_at, falling
 	// back to updated_at when heartbeat_at is NULL (jobs predating the lease

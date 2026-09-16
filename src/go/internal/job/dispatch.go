@@ -204,7 +204,16 @@ func (d *Dispatcher) startLeaseRenewer(ctx context.Context, jobID string) func()
 			case <-rctx.Done():
 				return
 			case <-t.C:
-				if _, err := d.store.RenewLease(rctx, jobID, d.now()); err != nil {
+				now := d.now()
+				// A renewal is a running→running CAS: it touches only heartbeat_at/
+				// updated_at and refuses to act once another writer has moved the row
+				// off running. ErrStateChanged just means the job left running.
+				_, err := d.store.TransitionJob(rctx, jobID, JobTransition{
+					From:        statusPtr(StatusRunning),
+					To:          StatusRunning,
+					HeartbeatAt: &now,
+				})
+				if err != nil && !errors.Is(err, ErrStateChanged) {
 					d.log.Warn("lease renewal failed", zap.String("job_id", jobID), zap.Error(err))
 				}
 			}

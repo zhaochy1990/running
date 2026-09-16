@@ -72,18 +72,6 @@ func (s *fakeStore) Claim(_ context.Context, id string, now time.Time) (*Job, bo
 	return &cp, true, nil
 }
 
-func (s *fakeStore) RenewLease(_ context.Context, id string, now time.Time) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	j, ok := s.rows[id]
-	if !ok || j.Status != StatusRunning {
-		return false, nil
-	}
-	j.HeartbeatAt = &now
-	j.UpdatedAt = now
-	return true, nil
-}
-
 func (s *fakeStore) ListStaleRunning(_ context.Context, olderThan time.Time, limit int) ([]*Job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

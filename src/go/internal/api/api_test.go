@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -140,11 +141,15 @@ func (f *fakeJobs) TransitionJob(_ context.Context, jobID string, tr job.JobTran
 	return j, nil
 }
 
-// FailStaleRunningJobs fails running jobs whose heartbeat is stale. A nil
-// heartbeat is never stale — it means the job never opted in (ADR 0033).
-func (f *fakeJobs) FailStaleRunningJobs(_ context.Context, olderThan, now time.Time, errorCode string) (int64, error) {
+// FailStaleRunningJobs fails running jobs whose heartbeat is stale, scoped to
+// jobTypes. A nil heartbeat is never stale — it means the job never opted in
+// (ADR 0033).
+func (f *fakeJobs) FailStaleRunningJobs(_ context.Context, olderThan, now time.Time, errorCode string, jobTypes []string) (int64, error) {
 	var count int64
 	for _, j := range f.byID {
+		if len(jobTypes) > 0 && !slices.Contains(jobTypes, j.Type) {
+			continue
+		}
 		if j.Status == job.StatusRunning && j.HeartbeatAt != nil && j.HeartbeatAt.Before(olderThan) {
 			j.Status = job.StatusFailed
 			j.ErrorCode = errorCode

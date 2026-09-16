@@ -1,5 +1,5 @@
 import { ERROR_CODES, newPermanentError } from "../job/errors.js";
-import type { JobTransition, PlanJob, PlanJobStatus, PlanJobType } from "../job/model.js";
+import { type JobTransition, PLAN_JOB_TYPES, type PlanJob, type PlanJobStatus, type PlanJobType } from "../job/model.js";
 import { JobStateChangedError, type PlanJobStore } from "../job/ports.js";
 
 /** Wire shape of Go's `jobStateResponse` (api/dto.go). */
@@ -88,6 +88,9 @@ export class GoJobClient implements PlanJobStore {
     const response = await this.call("POST", "/api/internal/jobs/stale-running", {
       older_than: olderThan.toISOString(),
       error_code: errorCode,
+      // Scope the sweep to plan jobs: the Go dispatcher owns lease/reclaim for
+      // Go job types, which also stamp a heartbeat now (ADR 0034).
+      job_types: [...PLAN_JOB_TYPES],
     });
     if (response.status !== 200) {
       throw this.describe("stale-running reconcile", response, await safeText(response));
