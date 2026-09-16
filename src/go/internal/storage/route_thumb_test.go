@@ -55,9 +55,9 @@ func seedThumbActivity(t *testing.T, st *Store, uid, labelID string, gps [][2]fl
 	}
 }
 
-func routeThumbCandidateSet(t *testing.T, st *Store, uid string) map[string]bool {
+func routeThumbCandidateSet(t *testing.T, st *Store, uid string, force bool) map[string]bool {
 	t.Helper()
-	ids, err := st.RouteThumbCandidates(context.Background(), uid)
+	ids, err := st.RouteThumbCandidates(context.Background(), uid, force)
 	if err != nil {
 		t.Fatalf("route thumb candidates: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestRouteThumbCandidatesSelectsOnlyOutdoorActivitiesMissingAThumbnail(t *te
 	seedThumbActivity(t, st, uid, "gps-dropped", [][2]float64{{0, 0}, {0, 0}}) // rows exist, every fix is NULL
 	seedThumbActivity(t, st, other, "someone-else", outdoor)                   // a different athlete
 
-	if got := routeThumbCandidateSet(t, st, uid); len(got) != 1 || !got["outdoor"] {
+	if got := routeThumbCandidateSet(t, st, uid, false); len(got) != 1 || !got["outdoor"] {
 		t.Fatalf("candidates = %v, want only {outdoor}", got)
 	}
 
@@ -101,8 +101,14 @@ func TestRouteThumbCandidatesSelectsOnlyOutdoorActivitiesMissingAThumbnail(t *te
 	if err := st.SetActivityRouteThumb(ctx, uid, "outdoor", `[[5,95],[95,5]]`, "https://cdn.example/thumbnails/x.png"); err != nil {
 		t.Fatalf("set route thumb: %v", err)
 	}
-	if got := routeThumbCandidateSet(t, st, uid); len(got) != 0 {
+	if got := routeThumbCandidateSet(t, st, uid, false); len(got) != 0 {
 		t.Fatalf("after writing a thumbnail, candidates = %v, want none", got)
+	}
+
+	// force re-selects it, which is how a rendering change gets regenerated. It
+	// still excludes activities with no GPS: forcing cannot conjure a trace.
+	if got := routeThumbCandidateSet(t, st, uid, true); len(got) != 1 || !got["outdoor"] {
+		t.Fatalf("forced candidates = %v, want only {outdoor}", got)
 	}
 }
 

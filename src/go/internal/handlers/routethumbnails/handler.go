@@ -51,9 +51,17 @@ var strokeColor = color.RGBA{R: 0xe3, G: 0xe2, B: 0xe5, A: 0xff}
 
 // Store is the slice of storage the handler needs.
 type Store interface {
-	RouteThumbCandidates(ctx context.Context, userID string) ([]string, error)
+	RouteThumbCandidates(ctx context.Context, userID string, force bool) ([]string, error)
 	ActivityTimeseries(ctx context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error)
 	SetActivityRouteThumb(ctx context.Context, userID, labelID, thumbJSON, thumbURL string) error
+}
+
+type thumbInput struct {
+	// Force regenerates activities that already have a thumbnail instead of only
+	// filling the gaps. Only the backfill job documents it: the pipeline step's
+	// input is merged from the sync run ({mode,content,limit}), which carries no
+	// force field, so a routine sync can never re-render the whole history.
+	Force bool `json:"force,omitempty"`
 }
 
 type thumbResult struct {
@@ -81,7 +89,14 @@ func New(store Store, uploader *cos.Client) job.Handler {
 			return string(result), nil
 		}
 
-		candidates, err := store.RouteThumbCandidates(ctx, j.UserID)
+		var in thumbInput
+		if j.InputJSON != "" {
+			if err := json.Unmarshal([]byte(j.InputJSON), &in); err != nil {
+				return "", job.NewPermanentError("bad_payload", fmt.Errorf("route thumbnails: parse input: %w", err))
+			}
+		}
+
+		candidates, err := store.RouteThumbCandidates(ctx, j.UserID, in.Force)
 		if err != nil {
 			return "", err
 		}

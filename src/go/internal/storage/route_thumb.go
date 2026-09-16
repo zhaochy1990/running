@@ -5,8 +5,8 @@ import (
 	"fmt"
 )
 
-// RouteThumbCandidates returns the label IDs of a user's activities that still
-// need a route thumbnail.
+// RouteThumbCandidates returns the label IDs of a user's activities that need a
+// route thumbnail.
 //
 // An activity is a candidate when it has no uploaded thumbnail yet AND at least
 // one GPS fix to draw. That predicate narrows itself: once an activity has a
@@ -16,26 +16,34 @@ import (
 // keeps activities that have no trace at all (indoor, treadmill, strength) from
 // being re-read on every sync, since they can never gain a thumbnail.
 //
-// It does NOT filter out activities that have GPS rows but too few valid fixes
-// to draw (a mostly-failed GPS lock). Those stay candidates and have their
+// force drops the "no thumbnail yet" half and selects every outdoor activity,
+// for regenerating existing thumbnails after a change to the rendering
+// algorithm. Keys are per-activity, so a forced run overwrites in place rather
+// than orphaning objects.
+//
+// It never filters out activities that have GPS rows but too few valid fixes to
+// draw (a mostly-failed GPS lock). Those stay candidates and have their
 // timeseries re-read each run; that costs one indexed read per such activity and
 // writing a "we tried and there was nothing to draw" marker to buy it back would
 // blur the column's meaning.
-func (s *Store) RouteThumbCandidates(ctx context.Context, userID string) ([]string, error) {
+func (s *Store) RouteThumbCandidates(ctx context.Context, userID string, force bool) ([]string, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return nil, err
 	}
-	var ids []string
-	if err := s.db.WithContext(ctx).
+	q := s.db.WithContext(ctx).
 		Model(&Activity{}).
-		Where("user_id = ? AND route_thumb_url IS NULL", uid).
+		Where("user_id = ?", uid).
 		Where(`EXISTS (SELECT 1 FROM timeseries t
 		                WHERE t.user_id = activities.user_id
 		                  AND t.label_id = activities.label_id
-		                  AND t.gps_lat IS NOT NULL)`).
-		Order("date DESC").
-		Pluck("label_id", &ids).Error; err != nil {
+		                  AND t.gps_lat IS NOT NULL)`)
+	if !force {
+		q = q.Where("route_thumb_url IS NULL")
+	}
+
+	var ids []string
+	if err := q.Order("date DESC").Pluck("label_id", &ids).Error; err != nil {
 		return nil, fmt.Errorf("storage: route thumb candidates: %w", err)
 	}
 	return ids, nil
