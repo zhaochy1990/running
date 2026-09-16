@@ -112,17 +112,22 @@ func (s *Store) upsertActivity(ctx context.Context, a *Activity, laps []Lap, ts 
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// The thumbnail columns are owned by the route_thumbnails job, never by a
+		// provider payload. UpdateAll would write the provider's zero value over
+		// them, so every resync of an activity would wipe its thumbnail and force
+		// a re-render and re-upload. Omit them so a sync can only ever add
+		// activities, not strip their thumbnails.
+		omits := []string{"RouteThumbJSON", "RouteThumbURL"}
 		// Garmin can return an empty details payload while still returning the
 		// summary. In that incomplete-response path, preserve the previously
 		// cached start alongside the preserved timeseries. Omit the two columns
 		// from the upsert rather than adding a read query per activity. A
 		// non-empty details response remains authoritative and may update or
 		// clear the start.
-		activityWrite := tx
 		if preserveEmpty && len(ts) == 0 && a.StartGPSLat == nil && a.StartGPSLon == nil {
-			activityWrite = activityWrite.Omit("StartGPSLat", "StartGPSLon")
+			omits = append(omits, "StartGPSLat", "StartGPSLon")
 		}
-		if err := activityWrite.Clauses(clause.OnConflict{UpdateAll: true}).Create(a).Error; err != nil {
+		if err := tx.Omit(omits...).Clauses(clause.OnConflict{UpdateAll: true}).Create(a).Error; err != nil {
 			return fmt.Errorf("storage: upsert activity: %w", err)
 		}
 		if !preserveEmpty || len(laps) > 0 {

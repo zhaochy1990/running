@@ -165,6 +165,39 @@ candidates. It is not a scheduled job and is unnecessary for newly synced
 activities. The job is partial-success: confirmed rows are committed as they are
 found, while a failed candidate remains absent and causes the job to retry/fail.
 
+#### Route thumbnail worker configuration
+
+The worker's route-thumbnail step uploads generated PNGs to Tencent Cloud COS.
+It is optional by design: an incomplete `cos:` section makes the job skip itself
+and report `{"skipped":"cos_not_configured"}` instead of failing the sync, so a
+deployment without bucket credentials still syncs normally (just without
+thumbnails). The committed `src/go/config.yml` supplies the non-secret defaults
+(all empty) under the `cos:` key:
+
+- `cos.bucket` — bucket name, e.g. `stride-running-1255867366`;
+- `cos.region` — e.g. `ap-shanghai`;
+- `cos.base-url` — the public origin prepended to the object key when building
+  `thumb_url`, e.g. `https://stride-running-1255867366.cos.ap-shanghai.myqcloud.com`
+  (a CDN origin can be substituted later without touching stored rows only if
+  existing rows are rewritten — the URL is persisted on each activity).
+
+The two secrets must be injected into `stride-worker` only, via
+`STRIDE_WORKER_COS_SECRET_ID` and `STRIDE_WORKER_COS_SECRET_KEY`; never commit or
+print them. `stride-api` neither loads nor needs them.
+
+The bucket must allow public reads on `thumbnails/*`: the miniprogram loads the
+stored URL directly. Add the bucket's public domain to the WeChat MP
+`downloadFile` / image domain allow-list — the avatar upload already uses the
+same bucket, so this is usually in place. Objects are keyed
+`thumbnails/{user_id}/{label_id}.png`, so a re-render overwrites in place and no
+cleanup job is needed for deleted activities beyond normal bucket lifecycle.
+
+After deploying the worker, enqueue internal-only `route_thumbnails_backfill`
+once per existing user to fill in activities synced before the feature existed.
+It is not a scheduled job; the pipeline's own `route_thumbnails` step keeps new
+activities covered. Both share one handler, and the candidate query selects only
+activities still missing a thumbnail, so re-running either is a cheap no-op.
+
 ### 赛季训练计划统一读取切流
 
 Web 从登录 JWT 的 `sub` 构造 `GET /api/users/{user_id}/master-plan/current`，并通过 BFF 的动态路由转发到 Go；`GET /api/users/me/master-plan/current` 仅作为后端兼容别名保留。该接口从

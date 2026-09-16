@@ -4973,6 +4973,10 @@ const docTemplate = `{
                 "temperature": {
                     "type": "number"
                 },
+                "thumb_url": {
+                    "description": "ThumbURL is the public URL of the pre-rendered route-thumbnail PNG clients\ncan drop straight into an \u003cimage\u003e. Null for indoor activities and until the\nthumbnail job has run.",
+                    "type": "string"
+                },
                 "train_type": {
                     "type": "string"
                 },

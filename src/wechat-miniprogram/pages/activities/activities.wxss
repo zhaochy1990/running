@@ -166,11 +166,20 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  /* 圆槽要真正裁掉缩略图的方角；border-radius 本身不裁剪子元素 */
+  overflow: hidden;
 }
 
 .activity__icon-img {
   width: 40rpx;
   height: 40rpx;
+}
+
+/* 路线缩略图铺满圆槽。PNG 背景透明，且渲染端已把折线收进内切圆，
+   所以圆角裁剪只会切掉空白角，不会切到路线本身 */
+.activity__thumb {
+  width: 72rpx;
+  height: 72rpx;
 }
 
 .activity__info {

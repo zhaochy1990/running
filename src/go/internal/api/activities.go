@@ -411,6 +411,10 @@ type activityListItem struct {
 	DurationFmt     string          `json:"duration_fmt"`
 	PaceFmt         string          `json:"pace_fmt"`
 	RouteThumb      json.RawMessage `json:"route_thumb" swaggertype:"object"`
+	// ThumbURL is the public URL of the pre-rendered route-thumbnail PNG clients
+	// can drop straight into an <image>. Null for indoor activities and until the
+	// thumbnail job has run.
+	ThumbURL *string `json:"thumb_url"`
 }
 
 // monthlySummaryDTO is one Shanghai-month aggregate. total_run_km is rounded to
@@ -633,6 +637,7 @@ func toActivityListItem(a *storage.Activity, strides map[string]*float64) activi
 		DurationFmt:     apifmt.DurationFmt(a.DurationS),
 		PaceFmt:         apifmt.PaceFmt(a.AvgPaceSKm),
 		RouteThumb:      routeThumbRaw(a.RouteThumbJSON),
+		ThumbURL:        a.RouteThumbURL,
 	}
 }
 

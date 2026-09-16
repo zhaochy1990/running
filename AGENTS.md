@@ -63,13 +63,13 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 | 用户运动、健康和训练计划数据 | **腾讯云 MySQL**（应用代码经 `src/go/internal/storage/`） |
 | Go API 持久化数据（含跨用户 social signals、preferences、push registrations） | **MySQL**（经 `src/go/internal/storage/`） |
 | Bulk binary blobs (photos, video, large export files) | **Azure Blob Storage**（经非客户端 Python 运行时，见下） |
-| 用户头像图片文件（avatar image） | **腾讯云 COS**（对象存储 + CDN；经应用侧媒体上传接口，DB 只存 `avatar_url`） |
+| 用户图片文件（头像 avatar image、活动路线缩略图 route thumbnail） | **腾讯云 COS**（对象存储 + CDN；头像经应用侧媒体上传接口，缩略图由 worker 生成上传，DB 只存 URL 字段 `avatar_url` / `route_thumb_url`） |
 | Authoring artifacts (plan.md, TRAINING_PLAN.md) | **Markdown files in `data/{user_id}/logs/`**（仅本地，不同步到任何远端）；weekly plan 草稿遵守下方人工 review 门禁，发布走受支持的 MySQL 写接口 |
 | 周反馈 | rollout 前沿用 legacy `feedback.md`；`STRIDE_WEEKLY_FEEDBACK_CUTOVER_COMPLETE=true` 后以 **腾讯云 MySQL `weekly_feedback`** 为唯一来源 |
 | Go API auth tokens / secrets | **MySQL**（经 `src/go/internal/storage/`） |
 | Python（非 API 运行时，如 worker / coach）的 auth tokens / secrets | **Azure Key Vault** |
 
-**Go API 的所有持久化状态统一落 MySQL**，不要为 Go API 新增 Azure Table、Azure Blob、Azure Files 或 Key Vault 存储依赖；**唯一例外是用户头像图片文件**——头像二进制不经 MySQL，存腾讯云 COS（对象存储 + CDN），MySQL / auth-service 身份只存 `avatar_url` 字段。**Python 仓库内包 `stride_server/`、`stride_storage/`、`stride_core/`、`coros_sync/` 全部标记为待删除（legacy / to-be-removed）**：不再承担任何来自小程序 / Web / 手机的客户端请求，也不应在新增代码中被依赖；新代码一律走 Go API → MySQL。这些包仅在迁移、遗留 CLI、测试 fixture 等暂时保留的路径里使用（如 `garmin_sync/` 仍引用 `coros_sync/`）。`src/coach_cli/` 已删除，不要引用。遗留 SQLite 的迁移或调试任务必须与 weekly plan authoring 流程隔离。likes_store 是 Python two-backend 文件（dev JSON / prod Azure Table）+ `DefaultAzureCredential`，不要把它用于 Go API。
+**Go API 的所有持久化状态统一落 MySQL**，不要为 Go API 新增 Azure Table、Azure Blob、Azure Files 或 Key Vault 存储依赖；**唯一例外是用户图片文件**——头像与活动路线缩略图的二进制不经 MySQL，存腾讯云 COS（对象存储 + CDN），MySQL / auth-service 只存 URL 字段（`avatar_url` / `route_thumb_url`）；缩略图是可由 activities + timeseries 重新生成的派生物，不是 canonical 数据。**Python 仓库内包 `stride_server/`、`stride_storage/`、`stride_core/`、`coros_sync/` 全部标记为待删除（legacy / to-be-removed）**：不再承担任何来自小程序 / Web / 手机的客户端请求，也不应在新增代码中被依赖；新代码一律走 Go API → MySQL。这些包仅在迁移、遗留 CLI、测试 fixture 等暂时保留的路径里使用（如 `garmin_sync/` 仍引用 `coros_sync/`）。`src/coach_cli/` 已删除，不要引用。遗留 SQLite 的迁移或调试任务必须与 weekly plan authoring 流程隔离。likes_store 是 Python two-backend 文件（dev JSON / prod Azure Table）+ `DefaultAzureCredential`，不要把它用于 Go API。
 
 ### SQL ownership rule (HARD)
 

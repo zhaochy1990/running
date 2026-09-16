@@ -218,6 +218,12 @@ definitions:
         type: number
       temperature:
         type: number
+      thumb_url:
+        description: |-
+          ThumbURL is the public URL of the pre-rendered route-thumbnail PNG clients
+          can drop straight into an <image>. Null for indoor activities and until the
+          thumbnail job has run.
+        type: string
       train_type:
         type: string
       training_load:
