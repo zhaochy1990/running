@@ -45,6 +45,18 @@ race-detection:
   timeout: 30s
   max-concurrency: 8
 
+# Tencent Cloud COS bucket holding route-thumbnail PNGs (public read). Secrets
+# come from env:
+#   STRIDE_WORKER_COS_SECRET_ID / STRIDE_WORKER_COS_SECRET_KEY
+# Leave any field empty to disable thumbnails entirely: the job then skips
+# itself instead of failing a sync, because thumbnails are cosmetic.
+cos:
+  secret-id: ""
+  secret-key: ""
+  bucket: ""
+  region: ""
+  base-url: ""          # public origin used to build thumb_url (CDN later)
+
 # HTTP API server (`stride api`) — a separate container (ADR 0012), same unified
 # binary as the worker. The worker ignores this section. Secrets stay empty here
 # and come from env:

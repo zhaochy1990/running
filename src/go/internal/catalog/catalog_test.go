@@ -25,8 +25,9 @@ func TestPipelineRegistryMatchesUserInitiable(t *testing.T) {
 }
 
 func TestOnboardingPipelineCataloged(t *testing.T) {
-	// calibration and compute are internal-only: users start a pipeline, not a step.
-	for _, jt := range []string{JobTypeCalibration, JobTypeCompute} {
+	// calibration, compute and the thumbnail jobs are internal-only: users start a
+	// pipeline, not a step.
+	for _, jt := range []string{JobTypeCalibration, JobTypeCompute, JobTypeRouteThumbnails, JobTypeRouteThumbnailsBackfill} {
 		if ui, ok := JobUserInitiable()[jt]; !ok || ui {
 			t.Fatalf("%s should be internal-only, got ok=%v ui=%v", jt, ok, ui)
 		}
@@ -39,7 +40,7 @@ func TestOnboardingPipelineCataloged(t *testing.T) {
 	if !ok {
 		t.Fatalf("onboarding pipeline missing from registry")
 	}
-	want := []string{JobTypeWatchSync, JobTypeRaceDetection, JobTypeCalibration, JobTypeCompute, JobTypeAbility}
+	want := []string{JobTypeWatchSync, JobTypeRaceDetection, JobTypeCalibration, JobTypeCompute, JobTypeRouteThumbnails, JobTypeAbility}
 	if len(def.Steps) != len(want) {
 		t.Fatalf("onboarding has %d steps, want %d", len(def.Steps), len(want))
 	}
@@ -52,11 +53,14 @@ func TestOnboardingPipelineCataloged(t *testing.T) {
 		t.Fatal("onboarding race detection must continue on terminal failure")
 	}
 	if !def.Steps[4].ContinueOnFailure {
+		t.Fatal("onboarding route thumbnails must continue on terminal failure")
+	}
+	if !def.Steps[5].ContinueOnFailure {
 		t.Fatal("onboarding ability step must continue on terminal failure")
 	}
 }
 
-// TestDataSyncPipelineCataloged checks the incremental path: sync -> race detection -> compute.
+// TestDataSyncPipelineCataloged checks the incremental path: sync -> race detection -> compute -> route thumbnails.
 func TestDataSyncPipelineCataloged(t *testing.T) {
 	if ui, ok := PipelineUserInitiable()[PipelineDataSync]; !ok || !ui {
 		t.Fatalf("data_sync pipeline should be user-initiable, got ok=%v ui=%v", ok, ui)
@@ -65,7 +69,7 @@ func TestDataSyncPipelineCataloged(t *testing.T) {
 	if !ok {
 		t.Fatalf("data_sync pipeline missing from registry")
 	}
-	want := []string{JobTypeWatchSync, JobTypeRaceDetection, JobTypeCompute, JobTypeAbility}
+	want := []string{JobTypeWatchSync, JobTypeRaceDetection, JobTypeCompute, JobTypeRouteThumbnails, JobTypeAbility}
 	if len(def.Steps) != len(want) {
 		t.Fatalf("data_sync has %d steps, want %d", len(def.Steps), len(want))
 	}
@@ -76,6 +80,9 @@ func TestDataSyncPipelineCataloged(t *testing.T) {
 	}
 	if !def.Steps[1].ContinueOnFailure {
 		t.Fatal("data_sync race detection must continue on terminal failure")
+	}
+	if !def.Steps[3].ContinueOnFailure {
+		t.Fatal("data_sync route thumbnails must continue on terminal failure")
 	}
 }
 

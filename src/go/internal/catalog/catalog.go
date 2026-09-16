@@ -40,6 +40,15 @@ const (
 	JobTypeRaceDetection = "race_detection"
 	// JobTypeRaceDetectionBackfill is the internal one-time all-history scan.
 	JobTypeRaceDetectionBackfill = "race_detection_backfill"
+	// JobTypeRouteThumbnails renders each newly synced outdoor activity's GPS
+	// trace into a route-thumbnail PNG in COS and records the polyline plus the
+	// PNG URL on the activity. Optional inside sync pipelines: thumbnails are
+	// cosmetic, so a terminal failure stays observable on its step while the
+	// pipeline advances.
+	JobTypeRouteThumbnails = "route_thumbnails"
+	// JobTypeRouteThumbnailsBackfill is the internal one-time all-history scan
+	// that fills in thumbnails for activities synced before the feature existed.
+	JobTypeRouteThumbnailsBackfill = "route_thumbnails_backfill"
 )
 
 // Pipeline names (ADR 0020). Both are fronted by POST /api/{user}/sync, which
@@ -115,6 +124,20 @@ func Jobs() []JobSpec {
 			ExampleInput:  json.RawMessage(`{}`),
 		},
 		{
+			Type:          JobTypeRouteThumbnails,
+			UserInitiable: false,
+			Description:   "Render the subject athlete's outdoor activities into route-thumbnail PNGs stored in COS, recording the polyline and PNG URL on each activity. Only activities that still lack a thumbnail are touched, so the step is a cheap no-op on a routine sync. Internal optional pipeline step; with an empty COS config it skips itself and reports why.",
+			InputSchema:   json.RawMessage(`{"type":"object","additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{}`),
+		},
+		{
+			Type:          JobTypeRouteThumbnailsBackfill,
+			UserInitiable: false,
+			Description:   "One-time all-history route-thumbnail backfill for one athlete, for activities synced before the feature existed. Same work as the pipeline step, exposed as its own job type so an operator can run it on demand. Internal-only.",
+			InputSchema:   json.RawMessage(`{"type":"object","additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{}`),
+		},
+		{
 			Type:          JobTypeCompute,
 			UserInitiable: false,
 			Description:   "Derive per-activity training load, daily PMC (CTL/ATL/Form) and personal bests from synced data and the latest calibration snapshot. Mode-aware: full recomputes the window; incremental only touches this sync's new activities (label_ids). Internal-only.",
@@ -148,11 +171,12 @@ func Pipelines() []PipelineSpec {
 					{Name: "race_detection", JobType: JobTypeRaceDetection, ContinueOnFailure: true},
 					{Name: "calibration", JobType: JobTypeCalibration},
 					{Name: "compute", JobType: JobTypeCompute},
+					{Name: "route_thumbnails", JobType: JobTypeRouteThumbnails, ContinueOnFailure: true},
 					{Name: "ability", JobType: JobTypeAbility, ContinueOnFailure: true},
 				},
 			},
 			UserInitiable: true,
-			Description:   "Full path (new-user onboarding or explicit full resync): a full watch sync, optional race detection, the athlete baseline, then a full load/PMC/PB compute. Race-detection failure remains visible on its step but does not fail the pipeline. The run's user_id is the subject athlete.",
+			Description:   "Full path (new-user onboarding or explicit full resync): a full watch sync, optional race detection, the athlete baseline, a full load/PMC/PB compute, then route thumbnails. Race-detection and thumbnail failures remain visible on their steps but do not fail the pipeline. The run's user_id is the subject athlete.",
 			InputSchema:   syncInputSchema,
 			ExampleInput:  json.RawMessage(`{"mode":"full"}`),
 		},
@@ -163,11 +187,12 @@ func Pipelines() []PipelineSpec {
 					{Name: "sync", JobType: JobTypeWatchSync},
 					{Name: "race_detection", JobType: JobTypeRaceDetection, ContinueOnFailure: true},
 					{Name: "compute", JobType: JobTypeCompute},
+					{Name: "route_thumbnails", JobType: JobTypeRouteThumbnails, ContinueOnFailure: true},
 					{Name: "ability", JobType: JobTypeAbility, ContinueOnFailure: true},
 				},
 			},
 			UserInitiable: true,
-			Description:   "Ongoing incremental path: an incremental watch sync, optional race detection, then an incremental compute over only this sync's new activities. Race-detection failure remains visible on its step but does not fail the pipeline. The run's user_id is the subject athlete.",
+			Description:   "Ongoing incremental path: an incremental watch sync, optional race detection, an incremental compute over only this sync's new activities, then route thumbnails for those activities. Race-detection and thumbnail failures remain visible on their steps but do not fail the pipeline. The run's user_id is the subject athlete.",
 			InputSchema:   syncInputSchema,
 			ExampleInput:  json.RawMessage(`{"mode":"incremental"}`),
 		},

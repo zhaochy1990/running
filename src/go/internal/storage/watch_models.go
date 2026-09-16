@@ -75,6 +75,7 @@ type Activity struct {
 	VerticalRatioPct      *float64 `gorm:"column:vertical_ratio_pct"`
 	Pauses                *string  `gorm:"column:pauses;type:json"`
 	RouteThumbJSON        *string  `gorm:"column:route_thumb_json;type:json"`
+	RouteThumbURL         *string  `gorm:"column:route_thumb_url;type:varchar(512)"`
 	StartGPSLat           *float64 `gorm:"column:start_gps_lat"`
 	StartGPSLon           *float64 `gorm:"column:start_gps_lon"`
 
