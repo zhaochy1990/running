@@ -93,6 +93,429 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/admin/declarations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Returns all five declaration types; current/draft are null when absent.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List declaration types with current version and draft",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.adminDeclarationsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/declarations/versions/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Returns a single version (draft or published) including the Markdown source.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get one declaration version with its body",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Version UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.legalDocumentBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Deletes an unpublished draft. Returns 409 for a published version, which is permanently retained.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Delete a declaration draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Version UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Replaces the title and Markdown body of an unpublished draft. Returns 409 for a published version.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Edit a declaration draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Version UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New title and Markdown body",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.legalDocumentDraftRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.legalDocumentBody"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/declarations/versions/{id}/publish": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Publishes the draft immediately: it becomes the currently effective version and effective_at/published_at are stamped with the publish time. Irreversible; subsequent edits require a new draft. Returns 409 when the version is already published.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Publish a declaration draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Version UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.legalDocumentBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/declarations/{doc_type}/draft": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Allocates the next version number for the type and stores it as a draft. Returns 409 when the type already has a draft.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Create a new declaration draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Declaration type",
+                        "name": "doc_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Draft title and Markdown body",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.legalDocumentDraftRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.legalDocumentBody"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/declarations/{doc_type}/versions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Returns every version (draft and published) of the type, newest first, without bodies.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List the version history of a declaration type",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Declaration type",
+                        "name": "doc_type",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.legalDocumentVersionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/pipeline-runs": {
             "get": {
                 "security": [
@@ -289,6 +712,67 @@ const docTemplate = `{
                     },
                     "503": {
                         "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/declarations": {
+            "get": {
+                "description": "Returns metadata (not the body) of the currently effective version of each declaration type. Public: no authentication. Drafts are never exposed.",
+                "tags": [
+                    "declarations"
+                ],
+                "summary": "List the currently effective declarations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.publicDeclarationsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/declarations/{doc_type}": {
+            "get": {
+                "description": "Returns the Markdown body and metadata of the currently effective version. Public: no authentication. Returns 404 when the type has no published version, 400 for an unknown doc_type.",
+                "tags": [
+                    "declarations"
+                ],
+                "summary": "Get the currently effective declaration body",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Declaration type (user_agreement, privacy_policy, child_protection, personal_info_collection, third_party_sharing)",
+                        "name": "doc_type",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.publicDeclarationBody"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -4991,6 +5475,31 @@ const docTemplate = `{
                 }
             }
         },
+        "api.adminDeclarationEntry": {
+            "type": "object",
+            "properties": {
+                "current": {
+                    "$ref": "#/definitions/api.legalDocumentMeta"
+                },
+                "doc_type": {
+                    "type": "string"
+                },
+                "draft": {
+                    "$ref": "#/definitions/api.legalDocumentMeta"
+                }
+            }
+        },
+        "api.adminDeclarationsResponse": {
+            "type": "object",
+            "properties": {
+                "declarations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.adminDeclarationEntry"
+                    }
+                }
+            }
+        },
         "api.applyMasterPlanRequest": {
             "type": "object",
             "required": [
@@ -6147,6 +6656,109 @@ const docTemplate = `{
                 }
             }
         },
+        "api.legalDocumentBody": {
+            "type": "object",
+            "properties": {
+                "content_markdown": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "doc_type": {
+                    "type": "string"
+                },
+                "effective_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.legalDocumentDraftRequest": {
+            "type": "object",
+            "required": [
+                "content_markdown",
+                "title"
+            ],
+            "properties": {
+                "content_markdown": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string",
+                    "maxLength": 255
+                }
+            }
+        },
+        "api.legalDocumentMeta": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "doc_type": {
+                    "type": "string"
+                },
+                "effective_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.legalDocumentVersionsResponse": {
+            "type": "object",
+            "properties": {
+                "doc_type": {
+                    "type": "string"
+                },
+                "versions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.legalDocumentMeta"
+                    }
+                }
+            }
+        },
         "api.linkedScheduledWorkoutDTO": {
             "type": "object",
             "properties": {
@@ -6616,6 +7228,68 @@ const docTemplate = `{
                 },
                 "running_age_range": {
                     "type": "string"
+                }
+            }
+        },
+        "api.publicDeclarationBody": {
+            "type": "object",
+            "properties": {
+                "content_markdown": {
+                    "type": "string"
+                },
+                "doc_type": {
+                    "type": "string"
+                },
+                "effective_at": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.publicDeclarationEntry": {
+            "type": "object",
+            "properties": {
+                "current": {
+                    "$ref": "#/definitions/api.publicDeclarationMeta"
+                },
+                "doc_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.publicDeclarationMeta": {
+            "type": "object",
+            "properties": {
+                "effective_at": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.publicDeclarationsResponse": {
+            "type": "object",
+            "properties": {
+                "declarations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.publicDeclarationEntry"
+                    }
                 }
             }
         },

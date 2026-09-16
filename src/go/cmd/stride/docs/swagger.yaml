@@ -233,6 +233,22 @@ definitions:
       wind_speed:
         type: number
     type: object
+  api.adminDeclarationEntry:
+    properties:
+      current:
+        $ref: '#/definitions/api.legalDocumentMeta'
+      doc_type:
+        type: string
+      draft:
+        $ref: '#/definitions/api.legalDocumentMeta'
+    type: object
+  api.adminDeclarationsResponse:
+    properties:
+      declarations:
+        items:
+          $ref: '#/definitions/api.adminDeclarationEntry'
+        type: array
+    type: object
   api.applyMasterPlanRequest:
     properties:
       content:
@@ -1007,6 +1023,74 @@ definitions:
     required:
     - to
     type: object
+  api.legalDocumentBody:
+    properties:
+      content_markdown:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      doc_type:
+        type: string
+      effective_at:
+        type: string
+      id:
+        type: string
+      published_at:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  api.legalDocumentDraftRequest:
+    properties:
+      content_markdown:
+        type: string
+      title:
+        maxLength: 255
+        type: string
+    required:
+    - content_markdown
+    - title
+    type: object
+  api.legalDocumentMeta:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      doc_type:
+        type: string
+      effective_at:
+        type: string
+      id:
+        type: string
+      published_at:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  api.legalDocumentVersionsResponse:
+    properties:
+      doc_type:
+        type: string
+      versions:
+        items:
+          $ref: '#/definitions/api.legalDocumentMeta'
+        type: array
+    type: object
   api.linkedScheduledWorkoutDTO:
     properties:
       abandoned_by_promote_at:
@@ -1320,6 +1404,46 @@ definitions:
         type: string
       running_age_range:
         type: string
+    type: object
+  api.publicDeclarationBody:
+    properties:
+      content_markdown:
+        type: string
+      doc_type:
+        type: string
+      effective_at:
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  api.publicDeclarationEntry:
+    properties:
+      current:
+        $ref: '#/definitions/api.publicDeclarationMeta'
+      doc_type:
+        type: string
+    type: object
+  api.publicDeclarationMeta:
+    properties:
+      effective_at:
+        type: string
+      title:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  api.publicDeclarationsResponse:
+    properties:
+      declarations:
+        items:
+          $ref: '#/definitions/api.publicDeclarationEntry'
+        type: array
     type: object
   api.pushPlannedSessionResponse:
     properties:
@@ -3440,6 +3564,286 @@ paths:
       summary: List async runs (admin)
       tags:
       - jobs
+  /api/admin/declarations:
+    get:
+      description: Administrator only. Returns all five declaration types; current/draft
+        are null when absent.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.adminDeclarationsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List declaration types with current version and draft
+      tags:
+      - admin
+  /api/admin/declarations/{doc_type}/draft:
+    post:
+      description: Administrator only. Allocates the next version number for the type
+        and stores it as a draft. Returns 409 when the type already has a draft.
+      parameters:
+      - description: Declaration type
+        in: path
+        name: doc_type
+        required: true
+        type: string
+      - description: Draft title and Markdown body
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.legalDocumentDraftRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.legalDocumentBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a new declaration draft
+      tags:
+      - admin
+  /api/admin/declarations/{doc_type}/versions:
+    get:
+      description: Administrator only. Returns every version (draft and published)
+        of the type, newest first, without bodies.
+      parameters:
+      - description: Declaration type
+        in: path
+        name: doc_type
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.legalDocumentVersionsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List the version history of a declaration type
+      tags:
+      - admin
+  /api/admin/declarations/versions/{id}:
+    delete:
+      description: Administrator only. Deletes an unpublished draft. Returns 409 for
+        a published version, which is permanently retained.
+      parameters:
+      - description: Version UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a declaration draft
+      tags:
+      - admin
+    get:
+      description: Administrator only. Returns a single version (draft or published)
+        including the Markdown source.
+      parameters:
+      - description: Version UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.legalDocumentBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get one declaration version with its body
+      tags:
+      - admin
+    patch:
+      description: Administrator only. Replaces the title and Markdown body of an
+        unpublished draft. Returns 409 for a published version.
+      parameters:
+      - description: Version UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New title and Markdown body
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.legalDocumentDraftRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.legalDocumentBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Edit a declaration draft
+      tags:
+      - admin
+  /api/admin/declarations/versions/{id}/publish:
+    post:
+      description: 'Administrator only. Publishes the draft immediately: it becomes
+        the currently effective version and effective_at/published_at are stamped
+        with the publish time. Irreversible; subsequent edits require a new draft.
+        Returns 409 when the version is already published.'
+      parameters:
+      - description: Version UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.legalDocumentBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Publish a declaration draft
+      tags:
+      - admin
   /api/admin/pipeline-runs:
     get:
       description: Lists pipeline runs across all users, newest first. Admin JWT or
@@ -3575,6 +3979,50 @@ paths:
       summary: Delete a user and all their data as an administrator
       tags:
       - admin
+  /api/declarations:
+    get:
+      description: 'Returns metadata (not the body) of the currently effective version
+        of each declaration type. Public: no authentication. Drafts are never exposed.'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.publicDeclarationsResponse'
+      summary: List the currently effective declarations
+      tags:
+      - declarations
+  /api/declarations/{doc_type}:
+    get:
+      description: 'Returns the Markdown body and metadata of the currently effective
+        version. Public: no authentication. Returns 404 when the type has no published
+        version, 400 for an unknown doc_type.'
+      parameters:
+      - description: Declaration type (user_agreement, privacy_policy, child_protection,
+          personal_info_collection, third_party_sharing)
+        in: path
+        name: doc_type
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.publicDeclarationBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      summary: Get the currently effective declaration body
+      tags:
+      - declarations
   /api/internal/jobs:
     post:
       consumes:

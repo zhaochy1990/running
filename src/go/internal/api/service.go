@@ -189,6 +189,11 @@ type Config struct {
 	MasterPlanStore MasterPlanStore
 	WeeklyPlanStore WeeklyPlanStore
 
+	// Compliance declarations (user agreement / privacy policy / …). A public
+	// read surface plus an admin-only maintenance surface. Leave zero to run
+	// without the declaration endpoints (e.g. in tests).
+	LegalDocumentStore LegalDocumentStore
+
 	// WorkoutPusher pushes normalized workouts to the user's bound watch
 	// provider (satisfied by the cmd-layer adapter over registry).
 	WorkoutPusher WorkoutPusher
@@ -247,6 +252,7 @@ type Service struct {
 	predictions     *predictionRoutes
 	masterPlan      *masterPlanRoutes
 	weeklyPlan      *weeklyPlanRoutes
+	legalDocuments  *legalDocumentRoutes
 
 	auth           *Authenticator
 	corsOrigins    []string
@@ -299,6 +305,7 @@ func NewService(cfg Config) *Service {
 		predictions:             newPredictionRoutes(cfg.PredictionStore, log),
 		masterPlan:              newMasterPlanRoutes(cfg.MasterPlanStore, log),
 		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, cfg.BodyCompositionStore, log),
+		legalDocuments:          newLegalDocumentRoutes(cfg.LegalDocumentStore, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
 		swaggerEnabled:          cfg.SwaggerEnabled,
@@ -329,6 +336,9 @@ func (s *Service) Router() *gin.Engine {
 	r.GET("/api/readyz/onboarding", s.onboardingReadiness)
 	r.GET("/api/readyz/plan-setup", s.planSetupReadiness)
 	r.GET("/api/readyz/body-composition", s.bodyCompositionReadiness)
+	// Compliance declarations: readable before login (the app shows the
+	// agreements on the sign-up screen), and only ever the published versions.
+	s.legalDocuments.registerPublic(r)
 
 	authenticated := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
 	// Plan routes explicitly admit the separate admin JWT tier. The master-plan
@@ -352,6 +362,9 @@ func (s *Service) Router() *gin.Engine {
 	// Administrator account erasure: mounted on the parent group so the admin JWT
 	// tier can enter; the handler rejects user/internal callers itself.
 	s.adminUsers.register(authenticated)
+	// Declaration maintenance is administrator-only; the handlers re-check the
+	// tier, so mounting on the parent group only admits TierAdmin.
+	s.legalDocuments.registerAdmin(authenticated)
 
 	// Existing routes accept only the original user/internal tiers. Keeping this
 	// default deny prevents an admin-dashboard token from silently inheriting
