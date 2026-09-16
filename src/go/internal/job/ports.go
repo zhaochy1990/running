@@ -14,6 +14,15 @@ type Store interface {
 	// Claim atomically transitions a queued job to running and returns false when
 	// another delivery has already claimed or terminated it.
 	Claim(ctx context.Context, jobID string, now time.Time) (*Job, bool, error)
+	// ListStaleRunning returns running jobs whose lease is older than olderThan,
+	// soonest-to-expire first, at most limit. The lease is heartbeat_at, falling
+	// back to updated_at when heartbeat_at is NULL (jobs predating the lease
+	// contract). It is the read half of the stale-running reclaim.
+	ListStaleRunning(ctx context.Context, olderThan time.Time, limit int) ([]*Job, error)
+	// TransitionJob applies a compare-and-set state change to one job row (ADR
+	// 0033). The reclaim uses it to move a stale running job only if it is still
+	// running and still stale.
+	TransitionJob(ctx context.Context, jobID string, tr JobTransition) (*Job, error)
 }
 
 // PipelineStore is the durable pipeline-run state.

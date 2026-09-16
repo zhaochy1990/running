@@ -52,9 +52,10 @@ type JobTransitioner interface {
 	TransitionJob(ctx context.Context, jobID string, tr job.JobTransition) (*job.Job, error)
 }
 
-// JobStaleRunner fails running jobs whose heartbeat is older than a window.
+// JobStaleRunner fails running jobs whose heartbeat is older than a window,
+// scoped to the caller's own job types.
 type JobStaleRunner interface {
-	FailStaleRunningJobs(ctx context.Context, olderThan, now time.Time, errorCode string) (int64, error)
+	FailStaleRunningJobs(ctx context.Context, olderThan, now time.Time, errorCode string, jobTypes []string) (int64, error)
 }
 
 // JobAdminLister lists standalone jobs across all users (admin async surface).

@@ -183,5 +183,6 @@ test("failStaleRunning posts the window and returns the failed count", async () 
   assert.deepEqual(JSON.parse(String(captured.init.body)), {
     older_than: "2026-09-01T00:05:00.000Z",
     error_code: "heartbeat_timeout",
+    job_types: ["generate_master_plan", "generate_weekly_plan"],
   });
 });

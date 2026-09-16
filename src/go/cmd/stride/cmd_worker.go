@@ -129,7 +129,7 @@ func runWorker() error {
 		BaseBackoff: cfg.Retry.BaseBackoff,
 		MaxBackoff:  cfg.Retry.MaxBackoff,
 	}
-	dispatcher := job.NewDispatcher(store.Jobs(), reg, pub, orch, policy, job.WithLogger(log))
+	dispatcher := job.NewDispatcher(store.Jobs(), reg, pub, orch, policy, job.WithLogger(log), job.WithLease(cfg.Runtime.ClaimLease))
 
 	// --- health ---
 	hs := health.New(cfg.Runtime.HealthAddr, map[string]health.Check{
@@ -152,9 +152,35 @@ func runWorker() error {
 	)
 
 	// --- run consumer + health server; first error or signal wins ---
-	errCh := make(chan error, 2)
-	go func() { errCh <- consumer.Run(ctx, dispatcher.Dispatch) }()
-	go func() { errCh <- hs.Run(ctx) }()
+	consumerErr := make(chan error, 1)
+	healthErr := make(chan error, 1)
+	go func() { consumerErr <- consumer.Run(ctx, dispatcher.Dispatch) }()
+	go func() { healthErr <- hs.Run(ctx) }()
+
+	// Reclaim jobs stranded by a dead worker: once at boot so a crashed
+	// predecessor's in-flight work is picked up promptly, then on the cadence.
+	// The lease CAS makes this safe to run on every replica.
+	reclaim := func() {
+		n, err := dispatcher.ReclaimStale(ctx, cfg.Runtime.ClaimLease)
+		if err != nil {
+			log.Warn("stale-running reclaim failed", zap.Error(err))
+		} else if n > 0 {
+			log.Info("reclaimed stale running jobs", zap.Int("count", n))
+		}
+	}
+	go func() {
+		reclaim()
+		t := time.NewTicker(cfg.Runtime.ReclaimInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				reclaim()
+			}
+		}
+	}()
 
 	// Periodic liveness heartbeat with running dispatch counters.
 	started := time.Now()
@@ -179,9 +205,29 @@ func runWorker() error {
 
 	select {
 	case <-ctx.Done():
+		// SIGTERM: ctx is cancelled, so the in-flight handler unwinds. Wait for
+		// the consumer to finish recording its requeue/terminal state before
+		// closing the broker connection — otherwise the delivery is dropped and a
+		// `running` job is stranded until the next lease reclaim.
 		log.Info("shutdown signal received, draining")
+		drainCtx, cancel := context.WithTimeout(context.Background(), cfg.Runtime.DrainTimeout)
+		defer cancel()
+		select {
+		case err := <-consumerErr:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				log.Warn("consumer exited during drain", zap.Error(err))
+			}
+			log.Info("drained in-flight work")
+		case <-drainCtx.Done():
+			log.Warn("drain timed out; in-flight jobs will be reclaimed by lease")
+		}
 		return nil
-	case err := <-errCh:
+	case err := <-consumerErr:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			return err
+		}
+		return nil
+	case err := <-healthErr:
 		if err != nil && !errors.Is(err, context.Canceled) {
 			return err
 		}

@@ -51,10 +51,10 @@ type Job struct {
 	// PipelineRunID links this job back to the PipelineRun that spawned it, so
 	// the orchestrator can advance the run on completion. Empty for standalone jobs.
 	PipelineRunID string
-	// HeartbeatAt is the last time a handler reported progress. Standalone
-	// long-running jobs (e.g. plan jobs, ADR 0033) use it as the stale-running
-	// reconcile key when a worker crashes mid-run; pipeline step jobs don't
-	// stamp it.
+	// HeartbeatAt is the job's lease: the last time a running handler proved it
+	// was alive. The dispatcher renews it on a ticker for every claimed job, so
+	// a dead worker's job goes stale in bounded time and is reclaimed by
+	// ReclaimStaleRunning. Plan jobs (ADR 0033) share the column.
 	HeartbeatAt *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -89,6 +89,11 @@ type JobTransition struct {
 	ResultJSON  *string
 	HeartbeatAt *time.Time
 	CompletedAt *time.Time
+	// LeaseBefore guards the write on the job's lease (heartbeat_at, falling
+	// back to updated_at when heartbeat_at is NULL) being older than this
+	// instant. The stale-running reclaim sets it so a worker that renewed the
+	// lease after the scan is never disturbed.
+	LeaseBefore *time.Time
 }
 
 // PipelineStep is one node in a linear pipeline.
