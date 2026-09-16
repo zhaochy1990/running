@@ -31,6 +31,7 @@ type Config struct {
 	Retry         Retry               `mapstructure:"retry"`
 	Runtime       Runtime             `mapstructure:"runtime"`
 	RaceDetection RaceDetection       `mapstructure:"race-detection"`
+	COS           COS                 `mapstructure:"cos"`
 }
 
 // MySQL holds the datastore connection (secret; env-only).
@@ -77,6 +78,20 @@ type RaceDetection struct {
 	Model          string        `mapstructure:"model" validate:"required"`
 	Timeout        time.Duration `mapstructure:"timeout" validate:"gt=0"`
 	MaxConcurrency int           `mapstructure:"max-concurrency" validate:"min=1"`
+}
+
+// COS is the Tencent Cloud bucket holding route-thumbnail PNGs, supplied
+// through STRIDE_WORKER_COS_*. Every field is optional: with any of them empty
+// the thumbnail job skips itself rather than failing, because thumbnails are
+// cosmetic and must never block a sync.
+type COS struct {
+	SecretID  string `mapstructure:"secret-id"`
+	SecretKey string `mapstructure:"secret-key"`
+	Bucket    string `mapstructure:"bucket"`
+	Region    string `mapstructure:"region"`
+	// BaseURL is the public origin prepended to the object key when building
+	// the URL stored on the activity row.
+	BaseURL string `mapstructure:"base-url"`
 }
 
 // MustLoad resolves the config path (explicit CONFIG_PATH env, else

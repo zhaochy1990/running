@@ -27,6 +27,8 @@ export interface Activity {
   stride_training_dose?: number | null;
   vo2max: number | null;
   train_type: string | null;
+  /** 后端预渲染的路线缩略图 PNG 公开地址；室内活动或尚未生成时为 null */
+  thumb_url?: string | null;
 
   // —— 以下为详情页字段（list 端点可能不返回，故可选）——
   ascent_m?: number | null;

@@ -18,8 +18,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zhaochy1990/stride/internal/config"
+	"github.com/zhaochy1990/stride/internal/cos"
 	"github.com/zhaochy1990/stride/internal/handlers/compute"
 	racehandler "github.com/zhaochy1990/stride/internal/handlers/racedetection"
+	"github.com/zhaochy1990/stride/internal/handlers/routethumbnails"
 	"github.com/zhaochy1990/stride/internal/handlers/watchsync"
 	"github.com/zhaochy1990/stride/internal/health"
 	"github.com/zhaochy1990/stride/internal/job"
@@ -58,6 +60,16 @@ func runWorker() error {
 	if err != nil {
 		return err
 	}
+
+	// Route-thumbnail bucket. An incomplete config yields an inert client rather
+	// than a boot failure — the handler skips itself and reports why.
+	cosClient := cos.NewClient(cos.Config{
+		SecretID:  cfg.COS.SecretID,
+		SecretKey: cfg.COS.SecretKey,
+		Bucket:    cfg.COS.Bucket,
+		Region:    cfg.COS.Region,
+		BaseURL:   cfg.COS.BaseURL,
+	})
 
 	// --- MySQL ---
 	store, err := storage.Open(cfg.MySQL.DSN)
@@ -111,7 +123,7 @@ func runWorker() error {
 		}
 		return registry.Build(name, store, watchRequestDelay)
 	}
-	registerHandlers(reg, resolve, store, racedetection.New(raceClassifier), cfg.RaceDetection.MaxConcurrency)
+	registerHandlers(reg, resolve, store, racedetection.New(raceClassifier), cfg.RaceDetection.MaxConcurrency, cosClient)
 	policy := job.RetryPolicy{
 		MaxAttempts: cfg.Retry.MaxAttempts,
 		BaseBackoff: cfg.Retry.BaseBackoff,
@@ -187,8 +199,9 @@ func newRaceClassifier(cfg config.RaceDetection) (racedetection.Classifier, erro
 // registerHandlers wires job handlers. `hello` is the deploy smoke handler;
 // `watch_sync` runs a user's watch-data sync (ADR 0011); `calibration` computes
 // the athlete baseline and `compute` derives load/PMC/PBs from synced data,
-// mode-aware (ADR 0020).
-func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int) {
+// mode-aware (ADR 0020); `route_thumbnails` renders outdoor activities into
+// route PNGs in COS, with `route_thumbnails_backfill` doing the all-history scan.
+func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, cosClient *cos.Client) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
@@ -199,4 +212,9 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	reg.MustRegister(compute.CalibrationJobType, compute.NewCalibration(store))
 	reg.MustRegister(compute.ComputeJobType, compute.NewCompute(store))
 	reg.MustRegister(compute.AbilityJobType, compute.NewAbility(store))
+	// Both thumbnail job types share one handler: the candidate query already
+	// selects only activities lacking a thumbnail, so the backfill needs no
+	// different behaviour — only its own catalog entry to be triggered on demand.
+	reg.MustRegister(routethumbnails.JobType, routethumbnails.New(store, cosClient))
+	reg.MustRegister(routethumbnails.BackfillJobType, routethumbnails.New(store, cosClient))
 }

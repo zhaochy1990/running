@@ -43,7 +43,17 @@
             bindtap="onActivityTap"
           >
             <view class="activity__icon">
-              <image class="activity__icon-img" src="{{row.iconPath}}" mode="aspectFit" />
+              <!-- 有路线缩略图就展示路线，否则回退运动图标；加载失败同样回退 -->
+              <image
+                wx:if="{{row.thumbUrl}}"
+                class="activity__thumb"
+                src="{{row.thumbUrl}}"
+                mode="aspectFill"
+                lazy-load
+                data-id="{{row.labelId}}"
+                binderror="onThumbError"
+              />
+              <image wx:else class="activity__icon-img" src="{{row.iconPath}}" mode="aspectFit" />
             </view>
             <view class="activity__info">
               <view class="activity__name">{{row.name}}</view>
