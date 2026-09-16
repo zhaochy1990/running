@@ -3,19 +3,22 @@
 //
 // The geometry is a port of the Python reference implementation
 // (stride_storage/sqlite/database.py: compute_route_thumbnail and its helpers).
-// The branch order matches it; three things deliberately do NOT. This port drops
-// invalid samples (see validSample), and it retuned the compact-route limits
+// The branch order matches it; several things deliberately do NOT. This port
+// drops invalid samples (see validSample), it retuned the compact-route limits
 // because the Python values misrender real running venues (see
 // repeatedRoutePathToPerimeter and repeatedRouteMaxCenterDensity, which carry
-// the measurements). The Python stack is legacy and being removed; this is the
-// production path, and each divergence is pinned by a test. Do not "restore
-// parity" without reading those tests.
+// the measurements), and it builds the loop footprint from the outer envelope
+// rather than a plain per-sector mean (see outerEnvelopeMean), because real
+// venues are loops with a shortcut cut across the middle. The Python stack is
+// legacy and being removed; this is the production path, and each divergence is
+// pinned by a test. Do not "restore parity" without reading those tests.
 //
 // Everything here is pure: no clock, no I/O, no database.
 package thumbnail
 
 import (
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -290,12 +293,7 @@ func loopFootprint(points []pt, target int) []pt {
 		if len(bucket) == 0 {
 			continue
 		}
-		var bx, by float64
-		for _, p := range bucket {
-			bx += p.x
-			by += p.y
-		}
-		footprint = append(footprint, pt{bx / float64(len(bucket)), by / float64(len(bucket))})
+		footprint = append(footprint, outerEnvelopeMean(bucket, cx, cy))
 	}
 	// Too few occupied sectors means this was not really a loop; distrust it.
 	if len(footprint) < 12 {
@@ -303,6 +301,48 @@ func loopFootprint(points []pt, target int) []pt {
 	}
 	// Close the loop so the rendered shape has no visible notch at the start.
 	return append(footprint, footprint[0])
+}
+
+// outerEnvelopeMean averages the points in one angular sector that sit in its
+// outermost third, measured from the sector's centre.
+//
+// A plain mean is wrong here: real venues are loops with a chord cut across the
+// middle (a shortcut through the park), and a sector containing chord points
+// averages them into the perimeter, denting the footprint wherever the chord ran.
+// Taking the outer envelope instead keeps the loop and discards the chord. For a
+// plain loop every point is already on the perimeter, so this is close to an
+// ordinary mean; averaging a slice rather than taking the single farthest point
+// keeps a stray GPS fix from spiking the outline.
+func outerEnvelopeMean(bucket []pt, cx, cy float64) pt {
+	const keepFraction = 0.7
+
+	radii := make([]float64, len(bucket))
+	for i, p := range bucket {
+		radii[i] = math.Hypot(p.x-cx, p.y-cy)
+	}
+	sorted := append([]float64(nil), radii...)
+	sort.Float64s(sorted)
+	cutoff := sorted[int(float64(len(sorted))*keepFraction)]
+
+	var sx, sy float64
+	var kept int
+	for i, p := range bucket {
+		if radii[i] < cutoff {
+			continue
+		}
+		sx, sy, kept = sx+p.x, sy+p.y, kept+1
+	}
+	if kept == 0 {
+		// Every point was below the cutoff (only possible for an empty bucket,
+		// which the caller already skips) — fall back to the plain mean.
+		var bx, by float64
+		for _, p := range bucket {
+			bx += p.x
+			by += p.y
+		}
+		return pt{bx / float64(len(bucket)), by / float64(len(bucket))}
+	}
+	return pt{sx / float64(kept), sy / float64(kept)}
 }
 
 // normalize fits the polyline into the [Padding, Viewbox-Padding] box, preserving
