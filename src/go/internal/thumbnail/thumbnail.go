@@ -1,31 +1,27 @@
 // Package thumbnail turns an activity's GPS time series into a small route
 // thumbnail: a normalized polyline, plus a PNG rendering of that polyline.
 //
-// The geometry is a port of the Python reference implementation
-// (stride_storage/sqlite/database.py: compute_route_thumbnail and its helpers).
-// The branch order matches it; several things deliberately do NOT. This port
-// drops invalid samples (see validSample), it retuned the compact-route limits
-// because the Python values misrender real running venues (see
-// repeatedRoutePathToPerimeter and repeatedRouteMaxCenterDensity, which carry
-// the measurements), and it builds the loop footprint from the outer envelope
-// rather than a plain per-sector mean (see outerEnvelopeMean), because real
-// venues are loops with a shortcut cut across the middle. The Python stack is
-// legacy and being removed; this is the production path, and each divergence is
-// pinned by a test. Do not "restore parity" without reading those tests.
+// The reduction step is NOT the Python reference's. The original thinned by
+// distance, which aliases on the routes people actually run — a loop covered
+// many times — into a criss-cross tangle, so the Python version bolted on a
+// separate "collapse a repeated loop into one footprint" path with its own
+// thresholds. That path only ever guessed at which single shape to keep and
+// threw away whatever the trace did uniquely (a shortcut taken twice out of
+// twenty laps, an inner loop), so it is gone. This port reduces the trace to the
+// ground it covers instead — see thinSpatially — which needs no thresholds and
+// keeps that structure. Python's stride_storage is legacy and being removed;
+// this is the production path.
 //
 // Everything here is pure: no clock, no I/O, no database.
 package thumbnail
 
 import (
 	"math"
-	"sort"
 	"strconv"
 	"strings"
 )
 
-// Constants inherited from the Python reference. The ones without a comment are
-// unchanged and still match it; the ones with one were retuned against real
-// traces and no longer do (see the package doc).
+// Constants inherited from the Python reference.
 const (
 	// TargetPoints caps the polyline length handed to the renderer and stored
 	// in route_thumb_json.
@@ -38,37 +34,6 @@ const (
 	// MinGPSSamples is the cutoff below which a route is not worth drawing at
 	// all (indoor, treadmill, GPS-failed activities).
 	MinGPSSamples = 10
-
-	repeatedRouteMinPathM = 1200.0
-	// repeatedRouteMaxBBoxM caps how large a "compact" loop may be. The Python
-	// original used 600 m, which misclassifies real park loops: a 32 km run of
-	// ~15 laps around a 615x481 m park sat 2.5% over the cap, fell through to
-	// uniform distance sampling, and rendered as a dense scribble (~15x its own
-	// bounding-box perimeter) instead of one clean lap. Measured over real
-	// traces, repeated loops bound at 1842 m while genuine point-to-point routes
-	// start at 7148 m — a 4x gap, so 3000 m sits clear of both.
-	repeatedRouteMaxBBoxM = 3000.0
-	repeatedRouteMinBBoxM = 20.0
-	// repeatedRoutePathToPerimeter is the repetition itself: the trace must cover
-	// more than this many times its own bounding-box perimeter. The Python
-	// original used 3.0, which misses a real venue pattern — a 3.6 km run of ~2.5
-	// laps around a 400 m park sits at 2.25 and rendered as a tangle. Combined
-	// with a low centre density, going around the box more than twice without
-	// cutting across it already means "loop", so 2.0 is both safe and enough.
-	// The open-route guards are density and angle coverage, not this.
-	repeatedRoutePathToPerimeter = 2.0
-	// repeatedRouteMinAngleCoverage rejects a trace that follows one line: such a
-	// route cannot be a loop no matter how often it is repeated.
-	repeatedRouteMinAngleCoverage = 0.75
-	// repeatedRouteMaxCenterDensity rejects a trace that spends its time crossing
-	// the middle of its own bounding box rather than going around it. The Python
-	// original used 0.08, which real running venues defeat: of eight sampled
-	// repeated loops, five cut a chord across the interior every lap, putting them
-	// at 0.11-0.20 and misclassifying every one as a scribble. The cost is
-	// deliberately biased towards folding — an unfolded loop renders as an
-	// unreadable tangle, while a needlessly folded route still renders as a
-	// recognisable outline of the area it covered.
-	repeatedRouteMaxCenterDensity = 0.35
 )
 
 // Sample is one GPS fix from the activity time series. OK=false marks a missing
@@ -91,12 +56,11 @@ type Point struct {
 // X is always longitude/east and Y latitude/north.
 type pt struct{ x, y float64 }
 
-// Compute builds a downsampled, normalized polyline for an activity thumbnail.
+// Compute builds a thinned, normalized polyline for an activity thumbnail.
 //
-// Samples are first filtered, projected into approximate local meters (so the
-// aspect ratio survives), then either collapsed into a single loop footprint —
-// compact repeated routes such as track laps, which uniform sampling would
-// alias into long infield chords — or uniformly downsampled by distance.
+// Samples are first filtered and projected into approximate local meters (so the
+// aspect ratio survives), then reduced to the geometry the route actually covers
+// (see thinSpatially).
 //
 // The result is normalized into [0,Viewbox] with Padding, Y flipped so north is
 // up, and rounded to one decimal. ok is false when fewer than MinGPSSamples
@@ -114,15 +78,116 @@ func Compute(samples []Sample) (points []Point, ok bool) {
 		return nil, false
 	}
 
-	projected := projectGPS(valid)
-	var sampled []pt
-	if isRepeatedCompactRoute(projected) {
-		sampled = loopFootprint(projected, TargetPoints)
-	} else {
-		sampled = downsampleByDistance(projected, TargetPoints)
+	return normalize(thinSpatially(projectGPS(valid), TargetPoints))
+}
+
+// thinSpatially reduces a trace to the ground it covers, keeping the survivors in
+// trace order.
+//
+// Thinning by distance — keep every n-th metre — is what breaks on a route run
+// many times: the interval does not divide the lap evenly, so successive kept
+// points land at different places on each lap and the outline criss-crosses into
+// a tangle. Keeping a point only when it is far from EVERY point kept so far
+// instead collapses repeated laps onto the same line while preserving whatever
+// the trace did uniquely — a shortcut taken twice out of twenty-two laps, an
+// inner loop, a one-off detour. That is the union of the route's geometry, which
+// is what the activity map draws and what a viewer recognises.
+//
+// The separation is binary-searched so the result fits the budget: the kept count
+// falls monotonically as the separation grows, so ~24 probes converge. A grid
+// makes the neighbour test O(1); a scan against every kept point would be
+// O(points × kept) and this runs over every fix of an activity.
+func thinSpatially(points []pt, target int) []pt {
+	if len(points) <= target {
+		return append([]pt(nil), points...)
+	}
+	lo, hi := 0.0, polylineLength(points)
+	for range 24 {
+		mid := (lo + hi) / 2
+		if len(keepApart(points, mid)) > target {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	kept := keepApart(points, hi)
+	if len(kept) > target {
+		// The search can only land between two separations; a target below what
+		// the smallest useful separation yields is not reachable, so trim.
+		kept = kept[:target]
+	}
+	return kept
+}
+
+// keepApart keeps a point only when no already-kept point lies within sep of it,
+// and splices each run of fresh points back in where it leaves the path already
+// kept rather than appending it.
+//
+// The splice is what keeps the outline honest. Appending fresh runs makes the
+// polyline jump from wherever the previous run ended straight to the new one,
+// drawing a straight line across the shape that the runner never ran — the
+// artefact is plainest for a spur off a loop (a shortcut taken on two laps out of
+// twenty), where appending draws a chord from the loop's end to the spur
+// instead of joining the spur at its junction.
+func keepApart(points []pt, sep float64) []pt {
+	if sep <= 0 {
+		return append([]pt(nil), points...)
+	}
+	type cell struct{ x, y int }
+	cellOf := func(p pt) cell { return cell{int(math.Floor(p.x / sep)), int(math.Floor(p.y / sep))} }
+
+	// Every covered point, kept or pending, so a repeat of either is skipped.
+	grid := make(map[cell][]pt, len(points)/8+1)
+	kept := []pt{points[0]}
+	grid[cellOf(points[0])] = []pt{points[0]}
+
+	// A point within sep is always inside the 3x3 block of cells around it.
+	crowded := func(p pt) bool {
+		c := cellOf(p)
+		for dx := -1; dx <= 1; dx++ {
+			for dy := -1; dy <= 1; dy++ {
+				for _, q := range grid[cell{c.x + dx, c.y + dy}] {
+					if distance(p, q) < sep {
+						return true
+					}
+				}
+			}
+		}
+		return false
 	}
 
-	return normalize(sampled)
+	var pending []pt
+	splicePending := func() {
+		if len(pending) == 0 {
+			return
+		}
+		// Attach where the spur left the path, not at the end of it.
+		at, best := -1, math.Inf(1)
+		for i, q := range kept {
+			if d := distance(pending[0], q); d < best {
+				at, best = i, d
+			}
+		}
+		if at < 0 {
+			return
+		}
+		rest := append([]pt(nil), kept[at+1:]...)
+		kept = append(kept[:at+1], pending...)
+		kept = append(kept, rest...)
+		pending = pending[:0]
+	}
+
+	for _, p := range points[1:] {
+		if crowded(p) {
+			// Back on ground already covered: close any spur we were on.
+			splicePending()
+			continue
+		}
+		pending = append(pending, p)
+		grid[cellOf(p)] = append(grid[cellOf(p)], p)
+	}
+	splicePending()
+	return kept
 }
 
 // JSON renders the polyline as the `[[x,y],...]` string stored in
@@ -183,168 +248,6 @@ func projectGPS(points []pt) []pt {
 	return out
 }
 
-// isRepeatedCompactRoute reports whether a track is a small loop traced over and
-// over — an oval track, a short crit circuit, a backyard ultra. Such a trace
-// covers all directions, stays inside a small bounding box, rarely visits the
-// centre, and travels far more than its own perimeter.
-func isRepeatedCompactRoute(points []pt) bool {
-	minX, maxX, minY, maxY := bounds(points)
-	width, height := maxX-minX, maxY-minY
-	if width <= 0 || height <= 0 {
-		return false
-	}
-	if math.Max(width, height) > repeatedRouteMaxBBoxM {
-		return false
-	}
-	if math.Min(width, height) < repeatedRouteMinBBoxM {
-		return false
-	}
-
-	cx, cy := (minX+maxX)/2, (minY+maxY)/2
-	const angleBins = 24
-	occupied := make(map[int]struct{}, angleBins)
-	for _, p := range points {
-		occupied[angleBin(p, cx, cy, angleBins)] = struct{}{}
-	}
-	if float64(len(occupied))/angleBins < repeatedRouteMinAngleCoverage {
-		return false
-	}
-
-	halfWidth, halfHeight := width/2, height/2
-	infield := 0
-	for _, p := range points {
-		if math.Hypot((p.x-cx)/halfWidth, (p.y-cy)/halfHeight) < 0.6 {
-			infield++
-		}
-	}
-	if float64(infield)/float64(len(points)) > repeatedRouteMaxCenterDensity {
-		return false
-	}
-
-	pathLength := polylineLength(points)
-	perimeter := 2 * (width + height)
-	return pathLength >= repeatedRouteMinPathM && pathLength/perimeter >= repeatedRoutePathToPerimeter
-}
-
-// downsampleByDistance keeps points roughly evenly spaced along the path,
-// measured in distance rather than sample count so a long straight gets the
-// same visual weight as a dense twisty section.
-func downsampleByDistance(points []pt, target int) []pt {
-	if len(points) <= target {
-		return append([]pt(nil), points...)
-	}
-	total := polylineLength(points)
-	if total <= 0 {
-		return append([]pt(nil), points[:target]...)
-	}
-
-	interval := total / float64(target-1)
-	out := []pt{points[0]}
-	nextDistance := interval
-	walked := 0.0
-	prev := points[0]
-
-	for _, curr := range points[1:] {
-		segment := distance(prev, curr)
-		for segment > 0 && walked+segment >= nextDistance && len(out) < target-1 {
-			ratio := (nextDistance - walked) / segment
-			out = append(out, pt{
-				x: prev.x + (curr.x-prev.x)*ratio,
-				y: prev.y + (curr.y-prev.y)*ratio,
-			})
-			nextDistance += interval
-		}
-		walked += segment
-		prev = curr
-	}
-
-	if last := out[len(out)-1]; last != points[len(points)-1] {
-		out = append(out, points[len(points)-1])
-	}
-	return out
-}
-
-// loopFootprint collapses repeated laps into one ordered footprint by averaging
-// every visit to each angular sector around the track centroid, then walking the
-// sectors out from the start angle. Non-uniform sampling is fine here: a lap is
-// not a circle, but each sector still sees the same corner of the same shape.
-func loopFootprint(points []pt, target int) []pt {
-	var sumX, sumY float64
-	for _, p := range points {
-		sumX += p.x
-		sumY += p.y
-	}
-	cx, cy := sumX/float64(len(points)), sumY/float64(len(points))
-
-	binCount := max(12, target-1)
-	buckets := make([][]pt, binCount)
-	for _, p := range points {
-		i := angleBin(p, cx, cy, binCount)
-		buckets[i] = append(buckets[i], p)
-	}
-
-	startIndex := angleBin(points[0], cx, cy, binCount)
-	ordered := make([][]pt, 0, binCount)
-	ordered = append(ordered, buckets[startIndex:]...)
-	ordered = append(ordered, buckets[:startIndex]...)
-
-	footprint := make([]pt, 0, binCount)
-	for _, bucket := range ordered {
-		if len(bucket) == 0 {
-			continue
-		}
-		footprint = append(footprint, outerEnvelopeMean(bucket, cx, cy))
-	}
-	// Too few occupied sectors means this was not really a loop; distrust it.
-	if len(footprint) < 12 {
-		return downsampleByDistance(points, target)
-	}
-	// Close the loop so the rendered shape has no visible notch at the start.
-	return append(footprint, footprint[0])
-}
-
-// outerEnvelopeMean averages the points in one angular sector that sit in its
-// outermost third, measured from the sector's centre.
-//
-// A plain mean is wrong here: real venues are loops with a chord cut across the
-// middle (a shortcut through the park), and a sector containing chord points
-// averages them into the perimeter, denting the footprint wherever the chord ran.
-// Taking the outer envelope instead keeps the loop and discards the chord. For a
-// plain loop every point is already on the perimeter, so this is close to an
-// ordinary mean; averaging a slice rather than taking the single farthest point
-// keeps a stray GPS fix from spiking the outline.
-func outerEnvelopeMean(bucket []pt, cx, cy float64) pt {
-	const keepFraction = 0.7
-
-	radii := make([]float64, len(bucket))
-	for i, p := range bucket {
-		radii[i] = math.Hypot(p.x-cx, p.y-cy)
-	}
-	sorted := append([]float64(nil), radii...)
-	sort.Float64s(sorted)
-	cutoff := sorted[int(float64(len(sorted))*keepFraction)]
-
-	var sx, sy float64
-	var kept int
-	for i, p := range bucket {
-		if radii[i] < cutoff {
-			continue
-		}
-		sx, sy, kept = sx+p.x, sy+p.y, kept+1
-	}
-	if kept == 0 {
-		// Every point was below the cutoff (only possible for an empty bucket,
-		// which the caller already skips) — fall back to the plain mean.
-		var bx, by float64
-		for _, p := range bucket {
-			bx += p.x
-			by += p.y
-		}
-		return pt{bx / float64(len(bucket)), by / float64(len(bucket))}
-	}
-	return pt{sx / float64(kept), sy / float64(kept)}
-}
-
 // normalize fits the polyline into the [Padding, Viewbox-Padding] box, preserving
 // aspect ratio, and flips Y so north points up.
 func normalize(points []pt) ([]Point, bool) {
@@ -366,13 +269,6 @@ func normalize(points []pt) ([]Point, bool) {
 		}
 	}
 	return out, true
-}
-
-// angleBin buckets a point into one of bins equal angular sectors around
-// (cx, cy), measured counter-clockwise from east.
-func angleBin(p pt, cx, cy float64, bins int) int {
-	angle := math.Mod(math.Atan2(p.y-cy, p.x-cx)+2*math.Pi, 2*math.Pi)
-	return min(int(angle/(2*math.Pi)*float64(bins)), bins-1)
 }
 
 func bounds(points []pt) (minX, maxX, minY, maxY float64) {
