@@ -15,6 +15,7 @@ import {
 } from "../api";
 import { useAuthStore } from "../store/authStore";
 import { useUser } from "../UserContextValue";
+import PhoneBindingSection from "../components/PhoneBindingSection";
 
 interface FieldError {
   [field: string]: string;
@@ -240,6 +241,8 @@ export default function ProfilePage({ embedded }: ProfilePageProps = {}) {
           </button>
         </section>
       </form>
+
+      <PhoneBindingSection />
 
       <InjuryManager />
 

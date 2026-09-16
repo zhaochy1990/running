@@ -15,7 +15,7 @@ vi.mock("../store/authStore", () => ({
 
 // Import after the vi.mock registration (vi.mock auto-hoists, but
 // being explicit keeps the read order obvious).
-import { getPipelineRun, getUsers, postOnboardingComplete, triggerSync, updateWeeklyFeedback } from "../api";
+import { bindPhone, getPipelineRun, getUsers, postOnboardingComplete, triggerSync, unbindPhone, updateWeeklyFeedback } from "../api";
 
 function resp(status: number, body: unknown = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -191,5 +191,63 @@ describe("api 401-refresh", () => {
         updated_at: "2026-08-16T11:00:00Z",
       },
     });
+  });
+
+  it("binds a phone to the auth-owned /api/users/me/phone with the Bearer header", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(200, { status: "ok" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(bindPhone("13800138000", "123456")).resolves.toEqual({
+      ok: true,
+      status: 200,
+      data: { status: "ok" },
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/users/me/phone",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer tok-old",
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify({ phone: "13800138000", code: "123456" }),
+      }),
+    );
+  });
+
+  it("unbinds the phone via DELETE /api/users/me/phone", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(200, { status: "ok" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(unbindPhone()).resolves.toEqual({ ok: true, status: 200, data: { status: "ok" } });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/users/me/phone",
+      expect.objectContaining({ method: "DELETE", headers: expect.objectContaining({ Authorization: "Bearer tok-old" }) }),
+    );
+  });
+
+  it("retries bind once after a stale token is refreshed (401 → refresh → retry)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(resp(401, { error: "invalid_token" }))
+      .mockResolvedValueOnce(resp(200, { status: "ok" }));
+    vi.stubGlobal("fetch", fetchMock);
+    refreshMock.mockResolvedValueOnce(undefined);
+
+    await expect(bindPhone("13800138000", "123456")).resolves.toEqual({ ok: true, status: 200, data: { status: "ok" } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a bind conflict code from a non-2xx response", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(resp(409, { error: "phone_already_bound" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await bindPhone("13800138000", "123456");
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(409);
+    expect((result.data as { error?: string }).error).toBe("phone_already_bound");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(refreshMock).not.toHaveBeenCalled();
   });
 });

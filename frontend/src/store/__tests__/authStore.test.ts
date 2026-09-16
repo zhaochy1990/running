@@ -165,4 +165,23 @@ describe("authStore auth calls (frontend static container → Caddy-internal API
       body: JSON.stringify({ phone: "13800138000", code: "123456" }),
     });
   });
+
+  it("sends a bind-mode code with login_only false so any phone can be bound", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const { useAuthStore } = await import("../authStore");
+
+    await useAuthStore.getState().sendSmsCode("13800138000", { loginOnly: false });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/auth/sms/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Client-Id": "app_test" },
+      body: JSON.stringify({ phone: "13800138000", login_only: false }),
+    });
+  });
 });
