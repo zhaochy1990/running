@@ -83,43 +83,50 @@ func parkLoopTrace(laps, samplesPerLap int) []Sample {
 	return samples
 }
 
-// A loop repeated many times around a park is the common case, not just an oval
-// track. With the compact-route cap too low, the trace falls through to uniform
-// distance sampling and aliases into a dense scribble whose drawn length is an
-// order of magnitude larger than the loop it is meant to show.
-func TestComputeParkLoopFoldsToSingleLap(t *testing.T) {
-	points, ok := Compute(parkLoopTrace(15, 200))
-	if !ok {
-		t.Fatal("Compute returned no polyline for a park loop")
+// A loop covered many times must not be DRAWN many times. The reduction keeps the
+// ground the trace covers, so the drawn length stays near one lap however many
+// laps the trace holds. This is the property plain distance-thinning broke, and
+// it is what makes a repeat-heavy route readable.
+func TestComputeRepeatedLoopDoesNotRetrace(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		trace    []Sample
+		maxSeg   float64
+		maxTotal float64
+	}{
+		// One lap inscribed in the 90-unit viewport draws a few hundred units;
+		// drawing every lap lands in the thousands.
+		{"oval track, 25 laps", trackTrace(25, 48), 30, 500},
+		{"park loop, 15 laps", parkLoopTrace(15, 200), 30, 500},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			points, ok := Compute(tc.trace)
+			if !ok {
+				t.Fatal("Compute returned no polyline")
+			}
+			if got := polylineLengthOf(points); got > tc.maxTotal {
+				t.Fatalf("polyline length %.0f — the trace retraced instead of collapsing", got)
+			}
+			if got := maxSegment(points); got > tc.maxSeg {
+				t.Fatalf("max segment %.1f exceeds %.0f", got, tc.maxSeg)
+			}
+			withinViewport(t, points)
+		})
 	}
-	if points[0] != points[len(points)-1] {
-		t.Fatalf("park loop should fold to a closed footprint, got %+v ... %+v", points[0], points[len(points)-1])
-	}
-	// One lap of a ~615x481 m loop inscribed in the 90-unit viewport draws a
-	// perimeter in the low hundreds. A scribble that re-crosses the box ~15
-	// times lands in the thousands.
-	if got := polylineLengthOf(points); got > 500 {
-		t.Fatalf("polyline length %.0f — trace aliased instead of folding to one lap", got)
-	}
-	if got := maxSegment(points); got > 20 {
-		t.Fatalf("max segment %.1f exceeds 20", got)
-	}
-	withinViewport(t, points)
 }
 
 // chordLoopTrace models the venue pattern that dominated a real athlete's
-// history: a small (~400x400 m) loop with a chord cut across the middle — a
-// shortcut through the park taken every lap. The chord puts roughly a fifth of
-// the trace inside the centre of the box, which the original density cap read as
-// "this route crosses its own area" and refused to fold.
+// history: a small (~400x400 m) loop with a spur cut across the middle — a
+// shortcut through the park. Pass withChord=false for the same loop walked
+// without it; the outer boundary is identical either way.
 func chordLoopTrace(laps int, withChord bool) []Sample {
 	latPerMeter := 1 / 111_000.0
 	lonPerMeter := 1 / (111_000 * math.Cos(trackLat0*math.Pi/180))
 
 	const samplesPerLap = 200
-	// The outer boundary is IDENTICAL with and without the chord — that is the
-	// whole point: only the extra leg changes, so any difference in the folded
-	// outline is the chord leaking into the footprint.
+	// The outer boundary is IDENTICAL with and without the spur — that is the
+	// whole point: only the extra leg changes, so any difference in the result is
+	// the spur leaking into (or out of) the outline.
 	v3 := [2]float64{-195, -50} // boundary vertex the detour leaves from
 	in := [2]float64{-30, -20}  // well inside the loop
 	shape := [][2]float64{
@@ -161,64 +168,56 @@ func chordLoopTrace(laps int, withChord bool) []Sample {
 	return samples
 }
 
-// A loop with a chord through the middle is still a loop: it must fold to one
-// lap rather than rendering every traverse of the chord as a criss-cross.
-func TestComputeChordLoopFoldsToSingleLap(t *testing.T) {
-	points, ok := Compute(chordLoopTrace(15, true))
-	if !ok {
-		t.Fatal("Compute returned no polyline for a chord loop")
-	}
-	if points[0] != points[len(points)-1] {
-		t.Fatalf("chord loop should fold to a closed footprint, got %+v ... %+v", points[0], points[len(points)-1])
-	}
-	// One lap of a ~400x400 m loop inscribed in the 90-unit viewport draws a few
-	// hundred units; each unfolded traverse of the chord adds another crossing.
-	if got := polylineLengthOf(points); got > 500 {
-		t.Fatalf("polyline length %.0f — chord loop aliased instead of folding", got)
-	}
-	if got := maxSegment(points); got > 20 {
-		t.Fatalf("max segment %.1f exceeds 20", got)
-	}
-	withinViewport(t, points)
-}
-
-// The shortcut must not change the shape. Folding a chord loop and the same
-// loop walked without the chord has to land on the same outline — if the chord
-// were averaged into the perimeter it would pull the footprint inwards wherever
-// it ran, drawing a dent that is not part of the venue.
-func TestComputeChordDoesNotDistortLoopFootprint(t *testing.T) {
-	withChord, ok := Compute(chordLoopTrace(15, true))
-	if !ok {
-		t.Fatal("no polyline for the chord loop")
-	}
-	loopOnly, ok := Compute(chordLoopTrace(15, false))
-	if !ok {
-		t.Fatal("no polyline for the loop without the chord")
-	}
-
-	// Hausdorff-style: the farthest any point of one outline sits from the other.
-	// A bounding-box comparison cannot see this — averaging the chord into the
-	// perimeter dents the outline locally without changing its extent.
-	oneWay := func(a, b []Point) float64 {
-		worst := 0.0
-		for _, p := range a {
-			nearest := math.Inf(1)
-			for _, q := range b {
-				nearest = math.Min(nearest, math.Hypot(p.X-q.X, p.Y-q.Y))
-			}
-			worst = math.Max(worst, nearest)
+// The reduction keeps whatever the trace did uniquely. A spur cut across the loop
+// on a couple of laps out of many must still be drawn, and a loop with no such
+// spur must not grow a phantom one.
+//
+// This is the property both earlier attempts lost. Collapsing the loop into one
+// averaged footprint pulled the spur into the perimeter as a dent; taking the
+// outer envelope instead deleted the spur outright. Neither is acceptable — the
+// activity map shows the spur, so a thumbnail that drops it looks wrong to the
+// person who ran it.
+func TestComputeKeepsUniqueSpur(t *testing.T) {
+	// How close the shape comes to its own centre: a loop stays out on its
+	// perimeter, a spur reaches in.
+	closestApproach := func(points []Point) float64 {
+		minX, maxX, minY, maxY := points[0].X, points[0].X, points[0].Y, points[0].Y
+		for _, p := range points {
+			minX, maxX = math.Min(minX, p.X), math.Max(maxX, p.X)
+			minY, maxY = math.Min(minY, p.Y), math.Max(maxY, p.Y)
 		}
-		return worst
+		cx, cy := (minX+maxX)/2, (minY+maxY)/2
+		best := math.Inf(1)
+		for _, p := range points {
+			best = math.Min(best, math.Hypot(p.X-cx, p.Y-cy))
+		}
+		return best
 	}
-	deviation := math.Max(oneWay(withChord, loopOnly), oneWay(loopOnly, withChord))
-	t.Logf("max outline deviation between chord and loop-only: %.1f viewbox units", deviation)
 
-	// Measured: 3.1 with the envelope, 21.8 when the sector mean is used instead
-	// (i.e. with keepFraction at 0). 6 leaves room below the broken behaviour
-	// while still being far tighter than the ~90-unit outline it guards.
-	if deviation > 6.0 {
-		t.Fatalf("chord distorted the footprint by %.1f units (want <= 6)", deviation)
+	withSpur, ok := Compute(chordLoopTrace(15, true))
+	if !ok {
+		t.Fatal("no polyline for the loop with the spur")
 	}
+	withoutSpur, ok := Compute(chordLoopTrace(15, false))
+	if !ok {
+		t.Fatal("no polyline for the loop without the spur")
+	}
+
+	spurred, plain := closestApproach(withSpur), closestApproach(withoutSpur)
+	t.Logf("closest approach to centre: with spur %.1f, without %.1f", spurred, plain)
+	if spurred >= plain {
+		t.Fatalf("the spur did not survive the reduction: %.1f vs %.1f", spurred, plain)
+	}
+	if plain < 25 {
+		t.Fatalf("a plain loop reached %.1f units from its centre — phantom interior", plain)
+	}
+
+	// It must also still not retrace: the spur was taken on every lap here, so
+	// keeping them all would land in the thousands.
+	if got := polylineLengthOf(withSpur); got > 500 {
+		t.Fatalf("polyline length %.0f — the repeated spur was drawn every lap", got)
+	}
+	withinViewport(t, withSpur)
 }
 
 func polylineLengthOf(points []Point) float64 {
@@ -246,27 +245,17 @@ func withinViewport(t *testing.T, points []Point) {
 	}
 }
 
-// A uniformly skipped multi-lap trace aliases into long chords across the
-// infield. The thumbnail must collapse repeated laps into one closed footprint
-// whose adjacent segments stay local.
-func TestComputeTrackCollapsesLapsIntoLoopFootprint(t *testing.T) {
-	points, ok := Compute(trackTrace(25, 48))
-	if !ok {
-		t.Fatal("Compute returned no polyline for a 25-lap track")
+// The result must fit the budget it is stored and shipped under.
+func TestComputeFitsPointBudget(t *testing.T) {
+	for _, trace := range [][]Sample{trackTrace(25, 48), parkLoopTrace(15, 200), chordLoopTrace(15, true)} {
+		points, ok := Compute(trace)
+		if !ok {
+			t.Fatal("Compute returned no polyline")
+		}
+		if len(points) > TargetPoints {
+			t.Fatalf("got %d points, want at most %d", len(points), TargetPoints)
+		}
 	}
-	if len(points) > TargetPoints+1 {
-		t.Fatalf("got %d points, want at most %d", len(points), TargetPoints+1)
-	}
-	if points[0] != points[len(points)-1] {
-		t.Fatalf("loop footprint should be closed, got %+v ... %+v", points[0], points[len(points)-1])
-	}
-	if got := maxSegment(points); got > 20 {
-		t.Fatalf("max segment %.1f exceeds 20 — laps aliased into infield chords", got)
-	}
-	if got := polylineLengthOf(points); got >= 400 {
-		t.Fatalf("polyline length %.1f exceeds 400", got)
-	}
-	withinViewport(t, points)
 }
 
 // Aspect ratio must survive the projection: an oval track is wider than it is
@@ -332,15 +321,13 @@ func switchbackTrace(reps int) []Sample {
 	return samples
 }
 
-// A compact route crossed only a few times must stay an OPEN polyline: it never
-// goes around the box, so folding it would invent an outline (and a phantom edge
-// at each turnaround). This is the guard on repeatedRoutePathToPerimeter.
+// A route crossed only a few times must stay an OPEN polyline: the reduction
+// must not close it and invent an edge across each turnaround.
 //
-// Note this deliberately no longer covers a MANY-pass sweep (~12 reps): that
-// crosses its box more than any loop does and now folds, like any other repeated
-// route. Folding it costs almost nothing — a 4 m drift over 280 m renders as the
-// same flat band either way — whereas leaving a chord-loop unfolded renders an
-// unreadable tangle. See repeatedRouteMaxCenterDensity.
+// Note this no longer covers a MANY-pass sweep (~12 reps). Such a sweep is a
+// route whose ground is covered over and over, so it reduces like any repeated
+// route — and the reduction closing it costs nothing, since a 4 m drift over
+// 280 m renders as the same flat band either way.
 func TestComputeCompactSinglePassRouteStaysOpen(t *testing.T) {
 	points, ok := Compute(switchbackTrace(4))
 	if !ok {
