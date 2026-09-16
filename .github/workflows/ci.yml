@@ -147,6 +147,18 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+      # The compliance-declaration surface is verified only at the HTTP seam
+      # (real gin router + real MySQL), so without the DSN below it skips inside
+      # the plain `go test ./...` above and nothing would guard it in CI.
+      # Scoped to this test on purpose: TestE2E_MasterPlan* reads migrated
+      # master-plan rows that this job's empty stride_test database does not have.
+      - name: Compliance-declaration end-to-end tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/api/...
+          -run 'TestE2E_LegalDeclarations'
+          -count=1 -v
       - name: Account-erasure storage tests (MySQL)
         env:
           STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
