@@ -1,0 +1,10 @@
+{
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "声明详情",
+  "navigationBarBackgroundColor": "#07080A",
+  "navigationBarTextStyle": "white",
+  "backgroundColor": "#07080A",
+  "usingComponents": {
+    "mp-html": "/components/mp-html/index"
+  }
+}

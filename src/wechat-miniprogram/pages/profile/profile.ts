@@ -145,6 +145,10 @@ Page<ProfilePageData, ProfilePageHandlers>({
       wx.navigateTo({ url: '/pages/watch/watch' });
       return;
     }
+    if (key === 'privacy') {
+      wx.navigateTo({ url: '/pages/privacy/privacy' });
+      return;
+    }
     wx.showToast({ title: `「${key}」建设中`, icon: 'none' });
   },
 

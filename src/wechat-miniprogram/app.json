@@ -9,7 +9,9 @@
     "pages/coach/coach",
     "pages/profile/profile",
     "pages/profile-edit/profile-edit",
-    "pages/watch/watch"
+    "pages/watch/watch",
+    "pages/privacy/privacy",
+    "pages/declaration/declaration"
   ],
   "window": {
     "backgroundTextStyle": "light",
