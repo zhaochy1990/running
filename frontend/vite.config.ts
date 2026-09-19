@@ -16,6 +16,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), tailwindcss()],
+    // Expose STRIDE_* build-time vars to the client bundle alongside VITE_* —
+    // e.g. STRIDE_REQUIRE_INVITE_CODE, the same flag the auth backend reads, so
+    // registration gating can be toggled per deployment (see
+    // src/lib/inviteRequired.ts, Dockerfile.web, .github/workflows/*.yml).
+    envPrefix: ["VITE_", "STRIDE_"],
     server: {
       proxy: {
         "/api": { target: devApiProxy, changeOrigin: true, secure: true },

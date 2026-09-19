@@ -258,6 +258,7 @@ jobs:
           VITE_AUTH_CLIENT_ID: ${{ vars.VITE_AUTH_CLIENT_ID }}
           VITE_AMAP_KEY: ${{ vars.VITE_AMAP_KEY }}
           VITE_AMAP_SECURITY_CODE: ${{ vars.VITE_AMAP_SECURITY_CODE }}
+          STRIDE_REQUIRE_INVITE_CODE: ${{ vars.STRIDE_REQUIRE_INVITE_CODE }}
         run: |
           set -euo pipefail
           case "$NAME" in
@@ -275,11 +276,13 @@ jobs:
             echo "APP_VERSION=$VERSION"
             if [ "$NAME" = "stride-web" ]; then
               # Vite bakes these into the bundle at build time; there is no
-              # runtime injection path.
+              # runtime injection path. STRIDE_REQUIRE_INVITE_CODE mirrors the
+              # auth backend's registration gate.
               echo "VITE_AUTH_CLIENT_ID=$VITE_AUTH_CLIENT_ID"
               echo "VITE_AMAP_KEY=$VITE_AMAP_KEY"
               echo "VITE_AMAP_SECURITY_CODE=$VITE_AMAP_SECURITY_CODE"
               echo "VITE_API_BASE_URL=https://api.stride-running.cn"
+              echo "STRIDE_REQUIRE_INVITE_CODE=$STRIDE_REQUIRE_INVITE_CODE"
             fi
             echo "__BUILD_ARGS__"
           } >> "$GITHUB_OUTPUT"

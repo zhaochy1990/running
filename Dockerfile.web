@@ -13,23 +13,28 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm install
 COPY frontend/ ./
 
-# Vite bakes VITE_* into the bundle at build time — no runtime injection path.
-# (AMap key/securityJsCode are gated by the AMap console domain whitelist, not
-# secrecy; sourced from stride-kv-common AKV in CI.)
+# Vite bakes VITE_*/STRIDE_* into the bundle at build time — no runtime
+# injection path. (AMap key/securityJsCode are gated by the AMap console domain
+# whitelist, not secrecy; sourced from stride-kv-common AKV in CI.)
 # VITE_API_BASE_URL: the API gateway the browser calls directly (cross-origin;
 # CORS must allow the SPA origin). Defaults to the prod gateway.
+# STRIDE_REQUIRE_INVITE_CODE: registration invite-code gate, same flag the auth
+# backend reads. Default true preserves the current always-show behavior; set
+# false to hide the 邀请码 field (see frontend/src/lib/inviteRequired.ts).
 ARG VITE_AUTH_CLIENT_ID
 ARG VITE_APPLICATIONINSIGHTS_CONNECTION_STRING
 ARG VITE_AMAP_KEY
 ARG VITE_AMAP_SECURITY_CODE
 ARG VITE_GO_ONBOARDING=true
 ARG VITE_API_BASE_URL=https://api.stride-running.cn
+ARG STRIDE_REQUIRE_INVITE_CODE=true
 ENV VITE_AUTH_CLIENT_ID=$VITE_AUTH_CLIENT_ID \
     VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=$VITE_APPLICATIONINSIGHTS_CONNECTION_STRING \
     VITE_AMAP_KEY=$VITE_AMAP_KEY \
     VITE_AMAP_SECURITY_CODE=$VITE_AMAP_SECURITY_CODE \
     VITE_GO_ONBOARDING=$VITE_GO_ONBOARDING \
-    VITE_API_BASE_URL=$VITE_API_BASE_URL
+    VITE_API_BASE_URL=$VITE_API_BASE_URL \
+    STRIDE_REQUIRE_INVITE_CODE=$STRIDE_REQUIRE_INVITE_CODE
 
 RUN npm run build
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import RegisterPage from "../RegisterPage";
@@ -31,6 +31,7 @@ function fillRegisterForm(password: string) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   authStoreMock.registerSuccess.mockReset();
 });
 
@@ -79,5 +80,38 @@ describe("RegisterPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
 
     expect(await screen.findByText("密码必须包含至少一个特殊字符")).toBeInTheDocument();
+  });
+
+  it("shows the invite field by default (gate on, STRIDE_REQUIRE_INVITE_CODE unset)", () => {
+    renderPage();
+    expect(screen.getByLabelText("邀请码")).toBeInTheDocument();
+  });
+
+  it("hides the invite field when STRIDE_REQUIRE_INVITE_CODE is false", () => {
+    vi.stubEnv("STRIDE_REQUIRE_INVITE_CODE", "false");
+    renderPage();
+    expect(screen.queryByLabelText("邀请码")).not.toBeInTheDocument();
+  });
+
+  it("omits invite_code from the register request when the gate is off", async () => {
+    vi.stubEnv("STRIDE_REQUIRE_INVITE_CODE", "false");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ access_token: "t", refresh_token: "r" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+    fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "runner@example.com" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "Password1!" } });
+    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "Password1!" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.invite_code).toBeUndefined();
+    expect(body.email).toBe("runner@example.com");
   });
 });
