@@ -3,6 +3,7 @@ package competitioncalendar
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -34,10 +35,12 @@ func (f *fakeStore) ReplaceCompetitionCalendarSeason(_ context.Context, source, 
 }
 
 // waServer serves one season of events, keyed by the season variable in the
-// GraphQL body.
-func waServer(t *testing.T) *httptest.Server {
+// GraphQL body, and records the x-api-key header each request carried.
+func waServer(t *testing.T) (*httptest.Server, *string) {
 	t.Helper()
+	var gotKey string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("x-api-key")
 		var body struct {
 			Variables struct {
 				Season string `json:"season"`
@@ -54,7 +57,7 @@ func waServer(t *testing.T) *httptest.Server {
 		]}}}`))
 	}))
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, &gotKey
 }
 
 func newHandler(t *testing.T, srv *httptest.Server, defaults []string, st CalendarStore) job.Handler {
@@ -69,7 +72,7 @@ func newHandler(t *testing.T, srv *httptest.Server, defaults []string, st Calend
 }
 
 func TestHandlerFetchesDefaultSeason(t *testing.T) {
-	srv := waServer(t)
+	srv, _ := waServer(t)
 	st := &fakeStore{}
 	h := newHandler(t, srv, nil, st)
 
@@ -97,7 +100,7 @@ func TestHandlerFetchesDefaultSeason(t *testing.T) {
 }
 
 func TestHandlerUsesInputOverride(t *testing.T) {
-	srv := waServer(t)
+	srv, _ := waServer(t)
 	st := &fakeStore{}
 	h := newHandler(t, srv, []string{"2026"}, st)
 
@@ -122,11 +125,43 @@ func TestHandlerUsesInputOverride(t *testing.T) {
 }
 
 func TestHandlerRejectsMalformedInput(t *testing.T) {
-	srv := waServer(t)
+	srv, _ := waServer(t)
 	h := newHandler(t, srv, nil, &fakeStore{})
 
 	_, err := h(context.Background(), &job.Job{InputJSON: `{not json`}, func(string, int) error { return nil })
 	if _, permanent := job.AsPermanent(err); !permanent {
 		t.Fatalf("err = %v, want a permanent error", err)
+	}
+}
+
+func TestHandlerUsesDiscoveredCredentials(t *testing.T) {
+	srv, gotKey := waServer(t)
+	st := &fakeStore{}
+	h := newHandler(t, srv, nil, st)
+
+	// The pipeline threads the key step's result here: {"endpoint":...,"api_key":...}.
+	in := fmt.Sprintf(`{"endpoint":%q,"api_key":"da2-discovered"}`, srv.URL)
+	if _, err := h(context.Background(), &job.Job{InputJSON: in}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if *gotKey != "da2-discovered" {
+		t.Fatalf("server saw x-api-key %q, want the discovered key da2-discovered", *gotKey)
+	}
+	if len(st.events) != 1 {
+		t.Fatalf("events mirrored = %d, want 1 season", len(st.events))
+	}
+}
+
+func TestHandlerIgnoresPartialCredentials(t *testing.T) {
+	srv, gotKey := waServer(t)
+	h := newHandler(t, srv, nil, &fakeStore{})
+
+	// Only api_key present (no endpoint): the handler must keep the configured
+	// client, so the server sees the configured "k" key.
+	if _, err := h(context.Background(), &job.Job{InputJSON: `{"api_key":"da2-discovered"}`}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if *gotKey != "k" {
+		t.Fatalf("server saw x-api-key %q, want configured key k (partial override ignored)", *gotKey)
 	}
 }

@@ -90,6 +90,14 @@ jobs:
                 echo "::error::pipeline $run_id failed: $(head -c 500 /tmp/resp.json)"
                 exit 1
               fi
+              # done but an optional step failed (e.g. the key-discovery step):
+              # the calendar data was still synced via the configured key, but
+              # alert so key rotation can't break discovery silently.
+              failed_steps=$(python3 -c "import json; d=json.load(open('/tmp/resp.json')); print(','.join(s['name'] for s in d.get('steps', []) if s.get('status')=='failed'))" 2>/dev/null)
+              if [ -n "$failed_steps" ]; then
+                echo "::error::pipeline $run_id done but optional step(s) failed: $failed_steps (calendar step fell back to the configured key)"
+                exit 1
+              fi
               exit 0
             fi
             [ "$poll" -lt "$MAX_POLL" ] && sleep "$POLL_INTERVAL"

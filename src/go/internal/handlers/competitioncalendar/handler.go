@@ -1,11 +1,16 @@
-// Package competitioncalendar provides the worker job handler for job type
-// "competition_calendar_sync": it fetches one or more seasons of a World
-// Athletics competition-group calendar (the label road races by default) and
-// mirrors them into the competition_calendar table. It is an internal-only,
-// system-scoped pipeline step — there is no subject user.
+// Package competitioncalendar provides the worker job handlers for the
+// competition_calendar_sync pipeline: "fetch_wa_api_key" discovers the current
+// World Athletics AppSync endpoint + API key from the site bundle, and
+// "competition_calendar_sync" fetches one or more seasons of a competition-group
+// calendar (the label road races by default) and mirrors them into the
+// competition_calendar table. Both are internal-only, system-scoped steps —
+// there is no subject user.
 //
-// Seasons come from the job input ({"seasons":["2026","2027"]}) when supplied,
-// else the handler's configured defaults, else the current Shanghai year.
+// The calendar handler reads endpoint/api_key from the job input (threaded by
+// the pipeline from the key step's result) and overrides its configured client
+// credentials with them when both are present. Seasons come from the job input
+// ({"seasons":["2026","2027"]}) when supplied, else the handler's configured
+// defaults, else the current Shanghai year.
 package competitioncalendar
 
 import (
@@ -48,13 +53,25 @@ type Config struct {
 // New returns the competition_calendar_sync job.Handler.
 func New(cfg Config) job.Handler {
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
-		seasons, err := resolveSeasons(cfg.DefaultSeasons, j.InputJSON)
+		in, err := resolveInput(j.InputJSON)
 		if err != nil {
 			// A malformed payload can't be fixed by retrying.
 			return "", job.NewPermanentError("bad_payload", err)
 		}
+
+		seasons := in.Seasons
+		if len(seasons) == 0 {
+			seasons = cfg.DefaultSeasons
+		}
 		if len(seasons) == 0 {
 			seasons = []string{currentSeason()}
+		}
+
+		// The pipeline threads the key step's discovered credentials into this
+		// job's input; prefer them over the configured default when both present.
+		client := cfg.Client
+		if in.Endpoint != "" && in.APIKey != "" {
+			client = cfg.Client.WithCredentials(in.Endpoint, in.APIKey)
 		}
 
 		out := struct {
@@ -64,7 +81,7 @@ func New(cfg Config) job.Handler {
 		for _, season := range seasons {
 			stage := "fetch:" + season
 			_ = hb(stage, 10)
-			events, err := cfg.Client.MinisiteCalendar(ctx, season, cfg.CompetitionGroupID, cfg.CompetitionSubgroupID)
+			events, err := client.MinisiteCalendar(ctx, season, cfg.CompetitionGroupID, cfg.CompetitionSubgroupID)
 			if err != nil {
 				return "", err
 			}
@@ -97,23 +114,26 @@ type seasonSummary struct {
 	Deleted  int `json:"deleted"`
 }
 
-// resolveSeasons merges an optional job-input override onto the configured
-// defaults. A malformed input is an error the caller turns into a permanent job
+// jobInput is the job's input: the run-level {"seasons":[...]} merged (by the
+// pipeline) with the key step's discovered {"endpoint":...,"api_key":...}.
+type jobInput struct {
+	Seasons  []string `json:"seasons"`
+	Endpoint string   `json:"endpoint"`
+	APIKey   string   `json:"api_key"`
+}
+
+// resolveInput parses the job input. Empty input yields a zero jobInput (no
+// overrides); a malformed one is an error the caller turns into a permanent job
 // failure (retrying can't fix it).
-func resolveSeasons(defaults []string, inputJSON string) ([]string, error) {
-	if inputJSON == "" {
-		return defaults, nil
+func resolveInput(inputJSON string) (jobInput, error) {
+	if strings.TrimSpace(inputJSON) == "" {
+		return jobInput{}, nil
 	}
-	var input struct {
-		Seasons []string `json:"seasons"`
+	var in jobInput
+	if err := json.Unmarshal([]byte(inputJSON), &in); err != nil {
+		return jobInput{}, err
 	}
-	if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
-		return nil, err
-	}
-	if len(input.Seasons) > 0 {
-		return input.Seasons, nil
-	}
-	return defaults, nil
+	return in, nil
 }
 
 // currentSeason is the World Athletics season (the calendar year) as of today's

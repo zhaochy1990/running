@@ -136,7 +136,7 @@ func runWorker() error {
 		}
 		return registry.Build(name, store, watchRequestDelay)
 	}
-	registerHandlers(reg, resolve, store, racedetection.New(raceClassifier), cfg.RaceDetection.MaxConcurrency, cosClient, competitioncalendar.Config{
+	registerHandlers(reg, resolve, store, racedetection.New(raceClassifier), cfg.RaceDetection.MaxConcurrency, cosClient, waClient, competitioncalendar.Config{
 		Client:                waClient,
 		Store:                 store,
 		CompetitionGroupID:    cfg.WorldAthletics.CompetitionGroupID,
@@ -266,8 +266,9 @@ func newRaceClassifier(cfg config.RaceDetection) (racedetection.Classifier, erro
 // the athlete baseline and `compute` derives load/PMC/PBs from synced data,
 // mode-aware (ADR 0020); `route_thumbnails` renders outdoor activities into
 // route PNGs in COS, with `route_thumbnails_backfill` doing the all-history scan;
-// `competition_calendar_sync` mirrors the World Athletics calendar (ccConfig).
-func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, cosClient *cos.Client, ccConfig competitioncalendar.Config) {
+// `competition_calendar_sync` mirrors the World Athletics calendar (ccConfig),
+// preceded by `fetch_wa_api_key` key discovery (waClient).
+func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, cosClient *cos.Client, waClient *worldathletics.Client, ccConfig competitioncalendar.Config) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
@@ -283,5 +284,9 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	// different behaviour — only its own catalog entry to be triggered on demand.
 	reg.MustRegister(routethumbnails.JobType, routethumbnails.New(store, cosClient))
 	reg.MustRegister(routethumbnails.BackfillJobType, routethumbnails.New(store, cosClient))
+	// competition_calendar_sync pipeline: discover the current WA API key (so a
+	// rotation self-heals), then mirror the calendar with the discovered or the
+	// configured key.
+	reg.MustRegister(competitioncalendar.KeyJobType, competitioncalendar.NewKeyFetcher(waClient, competitioncalendar.DefaultSitePageURL))
 	reg.MustRegister(competitioncalendar.JobType, competitioncalendar.New(ccConfig))
 }
