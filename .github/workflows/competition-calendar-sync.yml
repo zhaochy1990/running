@@ -1,0 +1,97 @@
+name: Competition calendar sync
+
+# Required GitHub Actions repository variable and secret:
+#   STRIDE_GO_API_URL         — base URL of the deployed Go API, e.g.
+#                               https://api.stride-running.cn
+#   STRIDE_GO_INTERNAL_TOKEN  — random 32+ char string. The Go API must receive
+#                               the same value as STRIDE_WORKER_API_INTERNAL_TOKEN.
+# If either value is unset the workflow fails so the omission is visible.
+
+on:
+  schedule:
+    # Daily 16:00 UTC = 00:00 Asia/Shanghai. UTC+8 has no DST.
+    - cron: '0 16 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Start the competition_calendar_sync pipeline
+        env:
+          GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}
+          GO_INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}
+        run: |
+          set -u
+          if [ -z "$GO_API_URL" ] || [ -z "$GO_INTERNAL_TOKEN" ]; then
+            echo "::error::STRIDE_GO_API_URL variable or STRIDE_GO_INTERNAL_TOKEN secret missing"
+            exit 1
+          fi
+
+          URL="${GO_API_URL%/}/pipelines"
+          DAY=$(TZ=Asia/Shanghai date +%F)
+          KEY="competition-calendar-sync-$DAY"
+
+          echo "## Competition calendar sync" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Shanghai day: \`$DAY\`, idempotency key: \`$KEY\`" >> "$GITHUB_STEP_SUMMARY"
+
+          # POST once. The Idempotency-Key is best-effort for this system run:
+          # the (user_id, idempotency_key) unique index does not dedupe a NULL
+          # user_id (MySQL treats NULLs as distinct), so a lost-response retry can
+          # start a second run — which is harmless because the handler itself is
+          # idempotent (upsert + replace-season). Retry once on a transient
+          # failure (cold start of a scaled-to-zero container takes ~15s).
+          post() {
+            curl -sS -o /tmp/resp.json -w "%{http_code}" \
+              --max-time 60 \
+              -X POST \
+              -H "X-Internal-Token: $GO_INTERNAL_TOKEN" \
+              -H "Content-Type: application/json" \
+              -H "Idempotency-Key: $KEY" \
+              --data '{"name":"competition_calendar_sync"}' \
+              "$URL"
+          }
+
+          http=$(post) || http="000"
+          if [ "$http" != "200" ] && [ "$http" != "202" ]; then
+            echo "  ↻ retrying (first attempt HTTP $http)"
+            sleep 15
+            http=$(post) || http="000"
+          fi
+          body=$(head -c 500 /tmp/resp.json | tr '\n' ' ')
+          echo "start pipeline: HTTP $http — $body" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$http" != "200" ] && [ "$http" != "202" ]; then
+            echo "::error::start pipeline failed (HTTP $http): $body"
+            exit 1
+          fi
+
+          run_id=$(python3 -c "import json; print(json.load(open('/tmp/resp.json')).get('run_id', ''))" 2>/dev/null || true)
+          if [ -z "$run_id" ]; then
+            echo "::warning::no run_id in response; not polling"
+            exit 0
+          fi
+
+          # Poll until the run reaches a terminal state so a worker-side failure
+          # makes this scheduled workflow fail visibly.
+          MAX_POLL=60
+          POLL_INTERVAL=15
+          for poll in $(seq 1 "$MAX_POLL"); do
+            : > /tmp/resp.json
+            http=$(curl -sS -o /tmp/resp.json -w "%{http_code}" --max-time 30 \
+              -H "X-Internal-Token: $GO_INTERNAL_TOKEN" \
+              "${GO_API_URL%/}/pipelines/$run_id") || http="000"
+            status=$(python3 -c "import json; print(json.load(open('/tmp/resp.json')).get('status', ''))" 2>/dev/null || true)
+            if [ "$http" = "200" ] && { [ "$status" = "done" ] || [ "$status" = "failed" ]; }; then
+              echo "pipeline \`$run_id\`: **$status**" >> "$GITHUB_STEP_SUMMARY"
+              if [ "$status" = "failed" ]; then
+                echo "::error::pipeline $run_id failed: $(head -c 500 /tmp/resp.json)"
+                exit 1
+              fi
+              exit 0
+            fi
+            [ "$poll" -lt "$MAX_POLL" ] && sleep "$POLL_INTERVAL"
+          done
+          echo "::warning::pipeline $run_id did not reach a terminal state within the poll window"

@@ -100,3 +100,21 @@ func TestPipelineStepsAreCatalogedJobs(t *testing.T) {
 		}
 	}
 }
+
+// TestCompetitionCalendarPipelineCataloged checks the internal system pipeline:
+// a single step whose job type is also internal-only, not user-initiable.
+func TestCompetitionCalendarPipelineCataloged(t *testing.T) {
+	if ui, ok := JobUserInitiable()[JobTypeCompetitionCalendar]; !ok || ui {
+		t.Fatalf("competition_calendar_sync should be internal-only, got ok=%v ui=%v", ok, ui)
+	}
+	if ui, ok := PipelineUserInitiable()[PipelineCompetitionCalendar]; !ok || ui {
+		t.Fatalf("competition_calendar_sync pipeline should not be user-initiable, got ok=%v ui=%v", ok, ui)
+	}
+	def, ok := PipelineRegistry().Get(PipelineCompetitionCalendar)
+	if !ok {
+		t.Fatalf("competition_calendar_sync pipeline missing from registry")
+	}
+	if len(def.Steps) != 1 || def.Steps[0].JobType != JobTypeCompetitionCalendar {
+		t.Fatalf("competition_calendar_sync steps = %+v, want single %q step", def.Steps, JobTypeCompetitionCalendar)
+	}
+}

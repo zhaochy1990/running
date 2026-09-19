@@ -228,6 +228,19 @@ commit 前必须用已人工审阅 manifest 的 hash 重新核对 Azure 源和 M
 `STRIDE_GO_API_URL` repository variable、`STRIDE_GO_INTERNAL_TOKEN` secret，以及按
 workflow run 和用户固定的 `Idempotency-Key`；因此网络重试不会重复入队。API 返回 `202`（或幂等重放的 `200`）后完成。该 workflow 只调用 Go API，不提供 Python backfill fallback。Go API 的 `STRIDE_WORKER_API_INTERNAL_TOKEN` 必须与 `STRIDE_GO_INTERNAL_TOKEN` 同值。
 
+### `.github/workflows/competition-calendar-sync.yml` —— 每日比赛日历同步
+
+每天 00:00 Asia/Shanghai 触发，通过 Go API 的 `POST /pipelines` 启动 internal-only
+系统 pipeline `competition_calendar_sync`（无 subject user）：worker 的
+`competition_calendar_sync` handler 调用 World Athletics 公开 GraphQL API
+（`getMinisiteCalendarEvents`，Label Road Races 组，`config.yml` 的
+`world-athletics` 段）拉取当前上海年份赛季，upsert 到 MySQL 的
+`competition_calendar` 表（identity `(source, season, event_id)`；整赛季镜像，上游
+消失的赛事会被删除）。Idempotency-Key 按上海日固定，重复触发安全；handler 本身幂等
+（upsert）。默认拉当前年份，如需多赛季可在 workflow `workflow_dispatch` 时把
+`input` 改成 `{"seasons":["2026","2027"]}`。依赖 `STRIDE_GO_API_URL` variable 与
+`STRIDE_GO_INTERNAL_TOKEN` secret（同 Go API `STRIDE_WORKER_API_INTERNAL_TOKEN`）。
+
 ### `.github/workflows/sync-data.yml` —— 已删除（不再同步到 Azure Files）
 
 该 workflow 曾把 `data/*/logs/**` 的 markdown / json / 体测图片、`TRAINING_PLAN.md`、`status.md`、
