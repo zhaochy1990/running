@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useNavigate, Link, Navigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import { apiUrl } from "../lib/apiRouting";
+import { inviteRequired } from "../lib/inviteRequired";
 
 // Auth hits the API gateway directly via the SPA's baked API origin
 // (src/lib/apiRouting.ts). Only VITE_AUTH_CLIENT_ID (X-Client-Id) is baked in.
@@ -187,6 +188,10 @@ export default function RegisterPage() {
 
   if (isAuthenticated) return <Navigate to="/" replace />;
 
+  // Mirrors the auth backend's STRIDE_REQUIRE_INVITE_CODE flag. When false the
+  // 邀请码 field is hidden entirely and invite_code is omitted from the request.
+  const requireInvite = inviteRequired();
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
@@ -204,15 +209,16 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
+      const payload: Record<string, string> = {
+        email,
+        password,
+        name: email.split("@")[0],
+      };
+      if (requireInvite) payload.invite_code = inviteCode;
       const res = await fetch(apiUrl("POST", `/api/auth/register`), {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Client-Id": CLIENT_ID },
-        body: JSON.stringify({
-          email,
-          password,
-          invite_code: inviteCode,
-          name: email.split("@")[0],
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (res.status === 201) {
@@ -275,20 +281,22 @@ export default function RegisterPage() {
               onChange={setPasswordConfirm}
               onToggle={() => setPasswordConfirmVisible((visible) => !visible)}
             />
-            <div>
-              <label htmlFor="register-invite-code" className="block text-xs font-mono text-text-muted uppercase tracking-wider mb-1">
-                邀请码
-              </label>
-              <input
-                id="register-invite-code"
-                type="text"
-                required
-                autoComplete="off"
-                value={inviteCode}
-                onChange={(e) => setInviteCode(e.target.value)}
-                className="w-full rounded-lg border border-border-subtle bg-bg-base px-3 py-2 text-sm text-text-primary focus:border-accent-green focus:outline-none focus:ring-1 focus:ring-accent-green font-mono"
-              />
-            </div>
+            {requireInvite && (
+              <div>
+                <label htmlFor="register-invite-code" className="block text-xs font-mono text-text-muted uppercase tracking-wider mb-1">
+                  邀请码
+                </label>
+                <input
+                  id="register-invite-code"
+                  type="text"
+                  required
+                  autoComplete="off"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  className="w-full rounded-lg border border-border-subtle bg-bg-base px-3 py-2 text-sm text-text-primary focus:border-accent-green focus:outline-none focus:ring-1 focus:ring-accent-green font-mono"
+                />
+              </div>
+            )}
             <button
               type="submit"
               disabled={loading}
