@@ -84,7 +84,7 @@ interface AuthState {
   hydrated: boolean;
   login: (email: string, password: string) => Promise<void>;
   registerSuccess: (access_token: string, refresh_token: string) => void;
-  sendSmsCode: (phone: string) => Promise<void>;
+  sendSmsCode: (phone: string, opts?: { loginOnly?: boolean }) => Promise<void>;
   loginWithPhone: (phone: string, code: string, inviteCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   clearSession: () => void;
@@ -165,14 +165,17 @@ export const useAuthStore = create<AuthState>((set) => ({
     applySession(set, access_token, refresh_token);
   },
 
-  sendSmsCode: async (phone: string) => {
+  sendSmsCode: async (phone: string, opts?: { loginOnly?: boolean }) => {
+    // login_only defaults true: the web login form must not silently register
+    // an unbound phone — the backend rejects it with phone_not_registered so
+    // the UI can guide the user to sign up instead. The bind flow passes
+    // { loginOnly: false } so any mainland phone can receive a code (the bind
+    // endpoint enforces ownership separately).
+    const loginOnly = opts?.loginOnly ?? true;
     const res = await fetch(apiUrl("POST", `/api/auth/sms/send`), {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Client-Id": CLIENT_ID },
-      // login_only: the web login form must not silently register an unbound
-      // phone — the backend rejects it with phone_not_registered so the UI can
-      // guide the user to sign up instead.
-      body: JSON.stringify({ phone, login_only: true }),
+      body: JSON.stringify({ phone, login_only: loginOnly }),
     });
 
     const data = await res.json().catch(() => ({}));

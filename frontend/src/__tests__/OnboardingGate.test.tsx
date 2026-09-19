@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 const mocks = vi.hoisted(() => ({
   isAuthenticated: true,
   getMyProfile: vi.fn(),
+  getAuthUser: vi.fn(),
 }));
 
 vi.mock("../store/authStore", () => ({
@@ -14,7 +15,7 @@ vi.mock("../store/authStore", () => ({
   },
 }));
 
-vi.mock("../api", () => ({ getMyProfile: mocks.getMyProfile }));
+vi.mock("../api", () => ({ getMyProfile: mocks.getMyProfile, getAuthUser: mocks.getAuthUser }));
 
 // Replace the authed dashboard subtree so a "ready" gate renders a marker
 // instead of pulling up the real dashboard / more API calls.
@@ -40,6 +41,9 @@ beforeEach(() => {
   );
   mocks.isAuthenticated = true;
   mocks.getMyProfile.mockReset();
+  // PhoneBindPrompt runs inside the ready gate; default to an already-bound
+  // phone so it does not open the bind modal in these gate tests.
+  mocks.getAuthUser.mockReset().mockResolvedValue({ id: "u1", email: null, phone: "13800138000" });
 });
 
 import AppRoutes from "../AppRoutes";

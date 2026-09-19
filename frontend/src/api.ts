@@ -107,6 +107,35 @@ export function getMyProfile() {
   return fetchJSON<MyProfile>("/users/me/profile");
 }
 
+// Auth-service identity surface. The gateway routes the exact path /users/me
+// (no suffix) to auth-backend, which owns the account/identity fields — phone
+// is only there. Used to decide whether the user has bound a phone.
+export interface AuthUserInfo {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  name: string | null;
+  avatar_url: string | null;
+  email_verified: boolean;
+}
+
+export function getAuthUser() {
+  return fetchJSON<AuthUserInfo>("/users/me");
+}
+
+// Phone bind / unbind. Both are Bearer-authenticated account operations routed
+// through apiFetch, so a stale access token is refreshed and retried once like
+// every other authenticated call (auth-wiring.md). They return JsonResult
+// ({ ok, status, data }); a non-2xx carries the auth apperror code in
+// data.error.
+export function bindPhone(phone: string, code: string) {
+  return postJSON<{ status?: string; error?: string }>("/users/me/phone", { phone, code });
+}
+
+export function unbindPhone() {
+  return deleteJSON<{ status?: string; error?: string }>("/users/me/phone");
+}
+
 export type RunningAgeRange = "unknown" | "lt_6m" | "6m_1y" | "1y_3y" | "3y_plus";
 
 export interface ProfileIn {

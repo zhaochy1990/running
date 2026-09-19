@@ -57,6 +57,20 @@ React + Vite + TypeScript SPA 在 `frontend/`。Light theme，monospace-heavy。
 
 当前赛季计划的无凭据浏览器回归用自包含 fixture（本地静态 SPA + 本地 fixture API，无需 BFF/上游）：`cd frontend && npm run smoke:plan:fixture`。它覆盖结构化、Markdown、404 创建页和读取错误四种状态。
 
+## Phone binding (auth-backend surface)
+
+Web 端手机号绑定走 auth-backend 的身份面（网关按精确路径把 `/api/users/me` 与
+`/api/users/me/phone` 路由到 `auth-backend`，不带后缀）。
+
+- `GET /api/users/me` —— 返回 `phone` 等身份字段；Web 用它判断是否已绑定手机
+- `POST /api/users/me/phone` `{ phone, code }` —— 绑定 / 换绑：验证码校验后写入
+  `users.phone` + `accounts`(sms) 行；手机号被其他账号占用返回 `409 phone_already_bound`
+- `DELETE /api/users/me/phone` —— 解绑；是唯一登录方式时返回 `409 cannot_unlink_last_account`
+- 发码复用 `POST /api/auth/sms/send`（`login_only: false`），前端 `sendSmsCode(phone, { loginOnly: false })`
+
+前端入口：`PhoneBindPrompt`（登录后、onboarding 完成后、`phone` 为空时弹 `PhoneBindModal`，
+可跳过、每次进入应用再提醒）；设置页 `PhoneBindingSection`（绑定 / 换绑 / 解绑）。
+
 ## Profile cutover target
 
 - Go `GET`/`POST`/`PATCH /api/users/me/profile` owns the five core profile fields plus `running_age_range`.

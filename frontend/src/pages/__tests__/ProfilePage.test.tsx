@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import ProfilePage from "../ProfilePage";
 
 const apiMock = vi.hoisted(() => ({
   getMyProfile: vi.fn(),
+  getAuthUser: vi.fn(),
   patchMyProfile: vi.fn(),
   deleteMyAccount: vi.fn(),
   listInjuries: vi.fn(),
@@ -13,11 +14,13 @@ const apiMock = vi.hoisted(() => ({
   deleteInjury: vi.fn(),
   refresh: vi.fn(),
   clearSession: vi.fn(),
+  unbindPhone: vi.fn(),
   navigate: vi.fn(),
 }));
 
 vi.mock("../../api", () => ({
   getMyProfile: apiMock.getMyProfile,
+  getAuthUser: apiMock.getAuthUser,
   patchMyProfile: apiMock.patchMyProfile,
   deleteMyAccount: apiMock.deleteMyAccount,
   listInjuries: apiMock.listInjuries,
@@ -31,7 +34,12 @@ vi.mock("../../UserContextValue", () => ({
 }));
 
 vi.mock("../../store/authStore", () => ({
-  useAuthStore: (selector: (state: { clearSession: () => void }) => unknown) => selector({ clearSession: apiMock.clearSession }),
+  // The real store allows a bare `useAuthStore()` (whole state); PhoneBindModal
+  // uses that form, so the mock must tolerate a missing selector.
+  useAuthStore: (selector?: (state: { clearSession: () => void; unbindPhone: () => void }) => unknown) => {
+    const state = { clearSession: apiMock.clearSession, unbindPhone: apiMock.unbindPhone };
+    return selector ? selector(state) : state;
+  },
 }));
 
 vi.mock("react-router-dom", async () => {
@@ -71,6 +79,12 @@ function renderPage() {
     </MemoryRouter>,
   );
 }
+
+beforeEach(() => {
+  // The phone-binding section reads the auth identity on mount; default to an
+  // already-bound phone so the section renders quietly in these profile tests.
+  apiMock.getAuthUser.mockResolvedValue({ id: "user-1", email: null, phone: "13800138000" });
+});
 
 afterEach(() => {
   vi.clearAllMocks();
