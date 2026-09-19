@@ -1,6 +1,10 @@
 package catalog
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/zhaochy1990/stride/internal/pipeline"
+)
 
 func TestJobUserInitiable(t *testing.T) {
 	m := JobUserInitiable()
@@ -97,6 +101,36 @@ func TestPipelineStepsAreCatalogedJobs(t *testing.T) {
 				t.Fatalf("pipeline %q step %q references uncataloged job type %q",
 					p.Def.Name, s.Name, s.JobType)
 			}
+		}
+	}
+}
+
+// TestCompetitionCalendarPipelineCataloged checks the internal system pipeline:
+// key discovery (optional, continue-on-failure) then the calendar fetch. Both
+// job types are internal-only, not user-initiable.
+func TestCompetitionCalendarPipelineCataloged(t *testing.T) {
+	for _, jt := range []string{JobTypeCompetitionCalendar, JobTypeFetchWAAPIKey} {
+		if ui, ok := JobUserInitiable()[jt]; !ok || ui {
+			t.Fatalf("%s should be internal-only, got ok=%v ui=%v", jt, ok, ui)
+		}
+	}
+	if ui, ok := PipelineUserInitiable()[PipelineCompetitionCalendar]; !ok || ui {
+		t.Fatalf("competition_calendar_sync pipeline should not be user-initiable, got ok=%v ui=%v", ok, ui)
+	}
+	def, ok := PipelineRegistry().Get(PipelineCompetitionCalendar)
+	if !ok {
+		t.Fatalf("competition_calendar_sync pipeline missing from registry")
+	}
+	want := []pipeline.StepDef{
+		{Name: "fetch_key", JobType: JobTypeFetchWAAPIKey, ContinueOnFailure: true},
+		{Name: "fetch", JobType: JobTypeCompetitionCalendar},
+	}
+	if len(def.Steps) != len(want) {
+		t.Fatalf("competition_calendar_sync has %d steps, want %d", len(def.Steps), len(want))
+	}
+	for i, s := range want {
+		if def.Steps[i] != s {
+			t.Fatalf("step %d = %+v, want %+v", i, def.Steps[i], s)
 		}
 	}
 }

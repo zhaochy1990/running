@@ -64,6 +64,18 @@ cos:
   region: ""
   base-url: ""          # public origin used to build thumb_url (CDN later)
 
+# World Athletics GraphQL API (public AWS AppSync endpoint) for the
+# competition_calendar_sync pipeline. The api-key is public — World Athletics
+# embeds it in the site's JS bundle — so it ships here as a non-secret default
+# and can be rotated via STRIDE_WORKER_WORLD_ATHLETICS_API_KEY.
+world-athletics:
+  endpoint: "https://graphql-prod-4895.edge.aws.worldathletics.org/graphql"
+  api-key: "da2-q7toieeiobcjxbov4abq3abk5u"
+  competition-group-id: 3775    # 3775 = World Athletics Label Road Races
+  competition-subgroup-id: 0    # 0 = all subgroups (Platinum/Gold/Silver/Bronze/Elite/Label)
+  seasons: []                   # empty -> the current Shanghai year
+  timeout: 60s
+
 # HTTP API server (`stride api`) — a separate container (ADR 0012), same unified
 # binary as the worker. The worker ignores this section. Secrets stay empty here
 # and come from env:
