@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"sync"
 
+	"go.uber.org/zap"
+
 	"github.com/zhaochy1990/stride/internal/httpx"
 )
 
@@ -70,6 +72,9 @@ var apiKeyConfigRe = regexp.MustCompile(`graphql:\{[^{}]*?endpoint:"([^"]+)"[^{}
 func (c *Client) DiscoverAPIKey(ctx context.Context, pageURL string) (APIKeyInfo, error) {
 	html, err := c.getText(ctx, pageURL)
 	if err != nil {
+		c.logger().Error("worldathletics: key discovery failed to fetch the site page",
+			zap.String("page", pageURL),
+			zap.Error(err))
 		return APIKeyInfo{}, fmt.Errorf("worldathletics: fetch site page: %w", err)
 	}
 	base := chunkBaseURL(pageURL)
@@ -80,6 +85,9 @@ func (c *Client) DiscoverAPIKey(ctx context.Context, pageURL string) (APIKeyInfo
 	if len(srcs) > maxDiscoveryChunks {
 		srcs = srcs[:maxDiscoveryChunks]
 	}
+	c.logger().Debug("worldathletics: key discovery scanning site chunks",
+		zap.String("page", pageURL),
+		zap.Int("chunks", len(srcs)))
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -98,9 +106,16 @@ func (c *Client) DiscoverAPIKey(ctx context.Context, pageURL string) (APIKeyInfo
 			}
 			js, err := c.getText(ctx, base+src)
 			if err != nil {
+				c.logger().Debug("worldathletics: key discovery chunk fetch failed",
+					zap.String("chunk", base+src),
+					zap.Error(err))
 				return
 			}
 			if info, ok := extractAPIKeyInfo(js); ok {
+				c.logger().Info("worldathletics: key discovery found API config",
+					zap.String("endpoint", info.Endpoint),
+					zap.String("api_key", MaskKey(info.APIKey)),
+					zap.String("chunk", base+src))
 				select {
 				case found <- info:
 					cancel() // one hit is enough; stop the remaining fetches
@@ -114,6 +129,10 @@ func (c *Client) DiscoverAPIKey(ctx context.Context, pageURL string) (APIKeyInfo
 	case info := <-found:
 		return info, nil
 	default:
+		c.logger().Error("worldathletics: key discovery found no API config in the site bundle",
+			zap.String("page", pageURL),
+			zap.Int("chunks_scanned", len(srcs)),
+			zap.String("error_code", "api_key_not_found"))
 		return APIKeyInfo{}, ErrAPIKeyNotFound
 	}
 }
@@ -128,7 +147,7 @@ func (c *Client) VerifyAPIKey(ctx context.Context, endpoint, apiKey string) erro
 	if err != nil {
 		return err
 	}
-	return httpx.Do(ctx, func() error {
+	err = httpx.Do(ctx, func() error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 		if err != nil {
 			return err
@@ -162,6 +181,23 @@ func (c *Client) VerifyAPIKey(ctx context.Context, endpoint, apiKey string) erro
 		}
 		return nil
 	})
+	if err != nil {
+		if errors.Is(err, ErrProbeRejected) {
+			c.logger().Warn("worldathletics: discovered API key rejected by GraphQL endpoint",
+				zap.String("endpoint", endpoint),
+				zap.String("api_key", MaskKey(apiKey)),
+				zap.Error(err))
+		} else {
+			c.logger().Warn("worldathletics: API key verification failed (transport)",
+				zap.String("endpoint", endpoint),
+				zap.Error(err))
+		}
+		return err
+	}
+	c.logger().Info("worldathletics: discovered API key verified",
+		zap.String("endpoint", endpoint),
+		zap.String("api_key", MaskKey(apiKey)))
+	return nil
 }
 
 // getText fetches url and returns its body, retrying transient failures via
@@ -171,11 +207,17 @@ func (c *Client) getText(ctx context.Context, url string) (string, error) {
 	err := httpx.Do(ctx, func() error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
+			c.logger().Debug("worldathletics: get failed",
+				zap.String("url", url),
+				zap.Error(err))
 			return err
 		}
 		req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; stride-bot/1.0)")
 		resp, err := c.hc.Do(req)
 		if err != nil {
+			c.logger().Debug("worldathletics: get failed",
+				zap.String("url", url),
+				zap.Error(err))
 			return err
 		}
 		defer resp.Body.Close()
@@ -184,6 +226,9 @@ func (c *Client) getText(ctx context.Context, url string) (string, error) {
 			return err
 		}
 		if resp.StatusCode != http.StatusOK {
+			c.logger().Debug("worldathletics: get non-2xx",
+				zap.String("url", url),
+				zap.Int("status", resp.StatusCode))
 			return &httpx.StatusError{Code: resp.StatusCode, Body: string(raw)}
 		}
 		body = string(raw)

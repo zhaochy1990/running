@@ -15,7 +15,10 @@ import (
 	"net/http"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/zhaochy1990/stride/internal/httpx"
+	"github.com/zhaochy1990/stride/internal/logging"
 )
 
 // Config wires the client. Endpoint and APIKey mirror the AppSync setup the WA
@@ -31,6 +34,7 @@ type Client struct {
 	endpoint string
 	apiKey   string
 	hc       *http.Client
+	log      *zap.Logger
 }
 
 // New returns a Client. A zero Timeout defaults to 60s.
@@ -43,6 +47,34 @@ func New(cfg Config) *Client {
 		apiKey:   cfg.APIKey,
 		hc:       &http.Client{Timeout: cfg.Timeout},
 	}
+}
+
+// WithLogger returns a copy of the client that logs with l. nil falls back to
+// the process logger (internal/logging.Default), which is nil-safe in tests.
+func (c *Client) WithLogger(l *zap.Logger) *Client {
+	cp := *c
+	cp.log = l
+	return &cp
+}
+
+// logger returns the client's logger, defaulting to the process logger.
+func (c *Client) logger() *zap.Logger {
+	if c.log != nil {
+		return c.log
+	}
+	return logging.Default()
+}
+
+// Endpoint exposes the endpoint the client talks to (for log context).
+func (c *Client) Endpoint() string { return c.endpoint }
+
+// MaskKey shortens an API key for logs, e.g. "da2-q7to...3abk5u". The key is
+// public, but logs should still avoid echoing full secrets by habit.
+func MaskKey(k string) string {
+	if len(k) <= 8 {
+		return "***"
+	}
+	return k[:4] + "..." + k[len(k)-4:]
 }
 
 // Event is one competition in a calendar season, mirroring the CalendarEvent
@@ -160,5 +192,17 @@ func (c *Client) MinisiteCalendar(ctx context.Context, season string, competitio
 		events = env.Data.GetMinisiteCalendarEvents.Results
 		return nil
 	})
-	return events, err
+	if err != nil {
+		c.logger().Warn("worldathletics: minisite calendar request failed",
+			zap.String("season", season),
+			zap.String("endpoint", c.endpoint),
+			zap.Error(err))
+		return events, err
+	}
+	c.logger().Info("worldathletics: minisite calendar fetched",
+		zap.String("season", season),
+		zap.String("endpoint", c.endpoint),
+		zap.Int("events", len(events)),
+	)
+	return events, nil
 }

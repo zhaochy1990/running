@@ -19,7 +19,10 @@ import (
 	"fmt"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"github.com/zhaochy1990/stride/internal/job"
+	"github.com/zhaochy1990/stride/internal/logging"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 	"github.com/zhaochy1990/stride/internal/worldathletics"
@@ -48,14 +51,25 @@ type Config struct {
 	// DefaultSeasons is used when the job input omits "seasons". Empty means the
 	// current Shanghai year.
 	DefaultSeasons []string
+	// Logger is the structured logger for this handler's diagnostics. nil falls
+	// back to the process logger.
+	Logger *zap.Logger
 }
 
 // New returns the competition_calendar_sync job.Handler.
 func New(cfg Config) job.Handler {
+	log := cfg.Logger
+	if log == nil {
+		log = logging.Default()
+	}
 	return func(ctx context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		in, err := resolveInput(j.InputJSON)
 		if err != nil {
 			// A malformed payload can't be fixed by retrying.
+			log.Error("competition_calendar_sync: malformed job input",
+				zap.String("job_id", j.ID),
+				zap.String("error_code", "bad_payload"),
+				zap.Error(err))
 			return "", job.NewPermanentError("bad_payload", err)
 		}
 
@@ -72,6 +86,14 @@ func New(cfg Config) job.Handler {
 		client := cfg.Client
 		if in.Endpoint != "" && in.APIKey != "" {
 			client = cfg.Client.WithCredentials(in.Endpoint, in.APIKey)
+			log.Info("competition_calendar_sync: using discovered credentials from the key step",
+				zap.String("job_id", j.ID),
+				zap.String("endpoint", in.Endpoint),
+				zap.String("api_key", worldathletics.MaskKey(in.APIKey)))
+		} else {
+			log.Info("competition_calendar_sync: using configured credentials",
+				zap.String("job_id", j.ID),
+				zap.String("endpoint", cfg.Client.Endpoint()))
 		}
 
 		out := struct {
@@ -83,6 +105,12 @@ func New(cfg Config) job.Handler {
 			_ = hb(stage, 10)
 			events, err := client.MinisiteCalendar(ctx, season, cfg.CompetitionGroupID, cfg.CompetitionSubgroupID)
 			if err != nil {
+				log.Error("competition_calendar_sync: season fetch failed",
+					zap.String("job_id", j.ID),
+					zap.String("season", season),
+					zap.String("endpoint", client.Endpoint()),
+					zap.Int("competition_group_id", cfg.CompetitionGroupID),
+					zap.Error(err))
 				return "", err
 			}
 			_ = hb(stage, 60)
@@ -94,12 +122,27 @@ func New(cfg Config) job.Handler {
 			res, err := cfg.Store.ReplaceCompetitionCalendarSeason(ctx, Source, season, rows)
 			if err != nil {
 				if storage.IsDeterministicWriteError(err) {
+					log.Error("competition_calendar_sync: season write failed (deterministic)",
+						zap.String("job_id", j.ID),
+						zap.String("season", season),
+						zap.String("error_code", "storage_constraint"),
+						zap.Error(err))
 					return "", job.NewPermanentError("storage_constraint", err)
 				}
+				log.Error("competition_calendar_sync: season write failed",
+					zap.String("job_id", j.ID),
+					zap.String("season", season),
+					zap.Error(err))
 				return "", err
 			}
 			_ = hb(stage, 100)
 			out.Seasons[season] = seasonSummary{Fetched: len(events), Upserted: res.Upserted, Deleted: res.Deleted}
+			log.Info("competition_calendar_sync: season synced",
+				zap.String("job_id", j.ID),
+				zap.String("season", season),
+				zap.Int("fetched", len(events)),
+				zap.Int("upserted", res.Upserted),
+				zap.Int("deleted", res.Deleted))
 		}
 
 		result, _ := json.Marshal(out)

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/worldathletics"
 )
@@ -48,7 +50,7 @@ func keySiteServer(t *testing.T, rejectProbe bool) (pageURL, gqlURL string) {
 func TestKeyFetcherReturnsDiscoveredCredentials(t *testing.T) {
 	pageURL, gqlURL := keySiteServer(t, false)
 	client := worldathletics.New(worldathletics.Config{Timeout: 5 * time.Second})
-	h := NewKeyFetcher(client, pageURL+"/page")
+	h := NewKeyFetcher(client, pageURL+"/page", zap.NewNop())
 
 	res, err := h(context.Background(), &job.Job{}, func(string, int) error { return nil })
 	if err != nil {
@@ -69,7 +71,7 @@ func TestKeyFetcherReturnsDiscoveredCredentials(t *testing.T) {
 func TestKeyFetcherProbeRejectedIsPermanent(t *testing.T) {
 	pageURL, _ := keySiteServer(t, true)
 	client := worldathletics.New(worldathletics.Config{Timeout: 5 * time.Second})
-	h := NewKeyFetcher(client, pageURL+"/page")
+	h := NewKeyFetcher(client, pageURL+"/page", zap.NewNop())
 
 	_, err := h(context.Background(), &job.Job{}, func(string, int) error { return nil })
 	if _, perm := job.AsPermanent(err); !perm {
