@@ -165,6 +165,33 @@ func TestMustLoadFrom_InvalidRaceDetectionAPIKindPanics(t *testing.T) {
 	_ = MustLoadFrom(writeConfig(t, body))
 }
 
+func TestMustLoadFrom_WorldAthleticsAndAbsentDefault(t *testing.T) {
+	// Present: every field resolves (the API key is a public non-secret default).
+	body := validYAML + `
+world-athletics:
+  endpoint: https://graphql-prod-4895.edge.aws.worldathletics.org/graphql
+  api-key: da2-test
+  competition-group-id: 3775
+  competition-subgroup-id: 0
+  years: ["2026", "2027"]
+  timeout: 60s
+`
+	cfg := MustLoadFrom(writeConfig(t, body))
+	if cfg.WorldAthletics.Endpoint == "" || cfg.WorldAthletics.APIKey != "da2-test" ||
+		cfg.WorldAthletics.CompetitionGroupID != 3775 || cfg.WorldAthletics.Timeout != 60*time.Second {
+		t.Fatalf("world-athletics = %+v", cfg.WorldAthletics)
+	}
+	if len(cfg.WorldAthletics.Years) != 2 || cfg.WorldAthletics.Years[0] != "2026" {
+		t.Fatalf("seasons = %v", cfg.WorldAthletics.Years)
+	}
+
+	// Absent section must not panic (the field is optional, like COS).
+	absent := MustLoadFrom(writeConfig(t, validYAML))
+	if absent.WorldAthletics.Endpoint != "" {
+		t.Fatalf("absent section should leave endpoint empty, got %q", absent.WorldAthletics.Endpoint)
+	}
+}
+
 func TestMustLoadRaceDetectionRuntimeFrom_ReadsMySQLAndRaceSettings(t *testing.T) {
 	body := `
 mysql:

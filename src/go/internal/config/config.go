@@ -24,14 +24,15 @@ const DefaultConfigFile = "config.yml"
 
 // Config is the fully-resolved worker configuration.
 type Config struct {
-	Logger        logger.LoggerConfig `mapstructure:"logger"`
-	MySQL         MySQL               `mapstructure:"mysql"`
-	AMQP          AMQP                `mapstructure:"amqp"`
-	Queues        Queues              `mapstructure:"queues"`
-	Retry         Retry               `mapstructure:"retry"`
-	Runtime       Runtime             `mapstructure:"runtime"`
-	RaceDetection RaceDetection       `mapstructure:"race-detection"`
-	COS           COS                 `mapstructure:"cos"`
+	Logger         logger.LoggerConfig `mapstructure:"logger"`
+	MySQL          MySQL               `mapstructure:"mysql"`
+	AMQP           AMQP                `mapstructure:"amqp"`
+	Queues         Queues              `mapstructure:"queues"`
+	Retry          Retry               `mapstructure:"retry"`
+	Runtime        Runtime             `mapstructure:"runtime"`
+	RaceDetection  RaceDetection       `mapstructure:"race-detection"`
+	COS            COS                 `mapstructure:"cos"`
+	WorldAthletics WorldAthletics      `mapstructure:"world-athletics"`
 }
 
 // MySQL holds the datastore connection (secret; env-only).
@@ -101,6 +102,24 @@ type COS struct {
 	// BaseURL is the public origin prepended to the object key when building
 	// the URL stored on the activity row.
 	BaseURL string `mapstructure:"base-url"`
+}
+
+// WorldAthletics configures the World Athletics GraphQL client used by the
+// race_calendar_sync pipeline. The API key is NOT a secret — World
+// Athletics embeds it in the site's JS bundle, so it ships as a config.yml
+// default and can be rotated via STRIDE_WORKER_WORLD_ATHLETICS_API_KEY if
+// upstream changes it. CompetitionGroupID pins which calendar is mirrored
+// (3775 = World Athletics Label Road Races); an empty Years means "the current
+// Shanghai year". Every field is optional (like COS): the worker boots without
+// the section, and a job run then fails loudly if the endpoint was never
+// configured.
+type WorldAthletics struct {
+	Endpoint              string        `mapstructure:"endpoint"`
+	APIKey                string        `mapstructure:"api-key"`
+	CompetitionGroupID    int           `mapstructure:"competition-group-id"`
+	CompetitionSubgroupID int           `mapstructure:"competition-subgroup-id"`
+	Years                 []string      `mapstructure:"years"`
+	Timeout               time.Duration `mapstructure:"timeout"`
 }
 
 // MustLoad resolves the config path (explicit CONFIG_PATH env, else

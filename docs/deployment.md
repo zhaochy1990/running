@@ -228,6 +228,37 @@ commit 前必须用已人工审阅 manifest 的 hash 重新核对 Azure 源和 M
 `STRIDE_GO_API_URL` repository variable、`STRIDE_GO_INTERNAL_TOKEN` secret，以及按
 workflow run 和用户固定的 `Idempotency-Key`；因此网络重试不会重复入队。API 返回 `202`（或幂等重放的 `200`）后完成。该 workflow 只调用 Go API，不提供 Python backfill fallback。Go API 的 `STRIDE_WORKER_API_INTERNAL_TOKEN` 必须与 `STRIDE_GO_INTERNAL_TOKEN` 同值。
 
+### `.github/workflows/race-calendar-sync.yml` —— 每日比赛日历同步
+
+每天 00:00 Asia/Shanghai 触发，通过 Go API 的 `POST /pipelines` 启动 internal-only
+系统 pipeline `race_calendar_sync`（无 subject user），两步：
+
+1. `fetch_wa_api_key`（可选，`ContinueOnFailure`）：抓取 worldathletics.org 页面
+   的初始 JS chunk，从站点配置对象里提取当前 AppSync GraphQL **endpoint + API key**
+   （该 key 是公开的、内嵌在站点 bundle 里，世界田联可随时轮换），并用一个极小的
+   introspection 探针验证它确实可用，返回 `{"endpoint":...,"api_key":...}`。
+2. `race_calendar_sync`：用第一步发现的（缺省时用 `config.yml` 配置的）
+   key 调 World Athletics GraphQL API（`getMinisiteCalendarEvents`，Label Road
+   Races 组）拉取当前上海年份的赛事，upsert 到 MySQL 的 `race_calendar` 表
+   （`source` 用固定中文值 `国际田联`，identity `(source, year, name)`，不含任何
+   上游内部 id；整年镜像，上游消失的赛事会被删除）。写入时把上游 `venue` 解析成
+   三级地址 `country`（3 字母 ISO）/`province`（中国中文省、国外英文州）/`city`
+   （中国城市映射中文名如 厦门市、国外保留英文原名），由 `race_date` 派生
+   `month`/`dayofmonth` 以便按月查询；`name_cn` 供后续人工填充中文名，同步永不
+   覆盖。
+
+> **旧表清理**：本 feature 早期迭代曾把数据写进 `competition_calendar` 表，重构后该表不再
+> 更新，AutoMigrate 也不会 drop 它。若生产环境曾跑过旧版本，请人工确认后
+> `DROP TABLE IF EXISTS competition_calendar;`（它没有独立数据，镜像语义由
+> `race_calendar` 承接）。
+
+该设计让 key 轮换**自愈**：第一步失败时 pipeline 继续，第二步回落到配置 key，日历
+照常同步；同时 workflow 会检查 run 的 step 状态，key 发现步骤挂掉时显式失败以便人工
+介入。Idempotency-Key 按上海日固定，重复触发安全；handler 本身幂等（upsert）。默认
+拉当前年份，如需多赛季可在 workflow `workflow_dispatch` 时把 `input` 改成
+`{"seasons":["2026","2027"]}`。依赖 `STRIDE_GO_API_URL` variable 与
+`STRIDE_GO_INTERNAL_TOKEN` secret（同 Go API `STRIDE_WORKER_API_INTERNAL_TOKEN`）。
+
 ### `.github/workflows/sync-data.yml` —— 已删除（不再同步到 Azure Files）
 
 该 workflow 曾把 `data/*/logs/**` 的 markdown / json / 体测图片、`TRAINING_PLAN.md`、`status.md`、
