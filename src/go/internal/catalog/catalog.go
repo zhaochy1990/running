@@ -49,13 +49,13 @@ const (
 	// JobTypeRouteThumbnailsBackfill is the internal one-time all-history scan
 	// that fills in thumbnails for activities synced before the feature existed.
 	JobTypeRouteThumbnailsBackfill = "route_thumbnails_backfill"
-	// JobTypeCompetitionCalendar syncs the external World Athletics competition
+	// JobTypeRaceCalendar syncs the external World Athletics competition
 	// calendar (label road races) into the race_calendar table. It is a system
 	// job (no subject user): internal-only, the final step of the
-	// competition_calendar_sync pipeline started by the daily cron workflow.
+	// race_calendar_sync pipeline started by the daily cron workflow.
 	// It consumes the endpoint/api_key its upstream step discovered, falling
 	// back to the configured key when absent.
-	JobTypeCompetitionCalendar = "competition_calendar_sync"
+	JobTypeRaceCalendar = "race_calendar_sync"
 	// JobTypeFetchWAAPIKey discovers the current World Athletics AppSync
 	// endpoint + API key from the site's JS bundle (the key is public) and
 	// returns {"endpoint":...,"api_key":...} for the calendar step, so the daily
@@ -64,7 +64,7 @@ const (
 )
 
 // Pipeline names (ADR 0020). onboarding and data_sync are fronted by
-// POST /api/{user}/sync, which picks by mode; competition_calendar_sync is an
+// POST /api/{user}/sync, which picks by mode; race_calendar_sync is an
 // internal system pipeline started by the daily cron workflow.
 const (
 	// PipelineOnboarding is the full path: watch_sync(full) -> optional
@@ -74,10 +74,10 @@ const (
 	// PipelineDataSync is the ongoing incremental path: watch_sync(incremental)
 	// -> optional race_detection -> compute(incremental).
 	PipelineDataSync = "data_sync"
-	// PipelineCompetitionCalendar mirrors the World Athletics label-road-races
+	// PipelineRaceCalendar mirrors the World Athletics label-road-races
 	// calendar into race_calendar. Internal-only (system run, no subject user);
 	// the daily cron workflow starts it via POST /pipelines.
-	PipelineCompetitionCalendar = "competition_calendar_sync"
+	PipelineRaceCalendar = "race_calendar_sync"
 )
 
 // JobSpec is one known job type and whether end users may enqueue it directly.
@@ -169,9 +169,9 @@ func Jobs() []JobSpec {
 			ExampleInput:  json.RawMessage(`{"mode":"backfill","days":180}`),
 		},
 		{
-			Type:          JobTypeCompetitionCalendar,
+			Type:          JobTypeRaceCalendar,
 			UserInitiable: false,
-			Description:   "Mirror the World Athletics label-road-races calendar into the race_calendar table (source 国际田联), parsing the upstream venue into country/province/city (Chinese cities mapped to Chinese names). System job (no subject user). Years come from the input {\"years\":[...]}, else the configured defaults, else the current Shanghai year. endpoint/api_key in the input (threaded from the fetch_wa_api_key step) override the configured client credentials. Internal-only; the daily cron workflow starts it via the competition_calendar_sync pipeline.",
+			Description:   "Mirror the World Athletics label-road-races calendar into the race_calendar table (source 国际田联), parsing the upstream venue into country/province/city (Chinese cities mapped to Chinese names). System job (no subject user). Years come from the input {\"years\":[...]}, else the configured defaults, else the current Shanghai year. endpoint/api_key in the input (threaded from the fetch_wa_api_key step) override the configured client credentials. Internal-only; the daily cron workflow starts it via the race_calendar_sync pipeline.",
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"},"description":"World Athletics seasons (calendar years) to fetch. Empty uses the configured defaults / current Shanghai year."},"endpoint":{"type":"string","description":"Discovered GraphQL endpoint (from fetch_wa_api_key)."},"api_key":{"type":"string","description":"Discovered GraphQL API key (from fetch_wa_api_key)."}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
 		},
@@ -229,10 +229,10 @@ func Pipelines() []PipelineSpec {
 		},
 		{
 			Def: pipeline.Def{
-				Name: PipelineCompetitionCalendar,
+				Name: PipelineRaceCalendar,
 				Steps: []pipeline.StepDef{
 					{Name: "fetch_key", JobType: JobTypeFetchWAAPIKey, ContinueOnFailure: true},
-					{Name: "fetch", JobType: JobTypeCompetitionCalendar},
+					{Name: "fetch", JobType: JobTypeRaceCalendar},
 				},
 			},
 			UserInitiable: false,

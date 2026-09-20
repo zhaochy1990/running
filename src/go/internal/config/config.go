@@ -105,7 +105,7 @@ type COS struct {
 }
 
 // WorldAthletics configures the World Athletics GraphQL client used by the
-// competition_calendar_sync pipeline. The API key is NOT a secret — World
+// race_calendar_sync pipeline. The API key is NOT a secret — World
 // Athletics embeds it in the site's JS bundle, so it ships as a config.yml
 // default and can be rotated via STRIDE_WORKER_WORLD_ATHLETICS_API_KEY if
 // upstream changes it. CompetitionGroupID pins which calendar is mirrored

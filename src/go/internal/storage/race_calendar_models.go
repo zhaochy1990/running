@@ -4,7 +4,7 @@ import "time"
 
 // RaceCalendarEvent is one race in an externally-sourced race calendar
 // (currently the World Athletics label road races, source value 国际田联)
-// mirrored into MySQL by the competition_calendar_sync pipeline. It is a system
+// mirrored into MySQL by the race_calendar_sync pipeline. It is a system
 // table — there is no user_id.
 //
 // Identity is (source, name, race_date): the same race name on the same date

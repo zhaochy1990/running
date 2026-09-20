@@ -65,7 +65,7 @@ cos:
   base-url: ""          # public origin used to build thumb_url (CDN later)
 
 # World Athletics GraphQL API (public AWS AppSync endpoint) for the
-# competition_calendar_sync pipeline. The api-key is public — World Athletics
+# race_calendar_sync pipeline. The api-key is public — World Athletics
 # embeds it in the site's JS bundle — so it ships here as a non-secret default
 # and can be rotated via STRIDE_WORKER_WORLD_ATHLETICS_API_KEY.
 world-athletics:

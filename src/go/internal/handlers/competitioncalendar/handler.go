@@ -1,7 +1,7 @@
 // Package competitioncalendar provides the worker job handlers for the
-// competition_calendar_sync pipeline: "fetch_wa_api_key" discovers the current
+// race_calendar_sync pipeline: "fetch_wa_api_key" discovers the current
 // World Athletics AppSync endpoint + API key from the site bundle, and
-// "competition_calendar_sync" fetches one or more years of a competition-group
+// "race_calendar_sync" fetches one or more years of a competition-group
 // calendar (the label road races by default) and mirrors them into the
 // race_calendar table. Both are internal-only, system-scoped steps — there is
 // no subject user.
@@ -30,8 +30,8 @@ import (
 	"github.com/zhaochy1990/stride/internal/worldathletics"
 )
 
-// JobType is the registered job_type for the competition-calendar sync handler.
-const JobType = "competition_calendar_sync"
+// JobType is the registered job_type for the race-calendar sync handler.
+const JobType = "race_calendar_sync"
 
 // Source labels the rows this handler writes — a fixed Chinese value per source
 // (国际田联 for the World Athletics label road races; 中国田协 reserved for a
@@ -59,7 +59,7 @@ type Config struct {
 	Logger *zap.Logger
 }
 
-// New returns the competition_calendar_sync job.Handler.
+// New returns the race_calendar_sync job.Handler.
 func New(cfg Config) job.Handler {
 	log := cfg.Logger
 	if log == nil {
@@ -69,7 +69,7 @@ func New(cfg Config) job.Handler {
 		in, err := resolveInput(j.InputJSON)
 		if err != nil {
 			// A malformed payload can't be fixed by retrying.
-			log.Error("competition_calendar_sync: malformed job input",
+			log.Error("race_calendar_sync: malformed job input",
 				zap.String("job_id", j.ID),
 				zap.String("error_code", "bad_payload"),
 				zap.Error(err))
@@ -89,12 +89,12 @@ func New(cfg Config) job.Handler {
 		client := cfg.Client
 		if in.Endpoint != "" && in.APIKey != "" {
 			client = cfg.Client.WithCredentials(in.Endpoint, in.APIKey)
-			log.Info("competition_calendar_sync: using discovered credentials from the key step",
+			log.Info("race_calendar_sync: using discovered credentials from the key step",
 				zap.String("job_id", j.ID),
 				zap.String("endpoint", in.Endpoint),
 				zap.String("api_key", worldathletics.MaskKey(in.APIKey)))
 		} else {
-			log.Info("competition_calendar_sync: using configured credentials",
+			log.Info("race_calendar_sync: using configured credentials",
 				zap.String("job_id", j.ID),
 				zap.String("endpoint", cfg.Client.Endpoint()))
 		}
@@ -108,7 +108,7 @@ func New(cfg Config) job.Handler {
 			_ = hb(stage, 10)
 			events, err := client.MinisiteCalendar(ctx, year, cfg.CompetitionGroupID, cfg.CompetitionSubgroupID)
 			if err != nil {
-				log.Error("competition_calendar_sync: year fetch failed",
+				log.Error("race_calendar_sync: year fetch failed",
 					zap.String("job_id", j.ID),
 					zap.String("year", year),
 					zap.String("endpoint", client.Endpoint()),
@@ -125,14 +125,14 @@ func New(cfg Config) job.Handler {
 			res, err := cfg.Store.ReplaceRaceCalendarYear(ctx, Source, year, rows)
 			if err != nil {
 				if storage.IsDeterministicWriteError(err) {
-					log.Error("competition_calendar_sync: year write failed (deterministic)",
+					log.Error("race_calendar_sync: year write failed (deterministic)",
 						zap.String("job_id", j.ID),
 						zap.String("year", year),
 						zap.String("error_code", "storage_constraint"),
 						zap.Error(err))
 					return "", job.NewPermanentError("storage_constraint", err)
 				}
-				log.Error("competition_calendar_sync: year write failed",
+				log.Error("race_calendar_sync: year write failed",
 					zap.String("job_id", j.ID),
 					zap.String("year", year),
 					zap.Error(err))
@@ -140,7 +140,7 @@ func New(cfg Config) job.Handler {
 			}
 			_ = hb(stage, 100)
 			out.Years[year] = yearSummary{Fetched: len(events), Upserted: res.Upserted, Deleted: res.Deleted}
-			log.Info("competition_calendar_sync: year synced",
+			log.Info("race_calendar_sync: year synced",
 				zap.String("job_id", j.ID),
 				zap.String("year", year),
 				zap.Int("fetched", len(events)),

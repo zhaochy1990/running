@@ -27,7 +27,7 @@ const DefaultSitePageURL = "https://worldathletics.org/competitions/world-athlet
 // to scan (DefaultSitePageURL in production; a test server in tests). log may
 // be nil (falls back to the process logger).
 //
-// It is the first step of the competition_calendar_sync pipeline with
+// It is the first step of the race_calendar_sync pipeline with
 // ContinueOnFailure: on any failure the next step falls back to the configured
 // key, so key-rotation self-healing never blocks a calendar sync; the failed
 // step stays visible on the run.

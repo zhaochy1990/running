@@ -1,4 +1,4 @@
-name: Competition calendar sync
+name: Race calendar sync
 
 # Required GitHub Actions repository variable and secret:
 #   STRIDE_GO_API_URL         — base URL of the deployed Go API, e.g.
@@ -19,7 +19,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Start the competition_calendar_sync pipeline
+      - name: Start the race_calendar_sync pipeline
         env:
           GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}
           GO_INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}
@@ -32,9 +32,9 @@ jobs:
 
           URL="${GO_API_URL%/}/pipelines"
           DAY=$(TZ=Asia/Shanghai date +%F)
-          KEY="competition-calendar-sync-$DAY"
+          KEY="race-calendar-sync-$DAY"
 
-          echo "## Competition calendar sync" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Race calendar sync" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Shanghai day: \`$DAY\`, idempotency key: \`$KEY\`" >> "$GITHUB_STEP_SUMMARY"
 
@@ -51,7 +51,7 @@ jobs:
               -H "X-Internal-Token: $GO_INTERNAL_TOKEN" \
               -H "Content-Type: application/json" \
               -H "Idempotency-Key: $KEY" \
-              --data '{"name":"competition_calendar_sync"}' \
+              --data '{"name":"race_calendar_sync"}' \
               "$URL"
           }
 
