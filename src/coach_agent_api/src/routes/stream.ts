@@ -19,8 +19,11 @@
  * a `values` chunk on the same stream, so the run must be drained to completion
  * before `done` is built — a partial snapshot has no reply message.
  */
+import { getLogger } from "@stride/common";
 import type { CoachStreamSource } from "../coach/coachInvoker.js";
 import { toPublicResponse } from "../publicResponse.js";
+
+const logger = getLogger("routes/stream");
 
 /** Phase labels a `status` event can carry. */
 export type CoachStatusPhase = "running_tool" | "analyzing";
@@ -70,6 +73,13 @@ export async function collectCoachStream(run: CoachStreamSource, emit: CoachStre
       }
     }
   } catch (error) {
+    // Distinguish "failed before the first values snapshot" (almost always an
+    // early model/tool error — nothing usable to return) from "failed mid-stream
+    // after a snapshot was seen" (a later node blew up, last snapshot is kept).
+    logger.warn(
+      { err: error, sawState: output !== undefined },
+      "coach stream iteration failed",
+    );
     if (output === undefined) throw error;
   }
 

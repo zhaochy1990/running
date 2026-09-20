@@ -112,7 +112,12 @@ async function streamChat(dependencies: ChatDependencies, stream: SSEStreamingAp
     await emit("done", { turn_id: turnId, ...response });
   } catch (error) {
     const { kind, message } = classifyTurnError(error);
-    logger.error({ error, threadId }, "coach streaming turn failed");
+    // `err` (not `error`) triggers pino's Error serializer — `error: {}` used to
+    // swallow message/stack and leave the actual cause invisible in prod logs.
+    logger.error(
+      { err: error instanceof Error ? error : undefined, kind, message, clientTurnId: body.clientTurnId, threadId },
+      "coach streaming turn failed",
+    );
     await emit("error", { turn_id: turnId, code: kind, message });
   }
 }

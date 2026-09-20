@@ -77,7 +77,15 @@ export function createLoggingMiddleware(scope = "agent") {
         "message sent to LLM,",
       );
 
-      const response = await handler(request);
+      // A failing model call is the classic silent killer: without this the
+      // error surfaces only as an opaque `coach_turn_failed` from chat.ts.
+      let response;
+      try {
+        response = await handler(request);
+      } catch (error) {
+        log.error({ err: error, ms: Date.now() - startedAt }, "LLM call failed");
+        throw error;
+      }
 
       const toolCalls = response.tool_calls ?? [];
       const reasoning = reasoningSignature(response);

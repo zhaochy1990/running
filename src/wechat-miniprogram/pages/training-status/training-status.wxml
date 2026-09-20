@@ -1,0 +1,189 @@
+<view class="page">
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">训练状态</view>
+        <view class="top-bar__subtitle">Threshold · Zones · Load</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <!-- 内容 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- 加载态 -->
+    <view wx:if="{{loading}}" class="state-card">
+      <view class="spinner"></view>
+      <view class="state-card__text">加载中…</view>
+    </view>
+
+    <!-- 加载失败 -->
+    <view wx:elif="{{error}}" class="empty-card">
+      <view class="empty-card__title">加载失败</view>
+      <view class="empty-card__sub">{{error}}</view>
+    </view>
+
+    <block wx:else>
+      <!-- 核心指标 -->
+      <view class="section-title">核心指标</view>
+      <view class="metric-grid">
+        <view class="metric-card" wx:for="{{metrics}}" wx:key="label">
+          <view class="metric-card__label">{{item.label}}</view>
+          <view class="metric-card__sub">{{item.sub}}</view>
+          <view class="metric-card__value" style="color: {{item.color}};">{{item.value}}<text class="metric-card__unit">{{item.unit}}</text></view>
+          <view wx:if="{{item.baseline}}" class="metric-card__baseline">{{item.baseline}}</view>
+        </view>
+      </view>
+
+      <!-- 趋势 -->
+      <view class="section-title section-title--row">
+        <text>趋势</text>
+        <view class="window-toggle">
+          <view
+            wx:for="{{trendOptions}}"
+            wx:key="value"
+            class="window-toggle__item {{item.active ? 'window-toggle__item--active' : ''}}"
+            data-value="{{item.value}}"
+            bindtap="onWindowChange"
+          >{{item.label}}</view>
+        </view>
+      </view>
+      <view class="card chart-card">
+        <view class="chart-card__label">静息心率 · 手表读数</view>
+        <canvas wx:if="{{hasRhrChart}}" type="2d" id="rhr-chart" class="chart chart--lg" bindtouchstart="onRhrTouch" bindtouchmove="onRhrTouch"></canvas>
+        <view wx:else class="chart-empty">暂无 RHR 数据</view>
+      </view>
+      <view class="card chart-card">
+        <view class="chart-card__label">心率变异性 · 手表读数</view>
+        <canvas wx:if="{{hasHrvChart}}" type="2d" id="hrv-chart" class="chart chart--lg" bindtouchstart="onHrvTouch" bindtouchmove="onHrvTouch"></canvas>
+        <view wx:else class="chart-empty">暂无 HRV 数据</view>
+      </view>
+
+      <!-- 训练负荷 -->
+      <block wx:if="{{hasLoad}}">
+        <view class="section-title">训练负荷</view>
+        <view class="card">
+          <view class="load-grid">
+            <view class="load-stat" wx:for="{{loadStats}}" wx:key="label">
+              <view class="load-stat__label">{{item.label}}</view>
+              <view class="load-stat__value" style="color: {{item.color}};">{{item.value}}</view>
+            </view>
+          </view>
+          <view class="readiness">
+            <view class="readiness__badge" style="color: {{readinessColor}}; background: {{readinessBg}};">{{readinessLabel}}</view>
+            <view wx:if="{{readinessReasons}}" class="readiness__reasons">{{readinessReasons}}</view>
+          </view>
+        </view>
+
+        <view class="card chart-card">
+          <view class="chart-card__label">每日训练负荷（Dose）</view>
+          <canvas wx:if="{{hasDoseChart}}" type="2d" id="dose-chart" class="chart" bindtouchstart="onDoseTouch" bindtouchmove="onDoseTouch"></canvas>
+          <view wx:else class="chart-empty">暂无训练负荷数据</view>
+        </view>
+
+        <view class="card chart-card">
+          <view class="chart-card__label">慢性负荷（42日 EWMA） vs 急性负荷（7日 EWMA）</view>
+          <canvas wx:if="{{hasLoadChart}}" type="2d" id="load-chart" class="chart" bindtouchstart="onLoadTouch" bindtouchmove="onLoadTouch"></canvas>
+          <view wx:else class="chart-empty">暂无趋势数据</view>
+        </view>
+
+        <view class="card chart-card">
+          <view class="chart-card__label">竞技状态 Form（慢性负荷 − 急性负荷）</view>
+          <canvas wx:if="{{hasFormChart}}" type="2d" id="form-chart" class="chart" bindtouchstart="onFormTouch" bindtouchmove="onFormTouch"></canvas>
+          <view wx:else class="chart-empty">暂无 Form 数据</view>
+          <view class="legend">
+            <view class="legend__item" wx:for="{{formLegend}}" wx:key="label">
+              <view class="legend__dot" style="background: {{item.color}};"></view>
+              <text class="legend__text">{{item.label}}</text>
+            </view>
+          </view>
+          <view wx:if="{{currentCtlNote}}" class="chart-note">{{currentCtlNote}}</view>
+        </view>
+
+        <view class="card chart-card">
+          <view class="chart-card__label">8 周负荷趋势</view>
+          <canvas wx:if="{{hasWeekChart}}" type="2d" id="week-chart" class="chart chart--sm" bindtouchstart="onWeekTouch" bindtouchmove="onWeekTouch"></canvas>
+          <view wx:else class="chart-empty">暂无周剂量数据</view>
+        </view>
+
+        <view class="card">
+          <view class="chart-card__label">16 周训练热力图</view>
+          <view class="heatmap">
+            <view class="heatmap__gutter">
+              <view class="heatmap__gutter-month"></view>
+              <view class="heatmap__gutter-label">一</view>
+              <view class="heatmap__gutter-label"></view>
+              <view class="heatmap__gutter-label">三</view>
+              <view class="heatmap__gutter-label"></view>
+              <view class="heatmap__gutter-label">五</view>
+              <view class="heatmap__gutter-label"></view>
+            </view>
+            <view class="heatmap__col" wx:for="{{heatWeeks}}" wx:key="weekIdx" wx:for-item="week">
+              <view class="heatmap__month {{week.month ? 'heatmap__month--show' : ''}}">{{week.month}}</view>
+              <view
+                wx:for="{{week.cells}}"
+                wx:key="date"
+                wx:for-item="cell"
+                class="heatmap__cell heatmap__cell--{{cell.state}} {{cell.tone}} {{cell.isToday ? 'heatmap__cell--today' : ''}}"
+                data-date="{{cell.date}}"
+                bindtap="onHeatTap"
+              ></view>
+            </view>
+          </view>
+          <view class="heatmap-legend">
+            <text class="heatmap-legend__text">少</text>
+            <view wx:for="{{heatColors}}" wx:key="index" class="heatmap-legend__swatch" style="background: {{item}};"></view>
+            <text class="heatmap-legend__text">多</text>
+          </view>
+          <view wx:if="{{heatSelected}}" class="heat-detail">
+            <view class="heat-detail__title">{{heatSelected.title}}</view>
+            <view class="heat-detail__dose">{{heatSelected.dose}}</view>
+            <view class="heat-detail__line" wx:for="{{heatSelected.lines}}" wx:key="index">{{item}}</view>
+          </view>
+        </view>
+      </block>
+
+      <!-- 配速 / 心率区间 -->
+      <block wx:if="{{hasZones}}">
+        <view class="section-title">STRIDE 区间</view>
+        <view class="card zone-card">
+          <view class="chart-card__label">配速区间</view>
+          <view class="zone-row zone-row--head">
+            <view class="zone-row__name">Zone</view>
+            <view class="zone-row__label">名称</view>
+            <view class="zone-row__range">区间</view>
+          </view>
+          <view class="zone-row" wx:for="{{paceZones}}" wx:key="name">
+            <view class="zone-row__name zone-row__name--pace">{{item.name}}</view>
+            <view class="zone-row__label">{{item.label}}</view>
+            <view class="zone-row__range">{{item.range}}</view>
+          </view>
+        </view>
+        <view class="card zone-card">
+          <view class="chart-card__label">心率区间</view>
+          <view class="zone-row zone-row--head">
+            <view class="zone-row__name">Zone</view>
+            <view class="zone-row__label">名称</view>
+            <view class="zone-row__range">区间</view>
+          </view>
+          <view class="zone-row" wx:for="{{hrZones}}" wx:key="name">
+            <view class="zone-row__name zone-row__name--hr">{{item.name}}</view>
+            <view class="zone-row__label">{{item.label}}</view>
+            <view class="zone-row__range">{{item.range}}</view>
+          </view>
+        </view>
+      </block>
+
+      <!-- 数据状态 -->
+      <view class="footer">
+        <view>{{calibrationLine}}</view>
+        <view>{{loadDateLine}}</view>
+        <view>RHR / HRV: 来自手表原始读数（COROS / Garmin）</view>
+      </view>
+    </block>
+  </view>
+</view>

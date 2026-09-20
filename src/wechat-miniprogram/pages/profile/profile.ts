@@ -70,6 +70,7 @@ function contentPaddingTopRpx(): number {
 
 const MENU_ROWS: MenuRow[] = [
   { key: 'plan', title: '我的训练计划', iconPath: '/assets/icons/calendar_month.svg' },
+  { key: 'training-status', title: '训练状态', iconPath: '/assets/icons/trend_up.svg' },
   { key: 'watch', title: '手表管理', iconPath: '/assets/icons/schedule.svg' },
 ];
 
@@ -141,6 +142,10 @@ Page<ProfilePageData, ProfilePageHandlers>({
 
   onRowTap(e: WechatMiniprogram.TouchEvent) {
     const key = e.currentTarget.dataset.key as string;
+    if (key === 'training-status') {
+      wx.navigateTo({ url: '/pages/training-status/training-status' });
+      return;
+    }
     if (key === 'watch') {
       wx.navigateTo({ url: '/pages/watch/watch' });
       return;

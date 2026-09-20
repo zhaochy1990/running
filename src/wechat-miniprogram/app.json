@@ -9,6 +9,7 @@
     "pages/coach/coach",
     "pages/profile/profile",
     "pages/profile-edit/profile-edit",
+    "pages/training-status/training-status",
     "pages/watch/watch",
     "pages/privacy/privacy",
     "pages/declaration/declaration"
