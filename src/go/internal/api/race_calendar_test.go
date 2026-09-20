@@ -288,6 +288,8 @@ func syncEvent() storage.RaceCalendarEvent {
 
 func strPtrAPITest(s string) *string { return &s }
 
+func intPtrAPITest(v int) *int { return &v }
+
 // --- tests -------------------------------------------------------------------
 
 func TestRaceCalendarAdmin_TierGuards(t *testing.T) {
@@ -427,6 +429,41 @@ func TestRaceCalendarAdmin_ResetFieldsHandsBackToSync(t *testing.T) {
 	stored := h.store.events[h.store.findEvent(event.ID)]
 	if len(stored.AdminOverrides) != 0 {
 		t.Errorf("admin_overrides = %v, want empty", stored.AdminOverrides)
+	}
+}
+
+func TestRaceCalendarAdmin_NullClearsNullableFields(t *testing.T) {
+	h := newRaceHarness(t)
+	event := h.store.seedEvent(syncEvent())
+
+	// An explicit null clears the field (absent would leave it unchanged).
+	w := h.do(t, http.MethodPatch, fmt.Sprintf("/api/admin/races/%d", event.ID),
+		map[string]any{"city": nil, "overrides": []string{"city"}}, h.adminToken(t))
+	if w.Code != http.StatusOK {
+		t.Fatalf("clear city = %d: %s", w.Code, w.Body.String())
+	}
+	got := decodeRaceDTO(t, w)
+	if got.City != nil {
+		t.Errorf("city = %v, want nil", got.City)
+	}
+	if got.FieldSources["city"] != "overridden" {
+		t.Errorf("city source = %q, want overridden", got.FieldSources["city"])
+	}
+
+	// The same for a nullable item field.
+	item := h.store.seedItem(storage.RaceCalendarItem{RaceEventID: event.ID, Name: "全程", Type: "Marathon", EntryFee: intPtrAPITest(12000), Origin: storage.RaceOriginSync})
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("/api/admin/races/%d/items/%d", event.ID, item.ID),
+		map[string]any{"entry_fee": nil}, h.adminToken(t))
+	if w.Code != http.StatusOK {
+		t.Fatalf("clear fee = %d: %s", w.Code, w.Body.String())
+	}
+	var updated raceCalendarItemDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &updated)
+	if updated.EntryFee != nil {
+		t.Errorf("entry_fee = %v, want nil", updated.EntryFee)
+	}
+	if updated.Origin != storage.RaceOriginManual {
+		t.Errorf("origin = %q, want manual after the edit", updated.Origin)
 	}
 }
 

@@ -161,10 +161,10 @@ var raceCalendarEditableFields = []string{
 }
 
 // raceCalendarFieldSources derives every editable field's provenance:
-//   - a key field (name/race_date) is manual once the row is detached, else sync;
-//   - any field named in admin_overrides is overridden;
-//   - on a manual row every remaining field is manual;
-//   - otherwise sync.
+//   - on a manual row (created by an admin, or detached by a key-field edit)
+//     every field is manual;
+//   - otherwise a field named in admin_overrides is overridden;
+//   - the rest are synced.
 func raceCalendarFieldSources(row storage.RaceCalendarEvent) map[string]string {
 	overrides := make(map[string]bool, len(row.AdminOverrides))
 	for _, f := range row.AdminOverrides {
@@ -173,16 +173,10 @@ func raceCalendarFieldSources(row storage.RaceCalendarEvent) map[string]string {
 	out := make(map[string]string, len(raceCalendarEditableFields))
 	for _, field := range raceCalendarEditableFields {
 		switch {
-		case overrides[field]:
-			out[field] = "overridden"
-		case field == "name" || field == "race_date":
-			if row.Origin == storage.RaceOriginManual {
-				out[field] = "manual"
-			} else {
-				out[field] = "sync"
-			}
 		case row.Origin == storage.RaceOriginManual:
 			out[field] = "manual"
+		case overrides[field]:
+			out[field] = "overridden"
 		default:
 			out[field] = "sync"
 		}
@@ -337,22 +331,46 @@ func (r *raceCalendarRoutes) create(c *gin.Context) {
 	})
 }
 
+// optionalField distinguishes an absent JSON key from an explicit null so a
+// PATCH can clear a nullable field (null) without also treating "not sent" as
+// a clear. Set is true whenever the key was present in the body; Value is nil
+// for an explicit null.
+type optionalField[T any] struct {
+	Set   bool
+	Value *T
+}
+
+func (o *optionalField[T]) UnmarshalJSON(data []byte) error {
+	o.Set = true
+	if string(data) == "null" {
+		o.Value = nil
+		return nil
+	}
+	var v T
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	o.Value = &v
+	return nil
+}
+
 // raceCalendarUpdateRequest is the body of PATCH /api/admin/races/:id. Fields
 // are optional; overrides names the sync-managed fields the administrator is
 // taking over and resetFields names fields to hand back to the sync (cleared
 // here, refilled on the next sync). Editing name or race_date detaches the row
-// (origin becomes manual).
+// (origin becomes manual). Nullable fields use optionalField so an explicit
+// null clears them.
 type raceCalendarUpdateRequest struct {
-	Name        *string   `json:"name"`
-	NameCN      *string   `json:"name_cn"`
-	RaceDate    *string   `json:"race_date"`
-	Country     *string   `json:"country"`
-	Province    *string   `json:"province"`
-	City        *string   `json:"city"`
-	Label       *string   `json:"label"`
-	RaceTypes   *[]string `json:"race_types"`
-	Overrides   []string  `json:"overrides"`
-	ResetFields []string  `json:"reset_fields"`
+	Name        *string               `json:"name"`
+	NameCN      optionalField[string] `json:"name_cn" swaggertype:"string"`
+	RaceDate    *string               `json:"race_date"`
+	Country     *string               `json:"country"`
+	Province    optionalField[string] `json:"province" swaggertype:"string"`
+	City        optionalField[string] `json:"city" swaggertype:"string"`
+	Label       optionalField[string] `json:"label" swaggertype:"string"`
+	RaceTypes   *[]string             `json:"race_types"`
+	Overrides   []string              `json:"overrides"`
+	ResetFields []string              `json:"reset_fields"`
 }
 
 // update applies a partial edit and merges the override markers.
@@ -502,11 +520,11 @@ func (r *raceCalendarRoutes) createItem(c *gin.Context) {
 
 // raceCalendarItemUpdateRequest is the body of PATCH .../items/:item_id.
 type raceCalendarItemUpdateRequest struct {
-	Name      *string `json:"name"`
-	Type      *string `json:"type"`
-	StartTime *string `json:"start_time"`
-	EntryFee  *int    `json:"entry_fee"`
-	Quota     *int    `json:"quota"`
+	Name      *string               `json:"name"`
+	Type      *string               `json:"type"`
+	StartTime optionalField[string] `json:"start_time" swaggertype:"string"`
+	EntryFee  optionalField[int]    `json:"entry_fee" swaggertype:"integer"`
+	Quota     optionalField[int]    `json:"quota" swaggertype:"integer"`
 }
 
 // updateItem edits an item. Editing a sync-owned item upgrades it to manual so
@@ -716,8 +734,8 @@ func applyRaceCalendarUpdate(c *gin.Context, row *storage.RaceCalendarEvent, req
 			row.Origin = storage.RaceOriginManual
 		}
 	}
-	if req.NameCN != nil {
-		row.NameCN = normalizeOptionalString(req.NameCN)
+	if req.NameCN.Set {
+		row.NameCN = normalizeOptionalString(req.NameCN.Value)
 	}
 	if req.Country != nil {
 		country := strings.TrimSpace(*req.Country)
@@ -727,14 +745,14 @@ func applyRaceCalendarUpdate(c *gin.Context, row *storage.RaceCalendarEvent, req
 		}
 		row.Country = country
 	}
-	if req.Province != nil {
-		row.Province = normalizeOptionalString(req.Province)
+	if req.Province.Set {
+		row.Province = normalizeOptionalString(req.Province.Value)
 	}
-	if req.City != nil {
-		row.City = normalizeOptionalString(req.City)
+	if req.City.Set {
+		row.City = normalizeOptionalString(req.City.Value)
 	}
-	if req.Label != nil {
-		row.Label = normalizeOptionalString(req.Label)
+	if req.Label.Set {
+		row.Label = normalizeOptionalString(req.Label.Value)
 	}
 	if req.RaceTypes != nil {
 		encoded, ok := encodeRaceTypes(c, *req.RaceTypes)
@@ -805,24 +823,24 @@ func applyRaceItemUpdate(c *gin.Context, item *storage.RaceCalendarItem, req rac
 		item.Type = normalizeRaceItemType(*req.Type)
 		changed = true
 	}
-	if req.StartTime != nil {
-		item.StartTime = normalizeStartTime(req.StartTime)
+	if req.StartTime.Set {
+		item.StartTime = normalizeStartTime(req.StartTime.Value)
 		changed = true
 	}
-	if req.EntryFee != nil {
-		if *req.EntryFee < 0 {
+	if req.EntryFee.Set {
+		if req.EntryFee.Value != nil && *req.EntryFee.Value < 0 {
 			c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_race_item"})
 			return false
 		}
-		item.EntryFee = req.EntryFee
+		item.EntryFee = req.EntryFee.Value
 		changed = true
 	}
-	if req.Quota != nil {
-		if *req.Quota < 0 {
+	if req.Quota.Set {
+		if req.Quota.Value != nil && *req.Quota.Value < 0 {
 			c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_race_item"})
 			return false
 		}
-		item.Quota = req.Quota
+		item.Quota = req.Quota.Value
 		changed = true
 	}
 	if changed {

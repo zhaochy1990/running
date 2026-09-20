@@ -300,24 +300,29 @@ func MonthDayOf(raceDate string) (int8, int8) { return monthDayOf(raceDate) }
 // ListRaceCalendarEvents returns one page of races ordered by race_date (then
 // name) plus the total row count matching the filter.
 func (s *Store) ListRaceCalendarEvents(ctx context.Context, f RaceCalendarListFilter) ([]RaceCalendarEvent, int64, error) {
-	query := s.db.WithContext(ctx).Model(&RaceCalendarEvent{})
-	if f.Year != "" {
-		from, to := yearDateRange(f.Year)
-		query = query.Where("race_date BETWEEN ? AND ?", from, to)
-	}
-	if f.Month > 0 {
-		query = query.Where("month = ?", f.Month)
-	}
-	if f.Source != "" {
-		query = query.Where("source = ?", f.Source)
-	}
-	if kw := strings.TrimSpace(f.Keyword); kw != "" {
-		like := "%" + kw + "%"
-		query = query.Where("name LIKE ? OR name_cn LIKE ?", like, like)
+	// Build the filtered scope independently for the count and the page, so the
+	// Count() SELECT does not leak into the row query.
+	scope := func() *gorm.DB {
+		query := s.db.WithContext(ctx).Model(&RaceCalendarEvent{})
+		if f.Year != "" {
+			from, to := yearDateRange(f.Year)
+			query = query.Where("race_date BETWEEN ? AND ?", from, to)
+		}
+		if f.Month > 0 {
+			query = query.Where("month = ?", f.Month)
+		}
+		if f.Source != "" {
+			query = query.Where("source = ?", f.Source)
+		}
+		if kw := strings.TrimSpace(f.Keyword); kw != "" {
+			like := "%" + kw + "%"
+			query = query.Where("name LIKE ? OR name_cn LIKE ?", like, like)
+		}
+		return query
 	}
 
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	if err := scope().Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("storage: count race_calendar: %w", err)
 	}
 
@@ -329,7 +334,7 @@ func (s *Store) ListRaceCalendarEvents(ctx context.Context, f RaceCalendarListFi
 		perPage = 20
 	}
 	var rows []RaceCalendarEvent
-	if err := query.Order("race_date ASC, name ASC, id ASC").
+	if err := scope().Order("race_date ASC, name ASC, id ASC").
 		Offset((page - 1) * perPage).Limit(perPage).
 		Find(&rows).Error; err != nil {
 		return nil, 0, fmt.Errorf("storage: list race_calendar: %w", err)
@@ -381,8 +386,7 @@ func (s *Store) UpdateRaceCalendarEvent(ctx context.Context, row *RaceCalendarEv
 }
 
 // DeleteRaceCalendarEvent removes a race and its items in one transaction.
-// It is idempotent: deleting a missing id returns ErrRaceCalendarNotFound so the
-// API can answer 404.
+// Deleting a missing id returns ErrRaceCalendarNotFound so the API answers 404.
 func (s *Store) DeleteRaceCalendarEvent(ctx context.Context, id uint64) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Where("id = ?", id).Delete(&RaceCalendarEvent{})
