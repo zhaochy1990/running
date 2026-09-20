@@ -218,6 +218,11 @@ func (s *Store) ReplaceRaceCalendarItems(ctx context.Context, source string, bat
 			if err != nil {
 				return fmt.Errorf("storage: locate race_calendar for items: %w", err)
 			}
+			if event.Origin == RaceOriginManual {
+				// An administrator detached this event from the mirror; its items
+				// must not be regenerated either.
+				continue
+			}
 
 			var manual []RaceCalendarItem
 			if err := tx.Where("race_event_id = ? AND origin = ?", event.ID, RaceOriginManual).Find(&manual).Error; err != nil {

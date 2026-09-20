@@ -232,6 +232,26 @@ func TestRaceCalendar_ReplaceItemsRegeneratesSyncAndKeepsManual(t *testing.T) {
 	if len(items) != 3 {
 		t.Errorf("items = %d, want 3 (半程 manual + 全程 + 10公里)", len(items))
 	}
+
+	// Once the event is detached (origin=manual), the item sync must skip it
+	// entirely rather than regenerate its sync items.
+	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).
+		Where("id = ?", event.ID).Update("origin", RaceOriginManual).Error; err != nil {
+		t.Fatalf("detach event: %v", err)
+	}
+	if _, err := st.ReplaceRaceCalendarItems(ctx, src, []RaceCalendarItemBatch{{
+		Name: "Item Race", RaceDate: "2034-06-01",
+		Items: []RaceCalendarItem{{Name: "42公里", Type: "Marathon"}},
+	}}); err != nil {
+		t.Fatalf("replace items on manual event: %v", err)
+	}
+	items, err = st.ListRaceCalendarItems(ctx, event.ID)
+	if err != nil {
+		t.Fatalf("list items after detach: %v", err)
+	}
+	if len(items) != 3 {
+		t.Errorf("items after detach = %d, want 3 (manual event untouched)", len(items))
+	}
 }
 
 func TestRaceCalendar_DeleteCascadesItems(t *testing.T) {
