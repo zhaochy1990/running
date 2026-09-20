@@ -100,6 +100,17 @@ func FromChinaItems(items []string) []string {
 	return out
 }
 
+// FromChinaSegment maps one raw 中国田协 race-item segment (already split on the
+// "、" separator) to its race-type token. Segments that carry no classifiable
+// marker degrade to Unknown rather than being dropped, because the item row's
+// name is still worth persisting for an administrator to classify.
+func FromChinaSegment(seg string) string {
+	if t, ok := mapChinaSegment(seg); ok {
+		return t
+	}
+	return Unknown
+}
+
 // mapChinaSegment maps one race-item segment to a race type. ok is false for a
 // segment that carries no classifiable marker at all (blank or opaque), which
 // the caller then omits — if every segment is like that the result is Unknown.

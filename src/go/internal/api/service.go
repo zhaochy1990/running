@@ -195,6 +195,11 @@ type Config struct {
 	// without the declaration endpoints (e.g. in tests).
 	LegalDocumentStore LegalDocumentStore
 
+	// Race calendar admin surface (source-synced race events + items).
+	// Administrator-only CRUD the Dashboard races tab drives. Leave zero to run
+	// without the race endpoints (e.g. in tests).
+	RaceCalendarStore RaceCalendarStore
+
 	// WorkoutPusher pushes normalized workouts to the user's bound watch
 	// provider (satisfied by the cmd-layer adapter over registry).
 	WorkoutPusher WorkoutPusher
@@ -254,6 +259,7 @@ type Service struct {
 	masterPlan      *masterPlanRoutes
 	weeklyPlan      *weeklyPlanRoutes
 	legalDocuments  *legalDocumentRoutes
+	raceCalendar    *raceCalendarRoutes
 
 	auth           *Authenticator
 	corsOrigins    []string
@@ -307,6 +313,7 @@ func NewService(cfg Config) *Service {
 		masterPlan:              newMasterPlanRoutes(cfg.MasterPlanStore, log),
 		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, cfg.BodyCompositionStore, log),
 		legalDocuments:          newLegalDocumentRoutes(cfg.LegalDocumentStore, log),
+		raceCalendar:            newRaceCalendarRoutes(cfg.RaceCalendarStore, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
 		swaggerEnabled:          cfg.SwaggerEnabled,
@@ -366,6 +373,8 @@ func (s *Service) Router() *gin.Engine {
 	// Declaration maintenance is administrator-only; the handlers re-check the
 	// tier, so mounting on the parent group only admits TierAdmin.
 	s.legalDocuments.registerAdmin(authenticated)
+	// Race-calendar management is administrator-only for the same reason.
+	s.raceCalendar.register(authenticated)
 
 	// Existing routes accept only the original user/internal tiers. Keeping this
 	// default deny prevents an admin-dashboard token from silently inheriting

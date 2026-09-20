@@ -20,6 +20,9 @@ import (
 type fakeStore struct {
 	years []string
 	races map[string][]storage.RaceCalendarEvent
+	// items records the per-race item batches the handler submits, keyed on the
+	// race's business key.
+	items map[[2]string][]storage.RaceCalendarItem
 }
 
 func (f *fakeStore) ReplaceRaceCalendarYear(_ context.Context, source, year string, races []storage.RaceCalendarEvent) (storage.ReplaceRaceCalendarResult, error) {
@@ -32,6 +35,18 @@ func (f *fakeStore) ReplaceRaceCalendarYear(_ context.Context, source, year stri
 	}
 	f.races[year] = append([]storage.RaceCalendarEvent(nil), races...)
 	return storage.ReplaceRaceCalendarResult{Upserted: len(races)}, nil
+}
+
+func (f *fakeStore) ReplaceRaceCalendarItems(_ context.Context, source string, batches []storage.RaceCalendarItemBatch) (storage.ReplaceRaceCalendarItemsResult, error) {
+	if f.items == nil {
+		f.items = map[[2]string][]storage.RaceCalendarItem{}
+	}
+	var res storage.ReplaceRaceCalendarItemsResult
+	for _, batch := range batches {
+		f.items[[2]string{batch.Name, batch.RaceDate}] = append([]storage.RaceCalendarItem(nil), batch.Items...)
+		res.Upserted += len(batch.Items)
+	}
+	return res, nil
 }
 
 // catalogueServer serves a three-race catalogue: two current-ish years and one
@@ -190,6 +205,31 @@ func TestHandlerResultJSON(t *testing.T) {
 	sum := out.Years["2026"]
 	if sum.Fetched != 4 || sum.Upserted != 2 || sum.Deleted != 0 {
 		t.Fatalf("2026 summary = %+v, want fetched=4 upserted=2 deleted=0", sum)
+	}
+}
+
+func TestHandlerSyncsItems(t *testing.T) {
+	clientSrv := catalogueServer(t)
+	st := &fakeStore{}
+	h := newHandler(t, clientSrv, []string{"2026"}, st)
+
+	if _, err := h(context.Background(), &job.Job{InputJSON: ""}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+
+	fuzhou := st.items[[2]string{"2026福州马拉松", "2026-12-27"}]
+	if len(fuzhou) != 2 {
+		t.Fatalf("福州 items = %+v, want 2 (全程, 半程)", fuzhou)
+	}
+	want := map[string]string{"全程": "Marathon", "半程": "HalfMarathon"}
+	for _, item := range fuzhou {
+		if want[item.Name] != item.Type {
+			t.Errorf("福州 item %q type = %q, want %q", item.Name, item.Type, want[item.Name])
+		}
+	}
+	xiamen := st.items[[2]string{"2026厦门环东半程马拉松", "2026-12-20"}]
+	if len(xiamen) != 1 || xiamen[0].Name != "半程" || xiamen[0].Type != "HalfMarathon" {
+		t.Fatalf("厦门 items = %+v, want one HalfMarathon 半程", xiamen)
 	}
 }
 
