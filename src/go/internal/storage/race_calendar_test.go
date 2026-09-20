@@ -7,12 +7,22 @@ import (
 	"time"
 )
 
-// migrateRaceCalendar ensures the race_calendar table exists for the
-// integration test (the shared openTestStore only migrates jobs/pipeline_runs).
+// migrateRaceCalendar ensures the race_calendar tables exist for the
+// integration test (the shared openTestStore only migrates jobs/pipeline_runs)
+// and empties them so each test starts from a clean, isolated state.
 func migrateRaceCalendar(t *testing.T, st *Store) {
 	t.Helper()
-	if err := st.AutoMigrateRaceCalendar(context.Background()); err != nil {
+	ctx := context.Background()
+	if err := st.AutoMigrateRaceCalendar(ctx); err != nil {
 		t.Fatalf("automigrate race_calendar: %v", err)
+	}
+	// The table is shared by every test in this package, so clear it (children
+	// first) rather than relying on test ordering.
+	if err := st.db.WithContext(ctx).Exec("DELETE FROM race_calendar_item").Error; err != nil {
+		t.Fatalf("clear race_calendar_item: %v", err)
+	}
+	if err := st.db.WithContext(ctx).Exec("DELETE FROM race_calendar").Error; err != nil {
+		t.Fatalf("clear race_calendar: %v", err)
 	}
 }
 
