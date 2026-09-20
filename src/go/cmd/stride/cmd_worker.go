@@ -17,8 +17,10 @@ import (
 	"github.com/zhaochy1990/x/logger"
 	"go.uber.org/zap"
 
+	"github.com/zhaochy1990/stride/internal/chinaath"
 	"github.com/zhaochy1990/stride/internal/config"
 	"github.com/zhaochy1990/stride/internal/cos"
+	"github.com/zhaochy1990/stride/internal/handlers/chinaathcalendar"
 	"github.com/zhaochy1990/stride/internal/handlers/competitioncalendar"
 	"github.com/zhaochy1990/stride/internal/handlers/compute"
 	racehandler "github.com/zhaochy1990/stride/internal/handlers/racedetection"
@@ -78,6 +80,13 @@ func runWorker() error {
 		Endpoint: cfg.WorldAthletics.Endpoint,
 		APIKey:   cfg.WorldAthletics.APIKey,
 		Timeout:  cfg.WorldAthletics.Timeout,
+	}).WithLogger(log)
+
+	// 中国田协 competition-list client for the chinaath_race_calendar_sync
+	// pipeline (public upstream, no credentials).
+	caClient := chinaath.New(chinaath.Config{
+		Endpoint: cfg.ChinaAth.Endpoint,
+		Timeout:  cfg.ChinaAth.Timeout,
 	}).WithLogger(log)
 
 	// --- MySQL ---
@@ -143,6 +152,11 @@ func runWorker() error {
 		CompetitionSubgroupID: cfg.WorldAthletics.CompetitionSubgroupID,
 		DefaultYears:          cfg.WorldAthletics.Years,
 		Logger:                log,
+	}, chinaathcalendar.Config{
+		Client:       caClient,
+		Store:        store,
+		DefaultYears: cfg.ChinaAth.Years,
+		Logger:       log,
 	})
 	policy := job.RetryPolicy{
 		MaxAttempts: cfg.Retry.MaxAttempts,
@@ -268,8 +282,9 @@ func newRaceClassifier(cfg config.RaceDetection) (racedetection.Classifier, erro
 // mode-aware (ADR 0020); `route_thumbnails` renders outdoor activities into
 // route PNGs in COS, with `route_thumbnails_backfill` doing the all-history scan;
 // `race_calendar_sync` mirrors the World Athletics calendar (ccConfig),
-// preceded by `fetch_wa_api_key` key discovery (waClient).
-func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, cosClient *cos.Client, waClient *worldathletics.Client, log *zap.Logger, ccConfig competitioncalendar.Config) {
+// preceded by `fetch_wa_api_key` key discovery (waClient); `chinaath_race_calendar_sync`
+// mirrors the 中国田协 catalogue (caConfig).
+func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, cosClient *cos.Client, waClient *worldathletics.Client, log *zap.Logger, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
 		return fmt.Sprintf(`{"echo":%q}`, j.InputJSON), nil
@@ -290,4 +305,7 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	// configured key.
 	reg.MustRegister(competitioncalendar.KeyJobType, competitioncalendar.NewKeyFetcher(waClient, competitioncalendar.DefaultSitePageURL, log))
 	reg.MustRegister(competitioncalendar.JobType, competitioncalendar.New(ccConfig))
+	// chinaath_race_calendar_sync pipeline: the single mirror step (the 田协
+	// upstream needs no credentials, so there is no key-discovery step).
+	reg.MustRegister(chinaathcalendar.JobType, chinaathcalendar.New(caConfig))
 }

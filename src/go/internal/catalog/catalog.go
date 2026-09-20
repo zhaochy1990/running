@@ -61,6 +61,11 @@ const (
 	// returns {"endpoint":...,"api_key":...} for the calendar step, so the daily
 	// sync survives upstream key rotation. Internal-only, optional pipeline step.
 	JobTypeFetchWAAPIKey = "fetch_wa_api_key"
+	// JobTypeChinaAthRaceCalendar syncs the 中国田协 (China Athletics
+	// Association) competition catalogue into the race_calendar table. It is a
+	// system job (no subject user): internal-only, the single step of the
+	// chinaath_race_calendar_sync pipeline started by the daily cron workflow.
+	JobTypeChinaAthRaceCalendar = "chinaath_race_calendar_sync"
 )
 
 // Pipeline names (ADR 0020). onboarding and data_sync are fronted by
@@ -78,6 +83,10 @@ const (
 	// calendar into race_calendar. Internal-only (system run, no subject user);
 	// the daily cron workflow starts it via POST /pipelines.
 	PipelineRaceCalendar = "race_calendar_sync"
+	// PipelineChinaAthRaceCalendar mirrors the 中国田协 competition catalogue
+	// into race_calendar. Internal-only (system run, no subject user); the
+	// daily cron workflow starts it via POST /pipelines.
+	PipelineChinaAthRaceCalendar = "chinaath_race_calendar_sync"
 )
 
 // JobSpec is one known job type and whether end users may enqueue it directly.
@@ -182,6 +191,13 @@ func Jobs() []JobSpec {
 			InputSchema:   json.RawMessage(`{"type":"object","additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{}`),
 		},
+		{
+			Type:          JobTypeChinaAthRaceCalendar,
+			UserInitiable: false,
+			Description:   "Mirror the 中国田协 competition catalogue into the race_calendar table (source 中国田协): the Chinese race name fills name/name_cn, the \"省/市/区\" address splits into province/city, the grade becomes the label, and the race items map onto the shared race-types vocabulary. System job (no subject user). Years come from the input {\"years\":[...]}, else the configured defaults, else the current and next Shanghai years. Internal-only; the daily cron workflow starts it via the chinaath_race_calendar_sync pipeline.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"},"description":"Calendar years to mirror. Empty uses the configured defaults / current and next Shanghai years."}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
+		},
 	}
 }
 
@@ -237,6 +253,18 @@ func Pipelines() []PipelineSpec {
 			},
 			UserInitiable: false,
 			Description:   "Internal system pipeline (no subject user): discover the current World Athletics AppSync endpoint + API key from the site bundle (optional step — a failure falls back to the configured key), then fetch one or more label-road-races calendar years and mirror them into the race_calendar table (source 国际田联). Started by the daily cron workflow via POST /pipelines; the optional input {\"years\":[...]} overrides which years to fetch.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
+		},
+		{
+			Def: pipeline.Def{
+				Name: PipelineChinaAthRaceCalendar,
+				Steps: []pipeline.StepDef{
+					{Name: "fetch", JobType: JobTypeChinaAthRaceCalendar},
+				},
+			},
+			UserInitiable: false,
+			Description:   "Internal system pipeline (no subject user): fetch the full 中国田协 competition catalogue (no credentials needed, years filtered in memory) and mirror the requested years into the race_calendar table (source 中国田协). Started by the daily cron workflow via POST /pipelines; the optional input {\"years\":[...]} overrides which years to mirror.",
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
 		},

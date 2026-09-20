@@ -81,11 +81,14 @@ func MaskKey(k string) string {
 // shape returned by getMinisiteCalendarEvents — trimmed to the fields the
 // race_calendar pipeline persists. Venue is kept raw so the handler can parse
 // the three-level address from it; Country is the 3-letter ISO code.
+// RankingCategory is the WA quality tier (GW/GL/A–E) the race-type mapping is
+// derived from (internal/racetypes — GW/GL are the only trusted markers).
 type Event struct {
 	CompetitionSubgroup string `json:"competitionSubgroup"`
 	Name                string `json:"name"`
 	Venue               string `json:"venue"`
 	Country             string `json:"country"`
+	RankingCategory     string `json:"rankingCategory"`
 	StartDate           string `json:"startDate"`
 }
 
@@ -112,6 +115,7 @@ const minisiteCalendarQuery = `query getMinisiteCalendarEvents($season: String, 
       name
       venue
       country
+      rankingCategory
       startDate
     }
   }

@@ -33,6 +33,7 @@ type Config struct {
 	RaceDetection  RaceDetection       `mapstructure:"race-detection"`
 	COS            COS                 `mapstructure:"cos"`
 	WorldAthletics WorldAthletics      `mapstructure:"world-athletics"`
+	ChinaAth       ChinaAth            `mapstructure:"china-ath"`
 }
 
 // MySQL holds the datastore connection (secret; env-only).
@@ -120,6 +121,18 @@ type WorldAthletics struct {
 	CompetitionSubgroupID int           `mapstructure:"competition-subgroup-id"`
 	Years                 []string      `mapstructure:"years"`
 	Timeout               time.Duration `mapstructure:"timeout"`
+}
+
+// ChinaAth configures the 中国田协 competition-list client used by the
+// chinaath_race_calendar_sync pipeline. The upstream needs no credentials, so
+// every field is optional: the worker boots without the section, and a job run
+// then fails loudly if the endpoint was never configured. An empty Years means
+// "the current and next Shanghai years" (the handler's default; the catalogue
+// also carries years of history, which a plain mirror must not touch).
+type ChinaAth struct {
+	Endpoint string        `mapstructure:"endpoint"`
+	Years    []string      `mapstructure:"years"`
+	Timeout  time.Duration `mapstructure:"timeout"`
 }
 
 // MustLoad resolves the config path (explicit CONFIG_PATH env, else

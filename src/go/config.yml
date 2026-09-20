@@ -76,6 +76,16 @@ world-athletics:
   years: []                     # empty -> the current Shanghai year
   timeout: 60s
 
+# 中国田协 competition-list API (public, no credentials) for the
+# chinaath_race_calendar_sync pipeline. No secrets here — the upstream accepts
+# a plain POST. An empty years list means "the current and next Shanghai
+# years"; the catalogue also carries years of history, which the mirror never
+# touches.
+china-ath:
+  endpoint: "https://api-changzheng.chinaath.com/changzheng-content-center-api/api/homePage/official/searchCompetitionMls"
+  years: []
+  timeout: 60s
+
 # HTTP API server (`stride api`) — a separate container (ADR 0012), same unified
 # binary as the worker. The worker ignores this section. Secrets stay empty here
 # and come from env:

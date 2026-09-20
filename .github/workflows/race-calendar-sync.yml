@@ -6,6 +6,10 @@ name: Race calendar sync
 #   STRIDE_GO_INTERNAL_TOKEN  — random 32+ char string. The Go API must receive
 #                               the same value as STRIDE_WORKER_API_INTERNAL_TOKEN.
 # If either value is unset the workflow fails so the omission is visible.
+#
+# One job per race-calendar source, distinguished only by the pipeline name
+# started via POST /pipelines: race_calendar_sync (World Athletics) and
+# chinaath_race_calendar_sync (中国田协).
 
 on:
   schedule:
@@ -18,11 +22,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pipeline: race_calendar_sync
+            label: World Athletics
+          - pipeline: chinaath_race_calendar_sync
+            label: 中国田协
     steps:
-      - name: Start the race_calendar_sync pipeline
+      - name: Start the ${{ matrix.pipeline }} pipeline
         env:
           GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}
           GO_INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}
+          PIPELINE: ${{ matrix.pipeline }}
+          LABEL: ${{ matrix.label }}
         run: |
           set -u
           if [ -z "$GO_API_URL" ] || [ -z "$GO_INTERNAL_TOKEN" ]; then
@@ -32,17 +46,17 @@ jobs:
 
           URL="${GO_API_URL%/}/pipelines"
           DAY=$(TZ=Asia/Shanghai date +%F)
-          KEY="race-calendar-sync-$DAY"
+          KEY="race-calendar-sync-$LABEL-$DAY"
 
-          echo "## Race calendar sync" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Race calendar sync — $LABEL" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Shanghai day: \`$DAY\`, idempotency key: \`$KEY\`" >> "$GITHUB_STEP_SUMMARY"
 
           # POST once. The Idempotency-Key is best-effort for this system run:
           # the (user_id, idempotency_key) unique index does not dedupe a NULL
           # user_id (MySQL treats NULLs as distinct), so a lost-response retry can
-          # start a second run — which is harmless because the handler itself is
-          # idempotent (upsert + replace-season). Retry once on a transient
+          # start a second run — which is harmless because the handlers themselves
+          # are idempotent (upsert + replace-year). Retry once on a transient
           # failure (cold start of a scaled-to-zero container takes ~15s).
           post() {
             curl -sS -o /tmp/resp.json -w "%{http_code}" \
@@ -51,7 +65,7 @@ jobs:
               -H "X-Internal-Token: $GO_INTERNAL_TOKEN" \
               -H "Content-Type: application/json" \
               -H "Idempotency-Key: $KEY" \
-              --data '{"name":"race_calendar_sync"}' \
+              --data "{\"name\":\"$PIPELINE\"}" \
               "$URL"
           }
 
