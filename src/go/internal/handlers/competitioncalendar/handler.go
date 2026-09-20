@@ -25,6 +25,7 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/logging"
+	"github.com/zhaochy1990/stride/internal/racetypes"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 	"github.com/zhaochy1990/stride/internal/worldathletics"
@@ -189,17 +190,20 @@ func currentYear() string {
 }
 
 // toRow maps an upstream calendar event into a race_calendar row, parsing the
-// venue into the three-level address (province/city) and leaving name_cn NULL
-// for later curation.
+// venue into the three-level address (province/city), deriving the race types
+// from the ranking category (GW/GL only — everything else is Unknown), and
+// leaving name_cn NULL for later curation.
 func toRow(e worldathletics.Event) storage.RaceCalendarEvent {
 	province, city := parseLocation(e.Venue, e.Country)
+	types, _ := json.Marshal(racetypes.FromWACategory(e.RankingCategory))
 	return storage.RaceCalendarEvent{
-		Name:     e.Name,
-		RaceDate: e.StartDate,
-		Country:  strings.TrimSpace(e.Country),
-		Province: strPtrOrNil(province),
-		City:     strPtrOrNil(city),
-		Label:    strPtrOrNil(e.CompetitionSubgroup),
+		Name:      e.Name,
+		RaceDate:  e.StartDate,
+		Country:   strings.TrimSpace(e.Country),
+		Province:  strPtrOrNil(province),
+		City:      strPtrOrNil(city),
+		Label:     strPtrOrNil(e.CompetitionSubgroup),
+		RaceTypes: strPtrOrNil(string(types)),
 	}
 }
 

@@ -132,6 +132,51 @@ func TestRaceCalendar_NameCNIsNotOverwritten(t *testing.T) {
 	}
 }
 
+func TestRaceCalendar_RaceTypesUpsertAndRefresh(t *testing.T) {
+	st := openTestStore(t)
+	migrateRaceCalendar(t, st)
+	ctx := context.Background()
+
+	src := "国际田联"
+	year := "2026"
+	races := sampleRaces()
+	races[1].RaceTypes = strPtr(`["Marathon"]`)
+	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, races); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	var got *string
+	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).
+		Where("source = ? AND name = ?", src, "Tokyo Marathon").
+		Pluck("race_types", &got).Error; err != nil {
+		t.Fatalf("read race_types: %v", err)
+	}
+	if got == nil || *got != `["Marathon"]` {
+		t.Fatalf("race_types = %v, want [\"Marathon\"]", got)
+	}
+
+	// The column is part of the upsert refresh set: a re-sync with a changed
+	// value must overwrite it (the second race keeps its NULL).
+	again := sampleRaces()
+	again[1].RaceTypes = strPtr(`["Marathon","HalfMarathon"]`)
+	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, again); err != nil {
+		t.Fatalf("re-sync: %v", err)
+	}
+	var rows []RaceCalendarEvent
+	if err := st.db.WithContext(ctx).Where("source = ? AND race_date LIKE ?", src, year+"-%").Order("name").Find(&rows).Error; err != nil {
+		t.Fatalf("list rows: %v", err)
+	}
+	byName := map[string]*string{}
+	for _, r := range rows {
+		byName[r.Name] = r.RaceTypes
+	}
+	if got := byName["Tokyo Marathon"]; got == nil || *got != `["Marathon","HalfMarathon"]` {
+		t.Fatalf("Tokyo race_types = %v, want refreshed [\"Marathon\",\"HalfMarathon\"]", got)
+	}
+	if got := byName["40. OPTIMA Dreikönigslauf in Schwäbisch Hall"]; got != nil {
+		t.Fatalf("OPTIMA race_types = %v, want nil (upstream has no marker)", got)
+	}
+}
+
 func TestRaceCalendar_SourcesAreIsolated(t *testing.T) {
 	st := openTestStore(t)
 	migrateRaceCalendar(t, st)

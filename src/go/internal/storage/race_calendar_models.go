@@ -32,8 +32,15 @@ import "time"
 // English name abroad). They are parsed from the upstream venue string at write
 // time; venue itself is not stored.
 //
-// Label is the World Athletics road-race label tier (Platinum/Gold/Elite/Label).
-// Timestamps are UTC.
+// Label is the World Athletics road-race label tier (Platinum/Gold/Elite/Label)
+// or the 中国田协 certification grade (A/B/C（属地办赛）/系列赛) — a
+// source-specific value space.
+//
+// RaceTypes is a JSON array of race types from the shared internal/racetypes
+// vocabulary (Marathon / HalfMarathon / "{n}Km" / Other / Unknown), e.g.
+// ["Marathon","HalfMarathon"]. Both sources fill it from explicit upstream
+// markers (the 中国田协 raceItem field; the WA rankingCategory GW/GL); anything
+// undeterminable is ["Unknown"] — no name-pattern guessing. Timestamps are UTC.
 type RaceCalendarEvent struct {
 	Source     string    `gorm:"column:source;size:32;not null;uniqueIndex:uidx_race_cal_src_name_date,priority:1"`
 	Name       string    `gorm:"column:name;size:255;not null;uniqueIndex:uidx_race_cal_src_name_date,priority:2"`
@@ -45,6 +52,7 @@ type RaceCalendarEvent struct {
 	Province   *string   `gorm:"column:province;size:64"`
 	City       *string   `gorm:"column:city;size:64"`
 	Label      *string   `gorm:"column:label;size:32"`
+	RaceTypes  *string   `gorm:"column:race_types;size:255"`
 	CreatedAt  time.Time `gorm:"column:created_at"`
 	UpdatedAt  time.Time `gorm:"column:updated_at"`
 }

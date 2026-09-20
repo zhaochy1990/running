@@ -54,8 +54,8 @@ func waServer(t *testing.T) (*httptest.Server, *string) {
 			return
 		}
 		_, _ = w.Write([]byte(`{"data":{"getMinisiteCalendarEvents":{"results":[
-			{"name":"Xiamen Marathon","venue":"Xiamen (CHN)","country":"CHN","startDate":"2026-01-06","competitionSubgroup":"Gold"},
-			{"name":"Boston Marathon","venue":"Boston, MA (USA)","country":"USA","startDate":"2026-04-20","competitionSubgroup":"Platinum"}
+			{"name":"Xiamen Marathon","venue":"Xiamen (CHN)","country":"CHN","rankingCategory":"GW","startDate":"2026-01-06","competitionSubgroup":"Gold"},
+			{"name":"Boston Marathon","venue":"Boston, MA (USA)","country":"USA","rankingCategory":"B","startDate":"2026-04-20","competitionSubgroup":"Platinum"}
 		]}}}`))
 	}))
 	t.Cleanup(srv.Close)
@@ -105,6 +105,13 @@ func TestHandlerFetchesDefaultYear(t *testing.T) {
 	}
 	if xiamen.Country != "CHN" || xiamen.Label == nil || *xiamen.Label != "Gold" {
 		t.Fatalf("Xiamen country/label = %v/%v", xiamen.Country, deref(xiamen.Label))
+	}
+	// toRow derives race_types from the ranking category (GW/GL only).
+	if xiamen.RaceTypes == nil || *xiamen.RaceTypes != `["Marathon"]` {
+		t.Fatalf("Xiamen race_types = %v, want [\"Marathon\"] (GW)", deref(xiamen.RaceTypes))
+	}
+	if boston.RaceTypes == nil || *boston.RaceTypes != `["Unknown"]` {
+		t.Fatalf("Boston race_types = %v, want [\"Unknown\"] (B is a quality tier)", deref(boston.RaceTypes))
 	}
 	if boston.City == nil || *boston.City != "Boston" || boston.Province == nil || *boston.Province != "Massachusetts" {
 		t.Fatalf("Boston city/province = %v/%v, want Boston/Massachusetts", deref(boston.City), deref(boston.Province))

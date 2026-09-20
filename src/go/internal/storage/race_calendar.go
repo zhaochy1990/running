@@ -24,7 +24,7 @@ func (s *Store) AutoMigrateRaceCalendar(ctx context.Context) error {
 // overwrite — and created_at keeps its first-seen timestamp.
 var raceCalendarUpsertCols = []string{
 	"race_date", "month", "dayofmonth", "country", "province", "city", "label",
-	"updated_at",
+	"race_types", "updated_at",
 }
 
 // ReplaceRaceCalendarResult reports what one year's sync did.
