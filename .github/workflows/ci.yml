@@ -16,6 +16,12 @@ on:
         description: Run every check regardless of which paths changed.
         type: boolean
         default: false
+      notify:
+        description: Post a WeCom notification when the run finishes. Release
+          calls this workflow and sends its own covering notification, so it
+          passes false here.
+        type: boolean
+        default: true
 
 jobs:
   changes:
@@ -305,3 +311,20 @@ jobs:
           build-args: ${{ steps.cfg.outputs.args }}
           cache-from: type=gha,scope=${{ matrix.artifact.name }}
           cache-to: type=gha,scope=${{ matrix.artifact.name }},mode=max
+
+  # Side-channel to the WeCom group; the action never fails this job. Skipped
+  # checks count as success, not an error. `!= false` (not a truthiness test):
+  # on pull_request the inputs context is empty, and the notification must still
+  # fire — only an explicit `notify: false` from a workflow_call caller mutes it.
+  notify:
+    name: Notify WeCom
+    needs: [changes, artifacts, frontend, go, coach, contract-parity, docker-dry-run]
+    if: always() && inputs.notify != false
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - uses: zhaochy1990/configurations/notify-wecom@v1
+        with:
+          webhook_url: ${{ secrets.WECOM_WEBHOOK_URL }}
+          needs_json: ${{ toJSON(needs) }}

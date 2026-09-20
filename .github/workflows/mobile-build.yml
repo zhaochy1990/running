@@ -119,3 +119,10 @@ jobs:
           files: mobile/build/app/outputs/flutter-apk/app-release.apk
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+      # Side-channel to the WeCom group; the action never fails this job.
+      - name: Notify WeCom
+        if: always()
+        uses: zhaochy1990/configurations/notify-wecom@v1
+        with:
+          webhook_url: ${{ secrets.WECOM_WEBHOOK_URL }}

@@ -54,6 +54,9 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       full: true
+      # The notify job below sends the one covering notification for the whole
+      # release; ci.yml's own notification stays muted when called from here.
+      notify: false
 
   # ── 3. build ───────────────────────────────────────────────────────────────
   # One leg per changed artifact, in parallel. Each pushes only to Aliyun ACR:
@@ -188,3 +191,21 @@ jobs:
           gh workflow run pin-images.yml \
             -R zhaochy1990/stride-devops \
             -f packages="$PACKAGES"
+
+  # ── 6. notify ──────────────────────────────────────────────────────────────
+  # Side-channel to the WeCom group; the action never fails this job. A
+  # skipped test/build chain (no changed artifacts) counts as success. This is
+  # the one covering notification for a release — ci.yml is called with
+  # notify: false above.
+  notify:
+    name: Notify WeCom
+    needs: [bump-versions, test, build, commit-versions, pin-images]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - uses: zhaochy1990/configurations/notify-wecom@v1
+        with:
+          webhook_url: ${{ secrets.WECOM_WEBHOOK_URL }}
+          needs_json: ${{ toJSON(needs) }}
