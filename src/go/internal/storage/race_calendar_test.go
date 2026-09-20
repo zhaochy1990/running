@@ -291,6 +291,64 @@ func TestRaceCalendar_DeleteCascadesItems(t *testing.T) {
 	}
 }
 
+func TestRaceCalendar_AutoMigrateAddsIDToLegacyTable(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	// Simulate the pre-feature table: no id, no origin, no admin_overrides, no
+	// item table. AutoMigrate must upgrade it in place without losing the row.
+	if err := st.db.Exec("DROP TABLE IF EXISTS race_calendar_item").Error; err != nil {
+		t.Fatalf("drop item table: %v", err)
+	}
+	if err := st.db.Exec("DROP TABLE IF EXISTS race_calendar").Error; err != nil {
+		t.Fatalf("drop race table: %v", err)
+	}
+	legacy := `CREATE TABLE race_calendar (
+		source varchar(32) NOT NULL,
+		name varchar(255) NOT NULL,
+		name_cn varchar(255) NULL,
+		race_date varchar(10) NOT NULL,
+		month tinyint NOT NULL,
+		dayofmonth tinyint NOT NULL,
+		country varchar(8) NOT NULL,
+		province varchar(64) NULL,
+		city varchar(64) NULL,
+		label varchar(32) NULL,
+		race_types varchar(255) NULL,
+		created_at datetime(3) NULL,
+		updated_at datetime(3) NULL,
+		UNIQUE KEY uidx_race_cal_src_name_date (source, name, race_date)
+	)`
+	if err := st.db.Exec(legacy).Error; err != nil {
+		t.Fatalf("create legacy table: %v", err)
+	}
+	if err := st.db.Exec("INSERT INTO race_calendar (source, name, race_date, month, dayofmonth, country) VALUES (?, ?, ?, ?, ?, ?)",
+		"国际田联", "Legacy Race", "2026-01-01", 1, 1, "JPN").Error; err != nil {
+		t.Fatalf("seed legacy row: %v", err)
+	}
+
+	if err := st.AutoMigrateRaceCalendar(ctx); err != nil {
+		t.Fatalf("automigrate legacy table: %v", err)
+	}
+	if !st.db.Migrator().HasTable(&RaceCalendarItem{}) {
+		t.Fatal("race_calendar_item was not created")
+	}
+
+	var row RaceCalendarEvent
+	if err := st.db.WithContext(ctx).Where("name = ?", "Legacy Race").First(&row).Error; err != nil {
+		t.Fatalf("read migrated row: %v", err)
+	}
+	if row.ID == 0 {
+		t.Error("legacy row kept id=0; the auto-increment primary key was not added")
+	}
+	if row.Origin != RaceOriginSync {
+		t.Errorf("legacy row origin = %q, want %q", row.Origin, RaceOriginSync)
+	}
+	if row.AdminOverrides != nil {
+		t.Errorf("legacy row admin_overrides = %v, want nil", row.AdminOverrides)
+	}
+}
+
 func strPtr(s string) *string { return &s }
 
 func sampleRaces() []RaceCalendarEvent {
