@@ -50,8 +50,8 @@ const (
 	// that fills in thumbnails for activities synced before the feature existed.
 	JobTypeRouteThumbnailsBackfill = "route_thumbnails_backfill"
 	// JobTypeCompetitionCalendar syncs the external World Athletics competition
-	// calendar (label road races) into the competition_calendar table. It is a
-	// system job (no subject user): internal-only, the final step of the
+	// calendar (label road races) into the race_calendar table. It is a system
+	// job (no subject user): internal-only, the final step of the
 	// competition_calendar_sync pipeline started by the daily cron workflow.
 	// It consumes the endpoint/api_key its upstream step discovered, falling
 	// back to the configured key when absent.
@@ -75,8 +75,8 @@ const (
 	// -> optional race_detection -> compute(incremental).
 	PipelineDataSync = "data_sync"
 	// PipelineCompetitionCalendar mirrors the World Athletics label-road-races
-	// calendar into competition_calendar. Internal-only (system run, no subject
-	// user); the daily cron workflow starts it via POST /pipelines.
+	// calendar into race_calendar. Internal-only (system run, no subject user);
+	// the daily cron workflow starts it via POST /pipelines.
 	PipelineCompetitionCalendar = "competition_calendar_sync"
 )
 
@@ -171,9 +171,9 @@ func Jobs() []JobSpec {
 		{
 			Type:          JobTypeCompetitionCalendar,
 			UserInitiable: false,
-			Description:   "Mirror the World Athletics label-road-races calendar into the competition_calendar table. System job (no subject user). Seasons come from the input {\"seasons\":[...]}, else the configured defaults, else the current Shanghai year. endpoint/api_key in the input (threaded from the fetch_wa_api_key step) override the configured client credentials. Internal-only; the daily cron workflow starts it via the competition_calendar_sync pipeline.",
-			InputSchema:   json.RawMessage(`{"type":"object","properties":{"seasons":{"type":"array","items":{"type":"string"},"description":"World Athletics seasons (calendar years) to fetch. Empty uses the configured defaults / current Shanghai year."},"endpoint":{"type":"string","description":"Discovered GraphQL endpoint (from fetch_wa_api_key)."},"api_key":{"type":"string","description":"Discovered GraphQL API key (from fetch_wa_api_key)."}},"additionalProperties":false}`),
-			ExampleInput:  json.RawMessage(`{"seasons":["2026"]}`),
+			Description:   "Mirror the World Athletics label-road-races calendar into the race_calendar table (source 国际田联), parsing the upstream venue into country/province/city (Chinese cities mapped to Chinese names). System job (no subject user). Years come from the input {\"years\":[...]}, else the configured defaults, else the current Shanghai year. endpoint/api_key in the input (threaded from the fetch_wa_api_key step) override the configured client credentials. Internal-only; the daily cron workflow starts it via the competition_calendar_sync pipeline.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"},"description":"World Athletics seasons (calendar years) to fetch. Empty uses the configured defaults / current Shanghai year."},"endpoint":{"type":"string","description":"Discovered GraphQL endpoint (from fetch_wa_api_key)."},"api_key":{"type":"string","description":"Discovered GraphQL API key (from fetch_wa_api_key)."}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
 		},
 		{
 			Type:          JobTypeFetchWAAPIKey,
@@ -236,9 +236,9 @@ func Pipelines() []PipelineSpec {
 				},
 			},
 			UserInitiable: false,
-			Description:   "Internal system pipeline (no subject user): discover the current World Athletics AppSync endpoint + API key from the site bundle (optional step — a failure falls back to the configured key), then fetch one or more label-road-races calendar seasons and mirror them into the competition_calendar table. Started by the daily cron workflow via POST /pipelines; the optional input {\"seasons\":[...]} overrides which seasons to fetch.",
-			InputSchema:   json.RawMessage(`{"type":"object","properties":{"seasons":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
-			ExampleInput:  json.RawMessage(`{"seasons":["2026"]}`),
+			Description:   "Internal system pipeline (no subject user): discover the current World Athletics AppSync endpoint + API key from the site bundle (optional step — a failure falls back to the configured key), then fetch one or more label-road-races calendar years and mirror them into the race_calendar table (source 国际田联). Started by the daily cron workflow via POST /pipelines; the optional input {\"years\":[...]} overrides which years to fetch.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
 		},
 	}
 }

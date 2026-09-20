@@ -1,16 +1,18 @@
 // Package competitioncalendar provides the worker job handlers for the
 // competition_calendar_sync pipeline: "fetch_wa_api_key" discovers the current
 // World Athletics AppSync endpoint + API key from the site bundle, and
-// "competition_calendar_sync" fetches one or more seasons of a competition-group
+// "competition_calendar_sync" fetches one or more years of a competition-group
 // calendar (the label road races by default) and mirrors them into the
-// competition_calendar table. Both are internal-only, system-scoped steps —
-// there is no subject user.
+// race_calendar table. Both are internal-only, system-scoped steps — there is
+// no subject user.
 //
 // The calendar handler reads endpoint/api_key from the job input (threaded by
 // the pipeline from the key step's result) and overrides its configured client
-// credentials with them when both are present. Seasons come from the job input
-// ({"seasons":["2026","2027"]}) when supplied, else the handler's configured
-// defaults, else the current Shanghai year.
+// credentials with them when both are present. Years come from the job input
+// ({"years":["2026","2027"]}) when supplied, else the handler's configured
+// defaults, else the current Shanghai year. It also parses the upstream venue
+// string into a three-level address (country/province/city) and maps Chinese
+// cities to their Chinese names via the curated tables in geocode.go.
 package competitioncalendar
 
 import (
@@ -31,15 +33,16 @@ import (
 // JobType is the registered job_type for the competition-calendar sync handler.
 const JobType = "competition_calendar_sync"
 
-// Source labels the rows this handler writes: the World Athletics competition
-// group it mirrors. Kept as a distinct value so the same table can later hold
-// other calendar sources.
-const Source = "world-athletics-label-road-races"
+// Source labels the rows this handler writes — a fixed Chinese value per source
+// (国际田联 for the World Athletics label road races; 中国田协 reserved for a
+// future China Athletics Association source). Kept as a constant so the same
+// race_calendar table can hold multiple sources.
+const Source = "国际田联"
 
 // CalendarStore is the slice of *storage.Store the handler needs, so the
 // handler stays unit-testable with a fake. cmd/worker injects the real store.
 type CalendarStore interface {
-	ReplaceCompetitionCalendarSeason(ctx context.Context, source, season string, events []storage.CompetitionCalendarEvent) (storage.ReplaceCompetitionCalendarResult, error)
+	ReplaceRaceCalendarYear(ctx context.Context, source, year string, races []storage.RaceCalendarEvent) (storage.ReplaceRaceCalendarResult, error)
 }
 
 // Config is the handler's static dependencies and defaults, wired in cmd/worker.
@@ -48,9 +51,9 @@ type Config struct {
 	Store                 CalendarStore
 	CompetitionGroupID    int
 	CompetitionSubgroupID int
-	// DefaultSeasons is used when the job input omits "seasons". Empty means the
+	// DefaultYears is used when the job input omits "years". Empty means the
 	// current Shanghai year.
-	DefaultSeasons []string
+	DefaultYears []string
 	// Logger is the structured logger for this handler's diagnostics. nil falls
 	// back to the process logger.
 	Logger *zap.Logger
@@ -73,12 +76,12 @@ func New(cfg Config) job.Handler {
 			return "", job.NewPermanentError("bad_payload", err)
 		}
 
-		seasons := in.Seasons
-		if len(seasons) == 0 {
-			seasons = cfg.DefaultSeasons
+		years := in.Years
+		if len(years) == 0 {
+			years = cfg.DefaultYears
 		}
-		if len(seasons) == 0 {
-			seasons = []string{currentSeason()}
+		if len(years) == 0 {
+			years = []string{currentYear()}
 		}
 
 		// The pipeline threads the key step's discovered credentials into this
@@ -97,17 +100,17 @@ func New(cfg Config) job.Handler {
 		}
 
 		out := struct {
-			Seasons map[string]seasonSummary `json:"seasons"`
-		}{Seasons: make(map[string]seasonSummary)}
+			Years map[string]yearSummary `json:"years"`
+		}{Years: make(map[string]yearSummary)}
 
-		for _, season := range seasons {
-			stage := "fetch:" + season
+		for _, year := range years {
+			stage := "fetch:" + year
 			_ = hb(stage, 10)
-			events, err := client.MinisiteCalendar(ctx, season, cfg.CompetitionGroupID, cfg.CompetitionSubgroupID)
+			events, err := client.MinisiteCalendar(ctx, year, cfg.CompetitionGroupID, cfg.CompetitionSubgroupID)
 			if err != nil {
-				log.Error("competition_calendar_sync: season fetch failed",
+				log.Error("competition_calendar_sync: year fetch failed",
 					zap.String("job_id", j.ID),
-					zap.String("season", season),
+					zap.String("year", year),
 					zap.String("endpoint", client.Endpoint()),
 					zap.Int("competition_group_id", cfg.CompetitionGroupID),
 					zap.Error(err))
@@ -115,31 +118,31 @@ func New(cfg Config) job.Handler {
 			}
 			_ = hb(stage, 60)
 
-			rows := make([]storage.CompetitionCalendarEvent, 0, len(events))
+			rows := make([]storage.RaceCalendarEvent, 0, len(events))
 			for _, e := range events {
 				rows = append(rows, toRow(e))
 			}
-			res, err := cfg.Store.ReplaceCompetitionCalendarSeason(ctx, Source, season, rows)
+			res, err := cfg.Store.ReplaceRaceCalendarYear(ctx, Source, year, rows)
 			if err != nil {
 				if storage.IsDeterministicWriteError(err) {
-					log.Error("competition_calendar_sync: season write failed (deterministic)",
+					log.Error("competition_calendar_sync: year write failed (deterministic)",
 						zap.String("job_id", j.ID),
-						zap.String("season", season),
+						zap.String("year", year),
 						zap.String("error_code", "storage_constraint"),
 						zap.Error(err))
 					return "", job.NewPermanentError("storage_constraint", err)
 				}
-				log.Error("competition_calendar_sync: season write failed",
+				log.Error("competition_calendar_sync: year write failed",
 					zap.String("job_id", j.ID),
-					zap.String("season", season),
+					zap.String("year", year),
 					zap.Error(err))
 				return "", err
 			}
 			_ = hb(stage, 100)
-			out.Seasons[season] = seasonSummary{Fetched: len(events), Upserted: res.Upserted, Deleted: res.Deleted}
-			log.Info("competition_calendar_sync: season synced",
+			out.Years[year] = yearSummary{Fetched: len(events), Upserted: res.Upserted, Deleted: res.Deleted}
+			log.Info("competition_calendar_sync: year synced",
 				zap.String("job_id", j.ID),
-				zap.String("season", season),
+				zap.String("year", year),
 				zap.Int("fetched", len(events)),
 				zap.Int("upserted", res.Upserted),
 				zap.Int("deleted", res.Deleted))
@@ -150,17 +153,17 @@ func New(cfg Config) job.Handler {
 	}
 }
 
-// seasonSummary is the per-season result reported in the job's result_json.
-type seasonSummary struct {
+// yearSummary is the per-year result reported in the job's result_json.
+type yearSummary struct {
 	Fetched  int `json:"fetched"`
 	Upserted int `json:"upserted"`
 	Deleted  int `json:"deleted"`
 }
 
-// jobInput is the job's input: the run-level {"seasons":[...]} merged (by the
+// jobInput is the job's input: the run-level {"years":[...]} merged (by the
 // pipeline) with the key step's discovered {"endpoint":...,"api_key":...}.
 type jobInput struct {
-	Seasons  []string `json:"seasons"`
+	Years    []string `json:"years"`
 	Endpoint string   `json:"endpoint"`
 	APIKey   string   `json:"api_key"`
 }
@@ -179,30 +182,31 @@ func resolveInput(inputJSON string) (jobInput, error) {
 	return in, nil
 }
 
-// currentSeason is the World Athletics season (the calendar year) as of today's
+// currentYear is the World Athletics season (the calendar year) as of today's
 // Shanghai day, matching the site's season dropdown default.
-func currentSeason() string {
+func currentYear() string {
 	return fmt.Sprintf("%d", timefmt.ShanghaiToday().Year())
 }
 
-func toRow(e worldathletics.Event) storage.CompetitionCalendarEvent {
-	return storage.CompetitionCalendarEvent{
-		EventID:                   e.ID,
-		IaafID:                    e.IaafID,
-		Name:                      e.Name,
-		Venue:                     strPtr(strings.TrimSpace(e.Venue)),
-		Country:                   strPtr(strings.TrimSpace(e.Country)),
-		StartDate:                 e.StartDate,
-		EndDate:                   e.EndDate,
-		DateRange:                 e.DateRange,
-		Disciplines:               strPtr(e.Disciplines),
-		RankingCategory:           strPtr(e.RankingCategory),
-		CompetitionSubgroup:       strPtr(e.CompetitionSubgroup),
-		HasResults:                e.HasResults,
-		HasStartlist:              e.HasStartlist,
-		HasAPIResults:             e.HasAPIResults,
-		HasCompetitionInformation: e.HasCompetitionInformation,
+// toRow maps an upstream calendar event into a race_calendar row, parsing the
+// venue into the three-level address (province/city) and leaving name_cn NULL
+// for later curation.
+func toRow(e worldathletics.Event) storage.RaceCalendarEvent {
+	province, city := parseLocation(e.Venue, e.Country)
+	return storage.RaceCalendarEvent{
+		Name:     e.Name,
+		RaceDate: e.StartDate,
+		Country:  strings.TrimSpace(e.Country),
+		Province: strPtrOrNil(province),
+		City:     strPtrOrNil(city),
+		Label:    strPtrOrNil(e.CompetitionSubgroup),
 	}
 }
 
-func strPtr(s string) *string { return &s }
+// strPtrOrNil maps an empty string to a nil pointer (NULL in MySQL).
+func strPtrOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

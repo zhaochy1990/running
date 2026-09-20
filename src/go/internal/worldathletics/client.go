@@ -78,24 +78,15 @@ func MaskKey(k string) string {
 }
 
 // Event is one competition in a calendar season, mirroring the CalendarEvent
-// shape returned by getMinisiteCalendarEvents. IaafID is the legacy World
-// Athletics event id and is null for modern events.
+// shape returned by getMinisiteCalendarEvents — trimmed to the fields the
+// race_calendar pipeline persists. Venue is kept raw so the handler can parse
+// the three-level address from it; Country is the 3-letter ISO code.
 type Event struct {
-	ID                        int64  `json:"id"`
-	IaafID                    *int64 `json:"iaafId"`
-	HasResults                bool   `json:"hasResults"`
-	HasStartlist              bool   `json:"hasStartlist"`
-	HasAPIResults             bool   `json:"hasApiResults"`
-	HasCompetitionInformation bool   `json:"hasCompetitionInformation"`
-	Disciplines               string `json:"disciplines"`
-	RankingCategory           string `json:"rankingCategory"`
-	CompetitionSubgroup       string `json:"competitionSubgroup"`
-	Name                      string `json:"name"`
-	Venue                     string `json:"venue"`
-	Country                   string `json:"country"`
-	StartDate                 string `json:"startDate"`
-	EndDate                   string `json:"endDate"`
-	DateRange                 string `json:"dateRange"`
+	CompetitionSubgroup string `json:"competitionSubgroup"`
+	Name                string `json:"name"`
+	Venue               string `json:"venue"`
+	Country             string `json:"country"`
+	StartDate           string `json:"startDate"`
 }
 
 // minisiteCalendarResponse is the GraphQL response envelope for
@@ -117,21 +108,11 @@ type minisiteCalendarResponse struct {
 const minisiteCalendarQuery = `query getMinisiteCalendarEvents($season: String, $competitionGroupId: Int, $competitionSubgroupId: Int) {
   getMinisiteCalendarEvents(season: $season, competitionGroupId: $competitionGroupId, competitionSubgroupId: $competitionSubgroupId) {
     results {
-      id
-      iaafId
-      hasResults
-      hasStartlist
-      hasApiResults
-      hasCompetitionInformation
-      disciplines
-      rankingCategory
       competitionSubgroup
       name
       venue
       country
       startDate
-      endDate
-      dateRange
     }
   }
 }`

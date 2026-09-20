@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/worldathletics"
@@ -16,25 +18,24 @@ import (
 
 // fakeStore records what the handler asks the storage layer to mirror.
 type fakeStore struct {
-	seasons []string
-	events  map[string][]storage.CompetitionCalendarEvent
+	years []string
+	races map[string][]storage.RaceCalendarEvent
 }
 
-func (f *fakeStore) ReplaceCompetitionCalendarSeason(_ context.Context, source, season string, events []storage.CompetitionCalendarEvent) (storage.ReplaceCompetitionCalendarResult, error) {
-	// Mirror the real store's contract: source/season are stamped on the rows.
-	for i := range events {
-		events[i].Source = source
-		events[i].Season = season
+func (f *fakeStore) ReplaceRaceCalendarYear(_ context.Context, source, year string, races []storage.RaceCalendarEvent) (storage.ReplaceRaceCalendarResult, error) {
+	// Mirror the real store's contract: source is stamped on the rows.
+	for i := range races {
+		races[i].Source = source
 	}
-	f.seasons = append(f.seasons, season)
-	if f.events == nil {
-		f.events = map[string][]storage.CompetitionCalendarEvent{}
+	f.years = append(f.years, year)
+	if f.races == nil {
+		f.races = map[string][]storage.RaceCalendarEvent{}
 	}
-	f.events[season] = append([]storage.CompetitionCalendarEvent(nil), events...)
-	return storage.ReplaceCompetitionCalendarResult{Upserted: len(events)}, nil
+	f.races[year] = append([]storage.RaceCalendarEvent(nil), races...)
+	return storage.ReplaceRaceCalendarResult{Upserted: len(races)}, nil
 }
 
-// waServer serves one season of events, keyed by the season variable in the
+// waServer serves one year of events, keyed by the year variable in the
 // GraphQL body, and records the x-api-key header each request carried.
 func waServer(t *testing.T) (*httptest.Server, *string) {
 	t.Helper()
@@ -53,7 +54,8 @@ func waServer(t *testing.T) (*httptest.Server, *string) {
 			return
 		}
 		_, _ = w.Write([]byte(`{"data":{"getMinisiteCalendarEvents":{"results":[
-			{"id":7236068,"iaafId":null,"hasResults":false,"hasStartlist":false,"hasApiResults":true,"hasCompetitionInformation":true,"disciplines":"Road Running","rankingCategory":"E","competitionSubgroup":"Label","name":"A Race","venue":"Madrid (ESP)","country":"ESP","startDate":"2026-01-06","endDate":"2026-01-06","dateRange":"06 JAN 2026"}
+			{"name":"Xiamen Marathon","venue":"Xiamen (CHN)","country":"CHN","startDate":"2026-01-06","competitionSubgroup":"Gold"},
+			{"name":"Boston Marathon","venue":"Boston, MA (USA)","country":"USA","startDate":"2026-04-20","competitionSubgroup":"Platinum"}
 		]}}}`))
 	}))
 	t.Cleanup(srv.Close)
@@ -67,11 +69,12 @@ func newHandler(t *testing.T, srv *httptest.Server, defaults []string, st Calend
 		Store:                 st,
 		CompetitionGroupID:    3775,
 		CompetitionSubgroupID: 0,
-		DefaultSeasons:        defaults,
+		DefaultYears:          defaults,
+		Logger:                zap.NewNop(),
 	})
 }
 
-func TestHandlerFetchesDefaultSeason(t *testing.T) {
+func TestHandlerFetchesDefaultYear(t *testing.T) {
 	srv, _ := waServer(t)
 	st := &fakeStore{}
 	h := newHandler(t, srv, nil, st)
@@ -80,22 +83,41 @@ func TestHandlerFetchesDefaultSeason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	if len(st.seasons) != 1 {
-		t.Fatalf("seasons mirrored = %v, want 1", st.seasons)
+	if len(st.years) != 1 {
+		t.Fatalf("years mirrored = %v, want 1", st.years)
 	}
-	events := st.events[st.seasons[0]]
-	if len(events) != 1 || events[0].Name != "A Race" || events[0].Source != Source {
-		t.Fatalf("events = %+v", events)
+	races := st.races[st.years[0]]
+	if len(races) != 2 {
+		t.Fatalf("races = %d, want 2", len(races))
 	}
+	// toRow maps venue -> country/province/city and label.
+	var xiamen, boston storage.RaceCalendarEvent
+	for _, r := range races {
+		if r.Name == "Xiamen Marathon" {
+			xiamen = r
+		}
+		if r.Name == "Boston Marathon" {
+			boston = r
+		}
+	}
+	if xiamen.City == nil || *xiamen.City != "厦门市" || xiamen.Province == nil || *xiamen.Province != "福建省" {
+		t.Fatalf("Xiamen city/province = %v/%v, want 厦门市/福建省", deref(xiamen.City), deref(xiamen.Province))
+	}
+	if xiamen.Country != "CHN" || xiamen.Label == nil || *xiamen.Label != "Gold" {
+		t.Fatalf("Xiamen country/label = %v/%v", xiamen.Country, deref(xiamen.Label))
+	}
+	if boston.City == nil || *boston.City != "Boston" || boston.Province == nil || *boston.Province != "Massachusetts" {
+		t.Fatalf("Boston city/province = %v/%v, want Boston/Massachusetts", deref(boston.City), deref(boston.Province))
+	}
+
 	var out struct {
-		Seasons map[string]seasonSummary `json:"seasons"`
+		Years map[string]yearSummary `json:"years"`
 	}
 	if err := json.Unmarshal([]byte(res), &out); err != nil {
 		t.Fatalf("result not json: %v", err)
 	}
-	// DefaultSeason was nil, so the handler falls back to the current year.
-	if _, ok := out.Seasons[time.Now().Format("2006")]; !ok {
-		t.Fatalf("result seasons = %+v", out.Seasons)
+	if _, ok := out.Years[time.Now().Format("2006")]; !ok {
+		t.Fatalf("result years = %+v", out.Years)
 	}
 }
 
@@ -104,23 +126,22 @@ func TestHandlerUsesInputOverride(t *testing.T) {
 	st := &fakeStore{}
 	h := newHandler(t, srv, []string{"2026"}, st)
 
-	res, err := h(context.Background(), &job.Job{InputJSON: `{"seasons":["2026","2027"]}`}, func(string, int) error { return nil })
+	res, err := h(context.Background(), &job.Job{InputJSON: `{"years":["2026","2027"]}`}, func(string, int) error { return nil })
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	if len(st.seasons) != 2 || st.seasons[0] != "2026" || st.seasons[1] != "2027" {
-		t.Fatalf("seasons mirrored = %v, want [2026 2027]", st.seasons)
+	if len(st.years) != 2 || st.years[0] != "2026" || st.years[1] != "2027" {
+		t.Fatalf("years mirrored = %v, want [2026 2027]", st.years)
 	}
-	// 2027 returned null -> no rows passed to the store for it.
-	if len(st.events["2027"]) != 0 {
-		t.Fatalf("2027 events = %d, want 0", len(st.events["2027"]))
+	if len(st.races["2027"]) != 0 {
+		t.Fatalf("2027 races = %d, want 0", len(st.races["2027"]))
 	}
 	var out struct {
-		Seasons map[string]seasonSummary `json:"seasons"`
+		Years map[string]yearSummary `json:"years"`
 	}
 	_ = json.Unmarshal([]byte(res), &out)
-	if out.Seasons["2027"].Fetched != 0 || out.Seasons["2026"].Upserted != 1 {
-		t.Fatalf("summary = %+v", out.Seasons)
+	if out.Years["2027"].Fetched != 0 || out.Years["2026"].Upserted != 2 {
+		t.Fatalf("summary = %+v", out.Years)
 	}
 }
 
@@ -139,16 +160,15 @@ func TestHandlerUsesDiscoveredCredentials(t *testing.T) {
 	st := &fakeStore{}
 	h := newHandler(t, srv, nil, st)
 
-	// The pipeline threads the key step's result here: {"endpoint":...,"api_key":...}.
 	in := fmt.Sprintf(`{"endpoint":%q,"api_key":"da2-discovered"}`, srv.URL)
 	if _, err := h(context.Background(), &job.Job{InputJSON: in}, func(string, int) error { return nil }); err != nil {
 		t.Fatalf("handler: %v", err)
 	}
 	if *gotKey != "da2-discovered" {
-		t.Fatalf("server saw x-api-key %q, want the discovered key da2-discovered", *gotKey)
+		t.Fatalf("server saw x-api-key %q, want da2-discovered", *gotKey)
 	}
-	if len(st.events) != 1 {
-		t.Fatalf("events mirrored = %d, want 1 season", len(st.events))
+	if len(st.races) != 1 {
+		t.Fatalf("races mirrored = %d, want 1 year", len(st.races))
 	}
 }
 
@@ -156,12 +176,17 @@ func TestHandlerIgnoresPartialCredentials(t *testing.T) {
 	srv, gotKey := waServer(t)
 	h := newHandler(t, srv, nil, &fakeStore{})
 
-	// Only api_key present (no endpoint): the handler must keep the configured
-	// client, so the server sees the configured "k" key.
 	if _, err := h(context.Background(), &job.Job{InputJSON: `{"api_key":"da2-discovered"}`}, func(string, int) error { return nil }); err != nil {
 		t.Fatalf("handler: %v", err)
 	}
 	if *gotKey != "k" {
 		t.Fatalf("server saw x-api-key %q, want configured key k (partial override ignored)", *gotKey)
 	}
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

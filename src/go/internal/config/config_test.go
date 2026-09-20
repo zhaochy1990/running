@@ -173,7 +173,7 @@ world-athletics:
   api-key: da2-test
   competition-group-id: 3775
   competition-subgroup-id: 0
-  seasons: ["2026", "2027"]
+  years: ["2026", "2027"]
   timeout: 60s
 `
 	cfg := MustLoadFrom(writeConfig(t, body))
@@ -181,8 +181,8 @@ world-athletics:
 		cfg.WorldAthletics.CompetitionGroupID != 3775 || cfg.WorldAthletics.Timeout != 60*time.Second {
 		t.Fatalf("world-athletics = %+v", cfg.WorldAthletics)
 	}
-	if len(cfg.WorldAthletics.Seasons) != 2 || cfg.WorldAthletics.Seasons[0] != "2026" {
-		t.Fatalf("seasons = %v", cfg.WorldAthletics.Seasons)
+	if len(cfg.WorldAthletics.Years) != 2 || cfg.WorldAthletics.Years[0] != "2026" {
+		t.Fatalf("seasons = %v", cfg.WorldAthletics.Years)
 	}
 
 	// Absent section must not panic (the field is optional, like COS).

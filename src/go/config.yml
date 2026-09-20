@@ -73,7 +73,7 @@ world-athletics:
   api-key: "da2-q7toieeiobcjxbov4abq3abk5u"
   competition-group-id: 3775    # 3775 = World Athletics Label Road Races
   competition-subgroup-id: 0    # 0 = all subgroups (Platinum/Gold/Silver/Bronze/Elite/Label)
-  seasons: []                   # empty -> the current Shanghai year
+  years: []                     # empty -> the current Shanghai year
   timeout: 60s
 
 # HTTP API server (`stride api`) — a separate container (ADR 0012), same unified

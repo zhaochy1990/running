@@ -25,12 +25,11 @@ func validResponseBody(t *testing.T) []byte {
 			"getMinisiteCalendarEvents": map[string]any{
 				"results": []map[string]any{
 					{
-						"id": 7236068, "iaafId": nil, "hasResults": false, "hasStartlist": false,
-						"hasApiResults": true, "hasCompetitionInformation": true,
-						"disciplines": "Road Running", "rankingCategory": "E", "competitionSubgroup": "Label",
-						"name":  "40. OPTIMA Dreikönigslauf in Schwäbisch Hall",
-						"venue": "Schwäbisch Hall (GER)", "country": "GER",
-						"startDate": "2026-01-06", "endDate": "2026-01-06", "dateRange": "06 JAN 2026",
+						"competitionSubgroup": "Label",
+						"name":                "40. OPTIMA Dreikönigslauf in Schwäbisch Hall",
+						"venue":               "Schwäbisch Hall (GER)",
+						"country":             "GER",
+						"startDate":           "2026-01-06",
 					},
 				},
 			},
@@ -64,14 +63,9 @@ func TestMinisiteCalendarParsesEventsAndSendsAPIKey(t *testing.T) {
 		t.Fatalf("events = %d, want 1", len(events))
 	}
 	e := events[0]
-	if e.ID != 7236068 || e.Name == "" || e.StartDate != "2026-01-06" || e.Venue != "Schwäbisch Hall (GER)" {
+	if e.Name == "" || e.StartDate != "2026-01-06" || e.Venue != "Schwäbisch Hall (GER)" ||
+		e.Country != "GER" || e.CompetitionSubgroup != "Label" {
 		t.Fatalf("event = %+v", e)
-	}
-	if e.IaafID != nil {
-		t.Fatalf("iaaf_id = %v, want nil", *e.IaafID)
-	}
-	if !e.HasAPIResults || e.HasResults {
-		t.Fatalf("flags = %+v", e)
 	}
 }
 

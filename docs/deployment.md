@@ -239,8 +239,18 @@ workflow run 和用户固定的 `Idempotency-Key`；因此网络重试不会重�
    introspection 探针验证它确实可用，返回 `{"endpoint":...,"api_key":...}`。
 2. `competition_calendar_sync`：用第一步发现的（缺省时用 `config.yml` 配置的）
    key 调 World Athletics GraphQL API（`getMinisiteCalendarEvents`，Label Road
-   Races 组）拉取当前上海年份赛季，upsert 到 MySQL 的 `competition_calendar` 表
-   （identity `(source, season, event_id)`；整赛季镜像，上游消失的赛事会被删除）。
+   Races 组）拉取当前上海年份的赛事，upsert 到 MySQL 的 `race_calendar` 表
+   （`source` 用固定中文值 `国际田联`，identity `(source, year, name)`，不含任何
+   上游内部 id；整年镜像，上游消失的赛事会被删除）。写入时把上游 `venue` 解析成
+   三级地址 `country`（3 字母 ISO）/`province`（中国中文省、国外英文州）/`city`
+   （中国城市映射中文名如 厦门市、国外保留英文原名），由 `race_date` 派生
+   `month`/`dayofmonth` 以便按月查询；`name_cn` 供后续人工填充中文名，同步永不
+   覆盖。
+
+> **旧表清理**：本 feature 早期迭代曾把数据写进 `competition_calendar` 表，重构后该表不再
+> 更新，AutoMigrate 也不会 drop 它。若生产环境曾跑过旧版本，请人工确认后
+> `DROP TABLE IF EXISTS competition_calendar;`（它没有独立数据，镜像语义由
+> `race_calendar` 承接）。
 
 该设计让 key 轮换**自愈**：第一步失败时 pipeline 继续，第二步回落到配置 key，日历
 照常同步；同时 workflow 会检查 run 的 step 状态，key 发现步骤挂掉时显式失败以便人工

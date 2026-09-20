@@ -109,16 +109,16 @@ type COS struct {
 // Athletics embeds it in the site's JS bundle, so it ships as a config.yml
 // default and can be rotated via STRIDE_WORKER_WORLD_ATHLETICS_API_KEY if
 // upstream changes it. CompetitionGroupID pins which calendar is mirrored
-// (3775 = World Athletics Label Road Races); an empty Seasons means "the
-// current Shanghai year". Every field is optional (like COS): the worker boots
-// without the section, and a job run then fails loudly if the endpoint was
-// never configured.
+// (3775 = World Athletics Label Road Races); an empty Years means "the current
+// Shanghai year". Every field is optional (like COS): the worker boots without
+// the section, and a job run then fails loudly if the endpoint was never
+// configured.
 type WorldAthletics struct {
 	Endpoint              string        `mapstructure:"endpoint"`
 	APIKey                string        `mapstructure:"api-key"`
 	CompetitionGroupID    int           `mapstructure:"competition-group-id"`
 	CompetitionSubgroupID int           `mapstructure:"competition-subgroup-id"`
-	Seasons               []string      `mapstructure:"seasons"`
+	Years                 []string      `mapstructure:"years"`
 	Timeout               time.Duration `mapstructure:"timeout"`
 }
 

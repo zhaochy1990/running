@@ -93,8 +93,8 @@ func runWorker() error {
 	if err := store.AutoMigrateWatch(ctx); err != nil {
 		return err
 	}
-	// competition_calendar table written by the competition_calendar_sync pipeline.
-	if err := store.AutoMigrateCompetitionCalendar(ctx); err != nil {
+	// race_calendar table written by the competition_calendar_sync pipeline.
+	if err := store.AutoMigrateRaceCalendar(ctx); err != nil {
 		return err
 	}
 
@@ -141,7 +141,7 @@ func runWorker() error {
 		Store:                 store,
 		CompetitionGroupID:    cfg.WorldAthletics.CompetitionGroupID,
 		CompetitionSubgroupID: cfg.WorldAthletics.CompetitionSubgroupID,
-		DefaultSeasons:        cfg.WorldAthletics.Seasons,
+		DefaultYears:          cfg.WorldAthletics.Years,
 		Logger:                log,
 	})
 	policy := job.RetryPolicy{
