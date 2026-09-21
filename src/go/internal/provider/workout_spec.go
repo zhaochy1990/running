@@ -53,7 +53,21 @@ const (
 	DurationOpen      DurationKind = "open"       // ends manually (no fixed length)
 )
 
-// TargetKind is what metric a step targets.
+// TargetKind is what metric a step targets. The canonical set is closed and
+// grouped in three families:
+//
+//   - Absolute: pace_s_km, hr_bpm, power_w, open.
+//   - Relative: pct_max_hr, pct_hrr, pct_lt_hr, pct_lt_pace, pct_race_pace,
+//     pct_ftp. The stored Low/High values are plain fractions (0.70 == 70%),
+//     never ×100 or ×1000 scaled; adapters own any scaling at their boundary.
+//   - Zone: pace_zone, hr_zone. Low/High are 1-based integer zone numbers.
+//
+// Adding a kind is a schema change: list it in validTargetKinds, give it a
+// resolution rule in resolve.go, and cover it in the round-trip tests. Unknown
+// kinds are a parse error (never a silent degrade).
+//
+// Candidate kinds that are deliberately NOT modelled yet: cadence_spm, rpe,
+// and a per-100m swim pace unit.
 type TargetKind string
 
 const (
@@ -61,7 +75,62 @@ const (
 	TargetHRBPM   TargetKind = "hr_bpm"    // beats per minute
 	TargetPowerW  TargetKind = "power_w"   // watts
 	TargetOpen    TargetKind = "open"      // no specific target
+
+	TargetPctMaxHR    TargetKind = "pct_max_hr"    // fraction of HRmax
+	TargetPctHRR      TargetKind = "pct_hrr"       // fraction of heart-rate reserve
+	TargetPctLTHR     TargetKind = "pct_lt_hr"     // fraction of lactate-threshold HR
+	TargetPctLTPace   TargetKind = "pct_lt_pace"   // speed ratio: v / v_threshold
+	TargetPctRacePace TargetKind = "pct_race_pace" // speed ratio: v / v_race_goal
+	TargetPctFTP      TargetKind = "pct_ftp"       // fraction of functional threshold power
+
+	TargetPaceZone TargetKind = "pace_zone" // integer pace zone number
+	TargetHRZone   TargetKind = "hr_zone"   // integer heart-rate zone number
 )
+
+// validTargetKinds is the closed set of kinds the canonical spec accepts.
+var validTargetKinds = map[TargetKind]struct{}{
+	TargetPaceSKM: {}, TargetHRBPM: {}, TargetPowerW: {}, TargetOpen: {},
+	TargetPctMaxHR: {}, TargetPctHRR: {}, TargetPctLTHR: {},
+	TargetPctLTPace: {}, TargetPctRacePace: {}, TargetPctFTP: {},
+	TargetPaceZone: {}, TargetHRZone: {},
+}
+
+var relativeTargetKinds = map[TargetKind]struct{}{
+	TargetPctMaxHR: {}, TargetPctHRR: {}, TargetPctLTHR: {},
+	TargetPctLTPace: {}, TargetPctRacePace: {}, TargetPctFTP: {},
+}
+
+var zoneTargetKinds = map[TargetKind]struct{}{
+	TargetPaceZone: {}, TargetHRZone: {},
+}
+
+// speedRatioTargetKinds are contractual speed ratios (v / v_reference): a
+// fraction below 1 is *slower* than the reference, and absolute pace is
+// reference pace ÷ fraction. The direction is pinned so no consumer can invert
+// it and emit a dangerously fast target.
+var speedRatioTargetKinds = map[TargetKind]struct{}{
+	TargetPctLTPace: {}, TargetPctRacePace: {},
+}
+
+// IsValid reports whether k is a canonical target kind. Unknown kinds must not
+// be accepted: the schema gate rejects them rather than degrading to open.
+func (k TargetKind) IsValid() bool { _, ok := validTargetKinds[k]; return ok }
+
+// IsRelative reports whether k is expressed as a fraction of an athlete
+// baseline and must be resolved before use.
+func (k TargetKind) IsRelative() bool { _, ok := relativeTargetKinds[k]; return ok }
+
+// IsZone reports whether k is expressed as an integer zone number.
+func (k TargetKind) IsZone() bool { _, ok := zoneTargetKinds[k]; return ok }
+
+// IsSpeedRatio reports whether k's fraction is a speed ratio (v / v_reference)
+// rather than a scalar multiple of a directly-usable value.
+func (k TargetKind) IsSpeedRatio() bool { _, ok := speedRatioTargetKinds[k]; return ok }
+
+// maxRelativeFraction is the sanity ceiling for a stored percentage. Values
+// are plain fractions, so 0.70 means 70%; anything above 2 is almost certainly
+// a ×100 scaling bug, and a value <= 0 is meaningless.
+const maxRelativeFraction = 2.0
 
 // StrengthTargetKind is what a strength exercise set targets.
 type StrengthTargetKind string
@@ -104,14 +173,95 @@ func OpenDuration() Duration { return Duration{Kind: DurationOpen} }
 
 // Target is an optional intensity target for a step.
 //
-// Low / High form an inclusive range in the unit implied by Kind. For
-// asymmetric metrics like pace where smaller = faster, Low is the slower bound
-// (larger seconds/km) and High is the faster bound (smaller seconds/km) — the
-// names refer to *intensity*, not numeric value.
+// Low / High form an inclusive range in the unit implied by Kind. Low is always
+// the *easier* end and High the *harder* end — the names refer to intensity,
+// not numeric value. That means:
+//
+//   - pace_s_km: Low is the slower bound (larger seconds/km), High the faster.
+//   - hr_bpm / power_w and all percentage kinds: Low is numerically smaller.
+//   - pct_lt_pace / pct_race_pace: Low is the smaller (slower) speed ratio, so
+//     Low <= High numerically and the resolved pace keeps Low > High.
+//   - *_zone: Low/High are 1-based integer zone numbers, Low the easier zone.
+//
+// Ranges, single points (Low == High) and one-sided caps (one side nil) are all
+// valid. Percent values are plain fractions (0.70–0.80), never ×100/×1000
+// scaled.
 type Target struct {
 	Kind TargetKind `json:"kind"`
 	Low  *float64   `json:"low"`
 	High *float64   `json:"high"`
+}
+
+// Validate enforces the canonical target contract. It is schema-gated: unknown
+// kinds, non-fraction percentages, non-integer zone numbers, and inverted
+// speed-ratio ranges are errors, never a silent degrade. Absolute kinds are
+// validated only for a known kind so stored legacy plans keep parsing.
+func (t Target) Validate() error {
+	if !t.Kind.IsValid() {
+		// A zero-value Target (no kind, no bounds) is the legacy "no target"
+		// shape produced by struct construction and by specs that omit the
+		// target entirely; treat it like open for backward compatibility. Any
+		// other unknown kind is a schema error.
+		if t.Kind == "" && t.Low == nil && t.High == nil {
+			return nil
+		}
+		return fmt.Errorf("unknown target kind %q", t.Kind)
+	}
+	if t.Kind == TargetOpen {
+		return nil
+	}
+	if t.Kind.IsRelative() || t.Kind.IsZone() {
+		for _, b := range []struct {
+			name string
+			v    *float64
+		}{{"low", t.Low}, {"high", t.High}} {
+			if b.v == nil {
+				continue
+			}
+			if t.Kind.IsRelative() {
+				if err := validateFraction(b.v); err != nil {
+					return fmt.Errorf("%s target %s %w", t.Kind, b.name, err)
+				}
+				continue
+			}
+			if *b.v < 1 || *b.v != math.Trunc(*b.v) || math.IsInf(*b.v, 0) || math.IsNaN(*b.v) {
+				return fmt.Errorf("%s target %s must be a positive integer zone number, got %v", t.Kind, b.name, *b.v)
+			}
+		}
+	}
+	if t.Low != nil && t.High != nil && (t.Kind.IsRelative() || t.Kind.IsZone()) {
+		if *t.Low > *t.High {
+			if t.Kind.IsSpeedRatio() {
+				return fmt.Errorf("%s is a speed ratio: low (easier/slower) must be <= high (harder/faster), got low=%v high=%v", t.Kind, *t.Low, *t.High)
+			}
+			return fmt.Errorf("%s target low (easier) must be <= high (harder), got low=%v high=%v", t.Kind, *t.Low, *t.High)
+		}
+	}
+	return nil
+}
+
+// validateFraction rejects any stored percentage that is not a plain fraction
+// in (0, maxRelativeFraction].
+func validateFraction(v *float64) error {
+	if math.IsNaN(*v) || math.IsInf(*v, 0) || *v <= 0 || *v > maxRelativeFraction {
+		return fmt.Errorf("must be a fraction in (0, %.1f], got %v", maxRelativeFraction, *v)
+	}
+	return nil
+}
+
+// PctRange builds a relative target from plain fractions (0.70 == 70%). Bounds
+// are ordered so Low is the easier end. Speed-ratio kinds keep their pinned
+// direction because the easier fraction is always the smaller one.
+func PctRange(kind TargetKind, low, high float64) Target {
+	lo, hi := math.Min(low, high), math.Max(low, high)
+	return Target{Kind: kind, Low: &lo, High: &hi}
+}
+
+// ZoneRange builds a zone target from 1-based integer zone numbers; Low is the
+// easier (lower) zone.
+func ZoneRange(kind TargetKind, low, high int) Target {
+	lo, hi := float64(min(low, high)), float64(max(low, high))
+	return Target{Kind: kind, Low: &lo, High: &hi}
 }
 
 // OpenTarget is a step with no intensity target.
@@ -162,13 +312,19 @@ type WorkoutBlock struct {
 	Repeat int           `json:"repeat"`
 }
 
-// Validate reports structural problems (repeat >= 1, at least one step).
+// Validate reports structural problems (repeat >= 1, at least one step) and
+// validates each step's target against the canonical schema.
 func (b WorkoutBlock) Validate() error {
 	if b.Repeat < 1 {
 		return fmt.Errorf("repeat must be >= 1, got %d", b.Repeat)
 	}
 	if len(b.Steps) == 0 {
 		return fmt.Errorf("workout block must have at least one step")
+	}
+	for i, s := range b.Steps {
+		if err := s.Target.Validate(); err != nil {
+			return fmt.Errorf("step %d: %w", i, err)
+		}
 	}
 	return nil
 }
