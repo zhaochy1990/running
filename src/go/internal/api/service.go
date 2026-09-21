@@ -200,6 +200,11 @@ type Config struct {
 	// without the race endpoints (e.g. in tests).
 	RaceCalendarStore RaceCalendarStore
 
+	// Race content maintenance surface (city/race/project structured content,
+	// issue #318). Administrator-only. Leave zero to run without the content
+	// endpoints (e.g. in tests).
+	RaceContentStore RaceContentStore
+
 	// WorkoutPusher pushes normalized workouts to the user's bound watch
 	// provider (satisfied by the cmd-layer adapter over registry).
 	WorkoutPusher WorkoutPusher
@@ -260,6 +265,7 @@ type Service struct {
 	weeklyPlan      *weeklyPlanRoutes
 	legalDocuments  *legalDocumentRoutes
 	raceCalendar    *raceCalendarRoutes
+	raceContent     *raceContentRoutes
 
 	auth           *Authenticator
 	corsOrigins    []string
@@ -314,6 +320,7 @@ func NewService(cfg Config) *Service {
 		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, cfg.BodyCompositionStore, log),
 		legalDocuments:          newLegalDocumentRoutes(cfg.LegalDocumentStore, log),
 		raceCalendar:            newRaceCalendarRoutes(cfg.RaceCalendarStore, log),
+		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
 		swaggerEnabled:          cfg.SwaggerEnabled,
@@ -375,6 +382,8 @@ func (s *Service) Router() *gin.Engine {
 	s.legalDocuments.registerAdmin(authenticated)
 	// Race-calendar management is administrator-only for the same reason.
 	s.raceCalendar.register(authenticated)
+	// Race-content maintenance is administrator-only for the same reason.
+	s.raceContent.register(authenticated)
 
 	// Existing routes accept only the original user/internal tiers. Keeping this
 	// default deny prevents an admin-dashboard token from silently inheriting
