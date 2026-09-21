@@ -1,0 +1,344 @@
+package storage
+
+import (
+	"context"
+	"testing"
+)
+
+// migrateRaceContent ensures the race-content tables exist for the integration
+// test and empties them (children first) so each test starts isolated. The
+// race_calendar tables are cleared too: the content tests seed their own events.
+func migrateRaceContent(t *testing.T, st *Store) {
+	t.Helper()
+	ctx := context.Background()
+	if err := st.AutoMigrateRaceCalendar(ctx); err != nil {
+		t.Fatalf("automigrate race_calendar: %v", err)
+	}
+	if err := st.AutoMigrateRaceContent(ctx); err != nil {
+		t.Fatalf("automigrate race content: %v", err)
+	}
+	for _, table := range []string{"race_content_version", "race_content_item", "race_content", "race_city_content", "race_calendar_item", "race_calendar"} {
+		if err := st.db.WithContext(ctx).Exec("DELETE FROM " + table).Error; err != nil {
+			t.Fatalf("clear %s: %v", table, err)
+		}
+	}
+}
+
+// seedRaceEvent inserts one race_calendar event directly and returns its id,
+// bypassing the sync merge so tests control the business key exactly.
+func seedRaceEvent(t *testing.T, st *Store, source, name, raceDate string) uint64 {
+	t.Helper()
+	row := RaceCalendarEvent{
+		Source: source, Name: name, RaceDate: raceDate, Country: "CHN",
+		Month: 5, DayOfMonth: 1, Origin: RaceOriginSync,
+	}
+	if err := st.db.Create(&row).Error; err != nil {
+		t.Fatalf("seed event: %v", err)
+	}
+	return row.ID
+}
+
+func TestRaceCityContent_Lifecycle(t *testing.T) {
+	st := openTestStore(t)
+	migrateRaceContent(t, st)
+	ctx := context.Background()
+
+	// Create: a new city starts as draft.
+	in := &RaceCityContent{
+		City:        "厦门市",
+		Province:    strPtr("福建省"),
+		Attractions: []CityAttraction{{Name: "鼓浪屿", Description: "世界文化遗产"}},
+	}
+	got, err := st.UpsertRaceCityContent(ctx, in)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if got.Status != RaceContentStatusDraft || got.ID == 0 {
+		t.Fatalf("created = %+v, want a draft with an id", got)
+	}
+
+	// Update: the working state is replaced, status preserved.
+	in.Intro = &CityIntro{Overview: "海滨城市"}
+	if _, err := st.UpsertRaceCityContent(ctx, in); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	row, err := st.GetRaceCityContent(ctx, "厦门市")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if row.Intro == nil || row.Intro.Overview != "海滨城市" || len(row.Attractions) != 1 {
+		t.Fatalf("updated = %+v, want the new intro kept", row)
+	}
+
+	// Publish: mints version 1 and flips to published.
+	if _, v, err := st.PublishRaceCityContent(ctx, "厦门市", "admin-1"); err != nil || v != 1 {
+		t.Fatalf("publish = v%d err %v, want v1", v, err)
+	}
+	// Edit after publish takes effect directly (保存即生效), no version minted.
+	in.Climate = &CityClimate{Spring: "温和多雨"}
+	if _, err := st.UpsertRaceCityContent(ctx, in); err != nil {
+		t.Fatalf("post-publish edit: %v", err)
+	}
+	versions, err := st.ListRaceContentVersions(ctx, RaceContentVersionTypeCity, row.ID)
+	if err != nil {
+		t.Fatalf("list versions: %v", err)
+	}
+	if len(versions) != 1 || versions[0].Version != 1 || versions[0].PublishedBy != "admin-1" {
+		t.Fatalf("versions = %+v, want one v1 by admin-1", versions)
+	}
+
+	// Rollback: the climate edit is undone, published status is untouched.
+	row, err = st.RollbackRaceCityContent(ctx, "厦门市", 1)
+	if err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+	if row.Climate != nil {
+		t.Errorf("climate = %+v, want nil after rollback", row.Climate)
+	}
+	if row.Status != RaceContentStatusPublished {
+		t.Errorf("status = %q, want published preserved", row.Status)
+	}
+
+	// Archive: offline but never deleted.
+	if _, err := st.ArchiveRaceCityContent(ctx, "厦门市"); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if row, _ = st.GetRaceCityContent(ctx, "厦门市"); row == nil || row.Status != RaceContentStatusArchived {
+		t.Fatalf("archived = %+v, want an archived row", row)
+	}
+
+	// Missing city reads as nil, not an error.
+	if row, err := st.GetRaceCityContent(ctx, "不存在市"); err != nil || row != nil {
+		t.Fatalf("missing city = (%v, %v), want (nil, nil)", row, err)
+	}
+}
+
+func TestRaceContent_LifecycleAndVersions(t *testing.T) {
+	st := openTestStore(t)
+	migrateRaceContent(t, st)
+	ctx := context.Background()
+	eventID := seedRaceEvent(t, st, "中国田协", "厦门马拉松", "2031-01-05")
+	event := &RaceCalendarEvent{ID: eventID, Source: "中国田协", Name: "厦门马拉松", RaceDate: "2031-01-05"}
+
+	// Create with one item.
+	in := &RaceContent{SignupChannels: []RaceSignupChannel{{Name: "官网", Type: "官网", URL: "https://example.com"}}}
+	items := []RaceContentItem{{ItemName: "全程马拉松", Quota: intPtr(30000)}}
+	got, gotItems, err := st.UpsertRaceContent(ctx, event, in, items)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if got.Status != RaceContentStatusDraft || got.Year != 2031 || got.RaceEventID == nil || *got.RaceEventID != eventID {
+		t.Fatalf("created = %+v, want a draft attached to the event", got)
+	}
+	if len(gotItems) != 1 || gotItems[0].Quota == nil || *gotItems[0].Quota != 30000 {
+		t.Fatalf("items = %+v, want one quota-30000 item", gotItems)
+	}
+
+	// Full replace: items are swapped by name.
+	items = []RaceContentItem{
+		{ItemName: "全程马拉松", EntryFee: intPtr(200)},
+		{ItemName: "半程马拉松", Quota: intPtr(20000)},
+	}
+	if _, gotItems, err = st.UpsertRaceContent(ctx, event, in, items); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	if len(gotItems) != 2 {
+		t.Fatalf("items = %+v, want 2 after replace", gotItems)
+	}
+
+	// Publish mints v1; a second publish mints v2.
+	if _, _, v, err := st.PublishRaceContent(ctx, got.ID, "admin-1"); err != nil || v != 1 {
+		t.Fatalf("publish = v%d err %v, want v1", v, err)
+	}
+	in.PartitionRule = &RacePartitionRule{Mode: "by_item", Description: "分项出发"}
+	if _, _, err = st.UpsertRaceContent(ctx, event, in, items); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	if _, _, v, err := st.PublishRaceContent(ctx, got.ID, "admin-2"); err != nil || v != 2 {
+		t.Fatalf("publish = v%d err %v, want v2", v, err)
+	}
+
+	// Rollback to v1 removes the post-v1 partition rule edit but keeps the two
+	// items (they were already in the v1 snapshot).
+	row, rolled, err := st.RollbackRaceContent(ctx, got.ID, 1)
+	if err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+	if row.PartitionRule != nil {
+		t.Errorf("partition_rule = %+v, want nil after rollback", row.PartitionRule)
+	}
+	if len(rolled) != 2 {
+		t.Fatalf("items = %+v, want the two v1 items", rolled)
+	}
+
+	// Version history: two entries, newest first, no snapshot bodies shipped.
+	versions, err := st.ListRaceContentVersions(ctx, RaceContentVersionTypeRace, got.ID)
+	if err != nil {
+		t.Fatalf("list versions: %v", err)
+	}
+	if len(versions) != 2 || versions[0].Version != 2 || versions[0].Snapshot != "" {
+		t.Fatalf("versions = %+v, want two meta rows newest first", versions)
+	}
+}
+
+// TestRaceContent_SurvivesUpstreamRenameAndReschedule is THE invariant test
+// (user story 31 / issue #318): the upstream sync's delete+insert must never
+// touch admin-maintained content, and broken links must be re-attachable.
+func TestRaceContent_SurvivesUpstreamRenameAndReschedule(t *testing.T) {
+	st := openTestStore(t)
+	migrateRaceContent(t, st)
+	ctx := context.Background()
+	src := "中国田协"
+
+	// Seed the event through the real sync write, then attach content.
+	year := "2031"
+	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, []RaceCalendarEvent{{
+		Name: "旧名马拉松", RaceDate: "2031-01-05", Country: "CHN",
+	}}); err != nil {
+		t.Fatalf("seed sync: %v", err)
+	}
+	var event RaceCalendarEvent
+	if err := st.db.WithContext(ctx).Where("source = ? AND name = ?", src, "旧名马拉松").First(&event).Error; err != nil {
+		t.Fatalf("read event: %v", err)
+	}
+	in := &RaceContent{PacketPickup: []RacePacketPickup{{Time: "1月3日 9:00-18:00", Location: "会展中心"}}}
+	items := []RaceContentItem{{ItemName: "全程马拉松"}}
+	got, _, err := st.UpsertRaceContent(ctx, &event, in, items)
+	if err != nil {
+		t.Fatalf("create content: %v", err)
+	}
+
+	// The sync rewrites the whole year: the race is renamed AND rescheduled.
+	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, []RaceCalendarEvent{{
+		Name: "新名马拉松", RaceDate: "2031-01-04", Country: "CHN",
+	}}); err != nil {
+		t.Fatalf("re-sync: %v", err)
+	}
+
+	// The content row survived untouched...
+	orphans, err := st.ListOrphanRaceContent(ctx)
+	if err != nil {
+		t.Fatalf("list orphans: %v", err)
+	}
+	if len(orphans) != 1 || orphans[0].ID != got.ID || orphans[0].RaceName != "旧名马拉松" || len(orphans[0].PacketPickup) != 1 {
+		t.Fatalf("orphans = %+v, want the surviving content row", orphans)
+	}
+
+	// ...and is re-attachable to the new event.
+	var newEvent RaceCalendarEvent
+	if err := st.db.WithContext(ctx).Where("source = ? AND name = ?", src, "新名马拉松").First(&newEvent).Error; err != nil {
+		t.Fatalf("read new event: %v", err)
+	}
+	attached, attachedItems, err := st.AttachRaceContent(ctx, got.ID, newEvent.ID)
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	if attached.RaceEventID == nil || *attached.RaceEventID != newEvent.ID || attached.RaceName != "新名马拉松" || attached.RaceDate != "2031-01-04" || attached.Year != 2031 {
+		t.Fatalf("attached = %+v, want a link to the new event with a refreshed key", attached)
+	}
+	if len(attachedItems) != 1 || attachedItems[0].ItemName != "全程马拉松" {
+		t.Fatalf("attached items = %+v, want the original item", attachedItems)
+	}
+
+	// After re-attachment the event resolves its content again...
+	byEvent, byEventItems, err := st.GetRaceContentByEvent(ctx, newEvent.ID)
+	if err != nil || byEvent == nil || byEvent.ID != got.ID || len(byEventItems) != 1 {
+		t.Fatalf("by event = (%+v, %+v, %v), want the re-attached content", byEvent, byEventItems, err)
+	}
+	// ...the orphan list is empty, and the old event id resolves nothing.
+	if orphans, _ := st.ListOrphanRaceContent(ctx); len(orphans) != 0 {
+		t.Fatalf("orphans = %+v, want none after attach", orphans)
+	}
+	if byEvent, _, err := st.GetRaceContentByEvent(ctx, event.ID); err == nil || byEvent != nil {
+		t.Fatalf("deleted event = (%v, %v), want not-found", byEvent, err)
+	}
+}
+
+// TestRaceContent_ReattachByBusinessKey covers the automatic half of sync
+// survival: an upstream delete+insert with an UNCHANGED identity re-links the
+// content on the next read (the live event-id link is gone, the business-key
+// snapshot still matches).
+func TestRaceContent_ReattachByBusinessKey(t *testing.T) {
+	st := openTestStore(t)
+	migrateRaceContent(t, st)
+	ctx := context.Background()
+	src, year := "中国田协", "2031"
+	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, []RaceCalendarEvent{{
+		Name: "重排马拉松", RaceDate: "2031-01-05", Country: "CHN",
+	}}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	var event RaceCalendarEvent
+	if err := st.db.WithContext(ctx).Where("source = ? AND name = ?", src, "重排马拉松").First(&event).Error; err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if _, _, err := st.UpsertRaceContent(ctx, &event, &RaceContent{}, []RaceContentItem{{ItemName: "全程马拉松"}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Simulate the sync's delete+insert of the same identity: the event row is
+	// replaced wholesale (new surrogate id), the content is never touched.
+	if err := st.db.WithContext(ctx).Where("id = ?", event.ID).Delete(&RaceCalendarEvent{}).Error; err != nil {
+		t.Fatalf("delete event: %v", err)
+	}
+	newID := seedRaceEvent(t, st, src, "重排马拉松", "2031-01-05")
+
+	got, items, err := st.GetRaceContentByEvent(ctx, newID)
+	if err != nil || got == nil || got.RaceEventID == nil || *got.RaceEventID != event.ID {
+		t.Fatalf("got = (%+v, %v), want the content found via the business key", got, err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items = %+v, want one", items)
+	}
+
+	// Editing through the new event id re-links the live pointer while keeping
+	// the content (the upsert path's re-attach branch).
+	event.ID = newID
+	updated, _, err := st.UpsertRaceContent(ctx, &event, &RaceContent{SignupTimeline: &RaceSignupTimeline{StartAt: "2030-12-01", Deadline: "2030-12-31"}}, nil)
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if updated.RaceEventID == nil || *updated.RaceEventID != newID || updated.SignupTimeline == nil {
+		t.Fatalf("updated = %+v, want re-link + new timeline", updated)
+	}
+}
+
+// TestRaceContent_AttachConflicts covers the attach edge cases: unknown event,
+// unknown content, and a race that already has content.
+func TestRaceContent_AttachConflicts(t *testing.T) {
+	st := openTestStore(t)
+	migrateRaceContent(t, st)
+	ctx := context.Background()
+	eventID := seedRaceEvent(t, st, "中国田协", "冲突马拉松", "2031-01-05")
+	event := &RaceCalendarEvent{ID: eventID, Source: "中国田协", Name: "冲突马拉松", RaceDate: "2031-01-05"}
+
+	content, _, err := st.UpsertRaceContent(ctx, event, &RaceContent{}, nil)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	otherEventID := seedRaceEvent(t, st, "中国田协", "另一场马拉松", "2031-03-01")
+
+	if _, _, err := st.AttachRaceContent(ctx, content.ID, otherEventID); err != nil {
+		t.Fatalf("attach to free event: %v", err)
+	}
+	// The source event is now free; a second content row can take it.
+	if _, _, err := st.UpsertRaceContent(ctx, event, &RaceContent{}, nil); err != nil {
+		t.Fatalf("recreate: %v", err)
+	}
+	// Attaching the recreated content to a race that already has content must
+	// fail with the conflict sentinel, not a raw duplicate-key error.
+	freeEventID := seedRaceEvent(t, st, "中国田协", "第三场马拉松", "2031-04-01")
+	third, _, err := st.UpsertRaceContent(ctx, &RaceCalendarEvent{ID: freeEventID, Source: "中国田协", Name: "第三场马拉松", RaceDate: "2031-04-01"}, &RaceContent{}, nil)
+	if err != nil {
+		t.Fatalf("create third: %v", err)
+	}
+	if _, _, err := st.AttachRaceContent(ctx, third.ID, eventID); err == nil {
+		t.Fatalf("attach to occupied event: want conflict")
+	}
+	if _, _, err := st.AttachRaceContent(ctx, 99999, otherEventID); err == nil {
+		t.Fatalf("attach unknown content: want not-found")
+	}
+	if _, _, err := st.AttachRaceContent(ctx, third.ID, 99999); err == nil {
+		t.Fatalf("attach unknown event: want not-found")
+	}
+}

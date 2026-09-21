@@ -85,6 +85,315 @@
                 }
             }
         },
+        "/api/admin/cities/{city}/content": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Returns the shared city content (introduction, attractions, climate, historical weather windows), or content:null when the city has none.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get a city's maintained content",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "City name (race_calendar.city spelling, e.g. 厦门市)",
+                        "name": "city",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceCityContentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Full-replace PUT: absent sections are cleared. A new row starts as draft; an existing one keeps its lifecycle status.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Create or replace a city's content",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "City name",
+                        "name": "city",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Content payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.raceCityContentInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceCityContentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/cities/{city}/content/ai-draft": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. One-期 contract endpoint for AI-generated city introduction + climate drafts. The LLM provider is二期; the endpoint currently answers 501 ai_draft_not_configured.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Generate an AI city-content draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "City name",
+                        "name": "city",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "501": {
+                        "description": "Not Implemented",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/cities/{city}/content/archive": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Marks the city content archived; nothing is deleted.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Archive a city's content",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "City name",
+                        "name": "city",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceCityContentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/cities/{city}/content/publish": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Snapshots the current content as the next version and flips the row to published.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Publish a city's content",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "City name",
+                        "name": "city",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceCityContentPublishResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/cities/{city}/content/versions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Returns the publish history of the city's content, newest first, without snapshot bodies.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List a city's content versions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "City name",
+                        "name": "city",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceContentVersionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/cities/{city}/content/versions/{version}/rollback": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Restores the version's snapshot as the new working state. The lifecycle status is untouched; history is never rewritten.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Roll back a city's content to a version",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "City name",
+                        "name": "city",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Version number",
+                        "name": "version",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceCityContentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/declarations": {
             "get": {
                 "security": [
@@ -647,6 +956,98 @@
                 }
             }
         },
+        "/api/admin/race-content/orphans": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Returns content rows whose live race link is broken (upstream renamed/rescheduled the race) so they can be re-attached.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List orphaned race content",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceContentSummariesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/race-content/{content_id}/attach": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Re-links a (possibly orphaned) content row to a race event and refreshes its business-key snapshot from that event. 409 when the race already has content.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Attach race content to a race event",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Content id",
+                        "name": "content_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Attach payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.raceContentAttachInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceContentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/races": {
             "get": {
                 "security": [
@@ -982,6 +1383,284 @@
                     },
                     "413": {
                         "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/races/{race_id}/content": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Returns the content aggregate (race-level fields + per-distance items) attached to the race, resolving a broken event link by business key.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get a race's maintained content",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Race event id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceContentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Full-replace PUT: absent sections are cleared, items are matched to the calendar's distances by item_name. A new aggregate starts as draft; an existing one keeps its lifecycle status.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Create or replace a race's content",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Race event id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Content payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.raceContentInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceContentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/races/{race_id}/content/archive": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Marks the aggregate archived; nothing is deleted.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Archive a race's content",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Race event id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceContentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/races/{race_id}/content/publish": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Snapshots the current content (including items) as the next version and flips the aggregate to published.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Publish a race's content",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Race event id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceContentPublishResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/races/{race_id}/content/versions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Returns the publish history of the race's content, newest first, without snapshot bodies.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List a race's content versions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Race event id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceContentVersionsResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/races/{race_id}/content/versions/{version}/rollback": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Restores the version's snapshot as the new working state (content and items). The lifecycle status is untouched; history is never rewritten.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Roll back a race's content to a version",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Race event id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Version number",
+                        "name": "version",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceContentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -8181,6 +8860,384 @@
                 }
             }
         },
+        "api.raceCityContentDTO": {
+            "type": "object",
+            "properties": {
+                "attractions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.CityAttraction"
+                    }
+                },
+                "city": {
+                    "type": "string"
+                },
+                "climate": {
+                    "$ref": "#/definitions/storage.CityClimate"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "intro": {
+                    "$ref": "#/definitions/storage.CityIntro"
+                },
+                "province": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "weather_windows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.CityWeatherWindow"
+                    }
+                }
+            }
+        },
+        "api.raceCityContentInput": {
+            "type": "object",
+            "properties": {
+                "attractions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.CityAttraction"
+                    }
+                },
+                "climate": {
+                    "$ref": "#/definitions/storage.CityClimate"
+                },
+                "intro": {
+                    "$ref": "#/definitions/storage.CityIntro"
+                },
+                "province": {
+                    "type": "string"
+                },
+                "weather_windows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.CityWeatherWindow"
+                    }
+                }
+            }
+        },
+        "api.raceCityContentPublishResponse": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "$ref": "#/definitions/api.raceCityContentDTO"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.raceCityContentResponse": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "$ref": "#/definitions/api.raceCityContentDTO"
+                }
+            }
+        },
+        "api.raceContentAttachInput": {
+            "type": "object",
+            "properties": {
+                "race_event_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.raceContentDTO": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.raceContentItemDTO"
+                    }
+                },
+                "packet_pickup": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RacePacketPickup"
+                    }
+                },
+                "partition_rule": {
+                    "$ref": "#/definitions/storage.RacePartitionRule"
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "race_event_id": {
+                    "type": "integer"
+                },
+                "race_name": {
+                    "type": "string"
+                },
+                "signup_channels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceSignupChannel"
+                    }
+                },
+                "signup_timeline": {
+                    "$ref": "#/definitions/storage.RaceSignupTimeline"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.raceContentInput": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.raceContentItemInput"
+                    }
+                },
+                "packet_pickup": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RacePacketPickup"
+                    }
+                },
+                "partition_rule": {
+                    "$ref": "#/definitions/storage.RacePartitionRule"
+                },
+                "signup_channels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceSignupChannel"
+                    }
+                },
+                "signup_timeline": {
+                    "$ref": "#/definitions/storage.RaceSignupTimeline"
+                }
+            }
+        },
+        "api.raceContentItemDTO": {
+            "type": "object",
+            "properties": {
+                "aid_stations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceAidStation"
+                    }
+                },
+                "cutoffs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceCutoff"
+                    }
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "elevation_points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceElevationPoint"
+                    }
+                },
+                "entry_fee": {
+                    "type": "integer"
+                },
+                "finish_point": {
+                    "$ref": "#/definitions/storage.RacePoint"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "item_name": {
+                    "type": "string"
+                },
+                "photos": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RacePhoto"
+                    }
+                },
+                "prizes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RacePrize"
+                    }
+                },
+                "quota": {
+                    "type": "integer"
+                },
+                "reputation": {
+                    "$ref": "#/definitions/storage.RaceReputation"
+                },
+                "start_point": {
+                    "$ref": "#/definitions/storage.RacePoint"
+                },
+                "total_ascent_m": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.raceContentItemInput": {
+            "type": "object",
+            "properties": {
+                "aid_stations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceAidStation"
+                    }
+                },
+                "cutoffs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceCutoff"
+                    }
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "elevation_points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceElevationPoint"
+                    }
+                },
+                "entry_fee": {
+                    "type": "integer"
+                },
+                "finish_point": {
+                    "$ref": "#/definitions/storage.RacePoint"
+                },
+                "item_name": {
+                    "type": "string"
+                },
+                "photos": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RacePhoto"
+                    }
+                },
+                "prizes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RacePrize"
+                    }
+                },
+                "quota": {
+                    "type": "integer"
+                },
+                "reputation": {
+                    "$ref": "#/definitions/storage.RaceReputation"
+                },
+                "start_point": {
+                    "$ref": "#/definitions/storage.RacePoint"
+                },
+                "total_ascent_m": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.raceContentPublishResponse": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "$ref": "#/definitions/api.raceContentDTO"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.raceContentResponse": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "$ref": "#/definitions/api.raceContentDTO"
+                }
+            }
+        },
+        "api.raceContentSummariesResponse": {
+            "type": "object",
+            "properties": {
+                "contents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.raceContentSummaryDTO"
+                    }
+                }
+            }
+        },
+        "api.raceContentSummaryDTO": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "race_event_id": {
+                    "type": "integer"
+                },
+                "race_name": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "year": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.raceContentVersionDTO": {
+            "type": "object",
+            "properties": {
+                "published_at": {
+                    "type": "string"
+                },
+                "published_by": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.raceContentVersionsResponse": {
+            "type": "object",
+            "properties": {
+                "versions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.raceContentVersionDTO"
+                    }
+                }
+            }
+        },
         "api.runStateResponse": {
             "type": "object",
             "properties": {
@@ -9107,6 +10164,240 @@
                     "type": "integer"
                 },
                 "zone_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.CityAttraction": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "image_url": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.CityClimate": {
+            "type": "object",
+            "properties": {
+                "autumn": {
+                    "type": "string"
+                },
+                "spring": {
+                    "type": "string"
+                },
+                "summer": {
+                    "type": "string"
+                },
+                "winter": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.CityIntro": {
+            "type": "object",
+            "properties": {
+                "culture": {
+                    "type": "string"
+                },
+                "food": {
+                    "type": "string"
+                },
+                "history": {
+                    "type": "string"
+                },
+                "overview": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.CityWeatherWindow": {
+            "type": "object",
+            "properties": {
+                "avg_temp_c": {
+                    "type": "number"
+                },
+                "humidity_pct": {
+                    "type": "integer"
+                },
+                "rain_probability_pct": {
+                    "type": "integer"
+                },
+                "temp_high_c": {
+                    "type": "number"
+                },
+                "temp_low_c": {
+                    "type": "number"
+                },
+                "wind": {
+                    "type": "string"
+                },
+                "window_end": {
+                    "type": "string"
+                },
+                "window_start": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.RaceAidStation": {
+            "type": "object",
+            "properties": {
+                "distance_km": {
+                    "type": "number"
+                },
+                "supplies": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "storage.RaceCutoff": {
+            "type": "object",
+            "properties": {
+                "cutoff_at": {
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "point": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.RaceElevationPoint": {
+            "type": "object",
+            "properties": {
+                "distance_km": {
+                    "type": "number"
+                },
+                "elevation_m": {
+                    "type": "integer"
+                }
+            }
+        },
+        "storage.RacePacketPickup": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string"
+                },
+                "time": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.RacePartitionRule": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.RacePhoto": {
+            "type": "object",
+            "properties": {
+                "caption": {
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "location": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.RacePoint": {
+            "type": "object",
+            "properties": {
+                "lat": {
+                    "type": "number"
+                },
+                "lng": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.RacePrize": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "rank": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.RaceReputation": {
+            "type": "object",
+            "properties": {
+                "cons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "pros": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "summary": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.RaceSignupChannel": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "qr_code_url": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.RaceSignupTimeline": {
+            "type": "object",
+            "properties": {
+                "deadline": {
+                    "type": "string"
+                },
+                "lottery": {
+                    "type": "boolean"
+                },
+                "lottery_result_at": {
+                    "type": "string"
+                },
+                "start_at": {
                     "type": "string"
                 }
             }

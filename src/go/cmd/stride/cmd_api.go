@@ -123,6 +123,12 @@ func runAPI() error {
 	if err := store.AutoMigrateRaceCalendar(ctx); err != nil {
 		return err
 	}
+	// race_content / race_content_item / race_city_content / race_content_version
+	// back the administrator race-content surface (issue #318). Only the API
+	// writes content, so the worker does not migrate these.
+	if err := store.AutoMigrateRaceContent(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ (publisher only; no consumer) ---
 	topo := mq.Topology{Work: cfg.Queues.Work, Retry: cfg.Queues.Retry, Poison: cfg.Queues.Poison}
@@ -211,6 +217,7 @@ func runAPI() error {
 		WeeklyPlanStore:         store,
 		LegalDocumentStore:      store,
 		RaceCalendarStore:       store,
+		RaceContentStore:        store,
 		WorkoutPusher:           workoutPush,
 		ScheduledWorkoutStore:   store,
 		Auth:                    authn,
