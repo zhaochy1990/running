@@ -13,6 +13,17 @@ name: Release
 on:
   push:
     branches: [master]
+  # Recovery path: a release that fails before `build` (e.g. a test error that a
+  # later push fixed) cannot be recovered by re-running the original run, because
+  # a re-run uses the broken SHA and would fail the same check. Dispatching this
+  # workflow with `base` set to the commit before that push re-detects the
+  # artifacts the push carried. An empty `base` is a no-op (no packages changed).
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "SHA to diff against for change detection (the pre-merge commit of a failed release)."
+        required: false
+        default: ""
 
 permissions:
   contents: write # commit-versions pushes a commit
@@ -41,7 +52,9 @@ jobs:
         uses: zhaochy1990/configurations/calver-release@v1
         with:
           phase: bump-versions
-          base: ${{ github.event.before }}
+          # push events diff against the pushed-to ref; a manual dispatch uses
+          # the recovery `base` input (empty falls through to the push default).
+          base: ${{ inputs.base || github.event.before }}
 
   # ── 2. test ────────────────────────────────────────────────────────────────
   # The same checks defined once in ci.yml, run in full: release.yml only gets
