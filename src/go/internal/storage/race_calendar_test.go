@@ -478,14 +478,14 @@ func TestRaceCalendar_RaceTypesUpsertAndRefresh(t *testing.T) {
 	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, races); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	var got *string
-	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).
+	var seeded RaceCalendarEvent
+	if err := st.db.WithContext(ctx).
 		Where("source = ? AND name = ?", src, "Tokyo Marathon").
-		Pluck("race_types", &got).Error; err != nil {
+		First(&seeded).Error; err != nil {
 		t.Fatalf("read race_types: %v", err)
 	}
-	if got == nil || *got != `["Marathon"]` {
-		t.Fatalf("race_types = %v, want [\"Marathon\"]", got)
+	if seeded.RaceTypes == nil || *seeded.RaceTypes != `["Marathon"]` {
+		t.Fatalf("race_types = %v, want [\"Marathon\"]", seeded.RaceTypes)
 	}
 
 	// The column is part of the upsert refresh set: a re-sync with a changed
