@@ -76,10 +76,7 @@ export async function collectCoachStream(run: CoachStreamSource, emit: CoachStre
     // Distinguish "failed before the first values snapshot" (almost always an
     // early model/tool error — nothing usable to return) from "failed mid-stream
     // after a snapshot was seen" (a later node blew up, last snapshot is kept).
-    logger.warn(
-      { err: error, sawState: output !== undefined },
-      "coach stream iteration failed",
-    );
+    logger.warn({ err: error, sawState: output !== undefined }, "coach stream iteration failed");
     if (output === undefined) throw error;
   }
 
