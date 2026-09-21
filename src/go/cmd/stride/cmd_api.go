@@ -117,6 +117,12 @@ func runAPI() error {
 	if err := store.AutoMigrateScheduledWorkout(ctx); err != nil {
 		return err
 	}
+	// race_calendar + race_calendar_item back the administrator race-calendar
+	// surface. The worker owns the same schema for its sync pipelines; the API
+	// migrates it too so its container can serve the admin tab independently.
+	if err := store.AutoMigrateRaceCalendar(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ (publisher only; no consumer) ---
 	topo := mq.Topology{Work: cfg.Queues.Work, Retry: cfg.Queues.Retry, Poison: cfg.Queues.Poison}
@@ -204,6 +210,7 @@ func runAPI() error {
 		MasterPlanStore:         store,
 		WeeklyPlanStore:         store,
 		LegalDocumentStore:      store,
+		RaceCalendarStore:       store,
 		WorkoutPusher:           workoutPush,
 		ScheduledWorkoutStore:   store,
 		Auth:                    authn,

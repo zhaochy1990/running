@@ -1467,6 +1467,190 @@ definitions:
     required:
     - content
     type: object
+  api.raceCalendarCreateRequest:
+    properties:
+      city:
+        type: string
+      country:
+        type: string
+      label:
+        type: string
+      name:
+        type: string
+      name_cn:
+        type: string
+      province:
+        type: string
+      race_date:
+        type: string
+      race_types:
+        items:
+          type: string
+        type: array
+    type: object
+  api.raceCalendarDetailDTO:
+    properties:
+      city:
+        type: string
+      country:
+        type: string
+      day_of_month:
+        type: integer
+      field_sources:
+        additionalProperties:
+          type: string
+        type: object
+      id:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/api.raceCalendarItemDTO'
+        type: array
+      label:
+        type: string
+      month:
+        type: integer
+      name:
+        type: string
+      name_cn:
+        type: string
+      origin:
+        type: string
+      province:
+        type: string
+      race_date:
+        type: string
+      race_types:
+        items:
+          type: string
+        type: array
+      source:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  api.raceCalendarEventDTO:
+    properties:
+      city:
+        type: string
+      country:
+        type: string
+      day_of_month:
+        type: integer
+      field_sources:
+        additionalProperties:
+          type: string
+        type: object
+      id:
+        type: integer
+      label:
+        type: string
+      month:
+        type: integer
+      name:
+        type: string
+      name_cn:
+        type: string
+      origin:
+        type: string
+      province:
+        type: string
+      race_date:
+        type: string
+      race_types:
+        items:
+          type: string
+        type: array
+      source:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  api.raceCalendarItemCreateRequest:
+    properties:
+      entry_fee:
+        type: integer
+      name:
+        type: string
+      quota:
+        type: integer
+      start_time:
+        type: string
+      type:
+        type: string
+    type: object
+  api.raceCalendarItemDTO:
+    properties:
+      entry_fee:
+        type: integer
+      id:
+        type: integer
+      name:
+        type: string
+      origin:
+        type: string
+      quota:
+        type: integer
+      start_time:
+        type: string
+      type:
+        type: string
+    type: object
+  api.raceCalendarItemUpdateRequest:
+    properties:
+      entry_fee:
+        type: integer
+      name:
+        type: string
+      quota:
+        type: integer
+      start_time:
+        type: string
+      type:
+        type: string
+    type: object
+  api.raceCalendarListResponse:
+    properties:
+      page:
+        type: integer
+      per_page:
+        type: integer
+      races:
+        items:
+          $ref: '#/definitions/api.raceCalendarEventDTO'
+        type: array
+      total:
+        type: integer
+    type: object
+  api.raceCalendarUpdateRequest:
+    properties:
+      city:
+        type: string
+      country:
+        type: string
+      label:
+        type: string
+      name:
+        type: string
+      name_cn:
+        type: string
+      overrides:
+        items:
+          type: string
+        type: array
+      province:
+        type: string
+      race_date:
+        type: string
+      race_types:
+        items:
+          type: string
+        type: array
+      reset_fields:
+        items:
+          type: string
+        type: array
+    type: object
   api.runStateResponse:
     properties:
       completed_at:
@@ -1535,6 +1719,14 @@ definitions:
     properties:
       error_code:
         type: string
+      job_types:
+        description: |-
+          JobTypes optionally scopes the sweep to the caller's own job types. The
+          plan-job worker passes its plan types so this backstop never retires a Go
+          job, which now also stamps a heartbeat (ADR 0034).
+        items:
+          type: string
+        type: array
       older_than:
         type: string
     required:
@@ -3935,6 +4127,390 @@ paths:
       summary: Get a pipeline run (admin)
       tags:
       - pipelines
+  /api/admin/races:
+    get:
+      description: Administrator only. Returns a page of races ordered by race date,
+        filtered by optional year, source (国际田联 / 中国田协 / manual), month and keyword
+        (matches name or name_cn).
+      parameters:
+      - description: 4-digit year
+        in: query
+        name: year
+        type: integer
+      - description: Month 1-12
+        in: query
+        name: month
+        type: integer
+      - description: Source label
+        in: query
+        name: source
+        type: string
+      - description: Substring of name or name_cn
+        in: query
+        name: keyword
+        type: string
+      - description: Page (1-based, default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Page size (default 20, max 100)
+        in: query
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.raceCalendarListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List the race calendar
+      tags:
+      - admin
+    post:
+      description: Administrator only. Creates a race with origin=manual and source=manual;
+        it is never touched by the sync. Fails with 409 when the (name, race_date)
+        already exists for the manual source.
+      parameters:
+      - description: Race fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.raceCalendarCreateRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.raceCalendarDetailDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a race manually
+      tags:
+      - admin
+  /api/admin/races/{race_id}:
+    delete:
+      description: Administrator only. Deletes the race and all its items.
+      parameters:
+      - description: Race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a race
+      tags:
+      - admin
+    get:
+      description: Administrator only. Returns the full event plus its child items.
+      parameters:
+      - description: Race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.raceCalendarDetailDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get one race with its items
+      tags:
+      - admin
+    patch:
+      description: Administrator only. Applies provided fields, unions overrides into
+        the row's admin-override set, and clears reset_fields. Editing name/race_date
+        upgrades origin to manual so the sync no longer owns the row.
+      parameters:
+      - description: Race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.raceCalendarUpdateRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.raceCalendarDetailDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Edit a race
+      tags:
+      - admin
+  /api/admin/races/{race_id}/items:
+    post:
+      description: Administrator only. Adds an item with origin=manual; it is never
+        regenerated by the sync.
+      parameters:
+      - description: Race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      - description: Item fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.raceCalendarItemCreateRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.raceCalendarItemDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add a race item
+      tags:
+      - admin
+  /api/admin/races/{race_id}/items/{item_id}:
+    delete:
+      description: Administrator only. Deletes one item.
+      parameters:
+      - description: Race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      - description: Item id
+        in: path
+        name: item_id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a race item
+      tags:
+      - admin
+    patch:
+      description: Administrator only. Applies provided fields; a sync-owned item
+        becomes manual once edited.
+      parameters:
+      - description: Race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      - description: Item id
+        in: path
+        name: item_id
+        required: true
+        type: integer
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.raceCalendarItemUpdateRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.raceCalendarItemDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Edit a race item
+      tags:
+      - admin
   /api/admin/users/{user_id}:
     delete:
       description: 'Deletes the user''s auth identity, coach data, STRIDE data, and
@@ -4168,8 +4744,9 @@ paths:
       consumes:
       - application/json
       description: Internal-only. Fails running jobs whose heartbeat is older than
-        older_than, tagged with error_code. Jobs that have never stamped a heartbeat
-        are left alone. Returns how many were failed.
+        older_than and whose job_type is in job_types, tagged with error_code. Jobs
+        that have never stamped a heartbeat are left alone. Returns how many were
+        failed.
       parameters:
       - description: Reconcile window and error code
         in: body

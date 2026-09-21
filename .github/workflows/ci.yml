@@ -172,6 +172,15 @@ jobs:
           go test ./internal/storage/...
           -run 'TestDeleteUserData|TestUserDeletionAudit'
           -count=1 -v
+      # The race-calendar per-field merge and stale-delete are SQL-level
+      # behaviours, so they only run against a real MySQL.
+      - name: Race-calendar storage tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/storage/...
+          -run 'TestRaceCalendar'
+          -count=1 -v
       # The lease/reclaim CAS lives in SQL, so only a real MySQL exercises it.
       - name: Job lease + reclaim storage tests (MySQL)
         env:

@@ -239,13 +239,24 @@ workflow run 和用户固定的 `Idempotency-Key`；因此网络重试不会重�
    introspection 探针验证它确实可用，返回 `{"endpoint":...,"api_key":...}`。
 2. `race_calendar_sync`：用第一步发现的（缺省时用 `config.yml` 配置的）
    key 调 World Athletics GraphQL API（`getMinisiteCalendarEvents`，Label Road
-   Races 组）拉取当前上海年份的赛事，upsert 到 MySQL 的 `race_calendar` 表
-   （`source` 用固定中文值 `国际田联`，identity `(source, year, name)`，不含任何
-   上游内部 id；整年镜像，上游消失的赛事会被删除）。写入时把上游 `venue` 解析成
-   三级地址 `country`（3 字母 ISO）/`province`（中国中文省、国外英文州）/`city`
-   （中国城市映射中文名如 厦门市、国外保留英文原名），由 `race_date` 派生
-   `month`/`dayofmonth` 以便按月查询；`name_cn` 供后续人工填充中文名，同步永不
-   覆盖。
+   Races 组）拉取当前上海年份的赛事，写入 MySQL 的 `race_calendar` 表
+   （`source` 用固定中文值 `国际田联`，业务键 `(source, name, race_date)`，不含
+   任何上游内部 id；整年同步，上游消失的赛事会被删除）。写入时把上游 `venue`
+   解析成三级地址 `country`（3 字母 ISO）/`province`（中国中文省、国外英文州）
+   /`city`（中国城市映射中文名如 厦门市、国外保留英文原名），由 `race_date`
+   派生 `month`/`dayofmonth` 以便按月查询；`name_cn` 供后续人工填充中文名，同步
+   永不覆盖。
+
+> **管理端合并语义**：`race_calendar` 每行带 `origin`（`sync` / `manual`）与
+> `admin_overrides`（被管理员接管的非键字段名 JSON 数组）。同步改为**逐字段
+> 合并**：被 override 的字段保持现值，其余字段取抓取值；`origin='manual'` 的行
+> （管理员新建，或在 admin-dashboard 改了名称/比赛日期而被升级脱离镜像）既不
+> 更新也不删除；陈旧删除只作用于 `origin='sync'` 且无 override 的行，并连带删
+> 除其 `race_calendar_item`。中国田协 pipeline 另行把上游 `raceItem` 列表写成
+> `race_calendar_item`（起跑时间/报名费/名额由管理员补全），每次同步重生成
+> `origin='sync'` 的项目、永不触碰人工项目。Admin-dashboard 的「赛事管理」tab
+> 通过 Go `cmd/api` 的 `/api/admin/races*`（仅 admin JWT / TierAdmin）做完整
+> CRUD。
 
 > **旧表清理**：本 feature 早期迭代曾把数据写进 `competition_calendar` 表，重构后该表不再
 > 更新，AutoMigrate 也不会 drop 它。若生产环境曾跑过旧版本，请人工确认后

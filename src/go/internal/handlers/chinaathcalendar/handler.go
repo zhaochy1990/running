@@ -15,7 +15,9 @@
 // (name_cn is excluded from the upsert refresh, so later curations survive
 // re-syncs). The raceAddress string ("省/市/区") is split into
 // country/province/city, and the raceItem array is mapped to the shared
-// internal/racetypes vocabulary.
+// internal/racetypes vocabulary. Each raceItem segment also becomes one
+// race_calendar_item child row (sync-owned), so the dashboard can show and
+// complete the per-distance details (start time, fee, quota).
 package chinaathcalendar
 
 import (
@@ -45,6 +47,7 @@ const Source = "中国田协"
 // handler stays unit-testable with a fake. cmd/worker injects the real store.
 type CalendarStore interface {
 	ReplaceRaceCalendarYear(ctx context.Context, source, year string, races []storage.RaceCalendarEvent) (storage.ReplaceRaceCalendarResult, error)
+	ReplaceRaceCalendarItems(ctx context.Context, source string, batches []storage.RaceCalendarItemBatch) (storage.ReplaceRaceCalendarItemsResult, error)
 }
 
 // Config is the handler's static dependencies and defaults, wired in cmd/worker.
@@ -102,8 +105,14 @@ func New(cfg Config) job.Handler {
 
 		// Group the catalogue by year so each wanted year gets its own
 		// mirror-by-year write; years outside the request are ignored (the
-		// catalogue also carries years of history).
-		byYear := map[string][]storage.RaceCalendarEvent{}
+		// catalogue also carries years of history). Items ride along with their
+		// event so the per-year write can regenerate the event and its child
+		// rows in one pass.
+		type yearRace struct {
+			event storage.RaceCalendarEvent
+			items []storage.RaceCalendarItem
+		}
+		byYear := map[string][]yearRace{}
 		for _, r := range races {
 			if len(r.RaceTime) < 4 {
 				continue
@@ -112,7 +121,8 @@ func New(cfg Config) job.Handler {
 			if !wanted[year] {
 				continue
 			}
-			byYear[year] = append(byYear[year], toRow(r))
+			event, items := toRow(r)
+			byYear[year] = append(byYear[year], yearRace{event: event, items: items})
 		}
 
 		out := struct {
@@ -121,8 +131,8 @@ func New(cfg Config) job.Handler {
 		for i, year := range years {
 			stage := "sync:" + year
 			_ = hb(stage, 40+50*(i+1)/len(years))
-			rows := byYear[year]
-			if len(rows) == 0 {
+			group := byYear[year]
+			if len(group) == 0 {
 				// The store's empty-replace no-op also covers a year upstream
 				// genuinely has no rows for; skip the call entirely.
 				out.Years[year] = yearSummary{Fetched: len(races), Upserted: 0, Deleted: 0}
@@ -130,6 +140,18 @@ func New(cfg Config) job.Handler {
 					zap.String("job_id", j.ID),
 					zap.String("year", year))
 				continue
+			}
+			rows := make([]storage.RaceCalendarEvent, 0, len(group))
+			batches := make([]storage.RaceCalendarItemBatch, 0, len(group))
+			for _, g := range group {
+				rows = append(rows, g.event)
+				if len(g.items) > 0 {
+					batches = append(batches, storage.RaceCalendarItemBatch{
+						Name:     g.event.Name,
+						RaceDate: g.event.RaceDate,
+						Items:    g.items,
+					})
+				}
 			}
 			res, err := cfg.Store.ReplaceRaceCalendarYear(ctx, Source, year, rows)
 			if err != nil {
@@ -147,13 +169,34 @@ func New(cfg Config) job.Handler {
 					zap.Error(err))
 				return "", err
 			}
-			out.Years[year] = yearSummary{Fetched: len(races), Upserted: res.Upserted, Deleted: res.Deleted}
+			itemsRes, err := cfg.Store.ReplaceRaceCalendarItems(ctx, Source, batches)
+			if err != nil {
+				if storage.IsDeterministicWriteError(err) {
+					log.Error("chinaath_race_calendar_sync: item write failed (deterministic)",
+						zap.String("job_id", j.ID),
+						zap.String("year", year),
+						zap.String("error_code", "storage_constraint"),
+						zap.Error(err))
+					return "", job.NewPermanentError("storage_constraint", err)
+				}
+				log.Error("chinaath_race_calendar_sync: item write failed",
+					zap.String("job_id", j.ID),
+					zap.String("year", year),
+					zap.Error(err))
+				return "", err
+			}
+			out.Years[year] = yearSummary{
+				Fetched: len(races), Upserted: res.Upserted, Deleted: res.Deleted,
+				ItemsUpserted: itemsRes.Upserted, ItemsDeleted: itemsRes.Deleted,
+			}
 			log.Info("chinaath_race_calendar_sync: year synced",
 				zap.String("job_id", j.ID),
 				zap.String("year", year),
 				zap.Int("fetched", len(races)),
 				zap.Int("upserted", res.Upserted),
-				zap.Int("deleted", res.Deleted))
+				zap.Int("deleted", res.Deleted),
+				zap.Int("items_upserted", itemsRes.Upserted),
+				zap.Int("items_deleted", itemsRes.Deleted))
 		}
 
 		result, _ := json.Marshal(out)
@@ -163,9 +206,11 @@ func New(cfg Config) job.Handler {
 
 // yearSummary is the per-year result reported in the job's result_json.
 type yearSummary struct {
-	Fetched  int `json:"fetched"`
-	Upserted int `json:"upserted"`
-	Deleted  int `json:"deleted"`
+	Fetched       int `json:"fetched"`
+	Upserted      int `json:"upserted"`
+	Deleted       int `json:"deleted"`
+	ItemsUpserted int `json:"items_upserted"`
+	ItemsDeleted  int `json:"items_deleted"`
 }
 
 // jobInput is the job's input: {"years":[...]} optionally overrides which
@@ -195,14 +240,17 @@ func defaultYears() []string {
 	return []string{strconv.Itoa(y), strconv.Itoa(y + 1)}
 }
 
-// toRow maps one upstream competition into a race_calendar row: the Chinese
-// race name fills both name and name_cn, the "省/市/区" address splits into
-// province/city (the district level is dropped), the grade becomes the label,
-// and the race items map onto the shared racetypes vocabulary.
-func toRow(r chinaath.Race) storage.RaceCalendarEvent {
+// toRow maps one upstream competition into a race_calendar row plus its child
+// items: the Chinese race name fills both name and name_cn, the "省/市/区"
+// address splits into province/city (the district level is dropped), the grade
+// becomes the label, and the race items map onto the shared racetypes
+// vocabulary. Every upstream item segment becomes one item row (name = the
+// segment, type = its token); segments that declare no distance/kind still get a
+// row typed Unknown so an administrator can classify them.
+func toRow(r chinaath.Race) (storage.RaceCalendarEvent, []storage.RaceCalendarItem) {
 	province, city := splitAddress(r.RaceAddress)
 	types, _ := json.Marshal(racetypes.FromChinaItems(r.Items))
-	return storage.RaceCalendarEvent{
+	event := storage.RaceCalendarEvent{
 		Name:      r.RaceName,
 		NameCN:    strPtrOrNil(r.RaceName),
 		RaceDate:  r.RaceTime,
@@ -212,6 +260,20 @@ func toRow(r chinaath.Race) storage.RaceCalendarEvent {
 		Label:     strPtrOrNil(r.RaceGrade),
 		RaceTypes: strPtrOrNil(string(types)),
 	}
+	var items []storage.RaceCalendarItem
+	for _, raw := range r.Items {
+		for _, seg := range strings.Split(raw, "、") {
+			name := strings.TrimSpace(seg)
+			if name == "" {
+				continue
+			}
+			items = append(items, storage.RaceCalendarItem{
+				Name: name,
+				Type: racetypes.FromChinaSegment(name),
+			})
+		}
+	}
+	return event, items
 }
 
 // splitAddress splits the upstream "省/市/区" address into its province and city
