@@ -23,9 +23,10 @@ const providerName = "coros"
 // Provider is the COROS watch-data adapter.
 type Provider struct {
 	provider.BaseProvider
-	store storage.Writer
-	creds CredentialStore
-	delay time.Duration
+	store     storage.Writer
+	creds     CredentialStore
+	delay     time.Duration
+	baselines BaselineLoader
 
 	// newClient builds the HTTP client for an account; overridable in tests.
 	newClient func(c Credentials, save CredentialSaver) *Client
@@ -51,6 +52,29 @@ func New(store storage.Writer, creds CredentialStore, opts ...ProviderOption) *P
 
 // ProviderOption configures a Provider.
 type ProviderOption func(*Provider)
+
+// BaselineLoader supplies the athlete calibration baselines used to resolve
+// relative/zone workout targets at push time. It is wired from the calibration
+// domain by the composition root so the adapter stays free of storage reads of
+// its own. A nil loader (or zero baselines) means "no calibration": relative
+// targets then fail loudly at resolution, and an absolute pace target is pushed
+// without a fabricated intensityPercent.
+type BaselineLoader func(ctx context.Context, user string) (provider.Baselines, error)
+
+// WithBaselineLoader wires the calibration-baseline loader for push-time target
+// resolution.
+func WithBaselineLoader(l BaselineLoader) ProviderOption {
+	return func(p *Provider) { p.baselines = l }
+}
+
+// loadBaselines returns the athlete baselines, or zero baselines when no loader
+// is wired.
+func (p *Provider) loadBaselines(ctx context.Context, user string) (provider.Baselines, error) {
+	if p.baselines == nil {
+		return provider.Baselines{}, nil
+	}
+	return p.baselines(ctx, user)
+}
 
 // WithClientFactory overrides how the HTTP client is built (used by tests to
 // inject an httptest-backed client).

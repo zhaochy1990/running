@@ -51,6 +51,24 @@ const (
 	strengthSourceURL = "https://oss.coros.com/source/source_default/0/8f65f771b129460abce14d3376a39d83.jpg"
 )
 
+// paceIntensityPercent returns the COROS `intensityPercent` for one pace bound
+// given the athlete's lactate-threshold pace. COROS defines the field as the
+// target's *speed* relative to the athlete's threshold speed, in thousandths
+// (verified against a real account schedule on 2026-09-21):
+//
+//	intensityPercent = target_speed / threshold_speed × 1000
+//	                 = lt_pace / pace × 1000          (speed is 1/pace)
+//
+// ltPaceSKM is the LT pace in seconds/km (provider.Baselines.LTPaceSKM); a nil
+// or non-positive baseline yields 0, meaning "no percentage" — a fabricated
+// value is never sent.
+func paceIntensityPercent(paceMS int, ltPaceSKM *float64) int {
+	if paceMS <= 0 || ltPaceSKM == nil || *ltPaceSKM <= 0 {
+		return 0
+	}
+	return int(math.Round(*ltPaceSKM * 1000 / float64(paceMS) * 1000))
+}
+
 // paceToMs converts a pace string like "5:30" (min:sec per km) to milliseconds
 // per km — the COROS intensityValue unit.
 func paceToMs(pace string) (int, error) {
@@ -96,6 +114,10 @@ type RunWorkoutBuilder struct {
 	date        string // YYYYMMDD
 	segments    []runSegment
 	workoutType string // easy, tempo, interval, long
+	// ltPaceSKM is the athlete's lactate-threshold pace (seconds/km) used to
+	// derive the real intensityPercent for pace targets. nil = no calibration,
+	// in which case the percent is left at 0 rather than fabricated.
+	ltPaceSKM *float64
 }
 
 // NewRunWorkoutBuilder starts a running workout with the given name, COROS date
@@ -173,7 +195,7 @@ func segTarget(distanceKm, durationMin *float64, defaultMin float64) (int, int) 
 // makeExercise builds one running exercise object.
 // exerciseType: 1=warmup, 2=training, 3=cooldown, 4=recovery;
 // targetType: 2=time(s), 5=distance(mm).
-func makeExercise(exerciseType, sortNo, targetType, targetValue int, template map[string]any, paceLow, paceHigh *string, sets int) map[string]any {
+func makeExercise(exerciseType, sortNo, targetType, targetValue int, template map[string]any, paceLow, paceHigh *string, sets int, ltPaceSKM *float64) map[string]any {
 	ex := map[string]any{
 		"access":                 0,
 		"createTimestamp":        template["createTimestamp"],
@@ -236,10 +258,10 @@ func makeExercise(exerciseType, sortNo, targetType, targetValue int, template ma
 			ex["intensityValueExtend"] = slowMS
 			ex["intensityDisplayUnit"] = "1"
 			ex["intensityMultiplier"] = 1000
-			// intensityPercent is derived from pace relative to threshold:
-			// approximate pace_ms / threshold_pace_ms * 100 * 1000.
-			ex["intensityPercent"] = fastMS / 5
-			ex["intensityPercentExtend"] = slowMS / 5
+			// Real intensityPercent = target speed / threshold speed × 1000,
+			// from the athlete's calibrated LT pace (never the old //5 fake).
+			ex["intensityPercent"] = paceIntensityPercent(fastMS, ltPaceSKM)
+			ex["intensityPercentExtend"] = paceIntensityPercent(slowMS, ltPaceSKM)
 		}
 	}
 	return ex
@@ -278,7 +300,7 @@ func (w *RunWorkoutBuilder) buildExercises() []map[string]any {
 			nextID++
 			targetType, targetValue := segTarget(seg.distanceKm, seg.durationMin, 5)
 			trainingEx := makeExercise(2, sortNo, targetType, targetValue, trainingTpl,
-				seg.paceLow, seg.paceHigh, 1)
+				seg.paceLow, seg.paceHigh, 1, w.ltPaceSKM)
 			trainingEx["id"] = nextID
 			trainingEx["groupId"] = groupID
 			exercises = append(exercises, trainingEx)
@@ -286,7 +308,7 @@ func (w *RunWorkoutBuilder) buildExercises() []map[string]any {
 			// Recovery between reps (next sortNo, unique id).
 			sortNo++
 			nextID++
-			recoveryEx := makeExercise(4, sortNo, 2, seg.recoveryDurationS, recoveryTpl, nil, nil, 1)
+			recoveryEx := makeExercise(4, sortNo, 2, seg.recoveryDurationS, recoveryTpl, nil, nil, 1, w.ltPaceSKM)
 			recoveryEx["id"] = nextID
 			recoveryEx["groupId"] = groupID
 			exercises = append(exercises, recoveryEx)
@@ -311,7 +333,7 @@ func (w *RunWorkoutBuilder) buildExercises() []map[string]any {
 		}
 		targetType, targetValue := segTarget(seg.distanceKm, seg.durationMin, defaultMin)
 		ex := makeExercise(exType, sortNo, targetType, targetValue, template,
-			seg.paceLow, seg.paceHigh, seg.sets)
+			seg.paceLow, seg.paceHigh, seg.sets, w.ltPaceSKM)
 		ex["id"] = nextID
 		exercises = append(exercises, ex)
 	}

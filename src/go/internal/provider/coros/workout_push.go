@@ -20,7 +20,11 @@ func (p *Provider) PushRunWorkout(ctx context.Context, user string, w provider.R
 	if err != nil {
 		return "", err
 	}
-	corosWorkout, err := NormalizedToCorosRun(w)
+	baselines, err := p.loadBaselines(ctx, user)
+	if err != nil {
+		return "", err
+	}
+	corosWorkout, err := NormalizedToCorosRun(w, baselines)
 	if err != nil {
 		return "", err
 	}

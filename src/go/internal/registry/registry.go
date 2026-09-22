@@ -113,7 +113,10 @@ func Build(providerName string, store *storage.Store, delay time.Duration) (prov
 	switch providerName {
 	case "coros":
 		return coros.New(store, coros.NewStorageCredentialStore(store),
-			coros.WithProviderRequestDelay(delay)), nil
+			coros.WithProviderRequestDelay(delay),
+			coros.WithBaselineLoader(func(ctx context.Context, user string) (provider.Baselines, error) {
+				return LoadBaselines(ctx, store, user)
+			})), nil
 	case "garmin":
 		return garmin.New(store, garmin.NewStorageCredentialStore(store),
 			garmin.WithProviderRequestDelay(delay)), nil
