@@ -193,7 +193,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Administrator only. Synchronously calls the configured OpenAI-compatible LLM and upserts a draft city-content row with only intro + climate filled; published/archived content is refused (409). Unconfigured deployments answer 501 ai_draft_not_configured.",
+                "description": "Administrator only. Synchronously calls the configured OpenAI-compatible LLM and upserts a draft city-content row with only the intro filled; published/archived content is refused (409). Unconfigured deployments answer 501 ai_draft_not_configured.",
                 "tags": [
                     "admin"
                 ],
@@ -1526,6 +1526,67 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/races/{race_id}/content/ai-draft": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Synchronously calls the configured OpenAI-compatible LLM with the race's name/date/city and upserts a draft content row with only climate + weather_windows filled; published/archived content is refused (409). Unconfigured deployments answer 501 ai_draft_not_configured.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Generate an AI race-content climate draft",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Race event id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceContentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "Not Implemented",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -8910,9 +8971,6 @@ const docTemplate = `{
                 "city": {
                     "type": "string"
                 },
-                "climate": {
-                    "$ref": "#/definitions/storage.CityClimate"
-                },
                 "id": {
                     "type": "integer"
                 },
@@ -8927,12 +8985,6 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
-                },
-                "weather_windows": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/storage.CityWeatherWindow"
-                    }
                 }
             }
         },
@@ -8945,20 +8997,11 @@ const docTemplate = `{
                         "$ref": "#/definitions/storage.CityAttraction"
                     }
                 },
-                "climate": {
-                    "$ref": "#/definitions/storage.CityClimate"
-                },
                 "intro": {
                     "$ref": "#/definitions/storage.CityIntro"
                 },
                 "province": {
                     "type": "string"
-                },
-                "weather_windows": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/storage.CityWeatherWindow"
-                    }
                 }
             }
         },
@@ -8992,6 +9035,9 @@ const docTemplate = `{
         "api.raceContentDTO": {
             "type": "object",
             "properties": {
+                "climate": {
+                    "$ref": "#/definitions/storage.RaceClimate"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -9037,6 +9083,12 @@ const docTemplate = `{
                 "updated_at": {
                     "type": "string"
                 },
+                "weather_windows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceWeatherWindow"
+                    }
+                },
                 "year": {
                     "type": "integer"
                 }
@@ -9045,6 +9097,9 @@ const docTemplate = `{
         "api.raceContentInput": {
             "type": "object",
             "properties": {
+                "climate": {
+                    "$ref": "#/definitions/storage.RaceClimate"
+                },
                 "items": {
                     "type": "array",
                     "items": {
@@ -9068,6 +9123,12 @@ const docTemplate = `{
                 },
                 "signup_timeline": {
                     "$ref": "#/definitions/storage.RaceSignupTimeline"
+                },
+                "weather_windows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceWeatherWindow"
+                    }
                 }
             }
         },
@@ -9725,7 +9786,8 @@ const docTemplate = `{
                     "enum": [
                         "all",
                         "activities",
-                        "health"
+                        "health",
+                        "schedule"
                     ],
                     "example": "all"
                 },
@@ -10220,23 +10282,6 @@ const docTemplate = `{
                 }
             }
         },
-        "storage.CityClimate": {
-            "type": "object",
-            "properties": {
-                "autumn": {
-                    "type": "string"
-                },
-                "spring": {
-                    "type": "string"
-                },
-                "summer": {
-                    "type": "string"
-                },
-                "winter": {
-                    "type": "string"
-                }
-            }
-        },
         "storage.CityIntro": {
             "type": "object",
             "properties": {
@@ -10254,35 +10299,6 @@ const docTemplate = `{
                 }
             }
         },
-        "storage.CityWeatherWindow": {
-            "type": "object",
-            "properties": {
-                "avg_temp_c": {
-                    "type": "number"
-                },
-                "humidity_pct": {
-                    "type": "integer"
-                },
-                "rain_probability_pct": {
-                    "type": "integer"
-                },
-                "temp_high_c": {
-                    "type": "number"
-                },
-                "temp_low_c": {
-                    "type": "number"
-                },
-                "wind": {
-                    "type": "string"
-                },
-                "window_end": {
-                    "type": "string"
-                },
-                "window_start": {
-                    "type": "string"
-                }
-            }
-        },
         "storage.RaceAidStation": {
             "type": "object",
             "properties": {
@@ -10294,6 +10310,14 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "storage.RaceClimate": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string"
                 }
             }
         },
@@ -10436,6 +10460,35 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "start_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.RaceWeatherWindow": {
+            "type": "object",
+            "properties": {
+                "avg_temp_c": {
+                    "type": "number"
+                },
+                "humidity_pct": {
+                    "type": "integer"
+                },
+                "rain_probability_pct": {
+                    "type": "integer"
+                },
+                "temp_high_c": {
+                    "type": "number"
+                },
+                "temp_low_c": {
+                    "type": "number"
+                },
+                "wind": {
+                    "type": "string"
+                },
+                "window_end": {
+                    "type": "string"
+                },
+                "window_start": {
                     "type": "string"
                 }
             }
