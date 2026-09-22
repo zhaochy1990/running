@@ -43,7 +43,7 @@ type startPipelineResponse struct {
 // mirrors provider.SyncOptionsInput (the shared watch_sync payload contract).
 type syncRequest struct {
 	Mode    string `json:"mode,omitempty" example:"incremental" enums:"full,incremental"`
-	Content string `json:"content,omitempty" example:"all" enums:"all,activities,health"`
+	Content string `json:"content,omitempty" example:"all" enums:"all,activities,health,schedule"`
 	Limit   int    `json:"limit,omitempty" example:"0"`
 }
 
