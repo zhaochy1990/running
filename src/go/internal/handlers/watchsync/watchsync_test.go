@@ -134,6 +134,35 @@ func TestHandler_ReturnsHealthDatesForDownstreamCompute(t *testing.T) {
 	}
 }
 
+func TestHandler_ReturnsScheduleMetadata(t *testing.T) {
+	f := &fakeProvider{
+		loggedIn: true,
+		result: provider.SyncResult{
+			ScheduleSessions:        2,
+			ScheduleSkippedStrength: 1,
+			ScheduleSkippedStride:   1,
+			ScheduleSkippedInvalid:  1,
+		},
+	}
+	res, err, _, _ := run(t, f, "")
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	var body struct {
+		ScheduleSessions        int `json:"schedule_sessions"`
+		ScheduleSkippedStrength int `json:"schedule_skipped_strength"`
+		ScheduleSkippedStride   int `json:"schedule_skipped_stride"`
+		ScheduleSkippedInvalid  int `json:"schedule_skipped_invalid"`
+	}
+	if err := json.Unmarshal([]byte(res), &body); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if body.ScheduleSessions != 2 || body.ScheduleSkippedStrength != 1 ||
+		body.ScheduleSkippedStride != 1 || body.ScheduleSkippedInvalid != 1 {
+		t.Fatalf("schedule metadata = %+v", body)
+	}
+}
+
 func TestHandler_NotLoggedIn_Permanent(t *testing.T) {
 	f := &fakeProvider{loggedIn: false}
 	_, err, _, _ := run(t, f, "")

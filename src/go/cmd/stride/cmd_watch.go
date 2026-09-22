@@ -103,7 +103,7 @@ func newWatchSyncCmd() *cobra.Command {
 	f := c.Flags()
 	f.StringVarP(&profile, "profile", "P", "", "user UUID or slug")
 	f.BoolVar(&full, "full", false, "full re-scan (default incremental)")
-	f.StringVar(&content, "content", "all", "all | activities | health")
+	f.StringVar(&content, "content", "all", "all | activities | health | schedule")
 	f.IntVar(&limit, "limit", 0, "max activities to fetch (0 = unlimited)")
 	return c
 }
@@ -371,6 +371,8 @@ func contentFlag(s string) provider.SyncContent {
 		return provider.ContentActivities
 	case "health":
 		return provider.ContentHealth
+	case "schedule":
+		return provider.ContentSchedule
 	default:
 		return provider.ContentAll
 	}

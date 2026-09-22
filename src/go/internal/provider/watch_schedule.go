@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
 
 // WatchScheduleSchema is the schema discriminator for the watch-schedule
@@ -53,6 +55,24 @@ type WatchSchedule struct {
 	Provider string         `json:"provider"`
 	Fetch    WatchFetchMeta `json:"fetch"`
 	Sessions []WatchSession `json:"sessions"`
+}
+
+// WatchSchedulePull is the result of pulling a watch's schedule page: the
+// canonical envelope (run sessions only) plus the counts of content the puller
+// intentionally dropped, so a sync can surface them as metadata (ADR 0038).
+type WatchSchedulePull struct {
+	Schedule        WatchSchedule
+	SkippedStrength int // strength sessions skipped (v1 models run content only)
+	SkippedStride   int // [STRIDE]-authored sessions excluded (self-loop)
+	SkippedInvalid  int // running sessions that failed to decode
+}
+
+// SchedulePullWindow returns the default watch-schedule pull window in ISO
+// YYYY-MM-DD: [Shanghai-today − 7 days, Shanghai-today + 90 days] (ADR 0038).
+// The bounds are local calendar days, so a UTC instant is never a window edge.
+func SchedulePullWindow() (from, to string) {
+	today := timefmt.ShanghaiToday()
+	return today.AddDate(0, 0, -7).Format("2006-01-02"), today.AddDate(0, 0, 90).Format("2006-01-02")
 }
 
 // Validate checks the envelope and every session. An empty session list is

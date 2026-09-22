@@ -22,6 +22,7 @@ type fakeWriter struct {
 	dashboard           *storage.Dashboard
 	dashboardUpsertMode string
 	meta                map[string]string
+	watchSchedules      []storage.WatchSchedule
 }
 
 func newFakeWriter() *fakeWriter {
@@ -65,6 +66,10 @@ func (f *fakeWriter) UpsertDailyHRV(_ context.Context, h *storage.DailyHRV) erro
 }
 func (f *fakeWriter) UpsertRacePrediction(_ context.Context, p *storage.RacePrediction) error {
 	f.preds[p.RaceType] = p
+	return nil
+}
+func (f *fakeWriter) UpsertWatchSchedules(_ context.Context, _ string, rows []storage.WatchSchedule) error {
+	f.watchSchedules = append(f.watchSchedules, rows...)
 	return nil
 }
 func (f *fakeWriter) SetMeta(_ context.Context, _, key, value string) error {
@@ -123,6 +128,9 @@ func syncMuxWithDashboard(list, dashboard string) *http.ServeMux {
 	})
 	mux.HandleFunc("/dashboard/detail/query", func(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, resultSuccess, `{"currentWeekRecord":{"distanceRecord":50000,"durationRecord":18000}}`)
+	})
+	mux.HandleFunc("/training/schedule/query", func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(w, resultSuccess, `{"entities":[],"programs":[]}`)
 	})
 	return mux
 }

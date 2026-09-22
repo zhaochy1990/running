@@ -52,6 +52,7 @@ func TestWatchModelTableNames(t *testing.T) {
 		RacePrediction{}.TableName():     "race_predictions",
 		SyncMeta{}.TableName():           "sync_meta",
 		ProviderCredential{}.TableName(): "provider_credentials",
+		WatchSchedule{}.TableName():      "watch_schedule",
 	}
 	for got, want := range cases {
 		if got != want {

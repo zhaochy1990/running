@@ -109,12 +109,17 @@ func New(resolve Resolver, marker SyncMarker, jobs int) job.Handler {
 		}
 
 		out, _ := json.Marshal(struct {
-			Activities  int      `json:"activities"`
-			Health      int      `json:"health"`
-			Mode        string   `json:"mode"`
-			LabelIDs    []string `json:"label_ids,omitempty"`
-			HealthDates []string `json:"health_dates,omitempty"`
-		}{res.Activities, res.Health, string(opts.Mode), res.ActivityLabelIDs, res.HealthDates})
+			Activities              int      `json:"activities"`
+			Health                  int      `json:"health"`
+			Mode                    string   `json:"mode"`
+			LabelIDs                []string `json:"label_ids,omitempty"`
+			HealthDates             []string `json:"health_dates,omitempty"`
+			ScheduleSessions        int      `json:"schedule_sessions,omitempty"`
+			ScheduleSkippedStrength int      `json:"schedule_skipped_strength,omitempty"`
+			ScheduleSkippedStride   int      `json:"schedule_skipped_stride,omitempty"`
+			ScheduleSkippedInvalid  int      `json:"schedule_skipped_invalid,omitempty"`
+		}{res.Activities, res.Health, string(opts.Mode), res.ActivityLabelIDs, res.HealthDates,
+			res.ScheduleSessions, res.ScheduleSkippedStrength, res.ScheduleSkippedStride, res.ScheduleSkippedInvalid})
 		return string(out), nil
 	}
 }

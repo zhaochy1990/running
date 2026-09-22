@@ -171,6 +171,11 @@ func (p *Provider) SyncUser(ctx context.Context, user string, opts provider.Sync
 			return res, err
 		}
 	}
+	if content.Has(provider.ContentSchedule) {
+		if err := p.syncSchedule(ctx, client, user, &res); err != nil {
+			return res, err
+		}
+	}
 	return res, nil
 }
 

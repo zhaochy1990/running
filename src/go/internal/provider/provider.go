@@ -74,8 +74,10 @@ const (
 	ContentActivities SyncContent = 1 << iota
 	// ContentHealth covers daily_health + dashboard + daily_hrv + race_predictions.
 	ContentHealth
+	// ContentSchedule covers the third-party watch schedule (watch-schedule/v1).
+	ContentSchedule
 	// ContentAll is every domain.
-	ContentAll = ContentActivities | ContentHealth
+	ContentAll = ContentActivities | ContentHealth | ContentSchedule
 )
 
 // Has reports whether c includes domain d.
@@ -121,6 +123,14 @@ type SyncResult struct {
 	Health           int      // health-domain writes (daily_health + HRV + dashboard); display count
 	ActivityLabelIDs []string // label_ids touched this run
 	HealthDates      []string // Shanghai calendar dates whose daily_health rows were refreshed
+
+	// Watch-schedule domain (ContentSchedule). Sessions is the count of run
+	// sessions ingested; the Skipped* counters record content the puller
+	// intentionally dropped so a sync can surface it as metadata.
+	ScheduleSessions        int // run sessions written/updated
+	ScheduleSkippedStrength int // strength sessions skipped (v1 models run only)
+	ScheduleSkippedStride   int // [STRIDE]-authored sessions excluded (self-loop)
+	ScheduleSkippedInvalid  int // running sessions that failed to decode
 }
 
 // SyncOptionsInput is the JSON contract for a sync request: the watch_sync job's
@@ -147,7 +157,7 @@ func (in SyncOptionsInput) Validate() error {
 		return fmt.Errorf("invalid mode %q", in.Mode)
 	}
 	switch in.Content {
-	case "", "all", "activities", "health":
+	case "", "all", "activities", "health", "schedule":
 	default:
 		return fmt.Errorf("invalid content %q", in.Content)
 	}
@@ -172,6 +182,8 @@ func (in SyncOptionsInput) Options() (SyncOptions, error) {
 		opts.Content = ContentActivities
 	case "health":
 		opts.Content = ContentHealth
+	case "schedule":
+		opts.Content = ContentSchedule
 	}
 	return opts, nil
 }
@@ -324,6 +336,7 @@ type Provider interface {
 	PushStrengthWorkout(ctx context.Context, user string, w StrengthWorkout) (string, error)
 	DeleteScheduledWorkout(ctx context.Context, user, date, name string) (bool, error)
 	QuerySchedule(ctx context.Context, user, start, end string) ([]ScheduledWorkoutSummary, error)
+	PullWatchSchedule(ctx context.Context, user, start, end string) (WatchSchedulePull, error)
 
 	// exercise catalog (optional, capability-gated)
 	QueryExercises(ctx context.Context, user, sport string) ([]map[string]any, error)
@@ -364,6 +377,10 @@ func (b BaseProvider) DeleteScheduledWorkout(context.Context, string, string, st
 
 func (b BaseProvider) QuerySchedule(context.Context, string, string, string) ([]ScheduledWorkoutSummary, error) {
 	return nil, &FeatureNotSupported{Provider: b.Name, Capability: CapQuerySchedule}
+}
+
+func (b BaseProvider) PullWatchSchedule(context.Context, string, string, string) (WatchSchedulePull, error) {
+	return WatchSchedulePull{}, &FeatureNotSupported{Provider: b.Name, Capability: CapQuerySchedule}
 }
 
 func (b BaseProvider) QueryExercises(context.Context, string, string) ([]map[string]any, error) {
