@@ -218,11 +218,17 @@ func runAPI() error {
 		LegalDocumentStore:      store,
 		RaceCalendarStore:       store,
 		RaceContentStore:        store,
-		WorkoutPusher:           workoutPush,
-		ScheduledWorkoutStore:   store,
-		Auth:                    authn,
-		CORSOrigins:             cfg.API.CORSOrigins,
-		SwaggerEnabled:          cfg.API.SwaggerEnabled,
+		CityAIDraft: api.CityAIDraftConfig{
+			Endpoint: cfg.CityAIDraft.Endpoint,
+			APIKey:   cfg.CityAIDraft.APIKey,
+			Model:    cfg.CityAIDraft.Model,
+			Timeout:  cfg.CityAIDraft.Timeout,
+		},
+		WorkoutPusher:         workoutPush,
+		ScheduledWorkoutStore: store,
+		Auth:                  authn,
+		CORSOrigins:           cfg.API.CORSOrigins,
+		SwaggerEnabled:        cfg.API.SwaggerEnabled,
 		Health: map[string]health.Check{
 			"mysql": store.Ping,
 			"rabbitmq": func(context.Context) error {

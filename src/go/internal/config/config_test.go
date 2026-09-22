@@ -250,3 +250,41 @@ api:
 		t.Fatalf("admin audience = %q", cfg.API.Auth.AdminAudience)
 	}
 }
+
+func TestMustLoadAPIFrom_CityAIDraft(t *testing.T) {
+	body := `
+logger: {format: json, service-name: stride-api, level: info}
+mysql: {dsn: mysql-dsn}
+amqp: {url: "amqp://guest:guest@localhost:5672/"}
+queues: {work: w, retry: r, poison: p}
+api:
+  addr: ":8080"
+  internal-token: internal-token
+  auth:
+    issuer: auth-service
+    audience: stride-user
+    public-key-path: /keys/public.pem
+city-ai-draft:
+  endpoint: "https://api.deepseek.com"
+  api-key: ""
+  model: "deepseek-v4-flash"
+  timeout: 45s
+`
+	cfg := MustLoadAPIFrom(writeConfig(t, body))
+	if cfg.CityAIDraft.Endpoint != "https://api.deepseek.com" || cfg.CityAIDraft.Model != "deepseek-v4-flash" {
+		t.Fatalf("city ai draft = %+v", cfg.CityAIDraft)
+	}
+	if cfg.CityAIDraft.Timeout != 45*time.Second {
+		t.Fatalf("city ai draft timeout = %v, want 45s", cfg.CityAIDraft.Timeout)
+	}
+	if cfg.CityAIDraft.APIKey != "" {
+		t.Fatalf("city ai draft key = %q, want empty (graceful 501)", cfg.CityAIDraft.APIKey)
+	}
+
+	// The secret comes from env.
+	t.Setenv("STRIDE_WORKER_CITY_AI_DRAFT_API_KEY", "secret-key")
+	cfg = MustLoadAPIFrom(writeConfig(t, body))
+	if cfg.CityAIDraft.APIKey != "secret-key" {
+		t.Fatalf("city ai draft key = %q, want env override", cfg.CityAIDraft.APIKey)
+	}
+}

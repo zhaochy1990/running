@@ -205,6 +205,11 @@ type Config struct {
 	// endpoints (e.g. in tests).
 	RaceContentStore RaceContentStore
 
+	// CityAIDraft configures the AI city-content draft generator (issue #332).
+	// Leave zero to keep the ai-draft endpoint answering 501
+	// ai_draft_not_configured.
+	CityAIDraft CityAIDraftConfig
+
 	// WorkoutPusher pushes normalized workouts to the user's bound watch
 	// provider (satisfied by the cmd-layer adapter over registry).
 	WorkoutPusher WorkoutPusher
@@ -320,7 +325,7 @@ func NewService(cfg Config) *Service {
 		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, cfg.BodyCompositionStore, log),
 		legalDocuments:          newLegalDocumentRoutes(cfg.LegalDocumentStore, log),
 		raceCalendar:            newRaceCalendarRoutes(cfg.RaceCalendarStore, log),
-		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, log),
+		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
 		swaggerEnabled:          cfg.SwaggerEnabled,

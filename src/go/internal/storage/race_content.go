@@ -94,6 +94,58 @@ func (s *Store) UpsertRaceCityContent(ctx context.Context, in *RaceCityContent) 
 	return saved, nil
 }
 
+// UpsertRaceCityContentAIDraft merges an AI-generated intro+climate into a
+// city's working content without touching the other sections (province,
+// attractions, weather windows). It is draft-only: a published or archived row
+// is rejected with ErrRaceContentConflict so a live city can never be silently
+// overwritten by a generated draft. A new row starts as draft with only the
+// two AI sections populated.
+func (s *Store) UpsertRaceCityContentAIDraft(ctx context.Context, in *RaceCityContent) (*RaceCityContent, error) {
+	var saved *RaceCityContent
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row RaceCityContent
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("city = ?", in.City).First(&row).Error
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			now := nowUTC()
+			created := *in
+			created.ID = 0
+			created.Status = RaceContentStatusDraft
+			// Only intro + climate are AI-generated; everything else is
+			// deliberately left empty for the admin to fill in later.
+			created.Province = nil
+			created.Attractions = nil
+			created.WeatherWindows = nil
+			created.CreatedAt, created.UpdatedAt = now, now
+			if err := tx.Create(&created).Error; err != nil {
+				if isDuplicateKey(err) {
+					return ErrRaceContentConflict
+				}
+				return fmt.Errorf("storage: create race city content draft: %w", err)
+			}
+			saved = &created
+			return nil
+		case err != nil:
+			return fmt.Errorf("storage: lock race city content: %w", err)
+		}
+		if row.Status != RaceContentStatusDraft {
+			return ErrRaceContentConflict
+		}
+		row.Intro = in.Intro
+		row.Climate = in.Climate
+		row.UpdatedAt = nowUTC()
+		if err := tx.Save(&row).Error; err != nil {
+			return fmt.Errorf("storage: update race city content draft: %w", err)
+		}
+		saved = &row
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return saved, nil
+}
+
 // PublishRaceCityContent snapshots the city's current content as the next
 // version and flips it to published. The snapshot is immutable; repeated
 // publishes mint one version each.

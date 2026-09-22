@@ -52,6 +52,16 @@ race-detection:
   timeout: 30s
   max-concurrency: 8
 
+# City-content AI draft (issue #332) — an OpenAI-compatible chat-completions
+# client used only by the HTTP API server (`stride api`). The key is secret and
+# must be supplied via STRIDE_WORKER_CITY_AI_DRAFT_API_KEY; until it is set the
+# ai-draft endpoint answers 501 ai_draft_not_configured.
+city-ai-draft:
+  endpoint: "https://api.deepseek.com"
+  api-key: ""
+  model: "deepseek-v4-flash"
+  timeout: 45s
+
 # Tencent Cloud COS bucket holding route-thumbnail PNGs (public read). Secrets
 # come from env:
 #   STRIDE_WORKER_COS_SECRET_ID / STRIDE_WORKER_COS_SECRET_KEY
