@@ -65,6 +65,31 @@ func newRaceContentRoutes(store RaceContentStore, aiDraft CityAIDraftConfig, log
 	return &raceContentRoutes{store: store, aiDraft: aiDraft, log: log}
 }
 
+// aiDraftMaxAttempts bounds the LLM retries per draft request. The provider is
+// not deterministic even at temperature 0 — json_object mode occasionally
+// emits structurally broken JSON — so a fresh roll is the practical recovery.
+const aiDraftMaxAttempts = 3
+
+// completeJSONWithRetry calls CompleteJSON up to aiDraftMaxAttempts times. A
+// failed attempt (provider error, malformed payload) is logged and retried;
+// the last error is returned. valid reports whether the decoded payload is
+// usable — an unusable payload counts as a failed attempt, because a partial
+// draft would silently clear sections the admin already wrote.
+func (r *raceContentRoutes) completeJSONWithRetry(ctx context.Context, client *llm.ChatCompletions, system, user string, out any, valid func() bool) error {
+	var err error
+	for attempt := 1; attempt <= aiDraftMaxAttempts; attempt++ {
+		if err = client.CompleteJSON(ctx, system, user, out); err == nil && valid() {
+			return nil
+		}
+		r.log.Warn("ai-draft generation attempt failed",
+			zap.Int("attempt", attempt), zap.Int("max_attempts", aiDraftMaxAttempts), zap.Error(err))
+	}
+	if err == nil {
+		err = errors.New("llm: payload failed validation after retries")
+	}
+	return err
+}
+
 // register mounts the admin race-content endpoints. Content lives under the
 // race it belongs to (races/:race_id/content), plus a small race-content root
 // for orphan re-attachment and a cities root for the shared city content.
@@ -856,7 +881,7 @@ func (r *raceContentRoutes) aiDraftCityContent(c *gin.Context) {
 	}
 
 	var out cityAIDraftPayload
-	if err := client.CompleteJSON(c.Request.Context(), cityAIDraftSystemPrompt, cityAIDraftUserPrompt(city), &out); err != nil {
+	if err := r.completeJSONWithRetry(c.Request.Context(), client, cityAIDraftSystemPrompt, cityAIDraftUserPrompt(city), &out, func() bool { return out.valid() }); err != nil {
 		r.log.Error("city ai-draft generation failed", zap.String("city", city), zap.Error(err))
 		c.JSON(http.StatusBadGateway, errorResponse{Error: "ai_draft_failed"})
 		return
@@ -1001,7 +1026,7 @@ func (r *raceContentRoutes) aiDraftRaceContent(c *gin.Context) {
 	}
 
 	var out raceAIDraftPayload
-	if err := client.CompleteJSON(c.Request.Context(), raceAIDraftSystemPrompt, raceAIDraftUserPrompt(name, event.RaceDate, city), &out); err != nil {
+	if err := r.completeJSONWithRetry(c.Request.Context(), client, raceAIDraftSystemPrompt, raceAIDraftUserPrompt(name, event.RaceDate, city), &out, func() bool { return out.valid() }); err != nil {
 		r.log.Error("race ai-draft generation failed", zap.Uint64("race_id", eventID), zap.Error(err))
 		c.JSON(http.StatusBadGateway, errorResponse{Error: "ai_draft_failed"})
 		return
