@@ -43,8 +43,10 @@ func TestSyncContentHas(t *testing.T) {
 	}{
 		{"all has activities", ContentAll, ContentActivities, true},
 		{"all has health", ContentAll, ContentHealth, true},
+		{"all has schedule", ContentAll, ContentSchedule, true},
 		{"activities only lacks health", ContentActivities, ContentHealth, false},
 		{"health only lacks activities", ContentHealth, ContentActivities, false},
+		{"schedule only lacks activities", ContentSchedule, ContentActivities, false},
 		{"zero has nothing", 0, ContentActivities, false},
 	}
 	for _, tt := range tests {
@@ -53,6 +55,26 @@ func TestSyncContentHas(t *testing.T) {
 				t.Errorf("(%b).Has(%b) = %v, want %v", tt.content, tt.domain, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSyncOptionsInputSchedule(t *testing.T) {
+	in := SyncOptionsInput{Content: "schedule"}
+	if err := in.Validate(); err != nil {
+		t.Fatalf("validate schedule: %v", err)
+	}
+	opts, err := in.Options()
+	if err != nil {
+		t.Fatalf("options: %v", err)
+	}
+	if opts.Content != ContentSchedule {
+		t.Errorf("content = %b, want ContentSchedule", opts.Content)
+	}
+	if opts.Content.Has(ContentActivities) || opts.Content.Has(ContentHealth) {
+		t.Errorf("schedule-only content must not include activities/health: %b", opts.Content)
+	}
+	if err := (SyncOptionsInput{Content: "nonsense"}).Validate(); err == nil {
+		t.Error("invalid content should fail validation")
 	}
 }
 
@@ -97,6 +119,9 @@ func TestBaseProviderOptionalMethodsReturnFeatureNotSupported(t *testing.T) {
 	assertUnsupported(t, err, CapDeleteWorkout)
 
 	_, err = p.QuerySchedule(ctx, "u", "2026-01-01", "2026-01-07")
+	assertUnsupported(t, err, CapQuerySchedule)
+
+	_, err = p.PullWatchSchedule(ctx, "u", "2026-01-01", "2026-01-07")
 	assertUnsupported(t, err, CapQuerySchedule)
 
 	_, err = p.QueryExercises(ctx, "u", "run")

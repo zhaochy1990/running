@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 const sampleWatchSchedule = `{
@@ -99,6 +100,21 @@ func TestWatchScheduleRejectsMissingSourceID(t *testing.T) {
 	_, err := WatchScheduleFromJSON([]byte(raw))
 	if err == nil || !strings.Contains(err.Error(), "entity_id") {
 		t.Fatalf("err = %v, want entity_id required", err)
+	}
+}
+
+func TestSchedulePullWindow(t *testing.T) {
+	from, to := SchedulePullWindow()
+	if !validISODate(from) || !validISODate(to) {
+		t.Fatalf("window = %q..%q, want ISO dates", from, to)
+	}
+	fromDay, err1 := time.Parse("2006-01-02", from)
+	toDay, err2 := time.Parse("2006-01-02", to)
+	if err1 != nil || err2 != nil {
+		t.Fatalf("window parse: %v / %v", err1, err2)
+	}
+	if d := toDay.Sub(fromDay).Hours() / 24; d != 97 {
+		t.Errorf("window span = %.0f days, want 97 (−7 → +90)", d)
 	}
 }
 
