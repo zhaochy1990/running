@@ -177,11 +177,12 @@ func MustLoadRaceDetectionRuntimeFrom(path string) *RaceDetectionRuntimeConfig {
 
 // APIConfig is the fully-resolved configuration for the HTTP API server.
 type APIConfig struct {
-	Logger logger.LoggerConfig `mapstructure:"logger"`
-	MySQL  MySQL               `mapstructure:"mysql"`
-	AMQP   AMQP                `mapstructure:"amqp"`
-	Queues Queues              `mapstructure:"queues"`
-	API    API                 `mapstructure:"api"`
+	Logger      logger.LoggerConfig `mapstructure:"logger"`
+	MySQL       MySQL               `mapstructure:"mysql"`
+	AMQP        AMQP                `mapstructure:"amqp"`
+	Queues      Queues              `mapstructure:"queues"`
+	API         API                 `mapstructure:"api"`
+	CityAIDraft CityAIDraft         `mapstructure:"city-ai-draft"`
 }
 
 // API holds the HTTP API server knobs.
@@ -219,6 +220,19 @@ type APIFeatures struct {
 	CoachChatUsers            []string `mapstructure:"coach-chat-users"`
 	CoachChatDebugUsers       []string `mapstructure:"coach-chat-debug-users"`
 	CoachChatMaxMessageChars  int      `mapstructure:"coach-chat-max-message-chars"`
+}
+
+// CityAIDraft configures the OpenAI-compatible chat-completions client behind
+// the city-content AI draft endpoint (issue #332). Every field is optional: an
+// empty API key keeps the endpoint answering 501 ai_draft_not_configured so the
+// capability can be rolled out gradually without breaking the admin dashboard.
+// The API key is a secret and must be supplied via
+// STRIDE_WORKER_CITY_AI_DRAFT_API_KEY.
+type CityAIDraft struct {
+	Endpoint string        `mapstructure:"endpoint"`
+	APIKey   string        `mapstructure:"api-key"`
+	Model    string        `mapstructure:"model"`
+	Timeout  time.Duration `mapstructure:"timeout"`
 }
 
 // APIAuth configures RS256 verification of end-user JWTs (direct-browser tier).

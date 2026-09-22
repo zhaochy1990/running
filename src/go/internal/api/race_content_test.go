@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -214,6 +215,21 @@ func (f *fakeRaceContentStore) UpsertRaceCityContent(_ context.Context, in *stor
 	return row, nil
 }
 
+func (f *fakeRaceContentStore) UpsertRaceCityContentAIDraft(_ context.Context, in *storage.RaceCityContent) (*storage.RaceCityContent, error) {
+	row, ok := f.cities[in.City]
+	if !ok {
+		f.nextID++
+		row = &storage.RaceCityContent{ID: f.nextID, City: in.City, Status: storage.RaceContentStatusDraft, CreatedAt: time.Now().UTC()}
+		f.cities[in.City] = row
+	}
+	if row.Status != storage.RaceContentStatusDraft {
+		return nil, storage.ErrRaceContentConflict
+	}
+	row.Intro, row.Climate = in.Intro, in.Climate
+	row.UpdatedAt = time.Now().UTC()
+	return row, nil
+}
+
 func (f *fakeRaceContentStore) PublishRaceCityContent(_ context.Context, city, publishedBy string) (*storage.RaceCityContent, int, error) {
 	row, ok := f.cities[city]
 	if !ok {
@@ -297,6 +313,10 @@ type raceContentHarness struct {
 }
 
 func newRaceContentHarness(t *testing.T) *raceContentHarness {
+	return newRaceContentHarnessCfg(t, CityAIDraftConfig{})
+}
+
+func newRaceContentHarnessCfg(t *testing.T, ai CityAIDraftConfig) *raceContentHarness {
 	t.Helper()
 	h := newRaceHarness(t)
 	// Rebuild the service with both stores: the harness's own service only has
@@ -306,6 +326,7 @@ func newRaceContentHarness(t *testing.T) *raceContentHarness {
 		Auth:              h.svc.auth,
 		RaceCalendarStore: h.store,
 		RaceContentStore:  store,
+		CityAIDraft:       ai,
 	})
 	return &raceContentHarness{svc: svc, store: store, rh: h}
 }
@@ -558,6 +579,175 @@ func TestRaceContentAdmin_CityLifecycle(t *testing.T) {
 	// Unknown city publish → content_not_found.
 	if w := h.do(t, "POST", "/api/admin/cities/不存在市/content/publish", "", admin); w.Code != http.StatusNotFound {
 		t.Fatalf("unknown city: got %d, want 404", w.Code)
+	}
+}
+
+// --- AI draft -----------------------------------------------------------------
+
+const aiDraftCity = "/api/admin/cities/%E5%8E%A6%E9%97%A8%E5%B8%82/content/ai-draft" // 厦门市
+
+const aiDraftPayload = `{"intro":{"overview":"海滨城市","culture":"闽南文化","food":"沙茶面","history":"经济特区"},"climate":{"spring":"温和","summer":"炎热","autumn":"凉爽","winter":"温暖"}}`
+
+// aiDraftServer starts a fake OpenAI-compatible chat-completions server.
+// content is the raw message.content string (already a JSON string when status
+// is 2xx); calls, when non-nil, counts every request the server receives.
+func aiDraftServer(t *testing.T, content string, status int, calls *atomic.Int32) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls != nil {
+			calls.Add(1)
+		}
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("llm path = %q, want /chat/completions", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if status < 200 || status >= 300 {
+			_, _ = w.Write([]byte(`{"error":"boom"}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": content}}},
+		})
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func aiDraftHarness(t *testing.T, server *httptest.Server, timeout time.Duration) *raceContentHarness {
+	t.Helper()
+	return newRaceContentHarnessCfg(t, CityAIDraftConfig{
+		Endpoint: server.URL, APIKey: "test-key", Model: "city-model", Timeout: timeout,
+	})
+}
+
+func TestRaceContentAdmin_AIDraftFillsIntroAndClimate(t *testing.T) {
+	var calls atomic.Int32
+	server := aiDraftServer(t, aiDraftPayload, http.StatusOK, &calls)
+	h := aiDraftHarness(t, server, time.Second)
+	admin := h.rh.adminToken(t)
+
+	// Existing draft with province + attraction + weather must keep those.
+	province := "福建省"
+	h.store.cities["厦门市"] = &storage.RaceCityContent{
+		ID: 7, City: "厦门市", Status: storage.RaceContentStatusDraft,
+		Province:       &province,
+		Attractions:    []storage.CityAttraction{{Name: "鼓浪屿", Description: "世界文化遗产"}},
+		WeatherWindows: []storage.CityWeatherWindow{{WindowStart: "01-01", WindowEnd: "01-15"}},
+	}
+
+	w := h.do(t, "POST", aiDraftCity, "", admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ai-draft: got %d %s", w.Code, w.Body.String())
+	}
+	var got raceCityContentResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Content == nil || got.Content.Status != storage.RaceContentStatusDraft {
+		t.Fatalf("content = %+v", got.Content)
+	}
+	if got.Content.Intro == nil || got.Content.Intro.Overview != "海滨城市" || got.Content.Intro.Culture != "闽南文化" || got.Content.Intro.Food != "沙茶面" || got.Content.Intro.History != "经济特区" {
+		t.Fatalf("intro = %+v", got.Content.Intro)
+	}
+	if got.Content.Climate == nil || got.Content.Climate.Spring != "温和" || got.Content.Climate.Summer != "炎热" || got.Content.Climate.Autumn != "凉爽" || got.Content.Climate.Winter != "温暖" {
+		t.Fatalf("climate = %+v", got.Content.Climate)
+	}
+	if got.Content.Province == nil || *got.Content.Province != "福建省" {
+		t.Fatalf("province = %+v, want preserved", got.Content.Province)
+	}
+	if len(got.Content.Attractions) != 1 || len(got.Content.WeatherWindows) != 1 {
+		t.Fatalf("other sections = %+v, want preserved", got.Content)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("llm calls = %d, want 1", calls.Load())
+	}
+}
+
+func TestRaceContentAdmin_AIDraftCreatesDraftForNewCity(t *testing.T) {
+	server := aiDraftServer(t, aiDraftPayload, http.StatusOK, nil)
+	h := aiDraftHarness(t, server, time.Second)
+	admin := h.rh.adminToken(t)
+
+	w := h.do(t, "POST", aiDraftCity, "", admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ai-draft: got %d %s", w.Code, w.Body.String())
+	}
+	var got raceCityContentResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Content == nil || got.Content.ID == 0 || got.Content.Status != storage.RaceContentStatusDraft {
+		t.Fatalf("content = %+v, want a persisted draft", got.Content)
+	}
+	if got.Content.Intro == nil || got.Content.Climate == nil || got.Content.Province != nil || len(got.Content.Attractions) != 0 || len(got.Content.WeatherWindows) != 0 {
+		t.Fatalf("content = %+v, want only intro + climate filled", got.Content)
+	}
+}
+
+func TestRaceContentAdmin_AIDraftRejectsPublishedOrArchived(t *testing.T) {
+	for _, status := range []string{storage.RaceContentStatusPublished, storage.RaceContentStatusArchived} {
+		t.Run(status, func(t *testing.T) {
+			var calls atomic.Int32
+			server := aiDraftServer(t, aiDraftPayload, http.StatusOK, &calls)
+			h := aiDraftHarness(t, server, time.Second)
+			admin := h.rh.adminToken(t)
+			h.store.cities["厦门市"] = &storage.RaceCityContent{ID: 1, City: "厦门市", Status: status}
+
+			w := h.do(t, "POST", aiDraftCity, "", admin)
+			if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "ai_draft_conflict") {
+				t.Fatalf("got %d %s, want 409 ai_draft_conflict", w.Code, w.Body.String())
+			}
+			if calls.Load() != 0 {
+				t.Fatalf("llm calls = %d, want 0 for %s content", calls.Load(), status)
+			}
+		})
+	}
+}
+
+func TestRaceContentAdmin_AIDraftFailureDoesNotWrite(t *testing.T) {
+	cases := []struct {
+		name    string
+		status  int
+		content string
+	}{
+		{"provider error", http.StatusInternalServerError, ""},
+		{"invalid JSON", http.StatusOK, `{"intro":`},
+		{"missing sections", http.StatusOK, `{"intro":{"overview":"x"}}`},
+		{"unexpected field", http.StatusOK, `{"intro":{"overview":"x","culture":"y","food":"z","history":"h"},"climate":{"spring":"a","summer":"b","autumn":"c","winter":"d"},"extra":1}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := aiDraftServer(t, tc.content, tc.status, nil)
+			h := aiDraftHarness(t, server, time.Second)
+			admin := h.rh.adminToken(t)
+
+			w := h.do(t, "POST", aiDraftCity, "", admin)
+			if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "ai_draft_failed") {
+				t.Fatalf("got %d %s, want 502 ai_draft_failed", w.Code, w.Body.String())
+			}
+			if row, ok := h.store.cities["厦门市"]; ok {
+				t.Fatalf("dirty row written on failure: %+v", row)
+			}
+		})
+	}
+}
+
+func TestRaceContentAdmin_AIDraftTimeoutDoesNotWrite(t *testing.T) {
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(slow.Close)
+	h := aiDraftHarness(t, slow, 20*time.Millisecond)
+	admin := h.rh.adminToken(t)
+
+	w := h.do(t, "POST", aiDraftCity, "", admin)
+	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "ai_draft_failed") {
+		t.Fatalf("got %d %s, want 502 ai_draft_failed", w.Code, w.Body.String())
+	}
+	if row, ok := h.store.cities["厦门市"]; ok {
+		t.Fatalf("dirty row written on timeout: %+v", row)
 	}
 }
 

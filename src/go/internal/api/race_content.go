@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"github.com/zhaochy1990/stride/internal/llm"
 	"github.com/zhaochy1990/stride/internal/logging"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
@@ -31,24 +32,36 @@ type RaceContentStore interface {
 	RollbackRaceContent(ctx context.Context, contentID uint64, version int) (*storage.RaceContent, []storage.RaceContentItem, error)
 	GetRaceCityContent(ctx context.Context, city string) (*storage.RaceCityContent, error)
 	UpsertRaceCityContent(ctx context.Context, in *storage.RaceCityContent) (*storage.RaceCityContent, error)
+	UpsertRaceCityContentAIDraft(ctx context.Context, in *storage.RaceCityContent) (*storage.RaceCityContent, error)
 	PublishRaceCityContent(ctx context.Context, city, publishedBy string) (*storage.RaceCityContent, int, error)
 	ArchiveRaceCityContent(ctx context.Context, city string) (*storage.RaceCityContent, error)
 	RollbackRaceCityContent(ctx context.Context, city string, version int) (*storage.RaceCityContent, error)
+}
+
+// CityAIDraftConfig configures the AI city-content draft generator. An empty
+// APIKey keeps the ai-draft endpoint answering 501 ai_draft_not_configured
+// (graceful degradation before rollout). Mirrors config.CityAIDraft.
+type CityAIDraftConfig struct {
+	Endpoint string
+	APIKey   string
+	Model    string
+	Timeout  time.Duration
 }
 
 // raceContentRoutes serves the administrator race-content surface. Mounted on
 // the parent authenticated group so the admin JWT tier can reach it; every
 // handler re-checks TierAdmin so user and internal callers are refused.
 type raceContentRoutes struct {
-	store RaceContentStore
-	log   *zap.Logger
+	store   RaceContentStore
+	aiDraft CityAIDraftConfig
+	log     *zap.Logger
 }
 
-func newRaceContentRoutes(store RaceContentStore, log *zap.Logger) *raceContentRoutes {
+func newRaceContentRoutes(store RaceContentStore, aiDraft CityAIDraftConfig, log *zap.Logger) *raceContentRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &raceContentRoutes{store: store, log: log}
+	return &raceContentRoutes{store: store, aiDraft: aiDraft, log: log}
 }
 
 // register mounts the admin race-content endpoints. Content lives under the
@@ -756,20 +769,122 @@ func (r *raceContentRoutes) rollbackCityContent(c *gin.Context) {
 	c.JSON(http.StatusOK, raceCityContentResponse{Content: newRaceCityContentDTO(saved)})
 }
 
-// aiDraftCityContent is the一期 AI-draft stub (city introduction + climate).
+// cityAIDraftPayload is the strict JSON shape the AI draft generator must
+// return. Field names match storage.CityIntro / storage.CityClimate exactly so
+// the provider contract and the storage contract stay one-to-one.
+type cityAIDraftPayload struct {
+	Intro   *storage.CityIntro   `json:"intro"`
+	Climate *storage.CityClimate `json:"climate"`
+}
+
+// valid reports whether every intro + climate section is present and non-empty.
+// A partial draft would silently clear a section the admin already wrote, so
+// incomplete payloads are treated as a generation failure (502), not saved.
+func (p cityAIDraftPayload) valid() bool {
+	if p.Intro == nil || p.Climate == nil {
+		return false
+	}
+	for _, s := range []string{
+		p.Intro.Overview, p.Intro.Culture, p.Intro.Food, p.Intro.History,
+		p.Climate.Spring, p.Climate.Summer, p.Climate.Autumn, p.Climate.Winter,
+	} {
+		if strings.TrimSpace(s) == "" {
+			return false
+		}
+	}
+	return true
+}
+
+const cityAIDraftSystemPrompt = `你是马拉松赛事内容编辑助手，负责为中国城市撰写面向跑者的城市内容草稿。你只能输出严格匹配以下结构的 JSON，不得输出其它字段、文字、代码块或注释，所有内容必须使用中文：
+
+{"intro":{"overview":"城市总体介绍","culture":"城市文化","food":"城市美食","history":"城市历史"},"climate":{"spring":"春季气候","summer":"夏季气候","autumn":"秋季气候","winter":"冬季气候"}}
+
+要求：
+1. intro.overview / intro.culture / intro.food / intro.history 各一段中文，面向参赛跑者。
+2. climate.spring / climate.summer / climate.autumn / climate.winter 各一段中文四季气候描述。
+3. 只写文字，禁止输出任何数值型天气数据（如具体气温、湿度、降雨概率），禁止输出图片 URL。
+4. 每段内容 2-4 句话，客观、准确、有吸引力。`
+
+func cityAIDraftUserPrompt(city string) string {
+	return "请为城市「" + city + "」生成上述结构的城市介绍与气候草稿。"
+}
+
+// aiDraftCityContent generates an AI draft for a city's intro + climate.
 //
 //	@Summary		Generate an AI city-content draft
-//	@Description	Administrator only. One-期 contract endpoint for AI-generated city introduction + climate drafts. The LLM provider is二期; the endpoint currently answers 501 ai_draft_not_configured.
+//	@Description	Administrator only. Synchronously calls the configured OpenAI-compatible LLM and upserts a draft city-content row with only intro + climate filled; published/archived content is refused (409). Unconfigured deployments answer 501 ai_draft_not_configured.
 //	@Tags			admin
 //	@Param			city	path	string	true	"City name"
-//	@Failure		501	{object}	errorResponse
+//	@Success		200		{object}	raceCityContentResponse
+//	@Failure		401		{object}	errorResponse
+//	@Failure		403		{object}	errorResponse
+//	@Failure		409		{object}	errorResponse
+//	@Failure		501		{object}	errorResponse
+//	@Failure		502		{object}	errorResponse
 //	@Security		BearerAuth
 //	@Router			/api/admin/cities/{city}/content/ai-draft [post]
 func (r *raceContentRoutes) aiDraftCityContent(c *gin.Context) {
 	if !requireAdmin(c) {
 		return
 	}
-	c.JSON(http.StatusNotImplemented, errorResponse{Error: "ai_draft_not_configured"})
+	city := c.Param("city")
+
+	if strings.TrimSpace(r.aiDraft.APIKey) == "" {
+		c.JSON(http.StatusNotImplemented, errorResponse{Error: "ai_draft_not_configured"})
+		return
+	}
+
+	// Cheap pre-check so a published/archived city refuses before we pay for a
+	// (slow) LLM call. The storage upsert re-checks atomically so a concurrent
+	// publish during generation still cannot be overwritten.
+	existing, err := r.store.GetRaceCityContent(c.Request.Context(), city)
+	if err != nil {
+		writeRaceContentError(c, r.log, err)
+		return
+	}
+	if existing != nil && existing.Status != storage.RaceContentStatusDraft {
+		c.JSON(http.StatusConflict, errorResponse{Error: "ai_draft_conflict"})
+		return
+	}
+
+	client, err := llm.NewChatCompletions(llm.Config{
+		Endpoint: r.aiDraft.Endpoint,
+		APIKey:   r.aiDraft.APIKey,
+		Model:    r.aiDraft.Model,
+		Timeout:  r.aiDraft.Timeout,
+	})
+	if err != nil {
+		r.log.Error("city ai-draft client misconfigured", zap.Error(err))
+		c.JSON(http.StatusBadGateway, errorResponse{Error: "ai_draft_failed"})
+		return
+	}
+
+	var out cityAIDraftPayload
+	if err := client.CompleteJSON(c.Request.Context(), cityAIDraftSystemPrompt, cityAIDraftUserPrompt(city), &out); err != nil {
+		r.log.Error("city ai-draft generation failed", zap.String("city", city), zap.Error(err))
+		c.JSON(http.StatusBadGateway, errorResponse{Error: "ai_draft_failed"})
+		return
+	}
+	if !out.valid() {
+		r.log.Error("city ai-draft returned an incomplete payload", zap.String("city", city))
+		c.JSON(http.StatusBadGateway, errorResponse{Error: "ai_draft_failed"})
+		return
+	}
+
+	saved, err := r.store.UpsertRaceCityContentAIDraft(c.Request.Context(), &storage.RaceCityContent{
+		City:    city,
+		Intro:   out.Intro,
+		Climate: out.Climate,
+	})
+	if err != nil {
+		if errors.Is(err, storage.ErrRaceContentConflict) {
+			c.JSON(http.StatusConflict, errorResponse{Error: "ai_draft_conflict"})
+			return
+		}
+		writeRaceContentError(c, r.log, err)
+		return
+	}
+	c.JSON(http.StatusOK, raceCityContentResponse{Content: newRaceCityContentDTO(saved)})
 }
 
 // ─── Binding + validation + errors ───────────────────────────────────────────

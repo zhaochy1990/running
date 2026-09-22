@@ -4218,9 +4218,10 @@ paths:
       - admin
   /api/admin/cities/{city}/content/ai-draft:
     post:
-      description: Administrator only. One-期 contract endpoint for AI-generated city
-        introduction + climate drafts. The LLM provider is二期; the endpoint currently
-        answers 501 ai_draft_not_configured.
+      description: Administrator only. Synchronously calls the configured OpenAI-compatible
+        LLM and upserts a draft city-content row with only intro + climate filled;
+        published/archived content is refused (409). Unconfigured deployments answer
+        501 ai_draft_not_configured.
       parameters:
       - description: City name
         in: path
@@ -4228,8 +4229,28 @@ paths:
         required: true
         type: string
       responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.raceCityContentResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
         "501":
           description: Not Implemented
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "502":
+          description: Bad Gateway
           schema:
             $ref: '#/definitions/api.errorResponse'
       security:

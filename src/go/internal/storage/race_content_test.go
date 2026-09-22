@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -110,6 +111,63 @@ func TestRaceCityContent_Lifecycle(t *testing.T) {
 	// Missing city reads as nil, not an error.
 	if row, err := st.GetRaceCityContent(ctx, "不存在市"); err != nil || row != nil {
 		t.Fatalf("missing city = (%v, %v), want (nil, nil)", row, err)
+	}
+}
+
+func TestRaceCityContent_AIDraft(t *testing.T) {
+	st := openTestStore(t)
+	migrateRaceContent(t, st)
+	ctx := context.Background()
+
+	// New city → a draft with only intro + climate filled.
+	got, err := st.UpsertRaceCityContentAIDraft(ctx, &RaceCityContent{
+		City:    "厦门市",
+		Intro:   &CityIntro{Overview: "海滨城市", Culture: "闽南文化", Food: "沙茶面", History: "经济特区"},
+		Climate: &CityClimate{Spring: "温和", Summer: "炎热", Autumn: "凉爽", Winter: "温暖"},
+	})
+	if err != nil {
+		t.Fatalf("create draft: %v", err)
+	}
+	if got.Status != RaceContentStatusDraft || got.ID == 0 {
+		t.Fatalf("created = %+v, want a draft with an id", got)
+	}
+	if got.Province != nil || len(got.Attractions) != 0 || len(got.WeatherWindows) != 0 {
+		t.Fatalf("created = %+v, want only intro + climate", got)
+	}
+
+	// A later AI draft merges intro + climate and keeps the other sections.
+	province := "福建省"
+	if _, err := st.UpsertRaceCityContent(ctx, &RaceCityContent{
+		City: "厦门市", Province: &province,
+		Attractions: []CityAttraction{{Name: "鼓浪屿", Description: "世界文化遗产"}},
+	}); err != nil {
+		t.Fatalf("seed other sections: %v", err)
+	}
+	got, err = st.UpsertRaceCityContentAIDraft(ctx, &RaceCityContent{
+		City:    "厦门市",
+		Intro:   &CityIntro{Overview: "更新概览", Culture: "更新文化", Food: "更新美食", History: "更新历史"},
+		Climate: &CityClimate{Spring: "春", Summer: "夏", Autumn: "秋", Winter: "冬"},
+	})
+	if err != nil {
+		t.Fatalf("merge draft: %v", err)
+	}
+	if got.Province == nil || *got.Province != "福建省" || len(got.Attractions) != 1 {
+		t.Fatalf("merged = %+v, want other sections preserved", got)
+	}
+	if got.Intro == nil || got.Intro.Overview != "更新概览" || got.Climate == nil || got.Climate.Winter != "冬" {
+		t.Fatalf("merged = %+v, want AI sections overwritten", got)
+	}
+
+	// Published content refuses an AI draft.
+	if _, _, err := st.PublishRaceCityContent(ctx, "厦门市", "admin-1"); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if _, err := st.UpsertRaceCityContentAIDraft(ctx, &RaceCityContent{
+		City:    "厦门市",
+		Intro:   &CityIntro{Overview: "x", Culture: "x", Food: "x", History: "x"},
+		Climate: &CityClimate{Spring: "x", Summer: "x", Autumn: "x", Winter: "x"},
+	}); !errors.Is(err, ErrRaceContentConflict) {
+		t.Fatalf("published draft = %v, want ErrRaceContentConflict", err)
 	}
 }
 
