@@ -16,13 +16,6 @@ import (
 
 // --- fake store ---------------------------------------------------------------
 
-// fakeRaceContentSnapshot is the test-local snapshot shape (mirrors the storage
-// package's unexported raceContentSnapshot).
-type fakeRaceContentSnapshot struct {
-	Content storage.RaceContent       `json:"content"`
-	Items   []storage.RaceContentItem `json:"items"`
-}
-
 // fakeRaceContentStore is the in-memory RaceContentStore the handler tests run
 // against. It mirrors the storage layer's resolution rules just closely enough
 // to exercise handler behavior (live link, then business key); the deep rules
@@ -32,7 +25,6 @@ type fakeRaceContentStore struct {
 	contents map[uint64]*storage.RaceContent
 	items    map[uint64][]storage.RaceContentItem
 	cities   map[string]*storage.RaceCityContent
-	versions map[string][]storage.RaceContentVersion
 	nextID   uint64
 }
 
@@ -42,7 +34,6 @@ func newFakeRaceContentStore() *fakeRaceContentStore {
 		contents: map[uint64]*storage.RaceContent{},
 		items:    map[uint64][]storage.RaceContentItem{},
 		cities:   map[string]*storage.RaceCityContent{},
-		versions: map[string][]storage.RaceContentVersion{},
 	}
 }
 
@@ -51,10 +42,6 @@ func (f *fakeRaceContentStore) seedEvent(e storage.RaceCalendarEvent) storage.Ra
 	e.ID = f.nextID
 	f.events[e.ID] = e
 	return e
-}
-
-func (f *fakeRaceContentStore) versionKey(contentType string, id uint64) string {
-	return fmt.Sprintf("%s/%d", contentType, id)
 }
 
 func (f *fakeRaceContentStore) GetRaceCalendarEvent(_ context.Context, id uint64) (*storage.RaceCalendarEvent, error) {
@@ -97,7 +84,7 @@ func (f *fakeRaceContentStore) UpsertRaceContent(_ context.Context, event *stora
 	row := f.findByEvent(event.ID)
 	if row == nil {
 		f.nextID++
-		row = &storage.RaceContent{ID: f.nextID, Status: storage.RaceContentStatusDraft, CreatedAt: time.Now().UTC()}
+		row = &storage.RaceContent{ID: f.nextID, CreatedAt: time.Now().UTC()}
 		f.contents[row.ID] = row
 	}
 	row.RaceEventID = &event.ID
@@ -118,18 +105,14 @@ func (f *fakeRaceContentStore) UpsertRaceContent(_ context.Context, event *stora
 }
 
 // UpsertRaceContentAIDraft merges an AI climate draft into a race's content,
-// mirroring the storage layer's draft-only rules closely enough for the
-// handler tests (the deep merge rules are integration-tested in the storage
-// package).
+// leaving the other sections and the items alone (the deep merge rules are
+// integration-tested in the storage package).
 func (f *fakeRaceContentStore) UpsertRaceContentAIDraft(_ context.Context, event *storage.RaceCalendarEvent, in *storage.RaceContent) (*storage.RaceContent, []storage.RaceContentItem, error) {
 	row := f.findByEvent(event.ID)
 	if row == nil {
 		f.nextID++
-		row = &storage.RaceContent{ID: f.nextID, Status: storage.RaceContentStatusDraft, CreatedAt: time.Now().UTC()}
+		row = &storage.RaceContent{ID: f.nextID, CreatedAt: time.Now().UTC()}
 		f.contents[row.ID] = row
-	}
-	if row.Status != storage.RaceContentStatusDraft {
-		return nil, nil, storage.ErrRaceContentConflict
 	}
 	row.RaceEventID = &event.ID
 	row.Source, row.RaceName, row.RaceDate = event.Source, event.Name, event.RaceDate
@@ -172,54 +155,6 @@ func (f *fakeRaceContentStore) ListOrphanRaceContent(_ context.Context) ([]stora
 	return out, nil
 }
 
-func (f *fakeRaceContentStore) PublishRaceContent(_ context.Context, contentID uint64, publishedBy string) (*storage.RaceContent, []storage.RaceContentItem, int, error) {
-	row, ok := f.contents[contentID]
-	if !ok {
-		return nil, nil, 0, storage.ErrRaceContentNotFound
-	}
-	version := f.mintVersion(storage.RaceContentVersionTypeRace, contentID, publishedBy)
-	row.Status = storage.RaceContentStatusPublished
-	return row, f.items[row.ID], version, nil
-}
-
-func (f *fakeRaceContentStore) ArchiveRaceContent(_ context.Context, contentID uint64) (*storage.RaceContent, []storage.RaceContentItem, error) {
-	row, ok := f.contents[contentID]
-	if !ok {
-		return nil, nil, storage.ErrRaceContentNotFound
-	}
-	row.Status = storage.RaceContentStatusArchived
-	return row, f.items[row.ID], nil
-}
-
-func (f *fakeRaceContentStore) ListRaceContentVersions(_ context.Context, contentType string, contentID uint64) ([]storage.RaceContentVersion, error) {
-	return f.versions[f.versionKey(contentType, contentID)], nil
-}
-
-func (f *fakeRaceContentStore) RollbackRaceContent(_ context.Context, contentID uint64, version int) (*storage.RaceContent, []storage.RaceContentItem, error) {
-	row, ok := f.contents[contentID]
-	if !ok {
-		return nil, nil, storage.ErrRaceContentNotFound
-	}
-	versions := f.versions[f.versionKey(storage.RaceContentVersionTypeRace, contentID)]
-	for _, v := range versions {
-		if v.Version == version {
-			var snap fakeRaceContentSnapshot
-			if err := json.Unmarshal([]byte(v.Snapshot), &snap); err != nil {
-				return nil, nil, err
-			}
-			row.PartitionRule = snap.Content.PartitionRule
-			row.SignupTimeline = snap.Content.SignupTimeline
-			row.SignupChannels = snap.Content.SignupChannels
-			row.PacketPickup = snap.Content.PacketPickup
-			row.Climate = snap.Content.Climate
-			row.WeatherWindows = snap.Content.WeatherWindows
-			f.items[row.ID] = snap.Items
-			return row, f.items[row.ID], nil
-		}
-	}
-	return nil, nil, fmt.Errorf("%w: version %d not found", storage.ErrInvalidRaceContent, version)
-}
-
 func (f *fakeRaceContentStore) GetRaceCityContent(_ context.Context, city string) (*storage.RaceCityContent, error) {
 	if row, ok := f.cities[city]; ok {
 		return row, nil
@@ -231,7 +166,7 @@ func (f *fakeRaceContentStore) UpsertRaceCityContent(_ context.Context, in *stor
 	row, ok := f.cities[in.City]
 	if !ok {
 		f.nextID++
-		row = &storage.RaceCityContent{ID: f.nextID, City: in.City, Status: storage.RaceContentStatusDraft, CreatedAt: time.Now().UTC()}
+		row = &storage.RaceCityContent{ID: f.nextID, City: in.City, CreatedAt: time.Now().UTC()}
 		f.cities[in.City] = row
 	}
 	row.Province, row.Intro, row.Attractions = in.Province, in.Intro, in.Attractions
@@ -243,88 +178,12 @@ func (f *fakeRaceContentStore) UpsertRaceCityContentAIDraft(_ context.Context, i
 	row, ok := f.cities[in.City]
 	if !ok {
 		f.nextID++
-		row = &storage.RaceCityContent{ID: f.nextID, City: in.City, Status: storage.RaceContentStatusDraft, CreatedAt: time.Now().UTC()}
+		row = &storage.RaceCityContent{ID: f.nextID, City: in.City, CreatedAt: time.Now().UTC()}
 		f.cities[in.City] = row
-	}
-	if row.Status != storage.RaceContentStatusDraft {
-		return nil, storage.ErrRaceContentConflict
 	}
 	row.Intro = in.Intro
 	row.UpdatedAt = time.Now().UTC()
 	return row, nil
-}
-
-func (f *fakeRaceContentStore) PublishRaceCityContent(_ context.Context, city, publishedBy string) (*storage.RaceCityContent, int, error) {
-	row, ok := f.cities[city]
-	if !ok {
-		return nil, 0, storage.ErrRaceContentNotFound
-	}
-	version := f.mintVersion(storage.RaceContentVersionTypeCity, row.ID, publishedBy)
-	row.Status = storage.RaceContentStatusPublished
-	return row, version, nil
-}
-
-func (f *fakeRaceContentStore) ArchiveRaceCityContent(_ context.Context, city string) (*storage.RaceCityContent, error) {
-	row, ok := f.cities[city]
-	if !ok {
-		return nil, storage.ErrRaceContentNotFound
-	}
-	row.Status = storage.RaceContentStatusArchived
-	return row, nil
-}
-
-func (f *fakeRaceContentStore) RollbackRaceCityContent(_ context.Context, city string, version int) (*storage.RaceCityContent, error) {
-	row, ok := f.cities[city]
-	if !ok {
-		return nil, storage.ErrRaceContentNotFound
-	}
-	versions := f.versions[f.versionKey(storage.RaceContentVersionTypeCity, row.ID)]
-	for _, v := range versions {
-		if v.Version == version {
-			var snap storage.RaceCityContent
-			if err := json.Unmarshal([]byte(v.Snapshot), &snap); err != nil {
-				return nil, err
-			}
-			row.Province, row.Intro, row.Attractions = snap.Province, snap.Intro, snap.Attractions
-			return row, nil
-		}
-	}
-	return nil, fmt.Errorf("%w: version %d not found", storage.ErrInvalidRaceContent, version)
-}
-
-// mintVersion appends the next version snapshot for (contentType, contentID).
-// The race snapshot body marshals the current aggregate (the fake shares the
-// storage layer's raceContentSnapshot shape); the city snapshot marshals the row.
-func (f *fakeRaceContentStore) mintVersion(contentType string, contentID uint64, publishedBy string) int {
-	key := f.versionKey(contentType, contentID)
-	next := 1
-	for _, v := range f.versions[key] {
-		if v.Version >= next {
-			next = v.Version + 1
-		}
-	}
-	var body []byte
-	if contentType == storage.RaceContentVersionTypeRace {
-		row := f.contents[contentID]
-		b, _ := json.Marshal(fakeRaceContentSnapshot{Content: *row, Items: f.items[contentID]})
-		body = b
-	} else {
-		b, _ := json.Marshal(f.citiesBy()[contentID])
-		body = b
-	}
-	f.versions[key] = append(f.versions[key], storage.RaceContentVersion{
-		Version: next, Snapshot: string(body), PublishedBy: publishedBy,
-		PublishedAt: time.Now().UTC(),
-	})
-	return next
-}
-
-func (f *fakeRaceContentStore) citiesBy() map[uint64]*storage.RaceCityContent {
-	out := map[uint64]*storage.RaceCityContent{}
-	for _, row := range f.cities {
-		out[row.ID] = row
-	}
-	return out
 }
 
 // --- harness -----------------------------------------------------------------
@@ -370,19 +229,11 @@ func TestRaceContentAdmin_TierGuards(t *testing.T) {
 	}{
 		{"GET", base, ""},
 		{"PUT", base, `{"packet_pickup":[{"time":"9:00","location":"会展中心"}]}`},
-		{"POST", base + "/publish", ""},
-		{"POST", base + "/archive", ""},
-		{"GET", base + "/versions", ""},
-		{"POST", base + "/versions/1/rollback", ""},
 		{"POST", base + "/ai-draft", ""},
 		{"GET", "/api/admin/race-content/orphans", ""},
 		{"POST", "/api/admin/race-content/1/attach", `{"race_event_id":1}`},
 		{"GET", "/api/admin/cities/厦门市/content", ""},
 		{"PUT", "/api/admin/cities/厦门市/content", `{"intro":{"overview":"x"}}`},
-		{"POST", "/api/admin/cities/厦门市/content/publish", ""},
-		{"POST", "/api/admin/cities/厦门市/content/archive", ""},
-		{"GET", "/api/admin/cities/厦门市/content/versions", ""},
-		{"POST", "/api/admin/cities/厦门市/content/versions/1/rollback", ""},
 		{"POST", "/api/admin/cities/厦门市/content/ai-draft", ""},
 	}
 	for _, tc := range cases {
@@ -406,7 +257,7 @@ func TestRaceContentAdmin_TierGuards(t *testing.T) {
 	}
 }
 
-func TestRaceContentAdmin_RaceLifecycle(t *testing.T) {
+func TestRaceContentAdmin_RaceContent(t *testing.T) {
 	h := newRaceContentHarness(t)
 	event := h.store.seedEvent(syncEvent())
 	admin := h.rh.adminToken(t)
@@ -439,7 +290,7 @@ func TestRaceContentAdmin_RaceLifecycle(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if created.Content.Status != storage.RaceContentStatusDraft || len(created.Content.Items) != 1 || created.Content.Items[0].ItemName != "全程马拉松" {
+	if len(created.Content.Items) != 1 || created.Content.Items[0].ItemName != "全程马拉松" {
 		t.Fatalf("created = %+v", created.Content)
 	}
 
@@ -457,42 +308,20 @@ func TestRaceContentAdmin_RaceLifecycle(t *testing.T) {
 		t.Fatalf("bad clock: got %d %s", w.Code, w.Body.String())
 	}
 
-	// Publish → version 1, published status.
-	w = h.do(t, "POST", base+"/publish", "", admin)
-	var published raceContentPublishResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &published); err != nil || published.Version != 1 {
-		t.Fatalf("publish: got %d %s", w.Code, w.Body.String())
-	}
-
-	// Version list.
-	w = h.do(t, "GET", base+"/versions", "", admin)
-	var versions raceContentVersionsResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &versions); err != nil || len(versions.Versions) != 1 || versions.Versions[0].Version != 1 {
-		t.Fatalf("versions: got %d %s", w.Code, w.Body.String())
-	}
-
-	// PUT again (保存即生效): clears the timeline (absent section), keeps published.
+	// PUT again replaces the aggregate outright (保存即生效): the absent
+	// timeline section is cleared and a GET reflects the edit immediately.
 	w = h.do(t, "PUT", base, jsonBody(t, map[string]any{"items": []map[string]any{{"item_name": "全程马拉松"}}}), admin)
 	var edited raceContentResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &edited); err != nil || edited.Content.Status != storage.RaceContentStatusPublished {
-		t.Fatalf("edit after publish: got %d %s", w.Code, w.Body.String())
+	if err := json.Unmarshal(w.Body.Bytes(), &edited); err != nil {
+		t.Fatalf("edit: got %d %s", w.Code, w.Body.String())
 	}
 	if edited.Content.SignupTimeline != nil {
 		t.Fatalf("absent section = %+v, want cleared", edited.Content.SignupTimeline)
 	}
-
-	// Rollback to v1 restores the timeline.
-	w = h.do(t, "POST", base+"/versions/1/rollback", "", admin)
-	var rolled raceContentResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &rolled); err != nil || rolled.Content.SignupTimeline == nil {
-		t.Fatalf("rollback: got %d %s", w.Code, w.Body.String())
-	}
-
-	// Archive.
-	w = h.do(t, "POST", base+"/archive", "", admin)
-	var archived raceContentResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &archived); err != nil || archived.Content.Status != storage.RaceContentStatusArchived {
-		t.Fatalf("archive: got %d %s", w.Code, w.Body.String())
+	w = h.do(t, "GET", base, "", admin)
+	var reread raceContentResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &reread); err != nil || reread.Content == nil || reread.Content.SignupTimeline != nil {
+		t.Fatalf("reread: got %d %s", w.Code, w.Body.String())
 	}
 }
 
@@ -594,7 +423,7 @@ func TestRaceContentAdmin_OrphansAndAttach(t *testing.T) {
 	}
 }
 
-func TestRaceContentAdmin_CityLifecycle(t *testing.T) {
+func TestRaceContentAdmin_CityContent(t *testing.T) {
 	h := newRaceContentHarness(t)
 	admin := h.rh.adminToken(t)
 	base := "/api/admin/cities/%E5%8E%A6%E9%97%A8%E5%B8%82/content" // 厦门市
@@ -611,8 +440,8 @@ func TestRaceContentAdmin_CityLifecycle(t *testing.T) {
 		t.Fatalf("ai-draft: got %d %s", w.Code, w.Body.String())
 	}
 
-	// PUT creates; publish mints v1; rollback restores. (Weather windows moved
-	// to race level — they are no longer part of the city payload.)
+	// PUT creates the aggregate. (Weather windows moved to race level — they are
+	// no longer part of the city payload.)
 	body := map[string]any{
 		"province":    "福建省",
 		"intro":       map[string]any{"overview": "海滨城市", "culture": "", "food": "沙茶面", "history": ""},
@@ -620,35 +449,18 @@ func TestRaceContentAdmin_CityLifecycle(t *testing.T) {
 	}
 	w = h.do(t, "PUT", base, jsonBody(t, body), admin)
 	var created raceCityContentResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil || created.Content.Status != storage.RaceContentStatusDraft {
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil || created.Content.Intro == nil || created.Content.Intro.Overview != "海滨城市" {
 		t.Fatalf("create: got %d %s", w.Code, w.Body.String())
 	}
 
-	w = h.do(t, "POST", base+"/publish", "", admin)
-	var published raceCityContentPublishResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &published); err != nil || published.Version != 1 {
-		t.Fatalf("publish: got %d %s", w.Code, w.Body.String())
+	// A later PUT replaces it outright (保存即生效).
+	w = h.do(t, "PUT", base, `{"intro":{"overview":"改概览"}}`, admin)
+	var edited raceCityContentResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &edited); err != nil || edited.Content.Intro == nil || edited.Content.Intro.Overview != "改概览" {
+		t.Fatalf("edit: got %d %s", w.Code, w.Body.String())
 	}
-
-	// Post-publish edit, then rollback to v1 restores the v1 intro.
-	h.do(t, "PUT", base, `{"intro":{"overview":"改概览"}}`, admin)
-	w = h.do(t, "POST", base+"/versions/1/rollback", "", admin)
-	var rolled raceCityContentResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &rolled); err != nil || rolled.Content.Intro == nil || rolled.Content.Intro.Overview != "海滨城市" {
-		t.Fatalf("rollback: got %d %s", w.Code, w.Body.String())
-	}
-
-	// Archive, then versions still list.
-	h.do(t, "POST", base+"/archive", "", admin)
-	w = h.do(t, "GET", base+"/versions", "", admin)
-	var versions raceContentVersionsResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &versions); err != nil || len(versions.Versions) != 1 {
-		t.Fatalf("versions: got %d %s", w.Code, w.Body.String())
-	}
-
-	// Unknown city publish → content_not_found.
-	if w := h.do(t, "POST", "/api/admin/cities/不存在市/content/publish", "", admin); w.Code != http.StatusNotFound {
-		t.Fatalf("unknown city: got %d, want 404", w.Code)
+	if edited.Content.Attractions != nil {
+		t.Fatalf("absent section = %+v, want cleared", edited.Content.Attractions)
 	}
 }
 
@@ -702,7 +514,7 @@ func TestRaceContentAdmin_AIDraftFillsIntro(t *testing.T) {
 	// Existing draft with province + attraction must keep those.
 	province := "福建省"
 	h.store.cities["厦门市"] = &storage.RaceCityContent{
-		ID: 7, City: "厦门市", Status: storage.RaceContentStatusDraft,
+		ID: 7, City: "厦门市",
 		Province:    &province,
 		Attractions: []storage.CityAttraction{{Name: "鼓浪屿", Description: "世界文化遗产"}},
 	}
@@ -715,7 +527,7 @@ func TestRaceContentAdmin_AIDraftFillsIntro(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.Content == nil || got.Content.Status != storage.RaceContentStatusDraft {
+	if got.Content == nil {
 		t.Fatalf("content = %+v", got.Content)
 	}
 	if got.Content.Intro == nil || got.Content.Intro.Overview != "海滨城市" || got.Content.Intro.Culture != "闽南文化" || got.Content.Intro.Food != "沙茶面" || got.Content.Intro.History != "经济特区" {
@@ -745,31 +557,11 @@ func TestRaceContentAdmin_AIDraftCreatesDraftForNewCity(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.Content == nil || got.Content.ID == 0 || got.Content.Status != storage.RaceContentStatusDraft {
-		t.Fatalf("content = %+v, want a persisted draft", got.Content)
+	if got.Content == nil || got.Content.ID == 0 {
+		t.Fatalf("content = %+v, want a persisted aggregate", got.Content)
 	}
 	if got.Content.Intro == nil || got.Content.Province != nil || len(got.Content.Attractions) != 0 {
 		t.Fatalf("content = %+v, want only the intro filled", got.Content)
-	}
-}
-
-func TestRaceContentAdmin_AIDraftRejectsPublishedOrArchived(t *testing.T) {
-	for _, status := range []string{storage.RaceContentStatusPublished, storage.RaceContentStatusArchived} {
-		t.Run(status, func(t *testing.T) {
-			var calls atomic.Int32
-			server := aiDraftServer(t, aiDraftPayload, http.StatusOK, &calls)
-			h := aiDraftHarness(t, server, time.Second)
-			admin := h.rh.adminToken(t)
-			h.store.cities["厦门市"] = &storage.RaceCityContent{ID: 1, City: "厦门市", Status: status}
-
-			w := h.do(t, "POST", aiDraftCity, "", admin)
-			if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "ai_draft_conflict") {
-				t.Fatalf("got %d %s, want 409 ai_draft_conflict", w.Code, w.Body.String())
-			}
-			if calls.Load() != 0 {
-				t.Fatalf("llm calls = %d, want 0 for %s content", calls.Load(), status)
-			}
-		})
 	}
 }
 
@@ -849,8 +641,8 @@ func TestRaceContentAdmin_RaceAIDraftMergesClimate(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.Content == nil || got.Content.ID != seeded.ID || got.Content.Status != storage.RaceContentStatusDraft {
-		t.Fatalf("content = %+v, want the seeded draft updated", got.Content)
+	if got.Content == nil || got.Content.ID != seeded.ID {
+		t.Fatalf("content = %+v, want the seeded aggregate updated", got.Content)
 	}
 	if got.Content.Climate == nil || got.Content.Climate.Summary != "干冷晴朗，昼夜温差大" || len(got.Content.WeatherWindows) != 2 {
 		t.Fatalf("content = %+v, want climate + two windows", got.Content)
@@ -884,8 +676,8 @@ func TestRaceContentAdmin_RaceAIDraftCreatesDraftForNeverMaintainedRace(t *testi
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.Content == nil || got.Content.ID == 0 || got.Content.Status != storage.RaceContentStatusDraft {
-		t.Fatalf("content = %+v, want a persisted draft", got.Content)
+	if got.Content == nil || got.Content.ID == 0 {
+		t.Fatalf("content = %+v, want a persisted aggregate", got.Content)
 	}
 	if got.Content.Climate == nil || got.Content.Climate.Summary != "干冷晴朗，昼夜温差大" || len(got.Content.WeatherWindows) != 2 {
 		t.Fatalf("content = %+v, want the AI sections filled", got.Content)
@@ -895,39 +687,6 @@ func TestRaceContentAdmin_RaceAIDraftCreatesDraftForNeverMaintainedRace(t *testi
 	}
 	if got.Content.RaceName != "同步赛事" || got.Content.Year != 2030 {
 		t.Fatalf("identity = %q/%d, want the event's business key", got.Content.RaceName, got.Content.Year)
-	}
-}
-
-func TestRaceContentAdmin_RaceAIDraftRejectsPublishedOrArchived(t *testing.T) {
-	for _, status := range []string{storage.RaceContentStatusPublished, storage.RaceContentStatusArchived} {
-		t.Run(status, func(t *testing.T) {
-			var calls atomic.Int32
-			server := aiDraftServer(t, raceAIDraftLLMPayload, http.StatusOK, &calls)
-			h := aiDraftHarness(t, server, time.Second)
-			admin := h.rh.adminToken(t)
-			event := h.store.seedEvent(syncEvent())
-			row, _, err := h.store.UpsertRaceContent(context.Background(), &event, &storage.RaceContent{}, nil)
-			if err != nil {
-				t.Fatalf("seed content: %v", err)
-			}
-			if status == storage.RaceContentStatusPublished {
-				if _, _, _, err := h.store.PublishRaceContent(context.Background(), row.ID, "admin-1"); err != nil {
-					t.Fatalf("publish: %v", err)
-				}
-			} else {
-				if _, _, err := h.store.ArchiveRaceContent(context.Background(), row.ID); err != nil {
-					t.Fatalf("archive: %v", err)
-				}
-			}
-
-			w := h.do(t, "POST", raceAIDraftPath(event.ID), "", admin)
-			if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "ai_draft_conflict") {
-				t.Fatalf("got %d %s, want 409 ai_draft_conflict", w.Code, w.Body.String())
-			}
-			if calls.Load() != 0 {
-				t.Fatalf("llm calls = %d, want 0 for %s content", calls.Load(), status)
-			}
-		})
 	}
 }
 

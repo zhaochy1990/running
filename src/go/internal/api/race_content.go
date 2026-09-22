@@ -17,9 +17,9 @@ import (
 )
 
 // RaceContentStore is the persistence the admin race-content surface needs
-// (issue #318 赛事信息维护): race-level and item-level content, city content,
-// and the publish-version history for both. The concrete *storage.Store
-// satisfies it; tests use an in-memory fake.
+// (issue #318 赛事信息维护): race-level and item-level content plus city
+// content. There is no lifecycle — an upsert is the live content. The concrete
+// *storage.Store satisfies it; tests use an in-memory fake.
 type RaceContentStore interface {
 	GetRaceCalendarEvent(ctx context.Context, id uint64) (*storage.RaceCalendarEvent, error)
 	GetRaceContentByEvent(ctx context.Context, eventID uint64) (*storage.RaceContent, []storage.RaceContentItem, error)
@@ -27,16 +27,9 @@ type RaceContentStore interface {
 	UpsertRaceContentAIDraft(ctx context.Context, event *storage.RaceCalendarEvent, in *storage.RaceContent) (*storage.RaceContent, []storage.RaceContentItem, error)
 	AttachRaceContent(ctx context.Context, contentID, eventID uint64) (*storage.RaceContent, []storage.RaceContentItem, error)
 	ListOrphanRaceContent(ctx context.Context) ([]storage.RaceContent, error)
-	PublishRaceContent(ctx context.Context, contentID uint64, publishedBy string) (*storage.RaceContent, []storage.RaceContentItem, int, error)
-	ArchiveRaceContent(ctx context.Context, contentID uint64) (*storage.RaceContent, []storage.RaceContentItem, error)
-	ListRaceContentVersions(ctx context.Context, contentType string, contentID uint64) ([]storage.RaceContentVersion, error)
-	RollbackRaceContent(ctx context.Context, contentID uint64, version int) (*storage.RaceContent, []storage.RaceContentItem, error)
 	GetRaceCityContent(ctx context.Context, city string) (*storage.RaceCityContent, error)
 	UpsertRaceCityContent(ctx context.Context, in *storage.RaceCityContent) (*storage.RaceCityContent, error)
 	UpsertRaceCityContentAIDraft(ctx context.Context, in *storage.RaceCityContent) (*storage.RaceCityContent, error)
-	PublishRaceCityContent(ctx context.Context, city, publishedBy string) (*storage.RaceCityContent, int, error)
-	ArchiveRaceCityContent(ctx context.Context, city string) (*storage.RaceCityContent, error)
-	RollbackRaceCityContent(ctx context.Context, city string, version int) (*storage.RaceCityContent, error)
 }
 
 // CityAIDraftConfig configures the AI city-content draft generator. An empty
@@ -99,18 +92,10 @@ func (r *raceContentRoutes) register(rg *gin.RouterGroup) {
 	}
 	rg.GET("/api/admin/races/:race_id/content", r.getRaceContent)
 	rg.PUT("/api/admin/races/:race_id/content", r.putRaceContent)
-	rg.POST("/api/admin/races/:race_id/content/publish", r.publishRaceContent)
-	rg.POST("/api/admin/races/:race_id/content/archive", r.archiveRaceContent)
-	rg.GET("/api/admin/races/:race_id/content/versions", r.listRaceContentVersions)
-	rg.POST("/api/admin/races/:race_id/content/versions/:version/rollback", r.rollbackRaceContent)
 	rg.GET("/api/admin/race-content/orphans", r.listOrphanRaceContent)
 	rg.POST("/api/admin/race-content/:content_id/attach", r.attachRaceContent)
 	rg.GET("/api/admin/cities/:city/content", r.getCityContent)
 	rg.PUT("/api/admin/cities/:city/content", r.putCityContent)
-	rg.POST("/api/admin/cities/:city/content/publish", r.publishCityContent)
-	rg.POST("/api/admin/cities/:city/content/archive", r.archiveCityContent)
-	rg.GET("/api/admin/cities/:city/content/versions", r.listCityContentVersions)
-	rg.POST("/api/admin/cities/:city/content/versions/:version/rollback", r.rollbackCityContent)
 	// AI draft generation (一期: 城市介绍 + 比赛期气候). The contract ships
 	// now; the LLM provider wiring is二期 — until then the endpoints answer
 	// 501 so the dashboard can render a real disabled state instead of
@@ -131,7 +116,6 @@ type raceContentDTO struct {
 	RaceName       string                      `json:"race_name"`
 	RaceDate       string                      `json:"race_date"`
 	Year           int                         `json:"year"`
-	Status         string                      `json:"status"`
 	PartitionRule  *storage.RacePartitionRule  `json:"partition_rule"`
 	SignupTimeline *storage.RaceSignupTimeline `json:"signup_timeline"`
 	SignupChannels []storage.RaceSignupChannel `json:"signup_channels"`
@@ -169,27 +153,11 @@ type raceContentSummaryDTO struct {
 	RaceName    string    `json:"race_name"`
 	RaceDate    string    `json:"race_date"`
 	Year        int       `json:"year"`
-	Status      string    `json:"status"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type raceContentResponse struct {
 	Content *raceContentDTO `json:"content"`
-}
-
-type raceContentPublishResponse struct {
-	Content *raceContentDTO `json:"content"`
-	Version int             `json:"version"`
-}
-
-type raceContentVersionsResponse struct {
-	Versions []raceContentVersionDTO `json:"versions"`
-}
-
-type raceContentVersionDTO struct {
-	Version     int       `json:"version"`
-	PublishedBy string    `json:"published_by"`
-	PublishedAt time.Time `json:"published_at"`
 }
 
 type raceContentSummariesResponse struct {
@@ -201,7 +169,6 @@ type raceCityContentDTO struct {
 	ID          uint64                   `json:"id"`
 	City        string                   `json:"city"`
 	Province    *string                  `json:"province"`
-	Status      string                   `json:"status"`
 	Intro       *storage.CityIntro       `json:"intro"`
 	Attractions []storage.CityAttraction `json:"attractions"`
 	UpdatedAt   time.Time                `json:"updated_at"`
@@ -209,11 +176,6 @@ type raceCityContentDTO struct {
 
 type raceCityContentResponse struct {
 	Content *raceCityContentDTO `json:"content"`
-}
-
-type raceCityContentPublishResponse struct {
-	Content *raceCityContentDTO `json:"content"`
-	Version int                 `json:"version"`
 }
 
 // ─── Input binding (PUT is a full replace: an absent section clears it) ─────
@@ -263,7 +225,6 @@ func newRaceContentDTO(row *storage.RaceContent, items []storage.RaceContentItem
 		RaceName:       row.RaceName,
 		RaceDate:       row.RaceDate,
 		Year:           row.Year,
-		Status:         row.Status,
 		PartitionRule:  row.PartitionRule,
 		SignupTimeline: row.SignupTimeline,
 		SignupChannels: row.SignupChannels,
@@ -306,7 +267,6 @@ func newRaceContentSummaryDTO(row storage.RaceContent) raceContentSummaryDTO {
 		RaceName:    row.RaceName,
 		RaceDate:    row.RaceDate,
 		Year:        row.Year,
-		Status:      row.Status,
 		UpdatedAt:   row.UpdatedAt,
 	}
 }
@@ -316,7 +276,6 @@ func newRaceCityContentDTO(row *storage.RaceCityContent) *raceCityContentDTO {
 		ID:          row.ID,
 		City:        row.City,
 		Province:    row.Province,
-		Status:      row.Status,
 		Intro:       row.Intro,
 		Attractions: row.Attractions,
 		UpdatedAt:   row.UpdatedAt,
@@ -357,11 +316,11 @@ func (r *raceContentRoutes) getRaceContent(c *gin.Context) {
 	c.JSON(http.StatusOK, raceContentResponse{Content: newRaceContentDTO(row, items)})
 }
 
-// putRaceContent creates or replaces a race's working content state (保存即生效:
-// published content is edited in place; publish is a separate explicit action).
+// putRaceContent creates or replaces a race's content. 保存即生效: the saved
+// content is the live content — there is no draft state and no publish step.
 //
 //	@Summary		Create or replace a race's content
-//	@Description	Administrator only. Full-replace PUT: absent sections are cleared, items are matched to the calendar's distances by item_name. A new aggregate starts as draft; an existing one keeps its lifecycle status.
+//	@Description	Administrator only. Full-replace PUT: absent sections are cleared, items are matched to the calendar's distances by item_name. The saved content is live immediately.
 //	@Tags			admin
 //	@Param			race_id	path	int					true	"Race event id"
 //	@Param			body	body	raceContentInput	true	"Content payload"
@@ -394,155 +353,6 @@ func (r *raceContentRoutes) putRaceContent(c *gin.Context) {
 		return
 	}
 	saved, savedItems, err := r.store.UpsertRaceContent(c.Request.Context(), event, row, items)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	c.JSON(http.StatusOK, raceContentResponse{Content: newRaceContentDTO(saved, savedItems)})
-}
-
-// publishRaceContent snapshots the current state as the next immutable version.
-//
-//	@Summary		Publish a race's content
-//	@Description	Administrator only. Snapshots the current content (including items) as the next version and flips the aggregate to published.
-//	@Tags			admin
-//	@Param			race_id	path	int	true	"Race event id"
-//	@Success		200	{object}	raceContentPublishResponse
-//	@Failure		404	{object}	errorResponse
-//	@Failure		500	{object}	errorResponse
-//	@Security		BearerAuth
-//	@Router			/api/admin/races/{race_id}/content/publish [post]
-func (r *raceContentRoutes) publishRaceContent(c *gin.Context) {
-	if !requireAdmin(c) {
-		return
-	}
-	eventID, ok := parseUintParam(c, "race_id")
-	if !ok {
-		return
-	}
-	row, _, err := r.store.GetRaceContentByEvent(c.Request.Context(), eventID)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	if row == nil {
-		c.JSON(http.StatusNotFound, errorResponse{Error: "content_not_found"})
-		return
-	}
-	saved, savedItems, version, err := r.store.PublishRaceContent(c.Request.Context(), row.ID, callerFrom(c).UserID)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	c.JSON(http.StatusOK, raceContentPublishResponse{Content: newRaceContentDTO(saved, savedItems), Version: version})
-}
-
-// archiveRaceContent takes a race's content offline without deleting it.
-//
-//	@Summary		Archive a race's content
-//	@Description	Administrator only. Marks the aggregate archived; nothing is deleted.
-//	@Tags			admin
-//	@Param			race_id	path	int	true	"Race event id"
-//	@Success		200	{object}	raceContentResponse
-//	@Failure		404	{object}	errorResponse
-//	@Failure		500	{object}	errorResponse
-//	@Security		BearerAuth
-//	@Router			/api/admin/races/{race_id}/content/archive [post]
-func (r *raceContentRoutes) archiveRaceContent(c *gin.Context) {
-	if !requireAdmin(c) {
-		return
-	}
-	eventID, ok := parseUintParam(c, "race_id")
-	if !ok {
-		return
-	}
-	row, _, err := r.store.GetRaceContentByEvent(c.Request.Context(), eventID)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	if row == nil {
-		c.JSON(http.StatusNotFound, errorResponse{Error: "content_not_found"})
-		return
-	}
-	saved, savedItems, err := r.store.ArchiveRaceContent(c.Request.Context(), row.ID)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	c.JSON(http.StatusOK, raceContentResponse{Content: newRaceContentDTO(saved, savedItems)})
-}
-
-// listRaceContentVersions returns the publish history, newest first.
-//
-//	@Summary		List a race's content versions
-//	@Description	Administrator only. Returns the publish history of the race's content, newest first, without snapshot bodies.
-//	@Tags			admin
-//	@Param			race_id	path	int	true	"Race event id"
-//	@Success		200	{object}	raceContentVersionsResponse
-//	@Failure		404	{object}	errorResponse
-//	@Failure		500	{object}	errorResponse
-//	@Security		BearerAuth
-//	@Router			/api/admin/races/{race_id}/content/versions [get]
-func (r *raceContentRoutes) listRaceContentVersions(c *gin.Context) {
-	if !requireAdmin(c) {
-		return
-	}
-	eventID, ok := parseUintParam(c, "race_id")
-	if !ok {
-		return
-	}
-	row, _, err := r.store.GetRaceContentByEvent(c.Request.Context(), eventID)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	if row == nil {
-		c.JSON(http.StatusOK, raceContentVersionsResponse{Versions: []raceContentVersionDTO{}})
-		return
-	}
-	versions, err := r.store.ListRaceContentVersions(c.Request.Context(), storage.RaceContentVersionTypeRace, row.ID)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	c.JSON(http.StatusOK, raceContentVersionsResponse{Versions: newRaceContentVersionDTOs(versions)})
-}
-
-// rollbackRaceContent copies a historical version back into the working state.
-//
-//	@Summary		Roll back a race's content to a version
-//	@Description	Administrator only. Restores the version's snapshot as the new working state (content and items). The lifecycle status is untouched; history is never rewritten.
-//	@Tags			admin
-//	@Param			race_id	path	int	true	"Race event id"
-//	@Param			version	path	int	true	"Version number"
-//	@Success		200	{object}	raceContentResponse
-//	@Failure		404	{object}	errorResponse
-//	@Failure		500	{object}	errorResponse
-//	@Security		BearerAuth
-//	@Router			/api/admin/races/{race_id}/content/versions/{version}/rollback [post]
-func (r *raceContentRoutes) rollbackRaceContent(c *gin.Context) {
-	if !requireAdmin(c) {
-		return
-	}
-	eventID, ok := parseUintParam(c, "race_id")
-	if !ok {
-		return
-	}
-	version, ok := parseUintParam(c, "version")
-	if !ok {
-		return
-	}
-	row, _, err := r.store.GetRaceContentByEvent(c.Request.Context(), eventID)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	if row == nil {
-		c.JSON(http.StatusNotFound, errorResponse{Error: "content_not_found"})
-		return
-	}
-	saved, savedItems, err := r.store.RollbackRaceContent(c.Request.Context(), row.ID, int(version))
 	if err != nil {
 		writeRaceContentError(c, r.log, err)
 		return
@@ -622,7 +432,7 @@ type raceContentAttachInput struct {
 // getCityContent returns a city's content, or content:null when unmaintained.
 //
 //	@Summary		Get a city's maintained content
-//	@Description	Administrator only. Returns the shared city content (introduction, attractions, climate, historical weather windows), or content:null when the city has none.
+//	@Description	Administrator only. Returns the shared city content (introduction, attractions), or content:null when the city has none. Race-period climate lives on the race's own content.
 //	@Tags			admin
 //	@Param			city	path	string	true	"City name (race_calendar.city spelling, e.g. 厦门市)"
 //	@Success		200	{object}	raceCityContentResponse
@@ -647,10 +457,11 @@ func (r *raceContentRoutes) getCityContent(c *gin.Context) {
 	c.JSON(http.StatusOK, raceCityContentResponse{Content: newRaceCityContentDTO(row)})
 }
 
-// putCityContent creates or replaces a city's working content state.
+// putCityContent creates or replaces a city's content. 保存即生效: the saved
+// content is the live content.
 //
 //	@Summary		Create or replace a city's content
-//	@Description	Administrator only. Full-replace PUT: absent sections are cleared. A new row starts as draft; an existing one keeps its lifecycle status.
+//	@Description	Administrator only. Full-replace PUT: absent sections are cleared. The saved content is live immediately.
 //	@Tags			admin
 //	@Param			city	path	string					true	"City name"
 //	@Param			body	body	raceCityContentInput	true	"Content payload"
@@ -674,117 +485,6 @@ func (r *raceContentRoutes) putCityContent(c *gin.Context) {
 		Intro:       in.Intro,
 		Attractions: in.Attractions,
 	})
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	c.JSON(http.StatusOK, raceCityContentResponse{Content: newRaceCityContentDTO(saved)})
-}
-
-// publishCityContent snapshots the city's content as the next version.
-//
-//	@Summary		Publish a city's content
-//	@Description	Administrator only. Snapshots the current content as the next version and flips the row to published.
-//	@Tags			admin
-//	@Param			city	path	string	true	"City name"
-//	@Success		200	{object}	raceCityContentPublishResponse
-//	@Failure		404	{object}	errorResponse
-//	@Failure		500	{object}	errorResponse
-//	@Security		BearerAuth
-//	@Router			/api/admin/cities/{city}/content/publish [post]
-func (r *raceContentRoutes) publishCityContent(c *gin.Context) {
-	if !requireAdmin(c) {
-		return
-	}
-	city := c.Param("city")
-	saved, version, err := r.store.PublishRaceCityContent(c.Request.Context(), city, callerFrom(c).UserID)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	c.JSON(http.StatusOK, raceCityContentPublishResponse{Content: newRaceCityContentDTO(saved), Version: version})
-}
-
-// archiveCityContent takes a city's content offline without deleting it.
-//
-//	@Summary		Archive a city's content
-//	@Description	Administrator only. Marks the city content archived; nothing is deleted.
-//	@Tags			admin
-//	@Param			city	path	string	true	"City name"
-//	@Success		200	{object}	raceCityContentResponse
-//	@Failure		404	{object}	errorResponse
-//	@Failure		500	{object}	errorResponse
-//	@Security		BearerAuth
-//	@Router			/api/admin/cities/{city}/content/archive [post]
-func (r *raceContentRoutes) archiveCityContent(c *gin.Context) {
-	if !requireAdmin(c) {
-		return
-	}
-	city := c.Param("city")
-	saved, err := r.store.ArchiveRaceCityContent(c.Request.Context(), city)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	c.JSON(http.StatusOK, raceCityContentResponse{Content: newRaceCityContentDTO(saved)})
-}
-
-// listCityContentVersions returns the city's publish history, newest first.
-//
-//	@Summary		List a city's content versions
-//	@Description	Administrator only. Returns the publish history of the city's content, newest first, without snapshot bodies.
-//	@Tags			admin
-//	@Param			city	path	string	true	"City name"
-//	@Success		200	{object}	raceContentVersionsResponse
-//	@Failure		400	{object}	errorResponse
-//	@Failure		500	{object}	errorResponse
-//	@Security		BearerAuth
-//	@Router			/api/admin/cities/{city}/content/versions [get]
-func (r *raceContentRoutes) listCityContentVersions(c *gin.Context) {
-	if !requireAdmin(c) {
-		return
-	}
-	city := c.Param("city")
-	row, err := r.store.GetRaceCityContent(c.Request.Context(), city)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	if row == nil {
-		c.JSON(http.StatusOK, raceContentVersionsResponse{Versions: []raceContentVersionDTO{}})
-		return
-	}
-	versions, err := r.store.ListRaceContentVersions(c.Request.Context(), storage.RaceContentVersionTypeCity, row.ID)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	c.JSON(http.StatusOK, raceContentVersionsResponse{Versions: newRaceContentVersionDTOs(versions)})
-}
-
-// rollbackCityContent copies a historical version back into the working state.
-//
-//	@Summary		Roll back a city's content to a version
-//	@Description	Administrator only. Restores the version's snapshot as the new working state. The lifecycle status is untouched; history is never rewritten.
-//	@Tags			admin
-//	@Param			city	path	string	true	"City name"
-//	@Param			version	path	int		true	"Version number"
-//	@Success		200	{object}	raceCityContentResponse
-//	@Failure		400	{object}	errorResponse
-//	@Failure		404	{object}	errorResponse
-//	@Failure		500	{object}	errorResponse
-//	@Security		BearerAuth
-//	@Router			/api/admin/cities/{city}/content/versions/{version}/rollback [post]
-func (r *raceContentRoutes) rollbackCityContent(c *gin.Context) {
-	if !requireAdmin(c) {
-		return
-	}
-	city := c.Param("city")
-	version, ok := parseUintParam(c, "version")
-	if !ok {
-		return
-	}
-	saved, err := r.store.RollbackRaceCityContent(c.Request.Context(), city, int(version))
 	if err != nil {
 		writeRaceContentError(c, r.log, err)
 		return
@@ -843,13 +543,12 @@ func cityAIDraftUserPrompt(city string) string {
 // aiDraftCityContent generates an AI draft for a city's intro.
 //
 //	@Summary		Generate an AI city-content draft
-//	@Description	Administrator only. Synchronously calls the configured OpenAI-compatible LLM and upserts a draft city-content row with only the intro filled; published/archived content is refused (409). Unconfigured deployments answer 501 ai_draft_not_configured.
+//	@Description	Administrator only. Synchronously calls the configured OpenAI-compatible LLM and upserts the city content row with only the intro filled, preserving the other sections. Unconfigured deployments answer 501 ai_draft_not_configured.
 //	@Tags			admin
 //	@Param			city	path	string	true	"City name"
 //	@Success		200		{object}	raceCityContentResponse
 //	@Failure		401		{object}	errorResponse
 //	@Failure		403		{object}	errorResponse
-//	@Failure		409		{object}	errorResponse
 //	@Failure		501		{object}	errorResponse
 //	@Failure		502		{object}	errorResponse
 //	@Security		BearerAuth
@@ -862,19 +561,6 @@ func (r *raceContentRoutes) aiDraftCityContent(c *gin.Context) {
 
 	if strings.TrimSpace(r.aiDraft.APIKey) == "" {
 		c.JSON(http.StatusNotImplemented, errorResponse{Error: "ai_draft_not_configured"})
-		return
-	}
-
-	// Cheap pre-check so a published/archived city refuses before we pay for a
-	// (slow) LLM call. The storage upsert re-checks atomically so a concurrent
-	// publish during generation still cannot be overwritten.
-	existing, err := r.store.GetRaceCityContent(c.Request.Context(), city)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	if existing != nil && existing.Status != storage.RaceContentStatusDraft {
-		c.JSON(http.StatusConflict, errorResponse{Error: "ai_draft_conflict"})
 		return
 	}
 
@@ -907,10 +593,6 @@ func (r *raceContentRoutes) aiDraftCityContent(c *gin.Context) {
 		Intro: out.intro(),
 	})
 	if err != nil {
-		if errors.Is(err, storage.ErrRaceContentConflict) {
-			c.JSON(http.StatusConflict, errorResponse{Error: "ai_draft_conflict"})
-			return
-		}
 		writeRaceContentError(c, r.log, err)
 		return
 	}
@@ -967,13 +649,12 @@ func raceAIDraftUserPrompt(name, raceDate, city string) string {
 // (summary + historical weather windows), keyed to the race's city and date.
 //
 //	@Summary		Generate an AI race-content climate draft
-//	@Description	Administrator only. Synchronously calls the configured OpenAI-compatible LLM with the race's name/date/city and upserts a draft content row with only climate + weather_windows filled; published/archived content is refused (409). Unconfigured deployments answer 501 ai_draft_not_configured.
+//	@Description	Administrator only. Synchronously calls the configured OpenAI-compatible LLM with the race's name/date/city and upserts climate + weather_windows on the race's content, preserving the other sections. Unconfigured deployments answer 501 ai_draft_not_configured.
 //	@Tags			admin
 //	@Param			race_id	path	int	true	"Race event id"
 //	@Success		200		{object}	raceContentResponse
 //	@Failure		400		{object}	errorResponse
 //	@Failure		404		{object}	errorResponse
-//	@Failure		409		{object}	errorResponse
 //	@Failure		501		{object}	errorResponse
 //	@Failure		502		{object}	errorResponse
 //	@Security		BearerAuth
@@ -1012,19 +693,6 @@ func (r *raceContentRoutes) aiDraftRaceContent(c *gin.Context) {
 		name = strings.TrimSpace(*event.NameCN)
 	}
 
-	// Cheap pre-check so a published/archived race refuses before we pay for a
-	// (slow) LLM call. The storage upsert re-checks atomically so a concurrent
-	// publish during generation still cannot be overwritten.
-	existing, _, err := r.store.GetRaceContentByEvent(c.Request.Context(), eventID)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	if existing != nil && existing.Status != storage.RaceContentStatusDraft {
-		c.JSON(http.StatusConflict, errorResponse{Error: "ai_draft_conflict"})
-		return
-	}
-
 	client, err := llm.NewChatCompletions(llm.Config{
 		Endpoint: r.aiDraft.Endpoint,
 		APIKey:   r.aiDraft.APIKey,
@@ -1054,10 +722,6 @@ func (r *raceContentRoutes) aiDraftRaceContent(c *gin.Context) {
 		WeatherWindows: out.WeatherWindows,
 	})
 	if err != nil {
-		if errors.Is(err, storage.ErrRaceContentConflict) {
-			c.JSON(http.StatusConflict, errorResponse{Error: "ai_draft_conflict"})
-			return
-		}
 		writeRaceContentError(c, r.log, err)
 		return
 	}
@@ -1154,18 +818,6 @@ func validateRaceContentInput(in *raceContentInput) (*storage.RaceContent, []sto
 	return row, items, nil
 }
 
-func newRaceContentVersionDTOs(rows []storage.RaceContentVersion) []raceContentVersionDTO {
-	out := make([]raceContentVersionDTO, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, raceContentVersionDTO{
-			Version:     row.Version,
-			PublishedBy: row.PublishedBy,
-			PublishedAt: row.PublishedAt,
-		})
-	}
-	return out
-}
-
 // errInvalidRaceContentInput marks a rejected request body (400 invalid_request).
 var errInvalidRaceContentInput = errors.New("api: invalid race content input")
 
@@ -1178,8 +830,6 @@ func writeRaceContentError(c *gin.Context, log *zap.Logger, err error) {
 		c.JSON(http.StatusNotFound, errorResponse{Error: "content_not_found"})
 	case errors.Is(err, storage.ErrRaceContentConflict):
 		c.JSON(http.StatusConflict, errorResponse{Error: "content_conflict"})
-	case errors.Is(err, storage.ErrInvalidRaceContent):
-		c.JSON(http.StatusNotFound, errorResponse{Error: "content_not_found"})
 	default:
 		log.Error("race content write failed", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal_error"})
