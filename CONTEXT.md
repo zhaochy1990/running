@@ -113,6 +113,10 @@ _Avoid_: pipeline success = onboarding complete、sync-status poll
 
 ## 手表数据同步
 
+**手表课表（Watch Schedule）**：
+从绑定手表平台的日历上拉取的训练课安排——包括用户在手表平台自建或第三方创建的课；经归一进入 STRIDE 后与 coach 生成的本周课表严格分离，永不写入本周课表或赛季训练计划。推送方向带 `[STRIDE]` 前缀的课不属于手表课表，拉取时跳过。v1 只收跑步课。实现设计见 `docs/adr/0036`。
+_Avoid_: 导入课表、外部课表、把手表课表混入本周课表
+
 **手表数据源**：
 STRIDE 能同步运动与健康数据的一个手表平台（如 COROS、Garmin）；每个用户绑定唯一一个数据源。代码层同义词 provider / adapter 均可使用（Go 侧契约包即命名 `internal/provider`）。
 _Avoid_: 集成、厂商
