@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 
@@ -99,6 +100,56 @@ type emptyCreds struct{}
 
 func (emptyCreds) Load(context.Context, string) (Credentials, error) { return Credentials{}, nil }
 func (emptyCreds) Save(context.Context, string, Credentials) error   { return nil }
+
+// TestPushRunWorkoutUsesCalibrationBaseline proves the push path calls the
+// wired baseline loader and stamps a real intensityPercent into the payload.
+func TestPushRunWorkoutUsesCalibrationBaseline(t *testing.T) {
+	var updateBody map[string]any
+	mux := http.NewServeMux()
+	mux.HandleFunc("/training/schedule/query", func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(w, resultSuccess, `{"id":"P","maxIdInPlan":"0","pbVersion":2}`)
+	})
+	mux.HandleFunc("/training/program/calculate", func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(w, resultSuccess, `{"planDistance":10000000,"planDuration":3600,"planTrainingLoad":45,"planSets":2,"planPitch":190}`)
+	})
+	mux.HandleFunc("/training/schedule/update", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&updateBody)
+		writeEnvelope(w, resultSuccess, `{}`)
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	factory := func(c Credentials, save CredentialSaver) *Client {
+		return NewClient(c,
+			WithBases(map[string]string{"global": srv.URL, "cn": srv.URL, "eu": srv.URL}),
+			WithHTTPClient(srv.Client()), WithRequestDelay(0), WithCredentialSaver(save))
+	}
+	lt := 300.0 // 5:00/km
+	p := New(newFakeWriter(), fakeCreds{}, WithClientFactory(factory),
+		WithBaselineLoader(func(context.Context, string) (provider.Baselines, error) {
+			return provider.Baselines{LTPaceSKM: &lt}, nil
+		}))
+
+	if _, err := p.PushRunWorkout(context.Background(), testUID, easyRun10km()); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	program := updateBody["programs"].([]any)[0].(map[string]any)
+	exercises := program["exercises"].([]any)
+	training := exercises[0].(map[string]any)
+	if training["intensityPercent"] != float64(938) {
+		t.Errorf("intensityPercent = %v, want 938 (from LT 5:00/km)", training["intensityPercent"])
+	}
+}
+
+func TestPushRunWorkoutBaselineLoaderErrorPropagates(t *testing.T) {
+	p := newTestProvider(t, workoutMux(0), newFakeWriter())
+	wantErr := errors.New("calibration db down")
+	p.baselines = func(context.Context, string) (provider.Baselines, error) { return provider.Baselines{}, wantErr }
+	_, err := p.PushRunWorkout(context.Background(), testUID, easyRun10km())
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("err = %v, want wrapped loader error", err)
+	}
+}
 
 func TestPushRunWorkoutNotLoggedIn(t *testing.T) {
 	// Credential store returns empty creds → provider.ErrAuthRequired.

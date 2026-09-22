@@ -82,7 +82,7 @@ func longRun25km() provider.RunWorkout {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestTranslateEasyRunYieldsOneTrainingSegment(t *testing.T) {
-	b, err := NormalizedToCorosRun(easyRun10km())
+	b, err := NormalizedToCorosRun(easyRun10km(), provider.Baselines{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestTranslateEasyRunYieldsOneTrainingSegment(t *testing.T) {
 }
 
 func TestTranslateIntervalsCollapsedToIntervalSegment(t *testing.T) {
-	b, err := NormalizedToCorosRun(intervals6x800())
+	b, err := NormalizedToCorosRun(intervals6x800(), provider.Baselines{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestTranslateIntervalsCollapsedToIntervalSegment(t *testing.T) {
 }
 
 func TestTranslateLongRunWorkoutTypeInferred(t *testing.T) {
-	b, err := NormalizedToCorosRun(longRun25km())
+	b, err := NormalizedToCorosRun(longRun25km(), provider.Baselines{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestTranslatePaceFormatRoundTrip(t *testing.T) {
 			}},
 		}},
 	}
-	b, err := NormalizedToCorosRun(wo)
+	b, err := NormalizedToCorosRun(wo, provider.Baselines{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestTranslateExtractsPaceFromNote(t *testing.T) {
 		Name:   "HR easy",
 		Date:   "2026-05-05",
 		Blocks: []provider.WorkoutBlock{{Repeat: 1, Steps: []provider.WorkoutStep{step}}},
-	})
+	}, provider.Baselines{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestTranslateNoPaceTargetYieldsOpenSegment(t *testing.T) {
 		Blocks: []provider.WorkoutBlock{{Repeat: 1, Steps: []provider.WorkoutStep{{
 			StepKind: provider.StepWork, Duration: provider.DurationOfTimeMin(30),
 		}}}},
-	})
+	}, provider.Baselines{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestTranslateRepeatBlockNonStandardFlattens(t *testing.T) {
 			},
 		}},
 	}
-	b, err := NormalizedToCorosRun(wo)
+	b, err := NormalizedToCorosRun(wo, provider.Baselines{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestTranslateRepeatBlockNonStandardFlattens(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func TestEasyRunPayloadShape(t *testing.T) {
-	b, err := NormalizedToCorosRun(easyRun10km())
+	b, err := NormalizedToCorosRun(easyRun10km(), provider.Baselines{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestEasyRunPayloadShape(t *testing.T) {
 }
 
 func TestIntervalPayloadGroupShape(t *testing.T) {
-	b, err := NormalizedToCorosRun(intervals6x800())
+	b, err := NormalizedToCorosRun(intervals6x800(), provider.Baselines{})
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}

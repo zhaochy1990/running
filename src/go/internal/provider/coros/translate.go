@@ -9,6 +9,9 @@
 // entry point.
 //
 // Translation rules:
+//   - Relative/zone targets (pct_*, *_zone) are resolved to absolute targets
+//     first against the injected athlete baselines (ADR 0037); a missing
+//     baseline is a hard error, never a silent default.
 //   - Single-step blocks (repeat=1) → one matching segment per step.
 //   - Multi-step blocks (repeat>1) → one COROS interval group per block.
 //     The group expects (work, recovery) or (work,) sub-steps; anything else
@@ -196,13 +199,47 @@ func inferCorosWorkoutType(w provider.RunWorkout) string {
 	return "easy"
 }
 
+// resolveWorkoutTargets returns a copy of w with every step target resolved to
+// an absolute (or open) target against the injected athlete baselines. Absolute
+// and open targets pass through unchanged. A relative or zone target whose
+// baseline is missing is a hard error (ADR 0037: baselines live in the
+// calibration domain and a default threshold is never invented).
+func resolveWorkoutTargets(w provider.RunWorkout, b provider.Baselines) (provider.RunWorkout, error) {
+	out := w
+	out.Blocks = make([]provider.WorkoutBlock, len(w.Blocks))
+	for i, block := range w.Blocks {
+		nb := block
+		nb.Steps = make([]provider.WorkoutStep, len(block.Steps))
+		for j, step := range block.Steps {
+			t, err := provider.ResolveTarget(step.Target, b)
+			if err != nil {
+				return provider.RunWorkout{}, fmt.Errorf("block %d step %d: %w", i, j, err)
+			}
+			ns := step
+			ns.Target = t
+			nb.Steps[j] = ns
+		}
+		out.Blocks[i] = nb
+	}
+	return out, nil
+}
+
 // NormalizedToCorosRun translates a normalized run workout into the COROS
-// builder (preserving segment order).
-func NormalizedToCorosRun(w provider.RunWorkout) (*RunWorkoutBuilder, error) {
+// builder (preserving segment order). Targets are resolved against b first:
+// relative/zone intensity is turned into absolute pace/HR (ADR 0037), and the
+// athlete's LT pace baseline is carried onto the builder so makeExercise emits
+// a real intensityPercent rather than the retired //5 placeholder.
+func NormalizedToCorosRun(w provider.RunWorkout, b provider.Baselines) (*RunWorkoutBuilder, error) {
 	if err := w.Validate(); err != nil {
 		return nil, err
 	}
+	resolved, err := resolveWorkoutTargets(w, b)
+	if err != nil {
+		return nil, err
+	}
+	w = resolved
 	out := NewRunWorkoutBuilder(w.Name, isoToYYYYMMDD(w.Date), inferCorosWorkoutType(w))
+	out.ltPaceSKM = b.LTPaceSKM
 	for _, block := range w.Blocks {
 		if block.Repeat > 1 {
 			emitRepeatBlock(out, block)
