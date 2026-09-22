@@ -117,7 +117,10 @@ func (p *Provider) DeleteScheduledWorkout(ctx context.Context, user, date, name 
 		if !strings.HasPrefix(programName, "[STRIDE]") {
 			continue
 		}
-		if name != "" && programName != name {
+		// Push appends HR-cap guardrails to the program name (hrCapNameSuffix),
+		// so accept those too — re-pushing a capped session must still clear its
+		// prior entry. The suffix always starts with hrCapSuffixPrefix.
+		if name != "" && programName != name && !strings.HasPrefix(programName, name+hrCapSuffixPrefix) {
 			continue
 		}
 		if _, err := client.DeleteScheduledWorkout(ctx, entity, strAny(sched.PlanID)); err != nil {

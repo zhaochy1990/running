@@ -402,3 +402,26 @@ func TestQueryExercisesProvider(t *testing.T) {
 func itoa(n int) string {
 	return strconv.Itoa(n)
 }
+
+func TestDeleteScheduledWorkoutNameFilterMatchesHRCapSuffix(t *testing.T) {
+	// Push appends HR-cap guardrails to the program name (hrCapNameSuffix); the
+	// exact-name delete filter must still recognise the base name so a re-push
+	// clears the prior entry (issue #326).
+	var deletes int
+	entities := `[{"happenDay":"20260504","idInPlan":17,"planProgramId":17,"id":"E1"}]`
+	programs := `[{"idInPlan":17,"name":"[STRIDE] Easy 10K · HR ≤167","sportType":1}]`
+	mux := deleteScheduleMux(entities, programs)
+	mux.HandleFunc("/training/schedule/update", func(w http.ResponseWriter, r *http.Request) {
+		deletes++
+		writeEnvelope(w, resultSuccess, `{}`)
+	})
+	p := newTestProvider(t, mux, newFakeWriter())
+
+	deleted, err := p.DeleteScheduledWorkout(context.Background(), testUID, "2026-05-04", "[STRIDE] Easy 10K")
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if !deleted || deletes != 1 {
+		t.Fatalf("deleted=%v deletes=%d, want true/1", deleted, deletes)
+	}
+}
