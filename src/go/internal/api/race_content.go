@@ -793,23 +793,24 @@ func (r *raceContentRoutes) rollbackCityContent(c *gin.Context) {
 }
 
 // cityAIDraftPayload is the strict JSON shape the AI draft generator must
-// return. Field names match storage.CityIntro exactly so the provider contract
-// and the storage contract stay one-to-one. (Climate moved to race level — the
-// race-content AI draft covers it.)
+// return. The four fields are deliberately FLAT (not nested under an "intro"
+// object): DeepSeek's json_object mode intermittently drops the closing brace
+// of a nested object that follows a long text member, and the flattened
+// schema removes that failure mode. The handler maps the fields onto
+// storage.CityIntro. (Climate moved to race level — the race-content AI draft
+// covers it.)
 type cityAIDraftPayload struct {
-	Intro *storage.CityIntro `json:"intro"`
+	Overview string `json:"overview"`
+	Culture  string `json:"culture"`
+	Food     string `json:"food"`
+	History  string `json:"history"`
 }
 
 // valid reports whether every intro section is present and non-empty. A
 // partial draft would silently clear a section the admin already wrote, so
 // incomplete payloads are treated as a generation failure (502), not saved.
 func (p cityAIDraftPayload) valid() bool {
-	if p.Intro == nil {
-		return false
-	}
-	for _, s := range []string{
-		p.Intro.Overview, p.Intro.Culture, p.Intro.Food, p.Intro.History,
-	} {
+	for _, s := range []string{p.Overview, p.Culture, p.Food, p.History} {
 		if strings.TrimSpace(s) == "" {
 			return false
 		}
@@ -817,12 +818,21 @@ func (p cityAIDraftPayload) valid() bool {
 	return true
 }
 
+func (p cityAIDraftPayload) intro() *storage.CityIntro {
+	return &storage.CityIntro{
+		Overview: p.Overview,
+		Culture:  p.Culture,
+		Food:     p.Food,
+		History:  p.History,
+	}
+}
+
 const cityAIDraftSystemPrompt = `你是马拉松赛事内容编辑助手，负责为中国城市撰写面向跑者的城市介绍草稿。你只能输出严格匹配以下结构的 JSON，不得输出其它字段、文字、代码块或注释，所有内容必须使用中文：
 
-{"intro":{"overview":"城市总体介绍","culture":"城市文化","food":"城市美食","history":"城市历史"}}
+{"overview":"城市总体介绍","culture":"城市文化","food":"城市美食","history":"城市历史"}
 
 要求：
-1. intro.overview / intro.culture / intro.food / intro.history 各一段中文，面向参赛跑者。
+1. overview / culture / food / history 各一段中文，面向参赛跑者。
 2. 只写文字，禁止输出任何数值型天气数据（如具体气温、湿度、降雨概率），禁止输出图片 URL。
 3. 每段内容 2-4 句话，客观、准确、有吸引力。`
 
@@ -894,7 +904,7 @@ func (r *raceContentRoutes) aiDraftCityContent(c *gin.Context) {
 
 	saved, err := r.store.UpsertRaceCityContentAIDraft(c.Request.Context(), &storage.RaceCityContent{
 		City:  city,
-		Intro: out.Intro,
+		Intro: out.intro(),
 	})
 	if err != nil {
 		if errors.Is(err, storage.ErrRaceContentConflict) {
@@ -908,12 +918,14 @@ func (r *raceContentRoutes) aiDraftCityContent(c *gin.Context) {
 }
 
 // raceAIDraftPayload is the strict JSON shape the race AI draft generator must
-// return. Field names match storage.RaceClimate / storage.RaceWeatherWindow so
-// the provider contract and the storage contract stay one-to-one. Unlike the
-// city draft, the race draft carries numeric climatology: the race's month is
-// what makes a weather window meaningful.
+// return. The summary is deliberately FLAT at the top level (not nested under
+// a "climate" object): DeepSeek's json_object mode intermittently drops the
+// closing brace of a nested object that follows a long text member, which is
+// exactly this payload's shape otherwise. The handler wraps the summary into
+// storage.RaceClimate. Unlike the city draft, the race draft carries numeric
+// climatology: the race's month is what makes a weather window meaningful.
 type raceAIDraftPayload struct {
-	Climate        *storage.RaceClimate        `json:"climate"`
+	Summary        string                      `json:"summary"`
 	WeatherWindows []storage.RaceWeatherWindow `json:"weather_windows"`
 }
 
@@ -923,7 +935,7 @@ type raceAIDraftPayload struct {
 // saved. Bounds are 2-4 windows: enough to bracket the race date, few enough
 // to stay a summary.
 func (p raceAIDraftPayload) valid() bool {
-	if p.Climate == nil || strings.TrimSpace(p.Climate.Summary) == "" {
+	if strings.TrimSpace(p.Summary) == "" {
 		return false
 	}
 	if len(p.WeatherWindows) < 2 || len(p.WeatherWindows) > 4 {
@@ -939,10 +951,10 @@ func (p raceAIDraftPayload) valid() bool {
 
 const raceAIDraftSystemPrompt = `你是马拉松赛事内容编辑助手，负责为具体一场赛事撰写面向跑者的比赛期气候草稿。你只能输出严格匹配以下结构的 JSON，不得输出其它字段、文字、代码块或注释，文字内容必须使用中文：
 
-{"climate":{"summary":"比赛期气候综述"},"weather_windows":[{"window_start":"MM-DD","window_end":"MM-DD","avg_temp_c":13.5,"temp_high_c":18,"temp_low_c":9,"rain_probability_pct":30,"humidity_pct":65,"wind":"东北风3级"}]}
+{"summary":"比赛期气候综述","weather_windows":[{"window_start":"MM-DD","window_end":"MM-DD","avg_temp_c":13.5,"temp_high_c":18,"temp_low_c":9,"rain_probability_pct":30,"humidity_pct":65,"wind":"东北风3级"}]}
 
 要求：
-1. climate.summary 一段中文（2-4 句）：结合赛事所在城市与比赛时间，描述参赛跑者应预期的气候（气温体感、降水、湿度、风、穿衣建议）。
+1. summary 一段中文（2-4 句）：结合赛事所在城市与比赛时间，描述参赛跑者应预期的气候（气温体感、降水、湿度、风、穿衣建议）。
 2. weather_windows 输出 2-4 个以比赛日期所在月份为中心的历史同期天气窗口；数值取该城市历史气候平均值（摄氏度/百分比），不确定的数值用 null。
 3. window_start / window_end 必须为 MM-DD 格式且 start 不晚于 end；wind 为简短中文自由文本。
 4. 禁止输出图片 URL。`
@@ -1038,7 +1050,7 @@ func (r *raceContentRoutes) aiDraftRaceContent(c *gin.Context) {
 	}
 
 	saved, savedItems, err := r.store.UpsertRaceContentAIDraft(c.Request.Context(), event, &storage.RaceContent{
-		Climate:        out.Climate,
+		Climate:        &storage.RaceClimate{Summary: out.Summary},
 		WeatherWindows: out.WeatherWindows,
 	})
 	if err != nil {

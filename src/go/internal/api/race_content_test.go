@@ -656,9 +656,9 @@ func TestRaceContentAdmin_CityLifecycle(t *testing.T) {
 
 const aiDraftCity = "/api/admin/cities/%E5%8E%A6%E9%97%A8%E5%B8%82/content/ai-draft" // 厦门市
 
-const aiDraftPayload = `{"intro":{"overview":"海滨城市","culture":"闽南文化","food":"沙茶面","history":"经济特区"}}`
+const aiDraftPayload = `{"overview":"海滨城市","culture":"闽南文化","food":"沙茶面","history":"经济特区"}`
 
-const raceAIDraftLLMPayload = `{"climate":{"summary":"干冷晴朗，昼夜温差大"},"weather_windows":[{"window_start":"09-20","window_end":"10-05","avg_temp_c":18.5,"temp_high_c":24,"temp_low_c":14,"rain_probability_pct":30,"humidity_pct":65,"wind":"东北风3级"},{"window_start":"10-01","window_end":"10-15","avg_temp_c":17,"temp_high_c":23,"temp_low_c":13}]}`
+const raceAIDraftLLMPayload = `{"summary":"干冷晴朗，昼夜温差大","weather_windows":[{"window_start":"09-20","window_end":"10-05","avg_temp_c":18.5,"temp_high_c":24,"temp_low_c":14,"rain_probability_pct":30,"humidity_pct":65,"wind":"东北风3级"},{"window_start":"10-01","window_end":"10-15","avg_temp_c":17,"temp_high_c":23,"temp_low_c":13}]}`
 
 // aiDraftServer starts a fake OpenAI-compatible chat-completions server.
 // content is the raw message.content string (already a JSON string when status
@@ -780,9 +780,9 @@ func TestRaceContentAdmin_AIDraftFailureDoesNotWrite(t *testing.T) {
 		content string
 	}{
 		{"provider error", http.StatusInternalServerError, ""},
-		{"invalid JSON", http.StatusOK, `{"intro":`},
-		{"missing sections", http.StatusOK, `{"intro":{"overview":"x"}}`},
-		{"unexpected field", http.StatusOK, `{"intro":{"overview":"x","culture":"y","food":"z","history":"h"},"extra":1}`},
+		{"invalid JSON", http.StatusOK, `{"overview":`},
+		{"missing sections", http.StatusOK, `{"overview":"x"}`},
+		{"unexpected field", http.StatusOK, `{"overview":"x","culture":"y","food":"z","history":"h","extra":1}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -978,10 +978,10 @@ func TestRaceContentAdmin_RaceAIDraftFailureDoesNotWrite(t *testing.T) {
 		content string
 	}{
 		{"provider error", http.StatusInternalServerError, ""},
-		{"invalid JSON", http.StatusOK, `{"climate":`},
+		{"invalid JSON", http.StatusOK, `{"summary":`},
 		{"missing summary", http.StatusOK, `{"weather_windows":[{"window_start":"09-20","window_end":"10-05"},{"window_start":"10-01","window_end":"10-15"}]}`},
-		{"too few windows", http.StatusOK, `{"climate":{"summary":"干冷"},"weather_windows":[{"window_start":"09-20","window_end":"10-05"}]}`},
-		{"bad window date", http.StatusOK, `{"climate":{"summary":"干冷"},"weather_windows":[{"window_start":"13-01","window_end":"10-05"},{"window_start":"10-01","window_end":"10-15"}]}`},
+		{"too few windows", http.StatusOK, `{"summary":"干冷","weather_windows":[{"window_start":"09-20","window_end":"10-05"}]}`},
+		{"bad window date", http.StatusOK, `{"summary":"干冷","weather_windows":[{"window_start":"13-01","window_end":"10-05"},{"window_start":"10-01","window_end":"10-15"}]}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
