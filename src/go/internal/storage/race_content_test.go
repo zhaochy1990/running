@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"testing"
 )
 
@@ -18,7 +17,7 @@ func migrateRaceContent(t *testing.T, st *Store) {
 	if err := st.AutoMigrateRaceContent(ctx); err != nil {
 		t.Fatalf("automigrate race content: %v", err)
 	}
-	for _, table := range []string{"race_content_version", "race_content_item", "race_content", "race_city_content", "race_calendar_item", "race_calendar"} {
+	for _, table := range []string{"race_content_item", "race_content", "race_city_content", "race_calendar_item", "race_calendar"} {
 		if err := st.db.WithContext(ctx).Exec("DELETE FROM " + table).Error; err != nil {
 			t.Fatalf("clear %s: %v", table, err)
 		}
@@ -39,12 +38,12 @@ func seedRaceEvent(t *testing.T, st *Store, source, name, raceDate string) uint6
 	return row.ID
 }
 
-func TestRaceCityContent_Lifecycle(t *testing.T) {
+func TestRaceCityContent_Upsert(t *testing.T) {
 	st := openTestStore(t)
 	migrateRaceContent(t, st)
 	ctx := context.Background()
 
-	// Create: a new city starts as draft.
+	// Create.
 	in := &RaceCityContent{
 		City:        "厦门市",
 		Province:    strPtr("福建省"),
@@ -54,11 +53,11 @@ func TestRaceCityContent_Lifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if got.Status != RaceContentStatusDraft || got.ID == 0 {
-		t.Fatalf("created = %+v, want a draft with an id", got)
+	if got.ID == 0 {
+		t.Fatalf("created = %+v, want an id", got)
 	}
 
-	// Update: the working state is replaced, status preserved.
+	// Update: 保存即生效 — the write replaces the live content.
 	in.Intro = &CityIntro{Overview: "海滨城市"}
 	if _, err := st.UpsertRaceCityContent(ctx, in); err != nil {
 		t.Fatalf("update: %v", err)
@@ -69,43 +68,6 @@ func TestRaceCityContent_Lifecycle(t *testing.T) {
 	}
 	if row.Intro == nil || row.Intro.Overview != "海滨城市" || len(row.Attractions) != 1 {
 		t.Fatalf("updated = %+v, want the new intro kept", row)
-	}
-
-	// Publish: mints version 1 and flips to published.
-	if _, v, err := st.PublishRaceCityContent(ctx, "厦门市", "admin-1"); err != nil || v != 1 {
-		t.Fatalf("publish = v%d err %v, want v1", v, err)
-	}
-	// Edit after publish takes effect directly (保存即生效), no version minted.
-	in.Intro = &CityIntro{Overview: "改概览"}
-	if _, err := st.UpsertRaceCityContent(ctx, in); err != nil {
-		t.Fatalf("post-publish edit: %v", err)
-	}
-	versions, err := st.ListRaceContentVersions(ctx, RaceContentVersionTypeCity, row.ID)
-	if err != nil {
-		t.Fatalf("list versions: %v", err)
-	}
-	if len(versions) != 1 || versions[0].Version != 1 || versions[0].PublishedBy != "admin-1" {
-		t.Fatalf("versions = %+v, want one v1 by admin-1", versions)
-	}
-
-	// Rollback: the intro edit is undone, published status is untouched.
-	row, err = st.RollbackRaceCityContent(ctx, "厦门市", 1)
-	if err != nil {
-		t.Fatalf("rollback: %v", err)
-	}
-	if row.Intro == nil || row.Intro.Overview != "海滨城市" {
-		t.Errorf("intro = %+v, want the v1 intro after rollback", row.Intro)
-	}
-	if row.Status != RaceContentStatusPublished {
-		t.Errorf("status = %q, want published preserved", row.Status)
-	}
-
-	// Archive: offline but never deleted.
-	if _, err := st.ArchiveRaceCityContent(ctx, "厦门市"); err != nil {
-		t.Fatalf("archive: %v", err)
-	}
-	if row, _ = st.GetRaceCityContent(ctx, "厦门市"); row == nil || row.Status != RaceContentStatusArchived {
-		t.Fatalf("archived = %+v, want an archived row", row)
 	}
 
 	// Missing city reads as nil, not an error.
@@ -119,7 +81,7 @@ func TestRaceCityContent_AIDraft(t *testing.T) {
 	migrateRaceContent(t, st)
 	ctx := context.Background()
 
-	// New city → a draft with only the intro filled.
+	// New city → a row with only the intro filled.
 	got, err := st.UpsertRaceCityContentAIDraft(ctx, &RaceCityContent{
 		City:  "厦门市",
 		Intro: &CityIntro{Overview: "海滨城市", Culture: "闽南文化", Food: "沙茶面", History: "经济特区"},
@@ -127,8 +89,8 @@ func TestRaceCityContent_AIDraft(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create draft: %v", err)
 	}
-	if got.Status != RaceContentStatusDraft || got.ID == 0 {
-		t.Fatalf("created = %+v, want a draft with an id", got)
+	if got.ID == 0 {
+		t.Fatalf("created = %+v, want an id", got)
 	}
 	if got.Province != nil || len(got.Attractions) != 0 {
 		t.Fatalf("created = %+v, want only the intro", got)
@@ -155,20 +117,9 @@ func TestRaceCityContent_AIDraft(t *testing.T) {
 	if got.Intro == nil || got.Intro.Overview != "更新概览" || got.Intro.History != "更新历史" {
 		t.Fatalf("merged = %+v, want the intro overwritten", got)
 	}
-
-	// Published content refuses an AI draft.
-	if _, _, err := st.PublishRaceCityContent(ctx, "厦门市", "admin-1"); err != nil {
-		t.Fatalf("publish: %v", err)
-	}
-	if _, err := st.UpsertRaceCityContentAIDraft(ctx, &RaceCityContent{
-		City:  "厦门市",
-		Intro: &CityIntro{Overview: "x", Culture: "x", Food: "x", History: "x"},
-	}); !errors.Is(err, ErrRaceContentConflict) {
-		t.Fatalf("published draft = %v, want ErrRaceContentConflict", err)
-	}
 }
 
-func TestRaceContent_LifecycleAndVersions(t *testing.T) {
+func TestRaceContent_UpsertAndReplace(t *testing.T) {
 	st := openTestStore(t)
 	migrateRaceContent(t, st)
 	ctx := context.Background()
@@ -182,8 +133,8 @@ func TestRaceContent_LifecycleAndVersions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if got.Status != RaceContentStatusDraft || got.Year != 2031 || got.RaceEventID == nil || *got.RaceEventID != eventID {
-		t.Fatalf("created = %+v, want a draft attached to the event", got)
+	if got.Year != 2031 || got.RaceEventID == nil || *got.RaceEventID != eventID {
+		t.Fatalf("created = %+v, want content attached to the event", got)
 	}
 	if len(gotItems) != 1 || gotItems[0].Quota == nil || *gotItems[0].Quota != 30000 {
 		t.Fatalf("items = %+v, want one quota-30000 item", gotItems)
@@ -201,38 +152,14 @@ func TestRaceContent_LifecycleAndVersions(t *testing.T) {
 		t.Fatalf("items = %+v, want 2 after replace", gotItems)
 	}
 
-	// Publish mints v1; a second publish mints v2.
-	if _, _, v, err := st.PublishRaceContent(ctx, got.ID, "admin-1"); err != nil || v != 1 {
-		t.Fatalf("publish = v%d err %v, want v1", v, err)
-	}
+	// A later edit lands on the same row (no draft copy, no version minted).
 	in.PartitionRule = &RacePartitionRule{Mode: "by_item", Description: "分项出发"}
-	if _, _, err = st.UpsertRaceContent(ctx, event, in, items); err != nil {
+	got, gotItems, err = st.UpsertRaceContent(ctx, event, in, items)
+	if err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	if _, _, v, err := st.PublishRaceContent(ctx, got.ID, "admin-2"); err != nil || v != 2 {
-		t.Fatalf("publish = v%d err %v, want v2", v, err)
-	}
-
-	// Rollback to v1 removes the post-v1 partition rule edit but keeps the two
-	// items (they were already in the v1 snapshot).
-	row, rolled, err := st.RollbackRaceContent(ctx, got.ID, 1)
-	if err != nil {
-		t.Fatalf("rollback: %v", err)
-	}
-	if row.PartitionRule != nil {
-		t.Errorf("partition_rule = %+v, want nil after rollback", row.PartitionRule)
-	}
-	if len(rolled) != 2 {
-		t.Fatalf("items = %+v, want the two v1 items", rolled)
-	}
-
-	// Version history: two entries, newest first, no snapshot bodies shipped.
-	versions, err := st.ListRaceContentVersions(ctx, RaceContentVersionTypeRace, got.ID)
-	if err != nil {
-		t.Fatalf("list versions: %v", err)
-	}
-	if len(versions) != 2 || versions[0].Version != 2 || versions[0].Snapshot != "" {
-		t.Fatalf("versions = %+v, want two meta rows newest first", versions)
+	if got.PartitionRule == nil || got.PartitionRule.Mode != "by_item" || len(gotItems) != 2 {
+		t.Fatalf("edited = %+v items %+v, want the partition rule and both items", got, gotItems)
 	}
 }
 
@@ -399,8 +326,8 @@ func TestRaceContent_AttachConflicts(t *testing.T) {
 }
 
 // TestRaceContent_ClimateRoundTrip covers the race-level climate sections
-// (moved from city level): a full-replace write keeps summary + windows, an
-// absent section clears them, and publish/rollback restores both.
+// (moved from city level): a full-replace write keeps summary + windows and an
+// absent section clears them.
 func TestRaceContent_ClimateRoundTrip(t *testing.T) {
 	st := openTestStore(t)
 	migrateRaceContent(t, st)
@@ -438,10 +365,7 @@ func TestRaceContent_ClimateRoundTrip(t *testing.T) {
 		t.Fatalf("items = %+v, want one", gotItems)
 	}
 
-	// Publish mints v1; the next write clears the absent climate sections.
-	if _, _, _, err := st.PublishRaceContent(ctx, got.ID, "admin-1"); err != nil {
-		t.Fatalf("publish: %v", err)
-	}
+	// The next write clears the absent climate sections (full replace).
 	if _, _, err := st.UpsertRaceContent(ctx, event, &RaceContent{}, nil); err != nil {
 		t.Fatalf("clear edit: %v", err)
 	}
@@ -452,27 +376,11 @@ func TestRaceContent_ClimateRoundTrip(t *testing.T) {
 	if cleared.Climate != nil || len(cleared.WeatherWindows) != 0 {
 		t.Fatalf("cleared = %+v, want climate sections emptied", cleared)
 	}
-
-	// Rollback to v1 restores summary + windows (and the v1 item).
-	row, rolled, err := st.RollbackRaceContent(ctx, got.ID, 1)
-	if err != nil {
-		t.Fatalf("rollback: %v", err)
-	}
-	if row.Climate == nil || row.Climate.Summary != "干冷晴朗，昼夜温差大" || len(row.WeatherWindows) != 1 {
-		t.Fatalf("rolled = %+v, want climate restored", row)
-	}
-	if row.WeatherWindows[0].WindowStart != "12-25" || row.WeatherWindows[0].WindowEnd != "01-10" {
-		t.Fatalf("rolled window = %+v, want 12-25..01-10", row.WeatherWindows)
-	}
-	if len(rolled) != 1 || rolled[0].ItemName != "全程马拉松" {
-		t.Fatalf("rolled items = %+v, want the v1 item", rolled)
-	}
 }
 
 // TestRaceContent_AIDraft covers the race AI-draft upsert: a never-maintained
-// race gets a fresh draft row with only climate + weather windows, an existing
-// draft merges without touching other sections or items, and published content
-// refuses the draft.
+// race gets a fresh row with only climate + weather windows, and an existing
+// row merges without touching other sections or items.
 func TestRaceContent_AIDraft(t *testing.T) {
 	st := openTestStore(t)
 	migrateRaceContent(t, st)
@@ -480,8 +388,8 @@ func TestRaceContent_AIDraft(t *testing.T) {
 	eventID := seedRaceEvent(t, st, "中国田协", "新赛马拉松", "2031-04-11")
 	event := &RaceCalendarEvent{ID: eventID, Source: "中国田协", Name: "新赛马拉松", RaceDate: "2031-04-11"}
 
-	// Never-maintained race → a new draft row with the event's business key and
-	// only the AI sections populated.
+	// Never-maintained race → a new row with the event's business key and only
+	// the AI sections populated.
 	got, gotItems, err := st.UpsertRaceContentAIDraft(ctx, event, &RaceContent{
 		Climate:        &RaceClimate{Summary: "温润多雨"},
 		WeatherWindows: []RaceWeatherWindow{{WindowStart: "04-01", WindowEnd: "04-20"}},
@@ -489,10 +397,10 @@ func TestRaceContent_AIDraft(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create draft: %v", err)
 	}
-	if got.Status != RaceContentStatusDraft || got.ID == 0 || got.Year != 2031 ||
+	if got.ID == 0 || got.Year != 2031 ||
 		got.RaceEventID == nil || *got.RaceEventID != eventID ||
 		got.Source != "中国田协" || got.RaceName != "新赛马拉松" || got.RaceDate != "2031-04-11" {
-		t.Fatalf("created = %+v, want a draft keyed to the event", got)
+		t.Fatalf("created = %+v, want a row keyed to the event", got)
 	}
 	if got.Climate == nil || got.Climate.Summary != "温润多雨" || len(got.WeatherWindows) != 1 {
 		t.Fatalf("created = %+v, want the AI sections filled", got)
@@ -501,7 +409,7 @@ func TestRaceContent_AIDraft(t *testing.T) {
 		t.Fatalf("created = %+v items %+v, want everything else empty", got, gotItems)
 	}
 
-	// An existing draft merges only climate + weather windows: the admin's
+	// An existing row merges only climate + weather windows: the admin's
 	// sections and items survive untouched.
 	if _, _, err := st.UpsertRaceContent(ctx, event, &RaceContent{
 		PartitionRule: &RacePartitionRule{Mode: "mixed"},
@@ -523,13 +431,5 @@ func TestRaceContent_AIDraft(t *testing.T) {
 	}
 	if len(gotItems) != 1 || gotItems[0].ItemName != "全程马拉松" || gotItems[0].Quota == nil || *gotItems[0].Quota != 30000 {
 		t.Fatalf("merged items = %+v, want the seeded item untouched", gotItems)
-	}
-
-	// Published content refuses an AI draft.
-	if _, _, _, err := st.PublishRaceContent(ctx, got.ID, "admin-1"); err != nil {
-		t.Fatalf("publish: %v", err)
-	}
-	if _, _, err := st.UpsertRaceContentAIDraft(ctx, event, &RaceContent{Climate: &RaceClimate{Summary: "x"}}); !errors.Is(err, ErrRaceContentConflict) {
-		t.Fatalf("published draft = %v, want ErrRaceContentConflict", err)
 	}
 }

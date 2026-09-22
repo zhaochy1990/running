@@ -2,15 +2,10 @@ package storage
 
 import "time"
 
-// Race content lifecycle. Admin-maintained race/city content is the same
-// three-state lifecycle as the rest of the admin surfaces: draft (being worked
-// on), published (visible to future runner/coach consumers) and archived
-// (deliberately taken offline, never deleted — history stays on disk).
-const (
-	RaceContentStatusDraft     = "draft"
-	RaceContentStatusPublished = "published"
-	RaceContentStatusArchived  = "archived"
-)
+// Race content is admin-maintained with NO lifecycle: an admin edit is the
+// content (save = live). There is no draft/published gate and no version
+// history — the feature never shipped with consumers of either, and the
+// overhead was dropped before launch.
 
 // RaceContent is the admin-maintained structured content of ONE race event
 // (issue #318 赛事级内容). It is a content asset, not a calendar mirror row: the
@@ -45,8 +40,6 @@ type RaceContent struct {
 	// Year is derived from RaceDate at write time (the calendar year of the
 	// event) so the dashboard can group/filter without string slicing.
 	Year int `gorm:"column:year;not null;index:idx_race_content_year"`
-
-	Status string `gorm:"column:status;size:16;not null;default:draft"`
 
 	PartitionRule  *RacePartitionRule  `gorm:"column:partition_rule;type:json;serializer:json"`
 	SignupTimeline *RaceSignupTimeline `gorm:"column:signup_timeline;type:json;serializer:json"`
@@ -229,8 +222,6 @@ type RaceCityContent struct {
 	City     string  `gorm:"column:city;size:64;not null;uniqueIndex:uidx_race_city_content_city"`
 	Province *string `gorm:"column:province;size:64"`
 
-	Status string `gorm:"column:status;size:16;not null;default:draft"`
-
 	// Intro is the four rich-text columns of the city introduction (user story
 	// 4): 风土人情/吃喝/历史/特色景点总览.
 	Intro       *CityIntro       `gorm:"column:intro;type:json;serializer:json"`
@@ -258,47 +249,4 @@ type CityAttraction struct {
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
 	ImageURL    *string `json:"image_url"`
-}
-
-// RaceContentVersion is one immutable publish snapshot of a content aggregate
-// (user stories 26-29), modeled on legal_documents: one row = one published
-// version, allocated max(version)+1 per (content_type, content_id), published
-// rows never edited. ContentType is "race" (snapshot includes the items) or
-// "city"; ContentID is RaceContent.ID or RaceCityContent.ID respectively.
-//
-// Snapshot is the JSON of the aggregate at publish time (race: content fields +
-// items; city: content fields). Rollback copies a snapshot back into the live
-// tables as the new working state — it does NOT rewrite history.
-type RaceContentVersion struct {
-	ID          uint64    `gorm:"column:id;primaryKey;autoIncrement"`
-	ContentType string    `gorm:"column:content_type;size:16;not null;uniqueIndex:uidx_race_content_version,priority:1"`
-	ContentID   uint64    `gorm:"column:content_id;not null;uniqueIndex:uidx_race_content_version,priority:2"`
-	Version     int       `gorm:"column:version;not null;uniqueIndex:uidx_race_content_version,priority:3;index:idx_race_content_version_key,priority:3"`
-	Snapshot    string    `gorm:"column:snapshot;type:mediumtext;not null"`
-	PublishedBy string    `gorm:"column:published_by;size:64;not null"`
-	PublishedAt time.Time `gorm:"column:published_at"`
-	CreatedAt   time.Time `gorm:"column:created_at"`
-	UpdatedAt   time.Time `gorm:"column:updated_at"`
-}
-
-// TableName pins the table name (GORM would otherwise pluralize).
-func (RaceContentVersion) TableName() string { return "race_content_version" }
-
-// Race content version content types (RaceContentVersion.ContentType).
-const (
-	RaceContentVersionTypeRace = "race"
-	RaceContentVersionTypeCity = "city"
-)
-
-// IsRaceContentVersionType reports whether t is a known version content type.
-func IsRaceContentVersionType(t string) bool {
-	return t == RaceContentVersionTypeRace || t == RaceContentVersionTypeCity
-}
-
-// raceContentSnapshot is the JSON stored in RaceContentVersion.Snapshot for a
-// race aggregate: the content fields plus every item, so a rollback restores
-// the whole per-race state.
-type raceContentSnapshot struct {
-	Content RaceContent       `json:"content"`
-	Items   []RaceContentItem `json:"items"`
 }

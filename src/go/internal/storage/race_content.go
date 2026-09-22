@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -20,22 +19,20 @@ var (
 	// target race event already has content, or the business key collides with
 	// another content row.
 	ErrRaceContentConflict = errors.New("storage: race content conflict")
-	// ErrInvalidRaceContent means the requested content type or version is
-	// unusable (unknown content type, version not found).
-	ErrInvalidRaceContent = errors.New("storage: invalid race content request")
 )
 
 // AutoMigrateRaceContent creates or reconciles the race-content schema: the
-// race-level and item-level content tables, the city content table and the
-// shared publish-version table. Climate and weather windows moved from city
-// level to race level (race-period climatology, not season-agnostic city
-// notes) — the city columns are dropped outright; AutoMigrate adds the two new
-// race_content columns.
+// race-level and item-level content tables plus the city content table.
+// Reconciliations beyond AutoMigrate's add-only capability, applied in order:
+// climate and weather windows moved from city level to race level (their city
+// columns are dropped), and the draft/published lifecycle with its version
+// history was removed entirely (save = live, no snapshots) — the status
+// columns and the version table are dropped.
 func (s *Store) AutoMigrateRaceContent(ctx context.Context) error {
 	db := s.db.WithContext(ctx)
 	m := db.Migrator()
 	if m.HasTable(&RaceCityContent{}) {
-		for _, col := range []string{"climate", "weather_windows"} {
+		for _, col := range []string{"climate", "weather_windows", "status"} {
 			if !m.HasColumn(&RaceCityContent{}, col) {
 				continue
 			}
@@ -44,7 +41,19 @@ func (s *Store) AutoMigrateRaceContent(ctx context.Context) error {
 			}
 		}
 	}
-	for _, model := range []any{&RaceContent{}, &RaceContentItem{}, &RaceCityContent{}, &RaceContentVersion{}} {
+	if m.HasTable(&RaceContent{}) && m.HasColumn(&RaceContent{}, "status") {
+		if err := m.DropColumn(&RaceContent{}, "status"); err != nil {
+			return fmt.Errorf("storage: drop race_content.status: %w", err)
+		}
+	}
+	// The type is gone from the model layer; the table name is all that is
+	// left to clean up.
+	if m.HasTable("race_content_version") {
+		if err := m.DropTable("race_content_version"); err != nil {
+			return fmt.Errorf("storage: drop race_content_version: %w", err)
+		}
+	}
+	for _, model := range []any{&RaceContent{}, &RaceContentItem{}, &RaceCityContent{}} {
 		if err := db.AutoMigrate(model); err != nil {
 			return fmt.Errorf("storage: automigrate %T: %w", model, err)
 		}
@@ -67,9 +76,8 @@ func (s *Store) GetRaceCityContent(ctx context.Context, city string) (*RaceCityC
 }
 
 // UpsertRaceCityContent creates or replaces the working state of a city's
-// content. An existing row keeps its lifecycle status (direct edits to
-// published content take effect immediately) and its identity; a new row starts
-// as draft. Status and City on the incoming row are ignored.
+// content — the save IS the content (no lifecycle). City on the incoming row
+// is the identity; everything admin-writable is overwritten.
 func (s *Store) UpsertRaceCityContent(ctx context.Context, in *RaceCityContent) (*RaceCityContent, error) {
 	var saved *RaceCityContent
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -80,7 +88,6 @@ func (s *Store) UpsertRaceCityContent(ctx context.Context, in *RaceCityContent) 
 			now := nowUTC()
 			created := *in
 			created.ID = 0
-			created.Status = RaceContentStatusDraft
 			created.CreatedAt, created.UpdatedAt = now, now
 			if err := tx.Create(&created).Error; err != nil {
 				if isDuplicateKey(err) {
@@ -111,10 +118,8 @@ func (s *Store) UpsertRaceCityContent(ctx context.Context, in *RaceCityContent) 
 
 // UpsertRaceCityContentAIDraft merges an AI-generated intro into a city's
 // working content without touching the other sections (province, attractions).
-// It is draft-only: a published or archived row is rejected with
-// ErrRaceContentConflict so a live city can never be silently overwritten by a
-// generated draft. A new row starts as draft with only the intro populated.
-// (Climate moved to race level — the race-content AI draft covers it.)
+// There is no lifecycle, so the merge always applies. (Climate moved to race
+// level — the race-content AI draft covers it.)
 func (s *Store) UpsertRaceCityContentAIDraft(ctx context.Context, in *RaceCityContent) (*RaceCityContent, error) {
 	var saved *RaceCityContent
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -125,7 +130,6 @@ func (s *Store) UpsertRaceCityContentAIDraft(ctx context.Context, in *RaceCityCo
 			now := nowUTC()
 			created := *in
 			created.ID = 0
-			created.Status = RaceContentStatusDraft
 			// Only the intro is AI-generated; everything else is deliberately
 			// left empty for the admin to fill in later.
 			created.Province = nil
@@ -142,105 +146,12 @@ func (s *Store) UpsertRaceCityContentAIDraft(ctx context.Context, in *RaceCityCo
 		case err != nil:
 			return fmt.Errorf("storage: lock race city content: %w", err)
 		}
-		if row.Status != RaceContentStatusDraft {
-			return ErrRaceContentConflict
-		}
 		row.Intro = in.Intro
 		row.UpdatedAt = nowUTC()
 		if err := tx.Save(&row).Error; err != nil {
 			return fmt.Errorf("storage: update race city content draft: %w", err)
 		}
 		saved = &row
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return saved, nil
-}
-
-// PublishRaceCityContent snapshots the city's current content as the next
-// version and flips it to published. The snapshot is immutable; repeated
-// publishes mint one version each.
-func (s *Store) PublishRaceCityContent(ctx context.Context, city, publishedBy string) (*RaceCityContent, int, error) {
-	var saved *RaceCityContent
-	version := 0
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		row, err := lockRaceCityContent(tx, city)
-		if err != nil {
-			return err
-		}
-		next, err := insertRaceContentVersion(tx, RaceContentVersionTypeCity, row.ID, row, publishedBy)
-		if err != nil {
-			return err
-		}
-		version = next
-		now := nowUTC()
-		if err := tx.Model(&RaceCityContent{}).Where("id = ?", row.ID).Updates(map[string]any{
-			"status":     RaceContentStatusPublished,
-			"updated_at": now,
-		}).Error; err != nil {
-			return fmt.Errorf("storage: publish race city content: %w", err)
-		}
-		row.Status = RaceContentStatusPublished
-		row.UpdatedAt = now
-		saved = row
-		return nil
-	})
-	if err != nil {
-		return nil, 0, err
-	}
-	return saved, version, nil
-}
-
-// ArchiveRaceCityContent takes a city's content offline without deleting it.
-func (s *Store) ArchiveRaceCityContent(ctx context.Context, city string) (*RaceCityContent, error) {
-	var saved *RaceCityContent
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		row, err := lockRaceCityContent(tx, city)
-		if err != nil {
-			return err
-		}
-		if err := tx.Model(&RaceCityContent{}).Where("id = ?", row.ID).Updates(map[string]any{
-			"status":     RaceContentStatusArchived,
-			"updated_at": nowUTC(),
-		}).Error; err != nil {
-			return fmt.Errorf("storage: archive race city content: %w", err)
-		}
-		row.Status = RaceContentStatusArchived
-		saved = row
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return saved, nil
-}
-
-// RollbackRaceCityContent copies version's snapshot back into the city's
-// working state. The lifecycle status is untouched (rollback restores content,
-// not the publish state). Version rows are never rewritten.
-func (s *Store) RollbackRaceCityContent(ctx context.Context, city string, version int) (*RaceCityContent, error) {
-	var saved *RaceCityContent
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		row, err := lockRaceCityContent(tx, city)
-		if err != nil {
-			return err
-		}
-		snap, err := loadRaceContentVersion(tx, RaceContentVersionTypeCity, row.ID, version)
-		if err != nil {
-			return err
-		}
-		var snapshot RaceCityContent
-		if err := json.Unmarshal([]byte(snap.Snapshot), &snapshot); err != nil {
-			return fmt.Errorf("storage: unmarshal city snapshot: %w", err)
-		}
-		applyRaceCityContentUpdate(row, &snapshot)
-		row.UpdatedAt = nowUTC()
-		if err := tx.Save(row).Error; err != nil {
-			return fmt.Errorf("storage: rollback race city content: %w", err)
-		}
-		saved = row
 		return nil
 	})
 	if err != nil {
@@ -284,11 +195,11 @@ func (s *Store) GetRaceContentByEvent(ctx context.Context, eventID uint64) (*Rac
 }
 
 // UpsertRaceContent creates or replaces the working state of a race's content
-// and its items, attaching it to event. Resolution mirrors
-// GetRaceContentByEvent (live link, then business-key snapshot), so editing a
-// re-inserted race re-attaches the surviving content instead of duplicating it.
-// Items are fully replaced (delete + insert by item_name). The lifecycle status
-// of an existing row is preserved; a new row starts as draft.
+// and its items, attaching it to event — the save IS the content (no
+// lifecycle). Resolution mirrors GetRaceContentByEvent (live link, then
+// business-key snapshot), so editing a re-inserted race re-attaches the
+// surviving content instead of duplicating it. Items are fully replaced
+// (delete + insert by item_name).
 func (s *Store) UpsertRaceContent(ctx context.Context, event *RaceCalendarEvent, in *RaceContent, items []RaceContentItem) (*RaceContent, []RaceContentItem, error) {
 	var saved *RaceContent
 	var savedItems []RaceContentItem
@@ -321,7 +232,6 @@ func (s *Store) UpsertRaceContent(ctx context.Context, event *RaceCalendarEvent,
 				RaceName:    event.Name,
 				RaceDate:    event.RaceDate,
 				Year:        raceContentYear(event.RaceDate),
-				Status:      RaceContentStatusDraft,
 				CreatedAt:   now,
 			}
 			applyRaceContentUpdate(&row, in)
@@ -362,12 +272,11 @@ func (s *Store) UpsertRaceContent(ctx context.Context, event *RaceCalendarEvent,
 }
 
 // UpsertRaceContentAIDraft merges an AI-generated race-period climate into a
-// race's working content without touching the other sections or the items. It
-// is draft-only: a published or archived row is rejected with
-// ErrRaceContentConflict so live content can never be silently overwritten by
-// a generated draft. A race with no content yet gets a new draft row attached
-// to the event with only the AI sections populated. Identity resolution
-// mirrors UpsertRaceContent (live link, then business-key snapshot).
+// race's working content without touching the other sections or the items.
+// There is no lifecycle, so the merge always applies. A race with no content
+// yet gets a new row attached to the event with only the AI sections
+// populated. Identity resolution mirrors UpsertRaceContent (live link, then
+// business-key snapshot).
 func (s *Store) UpsertRaceContentAIDraft(ctx context.Context, event *RaceCalendarEvent, in *RaceContent) (*RaceContent, []RaceContentItem, error) {
 	var saved *RaceContent
 	var savedItems []RaceContentItem
@@ -400,7 +309,6 @@ func (s *Store) UpsertRaceContentAIDraft(ctx context.Context, event *RaceCalenda
 				RaceName:    event.Name,
 				RaceDate:    event.RaceDate,
 				Year:        raceContentYear(event.RaceDate),
-				Status:      RaceContentStatusDraft,
 				// Only climate + weather windows are AI-generated; every other
 				// section is deliberately left empty for the admin to fill in.
 				Climate:        in.Climate,
@@ -417,9 +325,6 @@ func (s *Store) UpsertRaceContentAIDraft(ctx context.Context, event *RaceCalenda
 		case err != nil:
 			return fmt.Errorf("storage: lock race content: %w", err)
 		default:
-			if row.Status != RaceContentStatusDraft {
-				return ErrRaceContentConflict
-			}
 			row.Climate = in.Climate
 			row.WeatherWindows = in.WeatherWindows
 			// Re-attach while we are here, same as UpsertRaceContent: the
@@ -517,131 +422,8 @@ func (s *Store) ListOrphanRaceContent(ctx context.Context) ([]RaceContent, error
 	return rows, nil
 }
 
-// PublishRaceContent snapshots the race's current content (including items) as
-// the next version and flips it to published.
-func (s *Store) PublishRaceContent(ctx context.Context, contentID uint64, publishedBy string) (*RaceContent, []RaceContentItem, int, error) {
-	var saved *RaceContent
-	var savedItems []RaceContentItem
-	version := 0
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		row, err := lockRaceContent(tx, contentID)
-		if err != nil {
-			return err
-		}
-		items, err := listRaceContentItemsTx(tx, row.ID)
-		if err != nil {
-			return err
-		}
-		snapshot := raceContentSnapshot{Content: *row, Items: items}
-		next, err := insertRaceContentVersion(tx, RaceContentVersionTypeRace, row.ID, snapshot, publishedBy)
-		if err != nil {
-			return err
-		}
-		version = next
-		now := nowUTC()
-		if err := tx.Model(&RaceContent{}).Where("id = ?", row.ID).Updates(map[string]any{
-			"status":     RaceContentStatusPublished,
-			"updated_at": now,
-		}).Error; err != nil {
-			return fmt.Errorf("storage: publish race content: %w", err)
-		}
-		row.Status = RaceContentStatusPublished
-		row.UpdatedAt = now
-		saved = row
-		savedItems = items
-		return nil
-	})
-	if err != nil {
-		return nil, nil, 0, err
-	}
-	return saved, savedItems, version, nil
-}
-
-// ArchiveRaceContent takes a race's content offline without deleting it.
-func (s *Store) ArchiveRaceContent(ctx context.Context, contentID uint64) (*RaceContent, []RaceContentItem, error) {
-	var saved *RaceContent
-	var savedItems []RaceContentItem
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		row, err := lockRaceContent(tx, contentID)
-		if err != nil {
-			return err
-		}
-		if err := tx.Model(&RaceContent{}).Where("id = ?", row.ID).Updates(map[string]any{
-			"status":     RaceContentStatusArchived,
-			"updated_at": nowUTC(),
-		}).Error; err != nil {
-			return fmt.Errorf("storage: archive race content: %w", err)
-		}
-		row.Status = RaceContentStatusArchived
-		items, err := listRaceContentItemsTx(tx, row.ID)
-		if err != nil {
-			return err
-		}
-		saved = row
-		savedItems = items
-		return nil
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return saved, savedItems, nil
-}
-
-// ListRaceContentVersions returns the publish history of a content aggregate,
-// newest first, without the snapshot bodies.
-func (s *Store) ListRaceContentVersions(ctx context.Context, contentType string, contentID uint64) ([]RaceContentVersion, error) {
-	var rows []RaceContentVersion
-	err := s.db.WithContext(ctx).
-		Select("id, content_type, content_id, version, published_by, published_at, created_at, updated_at").
-		Where("content_type = ? AND content_id = ?", contentType, contentID).
-		Order("version DESC").
-		Find(&rows).Error
-	if err != nil {
-		return nil, fmt.Errorf("storage: list race content versions: %w", err)
-	}
-	return rows, nil
-}
-
-// RollbackRaceContent copies version's snapshot back into the race's working
-// state (content fields + items). The lifecycle status and the current
-// event link are untouched — rollback restores content, not identity.
-func (s *Store) RollbackRaceContent(ctx context.Context, contentID uint64, version int) (*RaceContent, []RaceContentItem, error) {
-	var saved *RaceContent
-	var savedItems []RaceContentItem
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		row, err := lockRaceContent(tx, contentID)
-		if err != nil {
-			return err
-		}
-		snap, err := loadRaceContentVersion(tx, RaceContentVersionTypeRace, row.ID, version)
-		if err != nil {
-			return err
-		}
-		var snapshot raceContentSnapshot
-		if err := json.Unmarshal([]byte(snap.Snapshot), &snapshot); err != nil {
-			return fmt.Errorf("storage: unmarshal race snapshot: %w", err)
-		}
-		applyRaceContentUpdate(row, &snapshot.Content)
-		row.UpdatedAt = nowUTC()
-		if err := tx.Save(row).Error; err != nil {
-			return fmt.Errorf("storage: rollback race content: %w", err)
-		}
-		items, err := replaceRaceContentItems(tx, row.ID, snapshot.Items)
-		if err != nil {
-			return err
-		}
-		saved = row
-		savedItems = items
-		return nil
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return saved, savedItems, nil
-}
-
 // applyRaceContentUpdate copies the admin-writable content fields from in onto
-// row, leaving identity (id, business key, link) and lifecycle status alone.
+// row, leaving identity (id, business key, link) alone.
 func applyRaceContentUpdate(row *RaceContent, in *RaceContent) {
 	row.PartitionRule = in.PartitionRule
 	row.SignupTimeline = in.SignupTimeline
@@ -704,75 +486,6 @@ func listRaceContentItemsTx(tx *gorm.DB, contentID uint64) ([]RaceContentItem, e
 		return nil, fmt.Errorf("storage: list race content items: %w", err)
 	}
 	return rows, nil
-}
-
-func lockRaceContent(tx *gorm.DB, id uint64) (*RaceContent, error) {
-	var row RaceContent
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrRaceContentNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("storage: lock race content: %w", err)
-	}
-	return &row, nil
-}
-
-func lockRaceCityContent(tx *gorm.DB, city string) (*RaceCityContent, error) {
-	var row RaceCityContent
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("city = ?", city).First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrRaceContentNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("storage: lock race city content: %w", err)
-	}
-	return &row, nil
-}
-
-// insertRaceContentVersion marshals payload as the next immutable version of
-// (contentType, contentID) and returns the allocated version number.
-func insertRaceContentVersion(tx *gorm.DB, contentType string, contentID uint64, payload any, publishedBy string) (int, error) {
-	var latest RaceContentVersion
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("content_type = ? AND content_id = ?", contentType, contentID).
-		Order("version DESC").First(&latest).Error
-	next := 1
-	if err == nil {
-		next = latest.Version + 1
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return 0, fmt.Errorf("storage: lock race content version: %w", err)
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return 0, fmt.Errorf("storage: marshal race content snapshot: %w", err)
-	}
-	now := nowUTC()
-	row := RaceContentVersion{
-		ContentType: contentType, ContentID: contentID, Version: next,
-		Snapshot: string(body), PublishedBy: publishedBy,
-		PublishedAt: now, CreatedAt: now, UpdatedAt: now,
-	}
-	if err := tx.Create(&row).Error; err != nil {
-		return 0, fmt.Errorf("storage: create race content version: %w", err)
-	}
-	return next, nil
-}
-
-// loadRaceContentVersion reads one version row FOR UPDATE, mapping a missing
-// row to ErrInvalidRaceContent (the API surfaces it as 404).
-func loadRaceContentVersion(tx *gorm.DB, contentType string, contentID uint64, version int) (*RaceContentVersion, error) {
-	var row RaceContentVersion
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("content_type = ? AND content_id = ? AND version = ?", contentType, contentID, version).
-		First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("%w: version %d not found", ErrInvalidRaceContent, version)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("storage: load race content version: %w", err)
-	}
-	return &row, nil
 }
 
 // raceContentYear extracts the calendar year from a race_date ("2006-01-02").
