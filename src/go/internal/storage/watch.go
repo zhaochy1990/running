@@ -26,6 +26,7 @@ type Writer interface {
 	UpsertDashboardPreservingNil(ctx context.Context, d *Dashboard) error
 	UpsertDailyHRV(ctx context.Context, h *DailyHRV) error
 	UpsertRacePrediction(ctx context.Context, p *RacePrediction) error
+	UpsertWatchSchedules(ctx context.Context, userID string, rows []WatchSchedule) error
 	SetMeta(ctx context.Context, userID, key, value string) error
 	GetMeta(ctx context.Context, userID, key string) (value string, ok bool, err error)
 }

@@ -296,6 +296,6 @@ func watchModels() []any {
 	return []any{
 		&Activity{}, &Lap{}, &TimeseriesPoint{}, &ActivityWatchZone{},
 		&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{},
-		&SyncMeta{}, &ProviderCredential{},
+		&SyncMeta{}, &ProviderCredential{}, &WatchSchedule{},
 	}
 }
