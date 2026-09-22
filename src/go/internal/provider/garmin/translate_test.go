@@ -234,3 +234,63 @@ func TestGarminPaceUnitsAreMetersPerSecond(t *testing.T) {
 		t.Errorf("pace values = %v/%v, want 1000/245 / 1000/240", vOne, vTwo)
 	}
 }
+
+func TestGarminHrCapAppendedToStepDescription(t *testing.T) {
+	cap := 167
+	low, _ := provider.ParsePaceSKM("4:10")
+	high, _ := provider.ParsePaceSKM("4:05")
+	w := provider.RunWorkout{
+		Schema: provider.RunWorkoutSchema,
+		Name:   "[STRIDE] 4x3K",
+		Date:   "2026-05-08",
+		Blocks: []provider.WorkoutBlock{{Repeat: 1, Steps: []provider.WorkoutStep{{
+			StepKind: provider.StepWork,
+			Duration: provider.DurationOfDistanceKM(3),
+			Target:   provider.PaceRangeSKM(float64(low), float64(high)),
+			HRCapBPM: &cap,
+		}}}},
+	}
+	s := garminSteps(t, garminPayload(t, w))[0]
+	if s["description"] != "HR ≤167" {
+		t.Errorf("description = %v, want %q", s["description"], "HR ≤167")
+	}
+}
+
+func TestGarminHrCapJoinsNote(t *testing.T) {
+	note := "配速参考 6:00-6:30/km"
+	cap := 160
+	w := provider.RunWorkout{
+		Schema: provider.RunWorkoutSchema,
+		Name:   "[STRIDE] HR easy",
+		Date:   "2026-05-09",
+		Blocks: []provider.WorkoutBlock{{Repeat: 1, Steps: []provider.WorkoutStep{{
+			StepKind: provider.StepWork,
+			Duration: provider.DurationOfTimeMin(40),
+			Target:   provider.HRRangeBPM(130, 148),
+			Note:     &note,
+			HRCapBPM: &cap,
+		}}}},
+	}
+	s := garminSteps(t, garminPayload(t, w))[0]
+	if want := "配速参考 6:00-6:30/km HR ≤160"; s["description"] != want {
+		t.Errorf("description = %v, want %q", s["description"], want)
+	}
+}
+
+func TestGarminNoteUnchangedWithoutHrCap(t *testing.T) {
+	note := "steady effort"
+	w := provider.RunWorkout{
+		Schema: provider.RunWorkoutSchema,
+		Name:   "[STRIDE] easy",
+		Date:   "2026-05-10",
+		Blocks: []provider.WorkoutBlock{{Repeat: 1, Steps: []provider.WorkoutStep{{
+			StepKind: provider.StepWork,
+			Duration: provider.DurationOfDistanceKM(8),
+			Note:     &note,
+		}}}},
+	}
+	s := garminSteps(t, garminPayload(t, w))[0]
+	if s["description"] != "steady effort" {
+		t.Errorf("description = %v, want %q", s["description"], "steady effort")
+	}
+}

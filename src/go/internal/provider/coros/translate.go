@@ -24,6 +24,9 @@
 //     Final fallback: segment runs without a pace target on the watch.
 //   - Duration: DISTANCE_M → distance_km, TIME_S → duration_min, OPEN → 5 min
 //     default for warmup/cooldown, 30 min for training.
+//   - HR ceilings (step.hr_cap_bpm) have no native COROS slot; they are folded
+//     into the program name as free text so they stay visible on the watch
+//     instead of being silently dropped (issue #326).
 package coros
 
 import (
@@ -224,6 +227,43 @@ func resolveWorkoutTargets(w provider.RunWorkout, b provider.Baselines) (provide
 	return out, nil
 }
 
+// hrCapSuffixPrefix is the program-name marker that introduces HR-cap
+// guardrails. COROS run exercises expose exactly one intensity slot per segment
+// (pace OR HR), so a pace-targeted step cannot also express an HR ceiling
+// natively. We therefore append the ceiling to the program name as free text;
+// DeleteScheduledWorkout recognises this marker so a re-push still clears the
+// prior entry (issue #326).
+const hrCapSuffixPrefix = " · HR ≤"
+
+// hrCapLabel renders the canonical athlete-facing HR-ceiling text, matching the
+// frontend rendering in PlannedCalendar/SessionDetailModal ("HR ≤167").
+func hrCapLabel(cap int) string {
+	return fmt.Sprintf("HR ≤%d", cap)
+}
+
+// hrCapNameSuffix returns the program-name suffix carrying every distinct HR
+// ceiling in w (in step order), or "" when no step carries one.
+func hrCapNameSuffix(w provider.RunWorkout) string {
+	var caps []int
+	seen := make(map[int]bool)
+	for _, block := range w.Blocks {
+		for _, step := range block.Steps {
+			if step.HRCapBPM != nil && !seen[*step.HRCapBPM] {
+				seen[*step.HRCapBPM] = true
+				caps = append(caps, *step.HRCapBPM)
+			}
+		}
+	}
+	if len(caps) == 0 {
+		return ""
+	}
+	labels := make([]string, len(caps))
+	for i, c := range caps {
+		labels[i] = hrCapLabel(c)
+	}
+	return " · " + strings.Join(labels, " / ")
+}
+
 // NormalizedToCorosRun translates a normalized run workout into the COROS
 // builder (preserving segment order). Targets are resolved against b first:
 // relative/zone intensity is turned into absolute pace/HR (ADR 0037), and the
@@ -238,7 +278,7 @@ func NormalizedToCorosRun(w provider.RunWorkout, b provider.Baselines) (*RunWork
 		return nil, err
 	}
 	w = resolved
-	out := NewRunWorkoutBuilder(w.Name, isoToYYYYMMDD(w.Date), inferCorosWorkoutType(w))
+	out := NewRunWorkoutBuilder(w.Name+hrCapNameSuffix(w), isoToYYYYMMDD(w.Date), inferCorosWorkoutType(w))
 	out.ltPaceSKM = b.LTPaceSKM
 	for _, block := range w.Blocks {
 		if block.Repeat > 1 {

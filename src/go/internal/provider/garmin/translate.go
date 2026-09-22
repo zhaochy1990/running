@@ -33,6 +33,8 @@
 package garmin
 
 import (
+	"fmt"
+
 	"github.com/zhaochy1990/stride/internal/provider"
 )
 
@@ -130,13 +132,36 @@ func executableStep(step provider.WorkoutStep, stepOrder int) map[string]any {
 		"endConditionValue":         endValue,
 		"preferredEndConditionUnit": endUnit,
 	}
-	if step.Note != nil {
-		payload["description"] = *step.Note
-	}
+	payload["description"] = stepDescription(step)
 	for k, v := range targetBlock(step) {
 		payload[k] = v
 	}
 	return payload
+}
+
+// hrCapLabel renders the canonical athlete-facing HR-ceiling text ("HR ≤167"),
+// matching the frontend rendering in PlannedCalendar/SessionDetailModal.
+// Garmin steps expose exactly one target slot (pace OR HR), so a pace-targeted
+// step cannot also express an HR ceiling natively; the ceiling is appended to
+// the step description instead of being silently dropped (issue #326).
+func hrCapLabel(cap int) string {
+	return fmt.Sprintf("HR ≤%d", cap)
+}
+
+// stepDescription returns the Garmin step description: the step's free-text note
+// plus any HR-ceiling guardrail, joined with a space.
+func stepDescription(step provider.WorkoutStep) string {
+	desc := ""
+	if step.Note != nil {
+		desc = *step.Note
+	}
+	if step.HRCapBPM != nil {
+		if desc != "" {
+			desc += " "
+		}
+		desc += hrCapLabel(*step.HRCapBPM)
+	}
+	return desc
 }
 
 func repeatBlock(block provider.WorkoutBlock, stepOrder, baseChildStepID int) map[string]any {

@@ -347,3 +347,54 @@ func TestIntervalPayloadGroupShape(t *testing.T) {
 		t.Errorf("totalSets = %v, want 10", program["totalSets"])
 	}
 }
+
+func TestTranslateHrCapAppendedToName(t *testing.T) {
+	low, _ := provider.ParsePaceSKM("4:10")
+	high, _ := provider.ParsePaceSKM("4:05")
+	cap := 167
+	wo := provider.RunWorkout{
+		Schema: provider.RunWorkoutSchema,
+		Name:   "[STRIDE] 4x3K",
+		Date:   "2026-05-08",
+		Blocks: []provider.WorkoutBlock{{
+			Repeat: 4,
+			Steps: []provider.WorkoutStep{
+				{
+					StepKind: provider.StepWork,
+					Duration: provider.DurationOfDistanceKM(3),
+					Target:   provider.PaceRangeSKM(float64(low), float64(high)),
+					HRCapBPM: &cap,
+				},
+				{StepKind: provider.StepRecovery, Duration: provider.DurationOfTimeS(90)},
+			},
+		}},
+	}
+	b, err := NormalizedToCorosRun(wo, provider.Baselines{})
+	if err != nil {
+		t.Fatalf("translate: %v", err)
+	}
+	if want := "[STRIDE] 4x3K · HR ≤167"; b.name != want {
+		t.Errorf("name = %q, want %q", b.name, want)
+	}
+}
+
+func TestTranslateHrCapSuffixDeduplicatesAndPreservesOrder(t *testing.T) {
+	cap167, cap160 := 167, 160
+	wo := provider.RunWorkout{
+		Schema: provider.RunWorkoutSchema,
+		Name:   "[STRIDE] mixed caps",
+		Date:   "2026-05-09",
+		Blocks: []provider.WorkoutBlock{
+			{Repeat: 1, Steps: []provider.WorkoutStep{{StepKind: provider.StepWork, Duration: provider.DurationOfTimeMin(10), HRCapBPM: &cap167}}},
+			{Repeat: 1, Steps: []provider.WorkoutStep{{StepKind: provider.StepWork, Duration: provider.DurationOfTimeMin(10), HRCapBPM: &cap160}}},
+			{Repeat: 1, Steps: []provider.WorkoutStep{{StepKind: provider.StepWork, Duration: provider.DurationOfTimeMin(10), HRCapBPM: &cap167}}},
+		},
+	}
+	b, err := NormalizedToCorosRun(wo, provider.Baselines{})
+	if err != nil {
+		t.Fatalf("translate: %v", err)
+	}
+	if want := "[STRIDE] mixed caps · HR ≤167 / HR ≤160"; b.name != want {
+		t.Errorf("name = %q, want %q", b.name, want)
+	}
+}
