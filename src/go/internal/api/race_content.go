@@ -24,6 +24,7 @@ type RaceContentStore interface {
 	GetRaceCalendarEvent(ctx context.Context, id uint64) (*storage.RaceCalendarEvent, error)
 	GetRaceContentByEvent(ctx context.Context, eventID uint64) (*storage.RaceContent, []storage.RaceContentItem, error)
 	UpsertRaceContent(ctx context.Context, event *storage.RaceCalendarEvent, in *storage.RaceContent, items []storage.RaceContentItem) (*storage.RaceContent, []storage.RaceContentItem, error)
+	UpsertRaceContentAIDraft(ctx context.Context, event *storage.RaceCalendarEvent, in *storage.RaceContent) (*storage.RaceContent, []storage.RaceContentItem, error)
 	AttachRaceContent(ctx context.Context, contentID, eventID uint64) (*storage.RaceContent, []storage.RaceContentItem, error)
 	ListOrphanRaceContent(ctx context.Context) ([]storage.RaceContent, error)
 	PublishRaceContent(ctx context.Context, contentID uint64, publishedBy string) (*storage.RaceContent, []storage.RaceContentItem, int, error)
@@ -85,10 +86,12 @@ func (r *raceContentRoutes) register(rg *gin.RouterGroup) {
 	rg.POST("/api/admin/cities/:city/content/archive", r.archiveCityContent)
 	rg.GET("/api/admin/cities/:city/content/versions", r.listCityContentVersions)
 	rg.POST("/api/admin/cities/:city/content/versions/:version/rollback", r.rollbackCityContent)
-	// AI draft generation (一期: 城市介绍+气候). The contract ships now; the
-	// LLM provider wiring is二期 — until then the endpoint answers 501 so the
-	// dashboard can render a real disabled state instead of guessing.
+	// AI draft generation (一期: 城市介绍 + 比赛期气候). The contract ships
+	// now; the LLM provider wiring is二期 — until then the endpoints answer
+	// 501 so the dashboard can render a real disabled state instead of
+	// guessing.
 	rg.POST("/api/admin/cities/:city/content/ai-draft", r.aiDraftCityContent)
+	rg.POST("/api/admin/races/:race_id/content/ai-draft", r.aiDraftRaceContent)
 }
 
 // ─── DTOs ────────────────────────────────────────────────────────────────────
@@ -108,6 +111,8 @@ type raceContentDTO struct {
 	SignupTimeline *storage.RaceSignupTimeline `json:"signup_timeline"`
 	SignupChannels []storage.RaceSignupChannel `json:"signup_channels"`
 	PacketPickup   []storage.RacePacketPickup  `json:"packet_pickup"`
+	Climate        *storage.RaceClimate        `json:"climate"`
+	WeatherWindows []storage.RaceWeatherWindow `json:"weather_windows"`
 	Items          []raceContentItemDTO        `json:"items"`
 	UpdatedAt      time.Time                   `json:"updated_at"`
 }
@@ -168,15 +173,13 @@ type raceContentSummariesResponse struct {
 
 // raceCityContentDTO is the admin projection of one city's content.
 type raceCityContentDTO struct {
-	ID             uint64                      `json:"id"`
-	City           string                      `json:"city"`
-	Province       *string                     `json:"province"`
-	Status         string                      `json:"status"`
-	Intro          *storage.CityIntro          `json:"intro"`
-	Attractions    []storage.CityAttraction    `json:"attractions"`
-	Climate        *storage.CityClimate        `json:"climate"`
-	WeatherWindows []storage.CityWeatherWindow `json:"weather_windows"`
-	UpdatedAt      time.Time                   `json:"updated_at"`
+	ID          uint64                   `json:"id"`
+	City        string                   `json:"city"`
+	Province    *string                  `json:"province"`
+	Status      string                   `json:"status"`
+	Intro       *storage.CityIntro       `json:"intro"`
+	Attractions []storage.CityAttraction `json:"attractions"`
+	UpdatedAt   time.Time                `json:"updated_at"`
 }
 
 type raceCityContentResponse struct {
@@ -198,6 +201,8 @@ type raceContentInput struct {
 	SignupTimeline *storage.RaceSignupTimeline `json:"signup_timeline"`
 	SignupChannels []storage.RaceSignupChannel `json:"signup_channels"`
 	PacketPickup   []storage.RacePacketPickup  `json:"packet_pickup"`
+	Climate        *storage.RaceClimate        `json:"climate"`
+	WeatherWindows []storage.RaceWeatherWindow `json:"weather_windows"`
 	Items          []raceContentItemInput      `json:"items"`
 }
 
@@ -217,13 +222,12 @@ type raceContentItemInput struct {
 	Photos          []storage.RacePhoto          `json:"photos"`
 }
 
-// raceCityContentInput is the PUT body for city content.
+// raceCityContentInput is the PUT body for city content. Climate and weather
+// windows moved to race level (race-period climatology, not city seasons).
 type raceCityContentInput struct {
-	Province       *string                     `json:"province"`
-	Intro          *storage.CityIntro          `json:"intro"`
-	Attractions    []storage.CityAttraction    `json:"attractions"`
-	Climate        *storage.CityClimate        `json:"climate"`
-	WeatherWindows []storage.CityWeatherWindow `json:"weather_windows"`
+	Province    *string                  `json:"province"`
+	Intro       *storage.CityIntro       `json:"intro"`
+	Attractions []storage.CityAttraction `json:"attractions"`
 }
 
 func newRaceContentDTO(row *storage.RaceContent, items []storage.RaceContentItem) *raceContentDTO {
@@ -239,6 +243,8 @@ func newRaceContentDTO(row *storage.RaceContent, items []storage.RaceContentItem
 		SignupTimeline: row.SignupTimeline,
 		SignupChannels: row.SignupChannels,
 		PacketPickup:   row.PacketPickup,
+		Climate:        row.Climate,
+		WeatherWindows: row.WeatherWindows,
 		UpdatedAt:      row.UpdatedAt,
 	}
 	dto.Items = make([]raceContentItemDTO, 0, len(items))
@@ -282,15 +288,13 @@ func newRaceContentSummaryDTO(row storage.RaceContent) raceContentSummaryDTO {
 
 func newRaceCityContentDTO(row *storage.RaceCityContent) *raceCityContentDTO {
 	return &raceCityContentDTO{
-		ID:             row.ID,
-		City:           row.City,
-		Province:       row.Province,
-		Status:         row.Status,
-		Intro:          row.Intro,
-		Attractions:    row.Attractions,
-		Climate:        row.Climate,
-		WeatherWindows: row.WeatherWindows,
-		UpdatedAt:      row.UpdatedAt,
+		ID:          row.ID,
+		City:        row.City,
+		Province:    row.Province,
+		Status:      row.Status,
+		Intro:       row.Intro,
+		Attractions: row.Attractions,
+		UpdatedAt:   row.UpdatedAt,
 	}
 }
 
@@ -639,17 +643,11 @@ func (r *raceContentRoutes) putCityContent(c *gin.Context) {
 	if !bindRaceCalendarJSON(c, &in, "invalid_request") {
 		return
 	}
-	if err := validateCityContentInput(&in); err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
-		return
-	}
 	saved, err := r.store.UpsertRaceCityContent(c.Request.Context(), &storage.RaceCityContent{
-		City:           city,
-		Province:       in.Province,
-		Intro:          in.Intro,
-		Attractions:    in.Attractions,
-		Climate:        in.Climate,
-		WeatherWindows: in.WeatherWindows,
+		City:        city,
+		Province:    in.Province,
+		Intro:       in.Intro,
+		Attractions: in.Attractions,
 	})
 	if err != nil {
 		writeRaceContentError(c, r.log, err)
@@ -770,23 +768,22 @@ func (r *raceContentRoutes) rollbackCityContent(c *gin.Context) {
 }
 
 // cityAIDraftPayload is the strict JSON shape the AI draft generator must
-// return. Field names match storage.CityIntro / storage.CityClimate exactly so
-// the provider contract and the storage contract stay one-to-one.
+// return. Field names match storage.CityIntro exactly so the provider contract
+// and the storage contract stay one-to-one. (Climate moved to race level — the
+// race-content AI draft covers it.)
 type cityAIDraftPayload struct {
-	Intro   *storage.CityIntro   `json:"intro"`
-	Climate *storage.CityClimate `json:"climate"`
+	Intro *storage.CityIntro `json:"intro"`
 }
 
-// valid reports whether every intro + climate section is present and non-empty.
-// A partial draft would silently clear a section the admin already wrote, so
+// valid reports whether every intro section is present and non-empty. A
+// partial draft would silently clear a section the admin already wrote, so
 // incomplete payloads are treated as a generation failure (502), not saved.
 func (p cityAIDraftPayload) valid() bool {
-	if p.Intro == nil || p.Climate == nil {
+	if p.Intro == nil {
 		return false
 	}
 	for _, s := range []string{
 		p.Intro.Overview, p.Intro.Culture, p.Intro.Food, p.Intro.History,
-		p.Climate.Spring, p.Climate.Summer, p.Climate.Autumn, p.Climate.Winter,
 	} {
 		if strings.TrimSpace(s) == "" {
 			return false
@@ -795,24 +792,23 @@ func (p cityAIDraftPayload) valid() bool {
 	return true
 }
 
-const cityAIDraftSystemPrompt = `你是马拉松赛事内容编辑助手，负责为中国城市撰写面向跑者的城市内容草稿。你只能输出严格匹配以下结构的 JSON，不得输出其它字段、文字、代码块或注释，所有内容必须使用中文：
+const cityAIDraftSystemPrompt = `你是马拉松赛事内容编辑助手，负责为中国城市撰写面向跑者的城市介绍草稿。你只能输出严格匹配以下结构的 JSON，不得输出其它字段、文字、代码块或注释，所有内容必须使用中文：
 
-{"intro":{"overview":"城市总体介绍","culture":"城市文化","food":"城市美食","history":"城市历史"},"climate":{"spring":"春季气候","summer":"夏季气候","autumn":"秋季气候","winter":"冬季气候"}}
+{"intro":{"overview":"城市总体介绍","culture":"城市文化","food":"城市美食","history":"城市历史"}}
 
 要求：
 1. intro.overview / intro.culture / intro.food / intro.history 各一段中文，面向参赛跑者。
-2. climate.spring / climate.summer / climate.autumn / climate.winter 各一段中文四季气候描述。
-3. 只写文字，禁止输出任何数值型天气数据（如具体气温、湿度、降雨概率），禁止输出图片 URL。
-4. 每段内容 2-4 句话，客观、准确、有吸引力。`
+2. 只写文字，禁止输出任何数值型天气数据（如具体气温、湿度、降雨概率），禁止输出图片 URL。
+3. 每段内容 2-4 句话，客观、准确、有吸引力。`
 
 func cityAIDraftUserPrompt(city string) string {
-	return "请为城市「" + city + "」生成上述结构的城市介绍与气候草稿。"
+	return "请为城市「" + city + "」生成上述结构的城市介绍草稿。"
 }
 
-// aiDraftCityContent generates an AI draft for a city's intro + climate.
+// aiDraftCityContent generates an AI draft for a city's intro.
 //
 //	@Summary		Generate an AI city-content draft
-//	@Description	Administrator only. Synchronously calls the configured OpenAI-compatible LLM and upserts a draft city-content row with only intro + climate filled; published/archived content is refused (409). Unconfigured deployments answer 501 ai_draft_not_configured.
+//	@Description	Administrator only. Synchronously calls the configured OpenAI-compatible LLM and upserts a draft city-content row with only the intro filled; published/archived content is refused (409). Unconfigured deployments answer 501 ai_draft_not_configured.
 //	@Tags			admin
 //	@Param			city	path	string	true	"City name"
 //	@Success		200		{object}	raceCityContentResponse
@@ -872,9 +868,8 @@ func (r *raceContentRoutes) aiDraftCityContent(c *gin.Context) {
 	}
 
 	saved, err := r.store.UpsertRaceCityContentAIDraft(c.Request.Context(), &storage.RaceCityContent{
-		City:    city,
-		Intro:   out.Intro,
-		Climate: out.Climate,
+		City:  city,
+		Intro: out.Intro,
 	})
 	if err != nil {
 		if errors.Is(err, storage.ErrRaceContentConflict) {
@@ -885,6 +880,151 @@ func (r *raceContentRoutes) aiDraftCityContent(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, raceCityContentResponse{Content: newRaceCityContentDTO(saved)})
+}
+
+// raceAIDraftPayload is the strict JSON shape the race AI draft generator must
+// return. Field names match storage.RaceClimate / storage.RaceWeatherWindow so
+// the provider contract and the storage contract stay one-to-one. Unlike the
+// city draft, the race draft carries numeric climatology: the race's month is
+// what makes a weather window meaningful.
+type raceAIDraftPayload struct {
+	Climate        *storage.RaceClimate        `json:"climate"`
+	WeatherWindows []storage.RaceWeatherWindow `json:"weather_windows"`
+}
+
+// valid reports whether the climate summary is present and every window is
+// complete. A partial draft would silently clear sections the admin already
+// wrote, so incomplete payloads are treated as a generation failure (502), not
+// saved. Bounds are 2-4 windows: enough to bracket the race date, few enough
+// to stay a summary.
+func (p raceAIDraftPayload) valid() bool {
+	if p.Climate == nil || strings.TrimSpace(p.Climate.Summary) == "" {
+		return false
+	}
+	if len(p.WeatherWindows) < 2 || len(p.WeatherWindows) > 4 {
+		return false
+	}
+	for _, w := range p.WeatherWindows {
+		if !isMonthDay(w.WindowStart) || !isMonthDay(w.WindowEnd) {
+			return false
+		}
+	}
+	return true
+}
+
+const raceAIDraftSystemPrompt = `你是马拉松赛事内容编辑助手，负责为具体一场赛事撰写面向跑者的比赛期气候草稿。你只能输出严格匹配以下结构的 JSON，不得输出其它字段、文字、代码块或注释，文字内容必须使用中文：
+
+{"climate":{"summary":"比赛期气候综述"},"weather_windows":[{"window_start":"MM-DD","window_end":"MM-DD","avg_temp_c":13.5,"temp_high_c":18,"temp_low_c":9,"rain_probability_pct":30,"humidity_pct":65,"wind":"东北风3级"}]}
+
+要求：
+1. climate.summary 一段中文（2-4 句）：结合赛事所在城市与比赛时间，描述参赛跑者应预期的气候（气温体感、降水、湿度、风、穿衣建议）。
+2. weather_windows 输出 2-4 个以比赛日期所在月份为中心的历史同期天气窗口；数值取该城市历史气候平均值（摄氏度/百分比），不确定的数值用 null。
+3. window_start / window_end 必须为 MM-DD 格式且 start 不晚于 end；wind 为简短中文自由文本。
+4. 禁止输出图片 URL。`
+
+func raceAIDraftUserPrompt(name, raceDate, city string) string {
+	return "请为赛事「" + name + "」（比赛日期 " + raceDate + "，城市：" + city + "）生成上述结构的比赛期气候草稿。"
+}
+
+// aiDraftRaceContent generates an AI draft for a race's race-period climate
+// (summary + historical weather windows), keyed to the race's city and date.
+//
+//	@Summary		Generate an AI race-content climate draft
+//	@Description	Administrator only. Synchronously calls the configured OpenAI-compatible LLM with the race's name/date/city and upserts a draft content row with only climate + weather_windows filled; published/archived content is refused (409). Unconfigured deployments answer 501 ai_draft_not_configured.
+//	@Tags			admin
+//	@Param			race_id	path	int	true	"Race event id"
+//	@Success		200		{object}	raceContentResponse
+//	@Failure		400		{object}	errorResponse
+//	@Failure		404		{object}	errorResponse
+//	@Failure		409		{object}	errorResponse
+//	@Failure		501		{object}	errorResponse
+//	@Failure		502		{object}	errorResponse
+//	@Security		BearerAuth
+//	@Router			/api/admin/races/{race_id}/content/ai-draft [post]
+func (r *raceContentRoutes) aiDraftRaceContent(c *gin.Context) {
+	if !requireAdmin(c) {
+		return
+	}
+	eventID, ok := parseUintParam(c, "race_id")
+	if !ok {
+		return
+	}
+
+	if strings.TrimSpace(r.aiDraft.APIKey) == "" {
+		c.JSON(http.StatusNotImplemented, errorResponse{Error: "ai_draft_not_configured"})
+		return
+	}
+
+	event, err := r.store.GetRaceCalendarEvent(c.Request.Context(), eventID)
+	if err != nil {
+		writeRaceContentError(c, r.log, err)
+		return
+	}
+	// The draft is keyed to the race's city and date; a race without a city
+	// has no climatology to describe.
+	var city string
+	if event.City != nil {
+		city = strings.TrimSpace(*event.City)
+	}
+	if city == "" {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "race_city_missing"})
+		return
+	}
+	name := event.Name
+	if event.NameCN != nil && strings.TrimSpace(*event.NameCN) != "" {
+		name = strings.TrimSpace(*event.NameCN)
+	}
+
+	// Cheap pre-check so a published/archived race refuses before we pay for a
+	// (slow) LLM call. The storage upsert re-checks atomically so a concurrent
+	// publish during generation still cannot be overwritten.
+	existing, _, err := r.store.GetRaceContentByEvent(c.Request.Context(), eventID)
+	if err != nil {
+		writeRaceContentError(c, r.log, err)
+		return
+	}
+	if existing != nil && existing.Status != storage.RaceContentStatusDraft {
+		c.JSON(http.StatusConflict, errorResponse{Error: "ai_draft_conflict"})
+		return
+	}
+
+	client, err := llm.NewChatCompletions(llm.Config{
+		Endpoint: r.aiDraft.Endpoint,
+		APIKey:   r.aiDraft.APIKey,
+		Model:    r.aiDraft.Model,
+		Timeout:  r.aiDraft.Timeout,
+	})
+	if err != nil {
+		r.log.Error("race ai-draft client misconfigured", zap.Error(err))
+		c.JSON(http.StatusBadGateway, errorResponse{Error: "ai_draft_failed"})
+		return
+	}
+
+	var out raceAIDraftPayload
+	if err := client.CompleteJSON(c.Request.Context(), raceAIDraftSystemPrompt, raceAIDraftUserPrompt(name, event.RaceDate, city), &out); err != nil {
+		r.log.Error("race ai-draft generation failed", zap.Uint64("race_id", eventID), zap.Error(err))
+		c.JSON(http.StatusBadGateway, errorResponse{Error: "ai_draft_failed"})
+		return
+	}
+	if !out.valid() {
+		r.log.Error("race ai-draft returned an incomplete payload", zap.Uint64("race_id", eventID))
+		c.JSON(http.StatusBadGateway, errorResponse{Error: "ai_draft_failed"})
+		return
+	}
+
+	saved, savedItems, err := r.store.UpsertRaceContentAIDraft(c.Request.Context(), event, &storage.RaceContent{
+		Climate:        out.Climate,
+		WeatherWindows: out.WeatherWindows,
+	})
+	if err != nil {
+		if errors.Is(err, storage.ErrRaceContentConflict) {
+			c.JSON(http.StatusConflict, errorResponse{Error: "ai_draft_conflict"})
+			return
+		}
+		writeRaceContentError(c, r.log, err)
+		return
+	}
+	c.JSON(http.StatusOK, raceContentResponse{Content: newRaceContentDTO(saved, savedItems)})
 }
 
 // ─── Binding + validation + errors ───────────────────────────────────────────
@@ -901,6 +1041,8 @@ func validateRaceContentInput(in *raceContentInput) (*storage.RaceContent, []sto
 		SignupTimeline: in.SignupTimeline,
 		SignupChannels: in.SignupChannels,
 		PacketPickup:   in.PacketPickup,
+		Climate:        in.Climate,
+		WeatherWindows: in.WeatherWindows,
 	}
 	if in.PartitionRule != nil {
 		if in.PartitionRule.Mode != "mixed" && in.PartitionRule.Mode != "by_item" {
@@ -920,6 +1062,21 @@ func validateRaceContentInput(in *raceContentInput) (*storage.RaceContent, []sto
 	for _, ch := range in.SignupChannels {
 		if strings.TrimSpace(ch.Name) == "" || strings.TrimSpace(ch.URL) == "" {
 			return nil, nil, errInvalidRaceContentInput
+		}
+	}
+	if in.Climate != nil && strings.TrimSpace(in.Climate.Summary) == "" {
+		// An empty-summary climate object carries nothing; treat it as absent
+		// rather than storing a stub.
+		row.Climate = nil
+	}
+	for _, w := range in.WeatherWindows {
+		if !isMonthDay(w.WindowStart) || !isMonthDay(w.WindowEnd) {
+			return nil, nil, errInvalidRaceContentInput
+		}
+		for _, pct := range []*int{w.RainProbabilityPct, w.HumidityPct} {
+			if pct != nil && (*pct < 0 || *pct > 100) {
+				return nil, nil, errInvalidRaceContentInput
+			}
 		}
 	}
 
@@ -958,22 +1115,6 @@ func validateRaceContentInput(in *raceContentInput) (*storage.RaceContent, []sto
 		})
 	}
 	return row, items, nil
-}
-
-// validateCityContentInput applies the city-side rules: weather windows need
-// MM-DD bounds and percent fields in range.
-func validateCityContentInput(in *raceCityContentInput) error {
-	for _, w := range in.WeatherWindows {
-		if !isMonthDay(w.WindowStart) || !isMonthDay(w.WindowEnd) {
-			return errInvalidRaceContentInput
-		}
-		for _, pct := range []*int{w.RainProbabilityPct, w.HumidityPct} {
-			if pct != nil && (*pct < 0 || *pct > 100) {
-				return errInvalidRaceContentInput
-			}
-		}
-	}
-	return nil
 }
 
 func newRaceContentVersionDTOs(rows []storage.RaceContentVersion) []raceContentVersionDTO {
