@@ -1659,22 +1659,14 @@ definitions:
         type: array
       city:
         type: string
-      climate:
-        $ref: '#/definitions/storage.CityClimate'
       id:
         type: integer
       intro:
         $ref: '#/definitions/storage.CityIntro'
       province:
         type: string
-      status:
-        type: string
       updated_at:
         type: string
-      weather_windows:
-        items:
-          $ref: '#/definitions/storage.CityWeatherWindow'
-        type: array
     type: object
   api.raceCityContentInput:
     properties:
@@ -1682,23 +1674,10 @@ definitions:
         items:
           $ref: '#/definitions/storage.CityAttraction'
         type: array
-      climate:
-        $ref: '#/definitions/storage.CityClimate'
       intro:
         $ref: '#/definitions/storage.CityIntro'
       province:
         type: string
-      weather_windows:
-        items:
-          $ref: '#/definitions/storage.CityWeatherWindow'
-        type: array
-    type: object
-  api.raceCityContentPublishResponse:
-    properties:
-      content:
-        $ref: '#/definitions/api.raceCityContentDTO'
-      version:
-        type: integer
     type: object
   api.raceCityContentResponse:
     properties:
@@ -1712,6 +1691,8 @@ definitions:
     type: object
   api.raceContentDTO:
     properties:
+      climate:
+        $ref: '#/definitions/storage.RaceClimate'
       id:
         type: integer
       items:
@@ -1738,15 +1719,19 @@ definitions:
         $ref: '#/definitions/storage.RaceSignupTimeline'
       source:
         type: string
-      status:
-        type: string
       updated_at:
         type: string
+      weather_windows:
+        items:
+          $ref: '#/definitions/storage.RaceWeatherWindow'
+        type: array
       year:
         type: integer
     type: object
   api.raceContentInput:
     properties:
+      climate:
+        $ref: '#/definitions/storage.RaceClimate'
       items:
         items:
           $ref: '#/definitions/api.raceContentItemInput'
@@ -1763,6 +1748,10 @@ definitions:
         type: array
       signup_timeline:
         $ref: '#/definitions/storage.RaceSignupTimeline'
+      weather_windows:
+        items:
+          $ref: '#/definitions/storage.RaceWeatherWindow'
+        type: array
     type: object
   api.raceContentItemDTO:
     properties:
@@ -1844,13 +1833,6 @@ definitions:
       total_ascent_m:
         type: integer
     type: object
-  api.raceContentPublishResponse:
-    properties:
-      content:
-        $ref: '#/definitions/api.raceContentDTO'
-      version:
-        type: integer
-    type: object
   api.raceContentResponse:
     properties:
       content:
@@ -1875,28 +1857,10 @@ definitions:
         type: string
       source:
         type: string
-      status:
-        type: string
       updated_at:
         type: string
       year:
         type: integer
-    type: object
-  api.raceContentVersionDTO:
-    properties:
-      published_at:
-        type: string
-      published_by:
-        type: string
-      version:
-        type: integer
-    type: object
-  api.raceContentVersionsResponse:
-    properties:
-      versions:
-        items:
-          $ref: '#/definitions/api.raceContentVersionDTO'
-        type: array
     type: object
   api.runStateResponse:
     properties:
@@ -2199,6 +2163,7 @@ definitions:
         - all
         - activities
         - health
+        - schedule
         example: all
         type: string
       limit:
@@ -2526,17 +2491,6 @@ definitions:
       name:
         type: string
     type: object
-  storage.CityClimate:
-    properties:
-      autumn:
-        type: string
-      spring:
-        type: string
-      summer:
-        type: string
-      winter:
-        type: string
-    type: object
   storage.CityIntro:
     properties:
       culture:
@@ -2548,25 +2502,6 @@ definitions:
       overview:
         type: string
     type: object
-  storage.CityWeatherWindow:
-    properties:
-      avg_temp_c:
-        type: number
-      humidity_pct:
-        type: integer
-      rain_probability_pct:
-        type: integer
-      temp_high_c:
-        type: number
-      temp_low_c:
-        type: number
-      wind:
-        type: string
-      window_end:
-        type: string
-      window_start:
-        type: string
-    type: object
   storage.RaceAidStation:
     properties:
       distance_km:
@@ -2575,6 +2510,11 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  storage.RaceClimate:
+    properties:
+      summary:
+        type: string
     type: object
   storage.RaceCutoff:
     properties:
@@ -2666,6 +2606,25 @@ definitions:
       lottery_result_at:
         type: string
       start_at:
+        type: string
+    type: object
+  storage.RaceWeatherWindow:
+    properties:
+      avg_temp_c:
+        type: number
+      humidity_pct:
+        type: integer
+      rain_probability_pct:
+        type: integer
+      temp_high_c:
+        type: number
+      temp_low_c:
+        type: number
+      wind:
+        type: string
+      window_end:
+        type: string
+      window_start:
         type: string
     type: object
 info:
@@ -4157,8 +4116,8 @@ paths:
   /api/admin/cities/{city}/content:
     get:
       description: Administrator only. Returns the shared city content (introduction,
-        attractions, climate, historical weather windows), or content:null when the
-        city has none.
+        attractions), or content:null when the city has none. Race-period climate
+        lives on the race's own content.
       parameters:
       - description: City name (race_calendar.city spelling, e.g. 厦门市)
         in: path
@@ -4185,7 +4144,7 @@ paths:
       - admin
     put:
       description: 'Administrator only. Full-replace PUT: absent sections are cleared.
-        A new row starts as draft; an existing one keeps its lifecycle status.'
+        The saved content is live immediately.'
       parameters:
       - description: City name
         in: path
@@ -4219,9 +4178,8 @@ paths:
   /api/admin/cities/{city}/content/ai-draft:
     post:
       description: Administrator only. Synchronously calls the configured OpenAI-compatible
-        LLM and upserts a draft city-content row with only intro + climate filled;
-        published/archived content is refused (409). Unconfigured deployments answer
-        501 ai_draft_not_configured.
+        LLM and upserts the city content row with only the intro filled, preserving
+        the other sections. Unconfigured deployments answer 501 ai_draft_not_configured.
       parameters:
       - description: City name
         in: path
@@ -4241,10 +4199,6 @@ paths:
           description: Forbidden
           schema:
             $ref: '#/definitions/api.errorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/api.errorResponse'
         "501":
           description: Not Implemented
           schema:
@@ -4256,127 +4210,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Generate an AI city-content draft
-      tags:
-      - admin
-  /api/admin/cities/{city}/content/archive:
-    post:
-      description: Administrator only. Marks the city content archived; nothing is
-        deleted.
-      parameters:
-      - description: City name
-        in: path
-        name: city
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.raceCityContentResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: Archive a city's content
-      tags:
-      - admin
-  /api/admin/cities/{city}/content/publish:
-    post:
-      description: Administrator only. Snapshots the current content as the next version
-        and flips the row to published.
-      parameters:
-      - description: City name
-        in: path
-        name: city
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.raceCityContentPublishResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: Publish a city's content
-      tags:
-      - admin
-  /api/admin/cities/{city}/content/versions:
-    get:
-      description: Administrator only. Returns the publish history of the city's content,
-        newest first, without snapshot bodies.
-      parameters:
-      - description: City name
-        in: path
-        name: city
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.raceContentVersionsResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: List a city's content versions
-      tags:
-      - admin
-  /api/admin/cities/{city}/content/versions/{version}/rollback:
-    post:
-      description: Administrator only. Restores the version's snapshot as the new
-        working state. The lifecycle status is untouched; history is never rewritten.
-      parameters:
-      - description: City name
-        in: path
-        name: city
-        required: true
-        type: string
-      - description: Version number
-        in: path
-        name: version
-        required: true
-        type: integer
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.raceCityContentResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: Roll back a city's content to a version
       tags:
       - admin
   /api/admin/declarations:
@@ -5072,8 +4905,8 @@ paths:
       - admin
     put:
       description: 'Administrator only. Full-replace PUT: absent sections are cleared,
-        items are matched to the calendar''s distances by item_name. A new aggregate
-        starts as draft; an existing one keeps its lifecycle status.'
+        items are matched to the calendar''s distances by item_name. The saved content
+        is live immediately.'
       parameters:
       - description: Race event id
         in: path
@@ -5108,9 +4941,12 @@ paths:
       summary: Create or replace a race's content
       tags:
       - admin
-  /api/admin/races/{race_id}/content/archive:
+  /api/admin/races/{race_id}/content/ai-draft:
     post:
-      description: Administrator only. Marks the aggregate archived; nothing is deleted.
+      description: Administrator only. Synchronously calls the configured OpenAI-compatible
+        LLM with the race's name/date/city and upserts climate + weather_windows on
+        the race's content, preserving the other sections. Unconfigured deployments
+        answer 501 ai_draft_not_configured.
       parameters:
       - description: Race event id
         in: path
@@ -5122,107 +4958,25 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/api.raceContentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
         "404":
           description: Not Found
           schema:
             $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
+        "501":
+          description: Not Implemented
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "502":
+          description: Bad Gateway
           schema:
             $ref: '#/definitions/api.errorResponse'
       security:
       - BearerAuth: []
-      summary: Archive a race's content
-      tags:
-      - admin
-  /api/admin/races/{race_id}/content/publish:
-    post:
-      description: Administrator only. Snapshots the current content (including items)
-        as the next version and flips the aggregate to published.
-      parameters:
-      - description: Race event id
-        in: path
-        name: race_id
-        required: true
-        type: integer
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.raceContentPublishResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: Publish a race's content
-      tags:
-      - admin
-  /api/admin/races/{race_id}/content/versions:
-    get:
-      description: Administrator only. Returns the publish history of the race's content,
-        newest first, without snapshot bodies.
-      parameters:
-      - description: Race event id
-        in: path
-        name: race_id
-        required: true
-        type: integer
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.raceContentVersionsResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: List a race's content versions
-      tags:
-      - admin
-  /api/admin/races/{race_id}/content/versions/{version}/rollback:
-    post:
-      description: Administrator only. Restores the version's snapshot as the new
-        working state (content and items). The lifecycle status is untouched; history
-        is never rewritten.
-      parameters:
-      - description: Race event id
-        in: path
-        name: race_id
-        required: true
-        type: integer
-      - description: Version number
-        in: path
-        name: version
-        required: true
-        type: integer
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.raceContentResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: Roll back a race's content to a version
+      summary: Generate an AI race-content climate draft
       tags:
       - admin
   /api/admin/races/{race_id}/items:

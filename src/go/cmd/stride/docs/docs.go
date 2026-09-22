@@ -100,7 +100,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Administrator only. Returns the shared city content (introduction, attractions, climate, historical weather windows), or content:null when the city has none.",
+                "description": "Administrator only. Returns the shared city content (introduction, attractions), or content:null when the city has none. Race-period climate lives on the race's own content.",
                 "tags": [
                     "admin"
                 ],
@@ -141,7 +141,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Administrator only. Full-replace PUT: absent sections are cleared. A new row starts as draft; an existing one keeps its lifecycle status.",
+                "description": "Administrator only. Full-replace PUT: absent sections are cleared. The saved content is live immediately.",
                 "tags": [
                     "admin"
                 ],
@@ -193,7 +193,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Administrator only. Synchronously calls the configured OpenAI-compatible LLM and upserts a draft city-content row with only intro + climate filled; published/archived content is refused (409). Unconfigured deployments answer 501 ai_draft_not_configured.",
+                "description": "Administrator only. Synchronously calls the configured OpenAI-compatible LLM and upserts the city content row with only the intro filled, preserving the other sections. Unconfigured deployments answer 501 ai_draft_not_configured.",
                 "tags": [
                     "admin"
                 ],
@@ -226,12 +226,6 @@ const docTemplate = `{
                             "$ref": "#/definitions/api.errorResponse"
                         }
                     },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
                     "501": {
                         "description": "Not Implemented",
                         "schema": {
@@ -240,191 +234,6 @@ const docTemplate = `{
                     },
                     "502": {
                         "description": "Bad Gateway",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/admin/cities/{city}/content/archive": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Administrator only. Marks the city content archived; nothing is deleted.",
-                "tags": [
-                    "admin"
-                ],
-                "summary": "Archive a city's content",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "City name",
-                        "name": "city",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.raceCityContentResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/admin/cities/{city}/content/publish": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Administrator only. Snapshots the current content as the next version and flips the row to published.",
-                "tags": [
-                    "admin"
-                ],
-                "summary": "Publish a city's content",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "City name",
-                        "name": "city",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.raceCityContentPublishResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/admin/cities/{city}/content/versions": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Administrator only. Returns the publish history of the city's content, newest first, without snapshot bodies.",
-                "tags": [
-                    "admin"
-                ],
-                "summary": "List a city's content versions",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "City name",
-                        "name": "city",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.raceContentVersionsResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/admin/cities/{city}/content/versions/{version}/rollback": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Administrator only. Restores the version's snapshot as the new working state. The lifecycle status is untouched; history is never rewritten.",
-                "tags": [
-                    "admin"
-                ],
-                "summary": "Roll back a city's content to a version",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "City name",
-                        "name": "city",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Version number",
-                        "name": "version",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.raceCityContentResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -1482,7 +1291,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Administrator only. Full-replace PUT: absent sections are cleared, items are matched to the calendar's distances by item_name. A new aggregate starts as draft; an existing one keeps its lifecycle status.",
+                "description": "Administrator only. Full-replace PUT: absent sections are cleared, items are matched to the calendar's distances by item_name. The saved content is live immediately.",
                 "tags": [
                     "admin"
                 ],
@@ -1533,18 +1342,18 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/admin/races/{race_id}/content/archive": {
+        "/api/admin/races/{race_id}/content/ai-draft": {
             "post": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Administrator only. Marks the aggregate archived; nothing is deleted.",
+                "description": "Administrator only. Synchronously calls the configured OpenAI-compatible LLM with the race's name/date/city and upserts climate + weather_windows on the race's content, preserving the other sections. Unconfigured deployments answer 501 ai_draft_not_configured.",
                 "tags": [
                     "admin"
                 ],
-                "summary": "Archive a race's content",
+                "summary": "Generate an AI race-content climate draft",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1561,47 +1370,10 @@ const docTemplate = `{
                             "$ref": "#/definitions/api.raceContentResponse"
                         }
                     },
-                    "404": {
-                        "description": "Not Found",
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/admin/races/{race_id}/content/publish": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Administrator only. Snapshots the current content (including items) as the next version and flips the aggregate to published.",
-                "tags": [
-                    "admin"
-                ],
-                "summary": "Publish a race's content",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Race event id",
-                        "name": "race_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.raceContentPublishResponse"
                         }
                     },
                     "404": {
@@ -1610,101 +1382,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/api.errorResponse"
                         }
                     },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/admin/races/{race_id}/content/versions": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Administrator only. Returns the publish history of the race's content, newest first, without snapshot bodies.",
-                "tags": [
-                    "admin"
-                ],
-                "summary": "List a race's content versions",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Race event id",
-                        "name": "race_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.raceContentVersionsResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
+                    "501": {
+                        "description": "Not Implemented",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
                     },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/admin/races/{race_id}/content/versions/{version}/rollback": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Administrator only. Restores the version's snapshot as the new working state (content and items). The lifecycle status is untouched; history is never rewritten.",
-                "tags": [
-                    "admin"
-                ],
-                "summary": "Roll back a race's content to a version",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Race event id",
-                        "name": "race_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Version number",
-                        "name": "version",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.raceContentResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
+                    "502": {
+                        "description": "Bad Gateway",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -8910,9 +8595,6 @@ const docTemplate = `{
                 "city": {
                     "type": "string"
                 },
-                "climate": {
-                    "$ref": "#/definitions/storage.CityClimate"
-                },
                 "id": {
                     "type": "integer"
                 },
@@ -8922,17 +8604,8 @@ const docTemplate = `{
                 "province": {
                     "type": "string"
                 },
-                "status": {
-                    "type": "string"
-                },
                 "updated_at": {
                     "type": "string"
-                },
-                "weather_windows": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/storage.CityWeatherWindow"
-                    }
                 }
             }
         },
@@ -8945,31 +8618,11 @@ const docTemplate = `{
                         "$ref": "#/definitions/storage.CityAttraction"
                     }
                 },
-                "climate": {
-                    "$ref": "#/definitions/storage.CityClimate"
-                },
                 "intro": {
                     "$ref": "#/definitions/storage.CityIntro"
                 },
                 "province": {
                     "type": "string"
-                },
-                "weather_windows": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/storage.CityWeatherWindow"
-                    }
-                }
-            }
-        },
-        "api.raceCityContentPublishResponse": {
-            "type": "object",
-            "properties": {
-                "content": {
-                    "$ref": "#/definitions/api.raceCityContentDTO"
-                },
-                "version": {
-                    "type": "integer"
                 }
             }
         },
@@ -8992,6 +8645,9 @@ const docTemplate = `{
         "api.raceContentDTO": {
             "type": "object",
             "properties": {
+                "climate": {
+                    "$ref": "#/definitions/storage.RaceClimate"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -9031,11 +8687,14 @@ const docTemplate = `{
                 "source": {
                     "type": "string"
                 },
-                "status": {
-                    "type": "string"
-                },
                 "updated_at": {
                     "type": "string"
+                },
+                "weather_windows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceWeatherWindow"
+                    }
                 },
                 "year": {
                     "type": "integer"
@@ -9045,6 +8704,9 @@ const docTemplate = `{
         "api.raceContentInput": {
             "type": "object",
             "properties": {
+                "climate": {
+                    "$ref": "#/definitions/storage.RaceClimate"
+                },
                 "items": {
                     "type": "array",
                     "items": {
@@ -9068,6 +8730,12 @@ const docTemplate = `{
                 },
                 "signup_timeline": {
                     "$ref": "#/definitions/storage.RaceSignupTimeline"
+                },
+                "weather_windows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceWeatherWindow"
+                    }
                 }
             }
         },
@@ -9192,17 +8860,6 @@ const docTemplate = `{
                 }
             }
         },
-        "api.raceContentPublishResponse": {
-            "type": "object",
-            "properties": {
-                "content": {
-                    "$ref": "#/definitions/api.raceContentDTO"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
         "api.raceContentResponse": {
             "type": "object",
             "properties": {
@@ -9240,39 +8897,11 @@ const docTemplate = `{
                 "source": {
                     "type": "string"
                 },
-                "status": {
-                    "type": "string"
-                },
                 "updated_at": {
                     "type": "string"
                 },
                 "year": {
                     "type": "integer"
-                }
-            }
-        },
-        "api.raceContentVersionDTO": {
-            "type": "object",
-            "properties": {
-                "published_at": {
-                    "type": "string"
-                },
-                "published_by": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "api.raceContentVersionsResponse": {
-            "type": "object",
-            "properties": {
-                "versions": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.raceContentVersionDTO"
-                    }
                 }
             }
         },
@@ -9725,7 +9354,8 @@ const docTemplate = `{
                     "enum": [
                         "all",
                         "activities",
-                        "health"
+                        "health",
+                        "schedule"
                     ],
                     "example": "all"
                 },
@@ -10220,23 +9850,6 @@ const docTemplate = `{
                 }
             }
         },
-        "storage.CityClimate": {
-            "type": "object",
-            "properties": {
-                "autumn": {
-                    "type": "string"
-                },
-                "spring": {
-                    "type": "string"
-                },
-                "summer": {
-                    "type": "string"
-                },
-                "winter": {
-                    "type": "string"
-                }
-            }
-        },
         "storage.CityIntro": {
             "type": "object",
             "properties": {
@@ -10254,35 +9867,6 @@ const docTemplate = `{
                 }
             }
         },
-        "storage.CityWeatherWindow": {
-            "type": "object",
-            "properties": {
-                "avg_temp_c": {
-                    "type": "number"
-                },
-                "humidity_pct": {
-                    "type": "integer"
-                },
-                "rain_probability_pct": {
-                    "type": "integer"
-                },
-                "temp_high_c": {
-                    "type": "number"
-                },
-                "temp_low_c": {
-                    "type": "number"
-                },
-                "wind": {
-                    "type": "string"
-                },
-                "window_end": {
-                    "type": "string"
-                },
-                "window_start": {
-                    "type": "string"
-                }
-            }
-        },
         "storage.RaceAidStation": {
             "type": "object",
             "properties": {
@@ -10294,6 +9878,14 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "storage.RaceClimate": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string"
                 }
             }
         },
@@ -10436,6 +10028,35 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "start_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "storage.RaceWeatherWindow": {
+            "type": "object",
+            "properties": {
+                "avg_temp_c": {
+                    "type": "number"
+                },
+                "humidity_pct": {
+                    "type": "integer"
+                },
+                "rain_probability_pct": {
+                    "type": "integer"
+                },
+                "temp_high_c": {
+                    "type": "number"
+                },
+                "temp_low_c": {
+                    "type": "number"
+                },
+                "wind": {
+                    "type": "string"
+                },
+                "window_end": {
+                    "type": "string"
+                },
+                "window_start": {
                     "type": "string"
                 }
             }

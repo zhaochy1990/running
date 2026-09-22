@@ -2,15 +2,10 @@ package storage
 
 import "time"
 
-// Race content lifecycle. Admin-maintained race/city content is the same
-// three-state lifecycle as the rest of the admin surfaces: draft (being worked
-// on), published (visible to future runner/coach consumers) and archived
-// (deliberately taken offline, never deleted — history stays on disk).
-const (
-	RaceContentStatusDraft     = "draft"
-	RaceContentStatusPublished = "published"
-	RaceContentStatusArchived  = "archived"
-)
+// Race content is admin-maintained with NO lifecycle: an admin edit is the
+// content (save = live). There is no draft/published gate and no version
+// history — the feature never shipped with consumers of either, and the
+// overhead was dropped before launch.
 
 // RaceContent is the admin-maintained structured content of ONE race event
 // (issue #318 赛事级内容). It is a content asset, not a calendar mirror row: the
@@ -46,12 +41,16 @@ type RaceContent struct {
 	// event) so the dashboard can group/filter without string slicing.
 	Year int `gorm:"column:year;not null;index:idx_race_content_year"`
 
-	Status string `gorm:"column:status;size:16;not null;default:draft"`
-
 	PartitionRule  *RacePartitionRule  `gorm:"column:partition_rule;type:json;serializer:json"`
 	SignupTimeline *RaceSignupTimeline `gorm:"column:signup_timeline;type:json;serializer:json"`
 	SignupChannels []RaceSignupChannel `gorm:"column:signup_channels;type:json;serializer:json"`
 	PacketPickup   []RacePacketPickup  `gorm:"column:packet_pickup;type:json;serializer:json"`
+	// Climate and WeatherWindows are the race-period weather picture (moved
+	// from city level — a city hosts races in different months, so the
+	// season-agnostic city climate was replaced by per-race climatology keyed
+	// to the race date).
+	Climate        *RaceClimate        `gorm:"column:climate;type:json;serializer:json"`
+	WeatherWindows []RaceWeatherWindow `gorm:"column:weather_windows;type:json;serializer:json"`
 
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
@@ -176,6 +175,30 @@ type RaceReputation struct {
 	Cons    []string `json:"cons"`
 }
 
+// RaceClimate is the race-period climate note (moved from city level): one
+// free-text paragraph describing the climate a runner should expect around the
+// race date. A struct keeps every RaceContent section a named JSON object and
+// leaves room to grow (generated_at, per-distance notes).
+type RaceClimate struct {
+	Summary string `json:"summary"`
+}
+
+// RaceWeatherWindow is one historical-weather window around the race period
+// (moved from city level; the JSON shape is identical to the former
+// CityWeatherWindow so previously published snapshots stay readable).
+// WindowStart/WindowEnd are "MM-DD" (never timezone-converted); temperatures
+// are °C, probabilities/humidity are percent, Wind is free text.
+type RaceWeatherWindow struct {
+	WindowStart        string   `json:"window_start"`
+	WindowEnd          string   `json:"window_end"`
+	AvgTempC           *float64 `json:"avg_temp_c"`
+	TempHighC          *float64 `json:"temp_high_c"`
+	TempLowC           *float64 `json:"temp_low_c"`
+	RainProbabilityPct *int     `json:"rain_probability_pct"`
+	HumidityPct        *int     `json:"humidity_pct"`
+	Wind               *string  `json:"wind"`
+}
+
 // RacePhoto is one course photo (user story 22): where along the course it was
 // taken plus optional media. URL is optional in the schema but a row without
 // one carries no information — the API layer validates it.
@@ -199,16 +222,10 @@ type RaceCityContent struct {
 	City     string  `gorm:"column:city;size:64;not null;uniqueIndex:uidx_race_city_content_city"`
 	Province *string `gorm:"column:province;size:64"`
 
-	Status string `gorm:"column:status;size:16;not null;default:draft"`
-
 	// Intro is the four rich-text columns of the city introduction (user story
 	// 4): 风土人情/吃喝/历史/特色景点总览.
 	Intro       *CityIntro       `gorm:"column:intro;type:json;serializer:json"`
 	Attractions []CityAttraction `gorm:"column:attractions;type:json;serializer:json"`
-	// Climate is the seasonal climate notes (user story 7), semi-structured:
-	// one free-text note per season.
-	Climate        *CityClimate        `gorm:"column:climate;type:json;serializer:json"`
-	WeatherWindows []CityWeatherWindow `gorm:"column:weather_windows;type:json;serializer:json"`
 
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
@@ -232,70 +249,4 @@ type CityAttraction struct {
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
 	ImageURL    *string `json:"image_url"`
-}
-
-// CityClimate is the per-season climate note (user story 7).
-type CityClimate struct {
-	Spring string `json:"spring"`
-	Summer string `json:"summer"`
-	Autumn string `json:"autumn"`
-	Winter string `json:"winter"`
-}
-
-// CityWeatherWindow is one historical-weather window for a city (user story
-// 8): a MM-DD..MM-DD slice of the year with the climatology a runner cares
-// about. WindowStart/WindowEnd are "MM-DD" (never timezone-converted);
-// temperatures are °C, probabilities/humidity are percent, Wind is free text.
-type CityWeatherWindow struct {
-	WindowStart        string   `json:"window_start"`
-	WindowEnd          string   `json:"window_end"`
-	AvgTempC           *float64 `json:"avg_temp_c"`
-	TempHighC          *float64 `json:"temp_high_c"`
-	TempLowC           *float64 `json:"temp_low_c"`
-	RainProbabilityPct *int     `json:"rain_probability_pct"`
-	HumidityPct        *int     `json:"humidity_pct"`
-	Wind               *string  `json:"wind"`
-}
-
-// RaceContentVersion is one immutable publish snapshot of a content aggregate
-// (user stories 26-29), modeled on legal_documents: one row = one published
-// version, allocated max(version)+1 per (content_type, content_id), published
-// rows never edited. ContentType is "race" (snapshot includes the items) or
-// "city"; ContentID is RaceContent.ID or RaceCityContent.ID respectively.
-//
-// Snapshot is the JSON of the aggregate at publish time (race: content fields +
-// items; city: content fields). Rollback copies a snapshot back into the live
-// tables as the new working state — it does NOT rewrite history.
-type RaceContentVersion struct {
-	ID          uint64    `gorm:"column:id;primaryKey;autoIncrement"`
-	ContentType string    `gorm:"column:content_type;size:16;not null;uniqueIndex:uidx_race_content_version,priority:1"`
-	ContentID   uint64    `gorm:"column:content_id;not null;uniqueIndex:uidx_race_content_version,priority:2"`
-	Version     int       `gorm:"column:version;not null;uniqueIndex:uidx_race_content_version,priority:3;index:idx_race_content_version_key,priority:3"`
-	Snapshot    string    `gorm:"column:snapshot;type:mediumtext;not null"`
-	PublishedBy string    `gorm:"column:published_by;size:64;not null"`
-	PublishedAt time.Time `gorm:"column:published_at"`
-	CreatedAt   time.Time `gorm:"column:created_at"`
-	UpdatedAt   time.Time `gorm:"column:updated_at"`
-}
-
-// TableName pins the table name (GORM would otherwise pluralize).
-func (RaceContentVersion) TableName() string { return "race_content_version" }
-
-// Race content version content types (RaceContentVersion.ContentType).
-const (
-	RaceContentVersionTypeRace = "race"
-	RaceContentVersionTypeCity = "city"
-)
-
-// IsRaceContentVersionType reports whether t is a known version content type.
-func IsRaceContentVersionType(t string) bool {
-	return t == RaceContentVersionTypeRace || t == RaceContentVersionTypeCity
-}
-
-// raceContentSnapshot is the JSON stored in RaceContentVersion.Snapshot for a
-// race aggregate: the content fields plus every item, so a rollback restores
-// the whole per-race state.
-type raceContentSnapshot struct {
-	Content RaceContent       `json:"content"`
-	Items   []RaceContentItem `json:"items"`
 }

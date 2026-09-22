@@ -118,7 +118,23 @@ func (c *ChatCompletions) CompleteJSON(ctx context.Context, systemPrompt, userPr
 }
 
 // decodeJSON decodes a strict JSON string into out.
+//
+// DeepSeek's json_object mode occasionally stops one token short of the real
+// end (finish_reason=stop with the outermost closing brace/bracket missing),
+// which decodes as unexpected EOF. That is a truncation artifact, not a
+// contract violation, so it gets one bounded repair attempt: close any open
+// string/structure in insertion order and re-decode strictly. Anything else
+// (unknown fields, trailing data, garbage) still fails loudly.
 func decodeJSON(content string, out any) error {
+	if err := decodeStrict(content, out); err == nil {
+		return nil
+	} else if !errors.Is(err, io.ErrUnexpectedEOF) {
+		return err
+	}
+	return decodeStrict(closeOpenStructures(content), out)
+}
+
+func decodeStrict(content string, out any) error {
 	decoder := json.NewDecoder(strings.NewReader(content))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(out); err != nil {
@@ -128,4 +144,47 @@ func decodeJSON(content string, out any) error {
 		return errors.New("llm: content contains trailing JSON")
 	}
 	return nil
+}
+
+// closeOpenStructures appends the terminators an unterminated JSON document is
+// missing: an open string's quote first, then the open brackets/braces in
+// reverse order. Structural characters inside strings are ignored, so the
+// repair never invents content — it only closes what the model left open.
+func closeOpenStructures(content string) string {
+	var stack []byte
+	inString := false
+	escaped := false
+	for i := 0; i < len(content); i++ {
+		c := content[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			stack = append(stack, '}')
+		case '[':
+			stack = append(stack, ']')
+		case '}', ']':
+			if len(stack) > 0 && stack[len(stack)-1] == c {
+				stack = stack[:len(stack)-1]
+			}
+		}
+	}
+	if inString {
+		content += `"`
+	}
+	for i := len(stack) - 1; i >= 0; i-- {
+		content += string(stack[i])
+	}
+	return content
 }
