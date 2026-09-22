@@ -123,9 +123,9 @@ func runAPI() error {
 	if err := store.AutoMigrateRaceCalendar(ctx); err != nil {
 		return err
 	}
-	// race_content / race_content_item / race_city_content / race_content_version
-	// back the administrator race-content surface (issue #318). Only the API
-	// writes content, so the worker does not migrate these.
+	// race_content / race_content_item / race_city_content back the administrator
+	// race-content surface (issue #318). Only the API writes content, so the
+	// worker does not migrate these.
 	if err := store.AutoMigrateRaceContent(ctx); err != nil {
 		return err
 	}
