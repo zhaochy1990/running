@@ -52,6 +52,12 @@ type RaceContent struct {
 	SignupTimeline *RaceSignupTimeline `gorm:"column:signup_timeline;type:json;serializer:json"`
 	SignupChannels []RaceSignupChannel `gorm:"column:signup_channels;type:json;serializer:json"`
 	PacketPickup   []RacePacketPickup  `gorm:"column:packet_pickup;type:json;serializer:json"`
+	// Climate and WeatherWindows are the race-period weather picture (moved
+	// from city level — a city hosts races in different months, so the
+	// season-agnostic city climate was replaced by per-race climatology keyed
+	// to the race date).
+	Climate        *RaceClimate        `gorm:"column:climate;type:json;serializer:json"`
+	WeatherWindows []RaceWeatherWindow `gorm:"column:weather_windows;type:json;serializer:json"`
 
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
@@ -176,6 +182,30 @@ type RaceReputation struct {
 	Cons    []string `json:"cons"`
 }
 
+// RaceClimate is the race-period climate note (moved from city level): one
+// free-text paragraph describing the climate a runner should expect around the
+// race date. A struct keeps every RaceContent section a named JSON object and
+// leaves room to grow (generated_at, per-distance notes).
+type RaceClimate struct {
+	Summary string `json:"summary"`
+}
+
+// RaceWeatherWindow is one historical-weather window around the race period
+// (moved from city level; the JSON shape is identical to the former
+// CityWeatherWindow so previously published snapshots stay readable).
+// WindowStart/WindowEnd are "MM-DD" (never timezone-converted); temperatures
+// are °C, probabilities/humidity are percent, Wind is free text.
+type RaceWeatherWindow struct {
+	WindowStart        string   `json:"window_start"`
+	WindowEnd          string   `json:"window_end"`
+	AvgTempC           *float64 `json:"avg_temp_c"`
+	TempHighC          *float64 `json:"temp_high_c"`
+	TempLowC           *float64 `json:"temp_low_c"`
+	RainProbabilityPct *int     `json:"rain_probability_pct"`
+	HumidityPct        *int     `json:"humidity_pct"`
+	Wind               *string  `json:"wind"`
+}
+
 // RacePhoto is one course photo (user story 22): where along the course it was
 // taken plus optional media. URL is optional in the schema but a row without
 // one carries no information — the API layer validates it.
@@ -205,10 +235,6 @@ type RaceCityContent struct {
 	// 4): 风土人情/吃喝/历史/特色景点总览.
 	Intro       *CityIntro       `gorm:"column:intro;type:json;serializer:json"`
 	Attractions []CityAttraction `gorm:"column:attractions;type:json;serializer:json"`
-	// Climate is the seasonal climate notes (user story 7), semi-structured:
-	// one free-text note per season.
-	Climate        *CityClimate        `gorm:"column:climate;type:json;serializer:json"`
-	WeatherWindows []CityWeatherWindow `gorm:"column:weather_windows;type:json;serializer:json"`
 
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
@@ -232,29 +258,6 @@ type CityAttraction struct {
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
 	ImageURL    *string `json:"image_url"`
-}
-
-// CityClimate is the per-season climate note (user story 7).
-type CityClimate struct {
-	Spring string `json:"spring"`
-	Summer string `json:"summer"`
-	Autumn string `json:"autumn"`
-	Winter string `json:"winter"`
-}
-
-// CityWeatherWindow is one historical-weather window for a city (user story
-// 8): a MM-DD..MM-DD slice of the year with the climatology a runner cares
-// about. WindowStart/WindowEnd are "MM-DD" (never timezone-converted);
-// temperatures are °C, probabilities/humidity are percent, Wind is free text.
-type CityWeatherWindow struct {
-	WindowStart        string   `json:"window_start"`
-	WindowEnd          string   `json:"window_end"`
-	AvgTempC           *float64 `json:"avg_temp_c"`
-	TempHighC          *float64 `json:"temp_high_c"`
-	TempLowC           *float64 `json:"temp_low_c"`
-	RainProbabilityPct *int     `json:"rain_probability_pct"`
-	HumidityPct        *int     `json:"humidity_pct"`
-	Wind               *string  `json:"wind"`
 }
 
 // RaceContentVersion is one immutable publish snapshot of a content aggregate

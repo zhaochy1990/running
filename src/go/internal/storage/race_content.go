@@ -27,10 +27,25 @@ var (
 
 // AutoMigrateRaceContent creates or reconciles the race-content schema: the
 // race-level and item-level content tables, the city content table and the
-// shared publish-version table.
+// shared publish-version table. Climate and weather windows moved from city
+// level to race level (race-period climatology, not season-agnostic city
+// notes) — the city columns are dropped outright; AutoMigrate adds the two new
+// race_content columns.
 func (s *Store) AutoMigrateRaceContent(ctx context.Context) error {
+	db := s.db.WithContext(ctx)
+	m := db.Migrator()
+	if m.HasTable(&RaceCityContent{}) {
+		for _, col := range []string{"climate", "weather_windows"} {
+			if !m.HasColumn(&RaceCityContent{}, col) {
+				continue
+			}
+			if err := m.DropColumn(&RaceCityContent{}, col); err != nil {
+				return fmt.Errorf("storage: drop race_city_content.%s: %w", col, err)
+			}
+		}
+	}
 	for _, model := range []any{&RaceContent{}, &RaceContentItem{}, &RaceCityContent{}, &RaceContentVersion{}} {
-		if err := s.db.WithContext(ctx).AutoMigrate(model); err != nil {
+		if err := db.AutoMigrate(model); err != nil {
 			return fmt.Errorf("storage: automigrate %T: %w", model, err)
 		}
 	}
@@ -94,12 +109,12 @@ func (s *Store) UpsertRaceCityContent(ctx context.Context, in *RaceCityContent) 
 	return saved, nil
 }
 
-// UpsertRaceCityContentAIDraft merges an AI-generated intro+climate into a
-// city's working content without touching the other sections (province,
-// attractions, weather windows). It is draft-only: a published or archived row
-// is rejected with ErrRaceContentConflict so a live city can never be silently
-// overwritten by a generated draft. A new row starts as draft with only the
-// two AI sections populated.
+// UpsertRaceCityContentAIDraft merges an AI-generated intro into a city's
+// working content without touching the other sections (province, attractions).
+// It is draft-only: a published or archived row is rejected with
+// ErrRaceContentConflict so a live city can never be silently overwritten by a
+// generated draft. A new row starts as draft with only the intro populated.
+// (Climate moved to race level — the race-content AI draft covers it.)
 func (s *Store) UpsertRaceCityContentAIDraft(ctx context.Context, in *RaceCityContent) (*RaceCityContent, error) {
 	var saved *RaceCityContent
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -111,11 +126,10 @@ func (s *Store) UpsertRaceCityContentAIDraft(ctx context.Context, in *RaceCityCo
 			created := *in
 			created.ID = 0
 			created.Status = RaceContentStatusDraft
-			// Only intro + climate are AI-generated; everything else is
-			// deliberately left empty for the admin to fill in later.
+			// Only the intro is AI-generated; everything else is deliberately
+			// left empty for the admin to fill in later.
 			created.Province = nil
 			created.Attractions = nil
-			created.WeatherWindows = nil
 			created.CreatedAt, created.UpdatedAt = now, now
 			if err := tx.Create(&created).Error; err != nil {
 				if isDuplicateKey(err) {
@@ -132,7 +146,6 @@ func (s *Store) UpsertRaceCityContentAIDraft(ctx context.Context, in *RaceCityCo
 			return ErrRaceContentConflict
 		}
 		row.Intro = in.Intro
-		row.Climate = in.Climate
 		row.UpdatedAt = nowUTC()
 		if err := tx.Save(&row).Error; err != nil {
 			return fmt.Errorf("storage: update race city content draft: %w", err)
@@ -348,6 +361,89 @@ func (s *Store) UpsertRaceContent(ctx context.Context, event *RaceCalendarEvent,
 	return saved, savedItems, nil
 }
 
+// UpsertRaceContentAIDraft merges an AI-generated race-period climate into a
+// race's working content without touching the other sections or the items. It
+// is draft-only: a published or archived row is rejected with
+// ErrRaceContentConflict so live content can never be silently overwritten by
+// a generated draft. A race with no content yet gets a new draft row attached
+// to the event with only the AI sections populated. Identity resolution
+// mirrors UpsertRaceContent (live link, then business-key snapshot).
+func (s *Store) UpsertRaceContentAIDraft(ctx context.Context, event *RaceCalendarEvent, in *RaceContent) (*RaceContent, []RaceContentItem, error) {
+	var saved *RaceContent
+	var savedItems []RaceContentItem
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Re-read inside the transaction: the API resolved the event outside
+		// it, and a concurrent upstream rename would otherwise snapshot a
+		// stale business key against the live event id.
+		fresh := *event
+		if err := tx.Where("id = ?", event.ID).First(&fresh).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrRaceCalendarNotFound
+			}
+			return fmt.Errorf("storage: get race calendar event: %w", err)
+		}
+		event = &fresh
+		var row RaceContent
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("race_event_id = ?", event.ID).First(&row).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("source = ? AND race_name = ? AND race_date = ?", event.Source, event.Name, event.RaceDate).
+				First(&row).Error
+		}
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			now := nowUTC()
+			row = RaceContent{
+				RaceEventID: &event.ID,
+				Source:      event.Source,
+				RaceName:    event.Name,
+				RaceDate:    event.RaceDate,
+				Year:        raceContentYear(event.RaceDate),
+				Status:      RaceContentStatusDraft,
+				// Only climate + weather windows are AI-generated; every other
+				// section is deliberately left empty for the admin to fill in.
+				Climate:        in.Climate,
+				WeatherWindows: in.WeatherWindows,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			}
+			if err := tx.Create(&row).Error; err != nil {
+				if isDuplicateKey(err) {
+					return ErrRaceContentConflict
+				}
+				return fmt.Errorf("storage: create race content draft: %w", err)
+			}
+		case err != nil:
+			return fmt.Errorf("storage: lock race content: %w", err)
+		default:
+			if row.Status != RaceContentStatusDraft {
+				return ErrRaceContentConflict
+			}
+			row.Climate = in.Climate
+			row.WeatherWindows = in.WeatherWindows
+			// Re-attach while we are here, same as UpsertRaceContent: the
+			// matched row may carry a stale or broken link.
+			row.RaceEventID = &event.ID
+			row.UpdatedAt = nowUTC()
+			if err := tx.Save(&row).Error; err != nil {
+				return fmt.Errorf("storage: update race content draft: %w", err)
+			}
+		}
+		items, err := listRaceContentItemsTx(tx, row.ID)
+		if err != nil {
+			return err
+		}
+		saved = &row
+		savedItems = items
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return saved, savedItems, nil
+}
+
 // AttachRaceContent links an orphaned (or stale-linked) content row to a race
 // event and refreshes its business-key snapshot from that event. Used after the
 // upstream sync renamed or rescheduled a race: the content survived, the link
@@ -551,6 +647,8 @@ func applyRaceContentUpdate(row *RaceContent, in *RaceContent) {
 	row.SignupTimeline = in.SignupTimeline
 	row.SignupChannels = in.SignupChannels
 	row.PacketPickup = in.PacketPickup
+	row.Climate = in.Climate
+	row.WeatherWindows = in.WeatherWindows
 }
 
 // applyRaceCityContentUpdate is the city-side counterpart of
@@ -559,8 +657,6 @@ func applyRaceCityContentUpdate(row *RaceCityContent, in *RaceCityContent) {
 	row.Province = in.Province
 	row.Intro = in.Intro
 	row.Attractions = in.Attractions
-	row.Climate = in.Climate
-	row.WeatherWindows = in.WeatherWindows
 }
 
 // replaceRaceContentItems swaps a content row's items for the given list in one
