@@ -10,13 +10,15 @@ import (
 
 // scheduleFixture is a step-level schedule/query payload covering the four pull
 // outcomes: a linear run, an interval group, a [STRIDE]-authored session
-// (self-loop), a strength session (skipped), and an orphan entity (invalid).
+// (self-loop), a strength session (skipped), an orphan entity (invalid), and an
+// absolute-HR session (including a percent-only step that degrades to open).
 const scheduleFixture = `{
 	"entities": [
 		{"happenDay": "20260922", "idInPlan": 10},
 		{"happenDay": "20260922", "idInPlan": 11},
 		{"happenDay": "20260922", "idInPlan": 12},
 		{"happenDay": "20260922", "idInPlan": 13},
+		{"happenDay": "20260922", "idInPlan": 14},
 		{"happenDay": "20260922", "idInPlan": 99}
 	],
 	"programs": [
@@ -32,6 +34,10 @@ const scheduleFixture = `{
 			{"exerciseType": 0, "isGroup": true, "sets": 6, "restValue": 60, "id": 5},
 			{"exerciseType": 2, "targetType": 5, "targetValue": 1000000, "intensityType": 3, "intensityValue": 250000, "intensityValueExtend": 260000, "id": 6, "groupId": 5},
 			{"exerciseType": 4, "targetType": 2, "targetValue": 60, "intensityType": 0, "id": 7, "groupId": 5}
+		]},
+		{"idInPlan": 14, "name": "HR Tempo", "sportType": 1, "exercises": [
+			{"exerciseType": 2, "targetType": 2, "targetValue": 1800, "intensityType": 2, "intensityValue": 170, "intensityValueExtend": 176, "intensityMultiplier": 0, "intensityPercent": 103000, "id": 8, "isGroup": false},
+			{"exerciseType": 3, "targetType": 2, "targetValue": 600, "intensityType": 2, "intensityValue": 0, "intensityValueExtend": 0, "intensityMultiplier": 0, "intensityPercent": 80000, "id": 9, "isGroup": false}
 		]}
 	]
 }`
@@ -50,8 +56,8 @@ func TestDecodeWatchSchedule(t *testing.T) {
 	if pull.SkippedInvalid != 1 {
 		t.Errorf("skipped invalid = %d, want 1 (orphan entity)", pull.SkippedInvalid)
 	}
-	if len(pull.Schedule.Sessions) != 2 {
-		t.Fatalf("sessions = %d, want 2", len(pull.Schedule.Sessions))
+	if len(pull.Schedule.Sessions) != 3 {
+		t.Fatalf("sessions = %d, want 3", len(pull.Schedule.Sessions))
 	}
 	if pull.Schedule.Provider != providerName || pull.Schedule.Schema != provider.WatchScheduleSchema {
 		t.Errorf("envelope = %+v", pull.Schedule)
@@ -104,6 +110,29 @@ func TestDecodeWatchSchedule(t *testing.T) {
 	if *blk.Steps[1].Duration.Value != 60 {
 		t.Errorf("interval recovery duration = %+v, want 60s", blk.Steps[1].Duration)
 	}
+
+	// HR session: absolute bpm wins over intensityPercent; Low = easier (lower
+	// bpm), High = harder. The percent-only cooldown step degrades to open.
+	hr := pull.Schedule.Sessions[2]
+	if hr.Spec.Name != "HR Tempo" {
+		t.Fatalf("hr spec = %+v", hr.Spec)
+	}
+	hrWork := hr.Spec.Blocks[0].Steps[0]
+	if hrWork.Target.Kind != provider.TargetHRBPM {
+		t.Fatalf("hr work target kind = %q, want hr_bpm", hrWork.Target.Kind)
+	}
+	if *hrWork.Target.Low != 170 || *hrWork.Target.High != 176 {
+		t.Errorf("hr work target = %+v, want low=170 high=176 (easier→harder)", hrWork.Target)
+	}
+	if hrWork.Target.Kind.IsValid() {
+		if err := hrWork.Target.Validate(); err != nil {
+			t.Errorf("hr work target invalid: %v", err)
+		}
+	}
+	hrCool := hr.Spec.Blocks[1].Steps[0]
+	if hrCool.Target.Kind != provider.TargetOpen {
+		t.Errorf("percent-only hr cooldown target = %+v, want open", hrCool.Target)
+	}
 }
 
 func TestPullWatchSchedule(t *testing.T) {
@@ -123,8 +152,8 @@ func TestPullWatchSchedule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pull: %v", err)
 	}
-	if len(pull.Schedule.Sessions) != 2 {
-		t.Fatalf("sessions = %d, want 2", len(pull.Schedule.Sessions))
+	if len(pull.Schedule.Sessions) != 3 {
+		t.Fatalf("sessions = %d, want 3", len(pull.Schedule.Sessions))
 	}
 	if pull.Schedule.Provider != providerName {
 		t.Errorf("provider = %q, want %q", pull.Schedule.Provider, providerName)
