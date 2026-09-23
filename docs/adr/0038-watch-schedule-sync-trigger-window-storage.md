@@ -58,9 +58,14 @@ envelope lands in MySQL, and how the two platform adapters produce it.
 - A default (`full` + `all`) or `content:"schedule"` sync now also refreshes the
   watch schedule, including during onboarding's `full` sync.
 - COROS pace targets are decoded absolutely (`intensityValue`/`Extend`, ms/km →
-  s/km). HR-based COROS steps degrade to `open` targets in v1 (the intensity
-  encoding is not yet reverse-engineered); when it is, the canonical `hr_bpm`
-  target family from ADR 0037 is the landing spot.
+  s/km). HR-based COROS steps (`intensityType=2`) are also decoded absolutely:
+  `intensityValue`/`intensityValueExtend` are bare bpm (`intensityMultiplier`
+  stays 0, unlike pace's ×1000), confirmed on 2026-09-23 against real-account
+  samples (134–150 bpm at `intensityPercent` 80000, 170–176 bpm at 103000 for an
+  athlete with LT HR ≈166) and decoded into the canonical `hr_bpm` target family
+  from ADR 0037 (Low = easier/lower bpm). Absolute values win over
+  `intensityPercent`; percent-only HR steps (zero absolute value) still degrade
+  to `open` — relative targets are not modelled on the pull side.
 - The unique `(user_id, provider, entity_id)` index is the only idempotency
   guarantee; the same `entity_id` never yields two live rows for a user+provider.
 - Garmin pull, within-window stale deletion, and HR-step decoding are explicit

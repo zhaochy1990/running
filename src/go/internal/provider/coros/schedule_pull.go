@@ -178,10 +178,7 @@ func corosExercisesToBlocks(exercises []map[string]any) ([]provider.WorkoutBlock
 		ex := exercises[i]
 		if boolAny(ex["isGroup"]) {
 			groupID := strAny(ex["id"])
-			sets := intAny(ex["sets"])
-			if sets < 1 {
-				sets = 1
-			}
+			sets := max(intAny(ex["sets"]), 1)
 			var steps []provider.WorkoutStep
 			j := i + 1
 			for j < len(exercises) && strAny(exercises[j]["groupId"]) == groupID {
@@ -254,22 +251,40 @@ func corosDuration(targetType, targetValue int) provider.Duration {
 
 // corosTarget maps COROS intensity onto a canonical target. intensityType 3 is
 // an absolute pace target whose intensityValue/intensityValueExtend are ms/km
-// (faster bound first); other intensity types (e.g. HR) degrade to open in v1
-// until their encoding is reverse-engineered.
+// (faster bound first); intensityType 2 is an absolute HR target whose
+// intensityValue/intensityValueExtend are bare bpm (intensityMultiplier is 0 —
+// verified against real-account samples on 2026-09-23: 134–150 bpm at
+// intensityPercent 80000 and 170–176 bpm at 103000 for an athlete with LT HR
+// ≈166). When an absolute value is present it wins over intensityPercent;
+// percent-only steps (zero absolute value) keep degrading to open — relative
+// targets are not modelled on the pull side in v1 (ADR 0038).
 func corosTarget(ex map[string]any) provider.Target {
-	if intAny(ex["intensityType"]) != 3 {
+	switch intAny(ex["intensityType"]) {
+	case 2:
+		lowBPM := floatAny(ex["intensityValue"])
+		highBPM := floatAny(ex["intensityValueExtend"])
+		if lowBPM <= 0 {
+			return provider.OpenTarget()
+		}
+		if highBPM <= 0 {
+			highBPM = lowBPM
+		}
+		// HRRangeBPM orders Low = lower bpm (easier), High = higher (harder).
+		return provider.HRRangeBPM(int(lowBPM), int(highBPM))
+	case 3:
+		fastMS := floatAny(ex["intensityValue"])
+		slowMS := floatAny(ex["intensityValueExtend"])
+		if fastMS <= 0 {
+			return provider.OpenTarget()
+		}
+		if slowMS <= 0 {
+			slowMS = fastMS
+		}
+		// PaceRangeSKM orders Low = slower (larger s/km), High = faster (smaller s/km).
+		return provider.PaceRangeSKM(slowMS/1000, fastMS/1000)
+	default:
 		return provider.OpenTarget()
 	}
-	fastMS := floatAny(ex["intensityValue"])
-	slowMS := floatAny(ex["intensityValueExtend"])
-	if fastMS <= 0 {
-		return provider.OpenTarget()
-	}
-	if slowMS <= 0 {
-		slowMS = fastMS
-	}
-	// PaceRangeSKM orders Low = slower (larger s/km), High = faster (smaller s/km).
-	return provider.PaceRangeSKM(slowMS/1000, fastMS/1000)
 }
 
 // boolAny coerces a JSON value (bool, number, or "true"/"1") to bool.
