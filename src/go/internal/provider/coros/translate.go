@@ -36,7 +36,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/zhaochy1990/stride/internal/logging"
 	"github.com/zhaochy1990/stride/internal/provider"
+	"go.uber.org/zap"
 )
 
 // isoToYYYYMMDD converts "2026-05-01" → "20260501" (COROS API date format).
@@ -229,10 +231,13 @@ func resolveWorkoutTargets(w provider.RunWorkout, b provider.Baselines) (provide
 
 // hrCapSuffixPrefix is the program-name marker that introduces HR-cap
 // guardrails. COROS run exercises expose exactly one intensity slot per segment
-// (pace OR HR), so a pace-targeted step cannot also express an HR ceiling
-// natively. We therefore append the ceiling to the program name as free text;
-// DeleteScheduledWorkout recognises this marker so a re-push still clears the
-// prior entry (issue #326).
+// (pace OR HR), and no per-step free-text field: exercise `name`/`overview`
+// come from fixed templates (T-codes and i18n sids like "sid_run_training"),
+// and the program-level `overview` is left empty by every reference payload,
+// so neither is a reliable athlete-visible text surface. The program `name`,
+// by contrast, is shown as-is in the schedule list and on the watch — so the
+// ceiling is appended there as free text. DeleteScheduledWorkout recognises
+// this marker so a re-push still clears the prior entry (issue #326).
 const hrCapSuffixPrefix = " · HR ≤"
 
 // hrCapLabel renders the canonical athlete-facing HR-ceiling text, matching the
@@ -241,9 +246,11 @@ func hrCapLabel(cap int) string {
 	return fmt.Sprintf("HR ≤%d", cap)
 }
 
-// hrCapNameSuffix returns the program-name suffix carrying every distinct HR
-// ceiling in w (in step order), or "" when no step carries one.
-func hrCapNameSuffix(w provider.RunWorkout) string {
+// hrCapValues returns every distinct HR ceiling carried by w's steps, in step
+// order. Because the COROS note never reaches the payload (it is only regex-
+// mined for a pace fallback), the name suffix is written even when a step's
+// note already states the same ceiling — the name is the only visible surface.
+func hrCapValues(w provider.RunWorkout) []int {
 	var caps []int
 	seen := make(map[int]bool)
 	for _, block := range w.Blocks {
@@ -254,6 +261,13 @@ func hrCapNameSuffix(w provider.RunWorkout) string {
 			}
 		}
 	}
+	return caps
+}
+
+// hrCapNameSuffix returns the program-name suffix carrying every distinct HR
+// ceiling in w (in step order), or "" when no step carries one.
+func hrCapNameSuffix(w provider.RunWorkout) string {
+	caps := hrCapValues(w)
 	if len(caps) == 0 {
 		return ""
 	}
@@ -279,6 +293,11 @@ func NormalizedToCorosRun(w provider.RunWorkout, b provider.Baselines) (*RunWork
 	}
 	w = resolved
 	out := NewRunWorkoutBuilder(w.Name+hrCapNameSuffix(w), isoToYYYYMMDD(w.Date), inferCorosWorkoutType(w))
+	if caps := hrCapValues(w); len(caps) > 0 {
+		logging.Default().Debug(
+			"coros: hr_cap_bpm has no native exercise slot; folded into program name",
+			zap.Ints("hr_cap_bpm", caps))
+	}
 	out.ltPaceSKM = b.LTPaceSKM
 	for _, block := range w.Blocks {
 		if block.Repeat > 1 {
