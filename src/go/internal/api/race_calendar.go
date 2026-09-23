@@ -398,16 +398,16 @@ func (o *optionalField[T]) UnmarshalJSON(data []byte) error {
 // (origin becomes manual). Nullable fields use optionalField so an explicit
 // null clears them.
 type raceCalendarUpdateRequest struct {
-	Name        *string                               `json:"name"`
-	NameCN      optionalField[string]                 `json:"name_cn" swaggertype:"string"`
-	RaceDate    *string                               `json:"race_date"`
-	Country     *string                               `json:"country"`
-	Province    optionalField[string]                 `json:"province" swaggertype:"string"`
-	City        optionalField[string]                 `json:"city" swaggertype:"string"`
-	Label       optionalField[string]                 `json:"label" swaggertype:"string"`
-	RaceTypes   *[]string                             `json:"race_types"`
-	Overrides   []string                              `json:"overrides"`
-	ResetFields []string                              `json:"reset_fields"`
+	Name        *string               `json:"name"`
+	NameCN      optionalField[string] `json:"name_cn" swaggertype:"string"`
+	RaceDate    *string               `json:"race_date"`
+	Country     *string               `json:"country"`
+	Province    optionalField[string] `json:"province" swaggertype:"string"`
+	City        optionalField[string] `json:"city" swaggertype:"string"`
+	Label       optionalField[string] `json:"label" swaggertype:"string"`
+	RaceTypes   *[]string             `json:"race_types"`
+	Overrides   []string              `json:"overrides"`
+	ResetFields []string              `json:"reset_fields"`
 	// Content is tri-state: absent = untouched, explicit null = clear every
 	// section, object = full replace of the six sections. The same PATCH
 	// carries the base fields and the content, but the dashboard sends them

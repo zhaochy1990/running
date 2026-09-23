@@ -83,14 +83,14 @@ type RaceCalendarEvent struct {
 	Month    int8    `gorm:"column:month;not null"`
 	// DayOfMonth derives from RaceDate (day-of-month); the field name avoids the
 	// reserved-looking "day" column name while the column stays dayofmonth.
-	DayOfMonth     int8      `gorm:"column:dayofmonth;not null"`
-	Country        string    `gorm:"column:country;size:8;not null"`
-	Province       *string   `gorm:"column:province;size:64"`
-	City           *string   `gorm:"column:city;size:64"`
-	Label          *string   `gorm:"column:label;size:32"`
-	RaceTypes      *string   `gorm:"column:race_types;size:255"`
-	Origin         string    `gorm:"column:origin;size:16;not null;default:sync"`
-	AdminOverrides []string  `gorm:"column:admin_overrides;type:json;serializer:json"`
+	DayOfMonth     int8     `gorm:"column:dayofmonth;not null"`
+	Country        string   `gorm:"column:country;size:8;not null"`
+	Province       *string  `gorm:"column:province;size:64"`
+	City           *string  `gorm:"column:city;size:64"`
+	Label          *string  `gorm:"column:label;size:32"`
+	RaceTypes      *string  `gorm:"column:race_types;size:255"`
+	Origin         string   `gorm:"column:origin;size:16;not null;default:sync"`
+	AdminOverrides []string `gorm:"column:admin_overrides;type:json;serializer:json"`
 
 	// The six admin-maintained content sections live on the same row as the
 	// calendar mirror (one race = one row, consumed as a whole downstream).
