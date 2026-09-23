@@ -7,7 +7,7 @@
       <view class="ob-title">手表已连接</view>
       <view class="ob-subtitle">训练数据将自动同步到 STRIDE</view>
     </view>
-    <button class="ob-cta" bindtap="onHomeTap">进入首页</button>
+    <button class="ob-cta" bindtap="goHome">进入首页</button>
   </block>
 
   <!-- 默认态：价值说明 + 品牌入口 + 跳过 -->
@@ -38,6 +38,6 @@
       </view>
     </view>
 
-    <view class="ob-skip" bindtap="onSkipTap">稍后再说，先逛逛</view>
+    <view class="ob-skip" bindtap="goHome">稍后再说，先逛逛</view>
   </block>
 </view>

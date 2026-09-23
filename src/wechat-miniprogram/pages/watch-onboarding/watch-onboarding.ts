@@ -7,21 +7,17 @@ import { getWatchInfo } from '../../services/watch';
 
 interface WatchOnboardingPageData {
   connected: boolean;
-  checking: boolean;
 }
 
 interface WatchOnboardingPageHandlers {
   onProviderTap(e: WechatMiniprogram.TouchEvent): void;
-  onSkipTap(): void;
-  onHomeTap(): void;
-  retryCheck(): void;
+  goHome(): void;
   checkWatchStatus(): Promise<void>;
 }
 
 Page<WatchOnboardingPageData, WatchOnboardingPageHandlers>({
   data: {
     connected: false,
-    checking: true,
   },
 
   onShow() {
@@ -31,17 +27,12 @@ Page<WatchOnboardingPageData, WatchOnboardingPageHandlers>({
   // 绑定状态以 STRIDE 数据面 GET /api/users/me/watch 的 logged_in 为准。
   // 查询失败不阻断引导（保持默认态，用户仍可跳过或进入绑定页）。
   async checkWatchStatus() {
-    this.setData({ checking: true });
     try {
       const info = await getWatchInfo();
-      this.setData({ connected: info.logged_in, checking: false });
+      this.setData({ connected: info.logged_in });
     } catch {
-      this.setData({ connected: false, checking: false });
+      this.setData({ connected: false });
     }
-  },
-
-  retryCheck() {
-    this.checkWatchStatus();
   },
 
   onProviderTap(e: WechatMiniprogram.TouchEvent) {
@@ -50,11 +41,8 @@ Page<WatchOnboardingPageData, WatchOnboardingPageHandlers>({
     wx.navigateTo({ url: '/pages/watch/watch' });
   },
 
-  onSkipTap() {
-    wx.switchTab({ url: '/pages/index/index' });
-  },
-
-  onHomeTap() {
+  // 「稍后再说」与成功态的「进入首页」是同一动作：跳过引导 / 离开引导页
+  goHome() {
     wx.switchTab({ url: '/pages/index/index' });
   },
 });

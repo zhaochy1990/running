@@ -215,7 +215,6 @@ Page<LoginPageData, LoginPageHandlers>({
     this.setData({ loading: true, errorMsg: '' });
     try {
       const result = await wechatBindPhone(phone, code);
-      if (!result.ok) return;
       userStore.setUser(result.user);
       wx.showToast({ title: '登录成功', icon: 'success' });
       setTimeout(() => {

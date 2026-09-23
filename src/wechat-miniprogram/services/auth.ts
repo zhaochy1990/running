@@ -35,7 +35,6 @@ const BIND_ERROR_MESSAGES: Record<string, string> = {
   [ApiErrorCode.SMS_SEND_COOLDOWN]: '发送太频繁，请稍后再试',
   [ApiErrorCode.SMS_DAILY_LIMIT]: '今日发送次数已达上限，请明天再试',
   [ApiErrorCode.SMS_NOT_CONFIGURED]: '短信服务未配置，请联系客服',
-  [ApiErrorCode.PHONE_ALREADY_BOUND]: '该手机号已绑定其他账号',
   [ApiErrorCode.USER_DISABLED]: '账号已被停用，请联系客服',
 };
 

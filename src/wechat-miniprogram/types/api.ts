@@ -38,7 +38,6 @@ export enum ApiErrorCode {
   SMS_SEND_COOLDOWN = 'sms_send_cooldown',
   SMS_DAILY_LIMIT = 'sms_daily_limit',
   SMS_NOT_CONFIGURED = 'sms_not_configured',
-  PHONE_ALREADY_BOUND = 'phone_already_bound',
   USER_DISABLED = 'user_disabled',
 }
 
@@ -79,8 +78,7 @@ export type WechatLoginResult =
   | { ok: true; user: UserProfile }
   | { ok: false; needsBinding: true };
 
-// 手机号 + 验证码绑定登录（wechat_phone_bind grant）结果：
+// 手机号 + 验证码绑定登录（wechat_phone_bind grant）结果：成功返回用户信息；
 // registered=true 表示本次新建了手机号账号，客户端应一次性进入手表绑定引导页。
-export type PhoneBindResult =
-  | { ok: true; user: UserProfile; registered: boolean }
-  | { ok: false; needsBinding: true };
+// 失败一律抛错（中文文案），因此没有 needsBinding 分支。
+export type PhoneBindResult = { ok: true; user: UserProfile; registered: boolean };
