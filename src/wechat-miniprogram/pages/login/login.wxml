@@ -18,6 +18,7 @@
         bindtap="onSwitchTab"
       >邮箱登录</view>
       <view
+        wx:if="{{phoneEnabled}}"
         class="login-tab {{tab === 'phone' ? 'login-tab-active' : ''}}"
         data-tab="phone"
         bindtap="onSwitchTab"

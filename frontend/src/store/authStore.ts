@@ -84,7 +84,10 @@ interface AuthState {
   hydrated: boolean;
   login: (email: string, password: string) => Promise<void>;
   registerSuccess: (access_token: string, refresh_token: string) => void;
-  sendSmsCode: (phone: string, opts?: { loginOnly?: boolean }) => Promise<void>;
+  sendSmsCode: (
+    phone: string,
+    opts?: { loginOnly?: boolean; scene?: "login" | "bind_phone" },
+  ) => Promise<void>;
   loginWithPhone: (phone: string, code: string, inviteCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   clearSession: () => void;
@@ -165,7 +168,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     applySession(set, access_token, refresh_token);
   },
 
-  sendSmsCode: async (phone: string, opts?: { loginOnly?: boolean }) => {
+  sendSmsCode: async (phone: string, opts?: { loginOnly?: boolean; scene?: "login" | "bind_phone" }) => {
     // login_only defaults true: the web login form must not silently register
     // an unbound phone — the backend rejects it with phone_not_registered so
     // the UI can guide the user to sign up instead. The bind flow passes
@@ -175,7 +178,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     const res = await fetch(apiUrl("POST", `/api/auth/sms/send`), {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Client-Id": CLIENT_ID },
-      body: JSON.stringify({ phone, login_only: loginOnly }),
+      // scene: a code can only be consumed by the scene it was sent for
+      // (auth ADR 0010). The bind modal must ask for bind_phone — the
+      // phone-bind endpoint refuses login-scene codes. Omitted (login form)
+      // defaults to login on the server for backward compatibility.
+      body: JSON.stringify({ phone, login_only: loginOnly, scene: opts?.scene }),
     });
 
     const data = await res.json().catch(() => ({}));

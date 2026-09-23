@@ -29,7 +29,16 @@ export enum ApiErrorCode {
   WECHAT_ALREADY_BOUND = 'wechat_already_bound',
   WECHAT_INVALID_CODE = 'wechat_invalid_code',
   WECHAT_NOT_CONFIGURED = 'wechat_not_configured',
+  WECHAT_RATE_LIMITED = 'wechat_rate_limited',
   INVALID_CREDENTIALS = 'invalid_credentials',
+  // SMS 验证码（auth-service /api/auth/sms/send 与 wechat_phone_bind grant）
+  SMS_CODE_INVALID = 'sms_code_invalid',
+  SMS_CODE_EXPIRED = 'sms_code_expired',
+  SMS_ATTEMPTS_EXCEEDED = 'sms_attempts_exceeded',
+  SMS_SEND_COOLDOWN = 'sms_send_cooldown',
+  SMS_DAILY_LIMIT = 'sms_daily_limit',
+  SMS_NOT_CONFIGURED = 'sms_not_configured',
+  USER_DISABLED = 'user_disabled',
 }
 
 // 业务错误响应（兼容 STRIDE {detail, code} 与 auth-service {error, message}）
@@ -57,6 +66,9 @@ export interface AuthTokenResponse {
   token_type: string;
   expires_in: number;
   scope?: string;
+  // wechat_phone_bind grant 自动注册（新建手机号账号）时为 true，其余场景不出现；
+  // 客户端借此一次性进入手表绑定引导页（ADR 0011）。
+  registered?: boolean;
 }
 
 // 微信登录 / 绑定结果：
@@ -65,3 +77,8 @@ export interface AuthTokenResponse {
 export type WechatLoginResult =
   | { ok: true; user: UserProfile }
   | { ok: false; needsBinding: true };
+
+// 手机号 + 验证码绑定登录（wechat_phone_bind grant）结果：成功返回用户信息；
+// registered=true 表示本次新建了手机号账号，客户端应一次性进入手表绑定引导页。
+// 失败一律抛错（中文文案），因此没有 needsBinding 分支。
+export type PhoneBindResult = { ok: true; user: UserProfile; registered: boolean };

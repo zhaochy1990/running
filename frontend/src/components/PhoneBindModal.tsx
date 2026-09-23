@@ -99,7 +99,8 @@ export default function PhoneBindModal({
     }
     setSendingCode(true);
     try {
-      await sendSmsCode(phone, { loginOnly: false });
+      // The phone-bind endpoint consumes only bind_phone-scene codes (ADR 0010).
+      await sendSmsCode(phone, { loginOnly: false, scene: "bind_phone" });
       setCountdown(CODE_RESEND_SECONDS);
     } catch (err: unknown) {
       const x = err as AuthError;
