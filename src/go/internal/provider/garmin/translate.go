@@ -34,8 +34,12 @@ package garmin
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 
+	"github.com/zhaochy1990/stride/internal/logging"
 	"github.com/zhaochy1990/stride/internal/provider"
+	"go.uber.org/zap"
 )
 
 var runSportType = map[string]any{
@@ -148,14 +152,37 @@ func hrCapLabel(cap int) string {
 	return fmt.Sprintf("HR ≤%d", cap)
 }
 
+// noteStatesHRCapRe matches HR-ceiling expressions already present in free text:
+// "HR≤167", "HR < 167", "心率 ≤167", ... Deliberately simple — we only need to
+// recognise an equivalent ceiling, not parse arbitrary HR prose (issue #326).
+// An HR *range* ("HR 130-148") does not match, because a range's upper bound is
+// not the same constraint as an explicit ceiling.
+var noteStatesHRCapRe = regexp.MustCompile(`(?i)(?:HR|心率)\s*[≤<]\s*(\d+)`)
+
+// noteStatesHRCap reports whether note already states cap as an HR ceiling. Only
+// the same numeric value counts as equivalent; a different value in the note
+// does not suppress the structured HRCapBPM, which stays authoritative.
+func noteStatesHRCap(note string, cap int) bool {
+	for _, m := range noteStatesHRCapRe.FindAllStringSubmatch(note, -1) {
+		if v, err := strconv.Atoi(m[1]); err == nil && v == cap {
+			return true
+		}
+	}
+	return false
+}
+
 // stepDescription returns the Garmin step description: the step's free-text note
-// plus any HR-ceiling guardrail, joined with a space.
+// plus any HR-ceiling guardrail, joined with a space. When the note already
+// states the same ceiling the guardrail is not appended again.
 func stepDescription(step provider.WorkoutStep) string {
 	desc := ""
 	if step.Note != nil {
 		desc = *step.Note
 	}
-	if step.HRCapBPM != nil {
+	if step.HRCapBPM != nil && !noteStatesHRCap(desc, *step.HRCapBPM) {
+		logging.Default().Debug(
+			"garmin: hr_cap_bpm has no native step slot; folded into step description",
+			zap.Int("hr_cap_bpm", *step.HRCapBPM))
 		if desc != "" {
 			desc += " "
 		}

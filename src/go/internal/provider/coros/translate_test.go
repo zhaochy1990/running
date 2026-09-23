@@ -398,3 +398,37 @@ func TestTranslateHrCapSuffixDeduplicatesAndPreservesOrder(t *testing.T) {
 		t.Errorf("name = %q, want %q", b.name, want)
 	}
 }
+
+func TestTranslateHrCapSuffixEvenWhenNoteStatesIt(t *testing.T) {
+	// The COROS payload has no per-step free-text field (exercise name/overview
+	// are fixed template/i18n values and the step note is never pushed), so the
+	// program name is the only athlete-visible surface — the suffix is written
+	// even when the note already states the same ceiling.
+	note := "HR≤167"
+	cap := 167
+	wo := provider.RunWorkout{
+		Schema: provider.RunWorkoutSchema,
+		Name:   "[STRIDE] 4x3K",
+		Date:   "2026-05-08",
+		Blocks: []provider.WorkoutBlock{{
+			Repeat: 4,
+			Steps: []provider.WorkoutStep{
+				{
+					StepKind: provider.StepWork,
+					Duration: provider.DurationOfDistanceKM(3),
+					Target:   provider.PaceRangeSKM(245, 250),
+					Note:     &note,
+					HRCapBPM: &cap,
+				},
+				{StepKind: provider.StepRecovery, Duration: provider.DurationOfTimeS(90)},
+			},
+		}},
+	}
+	b, err := NormalizedToCorosRun(wo, provider.Baselines{})
+	if err != nil {
+		t.Fatalf("translate: %v", err)
+	}
+	if want := "[STRIDE] 4x3K · HR ≤167"; b.name != want {
+		t.Errorf("name = %q, want %q", b.name, want)
+	}
+}

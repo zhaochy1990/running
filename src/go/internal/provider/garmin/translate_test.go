@@ -294,3 +294,48 @@ func TestGarminNoteUnchangedWithoutHrCap(t *testing.T) {
 		t.Errorf("description = %v, want %q", s["description"], "steady effort")
 	}
 }
+
+func TestGarminHrCapNotDuplicatedWhenNoteStatesIt(t *testing.T) {
+	for _, note := range []string{"4x3K，HR≤167", "控制强度，HR < 167", "心率 ≤167，别越线"} {
+		cap := 167
+		w := provider.RunWorkout{
+			Schema: provider.RunWorkoutSchema,
+			Name:   "[STRIDE] 4x3K",
+			Date:   "2026-05-08",
+			Blocks: []provider.WorkoutBlock{{Repeat: 1, Steps: []provider.WorkoutStep{{
+				StepKind: provider.StepWork,
+				Duration: provider.DurationOfDistanceKM(3),
+				Target:   provider.PaceRangeSKM(245, 250),
+				Note:     &note,
+				HRCapBPM: &cap,
+			}}}},
+		}
+		s := garminSteps(t, garminPayload(t, w))[0]
+		if s["description"] != note {
+			t.Errorf("note %q: description = %v, want unchanged", note, s["description"])
+		}
+	}
+}
+
+func TestGarminHrCapStillAppendedWhenNoteStatesDifferentValue(t *testing.T) {
+	// The structured HRCapBPM is authoritative: a note that mentions a *different*
+	// ceiling does not suppress the guardrail.
+	note := "HR≤160"
+	cap := 167
+	w := provider.RunWorkout{
+		Schema: provider.RunWorkoutSchema,
+		Name:   "[STRIDE] 4x3K",
+		Date:   "2026-05-08",
+		Blocks: []provider.WorkoutBlock{{Repeat: 1, Steps: []provider.WorkoutStep{{
+			StepKind: provider.StepWork,
+			Duration: provider.DurationOfDistanceKM(3),
+			Target:   provider.PaceRangeSKM(245, 250),
+			Note:     &note,
+			HRCapBPM: &cap,
+		}}}},
+	}
+	s := garminSteps(t, garminPayload(t, w))[0]
+	if want := "HR≤160 HR ≤167"; s["description"] != want {
+		t.Errorf("description = %v, want %q", s["description"], want)
+	}
+}
