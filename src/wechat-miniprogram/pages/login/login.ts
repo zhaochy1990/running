@@ -14,6 +14,8 @@ type FocusField = '' | 'email' | 'password' | 'phone' | 'code';
 
 interface LoginPageData {
   tab: LoginTab;
+  // 手机号登录特性开关暴露给 WXML：关闭时隐藏手机号 tab 按钮
+  phoneEnabled: boolean;
   email: string;
   password: string;
   showPassword: boolean;
@@ -54,7 +56,8 @@ const PHONE_RE = /^1\d{10}$/;
 Page<LoginPageData, LoginPageHandlers>({
   data: {
     // 默认手机号 tab（开关开启时）：新用户无需已有账号即可注册；邮箱密码 tab
-    // 保留给老用户。开关关闭时回落邮箱 tab。
+    // 保留给老用户。开关关闭时回落邮箱 tab 并隐藏手机号 tab 按钮。
+    phoneEnabled: PHONE_LOGIN_AVAILABLE,
     tab: PHONE_LOGIN_AVAILABLE ? ('phone' as LoginTab) : ('email' as LoginTab),
     email: '',
     password: '',
