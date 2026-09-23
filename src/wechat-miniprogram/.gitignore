@@ -4,6 +4,16 @@ node_modules/
 dist/
 build/
 
+# TypeScript 编译产物（开发者工具内置 typescript 插件就地生成，源文件是同名 .ts）
+# 只列 TS 源码目录；components/ 与 vendor/ 是手写 JS，不在此列
+/app.js
+/constants/*.js
+/pages/**/*.js
+/services/*.js
+/store/*.js
+/types/*.js
+/utils/*.js
+
 # 个人配置
 project.private.config.json
 
