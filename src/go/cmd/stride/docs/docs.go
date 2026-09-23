@@ -803,98 +803,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/admin/race-content/orphans": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Administrator only. Returns content rows whose live race link is broken (upstream renamed/rescheduled the race) so they can be re-attached.",
-                "tags": [
-                    "admin"
-                ],
-                "summary": "List orphaned race content",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.raceContentSummariesResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/admin/race-content/{content_id}/attach": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Administrator only. Re-links a (possibly orphaned) content row to a race event and refreshes its business-key snapshot from that event. 409 when the race already has content.",
-                "tags": [
-                    "admin"
-                ],
-                "summary": "Attach race content to a race event",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Content id",
-                        "name": "content_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Attach payload",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.raceContentAttachInput"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.raceContentResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/admin/races": {
             "get": {
                 "security": [
@@ -1243,105 +1151,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/admin/races/{race_id}/content": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Administrator only. Returns the content aggregate (race-level fields + per-distance items) attached to the race, resolving a broken event link by business key.",
-                "tags": [
-                    "admin"
-                ],
-                "summary": "Get a race's maintained content",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Race event id",
-                        "name": "race_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.raceContentResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Administrator only. Full-replace PUT: absent sections are cleared, items are matched to the calendar's distances by item_name. The saved content is live immediately.",
-                "tags": [
-                    "admin"
-                ],
-                "summary": "Create or replace a race's content",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Race event id",
-                        "name": "race_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Content payload",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.raceContentInput"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.raceContentResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/api.errorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/admin/races/{race_id}/content/ai-draft": {
             "post": {
                 "security": [
@@ -1349,7 +1158,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Administrator only. Synchronously calls the configured OpenAI-compatible LLM with the race's name/date/city and upserts climate + weather_windows on the race's content, preserving the other sections. Unconfigured deployments answer 501 ai_draft_not_configured.",
+                "description": "Administrator only. Synchronously calls the configured OpenAI-compatible LLM with the race's name/date/city and merges climate + weather_windows onto the race row, preserving the other sections. Unconfigured deployments answer 501 ai_draft_not_configured.",
                 "tags": [
                     "admin"
                 ],
@@ -1367,7 +1176,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.raceContentResponse"
+                            "$ref": "#/definitions/api.raceCalendarDetailDTO"
                         }
                     },
                     "400": {
@@ -1618,6 +1427,79 @@ const docTemplate = `{
                     },
                     "413": {
                         "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/races/{race_id}/move-content": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Copies the content sections and item content from this race to the target race and deletes this race (with its items). 409 when the target already has content.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Move a race's content to another race",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Source race id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Move payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.raceContentMoveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -8341,6 +8223,12 @@ const docTemplate = `{
                 "city": {
                     "type": "string"
                 },
+                "content": {
+                    "$ref": "#/definitions/api.raceEventContentDTO"
+                },
+                "content_stale": {
+                    "type": "boolean"
+                },
                 "country": {
                     "type": "string"
                 },
@@ -8403,6 +8291,12 @@ const docTemplate = `{
                 "city": {
                     "type": "string"
                 },
+                "content": {
+                    "$ref": "#/definitions/api.raceEventContentDTO"
+                },
+                "content_stale": {
+                    "type": "boolean"
+                },
                 "country": {
                     "type": "string"
                 },
@@ -8456,6 +8350,9 @@ const docTemplate = `{
         "api.raceCalendarItemCreateRequest": {
             "type": "object",
             "properties": {
+                "content": {
+                    "$ref": "#/definitions/api.raceItemContentInput"
+                },
                 "entry_fee": {
                     "type": "integer"
                 },
@@ -8476,6 +8373,9 @@ const docTemplate = `{
         "api.raceCalendarItemDTO": {
             "type": "object",
             "properties": {
+                "content": {
+                    "$ref": "#/definitions/api.raceItemContentDTO"
+                },
                 "entry_fee": {
                     "type": "integer"
                 },
@@ -8502,6 +8402,9 @@ const docTemplate = `{
         "api.raceCalendarItemUpdateRequest": {
             "type": "object",
             "properties": {
+                "content": {
+                    "type": "object"
+                },
                 "entry_fee": {
                     "type": "integer"
                 },
@@ -8544,6 +8447,10 @@ const docTemplate = `{
             "properties": {
                 "city": {
                     "type": "string"
+                },
+                "content": {
+                    "description": "Content is tri-state: absent = untouched, explicit null = clear every\nsection, object = full replace of the six sections. The same PATCH\ncarries the base fields and the content, but the dashboard sends them\nas two independent saves.",
+                    "type": "object"
                 },
                 "country": {
                     "type": "string"
@@ -8634,84 +8541,19 @@ const docTemplate = `{
                 }
             }
         },
-        "api.raceContentAttachInput": {
+        "api.raceContentMoveRequest": {
             "type": "object",
             "properties": {
-                "race_event_id": {
+                "target_race_id": {
                     "type": "integer"
                 }
             }
         },
-        "api.raceContentDTO": {
+        "api.raceEventContentDTO": {
             "type": "object",
             "properties": {
                 "climate": {
                     "$ref": "#/definitions/storage.RaceClimate"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.raceContentItemDTO"
-                    }
-                },
-                "packet_pickup": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/storage.RacePacketPickup"
-                    }
-                },
-                "partition_rule": {
-                    "$ref": "#/definitions/storage.RacePartitionRule"
-                },
-                "race_date": {
-                    "type": "string"
-                },
-                "race_event_id": {
-                    "type": "integer"
-                },
-                "race_name": {
-                    "type": "string"
-                },
-                "signup_channels": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/storage.RaceSignupChannel"
-                    }
-                },
-                "signup_timeline": {
-                    "$ref": "#/definitions/storage.RaceSignupTimeline"
-                },
-                "source": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "weather_windows": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/storage.RaceWeatherWindow"
-                    }
-                },
-                "year": {
-                    "type": "integer"
-                }
-            }
-        },
-        "api.raceContentInput": {
-            "type": "object",
-            "properties": {
-                "climate": {
-                    "$ref": "#/definitions/storage.RaceClimate"
-                },
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.raceContentItemInput"
-                    }
                 },
                 "packet_pickup": {
                     "type": "array",
@@ -8739,7 +8581,7 @@ const docTemplate = `{
                 }
             }
         },
-        "api.raceContentItemDTO": {
+        "api.raceItemContentDTO": {
             "type": "object",
             "properties": {
                 "aid_stations": {
@@ -8763,17 +8605,8 @@ const docTemplate = `{
                         "$ref": "#/definitions/storage.RaceElevationPoint"
                     }
                 },
-                "entry_fee": {
-                    "type": "integer"
-                },
                 "finish_point": {
                     "$ref": "#/definitions/storage.RacePoint"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "item_name": {
-                    "type": "string"
                 },
                 "photos": {
                     "type": "array",
@@ -8787,9 +8620,6 @@ const docTemplate = `{
                         "$ref": "#/definitions/storage.RacePrize"
                     }
                 },
-                "quota": {
-                    "type": "integer"
-                },
                 "reputation": {
                     "$ref": "#/definitions/storage.RaceReputation"
                 },
@@ -8801,7 +8631,7 @@ const docTemplate = `{
                 }
             }
         },
-        "api.raceContentItemInput": {
+        "api.raceItemContentInput": {
             "type": "object",
             "properties": {
                 "aid_stations": {
@@ -8825,14 +8655,8 @@ const docTemplate = `{
                         "$ref": "#/definitions/storage.RaceElevationPoint"
                     }
                 },
-                "entry_fee": {
-                    "type": "integer"
-                },
                 "finish_point": {
                     "$ref": "#/definitions/storage.RacePoint"
-                },
-                "item_name": {
-                    "type": "string"
                 },
                 "photos": {
                     "type": "array",
@@ -8846,9 +8670,6 @@ const docTemplate = `{
                         "$ref": "#/definitions/storage.RacePrize"
                     }
                 },
-                "quota": {
-                    "type": "integer"
-                },
                 "reputation": {
                     "$ref": "#/definitions/storage.RaceReputation"
                 },
@@ -8856,51 +8677,6 @@ const docTemplate = `{
                     "$ref": "#/definitions/storage.RacePoint"
                 },
                 "total_ascent_m": {
-                    "type": "integer"
-                }
-            }
-        },
-        "api.raceContentResponse": {
-            "type": "object",
-            "properties": {
-                "content": {
-                    "$ref": "#/definitions/api.raceContentDTO"
-                }
-            }
-        },
-        "api.raceContentSummariesResponse": {
-            "type": "object",
-            "properties": {
-                "contents": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.raceContentSummaryDTO"
-                    }
-                }
-            }
-        },
-        "api.raceContentSummaryDTO": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "integer"
-                },
-                "race_date": {
-                    "type": "string"
-                },
-                "race_event_id": {
-                    "type": "integer"
-                },
-                "race_name": {
-                    "type": "string"
-                },
-                "source": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "year": {
                     "type": "integer"
                 }
             }
