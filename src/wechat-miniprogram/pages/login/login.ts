@@ -1,10 +1,5 @@
-import { wechatBindAccount } from '../../services/auth';
+import { sendBindPhoneCode, wechatBindAccount, wechatBindPhone } from '../../services/auth';
 import { userStore } from '../../store/index';
-
-// 手机号验证码登录：auth-service 目前只支持 RFC 8693 token_exchange + email/password，
-// 短信验证码端点尚未上线（见 CLAUDE.md 认证流程）。后端就绪后把此常量置 true，
-// 并在 onGetCode / onLoginTap 的对应分支接上短信发送与 phone+code 绑定接口。
-const PHONE_LOGIN_AVAILABLE = false;
 
 // 验证码倒计时时长（秒），与设计稿「52 秒后重发」的禁用倒计时文案一致
 const CODE_RESEND_SECONDS = 60;
@@ -36,7 +31,7 @@ interface LoginPageHandlers {
   onForgotPasswordTap(): void;
   onPhoneInput(e: WechatMiniprogram.Input): void;
   onCodeInput(e: WechatMiniprogram.Input): void;
-  onGetCode(): void;
+  onGetCode(): Promise<void>;
   startCodeCountdown(): void;
   onLoginTap(): Promise<void>;
   submitEmail(): Promise<void>;
@@ -53,7 +48,8 @@ const PHONE_RE = /^1\d{10}$/;
 
 Page<LoginPageData, LoginPageHandlers>({
   data: {
-    tab: 'email',
+    // 默认手机号 tab：新用户无需已有账号即可注册；邮箱密码 tab 保留给老用户
+    tab: 'phone',
     email: '',
     password: '',
     showPassword: false,
@@ -117,24 +113,28 @@ Page<LoginPageData, LoginPageHandlers>({
     this.setData({ code: e.detail.value, errorMsg: '' });
   },
 
-  onGetCode() {
-    const { phone, codeCountdown } = this.data;
-    if (codeCountdown > 0) return;
-
-    if (!PHONE_LOGIN_AVAILABLE) {
-      this.setData({ errorMsg: '手机号登录暂未开放，请使用邮箱登录' });
-      return;
-    }
+  async onGetCode() {
+    const { phone, codeCountdown, loading } = this.data;
+    if (codeCountdown > 0 || loading) return;
 
     if (!PHONE_RE.test(phone)) {
       this.setData({ errorMsg: '请输入正确的手机号' });
       return;
     }
 
-    // TODO(auth-service): 调用短信验证码发送接口（失败时保持通用提示，不暴露手机号是否注册）。
-    // 发送成功后启动倒计时：
-    this.startCodeCountdown();
-    wx.showToast({ title: '验证码已发送', icon: 'none' });
+    // 发送失败不启动倒计时（服务端 60 秒冷却 / 日上限的中文提示展示在错误区）
+    this.setData({ loading: true, errorMsg: '' });
+    try {
+      await sendBindPhoneCode(phone);
+      this.startCodeCountdown();
+      wx.showToast({ title: '验证码已发送', icon: 'none' });
+    } catch (err) {
+      this.setData({
+        errorMsg: err instanceof Error ? err.message : '发送失败，请重试',
+      });
+    } finally {
+      this.setData({ loading: false });
+    }
   },
 
   startCodeCountdown() {
@@ -201,11 +201,6 @@ Page<LoginPageData, LoginPageHandlers>({
   },
 
   async submitPhone() {
-    if (!PHONE_LOGIN_AVAILABLE) {
-      this.setData({ errorMsg: '手机号登录暂未开放，请使用邮箱登录' });
-      return;
-    }
-
     const phone = this.data.phone;
     const code = this.data.code;
     if (!PHONE_RE.test(phone)) {
@@ -219,9 +214,22 @@ Page<LoginPageData, LoginPageHandlers>({
 
     this.setData({ loading: true, errorMsg: '' });
     try {
-      // TODO(auth-service): 手机号 + 验证码绑定接口（token_exchange 追加 phone/code 参数）。
-      // 成功后：userStore.setUser(result.user) + 跳首页，逻辑与 submitEmail 一致。
-      wx.showToast({ title: '暂未开放', icon: 'none' });
+      const result = await wechatBindPhone(phone, code);
+      if (!result.ok) return;
+      userStore.setUser(result.user);
+      wx.showToast({ title: '登录成功', icon: 'success' });
+      setTimeout(() => {
+        if (result.registered) {
+          // 新注册用户一次性进入手表绑定引导页（可跳过）
+          wx.navigateTo({ url: '/pages/watch-onboarding/watch-onboarding' });
+          return;
+        }
+        wx.switchTab({ url: '/pages/index/index' });
+      }, 1000);
+    } catch (err) {
+      this.setData({
+        errorMsg: err instanceof Error ? err.message : '登录失败，请重试',
+      });
     } finally {
       this.setData({ loading: false });
     }

@@ -141,6 +141,8 @@ src/wechat-miniprogram/
 |------|------|------|------|
 | `POST /oauth/token` | `grant_type=token_exchange` + `client_id`（请求体）+ `subject_token`（wx.login code）+ `subject_token_type=wechat_mini_program` | 已绑定：`200` 标准 token 响应 `{ access_token, refresh_token, token_type, expires_in, scope }`；未绑定：`400 {error:"wechat_needs_binding"}` | 微信 code 登录（public client，`client_id` 在 body，**不需要** client secret / Basic auth） |
 | `POST /oauth/token`（绑定） | 同上 + `email` + `password` | 成功：`200` token 响应（已绑定并登录）；密码错：`401 invalid_credentials`；已被其它账号绑定：`409 wechat_already_bound` | 将微信绑定到已有 STRIDE 账号 |
+| `POST /oauth/token`（手机号绑定登录） | `grant_type=wechat_phone_bind` + `client_id` + `subject_token`（wx.login code）+ `subject_token_type=wechat_mini_program` + `phone` + `code`（`bind_phone` 场景验证码） | 已有手机号账号：`200` token 响应（登录并绑定微信）；全新手机号：`200` 且响应带 `registered: true`（自动注册手机号账号，客户端进入手表绑定引导页）；验证码错误/过期/超次数：`400 sms_code_*`；微信已被其它账号绑定：`409 wechat_already_bound` | 手机号一步完成注册（或登录）+ 微信绑定（ADR 0011）；`registered` 仅自动注册时出现 |
+| `POST /api/auth/sms/send` | `X-Client-Id` + `{ phone, scene }`（小程序绑定用 `scene: "bind_phone"`） | `200 {status:"ok"}`；60 秒窗口超限/日上限：`429 sms_send_cooldown` / `sms_daily_limit`；未配置：`503 sms_not_configured` | 发送短信验证码；验证码按 scene 隔离，只能被同场景端点消费（ADR 0010） |
 | `GET /api/users/me` | `Authorization: Bearer <access_token>` | `{ id, email, name, avatar_url, wechat_bound, ... }` | 登录/绑定成功后拉用户信息；token 响应里**没有** user 对象 |
 | `POST /api/auth/refresh` | `X-Client-Id` + `{ refresh_token }` | 新的 access + refresh token | 401 自动刷新（`services/request.ts`） |
 

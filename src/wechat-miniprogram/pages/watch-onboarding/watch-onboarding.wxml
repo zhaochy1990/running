@@ -1,0 +1,43 @@
+<!-- 手表绑定引导页 —— 深色 STRIDE 主题（与登录页一致） -->
+<view class="ob-page">
+  <!-- 成功态：手表已连接 -->
+  <block wx:if="{{connected}}">
+    <view class="ob-hero">
+      <view class="ob-success-badge">✓</view>
+      <view class="ob-title">手表已连接</view>
+      <view class="ob-subtitle">训练数据将自动同步到 STRIDE</view>
+    </view>
+    <button class="ob-cta" bindtap="onHomeTap">进入首页</button>
+  </block>
+
+  <!-- 默认态：价值说明 + 品牌入口 + 跳过 -->
+  <block wx:else>
+    <view class="ob-hero">
+      <view class="ob-title">连接你的运动手表</view>
+      <view class="ob-subtitle">训练数据自动同步，训练量与疲劳趋势无需手动记录</view>
+    </view>
+
+    <view class="ob-card">
+      <view
+        class="ob-provider"
+        data-provider="coros"
+        bindtap="onProviderTap"
+      >
+        <view class="ob-provider-info">
+          <view class="ob-provider-name">COROS 高驰</view>
+          <view class="ob-provider-desc">同步训练与心率数据</view>
+        </view>
+        <view class="ob-provider-arrow">›</view>
+      </view>
+      <view class="ob-provider ob-provider-last" data-provider="garmin" bindtap="onProviderTap">
+        <view class="ob-provider-info">
+          <view class="ob-provider-name">Garmin 佳明</view>
+          <view class="ob-provider-desc">同步训练与生理数据</view>
+        </view>
+        <view class="ob-provider-arrow">›</view>
+      </view>
+    </view>
+
+    <view class="ob-skip" bindtap="onSkipTap">稍后再说，先逛逛</view>
+  </block>
+</view>
