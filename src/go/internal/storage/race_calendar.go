@@ -20,14 +20,14 @@ var ErrRaceCalendarNotFound = errors.New("storage: race calendar row not found")
 var ErrRaceCalendarConflict = errors.New("storage: race calendar unique conflict")
 
 // AutoMigrateRaceCalendar creates/updates the race_calendar and
-// race_calendar_item tables. Called by the worker (the pipeline that writes
-// them) and by the API (the admin surface that reads/writes them).
+// race_calendar_item tables plus race_item_content (the per-item content rows
+// the stale-delete must be able to see). Called by the worker (the pipeline
+// that writes the calendar) and by the API (the admin surface).
 func (s *Store) AutoMigrateRaceCalendar(ctx context.Context) error {
-	if err := s.db.WithContext(ctx).AutoMigrate(&RaceCalendarEvent{}); err != nil {
-		return fmt.Errorf("storage: automigrate race_calendar: %w", err)
-	}
-	if err := s.db.WithContext(ctx).AutoMigrate(&RaceCalendarItem{}); err != nil {
-		return fmt.Errorf("storage: automigrate race_calendar_item: %w", err)
+	for _, model := range []any{&RaceCalendarEvent{}, &RaceCalendarItem{}, &RaceItemContent{}} {
+		if err := s.db.WithContext(ctx).AutoMigrate(model); err != nil {
+			return fmt.Errorf("storage: automigrate %T: %w", model, err)
+		}
 	}
 	return nil
 }
@@ -37,16 +37,21 @@ func (s *Store) AutoMigrateRaceCalendar(ctx context.Context) error {
 // — it is an app-side asset the sync must never overwrite — and created_at keeps
 // its first-seen timestamp. origin/admin_overrides are also excluded: an
 // existing row keeps its provenance, and a fresh insert takes the values from
-// the struct.
+// the struct. The six admin content columns are excluded for the same reason
+// (the sync never writes them); content_stale IS included so a key the upstream
+// re-lists is un-flagged by the same upsert that refreshes the row.
 var raceCalendarUpsertCols = []string{
 	"race_date", "month", "dayofmonth", "country", "province", "city", "label",
-	"race_types", "updated_at",
+	"race_types", "updated_at", "content_stale",
 }
 
-// ReplaceRaceCalendarResult reports what one year's sync did.
+// ReplaceRaceCalendarResult reports what one year's sync did. ContentStale
+// counts stale rows that were kept and flagged because they carry
+// admin-maintained content.
 type ReplaceRaceCalendarResult struct {
-	Upserted int
-	Deleted  int
+	Upserted     int
+	Deleted      int
+	ContentStale int
 }
 
 // ReplaceRaceCalendarYear merges one source's year into race_calendar, keyed on
@@ -64,7 +69,10 @@ type ReplaceRaceCalendarResult struct {
 // After merging, stale rows — rows of that year that upstream no longer lists,
 // with origin='sync' and no overrides — are deleted together with their items,
 // so the table stays a faithful mirror without ever discarding admin-maintained
-// data.
+// data. A stale row that carries admin-maintained content (any of the six
+// content sections, or per-item content rows) is NOT deleted: it is flagged
+// content_stale and kept, exactly like an overridden row, for an administrator
+// to resolve (move the content to the upstream's new row, or delete it).
 //
 // Source on each race is overwritten with the passed value, and Month/DayOfMonth
 // are derived from RaceDate (single source of truth). year bounds the
@@ -145,29 +153,69 @@ func (s *Store) ReplaceRaceCalendarYear(ctx context.Context, source, year string
 		// no longer lists. Two different races can share a name in a year, so the
 		// survivor test is the composite (name, race_date) row value, not name
 		// alone. Rows with any override (or origin='manual') are never stale.
+		// A stale row that carries admin-maintained content is not deleted
+		// either — deleting it would destroy admin work the sync knows nothing
+		// about — it is flagged content_stale instead (same survivor class as
+		// overridden rows) and resolved by an administrator.
 		keys := make([][]any, len(races))
 		for i, r := range races {
 			keys[i] = []any{r.Name, r.RaceDate}
 		}
-		var stale []RaceCalendarEvent
+		var candidates []RaceCalendarEvent
 		if err := tx.Where(
 			"source = ? AND race_date BETWEEN ? AND ? AND origin = ? AND (admin_overrides IS NULL OR JSON_LENGTH(admin_overrides) = 0) AND (name, race_date) NOT IN ?",
 			source, from, to, RaceOriginSync, keys,
-		).Find(&stale).Error; err != nil {
+		).Find(&candidates).Error; err != nil {
 			return fmt.Errorf("storage: find stale race_calendar: %w", err)
 		}
-		if len(stale) > 0 {
-			ids := make([]uint64, len(stale))
-			for i, row := range stale {
-				ids[i] = row.ID
+		if len(candidates) > 0 {
+			candidateIDs := make([]uint64, len(candidates))
+			for i, row := range candidates {
+				candidateIDs[i] = row.ID
 			}
-			if err := tx.Where("race_event_id IN ?", ids).Delete(&RaceCalendarItem{}).Error; err != nil {
-				return fmt.Errorf("storage: delete stale race_calendar items: %w", err)
+			var withContent []uint64
+			if err := tx.Model(&RaceItemContent{}).
+				Where("race_event_id IN ?", candidateIDs).
+				Distinct("race_event_id").Pluck("race_event_id", &withContent).Error; err != nil {
+				return fmt.Errorf("storage: detect stale race_calendar item content: %w", err)
 			}
-			if err := tx.Where("id IN ?", ids).Delete(&RaceCalendarEvent{}).Error; err != nil {
-				return fmt.Errorf("storage: delete stale race_calendar: %w", err)
+			contentSet := make(map[uint64]bool, len(withContent))
+			for _, id := range withContent {
+				contentSet[id] = true
 			}
-			res.Deleted = len(stale)
+			var stale []RaceCalendarEvent
+			var staleContent []RaceCalendarEvent
+			for _, row := range candidates {
+				if contentSet[row.ID] || row.HasContent() {
+					staleContent = append(staleContent, row)
+				} else {
+					stale = append(stale, row)
+				}
+			}
+			if len(stale) > 0 {
+				ids := make([]uint64, len(stale))
+				for i, row := range stale {
+					ids[i] = row.ID
+				}
+				if err := tx.Where("race_event_id IN ?", ids).Delete(&RaceCalendarItem{}).Error; err != nil {
+					return fmt.Errorf("storage: delete stale race_calendar items: %w", err)
+				}
+				if err := tx.Where("id IN ?", ids).Delete(&RaceCalendarEvent{}).Error; err != nil {
+					return fmt.Errorf("storage: delete stale race_calendar: %w", err)
+				}
+				res.Deleted = len(stale)
+			}
+			if len(staleContent) > 0 {
+				ids := make([]uint64, len(staleContent))
+				for i, row := range staleContent {
+					ids[i] = row.ID
+				}
+				if err := tx.Model(&RaceCalendarEvent{}).Where("id IN ?", ids).
+					Updates(map[string]any{"content_stale": true, "updated_at": now}).Error; err != nil {
+					return fmt.Errorf("storage: flag stale race_calendar content: %w", err)
+				}
+				res.ContentStale = len(staleContent)
+			}
 		}
 		return nil
 	})
@@ -284,13 +332,15 @@ func raceCalendarOverrideSet(fields []string) map[string]bool {
 // RaceCalendarListFilter bounds and orders the admin race list. Year and Month
 // are optional ("" / 0 mean no bound), Keyword matches name or name_cn as a
 // substring, and Page/PerPage are 1-based (PerPage is clamped by the caller).
+// ContentStale selects only the rows the stale-delete kept and flagged.
 type RaceCalendarListFilter struct {
-	Year    string
-	Month   int
-	Source  string
-	Keyword string
-	Page    int
-	PerPage int
+	Year         string
+	Month        int
+	Source       string
+	Keyword      string
+	ContentStale bool
+	Page         int
+	PerPage      int
 }
 
 // MonthDayOf is the exported form of the write-time derivation, used by the API
@@ -317,6 +367,9 @@ func (s *Store) ListRaceCalendarEvents(ctx context.Context, f RaceCalendarListFi
 		if kw := strings.TrimSpace(f.Keyword); kw != "" {
 			like := "%" + kw + "%"
 			query = query.Where("name LIKE ? OR name_cn LIKE ?", like, like)
+		}
+		if f.ContentStale {
+			query = query.Where("content_stale = ?", true)
 		}
 		return query
 	}
@@ -385,8 +438,9 @@ func (s *Store) UpdateRaceCalendarEvent(ctx context.Context, row *RaceCalendarEv
 	return nil
 }
 
-// DeleteRaceCalendarEvent removes a race and its items in one transaction.
-// Deleting a missing id returns ErrRaceCalendarNotFound so the API answers 404.
+// DeleteRaceCalendarEvent removes a race, its items and their content rows in
+// one transaction. Deleting a missing id returns ErrRaceCalendarNotFound so the
+// API answers 404.
 func (s *Store) DeleteRaceCalendarEvent(ctx context.Context, id uint64) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Where("id = ?", id).Delete(&RaceCalendarEvent{})
@@ -398,6 +452,9 @@ func (s *Store) DeleteRaceCalendarEvent(ctx context.Context, id uint64) error {
 		}
 		if err := tx.Where("race_event_id = ?", id).Delete(&RaceCalendarItem{}).Error; err != nil {
 			return fmt.Errorf("storage: delete race_calendar items: %w", err)
+		}
+		if err := tx.Where("race_event_id = ?", id).Delete(&RaceItemContent{}).Error; err != nil {
+			return fmt.Errorf("storage: delete race item content: %w", err)
 		}
 		return nil
 	})
@@ -454,16 +511,26 @@ func (s *Store) UpdateRaceCalendarItem(ctx context.Context, row *RaceCalendarIte
 	return nil
 }
 
-// DeleteRaceCalendarItem removes one item, or reports ErrRaceCalendarNotFound.
+// DeleteRaceCalendarItem removes one item together with its content row (keyed
+// by the item's name), or reports ErrRaceCalendarNotFound.
 func (s *Store) DeleteRaceCalendarItem(ctx context.Context, id uint64) error {
-	res := s.db.WithContext(ctx).Delete(&RaceCalendarItem{}, id)
-	if res.Error != nil {
-		return fmt.Errorf("storage: delete race_calendar_item: %w", res.Error)
-	}
-	if res.RowsAffected == 0 {
-		return ErrRaceCalendarNotFound
-	}
-	return nil
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row RaceCalendarItem
+		if err := tx.First(&row, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrRaceCalendarNotFound
+			}
+			return fmt.Errorf("storage: get race_calendar_item: %w", err)
+		}
+		if err := tx.Where("race_event_id = ? AND item_name = ?", row.RaceEventID, row.Name).
+			Delete(&RaceItemContent{}).Error; err != nil {
+			return fmt.Errorf("storage: delete race item content: %w", err)
+		}
+		if err := tx.Delete(&RaceCalendarItem{}, id).Error; err != nil {
+			return fmt.Errorf("storage: delete race_calendar_item: %w", err)
+		}
+		return nil
+	})
 }
 
 // monthDayOf parses a "2006-01-02" calendar date into its month and day of

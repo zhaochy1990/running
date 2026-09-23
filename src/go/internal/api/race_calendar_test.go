@@ -22,13 +22,18 @@ import (
 // filtering — the field-by-field sync merge is covered against real MySQL in
 // internal/storage.
 type fakeRaceCalendarStore struct {
-	events []storage.RaceCalendarEvent
-	items  []storage.RaceCalendarItem
-	nextID uint64
+	events       []storage.RaceCalendarEvent
+	items        []storage.RaceCalendarItem
+	itemContents map[string]*storage.RaceItemContent // key: itemContentKey(eventID, name)
+	nextID       uint64
+}
+
+func itemContentKey(eventID uint64, name string) string {
+	return fmt.Sprintf("%d/%s", eventID, name)
 }
 
 func newFakeRaceCalendarStore() *fakeRaceCalendarStore {
-	return &fakeRaceCalendarStore{nextID: 1}
+	return &fakeRaceCalendarStore{nextID: 1, itemContents: map[string]*storage.RaceItemContent{}}
 }
 
 func (f *fakeRaceCalendarStore) seedEvent(row storage.RaceCalendarEvent) storage.RaceCalendarEvent {
@@ -80,6 +85,9 @@ func (f *fakeRaceCalendarStore) ListRaceCalendarEvents(_ context.Context, filter
 		}
 		if filter.Keyword != "" && !strings.Contains(row.Name, filter.Keyword) &&
 			(row.NameCN == nil || !strings.Contains(*row.NameCN, filter.Keyword)) {
+			continue
+		}
+		if filter.ContentStale && !row.ContentStale {
 			continue
 		}
 		matched = append(matched, row)
@@ -149,6 +157,11 @@ func (f *fakeRaceCalendarStore) DeleteRaceCalendarEvent(_ context.Context, id ui
 		}
 	}
 	f.items = kept
+	for key, c := range f.itemContents {
+		if c.RaceEventID == id {
+			delete(f.itemContents, key)
+		}
+	}
 	return nil
 }
 
@@ -171,7 +184,17 @@ func (f *fakeRaceCalendarStore) GetRaceCalendarItem(_ context.Context, id uint64
 	return &row, nil
 }
 
-func (f *fakeRaceCalendarStore) CreateRaceCalendarItem(_ context.Context, row *storage.RaceCalendarItem) error {
+func (f *fakeRaceCalendarStore) ListRaceItemContents(_ context.Context, eventID uint64) ([]storage.RaceItemContent, error) {
+	var out []storage.RaceItemContent
+	for _, c := range f.itemContents {
+		if c.RaceEventID == eventID {
+			out = append(out, *c)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeRaceCalendarStore) CreateRaceCalendarItemWithContent(_ context.Context, row *storage.RaceCalendarItem, content *storage.RaceItemContent) error {
 	for _, existing := range f.items {
 		if existing.RaceEventID == row.RaceEventID && existing.Name == row.Name {
 			return storage.ErrRaceCalendarConflict
@@ -180,15 +203,43 @@ func (f *fakeRaceCalendarStore) CreateRaceCalendarItem(_ context.Context, row *s
 	row.ID = f.nextID
 	f.nextID++
 	f.items = append(f.items, *row)
+	if content != nil {
+		saved := *content
+		saved.ID = f.nextID
+		f.nextID++
+		saved.RaceEventID = row.RaceEventID
+		saved.ItemName = row.Name
+		f.itemContents[itemContentKey(row.RaceEventID, row.Name)] = &saved
+	}
 	return nil
 }
 
-func (f *fakeRaceCalendarStore) UpdateRaceCalendarItem(_ context.Context, row *storage.RaceCalendarItem) error {
+func (f *fakeRaceCalendarStore) UpdateRaceCalendarItemWithContent(_ context.Context, row *storage.RaceCalendarItem, content *storage.RaceItemContent, set bool) error {
 	i := f.findItem(row.ID)
 	if i < 0 {
 		return storage.ErrRaceCalendarNotFound
 	}
+	oldName := f.items[i].Name
+	if oldName != row.Name {
+		delete(f.itemContents, itemContentKey(row.RaceEventID, row.Name))
+		if old, ok := f.itemContents[itemContentKey(row.RaceEventID, oldName)]; ok {
+			old.ItemName = row.Name
+			f.itemContents[itemContentKey(row.RaceEventID, row.Name)] = old
+			delete(f.itemContents, itemContentKey(row.RaceEventID, oldName))
+		}
+	}
 	f.items[i] = *row
+	if !set {
+		return nil
+	}
+	if content == nil {
+		delete(f.itemContents, itemContentKey(row.RaceEventID, row.Name))
+		return nil
+	}
+	saved := *content
+	saved.RaceEventID = row.RaceEventID
+	saved.ItemName = row.Name
+	f.itemContents[itemContentKey(row.RaceEventID, row.Name)] = &saved
 	return nil
 }
 
@@ -197,7 +248,55 @@ func (f *fakeRaceCalendarStore) DeleteRaceCalendarItem(_ context.Context, id uin
 	if i < 0 {
 		return storage.ErrRaceCalendarNotFound
 	}
+	item := f.items[i]
+	delete(f.itemContents, itemContentKey(item.RaceEventID, item.Name))
 	f.items = append(f.items[:i], f.items[i+1:]...)
+	return nil
+}
+
+func (f *fakeRaceCalendarStore) MoveRaceContent(_ context.Context, sourceEventID, targetEventID uint64) error {
+	si := f.findEvent(sourceEventID)
+	ti := f.findEvent(targetEventID)
+	if si < 0 || ti < 0 {
+		return storage.ErrRaceCalendarNotFound
+	}
+	if sourceEventID == targetEventID {
+		return storage.ErrRaceCalendarConflict
+	}
+	source := f.events[si]
+	target := f.events[ti]
+	if target.HasContent() {
+		return storage.ErrRaceContentConflict
+	}
+	for _, c := range f.itemContents {
+		if c.RaceEventID == targetEventID {
+			return storage.ErrRaceContentConflict
+		}
+	}
+	target.PartitionRule = source.PartitionRule
+	target.SignupTimeline = source.SignupTimeline
+	target.SignupChannels = source.SignupChannels
+	target.PacketPickup = source.PacketPickup
+	target.Climate = source.Climate
+	target.WeatherWindows = source.WeatherWindows
+	target.ContentStale = false
+	f.events[ti] = target
+	for key, c := range f.itemContents {
+		if c.RaceEventID == sourceEventID {
+			moved := *c
+			moved.RaceEventID = targetEventID
+			f.itemContents[itemContentKey(targetEventID, moved.ItemName)] = &moved
+			delete(f.itemContents, key)
+		}
+	}
+	f.events = append(f.events[:si], f.events[si+1:]...)
+	kept := f.items[:0]
+	for _, item := range f.items {
+		if item.RaceEventID != sourceEventID {
+			kept = append(kept, item)
+		}
+	}
+	f.items = kept
 	return nil
 }
 
@@ -289,6 +388,8 @@ func syncEvent() storage.RaceCalendarEvent {
 func strPtrAPITest(s string) *string { return &s }
 
 func intPtrAPITest(v int) *int { return &v }
+
+func floatPtrAPITest(v float64) *float64 { return &v }
 
 // --- tests -------------------------------------------------------------------
 
@@ -552,5 +653,208 @@ func TestRaceCalendarAdmin_ItemLifecycle(t *testing.T) {
 	}
 	if w := h.do(t, http.MethodGet, fmt.Sprintf("/api/admin/races/%d", event.ID), nil, h.adminToken(t)); w.Code != http.StatusNotFound {
 		t.Errorf("detail after delete = %d, want 404", w.Code)
+	}
+}
+
+// TestRaceCalendarAdmin_EventContentPatch covers the merged content sections on
+// the race row: full-replace object, tri-state (absent untouched / null clear),
+// validation, and the content_stale clear when content is emptied.
+func TestRaceCalendarAdmin_EventContentPatch(t *testing.T) {
+	h := newRaceHarness(t)
+	event := h.store.seedEvent(syncEvent())
+	base := fmt.Sprintf("/api/admin/races/%d", event.ID)
+	admin := h.adminToken(t)
+
+	// Absent content on a fresh race reads as null.
+	got := decodeRaceDTO(t, h.do(t, http.MethodGet, base, nil, admin))
+	if got.Content != nil || got.ContentStale {
+		t.Fatalf("fresh content = %+v stale=%v, want null/false", got.Content, got.ContentStale)
+	}
+
+	// Full replace with an object.
+	body := map[string]any{
+		"content": map[string]any{
+			"signup_timeline": map[string]any{"start_at": "2030-08-01", "deadline": "2030-09-15", "lottery": true, "lottery_result_at": "2030-09-20"},
+			"signup_channels": []map[string]any{{"name": "官网", "type": "官网", "url": "https://example.com"}},
+		},
+	}
+	w := h.do(t, http.MethodPatch, base, body, admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("content patch = %d: %s", w.Code, w.Body.String())
+	}
+	got = decodeRaceDTO(t, w)
+	if got.Content == nil || got.Content.SignupTimeline == nil || got.Content.SignupTimeline.Deadline != "2030-09-15" || len(got.Content.SignupChannels) != 1 {
+		t.Fatalf("content = %+v, want the sections written", got.Content)
+	}
+	if got.Content.PartitionRule != nil || got.Content.Climate != nil {
+		t.Fatalf("content = %+v, want absent sections cleared (full replace)", got.Content)
+	}
+
+	// Validation: a bad partition mode is a 400, not a write.
+	bad := map[string]any{"content": map[string]any{"partition_rule": map[string]any{"mode": "bogus"}}}
+	if w = h.do(t, http.MethodPatch, base, bad, admin); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_request") {
+		t.Fatalf("bad mode = %d %s, want 400 invalid_request", w.Code, w.Body.String())
+	}
+
+	// An explicit null clears everything, including the stale flag.
+	h.store.events[h.store.findEvent(event.ID)].ContentStale = true
+	w = h.do(t, http.MethodPatch, base, map[string]any{"content": nil}, admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("content null = %d: %s", w.Code, w.Body.String())
+	}
+	got = decodeRaceDTO(t, w)
+	if got.Content != nil || got.ContentStale {
+		t.Fatalf("after null = %+v stale=%v, want null/false", got.Content, got.ContentStale)
+	}
+
+	// An absent content key leaves the row untouched (and the flag up).
+	h.store.events[h.store.findEvent(event.ID)].ContentStale = true
+	w = h.do(t, http.MethodPatch, base, map[string]any{"city": "厦门（人工）"}, admin)
+	got = decodeRaceDTO(t, w)
+	if !got.ContentStale {
+		t.Fatalf("absent content key reset content_stale, want untouched")
+	}
+}
+
+// TestRaceCalendarAdmin_ItemContentLifecycle covers the per-item content
+// surface: create with content, replace, untouched-absent, explicit-null
+// delete, and the name rename carrying the content row.
+func TestRaceCalendarAdmin_ItemContentLifecycle(t *testing.T) {
+	h := newRaceHarness(t)
+	event := h.store.seedEvent(syncEvent())
+	admin := h.adminToken(t)
+	base := fmt.Sprintf("/api/admin/races/%d/items", event.ID)
+
+	w := h.do(t, http.MethodPost, base, map[string]any{
+		"name": "全程马拉松", "type": "Marathon",
+		"content": map[string]any{"distance_km": 42.195, "start_point": map[string]any{"name": "广场", "lat": 24.0, "lng": 118.0}},
+	}, admin)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create item = %d: %s", w.Code, w.Body.String())
+	}
+	var created raceCalendarItemDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &created)
+	if created.Content == nil || created.Content.DistanceKm == nil || *created.Content.DistanceKm != 42.195 || created.Content.StartPoint == nil {
+		t.Fatalf("created content = %+v, want distance + start point", created.Content)
+	}
+
+	// Replace via PATCH object.
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{
+		"content": map[string]any{"distance_km": 42.0, "cutoffs": []map[string]any{{"point": "终点", "cutoff_at": "06:00"}}},
+	}, admin)
+	var replaced raceCalendarItemDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &replaced)
+	if replaced.Content == nil || replaced.Content.DistanceKm == nil || *replaced.Content.DistanceKm != 42.0 || len(replaced.Content.Cutoffs) != 1 || replaced.Content.StartPoint != nil {
+		t.Fatalf("replaced content = %+v, want full replace", replaced.Content)
+	}
+	// A bad cutoff clock is a 400.
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{
+		"content": map[string]any{"cutoffs": []map[string]any{{"point": "终点", "cutoff_at": "25:00"}}},
+	}, admin)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("bad clock = %d %s, want 400", w.Code, w.Body.String())
+	}
+
+	// Detail shows the content on the item.
+	detail := decodeRaceDTO(t, h.do(t, http.MethodGet, fmt.Sprintf("/api/admin/races/%d", event.ID), nil, admin))
+	if len(detail.Items) != 1 || detail.Items[0].Content == nil || len(detail.Items[0].Content.Cutoffs) != 1 {
+		t.Fatalf("detail item content = %+v", detail.Items)
+	}
+
+	// Renaming the item carries the content row to the new name.
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{"name": "全程马拉松（改）"}, admin)
+	var renamed raceCalendarItemDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &renamed)
+	if renamed.Content == nil || len(renamed.Content.Cutoffs) != 1 {
+		t.Fatalf("renamed content = %+v, want the content carried to the new name", renamed.Content)
+	}
+
+	// Explicit null deletes the content row.
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{"content": nil}, admin)
+	var cleared raceCalendarItemDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &cleared)
+	if cleared.Content != nil {
+		t.Fatalf("cleared content = %+v, want null", cleared.Content)
+	}
+	if len(h.store.itemContents) != 0 {
+		t.Fatalf("itemContents = %v, want empty", h.store.itemContents)
+	}
+}
+
+// TestRaceCalendarAdmin_MoveContent covers the stale-row resolution endpoint:
+// 204 with the content moved and the source gone, 409 onto an occupied target.
+func TestRaceCalendarAdmin_MoveContent(t *testing.T) {
+	h := newRaceHarness(t)
+	admin := h.adminToken(t)
+	source := h.store.seedEvent(syncEvent())
+	source.ContentStale = true
+	source.Climate = &storage.RaceClimate{Summary: "温润多雨"}
+	h.store.events[h.store.findEvent(source.ID)] = source
+	h.store.seedItem(storage.RaceCalendarItem{RaceEventID: source.ID, Name: "全程马拉松", Type: "Marathon", Origin: storage.RaceOriginSync})
+	h.store.itemContents[itemContentKey(source.ID, "全程马拉松")] = &storage.RaceItemContent{
+		RaceEventID: source.ID, ItemName: "全程马拉松", DistanceKm: floatPtrAPITest(42.195),
+	}
+	target := h.store.seedEvent(storage.RaceCalendarEvent{
+		Source: "中国田协", Origin: storage.RaceOriginSync, Name: "新名赛事",
+		RaceDate: "2030-09-30", Month: 9, DayOfMonth: 30, Country: "CHN", City: strPtrAPITest("厦门市"),
+	})
+
+	path := fmt.Sprintf("/api/admin/races/%d/move-content", source.ID)
+	w := h.do(t, http.MethodPost, path, map[string]any{"target_race_id": target.ID}, admin)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("move = %d: %s", w.Code, w.Body.String())
+	}
+	if h.store.findEvent(source.ID) >= 0 {
+		t.Fatalf("source still exists, want deleted")
+	}
+	moved := h.store.events[h.store.findEvent(target.ID)]
+	if moved.Climate == nil || moved.Climate.Summary != "温润多雨" || moved.ContentStale {
+		t.Fatalf("target = %+v, want the content moved and the flag clear", moved)
+	}
+	if _, ok := h.store.itemContents[itemContentKey(target.ID, "全程马拉松")]; !ok {
+		t.Fatalf("item content not moved")
+	}
+
+	// Moving onto a target that already has content is a 409 content_conflict.
+	second := h.store.seedEvent(syncEvent())
+	second.Climate = &storage.RaceClimate{Summary: " occupied"}
+	h.store.events[h.store.findEvent(second.ID)] = second
+	w = h.do(t, http.MethodPost, fmt.Sprintf("/api/admin/races/%d/move-content", target.ID), map[string]any{"target_race_id": second.ID}, admin)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "content_conflict") {
+		t.Fatalf("occupied move = %d %s, want 409 content_conflict", w.Code, w.Body.String())
+	}
+	// Unknown ids are 404s.
+	w = h.do(t, http.MethodPost, "/api/admin/races/999999/move-content", map[string]any{"target_race_id": target.ID}, admin)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("unknown source move = %d, want 404", w.Code)
+	}
+}
+
+// TestRaceCalendarAdmin_ContentStaleFilter covers the stale list filter and its
+// validation.
+func TestRaceCalendarAdmin_ContentStaleFilter(t *testing.T) {
+	h := newRaceHarness(t)
+	stale := h.store.seedEvent(syncEvent())
+	stale.ContentStale = true
+	h.store.events[h.store.findEvent(stale.ID)] = stale
+	h.store.seedEvent(storage.RaceCalendarEvent{
+		Source: "中国田协", Origin: storage.RaceOriginSync, Name: "正常赛事",
+		RaceDate: "2030-11-01", Month: 11, DayOfMonth: 1, Country: "CHN",
+	})
+	admin := h.adminToken(t)
+
+	w := h.do(t, http.MethodGet, "/api/admin/races?content_stale=1", nil, admin)
+	var list raceCalendarListResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || list.Total != 1 || list.Races[0].Name != "同步赛事" {
+		t.Fatalf("stale filter = %d %s", w.Code, w.Body.String())
+	}
+	w = h.do(t, http.MethodGet, "/api/admin/races", nil, admin)
+	list = raceCalendarListResponse{}
+	_ = json.Unmarshal(w.Body.Bytes(), &list)
+	if list.Total != 2 {
+		t.Fatalf("unfiltered = %d, want 2", list.Total)
+	}
+	if w := h.do(t, http.MethodGet, "/api/admin/races?content_stale=yes", nil, admin); w.Code != http.StatusBadRequest {
+		t.Fatalf("bad content_stale = %d, want 400", w.Code)
 	}
 }

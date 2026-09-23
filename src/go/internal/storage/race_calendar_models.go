@@ -91,12 +91,49 @@ type RaceCalendarEvent struct {
 	RaceTypes      *string   `gorm:"column:race_types;size:255"`
 	Origin         string    `gorm:"column:origin;size:16;not null;default:sync"`
 	AdminOverrides []string  `gorm:"column:admin_overrides;type:json;serializer:json"`
-	CreatedAt      time.Time `gorm:"column:created_at"`
-	UpdatedAt      time.Time `gorm:"column:updated_at"`
+
+	// The six admin-maintained content sections live on the same row as the
+	// calendar mirror (one race = one row, consumed as a whole downstream).
+	// They are the same name_cn-class invariant as the overrides above: the
+	// sync NEVER writes them — they are absent from raceCalendarUpsertCols, so
+	// an OnConflict merge leaves them untouched and a fresh insert takes NULL.
+	// What the sync DOES do is protect them at stale-delete time: a stale row
+	// carrying content is flagged ContentStale instead of being deleted (see
+	// ReplaceRaceCalendarYear).
+	PartitionRule  *RacePartitionRule  `gorm:"column:partition_rule;type:json;serializer:json"`
+	SignupTimeline *RaceSignupTimeline `gorm:"column:signup_timeline;type:json;serializer:json"`
+	SignupChannels []RaceSignupChannel `gorm:"column:signup_channels;type:json;serializer:json"`
+	PacketPickup   []RacePacketPickup  `gorm:"column:packet_pickup;type:json;serializer:json"`
+	// Climate and WeatherWindows are the race-period weather picture (moved
+	// from city level — a city hosts races in different months, so the
+	// season-agnostic city climate was replaced by per-race climatology keyed
+	// to the race date).
+	Climate        *RaceClimate        `gorm:"column:climate;type:json;serializer:json"`
+	WeatherWindows []RaceWeatherWindow `gorm:"column:weather_windows;type:json;serializer:json"`
+	// ContentStale marks a row the upstream no longer lists but that carries
+	// admin-maintained content, so the stale-delete kept it. An administrator
+	// resolves it via the stale list (move the content to the fresh row, or
+	// delete the row); the flag clears when upstream re-lists the key.
+	ContentStale bool `gorm:"column:content_stale;not null;default:false"`
+
+	CreatedAt time.Time `gorm:"column:created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
 // TableName pins the table name (GORM would otherwise pluralize).
 func (RaceCalendarEvent) TableName() string { return "race_calendar" }
+
+// HasContent reports whether the event row carries any of the six admin
+// content sections (item-level content lives in race_item_content and is not
+// part of this check).
+func (row RaceCalendarEvent) HasContent() bool {
+	return row.PartitionRule != nil ||
+		row.SignupTimeline != nil ||
+		row.Climate != nil ||
+		len(row.SignupChannels) > 0 ||
+		len(row.PacketPickup) > 0 ||
+		len(row.WeatherWindows) > 0
+}
 
 // RaceCalendarOverrideableFields are the sync-managed event fields an
 // administrator can take over. Key fields (name, race_date) are NOT here: editing
@@ -148,3 +185,151 @@ type RaceCalendarItem struct {
 
 // TableName pins the table name (GORM would otherwise pluralize).
 func (RaceCalendarItem) TableName() string { return "race_calendar_item" }
+
+// RaceItemContent is the admin-maintained structured content of ONE race
+// distance (全程/半马/迷你马…) of one race event (user stories 14-22). 项目 is a
+// first-class content entity: everything here is per-distance because that is
+// how runners evaluate a race.
+//
+// Identity is (race_event_id, item_name): the item name must match the
+// RaceCalendarItem.Name of the corresponding calendar row (e.g. 全程马拉松).
+// Keying by name — not by race_calendar_item.id — is what makes the content
+// survive the sync's delete+insert of sync items: the upstream item ids churn,
+// the names do not. Like the event content columns this is a content asset the
+// sync never writes; the stale-delete keeps the event row (flagged
+// content_stale) so these rows never dangle unprotected.
+type RaceItemContent struct {
+	ID          uint64 `gorm:"column:id;primaryKey;autoIncrement"`
+	RaceEventID uint64 `gorm:"column:race_event_id;not null;uniqueIndex:uidx_race_item_content_event_name,priority:1"`
+	ItemName    string `gorm:"column:item_name;size:255;not null;uniqueIndex:uidx_race_item_content_event_name,priority:2"`
+
+	DistanceKm      *float64             `gorm:"column:distance_km"`
+	StartPoint      *RacePoint           `gorm:"column:start_point;type:json;serializer:json"`
+	FinishPoint     *RacePoint           `gorm:"column:finish_point;type:json;serializer:json"`
+	TotalAscentM    *int                 `gorm:"column:total_ascent_m"`
+	ElevationPoints []RaceElevationPoint `gorm:"column:elevation_points;type:json;serializer:json"`
+	AidStations     []RaceAidStation     `gorm:"column:aid_stations;type:json;serializer:json"`
+	Cutoffs         []RaceCutoff         `gorm:"column:cutoffs;type:json;serializer:json"`
+	Prizes          []RacePrize          `gorm:"column:prizes;type:json;serializer:json"`
+	Reputation      *RaceReputation      `gorm:"column:reputation;type:json;serializer:json"`
+	Photos          []RacePhoto          `gorm:"column:photos;type:json;serializer:json"`
+
+	CreatedAt time.Time `gorm:"column:created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
+}
+
+// TableName pins the table name (GORM would otherwise pluralize).
+func (RaceItemContent) TableName() string { return "race_item_content" }
+
+// RacePartitionRule is the race-level start-corral arrangement (user story 9).
+// Mode is "mixed" (所有项目混合分区) or "by_item" (分项先后出发); Description
+// carries the free-text explanation.
+type RacePartitionRule struct {
+	Mode        string `json:"mode"`
+	Description string `json:"description"`
+}
+
+// RaceSignupTimeline is the race-level signup window (user story 10). StartAt /
+// Deadline / LotteryResultAt are calendar dates ("2006-01-02"), never
+// timezone-converted; LotteryResultAt is nil when there is no lottery.
+type RaceSignupTimeline struct {
+	StartAt         string  `json:"start_at"`
+	Deadline        string  `json:"deadline"`
+	Lottery         bool    `json:"lottery"`
+	LotteryResultAt *string `json:"lottery_result_at"`
+}
+
+// RaceSignupChannel is one signup entry point (user story 11). Type is a free
+// label (官网 / 公众号 / 合作App); QrCodeURL is optional media, selectable.
+type RaceSignupChannel struct {
+	Name      string  `json:"name"`
+	Type      string  `json:"type"`
+	URL       string  `json:"url"`
+	QrCodeURL *string `json:"qr_code_url"`
+}
+
+// RacePacketPickup is one packet-pickup window (user story 12): when and where
+// bibs/packs are collected.
+type RacePacketPickup struct {
+	Time     string `json:"time"`
+	Location string `json:"location"`
+}
+
+// RacePoint is a named geographic point (start/finish of a distance, user
+// story 14). Lat/Lng are WGS84 decimal degrees, nil when unknown.
+type RacePoint struct {
+	Name string   `json:"name"`
+	Lat  *float64 `json:"lat"`
+	Lng  *float64 `json:"lng"`
+}
+
+// RaceElevationPoint is one sample on the course profile (user story 15):
+// distance along the course and the elevation at that point.
+type RaceElevationPoint struct {
+	DistanceKm float64 `json:"distance_km"`
+	ElevationM int     `json:"elevation_m"`
+}
+
+// RaceAidStation is one aid station (user story 17): distance along the course
+// plus the supplies offered there (水/能量胶/香蕉…).
+type RaceAidStation struct {
+	DistanceKm float64  `json:"distance_km"`
+	Supplies   []string `json:"supplies"`
+}
+
+// RaceCutoff is one cutoff (user story 18): Point names the location ("21K" /
+// "终点"), CutoffAt is a wall-clock "HH:MM" on race day (never
+// timezone-converted).
+type RaceCutoff struct {
+	Point      string   `json:"point"`
+	DistanceKm *float64 `json:"distance_km"`
+	CutoffAt   string   `json:"cutoff_at"`
+}
+
+// RacePrize is one prize tier (user story 20): Rank is a display label ("1" /
+// "冠军"), Amount is in whole CNY yuan.
+type RacePrize struct {
+	Rank   string `json:"rank"`
+	Amount int    `json:"amount"`
+}
+
+// RaceReputation is the curated course reputation (user story 21).
+type RaceReputation struct {
+	Summary string   `json:"summary"`
+	Pros    []string `json:"pros"`
+	Cons    []string `json:"cons"`
+}
+
+// RaceClimate is the race-period climate note (moved from city level): one
+// free-text paragraph describing the climate a runner should expect around the
+// race date. A struct keeps every race content section a named JSON object and
+// leaves room to grow (generated_at, per-distance notes).
+type RaceClimate struct {
+	Summary string `json:"summary"`
+}
+
+// RaceWeatherWindow is one historical-weather window around the race period
+// (moved from city level; the JSON shape is identical to the former
+// CityWeatherWindow so previously published snapshots stay readable).
+// WindowStart/WindowEnd are "MM-DD" (never timezone-converted); temperatures
+// are °C, probabilities/humidity are percent, Wind is free text.
+type RaceWeatherWindow struct {
+	WindowStart        string   `json:"window_start"`
+	WindowEnd          string   `json:"window_end"`
+	AvgTempC           *float64 `json:"avg_temp_c"`
+	TempHighC          *float64 `json:"temp_high_c"`
+	TempLowC           *float64 `json:"temp_low_c"`
+	RainProbabilityPct *int     `json:"rain_probability_pct"`
+	HumidityPct        *int     `json:"humidity_pct"`
+	Wind               *string  `json:"wind"`
+}
+
+// RacePhoto is one course photo (user story 22): where along the course it was
+// taken plus optional media. URL is optional in the schema but a row without
+// one carries no information — the API layer validates it.
+type RacePhoto struct {
+	DistanceKm *float64 `json:"distance_km"`
+	Location   string   `json:"location"`
+	URL        string   `json:"url"`
+	Caption    string   `json:"caption"`
+}

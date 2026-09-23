@@ -16,17 +16,18 @@ import (
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
-// RaceContentStore is the persistence the admin race-content surface needs
-// (issue #318 赛事信息维护): race-level and item-level content plus city
-// content. There is no lifecycle — an upsert is the live content. The concrete
+// Race content lives ON the race_calendar row (the six event-level sections)
+// and in race_item_content (one row per distance); the race-calendar routes in
+// race_calendar.go serve it. This file keeps what is genuinely separate: the
+// city content surface, the AI draft generators, and the content input
+// validation shared by the calendar handlers.
+
+// RaceContentStore is the persistence the city-content and AI-draft surface
+// needs. There is no lifecycle — an upsert is the live content. The concrete
 // *storage.Store satisfies it; tests use an in-memory fake.
 type RaceContentStore interface {
 	GetRaceCalendarEvent(ctx context.Context, id uint64) (*storage.RaceCalendarEvent, error)
-	GetRaceContentByEvent(ctx context.Context, eventID uint64) (*storage.RaceContent, []storage.RaceContentItem, error)
-	UpsertRaceContent(ctx context.Context, event *storage.RaceCalendarEvent, in *storage.RaceContent, items []storage.RaceContentItem) (*storage.RaceContent, []storage.RaceContentItem, error)
-	UpsertRaceContentAIDraft(ctx context.Context, event *storage.RaceCalendarEvent, in *storage.RaceContent) (*storage.RaceContent, []storage.RaceContentItem, error)
-	AttachRaceContent(ctx context.Context, contentID, eventID uint64) (*storage.RaceContent, []storage.RaceContentItem, error)
-	ListOrphanRaceContent(ctx context.Context) ([]storage.RaceContent, error)
+	UpdateRaceCalendarEvent(ctx context.Context, row *storage.RaceCalendarEvent) error
 	GetRaceCityContent(ctx context.Context, city string) (*storage.RaceCityContent, error)
 	UpsertRaceCityContent(ctx context.Context, in *storage.RaceCityContent) (*storage.RaceCityContent, error)
 	UpsertRaceCityContentAIDraft(ctx context.Context, in *storage.RaceCityContent) (*storage.RaceCityContent, error)
@@ -42,9 +43,10 @@ type CityAIDraftConfig struct {
 	Timeout  time.Duration
 }
 
-// raceContentRoutes serves the administrator race-content surface. Mounted on
-// the parent authenticated group so the admin JWT tier can reach it; every
-// handler re-checks TierAdmin so user and internal callers are refused.
+// raceContentRoutes serves the administrator city-content surface plus the AI
+// draft generators. Mounted on the parent authenticated group so the admin JWT
+// tier can reach it; every handler re-checks TierAdmin so user and internal
+// callers are refused.
 type raceContentRoutes struct {
 	store   RaceContentStore
 	aiDraft CityAIDraftConfig
@@ -83,17 +85,13 @@ func (r *raceContentRoutes) completeJSONWithRetry(ctx context.Context, client *l
 	return err
 }
 
-// register mounts the admin race-content endpoints. Content lives under the
-// race it belongs to (races/:race_id/content), plus a small race-content root
-// for orphan re-attachment and a cities root for the shared city content.
+// register mounts the city content endpoints and the race AI draft. Race
+// content itself is served by the race-calendar routes; only the AI draft
+// keeps a race-scoped path here.
 func (r *raceContentRoutes) register(rg *gin.RouterGroup) {
 	if r.store == nil {
 		return
 	}
-	rg.GET("/api/admin/races/:race_id/content", r.getRaceContent)
-	rg.PUT("/api/admin/races/:race_id/content", r.putRaceContent)
-	rg.GET("/api/admin/race-content/orphans", r.listOrphanRaceContent)
-	rg.POST("/api/admin/race-content/:content_id/attach", r.attachRaceContent)
 	rg.GET("/api/admin/cities/:city/content", r.getCityContent)
 	rg.PUT("/api/admin/cities/:city/content", r.putCityContent)
 	// AI draft generation (一期: 城市介绍 + 比赛期气候). The contract ships
@@ -105,64 +103,6 @@ func (r *raceContentRoutes) register(rg *gin.RouterGroup) {
 }
 
 // ─── DTOs ────────────────────────────────────────────────────────────────────
-
-// raceContentDTO is the admin projection of one race's content aggregate.
-// Nested payload structs are the storage value types (their json tags are the
-// API contract); only the model-level fields are re-projected here.
-type raceContentDTO struct {
-	ID             uint64                      `json:"id"`
-	RaceEventID    *uint64                     `json:"race_event_id"`
-	Source         string                      `json:"source"`
-	RaceName       string                      `json:"race_name"`
-	RaceDate       string                      `json:"race_date"`
-	Year           int                         `json:"year"`
-	PartitionRule  *storage.RacePartitionRule  `json:"partition_rule"`
-	SignupTimeline *storage.RaceSignupTimeline `json:"signup_timeline"`
-	SignupChannels []storage.RaceSignupChannel `json:"signup_channels"`
-	PacketPickup   []storage.RacePacketPickup  `json:"packet_pickup"`
-	Climate        *storage.RaceClimate        `json:"climate"`
-	WeatherWindows []storage.RaceWeatherWindow `json:"weather_windows"`
-	Items          []raceContentItemDTO        `json:"items"`
-	UpdatedAt      time.Time                   `json:"updated_at"`
-}
-
-// raceContentItemDTO is the admin projection of one distance's content.
-type raceContentItemDTO struct {
-	ID              uint64                       `json:"id"`
-	ItemName        string                       `json:"item_name"`
-	DistanceKm      *float64                     `json:"distance_km"`
-	StartPoint      *storage.RacePoint           `json:"start_point"`
-	FinishPoint     *storage.RacePoint           `json:"finish_point"`
-	TotalAscentM    *int                         `json:"total_ascent_m"`
-	ElevationPoints []storage.RaceElevationPoint `json:"elevation_points"`
-	Quota           *int                         `json:"quota"`
-	AidStations     []storage.RaceAidStation     `json:"aid_stations"`
-	Cutoffs         []storage.RaceCutoff         `json:"cutoffs"`
-	EntryFee        *int                         `json:"entry_fee"`
-	Prizes          []storage.RacePrize          `json:"prizes"`
-	Reputation      *storage.RaceReputation      `json:"reputation"`
-	Photos          []storage.RacePhoto          `json:"photos"`
-}
-
-// raceContentSummaryDTO is the orphan-list projection: enough identity for an
-// administrator to recognize the row and re-attach it, nothing else.
-type raceContentSummaryDTO struct {
-	ID          uint64    `json:"id"`
-	RaceEventID *uint64   `json:"race_event_id"`
-	Source      string    `json:"source"`
-	RaceName    string    `json:"race_name"`
-	RaceDate    string    `json:"race_date"`
-	Year        int       `json:"year"`
-	UpdatedAt   time.Time `json:"updated_at"`
-}
-
-type raceContentResponse struct {
-	Content *raceContentDTO `json:"content"`
-}
-
-type raceContentSummariesResponse struct {
-	Contents []raceContentSummaryDTO `json:"contents"`
-}
 
 // raceCityContentDTO is the admin projection of one city's content.
 type raceCityContentDTO struct {
@@ -178,99 +118,6 @@ type raceCityContentResponse struct {
 	Content *raceCityContentDTO `json:"content"`
 }
 
-// ─── Input binding (PUT is a full replace: an absent section clears it) ─────
-
-// raceContentInput is the PUT body for race content. Section pointers are
-// nil-when-absent: nil clears the section. Items are fully replaced (matched to
-// the calendar's distances by item_name).
-type raceContentInput struct {
-	PartitionRule  *storage.RacePartitionRule  `json:"partition_rule"`
-	SignupTimeline *storage.RaceSignupTimeline `json:"signup_timeline"`
-	SignupChannels []storage.RaceSignupChannel `json:"signup_channels"`
-	PacketPickup   []storage.RacePacketPickup  `json:"packet_pickup"`
-	Climate        *storage.RaceClimate        `json:"climate"`
-	WeatherWindows []storage.RaceWeatherWindow `json:"weather_windows"`
-	Items          []raceContentItemInput      `json:"items"`
-}
-
-type raceContentItemInput struct {
-	ItemName        string                       `json:"item_name"`
-	DistanceKm      *float64                     `json:"distance_km"`
-	StartPoint      *storage.RacePoint           `json:"start_point"`
-	FinishPoint     *storage.RacePoint           `json:"finish_point"`
-	TotalAscentM    *int                         `json:"total_ascent_m"`
-	ElevationPoints []storage.RaceElevationPoint `json:"elevation_points"`
-	Quota           *int                         `json:"quota"`
-	AidStations     []storage.RaceAidStation     `json:"aid_stations"`
-	Cutoffs         []storage.RaceCutoff         `json:"cutoffs"`
-	EntryFee        *int                         `json:"entry_fee"`
-	Prizes          []storage.RacePrize          `json:"prizes"`
-	Reputation      *storage.RaceReputation      `json:"reputation"`
-	Photos          []storage.RacePhoto          `json:"photos"`
-}
-
-// raceCityContentInput is the PUT body for city content. Climate and weather
-// windows moved to race level (race-period climatology, not city seasons).
-type raceCityContentInput struct {
-	Province    *string                  `json:"province"`
-	Intro       *storage.CityIntro       `json:"intro"`
-	Attractions []storage.CityAttraction `json:"attractions"`
-}
-
-func newRaceContentDTO(row *storage.RaceContent, items []storage.RaceContentItem) *raceContentDTO {
-	dto := &raceContentDTO{
-		ID:             row.ID,
-		RaceEventID:    row.RaceEventID,
-		Source:         row.Source,
-		RaceName:       row.RaceName,
-		RaceDate:       row.RaceDate,
-		Year:           row.Year,
-		PartitionRule:  row.PartitionRule,
-		SignupTimeline: row.SignupTimeline,
-		SignupChannels: row.SignupChannels,
-		PacketPickup:   row.PacketPickup,
-		Climate:        row.Climate,
-		WeatherWindows: row.WeatherWindows,
-		UpdatedAt:      row.UpdatedAt,
-	}
-	dto.Items = make([]raceContentItemDTO, 0, len(items))
-	for _, item := range items {
-		dto.Items = append(dto.Items, newRaceContentItemDTO(item))
-	}
-	return dto
-}
-
-func newRaceContentItemDTO(row storage.RaceContentItem) raceContentItemDTO {
-	return raceContentItemDTO{
-		ID:              row.ID,
-		ItemName:        row.ItemName,
-		DistanceKm:      row.DistanceKm,
-		StartPoint:      row.StartPoint,
-		FinishPoint:     row.FinishPoint,
-		TotalAscentM:    row.TotalAscentM,
-		ElevationPoints: row.ElevationPoints,
-		Quota:           row.Quota,
-		AidStations:     row.AidStations,
-		Cutoffs:         row.Cutoffs,
-		EntryFee:        row.EntryFee,
-		Prizes:          row.Prizes,
-		Reputation:      row.Reputation,
-		Photos:          row.Photos,
-	}
-}
-
-func newRaceContentSummaryDTO(row storage.RaceContent) raceContentSummaryDTO {
-	return raceContentSummaryDTO{
-		ID:          row.ID,
-		RaceEventID: row.RaceEventID,
-		Source:      row.Source,
-		RaceName:    row.RaceName,
-		RaceDate:    row.RaceDate,
-		Year:        row.Year,
-		UpdatedAt:   row.UpdatedAt,
-	}
-}
-
 func newRaceCityContentDTO(row *storage.RaceCityContent) *raceCityContentDTO {
 	return &raceCityContentDTO{
 		ID:          row.ID,
@@ -282,149 +129,12 @@ func newRaceCityContentDTO(row *storage.RaceCityContent) *raceCityContentDTO {
 	}
 }
 
-// ─── Race content handlers ───────────────────────────────────────────────────
-
-// getRaceContent returns a race's content aggregate, or content:null when the
-// race has never been maintained.
-//
-//	@Summary		Get a race's maintained content
-//	@Description	Administrator only. Returns the content aggregate (race-level fields + per-distance items) attached to the race, resolving a broken event link by business key.
-//	@Tags			admin
-//	@Param			race_id	path	int	true	"Race event id"
-//	@Success		200	{object}	raceContentResponse
-//	@Failure		404	{object}	errorResponse
-//	@Failure		500	{object}	errorResponse
-//	@Security		BearerAuth
-//	@Router			/api/admin/races/{race_id}/content [get]
-func (r *raceContentRoutes) getRaceContent(c *gin.Context) {
-	if !requireAdmin(c) {
-		return
-	}
-	eventID, ok := parseUintParam(c, "race_id")
-	if !ok {
-		return
-	}
-	row, items, err := r.store.GetRaceContentByEvent(c.Request.Context(), eventID)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	if row == nil {
-		c.JSON(http.StatusOK, raceContentResponse{Content: nil})
-		return
-	}
-	c.JSON(http.StatusOK, raceContentResponse{Content: newRaceContentDTO(row, items)})
-}
-
-// putRaceContent creates or replaces a race's content. 保存即生效: the saved
-// content is the live content — there is no draft state and no publish step.
-//
-//	@Summary		Create or replace a race's content
-//	@Description	Administrator only. Full-replace PUT: absent sections are cleared, items are matched to the calendar's distances by item_name. The saved content is live immediately.
-//	@Tags			admin
-//	@Param			race_id	path	int					true	"Race event id"
-//	@Param			body	body	raceContentInput	true	"Content payload"
-//	@Success		200	{object}	raceContentResponse
-//	@Failure		400	{object}	errorResponse
-//	@Failure		404	{object}	errorResponse
-//	@Failure		500	{object}	errorResponse
-//	@Security		BearerAuth
-//	@Router			/api/admin/races/{race_id}/content [put]
-func (r *raceContentRoutes) putRaceContent(c *gin.Context) {
-	if !requireAdmin(c) {
-		return
-	}
-	eventID, ok := parseUintParam(c, "race_id")
-	if !ok {
-		return
-	}
-	event, err := r.store.GetRaceCalendarEvent(c.Request.Context(), eventID)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	var in raceContentInput
-	if !bindRaceCalendarJSON(c, &in, "invalid_request") {
-		return
-	}
-	row, items, err := validateRaceContentInput(&in)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
-		return
-	}
-	saved, savedItems, err := r.store.UpsertRaceContent(c.Request.Context(), event, row, items)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	c.JSON(http.StatusOK, raceContentResponse{Content: newRaceContentDTO(saved, savedItems)})
-}
-
-// listOrphanRaceContent returns content whose race link broke upstream.
-//
-//	@Summary		List orphaned race content
-//	@Description	Administrator only. Returns content rows whose live race link is broken (upstream renamed/rescheduled the race) so they can be re-attached.
-//	@Tags			admin
-//	@Success		200	{object}	raceContentSummariesResponse
-//	@Failure		500	{object}	errorResponse
-//	@Security		BearerAuth
-//	@Router			/api/admin/race-content/orphans [get]
-func (r *raceContentRoutes) listOrphanRaceContent(c *gin.Context) {
-	if !requireAdmin(c) {
-		return
-	}
-	rows, err := r.store.ListOrphanRaceContent(c.Request.Context())
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	dtos := make([]raceContentSummaryDTO, 0, len(rows))
-	for _, row := range rows {
-		dtos = append(dtos, newRaceContentSummaryDTO(row))
-	}
-	c.JSON(http.StatusOK, raceContentSummariesResponse{Contents: dtos})
-}
-
-// attachRaceContent re-links orphaned content to a race event.
-//
-//	@Summary		Attach race content to a race event
-//	@Description	Administrator only. Re-links a (possibly orphaned) content row to a race event and refreshes its business-key snapshot from that event. 409 when the race already has content.
-//	@Tags			admin
-//	@Param			content_id	path	int					true	"Content id"
-//	@Param			body		body	raceContentAttachInput	true	"Attach payload"
-//	@Success		200	{object}	raceContentResponse
-//	@Failure		400	{object}	errorResponse
-//	@Failure		404	{object}	errorResponse
-//	@Failure		409	{object}	errorResponse
-//	@Failure		500	{object}	errorResponse
-//	@Security		BearerAuth
-//	@Router			/api/admin/race-content/{content_id}/attach [post]
-func (r *raceContentRoutes) attachRaceContent(c *gin.Context) {
-	if !requireAdmin(c) {
-		return
-	}
-	contentID, ok := parseUintParam(c, "content_id")
-	if !ok {
-		return
-	}
-	var in raceContentAttachInput
-	if !bindRaceCalendarJSON(c, &in, "invalid_request") {
-		return
-	}
-	if in.RaceEventID == 0 {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
-		return
-	}
-	saved, savedItems, err := r.store.AttachRaceContent(c.Request.Context(), contentID, in.RaceEventID)
-	if err != nil {
-		writeRaceContentError(c, r.log, err)
-		return
-	}
-	c.JSON(http.StatusOK, raceContentResponse{Content: newRaceContentDTO(saved, savedItems)})
-}
-
-type raceContentAttachInput struct {
-	RaceEventID uint64 `json:"race_event_id"`
+// raceCityContentInput is the PUT body for city content. Climate and weather
+// windows moved to race level (race-period climatology, not city seasons).
+type raceCityContentInput struct {
+	Province    *string                  `json:"province"`
+	Intro       *storage.CityIntro       `json:"intro"`
+	Attractions []storage.CityAttraction `json:"attractions"`
 }
 
 // ─── City content handlers ───────────────────────────────────────────────────
@@ -647,12 +357,14 @@ func raceAIDraftUserPrompt(name, raceDate, city string) string {
 
 // aiDraftRaceContent generates an AI draft for a race's race-period climate
 // (summary + historical weather windows), keyed to the race's city and date.
+// The draft merges onto the race_calendar row's climate + weather_windows
+// columns; the other sections are untouched.
 //
 //	@Summary		Generate an AI race-content climate draft
-//	@Description	Administrator only. Synchronously calls the configured OpenAI-compatible LLM with the race's name/date/city and upserts climate + weather_windows on the race's content, preserving the other sections. Unconfigured deployments answer 501 ai_draft_not_configured.
+//	@Description	Administrator only. Synchronously calls the configured OpenAI-compatible LLM with the race's name/date/city and merges climate + weather_windows onto the race row, preserving the other sections. Unconfigured deployments answer 501 ai_draft_not_configured.
 //	@Tags			admin
 //	@Param			race_id	path	int	true	"Race event id"
-//	@Success		200		{object}	raceContentResponse
+//	@Success		200		{object}	raceCalendarDetailDTO
 //	@Failure		400		{object}	errorResponse
 //	@Failure		404		{object}	errorResponse
 //	@Failure		501		{object}	errorResponse
@@ -717,105 +429,157 @@ func (r *raceContentRoutes) aiDraftRaceContent(c *gin.Context) {
 		return
 	}
 
-	saved, savedItems, err := r.store.UpsertRaceContentAIDraft(c.Request.Context(), event, &storage.RaceContent{
-		Climate:        &storage.RaceClimate{Summary: out.Summary},
-		WeatherWindows: out.WeatherWindows,
-	})
-	if err != nil {
+	event.Climate = &storage.RaceClimate{Summary: out.Summary}
+	event.WeatherWindows = out.WeatherWindows
+	if err := r.store.UpdateRaceCalendarEvent(c.Request.Context(), event); err != nil {
 		writeRaceContentError(c, r.log, err)
 		return
 	}
-	c.JSON(http.StatusOK, raceContentResponse{Content: newRaceContentDTO(saved, savedItems)})
+	c.JSON(http.StatusOK, newRaceCalendarEventDTO(*event))
 }
 
-// ─── Binding + validation + errors ───────────────────────────────────────────
+// ─── Content input validation (shared with the race-calendar handlers) ──────
 
-// validateRaceContentInput applies the cross-field rules the storage layer
-// deliberately does not know about and projects the input onto the storage
-// model. The rules are the minimum that keeps the dataset honest: a distance
-// without a name cannot be matched to a calendar item, duplicate names would
-// make the full-replace ambiguous, a photo without a URL carries nothing, and
-// the enum fields have a closed value space.
-func validateRaceContentInput(in *raceContentInput) (*storage.RaceContent, []storage.RaceContentItem, error) {
-	row := &storage.RaceContent{
-		PartitionRule:  in.PartitionRule,
-		SignupTimeline: in.SignupTimeline,
-		SignupChannels: in.SignupChannels,
-		PacketPickup:   in.PacketPickup,
-		Climate:        in.Climate,
-		WeatherWindows: in.WeatherWindows,
+// raceEventContentInput is the content object of a PATCH /api/admin/races/:id
+// body (and the shape the detail DTO mirrors back). It is a FULL REPLACE of
+// the six sections: an absent section clears it — the same save-is-live
+// semantics the old PUT /content endpoint had. An explicit JSON null at the
+// content level (optionalField.Value == nil) clears everything.
+type raceEventContentInput struct {
+	PartitionRule  *storage.RacePartitionRule  `json:"partition_rule"`
+	SignupTimeline *storage.RaceSignupTimeline `json:"signup_timeline"`
+	SignupChannels []storage.RaceSignupChannel `json:"signup_channels"`
+	PacketPickup   []storage.RacePacketPickup  `json:"packet_pickup"`
+	Climate        *storage.RaceClimate        `json:"climate"`
+	WeatherWindows []storage.RaceWeatherWindow `json:"weather_windows"`
+}
+
+// raceItemContentInput is the content object of the item create/update bodies:
+// full-replace of the item's content fields. The item's name is its identity
+// on race_item_content and is not settable here.
+type raceItemContentInput struct {
+	DistanceKm      *float64                     `json:"distance_km"`
+	StartPoint      *storage.RacePoint           `json:"start_point"`
+	FinishPoint     *storage.RacePoint           `json:"finish_point"`
+	TotalAscentM    *int                         `json:"total_ascent_m"`
+	ElevationPoints []storage.RaceElevationPoint `json:"elevation_points"`
+	AidStations     []storage.RaceAidStation     `json:"aid_stations"`
+	Cutoffs         []storage.RaceCutoff         `json:"cutoffs"`
+	Prizes          []storage.RacePrize          `json:"prizes"`
+	Reputation      *storage.RaceReputation      `json:"reputation"`
+	Photos          []storage.RacePhoto          `json:"photos"`
+}
+
+// raceEventContentDTO is the admin projection of the six content sections on a
+// race row. A nil pointer means the race has never been maintained.
+type raceEventContentDTO struct {
+	PartitionRule  *storage.RacePartitionRule  `json:"partition_rule"`
+	SignupTimeline *storage.RaceSignupTimeline `json:"signup_timeline"`
+	SignupChannels []storage.RaceSignupChannel `json:"signup_channels"`
+	PacketPickup   []storage.RacePacketPickup  `json:"packet_pickup"`
+	Climate        *storage.RaceClimate        `json:"climate"`
+	WeatherWindows []storage.RaceWeatherWindow `json:"weather_windows"`
+}
+
+func newRaceEventContentDTO(row storage.RaceCalendarEvent) *raceEventContentDTO {
+	if !row.HasContent() {
+		return nil
 	}
+	return &raceEventContentDTO{
+		PartitionRule:  row.PartitionRule,
+		SignupTimeline: row.SignupTimeline,
+		SignupChannels: row.SignupChannels,
+		PacketPickup:   row.PacketPickup,
+		Climate:        row.Climate,
+		WeatherWindows: row.WeatherWindows,
+	}
+}
+
+// raceItemContentDTO is the admin projection of one item's content row. A nil
+// pointer means the item has no content yet.
+type raceItemContentDTO struct {
+	DistanceKm      *float64                     `json:"distance_km"`
+	StartPoint      *storage.RacePoint           `json:"start_point"`
+	FinishPoint     *storage.RacePoint           `json:"finish_point"`
+	TotalAscentM    *int                         `json:"total_ascent_m"`
+	ElevationPoints []storage.RaceElevationPoint `json:"elevation_points"`
+	AidStations     []storage.RaceAidStation     `json:"aid_stations"`
+	Cutoffs         []storage.RaceCutoff         `json:"cutoffs"`
+	Prizes          []storage.RacePrize          `json:"prizes"`
+	Reputation      *storage.RaceReputation      `json:"reputation"`
+	Photos          []storage.RacePhoto          `json:"photos"`
+}
+
+func newRaceItemContentDTO(row *storage.RaceItemContent) *raceItemContentDTO {
+	if row == nil {
+		return nil
+	}
+	return &raceItemContentDTO{
+		DistanceKm:      row.DistanceKm,
+		StartPoint:      row.StartPoint,
+		FinishPoint:     row.FinishPoint,
+		TotalAscentM:    row.TotalAscentM,
+		ElevationPoints: row.ElevationPoints,
+		AidStations:     row.AidStations,
+		Cutoffs:         row.Cutoffs,
+		Prizes:          row.Prizes,
+		Reputation:      row.Reputation,
+		Photos:          row.Photos,
+	}
+}
+
+// validateRaceEventContent applies the cross-field rules the storage layer
+// deliberately does not know about. The rules are the minimum that keeps the
+// dataset honest: the partition mode's closed enum, calendar dates, non-empty
+// channel entries, and the weather windows' MM-DD/percent bounds. An
+// empty-summary climate object carries nothing and is treated as absent.
+func validateRaceEventContent(in *raceEventContentInput) error {
 	if in.PartitionRule != nil {
 		if in.PartitionRule.Mode != "mixed" && in.PartitionRule.Mode != "by_item" {
-			return nil, nil, errInvalidRaceContentInput
+			return errInvalidRaceContentInput
 		}
 	}
-	if in.SignupTimeline != nil && !isCalendarDate(in.SignupTimeline.StartAt) {
-		return nil, nil, errInvalidRaceContentInput
-	}
-	if in.SignupTimeline != nil && !isCalendarDate(in.SignupTimeline.Deadline) {
-		return nil, nil, errInvalidRaceContentInput
-	}
-	if in.SignupTimeline != nil && in.SignupTimeline.LotteryResultAt != nil &&
-		!isCalendarDate(*in.SignupTimeline.LotteryResultAt) {
-		return nil, nil, errInvalidRaceContentInput
+	if in.SignupTimeline != nil {
+		if !isCalendarDate(in.SignupTimeline.StartAt) || !isCalendarDate(in.SignupTimeline.Deadline) {
+			return errInvalidRaceContentInput
+		}
+		if in.SignupTimeline.LotteryResultAt != nil && !isCalendarDate(*in.SignupTimeline.LotteryResultAt) {
+			return errInvalidRaceContentInput
+		}
 	}
 	for _, ch := range in.SignupChannels {
 		if strings.TrimSpace(ch.Name) == "" || strings.TrimSpace(ch.URL) == "" {
-			return nil, nil, errInvalidRaceContentInput
+			return errInvalidRaceContentInput
 		}
-	}
-	if in.Climate != nil && strings.TrimSpace(in.Climate.Summary) == "" {
-		// An empty-summary climate object carries nothing; treat it as absent
-		// rather than storing a stub.
-		row.Climate = nil
 	}
 	for _, w := range in.WeatherWindows {
 		if !isMonthDay(w.WindowStart) || !isMonthDay(w.WindowEnd) {
-			return nil, nil, errInvalidRaceContentInput
+			return errInvalidRaceContentInput
 		}
 		for _, pct := range []*int{w.RainProbabilityPct, w.HumidityPct} {
 			if pct != nil && (*pct < 0 || *pct > 100) {
-				return nil, nil, errInvalidRaceContentInput
+				return errInvalidRaceContentInput
 			}
 		}
 	}
+	return nil
+}
 
-	seen := make(map[string]bool, len(in.Items))
-	items := make([]storage.RaceContentItem, 0, len(in.Items))
-	for _, inItem := range in.Items {
-		name := strings.TrimSpace(inItem.ItemName)
-		if name == "" || seen[name] {
-			return nil, nil, errInvalidRaceContentInput
+// validateRaceItemContent is the item-level counterpart of
+// validateRaceEventContent: a cutoff must be a race-day wall clock and a photo
+// without a URL carries nothing.
+func validateRaceItemContent(in *raceItemContentInput) error {
+	for _, cutoff := range in.Cutoffs {
+		if !isRaceClock(cutoff.CutoffAt) {
+			return errInvalidRaceContentInput
 		}
-		seen[name] = true
-		for _, cutoff := range inItem.Cutoffs {
-			if !isRaceClock(cutoff.CutoffAt) {
-				return nil, nil, errInvalidRaceContentInput
-			}
-		}
-		for _, photo := range inItem.Photos {
-			if strings.TrimSpace(photo.URL) == "" {
-				return nil, nil, errInvalidRaceContentInput
-			}
-		}
-		items = append(items, storage.RaceContentItem{
-			ItemName:        name,
-			DistanceKm:      inItem.DistanceKm,
-			StartPoint:      inItem.StartPoint,
-			FinishPoint:     inItem.FinishPoint,
-			TotalAscentM:    inItem.TotalAscentM,
-			ElevationPoints: inItem.ElevationPoints,
-			Quota:           inItem.Quota,
-			AidStations:     inItem.AidStations,
-			Cutoffs:         inItem.Cutoffs,
-			EntryFee:        inItem.EntryFee,
-			Prizes:          inItem.Prizes,
-			Reputation:      inItem.Reputation,
-			Photos:          inItem.Photos,
-		})
 	}
-	return row, items, nil
+	for _, photo := range in.Photos {
+		if strings.TrimSpace(photo.URL) == "" {
+			return errInvalidRaceContentInput
+		}
+	}
+	return nil
 }
 
 // errInvalidRaceContentInput marks a rejected request body (400 invalid_request).

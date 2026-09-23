@@ -1492,6 +1492,10 @@ definitions:
     properties:
       city:
         type: string
+      content:
+        $ref: '#/definitions/api.raceEventContentDTO'
+      content_stale:
+        type: boolean
       country:
         type: string
       day_of_month:
@@ -1533,6 +1537,10 @@ definitions:
     properties:
       city:
         type: string
+      content:
+        $ref: '#/definitions/api.raceEventContentDTO'
+      content_stale:
+        type: boolean
       country:
         type: string
       day_of_month:
@@ -1568,6 +1576,8 @@ definitions:
     type: object
   api.raceCalendarItemCreateRequest:
     properties:
+      content:
+        $ref: '#/definitions/api.raceItemContentInput'
       entry_fee:
         type: integer
       name:
@@ -1581,6 +1591,8 @@ definitions:
     type: object
   api.raceCalendarItemDTO:
     properties:
+      content:
+        $ref: '#/definitions/api.raceItemContentDTO'
       entry_fee:
         type: integer
       id:
@@ -1598,6 +1610,8 @@ definitions:
     type: object
   api.raceCalendarItemUpdateRequest:
     properties:
+      content:
+        type: object
       entry_fee:
         type: integer
       name:
@@ -1626,6 +1640,13 @@ definitions:
     properties:
       city:
         type: string
+      content:
+        description: |-
+          Content is tri-state: absent = untouched, explicit null = clear every
+          section, object = full replace of the six sections. The same PATCH
+          carries the base fields and the content, but the dashboard sends them
+          as two independent saves.
+        type: object
       country:
         type: string
       label:
@@ -1684,58 +1705,15 @@ definitions:
       content:
         $ref: '#/definitions/api.raceCityContentDTO'
     type: object
-  api.raceContentAttachInput:
+  api.raceContentMoveRequest:
     properties:
-      race_event_id:
+      target_race_id:
         type: integer
     type: object
-  api.raceContentDTO:
+  api.raceEventContentDTO:
     properties:
       climate:
         $ref: '#/definitions/storage.RaceClimate'
-      id:
-        type: integer
-      items:
-        items:
-          $ref: '#/definitions/api.raceContentItemDTO'
-        type: array
-      packet_pickup:
-        items:
-          $ref: '#/definitions/storage.RacePacketPickup'
-        type: array
-      partition_rule:
-        $ref: '#/definitions/storage.RacePartitionRule'
-      race_date:
-        type: string
-      race_event_id:
-        type: integer
-      race_name:
-        type: string
-      signup_channels:
-        items:
-          $ref: '#/definitions/storage.RaceSignupChannel'
-        type: array
-      signup_timeline:
-        $ref: '#/definitions/storage.RaceSignupTimeline'
-      source:
-        type: string
-      updated_at:
-        type: string
-      weather_windows:
-        items:
-          $ref: '#/definitions/storage.RaceWeatherWindow'
-        type: array
-      year:
-        type: integer
-    type: object
-  api.raceContentInput:
-    properties:
-      climate:
-        $ref: '#/definitions/storage.RaceClimate'
-      items:
-        items:
-          $ref: '#/definitions/api.raceContentItemInput'
-        type: array
       packet_pickup:
         items:
           $ref: '#/definitions/storage.RacePacketPickup'
@@ -1753,7 +1731,7 @@ definitions:
           $ref: '#/definitions/storage.RaceWeatherWindow'
         type: array
     type: object
-  api.raceContentItemDTO:
+  api.raceItemContentDTO:
     properties:
       aid_stations:
         items:
@@ -1769,14 +1747,8 @@ definitions:
         items:
           $ref: '#/definitions/storage.RaceElevationPoint'
         type: array
-      entry_fee:
-        type: integer
       finish_point:
         $ref: '#/definitions/storage.RacePoint'
-      id:
-        type: integer
-      item_name:
-        type: string
       photos:
         items:
           $ref: '#/definitions/storage.RacePhoto'
@@ -1785,8 +1757,6 @@ definitions:
         items:
           $ref: '#/definitions/storage.RacePrize'
         type: array
-      quota:
-        type: integer
       reputation:
         $ref: '#/definitions/storage.RaceReputation'
       start_point:
@@ -1794,7 +1764,7 @@ definitions:
       total_ascent_m:
         type: integer
     type: object
-  api.raceContentItemInput:
+  api.raceItemContentInput:
     properties:
       aid_stations:
         items:
@@ -1810,12 +1780,8 @@ definitions:
         items:
           $ref: '#/definitions/storage.RaceElevationPoint'
         type: array
-      entry_fee:
-        type: integer
       finish_point:
         $ref: '#/definitions/storage.RacePoint'
-      item_name:
-        type: string
       photos:
         items:
           $ref: '#/definitions/storage.RacePhoto'
@@ -1824,42 +1790,11 @@ definitions:
         items:
           $ref: '#/definitions/storage.RacePrize'
         type: array
-      quota:
-        type: integer
       reputation:
         $ref: '#/definitions/storage.RaceReputation'
       start_point:
         $ref: '#/definitions/storage.RacePoint'
       total_ascent_m:
-        type: integer
-    type: object
-  api.raceContentResponse:
-    properties:
-      content:
-        $ref: '#/definitions/api.raceContentDTO'
-    type: object
-  api.raceContentSummariesResponse:
-    properties:
-      contents:
-        items:
-          $ref: '#/definitions/api.raceContentSummaryDTO'
-        type: array
-    type: object
-  api.raceContentSummaryDTO:
-    properties:
-      id:
-        type: integer
-      race_date:
-        type: string
-      race_event_id:
-        type: integer
-      race_name:
-        type: string
-      source:
-        type: string
-      updated_at:
-        type: string
-      year:
         type: integer
     type: object
   api.runStateResponse:
@@ -4583,67 +4518,6 @@ paths:
       summary: Get a pipeline run (admin)
       tags:
       - pipelines
-  /api/admin/race-content/{content_id}/attach:
-    post:
-      description: Administrator only. Re-links a (possibly orphaned) content row
-        to a race event and refreshes its business-key snapshot from that event. 409
-        when the race already has content.
-      parameters:
-      - description: Content id
-        in: path
-        name: content_id
-        required: true
-        type: integer
-      - description: Attach payload
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/api.raceContentAttachInput'
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.raceContentResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: Attach race content to a race event
-      tags:
-      - admin
-  /api/admin/race-content/orphans:
-    get:
-      description: Administrator only. Returns content rows whose live race link is
-        broken (upstream renamed/rescheduled the race) so they can be re-attached.
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.raceContentSummariesResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: List orphaned race content
-      tags:
-      - admin
   /api/admin/races:
     get:
       description: Administrator only. Returns a page of races ordered by race date,
@@ -4874,79 +4748,12 @@ paths:
       summary: Edit a race
       tags:
       - admin
-  /api/admin/races/{race_id}/content:
-    get:
-      description: Administrator only. Returns the content aggregate (race-level fields
-        + per-distance items) attached to the race, resolving a broken event link
-        by business key.
-      parameters:
-      - description: Race event id
-        in: path
-        name: race_id
-        required: true
-        type: integer
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.raceContentResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: Get a race's maintained content
-      tags:
-      - admin
-    put:
-      description: 'Administrator only. Full-replace PUT: absent sections are cleared,
-        items are matched to the calendar''s distances by item_name. The saved content
-        is live immediately.'
-      parameters:
-      - description: Race event id
-        in: path
-        name: race_id
-        required: true
-        type: integer
-      - description: Content payload
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/api.raceContentInput'
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.raceContentResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-      security:
-      - BearerAuth: []
-      summary: Create or replace a race's content
-      tags:
-      - admin
   /api/admin/races/{race_id}/content/ai-draft:
     post:
       description: Administrator only. Synchronously calls the configured OpenAI-compatible
-        LLM with the race's name/date/city and upserts climate + weather_windows on
-        the race's content, preserving the other sections. Unconfigured deployments
-        answer 501 ai_draft_not_configured.
+        LLM with the race's name/date/city and merges climate + weather_windows onto
+        the race row, preserving the other sections. Unconfigured deployments answer
+        501 ai_draft_not_configured.
       parameters:
       - description: Race event id
         in: path
@@ -4957,7 +4764,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.raceContentResponse'
+            $ref: '#/definitions/api.raceCalendarDetailDTO'
         "400":
           description: Bad Request
           schema:
@@ -5131,6 +4938,55 @@ paths:
       security:
       - BearerAuth: []
       summary: Edit a race item
+      tags:
+      - admin
+  /api/admin/races/{race_id}/move-content:
+    post:
+      description: Administrator only. Copies the content sections and item content
+        from this race to the target race and deletes this race (with its items).
+        409 when the target already has content.
+      parameters:
+      - description: Source race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      - description: Move payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.raceContentMoveRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Move a race's content to another race
       tags:
       - admin
   /api/admin/users/{user_id}:
