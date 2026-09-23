@@ -40,7 +40,10 @@ describe("PhoneBindModal", () => {
     fireEvent.change(screen.getByLabelText("手机号"), { target: { value: "13800138000" } });
     fireEvent.click(screen.getByRole("button", { name: "获取验证码" }));
 
-    expect(store.sendSmsCode).toHaveBeenCalledWith("13800138000", { loginOnly: false });
+    expect(store.sendSmsCode).toHaveBeenCalledWith("13800138000", {
+      loginOnly: false,
+      scene: "bind_phone",
+    });
     expect(await screen.findByText(/重新获取/)).toBeInTheDocument();
   });
 

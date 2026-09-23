@@ -1,6 +1,11 @@
 import { sendBindPhoneCode, wechatBindAccount, wechatBindPhone } from '../../services/auth';
 import { userStore } from '../../store/index';
 
+// 手机号验证码登录的特性开关（issue #335）：auth-service 的新 grant
+// wechat_phone_bind 已上线后置 true；auth 回滚/未上线的窗口期置 false，
+// 登录页回落到默认邮箱 tab，手机号 tab 禁用。
+const PHONE_LOGIN_AVAILABLE = true;
+
 // 验证码倒计时时长（秒），与设计稿「52 秒后重发」的禁用倒计时文案一致
 const CODE_RESEND_SECONDS = 60;
 
@@ -48,8 +53,9 @@ const PHONE_RE = /^1\d{10}$/;
 
 Page<LoginPageData, LoginPageHandlers>({
   data: {
-    // 默认手机号 tab：新用户无需已有账号即可注册；邮箱密码 tab 保留给老用户
-    tab: 'phone',
+    // 默认手机号 tab（开关开启时）：新用户无需已有账号即可注册；邮箱密码 tab
+    // 保留给老用户。开关关闭时回落邮箱 tab。
+    tab: PHONE_LOGIN_AVAILABLE ? ('phone' as LoginTab) : ('email' as LoginTab),
     email: '',
     password: '',
     showPassword: false,
@@ -73,6 +79,10 @@ Page<LoginPageData, LoginPageHandlers>({
   onSwitchTab(e: WechatMiniprogram.TouchEvent) {
     const tab = e.currentTarget.dataset.tab as LoginTab;
     if (tab === this.data.tab) return;
+    if (tab === 'phone' && !PHONE_LOGIN_AVAILABLE) {
+      this.setData({ errorMsg: '手机号登录暂未开放，请使用邮箱登录' });
+      return;
+    }
     this.setData({ tab, errorMsg: '', focusField: '' });
   },
 
@@ -116,6 +126,11 @@ Page<LoginPageData, LoginPageHandlers>({
   async onGetCode() {
     const { phone, codeCountdown, loading } = this.data;
     if (codeCountdown > 0 || loading) return;
+
+    if (!PHONE_LOGIN_AVAILABLE) {
+      this.setData({ errorMsg: '手机号登录暂未开放，请使用邮箱登录' });
+      return;
+    }
 
     if (!PHONE_RE.test(phone)) {
       this.setData({ errorMsg: '请输入正确的手机号' });
@@ -201,6 +216,11 @@ Page<LoginPageData, LoginPageHandlers>({
   },
 
   async submitPhone() {
+    if (!PHONE_LOGIN_AVAILABLE) {
+      this.setData({ errorMsg: '手机号登录暂未开放，请使用邮箱登录' });
+      return;
+    }
+
     const phone = this.data.phone;
     const code = this.data.code;
     if (!PHONE_RE.test(phone)) {
@@ -219,8 +239,9 @@ Page<LoginPageData, LoginPageHandlers>({
       wx.showToast({ title: '登录成功', icon: 'success' });
       setTimeout(() => {
         if (result.registered) {
-          // 新注册用户一次性进入手表绑定引导页（可跳过）
-          wx.navigateTo({ url: '/pages/watch-onboarding/watch-onboarding' });
+          // 新注册用户一次性进入手表绑定引导页（可跳过）。
+          // redirectTo 替换登录页：返回键不再回到已登录状态的登录页。
+          wx.redirectTo({ url: '/pages/watch-onboarding/watch-onboarding' });
           return;
         }
         wx.switchTab({ url: '/pages/index/index' });

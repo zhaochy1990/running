@@ -36,6 +36,9 @@ const BIND_ERROR_MESSAGES: Record<string, string> = {
   [ApiErrorCode.SMS_DAILY_LIMIT]: '今日发送次数已达上限，请明天再试',
   [ApiErrorCode.SMS_NOT_CONFIGURED]: '短信服务未配置，请联系客服',
   [ApiErrorCode.USER_DISABLED]: '账号已被停用，请联系客服',
+  // 兜底：auth-service 的 400 bad_request（如注册门禁误开时的
+  // "invite_code is required"）直接透传会是英文，给出中文提示
+  bad_request: '操作未完成，请稍后再试或联系客服',
 };
 
 // auth-service 错误 → 中文文案错误（映射不到时保留服务端 message）。
