@@ -1,4 +1,5 @@
 import { wechatLogin, hasValidToken, validateSession } from './services/auth';
+import { getOnboardingStatus } from './services/onboarding';
 import { ApiError } from './services/request';
 import { userStore } from './store/index';
 
@@ -17,6 +18,21 @@ async function silentLogin(): Promise<boolean> {
       err instanceof Error ? err.message : err,
     );
     return false;
+  }
+}
+
+// 基础档案是必填项（ADR 0013），但 onboarding 页的入口只有「刚注册」和「绑表成功」
+// 两处 —— 用户中途退出、或注册早于这个流程（比如从没进过 onboarding 页的老账号），
+// 就再也回不到资料步了。所以每次启动查一次服务端状态并送回去，与 Web 的
+// OnboardingGate 同思路。查失败时放行：网络抖动不该把用户从首页拽走。
+async function routeToOnboardingIfProfileMissing(): Promise<void> {
+  try {
+    const status = await getOnboardingStatus();
+    if (status.profileReady) return;
+    console.log('[auth] 尚未填写基础档案 → 去 onboarding');
+    wx.reLaunch({ url: '/pages/onboarding/onboarding' });
+  } catch (err) {
+    console.warn('[auth] 读取档案状态失败，本次不拦截:', err);
   }
 }
 
@@ -62,12 +78,15 @@ App<IAppOption>({
         const user = await validateSession();
         console.log('[auth] 本地 token 仍被服务端接受 → 视为已登录');
         userStore.setUser(user);
+        await routeToOnboardingIfProfileMissing();
         return;
       }
 
       // 无本地 token → 免密登录换 JWT
       // 未绑定 → 跳登录页（邮箱登录即绑定已有 STRIDE 账号）
-      if (!(await silentLogin())) {
+      if (await silentLogin()) {
+        await routeToOnboardingIfProfileMissing();
+      } else {
         console.log('[auth] 免密登录没成功（未绑定 / 网络）→ 去登录页');
         wx.reLaunch({
           url: '/pages/login/login',

@@ -1,0 +1,221 @@
+<!-- Onboarding 单页三步：资料（必填） → 绑表（可跳过） → 同步（可跳过）
+     深色 STRIDE 主题，与登录页同一套配色（#07080A / #141517 / #FF6363）。 -->
+<view class="ob-page">
+  <!-- 步骤指示：只在流程中显示，loading / ready 不显示 -->
+  <view wx:if="{{step === 'profile' || step === 'watch' || step === 'sync'}}" class="ob-steps">
+    <view class="ob-steps__item {{step === 'profile' ? 'ob-steps__item--on' : ''}}">资料</view>
+    <view class="ob-steps__sep"></view>
+    <view class="ob-steps__item {{step === 'watch' ? 'ob-steps__item--on' : ''}}">手表</view>
+    <view class="ob-steps__sep"></view>
+    <view class="ob-steps__item {{step === 'sync' ? 'ob-steps__item--on' : ''}}">同步</view>
+  </view>
+
+  <!-- 加载中 -->
+  <block wx:if="{{step === 'loading'}}">
+    <view class="ob-hero">
+      <view class="ob-spinner"></view>
+    </view>
+  </block>
+
+  <!-- ============ 第一步：资料（必填） ============ -->
+  <block wx:elif="{{step === 'profile'}}">
+    <view class="ob-hero">
+      <view class="ob-title">先认识一下你</view>
+      <view class="ob-subtitle">这些信息用来算训练负荷和能力基线，填一次就好</view>
+    </view>
+
+    <view class="ob-card ob-card--pad">
+      <!-- 头像：微信一键取用 -->
+      <view class="ob-avatar-row">
+        <button class="ob-avatar-btn" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+          <image wx:if="{{avatarUrl}}" class="ob-avatar" src="{{avatarUrl}}" mode="aspectFill" />
+          <view wx:else class="ob-avatar ob-avatar--empty">
+            <text class="ob-avatar__hint">微信头像</text>
+          </view>
+        </button>
+        <view class="ob-avatar-tip">点头像可从微信同步</view>
+      </view>
+
+      <view class="ob-field">
+        <view class="ob-field__label">昵称</view>
+        <input
+          class="ob-input"
+          type="nickname"
+          placeholder="点击可选用微信昵称"
+          placeholder-class="ob-placeholder"
+          value="{{nickname}}"
+          bindinput="onNicknameInput"
+        />
+      </view>
+
+      <view class="ob-field-row">
+        <view class="ob-field ob-field--half">
+          <view class="ob-field__label">性别</view>
+          <picker mode="selector" range="{{sexOptions}}" value="{{sexIndex}}" bindchange="onSexChange">
+            <view class="ob-input ob-input--picker">{{sexOptions[sexIndex]}}</view>
+          </picker>
+        </view>
+        <view class="ob-field ob-field--half">
+          <view class="ob-field__label">生日</view>
+          <picker mode="date" value="{{dob}}" end="{{today}}" bindchange="onDobChange">
+            <view class="ob-input ob-input--picker">{{dob || '请选择'}}</view>
+          </picker>
+        </view>
+      </view>
+
+      <view class="ob-field-row">
+        <view class="ob-field ob-field--half">
+          <view class="ob-field__label">身高（cm）</view>
+          <input
+            class="ob-input"
+            type="digit"
+            placeholder="170"
+            placeholder-class="ob-placeholder"
+            value="{{heightCm}}"
+            bindinput="onHeightInput"
+          />
+        </view>
+        <view class="ob-field ob-field--half">
+          <view class="ob-field__label">体重（kg）</view>
+          <input
+            class="ob-input"
+            type="digit"
+            placeholder="65"
+            placeholder-class="ob-placeholder"
+            value="{{weightKg}}"
+            bindinput="onWeightInput"
+          />
+        </view>
+      </view>
+
+      <view class="ob-field">
+        <view class="ob-field__label">跑步年限</view>
+        <picker mode="selector" range="{{ageOptions}}" value="{{ageIndex}}" bindchange="onAgeChange">
+          <view class="ob-input ob-input--picker">{{ageOptions[ageIndex]}}</view>
+        </picker>
+      </view>
+
+      <view wx:if="{{formError}}" class="ob-error">{{formError}}</view>
+
+      <button class="ob-cta {{saving ? 'ob-cta--disabled' : ''}}" bindtap="onSaveProfile" disabled="{{saving}}">
+        {{saving ? '保存中…' : '保存并继续'}}
+      </button>
+    </view>
+  </block>
+
+  <!-- ============ 第二步：绑表（可跳过） ============ -->
+  <block wx:elif="{{step === 'watch'}}">
+    <view class="ob-hero">
+      <view class="ob-title">连接你的运动手表</view>
+      <view class="ob-subtitle">绑定后训练数据自动同步，训练量与疲劳趋势无需手动记录</view>
+    </view>
+
+    <view class="ob-card">
+      <view
+        class="ob-provider {{provider === 'coros' ? 'ob-provider--on' : ''}}"
+        data-provider="coros"
+        bindtap="onSelectProvider"
+      >
+        <view class="ob-provider-info">
+          <view class="ob-provider-name">COROS 高驰</view>
+          <view class="ob-provider-desc">同步训练与心率数据</view>
+        </view>
+        <view class="ob-provider-check">{{provider === 'coros' ? '✓' : ''}}</view>
+      </view>
+      <view
+        class="ob-provider ob-provider-last {{provider === 'garmin' ? 'ob-provider--on' : ''}}"
+        data-provider="garmin"
+        bindtap="onSelectProvider"
+      >
+        <view class="ob-provider-info">
+          <view class="ob-provider-name">Garmin 佳明</view>
+          <view class="ob-provider-desc">同步训练与生理数据</view>
+        </view>
+        <view class="ob-provider-check">{{provider === 'garmin' ? '✓' : ''}}</view>
+      </view>
+    </view>
+
+    <!-- 选中品牌后就地展开凭据表单，不用再跳一页重选品牌 -->
+    <view wx:if="{{provider}}" class="ob-card ob-card--pad ob-card--gap">
+      <view wx:if="{{provider === 'garmin'}}" class="ob-field">
+        <view class="ob-field__label">账号区域</view>
+        <picker mode="selector" range="{{regionOptions}}" value="{{regionIndex}}" bindchange="onRegionChange">
+          <view class="ob-input ob-input--picker">{{regionOptions[regionIndex]}}</view>
+        </picker>
+      </view>
+
+      <view class="ob-field">
+        <view class="ob-field__label">{{provider === 'coros' ? 'COROS' : 'Garmin'}} 账号</view>
+        <input
+          class="ob-input"
+          type="text"
+          placeholder="登录邮箱"
+          placeholder-class="ob-placeholder"
+          value="{{email}}"
+          bindinput="onEmailInput"
+        />
+      </view>
+
+      <view class="ob-field">
+        <view class="ob-field__label">密码</view>
+        <input
+          class="ob-input"
+          password="{{true}}"
+          placeholder="登录密码"
+          placeholder-class="ob-placeholder"
+          value="{{password}}"
+          bindinput="onPasswordInput"
+        />
+      </view>
+
+      <view wx:if="{{watchError}}" class="ob-error">{{watchError}}</view>
+
+      <button class="ob-cta {{connecting ? 'ob-cta--disabled' : ''}}" bindtap="onConnect" disabled="{{connecting}}">
+        {{connecting ? '绑定中…' : '绑定'}}
+      </button>
+    </view>
+
+    <view wx:elif="{{watchError}}" class="ob-error ob-error--loose">{{watchError}}</view>
+
+    <view class="ob-skip" bindtap="onSkipWatch">稍后再说，先逛逛</view>
+  </block>
+
+  <!-- ============ 第三步：同步（可跳过） ============ -->
+  <block wx:elif="{{step === 'sync'}}">
+    <block wx:if="{{syncPending}}">
+      <view class="ob-hero">
+        <view class="ob-title">还在同步中</view>
+        <view class="ob-subtitle">数据量大时会久一些，下次进来会自动接着同步</view>
+      </view>
+    </block>
+    <block wx:else>
+      <view class="ob-hero">
+        <view class="ob-spinner"></view>
+        <view class="ob-title">正在准备你的训练数据</view>
+        <view class="ob-subtitle">首次同步会拉取历史训练并计算能力基线，通常需要十几分钟</view>
+      </view>
+      <view class="ob-card ob-progress">
+        <view class="ob-progress__text">{{syncText}}</view>
+        <view class="ob-progress__bar">
+          <view class="ob-progress__fill" style="width: {{percent}}%"></view>
+        </view>
+        <view class="ob-progress__hint">可以先退出，下次进来会接着同步</view>
+      </view>
+    </block>
+
+    <view wx:if="{{syncError}}" class="ob-error ob-error--loose">{{syncError}}</view>
+
+    <button wx:if="{{syncError}}" class="ob-cta" bindtap="onRetrySync">重试</button>
+    <view class="ob-skip" bindtap="goHome">{{syncError ? '稍后再说，先逛逛' : '先进入首页'}}</view>
+  </block>
+
+  <!-- ============ 完成 ============ -->
+  <block wx:else>
+    <view class="ob-hero">
+      <view class="ob-success-badge">✓</view>
+      <view class="ob-title">准备就绪</view>
+      <view class="ob-subtitle">档案已保存。绑了手表的话，训练数据会在首页自动出现</view>
+    </view>
+    <button class="ob-cta" bindtap="goHome">进入首页</button>
+  </block>
+</view>

@@ -1,49 +1,40 @@
-// Onboarding 服务层 —— 新用户绑表后触发 onboarding pipeline，并把它续跑到真正"完成 onboarding"。
+// Onboarding 服务层 —— 两件互不依赖的事：
 //
-// 语义对齐 Web 的 frontend/src/pages/onboarding/SubmitStep.tsx：
-//   triggerSync(full) + Idempotency-Key → 轮询 run → POST /api/users/me/onboarding/complete
+//   1. 完成（complete）：只要求基础档案（ADR 0013）。资料保存成功即可标记完成，
+//      不依赖手表绑定，也不依赖任何 pipeline。
+//   2. 数据同步（sync）：绑表之后触发的 full sync。它**不是**完成的前置，纯粹为了
+//      把训练数据拉下来。
 //
-// 与 Web 有意的两点差异（各自在下面注释里说明理由）：
-//   1. 触发前会列一次该用户的 run，认领别端（Web / 换设备）已经起过的 onboarding run。
-//      Web 只信自己的 localStorage 指针，指针丢了就重复起一个 full sync。
-//   2. 读部署开关 features.sync_data_at_onboarding，关掉时不触发（Web 目前没读这个 flag）。
+// 所以这里没有"等 run 跑完再收尾"的链路：`completeOnboarding()` 与 `ensureSync()`
+// 各管各的，谁也不用等谁。
 //
-// 为什么"续跑"是主路径而不是补丁：onboarding pipeline 在生产实测平均 24 分钟（最长 51 分钟），
-// 小程序必然会在中途被杀掉，所以每次进页面都要能接着上次那次 run 继续，而不是从头再来。
+// 同步的语义对齐 Web 的 pages/onboarding/SubmitStep.tsx：triggerSync(full) +
+// Idempotency-Key → 轮询 run。与 Web 的一处差异：触发前会列一次该用户的 run，
+// 认领别端（Web / 换设备）已经起过的那次 —— Web 只信自己的 localStorage 指针，
+// 指针丢了就重复起一个 full sync。
+//
+// 为什么"续跑"是主路径：onboarding pipeline 在生产实测平均 24 分钟（最长 51 分钟），
+// 小程序必然会在中途被杀掉，所以每次进页面都要能接着上次那次 run 继续。
 
 import { getPipelineRun, listUserPipelines, triggerSync } from './sync';
 import { getMyProfile } from './profile';
 import { ApiError, http } from './request';
 import type { PipelineRun } from '../types/sync';
 
-/** onboarding pipeline 的名字（Go catalog.PipelineOnboarding）；complete 只认这个名字。 */
+/** onboarding pipeline 的名字（Go catalog.PipelineOnboarding）。 */
 const ONBOARDING_PIPELINE = 'onboarding';
 
-// 本地指针键名。带 userId 是因为小程序可以换账号，而 STORAGE_KEYS 都是全局单键，不能复用。
-// 前缀沿用 Web 的 stride:onboarding-*，两端对照排查时能对上。
+// 同步 run 的本地指针。键名带 userId 是因为小程序可以换账号，而 STORAGE_KEYS 都是
+// 全局单键，不能复用。前缀沿用 Web 的 stride:onboarding-*，两端对照排查时能对上。
 const RUN_KEY_PREFIX = 'stride:onboarding-run:';
 const START_KEY_PREFIX = 'stride:onboarding-start-key:';
-
-export type OnboardingPhase =
-  | 'complete' // 服务端已标记完成，什么都不用做
-  | 'disabled' // 部署开关关掉了 onboarding 同步
-  | 'no-watch' // 还没绑表；pipeline 第一步就是 watch sync，跑也没意义
-  | 'running' // 有 run 在跑（含刚触发的）
-  | 'done' // run 已成功结束，等着被 complete
-  | 'failed'; // run 失败，需要用户重试
 
 export interface OnboardingStatus {
   watchReady: boolean;
   profileReady: boolean;
   completed: boolean;
-  /** 部署开关：config.yml 的 sync-data-at-onboarding。 */
-  enabled: boolean;
-}
-
-export interface OnboardingResult {
-  phase: OnboardingPhase;
-  runId?: string;
-  message?: string;
+  /** 部署开关：config.yml 的 sync-data-at-onboarding，只关同步、不影响完成。 */
+  syncEnabled: boolean;
 }
 
 /** 读 onboarding 状态。复用 GET /api/users/me/profile（后端本来就在返回这两块）。 */
@@ -55,26 +46,39 @@ export async function getOnboardingStatus(): Promise<OnboardingStatus> {
     profileReady: onb?.profile_ready === true,
     completed: !!onb?.completed_at,
     // 字段缺失按"关"处理：宁可不动 24 分钟的 pipeline，也不要在开关状态未知时乱触发
-    enabled: p.features?.sync_data_at_onboarding === true,
+    syncEnabled: p.features?.sync_data_at_onboarding === true,
   };
 }
 
 /**
- * 幂等入口：确保该用户有一个正在跑的 onboarding run，返回当前该走的状态。
- * 顺序：已完成 → 开关 → 有表 → 本地指针 → 认领别端的 run → 触发。
+ * 标记 onboarding 完成。资料已保存时调用；服务端幂等（已完成返回 already-complete）。
+ * 不传 run_id：完成不再需要 pipeline（ADR 0013）。
  */
-export async function ensureOnboarding(userId: string): Promise<OnboardingResult> {
+export async function completeOnboarding(): Promise<void> {
+  await http.post<{ state?: string }>('/api/users/me/onboarding/complete', {});
+  console.log('[onboarding] 服务端已标记 onboarding 完成');
+}
+
+export type SyncPhase = 'disabled' | 'no-watch' | 'running' | 'done' | 'failed';
+
+export interface SyncResult {
+  phase: SyncPhase;
+  runId?: string;
+  message?: string;
+}
+
+/**
+ * 幂等入口：确保该用户有一个正在跑的同步 run，返回当前该走的状态。
+ * 顺序：开关 → 有表 → 本地指针 → 认领别端的 run → 触发。
+ */
+export async function ensureSync(userId: string): Promise<SyncResult> {
   const status = await getOnboardingStatus();
-  if (status.completed) {
-    console.log('[onboarding] 服务端已标记完成，跳过');
-    return { phase: 'complete' };
-  }
-  if (!status.enabled) {
-    console.warn('[onboarding] 部署开关 sync_data_at_onboarding 为 false，不触发 onboarding 同步');
+  if (!status.syncEnabled) {
+    console.warn('[onboarding] 部署开关 sync_data_at_onboarding 为 false，不触发同步');
     return { phase: 'disabled' };
   }
   if (!status.watchReady) {
-    console.log('[onboarding] 尚未绑表，不触发（pipeline 第一步就是 watch sync）');
+    console.log('[onboarding] 尚未绑表，不触发同步（pipeline 第一步就是 watch sync）');
     return { phase: 'no-watch' };
   }
 
@@ -92,8 +96,8 @@ export async function ensureOnboarding(userId: string): Promise<OnboardingResult
     clearPointer(userId);
   }
 
-  // 2) 认领别端已起的 onboarding run（换设备 / Web 先起过）。
-  //    只认非 failed 的：failed 需要用户主动重试起新 run；done 但未 complete 的正好认领来收尾。
+  // 2) 认领别端已起的 run（换设备 / Web 先起过）。
+  //    只认非 failed 的：failed 需要用户主动重试起新 run；done 的正好认领来展示结果。
   try {
     const { pipelines } = await listUserPipelines(userId);
     const existing = (pipelines || []).find(
@@ -115,7 +119,7 @@ export async function ensureOnboarding(userId: string): Promise<OnboardingResult
   console.log(`[onboarding] 触发 full sync（Idempotency-Key=${key}）`);
   const res = await triggerSync(userId, { full: true, idempotencyKey: key });
   if (!res.run_id) {
-    throw new Error(res.error || 'onboarding 任务创建失败');
+    throw new Error(res.error || '同步任务创建失败');
   }
   if (res.deduplicated) {
     console.log('[onboarding] 幂等键命中已有 run（重复触发被服务端去重）');
@@ -128,28 +132,12 @@ export async function ensureOnboarding(userId: string): Promise<OnboardingResult
 }
 
 /** 失败后重试：清指针与旧 key，确保起一个**新** run（否则幂等键会把那个失败的 run 带回来）。 */
-export async function retryOnboarding(userId: string): Promise<OnboardingResult> {
+export async function retrySync(userId: string): Promise<SyncResult> {
   console.log('[onboarding] 用户重试：清本地指针与幂等键');
   clearPointer(userId);
   clearStartKey(userId);
-  return ensureOnboarding(userId);
+  return ensureSync(userId);
 }
-
-/**
- * 标记 onboarding 完成。服务端要求：run 属于本人、名字是 onboarding、状态 done，
- * 且 profile_ready && watch_ready 都为真 —— 前置不满足时返回 400/409，由调用方决定引导去哪。
- */
-export async function completeOnboarding(userId: string, runId: string): Promise<void> {
-  await http.post<{ state?: string }>('/api/users/me/onboarding/complete', {
-    run_id: runId,
-  });
-  console.log('[onboarding] 服务端已标记 onboarding 完成');
-  clearPointer(userId);
-  clearStartKey(userId);
-}
-
-// 进度文案（步骤名 → 中文）在 utils/onboardingSteps.ts —— 纯函数放那边才能进 node 自检，
-// 本文件依赖请求层（TS enum），node 的 strip-only 模式导入不了。
 
 // --- 本地指针 / 幂等键 ---
 
@@ -174,7 +162,7 @@ async function lookupRun(runId: string): Promise<{ verdict: Verdict; run?: Pipel
   }
 }
 
-function toResult(run: PipelineRun): OnboardingResult {
+function toResult(run: PipelineRun): SyncResult {
   if (run.status === 'failed') {
     return { phase: 'failed', runId: run.run_id, message: run.error_message };
   }

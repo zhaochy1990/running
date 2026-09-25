@@ -262,9 +262,9 @@ Page<LoginPageData, LoginPageHandlers>({
       wx.showToast({ title: '登录成功', icon: 'success' });
       setTimeout(() => {
         if (result.registered) {
-          // 新注册用户一次性进入手表绑定引导页（可跳过）。
+          // 新注册用户进入 onboarding（资料必填 → 绑表/同步可跳过）。
           // redirectTo 替换登录页：返回键不再回到已登录状态的登录页。
-          wx.redirectTo({ url: '/pages/watch-onboarding/watch-onboarding' });
+          wx.redirectTo({ url: '/pages/onboarding/onboarding' });
           return;
         }
         wx.switchTab({ url: '/pages/index/index' });

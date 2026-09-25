@@ -7,7 +7,7 @@ import {
   type WatchProvider,
 } from '../../services/watch';
 import { ApiError } from '../../services/request';
-import { ensureOnboarding } from '../../services/onboarding';
+import { ensureSync } from '../../services/onboarding';
 import { userStore } from '../../store/index';
 
 interface WatchPageData {
@@ -180,27 +180,17 @@ Page<WatchPageData, WatchPageHandlers>({
       });
       wx.showToast({ title: '绑定成功', icon: 'success' });
       await this.fetchWatch();
-      // 绑表是 onboarding 的触发点 —— 服务端的 watchLogin 自己不触发同步（它只置 watch_ready）。
-      // fire-and-forget：这里不阻塞绑表流程，进度与收尾由 pages/watch-onboarding 的 onShow 续跑接管。
+      // 绑表后触发同步 —— 服务端的 watchLogin 自己不触发（它只置 watch_ready），
+      // 所以这一步得由客户端补上；然后去 onboarding 页看进度。
+      // 这里不等 ensureSync 的结果再跳：绑表是用户可见动作，不值得为它加一次往返延迟 ——
+      // onboarding 页自己的 onShow 会重算落点并接着续跑。
       const userId = userStore.getState().user?.id;
       if (userId) {
-        void ensureOnboarding(userId).catch((err) => {
-          console.warn('[onboarding] 绑表后触发 onboarding 失败（进引导页会重试）:', err);
+        void ensureSync(userId).catch((err) => {
+          console.warn('[onboarding] 绑表后触发同步失败（同步页会重试）:', err);
         });
-        // 去引导页看进度并收尾（complete 只能在那里发生）。已经是从引导页跳过来的就直接
-        // 返回它，免得页面栈里堆出第二个实例。
-        // 取舍：这里不等 ensureOnboarding 的结果再跳，避免给绑表这个用户可见动作加一次往返延迟。
-        // 代价是「已完成的用户加绑第二块表」也会被带到引导页 —— 那一页会立刻显示"准备就绪"，
-        // 多点一下即可，比给所有人都加延迟划算。
-        const stack = getCurrentPages();
-        const prev = stack[stack.length - 2] as { route?: string } | undefined;
-        if (prev?.route === 'pages/watch-onboarding/watch-onboarding') {
-          wx.navigateBack();
-        } else {
-          wx.redirectTo({ url: '/pages/watch-onboarding/watch-onboarding' });
-        }
-        // 已经离开这一页（back 或 replace），"绑定成功"横幅不用再清了 —— 也就不会
-        // 在已卸载的页面上 setData。
+        wx.redirectTo({ url: '/pages/onboarding/onboarding' });
+        // 已经 replace 走了，绑定成功横幅不用再清，也就不会在已卸载的页面上 setData。
         return;
       }
       setTimeout(() => this.setData({ success: '' }), 3000);

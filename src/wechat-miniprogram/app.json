@@ -11,7 +11,7 @@
     "pages/profile-edit/profile-edit",
     "pages/training-status/training-status",
     "pages/watch/watch",
-    "pages/watch-onboarding/watch-onboarding",
+    "pages/onboarding/onboarding",
     "pages/privacy/privacy",
     "pages/declaration/declaration"
   ],
