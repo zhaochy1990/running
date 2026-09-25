@@ -143,9 +143,9 @@
 
   <!-- 法务条款 -->
   <view class="login-terms">
-    <view class="login-terms-text">登录即代表您同意我们的</view>
+    <view class="login-terms-text">注册/登录即代表您同意我们的</view>
     <view class="login-terms-links">
-      <text class="login-terms-link" bindtap="onTermsTap">服务条款</text>
+      <text class="login-terms-link" bindtap="onTermsTap">用户协议</text>
       <text class="login-terms-sep">和</text>
       <text class="login-terms-link" bindtap="onPrivacyTap">隐私政策</text>
     </view>
