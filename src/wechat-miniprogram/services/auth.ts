@@ -42,10 +42,20 @@ const BIND_ERROR_MESSAGES: Record<string, string> = {
 };
 
 // auth-service 错误 → 中文文案错误（映射不到时保留服务端 message）。
+// 先把原始 status/code/message 打出来再映射：映射后的中文会丢掉服务端的具体
+// 原因（例如 400 bad_request 底下一堆互不相同的 BadRequest），只看页面文案排不动。
 function toBindError(err: unknown): Error {
   if (err instanceof ApiError) {
-    return new Error(BIND_ERROR_MESSAGES[err.code ?? ''] || err.message);
+    console.error(
+      `[auth] 服务端错误 status=${err.statusCode} code=${err.code ?? '-'} message=${err.message}`,
+    );
+    const mapped = BIND_ERROR_MESSAGES[err.code ?? ''];
+    if (!mapped) {
+      console.warn(`[auth] 错误码 ${err.code ?? '-'} 无中文映射，直接透传服务端 message`);
+    }
+    return new Error(mapped || err.message);
   }
+  console.error('[auth] 非 ApiError 的失败:', err);
   return err instanceof Error ? err : new Error('操作失败，请重试');
 }
 
@@ -57,8 +67,13 @@ async function exchangeWechatCode(
 ): Promise<AuthTokenResponse> {
   const { code } = await wx.login();
   if (!code) {
+    console.error('[auth] wx.login 返回空 code');
     throw new Error('wx.login 返回空 code');
   }
+  // code 长度只应为 32（一次性、马上被服务端消费），异常长度是 appid 配错的信号
+  console.log(
+    `[auth] wx.login ok (code=${code.length} chars) → grant=${grantType} 附加字段=[${Object.keys(extra).join(',')}]`,
+  );
 
   return http.post<AuthTokenResponse>(
     TOKEN_ENDPOINT,
@@ -99,14 +114,21 @@ async function persistSession(tokens: AuthTokenResponse): Promise<UserProfile> {
 // - 微信未绑定任何账号 → ok=false + needsBinding=true（上层跳绑定页）
 // - 其它错误 → 抛错（上层统一走绑定页兜底）
 export async function wechatLogin(): Promise<WechatLoginResult> {
+  console.log('[auth] 免密登录（token_exchange）…');
   try {
     const tokens = await exchangeWechatCode('token_exchange');
     const user = await persistSession(tokens);
+    console.log('[auth] 免密登录成功，用户已缓存');
     return { ok: true, user };
   } catch (err) {
     if (err instanceof ApiError && err.code === ApiErrorCode.WECHAT_NEEDS_BINDING) {
+      console.log('[auth] 该微信未绑定任何账号 → 需要走绑定/注册页');
       return { ok: false, needsBinding: true };
     }
+    console.error(
+      `[auth] 免密登录失败 code=${err instanceof ApiError ? err.code : '-'}`,
+      err instanceof Error ? err.message : err,
+    );
     throw err;
   }
 }
@@ -114,12 +136,14 @@ export async function wechatLogin(): Promise<WechatLoginResult> {
 // 发送手机号绑定场景（bind_phone）的短信验证码。发送成功即返回；
 // 失败抛中文错误（限流 / 未配置 / 参数问题），由登录页展示。
 export async function sendBindPhoneCode(phone: string): Promise<void> {
+  console.log(`[auth] 请求验证码 scene=bind_phone phone=${phone}`);
   try {
     await http.post<{ status: string }, { phone: string; scene: string }>(
       SMS_SEND_ENDPOINT,
       { phone, scene: 'bind_phone' },
       { auth: false },
     );
+    console.log('[auth] 验证码已下发（服务端 200）');
   } catch (err) {
     throw toBindError(err);
   }
@@ -144,8 +168,13 @@ export async function wechatBindAccount(
 // 则登录，未注册则自动创建手机号账号并绑定微信。成功后已登录并返回用户信息；
 // registered=true 表示本次新注册（上层进入手表绑定引导页）。失败抛中文错误。
 export async function wechatBindPhone(phone: string, code: string): Promise<PhoneBindResult> {
+  // 入口日志：确认这一步真的发出去了（表格校验失败是根本不发请求的）
+  console.log(`[auth] 手机号登录/注册 wechat_phone_bind phone=${phone} code=${code.length} 位`);
   try {
     const tokens = await exchangeWechatCode('wechat_phone_bind', { phone, code });
+    console.log(
+      `[auth] token 换取成功 registered=${tokens.registered === true}（下一步拉 /api/users/me）`,
+    );
     const user = await persistSession(tokens);
     return { ok: true, user, registered: tokens.registered === true };
   } catch (err) {

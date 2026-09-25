@@ -7,6 +7,7 @@ import { userStore } from './store/index';
 async function silentLogin(): Promise<boolean> {
   try {
     const result = await wechatLogin();
+    console.log(`[auth] 免密登录结果 ok=${result.ok}`);
     if (!result.ok) return false;
     userStore.setUser(result.user);
     return true;
@@ -51,6 +52,7 @@ App<IAppOption>({
    */
   async checkAuth(): Promise<void> {
     const hadToken = hasValidToken();
+    console.log(`[auth] checkAuth 启动：本地 ${hadToken ? '有' : '无'} token`);
     userStore.setLoading(true);
 
     try {
@@ -58,6 +60,7 @@ App<IAppOption>({
       // 已失效/吊销」的 token），主动向服务端验证一次，避免出现假登录态留在首页。
       if (hadToken) {
         const user = await validateSession();
+        console.log('[auth] 本地 token 仍被服务端接受 → 视为已登录');
         userStore.setUser(user);
         return;
       }
@@ -65,6 +68,7 @@ App<IAppOption>({
       // 无本地 token → 免密登录换 JWT
       // 未绑定 → 跳登录页（邮箱登录即绑定已有 STRIDE 账号）
       if (!(await silentLogin())) {
+        console.log('[auth] 免密登录没成功（未绑定 / 网络）→ 去登录页');
         wx.reLaunch({
           url: '/pages/login/login',
         });

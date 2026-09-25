@@ -23,10 +23,38 @@ interface WxRequestResponse {
   errMsg?: string;
 }
 
+// 请求日志的敏感字段脱敏：只记长度，够判断「有没有带上」而不把密码/验证码原文
+// 写进控制台。phone 等排障必需的字段保留原值。
+const REDACT_KEYS = [
+  'password',
+  'code',
+  'access_token',
+  'refresh_token',
+  'subject_token',
+  'token',
+];
+
+function redact(data: unknown): unknown {
+  if (!data || typeof data !== 'object') return data;
+  const out: Record<string, unknown> = { ...(data as Record<string, unknown>) };
+  for (const key of REDACT_KEYS) {
+    if (out[key] != null) out[key] = `<${String(out[key]).length} chars>`;
+  }
+  return out;
+}
+
 // wx.request 在当前模拟器/基础库环境只返回 RequestTask（不返回 Promise），
 // 直接 `await wx.request(...)` 拿到的是 RequestTask 对象（没有 statusCode/data）。
 // 这里用 success/fail 回调显式包一层 Promise，保证所有环境都能拿到响应。
+//
+// 所有 HTTP 都经过这里，所以请求日志也集中打在这一层：非 2xx 时打完整响应体。
+// 页面上的中文错误文案是兜底映射后的结果（见 services/auth.ts 的
+// BIND_ERROR_MESSAGES），真实 error code / message 只在响应体里 —— 排障先看这里。
 function wxRequest(options: RequestOptions): Promise<WxRequestResponse> {
+  const method = options.method || 'GET';
+
+  console.log(`[http] → ${method} ${options.url}`, redact(options.data));
+
   return new Promise((resolve, reject) => {
     wx.request({
       url: options.url,
@@ -34,8 +62,20 @@ function wxRequest(options: RequestOptions): Promise<WxRequestResponse> {
       data: options.data,
       header: options.header,
       timeout: options.timeout,
-      success: (res) => resolve(res as unknown as WxRequestResponse),
-      fail: (err) => reject(err),
+      success: (res) => {
+        const r = res as unknown as WxRequestResponse;
+        if (r.statusCode >= 200 && r.statusCode < 300) {
+          console.log(`[http] ← ${r.statusCode} ${method} ${options.url}`);
+        } else {
+          console.error(`[http] ← ${r.statusCode} ${method} ${options.url}`, r.data);
+        }
+        resolve(r);
+      },
+      // fail 是网络层失败（域名没配、超时、DNS），没有 statusCode，errMsg 才是线索
+      fail: (err) => {
+        console.error(`[http] ✗ ${method} ${options.url}`, err);
+        reject(err);
+      },
     } as WechatMiniprogram.RequestOption);
   });
 }
@@ -55,25 +95,35 @@ let redirectingToLogin = false;
 let recoveredOnce = false;
 
 export function handleSessionExpired(): void {
+  console.warn('[auth] 会话失效：清掉本地 token');
   wx.removeStorageSync(STORAGE_KEYS.TOKEN);
   wx.removeStorageSync(STORAGE_KEYS.REFRESH_TOKEN);
   wx.removeStorageSync(STORAGE_KEYS.TOKEN_EXPIRES_AT);
   wx.removeStorageSync(STORAGE_KEYS.USER_INFO);
-  if (redirectingToLogin) return;
+  if (redirectingToLogin) {
+    console.log('[auth] 已在处理会话失效，跳过重复触发');
+    return;
+  }
   redirectingToLogin = true;
 
   const recover = getApp<IAppOption>()?.recoverSession;
   if (!recover || recoveredOnce) {
+    console.log(
+      `[auth] 不尝试免密恢复（recoverSession=${recover ? '有' : '无'}, 本次启动已恢复过=${recoveredOnce}）→ 登录页`,
+    );
     redirectToLogin();
     return;
   }
   recoveredOnce = true;
+  console.log('[auth] 会话失效 → 尝试微信免密恢复');
   recover()
     .then((ok) => {
       if (!ok) {
+        console.log('[auth] 免密恢复失败（未绑定 / 网络）→ 登录页');
         redirectToLogin();
         return;
       }
+      console.log('[auth] 免密恢复成功 → 重进首页');
       // 新 token 已落好：重进首页，让页面按正常冷启动流程重新拉数据。
       wx.reLaunch({
         url: '/pages/index/index',

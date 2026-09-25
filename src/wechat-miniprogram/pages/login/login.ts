@@ -147,6 +147,10 @@ Page<LoginPageData, LoginPageHandlers>({
       this.startCodeCountdown();
       wx.showToast({ title: '验证码已发送', icon: 'none' });
     } catch (err) {
+      console.error(
+        '[login] 验证码发送失败，展示给用户的文案：',
+        err instanceof Error ? err.message : err,
+      );
       this.setData({
         errorMsg: err instanceof Error ? err.message : '发送失败，请重试',
       });
@@ -201,15 +205,24 @@ Page<LoginPageData, LoginPageHandlers>({
     }
 
     this.setData({ loading: true, errorMsg: '' });
+    console.log(`[login] 点「立即登录」(邮箱 tab) email=${email}`);
     try {
       const result = await wechatBindAccount(email, password);
-      if (!result.ok) return;
+      if (!result.ok) {
+        console.warn('[login] 邮箱绑定返回 ok=false（未进入已登录态）');
+        return;
+      }
       userStore.setUser(result.user);
+      console.log('[login] 邮箱绑定登录成功');
       wx.showToast({ title: '登录成功', icon: 'success' });
       setTimeout(() => {
         wx.switchTab({ url: '/pages/index/index' });
       }, 1000);
     } catch (err) {
+      console.error(
+        '[login] 邮箱绑定登录失败，展示给用户的文案：',
+        err instanceof Error ? err.message : err,
+      );
       this.setData({
         errorMsg: err instanceof Error ? err.message : '登录失败，请重试',
       });
@@ -226,11 +239,14 @@ Page<LoginPageData, LoginPageHandlers>({
 
     const phone = this.data.phone;
     const code = this.data.code;
+    console.log(`[login] 点「立即登录」(手机号 tab) phone=${phone} code=${code.length} 位`);
     if (!PHONE_RE.test(phone)) {
+      console.warn('[login] 前端校验拦住：手机号格式不对，不会发请求');
       this.setData({ errorMsg: '请输入正确的手机号' });
       return;
     }
     if (!/^\d{6}$/.test(code)) {
+      console.warn('[login] 前端校验拦住：验证码不是 6 位，不会发请求');
       this.setData({ errorMsg: '请输入 6 位验证码' });
       return;
     }
@@ -239,6 +255,10 @@ Page<LoginPageData, LoginPageHandlers>({
     try {
       const result = await wechatBindPhone(phone, code);
       userStore.setUser(result.user);
+      console.log(
+        `[login] 登录成功 registered=${result.registered}` +
+          (result.registered ? ' → 跳手表绑定引导页' : ' → 进首页'),
+      );
       wx.showToast({ title: '登录成功', icon: 'success' });
       setTimeout(() => {
         if (result.registered) {
@@ -250,6 +270,9 @@ Page<LoginPageData, LoginPageHandlers>({
         wx.switchTab({ url: '/pages/index/index' });
       }, 1000);
     } catch (err) {
+      // 页面上只会显示映射后的中文（可能把多种失败合并成同一句），
+      // 真正的原因看上面 [auth]/[http] 的原始日志。
+      console.error('[login] 手机号登录/注册失败，展示给用户的文案：', err instanceof Error ? err.message : err);
       this.setData({
         errorMsg: err instanceof Error ? err.message : '登录失败，请重试',
       });
