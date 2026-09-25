@@ -118,10 +118,16 @@
   margin-bottom: 32rpx;
 }
 
-/* 头像必须是 <button open-type="chooseAvatar">，而 WeChat 的 button 自带
-   min-height / padding / line-height，不压掉的话 160rpx 的正方形会被撑成椭圆。 */
+/* 头像必须是 <button open-type="chooseAvatar">。WeChat 的 button 自带
+   min-width / min-height / padding / line-height，实测它的盒子会被撑成
+   约 320rpx 宽 × 160rpx 高 —— 不是正方形。所以：① 把 button 的默认约束压掉；
+   ② 内层头像用**固定正方形**并自居中，不写 100%（写 100% 就会跟着宽盒子拉成椭圆）。 */
 .ob-avatar-btn {
-  width: 160rpx;
+  /* !important：WeChat 基座给 button 的 width 约束优先级高于普通类选择器，
+     实测 width/min-width 一起写都压不住（高度能生效、宽度不生效）。 */
+  width: 160rpx !important;
+  max-width: 160rpx !important;
+  min-width: 0 !important;
   height: 160rpx;
   min-height: 0;
   padding: 0;
@@ -139,8 +145,9 @@
 
 .ob-avatar {
   display: block;
-  width: 100%;
-  height: 100%;
+  margin: 0 auto;
+  width: 160rpx;
+  height: 160rpx;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.06);
   overflow: hidden;
@@ -306,7 +313,7 @@
 /* 通栏：与上方输入框对齐。WeChat 的 button 默认 width:auto（收缩到内容宽），
    登录页是靠外层 flex 撑满的，这里直接放在卡片里就必须显式写 100%。 */
 .ob-cta {
-  width: 100%;
+  width: 100% !important;
   box-sizing: border-box;
   margin: 40rpx 0 0;
   padding: 0;
