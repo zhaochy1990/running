@@ -343,7 +343,9 @@ function formatPaceRange(z: Zone, peers: Zone[]): string {
   const maxIdx = Math.max(...peers.map((x) => x.zone_index));
   if (z.zone_index === 1) {
     const z2 = peers.find((x) => x.zone_index === 2);
-    if (z2?.range_min != null && Math.round(z2.range_min) === Math.round(z.range_min)) return `> ${slow}`;
+    // z.range_min 要显式判空：上面的 slow 是三元派生的字符串，TS 不会据此收窄
+    // z.range_min（对比 formatHrRange 直接用早退收窄的 min）。
+    if (z2?.range_min != null && z.range_min != null && Math.round(z2.range_min) === Math.round(z.range_min)) return `> ${slow}`;
   }
   if (z.zone_index === maxIdx) return `< ${slow}`;
   return `${slow} - ${fast}`;
