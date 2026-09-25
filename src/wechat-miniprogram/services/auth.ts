@@ -65,7 +65,15 @@ async function exchangeWechatCode(
   grantType: string,
   extra: Record<string, string> = {},
 ): Promise<AuthTokenResponse> {
-  const { code } = await wx.login();
+  // wx.login 自己不成功时后面一个请求都不会发，控制台里连 [http] 都没有 ——
+  // 这是唯一能区分「请求被服务端拒了」和「请求根本没发出去」的线索。
+  let code: string;
+  try {
+    ({ code } = await wx.login());
+  } catch (err) {
+    console.error('[auth] wx.login 调用失败（appid / 登录态问题），后续请求不会发出:', err);
+    throw err;
+  }
   if (!code) {
     console.error('[auth] wx.login 返回空 code');
     throw new Error('wx.login 返回空 code');
