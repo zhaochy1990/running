@@ -30,7 +30,7 @@
         <button class="ob-avatar-btn" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
           <image wx:if="{{avatarUrl}}" class="ob-avatar" src="{{avatarUrl}}" mode="aspectFill" />
           <view wx:else class="ob-avatar ob-avatar--empty">
-            <text class="ob-avatar__hint">微信头像</text>
+            <image class="ob-avatar__icon" src="/assets/icons/person.svg" mode="aspectFit" />
           </view>
         </button>
         <view class="ob-avatar-tip">点头像可从微信同步</view>
