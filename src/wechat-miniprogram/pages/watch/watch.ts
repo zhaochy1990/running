@@ -30,7 +30,8 @@ interface WatchPageData {
 }
 
 interface WatchPageHandlers {
-  onLoad(): void;
+  /** query.provider 可选：由 onboarding 引导页带过来，直接进该品牌的登录表单。 */
+  onLoad(query: Record<string, string | undefined>): void;
   onShow(): void;
   fetchWatch(): Promise<void>;
   onBack(): void;
@@ -109,11 +110,17 @@ Page<WatchPageData, WatchPageHandlers>({
     showDisconnectConfirm: false,
   },
 
-  onLoad() {
+  onLoad(query: Record<string, string | undefined>) {
     this.setData({
       statusBarHeight: statusBarHeight(),
       contentPaddingTop: contentPaddingTopRpx(),
     });
+    // 从 onboarding 引导页带 provider 进来：用户已经选过品牌了，直接进登录表单，
+    // 不再让他对着 provider-grid 选第二遍。
+    const provider = query.provider;
+    if (provider === 'coros' || provider === 'garmin') {
+      this.setData({ connectProvider: provider });
+    }
   },
 
   onShow() {

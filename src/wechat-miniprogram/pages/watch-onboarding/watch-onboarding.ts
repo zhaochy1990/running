@@ -231,7 +231,8 @@ Page<WatchOnboardingPageData, WatchOnboardingPageHandlers>({
   onProviderTap(e: WechatMiniprogram.TouchEvent) {
     const provider = e.currentTarget.dataset.provider as string;
     if (provider !== 'coros' && provider !== 'garmin') return;
-    wx.navigateTo({ url: '/pages/watch/watch' });
+    // 带上品牌：pages/watch 的 onLoad 会据此直接进登录表单，不再让用户选第二遍
+    wx.navigateTo({ url: `/pages/watch/watch?provider=${provider}` });
   },
 
   // 「稍后再说」与「进入首页」是同一动作：跳过引导 / 离开引导页
