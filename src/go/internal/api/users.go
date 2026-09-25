@@ -59,10 +59,10 @@ type UserStore interface {
 	GetMeta(ctx context.Context, userID, key string) (value string, ok bool, err error)
 	DeleteCredential(ctx context.Context, userID, provider string) error
 	ClearWatchReady(ctx context.Context, userID string) error
-	// FinalizeOnboardingRun conditionally marks a connected user complete after
-	// the API has verified a completed onboarding pipeline. It reports whether
-	// this request wrote the completion marker; no pre-linked run is required.
-	FinalizeOnboardingRun(ctx context.Context, userID, runID string) (bool, error)
+	// FinalizeOnboardingRun conditionally marks a profile-ready user complete.
+	// It reports whether this request wrote the completion marker; neither a
+	// linked run nor a watch binding is required (ADR 0013).
+	FinalizeOnboardingRun(ctx context.Context, userID string) (bool, error)
 	DeleteUserData(ctx context.Context, userID string) error
 }
 
@@ -266,8 +266,12 @@ type disconnectWatchResponse struct {
 	Provider string `json:"provider"`
 }
 
+// onboardingCompleteInput carries an optional run_id. Completion is
+// profile-derived (ADR 0013): a client that bound a watch submits the finished
+// onboarding run for verification, a client that skipped that optional step
+// submits nothing.
 type onboardingCompleteInput struct {
-	RunID string `json:"run_id" binding:"required,uuid4"`
+	RunID string `json:"run_id" binding:"omitempty,uuid4"`
 }
 
 type onboardingCompleteResponse struct {
@@ -519,16 +523,17 @@ func (u *userRoutes) watchLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, watchLoginResponse{OK: true, Region: res.Region, UserID: res.UserID})
 }
 
-// completeOnboarding finalizes onboarding only after the caller explicitly
-// submits a verified, completed onboarding pipeline run. It never starts,
-// retries, or re-associates pipeline work.
+// completeOnboarding finalizes onboarding once the caller has a saved profile.
+// Watch binding and data sync are separate, optional steps (ADR 0013), so a
+// supplied run_id is verified but never required. It never starts, retries, or
+// re-associates pipeline work.
 //
 //	@Summary		Finalize the current user's onboarding
-//	@Description	Marks onboarding complete after the user explicitly submits a completed run_id. The run must belong to the caller, use the onboarding pipeline, and have finished successfully; profile and watch readiness are also required. A 409 means the run is missing, belongs to another user, is not an onboarding run, or is not done. This endpoint never starts or retries pipeline work.
+//	@Description	Marks onboarding complete for a user who has saved their profile; profile readiness is the only precondition. run_id is optional: supply the finished onboarding run to have it verified (it must belong to the caller, use the onboarding pipeline, and have finished successfully — a 409 means it is missing, belongs to another user, is not an onboarding run, or is not done), or omit it when the optional watch sync was skipped. This endpoint never starts or retries pipeline work.
 //	@Tags			users
 //	@Accept			json
 //	@Produce		json
-//	@Param			body	body		onboardingCompleteInput	true	"Completed onboarding pipeline run"
+//	@Param			body	body		onboardingCompleteInput	false	"Optional: the finished onboarding pipeline run"
 //	@Success		200	{object}	onboardingCompleteResponse
 //	@Failure		400	{object}	errorResponse
 //	@Failure		401	{object}	errorResponse
@@ -541,12 +546,14 @@ func (u *userRoutes) completeOnboarding(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if u.store == nil || u.runs == nil {
+	if u.store == nil {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "onboarding unavailable"})
 		return
 	}
 	var in onboardingCompleteInput
-	if err := c.ShouldBindJSON(&in); err != nil {
+	// An empty body is the shape of "profile-only completion" (no run to submit),
+	// so tolerate EOF exactly like the other optional-body endpoints.
+	if err := c.ShouldBindJSON(&in); err != nil && !errors.Is(err, io.EOF) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid request"})
 		return
 	}
@@ -557,33 +564,43 @@ func (u *userRoutes) completeOnboarding(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
-	if onb == nil || !onb.ProfileReady || !onb.WatchReady {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "profile and watch connection required"})
+	// Profile-only (ADR 0013): binding a watch is an optional step, so a missing
+	// watch_ready must not block completion.
+	if onb == nil || !onb.ProfileReady {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "profile is required"})
 		return
 	}
 	if onb.CompletedAt != nil {
 		c.JSON(http.StatusOK, onboardingCompleteResponse{State: "already-complete"})
 		return
 	}
-	run, err := u.runs.Get(ctx, in.RunID)
-	if err != nil {
-		if job.IsNotFound(err) {
+	// A supplied run is still verified end to end; a client that skipped the
+	// optional watch sync sends none. Only the verified branch needs the run store.
+	if in.RunID != "" {
+		if u.runs == nil {
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "onboarding unavailable"})
+			return
+		}
+		run, err := u.runs.Get(ctx, in.RunID)
+		if err != nil {
+			if job.IsNotFound(err) {
+				c.JSON(http.StatusConflict, errorResponse{Error: "onboarding run is not ready"})
+				return
+			}
+			u.log.Error("get onboarding pipeline failed", zapErr(err))
+			c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+		if run.UserID != uid || run.Name != "onboarding" {
+			c.JSON(http.StatusConflict, errorResponse{Error: "onboarding run is not valid"})
+			return
+		}
+		if run.Status != job.StatusDone {
 			c.JSON(http.StatusConflict, errorResponse{Error: "onboarding run is not ready"})
 			return
 		}
-		u.log.Error("get onboarding pipeline failed", zapErr(err))
-		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
-		return
 	}
-	if run.UserID != uid || run.Name != "onboarding" {
-		c.JSON(http.StatusConflict, errorResponse{Error: "onboarding run is not valid"})
-		return
-	}
-	if run.Status != job.StatusDone {
-		c.JSON(http.StatusConflict, errorResponse{Error: "onboarding run is not ready"})
-		return
-	}
-	if _, err := u.store.FinalizeOnboardingRun(ctx, uid, run.RunID); err != nil {
+	if _, err := u.store.FinalizeOnboardingRun(ctx, uid); err != nil {
 		u.log.Error("finalize onboarding failed", zapErr(err))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return

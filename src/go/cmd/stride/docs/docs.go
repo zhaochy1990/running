@@ -2328,7 +2328,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Marks onboarding complete after the user explicitly submits a completed run_id. The run must belong to the caller, use the onboarding pipeline, and have finished successfully; profile and watch readiness are also required. A 409 means the run is missing, belongs to another user, is not an onboarding run, or is not done. This endpoint never starts or retries pipeline work.",
+                "description": "Marks onboarding complete for a user who has saved their profile; profile readiness is the only precondition. run_id is optional: supply the finished onboarding run to have it verified (it must belong to the caller, use the onboarding pipeline, and have finished successfully — a 409 means it is missing, belongs to another user, is not an onboarding run, or is not done), or omit it when the optional watch sync was skipped. This endpoint never starts or retries pipeline work.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2341,10 +2341,9 @@ const docTemplate = `{
                 "summary": "Finalize the current user's onboarding",
                 "parameters": [
                     {
-                        "description": "Completed onboarding pipeline run",
+                        "description": "Optional: the finished onboarding pipeline run",
                         "name": "body",
                         "in": "body",
-                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/api.onboardingCompleteInput"
                         }
@@ -7674,9 +7673,6 @@ const docTemplate = `{
         },
         "api.onboardingCompleteInput": {
             "type": "object",
-            "required": [
-                "run_id"
-            ],
             "properties": {
                 "run_id": {
                     "type": "string"

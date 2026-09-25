@@ -158,17 +158,18 @@ func (f *fakeUserStore) ClearWatchReady(_ context.Context, uid string) error {
 	if o == nil {
 		o = &storage.UserOnboarding{UserID: uid}
 	}
+	// Mirrors storage.DisconnectWatch: completion is profile-derived, so it
+	// survives a disconnect.
 	o.WatchReady = false
-	o.CompletedAt = nil
 	o.OnboardingRunID = nil
 	f.onboarding[uid] = o
 	return nil
 }
 
-func (f *fakeUserStore) FinalizeOnboardingRun(_ context.Context, uid, _ string) (bool, error) {
+func (f *fakeUserStore) FinalizeOnboardingRun(_ context.Context, uid string) (bool, error) {
 	f.finalizeCalls++
 	o := f.onboarding[uid]
-	if o == nil || !o.ProfileReady || !o.WatchReady || o.CompletedAt != nil {
+	if o == nil || !o.ProfileReady || o.CompletedAt != nil {
 		return false, nil
 	}
 	now := time.Now().UTC()
@@ -911,12 +912,12 @@ func TestDeleteWatch_Success(t *testing.T) {
 	if o == nil || o.WatchReady {
 		t.Errorf("watch_ready must be cleared on disconnect: %+v", o)
 	}
-	// Profile remains, but watch-dependent onboarding completion is cleared.
+	// Onboarding completion is profile-derived, so a disconnect must not clear it.
 	if o != nil && !o.ProfileReady {
 		t.Errorf("profile_ready must be retained on disconnect")
 	}
-	if o != nil && o.CompletedAt != nil {
-		t.Errorf("completed_at must be cleared on disconnect")
+	if o != nil && o.CompletedAt == nil {
+		t.Errorf("completed_at must survive a disconnect")
 	}
 	if o != nil && o.OnboardingRunID != nil {
 		t.Errorf("onboarding run must be cleared on disconnect")
@@ -1026,11 +1027,11 @@ func TestOnboardingComplete_RejectsUnverifiedRuns(t *testing.T) {
 	}
 }
 
-func TestOnboardingComplete_RequiresProfileAndConnectedWatch(t *testing.T) {
+func TestOnboardingComplete_RequiresProfile(t *testing.T) {
+	// A connected watch is not a prerequisite (ADR 0013) — only the profile is.
 	for name, onboarding := range map[string]*storage.UserOnboarding{
-		"missing both":    nil,
+		"missing row":     nil,
 		"missing profile": {UserID: testSub, WatchReady: true},
-		"missing watch":   {UserID: testSub, ProfileReady: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			h := newUserHarness(t, FeatureConfig{})
@@ -1042,7 +1043,36 @@ func TestOnboardingComplete_RequiresProfileAndConnectedWatch(t *testing.T) {
 				t.Fatalf("code = %d, want 400: %s", w.Code, w.Body.String())
 			}
 			if h.store.finalizeCalls != 0 {
-				t.Fatal("missing prerequisite must not finalize")
+				t.Fatal("missing profile must not finalize")
+			}
+		})
+	}
+}
+
+// The miniprogram shape: profile saved, optional watch step skipped, so there is
+// no run to submit and no watch bound. An empty body must complete.
+func TestOnboardingComplete_ProfileOnlyWithoutRunOrWatch(t *testing.T) {
+	for name, body := range map[string]string{"empty object": `{}`, "no body": ""} {
+		t.Run(name, func(t *testing.T) {
+			h := newUserHarness(t, FeatureConfig{})
+			h.store.onboarding[testSub] = &storage.UserOnboarding{UserID: testSub, ProfileReady: true}
+
+			w := h.do(http.MethodPost, "/api/users/me/onboarding/complete", body, h.bearer(t, testSub))
+			if w.Code != http.StatusOK {
+				t.Fatalf("code = %d, want 200: %s", w.Code, w.Body.String())
+			}
+			var resp onboardingCompleteResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if resp.State != "complete" {
+				t.Errorf("state = %q, want complete", resp.State)
+			}
+			if h.store.onboarding[testSub].CompletedAt == nil || h.store.finalizeCalls != 1 {
+				t.Fatalf("completion was not persisted: %+v", h.store.onboarding[testSub])
+			}
+			if len(h.runs.byID) != 0 {
+				t.Fatalf("finalizer must not start a pipeline: runs=%d", len(h.runs.byID))
 			}
 		})
 	}

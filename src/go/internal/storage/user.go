@@ -176,21 +176,24 @@ func (s *Store) ClearWatchReady(ctx context.Context, userID string) error {
 	return s.setOnboardingFlag(ctx, userID, "watch_ready", false)
 }
 
-// FinalizeOnboardingRun marks a connected user's onboarding complete after the
-// API has verified that runID is their completed onboarding pipeline. The write
-// deliberately does not require onboarding_run_id to be linked: generic full
-// sync runs must never mutate onboarding state. Both prerequisite predicates
-// make a concurrent profile or final-watch change win safely. The returned
-// boolean reports whether this call wrote the marker; an existing completion is
-// idempotent.
-func (s *Store) FinalizeOnboardingRun(ctx context.Context, userID, runID string) (bool, error) {
+// FinalizeOnboardingRun marks a user's onboarding complete. Readiness is
+// profile-derived (ADR 0013): the write requires profile_ready and nothing else
+// — neither a watch binding nor a pipeline run — so a client that collects the
+// profile and skips the optional watch step still completes.
+//
+// The write deliberately does not require onboarding_run_id to be linked:
+// generic full sync runs must never mutate onboarding state. The profile
+// predicate makes a concurrent profile change win safely, and the
+// completed_at IS NULL guard makes an existing completion idempotent. The
+// returned boolean reports whether this call wrote the marker.
+func (s *Store) FinalizeOnboardingRun(ctx context.Context, userID string) (bool, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return false, err
 	}
 	now := time.Now().UTC()
 	result := s.db.WithContext(ctx).Model(&UserOnboarding{}).
-		Where("user_id = ? AND profile_ready = ? AND watch_ready = ? AND completed_at IS NULL", uid, true, true).
+		Where("user_id = ? AND profile_ready = ? AND completed_at IS NULL", uid, true).
 		Updates(map[string]interface{}{"completed_at": now, "updated_at": now})
 	if result.Error != nil {
 		return false, result.Error
@@ -211,10 +214,12 @@ func ensureLockedUserOnboarding(tx *gorm.DB, userID string, now time.Time) (*Use
 	return &onboarding, nil
 }
 
-// DisconnectWatch atomically removes one provider credential. It resets
-// watch-dependent onboarding state only when the user has no other provider
-// credentials; dual-watch users remain connected through their remaining source.
-// Synced watch data is retained.
+// DisconnectWatch atomically removes one provider credential. It clears
+// watch_ready only when the user has no other provider credentials; dual-watch
+// users remain connected through their remaining source. Synced watch data is
+// retained, and so is onboarding completion: completed_at is profile-derived
+// (ADR 0013), so unbinding a watch must not send an already-onboarded user back
+// through onboarding.
 func (s *Store) DisconnectWatch(ctx context.Context, userID, providerName string) error {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -240,7 +245,6 @@ func (s *Store) DisconnectWatch(ctx context.Context, userID, providerName string
 		}
 		return tx.Model(&UserOnboarding{}).Where("user_id = ?", uid).Updates(map[string]interface{}{
 			"watch_ready":       false,
-			"completed_at":      nil,
 			"onboarding_run_id": nil,
 			"updated_at":        now,
 		}).Error

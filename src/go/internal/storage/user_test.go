@@ -191,36 +191,43 @@ func TestUser_AbsentReturnsNil(t *testing.T) {
 	}
 }
 
-func TestUserOnboarding_FinalizeRequiresBothPrerequisites(t *testing.T) {
+func TestUserOnboarding_FinalizeRequiresProfileOnly(t *testing.T) {
 	st := openTestStore(t)
 	migrateUserWatchTables(t, st)
 	ctx := context.Background()
 	uid := uuid.NewString()
 	saveTestCredential(t, st, uid)
 
-	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, uuid.NewString()); err != nil || wrote {
-		t.Fatalf("finalize without prerequisites: wrote=%v err=%v", wrote, err)
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid); err != nil || wrote {
+		t.Fatalf("finalize without profile: wrote=%v err=%v", wrote, err)
 	}
+	// A connected watch alone must not complete onboarding: readiness is
+	// profile-derived (ADR 0013).
 	if err := st.SetWatchReady(ctx, uid); err != nil {
 		t.Fatalf("set watch_ready: %v", err)
 	}
-	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, uuid.NewString()); err != nil || wrote {
-		t.Fatalf("finalize without profile: wrote=%v err=%v", wrote, err)
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid); err != nil || wrote {
+		t.Fatalf("finalize with a watch but no profile: wrote=%v err=%v", wrote, err)
 	}
+	// The profile alone does — no watch binding and no pipeline run required.
 	if err := st.SetProfileReady(ctx, uid); err != nil {
 		t.Fatalf("set profile_ready: %v", err)
 	}
-	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, uuid.NewString()); err != nil || !wrote {
-		t.Fatalf("finalize with both prerequisites: wrote=%v err=%v", wrote, err)
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid); err != nil || !wrote {
+		t.Fatalf("finalize with profile: wrote=%v err=%v", wrote, err)
 	}
-	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, uuid.NewString()); err != nil || wrote {
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid); err != nil || wrote {
 		t.Fatalf("repeat finalization: wrote=%v err=%v", wrote, err)
 	}
+	// Disconnecting the watch must not undo an earned completion.
 	if err := st.DisconnectWatch(ctx, uid, "coros"); err != nil {
 		t.Fatalf("disconnect: %v", err)
 	}
-	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, uuid.NewString()); err != nil || wrote {
-		t.Fatalf("finalize disconnected user: wrote=%v err=%v", wrote, err)
+	if o, err := st.GetUserOnboarding(ctx, uid); err != nil || o == nil || o.CompletedAt == nil {
+		t.Fatalf("disconnect cleared completion: %+v, err=%v", o, err)
+	}
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid); err != nil || wrote {
+		t.Fatalf("finalize after disconnect: wrote=%v err=%v", wrote, err)
 	}
 }
 
@@ -317,7 +324,7 @@ func TestUserOnboarding_ConcurrentReadyAndDisconnectPreserveCredentialInvariant(
 	}
 }
 
-func TestUserOnboarding_DisconnectWatchClearsDependentState(t *testing.T) {
+func TestUserOnboarding_DisconnectWatchClearsWatchStateOnly(t *testing.T) {
 	st := openTestStore(t)
 	migrateUserWatchTables(t, st)
 	ctx := context.Background()
@@ -333,8 +340,8 @@ func TestUserOnboarding_DisconnectWatchClearsDependentState(t *testing.T) {
 	if err := st.SetProfileReady(ctx, uid); err != nil {
 		t.Fatalf("set profile_ready: %v", err)
 	}
-	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, "run-current"); err != nil || !wrote {
-		t.Fatalf("finalize current run: wrote=%v err=%v", wrote, err)
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid); err != nil || !wrote {
+		t.Fatalf("finalize: wrote=%v err=%v", wrote, err)
 	}
 
 	if err := st.DisconnectWatch(ctx, uid, "coros"); err != nil {
@@ -347,7 +354,8 @@ func TestUserOnboarding_DisconnectWatchClearsDependentState(t *testing.T) {
 	if err != nil || o == nil {
 		t.Fatalf("get onboarding: %v", err)
 	}
-	if o.WatchReady || !o.ProfileReady || o.CompletedAt != nil || o.OnboardingRunID != nil {
+	// Watch state clears; profile and completion are profile-derived and survive.
+	if o.WatchReady || !o.ProfileReady || o.CompletedAt == nil || o.OnboardingRunID != nil {
 		t.Fatalf("disconnect onboarding state = %+v", o)
 	}
 }
@@ -370,7 +378,7 @@ func TestUserOnboarding_DisconnectOneOfTwoProvidersPreservesState(t *testing.T) 
 	if err := st.SetProfileReady(ctx, uid); err != nil {
 		t.Fatalf("set profile_ready: %v", err)
 	}
-	if wrote, err := st.FinalizeOnboardingRun(ctx, uid, "run-current"); err != nil || !wrote {
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid); err != nil || !wrote {
 		t.Fatalf("finalize: wrote=%v err=%v", wrote, err)
 	}
 
@@ -403,6 +411,12 @@ func TestUserOnboarding_ConcurrentDisconnectsClearLastCredentialState(t *testing
 	if err := st.SetWatchReady(ctx, uid); err != nil {
 		t.Fatalf("set watch_ready: %v", err)
 	}
+	if err := st.SetProfileReady(ctx, uid); err != nil {
+		t.Fatalf("set profile_ready: %v", err)
+	}
+	if wrote, err := st.FinalizeOnboardingRun(ctx, uid); err != nil || !wrote {
+		t.Fatalf("finalize: wrote=%v err=%v", wrote, err)
+	}
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
 	for _, provider := range []string{"coros", "garmin"} {
@@ -420,8 +434,8 @@ func TestUserOnboarding_ConcurrentDisconnectsClearLastCredentialState(t *testing
 		}
 	}
 	o, err := st.GetUserOnboarding(ctx, uid)
-	if err != nil || o == nil || o.WatchReady || o.OnboardingRunID != nil || o.CompletedAt != nil {
-		t.Fatalf("onboarding state after last disconnect = %+v, err=%v", o, err)
+	if err != nil || o == nil || o.WatchReady || o.OnboardingRunID != nil || o.CompletedAt == nil {
+		t.Fatalf("onboarding state after last disconnect = %+v, err=%v; want watch state cleared, completion kept", o, err)
 	}
 	for _, provider := range []string{"coros", "garmin"} {
 		if cred, err := st.GetCredential(ctx, uid, provider); err != nil || cred != nil {
