@@ -2,6 +2,23 @@ import { wechatLogin, hasValidToken, validateSession } from './services/auth';
 import { ApiError } from './services/request';
 import { userStore } from './store/index';
 
+// 免密登录：用 wx.login() 的 code 换 JWT。微信已绑定 → 存好 token/user 返回 true；
+// 未绑定或失败 → 返回 false。函数本身不导航，由调用方决定去哪。
+async function silentLogin(): Promise<boolean> {
+  try {
+    const result = await wechatLogin();
+    if (!result.ok) return false;
+    userStore.setUser(result.user);
+    return true;
+  } catch (err) {
+    console.error(
+      '[auth] silent login failed:',
+      err instanceof Error ? err.message : err,
+    );
+    return false;
+  }
+}
+
 App<IAppOption>({
   globalData: {
     token: undefined,
@@ -25,7 +42,8 @@ App<IAppOption>({
    * 检查登录态：
    * 1. 本地有 token → 主动向 auth-service 验证它是否仍被服务端接受（GET /api/users/me）。
    *    - 有效 → 视为已登录，进入首页
-   *    - 服务端已拒绝（且 refresh 也失败）→ 清会话并回登录页
+   *    - 服务端已拒绝（且 refresh 也失败）→ request.ts 的 handleSessionExpired 接管：
+   *      先试一次免密登录，成不成才决定进首页还是登录页（见 recoverSession）
    *    - 网络等非认证错误 → 保留本地会话，交给数据页处理，不误登出
    * 2. 无 token → 用 wx.login() 的 code 换 JWT
    *    - 已绑定账号 → 存 token，进入首页
@@ -44,13 +62,9 @@ App<IAppOption>({
         return;
       }
 
-      // 无本地 token → 调微信登录换 JWT
-      const result = await wechatLogin();
-
-      if (result.ok) {
-        userStore.setUser(result.user);
-      } else {
-        // 未绑定 → 跳登录页（邮箱登录即绑定已有 STRIDE 账号）
+      // 无本地 token → 免密登录换 JWT
+      // 未绑定 → 跳登录页（邮箱登录即绑定已有 STRIDE 账号）
+      if (!(await silentLogin())) {
         wx.reLaunch({
           url: '/pages/login/login',
         });
@@ -65,23 +79,27 @@ App<IAppOption>({
         err instanceof Error ? err.message : err,
       );
 
-      if (!hadToken) {
-        // 无本地 token 且微信登录失败（未绑定已单独处理）→ 回登录页让用户手动处理
-        userStore.clear();
-        wx.reLaunch({
-          url: '/pages/login/login',
-        });
-        return;
-      }
-
+      // 走到这里只可能是「本地有 token 且校验抛错」：无 token 那条件分支的失败
+      // 已由 silentLogin 自己吞掉并返回 false（不抛）。
       if (authFailure) {
-        // 本地 token 被服务端拒绝：request.ts 已清 token 并 reLaunch 到登录页，
-        // 这里仅清理内存态（isAuthenticated=false），避免重复导航。
+        // 本地 token 被服务端拒绝：request.ts 已清掉本地 token 并接管导航
+        // （先免密恢复，不行才去登录页），这里仅清理内存态，避免重复导航。
+        // 若免密恢复随后成功，userStore.setUser 会把 isAuthenticated 再置回 true。
         userStore.clear();
       }
       // 本地有 token 且非认证失败（如纯网络错误）→ 保留本地会话，不误登出。
     } finally {
       userStore.setLoading(false);
     }
+  },
+
+  /**
+   * 会话失效后的免密恢复，由 request.ts 的 handleSessionExpired 兜底调用。
+   * token 失效/refresh 失败不等于微信解绑：此时用户微信多半还绑着，重走
+   * wx.login() 即可无感换回 JWT，不该把人甩到登录页重做一遍手机号验证码。
+   * 返回 true 表示已恢复并落好新 token；false 表示确实未绑定或网络失败。
+   */
+  recoverSession(): Promise<boolean> {
+    return silentLogin();
   },
 });
