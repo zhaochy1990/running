@@ -261,11 +261,11 @@ Page<LoginPageData, LoginPageHandlers>({
   // --- 法务链接 ---
 
   onTermsTap() {
-    // 服务条款 Web 页暂未在小程序内接入（web-view 路由未建）
-    wx.showToast({ title: '暂未开放', icon: 'none' });
+    // 正文由 pages/declaration 经公开接口 GET /api/declarations/:doc_type 拉取。
+    wx.navigateTo({ url: '/pages/declaration/declaration?doc_type=user_agreement' });
   },
 
   onPrivacyTap() {
-    wx.showToast({ title: '暂未开放', icon: 'none' });
+    wx.navigateTo({ url: '/pages/declaration/declaration?doc_type=privacy_policy' });
   },
 });
