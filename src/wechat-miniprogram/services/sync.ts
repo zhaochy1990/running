@@ -5,6 +5,7 @@ import type {
   TriggerSyncOptions,
   TriggerSyncResponse,
   PipelineRun,
+  UserPipelinesResponse,
 } from '../types/sync';
 
 const PIPELINE_POLL_INTERVAL_MS = 2000;
@@ -28,6 +29,17 @@ export function triggerSync(
 
 export function getPipelineRun(runId: string): Promise<PipelineRun> {
   return http.get<PipelineRun>(`/api/pipelines/${encodeURIComponent(runId)}`);
+}
+
+/**
+ * 列出某个用户的 pipeline run（新的在前，见 Go `listUserPipelines`）。
+ * 用于采纳"别的端已经起过"的 run：小程序本地指针丢了（换设备 / 重装）时，
+ * 靠它认领服务端已有的 onboarding run，而不是白起一个 24 分钟的 full sync。
+ */
+export function listUserPipelines(userId: string): Promise<UserPipelinesResponse> {
+  return http.get<UserPipelinesResponse>(
+    `/api/users/${encodeURIComponent(userId)}/pipelines`,
+  );
 }
 
 export interface PollPipelineOptions {

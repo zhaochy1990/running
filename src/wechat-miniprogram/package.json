@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node utils/lapRows.check.mts && node utils/curve.check.mts && node --import ./utils/ts-resolve-hooks.mjs utils/trainingStatus.check.mts"
+    "test": "node utils/lapRows.check.mts && node utils/curve.check.mts && node utils/onboardingSteps.check.mts && node --import ./utils/ts-resolve-hooks.mjs utils/trainingStatus.check.mts"
   },
   "keywords": [],
   "author": "",

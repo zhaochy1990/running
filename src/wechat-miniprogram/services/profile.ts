@@ -87,12 +87,28 @@ export interface ProfileCore {
   running_age_range: RunningAgeRange;
 }
 
+/** 数据面 onboarding 状态（GET /api/users/me/profile 的 `onboarding`）。 */
+export interface OnboardingState {
+  watch_ready: boolean;
+  profile_ready: boolean;
+  /** 完成时间；null = 尚未完成。解绑手表会被重置回 null。 */
+  completed_at: string | null;
+}
+
+/** 部署侧特性开关（GET /api/users/me/profile 的 `features`，只取小程序用到的）。 */
+export interface FeatureFlags {
+  /** config.yml 的 sync-data-at-onboarding：onboarding 时是否同步数据。 */
+  sync_data_at_onboarding: boolean;
+}
+
 /** GET /api/users/me/profile 响应（只取小程序用到的字段）。 */
 export interface MyProfileData {
   id: string;
   display_name: string;
   running_age_range: RunningAgeRange;
   profile: ProfileCore | null;
+  onboarding: OnboardingState;
+  features: FeatureFlags;
 }
 
 /** PATCH 可提交的字段子集（省略即不变）。 */

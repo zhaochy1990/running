@@ -93,6 +93,54 @@
   line-height: 1;
 }
 
+/* ---------- 同步进度 ---------- */
+
+.ob-spinner {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 50%;
+  border: 6rpx solid rgba(255, 99, 99, 0.2);
+  border-top-color: #ff6363;
+  animation: ob-spin 0.9s linear infinite;
+}
+
+@keyframes ob-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ob-progress {
+  padding: 40rpx 36rpx;
+}
+
+.ob-progress__text {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.ob-progress__bar {
+  margin-top: 24rpx;
+  height: 12rpx;
+  border-radius: 6rpx;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.ob-progress__fill {
+  height: 100%;
+  border-radius: 6rpx;
+  background: #ff6363;
+  transition: width 0.4s ease;
+}
+
+.ob-progress__hint {
+  margin-top: 20rpx;
+  font-size: 24rpx;
+  color: #8a8b8c;
+}
+
 /* ---------- 跳过 / 主按钮 ---------- */
 
 .ob-skip {

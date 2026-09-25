@@ -27,3 +27,8 @@ export interface PipelineRun {
   steps: PipelineStep[];
   error_message?: string;
 }
+
+/** GET /api/users/{uid}/pipelines 响应（该用户的 run，新的在前）。 */
+export interface UserPipelinesResponse {
+  pipelines: PipelineRun[];
+}
