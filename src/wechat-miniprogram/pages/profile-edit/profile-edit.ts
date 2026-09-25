@@ -14,15 +14,12 @@ import {
   updateProfile,
   uploadAvatar,
 } from '../../services/profile';
-import type { ProfilePatch, RunningAgeRange } from '../../services/profile';
+import type { ProfilePatch } from '../../services/profile';
 import { ApiError } from '../../services/request';
 import { shanghaiToday } from '../../utils/date';
-
-const SEX_VALUES: string[] = ['male', 'female', 'other'];
-const SEX_OPTIONS = ['男', '女', '其他'];
-
-const AGE_VALUES: RunningAgeRange[] = ['unknown', 'lt_6m', '6m_1y', '1y_3y', '3y_plus'];
-const AGE_OPTIONS = ['暂不透露', '不足 6 个月', '6 个月 – 1 年', '1 – 3 年', '3 年以上'];
+// 取值表与 onboarding 的资料步共用一份（必须与后端 oneof 一致），见 utils/profileFields.ts
+import { AGE_OPTIONS, AGE_VALUES, SEX_OPTIONS, SEX_VALUES } from '../../utils/profileFields';
+import type { Sex } from '../../utils/profileFields';
 
 interface ProfileEditPageData {
   statusBarHeight: number;
@@ -146,7 +143,9 @@ Page<ProfileEditPageData, ProfileEditPageHandlers>({
     try {
       const data = await getMyProfile();
       const core = data.profile;
-      const sexIndex = core ? SEX_VALUES.indexOf(core.sex) : -1;
+      // 数据面把 sex 回传成 string（不是联合类型），这里的取值来自我们自己提交的
+      // token，故收窄回 Sex 用于查下标；未知值 indexOf 仍返回 -1。
+      const sexIndex = core ? SEX_VALUES.indexOf(core.sex as Sex) : -1;
       this.setData({
         loading: false,
         error: '',
