@@ -57,7 +57,16 @@
         </view>
         <view class="ob-field ob-field--half">
           <view class="ob-field__label">生日</view>
-          <picker mode="date" value="{{dob}}" end="{{today}}" bindchange="onDobChange">
+          <!-- value 为空时微信的日期选择器会停在「今天」，用户随手一点就把生日设成今天
+               （年龄 0，后面算负荷/心率区全跑偏）。所以未选时用 1990-01-01 作为打开位置，
+               显示仍是「请选择」——必须真的滚动选择才会填上。 -->
+          <picker
+            mode="date"
+            value="{{dob || '1990-01-01'}}"
+            start="1940-01-01"
+            end="{{today}}"
+            bindchange="onDobChange"
+          >
             <view class="ob-input ob-input--picker">{{dob || '请选择'}}</view>
           </picker>
         </view>
