@@ -514,6 +514,89 @@ func TestRaceCalendar_AutoMigrateAddsItemContentColumns(t *testing.T) {
 	}
 }
 
+// Adding published to an already-populated race_calendar must be purely
+// additive: the migration is what upgrades production's 661 mirrored rows, and
+// anything it dropped or rewrote would be silent data loss.
+func TestRaceCalendar_AutoMigrateAddsPublishedKeepingExistingRows(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	if err := st.db.Exec("DROP TABLE IF EXISTS race_calendar_item").Error; err != nil {
+		t.Fatalf("drop item table: %v", err)
+	}
+	if err := st.db.Exec("DROP TABLE IF EXISTS race_calendar").Error; err != nil {
+		t.Fatalf("drop event table: %v", err)
+	}
+	// race_calendar as it stood before published existed.
+	legacy := `CREATE TABLE race_calendar (
+		id bigint unsigned NOT NULL AUTO_INCREMENT,
+		source varchar(32) NOT NULL,
+		name varchar(255) NOT NULL,
+		name_cn varchar(255) NULL,
+		race_date varchar(10) NOT NULL,
+		month tinyint NOT NULL,
+		dayofmonth tinyint NOT NULL,
+		country varchar(8) NOT NULL,
+		province varchar(64) NULL,
+		city varchar(64) NULL,
+		label varchar(32) NULL,
+		race_types varchar(255) NULL,
+		origin varchar(16) NOT NULL DEFAULT 'sync',
+		admin_overrides json NULL,
+		partition_rule json NULL,
+		signup_timeline json NULL,
+		signup_channels json NULL,
+		packet_pickup json NULL,
+		climate json NULL,
+		weather_windows json NULL,
+		content_stale tinyint(1) NOT NULL DEFAULT 0,
+		created_at datetime(3) NULL,
+		updated_at datetime(3) NULL,
+		PRIMARY KEY (id),
+		UNIQUE KEY uidx_race_cal_src_name_date (source, name, race_date)
+	)`
+	if err := st.db.Exec(legacy).Error; err != nil {
+		t.Fatalf("create legacy event table: %v", err)
+	}
+	if err := st.db.Exec(
+		`INSERT INTO race_calendar (source, name, name_cn, race_date, month, dayofmonth, country, city, origin, climate)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"中国田协", "2026厦门马拉松", "2026厦门马拉松", "2026-01-11", 1, 11, "CHN", "厦门市", RaceOriginSync,
+		[]byte(`{"summary":"冬季湿冷"}`),
+	).Error; err != nil {
+		t.Fatalf("seed legacy event: %v", err)
+	}
+
+	if err := st.AutoMigrateRaceCalendar(ctx); err != nil {
+		t.Fatalf("automigrate legacy event table: %v", err)
+	}
+	if !st.db.Migrator().HasColumn(&RaceCalendarEvent{}, "published") {
+		t.Fatal("race_calendar.published was not added")
+	}
+
+	var row RaceCalendarEvent
+	if err := st.db.WithContext(ctx).Where("name = ?", "2026厦门马拉松").First(&row).Error; err != nil {
+		t.Fatalf("read migrated event: %v", err)
+	}
+	if row.Published {
+		t.Errorf("published = true, want existing rows to default to unpublished")
+	}
+	if row.NameCN == nil || *row.NameCN != "2026厦门马拉松" || row.City == nil || *row.City != "厦门市" {
+		t.Errorf("row = %+v, want the mirrored values kept", row)
+	}
+	if row.Climate == nil || row.Climate.Summary != "冬季湿冷" {
+		t.Errorf("climate = %+v, want the admin content kept", row.Climate)
+	}
+
+	var count int64
+	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Count(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("rows = %d, want 1 (the migration must not drop rows)", count)
+	}
+}
+
 func TestRaceCalendar_AutoMigrateAddsIDToLegacyTable(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
