@@ -30,7 +30,7 @@ const client_ids: Record<Env, string> = {
   [ENV.PROD]: 'app_895073719c0147368b8feed3',
 }
 
-export const CURRENT_ENV: Env = ENV.STAGING;
+export const CURRENT_ENV: Env = ENV.PROD;
 export const API_BASE_URL = API_BASE_URLS[CURRENT_ENV];
 export const AUTH_BASE_URL = AUTH_BASE_URLS[CURRENT_ENV];
 export const COACH_BASE_URL = COACH_BASE_URLS[CURRENT_ENV];
@@ -51,7 +51,7 @@ export const REQUEST_TIMEOUT = 15000;
 
 // Coach 对话超时（毫秒）。coach turn 是 LLM 编排，可能明显慢于普通读接口，
 // 单独放宽（微信 60s 上限），避免快速误判失败落兜底文案。
-export const COACH_REQUEST_TIMEOUT = 120000;
+export const COACH_REQUEST_TIMEOUT = 600000;
 
 // token 过期前多少秒提前刷新
 export const TOKEN_REFRESH_LEAD_SECONDS = 60;
