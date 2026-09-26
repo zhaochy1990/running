@@ -264,7 +264,7 @@ export class MySqlDataProvider implements DataProvider {
               t.session_class AS stride_session_class, a.temperature,
               a.humidity, a.feels_like, a.wind_speed, a.sport_note, a.sport,
               a.feel, a.vertical_oscillation_mm, a.ground_contact_time_ms,
-              a.vertical_ratio_pct, a.pauses, a.provider
+              a.vertical_ratio_pct, a.pauses, a.provider, a.sport_type
          FROM activities a
          LEFT JOIN activity_training_load t
            ON t.user_id = a.user_id AND t.label_id = a.label_id
@@ -277,17 +277,41 @@ export class MySqlDataProvider implements DataProvider {
       return null;
     }
     const activity = rowToActivity(row);
-    const [lapRows] = await this.pool.query<RowDataPacket[]>(
+    activity.laps = await this.pickSegments(userId, labelId, isStrengthRow(row));
+    return activity;
+  }
+
+  /**
+   * Choose the activity's split table, mirroring Go's `pickSegments`
+   * (src/go/internal/api/activities.go). `type2` is COROS's own lap table — the
+   * watch's laps (1 km / 500 m auto splits), a workout's interval reps, or a
+   * strength session's exercise groups — and the only family COROS fills
+   * distance/pace/HR/cadence in consistently. `autoKm` is the fallback for when
+   * `type2` is not a real split table: Garmin writes no `type2` at all, and a
+   * COROS activity with auto-lap off has a single lap. The other derived tiers
+   * (`autoMile` 5 km, `type12` 10 km) are the same laps re-grouped, return zero
+   * distance on a share of activities, and are never read.
+   */
+  private async pickSegments(userId: string, labelId: string, strength: boolean): Promise<ActivityLap[]> {
+    const type2 = await this.lapsByType(userId, labelId, "type2");
+    if (strength || hasDistanceSplits(type2)) {
+      return type2;
+    }
+    const autoKm = await this.lapsByType(userId, labelId, "autoKm");
+    return hasDistanceSplits(autoKm) ? autoKm : [];
+  }
+
+  private async lapsByType(userId: string, labelId: string, lapType: string): Promise<ActivityLap[]> {
+    const [rows] = await this.pool.query<RowDataPacket[]>(
       `SELECT label_id, lap_index, lap_type, distance_m, duration_s, avg_pace,
               adjusted_pace, avg_hr, max_hr, avg_cadence, avg_power, ascent_m,
               descent_m, exercise_type, exercise_name_key, mode
          FROM laps
-        WHERE user_id = ? AND label_id = ?
-        ORDER BY lap_index, lap_type`,
-      [userId, labelId],
+        WHERE user_id = ? AND label_id = ? AND lap_type = ?
+        ORDER BY lap_index`,
+      [userId, labelId, lapType],
     );
-    activity.laps = lapRows.map(rowToActivityLap);
-    return activity;
+    return rows.map(rowToActivityLap);
   }
 
   /**
@@ -538,6 +562,31 @@ function rowToActivityLap(row: RowDataPacket): ActivityLap {
     exerciseNameKey: (row.exercise_name_key ?? null) as string | null,
     mode: (row.mode ?? null) as number | null,
   };
+}
+
+/**
+ * A lap family is usable as a split table only when at least two of its laps
+ * carry a positive distance. A single-lap family is not a split table, and a
+ * family whose distances are all zero (COROS's derived tiers, strength exercise
+ * groups) must not be served as one. Mirrors Go's `hasDistanceSplits`.
+ */
+function hasDistanceSplits(laps: ActivityLap[]): boolean {
+  let withDistance = 0;
+  for (const lap of laps) {
+    if (lap.distanceM !== null && lap.distanceM > 0) {
+      withDistance += 1;
+      if (withDistance >= 2) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** Mirrors the sport branch of Go's `strengthActivityPredicate` on a loaded row. */
+function isStrengthRow(row: RowDataPacket): boolean {
+  const sportType = (row.sport_type ?? null) as number | null;
+  return sportType === 402 || sportType === 800 || row.sport === "strength";
 }
 
 function rowToDailyTrainingLoad(row: RowDataPacket): DailyTrainingLoad {

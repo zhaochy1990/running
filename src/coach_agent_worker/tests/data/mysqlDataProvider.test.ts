@@ -215,25 +215,61 @@ test("date-range reads reject a reversed start>end interval before querying", as
   assert.equal(queried, false, "should reject without hitting the database");
 });
 
-test("activity detail reads a single activity with its laps, scoped by user and label", async () => {
+/** Detail-row fake whose `type2` / `autoKm` families are supplied per test. */
+function detailProvider(detail: Record<string, unknown>, families: Record<string, unknown[]>) {
   const calls: Array<{ sql: string; values: unknown[] }> = [];
-  const provider = new MySqlDataProvider({
-    async query(query: string, values: unknown[]) {
-      calls.push({ sql: query, values });
-      if (query.includes("FROM laps")) {
-        return [[{ label_id: "run-1", lap_index: 1, lap_type: "autoKm", distance_m: 1000, duration_s: 300, avg_pace: 300, avg_hr: 160 }], []];
-      }
-      return [[{ user_id: "athlete", label_id: "run-1", date: new Date("2026-08-01T00:00:00Z"), provider: "coros" }], []];
-    },
-  } as never);
+  return {
+    calls,
+    provider: new MySqlDataProvider({
+      async query(query: string, values: unknown[]) {
+        calls.push({ sql: query, values });
+        if (query.includes("FROM laps")) {
+          const lapType = values[2] as string;
+          return [families[lapType] ?? [], []];
+        }
+        return [[{ user_id: "athlete", label_id: "run-1", date: new Date("2026-08-01T00:00:00Z"), provider: "coros", ...detail }], []];
+      },
+    } as never),
+  };
+}
+
+const km = (lapIndex: number) => ({ label_id: "run-1", lap_index: lapIndex, lap_type: "type2", distance_m: 1000, duration_s: 300, avg_pace: 300, avg_hr: 160 });
+
+test("activity detail reads a single activity with its laps, scoped by user and label", async () => {
+  const { calls, provider } = detailProvider({}, { type2: [km(1), km(2)] });
 
   const activity = await provider.getActivityDetail("athlete", "run-1");
   assert.equal(activity?.labelId, "run-1");
-  assert.equal(activity?.laps?.length, 1);
-  assert.equal(activity?.laps?.[0]?.lapIndex, 1);
+  assert.equal(activity?.laps?.length, 2);
+  assert.equal(activity?.laps?.[1]?.lapIndex, 2);
   assert.match(calls[0]?.sql ?? "", /WHERE a\.user_id = \? AND a\.label_id = \?/);
   assert.deepEqual(calls[0]?.values, ["athlete", "run-1"]);
-  assert.deepEqual(calls[1]?.values, ["athlete", "run-1"]);
+  assert.deepEqual(calls[1]?.values, ["athlete", "run-1", "type2"]);
+});
+
+test("activity detail prefers type2 and falls back to autoKm only when it is a real split table", async () => {
+  // type2 is a single lap (COROS with auto-lap off) → not a split table.
+  const single = detailProvider({}, { type2: [km(1)], autoKm: [km(1), km(2)] });
+  const fromAutoKm = await single.provider.getActivityDetail("athlete", "run-1");
+  assert.equal(fromAutoKm?.laps?.length, 2);
+  assert.deepEqual(
+    single.calls.slice(1).map((call) => call.values[2]),
+    ["type2", "autoKm"],
+  );
+
+  // Garmin writes no type2 at all, and no autoKm either → no segments.
+  const none = detailProvider({}, {});
+  assert.deepEqual((await none.provider.getActivityDetail("athlete", "run-1"))?.laps, []);
+
+  // A strength session keeps its type2 exercise groups even with no distance.
+  const strength = detailProvider({ sport_type: 402 }, { type2: [{ label_id: "run-1", lap_index: 1, lap_type: "type2", distance_m: 0 }] });
+  const groups = await strength.provider.getActivityDetail("athlete", "run-1");
+  assert.equal(groups?.laps?.length, 1);
+  assert.deepEqual(
+    strength.calls.slice(1).map((call) => call.values[2]),
+    ["type2"],
+    "a strength session must not fall through to autoKm",
+  );
 });
 
 test("activity detail returns null for an unknown label within the user's scope", async () => {
