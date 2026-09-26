@@ -66,6 +66,15 @@ const (
 	// system job (no subject user): internal-only, the single step of the
 	// chinaath_race_calendar_sync pipeline started by the daily cron workflow.
 	JobTypeChinaAthRaceCalendar = "chinaath_race_calendar_sync"
+	// JobTypeRaceCalendarWALabel copies each World Athletics race's label tier
+	// (Platinum/Gold/Elite/Label) onto the matching 中国田协 row, matched by
+	// (race_date, city). It is the third pass over race_calendar and the only
+	// cross-source write there: neither mirror can write the other's rows, so a
+	// separate step owns the tier column. It must run after BOTH calendar
+	// mirrors, which is why it is its own single-step pipeline rather than a
+	// step inside either one — the two mirrors run as parallel jobs. System job
+	// (no subject user), internal-only, started by the daily cron workflow.
+	JobTypeRaceCalendarWALabel = "race_calendar_wa_label"
 )
 
 // Pipeline names (ADR 0020). onboarding and data_sync are fronted by
@@ -87,6 +96,10 @@ const (
 	// into race_calendar. Internal-only (system run, no subject user); the
 	// daily cron workflow starts it via POST /pipelines.
 	PipelineChinaAthRaceCalendar = "chinaath_race_calendar_sync"
+	// PipelineRaceCalendarWALabel runs the World Athletics tier copy onto the
+	// 中国田协 rows. Its own pipeline because it depends on both mirrors above
+	// having run, and those run as parallel jobs of the daily cron workflow.
+	PipelineRaceCalendarWALabel = "race_calendar_wa_label"
 )
 
 // JobSpec is one known job type and whether end users may enqueue it directly.
@@ -198,6 +211,13 @@ func Jobs() []JobSpec {
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"},"description":"Calendar years to mirror. Empty uses the configured defaults / current and next Shanghai years."}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
 		},
+		{
+			Type:          JobTypeRaceCalendarWALabel,
+			UserInitiable: false,
+			Description:   "Copy each race's World Athletics label tier (Platinum/Gold/Elite/Label) onto the matching 中国田协 row, matched by (race_date, city). Unmatched 中国田协 rows get no tier; a row whose wa_label an administrator has overridden keeps its value. Idempotent — only rows whose tier changes are written. System job (no subject user). Years come from the input {\"years\":[...]}, else the current and next Shanghai year. Internal-only; the daily cron workflow starts it via the race_calendar_wa_label pipeline, after both calendar mirrors.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"},"description":"Calendar years to label. Empty uses the current and next Shanghai year."}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
+		},
 	}
 }
 
@@ -265,6 +285,18 @@ func Pipelines() []PipelineSpec {
 			},
 			UserInitiable: false,
 			Description:   "Internal system pipeline (no subject user): fetch the full 中国田协 competition catalogue (no credentials needed, years filtered in memory) and mirror the requested years into the race_calendar table (source 中国田协). Started by the daily cron workflow via POST /pipelines; the optional input {\"years\":[...]} overrides which years to mirror.",
+			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
+		},
+		{
+			Def: pipeline.Def{
+				Name: PipelineRaceCalendarWALabel,
+				Steps: []pipeline.StepDef{
+					{Name: "label", JobType: JobTypeRaceCalendarWALabel},
+				},
+			},
+			UserInitiable: false,
+			Description:   "Internal system pipeline (no subject user): copy the World Athletics tier from each 国际田联 row onto its matching 中国田协 row (matched by race_date + city), so one race carries both its 中国田协 grade and its World Athletics label. Started by the daily cron workflow via POST /pipelines AFTER both calendar mirrors, which run as parallel jobs — the step needs both calendars' output. The optional input {\"years\":[...]} overrides which years to label.",
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
 		},

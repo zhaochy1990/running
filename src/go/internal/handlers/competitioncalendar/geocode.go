@@ -24,6 +24,20 @@ var usStateNames = map[string]string{
 // administrative suffix) and Chinese province for Chinese races. Kept in the
 // handler because it is source-specific curation; extend as new cities appear.
 // Province uses the standard 省/直辖市/自治区/特别行政区 names.
+//
+// City MUST be the prefecture level (地级市 / 直辖市 / 自治州), never a district,
+// county or county-level city. The upstream venue string frequently names the
+// host locality instead — "Gaochun" for 高淳区, "Zhenning" for 镇宁县 — but the
+// 中国田协 catalogue splits raceAddress and discards its third segment, so that
+// side's city is always the prefecture. Leaving a district here makes the two
+// sources disagree on the city of the same race, which breaks the
+// (race_date, city) join the race_calendar_wa_label step matches on: before this
+// rule, 高淳/浦口/西昌/杨陵/镇宁 matched nothing and their races silently lost
+// their World Athletics tier. The race's own name carries the locality anyway.
+//
+// (Yiwu is the one county-level city that stays: no 金华 race exists in the
+// 中国田协 catalogue to join against, so the prefecture would cost precision for
+// nothing. Revisit it if one appears.)
 type chinaCityEntry struct {
 	CityZh   string
 	Province string
@@ -38,7 +52,7 @@ var chinaCity = map[string]chinaCityEntry{
 	"Dongying":      {"东营市", "山东省"},
 	"Fangchenggang": {"防城港市", "广西壮族自治区"},
 	"Fuzhou":        {"福州市", "福建省"},
-	"Gaochun":       {"高淳区", "江苏省"},
+	"Gaochun":       {"南京市", "江苏省"},
 	"Guangzhou":     {"广州市", "广东省"},
 	"Guilin":        {"桂林市", "广西壮族自治区"},
 	"Guiyang":       {"贵阳市", "贵州省"},
@@ -52,7 +66,7 @@ var chinaCity = map[string]chinaCityEntry{
 	"Nanchang":      {"南昌市", "江西省"},
 	"Nanjing":       {"南京市", "江苏省"},
 	"Nanning":       {"南宁市", "广西壮族自治区"},
-	"Pukou":         {"浦口区", "江苏省"},
+	"Pukou":         {"南京市", "江苏省"},
 	"Qingdao":       {"青岛市", "山东省"},
 	"Shanghai":      {"上海市", "上海市"},
 	"Shenyang":      {"沈阳市", "辽宁省"},
@@ -64,14 +78,14 @@ var chinaCity = map[string]chinaCityEntry{
 	"Wuxi":          {"无锡市", "江苏省"},
 	"Xi'an":         {"西安市", "陕西省"},
 	"Xiamen":        {"厦门市", "福建省"},
-	"Xichang":       {"西昌市", "四川省"},
+	"Xichang":       {"凉山彝族自治州", "四川省"},
 	"Xinyu":         {"新余市", "江西省"},
 	"Yancheng":      {"盐城市", "江苏省"},
-	"Yangling":      {"杨陵区", "陕西省"},
+	"Yangling":      {"咸阳市", "陕西省"},
 	"Yangzhou":      {"扬州市", "江苏省"},
 	"Yichang":       {"宜昌市", "湖北省"},
 	"Yiwu":          {"义乌市", "浙江省"},
-	"Zhenning":      {"镇宁县", "贵州省"},
+	"Zhenning":      {"安顺市", "贵州省"},
 }
 
 // parseLocation derives (province, city) from the upstream venue string and

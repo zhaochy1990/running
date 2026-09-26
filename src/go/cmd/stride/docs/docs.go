@@ -8291,6 +8291,10 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "wa_label": {
+                    "description": "WALabel is this race's World Athletics tier, derived by the\nrace_calendar_wa_label step from the 国际田联 mirror (null when no World\nAthletics listing matches).",
+                    "type": "string"
                 }
             }
         },
@@ -8359,6 +8363,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                },
+                "wa_label": {
+                    "description": "WALabel is this race's World Athletics tier, derived by the\nrace_calendar_wa_label step from the 国际田联 mirror (null when no World\nAthletics listing matches).",
                     "type": "string"
                 }
             }
@@ -8529,6 +8537,10 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "wa_label": {
+                    "description": "WALabel is the World Athletics tier written onto this row by the\nrace_calendar_wa_label step. Editable like label so an administrator can\ncorrect a mis-matched tier; declaring \"wa_label\" in Overrides makes the\nlabel run keep the administrator's value.",
+                    "type": "string"
                 }
             }
         },

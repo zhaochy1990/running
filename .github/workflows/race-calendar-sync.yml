@@ -124,3 +124,91 @@ jobs:
         uses: zhaochy1990/configurations/notify-wecom@v1
         with:
           webhook_url: ${{ secrets.WECOM_WEBHOOK_URL }}
+
+  # The label pass is the third step of the same daily job, in its own job only
+  # because it MUST run after both mirrors: the matrix above runs them in
+  # parallel, and this step reads both calendars. Without `needs`, it would race
+  # the 中国田协 mirror and label against a stale catalogue.
+  label:
+    needs: sync
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Same start-and-poll shape as the sync job above; kept inline rather than
+      # extracted into a shared action so the working sync job stays untouched.
+      - name: Start the race_calendar_wa_label pipeline
+        env:
+          GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}
+          GO_INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}
+          PIPELINE: race_calendar_wa_label
+        run: |
+          set -u
+          if [ -z "$GO_API_URL" ] || [ -z "$GO_INTERNAL_TOKEN" ]; then
+            echo "::error::STRIDE_GO_API_URL variable or STRIDE_GO_INTERNAL_TOKEN secret missing"
+            exit 1
+          fi
+
+          URL="${GO_API_URL%/}/pipelines"
+          DAY=$(TZ=Asia/Shanghai date +%F)
+          KEY="race-calendar-wa-label-$DAY"
+
+          echo "## Race calendar sync — WA label" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Shanghai day: \`$DAY\`, idempotency key: \`$KEY\`" >> "$GITHUB_STEP_SUMMARY"
+
+          post() {
+            curl -sS -o /tmp/resp.json -w "%{http_code}" \
+              --max-time 60 \
+              -X POST \
+              -H "X-Internal-Token: $GO_INTERNAL_TOKEN" \
+              -H "Content-Type: application/json" \
+              -H "Idempotency-Key: $KEY" \
+              --data "{\"name\":\"$PIPELINE\"}" \
+              "$URL"
+          }
+
+          http=$(post) || http="000"
+          if [ "$http" != "200" ] && [ "$http" != "202" ]; then
+            echo "  ↻ retrying (first attempt HTTP $http)"
+            sleep 15
+            http=$(post) || http="000"
+          fi
+          body=$(head -c 500 /tmp/resp.json | tr '\n' ' ')
+          echo "start pipeline: HTTP $http — $body" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$http" != "200" ] && [ "$http" != "202" ]; then
+            echo "::error::start pipeline failed (HTTP $http): $body"
+            exit 1
+          fi
+
+          run_id=$(python3 -c "import json; print(json.load(open('/tmp/resp.json')).get('run_id', ''))" 2>/dev/null || true)
+          if [ -z "$run_id" ]; then
+            echo "::warning::no run_id in response; not polling"
+            exit 0
+          fi
+
+          MAX_POLL=60
+          POLL_INTERVAL=15
+          for poll in $(seq 1 "$MAX_POLL"); do
+            : > /tmp/resp.json
+            http=$(curl -sS -o /tmp/resp.json -w "%{http_code}" --max-time 30 \
+              -H "X-Internal-Token: $GO_INTERNAL_TOKEN" \
+              "${GO_API_URL%/}/pipelines/$run_id") || http="000"
+            status=$(python3 -c "import json; print(json.load(open('/tmp/resp.json')).get('status', ''))" 2>/dev/null || true)
+            if [ "$http" = "200" ] && { [ "$status" = "done" ] || [ "$status" = "failed" ]; }; then
+              echo "pipeline \`$run_id\`: **$status**" >> "$GITHUB_STEP_SUMMARY"
+              if [ "$status" = "failed" ]; then
+                echo "::error::pipeline $run_id failed: $(head -c 500 /tmp/resp.json)"
+                exit 1
+              fi
+              exit 0
+            fi
+            [ "$poll" -lt "$MAX_POLL" ] && sleep "$POLL_INTERVAL"
+          done
+          echo "::warning::pipeline $run_id did not reach a terminal state within the poll window"
+
+      - name: Notify WeCom
+        if: always()
+        uses: zhaochy1990/configurations/notify-wecom@v1
+        with:
+          webhook_url: ${{ secrets.WECOM_WEBHOOK_URL }}
