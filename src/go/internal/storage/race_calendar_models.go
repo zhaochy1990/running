@@ -110,6 +110,19 @@ type RaceCalendarEvent struct {
 	// to the race date).
 	Climate        *RaceClimate        `gorm:"column:climate;type:json;serializer:json"`
 	WeatherWindows []RaceWeatherWindow `gorm:"column:weather_windows;type:json;serializer:json"`
+	// Published marks a race the product actually surfaces: the 小程序/Web race
+	// calendar shows published rows and nothing else, so a race is invisible to
+	// end users until an administrator publishes it. It is admin-owned state
+	// like the content columns above — absent from raceCalendarUpsertCols, so
+	// the sync's OnConflict merge leaves it alone and a fresh insert takes
+	// false.
+	//
+	// Publishing also protects the row from the stale-delete for the same reason
+	// content does: deleting a published race would silently remove it from the
+	// app, and an administrator's decision to surface it is not something the
+	// sync can know to recreate. See ReplaceRaceCalendarYear.
+	Published bool `gorm:"column:published;not null;default:false"`
+
 	// ContentStale marks a row the upstream no longer lists but that carries
 	// admin-maintained content, so the stale-delete kept it. An administrator
 	// resolves it via the stale list (move the content to the fresh row, or

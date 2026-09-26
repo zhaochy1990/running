@@ -139,6 +139,60 @@ func TestRaceCalendar_StaleDeleteSkipsManualAndOverridden(t *testing.T) {
 	}
 }
 
+func TestRaceCalendar_PublishedSurvivesResyncAndStaleDelete(t *testing.T) {
+	st := openTestStore(t)
+	migrateRaceCalendar(t, st)
+	ctx := context.Background()
+
+	src := "测试源-发布"
+	year := "2033"
+	seed := []RaceCalendarEvent{
+		{Name: "Published Race", RaceDate: "2033-01-10", Country: "CHN"},
+		{Name: "Unpublished Race", RaceDate: "2033-02-10", Country: "CHN"},
+	}
+	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, seed); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	read := func(name string) RaceCalendarEvent {
+		t.Helper()
+		var row RaceCalendarEvent
+		if err := st.db.WithContext(ctx).Where("source = ? AND name = ?", src, name).First(&row).Error; err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		return row
+	}
+	row := read("Published Race")
+	row.Published = true
+	if err := st.UpdateRaceCalendarEvent(ctx, &row); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	// Re-listing the same year must not knock the flag back to false — the
+	// merge is built from the upstream struct, so only the upsert column list
+	// keeps published out of the DO UPDATE.
+	if _, err := st.ReplaceRaceCalendarYear(ctx, src, year, seed); err != nil {
+		t.Fatalf("resync: %v", err)
+	}
+	if got := read("Published Race"); !got.Published {
+		t.Errorf("published = false after a re-listing merge, want true")
+	}
+
+	// Upstream drops both races. The published one is admin intent the sync
+	// cannot recreate, so it survives (flagged); the bare one is deleted.
+	res, err := st.ReplaceRaceCalendarYear(ctx, src, year, []RaceCalendarEvent{
+		{Name: "New Race", RaceDate: "2033-03-10", Country: "CHN"},
+	})
+	if err != nil {
+		t.Fatalf("stale sync: %v", err)
+	}
+	if res.Deleted != 1 || res.ContentStale != 1 {
+		t.Fatalf("result = %+v, want deleted=1 content_stale=1", res)
+	}
+	if got := read("Published Race"); !got.ContentStale || !got.Published {
+		t.Errorf("published race = %+v, want kept, flagged and still published", got)
+	}
+}
+
 func TestRaceCalendar_ManualRowWithSameKeyIsUntouched(t *testing.T) {
 	st := openTestStore(t)
 	migrateRaceCalendar(t, st)

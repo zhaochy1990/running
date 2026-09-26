@@ -1520,6 +1520,8 @@ definitions:
         type: string
       province:
         type: string
+      published:
+        type: boolean
       race_date:
         type: string
       race_types:
@@ -1561,6 +1563,8 @@ definitions:
         type: string
       province:
         type: string
+      published:
+        type: boolean
       race_date:
         type: string
       race_types:
@@ -1663,6 +1667,12 @@ definitions:
         type: array
       province:
         type: string
+      published:
+        description: |-
+          Published flips whether end users see the race. It is admin-owned: the
+          sync never writes the column, so it takes no override marker, and an
+          absent key leaves the current value alone.
+        type: boolean
       race_date:
         type: string
       race_types:
@@ -4523,8 +4533,8 @@ paths:
   /api/admin/races:
     get:
       description: Administrator only. Returns a page of races ordered by race date,
-        filtered by optional year, source (国际田联 / 中国田协 / manual), month and keyword
-        (matches name or name_cn).
+        filtered by optional year, source (国际田联 / 中国田协 / manual), month, keyword (matches
+        name or name_cn) and published state.
       parameters:
       - description: 4-digit year
         in: query
@@ -4542,6 +4552,11 @@ paths:
         in: query
         name: keyword
         type: string
+      - description: Only published (true) or unpublished (false) races; omit for
+          both
+        in: query
+        name: published
+        type: boolean
       - description: Page (1-based, default 1)
         in: query
         name: page

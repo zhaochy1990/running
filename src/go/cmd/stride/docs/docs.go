@@ -810,7 +810,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Administrator only. Returns a page of races ordered by race date, filtered by optional year, source (国际田联 / 中国田协 / manual), month and keyword (matches name or name_cn).",
+                "description": "Administrator only. Returns a page of races ordered by race date, filtered by optional year, source (国际田联 / 中国田协 / manual), month, keyword (matches name or name_cn) and published state.",
                 "tags": [
                     "admin"
                 ],
@@ -838,6 +838,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Substring of name or name_cn",
                         "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Only published (true) or unpublished (false) races; omit for both",
+                        "name": "published",
                         "in": "query"
                     },
                     {
@@ -8264,6 +8270,9 @@ const docTemplate = `{
                 "province": {
                     "type": "string"
                 },
+                "published": {
+                    "type": "boolean"
+                },
                 "race_date": {
                     "type": "string"
                 },
@@ -8325,6 +8334,9 @@ const docTemplate = `{
                 },
                 "province": {
                     "type": "string"
+                },
+                "published": {
+                    "type": "boolean"
                 },
                 "race_date": {
                     "type": "string"
@@ -8474,6 +8486,10 @@ const docTemplate = `{
                 },
                 "province": {
                     "type": "string"
+                },
+                "published": {
+                    "description": "Published flips whether end users see the race. It is admin-owned: the\nsync never writes the column, so it takes no override marker, and an\nabsent key leaves the current value alone.",
+                    "type": "boolean"
                 },
                 "race_date": {
                     "type": "string"

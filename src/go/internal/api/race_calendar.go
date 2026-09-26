@@ -91,6 +91,7 @@ type raceCalendarEventDTO struct {
 	Label        *string              `json:"label"`
 	RaceTypes    []string             `json:"race_types"`
 	FieldSources map[string]string    `json:"field_sources"`
+	Published    bool                 `json:"published"`
 	ContentStale bool                 `json:"content_stale"`
 	Content      *raceEventContentDTO `json:"content"`
 	UpdatedAt    time.Time            `json:"updated_at"`
@@ -138,6 +139,7 @@ func newRaceCalendarEventDTO(row storage.RaceCalendarEvent) raceCalendarEventDTO
 		Label:        row.Label,
 		RaceTypes:    decodeRaceTypes(row.RaceTypes),
 		FieldSources: raceCalendarFieldSources(row),
+		Published:    row.Published,
 		ContentStale: row.ContentStale,
 		Content:      newRaceEventContentDTO(row),
 		UpdatedAt:    row.UpdatedAt,
@@ -218,12 +220,13 @@ func decodeRaceTypes(raw *string) []string {
 // list returns one page of races with the year/source/month/keyword filters.
 //
 //	@Summary		List the race calendar
-//	@Description	Administrator only. Returns a page of races ordered by race date, filtered by optional year, source (国际田联 / 中国田协 / manual), month and keyword (matches name or name_cn).
+//	@Description	Administrator only. Returns a page of races ordered by race date, filtered by optional year, source (国际田联 / 中国田协 / manual), month, keyword (matches name or name_cn) and published state.
 //	@Tags			admin
 //	@Param			year		query	int		false	"4-digit year"
 //	@Param			month		query	int		false	"Month 1-12"
 //	@Param			source		query	string	false	"Source label"
 //	@Param			keyword		query	string	false	"Substring of name or name_cn"
+//	@Param			published	query	bool	false	"Only published (true) or unpublished (false) races; omit for both"
 //	@Param			page		query	int		false	"Page (1-based, default 1)"
 //	@Param			per_page	query	int		false	"Page size (default 20, max 100)"
 //	@Success		200			{object}	raceCalendarListResponse
@@ -394,6 +397,10 @@ type raceCalendarUpdateRequest struct {
 	RaceTypes   *[]string             `json:"race_types"`
 	Overrides   []string              `json:"overrides"`
 	ResetFields []string              `json:"reset_fields"`
+	// Published flips whether end users see the race. It is admin-owned: the
+	// sync never writes the column, so it takes no override marker, and an
+	// absent key leaves the current value alone.
+	Published *bool `json:"published"`
 	// Content is tri-state: absent = untouched, explicit null = clear every
 	// section, object = full replace of the six sections. The same PATCH
 	// carries the base fields and the content, but the dashboard sends them
@@ -739,6 +746,18 @@ func bindRaceListFilter(c *gin.Context) (storage.RaceCalendarListFilter, bool) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_content_stale"})
 		return f, false
 	}
+	switch strings.TrimSpace(c.Query("published")) {
+	case "":
+	case "1", "true":
+		published := true
+		f.Published = &published
+	case "0", "false":
+		published := false
+		f.Published = &published
+	default:
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_published"})
+		return f, false
+	}
 	if f.Year != "" && !isFourDigitYear(f.Year) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_year"})
 		return f, false
@@ -866,6 +885,12 @@ func applyRaceCalendarUpdate(c *gin.Context, row *storage.RaceCalendarEvent, req
 		}
 		row.RaceTypes = encoded
 	}
+	// Published is admin-owned, so it neither touches origin nor joins the
+	// override set — the sync never writes the column, so there is nothing to
+	// take over.
+	if req.Published != nil {
+		row.Published = *req.Published
+	}
 
 	overrides := make(map[string]bool, len(row.AdminOverrides)+len(req.Overrides))
 	for _, f := range row.AdminOverrides {
@@ -915,8 +940,10 @@ func applyRaceCalendarUpdate(c *gin.Context, row *storage.RaceCalendarEvent, req
 			row.WeatherWindows = in.WeatherWindows
 		}
 		// A race whose content was just fully cleared no longer needs the
-		// stale protection — there is nothing left to lose.
-		if !row.HasContent() {
+		// stale protection — unless it is published, which protects it on its
+		// own (see ReplaceRaceCalendarYear), so the "upstream dropped this"
+		// warning must stay visible.
+		if !row.HasContent() && !row.Published {
 			row.ContentStale = false
 		}
 	}

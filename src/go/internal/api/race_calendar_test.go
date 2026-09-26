@@ -85,6 +85,9 @@ func (f *fakeRaceCalendarStore) ListRaceCalendarEvents(_ context.Context, filter
 		if filter.ContentStale && !row.ContentStale {
 			continue
 		}
+		if filter.Published != nil && row.Published != *filter.Published {
+			continue
+		}
 		matched = append(matched, row)
 	}
 	page, perPage := filter.Page, filter.PerPage
@@ -858,5 +861,62 @@ func TestRaceCalendarAdmin_ContentStaleFilter(t *testing.T) {
 	}
 	if w := h.do(t, http.MethodGet, "/api/admin/races?content_stale=yes", nil, admin); w.Code != http.StatusBadRequest {
 		t.Fatalf("bad content_stale = %d, want 400", w.Code)
+	}
+}
+
+func TestRaceCalendarAdmin_PublishAndFilter(t *testing.T) {
+	h := newRaceHarness(t)
+	target := h.store.seedEvent(syncEvent())
+	h.store.seedEvent(storage.RaceCalendarEvent{
+		Source: "中国田协", Origin: storage.RaceOriginSync, Name: "未发布赛事",
+		RaceDate: "2030-12-01", Month: 12, DayOfMonth: 1, Country: "CHN",
+	})
+	admin := h.adminToken(t)
+
+	// Publishing is a plain PATCH of the field, and it is admin-owned: the row
+	// keeps following the sync (origin unchanged, nothing added to overrides).
+	path := fmt.Sprintf("/api/admin/races/%d", target.ID)
+	w := h.do(t, http.MethodPatch, path, map[string]any{"published": true}, admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("publish = %d: %s", w.Code, w.Body.String())
+	}
+	var detail raceCalendarDetailDTO
+	if err := json.Unmarshal(w.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !detail.Published || detail.Origin != storage.RaceOriginSync || detail.FieldSources["name"] != "sync" {
+		t.Fatalf("published = %+v, want published, sync-owned, no overrides", detail.raceCalendarEventDTO)
+	}
+
+	// A PATCH that does not mention published leaves it alone.
+	if w := h.do(t, http.MethodPatch, path, map[string]any{"city": "厦门市"}, admin); w.Code != http.StatusOK {
+		t.Fatalf("unrelated patch = %d: %s", w.Code, w.Body.String())
+	}
+	if got := h.store.events[h.store.findEvent(target.ID)]; !got.Published {
+		t.Errorf("published cleared by an unrelated patch")
+	}
+
+	for _, tc := range []struct {
+		query string
+		want  int64
+	}{
+		{"published=true", 1},
+		{"published=false", 1},
+		{"", 2},
+	} {
+		w := h.do(t, http.MethodGet, "/api/admin/races?"+tc.query, nil, admin)
+		if w.Code != http.StatusOK {
+			t.Fatalf("list %q = %d: %s", tc.query, w.Code, w.Body.String())
+		}
+		var list raceCalendarListResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if list.Total != tc.want {
+			t.Errorf("list %q total = %d, want %d", tc.query, list.Total, tc.want)
+		}
+	}
+	if w := h.do(t, http.MethodGet, "/api/admin/races?published=maybe", nil, admin); w.Code != http.StatusBadRequest {
+		t.Errorf("bad published = %d, want 400", w.Code)
 	}
 }

@@ -36,9 +36,9 @@ func (s *Store) AutoMigrateRaceCalendar(ctx context.Context) error {
 // — it is an app-side asset the sync must never overwrite — and created_at keeps
 // its first-seen timestamp. origin/admin_overrides are also excluded: an
 // existing row keeps its provenance, and a fresh insert takes the values from
-// the struct. The six admin content columns are excluded for the same reason
-// (the sync never writes them); content_stale IS included so a key the upstream
-// re-lists is un-flagged by the same upsert that refreshes the row.
+// the struct. The six admin content columns and published are excluded for the
+// same reason (the sync never writes them); content_stale IS included so a key
+// the upstream re-lists is un-flagged by the same upsert that refreshes the row.
 var raceCalendarUpsertCols = []string{
 	"race_date", "month", "dayofmonth", "country", "province", "city", "label",
 	"race_types", "updated_at", "content_stale",
@@ -168,7 +168,9 @@ func (s *Store) ReplaceRaceCalendarYear(ctx context.Context, source, year string
 		// A stale row that carries admin-maintained content is not deleted
 		// either — deleting it would destroy admin work the sync knows nothing
 		// about — it is flagged content_stale instead (same survivor class as
-		// overridden rows) and resolved by an administrator.
+		// overridden rows) and resolved by an administrator. A published row
+		// survives by the same rule even when it has no content: it is visible
+		// in the app, so dropping it upstream must not silently unpublish it.
 		keys := make([][]any, len(races))
 		for i, r := range races {
 			keys[i] = []any{r.Name, r.RaceDate}
@@ -202,7 +204,7 @@ func (s *Store) ReplaceRaceCalendarYear(ctx context.Context, source, year string
 			var stale []RaceCalendarEvent
 			var staleContent []RaceCalendarEvent
 			for _, row := range candidates {
-				if itemDataSet[row.ID] || row.HasContent() {
+				if itemDataSet[row.ID] || row.HasContent() || row.Published {
 					staleContent = append(staleContent, row)
 				} else {
 					stale = append(stale, row)
@@ -409,12 +411,15 @@ func raceCalendarOverrideSet(fields []string) map[string]bool {
 // are optional ("" / 0 mean no bound), Keyword matches name or name_cn as a
 // substring, and Page/PerPage are 1-based (PerPage is clamped by the caller).
 // ContentStale selects only the rows the stale-delete kept and flagged.
+// Published is tri-state: nil means no bound, so the admin can list all races,
+// only the published ones, or only the unpublished ones.
 type RaceCalendarListFilter struct {
 	Year         string
 	Month        int
 	Source       string
 	Keyword      string
 	ContentStale bool
+	Published    *bool
 	Page         int
 	PerPage      int
 }
@@ -446,6 +451,9 @@ func (s *Store) ListRaceCalendarEvents(ctx context.Context, f RaceCalendarListFi
 		}
 		if f.ContentStale {
 			query = query.Where("content_stale = ?", true)
+		}
+		if f.Published != nil {
+			query = query.Where("published = ?", *f.Published)
 		}
 		return query
 	}
