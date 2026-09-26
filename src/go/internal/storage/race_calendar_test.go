@@ -597,6 +597,125 @@ func TestRaceCalendar_AutoMigrateAddsPublishedKeepingExistingRows(t *testing.T) 
 	}
 }
 
+// Adding content_source to both race tables must likewise be purely additive.
+// The column is a nullable pointer, so an existing row must come out NULL —
+// not "" — or every mirrored row would look like a provenance value nothing
+// wrote, and the dashboard would badge 661 races as machine-filled.
+func TestRaceCalendar_AutoMigrateAddsContentSourceKeepingExistingRows(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	for _, table := range []string{"race_calendar_item", "race_calendar"} {
+		if err := st.db.Exec("DROP TABLE IF EXISTS " + table).Error; err != nil {
+			t.Fatalf("drop %s: %v", table, err)
+		}
+	}
+	// Both tables as they stood before content_source existed.
+	if err := st.db.Exec(`CREATE TABLE race_calendar (
+		id bigint unsigned NOT NULL AUTO_INCREMENT,
+		source varchar(32) NOT NULL,
+		name varchar(255) NOT NULL,
+		name_cn varchar(255) NULL,
+		race_date varchar(10) NOT NULL,
+		month tinyint NOT NULL,
+		dayofmonth tinyint NOT NULL,
+		country varchar(8) NOT NULL,
+		province varchar(64) NULL,
+		city varchar(64) NULL,
+		label varchar(32) NULL,
+		race_types varchar(255) NULL,
+		origin varchar(16) NOT NULL DEFAULT 'sync',
+		admin_overrides json NULL,
+		signup_timeline json NULL,
+		signup_channels json NULL,
+		published tinyint(1) NOT NULL DEFAULT 0,
+		content_stale tinyint(1) NOT NULL DEFAULT 0,
+		created_at datetime(3) NULL,
+		updated_at datetime(3) NULL,
+		PRIMARY KEY (id),
+		UNIQUE KEY uidx_race_cal_src_name_date (source, name, race_date)
+	)`).Error; err != nil {
+		t.Fatalf("create legacy event table: %v", err)
+	}
+	if err := st.db.Exec(`CREATE TABLE race_calendar_item (
+		id bigint unsigned NOT NULL AUTO_INCREMENT,
+		race_event_id bigint unsigned NOT NULL,
+		name varchar(255) NOT NULL,
+		type varchar(32) NOT NULL,
+		start_time varchar(8) NULL,
+		entry_fee bigint NULL,
+		quota bigint NULL,
+		origin varchar(16) NOT NULL DEFAULT 'sync',
+		aid_stations json NULL,
+		content_stale tinyint(1) NOT NULL DEFAULT 0,
+		created_at datetime(3) NULL,
+		updated_at datetime(3) NULL,
+		PRIMARY KEY (id),
+		UNIQUE KEY uidx_race_cal_item_event_name (race_event_id, name)
+	)`).Error; err != nil {
+		t.Fatalf("create legacy item table: %v", err)
+	}
+
+	// A row carrying hand-typed content, the case that must survive untouched.
+	if err := st.db.Exec(
+		`INSERT INTO race_calendar (source, name, name_cn, race_date, month, dayofmonth, country, city, origin, signup_channels)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"中国田协", "2026杭州马拉松", "2026杭州马拉松", "2026-11-01", 11, 1, "CHN", "杭州市", RaceOriginSync,
+		[]byte(`[{"name":"官网","type":"官网","url":"https://hm.zhetiyu.cn","url_type":"web"}]`),
+	).Error; err != nil {
+		t.Fatalf("seed legacy event: %v", err)
+	}
+	if err := st.db.Exec(
+		"INSERT INTO race_calendar_item (race_event_id, name, type, start_time, origin, aid_stations) VALUES (?, ?, ?, ?, ?, ?)",
+		1, "全程马拉松", "Marathon", "07:00", RaceOriginSync,
+		[]byte(`[{"distance_km":5,"supplies":["水"]}]`),
+	).Error; err != nil {
+		t.Fatalf("seed legacy item: %v", err)
+	}
+
+	if err := st.AutoMigrateRaceCalendar(ctx); err != nil {
+		t.Fatalf("automigrate legacy tables: %v", err)
+	}
+	for _, model := range []any{&RaceCalendarEvent{}, &RaceCalendarItem{}} {
+		if !st.db.Migrator().HasColumn(model, "content_source") {
+			t.Fatalf("content_source was not added to %T", model)
+		}
+	}
+
+	var event RaceCalendarEvent
+	if err := st.db.WithContext(ctx).Where("name = ?", "2026杭州马拉松").First(&event).Error; err != nil {
+		t.Fatalf("read migrated event: %v", err)
+	}
+	if event.ContentSource != nil {
+		t.Errorf("content_source = %q, want NULL for a pre-existing row", *event.ContentSource)
+	}
+	if len(event.SignupChannels) != 1 || event.SignupChannels[0].URLType != RaceChannelURLTypeWeb {
+		t.Errorf("signup_channels = %+v, want the stored channels kept", event.SignupChannels)
+	}
+	if event.SignupChannels[0].URL == nil || *event.SignupChannels[0].URL != "https://hm.zhetiyu.cn" {
+		t.Errorf("channel url = %v, want the stored pointer kept", event.SignupChannels[0].URL)
+	}
+
+	var item RaceCalendarItem
+	if err := st.db.WithContext(ctx).Where("name = ?", "全程马拉松").First(&item).Error; err != nil {
+		t.Fatalf("read migrated item: %v", err)
+	}
+	if item.ContentSource != nil {
+		t.Errorf("item content_source = %q, want NULL for a pre-existing row", *item.ContentSource)
+	}
+	if len(item.AidStations) != 1 || item.AidStations[0].DistanceKm != 5 {
+		t.Errorf("aid_stations = %+v, want the stored content kept", item.AidStations)
+	}
+
+	var count int64
+	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Count(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("rows = %d, want 1 (the migration must not drop rows)", count)
+	}
+}
+
 func TestRaceCalendar_AutoMigrateAddsIDToLegacyTable(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

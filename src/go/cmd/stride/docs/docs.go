@@ -8228,6 +8228,10 @@ const docTemplate = `{
                 "content": {
                     "$ref": "#/definitions/api.raceEventContentDTO"
                 },
+                "content_source": {
+                    "description": "ContentSource is who filled the content: null for an administrator, else a\nterm from storage.RaceContentSources (\"WebSearch\"). It is exposed so the\ndashboard can mark researched content as needing review.",
+                    "type": "string"
+                },
                 "content_stale": {
                     "type": "boolean"
                 },
@@ -8299,6 +8303,10 @@ const docTemplate = `{
                 "content": {
                     "$ref": "#/definitions/api.raceEventContentDTO"
                 },
+                "content_source": {
+                    "description": "ContentSource is who filled the content: null for an administrator, else a\nterm from storage.RaceContentSources (\"WebSearch\"). It is exposed so the\ndashboard can mark researched content as needing review.",
+                    "type": "string"
+                },
                 "content_stale": {
                     "type": "boolean"
                 },
@@ -8361,6 +8369,10 @@ const docTemplate = `{
                 "content": {
                     "$ref": "#/definitions/api.raceItemContentInput"
                 },
+                "content_source": {
+                    "description": "ContentSource is the item-level counterpart of the event field: absent or\nnull means an administrator authored the item, else a term from\nstorage.RaceContentSources.",
+                    "type": "string"
+                },
                 "entry_fee": {
                     "type": "integer"
                 },
@@ -8383,6 +8395,10 @@ const docTemplate = `{
             "properties": {
                 "content": {
                     "$ref": "#/definitions/api.raceItemContentDTO"
+                },
+                "content_source": {
+                    "description": "ContentSource is the item-level counterpart of the event's field: null for\nan administrator, else a term from storage.RaceContentSources.",
+                    "type": "string"
                 },
                 "entry_fee": {
                     "type": "integer"
@@ -8412,6 +8428,10 @@ const docTemplate = `{
             "properties": {
                 "content": {
                     "type": "object"
+                },
+                "content_source": {
+                    "description": "ContentSource records who filled the item's content and entry fields:\nabsent = untouched, explicit null = clear, else a term from\nstorage.RaceContentSources.",
+                    "type": "string"
                 },
                 "entry_fee": {
                     "type": "integer"
@@ -8465,6 +8485,10 @@ const docTemplate = `{
                 "content": {
                     "description": "Content is tri-state: absent = untouched, explicit null = clear every\nsection, object = full replace of the six sections. The same PATCH\ncarries the base fields and the content, but the dashboard sends them\nas two independent saves.",
                     "type": "object"
+                },
+                "content_source": {
+                    "description": "ContentSource records who filled the content: absent = untouched, explicit\nnull = clear (an administrator's hand-typed value), else a term from\nstorage.RaceContentSources. The web-research script declares \"WebSearch\"\nhere so an administrator reviewing a filled 报名时间 can tell a researched\nvalue from a hand-typed one. Unlike the sync-managed fields it takes no\noverride marker: the content columns are admin-owned outright.",
+                    "type": "string"
                 },
                 "country": {
                     "type": "string"
@@ -9798,13 +9822,13 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
-                "qr_code_url": {
-                    "type": "string"
-                },
                 "type": {
                     "type": "string"
                 },
                 "url": {
+                    "type": "string"
+                },
+                "url_type": {
                     "type": "string"
                 }
             }
@@ -9819,6 +9843,9 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "lottery_result_at": {
+                    "type": "string"
+                },
+                "payment_deadline": {
                     "type": "string"
                 },
                 "start_at": {

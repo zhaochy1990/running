@@ -94,7 +94,11 @@ type raceCalendarEventDTO struct {
 	Published    bool                 `json:"published"`
 	ContentStale bool                 `json:"content_stale"`
 	Content      *raceEventContentDTO `json:"content"`
-	UpdatedAt    time.Time            `json:"updated_at"`
+	// ContentSource is who filled the content: null for an administrator, else a
+	// term from storage.RaceContentSources ("WebSearch"). It is exposed so the
+	// dashboard can mark researched content as needing review.
+	ContentSource *string   `json:"content_source"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // raceCalendarItemDTO is the admin projection of one race item, including its
@@ -108,6 +112,9 @@ type raceCalendarItemDTO struct {
 	Quota     *int                `json:"quota"`
 	Origin    string              `json:"origin"`
 	Content   *raceItemContentDTO `json:"content"`
+	// ContentSource is the item-level counterpart of the event's field: null for
+	// an administrator, else a term from storage.RaceContentSources.
+	ContentSource *string `json:"content_source"`
 }
 
 // raceCalendarDetailDTO adds the child item list to the event shape.
@@ -125,37 +132,39 @@ type raceCalendarListResponse struct {
 
 func newRaceCalendarEventDTO(row storage.RaceCalendarEvent) raceCalendarEventDTO {
 	return raceCalendarEventDTO{
-		ID:           row.ID,
-		Source:       row.Source,
-		Origin:       row.Origin,
-		Name:         row.Name,
-		NameCN:       row.NameCN,
-		RaceDate:     row.RaceDate,
-		Month:        row.Month,
-		DayOfMonth:   row.DayOfMonth,
-		Country:      row.Country,
-		Province:     row.Province,
-		City:         row.City,
-		Label:        row.Label,
-		RaceTypes:    decodeRaceTypes(row.RaceTypes),
-		FieldSources: raceCalendarFieldSources(row),
-		Published:    row.Published,
-		ContentStale: row.ContentStale,
-		Content:      newRaceEventContentDTO(row),
-		UpdatedAt:    row.UpdatedAt,
+		ID:            row.ID,
+		Source:        row.Source,
+		Origin:        row.Origin,
+		Name:          row.Name,
+		NameCN:        row.NameCN,
+		RaceDate:      row.RaceDate,
+		Month:         row.Month,
+		DayOfMonth:    row.DayOfMonth,
+		Country:       row.Country,
+		Province:      row.Province,
+		City:          row.City,
+		Label:         row.Label,
+		RaceTypes:     decodeRaceTypes(row.RaceTypes),
+		FieldSources:  raceCalendarFieldSources(row),
+		Published:     row.Published,
+		ContentStale:  row.ContentStale,
+		Content:       newRaceEventContentDTO(row),
+		ContentSource: row.ContentSource,
+		UpdatedAt:     row.UpdatedAt,
 	}
 }
 
 func newRaceCalendarItemDTO(row storage.RaceCalendarItem) raceCalendarItemDTO {
 	return raceCalendarItemDTO{
-		ID:        row.ID,
-		Name:      row.Name,
-		Type:      row.Type,
-		StartTime: row.StartTime,
-		EntryFee:  row.EntryFee,
-		Quota:     row.Quota,
-		Origin:    row.Origin,
-		Content:   newRaceItemContentDTO(row),
+		ID:            row.ID,
+		Name:          row.Name,
+		Type:          row.Type,
+		StartTime:     row.StartTime,
+		EntryFee:      row.EntryFee,
+		Quota:         row.Quota,
+		Origin:        row.Origin,
+		Content:       newRaceItemContentDTO(row),
+		ContentSource: row.ContentSource,
 	}
 }
 
@@ -406,6 +415,13 @@ type raceCalendarUpdateRequest struct {
 	// carries the base fields and the content, but the dashboard sends them
 	// as two independent saves.
 	Content optionalField[raceEventContentInput] `json:"content" swaggertype:"object"`
+	// ContentSource records who filled the content: absent = untouched, explicit
+	// null = clear (an administrator's hand-typed value), else a term from
+	// storage.RaceContentSources. The web-research script declares "WebSearch"
+	// here so an administrator reviewing a filled 报名时间 can tell a researched
+	// value from a hand-typed one. Unlike the sync-managed fields it takes no
+	// override marker: the content columns are admin-owned outright.
+	ContentSource optionalField[string] `json:"content_source" swaggertype:"string"`
 }
 
 // update applies a partial edit and merges the override markers.
@@ -541,6 +557,10 @@ type raceCalendarItemCreateRequest struct {
 	EntryFee  *int                  `json:"entry_fee"`
 	Quota     *int                  `json:"quota"`
 	Content   *raceItemContentInput `json:"content"`
+	// ContentSource is the item-level counterpart of the event field: absent or
+	// null means an administrator authored the item, else a term from
+	// storage.RaceContentSources.
+	ContentSource optionalField[string] `json:"content_source" swaggertype:"string"`
 }
 
 // createItem adds an administrator-authored item to a race.
@@ -597,6 +617,11 @@ func (r *raceCalendarRoutes) createItem(c *gin.Context) {
 		Origin:      storage.RaceOriginManual,
 	}
 	applyRaceItemContentColumns(item, req.Content)
+	src, ok := resolveContentSource(c, req.ContentSource)
+	if !ok {
+		return
+	}
+	item.ContentSource = src
 	if err := r.store.CreateRaceCalendarItem(c.Request.Context(), item); err != nil {
 		writeRaceCalendarError(c, r.log, err)
 		return
@@ -619,6 +644,10 @@ type raceCalendarItemUpdateRequest struct {
 	Quota       optionalField[int]                  `json:"quota" swaggertype:"integer"`
 	Content     optionalField[raceItemContentInput] `json:"content" swaggertype:"object"`
 	ResetFields []string                            `json:"reset_fields"`
+	// ContentSource records who filled the item's content and entry fields:
+	// absent = untouched, explicit null = clear, else a term from
+	// storage.RaceContentSources.
+	ContentSource optionalField[string] `json:"content_source" swaggertype:"string"`
 }
 
 // updateItem edits an item. Editing the name (the identity key) detaches a
@@ -927,6 +956,11 @@ func applyRaceCalendarUpdate(c *gin.Context, row *storage.RaceCalendarEvent, req
 				c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
 				return false
 			}
+			// Normalization runs AFTER validation, never before: it clears a
+			// url_type that has no url, which is exactly the inconsistency the
+			// validator rejects. Tidy the order and a typeless url_type stops
+			// being a 400 and becomes a silently cleaned value.
+			normalizeRaceEventContent(in)
 			// An empty-summary climate object is normalized to absent, matching
 			// the old PUT /content semantics.
 			if in.Climate != nil && strings.TrimSpace(in.Climate.Summary) == "" {
@@ -946,6 +980,16 @@ func applyRaceCalendarUpdate(c *gin.Context, row *storage.RaceCalendarEvent, req
 		if !row.HasContent() && !row.Published {
 			row.ContentStale = false
 		}
+	}
+	// Content provenance is independent of the content payload: the web-research
+	// script declares "WebSearch" alongside the sections it just filled, and an
+	// administrator clearing the value declares the content hand-typed.
+	if req.ContentSource.Set {
+		src, ok := resolveContentSource(c, req.ContentSource)
+		if !ok {
+			return false
+		}
+		row.ContentSource = src
 	}
 	return true
 }
@@ -1027,6 +1071,13 @@ func applyRaceItemUpdate(c *gin.Context, item *storage.RaceCalendarItem, req rac
 		clearRaceItemField(item, f)
 	}
 	item.AdminOverrides = sortedOverrideFields(overrides, storage.RaceCalendarItemOverrideableFields)
+	if req.ContentSource.Set {
+		src, ok := resolveContentSource(c, req.ContentSource)
+		if !ok {
+			return false
+		}
+		item.ContentSource = src
+	}
 	return true
 }
 

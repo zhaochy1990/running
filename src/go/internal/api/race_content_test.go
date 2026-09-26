@@ -360,7 +360,7 @@ func TestRaceContentAdmin_RaceAIDraftMergesClimate(t *testing.T) {
 	// The race row already carries other sections; they must survive.
 	seeded := h.store.events[event.ID]
 	seeded.SignupTimeline = &storage.RaceSignupTimeline{StartAt: "2030-08-01", Deadline: "2030-09-15"}
-	seeded.SignupChannels = []storage.RaceSignupChannel{{Name: "官网", Type: "官网", URL: "https://example.com"}}
+	seeded.SignupChannels = []storage.RaceSignupChannel{{Name: "官网", Type: "官网", URL: strPtrAPITest("https://example.com"), URLType: storage.RaceChannelURLTypeWeb}}
 	h.store.events[event.ID] = seeded
 
 	w := h.do(t, "POST", raceAIDraftPath(event.ID), "", admin)
