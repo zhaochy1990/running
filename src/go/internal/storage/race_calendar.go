@@ -20,11 +20,10 @@ var ErrRaceCalendarNotFound = errors.New("storage: race calendar row not found")
 var ErrRaceCalendarConflict = errors.New("storage: race calendar unique conflict")
 
 // AutoMigrateRaceCalendar creates/updates the race_calendar and
-// race_calendar_item tables plus race_item_content (the per-item content rows
-// the stale-delete must be able to see). Called by the worker (the pipeline
-// that writes the calendar) and by the API (the admin surface).
+// race_calendar_item tables. Called by the worker (the pipeline that writes the
+// calendar) and by the API (the admin surface).
 func (s *Store) AutoMigrateRaceCalendar(ctx context.Context) error {
-	for _, model := range []any{&RaceCalendarEvent{}, &RaceCalendarItem{}, &RaceItemContent{}} {
+	for _, model := range []any{&RaceCalendarEvent{}, &RaceCalendarItem{}} {
 		if err := s.db.WithContext(ctx).AutoMigrate(model); err != nil {
 			return fmt.Errorf("storage: automigrate %T: %w", model, err)
 		}
@@ -44,6 +43,18 @@ var raceCalendarUpsertCols = []string{
 	"race_date", "month", "dayofmonth", "country", "province", "city", "label",
 	"race_types", "updated_at", "content_stale",
 }
+
+// raceCalendarItemUpsertCols are the sync-managed item columns refreshed on a
+// conflict, keyed on (race_event_id, name) — the item-level counterpart of
+// raceCalendarUpsertCols above, and deliberately as narrow. name is the identity
+// key so it never updates; origin/admin_overrides are excluded so an existing row
+// keeps its provenance; created_at keeps its first-seen timestamp. The ten
+// content columns and the three admin-maintained entry fields (start_time /
+// entry_fee / quota) are excluded because 中国田协 supplies none of them — the
+// sync writing them would blank an administrator's work. content_stale IS
+// included so a name the upstream re-lists is un-flagged by the same upsert that
+// refreshes the row.
+var raceCalendarItemUpsertCols = []string{"type", "updated_at", "content_stale"}
 
 // ReplaceRaceCalendarResult reports what one year's sync did. ContentStale
 // counts stale rows that were kept and flagged because they carry
@@ -70,9 +81,10 @@ type ReplaceRaceCalendarResult struct {
 // with origin='sync' and no overrides — are deleted together with their items,
 // so the table stays a faithful mirror without ever discarding admin-maintained
 // data. A stale row that carries admin-maintained content (any of the six
-// content sections, or per-item content rows) is NOT deleted: it is flagged
-// content_stale and kept, exactly like an overridden row, for an administrator
-// to resolve (move the content to the upstream's new row, or delete it).
+// content sections, or admin data on any of its items) is NOT deleted: it is
+// flagged content_stale and kept, exactly like an overridden row, for an
+// administrator to resolve (move the content to the upstream's new row, or
+// delete it).
 //
 // Source on each race is overwritten with the passed value, and Month/DayOfMonth
 // are derived from RaceDate (single source of truth). year bounds the
@@ -173,20 +185,24 @@ func (s *Store) ReplaceRaceCalendarYear(ctx context.Context, source, year string
 			for i, row := range candidates {
 				candidateIDs[i] = row.ID
 			}
-			var withContent []uint64
-			if err := tx.Model(&RaceItemContent{}).
-				Where("race_event_id IN ?", candidateIDs).
-				Distinct("race_event_id").Pluck("race_event_id", &withContent).Error; err != nil {
-				return fmt.Errorf("storage: detect stale race_calendar item content: %w", err)
+			// An item an administrator has touched counts as content too: the
+			// content lives on the item rows now, so ask the rows themselves.
+			// ponytail: loads the candidates' items and scans in Go rather than
+			// writing a ten-column OR into SQL — the candidate set is small.
+			var itemRows []RaceCalendarItem
+			if err := tx.Where("race_event_id IN ?", candidateIDs).Find(&itemRows).Error; err != nil {
+				return fmt.Errorf("storage: read stale race_calendar item data: %w", err)
 			}
-			contentSet := make(map[uint64]bool, len(withContent))
-			for _, id := range withContent {
-				contentSet[id] = true
+			itemDataSet := make(map[uint64]bool, len(itemRows))
+			for _, row := range itemRows {
+				if row.HasAdminData() {
+					itemDataSet[row.RaceEventID] = true
+				}
 			}
 			var stale []RaceCalendarEvent
 			var staleContent []RaceCalendarEvent
 			for _, row := range candidates {
-				if contentSet[row.ID] || row.HasContent() {
+				if itemDataSet[row.ID] || row.HasContent() {
 					staleContent = append(staleContent, row)
 				} else {
 					stale = append(stale, row)
@@ -233,28 +249,43 @@ type RaceCalendarItemBatch struct {
 	Items    []RaceCalendarItem
 }
 
-// ReplaceRaceCalendarItemsResult reports how many sync items were written and
-// removed across all batches of one sync run.
+// ReplaceRaceCalendarItemsResult reports what one sync run did across all
+// batches. ContentStale counts items that were kept and flagged because they
+// carry admin-maintained data instead of being deleted.
 type ReplaceRaceCalendarItemsResult struct {
-	Upserted int
-	Deleted  int
+	Upserted     int
+	Deleted      int
+	ContentStale int
 }
 
-// ReplaceRaceCalendarItems regenerates the sync-owned items of the named races.
-// It is the 中国田协 pipeline's second write, separate from the event merge
-// because only that source has item-level data.
+// ReplaceRaceCalendarItems merges the sync-owned items of the named races,
+// keyed on (race_event_id, name). It is the 中国田协 pipeline's second write,
+// separate from the event merge because only that source has item-level data —
+// and it is a per-field merge for the same reason the event merge is: so
+// administrator corrections survive.
 //
 // For each batch it locates the event by its business key (source, name,
-// race_date); a batch with no matching event is skipped. The event's
-// origin='sync' items are deleted and the supplied items re-inserted as
-// origin='sync'. An item name that collides with an existing origin='manual'
-// item is skipped, and no manual item is ever updated or deleted — so an
-// administrator's edits survive the next sync. The whole run is one transaction.
+// race_date); a batch with no matching event is skipped, as is an event an
+// administrator detached (origin='manual'). Otherwise:
+//
+//   - An item that already exists with origin='sync' keeps the current value of
+//     each field listed in its admin_overrides and takes the upstream value for
+//     every other sync-managed field (in practice: type). Its origin and
+//     override set survive, and so does everything the sync never writes — the
+//     ten content columns and start_time/entry_fee/quota.
+//   - A missing item is inserted as origin='sync' with no overrides.
+//   - A detached item (origin='manual') is left completely untouched: neither
+//     refreshed nor stale-deleted.
+//
+// The event's sync-owned items the upstream no longer lists are then resolved
+// exactly like stale events — an item carrying nothing admin-maintained is
+// deleted, one carrying content or overrides is flagged content_stale and kept
+// for an administrator to resolve. The whole run is one transaction.
 func (s *Store) ReplaceRaceCalendarItems(ctx context.Context, source string, batches []RaceCalendarItemBatch) (ReplaceRaceCalendarItemsResult, error) {
 	if len(batches) == 0 {
 		return ReplaceRaceCalendarItemsResult{}, nil
 	}
-	now := time.Now().UTC()
+	now := time.Now().UTC().Truncate(time.Millisecond)
 	var res ReplaceRaceCalendarItemsResult
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, batch := range batches {
@@ -272,43 +303,88 @@ func (s *Store) ReplaceRaceCalendarItems(ctx context.Context, source string, bat
 				continue
 			}
 
-			var manual []RaceCalendarItem
-			if err := tx.Where("race_event_id = ? AND origin = ?", event.ID, RaceOriginManual).Find(&manual).Error; err != nil {
-				return fmt.Errorf("storage: read manual race_calendar items: %w", err)
+			var existing []RaceCalendarItem
+			if err := tx.Where("race_event_id = ?", event.ID).Find(&existing).Error; err != nil {
+				return fmt.Errorf("storage: read race_calendar items: %w", err)
 			}
-			manualNames := make(map[string]bool, len(manual))
-			for _, item := range manual {
-				manualNames[item.Name] = true
+			byName := make(map[string]RaceCalendarItem, len(existing))
+			for _, row := range existing {
+				byName[row.Name] = row
 			}
 
-			del := tx.Where("race_event_id = ? AND origin = ?", event.ID, RaceOriginSync).Delete(&RaceCalendarItem{})
-			if del.Error != nil {
-				return fmt.Errorf("storage: delete sync race_calendar items: %w", del.Error)
-			}
-			res.Deleted += int(del.RowsAffected)
-
-			rows := make([]RaceCalendarItem, 0, len(batch.Items))
+			toUpsert := make([]RaceCalendarItem, 0, len(batch.Items))
 			seen := make(map[string]bool, len(batch.Items))
 			for _, item := range batch.Items {
 				name := strings.TrimSpace(item.Name)
-				if name == "" || manualNames[name] || seen[name] {
+				if name == "" || seen[name] {
 					continue
 				}
 				seen[name] = true
-				rows = append(rows, RaceCalendarItem{
-					RaceEventID: event.ID,
-					Name:        name,
-					Type:        item.Type,
-					Origin:      RaceOriginSync,
-					UpdatedAt:   now,
-				})
+				prev, ok := byName[name]
+				if !ok {
+					toUpsert = append(toUpsert, RaceCalendarItem{
+						RaceEventID: event.ID,
+						Name:        name,
+						Type:        item.Type,
+						Origin:      RaceOriginSync,
+						CreatedAt:   now,
+						UpdatedAt:   now,
+					})
+					continue
+				}
+				if prev.Origin == RaceOriginManual {
+					// An administrator detached this item; the sync must neither
+					// refresh nor delete it.
+					continue
+				}
+				merged := prev
+				if !raceCalendarOverrideSet(prev.AdminOverrides)["type"] {
+					merged.Type = item.Type
+				}
+				merged.UpdatedAt = now
+				// The upstream lists this name again, so it is no longer stale —
+				// same clear the event merge performs via the upsert column.
+				merged.ContentStale = false
+				toUpsert = append(toUpsert, merged)
 			}
-			if len(rows) > 0 {
-				if err := tx.Create(&rows).Error; err != nil {
-					return fmt.Errorf("storage: insert sync race_calendar items: %w", err)
+
+			if len(toUpsert) > 0 {
+				if err := tx.Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "race_event_id"}, {Name: "name"}},
+					DoUpdates: clause.AssignmentColumns(raceCalendarItemUpsertCols),
+				}).Create(&toUpsert).Error; err != nil {
+					return fmt.Errorf("storage: upsert race_calendar items: %w", err)
 				}
 			}
-			res.Upserted += len(rows)
+			res.Upserted += len(toUpsert)
+
+			// Stale items: this event's sync-owned items the upstream no longer
+			// lists. Same survivor rule as stale events — admin data keeps the row,
+			// flagged rather than deleted.
+			var staleIDs, staleContentIDs []uint64
+			for _, row := range existing {
+				if seen[row.Name] || row.Origin == RaceOriginManual {
+					continue
+				}
+				if row.HasAdminData() {
+					staleContentIDs = append(staleContentIDs, row.ID)
+				} else {
+					staleIDs = append(staleIDs, row.ID)
+				}
+			}
+			if len(staleIDs) > 0 {
+				if err := tx.Where("id IN ?", staleIDs).Delete(&RaceCalendarItem{}).Error; err != nil {
+					return fmt.Errorf("storage: delete stale race_calendar items: %w", err)
+				}
+				res.Deleted += len(staleIDs)
+			}
+			if len(staleContentIDs) > 0 {
+				if err := tx.Model(&RaceCalendarItem{}).Where("id IN ?", staleContentIDs).
+					Updates(map[string]any{"content_stale": true, "updated_at": now}).Error; err != nil {
+					return fmt.Errorf("storage: flag stale race_calendar item content: %w", err)
+				}
+				res.ContentStale += len(staleContentIDs)
+			}
 		}
 		return nil
 	})
@@ -438,9 +514,9 @@ func (s *Store) UpdateRaceCalendarEvent(ctx context.Context, row *RaceCalendarEv
 	return nil
 }
 
-// DeleteRaceCalendarEvent removes a race, its items and their content rows in
-// one transaction. Deleting a missing id returns ErrRaceCalendarNotFound so the
-// API answers 404.
+// DeleteRaceCalendarEvent removes a race and its items (item content lives on
+// those rows) in one transaction. Deleting a missing id returns
+// ErrRaceCalendarNotFound so the API answers 404.
 func (s *Store) DeleteRaceCalendarEvent(ctx context.Context, id uint64) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Where("id = ?", id).Delete(&RaceCalendarEvent{})
@@ -452,9 +528,6 @@ func (s *Store) DeleteRaceCalendarEvent(ctx context.Context, id uint64) error {
 		}
 		if err := tx.Where("race_event_id = ?", id).Delete(&RaceCalendarItem{}).Error; err != nil {
 			return fmt.Errorf("storage: delete race_calendar items: %w", err)
-		}
-		if err := tx.Where("race_event_id = ?", id).Delete(&RaceItemContent{}).Error; err != nil {
-			return fmt.Errorf("storage: delete race item content: %w", err)
 		}
 		return nil
 	})
@@ -511,26 +584,144 @@ func (s *Store) UpdateRaceCalendarItem(ctx context.Context, row *RaceCalendarIte
 	return nil
 }
 
-// DeleteRaceCalendarItem removes one item together with its content row (keyed
-// by the item's name), or reports ErrRaceCalendarNotFound.
+// DeleteRaceCalendarItem removes one item, or reports ErrRaceCalendarNotFound.
 func (s *Store) DeleteRaceCalendarItem(ctx context.Context, id uint64) error {
+	res := s.db.WithContext(ctx).Delete(&RaceCalendarItem{}, id)
+	if res.Error != nil {
+		return fmt.Errorf("storage: delete race_calendar_item: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrRaceCalendarNotFound
+	}
+	return nil
+}
+
+// MoveRaceContent copies the six event content columns and every item's
+// admin-maintained data from the source event to the target event, then deletes
+// the source event (its items go with it). It is the administrator's resolution
+// for a content_stale row: the upstream renamed/rescheduled the race and now
+// lists a fresh row; the content moves to that row and the stale row disappears.
+//
+// Item data moves by name: a source item whose name matches a target item lands
+// on that row (keeping the target's origin, so it keeps following the mirror —
+// only its admin-maintained values are overwritten). A source item the target
+// does not have is recreated on the target as origin='manual', so nothing an
+// administrator wrote is dropped.
+//
+// The move refuses (ErrRaceContentConflict) when the target already carries
+// admin data of its own — the admin decides which side wins, the storage never
+// merges.
+func (s *Store) MoveRaceContent(ctx context.Context, sourceEventID, targetEventID uint64) error {
+	now := nowUTC()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var row RaceCalendarItem
-		if err := tx.First(&row, id).Error; err != nil {
+		var source, target RaceCalendarEvent
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&source, sourceEventID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrRaceCalendarNotFound
 			}
-			return fmt.Errorf("storage: get race_calendar_item: %w", err)
+			return fmt.Errorf("storage: lock move source: %w", err)
 		}
-		if err := tx.Where("race_event_id = ? AND item_name = ?", row.RaceEventID, row.Name).
-			Delete(&RaceItemContent{}).Error; err != nil {
-			return fmt.Errorf("storage: delete race item content: %w", err)
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&target, targetEventID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrRaceCalendarNotFound
+			}
+			return fmt.Errorf("storage: lock move target: %w", err)
 		}
-		if err := tx.Delete(&RaceCalendarItem{}, id).Error; err != nil {
-			return fmt.Errorf("storage: delete race_calendar_item: %w", err)
+		if source.ID == target.ID {
+			return ErrRaceCalendarConflict
+		}
+
+		// Refuse when the target already has content of its own — the admin
+		// decides which side wins, the storage never merges.
+		if target.HasContent() {
+			return ErrRaceContentConflict
+		}
+		var targetItems []RaceCalendarItem
+		if err := tx.Where("race_event_id = ?", target.ID).Find(&targetItems).Error; err != nil {
+			return fmt.Errorf("storage: read move target items: %w", err)
+		}
+		for _, item := range targetItems {
+			if item.HasAdminData() {
+				return ErrRaceContentConflict
+			}
+		}
+
+		// Copy the columns through the model (serializer applies on Save only).
+		target.PartitionRule = source.PartitionRule
+		target.SignupTimeline = source.SignupTimeline
+		target.SignupChannels = source.SignupChannels
+		target.PacketPickup = source.PacketPickup
+		target.Climate = source.Climate
+		target.WeatherWindows = source.WeatherWindows
+		target.ContentStale = false
+		target.UpdatedAt = now
+		if err := tx.Save(&target).Error; err != nil {
+			return fmt.Errorf("storage: move race content columns: %w", err)
+		}
+
+		var sourceItems []RaceCalendarItem
+		if err := tx.Where("race_event_id = ?", source.ID).Find(&sourceItems).Error; err != nil {
+			return fmt.Errorf("storage: read move source items: %w", err)
+		}
+		targetByName := make(map[string]*RaceCalendarItem, len(targetItems))
+		for i := range targetItems {
+			targetByName[targetItems[i].Name] = &targetItems[i]
+		}
+		for _, src := range sourceItems {
+			if !src.HasAdminData() {
+				// Nothing an administrator wrote: the mirror rows regenerate
+				// themselves, no need to carry them over.
+				continue
+			}
+			dst, ok := targetByName[src.Name]
+			if !ok {
+				row := src
+				row.ID = 0
+				row.RaceEventID = target.ID
+				row.Origin = RaceOriginManual
+				row.ContentStale = false
+				row.CreatedAt, row.UpdatedAt = now, now
+				if err := tx.Create(&row).Error; err != nil {
+					return fmt.Errorf("storage: recreate moved race item: %w", err)
+				}
+				continue
+			}
+			copyRaceItemAdminData(dst, src)
+			dst.ContentStale = false
+			dst.UpdatedAt = now
+			if err := tx.Save(dst).Error; err != nil {
+				return fmt.Errorf("storage: move race item data: %w", err)
+			}
+		}
+
+		// Delete the source event; its items go with it.
+		if err := tx.Where("id = ?", source.ID).Delete(&RaceCalendarEvent{}).Error; err != nil {
+			return fmt.Errorf("storage: delete moved source: %w", err)
+		}
+		if err := tx.Where("race_event_id = ?", source.ID).Delete(&RaceCalendarItem{}).Error; err != nil {
+			return fmt.Errorf("storage: delete moved source items: %w", err)
 		}
 		return nil
 	})
+}
+
+// copyRaceItemAdminData moves every administrator-owned value from src onto dst:
+// the entry fields the upstream never supplies, the ten content columns and the
+// field overrides. dst keeps its own identity (id/name/type/origin), so a sync
+// item stays on the mirror.
+func copyRaceItemAdminData(dst *RaceCalendarItem, src RaceCalendarItem) {
+	dst.StartTime, dst.EntryFee, dst.Quota = src.StartTime, src.EntryFee, src.Quota
+	dst.AdminOverrides = src.AdminOverrides
+	dst.DistanceKm = src.DistanceKm
+	dst.StartPoint = src.StartPoint
+	dst.FinishPoint = src.FinishPoint
+	dst.TotalAscentM = src.TotalAscentM
+	dst.ElevationPoints = src.ElevationPoints
+	dst.AidStations = src.AidStations
+	dst.Cutoffs = src.Cutoffs
+	dst.Prizes = src.Prizes
+	dst.Reputation = src.Reputation
+	dst.Photos = src.Photos
 }
 
 // monthDayOf parses a "2006-01-02" calendar date into its month and day of

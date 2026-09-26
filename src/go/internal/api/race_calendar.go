@@ -20,8 +20,8 @@ import (
 // Every method maps to exactly one endpoint need: the list reads a page of
 // events, the detail additionally loads the child items and their content, and
 // the mutations are split into event and item operations so the handlers stay
-// thin. The item mutations carry the item's content row (one transaction per
-// write, see storage.UpdateRaceCalendarItemWithContent).
+// thin. An item's content is part of its own row (see storage.RaceCalendarItem),
+// so every item write is a single-row operation.
 type RaceCalendarStore interface {
 	ListRaceCalendarEvents(ctx context.Context, f storage.RaceCalendarListFilter) ([]storage.RaceCalendarEvent, int64, error)
 	GetRaceCalendarEvent(ctx context.Context, id uint64) (*storage.RaceCalendarEvent, error)
@@ -29,10 +29,9 @@ type RaceCalendarStore interface {
 	UpdateRaceCalendarEvent(ctx context.Context, row *storage.RaceCalendarEvent) error
 	DeleteRaceCalendarEvent(ctx context.Context, id uint64) error
 	ListRaceCalendarItems(ctx context.Context, eventID uint64) ([]storage.RaceCalendarItem, error)
-	ListRaceItemContents(ctx context.Context, eventID uint64) ([]storage.RaceItemContent, error)
 	GetRaceCalendarItem(ctx context.Context, id uint64) (*storage.RaceCalendarItem, error)
-	CreateRaceCalendarItemWithContent(ctx context.Context, item *storage.RaceCalendarItem, content *storage.RaceItemContent) error
-	UpdateRaceCalendarItemWithContent(ctx context.Context, item *storage.RaceCalendarItem, content *storage.RaceItemContent, set bool) error
+	CreateRaceCalendarItem(ctx context.Context, row *storage.RaceCalendarItem) error
+	UpdateRaceCalendarItem(ctx context.Context, row *storage.RaceCalendarItem) error
 	DeleteRaceCalendarItem(ctx context.Context, id uint64) error
 	MoveRaceContent(ctx context.Context, sourceEventID, targetEventID uint64) error
 }
@@ -145,7 +144,7 @@ func newRaceCalendarEventDTO(row storage.RaceCalendarEvent) raceCalendarEventDTO
 	}
 }
 
-func newRaceCalendarItemDTO(row storage.RaceCalendarItem, content *raceItemContentDTO) raceCalendarItemDTO {
+func newRaceCalendarItemDTO(row storage.RaceCalendarItem) raceCalendarItemDTO {
 	return raceCalendarItemDTO{
 		ID:        row.ID,
 		Name:      row.Name,
@@ -154,24 +153,16 @@ func newRaceCalendarItemDTO(row storage.RaceCalendarItem, content *raceItemConte
 		EntryFee:  row.EntryFee,
 		Quota:     row.Quota,
 		Origin:    row.Origin,
-		Content:   content,
+		Content:   newRaceItemContentDTO(row),
 	}
 }
 
-// newRaceCalendarItemDTOs projects items and matches each with its content row
-// by item name (the key race_item_content rows live on).
-func newRaceCalendarItemDTOs(rows []storage.RaceCalendarItem, contents []storage.RaceItemContent) []raceCalendarItemDTO {
-	byName := make(map[string]*storage.RaceItemContent, len(contents))
-	for i := range contents {
-		byName[contents[i].ItemName] = &contents[i]
-	}
+// newRaceCalendarItemDTOs projects an event's item rows. The content rides on
+// the row itself, so this is a plain projection.
+func newRaceCalendarItemDTOs(rows []storage.RaceCalendarItem) []raceCalendarItemDTO {
 	out := make([]raceCalendarItemDTO, 0, len(rows))
 	for _, row := range rows {
-		var content *raceItemContentDTO
-		if c, ok := byName[row.Name]; ok {
-			content = newRaceItemContentDTO(c)
-		}
-		out = append(out, newRaceCalendarItemDTO(row, content))
+		out = append(out, newRaceCalendarItemDTO(row))
 	}
 	return out
 }
@@ -298,22 +289,17 @@ func (r *raceCalendarRoutes) detail(c *gin.Context) {
 	c.JSON(http.StatusOK, detail)
 }
 
-// loadDetail assembles the detail DTO (event + items + per-item content) for
-// the handlers that return the full race shape.
+// loadDetail assembles the detail DTO (event + items, each item carrying its own
+// content) for the handlers that return the full race shape.
 func (r *raceCalendarRoutes) loadDetail(c *gin.Context, row *storage.RaceCalendarEvent) (raceCalendarDetailDTO, bool) {
 	items, err := r.store.ListRaceCalendarItems(c.Request.Context(), row.ID)
 	if err != nil {
 		writeRaceCalendarError(c, r.log, err)
 		return raceCalendarDetailDTO{}, false
 	}
-	contents, err := r.store.ListRaceItemContents(c.Request.Context(), row.ID)
-	if err != nil {
-		writeRaceCalendarError(c, r.log, err)
-		return raceCalendarDetailDTO{}, false
-	}
 	return raceCalendarDetailDTO{
 		raceCalendarEventDTO: newRaceCalendarEventDTO(*row),
-		Items:                newRaceCalendarItemDTOs(items, contents),
+		Items:                newRaceCalendarItemDTOs(items),
 	}, true
 }
 
@@ -540,7 +526,7 @@ func (r *raceCalendarRoutes) delete(c *gin.Context) {
 }
 
 // raceCalendarItemCreateRequest is the body of POST .../items. Content is
-// optional: absent or null = no content row.
+// optional: absent or null = an item with no course content yet.
 type raceCalendarItemCreateRequest struct {
 	Name      string                `json:"name"`
 	Type      string                `json:"type"`
@@ -588,59 +574,52 @@ func (r *raceCalendarRoutes) createItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_race_item"})
 		return
 	}
-	itemType := normalizeRaceItemType(req.Type)
-	item := &storage.RaceCalendarItem{
-		RaceEventID: eventID,
-		Name:        name,
-		Type:        itemType,
-		StartTime:   normalizeStartTime(req.StartTime),
-		EntryFee:    req.EntryFee,
-		Quota:       req.Quota,
-		Origin:      storage.RaceOriginManual,
-	}
-	var content *storage.RaceItemContent
 	if req.Content != nil {
 		if err := validateRaceItemContent(req.Content); err != nil {
 			c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
 			return
 		}
-		content = &storage.RaceItemContent{
-			DistanceKm:      req.Content.DistanceKm,
-			StartPoint:      req.Content.StartPoint,
-			FinishPoint:     req.Content.FinishPoint,
-			TotalAscentM:    req.Content.TotalAscentM,
-			ElevationPoints: req.Content.ElevationPoints,
-			AidStations:     req.Content.AidStations,
-			Cutoffs:         req.Content.Cutoffs,
-			Prizes:          req.Content.Prizes,
-			Reputation:      req.Content.Reputation,
-			Photos:          req.Content.Photos,
-		}
 	}
-	if err := r.store.CreateRaceCalendarItemWithContent(c.Request.Context(), item, content); err != nil {
+	item := &storage.RaceCalendarItem{
+		RaceEventID: eventID,
+		Name:        name,
+		Type:        normalizeRaceItemType(req.Type),
+		StartTime:   normalizeStartTime(req.StartTime),
+		EntryFee:    req.EntryFee,
+		Quota:       req.Quota,
+		Origin:      storage.RaceOriginManual,
+	}
+	applyRaceItemContentColumns(item, req.Content)
+	if err := r.store.CreateRaceCalendarItem(c.Request.Context(), item); err != nil {
 		writeRaceCalendarError(c, r.log, err)
 		return
 	}
-	c.JSON(http.StatusCreated, newRaceCalendarItemDTO(*item, newRaceItemContentDTO(content)))
+	c.JSON(http.StatusCreated, newRaceCalendarItemDTO(*item))
 }
 
 // raceCalendarItemUpdateRequest is the body of PATCH .../items/:item_id.
-// Content is tri-state: absent = untouched, explicit null = delete the content
-// row, object = full replace.
+// Content is tri-state: absent = untouched, explicit null = clear the ten
+// content columns, object = full replace. ResetFields drops a field from the
+// row's admin-override set and hands it back to the sync; there is no
+// `overrides` counterpart because the item's only sync-managed field (type) is
+// recorded automatically — a client that forgets to declare it must not lose the
+// administrator's edit to the next sync.
 type raceCalendarItemUpdateRequest struct {
-	Name      *string                             `json:"name"`
-	Type      *string                             `json:"type"`
-	StartTime optionalField[string]               `json:"start_time" swaggertype:"string"`
-	EntryFee  optionalField[int]                  `json:"entry_fee" swaggertype:"integer"`
-	Quota     optionalField[int]                  `json:"quota" swaggertype:"integer"`
-	Content   optionalField[raceItemContentInput] `json:"content" swaggertype:"object"`
+	Name        *string                             `json:"name"`
+	Type        *string                             `json:"type"`
+	StartTime   optionalField[string]               `json:"start_time" swaggertype:"string"`
+	EntryFee    optionalField[int]                  `json:"entry_fee" swaggertype:"integer"`
+	Quota       optionalField[int]                  `json:"quota" swaggertype:"integer"`
+	Content     optionalField[raceItemContentInput] `json:"content" swaggertype:"object"`
+	ResetFields []string                            `json:"reset_fields"`
 }
 
-// updateItem edits an item. Editing a sync-owned item upgrades it to manual so
-// the next sync's regeneration cannot erase the administrator's change.
+// updateItem edits an item. Editing the name (the identity key) detaches a
+// sync-owned item to manual; editing any other sync-managed field records an
+// override instead, so the row keeps following the mirror.
 //
 //	@Summary		Edit a race item
-//	@Description	Administrator only. Applies provided fields; a sync-owned item becomes manual once edited.
+//	@Description	Administrator only. Applies provided fields; editing the name detaches a sync-owned item to manual, editing other fields records an override.
 //	@Tags			admin
 //	@Param			race_id	path	int								true	"Race id"
 //	@Param			item_id	path	int								true	"Item id"
@@ -683,51 +662,20 @@ func (r *raceCalendarRoutes) updateItem(c *gin.Context) {
 	if !applyRaceItemUpdate(c, item, req) {
 		return
 	}
-	var content *storage.RaceItemContent
-	if req.Content.Set && req.Content.Value != nil {
-		if err := validateRaceItemContent(req.Content.Value); err != nil {
-			c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
-			return
+	if req.Content.Set {
+		if req.Content.Value != nil {
+			if err := validateRaceItemContent(req.Content.Value); err != nil {
+				c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_request"})
+				return
+			}
 		}
-		content = &storage.RaceItemContent{
-			DistanceKm:      req.Content.Value.DistanceKm,
-			StartPoint:      req.Content.Value.StartPoint,
-			FinishPoint:     req.Content.Value.FinishPoint,
-			TotalAscentM:    req.Content.Value.TotalAscentM,
-			ElevationPoints: req.Content.Value.ElevationPoints,
-			AidStations:     req.Content.Value.AidStations,
-			Cutoffs:         req.Content.Value.Cutoffs,
-			Prizes:          req.Content.Value.Prizes,
-			Reputation:      req.Content.Value.Reputation,
-			Photos:          req.Content.Value.Photos,
-		}
+		applyRaceItemContentColumns(item, req.Content.Value)
 	}
-	if err := r.store.UpdateRaceCalendarItemWithContent(c.Request.Context(), item, content, req.Content.Set); err != nil {
+	if err := r.store.UpdateRaceCalendarItem(c.Request.Context(), item); err != nil {
 		writeRaceCalendarError(c, r.log, err)
 		return
 	}
-	var contentDTO *raceItemContentDTO
-	if req.Content.Set {
-		if req.Content.Value == nil {
-			contentDTO = nil // explicit delete
-		} else {
-			contentDTO = newRaceItemContentDTO(content)
-		}
-	} else {
-		// Untouched by this PATCH: read back whatever the row carries.
-		contents, err := r.store.ListRaceItemContents(c.Request.Context(), item.RaceEventID)
-		if err != nil {
-			writeRaceCalendarError(c, r.log, err)
-			return
-		}
-		for i := range contents {
-			if contents[i].ItemName == item.Name {
-				contentDTO = newRaceItemContentDTO(&contents[i])
-				break
-			}
-		}
-	}
-	c.JSON(http.StatusOK, newRaceCalendarItemDTO(*item, contentDTO))
+	c.JSON(http.StatusOK, newRaceCalendarItemDTO(*item))
 }
 
 // deleteItem removes one item.
@@ -938,7 +886,7 @@ func applyRaceCalendarUpdate(c *gin.Context, row *storage.RaceCalendarEvent, req
 		delete(overrides, f)
 		clearRaceCalendarField(row, f)
 	}
-	row.AdminOverrides = sortedOverrideFields(overrides)
+	row.AdminOverrides = sortedOverrideFields(overrides, storage.RaceCalendarOverrideableFields)
 
 	if req.Content.Set {
 		if req.Content.Value == nil {
@@ -995,9 +943,13 @@ func clearRaceCalendarField(row *storage.RaceCalendarEvent, field string) {
 	}
 }
 
-// applyRaceItemUpdate mutates item in place.
+// applyRaceItemUpdate mutates item in place. Provenance follows the event-level
+// rule: editing the identity key (name) detaches the row from the mirror
+// (origin='manual'), while editing any other sync-managed field records it in
+// admin_overrides — the row keeps following the mirror but keeps the
+// administrator's value for that field. start_time/entry_fee/quota need no
+// override: the upstream never supplies them, so the sync never writes them.
 func applyRaceItemUpdate(c *gin.Context, item *storage.RaceCalendarItem, req raceCalendarItemUpdateRequest) bool {
-	changed := false
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" || len(name) > 255 {
@@ -1006,16 +958,14 @@ func applyRaceItemUpdate(c *gin.Context, item *storage.RaceCalendarItem, req rac
 		}
 		if name != item.Name {
 			item.Name = name
-			changed = true
+			item.Origin = storage.RaceOriginManual
 		}
 	}
 	if req.Type != nil {
 		item.Type = normalizeRaceItemType(*req.Type)
-		changed = true
 	}
 	if req.StartTime.Set {
 		item.StartTime = normalizeStartTime(req.StartTime.Value)
-		changed = true
 	}
 	if req.EntryFee.Set {
 		if req.EntryFee.Value != nil && *req.EntryFee.Value < 0 {
@@ -1023,7 +973,6 @@ func applyRaceItemUpdate(c *gin.Context, item *storage.RaceCalendarItem, req rac
 			return false
 		}
 		item.EntryFee = req.EntryFee.Value
-		changed = true
 	}
 	if req.Quota.Set {
 		if req.Quota.Value != nil && *req.Quota.Value < 0 {
@@ -1031,12 +980,64 @@ func applyRaceItemUpdate(c *gin.Context, item *storage.RaceCalendarItem, req rac
 			return false
 		}
 		item.Quota = req.Quota.Value
-		changed = true
 	}
-	if changed {
-		item.Origin = storage.RaceOriginManual
+
+	// The item's only sync-managed field is recorded automatically: an edit to it
+	// must survive the next sync whether or not the caller remembered to say so.
+	overrides := make(map[string]bool, len(item.AdminOverrides)+1)
+	for _, f := range item.AdminOverrides {
+		overrides[f] = true
 	}
+	if req.Type != nil {
+		overrides["type"] = true
+	}
+	for _, f := range req.ResetFields {
+		if !storage.IsRaceCalendarItemOverrideable(f) {
+			c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_override_field"})
+			return false
+		}
+		delete(overrides, f)
+		clearRaceItemField(item, f)
+	}
+	item.AdminOverrides = sortedOverrideFields(overrides, storage.RaceCalendarItemOverrideableFields)
 	return true
+}
+
+// applyRaceItemContentColumns writes the ten content columns of one item row to
+// match the tri-state content input: an object replaces them wholesale, nil
+// clears them.
+func applyRaceItemContentColumns(item *storage.RaceCalendarItem, in *raceItemContentInput) {
+	if in == nil {
+		item.DistanceKm = nil
+		item.StartPoint = nil
+		item.FinishPoint = nil
+		item.TotalAscentM = nil
+		item.ElevationPoints = nil
+		item.AidStations = nil
+		item.Cutoffs = nil
+		item.Prizes = nil
+		item.Reputation = nil
+		item.Photos = nil
+		return
+	}
+	item.DistanceKm = in.DistanceKm
+	item.StartPoint = in.StartPoint
+	item.FinishPoint = in.FinishPoint
+	item.TotalAscentM = in.TotalAscentM
+	item.ElevationPoints = in.ElevationPoints
+	item.AidStations = in.AidStations
+	item.Cutoffs = in.Cutoffs
+	item.Prizes = in.Prizes
+	item.Reputation = in.Reputation
+	item.Photos = in.Photos
+}
+
+// clearRaceItemField resets one overrideable item field to its empty value; the
+// next sync fills it back in from upstream.
+func clearRaceItemField(item *storage.RaceCalendarItem, field string) {
+	if field == "type" {
+		item.Type = ""
+	}
 }
 
 // bindRaceCalendarJSON decodes a JSON body, mapping an oversized body to 413 and
@@ -1140,9 +1141,12 @@ func normalizeStartTime(s *string) *string {
 
 // sortedOverrideFields returns the override names in the canonical field order,
 // so the stored JSON is stable across edits.
-func sortedOverrideFields(set map[string]bool) []string {
+// sortedOverrideFields returns the override set in the canonical order of the
+// given vocabulary, so the stored array is stable across writes. The vocabulary
+// is passed in because events and items have their own field sets.
+func sortedOverrideFields(set map[string]bool, fields []string) []string {
 	out := make([]string, 0, len(set))
-	for _, f := range storage.RaceCalendarOverrideableFields {
+	for _, f := range fields {
 		if set[f] {
 			out = append(out, f)
 		}

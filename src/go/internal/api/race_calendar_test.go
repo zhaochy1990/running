@@ -18,22 +18,17 @@ import (
 )
 
 // fakeRaceCalendarStore is an in-memory RaceCalendarStore. The merge semantics
-// under test live in the HTTP handlers, so the fake only needs faithful CRUD and
-// filtering — the field-by-field sync merge is covered against real MySQL in
+// under test live in the HTTP handlers, so the fake only needs faithful CRUD —
+// the field-by-field sync merge is covered against real MySQL in
 // internal/storage.
 type fakeRaceCalendarStore struct {
-	events       []storage.RaceCalendarEvent
-	items        []storage.RaceCalendarItem
-	itemContents map[string]*storage.RaceItemContent // key: itemContentKey(eventID, name)
-	nextID       uint64
-}
-
-func itemContentKey(eventID uint64, name string) string {
-	return fmt.Sprintf("%d/%s", eventID, name)
+	events []storage.RaceCalendarEvent
+	items  []storage.RaceCalendarItem
+	nextID uint64
 }
 
 func newFakeRaceCalendarStore() *fakeRaceCalendarStore {
-	return &fakeRaceCalendarStore{nextID: 1, itemContents: map[string]*storage.RaceItemContent{}}
+	return &fakeRaceCalendarStore{nextID: 1}
 }
 
 func (f *fakeRaceCalendarStore) seedEvent(row storage.RaceCalendarEvent) storage.RaceCalendarEvent {
@@ -157,11 +152,6 @@ func (f *fakeRaceCalendarStore) DeleteRaceCalendarEvent(_ context.Context, id ui
 		}
 	}
 	f.items = kept
-	for key, c := range f.itemContents {
-		if c.RaceEventID == id {
-			delete(f.itemContents, key)
-		}
-	}
 	return nil
 }
 
@@ -184,17 +174,7 @@ func (f *fakeRaceCalendarStore) GetRaceCalendarItem(_ context.Context, id uint64
 	return &row, nil
 }
 
-func (f *fakeRaceCalendarStore) ListRaceItemContents(_ context.Context, eventID uint64) ([]storage.RaceItemContent, error) {
-	var out []storage.RaceItemContent
-	for _, c := range f.itemContents {
-		if c.RaceEventID == eventID {
-			out = append(out, *c)
-		}
-	}
-	return out, nil
-}
-
-func (f *fakeRaceCalendarStore) CreateRaceCalendarItemWithContent(_ context.Context, row *storage.RaceCalendarItem, content *storage.RaceItemContent) error {
+func (f *fakeRaceCalendarStore) CreateRaceCalendarItem(_ context.Context, row *storage.RaceCalendarItem) error {
 	for _, existing := range f.items {
 		if existing.RaceEventID == row.RaceEventID && existing.Name == row.Name {
 			return storage.ErrRaceCalendarConflict
@@ -203,43 +183,15 @@ func (f *fakeRaceCalendarStore) CreateRaceCalendarItemWithContent(_ context.Cont
 	row.ID = f.nextID
 	f.nextID++
 	f.items = append(f.items, *row)
-	if content != nil {
-		saved := *content
-		saved.ID = f.nextID
-		f.nextID++
-		saved.RaceEventID = row.RaceEventID
-		saved.ItemName = row.Name
-		f.itemContents[itemContentKey(row.RaceEventID, row.Name)] = &saved
-	}
 	return nil
 }
 
-func (f *fakeRaceCalendarStore) UpdateRaceCalendarItemWithContent(_ context.Context, row *storage.RaceCalendarItem, content *storage.RaceItemContent, set bool) error {
+func (f *fakeRaceCalendarStore) UpdateRaceCalendarItem(_ context.Context, row *storage.RaceCalendarItem) error {
 	i := f.findItem(row.ID)
 	if i < 0 {
 		return storage.ErrRaceCalendarNotFound
 	}
-	oldName := f.items[i].Name
-	if oldName != row.Name {
-		delete(f.itemContents, itemContentKey(row.RaceEventID, row.Name))
-		if old, ok := f.itemContents[itemContentKey(row.RaceEventID, oldName)]; ok {
-			old.ItemName = row.Name
-			f.itemContents[itemContentKey(row.RaceEventID, row.Name)] = old
-			delete(f.itemContents, itemContentKey(row.RaceEventID, oldName))
-		}
-	}
 	f.items[i] = *row
-	if !set {
-		return nil
-	}
-	if content == nil {
-		delete(f.itemContents, itemContentKey(row.RaceEventID, row.Name))
-		return nil
-	}
-	saved := *content
-	saved.RaceEventID = row.RaceEventID
-	saved.ItemName = row.Name
-	f.itemContents[itemContentKey(row.RaceEventID, row.Name)] = &saved
 	return nil
 }
 
@@ -248,8 +200,6 @@ func (f *fakeRaceCalendarStore) DeleteRaceCalendarItem(_ context.Context, id uin
 	if i < 0 {
 		return storage.ErrRaceCalendarNotFound
 	}
-	item := f.items[i]
-	delete(f.itemContents, itemContentKey(item.RaceEventID, item.Name))
 	f.items = append(f.items[:i], f.items[i+1:]...)
 	return nil
 }
@@ -268,8 +218,8 @@ func (f *fakeRaceCalendarStore) MoveRaceContent(_ context.Context, sourceEventID
 	if target.HasContent() {
 		return storage.ErrRaceContentConflict
 	}
-	for _, c := range f.itemContents {
-		if c.RaceEventID == targetEventID {
+	for _, item := range f.items {
+		if item.RaceEventID == targetEventID && item.HasAdminData() {
 			return storage.ErrRaceContentConflict
 		}
 	}
@@ -281,12 +231,31 @@ func (f *fakeRaceCalendarStore) MoveRaceContent(_ context.Context, sourceEventID
 	target.WeatherWindows = source.WeatherWindows
 	target.ContentStale = false
 	f.events[ti] = target
-	for key, c := range f.itemContents {
-		if c.RaceEventID == sourceEventID {
-			moved := *c
-			moved.RaceEventID = targetEventID
-			f.itemContents[itemContentKey(targetEventID, moved.ItemName)] = &moved
-			delete(f.itemContents, key)
+	// Carry each source item's admin data over by name, recreating the row on the
+	// target when the name is not there.
+	for _, item := range f.items {
+		if item.RaceEventID != sourceEventID || !item.HasAdminData() {
+			continue
+		}
+		landed := false
+		for j := range f.items {
+			if f.items[j].RaceEventID == targetEventID && f.items[j].Name == item.Name {
+				id, origin := f.items[j].ID, f.items[j].Origin
+				f.items[j] = item
+				f.items[j].ID, f.items[j].RaceEventID, f.items[j].Origin = id, targetEventID, origin
+				f.items[j].ContentStale = false
+				landed = true
+				break
+			}
+		}
+		if !landed {
+			row := item
+			row.ID = f.nextID
+			f.nextID++
+			row.RaceEventID = targetEventID
+			row.Origin = storage.RaceOriginManual
+			row.ContentStale = false
+			f.items = append(f.items, row)
 		}
 	}
 	f.events = append(f.events[:si], f.events[si+1:]...)
@@ -551,7 +520,9 @@ func TestRaceCalendarAdmin_NullClearsNullableFields(t *testing.T) {
 		t.Errorf("city source = %q, want overridden", got.FieldSources["city"])
 	}
 
-	// The same for a nullable item field.
+	// The same for a nullable item field — and clearing it does not detach the
+	// row: entry_fee is not sync-managed, so there is nothing to override and the
+	// item stays on the mirror.
 	item := h.store.seedItem(storage.RaceCalendarItem{RaceEventID: event.ID, Name: "全程", Type: "Marathon", EntryFee: intPtrAPITest(12000), Origin: storage.RaceOriginSync})
 	w = h.do(t, http.MethodPatch, fmt.Sprintf("/api/admin/races/%d/items/%d", event.ID, item.ID),
 		map[string]any{"entry_fee": nil}, h.adminToken(t))
@@ -563,8 +534,8 @@ func TestRaceCalendarAdmin_NullClearsNullableFields(t *testing.T) {
 	if updated.EntryFee != nil {
 		t.Errorf("entry_fee = %v, want nil", updated.EntryFee)
 	}
-	if updated.Origin != storage.RaceOriginManual {
-		t.Errorf("origin = %q, want manual after the edit", updated.Origin)
+	if updated.Origin != storage.RaceOriginSync {
+		t.Errorf("origin = %q, want sync (entry_fee is not sync-managed)", updated.Origin)
 	}
 }
 
@@ -622,15 +593,40 @@ func TestRaceCalendarAdmin_ItemLifecycle(t *testing.T) {
 		t.Fatalf("created item = %+v", created)
 	}
 
-	// Editing a sync item upgrades it to manual.
+	// Editing a field the upstream never supplies (entry_fee) records no
+	// override: the sync does not write that column, so the row stays on the
+	// mirror and keeps the administrator's value.
 	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, syncItem.ID), map[string]any{"entry_fee": 20000}, h.adminToken(t))
 	if w.Code != http.StatusOK {
 		t.Fatalf("edit item = %d: %s", w.Code, w.Body.String())
 	}
 	var edited raceCalendarItemDTO
 	_ = json.Unmarshal(w.Body.Bytes(), &edited)
-	if edited.Origin != storage.RaceOriginManual {
-		t.Errorf("edited item origin = %q, want manual", edited.Origin)
+	if edited.Origin != storage.RaceOriginSync {
+		t.Errorf("edited item origin = %q, want sync (entry_fee is not sync-managed)", edited.Origin)
+	}
+	if edited.EntryFee == nil || *edited.EntryFee != 20000 {
+		t.Errorf("edited entry fee = %v, want 20000", edited.EntryFee)
+	}
+
+	// Editing a sync-managed field (type) records an override and keeps the row
+	// on the mirror.
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, syncItem.ID), map[string]any{"type": "HalfMarathon"}, h.adminToken(t))
+	if w.Code != http.StatusOK {
+		t.Fatalf("edit type = %d: %s", w.Code, w.Body.String())
+	}
+	if stored := h.store.items[h.store.findItem(syncItem.ID)]; stored.Origin != storage.RaceOriginSync ||
+		len(stored.AdminOverrides) != 1 || stored.AdminOverrides[0] != "type" {
+		t.Errorf("stored item = %+v, want origin=sync with a type override", stored)
+	}
+
+	// Editing the identity key detaches the row from the mirror.
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, syncItem.ID), map[string]any{"name": "全程（改）"}, h.adminToken(t))
+	if w.Code != http.StatusOK {
+		t.Fatalf("rename item = %d: %s", w.Code, w.Body.String())
+	}
+	if stored := h.store.items[h.store.findItem(syncItem.ID)]; stored.Origin != storage.RaceOriginManual {
+		t.Errorf("renamed item origin = %q, want manual", stored.Origin)
 	}
 
 	// An item id belonging to another race is a 404, not a cross-event edit.
@@ -761,7 +757,7 @@ func TestRaceCalendarAdmin_ItemContentLifecycle(t *testing.T) {
 		t.Fatalf("detail item content = %+v", detail.Items)
 	}
 
-	// Renaming the item carries the content row to the new name.
+	// Renaming the item carries its content along (same row now).
 	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{"name": "全程马拉松（改）"}, admin)
 	var renamed raceCalendarItemDTO
 	_ = json.Unmarshal(w.Body.Bytes(), &renamed)
@@ -769,15 +765,15 @@ func TestRaceCalendarAdmin_ItemContentLifecycle(t *testing.T) {
 		t.Fatalf("renamed content = %+v, want the content carried to the new name", renamed.Content)
 	}
 
-	// Explicit null deletes the content row.
+	// Explicit null clears the content columns.
 	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{"content": nil}, admin)
 	var cleared raceCalendarItemDTO
 	_ = json.Unmarshal(w.Body.Bytes(), &cleared)
 	if cleared.Content != nil {
 		t.Fatalf("cleared content = %+v, want null", cleared.Content)
 	}
-	if len(h.store.itemContents) != 0 {
-		t.Fatalf("itemContents = %v, want empty", h.store.itemContents)
+	if stored := h.store.items[h.store.findItem(created.ID)]; stored.HasContent() {
+		t.Fatalf("stored item = %+v, want the content columns cleared", stored)
 	}
 }
 
@@ -790,10 +786,10 @@ func TestRaceCalendarAdmin_MoveContent(t *testing.T) {
 	source.ContentStale = true
 	source.Climate = &storage.RaceClimate{Summary: "温润多雨"}
 	h.store.events[h.store.findEvent(source.ID)] = source
-	h.store.seedItem(storage.RaceCalendarItem{RaceEventID: source.ID, Name: "全程马拉松", Type: "Marathon", Origin: storage.RaceOriginSync})
-	h.store.itemContents[itemContentKey(source.ID, "全程马拉松")] = &storage.RaceItemContent{
-		RaceEventID: source.ID, ItemName: "全程马拉松", DistanceKm: floatPtrAPITest(42.195),
-	}
+	h.store.seedItem(storage.RaceCalendarItem{
+		RaceEventID: source.ID, Name: "全程马拉松", Type: "Marathon",
+		Origin: storage.RaceOriginSync, DistanceKm: floatPtrAPITest(42.195),
+	})
 	target := h.store.seedEvent(storage.RaceCalendarEvent{
 		Source: "中国田协", Origin: storage.RaceOriginSync, Name: "新名赛事",
 		RaceDate: "2030-09-30", Month: 9, DayOfMonth: 30, Country: "CHN", City: strPtrAPITest("厦门市"),
@@ -811,8 +807,14 @@ func TestRaceCalendarAdmin_MoveContent(t *testing.T) {
 	if moved.Climate == nil || moved.Climate.Summary != "温润多雨" || moved.ContentStale {
 		t.Fatalf("target = %+v, want the content moved and the flag clear", moved)
 	}
-	if _, ok := h.store.itemContents[itemContentKey(target.ID, "全程马拉松")]; !ok {
-		t.Fatalf("item content not moved")
+	var movedItem *storage.RaceCalendarItem
+	for i := range h.store.items {
+		if h.store.items[i].RaceEventID == target.ID && h.store.items[i].Name == "全程马拉松" {
+			movedItem = &h.store.items[i]
+		}
+	}
+	if movedItem == nil || movedItem.DistanceKm == nil || *movedItem.DistanceKm != 42.195 {
+		t.Fatalf("target item = %+v, want the content moved over", movedItem)
 	}
 
 	// Moving onto a target that already has content is a 409 content_conflict.

@@ -253,10 +253,18 @@ workflow run 和用户固定的 `Idempotency-Key`；因此网络重试不会重�
 > （管理员新建，或在 admin-dashboard 改了名称/比赛日期而被升级脱离镜像）既不
 > 更新也不删除；陈旧删除只作用于 `origin='sync'` 且无 override 的行，并连带删
 > 除其 `race_calendar_item`。中国田协 pipeline 另行把上游 `raceItem` 列表写成
-> `race_calendar_item`（起跑时间/报名费/名额由管理员补全），每次同步重生成
-> `origin='sync'` 的项目、永不触碰人工项目。Admin-dashboard 的「赛事管理」tab
-> 通过 Go `cmd/api` 的 `/api/admin/races*`（仅 admin JWT / TierAdmin）做完整
+> `race_calendar_item`，**项目行同样逐字段合并**（ADR 0039）：项目的赛道内容列
+> （距离/爬升/补给/关门/奖金…）与起跑时间/报名费/名额由管理员维护、同步永不写入
+> （上游只给项目名与类型 token）；管理员改过的项目类型记入该项目行的
+> `admin_overrides`，改项目名则整行脱离镜像。上游不再列出的项目，无管理员数据
+> 即删除，否则打 `content_stale` 保留待管理员处理。Admin-dashboard 的「赛事管理」
+> tab 通过 Go `cmd/api` 的 `/api/admin/races*`（仅 admin JWT / TierAdmin）做完整
 > CRUD。
+
+> **发布顺序（ADR 0039）**：项目级逐字段合并依赖 `race_calendar_item` 的新列，而
+> 退役表 `race_item_content` 的 drop 只在 API 侧执行（`AutoMigrateRaceContent`）。
+> `stride-api` 与 `stride-worker` 在 `versions.env` 共用同一个 tag、同批发布，
+> 正常发布流程无需额外步骤；只要别在两者只更新其一的窗口里触发中国田协 pipeline。
 
 > **旧表清理**：本 feature 早期迭代曾把数据写进 `competition_calendar` 表，重构后该表不再
 > 更新，AutoMigrate 也不会 drop 它。若生产环境曾跑过旧版本，请人工确认后

@@ -19,7 +19,7 @@ func migrateRaceContent(t *testing.T, st *Store) {
 	if err := st.AutoMigrateRaceContent(ctx); err != nil {
 		t.Fatalf("automigrate race content: %v", err)
 	}
-	for _, table := range []string{"race_item_content", "race_city_content", "race_calendar_item", "race_calendar"} {
+	for _, table := range []string{"race_city_content", "race_calendar_item", "race_calendar"} {
 		if err := st.db.WithContext(ctx).Exec("DELETE FROM " + table).Error; err != nil {
 			t.Fatalf("clear %s: %v", table, err)
 		}
@@ -183,7 +183,7 @@ func TestRaceContent_RoundTripsOnEventRow(t *testing.T) {
 
 // TestRaceCalendar_StaleDeleteKeepsContentRows is THE invariant test of the
 // merge: a stale row that carries admin-maintained content is never deleted —
-// it is flagged content_stale and kept with its items and item content.
+// it is flagged content_stale and kept, items and their content included.
 func TestRaceCalendar_StaleDeleteKeepsContentRows(t *testing.T) {
 	st := openTestStore(t)
 	migrateRaceContent(t, st)
@@ -204,10 +204,9 @@ func TestRaceCalendar_StaleDeleteKeepsContentRows(t *testing.T) {
 		Update("climate", []byte(`{"summary":"温润多雨"}`)).Error; err != nil {
 		t.Fatalf("seed content: %v", err)
 	}
-	item := &RaceCalendarItem{RaceEventID: withContent.ID, Name: "全程马拉松", Type: "Marathon", Origin: RaceOriginSync}
-	if err := st.CreateRaceCalendarItemWithContent(ctx, item, &RaceItemContent{
-		ItemName:   "全程马拉松",
-		DistanceKm: floatPtr(42.195),
+	if err := st.CreateRaceCalendarItem(ctx, &RaceCalendarItem{
+		RaceEventID: withContent.ID, Name: "全程马拉松", Type: "Marathon",
+		Origin: RaceOriginSync, DistanceKm: floatPtr(42.195),
 	}); err != nil {
 		t.Fatalf("seed item content: %v", err)
 	}
@@ -234,9 +233,8 @@ func TestRaceCalendar_StaleDeleteKeepsContentRows(t *testing.T) {
 	if err != nil || len(items) != 1 {
 		t.Fatalf("items = (%+v, %v), want the item kept", items, err)
 	}
-	contents, err := st.ListRaceItemContents(ctx, flagged.ID)
-	if err != nil || len(contents) != 1 || contents[0].DistanceKm == nil || *contents[0].DistanceKm != 42.195 {
-		t.Fatalf("item content = (%+v, %v), want the content row kept", contents, err)
+	if items[0].DistanceKm == nil || *items[0].DistanceKm != 42.195 {
+		t.Fatalf("item = %+v, want the content columns kept", items[0])
 	}
 
 	// The list filter surfaces exactly the flagged row.
@@ -295,32 +293,11 @@ func TestRaceCalendar_StaleFlagClearedOnResync(t *testing.T) {
 	}
 }
 
-// TestRaceCalendar_DeleteCascadesItemContent: deleting an event removes its
-// items AND their content rows.
-func TestRaceCalendar_DeleteCascadesItemContent(t *testing.T) {
-	st := openTestStore(t)
-	migrateRaceContent(t, st)
-	ctx := context.Background()
-	eventID := seedRaceEvent(t, st, "测试源-级联", "级联马拉松", "2036-01-05")
-	if err := st.CreateRaceCalendarItemWithContent(ctx, &RaceCalendarItem{
-		RaceEventID: eventID, Name: "全程马拉松", Type: "Marathon", Origin: RaceOriginManual,
-	}, &RaceItemContent{ItemName: "全程马拉松", DistanceKm: floatPtr(42.195)}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	if err := st.DeleteRaceCalendarEvent(ctx, eventID); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	var count int64
-	if err := st.db.WithContext(ctx).Model(&RaceItemContent{}).Where("race_event_id = ?", eventID).Count(&count).Error; err != nil || count != 0 {
-		t.Fatalf("item content count = (%d, %v), want 0", count, err)
-	}
-}
-
-// TestRaceItemContent_SurvivesSyncRegeneration pins the name-keying design:
-// the 田协 item regeneration delete+inserts sync items, the content rows keyed
-// by name survive and re-attach to the new item names.
-func TestRaceItemContent_SurvivesSyncRegeneration(t *testing.T) {
+// TestRaceItemContent_SurvivesSyncMerge is the item-level counterpart of the
+// event merge invariant: the sync refreshes the sync-managed fields (type) in
+// place, and everything it never writes — the ten content columns and the
+// admin-maintained entry fields — survives on the same row.
+func TestRaceItemContent_SurvivesSyncMerge(t *testing.T) {
 	st := openTestStore(t)
 	migrateRaceContent(t, st)
 	ctx := context.Background()
@@ -335,77 +312,66 @@ func TestRaceItemContent_SurvivesSyncRegeneration(t *testing.T) {
 	if err := st.db.WithContext(ctx).Where("source = ? AND name = ?", src, "重建马拉松").First(&event).Error; err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if err := st.CreateRaceCalendarItemWithContent(ctx, &RaceCalendarItem{
+	if err := st.CreateRaceCalendarItem(ctx, &RaceCalendarItem{
 		RaceEventID: event.ID, Name: "全程马拉松", Type: "Marathon", Origin: RaceOriginSync,
-	}, &RaceItemContent{ItemName: "全程马拉松", DistanceKm: floatPtr(42.195)}); err != nil {
+		StartTime: strPtr("07:30"), Quota: intPtr(30000), DistanceKm: floatPtr(42.195),
+	}); err != nil {
 		t.Fatalf("seed item: %v", err)
 	}
 
-	// The sync regenerates the sync items (delete + insert, new surrogate ids).
+	// The sync re-lists the same item name with a different upstream type.
 	if _, err := st.ReplaceRaceCalendarItems(ctx, src, []RaceCalendarItemBatch{{
 		Name: "重建马拉松", RaceDate: "2037-01-10",
-		Items: []RaceCalendarItem{{Name: "全程马拉松", Type: "Marathon"}},
+		Items: []RaceCalendarItem{{Name: "全程马拉松", Type: "HalfMarathon"}},
 	}}); err != nil {
-		t.Fatalf("regenerate: %v", err)
+		t.Fatalf("sync: %v", err)
 	}
 
 	items, err := st.ListRaceCalendarItems(ctx, event.ID)
 	if err != nil || len(items) != 1 {
-		t.Fatalf("items = (%+v, %v), want one regenerated item", items, err)
+		t.Fatalf("items = (%+v, %v), want one item", items, err)
 	}
-	contents, err := st.ListRaceItemContents(ctx, event.ID)
-	if err != nil || len(contents) != 1 || contents[0].ItemName != "全程马拉松" ||
-		contents[0].DistanceKm == nil || *contents[0].DistanceKm != 42.195 {
-		t.Fatalf("contents = (%+v, %v), want the content row kept by name", contents, err)
+	got := items[0]
+	if got.Type != "HalfMarathon" {
+		t.Errorf("type = %q, want the upstream refresh", got.Type)
+	}
+	if got.DistanceKm == nil || *got.DistanceKm != 42.195 {
+		t.Errorf("distance = %v, want the content kept", got.DistanceKm)
+	}
+	if got.StartTime == nil || *got.StartTime != "07:30" || got.Quota == nil || *got.Quota != 30000 {
+		t.Errorf("item = %+v, want the admin-maintained entry fields kept", got)
 	}
 }
 
-// TestRaceItemContent_TriStateAndRename covers the item update's content
-// tri-state (untouched / deleted / replaced) and the rename carrying the
+// TestRaceCalendarItem_RenameKeepsContent pins the payoff of folding content
+// onto the item row: a rename carries the content along as part of the same
+// write. The old split-table design needed a follow-up UPDATE to chase the
 // content row to the new name.
-func TestRaceItemContent_TriStateAndRename(t *testing.T) {
+func TestRaceCalendarItem_RenameKeepsContent(t *testing.T) {
 	st := openTestStore(t)
 	migrateRaceContent(t, st)
 	ctx := context.Background()
-	eventID := seedRaceEvent(t, st, "测试源-三态", "三态马拉松", "2038-01-05")
-	item := &RaceCalendarItem{RaceEventID: eventID, Name: "全程马拉松", Type: "Marathon", Origin: RaceOriginManual}
-	if err := st.CreateRaceCalendarItemWithContent(ctx, item, &RaceItemContent{
-		ItemName: "全程马拉松", DistanceKm: floatPtr(42.195),
-	}); err != nil {
+	eventID := seedRaceEvent(t, st, "测试源-改名", "改名马拉松", "2038-01-05")
+
+	item := &RaceCalendarItem{
+		RaceEventID: eventID, Name: "全程马拉松", Type: "Marathon",
+		Origin: RaceOriginManual, DistanceKm: floatPtr(42.195),
+	}
+	if err := st.CreateRaceCalendarItem(ctx, item); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
-	// set=false: the content row is untouched.
-	item.Quota = nil
-	if err := st.UpdateRaceCalendarItemWithContent(ctx, item, nil, false); err != nil {
-		t.Fatalf("update without content: %v", err)
-	}
-	if contents, _ := st.ListRaceItemContents(ctx, eventID); len(contents) != 1 {
-		t.Fatalf("contents = %+v, want untouched", contents)
-	}
-
-	// Rename carries the content row along.
 	item.Name = "全程马拉松（改）"
-	if err := st.UpdateRaceCalendarItemWithContent(ctx, item, nil, false); err != nil {
+	if err := st.UpdateRaceCalendarItem(ctx, item); err != nil {
 		t.Fatalf("rename: %v", err)
 	}
-	contents, err := st.ListRaceItemContents(ctx, eventID)
-	if err != nil || len(contents) != 1 || contents[0].ItemName != "全程马拉松（改）" {
-		t.Fatalf("contents = (%+v, %v), want the row moved to the new name", contents, err)
-	}
 
-	// set=true with a new payload replaces; set=true with nil deletes.
-	if err := st.UpdateRaceCalendarItemWithContent(ctx, item, &RaceItemContent{ItemName: "全程马拉松（改）", DistanceKm: floatPtr(21.0975)}, true); err != nil {
-		t.Fatalf("replace: %v", err)
+	got, err := st.GetRaceCalendarItem(ctx, item.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
 	}
-	if contents, _ := st.ListRaceItemContents(ctx, eventID); len(contents) != 1 || *contents[0].DistanceKm != 21.0975 {
-		t.Fatalf("contents = %+v, want replaced", contents)
-	}
-	if err := st.UpdateRaceCalendarItemWithContent(ctx, item, nil, true); err != nil {
-		t.Fatalf("delete content: %v", err)
-	}
-	if contents, _ := st.ListRaceItemContents(ctx, eventID); len(contents) != 0 {
-		t.Fatalf("contents = %+v, want deleted", contents)
+	if got.Name != "全程马拉松（改）" || got.DistanceKm == nil || *got.DistanceKm != 42.195 {
+		t.Fatalf("got = %+v, want the content carried by the rename", got)
 	}
 }
 
@@ -431,9 +397,10 @@ func TestRaceContent_Move(t *testing.T) {
 	if err := st.UpdateRaceCalendarEvent(ctx, &source); err != nil {
 		t.Fatalf("seed content: %v", err)
 	}
-	if err := st.CreateRaceCalendarItemWithContent(ctx, &RaceCalendarItem{
-		RaceEventID: source.ID, Name: "全程马拉松", Type: "Marathon", Origin: RaceOriginSync,
-	}, &RaceItemContent{ItemName: "全程马拉松", DistanceKm: floatPtr(42.195)}); err != nil {
+	if err := st.CreateRaceCalendarItem(ctx, &RaceCalendarItem{
+		RaceEventID: source.ID, Name: "全程马拉松", Type: "Marathon",
+		Origin: RaceOriginSync, DistanceKm: floatPtr(42.195),
+	}); err != nil {
 		t.Fatalf("seed item content: %v", err)
 	}
 
@@ -449,14 +416,18 @@ func TestRaceContent_Move(t *testing.T) {
 	if target.Climate == nil || target.Climate.Summary != "温润多雨" || target.ContentStale {
 		t.Fatalf("target = %+v, want the content moved and the flag clear", target)
 	}
-	if contents, _ := st.ListRaceItemContents(ctx, targetID); len(contents) != 1 {
-		t.Fatalf("target item content = %+v, want moved", contents)
+	items, err := st.ListRaceCalendarItems(ctx, targetID)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("target items = (%+v, %v), want the source item carried over", items, err)
 	}
-	var sourceCount, itemCount int64
-	st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Where("id = ?", source.ID).Count(&sourceCount)
-	st.db.WithContext(ctx).Model(&RaceItemContent{}).Where("race_event_id = ?", source.ID).Count(&itemCount)
-	if sourceCount != 0 || itemCount != 0 {
-		t.Fatalf("source = (%d events, %d item content), want gone", sourceCount, itemCount)
+	if items[0].Name != "全程马拉松" || items[0].DistanceKm == nil || *items[0].DistanceKm != 42.195 {
+		t.Fatalf("target item = %+v, want the content moved", items[0])
+	}
+	var sourceEventCount, sourceItemCount int64
+	st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).Where("id = ?", source.ID).Count(&sourceEventCount)
+	st.db.WithContext(ctx).Model(&RaceCalendarItem{}).Where("race_event_id = ?", source.ID).Count(&sourceItemCount)
+	if sourceEventCount != 0 || sourceItemCount != 0 {
+		t.Fatalf("source = (%d events, %d items), want gone", sourceEventCount, sourceItemCount)
 	}
 
 	// A target that already carries content is refused with the sentinel.
@@ -476,24 +447,29 @@ func TestRaceContent_Move(t *testing.T) {
 }
 
 // TestRaceContent_LegacyTablesDropped pins the startup reconciliation: the
-// pre-merge content tables are dropped unconditionally (the feature never
-// launched with the split tables, so there is nothing to preserve).
+// retired split content tables are dropped unconditionally. Production is not
+// live yet and they carried no data worth preserving.
 func TestRaceContent_LegacyTablesDropped(t *testing.T) {
 	st := openTestStore(t)
 	migrateRaceContent(t, st)
 	ctx := context.Background()
 
-	// Recreate a legacy-shaped table to simulate an upgrade from the old
-	// release, then let AutoMigrateRaceContent reconcile it away.
-	if err := st.db.WithContext(ctx).Exec(
-		"CREATE TABLE IF NOT EXISTS race_content (id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT, status VARCHAR(16))",
-	).Error; err != nil {
-		t.Fatalf("seed legacy table: %v", err)
+	// Recreate legacy-shaped tables to simulate an upgrade from the old release,
+	// then let AutoMigrateRaceContent reconcile them away.
+	retired := []string{"race_content", "race_item_content"}
+	for _, table := range retired {
+		if err := st.db.WithContext(ctx).Exec(
+			"CREATE TABLE IF NOT EXISTS " + table + " (id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT, status VARCHAR(16))",
+		).Error; err != nil {
+			t.Fatalf("seed legacy table %s: %v", table, err)
+		}
 	}
 	if err := st.AutoMigrateRaceContent(ctx); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
-	if st.db.WithContext(ctx).Migrator().HasTable("race_content") {
-		t.Fatalf("race_content still exists, want dropped")
+	for _, table := range retired {
+		if st.db.WithContext(ctx).Migrator().HasTable(table) {
+			t.Fatalf("%s still exists, want dropped", table)
+		}
 	}
 }

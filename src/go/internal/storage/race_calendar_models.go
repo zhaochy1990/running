@@ -124,8 +124,8 @@ type RaceCalendarEvent struct {
 func (RaceCalendarEvent) TableName() string { return "race_calendar" }
 
 // HasContent reports whether the event row carries any of the six admin
-// content sections (item-level content lives in race_item_content and is not
-// part of this check).
+// content sections. Admin data on the event's items is not part of this check —
+// the stale scan consults RaceCalendarItem.HasAdminData separately.
 func (row RaceCalendarEvent) HasContent() bool {
 	return row.PartitionRule != nil ||
 		row.SignupTimeline != nil ||
@@ -156,9 +156,12 @@ func IsRaceCalendarOverrideable(field string) bool {
 }
 
 // RaceCalendarItem is one race distance/entry inside a RaceCalendarEvent (e.g.
-// the full marathon and half marathon of one event). It carries the finer
-// details an external calendar does not reliably provide — start time, entry
-// fee and quota — so an administrator can complete them.
+// the full marathon and half marathon of one event). It carries both the
+// upstream-supplied segments and the finer details an external calendar does not
+// reliably provide — start time, entry fee, quota — plus the whole per-distance
+// content asset (course profile, aid stations, cutoffs…, user stories 14-22).
+// 项目 is a first-class content entity: everything here is per-distance because
+// that is how runners evaluate a race.
 //
 // Identity is (race_event_id, name): one item name per event. Only the 中国田协
 // source produces sync items (its upstream raceItem list is a list of event
@@ -167,41 +170,29 @@ func IsRaceCalendarOverrideable(field string) bool {
 //
 // Type is a token from the shared internal/racetypes vocabulary. StartTime is a
 // wall-clock "HH:MM" (no instant, never timezone-converted); EntryFee is in
-// fen/cents (the smallest unit) and defaults to CNY; both are NULL when unknown.
-// Origin follows the event row: sync items are regenerated on each sync, manual
-// items are never touched.
-type RaceCalendarItem struct {
-	ID          uint64    `gorm:"column:id;primaryKey;autoIncrement"`
-	RaceEventID uint64    `gorm:"column:race_event_id;not null;uniqueIndex:uidx_race_cal_item_event_name,priority:1"`
-	Name        string    `gorm:"column:name;size:255;not null;uniqueIndex:uidx_race_cal_item_event_name,priority:2"`
-	Type        string    `gorm:"column:type;size:32;not null"`
-	StartTime   *string   `gorm:"column:start_time;size:8"`
-	EntryFee    *int      `gorm:"column:entry_fee"`
-	Quota       *int      `gorm:"column:quota"`
-	Origin      string    `gorm:"column:origin;size:16;not null;default:sync"`
-	CreatedAt   time.Time `gorm:"column:created_at"`
-	UpdatedAt   time.Time `gorm:"column:updated_at"`
-}
-
-// TableName pins the table name (GORM would otherwise pluralize).
-func (RaceCalendarItem) TableName() string { return "race_calendar_item" }
-
-// RaceItemContent is the admin-maintained structured content of ONE race
-// distance (全程/半马/迷你马…) of one race event (user stories 14-22). 项目 is a
-// first-class content entity: everything here is per-distance because that is
-// how runners evaluate a race.
+// fen/cents (the smallest unit) and defaults to CNY.
 //
-// Identity is (race_event_id, item_name): the item name must match the
-// RaceCalendarItem.Name of the corresponding calendar row (e.g. 全程马拉松).
-// Keying by name — not by race_calendar_item.id — is what makes the content
-// survive the sync's delete+insert of sync items: the upstream item ids churn,
-// the names do not. Like the event content columns this is a content asset the
-// sync never writes; the stale-delete keeps the event row (flagged
-// content_stale) so these rows never dangle unprotected.
-type RaceItemContent struct {
-	ID          uint64 `gorm:"column:id;primaryKey;autoIncrement"`
-	RaceEventID uint64 `gorm:"column:race_event_id;not null;uniqueIndex:uidx_race_item_content_event_name,priority:1"`
-	ItemName    string `gorm:"column:item_name;size:255;not null;uniqueIndex:uidx_race_item_content_event_name,priority:2"`
+// Provenance mirrors the event row exactly: Origin plus AdminOverrides, merged
+// per field by ReplaceRaceCalendarItems. Editing name (the identity key) detaches
+// the row to origin='manual'; editing any other sync-managed field records it in
+// AdminOverrides instead. StartTime/EntryFee/Quota are NOT sync-managed (中国田协
+// never supplies them), so they are absent from raceCalendarItemUpsertCols: the
+// sync can never overwrite what an administrator fills in there.
+//
+// The ten course-content columns are the item-level counterpart of the event's
+// six content sections: same invariant, the sync NEVER writes them, and the
+// stale-delete flags ContentStale instead of deleting a row carrying them.
+type RaceCalendarItem struct {
+	ID          uint64  `gorm:"column:id;primaryKey;autoIncrement"`
+	RaceEventID uint64  `gorm:"column:race_event_id;not null;uniqueIndex:uidx_race_cal_item_event_name,priority:1"`
+	Name        string  `gorm:"column:name;size:255;not null;uniqueIndex:uidx_race_cal_item_event_name,priority:2"`
+	Type        string  `gorm:"column:type;size:32;not null"`
+	StartTime   *string `gorm:"column:start_time;size:8"`
+	EntryFee    *int    `gorm:"column:entry_fee"`
+	Quota       *int    `gorm:"column:quota"`
+	Origin      string  `gorm:"column:origin;size:16;not null;default:sync"`
+
+	AdminOverrides []string `gorm:"column:admin_overrides;type:json;serializer:json"`
 
 	DistanceKm      *float64             `gorm:"column:distance_km"`
 	StartPoint      *RacePoint           `gorm:"column:start_point;type:json;serializer:json"`
@@ -214,12 +205,63 @@ type RaceItemContent struct {
 	Reputation      *RaceReputation      `gorm:"column:reputation;type:json;serializer:json"`
 	Photos          []RacePhoto          `gorm:"column:photos;type:json;serializer:json"`
 
+	// ContentStale marks an item the upstream no longer lists but that carries
+	// admin-maintained data, so the stale-delete kept it. Same meaning as the
+	// event-level flag, and it clears the same way: when upstream re-lists the
+	// name, the merge's upsert writes content_stale=false.
+	ContentStale bool `gorm:"column:content_stale;not null;default:false"`
+
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
 // TableName pins the table name (GORM would otherwise pluralize).
-func (RaceItemContent) TableName() string { return "race_item_content" }
+func (RaceCalendarItem) TableName() string { return "race_calendar_item" }
+
+// HasContent reports whether the item carries any of the ten per-distance
+// content columns. MoveRaceContent uses it to refuse a target that already
+// carries content of its own.
+func (row RaceCalendarItem) HasContent() bool {
+	return row.DistanceKm != nil ||
+		row.StartPoint != nil ||
+		row.FinishPoint != nil ||
+		row.TotalAscentM != nil ||
+		len(row.ElevationPoints) > 0 ||
+		len(row.AidStations) > 0 ||
+		len(row.Cutoffs) > 0 ||
+		len(row.Prizes) > 0 ||
+		row.Reputation != nil ||
+		len(row.Photos) > 0
+}
+
+// HasAdminData reports whether an administrator has contributed anything at all
+// to the item — content, one of the entry fields the upstream never supplies, a
+// field override, or a full detach. Any of them makes the row survive the sync's
+// stale-delete (and keeps its event from being deleted out from under it).
+func (row RaceCalendarItem) HasAdminData() bool {
+	return row.Origin == RaceOriginManual ||
+		len(row.AdminOverrides) > 0 ||
+		row.StartTime != nil || row.EntryFee != nil || row.Quota != nil ||
+		row.HasContent()
+}
+
+// RaceCalendarItemOverrideableFields are the sync-managed item fields an
+// administrator can take over. name (the identity key) is NOT here: editing it
+// upgrades the whole row to manual instead of recording a field override.
+// StartTime/EntryFee/Quota are not here either — the sync never writes them, so
+// there is nothing to override; an administrator simply owns them.
+var RaceCalendarItemOverrideableFields = []string{"type"}
+
+// IsRaceCalendarItemOverrideable reports whether field is a valid item
+// admin-override field name (used to reject unknown names in a PATCH body).
+func IsRaceCalendarItemOverrideable(field string) bool {
+	for _, f := range RaceCalendarItemOverrideableFields {
+		if f == field {
+			return true
+		}
+	}
+	return false
+}
 
 // RacePartitionRule is the race-level start-corral arrangement (user story 9).
 // Mode is "mixed" (所有项目混合分区) or "by_item" (分项先后出发); Description

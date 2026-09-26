@@ -187,7 +187,9 @@ func New(cfg Config) job.Handler {
 			}
 			out.Years[year] = yearSummary{
 				Fetched: len(races), Upserted: res.Upserted, Deleted: res.Deleted,
-				ItemsUpserted: itemsRes.Upserted, ItemsDeleted: itemsRes.Deleted,
+				ItemsUpserted:     itemsRes.Upserted,
+				ItemsDeleted:      itemsRes.Deleted,
+				ItemsContentStale: itemsRes.ContentStale,
 			}
 			log.Info("chinaath_race_calendar_sync: year synced",
 				zap.String("job_id", j.ID),
@@ -196,7 +198,8 @@ func New(cfg Config) job.Handler {
 				zap.Int("upserted", res.Upserted),
 				zap.Int("deleted", res.Deleted),
 				zap.Int("items_upserted", itemsRes.Upserted),
-				zap.Int("items_deleted", itemsRes.Deleted))
+				zap.Int("items_deleted", itemsRes.Deleted),
+				zap.Int("items_content_stale", itemsRes.ContentStale))
 		}
 
 		result, _ := json.Marshal(out)
@@ -205,12 +208,16 @@ func New(cfg Config) job.Handler {
 }
 
 // yearSummary is the per-year result reported in the job's result_json.
+// ItemsDeleted counts items genuinely dropped because the upstream no longer
+// lists them; ItemsContentStale counts items kept and flagged instead, because
+// they carry administrator data.
 type yearSummary struct {
-	Fetched       int `json:"fetched"`
-	Upserted      int `json:"upserted"`
-	Deleted       int `json:"deleted"`
-	ItemsUpserted int `json:"items_upserted"`
-	ItemsDeleted  int `json:"items_deleted"`
+	Fetched           int `json:"fetched"`
+	Upserted          int `json:"upserted"`
+	Deleted           int `json:"deleted"`
+	ItemsUpserted     int `json:"items_upserted"`
+	ItemsDeleted      int `json:"items_deleted"`
+	ItemsContentStale int `json:"items_content_stale"`
 }
 
 // jobInput is the job's input: {"years":[...]} optionally overrides which

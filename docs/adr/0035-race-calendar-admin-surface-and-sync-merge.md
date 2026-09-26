@@ -2,6 +2,11 @@
 
 Status: accepted
 
+> **Superseded in part by [ADR 0039](0039-race-item-content-folds-onto-the-item-row.md).**
+> The item level no longer uses a separate content table or delete+insert
+> regeneration. Everything below about the *event* level — provenance on the
+> row, key-field edits detach, the per-field merge, stale protection — stands.
+
 ## Context
 
 The daily pipelines mirror the World Athletics (国际田联) and China Athletics

@@ -495,8 +495,9 @@ func newRaceEventContentDTO(row storage.RaceCalendarEvent) *raceEventContentDTO 
 	}
 }
 
-// raceItemContentDTO is the admin projection of one item's content row. A nil
-// pointer means the item has no content yet.
+// raceItemContentDTO is the admin projection of one item's content. A nil
+// pointer means the item has no content yet. The content columns live on the
+// item's own race_calendar_item row, so this projects a RaceCalendarItem.
 type raceItemContentDTO struct {
 	DistanceKm      *float64                     `json:"distance_km"`
 	StartPoint      *storage.RacePoint           `json:"start_point"`
@@ -510,8 +511,8 @@ type raceItemContentDTO struct {
 	Photos          []storage.RacePhoto          `json:"photos"`
 }
 
-func newRaceItemContentDTO(row *storage.RaceItemContent) *raceItemContentDTO {
-	if row == nil {
+func newRaceItemContentDTO(row storage.RaceCalendarItem) *raceItemContentDTO {
+	if !row.HasContent() {
 		return nil
 	}
 	return &raceItemContentDTO{

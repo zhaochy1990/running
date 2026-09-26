@@ -177,7 +177,7 @@ func TestRaceCalendar_ManualRowWithSameKeyIsUntouched(t *testing.T) {
 	}
 }
 
-func TestRaceCalendar_ReplaceItemsRegeneratesSyncAndKeepsManual(t *testing.T) {
+func TestRaceCalendar_ReplaceItemsMergesInPlaceAndKeepsManual(t *testing.T) {
 	st := openTestStore(t)
 	migrateRaceCalendar(t, st)
 	ctx := context.Background()
@@ -194,12 +194,14 @@ func TestRaceCalendar_ReplaceItemsRegeneratesSyncAndKeepsManual(t *testing.T) {
 		t.Fatalf("read event: %v", err)
 	}
 
-	// Seed one sync item and one manual item (the manual one shares a name with
-	// an upstream item that is about to arrive).
+	// Seed one sync item (carrying admin data the upstream never supplies) and
+	// one manual item (sharing a name with an upstream item about to arrive).
 	fee := 12000
-	if err := st.CreateRaceCalendarItem(ctx, &RaceCalendarItem{
+	syncItem := &RaceCalendarItem{
 		RaceEventID: event.ID, Name: "全程", Type: "Marathon", Origin: RaceOriginSync,
-	}); err != nil {
+		StartTime: strPtr("07:30"), DistanceKm: floatPtr(42.195),
+	}
+	if err := st.CreateRaceCalendarItem(ctx, syncItem); err != nil {
 		t.Fatalf("seed sync item: %v", err)
 	}
 	if err := st.CreateRaceCalendarItem(ctx, &RaceCalendarItem{
@@ -219,10 +221,11 @@ func TestRaceCalendar_ReplaceItemsRegeneratesSyncAndKeepsManual(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replace items: %v", err)
 	}
-	// The old sync item is deleted, then 全程 + 10公里 are inserted; the manual
-	// 半程 is skipped.
-	if res.Deleted != 1 || res.Upserted != 2 {
-		t.Fatalf("result = %+v, want deleted=1 upserted=2", res)
+	// 全程 is merged in place and 10公里 inserted; the manual 半程 is skipped and
+	// nothing is stale, so nothing is deleted — the merge never drops and
+	// re-inserts a sync item.
+	if res.Deleted != 0 || res.Upserted != 2 || res.ContentStale != 0 {
+		t.Fatalf("result = %+v, want deleted=0 upserted=2 content_stale=0", res)
 	}
 
 	items, err := st.ListRaceCalendarItems(ctx, event.ID)
@@ -232,6 +235,13 @@ func TestRaceCalendar_ReplaceItemsRegeneratesSyncAndKeepsManual(t *testing.T) {
 	byName := map[string]RaceCalendarItem{}
 	for _, it := range items {
 		byName[it.Name] = it
+	}
+	got, ok := byName["全程"]
+	if !ok || got.ID != syncItem.ID || got.Origin != RaceOriginSync || got.Type != "Marathon" {
+		t.Errorf("全程 = %+v, want the same row refreshed in place", got)
+	}
+	if got.StartTime == nil || *got.StartTime != "07:30" || got.DistanceKm == nil || *got.DistanceKm != 42.195 {
+		t.Errorf("全程 = %+v, want the admin data kept across the merge", got)
 	}
 	if got, ok := byName["半程"]; !ok || got.Origin != RaceOriginManual || got.EntryFee == nil || *got.EntryFee != fee {
 		t.Errorf("manual 半程 = %+v, want preserved manual item with fee", got)
@@ -264,6 +274,107 @@ func TestRaceCalendar_ReplaceItemsRegeneratesSyncAndKeepsManual(t *testing.T) {
 	}
 }
 
+// TestRaceCalendar_ReplaceItemsStaleKeepsAdminData pins the item-level stale
+// rule: an item the upstream no longer lists is deleted only when nobody has
+// touched it. One carrying content, an override or an admin-maintained entry
+// field is flagged content_stale and kept, and the flag clears as soon as the
+// upstream lists the name again.
+func TestRaceCalendar_ReplaceItemsStaleKeepsAdminData(t *testing.T) {
+	st := openTestStore(t)
+	migrateRaceCalendar(t, st)
+	ctx := context.Background()
+
+	src := "测试源-项目陈旧"
+	key := "2034-07-01"
+	if _, err := st.ReplaceRaceCalendarYear(ctx, src, "2034", []RaceCalendarEvent{
+		{Name: "Stale Item Race", RaceDate: key, Country: "CHN"},
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	var event RaceCalendarEvent
+	if err := st.db.WithContext(ctx).Where("source = ? AND name = ?", src, "Stale Item Race").First(&event).Error; err != nil {
+		t.Fatalf("read event: %v", err)
+	}
+	if _, err := st.ReplaceRaceCalendarItems(ctx, src, []RaceCalendarItemBatch{{
+		Name: "Stale Item Race", RaceDate: key,
+		Items: []RaceCalendarItem{
+			{Name: "裸项目", Type: "10Km"},
+			{Name: "带内容项目", Type: "Marathon"},
+			{Name: "改过字段项目", Type: "HalfMarathon"},
+		},
+	}}); err != nil {
+		t.Fatalf("seed items: %v", err)
+	}
+
+	// Give two of the three something an administrator owns.
+	read := func(name string) RaceCalendarItem {
+		t.Helper()
+		var row RaceCalendarItem
+		if err := st.db.WithContext(ctx).Where("race_event_id = ? AND name = ?", event.ID, name).First(&row).Error; err != nil {
+			t.Fatalf("read item %s: %v", name, err)
+		}
+		return row
+	}
+	withContent := read("带内容项目")
+	withContent.DistanceKm = floatPtr(42.195)
+	if err := st.UpdateRaceCalendarItem(ctx, &withContent); err != nil {
+		t.Fatalf("seed content: %v", err)
+	}
+	withOverride := read("改过字段项目")
+	withOverride.AdminOverrides = []string{"type"}
+	if err := st.UpdateRaceCalendarItem(ctx, &withOverride); err != nil {
+		t.Fatalf("seed override: %v", err)
+	}
+
+	// Upstream renames its whole item list: every old name goes stale at once.
+	res, err := st.ReplaceRaceCalendarItems(ctx, src, []RaceCalendarItemBatch{{
+		Name: "Stale Item Race", RaceDate: key,
+		Items: []RaceCalendarItem{{Name: "新项目名", Type: "10Km"}},
+	}})
+	if err != nil {
+		t.Fatalf("stale sync: %v", err)
+	}
+	if res.Deleted != 1 || res.ContentStale != 2 {
+		t.Fatalf("result = %+v, want deleted=1 content_stale=2", res)
+	}
+
+	items, err := st.ListRaceCalendarItems(ctx, event.ID)
+	if err != nil {
+		t.Fatalf("list items: %v", err)
+	}
+	byName := map[string]RaceCalendarItem{}
+	for _, it := range items {
+		byName[it.Name] = it
+	}
+	if _, ok := byName["裸项目"]; ok {
+		t.Errorf("裸项目 still present, want the untouched sync item deleted")
+	}
+	if got, ok := byName["带内容项目"]; !ok || !got.ContentStale || got.DistanceKm == nil || *got.DistanceKm != 42.195 {
+		t.Errorf("带内容项目 = %+v, want kept, flagged and intact", got)
+	}
+	if got, ok := byName["改过字段项目"]; !ok || !got.ContentStale || len(got.AdminOverrides) != 1 {
+		t.Errorf("改过字段项目 = %+v, want kept and flagged", got)
+	}
+	if got, ok := byName["新项目名"]; !ok || got.Origin != RaceOriginSync || got.ContentStale {
+		t.Errorf("新项目名 = %+v, want a fresh sync item", got)
+	}
+
+	// Listing the name again clears the flag and keeps the content.
+	if _, err := st.ReplaceRaceCalendarItems(ctx, src, []RaceCalendarItemBatch{{
+		Name: "Stale Item Race", RaceDate: key,
+		Items: []RaceCalendarItem{{Name: "带内容项目", Type: "Marathon"}},
+	}}); err != nil {
+		t.Fatalf("re-list: %v", err)
+	}
+	back := read("带内容项目")
+	if back.ContentStale {
+		t.Errorf("content_stale still set, want cleared by the re-listing merge")
+	}
+	if back.DistanceKm == nil || *back.DistanceKm != 42.195 {
+		t.Errorf("distance = %v, want the content kept", back.DistanceKm)
+	}
+}
+
 func TestRaceCalendar_DeleteCascadesItems(t *testing.T) {
 	st := openTestStore(t)
 	migrateRaceCalendar(t, st)
@@ -288,6 +399,64 @@ func TestRaceCalendar_DeleteCascadesItems(t *testing.T) {
 	}
 	if err := st.DeleteRaceCalendarEvent(ctx, row.ID); !errors.Is(err, ErrRaceCalendarNotFound) {
 		t.Fatalf("second delete = %v, want ErrRaceCalendarNotFound", err)
+	}
+}
+
+// TestRaceCalendar_AutoMigrateAddsItemContentColumns pins the upgrade path from
+// the split-table shape (ADR 0039): an existing race_calendar_item keeps its
+// rows and gains the content, override and stale columns in place.
+func TestRaceCalendar_AutoMigrateAddsItemContentColumns(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	if err := st.db.Exec("DROP TABLE IF EXISTS race_calendar_item").Error; err != nil {
+		t.Fatalf("drop item table: %v", err)
+	}
+	legacy := `CREATE TABLE race_calendar_item (
+		id bigint unsigned NOT NULL AUTO_INCREMENT,
+		race_event_id bigint unsigned NOT NULL,
+		name varchar(255) NOT NULL,
+		type varchar(32) NOT NULL,
+		start_time varchar(8) NULL,
+		entry_fee bigint NULL,
+		quota bigint NULL,
+		origin varchar(16) NOT NULL DEFAULT 'sync',
+		created_at datetime(3) NULL,
+		updated_at datetime(3) NULL,
+		PRIMARY KEY (id),
+		UNIQUE KEY uidx_race_cal_item_event_name (race_event_id, name)
+	)`
+	if err := st.db.Exec(legacy).Error; err != nil {
+		t.Fatalf("create legacy item table: %v", err)
+	}
+	if err := st.db.Exec(
+		"INSERT INTO race_calendar_item (race_event_id, name, type, start_time, origin) VALUES (?, ?, ?, ?, ?)",
+		7, "全程马拉松", "Marathon", "07:30", RaceOriginSync,
+	).Error; err != nil {
+		t.Fatalf("seed legacy item: %v", err)
+	}
+
+	if err := st.AutoMigrateRaceCalendar(ctx); err != nil {
+		t.Fatalf("automigrate legacy item table: %v", err)
+	}
+	for _, col := range []string{"admin_overrides", "content_stale", "distance_km", "start_point", "photos"} {
+		if !st.db.Migrator().HasColumn(&RaceCalendarItem{}, col) {
+			t.Errorf("race_calendar_item.%s was not added", col)
+		}
+	}
+
+	var row RaceCalendarItem
+	if err := st.db.WithContext(ctx).Where("name = ?", "全程马拉松").First(&row).Error; err != nil {
+		t.Fatalf("read migrated item: %v", err)
+	}
+	if row.Type != "Marathon" || row.StartTime == nil || *row.StartTime != "07:30" {
+		t.Errorf("row = %+v, want the legacy values kept", row)
+	}
+	if row.HasContent() {
+		t.Errorf("row = %+v, want no content columns filled", row)
+	}
+	if !row.HasAdminData() {
+		t.Errorf("row = %+v, want the start time to count as admin data", row)
 	}
 }
 

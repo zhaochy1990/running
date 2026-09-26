@@ -1358,7 +1358,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Administrator only. Applies provided fields; a sync-owned item becomes manual once edited.",
+                "description": "Administrator only. Applies provided fields; editing the name detaches a sync-owned item to manual, editing other fields records an override.",
                 "tags": [
                     "admin"
                 ],
@@ -8409,6 +8409,12 @@ const docTemplate = `{
                 },
                 "quota": {
                     "type": "integer"
+                },
+                "reset_fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "start_time": {
                     "type": "string"

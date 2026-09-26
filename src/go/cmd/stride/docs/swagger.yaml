@@ -1616,6 +1616,10 @@ definitions:
         type: string
       quota:
         type: integer
+      reset_fields:
+        items:
+          type: string
+        type: array
       start_time:
         type: string
       type:
@@ -4881,8 +4885,8 @@ paths:
       tags:
       - admin
     patch:
-      description: Administrator only. Applies provided fields; a sync-owned item
-        becomes manual once edited.
+      description: Administrator only. Applies provided fields; editing the name detaches
+        a sync-owned item to manual, editing other fields records an override.
       parameters:
       - description: Race id
         in: path

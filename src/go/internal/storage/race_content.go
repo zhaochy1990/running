@@ -21,12 +21,12 @@ var (
 	ErrRaceContentConflict = errors.New("storage: race content conflict")
 )
 
-// AutoMigrateRaceContent reconciles the race-content schema. The race-level and
-// item-level content now live ON the race_calendar row and in race_item_content
-// (migrated by AutoMigrateRaceCalendar, which the worker also runs); this
-// function migrates the city content table and drops the retired
-// pre-merge content tables. The feature never launched with the split tables
-// (no real data to preserve), so the drop is unconditional.
+// AutoMigrateRaceContent reconciles the race-content schema. Race-level content
+// lives ON the race_calendar row and item-level content ON the
+// race_calendar_item row (both migrated by AutoMigrateRaceCalendar, which the
+// worker also runs); this function migrates the city content table and drops the
+// retired split content tables. Production is not live yet and the split tables
+// carried no data worth preserving, so the drops are unconditional.
 func (s *Store) AutoMigrateRaceContent(ctx context.Context) error {
 	db := s.db.WithContext(ctx)
 	m := db.Migrator()
@@ -43,14 +43,15 @@ func (s *Store) AutoMigrateRaceContent(ctx context.Context) error {
 	if err := db.AutoMigrate(&RaceCityContent{}); err != nil {
 		return fmt.Errorf("storage: automigrate race_city_content: %w", err)
 	}
-	// The type is gone from the model layer; the table name is all that is
-	// left to clean up.
+	// The types are gone from the model layer; the table names are all that is
+	// left to clean up. race_item_content was folded into race_calendar_item so
+	// an item's content shares its row's provenance and merge semantics.
 	if m.HasTable("race_content_version") {
 		if err := m.DropTable("race_content_version"); err != nil {
 			return fmt.Errorf("storage: drop race_content_version: %w", err)
 		}
 	}
-	for _, table := range []string{"race_content_item", "race_content"} {
+	for _, table := range []string{"race_item_content", "race_content_item", "race_content"} {
 		if m.HasTable(table) {
 			if err := m.DropTable(table); err != nil {
 				return fmt.Errorf("storage: drop %s: %w", table, err)
