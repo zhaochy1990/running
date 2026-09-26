@@ -11,6 +11,10 @@
  *   calls no tool — when the reply text starts.
  * - `text_delta` — successive chunks of the final reply text, which the client
  *   concatenates to the message in `done`.
+ * - `narration` — text the model wrote on a message that also calls tools, i.e.
+ *   a note about what it is about to look up rather than part of the reply. It
+ *   is progress, not answer: clients show it beside the phase label and must not
+ *   append it to the reply.
  * - `done` — the same public response as the sync path (full message, usage),
  *   emitted once the run reaches its final state.
  *
@@ -30,8 +34,11 @@ export type CoachStatusPhase = "running_tool" | "analyzing";
 
 export type ToolCallStatus = "running" | "finished" | "error";
 
-/** A single event the adapter emits: either a phase status or a text delta. */
-export type CoachStreamEvent = { kind: "status"; phase: CoachStatusPhase; tool?: string; toolStatus?: ToolCallStatus } | { kind: "text_delta"; delta: string };
+/** A single event the adapter emits: a phase status, progress narration, or reply text. */
+export type CoachStreamEvent =
+  | { kind: "status"; phase: CoachStatusPhase; tool?: string; toolStatus?: ToolCallStatus }
+  | { kind: "narration"; delta: string }
+  | { kind: "text_delta"; delta: string };
 
 export type CoachStreamEmitter = (event: CoachStreamEvent) => Promise<void>;
 
@@ -109,12 +116,20 @@ async function handleMessage(payload: unknown, emit: CoachStreamEmitter, phases:
     }
   }
 
-  // Reply text: an AI message's text content.
+  // An AI message's text content: the reply, unless the same message also calls
+  // tools — then it is the model saying what it is about to look up. That text
+  // goes out as `narration` rather than reply text (a client that concatenated
+  // it would prepend English progress notes to the answer), and it must not
+  // flip the phase to `analyzing` while tools are still in flight.
   if (type === "ai") {
     const text = textContent(message?.content);
     if (text.length > 0) {
-      await phases.analyzing();
-      await emit({ kind: "text_delta", delta: text });
+      if (toolCalls.length > 0) {
+        await emit({ kind: "narration", delta: text });
+      } else {
+        await phases.analyzing();
+        await emit({ kind: "text_delta", delta: text });
+      }
     }
   }
 }

@@ -66,6 +66,8 @@ export type CoachPhase = 'in_subagent' | 'running_tool' | 'analyzing';
 
 export type CoachStreamEvent =
   | { kind: 'status'; phase: CoachPhase; subagent?: string; tool?: string; toolStatus?: string }
+  /** 工具调用前的一句话进度说明（不是回答正文），展示在进度区。 */
+  | { kind: 'narration'; delta: string }
   | { kind: 'delta'; delta: string };
 
 /** done 事件的 data（`{ turn_id, ...toPublicResponse }`）；非流式降级时同步 JSON 也走这里。 */
@@ -133,6 +135,9 @@ export function sendCoachChatStream(
         tool: d.tool as string | undefined,
         toolStatus: d.tool_status as string | undefined,
       });
+    } else if (ev.event === 'narration') {
+      const d = safeParse(ev.data);
+      callbacks.onEvent?.({ kind: 'narration', delta: typeof d.delta === 'string' ? d.delta : '' });
     } else if (ev.event === 'text_delta') {
       const d = safeParse(ev.data);
       callbacks.onEvent?.({ kind: 'delta', delta: typeof d.delta === 'string' ? d.delta : '' });

@@ -147,6 +147,77 @@ test("text_delta events accumulate to the done message", async () => {
   assert.equal(accumulated, done?.data.message);
 });
 
+test("text on a tool-calling message is narration, not reply text", async () => {
+  // A model that narrates what it is about to look up writes that text on the
+  // same message that carries the tool calls. It must not reach the reply: a
+  // client concatenating text_delta would prepend it to the answer.
+  const narration = "I'll pull your current plan, recent training, and fitness data before answering.";
+  const app = createApp({
+    jwtVerifier: {
+      async verify() {
+        return { userId: "athlete-1", isAdmin: false };
+      },
+    },
+    coachInvoker: {
+      async invoke() {
+        throw new Error("must not invoke");
+      },
+      async streamEvents() {
+        return source(
+          eventsFrom([
+            msgChunk(ai(narration, [{ id: "call-1", name: "get_master_plan" }])),
+            msgChunk(toolResult("call-1")),
+            msgChunk(ai("正文回答。")),
+            valuesChunk({ messages: [ai("正文回答。")] }),
+          ]),
+        );
+      },
+    },
+  });
+  const response = await chatRequest({ session_id: "session-1", client_turn_id: "turn-1", message: "hi" }, SSE_ACCEPT)(app);
+  const events = parseSse(await response.text());
+
+  const narrated = events.filter((event) => event.event === "narration");
+  assert.deepEqual(
+    narrated.map((event) => event.data.delta),
+    [narration],
+  );
+  const deltas = events.filter((event) => event.event === "text_delta").map((event) => event.data.delta as string);
+  assert.deepEqual(deltas, ["正文回答。"], "reply deltas carry only the reply");
+  assert.equal(events.find((event) => event.event === "done")?.data.message, "正文回答。");
+});
+
+test("narration does not flip the phase to analyzing while tools are in flight", async () => {
+  const app = createApp({
+    jwtVerifier: {
+      async verify() {
+        return { userId: "athlete-1", isAdmin: false };
+      },
+    },
+    coachInvoker: {
+      async invoke() {
+        throw new Error("must not invoke");
+      },
+      async streamEvents() {
+        return source(
+          eventsFrom([
+            msgChunk(ai("先看一下计划。", [{ id: "call-1", name: "get_master_plan" }])),
+            msgChunk(toolResult("call-1")),
+            msgChunk(ai("回答。")),
+            valuesChunk({ messages: [ai("回答。")] }),
+          ]),
+        );
+      },
+    },
+  });
+  const response = await chatRequest({ session_id: "session-1", client_turn_id: "turn-1", message: "hi" }, SSE_ACCEPT)(app);
+  const phases = parseSse(await response.text())
+    .filter((event) => event.event === "status")
+    .map((event) => event.data.phase);
+
+  assert.deepEqual(phases, ["running_tool", "running_tool", "analyzing"], "analyzing comes after the last tool, not with the narration");
+});
+
 test("text_delta events are emitted while the run is still executing, not replayed after it ends", async () => {
   // The events stream yields text messages as they happen, and the adapter
   // drains them immediately — so deltas land before the terminal values chunk.

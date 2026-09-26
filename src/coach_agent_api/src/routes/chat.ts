@@ -84,7 +84,7 @@ async function runTurn(
 /** SSE variant: emit status events during the run, then a single `done` event. */
 async function streamChat(dependencies: ChatDependencies, stream: SSEStreamingApi, body: ChatRequest, userId: string, threadId: string): Promise<void> {
   const turnId = body.clientTurnId;
-  const emit = async (event: "status" | "text_delta" | "done" | "error", data: Record<string, unknown>) => {
+  const emit = async (event: "status" | "text_delta" | "narration" | "done" | "error", data: Record<string, unknown>) => {
     await stream.writeSSE({ event, data: JSON.stringify(data) });
   };
   // Map each adapter event to its SSE wire form; every event carries the
@@ -92,6 +92,9 @@ async function streamChat(dependencies: ChatDependencies, stream: SSEStreamingAp
   const emitStreamEvent: CoachStreamEmitter = (streamEvent) => {
     if (streamEvent.kind === "text_delta") {
       return emit("text_delta", { turn_id: turnId, delta: streamEvent.delta });
+    }
+    if (streamEvent.kind === "narration") {
+      return emit("narration", { turn_id: turnId, delta: streamEvent.delta });
     }
     const { phase, tool, toolStatus } = streamEvent;
     return emit("status", {
