@@ -45,7 +45,7 @@ const getActivitiesByDateRangeSchema = z.object({
 type GetActivitiesByDateRangeInput = z.infer<typeof getActivitiesByDateRangeSchema>;
 
 const getActivityDetailSchema = z.object({
-  labelId: z.string().min(1).describe("运动记录的唯一 ID（get_activities_by_date_range 返回的 labelId）。"),
+  labelId: z.string().min(1).describe("运动记录的唯一 ID（labelId），取自 get_activities_by_date_range 或 get_race_history 的返回。"),
 });
 
 type GetActivityDetailInput = z.infer<typeof getActivityDetailSchema>;
