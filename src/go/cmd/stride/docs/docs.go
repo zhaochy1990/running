@@ -8293,7 +8293,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "wa_label": {
-                    "description": "WALabel is this race's World Athletics tier, derived by the\nrace_calendar_wa_label step from the 国际田联 mirror (null when no World\nAthletics listing matches).",
+                    "description": "WALabel is this race's World Athletics tier (Platinum/Gold/Elite/Label),\nwritten by the race_calendar_wa_label step, or null when the race has none.\nOne meaning regardless of source: a 中国田协 row takes it from its World\nAthletics counterpart, and a 国际田联 row mirrors its own tier.",
                     "type": "string"
                 }
             }
@@ -8366,7 +8366,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "wa_label": {
-                    "description": "WALabel is this race's World Athletics tier, derived by the\nrace_calendar_wa_label step from the 国际田联 mirror (null when no World\nAthletics listing matches).",
+                    "description": "WALabel is this race's World Athletics tier (Platinum/Gold/Elite/Label),\nwritten by the race_calendar_wa_label step, or null when the race has none.\nOne meaning regardless of source: a 中国田协 row takes it from its World\nAthletics counterpart, and a 国际田联 row mirrors its own tier.",
                     "type": "string"
                 }
             }

@@ -65,6 +65,18 @@ consequences are deliberate:
   risking the tier being attached to whatever else 南昌 ran that day. One race in
   fifty loses a label; the failure direction is a gap, never a wrong value.
 
+**`wa_label` is written on both calendars' rows, with one meaning.** For the 38
+races both calendars list, the tier is copied onto the 中国田协 row — the row a
+runner sees, whose own `label` holds 中国田协's grade. For the 12 races 中国田协
+does not list at all, the 国际田联 row *is* the race, so the step mirrors its own
+`label` into `wa_label`. Without that second half the column would read empty for
+上海马拉松 (Platinum) and 北京马拉松 (Gold) — precisely the races whose tier
+matters most — and an empty column reads as "no World Athletics tier" rather than
+"not copied". The rule is therefore source-independent: `wa_label` is this race's
+World Athletics tier wherever one is known. This was found by verifying the first
+production run rather than by testing: the counts were right and the field was
+still blank on 50 rows.
+
 **`wa_label` is admin-overrideable.** The match is a heuristic, so an
 administrator who corrects a tier must outrank it. `wa_label` joins
 `RaceCalendarOverrideableFields`, `ApplyRaceCalendarWALabels` skips any row

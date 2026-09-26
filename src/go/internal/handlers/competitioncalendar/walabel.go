@@ -67,10 +67,21 @@ type waLabelInput struct {
 	Years []string `json:"years"`
 }
 
+// waLabelYearSummary reports one year's work, split by which side of the match a
+// row was, so an operator can tell a failed cross-source match (Labeled falling
+// to zero) from the routine self-mirror still working (Mirrored steady).
 type waLabelYearSummary struct {
-	Labeled  int `json:"labeled"`
-	Cleared  int `json:"cleared"`
-	Unmerged int `json:"unmatched"`
+	// Labeled counts 中国田协 rows that took a tier from their World Athletics
+	// counterpart; Unmatched counts those that found no counterpart.
+	Labeled   int `json:"labeled"`
+	Unmatched int `json:"unmatched"`
+	// Cleared counts 中国田协 rows whose tier was removed (the listing is gone or
+	// the two no longer match). Listed before Unmatched because the two are
+	// different states: a cleared row had a tier and lost it.
+	Cleared int `json:"cleared"`
+	// Mirrored counts World Athletics rows that took their own tier into
+	// wa_label — routine, and the whole count for races 中国田协 does not list.
+	Mirrored int `json:"mirrored"`
 }
 
 // NewWALabel returns the race_calendar_wa_label job.Handler.
@@ -121,17 +132,28 @@ func NewWALabel(cfg WALabelConfig) job.Handler {
 
 			// Write only what changes, so a routine day writes nothing at all and
 			// a re-run of the same day is a no-op.
-			changed := make([]storage.RaceCalendarWALabel, 0, len(scope.ChinaAth))
-			summary := waLabelYearSummary{Unmerged: len(scope.ChinaAth) - matched}
-			for _, row := range scope.ChinaAth {
+			// Both calendars are reconciled, not only the 中国田协 side: a WA row
+			// carries its own tier (see matchWALabels). A fresh slice rather than
+			// append(scope.ChinaAth, ...) — that would write into the scope's own
+			// backing array when it has spare capacity.
+			all := make([]storage.RaceCalendarEvent, 0, len(scope.ChinaAth)+len(scope.WorldAth))
+			all = append(all, scope.ChinaAth...)
+			all = append(all, scope.WorldAth...)
+
+			changed := make([]storage.RaceCalendarWALabel, 0, len(all))
+			summary := waLabelYearSummary{Unmatched: len(scope.ChinaAth) - matched}
+			for _, row := range all {
 				want := desired[row.ID]
 				if sameLabel(row.WALabel, want) {
 					continue
 				}
 				changed = append(changed, storage.RaceCalendarWALabel{ID: row.ID, WALabel: want})
-				if want == nil {
+				switch {
+				case row.Source == storage.RaceSourceWorldAth:
+					summary.Mirrored++
+				case want == nil:
 					summary.Cleared++
-				} else {
+				default:
 					summary.Labeled++
 				}
 			}
@@ -169,16 +191,23 @@ func NewWALabel(cfg WALabelConfig) job.Handler {
 	}
 }
 
-// matchWALabels maps each 中国田协 row id to the World Athletics tier it should
-// carry, and reports how many rows found a counterpart. A row absent from the map
-// has no tier and the map value for a present row may be nil when the matched WA
-// row itself carries no label.
+// matchWALabels maps each in-scope row id to the World Athletics tier it should
+// carry, and reports how many 中国田协 rows found a counterpart.
 //
-// The candidate must be unique: two World Athletics listings sharing a city and
-// date would leave the choice a coin flip, so both are dropped rather than
-// guessed. That is the same reason a WA date that has drifted onto another
-// race's day cannot cause a wrong label — the second listing is what makes the
-// pick ambiguous, and ambiguity is refused.
+// THE CONTRACT: the map must contain an entry for every row that has a tier, and
+// the caller treats an ABSENT entry as "clear it". That is what lets a race which
+// lost its World Athletics listing shed a stale tier — but it also means
+// forgetting to populate a row here does not leave it blank, it ERASES it. Every
+// source in the scope must be enumerated below; removing the World Athletics loop
+// would silently wipe those rows' tiers rather than merely stop filling them.
+//
+// A present entry may itself hold nil, which also clears — that is how a
+// 中国田协 row whose counterpart carries no tier is handled.
+//
+// The counterpart must be unique: two World Athletics listings sharing a city and
+// date would leave the choice a coin flip, so an ambiguous 中国田协 row is left out
+// of the map (and therefore cleared) rather than guessed at. The same rule is why
+// a WA date that has drifted onto another race's day cannot cause a wrong label.
 func matchWALabels(scope storage.RaceCalendarLabelScope) (map[uint64]*string, int) {
 	byKey := make(map[labelKey][]storage.RaceCalendarEvent, len(scope.WorldAth))
 	for _, wa := range scope.WorldAth {
@@ -189,7 +218,25 @@ func matchWALabels(scope storage.RaceCalendarLabelScope) (map[uint64]*string, in
 		byKey[k] = append(byKey[k], wa)
 	}
 
-	desired := make(map[uint64]*string, len(scope.ChinaAth))
+	desired := make(map[uint64]*string, len(scope.ChinaAth)+len(scope.WorldAth))
+
+	// A World Athletics row carries its own tier, and mirrors it onto itself.
+	//
+	// This is not redundant. For the 38 races both calendars list, the tier lands
+	// on the 中国田协 row and the WA row is a duplicate nobody reads. But 12 races
+	// exist ONLY in the World Athletics calendar — 上海马拉松 (Platinum),
+	// 北京马拉松 (Gold), 桂林, 黄石, 义乌, 深圳… — and for those the WA row *is*
+	// the race, so its `label` is the only place the tier lives. Without this the
+	// wa_label column would read empty for exactly the races whose tier is
+	// Platinum, which reads as "no World Athletics tier" rather than "not copied".
+	//
+	// The rule is then uniform and source-independent: wa_label is this race's
+	// World Athletics tier wherever one is known. A reader consults one column
+	// instead of reasoning about which calendar a row came from.
+	for _, wa := range scope.WorldAth {
+		desired[wa.ID] = wa.Label
+	}
+
 	matched := 0
 	for _, cn := range scope.ChinaAth {
 		k, ok := keyOf(cn)

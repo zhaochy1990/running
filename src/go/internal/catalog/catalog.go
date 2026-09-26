@@ -214,7 +214,7 @@ func Jobs() []JobSpec {
 		{
 			Type:          JobTypeRaceCalendarWALabel,
 			UserInitiable: false,
-			Description:   "Copy each race's World Athletics label tier (Platinum/Gold/Elite/Label) onto the matching 中国田协 row, matched by (race_date, city). Unmatched 中国田协 rows get no tier; a row whose wa_label an administrator has overridden keeps its value. Idempotent — only rows whose tier changes are written. System job (no subject user). Years come from the input {\"years\":[...]}, else the current and next Shanghai year. Internal-only; the daily cron workflow starts it via the race_calendar_wa_label pipeline, after both calendar mirrors.",
+			Description:   "Write each race's World Athletics label tier (Platinum/Gold/Elite/Label) into wa_label. A 国际田联 row mirrors its own tier; a 中国田协 row takes it from its counterpart matched by (race_date, city), and an unmatched 中国田协 row gets none. A row whose wa_label an administrator has overridden keeps its value. Idempotent — only rows whose tier changes are written. System job (no subject user). Years come from the input {\"years\":[...]}, else the current and next Shanghai year. Internal-only; the daily cron workflow starts it via the race_calendar_wa_label pipeline, after both calendar mirrors.",
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"},"description":"Calendar years to label. Empty uses the current and next Shanghai year."}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
 		},

@@ -241,19 +241,23 @@ func TestWALabelHandler_WritesOnlyChanges(t *testing.T) {
 	fresh := cnRow(3, "2026-03-15", "上海市") // no tier yet
 	never := cnRow(4, "2026-12-06", "上海市") // no counterpart at all
 
+	waGold := waRow(51, "2026-11-01", "杭州市", "Gold")
+	waGold.WALabel = strp("Gold") // its own row already mirrors its tier
+	waLabel := waRow(52, "2026-10-18", "西安市", "Label")
+	waFresh := waRow(53, "2026-03-15", "上海市", "Gold")
+
 	store := &fakeLabelStore{scope: storage.RaceCalendarLabelScope{
 		ChinaAth: []storage.RaceCalendarEvent{existing, stale, fresh, never},
-		WorldAth: []storage.RaceCalendarEvent{
-			waRow(51, "2026-11-01", "杭州市", "Gold"),
-			waRow(52, "2026-10-18", "西安市", "Label"),
-			waRow(53, "2026-03-15", "上海市", "Gold"),
-		},
+		WorldAth: []storage.RaceCalendarEvent{waGold, waLabel, waFresh},
 	}}
 
 	out := runLabel(t, store, `{"years":["2026"]}`)
 
-	if len(store.applied) != 2 {
-		t.Fatalf("applied %d rows (%+v), want 2 (the stale and the fresh)", len(store.applied), store.applied)
+	// The two 中国田协 rows whose tier changed, plus the two World Athletics rows
+	// that had no wa_label yet. Withheld: row 1 and WA row 51 (already correct),
+	// and row 4 (no counterpart at all).
+	if len(store.applied) != 4 {
+		t.Fatalf("applied %d rows (%+v), want 4", len(store.applied), store.applied)
 	}
 	byID := map[uint64]*string{}
 	for _, l := range store.applied {
@@ -265,8 +269,19 @@ func TestWALabelHandler_WritesOnlyChanges(t *testing.T) {
 	if v := byID[3]; v == nil || *v != "Gold" {
 		t.Errorf("row 3 = %v, want Gold", byID[3])
 	}
+	// The World Athletics rows mirror their own tier — this is what keeps
+	// wa_label populated for races 中国田协 does not list.
+	if v := byID[52]; v == nil || *v != "Label" {
+		t.Errorf("WA row 52 = %v, want its own Label mirrored", byID[52])
+	}
+	if v := byID[53]; v == nil || *v != "Gold" {
+		t.Errorf("WA row 53 = %v, want its own Gold mirrored", byID[53])
+	}
 	if _, touched := byID[1]; touched {
 		t.Errorf("row 1 rewritten though its tier was already Gold")
+	}
+	if _, touched := byID[51]; touched {
+		t.Errorf("WA row 51 rewritten though its wa_label already held its tier")
 	}
 	if _, touched := byID[4]; touched {
 		t.Errorf("row 4 written though it has no counterpart and no tier")
@@ -278,8 +293,8 @@ func TestWALabelHandler_WritesOnlyChanges(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("result is not JSON: %v (%s)", err, out)
 	}
-	if s := got.Years["2026"]; s.Labeled != 2 || s.Unmerged != 1 {
-		t.Fatalf("summary = %+v, want labeled 2 unmerged 1", s)
+	if s := got.Years["2026"]; s.Labeled != 2 || s.Unmatched != 1 || s.Mirrored != 2 {
+		t.Fatalf("summary = %+v, want labeled 2 unmatched 1 mirrored 2", s)
 	}
 }
 

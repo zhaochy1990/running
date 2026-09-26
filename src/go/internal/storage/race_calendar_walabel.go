@@ -19,13 +19,15 @@ import (
 // write the other's rows (ReplaceRaceCalendarYear is scoped to its own source),
 // so the tier is copied by a third pass that owns no source at all.
 
-// RaceCalendarLabelScope is the row set one label run matches over for a year:
-// the 中国田协 rows that receive a tier, and the 国际田联 rows that carry one.
+// RaceCalendarLabelScope is the row set one label run reconciles for a year:
+// both calendars' rows, because wa_label is written on both (a World Athletics
+// row mirrors its own tier; see the model's WALabel doc).
 //
 // 中国田协 rows are loaded without a country filter because that source is
 // China-only by construction; 国际田联 is scoped to CHN because the two calendars
-// only overlap on Chinese races (a World Athletics race with no 中国田协 listing
-// keeps its tier in its own row's label column already).
+// only overlap on Chinese races. A World Athletics race abroad is not in scope:
+// there is no 中国田协 row to copy onto, and its own row already carries its tier
+// in label — mirroring it into wa_label would be work for no reader.
 type RaceCalendarLabelScope struct {
 	ChinaAth []RaceCalendarEvent
 	WorldAth []RaceCalendarEvent
