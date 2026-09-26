@@ -77,18 +77,22 @@ func (r *raceCalendarRoutes) register(rg *gin.RouterGroup) {
 // (sync / overridden / manual) so the dashboard can render the source badge
 // without knowing the origin/override encoding.
 type raceCalendarEventDTO struct {
-	ID           uint64               `json:"id"`
-	Source       string               `json:"source"`
-	Origin       string               `json:"origin"`
-	Name         string               `json:"name"`
-	NameCN       *string              `json:"name_cn"`
-	RaceDate     string               `json:"race_date"`
-	Month        int8                 `json:"month"`
-	DayOfMonth   int8                 `json:"day_of_month"`
-	Country      string               `json:"country"`
-	Province     *string              `json:"province"`
-	City         *string              `json:"city"`
-	Label        *string              `json:"label"`
+	ID         uint64  `json:"id"`
+	Source     string  `json:"source"`
+	Origin     string  `json:"origin"`
+	Name       string  `json:"name"`
+	NameCN     *string `json:"name_cn"`
+	RaceDate   string  `json:"race_date"`
+	Month      int8    `json:"month"`
+	DayOfMonth int8    `json:"day_of_month"`
+	Country    string  `json:"country"`
+	Province   *string `json:"province"`
+	City       *string `json:"city"`
+	Label      *string `json:"label"`
+	// WALabel is this race's World Athletics tier, derived by the
+	// race_calendar_wa_label step from the 国际田联 mirror (null when no World
+	// Athletics listing matches).
+	WALabel      *string              `json:"wa_label"`
 	RaceTypes    []string             `json:"race_types"`
 	FieldSources map[string]string    `json:"field_sources"`
 	Published    bool                 `json:"published"`
@@ -144,6 +148,7 @@ func newRaceCalendarEventDTO(row storage.RaceCalendarEvent) raceCalendarEventDTO
 		Province:      row.Province,
 		City:          row.City,
 		Label:         row.Label,
+		WALabel:       row.WALabel,
 		RaceTypes:     decodeRaceTypes(row.RaceTypes),
 		FieldSources:  raceCalendarFieldSources(row),
 		Published:     row.Published,
@@ -181,7 +186,7 @@ func newRaceCalendarItemDTOs(rows []storage.RaceCalendarItem) []raceCalendarItem
 // raceCalendarEditableFields is the field-source key space the dashboard
 // renders badges for.
 var raceCalendarEditableFields = []string{
-	"name", "name_cn", "race_date", "country", "province", "city", "label", "race_types",
+	"name", "name_cn", "race_date", "country", "province", "city", "label", "race_types", "wa_label",
 }
 
 // raceCalendarFieldSources derives every editable field's provenance:
@@ -396,13 +401,18 @@ func (o *optionalField[T]) UnmarshalJSON(data []byte) error {
 // (origin becomes manual). Nullable fields use optionalField so an explicit
 // null clears them.
 type raceCalendarUpdateRequest struct {
-	Name        *string               `json:"name"`
-	NameCN      optionalField[string] `json:"name_cn" swaggertype:"string"`
-	RaceDate    *string               `json:"race_date"`
-	Country     *string               `json:"country"`
-	Province    optionalField[string] `json:"province" swaggertype:"string"`
-	City        optionalField[string] `json:"city" swaggertype:"string"`
-	Label       optionalField[string] `json:"label" swaggertype:"string"`
+	Name     *string               `json:"name"`
+	NameCN   optionalField[string] `json:"name_cn" swaggertype:"string"`
+	RaceDate *string               `json:"race_date"`
+	Country  *string               `json:"country"`
+	Province optionalField[string] `json:"province" swaggertype:"string"`
+	City     optionalField[string] `json:"city" swaggertype:"string"`
+	Label    optionalField[string] `json:"label" swaggertype:"string"`
+	// WALabel is the World Athletics tier written onto this row by the
+	// race_calendar_wa_label step. Editable like label so an administrator can
+	// correct a mis-matched tier; declaring "wa_label" in Overrides makes the
+	// label run keep the administrator's value.
+	WALabel     optionalField[string] `json:"wa_label" swaggertype:"string"`
 	RaceTypes   *[]string             `json:"race_types"`
 	Overrides   []string              `json:"overrides"`
 	ResetFields []string              `json:"reset_fields"`
@@ -907,6 +917,9 @@ func applyRaceCalendarUpdate(c *gin.Context, row *storage.RaceCalendarEvent, req
 	if req.Label.Set {
 		row.Label = normalizeOptionalString(req.Label.Value)
 	}
+	if req.WALabel.Set {
+		row.WALabel = normalizeOptionalString(req.WALabel.Value)
+	}
 	if req.RaceTypes != nil {
 		encoded, ok := encodeRaceTypes(c, *req.RaceTypes)
 		if !ok {
@@ -1011,6 +1024,10 @@ func clearRaceCalendarField(row *storage.RaceCalendarEvent, field string) {
 		row.Label = nil
 	case "race_types":
 		row.RaceTypes = nil
+	case "wa_label":
+		// Clearing hands the field back to the label run, which refills it on
+		// its next pass (a no-op when no World Athletics listing matches).
+		row.WALabel = nil
 	}
 }
 

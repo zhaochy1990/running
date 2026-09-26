@@ -681,6 +681,10 @@ func TestRaceCalendar_AutoMigrateAddsContentSourceKeepingExistingRows(t *testing
 			t.Fatalf("content_source was not added to %T", model)
 		}
 	}
+	// wa_label lands on the event table in the same migration.
+	if !st.db.Migrator().HasColumn(&RaceCalendarEvent{}, "wa_label") {
+		t.Fatal("race_calendar.wa_label was not added")
+	}
 
 	var event RaceCalendarEvent
 	if err := st.db.WithContext(ctx).Where("name = ?", "2026杭州马拉松").First(&event).Error; err != nil {
@@ -688,6 +692,9 @@ func TestRaceCalendar_AutoMigrateAddsContentSourceKeepingExistingRows(t *testing
 	}
 	if event.ContentSource != nil {
 		t.Errorf("content_source = %q, want NULL for a pre-existing row", *event.ContentSource)
+	}
+	if event.WALabel != nil {
+		t.Errorf("wa_label = %q, want NULL — a pre-existing row has no derived tier yet, and a non-NULL would read as one the label step wrote", *event.WALabel)
 	}
 	if len(event.SignupChannels) != 1 || event.SignupChannels[0].URLType != RaceChannelURLTypeWeb {
 		t.Errorf("signup_channels = %+v, want the stored channels kept", event.SignupChannels)

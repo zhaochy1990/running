@@ -715,6 +715,64 @@ func TestRaceCalendarAdmin_EventContentPatch(t *testing.T) {
 	}
 }
 
+// TestRaceCalendarAdmin_WALabel covers the World Athletics tier as an editable,
+// overridable field: the label step writes it, but the match is a heuristic, so
+// an administrator must be able to correct it and have the correction survive the
+// next run.
+func TestRaceCalendarAdmin_WALabel(t *testing.T) {
+	h := newRaceHarness(t)
+	event := h.store.seedEvent(syncEvent())
+	base := fmt.Sprintf("/api/admin/races/%d", event.ID)
+	admin := h.adminToken(t)
+
+	// A fresh race carries no tier.
+	got := decodeRaceDTO(t, h.do(t, http.MethodGet, base, nil, admin))
+	if got.WALabel != nil {
+		t.Fatalf("wa_label = %q, want null on a fresh race", *got.WALabel)
+	}
+
+	// The label step's write, as the admin surface sees it.
+	w := h.do(t, http.MethodPatch, base, map[string]any{"wa_label": "Gold"}, admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("wa_label = %d: %s", w.Code, w.Body.String())
+	}
+	if got = decodeRaceDTO(t, w); got.WALabel == nil || *got.WALabel != "Gold" {
+		t.Fatalf("wa_label = %v, want Gold", got.WALabel)
+	}
+
+	// Declaring the override is what makes the correction stick.
+	w = h.do(t, http.MethodPatch, base, map[string]any{"wa_label": "Elite", "overrides": []string{"wa_label"}}, admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("override = %d: %s", w.Code, w.Body.String())
+	}
+	got = decodeRaceDTO(t, w)
+	if got.WALabel == nil || *got.WALabel != "Elite" {
+		t.Fatalf("wa_label = %v, want Elite", got.WALabel)
+	}
+	if got.FieldSources["wa_label"] != "overridden" {
+		t.Fatalf("field_sources[wa_label] = %q, want overridden", got.FieldSources["wa_label"])
+	}
+
+	// An explicit null clears the tier (the admin's way to say "no tier").
+	w = h.do(t, http.MethodPatch, base, map[string]any{"wa_label": nil}, admin)
+	if got = decodeRaceDTO(t, w); got.WALabel != nil {
+		t.Fatalf("wa_label = %q, want cleared", *got.WALabel)
+	}
+
+	// reset_fields hands it back to the label step: value cleared, override gone.
+	w = h.do(t, http.MethodPatch, base, map[string]any{"reset_fields": []string{"wa_label"}}, admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("reset = %d: %s", w.Code, w.Body.String())
+	}
+	got = decodeRaceDTO(t, w)
+	if got.WALabel != nil {
+		t.Fatalf("wa_label = %q, want cleared after reset", *got.WALabel)
+	}
+	if got.FieldSources["wa_label"] == "overridden" {
+		t.Fatalf("field_sources[wa_label] still overridden after reset")
+	}
+}
+
 // TestRaceCalendarAdmin_SignupChannelValidation pins the channel rule: a channel
 // needs a name, and its url and url_type must agree — a pointer needs a kind and
 // a kind needs a pointer. The point of the change is the "name only" case: a

@@ -35,10 +35,10 @@ import (
 const JobType = "race_calendar_sync"
 
 // Source labels the rows this handler writes — a fixed Chinese value per source
-// (国际田联 for the World Athletics label road races; 中国田协 reserved for a
-// future China Athletics Association source). Kept as a constant so the same
-// race_calendar table can hold multiple sources.
-const Source = "国际田联"
+// (国际田联 for the World Athletics label road races; 中国田协 for the China
+// Athletics Association catalogue). Aliased to the storage constant so the
+// storage layer and the handlers cannot drift apart.
+const Source = storage.RaceSourceWorldAth
 
 // CalendarStore is the slice of *storage.Store the handler needs, so the
 // handler stays unit-testable with a fake. cmd/worker injects the real store.

@@ -18,7 +18,17 @@ const (
 	// 中国田协) so the sync can never match or clobber a manual row; the
 	// dashboard renders it as 管理员 / Manual.
 	RaceSourceManual = "manual"
+	// RaceSourceChinaAth and RaceSourceWorldAth are the two mirrored calendars'
+	// Source values. They live here so the storage layer can address a source
+	// without importing a handler; the handlers' own Source constants alias these.
+	RaceSourceChinaAth = "中国田协"
+	RaceSourceWorldAth = "国际田联"
 )
+
+// OverrideFieldWALabel is the admin-override field name for the World Athletics
+// tier. It names the column in admin_overrides, and is what the label step checks
+// before overwriting an administrator's correction.
+const OverrideFieldWALabel = "wa_label"
 
 // RaceContentSourceWebSearch marks content an automated web-research script
 // filled from public sources (the race's official site, signup announcements,
@@ -170,6 +180,22 @@ type RaceCalendarEvent struct {
 	// asset, and a per-section map would be a vocabulary to maintain for a
 	// distinction nothing reads yet.
 	ContentSource *string `gorm:"column:content_source;size:32"`
+	// WALabel is the World Athletics road-race label tier (Platinum/Gold/Elite/
+	// Label) of this race, derived from the 国际田联 mirror and written onto the
+	// 中国田协 row so one race carries both its 中国田协 grade (Label below) and
+	// its WA tier.
+	//
+	// It is written by the race_calendar_wa_label step, which matches a 中国田协
+	// race to its World Athletics listing by (race_date, city) and copies the
+	// tier across. Like the content columns it is NOT in raceCalendarUpsertCols,
+	// so neither calendar mirror clobbers it — the 中国田协 mirror writes only its
+	// own source's rows and would not touch this column even if it did.
+	//
+	// It is admin-overrideable (see RaceCalendarOverrideableFields): the match is
+	// a heuristic, so an administrator must be able to correct or clear a wrong
+	// tier, and a row that declares the override keeps its value against the next
+	// label run.
+	WALabel *string `gorm:"column:wa_label;size:32"`
 	// Published marks a race the product actually surfaces: the 小程序/Web race
 	// calendar shows published rows and nothing else, so a race is invisible to
 	// end users until an administrator publishes it. It is admin-owned state
@@ -214,7 +240,7 @@ func (row RaceCalendarEvent) HasContent() bool {
 // name_cn is included because curating a Chinese name must protect the row from
 // the stale-delete even though the sync merge always preserves it.
 var RaceCalendarOverrideableFields = []string{
-	"name_cn", "country", "province", "city", "label", "race_types",
+	"name_cn", "country", "province", "city", "label", "race_types", OverrideFieldWALabel,
 }
 
 // IsRaceCalendarOverrideable reports whether field is a valid admin-override

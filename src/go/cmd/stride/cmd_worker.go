@@ -308,4 +308,12 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 	// chinaath_race_calendar_sync pipeline: the single mirror step (the 田协
 	// upstream needs no credentials, so there is no key-discovery step).
 	reg.MustRegister(chinaathcalendar.JobType, chinaathcalendar.New(caConfig))
+	// race_calendar_wa_label pipeline: the third pass over the calendars, which
+	// copies the World Athletics tier onto the matching 中国田协 row. It owns no
+	// source, so it needs no client — only the store. Its own pipeline because it
+	// must run after both mirrors above.
+	reg.MustRegister(competitioncalendar.JobTypeWALabel, competitioncalendar.NewWALabel(competitioncalendar.WALabelConfig{
+		Store:  store,
+		Logger: log,
+	}))
 }

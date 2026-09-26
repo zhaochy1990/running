@@ -39,9 +39,9 @@ import (
 // JobType is the registered job_type for the 田协 race-calendar sync handler.
 const JobType = "chinaath_race_calendar_sync"
 
-// Source labels the rows this handler writes — the fixed Chinese source value
-// the WA handler's Source comment reserved for this catalogue.
-const Source = "中国田协"
+// Source labels the rows this handler writes — aliased to the storage constant
+// so the storage layer and the handlers cannot drift apart.
+const Source = storage.RaceSourceChinaAth
 
 // CalendarStore is the slice of *storage.Store the handler needs, so the
 // handler stays unit-testable with a fake. cmd/worker injects the real store.
