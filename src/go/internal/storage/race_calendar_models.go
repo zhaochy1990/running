@@ -20,6 +20,54 @@ const (
 	RaceSourceManual = "manual"
 )
 
+// RaceContentSourceWebSearch marks content an automated web-research script
+// filled from public sources (the race's official site, signup announcements,
+// local-media coverage). ContentSource absent means an administrator typed the
+// value in the dashboard.
+//
+// This is content provenance only: it never joins the admin-override set and
+// never affects the sync merge, because the content sections it describes are
+// admin-owned columns the sync does not write at all. It exists so an
+// administrator reviewing a WebSearch-filled 报名时间 or 报名费 can tell a
+// researched value from a hand-typed one.
+const RaceContentSourceWebSearch = "WebSearch"
+
+// RaceContentSources is the controlled vocabulary of ContentSource values, the
+// same shape as RaceCalendarOverrideableFields: a closed set the API validates
+// a request body against, so a typo cannot silently invent a provenance value.
+// Adding a producer means adding its term here.
+var RaceContentSources = []string{RaceContentSourceWebSearch}
+
+// IsRaceContentSource reports whether v is a known content-provenance term.
+func IsRaceContentSource(v string) bool {
+	for _, s := range RaceContentSources {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
+// RaceSignupChannel URL kinds. The URLType discriminates what the channel's one
+// URL field points at, which is what the 小程序 needs to render it: a page to
+// open in a webview, or an image to long-press and recognise.
+const (
+	// RaceChannelURLTypeWeb marks a URL that opens as a page: the race's
+	// official site, a registration portal, an app-store listing.
+	RaceChannelURLTypeWeb = "web"
+	// RaceChannelURLTypeQRCode marks a URL that is the image of a QR code or a
+	// mini-program code. It is what makes a 公众号 / 小程序 registration entry
+	// storable at all: those channels have no page to link to, only a code, and
+	// they are the majority of Chinese race signup entries.
+	RaceChannelURLTypeQRCode = "qrcode"
+)
+
+// IsRaceChannelURLType reports whether v is a known channel URL kind (used to
+// reject an unknown url_type in a request body).
+func IsRaceChannelURLType(v string) bool {
+	return v == RaceChannelURLTypeWeb || v == RaceChannelURLTypeQRCode
+}
+
 // RaceCalendarEvent is one race in an externally-sourced race calendar
 // (currently the World Athletics label road races and the 中国田协 competition
 // catalogue) mirrored into MySQL by the race-calendar sync pipelines, plus
@@ -74,6 +122,10 @@ const (
 // each listed field instead of the upstream value, and the stale-delete skips
 // any row with a non-empty override set, so an administrator's corrections
 // survive the next sync.
+//
+// ContentSource is the provenance of the six content sections (nil =
+// administrator, "WebSearch" = the automated web-research script). It is
+// admin-owned state on the same footing as the sections themselves.
 type RaceCalendarEvent struct {
 	ID       uint64  `gorm:"column:id;primaryKey;autoIncrement"`
 	Source   string  `gorm:"column:source;size:32;not null;uniqueIndex:uidx_race_cal_src_name_date,priority:1"`
@@ -110,6 +162,14 @@ type RaceCalendarEvent struct {
 	// to the race date).
 	Climate        *RaceClimate        `gorm:"column:climate;type:json;serializer:json"`
 	WeatherWindows []RaceWeatherWindow `gorm:"column:weather_windows;type:json;serializer:json"`
+	// ContentSource records who filled the content sections above: nil for an
+	// administrator typing in the dashboard, RaceContentSourceWebSearch for the
+	// automated web-research script. Like the sections it describes it is
+	// admin-owned — absent from raceCalendarUpsertCols, so the sync never writes
+	// it. It is row-level, not per-section: the sections are consumed as one
+	// asset, and a per-section map would be a vocabulary to maintain for a
+	// distinction nothing reads yet.
+	ContentSource *string `gorm:"column:content_source;size:32"`
 	// Published marks a race the product actually surfaces: the 小程序/Web race
 	// calendar shows published rows and nothing else, so a race is invisible to
 	// end users until an administrator publishes it. It is admin-owned state
@@ -218,6 +278,13 @@ type RaceCalendarItem struct {
 	Reputation      *RaceReputation      `gorm:"column:reputation;type:json;serializer:json"`
 	Photos          []RacePhoto          `gorm:"column:photos;type:json;serializer:json"`
 
+	// ContentSource is the item-level counterpart of the event's column: nil
+	// when an administrator typed the content, RaceContentSourceWebSearch when
+	// the automated web-research script filled it. The three entry fields
+	// (StartTime / EntryFee / Quota) count as content here — they are the fields
+	// the script fills most often and the upstream never supplies.
+	ContentSource *string `gorm:"column:content_source;size:32"`
+
 	// ContentStale marks an item the upstream no longer lists but that carries
 	// admin-maintained data, so the stale-delete kept it. Same meaning as the
 	// event-level flag, and it clears the same way: when upstream re-lists the
@@ -285,22 +352,46 @@ type RacePartitionRule struct {
 }
 
 // RaceSignupTimeline is the race-level signup window (user story 10). StartAt /
-// Deadline / LotteryResultAt are calendar dates ("2006-01-02"), never
-// timezone-converted; LotteryResultAt is nil when there is no lottery.
+// Deadline / LotteryResultAt / PaymentDeadline are calendar dates
+// ("2006-01-02"), never timezone-converted; LotteryResultAt is nil when there is
+// no lottery.
+//
+// Deadline is the entry deadline and PaymentDeadline the separate deadline to
+// pay after winning the lottery — the two are genuinely distinct for a Chinese
+// major: 上海马拉松 closed entries on 5/29 but gave winners until 7/20 to pay,
+// 西安马拉松 closed on 8/20 and to pay by 9/2. Losing only the first would hide
+// the date a runner can still act on. It is nil when the race has no lottery
+// (entry is paid at signup) or the two coincide.
 type RaceSignupTimeline struct {
 	StartAt         string  `json:"start_at"`
 	Deadline        string  `json:"deadline"`
 	Lottery         bool    `json:"lottery"`
 	LotteryResultAt *string `json:"lottery_result_at"`
+	PaymentDeadline *string `json:"payment_deadline"`
 }
 
 // RaceSignupChannel is one signup entry point (user story 11). Type is a free
-// label (官网 / 公众号 / 合作App); QrCodeURL is optional media, selectable.
+// label for what the channel IS (官网 / 公众号 / 合作App); URLType discriminates
+// what the channel's single URL points AT (see the RaceChannelURLType constants
+// above). The two are orthogonal — a 公众号 channel normally carries a QR-code
+// image, a 合作App channel an app-store page.
+//
+// URL is a pointer and may be nil: a channel with no pointer is still worth
+// recording, because 关注微信公众号「杭州马拉松」 is a real and common entry
+// route that has nothing to tap. URLType is empty exactly when URL is nil, and
+// required when it is not.
+//
+// There is deliberately no separate QR-code column. A channel is ONE entry
+// point, so it has ONE pointer, and whether that pointer is a page or a code
+// image is what URLType records. The former two-URL shape (a mandatory URL plus
+// an optional QrCodeURL) was ambiguous about which was the actionable link —
+// and by making the URL mandatory it made every 公众号 / 小程序 channel
+// unstorable, which is the majority of how Chinese races take entries.
 type RaceSignupChannel struct {
-	Name      string  `json:"name"`
-	Type      string  `json:"type"`
-	URL       string  `json:"url"`
-	QrCodeURL *string `json:"qr_code_url"`
+	Name    string  `json:"name"`
+	Type    string  `json:"type"`
+	URL     *string `json:"url"`
+	URLType string  `json:"url_type"`
 }
 
 // RacePacketPickup is one packet-pickup window (user story 12): when and where

@@ -140,7 +140,7 @@ func TestRaceContent_RoundTripsOnEventRow(t *testing.T) {
 	rain, humidity := 20, 45
 	wind := "东北风3级"
 	event.PartitionRule = &RacePartitionRule{Mode: "by_item", Description: "分项出发"}
-	event.SignupChannels = []RaceSignupChannel{{Name: "官网", Type: "官网", URL: "https://example.com"}}
+	event.SignupChannels = []RaceSignupChannel{{Name: "官网", Type: "官网", URL: strPtr("https://example.com"), URLType: RaceChannelURLTypeWeb}}
 	event.PacketPickup = []RacePacketPickup{{Time: "1月3日 9:00-18:00", Location: "会展中心"}}
 	event.Climate = &RaceClimate{Summary: "干冷晴朗，昼夜温差大"}
 	event.WeatherWindows = []RaceWeatherWindow{{

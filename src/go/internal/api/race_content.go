@@ -531,9 +531,10 @@ func newRaceItemContentDTO(row storage.RaceCalendarItem) *raceItemContentDTO {
 
 // validateRaceEventContent applies the cross-field rules the storage layer
 // deliberately does not know about. The rules are the minimum that keeps the
-// dataset honest: the partition mode's closed enum, calendar dates, non-empty
-// channel entries, and the weather windows' MM-DD/percent bounds. An
-// empty-summary climate object carries nothing and is treated as absent.
+// dataset honest: the partition mode's closed enum, calendar dates, channel
+// entries that point somewhere or nowhere but never half-way, and the weather
+// windows' MM-DD/percent bounds. An empty-summary climate object carries nothing
+// and is treated as absent.
 func validateRaceEventContent(in *raceEventContentInput) error {
 	if in.PartitionRule != nil {
 		if in.PartitionRule.Mode != "mixed" && in.PartitionRule.Mode != "by_item" {
@@ -547,9 +548,20 @@ func validateRaceEventContent(in *raceEventContentInput) error {
 		if in.SignupTimeline.LotteryResultAt != nil && !isCalendarDate(*in.SignupTimeline.LotteryResultAt) {
 			return errInvalidRaceContentInput
 		}
+		if in.SignupTimeline.PaymentDeadline != nil && !isCalendarDate(*in.SignupTimeline.PaymentDeadline) {
+			return errInvalidRaceContentInput
+		}
 	}
+	// A channel needs a name, and its URL and URL type must agree: a pointer
+	// needs a kind, and a kind without a pointer describes nothing. The URL is
+	// optional on purpose — 关注微信公众号 is a real entry route with nothing to
+	// tap — but a half-set pair is a client bug, not data.
 	for _, ch := range in.SignupChannels {
-		if strings.TrimSpace(ch.Name) == "" || strings.TrimSpace(ch.URL) == "" {
+		if strings.TrimSpace(ch.Name) == "" {
+			return errInvalidRaceContentInput
+		}
+		hasURL := ch.URL != nil && strings.TrimSpace(*ch.URL) != ""
+		if hasURL != storage.IsRaceChannelURLType(ch.URLType) {
 			return errInvalidRaceContentInput
 		}
 	}
@@ -564,6 +576,46 @@ func validateRaceEventContent(in *raceEventContentInput) error {
 		}
 	}
 	return nil
+}
+
+// normalizeRaceEventContent collapses representations that pass validation but
+// would be stored inconsistently: a whitespace-only URL is no URL, and a blank
+// url_type alongside it is absent rather than "". Storing "" for either would
+// make "unset" and "explicitly empty" indistinguishable in the JSON column.
+//
+// Order matters: this MUST run after validateRaceEventContent, because the
+// url_type it clears is precisely what that validator rejects. Run first, it
+// erases the evidence and turns a 400 into a silently cleaned value.
+func normalizeRaceEventContent(in *raceEventContentInput) {
+	for i := range in.SignupChannels {
+		ch := &in.SignupChannels[i]
+		if ch.URL != nil && strings.TrimSpace(*ch.URL) == "" {
+			ch.URL = nil
+		}
+		if ch.URL == nil {
+			ch.URLType = ""
+		}
+	}
+}
+
+// resolveContentSource turns a requested content-source value into the pointer
+// to store: nil for an absent, explicit-null or blank value (an administrator
+// hand-typing), else the value when it is a known term. An unknown term is a 400
+// — the vocabulary is closed so a typo cannot invent a provenance value. It
+// writes the error response itself and reports false so the caller returns.
+func resolveContentSource(c *gin.Context, in optionalField[string]) (*string, bool) {
+	if !in.Set || in.Value == nil {
+		return nil, true
+	}
+	v := strings.TrimSpace(*in.Value)
+	if v == "" {
+		return nil, true
+	}
+	if !storage.IsRaceContentSource(v) {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_content_source"})
+		return nil, false
+	}
+	return &v, true
 }
 
 // validateRaceItemContent is the item-level counterpart of

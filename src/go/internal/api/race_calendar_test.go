@@ -674,7 +674,7 @@ func TestRaceCalendarAdmin_EventContentPatch(t *testing.T) {
 	body := map[string]any{
 		"content": map[string]any{
 			"signup_timeline": map[string]any{"start_at": "2030-08-01", "deadline": "2030-09-15", "lottery": true, "lottery_result_at": "2030-09-20"},
-			"signup_channels": []map[string]any{{"name": "官网", "type": "官网", "url": "https://example.com"}},
+			"signup_channels": []map[string]any{{"name": "官网", "type": "官网", "url": "https://example.com", "url_type": "web"}},
 		},
 	}
 	w := h.do(t, http.MethodPatch, base, body, admin)
@@ -712,6 +712,161 @@ func TestRaceCalendarAdmin_EventContentPatch(t *testing.T) {
 	got = decodeRaceDTO(t, w)
 	if !got.ContentStale {
 		t.Fatalf("absent content key reset content_stale, want untouched")
+	}
+}
+
+// TestRaceCalendarAdmin_SignupChannelValidation pins the channel rule: a channel
+// needs a name, and its url and url_type must agree — a pointer needs a kind and
+// a kind needs a pointer. The point of the change is the "name only" case: a
+// 公众号 entry has no page to link to, and the old rule dropped it (and its
+// whole save) on the floor, which is how most Chinese races take entries.
+func TestRaceCalendarAdmin_SignupChannelValidation(t *testing.T) {
+	h := newRaceHarness(t)
+	event := h.store.seedEvent(syncEvent())
+	base := fmt.Sprintf("/api/admin/races/%d", event.ID)
+	admin := h.adminToken(t)
+
+	cases := []struct {
+		name    string
+		channel map[string]any
+		want    int
+	}{
+		{"web url with web type",
+			map[string]any{"name": "官网", "type": "官网", "url": "https://x.com", "url_type": "web"}, http.StatusOK},
+		{"qr image with qrcode type",
+			map[string]any{"name": "杭州马拉松", "type": "公众号", "url": "https://x.com/qr.png", "url_type": "qrcode"}, http.StatusOK},
+		{"name only, no pointer",
+			map[string]any{"name": "杭州马拉松", "type": "公众号"}, http.StatusOK},
+		{"url without a type",
+			map[string]any{"name": "官网", "url": "https://x.com"}, http.StatusBadRequest},
+		{"type without a url",
+			map[string]any{"name": "官网", "url_type": "web"}, http.StatusBadRequest},
+		{"unknown url type",
+			map[string]any{"name": "官网", "url": "https://x.com", "url_type": "ftp"}, http.StatusBadRequest},
+		{"blank url with no type",
+			map[string]any{"name": "官网", "url": "   "}, http.StatusOK},
+		{"no name",
+			map[string]any{"type": "官网", "url": "https://x.com", "url_type": "web"}, http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := map[string]any{"content": map[string]any{"signup_channels": []map[string]any{tc.channel}}}
+			if w := h.do(t, http.MethodPatch, base, body, admin); w.Code != tc.want {
+				t.Fatalf("got %d %s, want %d", w.Code, w.Body.String(), tc.want)
+			}
+		})
+	}
+
+	// A whitespace-only url is stored as absent, not as "".
+	w := h.do(t, http.MethodPatch, base, map[string]any{
+		"content": map[string]any{"signup_channels": []map[string]any{{"name": "官网", "url": "   "}}},
+	}, admin)
+	got := decodeRaceDTO(t, w)
+	if len(got.Content.SignupChannels) != 1 {
+		t.Fatalf("channels = %+v, want the channel stored", got.Content.SignupChannels)
+	}
+	if ch := got.Content.SignupChannels[0]; ch.URL != nil || ch.URLType != "" {
+		t.Fatalf("channel = %+v, want url absent and url_type empty", ch)
+	}
+}
+
+// TestRaceCalendarAdmin_PaymentDeadline covers the post-lottery payment deadline
+// the timeline gained: it is a calendar date like its siblings, and absent is
+// legitimate (a race with no lottery pays at signup).
+func TestRaceCalendarAdmin_PaymentDeadline(t *testing.T) {
+	h := newRaceHarness(t)
+	event := h.store.seedEvent(syncEvent())
+	base := fmt.Sprintf("/api/admin/races/%d", event.ID)
+	admin := h.adminToken(t)
+
+	timeline := func(extra map[string]any) map[string]any {
+		body := map[string]any{"start_at": "2030-08-01", "deadline": "2030-09-15", "lottery": true, "lottery_result_at": "2030-09-20"}
+		for k, v := range extra {
+			body[k] = v
+		}
+		return map[string]any{"content": map[string]any{"signup_timeline": body}}
+	}
+
+	w := h.do(t, http.MethodPatch, base, timeline(map[string]any{"payment_deadline": "2030-09-30"}), admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("payment_deadline = %d: %s", w.Code, w.Body.String())
+	}
+	got := decodeRaceDTO(t, w)
+	if got.Content.SignupTimeline.PaymentDeadline == nil || *got.Content.SignupTimeline.PaymentDeadline != "2030-09-30" {
+		t.Fatalf("payment_deadline = %v, want 2030-09-30", got.Content.SignupTimeline.PaymentDeadline)
+	}
+
+	// A non-date is rejected rather than stored.
+	for _, bad := range []string{"09/30", "2030-9-30", "2030-13-01", ""} {
+		w = h.do(t, http.MethodPatch, base, timeline(map[string]any{"payment_deadline": bad}), admin)
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_request") {
+			t.Fatalf("payment_deadline %q = %d %s, want 400 invalid_request", bad, w.Code, w.Body.String())
+		}
+	}
+
+	// Absent stays absent (no lottery ⇒ pay at signup).
+	w = h.do(t, http.MethodPatch, base, timeline(nil), admin)
+	got = decodeRaceDTO(t, w)
+	if got.Content.SignupTimeline.PaymentDeadline != nil {
+		t.Fatalf("payment_deadline = %v, want absent", *got.Content.SignupTimeline.PaymentDeadline)
+	}
+}
+
+// TestRaceCalendarAdmin_ContentSource covers the content provenance field: the
+// web-research script declares "WebSearch", the vocabulary is closed so a typo
+// cannot invent a value, and an explicit null hands the content back to
+// "administrator" without touching the content itself.
+func TestRaceCalendarAdmin_ContentSource(t *testing.T) {
+	h := newRaceHarness(t)
+	event := h.store.seedEvent(syncEvent())
+	base := fmt.Sprintf("/api/admin/races/%d", event.ID)
+	admin := h.adminToken(t)
+
+	content := map[string]any{"content": map[string]any{
+		"signup_channels": []map[string]any{{"name": "杭州马拉松", "type": "公众号"}},
+	}}
+	withSource := func(src any) map[string]any {
+		body := map[string]any{"content": content["content"]}
+		if src != nil {
+			body["content_source"] = src
+		}
+		return body
+	}
+
+	// A fresh race has no provenance.
+	got := decodeRaceDTO(t, h.do(t, http.MethodGet, base, nil, admin))
+	if got.ContentSource != nil {
+		t.Fatalf("content_source = %q, want null on a fresh race", *got.ContentSource)
+	}
+
+	w := h.do(t, http.MethodPatch, base, withSource("WebSearch"), admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("content_source = %d: %s", w.Code, w.Body.String())
+	}
+	if got = decodeRaceDTO(t, w); got.ContentSource == nil || *got.ContentSource != "WebSearch" {
+		t.Fatalf("content_source = %v, want WebSearch", got.ContentSource)
+	}
+
+	// An unknown term is a 400, not a stored value.
+	w = h.do(t, http.MethodPatch, base, withSource("SomeBlog"), admin)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid_content_source") {
+		t.Fatalf("unknown source = %d %s, want 400 invalid_content_source", w.Code, w.Body.String())
+	}
+
+	// An absent key leaves the value alone.
+	w = h.do(t, http.MethodPatch, base, withSource(nil), admin)
+	if got = decodeRaceDTO(t, w); got.ContentSource == nil || *got.ContentSource != "WebSearch" {
+		t.Fatalf("content_source = %v, want untouched", got.ContentSource)
+	}
+
+	// An explicit null clears it, leaving the content itself in place.
+	w = h.do(t, http.MethodPatch, base, map[string]any{"content_source": nil}, admin)
+	got = decodeRaceDTO(t, w)
+	if got.ContentSource != nil {
+		t.Fatalf("content_source = %q, want cleared", *got.ContentSource)
+	}
+	if got.Content == nil || len(got.Content.SignupChannels) != 1 {
+		t.Fatalf("content = %+v, want the content kept when only the source is cleared", got.Content)
 	}
 }
 
