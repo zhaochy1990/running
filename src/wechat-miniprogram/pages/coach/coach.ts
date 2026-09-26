@@ -64,9 +64,11 @@ interface CoachPageData {
   sending: boolean;
   scrollIntoId: string;
   // 流式回复：streaming 时展示流式气泡；streamPhase 为阶段文案（无正文时显示）；
-  // streamText 为累积纯文本（打字机）。done 后转入 messages 的完整 markdown 消息。
+  // streamNarration 为模型工具调用前的进度说明；streamText 为累积纯文本（打字机）。
+  // done 后转入 messages 的完整 markdown 消息，三者都清空。
   streaming: boolean;
   streamPhase: string;
+  streamNarration: string;
   streamText: string;
   // 流式气泡 id（随打字机变长自增，drive scroll-into-view 跟随）。
   streamScrollId: string;
@@ -90,6 +92,8 @@ interface CoachPageHandlers {
   onBlur(): void;
   onSend(): Promise<void>;
   onRetry(e: WechatMiniprogram.TouchEvent): void;
+  onMessageLongPress(e: WechatMiniprogram.TouchEvent): void;
+  copyMessageText(messageId: number): void;
   onMenuTap(): void;
   onCloseDrawer(): void;
   onSearchTap(): void;
@@ -215,6 +219,7 @@ Page<CoachPageData, CoachPageHandlers>({
     sending: false,
     streaming: false,
     streamPhase: '',
+    streamNarration: '',
     streamText: '',
     streamScrollId: 'msg-streaming',
     scrollIntoId: '',
@@ -395,6 +400,36 @@ Page<CoachPageData, CoachPageHandlers>({
     this.setData({ keyboardHeight: 0, keyboardPaddedStyle: '' });
   },
 
+  /**
+   * 长按助手消息 → 复制全文。
+   *
+   * 为什么需要它：mp-html 把每个块渲染成独立的 `<rich-text>`，而 rich-text 的选区
+   * 不跨实例——长按一个段落只能选中该段，无法整段答案一次取走。所以这里补一个
+   * 「复制全文」入口。用户消息是单个 `<text user-select>`，自身可选中复制，无需接管。
+   */
+  onMessageLongPress(e: WechatMiniprogram.TouchEvent) {
+    const { id, role } = e.currentTarget.dataset as { id?: number; role?: string };
+    if (role !== 'assistant' || typeof id !== 'number') return;
+    wx.showActionSheet({
+      itemList: ['复制全文'],
+      success: (res) => {
+        if (res.tapIndex === 0) this.copyMessageText(id);
+      },
+      // 用户点空白取消：静默返回，不要弹错误提示。
+      fail: () => undefined,
+    });
+  },
+
+  /** 复制一条助手消息。优先取渲染后的纯文本，取不到时退回原始 markdown。 */
+  copyMessageText(messageId: number) {
+    const message = this.data.messages.find((m) => m.id === messageId);
+    if (!message) return;
+    const component = this.selectComponent(`#md-${messageId}`) as { getText?: () => string } | null;
+    const rendered = component?.getText?.();
+    // setClipboardData 自带“内容已复制”toast，不再自己弹。
+    wx.setClipboardData({ data: rendered && rendered.trim() ? rendered : message.content });
+  },
+
   async onSend() {
     const text = this.data.input.trim();
     if (!text || this.data.sending) return;
@@ -449,6 +484,7 @@ Page<CoachPageData, CoachPageHandlers>({
       // 空文案：真实阶段由服务端 status 事件驱动（无工具调用的轮次没有查询阶段，
       // 直接跳到「正在分析」）。
       streamPhase: '',
+      streamNarration: '',
       streamText: '',
       streamScrollId: 'msg-streaming',
       scrollIntoId: 'msg-streaming',
@@ -466,8 +502,15 @@ Page<CoachPageData, CoachPageHandlers>({
     );
   },
 
-  /** 流式事件：status 更新阶段文案；delta 累积纯文本（打字机）。 */
+  /** 流式事件：status 更新阶段文案；narration 更新进度说明；delta 累积纯文本（打字机）。 */
   handleStreamEvent(ev: CoachStreamEvent) {
+    if (ev.kind === 'narration') {
+      // 模型调用工具前的一句话说明。整段一次到达（不是逐 token），展示最新一条即可；
+      // 它属于进度区，绝不进 streamText，否则会被当成回答正文。
+      const text = ev.delta.trim();
+      if (text.length > 0 && this.data.streamNarration !== text) this.setData({ streamNarration: text });
+      return;
+    }
     if (ev.kind === 'delta') {
       // 轻量节流：同一帧内的多个 delta 合并成一次 setData，避免每 token 都刷一次 WXML。
       streamBuffer += ev.delta;
@@ -515,6 +558,7 @@ Page<CoachPageData, CoachPageHandlers>({
       sending: false,
       streaming: false,
       streamPhase: '',
+      streamNarration: '',
       streamText: '',
       scrollIntoId: `msg-${assistantMsg.id}`,
     });
@@ -536,6 +580,7 @@ Page<CoachPageData, CoachPageHandlers>({
       sending: false,
       streaming: false,
       streamPhase: '',
+      streamNarration: '',
       streamText: '',
       scrollIntoId: `msg-${userMsgId}`,
     });
@@ -550,7 +595,7 @@ Page<CoachPageData, CoachPageHandlers>({
       streamFlushTimer = null;
     }
     streamBuffer = '';
-    this.setData({ sending: false, streaming: false, streamPhase: '', streamText: '' });
+    this.setData({ sending: false, streaming: false, streamPhase: '', streamNarration: '', streamText: '' });
   },
 
 

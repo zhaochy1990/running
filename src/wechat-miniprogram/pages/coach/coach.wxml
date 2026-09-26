@@ -29,15 +29,19 @@
         wx:key="id"
         id="msg-{{item.id}}"
         class="coach-msg {{item.role === 'user' ? 'coach-msg--user' : 'coach-msg--assistant'}}"
+        data-id="{{item.id}}"
+        data-role="{{item.role}}"
+        bindlongpress="onMessageLongPress"
       >
         <view class="coach-msg__bubble">
-          <text wx:if="{{item.role === 'user'}}">{{item.content}}</text>
+          <text wx:if="{{item.role === 'user'}}" user-select="true">{{item.content}}</text>
           <mp-html
             wx:else
+            id="md-{{item.id}}"
             content="{{item.html}}"
             containerStyle="{{containerStyle}}"
             tagStyle="{{tagStyle}}"
-            selectable="{{true}}"
+            selectable="force"
           />
         </view>
         <view
@@ -51,6 +55,8 @@
       <view wx:if="{{streaming}}" id="{{streamScrollId}}" class="coach-msg coach-msg--assistant">
         <view class="coach-msg__bubble coach-msg__streaming">
           <text wx:if="{{streamPhase}}" class="coach-msg__phase">{{streamPhase}}</text>
+          <!-- 模型调用工具前的进度说明，属于进度区，不是回答正文 -->
+          <text wx:if="{{streamNarration}}" class="coach-msg__narration">{{streamNarration}}</text>
           <view class="coach-msg__stream-text-wrap">
             <text wx:if="{{streamText}}" class="coach-msg__stream-text">{{streamText}}</text>
             <view class="coach-stream-cursor"></view>

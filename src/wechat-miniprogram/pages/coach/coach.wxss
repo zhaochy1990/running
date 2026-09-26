@@ -235,6 +235,15 @@
   color: #ffb3af;
 }
 
+/* 工具调用前的进度说明：比 phase 略大、更淡，读起来像旁白而不是正文 */
+.coach-msg__narration {
+  font-size: 24rpx;
+  line-height: 34rpx;
+  color: #ffb3af;
+  opacity: 0.72;
+  font-style: italic;
+}
+
 .coach-msg__stream-text-wrap {
   display: flex;
   align-items: baseline;
