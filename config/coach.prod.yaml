@@ -1,0 +1,82 @@
+# Coach LLM Configuration - PROD overlay
+#
+# Loaded as config/coach.<STRIDE_COACH_ENV>.yaml. Both coach Dockerfiles bake
+# STRIDE_COACH_ENV=prod, so this file is the agent/model registry that
+# stride-coach-api and stride-coach-worker boot with. Running locally against
+# prod models means exporting STRIDE_COACH_ENV=prod (see .vscode/launch.json).
+#
+# Tracked on purpose (see .gitignore): the Dockerfiles COPY config/ into the
+# image, so a gitignored file would be missing from the CI checkout and
+# coachAgentConfigFiles() would resolve [] -> the services crash at boot.
+# Keep it secret-free: model keys come from DEEPSEEK_API_KEY, DB creds from the
+# container env (STRIDE_COACH_DATA_* / COACH_AGENT_MYSQL_*).
+#
+# Model properties live in models.<key>. Agent roles below only reference a
+# model key, so switching one role is a one-line edit. DeepSeek V4 uses the
+# official OpenAI-compatible endpoint: https://api.deepseek.com
+
+models:
+  - name: deepseekv4pro
+    provider: openai-compatible
+    model: deepseek-v4-pro
+    deployment: deepseek-v4-pro
+    endpoint: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY
+    auth: api-key
+    api_kind: responses
+    max_tokens: 4096
+    timeout_s: 120
+    reasoning_effort: high
+
+  - name: deepseekv4flash
+    provider: openai-compatible
+    model: deepseek-v4-flash
+    deployment: deepseek-v4-flash
+    endpoint: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY
+    auth: api-key
+    api_kind: responses
+    max_tokens: 4096
+    timeout_s: 120
+    reasoning_effort: high
+
+
+agents:
+  - name: qa
+    model: deepseekv4flash
+    thinking: enabled
+    # none/low/high/max
+    reasoning_effort: low
+    api_kind: chat-completions
+    max_tokens: 65536
+    timeout_s: 600
+  - name: orchestrator
+    model: deepseekv4flash
+    api_kind: chat-completions
+    thinking: disabled
+    max_tokens: 4096
+    timeout_s: 60
+
+  # 周计划生成是核心产物，保持 pro；其余角色用 flash。
+  - name: weekly_plan
+    model: deepseekv4pro
+    max_tokens: 65536
+    timeout_s: 600
+  - name: master_plan
+    model: deepseekv4flash
+    max_tokens: 65536
+    timeout_s: 600  
+  - name: reviewer
+    model: deepseekv4flash
+    max_tokens: 16384
+    timeout_s: 300
+  - name: commentary
+    model: deepseekv4flash
+ 
+
+
+observability:
+  langsmith_enabled: false
+  langsmith_project: stride-coach-dev
+  langsmith_endpoint: https://api.smith.langchain.com
+  langsmith_api_key_env: LANGSMITH_API_KEY

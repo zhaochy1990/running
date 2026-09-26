@@ -81,7 +81,10 @@ node_modules/
 data/*/testing/**
 .opencode
 src/coach_agent/.env
-config/coach.prod.yaml
+# config/coach.prod.yaml is tracked on purpose: both coach Dockerfiles COPY it
+# into the image, so it has to be in the build context (a gitignored file is
+# absent from the CI checkout). Keep it secret-free — model keys come from
+# DEEPSEEK_API_KEY, DB creds from the container env.
 src/coach_agent/test-output
 src/go/config.prod.yml
 src/coach_agent_api/config/coach-api.local.yaml
