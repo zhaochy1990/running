@@ -67,15 +67,14 @@ export function createRaceTools(store: DataProvider): StructuredTool[] {
     {
       name: "get_race_history",
       description:
-        "回看运动员“比赛级别”的跑步（默认距离 ≥ 20km，最近在前），含距离、用时、平均配速、平均/最大心率与主观感受 feel。" +
-        "数据没有显式“比赛”标记，请结合 feel（awful/bad 常是跑崩信号）、配速是否明显慢于同距离 PB/近期水平来判断哪次是比赛、是否跑崩。" +
-        "生成或调整赛季计划前，先用它了解运动员过往比赛表现。",
+        "回看运动员的长距离跑步记录（默认距离 ≥ 20km，最近在前），含距离、用时、平均配速、平均/最大心率与主观感受 feel。" +
+        "数据没有显式的“比赛”标记，返回的记录只是比赛候选。",
       schema: getRaceHistorySchema,
       handler: (input, runtime) => impl.getRaceHistory(input, runtime),
     },
     {
       name: "get_personal_bests",
-      description: "获取运动员各标准距离（5K/10K/HM/FM 等）的个人最好成绩（用时秒 + 取得日期），作为“这次比赛本该多快”的参照系。",
+      description: "获取运动员各标准距离（5K/10K/HM/FM 等）的个人最好成绩（用时秒 + 取得日期）。",
       schema: getPersonalBestsSchema,
       handler: (input, runtime) => impl.getPersonalBests(input, runtime),
     },

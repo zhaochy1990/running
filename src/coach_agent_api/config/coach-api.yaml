@@ -1,18 +1,50 @@
 # Coach API infrastructure defaults. Environment files and then environment
 # variables override this file.
+#
+# Every key the Coach API reads at startup is listed here. Merge order (later
+# wins): this file -> coach-api.<STRIDE_COACH_ENV>.yaml -> environment variables.
+#
+# Secrets appear below as empty (or dev-default) values with the environment
+# variable that carries the real one. An empty secret is not a silent fallback:
+# `internal_token` fails validation and aborts startup on purpose, and the
+# others point at the local dev stack.
+#
+# NOT read from here: the LLM registry and observability config live in the
+# repo-root coach config, loaded separately by @stride/coach-agent from
+# `config/coach.yaml` + `config/coach.<STRIDE_COACH_ENV>.yaml`. That file owns
+# `models[].api_key_env` (DEEPSEEK_API_KEY) and the Langfuse credentials
+# (LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_BASE_URL). Both are
+# startup dependencies of this service: the graph builds its models while
+# booting, so a missing DEEPSEEK_API_KEY aborts startup, while Langfuse is a
+# no-op until all three LANGFUSE_* variables are set.
+
 api:
   # host: 0.0.0.0
-  port: 8888
+  port: 8889
 
 auth:
+  # Exactly one of public_key_pem / public_key_path / auth_service_url.
+  # Env: STRIDE_AUTH_PUBLIC_KEY_PEM (secret).
   public_key_pem: ""
+  # RS256 public key path, relative to this file's directory.
+  # Env: STRIDE_AUTH_PUBLIC_KEY_PATH.
   public_key_path: ""
   # When set, the RS256 public key is fetched from <url>/api/system/public-key
-  # at startup (only one of public_key_pem / public_key_path / auth_service_url).
+  # at startup. Blocking: an unreachable auth-service aborts startup.
+  # Env: STRIDE_AUTH_SERVICE_URL.
   auth_service_url: "https://api.stride-running.cn"
+  # Env: STRIDE_AUTH_ISSUER.
   issuer: auth-service
+  # Env: STRIDE_AUTH_AUDIENCE. Empty accepts any audience (the mini-program and
+  # the web frontend mint different ones and only one can be matched).
   audience: ""
+  # Env: STRIDE_AUTH_ADMIN_AUDIENCE. Marks an admin-dashboard token, which
+  # unlocks the cross-user plan-job surface. Empty = no token is admin.
+  admin_audience: ""
 
+# Read-only training data (`stride`), read lazily by the coach's data provider.
+# Env: STRIDE_COACH_DATA_HOST / _PORT / _READONLY_USER /
+#      _READONLY_PASSWORD (secret) / _DATABASE.
 stride_database:
   host: "127.0.0.1"
   port: 3306
@@ -20,6 +52,9 @@ stride_database:
   password: "root_password"
   database: "stride"
 
+# Coach persistence (`coach_agent`): checkpoints, turn receipts, thread locks.
+# Tables are created and migrated at startup, so the account needs DDL rights.
+# Env: COACH_AGENT_MYSQL_HOST / _PORT / _USER / _PASSWORD (secret) / _DATABASE.
 persistence_database:
   host: "127.0.0.1"
   port: 3306
@@ -27,16 +62,22 @@ persistence_database:
   password: "root_password"
   database: "coach_agent"
 
-# Plan-job broker used by the deterministic enqueue endpoint.
+# RabbitMQ broker used by the deterministic enqueue endpoint (ADR 0030). The
+# connection is opened and the topology below declared at startup, so an
+# unreachable broker aborts startup.
+# Env: STRIDE_COACH_PLAN_JOBS_AMQP_URL (secret).
 plan_jobs:
-  # amqp_url comes from STRIDE_COACH_PLAN_JOBS_AMQP_URL (secret; never in YAML).
+  amqp_url: "amqp://guest:guest@127.0.0.1:5672/"
   queues:
     work: plan.jobs
     retry: plan.jobs.retry
     poison: plan.jobs.poison
 
 # Go API internal endpoints: plan-job rows are created and polled there, because
-# Go owns the `jobs` table (ADR 0033).
+# Go owns the `jobs` table (ADR 0033). Called lazily, never at startup.
 go_api:
   base_url: "https://api.stride-running.cn"
-  # internal_token comes from STRIDE_COACH_GO_API_INTERNAL_TOKEN (secret).
+  # Env: STRIDE_COACH_GO_API_INTERNAL_TOKEN (secret). Deliberately empty with no
+  # default: an empty token fails validation, so the API refuses to boot rather
+  # than call Go unauthenticated.
+  internal_token: ""

@@ -10,27 +10,27 @@ export const ENV = {
 export type Env = typeof ENV[keyof typeof ENV];
 
 const API_BASE_URLS: Record<Env, string> = {
-  [ENV.DEV]: 'http://127.0.0.1:3000',
-  [ENV.STAGING]: 'https://staging.stride.run',
+  [ENV.DEV]: 'https://api.stride-running.cn',
+  [ENV.STAGING]: 'https://api.stride-running.cn',
   [ENV.PROD]: 'https://api.stride-running.cn',
 };
 const AUTH_BASE_URLS: Record<Env, string> = {
-  [ENV.DEV]: 'http://127.0.0.1:3001',
+  [ENV.DEV]: 'https://api.stride-running.cn',
   [ENV.STAGING]: 'https://api.stride-running.cn',
   [ENV.PROD]: 'https://api.stride-running.cn',
 };
 const COACH_BASE_URLS: Record<Env, string> = {
-  [ENV.DEV]: 'http://127.0.0.1:8888',
-  [ENV.STAGING]: 'https://api.stride-running.cn',
+  [ENV.DEV]: 'http://127.0.0.1:8889',
+  [ENV.STAGING]: 'http://127.0.0.1:8889',
   [ENV.PROD]: 'https://api.stride-running.cn',
 };
 const client_ids: Record<Env, string> = {
   [ENV.DEV]: 'app_43290db46d71409caa36fc4d',
-  [ENV.STAGING]: '',
+  [ENV.STAGING]: 'app_895073719c0147368b8feed3',
   [ENV.PROD]: 'app_895073719c0147368b8feed3',
 }
 
-export const CURRENT_ENV: Env = ENV.PROD;
+export const CURRENT_ENV: Env = ENV.STAGING;
 export const API_BASE_URL = API_BASE_URLS[CURRENT_ENV];
 export const AUTH_BASE_URL = AUTH_BASE_URLS[CURRENT_ENV];
 export const COACH_BASE_URL = COACH_BASE_URLS[CURRENT_ENV];

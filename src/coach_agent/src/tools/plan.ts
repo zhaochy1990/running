@@ -1,16 +1,15 @@
 /** Read-only master and weekly plan tools backed by DataProvider. */
 
 import type { StructuredTool } from "@langchain/core/tools";
+import { mondayOnOrBefore, weekFolder } from "@stride/contract";
 import * as z from "zod";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
 import type { DataProvider, MasterPlanDocument, WeeklyPlanDocument } from "../data/dataProvider.js";
 import { defineCoachTools } from "./common.js";
 
-const WEEK_NAME_RE = /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}$/;
-
 const getMasterPlanSchema = z.object({});
 const getWeeklyPlanSchema = z.object({
-  weekName: z.string().regex(WEEK_NAME_RE, "expected YYYY-MM-DD_MM-DD").describe("week name, format: YYYY-MM-DD_MM-DD, example 2026-07-20_07-26"),
+  weekStart: z.iso.date().describe("周起始日（周一），格式 YYYY-MM-DD，例 2026-07-20。传该周内任意一天都会归一到周一。"),
 });
 
 export interface PlanStore {
@@ -28,11 +27,10 @@ class PlanToolImpl {
   }
 
   async getWeeklyPlan(input: z.infer<typeof getWeeklyPlanSchema>, runtime: CoachToolRuntime): Promise<WeeklyPlanDocument | null> {
-    if (!WEEK_NAME_RE.test(input.weekName)) {
-      throw new Error(`get_weekly_plan: invalid weekName ${input.weekName}, expected YYYY-MM-DD_MM-DD`);
-    }
-
-    return this.store.getWeeklyPlan(requireUserId(runtime, "get_week_plan"), input.weekName);
+    const userId = requireUserId(runtime, "get_weekly_plan");
+    // MySQL keys weekly plans by their Monday, so normalize the caller's
+    // week-start date to the canonical Monday-Sunday folder identity.
+    return this.store.getWeeklyPlan(userId, weekFolder(mondayOnOrBefore(input.weekStart)));
   }
 }
 
@@ -47,7 +45,7 @@ export function createPlanTools(store: DataProvider): StructuredTool[] {
     },
     {
       name: "get_weekly_plan",
-      description: "查询运动员某一周的训练计划，包含每天训练、营养与教练备注。需要使用weekName指定查询周。没有匹配计划时返回 null。",
+      description: "查询运动员某一周（周一起算的自然周）的训练计划，包含每天训练、营养与教练备注。weekStart 指定查询周的周一，没有匹配计划时返回 null。",
       schema: getWeeklyPlanSchema,
       handler: (input, runtime) => impl.getWeeklyPlan(input, runtime),
     },

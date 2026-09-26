@@ -23,6 +23,10 @@ class FakePlanStore implements PlanStore {
   }
 }
 
+// 2026-07-20 is a Monday; 2026-07-23 falls in the same week.
+const currentMonday = "2026-07-20";
+const midWeekDay = "2026-07-23";
+
 test("plan tools query the data provider with the runtime user identity", async () => {
   const store = new FakePlanStore();
   const [masterTool, weeklyTool] = createPlanTools(store as never);
@@ -34,11 +38,30 @@ test("plan tools query the data provider with the runtime user identity", async 
     plan_id: "master-1",
     status: "active",
   });
-  assert.deepEqual(await weeklyTool!.invoke({ weekName: "2026-07-20_07-26" }, config), { week_name: "2026-07-20_07-26", sessions: [] });
+  assert.deepEqual(await weeklyTool!.invoke({ weekStart: currentMonday }, config), { week_name: "2026-07-20_07-26", sessions: [] });
   assert.deepEqual(store.calls, [
     { method: "master", userId, day: "2026-07-20" },
     { method: "weekly", userId, weekName: "2026-07-20_07-26" },
   ]);
+});
+
+test("get_weekly_plan normalizes any day in the week to its Monday folder", async () => {
+  const store = new FakePlanStore();
+  const [, weeklyTool] = createPlanTools(store as never);
+  const config = { context: { userId, asof: currentMonday } };
+
+  // Same plan as querying the Monday directly — the folder identity is what MySQL keys on.
+  assert.deepEqual(await weeklyTool!.invoke({ weekStart: midWeekDay }, config), { week_name: "2026-07-20_07-26", sessions: [] });
+  assert.deepEqual(store.calls, [{ method: "weekly", userId, weekName: "2026-07-20_07-26" }]);
+
+  // A week with no plan is null, not an error.
+  assert.equal(await weeklyTool!.invoke({ weekStart: "2026-07-13" }, config), null);
+});
+
+test("get_weekly_plan rejects a non-ISO week start", async () => {
+  const [, weeklyTool] = createPlanTools(new FakePlanStore() as never);
+  const config = { context: { userId, asof: currentMonday } };
+  await assert.rejects(() => weeklyTool!.invoke({ weekStart: "20260720" }, config));
 });
 
 test("plan tools reject calls without a runtime user identity", async () => {

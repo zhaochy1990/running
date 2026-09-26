@@ -24,7 +24,7 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "test:api",
+            "name": "run coach agent api",
             "runtimeExecutable": "pnpm",
             "cwd": "${workspaceFolder}/src/coach_agent_api",
             "runtimeArgs": [
@@ -39,7 +39,10 @@
             ],
             "sourceMaps": true,
             "console": "integratedTerminal",
-            "autoAttachChildProcesses": true
+            "autoAttachChildProcesses": true,
+            "env": {
+                "STRIDE_COACH_ENV":"prod"
+            }
         },
         {
             "type": "node",

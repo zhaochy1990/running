@@ -27,7 +27,7 @@ const getActivitiesByDateRangeSchema = z.object({
   startDay: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
-    .describe("查询起始日期（含），格式 YYYY-MM-DD（Asia/Shanghai 日历日）。回答“今天/最近跑得怎么样”时，围绕 asof 查最近 7 天足够。"),
+    .describe("查询起始日期（含），格式 YYYY-MM-DD（Asia/Shanghai 日历日）"),
   endDay: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
@@ -139,15 +139,13 @@ export function createActivitiesTools(store: DataProvider): StructuredTool[] {
       name: "get_activities_by_date_range",
       description:
         "获取运动员在某个日期区间（Asia/Shanghai 日历日，含起止两端）的运动清单，按 date 升序返回。每条运动只含汇总字段、`laps` 为空 []；要看分段明细请用 get_activity_details(labelId)。" +
-        "默认最多返回最近 30 条（按 date 升序取末尾），超出则截断并置 truncated=true。startDay 必填；endDay 缺省为 runtime context 的 asof。" +
-        "回答“今天/最近跑得怎么样”时，围绕 asof 查最近 7 天、endDay 留空即可。",
+        "默认最多返回最近 30 条（按 date 升序取末尾），超出则截断并置 truncated=true。startDay 必填；endDay 缺省为 runtime context 的 asof。",
       schema: getActivitiesByDateRangeSchema,
       handler: (input, runtime) => impl.getActivitiesByDateRange(input, runtime),
     },
     {
       name: "get_activity_details",
-      description:
-        "获取单条运动的完整明细，含 `laps` 分段（每公里/每秒）。用 get_activities_by_date_range 拿到的 labelId 传入。一次只取一条，用于需要看分段/间歇/配速拆解的场景。",
+      description: "获取单条运动的完整明细，含 `laps` 分段（每公里/每圈）。",
       schema: getActivityDetailSchema,
       handler: (input, runtime) => impl.getActivityDetail(input, runtime),
     },

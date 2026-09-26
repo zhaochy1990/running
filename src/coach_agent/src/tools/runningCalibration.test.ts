@@ -29,7 +29,9 @@ test("get_running_calibration returns the latest threshold and zones for the run
   assert.deepEqual(await tool.invoke({}, { context: { userId, asof: "2026-08-14" } }), {
     asOfDate: "2026-08-08",
     thresholdHr: 168,
-    thresholdSpeedMps: 3.9,
+    // 1000 / 3.9 m/s, rounded to whole seconds — same unit as paceZones.
+    // The raw m/s field is deliberately not surfaced to the model.
+    thresholdPaceSPerKm: 256,
     rhrBaseline: 48,
     thresholdHrConfidence: "high",
     thresholdSpeedConfidence: "medium",

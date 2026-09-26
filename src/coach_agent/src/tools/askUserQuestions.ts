@@ -74,7 +74,6 @@ export const askUserQuestionTool = tool(
     description:
       "当你无法仅凭现有数据得出可靠结论、需要运动员本人澄清时，用它向运动员追问一个问题并等待回答。" +
       "可给出候选答案 options（每项 label + 可选 description）帮助运动员作答，运动员也可自由回答。" +
-      "典型场景：数据显示某次比赛异常（如跑崩/严重掉速），但真正原因（心肺、抽筋、补给、配速策略等）无法从数据判断时，向运动员追问当时的具体情况。" +
       "一次只问一个核心问题，问题要具体。",
     schema: askUserQuestionSchema,
   },
