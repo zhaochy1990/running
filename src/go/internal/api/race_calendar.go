@@ -89,9 +89,10 @@ type raceCalendarEventDTO struct {
 	Province   *string `json:"province"`
 	City       *string `json:"city"`
 	Label      *string `json:"label"`
-	// WALabel is this race's World Athletics tier, derived by the
-	// race_calendar_wa_label step from the 国际田联 mirror (null when no World
-	// Athletics listing matches).
+	// WALabel is this race's World Athletics tier (Platinum/Gold/Elite/Label),
+	// written by the race_calendar_wa_label step, or null when the race has none.
+	// One meaning regardless of source: a 中国田协 row takes it from its World
+	// Athletics counterpart, and a 国际田联 row mirrors its own tier.
 	WALabel      *string              `json:"wa_label"`
 	RaceTypes    []string             `json:"race_types"`
 	FieldSources map[string]string    `json:"field_sources"`

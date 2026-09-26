@@ -180,16 +180,23 @@ type RaceCalendarEvent struct {
 	// asset, and a per-section map would be a vocabulary to maintain for a
 	// distinction nothing reads yet.
 	ContentSource *string `gorm:"column:content_source;size:32"`
-	// WALabel is the World Athletics road-race label tier (Platinum/Gold/Elite/
-	// Label) of this race, derived from the 国际田联 mirror and written onto the
-	// 中国田协 row so one race carries both its 中国田协 grade (Label below) and
-	// its WA tier.
+	// WALabel is this race's World Athletics road-race label tier (Platinum /
+	// Gold / Elite / Label), or nil when it has none. The rule is uniform and
+	// source-independent: it is written on EVERY row, so a reader consults one
+	// column instead of reasoning about which calendar the row came from.
 	//
-	// It is written by the race_calendar_wa_label step, which matches a 中国田协
-	// race to its World Athletics listing by (race_date, city) and copies the
-	// tier across. Like the content columns it is NOT in raceCalendarUpsertCols,
-	// so neither calendar mirror clobbers it — the 中国田协 mirror writes only its
-	// own source's rows and would not touch this column even if it did.
+	// For the ~38 races both calendars list, the tier is copied from the
+	// 国际田联 row onto the 中国田协 row, which is the one a runner sees — that
+	// row's own Label holds 中国田协's grade (A/B/C…), so the two coexist. For the
+	// ~12 races 中国田协 does not list at all (上海马拉松 Platinum, 北京马拉松
+	// Gold…), the 国际田联 row *is* the race, and the step mirrors its own Label
+	// into WALabel; without that those races — the most prestigious ones — would
+	// read as having no World Athletics tier.
+	//
+	// It is written by the race_calendar_wa_label step. Like the content columns
+	// it is NOT in raceCalendarUpsertCols, so neither calendar mirror clobbers
+	// it — the 中国田协 mirror writes only its own source's rows and would not
+	// touch this column even if it did.
 	//
 	// It is admin-overrideable (see RaceCalendarOverrideableFields): the match is
 	// a heuristic, so an administrator must be able to correct or clear a wrong
