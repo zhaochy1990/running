@@ -37,7 +37,7 @@ from stride_core.workout_spec import (
     WorkoutBlock,
     WorkoutStep,
 )
-from stride_server.config.models import InternalConfig, PlanConfig
+from stride_server.config.models import InternalConfig
 
 
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
@@ -59,12 +59,6 @@ def test_internal_token_validation_rejects_missing_config() -> None:
         validate_internal_token_value("anything", InternalConfig(token=""))
 
     assert exc_info.value.status_code == 401
-
-
-def test_plan_json_priority_uses_config() -> None:
-    from stride_server.routes.plan import prefer_authored_json_from_config
-
-    assert prefer_authored_json_from_config(PlanConfig(prefer_authored_json=False)) is False
 
 
 def test_internal_token_dependency_uses_uncached_fallback_config(monkeypatch) -> None:
@@ -1039,196 +1033,6 @@ class TestPushSession:
         assert body["push_date"] == "2026-04-22"
         assert len(fake.delete_calls) == 1
         assert fake.delete_calls[0] == (USER_UUID, "2026-04-22", "[STRIDE] Easy 10K")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# POST /api/{user}/plan/reparse
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class TestReparsePlan:
-    def test_reparse_success(self, app_client, monkeypatch):
-        client, token, tmp_path, _, _ = app_client
-        db = _db(tmp_path)
-        try:
-            db.upsert_weekly_plan(WEEK, "# Plan markdown", generated_by="test")
-            db.set_weekly_plan_structured_status(WEEK, status="parse_failed")
-        finally:
-            db.close()
-
-        # Stub parse_plan_md so the reparse route doesn't hit a real LLM.
-        from plan_parser import PlanParseResult
-        wp = WeeklyPlan(
-            week_folder=WEEK,
-            sessions=(PlannedSession(
-                date="2026-04-22", session_index=0,
-                kind=SessionKind.REST, summary="rest",
-            ),),
-            nutrition=(),
-        )
-        import stride_server.routes.plan as plan_mod
-        monkeypatch.setattr(
-            plan_mod, "parse_plan_md",
-            lambda *a, **kw: PlanParseResult(
-                structured=wp, parse_error=None, model="test",
-            ),
-        )
-
-        resp = client.post(
-            f"/api/{USER_UUID}/plan/reparse?folder={WEEK}",
-            headers=_auth(token),
-        )
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["structured_status"] == "fresh"
-
-    def test_reparse_404_when_no_plan(self, app_client):
-        client, token, _, _, _ = app_client
-        resp = client.post(
-            f"/api/{USER_UUID}/plan/reparse?folder={WEEK}",
-            headers=_auth(token),
-        )
-        assert resp.status_code == 404
-
-    def test_reparse_400_when_folder_invalid(self, app_client):
-        client, token, _, _, _ = app_client
-        resp = client.post(
-            f"/api/{USER_UUID}/plan/reparse?folder=not-a-week",
-            headers=_auth(token),
-        )
-        assert resp.status_code == 400
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Internal webhook
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class TestInternalReparse:
-    def _seed_md(self, tmp_path):
-        db = _db(tmp_path)
-        try:
-            db.upsert_weekly_plan(WEEK, "# md", generated_by="test")
-        finally:
-            db.close()
-
-    def _stub_agent(self, monkeypatch, *, structured=True):
-        from plan_parser import PlanParseResult
-        wp = WeeklyPlan(
-            week_folder=WEEK,
-            sessions=(PlannedSession(
-                date="2026-04-22", session_index=0,
-                kind=SessionKind.REST, summary="rest",
-            ),),
-            nutrition=(),
-        ) if structured else None
-        import stride_server.routes.plan as plan_mod
-        monkeypatch.setattr(
-            plan_mod, "parse_plan_md",
-            lambda *a, **kw: PlanParseResult(
-                structured=wp,
-                parse_error=None if structured else "fail",
-                model="test",
-            ),
-        )
-
-    def test_missing_token_401(self, app_client):
-        client, _, tmp_path, _, _ = app_client
-        self._seed_md(tmp_path)
-        resp = client.post(
-            f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
-        )
-        assert resp.status_code == 401
-
-    def test_wrong_token_401(self, app_client):
-        client, _, tmp_path, _, _ = app_client
-        self._seed_md(tmp_path)
-        resp = client.post(
-            f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
-            headers={"X-Internal-Token": "WRONG"},
-        )
-        assert resp.status_code == 401
-
-    def test_correct_token_triggers_reparse(self, app_client, monkeypatch):
-        client, _, tmp_path, _, _ = app_client
-        self._seed_md(tmp_path)
-        self._stub_agent(monkeypatch, structured=True)
-        resp = client.post(
-            f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
-            headers={"X-Internal-Token": INTERNAL_TOKEN},
-        )
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["ok"] is True
-        assert body["user"] == USER_UUID
-        assert body["folder"] == WEEK
-        assert body["structured_status"] == "fresh"
-
-    def test_internal_route_does_not_require_bearer(self, app_client, monkeypatch):
-        """Internal route should ignore Authorization headers entirely — only the
-        X-Internal-Token gates it. We verify by sending a Bearer that would fail
-        normal verification AND no internal token: 401 from internal-token dep
-        rather than 401 from bearer.
-        """
-        client, _, tmp_path, _, _ = app_client
-        self._seed_md(tmp_path)
-        resp = client.post(
-            f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
-            headers={"Authorization": "Bearer total-junk"},
-        )
-        assert resp.status_code == 401
-        assert resp.json()["detail"] == "Invalid internal token"
-
-    def test_token_unset_on_server_401(self, app_client, monkeypatch):
-        client, _, tmp_path, _, _ = app_client
-        self._seed_md(tmp_path)
-        monkeypatch.delenv("STRIDE_INTERNAL_TOKEN", raising=False)
-        resp = client.post(
-            f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
-            headers={"X-Internal-Token": "anything"},
-        )
-        assert resp.status_code == 401
-
-    def test_404_when_plan_row_missing(self, app_client, monkeypatch):
-        client, _, _, _, _ = app_client
-        self._stub_agent(monkeypatch, structured=True)
-        resp = client.post(
-            f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
-            headers={"X-Internal-Token": INTERNAL_TOKEN},
-        )
-        assert resp.status_code == 404
-
-    def test_noop_when_hash_matches(self, app_client, monkeypatch):
-        """Atomicity guard — same md sha256 + status='fresh' should skip the
-        LLM call and return noop:True."""
-        client, _, tmp_path, _, _ = app_client
-        # Seed plan + walk it to fresh first
-        self._seed_md(tmp_path)
-        self._stub_agent(monkeypatch, structured=True)
-        first = client.post(
-            f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
-            headers={"X-Internal-Token": INTERNAL_TOKEN},
-        )
-        assert first.status_code == 200
-        assert first.json()["noop"] is False
-
-        # Re-stub parse_plan_md to fail loudly if called again — second call should not invoke it.
-        import stride_server.routes.plan as plan_mod
-        sentinel = {"called": False}
-
-        def _boom(*a, **kw):
-            sentinel["called"] = True
-            raise RuntimeError("should not be called when hash matches")
-        monkeypatch.setattr(plan_mod, "parse_plan_md", _boom)
-
-        second = client.post(
-            f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
-            headers={"X-Internal-Token": INTERNAL_TOKEN},
-        )
-        assert second.status_code == 200, second.text
-        body = second.json()
-        assert body["noop"] is True
-        assert body["structured_status"] == "canonical"
-        assert sentinel["called"] is False
 
 
 # ─────────────────────────────────────────────────────────────────────────────

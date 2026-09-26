@@ -51,10 +51,12 @@ WEEKLY_HARD_RULES = f"""\
 # generation LLM must produce a watch-pushable NormalizedRunWorkout /
 # NormalizedStrengthWorkout per run/strength session, using the injected
 # pace_targets (never invented). Field names mirror ``stride_core.workout_spec``;
-# a drift-guard test parses the examples below through the real model. (We do NOT
-# import ``plan_parser.prompts`` — that would drag ``stride_storage.sqlite`` into
-# the coach-core import graph, forbidden by the coach-no-storage-impl contract.
-# The one source of truth is the ``workout_spec`` model, validated by the test.)
+# a drift-guard test parses the examples below through the real model. (An
+# earlier revision imported the schema hint from the markdown reverse-parser's
+# prompts module — retired, and it would have dragged ``stride_storage.sqlite``
+# into the coach-core import graph anyway, forbidden by the
+# coach-no-storage-impl contract. The one source of truth is the
+# ``workout_spec`` model, validated by the test.)
 RUN_STRENGTH_SPEC_SCHEMA = """\
 【结构化 spec schema —— run / strength session 的 `spec` 字段按此输出，可直接推手表】
 配速单位一律秒/km（4:00/km = 240），距离单位米，时长单位秒。配速 / 心率一律用**下方注入的

@@ -5,10 +5,8 @@ Coverage matrix (one or more tests per fix):
 - Fix #1 — timing-safe internal-token compare via secrets.compare_digest
 - Fix #2 — re-push transaction order: superseded UPDATE deferred until after
   successful new push; if new push 502s the old row's status is unchanged
-- Fix #3 — apply_weekly_plan rolls back on mid-call exception (no partial rows)
-- Fix #4 — LLM input size cap on /plan/reparse and /internal/plan/reparse
-- Fix #5 — _parse_structured rejects WeeklyPlan whose session dates fall
-  outside the parent week's date range
+- Fix #3 — apply_weekly_plan_atomic rolls back on mid-call exception (no partial
+  rows)
 """
 
 from __future__ import annotations
@@ -212,54 +210,6 @@ class TestInternalTokenTimingSafeCompare:
         assert "compare_digest" in src
         assert " == " not in src or "compare_digest" in src
 
-    def test_correct_token_passes(self, tmp_path, monkeypatch, rsa_keypair):
-        client, _, _ = _build_app(tmp_path, monkeypatch, rsa_keypair)
-        db = _db(tmp_path)
-        try:
-            db.upsert_weekly_plan(WEEK, "# md", generated_by="t")
-        finally:
-            db.close()
-        # Stub parse_plan_md so the reparse route returns 200 fast.
-        import stride_server.routes.plan as plan_mod
-        from plan_parser import PlanParseResult
-        wp = WeeklyPlan(
-            week_folder=WEEK,
-            sessions=(PlannedSession(
-                date="2026-04-22", session_index=0,
-                kind=SessionKind.REST, summary="rest",
-            ),),
-            nutrition=(),
-        )
-        monkeypatch.setattr(
-            plan_mod, "parse_plan_md",
-            lambda *a, **kw: PlanParseResult(
-                structured=wp, parse_error=None, model="t",
-            ),
-        )
-        resp = client.post(
-            f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
-            headers={"X-Internal-Token": INTERNAL_TOKEN},
-        )
-        assert resp.status_code == 200, resp.text
-
-    def test_wrong_token_still_401(self, tmp_path, monkeypatch, rsa_keypair):
-        client, _, _ = _build_app(tmp_path, monkeypatch, rsa_keypair)
-        # Same length to avoid fast-path differences
-        wrong = "x" * len(INTERNAL_TOKEN)
-        resp = client.post(
-            f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
-            headers={"X-Internal-Token": wrong},
-        )
-        assert resp.status_code == 401
-
-    def test_empty_token_still_401(self, tmp_path, monkeypatch, rsa_keypair):
-        client, _, _ = _build_app(tmp_path, monkeypatch, rsa_keypair)
-        resp = client.post(
-            f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
-            headers={"X-Internal-Token": ""},
-        )
-        assert resp.status_code == 401
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fix #2 — re-push transaction (no orphan-supersede on 502)
@@ -341,7 +291,7 @@ class TestRepushTransaction:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Fix #3 — apply_weekly_plan rollback on mid-call exception
+# Fix #3 — apply_weekly_plan_atomic rollback on mid-call exception
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -351,8 +301,8 @@ class TestApplyWeeklyPlanRollback:
         partial rows landed in any of the three tables."""
         import stride_core.db as core_db
         import stride_storage.sqlite.database as sdb
+        from stride_storage.sqlite.state_stores import SqlitePlanStateStore
         monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
-        from plan_parser import apply_weekly_plan
 
         wp = WeeklyPlan(
             week_folder=WEEK,
@@ -377,12 +327,20 @@ class TestApplyWeeklyPlanRollback:
             sdb.Database, "upsert_planned_nutrition", boom,
         )
 
-        with pytest.raises(RuntimeError, match="simulated"):
-            apply_weekly_plan(
-                USER_UUID, WEEK, "# Plan markdown",
-                generated_by="claude-opus-4-7",
-                structured=wp, structured_source="fresh",
-            )
+        db = Database(tmp_path / USER_UUID / "coros.db")
+        try:
+            with pytest.raises(RuntimeError, match="simulated"):
+                SqlitePlanStateStore(db).apply_weekly_plan_atomic(
+                    WEEK, "# Plan markdown",
+                    generated_by="claude-opus-4-7",
+                    sessions=list(wp.sessions),
+                    nutrition=list(wp.nutrition),
+                    structured_status="fresh",
+                    structured_source="fresh",
+                    parsed_from_md_hash=None,
+                )
+        finally:
+            db.close()
 
         # All three tables should be empty — the transaction rolled back.
         db = Database(tmp_path / USER_UUID / "coros.db")
@@ -394,189 +352,3 @@ class TestApplyWeeklyPlanRollback:
             assert db.get_planned_nutrition(week_folder=WEEK) == []
         finally:
             db.close()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Fix #4 — LLM input size cap (64 KiB)
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class TestPlanMarkdownSizeCap:
-    def _seed_oversized(self, tmp_path) -> None:
-        db = _db(tmp_path)
-        try:
-            big = "x" * (65 * 1024)  # > 64 KiB
-            db.upsert_weekly_plan(WEEK, big, generated_by="t")
-        finally:
-            db.close()
-
-    def test_public_reparse_400_when_too_big(self, tmp_path, monkeypatch, rsa_keypair):
-        client, token, _ = _build_app(tmp_path, monkeypatch, rsa_keypair)
-        self._seed_oversized(tmp_path)
-        # Stub parse_plan_md so we know the route would have called it (and
-        # we can fail loudly if the size cap is bypassed).
-        import stride_server.routes.plan as plan_mod
-        called = {"flag": False}
-
-        def boom(*a, **kw):
-            called["flag"] = True
-            raise RuntimeError("should not be called")
-        monkeypatch.setattr(plan_mod, "parse_plan_md", boom)
-
-        resp = client.post(
-            f"/api/{USER_UUID}/plan/reparse?folder={WEEK}",
-            headers=_auth(token),
-        )
-        assert resp.status_code == 400
-        assert "byte limit" in resp.json()["detail"]
-        assert called["flag"] is False
-
-    def test_internal_reparse_400_when_too_big(self, tmp_path, monkeypatch, rsa_keypair):
-        client, _, _ = _build_app(tmp_path, monkeypatch, rsa_keypair)
-        self._seed_oversized(tmp_path)
-        import stride_server.routes.plan as plan_mod
-        called = {"flag": False}
-
-        def boom(*a, **kw):
-            called["flag"] = True
-            raise RuntimeError("should not be called")
-        monkeypatch.setattr(plan_mod, "parse_plan_md", boom)
-
-        resp = client.post(
-            f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
-            headers={"X-Internal-Token": INTERNAL_TOKEN},
-        )
-        assert resp.status_code == 400
-        assert "byte limit" in resp.json()["detail"]
-        assert called["flag"] is False
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Fix #5 — session-date-within-week validation
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class TestSessionDateValidation:
-    def test_parser_rejects_out_of_week_session(self):
-        """Direct test on parse_structured: a session dated outside the
-        parent week's range yields parse_error."""
-        from plan_parser import parse_structured
-        plan = {
-            "schema": "weekly-plan/v1",
-            "week_folder": WEEK,
-            "sessions": [
-                {
-                    "schema": "plan-session/v1",
-                    "date": "2026-05-15",  # outside 2026-04-20..04-26
-                    "session_index": 0,
-                    "kind": "rest",
-                    "summary": "rest",
-                    "spec": None,
-                    "notes_md": None,
-                    "total_distance_m": None,
-                    "total_duration_s": None,
-                    "scheduled_workout_id": None,
-                }
-            ],
-            "nutrition": [],
-            "notes_md": None,
-        }
-        raw = f"```json\n{json.dumps(plan)}\n```"
-        result, err = parse_structured(raw, folder=WEEK)
-        assert result is None
-        assert err is not None
-        assert "outside week" in err
-        assert "2026-05-15" in err
-
-    def test_parser_accepts_in_range_session(self):
-        from plan_parser import parse_structured
-        plan = {
-            "schema": "weekly-plan/v1",
-            "week_folder": WEEK,
-            "sessions": [
-                {
-                    "schema": "plan-session/v1",
-                    "date": "2026-04-22",  # within range
-                    "session_index": 0,
-                    "kind": "rest",
-                    "summary": "rest",
-                    "spec": None,
-                    "notes_md": None,
-                    "total_distance_m": None,
-                    "total_duration_s": None,
-                    "scheduled_workout_id": None,
-                }
-            ],
-            "nutrition": [],
-            "notes_md": None,
-        }
-        raw = f"```json\n{json.dumps(plan)}\n```"
-        result, err = parse_structured(raw, folder=WEEK)
-        assert err is None
-        assert result is not None
-        assert len(result.sessions) == 1
-
-    def test_run_agent_marks_parse_failed_on_out_of_week(self, monkeypatch):
-        """End-to-end through plan_parser.parse_plan_md — when the LLM
-        returns a session dated outside the week, structured is None and
-        parse_error is set; downstream apply_weekly_plan would mark
-        structured_status='parse_failed'."""
-        from plan_parser import parse_plan_md
-
-        plan = {
-            "schema": "weekly-plan/v1",
-            "week_folder": WEEK,
-            "sessions": [
-                {
-                    "schema": "plan-session/v1",
-                    "date": "2027-01-01",  # very far outside
-                    "session_index": 0,
-                    "kind": "rest",
-                    "summary": "rest",
-                    "spec": None,
-                    "notes_md": None,
-                    "total_distance_m": None,
-                    "total_duration_s": None,
-                    "scheduled_workout_id": None,
-                }
-            ],
-            "nutrition": [],
-            "notes_md": None,
-        }
-
-        class FakeModel:
-            def invoke(self, messages):
-                class _R: pass
-                r = _R()
-                r.content = f"```json\n{json.dumps(plan)}\n```"
-                return r
-
-        result = parse_plan_md(
-            folder=WEEK, md_text="# md", chat_model=FakeModel(),
-        )
-        assert result.structured is None
-        assert result.parse_error is not None
-        assert "outside week" in result.parse_error
-
-    def test_invalid_folder_skips_date_check(self):
-        """Defensive: when folder is unparseable we don't reject the plan
-        on date grounds (parse_week_dates returns None → skip the guard)."""
-        from plan_parser import parse_structured
-        plan = {
-            "schema": "weekly-plan/v1",
-            "week_folder": "garbage",
-            "sessions": [
-                {
-                    "schema": "plan-session/v1",
-                    "date": "2026-04-22", "session_index": 0,
-                    "kind": "rest", "summary": "rest", "spec": None,
-                    "notes_md": None, "total_distance_m": None,
-                    "total_duration_s": None, "scheduled_workout_id": None,
-                }
-            ],
-            "nutrition": [], "notes_md": None,
-        }
-        raw = f"```json\n{json.dumps(plan)}\n```"
-        result, err = parse_structured(raw, folder="not-a-week")
-        assert err is None
-        assert result is not None

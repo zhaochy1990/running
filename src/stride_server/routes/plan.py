@@ -2,15 +2,13 @@
 
 Two routers live here:
 
-- ``router`` — public endpoints (calendar / today / push / reparse). Mounted in
+- ``router`` — public endpoints (calendar / today / push). Mounted in
   ``app.py`` behind ``protected_user`` (Bearer + path-user verification).
 
-- ``internal_router`` — webhook endpoints called by trusted infrastructure
-  (e.g. the ``sync-data.yml`` GitHub Action). Mounted **separately** so it
-  does NOT inherit ``require_bearer``; instead each route declares
-  ``Depends(require_internal_token)``. Path is ``/internal/...`` (NOT
-  ``/api/internal/...``) so future bearer-prefix middleware on ``/api/*``
-  cannot accidentally catch it.
+- ``internal_router`` — empty today: its only route (``/internal/plan/reparse``)
+  went away with the markdown reverse-parser. Still exported because
+  ``app.py`` mounts it; the shared ``require_internal_token`` dependency other
+  routers import from this module lives here.
 """
 
 from __future__ import annotations
@@ -24,11 +22,6 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
 
-# Reject huge plan markdowns *before* sending them to the LLM. Prompt-injection
-# guardrail + cost cap; 64 KiB comfortably accommodates a multi-week plan with
-# nutrition tables and detailed daily notes (we observe ~6-12 KiB in practice).
-_MAX_PLAN_MD_BYTES = 64 * 1024
-
 # How far a user can move a planned session when pushing to the watch. The
 # rationale is "moving the session within a small window, not authoring a new
 # week" — wider windows would conflict with the plan structure (week boundaries,
@@ -36,16 +29,13 @@ _MAX_PLAN_MD_BYTES = 64 * 1024
 _PUSH_DATE_WINDOW_DAYS = 7
 
 from stride_storage.sqlite.database import Database
-from stride_core.plan_spec import SUPPORTED_SCHEMA_VERSION, SessionKind, WeeklyPlan
+from stride_core.plan_spec import SessionKind, WeeklyPlan
 from stride_core.source import Capability, DataSource, FeatureNotSupported
 from stride_core.timefmt import today_shanghai
 from stride_core.workout_spec import NormalizedRunWorkout, NormalizedStrengthWorkout
 
-from plan_parser import parse_plan_md
-from ..content_store import read_json as content_read_json
-from ..content_store import read_text as content_read_text
 from ..config import load_server_config
-from ..config.models import InternalConfig, PlanConfig, ServerConfig
+from ..config.models import InternalConfig, ServerConfig
 from ..deps import (
     format_duration,
     get_db,
@@ -59,7 +49,6 @@ from ..weekly_plan_store import (
     get_weekly_plan_store,
     nutrition_to_api,
     plans_in_range,
-    save_weekly_plan,
     session_to_api,
 )
 
@@ -107,10 +96,6 @@ def require_internal_token(
 ) -> None:
     """Validate ``X-Internal-Token`` against server runtime config."""
     validate_internal_token_value(x_internal_token, _server_config(config).internal)
-
-
-def prefer_authored_json_from_config(config: PlanConfig) -> bool:
-    return config.prefer_authored_json
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -672,289 +657,6 @@ def push_planned_session(
         }
     finally:
         db.close()
-
-
-def _try_authored_reparse(
-    user: str, folder: str, content_md: str, generated_by: str | None,
-    *, source_hash: str | None = None,
-) -> dict[str, Any] | None:
-    """Try plan.json-first reparse path. Returns response dict on success, None to fall through.
-
-    Phase 1 plan.json-priority logic. Gated by server config. The legacy
-    ``STRIDE_PLAN_JSON_PRIORITY`` env var maps to ``plan.prefer_authored_json``.
-    When plan.json exists at the legacy content-store import path
-    and parses against ``SUPPORTED_SCHEMA_VERSION``, we promote it directly to the
-    structured layer with ``structured_source='authored'`` — bypassing the LLM
-    reverse parser entirely. Any failure (missing file, malformed JSON, schema
-    skew, validation error) returns ``None`` so the caller falls through to the
-    existing LLM path.
-    """
-    if not prefer_authored_json_from_config(load_server_config(use_cache=False).plan):
-        return None
-    plan_json_path = f"{user}/logs/{folder}/plan.json"
-    try:
-        json_result = content_read_json(plan_json_path)
-    except Exception as exc:
-        logger.warning("plan.json read failed for %s: %s", plan_json_path, exc)
-        return None
-    if json_result is None:
-        return None
-    json_data, _source = json_result
-    schema_str = json_data.get("schema", "") if isinstance(json_data, dict) else ""
-    try:
-        schema_version = int(schema_str.split("/v")[-1]) if "/v" in schema_str else None
-    except (ValueError, IndexError):
-        schema_version = None
-    if schema_version is None:
-        logger.warning("plan.json missing valid schema field at %s", plan_json_path)
-        return None
-    if schema_version > SUPPORTED_SCHEMA_VERSION:
-        logger.warning(
-            "plan.json schema_version=%s > SUPPORTED=%s at %s, falling through",
-            schema_version, SUPPORTED_SCHEMA_VERSION, plan_json_path,
-        )
-        return None
-    try:
-        weekly_plan = WeeklyPlan.from_dict(json_data)
-    except Exception as exc:
-        # Catch broadly: ``WeeklyPlan.from_dict`` recurses through
-        # ``PlannedSession`` → ``NormalizedRunWorkout`` → ``WorkoutBlock`` →
-        # ``Duration``/``Target`` etc. Any of those can raise ``AttributeError``,
-        # ``IndexError``, or custom dataclass-validation errors that aren't in
-        # the (ValueError, KeyError, TypeError) tuple. We never want a malformed
-        # plan.json to surface as a 500 to the webhook caller — log + fall
-        # through to the LLM path instead.
-        logger.warning(
-            "plan.json schema invalid at %s: %s (%s)",
-            plan_json_path, exc, type(exc).__name__,
-        )
-        return None
-    try:
-        save_weekly_plan(
-            user, weekly_plan, expected_folder=folder, generated_by=generated_by,
-            source_hash=source_hash,
-        )
-    except ValueError as exc:
-        logger.warning("plan.json identity invalid at %s: %s", plan_json_path, exc)
-        return None
-    logger.info(
-        "plan.json authored path: user=%s folder=%s schema=v%d",
-        user, folder, schema_version,
-    )
-    return {
-        "structured_status": "authored",
-        "source": "authored",
-        "llm_calls": 0,
-        "schema_version": schema_version,
-        "parse_error": None,
-    }
-
-
-@router.post("/api/{user}/plan/reparse")
-def reparse_plan(
-    user: str,
-    folder: str = Query(...),
-):
-    """Re-run the LLM reverse parser on the stored markdown for a week.
-
-    Used by the UI's "重新解析计划" button. Reads the canonical markdown from
-    ``weekly_plan.content_md`` (or the on-disk plan.md as fallback when the
-    DB row isn't there yet), invokes ``run_agent(task='parse_plan')``, and
-    writes the structured layer + ``structured_status`` accordingly.
-    """
-    if not parse_week_dates(folder):
-        raise HTTPException(status_code=400, detail="Invalid folder")
-
-    plan_store = get_plan_state_store(user)
-    try:
-        row = plan_store.get_weekly_plan_row(folder)
-        existing_generated_by = row["generated_by"] if row else None
-        content_md = row["content_md"] if row else ""
-    finally:
-        plan_store.close()
-
-    # Fall back to the on-disk plan.md when the DB row is empty. Historical
-    # weeks were authored by hand + git-pushed via sync-data.yml, never went
-    # through `apply_weekly_plan`, so weekly_plan.content_md is NULL for
-    # them. Reading from disk lets the user trigger reparse on those weeks
-    # without first having to re-import each one through the coach CLI.
-    if not content_md:
-        disk_md = content_read_text(f"{user}/logs/{folder}/plan.md")
-        if disk_md:
-            content_md = disk_md.content
-    # Phase 1 plan.json-priority short-circuit. When plan.json is present and
-    # parses against the supported schema, promote it as ``authored`` and skip
-    # the LLM call entirely. This deliberately precedes the Markdown
-    # precondition: a valid structured plan is independently importable.
-    authored = _try_authored_reparse(
-        user, folder, content_md, existing_generated_by
-    )
-    if authored is not None:
-        return {
-            "ok": True,
-            "folder": folder,
-            **authored,
-        }
-
-    if not content_md:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No stored plan for week {folder!r}; nothing to reparse",
-        )
-
-    if len(content_md.encode("utf-8")) > _MAX_PLAN_MD_BYTES:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Plan markdown exceeds {_MAX_PLAN_MD_BYTES} byte limit; "
-                "trim the file before re-parsing"
-            ),
-        )
-
-    result = parse_plan_md(folder=folder, md_text=content_md)
-    if result.structured is not None:
-        save_weekly_plan(
-            user, result.structured, expected_folder=folder,
-            generated_by=existing_generated_by,
-        )
-    structured_status = "fresh" if result.structured is not None else "parse_failed"
-    return {
-        "ok": True,
-        "folder": folder,
-        "structured_status": structured_status,
-        "source": structured_status,
-        "llm_calls": 1,
-        "schema_version": None,
-        "parse_error": result.parse_error,
-    }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Internal route — webhook from sync-data.yml
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-@internal_router.post("/internal/plan/reparse")
-def internal_reparse_plan(
-    user: str = Query(...),
-    folder: str = Query(...),
-    _token: None = Depends(require_internal_token),
-):
-    """Trusted webhook used by ``sync-data.yml`` after pushing a fresh plan.md
-    to Azure Files. Re-uses the same reverse-parser path as the UI button so
-    we have one canonical reparse code path.
-
-    Atomicity guard: when the stored markdown's sha256 matches the previous
-    ``parsed_from_md_hash`` already on the row, we skip the LLM call and
-    return ``noop=True``. This makes the webhook idempotent — a re-run of the
-    same git push (or a manual workflow_dispatch) does not waste tokens.
-    Azure Files SMB writes are not atomic, so a partial read on the very first
-    upload can yield a wrong hash; the next webhook trigger reads the settled
-    file and corrects it.
-    """
-    import hashlib
-
-    if not parse_week_dates(folder):
-        raise HTTPException(status_code=400, detail="Invalid folder")
-
-    plan_store = get_plan_state_store(user)
-    try:
-        row = plan_store.get_weekly_plan_row(folder)
-        existing_generated_by = row["generated_by"] if row else None
-        content_md = row["content_md"] if row else ""
-        prior_hash = None
-        prior_status = None
-        if row is not None:
-            try:
-                prior_hash = row["parsed_from_md_hash"]
-                prior_status = row["structured_status"]
-            except (IndexError, KeyError):
-                pass
-    finally:
-        plan_store.close()
-
-    # Same disk fallback as the public reparse route — sync-data.yml uploads
-    # plan.md to Azure Files but doesn't write the DB row, so the first
-    # webhook for a new week reads from disk.
-    if not content_md:
-        disk_md = content_read_text(f"{user}/logs/{folder}/plan.md")
-        if disk_md:
-            content_md = disk_md.content
-    # Phase 1 plan.json-priority short-circuit. plan.json supersedes the hash
-    # idempotency check because the schema-validated JSON is its own source of
-    # truth — even when plan.md is absent or unchanged, plan.json may have been
-    # created or updated.
-    md_hash = (
-        hashlib.sha256(content_md.encode("utf-8")).hexdigest()
-        if content_md else None
-    )
-    authored = _try_authored_reparse(
-        user, folder, content_md, existing_generated_by, source_hash=md_hash
-    )
-    if authored is not None:
-        return {
-            "ok": True, "noop": False, "user": user, "folder": folder,
-            **authored,
-        }
-    if not content_md:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No stored plan for week {folder!r}",
-        )
-    if get_weekly_plan_store().get_source_hash(user, folder) == md_hash:
-        return {
-            "ok": True, "noop": True, "user": user, "folder": folder,
-            "structured_status": "canonical", "source": "canonical",
-            "llm_calls": 0, "schema_version": None, "parse_error": None,
-        }
-    if (
-        prior_hash == md_hash
-        and prior_status in ("fresh", "authored")
-        and get_weekly_plan_store().get_plan(user, folder) is not None
-    ):
-        # Idempotent re-run: same plan.md + last parse already in a canonical
-        # state (LLM-fresh or plan.json-authored). Skip the LLM call and echo
-        # the prior status. ``source`` mirrors ``structured_status`` directly
-        # because we know it's one of the accepted canonical values here.
-        return {
-            "ok": True,
-            "noop": True,
-            "user": user,
-            "folder": folder,
-            "structured_status": prior_status,
-            "source": prior_status,
-            "llm_calls": 0,
-            "schema_version": None,
-            "parse_error": None,
-        }
-
-    if len(content_md.encode("utf-8")) > _MAX_PLAN_MD_BYTES:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Plan markdown exceeds {_MAX_PLAN_MD_BYTES} byte limit; "
-                "trim the file before re-parsing"
-            ),
-        )
-
-    result = parse_plan_md(folder=folder, md_text=content_md)
-    if result.structured is not None:
-        save_weekly_plan(
-            user, result.structured, expected_folder=folder,
-            generated_by=existing_generated_by, source_hash=md_hash,
-        )
-    structured_status = "fresh" if result.structured is not None else "parse_failed"
-    return {
-        "ok": True,
-        "noop": False,
-        "user": user,
-        "folder": folder,
-        "structured_status": structured_status,
-        "source": structured_status,
-        "llm_calls": 1,
-        "schema_version": None,
-        "parse_error": result.parse_error,
-    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import shutil
@@ -2958,10 +2959,10 @@ class Database:
         ``sessions`` is a list of ``stride_core.plan_spec.PlannedSession``.
         Returns the list of newly-assigned row ids in input order so callers
         can stitch them into other tables (e.g. push pipeline).
-        Pass ``commit=False`` to defer the commit to the caller (used by
-        ``apply_weekly_plan`` so all writes land atomically inside one
-        ``with db._conn:`` block). Pass ``conn=`` to redirect writes onto a
-        dedicated immediate-txn connection (used by promote/select).
+        Pass ``commit=False`` to defer the commit to the caller so all writes
+        land atomically inside one ``with db._conn:`` block. Pass ``conn=`` to
+        redirect writes onto a dedicated immediate-txn connection (used by
+        promote/select).
         """
         import json as _json
 
@@ -3341,10 +3342,11 @@ class Database:
         rows have ``scheduled_workout_id = NULL``. The UI must guide
         the user to delete orphan [STRIDE] entries on COROS before the
         next push.
+
+        ``user`` is accepted for call-site compatibility but is no longer
+        read: writes go through ``self``, which is already the per-user
+        ``Database``.
         """
-        # Lazy import to avoid circular dep:
-        # plan_parser.persistence imports stride_storage.sqlite.database.Database.
-        from plan_parser import apply_weekly_plan
         from stride_core.plan_spec import (
             SUPPORTED_SCHEMA_VERSION, WeeklyPlan,
         )
@@ -3423,22 +3425,36 @@ class Database:
                         "variant_id": variant_id}
             plan = WeeklyPlan.from_dict(_json.loads(variant["structured_json"]))
 
-            # 7. apply_weekly_plan inside the dedicated txn.
-            apply_weekly_plan(
-                user=user,
-                folder=week_folder,
-                content=variant["content_md"],
-                generated_by=variant["model_id"],
-                structured=plan,
-                structured_source="fresh",
-                commit=False,
-                conn=txn,
+            # 7. Project the variant into the canonical weekly_plan +
+            # planned_session rows, inside this same txn. (Inlined from the
+            # retired plan_parser.apply_weekly_plan helper, which did exactly
+            # these four writes with commit=False/conn=.)
+            self.upsert_weekly_plan(
+                week_folder, variant["content_md"],
+                generated_by=variant["model_id"], commit=False, conn=txn,
+            )
+            self.upsert_planned_sessions(
+                week_folder, list(plan.sessions), commit=False, conn=txn,
+            )
+            self.upsert_planned_nutrition(
+                week_folder, list(plan.nutrition), commit=False, conn=txn,
+            )
+            self.set_weekly_plan_structured_status(
+                week_folder, status="fresh",
+                # Hash the markdown we are actually promoting — the variant
+                # row's own parsed_from_md_hash is NULL for variants created
+                # by the API, and leaving the old column value would misattribute
+                # the structured content to a different markdown.
+                parsed_from_md_hash=hashlib.sha256(
+                    variant["content_md"].encode("utf-8"),
+                ).hexdigest(),
+                commit=False, conn=txn,
             )
 
             # 8. FALLBACK: mark ALL prior scheduled_workout ids abandoned.
             # New planned_session rows already have scheduled_workout_id=NULL
-            # (apply_weekly_plan REPLACE; variant blob's sessions never
-            # carry scheduled_workout_id).
+            # (the REPLACE in upsert_planned_sessions; variant blob's sessions
+            # never carry scheduled_workout_id).
             if prior_sw_ids:
                 placeholders = ",".join("?" * len(prior_sw_ids))
                 txn.execute(
@@ -3449,9 +3465,9 @@ class Database:
                     prior_sw_ids,
                 )
 
-            # 9. Stamp the selection on weekly_plan. apply_weekly_plan
-            # already wrote/UPSERTed the weekly_plan row in the same txn,
-            # so a plain UPDATE is sufficient.
+            # 9. Stamp the selection on weekly_plan. Step 7 already
+            # wrote/UPSERTed the weekly_plan row in the same txn, so a
+            # plain UPDATE is sufficient.
             txn.execute(
                 """UPDATE weekly_plan
                        SET selected_variant_id = ?,
