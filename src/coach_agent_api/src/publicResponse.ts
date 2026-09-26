@@ -1,3 +1,7 @@
+import { getLogger } from "@stride/common";
+
+const logger = getLogger("publicResponse");
+
 /** Convert a LangGraph Coach result into the API's intentionally small contract. */
 export function toPublicResponse(result: unknown): Record<string, unknown> {
   const response = tryToPublicResponse(result);
@@ -23,17 +27,64 @@ export function tryToPublicResponse(result: unknown): Record<string, unknown> | 
       interrupt: isRecord(first) ? first.value : first,
     };
   }
-  const messages = result.messages;
+  const message = lastReplyMessage(result.messages);
+  if (message === undefined) return undefined;
+  const text = textContent(message.content);
+  return text !== undefined ? { status: "completed", message: text } : undefined;
+}
+
+/** The assistant message that carries the reply: the last one with no tool calls. */
+function lastReplyMessage(messages: unknown): Record<string, unknown> | undefined {
   if (!Array.isArray(messages)) return undefined;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (!isAssistantMessage(message)) continue;
     // An AI tool-call message is an intermediate graph step, not a reply.
     if (hasToolCalls(message)) return undefined;
-    const text = textContent(message.content);
-    if (text !== undefined) return { status: "completed", message: text };
+    return message;
   }
   return undefined;
+}
+
+/** Why a turn's reply is unusable even though the run itself completed. */
+export type DegradedReplyReason = "empty_reply" | "output_budget_exhausted";
+
+/**
+ * Warn when a completed turn produced no usable reply, or when the model spent
+ * its entire output budget.
+ *
+ * A turn can finish "successfully" with empty text: reasoning tokens are billed
+ * against `max_tokens`, so `reasoning_effort: max` can consume the whole budget
+ * and leave `content` empty (observed: 16384/16384 output tokens were reasoning,
+ * 45k chars of thinking, zero reply). Nothing else in the pipeline treats that
+ * as a failure, so without this warning it is indistinguishable from a normal
+ * turn — the checkpoint is the only place the cause is visible.
+ *
+ * Returns the reason so callers (and tests) can act on it, and logs it.
+ */
+export function warnOnDegradedReply(result: unknown, maxOutputTokens: number, context: Record<string, unknown> = {}): DegradedReplyReason | null {
+  if (!isRecord(result)) return null;
+  const message = lastReplyMessage(result.messages);
+  if (message === undefined) return null;
+  const usage = isRecord(message.usage_metadata) ? message.usage_metadata : {};
+  const details = isRecord(usage.output_token_details) ? usage.output_token_details : {};
+  const fields = {
+    ...context,
+    outputTokens: typeof usage.output_tokens === "number" ? usage.output_tokens : null,
+    reasoningTokens: typeof details.reasoning === "number" ? details.reasoning : null,
+    maxOutputTokens,
+  };
+
+  const text = textContent(message.content);
+  if (text === undefined || text.trim().length === 0) {
+    logger.warn({ ...fields, reason: "empty_reply" }, "coach turn produced an empty reply");
+    return "empty_reply";
+  }
+  if (maxOutputTokens > 0 && typeof usage.output_tokens === "number" && usage.output_tokens >= maxOutputTokens) {
+    logger.warn({ ...fields, reason: "output_budget_exhausted" }, "coach turn exhausted its output token budget");
+    return "output_budget_exhausted";
+  }
+  return null;
 }
 
 function hasToolCalls(message: Record<string, unknown>): boolean {
