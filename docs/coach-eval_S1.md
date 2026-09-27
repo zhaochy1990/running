@@ -1,5 +1,7 @@
 # Coach Agent Evaluation — S1 (Master Plan)
 
+> **DEPRECATED**：面向**旧 Python Coach**（`src/coach/*`），路径已失效；现行实现是 TS `src/coach_agent/`。见 [`coach-eval.md`](coach-eval.md) 顶部说明。
+
 **何时读**：要给 S1（赛季备战计划）加 fixture、改 L1 master_plan 规则、调 S1 judge axis 时必读。框架级问题（L1/L2/L3 概念、Judge graph 设计、CLI、目录结构、冻结原则）见 [`coach-eval.md`](coach-eval.md)。
 
 **范围**：本文档只覆盖 S1 offline evaluation。S2 / S3 见 [`coach-eval_S2.md`](coach-eval_S2.md) / [`coach-eval_S3.md`](coach-eval_S3.md)。

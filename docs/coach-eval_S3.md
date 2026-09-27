@@ -1,5 +1,7 @@
 # Coach Agent Evaluation — S3 (Daily Q&A)
 
+> **DEPRECATED**：面向**旧 Python Coach**（`src/coach/*`），路径已失效；现行实现是 TS `src/coach_agent/`。见 [`coach-eval.md`](coach-eval.md) 顶部说明。
+
 **何时读**：要给 S3（每日问答）加 fixture、改 hallucination check / metric_traceability 规则、调 S3 judge axis 时必读。框架级问题（L1/L2/L3 概念、Judge graph 设计、CLI、目录结构、冻结原则）见 [`coach-eval.md`](coach-eval.md)。
 
 **范围**：本文档只覆盖 S3 offline evaluation。S1 / S2 见 [`coach-eval_S1.md`](coach-eval_S1.md) / [`coach-eval_S2.md`](coach-eval_S2.md)。

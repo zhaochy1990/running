@@ -1,5 +1,10 @@
 """Offline evaluation framework for the STRIDE coach agent.
 
+DEPRECATED: this offline eval framework targets the legacy **Python** Coach
+Agent (`src/coach/` + `src/stride_server/coach_adapters/`), which is no longer
+used. The current Coach Agent is TypeScript (`src/coach_agent/`). Kept for
+historical reference only; do not add features here or wire it into anything.
+
 This package is **dev-time only** — it never runs in production. The
 ``.importlinter`` contract pins this: ``coach.*`` and ``stride_server.*``
 must NOT import from ``coach_eval.*``; the dependency direction is one-way

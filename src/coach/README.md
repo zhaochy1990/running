@@ -1,4 +1,8 @@
-# `coach` — Pure LangGraph Core
+# `coach` — Pure LangGraph Core（已废弃 / DEPRECATED）
+
+> **DEPRECATED**：这是 **旧 Python Coach Agent**（`src/coach/` + `src/stride_server/coach_*`），**已不再使用**，仅作历史保留，勿在其上新增功能或引用。
+>
+> 现行 Coach Agent 是 **TypeScript 版**：`src/coach_agent/`（核心）+ `src/coach_agent_api/`（HTTP 服务）+ `src/coach_agent_worker/`（后台 worker）。见 [`src/coach_agent/AGENTS.md`](../coach_agent/AGENTS.md) 与 [`docs/coach_agent/`](../../docs/coach_agent/)。
 
 The STRIDE coach agent's pure runtime. Has zero coupling to STRIDE
 infrastructure — no Azure SDKs, no FastAPI, no SQLite, no COROS API. All

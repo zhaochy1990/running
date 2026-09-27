@@ -1,5 +1,7 @@
 # Coach Agent Evaluation — S2 (Weekly Plan)
 
+> **DEPRECATED**：面向**旧 Python Coach**（`src/coach/*`），路径已失效；现行实现是 TS `src/coach_agent/`。见 [`coach-eval.md`](coach-eval.md) 顶部说明。
+
 **何时读**：要给 S2（周训练计划）加 fixture、改 L1 rule_filter、调 S2 judge axis 时必读。框架级问题（L1/L2/L3 概念、Judge graph 设计、CLI、目录结构、冻结原则）见 [`coach-eval.md`](coach-eval.md)。
 
 **范围**：本文档只覆盖 S2 offline evaluation。S1 / S3 见 [`coach-eval_S1.md`](coach-eval_S1.md) / [`coach-eval_S3.md`](coach-eval_S3.md)。

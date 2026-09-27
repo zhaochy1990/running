@@ -1,6 +1,8 @@
 # stride_storage
 
-STRIDE 的**统一数据访问层**。API Server (`stride_server`) 与 Coach Agent (`coach`) 共享的唯一持久化包：SQLite（手表同步运动数据）、Azure Table / Blob（社交信号、计划、通知、coach checkpoints）、markdown/JSON content store、Azure Key Vault secret 读写。
+> **注意**：本包及其文档属于**待删除的遗留 Python 世界**。文中 `coach` 指**已废弃的旧 Python Coach Agent**（`src/coach/`），不是现行 Coach Agent —— 现行的是 TypeScript 版 `src/coach_agent/`，不经过本包。
+
+STRIDE 的**统一数据访问层**。API Server (`stride_server`) 与遗留 Coach Agent (`coach`) 共享的唯一持久化包：SQLite（手表同步运动数据）、Azure Table / Blob（社交信号、计划、通知、coach checkpoints）、markdown/JSON content store、Azure Key Vault secret 读写。
 
 > 提取自原先横跨 `stride_core`（SQLite）+ `stride_server`（Azure/文件/KV）的存储代码，消除了 8 份重复的 dev/prod 后端选择 + 8 个独立 `DefaultAzureCredential()`。
 
@@ -77,6 +79,6 @@ backend.put(LikeEntity(...))       # account_url 有 → Azure Table；否则 JS
 - **config 加载留 server 侧**：本包的 `*_from_config()` 工厂只接收**已解析**的 config dataclass；`ServerConfig`（TOML/env/Key Vault 合并、缓存）住在 `stride_server.config`。本包**绝不** import `stride_server`（否则成环）。
 - **共享原语**：建 Azure 客户端一律走 `azure/credentials.py::get_credential`、`azure/table_backend.py::AzureTableConnection`、`azure/blob_backend.py::get_container_client`、`keyvault/secret_client.py::get_secret_client`；后端选择走 `azure/backend_select.py::choose_backend`。不要再 new `DefaultAzureCredential()` 或重写 dev/prod 分支。
 - **路径常量例外**：`USER_DATA_DIR` / `DB_PATH` / `_parse_week_folder_dates` **不在本包**，住在 `stride_core.db`（纯 pathlib/regex，是 caller + 测试的 canonical monkeypatch 目标）。`sqlite/database.py` 经 lazy `_paths()` 在调用时读回，故 monkeypatch 可见且无 import 环。
-- **`coach` 经 DI 拿数据**：`coach` core 只可 import `stride_storage.interfaces`；具体 store 由 `stride_server.coach_adapters` 构造后注入。`coach` 禁止 import 实现层（Contract 5）。
+- **遗留 `coach` 经 DI 拿数据**：`coach` core 只可 import `stride_storage.interfaces`；具体 store 由 `stride_server.coach_adapters` 构造后注入。`coach` 禁止 import 实现层（Contract 5）。
 
 加新 store / 改实现前请读同目录 `CLAUDE.md`。

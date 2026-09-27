@@ -1,5 +1,7 @@
 # Coach Agent Evaluation — Framework
 
+> **DEPRECATED**：本文档（及 [`coach-eval_S1.md`](coach-eval_S1.md) / [`coach-eval_S2.md`](coach-eval_S2.md) / [`coach-eval_S3.md`](coach-eval_S3.md)）描述的是**旧的 Python Coach 离线 eval 框架**（`src/coach/*`、`src/coach_eval/`、`scripts/eval_coach.py`）。该 Python 实现已废弃，下文的 `src/coach/...` 代码路径均已失效。现行 Coach Agent 是 **TypeScript 版**（`src/coach_agent/`），见 [`src/coach_agent/AGENTS.md`](../src/coach_agent/AGENTS.md) 与 [`docs/coach_agent/`](coach_agent/)。S1/S2/S3 场景定义仍可参考，但实现与 CLI 以 TS 版为准。
+
 **何时读**：要读 coach eval 框架级概念（L1/L2/L3 三层栈、Judge graph 设计、fixture 通用 envelope、CLI、目录约定）时必读。Scope-specific 内容（fixture 字段、coverage 场景、L1 规则、judge axes）请按 scope 跳转：
 
 - [`coach-eval_S1.md`](coach-eval_S1.md) —— S1 赛季备战计划

@@ -13,7 +13,7 @@
 [`docs/working-model.md`](docs/working-model.md) ·
 [`docs/frontend.md`](docs/frontend.md) ·
 [`docs/deployment.md`](docs/deployment.md) ·
-[`docs/coach-agent.md`](docs/coach-agent.md) ·
+[`src/coach_agent/AGENTS.md`](src/coach_agent/AGENTS.md)（Coach Agent = TS 版；`docs/coach-agent.md` 已废弃） ·
 [`docs/plan-json-schema.md`](docs/plan-json-schema.md) ·
 [`docs/strength-training.md`](docs/strength-training.md) ·
 [`frontend/DESIGN.md`](frontend/DESIGN.md) ·

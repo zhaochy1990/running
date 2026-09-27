@@ -1,5 +1,10 @@
 """Coach runtime — request-scoped graph + module-level LLM singletons.
 
+DEPRECATED: part of the legacy **Python** Coach Agent (with `src/coach/` and
+`src/stride_server/coach_adapters/`), which is no longer used. The current
+Coach Agent is TypeScript (`src/coach_agent/` + `src/coach_agent_api/` +
+`src/coach_agent_worker/`). Do not add new callers or features here.
+
 Three role-based LLMs are exposed (``get_generator_llm`` / ``get_reviewer_llm``
 / ``get_commentary_llm``). Each is lazy-built on first call via
 ``coach.runtime.llm_factory.build_*_llm()`` which reads the role's

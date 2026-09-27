@@ -2,6 +2,8 @@
 
 在本包内写 / 改代码前必读。这是 STRIDE 的统一数据访问层；总览见同目录 `README.md`，全局规则见仓库根 `AGENTS.md` 的 *Storage scope rule* 段。
 
+> **注意**：本包及其文档属于**待删除的遗留 Python 世界**。文中 `coach` 指**已废弃的旧 Python Coach Agent**（`src/coach/`）；现行 Coach Agent 是 TypeScript 版 `src/coach_agent/`，不经过本包。
+
 ## HARD 规则
 
 ### 1. 三层 import 纪律（`.importlinter` 强制）
@@ -14,7 +16,7 @@
 
 改完跑 `PYTHONPATH=src lint-imports`，**5 contract 必须全 KEPT**。相关契约：
 - **Contract 3 / 4**：纯公式层 `training_load.{core,calibration,types}`、`running_calibration.{core,…}` 禁止 import `stride_storage.{sqlite,azure,content,keyvault,coach_persistence}`。
-- **Contract 5**：`coach` 禁止 import `stride_storage.{sqlite,azure,content,keyvault,coach_persistence}`（只可 `interfaces`）。
+- **Contract 5**：遗留 `coach` 禁止 import `stride_storage.{sqlite,azure,content,keyvault,coach_persistence}`（只可 `interfaces`）。
 
 ### 2. Azure-free 不变量（HARD）
 
@@ -58,7 +60,7 @@ def backend_from_config(config: LikesStorageConfig) -> LikesBackend: ...
 2. **`interfaces/config.py`**：加 `<Name>StorageConfig`（frozen dataclass）。
 3. **`azure/<name>_backend.py`**：`File<Name>Backend`（JSON，dev）+ `AzureTable<Name>Backend`（用 `AzureTableConnection`）+ `backend_from_config(config) -> <Name>Backend`（用 `choose_backend`）。azure import 全 lazy。
 4. **server 侧** `stride_server/<name>_store.py`：config 解析 + `@lru_cache` backend + 公共 API；re-export 搬来的符号。
-5. **`coach` 用到**：走 `coach_adapters` DI，coach 只见 `interfaces.<name>` 的 Protocol。
+5. **遗留 `coach` 用到**：走 `coach_adapters` DI，coach 只见 `interfaces.<name>` 的 Protocol。
 6. 跑 `lint-imports`（5/5 KEPT）+ `pytest`。
 
 ## 测试约定

@@ -2,6 +2,8 @@
 
 > 状态：Draft · 架构设计 · 与 [`STRIDE_COACH_PRODUCT_VISION.md`](./STRIDE_COACH_PRODUCT_VISION.md) 配套
 > 本文定义"对话即入口"的核心 AI Agent 架构、专家契约、**三层记忆（含跨会话长期记忆）**、状态模型与 MVP 落地清单。
+>
+> **实现以 TypeScript 版为准**：`src/coach_agent/`（核心）+ `src/coach_agent_api/`（HTTP）+ `src/coach_agent_worker/`（后台）。文中出现的 `coach.contracts` / `coach_adapters` / `src/coach/*` 等是**已废弃的 Python 实现**残留，仅作历史参考，勿据此改代码。
 
 ---
 
