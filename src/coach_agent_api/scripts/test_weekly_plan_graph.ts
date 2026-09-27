@@ -9,6 +9,9 @@ import { getLogger } from "@stride/common";
 
 type Profile = "local" | "prod";
 const PROFILE = "prod" as Profile;
+// configPaths resolves the overlay from STRIDE_COACH_ENV, so wire PROFILE into it
+// before any config is loaded below.
+process.env.STRIDE_COACH_ENV = PROFILE;
 const AS_OF = new Date("2026-09-14").toISOString();
 const logger = getLogger("test-weekly-plan-graph");
 

@@ -11,14 +11,19 @@ import { coachAgentConfigFiles, coachApiConfigFiles } from "../src/configPaths.j
 import { MySqlDataProvider } from "@stride/coach-agent-worker";
 
 type Profile = "local" | "prod";
-const PROFILE = "local" as Profile;
-const USER_ID = "11c2e582-5a85-4633-81d2-df7e37ad7b48";
-const AS_OF = new Date("2026-08-07").toISOString();
+const PROFILE = "prod" as Profile;
+// configPaths resolves the overlay from STRIDE_COACH_ENV, so wire PROFILE into it
+// before any config is loaded below.
+process.env.STRIDE_COACH_ENV = PROFILE;
+const USER_ID = "f10bc353-01ab-4db1-af9f-d9305ea9a532";
+const AS_OF = new Date("2026-09-27").toISOString();
 
 export const config = loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) });
 const modelConfig = getAgentConfig(config, "master_plan");
 const reviewerConfig = getAgentConfig(config, "reviewer");
-const store = MySqlDataProvider.create(loadApiConfig({ configFiles: coachApiConfigFiles(import.meta.url) }).strideDatabase);
+
+const configFiles = coachApiConfigFiles(import.meta.url);
+const store = MySqlDataProvider.create(loadApiConfig({ configFiles }).strideDatabase);
 
 const provider = new DataProviderMasterPlanContextProvider(store);
 
@@ -28,8 +33,7 @@ const request = MasterPlanGraphRequest.parse({
   requested_modifiers: [],
   goals: [
     {
-      race_name: "西安马拉松",
-      location: "西安",
+      race_name: "上海马拉松",
       distance: "FM",
       race_date: "2026-10-18",
       target_time: "2:50:00",
@@ -43,7 +47,7 @@ const request = MasterPlanGraphRequest.parse({
     unavailable_days: [],
     max_session_duration_min: 180,
     allows_double_sessions: true,
-    preferred_long_run_day: "saturday",
+    preferred_long_run_day: "sunday",
     strength_sessions_per_week: 2,
     strength_available_days: ["monday", "thursday"],
   },
@@ -69,6 +73,7 @@ async function main() {
       masterPlanModel: modelConfig,
       reviewerModel: reviewerConfig,
     });
+    
     const graph = createMasterPlanGraph({
       contextProvider: provider,
       ...llmModels,

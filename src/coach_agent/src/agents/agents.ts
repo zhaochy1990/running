@@ -36,13 +36,14 @@ export function getAgentNode(agentName: string, config: CoachAgentConfig, dataPr
 
   if (agentName === "qa") {
     const agentConfig = getAgentConfig(config, "qa");
-    return makeAgentNode(getQaAgent(dataProvider, agentConfig) as unknown as InnerAgent);
+    const qaAgent = getQaAgent(dataProvider, agentConfig) as unknown as InnerAgent;
+    return makeAgentNode(qaAgent);
   }
 
   if (agentName === "other") {
-    // `other` 复用 qa 的快速 chat 模型（思考关闭、低 effort），不新增独立 role。
     const agentConfig = getAgentConfig(config, "qa");
-    return makeAgentNode(getOtherAgent(agentConfig) as unknown as InnerAgent);
+    const otherAgent = getOtherAgent(agentConfig) as unknown as InnerAgent;
+    return makeAgentNode(otherAgent);
   }
 
   throw new Error(`Unknown agent name: ${agentName}`);

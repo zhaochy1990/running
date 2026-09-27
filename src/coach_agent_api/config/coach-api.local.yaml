@@ -11,3 +11,10 @@ persistence_database:
   user: "root"
   password: "root_password"
   database: "coach_agent"
+
+go_api:
+  base_url: "https://api.stride-running.cn"
+  # Env: STRIDE_COACH_GO_API_INTERNAL_TOKEN (secret). Deliberately empty with no
+  # default: an empty token fails validation, so the API refuses to boot rather
+  # than call Go unauthenticated.
+  internal_token: ""

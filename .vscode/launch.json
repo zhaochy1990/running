@@ -47,12 +47,12 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "tests:coach_agent",
+            "name": "masterplan-graph",
             "runtimeExecutable": "pnpm",
             "cwd": "${workspaceFolder}/src/coach_agent_api",
             "runtimeArgs": [
                 "run",
-                "test:deepagent"
+                "test:masterplan-graph"
             ],
             "skipFiles": [
                 "<node_internals>/**"

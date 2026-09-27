@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
-import { loadConfig } from "@stride/common";
+import { getLogger, loadConfig } from "@stride/common";
 import convict from "convict";
 import type { ApiConfig, LoadApiConfigOptions, MySqlConfig, RawApiConfig } from "./dto/config.js";
+
+const logger = getLogger("CoachAgentApi:config");
 
 convict.addFormat({
   name: "active-port",
@@ -115,6 +117,8 @@ const schema: convict.Schema<RawApiConfig> = {
 };
 
 export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
+  logger.info(options, "Loading Coach Agent API config");
+
   const rawEnv = normalizeAuthEnvironment(options.env ?? process.env);
   const raw = loadConfig({ schema, configFiles: options.configFiles, env: rawEnv, strict: true });
   const configDir = dirname(options.configFiles[0] ?? "");
