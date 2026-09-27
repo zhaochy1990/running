@@ -384,7 +384,7 @@ function CalendarTab({
       setBatchBusy(busy);
       // Refresh the calendar once when the batch finishes so new
       // scheduled_workout_id values surface in the per-row buttons.
-       if (!busy && user) {
+      if (!busy && user) {
         try {
           setPlanDays(buildPlanDaysFromWeekDetail(weekDetail));
         } catch {

@@ -84,16 +84,12 @@ for (const screen of candidateManifest.screens) {
 }
 
 const artifactFiles = (await readdir(join(root, "artifacts"))).filter((name) => name.endsWith(".html"));
-const referencedArtifacts = new Set(
-  manifest.screens.flatMap((screen) => screen.html ? [basename(screen.html)] : []),
-);
+const referencedArtifacts = new Set(manifest.screens.flatMap((screen) => (screen.html ? [basename(screen.html)] : [])));
 const orphanArtifacts = artifactFiles.filter((name) => !referencedArtifacts.has(name));
 expect(orphanArtifacts.length === 0, `orphan HTML artifacts are not allowed: ${orphanArtifacts.join(", ")}`);
 
 const candidateFiles = (await readdir(join(root, "candidates"))).filter((name) => name.endsWith(".html"));
-const referencedCandidates = new Set(
-  candidateManifest.screens.flatMap((screen) => screen.html ? [basename(screen.html)] : []),
-);
+const referencedCandidates = new Set(candidateManifest.screens.flatMap((screen) => (screen.html ? [basename(screen.html)] : [])));
 const orphanCandidates = candidateFiles.filter((name) => !referencedCandidates.has(name));
 expect(orphanCandidates.length === 0, `orphan candidate HTML files are not allowed: ${orphanCandidates.join(", ")}`);
 

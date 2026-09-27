@@ -33,13 +33,7 @@ export default function PhoneBindPrompt({ children }: { children: ReactNode }) {
   return (
     <>
       {children}
-      <PhoneBindModal
-        open={showModal}
-        currentPhone={null}
-        onClose={() => setDismissed(true)}
-        onBound={() => setDismissed(true)}
-        secondaryLabel="稍后再说"
-      />
+      <PhoneBindModal open={showModal} currentPhone={null} onClose={() => setDismissed(true)} onBound={() => setDismissed(true)} secondaryLabel="稍后再说" />
     </>
   );
 }

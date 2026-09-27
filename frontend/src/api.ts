@@ -538,7 +538,9 @@ export function resyncActivity(user: string, labelId: string) {
 }
 
 export function regenerateCommentary(user: string, labelId: string) {
-  return fetch(apiUrl("POST", `${BASE}/${user}/activities/${labelId}/commentary/regenerate`), { method: "POST", headers: authHeaders() }).then((r) => r.json()) as Promise<{
+  return fetch(apiUrl("POST", `${BASE}/${user}/activities/${labelId}/commentary/regenerate`), { method: "POST", headers: authHeaders() }).then((r) =>
+    r.json(),
+  ) as Promise<{
     success: boolean;
     commentary?: string;
     generated_by?: string | null;

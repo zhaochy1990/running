@@ -147,19 +147,12 @@ export function isPushable(s: PlannedSession): boolean {
  *
  * Structured sessions lack `id`/`pushable`, so we synthesize them.
  */
-export function mergeStructuredIntoPlanDays(
-  days: PlanDay[],
-  structured: WeekDetail["structured"],
-): PlanDay[] {
+export function mergeStructuredIntoPlanDays(days: PlanDay[], structured: WeekDetail["structured"]): PlanDay[] {
   if (!structured) return days;
   const structuredSessions = structured.sessions ?? [];
-  const structuredNutrition = new Map<string, PlannedNutrition>(
-    (structured.nutrition ?? []).map((n) => [n.date, n]),
-  );
+  const structuredNutrition = new Map<string, PlannedNutrition>((structured.nutrition ?? []).map((n) => [n.date, n]));
   const out = days.map((day) => {
-    const byKey = new Map<string, PlannedSessionRow>(
-      day.sessions.map((s) => [`${s.date}/${s.session_index}`, s]),
-    );
+    const byKey = new Map<string, PlannedSessionRow>(day.sessions.map((s) => [`${s.date}/${s.session_index}`, s]));
     for (const s of structuredSessions) {
       if (s.date !== day.date) continue;
       const key = `${s.date}/${s.session_index}`;
@@ -167,9 +160,7 @@ export function mergeStructuredIntoPlanDays(
         byKey.set(key, { ...s, id: 0, pushable: isPushable(s) });
       }
     }
-    const sessions = Array.from(byKey.values()).sort(
-      (a, b) => a.session_index - b.session_index,
-    );
+    const sessions = Array.from(byKey.values()).sort((a, b) => a.session_index - b.session_index);
     const nutrition = day.nutrition ?? structuredNutrition.get(day.date) ?? null;
     return { date: day.date, sessions, nutrition };
   });

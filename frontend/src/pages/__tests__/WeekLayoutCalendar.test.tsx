@@ -256,7 +256,26 @@ describe("buildPlanDaysFromWeekDetail", () => {
 describe("mergeStructuredIntoPlanDays", () => {
   it("keeps existing (Azure/Python) rows and fills gaps from structured", () => {
     const existing: PlanDay[] = [
-      { date: "2026-04-20", sessions: [{ schema: "plan-session/v1", id: 1, date: "2026-04-20", session_index: 0, kind: "run", summary: "Azure Easy", spec: null, notes_md: null, total_distance_m: 10000, total_duration_s: 3600, pushable: true, scheduled_workout_id: null }], nutrition: null },
+      {
+        date: "2026-04-20",
+        sessions: [
+          {
+            schema: "plan-session/v1",
+            id: 1,
+            date: "2026-04-20",
+            session_index: 0,
+            kind: "run",
+            summary: "Azure Easy",
+            spec: null,
+            notes_md: null,
+            total_distance_m: 10000,
+            total_duration_s: 3600,
+            pushable: true,
+            scheduled_workout_id: null,
+          },
+        ],
+        nutrition: null,
+      },
       { date: "2026-04-21", sessions: [], nutrition: null },
     ];
     const structured = {

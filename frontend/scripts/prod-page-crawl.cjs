@@ -105,7 +105,11 @@ async function main() {
   await page.goto(`${base}/activities`, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "活动列表" }).waitFor({ timeout: 20000 });
   await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
-  const firstActivity = await page.locator('a[href^="/activity/"]').first().getAttribute("href").catch(() => null);
+  const firstActivity = await page
+    .locator('a[href^="/activity/"]')
+    .first()
+    .getAttribute("href")
+    .catch(() => null);
 
   // Home redirects to /week/<current>.
   await page.goto(`${base}/`, { waitUntil: "domcontentloaded" });
@@ -156,7 +160,10 @@ async function main() {
   // ---- report ----
   console.log("=== PAGE OUTCOMES ===");
   for (const p of perPage) {
-    if (p.skipped) { console.log(`  - ${p.name}: SKIPPED (${p.note})`); continue; }
+    if (p.skipped) {
+      console.log(`  - ${p.name}: SKIPPED (${p.note})`);
+      continue;
+    }
     const ok = !p.gateError && !p.crashed;
     const status = ok ? "OK" : "FAIL";
     const why = [];

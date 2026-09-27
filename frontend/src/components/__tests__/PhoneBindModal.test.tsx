@@ -29,9 +29,7 @@ beforeEach(() => {
 
 describe("PhoneBindModal", () => {
   it("renders nothing while closed", () => {
-    const { queryByRole } = render(
-      <PhoneBindModal open={false} currentPhone={null} onClose={() => {}} />,
-    );
+    const { queryByRole } = render(<PhoneBindModal open={false} currentPhone={null} onClose={() => {}} />);
     expect(queryByRole("dialog")).not.toBeInTheDocument();
   });
 

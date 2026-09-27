@@ -97,11 +97,13 @@ export default function PhoneBindingSection() {
 
       {confirmUnbind && phone && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-4">
-          <p className="text-sm text-text-primary">
-            确定要解绑手机号 {maskPhone(phone)} 吗？解绑后将无法再用该手机号登录。
-          </p>
+          <p className="text-sm text-text-primary">确定要解绑手机号 {maskPhone(phone)} 吗？解绑后将无法再用该手机号登录。</p>
           <div className="mt-3 flex gap-2">
-            <button type="button" onClick={() => setConfirmUnbind(false)} className="rounded-lg border border-border-subtle px-3 py-1.5 text-sm text-text-secondary">
+            <button
+              type="button"
+              onClick={() => setConfirmUnbind(false)}
+              className="rounded-lg border border-border-subtle px-3 py-1.5 text-sm text-text-secondary"
+            >
               取消
             </button>
             <button type="button" onClick={() => void handleUnbind()} className="rounded-lg bg-red-500/90 px-3 py-1.5 text-sm text-bg-base">

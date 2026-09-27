@@ -84,10 +84,7 @@ interface AuthState {
   hydrated: boolean;
   login: (email: string, password: string) => Promise<void>;
   registerSuccess: (access_token: string, refresh_token: string) => void;
-  sendSmsCode: (
-    phone: string,
-    opts?: { loginOnly?: boolean; scene?: "login" | "bind_phone" },
-  ) => Promise<void>;
+  sendSmsCode: (phone: string, opts?: { loginOnly?: boolean; scene?: "login" | "bind_phone" }) => Promise<void>;
   loginWithPhone: (phone: string, code: string, inviteCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   clearSession: () => void;

@@ -214,7 +214,11 @@ export default function PhoneBindModal({
           {error && <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm text-red-400">{error}</div>}
 
           <div className="flex gap-2 pt-1">
-            <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-border-subtle px-4 py-2 text-sm text-text-muted hover:text-text-primary transition-colors">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-lg border border-border-subtle px-4 py-2 text-sm text-text-muted hover:text-text-primary transition-colors"
+            >
               {secondaryLabel}
             </button>
             <button
