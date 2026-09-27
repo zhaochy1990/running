@@ -4,10 +4,10 @@ export {
   buildResponsesModel,
   type ModelApiKind,
   type ModelConfig,
-  type ReasoningEffort,
-} from "./models.js";
-export {
-  invokeStructured,
   ModelContractError,
   type PromptMessage,
-} from "./structured.js";
+  type ReasoningEffort,
+  type StructuredModelConfig,
+  type StructuredRequest,
+  type StructuredRunnable,
+} from "./models.js";

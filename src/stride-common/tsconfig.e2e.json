@@ -1,0 +1,9 @@
+{
+  "//": "Type-checks `e2e/` only. It lives outside `src/`, so the library build (tsconfig.json, rootDir ./src) cannot cover it, and Node's type stripping does not check types at all.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["e2e/**/*.ts"]
+}

@@ -15,10 +15,12 @@
     "clean": "rm -rf dist",
     "build": "npm run clean && npm run tsc",
     "test": "npm run build && node --test dist/*.test.js dist/llm/*.test.js",
-    "format": "biome format --write src scripts",
-    "lint": "biome lint src scripts",
-    "check": "biome check src scripts",
-    "check:fix": "biome check --write src scripts"
+    "typecheck:e2e": "node node_modules/typescript/lib/tsc.js -p tsconfig.e2e.json",
+    "test:e2e": "npm run build && npm run typecheck:e2e && node --test e2e/models.test.ts",
+    "format": "biome format --write src scripts e2e",
+    "lint": "biome lint src scripts e2e",
+    "check": "biome check src scripts e2e",
+    "check:fix": "biome check --write src scripts e2e"
   },
   "keywords": [],
   "author": "",
