@@ -1,3 +1,4 @@
+import { invokeStructured } from "@stride/common";
 import { MasterPlanSchema, ReviewReportSchema, StrategyCandidateSchema, StrategyJudgmentSchema } from "@stride/contract";
 import type { ModelConfig } from "../../../config/config.js";
 import {
@@ -22,7 +23,6 @@ import {
   skeletonPrompt,
   strategyPrompt,
 } from "./prompts.js";
-import { invokeStructured } from "./structured.js";
 
 export type MasterPlanLlmModels = Pick<
   MasterPlanGraphDependencies,

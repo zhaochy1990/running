@@ -1,4 +1,4 @@
-import { getLogger } from "@stride/common";
+import { buildModel, getLogger } from "@stride/common";
 import { createAgent } from "langchain";
 import type { ModelConfig } from "../../config/config.js";
 import type { DataProvider } from "../../data/dataProvider.js";
@@ -7,7 +7,6 @@ import { createPlanTools } from "../../tools/plan.js";
 import { createRaceTools } from "../../tools/races.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
 import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
-import { buildModel } from "../common.js";
 import { CoachContext } from "../context.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { loadSkillMarkdown } from "../skillLoader.js";

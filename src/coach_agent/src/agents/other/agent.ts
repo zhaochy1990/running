@@ -1,7 +1,6 @@
-import { getLogger } from "@stride/common";
+import { buildModel, getLogger } from "@stride/common";
 import { createAgent } from "langchain";
 import type { ModelConfig } from "../../config/config.js";
-import { buildModel } from "../common.js";
 import { CoachContext } from "../context.js";
 import { memoryTools } from "../memory.js";
 import { createLoggingMiddleware } from "../middleware.js";

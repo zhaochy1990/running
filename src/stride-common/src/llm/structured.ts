@@ -1,9 +1,24 @@
+/**
+ * Structured (schema-validated) LLM invocation, with a bounded retry that feeds
+ * the previous violation back to the model.
+ *
+ * This is the contract layer on top of a plain model call, and it is the only
+ * thing STRIDE adds: the client itself comes from {@link buildResponsesModel}.
+ * Callers pass a zod schema for shape and an optional `validate` callback for
+ * domain rules that a schema cannot express (for example "the model's verdict
+ * must agree with the authoritative facts").
+ */
+
 import { OutputParserException } from "@langchain/core/output_parsers";
 import type { Runnable } from "@langchain/core/runnables";
 import { z } from "zod/v4";
-import { buildResponsesModel } from "../../../agents/common.js";
-import type { ModelConfig } from "../../../config/config.js";
-import { ModelContractError } from "../nodes.js";
+import { getLogger } from "../logger.js";
+import { buildResponsesModel, type ModelConfig } from "./models.js";
+
+const logger = getLogger("llm:structured");
+
+/** Raised when a model could not satisfy its schema/domain contract after retries. */
+export class ModelContractError extends Error {}
 
 export type PromptMessage = ["system" | "user", string];
 
@@ -23,6 +38,7 @@ export async function invokeStructured<Output>(
   validate: (value: Output) => Output = (value) => value,
   dependencies: StructuredOutputDependencies = {},
 ): Promise<Output> {
+  logger.info({ model: model.name, name }, "Invoking structured output model");
   let lastError: unknown;
   const buildStructured = dependencies.buildStructuredModel ?? defaultStructuredModel;
 
@@ -44,13 +60,17 @@ export async function invokeStructured<Output>(
     }
   }
 
-  throw new ModelContractError(`Structured output contract failed after retries for ${name}`);
+  const detail = lastError instanceof Error ? lastError.message : "unknown contract violation";
+  throw new ModelContractError(`Structured output contract failed after retries for ${name}: ${detail}`);
 }
 
 function defaultStructuredModel(model: ModelConfig, schema: StructuredSchema<unknown>, name: string) {
+  // DeepSeek thinking models reject the forced `tool_choice` that functionCalling
+  // emits (400 "Thinking mode does not support this tool_choice"), so use the
+  // response_format path instead.
   return buildResponsesModel(model).withStructuredOutput(schema as never, {
     name,
-    method: "functionCalling",
+    method: "jsonSchema",
     strict: true,
   });
 }

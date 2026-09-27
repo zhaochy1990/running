@@ -23,7 +23,7 @@ export interface LoadConfigOptions {
 }
 
 export function loadConfig(options: LoadConfigOptions): CoachAgentConfig {
-  logger.info({ configFiles: options.configFiles }, "Loading coach config");
+  logger.info({ configFiles: options.configFiles }, "Loading Coach Agent config");
   // The coach registry is dynamic; the convicted output is trusted to match the shape.
   return loadWithConvict({ schema: coachSchema, configFiles: options.configFiles, strict: false }) as unknown as CoachAgentConfig;
 }
@@ -53,9 +53,6 @@ export function getAgentConfig(config: CoachAgentConfig, agentName: string): Mod
   }
   if (agentConfig.thinking !== undefined) {
     resolved.thinking = agentConfig.thinking;
-  }
-  if (agentConfig.response_format !== undefined) {
-    resolved.response_format = agentConfig.response_format;
   }
   if (agentConfig.api_kind !== undefined) {
     resolved.api_kind = agentConfig.api_kind;

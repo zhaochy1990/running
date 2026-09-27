@@ -1,8 +1,33 @@
-import { ChatOpenAI, ChatOpenAIResponses } from "@langchain/openai";
-import { getLogger } from "@stride/common";
-import type { ModelConfig } from "../config/config.js";
+/**
+ * LLM client construction for STRIDE's OpenAI-compatible model endpoints.
+ *
+ * This is the single place that knows how to turn a `ModelConfig` into a
+ * LangChain chat model (auth, endpoint, thinking switches, Responses vs Chat
+ * Completions). The chat agents, the planning graphs and the worker all build
+ * their clients here instead of each keeping a copy.
+ */
 
-const logger = getLogger("coachAgent:model");
+import { ChatOpenAI, ChatOpenAIResponses } from "@langchain/openai";
+import { getLogger } from "../logger.js";
+
+export type ModelApiKind = "chat-completions" | "responses";
+export type ReasoningEffort = "low" | "medium" | "high" | "max";
+
+export interface ModelConfig {
+  name: string;
+  model: string;
+  endpoint: string;
+  api_key_env: string;
+  api_kind: ModelApiKind;
+  temperature?: number;
+  max_tokens: number;
+  timeout_s: number;
+  reasoning_effort?: ReasoningEffort;
+  /** DeepSeek 思考模式开关。缺省 = 保持模型默认（思考模式打开，effort 默认 high）。 */
+  thinking?: "enabled" | "disabled";
+}
+
+const logger = getLogger("llm:models");
 
 /** Config comes from leniently-parsed YAML, so the runtime presence of the key env var is not type-guaranteed. */
 function resolveApiKey(config: ModelConfig): string {
@@ -29,10 +54,10 @@ export function buildModel(config: ModelConfig): ChatOpenAI | ChatOpenAIResponse
 }
 
 export function buildResponsesModel(config: ModelConfig): ChatOpenAIResponses {
-  if (config.provider !== "openai-compatible" || config.api_kind !== "responses") {
-    throw new Error(
-      `ChatOpenAIResponses requires an openai-compatible Responses model; "${config.name}" is provider=${config.provider} api_kind=${config.api_kind}`,
-    );
+  // Callers reach this builder directly (not only through `buildModel`), so the
+  // api_kind guard is the one runtime check that catches a misconfigured role.
+  if (config.api_kind !== "responses") {
+    throw new Error(`ChatOpenAIResponses requires a Responses model; "${config.name}" is api_kind=${config.api_kind}`);
   }
 
   return new ChatOpenAIResponses({
@@ -76,6 +101,5 @@ export function buildChatModel(config: ModelConfig): ChatOpenAI {
     // TypeScript 特有：禁用 TS 的 Responses API 预设，使 extraBody 生效并切换回普通模式
     useResponsesApi: false,
     temperature: config.temperature ?? 0.4,
-    // outputVersion: "v1",
   });
 }

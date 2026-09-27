@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { PromptMessage } from "@stride/common";
 import { REQUIRED_REVIEWERS, type ReviewerType } from "@stride/contract";
-import type { PromptMessage } from "./structured.js";
 
 interface AssessmentPromptInput {
   request: unknown;

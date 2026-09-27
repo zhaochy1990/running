@@ -6,11 +6,9 @@ import { z } from "zod";
 
 const no_thinking: ModelConfig = {
   name: 'deepseekv4flash',
-  provider: 'openai-compatible',
   model: 'deepseek-v4-flash',
   endpoint: 'https://api.deepseek.com',
   api_key_env: 'DEEPSEEK_API_KEY',
-  auth: 'api-key',
   api_kind: 'chat-completions',
   max_tokens: 16384,
   timeout_s: 120,
@@ -20,11 +18,9 @@ const no_thinking: ModelConfig = {
 
 const thinking: ModelConfig = {
   name: 'deepseekv4flash',
-  provider: 'openai-compatible',
   model: 'deepseek-v4-flash',
   endpoint: 'https://api.deepseek.com',
   api_key_env: 'DEEPSEEK_API_KEY',
-  auth: 'api-key',
   api_kind: 'chat-completions',
   max_tokens: 16384,
   timeout_s: 120,

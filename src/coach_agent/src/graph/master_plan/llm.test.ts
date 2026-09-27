@@ -1,18 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { OutputParserException } from "@langchain/core/output_parsers";
+import { invokeStructured } from "@stride/common";
 import type { ModelConfig } from "../../config/config.js";
 import { createMasterPlanLlmModels } from "./llm/models.js";
 import { athleteAssessmentPrompt, goalAssessmentPrompt, reviewPrompt, strategyPrompt } from "./llm/prompts.js";
-import { invokeStructured } from "./llm/structured.js";
 
 const MODEL: ModelConfig = {
   name: "test-responses",
-  provider: "openai-compatible",
   model: "test-model",
-  deployment: "test-model",
   endpoint: "http://127.0.0.1:1/v1",
-  auth: "api-key",
   api_kind: "responses",
   api_key_env: "COACH_AGENT_TEST_API_KEY",
   max_tokens: 1024,

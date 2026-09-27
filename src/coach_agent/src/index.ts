@@ -19,6 +19,7 @@ export {
   getCheckpointId,
   WRITES_IDX_MAP,
 } from "@langchain/langgraph-checkpoint";
+export { buildModel } from "@stride/common";
 export type {
   CoachAgentOptions,
   CoachToolRuntime,
@@ -50,4 +51,3 @@ export {
   formatTokenUsageReport,
   LlmTokenUsageTracker,
 } from "./utils/tokenUsage.js";
-export { buildModel } from "./agents/common.js";

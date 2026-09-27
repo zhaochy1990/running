@@ -1,3 +1,4 @@
+import { buildResponsesModel } from "@stride/common";
 import { WeeklyPlanDirectResponseSchema } from "@stride/contract";
 import type { ModelConfig } from "../../config/config.js";
 import type { DataProvider } from "../../data/dataProvider.js";
@@ -8,7 +9,6 @@ import { createRaceTools } from "../../tools/races.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
 import { createTrainingLoadTools } from "../../tools/trainingLoad.js";
 import { createWeeklyPlanContextTools } from "../../tools/weeklyPlanContext.js";
-import { buildResponsesModel } from "../common.js";
 import { createLoggingMiddleware } from "../middleware.js";
 import { WeeklyPlanPrompt } from "../prompts.js";
 import { createTurnScopeMiddleware } from "../turnScope.js";

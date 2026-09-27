@@ -24,11 +24,8 @@ after(() => {
 
 const modelConfig: ModelConfig = {
   name: "test",
-  provider: "openai-compatible",
   model: "test-model",
-  deployment: "test",
   endpoint: "http://127.0.0.1:1",
-  auth: "api-key",
   api_kind: "responses",
   api_key_env: TEST_API_KEY_ENV,
   max_tokens: 100,

@@ -1,26 +1,8 @@
-export type ModelProvider = "openai-compatible" | "azure-openai";
-export type ModelAuth = "api-key" | "managed-identity";
-export type ModelApiKind = "chat-completions" | "responses";
-export type ReasoningEffort = "low" | "medium" | "high" | "max";
+// The model client config lives in `@stride/common`, next to the builders that
+// consume it. Re-exported here so coach packages keep a single import site.
+export type { ModelApiKind, ModelConfig, ReasoningEffort } from "@stride/common";
 
-export interface ModelConfig {
-  name: string;
-  provider: ModelProvider;
-  model: string;
-  deployment?: string;
-  endpoint: string;
-  api_key_env: string;
-  api_version?: string;
-  auth: ModelAuth;
-  api_kind: ModelApiKind;
-  temperature?: number;
-  max_tokens: number;
-  timeout_s: number;
-  reasoning_effort?: ReasoningEffort;
-  /** DeepSeek 思考模式开关。缺省 = 保持模型默认（思考模式打开，effort 默认 high）。 */
-  thinking?: "enabled" | "disabled";
-  response_format?: "json_object";
-}
+import type { ModelApiKind, ModelConfig, ReasoningEffort } from "@stride/common";
 
 export interface RoleConfig {
   name: string;
@@ -30,7 +12,6 @@ export interface RoleConfig {
   reasoning_effort?: ReasoningEffort;
   /** DeepSeek 思考模式开关；缺省 = 模型默认（思考开、effort high）。 */
   thinking?: "enabled" | "disabled";
-  response_format?: "json_object";
   api_kind?: ModelApiKind;
 }
 

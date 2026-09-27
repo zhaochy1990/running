@@ -1,15 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ModelConfig } from "../config/config.js";
-import { buildResponsesModel } from "./common.js";
+import { buildResponsesModel, type ModelConfig } from "./models.js";
 
 const MODEL: ModelConfig = {
   name: "test-responses",
-  provider: "openai-compatible",
   model: "test-model",
-  deployment: "test-model",
   endpoint: "http://127.0.0.1:1/v1",
-  auth: "api-key",
   api_kind: "responses",
   max_tokens: 1024,
   api_key_env: "COACH_AGENT_TEST_API_KEY",

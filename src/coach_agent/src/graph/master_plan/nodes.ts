@@ -1,5 +1,5 @@
 import { END, ReducedValue, Send, StateSchema } from "@langchain/langgraph";
-import { getLogger } from "@stride/common";
+import { getLogger, ModelContractError } from "@stride/common";
 import {
   addDays,
   adjudicateMasterPlanReviews,
@@ -122,7 +122,9 @@ export interface MasterPlanGraphDependencies {
   artifactRevision?: number;
 }
 
-export class ModelContractError extends Error {}
+// Defined in `@stride/common` next to the structured-output contract that raises
+// it; re-exported because the master-plan graph's public surface exposes it.
+export { ModelContractError };
 
 export const GraphInput = new StateSchema({ request: MasterPlanGraphRequest });
 export const GraphOutput = new StateSchema({ outcome: MasterPlanGraphOutcome });
@@ -294,6 +296,7 @@ class MasterPlanNodes {
         };
       return { athleteAssessment: assessment };
     } catch (error) {
+      logger.error(`Athlete assessment model failed for request ${state.request.request_id}: ${error instanceof Error ? error.message : "unknown error"}`);
       return {
         outcome: modelFailure(error, request, context, "athlete_assessment_contract_invalid", "assessment_model_unavailable"),
       };
@@ -373,6 +376,7 @@ class MasterPlanNodes {
       validateStrategyCandidate(candidate, facts, athleteAssessment);
       return { strategyCandidates: [candidate] };
     } catch (error) {
+      logSwallowedFailure("strategyWorker", error, { archetype: state.strategyArchetype });
       return {
         workerErrors: [isInfrastructureError(error) ? "infra:strategy_model_unavailable" : "quality:strategy_candidate_invalid"],
       };
@@ -395,6 +399,7 @@ class MasterPlanNodes {
       validateStrategyJudgment(judgment, state.candidate!, facts);
       return { judgments: [judgment] };
     } catch (error) {
+      logSwallowedFailure("judgeWorker", error, { judge: state.judge, candidateId: state.candidate?.candidate_id });
       return {
         workerErrors: [isInfrastructureError(error) ? "infra:strategy_judgment_unavailable" : "quality:strategy_judgment_invalid"],
       };
@@ -441,6 +446,7 @@ class MasterPlanNodes {
         selectedStrategy: state.selectedStrategy!,
       });
     } catch (error) {
+      logSwallowedFailure("expandSkeleton", error);
       return {
         outcome: isContractError(error)
           ? qualityFailure(request, context, "candidate_plan_contract_invalid")
@@ -556,6 +562,7 @@ class MasterPlanNodes {
         throw new Error("review identity mismatch");
       return { reviewReports: [report] };
     } catch (error) {
+      logSwallowedFailure("reviewWorker", error, { reviewerType: state.reviewerType });
       return {
         reviewWorkerErrors: [
           ReviewWorkerErrorSchema.parse({
@@ -636,9 +643,104 @@ class MasterPlanNodes {
 
 const JUDGES: readonly Judge[] = ["performance_path", "safety_load", "constraint_feasibility"];
 
+/** Node functions registered in `graph.ts`, in rough execution order. */
+const LOGGED_NODES = [
+  "initialize",
+  "assessAthlete",
+  "assessGoal",
+  "strategyWorker",
+  "dispatchJudges",
+  "judgeWorker",
+  "selectStrategy",
+  "expandSkeleton",
+  "simulateLoad",
+  "filterRules",
+  "validateSelected",
+  "reviewWorker",
+  "adjudicateReviews",
+  "finalize",
+] as const;
+
+/**
+ * The state fields that tell concurrent fan-out invocations apart. Nine judges
+ * run as three candidates x three judges, so the candidate is what makes the
+ * difference between "stuck in the judge stage" and "stuck on one judgment".
+ */
+function fanOutDetail(state: unknown): string | undefined {
+  const scoped = state as {
+    strategyArchetype?: unknown;
+    judge?: unknown;
+    reviewerType?: unknown;
+    candidate?: { candidate_id?: unknown };
+  };
+  const parts = [scoped?.candidate?.candidate_id, scoped?.strategyArchetype, scoped?.judge, scoped?.reviewerType].filter(
+    (part): part is string => typeof part === "string",
+  );
+  return parts.length ? parts.join(" · ") : undefined;
+}
+
+/**
+ * The diagnostic fields of a terminal outcome — enough to see why a node
+ * stopped without dumping the whole artifact (which can carry a full plan).
+ */
+function outcomeReason(update: unknown): Record<string, unknown> | undefined {
+  const outcome = (update as { outcome?: { decision?: string; code?: string; artifact?: { unresolved_issues?: unknown } } })?.outcome;
+  if (!outcome) return undefined;
+  return {
+    decision: outcome.decision,
+    ...(outcome.code ? { code: outcome.code } : {}),
+    ...(outcome.artifact?.unresolved_issues ? { issues: outcome.artifact.unresolved_issues } : {}),
+  };
+}
+
+/**
+ * Log each node entry and exit with its duration, so a stalled or failed run
+ * shows which node it entered and never left. An entry without a matching exit
+ * IS the answer to "where is it stuck". Three strategy workers, nine judges and
+ * three reviewers share one node each, so `detail` carries the branch identity.
+ *
+ * A node that ends the run returns an `outcome` instead of a normal state
+ * update; that exit is logged at `warn` with the decision and its issues, so a
+ * failed run reads as one line instead of a silent `done`.
+ */
+function withNodeLogging(name: string, node: (...args: never[]) => unknown): (...args: never[]) => unknown {
+  return async (...args: never[]) => {
+    const startedAt = Date.now();
+    const state = args[0] as unknown as { request?: { request_id?: string } } | undefined;
+    const context = {
+      node: name,
+      requestId: state?.request?.request_id,
+      detail: fanOutDetail(state),
+      ms: 0,
+    };
+    logger.info(context, `▶ node ${name} start`);
+    try {
+      const update = (await node(...args)) as { outcome?: { decision?: string } } | undefined;
+      context.ms = Date.now() - startedAt;
+      const reason = outcomeReason(update);
+      const payload = { ...context, keys: update ? Object.keys(update) : [], ...(reason ? { outcome: reason } : {}) };
+      if (reason) logger.warn(payload, `⚠ node ${name} ended the run`);
+      else logger.info(payload, `✔ node ${name} done`);
+      return update;
+    } catch (error) {
+      context.ms = Date.now() - startedAt;
+      logger.error({ ...context, err: error }, `✘ node ${name} threw`);
+      throw error;
+    }
+  };
+}
+
 /** Bind graph dependencies once and expose ready-to-register node functions. */
 export function createMasterPlanNodes(dependencies: MasterPlanGraphDependencies) {
-  return new MasterPlanNodes(dependencies);
+  const nodes = new MasterPlanNodes(dependencies);
+  // Wrapped in place: the node functions are instance fields and `graph.ts`
+  // reads them off this object, so the precise `MasterPlanNodes` type survives.
+  const mutable = nodes as unknown as Record<string, (...args: never[]) => unknown>;
+  for (const name of LOGGED_NODES) {
+    const node = mutable[name];
+    if (node) mutable[name] = withNodeLogging(name, node);
+  }
+  return nodes;
 }
 
 function sharedWorkerState(state: typeof GraphState.State) {
@@ -677,7 +779,17 @@ function requiredWithAssessments(state: typeof GraphState.State) {
 function isContractError(error: unknown) {
   return error instanceof ModelContractError || error instanceof z.ZodError;
 }
+/**
+ * Nodes catch their own failures and hand the graph a structured outcome — what
+ * the graph wants, but it makes the cause invisible in the logs. Every catch
+ * site that swallows an exception must call this first.
+ */
+function logSwallowedFailure(site: string, error: unknown, extra: Record<string, unknown> = {}): void {
+  logger.warn({ site, ...extra, err: error }, `${site}: failure converted into a structured outcome`);
+}
+
 function modelFailure(error: unknown, request: MasterPlanGraphRequest, context: MasterPlanGraphContext, issue: string, code: string) {
+  logSwallowedFailure("modelFailure", error, { issue });
   return isContractError(error) || !(error instanceof Error) || !/(?:timeout|ECONN|network|unavailable)/i.test(error.message)
     ? qualityFailure(request, context, issue)
     : infrastructureFailure(request, context, code);
