@@ -30,9 +30,11 @@ function makeAgentNode(agent: InnerAgent): GraphNode<typeof AgentsState> {
 export function getAgentNode(agentName: string, config: CoachAgentConfig, dataProvider: DataProvider): GraphNode<typeof AgentsState> {
   if (agentName === "orchestrator") {
     const agentConfig = getAgentConfig(config, "orchestrator");
-    // 训练计划相关意图（weekly_plan / master_plan）统一路由到 training 子图；
-    // 训练问答与其它意图仍交给 qa。分类结果写入 state.intent 供观测。
-    return getOrchestratorNode(agentConfig, { training_question: "qa", weekly_plan: "training", master_plan: "training", other: "qa" });
+    // ponytail: 临时全量兜到 qa —— training 子图还是 hello-world 占位，
+    // 计划意图走它只会拿到 "received"。qa 的计划工具是只读的，能查看/解释计划，
+    // 但会拒绝修改。真实现接回后把 weekly_plan / master_plan 改回 "training"。
+    // 分类结果仍写入 state.intent 供观测。
+    return getOrchestratorNode(agentConfig, { training_question: "qa", weekly_plan: "qa", master_plan: "qa", other: "qa" });
   }
 
   if (agentName === "training") {
