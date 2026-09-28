@@ -1808,6 +1808,10 @@ definitions:
         items:
           $ref: '#/definitions/storage.RaceAidStation'
         type: array
+      course_challenges:
+        items:
+          $ref: '#/definitions/storage.RaceCourseChallenge'
+        type: array
       cutoffs:
         items:
           $ref: '#/definitions/storage.RaceCutoff'
@@ -1830,6 +1834,8 @@ definitions:
         type: array
       reputation:
         $ref: '#/definitions/storage.RaceReputation'
+      route_description:
+        type: string
       start_point:
         $ref: '#/definitions/storage.RacePoint'
       total_ascent_m:
@@ -1841,6 +1847,10 @@ definitions:
         items:
           $ref: '#/definitions/storage.RaceAidStation'
         type: array
+      course_challenges:
+        items:
+          $ref: '#/definitions/storage.RaceCourseChallenge'
+        type: array
       cutoffs:
         items:
           $ref: '#/definitions/storage.RaceCutoff'
@@ -1863,6 +1873,12 @@ definitions:
         type: array
       reputation:
         $ref: '#/definitions/storage.RaceReputation'
+      route_description:
+        description: |-
+          RouteDescription is the course as the organiser writes it, "起点→路段→…
+          →终点". A blank value is normalized to absent (see applyRaceItemContent-
+          Columns) so "unset" and "explicitly empty" stay distinguishable.
+        type: string
       start_point:
         $ref: '#/definitions/storage.RacePoint'
       total_ascent_m:
@@ -2385,8 +2401,7 @@ definitions:
         type: string
         x-nullable: true
       structured:
-        allOf:
-        - $ref: '#/definitions/api.structuredWeekResponse'
+        $ref: '#/definitions/api.structuredWeekResponse'
         x-nullable: true
       total_duration_fmt:
         type: string
@@ -2522,6 +2537,13 @@ definitions:
       summary:
         type: string
     type: object
+  storage.RaceCourseChallenge:
+    properties:
+      description:
+        type: string
+      distance_km:
+        type: number
+    type: object
   storage.RaceCutoff:
     properties:
       cutoff_at:
@@ -2637,10 +2659,6 @@ definitions:
     type: object
 info:
   contact: {}
-  description: 'HTTP API fronting the STRIDE worker: create and track async jobs and
-    pipeline runs, and manage user profile, onboarding, and watch-provider login.'
-  title: STRIDE API
-  version: "1.0"
 paths:
   /api/{user}/ability/backfill:
     post:
@@ -6594,15 +6612,4 @@ paths:
       summary: Get a pipeline run's status
       tags:
       - pipelines
-securityDefinitions:
-  BearerAuth:
-    description: '"Bearer <JWT>" for end-user callers (RS256).'
-    in: header
-    name: Authorization
-    type: apiKey
-  InternalToken:
-    description: Shared secret for server-to-server callers.
-    in: header
-    name: X-Internal-Token
-    type: apiKey
 swagger: "2.0"

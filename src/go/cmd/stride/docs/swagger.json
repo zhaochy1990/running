@@ -1,10 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "HTTP API fronting the STRIDE worker: create and track async jobs and pipeline runs, and manage user profile, onboarding, and watch-provider login.",
-        "title": "STRIDE API",
-        "contact": {},
-        "version": "1.0"
+        "contact": {}
     },
     "paths": {
         "/api/admin/async-runs": {
@@ -8636,6 +8633,12 @@
                         "$ref": "#/definitions/storage.RaceAidStation"
                     }
                 },
+                "course_challenges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceCourseChallenge"
+                    }
+                },
                 "cutoffs": {
                     "type": "array",
                     "items": {
@@ -8668,6 +8671,9 @@
                 },
                 "reputation": {
                     "$ref": "#/definitions/storage.RaceReputation"
+                },
+                "route_description": {
+                    "type": "string"
                 },
                 "start_point": {
                     "$ref": "#/definitions/storage.RacePoint"
@@ -8686,6 +8692,12 @@
                         "$ref": "#/definitions/storage.RaceAidStation"
                     }
                 },
+                "course_challenges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceCourseChallenge"
+                    }
+                },
                 "cutoffs": {
                     "type": "array",
                     "items": {
@@ -8718,6 +8730,10 @@
                 },
                 "reputation": {
                     "$ref": "#/definitions/storage.RaceReputation"
+                },
+                "route_description": {
+                    "description": "RouteDescription is the course as the organiser writes it, \"起点→路段→…\n→终点\". A blank value is normalized to absent (see applyRaceItemContent-\nColumns) so \"unset\" and \"explicitly empty\" stay distinguishable.",
+                    "type": "string"
                 },
                 "start_point": {
                     "$ref": "#/definitions/storage.RacePoint"
@@ -9499,12 +9515,8 @@
                     "x-nullable": true
                 },
                 "structured": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/api.structuredWeekResponse"
-                        }
-                    ],
-                    "x-nullable": true
+                    "x-nullable": true,
+                    "$ref": "#/definitions/api.structuredWeekResponse"
                 },
                 "total_duration_fmt": {
                     "type": "string"
@@ -9711,6 +9723,17 @@
                 }
             }
         },
+        "storage.RaceCourseChallenge": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                }
+            }
+        },
         "storage.RaceCutoff": {
             "type": "object",
             "properties": {
@@ -9885,20 +9908,6 @@
                     "type": "string"
                 }
             }
-        }
-    },
-    "securityDefinitions": {
-        "BearerAuth": {
-            "description": "\"Bearer \u003cJWT\u003e\" for end-user callers (RS256).",
-            "type": "apiKey",
-            "name": "Authorization",
-            "in": "header"
-        },
-        "InternalToken": {
-            "description": "Shared secret for server-to-server callers.",
-            "type": "apiKey",
-            "name": "X-Internal-Token",
-            "in": "header"
         }
     }
 }

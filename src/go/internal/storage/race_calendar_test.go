@@ -1145,6 +1145,7 @@ func TestCopyRaceItemAdminData_CopiesEveryAdminOwnedColumn(t *testing.T) {
 		RouteDescription: strPtr("起点→终点"),
 		TotalAscentM:     intPtr(120),
 		ElevationPoints:  []RaceElevationPoint{{DistanceKm: 1, ElevationM: 10}},
+		CourseChallenges: []RaceCourseChallenge{{DistanceKm: floatPtr(4.5), Description: "隧道下穿，有上下起伏"}},
 		AidStations:      []RaceAidStation{{DistanceKm: 5, Supplies: []string{"水"}}},
 		Cutoffs:          []RaceCutoff{{Point: "21K", CutoffAt: "03:00"}},
 		Prizes:           []RacePrize{{Rank: "1", Amount: 10000}},

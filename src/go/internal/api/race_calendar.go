@@ -1099,7 +1099,7 @@ func applyRaceItemUpdate(c *gin.Context, item *storage.RaceCalendarItem, req rac
 	return true
 }
 
-// applyRaceItemContentColumns writes the eleven content columns of one item row
+// applyRaceItemContentColumns writes the twelve content columns of one item row
 // to match the tri-state content input: an object replaces them wholesale, nil
 // clears them.
 //
@@ -1114,6 +1114,7 @@ func applyRaceItemContentColumns(item *storage.RaceCalendarItem, in *raceItemCon
 		item.RouteDescription = nil
 		item.TotalAscentM = nil
 		item.ElevationPoints = nil
+		item.CourseChallenges = nil
 		item.AidStations = nil
 		item.Cutoffs = nil
 		item.Prizes = nil
@@ -1127,6 +1128,7 @@ func applyRaceItemContentColumns(item *storage.RaceCalendarItem, in *raceItemCon
 	item.RouteDescription = normalizeOptionalString(in.RouteDescription)
 	item.TotalAscentM = in.TotalAscentM
 	item.ElevationPoints = in.ElevationPoints
+	item.CourseChallenges = in.CourseChallenges
 	item.AidStations = in.AidStations
 	item.Cutoffs = in.Cutoffs
 	item.Prizes = in.Prizes

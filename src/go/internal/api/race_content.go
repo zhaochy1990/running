@@ -464,14 +464,15 @@ type raceItemContentInput struct {
 	// RouteDescription is the course as the organiser writes it, "起点→路段→…
 	// →终点". A blank value is normalized to absent (see applyRaceItemContent-
 	// Columns) so "unset" and "explicitly empty" stay distinguishable.
-	RouteDescription *string                      `json:"route_description"`
-	TotalAscentM     *int                         `json:"total_ascent_m"`
-	ElevationPoints  []storage.RaceElevationPoint `json:"elevation_points"`
-	AidStations      []storage.RaceAidStation     `json:"aid_stations"`
-	Cutoffs          []storage.RaceCutoff         `json:"cutoffs"`
-	Prizes           []storage.RacePrize          `json:"prizes"`
-	Reputation       *storage.RaceReputation      `json:"reputation"`
-	Photos           []storage.RacePhoto          `json:"photos"`
+	RouteDescription *string                       `json:"route_description"`
+	TotalAscentM     *int                          `json:"total_ascent_m"`
+	ElevationPoints  []storage.RaceElevationPoint  `json:"elevation_points"`
+	CourseChallenges []storage.RaceCourseChallenge `json:"course_challenges"`
+	AidStations      []storage.RaceAidStation      `json:"aid_stations"`
+	Cutoffs          []storage.RaceCutoff          `json:"cutoffs"`
+	Prizes           []storage.RacePrize           `json:"prizes"`
+	Reputation       *storage.RaceReputation       `json:"reputation"`
+	Photos           []storage.RacePhoto           `json:"photos"`
 }
 
 // raceEventContentDTO is the admin projection of the six content sections on a
@@ -503,17 +504,18 @@ func newRaceEventContentDTO(row storage.RaceCalendarEvent) *raceEventContentDTO 
 // pointer means the item has no content yet. The content columns live on the
 // item's own race_calendar_item row, so this projects a RaceCalendarItem.
 type raceItemContentDTO struct {
-	DistanceKm       *float64                     `json:"distance_km"`
-	StartPoint       *storage.RacePoint           `json:"start_point"`
-	FinishPoint      *storage.RacePoint           `json:"finish_point"`
-	RouteDescription *string                      `json:"route_description"`
-	TotalAscentM     *int                         `json:"total_ascent_m"`
-	ElevationPoints  []storage.RaceElevationPoint `json:"elevation_points"`
-	AidStations      []storage.RaceAidStation     `json:"aid_stations"`
-	Cutoffs          []storage.RaceCutoff         `json:"cutoffs"`
-	Prizes           []storage.RacePrize          `json:"prizes"`
-	Reputation       *storage.RaceReputation      `json:"reputation"`
-	Photos           []storage.RacePhoto          `json:"photos"`
+	DistanceKm       *float64                      `json:"distance_km"`
+	StartPoint       *storage.RacePoint            `json:"start_point"`
+	FinishPoint      *storage.RacePoint            `json:"finish_point"`
+	RouteDescription *string                       `json:"route_description"`
+	TotalAscentM     *int                          `json:"total_ascent_m"`
+	ElevationPoints  []storage.RaceElevationPoint  `json:"elevation_points"`
+	CourseChallenges []storage.RaceCourseChallenge `json:"course_challenges"`
+	AidStations      []storage.RaceAidStation      `json:"aid_stations"`
+	Cutoffs          []storage.RaceCutoff          `json:"cutoffs"`
+	Prizes           []storage.RacePrize           `json:"prizes"`
+	Reputation       *storage.RaceReputation       `json:"reputation"`
+	Photos           []storage.RacePhoto           `json:"photos"`
 }
 
 func newRaceItemContentDTO(row storage.RaceCalendarItem) *raceItemContentDTO {
@@ -527,6 +529,7 @@ func newRaceItemContentDTO(row storage.RaceCalendarItem) *raceItemContentDTO {
 		RouteDescription: row.RouteDescription,
 		TotalAscentM:     row.TotalAscentM,
 		ElevationPoints:  row.ElevationPoints,
+		CourseChallenges: row.CourseChallenges,
 		AidStations:      row.AidStations,
 		Cutoffs:          row.Cutoffs,
 		Prizes:           row.Prizes,
@@ -642,6 +645,15 @@ func validateRaceItemContent(in *raceItemContentInput) error {
 	}
 	for _, cutoff := range in.Cutoffs {
 		if !isRaceClock(cutoff.CutoffAt) {
+			return errInvalidRaceContentInput
+		}
+	}
+	// A challenge row without a description carries nothing — the distance
+	// alone names a place, not a difficulty. The distance itself stays optional
+	// (nil), mirroring RaceCutoff: "立交桥缓上坡" is meaningful even before the
+	// organiser publishes where it sits.
+	for _, challenge := range in.CourseChallenges {
+		if strings.TrimSpace(challenge.Description) == "" {
 			return errInvalidRaceContentInput
 		}
 	}

@@ -280,7 +280,7 @@ type ReplaceRaceCalendarItemsResult struct {
 //     each field listed in its admin_overrides and takes the upstream value for
 //     every other sync-managed field (in practice: type). Its origin and
 //     override set survive, and so does everything the sync never writes — the
-//     eleven content columns and start_time/entry_fee/quota.
+//     twelve content columns and start_time/entry_fee/quota.
 //   - A missing item is inserted as origin='sync' with no overrides.
 //   - A detached item (origin='manual') is left completely untouched: neither
 //     refreshed nor stale-deleted.
@@ -720,7 +720,7 @@ func (s *Store) MoveRaceContent(ctx context.Context, sourceEventID, targetEventI
 }
 
 // copyRaceItemAdminData moves every administrator-owned value from src onto dst:
-// the entry fields the upstream never supplies, the eleven content columns and the
+// the entry fields the upstream never supplies, the twelve content columns and the
 // field overrides. dst keeps its own identity (id/name/type/origin), so a sync
 // item stays on the mirror.
 func copyRaceItemAdminData(dst *RaceCalendarItem, src RaceCalendarItem) {
@@ -736,6 +736,7 @@ func copyRaceItemAdminData(dst *RaceCalendarItem, src RaceCalendarItem) {
 	dst.RouteDescription = src.RouteDescription
 	dst.TotalAscentM = src.TotalAscentM
 	dst.ElevationPoints = src.ElevationPoints
+	dst.CourseChallenges = src.CourseChallenges
 	dst.AidStations = src.AidStations
 	dst.Cutoffs = src.Cutoffs
 	dst.Prizes = src.Prizes
