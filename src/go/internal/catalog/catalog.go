@@ -75,6 +75,12 @@ const (
 	// step inside either one — the two mirrors run as parallel jobs. System job
 	// (no subject user), internal-only, started by the daily cron workflow.
 	JobTypeRaceCalendarWALabel = "race_calendar_wa_label"
+	// JobTypeHomeCityRecompute recomputes every user's resident city from
+	// activity GPS starts + watch-named activity cities and upserts
+	// user_home_city, appending a history row on city changes. A system job
+	// (no subject user): internal-only, the single step of the
+	// homecity_recompute pipeline started by the weekly cron workflow.
+	JobTypeHomeCityRecompute = "homecity_recompute"
 )
 
 // Pipeline names (ADR 0020). onboarding and data_sync are fronted by
@@ -100,6 +106,10 @@ const (
 	// 中国田协 rows. Its own pipeline because it depends on both mirrors above
 	// having run, and those run as parallel jobs of the daily cron workflow.
 	PipelineRaceCalendarWALabel = "race_calendar_wa_label"
+	// PipelineHomeCityRecompute refreshes every user's resident-city snapshot.
+	// Internal-only (system run, no subject user); the weekly cron workflow
+	// starts it via POST /pipelines.
+	PipelineHomeCityRecompute = "homecity_recompute"
 )
 
 // JobSpec is one known job type and whether end users may enqueue it directly.
@@ -218,6 +228,13 @@ func Jobs() []JobSpec {
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"},"description":"Calendar years to label. Empty uses the current and next Shanghai year."}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
 		},
+		{
+			Type:          JobTypeHomeCityRecompute,
+			UserInitiable: false,
+			Description:   "Recompute every user's resident city from activity GPS starts + watch-named activity cities (time-weighted voting with training-camp exclusion and a relocation gate) and upsert user_home_city, appending a user_home_city_history row when a user's city changes (new/relocated/drift/cleared). Idempotent full scan; per-user failures skip and count rather than fail the run. System job (no subject user). Internal-only; the weekly cron workflow starts it via the homecity_recompute pipeline.",
+			InputSchema:   json.RawMessage(`{"type":"object","additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{}`),
+		},
 	}
 }
 
@@ -299,6 +316,18 @@ func Pipelines() []PipelineSpec {
 			Description:   "Internal system pipeline (no subject user): copy the World Athletics tier from each 国际田联 row onto its matching 中国田协 row (matched by race_date + city), so one race carries both its 中国田协 grade and its World Athletics label. Started by the daily cron workflow via POST /pipelines AFTER both calendar mirrors, which run as parallel jobs — the step needs both calendars' output. The optional input {\"years\":[...]} overrides which years to label.",
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
+		},
+		{
+			Def: pipeline.Def{
+				Name: PipelineHomeCityRecompute,
+				Steps: []pipeline.StepDef{
+					{Name: "recompute", JobType: JobTypeHomeCityRecompute},
+				},
+			},
+			UserInitiable: false,
+			Description:   "Internal system pipeline (no subject user): recompute every user's resident city from their activity signals (GPS starts + watch-named cities) and refresh the user_home_city snapshot, recording city changes in user_home_city_history. Idempotent; started weekly by the cron workflow via POST /pipelines (also manually via workflow_dispatch).",
+			InputSchema:   json.RawMessage(`{"type":"object","additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{}`),
 		},
 	}
 }

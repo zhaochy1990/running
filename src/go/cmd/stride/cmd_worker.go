@@ -23,6 +23,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/handlers/chinaathcalendar"
 	"github.com/zhaochy1990/stride/internal/handlers/competitioncalendar"
 	"github.com/zhaochy1990/stride/internal/handlers/compute"
+	"github.com/zhaochy1990/stride/internal/handlers/homecitysync"
 	racehandler "github.com/zhaochy1990/stride/internal/handlers/racedetection"
 	"github.com/zhaochy1990/stride/internal/handlers/routethumbnails"
 	"github.com/zhaochy1990/stride/internal/handlers/watchsync"
@@ -104,6 +105,10 @@ func runWorker() error {
 	}
 	// race_calendar table written by the race_calendar_sync pipeline.
 	if err := store.AutoMigrateRaceCalendar(ctx); err != nil {
+		return err
+	}
+	// user_home_city tables written by the homecity_recompute pipeline.
+	if err := store.AutoMigrateHomeCity(ctx); err != nil {
 		return err
 	}
 
@@ -283,7 +288,8 @@ func newRaceClassifier(cfg config.RaceDetection) (racedetection.Classifier, erro
 // route PNGs in COS, with `route_thumbnails_backfill` doing the all-history scan;
 // `race_calendar_sync` mirrors the World Athletics calendar (ccConfig),
 // preceded by `fetch_wa_api_key` key discovery (waClient); `chinaath_race_calendar_sync`
-// mirrors the 中国田协 catalogue (caConfig).
+// mirrors the 中国田协 catalogue (caConfig); `homecity_recompute` refreshes
+// every user's resident-city snapshot.
 func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *storage.Store, raceDetector *racedetection.Detector, raceConcurrency int, cosClient *cos.Client, waClient *worldathletics.Client, log *zap.Logger, ccConfig competitioncalendar.Config, caConfig chinaathcalendar.Config) {
 	reg.MustRegister("hello", func(_ context.Context, j *job.Job, hb job.Heartbeat) (string, error) {
 		_ = hb("greeting", 50)
@@ -316,4 +322,6 @@ func registerHandlers(reg *job.Registry, resolve watchsync.Resolver, store *stor
 		Store:  store,
 		Logger: log,
 	}))
+	// homecity_recompute pipeline: refresh every user's resident-city snapshot.
+	reg.MustRegister(homecitysync.JobType, homecitysync.New(store))
 }
