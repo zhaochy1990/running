@@ -9,7 +9,7 @@
 //	stride watch import-creds seed provider credentials from data/<uid> files
 //	stride watch sync        pull latest activities/health from the bound provider
 //	stride watch status      show the bound provider + login state
-//	stride homecity          detect each user's resident city (read-only; --write persists via the daily pipeline's recompute)
+//	stride homecity          detect each user's resident city (read-only; --write persists via the weekly pipeline's recompute)
 //
 // Each subcommand stays thin: parse flags via cobra, wire dependencies, run.
 // All logic lives in internal/.

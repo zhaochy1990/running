@@ -79,7 +79,7 @@ const (
 	// activity GPS starts + watch-named activity cities and upserts
 	// user_home_city, appending a history row on city changes. A system job
 	// (no subject user): internal-only, the single step of the
-	// homecity_recompute pipeline started by the daily cron workflow.
+	// homecity_recompute pipeline started by the weekly cron workflow.
 	JobTypeHomeCityRecompute = "homecity_recompute"
 )
 
@@ -107,7 +107,7 @@ const (
 	// having run, and those run as parallel jobs of the daily cron workflow.
 	PipelineRaceCalendarWALabel = "race_calendar_wa_label"
 	// PipelineHomeCityRecompute refreshes every user's resident-city snapshot.
-	// Internal-only (system run, no subject user); the daily cron workflow
+	// Internal-only (system run, no subject user); the weekly cron workflow
 	// starts it via POST /pipelines.
 	PipelineHomeCityRecompute = "homecity_recompute"
 )
@@ -231,7 +231,7 @@ func Jobs() []JobSpec {
 		{
 			Type:          JobTypeHomeCityRecompute,
 			UserInitiable: false,
-			Description:   "Recompute every user's resident city from activity GPS starts + watch-named activity cities (time-weighted voting with training-camp exclusion and a relocation gate) and upsert user_home_city, appending a user_home_city_history row when a user's city changes (new/relocated/drift/cleared). Idempotent full scan; per-user failures skip and count rather than fail the run. System job (no subject user). Internal-only; the daily cron workflow starts it via the homecity_recompute pipeline.",
+			Description:   "Recompute every user's resident city from activity GPS starts + watch-named activity cities (time-weighted voting with training-camp exclusion and a relocation gate) and upsert user_home_city, appending a user_home_city_history row when a user's city changes (new/relocated/drift/cleared). Idempotent full scan; per-user failures skip and count rather than fail the run. System job (no subject user). Internal-only; the weekly cron workflow starts it via the homecity_recompute pipeline.",
 			InputSchema:   json.RawMessage(`{"type":"object","additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{}`),
 		},
@@ -325,7 +325,7 @@ func Pipelines() []PipelineSpec {
 				},
 			},
 			UserInitiable: false,
-			Description:   "Internal system pipeline (no subject user): recompute every user's resident city from their activity signals (GPS starts + watch-named cities) and refresh the user_home_city snapshot, recording city changes in user_home_city_history. Idempotent; started daily by the cron workflow via POST /pipelines (also manually via workflow_dispatch).",
+			Description:   "Internal system pipeline (no subject user): recompute every user's resident city from their activity signals (GPS starts + watch-named cities) and refresh the user_home_city snapshot, recording city changes in user_home_city_history. Idempotent; started weekly by the cron workflow via POST /pipelines (also manually via workflow_dispatch).",
 			InputSchema:   json.RawMessage(`{"type":"object","additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{}`),
 		},

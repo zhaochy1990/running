@@ -1,7 +1,7 @@
 // Package homecitysync recomputes every user's resident city
 // (internal/homecity) from the activity store and persists the latest result
 // plus a change-history row. It is the single step of the internal
-// homecity_recompute pipeline started daily by the cron workflow; the same
+// homecity_recompute pipeline started weekly by the cron workflow; the same
 // RecomputeAll backs `stride homecity --write` for operator-triggered runs.
 //
 // The recompute is a full scan by design: 12 users × 15k activities resolve in

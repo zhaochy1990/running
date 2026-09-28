@@ -3,7 +3,7 @@
 // user. Default mode is read-only (safe against production with a reader
 // account); --write persists via the same RecomputeAll the homecity_recompute
 // pipeline runs (user_home_city + history), for operator-triggered refreshes
-// and backfills outside the daily cron.
+// and backfills outside the weekly cron.
 //
 // Output columns: user, detected city (district), confidence, source, weighted
 // share, vote count, and flags — relocation (prev→city), the trailing-30-day

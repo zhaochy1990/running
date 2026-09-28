@@ -14,10 +14,13 @@ name: Home city recompute
 
 on:
   schedule:
-    # Daily 16:30 UTC = 00:30 Asia/Shanghai, after the race-calendar mirrors at
-    # 16:00 so a fresh sync's activities are included in the same night's
-    # snapshot. UTC+8 has no DST.
-    - cron: '30 16 * * *'
+    # Weekly, Sunday 04:30 UTC = 12:30 Asia/Shanghai. Resident cities change
+    # slowly — the detector's own relocation gate needs ≥30 days of sustained
+    # presence in the new city before it flips — so a weekly cadence cannot
+    # miss a move. Runs half an hour after the weekly running-calibration
+    # recompute (04:00) purely to keep the two logs distinguishable; the two
+    # pipelines share no data. UTC+8 has no DST.
+    - cron: '30 4 * * 0'
   workflow_dispatch: {}
 
 jobs:
