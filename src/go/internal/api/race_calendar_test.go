@@ -993,6 +993,83 @@ func TestRaceCalendarAdmin_ItemContentLifecycle(t *testing.T) {
 	}
 }
 
+// TestRaceCalendarAdmin_RouteDescription covers the written course: it round
+// trips, a blank is stored as absent rather than "", an over-long paste is a
+// 400, and it survives one item's content being moved onto another row.
+func TestRaceCalendarAdmin_RouteDescription(t *testing.T) {
+	h := newRaceHarness(t)
+	event := h.store.seedEvent(syncEvent())
+	admin := h.adminToken(t)
+	base := fmt.Sprintf("/api/admin/races/%d/items", event.ID)
+
+	// Realistic shape: the organiser's own chain, 折返 included.
+	route := "桐庐县中心广场(起点)→迎春南路→富春江二桥(赛道1.7KM处折返)→春江路→桐庐县中心广场(终点)"
+
+	w := h.do(t, http.MethodPost, base, map[string]any{
+		"name": "半程", "type": "HalfMarathon",
+		"content": map[string]any{"distance_km": 21.0975, "route_description": route},
+	}, admin)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create = %d: %s", w.Code, w.Body.String())
+	}
+	var created raceCalendarItemDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &created)
+	if created.Content == nil || created.Content.RouteDescription == nil || *created.Content.RouteDescription != route {
+		t.Fatalf("created route = %+v, want it round-tripped", created.Content)
+	}
+	if stored := h.store.items[h.store.findItem(created.ID)]; !stored.HasContent() {
+		t.Fatal("a row carrying only a route must count as having content")
+	}
+
+	// A blank route is absent, not "" — the column has one spelling for unset.
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{
+		"content": map[string]any{"route_description": "   "},
+	}, admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("blank route = %d: %s", w.Code, w.Body.String())
+	}
+	var blanked raceCalendarItemDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &blanked)
+	if blanked.Content != nil && blanked.Content.RouteDescription != nil {
+		t.Fatalf("blank route = %q, want absent", *blanked.Content.RouteDescription)
+	}
+	if stored := h.store.items[h.store.findItem(created.ID)]; stored.RouteDescription != nil {
+		t.Fatalf("stored route = %q, want NULL", *stored.RouteDescription)
+	}
+
+	// The cap counts runes: a 2001-character CJK route is 6003 bytes and must
+	// still be rejected, and a 2000-character one must still be accepted.
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{
+		"content": map[string]any{"route_description": strings.Repeat("马", maxRouteDescriptionRunes)},
+	}, admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("route at the cap = %d %s, want 200", w.Code, w.Body.String())
+	}
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{
+		"content": map[string]any{"route_description": strings.Repeat("马", maxRouteDescriptionRunes+1)},
+	}, admin)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("route over the cap = %d %s, want 400", w.Code, w.Body.String())
+	}
+
+	// Explicit null clears it along with the rest of the content, and the row
+	// stops counting as having content.
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{
+		"content": nil,
+	}, admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("clear = %d: %s", w.Code, w.Body.String())
+	}
+	if stored := h.store.items[h.store.findItem(created.ID)]; stored.HasContent() {
+		t.Fatalf("stored item = %+v, want the route cleared with the content", stored)
+	}
+	//
+	// The move-content path is not asserted here: the harness's store is a fake,
+	// so a "the route survived the move" check would be testing the fake rather
+	// than copyRaceItemAdminData. That path is covered by
+	// TestCopyRaceItemAdminData_CopiesEveryAdminOwnedColumn in package storage.
+}
+
 // TestRaceCalendarAdmin_MoveContent covers the stale-row resolution endpoint:
 // 204 with the content moved and the source gone, 409 onto an occupied target.
 func TestRaceCalendarAdmin_MoveContent(t *testing.T) {

@@ -1099,14 +1099,19 @@ func applyRaceItemUpdate(c *gin.Context, item *storage.RaceCalendarItem, req rac
 	return true
 }
 
-// applyRaceItemContentColumns writes the ten content columns of one item row to
-// match the tri-state content input: an object replaces them wholesale, nil
+// applyRaceItemContentColumns writes the eleven content columns of one item row
+// to match the tri-state content input: an object replaces them wholesale, nil
 // clears them.
+//
+// A blank route description is stored as absent rather than as "", the same
+// reason normalizeRaceEventContent clears a blank url_type: the column is
+// nullable, and letting "" mean "unset" would give it two spellings.
 func applyRaceItemContentColumns(item *storage.RaceCalendarItem, in *raceItemContentInput) {
 	if in == nil {
 		item.DistanceKm = nil
 		item.StartPoint = nil
 		item.FinishPoint = nil
+		item.RouteDescription = nil
 		item.TotalAscentM = nil
 		item.ElevationPoints = nil
 		item.AidStations = nil
@@ -1119,6 +1124,7 @@ func applyRaceItemContentColumns(item *storage.RaceCalendarItem, in *raceItemCon
 	item.DistanceKm = in.DistanceKm
 	item.StartPoint = in.StartPoint
 	item.FinishPoint = in.FinishPoint
+	item.RouteDescription = normalizeOptionalString(in.RouteDescription)
 	item.TotalAscentM = in.TotalAscentM
 	item.ElevationPoints = in.ElevationPoints
 	item.AidStations = in.AidStations

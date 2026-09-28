@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -493,7 +494,7 @@ func TestRaceCalendar_AutoMigrateAddsItemContentColumns(t *testing.T) {
 	if err := st.AutoMigrateRaceCalendar(ctx); err != nil {
 		t.Fatalf("automigrate legacy item table: %v", err)
 	}
-	for _, col := range []string{"admin_overrides", "content_stale", "distance_km", "start_point", "photos"} {
+	for _, col := range []string{"admin_overrides", "content_stale", "distance_km", "start_point", "photos", "route_description"} {
 		if !st.db.Migrator().HasColumn(&RaceCalendarItem{}, col) {
 			t.Errorf("race_calendar_item.%s was not added", col)
 		}
@@ -1117,5 +1118,61 @@ func TestMonthDayOf(t *testing.T) {
 	// A malformed date degrades to (0,0) instead of failing the sync.
 	if m, d := monthDayOf("not-a-date"); m != 0 || d != 0 {
 		t.Fatalf("monthDayOf(bad) = %d/%d, want 0/0", m, d)
+	}
+}
+
+// TestCopyRaceItemAdminData_CopiesEveryAdminOwnedColumn pins the column set
+// MoveRaceContent carries when both rows already hold an item of the same name.
+// Its sibling path — a name the target lacks — recreates the row wholesale and
+// needs no list; this one transfers column by column, so a content column added
+// to the struct and forgotten here silently drops an administrator's work the
+// moment upstream renames a race.
+//
+// The walk is over the struct's own fields rather than a hand-written list, so
+// the test is exhaustive by construction: a future column is covered the day it
+// is declared, and fails here until it is handled.
+func TestCopyRaceItemAdminData_CopiesEveryAdminOwnedColumn(t *testing.T) {
+	src := RaceCalendarItem{
+		ID: 42, RaceEventID: 7, Name: "全程", Type: "Marathon",
+		Origin: RaceOriginManual, ContentStale: true,
+		CreatedAt: time.Now().Add(-time.Hour), UpdatedAt: time.Now(),
+		StartTime: strPtr("07:30"), EntryFee: intPtr(20000), Quota: intPtr(30000),
+		AdminOverrides:   []string{"type"},
+		ContentSource:    strPtr(RaceContentSourceWebSearch),
+		DistanceKm:       floatPtr(42.195),
+		StartPoint:       &RacePoint{Name: "起点"},
+		FinishPoint:      &RacePoint{Name: "终点"},
+		RouteDescription: strPtr("起点→终点"),
+		TotalAscentM:     intPtr(120),
+		ElevationPoints:  []RaceElevationPoint{{DistanceKm: 1, ElevationM: 10}},
+		AidStations:      []RaceAidStation{{DistanceKm: 5, Supplies: []string{"水"}}},
+		Cutoffs:          []RaceCutoff{{Point: "21K", CutoffAt: "03:00"}},
+		Prizes:           []RacePrize{{Rank: "1", Amount: 10000}},
+		Reputation:       &RaceReputation{Summary: "赛道平整"},
+		Photos:           []RacePhoto{{Location: "起点", URL: "https://example.test/1.jpg"}},
+	}
+
+	var dst RaceCalendarItem
+	copyRaceItemAdminData(&dst, src)
+
+	// The five fields the sync owns, plus the row's identity and timestamps:
+	// these must NOT be carried over, because dst keeps its own.
+	syncOwned := map[string]bool{
+		"ID": true, "RaceEventID": true, "Name": true, "Type": true,
+		"Origin": true, "ContentStale": true, "CreatedAt": true, "UpdatedAt": true,
+	}
+
+	sv, dv := reflect.ValueOf(src), reflect.ValueOf(dst)
+	typ := sv.Type()
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if syncOwned[field.Name] {
+			continue
+		}
+		got, want := dv.Field(i).Interface(), sv.Field(i).Interface()
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s not carried over by copyRaceItemAdminData: got %#v, want %#v",
+				field.Name, got, want)
+		}
 	}
 }

@@ -458,16 +458,20 @@ type raceEventContentInput struct {
 // full-replace of the item's content fields. The item's name is its identity
 // on race_item_content and is not settable here.
 type raceItemContentInput struct {
-	DistanceKm      *float64                     `json:"distance_km"`
-	StartPoint      *storage.RacePoint           `json:"start_point"`
-	FinishPoint     *storage.RacePoint           `json:"finish_point"`
-	TotalAscentM    *int                         `json:"total_ascent_m"`
-	ElevationPoints []storage.RaceElevationPoint `json:"elevation_points"`
-	AidStations     []storage.RaceAidStation     `json:"aid_stations"`
-	Cutoffs         []storage.RaceCutoff         `json:"cutoffs"`
-	Prizes          []storage.RacePrize          `json:"prizes"`
-	Reputation      *storage.RaceReputation      `json:"reputation"`
-	Photos          []storage.RacePhoto          `json:"photos"`
+	DistanceKm  *float64           `json:"distance_km"`
+	StartPoint  *storage.RacePoint `json:"start_point"`
+	FinishPoint *storage.RacePoint `json:"finish_point"`
+	// RouteDescription is the course as the organiser writes it, "起点→路段→…
+	// →终点". A blank value is normalized to absent (see applyRaceItemContent-
+	// Columns) so "unset" and "explicitly empty" stay distinguishable.
+	RouteDescription *string                      `json:"route_description"`
+	TotalAscentM     *int                         `json:"total_ascent_m"`
+	ElevationPoints  []storage.RaceElevationPoint `json:"elevation_points"`
+	AidStations      []storage.RaceAidStation     `json:"aid_stations"`
+	Cutoffs          []storage.RaceCutoff         `json:"cutoffs"`
+	Prizes           []storage.RacePrize          `json:"prizes"`
+	Reputation       *storage.RaceReputation      `json:"reputation"`
+	Photos           []storage.RacePhoto          `json:"photos"`
 }
 
 // raceEventContentDTO is the admin projection of the six content sections on a
@@ -499,16 +503,17 @@ func newRaceEventContentDTO(row storage.RaceCalendarEvent) *raceEventContentDTO 
 // pointer means the item has no content yet. The content columns live on the
 // item's own race_calendar_item row, so this projects a RaceCalendarItem.
 type raceItemContentDTO struct {
-	DistanceKm      *float64                     `json:"distance_km"`
-	StartPoint      *storage.RacePoint           `json:"start_point"`
-	FinishPoint     *storage.RacePoint           `json:"finish_point"`
-	TotalAscentM    *int                         `json:"total_ascent_m"`
-	ElevationPoints []storage.RaceElevationPoint `json:"elevation_points"`
-	AidStations     []storage.RaceAidStation     `json:"aid_stations"`
-	Cutoffs         []storage.RaceCutoff         `json:"cutoffs"`
-	Prizes          []storage.RacePrize          `json:"prizes"`
-	Reputation      *storage.RaceReputation      `json:"reputation"`
-	Photos          []storage.RacePhoto          `json:"photos"`
+	DistanceKm       *float64                     `json:"distance_km"`
+	StartPoint       *storage.RacePoint           `json:"start_point"`
+	FinishPoint      *storage.RacePoint           `json:"finish_point"`
+	RouteDescription *string                      `json:"route_description"`
+	TotalAscentM     *int                         `json:"total_ascent_m"`
+	ElevationPoints  []storage.RaceElevationPoint `json:"elevation_points"`
+	AidStations      []storage.RaceAidStation     `json:"aid_stations"`
+	Cutoffs          []storage.RaceCutoff         `json:"cutoffs"`
+	Prizes           []storage.RacePrize          `json:"prizes"`
+	Reputation       *storage.RaceReputation      `json:"reputation"`
+	Photos           []storage.RacePhoto          `json:"photos"`
 }
 
 func newRaceItemContentDTO(row storage.RaceCalendarItem) *raceItemContentDTO {
@@ -516,16 +521,17 @@ func newRaceItemContentDTO(row storage.RaceCalendarItem) *raceItemContentDTO {
 		return nil
 	}
 	return &raceItemContentDTO{
-		DistanceKm:      row.DistanceKm,
-		StartPoint:      row.StartPoint,
-		FinishPoint:     row.FinishPoint,
-		TotalAscentM:    row.TotalAscentM,
-		ElevationPoints: row.ElevationPoints,
-		AidStations:     row.AidStations,
-		Cutoffs:         row.Cutoffs,
-		Prizes:          row.Prizes,
-		Reputation:      row.Reputation,
-		Photos:          row.Photos,
+		DistanceKm:       row.DistanceKm,
+		StartPoint:       row.StartPoint,
+		FinishPoint:      row.FinishPoint,
+		RouteDescription: row.RouteDescription,
+		TotalAscentM:     row.TotalAscentM,
+		ElevationPoints:  row.ElevationPoints,
+		AidStations:      row.AidStations,
+		Cutoffs:          row.Cutoffs,
+		Prizes:           row.Prizes,
+		Reputation:       row.Reputation,
+		Photos:           row.Photos,
 	}
 }
 
@@ -618,10 +624,22 @@ func resolveContentSource(c *gin.Context, in optionalField[string]) (*string, bo
 	return &v, true
 }
 
+// maxRouteDescriptionRunes caps the written course. The longest real one (北马's
+// 33-segment chain) is ~400 characters; the cap is not there to fit it but to
+// stop a pasted 竞赛规程 from landing in the column. Counted in runes, not
+// bytes, because every one of those characters is a 3-byte CJK codepoint.
+const maxRouteDescriptionRunes = 2000
+
 // validateRaceItemContent is the item-level counterpart of
-// validateRaceEventContent: a cutoff must be a race-day wall clock and a photo
-// without a URL carries nothing.
+// validateRaceEventContent: a cutoff must be a race-day wall clock, a photo
+// without a URL carries nothing, and a route description must stay a route
+// rather than a whole regulation document.
 func validateRaceItemContent(in *raceItemContentInput) error {
+	if in.RouteDescription != nil {
+		if len([]rune(strings.TrimSpace(*in.RouteDescription))) > maxRouteDescriptionRunes {
+			return errInvalidRaceContentInput
+		}
+	}
 	for _, cutoff := range in.Cutoffs {
 		if !isRaceClock(cutoff.CutoffAt) {
 			return errInvalidRaceContentInput
