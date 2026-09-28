@@ -172,6 +172,10 @@ type Config struct {
 	// PBStore backs the personal-best read surface (GET /api/{user}/pbs), a
 	// sibling registrar sharing the auth path. Leave zero to run without it.
 	PBStore PBStore
+	// RaceStore backs the user-facing race-effort read surface
+	// (GET /api/{user}/races), a sibling registrar sharing the auth path. Leave
+	// zero to run without it.
+	RaceStore RaceStore
 	// BodyCompositionStore backs the body-composition read/write surface
 	// (list / summary / single / upsert). User-entered (OCR/manual), not
 	// watch-synced. Leave zero to run without it (e.g. in tests).
@@ -263,6 +267,7 @@ type Service struct {
 	healthMetrics   *healthRoutes
 	strideMetrics   *strideRoutes
 	pbs             *pbsRoutes
+	races           *raceRoutes
 	bodyComposition *bodyCompositionRoutes
 	ability         *abilityRoutes
 	predictions     *predictionRoutes
@@ -318,6 +323,7 @@ func NewService(cfg Config) *Service {
 		healthMetrics:           newHealthRoutes(cfg.HealthStore, log),
 		strideMetrics:           newStrideRoutes(cfg.StrideStore, log),
 		pbs:                     newPbsRoutes(cfg.PBStore, log),
+		races:                   newRaceRoutes(cfg.RaceStore, log),
 		bodyComposition:         newBodyCompositionRoutes(cfg.BodyCompositionStore, log),
 		ability:                 newAbilityRoutes(cfg.AbilityStore, cfg.Enqueuer, cfg.AbilityBackfillJobType, log),
 		predictions:             newPredictionRoutes(cfg.PredictionStore, log),
@@ -421,6 +427,7 @@ func (s *Service) Router() *gin.Engine {
 	s.healthMetrics.register(authed)
 	s.strideMetrics.register(authed)
 	s.pbs.register(authed)
+	s.races.register(authed)
 	s.bodyComposition.register(authed)
 	s.ability.register(authed)
 	s.predictions.register(authed)
