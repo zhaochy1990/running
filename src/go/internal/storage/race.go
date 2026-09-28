@@ -101,6 +101,45 @@ func (s *Store) ActivityStartCoordinates(ctx context.Context, userID string) ([]
 	return coordinates, nil
 }
 
+// UserRaceRow is one row of the user-facing race list: a confirmed races row
+// joined back to its canonical activity columns (races deliberately stores only
+// the reference). Newest first; label_id breaks date ties deterministically.
+type UserRaceRow struct {
+	LabelID    string
+	Name       *string
+	SportName  *string
+	Date       time.Time
+	DistanceM  *float64
+	DurationS  *float64
+	AvgPaceSKm *float64
+	AvgHR      *int
+	MaxHR      *int
+	AscentM    *float64
+	ThumbURL   *string
+}
+
+// UserRaces returns the user's confirmed race efforts (half marathons and
+// marathons the race-detection pipeline classified post-sync), newest first.
+// The list is bounded by how many races a runner can physically run, so it is
+// not paginated.
+func (s *Store) UserRaces(ctx context.Context, userID string) ([]UserRaceRow, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []UserRaceRow
+	if err := s.db.WithContext(ctx).Table("races AS r").
+		Select(`a.label_id, a.name, a.sport_name, a.date, a.distance_m, a.duration_s,
+			a.avg_pace_s_km, a.avg_hr, a.max_hr, a.ascent_m, a.route_thumb_url`).
+		Joins("JOIN activities AS a ON a.user_id = r.user_id AND a.label_id = r.label_id").
+		Where("r.user_id = ?", uid).
+		Order("a.date DESC, a.label_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // InsertRace idempotently persists one confirmed race activity reference and
 // reports whether this call inserted the row.
 func (s *Store) InsertRace(ctx context.Context, race *Race) (bool, error) {
