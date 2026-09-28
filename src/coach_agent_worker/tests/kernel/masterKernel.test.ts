@@ -3,7 +3,6 @@ import test from "node:test";
 import { createMasterPlanGraph, FrozenMasterPlanContextProvider, MasterPlanGraphRequest } from "@stride/coach-agent";
 import {
   createAssessmentSnapshot,
-  createTestAthleteAssessment,
   createTestGoalAssessment,
   createTestJudgments,
   createTestMasterPlan,
@@ -26,11 +25,6 @@ function buildGraph(overrides: GraphOverrides = {}) {
   const snapshot = new FrozenMasterPlanContextProvider(createAssessmentSnapshot());
   return toMasterPlanGraphShim(
     createMasterPlanGraph({
-      assessmentModel: {
-        async invoke() {
-          return createTestAthleteAssessment();
-        },
-      },
       goalAssessmentModel: {
         async invoke() {
           return createTestGoalAssessment();

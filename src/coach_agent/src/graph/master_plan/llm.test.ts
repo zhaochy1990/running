@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ModelConfig } from "../../config/config.js";
 import { createMasterPlanLlmModels } from "./llm/models.js";
-import { athleteAssessmentPrompt, goalAssessmentPrompt, reviewPrompt, strategyPrompt } from "./llm/prompts.js";
+import { goalAssessmentPrompt, reviewPrompt, strategyPrompt } from "./llm/prompts.js";
 
 const MODEL: ModelConfig = {
   name: "test-responses",
@@ -20,7 +20,7 @@ test("createMasterPlanLlmModels loads every graph model without invoking an LLM"
     reviewerModel: MODEL,
   });
 
-  assert.deepEqual(Object.keys(models).sort(), ["assessmentModel", "goalAssessmentModel", "judgmentModel", "reviewModel", "skeletonModel", "strategyModel"]);
+  assert.deepEqual(Object.keys(models).sort(), ["goalAssessmentModel", "judgmentModel", "reviewModel", "skeletonModel", "strategyModel"]);
   for (const model of Object.values(models)) {
     assert.equal(typeof model.invoke, "function");
   }
@@ -32,24 +32,13 @@ test("prompt builders keep runtime data in user messages", () => {
     facts: { id: "facts" },
     snapshot: { id: "snapshot" },
   };
-  const athleteMessages = athleteAssessmentPrompt(input);
-  const goalMessages = goalAssessmentPrompt({
-    ...input,
-    athleteAssessment: { id: "assessment" },
-  });
+  const goalMessages = goalAssessmentPrompt(input);
 
-  assert.equal(athleteMessages[0]?.[0], "system");
-  assert.deepEqual(JSON.parse(athleteMessages[1]?.[1] ?? ""), {
-    task: "Assess the athlete's current capability and safe planning entry point",
-    request: input.request,
-    assessment_facts: input.facts,
-    snapshot: input.snapshot,
-  });
+  assert.equal(goalMessages[0]?.[0], "system");
   assert.deepEqual(JSON.parse(goalMessages[1]?.[1] ?? ""), {
-    task: "Assess the confirmed race goal against the athlete assessment",
+    task: "Assess the confirmed race goal against the athlete capability facts",
     request: input.request,
     assessment_facts: input.facts,
-    athlete_assessment: { id: "assessment" },
     snapshot: input.snapshot,
   });
 });

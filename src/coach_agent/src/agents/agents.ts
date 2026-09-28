@@ -6,6 +6,7 @@ import { getOrchestratorNode } from "./orchestrator.js";
 import { getOtherAgent } from "./other/agent.js";
 import { getQaAgent } from "./qa/agent.js";
 import type { AgentsState } from "./state.js";
+import { createTrainingGraph } from "./training/graph.js";
 
 /** Minimal surface of an inner `createAgent` agent that a node needs to run it. */
 interface InnerAgent {
@@ -29,9 +30,13 @@ function makeAgentNode(agent: InnerAgent): GraphNode<typeof AgentsState> {
 export function getAgentNode(agentName: string, config: CoachAgentConfig, dataProvider: DataProvider): GraphNode<typeof AgentsState> {
   if (agentName === "orchestrator") {
     const agentConfig = getAgentConfig(config, "orchestrator");
-    // weekly_plan / master_plan 尚未接线，当前把全部意图统一交给 qa；分类结果仍写入
-    // state.intent 供观测，后续接入对应 subagent 时在这里改回各自的落点。
-    return getOrchestratorNode(agentConfig, { training_question: "qa", weekly_plan: "qa", master_plan: "qa", other: "qa" });
+    // 训练计划相关意图（weekly_plan / master_plan）统一路由到 training 子图；
+    // 训练问答与其它意图仍交给 qa。分类结果写入 state.intent 供观测。
+    return getOrchestratorNode(agentConfig, { training_question: "qa", weekly_plan: "training", master_plan: "training", other: "qa" });
+  }
+
+  if (agentName === "training") {
+    return makeAgentNode(createTrainingGraph() as unknown as InnerAgent);
   }
 
   if (agentName === "qa") {

@@ -23,6 +23,7 @@
     "verify:weekly-plan-schema": "pnpm run generate:weekly-plan-schema && git diff --exit-code -- ../go/internal/api/weekly_plan_schema.json",
     "test": "npm run build && node --test dist/tools/*.test.js dist/agents/*.test.js dist/agents/master_plan/*.test.js dist/graph/master_plan/*.test.js dist/graph/weekly_plan/*.test.js dist/data/*.test.js dist/utils/*.test.js",
     "test:masterplan-kernel": "npm run build && node dist/tests/masterPlan.js",
+    "e2e": "npm run build && node --test \"dist/e2e/**/*.test.js\"",
     "format": "biome format --write src scripts",
     "lint": "biome lint src scripts",
     "check": "biome check src scripts",

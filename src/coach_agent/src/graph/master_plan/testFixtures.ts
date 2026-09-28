@@ -429,35 +429,6 @@ export function createAssessmentSnapshot() {
   };
 }
 
-export function createTestAthleteAssessment() {
-  return {
-    schema_version: 2 as const,
-    readiness: "ready" as const,
-    summary: "Ready for structured preparation",
-    capability_confidence: "high" as const,
-    current_phase: null,
-    continuity: "continuous" as const,
-    recommended_entry_phase: "build" as const,
-    safe_training_ranges: {
-      starting_weekly_distance_km: { low: 55, high: 70 },
-      weekly_distance_km: { low: 55, high: 80 },
-      runs_per_week: { low: 4, high: 6 },
-      long_run_km: { low: 18, high: 30 },
-      quality_sessions_per_week: { low: 1, high: 2 },
-    },
-    material_conclusions: [
-      {
-        claim: "volume_baseline_established" as const,
-        explanation: "Recent volume supports preparation",
-        fact_ids: ["volume.recent_weekly_km"],
-      },
-    ],
-    limiting_factors: [],
-    assumptions_to_validate: [],
-    gaps: [],
-  };
-}
-
 export function createTestGoalAssessment() {
   const conditions = (fact_id: string) => [
     {

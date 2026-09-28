@@ -35,7 +35,7 @@
                 "<node_internals>/**"
             ],
             "outFiles": [
-                "${workspaceFolder}/src/coach_agent_api/dist/**/*.js"
+                "${workspaceFolder}/src/*/dist/**/*.js"
             ],
             "sourceMaps": true,
             "console": "integratedTerminal",
@@ -58,7 +58,7 @@
                 "<node_internals>/**"
             ],
             "outFiles": [
-                "${workspaceFolder}/src/coach_agent_api/dist/**/*.js"
+                "${workspaceFolder}/src/*/dist/**/*.js"
             ],
             "sourceMaps": true,
             "console": "integratedTerminal",
@@ -78,7 +78,7 @@
                 "<node_internals>/**"
             ],
             "outFiles": [
-                "${workspaceFolder}/src/coach_agent_api/dist/**/*.js"
+                "${workspaceFolder}/src/*/dist/**/*.js"
             ],
             "sourceMaps": true,
             "console": "integratedTerminal",
@@ -105,7 +105,7 @@
                 "<node_internals>/**"
             ],
             "outFiles": [
-                "${workspaceFolder}/src/coach_agent_api/dist/**/*.js"
+                "${workspaceFolder}/src/*/dist/**/*.js"
             ],
             "sourceMaps": true,
             "console": "integratedTerminal",
@@ -132,7 +132,7 @@
                 "<node_internals>/**"
             ],
             "outFiles": [
-                "${workspaceFolder}/src/coach_agent_api/dist/**/*.js"
+                "${workspaceFolder}/src/*/dist/**/*.js"
             ],
             "sourceMaps": true,
             "console": "integratedTerminal",

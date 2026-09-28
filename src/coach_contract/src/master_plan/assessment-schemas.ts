@@ -21,16 +21,7 @@ export const AssessmentFactsSchema = z
 export type AssessmentFacts = z.infer<typeof AssessmentFactsSchema>;
 export type Fact = z.infer<typeof FactSchema>;
 
-const AthleteClaimSchema = z.enum([
-  "volume_baseline_established",
-  "long_run_tolerance_established",
-  "quality_tolerance_established",
-  "availability_requires_adjustment",
-  "load_state_supportive",
-  "coverage_sufficient",
-]);
 const GoalClaimSchema = z.enum(["goal_requires_improvement", "goal_runway_limited", "goal_supported_by_history"]);
-export type AthleteClaim = z.infer<typeof AthleteClaimSchema>;
 export type GoalClaim = z.infer<typeof GoalClaimSchema>;
 const MaterialConclusionSchema = <T extends z.ZodType>(claim: T) =>
   z
@@ -46,37 +37,6 @@ const EvidenceNoteSchema = z
     fact_ids: z.array(z.string().min(1)).min(1),
   })
   .strict();
-const RangeSchema = z
-  .object({ low: z.number().nonnegative(), high: z.number().nonnegative() })
-  .strict()
-  .refine((range) => range.low <= range.high, "range low must not exceed high");
-
-export const AthleteAssessmentSchema = z
-  .object({
-    schema_version: z.literal(2),
-    readiness: z.enum(["ready", "limited", "missing_baseline"]),
-    summary: z.string().min(1),
-    capability_confidence: z.enum(["high", "medium", "low"]),
-    current_phase: z.string().min(1).nullable(),
-    continuity: z.enum(["continuous", "interrupted", "returning", "unknown"]),
-    recommended_entry_phase: z.enum(["base", "build", "peak", "taper", "recovery", "return_to_run"]),
-    safe_training_ranges: z
-      .object({
-        starting_weekly_distance_km: RangeSchema,
-        weekly_distance_km: RangeSchema,
-        runs_per_week: RangeSchema,
-        long_run_km: RangeSchema,
-        quality_sessions_per_week: RangeSchema,
-      })
-      .strict(),
-    material_conclusions: z.array(MaterialConclusionSchema(AthleteClaimSchema)).min(1),
-    limiting_factors: z.array(EvidenceNoteSchema),
-    assumptions_to_validate: z.array(EvidenceNoteSchema),
-    gaps: z.array(EvidenceNoteSchema),
-  })
-  .strict();
-export type AthleteAssessment = z.infer<typeof AthleteAssessmentSchema>;
-
 const GateSchema = z
   .object({
     target: z

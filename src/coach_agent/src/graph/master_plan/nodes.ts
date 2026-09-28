@@ -1,5 +1,5 @@
 import { END, ReducedValue, Send, StateSchema } from "@langchain/langgraph";
-import { getLogger, ModelContractError } from "@stride/common";
+import { ModelContractError } from "@stride/common";
 import {
   addDays,
   adjudicateMasterPlanReviews,
@@ -28,20 +28,25 @@ import { z } from "zod/v4";
 import { measureExecutionTimeAsync } from "../../utils/performance.js";
 import {
   type AssessmentFacts,
-  type AthleteAssessment,
-  AthleteAssessmentSchema,
-  authoritativeContinuity,
   authoritativeGoalLevel,
-  authoritativeReadiness,
   canonicalizeAssessmentSummary,
   deriveAssessmentFacts,
   type GoalAssessment,
   GoalAssessmentSchema,
   validateAssessmentReferences,
-  validateAthleteAssessmentRanges,
   validateGoalAssessmentTargets,
 } from "./assessment.js";
 import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "./context.js";
+import {
+  infrastructureFailure,
+  isContractError,
+  logger,
+  logSwallowedFailure,
+  modelFailure,
+  qualityFailure,
+  required,
+  requiredWithGoalAssessment,
+} from "./nodes/shared.js";
 import { type RuleReport, runMasterPlanRuleFilter } from "./rules.js";
 import { type SimulationReport, simulateMasterPlanLoad } from "./simulation.js";
 import {
@@ -63,16 +68,12 @@ interface SkeletonModel {
     context: MasterPlanGraphContext;
     snapshot: ContextSnapshot;
     facts: AssessmentFacts;
-    athleteAssessment: AthleteAssessment;
     goalAssessment: GoalAssessment;
     selectedStrategy: SelectedStrategy;
   }): Promise<unknown>;
 }
-interface AssessmentModel {
+interface GoalAssessmentModel {
   invoke(input: { request: MasterPlanGraphRequest; snapshot: ContextSnapshot; facts: AssessmentFacts }): Promise<unknown>;
-}
-interface GoalAssessmentModel extends AssessmentModel {
-  invoke(input: { request: MasterPlanGraphRequest; snapshot: ContextSnapshot; facts: AssessmentFacts; athleteAssessment: AthleteAssessment }): Promise<unknown>;
 }
 interface StrategyModel {
   invoke(input: {
@@ -80,7 +81,6 @@ interface StrategyModel {
     request: MasterPlanGraphRequest;
     snapshot: ContextSnapshot;
     facts: AssessmentFacts;
-    athleteAssessment: AthleteAssessment;
     goalAssessment: GoalAssessment;
   }): Promise<unknown>;
 }
@@ -90,7 +90,6 @@ interface JudgmentModel {
     candidate: StrategyCandidate;
     request: MasterPlanGraphRequest;
     facts: AssessmentFacts;
-    athleteAssessment: AthleteAssessment;
     goalAssessment: GoalAssessment;
   }): Promise<unknown>;
 }
@@ -102,7 +101,6 @@ interface ReviewModel {
     request: MasterPlanGraphRequest;
     plan: z.infer<typeof MasterPlanSchema>;
     facts: AssessmentFacts;
-    athleteAssessment: AthleteAssessment;
     goalAssessment: GoalAssessment;
     selectedStrategy: SelectedStrategy;
     simulationReport: SimulationReport;
@@ -112,7 +110,6 @@ interface ReviewModel {
 
 export interface MasterPlanGraphDependencies {
   contextProvider: MasterPlanContextProvider;
-  assessmentModel: AssessmentModel;
   goalAssessmentModel: GoalAssessmentModel;
   strategyModel: StrategyModel;
   judgmentModel: JudgmentModel;
@@ -133,7 +130,6 @@ export const GraphState = new StateSchema({
   context: MasterPlanGraphContext.optional(),
   snapshot: ContextSnapshotSchema.optional(),
   facts: z.custom<AssessmentFacts>().optional(),
-  athleteAssessment: AthleteAssessmentSchema.optional(),
   goalAssessment: GoalAssessmentSchema.optional(),
   strategyArchetype: StrategyArchetypeSchema.optional(),
   judge: StrategyJudgmentSchema.shape.judge.optional(),
@@ -169,7 +165,6 @@ export const GraphState = new StateSchema({
   adjudication: z.custom<ReviewAdjudication>().optional(),
 });
 
-const logger = getLogger("master-plan-graph");
 const DEFAULT_STRATEGY_ARCHETYPES: readonly StrategyArchetype[] = ["conservative", "balanced", "aggressive_gated"];
 
 /** Node implementations and routing helpers for the planning graph. */
@@ -260,51 +255,8 @@ class MasterPlanNodes {
     return { context, snapshot, facts, artifactRevision };
   };
 
-  readonly assessAthlete = async (state: typeof GraphState.State) => {
-    logger.info(`Assessing athlete for request ${state.request.request_id}...`);
-
-    const { request, snapshot, facts, context } = required(state);
-    try {
-      const res = await measureExecutionTimeAsync(() =>
-        this.dependencies.assessmentModel.invoke({
-          request,
-          snapshot,
-          facts,
-        }),
-      );
-      logger.info(`Athlete assessment model invoked in ${res.time.toFixed(2)} ms`);
-
-      const assessment = canonicalizeAssessmentSummary(AthleteAssessmentSchema.parse(res.result));
-      logger.info(assessment, `Athlete assessment for request ${request.request_id}`);
-
-      validateAssessmentReferences(assessment, facts);
-      validateAthleteAssessmentRanges(assessment, facts, request);
-      if (assessment.readiness !== authoritativeReadiness(facts)) throw new Error("readiness conflict");
-      if (assessment.continuity !== authoritativeContinuity(facts)) throw new Error("continuity conflict");
-      if (assessment.readiness === "missing_baseline")
-        return {
-          outcome: MasterPlanGraphOutcome.parse({
-            decision: "needs_baseline",
-            request_id: request.request_id,
-            generation_id: context.generationId,
-            artifact: {
-              type: "baseline_requirements",
-              missing: assessment.gaps.length ? assessment.gaps.map((gap) => gap.description) : ["assessment baseline"],
-              next_steps: ["Collect the missing baseline evidence and reassess without changing the confirmed goal"],
-            },
-          }),
-        };
-      return { athleteAssessment: assessment };
-    } catch (error) {
-      logger.error(`Athlete assessment model failed for request ${state.request.request_id}: ${error instanceof Error ? error.message : "unknown error"}`);
-      return {
-        outcome: modelFailure(error, request, context, "athlete_assessment_contract_invalid", "assessment_model_unavailable"),
-      };
-    }
-  };
-
   readonly assessGoal = async (state: typeof GraphState.State) => {
-    const { request, snapshot, facts, context, athleteAssessment } = requiredWithAthleteAssessment(state);
+    const { request, snapshot, facts, context } = required(state);
     try {
       const assessment = canonicalizeAssessmentSummary(
         GoalAssessmentSchema.parse(
@@ -312,17 +264,13 @@ class MasterPlanNodes {
             request,
             snapshot,
             facts,
-            athleteAssessment,
           }),
         ),
       );
       logger.info(assessment, `Goal assessment for request ${request.request_id}`);
       validateAssessmentReferences(assessment, facts);
       validateGoalAssessmentTargets(assessment, request, facts);
-      if (
-        assessment.level !== authoritativeGoalLevel(facts, athleteAssessment) ||
-        (assessment.level !== "multi_cycle_required" && assessment.multi_cycle_path.length)
-      )
+      if (assessment.level !== authoritativeGoalLevel(facts) || (assessment.level !== "multi_cycle_required" && assessment.multi_cycle_path.length))
         throw new Error("goal assessment conflict");
       if (assessment.level === "multi_cycle_required")
         return {
@@ -361,7 +309,7 @@ class MasterPlanNodes {
   };
 
   readonly strategyWorker = async (state: typeof GraphState.State) => {
-    const { request, snapshot, facts, athleteAssessment, goalAssessment } = requiredWithAssessments(state);
+    const { request, snapshot, facts, goalAssessment } = requiredWithGoalAssessment(state);
     try {
       const candidate = StrategyCandidateSchema.parse(
         await this.dependencies.strategyModel.invoke({
@@ -369,11 +317,10 @@ class MasterPlanNodes {
           request,
           snapshot,
           facts,
-          athleteAssessment,
           goalAssessment,
         }),
       );
-      validateStrategyCandidate(candidate, facts, athleteAssessment);
+      validateStrategyCandidate(candidate, facts);
       return { strategyCandidates: [candidate] };
     } catch (error) {
       logSwallowedFailure("strategyWorker", error, { archetype: state.strategyArchetype });
@@ -384,7 +331,7 @@ class MasterPlanNodes {
   };
 
   readonly judgeWorker = async (state: typeof GraphState.State) => {
-    const { request, facts, athleteAssessment, goalAssessment } = requiredWithAssessments(state);
+    const { request, facts, goalAssessment } = requiredWithGoalAssessment(state);
     try {
       const judgment = StrategyJudgmentSchema.parse(
         await this.dependencies.judgmentModel.invoke({
@@ -392,7 +339,6 @@ class MasterPlanNodes {
           candidate: state.candidate!,
           request,
           facts,
-          athleteAssessment,
           goalAssessment,
         }),
       );
@@ -433,7 +379,7 @@ class MasterPlanNodes {
   };
 
   readonly expandSkeleton = async (state: typeof GraphState.State) => {
-    const { request, snapshot, facts, context, athleteAssessment, goalAssessment } = requiredWithAssessments(state);
+    const { request, snapshot, facts, context, goalAssessment } = requiredWithGoalAssessment(state);
     let raw: unknown;
     try {
       raw = await this.dependencies.skeletonModel.invoke({
@@ -441,7 +387,6 @@ class MasterPlanNodes {
         context,
         snapshot,
         facts,
-        athleteAssessment,
         goalAssessment,
         selectedStrategy: state.selectedStrategy!,
       });
@@ -464,7 +409,7 @@ class MasterPlanNodes {
   };
 
   readonly finalize = (state: typeof GraphState.State) => {
-    const { request, context, facts, athleteAssessment, goalAssessment } = requiredWithAssessments(state);
+    const { request, context, facts, goalAssessment } = requiredWithGoalAssessment(state);
     const plan = state.plan!;
     const goal = request.goals.find((item) => item.priority === "A") ?? request.goals[0]!;
     if (
@@ -487,7 +432,6 @@ class MasterPlanNodes {
           activation_status: "inactive",
           plan,
           facts,
-          athlete_assessment: athleteAssessment,
           goal_assessment: goalAssessment,
           strategy_candidates: state.strategyCandidates,
           judgments: state.judgments,
@@ -527,7 +471,7 @@ class MasterPlanNodes {
 
   readonly validateSelected = (state: typeof GraphState.State) => {
     try {
-      validateSkeletonAgainstStrategy(state.plan!, state.selectedStrategy!, state.athleteAssessment!);
+      validateSkeletonAgainstStrategy(state.plan!, state.selectedStrategy!);
       return {};
     } catch (error) {
       return {
@@ -550,7 +494,6 @@ class MasterPlanNodes {
       request: state.request,
       plan: state.plan!,
       facts: state.facts!,
-      athleteAssessment: state.athleteAssessment!,
       goalAssessment: state.goalAssessment!,
       selectedStrategy: state.selectedStrategy!,
       simulationReport: state.simulationReport!,
@@ -646,7 +589,6 @@ const JUDGES: readonly Judge[] = ["performance_path", "safety_load", "constraint
 /** Node functions registered in `graph.ts`, in rough execution order. */
 const LOGGED_NODES = [
   "initialize",
-  "assessAthlete",
   "assessGoal",
   "strategyWorker",
   "dispatchJudges",
@@ -749,51 +691,10 @@ function sharedWorkerState(state: typeof GraphState.State) {
     context: state.context,
     snapshot: state.snapshot,
     facts: state.facts,
-    athleteAssessment: state.athleteAssessment,
     goalAssessment: state.goalAssessment,
   };
 }
 
-// get the required state values
-function required(state: typeof GraphState.State) {
-  return {
-    request: state.request,
-    context: state.context!,
-    snapshot: state.snapshot!,
-    facts: state.facts!,
-  };
-}
-function requiredWithAthleteAssessment(state: typeof GraphState.State) {
-  return {
-    ...required(state),
-    athleteAssessment: state.athleteAssessment!,
-  };
-}
-function requiredWithAssessments(state: typeof GraphState.State) {
-  return {
-    ...required(state),
-    athleteAssessment: state.athleteAssessment!,
-    goalAssessment: state.goalAssessment!,
-  };
-}
-function isContractError(error: unknown) {
-  return error instanceof ModelContractError || error instanceof z.ZodError;
-}
-/**
- * Nodes catch their own failures and hand the graph a structured outcome — what
- * the graph wants, but it makes the cause invisible in the logs. Every catch
- * site that swallows an exception must call this first.
- */
-function logSwallowedFailure(site: string, error: unknown, extra: Record<string, unknown> = {}): void {
-  logger.warn({ site, ...extra, err: error }, `${site}: failure converted into a structured outcome`);
-}
-
-function modelFailure(error: unknown, request: MasterPlanGraphRequest, context: MasterPlanGraphContext, issue: string, code: string) {
-  logSwallowedFailure("modelFailure", error, { issue });
-  return isContractError(error) || !(error instanceof Error) || !/(?:timeout|ECONN|network|unavailable)/i.test(error.message)
-    ? qualityFailure(request, context, issue)
-    : infrastructureFailure(request, context, code);
-}
 function isInfrastructureError(error: unknown): boolean {
   return error instanceof Error && /(?:timeout|ECONN|network|unavailable|rate limit|429|5\d\d)/i.test(error.message);
 }
@@ -802,27 +703,6 @@ function workerFailure(state: typeof GraphState.State) {
   return error.startsWith("infra:")
     ? infrastructureFailure(state.request, state.context!, error.slice(6))
     : qualityFailure(state.request, state.context!, error.replace(/^quality:/, ""));
-}
-function infrastructureFailure(request: MasterPlanGraphRequest, context: MasterPlanGraphContext, code: string) {
-  return MasterPlanGraphOutcome.parse({
-    decision: "infrastructure_failure",
-    request_id: request.request_id,
-    generation_id: context.generationId,
-    code,
-    retryable: true,
-  });
-}
-function qualityFailure(request: MasterPlanGraphRequest, context: MasterPlanGraphContext, ...issues: string[]) {
-  return MasterPlanGraphOutcome.parse({
-    decision: "failed_quality_gate",
-    request_id: request.request_id,
-    generation_id: context.generationId,
-    artifact: {
-      type: "quality_failure_report",
-      unresolved_issues: issues.length ? issues : ["quality_gate_failed"],
-      attempt_history: [],
-    },
-  });
 }
 function qualityFailureWithReports(
   request: MasterPlanGraphRequest,
@@ -894,7 +774,7 @@ function isPositiveRestriction(text: string, restriction: RegExp): boolean {
         !/(?:no|without|none|not|无|没有|否认)[^,;，；]{0,30}(?:acute|injury|pain|running restriction|restriction|伤|痛|限制)/i.test(clause),
     );
 }
-export function validateSkeletonAgainstStrategy(plan: z.infer<typeof MasterPlanSchema>, selected: SelectedStrategy, athlete: AthleteAssessment): void {
+export function validateSkeletonAgainstStrategy(plan: z.infer<typeof MasterPlanSchema>, selected: SelectedStrategy): void {
   if (selected.candidate.phases.reduce((sum, phase) => sum + phase.weeks, 0) !== selected.candidate.race_week_index)
     throw new Error("selected phase structure must cover the race runway");
   validatePhaseTimeline(plan);
@@ -916,10 +796,6 @@ export function validateSkeletonAgainstStrategy(plan: z.infer<typeof MasterPlanS
       week.target_weekly_km_high > phase.weekly_distance_km_high
     )
       throw new Error("skeleton weekly volume must fit phase range");
-    const isException =
-      week.is_recovery_week || week.phase_name === "taper" || week.phase_name === "recovery" || week.key_sessions.some((session) => session.type === "race");
-    if (!isException && week.target_weekly_km_high > athlete.safe_training_ranges.weekly_distance_km.high)
-      throw new Error("skeleton weekly volume exceeds athlete safe range");
     if (index < selected.candidate.race_week_index && week.target_weekly_km_high !== selected.candidate.weekly_highs_km[index])
       throw new Error("skeleton weekly highs must match selected strategy");
     const hard = week.key_sessions.filter(

@@ -30,7 +30,7 @@ const client_ids: Record<Env, string> = {
   [ENV.PROD]: 'app_895073719c0147368b8feed3',
 }
 
-export const CURRENT_ENV: Env = ENV.PROD;
+export const CURRENT_ENV: Env = ENV.STAGING;
 export const API_BASE_URL = API_BASE_URLS[CURRENT_ENV];
 export const AUTH_BASE_URL = AUTH_BASE_URLS[CURRENT_ENV];
 export const COACH_BASE_URL = COACH_BASE_URLS[CURRENT_ENV];

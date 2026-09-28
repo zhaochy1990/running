@@ -45,7 +45,9 @@ export function getOrchestratorNode(modelConfig: ModelConfig, routes: Partial<Re
     if (!parsed.success) {
       logger.warn({ raw, issues: parsed.error.issues }, "orchestrator: intent classification did not match schema; defaulting to 'other'");
     }
+    const msg = state.messages.at(-1)?.content ?? "";
 
+    logger.info({ classification, input: msg }, "orchestrator: classified intent.");
     // Route inside the node via Command goto — the graph injects the
     // intent→node table; unrouted intents fall through to the `other` node
     // (which produces a reply) and only hit END when no `other` route exists.

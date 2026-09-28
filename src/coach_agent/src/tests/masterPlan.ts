@@ -3,7 +3,6 @@ import { resolve } from "node:path";
 import { createMasterPlanGraph, FrozenMasterPlanContextProvider, MasterPlanGraphOutcome, MasterPlanGraphRequest } from "../graph/master_plan/index.js";
 import {
   createAssessmentSnapshot,
-  createTestAthleteAssessment,
   createTestGoalAssessment,
   createTestJudgments,
   createTestReviewReport,
@@ -128,11 +127,6 @@ const stubPlan = {
 
 const generationId = "local-kernel-seam";
 const graph = createMasterPlanGraph({
-  assessmentModel: {
-    async invoke() {
-      return createTestAthleteAssessment();
-    },
-  },
   goalAssessmentModel: {
     async invoke() {
       return createTestGoalAssessment();

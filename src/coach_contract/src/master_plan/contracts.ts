@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { AssessmentFactsSchema, AthleteAssessmentSchema, GoalAssessmentSchema } from "./assessment-schemas.js";
+import { AssessmentFactsSchema, GoalAssessmentSchema } from "./assessment-schemas.js";
 import { adjudicateMasterPlanReviews, REQUIRED_REVIEWERS, ReviewAdjudicationSchema, ReviewReportSchema, ReviewWorkerErrorSchema } from "./review.js";
 import { RuleReportSchema } from "./rules-schemas.js";
 import { MasterPlanSchema, SelectedStrategySchema, StrategyCandidateSchema, StrategyJudgmentSchema } from "./schemas.js";
@@ -141,7 +141,6 @@ const CompletedOutcomeSchema = OutcomeIdentitySchema.extend({
       activation_status: z.literal("inactive"),
       plan: MasterPlanSchema,
       facts: AssessmentFactsSchema,
-      athlete_assessment: AthleteAssessmentSchema,
       goal_assessment: GoalAssessmentSchema,
       strategy_candidates: z.array(StrategyCandidateSchema).min(2).max(3),
       judgments: z.array(StrategyJudgmentSchema).min(6).max(9),

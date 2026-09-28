@@ -1,28 +1,14 @@
 import type { MasterPlanGraphRequest } from "@stride/contract";
-import {
-  type AssessmentFacts,
-  AssessmentFactsSchema,
-  type AthleteAssessment,
-  AthleteAssessmentSchema,
-  type AthleteClaim,
-  addDays,
-  type Fact,
-  type GoalAssessment,
-  GoalAssessmentSchema,
-  type GoalClaim,
-  shanghaiDay,
-} from "@stride/contract";
+import { type AssessmentFacts, AssessmentFactsSchema, addDays, type Fact, type GoalAssessment, type GoalClaim, shanghaiDay } from "@stride/contract";
 import { median } from "../../utils/statistics.js";
 import type { ContextSnapshot } from "./context.js";
 
 export type {
   AssessmentFacts,
-  AthleteAssessment,
   GoalAssessment,
 } from "@stride/contract";
 export {
   AssessmentFactsSchema,
-  AthleteAssessmentSchema,
   GoalAssessmentSchema,
 } from "@stride/contract";
 
@@ -122,22 +108,18 @@ export function deriveAssessmentFacts(snapshot: ContextSnapshot, request: Master
   });
 }
 
-export function validateAssessmentReferences(assessment: AthleteAssessment | GoalAssessment, facts: AssessmentFacts): void {
+export function validateAssessmentReferences(assessment: GoalAssessment, facts: AssessmentFacts): void {
   const byId = new Map(facts.facts.map((fact) => [fact.fact_id, fact]));
   const conclusionIds = assessment.material_conclusions.flatMap((item) => item.fact_ids);
-  const noteIds =
-    "gaps" in assessment
-      ? [...assessment.gaps, ...assessment.limiting_factors, ...assessment.assumptions_to_validate].flatMap((item) => item.fact_ids)
-      : assessment.conflicts.flatMap((item) => item.fact_ids);
-  const gateIds =
-    "abc_gates" in assessment ? Object.values(assessment.abc_gates).flatMap((gate) => gate.conditions.flatMap((condition) => condition.fact_ids)) : [];
+  const noteIds = assessment.conflicts.flatMap((item) => item.fact_ids);
+  const gateIds = Object.values(assessment.abc_gates).flatMap((gate) => gate.conditions.flatMap((condition) => condition.fact_ids));
   for (const factId of conclusionIds) if (!byId.has(factId)) throw new Error(`assessment cites unknown fact_id: ${factId}`);
   for (const factId of noteIds) if (!byId.has(factId)) throw new Error(`assessment note cites unknown fact_id: ${factId}`);
   for (const factId of gateIds) if (!byId.has(factId)) throw new Error(`assessment gate cites unknown fact_id: ${factId}`);
   for (const item of assessment.material_conclusions) validateClaim(item.claim, item.fact_ids, byId);
 }
 
-export function canonicalizeAssessmentSummary<T extends AthleteAssessment | GoalAssessment>(assessment: T): T {
+export function canonicalizeAssessmentSummary(assessment: GoalAssessment): GoalAssessment {
   const material_conclusions = assessment.material_conclusions.map((item) => ({
     ...item,
     explanation: claimExplanation(item.claim),
@@ -194,67 +176,15 @@ export function validateGoalAssessmentTargets(assessment: GoalAssessment, reques
   if (c.kind !== "time" && c.kind !== "pb" && c.kind !== "finish") throw new Error("goal assessment C target must be a fallback");
 }
 
-export function authoritativeReadiness(facts: AssessmentFacts): AthleteAssessment["readiness"] {
-  const values = new Map(facts.facts.map((fact) => [fact.fact_id, fact.value]));
-  if ((numberFact(values.get("volume.recent_weekly_km")) ?? 0) <= 0 || (numberFact(values.get("frequency.recent_run_days_per_week")) ?? 0) <= 0)
-    return "missing_baseline";
-  const daysSinceLastRun = numberFact(values.get("continuity.days_since_last_run"));
-  const ctl = numberFact(values.get("load.current_ctl"));
-  const form = numberFact(values.get("load.current_form"));
-  if ((daysSinceLastRun !== null && daysSinceLastRun >= 14) || (ctl !== null && ctl > 0 && form !== null && form / ctl < -0.25)) return "limited";
-  return "ready";
-}
-
-export function authoritativeContinuity(facts: AssessmentFacts): AthleteAssessment["continuity"] {
-  const days = numberFact(facts.facts.find((fact) => fact.fact_id === "continuity.days_since_last_run")?.value);
-  if (days === null) return "unknown";
-  if (days >= 28) return "returning";
-  if (days >= 14) return "interrupted";
-  return "continuous";
-}
-
-export function authoritativeGoalLevel(facts: AssessmentFacts, athlete?: AthleteAssessment): GoalAssessment["level"] {
+export function authoritativeGoalLevel(facts: AssessmentFacts): GoalAssessment["level"] {
   const values = new Map(facts.facts.map((fact) => [fact.fact_id, fact.value]));
   const improvement = numberFact(values.get("goal.a.improvement_pct"));
   const runway = numberFact(values.get("race.a.weeks_to_race"));
   if ((runway !== null && runway <= 0) || values.get("constraints.goal_incompatible") === true) return "unsafe_or_incompatible";
   if (improvement === null) return "conditional";
   if (improvement > 15 || (improvement > 10 && (runway ?? 0) < 16)) return "multi_cycle_required";
-  if (athlete && (athlete.readiness === "limited" || athlete.continuity === "returning" || athlete.capability_confidence === "low")) return "conditional";
   if (improvement > 3 || (runway ?? 99) < 12) return "aggressive_but_plausible";
   return "supported";
-}
-
-export function validateAthleteAssessmentRanges(assessment: AthleteAssessment, facts: AssessmentFacts, request: MasterPlanGraphRequest): void {
-  const byId = new Map(facts.facts.map((fact) => [fact.fact_id, fact.value]));
-  const recentKm = numberFact(byId.get("volume.recent_weekly_km"));
-  const stableKm = numberFact(byId.get("volume.stable_weekly_km"));
-  const historyPeak = numberFact(byId.get("history.peak_weekly_km"));
-  const roadLongest = numberFact(byId.get("history.longest_road_run_km"));
-  const quality = numberFact(byId.get("tolerance.quality_sessions_per_week"));
-  const distance = assessment.safe_training_ranges.weekly_distance_km;
-  const startingDistance = assessment.safe_training_ranges.starting_weekly_distance_km;
-  if (
-    startingDistance.low > startingDistance.high ||
-    startingDistance.high > distance.high ||
-    startingDistance.high > Math.max(recentKm ?? 0, stableKm ?? 0) * 1.1 + 1
-  )
-    throw new Error("athlete assessment starting range exceeds peak training boundary");
-  const currentPhase = byId.get("continuity.current_phase");
-  if (assessment.current_phase !== (currentPhase === "none" ? null : currentPhase)) throw new Error("athlete assessment current phase contradicts snapshot");
-  const athleteNoteIds = [...assessment.limiting_factors, ...assessment.assumptions_to_validate, ...assessment.gaps].flatMap((item) => item.fact_ids);
-  if (athleteNoteIds.some((id) => id.startsWith("goal.") || id.startsWith("race.")))
-    throw new Error("athlete assessment notes must not assess race-goal feasibility");
-  if (distance.low > distance.high || distance.high > Math.max(historyPeak ?? 0, recentKm ?? 0, stableKm ?? 0) * 1.1 + 1)
-    throw new Error("athlete assessment weekly-distance range exceeds deterministic evidence");
-  if (assessment.safe_training_ranges.runs_per_week.high > request.availability.weekly_run_days_max)
-    throw new Error("athlete assessment run frequency exceeds confirmed availability");
-  if (roadLongest === null && assessment.safe_training_ranges.long_run_km.high > 0)
-    throw new Error("athlete assessment long-run range requires road-run evidence");
-  if (roadLongest !== null && assessment.safe_training_ranges.long_run_km.high > roadLongest)
-    throw new Error("athlete assessment long-run range exceeds road-run evidence");
-  if (quality !== null && assessment.safe_training_ranges.quality_sessions_per_week.high > Math.ceil(quality))
-    throw new Error("athlete assessment quality-session range exceeds deterministic evidence");
 }
 
 function round(value: number, digits: number): number {
@@ -286,14 +216,8 @@ function goalIncompatible(request: MasterPlanGraphRequest): boolean {
     request.prohibited_arrangements.some((item) => /(?:no|禁止|不做|不能).{0,10}(?:running|run|long run|跑步|长跑|长距离)/i.test(item))
   );
 }
-function validateClaim(claim: AthleteClaim | GoalClaim, factIds: string[], facts: Map<string, Fact>): void {
-  const required: Record<AthleteClaim | GoalClaim, string[]> = {
-    volume_baseline_established: ["volume.recent_weekly_km"],
-    long_run_tolerance_established: ["tolerance.long_run_km"],
-    quality_tolerance_established: ["tolerance.quality_sessions_per_week"],
-    availability_requires_adjustment: ["frequency.recent_run_days_per_week"],
-    load_state_supportive: ["load.current_form"],
-    coverage_sufficient: ["coverage.ratio", "coverage.missing_domains"],
+function validateClaim(claim: GoalClaim, factIds: string[], facts: Map<string, Fact>): void {
+  const required: Record<GoalClaim, string[]> = {
     goal_requires_improvement: ["goal.a.improvement_pct"],
     goal_runway_limited: ["race.a.weeks_to_race"],
     goal_supported_by_history: ["history.peak_weekly_km", "history.longest_road_run_km"],
@@ -301,37 +225,19 @@ function validateClaim(claim: AthleteClaim | GoalClaim, factIds: string[], facts
   for (const id of required[claim]) if (!factIds.includes(id) || !facts.has(id)) throw new Error(`assessment claim ${claim} requires fact_id: ${id}`);
   const value = (id: string) => facts.get(id)?.value;
   const valid =
-    claim === "volume_baseline_established"
-      ? positive(value("volume.recent_weekly_km"))
-      : claim === "long_run_tolerance_established"
-        ? positive(value("tolerance.long_run_km"))
-        : claim === "quality_tolerance_established"
-          ? positive(value("tolerance.quality_sessions_per_week"))
-          : claim === "availability_requires_adjustment"
-            ? positive(value("frequency.recent_run_days_per_week"))
-            : claim === "load_state_supportive"
-              ? numberFact(value("load.current_form")) !== null && numberFact(value("load.current_form"))! >= 0
-              : claim === "coverage_sufficient"
-                ? (numberFact(value("coverage.ratio")) ?? 0) >= 0.7 && value("coverage.missing_domains") === "none"
-                : claim === "goal_requires_improvement"
-                  ? (numberFact(value("goal.a.improvement_pct")) ?? 0) > 0
-                  : claim === "goal_runway_limited"
-                    ? (numberFact(value("race.a.weeks_to_race")) ?? 99) < 12
-                    : positive(value("history.peak_weekly_km")) && positive(value("history.longest_road_run_km"));
+    claim === "goal_requires_improvement"
+      ? (numberFact(value("goal.a.improvement_pct")) ?? 0) > 0
+      : claim === "goal_runway_limited"
+        ? (numberFact(value("race.a.weeks_to_race")) ?? 99) < 12
+        : positive(value("history.peak_weekly_km")) && positive(value("history.longest_road_run_km"));
   if (!valid) throw new Error(`assessment claim ${claim} contradicts deterministic facts`);
 }
 function positive(value: unknown): boolean {
   return (numberFact(value) ?? 0) > 0;
 }
-function claimExplanation(claim: AthleteClaim | GoalClaim): string {
+function claimExplanation(claim: GoalClaim): string {
   return (
     {
-      volume_baseline_established: "Recent volume establishes a usable training baseline.",
-      long_run_tolerance_established: "Recent long-run history establishes a durability baseline.",
-      quality_tolerance_established: "Recent quality work establishes a quality-session baseline.",
-      availability_requires_adjustment: "Recent running frequency must be reconciled with confirmed availability.",
-      load_state_supportive: "Current STRIDE load state is supportive rather than overloaded.",
-      coverage_sufficient: "Available planning evidence is sufficiently covered.",
       goal_requires_improvement: "The confirmed goal requires improvement over the matching personal best.",
       goal_runway_limited: "The remaining race runway limits adaptation time.",
       goal_supported_by_history: "Historical volume and road-running durability support the goal path.",

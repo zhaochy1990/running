@@ -6,7 +6,6 @@ import { MonotonicProgress, type StageProgress } from "../progress.js";
 /** Master-plan kernel nodes → stage/progress anchors (in graph execution order). */
 export const MASTER_PLAN_NODES: Record<string, StageProgress> = {
   initialize: { stage: "reading_history", progressPct: 10 },
-  assess_athlete: { stage: "evaluating", progressPct: 20 },
   assess_goal: { stage: "evaluating", progressPct: 28 },
   strategy_worker: { stage: "planning_phases", progressPct: 40 },
   dispatch_judges: { stage: "planning_phases", progressPct: 42 },

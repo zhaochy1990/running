@@ -1,6 +1,6 @@
 import type { SelectedStrategy, StrategyCandidate, StrategyJudgment } from "@stride/contract";
 import { SelectedStrategySchema, StrategyCandidateSchema, StrategyJudgmentSchema } from "@stride/contract";
-import type { AssessmentFacts, AthleteAssessment } from "./assessment.js";
+import type { AssessmentFacts } from "./assessment.js";
 
 export const STRATEGY_WEIGHTS = {
   performance_path: 0.45,
@@ -44,17 +44,12 @@ export function mergeWorkerErrors(current: readonly string[], update: readonly s
   return [...new Set([...current, ...update])].sort();
 }
 
-export function validateStrategyCandidate(candidate: StrategyCandidate, facts: AssessmentFacts, athlete: AthleteAssessment): void {
+export function validateStrategyCandidate(candidate: StrategyCandidate, facts: AssessmentFacts): void {
   const ids = new Set(facts.facts.map((fact) => fact.fact_id));
   for (const id of candidate.evidence_fact_ids) if (!ids.has(id)) throw new Error(`strategy cites unknown fact_id: ${id}`);
-  const safe = athlete.safe_training_ranges;
   if (candidate.phases.reduce((sum, phase) => sum + phase.weeks, 0) !== candidate.weekly_highs_km.length)
     throw new Error("strategy phase weeks must equal weekly load curve length");
   if (candidate.race_week_index !== candidate.weekly_highs_km.length) throw new Error("strategy race week must be the final planned week");
-  if (candidate.weekly_highs_km.some((value, index) => index + 1 !== candidate.race_week_index && value > safe.weekly_distance_km.high))
-    throw new Error("strategy weekly load exceeds athlete safe range");
-  if (candidate.max_long_run_km > safe.long_run_km.high) throw new Error("strategy long run exceeds athlete safe range");
-  if (candidate.max_quality_sessions_per_week > safe.quality_sessions_per_week.high) throw new Error("strategy quality density exceeds athlete safe range");
 }
 
 export function validateStrategyJudgment(judgment: StrategyJudgment, candidate: StrategyCandidate, facts: AssessmentFacts): void {

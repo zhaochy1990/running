@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import { ContextSnapshotSchema, createMasterPlanGraph, type MasterPlanGraphContext, MasterPlanGraphOutcome } from "./index.js";
 import {
   createAssessmentSnapshot,
-  createTestAthleteAssessment,
   createTestGoalAssessment,
   createTestJudgments,
   createTestMasterPlan,
@@ -28,11 +27,6 @@ test("planning doctrine is packaged beside the compiled Kernel", async () => {
 const snapshot = ContextSnapshotSchema.parse(createAssessmentSnapshot());
 const strategies = ["conservative", "balanced", "aggressive_gated"] as const;
 const assessmentDependencies = {
-  assessmentModel: {
-    async invoke() {
-      return createTestAthleteAssessment();
-    },
-  },
   goalAssessmentModel: {
     async invoke() {
       return createTestGoalAssessment();

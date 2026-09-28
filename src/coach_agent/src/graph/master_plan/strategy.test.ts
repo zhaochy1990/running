@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MasterPlanGraphRequest } from "@stride/contract";
-import { AthleteAssessmentSchema, deriveAssessmentFacts } from "./assessment.js";
+import { deriveAssessmentFacts } from "./assessment.js";
 import { ContextSnapshotSchema } from "./context.js";
 import {
   aggregateStrategySelection,
@@ -11,7 +11,7 @@ import {
   validateStrategyCandidate,
   validateStrategyJudgment,
 } from "./strategy.js";
-import { createAssessmentSnapshot, createTestAthleteAssessment, createTestJudgments, createTestRequest, createTestStrategyCandidate } from "./testFixtures.js";
+import { createAssessmentSnapshot, createTestJudgments, createTestRequest, createTestStrategyCandidate } from "./testFixtures.js";
 
 test("candidate reducer is order-independent, keyed by stable ID, and duplicate-safe", () => {
   const conservative = createTestStrategyCandidate("conservative");
@@ -81,12 +81,11 @@ test("selection treats a low score as a tradeoff unless the judge explicitly vet
 
 test("strategy and judgment evidence must reference deterministic facts", () => {
   const facts = deriveAssessmentFacts(ContextSnapshotSchema.parse(createAssessmentSnapshot()), MasterPlanGraphRequest.parse(createTestRequest()));
-  const athlete = AthleteAssessmentSchema.parse(createTestAthleteAssessment());
   const candidate = {
     ...createTestStrategyCandidate("balanced"),
     evidence_fact_ids: ["invented.fact"],
   };
-  assert.throws(() => validateStrategyCandidate(candidate, facts, athlete), /unknown fact_id/);
+  assert.throws(() => validateStrategyCandidate(candidate, facts), /unknown fact_id/);
   const valid = createTestStrategyCandidate("balanced");
   const judgment = {
     ...createTestJudgments(valid.candidate_id)[0]!,

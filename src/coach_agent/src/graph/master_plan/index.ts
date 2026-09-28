@@ -22,20 +22,15 @@ export {
 } from "@stride/contract";
 export type {
   AssessmentFacts,
-  AthleteAssessment,
   GoalAssessment,
 } from "./assessment.js";
 export {
   AssessmentFactsSchema,
-  AthleteAssessmentSchema,
-  authoritativeContinuity,
   authoritativeGoalLevel,
-  authoritativeReadiness,
   canonicalizeAssessmentSummary,
   deriveAssessmentFacts,
   GoalAssessmentSchema,
   validateAssessmentReferences,
-  validateAthleteAssessmentRanges,
   validateGoalAssessmentTargets,
 } from "./assessment.js";
 export type { ContextSnapshot, MasterPlanContextProvider } from "./context.js";

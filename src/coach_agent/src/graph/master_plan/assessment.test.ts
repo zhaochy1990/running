@@ -1,15 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  AthleteAssessmentSchema,
-  authoritativeGoalLevel,
   ContextSnapshotSchema,
   createMasterPlanGraph,
   deriveAssessmentFacts,
   GoalAssessmentSchema,
   type MasterPlanGraphContext,
   MasterPlanGraphRequest,
-  validateAthleteAssessmentRanges,
 } from "./index.js";
 import {
   createAssessmentSnapshot,
@@ -24,35 +21,6 @@ const context: MasterPlanGraphContext = {
   userId: "athlete-344",
   generationId: "generation-344",
 };
-
-function validAthleteAssessment() {
-  return {
-    schema_version: 2 as const,
-    readiness: "ready" as const,
-    summary: "Recent training supports continued structured preparation.",
-    capability_confidence: "high" as const,
-    current_phase: null,
-    continuity: "continuous" as const,
-    recommended_entry_phase: "build" as const,
-    safe_training_ranges: {
-      starting_weekly_distance_km: { low: 62, high: 70 },
-      weekly_distance_km: { low: 62, high: 82 },
-      runs_per_week: { low: 4, high: 6 },
-      long_run_km: { low: 20, high: 30 },
-      quality_sessions_per_week: { low: 1, high: 2 },
-    },
-    material_conclusions: [
-      {
-        claim: "volume_baseline_established" as const,
-        explanation: "The recent weekly baseline supports structured preparation.",
-        fact_ids: ["volume.recent_weekly_km"],
-      },
-    ],
-    limiting_factors: [],
-    assumptions_to_validate: [],
-    gaps: [],
-  };
-}
 
 function validGoalAssessment() {
   return {
@@ -125,11 +93,6 @@ function dependencies(overrides: Record<string, unknown> = {}) {
         return createAssessmentSnapshot();
       },
     },
-    assessmentModel: {
-      async invoke() {
-        return validAthleteAssessment();
-      },
-    },
     goalAssessmentModel: {
       async invoke() {
         return validGoalAssessment();
@@ -165,17 +128,10 @@ function dependencies(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test("derives deterministic assessment facts from worked literals and passes assessments to skeleton", async () => {
+test("derives deterministic assessment facts from worked literals and passes them to the skeleton", async () => {
   const skeletonInputs: unknown[] = [];
-  const goalInputs: unknown[] = [];
   const graph = createMasterPlanGraph(
     dependencies({
-      goalAssessmentModel: {
-        async invoke(input: unknown) {
-          goalInputs.push(input);
-          return validGoalAssessment();
-        },
-      },
       skeletonModel: {
         async invoke(input: unknown) {
           skeletonInputs.push(input);
@@ -208,62 +164,12 @@ test("derives deterministic assessment facts from worked literals and passes ass
   assert.equal(values["coverage.ratio"], 0.75);
   assert.equal(values["continuity.days_since_last_run"], 1);
   assert.equal(values["continuity.current_phase"], "none");
-  assert.deepEqual((goalInputs[0] as { athleteAssessment: unknown }).athleteAssessment, outcome.artifact.athlete_assessment);
   const input = skeletonInputs[0] as {
     facts: unknown;
-    athleteAssessment: unknown;
     goalAssessment: unknown;
   };
   assert.deepEqual(input.facts, outcome.artifact.facts);
-  assert.deepEqual(input.athleteAssessment, outcome.artifact.athlete_assessment);
   assert.deepEqual(input.goalAssessment, outcome.artifact.goal_assessment);
-});
-
-test("athlete assessment rejects goal-specific conclusions", () => {
-  assert.throws(() =>
-    AthleteAssessmentSchema.parse({
-      ...validAthleteAssessment(),
-      material_conclusions: [
-        {
-          claim: "goal_runway_limited",
-          explanation: "Goal runway is limited",
-          fact_ids: ["race.a.weeks_to_race"],
-        },
-      ],
-    }),
-  );
-});
-
-test("athlete assessment rejects goal facts in capability notes", () => {
-  assert.throws(() => {
-    const assessment = AthleteAssessmentSchema.parse({
-      ...validAthleteAssessment(),
-      limiting_factors: [
-        {
-          description: "The goal runway is short",
-          fact_ids: ["race.a.weeks_to_race"],
-        },
-      ],
-    });
-    validateAthleteAssessmentRanges(
-      assessment,
-      deriveAssessmentFacts(ContextSnapshotSchema.parse(createAssessmentSnapshot()), MasterPlanGraphRequest.parse(createTestRequest())),
-      MasterPlanGraphRequest.parse(createTestRequest()),
-    );
-  });
-});
-
-test("limited athlete capability makes an otherwise supported goal conditional", () => {
-  const snapshot = createAssessmentSnapshot();
-  snapshot.continuity.days_since_last_run = 30;
-  const facts = deriveAssessmentFacts(ContextSnapshotSchema.parse(snapshot), MasterPlanGraphRequest.parse(createTestRequest()));
-  const athlete = AthleteAssessmentSchema.parse({
-    ...validAthleteAssessment(),
-    readiness: "limited",
-    continuity: "returning",
-    recommended_entry_phase: "return_to_run",
-  });
-  assert.equal(authoritativeGoalLevel(facts, athlete), "conditional");
 });
 
 test("goal assessment requires operational gate criteria", () => {
@@ -286,22 +192,6 @@ test("goal assessment requires operational gate criteria", () => {
       },
     }),
   );
-});
-
-test("rejects an assessment citation whose fact id does not exist", async () => {
-  const assessment = AthleteAssessmentSchema.parse(validAthleteAssessment());
-  assessment.material_conclusions[0]!.fact_ids[0] = "invented.fact";
-  const graph = createMasterPlanGraph(
-    dependencies({
-      assessmentModel: {
-        async invoke() {
-          return assessment;
-        },
-      },
-    }),
-  );
-  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context });
-  assert.equal(outcome.decision, "failed_quality_gate");
 });
 
 test("rejects a goal gate whose fact id does not exist", async () => {
@@ -356,34 +246,12 @@ test("rejects B targets that are faster than the confirmed A target", async () =
   assert.equal(outcome.decision, "failed_quality_gate");
 });
 
-test("rejects supportive load claims when deterministic form is negative", async () => {
-  const assessment = AthleteAssessmentSchema.parse(validAthleteAssessment());
-  assessment.material_conclusions = [
-    {
-      claim: "load_state_supportive",
-      explanation: "Load state supports progression",
-      fact_ids: ["load.current_form"],
-    },
-  ];
-  const graph = createMasterPlanGraph(
-    dependencies({
-      assessmentModel: {
-        async invoke() {
-          return assessment;
-        },
-      },
-    }),
-  );
-  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context });
-  assert.equal(outcome.decision, "failed_quality_gate");
-});
-
 test("canonicalizes free-form explanations from controlled claims", async () => {
-  const assessment = AthleteAssessmentSchema.parse(validAthleteAssessment());
-  assessment.material_conclusions[0]!.explanation = "The athlete has no usable volume baseline.";
+  const assessment = validGoalAssessment();
+  assessment.material_conclusions[0]!.explanation = "The athlete cannot possibly run this fast.";
   const graph = createMasterPlanGraph(
     dependencies({
-      assessmentModel: {
+      goalAssessmentModel: {
         async invoke() {
           return assessment;
         },
@@ -393,7 +261,10 @@ test("canonicalizes free-form explanations from controlled claims", async () => 
   const { outcome } = await graph.invoke({ request: createTestRequest() }, { context });
   assert.equal(outcome.decision, "completed");
   if (outcome.decision !== "completed") assert.fail("expected completed");
-  assert.equal(outcome.artifact.athlete_assessment.material_conclusions[0]?.explanation, "Recent volume establishes a usable training baseline.");
+  assert.equal(
+    outcome.artifact.goal_assessment.material_conclusions[0]?.explanation,
+    "The confirmed goal requires improvement over the matching personal best.",
+  );
 });
 
 test("missing athlete baseline stops before goal assessment", async () => {
@@ -456,7 +327,7 @@ test("assessment facts include complete zero-run weeks", async () => {
   assert.equal(facts.facts.find((fact) => fact.fact_id === "frequency.recent_run_days_per_week")?.value, 5.5);
 });
 
-test("zero recent running baseline stops before assessment models", async () => {
+test("zero recent running baseline stops before any assessment model", async () => {
   const snapshot = createAssessmentSnapshot();
   for (const week of snapshot.recent_history.weeks.slice(-4)) {
     week.distance_km = 0;
@@ -472,10 +343,10 @@ test("zero recent running baseline stops before assessment models", async () => 
           return snapshot;
         },
       },
-      assessmentModel: {
+      goalAssessmentModel: {
         async invoke() {
           modelCalls += 1;
-          return validAthleteAssessment();
+          return validGoalAssessment();
         },
       },
     }),
@@ -483,86 +354,6 @@ test("zero recent running baseline stops before assessment models", async () => 
   const { outcome } = await graph.invoke({ request: createTestRequest() }, { context });
   assert.equal(outcome.decision, "needs_baseline");
   assert.equal(modelCalls, 0);
-});
-
-test("zero quality-session history cannot authorize quality sessions", async () => {
-  const snapshot = createAssessmentSnapshot();
-  for (const week of snapshot.recent_history.weeks.slice(-4)) week.speed_session_count = 0;
-  const assessment = AthleteAssessmentSchema.parse(validAthleteAssessment());
-  assessment.safe_training_ranges.quality_sessions_per_week = {
-    low: 0,
-    high: 1,
-  };
-  const graph = createMasterPlanGraph(
-    dependencies({
-      contextProvider: {
-        async loadSnapshot() {
-          return snapshot;
-        },
-      },
-      assessmentModel: {
-        async invoke() {
-          return assessment;
-        },
-      },
-    }),
-  );
-  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context });
-  assert.equal(outcome.decision, "failed_quality_gate");
-});
-
-test("zero quality-session history cannot support an established-tolerance claim", async () => {
-  const snapshot = createAssessmentSnapshot();
-  for (const week of snapshot.recent_history.weeks.slice(-4)) week.speed_session_count = 0;
-  const assessment = AthleteAssessmentSchema.parse(validAthleteAssessment());
-  assessment.safe_training_ranges.quality_sessions_per_week = {
-    low: 0,
-    high: 0,
-  };
-  assessment.material_conclusions = [
-    {
-      claim: "quality_tolerance_established",
-      explanation: "Quality tolerance is established",
-      fact_ids: ["tolerance.quality_sessions_per_week"],
-    },
-  ];
-  const graph = createMasterPlanGraph(
-    dependencies({
-      contextProvider: {
-        async loadSnapshot() {
-          return snapshot;
-        },
-      },
-      assessmentModel: {
-        async invoke() {
-          return assessment;
-        },
-      },
-    }),
-  );
-  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context });
-  assert.equal(outcome.decision, "failed_quality_gate");
-});
-
-test("missing road-run evidence cannot authorize a positive long-run range", async () => {
-  const snapshot = ContextSnapshotSchema.parse({
-    ...createAssessmentSnapshot(),
-    macro_history: {
-      ...createAssessmentSnapshot().macro_history,
-      longest_road_run_km: null,
-    },
-  });
-  const graph = createMasterPlanGraph(
-    dependencies({
-      contextProvider: {
-        async loadSnapshot() {
-          return snapshot;
-        },
-      },
-    }),
-  );
-  const { outcome } = await graph.invoke({ request: createTestRequest() }, { context });
-  assert.equal(outcome.decision, "failed_quality_gate");
 });
 
 test("typed stop outcomes do not invoke the skeleton", async () => {
@@ -618,7 +409,7 @@ test("rejects a model-declared multi-cycle stop that contradicts deterministic f
   assert.equal(outcome.decision, "failed_quality_gate");
 });
 
-test("explicit current acute restrictions stop before either assessment model", async () => {
+test("explicit current acute restrictions stop before any assessment model", async () => {
   let modelCalls = 0;
   const request = createTestRequest();
   const injuredRequest = {
@@ -634,10 +425,10 @@ test("explicit current acute restrictions stop before either assessment model", 
   };
   const graph = createMasterPlanGraph(
     dependencies({
-      assessmentModel: {
+      goalAssessmentModel: {
         async invoke() {
           modelCalls += 1;
-          return validAthleteAssessment();
+          return validGoalAssessment();
         },
       },
     }),

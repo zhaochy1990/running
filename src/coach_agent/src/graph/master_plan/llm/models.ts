@@ -2,31 +2,19 @@ import { buildModel } from "@stride/common";
 import { MasterPlanSchema, ReviewReportSchema, StrategyCandidateSchema, StrategyJudgmentSchema } from "@stride/contract";
 import type { ModelConfig } from "../../../config/config.js";
 import {
-  AthleteAssessmentSchema,
-  authoritativeContinuity,
   authoritativeGoalLevel,
-  authoritativeReadiness,
   canonicalizeAssessmentSummary,
   GoalAssessmentSchema,
   validateAssessmentReferences,
-  validateAthleteAssessmentRanges,
   validateGoalAssessmentTargets,
 } from "../assessment.js";
 import { type MasterPlanGraphDependencies, validateSkeletonAgainstStrategy } from "../nodes.js";
 import { runMasterPlanRuleFilter } from "../rules.js";
-import {
-  athleteAssessmentPrompt,
-  goalAssessmentPrompt,
-  judgmentPrompt,
-  loadMasterPlanPromptAssets,
-  reviewPrompt,
-  skeletonPrompt,
-  strategyPrompt,
-} from "./prompts.js";
+import { goalAssessmentPrompt, judgmentPrompt, loadMasterPlanPromptAssets, reviewPrompt, skeletonPrompt, strategyPrompt } from "./prompts.js";
 
 export type MasterPlanLlmModels = Pick<
   MasterPlanGraphDependencies,
-  "assessmentModel" | "goalAssessmentModel" | "strategyModel" | "judgmentModel" | "skeletonModel" | "reviewModel"
+  "goalAssessmentModel" | "strategyModel" | "judgmentModel" | "skeletonModel" | "reviewModel"
 >;
 
 export interface MasterPlanLlmOptions {
@@ -38,29 +26,6 @@ export async function createMasterPlanLlmModels({ masterPlanModel, reviewerModel
   const { doctrine, reviewRubrics } = await loadMasterPlanPromptAssets();
 
   return {
-    assessmentModel: {
-      async invoke(input) {
-        return buildModel({
-          ...masterPlanModel,
-          structured: {
-            schema: AthleteAssessmentSchema,
-            name: "submit_athlete_assessment",
-            validate: (assessment) => {
-              const canonical = canonicalizeAssessmentSummary(assessment);
-              validateAssessmentReferences(canonical, input.facts);
-              validateAthleteAssessmentRanges(canonical, input.facts, input.request);
-              if (canonical.readiness !== authoritativeReadiness(input.facts)) {
-                throw new Error("readiness conflict");
-              }
-              if (canonical.continuity !== authoritativeContinuity(input.facts)) {
-                throw new Error("continuity conflict");
-              }
-              return canonical;
-            },
-          },
-        }).invoke(athleteAssessmentPrompt(input));
-      },
-    },
     goalAssessmentModel: {
       async invoke(input) {
         return buildModel({
@@ -73,7 +38,7 @@ export async function createMasterPlanLlmModels({ masterPlanModel, reviewerModel
               validateAssessmentReferences(canonical, input.facts);
               validateGoalAssessmentTargets(canonical, input.request, input.facts);
               if (
-                canonical.level !== authoritativeGoalLevel(input.facts, input.athleteAssessment) ||
+                canonical.level !== authoritativeGoalLevel(input.facts) ||
                 (canonical.level !== "multi_cycle_required" && canonical.multi_cycle_path.length > 0)
               ) {
                 throw new Error("goal classification conflict");
@@ -116,7 +81,7 @@ export async function createMasterPlanLlmModels({ masterPlanModel, reviewerModel
                   .join("; ");
                 throw new Error(`deterministic rule errors: ${errors}`);
               }
-              validateSkeletonAgainstStrategy(plan, input.selectedStrategy, input.athleteAssessment);
+              validateSkeletonAgainstStrategy(plan, input.selectedStrategy);
               return plan;
             },
           },

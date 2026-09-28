@@ -6,7 +6,6 @@ import { runMasterPlanRuleFilter } from "./rules.js";
 import { simulateMasterPlanLoad } from "./simulation.js";
 import {
   createAssessmentSnapshot,
-  createTestAthleteAssessment,
   createTestGoalAssessment,
   createTestJudgments,
   createTestMasterPlan,
@@ -41,7 +40,6 @@ function completedOutcome() {
       activation_status: "inactive",
       plan: createTestMasterPlan(),
       facts,
-      athlete_assessment: createTestAthleteAssessment(),
       goal_assessment: createTestGoalAssessment(),
       strategy_candidates: [createTestStrategyCandidate("conservative"), createTestStrategyCandidate("balanced")],
       judgments: [...createTestJudgments("strategy-conservative-v1"), ...createTestJudgments("strategy-balanced-v1")],

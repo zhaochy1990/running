@@ -24,7 +24,7 @@ test("maps each weekly-plan kernel node to a monotonic stage/progress anchor", (
 test("never regresses even if the stream reports an earlier node out of order", () => {
   const progress = new MonotonicProgress(MASTER_PLAN_NODES);
   assert.deepEqual(progress.observe("expand_skeleton"), { stage: "planning_phases", progressPct: 68 });
-  assert.equal(progress.observe("assess_athlete"), null); // 20 < 68 → ignored
+  assert.equal(progress.observe("assess_goal"), null); // 28 < 68 → ignored
   assert.deepEqual(progress.observe("finalize"), { stage: "outputting", progressPct: 99 });
   assert.equal(progress.observe("initialize"), null); // 10 < 99 → ignored
 });

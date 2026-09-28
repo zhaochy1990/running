@@ -3,7 +3,6 @@ import test from "node:test";
 import { ContextSnapshotSchema, createMasterPlanGraph, type MasterPlanGraphContext, MasterPlanGraphOutcome } from "./index.js";
 import {
   createAssessmentSnapshot,
-  createTestAthleteAssessment,
   createTestGoalAssessment,
   createTestJudgments,
   createTestMasterPlan,
@@ -26,11 +25,6 @@ const runtimeContext: MasterPlanGraphContext = {
 test("streamMode updates yields node-keyed chunks and a terminal outcome", async () => {
   const snapshot = ContextSnapshotSchema.parse(createAssessmentSnapshot());
   const graph = createMasterPlanGraph({
-    assessmentModel: {
-      async invoke() {
-        return createTestAthleteAssessment();
-      },
-    },
     goalAssessmentModel: {
       async invoke() {
         return createTestGoalAssessment();
@@ -81,7 +75,7 @@ test("streamMode updates yields node-keyed chunks and a terminal outcome", async
 
   // The graph begins at initialize and streams through the pipeline.
   assert.ok(seenNodes.includes("initialize"));
-  assert.ok(seenNodes.includes("assess_athlete"));
+  assert.ok(seenNodes.includes("assess_goal"));
   assert.ok(seenNodes.length >= 2);
 
   // The final outcome is captured from the stream, schema-valid and completed.
