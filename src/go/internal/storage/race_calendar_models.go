@@ -285,7 +285,7 @@ func IsRaceCalendarOverrideable(field string) bool {
 // never supplies them), so they are absent from raceCalendarItemUpsertCols: the
 // sync can never overwrite what an administrator fills in there.
 //
-// The ten course-content columns are the item-level counterpart of the event's
+// The eleven course-content columns are the item-level counterpart of the event's
 // six content sections: same invariant, the sync NEVER writes them, and the
 // stale-delete flags ContentStale instead of deleting a row carrying them.
 type RaceCalendarItem struct {
@@ -300,16 +300,24 @@ type RaceCalendarItem struct {
 
 	AdminOverrides []string `gorm:"column:admin_overrides;type:json;serializer:json"`
 
-	DistanceKm      *float64             `gorm:"column:distance_km"`
-	StartPoint      *RacePoint           `gorm:"column:start_point;type:json;serializer:json"`
-	FinishPoint     *RacePoint           `gorm:"column:finish_point;type:json;serializer:json"`
-	TotalAscentM    *int                 `gorm:"column:total_ascent_m"`
-	ElevationPoints []RaceElevationPoint `gorm:"column:elevation_points;type:json;serializer:json"`
-	AidStations     []RaceAidStation     `gorm:"column:aid_stations;type:json;serializer:json"`
-	Cutoffs         []RaceCutoff         `gorm:"column:cutoffs;type:json;serializer:json"`
-	Prizes          []RacePrize          `gorm:"column:prizes;type:json;serializer:json"`
-	Reputation      *RaceReputation      `gorm:"column:reputation;type:json;serializer:json"`
-	Photos          []RacePhoto          `gorm:"column:photos;type:json;serializer:json"`
+	DistanceKm  *float64   `gorm:"column:distance_km"`
+	StartPoint  *RacePoint `gorm:"column:start_point;type:json;serializer:json"`
+	FinishPoint *RacePoint `gorm:"column:finish_point;type:json;serializer:json"`
+	// RouteDescription is the course in words: the organiser's own
+	// "起点→路段→…→终点" chain, including turn directions and 折返 points, as
+	// published in 竞赛规程. It is text rather than a track because that is the
+	// form the data actually comes in — a GPX is not published for Chinese
+	// races at all, while the written chain is, and it is what a runner reads to
+	// picture the course. It sits on the item, not the race: a race's distances
+	// take different routes (东营's 全马 and 半马 share only their first 2 km).
+	RouteDescription *string              `gorm:"column:route_description;type:text"`
+	TotalAscentM     *int                 `gorm:"column:total_ascent_m"`
+	ElevationPoints  []RaceElevationPoint `gorm:"column:elevation_points;type:json;serializer:json"`
+	AidStations      []RaceAidStation     `gorm:"column:aid_stations;type:json;serializer:json"`
+	Cutoffs          []RaceCutoff         `gorm:"column:cutoffs;type:json;serializer:json"`
+	Prizes           []RacePrize          `gorm:"column:prizes;type:json;serializer:json"`
+	Reputation       *RaceReputation      `gorm:"column:reputation;type:json;serializer:json"`
+	Photos           []RacePhoto          `gorm:"column:photos;type:json;serializer:json"`
 
 	// ContentSource is the item-level counterpart of the event's column: nil
 	// when an administrator typed the content, RaceContentSourceWebSearch when
@@ -331,13 +339,14 @@ type RaceCalendarItem struct {
 // TableName pins the table name (GORM would otherwise pluralize).
 func (RaceCalendarItem) TableName() string { return "race_calendar_item" }
 
-// HasContent reports whether the item carries any of the ten per-distance
+// HasContent reports whether the item carries any of the eleven per-distance
 // content columns. MoveRaceContent uses it to refuse a target that already
 // carries content of its own.
 func (row RaceCalendarItem) HasContent() bool {
 	return row.DistanceKm != nil ||
 		row.StartPoint != nil ||
 		row.FinishPoint != nil ||
+		row.RouteDescription != nil ||
 		row.TotalAscentM != nil ||
 		len(row.ElevationPoints) > 0 ||
 		len(row.AidStations) > 0 ||
