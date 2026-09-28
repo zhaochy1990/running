@@ -1,8 +1,9 @@
 // Subcommand `stride homecity`: runs the resident-city detector
 // (internal/homecity) over the MySQL activity store and prints one line per
-// user. A read-only validation/ops tool: it never writes, so pointing it at
-// production with a reader account is safe. The periodic worker job that will
-// persist results reuses the same storage reads.
+// user. Default mode is read-only (safe against production with a reader
+// account); --write persists via the same RecomputeAll the homecity_recompute
+// pipeline runs (user_home_city + history), for operator-triggered refreshes
+// and backfills outside the daily cron.
 //
 // Output columns: user, detected city (district), confidence, source, weighted
 // share, vote count, and flags — relocation (prev→city), the trailing-30-day
@@ -21,6 +22,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zhaochy1990/stride/internal/handlers/homecitysync"
 	"github.com/zhaochy1990/stride/internal/homecity"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/syncconfig"
@@ -30,27 +32,47 @@ func newHomeCityCmd() *cobra.Command {
 	var (
 		profile string
 		asJSON  bool
+		write   bool
 	)
 	c := &cobra.Command{
 		Use:   "homecity",
-		Short: "Detect each user's resident city from activity signals (read-only)",
+		Short: "Detect each user's resident city from activity signals (read-only, or --write to persist)",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return runHomeCity(profile, asJSON)
+			return runHomeCity(profile, asJSON, write)
 		},
 	}
 	f := c.Flags()
 	f.StringVarP(&profile, "profile", "P", "", "restrict to one user UUID (default: all users with activities)")
 	f.BoolVar(&asJSON, "json", false, "machine-readable output")
+	f.BoolVar(&write, "write", false, "persist results to user_home_city (requires a writable DSN)")
 	return c
 }
 
-func runHomeCity(profile string, asJSON bool) error {
+func runHomeCity(profile string, asJSON, write bool) error {
+	if write && profile != "" {
+		return fmt.Errorf("--write recomputes every user (same scope as the pipeline); drop --profile to print only")
+	}
 	ctx := context.Background()
 	cfg := syncconfig.MustLoad()
 	store, err := storage.Open(cfg.MySQL.DSN)
 	if err != nil {
 		return fmt.Errorf("open mysql: %w", err)
+	}
+
+	if write {
+		if err := store.AutoMigrateHomeCity(ctx); err != nil {
+			return err
+		}
+		summary, err := homecitysync.RecomputeAll(ctx, store, nil)
+		if err != nil {
+			return err
+		}
+		encoded, err := json.Marshal(summary)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("homecity recompute persisted: %s\n", encoded)
 	}
 
 	userIDs := []string{profile}
@@ -62,9 +84,9 @@ func runHomeCity(profile string, asJSON bool) error {
 	}
 
 	type row struct {
-		UserID string           `json:"user_id"`
-		Result homecity.Result  `json:"result"`
-		Error  string           `json:"error,omitempty"`
+		UserID string          `json:"user_id"`
+		Result homecity.Result `json:"result"`
+		Error  string          `json:"error,omitempty"`
 	}
 	rows := make([]row, 0, len(userIDs))
 	for _, uid := range userIDs {

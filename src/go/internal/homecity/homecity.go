@@ -74,7 +74,7 @@ const (
 	SecondarySeasonal  SecondaryKind = "seasonal"  // recurring stints across years (summer training base)
 	SecondaryTransient SecondaryKind = "transient" // one bounded stint: camp, race trip, long holiday
 	SecondaryFormer    SecondaryKind = "former"    // the residence a relocation just replaced
-	SecondaryOther     SecondaryKind = "other"      // persistent minor presence (workday city, nearby metro)
+	SecondaryOther     SecondaryKind = "other"     // persistent minor presence (workday city, nearby metro)
 )
 
 // SecondaryCity is a non-winning city with meaningful weighted presence.
@@ -138,29 +138,29 @@ type Options struct {
 	Now time.Time
 
 	// Anchor resolution.
-	Anchors            []Anchor
+	Anchors             []Anchor
 	MaxAnchorDistanceKM float64
 
 	// Time weighting.
-	RecentWeight    float64 // ≤ 90 days
-	PastYearWeight  float64 // ≤ 365 days
-	OlderWeight     float64 // > 365 days
+	RecentWeight   float64 // ≤ 90 days
+	PastYearWeight float64 // ≤ 365 days
+	OlderWeight    float64 // > 365 days
 
 	// Minimum evidence to output a city at all.
-	MinVotes        int
+	MinVotes         int
 	MinTotalWeighted float64
 
 	// Seasonality (blocks relocation for recurring non-resident stints).
-	SeasonalMinYears          int
-	SeasonalMinVotesPerYear   int
+	SeasonalMinYears        int
+	SeasonalMinVotesPerYear int
 
 	// Relocation gate (challenger must pass every check).
-	RelocationWindow       time.Duration
-	RelocationMinShare     float64
-	RelocationMinVotes     int
-	RecentWindow           time.Duration
-	RecentMinVotes         int
-	MinChallengerSpanDays  int
+	RelocationWindow      time.Duration
+	RelocationMinShare    float64
+	RelocationMinVotes    int
+	RecentWindow          time.Duration
+	RecentMinVotes        int
+	MinChallengerSpanDays int
 
 	// Reporting.
 	TransientMaxSpanDays int
@@ -178,29 +178,29 @@ type Options struct {
 // clock now.
 func DefaultOptions(now time.Time) Options {
 	return Options{
-		Now:                      now,
-		Anchors:                  DefaultAnchors(),
-		MaxAnchorDistanceKM:      60,
-		RecentWeight:             3,
-		PastYearWeight:           1.5,
-		OlderWeight:              0.5,
-		MinVotes:                 3,
-		MinTotalWeighted:         3,
-		SeasonalMinYears:         2,
-		SeasonalMinVotesPerYear:  5,
-		RelocationWindow:         90 * 24 * time.Hour,
-		RelocationMinShare:       0.5,
-		RelocationMinVotes:       10,
-		RecentWindow:             30 * 24 * time.Hour,
-		RecentMinVotes:           3,
-		MinChallengerSpanDays:    30,
-		TransientMaxSpanDays:     45,
-		MinSecondaryShare:        0.05,
-		SecondaryCap:             3,
-		HighConfidenceMinVotes:   40,
-		HighConfidenceMinShare:   0.6,
-		NameMediumMinVotes:       100,
-		NameMediumMinShare:       0.7,
+		Now:                     now,
+		Anchors:                 DefaultAnchors(),
+		MaxAnchorDistanceKM:     60,
+		RecentWeight:            3,
+		PastYearWeight:          1.5,
+		OlderWeight:             0.5,
+		MinVotes:                3,
+		MinTotalWeighted:        3,
+		SeasonalMinYears:        2,
+		SeasonalMinVotesPerYear: 5,
+		RelocationWindow:        90 * 24 * time.Hour,
+		RelocationMinShare:      0.5,
+		RelocationMinVotes:      10,
+		RecentWindow:            30 * 24 * time.Hour,
+		RecentMinVotes:          3,
+		MinChallengerSpanDays:   30,
+		TransientMaxSpanDays:    45,
+		MinSecondaryShare:       0.05,
+		SecondaryCap:            3,
+		HighConfidenceMinVotes:  40,
+		HighConfidenceMinShare:  0.6,
+		NameMediumMinVotes:      100,
+		NameMediumMinShare:      0.7,
 	}
 }
 
