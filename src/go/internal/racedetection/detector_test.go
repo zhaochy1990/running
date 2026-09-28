@@ -121,20 +121,20 @@ func TestDetectorDoesNotClassifyRejectedCandidate(t *testing.T) {
 func TestScoreAssessmentUsesFixedWeightsAndThreshold(t *testing.T) {
 	assessment := scoringEvidence{
 		Model:         ModelAssessment{EventIntent: EvidenceUnknown, IntensityContinuity: EvidenceRace},
-		DistancePrior: EvidenceRace, PausePattern: EvidenceTraining, RouteShape: EvidenceUnknown,
+		DistancePrior: EvidenceRace, HRIntensity: EvidenceRace, PausePattern: EvidenceTraining, RouteShape: EvidenceUnknown,
 		Travel: EvidenceUnknown, TimeWindow: EvidenceRace,
 	}
 	result, err := ScoreAssessment(assessment)
 	if err != nil {
 		t.Fatalf("ScoreAssessment: %v", err)
 	}
-	// +25 distance +20 intensity -20 pauses +10 time = 35. The threshold is inclusive.
-	if result.Score != 35 || result.Threshold != DefaultRaceScoreThreshold || !result.IsRace {
+	// +15 distance +20 intensity +20 hr -20 pauses +10 time = 45. The threshold is inclusive.
+	if result.Score != 45 || result.Threshold != DefaultRaceScoreThreshold || !result.IsRace {
 		t.Fatalf("score result = %+v", result)
 	}
 	want := map[ScoreDimension]int{
-		DimensionEventIntent: 0, DimensionDistancePrior: 25, DimensionIntensityContinuity: 20,
-		DimensionPausePattern: -20, DimensionRouteShape: 0, DimensionTravel: 0, DimensionTimeWindow: 10,
+		DimensionEventIntent: 0, DimensionDistancePrior: 15, DimensionIntensityContinuity: 20,
+		DimensionHRIntensity: 20, DimensionPausePattern: -20, DimensionRouteShape: 0, DimensionTravel: 0, DimensionTimeWindow: 10,
 	}
 	for _, contribution := range result.Dimensions {
 		if contribution.Contribution != want[contribution.Dimension] {
@@ -143,21 +143,23 @@ func TestScoreAssessmentUsesFixedWeightsAndThreshold(t *testing.T) {
 	}
 }
 
-func TestScoreAssessmentUsesRequestedRouteAndTravelRaceWeights(t *testing.T) {
+func TestScoreAssessmentKeepsWeakGoPositivesBelowThreshold(t *testing.T) {
 	result, err := ScoreAssessment(scoringEvidence{
 		Model:         ModelAssessment{EventIntent: EvidenceUnknown, IntensityContinuity: EvidenceUnknown},
-		DistancePrior: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceRace,
+		DistancePrior: EvidenceUnknown, HRIntensity: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceRace,
 		Travel: EvidenceRace, TimeWindow: EvidenceUnknown,
 	})
 	if err != nil {
 		t.Fatalf("ScoreAssessment: %v", err)
 	}
-	if result.Score != 45 || !result.IsRace {
-		t.Fatalf("route and travel score = %+v, want 45 and race", result)
+	// A big-city loop plus an out-of-town start are routine long-run signals;
+	// together they must no longer confirm a race on their own.
+	if result.Score != 20 || result.IsRace {
+		t.Fatalf("route and travel score = %+v, want 20 and not race", result)
 	}
 	wantRaceWeights := map[ScoreDimension]int{
-		DimensionRouteShape: 20,
-		DimensionTravel:     25,
+		DimensionRouteShape: 10,
+		DimensionTravel:     10,
 	}
 	for _, contribution := range result.Dimensions {
 		if want, ok := wantRaceWeights[contribution.Dimension]; ok && contribution.RaceWeight != want {
@@ -169,32 +171,72 @@ func TestScoreAssessmentUsesRequestedRouteAndTravelRaceWeights(t *testing.T) {
 func TestScoreAssessmentAppliesTrainingTimeAgainstPositiveRoute(t *testing.T) {
 	result, err := ScoreAssessment(scoringEvidence{
 		Model:         ModelAssessment{EventIntent: EvidenceUnknown, IntensityContinuity: EvidenceRace},
-		DistancePrior: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceRace,
+		DistancePrior: EvidenceUnknown, HRIntensity: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceRace,
 		Travel: EvidenceUnknown, TimeWindow: EvidenceTraining,
 	})
 	if err != nil {
 		t.Fatalf("ScoreAssessment: %v", err)
 	}
-	// Intensity +20 and the requested route weight +20 exactly offset a
-	// training-like time window (-20) at the inclusive race threshold.
-	if result.Score != 20 || !result.IsRace {
-		t.Fatalf("score result = %+v", result)
+	// Intensity +20 plus the weakened route weight +10 no longer offsets a
+	// training-like time window (-20) enough to reach the threshold.
+	if result.Score != 10 || result.IsRace {
+		t.Fatalf("score result = %+v, want 10 and not race", result)
 	}
 }
 
 func TestScoreAssessmentPreservesExplicitPersonalTimeTrial(t *testing.T) {
+	// A named all-out time trial needs physiological corroboration under the
+	// higher threshold: HR intensity evidence (+20) exactly offsets the
+	// training-shaped route (-15) and time window (-20) on top of the model's
+	// intent (+35) and intensity (+20) evidence.
 	result, err := ScoreAssessment(scoringEvidence{
 		Model:         ModelAssessment{EventIntent: EvidenceRace, IntensityContinuity: EvidenceRace},
-		DistancePrior: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceTraining,
+		DistancePrior: EvidenceUnknown, HRIntensity: EvidenceRace, PausePattern: EvidenceUnknown, RouteShape: EvidenceTraining,
 		Travel: EvidenceUnknown, TimeWindow: EvidenceTraining,
 	})
 	if err != nil {
 		t.Fatalf("ScoreAssessment: %v", err)
 	}
-	if result.Score != 20 || !result.IsRace {
-		t.Fatalf("explicit personal time trial score = %+v", result)
+	if result.Score != 40 || !result.IsRace {
+		t.Fatalf("explicit personal time trial score = %+v, want 40 and race", result)
+	}
+	// Without any HR evidence the same profile stays below the threshold:
+	// production false positives were exactly model-only confirmations.
+	result, err = ScoreAssessment(scoringEvidence{
+		Model:         ModelAssessment{EventIntent: EvidenceRace, IntensityContinuity: EvidenceRace},
+		DistancePrior: EvidenceUnknown, HRIntensity: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceTraining,
+		Travel: EvidenceUnknown, TimeWindow: EvidenceTraining,
+	})
+	if err != nil {
+		t.Fatalf("ScoreAssessment: %v", err)
+	}
+	if result.Score != 20 || result.IsRace {
+		t.Fatalf("unevidenced personal time trial score = %+v, want 20 and not race", result)
 	}
 }
+
+func TestHRIntensityEvidenceBoundaries(t *testing.T) {
+	cases := []struct {
+		name         string
+		avgHR, maxHR *int
+		want         Evidence
+	}{
+		{"race ratio inclusive", intPtr(171), intPtr(190), EvidenceRace},
+		{"training ratio inclusive", intPtr(129), intPtr(150), EvidenceTraining},
+		{"borderline stays neutral high", intPtr(132), intPtr(150), EvidenceUnknown},
+		{"borderline stays neutral low", intPtr(130), intPtr(150), EvidenceUnknown},
+		{"missing avg", nil, intPtr(190), EvidenceUnknown},
+		{"missing max", intPtr(171), nil, EvidenceUnknown},
+		{"zero max", intPtr(171), intPtr(0), EvidenceUnknown},
+	}
+	for _, tc := range cases {
+		if got := hrIntensityEvidence(tc.avgHR, tc.maxHR); got != tc.want {
+			t.Errorf("%s: hrIntensityEvidence(%v, %v) = %q, want %q", tc.name, tc.avgHR, tc.maxHR, got, tc.want)
+		}
+	}
+}
+
+func intPtr(v int) *int { return &v }
 
 func TestScoreAssessmentRejectsMissingOrUnknownEvidence(t *testing.T) {
 	assessment := scoringEvidence{
