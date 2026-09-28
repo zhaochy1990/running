@@ -1070,6 +1070,58 @@ func TestRaceCalendarAdmin_RouteDescription(t *testing.T) {
 	// TestCopyRaceItemAdminData_CopiesEveryAdminOwnedColumn in package storage.
 }
 
+// TestRaceCalendarAdmin_CourseChallenges covers the key-difficulty rows: they
+// round trip, a row without a description is a 400 (it would carry nothing), a
+// row whose distance is still unknown is fine, and the section counts as
+// content and clears with the rest of it.
+func TestRaceCalendarAdmin_CourseChallenges(t *testing.T) {
+	h := newRaceHarness(t)
+	event := h.store.seedEvent(syncEvent())
+	admin := h.adminToken(t)
+	base := fmt.Sprintf("/api/admin/races/%d/items", event.ID)
+
+	challenges := []map[string]any{
+		{"distance_km": 4.5, "description": "有一个隧道，需要下穿，有上下起伏"},
+		{"distance_km": 5.4, "description": "立交桥，赛道最大上坡（大约400米缓上坡）"},
+		{"description": "终点前爬升，无准确桩号"},
+	}
+	w := h.do(t, http.MethodPost, base, map[string]any{
+		"name": "全程马拉松", "type": "Marathon",
+		"content": map[string]any{"distance_km": 42.195, "course_challenges": challenges},
+	}, admin)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create = %d: %s", w.Code, w.Body.String())
+	}
+	var created raceCalendarItemDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &created)
+	if created.Content == nil || len(created.Content.CourseChallenges) != 3 ||
+		created.Content.CourseChallenges[0].DistanceKm == nil || *created.Content.CourseChallenges[0].DistanceKm != 4.5 ||
+		created.Content.CourseChallenges[2].DistanceKm != nil {
+		t.Fatalf("created challenges = %+v, want the rows round-tripped with an optional distance", created.Content)
+	}
+	if stored := h.store.items[h.store.findItem(created.ID)]; !stored.HasContent() {
+		t.Fatal("a row carrying only challenges must count as having content")
+	}
+
+	// A challenge without a description carries nothing — a distance alone
+	// names a place, not a difficulty.
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{
+		"content": map[string]any{"course_challenges": []map[string]any{{"distance_km": 30}}},
+	}, admin)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("blank description = %d %s, want 400", w.Code, w.Body.String())
+	}
+
+	// Explicit null clears the section with the rest of the content.
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{"content": nil}, admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("clear = %d: %s", w.Code, w.Body.String())
+	}
+	if stored := h.store.items[h.store.findItem(created.ID)]; stored.HasContent() {
+		t.Fatalf("stored item = %+v, want the challenges cleared with the content", stored)
+	}
+}
+
 // TestRaceCalendarAdmin_MoveContent covers the stale-row resolution endpoint:
 // 204 with the content moved and the source gone, 409 onto an occupied target.
 func TestRaceCalendarAdmin_MoveContent(t *testing.T) {
