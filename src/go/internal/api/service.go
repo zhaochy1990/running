@@ -203,6 +203,10 @@ type Config struct {
 	// Administrator-only CRUD the Dashboard races tab drives. Leave zero to run
 	// without the race endpoints (e.g. in tests).
 	RaceCalendarStore RaceCalendarStore
+	// RaceItemGeocoder optionally resolves race-calendar venue names to WGS84
+	// coordinates when item content carries a name but no coordinates. Nil
+	// disables geocoding (see race_calendar.go).
+	RaceItemGeocoder RaceItemGeocoder
 
 	// Race content maintenance surface (city/race/project structured content,
 	// issue #318). Administrator-only. Leave zero to run without the content
@@ -330,7 +334,7 @@ func NewService(cfg Config) *Service {
 		masterPlan:              newMasterPlanRoutes(cfg.MasterPlanStore, log),
 		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, cfg.BodyCompositionStore, log),
 		legalDocuments:          newLegalDocumentRoutes(cfg.LegalDocumentStore, log),
-		raceCalendar:            newRaceCalendarRoutes(cfg.RaceCalendarStore, log),
+		raceCalendar:            newRaceCalendarRoutes(cfg.RaceCalendarStore, log, cfg.RaceItemGeocoder),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,

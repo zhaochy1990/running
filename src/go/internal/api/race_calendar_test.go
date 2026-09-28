@@ -1262,3 +1262,72 @@ func TestRaceCalendarAdmin_PublishAndFilter(t *testing.T) {
 		t.Errorf("bad published = %d, want 400", w.Code)
 	}
 }
+
+type stubGeocoder struct {
+	calls    []struct{ address, city string }
+	lat, lng float64
+	ok       bool
+}
+
+func (s *stubGeocoder) Geocode(_ context.Context, address, city string) (float64, float64, bool) {
+	s.calls = append(s.calls, struct{ address, city string }{address, city})
+	return s.lat, s.lng, s.ok
+}
+
+// TestRaceCalendarAdmin_ItemStartPointGeocoding verifies the content hook: a
+// start point carrying only a venue name is resolved to WGS84 coordinates on
+// create and update, while geocoding failures never block the write.
+func TestRaceCalendarAdmin_ItemStartPointGeocoding(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("gen key: %v", err)
+	}
+	verifier, err := NewJWTVerifierFromKeyWithAdmin(&key.PublicKey, testIssuer, testAudience, testAdminAudience)
+	if err != nil {
+		t.Fatalf("verifier: %v", err)
+	}
+	store := newFakeRaceCalendarStore()
+	geocoder := &stubGeocoder{lat: 24.48, lng: 118.09, ok: true}
+	svc := NewService(Config{
+		Auth:              NewAuthenticator(testToken, verifier),
+		RaceCalendarStore: store,
+		RaceItemGeocoder:  geocoder,
+	})
+	h := &raceHarness{svc: svc, store: store, key: key}
+	event := store.seedEvent(syncEvent())
+	admin := h.adminToken(t)
+	base := fmt.Sprintf("/api/admin/races/%d/items", event.ID)
+
+	w := h.do(t, http.MethodPost, base, map[string]any{
+		"name": "全程马拉松", "type": "Marathon",
+		"content": map[string]any{"distance_km": 42.195, "start_point": map[string]any{"name": "厦门会展中心"}},
+	}, admin)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create item = %d: %s", w.Code, w.Body.String())
+	}
+	var created raceCalendarItemDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &created)
+	if created.Content == nil || created.Content.StartPoint == nil ||
+		created.Content.StartPoint.Lat == nil || *created.Content.StartPoint.Lat != 24.48 ||
+		created.Content.StartPoint.Lng == nil || *created.Content.StartPoint.Lng != 118.09 {
+		t.Fatalf("created start point = %+v, want geocoded coordinates", created.Content.StartPoint)
+	}
+	if len(geocoder.calls) != 1 || geocoder.calls[0].address != "厦门会展中心" || geocoder.calls[0].city != "厦门市" {
+		t.Fatalf("geocoder calls = %+v, want venue narrowed by event city", geocoder.calls)
+	}
+
+	// A geocoding failure stores the name without coordinates and still 200s.
+	geocoder.ok = false
+	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{
+		"content": map[string]any{"start_point": map[string]any{"name": "新的起点"}},
+	}, admin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("patch item = %d: %s", w.Code, w.Body.String())
+	}
+	var replaced raceCalendarItemDTO
+	_ = json.Unmarshal(w.Body.Bytes(), &replaced)
+	if replaced.Content == nil || replaced.Content.StartPoint == nil || replaced.Content.StartPoint.Name != "新的起点" ||
+		replaced.Content.StartPoint.Lat != nil || replaced.Content.StartPoint.Lng != nil {
+		t.Fatalf("replaced start point = %+v, want name without coordinates", replaced.Content.StartPoint)
+	}
+}
