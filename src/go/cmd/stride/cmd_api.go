@@ -31,6 +31,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/mq"
 	"github.com/zhaochy1990/stride/internal/pipeline"
+	"github.com/zhaochy1990/stride/internal/provider/amap"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/userdata"
 )
@@ -218,6 +219,7 @@ func runAPI() error {
 		LegalDocumentStore:      store,
 		RaceCalendarStore:       store,
 		RaceContentStore:        store,
+		RaceItemGeocoder:        newAMapGeocoder(cfg.AMap),
 		CityAIDraft: api.CityAIDraftConfig{
 			Endpoint: cfg.CityAIDraft.Endpoint,
 			APIKey:   cfg.CityAIDraft.APIKey,
@@ -317,4 +319,24 @@ func apiPipelineCatalog() []api.PipelineCatalogEntry {
 		}
 	}
 	return out
+}
+
+// newAMapGeocoder adapts the optional Amap client to the api geocoder
+// interface. An empty key returns nil, which disables geocoding.
+func newAMapGeocoder(cfg config.AMap) api.RaceItemGeocoder {
+	client := amap.New(cfg.APIKey, cfg.Timeout)
+	if !client.IsConfigured() {
+		return nil
+	}
+	return amapGeocoder{client: client}
+}
+
+type amapGeocoder struct{ client *amap.Client }
+
+func (g amapGeocoder) Geocode(ctx context.Context, address, city string) (float64, float64, bool) {
+	result, err := g.client.Geocode(ctx, address, city)
+	if err != nil || result == nil {
+		return 0, 0, false
+	}
+	return result.Latitude, result.Longitude, true
 }

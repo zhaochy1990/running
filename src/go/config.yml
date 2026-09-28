@@ -62,6 +62,15 @@ city-ai-draft:
   model: "deepseek-v4-flash"
   timeout: 45s
 
+# Amap (高德) geocoding for race-calendar venue names: resolves start_point
+# names to WGS84 coordinates so the deterministic race matcher can confirm
+# races by start point + gun time. The key is secret and must be supplied via
+# STRIDE_WORKER_AMAP_API_KEY; until it is set venue names are stored without
+# coordinates, exactly as before.
+amap:
+  api-key: ""
+  timeout: 3s
+
 # Tencent Cloud COS bucket holding route-thumbnail PNGs (public read). Secrets
 # come from env:
 #   STRIDE_WORKER_COS_SECRET_ID / STRIDE_WORKER_COS_SECRET_KEY

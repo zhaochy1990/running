@@ -39,16 +39,25 @@ type RaceCalendarStore interface {
 // raceCalendarRoutes serves the administrator race-calendar management surface.
 // Mounted on the parent authenticated group so the admin JWT tier can reach it;
 // every handler re-checks TierAdmin so user and internal callers are refused.
-type raceCalendarRoutes struct {
-	store RaceCalendarStore
-	log   *zap.Logger
+// RaceItemGeocoder resolves a venue name, optionally narrowed by a Chinese
+// city name, to WGS84 coordinates. A nil implementation disables geocoding:
+// venue names are then stored without coordinates, exactly as before the
+// matcher needed them.
+type RaceItemGeocoder interface {
+	Geocode(ctx context.Context, address, city string) (lat, lng float64, ok bool)
 }
 
-func newRaceCalendarRoutes(store RaceCalendarStore, log *zap.Logger) *raceCalendarRoutes {
+type raceCalendarRoutes struct {
+	store    RaceCalendarStore
+	log      *zap.Logger
+	geocoder RaceItemGeocoder
+}
+
+func newRaceCalendarRoutes(store RaceCalendarStore, log *zap.Logger, geocoder RaceItemGeocoder) *raceCalendarRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &raceCalendarRoutes{store: store, log: log}
+	return &raceCalendarRoutes{store: store, log: log, geocoder: geocoder}
 }
 
 // register mounts the admin race-calendar endpoints. The whole surface is
@@ -633,6 +642,7 @@ func (r *raceCalendarRoutes) createItem(c *gin.Context) {
 		return
 	}
 	item.ContentSource = src
+	r.geocodeItemStartPoint(c, item)
 	if err := r.store.CreateRaceCalendarItem(c.Request.Context(), item); err != nil {
 		writeRaceCalendarError(c, r.log, err)
 		return
@@ -718,6 +728,7 @@ func (r *raceCalendarRoutes) updateItem(c *gin.Context) {
 		}
 		applyRaceItemContentColumns(item, req.Content.Value)
 	}
+	r.geocodeItemStartPoint(c, item)
 	if err := r.store.UpdateRaceCalendarItem(c.Request.Context(), item); err != nil {
 		writeRaceCalendarError(c, r.log, err)
 		return
@@ -1038,6 +1049,30 @@ func clearRaceCalendarField(row *storage.RaceCalendarEvent, field string) {
 // admin_overrides — the row keeps following the mirror but keeps the
 // administrator's value for that field. start_time/entry_fee/quota need no
 // override: the upstream never supplies them, so the sync never writes them.
+// geocodeItemStartPoint best-effort fills missing start-point coordinates
+// from the venue name. Geocoding failures never block the content write: the
+// name alone is still worth storing, and the crowd-sourced consensus path or
+// a later edit can add coordinates.
+func (r *raceCalendarRoutes) geocodeItemStartPoint(c *gin.Context, item *storage.RaceCalendarItem) {
+	if r.geocoder == nil || item.StartPoint == nil || item.StartPoint.Name == "" ||
+		(item.StartPoint.Lat != nil && item.StartPoint.Lng != nil) {
+		return
+	}
+	city := ""
+	if event, err := r.store.GetRaceCalendarEvent(c.Request.Context(), item.RaceEventID); err == nil && event != nil && event.City != nil {
+		city = *event.City
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	lat, lng, ok := r.geocoder.Geocode(ctx, item.StartPoint.Name, city)
+	if !ok {
+		r.log.Debug("race item start point not geocodable",
+			zap.Uint64("item_id", item.ID), zap.String("name", item.StartPoint.Name))
+		return
+	}
+	item.StartPoint.Lat, item.StartPoint.Lng = &lat, &lng
+}
+
 func applyRaceItemUpdate(c *gin.Context, item *storage.RaceCalendarItem, req raceCalendarItemUpdateRequest) bool {
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)

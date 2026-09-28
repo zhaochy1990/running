@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/zhaochy1990/stride/internal/job"
 	detector "github.com/zhaochy1990/stride/internal/racedetection"
 	"github.com/zhaochy1990/stride/internal/storage"
@@ -26,7 +28,14 @@ type fakeStore struct {
 	insertedResult bool
 	listedIDs      []string
 	inserted       []storage.Race
-	mu             sync.Mutex
+	calendarItems  map[string][]detector.CalendarItem
+	rematchRows    []storage.RaceCandidate
+	linked         []struct {
+		labelID string
+		itemID  int64
+	}
+	consensusWrites []int64
+	mu              sync.Mutex
 }
 
 func (f *fakeStore) ActivityStartCoordinates(_ context.Context, _ string) ([]detector.Coordinate, error) {
@@ -47,6 +56,35 @@ func (f *fakeStore) RaceCandidates(_ context.Context, _ string, labelIDs []strin
 		f.listedIDs = append([]string{}, labelIDs...)
 	}
 	return f.candidates, nil
+}
+
+func (f *fakeStore) RaceCalendarItemsForDates(_ context.Context, dates []string) ([]detector.CalendarItem, error) {
+	var items []detector.CalendarItem
+	for _, date := range dates {
+		items = append(items, f.calendarItems[date]...)
+	}
+	return items, nil
+}
+
+func (f *fakeStore) LinkRaceToCalendarItem(_ context.Context, _, labelID string, itemID int64) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.linked = append(f.linked, struct {
+		labelID string
+		itemID  int64
+	}{labelID, itemID})
+	return true, nil
+}
+
+func (f *fakeStore) RacesWithoutCalendarLink(_ context.Context, _ string) ([]storage.RaceCandidate, error) {
+	return f.rematchRows, nil
+}
+
+func (f *fakeStore) UpdateRaceCalendarItemStartFromConsensus(_ context.Context, itemID int64, _ int, _ float64) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.consensusWrites = append(f.consensusWrites, itemID)
+	return true, nil
 }
 
 func (f *fakeStore) InsertRace(_ context.Context, race *storage.Race) (bool, error) {
@@ -366,3 +404,95 @@ func stringsContainAll(s string, values ...string) bool {
 	}
 	return true
 }
+
+// countingClassifier fails the test when the model is consulted at all: the
+// calendar-match path must short-circuit before any LLM call.
+type countingClassifier struct{ calls atomic.Int32 }
+
+func (c *countingClassifier) Assess(_ context.Context, _ detector.Candidate) (detector.ModelAssessment, error) {
+	c.calls.Add(1)
+	return detector.ModelAssessment{EventIntent: detector.EvidenceUnknown, IntensityContinuity: detector.EvidenceUnknown}, nil
+}
+
+func TestHandlerCalendarMatchSkipsModelAndLinksItem(t *testing.T) {
+	// 2026-03-29 07:31 Asia/Shanghai == 2026-03-28 23:31 UTC, the way watch
+	// sync stores activity timestamps.
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+	start := time.Date(2026, 3, 29, 7, 31, 0, 0, shanghai)
+	lat, lng := 39.902, 116.393
+	store := &fakeStore{
+		insertedResult: true,
+		candidates: []storage.RaceCandidate{{
+			LabelID: "cal-1", Name: "Official Marathon", Sport: "run_outdoor",
+			Date: start.UTC(), DistanceM: 42_500,
+			AvgHR: intPtrForHandler(168), MaxHR: intPtrForHandler(178),
+			StartGPSLat: &lat, StartGPSLon: &lng,
+		}},
+		calendarItems: map[string][]detector.CalendarItem{
+			"2026-03-29": {{
+				ItemID: 55, RaceDate: "2026-03-29", Type: "Marathon",
+				DistanceKM: floatPtrForHandler(42.195), GunTime: strPtrForHandler("07:30"),
+				StartLat: &lat, StartLng: &lng,
+			}},
+		},
+	}
+	classifier := &countingClassifier{}
+	if _, err = New(store, detector.New(classifier), 2)(context.Background(), &job.Job{UserID: uuid.NewString(), InputJSON: `{"mode":"incremental","label_ids":["cal-1"]}`}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if calls := classifier.calls.Load(); calls != 0 {
+		t.Fatalf("classifier called %d times, want zero for calendar-matched candidate", calls)
+	}
+	if len(store.inserted) != 1 {
+		t.Fatalf("inserted = %+v, want one race", store.inserted)
+	}
+	race := store.inserted[0]
+	if race.RaceCalendarItemID == nil || *race.RaceCalendarItemID != 55 {
+		t.Fatalf("race calendar item = %+v, want item 55", race.RaceCalendarItemID)
+	}
+	if race.Evidence != detector.RaceEvidenceCalendarMatch {
+		t.Fatalf("race evidence = %q, want calendar_match", race.Evidence)
+	}
+	if len(store.consensusWrites) != 1 || store.consensusWrites[0] != 55 {
+		t.Fatalf("consensus writes = %+v, want item 55", store.consensusWrites)
+	}
+}
+
+func TestHandlerBackfillRematchesExistingRaces(t *testing.T) {
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+	start := time.Date(2025, 11, 30, 7, 0, 0, 0, shanghai)
+	lat, lng := 31.238, 121.486
+	store := &fakeStore{
+		insertedResult: true,
+		rematchRows: []storage.RaceCandidate{{
+			LabelID: "old-race", Sport: "run_outdoor", Date: start.UTC(), DistanceM: 42_700,
+			StartGPSLat: &lat, StartGPSLon: &lng,
+		}},
+		calendarItems: map[string][]detector.CalendarItem{
+			"2025-11-30": {{
+				ItemID: 88, RaceDate: "2025-11-30", Type: "Marathon",
+				DistanceKM: floatPtrForHandler(42.195), GunTime: strPtrForHandler("07:00"),
+				StartLat: &lat, StartLng: &lng,
+			}},
+		},
+	}
+	if _, err = NewBackfill(store, detector.New(&countingClassifier{}), 1)(context.Background(), &job.Job{UserID: uuid.NewString()}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if len(store.linked) != 1 || store.linked[0].labelID != "old-race" || store.linked[0].itemID != 88 {
+		t.Fatalf("linked = %+v, want old-race to item 88", store.linked)
+	}
+	if len(store.inserted) != 0 {
+		t.Fatalf("rematch must not re-insert races, got %+v", store.inserted)
+	}
+}
+
+func intPtrForHandler(v int) *int           { return &v }
+func floatPtrForHandler(v float64) *float64 { return &v }
+func strPtrForHandler(v string) *string     { return &v }

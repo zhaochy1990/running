@@ -183,6 +183,7 @@ type APIConfig struct {
 	Queues      Queues              `mapstructure:"queues"`
 	API         API                 `mapstructure:"api"`
 	CityAIDraft CityAIDraft         `mapstructure:"city-ai-draft"`
+	AMap        AMap                `mapstructure:"amap"`
 }
 
 // API holds the HTTP API server knobs.
@@ -233,6 +234,17 @@ type CityAIDraft struct {
 	APIKey   string        `mapstructure:"api-key"`
 	Model    string        `mapstructure:"model"`
 	Timeout  time.Duration `mapstructure:"timeout"`
+}
+
+// AMap configures the Amap (高德) geocoding client that resolves race-calendar
+// venue names to WGS84 coordinates for the deterministic race matcher. Every
+// field is optional: an empty API key disables geocoding (venue names are
+// stored without coordinates, as before) so the rollout needs no coordinated
+// config change. The API key is a secret and must be supplied via
+// STRIDE_WORKER_AMAP_API_KEY.
+type AMap struct {
+	APIKey  string        `mapstructure:"api-key"`
+	Timeout time.Duration `mapstructure:"timeout"`
 }
 
 // APIAuth configures RS256 verification of end-user JWTs (direct-browser tier).

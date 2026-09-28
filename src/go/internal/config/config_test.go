@@ -288,3 +288,35 @@ city-ai-draft:
 		t.Fatalf("city ai draft key = %q, want env override", cfg.CityAIDraft.APIKey)
 	}
 }
+
+func TestMustLoadAPIFrom_AMap(t *testing.T) {
+	body := `
+logger: {format: json, service-name: stride-api, level: info}
+mysql: {dsn: mysql-dsn}
+amqp: {url: "amqp://guest:guest@localhost:5672/"}
+queues: {work: w, retry: r, poison: p}
+api:
+  addr: ":8080"
+  internal-token: internal-token
+  auth:
+    issuer: auth-service
+    audience: stride-user
+    public-key-path: /keys/public.pem
+amap:
+  api-key: ""
+  timeout: 3s
+`
+	cfg := MustLoadAPIFrom(writeConfig(t, body))
+	if cfg.AMap.APIKey != "" {
+		t.Fatalf("amap key = %q, want empty when unset (geocoding disabled)", cfg.AMap.APIKey)
+	}
+	if cfg.AMap.Timeout != 3*time.Second {
+		t.Fatalf("amap timeout = %v, want 3s", cfg.AMap.Timeout)
+	}
+
+	t.Setenv("STRIDE_WORKER_AMAP_API_KEY", "amap-secret")
+	cfg = MustLoadAPIFrom(writeConfig(t, body))
+	if cfg.AMap.APIKey != "amap-secret" {
+		t.Fatalf("amap key = %q, want env override", cfg.AMap.APIKey)
+	}
+}
