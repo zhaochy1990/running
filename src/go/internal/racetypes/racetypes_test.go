@@ -77,3 +77,23 @@ func TestFromChinaItems(t *testing.T) {
 		}
 	}
 }
+
+func TestIsValid(t *testing.T) {
+	valid := []string{
+		Marathon, HalfMarathon, Other, Unknown,
+		"10Km", "5Km", "21.0975Km", "50Km",
+	}
+	for _, token := range valid {
+		if !IsValid(token) {
+			t.Errorf("IsValid(%q) = false, want true", token)
+		}
+	}
+	invalid := []string{
+		"", "marathon", "10km", "KM", "10公里", "超级马拉松", "10 Km", "-5Km", "Km",
+	}
+	for _, token := range invalid {
+		if IsValid(token) {
+			t.Errorf("IsValid(%q) = true, want false", token)
+		}
+	}
+}

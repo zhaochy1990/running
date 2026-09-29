@@ -203,6 +203,11 @@ type Config struct {
 	// Administrator-only CRUD the Dashboard races tab drives. Leave zero to run
 	// without the race endpoints (e.g. in tests).
 	RaceCalendarStore RaceCalendarStore
+	// RaceFavoriteStore and RacePlanStore back the user-facing race engagement
+	// surface (issue #391): 收藏 + 参赛计划. Two sibling registrars sharing the
+	// auth path. Leave zero to run without them (e.g. in tests).
+	RaceFavoriteStore RaceFavoriteStore
+	RacePlanStore     RacePlanStore
 	// RaceItemGeocoder optionally resolves race-calendar venue names to WGS84
 	// coordinates when item content carries a name but no coordinates. Nil
 	// disables geocoding (see race_calendar.go).
@@ -279,6 +284,8 @@ type Service struct {
 	weeklyPlan      *weeklyPlanRoutes
 	legalDocuments  *legalDocumentRoutes
 	raceCalendar    *raceCalendarRoutes
+	raceFavorites   *raceFavoriteRoutes
+	racePlans       *racePlanRoutes
 	raceContent     *raceContentRoutes
 
 	auth           *Authenticator
@@ -335,6 +342,8 @@ func NewService(cfg Config) *Service {
 		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, cfg.BodyCompositionStore, log),
 		legalDocuments:          newLegalDocumentRoutes(cfg.LegalDocumentStore, log),
 		raceCalendar:            newRaceCalendarRoutes(cfg.RaceCalendarStore, log, cfg.RaceItemGeocoder),
+		raceFavorites:           newRaceFavoriteRoutes(cfg.RaceFavoriteStore, log),
+		racePlans:               newRacePlanRoutes(cfg.RacePlanStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
@@ -432,6 +441,10 @@ func (s *Service) Router() *gin.Engine {
 	s.strideMetrics.register(authed)
 	s.pbs.register(authed)
 	s.races.register(authed)
+	// Race engagement (收藏 + 参赛计划): user-tier "me" endpoints, same group as
+	// the sibling user surfaces.
+	s.raceFavorites.register(authed)
+	s.racePlans.register(authed)
 	s.bodyComposition.register(authed)
 	s.ability.register(authed)
 	s.predictions.register(authed)

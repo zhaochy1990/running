@@ -124,6 +124,15 @@ func runAPI() error {
 	if err := store.AutoMigrateRaceCalendar(ctx); err != nil {
 		return err
 	}
+	// race_favorite + race_plan back the user-facing race engagement surface
+	// (issue #391). Only the API writes them, so the worker does not migrate
+	// these.
+	if err := store.AutoMigrateRaceFavorites(ctx); err != nil {
+		return err
+	}
+	if err := store.AutoMigrateRacePlans(ctx); err != nil {
+		return err
+	}
 	// race_content / race_content_item / race_city_content back the administrator
 	// race-content surface (issue #318). Only the API writes content, so the
 	// worker does not migrate these.
@@ -219,6 +228,8 @@ func runAPI() error {
 		WeeklyPlanStore:         store,
 		LegalDocumentStore:      store,
 		RaceCalendarStore:       store,
+		RaceFavoriteStore:       store,
+		RacePlanStore:           store,
 		RaceContentStore:        store,
 		RaceItemGeocoder:        newAMapGeocoder(cfg.AMap),
 		CityAIDraft: api.CityAIDraftConfig{
