@@ -13,6 +13,7 @@
     "pages/my-races/my-races",
     "pages/race-center/race-center",
     "pages/race-center/detail",
+    "pages/race-center/plans/plans",
     "pages/watch/watch",
     "pages/onboarding/onboarding",
     "pages/privacy/privacy",

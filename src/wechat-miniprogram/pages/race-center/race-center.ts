@@ -54,7 +54,7 @@ interface RaceCenterPageHandlers {
   onFavToggleTap(): void;
   onStarTap(e: WechatMiniprogram.TouchEvent): void;
   onRaceTap(e: WechatMiniprogram.TouchEvent): void;
-  onMyRacesTap(): void;
+  onPlansTap(): void;
   onBack(): void;
   refresh(bustCache: boolean): Promise<void>;
   applyView(): void;
@@ -261,8 +261,9 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
     wx.navigateTo({ url: `/pages/race-center/detail?id=${id}` });
   },
 
-  onMyRacesTap() {
-    wx.navigateTo({ url: '/pages/my-races/my-races' });
+  onPlansTap() {
+    // 「我的赛事」右上角入口（#394）：参赛计划管理二级页
+    wx.navigateTo({ url: '/pages/race-center/plans/plans' });
   },
 
   onBack() {

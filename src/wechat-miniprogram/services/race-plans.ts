@@ -49,21 +49,30 @@ export interface RacePlanUpsertResult {
   updated_at: string;
 }
 
+/** PUT 的请求体：项目与状态必须成对提交；hotel/transit 三态——
+ *  缺省=保留已存值（报名选择器不能误清计划卡的行程勾选），显式值=覆盖
+ *  （「我的赛事」页的行程勾选走后者）。 */
+export interface RacePlanUpsertBody {
+  item_type: string;
+  state: RacePlanState;
+  hotel?: boolean;
+  transit?: boolean;
+}
+
 /** 我的全部计划（按比赛日升序）。 */
 export function listRacePlans(): Promise<{ plans: RacePlan[] }> {
   return http.get<{ plans: RacePlan[] }>('/api/users/me/race-plans');
 }
 
-/** 创建/更新一条计划：项目与状态必须成对提交。 */
+/** 创建/更新一条计划（报名选择器与计划卡的状态流转/行程勾选共用）。 */
 export function upsertRacePlan(
   raceId: number,
-  itemType: string,
-  state: RacePlanState,
+  body: RacePlanUpsertBody,
 ): Promise<RacePlanUpsertResult> {
-  return http.put<RacePlanUpsertResult>(`/api/users/me/race-plans/${raceId}`, {
-    item_type: itemType,
-    state,
-  });
+  return http.put<RacePlanUpsertResult, RacePlanUpsertBody>(
+    `/api/users/me/race-plans/${raceId}`,
+    body,
+  );
 }
 
 /** 取消追踪（未报名）。计划不存在时后端答 404，调用方按已取消处理。 */

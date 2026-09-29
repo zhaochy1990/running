@@ -13,7 +13,7 @@
     </view>
   </view>
 
-  <!-- 常驻筛选栏（#384 C 版式：年份 / 项目 / 城市 / 收藏 + 我的比赛快捷入口） -->
+  <!-- 常驻筛选栏（#384 C 版式：年份 / 项目 / 城市 / 收藏 + 「我的赛事」右上角入口 #394） -->
   <view class="fbar" style="top: calc({{statusBarHeight}}px + 128rpx);">
     <picker class="fbar__pick" mode="selector" range="{{years}}" value="{{yearIndex}}" bindchange="onYearChange">
       <view class="fbar__cell">{{years[yearIndex]}} ▾</view>
@@ -27,7 +27,7 @@
     <view class="fbar__cell fbar__star {{favOnly ? 'fbar__cell--on' : ''}}" bindtap="onFavToggleTap">
       {{favOnly ? '★ 收藏' : '☆ 收藏'}}
     </view>
-    <view class="fbar__myraces" bindtap="onMyRacesTap">我的比赛 ›</view>
+    <view class="fbar__plans" bindtap="onPlansTap">我的赛事 ›</view>
   </view>
 
   <!-- 内容 -->

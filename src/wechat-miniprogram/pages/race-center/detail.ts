@@ -267,7 +267,10 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
         this._plan = null;
         wx.showToast({ title: '已取消追踪', icon: 'none' });
       } else {
-        const res = await upsertRacePlan(this._raceId, this.data.sheetItem, value);
+        const res = await upsertRacePlan(this._raceId, {
+          item_type: this.data.sheetItem,
+          state: value,
+        });
         // 只记页面会读的两字段；race/offboarded 是列表读语义，此处捏造即谎言
         this._plan = { item_type: res.item_type, state: res.state };
         wx.showToast({ title: '已更新报名状态', icon: 'none' });
