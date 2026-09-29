@@ -1,16 +1,17 @@
 // 「我的赛事」页 —— 参赛计划管理（#394，#385 定稿版式：C 紧凑风、深色转译）。
 //
-// 数据走 services/race-center（GET/PUT /api/users/me/race-plans，#391 后端）：
-// 计划卡 = 赛事名 + 报名项目徽章 + 状态徽章 + 日期·城市；状态条 chips 点击流转
-// （已报名→已中签→确认参赛，未中签为旁路状态给替代赛事引导）；行程布尔勾选
-// 🏨 酒店 / 🚄 火车票·机票；offboarded 计划灰卡占位不可交互；空态引导去列表页。
-// 教练行本期隐藏（随 #386/v2 恢复）。纯视图变换在 utils/racePlanRows，配套自检。
+// 数据走 services/race-plans（GET/PUT /api/users/me/race-plans，#391 后端）：
+// 计划卡 = 赛事名（点击进详情，报名选择器是计划的唯一创建入口）+ 报名项目
+// 徽章 + 状态徽章 + 日期·城市；状态条 chips 点击流转（已报名→已中签→确认
+// 参赛，未中签为旁路状态给替代赛事引导）；行程布尔勾选 🏨 酒店 / 🚄 火车票·
+// 机票；offboarded 计划灰卡占位不可交互；空态引导去列表页。教练行本期隐藏
+// （随 #386/v2 恢复）。纯视图变换在 utils/racePlanRows，配套自检。
 
 import {
   listRacePlans,
-  updateRacePlan,
+  upsertRacePlan,
   type RacePlanState,
-} from '../../../services/race-center';
+} from '../../../services/race-plans';
 import { statePatch, toPlanCards, type PlanCardView } from '../../../utils/racePlanRows';
 import { userStore } from '../../../store/index';
 
@@ -28,7 +29,7 @@ interface PlansPageHandlers {
   refresh(): Promise<void>;
   onStateTap(e: WechatMiniprogram.TouchEvent): void;
   onTripTap(e: WechatMiniprogram.TouchEvent): void;
-  onRaceNameTap(): void;
+  onRaceNameTap(e: WechatMiniprogram.TouchEvent): void;
   onGoListTap(): void;
   /** 在飞的写请求（键=race_id → 乐观补丁）：防连点，并让并发读不打回乐观态 */
   _inflight: Map<number, Partial<PlanCardView>>;
@@ -104,7 +105,7 @@ Page<PlansPageData, PlansPageHandlers>({
     this._inflight.set(raceId, patch);
     patchCard(this, raceId, patch);
     try {
-      await updateRacePlan(raceId, { item_type: card.itemToken, state: next });
+      await upsertRacePlan(raceId, { item_type: card.itemToken, state: next });
     } catch {
       this._inflight.delete(raceId);
       patchCard(this, raceId, statePatch(prev));
@@ -126,7 +127,7 @@ Page<PlansPageData, PlansPageHandlers>({
     this._inflight.set(raceId, patch);
     patchCard(this, raceId, patch);
     try {
-      await updateRacePlan(raceId, {
+      await upsertRacePlan(raceId, {
         item_type: card.itemToken,
         state: card.state,
         [field]: next,
@@ -140,9 +141,11 @@ Page<PlansPageData, PlansPageHandlers>({
     this._inflight.delete(raceId);
   },
 
-  onRaceNameTap() {
-    // 详情页是 #393 的范围，先给明确反馈而不是静默无响应
-    wx.showToast({ title: '赛事详情即将上线', icon: 'none' });
+  /** 赛事名点击进详情（#393 已上线；详情页的报名选择器即计划创建入口）。 */
+  onRaceNameTap(e: WechatMiniprogram.TouchEvent) {
+    const raceId = Number(e.currentTarget.dataset.raceId);
+    if (!raceId) return;
+    wx.navigateTo({ url: `/pages/race-center/detail?id=${raceId}` });
   },
 
   /** 顶栏返回 / 未中签「去找替代赛事」/ 空态「去逛逛」：回赛事中心列表页。 */

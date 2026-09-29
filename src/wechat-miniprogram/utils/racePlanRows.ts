@@ -3,7 +3,7 @@
 // utils/racePlanRows.check.mts`）。页面（pages/race-center/plans）负责请求与交互，
 // 这里只做 计划 DTO → 卡片视图 的确定性变换。版式与状态机见 #385 定稿 / #394。
 
-import type { RacePlan, RacePlanState } from '../services/race-center';
+import type { RacePlan, RacePlanState } from '../services/race-plans';
 import { shanghaiWeekdayLabel } from './date';
 import { typeAbbr } from './raceCenterRows';
 

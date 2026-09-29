@@ -113,6 +113,13 @@ func runAPI() error {
 	if err := store.AutoMigrateUserDeletionAudit(ctx); err != nil {
 		return err
 	}
+	// user_home_city + user_home_city_history are written by the worker's
+	// homecity recompute, but DeleteUserData (API-only) removes them during
+	// account erasure; migrate here so erasure works on a database the worker
+	// has not touched yet.
+	if err := store.AutoMigrateHomeCity(ctx); err != nil {
+		return err
+	}
 	// scheduled_workout rows back the watch workout-push API (device execution
 	// state: pushed workouts + provider ids).
 	if err := store.AutoMigrateScheduledWorkout(ctx); err != nil {

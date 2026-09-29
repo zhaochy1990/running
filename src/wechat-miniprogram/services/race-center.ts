@@ -1,7 +1,7 @@
-// 赛事中心服务层 —— 对接 stride-api 用户侧赛事日历、收藏与参赛计划接口。
-// 后端契约：internal/api/race_catalog.go（GET /api/race-calendar，#390）、
-// internal/api/race_favorites.go（POST /api/users/me/race-favorites/:id/toggle，#391）与
-// internal/api/race_plans.go（GET/PUT /api/users/me/race-plans，#391/#394）。
+// 赛事中心服务层 —— 对接 stride-api 用户侧赛事日历与收藏接口。
+// 后端契约：internal/api/race_catalog.go（GET /api/race-calendar，#390；GET
+// /api/race-calendar/:race_id 详情，#393）与 internal/api/race_favorites.go
+// （POST /api/users/me/race-favorites/:id/toggle，#391）。
 // 列表行自带 favorited 星标态；收藏视图由客户端按该标记过滤，无需单独拉收藏 id 集。
 
 import { http } from './request';
@@ -65,68 +65,83 @@ export function toggleRaceFavorite(raceId: number): Promise<RaceFavoriteToggleRe
   );
 }
 
-// ── 参赛计划（#394「我的赛事」页；状态机与失效分层见 race_plans.go）──
+/* ──────────────────────────────────────────────────────────────────────────
+   详情（#393）：GET /api/race-calendar/:race_id 的 userRaceDetailDTO 镜像。
+   项目十二列内容里 v1 详情页只渲染 距离/起终点/赛道文字/关门，其余列
+   （爬升/海拔点/难点/补给/奖金/口碑/照片）留给后续版本，接口一到位即可补。
+   ────────────────────────────────────────────────────────────────────────── */
 
-/** 计划状态四态：已报名（等抽签）/ 已中签 / 未中签 / 确认参赛。 */
-export type RacePlanState = 'registered' | 'won' | 'lost' | 'confirmed';
+/** 报名时间轴（storage.RaceSignupTimeline 镜像）。日期均为 YYYY-MM-DD。 */
+export interface RaceSignupTimeline {
+  start_at: string;
+  deadline: string;
+  lottery: boolean;
+  lottery_result_at: string | null;
+  payment_deadline: string | null;
+}
 
-/** 计划卡携带的赛事投影；race 行被物理删除时为 null（纯占位卡）。 */
-export interface RacePlanRace {
+/**
+ * 报名渠道（storage.RaceSignupChannel 镜像）。type 描述渠道形态（官网 /
+ * 公众号 / 合作App），url_type 区分唯一链接是可打开的页面（web）还是二维码
+ * 图片（qrcode）——前者给「复制链接」，后者只标注形态；url 为 null 的渠道
+ * 连链接都没有（如“关注公众号报名”），照常展示。
+ */
+export interface RaceSignupChannel {
+  name: string;
+  type: string;
+  url: string | null;
+  url_type: string;
+}
+
+/** 领物窗口（storage.RacePacketPickup 镜像）。 */
+export interface RacePacketPickup {
+  time: string;
+  location: string;
+}
+
+/** 起终点（storage.RacePoint 的 v1 投影）：详情页只渲染名称，坐标不镜像。 */
+export interface RacePoint {
+  name: string;
+}
+
+/** 关门点（storage.RaceCutoff 的 v1 投影）：位置名 + 当日墙钟 HH:MM。 */
+export interface RaceCutoff {
+  point: string;
+  cutoff_at: string;
+}
+
+/** 详情页一个项目（userRaceItemDTO 的 v1 投影）。entry_fee 单位是分。 */
+export interface RaceItem {
   id: number;
   name: string;
-  name_cn: string | null;
-  race_date: string;
-  province: string | null;
-  city: string | null;
-  label: string | null;
-  wa_label: string | null;
+  type: string;
+  start_time: string | null;
+  entry_fee: number | null;
+  quota: number | null;
+  distance_km: number | null;
+  start_point: RacePoint | null;
+  finish_point: RacePoint | null;
+  route_description: string | null;
+  cutoffs: RaceCutoff[];
 }
 
-export interface RacePlan {
-  race_id: number;
-  /** racetypes token（Marathon / HalfMarathon / …），即报名项目 */
-  item_type: string;
-  state: RacePlanState;
-  hotel: boolean;
-  transit: boolean;
-  race: RacePlanRace | null;
-  /** 赛事已下架/被删：灰卡占位、记录保留、不可交互 */
-  offboarded: boolean;
-  created_at: string;
-  updated_at: string;
+/** 城市介绍（userCityContentDTO 的 v1 投影：图片/省份列不镜像）。 */
+export interface RaceCityContent {
+  city: string;
+  intro: { overview: string; culture: string; food: string; history: string } | null;
+  attractions: Array<{ name: string; description: string }>;
 }
 
-export interface RacePlanUpsertBody {
-  /** 后端 binding:required —— 行程单独勾选时也要带上当前值 */
-  item_type: string;
-  state: RacePlanState;
-  /** 三态：缺省=保留已存值，显式 true/false=覆盖 */
-  hotel?: boolean;
-  transit?: boolean;
+/** 赛事详情（userRaceDetailDTO 镜像）：列表行字段 + 三段内容区。 */
+export interface RaceDetail extends RaceCalendarRace {
+  signup_timeline: RaceSignupTimeline | null;
+  signup_channels: RaceSignupChannel[];
+  packet_pickup: RacePacketPickup[];
+  items: RaceItem[];
+  city_content: RaceCityContent | null;
 }
 
-/** 拉当前用户的参赛计划（含赛事投影，offboarded 分层已由后端处理）。 */
-export function listRacePlans(): Promise<{ plans: RacePlan[] }> {
-  return http.get<{ plans: RacePlan[] }>('/api/users/me/race-plans');
-}
-
-/** 更新一条计划（状态流转 / 行程勾选都走同一个 upsert 端点）。 */
-export function updateRacePlan(
-  raceId: number,
-  body: RacePlanUpsertBody,
-): Promise<RacePlanUpsertResponse> {
-  return http.put<RacePlanUpsertResponse, RacePlanUpsertBody>(
-    `/api/users/me/race-plans/${raceId}`,
-    body,
-  );
-}
-
-export interface RacePlanUpsertResponse {
-  race_id: number;
-  item_type: string;
-  state: RacePlanState;
-  hotel: boolean;
-  transit: boolean;
-  created_at: string;
-  updated_at: string;
+/** 拉一场已发布赛事的详情；未发布/不存在均 404。 */
+export function getRaceDetail(raceId: number): Promise<RaceDetail> {
+  return http.get<RaceDetail>(`/api/race-calendar/${raceId}`);
 }

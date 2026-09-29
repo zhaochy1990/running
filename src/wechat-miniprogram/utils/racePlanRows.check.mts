@@ -4,7 +4,7 @@
  * 下架占位（含 race 行被删的纯占位卡）/ 比赛日排序，不依赖小程序运行时
  * （services 只做 type-only 导入，剥离后无副作用）。
  */
-import type { RacePlan } from '../services/race-center.ts';
+import type { RacePlan } from '../services/race-plans.ts';
 import { toPlanCard, toPlanCards } from './racePlanRows.ts';
 
 function eq(actual: unknown, expected: unknown, what: string): void {

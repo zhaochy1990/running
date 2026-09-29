@@ -40,7 +40,7 @@
           <!-- 常规卡 -->
           <view wx:else class="card">
             <view class="card__head">
-              <view class="card__name" bindtap="onRaceNameTap">{{item.name}}</view>
+              <view class="card__name" data-race-id="{{item.raceId}}" bindtap="onRaceNameTap">{{item.name}}</view>
               <text class="badge badge--item">{{item.itemLabel}}</text>
               <text class="badge badge--state badge--state--{{item.state}}">{{item.stateLabel}}</text>
             </view>

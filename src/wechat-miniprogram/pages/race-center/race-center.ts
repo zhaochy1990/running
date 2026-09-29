@@ -53,7 +53,7 @@ interface RaceCenterPageHandlers {
   onCityChange(e: WechatMiniprogram.PickerChange): void;
   onFavToggleTap(): void;
   onStarTap(e: WechatMiniprogram.TouchEvent): void;
-  onRaceTap(): void;
+  onRaceTap(e: WechatMiniprogram.TouchEvent): void;
   onPlansTap(): void;
   onBack(): void;
   refresh(bustCache: boolean): Promise<void>;
@@ -255,9 +255,10 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
     }
   },
 
-  onRaceTap() {
-    // 详情页是 #393 的范围，先给明确反馈而不是静默无响应
-    wx.showToast({ title: '赛事详情即将上线', icon: 'none' });
+  onRaceTap(e: WechatMiniprogram.TouchEvent) {
+    const id = Number(e.currentTarget.dataset.id);
+    if (!id) return;
+    wx.navigateTo({ url: `/pages/race-center/detail?id=${id}` });
   },
 
   onPlansTap() {
