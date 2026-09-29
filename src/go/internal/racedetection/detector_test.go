@@ -379,3 +379,38 @@ func TestTimeWindowEvidenceRejectsAfternoonStarts(t *testing.T) {
 		}
 	}
 }
+
+func TestDetectGatesAfternoonConfirmation(t *testing.T) {
+	// Race-like everything — intent, intensity, HR ratio, route — but a 17:00
+	// local start. This is the exact production profile (evening Chengdu and
+	// Chongqing efforts at HR ratio 0.92–0.94) that re-confirmed after
+	// deletion: evidence-weighted rejection was not enough.
+	classifier := &fakeClassifier{assessments: map[string]ModelAssessment{
+		"evidence": {EventIntent: EvidenceRace, IntensityContinuity: EvidenceRace},
+	}}
+	afternoon := Candidate{
+		LabelID: "evidence", Name: "成都市 跑步", Sport: "run_outdoor",
+		Date: "2025-09-07 17:00:00", DistanceM: 21_700,
+		AvgHR: intPtr(161), MaxHR: intPtr(171),
+	}
+	result, err := New(classifier).DetectWithUsage(context.Background(), afternoon)
+	if err != nil {
+		t.Fatalf("DetectWithUsage: %v", err)
+	}
+	if result.Score < DefaultRaceScoreThreshold {
+		t.Fatalf("score = %d, want the ungated score above threshold to prove the gate (not the score) rejected it", result.Score)
+	}
+	if result.IsRace {
+		t.Fatal("afternoon start must not be confirmable by scoring even with race-like evidence")
+	}
+
+	morning := afternoon
+	morning.Date = "2025-09-07 08:00:00"
+	result, err = New(classifier).DetectWithUsage(context.Background(), morning)
+	if err != nil {
+		t.Fatalf("DetectWithUsage: %v", err)
+	}
+	if !result.IsRace {
+		t.Fatalf("morning start with the same evidence must confirm, score = %d", result.Score)
+	}
+}
