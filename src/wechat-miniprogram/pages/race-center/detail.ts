@@ -67,11 +67,16 @@ interface RaceDetailPageHandlers {
   applyPlan(): void;
   _raceId: number;
   _detail: RaceDetail | null;
-  /** 当前计划（无则 null）；按钮文案与选择器选中态的依据 */
-  _plan: RacePlan | null;
+  /** 当前计划（无则 null），只记按钮文案与选择器要读的两字段；按钮文案与选择器选中态的依据 */
+  _plan: Pick<RacePlan, 'item_type' | 'state'> | null;
   /** 报名提交进行中：防连点 */
   _planPending: boolean;
   _starPending: boolean;
+  /**
+   * 请求序号（同列表页 #392 模式）：慢响应回来时发现自己已过期则丢弃；
+   * 星标/报名写成功也会自增，作废在途刷新携带的旧值（乐观更新以本地为准）。
+   */
+  _fetchSeq: number;
 }
 
 function statusBarHeight(): number {
@@ -103,6 +108,7 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
   _plan: null,
   _planPending: false,
   _starPending: false,
+  _fetchSeq: 0,
 
   onLoad(options) {
     const id = Number(options.id);
@@ -130,27 +136,30 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
       return;
     }
     this.setData({ loading: true, error: '' });
+    const seq = (this._fetchSeq += 1);
+    // 详情与计划并行发起（计划态只依赖 raceId）；计划拉不到不阻塞详情，
+    // 只是按钮先显示未报名——选择器提交不受影响
+    const plansP = listRacePlans().catch(() => null);
     let detail: RaceDetail;
     try {
       detail = await getRaceDetail(this._raceId);
     } catch (err: unknown) {
-      // 未发布与不存在同为 404（后端不泄漏未发布行的存在）
+      if (seq !== this._fetchSeq) return;
+      // 未发布与不存在同为 404（后端不泄漏未发布行的存在）；5xx 的英文错误体不直出
       const msg =
         err instanceof ApiError && err.statusCode === 404
           ? '赛事不存在或已下架'
-          : err instanceof Error
-            ? err.message
-            : '加载失败，请稍后重试';
+          : err instanceof ApiError && err.statusCode >= 500
+            ? '加载失败，请稍后重试'
+            : err instanceof Error
+              ? err.message
+              : '加载失败，请稍后重试';
       this.setData({ loading: false, error: msg });
       return;
     }
-    // 计划态拉不到不阻塞详情（选择器仍可提交），只是按钮先显示未报名
-    try {
-      const res = await listRacePlans();
-      this._plan = res.plans.find((p) => p.race_id === this._raceId) || null;
-    } catch {
-      this._plan = null;
-    }
+    const plansRes = await plansP;
+    if (seq !== this._fetchSeq) return;
+    this._plan = plansRes?.plans.find((p) => p.race_id === this._raceId) || null;
     this._detail = detail;
     const view = toDetailView(detail, shanghaiToday());
     this.setData({
@@ -176,6 +185,8 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
     const detail = this._detail;
     if (!detail || this._starPending) return;
     const next = !detail.favorited;
+    // 作废在途刷新：其响应里的 favorited 是点星前的旧值，落地会打回乐观结果
+    this._fetchSeq += 1;
     this._starPending = true;
     detail.favorited = next;
     this.setData({ starred: next });
@@ -234,7 +245,18 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
   async onStateTap(e: WechatMiniprogram.TouchEvent) {
     const value = String(e.currentTarget.dataset.value || '') as RacePlanState | 'none';
     if (!value || this._planPending) return;
-    if (value === 'none' && !this._plan) {
+    // 点中当前状态且项目未换：纯确认，不发起冗余写
+    const plan = this._plan;
+    if (
+      plan &&
+      value !== 'none' &&
+      value === plan.state &&
+      this.data.sheetItem === plan.item_type
+    ) {
+      this.setData({ sheetOpen: false });
+      return;
+    }
+    if (value === 'none' && !plan) {
       this.setData({ sheetOpen: false });
       return;
     }
@@ -246,19 +268,12 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
         wx.showToast({ title: '已取消追踪', icon: 'none' });
       } else {
         const res = await upsertRacePlan(this._raceId, this.data.sheetItem, value);
-        this._plan = {
-          race_id: res.race_id,
-          item_type: res.item_type,
-          state: res.state,
-          hotel: res.hotel,
-          transit: res.transit,
-          race: null,
-          offboarded: false,
-          created_at: res.created_at,
-          updated_at: res.updated_at,
-        };
+        // 只记页面会读的两字段；race/offboarded 是列表读语义，此处捏造即谎言
+        this._plan = { item_type: res.item_type, state: res.state };
         wx.showToast({ title: '已更新报名状态', icon: 'none' });
       }
+      // 作废在途刷新：其计划列表是提交前的旧快照
+      this._fetchSeq += 1;
       this.setData({ sheetOpen: false });
       this.applyPlan();
     } catch (err: unknown) {
@@ -282,9 +297,10 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
   onCopyTap(e: WechatMiniprogram.TouchEvent) {
     const url = String(e.currentTarget.dataset.url || '');
     if (!url) return;
+    // 成功不另发 toast：客户端系统自带「内容已复制」，双 toast 会叠显
     wx.setClipboardData({
       data: url,
-      success: () => wx.showToast({ title: '链接已复制', icon: 'none' }),
+      fail: () => wx.showToast({ title: '复制失败', icon: 'none' }),
     });
   },
 
@@ -293,6 +309,10 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
   },
 
   onShareAppMessage() {
+    // 坏分享链进来（id 缺失）时不再外发 ?id=0 的死路径，回落赛事中心
+    if (!this._raceId) {
+      return { title: '赛事中心 · 全年路跑日历', path: '/pages/race-center/race-center' };
+    }
     const name = this.data.view?.head.name || '赛事详情';
     const date = this._detail?.race_date || '';
     return {

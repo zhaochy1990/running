@@ -6,9 +6,7 @@
  * 不依赖小程序运行时（services 只做 type-only 导入，剥离后无副作用）。
  */
 import type { RaceDetail, RaceItem } from '../services/race-center.ts';
-import type { RacePlanState } from '../services/race-plans.ts';
 import {
-  PLAN_STATE_OPTIONS,
   daysUntil,
   firstStartTime,
   itemChips,
@@ -32,8 +30,8 @@ const item = (over: Partial<RaceItem>): RaceItem => ({
   entry_fee: 15000,
   quota: 20000,
   distance_km: 42.195,
-  start_point: { name: '黄龙体育中心', lat: null, lng: null },
-  finish_point: { name: '奥体中心', lat: null, lng: null },
+  start_point: { name: '黄龙体育中心' },
+  finish_point: { name: '奥体中心' },
   route_description: null,
   cutoffs: [],
   ...over,
@@ -95,9 +93,9 @@ eq(firstStartTime([]), '', 'no start time');
 const v = toDetailView(detail({}), TODAY);
 eq(v.head.name, '2026杭州马拉松', 'head name_cn preferred');
 eq(v.head.grid, [
-  { value: '33', label: '天后开赛' },
-  { value: '11/01', label: '比赛日 07:30' },
-  { value: '抽签', label: '报名制式' },
+  { value: '33', label: '天后开赛', lead: true },
+  { value: '11/01', label: '比赛日 07:30', lead: false },
+  { value: '抽签', label: '报名制式', lead: false },
 ], 'head grid');
 eq(v.head.timeline, [
   { key: 'start', label: '报名开始', date: '6/23', done: true },
@@ -106,8 +104,8 @@ eq(v.head.timeline, [
   { key: 'race', label: '开赛', date: '11/1', done: false },
 ], 'timeline done by today');
 
-// 时间轴边界：未中签制式改「缴费截止」；出签时间缺失回落缴费截止；
-// 比赛日当天 done；无 signup_timeline = 空数组（整条隐藏）
+// 时间轴边界：非抽签且无缴费截止收成三步（无信息的「待公布」死格不渲染）；
+// 抽签制恒四步；比赛日当天 done；无 signup_timeline = 空数组（整条隐藏）
 const noLottery = toDetailView(
   detail({
     signup_timeline: {
@@ -123,22 +121,42 @@ const noLottery = toDetailView(
 eq(noLottery.head.timeline.map((s) => [s.label, s.date, s.done]), [
   ['报名开始', '9/29', true],
   ['报名截止', '10/20', false],
-  ['缴费截止', '待公布', false],
   ['开赛', '11/1', false],
-], 'no-lottery timeline');
+], 'no-lottery timeline collapses to 3 steps');
+const noLotteryWithPay = toDetailView(
+  detail({
+    signup_timeline: {
+      start_at: '2026-09-01',
+      deadline: '2026-09-20',
+      lottery: false,
+      lottery_result_at: null,
+      payment_deadline: '2026-09-25',
+    },
+  }),
+  TODAY,
+);
+eq(noLotteryWithPay.head.timeline.map((s) => [s.label, s.date]), [
+  ['报名开始', '9/1'],
+  ['报名截止', '9/20'],
+  ['缴费截止', '9/25'],
+  ['开赛', '11/1'],
+], 'no-lottery with payment keeps 4 steps');
 eq(toDetailView(detail({ signup_timeline: null }), TODAY).head.timeline, [], 'timeline hidden');
 eq(toDetailView(detail({ signup_timeline: null }), TODAY).head.grid[2], {
   value: '待定',
   label: '报名制式',
+  lead: false,
 }, 'format unknown without timeline');
 eq(toDetailView(detail({ race_date: TODAY }), TODAY).head.grid[0], {
   value: '今天',
   label: '开赛',
+  lead: false,
 }, 'grid race today');
 eq(toDetailView(detail({ race_date: '2026-01-04' }), TODAY).head.grid[0], {
   value: '已结束',
   label: '',
-}, 'grid race past');
+  lead: false,
+}, 'grid race past no lead color');
 
 // 概要键值行：比赛日+周几、地点带首起点、认证全称、规模求和、空项目占位
 eq(v.summary, [
@@ -165,11 +183,11 @@ eq(
   'summary empty fallbacks',
 );
 
-// 报名渠道：web 且有 url 才给复制链接；qrcode/无 url 只展示
+// 报名渠道：web 且有 url 才给复制链接；qrcode/无 url 只展示；key 供 wx:key（渠道名可重）
 eq(v.channels, [
-  { name: '官网', type: '官网', copyUrl: 'https://hm.example.cn' },
-  { name: '杭州马拉松公众号', type: '公众号', copyUrl: '' },
-  { name: '浙体育', type: '合作App', copyUrl: '' },
+  { key: '0', name: '官网', type: '官网', copyUrl: 'https://hm.example.cn' },
+  { key: '1', name: '杭州马拉松公众号', type: '公众号', copyUrl: '' },
+  { key: '2', name: '浙体育', type: '合作App', copyUrl: '' },
 ], 'channel rows copy rules');
 
 // 项目节：报名费分→元（整/角分）、赛道·关门待补、有数据时透出
@@ -191,7 +209,7 @@ const rich = toDetailView(
         distance_km: null,
         start_point: null,
         route_description: '黄龙路→曙光路→杨公堤……→奥体中心',
-        cutoffs: [{ point: '21K', distance_km: 21, cutoff_at: '09:30' }],
+        cutoffs: [{ point: '21K', cutoff_at: '09:30' }],
       }),
     ],
   }),
@@ -207,29 +225,34 @@ eq(rich.items[0].rows, [
 eq(rich.items[0].route, '黄龙路→曙光路→杨公堤……→奥体中心', 'route text');
 eq(rich.items[0].cutoffs, ['21K 09:30'], 'cutoff line');
 
-// 出行：领物/城市空态字段；有城市内容时段落过滤空章、景点透出
+// 出行：领物/城市空态字段；有城市内容时段落过滤空章、标题预拼接、景点透出
 eq(v.trip, { pickups: [], city: null }, 'trip empty');
 const trip = toDetailView(
   detail({
-    packet_pickup: [{ time: '10/30 09:00-20:00', location: '黄龙体育中心' }],
+    packet_pickup: [
+      { time: '10/30 09:00-20:00', location: '黄龙体育中心' },
+      { time: '10/30 09:00-20:00', location: '奥体中心' },
+    ],
     city_content: {
       city: '杭州市',
-      province: '浙江省',
       intro: { overview: '人间天堂。', culture: '', food: '西湖醋鱼。', history: '' },
-      attractions: [{ name: '西湖', description: '城市名片', image_url: null }],
+      attractions: [{ name: '西湖', description: '城市名片' }],
     },
   }),
   TODAY,
 );
-eq(trip.trip.pickups, [{ time: '10/30 09:00-20:00', location: '黄龙体育中心' }], 'pickup rows');
+eq(trip.trip.pickups, [
+  { key: '0', time: '10/30 09:00-20:00', location: '黄龙体育中心' },
+  { key: '1', time: '10/30 09:00-20:00', location: '奥体中心' },
+], 'pickup rows keyed (same time distinct rows)');
+eq(trip.trip.city?.title, '城市 · 杭州市', 'city title prebuilt');
 eq(trip.trip.city?.paragraphs, [
   { k: '概览', v: '人间天堂。' },
   { k: '美食', v: '西湖醋鱼。' },
 ], 'city paragraphs skip empty');
 eq(trip.trip.city?.attractions, [{ name: '西湖', description: '城市名片' }], 'attractions');
 
-// 报名选择器：状态选项顺序与词汇、chips 去重与回落、按钮文案
-eq(PLAN_STATE_OPTIONS.map((o) => o.value), ['none', 'registered', 'won', 'lost', 'confirmed'], 'state options');
+// 报名选择器：chips 去重与回落、按钮文案四态
 eq(itemChips(detail({}).items), [
   { token: 'Marathon', label: '全马' },
   { token: 'HalfMarathon', label: '半马' },
@@ -243,7 +266,6 @@ eq(planButtonLabel('Marathon', 'none'), '未报名', 'button none');
 eq(planButtonLabel('Marathon', 'registered'), '全马 · 已报名（等抽签）', 'button registered');
 eq(planButtonLabel('HalfMarathon', 'won'), '半马 · 已中签', 'button won');
 eq(planButtonLabel('10Km', 'confirmed'), '10K · 确认参赛', 'button km chip');
-const st: RacePlanState = 'lost';
-eq(planButtonLabel('Marathon', st), '全马 · 未中签', 'button lost');
+eq(planButtonLabel('Marathon', 'lost'), '全马 · 未中签', 'button lost');
 
 console.log('raceDetailRows check passed');

@@ -24,10 +24,11 @@ function mdLabel(ymd: string | null | undefined): string {
   return `${parseInt(ymd.slice(5, 7), 10)}/${parseInt(ymd.slice(8, 10), 10)}`;
 }
 
-/** 三宫格一格（天后开赛 / 比赛日 / 报名制式）。 */
+/** 三宫格一格（天后开赛 / 比赛日 / 报名制式）；lead=主强调色（仅未开赛的倒计时）。 */
 export interface RaceHeadCell {
   value: string;
   label: string;
+  lead: boolean;
 }
 
 /** 报名时间轴一步：date '待公布'=未录入；done 按当前日期计算（#393）。 */
@@ -43,7 +44,7 @@ export interface RaceDetailHead {
   name: string;
   cnBadge: string;
   waBadge: string;
-  grid: [RaceHeadCell, RaceHeadCell, RaceHeadCell];
+  grid: RaceHeadCell[];
   timeline: RaceTimelineStep[];
 }
 
@@ -53,8 +54,9 @@ export interface RaceKvRow {
   v: string;
 }
 
-/** 报名渠道行：copyUrl 非空才有「复制链接」，否则按站内渠道标注形态。 */
+/** 报名渠道行：copyUrl 非空才有「复制链接」，否则按站内渠道标注形态。key 供 wx:key（渠道名可重）。 */
 export interface RaceChannelRow {
+  key: string;
   name: string;
   type: string;
   copyUrl: string;
@@ -69,11 +71,12 @@ export interface RaceItemSection {
   cutoffs: string[];
 }
 
-/** 出行 tab：领物 + 城市介绍（null = 城市未维护，页脚空态「待发布」）。 */
+/** 出行 tab：领物 + 城市介绍（null = 城市未维护，页脚空态「待发布」）。key 供 wx:key（时段可重）。 */
 export interface RaceTripView {
-  pickups: Array<{ time: string; location: string }>;
+  pickups: Array<{ key: string; time: string; location: string }>;
   city: {
-    name: string;
+    /** 卡片标题预拼接（'城市 · 杭州'）：wxml 不做数据拼接 */
+    title: string;
     paragraphs: RaceKvRow[];
     attractions: Array<{ name: string; description: string }>;
   } | null;
@@ -101,25 +104,30 @@ export function firstStartTime(items: RaceItem[]): string {
   return times.length ? times.sort()[0] : '';
 }
 
-function headGrid(detail: RaceDetail, today: string): [RaceHeadCell, RaceHeadCell, RaceHeadCell] {
+function headGrid(detail: RaceDetail, today: string): RaceHeadCell[] {
   const days = daysUntil(detail.race_date, today);
   const countCell: RaceHeadCell =
     days > 0
-      ? { value: String(days), label: '天后开赛' }
+      ? { value: String(days), label: '天后开赛', lead: true }
       : days === 0
-        ? { value: '今天', label: '开赛' }
-        : { value: '已结束', label: '' };
+        ? { value: '今天', label: '开赛', lead: false }
+        : { value: '已结束', label: '', lead: false };
   const start = firstStartTime(detail.items);
   const dayCell: RaceHeadCell = {
     value: detail.race_date.slice(5).replace('-', '/'),
     label: start ? `比赛日 ${start}` : '比赛日',
+    lead: false,
   };
   const t = detail.signup_timeline;
   const format = t ? (t.lottery ? '抽签' : '先到先得') : '待定';
-  return [countCell, dayCell, { value: format, label: '报名制式' }];
+  return [countCell, dayCell, { value: format, label: '报名制式', lead: false }];
 }
 
-/** 报名时间轴：报名开始 → 截止 → 出签·缴费 → 开赛，完成态按 today 判定。 */
+/**
+ * 报名时间轴：报名开始 → 截止 → 出签·缴费 → 开赛，完成态按 today 判定。
+ * 非抽签且无缴费截止时收成三步——后端契约里无抽签赛 PaymentDeadline 常为空
+ * （报名即缴费），一格恒「待公布」没有信息量。
+ */
 function timelineSteps(detail: RaceDetail, today: string): RaceTimelineStep[] {
   const t = detail.signup_timeline;
   if (!t) return [];
@@ -130,15 +138,17 @@ function timelineSteps(detail: RaceDetail, today: string): RaceTimelineStep[] {
     { key: 'draw', label: t.lottery ? '出签·缴费' : '缴费截止', date: drawAt },
     { key: 'race', label: '开赛', date: detail.race_date },
   ];
-  return defs.map((d) => {
-    const ok = !!d.date && /^\d{4}-\d{2}-\d{2}$/.test(d.date);
-    return {
-      key: d.key,
-      label: d.label,
-      date: mdLabel(d.date),
-      done: ok && (d.date as string) <= today,
-    };
-  });
+  return defs
+    .filter((d) => d.key !== 'draw' || t.lottery || !!t.payment_deadline)
+    .map((d) => {
+      const ok = !!d.date && /^\d{4}-\d{2}-\d{2}$/.test(d.date);
+      return {
+        key: d.key,
+        label: d.label,
+        date: mdLabel(d.date),
+        done: ok && (d.date as string) <= today,
+      };
+    });
 }
 
 function summaryRows(detail: RaceDetail): RaceKvRow[] {
@@ -163,7 +173,8 @@ function summaryRows(detail: RaceDetail): RaceKvRow[] {
 }
 
 function channelRows(detail: RaceDetail): RaceChannelRow[] {
-  return detail.signup_channels.map((c) => ({
+  return detail.signup_channels.map((c, i) => ({
+    key: String(i),
     name: c.name,
     type: c.type,
     copyUrl: c.url_type === 'web' && c.url ? c.url : '',
@@ -206,7 +217,7 @@ function tripView(detail: RaceDetail): RaceTripView {
         ).filter(([, text]) => !!text)
       : [];
     cityView = {
-      name: city.city,
+      title: `城市 · ${city.city}`,
       paragraphs: paragraphs.map(([k, v]) => ({ k, v })),
       attractions: city.attractions.map((a) => ({
         name: a.name,
@@ -215,7 +226,11 @@ function tripView(detail: RaceDetail): RaceTripView {
     };
   }
   return {
-    pickups: detail.packet_pickup.map((p) => ({ time: p.time, location: p.location })),
+    pickups: detail.packet_pickup.map((p, i) => ({
+      key: String(i),
+      time: p.time,
+      location: p.location,
+    })),
     city: cityView,
   };
 }
@@ -239,8 +254,8 @@ export function toDetailView(detail: RaceDetail, today: string): RaceDetailView 
 
 /* ───────────────────────── 报名选择器（#393 唯一计划创建入口） ───────────────────────── */
 
-/** 四态报名状态 → 中文标签（storage.RacePlanState* 词汇）。 */
-export const PLAN_STATE_LABELS: Record<RacePlanState, string> = {
+/** 四态报名状态 → 中文标签（storage.RacePlanState* 词汇；选择器选项与按钮共用）。 */
+const PLAN_STATE_LABELS: Record<RacePlanState, string> = {
   registered: '已报名（等抽签）',
   won: '已中签',
   lost: '未中签',

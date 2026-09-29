@@ -99,17 +99,14 @@ export interface RacePacketPickup {
   location: string;
 }
 
-/** 起终点（storage.RacePoint 镜像），lat/lng WGS84，null=未录入。 */
+/** 起终点（storage.RacePoint 的 v1 投影）：详情页只渲染名称，坐标不镜像。 */
 export interface RacePoint {
   name: string;
-  lat: number | null;
-  lng: number | null;
 }
 
-/** 关门点（storage.RaceCutoff 镜像）：位置名 + 当日墙钟 HH:MM。 */
+/** 关门点（storage.RaceCutoff 的 v1 投影）：位置名 + 当日墙钟 HH:MM。 */
 export interface RaceCutoff {
   point: string;
-  distance_km: number | null;
   cutoff_at: string;
 }
 
@@ -128,12 +125,11 @@ export interface RaceItem {
   cutoffs: RaceCutoff[];
 }
 
-/** 城市介绍（userCityContentDTO 镜像）。 */
+/** 城市介绍（userCityContentDTO 的 v1 投影：图片/省份列不镜像）。 */
 export interface RaceCityContent {
   city: string;
-  province: string | null;
   intro: { overview: string; culture: string; food: string; history: string } | null;
-  attractions: Array<{ name: string; description: string; image_url: string | null }>;
+  attractions: Array<{ name: string; description: string }>;
 }
 
 /** 赛事详情（userRaceDetailDTO 镜像）：列表行字段 + 三段内容区。 */
