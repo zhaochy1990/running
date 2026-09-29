@@ -234,6 +234,15 @@ func timeWindowEvidence(localStart string) Evidence {
 	if start.Weekday() == time.Sunday && minutes >= 7*60 && minutes <= 8*60+30 {
 		return EvidenceRace
 	}
+	// Chinese road races gun in the morning — every calendar-verified race in
+	// production started 06:00–08:30 local. An afternoon start is
+	// training-shaped on ANY weekday: an all-out afternoon effort is at most a
+	// personal time trial away from any race scene, and the product counts
+	// races, not workouts. Listed afternoon races still confirm through the
+	// calendar matcher's own gun-time window, which this never overrides.
+	if minutes >= 13*60 {
+		return EvidenceTraining
+	}
 	if start.Weekday() == time.Saturday || (start.Weekday() == time.Sunday && minutes <= 5*60+30) ||
 		(start.Weekday() >= time.Monday && start.Weekday() <= time.Friday && minutes >= 17*60) {
 		return EvidenceTraining

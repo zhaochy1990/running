@@ -359,3 +359,23 @@ func indexOf(body, fragment string) int {
 
 func floatPtrDet(v float64) *float64 { return &v }
 func intPtrDet(v int) *int           { return &v }
+
+func TestTimeWindowEvidenceRejectsAfternoonStarts(t *testing.T) {
+	cases := []struct {
+		start string
+		want  Evidence
+	}{
+		{"2025-11-16 07:05:00", EvidenceRace},    // Sunday gun window
+		{"2025-11-16 08:31:00", EvidenceUnknown}, // just past the gun window, still morning
+		{"2025-11-15 13:00:00", EvidenceTraining},
+		{"2024-12-11 16:00:00", EvidenceTraining}, // weekday afternoon
+		{"2023-10-08 17:00:00", EvidenceTraining}, // Sunday afternoon
+		{"2020-11-14 20:00:00", EvidenceTraining}, // evening
+		{"2025-11-16 12:59:00", EvidenceUnknown},  // boundary stays neutral
+	}
+	for _, tc := range cases {
+		if got := timeWindowEvidence(tc.start); got != tc.want {
+			t.Errorf("timeWindowEvidence(%s) = %q, want %q", tc.start, got, tc.want)
+		}
+	}
+}
