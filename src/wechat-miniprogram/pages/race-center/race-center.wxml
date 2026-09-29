@@ -1,0 +1,84 @@
+<view class="page">
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">赛事中心</view>
+        <view class="top-bar__subtitle">全年路跑日历</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <!-- 常驻筛选栏（#384 C 版式：年份 / 项目 / 城市 / 收藏 + 我的比赛快捷入口） -->
+  <view class="fbar" style="top: {{filterBarTopPx}}px;">
+    <picker class="fbar__pick" mode="selector" range="{{years}}" value="{{yearIndex}}" bindchange="onYearChange">
+      <view class="fbar__cell">{{years[yearIndex]}} ▾</view>
+    </picker>
+    <picker class="fbar__pick" mode="selector" range="{{typeLabels}}" value="{{typeIndex}}" bindchange="onTypeChange">
+      <view class="fbar__cell {{typeIndex > 0 ? 'fbar__cell--on' : ''}}">{{typeLabels[typeIndex]}} ▾</view>
+    </picker>
+    <picker class="fbar__pick" mode="selector" range="{{cityNames}}" value="{{cityIndex}}" bindchange="onCityChange">
+      <view class="fbar__cell {{cityIndex > 0 ? 'fbar__cell--on' : ''}}">{{cityNames[cityIndex]}} ▾</view>
+    </picker>
+    <view class="fbar__cell fbar__star {{favOnly ? 'fbar__cell--on' : ''}}" bindtap="onFavToggleTap">
+      {{favOnly ? '★ 收藏' : '☆ 收藏'}}
+    </view>
+    <view class="fbar__myraces" bindtap="onMyRacesTap">我的比赛 ›</view>
+  </view>
+
+  <!-- 内容 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- 加载态 -->
+    <view wx:if="{{loading}}" class="state-card">
+      <view class="spinner"></view>
+      <view class="state-card__text">加载中…</view>
+    </view>
+
+    <block wx:else>
+      <view wx:if="{{error}}" class="banner banner--error">{{error}}</view>
+
+      <!-- 月份分组密表（C 版式：航班式行） -->
+      <block wx:if="{{groups.length}}">
+        <view wx:for="{{groups}}" wx:for-item="g" wx:key="key" class="month">
+          <view class="month__head" style="top: {{stickyTopPx}}px;">{{g.label}}</view>
+          <view
+            wx:for="{{g.rows}}"
+            wx:key="id"
+            class="row"
+            data-id="{{item.id}}"
+            bindtap="onRaceTap"
+          >
+            <view class="row__date">
+              <view class="row__dm">{{item.dateLabel}}</view>
+              <view class="row__dw">{{item.weekday}}</view>
+            </view>
+            <view class="row__main">
+              <view class="row__name">{{item.name}}</view>
+              <view wx:if="{{item.cnBadge || item.waBadge}}" class="row__badges">
+                <text wx:if="{{item.cnBadge}}" class="badge badge--cn">{{item.cnBadge}}</text>
+                <text wx:if="{{item.waBadge}}" class="badge badge--wa">{{item.waBadge}}</text>
+              </view>
+            </view>
+            <view class="row__types">{{item.typesLabel}}</view>
+            <view class="row__city">{{item.city}}</view>
+            <view
+              class="row__star {{item.starred ? 'row__star--on' : ''}}"
+              data-id="{{item.id}}"
+              catchtap="onStarTap"
+            >{{item.starred ? '★' : '☆'}}</view>
+          </view>
+        </view>
+        <view class="footer">共 {{viewCount}} 场 · 下拉刷新</view>
+      </block>
+
+      <!-- 空态 -->
+      <view wx:elif="{{!error}}" class="empty-card">
+        <view class="empty-card__title">{{emptyText}}</view>
+      </view>
+    </block>
+  </view>
+</view>

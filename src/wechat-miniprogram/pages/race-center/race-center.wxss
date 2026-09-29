@@ -1,0 +1,317 @@
+/* ============================================================
+   赛事中心页 —— 深色 STRIDE 主题（与 my-races / watch 一致）。
+   C 紧凑清单版式（#384 定稿）：常驻筛选栏 + 航班式密表行 +
+   月份分组头；app.wxss 全局令牌是浅色，深色类在本页重定义。
+   ============================================================ */
+
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #07080a;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- 顶部栏（同 my-races） ---------- */
+
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: #07080a;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.top-bar__inner {
+  height: 128rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.top-bar__btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top-bar__btn--spacer {
+  width: 88rpx;
+}
+
+.top-bar__icon {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+.top-bar__icon--back {
+  transform: rotate(180deg);
+}
+
+.top-bar__title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-bar__title {
+  font-size: 34rpx;
+  line-height: 48rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: #ffb3af;
+}
+
+.top-bar__subtitle {
+  font-size: 20rpx;
+  line-height: 32rpx;
+  color: rgba(225, 191, 188, 0.8);
+}
+
+/* ---------- 常驻筛选栏 ----------
+   顶栏下方固定；四个筛格 + 「我的比赛 ›」快捷跳转（#392）。 */
+
+.fbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  height: 88rpx;
+  display: flex;
+  align-items: stretch;
+  background: #0a0b0d;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
+}
+
+.fbar__pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.fbar__cell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4rpx;
+  padding: 0 8rpx;
+  font-size: 24rpx;
+  color: #b9b8bc;
+  white-space: nowrap;
+  overflow: hidden;
+  border-right: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.fbar__cell--on {
+  color: #5fc992;
+  font-weight: 600;
+}
+
+.fbar__star {
+  flex: 0.9;
+}
+
+.fbar__myraces {
+  flex: 1.1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8rpx;
+  font-size: 24rpx;
+  color: #ffb3af;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.content {
+  padding: 0 24rpx 48rpx;
+}
+
+/* ---------- 提示条 / 加载（同 my-races） ---------- */
+
+.banner {
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  font-size: 24rpx;
+  margin-bottom: 24rpx;
+}
+
+.banner--error {
+  background: rgba(255, 99, 99, 0.1);
+  border: 1rpx solid rgba(255, 99, 99, 0.2);
+  color: #ff6363;
+}
+
+.spinner {
+  width: 48rpx;
+  height: 48rpx;
+  border: 4rpx solid rgba(95, 201, 146, 0.3);
+  border-top-color: #5fc992;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- 月份分组头 ---------- */
+
+.month {
+  margin-top: 24rpx;
+}
+
+.month__head {
+  position: sticky;
+  /* top 由页面按状态栏高度注入（筛选栏底沿） */
+  top: 132px;
+  z-index: 10;
+  padding: 10rpx 16rpx;
+  font-size: 22rpx;
+  font-weight: 600;
+  letter-spacing: 2rpx;
+  color: #9c9c9d;
+  background: rgba(16, 17, 17, 0.96);
+  border-radius: 12rpx 12rpx 0 0;
+}
+
+/* ---------- 密表行 ----------
+   五列：日期 | 赛事名+双徽章 | 项目缩写 | 城市 | 星标（城市在右列，#392）。 */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx 16rpx;
+  background: #101111;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.row:active {
+  background: #17181a;
+}
+
+.row__date {
+  width: 92rpx;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.row__dm {
+  font-size: 26rpx;
+  font-weight: 600;
+  line-height: 36rpx;
+  color: #e3e2e5;
+}
+
+.row__dw {
+  font-size: 18rpx;
+  line-height: 26rpx;
+  color: #8a8a8c;
+}
+
+.row__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.row__name {
+  font-size: 26rpx;
+  font-weight: 600;
+  line-height: 36rpx;
+  color: #e3e2e5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 标签全称双徽章（#392）：名下方，田协暖色 / 世界田联冷色 */
+
+.row__badges {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 6rpx;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.badge {
+  flex-shrink: 0;
+  font-size: 18rpx;
+  line-height: 28rpx;
+  padding: 0 10rpx;
+  border-radius: 6rpx;
+}
+
+.badge--cn {
+  color: #e8c07d;
+  background: rgba(232, 192, 125, 0.12);
+}
+
+.badge--wa {
+  color: #8fb8e8;
+  background: rgba(143, 184, 232, 0.12);
+}
+
+.row__types {
+  flex-shrink: 0;
+  max-width: 128rpx;
+  font-size: 20rpx;
+  line-height: 28rpx;
+  color: #9c9c9d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row__city {
+  flex-shrink: 0;
+  max-width: 128rpx;
+  font-size: 20rpx;
+  line-height: 28rpx;
+  color: #9c9c9d;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row__star {
+  width: 56rpx;
+  height: 56rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34rpx;
+  line-height: 56rpx;
+  color: #6a6a6c;
+}
+
+.row__star--on {
+  color: #ffb3af;
+}
+
+/* ---------- 页脚 / 空态 ---------- */
+
+.footer {
+  padding: 28rpx 0 12rpx;
+  text-align: center;
+  font-size: 20rpx;
+  color: #8a8a8c;
+}
+
+.empty-card__title {
+  white-space: normal;
+  line-height: 40rpx;
+}
