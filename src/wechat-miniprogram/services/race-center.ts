@@ -1,6 +1,7 @@
 // 赛事中心服务层 —— 对接 stride-api 用户侧赛事日历与收藏接口。
-// 后端契约：internal/api/race_catalog.go（GET /api/race-calendar，#390）与
-// internal/api/race_favorites.go（POST /api/users/me/race-favorites/:id/toggle，#391）。
+// 后端契约：internal/api/race_catalog.go（GET /api/race-calendar，#390；GET
+// /api/race-calendar/:race_id 详情，#393）与 internal/api/race_favorites.go
+// （POST /api/users/me/race-favorites/:id/toggle，#391）。
 // 列表行自带 favorited 星标态；收藏视图由客户端按该标记过滤，无需单独拉收藏 id 集。
 
 import { http } from './request';
@@ -62,4 +63,85 @@ export function toggleRaceFavorite(raceId: number): Promise<RaceFavoriteToggleRe
   return http.post<RaceFavoriteToggleResponse>(
     `/api/users/me/race-favorites/${raceId}/toggle`,
   );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   详情（#393）：GET /api/race-calendar/:race_id 的 userRaceDetailDTO 镜像。
+   项目十二列内容里 v1 详情页只渲染 距离/起终点/赛道文字/关门，其余列
+   （爬升/海拔点/难点/补给/奖金/口碑/照片）留给后续版本，接口一到位即可补。
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** 报名时间轴（storage.RaceSignupTimeline 镜像）。日期均为 YYYY-MM-DD。 */
+export interface RaceSignupTimeline {
+  start_at: string;
+  deadline: string;
+  lottery: boolean;
+  lottery_result_at: string | null;
+  payment_deadline: string | null;
+}
+
+/**
+ * 报名渠道（storage.RaceSignupChannel 镜像）。type 描述渠道形态（官网 /
+ * 公众号 / 合作App），url_type 区分唯一链接是可打开的页面（web）还是二维码
+ * 图片（qrcode）——前者给「复制链接」，后者只标注形态；url 为 null 的渠道
+ * 连链接都没有（如“关注公众号报名”），照常展示。
+ */
+export interface RaceSignupChannel {
+  name: string;
+  type: string;
+  url: string | null;
+  url_type: string;
+}
+
+/** 领物窗口（storage.RacePacketPickup 镜像）。 */
+export interface RacePacketPickup {
+  time: string;
+  location: string;
+}
+
+/** 起终点（storage.RacePoint 的 v1 投影）：详情页只渲染名称，坐标不镜像。 */
+export interface RacePoint {
+  name: string;
+}
+
+/** 关门点（storage.RaceCutoff 的 v1 投影）：位置名 + 当日墙钟 HH:MM。 */
+export interface RaceCutoff {
+  point: string;
+  cutoff_at: string;
+}
+
+/** 详情页一个项目（userRaceItemDTO 的 v1 投影）。entry_fee 单位是分。 */
+export interface RaceItem {
+  id: number;
+  name: string;
+  type: string;
+  start_time: string | null;
+  entry_fee: number | null;
+  quota: number | null;
+  distance_km: number | null;
+  start_point: RacePoint | null;
+  finish_point: RacePoint | null;
+  route_description: string | null;
+  cutoffs: RaceCutoff[];
+}
+
+/** 城市介绍（userCityContentDTO 的 v1 投影：图片/省份列不镜像）。 */
+export interface RaceCityContent {
+  city: string;
+  intro: { overview: string; culture: string; food: string; history: string } | null;
+  attractions: Array<{ name: string; description: string }>;
+}
+
+/** 赛事详情（userRaceDetailDTO 镜像）：列表行字段 + 三段内容区。 */
+export interface RaceDetail extends RaceCalendarRace {
+  signup_timeline: RaceSignupTimeline | null;
+  signup_channels: RaceSignupChannel[];
+  packet_pickup: RacePacketPickup[];
+  items: RaceItem[];
+  city_content: RaceCityContent | null;
+}
+
+/** 拉一场已发布赛事的详情；未发布/不存在均 404。 */
+export function getRaceDetail(raceId: number): Promise<RaceDetail> {
+  return http.get<RaceDetail>(`/api/race-calendar/${raceId}`);
 }
