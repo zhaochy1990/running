@@ -17,7 +17,7 @@ const classifierSystemPrompt = `你只负责评估候选半马或全马活动的
 
 每个维度只能选择“支持比赛”“支持训练”“信息不足”：
 1. “赛事或全力自测意图”：根据活动名称、备注，以及城市和精确日期是否明确对应真实赛事判断。默认“<城市> 跑步”和空备注不能作为训练证据；手表训练分类也不代表主观意图。只有名称/备注明确是训练计划时才支持训练，明确赛事或全力测试/PB时支持比赛，否则信息不足。可以使用确定的通用赛事知识，但不能因为某城市可能在某天办赛而猜测。
-2. “强度与跑动连续性”：根据用时、平均配速、平均/最高心率判断是否像连续全力完成。不要使用星期、时刻、距离先验、暂停、路线形态或异地信息；这些由 Go 代码独立评分。指标不足时选择信息不足。
+2. “强度与跑动连续性”：根据用时、平均配速、平均/最高心率判断是否像连续全力完成。若提供了“用户长距离跑基线”，必须相对该跑者的基线判断：候选配速明显快于其中位配速且接近最快配速才支持比赛；慢于或接近中位配速支持训练。没有基线时按绝对强度判断。不要使用星期、时刻、距离先验、暂停、路线形态或异地信息；这些由 Go 代码独立评分。指标不足时选择信息不足。
 
 只输出严格匹配以下结构的 JSON，不得输出其它字段或文字：
 {"赛事或全力自测意图":"支持比赛|支持训练|信息不足","强度与跑动连续性":"支持比赛|支持训练|信息不足"}`
@@ -139,6 +139,14 @@ func (c *ChatCompletionsClassifier) AssessWithUsage(ctx context.Context, candida
 }
 
 func localizedCandidateJSON(candidate Candidate) ([]byte, error) {
+	var baseline *localizedPaceBaseline
+	if candidate.UserBaseline != nil {
+		baseline = &localizedPaceBaseline{
+			SampleCount:   candidate.UserBaseline.SampleCount,
+			MedianPaceSKm: candidate.UserBaseline.MedianPaceSKm,
+			BestPaceSKm:   candidate.UserBaseline.BestPaceSKm,
+		}
+	}
 	return json.Marshal(localizedCandidate{
 		Name:           candidate.Name,
 		Sport:          localizeSport(candidate.Sport),
@@ -153,7 +161,16 @@ func localizedCandidateJSON(candidate Candidate) ([]byte, error) {
 		WatchTrainKind: localizeTrainKind(candidate.TrainKind),
 		SportNote:      candidate.SportNote,
 		CandidateType:  localizeRaceType(candidate.CandidateType),
+		UserBaseline:   baseline,
 	})
+}
+
+// localizedPaceBaseline carries the athlete's own long-run pace distribution
+// so the model judges intensity relative to the runner, not in absolutes.
+type localizedPaceBaseline struct {
+	SampleCount   int     `json:"样本数"`
+	MedianPaceSKm float64 `json:"中位配速_秒每公里"`
+	BestPaceSKm   float64 `json:"最快配速_秒每公里"`
 }
 
 func candidateUserPrompt(activityJSON []byte) string {
@@ -177,19 +194,20 @@ func decodeAssessment(content string) (ModelAssessment, error) {
 }
 
 type localizedCandidate struct {
-	Name           string   `json:"名称,omitempty"`
-	Sport          string   `json:"运动类型"`
-	LocalStart     string   `json:"本地开始时间"`
-	Weekday        string   `json:"星期,omitempty"`
-	DistanceM      float64  `json:"距离_米"`
-	DurationS      *float64 `json:"用时_秒,omitempty"`
-	AvgPaceSKm     *float64 `json:"平均配速_秒每公里,omitempty"`
-	AvgHR          *int     `json:"平均心率,omitempty"`
-	MaxHR          *int     `json:"最高心率,omitempty"`
-	AscentM        *float64 `json:"累计爬升_米,omitempty"`
-	WatchTrainKind string   `json:"手表训练分类,omitempty"`
-	SportNote      string   `json:"运动备注,omitempty"`
-	CandidateType  string   `json:"候选距离类型"`
+	Name           string                 `json:"名称,omitempty"`
+	Sport          string                 `json:"运动类型"`
+	LocalStart     string                 `json:"本地开始时间"`
+	Weekday        string                 `json:"星期,omitempty"`
+	DistanceM      float64                `json:"距离_米"`
+	DurationS      *float64               `json:"用时_秒,omitempty"`
+	AvgPaceSKm     *float64               `json:"平均配速_秒每公里,omitempty"`
+	AvgHR          *int                   `json:"平均心率,omitempty"`
+	MaxHR          *int                   `json:"最高心率,omitempty"`
+	AscentM        *float64               `json:"累计爬升_米,omitempty"`
+	WatchTrainKind string                 `json:"手表训练分类,omitempty"`
+	SportNote      string                 `json:"运动备注,omitempty"`
+	CandidateType  string                 `json:"候选距离类型"`
+	UserBaseline   *localizedPaceBaseline `json:"用户长距离跑基线,omitempty"`
 }
 
 func localizeSport(sport string) string {

@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"time"
 
 	"github.com/zhaochy1990/stride/internal/normalize"
@@ -303,4 +304,123 @@ func (s *Store) UpdateRaceCalendarItemStartFromConsensus(ctx context.Context, it
 		"UPDATE race_calendar_item SET start_point = ?, updated_at = CURRENT_TIMESTAMP(3) WHERE id = ?",
 		string(point), itemID)
 	return tx.RowsAffected == 1, tx.Error
+}
+
+// LongRunStart is one HM/FM-band activity start with its identity, used to
+// detect habitual training routes around a candidate's start point.
+type LongRunStart struct {
+	LabelID   string
+	Latitude  float64
+	Longitude float64
+}
+
+// LongRunStarts returns the cached start coordinates of a user's half/full
+// marathon band activities. Rows without cached coordinates are skipped;
+// BackfillActivityStartCoordinates fills them from the timeseries.
+func (s *Store) LongRunStarts(ctx context.Context, userID string) ([]LongRunStart, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []LongRunStart
+	if err := s.db.WithContext(ctx).Model(&Activity{}).
+		Select("label_id, start_gps_lat AS latitude, start_gps_lon AS longitude").
+		Where("user_id = ?", uid).
+		Where(`((distance_m >= ? AND distance_m <= ?) OR (distance_m >= ? AND distance_m <= ?))`,
+			racedetection.HalfMarathonMinDistanceM, racedetection.HalfMarathonMaxDistanceM,
+			racedetection.MarathonMinDistanceM, racedetection.MarathonMaxDistanceM).
+		Where("start_gps_lat IS NOT NULL AND start_gps_lon IS NOT NULL").
+		Where("start_gps_lat BETWEEN -90 AND 90 AND start_gps_lon BETWEEN -180 AND 180").
+		Where("NOT (start_gps_lat = 0 AND start_gps_lon = 0)").
+		Order("date, label_id").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// BackfillActivityStartCoordinates fills missing activity-level start GPS
+// columns for a user's half/full marathon band activities from the first
+// valid timeseries fix. It reports how many rows were filled.
+func (s *Store) BackfillActivityStartCoordinates(ctx context.Context, userID string) (int, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return 0, err
+	}
+	var labels []string
+	if err := s.db.WithContext(ctx).Model(&Activity{}).
+		Where("user_id = ?", uid).
+		Where(`((distance_m >= ? AND distance_m <= ?) OR (distance_m >= ? AND distance_m <= ?))`,
+			racedetection.HalfMarathonMinDistanceM, racedetection.HalfMarathonMaxDistanceM,
+			racedetection.MarathonMinDistanceM, racedetection.MarathonMaxDistanceM).
+		Where("start_gps_lat IS NULL OR start_gps_lon IS NULL").
+		Pluck("label_id", &labels).Error; err != nil {
+		return 0, err
+	}
+	if len(labels) == 0 {
+		return 0, nil
+	}
+	var fixes []struct {
+		LabelID   string  `gorm:"column:label_id"`
+		Latitude  float64 `gorm:"column:latitude"`
+		Longitude float64 `gorm:"column:longitude"`
+	}
+	if err := s.db.WithContext(ctx).Raw(`
+        SELECT label_id, latitude, longitude FROM (
+            SELECT label_id, gps_lat AS latitude, gps_lon AS longitude,
+                   ROW_NUMBER() OVER (PARTITION BY label_id ORDER BY timestamp) AS rn
+            FROM timeseries
+            WHERE user_id = ? AND label_id IN ? AND gps_lat IS NOT NULL AND gps_lon IS NOT NULL
+              AND gps_lat BETWEEN -90 AND 90 AND gps_lon BETWEEN -180 AND 180
+              AND NOT (gps_lat = 0 AND gps_lon = 0)
+        ) ranked WHERE rn = 1`, uid, labels).Scan(&fixes).Error; err != nil {
+		return 0, err
+	}
+	filled := 0
+	for _, fix := range fixes {
+		if err := s.db.WithContext(ctx).Model(&Activity{}).
+			Where("user_id = ? AND label_id = ?", uid, fix.LabelID).
+			Updates(map[string]any{"start_gps_lat": fix.Latitude, "start_gps_lon": fix.Longitude}).Error; err != nil {
+			return filled, err
+		}
+		filled++
+	}
+	return filled, nil
+}
+
+// PaceBaseline summarises a user's long-run pace distribution before a point
+// in time, giving the model (and operators) the context to judge whether one
+// candidate's pace is genuinely hard for THIS runner.
+type PaceBaseline struct {
+	Count         int
+	MedianPaceSKm float64
+	BestPaceSKm   float64
+}
+
+// UserPaceBaseline computes the median and best average pace of a user's
+// 15–45 km runs inside the lookback window strictly before the given instant.
+// It returns nil when fewer than minSamples runs exist.
+func (s *Store) UserPaceBaseline(ctx context.Context, userID string, before time.Time, lookback time.Duration, minSamples int) (*PaceBaseline, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var paces []float64
+	if err := s.db.WithContext(ctx).Model(&Activity{}).
+		Where("user_id = ?", uid).
+		Where("distance_m >= ? AND distance_m <= ?", 15_000, 45_000).
+		Where("avg_pace_s_km IS NOT NULL AND avg_pace_s_km > 0").
+		Where("date >= ? AND date < ?", before.Add(-lookback), before).
+		Order("date, label_id").Pluck("avg_pace_s_km", &paces).Error; err != nil {
+		return nil, err
+	}
+	if len(paces) < minSamples {
+		return nil, nil
+	}
+	sorted := append([]float64(nil), paces...)
+	sort.Float64s(sorted)
+	median := sorted[len(sorted)/2]
+	if len(sorted)%2 == 0 {
+		median = (sorted[len(sorted)/2-1] + sorted[len(sorted)/2]) / 2
+	}
+	return &PaceBaseline{Count: len(sorted), MedianPaceSKm: median, BestPaceSKm: sorted[0]}, nil
 }

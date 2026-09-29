@@ -34,6 +34,7 @@ const (
 	DimensionHRIntensity         ScoreDimension = "hr_intensity"
 	DimensionPausePattern        ScoreDimension = "pause_pattern"
 	DimensionRouteShape          ScoreDimension = "route_shape"
+	DimensionHabitualStart       ScoreDimension = "habitual_start"
 	DimensionTravel              ScoreDimension = "travel"
 	DimensionTimeWindow          ScoreDimension = "time_window"
 )
@@ -51,6 +52,7 @@ type scoringEvidence struct {
 	HRIntensity   Evidence
 	PausePattern  Evidence
 	RouteShape    Evidence
+	HabitualStart Evidence
 	Travel        Evidence
 	TimeWindow    Evidence
 }
@@ -84,6 +86,7 @@ var scoringDimensions = []struct {
 	{DimensionHRIntensity, 20, 20, EvidenceSourceGo, func(e scoringEvidence) Evidence { return e.HRIntensity }},
 	{DimensionPausePattern, 20, 20, EvidenceSourceGo, func(e scoringEvidence) Evidence { return e.PausePattern }},
 	{DimensionRouteShape, 10, 15, EvidenceSourceGo, func(e scoringEvidence) Evidence { return e.RouteShape }},
+	{DimensionHabitualStart, 0, 20, EvidenceSourceGo, func(e scoringEvidence) Evidence { return e.HabitualStart }},
 	{DimensionTravel, 10, 15, EvidenceSourceGo, func(e scoringEvidence) Evidence { return e.Travel }},
 	// A typical Sunday start is only weak positive evidence, while a clearly
 	// training-like start window is a stronger negative signal.
@@ -121,8 +124,46 @@ func buildScoringEvidence(candidate Candidate, model ModelAssessment, route Rout
 	return scoringEvidence{
 		Model: model, DistancePrior: distanceEvidence(candidate), HRIntensity: hrIntensityEvidence(candidate.AvgHR, candidate.MaxHR),
 		PausePattern: pauseEvidence(candidate.Pauses),
-		RouteShape:   routeEvidence(route.Shape), Travel: travelEvidence(candidate.Location), TimeWindow: timeWindowEvidence(candidate.Date),
+		RouteShape:   routeEvidence(route.Shape), HabitualStart: habitualStartEvidence(candidate.NearbyLongRunStarts),
+		Travel: travelEvidence(candidate.Location), TimeWindow: timeWindowEvidence(candidate.Date),
 	}
+}
+
+// habitualStartMinOthers fires the training evidence when at least this many
+// of the user's OTHER half/full-band activities started within
+// habitualStartRadiusM of the candidate's start. Production calibration: a
+// weekend-racing athlete's real venue starts peaked at 8 nearby starts, while
+// the habitual-route false positives started alongside 15+ of the user's own
+// long runs — 9 separates the two with one start of headroom.
+const (
+	habitualStartRadiusM  = 2_000.0
+	habitualStartMinCount = 9
+)
+
+// habitualStartEvidence encodes the dominant residual false-positive profile:
+// the habitual distance-long run from a fixed start point, whose GPS fix sits
+// among many of the athlete's own same-band starts. A race venue is shared
+// with few of the athlete's other long runs, so this stays neutral there.
+func habitualStartEvidence(nearbyOthers int) Evidence {
+	if nearbyOthers >= habitualStartMinCount {
+		return EvidenceTraining
+	}
+	return EvidenceUnknown
+}
+
+// NearbyLongRunStartCount counts the user's same-band activity starts within
+// the habitual radius of one start point, excluding the given label.
+func NearbyLongRunStartCount(start Coordinate, excludeLabel string, starts []LabeledCoordinate) int {
+	count := 0
+	for _, point := range starts {
+		if point.LabelID == excludeLabel {
+			continue
+		}
+		if haversineKM(start, point.Coordinate)*1000 <= habitualStartRadiusM {
+			count++
+		}
+	}
+	return count
 }
 
 // hrIntensityRaceMinRatio and hrIntensityTrainingMaxRatio bound the

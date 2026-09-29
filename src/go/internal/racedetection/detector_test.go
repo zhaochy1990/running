@@ -3,6 +3,7 @@ package racedetection
 import (
 	"context"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -122,7 +123,7 @@ func TestScoreAssessmentUsesFixedWeightsAndThreshold(t *testing.T) {
 	assessment := scoringEvidence{
 		Model:         ModelAssessment{EventIntent: EvidenceUnknown, IntensityContinuity: EvidenceRace},
 		DistancePrior: EvidenceRace, HRIntensity: EvidenceRace, PausePattern: EvidenceTraining, RouteShape: EvidenceUnknown,
-		Travel: EvidenceUnknown, TimeWindow: EvidenceRace,
+		HabitualStart: EvidenceUnknown, Travel: EvidenceUnknown, TimeWindow: EvidenceRace,
 	}
 	result, err := ScoreAssessment(assessment)
 	if err != nil {
@@ -134,7 +135,7 @@ func TestScoreAssessmentUsesFixedWeightsAndThreshold(t *testing.T) {
 	}
 	want := map[ScoreDimension]int{
 		DimensionEventIntent: 0, DimensionDistancePrior: 15, DimensionIntensityContinuity: 20,
-		DimensionHRIntensity: 20, DimensionPausePattern: -20, DimensionRouteShape: 0, DimensionTravel: 0, DimensionTimeWindow: 10,
+		DimensionHRIntensity: 20, DimensionPausePattern: -20, DimensionRouteShape: 0, DimensionHabitualStart: 0, DimensionTravel: 0, DimensionTimeWindow: 10,
 	}
 	for _, contribution := range result.Dimensions {
 		if contribution.Contribution != want[contribution.Dimension] {
@@ -147,7 +148,7 @@ func TestScoreAssessmentKeepsWeakGoPositivesBelowThreshold(t *testing.T) {
 	result, err := ScoreAssessment(scoringEvidence{
 		Model:         ModelAssessment{EventIntent: EvidenceUnknown, IntensityContinuity: EvidenceUnknown},
 		DistancePrior: EvidenceUnknown, HRIntensity: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceRace,
-		Travel: EvidenceRace, TimeWindow: EvidenceUnknown,
+		HabitualStart: EvidenceUnknown, Travel: EvidenceRace, TimeWindow: EvidenceUnknown,
 	})
 	if err != nil {
 		t.Fatalf("ScoreAssessment: %v", err)
@@ -172,7 +173,7 @@ func TestScoreAssessmentAppliesTrainingTimeAgainstPositiveRoute(t *testing.T) {
 	result, err := ScoreAssessment(scoringEvidence{
 		Model:         ModelAssessment{EventIntent: EvidenceUnknown, IntensityContinuity: EvidenceRace},
 		DistancePrior: EvidenceUnknown, HRIntensity: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceRace,
-		Travel: EvidenceUnknown, TimeWindow: EvidenceTraining,
+		HabitualStart: EvidenceUnknown, Travel: EvidenceUnknown, TimeWindow: EvidenceTraining,
 	})
 	if err != nil {
 		t.Fatalf("ScoreAssessment: %v", err)
@@ -192,7 +193,7 @@ func TestScoreAssessmentPreservesExplicitPersonalTimeTrial(t *testing.T) {
 	result, err := ScoreAssessment(scoringEvidence{
 		Model:         ModelAssessment{EventIntent: EvidenceRace, IntensityContinuity: EvidenceRace},
 		DistancePrior: EvidenceUnknown, HRIntensity: EvidenceRace, PausePattern: EvidenceUnknown, RouteShape: EvidenceTraining,
-		Travel: EvidenceUnknown, TimeWindow: EvidenceTraining,
+		HabitualStart: EvidenceUnknown, Travel: EvidenceUnknown, TimeWindow: EvidenceTraining,
 	})
 	if err != nil {
 		t.Fatalf("ScoreAssessment: %v", err)
@@ -205,7 +206,7 @@ func TestScoreAssessmentPreservesExplicitPersonalTimeTrial(t *testing.T) {
 	result, err = ScoreAssessment(scoringEvidence{
 		Model:         ModelAssessment{EventIntent: EvidenceRace, IntensityContinuity: EvidenceRace},
 		DistancePrior: EvidenceUnknown, HRIntensity: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceTraining,
-		Travel: EvidenceUnknown, TimeWindow: EvidenceTraining,
+		HabitualStart: EvidenceUnknown, Travel: EvidenceUnknown, TimeWindow: EvidenceTraining,
 	})
 	if err != nil {
 		t.Fatalf("ScoreAssessment: %v", err)
@@ -241,7 +242,8 @@ func intPtr(v int) *int { return &v }
 func TestScoreAssessmentRejectsMissingOrUnknownEvidence(t *testing.T) {
 	assessment := scoringEvidence{
 		Model:         ModelAssessment{EventIntent: EvidenceRace, IntensityContinuity: EvidenceUnknown},
-		DistancePrior: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceUnknown, Travel: EvidenceUnknown,
+		DistancePrior: EvidenceUnknown, HRIntensity: EvidenceUnknown, PausePattern: EvidenceUnknown, RouteShape: EvidenceUnknown, Travel: EvidenceUnknown,
+		HabitualStart: EvidenceUnknown,
 		// TimeWindow deliberately omitted.
 	}
 	if _, err := ScoreAssessment(assessment); err == nil {
@@ -252,3 +254,108 @@ func TestScoreAssessmentRejectsMissingOrUnknownEvidence(t *testing.T) {
 		t.Fatal("unknown dimension evidence must fail")
 	}
 }
+
+func TestHabitualStartEvidenceBoundaries(t *testing.T) {
+	if got := habitualStartEvidence(8); got != EvidenceUnknown {
+		t.Errorf("8 nearby starts = %q, want unknown (venue-level, calibrated to production)", got)
+	}
+	if got := habitualStartEvidence(9); got != EvidenceTraining {
+		t.Errorf("9 nearby starts = %q, want training", got)
+	}
+	if got := habitualStartEvidence(30); got != EvidenceTraining {
+		t.Errorf("30 nearby starts = %q, want training", got)
+	}
+	if got := habitualStartEvidence(0); got != EvidenceUnknown {
+		t.Errorf("0 nearby starts = %q, want unknown", got)
+	}
+}
+
+func TestHabitualStartOffsetsModelOnlyConfirmation(t *testing.T) {
+	// The residual production false positive: race-level HR ratio, gun-window
+	// start, city-loop route and a model that (without baseline context) read
+	// a moderate pace as race-like summed to exactly the threshold. The
+	// baseline context is what must flip the model's intensity verdict; the
+	// habitual-start counter adds margin. When the model STILL says race with
+	// baseline context present, confirmation stands (boundary case), but the
+	// Go-only profile below no longer clears the bar.
+	result, err := ScoreAssessment(scoringEvidence{
+		Model:         ModelAssessment{EventIntent: EvidenceUnknown, IntensityContinuity: EvidenceRace},
+		DistancePrior: EvidenceUnknown, HRIntensity: EvidenceRace, PausePattern: EvidenceUnknown, RouteShape: EvidenceRace,
+		HabitualStart: EvidenceTraining, Travel: EvidenceUnknown, TimeWindow: EvidenceRace,
+	})
+	if err != nil {
+		t.Fatalf("ScoreAssessment: %v", err)
+	}
+	if result.Score != 40 || !result.IsRace {
+		t.Fatalf("model-corroborated profile with habitual offset = %+v, want 40 and race", result)
+	}
+	result, err = ScoreAssessment(scoringEvidence{
+		Model:         ModelAssessment{EventIntent: EvidenceUnknown, IntensityContinuity: EvidenceUnknown},
+		DistancePrior: EvidenceUnknown, HRIntensity: EvidenceRace, PausePattern: EvidenceUnknown, RouteShape: EvidenceRace,
+		HabitualStart: EvidenceTraining, Travel: EvidenceUnknown, TimeWindow: EvidenceRace,
+	})
+	if err != nil {
+		t.Fatalf("ScoreAssessment: %v", err)
+	}
+	if result.Score != 20 || result.IsRace {
+		t.Fatalf("go-only profile with habitual offset = %+v, want 20 and not race", result)
+	}
+}
+
+func TestNearbyLongRunStartCountExcludesSelfAndHonorsRadius(t *testing.T) {
+	home := Coordinate{Latitude: 31.127, Longitude: 121.055}
+	within := Coordinate{Latitude: 31.1275, Longitude: 121.0555} // ~70m away
+	far := Coordinate{Latitude: 31.30, Longitude: 121.30}        // ~30km away
+	starts := []LabeledCoordinate{
+		{LabelID: "self", Coordinate: home},
+		{LabelID: "a", Coordinate: within},
+		{LabelID: "b", Coordinate: within},
+		{LabelID: "c", Coordinate: far},
+	}
+	if got := NearbyLongRunStartCount(home, "self", starts); got != 2 {
+		t.Fatalf("nearby count = %d, want 2 (self excluded, far ignored)", got)
+	}
+	if got := NearbyLongRunStartCount(home, "a", starts); got != 2 {
+		t.Fatalf("nearby count excluding a = %d, want 2 (self now counted as other)", got)
+	}
+}
+
+func TestLocalizedCandidateJSONCarriesBaseline(t *testing.T) {
+	median, best := 294.0, 246.0 // 4:54 / 4:06 per km
+	body, err := localizedCandidateJSON(Candidate{
+		Name: "上海市 跑步", Sport: "run_outdoor", Date: "2025-01-05 15:00:00",
+		DistanceM: 21_130, AvgPaceSKm: floatPtrDet(306), AvgHR: intPtrDet(148), MaxHR: intPtrDet(163),
+		CandidateType: RaceTypeHalfMarathon,
+		UserBaseline:  &PaceBaselineContext{SampleCount: 63, MedianPaceSKm: median, BestPaceSKm: best},
+	})
+	if err != nil {
+		t.Fatalf("localizedCandidateJSON: %v", err)
+	}
+	decoded := string(body)
+	for _, fragment := range []string{"用户长距离跑基线", `"样本数":63`, `"中位配速_秒每公里":294`, `"最快配速_秒每公里":246`} {
+		if !strings.Contains(decoded, fragment) {
+			t.Fatalf("candidate JSON missing %s: %s", fragment, decoded)
+		}
+	}
+	// Without a baseline the key is omitted entirely.
+	absent, _ := localizedCandidateJSON(Candidate{Name: "x", Sport: "run_outdoor", Date: "2025-01-05 15:00:00", DistanceM: 21_000, CandidateType: RaceTypeHalfMarathon})
+	if strings.Contains(string(absent), "用户长距离跑基线") {
+		t.Fatalf("baseline key must be omitted without context: %s", absent)
+	}
+}
+
+func containsFragment(body, fragment string) bool {
+	return len(fragment) > 0 && indexOf(body, fragment) >= 0
+}
+
+func indexOf(body, fragment string) int {
+	for i := 0; i+len(fragment) <= len(body); i++ {
+		if body[i:i+len(fragment)] == fragment {
+			return i
+		}
+	}
+	return -1
+}
+
+func floatPtrDet(v float64) *float64 { return &v }
+func intPtrDet(v int) *int           { return &v }

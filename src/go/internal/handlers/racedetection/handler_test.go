@@ -34,8 +34,12 @@ type fakeStore struct {
 		labelID string
 		itemID  int64
 	}
-	consensusWrites []int64
-	mu              sync.Mutex
+	consensusWrites  []int64
+	longRunStarts    []storage.LongRunStart
+	coordBackfills   int
+	coordBackfillHit int
+	paceBaseline     *storage.PaceBaseline
+	mu               sync.Mutex
 }
 
 func (f *fakeStore) ActivityStartCoordinates(_ context.Context, _ string) ([]detector.Coordinate, error) {
@@ -85,6 +89,21 @@ func (f *fakeStore) UpdateRaceCalendarItemStartFromConsensus(_ context.Context, 
 	defer f.mu.Unlock()
 	f.consensusWrites = append(f.consensusWrites, itemID)
 	return true, nil
+}
+
+func (f *fakeStore) LongRunStarts(_ context.Context, _ string) ([]storage.LongRunStart, error) {
+	return f.longRunStarts, nil
+}
+
+func (f *fakeStore) BackfillActivityStartCoordinates(_ context.Context, _ string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.coordBackfills++
+	return f.coordBackfillHit, nil
+}
+
+func (f *fakeStore) UserPaceBaseline(_ context.Context, _ string, _ time.Time, _ time.Duration, _ int) (*storage.PaceBaseline, error) {
+	return f.paceBaseline, nil
 }
 
 func (f *fakeStore) InsertRace(_ context.Context, race *storage.Race) (bool, error) {
@@ -496,3 +515,57 @@ func TestHandlerBackfillRematchesExistingRaces(t *testing.T) {
 func intPtrForHandler(v int) *int           { return &v }
 func floatPtrForHandler(v float64) *float64 { return &v }
 func strPtrForHandler(v string) *string     { return &v }
+
+// capturingClassifier records the candidates it assessed so tests can verify
+// the context the handler injected (nearby-start counts, pace baseline).
+type capturingClassifier struct {
+	seen []detector.Candidate
+}
+
+func (c *capturingClassifier) Assess(_ context.Context, candidate detector.Candidate) (detector.ModelAssessment, error) {
+	c.seen = append(c.seen, candidate)
+	return detector.ModelAssessment{EventIntent: detector.EvidenceUnknown, IntensityContinuity: detector.EvidenceUnknown}, nil
+}
+
+func TestHandlerInjectsHabitualContextAndPaceBaseline(t *testing.T) {
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+	lat, lng := 31.127, 121.055
+	store := &fakeStore{
+		insertedResult: true,
+		candidates: []storage.RaceCandidate{{
+			LabelID: "c1", Name: "上海市 跑步", Sport: "run_outdoor",
+			Date: time.Date(2025, 1, 5, 7, 0, 0, 0, shanghai).UTC(), DistanceM: 21_130,
+			AvgPaceSKm:  func() *float64 { v := 306.0; return &v }(),
+			StartGPSLat: &lat, StartGPSLon: &lng,
+		}},
+		longRunStarts: func() []storage.LongRunStart {
+			starts := make([]storage.LongRunStart, 0, 12)
+			starts = append(starts, storage.LongRunStart{LabelID: "c1", Latitude: lat, Longitude: lng})
+			for i := range 11 { // eleven other long runs from the same start
+				starts = append(starts, storage.LongRunStart{LabelID: fmt.Sprintf("other-%d", i), Latitude: lat + 0.001, Longitude: lng + 0.001})
+			}
+			return starts
+		}(),
+		paceBaseline: &storage.PaceBaseline{Count: 63, MedianPaceSKm: 294, BestPaceSKm: 246},
+	}
+	classifier := &capturingClassifier{}
+	if _, err := New(store, detector.New(classifier), 1)(context.Background(), &job.Job{UserID: uuid.NewString(), InputJSON: `{"mode":"incremental","label_ids":["c1"]}`}, func(string, int) error { return nil }); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if store.coordBackfills != 1 {
+		t.Fatalf("coordinate backfill calls = %d, want one per job", store.coordBackfills)
+	}
+	if len(classifier.seen) != 1 {
+		t.Fatalf("classifier saw %d candidates, want 1", len(classifier.seen))
+	}
+	seen := classifier.seen[0]
+	if seen.NearbyLongRunStarts != 11 {
+		t.Fatalf("nearby long-run starts = %d, want 11 excluding the candidate itself", seen.NearbyLongRunStarts)
+	}
+	if seen.UserBaseline == nil || seen.UserBaseline.SampleCount != 63 || seen.UserBaseline.MedianPaceSKm != 294 || seen.UserBaseline.BestPaceSKm != 246 {
+		t.Fatalf("user baseline = %+v, want the fetched pace distribution", seen.UserBaseline)
+	}
+}

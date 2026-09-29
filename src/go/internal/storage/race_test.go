@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -311,5 +312,119 @@ func TestUpdateRaceCalendarItemStartFromConsensus(t *testing.T) {
 	// A second call is a no-op: coordinates already present.
 	if wrote, err := st.UpdateRaceCalendarItemStartFromConsensus(ctx, int64(item.ID), 3, 300); err != nil || wrote {
 		t.Fatalf("second consensus wrote (%t, %v), want idempotent skip", wrote, err)
+	}
+}
+
+func TestLongRunStartsAndCoordinateBackfill(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatalf("automigrate watch: %v", err)
+	}
+	uid := uuid.NewString()
+	defer func() {
+		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&TimeseriesPoint{})
+		st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Activity{})
+	}()
+	zero := 0.0
+	first, second := 31.127, 31.128
+	activities := []Activity{
+		{UserID: uid, LabelID: "no-coords", Name: strptr("HM"), SportType: 100, Sport: strptr("run_outdoor"), DistanceM: fptr(21_100), Date: time.Now().UTC(), Provider: "test", SyncedAt: time.Now().UTC()},
+		{UserID: uid, LabelID: "cached", Name: strptr("HM"), SportType: 100, Sport: strptr("run_outdoor"), DistanceM: fptr(21_200), Date: time.Now().UTC().Add(time.Hour), Provider: "test", SyncedAt: time.Now().UTC(), StartGPSLat: fptr(second), StartGPSLon: fptr(121.056)},
+		{UserID: uid, LabelID: "short", Name: strptr("easy"), SportType: 100, Sport: strptr("run_outdoor"), DistanceM: fptr(10_000), Date: time.Now().UTC().Add(2 * time.Hour), Provider: "test", SyncedAt: time.Now().UTC(), StartGPSLat: fptr(31.2), StartGPSLon: fptr(121.2)},
+	}
+	for i := range activities {
+		if err := st.UpsertActivity(ctx, &activities[i], nil, nil, nil); err != nil {
+			t.Fatalf("upsert %s: %v", activities[i].LabelID, err)
+		}
+	}
+	// First fix for the coordinate-less HM is preceded by a zero/invalid fix.
+	points := []TimeseriesPoint{
+		{UserID: uid, LabelID: "no-coords", Timestamp: i64ptr(1), GPSLat: &zero, GPSLon: &zero},
+		{UserID: uid, LabelID: "no-coords", Timestamp: i64ptr(2), GPSLat: fptr(first), GPSLon: fptr(121.055)},
+		{UserID: uid, LabelID: "no-coords", Timestamp: i64ptr(3), GPSLat: fptr(31.13), GPSLon: fptr(121.06)},
+	}
+	if err := st.db.WithContext(ctx).Create(&points).Error; err != nil {
+		t.Fatalf("seed timeseries: %v", err)
+	}
+
+	filled, err := st.BackfillActivityStartCoordinates(ctx, uid)
+	if err != nil {
+		t.Fatalf("backfill coordinates: %v", err)
+	}
+	if filled != 1 {
+		t.Fatalf("backfilled %d rows, want 1 (cached and short rows untouched)", filled)
+	}
+	starts, err := st.LongRunStarts(ctx, uid)
+	if err != nil {
+		t.Fatalf("long run starts: %v", err)
+	}
+	if len(starts) != 2 {
+		t.Fatalf("long run starts = %+v, want the two HM-band rows", starts)
+	}
+	var noCoords *LongRunStart
+	for i := range starts {
+		if starts[i].LabelID == "no-coords" {
+			noCoords = &starts[i]
+		}
+	}
+	if noCoords == nil || noCoords.Latitude != first || noCoords.Longitude != 121.055 {
+		t.Fatalf("backfilled start = %+v, want the first VALID fix (zero skipped)", noCoords)
+	}
+
+	// Second run is a no-op.
+	filled, err = st.BackfillActivityStartCoordinates(ctx, uid)
+	if err != nil || filled != 0 {
+		t.Fatalf("second backfill = (%d, %v), want idempotent zero", filled, err)
+	}
+}
+
+func TestUserPaceBaselineWindowAndMedian(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.AutoMigrateWatch(ctx); err != nil {
+		t.Fatalf("automigrate watch: %v", err)
+	}
+	uid := uuid.NewString()
+	defer st.db.WithContext(ctx).Where("user_id = ?", uid).Delete(&Activity{})
+	before := time.Date(2025, 1, 5, 7, 0, 0, 0, time.UTC)
+	runs := []struct {
+		days int
+		pace float64
+		dist float64
+	}{
+		{-1, 300, 21_000}, {-10, 294, 30_000}, {-30, 280, 25_000}, {-100, 246, 42_000}, // window
+		{-200, 240, 42_000}, // outside the 180d lookback
+		{-2, 200, 10_000},   // too short to count
+	}
+	for i, run := range runs {
+		activity := Activity{UserID: uid, LabelID: fmt.Sprintf("run-%d", i), SportType: 100, Sport: strptr("run_outdoor"),
+			DistanceM: fptr(run.dist), AvgPaceSKm: fptr(run.pace), Provider: "test", SyncedAt: time.Now().UTC(),
+			Date: before.AddDate(0, 0, run.days)}
+		if err := st.UpsertActivity(ctx, &activity, nil, nil, nil); err != nil {
+			t.Fatalf("upsert %d: %v", i, err)
+		}
+	}
+
+	baseline, err := st.UserPaceBaseline(ctx, uid, before, 180*24*time.Hour, 3)
+	if err != nil {
+		t.Fatalf("pace baseline: %v", err)
+	}
+	if baseline == nil {
+		t.Fatal("baseline = nil, want a computed distribution")
+	}
+	if baseline.Count != 4 {
+		t.Fatalf("sample count = %d, want 4 (window + distance filters)", baseline.Count)
+	}
+	if baseline.MedianPaceSKm != (280+294)/2.0 {
+		t.Fatalf("median pace = %v, want 287 (even-count mean of middle two)", baseline.MedianPaceSKm)
+	}
+	if baseline.BestPaceSKm != 246 {
+		t.Fatalf("best pace = %v, want 246", baseline.BestPaceSKm)
+	}
+
+	thin, err := st.UserPaceBaseline(ctx, uid, before, 3*24*time.Hour, 3)
+	if err != nil || thin != nil {
+		t.Fatalf("thin window baseline = (%+v, %v), want nil below min samples", thin, err)
 	}
 }
