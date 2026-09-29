@@ -218,6 +218,10 @@ type Config struct {
 	// endpoints (e.g. in tests).
 	RaceContentStore RaceContentStore
 
+	// User-facing race catalog (issue #390): published-only reads for the
+	// 小程序 race center. Leave zero to run without the endpoints.
+	RaceCatalogStore RaceCatalogStore
+
 	// CityAIDraft configures the AI city-content draft generator (issue #332).
 	// Leave zero to keep the ai-draft endpoint answering 501
 	// ai_draft_not_configured.
@@ -287,6 +291,7 @@ type Service struct {
 	raceFavorites   *raceFavoriteRoutes
 	racePlans       *racePlanRoutes
 	raceContent     *raceContentRoutes
+	raceCatalog     *raceCatalogRoutes
 
 	auth           *Authenticator
 	corsOrigins    []string
@@ -345,6 +350,7 @@ func NewService(cfg Config) *Service {
 		raceFavorites:           newRaceFavoriteRoutes(cfg.RaceFavoriteStore, log),
 		racePlans:               newRacePlanRoutes(cfg.RacePlanStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
+		raceCatalog:             newRaceCatalogRoutes(cfg.RaceCatalogStore, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
 		swaggerEnabled:          cfg.SwaggerEnabled,
@@ -433,6 +439,10 @@ func (s *Service) Router() *gin.Engine {
 	authed.GET("/api/pipelines/:run_id", s.getPipelineRun)
 	authed.GET("/api/users/:user_id/pipelines", s.listUserPipelines)
 	authed.POST("/api/:user/sync", s.syncUser)
+	// User-facing race catalog (issue #390): published-only reads for the
+	// 小程序 race center, on the default-deny group — the admin tier reaches
+	// the same rows through /api/admin/races.
+	s.raceCatalog.register(authed)
 	s.users.register(authed)
 	s.activities.register(authed)
 	s.teams.register(authed)

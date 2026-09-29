@@ -231,6 +231,7 @@ func runAPI() error {
 		RaceFavoriteStore:       store,
 		RacePlanStore:           store,
 		RaceContentStore:        store,
+		RaceCatalogStore:        store,
 		RaceItemGeocoder:        newAMapGeocoder(cfg.AMap),
 		CityAIDraft: api.CityAIDraftConfig{
 			Endpoint: cfg.CityAIDraft.Endpoint,

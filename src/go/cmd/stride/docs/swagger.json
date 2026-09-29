@@ -1,7 +1,10 @@
 {
     "swagger": "2.0",
     "info": {
-        "contact": {}
+        "description": "HTTP API fronting the STRIDE worker: create and track async jobs and pipeline runs, and manage user profile, onboarding, and watch-provider login.",
+        "title": "STRIDE API",
+        "contact": {},
+        "version": "1.0"
     },
     "paths": {
         "/api/admin/async-runs": {
@@ -1961,6 +1964,139 @@
                 }
             }
         },
+        "/api/race-calendar": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "User tier only. Returns a page of published races ordered by race date, filtered by year (defaults to the current Shanghai year), optional item type (via the race's 项目 rows), optional city, and the upcoming scope. scope=upcoming (the default) keeps only races with race_date \u003e= today (Shanghai); scope=all returns the whole year — the year-switching view of history. Each row carries the requesting user's favorited star state.",
+                "tags": [
+                    "races"
+                ],
+                "summary": "List published races",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "4-digit year (defaults to the current Shanghai year)",
+                        "name": "year",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Race type token (Marathon / HalfMarathon / {n}Km…), matched against the race's items",
+                        "name": "type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "City (race_calendar.city spelling, e.g. 厦门市)",
+                        "name": "city",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "upcoming (default) or all",
+                        "name": "scope",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page (1-based, default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 20, max 100)",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.userRaceListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/race-calendar/{race_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "User tier only. Returns a published race's detail: the event's public fields and signup/packet-pickup sections, its 项目 rows with the twelve per-distance content columns, and the city introduction (null when unmaintained). Unpublished or missing races both answer 404, so an unpublished row's existence is not leaked.",
+                "tags": [
+                    "races"
+                ],
+                "summary": "Get a published race",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Race id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.userRaceDetailDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/readyz/body-composition": {
             "get": {
                 "description": "Returns the static route contract required before the Web BFF enables its Go body-composition route flags. No authentication is required and no user data is returned.",
@@ -2525,6 +2661,264 @@
                         "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/api.validationErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/race-favorites": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the ids of the current user's favorited races that are still published, newest favorite first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "race-favorites"
+                ],
+                "summary": "List favorited race ids",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceFavoritesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/race-favorites/{race_id}/toggle": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Toggles the current user's favorite mark on one published race and returns the resulting state.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "race-favorites"
+                ],
+                "summary": "Toggle a race favorite",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Race id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceFavoriteToggleResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/race-plans": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the current user's race plans with a compact race projection, ordered by race date ascending. Plans whose race is unpublished or deleted carry offboarded=true (已下架 placeholder); lost plans on such races are omitted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "race-plans"
+                ],
+                "summary": "List my race plans",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.racePlansResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/race-plans/{race_id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Upserts the current user's plan (报名项目 + 状态) for one published race. Absent hotel/transit keep their stored values.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "race-plans"
+                ],
+                "summary": "Create or update a race plan",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Race id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Plan fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.racePlanUpsertRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.racePlanUpsertResponse"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.racePlanUpsertResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.validationErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes the current user's plan for one race.",
+                "tags": [
+                    "race-plans"
+                ],
+                "summary": "Delete a race plan",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Race id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
                         }
                     },
                     "500": {
@@ -5281,6 +5675,61 @@
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/{user}/races": {
+            "get": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the half-marathon and marathon race efforts the race-detection pipeline confirmed from synced activities, newest first, with name/date/distance/duration/pace/HR joined from the canonical activity rows. A user caller may only read their own races; an internal caller may read any user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "races"
+                ],
+                "summary": "List a user's confirmed races",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.racesResponse"
                         }
                     },
                     "401": {
@@ -8624,6 +9073,28 @@
                 }
             }
         },
+        "api.raceFavoriteToggleResponse": {
+            "type": "object",
+            "properties": {
+                "favorited": {
+                    "type": "boolean"
+                },
+                "race_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.raceFavoritesResponse": {
+            "type": "object",
+            "properties": {
+                "race_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
         "api.raceItemContentDTO": {
             "type": "object",
             "properties": {
@@ -8740,6 +9211,189 @@
                 },
                 "total_ascent_m": {
                     "type": "integer"
+                }
+            }
+        },
+        "api.raceItemDTO": {
+            "type": "object",
+            "properties": {
+                "ascent_m": {
+                    "type": "number"
+                },
+                "avg_hr": {
+                    "type": "integer"
+                },
+                "avg_pace_s_km": {
+                    "type": "number"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "distance_band": {
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "distance_m": {
+                    "type": "number"
+                },
+                "duration_fmt": {
+                    "type": "string"
+                },
+                "duration_s": {
+                    "type": "number"
+                },
+                "label_id": {
+                    "type": "string"
+                },
+                "max_hr": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pace_fmt": {
+                    "type": "string"
+                },
+                "sport_name": {
+                    "type": "string"
+                },
+                "thumb_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.racePlanDTO": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "hotel": {
+                    "type": "boolean"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "offboarded": {
+                    "type": "boolean"
+                },
+                "race": {
+                    "$ref": "#/definitions/api.racePlanRaceDTO"
+                },
+                "race_id": {
+                    "type": "integer"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "transit": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.racePlanRaceDTO": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "province": {
+                    "type": "string"
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "wa_label": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.racePlanUpsertRequest": {
+            "type": "object",
+            "required": [
+                "item_type",
+                "state"
+            ],
+            "properties": {
+                "hotel": {
+                    "type": "boolean"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "transit": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.racePlanUpsertResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "hotel": {
+                    "type": "boolean"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "race_id": {
+                    "type": "integer"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "transit": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.racePlansResponse": {
+            "type": "object",
+            "properties": {
+                "plans": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.racePlanDTO"
+                    }
+                }
+            }
+        },
+        "api.racesResponse": {
+            "type": "object",
+            "properties": {
+                "races": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.raceItemDTO"
+                    }
+                },
+                "user_id": {
+                    "type": "string"
                 }
             }
         },
@@ -9275,6 +9929,26 @@
                 }
             }
         },
+        "api.userCityContentDTO": {
+            "type": "object",
+            "properties": {
+                "attractions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.CityAttraction"
+                    }
+                },
+                "city": {
+                    "type": "string"
+                },
+                "intro": {
+                    "$ref": "#/definitions/storage.CityIntro"
+                },
+                "province": {
+                    "type": "string"
+                }
+            }
+        },
         "api.userPipelinesResponse": {
             "type": "object",
             "properties": {
@@ -9283,6 +9957,205 @@
                     "items": {
                         "$ref": "#/definitions/api.runStateResponse"
                     }
+                }
+            }
+        },
+        "api.userRaceDetailDTO": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string"
+                },
+                "city_content": {
+                    "$ref": "#/definitions/api.userCityContentDTO"
+                },
+                "favorited": {
+                    "description": "Favorited is whether the requesting user stars this race (race_favorite).\nThe toggle itself is #391; this read is what lights up the star state.",
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.userRaceItemDTO"
+                    }
+                },
+                "label": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "packet_pickup": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RacePacketPickup"
+                    }
+                },
+                "province": {
+                    "type": "string"
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "race_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "signup_channels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceSignupChannel"
+                    }
+                },
+                "signup_timeline": {
+                    "$ref": "#/definitions/storage.RaceSignupTimeline"
+                },
+                "wa_label": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.userRaceItemDTO": {
+            "type": "object",
+            "properties": {
+                "aid_stations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceAidStation"
+                    }
+                },
+                "course_challenges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceCourseChallenge"
+                    }
+                },
+                "cutoffs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceCutoff"
+                    }
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "elevation_points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RaceElevationPoint"
+                    }
+                },
+                "entry_fee": {
+                    "type": "integer"
+                },
+                "finish_point": {
+                    "$ref": "#/definitions/storage.RacePoint"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "photos": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RacePhoto"
+                    }
+                },
+                "prizes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/storage.RacePrize"
+                    }
+                },
+                "quota": {
+                    "type": "integer"
+                },
+                "reputation": {
+                    "$ref": "#/definitions/storage.RaceReputation"
+                },
+                "route_description": {
+                    "type": "string"
+                },
+                "start_point": {
+                    "$ref": "#/definitions/storage.RacePoint"
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "total_ascent_m": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.userRaceListResponse": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "per_page": {
+                    "type": "integer"
+                },
+                "races": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.userRaceSummaryDTO"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.userRaceSummaryDTO": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string"
+                },
+                "favorited": {
+                    "description": "Favorited is whether the requesting user stars this race (race_favorite).\nThe toggle itself is #391; this read is what lights up the star state.",
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "province": {
+                    "type": "string"
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "race_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "wa_label": {
+                    "type": "string"
                 }
             }
         },
@@ -9515,8 +10388,12 @@
                     "x-nullable": true
                 },
                 "structured": {
-                    "x-nullable": true,
-                    "$ref": "#/definitions/api.structuredWeekResponse"
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/api.structuredWeekResponse"
+                        }
+                    ],
+                    "x-nullable": true
                 },
                 "total_duration_fmt": {
                     "type": "string"
@@ -9908,6 +10785,20 @@
                     "type": "string"
                 }
             }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "\"Bearer \u003cJWT\u003e\" for end-user callers (RS256).",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        },
+        "InternalToken": {
+            "description": "Shared secret for server-to-server callers.",
+            "type": "apiKey",
+            "name": "X-Internal-Token",
+            "in": "header"
         }
     }
 }

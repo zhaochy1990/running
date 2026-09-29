@@ -485,6 +485,73 @@ func (s *Store) ListRaceCalendarEvents(ctx context.Context, f RaceCalendarListFi
 	return rows, total, nil
 }
 
+// ─── user-facing catalog read ────────────────────────────────────────────────
+
+// PublishedRaceFilter bounds the user-facing race-catalog list (issue #390).
+// Unlike RaceCalendarListFilter this query is published-only by construction —
+// the product surface never sees an unpublished row, whatever the caller does.
+//
+// Year is always set (the handler defaults it to the current Shanghai year).
+// FromDate is the 「即将开跑」 floor: when non-empty, only races with
+// race_date >= FromDate are returned (both sides are "2006-01-02" strings, so
+// the comparison is lexicographic and exact); "" means the whole year, the
+// year-switching view of history. Type and City are optional exact matches —
+// Type through the item child table (a race matches when one of its
+// race_calendar_item rows has that type token), City on the event's own city
+// spelling (e.g. 厦门市).
+type PublishedRaceFilter struct {
+	Year     string
+	FromDate string
+	Type     string
+	City     string
+	Page     int
+	PerPage  int
+}
+
+// ListPublishedRaceCalendarEvents returns one page of published races ordered
+// by race_date (then name) plus the total matching count.
+func (s *Store) ListPublishedRaceCalendarEvents(ctx context.Context, f PublishedRaceFilter) ([]RaceCalendarEvent, int64, error) {
+	scope := func() *gorm.DB {
+		from, to := yearDateRange(f.Year)
+		query := s.db.WithContext(ctx).Model(&RaceCalendarEvent{}).
+			Where("published = ?", true).
+			Where("race_date BETWEEN ? AND ?", from, to)
+		if f.FromDate != "" {
+			query = query.Where("race_date >= ?", f.FromDate)
+		}
+		if f.City != "" {
+			query = query.Where("city = ?", f.City)
+		}
+		if f.Type != "" {
+			query = query.Where(
+				"EXISTS (SELECT 1 FROM race_calendar_item i WHERE i.race_event_id = race_calendar.id AND i.type = ?)",
+				f.Type,
+			)
+		}
+		return query
+	}
+
+	var total int64
+	if err := scope().Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("storage: count published race_calendar: %w", err)
+	}
+
+	page, perPage := f.Page, f.PerPage
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 20
+	}
+	var rows []RaceCalendarEvent
+	if err := scope().Order("race_date ASC, name ASC, id ASC").
+		Offset((page - 1) * perPage).Limit(perPage).
+		Find(&rows).Error; err != nil {
+		return nil, 0, fmt.Errorf("storage: list published race_calendar: %w", err)
+	}
+	return rows, total, nil
+}
+
 // GetRaceCalendarEvent returns one race by internal id, or
 // ErrRaceCalendarNotFound.
 func (s *Store) GetRaceCalendarEvent(ctx context.Context, id uint64) (*RaceCalendarEvent, error) {

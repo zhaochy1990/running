@@ -112,3 +112,31 @@ func (s *Store) ListRaceFavoriteIDs(ctx context.Context, userID string) ([]uint6
 	}
 	return ids, nil
 }
+
+// FavoritedRaceEventIDs reports which of eventIDs the user has favorited, as a
+// set for O(1) projection into catalog list rows (issue #390's per-row star
+// state — the page's ids, not the user's whole collection). Unlike
+// ListRaceFavoriteIDs it does not join race_calendar: the caller already
+// fetched published rows, so an offboarded favorite in the batch is impossible
+// and the join would only cost a page-sized nothing. An empty eventIDs returns
+// an empty set without touching the database.
+func (s *Store) FavoritedRaceEventIDs(ctx context.Context, userID string, eventIDs []uint64) (map[uint64]bool, error) {
+	out := make(map[uint64]bool, len(eventIDs))
+	if len(eventIDs) == 0 {
+		return out, nil
+	}
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var ids []uint64
+	if err := s.db.WithContext(ctx).Model(&RaceFavorite{}).
+		Where("user_id = ? AND race_event_id IN ?", uid, eventIDs).
+		Pluck("race_event_id", &ids).Error; err != nil {
+		return nil, fmt.Errorf("storage: list race_favorite: %w", err)
+	}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out, nil
+}
