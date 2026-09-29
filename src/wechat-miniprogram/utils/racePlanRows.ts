@@ -18,19 +18,14 @@ const STATE_LABELS: Record<RacePlanState, string> = {
 /** 状态条的三态流转序列（未中签是独立旁路状态，不进 chips）。 */
 const STATE_FLOW: RacePlanState[] = ['registered', 'won', 'confirmed'];
 
-export function planStateLabel(state: RacePlanState): string {
-  return STATE_LABELS[state];
-}
-
-/** 状态切换后卡片的可变部分：徽章文案/配色类、chips 点亮、未中签引导行可见性。
+/** 状态切换后卡片的可变部分：徽章文案、chips 点亮、未中签引导行可见性。
  *  页面乐观更新与失败回滚都用它算补丁，与 toPlanCard 同源不漂移。 */
 export function statePatch(
   state: RacePlanState,
-): Pick<PlanCardView, 'state' | 'stateLabel' | 'stateClass' | 'steps' | 'lost'> {
+): Pick<PlanCardView, 'state' | 'stateLabel' | 'steps' | 'lost'> {
   return {
     state,
     stateLabel: STATE_LABELS[state],
-    stateClass: state,
     steps: STATE_FLOW.map((s) => ({
       state: s,
       label: STATE_LABELS[s].replace(' · 等抽签', ''),
@@ -52,8 +47,6 @@ export interface PlanCardView {
   itemToken: string;
   state: RacePlanState;
   stateLabel: string;
-  /** wxss 状态色类后缀：registered / won / lost / confirmed */
-  stateClass: string;
   /** 2026/11/01 周日 */
   dateLabel: string;
   city: string;
@@ -70,7 +63,7 @@ export function toPlanCard(plan: RacePlan): PlanCardView {
   const itemLabel = typeAbbr(plan.item_type);
   return {
     raceId: plan.race_id,
-    name: plan.race?.name_cn || plan.race?.name || '该赛事已下架',
+    name: plan.race?.name_cn || plan.race?.name || '已下架赛事',
     itemLabel: itemLabel || '—',
     itemToken: plan.item_type,
     ...statePatch(plan.state),

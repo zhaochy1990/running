@@ -16,7 +16,6 @@ import { userStore } from '../../../store/index';
 
 interface PlansPageData {
   statusBarHeight: number;
-  contentPaddingTop: number;
   loading: boolean;
   error: string;
   cards: PlanCardView[];
@@ -31,9 +30,10 @@ interface PlansPageHandlers {
   onTripTap(e: WechatMiniprogram.TouchEvent): void;
   onRaceNameTap(): void;
   onGoListTap(): void;
-  onBack(): void;
-  /** 进行中的计划写请求（键=race_id），防连点抖动 */
-  _pending: Set<number>;
+  /** 在飞的写请求（键=race_id → 乐观补丁）：防连点，并让并发读不打回乐观态 */
+  _inflight: Map<number, Partial<PlanCardView>>;
+  /** 请求序号，慢响应回来时发现自己已过期则丢弃（同 race-center._fetchSeq） */
+  _fetchSeq: number;
 }
 
 function statusBarHeight(): number {
@@ -44,37 +44,19 @@ function statusBarHeight(): number {
   }
 }
 
-function contentPaddingTopRpx(): number {
-  let statusPx = statusBarHeight();
-  let width = 375;
-  try {
-    const win = wx.getWindowInfo();
-    statusPx = win.statusBarHeight;
-    width = win.windowWidth || 375;
-  } catch {
-    const sys = wx.getSystemInfoSync();
-    statusPx = sys.statusBarHeight;
-    width = sys.windowWidth || 375;
-  }
-  return Math.round((statusPx * 750) / width) + 128 + 24;
-}
-
 Page<PlansPageData, PlansPageHandlers>({
-  _pending: new Set<number>(),
+  _inflight: new Map(),
+  _fetchSeq: 0,
 
   data: {
     statusBarHeight: 0,
-    contentPaddingTop: 232,
     loading: true,
     error: '',
     cards: [],
   },
 
   onLoad() {
-    this.setData({
-      statusBarHeight: statusBarHeight(),
-      contentPaddingTop: contentPaddingTopRpx(),
-    });
+    this.setData({ statusBarHeight: statusBarHeight() });
   },
 
   onShow() {
@@ -90,11 +72,19 @@ Page<PlansPageData, PlansPageHandlers>({
       this.setData({ loading: false, error: '请先登录' });
       return;
     }
+    const seq = (this._fetchSeq += 1);
     this.setData({ loading: true, error: '' });
     try {
       const res = await listRacePlans();
-      this.setData({ loading: false, cards: toPlanCards(res.plans) });
+      if (seq !== this._fetchSeq) return;
+      // GET 若赶在 PUT 落库前返回，快照还是旧态：叠加在飞乐观补丁，不打回 UI
+      const cards = toPlanCards(res.plans).map((c) => {
+        const patch = this._inflight.get(c.raceId);
+        return patch ? { ...c, ...patch } : c;
+      });
+      this.setData({ loading: false, cards });
     } catch (err: unknown) {
+      if (seq !== this._fetchSeq) return;
       const msg = err instanceof Error ? err.message : '加载失败，请稍后重试';
       this.setData({ loading: false, error: msg });
     }
@@ -107,19 +97,21 @@ Page<PlansPageData, PlansPageHandlers>({
     const raceId = Number(e.currentTarget.dataset.raceId);
     const next = e.currentTarget.dataset.state as RacePlanState;
     const card = this.data.cards.find((c) => c.raceId === raceId);
-    if (!card || card.offboarded || card.state === next || this._pending.has(raceId)) return;
+    if (!card || card.offboarded || card.state === next || this._inflight.has(raceId)) return;
 
     const prev = card.state;
-    patchCard(this, raceId, statePatch(next));
-    this._pending.add(raceId);
+    const patch = statePatch(next);
+    this._inflight.set(raceId, patch);
+    patchCard(this, raceId, patch);
     try {
       await updateRacePlan(raceId, { item_type: card.itemToken, state: next });
     } catch {
+      this._inflight.delete(raceId);
       patchCard(this, raceId, statePatch(prev));
       wx.showToast({ title: '状态更新失败', icon: 'none' });
-    } finally {
-      this._pending.delete(raceId);
+      return;
     }
+    this._inflight.delete(raceId);
   },
 
   /** 行程布尔勾选：🏨 酒店 / 🚄 火车票·机票，显式传反值覆盖。 */
@@ -127,11 +119,12 @@ Page<PlansPageData, PlansPageHandlers>({
     const raceId = Number(e.currentTarget.dataset.raceId);
     const field = e.currentTarget.dataset.field as 'hotel' | 'transit';
     const card = this.data.cards.find((c) => c.raceId === raceId);
-    if (!card || card.offboarded || !field || this._pending.has(raceId)) return;
+    if (!card || card.offboarded || !field || this._inflight.has(raceId)) return;
 
     const next = !card[field];
-    patchCard(this, raceId, { [field]: next });
-    this._pending.add(raceId);
+    const patch: Partial<PlanCardView> = { [field]: next };
+    this._inflight.set(raceId, patch);
+    patchCard(this, raceId, patch);
     try {
       await updateRacePlan(raceId, {
         item_type: card.itemToken,
@@ -139,11 +132,12 @@ Page<PlansPageData, PlansPageHandlers>({
         [field]: next,
       });
     } catch {
+      this._inflight.delete(raceId);
       patchCard(this, raceId, { [field]: !next });
       wx.showToast({ title: '保存失败', icon: 'none' });
-    } finally {
-      this._pending.delete(raceId);
+      return;
     }
+    this._inflight.delete(raceId);
   },
 
   onRaceNameTap() {
@@ -151,14 +145,8 @@ Page<PlansPageData, PlansPageHandlers>({
     wx.showToast({ title: '赛事详情即将上线', icon: 'none' });
   },
 
-  /** 未中签「去找替代赛事」/ 空态「去逛逛」：回赛事中心列表页。 */
+  /** 顶栏返回 / 未中签「去找替代赛事」/ 空态「去逛逛」：回赛事中心列表页。 */
   onGoListTap() {
-    wx.navigateBack({
-      fail: () => wx.navigateTo({ url: '/pages/race-center/race-center' }),
-    });
-  },
-
-  onBack() {
     wx.navigateBack({
       fail: () => wx.navigateTo({ url: '/pages/race-center/race-center' }),
     });

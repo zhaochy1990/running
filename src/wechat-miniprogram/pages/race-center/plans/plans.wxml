@@ -2,7 +2,7 @@
   <!-- 自定义顶部栏（同 race-center 深色语言） -->
   <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
     <view class="top-bar__inner">
-      <view class="top-bar__btn" bindtap="onBack">
+      <view class="top-bar__btn" bindtap="onGoListTap">
         <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
       </view>
       <view class="top-bar__title-wrap">
@@ -13,7 +13,7 @@
     </view>
   </view>
 
-  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+  <view class="content" style="padding-top: calc({{statusBarHeight}}px + 152rpx);">
     <!-- 加载态 -->
     <view wx:if="{{loading}}" class="state-card">
       <view class="spinner"></view>
@@ -40,9 +40,9 @@
           <!-- 常规卡 -->
           <view wx:else class="card">
             <view class="card__head">
-              <view class="card__name" data-race-id="{{item.raceId}}" bindtap="onRaceNameTap">{{item.name}}</view>
+              <view class="card__name" bindtap="onRaceNameTap">{{item.name}}</view>
               <text class="badge badge--item">{{item.itemLabel}}</text>
-              <text class="badge badge--state badge--state--{{item.stateClass}}">{{item.stateLabel}}</text>
+              <text class="badge badge--state badge--state--{{item.state}}">{{item.stateLabel}}</text>
             </view>
             <view class="card__meta">{{item.dateLabel}}{{item.city ? ' · ' + item.city : ''}}</view>
 
