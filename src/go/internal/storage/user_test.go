@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -719,5 +720,55 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 	}
 	if n := count(&UserHomeCityHistory{}, "user_id = ?", keptUID); n != 1 {
 		t.Errorf("other user's home city history = %d, want 1", n)
+	}
+}
+
+// TestDeleteUserData_ErrorNamesTable pins the per-table error wrap: when one
+// of the swept deletes fails, the message must name the table. The wrap used
+// tx.Statement.Table, which is empty at the failure site, so errors read
+// "delete user data from : ..." and the failing table was only findable in
+// the wrapped MySQL error—if present at all (deadlock errors carry none).
+func TestDeleteUserData_ErrorNamesTable(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	for _, migrate := range []func(context.Context) error{
+		st.AutoMigrateWatch, // includes the onboarding-compute models
+		st.AutoMigrateUsers,
+		st.AutoMigrateGoals,
+		st.AutoMigrateMasterPlan,
+		st.AutoMigrateWeeklyPlan,
+		st.AutoMigrateWeeklyFeedback,
+		st.AutoMigrateBodyComposition,
+		st.AutoMigrateTeamLikes,
+		st.AutoMigrateScheduledWorkout,
+		st.AutoMigrateRaceFavorites,
+		st.AutoMigrateRacePlans,
+		st.AutoMigrateHomeCity,
+	} {
+		if err := migrate(ctx); err != nil {
+			t.Fatalf("migrate: %v", err)
+		}
+	}
+
+	// Drop one swept table so the per-table delete fails on it; every earlier
+	// table in the sweep exists, so the wrap must point at exactly this one.
+	// Cleanup re-migrates the schema for test runs against a shared database.
+	if err := st.db.Exec("DROP TABLE user_home_city").Error; err != nil {
+		t.Fatalf("drop user_home_city: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := st.db.AutoMigrate(&UserHomeCity{}); err != nil {
+			t.Errorf("restore user_home_city: %v", err)
+		}
+	})
+
+	// No rows needed: the missing table fails the DELETE regardless of the
+	// affected-row count.
+	err := st.DeleteUserData(ctx, uuid.NewString())
+	if err == nil {
+		t.Fatal("DeleteUserData should fail when a swept table is missing")
+	}
+	if !strings.Contains(err.Error(), "delete user data from user_home_city") {
+		t.Fatalf("error does not name the failing table: %v", err)
 	}
 }
