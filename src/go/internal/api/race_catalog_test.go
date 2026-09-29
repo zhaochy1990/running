@@ -255,32 +255,37 @@ func decodeCatalogList(t *testing.T, w *httptest.ResponseRecorder) catalogListBo
 	return body
 }
 
-// seedCatalogRaces seeds a standard published set: an upcoming and a past race
-// in 厦门市, an upcoming race in 杭州市 with only a half-marathon item, and an
-// unpublished draft. Returns (upcomingID, pastID, hangzhouID, unpublishedID).
-// Upcoming dates are today-offsets so the default-scope assertions hold on any
-// run date; the past race may fall in the previous year around New Year, so
+// seedCatalogRaces seeds a standard published set: two same-day upcoming races
+// (厦门 with a marathon item, 杭州 with only a half-marathon item), a past race
+// in 厦门市, and an unpublished draft. Returns (upcomingID, pastID,
+// hangzhouID, unpublishedID).
+//
+// The two upcoming races are dated TODAY, not today+N: a future offset crosses
+// into the next year around New Year and silently breaks the default-scope
+// assertions (the default year is the current Shanghai year), while today
+// always satisfies both the 即将开跑 floor (race_date >= today) and the year
+// window on every run date. The past race may fall in the previous year, so
 // its test queries that race's own year.
 func seedCatalogRaces(t *testing.T, store *fakeRaceCatalogStore) (uint64, uint64, uint64, uint64) {
 	t.Helper()
-	today := timefmt.ShanghaiToday()
+	today := timefmt.ShanghaiToday().Format("2006-01-02")
 	upcoming := store.seedEvent(storage.RaceCalendarEvent{
-		Source: "中国田协", Name: "Upcoming Race", RaceDate: today.AddDate(0, 0, 30).Format("2006-01-02"),
+		Source: "中国田协", Name: "Upcoming Race", RaceDate: today,
 		Country: "CHN", City: strPtrAPITest("厦门市"), Label: strPtrAPITest("A"),
 		RaceTypes: strPtrAPITest(`["Marathon"]`), Published: true,
 	})
 	past := store.seedEvent(storage.RaceCalendarEvent{
-		Source: "中国田协", Name: "Past Race", RaceDate: today.AddDate(0, 0, -30).Format("2006-01-02"),
+		Source: "中国田协", Name: "Past Race", RaceDate: timefmt.ShanghaiToday().AddDate(0, 0, -30).Format("2006-01-02"),
 		Country: "CHN", City: strPtrAPITest("厦门市"),
 		RaceTypes: strPtrAPITest(`["Marathon"]`), Published: true,
 	})
 	hangzhou := store.seedEvent(storage.RaceCalendarEvent{
-		Source: "中国田协", Name: "Hangzhou Race", RaceDate: today.AddDate(0, 0, 60).Format("2006-01-02"),
+		Source: "中国田协", Name: "Hangzhou Race", RaceDate: today,
 		Country: "CHN", City: strPtrAPITest("杭州市"),
 		RaceTypes: strPtrAPITest(`["HalfMarathon"]`), Published: true,
 	})
 	unpublished := store.seedEvent(storage.RaceCalendarEvent{
-		Source: "中国田协", Name: "Draft Race", RaceDate: today.AddDate(0, 0, 45).Format("2006-01-02"),
+		Source: "中国田协", Name: "Draft Race", RaceDate: today,
 		Country: "CHN", City: strPtrAPITest("厦门市"), Published: false,
 	})
 	store.seedItem(storage.RaceCalendarItem{RaceEventID: upcoming.ID, Name: "马拉松", Type: "Marathon"})
@@ -391,9 +396,10 @@ func TestRaceCatalog_ListPagination(t *testing.T) {
 	if body.Total != 2 || body.Page != 2 || body.PerPage != 1 {
 		t.Fatalf("envelope = total %d page %d per_page %d", body.Total, body.Page, body.PerPage)
 	}
-	// Ordered by race_date: the second page is the later race.
-	if len(body.Races) != 1 || body.Races[0].ID != hangzhouID {
-		t.Fatalf("page 2 expected %d, got %v", hangzhouID, body.Races)
+	// Both seeds share today's date, so the tie breaks on name: the second
+	// page is the later name ("Upcoming Race" > "Hangzhou Race").
+	if len(body.Races) != 1 || body.Races[0].ID != upcomingID {
+		t.Fatalf("page 2 expected %d, got %v", upcomingID, body.Races)
 	}
 	if upcomingID == hangzhouID {
 		t.Fatalf("fixture error: ids collide")

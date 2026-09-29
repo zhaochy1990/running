@@ -40,7 +40,7 @@ func TestPublishedList(t *testing.T) {
 	// Year 2031 fixture: three published races (one before the floor, two
 	// after), one unpublished, one published in the neighbouring year.
 	p1 := seed(RaceCalendarEvent{Source: src, Name: "Early Race", RaceDate: "2031-03-10", Country: "CHN", City: strPtr("厦门市"), Published: true})
-	unpub := seed(RaceCalendarEvent{Source: src, Name: "Draft Race", RaceDate: "2031-04-01", Country: "CHN", City: strPtr("厦门市"), Published: false})
+	seed(RaceCalendarEvent{Source: src, Name: "Draft Race", RaceDate: "2031-04-01", Country: "CHN", City: strPtr("厦门市"), Published: false})
 	p3 := seed(RaceCalendarEvent{Source: src, Name: "Hangzhou Race", RaceDate: "2031-06-10", Country: "CHN", City: strPtr("杭州市"), Published: true})
 	p2 := seed(RaceCalendarEvent{Source: src, Name: "Late Race", RaceDate: "2031-06-20", Country: "CHN", City: strPtr("厦门市"), Published: true})
 	seed(RaceCalendarEvent{Source: src, Name: "Other Year Race", RaceDate: "2030-12-31", Country: "CHN", City: strPtr("厦门市"), Published: true})
@@ -62,7 +62,8 @@ func TestPublishedList(t *testing.T) {
 	}
 
 	// Whole year: published only, ordered by race_date (the unpublished row
-	// and the other-year row never surface).
+	// and the other-year row never surface — the exact-order assertion below
+	// pins the full membership).
 	rows, total, err := st.ListPublishedRaceCalendarEvents(ctx, PublishedRaceFilter{Year: "2031"})
 	if err != nil {
 		t.Fatalf("list year: %v", err)
@@ -114,7 +115,6 @@ func TestPublishedList(t *testing.T) {
 		t.Fatalf("page 2 = %v (total %d), want [%d]", ids(rows), total, p2.ID)
 	}
 
-	_ = unpub
 }
 
 // TestFavoritedRaceEventIDs covers the star-state lookup, including the empty

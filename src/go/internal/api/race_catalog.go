@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -165,6 +166,16 @@ func newUserRaceItemDTO(row storage.RaceCalendarItem) userRaceItemDTO {
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
+// writeRaceCatalogReadError maps storage errors for the read-only catalog via
+// the shared writeRaceCalendarError mapping (nil logger silences its
+// "write failed" line), then logs the failure with read wording.
+func writeRaceCatalogReadError(c *gin.Context, log *zap.Logger, err error) {
+	if log != nil && !errors.Is(err, storage.ErrRaceCalendarNotFound) {
+		log.Error("race catalog read failed", zap.Error(err))
+	}
+	writeRaceCalendarError(c, nil, err)
+}
+
 // list returns one page of published races for the race center (issue #390).
 //
 //	@Summary		List published races
@@ -193,7 +204,7 @@ func (r *raceCatalogRoutes) list(c *gin.Context) {
 	}
 	rows, total, err := r.store.ListPublishedRaceCalendarEvents(c.Request.Context(), filter)
 	if err != nil {
-		writeRaceCalendarError(c, r.log, err)
+		writeRaceCatalogReadError(c, r.log, err)
 		return
 	}
 	ids := make([]uint64, len(rows))
@@ -202,7 +213,7 @@ func (r *raceCatalogRoutes) list(c *gin.Context) {
 	}
 	favorited, err := r.store.FavoritedRaceEventIDs(c.Request.Context(), userID, ids)
 	if err != nil {
-		writeRaceCalendarError(c, r.log, err)
+		writeRaceCatalogReadError(c, r.log, err)
 		return
 	}
 	races := make([]userRaceSummaryDTO, 0, len(rows))
@@ -221,9 +232,13 @@ func (r *raceCatalogRoutes) list(c *gin.Context) {
 // resolving the defaults: year → the current Shanghai year, scope → upcoming,
 // page → 1, per_page → 20 (max 100).
 func bindPublishedRaceFilter(c *gin.Context) (storage.PublishedRaceFilter, bool) {
+	// One "today" for both the default year and the upcoming floor: two calls
+	// could straddle Shanghai midnight and pair last year's window with next
+	// year's floor.
+	today := timefmt.ShanghaiToday()
 	year := c.Query("year")
 	if year == "" {
-		year = strconv.Itoa(timefmt.ShanghaiToday().Year())
+		year = strconv.Itoa(today.Year())
 	} else if !isFourDigitYear(year) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_year"})
 		return storage.PublishedRaceFilter{}, false
@@ -232,12 +247,15 @@ func bindPublishedRaceFilter(c *gin.Context) (storage.PublishedRaceFilter, bool)
 	fromDate := ""
 	switch scope {
 	case "upcoming":
-		fromDate = timefmt.ShanghaiToday().Format("2006-01-02")
+		fromDate = today.Format("2006-01-02")
 	case "all":
 	default:
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_scope"})
 		return storage.PublishedRaceFilter{}, false
 	}
+	// Unlike the admin list (which 400s on a bad page), the user surface
+	// clamps silently: a 小程序 client should never hard-fail over a page
+	// number it computed itself.
 	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if err != nil || page < 1 {
 		page = 1
@@ -283,7 +301,7 @@ func (r *raceCatalogRoutes) detail(c *gin.Context) {
 	}
 	row, err := r.store.GetRaceCalendarEvent(c.Request.Context(), id)
 	if err != nil {
-		writeRaceCalendarError(c, r.log, err)
+		writeRaceCatalogReadError(c, r.log, err)
 		return
 	}
 	if !row.Published {
@@ -294,12 +312,12 @@ func (r *raceCatalogRoutes) detail(c *gin.Context) {
 	}
 	items, err := r.store.ListRaceCalendarItems(c.Request.Context(), row.ID)
 	if err != nil {
-		writeRaceCalendarError(c, r.log, err)
+		writeRaceCatalogReadError(c, r.log, err)
 		return
 	}
 	favorited, err := r.store.FavoritedRaceEventIDs(c.Request.Context(), userID, []uint64{row.ID})
 	if err != nil {
-		writeRaceCalendarError(c, r.log, err)
+		writeRaceCatalogReadError(c, r.log, err)
 		return
 	}
 	itemDTOs := make([]userRaceItemDTO, 0, len(items))
@@ -316,7 +334,7 @@ func (r *raceCatalogRoutes) detail(c *gin.Context) {
 	if row.City != nil {
 		city, err := r.store.GetRaceCityContent(c.Request.Context(), *row.City)
 		if err != nil {
-			writeRaceCalendarError(c, r.log, err)
+			writeRaceCatalogReadError(c, r.log, err)
 			return
 		}
 		if city != nil {
