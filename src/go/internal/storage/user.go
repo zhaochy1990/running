@@ -265,7 +265,7 @@ var userOwnedDeletionModels = []any{
 	&AbilitySnapshot{}, &ActivityAbility{}, &Vo2MaxPB{},
 	&RaceFavorite{}, &RacePlan{},
 	&ScheduledWorkout{}, &WatchSchedule{}, &BodyCompositionScanRecord{},
-	&UserOnboarding{}, &UserProfile{}, &InjuryRecord{}, &RaceFavorite{},
+	&UserOnboarding{}, &UserProfile{}, &InjuryRecord{},
 }
 
 // DeleteUserData removes every row owned by userID in one transaction. The

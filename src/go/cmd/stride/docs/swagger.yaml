@@ -1802,6 +1802,20 @@ definitions:
           $ref: '#/definitions/storage.RaceWeatherWindow'
         type: array
     type: object
+  api.raceFavoriteToggleResponse:
+    properties:
+      favorited:
+        type: boolean
+      race_id:
+        type: integer
+    type: object
+  api.raceFavoritesResponse:
+    properties:
+      race_ids:
+        items:
+          type: integer
+        type: array
+    type: object
   api.raceItemContentDTO:
     properties:
       aid_stations:
@@ -1883,6 +1897,126 @@ definitions:
         $ref: '#/definitions/storage.RacePoint'
       total_ascent_m:
         type: integer
+    type: object
+  api.raceItemDTO:
+    properties:
+      ascent_m:
+        type: number
+      avg_hr:
+        type: integer
+      avg_pace_s_km:
+        type: number
+      date:
+        type: string
+      distance_band:
+        type: string
+      distance_km:
+        type: number
+      distance_m:
+        type: number
+      duration_fmt:
+        type: string
+      duration_s:
+        type: number
+      label_id:
+        type: string
+      max_hr:
+        type: integer
+      name:
+        type: string
+      pace_fmt:
+        type: string
+      sport_name:
+        type: string
+      thumb_url:
+        type: string
+    type: object
+  api.racePlanDTO:
+    properties:
+      created_at:
+        type: string
+      hotel:
+        type: boolean
+      item_type:
+        type: string
+      offboarded:
+        type: boolean
+      race:
+        $ref: '#/definitions/api.racePlanRaceDTO'
+      race_id:
+        type: integer
+      state:
+        type: string
+      transit:
+        type: boolean
+      updated_at:
+        type: string
+    type: object
+  api.racePlanRaceDTO:
+    properties:
+      city:
+        type: string
+      id:
+        type: integer
+      label:
+        type: string
+      name:
+        type: string
+      name_cn:
+        type: string
+      province:
+        type: string
+      race_date:
+        type: string
+      wa_label:
+        type: string
+    type: object
+  api.racePlanUpsertRequest:
+    properties:
+      hotel:
+        type: boolean
+      item_type:
+        type: string
+      state:
+        type: string
+      transit:
+        type: boolean
+    required:
+    - item_type
+    - state
+    type: object
+  api.racePlanUpsertResponse:
+    properties:
+      created_at:
+        type: string
+      hotel:
+        type: boolean
+      item_type:
+        type: string
+      race_id:
+        type: integer
+      state:
+        type: string
+      transit:
+        type: boolean
+      updated_at:
+        type: string
+    type: object
+  api.racePlansResponse:
+    properties:
+      plans:
+        items:
+          $ref: '#/definitions/api.racePlanDTO'
+        type: array
+    type: object
+  api.racesResponse:
+    properties:
+      races:
+        items:
+          $ref: '#/definitions/api.raceItemDTO'
+        type: array
+      user_id:
+        type: string
     type: object
   api.runStateResponse:
     properties:
@@ -3993,6 +4127,43 @@ paths:
       summary: Race prediction history
       tags:
       - metrics
+  /api/{user}/races:
+    get:
+      description: Returns the half-marathon and marathon race efforts the race-detection
+        pipeline confirmed from synced activities, newest first, with name/date/distance/duration/pace/HR
+        joined from the canonical activity rows. A user caller may only read their
+        own races; an internal caller may read any user.
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.racesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: List a user's confirmed races
+      tags:
+      - races
   /api/{user}/stride/training-load:
     get:
       description: Returns the most recent `days` daily training-load rows (oldest
@@ -6464,6 +6635,175 @@ paths:
       summary: Save the current user's basic profile
       tags:
       - users
+  /api/users/me/race-favorites:
+    get:
+      description: Returns the ids of the current user's favorited races that are
+        still published, newest favorite first.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.raceFavoritesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List favorited race ids
+      tags:
+      - race-favorites
+  /api/users/me/race-favorites/{race_id}/toggle:
+    post:
+      description: Toggles the current user's favorite mark on one published race
+        and returns the resulting state.
+      parameters:
+      - description: Race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.raceFavoriteToggleResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Toggle a race favorite
+      tags:
+      - race-favorites
+  /api/users/me/race-plans:
+    get:
+      description: Returns the current user's race plans with a compact race projection,
+        ordered by race date ascending. Plans whose race is unpublished or deleted
+        carry offboarded=true (已下架 placeholder); lost plans on such races are omitted.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.racePlansResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List my race plans
+      tags:
+      - race-plans
+  /api/users/me/race-plans/{race_id}:
+    delete:
+      description: Deletes the current user's plan for one race.
+      parameters:
+      - description: Race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a race plan
+      tags:
+      - race-plans
+    put:
+      consumes:
+      - application/json
+      description: Upserts the current user's plan (报名项目 + 状态) for one published race.
+        Absent hotel/transit keep their stored values.
+      parameters:
+      - description: Race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      - description: Plan fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.racePlanUpsertRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.racePlanUpsertResponse'
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.racePlanUpsertResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.validationErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create or update a race plan
+      tags:
+      - race-plans
   /api/users/me/training-goal:
     get:
       produces:

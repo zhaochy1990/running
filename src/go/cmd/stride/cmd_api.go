@@ -139,11 +139,6 @@ func runAPI() error {
 	if err := store.AutoMigrateRaceContent(ctx); err != nil {
 		return err
 	}
-	// race_favorite backs the user-facing race catalog's star state (issue
-	// #390 read; #391 adds the toggle write). Same API-only migration rule.
-	if err := store.AutoMigrateRaceFavorite(ctx); err != nil {
-		return err
-	}
 
 	// --- RabbitMQ (publisher only; no consumer) ---
 	topo := mq.Topology{Work: cfg.Queues.Work, Retry: cfg.Queues.Retry, Poison: cfg.Queues.Poison}

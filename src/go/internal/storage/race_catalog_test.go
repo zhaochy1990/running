@@ -13,7 +13,7 @@ func migrateRaceCatalog(t *testing.T, st *Store) {
 	t.Helper()
 	migrateRaceCalendar(t, st)
 	ctx := context.Background()
-	if err := st.AutoMigrateRaceFavorite(ctx); err != nil {
+	if err := st.AutoMigrateRaceFavorites(ctx); err != nil {
 		t.Fatalf("automigrate race_favorite: %v", err)
 	}
 	if err := st.db.WithContext(ctx).Exec("DELETE FROM race_favorite").Error; err != nil {
