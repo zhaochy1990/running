@@ -71,6 +71,7 @@ function contentPaddingTopRpx(): number {
 const MENU_ROWS: MenuRow[] = [
   { key: 'plan', title: '我的训练计划', iconPath: '/assets/icons/calendar_month.svg' },
   { key: 'training-status', title: '训练状态', iconPath: '/assets/icons/trend_up.svg' },
+  { key: 'race-center', title: '赛事中心', iconPath: '/assets/icons/sprint.svg' },
   { key: 'my-races', title: '我的比赛', iconPath: '/assets/icons/flag.svg' },
   { key: 'watch', title: '手表管理', iconPath: '/assets/icons/schedule.svg' },
 ];
@@ -145,6 +146,10 @@ Page<ProfilePageData, ProfilePageHandlers>({
     const key = e.currentTarget.dataset.key as string;
     if (key === 'training-status') {
       wx.navigateTo({ url: '/pages/training-status/training-status' });
+      return;
+    }
+    if (key === 'race-center') {
+      wx.navigateTo({ url: '/pages/race-center/race-center' });
       return;
     }
     if (key === 'my-races') {
