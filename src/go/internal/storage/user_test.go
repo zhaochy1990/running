@@ -497,6 +497,8 @@ func TestDeleteUserData_RemovesOwnedRowsAndPreservesOtherUsers(t *testing.T) {
 		st.AutoMigrateBodyComposition,
 		st.AutoMigrateTeamLikes,
 		st.AutoMigrateScheduledWorkout,
+		st.AutoMigrateRaceFavorites,
+		st.AutoMigrateRacePlans,
 	} {
 		if err := migrate(ctx); err != nil {
 			t.Fatalf("migrate: %v", err)
@@ -569,6 +571,8 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 		st.AutoMigrateWeeklyFeedback,
 		st.AutoMigrateTeamLikes,
 		st.AutoMigrateScheduledWorkout,
+		st.AutoMigrateRaceFavorites,
+		st.AutoMigrateRacePlans,
 	} {
 		if err := migrate(ctx); err != nil {
 			t.Fatalf("migrate: %v", err)
@@ -600,6 +604,12 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 		}
 		if err := st.db.Create(&WeeklyFeedback{UserID: uid, WeekStart: "2026-01-05", ContentMD: "ok", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
 			t.Fatalf("seed weekly feedback: %v", err)
+		}
+		if err := st.db.Create(&RaceFavorite{UserID: uid, RaceEventID: 1, CreatedAt: now}).Error; err != nil {
+			t.Fatalf("seed race favorite: %v", err)
+		}
+		if err := st.db.Create(&RacePlan{UserID: uid, RaceEventID: 1, ItemType: "Marathon", State: "registered", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
+			t.Fatalf("seed race plan: %v", err)
 		}
 	}
 
@@ -663,6 +673,12 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 	}
 	if n := count(&WeeklyFeedback{}, "user_id = ?", deletedUID); n != 0 {
 		t.Errorf("weekly_feedback rows survived: %d", n)
+	}
+	if n := count(&RaceFavorite{}, "user_id = ?", deletedUID); n != 0 {
+		t.Errorf("race_favorite rows survived: %d", n)
+	}
+	if n := count(&RacePlan{}, "user_id = ?", deletedUID); n != 0 {
+		t.Errorf("race_plan rows survived: %d", n)
 	}
 	if n := count(&BodyCompositionScanRecord{}, "user_id = ?", deletedUID); n != 0 {
 		t.Errorf("body composition scans survived: %d", n)

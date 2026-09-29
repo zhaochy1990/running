@@ -263,6 +263,7 @@ var userOwnedDeletionModels = []any{
 	&DailyHealth{}, &Dashboard{}, &DailyHRV{}, &RacePrediction{}, &SyncMeta{},
 	&ProviderCredential{}, &WeeklyPlan{}, &WeeklyFeedback{}, &MasterPlan{}, &RaceGoal{},
 	&AbilitySnapshot{}, &ActivityAbility{}, &Vo2MaxPB{},
+	&RaceFavorite{}, &RacePlan{},
 	&ScheduledWorkout{}, &WatchSchedule{}, &BodyCompositionScanRecord{},
 	&UserOnboarding{}, &UserProfile{}, &InjuryRecord{},
 }

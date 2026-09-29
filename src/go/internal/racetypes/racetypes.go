@@ -42,6 +42,22 @@ func DistanceKm(km float64) string {
 	return strconv.FormatFloat(km, 'f', -1, 64) + "Km"
 }
 
+// kmTokenRe matches the "{n}Km" half of the vocabulary (DistanceKm's output
+// space): a plain decimal number, always the capital "Km" suffix.
+var kmTokenRe = regexp.MustCompile(`^\d+(?:\.\d+)?Km$`)
+
+// IsValid reports whether token belongs to this vocabulary: one of the four
+// named kinds (Marathon/HalfMarathon/Other/Unknown) or a "{n}Km" distance
+// token. Callers use it to reject a request body that would otherwise silently
+// invent a new type string.
+func IsValid(token string) bool {
+	switch token {
+	case Marathon, HalfMarathon, Other, Unknown:
+		return true
+	}
+	return kmTokenRe.MatchString(token)
+}
+
 // distanceRe extracts "<number><unit>" from a 中国田协 race-item segment. The
 // unit tolerates the variants observed upstream (公里 / km / KM / Km) and the
 // number tolerates decoration around it ("约5公里", "5公里亲子跑", "欢乐跑（6km）").
