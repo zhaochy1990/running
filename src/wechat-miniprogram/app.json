@@ -10,6 +10,7 @@
     "pages/profile/profile",
     "pages/profile-edit/profile-edit",
     "pages/training-status/training-status",
+    "pages/my-races/my-races",
     "pages/watch/watch",
     "pages/onboarding/onboarding",
     "pages/privacy/privacy",

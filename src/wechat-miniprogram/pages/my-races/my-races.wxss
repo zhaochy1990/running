@@ -1,0 +1,229 @@
+/* ============================================================
+   我的比赛页 —— 深色 STRIDE 主题（与 watch / activities 一致）
+   app.wxss 的全局令牌是浅色主题，深色页需在页面内重定义
+   .card / .card__label / banner / spinner（同 watch 页做法）；
+   .state-card / .empty-card 为 app.wxss 里已是深色的全局类。
+   ============================================================ */
+
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #07080a;
+  display: flex;
+  flex-direction: column;
+}
+
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: #07080a;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.top-bar__inner {
+  height: 128rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.top-bar__btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top-bar__btn--spacer {
+  width: 88rpx;
+}
+
+.top-bar__icon {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+.top-bar__icon--back {
+  transform: rotate(180deg);
+}
+
+.top-bar__title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-bar__title {
+  font-size: 34rpx;
+  line-height: 48rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: #ffb3af;
+}
+
+.top-bar__subtitle {
+  font-size: 20rpx;
+  line-height: 32rpx;
+  color: rgba(225, 191, 188, 0.8);
+}
+
+.content {
+  padding: 0 40rpx 48rpx;
+}
+
+/* ---------- 卡片 ----------
+   app.wxss 的全局 .card 用浅色主题令牌（--color-card: #ffffff），
+   深色页都在页面内重定义暗卡（与 watch / activities 一致）。 */
+
+.card {
+  background: #101111;
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-radius: 24rpx;
+  padding: 32rpx;
+  margin-bottom: 48rpx;
+}
+
+.card__label {
+  font-size: 20rpx;
+  letter-spacing: 2rpx;
+  text-transform: uppercase;
+  color: #9c9c9d;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+/* ---------- 提示条 / 加载（同 watch 页） ---------- */
+
+.banner {
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  font-size: 24rpx;
+  margin-bottom: 32rpx;
+}
+
+.banner--error {
+  background: rgba(255, 99, 99, 0.1);
+  border: 1rpx solid rgba(255, 99, 99, 0.2);
+  color: #ff6363;
+}
+
+.spinner {
+  width: 48rpx;
+  height: 48rpx;
+  border: 4rpx solid rgba(95, 201, 146, 0.3);
+  border-top-color: #5fc992;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- 比赛行 ---------- */
+
+.race {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding: 28rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
+}
+
+.race:last-child {
+  border-bottom: none;
+  padding-bottom: 8rpx;
+}
+
+.race__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.race__head {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 8rpx;
+}
+
+.race__band {
+  font-size: 20rpx;
+  font-weight: 600;
+  line-height: 32rpx;
+  padding: 2rpx 14rpx;
+  border-radius: 8rpx;
+  flex-shrink: 0;
+}
+
+.race__band--marathon {
+  color: #ff8f8f;
+  background: rgba(255, 99, 99, 0.14);
+}
+
+.race__band--half {
+  color: #7ec9a6;
+  background: rgba(95, 201, 146, 0.14);
+}
+
+.race__band--other {
+  color: #c9c3c4;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.race__date {
+  font-size: 22rpx;
+  color: #9c9c9d;
+}
+
+.race__name {
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 40rpx;
+  color: #e3e2e5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.race__meta {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #9c9c9d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.race__meta-dot {
+  flex-shrink: 0;
+}
+
+.race__result {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.race__duration {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #ffb3af;
+  font-variant-numeric: tabular-nums;
+}
+
+.race__duration-label {
+  margin-top: 4rpx;
+  font-size: 18rpx;
+  color: #9c9c9d;
+}

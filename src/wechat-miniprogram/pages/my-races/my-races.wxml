@@ -1,0 +1,64 @@
+<view class="page">
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">我的比赛</view>
+        <view class="top-bar__subtitle">自动识别的参赛经历</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <!-- 内容 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- 加载态 -->
+    <view wx:if="{{loading}}" class="state-card">
+      <view class="spinner"></view>
+      <view class="state-card__text">加载中…</view>
+    </view>
+
+    <block wx:else>
+      <view wx:if="{{error}}" class="banner banner--error">{{error}}</view>
+
+      <!-- 比赛列表 -->
+      <view wx:if="{{rows.length}}" class="card">
+        <view class="card__label">{{summary}}</view>
+        <view
+          wx:for="{{rows}}"
+          wx:key="labelId"
+          class="race"
+          data-id="{{item.labelId}}"
+          bindtap="onRaceTap"
+        >
+          <view class="race__main">
+            <view class="race__head">
+              <view class="race__band race__band--{{item.bandClass}}">{{item.bandLabel}}</view>
+              <view class="race__date">{{item.dateLabel}}</view>
+            </view>
+            <view class="race__name">{{item.name}}</view>
+            <view class="race__meta">
+              <text>{{item.distanceKm}} km</text>
+              <text wx:if="{{item.pace}}" class="race__meta-dot"> · {{item.pace}}</text>
+              <text wx:if="{{item.avgHr}}" class="race__meta-dot"> · {{item.avgHr}} bpm</text>
+              <text wx:if="{{item.ascent}}" class="race__meta-dot"> · 爬升 {{item.ascent}} m</text>
+            </view>
+          </view>
+          <view class="race__result">
+            <view class="race__duration">{{item.duration}}</view>
+            <view class="race__duration-label">净成绩</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 空态 -->
+      <view wx:elif="{{!error}}" class="empty-card">
+        <view class="empty-card__title">还没有识别到比赛</view>
+        <view class="empty-card__sub">同步手表数据后，半马 / 全马比赛会自动出现在这里</view>
+      </view>
+    </block>
+  </view>
+</view>
