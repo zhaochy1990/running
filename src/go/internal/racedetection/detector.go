@@ -226,6 +226,30 @@ type Candidate struct {
 	Trace         []TracePoint     `json:"trace,omitempty"`
 	Location      *LocationContext `json:"location,omitempty"`
 	Pauses        *PauseContext    `json:"pauses,omitempty"`
+	// UserBaseline is the athlete's own long-run pace distribution before the
+	// candidate date, sent to the model so intensity is judged relative to
+	// THIS runner rather than in absolute terms.
+	UserBaseline *PaceBaselineContext `json:"user_baseline,omitempty"`
+	// NearbyLongRunStarts counts the athlete's other half/full-band starts
+	// within the habitual radius of this candidate's start. Go-side evidence
+	// only; never serialized to the model.
+	NearbyLongRunStarts int `json:"-"`
+}
+
+// PaceBaselineContext summarises the athlete's long-run pace distribution
+// strictly before the candidate date. SampleCount guards against thin
+// windows: handlers omit the context below the minimum sample size.
+type PaceBaselineContext struct {
+	SampleCount   int     `json:"样本数"`
+	MedianPaceSKm float64 `json:"中位配速_秒每公里"`
+	BestPaceSKm   float64 `json:"最快配速_秒每公里"`
+}
+
+// LabeledCoordinate pairs a start coordinate with the activity it belongs to,
+// so habitual-start counting can exclude the candidate itself.
+type LabeledCoordinate struct {
+	LabelID    string
+	Coordinate Coordinate
 }
 
 // Classifier asks the model only for semantic evidence. It does not let the

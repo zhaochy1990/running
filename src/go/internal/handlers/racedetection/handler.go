@@ -34,6 +34,9 @@ type Store interface {
 	LinkRaceToCalendarItem(ctx context.Context, userID, labelID string, itemID int64) (bool, error)
 	RacesWithoutCalendarLink(ctx context.Context, userID string) ([]storage.RaceCandidate, error)
 	UpdateRaceCalendarItemStartFromConsensus(ctx context.Context, itemID int64, minUsers int, maxSpreadM float64) (bool, error)
+	LongRunStarts(ctx context.Context, userID string) ([]storage.LongRunStart, error)
+	BackfillActivityStartCoordinates(ctx context.Context, userID string) (int, error)
+	UserPaceBaseline(ctx context.Context, userID string, before time.Time, lookback time.Duration, minSamples int) (*storage.PaceBaseline, error)
 }
 
 // Consensus write-back thresholds for crowd-sourced start points: three
@@ -41,6 +44,13 @@ type Store interface {
 const (
 	consensusMinUsers  = 3
 	consensusMaxSpread = 300.0
+)
+
+// Pace-baseline context window for the model's intensity judgement: 180 days
+// of long runs, omitted below three samples.
+const (
+	paceBaselineLookback = 180 * 24 * time.Hour
+	paceBaselineMinRuns  = 3
 )
 
 type detectionInput struct {
@@ -96,6 +106,12 @@ func newHandler(store Store, raceDetector *detector.Detector, maxConcurrency int
 		} else if labelIDs == nil {
 			labelIDs = []string{}
 		}
+		// Historical rows can predate the start-coordinate cache; fill it from
+		// the timeseries BEFORE reading candidates, so the calendar matcher
+		// and the habitual-start counter see every start.
+		if _, err := store.BackfillActivityStartCoordinates(ctx, j.UserID); err != nil {
+			return "", err
+		}
 		candidates, err := store.RaceCandidates(ctx, j.UserID, labelIDs)
 		if err != nil {
 			return "", err
@@ -113,6 +129,38 @@ func newHandler(store Store, raceDetector *detector.Detector, maxConcurrency int
 		calendarByDate, err := loadCalendarByDate(ctx, store, candidates, rematches)
 		if err != nil {
 			return "", err
+		}
+		var longRunStarts []detector.LabeledCoordinate
+		if len(candidates) > 0 || len(rematches) > 0 {
+			rows, err := store.LongRunStarts(ctx, j.UserID)
+			if err != nil {
+				return "", err
+			}
+			longRunStarts = make([]detector.LabeledCoordinate, 0, len(rows))
+			for _, row := range rows {
+				longRunStarts = append(longRunStarts, detector.LabeledCoordinate{
+					LabelID:    row.LabelID,
+					Coordinate: detector.Coordinate{Latitude: row.Latitude, Longitude: row.Longitude},
+				})
+			}
+		}
+		// The model needs each candidate judged against the runner's own
+		// long-run paces. One baseline per distinct local date, fetched before
+		// the worker pool starts so workers stay read-only.
+		baselines := make(map[string]*detector.PaceBaselineContext)
+		for _, row := range candidates {
+			key := row.Date.In(timefmt.Shanghai).Format("2006-01-02")
+			if _, ok := baselines[key]; ok {
+				continue
+			}
+			baselines[key] = nil
+			if raw, err := store.UserPaceBaseline(ctx, j.UserID, row.Date, paceBaselineLookback, paceBaselineMinRuns); err != nil {
+				logging.Default().Warn("race detection pace baseline unavailable", zap.String("user_id", j.UserID), zap.String("date", key), zap.Error(err))
+			} else if raw != nil {
+				baselines[key] = &detector.PaceBaselineContext{
+					SampleCount: raw.Count, MedianPaceSKm: raw.MedianPaceSKm, BestPaceSKm: raw.BestPaceSKm,
+				}
+			}
 		}
 		var starts []detector.Coordinate
 		var usualArea *detector.UsualActivityArea
@@ -176,6 +224,8 @@ func newHandler(store Store, raceDetector *detector.Detector, maxConcurrency int
 				if classifyErr == nil {
 					candidate := toCandidate(row, points)
 					candidate.Location = detector.LocationContextForTrace(usualArea, candidate.Trace)
+					candidate.NearbyLongRunStarts = nearbyLongRunStarts(row, longRunStarts)
+					candidate.UserBaseline = baselines[row.Date.In(timefmt.Shanghai).Format("2006-01-02")]
 					classification, err := raceDetector.DetectWithUsage(ctx, candidate)
 					isRace, classifyErr = classification.IsRace, err
 					logTokenUsage(logging.Default(), j.UserID, row.LabelID, classification.Usage)
@@ -360,4 +410,17 @@ func logCalendarMatch(log *zap.Logger, userID, labelID string, match *detector.C
 		fields = append(fields, zap.Int("gun_offset_s", *match.GunOffsetS))
 	}
 	log.Info("race detection calendar match", fields...)
+}
+
+// nearbyLongRunStarts counts the athlete's other same-band starts around this
+// candidate's cached start fix; zero when the row carries no usable fix.
+func nearbyLongRunStarts(row storage.RaceCandidate, starts []detector.LabeledCoordinate) int {
+	if row.StartGPSLat == nil || row.StartGPSLon == nil {
+		return 0
+	}
+	start := detector.ValidStartCoordinate(*row.StartGPSLat, *row.StartGPSLon)
+	if start == nil {
+		return 0
+	}
+	return detector.NearbyLongRunStartCount(*start, row.LabelID, starts)
 }
