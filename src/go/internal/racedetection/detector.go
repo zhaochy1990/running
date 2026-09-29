@@ -345,5 +345,30 @@ func (d *Detector) DetectWithUsage(ctx context.Context, candidate Candidate) (Cl
 		return result, err
 	}
 	result.ScoreResult, err = ScoreAssessment(buildScoringEvidence(candidate, assessed.Assessment, route))
-	return result, err
+	if err != nil {
+		return result, err
+	}
+	// Hard gate, not just evidence: an afternoon start cannot be confirmed by
+	// scoring even when the model, heart rate and route all look race-like —
+	// production showed exactly that profile re-confirming deleted rows. A
+	// listed afternoon race still confirms through the calendar matcher, whose
+	// own gun-time window bypasses scoring entirely.
+	if result.IsRace && isAfternoonLocalStart(candidate.Date) {
+		result.IsRace = false
+	}
+	return result, nil
+}
+
+// afternoonStartHour is the local hour at and after which road-race
+// confirmation stops being plausible: every calendar-verified race in
+// production started 06:00–08:30, and the product counts races, not
+// all-out afternoon workouts.
+const afternoonStartHour = 13
+
+func isAfternoonLocalStart(localStart string) bool {
+	start, err := time.Parse("2006-01-02 15:04:05", localStart)
+	if err != nil {
+		return false
+	}
+	return start.Hour() >= afternoonStartHour
 }
