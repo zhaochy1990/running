@@ -499,6 +499,7 @@ func TestDeleteUserData_RemovesOwnedRowsAndPreservesOtherUsers(t *testing.T) {
 		st.AutoMigrateScheduledWorkout,
 		st.AutoMigrateRaceFavorites,
 		st.AutoMigrateRacePlans,
+		st.AutoMigrateHomeCity,
 	} {
 		if err := migrate(ctx); err != nil {
 			t.Fatalf("migrate: %v", err)
@@ -573,6 +574,7 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 		st.AutoMigrateScheduledWorkout,
 		st.AutoMigrateRaceFavorites,
 		st.AutoMigrateRacePlans,
+		st.AutoMigrateHomeCity,
 	} {
 		if err := migrate(ctx); err != nil {
 			t.Fatalf("migrate: %v", err)
@@ -610,6 +612,12 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 		}
 		if err := st.db.Create(&RacePlan{UserID: uid, RaceEventID: 1, ItemType: "Marathon", State: "registered", CreatedAt: now, UpdatedAt: now}).Error; err != nil {
 			t.Fatalf("seed race plan: %v", err)
+		}
+		if err := st.db.Create(&UserHomeCity{UserID: uid, City: "上海市", Confidence: "high", SecondaryJSON: "[]", ComputedAt: now, UpdatedAt: now}).Error; err != nil {
+			t.Fatalf("seed home city: %v", err)
+		}
+		if err := st.db.Create(&UserHomeCityHistory{UserID: uid, ToCity: "上海市", Reason: HomeCityChangeNew, ComputedAt: now}).Error; err != nil {
+			t.Fatalf("seed home city history: %v", err)
 		}
 	}
 
@@ -680,6 +688,12 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 	if n := count(&RacePlan{}, "user_id = ?", deletedUID); n != 0 {
 		t.Errorf("race_plan rows survived: %d", n)
 	}
+	if n := count(&UserHomeCity{}, "user_id = ?", deletedUID); n != 0 {
+		t.Errorf("user_home_city rows survived: %d", n)
+	}
+	if n := count(&UserHomeCityHistory{}, "user_id = ?", deletedUID); n != 0 {
+		t.Errorf("user_home_city_history rows survived: %d", n)
+	}
 	if n := count(&BodyCompositionScanRecord{}, "user_id = ?", deletedUID); n != 0 {
 		t.Errorf("body composition scans survived: %d", n)
 	}
@@ -699,5 +713,11 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 	}
 	if n := count(&TeamLike{}, "owner_user_id = ? OR liker_user_id = ?", keptUID, keptUID); n != 1 {
 		t.Errorf("other user's likes = %d, want 1 (likes involving the deleted user are removed)", n)
+	}
+	if n := count(&UserHomeCity{}, "user_id = ?", keptUID); n != 1 {
+		t.Errorf("other user's home city = %d, want 1", n)
+	}
+	if n := count(&UserHomeCityHistory{}, "user_id = ?", keptUID); n != 1 {
+		t.Errorf("other user's home city history = %d, want 1", n)
 	}
 }
