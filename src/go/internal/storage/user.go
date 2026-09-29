@@ -269,6 +269,16 @@ var userOwnedDeletionModels = []any{
 	&UserHomeCity{}, &UserHomeCityHistory{},
 }
 
+// deletionTableName resolves a deletion model's table name for error
+// messages. tx.Statement.Table is empty at the failure site, so the DeleteUserData
+// wrap would otherwise read "delete user data from : ...".
+func deletionTableName(model any) string {
+	if named, ok := model.(interface{ TableName() string }); ok {
+		return named.TableName()
+	}
+	return fmt.Sprintf("%T", model)
+}
+
 // DeleteUserData removes every row owned by userID in one transaction. The
 // explicit model list is intentional: this schema has no cross-table cascade,
 // and keeping deletion in storage makes new user-owned tables visible in review.
@@ -303,7 +313,7 @@ func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
 
 		for _, model := range models {
 			if err := tx.Where("user_id = ?", uid).Delete(model).Error; err != nil {
-				return fmt.Errorf("storage: delete user data from %s: %w", tx.Statement.Table, err)
+				return fmt.Errorf("storage: delete user data from %s: %w", deletionTableName(model), err)
 			}
 		}
 		// Jobs and runs also carry created_by provenance. Delete either ownership
