@@ -23,6 +23,16 @@ const WA_LABEL_BADGES: Record<string, string> = {
   Elite: '世界田联精英标',
 };
 
+/** 田协认证值 → 徽章全称；null 与未知取值返回 ''（不编造认证）。详情页认证行复用。 */
+export function cnBadgeOf(label: string | null | undefined): string {
+  return label ? CN_LABEL_BADGES[label] || '' : '';
+}
+
+/** 世界田联标牌值 → 徽章全称；null 与未知取值返回 ''。 */
+export function waBadgeOf(waLabel: string | null | undefined): string {
+  return waLabel ? WA_LABEL_BADGES[waLabel] || '' : '';
+}
+
 /** 项目 token → 密表缩写。{n}Km 去掉单位压成 {n}K（10Km→10K、5.2Km→5.2K）。 */
 export function typeAbbr(token: string): string {
   if (token === 'Marathon') return '全马';
@@ -77,8 +87,8 @@ export function toRowView(r: RaceCalendarRace): RaceRowView {
     dateLabel: r.race_date.slice(5).replace('-', '/'),
     weekday: shanghaiWeekdayLabel(r.race_date),
     name: r.name_cn || r.name,
-    cnBadge: r.label ? CN_LABEL_BADGES[r.label] || '' : '',
-    waBadge: r.wa_label ? WA_LABEL_BADGES[r.wa_label] || '' : '',
+    cnBadge: cnBadgeOf(r.label),
+    waBadge: waBadgeOf(r.wa_label),
     typesLabel: abbrs.join('/') || '—',
     city: r.city || '—',
     starred: r.favorited,

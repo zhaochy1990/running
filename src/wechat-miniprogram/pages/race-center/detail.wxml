@@ -1,0 +1,173 @@
+<view class="page">
+  <!-- 自定义顶部栏（同列表页） -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">赛事详情</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <view class="content" style="padding-top: calc({{statusBarHeight}}px + 128rpx);">
+    <!-- 加载态 -->
+    <view wx:if="{{loading}}" class="state-card">
+      <view class="spinner"></view>
+      <view class="state-card__text">加载中…</view>
+    </view>
+
+    <block wx:else>
+      <!-- 错误态（未登录 / 不存在 / 网络失败）：下拉重试 -->
+      <view wx:if="{{error}}" class="banner banner--error">{{error}}</view>
+
+      <block wx:elif="{{view}}">
+        <!-- 头区：名称+星标+双徽章 → 三宫格 → 报名时间轴 → 报名按钮 -->
+        <view class="card head">
+          <view class="head__r1">
+            <view class="head__name">{{view.head.name}}</view>
+            <view class="head__star {{starred ? 'head__star--on' : ''}}" bindtap="onStarTap">{{starred ? '★' : '☆'}}</view>
+          </view>
+          <view wx:if="{{view.head.cnBadge || view.head.waBadge}}" class="head__badges">
+            <text wx:if="{{view.head.cnBadge}}" class="badge badge--cn">{{view.head.cnBadge}}</text>
+            <text wx:if="{{view.head.waBadge}}" class="badge badge--wa">{{view.head.waBadge}}</text>
+          </view>
+
+          <view class="grid">
+            <view class="grid__cell" wx:for="{{view.head.grid}}" wx:key="label">
+              <view class="grid__value {{index === 0 ? 'grid__value--lead' : ''}}">{{item.value}}</view>
+              <view class="grid__label">{{item.label}}</view>
+            </view>
+          </view>
+
+          <view wx:if="{{view.head.timeline.length}}" class="tl">
+            <block wx:for="{{view.head.timeline}}" wx:key="key">
+              <view class="tl__step {{item.done ? 'tl__step--on' : ''}}">
+                <view class="tl__date">{{item.date}}</view>
+                <view class="tl__dot"></view>
+                <view class="tl__label">{{item.label}}</view>
+              </view>
+              <view wx:if="{{index < view.head.timeline.length - 1}}" class="tl__bar {{item.done ? 'tl__bar--on' : ''}}"></view>
+            </block>
+          </view>
+
+          <view wx:if="{{signupAvailable}}" class="signup-btn" bindtap="onSignupTap">报名：{{signupButton}} ▾</view>
+        </view>
+
+        <!-- 三 tab：概要 / 项目 / 出行（#385：无报名 tab，渠道挪入概要） -->
+        <view class="tabs" style="top: calc({{statusBarHeight}}px + 128rpx);">
+          <view class="tabs__item {{tabIndex === 0 ? 'tabs__item--on' : ''}}" data-tab="0" bindtap="onTabTap">概要</view>
+          <view class="tabs__item {{tabIndex === 1 ? 'tabs__item--on' : ''}}" data-tab="1" bindtap="onTabTap">项目</view>
+          <view class="tabs__item {{tabIndex === 2 ? 'tabs__item--on' : ''}}" data-tab="2" bindtap="onTabTap">出行</view>
+        </view>
+
+        <!-- 概要：关键信息 + 报名渠道 -->
+        <block wx:if="{{tabIndex === 0}}">
+          <view class="card">
+            <view class="card__title">关键信息</view>
+            <view class="kv" wx:for="{{view.summary}}" wx:key="k">
+              <view class="kv__k">{{item.k}}</view>
+              <view class="kv__v">{{item.v}}</view>
+            </view>
+          </view>
+          <view class="card">
+            <view class="card__title">报名渠道</view>
+            <block wx:if="{{view.channels.length}}">
+              <view class="ch" wx:for="{{view.channels}}" wx:key="name">
+                <view class="ch__name">{{item.name}}<text class="ch__type">{{item.type}}</text></view>
+                <view wx:if="{{item.copyUrl}}" class="ch__copy" data-url="{{item.copyUrl}}" bindtap="onCopyTap">复制链接</view>
+                <view wx:else class="ch__inline">站内渠道</view>
+              </view>
+            </block>
+            <view wx:else class="card__empty">待公布</view>
+          </view>
+        </block>
+
+        <!-- 项目：每项目一节；赛道·关门空态「待补」 -->
+        <block wx:elif="{{tabIndex === 1}}">
+          <block wx:if="{{view.items.length}}">
+            <view class="card" wx:for="{{view.items}}" wx:for-item="sec" wx:key="id">
+              <view class="card__title">{{sec.title}}</view>
+              <view class="kv" wx:for="{{sec.rows}}" wx:for-item="row" wx:key="k">
+                <view class="kv__k">{{row.k}}</view>
+                <view class="kv__v">{{row.v}}</view>
+              </view>
+              <view class="kv">
+                <view class="kv__k">赛道</view>
+                <view class="kv__v {{sec.route ? '' : 'kv__v--dim'}}">{{sec.route || '待补'}}</view>
+              </view>
+              <view class="kv kv--last">
+                <view class="kv__k">关门</view>
+                <view class="kv__v">
+                  <block wx:if="{{sec.cutoffs.length}}">
+                    <view class="kv__line" wx:for="{{sec.cutoffs}}" wx:for-item="co" wx:key="*this">{{co}}</view>
+                  </block>
+                  <view wx:else class="kv__v--dim">待补</view>
+                </view>
+              </view>
+            </view>
+          </block>
+          <view wx:else class="empty-card">
+            <view class="empty-card__title">项目待发布</view>
+          </view>
+        </block>
+
+        <!-- 出行：领物 + 城市介绍，空态「待发布」 -->
+        <block wx:else>
+          <view class="card">
+            <view class="card__title">领物</view>
+            <block wx:if="{{view.trip.pickups.length}}">
+              <view class="kv" wx:for="{{view.trip.pickups}}" wx:key="time">
+                <view class="kv__k pickup__time">{{item.time}}</view>
+                <view class="kv__v">{{item.location}}</view>
+              </view>
+            </block>
+            <view wx:else class="card__empty">待发布</view>
+          </view>
+          <view class="card">
+            <view class="card__title">城市{{view.trip.city ? ' · ' + view.trip.city.name : ''}}</view>
+            <block wx:if="{{view.trip.city}}">
+              <view class="kv" wx:for="{{view.trip.city.paragraphs}}" wx:key="k">
+                <view class="kv__k">{{item.k}}</view>
+                <view class="kv__v">{{item.v}}</view>
+              </view>
+              <view class="attr" wx:for="{{view.trip.city.attractions}}" wx:key="name">
+                <view class="attr__name">{{item.name}}</view>
+                <view class="attr__desc">{{item.description}}</view>
+              </view>
+            </block>
+            <view wx:else class="card__empty">待发布</view>
+          </view>
+        </block>
+      </block>
+    </block>
+  </view>
+
+  <!-- 报名选择器（action sheet）：项目 chips + 状态，选择即创建/更新/删除计划 -->
+  <block wx:if="{{sheetOpen}}">
+    <view class="sheet-mask" bindtap="onSheetClose"></view>
+    <view class="sheet">
+      <view class="sheet__hint">报名项目与状态（选择即创建/更新参赛计划，同步到「我的赛事」）</view>
+      <view class="sheet__chips">
+        <text class="sheet__chips-label">报名项目</text>
+        <view
+          wx:for="{{sheetChips}}"
+          wx:key="token"
+          class="chip {{item.on ? 'chip--on' : ''}}"
+          data-token="{{item.token}}"
+          bindtap="onChipTap"
+        >{{item.label}}</view>
+      </view>
+      <view
+        wx:for="{{sheetStates}}"
+        wx:key="value"
+        class="sheet__opt {{item.current ? 'sheet__opt--on' : ''}}"
+        data-value="{{item.value}}"
+        bindtap="onStateTap"
+      >{{item.label}}<text wx:if="{{item.current}}" class="sheet__check"> ✓</text></view>
+      <view class="sheet__cancel" bindtap="onSheetClose">取消</view>
+    </view>
+  </block>
+</view>

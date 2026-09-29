@@ -1,0 +1,303 @@
+// 赛事详情页 —— #393，版式按 #385 定稿（沿用列表页 #392 的深色视觉语言）。
+//
+// 头区：名称+星标+双徽章 → 三宫格（天后开赛/比赛日/报名制式）→ 报名时间轴
+// （完成态按当前日期计算）→「报名：项目 · 状态 ▾」按钮；三 tab：概要/项目/出行。
+// 报名选择器是参赛计划的唯一创建入口（PUT / DELETE /api/users/me/race-plans/:id，
+// 后端 race_plans.go）；比赛策略卡归 v2（#386），本期不上。
+// 视图变换在 utils/raceDetailRows（配套自检），请求在 services/race-center /
+// services/race-plans。计划列表接口没有单场查询，进来时整表拉一次找本场的计划。
+
+import { ApiError } from '../../services/request';
+import {
+  getRaceDetail,
+  toggleRaceFavorite,
+  type RaceDetail,
+} from '../../services/race-center';
+import {
+  deleteRacePlan,
+  listRacePlans,
+  upsertRacePlan,
+  type RacePlan,
+  type RacePlanState,
+} from '../../services/race-plans';
+import {
+  PLAN_STATE_OPTIONS,
+  itemChips,
+  planButtonLabel,
+  toDetailView,
+  type RaceDetailView,
+} from '../../utils/raceDetailRows';
+import { shanghaiToday } from '../../utils/date';
+import { userStore } from '../../store/index';
+
+interface RaceDetailPageData {
+  statusBarHeight: number;
+  loading: boolean;
+  /** 非空时整页只渲染错误条（含未登录 / 赛事不存在） */
+  error: string;
+  /** 头区 + 三 tab 的渲染模型（utils/raceDetailRows.toDetailView 产物） */
+  view: RaceDetailView | null;
+  starred: boolean;
+  tabIndex: number;
+  /** 报名按钮文案（'未报名' 或 '全马 · 已报名（等抽签）'） */
+  signupButton: string;
+  /** 无项目可报时整个报名按钮不渲染 */
+  signupAvailable: boolean;
+  sheetOpen: boolean;
+  sheetChips: Array<{ token: string; label: string; on: boolean }>;
+  /** sheet 内当前选中的项目 token（提交时用它） */
+  sheetItem: string;
+  sheetStates: Array<{ value: string; label: string; current: boolean }>;
+}
+
+interface RaceDetailPageHandlers {
+  onLoad(options: Record<string, string | undefined>): void;
+  onShow(): void;
+  onPullDownRefresh(): void;
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onBack(): void;
+  onStarTap(): void;
+  onTabTap(e: WechatMiniprogram.TouchEvent): void;
+  onSignupTap(): void;
+  onChipTap(e: WechatMiniprogram.TouchEvent): void;
+  onStateTap(e: WechatMiniprogram.TouchEvent): void;
+  onSheetClose(): void;
+  onCopyTap(e: WechatMiniprogram.TouchEvent): void;
+  refresh(): Promise<void>;
+  applyPlan(): void;
+  _raceId: number;
+  _detail: RaceDetail | null;
+  /** 当前计划（无则 null）；按钮文案与选择器选中态的依据 */
+  _plan: RacePlan | null;
+  /** 报名提交进行中：防连点 */
+  _planPending: boolean;
+  _starPending: boolean;
+}
+
+function statusBarHeight(): number {
+  try {
+    return wx.getWindowInfo().statusBarHeight || 0;
+  } catch {
+    return wx.getSystemInfoSync().statusBarHeight || 0;
+  }
+}
+
+Page<RaceDetailPageData, RaceDetailPageHandlers>({
+  data: {
+    statusBarHeight: 0,
+    loading: true,
+    error: '',
+    view: null,
+    starred: false,
+    tabIndex: 0,
+    signupButton: '未报名',
+    signupAvailable: false,
+    sheetOpen: false,
+    sheetChips: [],
+    sheetItem: '',
+    sheetStates: [],
+  },
+
+  _raceId: 0,
+  _detail: null,
+  _plan: null,
+  _planPending: false,
+  _starPending: false,
+
+  onLoad(options) {
+    const id = Number(options.id);
+    this.setData({ statusBarHeight: statusBarHeight() });
+    if (!id || id <= 0) {
+      this.setData({ loading: false, error: '赛事不存在' });
+      return;
+    }
+    this._raceId = id;
+    void this.refresh();
+  },
+
+  // 未登录被拦下后登录回来要能自愈；从分享卡片进来也走这里补拉计划态
+  onShow() {
+    if (this._raceId && !this.data.loading) void this.refresh();
+  },
+
+  onPullDownRefresh() {
+    void this.refresh().then(() => wx.stopPullDownRefresh());
+  },
+
+  async refresh() {
+    if (!userStore.getState().user) {
+      this.setData({ loading: false, error: '请先登录后查看赛事详情' });
+      return;
+    }
+    this.setData({ loading: true, error: '' });
+    let detail: RaceDetail;
+    try {
+      detail = await getRaceDetail(this._raceId);
+    } catch (err: unknown) {
+      // 未发布与不存在同为 404（后端不泄漏未发布行的存在）
+      const msg =
+        err instanceof ApiError && err.statusCode === 404
+          ? '赛事不存在或已下架'
+          : err instanceof Error
+            ? err.message
+            : '加载失败，请稍后重试';
+      this.setData({ loading: false, error: msg });
+      return;
+    }
+    // 计划态拉不到不阻塞详情（选择器仍可提交），只是按钮先显示未报名
+    try {
+      const res = await listRacePlans();
+      this._plan = res.plans.find((p) => p.race_id === this._raceId) || null;
+    } catch {
+      this._plan = null;
+    }
+    this._detail = detail;
+    const view = toDetailView(detail, shanghaiToday());
+    this.setData({
+      loading: false,
+      error: '',
+      view,
+      starred: detail.favorited,
+      signupAvailable: itemChips(detail.items).length > 0,
+    });
+    this.applyPlan();
+  },
+
+  /** 报名按钮文案（依据 _plan）。 */
+  applyPlan() {
+    const plan = this._plan;
+    this.setData({
+      signupButton: planButtonLabel(plan?.item_type || '', plan?.state || 'none'),
+    });
+  },
+
+  /** 行尾星标：乐观更新，服务端结果为准，失败回滚。 */
+  onStarTap() {
+    const detail = this._detail;
+    if (!detail || this._starPending) return;
+    const next = !detail.favorited;
+    this._starPending = true;
+    detail.favorited = next;
+    this.setData({ starred: next });
+    toggleRaceFavorite(detail.id)
+      .then((res) => {
+        detail.favorited = res.favorited;
+        this.setData({ starred: res.favorited });
+      })
+      .catch(() => {
+        detail.favorited = !next;
+        this.setData({ starred: !next });
+        wx.showToast({ title: '收藏操作失败', icon: 'none' });
+      })
+      .finally(() => {
+        this._starPending = false;
+      });
+  },
+
+  onTabTap(e: WechatMiniprogram.TouchEvent) {
+    const tab = Number(e.currentTarget.dataset.tab);
+    if (tab === this.data.tabIndex) return;
+    this.setData({ tabIndex: tab });
+  },
+
+  /** 打开报名选择器：项目 chip 预选当前计划的项目（否则第一枚）。 */
+  onSignupTap() {
+    if (!this.data.signupAvailable || !this._detail) return;
+    const chips = itemChips(this._detail.items);
+    const current =
+      this._plan && chips.some((c) => c.token === this._plan?.item_type)
+        ? this._plan.item_type
+        : chips[0].token;
+    const state = this._plan?.state || 'none';
+    this.setData({
+      sheetOpen: true,
+      sheetItem: current,
+      sheetChips: chips.map((c) => ({ ...c, on: c.token === current })),
+      sheetStates: PLAN_STATE_OPTIONS.map((o) => ({
+        value: o.value,
+        label: o.label,
+        current: o.value === state,
+      })),
+    });
+  },
+
+  onChipTap(e: WechatMiniprogram.TouchEvent) {
+    const token = String(e.currentTarget.dataset.token || '');
+    if (!token || token === this.data.sheetItem) return;
+    this.setData({
+      sheetItem: token,
+      sheetChips: this.data.sheetChips.map((c) => ({ ...c, on: c.token === token })),
+    });
+  },
+
+  /** 选择状态即提交：none=删计划，四态=PUT（项目用 sheet 内选中项）。 */
+  async onStateTap(e: WechatMiniprogram.TouchEvent) {
+    const value = String(e.currentTarget.dataset.value || '') as RacePlanState | 'none';
+    if (!value || this._planPending) return;
+    if (value === 'none' && !this._plan) {
+      this.setData({ sheetOpen: false });
+      return;
+    }
+    this._planPending = true;
+    try {
+      if (value === 'none') {
+        await deleteRacePlan(this._raceId);
+        this._plan = null;
+        wx.showToast({ title: '已取消追踪', icon: 'none' });
+      } else {
+        const res = await upsertRacePlan(this._raceId, this.data.sheetItem, value);
+        this._plan = {
+          race_id: res.race_id,
+          item_type: res.item_type,
+          state: res.state,
+          hotel: res.hotel,
+          transit: res.transit,
+          race: null,
+          offboarded: false,
+          created_at: res.created_at,
+          updated_at: res.updated_at,
+        };
+        wx.showToast({ title: '已更新报名状态', icon: 'none' });
+      }
+      this.setData({ sheetOpen: false });
+      this.applyPlan();
+    } catch (err: unknown) {
+      // 取消时计划可能已被别处删掉（404）：按已取消收尾而不是报错
+      if (value === 'none' && err instanceof ApiError && err.statusCode === 404) {
+        this._plan = null;
+        this.setData({ sheetOpen: false });
+        this.applyPlan();
+        return;
+      }
+      wx.showToast({ title: '报名状态更新失败', icon: 'none' });
+    } finally {
+      this._planPending = false;
+    }
+  },
+
+  onSheetClose() {
+    this.setData({ sheetOpen: false });
+  },
+
+  onCopyTap(e: WechatMiniprogram.TouchEvent) {
+    const url = String(e.currentTarget.dataset.url || '');
+    if (!url) return;
+    wx.setClipboardData({
+      data: url,
+      success: () => wx.showToast({ title: '链接已复制', icon: 'none' }),
+    });
+  },
+
+  onBack() {
+    wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/profile/profile' }) });
+  },
+
+  onShareAppMessage() {
+    const name = this.data.view?.head.name || '赛事详情';
+    const date = this._detail?.race_date || '';
+    return {
+      title: date ? `${name} · ${date} 开跑` : name,
+      path: `/pages/race-center/detail?id=${this._raceId}`,
+    };
+  },
+});
