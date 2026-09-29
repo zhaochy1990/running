@@ -42,11 +42,8 @@ eq(typeAbbr('Unknown'), '', 'abbr unknown hidden');
 eq(typeAbbr('weird'), '', 'abbr junk hidden');
 
 // 双徽章全称：已知的田协/WA 取值给全称，未知取值与 null 都隐藏
-eq(
-  toRowView(race({ label: 'A', wa_label: 'Platinum' })),
-  { ...toRowView(race()), cnBadge: '中国田协A类赛事', waBadge: '世界田联白金标' },
-  'badges full names',
-);
+const dual = toRowView(race({ label: 'A', wa_label: 'Platinum' }));
+eq([dual.cnBadge, dual.waBadge], ['中国田协A类赛事', '世界田联白金标'], 'badges full names');
 eq(toRowView(race({ label: 'C（属地办赛）' })).cnBadge, '中国田协C类（属地办赛）', 'badge cn C local');
 eq(toRowView(race({ label: '系列赛' })).cnBadge, '中国田协系列赛', 'badge cn series');
 eq(toRowView(race({ wa_label: 'Gold' })).waBadge, '世界田联金标', 'badge wa gold');

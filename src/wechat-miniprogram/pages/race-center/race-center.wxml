@@ -14,7 +14,7 @@
   </view>
 
   <!-- 常驻筛选栏（#384 C 版式：年份 / 项目 / 城市 / 收藏 + 我的比赛快捷入口） -->
-  <view class="fbar" style="top: {{filterBarTopPx}}px;">
+  <view class="fbar" style="top: calc({{statusBarHeight}}px + 128rpx);">
     <picker class="fbar__pick" mode="selector" range="{{years}}" value="{{yearIndex}}" bindchange="onYearChange">
       <view class="fbar__cell">{{years[yearIndex]}} ▾</view>
     </picker>
@@ -31,7 +31,7 @@
   </view>
 
   <!-- 内容 -->
-  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+  <view class="content" style="padding-top: calc({{statusBarHeight}}px + 248rpx);">
     <!-- 加载态 -->
     <view wx:if="{{loading}}" class="state-card">
       <view class="spinner"></view>
@@ -44,7 +44,7 @@
       <!-- 月份分组密表（C 版式：航班式行） -->
       <block wx:if="{{groups.length}}">
         <view wx:for="{{groups}}" wx:for-item="g" wx:key="key" class="month">
-          <view class="month__head" style="top: {{stickyTopPx}}px;">{{g.label}}</view>
+          <view class="month__head" style="top: calc({{statusBarHeight}}px + 216rpx);">{{g.label}}</view>
           <view
             wx:for="{{g.rows}}"
             wx:key="id"

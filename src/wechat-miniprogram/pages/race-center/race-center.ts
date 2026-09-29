@@ -1,9 +1,9 @@
 // 赛事中心页 —— 全年路跑赛事密表（#392，#384 定稿的 C 紧凑清单版式）。
 //
 // 数据走 services/race-center（GET /api/race-calendar #390，收藏 toggle #391）。
-// 每年数据整年拉全（一页 100 场 + 翻页兜底，生产单年约 40 场），年份内
-// 项目类型 / 城市 / 收藏视图全部客户端过滤，切换即生效；收藏视图改用
-// scope=all 补拉整年，避免「今年已结束的收藏赛事」在 upcoming 集里丢失。
+// 每年数据以 scope=all 整年拉全（一页 100 场 + 翻页兜底，生产单年约 40 场），
+// 「即将开跑」（race_date >= 今天）在客户端过滤——年份内 项目类型 / 城市 /
+// 收藏视图全部纯客户端切换，即点即生效；城市下拉选项也取自同一份整年数据。
 // 纯视图变换（徽章/缩写/分组/筛选）在 utils/raceCenterRows，配套自检。
 
 import {
@@ -29,11 +29,6 @@ const MAX_PAGES = 50;
 
 interface RaceCenterPageData {
   statusBarHeight: number;
-  contentPaddingTop: number;
-  /** 筛选栏固定在顶栏下方的像素偏移（px，顶栏用 rpx 布局需换算） */
-  filterBarTopPx: number;
-  /** 月份分组头 sticky 的 top（筛选栏底沿），px */
-  stickyTopPx: number;
   loading: boolean;
   error: string;
   years: string[];
@@ -51,6 +46,7 @@ interface RaceCenterPageData {
 
 interface RaceCenterPageHandlers {
   onLoad(): void;
+  onShow(): void;
   onPullDownRefresh(): void;
   onYearChange(e: WechatMiniprogram.PickerChange): void;
   onTypeChange(e: WechatMiniprogram.PickerChange): void;
@@ -62,7 +58,7 @@ interface RaceCenterPageHandlers {
   onBack(): void;
   refresh(bustCache: boolean): Promise<void>;
   applyView(): void;
-  /** 每年的整年数据缓存，键 `${year}:${scope}`；实例级，页面关掉即弃 */
+  /** 每年整年数据缓存（键=年份，scope 恒 all）；实例级，页面关掉即弃 */
   _cache: Map<string, RaceCalendarRace[]>;
   /** 进行中的星标请求，防连点抖动 */
   _pendingStars: Set<number>;
@@ -78,28 +74,6 @@ function statusBarHeight(): number {
   }
 }
 
-function windowWidth(): number {
-  try {
-    return wx.getWindowInfo().windowWidth || 375;
-  } catch {
-    return wx.getSystemInfoSync().windowWidth || 375;
-  }
-}
-
-/** 顶栏（128rpx）换算成 px 的总偏移：筛选栏 fixed 定位用。 */
-function filterBarTop(): number {
-  return statusBarHeight() + Math.round((128 * windowWidth()) / 750);
-}
-
-/** 筛选栏底沿（顶栏 128rpx + 筛选栏 88rpx）：月份头 sticky 定位用。 */
-function stickyTop(): number {
-  return statusBarHeight() + Math.round(((128 + 88) * windowWidth()) / 750);
-}
-
-function contentPaddingTopRpx(): number {
-  return Math.round((statusBarHeight() * 750) / windowWidth()) + 128 + 88 + 32;
-}
-
 /** 年份选项：当前上海年份 ±1。 */
 function yearOptions(): string[] {
   const y = parseInt(shanghaiToday().slice(0, 4), 10);
@@ -107,10 +81,10 @@ function yearOptions(): string[] {
 }
 
 /** 整年拉全：一页 100 场，不足 total 则续页。 */
-async function fetchYear(year: string, scope: 'upcoming' | 'all'): Promise<RaceCalendarRace[]> {
+async function fetchYear(year: string): Promise<RaceCalendarRace[]> {
   const out: RaceCalendarRace[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const res = await getRaceCalendar({ year, scope, page, perPage: PER_PAGE });
+    const res = await getRaceCalendar({ year, scope: 'all', page, perPage: PER_PAGE });
     out.push(...res.races);
     if (res.races.length === 0 || out.length >= res.total) break;
   }
@@ -120,9 +94,6 @@ async function fetchYear(year: string, scope: 'upcoming' | 'all'): Promise<RaceC
 Page<RaceCenterPageData, RaceCenterPageHandlers>({
   data: {
     statusBarHeight: 0,
-    contentPaddingTop: 280,
-    filterBarTopPx: 88,
-    stickyTopPx: 132,
     loading: true,
     error: '',
     years: [],
@@ -147,70 +118,84 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
     const thisYear = shanghaiToday().slice(0, 4);
     this.setData({
       statusBarHeight: statusBarHeight(),
-      filterBarTopPx: filterBarTop(),
-      stickyTopPx: stickyTop(),
-      contentPaddingTop: contentPaddingTopRpx(),
       years,
       yearIndex: Math.max(years.indexOf(thisYear), 0),
     });
     void this.refresh(false);
   },
 
+  // 未登录进入被拦下后，登录回来本页要能自愈（缓存命中时 refresh 不发请求）
+  onShow() {
+    if (!this.data.loading) void this.refresh(false);
+  },
+
   onPullDownRefresh() {
     void this.refresh(true).then(() => wx.stopPullDownRefresh());
   },
 
-  /** 载入（或重载）当前 年份+收藏视图 对应的整年数据并渲染。 */
+  /** 载入（或重载）当前年份的整年数据并渲染。缓存命中时纯本地重算。 */
   async refresh(bustCache: boolean) {
     if (!userStore.getState().user) {
       this.setData({ loading: false, error: '请先登录后查看赛事日历' });
       return;
     }
     const year = this.data.years[this.data.yearIndex] || shanghaiToday().slice(0, 4);
-    const scope =
-      this.data.favOnly || year < shanghaiToday().slice(0, 4) ? 'all' : 'upcoming';
-    const key = `${year}:${scope}`;
-    if (bustCache) this._cache.delete(key);
-
     const seq = (this._fetchSeq += 1);
-    this.setData({ loading: true, error: '' });
-    try {
-      if (!this._cache.has(key)) {
-        this._cache.set(key, await fetchYear(year, scope));
+
+    if (bustCache || !this._cache.has(year)) {
+      this.setData({ loading: true, error: '' });
+      try {
+        const rows = await fetchYear(year);
+        // 已被更新的请求取代：本响应作废（不写缓存，新请求会带来更新的数据）
+        if (seq !== this._fetchSeq) return;
+        this._cache.set(year, rows);
+      } catch (err: unknown) {
+        if (seq !== this._fetchSeq) return;
+        const msg = err instanceof Error ? err.message : '加载失败，请稍后重试';
+        // 缓存里没有该年数据（如切年失败）：清空旧年残留视图，只留错误条；
+        // 有缓存（如下拉刷新失败）：保留旧列表，banner 说明即可
+        const patch: Partial<RaceCenterPageData> = { loading: false, error: msg };
+        if (!this._cache.has(year)) {
+          Object.assign(patch, { groups: [], viewCount: 0, emptyText: '' });
+        }
+        this.setData(patch);
+        return;
       }
-      if (seq !== this._fetchSeq) return; // 已被更新的筛选请求取代
-      this.setData({ loading: false });
-      this.applyView();
-    } catch (err: unknown) {
-      if (seq !== this._fetchSeq) return;
-      const msg = err instanceof Error ? err.message : '加载失败，请稍后重试';
-      this.setData({ loading: false, error: msg });
     }
+    this.setData({ loading: false });
+    this.applyView();
   },
 
   /** 用当前筛选条件重算 分组/计数/城市选项/空态。数据已在缓存，纯同步。 */
   applyView() {
     const year = this.data.years[this.data.yearIndex] || '';
-    const scope = this.data.favOnly || year < shanghaiToday().slice(0, 4) ? 'all' : 'upcoming';
-    const rows = this._cache.get(`${year}:${scope}`) || [];
-    const filtered = filterRaces(rows, {
+    const rows = this._cache.get(year);
+    if (!rows) return; // 该年数据未落地：保留现状，请求回来后统一重算
+
+    // 城市按「值」记录选中身份：列表重算（刷新/切年）后按下标会漂到别的城市
+    const selectedCity = this.data.cityIndex > 0 ? this.data.cityNames[this.data.cityIndex] || '' : '';
+
+    // 默认视图只看即将开跑；收藏视图与往年看整年（往年的 upcoming 恒空）
+    const floor =
+      !this.data.favOnly && year >= shanghaiToday().slice(0, 4) ? shanghaiToday() : '';
+    const inScope = floor ? rows.filter((r) => r.race_date >= floor) : rows;
+    const filtered = filterRaces(inScope, {
       type: TYPE_OPTIONS[this.data.typeIndex].token,
-      city: this.data.cityIndex > 0 ? this.data.cityNames[this.data.cityIndex] : '',
+      city: selectedCity,
       favoritesOnly: this.data.favOnly,
     });
     const groups = groupByMonth(filtered);
 
-    // 城市选项来自该年未过滤集合；切换年份后若原选中城市不在列表则回落「全部」
+    // 城市选项取整年未过滤集合：年份内切换筛选时选项稳定，不随视图塌缩
     const cityNames = ['全部', ...cityOptions(rows)];
-    const cityIndex =
-      this.data.cityIndex < cityNames.length ? this.data.cityIndex : 0;
+    const cityIndex = selectedCity ? Math.max(cityNames.indexOf(selectedCity), 0) : 0;
 
     let emptyText = '';
     if (groups.length === 0) {
       if (rows.length === 0) {
         emptyText = `${year} 年暂无已发布赛事 · 下拉刷新`;
-      } else if (this.data.favOnly && filtered.length === 0 && this.data.typeIndex === 0 && cityIndex === 0) {
-        emptyText = '还没有收藏的赛事 · 点行尾 ☆ 收藏感兴趣的赛事';
+      } else if (this.data.favOnly && this.data.typeIndex === 0 && !selectedCity) {
+        emptyText = '还没有收藏的赛事 · 退出收藏筛选后点 ☆ 收藏';
       } else {
         emptyText = '当前筛选下没有赛事 · 换个条件试试';
       }
@@ -238,39 +223,31 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
     this.applyView();
   },
 
-  /** 收藏视图开关：仅当需要补拉 scope=all 时才走网络，否则纯客户端过滤。 */
+  /** 收藏视图开关：纯客户端过滤，即点即生效。 */
   onFavToggleTap() {
     this.setData({ favOnly: !this.data.favOnly });
-    void this.refresh(false);
+    this.applyView();
   },
 
-  /** 行尾星标：乐观更新，服务端结果回来对账，失败回滚。catchtap 不冒泡进详情。 */
+  /** 行尾星标：乐观更新，服务端结果为准，失败回滚。catchtap 不冒泡进详情。 */
   async onStarTap(e: WechatMiniprogram.TouchEvent) {
     const id = Number(e.currentTarget.dataset.id);
     if (!id || this._pendingStars.has(id)) return;
-
-    // 同一赛事可能同时存在于当年的 upcoming 与 all 两份缓存，翻转要一并改
-    const touched: RaceCalendarRace[] = [];
-    for (const rows of this._cache.values()) {
-      const row = rows.find((r) => r.id === id);
-      if (row) touched.push(row);
-    }
-    if (touched.length === 0) return;
-    const next = !touched[0].favorited;
+    const rows = this._cache.get(this.data.years[this.data.yearIndex] || '');
+    const row = rows?.find((r) => r.id === id);
+    if (!row) return;
+    const next = !row.favorited;
 
     this._pendingStars.add(id);
-    for (const row of touched) row.favorited = next;
+    row.favorited = next;
     this.applyView();
 
     try {
       const res = await toggleRaceFavorite(id);
-      if (res.favorited !== next) {
-        // 并发窗口被别处翻转：以服务端为准对账
-        for (const row of touched) row.favorited = res.favorited;
-        this.applyView();
-      }
+      row.favorited = res.favorited;
+      this.applyView();
     } catch {
-      for (const row of touched) row.favorited = !next;
+      row.favorited = !next;
       this.applyView();
       wx.showToast({ title: '收藏操作失败', icon: 'none' });
     } finally {

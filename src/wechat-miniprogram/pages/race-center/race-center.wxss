@@ -136,7 +136,22 @@
   padding: 0 24rpx 48rpx;
 }
 
-/* ---------- 提示条 / 加载（同 my-races） ---------- */
+/* ---------- 提示条 / 加载（同 watch） ---------- */
+
+/* app.wxss 没有 .state-card 全局类，深色页各自本地定义（同 watch /
+   training-status / activity-detail）。 */
+.state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+  padding: 96rpx 0;
+}
+
+.state-card__text {
+  font-size: 24rpx;
+  color: #9c9c9d;
+}
 
 .banner {
   padding: 20rpx 24rpx;
@@ -173,8 +188,7 @@
 
 .month__head {
   position: sticky;
-  /* top 由页面按状态栏高度注入（筛选栏底沿） */
-  top: 132px;
+  /* top 由 wxml 按状态栏高度注入 calc（筛选栏底沿） */
   z-index: 10;
   padding: 10rpx 16rpx;
   font-size: 22rpx;
@@ -265,7 +279,8 @@
 
 .row__types {
   flex-shrink: 0;
-  max-width: 128rpx;
+  /* 容纳「全马/半马/10K」三项目不截断 */
+  max-width: 160rpx;
   font-size: 20rpx;
   line-height: 28rpx;
   color: #9c9c9d;
