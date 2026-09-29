@@ -29,7 +29,9 @@ import (
 
 // RacePlanStore is the persistence the plan endpoints need.
 type RacePlanStore interface {
-	UpsertRacePlan(ctx context.Context, up storage.RacePlanUpsert) (*storage.RacePlan, error)
+	// The bool reports whether the upsert created the row (the handler answers
+	// 201 vs 200 on it).
+	UpsertRacePlan(ctx context.Context, up storage.RacePlanUpsert) (*storage.RacePlan, bool, error)
 	DeleteRacePlan(ctx context.Context, userID string, raceEventID uint64) error
 	ListRacePlans(ctx context.Context, userID string) ([]storage.RacePlanWithRace, error)
 }
@@ -130,7 +132,7 @@ type racePlanUpsertRequest struct {
 
 // upsert creates or updates the caller's plan for one race. item_type must be
 // a racetypes token and state one of the four signup states; the race must be
-// published (404 otherwise).
+// published (404 otherwise). Answers 201 on create, 200 on update.
 //
 //	@Summary		Create or update a race plan
 //	@Description	Upserts the current user's plan (报名项目 + 状态) for one published race. Absent hotel/transit keep their stored values.
@@ -139,6 +141,7 @@ type racePlanUpsertRequest struct {
 //	@Produce		json
 //	@Param			race_id	path	int						true	"Race id"
 //	@Param			body	body	racePlanUpsertRequest	true	"Plan fields"
+//	@Success		201		{object}	racePlanUpsertResponse
 //	@Success		200		{object}	racePlanUpsertResponse
 //	@Failure		400		{object}	errorResponse
 //	@Failure		401		{object}	errorResponse
@@ -152,7 +155,7 @@ func (p *racePlanRoutes) upsert(c *gin.Context) {
 	if !ok {
 		return
 	}
-	raceID, ok := parseRaceIDParam(c)
+	raceID, ok := parseUintParam(c, "race_id")
 	if !ok {
 		return
 	}
@@ -162,14 +165,14 @@ func (p *racePlanRoutes) upsert(c *gin.Context) {
 		return
 	}
 	if !racetypes.IsValid(req.ItemType) {
-		c.JSON(http.StatusUnprocessableEntity, racePlanValidationDetail("item_type", "item_type must be a race-type token (Marathon / HalfMarathon / {n}Km / Other / Unknown)"))
+		c.JSON(http.StatusUnprocessableEntity, racePlanValidationDetail("item_type", "item_type must be a race-type token"))
 		return
 	}
 	if !storage.IsRacePlanState(req.State) {
 		c.JSON(http.StatusUnprocessableEntity, racePlanValidationDetail("state", "state must be one of registered / won / lost / confirmed"))
 		return
 	}
-	plan, err := p.store.UpsertRacePlan(c.Request.Context(), storage.RacePlanUpsert{
+	plan, created, err := p.store.UpsertRacePlan(c.Request.Context(), storage.RacePlanUpsert{
 		UserID: uid, RaceEventID: raceID,
 		ItemType: req.ItemType, State: req.State,
 		Hotel: req.Hotel, Transit: req.Transit,
@@ -178,7 +181,11 @@ func (p *racePlanRoutes) upsert(c *gin.Context) {
 		writeRaceEngagementError(c, p.log, err)
 		return
 	}
-	c.JSON(http.StatusOK, racePlanUpsertResponse{
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	c.JSON(status, racePlanUpsertResponse{
 		RaceID:    plan.RaceEventID,
 		ItemType:  plan.ItemType,
 		State:     plan.State,
@@ -208,7 +215,7 @@ func (p *racePlanRoutes) delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	raceID, ok := parseRaceIDParam(c)
+	raceID, ok := parseUintParam(c, "race_id")
 	if !ok {
 		return
 	}

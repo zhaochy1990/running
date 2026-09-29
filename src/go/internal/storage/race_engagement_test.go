@@ -92,19 +92,24 @@ func TestRaceFavorite_ListFiltersUnpublished(t *testing.T) {
 	ctx := context.Background()
 	uid := uuid.NewString()
 
-	kept1 := seedEngagementRace(t, st, "收藏列表甲", "2032-06-01", true)
+	first := seedEngagementRace(t, st, "收藏列表甲", "2032-06-01", true) // lowest id
 	dropped := seedEngagementRace(t, st, "收藏列表乙", "2032-06-02", true)
-	kept2 := seedEngagementRace(t, st, "收藏列表丙", "2032-06-03", true)
+	last := seedEngagementRace(t, st, "收藏列表丙", "2032-06-03", true) // highest id
 
-	// Favorite in reverse id order so created_at DESC is observable, then
-	// offboard one race: its favorite must drop out of the collection silently.
-	for _, id := range []uint64{dropped, kept2, kept1} {
+	// Favorite order (created_at ascending): dropped, last, first — so the
+	// expected created_at DESC is first, last, which is ALSO id ascending.
+	// id DESC would return last, first; only created_at ordering passes. The
+	// sleeps keep created_at values apart at MySQL's millisecond precision.
+	for _, id := range []uint64{dropped, last, first} {
+		time.Sleep(10 * time.Millisecond)
 		if _, err := st.ToggleRaceFavorite(ctx, uid, id); err != nil {
 			t.Fatalf("toggle %d: %v", id, err)
 		}
 	}
+	// Offboarding the middle race drops its favorite silently while the pinned
+	// order stays observable on the two survivors.
 	if err := st.db.WithContext(ctx).Model(&RaceCalendarEvent{}).
-		Where("id IN ?", []uint64{dropped, kept2}).Update("published", false).Error; err != nil {
+		Where("id = ?", dropped).Update("published", false).Error; err != nil {
 		t.Fatalf("unpublish: %v", err)
 	}
 
@@ -112,8 +117,8 @@ func TestRaceFavorite_ListFiltersUnpublished(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if len(ids) != 1 || ids[0] != kept1 {
-		t.Fatalf("ids = %v, want [%d]", ids, kept1)
+	if len(ids) != 2 || ids[0] != first || ids[1] != last {
+		t.Fatalf("ids = %v, want [%d %d] newest favorite first", ids, first, last)
 	}
 
 	// Another user's favorites stay invisible, as an empty (never null) slice.
@@ -134,7 +139,7 @@ func TestRacePlan_FourStateRoundTrip(t *testing.T) {
 	raceID := seedEngagementRace(t, st, "状态机赛", "2032-07-01", true)
 
 	hotel, transit := true, true
-	plan, err := st.UpsertRacePlan(ctx, RacePlanUpsert{
+	plan, _, err := st.UpsertRacePlan(ctx, RacePlanUpsert{
 		UserID: uid, RaceEventID: raceID,
 		ItemType: "Marathon", State: RacePlanStateRegistered,
 		Hotel: &hotel, Transit: &transit,
@@ -155,7 +160,7 @@ func TestRacePlan_FourStateRoundTrip(t *testing.T) {
 	// registered -> won: the whole four-state machine is driven by upserts; the
 	// travel booleans ride along and absent keys preserve the stored values.
 	for _, state := range []string{RacePlanStateWon, RacePlanStateLost, RacePlanStateConfirmed} {
-		plan, err = st.UpsertRacePlan(ctx, RacePlanUpsert{
+		plan, _, err = st.UpsertRacePlan(ctx, RacePlanUpsert{
 			UserID: uid, RaceEventID: raceID,
 			ItemType: "HalfMarathon", State: state,
 		})
@@ -175,7 +180,7 @@ func TestRacePlan_FourStateRoundTrip(t *testing.T) {
 
 	// Explicit false clears a checkbox without touching its sibling.
 	off := false
-	plan, err = st.UpsertRacePlan(ctx, RacePlanUpsert{
+	plan, _, err = st.UpsertRacePlan(ctx, RacePlanUpsert{
 		UserID: uid, RaceEventID: raceID,
 		ItemType: "HalfMarathon", State: RacePlanStateConfirmed, Hotel: &off,
 	})
@@ -194,7 +199,7 @@ func TestRacePlan_FourStateRoundTrip(t *testing.T) {
 
 	// Unpublished / missing races are not plannable: 404 sentinel.
 	unpub := seedEngagementRace(t, st, "不可计划赛", "2032-07-02", false)
-	if _, err := st.UpsertRacePlan(ctx, RacePlanUpsert{
+	if _, _, err := st.UpsertRacePlan(ctx, RacePlanUpsert{
 		UserID: uid, RaceEventID: unpub, ItemType: "Marathon", State: RacePlanStateRegistered,
 	}); err != ErrRaceCalendarNotFound {
 		t.Fatalf("upsert unpublished race: err=%v want ErrRaceCalendarNotFound", err)
@@ -241,7 +246,7 @@ func TestRacePlan_ListOffboardingLayering(t *testing.T) {
 
 	seed := func(raceID uint64, state string) {
 		t.Helper()
-		if _, err := st.UpsertRacePlan(ctx, RacePlanUpsert{
+		if _, _, err := st.UpsertRacePlan(ctx, RacePlanUpsert{
 			UserID: uid, RaceEventID: raceID, ItemType: "Marathon", State: state,
 		}); err != nil {
 			t.Fatalf("seed plan race=%d state=%s: %v", raceID, state, err)
@@ -304,5 +309,89 @@ func TestRacePlan_ListOffboardingLayering(t *testing.T) {
 				t.Fatalf("deleted race must read as offboarded with nil race: %+v", row)
 			}
 		}
+	}
+}
+
+// TestRaceFavorite_ConcurrentDoubleTap pins the double-tap contract — the
+// production race the toggle retry exists for: two first-tap favorites on the
+// same (user, race) deadlock on the empty key range; the loser's retry must
+// observe the winner's row and take the delete path, leaving one row and two
+// successes. (A wider N-way toggle would be a semantic flip-flop needing
+// unbounded retries; the star only ever races a double-tap.)
+func TestRaceFavorite_ConcurrentDoubleTap(t *testing.T) {
+	st := openTestStore(t)
+	migrateRaceEngagement(t, st)
+	ctx := context.Background()
+	uid := uuid.NewString()
+	raceID := seedEngagementRace(t, st, "并发收藏赛", "2032-11-01", true)
+
+	const n = 2
+	errs := make(chan error, n)
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		go func() {
+			<-start
+			_, err := st.ToggleRaceFavorite(ctx, uid, raceID)
+			errs <- err
+		}()
+	}
+	close(start)
+	for i := 0; i < n; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent toggle: %v", err)
+		}
+	}
+	var count int64
+	if err := st.db.WithContext(ctx).Model(&RaceFavorite{}).
+		Where("user_id = ? AND race_event_id = ?", uid, raceID).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	// Two toggles are two flips: the net state depends on the interleaving
+	// (insert-then-delete leaves 0 rows; both-insert-with-retry leaves 1). The
+	// contract is no error plus at most one row — the UNIQUE index bounds it.
+	if count > 1 {
+		t.Fatalf("rows after %d toggles = %d, want at most 1", n, count)
+	}
+}
+
+// TestRacePlan_ConcurrentUpsert pins the wider first-write contract: N racing
+// creates on the same (user, race) must all succeed (one insert wins; every
+// deadlocked loser's retry finds the winner's row and takes the update path,
+// which cannot deadlock again), leaving exactly one row.
+func TestRacePlan_ConcurrentUpsert(t *testing.T) {
+	st := openTestStore(t)
+	migrateRaceEngagement(t, st)
+	ctx := context.Background()
+	uid := uuid.NewString()
+	raceID := seedEngagementRace(t, st, "并发计划赛", "2032-11-02", true)
+
+	const n = 8
+	errs := make(chan error, n)
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		go func() {
+			<-start
+			_, _, err := st.UpsertRacePlan(ctx, RacePlanUpsert{
+				UserID: uid, RaceEventID: raceID,
+				ItemType: "Marathon", State: RacePlanStateRegistered,
+			})
+			errs <- err
+		}()
+	}
+	close(start)
+	for i := 0; i < n; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent upsert: %v", err)
+		}
+	}
+	var count int64
+	if err := st.db.WithContext(ctx).Model(&RacePlan{}).
+		Where("user_id = ? AND race_event_id = ?", uid, raceID).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("rows after %d upserts = %d, want 1", n, count)
 	}
 }

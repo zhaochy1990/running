@@ -47,7 +47,8 @@ func (f *fakeRaceFavoriteStore) ToggleRaceFavorite(_ context.Context, userID str
 }
 
 func (f *fakeRaceFavoriteStore) ListRaceFavoriteIDs(_ context.Context, userID string) ([]uint64, error) {
-	var ids []uint64
+	// Match the real store's empty-set contract: never nil (JSON [] not null).
+	ids := []uint64{}
 	for id, on := range f.favorites[userID] {
 		if on {
 			ids = append(ids, id)
@@ -57,13 +58,15 @@ func (f *fakeRaceFavoriteStore) ListRaceFavoriteIDs(_ context.Context, userID st
 }
 
 // fakeRacePlanStore is an in-memory RacePlanStore. It keeps one plan per
-// (user, race) like the UNIQUE(user, event) row and applies the same
-// offboarding layering as the real store so the list DTO path is exercised.
+// (user, race) like the UNIQUE(user, event) row. It deliberately does NOT
+// replicate the store's offboarding layering (lost-on-unpublished filtering):
+// that rule is pinned against real MySQL in internal/storage, and a fake
+// re-implementation would only drift silently — the handler tests exercise
+// the DTO projection over whatever pairs the fake hands back.
 type fakeRacePlanStore struct {
 	plans   map[string]map[uint64]*storage.RacePlan // user -> race -> plan
 	races   map[uint64]*storage.RaceCalendarEvent   // the join input
 	missing map[uint64]bool
-	nextID  uint64
 }
 
 func newFakeRacePlanStore() *fakeRacePlanStore {
@@ -71,13 +74,12 @@ func newFakeRacePlanStore() *fakeRacePlanStore {
 		plans:   map[string]map[uint64]*storage.RacePlan{},
 		races:   map[uint64]*storage.RaceCalendarEvent{},
 		missing: map[uint64]bool{},
-		nextID:  1,
 	}
 }
 
-func (f *fakeRacePlanStore) UpsertRacePlan(_ context.Context, up storage.RacePlanUpsert) (*storage.RacePlan, error) {
+func (f *fakeRacePlanStore) UpsertRacePlan(_ context.Context, up storage.RacePlanUpsert) (*storage.RacePlan, bool, error) {
 	if f.missing[up.RaceEventID] {
-		return nil, storage.ErrRaceCalendarNotFound
+		return nil, false, storage.ErrRaceCalendarNotFound
 	}
 	byRace := f.plans[up.UserID]
 	if byRace == nil {
@@ -86,13 +88,13 @@ func (f *fakeRacePlanStore) UpsertRacePlan(_ context.Context, up storage.RacePla
 	}
 	now := time.Now().UTC()
 	cur := byRace[up.RaceEventID]
-	if cur == nil {
+	created := cur == nil
+	if created {
 		cur = &storage.RacePlan{
-			ID: f.nextID, UserID: up.UserID, RaceEventID: up.RaceEventID,
+			UserID: up.UserID, RaceEventID: up.RaceEventID,
 			ItemType: up.ItemType, State: up.State,
 			CreatedAt: now, UpdatedAt: now,
 		}
-		f.nextID++
 		byRace[up.RaceEventID] = cur
 	}
 	cur.ItemType = up.ItemType
@@ -105,7 +107,7 @@ func (f *fakeRacePlanStore) UpsertRacePlan(_ context.Context, up storage.RacePla
 	}
 	cur.UpdatedAt = now
 	cp := *cur
-	return &cp, nil
+	return &cp, created, nil
 }
 
 func (f *fakeRacePlanStore) DeleteRacePlan(_ context.Context, userID string, raceID uint64) error {
@@ -119,11 +121,7 @@ func (f *fakeRacePlanStore) DeleteRacePlan(_ context.Context, userID string, rac
 func (f *fakeRacePlanStore) ListRacePlans(_ context.Context, userID string) ([]storage.RacePlanWithRace, error) {
 	out := []storage.RacePlanWithRace{}
 	for _, plan := range f.plans[userID] {
-		race := f.races[plan.RaceEventID]
-		if plan.State == storage.RacePlanStateLost && (race == nil || !race.Published) {
-			continue
-		}
-		out = append(out, storage.RacePlanWithRace{Plan: *plan, Race: race})
+		out = append(out, storage.RacePlanWithRace{Plan: *plan, Race: f.races[plan.RaceEventID]})
 	}
 	return out, nil
 }
@@ -177,6 +175,21 @@ func (h *engagementHarness) token(t *testing.T, audience, role string) map[strin
 
 func (h *engagementHarness) userToken(t *testing.T) map[string]string {
 	return h.token(t, testAudience, "")
+}
+
+// userTokenFor mints a user token for a different subject (e.g. a second user
+// with no data), the same claims shape otherwise.
+func (h *engagementHarness) userTokenFor(t *testing.T, sub string) map[string]string {
+	t.Helper()
+	claims := jwt.MapClaims{
+		"sub": sub, "iss": testIssuer, "aud": testAudience,
+		"exp": time.Now().Add(time.Hour).Unix(), "iat": time.Now().Unix(),
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(h.key)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	return map[string]string{"Authorization": "Bearer " + signed}
 }
 
 func (h *engagementHarness) adminToken(t *testing.T) map[string]string {
@@ -281,6 +294,16 @@ func TestRaceFavorites_List(t *testing.T) {
 	if len(got.RaceIDs) != 2 {
 		t.Fatalf("race_ids = %v, want 2 ids", got.RaceIDs)
 	}
+
+	// A user with no favorites gets an empty array, never JSON null.
+	w = h.do(t, http.MethodGet, "/api/users/me/race-favorites", nil,
+		h.userTokenFor(t, "99999999-9999-4999-8999-999999999999"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("empty list = %d: %s", w.Code, w.Body.String())
+	}
+	if body := w.Body.String(); !strings.Contains(body, `"race_ids":[]`) {
+		t.Fatalf("empty list body = %s, want race_ids []", body)
+	}
 }
 
 // --- plans -------------------------------------------------------------------
@@ -314,8 +337,8 @@ func TestRacePlans_UpsertValidation(t *testing.T) {
 
 	w := h.do(t, http.MethodPut, "/api/users/me/race-plans/7",
 		map[string]string{"item_type": "Marathon", "state": "registered"}, h.userToken(t))
-	if w.Code != http.StatusOK {
-		t.Fatalf("upsert = %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("upsert create = %d: %s", w.Code, w.Body.String())
 	}
 	var plan racePlanUpsertResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &plan); err != nil {
@@ -323,6 +346,12 @@ func TestRacePlans_UpsertValidation(t *testing.T) {
 	}
 	if plan.ItemType != "Marathon" || plan.State != "registered" || plan.RaceID != 7 {
 		t.Fatalf("upsert body: %+v", plan)
+	}
+	// The second submission updates the same row: 200, not another 201.
+	w = h.do(t, http.MethodPut, "/api/users/me/race-plans/7",
+		map[string]string{"item_type": "HalfMarathon", "state": "won"}, h.userToken(t))
+	if w.Code != http.StatusOK {
+		t.Fatalf("upsert update = %d: %s", w.Code, w.Body.String())
 	}
 
 	cases := []struct {
@@ -357,7 +386,7 @@ func TestRacePlans_Delete(t *testing.T) {
 	if w := h.do(t, http.MethodDelete, "/api/users/me/race-plans/7", nil, h.userToken(t)); w.Code != http.StatusNotFound {
 		t.Fatalf("delete absent = %d, want 404", w.Code)
 	}
-	if _, err := h.plans.UpsertRacePlan(context.Background(), storage.RacePlanUpsert{
+	if _, _, err := h.plans.UpsertRacePlan(context.Background(), storage.RacePlanUpsert{
 		UserID: "11111111-2222-4333-8333-333333333333", RaceEventID: 7,
 		ItemType: "Marathon", State: storage.RacePlanStateRegistered,
 	}); err != nil {
@@ -378,7 +407,7 @@ func TestRacePlans_ListOffboardedProjection(t *testing.T) {
 	}
 	seed := func(raceID uint64, state string) {
 		t.Helper()
-		if _, err := h.plans.UpsertRacePlan(context.Background(), storage.RacePlanUpsert{
+		if _, _, err := h.plans.UpsertRacePlan(context.Background(), storage.RacePlanUpsert{
 			UserID: uid, RaceEventID: raceID, ItemType: "Marathon", State: state,
 		}); err != nil {
 			t.Fatalf("seed race=%d: %v", raceID, err)

@@ -12,7 +12,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -92,7 +91,7 @@ func (f *raceFavoriteRoutes) toggle(c *gin.Context) {
 	if !ok {
 		return
 	}
-	raceID, ok := parseRaceIDParam(c)
+	raceID, ok := parseUintParam(c, "race_id")
 	if !ok {
 		return
 	}
@@ -133,17 +132,6 @@ func (f *raceFavoriteRoutes) list(c *gin.Context) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers (favorites + plans)
 // ─────────────────────────────────────────────────────────────────────────────
-
-// parseRaceIDParam parses the :race_id path parameter shared by both surfaces.
-func parseRaceIDParam(c *gin.Context) (uint64, bool) {
-	raw := c.Param("race_id")
-	value, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil || value == 0 {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_race_id"})
-		return 0, false
-	}
-	return value, true
-}
 
 // writeRaceEngagementError maps the engagement stores' sentinels onto HTTP
 // status codes. Both surfaces answer a missing/unpublished race with the same

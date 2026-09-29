@@ -38,73 +38,91 @@ type RacePlanUpsert struct {
 }
 
 // UpsertRacePlan creates or updates the user's single plan for one race (the
-// UNIQUE(user, event) row). Like the favorite toggle it refuses a race that
-// does not exist or is unpublished with ErrRaceCalendarNotFound. The returned
-// row carries the merged fields and fresh timestamps.
-func (s *Store) UpsertRacePlan(ctx context.Context, up RacePlanUpsert) (*RacePlan, error) {
+// UNIQUE(user, event) row), reporting whether it created the row. Like the
+// favorite toggle it refuses a race that does not exist or is unpublished with
+// ErrRaceCalendarNotFound — which also makes an offboarded plan read-only: the
+// row survives and renders as the 已下架 placeholder, but its state and travel
+// checkboxes can no longer change (only DELETE still works). That freeze is
+// deliberate: the race center no longer surfaces the race, so the runner has
+// nothing to update against; re-publishing the race re-enables the upsert. The
+// returned row carries the merged fields and fresh timestamps.
+func (s *Store) UpsertRacePlan(ctx context.Context, up RacePlanUpsert) (*RacePlan, bool, error) {
 	uid, err := canonicalUserID(up.UserID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var out *RacePlan
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var event RaceCalendarEvent
-		e := tx.Select("id", "published").First(&event, up.RaceEventID).Error
-		if errors.Is(e, gorm.ErrRecordNotFound) {
-			return ErrRaceCalendarNotFound
-		}
-		if e != nil {
-			return fmt.Errorf("storage: load race for plan: %w", e)
-		}
-		if !event.Published {
-			return ErrRaceCalendarNotFound
-		}
-
-		var cur RacePlan
-		e = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("user_id = ? AND race_event_id = ?", uid, up.RaceEventID).
-			First(&cur).Error
-		now := time.Now().UTC()
-		if errors.Is(e, gorm.ErrRecordNotFound) {
-			row := RacePlan{
-				UserID: uid, RaceEventID: up.RaceEventID,
-				ItemType: up.ItemType, State: up.State,
-				CreatedAt: now, UpdatedAt: now,
+	var created bool
+	write := func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var event RaceCalendarEvent
+			e := tx.Select("id", "published").First(&event, up.RaceEventID).Error
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return ErrRaceCalendarNotFound
 			}
+			if e != nil {
+				return fmt.Errorf("storage: load race for plan: %w", e)
+			}
+			if !event.Published {
+				return ErrRaceCalendarNotFound
+			}
+
+			var cur RacePlan
+			e = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("user_id = ? AND race_event_id = ?", uid, up.RaceEventID).
+				First(&cur).Error
+			now := time.Now().UTC()
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				row := RacePlan{
+					UserID: uid, RaceEventID: up.RaceEventID,
+					ItemType: up.ItemType, State: up.State,
+					CreatedAt: now, UpdatedAt: now,
+				}
+				if up.Hotel != nil {
+					row.Hotel = *up.Hotel
+				}
+				if up.Transit != nil {
+					row.Transit = *up.Transit
+				}
+				if err := tx.Create(&row).Error; err != nil {
+					return fmt.Errorf("storage: create race_plan: %w", err)
+				}
+				out = &row
+				created = true
+				return nil
+			}
+			if e != nil {
+				return fmt.Errorf("storage: load race_plan: %w", e)
+			}
+			cur.ItemType = up.ItemType
+			cur.State = up.State
 			if up.Hotel != nil {
-				row.Hotel = *up.Hotel
+				cur.Hotel = *up.Hotel
 			}
 			if up.Transit != nil {
-				row.Transit = *up.Transit
+				cur.Transit = *up.Transit
 			}
-			if err := tx.Create(&row).Error; err != nil {
-				return fmt.Errorf("storage: create race_plan: %w", err)
+			cur.UpdatedAt = now
+			if err := tx.Save(&cur).Error; err != nil {
+				return fmt.Errorf("storage: update race_plan: %w", err)
 			}
-			out = &row
+			out = &cur
+			created = false
 			return nil
-		}
-		if e != nil {
-			return fmt.Errorf("storage: load race_plan: %w", e)
-		}
-		cur.ItemType = up.ItemType
-		cur.State = up.State
-		if up.Hotel != nil {
-			cur.Hotel = *up.Hotel
-		}
-		if up.Transit != nil {
-			cur.Transit = *up.Transit
-		}
-		cur.UpdatedAt = now
-		if err := tx.Save(&cur).Error; err != nil {
-			return fmt.Errorf("storage: update race_plan: %w", err)
-		}
-		out = &cur
-		return nil
-	})
-	if err != nil {
-		return nil, err
+		})
 	}
-	return out, nil
+	err = write()
+	// The locking read on a not-yet-existing row takes a gap lock, so two
+	// first-time submitters of the same (user, race) race each other into a
+	// deadlock (or a duplicate-key on the winner's committed row). A retry
+	// finds the winner's row and takes the plain update path.
+	if err != nil && isConcurrentInsertRace(err) {
+		err = write()
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return out, created, nil
 }
 
 // DeleteRacePlan removes the user's plan for one race (the 未报名/取消追踪 action
@@ -157,7 +175,6 @@ func (s *Store) ListRacePlans(ctx context.Context, userID string) ([]RacePlanWit
 	var plans []RacePlan
 	if err := s.db.WithContext(ctx).
 		Where("user_id = ?", uid).
-		Order("race_event_id ASC").
 		Find(&plans).Error; err != nil {
 		return nil, fmt.Errorf("storage: list race_plan: %w", err)
 	}

@@ -19,18 +19,13 @@ const (
 	RacePlanStateConfirmed = "confirmed"
 )
 
-// RacePlanStates is the closed state vocabulary (used to validate request
-// bodies; a typo must not silently invent a fifth state).
-var RacePlanStates = []string{
-	RacePlanStateRegistered, RacePlanStateWon, RacePlanStateLost, RacePlanStateConfirmed,
-}
-
-// IsRacePlanState reports whether v is a known plan state.
+// IsRacePlanState reports whether v is one of the four signup states — the
+// closed vocabulary an upsert body is validated against, so a typo cannot
+// silently invent a fifth state.
 func IsRacePlanState(v string) bool {
-	for _, s := range RacePlanStates {
-		if s == v {
-			return true
-		}
+	switch v {
+	case RacePlanStateRegistered, RacePlanStateWon, RacePlanStateLost, RacePlanStateConfirmed:
+		return true
 	}
 	return false
 }

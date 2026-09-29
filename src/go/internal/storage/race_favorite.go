@@ -22,47 +22,70 @@ func (s *Store) AutoMigrateRaceFavorites(ctx context.Context) error {
 // resulting state. The race must exist and be published — the star only ever
 // appears on races the race center surfaces — so a missing or unpublished id
 // returns ErrRaceCalendarNotFound (404 at the API) rather than storing a
-// favorite nothing will ever show.
+// favorite nothing will ever show. A favorite on a race that is later
+// unpublished can never be un-toggled through this method (the 404 fires
+// before the delete); that row is invisible everywhere and is cleaned up only
+// by account erasure. That is the accepted cost of silent offboarding.
 func (s *Store) ToggleRaceFavorite(ctx context.Context, userID string, raceEventID uint64) (bool, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return false, err
 	}
 	var favorited bool
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var event RaceCalendarEvent
-		e := tx.Select("id", "published").First(&event, raceEventID).Error
-		if errors.Is(e, gorm.ErrRecordNotFound) {
-			return ErrRaceCalendarNotFound
-		}
-		if e != nil {
-			return fmt.Errorf("storage: load race for favorite: %w", e)
-		}
-		if !event.Published {
-			return ErrRaceCalendarNotFound
-		}
-		// Delete-else-insert implements the toggle without a prior SELECT, so a
-		// double-tap races safely inside the transaction.
-		res := tx.Where("user_id = ? AND race_event_id = ?", uid, raceEventID).
-			Delete(&RaceFavorite{})
-		if res.Error != nil {
-			return fmt.Errorf("storage: delete race_favorite: %w", res.Error)
-		}
-		if res.RowsAffected > 0 {
-			favorited = false
+	toggle := func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var event RaceCalendarEvent
+			e := tx.Select("id", "published").First(&event, raceEventID).Error
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return ErrRaceCalendarNotFound
+			}
+			if e != nil {
+				return fmt.Errorf("storage: load race for favorite: %w", e)
+			}
+			if !event.Published {
+				return ErrRaceCalendarNotFound
+			}
+			// Delete-else-insert implements the toggle without a prior SELECT.
+			res := tx.Where("user_id = ? AND race_event_id = ?", uid, raceEventID).
+				Delete(&RaceFavorite{})
+			if res.Error != nil {
+				return fmt.Errorf("storage: delete race_favorite: %w", res.Error)
+			}
+			if res.RowsAffected > 0 {
+				favorited = false
+				return nil
+			}
+			row := &RaceFavorite{UserID: uid, RaceEventID: raceEventID, CreatedAt: time.Now().UTC()}
+			if err := tx.Create(row).Error; err != nil {
+				return fmt.Errorf("storage: create race_favorite: %w", err)
+			}
+			favorited = true
 			return nil
-		}
-		row := &RaceFavorite{UserID: uid, RaceEventID: raceEventID, CreatedAt: time.Now().UTC()}
-		if err := tx.Create(row).Error; err != nil {
-			return fmt.Errorf("storage: create race_favorite: %w", err)
-		}
-		favorited = true
-		return nil
-	})
+		})
+	}
+	err = toggle()
+	// Two first-tap favorites lock the same empty key range (the delete matches
+	// nothing) before either inserts, and InnoDB resolves that race by
+	// deadlocking one of them — or by a duplicate-key on the unique index. A
+	// retry observes the winner's row and takes the plain delete path.
+	if err != nil && isConcurrentInsertRace(err) {
+		err = toggle()
+	}
 	if err != nil {
 		return false, err
 	}
 	return favorited, nil
+}
+
+// isConcurrentInsertRace reports whether err is the transient outcome of two
+// transactions racing to insert the same not-yet-existing row: InnoDB either
+// deadlocks one of them (1213) or the loser's insert hits the winner's
+// committed row (1062). Re-running the operation resolves both — the row now
+// exists, so the retry takes the lock-on-existing-row path. Shared by the
+// favorite toggle and the plan upsert, whose first-write shapes both have it.
+func isConcurrentInsertRace(err error) bool {
+	n, ok := mysqlErrNo(err)
+	return ok && (n == 1213 || n == 1062)
 }
 
 // ListRaceFavoriteIDs returns the ids of the user's favorited published races,

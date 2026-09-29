@@ -43,7 +43,7 @@ func DistanceKm(km float64) string {
 }
 
 // kmTokenRe matches the "{n}Km" half of the vocabulary (DistanceKm's output
-// space): one or two significant decimals, always the capital "Km" suffix.
+// space): a plain decimal number, always the capital "Km" suffix.
 var kmTokenRe = regexp.MustCompile(`^\d+(?:\.\d+)?Km$`)
 
 // IsValid reports whether token belongs to this vocabulary: one of the four
