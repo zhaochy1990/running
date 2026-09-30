@@ -29,7 +29,7 @@ import {
   type RaceDetailView,
 } from '../../utils/raceDetailRows';
 import { typeAbbr } from '../../utils/raceCenterRows';
-import { shanghaiToday } from '../../utils/date';
+import { shanghaiDateFromIso, shanghaiToday } from '../../utils/date';
 import { setPendingCoachContext } from '../../services/coach';
 import { getRaceStrategy } from '../../services/race-strategy';
 import { userStore } from '../../store/index';
@@ -152,8 +152,12 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
     // 只是按钮先显示未报名——选择器提交不受影响
     const plansP = listRacePlans().catch(() => null);
     // 策略态并行拉取（404=未生成；其它失败按未生成展示，不阻塞详情）
+    // updated_at 是 UTC RFC3339：摘要日期按上海时区取（直接切 UTC 串会差 8 小时）
     const strategyP = getRaceStrategy(this._raceId).then(
-      (res) => ({ target: res.content.target_finish_time, updatedAt: res.updated_at.slice(0, 10).replace(/-/g, '/') }),
+      (res) => ({
+        target: res.content.target_finish_time || '—',
+        updatedAt: shanghaiDateFromIso(res.updated_at).replace(/-/g, '/'),
+      }),
       () => null,
     );
     let detail: RaceDetail;

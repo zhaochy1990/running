@@ -55,8 +55,12 @@ export function getOrchestratorNode(modelConfig: ModelConfig, routes: Partial<Re
     // intent→node table; unrouted intents fall through to the `other` node
     // (which produces a reply) and only hit END when no `other` route exists.
     const goto = routes[classification.intent] ?? routes.other ?? END;
+    // Clear the race-strategy channel every turn: it is a per-turn artifact, and
+    // a stale value from an earlier turn would otherwise ride along in the
+    // checkpointed state (a later plain-text turn must not re-persist the old
+    // draft over the runner's manual edits).
     return new Command({
-      update: { intent: classification, llmCalls: 1 },
+      update: { intent: classification, llmCalls: 1, raceStrategy: null },
       goto,
     });
   };

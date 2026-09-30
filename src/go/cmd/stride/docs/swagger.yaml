@@ -2014,8 +2014,6 @@ definitions:
       content:
         additionalProperties: {}
         type: object
-      created_at:
-        type: string
       item_type:
         type: string
       race_id:

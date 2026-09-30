@@ -481,17 +481,13 @@ export class MySqlDataProvider implements DataProvider {
    * 与 race_plan 一样按 published 过滤——未发布赛事对策略上下文等同不存在。
    */
   async getRaceCalendarContext(raceEventId: number): Promise<RaceCalendarContext | null> {
-    const raceEventIdNum = Number(raceEventId);
-    if (!Number.isInteger(raceEventIdNum) || raceEventIdNum <= 0) {
-      throw new Error(`invalid raceEventId: ${raceEventId}`);
-    }
     const [eventRows, itemRows] = await Promise.all([
       this.pool.query<RowDataPacket[]>(
         `SELECT id, name, name_cn, race_date, province, city, climate, content_source
            FROM race_calendar
           WHERE id = ? AND published = 1
           LIMIT 1`,
-        [raceEventIdNum],
+        [raceEventId],
       ),
       this.pool.query<RowDataPacket[]>(
         `SELECT name, type, distance_km, start_point, finish_point, route_description,
@@ -499,7 +495,7 @@ export class MySqlDataProvider implements DataProvider {
            FROM race_calendar_item
           WHERE race_event_id = ?
           ORDER BY id ASC`,
-        [raceEventIdNum],
+        [raceEventId],
       ),
     ]);
     const event = eventRows[0][0];
@@ -523,7 +519,7 @@ export class MySqlDataProvider implements DataProvider {
     }
 
     return {
-      race_event_id: raceEventIdNum,
+      race_event_id: raceEventId,
       name: event.name as string,
       name_cn: (event.name_cn ?? null) as string | null,
       race_date: normalizeDay(event.race_date as string),

@@ -75,7 +75,6 @@ type raceStrategyDTO struct {
 	RaceID    uint64         `json:"race_id"`
 	ItemType  string         `json:"item_type"`
 	Content   map[string]any `json:"content"`
-	CreatedAt string         `json:"created_at"`
 	UpdatedAt string         `json:"updated_at"`
 }
 
@@ -145,29 +144,7 @@ func (r *raceStrategyRoutes) insert(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
-	if !racetypes.IsValid(req.ItemType) {
-		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_item_type"})
-		return
-	}
-	encoded, err := json.Marshal(req.Content)
-	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
-		return
-	}
-	strategy, created, err := r.store.UpsertRaceStrategy(c.Request.Context(), uid, req.RaceEventID, req.ItemType, string(encoded))
-	if err != nil {
-		writeRaceEngagementError(c, r.log, err)
-		return
-	}
-	status := http.StatusOK
-	if created {
-		status = http.StatusCreated
-	}
-	c.JSON(status, raceStrategyUpsertResponse{
-		RaceID:    strategy.RaceEventID,
-		ItemType:  strategy.ItemType,
-		UpdatedAt: strategy.UpdatedAt.UTC().Format(time.RFC3339),
-	})
+	r.upsert(c, uid, req.RaceEventID, req.ItemType, req.Content)
 }
 
 // get returns the caller's latest strategy for one race (the detail card's
@@ -245,16 +222,22 @@ func (r *raceStrategyRoutes) put(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
-	if !racetypes.IsValid(req.ItemType) {
+	r.upsert(c, uid, raceID, req.ItemType, req.Content)
+}
+
+// upsert is the shared tail of insert and put: validate the vocabulary and
+// content, write through the store, answer 201 on create / 200 on overwrite.
+func (r *raceStrategyRoutes) upsert(c *gin.Context, uid string, raceEventID uint64, itemType string, content map[string]any) {
+	if !racetypes.IsValid(itemType) {
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_item_type"})
 		return
 	}
-	encoded, err := json.Marshal(req.Content)
+	encoded, err := json.Marshal(content)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, errorResponse{Error: "invalid_content"})
 		return
 	}
-	strategy, created, err := r.store.UpsertRaceStrategy(c.Request.Context(), uid, raceID, req.ItemType, string(encoded))
+	strategy, created, err := r.store.UpsertRaceStrategy(c.Request.Context(), uid, raceEventID, itemType, string(encoded))
 	if err != nil {
 		writeRaceEngagementError(c, r.log, err)
 		return
@@ -285,7 +268,6 @@ func newRaceStrategyDTO(row *storage.RaceStrategy) raceStrategyDTO {
 		RaceID:    row.RaceEventID,
 		ItemType:  row.ItemType,
 		Content:   content,
-		CreatedAt: row.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt: row.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 }

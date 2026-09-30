@@ -168,12 +168,8 @@ async function persistRaceStrategy(dependencies: ChatDependencies, userId: strin
     logger.warn({ userId, issues: parsed.error.issues }, "race strategy artifact failed canonical validation; skipping persistence");
     return;
   }
-  const itemType = parsed.data.item_type ?? target.item_type ?? undefined;
-  if (itemType === undefined) {
-    logger.warn({ userId }, "race strategy has no item_type; skipping persistence");
-    return;
-  }
-  const saved = await writer.saveRaceStrategy(userId, target.race_event_id, itemType, parsed.data);
+  // RaceStrategySchema guarantees item_type, so the artifact carries it itself.
+  const saved = await writer.saveRaceStrategy(userId, target.race_event_id, parsed.data.item_type, parsed.data);
   if (saved) response.race_strategy_saved = true;
 }
 

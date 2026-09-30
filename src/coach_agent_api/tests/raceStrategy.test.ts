@@ -14,13 +14,15 @@ const jwtVerifier = {
   },
 };
 
+// 分段须与目标自洽（RaceStrategySchema superRefine：累计差 >60s 拒绝）：
+// 42.195 km × 5:41/km ≈ 3:59:48，与 3:59:59 差 11s。
 const strategy = {
   race_name: "杭州马拉松",
   item_type: "Marathon",
   target_finish_time: "3:59:59",
   summary: "前稳后渐进。",
   pace_segments: [
-    { segment: "0–10 km", distance_km: 10, pace: "5:45/km", segment_time: "57:30", cumulative_time: "57:30", note: "压住兴奋" },
+    { segment: "0–42.195 km", distance_km: 42.195, pace: "5:41/km", segment_time: "3:59:48", cumulative_time: "3:59:48", note: "全程匀速" },
   ],
   fueling_plan: [{ time_point: "赛前 30 分钟", content: "能量胶 1 支" }],
   course_tips: ["32km 爬坡提前降档"],
@@ -52,7 +54,7 @@ test("chat persists a race strategy produced under a race target", async () => {
     jwtVerifier,
     coachInvoker: {
       async invoke() {
-        return { messages: [{ type: "ai", content: "初稿如下……" }], raceStrategy: strategy };
+        return { messages: [{ type: "ai", content: "初稿如下……" }], intent: { intent: "race_strategy" }, raceStrategy: strategy };
       },
       streamEvents: neverStream,
     },
@@ -73,7 +75,7 @@ test("chat skips persistence without a race target", async () => {
     jwtVerifier,
     coachInvoker: {
       async invoke() {
-        return { messages: [{ type: "ai", content: "普通回复" }], raceStrategy: strategy };
+        return { messages: [{ type: "ai", content: "普通回复" }], intent: { intent: "race_strategy" }, raceStrategy: strategy };
       },
       streamEvents: neverStream,
     },
@@ -97,7 +99,7 @@ test("chat survives a failed race-strategy write", async () => {
     jwtVerifier,
     coachInvoker: {
       async invoke() {
-        return { messages: [{ type: "ai", content: "初稿如下……" }], raceStrategy: strategy };
+        return { messages: [{ type: "ai", content: "初稿如下……" }], intent: { intent: "race_strategy" }, raceStrategy: strategy };
       },
       streamEvents: neverStream,
     },
@@ -152,4 +154,33 @@ test("chat rejects a race target without race_event_id", async () => {
   const response = await postChat(app, { target: { kind: "race", item_type: "Marathon" } });
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "invalid_turn_scope" });
+});
+
+test("chat does not re-persist a stale strategy on a later plain turn", async () => {
+  // raceStrategy 是跨轮 state channel：上一轮的产物会残留在 checkpoint 里。
+  // 后续 routed to qa 的普通轮即使带着旧值，也不得再次落库（否则覆盖用户
+  // 在报告页的手动编辑）。门槛：本轮 intent 必须就是 race_strategy。
+  let saves = 0;
+  const app = createApp({
+    jwtVerifier,
+    coachInvoker: {
+      async invoke() {
+        return { messages: [{ type: "ai", content: "不客气！" }], intent: { intent: "training_question" }, raceStrategy: strategy };
+      },
+      streamEvents: neverStream,
+    },
+    raceStrategyWriter: {
+      async saveRaceStrategy() {
+        saves += 1;
+        return true;
+      },
+    },
+  });
+
+  const response = await postChat(app, { target: raceTarget() });
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as Record<string, unknown>;
+  assert.equal(body.race_strategy, undefined);
+  assert.equal(body.race_strategy_saved, undefined);
+  assert.equal(saves, 0);
 });

@@ -41,10 +41,12 @@ test("race-strategy prompt gates generation on race content and declares gaps", 
   assert.match(RACE_STRATEGY_PROMPT, /basis_note/);
 });
 
-test("extractRaceStrategyResult accepts a valid envelope and rejects anything else", () => {
+test("extractRaceStrategyResult takes the return_direct envelope, structure-checked only", () => {
+  // 内容有效性由 ToolStrategy 解析 + 校验中间件（失败即 throw）在到达前保证；
+  // 这里只钉结构：无信封 / 非 return_direct / 无 content → 普通回复。
   assert.deepEqual(extractRaceStrategyResult({ structuredResponse: { disposition: "return_direct", content: strategy } }), strategy);
   assert.equal(extractRaceStrategyResult({ structuredResponse: { disposition: "continue" } }), undefined);
-  assert.equal(extractRaceStrategyResult({ structuredResponse: { disposition: "return_direct", content: { race_name: "x" } } }), undefined);
+  assert.equal(extractRaceStrategyResult({ structuredResponse: { disposition: "return_direct" } }), undefined);
   assert.equal(extractRaceStrategyResult({}), undefined);
   assert.equal(extractRaceStrategyResult(null), undefined);
 });

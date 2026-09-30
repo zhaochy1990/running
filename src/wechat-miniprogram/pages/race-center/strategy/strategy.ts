@@ -21,6 +21,7 @@ import {
   type StrategyView,
 } from '../../../utils/raceStrategyRows';
 import { setPendingCoachContext } from '../../../services/coach';
+import { shanghaiDateFromIso, shanghaiTimeFromIso } from '../../../utils/date';
 import { userStore } from '../../../store/index';
 
 const GOAL_DAYS = [3, 4, 5, 6];
@@ -76,9 +77,12 @@ function statusBarHeight(): number {
   }
 }
 
+/** UTC RFC3339 → 上海时区 'YYYY/MM/DD HH:mm'（不做时区换算会差 8 小时）。 */
 function timeLabel(iso: string): string {
-  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(iso);
-  return m ? `${m[1].replace(/-/g, '/')} ${m[2]}` : '';
+  const day = shanghaiDateFromIso(iso);
+  const time = shanghaiTimeFromIso(iso);
+  if (!day || !time) return '';
+  return `${day.replace(/-/g, '/')} ${time.slice(0, 5)}`;
 }
 
 Page<StrategyPageData, StrategyPageHandlers>({

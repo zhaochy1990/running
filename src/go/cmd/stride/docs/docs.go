@@ -9625,9 +9625,6 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": {}
                 },
-                "created_at": {
-                    "type": "string"
-                },
                 "item_type": {
                     "type": "string"
                 },

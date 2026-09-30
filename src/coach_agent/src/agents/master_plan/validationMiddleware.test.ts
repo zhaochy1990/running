@@ -30,7 +30,7 @@ test("canonical master-plan middleware accepts fully refined responses", async (
         disposition: "return_direct",
         content: createTestMasterPlan(),
       },
-      _masterPlanValidationRetries: 0,
+      _schemaValidationRetries: 0,
     } as never,
     {} as never,
   );
@@ -46,13 +46,13 @@ test("canonical master-plan middleware retries Zod cross-field failures", async 
         disposition: "return_direct",
         content: invalid,
       },
-      _masterPlanValidationRetries: 0,
+      _schemaValidationRetries: 0,
     } as never,
     {} as never,
   );
   assert.ok(result);
   assert.equal(result.jumpTo, "model");
-  assert.equal(result._masterPlanValidationRetries, 1);
+  assert.equal(result._schemaValidationRetries, 1);
   assert.ok(HumanMessage.isInstance(result.messages?.[0]));
 });
 
@@ -66,7 +66,7 @@ test("canonical master-plan middleware caps invalid retries", () => {
           disposition: "return_direct",
           content: invalid,
         },
-        _masterPlanValidationRetries: 2,
+        _schemaValidationRetries: 2,
       } as never,
       {} as never,
     ),

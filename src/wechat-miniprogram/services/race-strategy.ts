@@ -41,7 +41,6 @@ export interface RaceStrategyResponse {
   race_id: number;
   item_type: string;
   content: RaceStrategy;
-  created_at: string;
   updated_at: string;
 }
 

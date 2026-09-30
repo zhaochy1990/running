@@ -1,6 +1,5 @@
 import { AIMessage } from "@langchain/core/messages";
 import type { RaceStrategy } from "@stride/contract";
-import { RaceStrategyDirectResponseSchema } from "@stride/contract";
 
 /**
  * 把结构化策略渲染成会话里的 Markdown 初稿。会话流（mp-html 渲染 GFM）不保
@@ -46,13 +45,18 @@ export function renderRaceStrategyMarkdown(strategy: RaceStrategy): string {
 /**
  * 从内层 agent 的返回里取已验证的策略信封。结构化输出未产生（教练声明依据
  * 不足、或纯追问）时返回 undefined，本轮按普通回复处理。
+ *
+ * 这里只做形状检查：structuredResponse 已在 ToolStrategy 解析和校验中间件
+ * （失败即 throw）双层保证下到达此处，第三次 safeParse 是冗余防御。
  */
 export function extractRaceStrategyResult(result: unknown): RaceStrategy | undefined {
   if (typeof result !== "object" || result === null) return undefined;
   const structured = (result as { structuredResponse?: unknown }).structuredResponse;
-  if (structured === undefined) return undefined;
-  const parsed = RaceStrategyDirectResponseSchema.safeParse(structured);
-  return parsed.success ? parsed.data.content : undefined;
+  if (typeof structured !== "object" || structured === null) return undefined;
+  const envelope = structured as { disposition?: unknown; content?: unknown };
+  if (envelope.disposition !== "return_direct") return undefined;
+  if (typeof envelope.content !== "object" || envelope.content === null) return undefined;
+  return envelope.content as RaceStrategy;
 }
 
 /** 结构化产物落进会话消息的形态（AIMessage，不再经任何模型改写）。 */
