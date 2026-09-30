@@ -3,8 +3,9 @@
 // 头区：名称+星标+双徽章 → 三宫格（天后开赛/比赛日/报名制式）→ 报名时间轴
 // （完成态按当前日期计算）→「报名：项目 · 状态 ▾」按钮；三 tab：概要/项目/出行。
 // 报名选择器是参赛计划的唯一创建入口（PUT / DELETE /api/users/me/race-plans/:id，
-// 后端 race_plans.go）；比赛策略卡（#396）：仅内容调研过（strategy_available）的
-// 赛事显示，未生成=CTA 进教练会话（带 race target），已生成=摘要进报告页。
+// 后端 race_plans.go）；比赛策略卡（#396）：跨 tab 常驻于 tab 栏上方（按产品原型），
+// 仅内容调研过（strategy_available）的赛事显示，未生成=CTA 进教练会话（带 race
+// target），已生成=摘要进报告页。
 // 视图变换在 utils/raceDetailRows（配套自检），请求在 services/race-center /
 // services/race-plans。计划列表接口没有单场查询，进来时整表拉一次找本场的计划。
 
