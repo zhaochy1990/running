@@ -1,10 +1,12 @@
 // 赛事中心页 —— 全年路跑赛事密表（#392，#384 定稿的 C 紧凑清单版式）。
 //
 // 数据走 services/race-center（GET /api/race-calendar #390，收藏 toggle #391）。
-// 每年数据以 scope=all 整年拉全（一页 100 场 + 翻页兜底，生产单年约 40 场），
+// 不做跨页面数据缓存（人工验收教训：列表/详情各自持 favorited 副本必然漂移）：
+// 每次进入页面都重拉当前 年份×省份 的整年数据（scope=all 一页 100 场 + 翻页
+// 兜底，生产单年约 40 场）；已有数据时静默后台刷新、旧列表先行，不闪屏。
 // 「即将开跑」（race_date >= 今天）与 项目类型 / 收藏视图在客户端切换，即点
 // 即生效；省份走服务端过滤（province= 省名原文，静态 34 省列表见
-// constants/provinces，不随后端数据渲染），缓存键按 年份×省份 区分。
+// constants/provinces，不随后端数据渲染）。
 // 纯视图变换（徽章/缩写/分组/筛选）在 utils/raceCenterRows，配套自检。
 
 import {
@@ -59,10 +61,15 @@ interface RaceCenterPageHandlers {
   onRaceTap(e: WechatMiniprogram.TouchEvent): void;
   onPlansTap(): void;
   onBack(): void;
-  refresh(bustCache: boolean): Promise<void>;
+  refresh(): Promise<void>;
   applyView(): void;
-  /** 整年数据缓存（键=年份|省份，scope 恒 all）；实例级，页面关掉即弃 */
-  _cache: Map<string, RaceCalendarRace[]>;
+  /** 当前视图（年份×省份）已拉到的整年数据；实例级，页面关掉即弃。
+   *  不跨页面缓存：每次进入页面重拉服务端真值（收藏星标跨页同步的前提）。 */
+  _rows: RaceCalendarRace[];
+  /** _rows 归属的 年份|省份 键：判断「重进重拉」还是「同键静默刷新」 */
+  _rowsKey: string;
+  /** 在途请求的键：onLoad+onShow 同帧双触发时只发一次 */
+  _fetchingKey: string;
   /** 进行中的星标请求，防连点抖动 */
   _pendingStars: Set<number>;
   /** 请求序号，慢响应回来时发现自己已过期则丢弃 */
@@ -118,7 +125,9 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
   },
 
   // 实例级私有状态（随页面销毁丢弃）
-  _cache: new Map<string, RaceCalendarRace[]>(),
+  _rows: [],
+  _rowsKey: '',
+  _fetchingKey: '',
   _pendingStars: new Set<number>(),
   _fetchSeq: 0,
 
@@ -130,59 +139,61 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
       years,
       yearIndex: Math.max(years.indexOf(thisYear), 0),
     });
-    void this.refresh(false);
+    void this.refresh();
   },
 
-  // 未登录进入被拦下后，登录回来本页要能自愈（缓存命中时 refresh 不发请求）
+  // 每次进入（含从详情返回、登录回来自愈、小程序前台切回）都重拉服务端真值
   onShow() {
-    if (!this.data.loading) void this.refresh(false);
+    void this.refresh();
   },
 
   onPullDownRefresh() {
-    void this.refresh(true).then(() => wx.stopPullDownRefresh());
+    void this.refresh().then(() => wx.stopPullDownRefresh());
   },
 
-  /** 载入（或重载）当前年份的整年数据并渲染。缓存命中时纯本地重算。 */
-  async refresh(bustCache: boolean) {
+  /** 拉取（或静默重拉）当前 年份×省份 的整年数据并渲染。每次调用都发请求：
+   *  同键在途时只发一次（onLoad+onShow 同帧双触发），已有数据时旧列表先行。 */
+  async refresh() {
     if (!userStore.getState().user) {
       this.setData({ loading: false, error: '请先登录后查看赛事日历' });
       return;
     }
     const year = this.data.years[this.data.yearIndex] || shanghaiToday().slice(0, 4);
     const province = this.data.provinceIndex > 0 ? this.data.provinceNames[this.data.provinceIndex] || '' : '';
-    const cacheKey = `${year}|${province || 'all'}`;
+    const key = `${year}|${province || 'all'}`;
+    if (this._fetchingKey === key) return; // 同一份数据已在拉取
+    this._fetchingKey = key;
     const seq = (this._fetchSeq += 1);
 
-    if (bustCache || !this._cache.has(cacheKey)) {
-      this.setData({ loading: true, error: '' });
-      try {
-        const rows = await fetchYear(year, province);
-        // 已被更新的请求取代：本响应作废（不写缓存，新请求会带来更新的数据）
-        if (seq !== this._fetchSeq) return;
-        this._cache.set(cacheKey, rows);
-      } catch (err: unknown) {
-        if (seq !== this._fetchSeq) return;
-        const msg = err instanceof Error ? err.message : '加载失败，请稍后重试';
-        // 缓存里没有该份数据（如切年/切省失败）：清空残留视图，只留错误条；
-        // 有缓存（如下拉刷新失败）：保留旧列表，banner 说明即可
-        const patch: Partial<RaceCenterPageData> = { loading: false, error: msg };
-        if (!this._cache.has(cacheKey)) {
-          Object.assign(patch, { groups: [], viewCount: 0, emptyText: '' });
-        }
-        this.setData(patch);
-        return;
-      }
+    // 已有同键数据：静默后台刷新（旧列表先行，不转圈）；首拉才展示 loading
+    const silent = this._rowsKey === key && this._rows.length > 0;
+    if (!silent) this.setData({ loading: true, error: '' });
+    try {
+      const rows = await fetchYear(year, province);
+      // 已被更新的请求取代：本响应作废
+      if (seq !== this._fetchSeq) return;
+      this._fetchingKey = '';
+      this._rows = rows;
+      this._rowsKey = key;
+      this.setData({ loading: false });
+      this.applyView();
+    } catch (err: unknown) {
+      if (seq !== this._fetchSeq) return;
+      this._fetchingKey = '';
+      const msg = err instanceof Error ? err.message : '加载失败，请稍后重试';
+      // 首拉失败（没有旧列表可显示）：清空视图只留错误条；
+      // 静默刷新失败：保留旧列表，banner 说明即可
+      const patch: Partial<RaceCenterPageData> = { loading: false, error: msg };
+      if (!silent) Object.assign(patch, { groups: [], viewCount: 0, emptyText: '' });
+      this.setData(patch);
     }
-    this.setData({ loading: false });
-    this.applyView();
   },
 
-  /** 用当前筛选条件重算 分组/计数/空态。数据已在缓存，纯同步。 */
+  /** 用当前筛选条件重算 分组/计数/空态。数据在 _rows，纯同步。 */
   applyView() {
     const year = this.data.years[this.data.yearIndex] || '';
     const province = this.data.provinceIndex > 0 ? this.data.provinceNames[this.data.provinceIndex] || '' : '';
-    const rows = this._cache.get(`${year}|${province || 'all'}`);
-    if (!rows) return; // 该份数据未落地：保留现状，请求回来后统一重算
+    const rows = this._rows;
 
     // 默认视图只看即将开跑；收藏视图与往年看整年（往年的 upcoming 恒空）
     const floor =
@@ -216,7 +227,7 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
     if (yearIndex === this.data.yearIndex) return;
     // 省份是静态列表，与年份无关，选中态跨年保留
     this.setData({ yearIndex });
-    void this.refresh(false);
+    void this.refresh();
   },
 
   onTypeChange(e: WechatMiniprogram.PickerChange) {
@@ -227,7 +238,7 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
   /** 省份切换：服务端过滤，按 年份×省份 取数（未缓存则发请求）。 */
   onProvinceChange(e: WechatMiniprogram.PickerChange) {
     this.setData({ provinceIndex: Number(e.detail.value) });
-    void this.refresh(false);
+    void this.refresh();
   },
 
   /** 收藏视图开关：纯客户端过滤，即点即生效。 */
@@ -240,10 +251,7 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
   async onStarTap(e: WechatMiniprogram.TouchEvent) {
     const id = Number(e.currentTarget.dataset.id);
     if (!id || this._pendingStars.has(id)) return;
-    const year = this.data.years[this.data.yearIndex] || '';
-    const province = this.data.provinceIndex > 0 ? this.data.provinceNames[this.data.provinceIndex] || '' : '';
-    const rows = this._cache.get(`${year}|${province || 'all'}`);
-    const row = rows?.find((r) => r.id === id);
+    const row = this._rows.find((r) => r.id === id);
     if (!row) return;
     const next = !row.favorited;
 
