@@ -503,10 +503,7 @@ export class MySqlDataProvider implements DataProvider {
 
     let cityContent: RaceCalendarContext["city_content"] = null;
     if (event.city) {
-      const [cityRows] = await this.pool.query<RowDataPacket[]>(
-        `SELECT city, intro FROM race_city_content WHERE city = ? LIMIT 1`,
-        [event.city],
-      );
+      const [cityRows] = await this.pool.query<RowDataPacket[]>(`SELECT city, intro FROM race_city_content WHERE city = ? LIMIT 1`, [event.city]);
       const city = cityRows[0];
       if (city) {
         const intro = parseJsonObject(city.intro, "race_city_content.intro");

@@ -27,6 +27,7 @@ func TestDeleteUserData_CoversEveryUserOwnedTable(t *testing.T) {
 		st.AutoMigrateUserDeletionAudit,
 		st.AutoMigrateRaceFavorites,
 		st.AutoMigrateRacePlans,
+		st.AutoMigrateRaceStrategies,
 		st.AutoMigrateHomeCity,
 	} {
 		if err := migrate(ctx); err != nil {

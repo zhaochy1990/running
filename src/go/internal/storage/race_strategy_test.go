@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -40,7 +41,8 @@ func TestRaceStrategy_UpsertKeepsLatestOnly(t *testing.T) {
 	if updated.Content != `{"target_finish_time":"3:55:00"}` {
 		t.Fatalf("latest version not kept: %s", updated.Content)
 	}
-	if !updated.CreatedAt.Equal(firstCreatedAt) {
+	// MySQL datetime 精度截到毫秒：按毫秒比较（覆盖不得重置创建时间）。
+	if !updated.CreatedAt.Truncate(time.Millisecond).Equal(firstCreatedAt.Truncate(time.Millisecond)) {
 		t.Fatalf("overwrite must keep created_at: %v vs %v", updated.CreatedAt, firstCreatedAt)
 	}
 
