@@ -110,7 +110,9 @@ export interface RaceCutoff {
   cutoff_at: string;
 }
 
-/** 详情页一个项目（userRaceItemDTO 的 v1 投影）。entry_fee 单位是分。 */
+/** 详情页一个项目（userRaceItemDTO 的 v1 投影）。entry_fee 单位是分。
+ * 内容列遵循后端「absent-when-empty as null」契约：仅基础字段的赛事
+ * cutoffs 为 null（e2e #395 曾因按非空数组 .map 白屏）。 */
 export interface RaceItem {
   id: number;
   name: string;
@@ -122,21 +124,23 @@ export interface RaceItem {
   start_point: RacePoint | null;
   finish_point: RacePoint | null;
   route_description: string | null;
-  cutoffs: RaceCutoff[];
+  cutoffs: RaceCutoff[] | null;
 }
 
 /** 城市介绍（userCityContentDTO 的 v1 投影：图片/省份列不镜像）。 */
 export interface RaceCityContent {
   city: string;
   intro: { overview: string; culture: string; food: string; history: string } | null;
-  attractions: Array<{ name: string; description: string }>;
+  attractions: Array<{ name: string; description: string }> | null;
 }
 
-/** 赛事详情（userRaceDetailDTO 镜像）：列表行字段 + 三段内容区。 */
+/** 赛事详情（userRaceDetailDTO 镜像）：列表行字段 + 三段内容区。
+ * 内容区遵循后端「absent-when-empty as null」契约：未维护内容的赛事
+ * signup_channels / packet_pickup 为 null（items 恒为数组，Go 侧 make 保证）。 */
 export interface RaceDetail extends RaceCalendarRace {
   signup_timeline: RaceSignupTimeline | null;
-  signup_channels: RaceSignupChannel[];
-  packet_pickup: RacePacketPickup[];
+  signup_channels: RaceSignupChannel[] | null;
+  packet_pickup: RacePacketPickup[] | null;
   items: RaceItem[];
   city_content: RaceCityContent | null;
 }

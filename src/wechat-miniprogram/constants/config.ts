@@ -10,12 +10,14 @@ export const ENV = {
 export type Env = typeof ENV[keyof typeof ENV];
 
 const API_BASE_URLS: Record<Env, string> = {
-  [ENV.DEV]: 'https://api.stride-running.cn',
+  // DEV 指向 stride-devops/local 的 api-gateway（8082，镜像生产 Caddy 的
+  // auth/api 分流）。开发者工具需勾选「不校验合法域名」。
+  [ENV.DEV]: 'http://127.0.0.1:8082',
   [ENV.STAGING]: 'https://api.stride-running.cn',
   [ENV.PROD]: 'https://api.stride-running.cn',
 };
 const AUTH_BASE_URLS: Record<Env, string> = {
-  [ENV.DEV]: 'https://api.stride-running.cn',
+  [ENV.DEV]: 'http://127.0.0.1:8082',
   [ENV.STAGING]: 'https://api.stride-running.cn',
   [ENV.PROD]: 'https://api.stride-running.cn',
 };
@@ -25,7 +27,9 @@ const COACH_BASE_URLS: Record<Env, string> = {
   [ENV.PROD]: 'https://api.stride-running.cn',
 };
 const client_ids: Record<Env, string> = {
-  [ENV.DEV]: 'app_43290db46d71409caa36fc4d',
+  // DEV 与生产同 id：本地栈用 enable-miniprogram-login.sh 注册同一个
+  // client_id（含 wechat provider），环境切换只动 URL。
+  [ENV.DEV]: 'app_895073719c0147368b8feed3',
   [ENV.STAGING]: 'app_895073719c0147368b8feed3',
   [ENV.PROD]: 'app_895073719c0147368b8feed3',
 }

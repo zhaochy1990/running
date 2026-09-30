@@ -32,6 +32,7 @@ jobs:
       go: ${{ steps.filter.outputs.go }}
       coach: ${{ steps.filter.outputs.coach }}
       contract: ${{ steps.filter.outputs.contract }}
+      miniprogram: ${{ steps.filter.outputs.miniprogram }}
     steps:
       - uses: actions/checkout@v4
       # These are CHECK triggers, deliberately separate from the artifact paths
@@ -57,6 +58,8 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'package.json'
+            miniprogram:
+              - 'src/wechat-miniprogram/**'
             contract:
               - 'src/go/internal/api/weekly_plan_validation.go'
               - 'src/go/internal/api/weekly_plan_contract_parity_test.go'
@@ -189,6 +192,28 @@ jobs:
           go test ./internal/storage/...
           -run 'TestLeaseRenewalAndListStaleRunning|TestTransitionJobCompareAndSet'
           -count=1 -v
+
+  miniprogram:
+    name: WeChat miniprogram (tsc + row self-checks)
+    needs: changes
+    if: inputs.full || needs.changes.outputs.miniprogram == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+          cache-dependency-path: src/wechat-miniprogram/package-lock.json
+      - name: Install
+        run: npm install
+        working-directory: src/wechat-miniprogram
+      - name: Type check (tsc --noEmit)
+        run: npm run check
+        working-directory: src/wechat-miniprogram
+      - name: Row self-checks
+        run: npm test
+        working-directory: src/wechat-miniprogram
 
   coach:
     name: Coach workspace (biome + vitest)

@@ -173,7 +173,7 @@ function summaryRows(detail: RaceDetail): RaceKvRow[] {
 }
 
 function channelRows(detail: RaceDetail): RaceChannelRow[] {
-  return detail.signup_channels.map((c, i) => ({
+  return (detail.signup_channels ?? []).map((c, i) => ({
     key: String(i),
     name: c.name,
     type: c.type,
@@ -197,7 +197,7 @@ function itemSection(it: RaceItem): RaceItemSection {
       { k: '报名费', v: feeLabel(it.entry_fee) },
     ],
     route: it.route_description || '',
-    cutoffs: it.cutoffs.map((c) => `${c.point} ${c.cutoff_at}`),
+    cutoffs: (it.cutoffs ?? []).map((c) => `${c.point} ${c.cutoff_at}`),
   };
 }
 
@@ -219,14 +219,14 @@ function tripView(detail: RaceDetail): RaceTripView {
     cityView = {
       title: `城市 · ${city.city}`,
       paragraphs: paragraphs.map(([k, v]) => ({ k, v })),
-      attractions: city.attractions.map((a) => ({
+      attractions: (city.attractions ?? []).map((a) => ({
         name: a.name,
         description: a.description,
       })),
     };
   }
   return {
-    pickups: detail.packet_pickup.map((p, i) => ({
+    pickups: (detail.packet_pickup ?? []).map((p, i) => ({
       key: String(i),
       time: p.time,
       location: p.location,

@@ -5,7 +5,11 @@
  * 项目节（报名费分转元、赛道·关门待补）/ 出行视图 / 报名选择器词汇与 chips，
  * 不依赖小程序运行时（services 只做 type-only 导入，剥离后无副作用）。
  */
-import type { RaceDetail, RaceItem } from '../services/race-center.ts';
+import type {
+  RaceCityContent,
+  RaceDetail,
+  RaceItem,
+} from '../services/race-center.ts';
 import {
   daysUntil,
   firstStartTime,
@@ -267,5 +271,45 @@ eq(planButtonLabel('Marathon', 'registered'), '全马 · 已报名（等抽签�
 eq(planButtonLabel('HalfMarathon', 'won'), '半马 · 已中签', 'button won');
 eq(planButtonLabel('10Km', 'confirmed'), '10K · 确认参赛', 'button km chip');
 eq(planButtonLabel('Marathon', 'lost'), '全马 · 未中签', 'button lost');
+
+// 仅基础字段赛事（#395 e2e 回归）：后端契约「absent-when-empty as null」——
+// signup_channels / packet_pickup / cutoffs 为 null 时 toDetailView 不得抛
+// （曾因按非空数组 .map 白屏），各段渲染为空集合。
+const noContentRace = toDetailView(
+  detail({
+    signup_timeline: null,
+    signup_channels: null,
+    packet_pickup: null,
+    items: [
+      item({
+        cutoffs: null as unknown as RaceItem['cutoffs'],
+        start_time: null,
+        entry_fee: null,
+        quota: null,
+        distance_km: null,
+        start_point: null,
+        finish_point: null,
+      }),
+    ],
+  }),
+  TODAY,
+);
+eq(noContentRace.channels, [], 'bare race: channels null → empty rows');
+eq(noContentRace.items[0].cutoffs, [], 'bare race: cutoffs null → empty list');
+eq(noContentRace.trip.pickups, [], 'bare race: pickups null → empty list');
+eq(noContentRace.head.timeline, [], 'bare race: no timeline');
+
+// 城市内容有 intro 无 attractions：attractions null → 空列表
+const introOnly = toDetailView(
+  detail({
+    city_content: {
+      city: '杭州市',
+      intro: { overview: 'o', culture: '', food: 'f', history: '' },
+      attractions: null as unknown as RaceCityContent['attractions'],
+    },
+  }),
+  TODAY,
+);
+eq(introOnly.trip.city?.attractions, [], 'city attractions null → empty');
 
 console.log('raceDetailRows check passed');
