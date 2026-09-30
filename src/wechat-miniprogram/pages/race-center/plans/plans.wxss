@@ -238,8 +238,8 @@
 }
 
 .steps__chip--on {
-  background: #5fc992;
-  color: #07130b;
+  background: #ff6363;
+  color: #ffffff;
   font-weight: 600;
 }
 
@@ -273,7 +273,7 @@
 
 .lost-row__link {
   flex-shrink: 0;
-  color: #5fc992;
+  color: #ff6363;
 }
 
 /* ---------- 行程布尔勾选 ---------- */
@@ -340,8 +340,8 @@
 .empty__btn {
   padding: 18rpx 52rpx;
   font-size: 26rpx;
-  color: #07130b;
-  background: #5fc992;
+  color: #ffffff;
+  background: #ff6363;
   border-radius: 36rpx;
   font-weight: 600;
 }

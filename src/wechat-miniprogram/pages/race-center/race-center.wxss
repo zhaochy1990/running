@@ -115,7 +115,7 @@
 }
 
 .fbar__cell--on {
-  color: #5fc992;
+  color: #ff6363;
   font-weight: 600;
 }
 
