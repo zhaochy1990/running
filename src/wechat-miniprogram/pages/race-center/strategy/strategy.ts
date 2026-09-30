@@ -287,6 +287,8 @@ Page<StrategyPageData, StrategyPageHandlers>({
     setPendingCoachContext({
       target: { kind: 'race', race_event_id: this._raceId, item_type: view.itemType },
       label: `${view.raceName} · ${view.itemTypeLabel}`,
+      // #513：报告页已有策略，kickoff 带现有目标，教练开场问要调整哪方面
+      kickoff: `我已经有一份「${view.raceName}」的比赛策略（目标 ${view.targetTime}），想和你聊聊怎么调整`,
     });
     // reLaunch 而非 switchTab：本页是深层普通页面，switchTab 会先播放
     // 返回宿主 tab 的关闭动画再切教练 tab，视觉上闪现宿主 tab 页。

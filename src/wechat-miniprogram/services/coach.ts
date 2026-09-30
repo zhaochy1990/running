@@ -32,11 +32,13 @@ let turnCounter = 0;
 // 教练页 onShow 消费后清除。
 const PENDING_CONTEXT_KEY = 'coach.pendingContext';
 
-/** 首页「和教练聊一聊」交给教练页的上下文：机器可读 target + 展示标签。 */
+/** 入口页交给教练页的上下文：机器可读 target + 展示标签。 */
 export interface PendingCoachContext {
   target: CoachSessionTarget;
   /** 展示用，如「轻松跑 12km · 9月8日」；为空则只显示日期。 */
   label: string;
+  /** 入口带入的首条用户消息（#513）：教练页建会话后自动发出，教练主动开场确认；兼作会话标题。 */
+  kickoff?: string;
 }
 
 export function setPendingCoachContext(context: PendingCoachContext): void {
@@ -53,7 +55,12 @@ export function takePendingCoachContext(): PendingCoachContext | null {
     const v = wx.getStorageSync(PENDING_CONTEXT_KEY);
     if (v && typeof v === 'object' && v.target && typeof v.target.kind === 'string') {
       wx.removeStorageSync(PENDING_CONTEXT_KEY);
-      return v as PendingCoachContext;
+      // kickoff 是可选新增字段且有副作用（会替用户自动发消息）：旧数据/损坏数据
+      // 里非 string 或空串一律不带。
+      const context = v as PendingCoachContext;
+      return typeof context.kickoff === 'string' && context.kickoff.trim()
+        ? context
+        : { ...context, kickoff: undefined };
     }
   } catch {
     /* ignore */

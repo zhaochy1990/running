@@ -50,6 +50,12 @@ test("race-strategy prompt gates generation on race content and asks the athlete
   assert.match(RACE_STRATEGY_PROMPT, /不得包含对运动员跑步能力的分析/);
 });
 
+test("race-strategy prompt asks first on generic entry before generating (#513)", () => {
+  // 一键入口只带泛化意图时，先追问参赛意愿/目标成绩/调整点，不直接生成。
+  assert.match(RACE_STRATEGY_PROMPT, /是否准备参加/);
+  assert.match(RACE_STRATEGY_PROMPT, /跳过追问/);
+});
+
 test("extractRaceStrategyResult takes the return_direct envelope, structure-checked only", () => {
   // 内容有效性由 ToolStrategy 解析 + 校验中间件（失败即 throw）在到达前保证；
   // 这里只钉结构：无信封 / 非 return_direct / 无 content → 普通回复。

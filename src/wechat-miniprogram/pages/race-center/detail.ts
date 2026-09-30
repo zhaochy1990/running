@@ -334,6 +334,8 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
     setPendingCoachContext({
       target: { kind: 'race', race_event_id: this._raceId, item_type: itemType },
       label: `${name} · ${typeAbbr(itemType) || itemType}`,
+      // #513：按钮即意图，进会话自动发出，教练主动开场确认参赛意愿/目标
+      kickoff: `我想和你聊聊「${name}」的比赛策略`,
     });
     // reLaunch 而非 switchTab：本页是「我」tab 链路下的深层普通页面，
     // switchTab 会先播放返回宿主 tab（我）的关闭动画再切教练 tab，视觉上闪现「我」页。
