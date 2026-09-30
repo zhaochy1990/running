@@ -2,9 +2,9 @@
 // 配套 utils/raceDetailRows.check.mts 自检
 // （`node --import ./utils/ts-resolve-hooks.mjs utils/raceDetailRows.check.mts`）。
 // 页面（pages/race-center/detail）负责请求与交互，这里只做
-// 数据 → 头区 / 概要 / 项目 / 出行 视图的确定性变换。
+// 数据 → 头区 / 难度 / 项目 / 出行 视图的确定性变换。
 // 版式按 #385 定稿：头区（名称+星标+双徽章 → 三宫格 → 报名时间轴 → 报名按钮）
-// + 概要/项目/出行 三 tab；比赛策略卡归 v2（#386），本期不上。
+// + 难度/项目/出行 三 tab；比赛策略卡归 v2（#386），本期不上。
 
 import type { RaceDetail, RaceItem } from '../services/race-center';
 import type { RacePlanState } from '../services/race-plans';
