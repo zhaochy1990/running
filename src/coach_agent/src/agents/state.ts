@@ -5,7 +5,7 @@ import { z } from "zod/v4";
 // Structured output of the intent classifier; also the type of the `intent`
 // state channel the orchestrator writes to.
 export const IntentClassificationSchema = z.object({
-  intent: z.enum(["weekly_plan", "master_plan", "training_question", "other"]),
+  intent: z.enum(["weekly_plan", "master_plan", "race_strategy", "training_question", "other"]),
   // topic: z.string(),
   // summary: z.string(),
 });
@@ -26,4 +26,6 @@ export const AgentsState = new StateSchema({
   // S1 master-plan generation channels (converged from the former GenState).
   inputPayload: z.custom<GenInputPayload | null>().default(null),
   context: z.custom<MasterPlanContext | null>().default(null),
+  // race_strategy 业务节点回填的结构化策略产物（无则为 null）；coach API 据此落库。
+  raceStrategy: z.custom<unknown>().default(null),
 });

@@ -1,10 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "HTTP API fronting the STRIDE worker: create and track async jobs and pipeline runs, and manage user profile, onboarding, and watch-provider login.",
-        "title": "STRIDE API",
-        "contact": {},
-        "version": "1.0"
+        "contact": {}
     },
     "paths": {
         "/api/admin/async-runs": {
@@ -2936,6 +2933,138 @@
                 }
             }
         },
+        "/api/users/me/race-strategies/{race_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the current user's latest race strategy for one race.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "race-strategies"
+                ],
+                "summary": "Get my race strategy",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Race id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceStrategyDTO"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Upserts (overwrites) the current user's race strategy edits for one published race.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "race-strategies"
+                ],
+                "summary": "Update my race strategy",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Race id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Item type and strategy content JSON",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.raceStrategyPutRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceStrategyUpsertResponse"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceStrategyUpsertResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/me/training-goal": {
             "get": {
                 "security": [
@@ -3903,6 +4032,94 @@
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/{user_id}/race-strategies": {
+            "post": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    }
+                ],
+                "description": "Internal-only. Upserts (overwrites) the user's latest race strategy for one published race; only the latest version is kept.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "race-strategies"
+                ],
+                "summary": "Save a coach race strategy",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Target user UUID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Race id, item type and strategy content JSON",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.raceStrategyInsertRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceStrategyUpsertResponse"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceStrategyUpsertResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -9389,6 +9606,74 @@
                 }
             }
         },
+        "api.raceStrategyDTO": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "race_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.raceStrategyInsertRequest": {
+            "type": "object",
+            "required": [
+                "content",
+                "item_type",
+                "race_event_id"
+            ],
+            "properties": {
+                "content": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "race_event_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.raceStrategyPutRequest": {
+            "type": "object",
+            "required": [
+                "content",
+                "item_type"
+            ],
+            "properties": {
+                "content": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "item_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.raceStrategyUpsertResponse": {
+            "type": "object",
+            "properties": {
+                "item_type": {
+                    "type": "string"
+                },
+                "race_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "api.racesResponse": {
             "type": "object",
             "properties": {
@@ -10024,6 +10309,10 @@
                 "signup_timeline": {
                     "$ref": "#/definitions/storage.RaceSignupTimeline"
                 },
+                "strategy_available": {
+                    "description": "StrategyAvailable reports whether the race's content has been researched\n(event-level content_source set): the v2 strategy card gates on it —\nonly a researched race offers 和教练聊一聊比赛策略 (#396). Derived, not\npassed through: the provenance term itself is an admin field and must\nnot leak into the user projection.",
+                    "type": "boolean"
+                },
                 "wa_label": {
                     "type": "string"
                 }
@@ -10394,12 +10683,8 @@
                     "x-nullable": true
                 },
                 "structured": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/api.structuredWeekResponse"
-                        }
-                    ],
-                    "x-nullable": true
+                    "x-nullable": true,
+                    "$ref": "#/definitions/api.structuredWeekResponse"
                 },
                 "total_duration_fmt": {
                     "type": "string"
@@ -10791,20 +11076,6 @@
                     "type": "string"
                 }
             }
-        }
-    },
-    "securityDefinitions": {
-        "BearerAuth": {
-            "description": "\"Bearer \u003cJWT\u003e\" for end-user callers (RS256).",
-            "type": "apiKey",
-            "name": "Authorization",
-            "in": "header"
-        },
-        "InternalToken": {
-            "description": "Shared secret for server-to-server callers.",
-            "type": "apiKey",
-            "name": "X-Internal-Token",
-            "in": "header"
         }
     }
 }

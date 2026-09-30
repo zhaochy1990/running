@@ -63,8 +63,23 @@
           <view class="tabs__item {{tabIndex === 2 ? 'tabs__item--on' : ''}}" data-tab="2" bindtap="onTabTap">出行</view>
         </view>
 
-        <!-- 概要：关键信息 + 报名渠道 -->
+        <!-- 概要：比赛策略卡（#396：仅内容调研过的赛事开放）+ 关键信息 + 报名渠道 -->
         <block wx:if="{{tabIndex === 0}}">
+          <view wx:if="{{strategyEntry}}" class="card strategy" bindtap="onStrategyTap">
+            <block wx:if="{{strategySummary}}">
+              <view class="card__title">比赛策略<text class="strategy__state strategy__state--on">已生成</text></view>
+              <view class="strategy__row">
+                <view class="strategy__target">目标 <text class="strategy__time">{{strategySummary.target}}</text></view>
+                <view class="strategy__updated">{{strategySummary.updatedAt}}</view>
+              </view>
+              <view class="strategy__go">查看完整报告（配速表 · 补给 · 提示，可编辑）›</view>
+            </block>
+            <block wx:else>
+              <view class="card__title">比赛策略</view>
+              <view class="strategy__desc">教练结合赛道内容与你的近期水平，定制这场比赛的分段配速与补给计划</view>
+              <view class="strategy__cta">和教练聊一聊比赛策略 ›</view>
+            </block>
+          </view>
           <view class="card">
             <view class="card__title">关键信息</view>
             <view class="kv" wx:for="{{view.summary}}" wx:key="k">

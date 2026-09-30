@@ -2009,6 +2009,52 @@ definitions:
           $ref: '#/definitions/api.racePlanDTO'
         type: array
     type: object
+  api.raceStrategyDTO:
+    properties:
+      content:
+        additionalProperties: {}
+        type: object
+      item_type:
+        type: string
+      race_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  api.raceStrategyInsertRequest:
+    properties:
+      content:
+        additionalProperties: {}
+        type: object
+      item_type:
+        type: string
+      race_event_id:
+        type: integer
+    required:
+    - content
+    - item_type
+    - race_event_id
+    type: object
+  api.raceStrategyPutRequest:
+    properties:
+      content:
+        additionalProperties: {}
+        type: object
+      item_type:
+        type: string
+    required:
+    - content
+    - item_type
+    type: object
+  api.raceStrategyUpsertResponse:
+    properties:
+      item_type:
+        type: string
+      race_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   api.racesResponse:
     properties:
       races:
@@ -2435,6 +2481,14 @@ definitions:
         type: array
       signup_timeline:
         $ref: '#/definitions/storage.RaceSignupTimeline'
+      strategy_available:
+        description: |-
+          StrategyAvailable reports whether the race's content has been researched
+          (event-level content_source set): the v2 strategy card gates on it —
+          only a researched race offers 和教练聊一聊比赛策略 (#396). Derived, not
+          passed through: the provenance term itself is an admin field and must
+          not leak into the user projection.
+        type: boolean
       wa_label:
         type: string
     type: object
@@ -2684,8 +2738,7 @@ definitions:
         type: string
         x-nullable: true
       structured:
-        allOf:
-        - $ref: '#/definitions/api.structuredWeekResponse'
+        $ref: '#/definitions/api.structuredWeekResponse'
         x-nullable: true
       total_duration_fmt:
         type: string
@@ -2943,10 +2996,6 @@ definitions:
     type: object
 info:
   contact: {}
-  description: 'HTTP API fronting the STRIDE worker: create and track async jobs and
-    pipeline runs, and manage user profile, onboarding, and watch-provider login.'
-  title: STRIDE API
-  version: "1.0"
 paths:
   /api/{user}/ability/backfill:
     post:
@@ -6305,6 +6354,64 @@ paths:
       summary: Activate a season plan draft
       tags:
       - master-plan
+  /api/users/{user_id}/race-strategies:
+    post:
+      consumes:
+      - application/json
+      description: Internal-only. Upserts (overwrites) the user's latest race strategy
+        for one published race; only the latest version is kept.
+      parameters:
+      - description: Target user UUID
+        in: path
+        name: user_id
+        required: true
+        type: string
+      - description: Race id, item type and strategy content JSON
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.raceStrategyInsertRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.raceStrategyUpsertResponse'
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.raceStrategyUpsertResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      summary: Save a coach race strategy
+      tags:
+      - race-strategies
   /api/users/me:
     delete:
       responses:
@@ -6808,6 +6915,92 @@ paths:
       summary: Create or update a race plan
       tags:
       - race-plans
+  /api/users/me/race-strategies/{race_id}:
+    get:
+      description: Returns the current user's latest race strategy for one race.
+      parameters:
+      - description: Race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.raceStrategyDTO'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get my race strategy
+      tags:
+      - race-strategies
+    put:
+      consumes:
+      - application/json
+      description: Upserts (overwrites) the current user's race strategy edits for
+        one published race.
+      parameters:
+      - description: Race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      - description: Item type and strategy content JSON
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.raceStrategyPutRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.raceStrategyUpsertResponse'
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.raceStrategyUpsertResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update my race strategy
+      tags:
+      - race-strategies
   /api/users/me/training-goal:
     get:
       produces:
@@ -7205,15 +7398,4 @@ paths:
       summary: Get a pipeline run's status
       tags:
       - pipelines
-securityDefinitions:
-  BearerAuth:
-    description: '"Bearer <JWT>" for end-user callers (RS256).'
-    in: header
-    name: Authorization
-    type: apiKey
-  InternalToken:
-    description: Shared secret for server-to-server callers.
-    in: header
-    name: X-Internal-Token
-    type: apiKey
 swagger: "2.0"

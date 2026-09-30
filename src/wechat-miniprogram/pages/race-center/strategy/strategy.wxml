@@ -1,0 +1,140 @@
+<view class="page">
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBack">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">比赛策略</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <view class="content" style="padding-top: calc({{statusBarHeight}}px + 128rpx);">
+    <view wx:if="{{loading}}" class="state-card">
+      <view class="spinner"></view>
+      <view class="state-card__text">加载中…</view>
+    </view>
+
+    <block wx:elif="{{error}}">
+      <view class="banner banner--error">{{error}}</view>
+      <view class="card" bindtap="onBack">
+        <view class="card__empty">回到赛事详情</view>
+      </view>
+    </block>
+
+    <block wx:elif="{{view}}">
+      <!-- hero：赛事名 + 目标成绩 + 主按钮（教练再聊）+ 次要（分享/配速卡） -->
+      <view class="card hero">
+        <view class="hero__sub">{{raceDayText}} · {{view.itemTypeLabel}}</view>
+        <view class="hero__name">{{view.raceName}}</view>
+        <view class="hero__target">目标 <text class="hero__time">{{view.targetTime}}</text></view>
+        <view class="hero__summary">{{view.summary}}</view>
+        <view class="hero__actions">
+          <button class="hero__btn hero__btn--lead" bindtap="onCoachTap">和教练聊一聊比赛策略</button>
+          <view class="hero__row">
+            <button class="hero__btn hero__btn--minor" open-type="share">分享</button>
+            <button class="hero__btn hero__btn--minor" bindtap="onPosterTap">配速卡</button>
+          </view>
+        </view>
+      </view>
+
+      <!-- 分段配速：五列表格，pace/说明可编辑；用时=距离×配速自动算 -->
+      <view class="card">
+        <view class="card__title">分段配速<text class="card__hint">配速/说明可编辑，用时自动换算</text></view>
+        <view class="pace pace--head">
+          <view class="pace__seg">分段</view>
+          <view class="pace__pace">配速</view>
+          <view class="pace__time">本段</view>
+          <view class="pace__time">累计</view>
+          <view class="pace__note">说明</view>
+        </view>
+        <view class="pace" wx:for="{{view.paceRows}}" wx:for-item="row" wx:key="index">
+          <view class="pace__seg">{{row.segment}}</view>
+          <input
+            class="pace__cell pace__cell--edit"
+            value="{{row.pace}}"
+            data-index="{{index}}"
+            bindblur="onPaceBlur"
+          />
+          <view class="pace__time">{{row.segmentTime}}</view>
+          <view class="pace__time">{{row.cumulativeTime}}</view>
+          <input
+            class="pace__cell pace__cell--edit pace__note"
+            value="{{row.note}}"
+            data-index="{{index}}"
+            bindblur="onNoteBlur"
+          />
+        </view>
+      </view>
+
+      <!-- 补给计划：逐行可编辑 + 增删 -->
+      <view class="card">
+        <view class="card__title">补给计划<text class="card__hint">时间点｜内容，可增删</text></view>
+        <view class="fuel" wx:for="{{view.fuelingRows}}" wx:for-item="row" wx:key="index">
+          <input
+            class="fuel__when pace__cell--edit"
+            value="{{row.timePoint}}"
+            placeholder="时间点"
+            data-index="{{index}}"
+            bindblur="onFuelingWhenBlur"
+          />
+          <input
+            class="fuel__what pace__cell--edit"
+            value="{{row.content}}"
+            placeholder="内容"
+            data-index="{{index}}"
+            bindblur="onFuelingWhatBlur"
+          />
+          <view class="fuel__del" data-index="{{index}}" bindtap="onFuelingRemove">✕</view>
+        </view>
+        <view class="fuel__add" bindtap="onFuelingAdd">+ 添加一条补给</view>
+      </view>
+
+      <!-- 提示：赛道（来自调研内容）+ 天气 -->
+      <view class="card">
+        <view class="card__title">赛道提示</view>
+        <view class="tip" wx:for="{{view.courseTips}}" wx:key="*this">· {{item}}</view>
+        <view wx:if="{{!view.courseTips.length}}" class="card__empty">待补</view>
+      </view>
+      <view class="card">
+        <view class="card__title">天气提示</view>
+        <view class="tip tip--pre">{{view.weatherTips}}</view>
+      </view>
+      <view class="card" wx:if="{{view.basisNote}}">
+        <view class="card__title">依据</view>
+        <view class="tip">{{view.basisNote}}</view>
+      </view>
+
+      <!-- 保存 + 设为目标 -->
+      <view class="actions">
+        <view class="actions__save {{dirty ? 'actions__save--on' : ''}}" bindtap="onSaveTap">{{saving ? '保存中…' : (dirty ? '保存修改' : '已保存 · ' + updatedAtText)}}</view>
+        <view wx:if="{{goalAvailable}}" class="actions__goal" bindtap="onGoalTap">设为目标赛事</view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 配速卡 canvas（离屏绘制后经 previewImage 长按保存） -->
+  <canvas type="2d" id="poster" class="poster-canvas"></canvas>
+
+  <!-- 「设为目标」确认弹层：预填信息 + 每周训练天数 -->
+  <block wx:if="{{goalSheetOpen}}">
+    <view class="sheet-mask" bindtap="onGoalSheetClose"></view>
+    <view class="sheet">
+      <view class="sheet__hint">设为目标赛事（新目标会替换当前目标，训练计划将围绕它制定）</view>
+      <view class="kv" wx:for="{{goalSheetRows}}" wx:key="k">
+        <view class="kv__k">{{item.k}}</view>
+        <view class="kv__v">{{item.v}}</view>
+      </view>
+      <view class="sheet__days">
+        <text class="sheet__days-label">每周训练天数</text>
+        <picker mode="selector" range="{{['3', '4', '5', '6']}}" value="{{goalDayIndex}}" bindchange="onGoalDayChange">
+          <view class="sheet__days-value">{{goalDays[goalDayIndex]}} 天 ▾</view>
+        </picker>
+      </view>
+      <view class="sheet__confirm" bindtap="onGoalConfirm">{{goalPending ? '设置中…' : '确认设置'}}</view>
+      <view class="sheet__cancel" bindtap="onGoalSheetClose">取消</view>
+    </view>
+  </block>
+</view>

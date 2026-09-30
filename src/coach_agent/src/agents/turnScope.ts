@@ -8,13 +8,26 @@ const TURN_SCOPE_INSTRUCTION =
 
 export const CoachTargetRef = z
   .object({
-    kind: z.enum(["master", "week", "session"]),
+    kind: z.enum(["master", "week", "session", "race"]),
     plan_id: z.string().min(1).max(128).nullish(),
     folder: z.string().min(1).max(128).nullish(),
     date: z.iso.date().nullish(),
     session_index: z.number().int().nonnegative().nullish(),
+    /** kind=race：赛事详情页策略卡进入会话时携带的目标赛事（race_calendar.id）。 */
+    race_event_id: z.number().int().positive().nullish(),
+    /** kind=race：报名项目 racetypes token（与 race_calendar_item.type 同词汇）。 */
+    item_type: z.string().min(1).max(32).nullish(),
   })
-  .strict();
+  .strict()
+  .superRefine((target, context) => {
+    if (target.kind !== "race") return;
+    if (target.race_event_id === null || target.race_event_id === undefined) {
+      context.addIssue({ code: "custom", message: "race target requires race_event_id", path: ["race_event_id"] });
+    }
+    if (target.item_type === null || target.item_type === undefined) {
+      context.addIssue({ code: "custom", message: "race target requires item_type", path: ["item_type"] });
+    }
+  });
 
 export const CoachReviewContext = z
   .object({

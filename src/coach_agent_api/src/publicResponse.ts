@@ -30,7 +30,18 @@ export function tryToPublicResponse(result: unknown): Record<string, unknown> | 
   const message = lastReplyMessage(result.messages);
   if (message === undefined) return undefined;
   const text = textContent(message.content);
-  return text !== undefined ? { status: "completed", message: text } : undefined;
+  if (text === undefined) return undefined;
+  // race_strategy 业务节点回填的结构化产物：一并下发给客户端（报告页/卡片
+  // 落库依据），并由此触发 coach API 的持久化（routes/chat.ts）。只在**本轮**
+  // intent 就是 race_strategy 时投影——state channel 跨轮持久，无此门槛时一
+  // 个残留的旧产物会在后续普通轮（如 routed to qa 的「谢谢」）被反复重存，
+  // 覆盖用户在报告页的手动编辑。
+  const raceStrategy = isRecord(result.intent) && result.intent.intent === "race_strategy" && isRecord(result.raceStrategy) ? result.raceStrategy : undefined;
+  return {
+    status: "completed",
+    message: text,
+    ...(raceStrategy ? { race_strategy: raceStrategy } : {}),
+  };
 }
 
 /** The assistant message that carries the reply: the last one with no tool calls. */

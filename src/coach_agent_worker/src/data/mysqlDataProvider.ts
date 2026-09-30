@@ -1,5 +1,6 @@
 /** MySQL adapter for the Coach Agent read-only DataProvider seam. */
 import type {
+  AbilityL4Baseline,
   ActiveMasterPlanMetadata,
   Activity,
   ActivityLap,
@@ -9,8 +10,16 @@ import type {
   HeartRateZone,
   MasterPlanDocument,
   PaceZone,
+  PerformanceBaseline,
   PersonalBest,
+  RaceAidStation,
+  RaceCalendarContext,
+  RaceCalendarItemContent,
+  RaceCourseChallenge,
+  RaceCutoff,
   RaceEffort,
+  RaceElevationPoint,
+  RacePredictionRow,
   RaceTarget,
   RunningCalibration,
   UserInjury,
@@ -456,8 +465,8 @@ export class MySqlDataProvider implements DataProvider {
   async getRaceTarget(userId: string): Promise<RaceTarget | null> {
     const [rows] = await this.pool.query<RowDataPacket[]>(
       `SELECT goal_id, user_id, status,
-			        DATE_FORMAT(race_date, '%Y-%m-%d') AS race_date,
-			        race_distance, race_name, target_finish_time, weekly_training_days
+				        DATE_FORMAT(race_date, '%Y-%m-%d') AS race_date,
+				        race_distance, race_name, target_finish_time, weekly_training_days
          FROM race_goal
         WHERE user_id = ? and status = 'active'
         ORDER BY race_date DESC
@@ -465,6 +474,121 @@ export class MySqlDataProvider implements DataProvider {
       [userId],
     );
     return rows.length === 0 ? null : (rows[0] as RaceTarget);
+  }
+
+  /**
+   * 一场赛事的内容聚合（比赛策略专用）：事件行 + 全部项目内容行 + 城市内容。
+   * 与 race_plan 一样按 published 过滤——未发布赛事对策略上下文等同不存在。
+   */
+  async getRaceCalendarContext(raceEventId: number): Promise<RaceCalendarContext | null> {
+    const [eventRows, itemRows] = await Promise.all([
+      this.pool.query<RowDataPacket[]>(
+        `SELECT id, name, name_cn, race_date, province, city, climate, content_source
+           FROM race_calendar
+          WHERE id = ? AND published = 1
+          LIMIT 1`,
+        [raceEventId],
+      ),
+      this.pool.query<RowDataPacket[]>(
+        `SELECT name, type, distance_km, start_point, finish_point, route_description,
+                total_ascent_m, elevation_points, course_challenges, aid_stations, cutoffs, content_source
+           FROM race_calendar_item
+          WHERE race_event_id = ?
+          ORDER BY id ASC`,
+        [raceEventId],
+      ),
+    ]);
+    const event = eventRows[0][0];
+    if (!event) return null;
+
+    let cityContent: RaceCalendarContext["city_content"] = null;
+    if (event.city) {
+      const [cityRows] = await this.pool.query<RowDataPacket[]>(`SELECT city, intro FROM race_city_content WHERE city = ? LIMIT 1`, [event.city]);
+      const city = cityRows[0];
+      if (city) {
+        const intro = parseJsonObject(city.intro, "race_city_content.intro");
+        cityContent = {
+          city: city.city as string,
+          overview: stringField(intro?.overview),
+          food: stringField(intro?.food),
+        };
+      }
+    }
+
+    return {
+      race_event_id: raceEventId,
+      name: event.name as string,
+      name_cn: (event.name_cn ?? null) as string | null,
+      race_date: normalizeDay(event.race_date as string),
+      province: (event.province ?? null) as string | null,
+      city: (event.city ?? null) as string | null,
+      climate: parseJsonObject(event.climate, "race_calendar.climate"),
+      content_source: (event.content_source ?? null) as string | null,
+      items: itemRows[0].map(rowToRaceItemContent),
+      city_content: cityContent,
+    };
+  }
+
+  /**
+   * 运动员成绩基线：race_predictions 全量（每距离一行）+ 最近一天整组 ability
+   * L4（90 天窗）+ 最新跑步校准。三源各自缺项为 null/空数组——由策略代理在
+   * basis_note 里声明依据缺口，而不是在此处报错。
+   */
+  async getPerformanceBaseline(userId: string, asOfDate: string): Promise<PerformanceBaseline> {
+    assertDay(asOfDate);
+    const windowStart = dayShift(asOfDate, -90);
+    const [predictionRows, l4Rows, calibration] = await Promise.all([
+      this.pool.query<RowDataPacket[]>(
+        `SELECT race_type, duration_s, avg_pace
+           FROM race_predictions
+          WHERE user_id = ?`,
+        [userId],
+      ),
+      this.pool.query<RowDataPacket[]>(
+        `SELECT date, dimension, value
+           FROM ability_snapshot
+          WHERE user_id = ? AND level = 'L4'
+            AND dimension IN ('composite', 'marathon_training_s', 'marathon_race_s', 'hm_race_s')
+            AND date BETWEEN ? AND ?
+          ORDER BY date DESC`,
+        [userId, windowStart, asOfDate],
+      ),
+      this.getLatestRunningCalibration(userId, asOfDate),
+    ]);
+
+    const predictions: RacePredictionRow[] = predictionRows[0].map((row) => ({
+      race_type: row.race_type as string,
+      duration_s: (row.duration_s ?? null) as number | null,
+      avg_pace_s_km: (row.avg_pace ?? null) as number | null,
+    }));
+
+    // L4 行按「最近一天」整组取：同一天的 composite/marathon_*/hm_* 是一次
+    // 计算的快照，跨天拼接会混合两次快照。
+    const latestDate = l4Rows[0][0]?.date as string | undefined;
+    let abilityL4: AbilityL4Baseline | null = null;
+    if (latestDate) {
+      const dims = new Map<string, number>();
+      for (const row of l4Rows[0]) {
+        if (row.date !== latestDate) continue;
+        if (row.value !== null && row.value !== undefined) {
+          dims.set(row.dimension as string, Number(row.value));
+        }
+      }
+      abilityL4 = {
+        as_of_date: normalizeDay(latestDate),
+        composite: dims.get("composite") ?? null,
+        marathon_training_s: dims.get("marathon_training_s") ?? null,
+        marathon_race_s: dims.get("marathon_race_s") ?? null,
+        hm_race_s: dims.get("hm_race_s") ?? null,
+      };
+    }
+
+    return {
+      as_of_date: asOfDate,
+      race_predictions: predictions,
+      ability_l4: abilityL4,
+      running_calibration: calibration,
+    };
   }
 
   /** Release the pool — only if this provider opened it via `create()`. */
@@ -477,6 +601,70 @@ export class MySqlDataProvider implements DataProvider {
 
 function normalizeDay(day: string): string {
   return day.length === 8 ? `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}` : day;
+}
+
+function dayShift(day: string, deltaDays: number): string {
+  const shifted = new Date(Date.parse(`${day}T00:00:00Z`) + deltaDays * 86400_000);
+  return shifted.toISOString().slice(0, 10);
+}
+
+/** JSON 列的宽容解析：mysql2 对 MySQL JSON 类型通常已解析成对象，字符串则再 parse。 */
+function parseJsonObject(value: unknown, source: string): Record<string, unknown> | null {
+  if (value === null || value === undefined) return null;
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    if (value.length === 0) return null;
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      throw new Error(`${source} contains invalid JSON`);
+    }
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`${source} must be a JSON object`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function stringField(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function rowToRaceItemContent(row: RowDataPacket): RaceCalendarItemContent {
+  return {
+    item_type: row.type as string,
+    name: row.name as string,
+    distance_km: (row.distance_km ?? null) as number | null,
+    start_point: pointName(row.start_point),
+    finish_point: pointName(row.finish_point),
+    route_description: stringField(row.route_description),
+    total_ascent_m: (row.total_ascent_m ?? null) as number | null,
+    elevation_points: parseJsonArray<RaceElevationPoint>(row.elevation_points, "elevation_points"),
+    course_challenges: parseJsonArray<RaceCourseChallenge>(row.course_challenges, "course_challenges"),
+    aid_stations: parseJsonArray<RaceAidStation>(row.aid_stations, "aid_stations"),
+    cutoffs: parseJsonArray<RaceCutoff>(row.cutoffs, "cutoffs"),
+    content_source: (row.content_source ?? null) as string | null,
+  };
+}
+
+/** RacePoint 列只取名称（策略只需要「从哪到哪」，坐标不进 LLM 上下文）。 */
+function pointName(value: unknown): string | null {
+  const parsed = parseJsonObject(value, "race_calendar_item point");
+  return parsed === null ? null : stringField(parsed.name);
+}
+
+function parseJsonArray<T>(value: unknown, source: string): T[] {
+  if (value === null || value === undefined) return [];
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    if (value.length === 0) return [];
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      throw new Error(`${source} contains invalid JSON`);
+    }
+  }
+  return Array.isArray(parsed) ? (parsed as T[]) : [];
 }
 
 function parsePlanContent(content: unknown, table: string): Record<string, unknown> {

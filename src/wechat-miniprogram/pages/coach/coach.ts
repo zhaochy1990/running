@@ -562,6 +562,23 @@ Page<CoachPageData, CoachPageHandlers>({
       streamText: '',
       scrollIntoId: `msg-${assistantMsg.id}`,
     });
+    // 比赛策略产物已落库（#396）：引导去报告页查看/编辑（目标赛事取自会话 target）。
+    if (done.race_strategy_saved) {
+      const target = this.currentSessionTarget();
+      if (target?.kind === 'race' && target.race_event_id) {
+        wx.showModal({
+          title: '比赛策略已生成',
+          content: '初稿已保存，去报告页查看配速表与补给计划？',
+          confirmText: '去查看',
+          cancelText: '留在这里',
+          success: (res) => {
+            if (res.confirm) {
+              wx.navigateTo({ url: `/pages/race-center/strategy/strategy?id=${target.race_event_id}` });
+            }
+          },
+        });
+      }
+    }
   },
 
   /** 流失败：清掉流式气泡，给该 user 消息打 failed 标记以展示重试按钮。 */

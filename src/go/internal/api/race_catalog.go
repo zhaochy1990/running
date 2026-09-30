@@ -117,6 +117,12 @@ type userRaceDetailDTO struct {
 	PacketPickup   []storage.RacePacketPickup  `json:"packet_pickup"`
 	Items          []userRaceItemDTO           `json:"items"`
 	CityContent    *userCityContentDTO         `json:"city_content"`
+	// StrategyAvailable reports whether the race's content has been researched
+	// (event-level content_source set): the v2 strategy card gates on it —
+	// only a researched race offers 和教练聊一聊比赛策略 (#396). Derived, not
+	// passed through: the provenance term itself is an admin field and must
+	// not leak into the user projection.
+	StrategyAvailable bool `json:"strategy_available"`
 }
 
 type userRaceListResponse struct {
@@ -332,6 +338,7 @@ func (r *raceCatalogRoutes) detail(c *gin.Context) {
 		SignupChannels:     row.SignupChannels,
 		PacketPickup:       row.PacketPickup,
 		Items:              itemDTOs,
+		StrategyAvailable:  row.ContentSource != nil,
 	}
 	if row.City != nil {
 		city, err := r.store.GetRaceCityContent(c.Request.Context(), *row.City)

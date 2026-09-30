@@ -500,6 +500,7 @@ func TestDeleteUserData_RemovesOwnedRowsAndPreservesOtherUsers(t *testing.T) {
 		st.AutoMigrateScheduledWorkout,
 		st.AutoMigrateRaceFavorites,
 		st.AutoMigrateRacePlans,
+		st.AutoMigrateRaceStrategies,
 		st.AutoMigrateHomeCity,
 	} {
 		if err := migrate(ctx); err != nil {
@@ -575,6 +576,7 @@ func TestDeleteUserData_CoversSensitiveTables(t *testing.T) {
 		st.AutoMigrateScheduledWorkout,
 		st.AutoMigrateRaceFavorites,
 		st.AutoMigrateRacePlans,
+		st.AutoMigrateRaceStrategies,
 		st.AutoMigrateHomeCity,
 	} {
 		if err := migrate(ctx); err != nil {
@@ -743,6 +745,7 @@ func TestDeleteUserData_ErrorNamesTable(t *testing.T) {
 		st.AutoMigrateScheduledWorkout,
 		st.AutoMigrateRaceFavorites,
 		st.AutoMigrateRacePlans,
+		st.AutoMigrateRaceStrategies,
 		st.AutoMigrateHomeCity,
 	} {
 		if err := migrate(ctx); err != nil {
