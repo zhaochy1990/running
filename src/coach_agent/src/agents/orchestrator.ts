@@ -10,6 +10,7 @@ function getAgentPrompt(): string {
   return `Analyze the user's utterance and classify their intent into one of the following categories. Only output the classification result in a structured format, without providing any answers or training advice.
 - "weekly_plan"：查看或调整某一周的训练计划
 - "master_plan"：查看或调整赛季 / 总体训练计划
+- "race_strategy"：为一场具体比赛制定或调整执行策略（分段配速、补给、赛道应对）
 - "training_question"：关于训练状态、疲劳、指标或跑步知识的问答
 - "other"：不属于以上任何一类
 
@@ -20,6 +21,8 @@ function getAgentPrompt(): string {
 - "帮我看下这周的训练计划" → weekly_plan
 - "下周计划调整一下，周三改成休息" → weekly_plan
 - "帮我看下赛季计划" → master_plan
+- "帮我制定杭马的分段配速和补给策略" → race_strategy
+- "比赛时前半程该跑多快？" → race_strategy
 - "今天天气怎么样" → other
 
 Provide classification including intent.

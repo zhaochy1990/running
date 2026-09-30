@@ -140,6 +140,12 @@ func runAPI() error {
 	if err := store.AutoMigrateRacePlans(ctx); err != nil {
 		return err
 	}
+	// race_strategy backs the coach race-strategy surface (#396). Only the API
+	// writes it (coach + runner both go through endpoints), so the worker does
+	// not migrate it.
+	if err := store.AutoMigrateRaceStrategies(ctx); err != nil {
+		return err
+	}
 	// race_content / race_content_item / race_city_content back the administrator
 	// race-content surface (issue #318). Only the API writes content, so the
 	// worker does not migrate these.
@@ -237,6 +243,7 @@ func runAPI() error {
 		RaceCalendarStore:       store,
 		RaceFavoriteStore:       store,
 		RacePlanStore:           store,
+		RaceStrategyStore:       store,
 		RaceContentStore:        store,
 		RaceCatalogStore:        store,
 		RaceItemGeocoder:        newAMapGeocoder(cfg.AMap),

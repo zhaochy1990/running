@@ -11,13 +11,17 @@ const COACH_CHAT_ENDPOINT = `${COACH_BASE_URL}/api/users/me/coach/chat`;
  * 教练对话的权威目标引用（后端 `CoachTargetRef`）。首页「和教练聊一聊」把
  * 具体计划 session 作为上下文挂到一次对话：target 随每轮消息发送，服务端经
  * <coach_turn_scope> 注入模型，使其聚焦该 session（date + session_index）。
+ * 赛事详情页策略卡（#396）以 kind=race 挂目标赛事：race_event_id +
+ * item_type，教练据此取赛事内容并生成/更新比赛策略。
  */
 export interface CoachSessionTarget {
-  kind: 'master' | 'week' | 'session';
+  kind: 'master' | 'week' | 'session' | 'race';
   plan_id?: string | null;
   folder?: string | null;
   date?: string | null;
   session_index?: number | null;
+  race_event_id?: number | null;
+  item_type?: string | null;
 }
 
 let turnCounter = 0;
@@ -70,12 +74,16 @@ export type CoachStreamEvent =
   | { kind: 'narration'; delta: string }
   | { kind: 'delta'; delta: string };
 
-/** done 事件的 data（`{ turn_id, ...toPublicResponse }`）；非流式降级时同步 JSON 也走这里。 */
+/** done 事件的 data（`{ turn_id, ...toPublicResponse }`）；非流式降级时同步 JSON 也走这里。
+ * race_strategy / race_strategy_saved：race_strategy 业务节点的结构化产物与落库
+ * 结果（#396）——策略已保存时聊天页引导去报告页。 */
 export interface CoachDone {
   turn_id?: string;
   status?: string;
   message?: string;
   interrupt?: unknown;
+  race_strategy?: unknown;
+  race_strategy_saved?: boolean;
 }
 
 export interface CoachStreamCallbacks {

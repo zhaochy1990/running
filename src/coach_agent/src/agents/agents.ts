@@ -5,6 +5,8 @@ import type { DataProvider } from "../data/dataProvider.js";
 import { getOrchestratorNode } from "./orchestrator.js";
 import { getOtherAgent } from "./other/agent.js";
 import { getQaAgent } from "./qa/agent.js";
+import { getRaceStrategyAgent } from "./race_strategy/agent.js";
+import { makeRaceStrategyNode } from "./race_strategy/node.js";
 import type { AgentsState } from "./state.js";
 import { createTrainingGraph } from "./training/graph.js";
 
@@ -34,7 +36,7 @@ export function getAgentNode(agentName: string, config: CoachAgentConfig, dataPr
     // 计划意图走它只会拿到 "received"。qa 的计划工具是只读的，能查看/解释计划，
     // 但会拒绝修改。真实现接回后把 weekly_plan / master_plan 改回 "training"。
     // 分类结果仍写入 state.intent 供观测。
-    return getOrchestratorNode(agentConfig, { training_question: "qa", weekly_plan: "qa", master_plan: "qa", other: "qa" });
+    return getOrchestratorNode(agentConfig, { training_question: "qa", weekly_plan: "qa", master_plan: "qa", race_strategy: "race_strategy", other: "qa" });
   }
 
   if (agentName === "training") {
@@ -45,6 +47,12 @@ export function getAgentNode(agentName: string, config: CoachAgentConfig, dataPr
     const agentConfig = getAgentConfig(config, "qa");
     const qaAgent = getQaAgent(dataProvider, agentConfig) as unknown as InnerAgent;
     return makeAgentNode(qaAgent);
+  }
+
+  if (agentName === "race_strategy") {
+    const agentConfig = getAgentConfig(config, "race_strategy");
+    const raceAgent = getRaceStrategyAgent(dataProvider, agentConfig);
+    return makeRaceStrategyNode(raceAgent);
   }
 
   if (agentName === "other") {

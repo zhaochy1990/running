@@ -5,7 +5,7 @@ import { type AuthEnv, createAuthMiddleware, type JwtVerifier } from "./auth.js"
 import type { CoachInvoker } from "./coach/coachInvoker.js";
 import type { CoachDataDeleter } from "./persistence/deletion.js";
 import { registerAdminUserRoutes } from "./routes/adminUsers.js";
-import { registerChatRoutes } from "./routes/chat.js";
+import { type RaceStrategyWriter, registerChatRoutes } from "./routes/chat.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerHistoryRoutes, registerSessionListRoutes, type ThreadHistoryReader, type ThreadSessionReader } from "./routes/history.js";
 import { type PlanJobsService, registerPlanJobRoutes } from "./routes/planJobs.js";
@@ -23,6 +23,8 @@ export interface AppDependencies {
   planJobs?: PlanJobsService;
   /** When provided, exposes the admin/self coach-data erasure endpoint. */
   coachDataDeleter?: CoachDataDeleter;
+  /** When provided, coach-generated race strategies are persisted to the Go-owned table. */
+  raceStrategyWriter?: RaceStrategyWriter;
 }
 
 export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
@@ -40,6 +42,7 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
   registerChatRoutes(app, {
     coach: dependencies.coachInvoker,
     turnCoordinator,
+    ...(dependencies.raceStrategyWriter ? { raceStrategyWriter: dependencies.raceStrategyWriter } : {}),
   });
 
   if (dependencies.planJobs) {

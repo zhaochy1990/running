@@ -131,10 +131,11 @@ func (f *fakeRacePlanStore) ListRacePlans(_ context.Context, userID string) ([]s
 // engagementHarness wires both engagement surfaces with their fakes and an
 // admin-aware verifier, so the tier guards are exercised for real.
 type engagementHarness struct {
-	svc   *Service
-	favs  *fakeRaceFavoriteStore
-	plans *fakeRacePlanStore
-	key   *rsa.PrivateKey
+	svc        *Service
+	favs       *fakeRaceFavoriteStore
+	plans      *fakeRacePlanStore
+	strategies *fakeRaceStrategyStore
+	key        *rsa.PrivateKey
 }
 
 func newEngagementHarness(t *testing.T) *engagementHarness {
@@ -149,12 +150,14 @@ func newEngagementHarness(t *testing.T) *engagementHarness {
 	}
 	favs := newFakeRaceFavoriteStore()
 	plans := newFakeRacePlanStore()
+	strategies := newFakeRaceStrategyStore()
 	svc := NewService(Config{
 		Auth:              NewAuthenticator(testToken, verifier),
 		RaceFavoriteStore: favs,
 		RacePlanStore:     plans,
+		RaceStrategyStore: strategies,
 	})
-	return &engagementHarness{svc: svc, favs: favs, plans: plans, key: key}
+	return &engagementHarness{svc: svc, favs: favs, plans: plans, strategies: strategies, key: key}
 }
 
 func (h *engagementHarness) token(t *testing.T, audience, role string) map[string]string {

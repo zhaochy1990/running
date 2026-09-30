@@ -1,12 +1,13 @@
 import { CoachTurnScope, Command } from "@stride/coach-agent";
 import { getLogger } from "@stride/common";
-import { shanghaiDay, shanghaiIso } from "@stride/contract";
+import { RaceStrategySchema, shanghaiDay, shanghaiIso } from "@stride/contract";
 import type { Hono } from "hono";
 import { type SSEStreamingApi, streamSSE } from "hono/streaming";
 import type { AuthEnv } from "../auth.js";
 import type { CoachInvoker } from "../coach/coachInvoker.js";
 import type { ChatRequest } from "../dto/chat.js";
 import type { TurnRequest } from "../dto/turn.js";
+import type { GoRaceStrategyClient } from "../goClient/raceStrategyClient.js";
 import { toPublicResponse } from "../publicResponse.js";
 import type { TurnCoordinator } from "../turn/coordinator.js";
 import { ThreadBusyError, TurnConflictError } from "../turn/errors.js";
@@ -16,9 +17,14 @@ const logger = getLogger("routes/chat");
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const ISO_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
+/** Persists coach-generated race strategies via the Go internal endpoint. */
+export type RaceStrategyWriter = Pick<GoRaceStrategyClient, "saveRaceStrategy">;
+
 interface ChatDependencies {
   coach: CoachInvoker;
   turnCoordinator: TurnCoordinator;
+  /** When provided, race-strategy turns are persisted to the Go-owned table. */
+  raceStrategyWriter?: RaceStrategyWriter;
 }
 
 export function registerChatRoutes(app: Hono<AuthEnv>, dependencies: ChatDependencies): void {
@@ -43,6 +49,7 @@ export function registerChatRoutes(app: Hono<AuthEnv>, dependencies: ChatDepende
         const result = await dependencies.coach.invoke(input, config);
         return toPublicResponse(result);
       });
+      await persistRaceStrategy(dependencies, userId, body.value, response);
       return context.json({ ...response, session_id: body.value.sessionId, client_turn_id: body.value.clientTurnId });
     } catch (error) {
       const { kind } = classifyTurnError(error);
@@ -112,6 +119,7 @@ async function streamChat(dependencies: ChatDependencies, stream: SSEStreamingAp
       const run = await dependencies.coach.streamEvents(input, config);
       return await collectCoachStream(run, emitStreamEvent);
     });
+    await persistRaceStrategy(dependencies, userId, body, response);
     await emit("done", { turn_id: turnId, ...response });
   } catch (error) {
     const { kind, message } = classifyTurnError(error);
@@ -137,6 +145,36 @@ function buildInput(body: ChatRequest, resumeFromCheckpoint: boolean): unknown {
       },
     ],
   };
+}
+
+/**
+ * Persist a race-strategy artifact the race_strategy node produced this turn.
+ * Fired only when the turn ran with a race target and the artifact re-validates
+ * against the canonical schema; the write itself is non-fatal — the athlete's
+ * reply must not be lost because the store hiccuped. Marks the public response
+ * with race_strategy_saved so the client can flip the detail-page card.
+ */
+async function persistRaceStrategy(dependencies: ChatDependencies, userId: string, body: ChatRequest, response: Record<string, unknown>): Promise<void> {
+  const artifact = response.race_strategy;
+  const target = body.target;
+  const writer = dependencies.raceStrategyWriter;
+  if (writer === undefined || !isRecord(artifact) || target?.kind !== "race") return;
+  if (typeof target.race_event_id !== "number") {
+    logger.warn({ userId, target }, "race strategy produced without a race_event_id; skipping persistence");
+    return;
+  }
+  const parsed = RaceStrategySchema.safeParse(artifact);
+  if (!parsed.success) {
+    logger.warn({ userId, issues: parsed.error.issues }, "race strategy artifact failed canonical validation; skipping persistence");
+    return;
+  }
+  const itemType = parsed.data.item_type ?? target.item_type ?? undefined;
+  if (itemType === undefined) {
+    logger.warn({ userId }, "race strategy has no item_type; skipping persistence");
+    return;
+  }
+  const saved = await writer.saveRaceStrategy(userId, target.race_event_id, itemType, parsed.data);
+  if (saved) response.race_strategy_saved = true;
 }
 
 function buildConfig(body: ChatRequest, userId: string, threadId: string, fingerprint: string): Record<string, unknown> {

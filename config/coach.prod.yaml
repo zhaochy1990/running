@@ -60,6 +60,11 @@ agents:
     model: deepseekv4flash
     max_tokens: 65536
     timeout_s: 600  
+  # 比赛策略同样是结构化核心产物（分段表+补给+提示），对齐 weekly_plan 用 pro。
+  - name: race_strategy
+    model: deepseekv4pro
+    max_tokens: 65536
+    timeout_s: 600
   - name: reviewer
     model: deepseekv4flash
     max_tokens: 16384

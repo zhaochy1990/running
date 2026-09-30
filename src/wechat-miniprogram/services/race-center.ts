@@ -146,6 +146,8 @@ export interface RaceDetail extends RaceCalendarRace {
   packet_pickup: RacePacketPickup[] | null;
   items: RaceItem[];
   city_content: RaceCityContent | null;
+  /** 内容是否经过调研（事件级 content_source 有值的派生布尔）：v2 比赛策略入口门槛。 */
+  strategy_available: boolean;
 }
 
 /** 拉一场已发布赛事的详情；未发布/不存在均 404。 */

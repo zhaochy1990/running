@@ -208,6 +208,11 @@ type Config struct {
 	// auth path. Leave zero to run without them (e.g. in tests).
 	RaceFavoriteStore RaceFavoriteStore
 	RacePlanStore     RacePlanStore
+	// RaceStrategyStore backs the race-strategy surface (#396): the coach's
+	// structured strategy per (user, race), written by the TS coach API via the
+	// internal endpoint and read/edited by the runner. Leave zero to run
+	// without it (e.g. in tests).
+	RaceStrategyStore RaceStrategyStore
 	// RaceItemGeocoder optionally resolves race-calendar venue names to WGS84
 	// coordinates when item content carries a name but no coordinates. Nil
 	// disables geocoding (see race_calendar.go).
@@ -290,6 +295,7 @@ type Service struct {
 	raceCalendar    *raceCalendarRoutes
 	raceFavorites   *raceFavoriteRoutes
 	racePlans       *racePlanRoutes
+	raceStrategy    *raceStrategyRoutes
 	raceContent     *raceContentRoutes
 	raceCatalog     *raceCatalogRoutes
 
@@ -349,6 +355,7 @@ func NewService(cfg Config) *Service {
 		raceCalendar:            newRaceCalendarRoutes(cfg.RaceCalendarStore, log, cfg.RaceItemGeocoder),
 		raceFavorites:           newRaceFavoriteRoutes(cfg.RaceFavoriteStore, log),
 		racePlans:               newRacePlanRoutes(cfg.RacePlanStore, log),
+		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
 		raceCatalog:             newRaceCatalogRoutes(cfg.RaceCatalogStore, log),
 		auth:                    cfg.Auth,
@@ -455,6 +462,7 @@ func (s *Service) Router() *gin.Engine {
 	// the sibling user surfaces.
 	s.raceFavorites.register(authed)
 	s.racePlans.register(authed)
+	s.raceStrategy.register(authed)
 	s.bodyComposition.register(authed)
 	s.ability.register(authed)
 	s.predictions.register(authed)

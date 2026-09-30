@@ -33,12 +33,14 @@ export async function createCoachAgent(dataProvider: DataProvider, config: Coach
   logger.info(`creating orchestrator with model ${orchestratorConfig.name} (${orchestratorConfig.model})`);
 
   const graph = new StateGraph(AgentsState)
-    .addNode("orchestrator", getAgentNode("orchestrator", config, dataProvider), { ends: ["qa", "training"] })
+    .addNode("orchestrator", getAgentNode("orchestrator", config, dataProvider), { ends: ["qa", "training", "race_strategy"] })
     .addNode("qa", getAgentNode("qa", config, dataProvider))
     .addNode("training", getAgentNode("training", config, dataProvider))
+    .addNode("race_strategy", getAgentNode("race_strategy", config, dataProvider))
     .addEdge(START, "orchestrator")
     .addEdge("qa", END)
     .addEdge("training", END)
+    .addEdge("race_strategy", END)
     .compile({
       checkpointer: options.checkpointer ?? new MemorySaver(),
       store: options.store ?? new InMemoryStore(),

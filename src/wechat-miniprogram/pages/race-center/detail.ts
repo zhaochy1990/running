@@ -3,7 +3,8 @@
 // 头区：名称+星标+双徽章 → 三宫格（天后开赛/比赛日/报名制式）→ 报名时间轴
 // （完成态按当前日期计算）→「报名：项目 · 状态 ▾」按钮；三 tab：概要/项目/出行。
 // 报名选择器是参赛计划的唯一创建入口（PUT / DELETE /api/users/me/race-plans/:id，
-// 后端 race_plans.go）；比赛策略卡归 v2（#386），本期不上。
+// 后端 race_plans.go）；比赛策略卡（#396）：仅内容调研过（strategy_available）的
+// 赛事显示，未生成=CTA 进教练会话（带 race target），已生成=摘要进报告页。
 // 视图变换在 utils/raceDetailRows（配套自检），请求在 services/race-center /
 // services/race-plans。计划列表接口没有单场查询，进来时整表拉一次找本场的计划。
 
@@ -27,7 +28,10 @@ import {
   toDetailView,
   type RaceDetailView,
 } from '../../utils/raceDetailRows';
+import { typeAbbr } from '../../utils/raceCenterRows';
 import { shanghaiToday } from '../../utils/date';
+import { setPendingCoachContext } from '../../services/coach';
+import { getRaceStrategy } from '../../services/race-strategy';
 import { userStore } from '../../store/index';
 
 interface RaceDetailPageData {
@@ -48,6 +52,10 @@ interface RaceDetailPageData {
   /** sheet 内当前选中的项目 token（提交时用它） */
   sheetItem: string;
   sheetStates: Array<{ value: string; label: string; current: boolean }>;
+  /** 策略卡入口（内容调研过才显示，#396 门槛） */
+  strategyEntry: boolean;
+  /** 已生成时的摘要态（目标成绩 + 更新时间）；null=未生成（CTA 态） */
+  strategySummary: { target: string; updatedAt: string } | null;
 }
 
 interface RaceDetailPageHandlers {
@@ -61,6 +69,7 @@ interface RaceDetailPageHandlers {
   onSignupTap(): void;
   onChipTap(e: WechatMiniprogram.TouchEvent): void;
   onStateTap(e: WechatMiniprogram.TouchEvent): void;
+  onStrategyTap(): void;
   onSheetClose(): void;
   onCopyTap(e: WechatMiniprogram.TouchEvent): void;
   refresh(): Promise<void>;
@@ -101,6 +110,8 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
     sheetChips: [],
     sheetItem: '',
     sheetStates: [],
+    strategyEntry: false,
+    strategySummary: null,
   },
 
   _raceId: 0,
@@ -140,6 +151,11 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
     // 详情与计划并行发起（计划态只依赖 raceId）；计划拉不到不阻塞详情，
     // 只是按钮先显示未报名——选择器提交不受影响
     const plansP = listRacePlans().catch(() => null);
+    // 策略态并行拉取（404=未生成；其它失败按未生成展示，不阻塞详情）
+    const strategyP = getRaceStrategy(this._raceId).then(
+      (res) => ({ target: res.content.target_finish_time, updatedAt: res.updated_at.slice(0, 10).replace(/-/g, '/') }),
+      () => null,
+    );
     let detail: RaceDetail;
     try {
       detail = await getRaceDetail(this._raceId);
@@ -157,7 +173,7 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
       this.setData({ loading: false, error: msg });
       return;
     }
-    const plansRes = await plansP;
+    const [plansRes, strategySummary] = await Promise.all([plansP, strategyP]);
     if (seq !== this._fetchSeq) return;
     this._plan = plansRes?.plans.find((p) => p.race_id === this._raceId) || null;
     this._detail = detail;
@@ -168,6 +184,8 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
       view,
       starred: detail.favorited,
       signupAvailable: itemChips(detail.items).length > 0,
+      strategyEntry: detail.strategy_available,
+      strategySummary,
     });
     this.applyPlan();
   },
@@ -291,6 +309,26 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
     } finally {
       this._planPending = false;
     }
+  },
+
+  /** 策略卡：已生成 → 报告页；未生成 → 带 race target 进教练会话。 */
+  onStrategyTap() {
+    const detail = this._detail;
+    if (!detail) return;
+    if (this.data.strategySummary) {
+      wx.navigateTo({ url: `/pages/race-center/strategy/strategy?id=${this._raceId}` });
+      return;
+    }
+    // 项目取当前计划的项目，否则第一枚项目 chip
+    const chips = itemChips(detail.items);
+    const itemType = this._plan?.item_type || chips[0]?.token;
+    if (!itemType) return;
+    const name = detail.name_cn || detail.name;
+    setPendingCoachContext({
+      target: { kind: 'race', race_event_id: this._raceId, item_type: itemType },
+      label: `${name} · ${typeAbbr(itemType) || itemType}`,
+    });
+    wx.switchTab({ url: '/pages/coach/coach' });
   },
 
   onSheetClose() {

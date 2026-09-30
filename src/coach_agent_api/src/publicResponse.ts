@@ -30,7 +30,15 @@ export function tryToPublicResponse(result: unknown): Record<string, unknown> | 
   const message = lastReplyMessage(result.messages);
   if (message === undefined) return undefined;
   const text = textContent(message.content);
-  return text !== undefined ? { status: "completed", message: text } : undefined;
+  if (text === undefined) return undefined;
+  // race_strategy 业务节点回填的结构化产物：一并下发给客户端（报告页/卡片
+  // 落库依据），并由此触发 coach API 的持久化（routes/chat.ts）。
+  const raceStrategy = isRecord(result.raceStrategy) ? result.raceStrategy : undefined;
+  return {
+    status: "completed",
+    message: text,
+    ...(raceStrategy ? { race_strategy: raceStrategy } : {}),
+  };
 }
 
 /** The assistant message that carries the reply: the last one with no tool calls. */
