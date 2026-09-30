@@ -99,6 +99,9 @@
 .fbar__cell {
   flex: 1;
   min-width: 0;
+  /* 显式栏高：原生 picker 宿主不透传 flex（stretch 失效，cell 会收缩到
+     内容高 18.5px 贴顶），不靠父级 stretch，cell 自己撑满再居中。 */
+  height: 88rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -122,6 +125,7 @@
 
 .fbar__plans {
   flex: 1.1;
+  height: 88rpx;
   display: flex;
   align-items: center;
   justify-content: center;
