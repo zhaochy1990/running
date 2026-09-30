@@ -194,7 +194,7 @@ eq(v.channels, [
   { key: '2', name: '浙体育', type: '合作App', copyUrl: '' },
 ], 'channel rows copy rules');
 
-// 项目节：报名费分→元（整/角分）、赛道·关门待补、有数据时透出
+// 项目节：报名费分→元（整/角分）、赛道待补
 eq(v.items[0].rows, [
   { k: '距离', v: '42.195 km' },
   { k: '名额', v: '20,000 人' },
@@ -203,7 +203,6 @@ eq(v.items[0].rows, [
   { k: '报名费', v: '¥150' },
 ], 'item rows');
 eq(v.items[0].route, '', 'route empty');
-eq(v.items[0].cutoffs, [], 'cutoffs empty');
 const rich = toDetailView(
   detail({
     items: [
@@ -213,7 +212,6 @@ const rich = toDetailView(
         distance_km: null,
         start_point: null,
         route_description: '黄龙路→曙光路→杨公堤……→奥体中心',
-        cutoffs: [{ point: '21K', cutoff_at: '09:30' }],
       }),
     ],
   }),
@@ -227,7 +225,6 @@ eq(rich.items[0].rows, [
   { k: '报名费', v: '¥125.50' },
 ], 'item partial fallbacks');
 eq(rich.items[0].route, '黄龙路→曙光路→杨公堤……→奥体中心', 'route text');
-eq(rich.items[0].cutoffs, ['21K 09:30'], 'cutoff line');
 
 // 出行：领物/城市空态字段；有城市内容时段落过滤空章、标题预拼接、景点透出
 eq(v.trip, { pickups: [], city: null }, 'trip empty');
@@ -295,7 +292,6 @@ const noContentRace = toDetailView(
   TODAY,
 );
 eq(noContentRace.channels, [], 'bare race: channels null → empty rows');
-eq(noContentRace.items[0].cutoffs, [], 'bare race: cutoffs null → empty list');
 eq(noContentRace.trip.pickups, [], 'bare race: pickups null → empty list');
 eq(noContentRace.head.timeline, [], 'bare race: no timeline');
 

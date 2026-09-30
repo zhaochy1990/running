@@ -85,7 +85,7 @@
           </view>
         </block>
 
-        <!-- 项目：每项目一节；赛道·关门空态「待补」 -->
+        <!-- 项目：每项目一节；赛道空态「待补」 -->
         <block wx:elif="{{tabIndex === 1}}">
           <block wx:if="{{view.items.length}}">
             <view class="card" wx:for="{{view.items}}" wx:for-item="sec" wx:key="id">
@@ -94,18 +94,9 @@
                 <view class="kv__k">{{row.k}}</view>
                 <view class="kv__v">{{row.v}}</view>
               </view>
-              <view class="kv">
+              <view class="kv kv--last">
                 <view class="kv__k">赛道</view>
                 <view class="kv__v {{sec.route ? '' : 'kv__v--dim'}}">{{sec.route || '待补'}}</view>
-              </view>
-              <view class="kv kv--last">
-                <view class="kv__k">关门</view>
-                <view class="kv__v">
-                  <block wx:if="{{sec.cutoffs.length}}">
-                    <view class="kv__line" wx:for="{{sec.cutoffs}}" wx:for-item="co" wx:key="*this">{{co}}</view>
-                  </block>
-                  <view wx:else class="kv__v--dim">待补</view>
-                </view>
               </view>
             </view>
           </block>

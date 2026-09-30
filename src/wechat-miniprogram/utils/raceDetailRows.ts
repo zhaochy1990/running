@@ -62,13 +62,12 @@ export interface RaceChannelRow {
   copyUrl: string;
 }
 
-/** 项目一节：entry 行 + 赛道/关门（空 = 「待补」，#393 口径）。 */
+/** 项目一节：entry 行 + 赛道（空 = 「待补」）。关门时间不再透出（人工验收反馈）。 */
 export interface RaceItemSection {
   id: number;
   title: string;
   rows: RaceKvRow[];
   route: string;
-  cutoffs: string[];
 }
 
 /** 出行 tab：领物 + 城市介绍（null = 城市未维护，页脚空态「待发布」）。key 供 wx:key（时段可重）。 */
@@ -197,7 +196,6 @@ function itemSection(it: RaceItem): RaceItemSection {
       { k: '报名费', v: feeLabel(it.entry_fee) },
     ],
     route: it.route_description || '',
-    cutoffs: (it.cutoffs ?? []).map((c) => `${c.point} ${c.cutoff_at}`),
   };
 }
 
