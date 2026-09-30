@@ -180,7 +180,9 @@ Page<StrategyPageData, StrategyPageHandlers>({
       target: { kind: 'race', race_event_id: this._raceId, item_type: view.itemType },
       label: `${view.raceName} · ${view.itemTypeLabel}`,
     });
-    wx.switchTab({ url: '/pages/coach/coach' });
+    // reLaunch 而非 switchTab：本页是深层普通页面，switchTab 会先播放
+    // 返回宿主 tab 的关闭动画再切教练 tab，视觉上闪现宿主 tab 页。
+    wx.reLaunch({ url: '/pages/coach/coach' });
   },
 
   // ── 编辑：blur 落值 + 重算（视图模型保证 用时=距离×配速） ──

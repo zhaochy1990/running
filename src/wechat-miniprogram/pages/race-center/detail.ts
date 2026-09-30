@@ -332,7 +332,9 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
       target: { kind: 'race', race_event_id: this._raceId, item_type: itemType },
       label: `${name} · ${typeAbbr(itemType) || itemType}`,
     });
-    wx.switchTab({ url: '/pages/coach/coach' });
+    // reLaunch 而非 switchTab：本页是「我」tab 链路下的深层普通页面，
+    // switchTab 会先播放返回宿主 tab（我）的关闭动画再切教练 tab，视觉上闪现「我」页。
+    wx.reLaunch({ url: '/pages/coach/coach' });
   },
 
   onSheetClose() {
