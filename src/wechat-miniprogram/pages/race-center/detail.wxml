@@ -68,7 +68,7 @@
           </block>
           <block wx:else>
             <view class="card__title">比赛策略</view>
-            <view class="strategy__desc">数据结合赛道内容与您的近期水平，定制这场比赛的分段配速与补给计划</view>
+            <view class="strategy__desc">结合赛道内容与您的近期水平，定制这场比赛的分段配速与补给计划</view>
             <view class="strategy__cta">和教练聊一聊比赛策略 ›</view>
           </block>
         </view>
