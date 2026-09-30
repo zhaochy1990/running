@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
@@ -1145,7 +1146,7 @@ func TestCopyRaceItemAdminData_CopiesEveryAdminOwnedColumn(t *testing.T) {
 		RouteDescription: strPtr("起点→终点"),
 		TotalAscentM:     intPtr(120),
 		ElevationPoints:  []RaceElevationPoint{{DistanceKm: 1, ElevationM: 10}},
-		CourseChallenges: []RaceCourseChallenge{{DistanceKm: floatPtr(4.5), Description: "隧道下穿，有上下起伏"}},
+		CourseChallenges: []RaceCourseChallenge{{DistanceKm: strPtr("4.5"), Description: "隧道下穿，有上下起伏"}},
 		AidStations:      []RaceAidStation{{DistanceKm: 5, Supplies: []string{"水"}}},
 		Cutoffs:          []RaceCutoff{{Point: "21K", CutoffAt: "03:00"}},
 		Prizes:           []RacePrize{{Rank: "1", Amount: 10000}},
@@ -1175,5 +1176,47 @@ func TestCopyRaceItemAdminData_CopiesEveryAdminOwnedColumn(t *testing.T) {
 			t.Errorf("%s not carried over by copyRaceItemAdminData: got %#v, want %#v",
 				field.Name, got, want)
 		}
+	}
+}
+
+// TestRaceCourseChallengeUnmarshal covers the JSON the course_challenges column
+// can hold. The locator became free text, but rows written before that carry a
+// bare number — a JSON number in a string field would fail the whole column's
+// deserialize (and with it the item's scan), so it is coerced to text instead.
+func TestRaceCourseChallengeUnmarshal(t *testing.T) {
+	cases := []struct {
+		name string
+		json string
+		want []RaceCourseChallenge
+	}{
+		{
+			name: "free text passes through",
+			json: `[{"distance_km":"0–10km（外滩→南京西路）","description":"过街桥引道小缓坡"}]`,
+			want: []RaceCourseChallenge{{DistanceKm: strPtr("0–10km（外滩→南京西路）"), Description: "过街桥引道小缓坡"}},
+		},
+		{
+			name: "legacy number is coerced to its shortest form",
+			json: `[{"distance_km":4.5,"description":"隧道下穿"},{"distance_km":28,"description":"折返侧风"}]`,
+			want: []RaceCourseChallenge{
+				{DistanceKm: strPtr("4.5"), Description: "隧道下穿"},
+				{DistanceKm: strPtr("28"), Description: "折返侧风"},
+			},
+		},
+		{
+			name: "null and absent locator stay nil",
+			json: `[{"distance_km":null,"description":"无准确桩号"},{"description":"终点前爬升"}]`,
+			want: []RaceCourseChallenge{{Description: "无准确桩号"}, {Description: "终点前爬升"}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []RaceCourseChallenge
+			if err := json.Unmarshal([]byte(tc.json), &got); err != nil {
+				t.Fatalf("unmarshal %s = %v", tc.json, err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("unmarshal %s = %#v, want %#v", tc.json, got, tc.want)
+			}
+		})
 	}
 }

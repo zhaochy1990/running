@@ -1,6 +1,10 @@
 package storage
 
-import "time"
+import (
+	"bytes"
+	"encoding/json"
+	"time"
+)
 
 // Race calendar provenance. Every event and item row carries an Origin telling
 // the sync pipeline whether the row still mirrors upstream (sync) or has been
@@ -462,11 +466,48 @@ type RaceElevationPoint struct {
 
 // RaceCourseChallenge is one key difficulty of the course (隧道 / 立交桥 /
 // 坡道): where along the course it sits plus what makes it hard. DistanceKm is
-// nil when only the location is known by name (inside Description), the same
-// looseness RaceCutoff allows.
+// free text ("28" / "0–10km（外滩→南京西路）"), because a difficulty owns a
+// stretch of road rather than a point — a range plus its landmarks is the
+// honest unit, not one number. It is nil when only the location is known by
+// name (inside Description), the same looseness RaceCutoff allows.
 type RaceCourseChallenge struct {
-	DistanceKm  *float64 `json:"distance_km"`
-	Description string   `json:"description"`
+	DistanceKm  *string `json:"distance_km"`
+	Description string  `json:"description"`
+}
+
+// UnmarshalJSON keeps rows written before DistanceKm became free text readable:
+// the admin dashboard used to store a bare number there, and a JSON number in a
+// string field would fail the whole course_challenges column's deserialize —
+// and with it the item row's scan. A legacy number is coerced to its shortest
+// textual form ("4.5"); a string (the current shape) passes through.
+func (c *RaceCourseChallenge) UnmarshalJSON(data []byte) error {
+	var row struct {
+		DistanceKm  json.RawMessage `json:"distance_km"`
+		Description string          `json:"description"`
+	}
+	if err := json.Unmarshal(data, &row); err != nil {
+		return err
+	}
+	c.Description = row.Description
+	raw := bytes.TrimSpace(row.DistanceKm)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return nil
+	}
+	if raw[0] == '"' {
+		var text string
+		if err := json.Unmarshal(raw, &text); err != nil {
+			return err
+		}
+		c.DistanceKm = &text
+		return nil
+	}
+	var number json.Number
+	if err := json.Unmarshal(raw, &number); err != nil {
+		return err
+	}
+	text := number.String()
+	c.DistanceKm = &text
+	return nil
 }
 
 // RaceAidStation is one aid station (user story 17): distance along the course

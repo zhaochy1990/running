@@ -1979,7 +1979,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "User tier only. Returns a page of published races ordered by race date, filtered by year (defaults to the current Shanghai year), optional item type (via the race's 项目 rows), optional city, and the upcoming scope. scope=upcoming (the default) keeps only races with race_date \u003e= today (Shanghai); scope=all returns the whole year — the year-switching view of history. Each row carries the requesting user's favorited star state.",
+                "description": "User tier only. Returns a page of published races ordered by race date, filtered by year (defaults to the current Shanghai year), optional item type (via the race's 项目 rows), optional city or province, and the upcoming scope. scope=upcoming (the default) keeps only races with race_date \u003e= today (Shanghai); scope=all returns the whole year — the year-switching view of history. Each row carries the requesting user's favorited star state.",
                 "tags": [
                     "races"
                 ],
@@ -2001,6 +2001,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "City (race_calendar.city spelling, e.g. 厦门市)",
                         "name": "city",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Province (race_calendar.province spelling, e.g. 浙江省)",
+                        "name": "province",
                         "in": "query"
                     },
                     {
@@ -10615,7 +10621,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "distance_km": {
-                    "type": "number"
+                    "type": "string"
                 }
             }
         },
