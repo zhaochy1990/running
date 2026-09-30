@@ -504,6 +504,7 @@ type PublishedRaceFilter struct {
 	FromDate string
 	Type     string
 	City     string
+	Province string
 	Page     int
 	PerPage  int
 }
@@ -521,6 +522,9 @@ func (s *Store) ListPublishedRaceCalendarEvents(ctx context.Context, f Published
 		}
 		if f.City != "" {
 			query = query.Where("city = ?", f.City)
+		}
+		if f.Province != "" {
+			query = query.Where("province = ?", f.Province)
 		}
 		if f.Type != "" {
 			query = query.Where(

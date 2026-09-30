@@ -72,8 +72,6 @@ export interface RaceMonthGroup {
 export interface RaceFilter {
   /** racetypes token；''=全部 */
   type: string;
-  /** 城市原文（race_calendar.city 拼写）；''=全部 */
-  city: string;
   /** 仅收藏 */
   favoritesOnly: boolean;
 }
@@ -95,12 +93,11 @@ export function toRowView(r: RaceCalendarRace): RaceRowView {
   };
 }
 
-/** 客户端筛选：type 匹配事件的 race_types 数组，city 原文精确匹配。 */
+/** 客户端筛选：type 匹配事件的 race_types 数组。省份/年份走服务端参数。 */
 export function filterRaces(races: RaceCalendarRace[], f: RaceFilter): RaceCalendarRace[] {
   return races.filter((r) => {
     if (f.favoritesOnly && !r.favorited) return false;
     if (f.type && !(r.race_types || []).includes(f.type)) return false;
-    if (f.city && r.city !== f.city) return false;
     return true;
   });
 }
@@ -127,11 +124,3 @@ export function groupByMonth(races: RaceCalendarRace[]): RaceMonthGroup[] {
   return groups;
 }
 
-/** 城市筛选项：当年数据去重排序，''=全部由页面在头部补上。 */
-export function cityOptions(races: RaceCalendarRace[]): string[] {
-  const seen = new Set<string>();
-  for (const r of races) {
-    if (r.city) seen.add(r.city);
-  }
-  return [...seen].sort((a, b) => a.localeCompare(b, 'zh'));
-}

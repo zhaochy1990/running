@@ -21,8 +21,8 @@
     <picker class="fbar__pick" mode="selector" range="{{typeLabels}}" value="{{typeIndex}}" bindchange="onTypeChange">
       <view class="fbar__cell {{typeIndex > 0 ? 'fbar__cell--on' : ''}}">{{typeLabels[typeIndex]}} ▾</view>
     </picker>
-    <picker class="fbar__pick" mode="selector" range="{{cityNames}}" value="{{cityIndex}}" bindchange="onCityChange">
-      <view class="fbar__cell {{cityIndex > 0 ? 'fbar__cell--on' : ''}}">{{cityNames[cityIndex]}} ▾</view>
+    <picker class="fbar__pick" mode="selector" range="{{provinceNames}}" value="{{provinceIndex}}" bindchange="onProvinceChange">
+      <view class="fbar__cell {{provinceIndex > 0 ? 'fbar__cell--on' : ''}}">{{provinceNames[provinceIndex]}} ▾</view>
     </picker>
     <view class="fbar__cell fbar__star {{favOnly ? 'fbar__cell--on' : ''}}" bindtap="onFavToggleTap">
       {{favOnly ? '★ 收藏' : '☆ 收藏'}}

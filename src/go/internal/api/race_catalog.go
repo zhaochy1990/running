@@ -179,11 +179,12 @@ func writeRaceCatalogReadError(c *gin.Context, log *zap.Logger, err error) {
 // list returns one page of published races for the race center (issue #390).
 //
 //	@Summary		List published races
-//	@Description	User tier only. Returns a page of published races ordered by race date, filtered by year (defaults to the current Shanghai year), optional item type (via the race's 项目 rows), optional city, and the upcoming scope. scope=upcoming (the default) keeps only races with race_date >= today (Shanghai); scope=all returns the whole year — the year-switching view of history. Each row carries the requesting user's favorited star state.
+//	@Description	User tier only. Returns a page of published races ordered by race date, filtered by year (defaults to the current Shanghai year), optional item type (via the race's 项目 rows), optional city or province, and the upcoming scope. scope=upcoming (the default) keeps only races with race_date >= today (Shanghai); scope=all returns the whole year — the year-switching view of history. Each row carries the requesting user's favorited star state.
 //	@Tags			races
 //	@Param			year		query	int		false	"4-digit year (defaults to the current Shanghai year)"
 //	@Param			type		query	string	false	"Race type token (Marathon / HalfMarathon / {n}Km…), matched against the race's items"
 //	@Param			city		query	string	false	"City (race_calendar.city spelling, e.g. 厦门市)"
+//	@Param			province	query	string	false	"Province (race_calendar.province spelling, e.g. 浙江省)"
 //	@Param			scope		query	string	false	"upcoming (default) or all"
 //	@Param			page		query	int		false	"Page (1-based, default 1)"
 //	@Param			per_page	query	int		false	"Page size (default 20, max 100)"
@@ -272,6 +273,7 @@ func bindPublishedRaceFilter(c *gin.Context) (storage.PublishedRaceFilter, bool)
 		FromDate: fromDate,
 		Type:     c.Query("type"),
 		City:     c.Query("city"),
+		Province: c.Query("province"),
 		Page:     page,
 		PerPage:  perPage,
 	}, true

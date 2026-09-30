@@ -39,11 +39,11 @@ func TestPublishedList(t *testing.T) {
 	const src = "测试源-用户目录"
 	// Year 2031 fixture: three published races (one before the floor, two
 	// after), one unpublished, one published in the neighbouring year.
-	p1 := seed(RaceCalendarEvent{Source: src, Name: "Early Race", RaceDate: "2031-03-10", Country: "CHN", City: strPtr("厦门市"), Published: true})
-	seed(RaceCalendarEvent{Source: src, Name: "Draft Race", RaceDate: "2031-04-01", Country: "CHN", City: strPtr("厦门市"), Published: false})
-	p3 := seed(RaceCalendarEvent{Source: src, Name: "Hangzhou Race", RaceDate: "2031-06-10", Country: "CHN", City: strPtr("杭州市"), Published: true})
-	p2 := seed(RaceCalendarEvent{Source: src, Name: "Late Race", RaceDate: "2031-06-20", Country: "CHN", City: strPtr("厦门市"), Published: true})
-	seed(RaceCalendarEvent{Source: src, Name: "Other Year Race", RaceDate: "2030-12-31", Country: "CHN", City: strPtr("厦门市"), Published: true})
+	p1 := seed(RaceCalendarEvent{Source: src, Name: "Early Race", RaceDate: "2031-03-10", Country: "CHN", Province: strPtr("福建省"), City: strPtr("厦门市"), Published: true})
+	seed(RaceCalendarEvent{Source: src, Name: "Draft Race", RaceDate: "2031-04-01", Country: "CHN", Province: strPtr("福建省"), City: strPtr("厦门市"), Published: false})
+	p3 := seed(RaceCalendarEvent{Source: src, Name: "Hangzhou Race", RaceDate: "2031-06-10", Country: "CHN", Province: strPtr("浙江省"), City: strPtr("杭州市"), Published: true})
+	p2 := seed(RaceCalendarEvent{Source: src, Name: "Late Race", RaceDate: "2031-06-20", Country: "CHN", Province: strPtr("福建省"), City: strPtr("厦门市"), Published: true})
+	seed(RaceCalendarEvent{Source: src, Name: "Other Year Race", RaceDate: "2030-12-31", Country: "CHN", Province: strPtr("福建省"), City: strPtr("厦门市"), Published: true})
 
 	if err := st.CreateRaceCalendarItem(ctx, &RaceCalendarItem{RaceEventID: p1.ID, Name: "马拉松", Type: "Marathon"}); err != nil {
 		t.Fatalf("seed item p1: %v", err)
@@ -95,6 +95,16 @@ func TestPublishedList(t *testing.T) {
 	}
 	if total != 1 || len(rows) != 1 || rows[0].ID != p1.ID {
 		t.Fatalf("type=Marathon = %v (total %d), want [%d]", ids(rows), total, p1.ID)
+	}
+
+	// Province match on the event's own spelling (小程序筛选栏的静态省列表
+	// 直接传省名，无再无近似匹配：没有就没有).
+	rows, total, err = st.ListPublishedRaceCalendarEvents(ctx, PublishedRaceFilter{Year: "2031", Province: "浙江省"})
+	if err != nil {
+		t.Fatalf("list by province: %v", err)
+	}
+	if total != 1 || len(rows) != 1 || rows[0].ID != p3.ID {
+		t.Fatalf("province=浙江省 = %v (total %d), want [%d]", ids(rows), total, p3.ID)
 	}
 
 	// City match on the event's own spelling.

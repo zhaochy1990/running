@@ -39,6 +39,8 @@ export interface RaceCalendarParams {
   year?: string;
   /** upcoming（默认，仅 race_date >= 今天）/ all（整年，含已结束） */
   scope?: 'upcoming' | 'all';
+  /** 省份原文（race_calendar.province 拼写，如 浙江省）；服务端精确匹配 */
+  province?: string;
   page?: number;
   perPage?: number;
 }
@@ -53,6 +55,7 @@ export function getRaceCalendar(params: RaceCalendarParams): Promise<RaceCalenda
   const q: string[] = [];
   if (params.year) q.push(`year=${encodeURIComponent(params.year)}`);
   if (params.scope) q.push(`scope=${params.scope}`);
+  if (params.province) q.push(`province=${encodeURIComponent(params.province)}`);
   q.push(`page=${params.page ?? 1}`);
   q.push(`per_page=${params.perPage ?? 100}`);
   return http.get<RaceCalendarResponse>(`/api/race-calendar?${q.join('&')}`);

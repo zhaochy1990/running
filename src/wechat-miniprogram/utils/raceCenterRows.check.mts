@@ -5,7 +5,6 @@
  */
 import type { RaceCalendarRace } from '../services/race-center.ts';
 import {
-  cityOptions,
   filterRaces,
   groupByMonth,
   toRowView,
@@ -65,11 +64,9 @@ const pool = [
   race({ id: 2, race_types: ['HalfMarathon', '10Km'], city: '杭州市', favorited: false }),
   race({ id: 3, race_types: ['10Km'], city: null, favorited: true, race_date: '2026-03-01' }),
 ];
-eq(filterRaces(pool, { type: '', city: '', favoritesOnly: false }).map((r) => r.id), [1, 2, 3], 'filter none');
-eq(filterRaces(pool, { type: '10Km', city: '', favoritesOnly: false }).map((r) => r.id), [2, 3], 'filter type array');
-eq(filterRaces(pool, { type: '', city: '厦门市', favoritesOnly: false }).map((r) => r.id), [1], 'filter city exact');
-eq(filterRaces(pool, { type: '', city: '厦门', favoritesOnly: false }).map((r) => r.id), [], 'filter city no prefix match');
-eq(filterRaces(pool, { type: '', city: '', favoritesOnly: true }).map((r) => r.id), [1, 3], 'filter favorites');
+eq(filterRaces(pool, { type: '', favoritesOnly: false }).map((r) => r.id), [1, 2, 3], 'filter none');
+eq(filterRaces(pool, { type: '10Km', favoritesOnly: false }).map((r) => r.id), [2, 3], 'filter type array');
+eq(filterRaces(pool, { type: '', favoritesOnly: true }).map((r) => r.id), [1, 3], 'filter favorites');
 
 // 分组：按月升序、组内按日期、key 供 wx:key、label 去前导零
 const grouped = groupByMonth([
@@ -83,8 +80,5 @@ eq(grouped.map((g) => g.key), ['2025-12', '2026-10', '2026-11'], 'group keys asc
 eq(grouped.map((g) => g.rows.map((r) => r.id)), [[5], [1, 2], [9]], 'group rows by date');
 
 // 城市选项：去重、不含 null；顺序只保证稳定（拼音排序依赖 ICU，不硬断言）
-eq([...cityOptions(pool)].sort(), ['厦门市', '杭州市'], 'city options deduped');
-eq(cityOptions(pool).length, 2, 'city options count');
-eq(cityOptions([race({ city: null })]), [], 'city options skip null');
 
 console.log('raceCenterRows check passed');

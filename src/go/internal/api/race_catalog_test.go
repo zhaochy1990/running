@@ -82,6 +82,9 @@ func (f *fakeRaceCatalogStore) ListPublishedRaceCalendarEvents(_ context.Context
 		if filter.City != "" && (row.City == nil || *row.City != filter.City) {
 			continue
 		}
+		if filter.Province != "" && (row.Province == nil || *row.Province != filter.Province) {
+			continue
+		}
 		if filter.Type != "" {
 			ok := false
 			for _, item := range f.items {
@@ -271,22 +274,22 @@ func seedCatalogRaces(t *testing.T, store *fakeRaceCatalogStore) (uint64, uint64
 	today := timefmt.ShanghaiToday().Format("2006-01-02")
 	upcoming := store.seedEvent(storage.RaceCalendarEvent{
 		Source: "中国田协", Name: "Upcoming Race", RaceDate: today,
-		Country: "CHN", City: strPtrAPITest("厦门市"), Label: strPtrAPITest("A"),
+		Country: "CHN", Province: strPtrAPITest("福建省"), City: strPtrAPITest("厦门市"), Label: strPtrAPITest("A"),
 		RaceTypes: strPtrAPITest(`["Marathon"]`), Published: true,
 	})
 	past := store.seedEvent(storage.RaceCalendarEvent{
 		Source: "中国田协", Name: "Past Race", RaceDate: timefmt.ShanghaiToday().AddDate(0, 0, -30).Format("2006-01-02"),
-		Country: "CHN", City: strPtrAPITest("厦门市"),
+		Country: "CHN", Province: strPtrAPITest("福建省"), City: strPtrAPITest("厦门市"),
 		RaceTypes: strPtrAPITest(`["Marathon"]`), Published: true,
 	})
 	hangzhou := store.seedEvent(storage.RaceCalendarEvent{
 		Source: "中国田协", Name: "Hangzhou Race", RaceDate: today,
-		Country: "CHN", City: strPtrAPITest("杭州市"),
+		Country: "CHN", Province: strPtrAPITest("浙江省"), City: strPtrAPITest("杭州市"),
 		RaceTypes: strPtrAPITest(`["HalfMarathon"]`), Published: true,
 	})
 	unpublished := store.seedEvent(storage.RaceCalendarEvent{
 		Source: "中国田协", Name: "Draft Race", RaceDate: today,
-		Country: "CHN", City: strPtrAPITest("厦门市"), Published: false,
+		Country: "CHN", Province: strPtrAPITest("福建省"), City: strPtrAPITest("厦门市"), Published: false,
 	})
 	store.seedItem(storage.RaceCalendarItem{RaceEventID: upcoming.ID, Name: "马拉松", Type: "Marathon"})
 	store.seedItem(storage.RaceCalendarItem{RaceEventID: hangzhou.ID, Name: "半程马拉松", Type: "HalfMarathon"})
@@ -380,6 +383,21 @@ func TestRaceCatalog_ListCityFilter(t *testing.T) {
 	body := decodeCatalogList(t, w)
 	if len(body.Races) != 1 || body.Races[0].ID != hangzhouID {
 		t.Fatalf("city filter expected only %d, got %v", hangzhouID, body.Races)
+	}
+}
+
+func TestRaceCatalog_ListProvinceFilter(t *testing.T) {
+	h := newRaceCatalogHarness(t)
+	_, _, hangzhouID, _ := seedCatalogRaces(t, h.store)
+	headers := h.userToken(t, "11111111-1111-4111-8111-111111111111")
+
+	w := h.get(t, "/api/race-calendar?province="+url.QueryEscape("浙江省"), headers)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body.String())
+	}
+	body := decodeCatalogList(t, w)
+	if len(body.Races) != 1 || body.Races[0].ID != hangzhouID {
+		t.Fatalf("province filter expected only %d, got %v", hangzhouID, body.Races)
 	}
 }
 
