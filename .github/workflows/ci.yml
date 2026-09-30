@@ -273,10 +273,15 @@ jobs:
   # Catches a broken Dockerfile before merge. The old CI only ever ran this on
   # push, i.e. after the release workflow had already built and published the
   # real image — so on pull requests it never ran at all.
+  # Pull requests only: when release.yml calls this workflow (full: true) the
+  # real Build & push follows with the same matrix and commit, so a dry run
+  # there rebuilds every changed image twice for no extra signal. `!= true`,
+  # not a truthiness test: the inputs context is empty on pull_request — the
+  # same idiom as notify's `inputs.notify != false`.
   docker-dry-run:
     name: Docker dry run (${{ matrix.artifact.name }})
     needs: artifacts
-    if: needs.artifacts.outputs.changed != ''
+    if: needs.artifacts.outputs.changed != '' && inputs.full != true
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
