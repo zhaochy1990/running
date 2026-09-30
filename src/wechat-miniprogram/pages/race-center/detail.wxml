@@ -56,14 +56,14 @@
           <view wx:if="{{signupAvailable}}" class="signup-btn" bindtap="onSignupTap">报名：{{signupButton}} ▾</view>
         </view>
 
-        <!-- 三 tab：难度 / 项目 / 出行（#385：无报名 tab，渠道挪入难度；原型：首 tab 承载比赛策略） -->
+        <!-- 三 tab：概要 / 项目 / 出行（#385：无报名 tab，渠道挪入概要） -->
         <view class="tabs" style="top: calc({{statusBarHeight}}px + 128rpx);">
-          <view class="tabs__item {{tabIndex === 0 ? 'tabs__item--on' : ''}}" data-tab="0" bindtap="onTabTap">难度</view>
+          <view class="tabs__item {{tabIndex === 0 ? 'tabs__item--on' : ''}}" data-tab="0" bindtap="onTabTap">概要</view>
           <view class="tabs__item {{tabIndex === 1 ? 'tabs__item--on' : ''}}" data-tab="1" bindtap="onTabTap">项目</view>
           <view class="tabs__item {{tabIndex === 2 ? 'tabs__item--on' : ''}}" data-tab="2" bindtap="onTabTap">出行</view>
         </view>
 
-        <!-- 难度：比赛策略卡（#396：仅内容调研过的赛事开放）+ 关键信息 + 报名渠道 -->
+        <!-- 概要：比赛策略卡（#396：仅内容调研过的赛事开放）+ 关键信息 + 报名渠道 -->
         <block wx:if="{{tabIndex === 0}}">
           <view wx:if="{{strategyEntry}}" class="card strategy" bindtap="onStrategyTap">
             <block wx:if="{{strategySummary}}">
