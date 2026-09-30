@@ -1071,9 +1071,11 @@ func TestRaceCalendarAdmin_RouteDescription(t *testing.T) {
 }
 
 // TestRaceCalendarAdmin_CourseChallenges covers the key-difficulty rows: they
-// round trip, a row without a description is a 400 (it would carry nothing), a
-// row whose distance is still unknown is fine, and the section counts as
-// content and clears with the rest of it.
+// round trip with a free-text locator ("0–10km（外滩→南京西路）" — a difficulty
+// owns a stretch of road, not a point), a blank locator is normalized to absent
+// like a blank route description, a row without a description is a 400 (it
+// would carry nothing), a row whose locator is still unknown is fine, and the
+// section counts as content and clears with the rest of it.
 func TestRaceCalendarAdmin_CourseChallenges(t *testing.T) {
 	h := newRaceHarness(t)
 	event := h.store.seedEvent(syncEvent())
@@ -1081,9 +1083,9 @@ func TestRaceCalendarAdmin_CourseChallenges(t *testing.T) {
 	base := fmt.Sprintf("/api/admin/races/%d/items", event.ID)
 
 	challenges := []map[string]any{
-		{"distance_km": 4.5, "description": "有一个隧道，需要下穿，有上下起伏"},
-		{"distance_km": 5.4, "description": "立交桥，赛道最大上坡（大约400米缓上坡）"},
-		{"description": "终点前爬升，无准确桩号"},
+		{"distance_km": "0–10km（外滩→南京西路）", "description": "过街桥引道，单次起伏2–3m的小缓坡"},
+		{"distance_km": "10–21km", "description": "立交桥，赛道最大上坡（大约400米缓上坡）"},
+		{"distance_km": "  ", "description": "终点前爬升，无准确桩号"},
 	}
 	w := h.do(t, http.MethodPost, base, map[string]any{
 		"name": "全程马拉松", "type": "Marathon",
@@ -1095,18 +1097,18 @@ func TestRaceCalendarAdmin_CourseChallenges(t *testing.T) {
 	var created raceCalendarItemDTO
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 	if created.Content == nil || len(created.Content.CourseChallenges) != 3 ||
-		created.Content.CourseChallenges[0].DistanceKm == nil || *created.Content.CourseChallenges[0].DistanceKm != 4.5 ||
+		created.Content.CourseChallenges[0].DistanceKm == nil || *created.Content.CourseChallenges[0].DistanceKm != "0–10km（外滩→南京西路）" ||
 		created.Content.CourseChallenges[2].DistanceKm != nil {
-		t.Fatalf("created challenges = %+v, want the rows round-tripped with an optional distance", created.Content)
+		t.Fatalf("created challenges = %+v, want the rows round-tripped, the blank locator stored as absent", created.Content)
 	}
 	if stored := h.store.items[h.store.findItem(created.ID)]; !stored.HasContent() {
 		t.Fatal("a row carrying only challenges must count as having content")
 	}
 
-	// A challenge without a description carries nothing — a distance alone
+	// A challenge without a description carries nothing — a locator alone
 	// names a place, not a difficulty.
 	w = h.do(t, http.MethodPatch, fmt.Sprintf("%s/%d", base, created.ID), map[string]any{
-		"content": map[string]any{"course_challenges": []map[string]any{{"distance_km": 30}}},
+		"content": map[string]any{"course_challenges": []map[string]any{{"distance_km": "30km"}}},
 	}, admin)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("blank description = %d %s, want 400", w.Code, w.Body.String())

@@ -2826,7 +2826,7 @@ definitions:
       description:
         type: string
       distance_km:
-        type: number
+        type: string
     type: object
   storage.RaceCutoff:
     properties:
@@ -5722,10 +5722,10 @@ paths:
     get:
       description: User tier only. Returns a page of published races ordered by race
         date, filtered by year (defaults to the current Shanghai year), optional item
-        type (via the race's 项目 rows), optional city, and the upcoming scope. scope=upcoming
-        (the default) keeps only races with race_date >= today (Shanghai); scope=all
-        returns the whole year — the year-switching view of history. Each row carries
-        the requesting user's favorited star state.
+        type (via the race's 项目 rows), optional city or province, and the upcoming
+        scope. scope=upcoming (the default) keeps only races with race_date >= today
+        (Shanghai); scope=all returns the whole year — the year-switching view of
+        history. Each row carries the requesting user's favorited star state.
       parameters:
       - description: 4-digit year (defaults to the current Shanghai year)
         in: query
@@ -5739,6 +5739,10 @@ paths:
       - description: City (race_calendar.city spelling, e.g. 厦门市)
         in: query
         name: city
+        type: string
+      - description: Province (race_calendar.province spelling, e.g. 浙江省)
+        in: query
+        name: province
         type: string
       - description: upcoming (default) or all
         in: query

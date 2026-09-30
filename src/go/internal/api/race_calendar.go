@@ -1163,7 +1163,7 @@ func applyRaceItemContentColumns(item *storage.RaceCalendarItem, in *raceItemCon
 	item.RouteDescription = normalizeOptionalString(in.RouteDescription)
 	item.TotalAscentM = in.TotalAscentM
 	item.ElevationPoints = in.ElevationPoints
-	item.CourseChallenges = in.CourseChallenges
+	item.CourseChallenges = normalizeChallenges(in.CourseChallenges)
 	item.AidStations = in.AidStations
 	item.Cutoffs = in.Cutoffs
 	item.Prizes = in.Prizes
@@ -1261,6 +1261,21 @@ func normalizeOptionalString(s *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+// normalizeChallenges trims the free-text locator of each difficulty row; a
+// blank locator is stored as absent, the same single-spelling rule the route
+// description follows. A nil section stays nil (NULL), not an empty array.
+func normalizeChallenges(rows []storage.RaceCourseChallenge) []storage.RaceCourseChallenge {
+	if rows == nil {
+		return nil
+	}
+	normalized := make([]storage.RaceCourseChallenge, len(rows))
+	for i, row := range rows {
+		row.DistanceKm = normalizeOptionalString(row.DistanceKm)
+		normalized[i] = row
+	}
+	return normalized
 }
 
 // normalizeRaceItemType defaults an empty item type to Unknown (the shared
