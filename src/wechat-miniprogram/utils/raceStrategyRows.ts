@@ -153,32 +153,6 @@ export function strategyShareTitle(view: StrategyView): string {
   return `我的${view.raceName}比赛策略 · 目标 ${view.targetTime}`;
 }
 
-/** race_goal 的 race_distance 词汇（POST /training-goal oneof）：映射不了的 token 返回 null（按钮隐藏）。 */
-export function goalDistanceOf(itemType: string): string | null {
-  if (itemType === 'Marathon') return 'FM';
-  if (itemType === 'HalfMarathon') return 'HM';
-  if (/^10\s*Km$/i.test(itemType)) return '10K';
-  if (/^5\s*Km$/i.test(itemType)) return '5K';
-  return null;
-}
-
-/** 「设为目标」预填体（race_goal POST 的 race_* 字段；weekly_training_days 由用户选）。 */
-export function goalPrefill(
-  view: StrategyView,
-  raceDate: string,
-  raceLocation: string | null,
-): { race_date: string; race_distance: string; race_name: string; target_finish_time: string; race_location: string | null } | null {
-  const distance = goalDistanceOf(view.itemType);
-  if (!distance) return null;
-  return {
-    race_date: raceDate,
-    race_distance: distance,
-    race_name: view.raceName,
-    target_finish_time: view.targetTime,
-    race_location: raceLocation,
-  };
-}
-
 /** '2026-10-18T09:30:00Z' → '2026/10/18'（报告页头部的比赛日展示；非法输入原样返回）。 */
 export function raceDayLabel(raceDate: string): string {
   return /^\d{4}-\d{2}-\d{2}/.test(raceDate) ? raceDate.slice(0, 10).replace(/-/g, '/') : raceDate;

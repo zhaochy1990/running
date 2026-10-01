@@ -7,7 +7,7 @@
 //     本地渲染（编辑同样可用），底部「应用并保存」= PUT 落库为该目标版本。
 // 五列配速表（配速/说明可编辑，用时=距离×配速自动算）+ 逐行补给（可增删）+
 // 赛道/天气提示；hero 次要「分享」（onShareAppMessage）与「配速卡」（canvas
-// 海报）；「设为目标」以 race_goal 预填确认。视图变换在 utils/raceStrategyRows。
+// 海报）。视图变换在 utils/raceStrategyRows。
 
 import { ApiError } from '../../../services/request';
 import { getRaceDetail, type RaceDetail } from '../../../services/race-center';
@@ -15,7 +15,6 @@ import {
   deleteRaceStrategy,
   getRaceStrategies,
   latestStrategyVersion,
-  postTrainingGoal,
   saveRaceStrategy,
   takePendingStrategyDraft,
   type RaceStrategy,
@@ -23,7 +22,6 @@ import {
 } from '../../../services/race-strategy';
 import {
   fromStrategyView,
-  goalPrefill,
   raceDayLabel,
   strategyShareTitle,
   toStrategyView,
@@ -32,8 +30,6 @@ import {
 import { setPendingCoachContext } from '../../../services/coach';
 import { shanghaiDateFromIso, shanghaiTimeFromIso } from '../../../utils/date';
 import { userStore } from '../../../store/index';
-
-const GOAL_DAYS = [3, 4, 5, 6];
 
 interface StrategyPageData {
   statusBarHeight: number;
@@ -51,12 +47,6 @@ interface StrategyPageData {
   applying: boolean;
   deleting: boolean;
   updatedAtText: string;
-  goalAvailable: boolean;
-  goalSheetOpen: boolean;
-  goalSheetRows: Array<{ k: string; v: string }>;
-  goalDays: number[];
-  goalDayIndex: number;
-  goalPending: boolean;
 }
 
 interface StrategyPageHandlers {
@@ -84,10 +74,6 @@ interface StrategyPageHandlers {
   onDeleteTap(): void;
   deleteActiveVersion(target: string): Promise<void>;
   onPosterTap(): void;
-  onGoalTap(): void;
-  onGoalSheetClose(): void;
-  onGoalDayChange(e: WechatMiniprogram.PickerChange): void;
-  onGoalConfirm(): void;
   _raceId: number;
   _detail: RaceDetail | null;
   _base: RaceStrategy | null;
@@ -132,12 +118,6 @@ Page<StrategyPageData, StrategyPageHandlers>({
     applying: false,
     deleting: false,
     updatedAtText: '',
-    goalAvailable: false,
-    goalSheetOpen: false,
-    goalSheetRows: [],
-    goalDays: GOAL_DAYS,
-    goalDayIndex: 1,
-    goalPending: false,
   },
 
   _raceId: 0,
@@ -185,7 +165,6 @@ Page<StrategyPageData, StrategyPageHandlers>({
           raceDayText: raceDayLabel(detail.race_date),
           dirty: false,
           updatedAtText: '',
-          goalAvailable: goalPrefill(view, detail.race_date, detail.city) !== null,
         });
       } catch {
         this.setData({ loading: false, error: '加载失败，请稍后重试' });
@@ -235,7 +214,6 @@ Page<StrategyPageData, StrategyPageHandlers>({
       raceDayText: raceDayLabel(detail.race_date),
       dirty: false,
       updatedAtText: timeLabel(version.updated_at),
-      goalAvailable: goalPrefill(view, detail.race_date, detail.city) !== null,
     });
   },
 
@@ -470,55 +448,6 @@ Page<StrategyPageData, StrategyPageHandlers>({
         });
       })
       .exec();
-  },
-
-  // ── 设为目标（race_goal 预填确认） ──
-
-  onGoalTap() {
-    const view = this.data.view;
-    const detail = this._detail;
-    if (!view || !detail) return;
-    const prefill = goalPrefill(view, detail.race_date, detail.city);
-    if (!prefill) return;
-    this.setData({
-      goalSheetOpen: true,
-      goalSheetRows: [
-        { k: '目标赛事', v: prefill.race_name },
-        { k: '比赛日', v: raceDayLabel(prefill.race_date) },
-        { k: '项目', v: view.itemTypeLabel },
-        { k: '目标成绩', v: prefill.target_finish_time },
-        ...(prefill.race_location ? [{ k: '地点', v: prefill.race_location }] : []),
-      ],
-    });
-  },
-
-  onGoalSheetClose() {
-    if (this.data.goalPending) return;
-    this.setData({ goalSheetOpen: false });
-  },
-
-  onGoalDayChange(e) {
-    this.setData({ goalDayIndex: Number(e.detail.value) });
-  },
-
-  async onGoalConfirm() {
-    const view = this.data.view;
-    const detail = this._detail;
-    if (!view || !detail || this.data.goalPending) return;
-    const prefill = goalPrefill(view, detail.race_date, detail.city);
-    if (!prefill) return;
-    this.setData({ goalPending: true });
-    try {
-      await postTrainingGoal({ ...prefill, weekly_training_days: GOAL_DAYS[this.data.goalDayIndex] || 4 });
-      this.setData({ goalSheetOpen: false });
-      wx.showToast({ title: '已设为目标赛事', icon: 'success' });
-    } catch (err: unknown) {
-      // 比赛日已过等校验失败直出后端信息
-      const msg = err instanceof ApiError && err.message ? err.message : '设置失败，请重试';
-      wx.showToast({ title: msg, icon: 'none' });
-    } finally {
-      this.setData({ goalPending: false });
-    }
   },
 });
 

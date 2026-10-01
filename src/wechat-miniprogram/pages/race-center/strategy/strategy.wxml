@@ -134,12 +134,10 @@
       <view wx:if="{{draft}}" class="actions actions--draft">
         <view class="actions__apply {{applying ? 'actions__apply--busy' : ''}}" bindtap="onApplyTap">{{applying ? '应用中…' : '应用并保存'}}</view>
         <view class="actions__draft-hint">应用前不会保存；离开即放弃这份初稿</view>
-        <view wx:if="{{goalAvailable}}" class="actions__goal" bindtap="onGoalTap">设为目标赛事</view>
       </view>
-      <!-- 已保存：保存 + 设为目标 + 删除此版本 -->
+      <!-- 已保存：保存 + 删除此版本 -->
       <view wx:else class="actions">
         <view class="actions__save {{dirty ? 'actions__save--on' : ''}}" bindtap="onSaveTap">{{saving ? '保存中…' : (dirty ? '保存修改' : '已保存 · ' + updatedAtText)}}</view>
-        <view wx:if="{{goalAvailable}}" class="actions__goal" bindtap="onGoalTap">设为目标赛事</view>
         <view class="actions__delete" bindtap="onDeleteTap">{{deleting ? '删除中…' : '删除此版本'}}</view>
       </view>
     </block>
@@ -147,24 +145,4 @@
 
   <!-- 配速卡 canvas（离屏绘制后经 previewImage 长按保存） -->
   <canvas type="2d" id="poster" class="poster-canvas"></canvas>
-
-  <!-- 「设为目标」确认弹层：预填信息 + 每周训练天数 -->
-  <block wx:if="{{goalSheetOpen}}">
-    <view class="sheet-mask" bindtap="onGoalSheetClose"></view>
-    <view class="sheet">
-      <view class="sheet__hint">设为目标赛事（新目标会替换当前目标，训练计划将围绕它制定）</view>
-      <view class="kv" wx:for="{{goalSheetRows}}" wx:key="k">
-        <view class="kv__k">{{item.k}}</view>
-        <view class="kv__v">{{item.v}}</view>
-      </view>
-      <view class="sheet__days">
-        <text class="sheet__days-label">每周训练天数</text>
-        <picker mode="selector" range="{{['3', '4', '5', '6']}}" value="{{goalDayIndex}}" bindchange="onGoalDayChange">
-          <view class="sheet__days-value">{{goalDays[goalDayIndex]}} 天 ▾</view>
-        </picker>
-      </view>
-      <view class="sheet__confirm" bindtap="onGoalConfirm">{{goalPending ? '设置中…' : '确认设置'}}</view>
-      <view class="sheet__cancel" bindtap="onGoalSheetClose">取消</view>
-    </view>
-  </block>
 </view>

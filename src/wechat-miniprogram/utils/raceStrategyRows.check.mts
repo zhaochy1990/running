@@ -2,7 +2,7 @@
  * raceStrategyRows.ts 自检：
  * `node --import ./utils/ts-resolve-hooks.mjs utils/raceStrategyRows.check.mts`。
  * 覆盖 配速解析/格式化、用时=距离×配速换算与累计、视图往返（编辑回收）、
- * 分享标题、「设为目标」的距离映射与预填。
+ * 分享标题。
  */
 import type { RaceStrategy } from '../services/race-strategy.ts';
 import { splitSegmentName } from './raceStrategyRows.ts';
@@ -10,8 +10,6 @@ import {
   formatDuration,
   formatPace,
   fromStrategyView,
-  goalDistanceOf,
-  goalPrefill,
   parsePaceSPerKm,
   raceDayLabel,
   recomputePaceTimes,
@@ -78,18 +76,8 @@ eq(saved.pace_segments[0].segment_time, '56:40', '编辑后重算用时');
 eq(saved.pace_segments[0].cumulative_time, '56:40', '编辑后重算累计');
 eq(saved.fueling_plan.length, 2, '空补给行被过滤');
 
-// 分享与目标映射
+// 分享标题
 eq(strategyShareTitle(view), '我的杭州马拉松比赛策略 · 目标 3:59:59', 'share title');
-eq(goalDistanceOf('Marathon'), 'FM', 'FM 映射');
-eq(goalDistanceOf('HalfMarathon'), 'HM', 'HM 映射');
-eq(goalDistanceOf('10Km'), '10K', '10K 映射');
-eq(goalDistanceOf('Other'), null, '不可映射 → null');
-const prefill = goalPrefill(view, '2026-11-01', '杭州市');
-eq(
-  prefill && { d: prefill.race_distance, n: prefill.race_name, t: prefill.target_finish_time, l: prefill.race_location },
-  { d: 'FM', n: '杭州马拉松', t: '3:59:59', l: '杭州市' },
-  'goal prefill',
-);
 
 
 

@@ -121,19 +121,3 @@ export function saveRaceStrategy(
 export function deleteRaceStrategy(raceId: number, targetFinishTime: string): Promise<void> {
   return http.delete<void>(`/api/users/me/race-strategies/${raceId}?target=${encodeURIComponent(targetFinishTime)}`);
 }
-
-/** 「设为目标」预填体（POST /api/users/me/training-goal；后端 goals.go goalInput）。 */
-export interface TrainingGoalInput {
-  race_date: string;
-  race_distance: string;
-  race_name: string;
-  target_finish_time: string;
-  race_location: string | null;
-  /** 3–6，必填：目标确认弹层里由用户选择。 */
-  weekly_training_days: number;
-}
-
-/** 把这场比赛设为目标赛事（新目标会归档既有活跃目标——服务端语义）。 */
-export function postTrainingGoal(goal: TrainingGoalInput): Promise<unknown> {
-  return http.post<unknown, TrainingGoalInput>('/api/users/me/training-goal', goal);
-}
