@@ -22,6 +22,7 @@ function getAgentPrompt(): string {
 - "下周计划调整一下，周三改成休息" → weekly_plan
 - "帮我看下赛季计划" → master_plan
 - "帮我制定杭马的分段配速和补给策略" → race_strategy
+- "我想和你聊聊这场比赛的比赛策略" → race_strategy
 - "比赛时前半程该跑多快？" → race_strategy
 - "2:55" → race_strategy（比赛策略对话中回答目标完赛时间，继续生成策略）
 - "再帮我出一版 250 的策略" → race_strategy

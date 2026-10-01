@@ -114,6 +114,7 @@ interface CoachPageHandlers {
   // 内部方法（以 this. 调用，需在接口中声明以便类型收窄）。
   loadSessions(): Promise<void>;
   loadSession(sessionId: string): Promise<void>;
+  sendText(text: string): Promise<void>;
   doSend(text: string, clientTurnId: string, userMsgId: number): Promise<void>;
   startContextSession(pending: PendingCoachContext): void;
   currentSessionTarget(): CoachSessionTarget | undefined;
@@ -345,7 +346,7 @@ Page<CoachPageData, CoachPageHandlers>({
     this.resetStream();
   },
 
-  /** 首页「和教练聊一聊」：新建会话并挂 target，展示上下文提示条。 */
+  /** 入口「和教练聊一聊」：新建会话并挂 target，展示上下文提示条；带 kickoff 时自动发出首条消息。 */
   startContextSession(pending: PendingCoachContext) {
     this.resetStream();
     const newSession: CoachSession = {
@@ -361,11 +362,17 @@ Page<CoachPageData, CoachPageHandlers>({
     this.setData({
       sessions,
       currentSessionId: newSession.id,
-      messages: welcomeMessages(),
+      // kickoff 入口：消息区从入口对话开始，不放通用欢迎语
+      messages: pending.kickoff ? [] : welcomeMessages(),
       scrollIntoId: '',
       drawerOpen: false,
       contextHint: this.contextHintOf(newSession),
     });
+    // #513：按钮已把意图说清，直接替用户发出首条消息让教练主动开场；
+    // 失败时该消息带重试按钮，与手动发送一致。
+    if (pending.kickoff) {
+      void this.sendText(pending.kickoff);
+    }
   },
 
   /** 当前会话锚定的计划 session；无则 undefined（普通对话）。 */
@@ -488,7 +495,12 @@ Page<CoachPageData, CoachPageHandlers>({
   async onSend() {
     const text = this.data.input.trim();
     if (!text || this.data.sending) return;
+    await this.sendText(text);
+  },
 
+  /** 发送一条用户消息（输入框发送与入口 kickoff 共用）：刷会话标题、落用户气泡、发起本轮。 */
+  async sendText(text: string) {
+    if (this.data.sending) return;
     // 新会话用首条消息当标题（覆盖占位标题）。
     const sessions = this.data.sessions;
     let refreshedSessions = sessions;
