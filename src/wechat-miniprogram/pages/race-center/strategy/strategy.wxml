@@ -52,7 +52,7 @@
           wx:key="target"
           data-target="{{item.target}}"
           bindtap="onVersionTap"
-        >{{item.target}}</view>
+        >{{item.target || '—'}}</view>
       </view>
 
       <!-- 分段配速：五列表格，pace/说明可编辑；用时=距离×配速自动算 -->

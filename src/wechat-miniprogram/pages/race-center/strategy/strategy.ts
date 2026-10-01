@@ -14,6 +14,7 @@ import { getRaceDetail, type RaceDetail } from '../../../services/race-center';
 import {
   deleteRaceStrategy,
   getRaceStrategies,
+  latestStrategyVersion,
   postTrainingGoal,
   saveRaceStrategy,
   takePendingStrategyDraft,
@@ -115,14 +116,7 @@ function timeLabel(iso: string): string {
   return `${day.replace(/-/g, '/')} ${time.slice(0, 5)}`;
 }
 
-/** 最近更新的版本（详情卡摘要与报告页的默认选中）。 */
-function latestVersion(versions: RaceStrategyVersion[]): RaceStrategyVersion | null {
-  let latest: RaceStrategyVersion | null = null;
-  for (const v of versions) {
-    if (latest === null || v.updated_at > latest.updated_at) latest = v;
-  }
-  return latest;
-}
+/** 最近更新的版本已抽到 services/race-strategy.ts（latestStrategyVersion）。 */
 
 Page<StrategyPageData, StrategyPageHandlers>({
   data: {
@@ -163,8 +157,6 @@ Page<StrategyPageData, StrategyPageHandlers>({
       return;
     }
     this._raceId = id;
-    // ?target= 指定初始选中的版本（详情卡跳最近版时不带）。
-    this._initialTarget = options.target || '';
     // 教练聊天卡片交接的草稿（raceId 匹配才消费）：进草稿模式。
     const pending = takePendingStrategyDraft(id);
     this._draftStrategy = pending?.strategy ?? null;
@@ -211,10 +203,9 @@ Page<StrategyPageData, StrategyPageHandlers>({
         this.setData({ loading: false, error: '策略尚未生成：回到赛事详情，和教练聊一聊生成初稿' });
         return;
       }
-      // 初始选中：?target= 指定版（不存在则回退最近更新），否则最近更新的版本。
+      // 初始选中最近更新的版本（草稿应用后 _initialTarget 指定落点）。
       const requested = listRes.strategies.find((v) => v.target_finish_time === this._initialTarget);
-      const latest = latestVersion(listRes.strategies);
-      const initial = requested ?? latest;
+      const initial = requested ?? latestStrategyVersion(listRes.strategies);
       if (initial) {
         this.applyVersion(initial, listRes.strategies, detail);
       }
@@ -364,6 +355,10 @@ Page<StrategyPageData, StrategyPageHandlers>({
         item_type: view.itemType,
         content: fromStrategyView(view, base),
       });
+      // 同步 _versions 的时间戳：后续删除切版时 latestStrategyVersion 才准。
+      this._versions = this._versions.map((v) =>
+        v.target_finish_time === this._activeTarget ? { ...v, updated_at: res.updated_at } : v,
+      );
       this.setData({ dirty: false, updatedAtText: timeLabel(res.updated_at) });
       wx.showToast({ title: '已保存', icon: 'success' });
     } catch {
@@ -433,7 +428,7 @@ Page<StrategyPageData, StrategyPageHandlers>({
         });
         return;
       }
-      const next = latestVersion(remaining);
+      const next = latestStrategyVersion(remaining);
       if (!next) return;
       this.applyVersion(next, remaining, detail);
     } catch {

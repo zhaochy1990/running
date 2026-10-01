@@ -33,9 +33,11 @@ func (s *Store) AutoMigrateRaceStrategies(ctx context.Context) error {
 // index, add the target_finish_time column and backfill it from the content
 // JSON. Every step is guarded so it is idempotent and a no-op on a fresh
 // database; AutoMigrate then builds the new (user, race, target) unique index.
-// The backfill keeps '' on rows whose content lacks the field — the legacy
-// unique index guarantees at most one such row per (user, race), so '' remains
-// a valid (never colliding) key for them.
+// The backfill keeps '' on rows whose content lacks a well-formed target —
+// the legacy unique index guarantees at most one such row per (user, race),
+// so '' remains a valid (never colliding) key for them. Deploy is
+// single-replica stop-the-world (same as every schema change here): between
+// DropIndex and the new index there is no uniqueness enforcement.
 func migrateRaceStrategyTargetKey(db *gorm.DB) error {
 	m := db.Migrator()
 	if !m.HasTable(&RaceStrategy{}) {
@@ -50,13 +52,19 @@ func migrateRaceStrategyTargetKey(db *gorm.DB) error {
 		if err := m.AddColumn(&RaceStrategy{}, "TargetFinishTime"); err != nil {
 			return fmt.Errorf("storage: add race_strategy.target_finish_time: %w", err)
 		}
-		// JSON_VALID guards against a corrupt LONGTEXT row aborting the whole
-		// UPDATE; COALESCE keeps '' where the field is absent.
-		if err := db.Exec(
-			`UPDATE race_strategy SET target_finish_time = COALESCE(JSON_UNQUOTE(JSON_EXTRACT(content, '$.target_finish_time')), '') WHERE target_finish_time = '' AND JSON_VALID(content)`,
-		).Error; err != nil {
-			return fmt.Errorf("storage: backfill race_strategy.target_finish_time: %w", err)
-		}
+	}
+	// Idempotent backfill, run on every boot (a crash between AddColumn and
+	// this UPDATE must not strand rows at '' forever). JSON_VALID guards
+	// against a corrupt LONGTEXT row; the REGEXP keeps only well-formed
+	// H:MM:SS values — a free-text goal must not become a version key, and a
+	// value longer than the column would abort the whole UPDATE in strict
+	// mode and fail api boot.
+	if err := db.Exec(
+		`UPDATE race_strategy SET target_finish_time = COALESCE(JSON_UNQUOTE(JSON_EXTRACT(content, '$.target_finish_time')), '') ` +
+			`WHERE target_finish_time = '' AND JSON_VALID(content) ` +
+			`AND JSON_UNQUOTE(JSON_EXTRACT(content, '$.target_finish_time')) REGEXP '^[0-9]{1,2}:[0-9]{2}:[0-9]{2}$'`,
+	).Error; err != nil {
+		return fmt.Errorf("storage: backfill race_strategy.target_finish_time: %w", err)
 	}
 	return nil
 }
@@ -134,7 +142,9 @@ func (s *Store) UpsertRaceStrategy(ctx context.Context, userID string, raceEvent
 
 // GetRaceStrategies returns all of the user's strategy versions for one race,
 // ordered by target finish time (fastest goal first — the report page's pill
-// order). An empty slice means "not generated yet", not an error.
+// order). "H:MM:SS" hours are not zero-padded, so plain lexical order would
+// put 10-hour goals before 2-hour ones: sort by length first, '' last. An
+// empty slice means "not generated yet", not an error.
 func (s *Store) GetRaceStrategies(ctx context.Context, userID string, raceEventID uint64) ([]RaceStrategy, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
@@ -143,7 +153,7 @@ func (s *Store) GetRaceStrategies(ctx context.Context, userID string, raceEventI
 	var rows []RaceStrategy
 	err = s.db.WithContext(ctx).
 		Where("user_id = ? AND race_event_id = ?", uid, raceEventID).
-		Order("target_finish_time ASC").Find(&rows).Error
+		Order("target_finish_time = '' ASC, CHAR_LENGTH(target_finish_time) ASC, target_finish_time ASC").Find(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("storage: list race_strategies: %w", err)
 	}

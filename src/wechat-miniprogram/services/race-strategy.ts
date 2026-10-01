@@ -57,6 +57,15 @@ export function getRaceStrategies(raceId: number): Promise<RaceStrategyListRespo
   return http.get<RaceStrategyListResponse>(`/api/users/me/race-strategies/${raceId}`);
 }
 
+/** 最近更新的版本（详情卡摘要与报告页的默认选中；空列表返回 null）。 */
+export function latestStrategyVersion(versions: RaceStrategyVersion[]): RaceStrategyVersion | null {
+  let latest: RaceStrategyVersion | null = null;
+  for (const v of versions) {
+    if (latest === null || v.updated_at > latest.updated_at) latest = v;
+  }
+  return latest;
+}
+
 // ── 教练会话 → 报告页的草稿交接 ─────────────────────────────────────────────
 // 教练生成的策略初稿不再自动落库（由用户在报告页「应用」触发保存）；聊天卡片
 // tap 时把草稿暂存本地，报告页 onLoad 取走后进草稿模式（本地渲染 + 应用保存）。

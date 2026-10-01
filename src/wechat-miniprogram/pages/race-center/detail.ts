@@ -31,7 +31,7 @@ import {
 import { typeAbbr } from '../../utils/raceCenterRows';
 import { shanghaiDateFromIso, shanghaiToday } from '../../utils/date';
 import { setPendingCoachContext } from '../../services/coach';
-import { getRaceStrategies } from '../../services/race-strategy';
+import { getRaceStrategies, latestStrategyVersion } from '../../services/race-strategy';
 import { userStore } from '../../store/index';
 
 interface RaceDetailPageData {
@@ -155,10 +155,7 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
     // 多版本按目标键控：摘要显示最近更新版的目标，count>1 时露出版本数。
     // updated_at 是 UTC RFC3339：摘要日期按上海时区取（直接切 UTC 串会差 8 小时）
     const strategyP = getRaceStrategies(this._raceId).then((res) => {
-      let latest: { target_finish_time: string; updated_at: string } | null = null;
-      for (const v of res.strategies) {
-        if (latest === null || v.updated_at > latest.updated_at) latest = v;
-      }
+      const latest = latestStrategyVersion(res.strategies);
       if (!latest) return null;
       return {
         target: latest.target_finish_time || '—',
@@ -326,10 +323,7 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
     const detail = this._detail;
     if (!detail) return;
     if (this.data.strategySummary) {
-      // 多版本时直接定位最近更新版（报告页内可再切换）。
-      const target = this.data.strategySummary.target;
-      const query = target && target !== '—' ? `&target=${encodeURIComponent(target)}` : '';
-      wx.navigateTo({ url: `/pages/race-center/strategy/strategy?id=${this._raceId}${query}` });
+      wx.navigateTo({ url: `/pages/race-center/strategy/strategy?id=${this._raceId}` });
       return;
     }
     // 项目取当前计划的项目，否则第一枚项目 chip

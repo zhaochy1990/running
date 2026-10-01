@@ -28,9 +28,12 @@ func TestRaceStrategy_TargetKeyedVersions(t *testing.T) {
 	uid := uuid.NewString()
 	pub := seedEngagementRace(t, st, "策略赛", "2032-04-10", true)
 
-	// Two goals coexist: 2:55:00 and 2:50:00 (the athlete's own targets).
+	// Three goals coexist: 2:55:00, 2:50:00 and a double-digit-hour 10:30:00.
 	if _, isNew, err := st.UpsertRaceStrategy(ctx, uid, pub, "2:55:00", "Marathon", `{"target_finish_time":"2:55:00","v":1}`); err != nil || !isNew {
 		t.Fatalf("upsert 2:55:00: isNew=%v err=%v", isNew, err)
+	}
+	if _, isNew, err := st.UpsertRaceStrategy(ctx, uid, pub, "10:30:00", "Marathon", `{"target_finish_time":"10:30:00","v":1}`); err != nil || !isNew {
+		t.Fatalf("upsert 10:30:00: isNew=%v err=%v", isNew, err)
 	}
 	row250, isNew, err := st.UpsertRaceStrategy(ctx, uid, pub, "2:50:00", "Marathon", `{"target_finish_time":"2:50:00","v":1}`)
 	if err != nil || !isNew {
@@ -46,8 +49,9 @@ func TestRaceStrategy_TargetKeyedVersions(t *testing.T) {
 	if updated.Content != `{"target_finish_time":"2:50:00","v":2}` {
 		t.Fatalf("same-target overwrite not kept: %s", updated.Content)
 	}
-	// MySQL datetime 精度截到毫秒：按毫秒比较（覆盖不得重置创建时间）。
-	if !updated.CreatedAt.Truncate(time.Millisecond).Equal(firstCreatedAt.Truncate(time.Millisecond)) {
+	// MySQL datetime(3) 会四舍五入到毫秒（Go 侧只截断）：按 2ms 容差比较
+	// （覆盖不得重置创建时间）。
+	if d := updated.CreatedAt.Sub(firstCreatedAt); d < -2*time.Millisecond || d > 2*time.Millisecond {
 		t.Fatalf("overwrite must keep created_at: %v vs %v", updated.CreatedAt, firstCreatedAt)
 	}
 
@@ -55,12 +59,17 @@ func TestRaceStrategy_TargetKeyedVersions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if len(versions) != 2 {
-		t.Fatalf("versions = %d, want 2 (per-goal rows, not latest-only)", len(versions))
+	if len(versions) != 3 {
+		t.Fatalf("versions = %d, want 3 (per-goal rows, not latest-only)", len(versions))
 	}
-	// Fastest goal first — the report page's pill order.
-	if versions[0].TargetFinishTime != "2:50:00" || versions[1].TargetFinishTime != "2:55:00" {
-		t.Fatalf("order: %s then %s, want 2:50:00 first", versions[0].TargetFinishTime, versions[1].TargetFinishTime)
+	// Fastest goal first — the report page's pill order. "H:MM:SS" hours are
+	// not zero-padded: plain lexical order would put 10:30:00 before 2:50:00.
+	got := []string{versions[0].TargetFinishTime, versions[1].TargetFinishTime, versions[2].TargetFinishTime}
+	want := []string{"2:50:00", "2:55:00", "10:30:00"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("order: %v, want %v", got, want)
+		}
 	}
 	if versions[0].Content != `{"target_finish_time":"2:50:00","v":2}` {
 		t.Fatalf("latest 2:50:00 content: %s", versions[0].Content)
@@ -138,11 +147,25 @@ func TestRaceStrategy_MigratesLegacySingleRow(t *testing.T) {
 
 	uid := uuid.NewString()
 	pub := seedEngagementRace(t, st, "迁移策略赛", "2032-04-13", true)
-	if err := st.db.WithContext(ctx).Exec(
-		"INSERT INTO race_strategy (user_id, race_event_id, item_type, content, created_at, updated_at) VALUES (?, ?, 'Marathon', ?, NOW(), NOW())",
-		uid, pub, `{"race_name":"上海马拉松","target_finish_time":"3:04:00"}`,
-	).Error; err != nil {
-		t.Fatalf("seed legacy row: %v", err)
+	// Three legacy users for the same race (the legacy UNIQUE(user, event)
+	// allowed one row per user): a well-formed target (backfilled), a
+	// free-text goal (must NOT become a version key — REGEXP keeps it ''),
+	// and a row missing the field entirely (stays '').
+	legacyRows := []struct {
+		user    string
+		content string
+	}{
+		{uid, `{"race_name":"上海马拉松","target_finish_time":"3:04:00"}`},
+		{uuid.NewString(), `{"race_name":"文字目标赛","target_finish_time":"2小时55分"}`},
+		{uuid.NewString(), `{"race_name":"无目标赛"}`},
+	}
+	for _, row := range legacyRows {
+		if err := st.db.WithContext(ctx).Exec(
+			"INSERT INTO race_strategy (user_id, race_event_id, item_type, content, created_at, updated_at) VALUES (?, ?, 'Marathon', ?, NOW(), NOW())",
+			row.user, pub, row.content,
+		).Error; err != nil {
+			t.Fatalf("seed legacy row: %v", err)
+		}
 	}
 
 	if err := st.AutoMigrateRaceStrategies(ctx); err != nil {
@@ -157,6 +180,17 @@ func TestRaceStrategy_MigratesLegacySingleRow(t *testing.T) {
 	}
 	if versions[0].TargetFinishTime != "3:04:00" {
 		t.Fatalf("target not backfilled: %q", versions[0].TargetFinishTime)
+	}
+	// Free-text / missing-field contents must stay '' (not raw keys).
+	var zombieTargets []string
+	if err := st.db.WithContext(ctx).
+		Model(&RaceStrategy{}).
+		Where("content LIKE ? OR content LIKE ?", "%文字目标赛%", "%无目标赛%").
+		Order("content").Pluck("target_finish_time", &zombieTargets).Error; err != nil {
+		t.Fatalf("load zombie rows: %v", err)
+	}
+	if len(zombieTargets) != 2 || zombieTargets[0] != "" || zombieTargets[1] != "" {
+		t.Fatalf("non-shape targets must stay '': %v", zombieTargets)
 	}
 
 	// Idempotent: a second migrate is a no-op.

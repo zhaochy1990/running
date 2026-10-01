@@ -66,7 +66,19 @@ func (f *fakeRaceStrategyStore) GetRaceStrategies(_ context.Context, userID stri
 	for target := range byTarget {
 		targets = append(targets, target)
 	}
-	sort.Strings(targets)
+	// Mirror the store's order: non-empty targets by (length, lexical) —
+	// "H:MM:SS" hours are not zero-padded, so 2:55:00 sorts before 10:30:00 —
+	// with '' last.
+	sort.Slice(targets, func(i, j int) bool {
+		a, b := targets[i], targets[j]
+		if (a == "") != (b == "") {
+			return b == ""
+		}
+		if len(a) != len(b) {
+			return len(a) < len(b)
+		}
+		return a < b
+	})
 	rows := make([]storage.RaceStrategy, 0, len(targets))
 	for _, target := range targets {
 		rows = append(rows, *byTarget[target])
@@ -222,18 +234,11 @@ func TestRaceStrategy_UserPutEdits(t *testing.T) {
 	}, h.userToken(t)); w.Code != http.StatusCreated {
 		t.Fatalf("put create = %d: %s", w.Code, w.Body.String())
 	}
-	// Editing a version keeps its own target: same key → overwrite.
+	// Editing a version keeps its own target: same key → overwrite, not a fork.
 	if w := h.do(t, http.MethodPut, "/api/users/me/race-strategies/30", map[string]any{
 		"item_type": "Marathon", "content": map[string]any{"race_name": "杭州马拉松", "target_finish_time": "3:59:59", "note": "赛后复盘"},
 	}, h.userToken(t)); w.Code != http.StatusOK {
 		t.Fatalf("put update = %d: %s", w.Code, w.Body.String())
-	}
-	// The report page's recompute (用时=距离×配速) may shift the goal by a
-	// second — that lands as its own version, not a silent overwrite.
-	if w := h.do(t, http.MethodPut, "/api/users/me/race-strategies/30", map[string]any{
-		"item_type": "Marathon", "content": map[string]any{"race_name": "杭州马拉松", "target_finish_time": "4:00:00"},
-	}, h.userToken(t)); w.Code != http.StatusCreated {
-		t.Fatalf("put other goal = %d: %s", w.Code, w.Body.String())
 	}
 
 	w := h.do(t, http.MethodGet, "/api/users/me/race-strategies/30", nil, h.userToken(t))
@@ -242,8 +247,8 @@ func TestRaceStrategy_UserPutEdits(t *testing.T) {
 	}
 	var dto raceStrategyListDTO
 	_ = json.Unmarshal(w.Body.Bytes(), &dto)
-	if len(dto.Strategies) != 2 {
-		t.Fatalf("versions = %d, want 2", len(dto.Strategies))
+	if len(dto.Strategies) != 1 {
+		t.Fatalf("versions = %d, want 1 (same-target edit must not fork)", len(dto.Strategies))
 	}
 	if dto.Strategies[0].Content["note"] != "赛后复盘" {
 		t.Fatalf("edit not kept: %v", dto.Strategies[0].Content)
@@ -268,6 +273,9 @@ func TestRaceStrategy_UserDelete(t *testing.T) {
 	}
 	if w := h.do(t, http.MethodDelete, "/api/users/me/race-strategies/30?target=255", nil, h.userToken(t)); w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("delete invalid target = %d, want 422", w.Code)
+	}
+	if w := h.do(t, http.MethodDelete, "/api/users/me/race-strategies/30", nil, h.userToken(t)); w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("delete without target = %d, want 422", w.Code)
 	}
 
 	w := h.do(t, http.MethodGet, "/api/users/me/race-strategies/30", nil, h.userToken(t))
