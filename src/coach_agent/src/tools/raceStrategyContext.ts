@@ -21,7 +21,7 @@ function raceEventIdFromTarget(runtime: CoachToolRuntime): number {
 }
 
 class RaceStrategyContextTool {
-  constructor(private readonly store: Pick<DataProvider, "getRaceCalendarContext" | "getPerformanceBaseline">) {}
+  constructor(private readonly store: Pick<DataProvider, "getRaceCalendarContext">) {}
 
   async getRaceCalendarContext(_input: z.infer<typeof getRaceCalendarContextSchema>, runtime: CoachToolRuntime) {
     const raceEventId = raceEventIdFromTarget(runtime);
@@ -31,25 +31,14 @@ class RaceStrategyContextTool {
     }
     return { ...context, found: true };
   }
-
-  async getPerformanceBaseline(_input: z.infer<typeof getPerformanceBaselineSchema>, runtime: CoachToolRuntime) {
-    const userId = runtime.context?.userId;
-    const asof = runtime.context?.asof;
-    if (!userId) {
-      throw new Error("get_performance_baseline: missing userId in runtime context");
-    }
-    if (!asof) {
-      throw new Error("get_performance_baseline: missing asof in runtime context");
-    }
-    return this.store.getPerformanceBaseline(userId, asof);
-  }
 }
 
 /**
- * 两个有界只读工具：赛事内容聚合（赛道/难点/关门/补给站/城市）与运动员成绩
- * 基线（预测/能力 L4/校准）。策略代理各调用一次，禁止拿逐条活动替代。
+ * 一个有界只读工具：赛事内容聚合（赛道/难点/关门/补给站/城市）。策略代理各
+ * 调用一次，禁止拿逐条活动替代。目标成绩不查数据——只来自运动员自己的消息
+ * （目标定多少是运动员的决策，策略内容也不做能力分析）。
  */
-export function createRaceStrategyContextTools(store: Pick<DataProvider, "getRaceCalendarContext" | "getPerformanceBaseline">): StructuredTool[] {
+export function createRaceStrategyContextTools(store: Pick<DataProvider, "getRaceCalendarContext">): StructuredTool[] {
   const impl = new RaceStrategyContextTool(store);
   return defineCoachTools([
     {
@@ -60,16 +49,7 @@ export function createRaceStrategyContextTools(store: Pick<DataProvider, "getRac
       schema: getRaceCalendarContextSchema,
       handler: (input, runtime) => impl.getRaceCalendarContext(input, runtime),
     },
-    {
-      name: "get_performance_baseline",
-      description:
-        "获取运动员成绩基线：各距离完赛预测（race_predictions）、最新能力 L4（综合分与全马/半马估计）、乳酸阈值与配速/心率区间校准。" +
-        "缺项以 null/空数组返回，需在策略依据里声明。",
-      schema: getPerformanceBaselineSchema,
-      handler: (input, runtime) => impl.getPerformanceBaseline(input, runtime),
-    },
   ]);
 }
 
 const getRaceCalendarContextSchema = z.object({});
-const getPerformanceBaselineSchema = z.object({});

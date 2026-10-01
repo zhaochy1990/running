@@ -10,27 +10,64 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// ErrRaceStrategyNotFound is returned when a read targets a strategy row that
-// does not exist (the API answers 404).
+// ErrRaceStrategyNotFound is returned when a read or delete targets a strategy
+// row that does not exist (the API answers 404).
 var ErrRaceStrategyNotFound = errors.New("storage: race strategy row not found")
 
 // AutoMigrateRaceStrategies creates/updates the race_strategy table. Called by
 // cmd/api at boot; the coach writes through the API, not the DB, so the worker
 // does not migrate this table.
 func (s *Store) AutoMigrateRaceStrategies(ctx context.Context) error {
-	if err := s.db.WithContext(ctx).AutoMigrate(&RaceStrategy{}); err != nil {
+	db := s.db.WithContext(ctx)
+	if err := migrateRaceStrategyTargetKey(db); err != nil {
+		return err
+	}
+	if err := db.AutoMigrate(&RaceStrategy{}); err != nil {
 		return fmt.Errorf("storage: automigrate race_strategy: %w", err)
 	}
 	return nil
 }
 
-// UpsertRaceStrategy creates or overwrites the user's single strategy for one
-// race (the UNIQUE(user, event) row), reporting whether it created the row.
-// Overwrite-in-place is the contract (#386): a new coach draft or a runner edit
-// replaces the previous version; nothing but the latest survives. Like
+// migrateRaceStrategyTargetKey moves a pre-v3 table from one-strategy-per-
+// (user, race) to one-per-target-time: drop the legacy UNIQUE(user, event)
+// index, add the target_finish_time column and backfill it from the content
+// JSON. Every step is guarded so it is idempotent and a no-op on a fresh
+// database; AutoMigrate then builds the new (user, race, target) unique index.
+// The backfill keeps '' on rows whose content lacks the field — the legacy
+// unique index guarantees at most one such row per (user, race), so '' remains
+// a valid (never colliding) key for them.
+func migrateRaceStrategyTargetKey(db *gorm.DB) error {
+	m := db.Migrator()
+	if !m.HasTable(&RaceStrategy{}) {
+		return nil
+	}
+	if m.HasIndex(&RaceStrategy{}, "uidx_race_strategy_user_event") {
+		if err := m.DropIndex(&RaceStrategy{}, "uidx_race_strategy_user_event"); err != nil {
+			return fmt.Errorf("storage: drop race_strategy legacy unique index: %w", err)
+		}
+	}
+	if !m.HasColumn(&RaceStrategy{}, "target_finish_time") {
+		if err := m.AddColumn(&RaceStrategy{}, "TargetFinishTime"); err != nil {
+			return fmt.Errorf("storage: add race_strategy.target_finish_time: %w", err)
+		}
+		// JSON_VALID guards against a corrupt LONGTEXT row aborting the whole
+		// UPDATE; COALESCE keeps '' where the field is absent.
+		if err := db.Exec(
+			`UPDATE race_strategy SET target_finish_time = COALESCE(JSON_UNQUOTE(JSON_EXTRACT(content, '$.target_finish_time')), '') WHERE target_finish_time = '' AND JSON_VALID(content)`,
+		).Error; err != nil {
+			return fmt.Errorf("storage: backfill race_strategy.target_finish_time: %w", err)
+		}
+	}
+	return nil
+}
+
+// UpsertRaceStrategy creates or overwrites the (user, race, target) version
+// row, reporting whether it created the row. The target finish time is the
+// version key — the athlete's own goal; regenerating or hand-editing a target
+// replaces only that target's version, other targets stay untouched. Like
 // UpsertRacePlan it refuses a race that does not exist or is unpublished with
 // ErrRaceCalendarNotFound, so a strategy can never point at an offboarded race.
-func (s *Store) UpsertRaceStrategy(ctx context.Context, userID string, raceEventID uint64, itemType, content string) (*RaceStrategy, bool, error) {
+func (s *Store) UpsertRaceStrategy(ctx context.Context, userID string, raceEventID uint64, targetTime, itemType, content string) (*RaceStrategy, bool, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return nil, false, err
@@ -53,12 +90,12 @@ func (s *Store) UpsertRaceStrategy(ctx context.Context, userID string, raceEvent
 
 			var cur RaceStrategy
 			e = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("user_id = ? AND race_event_id = ?", uid, raceEventID).
+				Where("user_id = ? AND race_event_id = ? AND target_finish_time = ?", uid, raceEventID, targetTime).
 				First(&cur).Error
 			now := time.Now().UTC()
 			if errors.Is(e, gorm.ErrRecordNotFound) {
 				row := RaceStrategy{
-					UserID: uid, RaceEventID: raceEventID,
+					UserID: uid, RaceEventID: raceEventID, TargetFinishTime: targetTime,
 					ItemType: itemType, Content: content,
 					CreatedAt: now, UpdatedAt: now,
 				}
@@ -85,7 +122,7 @@ func (s *Store) UpsertRaceStrategy(ctx context.Context, userID string, raceEvent
 	}
 	err = write()
 	// Same gap-lock race as UpsertRacePlan: two first-time writers of the same
-	// (user, race) can deadlock; one retry takes the plain update path.
+	// (user, race, target) can deadlock; one retry takes the plain update path.
 	if err != nil && isConcurrentInsertRace(err) {
 		err = write()
 	}
@@ -95,22 +132,39 @@ func (s *Store) UpsertRaceStrategy(ctx context.Context, userID string, raceEvent
 	return out, created, nil
 }
 
-// GetRaceStrategy returns the user's latest strategy for one race, or
-// ErrRaceStrategyNotFound when none exists.
-func (s *Store) GetRaceStrategy(ctx context.Context, userID string, raceEventID uint64) (*RaceStrategy, error) {
+// GetRaceStrategies returns all of the user's strategy versions for one race,
+// ordered by target finish time (fastest goal first — the report page's pill
+// order). An empty slice means "not generated yet", not an error.
+func (s *Store) GetRaceStrategies(ctx context.Context, userID string, raceEventID uint64) ([]RaceStrategy, error) {
 	uid, err := canonicalUserID(userID)
 	if err != nil {
 		return nil, err
 	}
-	var row RaceStrategy
+	var rows []RaceStrategy
 	err = s.db.WithContext(ctx).
 		Where("user_id = ? AND race_event_id = ?", uid, raceEventID).
-		First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrRaceStrategyNotFound
-	}
+		Order("target_finish_time ASC").Find(&rows).Error
 	if err != nil {
-		return nil, fmt.Errorf("storage: get race_strategy: %w", err)
+		return nil, fmt.Errorf("storage: list race_strategies: %w", err)
 	}
-	return &row, nil
+	return rows, nil
+}
+
+// DeleteRaceStrategy removes one target's version. ErrRaceStrategyNotFound
+// when that version does not exist; the race's remaining versions are untouched.
+func (s *Store) DeleteRaceStrategy(ctx context.Context, userID string, raceEventID uint64, targetTime string) error {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return err
+	}
+	result := s.db.WithContext(ctx).
+		Where("user_id = ? AND race_event_id = ? AND target_finish_time = ?", uid, raceEventID, targetTime).
+		Delete(&RaceStrategy{})
+	if result.Error != nil {
+		return fmt.Errorf("storage: delete race_strategy: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrRaceStrategyNotFound
+	}
+	return nil
 }

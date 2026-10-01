@@ -290,6 +290,37 @@
   background: rgba(216, 255, 62, 0.12);
   color: #d8ff3e;
 }
+.actions__delete {
+  text-align: center;
+  border-radius: 12rpx;
+  line-height: 84rpx;
+  font-size: 28rpx;
+  background: rgba(255, 92, 92, 0.1);
+  color: #ff5c5c;
+}
+
+/* 版本切换 pills：目标成绩键控的多版本（点击切换，active 高亮） */
+.versions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  padding: 0 32rpx;
+  margin-top: 20rpx;
+}
+.versions__pill {
+  padding: 10rpx 28rpx;
+  border-radius: 999rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1rpx solid rgba(255, 255, 255, 0.14);
+  color: #b9b9bc;
+}
+.versions__pill--on {
+  background: rgba(216, 255, 62, 0.14);
+  border-color: #d8ff3e;
+  color: #d8ff3e;
+}
 
 /* 配速卡 canvas：离屏（页面内不可见位置）绘制 */
 .poster-canvas {

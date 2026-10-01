@@ -596,6 +596,11 @@
   color: #d8ff3e;
   margin-left: 8rpx;
 }
+.strategy__count {
+  font-size: 22rpx;
+  color: #b9b9bc;
+  margin-left: 16rpx;
+}
 .strategy__updated {
   font-size: 22rpx;
   color: #8a8a8c;

@@ -43,6 +43,18 @@
         </view>
       </view>
 
+      <!-- 版本切换：同一场比赛按目标多版本（2:50 / 2:55…），点击切换；草稿态不显示 -->
+      <view wx:if="{{!draft && versions.length > 0}}" class="versions">
+        <view
+          class="versions__pill {{item.active ? 'versions__pill--on' : ''}}"
+          wx:for="{{versions}}"
+          wx:for-item="item"
+          wx:key="target"
+          data-target="{{item.target}}"
+          bindtap="onVersionTap"
+        >{{item.target}}</view>
+      </view>
+
       <!-- 分段配速：五列表格，pace/说明可编辑；用时=距离×配速自动算 -->
       <view class="card">
         <view class="card__title">分段配速<text class="card__hint">配速/说明可编辑，用时自动换算</text></view>
@@ -124,10 +136,11 @@
         <view class="actions__draft-hint">应用前不会保存；离开即放弃这份初稿</view>
         <view wx:if="{{goalAvailable}}" class="actions__goal" bindtap="onGoalTap">设为目标赛事</view>
       </view>
-      <!-- 已保存：保存 + 设为目标 -->
+      <!-- 已保存：保存 + 设为目标 + 删除此版本 -->
       <view wx:else class="actions">
         <view class="actions__save {{dirty ? 'actions__save--on' : ''}}" bindtap="onSaveTap">{{saving ? '保存中…' : (dirty ? '保存修改' : '已保存 · ' + updatedAtText)}}</view>
         <view wx:if="{{goalAvailable}}" class="actions__goal" bindtap="onGoalTap">设为目标赛事</view>
+        <view class="actions__delete" bindtap="onDeleteTap">{{deleting ? '删除中…' : '删除此版本'}}</view>
       </view>
     </block>
   </view>

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { PerformanceBaseline, RaceCalendarContext } from "../data/dataProvider.js";
+import type { RaceCalendarContext } from "../data/dataProvider.js";
 import { createRaceStrategyContextTools } from "./raceStrategyContext.js";
 
 function raceContextFixture(): RaceCalendarContext {
@@ -41,9 +41,6 @@ test("get_race_calendar_context resolves the race from the turn-scope target", a
       calls.push(raceEventId);
       return fixture;
     },
-    async getPerformanceBaseline() {
-      throw new Error("not called in this test");
-    },
   });
   const tool = tools.find((candidate) => candidate.name === "get_race_calendar_context");
   assert.ok(tool);
@@ -63,9 +60,6 @@ test("get_race_calendar_context reports found=false for an unknown race", async 
     async getRaceCalendarContext() {
       return null;
     },
-    async getPerformanceBaseline() {
-      throw new Error("not called in this test");
-    },
   });
   const tool = tools.find((candidate) => candidate.name === "get_race_calendar_context");
   assert.ok(tool);
@@ -78,9 +72,6 @@ test("get_race_calendar_context refuses a turn without a race target", async () 
     async getRaceCalendarContext() {
       throw new Error("provider must not be called");
     },
-    async getPerformanceBaseline() {
-      throw new Error("not called in this test");
-    },
   });
   const tool = tools.find((candidate) => candidate.name === "get_race_calendar_context");
   assert.ok(tool);
@@ -91,27 +82,14 @@ test("get_race_calendar_context refuses a turn without a race target", async () 
   );
 });
 
-test("get_performance_baseline loads the runtime user's bounded aggregation", async () => {
-  const calls: Array<[string, string]> = [];
-  const baseline: PerformanceBaseline = {
-    as_of_date: "2026-10-01",
-    race_predictions: [{ race_type: "FM", duration_s: 10800, avg_pace_s_km: 256 }],
-    ability_l4: { as_of_date: "2026-09-30", composite: 62, marathon_training_s: 11000, marathon_race_s: 10700, hm_race_s: 5200 },
-    running_calibration: null,
-  };
+test("the strategy toolset no longer exposes performance data (target is the athlete's own decision)", () => {
   const tools = createRaceStrategyContextTools({
     async getRaceCalendarContext() {
-      throw new Error("not called in this test");
-    },
-    async getPerformanceBaseline(userId, asOfDate) {
-      calls.push([userId, asOfDate]);
-      return baseline;
+      return null;
     },
   });
-  const tool = tools.find((candidate) => candidate.name === "get_performance_baseline");
-  assert.ok(tool);
-  assert.equal(await tool.invoke({}, { context: { userId: "athlete-1", asof: "2026-10-01" } }), baseline);
-  assert.deepEqual(calls, [["athlete-1", "2026-10-01"]]);
-  await assert.rejects(() => tool.invoke({}, {}), /missing userId/);
-  await assert.rejects(() => tool.invoke({}, { context: { userId: "athlete-1" } }), /missing asof/);
+  assert.equal(
+    tools.some((candidate) => candidate.name === "get_performance_baseline"),
+    false,
+  );
 });

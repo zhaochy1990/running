@@ -1,8 +1,10 @@
-// 比赛策略报告页 —— #396。两种进入形态：
-//   已保存：GET race_strategy 渲染最新版，编辑经 hero 区保存（覆盖最新版）。
+// 比赛策略报告页 —— #396。同一场比赛按目标成绩多版本（如 2:55 一版、2:50
+// 一版，目标最快在前）：hero 下版本 pills 切换，编辑/应用/删除都以当前选中
+// 版本的目标为键。两种进入形态：
+//   已保存：GET race_strategies 渲染全部版本（?target= 指定初始选中，默认
+//     最近更新的那版），编辑经 hero 区保存（PUT 按目标键控覆盖该版）。
 //   草稿（draft）：教练聊天卡片 tap 时经 setPendingStrategyDraft 交接的初稿，
-//     本地渲染（编辑同样可用），底部「应用并保存」= PUT 落库；应用前服务端
-//     没有这版策略（教练生成不再自动落库）。
+//     本地渲染（编辑同样可用），底部「应用并保存」= PUT 落库为该目标版本。
 // 五列配速表（配速/说明可编辑，用时=距离×配速自动算）+ 逐行补给（可增删）+
 // 赛道/天气提示；hero 次要「分享」（onShareAppMessage）与「配速卡」（canvas
 // 海报）；「设为目标」以 race_goal 预填确认。视图变换在 utils/raceStrategyRows。
@@ -10,11 +12,13 @@
 import { ApiError } from '../../../services/request';
 import { getRaceDetail, type RaceDetail } from '../../../services/race-center';
 import {
-  getRaceStrategy,
+  deleteRaceStrategy,
+  getRaceStrategies,
   postTrainingGoal,
   saveRaceStrategy,
   takePendingStrategyDraft,
   type RaceStrategy,
+  type RaceStrategyVersion,
 } from '../../../services/race-strategy';
 import {
   fromStrategyView,
@@ -37,11 +41,14 @@ interface StrategyPageData {
   error: string;
   view: StrategyView | null;
   raceDayText: string;
+  /** 版本切换 pills（非草稿且有已保存版本时显示）；active 为当前选中目标。 */
+  versions: Array<{ target: string; active: boolean }>;
   /** 草稿模式：教练聊天卡片交接的初稿，未落库（底部「应用并保存」）。 */
   draft: boolean;
   dirty: boolean;
   saving: boolean;
   applying: boolean;
+  deleting: boolean;
   updatedAtText: string;
   goalAvailable: boolean;
   goalSheetOpen: boolean;
@@ -54,6 +61,10 @@ interface StrategyPageData {
 interface StrategyPageHandlers {
   onLoad(options: Record<string, string | undefined>): void;
   refresh(): Promise<void>;
+  /** 把选中版本落到页面数据：视图 + pills + 保存态时间戳。 */
+  applyVersion(version: RaceStrategyVersion, versions: RaceStrategyVersion[], detail: RaceDetail): void;
+  /** 版本 pill 切换：纯内存换视图（有未保存修改时先确认丢弃）。 */
+  onVersionTap(e: WechatMiniprogram.TouchEvent): void;
   patchPaceRow(index: number, patch: Partial<StrategyView['paceRows'][number]>): void;
   patchFuelingRow(index: number, patch: Partial<StrategyView['fuelingRows'][number]>): void;
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
@@ -66,8 +77,11 @@ interface StrategyPageHandlers {
   onFuelingAdd(): void;
   onFuelingRemove(e: WechatMiniprogram.TouchEvent): void;
   onSaveTap(): void;
-  /** 草稿模式底部主按钮：PUT 落库并转已保存态。 */
+  /** 草稿模式底部主按钮：PUT 落库并转已保存态（刷新出全部版本）。 */
   onApplyTap(): void;
+  /** 删除当前选中的目标版本（其它版本不动）。 */
+  onDeleteTap(): void;
+  deleteActiveVersion(target: string): Promise<void>;
   onPosterTap(): void;
   onGoalTap(): void;
   onGoalSheetClose(): void;
@@ -78,6 +92,11 @@ interface StrategyPageHandlers {
   _base: RaceStrategy | null;
   /** 草稿模式的初稿本体（应用时作为 fromStrategyView 的 base）。 */
   _draftStrategy: RaceStrategy | null;
+  /** 已保存版本全量（服务端目标升序）；_activeTarget 是当前选中的版本键。 */
+  _versions: RaceStrategyVersion[];
+  _activeTarget: string;
+  /** 指定初始选中的目标（?target= 或草稿应用后的落点）。 */
+  _initialTarget: string;
 }
 
 function statusBarHeight(): number {
@@ -96,6 +115,15 @@ function timeLabel(iso: string): string {
   return `${day.replace(/-/g, '/')} ${time.slice(0, 5)}`;
 }
 
+/** 最近更新的版本（详情卡摘要与报告页的默认选中）。 */
+function latestVersion(versions: RaceStrategyVersion[]): RaceStrategyVersion | null {
+  let latest: RaceStrategyVersion | null = null;
+  for (const v of versions) {
+    if (latest === null || v.updated_at > latest.updated_at) latest = v;
+  }
+  return latest;
+}
+
 Page<StrategyPageData, StrategyPageHandlers>({
   data: {
     statusBarHeight: 0,
@@ -103,10 +131,12 @@ Page<StrategyPageData, StrategyPageHandlers>({
     error: '',
     view: null,
     raceDayText: '',
+    versions: [],
     draft: false,
     dirty: false,
     saving: false,
     applying: false,
+    deleting: false,
     updatedAtText: '',
     goalAvailable: false,
     goalSheetOpen: false,
@@ -121,6 +151,9 @@ Page<StrategyPageData, StrategyPageHandlers>({
   _base: null,
   /** 草稿模式的初稿本体（应用时作为 fromStrategyView 的 base）。 */
   _draftStrategy: null,
+  _versions: [],
+  _activeTarget: '',
+  _initialTarget: '',
 
   onLoad(options) {
     const id = Number(options.id);
@@ -130,6 +163,8 @@ Page<StrategyPageData, StrategyPageHandlers>({
       return;
     }
     this._raceId = id;
+    // ?target= 指定初始选中的版本（详情卡跳最近版时不带）。
+    this._initialTarget = options.target || '';
     // 教练聊天卡片交接的草稿（raceId 匹配才消费）：进草稿模式。
     const pending = takePendingStrategyDraft(id);
     this._draftStrategy = pending?.strategy ?? null;
@@ -165,36 +200,75 @@ Page<StrategyPageData, StrategyPageHandlers>({
       }
       return;
     }
-    // 已保存态：赛事详情 + 最新策略双请求。
+    // 已保存态：赛事详情 + 全部策略版本双请求。
     try {
-      const [detail, strategyRes] = await Promise.all([
+      const [detail, listRes] = await Promise.all([
         getRaceDetail(this._raceId),
-        getRaceStrategy(this._raceId),
+        getRaceStrategies(this._raceId),
       ]);
       this._detail = detail;
-      this._base = strategyRes.content;
-      const view = toStrategyView(strategyRes.content);
-      this.setData({
-        loading: false,
-        error: '',
-        view,
-        draft: false,
-        raceDayText: raceDayLabel(detail.race_date),
-        dirty: false,
-        updatedAtText: timeLabel(strategyRes.updated_at),
-        goalAvailable: goalPrefill(view, detail.race_date, detail.city) !== null,
-      });
+      if (listRes.strategies.length === 0) {
+        this.setData({ loading: false, error: '策略尚未生成：回到赛事详情，和教练聊一聊生成初稿' });
+        return;
+      }
+      // 初始选中：?target= 指定版（不存在则回退最近更新），否则最近更新的版本。
+      const requested = listRes.strategies.find((v) => v.target_finish_time === this._initialTarget);
+      const latest = latestVersion(listRes.strategies);
+      const initial = requested ?? latest;
+      if (initial) {
+        this.applyVersion(initial, listRes.strategies, detail);
+      }
     } catch (err: unknown) {
       const msg =
-        err instanceof ApiError && err.statusCode === 404
-          ? '策略尚未生成：回到赛事详情，和教练聊一聊生成初稿'
-          : err instanceof ApiError && err.statusCode >= 500
-            ? '加载失败，请稍后重试'
-            : err instanceof Error
-              ? err.message
-              : '加载失败，请稍后重试';
+        err instanceof ApiError && err.statusCode >= 500
+          ? '加载失败，请稍后重试'
+          : err instanceof Error
+            ? err.message
+            : '加载失败，请稍后重试';
       this.setData({ loading: false, error: msg });
     }
+  },
+
+  /** 把选中版本落到页面数据：视图 + pills + 保存态时间戳。 */
+  applyVersion(version: RaceStrategyVersion, versions: RaceStrategyVersion[], detail: RaceDetail) {
+    this._versions = versions;
+    this._activeTarget = version.target_finish_time;
+    this._base = version.content;
+    const view = toStrategyView(version.content);
+    this.setData({
+      loading: false,
+      error: '',
+      view,
+      draft: false,
+      versions: versions.map((v) => ({ target: v.target_finish_time, active: v.target_finish_time === version.target_finish_time })),
+      raceDayText: raceDayLabel(detail.race_date),
+      dirty: false,
+      updatedAtText: timeLabel(version.updated_at),
+      goalAvailable: goalPrefill(view, detail.race_date, detail.city) !== null,
+    });
+  },
+
+  /** 版本 pill 切换：纯内存换视图；有未保存修改先确认丢弃。 */
+  onVersionTap(e: WechatMiniprogram.TouchEvent) {
+    const target = String(e.currentTarget.dataset.target || '');
+    if (!target || target === this._activeTarget) return;
+    const detail = this._detail;
+    if (!detail) return;
+    const next = this._versions.find((v) => v.target_finish_time === target);
+    if (!next) return;
+    const switchTo = () => this.applyVersion(next, this._versions, detail);
+    if (!this.data.dirty) {
+      switchTo();
+      return;
+    }
+    wx.showModal({
+      title: '切换目标版本',
+      content: '当前版本有未保存的修改，切换后将丢弃。',
+      confirmText: '丢弃并切换',
+      success: (res) => {
+        if (res.confirm) switchTo();
+      },
+    });
   },
 
   onShareAppMessage() {
@@ -300,8 +374,8 @@ Page<StrategyPageData, StrategyPageHandlers>({
   },
 
   /**
-   * 草稿模式底部主按钮：把教练初稿（含本页编辑）PUT 落库，转已保存态。
-   * 应用前服务端没有这版策略；不应用直接离开 = 放弃初稿（可重新生成）。
+   * 草稿模式底部主按钮：把教练初稿（含本页编辑）PUT 落库为该目标的版本，
+   * 转「最近更新」选中态；应用前服务端没有这版策略；不应用直接离开=放弃初稿。
    */
   async onApplyTap() {
     const view = this.data.view;
@@ -314,16 +388,58 @@ Page<StrategyPageData, StrategyPageHandlers>({
         content: fromStrategyView(view, base),
       });
       this._draftStrategy = null;
-      this.setData({
-        draft: false,
-        dirty: false,
-        updatedAtText: timeLabel(res.updated_at),
-      });
+      // 草稿应用后落到自己目标的那版（列表可能有多个版本）。
+      this._initialTarget = res.target_finish_time || view.targetTime;
       wx.showToast({ title: '已应用', icon: 'success' });
+      await this.refresh();
     } catch {
       wx.showToast({ title: '应用失败，请重试', icon: 'none' });
     } finally {
       this.setData({ applying: false });
+    }
+  },
+
+  /** 删除当前选中的目标版本；还有其它版本则切过去，没有了回未生成态。 */
+  onDeleteTap() {
+    const target = this._activeTarget;
+    if (!target || this.data.deleting) return;
+    wx.showModal({
+      title: '删除目标版本',
+      content: `删除 ${target} 这一版策略？其它目标版本不受影响。`,
+      confirmText: '删除',
+      confirmColor: '#ff5c5c',
+      success: (res) => {
+        if (!res.confirm) return;
+        void this.deleteActiveVersion(target);
+      },
+    });
+  },
+
+  async deleteActiveVersion(target: string) {
+    const detail = this._detail;
+    if (!detail) return;
+    this.setData({ deleting: true });
+    try {
+      await deleteRaceStrategy(this._raceId, target);
+      const remaining = this._versions.filter((v) => v.target_finish_time !== target);
+      if (remaining.length === 0) {
+        this._versions = [];
+        this._activeTarget = '';
+        this.setData({
+          versions: [],
+          view: null,
+          updatedAtText: '',
+          error: '策略尚未生成：回到赛事详情，和教练聊一聊生成初稿',
+        });
+        return;
+      }
+      const next = latestVersion(remaining);
+      if (!next) return;
+      this.applyVersion(next, remaining, detail);
+    } catch {
+      wx.showToast({ title: '删除失败，请重试', icon: 'none' });
+    } finally {
+      this.setData({ deleting: false });
     }
   },
 

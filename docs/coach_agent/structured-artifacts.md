@@ -55,6 +55,12 @@ markdown 渲染）；旧后端 + 新客户端 → 没有 `card`，同样走 mark
 draft → 审阅 → activate 产品模式。Go 内部写入端点（`POST /api/users/:user_id/race-strategies`，
 X-Internal-Token）保留但当前无调用方。
 
+race-strategy 的落库语义（v3 起多版本）：同一 (user, race) 按
+`content.target_finish_time` 分版（2:55 一版、2:50 一版），应用/编辑只覆盖
+该目标的版本，报告页 pills 切换、`DELETE ?target=` 删版；目标成绩只来自
+用户本人的表达——race_strategy 子代理不查能力数据、不代选目标、内容不含
+能力分析（详见 RACE_STRATEGY_PROMPT）。
+
 ## 4. 防御性信封解析（根因修复）
 
 弱模型偶发不走 ToolStrategy 伪工具调用、把 `{ disposition: "return_direct",

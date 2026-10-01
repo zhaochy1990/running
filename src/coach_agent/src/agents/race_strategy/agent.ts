@@ -4,7 +4,6 @@ import { RaceStrategyDirectResponseSchema } from "@stride/contract";
 import { createAgent, ToolStrategy } from "langchain";
 import type { ModelConfig } from "../../config/config.js";
 import type { DataProvider } from "../../data/dataProvider.js";
-import { askUserQuestionTool } from "../../tools/askUserQuestions.js";
 import { createRaceStrategyContextTools } from "../../tools/raceStrategyContext.js";
 import { CoachContext } from "../context.js";
 import { createLoggingMiddleware } from "../middleware.js";
@@ -16,15 +15,19 @@ const logger = getLogger("coachAgent:race_strategy");
 
 /**
  * race_strategy 业务节点：一个带结构化输出的内层 ReAct agent。生成流程由
- * RACE_STRATEGY_PROMPT 硬约束——先取赛事内容与成绩基线，依据不足时以普通
- * 文本回复声明缺口；内容齐全才提交 return_direct 信封。DeepSeek
- * chat-completions 不支持 json_schema response_format，结构化输出走
- * ToolStrategy（function calling），与 orchestrator 的做法一致。
+ * RACE_STRATEGY_PROMPT 硬约束——先取赛事内容；目标成绩只来自运动员本人的
+ * 消息，没有就纯文本追问（下一轮拿到再生成）；内容齐全才提交 return_direct
+ * 信封。DeepSeek chat-completions 不支持 json_schema response_format，结构化
+ * 输出走 ToolStrategy（function calling），与 orchestrator 的做法一致。
+ *
+ * 注意不挂 askUserQuestionTool：内层 agent 不带 checkpointer 编译，interrupt()
+ * 会直接抛错；且客户端对追问的下一条消息走新 message 而非 resume，中断语义
+ * 两头都不成立。追问一律用普通文本回复。
  */
 export function getRaceStrategyAgent(store: DataProvider, config: ModelConfig) {
   logger.info(`creating race_strategy agent with model ${config.name} (${config.model})`);
 
-  const tools: StructuredTool[] = [...createRaceStrategyContextTools(store), askUserQuestionTool];
+  const tools: StructuredTool[] = [...createRaceStrategyContextTools(store)];
 
   return createAgent({
     model: buildModel(config),

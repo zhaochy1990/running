@@ -4,8 +4,8 @@ import { z } from "zod/v4";
  * 比赛策略（Race Strategy）——教练会话的结构化产物，展示契约见 #385 定稿：
  * 目标成绩 + 分段配速表（分段/本段配速/本段用时/累计用时/说明五列，生成时
  * 用时=距离×配速自动算）+ 逐行补给（时间点｜内容）+ 赛道与天气提示。
- * 教练生成初稿，分段与补给用户可在报告页手动编辑；再聊一轮=更新版本
- * （race_strategy 表 UNIQUE(user, event) 只留最新版）。
+ * 教练生成初稿，分段与补给用户可在报告页手动编辑；应用时落 race_strategy
+ * 表，同一 (user, race) 按目标成绩多版本共存（同目标覆盖）。
  */
 
 /** 分段配速表一行（五列 + 供「用时=距离×配速」自动计算的距离列）。 */
@@ -37,9 +37,9 @@ export const RaceStrategySchema = z
     race_name: z.string().min(1),
     /** 报名项目 racetypes token（与 race_calendar_item.type 同词汇），如 Marathon。 */
     item_type: z.string().min(1),
-    /** 目标完赛时间 h:mm:ss，如 "3:59:59"。 */
+    /** 目标完赛时间 h:mm:ss，如 "3:59:59"；只来自运动员自己的表达，教练不得代选。 */
     target_finish_time: z.string().regex(/^\d{1,2}:\d{2}:\d{2}$/),
-    /** 策略总述（1–3 句：总方针 + 正负配速取舍）。 */
+    /** 策略总述（1–3 句）：只写执行方针（配速分布思路/关键应对），不含能力分析。 */
     summary: z.string().min(1),
     pace_segments: z.array(RacePaceSegmentSchema).min(1),
     fueling_plan: z.array(RaceFuelingItemSchema),
@@ -47,7 +47,7 @@ export const RaceStrategySchema = z
     course_tips: z.array(z.string()),
     /** 天气提示（赛期气候/着装/补水口径）。 */
     weather_tips: z.array(z.string()),
-    /** 依据声明：用了哪些数据、哪些缺口（依据不足时由教练声明，缺项不臆测）。 */
+    /** 依据声明：只写赛道内容的数据来源与缺口（如「以 2025 届官方路线为参考」），不含能力/成绩数据。 */
     basis_note: z.string(),
   })
   .superRefine((strategy, ctx) => {
