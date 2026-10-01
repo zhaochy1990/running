@@ -124,6 +124,14 @@ async function handleMessage(payload: unknown, emit: CoachStreamEmitter, phases:
   if (type === "ai") {
     const text = textContent(message?.content);
     if (text.length > 0) {
+      if (isStructuredResponseEcho(text)) {
+        // DeepSeek responses-API 在产出 ToolStrategy 结构化输出时会把信封以
+        // 文本 echo 一遍（实测 race_strategy turn："Returning structured
+        // response: {…}"）。它不是回复正文——最终回复以 done.message 为准——
+        // 转发只会在客户端打字机里闪现整段 JSON。
+        logger.info("dropped structured-response echo delta");
+        return;
+      }
       if (toolCalls.length > 0) {
         await emit({ kind: "narration", delta: text });
       } else {
@@ -132,6 +140,12 @@ async function handleMessage(payload: unknown, emit: CoachStreamEmitter, phases:
       }
     }
   }
+}
+
+/** 文本形态的结构化输出 echo（见上）；仅匹配已知 DeepSeek 前缀与裸信封开头。 */
+function isStructuredResponseEcho(text: string): boolean {
+  const trimmed = text.trimStart();
+  return trimmed.startsWith("Returning structured response:") || trimmed.startsWith('{"disposition"');
 }
 
 /**
