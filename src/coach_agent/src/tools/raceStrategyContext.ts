@@ -1,10 +1,14 @@
 /** Bounded race-strategy context tools over the read-only DataProvider. */
 
 import type { StructuredTool } from "@langchain/core/tools";
-import * as z from "zod";
+import { getLogger } from "@stride/common";
+import * as z from "zod/v4";
 import type { CoachToolRuntime } from "../agents/coachAgent.js";
+import { raceGoalQuestion } from "../agents/race_strategy/goalQuestion.js";
 import type { DataProvider } from "../data/dataProvider.js";
-import { defineCoachTools } from "./common.js";
+import { defineCoachTool, defineCoachTools } from "./common.js";
+
+const logger = getLogger("raceStrategyContextTools");
 
 /**
  * race target 从服务端校验过的 turn scope（<coach_turn_scope>）读取，不由模型
@@ -53,3 +57,47 @@ export function createRaceStrategyContextTools(store: Pick<DataProvider, "getRac
 }
 
 const getRaceCalendarContextSchema = z.object({});
+
+/** 模型用这个工具名声明「本轮要追问目标成绩」；race_strategy 节点按它检测并替换回复。 */
+export const ASK_USER_FOR_GOAL_TOOL = "ask_user_for_goal";
+
+class AskUserForGoalTool {
+  constructor(private readonly store: Pick<DataProvider, "getRaceTarget" | "getRaceCalendarContext">) {}
+
+  /**
+   * 追问文案在这里确定性生成：查运动员唯一 active 的 race_goal，比赛日、项目
+   * 词汇、目标时间都对上本场才带着目标确认复用，否则一句话直问。模型只负责
+   * 原样转达——弱模型自己组织追问会夹带大段赛道内容。任何数据异常都落到直
+   * 问，绝不因 goal 查询挂掉这一轮。
+   */
+  async askUserForGoal(_input: z.infer<typeof askUserForGoalSchema>, runtime: CoachToolRuntime) {
+    const target = runtime.context?.target;
+    const raceTarget = target?.kind === "race" ? target : undefined;
+    const raceEventId = raceTarget?.race_event_id;
+    const itemType = raceTarget?.item_type;
+    if (runtime.context === undefined || raceEventId === null || raceEventId === undefined || itemType === null || itemType === undefined) {
+      return { question: raceGoalQuestion({ goal: null, race: null, itemType: "" }) };
+    }
+    try {
+      const [goal, race] = await Promise.all([this.store.getRaceTarget(runtime.context.userId), this.store.getRaceCalendarContext(raceEventId)]);
+      return { question: raceGoalQuestion({ goal, race, itemType }) };
+    } catch (error) {
+      logger.warn({ err: error }, "ask_user_for_goal lookup failed; falling back to the direct question");
+      return { question: raceGoalQuestion({ goal: null, race: null, itemType: "" }) };
+    }
+  }
+}
+
+/** 追问目标成绩的专用工具：返回应原样转达给运动员的一句话文案。 */
+export function createAskUserForGoalTool(store: Pick<DataProvider, "getRaceTarget" | "getRaceCalendarContext">): StructuredTool {
+  const impl = new AskUserForGoalTool(store);
+  return defineCoachTool({
+    name: ASK_USER_FOR_GOAL_TOOL,
+    description:
+      "当对话里还没有运动员明确给出的目标完赛时间时调用一次：系统会查运动员已存的比赛目标，返回应当原样转达给运动员的一句话追问文案（question 字段；不要改写、不要补充赛道/天气等任何其它内容）。无输入参数。",
+    schema: askUserForGoalSchema,
+    handler: (input, runtime) => impl.askUserForGoal(input, runtime),
+  });
+}
+
+const askUserForGoalSchema = z.object({});

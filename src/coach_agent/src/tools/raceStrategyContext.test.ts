@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { RaceCalendarContext } from "../data/dataProvider.js";
-import { createRaceStrategyContextTools } from "./raceStrategyContext.js";
+import type { RaceCalendarContext, RaceTarget } from "../data/dataProvider.js";
+import { ASK_USER_FOR_GOAL_TOOL, createAskUserForGoalTool, createRaceStrategyContextTools } from "./raceStrategyContext.js";
 
 function raceContextFixture(): RaceCalendarContext {
   return {
@@ -92,4 +92,76 @@ test("the strategy toolset no longer exposes performance data (target is the ath
     tools.some((candidate) => candidate.name === "get_performance_baseline"),
     false,
   );
+});
+
+const goalRaceContext = raceContextFixture();
+
+function raceGoalFixture(): RaceTarget {
+  return {
+    goal_id: "g1",
+    user_id: "athlete-1",
+    status: "active",
+    race_date: "2026-11-01",
+    race_distance: "FM",
+    race_name: "杭州马拉松",
+    target_finish_time: "2:50:00",
+    weekly_training_days: 5,
+  };
+}
+
+const goalToolRuntime = { context: { userId: "athlete-1", asof: "2026-10-01", target: { kind: "race", race_event_id: 30, item_type: "Marathon" } } };
+
+test("ask_user_for_goal returns the confirm question when the stored goal matches this race", async () => {
+  const calls: { users: string[]; races: number[] } = { users: [], races: [] };
+  const tool = createAskUserForGoalTool({
+    async getRaceTarget(userId) {
+      calls.users.push(userId);
+      return raceGoalFixture();
+    },
+    async getRaceCalendarContext(raceEventId) {
+      calls.races.push(raceEventId);
+      return goalRaceContext;
+    },
+  });
+  assert.equal(tool.name, ASK_USER_FOR_GOAL_TOOL);
+  const result = await tool.invoke({}, goalToolRuntime);
+  assert.deepEqual(calls, { users: ["athlete-1"], races: [30] });
+  assert.equal((result as { question: string }).question, "我查到你之前的比赛目标是 2:50:00，需要我按照这个目标帮你制定比赛策略吗？");
+});
+
+test("ask_user_for_goal returns the direct question when no stored goal matches", async () => {
+  const tool = createAskUserForGoalTool({
+    async getRaceTarget() {
+      return null;
+    },
+    async getRaceCalendarContext() {
+      return goalRaceContext;
+    },
+  });
+  const result = await tool.invoke({}, goalToolRuntime);
+  assert.equal((result as { question: string }).question, "你这场比赛的目标成绩是多少？");
+});
+
+test("ask_user_for_goal never throws — lookup failure or missing race target both fall back to the direct question", async () => {
+  const failing = createAskUserForGoalTool({
+    async getRaceTarget() {
+      throw new Error("db down");
+    },
+    async getRaceCalendarContext() {
+      return goalRaceContext;
+    },
+  });
+  const failingResult = await failing.invoke({}, goalToolRuntime);
+  assert.equal((failingResult as { question: string }).question, "你这场比赛的目标成绩是多少？");
+
+  const untouched = createAskUserForGoalTool({
+    async getRaceTarget() {
+      throw new Error("provider must not be called");
+    },
+    async getRaceCalendarContext() {
+      throw new Error("provider must not be called");
+    },
+  });
+  const noTarget = await untouched.invoke({}, { context: { userId: "athlete-1", asof: "2026-10-01" } });
+  assert.equal((noTarget as { question: string }).question, "你这场比赛的目标成绩是多少？");
 });

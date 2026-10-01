@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import type { RaceStrategy } from "@stride/contract";
 import { RACE_STRATEGY_PROMPT } from "../prompts.js";
 import { CoachTargetRef } from "../turnScope.js";
@@ -27,6 +27,8 @@ const strategy: RaceStrategy = {
   basis_note: "以 2025 届官方路线与调研的补给站信息为参考；2026 届路线待公布。",
 };
 
+const GOAL_QUESTION = "我查到你之前的比赛目标是 2:50:00，需要我按照这个目标帮你制定比赛策略吗？";
+
 test("race target requires race_event_id and item_type", () => {
   CoachTargetRef.parse({ kind: "race", race_event_id: 30, item_type: "Marathon" });
   assert.throws(() => CoachTargetRef.parse({ kind: "race" }), /race target requires/);
@@ -40,9 +42,12 @@ test("race-strategy prompt gates generation on race content and asks the athlete
   assert.match(RACE_STRATEGY_PROMPT, /get_race_calendar_context/);
   assert.match(RACE_STRATEGY_PROMPT, /赛道内容暂未调研/);
   assert.match(RACE_STRATEGY_PROMPT, /basis_note/);
-  // 目标只来自运动员自己的表达；没有目标就纯文本追问，不自行依据数据选目标。
-  assert.match(RACE_STRATEGY_PROMPT, /这场比赛你想以什么完赛时间作为目标/);
+  // 目标只来自运动员自己的表达；没有目标就调 ask_user_for_goal，一句话文案由
+  // 工具生成——模型不自己写追问（弱模型上自由文本追问会夹带大段赛道内容）。
+  assert.match(RACE_STRATEGY_PROMPT, /ask_user_for_goal/);
+  assert.doesNotMatch(RACE_STRATEGY_PROMPT, /这场比赛你想以什么完赛时间作为目标/);
   assert.match(RACE_STRATEGY_PROMPT, /运动员自己的决策/);
+  assert.match(RACE_STRATEGY_PROMPT, /肯定回复/);
   // 能力分析彻底退出策略内容：不查基线、不出现进取/能力口径。
   assert.doesNotMatch(RACE_STRATEGY_PROMPT, /get_performance_baseline/);
   assert.doesNotMatch(RACE_STRATEGY_PROMPT, /进取/);
@@ -83,6 +88,99 @@ test("race-strategy node writes a rendered reply and the artifact for a structur
     raceStrategy: RaceStrategy | null;
   };
   assert.equal(update.messages.length, 1);
+  assert.match(String(update.messages[0]?.content), /目标成绩 3:59:59/);
+  assert.deepEqual(update.raceStrategy, strategy);
+});
+
+test("race-strategy node replaces the model text with the ask_user_for_goal one-sentence question", async () => {
+  const userMessage = new HumanMessage("帮我制定上马策略");
+  const verboseModelText = `这场比赛是 2026 上海马拉松，赛道我已经拿到了：几乎无大坡，总爬升约 26m，滨江开跑段约 21–38km 是风的主要变数……总之，${GOAL_QUESTION}`;
+  const innerTrail = [
+    userMessage,
+    new AIMessage({ content: "", tool_calls: [{ id: "call-1", name: "ask_user_for_goal", args: {} }] }),
+    new ToolMessage({ content: JSON.stringify({ question: GOAL_QUESTION }), tool_call_id: "call-1" }),
+    new AIMessage(verboseModelText),
+  ];
+  const node = makeRaceStrategyNode({
+    async invoke() {
+      return { messages: innerTrail };
+    },
+  });
+  const update = (await node({ messages: [userMessage] } as never, {} as never)) as {
+    messages: BaseMessageLike[];
+    raceStrategy: RaceStrategy | null;
+  };
+  assert.equal(update.messages.length, 1);
+  assert.equal(String(update.messages[0]?.content), GOAL_QUESTION);
+  assert.doesNotMatch(String(update.messages[0]?.content), /总爬升/);
+  assert.equal(update.raceStrategy, null);
+});
+
+test("race-strategy node takes the raw tool content when it is not JSON-wrapped", async () => {
+  const userMessage = new HumanMessage("帮我制定上马策略");
+  const innerTrail = [
+    userMessage,
+    new AIMessage({ content: "", tool_calls: [{ id: "call-2", name: "ask_user_for_goal", args: {} }] }),
+    new ToolMessage({ content: GOAL_QUESTION, tool_call_id: "call-2" }),
+  ];
+  const node = makeRaceStrategyNode({
+    async invoke() {
+      return { messages: innerTrail };
+    },
+  });
+  const update = (await node({ messages: [userMessage] } as never, {} as never)) as { messages: BaseMessageLike[] };
+  assert.equal(String(update.messages[0]?.content), GOAL_QUESTION);
+});
+
+test("race-strategy node passes the model text through when the tool result is missing or empty", async () => {
+  const userMessage = new HumanMessage("帮我制定上马策略");
+  const reply = new AIMessage("目标成绩是多少呢？");
+  // passthrough 分支按既有口径回写整个本轮 delta（含工具调用消息），这里只钉
+  // 「没有被替换成追问文案」——丢结果的调用不作数，落回模型文本。
+  const missingCall = new AIMessage({ content: "", tool_calls: [{ id: "call-3", name: "ask_user_for_goal", args: {} }] });
+  const missingResult = makeRaceStrategyNode({
+    async invoke() {
+      return { messages: [userMessage, missingCall, reply] };
+    },
+  });
+  const update = (await missingResult({ messages: [userMessage] } as never, {} as never)) as { messages: BaseMessageLike[] };
+  assert.equal(update.messages.length, 2);
+  assert.equal(String(update.messages.at(-1)?.content), "目标成绩是多少呢？");
+
+  const emptyResult = makeRaceStrategyNode({
+    async invoke() {
+      return {
+        messages: [
+          userMessage,
+          new AIMessage({ content: "", tool_calls: [{ id: "call-4", name: "ask_user_for_goal", args: {} }] }),
+          new ToolMessage({ content: "   ", tool_call_id: "call-4" }),
+          reply,
+        ],
+      };
+    },
+  });
+  const update2 = (await emptyResult({ messages: [userMessage] } as never, {} as never)) as { messages: BaseMessageLike[] };
+  assert.equal(update2.messages.length, 3);
+  assert.equal(String(update2.messages.at(-1)?.content), "目标成绩是多少呢？");
+});
+
+test("a structured strategy still wins when the trail also contains an ask_user_for_goal call", async () => {
+  const userMessage = new HumanMessage("可以，按这个目标来");
+  const innerTrail = [
+    userMessage,
+    new AIMessage({ content: "", tool_calls: [{ id: "call-5", name: "ask_user_for_goal", args: {} }] }),
+    new ToolMessage({ content: JSON.stringify({ question: GOAL_QUESTION }), tool_call_id: "call-5" }),
+    new AIMessage(""),
+  ];
+  const node = makeRaceStrategyNode({
+    async invoke() {
+      return { messages: innerTrail, structuredResponse: { disposition: "return_direct", content: strategy } };
+    },
+  });
+  const update = (await node({ messages: [userMessage] } as never, {} as never)) as {
+    messages: BaseMessageLike[];
+    raceStrategy: RaceStrategy | null;
+  };
   assert.match(String(update.messages[0]?.content), /目标成绩 3:59:59/);
   assert.deepEqual(update.raceStrategy, strategy);
 });
