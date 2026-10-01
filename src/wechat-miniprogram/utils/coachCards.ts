@@ -105,5 +105,8 @@ export function parseLeakedRaceStrategyEnvelope(content: string): CoachCardWire 
 
 /** 流式正文是否「形似 JSON 泄漏」（旧后端防御）：呈现层换成占位文案。 */
 export function looksLikeJsonText(text: string): boolean {
-  return /^\s*\{/.test(text);
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith('{')) return true;
+  if (trimmed.startsWith('Returning structured response:')) return true;
+  return trimmed.slice(0, 120).includes('"disposition"');
 }

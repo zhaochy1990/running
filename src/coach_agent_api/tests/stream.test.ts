@@ -147,6 +147,36 @@ test("text_delta events accumulate to the done message", async () => {
   assert.equal(accumulated, done?.data.message);
 });
 
+test("a DeepSeek structured-response echo is dropped, not streamed as reply text", async () => {
+  // race_strategy turn 实测：模型在 ToolStrategy 结构化输出的同时，把信封以
+  // `Returning structured response: {…}` 文本 echo 一遍。它是中间产物（最终
+  // 回复以 done.message 为准），流出去只会在打字机里闪现整段 JSON。
+  const app = createApp({
+    jwtVerifier: { async verify() { return { userId: "athlete-1", isAdmin: false }; } },
+    coachInvoker: {
+      async invoke() { throw new Error("must not invoke"); },
+      async streamEvents() {
+        const outputMessage = { type: "ai", content: "## 上海马拉松 · 比赛策略" };
+        return source(
+          eventsFrom([
+            msgChunk(ai("Returning structured response: {\"disposition\":\"return_direct\",\"content\":{…}}")),
+            msgChunk(ai('{"disposition":"return_direct"}')),
+            msgChunk(ai("## 上海马拉松 · 比赛策略")),
+            valuesChunk({ messages: [outputMessage] }),
+          ]),
+        );
+      },
+    },
+  });
+  const response = await chatRequest({ session_id: "session-1", client_turn_id: "turn-1", message: "hi" }, SSE_ACCEPT)(app);
+  const events = parseSse(await response.text());
+  const deltas = events.filter((event) => event.event === "text_delta").map((event) => event.data.delta as string);
+
+  assert.deepEqual(deltas, ["## 上海马拉松 · 比赛策略"]);
+  const done = events.find((event) => event.event === "done");
+  assert.equal(done?.data.message, "## 上海马拉松 · 比赛策略");
+});
+
 test("text on a tool-calling message is narration, not reply text", async () => {
   // A model that narrates what it is about to look up writes that text on the
   // same message that carries the tool calls. It must not reach the reply: a
