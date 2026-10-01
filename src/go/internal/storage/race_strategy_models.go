@@ -24,7 +24,7 @@ type RaceStrategy struct {
 	RaceEventID uint64 `gorm:"column:race_event_id;not null;uniqueIndex:uidx_race_strategy_user_target,priority:2"`
 	// TargetFinishTime is the goal finish time ("H:MM:SS") this version is
 	// keyed by, extracted from content.target_finish_time on every write.
-	// '' only survives on legacy rows whose content lacks the field (at most
+	// The empty value only survives on legacy rows whose content lacks the field (at most
 	// one per user+race — the pre-v3 unique index guaranteed that).
 	TargetFinishTime string `gorm:"column:target_finish_time;size:9;not null;default:'';uniqueIndex:uidx_race_strategy_user_target,priority:3"`
 	// ItemType is the strategy's 项目, a token from internal/racetypes — the

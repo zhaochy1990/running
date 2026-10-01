@@ -33,9 +33,9 @@ func (s *Store) AutoMigrateRaceStrategies(ctx context.Context) error {
 // index, add the target_finish_time column and backfill it from the content
 // JSON. Every step is guarded so it is idempotent and a no-op on a fresh
 // database; AutoMigrate then builds the new (user, race, target) unique index.
-// The backfill keeps ” on rows whose content lacks a well-formed target —
+// The backfill keeps the empty string on rows whose content lacks a well-formed target —
 // the legacy unique index guarantees at most one such row per (user, race),
-// so ” remains a valid (never colliding) key for them. Deploy is
+// so the empty value remains a valid (never colliding) key for them. Deploy is
 // single-replica stop-the-world (same as every schema change here): between
 // DropIndex and the new index there is no uniqueness enforcement.
 func migrateRaceStrategyTargetKey(db *gorm.DB) error {
@@ -143,7 +143,7 @@ func (s *Store) UpsertRaceStrategy(ctx context.Context, userID string, raceEvent
 // GetRaceStrategies returns all of the user's strategy versions for one race,
 // ordered by target finish time (fastest goal first — the report page's pill
 // order). "H:MM:SS" hours are not zero-padded, so plain lexical order would
-// put 10-hour goals before 2-hour ones: sort by length first, ” last. An
+// put 10-hour goals before 2-hour ones: sort by length first, empty key last. An
 // empty slice means "not generated yet", not an error.
 func (s *Store) GetRaceStrategies(ctx context.Context, userID string, raceEventID uint64) ([]RaceStrategy, error) {
 	uid, err := canonicalUserID(userID)
