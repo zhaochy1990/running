@@ -31,7 +31,7 @@ import {
 import { typeAbbr } from '../../utils/raceCenterRows';
 import { shanghaiDateFromIso, shanghaiToday } from '../../utils/date';
 import { setPendingCoachContext } from '../../services/coach';
-import { getRaceStrategy } from '../../services/race-strategy';
+import { getRaceStrategies, latestStrategyVersion } from '../../services/race-strategy';
 import { userStore } from '../../store/index';
 
 interface RaceDetailPageData {
@@ -54,8 +54,8 @@ interface RaceDetailPageData {
   sheetStates: Array<{ value: string; label: string; current: boolean }>;
   /** 策略卡入口（内容调研过才显示，#396 门槛） */
   strategyEntry: boolean;
-  /** 已生成时的摘要态（目标成绩 + 更新时间）；null=未生成（CTA 态） */
-  strategySummary: { target: string; updatedAt: string } | null;
+  /** 已生成时的摘要态（最近更新版目标 + 版本数 + 更新时间）；null=未生成（CTA 态） */
+  strategySummary: { target: string; count: number; updatedAt: string } | null;
 }
 
 interface RaceDetailPageHandlers {
@@ -151,15 +151,18 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
     // 详情与计划并行发起（计划态只依赖 raceId）；计划拉不到不阻塞详情，
     // 只是按钮先显示未报名——选择器提交不受影响
     const plansP = listRacePlans().catch(() => null);
-    // 策略态并行拉取（404=未生成；其它失败按未生成展示，不阻塞详情）
+    // 策略态并行拉取（空列表=未生成；其它失败按未生成展示，不阻塞详情）。
+    // 多版本按目标键控：摘要显示最近更新版的目标，count>1 时露出版本数。
     // updated_at 是 UTC RFC3339：摘要日期按上海时区取（直接切 UTC 串会差 8 小时）
-    const strategyP = getRaceStrategy(this._raceId).then(
-      (res) => ({
-        target: res.content.target_finish_time || '—',
-        updatedAt: shanghaiDateFromIso(res.updated_at).replace(/-/g, '/'),
-      }),
-      () => null,
-    );
+    const strategyP = getRaceStrategies(this._raceId).then((res) => {
+      const latest = latestStrategyVersion(res.strategies);
+      if (!latest) return null;
+      return {
+        target: latest.target_finish_time || '—',
+        count: res.strategies.length,
+        updatedAt: shanghaiDateFromIso(latest.updated_at).replace(/-/g, '/'),
+      };
+    }, () => null);
     let detail: RaceDetail;
     try {
       detail = await getRaceDetail(this._raceId);

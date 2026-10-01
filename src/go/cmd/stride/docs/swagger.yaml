@@ -2009,18 +2009,6 @@ definitions:
           $ref: '#/definitions/api.racePlanDTO'
         type: array
     type: object
-  api.raceStrategyDTO:
-    properties:
-      content:
-        additionalProperties: {}
-        type: object
-      item_type:
-        type: string
-      race_id:
-        type: integer
-      updated_at:
-        type: string
-    type: object
   api.raceStrategyInsertRequest:
     properties:
       content:
@@ -2034,6 +2022,15 @@ definitions:
     - content
     - item_type
     - race_event_id
+    type: object
+  api.raceStrategyListDTO:
+    properties:
+      race_id:
+        type: integer
+      strategies:
+        items:
+          $ref: '#/definitions/api.raceStrategyVersionDTO'
+        type: array
     type: object
   api.raceStrategyPutRequest:
     properties:
@@ -2052,6 +2049,20 @@ definitions:
         type: string
       race_id:
         type: integer
+      target_finish_time:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  api.raceStrategyVersionDTO:
+    properties:
+      content:
+        additionalProperties: {}
+        type: object
+      item_type:
+        type: string
+      target_finish_time:
+        type: string
       updated_at:
         type: string
     type: object
@@ -2738,7 +2749,8 @@ definitions:
         type: string
         x-nullable: true
       structured:
-        $ref: '#/definitions/api.structuredWeekResponse'
+        allOf:
+        - $ref: '#/definitions/api.structuredWeekResponse'
         x-nullable: true
       total_duration_fmt:
         type: string
@@ -2996,6 +3008,10 @@ definitions:
     type: object
 info:
   contact: {}
+  description: 'HTTP API fronting the STRIDE worker: create and track async jobs and
+    pipeline runs, and manage user profile, onboarding, and watch-provider login.'
+  title: STRIDE API
+  version: "1.0"
 paths:
   /api/{user}/ability/backfill:
     post:
@@ -6358,15 +6374,17 @@ paths:
     post:
       consumes:
       - application/json
-      description: Internal-only. Upserts (overwrites) the user's latest race strategy
-        for one published race; only the latest version is kept.
+      description: Internal-only. Upserts (overwrites) one goal version of the user's
+        race strategy for a published race; the goal (target_finish_time in content)
+        is the version key, other goals are untouched.
       parameters:
       - description: Target user UUID
         in: path
         name: user_id
         required: true
         type: string
-      - description: Race id, item type and strategy content JSON
+      - description: Race id, item type and strategy content JSON (target_finish_time
+          inside content is the version key)
         in: body
         name: body
         required: true
@@ -6916,8 +6934,53 @@ paths:
       tags:
       - race-plans
   /api/users/me/race-strategies/{race_id}:
+    delete:
+      description: Deletes one goal version of the current user's race strategy, keyed
+        by the target query parameter (H:MM:SS).
+      parameters:
+      - description: Race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      - description: Target finish time (H:MM:SS) of the version to delete
+        in: query
+        name: target
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete my race strategy version
+      tags:
+      - race-strategies
     get:
-      description: Returns the current user's latest race strategy for one race.
+      description: Returns all of the current user's race-strategy versions for one
+        race, one per goal (target_finish_time), fastest goal first.
       parameters:
       - description: Race id
         in: path
@@ -6930,13 +6993,9 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.raceStrategyDTO'
+            $ref: '#/definitions/api.raceStrategyListDTO'
         "401":
           description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.errorResponse'
-        "404":
-          description: Not Found
           schema:
             $ref: '#/definitions/api.errorResponse'
         "500":
@@ -6945,21 +7004,22 @@ paths:
             $ref: '#/definitions/api.errorResponse'
       security:
       - BearerAuth: []
-      summary: Get my race strategy
+      summary: List my race strategies
       tags:
       - race-strategies
     put:
       consumes:
       - application/json
-      description: Upserts (overwrites) the current user's race strategy edits for
-        one published race.
+      description: Upserts one goal version of the current user's race strategy for
+        a published race; content.target_finish_time is the version key.
       parameters:
       - description: Race id
         in: path
         name: race_id
         required: true
         type: integer
-      - description: Item type and strategy content JSON
+      - description: Item type and strategy content JSON (target_finish_time inside
+          content is the version key)
         in: body
         name: body
         required: true
@@ -7398,4 +7458,15 @@ paths:
       summary: Get a pipeline run's status
       tags:
       - pipelines
+securityDefinitions:
+  BearerAuth:
+    description: '"Bearer <JWT>" for end-user callers (RS256).'
+    in: header
+    name: Authorization
+    type: apiKey
+  InternalToken:
+    description: Shared secret for server-to-server callers.
+    in: header
+    name: X-Internal-Token
+    type: apiKey
 swagger: "2.0"

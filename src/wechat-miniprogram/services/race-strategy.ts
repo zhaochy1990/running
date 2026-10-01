@@ -1,8 +1,10 @@
 // 比赛策略服务层 —— #396。对接 Go 侧 race_strategy 端点：
-//   GET /api/users/me/race-strategies/:race_id   （详情卡摘要态 / 报告页）
-//   PUT /api/users/me/race-strategies/:race_id   （报告页手动编辑保存）
-// 内容结构是 coach_contract RaceStrategySchema 的镜像（教练生成初稿，TS 侧
-// 落库；分段配速与补给可手动编辑，再聊一轮=教练更新版本——服务端只留最新版）。
+//   GET    /api/users/me/race-strategies/:race_id（详情卡摘要态 / 报告页，全量版本）
+//   PUT    /api/users/me/race-strategies/:race_id（报告页手动编辑保存）
+//   DELETE /api/users/me/race-strategies/:race_id?target=（删除某个目标的版本）
+// 内容结构是 coach_contract RaceStrategySchema 的镜像。同一场比赛按目标成绩
+// 多版本共存（如 2:55 一版、2:50 一版）：content.target_finish_time 是版本键，
+// 同目标再生成/编辑=覆盖该版，其它目标不受影响——目标选哪个是用户自己的决策。
 
 import { http } from './request';
 
@@ -36,17 +38,32 @@ export interface RaceStrategy {
   basis_note: string;
 }
 
-/** GET /api/users/me/race-strategies/:race_id 的响应（raceStrategyDTO 镜像）。 */
-export interface RaceStrategyResponse {
-  race_id: number;
+/** 一个目标版本的落库视图（raceStrategyVersionDTO 镜像）。 */
+export interface RaceStrategyVersion {
+  target_finish_time: string;
   item_type: string;
   content: RaceStrategy;
   updated_at: string;
 }
 
-/** 拉当前用户一场赛事的最新策略；未生成抛 404（调用方按未生成渲染 CTA）。 */
-export function getRaceStrategy(raceId: number): Promise<RaceStrategyResponse> {
-  return http.get<RaceStrategyResponse>(`/api/users/me/race-strategies/${raceId}`);
+/** GET /api/users/me/race-strategies/:race_id 的响应：全部版本，目标最快在前。 */
+export interface RaceStrategyListResponse {
+  race_id: number;
+  strategies: RaceStrategyVersion[];
+}
+
+/** 拉当前用户一场赛事的全部策略版本；未生成时 strategies 为空数组（200）。 */
+export function getRaceStrategies(raceId: number): Promise<RaceStrategyListResponse> {
+  return http.get<RaceStrategyListResponse>(`/api/users/me/race-strategies/${raceId}`);
+}
+
+/** 最近更新的版本（详情卡摘要与报告页的默认选中；空列表返回 null）。 */
+export function latestStrategyVersion(versions: RaceStrategyVersion[]): RaceStrategyVersion | null {
+  let latest: RaceStrategyVersion | null = null;
+  for (const v of versions) {
+    if (latest === null || v.updated_at > latest.updated_at) latest = v;
+  }
+  return latest;
 }
 
 // ── 教练会话 → 报告页的草稿交接 ─────────────────────────────────────────────
@@ -86,12 +103,23 @@ export function takePendingStrategyDraft(raceId: number): PendingStrategyDraft |
   return null;
 }
 
-/** 保存报告页手动编辑（覆盖最新版）。 */
-export function saveRaceStrategy(raceId: number, body: { item_type: string; content: RaceStrategy }): Promise<{ race_id: number; updated_at: string }> {
-  return http.put<{ race_id: number; updated_at: string }, { item_type: string; content: RaceStrategy }>(
+/**
+ * 保存报告页手动编辑：content.target_finish_time 是版本键——同目标覆盖该版，
+ * 不同目标落成新版本。响应带 target_finish_time 供调用方定位版本。
+ */
+export function saveRaceStrategy(
+  raceId: number,
+  body: { item_type: string; content: RaceStrategy },
+): Promise<{ race_id: number; target_finish_time: string; updated_at: string }> {
+  return http.put<{ race_id: number; target_finish_time: string; updated_at: string }, { item_type: string; content: RaceStrategy }>(
     `/api/users/me/race-strategies/${raceId}`,
     body,
   );
+}
+
+/** 删除某个目标的版本（其它版本不动）。 */
+export function deleteRaceStrategy(raceId: number, targetFinishTime: string): Promise<void> {
+  return http.delete<void>(`/api/users/me/race-strategies/${raceId}?target=${encodeURIComponent(targetFinishTime)}`);
 }
 
 /** 「设为目标」预填体（POST /api/users/me/training-goal；后端 goals.go goalInput）。 */

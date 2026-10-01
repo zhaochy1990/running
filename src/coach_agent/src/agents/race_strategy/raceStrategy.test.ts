@@ -11,7 +11,7 @@ const strategy: RaceStrategy = {
   race_name: "杭州马拉松",
   item_type: "Marathon",
   target_finish_time: "3:59:59",
-  summary: "前 30km 稳在基线配速，最后 12km 视状态渐进提速。",
+  summary: "前 30km 稳住目标配速建立节奏，最后 12km 视体感渐进提速。",
   // 分段与目标自洽（superRefine：累计差 >60s 拒绝）：
   // 10 km × 5:45/km + 32.195 km × 5:40/km = 3:59:56，与 3:59:59 差 3s。
   pace_segments: [
@@ -24,7 +24,7 @@ const strategy: RaceStrategy = {
   ],
   course_tips: ["32km 钱塘江大桥爬坡提前降档"],
   weather_tips: ["11 月杭州早晨 12–16℃，穿背心+臂套"],
-  basis_note: "依据近 90 天 L4 全马估计与校准阈值；赛道数据来自调研内容。",
+  basis_note: "以 2025 届官方路线与调研的补给站信息为参考；2026 届路线待公布。",
 };
 
 test("race target requires race_event_id and item_type", () => {
@@ -35,12 +35,19 @@ test("race target requires race_event_id and item_type", () => {
   CoachTargetRef.parse({ kind: "session", date: "2026-10-01", session_index: 0 });
 });
 
-test("race-strategy prompt gates generation on race content and declares gaps", () => {
+test("race-strategy prompt gates generation on race content and asks the athlete for the target", () => {
   assert.match(RACE_STRATEGY_PROMPT, /kind=race/);
   assert.match(RACE_STRATEGY_PROMPT, /get_race_calendar_context/);
-  assert.match(RACE_STRATEGY_PROMPT, /get_performance_baseline/);
   assert.match(RACE_STRATEGY_PROMPT, /赛道内容暂未调研/);
   assert.match(RACE_STRATEGY_PROMPT, /basis_note/);
+  // 目标只来自运动员自己的表达；没有目标就纯文本追问，不自行依据数据选目标。
+  assert.match(RACE_STRATEGY_PROMPT, /这场比赛你想以什么完赛时间作为目标/);
+  assert.match(RACE_STRATEGY_PROMPT, /运动员自己的决策/);
+  // 能力分析彻底退出策略内容：不查基线、不出现进取/能力口径。
+  assert.doesNotMatch(RACE_STRATEGY_PROMPT, /get_performance_baseline/);
+  assert.doesNotMatch(RACE_STRATEGY_PROMPT, /进取/);
+  assert.doesNotMatch(RACE_STRATEGY_PROMPT, /能力 L4/);
+  assert.match(RACE_STRATEGY_PROMPT, /不得包含对运动员跑步能力的分析/);
 });
 
 test("extractRaceStrategyResult takes the return_direct envelope, structure-checked only", () => {

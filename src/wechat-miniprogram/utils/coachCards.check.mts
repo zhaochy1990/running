@@ -62,8 +62,10 @@ eq(parseLeakedRaceStrategyEnvelope('该赛事内容暂未调研，无法制定�
 eq(parseLeakedRaceStrategyEnvelope('0–10 km 未完待续 {'), null, 'broken json untouched');
 eq(parseLeakedRaceStrategyEnvelope(''), null, 'empty untouched');
 
-// 流式 JSON 探测（呈现层占位）
+// 流式 JSON 探测（呈现层占位）：裸 JSON / DeepSeek echo 前缀 / 正文含信封头
 eq(looksLikeJsonText('{"disposition": "return_direct"'), true, 'json prefix detected');
+eq(looksLikeJsonText('Returning structured response: {"disposition":"return_direct",…'), true, 'deepseek echo prefix detected');
+eq(looksLikeJsonText('正'.repeat(130) + '"disposition"'), false, 'disposition beyond 120 chars not flagged');
 eq(looksLikeJsonText('## 杭州马拉松 · 比赛策略'), false, 'markdown not flagged');
 eq(looksLikeJsonText('  \n{"a": 1}'), true, 'leading whitespace json');
 
