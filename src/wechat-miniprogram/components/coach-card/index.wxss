@@ -73,5 +73,4 @@
   width: 24rpx;
   height: 24rpx;
   margin-left: 4rpx;
-  transform: rotate(180deg);
 }

@@ -86,7 +86,7 @@ export function parseRaceStrategyFromText(text: string): RaceStrategy | undefine
 }
 
 /** 文本里的 ```json 围栏剥离（信封泄漏的另一种形态），非围栏文本原样返回。 */
-export function stripJsonFence(text: string): string {
+function stripJsonFence(text: string): string {
   const match = /^```(?:json)?\s*\n([\s\S]*?)\n?```\s*$/.exec(text.trim());
   return match?.[1] ?? text;
 }

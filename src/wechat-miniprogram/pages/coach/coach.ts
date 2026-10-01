@@ -1,7 +1,7 @@
 import { sendCoachChatStream, fetchCoachHistory, fetchCoachSessions, takePendingCoachContext } from '../../services/coach';
 import type { CoachHistoryMessage, CoachSessionTarget, PendingCoachContext, CoachStreamEvent, CoachDone, CoachStreamHandle } from '../../services/coach';
-import { setPendingStrategyDraft } from '../../services/race-strategy';
-import { buildCoachCard, looksLikeJsonText, parseLeakedEnvelope, type CoachCardView } from '../../utils/coachCards';
+import { setPendingStrategyDraft, type RaceStrategy } from '../../services/race-strategy';
+import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope, type CoachCardView } from '../../utils/coachCards';
 import { markdownToHtml } from '../../utils/markdown';
 
 interface CoachMessage {
@@ -169,7 +169,7 @@ function toCoachMessage(m: CoachHistoryMessage, target?: CoachSessionTarget): Co
   // 形似信封的 assistant 文本捞回成通知卡片（无 race target 定位不了赛事时
   // 保持原文）。服务端历史只存文本，卡片仅靠此路径存在于重开的会话里。
   if (m.role === 'assistant') {
-    const leaked = parseLeakedEnvelope(m.content);
+    const leaked = parseLeakedRaceStrategyEnvelope(m.content);
     if (leaked) {
       const card = buildCoachCard(leaked, target);
       if (card) {
@@ -297,8 +297,20 @@ Page<CoachPageData, CoachPageHandlers>({
   async loadSessions() {
     try {
       const res = await fetchCoachSessions();
+      const locals = readSessions();
+      const localOf = (id: string): CoachSession | undefined => locals.find((l) => l.id === id);
+      // 服务端行只有 id/标题：会话 target（race 卡片定位、草稿交接依赖）存在
+      // 本地，覆盖时须带回来，否则刷新/重启后卡片 tap 静默退化。
       const list: CoachSession[] = (res.sessions ?? [])
-        .map((s) => ({ id: s.session_id, title: s.preview?.trim() ? s.preview : PLACEHOLDER_TITLE }))
+        .map((s) => {
+          const local = localOf(s.session_id);
+          return {
+            id: s.session_id,
+            title: s.preview?.trim() ? s.preview : PLACEHOLDER_TITLE,
+            ...(local?.target ? { target: local.target } : {}),
+            ...(local?.contextLabel ? { contextLabel: local.contextLabel } : {}),
+          };
+        })
         .filter((s, i, arr) => s.id && arr.findIndex((x) => x.id === s.id) === i);
       // 后端尚未落库的新会话（本地刚新建、还没发过消息）不在列表里，
       // 保持它的条目标记在当前会话，避免抽屉里“当前”徽标失效。
@@ -467,7 +479,7 @@ Page<CoachPageData, CoachPageHandlers>({
     if (card.type === 'race-strategy' && card.data && typeof card.data === 'object') {
       const target = this.currentSessionTarget();
       if (target?.kind === 'race' && target.race_event_id) {
-        setPendingStrategyDraft({ raceId: target.race_event_id, strategy: card.data as never });
+        setPendingStrategyDraft({ raceId: target.race_event_id, strategy: card.data as RaceStrategy });
       }
     }
     wx.navigateTo({ url: card.url });
@@ -563,8 +575,8 @@ Page<CoachPageData, CoachPageHandlers>({
           streamRawText += streamBuffer;
           streamBuffer = '';
           // 旧后端可能把信封 JSON 当正文流出（防御解析上线前）：呈现层换成
-          // 占位文案，done 后由卡片/历史自愈接管；正常 markdown 不受影响。
-          const display = looksLikeJsonText(streamRawText) ? '正在整理比赛策略…' : streamRawText;
+          // 中性占位文案（不预设产物类型），done 后由卡片/历史自愈接管。
+          const display = looksLikeJsonText(streamRawText) ? '正在整理内容…' : streamRawText;
           const sid = `msg-streaming-${++streamScrollTick}`;
           this.setData({ streamText: display, streamScrollId: sid, scrollIntoId: sid });
         }, 16);

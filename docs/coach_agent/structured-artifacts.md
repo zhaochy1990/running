@@ -35,9 +35,9 @@ markdown 渲染）；旧后端 + 新客户端 → 没有 `card`，同样走 mark
 | `weekly-plan`（未来） | `weekly_plan` intent → channel | → 周计划页草稿态 |
 | `master-plan`（未来） | `master_plan` intent → channel | → 计划审阅页 |
 
-投影门槛是**双保险**：本轮 intent 必须命中 + state channel 有值。channel
-跨轮持久（LangGraph checkpoint），无 intent 门槛时残留产物会在后续普通轮
-（routed to qa 的「谢谢」）反复下发。
+投影门槛是**双保险**（纵深防御）：orchestrator 每轮把 channel 清零是主闸
+（防上一轮产物跨轮残留），投影时再校验「本轮 intent 命中 + channel 有值」
+兜住异常路径（如中断轮恢复）——两层缺一不可但动机不同。
 
 ## 3. 草稿 → 查看 → 应用（落库语义）
 

@@ -5,7 +5,7 @@
  * JSON/普通文本）、流式 JSON 探测。
  */
 import type { RaceStrategy } from '../services/race-strategy.ts';
-import { buildCoachCard, looksLikeJsonText, parseLeakedEnvelope } from './coachCards.ts';
+import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope } from './coachCards.ts';
 
 function eq(actual: unknown, expected: unknown, what: string): void {
   const a = JSON.stringify(actual);
@@ -56,11 +56,11 @@ eq(buildCoachCard(null, raceTarget), null, 'null card');
 eq(buildCoachCard({}, raceTarget), null, 'missing $type');
 
 // 历史自愈：信封 JSON / 裸策略 JSON 捞回；普通文本与坏 JSON 不动
-eq(parseLeakedEnvelope(JSON.stringify({ disposition: 'return_direct', content: strategy })), { $type: 'race-strategy', data: strategy }, 'leaked envelope');
-eq(parseLeakedEnvelope(JSON.stringify(strategy)), { $type: 'race-strategy', data: strategy }, 'leaked bare strategy');
-eq(parseLeakedEnvelope('该赛事内容暂未调研，无法制定策略。'), null, 'plain prose untouched');
-eq(parseLeakedEnvelope('0–10 km 未完待续 {'), null, 'broken json untouched');
-eq(parseLeakedEnvelope(''), null, 'empty untouched');
+eq(parseLeakedRaceStrategyEnvelope(JSON.stringify({ disposition: 'return_direct', content: strategy })), { $type: 'race-strategy', data: strategy }, 'leaked envelope');
+eq(parseLeakedRaceStrategyEnvelope(JSON.stringify(strategy)), { $type: 'race-strategy', data: strategy }, 'leaked bare strategy');
+eq(parseLeakedRaceStrategyEnvelope('该赛事内容暂未调研，无法制定策略。'), null, 'plain prose untouched');
+eq(parseLeakedRaceStrategyEnvelope('0–10 km 未完待续 {'), null, 'broken json untouched');
+eq(parseLeakedRaceStrategyEnvelope(''), null, 'empty untouched');
 
 // 流式 JSON 探测（呈现层占位）
 eq(looksLikeJsonText('{"disposition": "return_direct"'), true, 'json prefix detected');

@@ -3,6 +3,7 @@
 import { http, getToken, refreshToken, handleSessionExpired } from './request';
 import { SseParser, type SseEvent } from '../utils/sse';
 import { COACH_BASE_URL, CLIENT_ID } from '../constants/config';
+import type { CoachCardWire } from '../utils/coachCards';
 
 // coach_agent_api 对话端点（见 constants/config.ts 的 COACH_BASE_URL）。
 const COACH_CHAT_ENDPOINT = `${COACH_BASE_URL}/api/users/me/coach/chat`;
@@ -84,7 +85,7 @@ export interface CoachDone {
   status?: string;
   message?: string;
   interrupt?: unknown;
-  card?: { $type?: string; data?: unknown };
+  card?: CoachCardWire;
 }
 
 export interface CoachStreamCallbacks {

@@ -5,7 +5,7 @@ import type { RaceStrategy } from "@stride/contract";
 import { RACE_STRATEGY_PROMPT } from "../prompts.js";
 import { CoachTargetRef } from "../turnScope.js";
 import { makeRaceStrategyNode } from "./node.js";
-import { extractRaceStrategyResult, parseRaceStrategyFromText, raceStrategyMessage, renderRaceStrategyMarkdown, stripJsonFence } from "./render.js";
+import { extractRaceStrategyResult, parseRaceStrategyFromText, raceStrategyMessage, renderRaceStrategyMarkdown } from "./render.js";
 
 const strategy: RaceStrategy = {
   race_name: "杭州马拉松",
@@ -128,10 +128,10 @@ test("parseRaceStrategyFromText accepts envelope, bare and fenced JSON; rejects 
   assert.equal(parseRaceStrategyFromText(""), undefined);
 });
 
-test("stripJsonFence only unwraps a whole-document fence", () => {
-  assert.equal(stripJsonFence("```json\n{}\n```"), "{}");
-  assert.equal(stripJsonFence("```\n{}\n```"), "{}");
-  assert.equal(stripJsonFence("正文里有一段 ```json\n{}\n``` 夹在中间"), "正文里有一段 ```json\n{}\n``` 夹在中间");
+test("defensive parse only unwraps a whole-document fence, not embedded code", () => {
+  // 整段围栏（泄漏形态）能捞回；正文中间夹的代码块不是信封泄漏，不动。
+  assert.deepEqual(parseRaceStrategyFromText("```\n" + JSON.stringify(strategy) + "\n```"), strategy);
+  assert.equal(parseRaceStrategyFromText(`开头正文\n\`\`\`json\n${JSON.stringify(strategy)}\n\`\`\`\n结尾`), undefined);
 });
 
 test("raceStrategyMessage produces a plain AI reply message", () => {

@@ -37,7 +37,9 @@ export interface CoachCardView {
   data: unknown;
 }
 
-/** 策略内容的形状校验（RaceStrategySchema 的鸭子类型版；边缘已由后端 zod 把关）。 */
+/** 策略内容的形状校验（RaceStrategySchema 的鸭子类型版；数值口径由后端 zod 把关）。
+ * 注意与 services/race-strategy.ts 的 storage 守卫刻意各自独立：那边不能
+ * runtime import utils（会把 enum 链拖进 node 自检的 strip-only 运行时）。 */
 function isRaceStrategyLike(value: unknown): value is RaceStrategy {
   if (value == null || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
@@ -77,12 +79,15 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
 }
 
 /**
- * 历史消息自愈：正文若是泄漏的信封 JSON（裸 `{` 开头），捞回成卡片信封。
- * 与后端 parseRaceStrategyFromText 同口径（信封/裸对象双形状），只做形状
- * 校验、不做数值复验——历史数据原样展示。
+ * 历史消息自愈：正文若是泄漏的**比赛策略**信封 JSON（裸 `{` 开头），捞回成
+ * 卡片信封。与后端 parseRaceStrategyFromText 同口径（信封/裸对象双形状），
+ * 只做形状校验、不做数值复验——历史数据原样展示。其他产物类型泄漏时在此
+ * 按注册表扩展判定。
  */
-export function parseLeakedEnvelope(content: string): CoachCardWire | null {
-  const text = content.trim();
+export function parseLeakedRaceStrategyEnvelope(content: string): CoachCardWire | null {
+  // 与后端同口径：先剥整段 ```json 围栏（泄漏的另一形态），再要求裸 `{` 开头。
+  const fence = /^```(?:json)?\s*\n([\s\S]*?)\n?```\s*$/.exec(content.trim());
+  const text = (fence?.[1] ?? content).trim();
   if (!text.startsWith('{')) return null;
   try {
     const parsed = JSON.parse(text) as Record<string, unknown>;
