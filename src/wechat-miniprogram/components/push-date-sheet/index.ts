@@ -20,8 +20,8 @@ Component({
 
   methods: {
     // 选中某个日期，向父级抛 select 事件（detail.value = YYYY-MM-DD）
-    onSelect(e) {
-      const value = e.currentTarget.dataset.value;
+    onSelect(e: WechatMiniprogram.TouchEvent) {
+      const value = e.currentTarget.dataset.value as string | undefined;
       if (!value) return;
       this.triggerEvent('select', { value });
     },

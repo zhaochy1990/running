@@ -34,10 +34,9 @@ Component({
   },
 
   methods: {
-    switchTab(e) {
-      const path = e.currentTarget.dataset.path;
-      const index = e.currentTarget.dataset.index;
-      if (index === undefined || index === this.data.selected) return;
+    switchTab(e: WechatMiniprogram.TouchEvent) {
+      const { path, index } = e.currentTarget.dataset as { path?: string; index?: number };
+      if (path === undefined || index === undefined || index === this.data.selected) return;
       wx.switchTab({ url: path });
     },
   },
