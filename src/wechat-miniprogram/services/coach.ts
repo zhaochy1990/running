@@ -3,6 +3,7 @@
 import { http, getToken, refreshToken, handleSessionExpired } from './request';
 import { SseParser, type SseEvent } from '../utils/sse';
 import { COACH_BASE_URL, CLIENT_ID } from '../constants/config';
+import type { CoachCardWire } from '../utils/coachCards';
 
 // coach_agent_api 对话端点（见 constants/config.ts 的 COACH_BASE_URL）。
 const COACH_CHAT_ENDPOINT = `${COACH_BASE_URL}/api/users/me/coach/chat`;
@@ -75,15 +76,16 @@ export type CoachStreamEvent =
   | { kind: 'delta'; delta: string };
 
 /** done 事件的 data（`{ turn_id, ...toPublicResponse }`）；非流式降级时同步 JSON 也走这里。
- * race_strategy / race_strategy_saved：race_strategy 业务节点的结构化产物与落库
- * 结果（#396）——策略已保存时聊天页引导去报告页。 */
+ * card：本轮 intent 命中的结构化产物信封 `{ $type, data }`（$type = 渲染器 key，
+ * 如 'race-strategy'；未来 'weekly-plan' / 'master-plan'），聊天页经
+ * utils/coachCards 翻译成通知卡片。旧后端的 race_strategy / race_strategy_saved
+ * 字段已随「生成即落库」一起退场（落库改由用户在报告页「应用」触发）。 */
 export interface CoachDone {
   turn_id?: string;
   status?: string;
   message?: string;
   interrupt?: unknown;
-  race_strategy?: unknown;
-  race_strategy_saved?: boolean;
+  card?: CoachCardWire;
 }
 
 export interface CoachStreamCallbacks {

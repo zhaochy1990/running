@@ -1,0 +1,16 @@
+<view class="cc-card" bindtap="onTap">
+  <view class="cc-card__head">
+    <image wx:if="{{icon}}" class="cc-card__icon" src="{{icon}}" mode="aspectFit" />
+    <view class="cc-card__title-wrap">
+      <view class="cc-card__title-row">
+        <text class="cc-card__title">{{title}}</text>
+        <text wx:if="{{badge}}" class="cc-card__badge">{{badge}}</text>
+      </view>
+      <text class="cc-card__subtitle">{{subtitle}}</text>
+    </view>
+  </view>
+  <view class="cc-card__cta" catchtap="onTap">
+    <text class="cc-card__cta-text">{{buttonText}}</text>
+    <image class="cc-card__cta-arrow" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+  </view>
+</view>
