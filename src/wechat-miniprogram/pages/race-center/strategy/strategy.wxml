@@ -27,7 +27,10 @@
     <block wx:elif="{{view}}">
       <!-- hero：赛事名 + 目标成绩 + 主按钮（教练再聊）+ 次要（分享/配速卡） -->
       <view class="card hero">
-        <view class="hero__sub">{{raceDayText}} · {{view.itemTypeLabel}}</view>
+        <view class="hero__sub">
+          <text wx:if="{{draft}}" class="hero__draft-badge">初稿</text>
+          <text>{{raceDayText}} · {{view.itemTypeLabel}}</text>
+        </view>
         <view class="hero__name">{{view.raceName}}</view>
         <view class="hero__target">目标 <text class="hero__time">{{view.targetTime}}</text></view>
         <view class="hero__summary">{{view.summary}}</view>
@@ -107,8 +110,14 @@
         <view class="tip">{{view.basisNote}}</view>
       </view>
 
-      <!-- 保存 + 设为目标 -->
-      <view class="actions">
+      <!-- 草稿模式：应用并保存（PUT 落库，转已保存态）；不应用离开=放弃初稿 -->
+      <view wx:if="{{draft}}" class="actions actions--draft">
+        <view class="actions__apply {{applying ? 'actions__apply--busy' : ''}}" bindtap="onApplyTap">{{applying ? '应用中…' : '应用并保存'}}</view>
+        <view class="actions__draft-hint">应用前不会保存；离开即放弃这份初稿</view>
+        <view wx:if="{{goalAvailable}}" class="actions__goal" bindtap="onGoalTap">设为目标赛事</view>
+      </view>
+      <!-- 已保存：保存 + 设为目标 -->
+      <view wx:else class="actions">
         <view class="actions__save {{dirty ? 'actions__save--on' : ''}}" bindtap="onSaveTap">{{saving ? '保存中…' : (dirty ? '保存修改' : '已保存 · ' + updatedAtText)}}</view>
         <view wx:if="{{goalAvailable}}" class="actions__goal" bindtap="onGoalTap">设为目标赛事</view>
       </view>

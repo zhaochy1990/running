@@ -49,6 +49,43 @@ export function getRaceStrategy(raceId: number): Promise<RaceStrategyResponse> {
   return http.get<RaceStrategyResponse>(`/api/users/me/race-strategies/${raceId}`);
 }
 
+// ── 教练会话 → 报告页的草稿交接 ─────────────────────────────────────────────
+// 教练生成的策略初稿不再自动落库（由用户在报告页「应用」触发保存）；聊天卡片
+// tap 时把草稿暂存本地，报告页 onLoad 取走后进草稿模式（本地渲染 + 应用保存）。
+// navigateTo 的 query 带不动大 JSON，沿用 setPendingCoachContext 的 storage 交接模式。
+const PENDING_DRAFT_KEY = 'raceStrategy.pendingDraft';
+
+/** 聊天卡片 tap 时交接给报告页的策略草稿。 */
+export interface PendingStrategyDraft {
+  raceId: number;
+  strategy: RaceStrategy;
+}
+
+export function setPendingStrategyDraft(draft: PendingStrategyDraft): void {
+  try {
+    wx.setStorageSync(PENDING_DRAFT_KEY, draft);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * 取走草稿（仅一次）：raceId 匹配才消费；不匹配（残留的过期草稿）直接丢弃。
+ * 返回 null 时报告页走服务端已保存版本。
+ */
+export function takePendingStrategyDraft(raceId: number): PendingStrategyDraft | null {
+  try {
+    const v = wx.getStorageSync(PENDING_DRAFT_KEY);
+    wx.removeStorageSync(PENDING_DRAFT_KEY);
+    if (v && typeof v === 'object' && v.raceId === raceId && v.strategy && Array.isArray(v.strategy.pace_segments)) {
+      return v as PendingStrategyDraft;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 /** 保存报告页手动编辑（覆盖最新版）。 */
 export function saveRaceStrategy(raceId: number, body: { item_type: string; content: RaceStrategy }): Promise<{ race_id: number; updated_at: string }> {
   return http.put<{ race_id: number; updated_at: string }, { item_type: string; content: RaceStrategy }>(

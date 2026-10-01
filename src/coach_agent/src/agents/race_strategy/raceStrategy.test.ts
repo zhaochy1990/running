@@ -5,16 +5,18 @@ import type { RaceStrategy } from "@stride/contract";
 import { RACE_STRATEGY_PROMPT } from "../prompts.js";
 import { CoachTargetRef } from "../turnScope.js";
 import { makeRaceStrategyNode } from "./node.js";
-import { extractRaceStrategyResult, raceStrategyMessage, renderRaceStrategyMarkdown } from "./render.js";
+import { extractRaceStrategyResult, parseRaceStrategyFromText, raceStrategyMessage, renderRaceStrategyMarkdown, stripJsonFence } from "./render.js";
 
 const strategy: RaceStrategy = {
   race_name: "杭州马拉松",
   item_type: "Marathon",
   target_finish_time: "3:59:59",
   summary: "前 30km 稳在基线配速，最后 12km 视状态渐进提速。",
+  // 分段与目标自洽（superRefine：累计差 >60s 拒绝）：
+  // 10 km × 5:45/km + 32.195 km × 5:40/km = 3:59:56，与 3:59:59 差 3s。
   pace_segments: [
     { segment: "0–10 km", distance_km: 10, pace: "5:45/km", segment_time: "57:30", cumulative_time: "57:30", note: "压住兴奋，稳定输出" },
-    { segment: "10–21.1 km", distance_km: 11.1, pace: "5:40/km", segment_time: "1:02:54", cumulative_time: "2:00:24", note: "半程点略快于目标" },
+    { segment: "10–42.195 km", distance_km: 32.195, pace: "5:40/km", segment_time: "3:02:26", cumulative_time: "3:59:56", note: "半程后视状态渐进提速" },
   ],
   fueling_plan: [
     { time_point: "赛前 30 分钟", content: "能量胶 1 支 + 水 200ml" },
@@ -92,6 +94,44 @@ test("race-strategy node behaves like a plain business node without structured o
   };
   assert.deepEqual(update.messages, [reply]);
   assert.equal(update.raceStrategy, null);
+});
+
+test("race-strategy node recovers an envelope leaked as plain text (weak-model fallback)", async () => {
+  // 弱模型偶发不走 ToolStrategy 伪工具调用、把信封 JSON 当正文输出；节点必须
+  // 捞回成正常路径（渲染 markdown + 填 channel），而不是把原始 JSON 透传给用户。
+  const userMessage = new HumanMessage("帮我制定杭马策略");
+  const leaked = new AIMessage(JSON.stringify({ disposition: "return_direct", content: strategy }));
+  const node = makeRaceStrategyNode({
+    async invoke() {
+      return { messages: [userMessage, leaked] };
+    },
+  });
+  const update = (await node({ messages: [userMessage] } as never, {} as never)) as {
+    messages: BaseMessageLike[];
+    raceStrategy: RaceStrategy | null;
+  };
+  assert.equal(update.messages.length, 1);
+  assert.match(String(update.messages[0]?.content), /目标成绩 3:59:59/);
+  assert.doesNotMatch(String(update.messages[0]?.content), /disposition/);
+  assert.deepEqual(update.raceStrategy, strategy);
+});
+
+test("parseRaceStrategyFromText accepts envelope, bare and fenced JSON; rejects everything else", () => {
+  const envelopeText = JSON.stringify({ disposition: "return_direct", content: strategy });
+  assert.deepEqual(parseRaceStrategyFromText(envelopeText), strategy);
+  assert.deepEqual(parseRaceStrategyFromText(JSON.stringify(strategy)), strategy);
+  assert.deepEqual(parseRaceStrategyFromText(`\`\`\`json\n${envelopeText}\n\`\`\``), strategy);
+  // 普通 prose / 坏 JSON / 形似但缺字段的 JSON 都按普通回复透传
+  assert.equal(parseRaceStrategyFromText("该赛事内容暂未调研，无法制定策略。"), undefined);
+  assert.equal(parseRaceStrategyFromText("0–10 km 未完待续 {"), undefined);
+  assert.equal(parseRaceStrategyFromText('{"race_name":"杭州马拉松"}'), undefined);
+  assert.equal(parseRaceStrategyFromText(""), undefined);
+});
+
+test("stripJsonFence only unwraps a whole-document fence", () => {
+  assert.equal(stripJsonFence("```json\n{}\n```"), "{}");
+  assert.equal(stripJsonFence("```\n{}\n```"), "{}");
+  assert.equal(stripJsonFence("正文里有一段 ```json\n{}\n``` 夹在中间"), "正文里有一段 ```json\n{}\n``` 夹在中间");
 });
 
 test("raceStrategyMessage produces a plain AI reply message", () => {

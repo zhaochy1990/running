@@ -1,5 +1,7 @@
 import { sendCoachChatStream, fetchCoachHistory, fetchCoachSessions, takePendingCoachContext } from '../../services/coach';
 import type { CoachHistoryMessage, CoachSessionTarget, PendingCoachContext, CoachStreamEvent, CoachDone, CoachStreamHandle } from '../../services/coach';
+import { setPendingStrategyDraft } from '../../services/race-strategy';
+import { buildCoachCard, looksLikeJsonText, parseLeakedEnvelope, type CoachCardView } from '../../utils/coachCards';
 import { markdownToHtml } from '../../utils/markdown';
 
 interface CoachMessage {
@@ -8,6 +10,9 @@ interface CoachMessage {
   content: string;
   // assistant 消息渲染用（GFM→HTML，经 <mp-html> 渲染）；user 消息保持纯文本。
   html?: string;
+  // 结构化产物通知卡片（done.card 经 utils/coachCards 翻译）：存在时替代 markdown
+  // 正文渲染，content 保留作复制全文的兜底。
+  card?: CoachCardView;
   // user 消息：本轮 client_turn_id（重试时复用）；failed 表示发送失败需重试。
   clientTurnId?: string;
   failed?: boolean;
@@ -41,6 +46,9 @@ const PHASE_LABEL: Record<string, string> = {
 // 当前流式的运行期状态（单会话单流；放 module 级避免给 Page 实例加自定义属性带来的 TS 收窄问题）。
 let streamAbort: CoachStreamHandle | null = null;
 let streamBuffer = '';
+// 已冲刷进气泡的原始正文累积（streamText 是呈现层文本：JSON 泄漏时被替换成
+// 占位文案，不能反向参与累积）。
+let streamRawText = '';
 let streamFlushTimer: number | null = null;
 // 流式气泡 id 自增：scroll-into-view 只在值变化时滚动，打字机文本不断变长，需跟着滚。
 let streamScrollTick = 0;
@@ -94,6 +102,8 @@ interface CoachPageHandlers {
   onRetry(e: WechatMiniprogram.TouchEvent): void;
   onMessageLongPress(e: WechatMiniprogram.TouchEvent): void;
   copyMessageText(messageId: number): void;
+  /** 结构化产物卡片 tap：产物经 storage 交接后跳目标页（如报告页草稿模式）。 */
+  onCardOpen(e: WechatMiniprogram.TouchEvent): void;
   onMenuTap(): void;
   onCloseDrawer(): void;
   onSearchTap(): void;
@@ -154,7 +164,19 @@ function welcomeMessages(): CoachMessage[] {
   return [{ id: ++seq, role: 'assistant', content, html: markdownToHtml(content) }];
 }
 
-function toCoachMessage(m: CoachHistoryMessage): CoachMessage {
+function toCoachMessage(m: CoachHistoryMessage, target?: CoachSessionTarget): CoachMessage {
+  // 历史自愈：防御解析上线前，弱模型曾把策略信封 JSON 当正文写进会话历史；
+  // 形似信封的 assistant 文本捞回成通知卡片（无 race target 定位不了赛事时
+  // 保持原文）。服务端历史只存文本，卡片仅靠此路径存在于重开的会话里。
+  if (m.role === 'assistant') {
+    const leaked = parseLeakedEnvelope(m.content);
+    if (leaked) {
+      const card = buildCoachCard(leaked, target);
+      if (card) {
+        return { id: ++seq, role: 'assistant', content: card.title, card };
+      }
+    }
+  }
   const msg: CoachMessage = {
     id: ++seq,
     role: m.role === 'user' ? 'user' : 'assistant',
@@ -246,6 +268,10 @@ Page<CoachPageData, CoachPageHandlers>({
       pre: 'margin:0 0 10px;padding:10px;background:#25262a;border-radius:8px;overflow-x:auto;color:#e3e2e5;',
       code: 'font-family:monospace;background:rgba(255,255,255,0.08);border-radius:4px;padding:0 4px;color:#e3e2e5;',
       a: 'color:#ffb3af;',
+      // markdownToHtml 会产出 GFM 表格；无样式时无边框无对齐，不可读。
+      table: 'width:100%;margin:0 0 10px;border-collapse:collapse;color:#e3e2e5;',
+      th: 'padding:6px 8px;border:1px solid rgba(255,255,255,0.14);color:#b8b8bc;font-weight:600;text-align:left;',
+      td: 'padding:6px 8px;border:1px solid rgba(255,255,255,0.14);color:#e3e2e5;',
     },
   },
 
@@ -365,7 +391,9 @@ Page<CoachPageData, CoachPageHandlers>({
       let msgs = this.data.messages;
       if (history && Array.isArray(history.messages) && history.messages.length) {
         seq = 0;
-        msgs = history.messages.map(toCoachMessage);
+        // 带上会话 target：历史自愈出的策略卡片需要 race_event_id 定位报告页。
+        const target = this.data.sessions.find((s) => s.id === sessionId)?.target;
+        msgs = history.messages.map((m) => toCoachMessage(m, target));
       } else {
         seq = 0;
         msgs = welcomeMessages();
@@ -428,6 +456,21 @@ Page<CoachPageData, CoachPageHandlers>({
     const rendered = component?.getText?.();
     // setClipboardData 自带“内容已复制”toast，不再自己弹。
     wx.setClipboardData({ data: rendered && rendered.trim() ? rendered : message.content });
+  },
+
+  /** 卡片 tap：按产物类型交接后跳目标页。策略草稿经 pending storage 交给报告页。 */
+  onCardOpen(e: WechatMiniprogram.TouchEvent) {
+    const id = e.currentTarget.dataset.id as number;
+    const message = this.data.messages.find((m) => m.id === id);
+    if (!message?.card) return;
+    const card = message.card;
+    if (card.type === 'race-strategy' && card.data && typeof card.data === 'object') {
+      const target = this.currentSessionTarget();
+      if (target?.kind === 'race' && target.race_event_id) {
+        setPendingStrategyDraft({ raceId: target.race_event_id, strategy: card.data as never });
+      }
+    }
+    wx.navigateTo({ url: card.url });
   },
 
   async onSend() {
@@ -517,10 +560,13 @@ Page<CoachPageData, CoachPageHandlers>({
       if (streamFlushTimer == null) {
         streamFlushTimer = setTimeout(() => {
           streamFlushTimer = null;
-          const text = this.data.streamText + streamBuffer;
+          streamRawText += streamBuffer;
           streamBuffer = '';
+          // 旧后端可能把信封 JSON 当正文流出（防御解析上线前）：呈现层换成
+          // 占位文案，done 后由卡片/历史自愈接管；正常 markdown 不受影响。
+          const display = looksLikeJsonText(streamRawText) ? '正在整理比赛策略…' : streamRawText;
           const sid = `msg-streaming-${++streamScrollTick}`;
-          this.setData({ streamText: text, streamScrollId: sid, scrollIntoId: sid });
+          this.setData({ streamText: display, streamScrollId: sid, scrollIntoId: sid });
         }, 16);
       }
     } else {
@@ -529,7 +575,7 @@ Page<CoachPageData, CoachPageHandlers>({
     }
   },
 
-  /** 流结束：把完整 markdown 一次性渲染为富文本，转入消息列表。 */
+  /** 流结束：结构化产物出通知卡片，其余把完整 markdown 一次性渲染为富文本。 */
   finishStream(done: CoachDone, userMsgId: number) {
     streamAbort = null;
     if (streamFlushTimer != null) {
@@ -537,18 +583,24 @@ Page<CoachPageData, CoachPageHandlers>({
       streamFlushTimer = null;
     }
     streamBuffer = '';
+    streamRawText = '';
     // completed → 正文 done.message；needs_input → interrupt 是追问 payload
     // （AskUserQuestionPayload 含 question），渲染成 assistant 追问，不算失败。
-    const content = done.status === 'completed' ? done.message : interruptText(done.interrupt);
-    if (!content || !content.trim()) {
+    let content = done.status === 'completed' ? done.message : interruptText(done.interrupt);
+    // 本轮 intent 命中的结构化产物：翻译成通知卡片替代 markdown 气泡（保存由
+    // 用户在报告页「应用」触发，不再生成即落库弹窗）。信封不认识时降级 markdown。
+    const card = buildCoachCard(done.card, this.currentSessionTarget());
+    if ((!content || !content.trim()) && !card) {
       this.failStream({ code: 'empty', message: 'no_answer' }, userMsgId);
       return;
     }
+    if (!content || !content.trim()) content = card?.title ?? '';
     const assistantMsg: CoachMessage = {
       id: ++seq,
       role: 'assistant',
       content,
-      html: markdownToHtml(content),
+      // 卡片存在时不渲染 markdown 正文（报告页才是完整视图）；content 留作复制兜底。
+      ...(card ? { card } : { html: markdownToHtml(content) }),
     };
     const messages = this.data.messages.map((m) =>
       m.id === userMsgId ? { ...m, failed: false } : m,
@@ -562,23 +614,6 @@ Page<CoachPageData, CoachPageHandlers>({
       streamText: '',
       scrollIntoId: `msg-${assistantMsg.id}`,
     });
-    // 比赛策略产物已落库（#396）：引导去报告页查看/编辑（目标赛事取自会话 target）。
-    if (done.race_strategy_saved) {
-      const target = this.currentSessionTarget();
-      if (target?.kind === 'race' && target.race_event_id) {
-        wx.showModal({
-          title: '比赛策略已生成',
-          content: '初稿已保存，去报告页查看配速表与补给计划？',
-          confirmText: '去查看',
-          cancelText: '留在这里',
-          success: (res) => {
-            if (res.confirm) {
-              wx.navigateTo({ url: `/pages/race-center/strategy/strategy?id=${target.race_event_id}` });
-            }
-          },
-        });
-      }
-    }
   },
 
   /** 流失败：清掉流式气泡，给该 user 消息打 failed 标记以展示重试按钮。 */
@@ -589,6 +624,7 @@ Page<CoachPageData, CoachPageHandlers>({
       streamFlushTimer = null;
     }
     streamBuffer = '';
+    streamRawText = '';
     const messages = this.data.messages.map((m) =>
       m.id === userMsgId ? { ...m, failed: true } : m,
     );
@@ -612,6 +648,7 @@ Page<CoachPageData, CoachPageHandlers>({
       streamFlushTimer = null;
     }
     streamBuffer = '';
+    streamRawText = '';
     this.setData({ sending: false, streaming: false, streamPhase: '', streamNarration: '', streamText: '' });
   },
 

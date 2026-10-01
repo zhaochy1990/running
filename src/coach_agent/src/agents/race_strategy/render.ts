@@ -1,5 +1,5 @@
 import { AIMessage } from "@langchain/core/messages";
-import type { RaceStrategy } from "@stride/contract";
+import { type RaceStrategy, RaceStrategyDirectResponseSchema, RaceStrategySchema } from "@stride/contract";
 
 /**
  * 把结构化策略渲染成会话里的 Markdown 初稿。会话流（mp-html 渲染 GFM）不保
@@ -62,4 +62,31 @@ export function extractRaceStrategyResult(result: unknown): RaceStrategy | undef
 /** 结构化产物落进会话消息的形态（AIMessage，不再经任何模型改写）。 */
 export function raceStrategyMessage(strategy: RaceStrategy): AIMessage {
   return new AIMessage({ content: renderRaceStrategyMarkdown(strategy) });
+}
+
+/**
+ * 防御性信封解析：模型偶发不守 ToolStrategy 格式、把信封 JSON 当正文文本输出
+ * （弱模型上已观察到），此函数把这类文本捞回成已验证的策略。只对「形似 JSON」
+ * 的文本尝试（裸 `{` 开头或 ```json 围栏），safeParse 双口径（信封/裸对象），
+ * 解析失败一律返回 undefined——按普通回复透传，绝不臆造。
+ */
+export function parseRaceStrategyFromText(text: string): RaceStrategy | undefined {
+  const stripped = stripJsonFence(text).trim();
+  if (stripped.length === 0 || !stripped.startsWith("{")) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripped);
+  } catch {
+    return undefined;
+  }
+  const envelope = RaceStrategyDirectResponseSchema.safeParse(parsed);
+  if (envelope.success) return envelope.data.content;
+  const bare = RaceStrategySchema.safeParse(parsed);
+  return bare.success ? bare.data : undefined;
+}
+
+/** 文本里的 ```json 围栏剥离（信封泄漏的另一种形态），非围栏文本原样返回。 */
+export function stripJsonFence(text: string): string {
+  const match = /^```(?:json)?\s*\n([\s\S]*?)\n?```\s*$/.exec(text.trim());
+  return match?.[1] ?? text;
 }

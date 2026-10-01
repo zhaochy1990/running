@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createApp } from "../src/app.js";
-import type { RaceStrategyWriter } from "../src/routes/chat.js";
 
 /** streamEvents stub for tests that must never stream. */
 const neverStream = () => {
@@ -42,14 +41,7 @@ async function postChat(app: ReturnType<typeof createApp>, body: Record<string, 
   });
 }
 
-test("chat persists a race strategy produced under a race target", async () => {
-  const saves: Array<{ userId: string; raceEventId: number; itemType: string }> = [];
-  const writer: RaceStrategyWriter = {
-    async saveRaceStrategy(userId, raceEventId, itemType) {
-      saves.push({ userId, raceEventId, itemType });
-      return true;
-    },
-  };
+test("chat projects a race-strategy artifact as a typed card", async () => {
   const app = createApp({
     jwtVerifier,
     coachInvoker: {
@@ -58,86 +50,53 @@ test("chat persists a race strategy produced under a race target", async () => {
       },
       streamEvents: neverStream,
     },
-    raceStrategyWriter: writer,
   });
 
   const response = await postChat(app, { target: raceTarget() });
   assert.equal(response.status, 200);
   const body = (await response.json()) as Record<string, unknown>;
-  assert.equal(body.race_strategy_saved, true);
-  assert.deepEqual(body.race_strategy, strategy);
-  assert.deepEqual(saves, [{ userId: "athlete-1", raceEventId: 30, itemType: "Marathon" }]);
+  // card 信封：$type = 客户端渲染器注册表 key；落库与否由用户在报告页「应用」
+  // 决定，协议不再携带 race_strategy / race_strategy_saved。
+  assert.deepEqual(body.card, { $type: "race-strategy", data: strategy });
+  assert.equal(body.race_strategy, undefined);
+  assert.equal(body.race_strategy_saved, undefined);
 });
 
-test("chat skips persistence without a race target", async () => {
-  let saves = 0;
+test("chat projects the card regardless of turn target (display artifact, not persistence)", async () => {
   const app = createApp({
     jwtVerifier,
     coachInvoker: {
       async invoke() {
-        return { messages: [{ type: "ai", content: "普通回复" }], intent: { intent: "race_strategy" }, raceStrategy: strategy };
+        return { messages: [{ type: "ai", content: "初稿如下……" }], intent: { intent: "race_strategy" }, raceStrategy: strategy };
       },
       streamEvents: neverStream,
-    },
-    raceStrategyWriter: {
-      async saveRaceStrategy() {
-        saves += 1;
-        return true;
-      },
     },
   });
 
   const response = await postChat(app, {});
   assert.equal(response.status, 200);
   const body = (await response.json()) as Record<string, unknown>;
-  assert.equal(body.race_strategy_saved, undefined);
-  assert.equal(saves, 0);
+  assert.deepEqual(body.card, { $type: "race-strategy", data: strategy });
 });
 
-test("chat survives a failed race-strategy write", async () => {
+test("chat does not project a stale strategy on a later plain turn", async () => {
+  // raceStrategy 是跨轮 state channel：上一轮的产物会残留在 checkpoint 里。
+  // 后续 routed to qa 的普通轮即使带着旧值，也不得再下发卡片。门槛：本轮
+  // intent 必须就是 race_strategy。
   const app = createApp({
     jwtVerifier,
     coachInvoker: {
       async invoke() {
-        return { messages: [{ type: "ai", content: "初稿如下……" }], intent: { intent: "race_strategy" }, raceStrategy: strategy };
+        return { messages: [{ type: "ai", content: "不客气！" }], intent: { intent: "training_question" }, raceStrategy: strategy };
       },
       streamEvents: neverStream,
-    },
-    raceStrategyWriter: {
-      async saveRaceStrategy() {
-        return false;
-      },
     },
   });
 
   const response = await postChat(app, { target: raceTarget() });
   assert.equal(response.status, 200);
   const body = (await response.json()) as Record<string, unknown>;
-  assert.equal(body.race_strategy_saved, undefined);
-  assert.deepEqual(body.race_strategy, strategy);
-});
-
-test("chat skips persistence when the artifact fails canonical validation", async () => {
-  let saves = 0;
-  const app = createApp({
-    jwtVerifier,
-    coachInvoker: {
-      async invoke() {
-        return { messages: [{ type: "ai", content: "初稿如下……" }], raceStrategy: { race_name: "不完整" } };
-      },
-      streamEvents: neverStream,
-    },
-    raceStrategyWriter: {
-      async saveRaceStrategy() {
-        saves += 1;
-        return true;
-      },
-    },
-  });
-
-  const response = await postChat(app, { target: raceTarget() });
-  assert.equal(response.status, 200);
-  assert.equal(saves, 0);
+  assert.equal(body.card, undefined);
 });
 
 test("chat rejects a race target without race_event_id", async () => {
@@ -154,33 +113,4 @@ test("chat rejects a race target without race_event_id", async () => {
   const response = await postChat(app, { target: { kind: "race", item_type: "Marathon" } });
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "invalid_turn_scope" });
-});
-
-test("chat does not re-persist a stale strategy on a later plain turn", async () => {
-  // raceStrategy 是跨轮 state channel：上一轮的产物会残留在 checkpoint 里。
-  // 后续 routed to qa 的普通轮即使带着旧值，也不得再次落库（否则覆盖用户
-  // 在报告页的手动编辑）。门槛：本轮 intent 必须就是 race_strategy。
-  let saves = 0;
-  const app = createApp({
-    jwtVerifier,
-    coachInvoker: {
-      async invoke() {
-        return { messages: [{ type: "ai", content: "不客气！" }], intent: { intent: "training_question" }, raceStrategy: strategy };
-      },
-      streamEvents: neverStream,
-    },
-    raceStrategyWriter: {
-      async saveRaceStrategy() {
-        saves += 1;
-        return true;
-      },
-    },
-  });
-
-  const response = await postChat(app, { target: raceTarget() });
-  assert.equal(response.status, 200);
-  const body = (await response.json()) as Record<string, unknown>;
-  assert.equal(body.race_strategy, undefined);
-  assert.equal(body.race_strategy_saved, undefined);
-  assert.equal(saves, 0);
 });

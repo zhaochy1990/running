@@ -35,6 +35,17 @@
       >
         <view class="coach-msg__bubble">
           <text wx:if="{{item.role === 'user'}}" user-select="true">{{item.content}}</text>
+          <!-- 结构化产物（done.card 经 utils/coachCards 翻译）：通知卡片替代 markdown 正文 -->
+          <coach-card
+            wx:elif="{{item.card}}"
+            icon="{{item.card.icon}}"
+            title="{{item.card.title}}"
+            subtitle="{{item.card.subtitle}}"
+            badge="{{item.card.badge}}"
+            buttonText="{{item.card.buttonText}}"
+            data-id="{{item.id}}"
+            bindopen="onCardOpen"
+          />
           <mp-html
             wx:else
             id="md-{{item.id}}"

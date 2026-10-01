@@ -1,8 +1,11 @@
-// 比赛策略报告页 —— #396。教练生成初稿（race_strategy 落库）后：
+// 比赛策略报告页 —— #396。两种进入形态：
+//   已保存：GET race_strategy 渲染最新版，编辑经 hero 区保存（覆盖最新版）。
+//   草稿（draft）：教练聊天卡片 tap 时经 setPendingStrategyDraft 交接的初稿，
+//     本地渲染（编辑同样可用），底部「应用并保存」= PUT 落库；应用前服务端
+//     没有这版策略（教练生成不再自动落库）。
 // 五列配速表（配速/说明可编辑，用时=距离×配速自动算）+ 逐行补给（可增删）+
-// 赛道/天气提示；hero 主按钮「和教练聊一聊比赛策略」带 race target 回教练 tab，
-// 次要「分享」（onShareAppMessage）与「配速卡」（canvas 海报 → 预览长按保存）；
-// 「设为目标」以 race_goal 预填确认。视图变换在 utils/raceStrategyRows（配套自检）。
+// 赛道/天气提示；hero 次要「分享」（onShareAppMessage）与「配速卡」（canvas
+// 海报）；「设为目标」以 race_goal 预填确认。视图变换在 utils/raceStrategyRows。
 
 import { ApiError } from '../../../services/request';
 import { getRaceDetail, type RaceDetail } from '../../../services/race-center';
@@ -10,6 +13,7 @@ import {
   getRaceStrategy,
   postTrainingGoal,
   saveRaceStrategy,
+  takePendingStrategyDraft,
   type RaceStrategy,
 } from '../../../services/race-strategy';
 import {
@@ -33,8 +37,11 @@ interface StrategyPageData {
   error: string;
   view: StrategyView | null;
   raceDayText: string;
+  /** 草稿模式：教练聊天卡片交接的初稿，未落库（底部「应用并保存」）。 */
+  draft: boolean;
   dirty: boolean;
   saving: boolean;
+  applying: boolean;
   updatedAtText: string;
   goalAvailable: boolean;
   goalSheetOpen: boolean;
@@ -59,6 +66,8 @@ interface StrategyPageHandlers {
   onFuelingAdd(): void;
   onFuelingRemove(e: WechatMiniprogram.TouchEvent): void;
   onSaveTap(): void;
+  /** 草稿模式底部主按钮：PUT 落库并转已保存态。 */
+  onApplyTap(): void;
   onPosterTap(): void;
   onGoalTap(): void;
   onGoalSheetClose(): void;
@@ -67,6 +76,8 @@ interface StrategyPageHandlers {
   _raceId: number;
   _detail: RaceDetail | null;
   _base: RaceStrategy | null;
+  /** 草稿模式的初稿本体（应用时作为 fromStrategyView 的 base）。 */
+  _draftStrategy: RaceStrategy | null;
 }
 
 function statusBarHeight(): number {
@@ -92,8 +103,10 @@ Page<StrategyPageData, StrategyPageHandlers>({
     error: '',
     view: null,
     raceDayText: '',
+    draft: false,
     dirty: false,
     saving: false,
+    applying: false,
     updatedAtText: '',
     goalAvailable: false,
     goalSheetOpen: false,
@@ -106,6 +119,8 @@ Page<StrategyPageData, StrategyPageHandlers>({
   _raceId: 0,
   _detail: null,
   _base: null,
+  /** 草稿模式的初稿本体（应用时作为 fromStrategyView 的 base）。 */
+  _draftStrategy: null,
 
   onLoad(options) {
     const id = Number(options.id);
@@ -115,6 +130,9 @@ Page<StrategyPageData, StrategyPageHandlers>({
       return;
     }
     this._raceId = id;
+    // 教练聊天卡片交接的草稿（raceId 匹配才消费）：进草稿模式。
+    const pending = takePendingStrategyDraft(id);
+    this._draftStrategy = pending?.strategy ?? null;
     void this.refresh();
   },
 
@@ -124,6 +142,30 @@ Page<StrategyPageData, StrategyPageHandlers>({
       return;
     }
     this.setData({ loading: true, error: '' });
+    const draft = this._draftStrategy;
+    if (draft) {
+      // 草稿模式：跳过 GET（服务端没有这版），只取赛事元信息（比赛日/目标预填）。
+      try {
+        const detail = await getRaceDetail(this._raceId);
+        this._detail = detail;
+        this._base = draft;
+        const view = toStrategyView(draft);
+        this.setData({
+          loading: false,
+          error: '',
+          view,
+          draft: true,
+          raceDayText: raceDayLabel(detail.race_date),
+          dirty: false,
+          updatedAtText: '',
+          goalAvailable: goalPrefill(view, detail.race_date, detail.city) !== null,
+        });
+      } catch {
+        this.setData({ loading: false, error: '加载失败，请稍后重试' });
+      }
+      return;
+    }
+    // 已保存态：赛事详情 + 最新策略双请求。
     try {
       const [detail, strategyRes] = await Promise.all([
         getRaceDetail(this._raceId),
@@ -136,6 +178,7 @@ Page<StrategyPageData, StrategyPageHandlers>({
         loading: false,
         error: '',
         view,
+        draft: false,
         raceDayText: raceDayLabel(detail.race_date),
         dirty: false,
         updatedAtText: timeLabel(strategyRes.updated_at),
@@ -253,6 +296,34 @@ Page<StrategyPageData, StrategyPageHandlers>({
       wx.showToast({ title: '保存失败，请重试', icon: 'none' });
     } finally {
       this.setData({ saving: false });
+    }
+  },
+
+  /**
+   * 草稿模式底部主按钮：把教练初稿（含本页编辑）PUT 落库，转已保存态。
+   * 应用前服务端没有这版策略；不应用直接离开 = 放弃初稿（可重新生成）。
+   */
+  async onApplyTap() {
+    const view = this.data.view;
+    const base = this._base;
+    if (!view || !base || this.data.applying) return;
+    this.setData({ applying: true });
+    try {
+      const res = await saveRaceStrategy(this._raceId, {
+        item_type: view.itemType,
+        content: fromStrategyView(view, base),
+      });
+      this._draftStrategy = null;
+      this.setData({
+        draft: false,
+        dirty: false,
+        updatedAtText: timeLabel(res.updated_at),
+      });
+      wx.showToast({ title: '已应用', icon: 'success' });
+    } catch {
+      wx.showToast({ title: '应用失败，请重试', icon: 'none' });
+    } finally {
+      this.setData({ applying: false });
     }
   },
 
