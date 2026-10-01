@@ -88,7 +88,7 @@ type raceStrategyVersionDTO struct {
 // raceStrategyListDTO is the GET response: every version the runner saved for
 // this race, ordered fastest goal first. Empty list means "not generated yet".
 type raceStrategyListDTO struct {
-	RaceID     uint64                  `json:"race_id"`
+	RaceID     uint64                   `json:"race_id"`
 	Strategies []raceStrategyVersionDTO `json:"strategies"`
 }
 
