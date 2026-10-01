@@ -35,13 +35,29 @@ export function formatDuration(sec: number): string {
 /** 分段配速表的可编辑行：segment/pace/note 手动编辑；times 自动算（距离已知时）。 */
 export interface PaceRowView {
   index: number;
+  /** 原始分段名（保存体往返用；模型可能写「0–3km 外滩起跑（…）」长描述）。 */
   segment: string;
+  /** 分段名里的距离短标签（「0–3km」），无距离前缀时回落整段名。 */
+  distance: string;
+  /** 分段名去掉距离后的描述（「外滩起跑（…）」），可为空。 */
+  desc: string;
   /** 距离 km；null=教练未给出（用时保持文本态，不自动换算）。 */
   distanceKm: number | null;
   pace: string;
   segmentTime: string;
   cumulativeTime: string;
   note: string;
+}
+
+/**
+ * 拆分段名：模型常把地形/位置描述写进 segment（「0–3km 外滩起跑（中山东一
+ * 路→新开河路收窄段）」），表格里距离列只放短标签，描述另起一行小字。
+ * 匹配不到距离前缀时 distance=整段名、desc 为空（不丢内容）。
+ */
+export function splitSegmentName(segment: string): { distance: string; desc: string } {
+  const m = /^([0-9]+(?:[.,][0-9]+)?\s*[–~\-—]+\s*[0-9]+(?:[.,][0-9]+)?\s*(?:km|公里)?|[0-9]+(?:[.,][0-9]+)?\s*(?:km|公里))\s*[：:、]?\s*(.*)$/i.exec(segment.trim());
+  if (m === null) return { distance: segment.trim(), desc: '' };
+  return { distance: m[1].replace(/\s+/g, ' ').trim(), desc: m[2].trim() };
 }
 
 /** 补给计划的可编辑行。 */
@@ -84,6 +100,7 @@ export function toStrategyView(strategy: RaceStrategy): StrategyView {
   const paceRows: PaceRowView[] = strategy.pace_segments.map((seg: RacePaceSegment, i) => ({
     index: i,
     segment: seg.segment,
+    ...splitSegmentName(seg.segment),
     distanceKm: seg.distance_km ?? null,
     pace: seg.pace,
     segmentTime: seg.segment_time,

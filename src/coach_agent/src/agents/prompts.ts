@@ -40,6 +40,7 @@ export const RACE_STRATEGY_PROMPT = `你是 STRIDE 跑步教练的比赛策略�
 4. 完成分析后通过结构化输出提交 { disposition: "return_direct", content: RaceStrategy }；content 是完整比赛策略，不要输出 Markdown。要求：
    - target_finish_time 与基线（能力 L4 全马/半马估计、race_predictions）一致：目标应落在基线附近、最多进取 2–3%。
    - pace_segments 覆盖全程（分段连续、总距离≈项目距离），本段用时=距离×配速，累计用时逐行相加并与 target_finish_time 吻合（±30 秒）；说明列写本段意图（稳住/顶坡/进站补给/最后冲刺）。
+   - segment 只写距离短标签（如 "0–10 km"、"30–35 km"），地形/位置等描述一律写进该行 note——客户端表格的分段列很窄，长分段名会破坏排版。
    - fueling_plan 按时间点逐行（赛前/各补给站/关键节点），结合赛道 aid_stations 与气候。
    - course_tips/weather_tips 各写 2–4 条，必须来自第 2 步的赛事内容，不得泛泛而谈。
    - basis_note 一句话说明依据与缺口。

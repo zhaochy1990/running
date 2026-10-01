@@ -5,6 +5,7 @@
  * 分享标题、「设为目标」的距离映射与预填。
  */
 import type { RaceStrategy } from '../services/race-strategy.ts';
+import { splitSegmentName } from './raceStrategyRows.ts';
 import {
   formatDuration,
   formatPace,
@@ -90,4 +91,23 @@ eq(
   'goal prefill',
 );
 
+
+
+// 分段名拆分：距离短标签 + 描述（长分段名是模型真实行为）；无距离前缀回落整段
+{
+  const a = splitSegmentName('0–3km 外滩起跑（中山东一路→新开河路收窄段）');
+  eq(a.distance, '0–3km', 'split distance');
+  eq(a.desc, '外滩起跑（中山东一路→新开河路收窄段）', 'split desc');
+  eq(splitSegmentName('0–10 km').desc, '', 'distance-only segment');
+  eq(splitSegmentName('起点热身段').distance, '起点热身段', 'no-prefix fallback keeps whole');
+  eq(splitSegmentName('10–21.1 km 龙华折返').distance, '10–21.1 km', 'km with space');
+  // 视图往返：编辑回收时 distance+desc 合并回 segment，内容无损
+  const base2: RaceStrategy = { ...strategy, pace_segments: [
+    { ...strategy.pace_segments[0], segment: '0–3km 外滩起跑（收窄段）', note: '稳住' },
+  ] };
+  const v2 = toStrategyView(base2);
+  const back = fromStrategyView(v2, base2);
+  eq(back.pace_segments[0].segment, '0–3km 外滩起跑（收窄段）', 'roundtrip keeps composed segment');
+  eq(back.pace_segments[0].note, '稳住', 'roundtrip note');
+}
 console.log('raceStrategyRows self-check passed');

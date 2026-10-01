@@ -51,21 +51,29 @@
           <view class="pace__pace">配速</view>
           <view class="pace__time">本段</view>
           <view class="pace__time">累计</view>
-          <view class="pace__note">说明</view>
         </view>
-        <view class="pace" wx:for="{{view.paceRows}}" wx:for-item="row" wx:key="index">
-          <view class="pace__seg">{{row.segment}}</view>
-          <input
-            class="pace__cell pace__cell--edit"
-            value="{{row.pace}}"
-            data-index="{{index}}"
-            bindblur="onPaceBlur"
-          />
-          <view class="pace__time">{{row.segmentTime}}</view>
-          <view class="pace__time">{{row.cumulativeTime}}</view>
-          <input
-            class="pace__cell pace__cell--edit pace__note"
+        <!-- 行结构：距离短标签 + 配速/用时（一行）；分段描述与说明为长文，
+             各占整行小字（textarea 自适应高度，可编辑换行，不再截断） -->
+        <view class="pace-row" wx:for="{{view.paceRows}}" wx:for-item="row" wx:key="index">
+          <view class="pace">
+            <view class="pace__seg">
+              <view class="pace__seg-dist">{{row.distance}}</view>
+              <view wx:if="{{row.desc}}" class="pace__seg-desc">{{row.desc}}</view>
+            </view>
+            <input
+              class="pace__cell pace__cell--edit pace__pace"
+              value="{{row.pace}}"
+              data-index="{{index}}"
+              bindblur="onPaceBlur"
+            />
+            <view class="pace__time">{{row.segmentTime}}</view>
+            <view class="pace__time">{{row.cumulativeTime}}</view>
+          </view>
+          <textarea
+            class="pace__cell--edit pace__note"
+            auto-height
             value="{{row.note}}"
+            placeholder="说明（稳住/进站/顶坡…）"
             data-index="{{index}}"
             bindblur="onNoteBlur"
           />
