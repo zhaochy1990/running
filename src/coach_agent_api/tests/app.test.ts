@@ -693,6 +693,46 @@ test("history returns an empty list when the thread has no checkpoint", async ()
   });
 });
 
+test("history restores the card envelope on the artifact turn and stays plain on later turns", async () => {
+  // 信封挂在策略消息自身随 checkpoint 持久化：重开会话按行恢复卡片，后续
+  // 普通轮（如「谢谢」）的行保持纯文本，多策略会话逐张保真。
+  const envelope = { $type: "race-strategy", data: { race_name: "杭州马拉松", pace_segments: [{ segment: "0–10 km" }] } };
+  const app = createApp({
+    jwtVerifier: {
+      async verify() {
+        return { userId: "athlete-1", isAdmin: false };
+      },
+    },
+    coachInvoker: {
+      async invoke() {
+        throw new Error("must not invoke");
+      },
+      streamEvents: neverStream,
+    },
+    checkpointer: stubCheckpointer([
+      { type: "human", content: '{"timestamp":"2026-10-01T20:00:00+08:00","message":"帮我制定策略"}' },
+      { type: "ai", content: "初稿如下……", additional_kwargs: { card: envelope } },
+      { type: "human", content: '{"timestamp":"2026-10-01T20:05:00+08:00","message":"谢谢"}' },
+      { type: "ai", content: "不客气！" },
+    ]),
+  });
+  const response = await app.request("/api/users/me/coach/sessions/session-3/messages", {
+    method: "GET",
+    headers: { authorization: "Bearer signed" },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    session_id: "session-3",
+    thread_id: "athlete-1:coach:session-3",
+    messages: [
+      { role: "user", content: "帮我制定策略" },
+      { role: "assistant", content: "初稿如下……", card: envelope },
+      { role: "user", content: "谢谢" },
+      { role: "assistant", content: "不客气！" },
+    ],
+  });
+});
+
 test("history rejects an invalid session id", async () => {
   const app = createApp({
     jwtVerifier: {

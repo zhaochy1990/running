@@ -31,11 +31,11 @@ export function tryToPublicResponse(result: unknown): Record<string, unknown> | 
   if (message === undefined) return undefined;
   const text = textContent(message.content);
   if (text === undefined) return undefined;
-  // 本轮 intent 命中的结构化产物以 card 信封下发（`$type` = 客户端渲染器注册
-  // 表 key，客户端据此渲染通知卡片并引导去专属页面查看/应用）。只在**本轮**
-  // intent 命中时投影——state channel 跨轮持久，无此门槛时一个残留的旧产物
-  // 会在后续普通轮（如 routed to qa 的「谢谢」）反复下发。
-  const card = projectCard(result);
+  // 结构化产物以 card 信封下发（`$type` = 客户端渲染器注册表 key，客户端据此
+  // 渲染通知卡片并引导去专属页面查看/应用）。信封由业务节点挂在回复消息自身
+  // （additional_kwargs.card）随 checkpoint 持久化，这里按消息投影——天然只
+  // 属于产生它的那一轮，不需要 state channel + intent 的跨轮门槛。
+  const card = cardFromMessage(message);
   return {
     status: "completed",
     message: text,
@@ -44,19 +44,14 @@ export function tryToPublicResponse(result: unknown): Record<string, unknown> | 
 }
 
 /**
- * intent → card 投影注册表：`channel` 是业务节点回填结构化产物的 state
- * channel，`$type` 是双端约定的渲染器 key（kebab-case）。未来 weekly-plan /
- * master-plan 接入时各加一行。
+ * 消息上的 card 信封（`{$type, data}`，由业务节点的 *Message 工厂挂上）。
+ * 只做形状检查：data 已在节点侧经 zod 校验，checkpoint 往返是 JSON 安全的。
  */
-const CARD_BY_INTENT: Record<string, { $type: string; channel: string }> = {
-  race_strategy: { $type: "race-strategy", channel: "raceStrategy" },
-};
-
-function projectCard(result: Record<string, unknown>): Record<string, unknown> | undefined {
-  const intent = isRecord(result.intent) && typeof result.intent.intent === "string" ? result.intent.intent : undefined;
-  const spec = intent !== undefined ? CARD_BY_INTENT[intent] : undefined;
-  if (spec === undefined) return undefined;
-  return isRecord(result[spec.channel]) ? { $type: spec.$type, data: result[spec.channel] } : undefined;
+function cardFromMessage(message: Record<string, unknown>): Record<string, unknown> | undefined {
+  const kwargs = isRecord(message.additional_kwargs) ? message.additional_kwargs : undefined;
+  const card = kwargs !== undefined && isRecord(kwargs.card) ? kwargs.card : undefined;
+  if (card === undefined) return undefined;
+  return typeof card.$type === "string" && card.$type.length > 0 && isRecord(card.data) ? card : undefined;
 }
 
 /** The assistant message that carries the reply: the last one with no tool calls. */
@@ -143,6 +138,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export interface SessionHistoryMessage {
   role: "user" | "assistant";
   content: string;
+  /** 结构化产物信封（`{$type, data}`）：卡片功能上线后的 assistant 行可带，客户端恢复通知卡片。 */
+  card?: Record<string, unknown>;
 }
 
 /**
@@ -151,6 +148,8 @@ export interface SessionHistoryMessage {
  * assistant messages that still carry tool calls are intermediate graph steps
  * and are skipped. User messages were stored JSON-wrapped
  * (`{ timestamp, message }`, see routes/chat.ts), so we unwrap to the raw text.
+ * The card envelope rides on the assistant message itself (see cardFromMessage),
+ * so every artifact turn keeps its card across turns and restarts.
  */
 export function toPublicHistory(messages: unknown[]): SessionHistoryMessage[] {
   const out: SessionHistoryMessage[] = [];
@@ -161,7 +160,9 @@ export function toPublicHistory(messages: unknown[]): SessionHistoryMessage[] {
     }
     if (isAssistantMessage(message) && !hasToolCalls(message)) {
       const text = textContent(message.content);
-      if (text !== undefined) out.push({ role: "assistant", content: text });
+      if (text === undefined) continue;
+      const card = cardFromMessage(message);
+      out.push(card !== undefined ? { role: "assistant", content: text, card } : { role: "assistant", content: text });
     }
   }
   return out;

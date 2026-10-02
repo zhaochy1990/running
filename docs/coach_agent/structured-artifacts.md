@@ -17,7 +17,7 @@ done = { turn_id, status, message, card? }
 | 通道 | 形态 | 职责 |
 |---|---|---|
 | `message` | string（markdown） | 永远存在：历史回看、旧版本客户端、无卡片时的降级渲染 |
-| `card` | `{ $type, data }` 信封 | 可选：本轮 intent 命中的结构化产物，客户端渲染通知卡片 |
+| `card` | `{ $type, data }` 信封 | 可选：本轮产出的结构化产物（挂在回复消息上），客户端渲染通知卡片 |
 
 任一端版本落后都不劣化：新后端 + 旧客户端 → 客户端读 `message`（完整
 markdown 渲染）；旧后端 + 新客户端 → 没有 `card`，同样走 markdown 渲染器。
@@ -29,15 +29,19 @@ markdown 渲染）；旧后端 + 新客户端 → 没有 `card`，同样走 mark
 
 `$type` 是双端约定的渲染器 key（kebab-case），等于客户端注册表的入口：
 
-| `$type` | 后端投影（coach_agent_api `publicResponse.ts` 的 `CARD_BY_INTENT`） | 前端注册表（小程序 `utils/coachCards.ts`） |
+| `$type` | 后端挂载（业务节点 `*Message` 工厂） | 前端注册表（小程序 `utils/coachCards.ts`） |
 |---|---|---|
-| `race-strategy` | `race_strategy` intent → `raceStrategy` channel | 图标/文案/路由 → 报告页 |
-| `weekly-plan`（未来） | `weekly_plan` intent → channel | → 周计划页草稿态 |
-| `master-plan`（未来） | `master_plan` intent → channel | → 计划审阅页 |
+| `race-strategy` | `raceStrategyMessage` 挂 `additional_kwargs.card` | 图标/文案/路由 → 报告页 |
+| `weekly-plan`（未来） | 同上 | → 周计划页草稿态 |
+| `master-plan`（未来） | 同上 | → 计划审阅页 |
 
-投影门槛是**双保险**（纵深防御）：orchestrator 每轮把 channel 清零是主闸
-（防上一轮产物跨轮残留），投影时再校验「本轮 intent 命中 + channel 有值」
-兜住异常路径（如中断轮恢复）——两层缺一不可但动机不同。
+**信封随消息持久化**：业务节点把 `{$type, data}` 挂在产生它的回复消息自身
+（`additional_kwargs.card`），随 checkpoint（MySQL）落库。coach_agent_api 的
+done 投影（`toPublicResponse`）与历史投影（`toPublicHistory`）都经
+`cardFromMessage` 按消息读取。按消息投影天然只属于产生它的那一轮——不需要
+「state channel 每轮清零 + intent 命中」的双门槛；历史接口按行带出信封，
+重开会话恢复全部卡片（多策略会话逐张保真）；崩溃恢复（`recoverTurn` 只回放
+messages）也自动带出卡片。
 
 ## 3. 草稿 → 查看 → 应用（落库语义）
 
@@ -89,12 +93,13 @@ content: {...} }` 信封 JSON 当正文文本输出（2026-09 在 deepseekv4flas
    小程序 `services/` 手工镜像 interface（仓内惯例）。
 2. 业务节点：仿 `agents/race_strategy/node.ts`——内层 agent 用
    `ToolStrategy.fromSchema` 结构化输出，节点把产物渲染 markdown 进
-   `message`（历史/降级用）+ 写专属 state channel（orchestrator 每轮清零
-   防 cross-turn 残留）。**不要**用 `masterPlanPassthrough` 的
-   `JSON.stringify` 直出路线（那正是把原始 JSON 打进气泡的源头）。
-3. 投影：`coach_agent_api/src/publicResponse.ts` 的 `CARD_BY_INTENT`
-   加一行（intent → channel → `$type`）。落库端点按需（有专属页面编辑
-   才需要，见第 3 节语义）。
+   `message`（历史/降级用），`*Message` 工厂同时把 `{$type, data}` 信封挂
+   到消息 `additional_kwargs.card`（done 与历史投影都从消息读，见第 2 节）。
+   **不要**用 `masterPlanPassthrough` 的 `JSON.stringify` 直出路线（那正是
+   把原始 JSON 打进气泡的源头）。
+3. 投影：无需注册——coach_agent_api 按消息上的信封统一投影（done +
+   历史，`cardFromMessage`），openapi 复用 `CardEnvelope` 组件。落库端点
+   按需（有专属页面编辑才需要，见第 3 节语义）。
 
 **前端 2 步**：
 
@@ -106,8 +111,7 @@ content: {...} }` 信封 JSON 当正文文本输出（2026-09 在 deepseekv4flas
 
 ## 6. 已知限制
 
-- 服务端会话历史只存文本（`toPublicHistory`）：卡片仅存在于当轮与本地
-  消息缓存；重开会话依赖历史自愈（race-strategy）或 markdown 兜底。若
-  未来需要历史保真，需把 card 信封存进 checkpoint 消息 metadata。
+- 历史保真已落地（信封随消息落 checkpoint，2026-10）：卡片功能上线**前**的
+  旧会话仍只有文本（markdown 渲染或 JSON 泄漏自愈），不追溯转换。
 - 聊天页卡片是通知型轻卡；完整视图永远在专属页面（报告页/计划页）。
 - Web 端（`frontend/`）未接入（其 chat 类型仍镜像废弃的 Python 契约）。

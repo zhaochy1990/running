@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { warnOnDegradedReply } from "../src/publicResponse.js";
+import { toPublicHistory, toPublicResponse, warnOnDegradedReply } from "../src/publicResponse.js";
 
 const MAX_TOKENS = 16384;
 
@@ -36,4 +36,44 @@ test("an unset max_tokens disables the budget check but not the empty-reply chec
   const usage = { output_tokens: 99999 };
   assert.equal(warnOnDegradedReply({ messages: [ai("答案", usage)] }, 0, {}), null);
   assert.equal(warnOnDegradedReply({ messages: [ai("", usage)] }, 0, {}), "empty_reply");
+});
+
+// ── card 信封投影（信封挂在回复消息自身，见 docs/coach_agent/structured-artifacts.md §2）──
+
+const envelope = { $type: "race-strategy", data: { race_name: "杭州马拉松", pace_segments: [{ segment: "0–10 km" }] } };
+
+function cardAi(content: string) {
+  return { _getType: () => "ai", content, additional_kwargs: { card: envelope } };
+}
+
+test("toPublicResponse projects the card from the reply message itself (checkpoint-recovery shape)", () => {
+  // recoverTurn 只回放 messages（无 intent/channel）——信封在消息上才不丢。
+  const response = toPublicResponse({ messages: [cardAi("初稿如下……")] });
+  assert.deepEqual(response, { status: "completed", message: "初稿如下……", card: envelope });
+});
+
+test("toPublicResponse omits the card when the reply message carries none", () => {
+  const response = toPublicResponse({ messages: [ai("不客气！")] });
+  assert.deepEqual(response, { status: "completed", message: "不客气！" });
+});
+
+test("a malformed card envelope is dropped, not forwarded", () => {
+  const bad = { _getType: () => "ai", content: "初稿", additional_kwargs: { card: { $type: "", data: {} } } };
+  assert.deepEqual(toPublicResponse({ messages: [bad] }), { status: "completed", message: "初稿" });
+});
+
+test("toPublicHistory restores cards per artifact turn and keeps legacy rows plain text", () => {
+  const wrapped = (text: string) => JSON.stringify({ timestamp: "2026-10-01T20:00:00+08:00", message: text });
+  const history = toPublicHistory([
+    { type: "human", content: wrapped("帮我制定策略") },
+    cardAi("初稿如下……"),
+    { type: "human", content: wrapped("谢谢") },
+    ai("不客气！"),
+  ]);
+  assert.deepEqual(history, [
+    { role: "user", content: "帮我制定策略" },
+    { role: "assistant", content: "初稿如下……", card: envelope },
+    { role: "user", content: "谢谢" },
+    { role: "assistant", content: "不客气！" },
+  ]);
 });

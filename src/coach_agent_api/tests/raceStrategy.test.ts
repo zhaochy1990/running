@@ -41,12 +41,21 @@ async function postChat(app: ReturnType<typeof createApp>, body: Record<string, 
   });
 }
 
+/** raceStrategyMessage() 产出形态的 plain-object 镜像（消息自身挂信封）。 */
+function strategyReply(): { type: string; content: string; additional_kwargs: Record<string, unknown> } {
+  return {
+    type: "ai",
+    content: "初稿如下……",
+    additional_kwargs: { card: { $type: "race-strategy", data: strategy } },
+  };
+}
+
 test("chat projects a race-strategy artifact as a typed card", async () => {
   const app = createApp({
     jwtVerifier,
     coachInvoker: {
       async invoke() {
-        return { messages: [{ type: "ai", content: "初稿如下……" }], intent: { intent: "race_strategy" }, raceStrategy: strategy };
+        return { messages: [strategyReply()] };
       },
       streamEvents: neverStream,
     },
@@ -67,7 +76,7 @@ test("chat projects the card regardless of turn target (display artifact, not pe
     jwtVerifier,
     coachInvoker: {
       async invoke() {
-        return { messages: [{ type: "ai", content: "初稿如下……" }], intent: { intent: "race_strategy" }, raceStrategy: strategy };
+        return { messages: [strategyReply()] };
       },
       streamEvents: neverStream,
     },
@@ -80,9 +89,9 @@ test("chat projects the card regardless of turn target (display artifact, not pe
 });
 
 test("chat does not project a stale strategy on a later plain turn", async () => {
-  // raceStrategy 是跨轮 state channel：上一轮的产物会残留在 checkpoint 里。
-  // 后续 routed to qa 的普通轮即使带着旧值，也不得再下发卡片。门槛：本轮
-  // intent 必须就是 race_strategy。
+  // 信封按消息投影：普通轮（routed to qa 的「谢谢」）的回复消息自身不带
+  // additional_kwargs.card，即使 checkpoint 里残留旧的 raceStrategy channel
+  // 也不得下发卡片。
   const app = createApp({
     jwtVerifier,
     coachInvoker: {

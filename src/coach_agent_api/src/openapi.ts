@@ -409,6 +409,17 @@ export const OPENAPI_DOCUMENT = {
         properties: {
           role: { type: "string", enum: ["user", "assistant"] },
           content: { type: "string" },
+          card: { $ref: "#/components/schemas/CardEnvelope" },
+        },
+        additionalProperties: false,
+      },
+      CardEnvelope: {
+        type: "object",
+        description: "结构化产物信封，挂在产生它的 assistant 消息上（随 checkpoint 持久化）。done 响应与历史行共用。",
+        required: ["$type", "data"],
+        properties: {
+          $type: { type: "string", description: "双端约定的渲染器 key（kebab-case），如 race-strategy。" },
+          data: { type: "object", description: "产物本体，形状由 $type 决定（节点侧已 zod 校验）。" },
         },
         additionalProperties: false,
       },
@@ -418,6 +429,7 @@ export const OPENAPI_DOCUMENT = {
         properties: {
           status: { type: "string", const: "completed" },
           message: { type: "string" },
+          card: { $ref: "#/components/schemas/CardEnvelope" },
           session_id: { $ref: "#/components/schemas/TurnIdentifier" },
           client_turn_id: { $ref: "#/components/schemas/TurnIdentifier" },
         },

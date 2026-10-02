@@ -59,9 +59,18 @@ export function extractRaceStrategyResult(result: unknown): RaceStrategy | undef
   return envelope.content as RaceStrategy;
 }
 
-/** 结构化产物落进会话消息的形态（AIMessage，不再经任何模型改写）。 */
+/**
+ * 结构化产物落进会话消息的形态（AIMessage，不再经任何模型改写）。
+ *
+ * card 信封挂在消息自身（additional_kwargs）随 checkpoint 持久化：messages
+ * 通道按会话累积，历史接口与崩溃恢复（recoverTurn）都从消息投影信封，卡片
+ * 因此跨轮、跨重启保真——不依赖每轮被 orchestrator 清空的 state channel。
+ */
 export function raceStrategyMessage(strategy: RaceStrategy): AIMessage {
-  return new AIMessage({ content: renderRaceStrategyMarkdown(strategy) });
+  return new AIMessage({
+    content: renderRaceStrategyMarkdown(strategy),
+    additional_kwargs: { card: { $type: "race-strategy", data: strategy } },
+  });
 }
 
 /**
