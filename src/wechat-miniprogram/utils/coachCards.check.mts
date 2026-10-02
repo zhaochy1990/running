@@ -37,7 +37,7 @@ const raceTarget = { kind: 'race', race_event_id: 30, item_type: 'Marathon' } as
   eq(view.title, '比赛策略已生成', 'card title');
   eq(view.subtitle, '杭州马拉松 · 目标 3:59:59，含 1 段配速与补给计划', 'card subtitle');
   eq(view.badge, '初稿', 'card badge');
-  eq(view.buttonText, '查看并应用', 'card cta');
+  eq(view.buttonText, '查看详情', 'card cta');
   eq(view.url, '/pages/race-center/strategy/strategy?id=30', 'card url');
   eq(view.data, strategy, 'card data');
   eq(view.icon, '/assets/icons/flag.svg', 'card icon');

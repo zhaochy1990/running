@@ -116,6 +116,17 @@
   margin: 8rpx 0 16rpx;
 }
 .hero__target {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 40rpx;
+}
+.hero__stat {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+}
+.hero__stat-label {
   font-size: 26rpx;
   color: #b9b9bc;
 }
@@ -125,39 +136,44 @@
   color: #d8ff3e;
   margin-left: 8rpx;
 }
+.hero__time--pace {
+  color: #f2f2f3;
+}
 .hero__summary {
   font-size: 26rpx;
   color: #b9b9bc;
   margin-top: 16rpx;
   line-height: 1.6;
 }
+/* 一行三按钮：主按钮占双列，次级平分剩余 */
 .hero__actions {
-  margin-top: 20rpx;
   margin-top: 28rpx;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 16rpx;
 }
 .hero__btn {
   margin: 0;
+  padding: 0;
   border-radius: 12rpx;
   font-size: 28rpx;
   line-height: 84rpx;
-  padding: 0;
+  white-space: nowrap;
+}
+/* 原生 button 的 ::after 默认描边会在深色卡上露出灰边，必须抹掉才是主题的扁平按钮 */
+.hero__btn::after {
+  border: none;
 }
 .hero__btn--lead {
-  background: #d8ff3e;
+  flex: 2;
+  background: #ff6363;
   color: #101111;
   font-weight: 600;
 }
 .hero__btn--minor {
+  flex: 1;
   background: rgba(255, 255, 255, 0.08);
   color: #f2f2f3;
-  flex: 1;
-}
-.hero__row {
-  display: flex;
-  gap: 16rpx;
 }
 
 /* 分段配速表 */
@@ -224,18 +240,28 @@
 }
 
 /* 补给 */
+/* 补给计划（行结构同分段配速表）：时间点行首短值，内容整行换行不截断 */
+.fuel-row {
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
 .fuel {
   display: flex;
   align-items: center;
   gap: 12rpx;
-  padding: 12rpx 0;
-  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
 }
 .fuel__when {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  font-weight: 600;
 }
 .fuel__what {
-  flex: 2;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  line-height: 30rpx;
+  color: #b9b9bc;
 }
 .fuel__del {
   width: 48rpx;

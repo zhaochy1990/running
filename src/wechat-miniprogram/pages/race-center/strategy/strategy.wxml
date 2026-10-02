@@ -32,14 +32,21 @@
           <text>{{raceDayText}} · {{view.itemTypeLabel}}</text>
         </view>
         <view class="hero__name">{{view.raceName}}</view>
-        <view class="hero__target">目标 <text class="hero__time">{{view.targetTime}}</text></view>
+        <view class="hero__target">
+          <view class="hero__stat">
+            <text class="hero__stat-label">目标成绩</text>
+            <text class="hero__time">{{view.targetTime}}</text>
+          </view>
+          <view wx:if="{{view.targetPace}}" class="hero__stat">
+            <text class="hero__stat-label">目标配速</text>
+            <text class="hero__time hero__time--pace">{{view.targetPace}}</text>
+          </view>
+        </view>
         <view class="hero__summary">{{view.summary}}</view>
         <view class="hero__actions">
           <button class="hero__btn hero__btn--lead" bindtap="onCoachTap">和教练聊一聊比赛策略</button>
-          <view class="hero__row">
-            <button class="hero__btn hero__btn--minor" open-type="share">分享</button>
-            <button class="hero__btn hero__btn--minor" bindtap="onPosterTap">配速卡</button>
-          </view>
+          <button class="hero__btn hero__btn--minor" open-type="share">分享</button>
+          <button class="hero__btn hero__btn--minor" bindtap="onPosterTap">配速卡</button>
         </view>
       </view>
 
@@ -92,25 +99,29 @@
         </view>
       </view>
 
-      <!-- 补给计划：逐行可编辑 + 增删 -->
+      <!-- 补给计划：逐行可编辑 + 增删。行结构同分段配速表：时间点为行首
+           短值（可编辑），内容是长文整行 textarea 自适应换行，不再截断 -->
       <view class="card">
         <view class="card__title">补给计划<text class="card__hint">时间点｜内容，可增删</text></view>
-        <view class="fuel" wx:for="{{view.fuelingRows}}" wx:for-item="row" wx:key="index">
-          <input
-            class="fuel__when pace__cell--edit"
-            value="{{row.timePoint}}"
-            placeholder="时间点"
-            data-index="{{index}}"
-            bindblur="onFuelingWhenBlur"
-          />
-          <input
+        <view class="fuel-row" wx:for="{{view.fuelingRows}}" wx:for-item="row" wx:key="index">
+          <view class="fuel">
+            <input
+              class="fuel__when pace__cell--edit"
+              value="{{row.timePoint}}"
+              placeholder="时间点"
+              data-index="{{index}}"
+              bindblur="onFuelingWhenBlur"
+            />
+            <view class="fuel__del" data-index="{{index}}" bindtap="onFuelingRemove">✕</view>
+          </view>
+          <textarea
             class="fuel__what pace__cell--edit"
+            auto-height
             value="{{row.content}}"
-            placeholder="内容"
+            placeholder="内容（能量胶 / 水 / 电解质…）"
             data-index="{{index}}"
             bindblur="onFuelingWhatBlur"
           />
-          <view class="fuel__del" data-index="{{index}}" bindtap="onFuelingRemove">✕</view>
         </view>
         <view class="fuel__add" bindtap="onFuelingAdd">+ 添加一条补给</view>
       </view>

@@ -68,7 +68,8 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
       title: '比赛策略已生成',
       subtitle: `${strategy.race_name} · 目标 ${strategy.target_finish_time}，含 ${strategy.pace_segments.length} 段配速与补给计划`,
       badge: '初稿',
-      buttonText: '查看并应用',
+      // 「查看并应用」会让用户以为点击即应用——实际是进报告页查看，应用在报告页内确认
+      buttonText: '查看详情',
       url: raceId
         ? `/pages/race-center/strategy/strategy?id=${raceId}`
         : '/pages/race-center/race-center',

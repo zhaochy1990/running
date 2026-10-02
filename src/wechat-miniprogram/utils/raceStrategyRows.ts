@@ -22,6 +22,33 @@ export function formatPace(sPerKm: number): string {
   return `${m}:${String(s).padStart(2, '0')}/km`;
 }
 
+/** 'h:mm:ss'（<1h 允许 'mm:ss'）→ 秒；解析不了返回 null。 */
+export function parseDuration(text: string): number | null {
+  const m = /^(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$/.exec(text.trim());
+  if (!m) return null;
+  const h = m[3] != null ? Number(m[1]) : 0;
+  const min = m[3] != null ? Number(m[2]) : Number(m[1]);
+  const s = m[3] != null ? Number(m[3]) : Number(m[2]);
+  const sec = h * 3600 + min * 60 + s;
+  return sec > 0 ? sec : null;
+}
+
+/** 项目 token → 标准距离 km（全马/半马/{n}Km）；未知项目返回 null。 */
+export function raceDistanceKm(itemType: string): number | null {
+  if (itemType === 'Marathon') return 42.195;
+  if (itemType === 'HalfMarathon') return 21.0975;
+  const m = /^(\d+(?:\.\d+)?)Km$/.exec(itemType);
+  return m ? Number(m[1]) : null;
+}
+
+/** 目标配速 = 目标成绩 ÷ 项目距离（四舍五入到秒）；任一项解析不了返回 ''。 */
+export function targetPaceLabel(targetTime: string, itemType: string): string {
+  const sec = parseDuration(targetTime);
+  const km = raceDistanceKm(itemType);
+  if (sec == null || km == null || km <= 0) return '';
+  return formatPace(Math.round(sec / km));
+}
+
 /** 秒数 → 'h:mm:ss'（<1h 时 'mm:ss'，与教练口径一致）。 */
 export function formatDuration(sec: number): string {
   const h = Math.floor(sec / 3600);
@@ -73,6 +100,8 @@ export interface StrategyView {
   itemType: string;
   itemTypeLabel: string;
   targetTime: string;
+  /** 目标成绩 ÷ 项目距离（'4:09/km'）；解析不了为 ''（hero 不显示配速）。 */
+  targetPace: string;
   summary: string;
   paceRows: PaceRowView[];
   fuelingRows: FuelingRowView[];
@@ -112,6 +141,7 @@ export function toStrategyView(strategy: RaceStrategy): StrategyView {
     itemType: strategy.item_type,
     itemTypeLabel: typeAbbr(strategy.item_type) || strategy.item_type,
     targetTime: strategy.target_finish_time,
+    targetPace: targetPaceLabel(strategy.target_finish_time, strategy.item_type),
     summary: strategy.summary,
     paceRows: recomputePaceTimes(paceRows),
     fuelingRows: strategy.fueling_plan.map((f, i) => ({

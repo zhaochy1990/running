@@ -10,10 +10,13 @@ import {
   formatDuration,
   formatPace,
   fromStrategyView,
+  parseDuration,
   parsePaceSPerKm,
   raceDayLabel,
+  raceDistanceKm,
   recomputePaceTimes,
   strategyShareTitle,
+  targetPaceLabel,
   toStrategyView,
 } from './raceStrategyRows.ts';
 
@@ -32,6 +35,19 @@ eq(formatPace(340), '5:40/km', 'pace format');
 eq(formatDuration(3450), '57:30', 'duration <1h');
 eq(formatDuration(14399), '3:59:59', 'duration h:mm:ss');
 eq(raceDayLabel('2026-10-18T01:30:00Z'), '2026/10/18', 'race day label');
+
+// 目标配速 = 目标成绩 ÷ 项目距离
+eq(parseDuration('2:55:00'), 10500, 'duration h:mm:ss');
+eq(parseDuration('57:30'), 3450, 'duration mm:ss');
+eq(parseDuration('0:00:00'), null, 'duration 零值');
+eq(parseDuration('2小时55分'), null, 'duration 非数字');
+eq(raceDistanceKm('Marathon'), 42.195, 'distance 全马');
+eq(raceDistanceKm('HalfMarathon'), 21.0975, 'distance 半马');
+eq(raceDistanceKm('10Km'), 10, 'distance 10K');
+eq(raceDistanceKm('未知'), null, 'distance 未知项目');
+eq(targetPaceLabel('2:55:00', 'Marathon'), '4:09/km', 'target pace 全马');
+eq(targetPaceLabel('1:40:00', 'HalfMarathon'), '4:44/km', 'target pace 半马');
+eq(targetPaceLabel('很快', 'Marathon'), '', 'target pace 解析失败回落空');
 
 // 用时=距离×配速 + 累计
 const rows = [
@@ -67,6 +83,7 @@ const strategy: RaceStrategy = {
 };
 const view = toStrategyView(strategy);
 eq(view.itemTypeLabel, '全马', 'item type label 全马');
+eq(view.targetPace, '5:41/km', 'view 目标配速');
 eq(view.paceRows[0].segmentTime, '57:30', 'view 换算');
 view.paceRows[0].pace = '5:40/km';
 view.fuelingRows = view.fuelingRows.filter((r) => r.timePoint || r.content);
