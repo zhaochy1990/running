@@ -147,10 +147,13 @@ test("defensive parse only unwraps a whole-document fence, not embedded code", (
   assert.equal(parseRaceStrategyFromText(`开头正文\n\`\`\`json\n${JSON.stringify(strategy)}\n\`\`\`\n结尾`), undefined);
 });
 
-test("raceStrategyMessage produces a plain AI reply message", () => {
+test("raceStrategyMessage produces a plain AI reply message carrying the card envelope", () => {
   const message = raceStrategyMessage(strategy);
   assert.equal(message._getType(), "ai");
   assert.equal(message.tool_calls?.length ?? 0, 0);
+  // 信封挂消息自身随 checkpoint 持久化：done/历史投影都从 additional_kwargs
+  // 读取（见 coach_agent_api publicResponse），data 与产物本体逐字段一致。
+  assert.deepEqual(message.additional_kwargs.card, { $type: "race-strategy", data: strategy });
 });
 
 interface BaseMessageLike {

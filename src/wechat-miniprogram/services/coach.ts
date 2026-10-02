@@ -289,9 +289,12 @@ export function sendCoachChatStream(
 
 // GET /api/users/me/coach/sessions/{session_id}/messages 的历史行（stride-coach-api）。
 // 只含 user / assistant 两种气泡；assistant 正文即 GFM markdown。
+// card：结构化产物信封（与 done.card 同形），挂在产生它的 assistant 行上，
+// 用于重开会话时恢复通知卡片；卡片功能上线前的历史行无此字段。
 export interface CoachHistoryMessage {
   role: 'user' | 'assistant';
   content: string;
+  card?: CoachCardWire;
 }
 
 export interface CoachHistoryResponse {

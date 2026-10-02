@@ -166,10 +166,16 @@ function welcomeMessages(): CoachMessage[] {
 }
 
 function toCoachMessage(m: CoachHistoryMessage, target?: CoachSessionTarget): CoachMessage {
-  // 历史自愈：防御解析上线前，弱模型曾把策略信封 JSON 当正文写进会话历史；
-  // 形似信封的 assistant 文本捞回成通知卡片（无 race target 定位不了赛事时
-  // 保持原文）。服务端历史只存文本，卡片仅靠此路径存在于重开的会话里。
   if (m.role === 'assistant') {
+    // 首选：服务端信封（挂在产生它的消息上随 checkpoint 持久化，与 done.card
+    // 同形），重开会话按行恢复通知卡片，多策略会话每张卡片各自保真。
+    const fromServer = buildCoachCard(m.card, target);
+    if (fromServer) {
+      return { id: ++seq, role: 'assistant', content: fromServer.title, card: fromServer };
+    }
+    // 兜底（历史自愈）：防御解析上线前，弱模型曾把策略信封 JSON 当正文写进
+    // 会话历史；形似信封的 assistant 文本捞回成通知卡片（无 race target 定位
+    // 不了赛事时保持原文）。仅覆盖卡片信封上线前的旧历史。
     const leaked = parseLeakedRaceStrategyEnvelope(m.content);
     if (leaked) {
       const card = buildCoachCard(leaked, target);
