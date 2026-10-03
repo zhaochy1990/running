@@ -85,10 +85,11 @@ func TestRaceCityContent_AIDraft(t *testing.T) {
 	migrateRaceContent(t, st)
 	ctx := context.Background()
 
-	// New city → a row with only the intro filled.
+	// New city → a row with the intro + AI province filled, attractions empty.
 	got, err := st.UpsertRaceCityContentAIDraft(ctx, &RaceCityContent{
-		City:  "厦门市",
-		Intro: &CityIntro{Overview: "海滨城市", Culture: "闽南文化", Food: "沙茶面", History: "经济特区"},
+		City:     "厦门市",
+		Province: strPtr("福建省"),
+		Intro:    &CityIntro{Overview: "海滨城市", Culture: "闽南文化", Food: "沙茶面", History: "经济特区"},
 	})
 	if err != nil {
 		t.Fatalf("create draft: %v", err)
@@ -96,11 +97,13 @@ func TestRaceCityContent_AIDraft(t *testing.T) {
 	if got.ID == 0 {
 		t.Fatalf("created = %+v, want an id", got)
 	}
-	if got.Province != nil || len(got.Attractions) != 0 {
-		t.Fatalf("created = %+v, want only the intro", got)
+	if got.Province == nil || *got.Province != "福建省" || len(got.Attractions) != 0 {
+		t.Fatalf("created = %+v, want intro + province only", got)
 	}
 
-	// A later AI draft merges the intro and keeps the other sections.
+	// A later AI draft merges the intro and keeps the admin-entered sections:
+	// even when the LLM comes back with a different province, the admin's own
+	// value wins (the AI province only fills an empty field).
 	province := "福建省"
 	if _, err := st.UpsertRaceCityContent(ctx, &RaceCityContent{
 		City: "厦门市", Province: &province,
@@ -109,8 +112,9 @@ func TestRaceCityContent_AIDraft(t *testing.T) {
 		t.Fatalf("seed other sections: %v", err)
 	}
 	got, err = st.UpsertRaceCityContentAIDraft(ctx, &RaceCityContent{
-		City:  "厦门市",
-		Intro: &CityIntro{Overview: "更新概览", Culture: "更新文化", Food: "更新美食", History: "更新历史"},
+		City:     "厦门市",
+		Province: strPtr("江苏省"),
+		Intro:    &CityIntro{Overview: "更新概览", Culture: "更新文化", Food: "更新美食", History: "更新历史"},
 	})
 	if err != nil {
 		t.Fatalf("merge draft: %v", err)
@@ -120,6 +124,26 @@ func TestRaceCityContent_AIDraft(t *testing.T) {
 	}
 	if got.Intro == nil || got.Intro.Overview != "更新概览" || got.Intro.History != "更新历史" {
 		t.Fatalf("merged = %+v, want the intro overwritten", got)
+	}
+
+	// A city whose admin saved the intro but left the province empty gets it
+	// filled by the next AI draft.
+	if _, err := st.UpsertRaceCityContent(ctx, &RaceCityContent{
+		City:  "苏州市",
+		Intro: &CityIntro{Overview: "园林城市"},
+	}); err != nil {
+		t.Fatalf("seed provinceless city: %v", err)
+	}
+	got, err = st.UpsertRaceCityContentAIDraft(ctx, &RaceCityContent{
+		City:     "苏州市",
+		Province: strPtr("江苏省"),
+		Intro:    &CityIntro{Overview: "更新概览"},
+	})
+	if err != nil {
+		t.Fatalf("fill draft: %v", err)
+	}
+	if got.Province == nil || *got.Province != "江苏省" {
+		t.Fatalf("province = %+v, want filled from the draft", got.Province)
 	}
 }
 

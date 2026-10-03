@@ -81,6 +81,11 @@ func (f *fakeRaceContentStore) UpsertRaceCityContentAIDraft(_ context.Context, i
 		row = &storage.RaceCityContent{ID: f.nextID, City: in.City, CreatedAt: time.Now().UTC()}
 		f.cities[in.City] = row
 	}
+	// Mirrors the store's merge rule: intro replaced, province only fills an
+	// empty field, attractions untouched.
+	if row.Province == nil {
+		row.Province = in.Province
+	}
 	row.Intro = in.Intro
 	row.UpdatedAt = time.Now().UTC()
 	return row, nil
@@ -197,7 +202,7 @@ func TestRaceContentAdmin_CityContent(t *testing.T) {
 
 const aiDraftCity = "/api/admin/cities/%E5%8E%A6%E9%97%A8%E5%B8%82/content/ai-draft" // 厦门市
 
-const aiDraftPayload = `{"overview":"海滨城市","culture":"闽南文化","food":"沙茶面","history":"经济特区"}`
+const aiDraftPayload = `{"province":"福建省","overview":"海滨城市","culture":"闽南文化","food":"沙茶面","history":"经济特区"}`
 
 const raceAIDraftLLMPayload = `{"summary":"干冷晴朗，昼夜温差大","weather_windows":[{"window_start":"09-20","window_end":"10-05","avg_temp_c":18.5,"temp_high_c":24,"temp_low_c":14,"rain_probability_pct":30,"humidity_pct":65,"wind":"东北风3级"},{"window_start":"10-01","window_end":"10-15","avg_temp_c":17,"temp_high_c":23,"temp_low_c":13}]}`
 
@@ -236,7 +241,10 @@ func aiDraftHarness(t *testing.T, server *httptest.Server, timeout time.Duration
 
 func TestRaceContentAdmin_AIDraftFillsIntro(t *testing.T) {
 	var calls atomic.Int32
-	server := aiDraftServer(t, aiDraftPayload, http.StatusOK, &calls)
+	// The LLM returns a different province than the seeded row: the admin's
+	// own value must win (the AI province only fills an empty field).
+	llmPayload := `{"province":"江苏省","overview":"海滨城市","culture":"闽南文化","food":"沙茶面","history":"经济特区"}`
+	server := aiDraftServer(t, llmPayload, http.StatusOK, &calls)
 	h := aiDraftHarness(t, server, time.Second)
 	admin := h.rh.adminToken(t)
 
@@ -289,8 +297,10 @@ func TestRaceContentAdmin_AIDraftCreatesDraftForNewCity(t *testing.T) {
 	if got.Content == nil || got.Content.ID == 0 {
 		t.Fatalf("content = %+v, want a persisted aggregate", got.Content)
 	}
-	if got.Content.Intro == nil || got.Content.Province != nil || len(got.Content.Attractions) != 0 {
-		t.Fatalf("content = %+v, want only the intro filled", got.Content)
+	// New city: the AI province lands on the created row; only attractions
+	// stay empty for the admin.
+	if got.Content.Intro == nil || got.Content.Province == nil || *got.Content.Province != "福建省" || len(got.Content.Attractions) != 0 {
+		t.Fatalf("content = %+v, want intro + province filled", got.Content)
 	}
 }
 
@@ -303,7 +313,8 @@ func TestRaceContentAdmin_AIDraftFailureDoesNotWrite(t *testing.T) {
 		{"provider error", http.StatusInternalServerError, ""},
 		{"invalid JSON", http.StatusOK, `{"overview":`},
 		{"missing sections", http.StatusOK, `{"overview":"x"}`},
-		{"unexpected field", http.StatusOK, `{"overview":"x","culture":"y","food":"z","history":"h","extra":1}`},
+		{"missing province", http.StatusOK, `{"overview":"o","culture":"c","food":"f","history":"h"}`},
+		{"unexpected field", http.StatusOK, `{"province":"福建省","overview":"x","culture":"y","food":"z","history":"h","extra":1}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
