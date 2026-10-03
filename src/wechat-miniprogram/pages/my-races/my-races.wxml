@@ -137,6 +137,7 @@
           <view class="race__main">
             <view class="race__head">
               <view class="race__band race__band--{{item.bandClass}}">{{item.bandLabel}}</view>
+              <view wx:if="{{item.isPb}}" class="race__pb">🏆 PB</view>
               <view class="race__date">{{item.dateLabel}}</view>
             </view>
             <view class="race__name">{{item.name}}</view>

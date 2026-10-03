@@ -39,6 +39,8 @@ interface RaceRow {
   pace: string;
   avgHr: string;
   ascent: string;
+  /** 同档位（全马 / 半马）当前最快：金 🏆 PB 徽章 */
+  isPb: boolean;
 }
 
 interface MyRacesPageData {
@@ -113,7 +115,7 @@ function bandClass(band: RaceItem['distance_band']): string {
   return 'other';
 }
 
-function toRow(race: RaceItem): RaceRow {
+function toRow(race: RaceItem, isPb: boolean): RaceRow {
   return {
     labelId: race.label_id,
     name: race.name || bandLabel(race.distance_band),
@@ -125,7 +127,27 @@ function toRow(race: RaceItem): RaceRow {
     pace: race.pace_fmt && race.pace_fmt !== '—' ? race.pace_fmt : '',
     avgHr: race.avg_hr != null ? String(race.avg_hr) : '',
     ascent: race.ascent_m != null ? String(Math.round(race.ascent_m)) : '',
+    isPb,
   };
+}
+
+/**
+ * 当前 PB 的 label_id 集合：全马 / 半马各自取净用时最短的一场，互不可比
+ * （其它档位距离不一，不设 PB）。用 `<=` 让新→旧遍历中同成绩的更早
+ * （更旧）一场胜出——PB 记在首次跑出该成绩的那场。
+ */
+function pbLabelIds(races: RaceItem[]): Set<string> {
+  const best = new Map<'marathon' | 'half_marathon', { id: string; seconds: number }>();
+  for (const race of races) {
+    const band = race.distance_band;
+    if (band !== 'marathon' && band !== 'half_marathon') continue;
+    if (race.duration_s == null) continue;
+    const cur = best.get(band);
+    if (!cur || race.duration_s <= cur.seconds) {
+      best.set(band, { id: race.label_id, seconds: race.duration_s });
+    }
+  }
+  return new Set([...best.values()].map((entry) => entry.id));
 }
 
 function buildSummary(rows: RaceRow[]): string {
@@ -191,7 +213,8 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
     try {
       const res = await getMyRaces(userId);
       if (seq !== this._resultsSeq) return;
-      const rows = res.races.map(toRow);
+      const pbIds = pbLabelIds(res.races);
+      const rows = res.races.map((race) => toRow(race, pbIds.has(race.label_id)));
       this.setData({ loading: false, rows, summary: buildSummary(rows) });
     } catch (err: unknown) {
       if (seq !== this._resultsSeq) return;

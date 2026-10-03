@@ -447,6 +447,18 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* PB 徽章：与 race__band 同形，金色 */
+.race__pb {
+  font-size: 20rpx;
+  font-weight: 600;
+  line-height: 32rpx;
+  padding: 2rpx 14rpx;
+  border-radius: 8rpx;
+  flex-shrink: 0;
+  color: #e8c07d;
+  background: rgba(232, 192, 125, 0.14);
+}
+
 .race__date {
   font-size: 22rpx;
   color: #9c9c9d;
