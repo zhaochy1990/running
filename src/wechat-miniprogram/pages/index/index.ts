@@ -32,6 +32,8 @@ interface TodayActivityRow {
   labelId: string;
   name: string;
   iconPath: string;
+  /** 路线缩略图公开地址；室内活动/未生成/加载失败时为空串，回退 iconPath */
+  thumbUrl: string;
   distanceKm: string;
   duration: string;
   pace: string;
@@ -60,11 +62,13 @@ function toTodayActivityRow(a: Activity): TodayActivityRow {
     labelId: a.label_id,
     name: displayName(a),
     iconPath: iconPathForSport(a.sport_name),
+    thumbUrl: a.thumb_url || '',
     distanceKm: a.distance_km != null && a.distance_km > 0 ? fmtKm(a.distance_m) : '—',
     duration: fmtDurationShort(a.duration_s),
     pace: fmtPace(a.avg_pace_s_km),
     avgHr: a.avg_hr != null ? `${Math.round(a.avg_hr)}` : '—',
-    load: fmtDose(a.training_load),
+    // 优先展示 STRIDE 自身计算的负荷（training_dose）；缺失时回退到手表上报值。
+    load: fmtDose(a.stride_training_dose ?? a.training_load),
   };
 }
 
@@ -104,6 +108,7 @@ interface IndexPageHandlers {
   onWatchTap(): void;
   onMoreTap(): void;
   onTodayActivityTap(e: WechatMiniprogram.TouchEvent): void;
+  onThumbError(e: WechatMiniprogram.CustomEvent): void;
   onPushDateSelect(e: PushDateSelectEvent): void;
   onPushDateClose(): void;
 }
@@ -309,6 +314,18 @@ Page<IndexPageData, IndexPageHandlers>({
     if (!labelId) return;
     wx.navigateTo({
       url: `/pages/activity-detail/activity-detail?labelId=${encodeURIComponent(labelId)}`,
+    });
+  },
+
+  // 缩略图加载失败（网络、合法域名未配置、对象被清理）时，把该行回退到运动图标，
+  // 而不是留一个空白圆槽。按 labelId 定位，不依赖 wx:for 的层级索引。
+  onThumbError(e: WechatMiniprogram.CustomEvent) {
+    const labelId = e.currentTarget.dataset.id as string;
+    if (!labelId) return;
+    this.setData({
+      todayActivities: this.data.todayActivities.map((r) =>
+        r.labelId === labelId && r.thumbUrl ? { ...r, thumbUrl: '' } : r,
+      ),
     });
   },
 
