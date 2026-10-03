@@ -185,7 +185,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Administrator only. Synchronously calls the configured OpenAI-compatible LLM and upserts the city content row with only the intro filled, preserving the other sections. Unconfigured deployments answer 501 ai_draft_not_configured.",
+                "description": "Administrator only. Synchronously calls the configured OpenAI-compatible LLM and upserts the city content row with the intro filled; the province is filled only when the admin has not set one, and the other sections are preserved. Unconfigured deployments answer 501 ai_draft_not_configured.",
                 "tags": [
                     "admin"
                 ],

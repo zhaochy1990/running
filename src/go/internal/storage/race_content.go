@@ -116,10 +116,11 @@ func (s *Store) UpsertRaceCityContent(ctx context.Context, in *RaceCityContent) 
 	return saved, nil
 }
 
-// UpsertRaceCityContentAIDraft merges an AI-generated intro into a city's
-// working content without touching the other sections (province, attractions).
-// There is no lifecycle, so the merge always applies. (Climate moved to race
-// level — the race-content AI draft covers it.)
+// UpsertRaceCityContentAIDraft merges an AI-generated draft into a city's
+// working content: the intro is always replaced, and the province fills only
+// an empty field (the admin's own value always wins). Attractions are never
+// touched. There is no lifecycle, so the merge always applies. (Climate moved
+// to race level — the race-content AI draft covers it.)
 func (s *Store) UpsertRaceCityContentAIDraft(ctx context.Context, in *RaceCityContent) (*RaceCityContent, error) {
 	var saved *RaceCityContent
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -130,9 +131,8 @@ func (s *Store) UpsertRaceCityContentAIDraft(ctx context.Context, in *RaceCityCo
 			now := nowUTC()
 			created := *in
 			created.ID = 0
-			// Only the intro is AI-generated; everything else is deliberately
-			// left empty for the admin to fill in later.
-			created.Province = nil
+			// Only the intro and the (still empty) province are AI-generated;
+			// attractions are left empty for the admin to fill in later.
 			created.Attractions = nil
 			created.CreatedAt, created.UpdatedAt = now, now
 			if err := tx.Create(&created).Error; err != nil {
@@ -145,6 +145,9 @@ func (s *Store) UpsertRaceCityContentAIDraft(ctx context.Context, in *RaceCityCo
 			return nil
 		case err != nil:
 			return fmt.Errorf("storage: lock race city content: %w", err)
+		}
+		if row.Province == nil {
+			row.Province = in.Province
 		}
 		row.Intro = in.Intro
 		row.UpdatedAt = nowUTC()

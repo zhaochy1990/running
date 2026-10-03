@@ -203,24 +203,27 @@ func (r *raceContentRoutes) putCityContent(c *gin.Context) {
 }
 
 // cityAIDraftPayload is the strict JSON shape the AI draft generator must
-// return. The four fields are deliberately FLAT (not nested under an "intro"
+// return. The fields are deliberately FLAT (not nested under an "intro"
 // object): DeepSeek's json_object mode intermittently drops the closing brace
 // of a nested object that follows a long text member, and the flattened
-// schema removes that failure mode. The handler maps the fields onto
-// storage.CityIntro. (Climate moved to race level — the race-content AI draft
-// covers it.)
+// schema removes that failure mode. The handler maps the four intro fields
+// onto storage.CityIntro; the province fills the content row only when the
+// admin has not set one. (Climate moved to race level — the race-content AI
+// draft covers it.)
 type cityAIDraftPayload struct {
+	Province string `json:"province"`
 	Overview string `json:"overview"`
 	Culture  string `json:"culture"`
 	Food     string `json:"food"`
 	History  string `json:"history"`
 }
 
-// valid reports whether every intro section is present and non-empty. A
-// partial draft would silently clear a section the admin already wrote, so
-// incomplete payloads are treated as a generation failure (502), not saved.
+// valid reports whether the province and every intro section are present and
+// non-empty. A partial draft would silently clear a section the admin already
+// wrote, so incomplete payloads are treated as a generation failure (502),
+// not saved.
 func (p cityAIDraftPayload) valid() bool {
-	for _, s := range []string{p.Overview, p.Culture, p.Food, p.History} {
+	for _, s := range []string{p.Province, p.Overview, p.Culture, p.Food, p.History} {
 		if strings.TrimSpace(s) == "" {
 			return false
 		}
@@ -239,12 +242,13 @@ func (p cityAIDraftPayload) intro() *storage.CityIntro {
 
 const cityAIDraftSystemPrompt = `你是马拉松赛事内容编辑助手，负责为中国城市撰写面向跑者的城市介绍草稿。你只能输出严格匹配以下结构的 JSON，不得输出其它字段、文字、代码块或注释，所有内容必须使用中文：
 
-{"overview":"城市总体介绍","culture":"城市文化","food":"城市美食","history":"城市历史"}
+{"province":"省份","overview":"城市总体介绍","culture":"城市文化","food":"城市美食","history":"城市历史"}
 
 要求：
-1. overview / culture / food / history 各一段中文，面向参赛跑者。
-2. 只写文字，禁止输出任何数值型天气数据（如具体气温、湿度、降雨概率），禁止输出图片 URL。
-3. 每段内容 2-4 句话，客观、准确、有吸引力。`
+1. province 必须为该城市所属省级行政区的规范全称（省/自治区/直辖市，如苏州市填江苏省、厦门市填福建省）。
+2. overview / culture / food / history 各一段中文，面向参赛跑者。
+3. 只写文字，禁止输出任何数值型天气数据（如具体气温、湿度、降雨概率），禁止输出图片 URL。
+4. 每段内容 2-4 句话，客观、准确、有吸引力。`
 
 func cityAIDraftUserPrompt(city string) string {
 	return "请为城市「" + city + "」生成上述结构的城市介绍草稿。"
@@ -253,7 +257,7 @@ func cityAIDraftUserPrompt(city string) string {
 // aiDraftCityContent generates an AI draft for a city's intro.
 //
 //	@Summary		Generate an AI city-content draft
-//	@Description	Administrator only. Synchronously calls the configured OpenAI-compatible LLM and upserts the city content row with only the intro filled, preserving the other sections. Unconfigured deployments answer 501 ai_draft_not_configured.
+//	@Description	Administrator only. Synchronously calls the configured OpenAI-compatible LLM and upserts the city content row with the intro filled; the province is filled only when the admin has not set one, and the other sections are preserved. Unconfigured deployments answer 501 ai_draft_not_configured.
 //	@Tags			admin
 //	@Param			city	path	string	true	"City name"
 //	@Success		200		{object}	raceCityContentResponse
@@ -299,8 +303,9 @@ func (r *raceContentRoutes) aiDraftCityContent(c *gin.Context) {
 	}
 
 	saved, err := r.store.UpsertRaceCityContentAIDraft(c.Request.Context(), &storage.RaceCityContent{
-		City:  city,
-		Intro: out.intro(),
+		City:     city,
+		Province: &out.Province,
+		Intro:    out.intro(),
 	})
 	if err != nil {
 		writeRaceContentError(c, r.log, err)
