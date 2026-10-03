@@ -216,10 +216,21 @@
 }
 
 .plan__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 16rpx;
   margin: 8rpx 0 20rpx;
   font-size: 22rpx;
   line-height: 32rpx;
   color: #9c9c9d;
+}
+
+/* 开赛倒计时：主题藕粉文字（与全马徽章同色族），不加底色避免卡上徽章过密 */
+.plan__countdown {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-weight: 600;
+  color: #ff8f8f;
 }
 
 .plan__meta--dim {

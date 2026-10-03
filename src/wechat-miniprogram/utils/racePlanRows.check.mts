@@ -1,11 +1,12 @@
 /**
  * racePlanRows.ts 自检：`node --import ./utils/ts-resolve-hooks.mjs utils/racePlanRows.check.mts`。
  * 覆盖 状态徽章文案 / 状态条 chips（三态流转与 lost 旁路）/ 报名项目缩写 /
- * 下架占位（含 race 行被删的纯占位卡）/ 比赛日排序，不依赖小程序运行时
- * （services 只做 type-only 导入，剥离后无副作用）。
+ * 开赛倒计时（未来 N 天 / 当天 / 已结束 / 无日期）/ 下架占位（含 race 行被删的纯占位卡）/
+ * 比赛日排序，不依赖小程序运行时（services 只做 type-only 导入，剥离后无副作用）。
  */
 import type { RacePlan } from '../services/race-plans.ts';
 import { toPlanCard, toPlanCards } from './racePlanRows.ts';
+import { epochToShanghaiYmd, shanghaiToday, shanghaiYmdToEpoch } from './date.ts';
 
 function eq(actual: unknown, expected: unknown, what: string): void {
   const a = JSON.stringify(actual);
@@ -72,6 +73,17 @@ const gone = toPlanCard(plan({ offboarded: true, race: null }));
 eq(gone.name, '已下架赛事', 'deleted race falls back to placeholder name');
 eq(gone.dateLabel, '', 'deleted race has no date');
 eq(gone.city, '', 'deleted race has no city');
+
+// 开赛倒计时：未来 N 天 / 比赛日当天「今天开赛」/ 已结束隐藏 / 无日期隐藏
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ymdShift = (base: string, days: number): string =>
+  epochToShanghaiYmd(shanghaiYmdToEpoch(base) + days * DAY_MS);
+const today = shanghaiToday();
+const raceOn = (race_date: string): RacePlan['race'] => ({ ...DEF_RACE, race_date });
+eq(toPlanCard(plan({ race: raceOn(ymdShift(today, 29)) })).countdown, '距离比赛还有 29 天', 'countdown future');
+eq(toPlanCard(plan({ race: raceOn(today) })).countdown, '今天开赛', 'countdown race day');
+eq(toPlanCard(plan({ race: raceOn(ymdShift(today, -1)) })).countdown, '', 'countdown past hidden');
+eq(toPlanCard(plan({ race: null })).countdown, '', 'countdown hidden without race');
 
 // 排序：比赛日升序，同日按 race_id；无日期（race=null）沉底
 const unordered = toPlanCards([

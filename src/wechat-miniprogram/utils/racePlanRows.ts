@@ -4,8 +4,9 @@
 // 这里只做 计划 DTO → 卡片视图 的确定性变换。版式与状态机见 #385 定稿 / #394。
 
 import type { RacePlan, RacePlanState } from '../services/race-plans';
-import { shanghaiWeekdayLabel } from './date';
+import { shanghaiToday, shanghaiWeekdayLabel } from './date';
 import { typeAbbr } from './raceCenterRows';
+import { daysUntil } from './raceDetailRows';
 
 /** 状态全称（卡头徽章用）；chip 上用短名（steps 里去掉「· 等抽签」尾缀）。 */
 const STATE_LABELS: Record<RacePlanState, string> = {
@@ -50,6 +51,8 @@ export interface PlanCardView {
   /** 2026/11/01 周日 */
   dateLabel: string;
   city: string;
+  /** 开赛倒计时文案（N>0「距离比赛还有 N 天」/ 当天「今天开赛」）；已结束或无日期为 ''，wxml 隐藏 */
+  countdown: string;
   /** 状态条 chips：已报名→已中签→确认参赛（短名） */
   steps: Array<{ state: RacePlanState; label: string; on: boolean }>;
   /** 未中签旁路：卡上给「去找替代赛事」转化引导 */
@@ -71,10 +74,17 @@ export function toPlanCard(plan: RacePlan): PlanCardView {
       ? `${plan.race.race_date.slice(0, 4)}/${plan.race.race_date.slice(5).replace('-', '/')} ${shanghaiWeekdayLabel(plan.race.race_date)}`
       : '',
     city: plan.race?.city || '',
+    countdown: countdownLabel(plan.race ? daysUntil(plan.race.race_date, shanghaiToday()) : null),
     hotel: plan.hotel,
     transit: plan.transit,
     offboarded: plan.offboarded,
   };
+}
+
+/** 开赛倒计时文案；null（无日期）/ 负数（已结束）不给文案。 */
+function countdownLabel(days: number | null): string {
+  if (days == null || days < 0) return '';
+  return days > 0 ? `距离比赛还有 ${days} 天` : '今天开赛';
 }
 
 /** 整表 → 卡片序列，按比赛日升序（API 已排序，防御性重排；无日期的占位卡沉底）。 */

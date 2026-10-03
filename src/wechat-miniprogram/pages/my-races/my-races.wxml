@@ -38,7 +38,7 @@
     <block wx:else>
       <view wx:if="{{plansError}}" class="banner banner--error">{{plansError}}</view>
 
-      <!-- 计划卡（#385 定稿：名 + 项目徽章 + 状态徽章 + 日期·城市 + 状态条 + 行程勾选） -->
+      <!-- 计划卡（#385 定稿：名 + 项目徽章 + 状态徽章 + 日期·城市 + 开赛倒计时 + 状态条 + 行程勾选） -->
       <block wx:if="{{cards.length}}">
         <block wx:for="{{cards}}" wx:key="raceId">
           <!-- 已下架占位卡：灰卡、记录保留、不可交互 -->
@@ -59,7 +59,10 @@
               <text class="plan-badge plan-badge--item">{{item.itemLabel}}</text>
               <text class="plan-badge plan-badge--state plan-badge--state--{{item.state}}">{{item.stateLabel}}</text>
             </view>
-            <view class="plan__meta">{{item.dateLabel}}{{item.city ? ' · ' + item.city : ''}}</view>
+            <view class="plan__meta">
+              <text>{{item.dateLabel}}{{item.city ? ' · ' + item.city : ''}}</text>
+              <text wx:if="{{item.countdown}}" class="plan__countdown">{{item.countdown}}</text>
+            </view>
 
             <!-- 状态条：已报名→已中签→确认参赛 chips 点击流转 -->
             <view class="steps">

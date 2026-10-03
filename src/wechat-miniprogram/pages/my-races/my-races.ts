@@ -4,7 +4,7 @@
 // 成绩数据来自 GET /api/{user}/races（services/races）：同步流水线确认的比赛，
 // 明细（名称/距离/用时/配速）join 自 activities，点击一行进活动详情。
 // 计划数据走 services/race-plans（GET/PUT /api/users/me/race-plans）：计划卡 =
-// 赛事名（点击进详情）+ 报名项目徽章 + 状态徽章 + 日期·城市；状态条 chips 点击
+// 赛事名（点击进详情）+ 报名项目徽章 + 状态徽章 + 日期·城市 + 开赛倒计时；状态条 chips 点击
 // 流转（已报名→已中签→确认参赛，未中签为旁路状态给替代赛事引导）；行程布尔
 // 勾选 🏨 酒店 / 🚄 火车票·机票；offboarded 计划灰卡占位不可交互。纯视图变换
 // 在 utils/racePlanRows，配套自检。
