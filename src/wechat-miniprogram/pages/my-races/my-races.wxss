@@ -1,8 +1,10 @@
 /* ============================================================
-   我的比赛页 —— 深色 STRIDE 主题（与 watch / activities 一致）
-   app.wxss 的全局令牌是浅色主题，深色页需在页面内重定义
-   .card / .card__label / banner / spinner（同 watch 页做法）；
-   .state-card / .empty-card 为 app.wxss 里已是深色的全局类。
+   我的比赛页 —— 双 tab（我的赛事 / 我的成绩），深色 STRIDE 主题
+   （与 watch / race-center 一致）。app.wxss 的全局令牌是浅色主题，
+   深色页需在页面内重定义 .card / .card__label / banner / spinner
+   （同 watch 页做法）；.empty-card 为 app.wxss 里已是深色的全局类。
+   「我的赛事」tab 样式自 race-center/plans 页并入，计划卡类名
+   统一 plan- 前缀，避免与成绩列表 .card 冲突。
    ============================================================ */
 
 .page {
@@ -74,13 +76,41 @@
   color: rgba(225, 191, 188, 0.8);
 }
 
+/* ---------- tab：我的赛事 / 我的成绩（分段选择器，主题色点亮） ---------- */
+
+.tabs {
+  display: flex;
+  gap: 8rpx;
+  padding: 4rpx 40rpx 20rpx;
+}
+
+.tabs__item {
+  flex: 1;
+  height: 64rpx;
+  line-height: 64rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: #9c9c9d;
+  background: #0a0b0d;
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-radius: 32rpx;
+}
+
+.tabs__item--on {
+  color: #ffffff;
+  font-weight: 600;
+  background: #ff6363;
+  border-color: #ff6363;
+}
+
 .content {
-  padding: 0 40rpx 48rpx;
+  padding: 0 24rpx 48rpx;
 }
 
 /* ---------- 卡片 ----------
    app.wxss 的全局 .card 用浅色主题令牌（--color-card: #ffffff），
-   深色页都在页面内重定义暗卡（与 watch / activities 一致）。 */
+   深色页都在页面内重定义暗卡（与 watch / activities 一致）；
+   此处 .card 只用于「我的成绩」列表容器。 */
 
 .card {
   background: #101111;
@@ -101,6 +131,19 @@
 }
 
 /* ---------- 提示条 / 加载（同 watch 页） ---------- */
+
+.state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+  padding: 96rpx 0;
+}
+
+.state-card__text {
+  font-size: 24rpx;
+  color: #9c9c9d;
+}
 
 .banner {
   padding: 20rpx 24rpx;
@@ -125,11 +168,235 @@
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-/* ---------- 比赛行 ---------- */
+/* ---------- 「我的赛事」计划卡（自 plans 页并入） ---------- */
+
+.plan {
+  margin-top: 24rpx;
+  padding: 28rpx 28rpx 24rpx;
+  background: #101111;
+  border: 1rpx solid rgba(255, 255, 255, 0.05);
+  border-radius: 26rpx;
+}
+
+/* 已下架占位：灰卡、记录保留、不可交互 */
+.plan--off {
+  background: #0d0e10;
+  border-color: rgba(255, 255, 255, 0.03);
+}
+
+.plan__head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.plan__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 40rpx;
+  color: #e3e2e5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan__name--dim {
+  color: #8a8a8c;
+}
+
+.plan__meta {
+  margin: 8rpx 0 20rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: #9c9c9d;
+}
+
+.plan__meta--dim {
+  color: #6a6a6c;
+  white-space: normal;
+}
+
+/* 徽章：项目=中性；状态=四态配色（与列表页双徽章同族暖/冷/绿） */
+
+.plan-badge {
+  flex-shrink: 0;
+  font-size: 18rpx;
+  line-height: 30rpx;
+  padding: 0 12rpx;
+  border-radius: 8rpx;
+}
+
+.plan-badge--item {
+  color: #b9b8bc;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.plan-badge--state--registered {
+  color: #8fb8e8;
+  background: rgba(143, 184, 232, 0.12);
+}
+
+.plan-badge--state--won {
+  color: #e8c07d;
+  background: rgba(232, 192, 125, 0.12);
+}
+
+.plan-badge--state--lost {
+  color: #9c9c9d;
+  background: rgba(156, 156, 157, 0.14);
+}
+
+.plan-badge--state--confirmed {
+  color: #5fc992;
+  background: rgba(95, 201, 146, 0.12);
+}
+
+.plan-badge--off {
+  color: #8a8a8c;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ---------- 状态条：已报名→已中签→确认参赛 chips ---------- */
+
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 16rpx;
+  background: #0a0b0d;
+  border-radius: 18rpx;
+}
+
+.steps__chip {
+  flex-shrink: 0;
+  padding: 8rpx 20rpx;
+  font-size: 22rpx;
+  color: #8a8f99;
+  background: #17181a;
+  border-radius: 24rpx;
+}
+
+.steps__chip--on {
+  background: #ff6363;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.steps__arrow {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  color: #6a6a6c;
+}
+
+.steps__hint {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 20rpx;
+  color: #6a6a6c;
+}
+
+/* ---------- 未中签旁路：转化引导 ---------- */
+
+.lost-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  margin-top: 16rpx;
+  padding: 16rpx 24rpx;
+  background: #0a0b0d;
+  border-radius: 18rpx;
+  font-size: 22rpx;
+  color: #9c9c9d;
+}
+
+.lost-row__link {
+  flex-shrink: 0;
+  color: #ff6363;
+}
+
+/* ---------- 行程布尔勾选 ---------- */
+
+.trip {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+
+.trip__chip {
+  flex: 1;
+  text-align: center;
+  padding: 14rpx 0;
+  font-size: 22rpx;
+  color: #9c9c9d;
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-radius: 18rpx;
+}
+
+.trip__chip--on {
+  color: #5fc992;
+  border-color: rgba(95, 201, 146, 0.6);
+  background: rgba(95, 201, 146, 0.08);
+  font-weight: 600;
+}
+
+/* ---------- 页脚说明 / 空态（我的赛事） ---------- */
+
+.note {
+  margin: 28rpx 8rpx 8rpx;
+  font-size: 20rpx;
+  line-height: 36rpx;
+  color: #6a6a6c;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 120rpx 60rpx;
+}
+
+.empty__icon {
+  font-size: 88rpx;
+  line-height: 120rpx;
+}
+
+.empty__title {
+  margin-top: 24rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #b9b8bc;
+}
+
+.empty__hint {
+  margin: 12rpx 0 36rpx;
+  font-size: 24rpx;
+  line-height: 40rpx;
+  color: #8a8a8c;
+  text-align: center;
+}
+
+.empty__btn {
+  padding: 18rpx 52rpx;
+  font-size: 26rpx;
+  color: #ffffff;
+  background: #ff6363;
+  border-radius: 36rpx;
+  font-weight: 600;
+}
+
+/* ---------- 我的成绩：比赛行 ---------- */
 
 .race {
   display: flex;

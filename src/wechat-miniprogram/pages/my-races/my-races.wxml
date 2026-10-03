@@ -1,5 +1,5 @@
 <view class="page">
-  <!-- 自定义顶部栏 -->
+  <!-- 自定义顶部栏 + 双 tab -->
   <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
     <view class="top-bar__inner">
       <view class="top-bar__btn" bindtap="onBack">
@@ -7,14 +7,114 @@
       </view>
       <view class="top-bar__title-wrap">
         <view class="top-bar__title">我的比赛</view>
-        <view class="top-bar__subtitle">自动识别的参赛经历</view>
+        <view class="top-bar__subtitle">参赛计划与成绩</view>
       </view>
       <view class="top-bar__btn top-bar__btn--spacer"></view>
     </view>
+
+    <!-- tab：我的赛事（默认）/ 我的成绩 -->
+    <view class="tabs">
+      <view
+        class="tabs__item {{activeTab === 'plans' ? 'tabs__item--on' : ''}}"
+        data-tab="plans"
+        bindtap="onTabTap"
+      >我的赛事</view>
+      <view
+        class="tabs__item {{activeTab === 'results' ? 'tabs__item--on' : ''}}"
+        data-tab="results"
+        bindtap="onTabTap"
+      >我的成绩</view>
+    </view>
   </view>
 
-  <!-- 内容 -->
-  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+  <!-- 「我的赛事」tab：参赛计划 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;" wx:if="{{activeTab === 'plans'}}">
+    <!-- 加载态 -->
+    <view wx:if="{{plansLoading}}" class="state-card">
+      <view class="spinner"></view>
+      <view class="state-card__text">加载中…</view>
+    </view>
+
+    <block wx:else>
+      <view wx:if="{{plansError}}" class="banner banner--error">{{plansError}}</view>
+
+      <!-- 计划卡（#385 定稿：名 + 项目徽章 + 状态徽章 + 日期·城市 + 状态条 + 行程勾选） -->
+      <block wx:if="{{cards.length}}">
+        <block wx:for="{{cards}}" wx:key="raceId">
+          <!-- 已下架占位卡：灰卡、记录保留、不可交互 -->
+          <view wx:if="{{item.offboarded}}" class="plan plan--off">
+            <view class="plan__head">
+              <view class="plan__name plan__name--dim">{{item.name}}</view>
+              <text class="plan-badge plan-badge--off">已下架</text>
+            </view>
+            <view class="plan__meta plan__meta--dim">
+              {{item.dateLabel ? item.dateLabel + ' · ' : ''}}{{item.city ? item.city + ' · ' : ''}}该赛事已被管理员下架，你的参赛记录保留
+            </view>
+          </view>
+
+          <!-- 常规卡 -->
+          <view wx:else class="plan">
+            <view class="plan__head">
+              <view class="plan__name" data-race-id="{{item.raceId}}" bindtap="onRaceNameTap">{{item.name}}</view>
+              <text class="plan-badge plan-badge--item">{{item.itemLabel}}</text>
+              <text class="plan-badge plan-badge--state plan-badge--state--{{item.state}}">{{item.stateLabel}}</text>
+            </view>
+            <view class="plan__meta">{{item.dateLabel}}{{item.city ? ' · ' + item.city : ''}}</view>
+
+            <!-- 状态条：已报名→已中签→确认参赛 chips 点击流转 -->
+            <view class="steps">
+              <block wx:for="{{item.steps}}" wx:for-item="s" wx:key="state">
+                <view
+                  class="steps__chip {{s.on ? 'steps__chip--on' : ''}}"
+                  data-race-id="{{item.raceId}}"
+                  data-state="{{s.state}}"
+                  bindtap="onStateTap"
+                >{{s.label}}</view>
+                <text wx:if="{{index < item.steps.length - 1}}" class="steps__arrow">›</text>
+              </block>
+              <text class="steps__hint">点状态切换</text>
+            </view>
+
+            <!-- 未中签旁路：转化引导 -->
+            <view wx:if="{{item.lost}}" class="lost-row">
+              <text>可惜没中签——看看同期还有哪些赛事</text>
+              <text class="lost-row__link" bindtap="onGoListTap">去找替代 ›</text>
+            </view>
+
+            <!-- 行程布尔勾选 -->
+            <view class="trip">
+              <view
+                class="trip__chip {{item.hotel ? 'trip__chip--on' : ''}}"
+                data-race-id="{{item.raceId}}"
+                data-field="hotel"
+                bindtap="onTripTap"
+              >🏨 酒店 · {{item.hotel ? '已订' : '未订'}}</view>
+              <view
+                class="trip__chip {{item.transit ? 'trip__chip--on' : ''}}"
+                data-race-id="{{item.raceId}}"
+                data-field="transit"
+                bindtap="onTripTap"
+              >🚄 火车票·机票 · {{item.transit ? '已订' : '未订'}}</view>
+            </view>
+          </view>
+        </block>
+
+        <!-- 页脚说明：收藏 ≠ 参赛计划 -->
+        <view class="note">收藏 ≠ 参赛计划：收藏但未报名的赛事不会出现在这里，可在赛事中心列表的「收藏」视图查看。</view>
+      </block>
+
+      <!-- 空态 -->
+      <view wx:elif="{{!plansError}}" class="empty">
+        <view class="empty__icon">🗓</view>
+        <view class="empty__title">还没有参赛计划</view>
+        <view class="empty__hint">去赛事中心收藏心仪赛事，报名后在这里追踪进度</view>
+        <view class="empty__btn" bindtap="onGoListTap">去赛事中心逛逛</view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 「我的成绩」tab：已跑完的比赛 -->
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;" wx:else>
     <!-- 加载态 -->
     <view wx:if="{{loading}}" class="state-card">
       <view class="spinner"></view>

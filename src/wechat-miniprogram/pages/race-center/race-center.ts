@@ -279,8 +279,8 @@ Page<RaceCenterPageData, RaceCenterPageHandlers>({
   },
 
   onPlansTap() {
-    // 「我的赛事」右上角入口（#394）：参赛计划管理二级页
-    wx.navigateTo({ url: '/pages/race-center/plans/plans' });
+    // 「我的赛事」右上角入口：跳「我的比赛」页，默认落在「我的赛事」tab
+    wx.navigateTo({ url: '/pages/my-races/my-races' });
   },
 
   onBack() {
