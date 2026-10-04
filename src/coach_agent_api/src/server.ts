@@ -1,12 +1,16 @@
 import { serve } from "@hono/node-server";
 import { flushLangfuse, loadConfig } from "@stride/coach-agent";
-import pino from "pino";
+import { attachFileLogging, getLogger } from "@stride/common";
 import { loadApiConfig } from "./config.js";
 import { coachAgentConfigFiles, coachApiConfigFiles } from "./configPaths.js";
 import { createCoachApiRuntime } from "./runtime.js";
 
-const logger = pino({ name: "coach-agent-api" });
+const logger = getLogger("coach-agent-api");
 const apiConfig = loadApiConfig({ configFiles: coachApiConfigFiles(import.meta.url) });
+if (apiConfig.logFile) {
+  // No-op (with a warning) outside the local environment; see attachFileLogging.
+  attachFileLogging(apiConfig.logFile);
+}
 const runtime = await createCoachApiRuntime(apiConfig, loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) }));
 const server = serve(
   {

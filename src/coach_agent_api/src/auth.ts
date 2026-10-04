@@ -25,6 +25,8 @@ export type AuthEnv = {
   Variables: {
     userId: string;
     isAdmin: boolean;
+    /** Set by the requestId middleware in app.ts; correlates request logs. */
+    requestId: string;
   };
 };
 

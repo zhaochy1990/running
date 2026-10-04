@@ -18,3 +18,8 @@ go_api:
   # default: an empty token fails validation, so the API refuses to boot rather
   # than call Go unauthenticated.
   internal_token: ""
+
+# Resolves to <package>/logs/coach-api.log (gitignored). Remove or set "" to
+# turn file logging off locally.
+logging:
+  file: "../logs/coach-api.log"

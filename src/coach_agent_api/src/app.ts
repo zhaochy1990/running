@@ -1,5 +1,5 @@
+import { getLogger } from "@stride/common";
 import { Hono } from "hono";
-import { logger } from "hono/logger";
 import { requestId } from "hono/request-id";
 import { type AuthEnv, createAuthMiddleware, type JwtVerifier } from "./auth.js";
 import type { CoachInvoker } from "./coach/coachInvoker.js";
@@ -25,10 +25,25 @@ export interface AppDependencies {
   coachDataDeleter?: CoachDataDeleter;
 }
 
+const httpLogger = getLogger("http");
+
 export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
-  app.use("*", logger());
   app.use("*", requestId());
+  app.use("*", async (c, next) => {
+    const startedAt = performance.now();
+    await next();
+    httpLogger.info(
+      {
+        requestId: c.get("requestId"),
+        method: c.req.method,
+        path: c.req.path,
+        status: c.res.status,
+        durationMs: Math.round(performance.now() - startedAt),
+      },
+      "request",
+    );
+  });
 
   const turnCoordinator = dependencies.turnCoordinator ?? createInMemoryTurnCoordinator();
 
