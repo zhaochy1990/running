@@ -9,18 +9,20 @@ const logger = getLogger("orchestrator");
 function getAgentPrompt(): string {
   return `Analyze the user's utterance and classify their intent into one of the following categories. Only output the classification result in a structured format, without providing any answers or training advice.
 - "weekly_plan"：查看或调整某一周的训练计划
-- "master_plan"：查看或调整赛季 / 总体训练计划
+- "master_plan"：制定或重新制定赛季 / 总体训练计划（生成一份完整的新计划）
 - "race_strategy"：为一场具体比赛制定或调整执行策略（分段配速、补给、赛道应对）
-- "training_question"：关于训练状态、疲劳、指标或跑步知识的问答
+- "training_question"：关于训练状态、疲劳、指标或跑步知识的问答；查看/解读已生成的计划
 - "other"：不属于以上任何一类
 
-判断依据是用户的**意图**，不是句中出现了「周 / 计划」：问训练跑得怎样、状态如何属于 training_question，只有想查看或修改已写好的计划才是 weekly_plan。
+判断依据是用户的**意图**，不是句中出现了「周 / 计划」：问训练跑得怎样、状态如何属于 training_question；查看已写好的计划（周或赛季）分别属于 weekly_plan / training_question；只有要**生成**或**整体重排**赛季计划才是 master_plan（耗时数分钟的完整规划）。
 示例（message → intent）：
 - "我这周跑的怎么样？" → training_question
 - "最近状态怎么样，累不累？" → training_question
 - "帮我看下这周的训练计划" → weekly_plan
 - "下周计划调整一下，周三改成休息" → weekly_plan
-- "帮我看下赛季计划" → master_plan
+- "帮我看下赛季计划" → training_question
+- "帮我制定一份下赛季的全马训练计划" → master_plan
+- "赛季计划重新规划一下" → master_plan
 - "帮我制定杭马的分段配速和补给策略" → race_strategy
 - "我想和你聊聊这场比赛的比赛策略" → race_strategy
 - "比赛时前半程该跑多快？" → race_strategy

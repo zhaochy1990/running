@@ -21,7 +21,7 @@
     "build": "npm run clean && npm run tsc && npm run copy-assets",
     "generate:weekly-plan-schema": "node scripts/generate-weekly-plan-schema.mjs",
     "verify:weekly-plan-schema": "pnpm run generate:weekly-plan-schema && git diff --exit-code -- ../go/internal/api/weekly_plan_schema.json",
-    "test": "npm run build && node --test dist/tools/*.test.js dist/agents/*.test.js dist/agents/master_plan/*.test.js dist/agents/race_strategy/*.test.js dist/graph/master_plan/*.test.js dist/graph/weekly_plan/*.test.js dist/data/*.test.js dist/utils/*.test.js",
+    "test": "npm run build && node --test dist/tools/*.test.js dist/agents/*.test.js dist/agents/master_plan/*.test.js dist/agents/race_strategy/*.test.js dist/agents/training/*.test.js dist/graph/master_plan/*.test.js dist/graph/weekly_plan/*.test.js dist/data/*.test.js dist/utils/*.test.js",
     "test:masterplan-kernel": "npm run build && node dist/tests/masterPlan.js",
     "e2e": "npm run build && node --test \"dist/e2e/**/*.test.js\"",
     "format": "biome format --write src scripts",
