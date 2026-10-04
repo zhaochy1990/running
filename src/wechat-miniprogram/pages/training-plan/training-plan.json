@@ -1,0 +1,8 @@
+{
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "我的训练计划",
+  "navigationBarBackgroundColor": "#07080A",
+  "navigationBarTextStyle": "white",
+  "backgroundColor": "#07080A",
+  "backgroundTextStyle": "light"
+}
