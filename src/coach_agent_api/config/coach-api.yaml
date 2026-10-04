@@ -81,3 +81,9 @@ go_api:
   # default: an empty token fails validation, so the API refuses to boot rather
   # than call Go unauthenticated.
   internal_token: ""
+
+# Local-only debug log file (pretty text, tee'd alongside stdout). Empty by
+# default; enabled in coach-api.local.yaml. A non-empty value outside the local
+# environment logs a startup warning and is ignored. Env: STRIDE_COACH_LOG_FILE.
+logging:
+  file: ""

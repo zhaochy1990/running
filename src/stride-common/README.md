@@ -9,7 +9,7 @@ this package, so anything added here is on every coach path.
 | Module | Owns |
 | --- | --- |
 | `src/config.ts` | Convict wrapper. Callers pass absolute config file paths; the loader does no repo-root discovery. |
-| `src/logger.ts` | The pino root logger and `getLogger(name)` children. |
+| `src/logger.ts` | The pino root logger, `getLogger(name)` children, and the local-only file-logging tee (`attachFileLogging`). |
 | `src/llm/models.ts` | Building a LangChain model from a `ModelConfig`. |
 
 ## The LLM layer

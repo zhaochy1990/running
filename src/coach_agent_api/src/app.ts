@@ -1,5 +1,5 @@
+import { getLogger } from "@stride/common";
 import { Hono } from "hono";
-import { logger } from "hono/logger";
 import { requestId } from "hono/request-id";
 import { type AuthEnv, createAuthMiddleware, type JwtVerifier } from "./auth.js";
 import type { CoachInvoker } from "./coach/coachInvoker.js";
@@ -25,10 +25,29 @@ export interface AppDependencies {
   coachDataDeleter?: CoachDataDeleter;
 }
 
+const httpLogger = getLogger("http");
+
 export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
   const app = new Hono<AuthEnv>();
-  app.use("*", logger());
   app.use("*", requestId());
+  app.use("*", async (c, next) => {
+    const startedAt = performance.now();
+    const fields = () => ({
+      requestId: c.get("requestId"),
+      method: c.req.method,
+      path: c.req.path,
+      durationMs: Math.round(performance.now() - startedAt),
+    });
+    try {
+      await next();
+      httpLogger.info({ ...fields(), status: c.res.status }, "request");
+    } catch (error) {
+      // Hono's onError composes the error response (500 by default) only after
+      // this middleware unwinds, so the status is not on c.res yet.
+      httpLogger.error({ ...fields(), status: 500 }, "request failed");
+      throw error;
+    }
+  });
 
   const turnCoordinator = dependencies.turnCoordinator ?? createInMemoryTurnCoordinator();
 

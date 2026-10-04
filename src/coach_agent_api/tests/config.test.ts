@@ -190,6 +190,29 @@ test("fails closed when required database or JWT settings are absent", () => {
   );
 });
 
+test("logging.file defaults to empty, resolves relative to the config directory, and is env-overridable", () => {
+  withConfigRepo(
+    {
+      "coach-api.yaml": BASE_YAML,
+      "coach-api.dev.yaml": "logging:\n  file: logs/dev.log\n",
+    },
+    (root) => {
+      assert.equal(
+        loadApiConfig({ configFiles: apiConfigFiles(root, "dev"), env: { STRIDE_COACH_ENV: "dev" } }).logFile,
+        join(root, "config", "logs", "dev.log"),
+      );
+      assert.equal(
+        loadApiConfig({
+          configFiles: apiConfigFiles(root, "dev"),
+          env: { STRIDE_COACH_ENV: "dev", STRIDE_COACH_LOG_FILE: "/abs/coach.log" },
+        }).logFile,
+        "/abs/coach.log",
+      );
+      assert.equal(loadApiConfig({ configFiles: apiConfigFiles(root, "local"), env: { STRIDE_COACH_ENV: "local" } }).logFile, "");
+    },
+  );
+});
+
 test("an auth_service_url defers the key to startup and replaces a YAML path", () => {
   withConfigRepo(
     {
