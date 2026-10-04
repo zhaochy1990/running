@@ -10,8 +10,9 @@ interface CoachMessage {
   content: string;
   // assistant 消息渲染用（GFM→HTML，经 <mp-html> 渲染）；user 消息保持纯文本。
   html?: string;
-  // 结构化产物通知卡片（done.card 经 utils/coachCards 翻译）：存在时替代 markdown
-  // 正文渲染，content 保留作复制全文的兜底。
+  // 结构化产物通知卡片（done.card 经 utils/coachCards 翻译）：存在时替代
+  // markdown 正文渲染，content 保留作复制全文的兜底；inlineBody 产物
+  // （master-plan 摘要即卡片）例外——html 同帧渲染在卡片下方。
   card?: CoachCardView;
   // user 消息：本轮 client_turn_id（重试时复用）；failed 表示发送失败需重试。
   clientTurnId?: string;
@@ -165,13 +166,23 @@ function welcomeMessages(): CoachMessage[] {
   return [{ id: ++seq, role: 'assistant', content, html: markdownToHtml(content) }];
 }
 
+/** 卡片消息的气泡内容：inlineBody 产物（master-plan 摘要即卡片）正文摘要
+ *  保留在卡片下方渲染；其余产物（race-strategy）卡片替代正文，content 留作
+ *  复制兜底。 */
+function cardCoachMessage(card: CoachCardView, content: string): CoachMessage {
+  if (!card.inlineBody) {
+    return { id: ++seq, role: 'assistant', content: card.title, card };
+  }
+  return { id: ++seq, role: 'assistant', content, card, html: markdownToHtml(content) };
+}
+
 function toCoachMessage(m: CoachHistoryMessage, target?: CoachSessionTarget): CoachMessage {
   if (m.role === 'assistant') {
     // 首选：服务端信封（挂在产生它的消息上随 checkpoint 持久化，与 done.card
     // 同形），重开会话按行恢复通知卡片，多策略会话每张卡片各自保真。
     const fromServer = buildCoachCard(m.card, target);
     if (fromServer) {
-      return { id: ++seq, role: 'assistant', content: fromServer.title, card: fromServer };
+      return cardCoachMessage(fromServer, m.content);
     }
     // 兜底（历史自愈）：防御解析上线前，弱模型曾把策略信封 JSON 当正文写进
     // 会话历史；形似信封的 assistant 文本捞回成通知卡片（无 race target 定位
@@ -180,7 +191,7 @@ function toCoachMessage(m: CoachHistoryMessage, target?: CoachSessionTarget): Co
     if (leaked) {
       const card = buildCoachCard(leaked, target);
       if (card) {
-        return { id: ++seq, role: 'assistant', content: card.title, card };
+        return cardCoachMessage(card, m.content);
       }
     }
   }
@@ -483,12 +494,14 @@ Page<CoachPageData, CoachPageHandlers>({
     wx.setClipboardData({ data: rendered && rendered.trim() ? rendered : message.content });
   },
 
-  /** 卡片 tap：按产物类型交接后跳目标页。策略草稿经 pending storage 交给报告页。 */
+  /** 卡片 tap：按产物类型交接后跳目标页。策略草稿经 pending storage 交给报告页；
+   *  无 url 的卡片（master-plan 摘要即卡片，启用/放弃随 #429）不跳转。 */
   onCardOpen(e: WechatMiniprogram.TouchEvent) {
     const id = e.currentTarget.dataset.id as number;
     const message = this.data.messages.find((m) => m.id === id);
     if (!message?.card) return;
     const card = message.card;
+    if (!card.url) return;
     if (card.type === 'race-strategy' && card.data && typeof card.data === 'object') {
       const target = this.currentSessionTarget();
       if (target?.kind === 'race' && target.race_event_id) {
@@ -629,8 +642,13 @@ Page<CoachPageData, CoachPageHandlers>({
       id: ++seq,
       role: 'assistant',
       content,
-      // 卡片存在时不渲染 markdown 正文（报告页才是完整视图）；content 留作复制兜底。
-      ...(card ? { card } : { html: markdownToHtml(content) }),
+      // 卡片存在时不渲染 markdown 正文（报告页才是完整视图）；inlineBody 产物
+      // （master-plan 摘要即卡片）例外——摘要正文跟卡片同泡渲染。
+      ...(card && !card.inlineBody
+        ? { card }
+        : card
+          ? { card, html: markdownToHtml(content) }
+          : { html: markdownToHtml(content) }),
     };
     const messages = this.data.messages.map((m) =>
       m.id === userMsgId ? { ...m, failed: false } : m,

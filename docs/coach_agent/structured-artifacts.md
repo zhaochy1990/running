@@ -2,8 +2,8 @@
 
 状态：已实现（race-strategy 首个接入，2026-10）。关联：#385 展示契约、#396 比赛策略 v2。
 
-教练会话里有一类回复不是「文本」，而是**结构化产物**（比赛策略、未来的
-weekly-plan / master-plan）。本文定义它们如何下发到客户端、渲染成卡片、
+教练会话里有一类回复不是「文本」，而是**结构化产物**（比赛策略、赛季训练
+计划、未来的 weekly-plan）。本文定义它们如何下发到客户端、渲染成卡片、
 以及「草稿 → 查看 → 应用」的产品模式。
 
 ## 1. 双通道原则
@@ -32,8 +32,8 @@ markdown 渲染）；旧后端 + 新客户端 → 没有 `card`，同样走 mark
 | `$type` | 后端挂载（业务节点 `*Message` 工厂） | 前端注册表（小程序 `utils/coachCards.ts`） |
 |---|---|---|
 | `race-strategy` | `raceStrategyMessage` 挂 `additional_kwargs.card` | 图标/文案/路由 → 报告页 |
+| `master-plan` | `masterPlanCardMessage`（training 节点，#428） | 图标/标题/角标「初稿」；摘要即卡片——markdown 摘要同泡渲染，无独立详情页（CTA 的启用/放弃随 #429） |
 | `weekly-plan`（未来） | 同上 | → 周计划页草稿态 |
-| `master-plan`（未来） | 同上 | → 计划审阅页 |
 
 **信封随消息持久化**：业务节点把 `{$type, data}` 挂在产生它的回复消息自身
 （`additional_kwargs.card`），随 checkpoint（MySQL）落库。coach_agent_api 的
@@ -81,6 +81,11 @@ content: {...} }` 信封 JSON 当正文文本输出（2026-09 在 deepseekv4flas
 - **历史自愈**（`utils/coachCards.ts` `parseLeakedEnvelope`）：防御上线前
   已写进会话历史的泄漏文本，重开会话时捞回成卡片（需会话带 race target
   才能定位报告页）。
+
+master-plan 卡片（#428）与此同标准：卡片轮正文由 training 节点确定性渲染
+（kernel 结构化输出 → markdown，不经任何模型改写），信封不存在「模型把
+JSON 当正文」的泄漏路径；客户端侧的形状校验降级（信封不认识/形状不对 →
+markdown）与流式 JSON 探测同样覆盖它。
 
 ## 5. 扩展指南：新增一种产物卡片
 

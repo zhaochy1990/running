@@ -4,13 +4,14 @@
 // 后端（coach_agent_api publicResponse）按本轮 intent 把结构化产物以
 // `done.card = { $type, data }` 信封下发；这里把信封翻译成聊天气泡里的
 // 通知卡片展示属性（标题/副标题/角标/CTA/目标页面），聊天页与卡片组件
-// 不感知各产物类型的细节。未来 weekly-plan / master-plan 各加一条注册项
-// （接入指南见 docs/coach_agent/structured-artifacts.md）。
+// 不感知各产物类型的细节。已注册 race-strategy / master-plan，未来
+// weekly-plan 再加一条（接入指南见 docs/coach_agent/structured-artifacts.md）。
 //
 // 历史自愈：后端防御解析上线前，弱模型曾把信封 JSON 当正文写进会话历史；
 // parseLeakedEnvelope 用同一套形状校验把这类历史文本捞回成卡片信封。
 
 import type { CoachSessionTarget } from '../services/coach';
+import type { MasterPlanCard } from '../services/master-plan';
 import type { RaceStrategy } from '../services/race-strategy';
 
 /** done.card 的 wire 形态镜像（$type = 双端约定的渲染器 key）。 */
@@ -29,12 +30,18 @@ export interface CoachCardView {
   subtitle: string;
   /** 角标（如「初稿」）；空则不显示。 */
   badge: string;
-  /** CTA 按钮文案。 */
+  /** CTA 按钮文案；空则不渲染按钮。 */
   buttonText: string;
-  /** CTA 目标页面（含 query）。 */
+  /** CTA 目标页面（含 query）；空则卡片不可跳转。 */
   url: string;
   /** 产物本体：tap 时经 storage 交接给目标页（如报告页草稿模式）。 */
   data: unknown;
+  /**
+   * 摘要即卡片（master-plan 模式）：true 时聊天页在卡片头部下方继续渲染
+   * markdown 正文摘要，卡片不替代正文——没有独立详情页的产物靠它把完整
+   * 摘要留在会话里。
+   */
+  inlineBody: boolean;
 }
 
 /** 策略内容的形状校验（RaceStrategySchema 的鸭子类型版；数值口径由后端 zod 把关）。
@@ -48,6 +55,18 @@ function isRaceStrategyLike(value: unknown): value is RaceStrategy {
     typeof v.item_type === 'string' && v.item_type.length > 0 &&
     typeof v.target_finish_time === 'string' &&
     Array.isArray(v.pace_segments) && v.pace_segments.length > 0
+  );
+}
+
+/** 计划卡内容的形状校验（MasterPlanCardSchema 的鸭子类型版，同上口径）。 */
+function isMasterPlanCardLike(value: unknown): value is MasterPlanCard {
+  if (value == null || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  const goal = v.goal as Record<string, unknown> | undefined;
+  return (
+    goal != null && typeof goal === 'object' &&
+    typeof goal.race_name === 'string' && goal.race_name.length > 0 &&
+    typeof v.total_weeks === 'number' && v.total_weeks > 0
   );
 }
 
@@ -74,9 +93,33 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
         ? `/pages/race-center/strategy/strategy?id=${raceId}`
         : '/pages/race-center/race-center',
       data: strategy,
+      inlineBody: false,
+    };
+  }
+  if (wire.$type === 'master-plan') {
+    if (!isMasterPlanCardLike(wire.data)) return null;
+    const plan = wire.data;
+    // 摘要即卡片（#428：不做独立详情页）：卡片头部之下渲染 markdown 摘要正文，
+    // CTA（启用/放弃）随 #429 的 draft 落库流程接入，当前不可跳转。
+    return {
+      type: wire.$type,
+      icon: '/assets/icons/calendar_month.svg',
+      title: '赛季训练计划已生成',
+      subtitle: masterPlanSubtitle(plan),
+      badge: '初稿',
+      buttonText: '',
+      url: '',
+      data: plan,
+      inlineBody: true,
     };
   }
   return null;
+}
+
+function masterPlanSubtitle(plan: MasterPlanCard): string {
+  const distance = plan.goal.distance === 'FM' ? '全马' : '半马';
+  const target = plan.goal.target_time ? `，目标 ${plan.goal.target_time}` : '';
+  return `${plan.goal.race_name}（${distance}） · ${plan.total_weeks} 周备赛${target}`;
 }
 
 /**

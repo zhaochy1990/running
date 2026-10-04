@@ -5,7 +5,7 @@ import { getLogger } from "@stride/common";
 import { MasterPlanGraphOutcome } from "@stride/contract";
 import type { RaceTarget } from "../../data/dataProvider.js";
 import type { AgentsState } from "../state.js";
-import { renderKernelOutcome, renderRequestGap } from "./render.js";
+import { masterPlanCardMessage, renderKernelOutcome, renderRequestGap } from "./render.js";
 import { buildMasterPlanRequest } from "./request.js";
 
 const logger = getLogger("coachAgent:training");
@@ -120,8 +120,11 @@ export function makeTrainingNode(deps: TrainingNodeDeps): GraphNode<typeof Agent
     const outcome = parsed.data;
     if (outcome.decision !== "completed") {
       logger.warn({ userId, generationId, decision: outcome.decision }, "master kernel finished without a plan");
+      return { messages: [new AIMessage(renderKernelOutcome(outcome))], llmCalls };
     }
-    return { messages: [new AIMessage(renderKernelOutcome(outcome))], llmCalls };
+    // completed：markdown 摘要正文 + `master-plan` 卡片信封（#428）。信封挂
+    // 消息自身随 checkpoint 持久化，done/历史投影按消息读取，跨设备重进免费。
+    return { messages: [masterPlanCardMessage(outcome.artifact.plan, outcome.artifact.simulation_report)], llmCalls };
   };
 }
 
