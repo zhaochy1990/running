@@ -45,7 +45,7 @@ This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
 | Multi-model A/B/C variants 流程 | [`docs/multi-variant.md`](docs/multi-variant.md) |
 | Commentary 写入 / 推 prod / daily loop | [`docs/working-model.md`](docs/working-model.md) |
 | 跑 coros-sync CLI / 改 sync 代码 / 直查 DB | [`docs/coros-cli.md`](docs/coros-cli.md)（`src/coros_sync/` 待删除，勿新增依赖） |
-| 改 Coach Agent（TS，`src/coach_agent/*`） | [`src/coach_agent/AGENTS.md`](src/coach_agent/AGENTS.md) —— TS Coach Agent 为准 |
+| 改 Coach Agent（TS，`src/coach_agent/*`） | [`src/coach_agent/AGENTS.md`](src/coach_agent/AGENTS.md) —— TS Coach Agent 为准；含 DeepSeek Responses API 踩坑清单（LLM 直连/结构化输出/SDK 升级必读） |
 | Auth wiring / Bearer / 401 排障 | [`docs/auth-wiring.md`](docs/auth-wiring.md) |
 | Docker / CI/CD / reparse webhook | [`docs/deployment.md`](docs/deployment.md) |
 | Frontend pages / API 路由清单 | [`docs/frontend.md`](docs/frontend.md) |
