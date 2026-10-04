@@ -62,6 +62,38 @@ eq(parseLeakedRaceStrategyEnvelope('该赛事内容暂未调研，无法制定�
 eq(parseLeakedRaceStrategyEnvelope('0–10 km 未完待续 {'), null, 'broken json untouched');
 eq(parseLeakedRaceStrategyEnvelope(''), null, 'empty untouched');
 
+// master-plan 卡片（#428）：摘要即卡片——正文摘要跟卡片同泡渲染，无跳转目标；
+// data 只带渲染/定位需要的标量（时间轴与负荷投影走 markdown 正文）
+const masterPlanCard = {
+  goal: { race_name: '无锡马拉松', distance: 'FM', race_date: '2027-03-21', target_time: '3:30:00' },
+  start_date: '2026-10-05',
+  end_date: '2027-03-21',
+  total_weeks: 24,
+};
+{
+  const view = buildCoachCard({ $type: 'master-plan', data: masterPlanCard }, raceTarget);
+  if (!view) throw new Error('master-plan card should build');
+  eq(view.type, 'master-plan', 'master-plan type');
+  eq(view.icon, '/assets/icons/calendar_month.svg', 'master-plan icon');
+  eq(view.title, '赛季训练计划已生成', 'master-plan title');
+  eq(view.subtitle, '无锡马拉松（全马） · 24 周备赛，目标 3:30:00', 'master-plan subtitle');
+  eq(view.badge, '初稿', 'master-plan badge');
+  eq(view.buttonText, '', 'master-plan cta empty until #429');
+  eq(view.url, '', 'master-plan no navigation');
+  eq(view.inlineBody, true, 'master-plan inline body');
+  eq(view.data, masterPlanCard, 'master-plan data');
+}
+// 完赛为目标（无 target_time）：副标题不拼目标段
+{
+  const finishOnly = buildCoachCard(
+    { $type: 'master-plan', data: { ...masterPlanCard, goal: { ...masterPlanCard.goal, target_time: '' } } },
+    undefined,
+  );
+  eq(finishOnly?.subtitle, '无锡马拉松（全马） · 24 周备赛', 'master-plan subtitle without target');
+}
+// 形状不对 → null（降级 markdown）
+eq(buildCoachCard({ $type: 'master-plan', data: { goal: { race_name: '缺字段' } } }, raceTarget), null, 'master-plan invalid payload');
+
 // 流式 JSON 探测（呈现层占位）：裸 JSON / DeepSeek echo 前缀 / 正文含信封头
 eq(looksLikeJsonText('{"disposition": "return_direct"'), true, 'json prefix detected');
 eq(looksLikeJsonText('Returning structured response: {"disposition":"return_direct",…'), true, 'deepseek echo prefix detected');

@@ -9,7 +9,7 @@
       <text class="cc-card__subtitle">{{subtitle}}</text>
     </view>
   </view>
-  <view class="cc-card__cta" catchtap="onTap">
+  <view wx:if="{{buttonText}}" class="cc-card__cta" catchtap="onTap">
     <text class="cc-card__cta-text">{{buttonText}}</text>
     <image class="cc-card__cta-arrow" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
   </view>

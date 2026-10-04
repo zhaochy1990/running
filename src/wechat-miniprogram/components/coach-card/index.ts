@@ -1,4 +1,4 @@
-// 教练结构化产物通知卡片 —— 聊天气泡里的轻量卡片（比赛策略/未来的训练计划）。
+// 教练结构化产物通知卡片 —— 聊天气泡里的轻量卡片（比赛策略/赛季训练计划）。
 //
 // 展示属性（icon/title/subtitle/badge/buttonText）全部由 utils/coachCards.ts
 // 注册表产出，本组件只负责布局与 tap 冒泡（bindopen），不感知各产物类型的
@@ -15,7 +15,8 @@ Component({
     subtitle: { type: String, value: '' },
     /** 角标（如「初稿」）；空则不显示。 */
     badge: { type: String, value: '' },
-    buttonText: { type: String, value: '查看' },
+    /** CTA 按钮文案；空则不渲染按钮（如 master-plan 的启用/放弃还没接入）。 */
+    buttonText: { type: String, value: '' },
   },
 
   methods: {

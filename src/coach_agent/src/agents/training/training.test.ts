@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AIMessage } from "@langchain/core/messages";
-import { adjudicateMasterPlanReviews, MasterPlanGraphOutcome, MasterPlanGraphRequest } from "@stride/contract";
+import { adjudicateMasterPlanReviews, MasterPlanCardSchema, MasterPlanGraphOutcome, MasterPlanGraphRequest } from "@stride/contract";
 import type { RaceTarget } from "../../data/dataProvider.js";
 import { deriveAssessmentFacts } from "../../graph/master_plan/assessment.js";
 import { runMasterPlanRuleFilter } from "../../graph/master_plan/rules.js";
@@ -110,7 +110,7 @@ async function replyOf(node: ReturnType<typeof makeTrainingNode>, intentLabel: s
   const result = (await node({ intent, messages: [] } as never, RUNTIME as never)) as { messages: unknown[]; llmCalls?: number };
   const last = result.messages.at(-1);
   assert.ok(last instanceof AIMessage);
-  return { text: String(last.content), llmCalls: result.llmCalls ?? 0 };
+  return { text: String(last.content), message: last, llmCalls: result.llmCalls ?? 0 };
 }
 
 test("training node answers non-master_plan intents without touching the kernel", async () => {
@@ -140,7 +140,50 @@ test("training node renders a completed kernel plan as text", async () => {
   const node = makeTrainingNode({ kernel, dataProvider: goalStore(BASE_TARGET) });
   const { text, llmCalls } = await replyOf(node);
   assert.match(text, /赛季训练计划初稿/);
+  assert.match(text, /负荷投影/);
   assert.ok(llmCalls >= 3, `expected llmCalls>=3, got ${llmCalls}`);
+});
+
+test("training node attaches a validated master-plan card envelope to the completed reply", async () => {
+  const outcome = completedOutcome();
+  if (outcome.decision !== "completed") throw new Error("fixture must be a completed outcome");
+  const kernel = fakeKernel([{ finalize: { outcome } }]);
+  const node = makeTrainingNode({ kernel, dataProvider: goalStore(BASE_TARGET) });
+  const { text, message } = await replyOf(node);
+  assert.match(text, /赛季训练计划初稿/);
+  const kwargs = message.additional_kwargs as Record<string, unknown> | undefined;
+  const card = kwargs?.card as Record<string, unknown> | undefined;
+  assert.ok(card, "completed reply should carry additional_kwargs.card");
+  assert.equal(card.$type, "master-plan");
+  // 信封 data 是渲染/定位需要的标量摘要（时间轴与负荷投影走 markdown 正文）
+  const parsed = MasterPlanCardSchema.safeParse(card.data);
+  assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues));
+  if (parsed.success) {
+    assert.deepEqual(parsed.data, {
+      goal: {
+        race_name: outcome.artifact.plan.goal.race_name,
+        distance: outcome.artifact.plan.goal.distance,
+        race_date: outcome.artifact.plan.goal.race_date,
+        target_time: outcome.artifact.plan.goal.target_time,
+      },
+      start_date: outcome.artifact.plan.start_date,
+      end_date: outcome.artifact.plan.end_date,
+      total_weeks: outcome.artifact.plan.total_weeks,
+    });
+  }
+});
+
+test("training node carries no card on non-completed outcomes", async () => {
+  const outcome = MasterPlanGraphOutcome.parse({
+    decision: "needs_baseline",
+    request_id: "r",
+    generation_id: "g",
+    artifact: { type: "baseline_requirements", missing: ["volume"], next_steps: ["Record two running weeks"] },
+  });
+  const node = makeTrainingNode({ kernel: fakeKernel([{ finalize: { outcome } }]), dataProvider: goalStore(BASE_TARGET) });
+  const { message } = await replyOf(node);
+  const kwargs = message.additional_kwargs as Record<string, unknown> | undefined;
+  assert.equal(kwargs?.card, undefined);
 });
 
 test("training node maps kernel decisions to athlete-facing text", async () => {
@@ -199,6 +242,7 @@ test("renderMasterPlanMarkdown covers goal, phases and weeks", () => {
   assert.match(text, new RegExp(plan.goal.race_name));
   assert.match(text, /阶段划分/);
   assert.match(text, /周骨架/);
+  assert.match(text, /负荷投影/);
   assert.match(text, new RegExp(`第 ${firstWeek.week_index} 周`));
 });
 
