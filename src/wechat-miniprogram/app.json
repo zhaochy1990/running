@@ -17,7 +17,8 @@
     "pages/watch/watch",
     "pages/onboarding/onboarding",
     "pages/privacy/privacy",
-    "pages/declaration/declaration"
+    "pages/declaration/declaration",
+    "pages/prototype/training-plan/training-plan"
   ],
   "window": {
     "backgroundTextStyle": "light",

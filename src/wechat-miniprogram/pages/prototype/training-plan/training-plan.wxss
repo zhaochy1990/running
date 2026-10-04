@@ -1,0 +1,1454 @@
+/* ============================================================
+   【原型 · 定稿后丢弃】我的训练计划三方案对比
+   深色 STRIDE 主题（背景 #07080A、卡片 #101111、主色 #FF6363）
+   B 方案信息架构对齐 Web /plan：阶段配色沿用 Web PHASE_VISUALS
+   语义（base 绿 / build 青 / peak 琥珀 / taper 紫，降饱和贴深色），
+   注意力色（当前/你在这里）仍为主题粉。
+   ============================================================ */
+
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #07080a;
+  display: flex;
+  flex-direction: column;
+}
+
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: #07080a;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.top-bar__inner {
+  height: 128rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.top-bar__btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.top-bar__btn--spacer {
+  width: 88rpx;
+}
+
+.top-bar__icon {
+  width: 48rpx;
+  height: 48rpx;
+}
+
+.top-bar__icon--back {
+  transform: rotate(180deg);
+}
+
+.top-bar__title-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-bar__title {
+  font-size: 34rpx;
+  line-height: 48rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: #ffb3af;
+}
+
+.top-bar__subtitle {
+  font-size: 20rpx;
+  line-height: 32rpx;
+  color: rgba(225, 191, 188, 0.8);
+}
+
+.content {
+  padding: 0 24rpx calc(180rpx + env(safe-area-inset-bottom));
+}
+
+/* 无边框卡片：靠底色与留白分区，左右留白压缩以吃满屏宽 */
+.card {
+  background: #101111;
+  border-radius: 24rpx;
+  padding: 24rpx;
+  margin-bottom: 40rpx;
+}
+
+.section-title {
+  font-size: 29rpx;
+  line-height: 52rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+  margin-bottom: 24rpx;
+}
+
+.section-title--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-title__more {
+  font-size: 22rpx;
+  font-weight: 400;
+  color: #9c9c9d;
+}
+
+/* ---------- 空态 ---------- */
+
+.empty-plan {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80rpx 32rpx 64rpx;
+  background: #101111;
+  border-radius: 24rpx;
+}
+
+.empty-plan__icon {
+  width: 88rpx;
+  height: 88rpx;
+  opacity: 0.5;
+  margin-bottom: 32rpx;
+}
+
+.empty-plan__title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.empty-plan__sub {
+  font-size: 23rpx;
+  color: #9c9c9d;
+  margin-top: 14rpx;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.empty-plan__cta {
+  margin-top: 48rpx;
+  height: 80rpx;
+  line-height: 80rpx;
+  padding: 0 56rpx;
+  border-radius: 40rpx;
+  background: #ff6363;
+  color: #101111;
+  font-size: 27rpx;
+  font-weight: 700;
+}
+
+.proto-note {
+  text-align: center;
+  font-size: 21rpx;
+  color: #6a6b6c;
+}
+
+/* ========== 方案 A · 赛季仪表盘 ========== */
+
+.hero__top {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.hero__flag {
+  width: 44rpx;
+  height: 44rpx;
+  flex-shrink: 0;
+}
+
+.hero__name {
+  flex: 1;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+}
+
+.hero__badge {
+  font-size: 20rpx;
+  color: #ff6363;
+  padding: 6rpx 14rpx;
+  border-radius: 8rpx;
+  background: rgba(255, 99, 99, 0.1);
+}
+
+.hero__meta {
+  margin-top: 16rpx;
+  font-size: 23rpx;
+  color: #9c9c9d;
+}
+
+.hero__countdown {
+  margin-top: 32rpx;
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+}
+
+.hero__countdown-num {
+  font-size: 72rpx;
+  font-weight: 800;
+  color: #ff6363;
+  line-height: 1;
+}
+
+.hero__countdown-label {
+  font-size: 24rpx;
+  color: #9c9c9d;
+}
+
+.prog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.prog-head__label {
+  font-size: 29rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.prog-head__value {
+  font-size: 23rpx;
+  color: #9c9c9d;
+}
+
+.prog-bar {
+  margin-top: 24rpx;
+  height: 14rpx;
+  border-radius: 7rpx;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.prog-bar__fill {
+  height: 100%;
+  border-radius: 7rpx;
+  background: #ff6363;
+}
+
+.chips {
+  margin-top: 28rpx;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.chips__arrow {
+  color: #6a6b6c;
+  font-size: 22rpx;
+}
+
+.chip {
+  font-size: 22rpx;
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  color: #6a6b6c;
+}
+
+.chip__check {
+  color: #9c9c9d;
+}
+
+.chip--done {
+  color: #9c9c9d;
+}
+
+.chip--current {
+  color: #ff6363;
+  border-color: rgba(255, 99, 99, 0.5);
+  background: rgba(255, 99, 99, 0.1);
+  font-weight: 700;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20rpx;
+  margin-bottom: 40rpx;
+}
+
+.stat-card {
+  background: #101111;
+  border-radius: 20rpx;
+  padding: 24rpx;
+}
+
+.stat-card__label {
+  font-size: 22rpx;
+  color: #9c9c9d;
+}
+
+.stat-card__value {
+  margin-top: 10rpx;
+  font-size: 44rpx;
+  font-weight: 800;
+  color: #e3e2e5;
+  line-height: 1.1;
+}
+
+.stat-card__unit {
+  margin-left: 6rpx;
+  font-size: 22rpx;
+  font-weight: 400;
+  color: #9c9c9d;
+}
+
+.stat-card__sub {
+  margin-top: 10rpx;
+  font-size: 21rpx;
+  color: #6a6b6c;
+}
+
+.ms-card__label {
+  font-size: 22rpx;
+  color: #9c9c9d;
+  margin-bottom: 20rpx;
+}
+
+.ms-card__row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.ms-card__icon {
+  width: 44rpx;
+  height: 44rpx;
+  flex-shrink: 0;
+}
+
+.ms-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.ms-card__name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.ms-card__detail {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #9c9c9d;
+}
+
+.ms-card__chevron {
+  width: 40rpx;
+  height: 40rpx;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.sess-list {
+  padding: 8rpx 0;
+}
+
+.sess-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 26rpx 32rpx;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+}
+
+.sess-row:last-child {
+  border-bottom: none;
+}
+
+.sess-row__icon {
+  width: 44rpx;
+  height: 44rpx;
+  flex-shrink: 0;
+}
+
+.sess-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.sess-row__title {
+  font-size: 28rpx;
+  color: #e3e2e5;
+}
+
+.sess-row__meta {
+  margin-top: 4rpx;
+  font-size: 21rpx;
+  color: #9c9c9d;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sess-row__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6rpx;
+  flex-shrink: 0;
+}
+
+.sess-row__km {
+  font-size: 24rpx;
+  color: #e3e2e5;
+}
+
+.sess-row__tag {
+  font-size: 19rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+}
+
+.sess-row__tag--done {
+  color: #9c9c9d;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sess-row__tag--today {
+  color: #101111;
+  background: #ff6363;
+  font-weight: 700;
+}
+
+.sess-row__tag--upcoming {
+  color: #9c9c9d;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ========== 方案 B · 备赛旅程 ========== */
+
+/* --- 目标条（Web hero 的移动端形态） --- */
+
+.goal-strip {
+  padding-bottom: 28rpx;
+}
+
+.goal-strip__eyebrow {
+  font-size: 20rpx;
+  letter-spacing: 0.14em;
+  color: #9c9c9d;
+  margin-bottom: 20rpx;
+}
+
+.goal-strip__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.goal-strip__left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.goal-strip__flag {
+  width: 40rpx;
+  height: 40rpx;
+  flex-shrink: 0;
+}
+
+.goal-strip__name {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goal-strip__badge {
+  font-size: 19rpx;
+  color: #ff6363;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  background: rgba(255, 99, 99, 0.1);
+  flex-shrink: 0;
+}
+
+.goal-strip__right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.goal-strip__count {
+  font-size: 34rpx;
+  font-weight: 800;
+  color: #ff6363;
+  line-height: 1.1;
+}
+
+.goal-strip__count-sub {
+  font-size: 20rpx;
+  color: #9c9c9d;
+}
+
+.goal-strip__lede {
+  margin-top: 22rpx;
+  font-size: 23rpx;
+  line-height: 1.6;
+  color: #9c9c9d;
+}
+
+/* --- 训练周期图（Web MileageCycleCard 转译） --- */
+
+.cycle-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28rpx;
+}
+
+.cycle-card__title {
+  font-size: 29rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.metric-toggle {
+  display: flex;
+  gap: 8rpx;
+  padding: 4rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.metric-toggle__item {
+  font-size: 21rpx;
+  padding: 6rpx 20rpx;
+  border-radius: 999rpx;
+  color: #9c9c9d;
+}
+
+.metric-toggle__item--on {
+  background: #e3e2e5;
+  color: #101111;
+  font-weight: 700;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(18, 1fr);
+  column-gap: 6rpx;
+  row-gap: 20rpx;
+}
+
+.chart__col {
+  min-width: 0;
+  position: relative;
+  padding-top: 34rpx;
+  box-sizing: border-box;
+}
+
+.chart__col--sel::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -12rpx;
+  height: 4rpx;
+  border-radius: 2rpx;
+  background: #ff6363;
+}
+
+.chart__cur-label {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 17rpx;
+  color: #ff6363;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.chart__bar-area {
+  position: relative;
+  height: 150rpx;
+}
+
+.chart__band {
+  position: absolute;
+  bottom: 0;
+  left: 22%;
+  right: 22%;
+  border-radius: 6rpx 6rpx 0 0;
+  opacity: 0.15;
+}
+
+.chart__bar {
+  position: absolute;
+  bottom: 0;
+  left: 22%;
+  right: 22%;
+  border-radius: 6rpx 6rpx 0 0;
+}
+
+.chart__tick {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 2rpx dashed rgba(255, 255, 255, 0.4);
+}
+
+.chart__span {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  min-width: 0;
+}
+
+.chart__span-bar {
+  height: 6rpx;
+  border-radius: 3rpx;
+}
+
+.chart__span-label {
+  font-size: 19rpx;
+  color: #9c9c9d;
+  text-align: center;
+}
+
+.chart-detail {
+  margin-top: 24rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 12rpx;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 21rpx;
+  line-height: 1.6;
+  color: #e3e2e5;
+}
+
+.chart-legend {
+  margin-top: 18rpx;
+  display: flex;
+  gap: 28rpx;
+}
+
+.chart-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 19rpx;
+  color: #6a6b6c;
+}
+
+.chart-legend__swatch {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 4rpx;
+}
+
+.chart-legend__swatch--dim {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* --- 旅程时间轴 --- */
+
+.timeline {
+  position: relative;
+  padding-left: 36rpx;
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 13rpx;
+  top: 16rpx;
+  bottom: 16rpx;
+  width: 2rpx;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tl-item {
+  position: relative;
+  margin-bottom: 20rpx;
+}
+
+.tl-item::before {
+  content: '';
+  position: absolute;
+  left: -30rpx;
+  top: 8rpx;
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: #101111;
+  border: 3rpx solid #6a6b6c;
+}
+
+.tl-item--phase::before {
+  width: 20rpx;
+  height: 20rpx;
+  left: -32rpx;
+  top: 26rpx;
+  border-width: 4rpx;
+}
+
+.tl-item--phase {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 16rpx;
+  padding: 20rpx;
+}
+
+.tl-item--done::before {
+  border-color: rgba(156, 156, 157, 0.6);
+}
+
+.tl-item--current::before {
+  border-color: #ff6363;
+  box-shadow: 0 0 0 8rpx rgba(255, 99, 99, 0.15);
+}
+
+.tl-item--future::before {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.tl-phase__head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.tl-phase__dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tl-phase__name {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+}
+
+.tl-item--current.tl-item--phase .tl-phase__name {
+  color: #ff6363;
+}
+
+.tl-phase__suffix {
+  font-size: 21rpx;
+  font-weight: 400;
+  color: #9c9c9d;
+}
+
+.tl-phase__suffix--cur {
+  color: #ff6363;
+}
+
+.tl-phase__weeks {
+  margin-left: auto;
+  font-size: 20rpx;
+  color: #9c9c9d;
+  font-weight: 600;
+}
+
+.tl-phase__km {
+  font-size: 20rpx;
+  color: #9c9c9d;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tl-phase__meta {
+  margin-top: 8rpx;
+  font-size: 21rpx;
+  color: #9c9c9d;
+}
+
+.tl-phase__you {
+  margin-top: 10rpx;
+  font-size: 20rpx;
+  color: #ff6363;
+  font-weight: 700;
+}
+
+.tl-phase__weeks-toggle {
+  margin-top: 18rpx;
+  text-align: center;
+  font-size: 21rpx;
+  color: #9c9c9d;
+  padding: 14rpx 0 4rpx;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10rpx;
+}
+
+.tl-phase__line {
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  line-height: 1.6;
+  color: #b9b8bb;
+}
+
+.tl-phase__line-label {
+  display: inline-block;
+  font-size: 19rpx;
+  color: #9c9c9d;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6rpx;
+  padding: 2rpx 10rpx;
+  margin-right: 12rpx;
+}
+
+.tl-phase__triggers {
+  margin-top: 14rpx;
+}
+
+.tl-phase__triggers-title {
+  font-size: 19rpx;
+  color: #9c9c9d;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6rpx;
+  padding: 2rpx 10rpx;
+  align-self: flex-start;
+  display: inline-block;
+}
+
+.tl-phase__trigger {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  margin-top: 10rpx;
+}
+
+.tl-phase__trigger-dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  margin-top: 10rpx;
+  flex-shrink: 0;
+}
+
+.tl-phase__trigger-text {
+  flex: 1;
+  font-size: 21rpx;
+  line-height: 1.6;
+  color: #9c9c9d;
+}
+
+.tl-phase__ms {
+  margin-top: 16rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.tl-phase__ms-title {
+  font-size: 19rpx;
+  color: #9c9c9d;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6rpx;
+  padding: 2rpx 10rpx;
+  align-self: flex-start;
+}
+
+.tl-ms-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 14rpx 18rpx;
+  border-radius: 12rpx;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tl-ms-row--done {
+  opacity: 0.7;
+}
+
+.tl-ms-row__date {
+  font-size: 22rpx;
+  font-weight: 700;
+  width: 84rpx;
+  flex-shrink: 0;
+}
+
+.tl-ms-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.tl-ms-row__name {
+  font-size: 23rpx;
+  color: #e3e2e5;
+}
+
+.tl-ms-row__type {
+  font-size: 18rpx;
+  color: #9c9c9d;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6rpx;
+  padding: 0 8rpx;
+}
+
+.tl-ms-row__value {
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  color: #9c9c9d;
+}
+
+.tl-ms-row__next {
+  font-size: 18rpx;
+  color: #ff6363;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.tl-ms-row__check {
+  font-size: 22rpx;
+  color: #9c9c9d;
+  flex-shrink: 0;
+}
+
+.tl-phase__chips {
+  margin-top: 12rpx;
+  display: flex;
+  gap: 10rpx;
+  flex-wrap: wrap;
+}
+
+.tl-phase__chip {
+  font-size: 19rpx;
+  color: #9c9c9d;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tl-phase__summary {
+  margin-top: 12rpx;
+  font-size: 20rpx;
+  color: #6a6b6c;
+}
+
+.tl-phase__note {
+  margin-top: 14rpx;
+  padding: 12rpx 18rpx;
+  border-left: 4rpx solid;
+  border-radius: 0 10rpx 10rpx 0;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 21rpx;
+  line-height: 1.6;
+  color: #b9b8bb;
+  font-style: italic;
+}
+
+.tl-item--week {
+  padding: 14rpx 18rpx;
+  border-radius: 14rpx;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.tl-item--week.tl-item--current {
+  background: rgba(255, 99, 99, 0.12);
+}
+
+.tl-week__head {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.tl-week__no {
+  font-size: 23rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+  width: 64rpx;
+  flex-shrink: 0;
+}
+
+.tl-item--done .tl-week__no,
+.tl-item--done .tl-week__date,
+.tl-item--done .tl-week__actual,
+.tl-item--done .tl-week__sub {
+  color: #9c9c9d;
+}
+
+.tl-item--future .tl-week__no,
+.tl-item--future .tl-week__date,
+.tl-item--future .tl-week__plan {
+  color: #6a6b6c;
+}
+
+.tl-week__date {
+  font-size: 22rpx;
+  color: #9c9c9d;
+  flex: 1;
+}
+
+.tl-week__tag {
+  font-size: 18rpx;
+  color: #d8ff3e;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  background: rgba(216, 255, 62, 0.1);
+  flex-shrink: 0;
+}
+
+.tl-week__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2rpx;
+  flex-shrink: 0;
+}
+
+.tl-week__actual {
+  font-size: 23rpx;
+  color: #e3e2e5;
+}
+
+.tl-week__sub {
+  font-size: 18rpx;
+  color: #6a6b6c;
+}
+
+.tl-week__plan {
+  font-size: 22rpx;
+  color: #9c9c9d;
+}
+
+.tl-week__you {
+  margin-top: 12rpx;
+  font-size: 20rpx;
+  color: #ff6363;
+  font-weight: 700;
+}
+
+.tl-week__sessions {
+  margin-top: 12rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.tl-sess {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  padding: 14rpx 18rpx;
+  border-radius: 12rpx;
+  background: #101111;
+}
+
+.tl-sess__icon {
+  width: 36rpx;
+  height: 36rpx;
+  flex-shrink: 0;
+}
+
+.tl-sess__title {
+  flex: 1;
+  font-size: 23rpx;
+  color: #e3e2e5;
+}
+
+.tl-sess__km {
+  font-size: 22rpx;
+  color: #9c9c9d;
+  flex-shrink: 0;
+}
+
+.tl-footer {
+  text-align: center;
+  font-size: 21rpx;
+  color: #6a6b6c;
+  padding: 12rpx 0 24rpx;
+}
+
+/* --- 训练原则（Web TrainingPrinciples） --- */
+
+.principles {
+  margin-bottom: 32rpx;
+}
+
+.principles__title {
+  font-size: 29rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.principles__list {
+  margin-top: 24rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.principles__item {
+  display: flex;
+  gap: 16rpx;
+  align-items: flex-start;
+}
+
+.principles__no {
+  font-size: 21rpx;
+  color: #ff6363;
+  font-weight: 700;
+  flex-shrink: 0;
+  padding-top: 2rpx;
+}
+
+.principles__text {
+  flex: 1;
+  font-size: 23rpx;
+  line-height: 1.6;
+  color: #b9b8bb;
+}
+
+/* ========== 方案 C · 本周优先 ========== */
+
+.status-strip {
+  margin-bottom: 32rpx;
+}
+
+.status-strip__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.status-strip__left {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+}
+
+.status-strip__right {
+  font-size: 23rpx;
+  color: #ff6363;
+}
+
+.dots {
+  margin-top: 26rpx;
+  display: flex;
+  gap: 10rpx;
+}
+
+.dot {
+  flex: 1;
+  height: 10rpx;
+  border-radius: 5rpx;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dot--done {
+  background: #ff6363;
+}
+
+.dot--current {
+  background: rgba(255, 99, 99, 0.35);
+  box-shadow: 0 0 0 6rpx rgba(255, 99, 99, 0.12);
+}
+
+.dots-caption {
+  margin-top: 14rpx;
+  font-size: 20rpx;
+  color: #6a6b6c;
+}
+
+.task-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.task-card__title {
+  font-size: 31rpx;
+  font-weight: 700;
+  color: #e3e2e5;
+}
+
+.task-card__progress {
+  font-size: 23rpx;
+  color: #9c9c9d;
+}
+
+.task-card__bar {
+  margin-top: 20rpx;
+  height: 12rpx;
+  border-radius: 6rpx;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.task-card__bar-fill {
+  height: 100%;
+  border-radius: 6rpx;
+  background: #ff6363;
+}
+
+.task-card__goal {
+  margin-top: 12rpx;
+  font-size: 21rpx;
+  color: #6a6b6c;
+}
+
+.task-sess {
+  margin-top: 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding: 26rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.task-sess--today {
+  background: rgba(255, 99, 99, 0.12);
+}
+
+.task-sess--done {
+  opacity: 0.65;
+}
+
+.task-sess__icon-wrap {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.task-sess--today .task-sess__icon-wrap {
+  background: rgba(255, 99, 99, 0.15);
+}
+
+.task-sess__icon {
+  width: 44rpx;
+  height: 44rpx;
+}
+
+.task-sess__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-sess__title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #e3e2e5;
+}
+
+.task-sess__meta {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #9c9c9d;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-sess__day {
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  color: #6a6b6c;
+}
+
+.task-sess__state {
+  font-size: 21rpx;
+  color: #9c9c9d;
+  flex-shrink: 0;
+}
+
+.task-sess--today .task-sess__state {
+  color: #ff6363;
+  font-weight: 700;
+}
+
+.goal-rows {
+  padding: 8rpx 32rpx;
+}
+
+.goal-row {
+  display: flex;
+  align-items: center;
+  padding: 22rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+}
+
+.goal-row:last-child {
+  border-bottom: none;
+}
+
+.goal-row__label {
+  width: 96rpx;
+  font-size: 23rpx;
+  color: #9c9c9d;
+  flex-shrink: 0;
+}
+
+.goal-row__value {
+  flex: 1;
+  font-size: 25rpx;
+  color: #e3e2e5;
+}
+
+.goal-row__value--accent {
+  color: #ff6363;
+  font-weight: 700;
+}
+
+.phase-rows {
+  padding: 8rpx 32rpx;
+}
+
+.phase-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 22rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.04);
+}
+
+.phase-row:last-child {
+  border-bottom: none;
+}
+
+.phase-row__name {
+  font-size: 25rpx;
+  color: #e3e2e5;
+  width: 110rpx;
+  flex-shrink: 0;
+}
+
+.phase-row__meta {
+  flex: 1;
+  font-size: 21rpx;
+  color: #9c9c9d;
+}
+
+.phase-row__state {
+  font-size: 19rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 6rpx;
+  flex-shrink: 0;
+}
+
+.phase-row__state--done {
+  color: #9c9c9d;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.phase-row__state--current {
+  color: #ff6363;
+  background: rgba(255, 99, 99, 0.1);
+  font-weight: 700;
+}
+
+.phase-row__state--future {
+  color: #6a6b6c;
+}
+
+.cta-row {
+  display: flex;
+  gap: 24rpx;
+  margin-top: 8rpx;
+}
+
+.cta-row--single {
+  justify-content: center;
+}
+
+.cta-btn {
+  flex: 1;
+  height: 88rpx;
+  line-height: 88rpx;
+  text-align: center;
+  border-radius: 20rpx;
+  background: #ff6363;
+  color: #101111;
+  font-size: 27rpx;
+  font-weight: 700;
+}
+
+.cta-btn--ghost {
+  background: rgba(255, 99, 99, 0.12);
+  color: #ff6363;
+}
+
+.cta-row--single .cta-btn {
+  flex: none;
+  padding: 0 64rpx;
+}
+
+/* ---------- 原型切换悬浮条（定稿后删除） ---------- */
+
+.proto-bar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(40rpx + env(safe-area-inset-bottom));
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 10rpx 12rpx;
+  border-radius: 999rpx;
+  background: #d8ff3e;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.6);
+}
+
+.proto-bar__arrow {
+  width: 64rpx;
+  height: 64rpx;
+  line-height: 60rpx;
+  text-align: center;
+  border-radius: 50%;
+  color: #101111;
+  font-size: 40rpx;
+  font-weight: 700;
+}
+
+.proto-bar__label {
+  min-width: 200rpx;
+  text-align: center;
+  color: #101111;
+  font-size: 24rpx;
+  font-weight: 700;
+}
+
+.proto-bar__chip {
+  height: 56rpx;
+  line-height: 52rpx;
+  padding: 0 22rpx;
+  border-radius: 999rpx;
+  border: 2rpx solid rgba(16, 17, 17, 0.35);
+  color: #101111;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.proto-bar__chip--on {
+  background: #101111;
+  color: #d8ff3e;
+}

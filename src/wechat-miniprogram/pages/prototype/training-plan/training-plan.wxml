@@ -1,0 +1,346 @@
+<view class="page">
+  <!-- 自定义顶部栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px;">
+    <view class="top-bar__inner">
+      <view class="top-bar__btn" bindtap="onBackTap">
+        <image class="top-bar__icon top-bar__icon--back" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+      </view>
+      <view class="top-bar__title-wrap">
+        <view class="top-bar__title">我的训练计划</view>
+        <view class="top-bar__subtitle">PROTOTYPE · {{variantName}}</view>
+      </view>
+      <view class="top-bar__btn top-bar__btn--spacer"></view>
+    </view>
+  </view>
+
+  <view class="content" style="padding-top: {{contentPaddingTop}}rpx;">
+    <!-- ============ 空态（三方案共用） ============ -->
+    <block wx:if="{{empty}}">
+      <view class="card empty-plan">
+        <image class="empty-plan__icon" src="/assets/icons/calendar_month.svg" mode="aspectFit" />
+        <view class="empty-plan__title">还没有启用中的训练计划</view>
+        <view class="empty-plan__sub">把目标比赛告诉教练，为你生成一份完整的赛季备赛计划</view>
+        <view class="empty-plan__cta" bindtap="onStubTap">去找教练生成</view>
+      </view>
+      <view class="proto-note">空态方案 1 / 1 —— 也可考虑：入口直接放「生成计划」引导卡</view>
+    </block>
+
+    <!-- ============ 方案 A · 赛季仪表盘 ============ -->
+    <block wx:elif="{{variant === 'A'}}">
+      <!-- 目标 hero -->
+      <view class="card hero">
+        <view class="hero__top">
+          <image class="hero__flag" src="/assets/icons/flag.svg" mode="aspectFit" />
+          <view class="hero__name">{{raceName}}</view>
+          <view class="hero__badge">{{raceDistanceLabel}}</view>
+        </view>
+        <view class="hero__meta">{{raceDateLabel}} · {{raceLocation}} · 目标 {{targetTime}}（{{targetPace}}）</view>
+        <view class="hero__countdown">
+          <view class="hero__countdown-num">{{countdownDays}}</view>
+          <view class="hero__countdown-label">天后比赛</view>
+        </view>
+      </view>
+
+      <!-- 赛季进度 + 阶段 -->
+      <view class="card">
+        <view class="prog-head">
+          <view class="prog-head__label">赛季进度</view>
+          <view class="prog-head__value">第 {{weekNow}} 周 / 共 {{weekTotal}} 周</view>
+        </view>
+        <view class="prog-bar">
+          <view class="prog-bar__fill" style="width: {{progressPercent}}%;"></view>
+        </view>
+        <view class="chips">
+          <view wx:for="{{phaseChips}}" wx:key="key" class="chip chip--{{item.state}}">
+            <text wx:if="{{item.state === 'done'}}" class="chip__check">✓ </text>{{item.name}}
+          </view>
+          <view class="chips__arrow">→</view>
+        </view>
+      </view>
+
+      <!-- 指标格 -->
+      <view class="stat-grid">
+        <view class="stat-card" wx:for="{{stats}}" wx:key="key">
+          <view class="stat-card__label">{{item.label}}</view>
+          <view class="stat-card__value">{{item.value}}<text class="stat-card__unit">{{item.unit}}</text></view>
+          <view class="stat-card__sub">{{item.sub}}</view>
+        </view>
+      </view>
+
+      <!-- 下一节点 -->
+      <view class="card ms-card">
+        <view class="ms-card__label">下一个节点</view>
+        <view class="ms-card__row">
+          <image class="ms-card__icon" src="{{nextMilestone.iconPath}}" mode="aspectFit" />
+          <view class="ms-card__body">
+            <view class="ms-card__name">{{nextMilestone.name}} · {{nextMilestone.dateLabel}}</view>
+            <view class="ms-card__detail">{{nextMilestone.detail}}</view>
+          </view>
+          <image class="ms-card__chevron" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+        </view>
+      </view>
+
+      <!-- 本周关键课 -->
+      <view class="section-title section-title--row">
+        <text>本周关键课</text>
+        <text class="section-title__more" bindtap="onStubTap">完整周计划 ›</text>
+      </view>
+      <view class="card sess-list">
+        <view wx:for="{{sessions}}" wx:key="key" class="sess-row" bindtap="onStubTap">
+          <image class="sess-row__icon" src="{{item.iconPath}}" mode="aspectFit" />
+          <view class="sess-row__body">
+            <view class="sess-row__title">{{item.title}}</view>
+            <view class="sess-row__meta">{{item.meta}}</view>
+          </view>
+          <view class="sess-row__side">
+            <view class="sess-row__km">{{item.km}}</view>
+            <view class="sess-row__tag sess-row__tag--{{item.state}}">{{item.stateLabel}}</view>
+          </view>
+        </view>
+      </view>
+    </block>
+
+    <!-- ============ 方案 B · 备赛旅程（对齐 Web /plan SeasonOverview） ============ -->
+    <block wx:elif="{{variant === 'B'}}">
+      <!-- 目标条：eyebrow + 名称 + lede（Web hero 的移动端形态） -->
+      <view class="card goal-strip">
+        <view class="goal-strip__eyebrow">赛季训练计划 · {{eyebrowStatus}}</view>
+        <view class="goal-strip__row">
+          <view class="goal-strip__left">
+            <image class="goal-strip__flag" src="/assets/icons/flag.svg" mode="aspectFit" />
+            <view class="goal-strip__name">{{raceName}}</view>
+            <view class="goal-strip__badge">{{raceDistanceLabel}}</view>
+          </view>
+          <view class="goal-strip__right">
+            <view class="goal-strip__count">{{countdownDays}} 天</view>
+            <view class="goal-strip__count-sub">{{raceDateLabel}} 开赛</view>
+          </view>
+        </view>
+        <view class="goal-strip__lede">{{ledeText}}</view>
+      </view>
+
+      <!-- 训练周期（Web MileageCycleCard 移动端转译：点柱看周详情） -->
+      <view class="card cycle-card">
+        <view class="cycle-card__head">
+          <view class="cycle-card__title">训练周期</view>
+          <view class="metric-toggle">
+            <view
+              class="metric-toggle__item {{chartMetric === 'km' ? 'metric-toggle__item--on' : ''}}"
+              data-metric="km"
+              bindtap="onMetricToggle"
+            >跑量</view>
+            <view
+              class="metric-toggle__item {{chartMetric === 'dose' ? 'metric-toggle__item--on' : ''}}"
+              data-metric="dose"
+              bindtap="onMetricToggle"
+            >负荷</view>
+          </view>
+        </view>
+
+        <!-- 柱与阶段条共用一个 18 列 grid，span N 精确对齐所属周列 -->
+        <view class="chart-grid">
+          <view
+            wx:for="{{chartBars}}"
+            wx:key="key"
+            class="chart__col {{item.week === chartSelectedWeek ? 'chart__col--sel' : ''}}"
+            data-week="{{item.week}}"
+            bindtap="onBarTap"
+          >
+            <view wx:if="{{item.label}}" class="chart__cur-label">{{item.label}}</view>
+            <view class="chart__bar-area">
+              <view wx:if="{{item.bandH > 0}}" class="chart__band" style="height: {{item.bandH}}rpx; background: {{item.bandColor}};"></view>
+              <view wx:if="{{item.fillH > 0}}" class="chart__bar" style="height: {{item.fillH}}rpx; background: {{item.barColor}}; opacity: {{item.opacity}};"></view>
+              <view wx:if="{{item.tickBottom > 0}}" class="chart__tick" style="bottom: {{item.tickBottom}}rpx;"></view>
+            </view>
+          </view>
+          <view wx:for="{{chartSpans}}" wx:key="key" class="chart__span" style="grid-column: span {{item.weeks}};">
+            <view class="chart__span-bar" style="background: {{item.color}};"></view>
+            <view class="chart__span-label">{{item.label}}</view>
+          </view>
+        </view>
+
+        <view class="chart-detail">{{chartDetail}}</view>
+        <view class="chart-legend">
+          <view class="chart-legend__item"><view class="chart-legend__swatch" style="background: #7ac9a3;"></view>实际</view>
+          <view class="chart-legend__item"><view class="chart-legend__swatch chart-legend__swatch--dim"></view>计划</view>
+          <view class="chart-legend__item"><view class="chart-legend__swatch" style="background: #ff6363;"></view>当前周</view>
+        </view>
+      </view>
+
+      <!-- 旅程时间轴 -->
+      <view class="timeline">
+        <block wx:for="{{timeline}}" wx:key="key">
+          <!-- 阶段节点（对齐 Web PhaseDetail：重点/节奏/关键课/监控触发/小结/里程碑） -->
+          <view wx:if="{{item.kind === 'phase'}}" class="tl-item tl-item--phase tl-item--{{item.state}}">
+            <view class="tl-phase__head">
+              <view class="tl-phase__dot" style="background: {{item.phase.color}};"></view>
+              <view class="tl-phase__name">{{item.phase.name}}<text wx:if="{{item.state === 'done'}}" class="tl-phase__suffix">（已完成）</text><text wx:elif="{{item.state === 'current'}}" class="tl-phase__suffix tl-phase__suffix--cur">（当前）</text></view>
+              <view class="tl-phase__weeks">{{item.phase.weeksLabel}}</view>
+              <view class="tl-phase__km">{{item.phase.kmRange}}</view>
+            </view>
+            <view class="tl-phase__meta">{{item.phase.dateRange}} · {{item.phase.typeLabel}}</view>
+            <view wx:if="{{item.state === 'current' && !expandedPhases[item.phase.key]}}" class="tl-phase__you">◀ 你在这里 · 第 {{weekNow}}/{{weekTotal}} 周</view>
+            <view class="tl-phase__line"><text class="tl-phase__line-label">阶段重点</text>{{item.phase.focus}}</view>
+            <view wx:if="{{item.phase.rhythm}}" class="tl-phase__line"><text class="tl-phase__line-label">阶段节奏</text>{{item.phase.rhythm}}</view>
+            <view wx:if="{{item.phase.keyWorkouts}}" class="tl-phase__line"><text class="tl-phase__line-label">关键课</text>{{item.phase.keyWorkouts}}</view>
+            <view wx:if="{{item.phase.triggers.length}}" class="tl-phase__triggers">
+              <view class="tl-phase__triggers-title">监控触发</view>
+              <view wx:for="{{item.phase.triggers}}" wx:for-item="tg" wx:key="*this" class="tl-phase__trigger">
+                <view class="tl-phase__trigger-dot" style="background: {{item.phase.color}};"></view>
+                <view class="tl-phase__trigger-text">{{tg}}</view>
+              </view>
+            </view>
+            <view class="tl-phase__chips">
+              <view wx:for="{{item.phase.keySessionTypes}}" wx:for-item="st" wx:key="*this" class="tl-phase__chip">{{st}}</view>
+            </view>
+            <view wx:if="{{item.phase.summaryLine}}" class="tl-phase__summary">{{item.phase.summaryLine}}</view>
+            <view wx:if="{{item.phase.hrZoneLine}}" class="tl-phase__summary">心率区间：{{item.phase.hrZoneLine}}</view>
+            <view wx:if="{{item.phase.coachNote}}" class="tl-phase__note" style="border-left-color: {{item.phase.color}};">Coach：{{item.phase.coachNote}}</view>
+            <view wx:if="{{item.phase.milestones.length}}" class="tl-phase__ms">
+              <view class="tl-phase__ms-title">关键里程碑</view>
+              <view
+                wx:for="{{item.phase.milestones}}"
+                wx:for-item="ms"
+                wx:key="key"
+                class="tl-ms-row {{ms.done ? 'tl-ms-row--done' : ''}}"
+              >
+                <view class="tl-ms-row__date" style="color: {{item.phase.color}};">{{ms.dateLabel}}</view>
+                <view class="tl-ms-row__body">
+                  <view class="tl-ms-row__name">{{ms.name}} <text class="tl-ms-row__type">{{ms.typeLabel}}</text></view>
+                  <view class="tl-ms-row__value">{{ms.valueText}}</view>
+                </view>
+                <view wx:if="{{ms.isNext}}" class="tl-ms-row__next">下一个 · {{ms.daysUntilLabel}}</view>
+                <view wx:elif="{{ms.done}}" class="tl-ms-row__check">✓</view>
+              </view>
+            </view>
+            <view class="tl-phase__weeks-toggle" data-key="{{item.phase.key}}" catchtap="onTogglePhaseWeeks">
+              {{expandedPhases[item.phase.key] ? '收起周次 ▴' : '展开周次 · ' + item.phase.weekCount + ' 周 ▾'}}
+            </view>
+          </view>
+
+          <!-- 周节点（所属阶段展开时才渲染） -->
+          <block wx:elif="{{item.kind === 'week'}}">
+            <view wx:if="{{expandedPhases[item.phaseKey]}}" class="tl-item tl-item--week tl-item--{{item.state}}">
+            <view class="tl-week__head">
+              <view class="tl-week__no">{{item.weekIndex}}</view>
+              <view class="tl-week__date">{{item.dateRange}}</view>
+              <view wx:if="{{item.tag}}" class="tl-week__tag">{{item.tag}}</view>
+              <view class="tl-week__side">
+                <view wx:if="{{item.actualKm}}" class="tl-week__actual">{{item.actualKm}}</view>
+                <view wx:else class="tl-week__plan">{{item.km}}</view>
+                <view wx:if="{{item.actualSub}}" class="tl-week__sub">{{item.actualSub}}</view>
+              </view>
+            </view>
+            <!-- 本周展开：关键课 -->
+            <view wx:if="{{item.state === 'current'}}" class="tl-week__you">◀ 你在这里 · 第 {{weekNow}}/{{weekTotal}} 周</view>
+            <view wx:if="{{item.state === 'current'}}" class="tl-week__sessions">
+              <view wx:for="{{sessions}}" wx:for-item="sess" wx:key="key" class="tl-sess">
+                <image class="tl-sess__icon" src="{{sess.iconPath}}" mode="aspectFit" />
+                <view class="tl-sess__title">{{sess.dayLabel}} {{sess.title}}</view>
+                <view class="tl-sess__km">{{sess.km}}</view>
+              </view>
+            </view>
+            </view>
+          </block>
+        </block>
+      </view>
+
+      <view class="tl-footer">目标 {{targetTime}} · {{targetPace}} · 共 {{weekTotal}} 周</view>
+
+      <!-- 训练原则（Web TrainingPrinciples，常展开） -->
+      <view class="card principles">
+        <view class="principles__title">训练原则</view>
+        <view class="principles__list">
+          <view wx:for="{{principles}}" wx:key="key" class="principles__item">
+            <view class="principles__no">{{item.no}}</view>
+            <view class="principles__text">{{item.text}}</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- CTA（Web hero 的「调整计划」） -->
+      <view class="cta-row cta-row--single">
+        <view class="cta-btn cta-btn--ghost" bindtap="onStubTap">调整计划</view>
+      </view>
+    </block>
+
+    <!-- ============ 方案 C · 本周优先 ============ -->
+    <block wx:elif="{{variant === 'C'}}">
+      <!-- 状态条 + 周点阵 -->
+      <view class="card status-strip">
+        <view class="status-strip__row">
+          <view class="status-strip__left">第 {{weekNow}} 周 · {{currentPhaseName}}</view>
+          <view class="status-strip__right">{{countdownDays}} 天后比赛</view>
+        </view>
+        <view class="dots">
+          <view wx:for="{{weekDots}}" wx:key="key" class="dot dot--{{item.state}}"></view>
+        </view>
+        <view class="dots-caption">18 周赛季 · 深色为已完成</view>
+      </view>
+
+      <!-- 本周任务大卡 -->
+      <view class="card task-card">
+        <view class="task-card__head">
+          <view class="task-card__title">本周任务</view>
+          <view class="task-card__progress">{{weekDoneText}}</view>
+        </view>
+        <view class="task-card__bar">
+          <view class="task-card__bar-fill" style="width: {{weekProgressPercent}}%;"></view>
+        </view>
+        <view class="task-card__goal">目标 {{weekGoalText}}</view>
+        <view wx:for="{{sessions}}" wx:key="key" class="task-sess task-sess--{{item.state}}" bindtap="onStubTap">
+          <view class="task-sess__icon-wrap">
+            <image class="task-sess__icon" src="{{item.iconPath}}" mode="aspectFit" />
+          </view>
+          <view class="task-sess__body">
+            <view class="task-sess__title">{{item.title}}</view>
+            <view class="task-sess__meta">{{item.meta}}</view>
+            <view class="task-sess__day">{{item.dayLabel}}</view>
+          </view>
+          <view class="task-sess__state">{{item.stateLabel}}</view>
+        </view>
+      </view>
+
+      <!-- 目标（压缩） -->
+      <view class="section-title">目标</view>
+      <view class="card goal-rows">
+        <view class="goal-row">
+          <view class="goal-row__label">赛事</view>
+          <view class="goal-row__value">{{raceName}} · {{raceDistanceLabel}}</view>
+        </view>
+        <view class="goal-row">
+          <view class="goal-row__label">时间</view>
+          <view class="goal-row__value">{{raceDateLabel}} · {{raceLocation}}</view>
+        </view>
+        <view class="goal-row">
+          <view class="goal-row__label">目标</view>
+          <view class="goal-row__value goal-row__value--accent">{{targetTime}}（{{targetPace}}）</view>
+        </view>
+      </view>
+
+      <!-- 阶段概览（压缩） -->
+      <view class="section-title">阶段</view>
+      <view class="card phase-rows">
+        <view class="phase-row" wx:for="{{phaseRows}}" wx:key="key">
+          <view class="phase-row__name">{{item.name}}</view>
+          <view class="phase-row__meta">{{item.weeksLabel}} · {{item.kmRange}}</view>
+          <view class="phase-row__state phase-row__state--{{item.state}}">{{item.stateLabel}}</view>
+        </view>
+      </view>
+
+      <!-- CTA -->
+      <view class="cta-row">
+        <view class="cta-btn" bindtap="onStubTap">查看周计划</view>
+        <view class="cta-btn cta-btn--ghost" bindtap="onStubTap">找教练调整</view>
+      </view>
+    </block>
+  </view>
+
+  <!-- ============ 原型切换悬浮条（定稿后删除） ============ -->
+  <view class="proto-bar">
+    <view class="proto-bar__arrow" bindtap="onPrevVariant">‹</view>
+    <view class="proto-bar__label">{{variant}} · {{variantName}}</view>
+    <view class="proto-bar__arrow" bindtap="onNextVariant">›</view>
+    <view class="proto-bar__chip {{empty ? 'proto-bar__chip--on' : ''}}" bindtap="onToggleEmpty">空态</view>
+  </view>
+</view>
