@@ -33,11 +33,12 @@ export interface MasterPlanCard {
 
 /** v2 plan 的 goal（SeasonPlanGoal 镜像）。 */
 export interface MasterPlanGoal {
-  goal_id?: string;
+  goal_id: string;
   race_name?: string;
   distance?: string;
   race_date?: string;
   target_time?: string;
+  timezone?: string;
   location?: string | null;
 }
 
@@ -108,7 +109,21 @@ export interface MasterPlanWeek {
   actual_avg_pace_fmt?: string;
   actual_avg_hr?: number | null;
   actual_run_count?: number;
+  actual_duration_s?: number;
   actual_training_dose?: number | null;
+  actual_training_dose_coverage?: number | null;
+  actual_training_dose_status?: 'complete' | 'partial' | 'unknown' | null;
+}
+
+/** 负荷投影可用性（MasterPlanTrainingLoadProjection 镜像）。 */
+export interface MasterPlanTrainingLoadProjection {
+  status: 'available' | 'unavailable';
+  unavailable_reason:
+    | 'weekly_skeleton_unavailable'
+    | 'personal_threshold_unavailable'
+    | 'planned_session_uncomputable'
+    | null;
+  calculated_at: string;
 }
 
 /** 里程碑（MasterPlanMilestone 镜像）。 */
@@ -138,6 +153,7 @@ export interface SeasonPlanContent {
   phases: MasterPlanPhase[];
   milestones: MasterPlanMilestone[];
   weeks: MasterPlanWeek[];
+  training_load_projection?: MasterPlanTrainingLoadProjection | null;
   training_principles: string[];
   generated_by: string;
   current_phase_id: string | null;

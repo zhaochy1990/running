@@ -55,7 +55,7 @@
           </view>
           <view class="goal-strip__right">
             <view class="goal-strip__count">{{countdownDays}} 天</view>
-            <view class="goal-strip__count-sub">{{raceDateLabel}} 开赛</view>
+            <view wx:if="{{raceDateLabel}}" class="goal-strip__count-sub">{{raceDateLabel}} 开赛</view>
           </view>
         </view>
         <view class="goal-strip__lede">{{ledeText}}</view>
@@ -189,7 +189,7 @@
         </block>
       </view>
 
-      <view class="tl-footer">目标 {{targetTime}}<text wx:if="{{targetPace}}"> · {{targetPace}}</text> · 共 {{weekTotal}} 周</view>
+      <view class="tl-footer"><text wx:if="{{targetTime}}">目标 {{targetTime}}<text wx:if="{{targetPace}}"> · {{targetPace}}</text> · </text>共 {{weekTotal}} 周</view>
 
       <!-- 训练原则（Web TrainingPrinciples，常展开编号列表） -->
       <view wx:if="{{principles.length}}" class="card principles">

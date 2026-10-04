@@ -8,14 +8,13 @@
 
 import { getCurrentMasterPlan } from '../../services/master-plan';
 import type {
-  CurrentSeasonPlan,
   MasterPlanMilestone,
   MasterPlanPhase,
   MasterPlanWeek,
   SeasonPlanContent,
 } from '../../services/master-plan';
-import { ApiError } from '../../services/request';
 import { userStore } from '../../store/index';
+import { epochToShanghaiYmd, shanghaiToday, shanghaiYmdToEpoch } from '../../utils/date';
 
 interface PhaseMilestoneVM {
   key: string;
@@ -188,26 +187,25 @@ const MILESTONE_TYPE_LABELS: Record<string, string> = {
   body_composition: '体测',
 };
 
-// ---------- 工具（沿用原型 / Web 端格式化习惯） ----------
+// ---------- 工具（沿用原型 / Web 端格式化习惯；日历算术全部走上海时区，见 utils/date.ts） ----------
 
-/** 兼容 YYYY-MM-DD 与 ISO 时间戳。 */
-function parseDateOnly(value: string): Date | null {
-  const [y, m, d] = value.split('T')[0].split('-').map(Number);
-  if (!y || !m || !d) return null;
-  return new Date(y, m - 1, d);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** 计划日期（YYYY-MM-DD 或 ISO 时间戳）→ 上海日历日 00:00 的 epoch ms；非法返回 null。 */
+function ymdToEpoch(value: string): number | null {
+  const epoch = shanghaiYmdToEpoch(value.split('T')[0]);
+  return Number.isNaN(epoch) ? null : epoch;
 }
 
-function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+/** 上海日历日 epoch → Web 端 formatShort 习惯的 M/D（无前导零）。 */
+function fmtShort(epoch: number): string {
+  const [, m, d] = epochToShanghaiYmd(epoch).split('-');
+  return `${Number(m)}/${Number(d)}`;
 }
 
-/** Web 端 formatShort 习惯：M/D 无前导零。 */
-function fmtShort(d: Date): string {
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-}
-
-function daysBetween(from: Date, to: Date): number {
-  return Math.round((startOfDay(to).getTime() - startOfDay(from).getTime()) / 86400000);
+/** 上海日历日的整天差。 */
+function daysBetween(fromEpoch: number, toEpoch: number): number {
+  return Math.round((toEpoch - fromEpoch) / DAY_MS);
 }
 
 /** Web 端 padWeek 习惯：W01-W18。 */
@@ -224,14 +222,13 @@ function distanceLabel(value: string): string {
   return DISTANCE_LABELS[value] || value;
 }
 
-/** 目标配速 = 目标成绩 ÷ 项距离；无法换算时返回空串。 */
+/** 目标配速 = 目标成绩 ÷ 项距离；仅接受 H:MM:SS（后端约定格式），无法换算时返回空串。 */
 function targetPaceOf(distance: string | undefined, targetTime: string | undefined): string {
   const dist = distance === 'FM' ? 42.195 : distance === 'HM' ? 21.0975 : distance === '10K' ? 10 : distance === '5K' ? 5 : 0;
   if (!dist || !targetTime) return '';
   const parts = targetTime.split(':').map(Number);
-  if (!parts.length || parts.some((n) => Number.isNaN(n))) return '';
-  let sec = 0;
-  for (const p of parts) sec = sec * 60 + p;
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n) || n < 0)) return '';
+  const sec = parts[0] * 3600 + parts[1] * 60 + parts[2];
   if (sec <= 0) return '';
   const pace = Math.round(sec / dist);
   return `${Math.floor(pace / 60)}:${String(pace % 60).padStart(2, '0')}/km`;
@@ -250,7 +247,8 @@ function phaseKind(phase: MasterPlanPhase, index: number): string {
   return PHASE_ORDER[index % PHASE_ORDER.length];
 }
 
-/** 每个阶段覆盖的周区间（from/to，含端点）；老 plan 无 weeks[] 时按日期推。 */
+/** 每个阶段覆盖的周区间（from/to，含端点）。weeks[] 不全覆盖时（老计划：后端只为
+ * 已开始的周合成周行），缺口阶段按日期推周区间，保证每个阶段都有 span。 */
 function phaseWeekSpans(plan: SeasonPlanContent): Map<string, { from: number; to: number }> {
   const out = new Map<string, { from: number; to: number }>();
   for (const w of plan.weeks) {
@@ -259,28 +257,33 @@ function phaseWeekSpans(plan: SeasonPlanContent): Map<string, { from: number; to
     span.to = Math.max(span.to, w.week_index);
     out.set(w.phase_id, span);
   }
-  if (out.size === 0) {
-    let cursor = 1;
-    for (const p of plan.phases) {
-      const s = parseDateOnly(p.start_date);
-      const e = parseDateOnly(p.end_date);
-      const count = s && e ? Math.max(1, Math.ceil((e.getTime() - s.getTime() + 1) / 604800000)) : 1;
-      out.set(p.id, { from: cursor, to: cursor + count - 1 });
-      cursor += count;
+  const planStart = plan.start_date ? ymdToEpoch(plan.start_date) : null;
+  for (let i = 0; i < plan.phases.length; i += 1) {
+    const p = plan.phases[i];
+    if (out.has(p.id)) continue;
+    const s = ymdToEpoch(p.start_date);
+    const e = ymdToEpoch(p.end_date);
+    if (s != null && planStart != null) {
+      const from = Math.floor((s - planStart) / (7 * DAY_MS)) + 1;
+      const to = e != null ? from + Math.max(1, Math.ceil((e - s + DAY_MS) / (7 * DAY_MS))) - 1 : from;
+      out.set(p.id, { from, to });
+    } else {
+      const prev = i > 0 ? out.get(plan.phases[i - 1].id) : undefined;
+      out.set(p.id, { from: prev ? prev.to + 1 : 1, to: prev ? prev.to + 1 : 1 });
     }
   }
   return out;
 }
 
 /** 当前周：优先后端派生的 current_week_number，缺了再按 start_date 推。 */
-function resolveWeekNow(plan: SeasonPlanContent, today: Date): number {
+function resolveWeekNow(plan: SeasonPlanContent, todayEpoch: number): number {
   const total = plan.total_weeks || plan.phases.length;
   if (plan.current_week_number && plan.current_week_number >= 1) {
     return Math.min(plan.current_week_number, total);
   }
-  const start = parseDateOnly(plan.start_date);
-  if (!start) return 1;
-  const raw = Math.floor((startOfDay(today).getTime() - start.getTime()) / 604800000) + 1;
+  const start = ymdToEpoch(plan.start_date);
+  if (start == null) return 1;
+  const raw = Math.floor((todayEpoch - start) / (7 * DAY_MS)) + 1;
   return Math.max(1, Math.min(total || raw, raw));
 }
 
@@ -315,7 +318,8 @@ interface PlanContext {
   weeksByIndex: Map<number, MasterPlanWeek>;
   spans: Map<string, { from: number; to: number }>;
   phaseById: Map<string, MasterPlanPhase>;
-  today: Date;
+  /** 今天（上海日历日 00:00 的 epoch ms）。 */
+  today: number;
   weekNow: number;
   weekTotal: number;
   currentPhaseId: string;
@@ -343,19 +347,40 @@ function plannedKmText(week: MasterPlanWeek | undefined, phase: MasterPlanPhase)
   return `${fmtKm(phase.weekly_distance_km_low)}-${fmtKm(phase.weekly_distance_km_high)} km`;
 }
 
-function weekStart(plan: SeasonPlanContent, weekIndex: number): Date | null {
+function weekStart(plan: SeasonPlanContent, weekIndex: number): number | null {
   const row = plan.weeks.find((w) => w.week_index === weekIndex);
-  if (row) return parseDateOnly(row.week_start);
-  const start = parseDateOnly(plan.start_date);
-  if (!start) return null;
-  start.setDate(start.getDate() + (weekIndex - 1) * 7);
-  return start;
+  if (row) return ymdToEpoch(row.week_start);
+  const start = ymdToEpoch(plan.start_date);
+  if (start == null) return null;
+  return start + (weekIndex - 1) * 7 * DAY_MS;
+}
+
+// 负荷近似系数（原型定稿的启发式）：计划 dose ≈ 周跑量 × 6.6-7.6，
+// 实际 dose ≈ 实际跑量 × 7.1。仅在后端没写显式 dose 字段时兜底。
+const DOSE_PER_KM_PLANNED_LOW = 6.6;
+const DOSE_PER_KM_PLANNED_HIGH = 7.6;
+const DOSE_PER_KM_ACTUAL = 7.1;
+
+/** 计划负荷区间：target_training_dose 缺失时按周跑量兜底估算（唯一来源，柱图带与详情行共用）。 */
+function plannedDoseRange(week: MasterPlanWeek | undefined, phase: MasterPlanPhase): { low: number; high: number } {
+  const lowKm = week?.target_weekly_km_low ?? phase.weekly_distance_km_low;
+  const highKm = week?.target_weekly_km_high ?? phase.weekly_distance_km_high;
+  return {
+    low: week?.target_training_dose_low ?? Math.round(lowKm * DOSE_PER_KM_PLANNED_LOW),
+    high: week?.target_training_dose_high ?? Math.round(highKm * DOSE_PER_KM_PLANNED_HIGH),
+  };
+}
+
+/** 实际负荷：actual_training_dose 优先，缺失时按实际跑量估算；无实际数据返回 null。 */
+function actualDose(week: MasterPlanWeek | undefined): number | null {
+  if (!week) return null;
+  if (week.actual_training_dose != null) return week.actual_training_dose;
+  return week.actual_distance_km != null ? week.actual_distance_km * DOSE_PER_KM_ACTUAL : null;
 }
 
 /** 训练周期图（Web MileageCycleCard 的移动端转译，原型 buildChart 移植）。 */
 function buildChart(ctx: PlanContext, metric: 'km' | 'dose'): { bars: ChartBarVM[]; spans: ChartSpanVM[] } {
   const CHART_AREA_RPX = 150;
-  const FALLBACK_DOSE_PER_KM = 7.1; // 老数据没有 dose 字段时由跑量近似（原型同款系数）
 
   let maxKm = 0;
   let maxDose = 0;
@@ -364,8 +389,7 @@ function buildChart(ctx: PlanContext, metric: 'km' | 'dose'): { bars: ChartBarVM
     const phase = phaseOf(ctx, w);
     const high = week?.target_weekly_km_high ?? phase.weekly_distance_km_high;
     maxKm = Math.max(maxKm, high, week?.actual_distance_km ?? 0);
-    const doseHigh = week?.target_training_dose_high ?? ((week?.target_weekly_km_low ?? phase.weekly_distance_km_low) + high) / 2 * FALLBACK_DOSE_PER_KM;
-    maxDose = Math.max(maxDose, doseHigh, week?.actual_training_dose ?? 0);
+    maxDose = Math.max(maxDose, plannedDoseRange(week, phase).high, actualDose(week) ?? 0);
   }
   if (maxKm <= 0) maxKm = 1;
   if (maxDose <= 0) maxDose = 1;
@@ -388,11 +412,11 @@ function buildChart(ctx: PlanContext, metric: 'km' | 'dose'): { bars: ChartBarVM
       fillH = Math.round(((actual ?? plannedMid) / maxKm) * CHART_AREA_RPX);
       tickBottom = Math.round((plannedMid / maxKm) * CHART_AREA_RPX);
     } else {
-      const doseHigh = week?.target_training_dose_high ?? (plannedMid * FALLBACK_DOSE_PER_KM);
-      const doseLow = week?.target_training_dose_low ?? (plannedLow * FALLBACK_DOSE_PER_KM);
-      bandH = Math.round((Math.max(doseHigh, doseLow) / maxDose) * CHART_AREA_RPX);
-      if (week?.actual_training_dose != null) {
-        fillH = Math.round((week.actual_training_dose / maxDose) * CHART_AREA_RPX);
+      const range = plannedDoseRange(week, phase);
+      bandH = Math.round((Math.max(range.high, range.low) / maxDose) * CHART_AREA_RPX);
+      const ad = actualDose(week);
+      if (ad != null) {
+        fillH = Math.round((ad / maxDose) * CHART_AREA_RPX);
       }
     }
     bars.push({
@@ -426,12 +450,10 @@ function buildChart(ctx: PlanContext, metric: 'km' | 'dose'): { bars: ChartBarVM
 function buildChartDetail(ctx: PlanContext, weekIndex: number, metric: 'km' | 'dose'): string {
   const phase = phaseOf(ctx, weekIndex);
   const week = ctx.weeksByIndex.get(weekIndex);
-  const ws = weekStart(ctx.plan, weekIndex);
   const parts: string[] = [padWeek(weekIndex)];
-  if (ws) {
-    const we = new Date(ws);
-    we.setDate(we.getDate() + 6);
-    parts.push(`${fmtShort(ws)} – ${fmtShort(we)}`);
+  const ws = weekStart(ctx.plan, weekIndex);
+  if (ws != null) {
+    parts.push(`${fmtShort(ws)} – ${fmtShort(ws + 6 * DAY_MS)}`);
   }
   const state: 'done' | 'current' | 'future' =
     weekIndex < ctx.weekNow ? 'done' : weekIndex === ctx.weekNow ? 'current' : 'future';
@@ -449,21 +471,19 @@ function buildChartDetail(ctx: PlanContext, weekIndex: number, metric: 'km' | 'd
       parts.push('未完成');
     }
   } else {
-    const plannedMid = ((week?.target_weekly_km_low ?? phase.weekly_distance_km_low) +
-      (week?.target_weekly_km_high ?? phase.weekly_distance_km_high)) / 2;
-    const doseLow = week?.target_training_dose_low ?? Math.round(plannedMid * 6.6);
-    const doseHigh = week?.target_training_dose_high ?? Math.round(plannedMid * 7.6);
-    parts.push(`计划负荷 ${fmtKm(doseLow)}-${fmtKm(doseHigh)} dose`);
-    if (week?.actual_training_dose != null && week.actual_training_dose > 0) {
-      parts.push(`实际负荷 ${fmtKm(week.actual_training_dose)} dose${state === 'current' ? '（截至目前）' : ''}`);
+    const range = plannedDoseRange(week, phase);
+    parts.push(`计划负荷 ${fmtKm(range.low)}-${fmtKm(range.high)} dose`);
+    const ad = actualDose(week);
+    if (ad != null && ad > 0) {
+      parts.push(`实际负荷 ${fmtKm(ad)} dose${state === 'current' ? '（截至目前）' : ''}`);
     }
   }
   return parts.join(' · ');
 }
 
-function buildViewModels(plan: SeasonPlanContent, today: Date) {
+function buildViewModels(plan: SeasonPlanContent, todayEpoch: number) {
   const totalWeeks = plan.total_weeks || plan.weeks.length || plan.phases.length;
-  const weekNow = resolveWeekNow(plan, today);
+  const weekNow = resolveWeekNow(plan, todayEpoch);
   const spans = phaseWeekSpans(plan);
   const weeksByIndex = new Map<number, MasterPlanWeek>();
   for (const w of plan.weeks) weeksByIndex.set(w.week_index, w);
@@ -485,17 +505,17 @@ function buildViewModels(plan: SeasonPlanContent, today: Date) {
     weeksByIndex,
     spans,
     phaseById,
-    today,
+    today: todayEpoch,
     weekNow,
     weekTotal: totalWeeks,
     currentPhaseId,
   };
 
   const goal = plan.goal;
-  const raceDate = parseDateOnly(goal.race_date || plan.end_date);
-  const countdownDays = raceDate ? Math.max(0, daysBetween(today, raceDate)) : 0;
+  const raceDate = ymdToEpoch(goal.race_date || plan.end_date);
+  const countdownDays = raceDate != null ? Math.max(0, daysBetween(todayEpoch, raceDate)) : 0;
   const currentPhase = phaseById.get(currentPhaseId) || plan.phases[plan.phases.length - 1];
-  const startDate = parseDateOnly(plan.start_date);
+  const startDate = ymdToEpoch(plan.start_date);
 
   const ledeParts: string[] = [];
   if (startDate && raceDate) ledeParts.push(`${fmtShort(startDate)} – ${fmtShort(raceDate)}`);
@@ -516,8 +536,8 @@ function buildViewModels(plan: SeasonPlanContent, today: Date) {
         : span.to < weekNow
           ? 'done'
           : 'future';
-    const ps = parseDateOnly(p.start_date);
-    const pe = parseDateOnly(p.end_date);
+    const ps = ymdToEpoch(p.start_date);
+    const pe = ymdToEpoch(p.end_date);
 
     let summaryLine: string | undefined;
     let hrZoneLine: string | undefined;
@@ -538,14 +558,14 @@ function buildViewModels(plan: SeasonPlanContent, today: Date) {
     const milestones: PhaseMilestoneVM[] = plan.milestones
       .filter((m: MasterPlanMilestone) => m.phase_id === p.id)
       .map((m) => {
-        const md = parseDateOnly(m.date);
+        const md = ymdToEpoch(m.date);
         // 「下一个」只标还没过期、且后端 next_milestone 指向的那枚；
         // 已完成阶段里遗留未完成的过期里程碑不标（days_until 会是负数）。
-        const daysUntil = plan.next_milestone?.id === m.id ? plan.next_milestone.days_until : md ? daysBetween(today, md) : 0;
+        const daysUntil = plan.next_milestone?.id === m.id ? plan.next_milestone.days_until : md != null ? daysBetween(todayEpoch, md) : 0;
         const isNext = m.id === nextMilestoneId && !m.completed_actual && daysUntil >= 0;
         return {
           key: m.id,
-          dateLabel: md ? fmtShort(md) : m.date,
+          dateLabel: md != null ? fmtShort(md) : m.date,
           typeLabel: MILESTONE_TYPE_LABELS[m.type] || m.type,
           valueText: m.completed_actual ? `实测 ${m.completed_actual}（目标 ${m.target}）` : `目标 ${m.target}`,
           done: Boolean(m.completed_actual),
@@ -590,10 +610,8 @@ function buildViewModels(plan: SeasonPlanContent, today: Date) {
       const st: WeekRowVM['state'] = w < weekNow ? 'done' : w === weekNow ? 'current' : 'future';
       const ws = weekStart(plan, w);
       let dateRange = '';
-      if (ws) {
-        const we = new Date(ws);
-        we.setDate(we.getDate() + 6);
-        dateRange = `${fmtShort(ws)} – ${fmtShort(we)}`;
+      if (ws != null) {
+        dateRange = `${fmtShort(ws)} – ${fmtShort(ws + 6 * DAY_MS)}`;
       }
       const hasActual = week?.actual_distance_km != null;
       const actualSub: string[] = [];
@@ -688,7 +706,16 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
       statusBarHeight: statusBarHeight(),
       contentPaddingTop: contentPaddingTopRpx(),
     });
-    void this.loadPlan();
+    // 先等认证流程 settle 再拉数据，避免会话恢复期间误入「请先登录」误导已登录用户
+    // （同 pages/training-status 的先认证后取数）。
+    userStore.waitForAuth().then(() => {
+      const { isAuthenticated, user } = userStore.getState();
+      if (!isAuthenticated || !user) {
+        wx.reLaunch({ url: '/pages/login/login' });
+        return;
+      }
+      void this.loadPlan();
+    });
   },
 
   async loadPlan() {
@@ -711,13 +738,19 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
       }
       this.applyPlan(envelope.plan);
     } catch (err) {
-      const msg = err instanceof ApiError && err.detail ? err.detail : '加载失败，请稍后重试';
-      this.setData({ loadState: 'error', errorText: msg });
+      // 后端 detail 可能是英文 jargon，不上屏；完整错误体 request 层已打日志
+      console.error('[training-plan] 加载失败', err);
+      this.setData({ loadState: 'error', errorText: '加载失败，请稍后重试' });
     }
   },
 
   applyPlan(plan: SeasonPlanContent) {
-    const vm = buildViewModels(plan, new Date());
+    if (!plan.phases.length) {
+      // Go 校验只保证 phases 是数组；空数组按内容错误走错误态而不是让它抛 TypeError
+      this.setData({ loadState: 'error', errorText: '计划内容为空' });
+      return;
+    }
+    const vm = buildViewModels(plan, shanghaiYmdToEpoch(shanghaiToday()));
     this._planCtx = vm.ctx;
     const goal = vm.goal;
     const expandedPhases: Record<string, boolean> = {};
@@ -726,7 +759,7 @@ Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
       loadState: 'ready',
       raceName: goal.race_name || '赛季训练计划',
       raceDistanceLabel: distanceLabel(goal.distance || ''),
-      raceDateLabel: (goal.race_date || '').split('T')[0].replace(/-/g, '.'),
+      raceDateLabel: (goal.race_date || plan.end_date || '').split('T')[0].replace(/-/g, '.'),
       targetTime: goal.target_time || '',
       targetPace: targetPaceOf(goal.distance, goal.target_time),
       countdownDays: vm.countdownDays,
