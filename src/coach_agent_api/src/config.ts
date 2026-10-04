@@ -139,7 +139,7 @@ export function loadApiConfig(options: LoadApiConfigOptions): ApiConfig {
     persistenceDatabase: raw.persistence_database,
     planJobs: { amqpUrl: raw.plan_jobs.amqp_url, queues: raw.plan_jobs.queues },
     goApi: { baseUrl: raw.go_api.base_url, internalToken: raw.go_api.internal_token },
-    logFile: raw.logging.file ? (isAbsolute(raw.logging.file) ? raw.logging.file : resolve(configDir, raw.logging.file)) : "",
+    logFile: raw.logging.file ? resolve(configDir, raw.logging.file) : "",
     auth: {
       publicKeyPem,
       authServiceUrl: raw.auth.auth_service_url,

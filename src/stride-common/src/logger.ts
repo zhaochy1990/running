@@ -43,8 +43,8 @@ function resolveLevel(): string {
   return "info";
 }
 
-function isProduction(): boolean {
-  return (process.env.STRIDE_COACH_ENV ?? process.env.NODE_ENV) === "production";
+function isProduction(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.STRIDE_COACH_ENV ?? env.NODE_ENV) === "production";
 }
 
 function usePretty(): boolean {
@@ -92,13 +92,9 @@ function buildTeeDestination(): NodeJS.WritableStream {
   const stdoutLeg: NodeJS.WritableStream = usePretty() ? pretty({ ...PRETTY_OPTIONS, colorize: true }) : process.stdout;
   return new Writable({
     write(chunk, _encoding, callback) {
-      try {
-        stdoutLeg.write(chunk);
-        fileLeg?.write(chunk);
-        callback();
-      } catch (error) {
-        callback(error as Error);
-      }
+      stdoutLeg.write(chunk);
+      fileLeg?.write(chunk);
+      callback();
     },
   });
 }
@@ -129,7 +125,8 @@ export interface AttachFileLoggingOptions {
  * directories). Local-only: outside the `local` environment the call logs a
  * warning and does nothing, so file logging can never silently run in
  * dev/staging/prod. Attach once at startup; repeated calls keep the first
- * stream. File-leg errors disable the leg — stdout logging is never lost.
+ * stream. An unopenable path logs a warning instead of throwing, and runtime
+ * file-leg errors disable the leg — stdout logging is never lost.
  *
  * @returns whether the file leg is (or already was) attached.
  */
@@ -137,16 +134,25 @@ export function attachFileLogging(path: string, options: AttachFileLoggingOption
   if (!path) {
     return false;
   }
-  const environment = resolveEnvironment(options.env ? { env: options.env } : {});
-  if (environment !== "local") {
+  const environment = resolveEnvironment(options);
+  if (environment !== "local" || isProduction(options.env ?? process.env)) {
     rootLogger.warn({ environment, file: path }, "file logging is local-only; ignoring logging.file");
     return false;
   }
   if (fileLeg) {
     return true;
   }
-  const destination = pino.destination({ dest: path, mkdir: true, sync: true });
-  const stream = pretty({ ...PRETTY_OPTIONS, colorize: false, destination });
+  // sonic-boom opens the file synchronously, so an unopenable path (EISDIR,
+  // EACCES, ...) throws here rather than emitting an async "error" later.
+  let destination: ReturnType<typeof pino.destination>;
+  let stream: ReturnType<typeof pretty>;
+  try {
+    destination = pino.destination({ dest: path, mkdir: true, sync: true });
+    stream = pretty({ ...PRETTY_OPTIONS, colorize: false, destination });
+  } catch (error) {
+    rootLogger.warn({ error, file: path }, "cannot open log file; continuing on stdout only");
+    return false;
+  }
   const detach = (error: unknown): void => {
     if (fileLeg === stream) {
       fileLeg = null;

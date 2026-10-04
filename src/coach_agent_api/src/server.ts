@@ -7,10 +7,8 @@ import { createCoachApiRuntime } from "./runtime.js";
 
 const logger = getLogger("coach-agent-api");
 const apiConfig = loadApiConfig({ configFiles: coachApiConfigFiles(import.meta.url) });
-if (apiConfig.logFile) {
-  // No-op (with a warning) outside the local environment; see attachFileLogging.
-  attachFileLogging(apiConfig.logFile);
-}
+// No-op (with a warning) when empty or outside the local environment.
+attachFileLogging(apiConfig.logFile);
 const runtime = await createCoachApiRuntime(apiConfig, loadConfig({ configFiles: coachAgentConfigFiles(import.meta.url) }));
 const server = serve(
   {

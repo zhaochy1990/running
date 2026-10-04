@@ -32,17 +32,21 @@ export function createApp(dependencies: AppDependencies): Hono<AuthEnv> {
   app.use("*", requestId());
   app.use("*", async (c, next) => {
     const startedAt = performance.now();
-    await next();
-    httpLogger.info(
-      {
-        requestId: c.get("requestId"),
-        method: c.req.method,
-        path: c.req.path,
-        status: c.res.status,
-        durationMs: Math.round(performance.now() - startedAt),
-      },
-      "request",
-    );
+    const fields = () => ({
+      requestId: c.get("requestId"),
+      method: c.req.method,
+      path: c.req.path,
+      durationMs: Math.round(performance.now() - startedAt),
+    });
+    try {
+      await next();
+      httpLogger.info({ ...fields(), status: c.res.status }, "request");
+    } catch (error) {
+      // Hono's onError composes the error response (500 by default) only after
+      // this middleware unwinds, so the status is not on c.res yet.
+      httpLogger.error({ ...fields(), status: 500 }, "request failed");
+      throw error;
+    }
   });
 
   const turnCoordinator = dependencies.turnCoordinator ?? createInMemoryTurnCoordinator();

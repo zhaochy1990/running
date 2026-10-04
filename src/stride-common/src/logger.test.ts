@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,6 +7,20 @@ import { attachFileLogging, getLogger } from "./logger.js";
 
 /** Give the in-process pretty transform a moment to flush to the sync file. */
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 200));
+
+// Attach is idempotent (keeps the first leg), so tests that must observe a
+// fresh attach decision run before the first successful attach below.
+test("attachFileLogging warns instead of throwing on an unopenable path", () => {
+  const root = mkdtempSync(join(tmpdir(), "stride-common-logfile-eisdir-"));
+  try {
+    const target = join(root, "as-directory.log");
+    mkdirSync(target);
+    assert.equal(attachFileLogging(target, { env: {} }), false);
+    getLogger("test:unopenable").info("stdout logging still works");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("attachFileLogging tees pretty, redacted, uncolored lines to the file", async () => {
   const root = mkdtempSync(join(tmpdir(), "stride-common-logfile-"));
@@ -34,6 +48,7 @@ test("attachFileLogging is local-only and idempotent", () => {
   try {
     assert.equal(attachFileLogging(file, { env: { STRIDE_COACH_ENV: "prod" } }), false);
     assert.equal(existsSync(file), false);
+    assert.equal(attachFileLogging(file, { env: { NODE_ENV: "production" } }), false);
 
     assert.equal(attachFileLogging(file, { env: {} }), true);
     assert.equal(attachFileLogging(join(root, "other.log"), { env: {} }), true);

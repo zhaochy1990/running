@@ -84,7 +84,6 @@ go_api:
 
 # Local-only debug log file (pretty text, tee'd alongside stdout). Empty by
 # default; enabled in coach-api.local.yaml. A non-empty value outside the local
-# environment logs a startup warning and is ignored. Relative paths resolve
-# against this file's directory. Env: STRIDE_COACH_LOG_FILE.
+# environment logs a startup warning and is ignored. Env: STRIDE_COACH_LOG_FILE.
 logging:
   file: ""
