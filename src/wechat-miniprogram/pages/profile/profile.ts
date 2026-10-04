@@ -144,6 +144,10 @@ Page<ProfilePageData, ProfilePageHandlers>({
 
   onRowTap(e: WechatMiniprogram.TouchEvent) {
     const key = e.currentTarget.dataset.key as string;
+    if (key === 'plan') {
+      wx.navigateTo({ url: '/pages/training-plan/training-plan' });
+      return;
+    }
     if (key === 'training-status') {
       wx.navigateTo({ url: '/pages/training-status/training-status' });
       return;
