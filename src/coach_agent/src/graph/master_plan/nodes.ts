@@ -28,13 +28,14 @@ import { z } from "zod/v4";
 import { measureExecutionTimeAsync } from "../../utils/performance.js";
 import {
   type AssessmentFacts,
-  authoritativeGoalLevel,
   canonicalizeAssessmentSummary,
   deriveAssessmentFacts,
   type GoalAssessment,
   GoalAssessmentSchema,
   validateAssessmentReferences,
   validateGoalAssessmentTargets,
+  withAuthoritativeLevel,
+  withBackfilledClaimCitations,
 } from "./assessment.js";
 import { type ContextSnapshot, ContextSnapshotSchema, type MasterPlanContextProvider } from "./context.js";
 import {
@@ -51,6 +52,7 @@ import { type RuleReport, runMasterPlanRuleFilter } from "./rules.js";
 import { type SimulationReport, simulateMasterPlanLoad } from "./simulation.js";
 import {
   aggregateStrategySelection,
+  canonicalizeStrategyCandidate,
   mergeCandidatesByStableId,
   mergeJudgmentsByStableKey,
   mergeWorkerErrors,
@@ -258,20 +260,24 @@ class MasterPlanNodes {
   readonly assessGoal = async (state: typeof GraphState.State) => {
     const { request, snapshot, facts, context } = required(state);
     try {
-      const assessment = canonicalizeAssessmentSummary(
-        GoalAssessmentSchema.parse(
-          await this.dependencies.goalAssessmentModel.invoke({
-            request,
-            snapshot,
-            facts,
-          }),
+      const assessment = withAuthoritativeLevel(
+        withBackfilledClaimCitations(
+          canonicalizeAssessmentSummary(
+            GoalAssessmentSchema.parse(
+              await this.dependencies.goalAssessmentModel.invoke({
+                request,
+                snapshot,
+                facts,
+              }),
+            ),
+          ),
+          facts,
         ),
+        facts,
       );
       logger.info(assessment, `Goal assessment for request ${request.request_id}`);
       validateAssessmentReferences(assessment, facts);
       validateGoalAssessmentTargets(assessment, request, facts);
-      if (assessment.level !== authoritativeGoalLevel(facts) || (assessment.level !== "multi_cycle_required" && assessment.multi_cycle_path.length))
-        throw new Error("goal assessment conflict");
       if (assessment.level === "multi_cycle_required")
         return {
           outcome: MasterPlanGraphOutcome.parse({
@@ -311,16 +317,21 @@ class MasterPlanNodes {
   readonly strategyWorker = async (state: typeof GraphState.State) => {
     const { request, snapshot, facts, goalAssessment } = requiredWithGoalAssessment(state);
     try {
-      const candidate = StrategyCandidateSchema.parse(
-        await this.dependencies.strategyModel.invoke({
-          archetype: state.strategyArchetype!,
-          request,
-          snapshot,
-          facts,
-          goalAssessment,
-        }),
-      );
-      validateStrategyCandidate(candidate, facts);
+      const candidate = await withModelRetry("strategyWorker", async () => {
+        const parsed = canonicalizeStrategyCandidate(
+          StrategyCandidateSchema.parse(
+            await this.dependencies.strategyModel.invoke({
+              archetype: state.strategyArchetype!,
+              request,
+              snapshot,
+              facts,
+              goalAssessment,
+            }),
+          ),
+        );
+        validateStrategyCandidate(parsed, facts);
+        return parsed;
+      });
       return { strategyCandidates: [candidate] };
     } catch (error) {
       logSwallowedFailure("strategyWorker", error, { archetype: state.strategyArchetype });
@@ -333,16 +344,19 @@ class MasterPlanNodes {
   readonly judgeWorker = async (state: typeof GraphState.State) => {
     const { request, facts, goalAssessment } = requiredWithGoalAssessment(state);
     try {
-      const judgment = StrategyJudgmentSchema.parse(
-        await this.dependencies.judgmentModel.invoke({
-          judge: state.judge!,
-          candidate: state.candidate!,
-          request,
-          facts,
-          goalAssessment,
-        }),
-      );
-      validateStrategyJudgment(judgment, state.candidate!, facts);
+      const judgment = await withModelRetry("judgeWorker", async () => {
+        const parsed = StrategyJudgmentSchema.parse(
+          await this.dependencies.judgmentModel.invoke({
+            judge: state.judge!,
+            candidate: state.candidate!,
+            request,
+            facts,
+            goalAssessment,
+          }),
+        );
+        validateStrategyJudgment(parsed, state.candidate!, facts);
+        return parsed;
+      });
       return { judgments: [judgment] };
     } catch (error) {
       logSwallowedFailure("judgeWorker", error, { judge: state.judge, candidateId: state.candidate?.candidate_id });
@@ -382,14 +396,16 @@ class MasterPlanNodes {
     const { request, snapshot, facts, context, goalAssessment } = requiredWithGoalAssessment(state);
     let raw: unknown;
     try {
-      raw = await this.dependencies.skeletonModel.invoke({
-        request,
-        context,
-        snapshot,
-        facts,
-        goalAssessment,
-        selectedStrategy: state.selectedStrategy!,
-      });
+      raw = await withModelRetry("expandSkeleton", () =>
+        this.dependencies.skeletonModel.invoke({
+          request,
+          context,
+          snapshot,
+          facts,
+          goalAssessment,
+          selectedStrategy: state.selectedStrategy!,
+        }),
+      );
     } catch (error) {
       logSwallowedFailure("expandSkeleton", error);
       return {
@@ -500,9 +516,12 @@ class MasterPlanNodes {
       ruleReport: state.ruleReport!,
     };
     try {
-      const report = ReviewReportSchema.parse(await this.dependencies.reviewModel.invoke(input));
-      if (report.review_task_id !== input.reviewTaskId || report.reviewer_type !== input.reviewerType || report.artifact_revision !== input.artifactRevision)
-        throw new Error("review identity mismatch");
+      const report = await withModelRetry("reviewWorker", async () => {
+        const parsed = ReviewReportSchema.parse(await this.dependencies.reviewModel.invoke(input));
+        if (parsed.review_task_id !== input.reviewTaskId || parsed.reviewer_type !== input.reviewerType || parsed.artifact_revision !== input.artifactRevision)
+          throw new Error("review identity mismatch");
+        return parsed;
+      });
       return { reviewReports: [report] };
     } catch (error) {
       logSwallowedFailure("reviewWorker", error, { reviewerType: state.reviewerType });
@@ -697,6 +716,22 @@ function sharedWorkerState(state: typeof GraphState.State) {
 
 function isInfrastructureError(error: unknown): boolean {
   return error instanceof Error && /(?:timeout|ECONN|network|unavailable|rate limit|429|5\d\d)/i.test(error.message);
+}
+
+/**
+ * One retry for model-side contract noise — hallucinated fact_ids, structured
+ * output parse flakes — before the worker reports a quality error that ends the
+ * whole run. Deterministic contract failures throw again on the retry;
+ * infrastructure errors fail fast without a second call.
+ */
+async function withModelRetry<T>(site: string, op: () => Promise<T>): Promise<T> {
+  try {
+    return await op();
+  } catch (error) {
+    if (isInfrastructureError(error)) throw error;
+    logSwallowedFailure(site, error, { retry: 1 });
+    return await op();
+  }
 }
 function workerFailure(state: typeof GraphState.State) {
   const error = state.workerErrors[0]!;
