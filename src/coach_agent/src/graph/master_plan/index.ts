@@ -32,6 +32,8 @@ export {
   GoalAssessmentSchema,
   validateAssessmentReferences,
   validateGoalAssessmentTargets,
+  withAuthoritativeLevel,
+  withBackfilledClaimCitations,
 } from "./assessment.js";
 export type { ContextSnapshot, MasterPlanContextProvider } from "./context.js";
 export {

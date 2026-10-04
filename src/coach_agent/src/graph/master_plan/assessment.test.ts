@@ -5,8 +5,10 @@ import {
   createMasterPlanGraph,
   deriveAssessmentFacts,
   GoalAssessmentSchema,
+  type GoalAssessment,
   type MasterPlanGraphContext,
   MasterPlanGraphRequest,
+  withBackfilledClaimCitations,
 } from "./index.js";
 import {
   createAssessmentSnapshot,
@@ -390,12 +392,13 @@ test("typed stop outcomes do not invoke the skeleton", async () => {
   assert.equal(skeletonCalls, 0);
 });
 
-test("rejects a model-declared multi-cycle stop that contradicts deterministic facts", async () => {
+test("canonicalizes a model-declared multi-cycle stop that contradicts deterministic facts", async () => {
   const goal = {
     ...validGoalAssessment(),
     level: "multi_cycle_required" as const,
     multi_cycle_path: ["Build baseline", "Reassess target"],
   };
+  let skeletonCalls = 0;
   const graph = createMasterPlanGraph(
     dependencies({
       goalAssessmentModel: {
@@ -403,10 +406,18 @@ test("rejects a model-declared multi-cycle stop that contradicts deterministic f
           return goal;
         },
       },
+      skeletonModel: {
+        async invoke() {
+          skeletonCalls += 1;
+          return createTestMasterPlan();
+        },
+      },
     }),
   );
   const { outcome } = await graph.invoke({ request: createTestRequest() }, { context });
-  assert.equal(outcome.decision, "failed_quality_gate");
+  assert.notEqual(outcome.decision, "failed_quality_gate");
+  assert.notEqual(outcome.decision, "multi_cycle_required");
+  assert.ok(skeletonCalls >= 1);
 });
 
 test("explicit current acute restrictions stop before any assessment model", async () => {
@@ -524,4 +535,14 @@ test("confirmed constraints incompatible with marathon preparation produce a goa
   );
   const { outcome } = await graph.invoke({ request }, { context });
   assert.equal(outcome.decision, "goal_conflict");
+});
+
+test("withBackfilledClaimCitations appends only known required facts", () => {
+  const goal: GoalAssessment = {
+    ...validGoalAssessment(),
+    material_conclusions: [{ claim: "goal_supported_by_history", explanation: "x", fact_ids: ["history.peak_weekly_km"] }],
+  };
+  const facts = deriveAssessmentFacts(createAssessmentSnapshot(), createTestRequest());
+  const backfilled = withBackfilledClaimCitations(goal, facts);
+  assert.deepEqual(backfilled.material_conclusions[0]?.fact_ids, ["history.peak_weekly_km", "history.longest_road_run_km"]);
 });

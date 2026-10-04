@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ChatOpenAIResponses } from "@langchain/openai";
-import { buildModel, buildResponsesModel, type ModelConfig } from "./models.js";
+import { buildModel, buildResponsesModel, enforceStrictRequired, inlineRefs, renameOneOf, type ModelConfig } from "./models.js";
 
 const MODEL: ModelConfig = {
   name: "test-responses",
@@ -77,4 +77,27 @@ test("a structured request turns buildModel into a schema-bound runnable", () =>
     assert.equal(runnable.name, "submit_test");
     assert.equal(typeof runnable.invoke, "function");
   });
+});
+
+test("json schema sanitizer renames oneOf, inlines refs, and completes strict required", () => {
+  const wire = {
+    type: "object",
+    properties: {
+      kind: { oneOf: [{ type: "object", properties: { a: { type: "string" } }, required: ["a"], additionalProperties: false }, { type: "object", properties: { b: { $ref: "#/$defs/Unit" } }, required: ["b"], additionalProperties: false }] },
+      note: { type: "string" },
+    },
+    required: ["kind"],
+    additionalProperties: false,
+    $defs: { Unit: { type: "string", enum: ["km"] } },
+  };
+  const sanitized = enforceStrictRequired(inlineRefs(renameOneOf(wire))) as Record<string, any>;
+
+  assert.equal(JSON.stringify(sanitized).includes('"oneOf"'), false);
+  assert.equal(sanitized.$defs, undefined);
+  assert.deepEqual(sanitized.required, ["kind", "note"]);
+  assert.ok(Array.isArray(sanitized.properties.note.anyOf));
+  assert.ok((sanitized.properties.note.anyOf as unknown[]).some((branch) => (branch as Record<string, unknown>).type === "null"));
+  const branches = sanitized.properties.kind.anyOf as Array<Record<string, any>>;
+  assert.equal(branches.length, 2);
+  assert.deepEqual(branches[1]?.properties.b, { type: "string", enum: ["km"] });
 });

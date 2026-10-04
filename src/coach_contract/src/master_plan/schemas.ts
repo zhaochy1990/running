@@ -56,6 +56,8 @@ const StrategyPhaseSchema = z
   .strict()
   .refine((phase) => phase.weekly_km_low <= phase.weekly_km_high, "phase weekly low must not exceed high");
 
+/** 模型直出的载荷：strip 而非 strict——模型多吐的杂键（如 title）是噪声不是
+ * 契约违规，已知字段的校验不受影响；内部生产者由 TS 编译期保证。 */
 export const StrategyCandidateSchema = z
   .object({
     schema_version: z.literal(1),
@@ -78,7 +80,6 @@ export const StrategyCandidateSchema = z
     hard_constraint_violations: z.array(z.string().min(1)),
     evidence_fact_ids: z.array(z.string().min(1)).min(1),
   })
-  .strict()
   .superRefine((candidate, ctx) => {
     const expectedId = `strategy-${candidate.archetype.replace("_", "-")}-v1`;
     if (candidate.candidate_id !== expectedId)

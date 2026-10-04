@@ -119,6 +119,25 @@ export function validateAssessmentReferences(assessment: GoalAssessment, facts: 
   for (const item of assessment.material_conclusions) validateClaim(item.claim, item.fact_ids, byId);
 }
 
+/**
+ * The required-claim citations are deterministic rules, so a model that picks
+ * the claim but under-cites its backing facts is a prompt-compliance miss, not
+ * a capability judgment. Backfill the missing ids (only ones the facts actually
+ * carry — ids absent from the facts stay missing so validation still fails
+ * loudly instead of inventing evidence); contradictory values remain rejected
+ * by validateClaim.
+ */
+export function withBackfilledClaimCitations(assessment: GoalAssessment, facts: AssessmentFacts): GoalAssessment {
+  const known = new Set(facts.facts.map((fact) => fact.fact_id));
+  return {
+    ...assessment,
+    material_conclusions: assessment.material_conclusions.map((item) => ({
+      ...item,
+      fact_ids: [...item.fact_ids, ...REQUIRED_CLAIM_FACTS[item.claim].filter((id) => !item.fact_ids.includes(id) && known.has(id))],
+    })),
+  };
+}
+
 export function canonicalizeAssessmentSummary(assessment: GoalAssessment): GoalAssessment {
   const material_conclusions = assessment.material_conclusions.map((item) => ({
     ...item,
@@ -129,6 +148,18 @@ export function canonicalizeAssessmentSummary(assessment: GoalAssessment): GoalA
     material_conclusions,
     summary: material_conclusions.map((item) => item.explanation).join(" "),
   };
+}
+
+/**
+ * The goal-level ladder is deterministic (authoritativeGoalLevel); the model's
+ * own level pick is coherence, not authority — a disagreement is prompt
+ * compliance noise, not a capability judgment. Canonicalize to the
+ * authoritative level and keep multi_cycle_path only when that level requires it.
+ */
+export function withAuthoritativeLevel(assessment: GoalAssessment, facts: AssessmentFacts): GoalAssessment {
+  const level = authoritativeGoalLevel(facts);
+  if (level === assessment.level && (level === "multi_cycle_required" || assessment.multi_cycle_path.length === 0)) return assessment;
+  return { ...assessment, level, multi_cycle_path: level === "multi_cycle_required" ? assessment.multi_cycle_path : [] };
 }
 
 export function validateGoalAssessmentTargets(assessment: GoalAssessment, request: MasterPlanGraphRequest, facts: AssessmentFacts): void {
@@ -216,13 +247,14 @@ function goalIncompatible(request: MasterPlanGraphRequest): boolean {
     request.prohibited_arrangements.some((item) => /(?:no|禁止|不做|不能).{0,10}(?:running|run|long run|跑步|长跑|长距离)/i.test(item))
   );
 }
+/** fact_ids that deterministically back each goal claim; conclusions citing a claim must cite all of them. */
+const REQUIRED_CLAIM_FACTS: Record<GoalClaim, string[]> = {
+  goal_requires_improvement: ["goal.a.improvement_pct"],
+  goal_runway_limited: ["race.a.weeks_to_race"],
+  goal_supported_by_history: ["history.peak_weekly_km", "history.longest_road_run_km"],
+};
 function validateClaim(claim: GoalClaim, factIds: string[], facts: Map<string, Fact>): void {
-  const required: Record<GoalClaim, string[]> = {
-    goal_requires_improvement: ["goal.a.improvement_pct"],
-    goal_runway_limited: ["race.a.weeks_to_race"],
-    goal_supported_by_history: ["history.peak_weekly_km", "history.longest_road_run_km"],
-  };
-  for (const id of required[claim]) if (!factIds.includes(id) || !facts.has(id)) throw new Error(`assessment claim ${claim} requires fact_id: ${id}`);
+  for (const id of REQUIRED_CLAIM_FACTS[claim]) if (!factIds.includes(id) || !facts.has(id)) throw new Error(`assessment claim ${claim} requires fact_id: ${id}`);
   const value = (id: string) => facts.get(id)?.value;
   const valid =
     claim === "goal_requires_improvement"

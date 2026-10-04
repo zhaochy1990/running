@@ -146,13 +146,110 @@ export function buildResponsesModel(config: ModelConfig): ChatOpenAIResponses {
     apiKey: resolveApiKey(config),
     maxTokens: config.max_tokens,
     timeout: config.timeout_s * 1000,
-    configuration: { baseURL: config.endpoint },
+    configuration: { baseURL: config.endpoint, fetch: jsonSchemaSanitizingFetch },
 
     reasoning: {
       effort: config.reasoning_effort ?? "high",
     },
     temperature: config.temperature ?? 0.4,
   });
+}
+
+/**
+ * DeepSeek 的 json_schema 校验比 OpenAI 严两处：不认 `oneOf`（报错文案却写
+ * `anyOf`）；strict 模式要求 `required` 覆盖全部 properties。发线前做等价改写：
+ * oneOf→anyOf（判别并集语义等价）；strict 惯例补全——required 补成全量、原本
+ * 可选的属性包一层 anyOf-null（OpenAI strict 的标准表达，zod 侧 nullish 字段
+ * 均可接住 null）。strict 本身保持开启，约束解码不受影响。
+ */
+const jsonSchemaSanitizingFetch: typeof fetch = async (input, init) => {
+  try {
+    if (typeof init?.body === "string") {
+      const body = JSON.parse(init.body) as { text?: { format?: Record<string, unknown> } };
+      const format = body?.text?.format;
+      if (format?.type === "json_schema" && format.schema != null) {
+        format.schema = enforceStrictRequired(inlineRefs(renameOneOf(format.schema)));
+        init = { ...init, body: JSON.stringify(body) };
+      }
+    }
+  } catch {
+    // 净化是尽力而为：解析失败就按原始请求发送，让服务端的报错可见。
+  }
+  return fetch(input, init);
+};
+
+export function renameOneOf(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(renameOneOf);
+  if (node && typeof node === "object") {
+    const { oneOf, ...rest } = node as Record<string, unknown> & { oneOf?: unknown[] };
+    const source: Record<string, unknown> = oneOf !== undefined ? { ...rest, anyOf: oneOf } : rest;
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(source)) out[key] = renameOneOf(value);
+    return out;
+  }
+  return node;
+}
+
+/** 内联 $ref 到 $defs：DeepSeek 对 anyOf 里的 $ref 分支同样挑剔，且这些
+ * 引用只是 zod 对重复子 schema 的去重产物，内联是纯等价改写。 */
+export function inlineRefs(node: unknown, defs: Record<string, unknown> = {}, depth = 0): unknown {
+  if (depth > 24) return node;
+  if (Array.isArray(node)) return node.map((item) => inlineRefs(item, defs, depth));
+  if (node && typeof node === "object") {
+    const record = node as Record<string, unknown>;
+    if (typeof record.$ref === "string" && record.$ref.startsWith("#/$defs/")) {
+      const def = defs[record.$ref.slice("#/$defs/".length)];
+      if (def != null) return inlineRefs(def, defs, depth + 1);
+    }
+    if (record.$defs != null && typeof record.$defs === "object") {
+      Object.assign(defs, record.$defs as Record<string, unknown>);
+      const { $defs: _ignored, ...rest } = record;
+      const out: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(rest)) out[key] = inlineRefs(value, defs, depth + 1);
+      return out;
+    }
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(record)) out[key] = inlineRefs(value, defs, depth + 1);
+    return out;
+  }
+  return node;
+}
+
+/** 把对象 schema 改写成 strict 惯例：required 全量，可选属性可空化。已是
+ * anyOf 的节点扁平追加 null 分支——嵌套 anyOf（无 type 的分支）DeepSeek 不收。 */
+export function enforceStrictRequired(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(enforceStrictRequired);
+  if (node && typeof node === "object") {
+    const record = node as Record<string, unknown>;
+    const hasProps = record.type === "object" && record.properties != null && typeof record.properties === "object" && !Array.isArray(record.properties);
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(record)) {
+      if (key === "required" && hasProps) continue;
+      if (key === "properties" && hasProps) {
+        const props = value as Record<string, unknown>;
+        const required = new Set(Array.isArray(record.required) ? (record.required as unknown[]) : []);
+        const patched: Record<string, unknown> = {};
+        for (const [prop, schema] of Object.entries(props)) {
+          patched[prop] = required.has(prop) ? enforceStrictRequired(schema) : strictNullable(enforceStrictRequired(schema));
+        }
+        out[key] = patched;
+        out.required = Object.keys(props);
+        continue;
+      }
+      out[key] = enforceStrictRequired(value);
+    }
+    return out;
+  }
+  return node;
+}
+
+function strictNullable(schema: unknown): unknown {
+  if (schema && typeof schema === "object" && !Array.isArray(schema) && Array.isArray((schema as Record<string, unknown>).anyOf)) {
+    const record = schema as Record<string, unknown> & { anyOf: unknown[] };
+    if (record.anyOf.some((branch) => (branch as Record<string, unknown> | null)?.type === "null")) return schema;
+    return { ...record, anyOf: [...record.anyOf, { type: "null" }] };
+  }
+  return { anyOf: [schema, { type: "null" }] };
 }
 
 export function buildChatModel(config: ModelConfig): ChatOpenAI {

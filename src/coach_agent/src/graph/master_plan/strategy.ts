@@ -52,6 +52,13 @@ export function validateStrategyCandidate(candidate: StrategyCandidate, facts: A
   if (candidate.race_week_index !== candidate.weekly_highs_km.length) throw new Error("strategy race week must be the final planned week");
 }
 
+/** The race week is the final planned week by definition — the model's index is
+ * presentation, not authority. Canonicalize before validation so an off-by-one
+ * (or an early-race guess) doesn't burn the whole generation. */
+export function canonicalizeStrategyCandidate(candidate: StrategyCandidate): StrategyCandidate {
+  return candidate.race_week_index === candidate.weekly_highs_km.length ? candidate : { ...candidate, race_week_index: candidate.weekly_highs_km.length };
+}
+
 export function validateStrategyJudgment(judgment: StrategyJudgment, candidate: StrategyCandidate, facts: AssessmentFacts): void {
   const ids = new Set(facts.facts.map((fact) => fact.fact_id));
   if (judgment.candidate_id !== candidate.candidate_id) throw new Error("judgment candidate ID mismatch");
