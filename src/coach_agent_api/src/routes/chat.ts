@@ -82,12 +82,23 @@ async function runTurn(
   return dependencies.turnCoordinator.run(turn, (resumeFromCheckpoint) => work(resumeFromCheckpoint, turn));
 }
 
+/**
+ * SSE comment frames sent while the turn produces no events. In-turn kernel
+ * runs are silent for minutes (#427); without traffic, proxies and clients
+ * with idle assumptions drop the connection before `done`. Comment lines are
+ * ignored by every SSE parser (including the miniprogram one).
+ */
+const SSE_KEEPALIVE_INTERVAL_MS = 15_000;
+
 /** SSE variant: emit status events during the run, then a single `done` event. */
 async function streamChat(dependencies: ChatDependencies, stream: SSEStreamingApi, body: ChatRequest, userId: string, threadId: string): Promise<void> {
   const turnId = body.clientTurnId;
   const emit = async (event: "status" | "text_delta" | "narration" | "done" | "error", data: Record<string, unknown>) => {
     await stream.writeSSE({ event, data: JSON.stringify(data) });
   };
+  const keepalive = setInterval(() => {
+    void stream.write(": ka\n\n").catch(() => {});
+  }, SSE_KEEPALIVE_INTERVAL_MS);
   // Map each adapter event to its SSE wire form; every event carries the
   // client turn id so the front end can correlate retries.
   const emitStreamEvent: CoachStreamEmitter = (streamEvent) => {
@@ -120,6 +131,8 @@ async function streamChat(dependencies: ChatDependencies, stream: SSEStreamingAp
     // swallow message/stack and leave the actual cause invisible in prod logs.
     logger.error({ err: error instanceof Error ? error : undefined, kind, message, clientTurnId: body.clientTurnId, threadId }, "coach streaming turn failed");
     await emit("error", { turn_id: turnId, code: kind, message });
+  } finally {
+    clearInterval(keepalive);
   }
 }
 

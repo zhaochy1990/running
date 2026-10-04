@@ -201,6 +201,10 @@ export function sendCoachChatStream(
     reqTask = wx.request({
       url: COACH_CHAT_ENDPOINT,
       method: 'POST',
+      // 赛季计划生成的 turn 是分钟级的（kernel 全阶段同步跑），wx.request 默认
+      // 60s 会在生成中途掐断连接。服务端单 turn 预算 10 分钟（超时出失败文案），
+      // 客户端放宽到 11 分钟，保证文案先于客户端超时到达。
+      timeout: 660_000,
       data: {
         session_id: sessionId,
         message,

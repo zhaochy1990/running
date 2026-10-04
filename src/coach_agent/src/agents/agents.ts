@@ -8,7 +8,6 @@ import { getQaAgent } from "./qa/agent.js";
 import { getRaceStrategyAgent } from "./race_strategy/agent.js";
 import { makeRaceStrategyNode } from "./race_strategy/node.js";
 import type { AgentsState } from "./state.js";
-import { createTrainingGraph } from "./training/graph.js";
 
 /** Minimal surface of an inner `createAgent` agent that a node needs to run it. */
 interface InnerAgent {
@@ -32,15 +31,10 @@ function makeAgentNode(agent: InnerAgent): GraphNode<typeof AgentsState> {
 export function getAgentNode(agentName: string, config: CoachAgentConfig, dataProvider: DataProvider): GraphNode<typeof AgentsState> {
   if (agentName === "orchestrator") {
     const agentConfig = getAgentConfig(config, "orchestrator");
-    // ponytail: 临时全量兜到 qa —— training 子图还是 hello-world 占位，
-    // 计划意图走它只会拿到 "received"。qa 的计划工具是只读的，能查看/解释计划，
-    // 但会拒绝修改。真实现接回后把 weekly_plan / master_plan 改回 "training"。
-    // 分类结果仍写入 state.intent 供观测。
-    return getOrchestratorNode(agentConfig, { training_question: "qa", weekly_plan: "qa", master_plan: "qa", race_strategy: "race_strategy", other: "qa" });
-  }
-
-  if (agentName === "training") {
-    return makeAgentNode(createTrainingGraph() as unknown as InnerAgent);
+    // master_plan 进 training 节点在聊天 turn 内同步跑 master kernel（#427）。
+    // weekly_plan 暂留 qa（只读查看/解释周计划）——周计划的 turn 内生成另立票。
+    const routes = { training_question: "qa", weekly_plan: "qa", master_plan: "training", race_strategy: "race_strategy", other: "qa" };
+    return getOrchestratorNode(agentConfig, routes);
   }
 
   if (agentName === "qa") {

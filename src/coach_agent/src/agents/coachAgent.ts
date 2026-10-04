@@ -6,6 +6,7 @@ import type { DataProvider } from "../data/dataProvider.js";
 import { getAgentNode } from "./agents.js";
 import { withLangfuseInvokeTracing } from "./langfuse.js";
 import { AgentsState } from "./state.js";
+import { createTrainingNode } from "./training/agent.js";
 
 export { CoachContext, type CoachToolRuntime } from "./context.js";
 
@@ -31,11 +32,13 @@ export interface CoachAgent {
 export async function createCoachAgent(dataProvider: DataProvider, config: CoachAgentConfig, options: CoachAgentOptions = {}) {
   const orchestratorConfig = getAgentConfig(config, "orchestrator");
   logger.info(`creating orchestrator with model ${orchestratorConfig.name} (${orchestratorConfig.model})`);
+  // training 节点携带完整 master kernel（API 进程注入 master_plan/reviewer 模型配置）。
+  const trainingNode = await createTrainingNode(dataProvider, config);
 
   const graph = new StateGraph(AgentsState)
     .addNode("orchestrator", getAgentNode("orchestrator", config, dataProvider), { ends: ["qa", "training", "race_strategy"] })
     .addNode("qa", getAgentNode("qa", config, dataProvider))
-    .addNode("training", getAgentNode("training", config, dataProvider))
+    .addNode("training", trainingNode)
     .addNode("race_strategy", getAgentNode("race_strategy", config, dataProvider))
     .addEdge(START, "orchestrator")
     .addEdge("qa", END)
