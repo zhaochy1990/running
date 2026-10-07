@@ -76,6 +76,68 @@ test("training node renders the envelope plan as markdown and attaches a validat
   }
 });
 
+// ---------------------------------------------------------------------------
+// #429 draft 落库（persistDraft dep，fail-soft）
+// ---------------------------------------------------------------------------
+
+test("training node puts the persisted draft plan_id on the card", async () => {
+  const plan = createTestMasterPlan();
+  let seen: { plan: unknown; userId: string } | undefined;
+  const node = makeTrainingNode({
+    agent: fakeAgent(envelopeResult(plan)),
+    persistDraft: async (persisted, userId) => {
+      seen = { plan: persisted, userId };
+      return "plan-id-1";
+    },
+  });
+  const { message } = await replyOf(node);
+  assert.deepEqual(seen, { plan, userId: "user-1" }, "sink 收到已解析 plan 与 runtime context 的 userId");
+  const card = (message.additional_kwargs as Record<string, unknown>).card as Record<string, unknown>;
+  assert.equal((card.data as Record<string, unknown>).plan_id, "plan-id-1");
+  assert.equal(MasterPlanCardSchema.safeParse(card.data).success, true);
+});
+
+test("training node degrades the card (no plan_id) when the draft sink returns null", async () => {
+  const node = makeTrainingNode({
+    agent: fakeAgent(envelopeResult(createTestMasterPlan())),
+    persistDraft: async () => null,
+  });
+  const { text, message } = await replyOf(node);
+  assert.match(text, /赛季训练计划初稿/, "回复不受落库失败影响");
+  const card = (message.additional_kwargs as Record<string, unknown>).card as Record<string, unknown>;
+  assert.equal("plan_id" in (card.data as Record<string, unknown>), false);
+});
+
+test("training node degrades the card when the draft sink throws", async () => {
+  const node = makeTrainingNode({
+    agent: fakeAgent(envelopeResult(createTestMasterPlan())),
+    persistDraft: async () => {
+      throw new Error("go api down");
+    },
+  });
+  const { message } = await replyOf(node);
+  const card = (message.additional_kwargs as Record<string, unknown>).card as Record<string, unknown>;
+  assert.equal(card.$type, "master-plan");
+  assert.equal("plan_id" in (card.data as Record<string, unknown>), false);
+});
+
+test("training node skips the draft sink when the runtime context has no userId", async () => {
+  let calls = 0;
+  const node = makeTrainingNode({
+    agent: fakeAgent(envelopeResult(createTestMasterPlan())),
+    persistDraft: async () => {
+      calls += 1;
+      return "plan-id-1";
+    },
+  });
+  const result = (await node({ intent: { intent: "master_plan" }, messages: [] } as never, {} as never)) as {
+    messages: AIMessage[];
+  };
+  assert.equal(calls, 0, "无 userId 时不得调用落库 sink");
+  const card = (result.messages.at(-1)?.additional_kwargs as Record<string, unknown>).card as Record<string, unknown>;
+  assert.equal("plan_id" in (card.data as Record<string, unknown>), false);
+});
+
 test("training node writes the agent's plain-text follow-up back when no envelope is produced", async () => {
   const followUp = "这场比赛你想以什么完赛时间作为目标？";
   const node = makeTrainingNode({

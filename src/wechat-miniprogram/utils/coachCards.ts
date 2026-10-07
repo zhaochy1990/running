@@ -32,6 +32,8 @@ export interface CoachCardView {
   badge: string;
   /** CTA 按钮文案；空则不渲染按钮。 */
   buttonText: string;
+  /** 次级动作按钮文案（如 master-plan 的「放弃」）；空则不渲染。 */
+  secondaryButtonText: string;
   /** CTA 目标页面（含 query）；空则卡片不可跳转。 */
   url: string;
   /** 产物本体：tap 时经 storage 交接给目标页（如报告页草稿模式）。 */
@@ -89,6 +91,7 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
       badge: '初稿',
       // 「查看并应用」会让用户以为点击即应用——实际是进报告页查看，应用在报告页内确认
       buttonText: '查看详情',
+      secondaryButtonText: '',
       url: raceId
         ? `/pages/race-center/strategy/strategy?id=${raceId}`
         : '/pages/race-center/race-center',
@@ -99,15 +102,19 @@ export function buildCoachCard(card: unknown, target: CoachSessionTarget | undef
   if (wire.$type === 'master-plan') {
     if (!isMasterPlanCardLike(wire.data)) return null;
     const plan = wire.data;
-    // 摘要即卡片（#428：不做独立详情页）：卡片头部之下渲染 markdown 摘要正文，
-    // CTA（启用/放弃）随 #429 的 draft 落库流程接入，当前不可跳转。
+    // 摘要即卡片（#428：不做独立详情页）：卡片头部之下渲染 markdown 摘要正文。
+    // #429：落库成功带 plan_id 的卡片出「启用/放弃」双 CTA（动作型，聊天页
+    // onCardCta/onCardSecondary 直调底座端点，不走 url 跳转）；无 plan_id 的
+    // 旧卡片/降级卡片保持纯展示。
+    const planId = typeof plan.plan_id === 'string' && plan.plan_id.length > 0 ? plan.plan_id : '';
     return {
       type: wire.$type,
       icon: '/assets/icons/calendar_month.svg',
       title: '赛季训练计划已生成',
       subtitle: masterPlanSubtitle(plan),
       badge: '初稿',
-      buttonText: '',
+      buttonText: planId ? '启用' : '',
+      secondaryButtonText: planId ? '放弃' : '',
       url: '',
       data: plan,
       inlineBody: true,

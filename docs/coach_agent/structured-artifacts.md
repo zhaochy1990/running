@@ -32,7 +32,7 @@ markdown 渲染）；旧后端 + 新客户端 → 没有 `card`，同样走 mark
 | `$type` | 后端挂载（业务节点 `*Message` 工厂） | 前端注册表（小程序 `utils/coachCards.ts`） |
 |---|---|---|
 | `race-strategy` | `raceStrategyMessage` 挂 `additional_kwargs.card` | 图标/文案/路由 → 报告页 |
-| `master-plan` | `masterPlanCardMessage`（training 节点，#428） | 图标/标题/角标「初稿」；摘要即卡片——markdown 摘要同泡渲染，无独立详情页（CTA 的启用/放弃随 #429） |
+| `master-plan` | `masterPlanCardMessage`（training 节点，#428/#429） | 图标/标题/角标「初稿」；摘要即卡片——markdown 摘要同泡渲染，无独立详情页；data 带 `plan_id` 时出「启用/放弃」双 CTA（#429） |
 | `weekly-plan`（未来） | 同上 | → 周计划页草稿态 |
 
 **信封随消息持久化**：业务节点把 `{$type, data}` 挂在产生它的回复消息自身
@@ -86,6 +86,17 @@ master-plan 卡片（#428）与此同标准：卡片轮正文由 training 节点
 （kernel 结构化输出 → markdown，不经任何模型改写），信封不存在「模型把
 JSON 当正文」的泄漏路径；客户端侧的形状校验降级（信封不认识/形状不对 →
 markdown）与流式 JSON 探测同样覆盖它。
+
+master-plan 的动作闭环（#429）：training 节点生成成功后经
+`persistDraft`（coach_agent_api 注入的 Go internal draft sink，fail-soft）
+把计划落成 Go 侧 draft——绑定当前激活 race goal、`masterPlanToDraftContent`
+补确定性 id（与 plan-job worker 同一变换）；落库成功卡片 data 带
+`plan_id`，小程序「启用」走用户端点
+`POST /api/users/:uid/master-plan/drafts/:plan_id/activate`（底座事务内归档
+旧 active、单人单 active；已有 active 时前端先弹替换确认），「放弃」走
+`.../abandon`。落库失败/无 race goal 的卡片不带 `plan_id`，降级为纯展示
+（旧历史卡片同理）；动作终态（已启用/已放弃/已失效）只回写本地消息角标，
+不回改 checkpoint 历史。
 
 ## 5. 扩展指南：新增一种产物卡片
 

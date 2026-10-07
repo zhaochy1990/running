@@ -21,6 +21,8 @@ export class GoDraftClient {
     private readonly baseUrl: string,
     private readonly internalToken: string,
     private readonly fetchImpl: typeof fetch = fetch,
+    /** 每请求墙钟预算（ms）；0/缺省 = 不设客户端超时（worker 交给 job 重试策略）。 */
+    private readonly timeoutMs = 0,
   ) {}
 
   /**
@@ -50,6 +52,7 @@ export class GoDraftClient {
         "x-internal-token": this.internalToken,
       },
       body: JSON.stringify({ draft_id: draftId, content }),
+      ...(this.timeoutMs > 0 ? { signal: AbortSignal.timeout(this.timeoutMs) } : {}),
     });
 
     if (response.status === 201 || response.status === 200) {

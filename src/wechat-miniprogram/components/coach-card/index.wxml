@@ -1,4 +1,4 @@
-<view class="cc-card" bindtap="onTap">
+<view class="cc-card" bindtap="onBodyTap">
   <view class="cc-card__head">
     <image wx:if="{{icon}}" class="cc-card__icon" src="{{icon}}" mode="aspectFit" />
     <view class="cc-card__title-wrap">
@@ -9,8 +9,13 @@
       <text class="cc-card__subtitle">{{subtitle}}</text>
     </view>
   </view>
-  <view wx:if="{{buttonText}}" class="cc-card__cta" catchtap="onTap">
-    <text class="cc-card__cta-text">{{buttonText}}</text>
-    <image class="cc-card__cta-arrow" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+  <view wx:if="{{buttonText || secondaryButtonText}}" class="cc-card__actions">
+    <view wx:if="{{buttonText}}" class="cc-card__cta" catchtap="onCtaTap">
+      <text class="cc-card__cta-text">{{buttonText}}</text>
+      <image class="cc-card__cta-arrow" src="/assets/icons/chevron_right.svg" mode="aspectFit" />
+    </view>
+    <view wx:if="{{secondaryButtonText}}" class="cc-card__cta cc-card__cta--ghost" catchtap="onSecondaryTap">
+      <text class="cc-card__cta-text cc-card__cta-text--ghost">{{secondaryButtonText}}</text>
+    </view>
   </view>
 </view>

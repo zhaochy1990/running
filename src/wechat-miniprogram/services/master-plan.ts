@@ -24,6 +24,9 @@ export interface MasterPlanCard {
   start_date: string;
   end_date: string;
   total_weeks: number;
+  /** #429：draft 落库后的 plan_id，卡片「启用/放弃」CTA 的定位；缺省 = 旧
+   * 卡片或落库失败降级，前端不渲染 CTA。 */
+  plan_id?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -197,4 +200,33 @@ export async function getCurrentMasterPlan(userId: string): Promise<CurrentSeaso
     }
     throw err;
   }
+}
+
+/** POST .../drafts/:plan_id/activate 的响应（Go activateMasterPlanDraftResponse）。 */
+export interface ActivateDraftResponse {
+  success: boolean;
+  plan: CurrentSeasonPlan;
+  /** 被替换归档的旧 active 计划 id；首次启用为 null。 */
+  replaced_plan_id: string | null;
+}
+
+/**
+ * 启用一版训练计划草稿（#429 卡片 CTA）：服务端事务内归档旧 active、把该
+ * draft 升为 active（单人单 active 由底座保证）。409 = 该 plan 已不是草稿
+ * （可能已在别处启用），404 = 草稿不存在。
+ */
+export function activateMasterPlanDraft(userId: string, planId: string): Promise<ActivateDraftResponse> {
+  return http.post<ActivateDraftResponse>(
+    `/api/users/${encodeURIComponent(userId)}/master-plan/drafts/${encodeURIComponent(planId)}/activate`,
+  );
+}
+
+/** 放弃一版草稿（归档，不可再启用）；404 = 草稿不存在或已非草稿。 */
+export function abandonMasterPlanDraft(
+  userId: string,
+  planId: string,
+): Promise<{ success: boolean; plan_id: string; status: string }> {
+  return http.post<{ success: boolean; plan_id: string; status: string }>(
+    `/api/users/${encodeURIComponent(userId)}/master-plan/drafts/${encodeURIComponent(planId)}/abandon`,
+  );
 }

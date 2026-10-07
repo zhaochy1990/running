@@ -23,5 +23,8 @@ export const MasterPlanCardSchema = z.object({
   start_date: z.string().regex(DAY),
   end_date: z.string().regex(DAY),
   total_weeks: z.int().positive(),
+  /** #429：draft 落库后的 plan_id，卡片「启用/放弃」CTA 的定位。缺省 = 落库
+   * 流程之前的旧卡片或落库失败/无 race goal 的降级卡片，无启用 CTA。 */
+  plan_id: z.string().min(1).optional(),
 });
 export type MasterPlanCard = z.infer<typeof MasterPlanCardSchema>;

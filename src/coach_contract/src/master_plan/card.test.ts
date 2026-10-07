@@ -22,6 +22,16 @@ test("MasterPlanCardSchema accepts an empty target_time (finish-only goal)", () 
   assert.equal(MasterPlanCardSchema.safeParse(card).success, true);
 });
 
+test("MasterPlanCardSchema carries an optional plan_id for the activate CTA (#429)", () => {
+  const withId = { ...validCard(), plan_id: "b34c6d7e-1111-4222-8333-444455556666" };
+  assert.equal(MasterPlanCardSchema.safeParse(withId).success, true);
+  const parsed = MasterPlanCardSchema.safeParse(withId);
+  assert.equal(parsed.success && parsed.data.plan_id, withId.plan_id);
+  // 空串拒绝：落库失败/降级卡片必须整个省略字段，而不是传空值
+  const emptyId = { ...validCard(), plan_id: "" };
+  assert.equal(MasterPlanCardSchema.safeParse(emptyId).success, false);
+});
+
 test("MasterPlanCardSchema rejects an unsupported distance and a malformed date", () => {
   const badDistance = validCard() as { goal: { distance: string } };
   badDistance.goal.distance = "10K";
