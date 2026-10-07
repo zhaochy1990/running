@@ -91,29 +91,26 @@ export async function collectCoachStream(run: CoachStreamSource, emit: CoachStre
 }
 
 /** 回复正文只可能来自这两个业务节点；orchestrator 的分类输出与 training
- * 节点内 master kernel 的内部 LLM 分片都不是正文——后者会把 kernel 的结构化
- * 输出整段 JSON 打进客户端打字机（分片是 token 级的，整块前缀的 echo 过滤
- * 拦不住），它们的回复由节点渲染、只随最终 state 到达。 */
+ * 节点内层 agent 的结构化信封都不是正文——后者会把整段计划 JSON 打进客户
+ * 端打字机（分片是 token 级的，整块前缀的 echo 过滤拦不住），它们的回复由
+ * 节点渲染、只随最终 state 到达。 */
 const REPLY_TEXT_NODES = new Set(["qa", "race_strategy"]);
+
+/** 结构化输出的伪工具名（langchain ToolStrategy/withStructuredOutput 内部
+ * 生成 `extract` / `extract-N`）：是格式管道，不是运动员可见的工具工作，
+ * 不产生 running_tool 状态。 */
+const STRUCTURED_OUTPUT_TOOL_NAME = /^extract(-\d+)?$/;
 
 /** Emit running_tool / analyzing / text_delta for one `messages` chunk. */
 async function handleMessage(payload: unknown, emit: CoachStreamEmitter, phases: StatusPhases, pendingTools: Map<string, string>): Promise<void> {
   const [message, meta] = payload as [MessageLike, { langgraph_node?: string } | undefined, ...unknown[]];
   const type = message?._getType?.();
 
-  // training 节点在 turn 内跑 master kernel，其内部 LLM 分片既不是回复正文
-  // 也不是工具调用——turn 的回复由节点渲染、只随最终 state 到达；转发这些
-  // 分片会把 kernel 的结构化输出整段 JSON 打进客户端打字机。
-  // TEMP-DEBUG: 探明 kernel 内部分片的 metadata 形状后移除。
-  // 回复正文只可能来自 qa / race_strategy 两个业务节点。orchestrator 的分类
-  // 输出与 training 节点内 master kernel 的内部 LLM 分片都不是正文——后者是
-  // token 级碎片、会把 kernel 的结构化输出整段 JSON 打进客户端打字机（整块
-  // 前缀的 echo 过滤拦不住）。没有 langgraph_node 的分片保持放行：历史消息
-  // 回放与部分适配路径不携带该字段。
-  if (type === "ai" && meta?.langgraph_node !== undefined && !REPLY_TEXT_NODES.has(meta.langgraph_node)) return;
-
-  // Tool call start: an AI message carrying `tool_calls`.
-  const toolCalls = message?.tool_calls ?? [];
+  // Tool-call lifecycle is extracted for EVERY node: running_tool status is
+  // progress, not reply text, and the training node's in-turn context reads
+  // must surface to the athlete (minutes-long generation would otherwise be a
+  // silent keepalive stream). Fake structured-output tools are skipped above.
+  const toolCalls = (message?.tool_calls ?? []).filter((call) => !STRUCTURED_OUTPUT_TOOL_NAME.test(call?.name ?? ""));
   for (const call of toolCalls) {
     if (!call?.name) continue;
     await phases.started(call.name);
@@ -131,6 +128,19 @@ async function handleMessage(payload: unknown, emit: CoachStreamEmitter, phases:
       }
       pendingTools.delete(toolCallId);
     }
+  }
+
+  // training 节点在 turn 内跑内层生成 agent，其 LLM 分片不是回复正文——turn
+  // 的回复由节点渲染、只随最终 state 到达；转发这些文本会把结构化输出整段
+  // JSON 打进客户端打字机。与工具调用同条的进度说明句除外：作为 narration
+  // 事件转发（是进度不是答案，与工具状态同理）。没有 langgraph_node 的分片
+  // 保持放行：历史消息回放与部分适配路径不携带该字段。
+  if (type === "ai" && meta?.langgraph_node !== undefined && !REPLY_TEXT_NODES.has(meta.langgraph_node)) {
+    if (toolCalls.length > 0) {
+      const narration = textContent(message?.content);
+      if (narration.length > 0 && !isStructuredResponseEcho(narration)) await emit({ kind: "narration", delta: narration });
+    }
+    return;
   }
 
   // An AI message's text content: the reply, unless the same message also calls

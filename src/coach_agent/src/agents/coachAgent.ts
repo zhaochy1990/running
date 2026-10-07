@@ -32,8 +32,8 @@ export interface CoachAgent {
 export async function createCoachAgent(dataProvider: DataProvider, config: CoachAgentConfig, options: CoachAgentOptions = {}) {
   const orchestratorConfig = getAgentConfig(config, "orchestrator");
   logger.info(`creating orchestrator with model ${orchestratorConfig.name} (${orchestratorConfig.model})`);
-  // training 节点携带完整 master kernel（API 进程注入 master_plan/reviewer 模型配置）。
-  const trainingNode = await createTrainingNode(dataProvider, config);
+  // training 节点在 turn 内同步跑 deepagent 版 generate-master-plan agent。
+  const trainingNode = createTrainingNode(dataProvider, config);
 
   const graph = new StateGraph(AgentsState)
     .addNode("orchestrator", getAgentNode("orchestrator", config, dataProvider), { ends: ["qa", "training", "race_strategy"] })

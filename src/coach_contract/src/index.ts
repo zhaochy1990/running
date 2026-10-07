@@ -7,6 +7,7 @@ export * from "./master_plan/rules-schemas.js";
 export {
   DirectResponseEnvelopeSchema,
   MasterPlanDirectResponseSchema,
+  MasterPlanLenientDirectResponseSchema,
 } from "./master_plan/schema.js";
 export * from "./master_plan/schemas.js";
 export * from "./master_plan/simulation-schemas.js";

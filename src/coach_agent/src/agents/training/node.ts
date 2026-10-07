@@ -1,143 +1,82 @@
-import { randomUUID } from "node:crypto";
+import type { BaseMessage } from "@langchain/core/messages";
 import { AIMessage } from "@langchain/core/messages";
 import type { GraphNode } from "@langchain/langgraph";
 import { getLogger } from "@stride/common";
-import { MasterPlanGraphOutcome } from "@stride/contract";
-import type { RaceTarget } from "../../data/dataProvider.js";
+import { type MasterPlan, MasterPlanLenientDirectResponseSchema } from "@stride/contract";
 import type { AgentsState } from "../state.js";
-import { masterPlanCardMessage, renderKernelOutcome, renderRequestGap } from "./render.js";
-import { buildMasterPlanRequest } from "./request.js";
+import { masterPlanCardMessage } from "./render.js";
 
 const logger = getLogger("coachAgent:training");
 
 /**
- * Wall-clock budget for one in-turn kernel run. The kernel's own model calls
- * each carry a `timeout_s` from the coach config; this guards the *sum* (and
- * any silent stall between stream updates) so a pathological turn still
- * answers the athlete instead of hanging the stream. Exceeded → failure copy,
- * never an async job fallback (#427 contract).
+ * Wall-clock budget for one in-turn master-plan generation. Each inner model
+ * call carries its own `timeout_s`; this guards the *sum* so a pathological
+ * turn still answers the athlete instead of hanging the stream. Exceeded →
+ * failure copy, never an async job fallback (#427 contract).
  */
-const MASTER_KERNEL_TURN_TIMEOUT_MS = 10 * 60_000;
+const MASTER_PLAN_TURN_TIMEOUT_MS = 10 * 60_000;
 
-/**
- * Minimal surface of the compiled master-plan graph the node drives (same
- * structural-cast approach as the worker's kernel shim).
- */
-export interface TrainingKernel {
-  stream(input: unknown, options: { context: { userId: string; generationId: string }; streamMode: readonly string[] }): Promise<AsyncIterable<unknown>>;
+/** Minimal surface of the inner generate-master-plan agent the node drives. */
+export interface TrainingAgent {
+  invoke(input: unknown, config?: unknown): Promise<{ messages: BaseMessage[] } & Record<string, unknown>>;
 }
 
 export interface TrainingNodeDeps {
-  kernel: TrainingKernel;
-  /** Narrowed to what the node reads; `DataProvider` satisfies this structurally. */
-  dataProvider: { getRaceTarget(userId: string): Promise<RaceTarget | null> };
+  agent: TrainingAgent;
   timeoutMs?: number;
 }
 
-/** Kernel nodes that each wrap exactly one LLM call — used to tally `llmCalls`. */
-const LLM_NODES = new Set(["assess_goal", "strategy_worker", "judge_worker", "expand_skeleton", "review_worker"]);
-
+/**
+ * training 业务节点（deepagent 版）：内层 createAgent 生成赛季计划，结构化
+ * 信封（return_direct + MasterPlan）经宽松 schema 解析后渲染为 markdown 摘要
+ * + master-plan 卡片消息；无信封（目标缺失追问、说明）按普通业务节点写回
+ * 文本增量。跨字段确定性质量门暂不启用（临时决策，回归另立票）。
+ */
 export function makeTrainingNode(deps: TrainingNodeDeps): GraphNode<typeof AgentsState> {
-  const timeoutMs = deps.timeoutMs ?? MASTER_KERNEL_TURN_TIMEOUT_MS;
+  const timeoutMs = deps.timeoutMs ?? MASTER_PLAN_TURN_TIMEOUT_MS;
   return async (state, config) => {
     if (state.intent?.intent !== "master_plan") {
       // The router only sends master_plan here; anything else means a routing
       // change upstream — answer honestly instead of silently generating.
       return { messages: [new AIMessage("这部分我还在学习中。你可以问我训练相关的问题，或让我为一场比赛制定赛季训练计划。")] };
     }
-    const userId = userIdFromRuntime(config) ?? state.userId;
-    if (!userId) {
-      logger.warn("training node missing userId in runtime context");
-      return { messages: [new AIMessage(KERNEL_FAILED_COPY)] };
-    }
 
-    const target = await deps.dataProvider.getRaceTarget(userId);
-    const built = buildMasterPlanRequest(target, { requestId: `chat-${randomUUID()}`, now: new Date() });
-    if (!built.ok) {
-      logger.info({ gap: built.gap }, "training node cannot build master-plan request");
-      return { messages: [new AIMessage(renderRequestGap(built.gap))] };
-    }
-
-    const generationId = randomUUID();
     const startedAt = Date.now();
-    const timing: Array<{ node: string; ms: number }> = [];
-    let llmCalls = 0;
-    let outcomeRaw: unknown = null;
-
-    const timedOut = (elapsedMs: number) => {
-      logger.warn({ userId, generationId, elapsedMs, timeoutMs }, "master kernel exceeded in-turn budget; failing the turn");
-      logTimingBreakdown(generationId, timing, elapsedMs);
-      return { messages: [new AIMessage(KERNEL_TIMEOUT_COPY)], llmCalls };
-    };
-
+    let result: { messages: BaseMessage[] } & Record<string, unknown>;
     try {
-      const stream = await deps.kernel.stream({ request: built.request }, { context: { userId, generationId }, streamMode: ["updates"] });
-      const iterator = stream[Symbol.asyncIterator]();
-      let lastTick = startedAt;
-      for (;;) {
-        const remaining = timeoutMs - (Date.now() - startedAt);
-        if (remaining <= 0) {
-          return timedOut(Date.now() - startedAt);
-        }
-        const next = await withDeadline(iterator.next(), remaining);
-        if (next.done) break;
-        const chunk = Array.isArray(next.value) ? (next.value[next.value.length - 1] as Record<string, unknown>) : (next.value as Record<string, unknown>);
-        if (chunk === null || typeof chunk !== "object") continue;
-        for (const [nodeKey, update] of Object.entries(chunk)) {
-          if (nodeKey.startsWith("__")) continue;
-          const at = Date.now();
-          timing.push({ node: nodeKey, ms: at - lastTick });
-          lastTick = at;
-          if (LLM_NODES.has(nodeKey)) llmCalls += 1;
-          if (update !== null && typeof update === "object" && "outcome" in update) {
-            outcomeRaw = (update as Record<string, unknown>).outcome;
-          }
-        }
-      }
+      result = await withDeadline(deps.agent.invoke({ messages: state.messages }, config), timeoutMs);
     } catch (error) {
-      if (error instanceof KernelDeadline) {
-        return timedOut(Date.now() - startedAt);
+      if (error instanceof PlanDeadline) {
+        logger.warn({ elapsedMs: Date.now() - startedAt, timeoutMs }, "master-plan generation exceeded in-turn budget; failing the turn");
+        return { messages: [new AIMessage(GENERATION_TIMEOUT_COPY)] };
       }
-      logger.error(
-        { err: error instanceof Error ? error : undefined, userId, generationId, elapsedMs: Date.now() - startedAt },
-        "master kernel threw inside chat turn",
-      );
-      logTimingBreakdown(generationId, timing, Date.now() - startedAt);
-      return { messages: [new AIMessage(KERNEL_FAILED_COPY)], llmCalls };
+      logger.error({ err: error instanceof Error ? error : undefined, elapsedMs: Date.now() - startedAt }, "master-plan agent threw inside chat turn");
+      return { messages: [new AIMessage(GENERATION_FAILED_COPY)] };
     }
 
-    logTimingBreakdown(generationId, timing, Date.now() - startedAt);
-
-    if (outcomeRaw === null) {
-      logger.error({ userId, generationId }, "master kernel stream ended without an outcome");
-      return { messages: [new AIMessage(KERNEL_FAILED_COPY)], llmCalls };
+    const plan = extractMasterPlan(result) ?? leakedPlanFromText(result, state);
+    if (plan !== undefined) {
+      logger.info({ elapsedMs: Date.now() - startedAt, totalWeeks: plan.total_weeks }, "master plan generated in-turn");
+      // markdown 摘要正文 + `master-plan` 卡片信封（#428）。信封挂消息自身随
+      // checkpoint 持久化，done/历史投影按消息读取，跨设备重进免费。
+      return { messages: [masterPlanCardMessage(plan)] };
     }
-    const parsed = MasterPlanGraphOutcome.safeParse(outcomeRaw);
-    if (!parsed.success) {
-      logger.error({ userId, generationId, issues: parsed.error.issues }, "master kernel emitted an unparseable outcome");
-      return { messages: [new AIMessage(KERNEL_FAILED_COPY)], llmCalls };
-    }
-    const outcome = parsed.data;
-    if (outcome.decision !== "completed") {
-      logger.warn({ userId, generationId, decision: outcome.decision }, "master kernel finished without a plan");
-      return { messages: [new AIMessage(renderKernelOutcome(outcome))], llmCalls };
-    }
-    // completed：markdown 摘要正文 + `master-plan` 卡片信封（#428）。信封挂
-    // 消息自身随 checkpoint 持久化，done/历史投影按消息读取，跨设备重进免费。
-    return { messages: [masterPlanCardMessage(outcome.artifact.plan, outcome.artifact.simulation_report)], llmCalls };
+    // 无信封：目标缺失追问或说明类回复，按普通业务节点写回增量——agent 的
+    // 工具调用轨迹（含 ToolStrategy 伪调用）留在节点内，不进入会话历史。
+    return { messages: result.messages.slice(state.messages.length) };
   };
 }
 
-const KERNEL_FAILED_COPY = "这次训练计划生成没能完成，请稍后再试一次。";
-const KERNEL_TIMEOUT_COPY = "这次训练计划生成用时超出了限制，已停止。请稍后再试一次。";
+const GENERATION_FAILED_COPY = "这次训练计划生成没能完成，请稍后再试一次。";
+const GENERATION_TIMEOUT_COPY = "这次训练计划生成用时超出了限制，已停止。请稍后再试一次。";
 
-/** Rejected by `withDeadline` when the budget runs out before the chunk lands. */
-class KernelDeadline extends Error {}
+/** Rejected by `withDeadline` when the budget runs out before the turn lands. */
+class PlanDeadline extends Error {}
 
-/** Race a pending chunk against the remaining wall-clock budget (silent-stall guard). */
+/** Race the generation against the wall-clock budget. */
 function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new KernelDeadline()), ms);
+    const timer = setTimeout(() => reject(new PlanDeadline()), ms);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -151,27 +90,43 @@ function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-/** userId rides the per-turn runtime context (same source the coach tools read). */
-function userIdFromRuntime(config: unknown): string | undefined {
-  if (config === null || typeof config !== "object") return undefined;
-  const context = (config as { context?: unknown }).context;
-  if (context === null || typeof context !== "object") return undefined;
-  const userId = (context as { userId?: unknown }).userId;
-  return typeof userId === "string" && userId.length > 0 ? userId : undefined;
+/**
+ * 从内层 agent 的返回里取结构化信封（与 race_strategy 同模式）。信封已在
+ * ToolStrategy 解析层按宽松 schema 校验；此处 safeParse 是防御性二次确认。
+ * 结构化输出未产生（目标缺失追问、说明）时返回 undefined。
+ */
+function extractMasterPlan(result: Record<string, unknown>): MasterPlan | undefined {
+  const structured = result.structuredResponse;
+  if (typeof structured !== "object" || structured === null) return undefined;
+  const envelope = MasterPlanLenientDirectResponseSchema.safeParse(structured);
+  return envelope.success ? envelope.data.content : undefined;
 }
 
 /**
- * One aggregated latency line per turn — the tracer bullet's deliverable
- * (#433 measures off these logs; failed runs log it too, their breakdown is
- * often the most valuable). Arrival-gap attribution: fan-out nodes are
- * credited the wall time until their update lands, which is exactly the
- * stage-latency the athlete experiences.
+ * 防御性信封解析：模型偶发不守 ToolStrategy 格式、把信封 JSON 当正文文本输
+ * 出（弱模型上 race_strategy 已观察到同款行为）。只对形似信封的文本尝试，
+ * 解析失败按普通回复透传，绝不臆造。
  */
-function logTimingBreakdown(generationId: string, timing: Array<{ node: string; ms: number }>, totalMs: number): void {
-  if (timing.length === 0) return;
-  const perNode: Record<string, number> = {};
-  for (const { node, ms } of timing) {
-    perNode[node] = (perNode[node] ?? 0) + ms;
+function leakedPlanFromText(result: { messages: BaseMessage[] }, state: { messages: BaseMessage[] }): MasterPlan | undefined {
+  const delta = result.messages.slice(state.messages.length);
+  for (let index = delta.length - 1; index >= 0; index -= 1) {
+    const message = delta[index];
+    if (message === undefined || message.getType() !== "ai" || typeof message.content !== "string") continue;
+    const unfenced = message.content
+      .replace(/^```(?:json)?\s*\n?/, "")
+      .replace(/\n?```\s*$/, "")
+      .trim();
+    if (!unfenced.startsWith('{"disposition"')) continue;
+    try {
+      const envelope = MasterPlanLenientDirectResponseSchema.safeParse(JSON.parse(unfenced));
+      if (envelope.success) {
+        logger.warn({ preview: message.content.slice(0, 120) }, "master-plan envelope leaked as plain text; recovered by defensive parse");
+        return envelope.data.content;
+      }
+      return undefined;
+    } catch {
+      return undefined;
+    }
   }
-  logger.info({ generationId, totalMs, perNode }, "master kernel stage timing");
+  return undefined;
 }

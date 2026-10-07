@@ -575,3 +575,80 @@ test("done waits for a turn slower than the old 5s drain bound and returns the r
   const response = await collectCoachStream({ events }, async () => {});
   assert.equal(response.message, "慢回复");
 });
+
+// ---------------------------------------------------------------------------
+// 节点过滤与进度可见性（training 节点在 turn 内跑内层生成 agent）
+// ---------------------------------------------------------------------------
+
+function appWithChunks(chunks: Array<[string, unknown]>): ReturnType<typeof createApp> {
+  return createApp({
+    jwtVerifier: {
+      async verify() {
+        return { userId: "athlete-1", isAdmin: false };
+      },
+    },
+    coachInvoker: {
+      async invoke() {
+        throw new Error("must not invoke");
+      },
+      async streamEvents() {
+        return source(eventsFrom(chunks));
+      },
+    },
+  });
+}
+
+test("tool calls inside the training node surface as running_tool progress", async () => {
+  // training 节点跑生成 agent 的几分钟里，读上下文的工具状态是运动员唯一能
+  // 看到的进度——必须转发（此前被回复正文节点过滤一并拦掉）。
+  const app = appWithChunks([
+    msgChunk(ai("", [{ id: "c1", name: "get_master_plan_context" }]), { langgraph_node: "training" }),
+    msgChunk(toolResult("c1"), { langgraph_node: "training" }),
+    valuesChunk({ messages: [ai("赛季训练计划初稿已生成。")] }),
+  ]);
+  const response = await chatRequest({ session_id: "session-1", client_turn_id: "turn-1", message: "帮我制定赛季计划" }, SSE_ACCEPT)(app);
+  const events = parseSse(await response.text());
+  const toolEvents = events.filter((event) => event.event === "status" && event.data.phase === "running_tool");
+  assert.deepEqual(toolEvents.map((event) => [event.data.tool, event.data.tool_status]), [
+    ["get_master_plan_context", "running"],
+    ["get_master_plan_context", "finished"],
+  ]);
+  assert.equal(events.find((event) => event.event === "done")?.data.message, "赛季训练计划初稿已生成。");
+});
+
+test("structured-output fake tools (extract-N) never emit running_tool", async () => {
+  const app = appWithChunks([
+    msgChunk(ai("", [{ id: "s1", name: "extract-1" }]), { langgraph_node: "training" }),
+    msgChunk(toolResult("s1"), { langgraph_node: "training" }),
+    valuesChunk({ messages: [ai("回复")] }),
+  ]);
+  const response = await chatRequest({ session_id: "session-1", client_turn_id: "turn-1", message: "hi" }, SSE_ACCEPT)(app);
+  const events = parseSse(await response.text());
+  assert.equal(events.filter((event) => event.event === "status" && event.data.phase === "running_tool").length, 0);
+});
+
+test("narration on a training-node tool message flows as narration, not reply text", async () => {
+  const app = appWithChunks([
+    msgChunk(ai("我先看一下你最近的训练情况。", [{ id: "c1", name: "get_master_plan_context" }]), { langgraph_node: "training" }),
+    msgChunk(toolResult("c1"), { langgraph_node: "training" }),
+    valuesChunk({ messages: [ai("赛季训练计划初稿已生成。")] }),
+  ]);
+  const response = await chatRequest({ session_id: "session-1", client_turn_id: "turn-1", message: "帮我制定赛季计划" }, SSE_ACCEPT)(app);
+  const events = parseSse(await response.text());
+  const narrated = events.filter((event) => event.event === "narration").map((event) => event.data.delta);
+  assert.deepEqual(narrated, ["我先看一下你最近的训练情况。"]);
+  assert.equal(events.filter((event) => event.event === "text_delta").length, 0, "training 节点正文只随最终 state 到达");
+});
+
+test("plain text from a non-reply node stays suppressed even without tool calls", async () => {
+  // 内层生成 agent 的结构化输出 token 级碎片不是正文：没有 langgraph_node 的
+  // 分片放行（历史回放），带 training 节点标记的分片一律不进打字机。
+  const app = appWithChunks([
+    msgChunk(ai('{"disposition": "return_direct", "content": {"status": "draft"'), { langgraph_node: "training" }),
+    valuesChunk({ messages: [ai("赛季训练计划初稿已生成。")] }),
+  ]);
+  const response = await chatRequest({ session_id: "session-1", client_turn_id: "turn-1", message: "hi" }, SSE_ACCEPT)(app);
+  const events = parseSse(await response.text());
+  assert.equal(events.filter((event) => event.event === "text_delta").length, 0);
+  assert.equal(events.filter((event) => event.event === "narration").length, 0);
+});

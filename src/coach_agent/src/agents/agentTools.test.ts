@@ -4,11 +4,11 @@ import { dirname, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { AIMessage, ToolMessage } from "@langchain/core/messages";
-import { MasterPlanDirectResponseSchema, WeeklyPlanDirectResponseSchema } from "@stride/contract";
+import { WeeklyPlanDirectResponseSchema } from "@stride/contract";
 import type { ModelConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
 import { CoachContext } from "./coachAgent.js";
-import { getMasterPlanGeneratorSubagent, getMasterPlanSubagent } from "./master_plan/agent.js";
+import { getMasterPlanGeneratorParts, getMasterPlanSubagent } from "./master_plan/agent.js";
 import { createPlanPassthroughMiddleware, getDirectPlanTaskResult, getMasterPlanTaskResult } from "./masterPlanPassthrough.js";
 import { MASTER_PLAN_PROMPT } from "./prompts.js";
 import { getQaTools } from "./qa/agent.js";
@@ -38,9 +38,9 @@ test("master-plan skills are present in the compiled virtual filesystem root", a
 });
 
 test("master-plan prompt gates athlete data behind a complete race goal", () => {
-  assert.match(MASTER_PLAN_PROMPT, /先只调用 get_master_plan/);
-  assert.match(MASTER_PLAN_PROMPT, /比赛地点可选/);
-  assert.match(MASTER_PLAN_PROMPT, /暂停并等待用户回答/);
+  assert.match(MASTER_PLAN_PROMPT, /先调用一次 get_master_plan_context/);
+  assert.match(MASTER_PLAN_PROMPT, /race_target 为 null/);
+  assert.match(MASTER_PLAN_PROMPT, /不要生成计划/);
 });
 
 test("coach context requires a strict Shanghai asof day", () => {
@@ -53,16 +53,22 @@ test("coach context requires a strict Shanghai asof day", () => {
   assert.throws(() => CoachContext.parse({ userId: "athlete", asof: "2026-02-30" }));
 });
 
-test("master-plan agent has a machine-enforced structured output contract", () => {
+test("master-plan generator inlines the skill and skips the deterministic gate", () => {
   assert.match(MASTER_PLAN_PROMPT, /结构化输出/);
   const store = {} as DataProvider;
-  const generator = getMasterPlanGeneratorSubagent(store, modelConfig);
+  const parts = getMasterPlanGeneratorParts(store);
   const reader = getMasterPlanSubagent(store, modelConfig);
-  assert.equal(generator.responseFormat, MasterPlanDirectResponseSchema);
-  assert.equal(reader.responseFormat, undefined);
-  assert.ok(generator.skills.includes("/generate-master-plan/"));
-  assert.ok(!reader.skills.includes("/generate-master-plan/"));
-  assert.ok(!generator.tools.some((tool) => tool.name === "get_current_time"));
+  const toolNames = parts.tools.map((tool) => tool.name);
+  assert.ok(toolNames.includes("get_master_plan"));
+  assert.ok(toolNames.includes("get_master_plan_context"));
+  assert.ok(!toolNames.includes("get_current_time"));
+  // 追问走普通文本：内层 agent 无 checkpointer，interrupt 不成立
+  assert.ok(!toolNames.includes("ask_user_question"));
+  // 技能文档（丹尼尔斯体系）内联进系统提示——deepagents FilesystemBackend 已不存在
+  assert.match(parts.systemPrompt, /丹尼尔斯/);
+  // 确定性校验中间件停用（临时）：宽松 schema 信封 + 不挂 MasterPlanValidationMiddleware
+  assert.ok(parts.middleware.every((middleware) => middleware.name !== "MasterPlanValidationMiddleware"));
+  assert.ok(reader.tools.length > 0, "只读视图保留自己的工具面");
 });
 
 test("weekly-plan reader and generator keep distinct contracts", () => {

@@ -204,33 +204,34 @@ const WorkoutStructureSchema = z
   .strict()
   .describe("Canonical running-workout blocks. Repeated interval work and recovery belong in the same block.");
 
-const PhaseSchema = z
-  .object({
-    name: PhaseNameSchema,
-    start_date: DaySchema,
-    end_date: DaySchema,
-    focus: z.string(),
-    weekly_distance_km_low: z.number().nonnegative(),
-    weekly_distance_km_high: z.number().nonnegative(),
-    key_session_types: z.array(z.string()),
-    milestones: z.array(MilestoneSchema),
-    key_workouts: z.string(),
-    monitoring_triggers: z.array(z.string()),
-    coach_note: z.string(),
-    strength: StrengthSchema,
-    recovery: RecoverySchema,
-    is_completed: z.boolean(),
-    summary: z.string().nullable(),
-  })
-  .superRefine((phase, ctx) => {
-    if (!phase.is_completed && phase.summary !== null) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["summary"],
-        message: "must be null for an incomplete phase",
-      });
-    }
-  });
+/** Phase 形状（字段类型/枚举），不带跨字段确定性规则。 */
+const PhaseShapeSchema = z.object({
+  name: PhaseNameSchema,
+  start_date: DaySchema,
+  end_date: DaySchema,
+  focus: z.string(),
+  weekly_distance_km_low: z.number().nonnegative(),
+  weekly_distance_km_high: z.number().nonnegative(),
+  key_session_types: z.array(z.string()),
+  milestones: z.array(MilestoneSchema),
+  key_workouts: z.string(),
+  monitoring_triggers: z.array(z.string()),
+  coach_note: z.string(),
+  strength: StrengthSchema,
+  recovery: RecoverySchema,
+  is_completed: z.boolean(),
+  summary: z.string().nullable(),
+});
+
+const PhaseSchema = PhaseShapeSchema.superRefine((phase, ctx) => {
+  if (!phase.is_completed && phase.summary !== null) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["summary"],
+      message: "must be null for an incomplete phase",
+    });
+  }
+});
 
 const KeySessionSchema = z
   .object({
@@ -253,192 +254,201 @@ const KeySessionSchema = z
   })
   .describe("Exactly one independently performed workout. Embedded blocks are components of this object and must not be repeated as sibling key_sessions.");
 
-const WeekSchema = z
-  .object({
-    week_index: z.int().positive(),
-    week_start: DaySchema,
-    phase_name: PhaseNameSchema,
-    target_weekly_km_low: z.number().nonnegative(),
-    target_weekly_km_high: z.number().nonnegative(),
-    key_sessions: z
-      .array(KeySessionSchema)
-      .describe("Strategic workouts for the week. Each object is one independently performed workout, never a component of another object."),
-    is_recovery_week: z.boolean(),
-  })
-  .superRefine((week, ctx) => {
-    if (week.key_sessions.length > (week.is_recovery_week ? 1 : 3)) {
+/** Week 形状（字段类型/枚举），不带跨字段确定性规则。 */
+const WeekShapeSchema = z.object({
+  week_index: z.int().positive(),
+  week_start: DaySchema,
+  phase_name: PhaseNameSchema,
+  target_weekly_km_low: z.number().nonnegative(),
+  target_weekly_km_high: z.number().nonnegative(),
+  key_sessions: z
+    .array(KeySessionSchema)
+    .describe("Strategic workouts for the week. Each object is one independently performed workout, never a component of another object."),
+  is_recovery_week: z.boolean(),
+});
+
+const WeekSchema = WeekShapeSchema.superRefine((week, ctx) => {
+  if (week.key_sessions.length > (week.is_recovery_week ? 1 : 3)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["key_sessions"],
+      message: week.is_recovery_week
+        ? "recovery weeks may contain at most one strategic key session"
+        : "weeks may contain at most three strategic key sessions",
+    });
+  }
+  const raceSessions = week.key_sessions.filter((session) => session.type === "race");
+  const raceWeekCompanions = week.key_sessions.filter((session) => session.type !== "race");
+  if (
+    raceSessions.length > 0 &&
+    (raceSessions.length !== 1 || raceWeekCompanions.length > 1 || raceWeekCompanions.some((session) => session.type !== "race_pace"))
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["key_sessions"],
+      message: "race weeks may contain the target race and at most one race-pace activation session",
+    });
+  }
+  for (const [index, session] of week.key_sessions.entries()) {
+    const structure = session.workout_structure;
+    if (session.type !== "strength_key" && !structure)
       ctx.addIssue({
         code: "custom",
-        path: ["key_sessions"],
-        message: week.is_recovery_week
-          ? "recovery weeks may contain at most one strategic key session"
-          : "weeks may contain at most three strategic key sessions",
+        path: ["key_sessions", index, "workout_structure"],
+        message: "running key sessions require workout_structure",
       });
-    }
-    const raceSessions = week.key_sessions.filter((session) => session.type === "race");
-    const raceWeekCompanions = week.key_sessions.filter((session) => session.type !== "race");
-    if (
-      raceSessions.length > 0 &&
-      (raceSessions.length !== 1 || raceWeekCompanions.length > 1 || raceWeekCompanions.some((session) => session.type !== "race_pace"))
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["key_sessions"],
-        message: "race weeks may contain the target race and at most one race-pace activation session",
-      });
-    }
-    for (const [index, session] of week.key_sessions.entries()) {
-      const structure = session.workout_structure;
-      if (session.type !== "strength_key" && !structure)
+    if (structure) {
+      const weekEnd = new Date(`${week.week_start}T00:00:00Z`);
+      weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
+      if (structure.date < week.week_start || structure.date > weekEnd.toISOString().slice(0, 10))
         ctx.addIssue({
           code: "custom",
-          path: ["key_sessions", index, "workout_structure"],
-          message: "running key sessions require workout_structure",
+          path: ["key_sessions", index, "workout_structure", "date"],
+          message: "must fall inside the containing Monday-Sunday week",
         });
-      if (structure) {
-        const weekEnd = new Date(`${week.week_start}T00:00:00Z`);
-        weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
-        if (structure.date < week.week_start || structure.date > weekEnd.toISOString().slice(0, 10))
-          ctx.addIssue({
-            code: "custom",
-            path: ["key_sessions", index, "workout_structure", "date"],
-            message: "must fall inside the containing Monday-Sunday week",
-          });
-        for (const [blockIndex, block] of structure.blocks.entries())
-          for (const [stepIndex, step] of block.steps.entries())
-            if (step.step_kind === "work" && step.target.kind === "open")
-              ctx.addIssue({
-                code: "custom",
-                path: ["key_sessions", index, "workout_structure", "blocks", blockIndex, "steps", stepIndex, "target"],
-                message: "work steps require an explicit target",
-              });
-        const activeSteps = structure.blocks
-          .flatMap((block) => Array.from({ length: block.repeat }, () => block.steps).flat())
-          .filter((step) => step.step_kind !== "rest");
-        if (session.distance_km !== null && activeSteps.every((step) => step.duration.kind === "distance_m")) {
-          const structuredDistanceKm = activeSteps.reduce((total, step) => total + (step.duration.kind === "distance_m" ? step.duration.value / 1000 : 0), 0);
-          if (Math.abs(session.distance_km - structuredDistanceKm) > 0.01)
+      for (const [blockIndex, block] of structure.blocks.entries())
+        for (const [stepIndex, step] of block.steps.entries())
+          if (step.step_kind === "work" && step.target.kind === "open")
             ctx.addIssue({
               code: "custom",
-              path: ["key_sessions", index, "distance_km"],
-              message: "must equal the complete distance-based workout_structure total",
+              path: ["key_sessions", index, "workout_structure", "blocks", blockIndex, "steps", stepIndex, "target"],
+              message: "work steps require an explicit target",
             });
-        }
-      }
-      if (ORDINARY_FILLER_PURPOSE.test(session.purpose ?? "")) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["key_sessions", index],
-          message: "ordinary easy/recovery/filler runs do not belong in the strategic skeleton",
-        });
+      const activeSteps = structure.blocks
+        .flatMap((block) => Array.from({ length: block.repeat }, () => block.steps).flat())
+        .filter((step) => step.step_kind !== "rest");
+      if (session.distance_km !== null && activeSteps.every((step) => step.duration.kind === "distance_m")) {
+        const structuredDistanceKm = activeSteps.reduce((total, step) => total + (step.duration.kind === "distance_m" ? step.duration.value / 1000 : 0), 0);
+        if (Math.abs(session.distance_km - structuredDistanceKm) > 0.01)
+          ctx.addIssue({
+            code: "custom",
+            path: ["key_sessions", index, "distance_km"],
+            message: "must equal the complete distance-based workout_structure total",
+          });
       }
     }
-    const hasEmbeddedRacePaceLongRun = week.key_sessions.some(
-      (session) => session.type === "long_run" && EMBEDDED_RACE_PACE.test(`${session.intensity ?? ""} ${session.purpose ?? ""}`),
-    );
-    if (
-      hasEmbeddedRacePaceLongRun &&
-      week.key_sessions.some(
-        (session) =>
-          session.type === "race_pace" &&
-          session.workout_structure &&
-          week.key_sessions.some(
-            (longRun) =>
-              longRun.type === "long_run" &&
-              longRun.workout_structure?.date === session.workout_structure?.date &&
-              EMBEDDED_RACE_PACE.test(`${longRun.intensity ?? ""} ${longRun.purpose ?? ""}`),
-          ),
-      )
-    ) {
+    if (ORDINARY_FILLER_PURPOSE.test(session.purpose ?? "")) {
       ctx.addIssue({
         code: "custom",
-        path: ["key_sessions"],
-        message: "embedded race-pace work must be represented only by its long_run session",
+        path: ["key_sessions", index],
+        message: "ordinary easy/recovery/filler runs do not belong in the strategic skeleton",
       });
     }
-  });
+  }
+  const hasEmbeddedRacePaceLongRun = week.key_sessions.some(
+    (session) => session.type === "long_run" && EMBEDDED_RACE_PACE.test(`${session.intensity ?? ""} ${session.purpose ?? ""}`),
+  );
+  if (
+    hasEmbeddedRacePaceLongRun &&
+    week.key_sessions.some(
+      (session) =>
+        session.type === "race_pace" &&
+        session.workout_structure &&
+        week.key_sessions.some(
+          (longRun) =>
+            longRun.type === "long_run" &&
+            longRun.workout_structure?.date === session.workout_structure?.date &&
+            EMBEDDED_RACE_PACE.test(`${longRun.intensity ?? ""} ${longRun.purpose ?? ""}`),
+        ),
+    )
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["key_sessions"],
+      message: "embedded race-pace work must be represented only by its long_run session",
+    });
+  }
+});
+
+/**
+ * Master Plan 形状（字段类型/枚举），不带任何跨字段确定性规则。
+ * 供「先跳过确定性质量门」的生成路径做结构化解析：保证可安全入库/渲染的
+ * 最低形状，不再因内容规则（比赛周激活量、周课次数等）拒绝模型产物。
+ */
+export const MasterPlanLenientSchema = z.object({
+  status: z.literal("draft"),
+  goal: z.object({
+    race_name: z.string(),
+    distance: z.enum(["FM", "HM"]),
+    race_date: DaySchema,
+    target_time: z.string(),
+    timezone: z.literal("Asia/Shanghai"),
+    location: z.string().min(1).nullish(),
+  }),
+  start_date: DaySchema,
+  end_date: DaySchema,
+  total_weeks: z.int().positive(),
+  phases: z.array(PhaseShapeSchema).min(1),
+  weeks: z.array(WeekShapeSchema).min(1),
+  training_principles: z.array(z.string()).min(1),
+  generated_by: z.literal("coach_agent"),
+  version: z.literal(1),
+  created_at: z.string().regex(UTC_ISO),
+  updated_at: z.string().regex(UTC_ISO),
+});
 
 /** Canonical machine-enforced contract for newly generated season plans. */
-export const MasterPlanSchema = z
-  .object({
-    status: z.literal("draft"),
-    goal: z.object({
-      race_name: z.string(),
-      distance: z.enum(["FM", "HM"]),
-      race_date: DaySchema,
-      target_time: z.string(),
-      timezone: z.literal("Asia/Shanghai"),
-      location: z.string().min(1).nullish(),
-    }),
-    start_date: DaySchema,
-    end_date: DaySchema,
-    total_weeks: z.int().positive(),
-    phases: z.array(PhaseSchema).min(1),
-    weeks: z.array(WeekSchema).min(1),
-    training_principles: z.array(z.string()).min(1),
-    generated_by: z.literal("coach_agent"),
-    version: z.literal(1),
-    created_at: z.string().regex(UTC_ISO),
-    updated_at: z.string().regex(UTC_ISO),
-  })
-  .superRefine((plan, ctx) => {
-    if (plan.total_weeks !== plan.weeks.length) {
+export const MasterPlanSchema = MasterPlanLenientSchema.extend({
+  phases: z.array(PhaseSchema).min(1),
+  weeks: z.array(WeekSchema).min(1),
+}).superRefine((plan, ctx) => {
+  if (plan.total_weeks !== plan.weeks.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["total_weeks"],
+      message: "must equal weeks.length",
+    });
+  }
+  if (new Set(plan.phases.map((phase) => phase.name)).size !== plan.phases.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["phases"],
+      message: "phase names must be unique",
+    });
+  }
+  for (const [index, week] of plan.weeks.entries()) {
+    if (week.week_index !== index + 1) {
       ctx.addIssue({
         code: "custom",
-        path: ["total_weeks"],
-        message: "must equal weeks.length",
+        path: ["weeks", index, "week_index"],
+        message: "must be consecutive from 1",
       });
     }
-    if (new Set(plan.phases.map((phase) => phase.name)).size !== plan.phases.length) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["phases"],
-        message: "phase names must be unique",
-      });
-    }
-    for (const [index, week] of plan.weeks.entries()) {
-      if (week.week_index !== index + 1) {
+    if (week.key_sessions.some((session) => session.type === "race")) {
+      const activation = week.key_sessions.find((session) => session.type === "race_pace");
+      if (activation && !activation.workout_structure)
         ctx.addIssue({
           code: "custom",
-          path: ["weeks", index, "week_index"],
-          message: "must be consecutive from 1",
+          path: ["weeks", index, "key_sessions", week.key_sessions.indexOf(activation), "workout_structure"],
+          message: "race-week activation requires workout_structure",
         });
-      }
-      if (week.key_sessions.some((session) => session.type === "race")) {
-        const activation = week.key_sessions.find((session) => session.type === "race_pace");
-        if (activation && !activation.workout_structure)
+      if (activation?.workout_structure) {
+        const goalPaceSPerKm = targetPaceSPerKm(plan.goal.target_time, RACE_DISTANCE_KM[plan.goal.distance]);
+        const workDistanceKm = activation.workout_structure.blocks.reduce(
+          (total, block) =>
+            total +
+            block.repeat *
+              block.steps.reduce(
+                (sum, step) =>
+                  sum +
+                  (step.step_kind === "work" && step.duration.kind === "distance_m" && targetsGoalRacePace(step.target, goalPaceSPerKm)
+                    ? step.duration.value / 1000
+                    : 0),
+                0,
+              ),
+          0,
+        );
+        const [minimum, maximum] = plan.goal.distance === "FM" ? [10, 15] : [8, 10];
+        if (workDistanceKm < minimum || workDistanceKm > maximum)
           ctx.addIssue({
             code: "custom",
             path: ["weeks", index, "key_sessions", week.key_sessions.indexOf(activation), "workout_structure"],
-            message: "race-week activation requires workout_structure",
+            message: `race-week ${plan.goal.distance} activation requires ${minimum}-${maximum}km of race-pace work`,
           });
-        if (activation?.workout_structure) {
-          const goalPaceSPerKm = targetPaceSPerKm(plan.goal.target_time, RACE_DISTANCE_KM[plan.goal.distance]);
-          const workDistanceKm = activation.workout_structure.blocks.reduce(
-            (total, block) =>
-              total +
-              block.repeat *
-                block.steps.reduce(
-                  (sum, step) =>
-                    sum +
-                    (step.step_kind === "work" && step.duration.kind === "distance_m" && targetsGoalRacePace(step.target, goalPaceSPerKm)
-                      ? step.duration.value / 1000
-                      : 0),
-                  0,
-                ),
-            0,
-          );
-          const [minimum, maximum] = plan.goal.distance === "FM" ? [10, 15] : [8, 10];
-          if (workDistanceKm < minimum || workDistanceKm > maximum)
-            ctx.addIssue({
-              code: "custom",
-              path: ["weeks", index, "key_sessions", week.key_sessions.indexOf(activation), "workout_structure"],
-              message: `race-week ${plan.goal.distance} activation requires ${minimum}-${maximum}km of race-pace work`,
-            });
-        }
       }
     }
-  });
+  }
+});
 
 export type MasterPlan = z.infer<typeof MasterPlanSchema>;
 
