@@ -37,6 +37,7 @@ import {
 } from '../../utils/trainingStatus';
 import { fmtPace } from '../../utils/format';
 import { epochToShanghaiYmd, shanghaiWeekdayLabel } from '../../utils/date';
+import { toUChartsTouchEvent } from '../../utils/ucharts';
 import { getHealth, getHrv, getStrideTrainingLoad, getStrideZones } from '../../services/health';
 import { getActivities } from '../../services/activities';
 import { userStore } from '../../store/index';
@@ -679,23 +680,23 @@ Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
   // —— uCharts 触摸工具提示 ——
 
   onRhrTouch(e: WechatMiniprogram.TouchEvent) {
-    if (rhrChart && rhrSpec) rhrChart.showToolTip(e, { formatter: (item, time) => rhrSpec!.tooltip(itemNumber(item), time) });
+    if (rhrChart && rhrSpec) rhrChart.showToolTip(toUChartsTouchEvent(e), { formatter: (item, time) => rhrSpec!.tooltip(itemNumber(item), time) });
   },
   onHrvTouch(e: WechatMiniprogram.TouchEvent) {
-    if (hrvChart && hrvSpec) hrvChart.showToolTip(e, { formatter: (item, time) => hrvSpec!.tooltip(itemNumber(item), time) });
+    if (hrvChart && hrvSpec) hrvChart.showToolTip(toUChartsTouchEvent(e), { formatter: (item, time) => hrvSpec!.tooltip(itemNumber(item), time) });
   },
   onDoseTouch(e: WechatMiniprogram.TouchEvent) {
-    if (doseChart && doseSpec) doseChart.showToolTip(e, { formatter: (item, time) => doseSpec!.tooltip(itemNumber(item), time) });
+    if (doseChart && doseSpec) doseChart.showToolTip(toUChartsTouchEvent(e), { formatter: (item, time) => doseSpec!.tooltip(itemNumber(item), time) });
   },
   onLoadTouch(e: WechatMiniprogram.TouchEvent) {
     // 双序列（慢性/急性）用 uCharts 默认工具提示（多行 name: value）。
-    if (loadChart) loadChart.showToolTip(e);
+    if (loadChart) loadChart.showToolTip(toUChartsTouchEvent(e));
   },
   onFormTouch(e: WechatMiniprogram.TouchEvent) {
-    if (formChart && formSpec) formChart.showToolTip(e, { formatter: (item, time) => formSpec!.tooltip(itemNumber(item), time) });
+    if (formChart && formSpec) formChart.showToolTip(toUChartsTouchEvent(e), { formatter: (item, time) => formSpec!.tooltip(itemNumber(item), time) });
   },
   onWeekTouch(e: WechatMiniprogram.TouchEvent) {
-    if (weekChart && weekSpec) weekChart.showToolTip(e, { formatter: (item, time) => weekSpec!.tooltip(itemNumber(item), time) });
+    if (weekChart && weekSpec) weekChart.showToolTip(toUChartsTouchEvent(e), { formatter: (item, time) => weekSpec!.tooltip(itemNumber(item), time) });
   },
 
   drawCharts() {

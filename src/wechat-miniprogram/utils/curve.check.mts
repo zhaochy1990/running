@@ -14,6 +14,7 @@ import {
   lineColorStops,
   zoneBands,
 } from './curve.ts';
+import { toUChartsTouchEvent } from './ucharts.ts';
 import { readFileSync } from 'node:fs';
 
 const pt = (timestamp: number | null, extra: Partial<TimeseriesPoint> = {}): TimeseriesPoint =>
@@ -180,5 +181,16 @@ chart.showToolTip(
 await new Promise((resolve) => setTimeout(resolve, 300));
 const tipText = texts.find((t) => t.startsWith('心率 ')) ?? '';
 eq(/^心率 \d+ bpm · \d\d:\d\d:\d\d$/.test(tipText), true, `touch shows tooltip (${tipText})`);
+
+// uCharts 触摸事件契约：事件带 clientX 时 uCharts 的坐标换算会削掉半个图高（只有图表
+// 底部能触发读数），必须剥掉 clientX 只喂 canvas 相对坐标 x/y
+const touch = { identifier: 1, clientX: 12, clientY: 34, pageY: 34, x: 150, y: 60 };
+eq(
+  toUChartsTouchEvent({ touches: [touch], changedTouches: [touch] } as unknown as WechatMiniprogram.TouchEvent),
+  { changedTouches: [{ x: 150, y: 60 }] },
+  'touch event strips clientX to canvas-relative x/y',
+);
+const legacy = { touches: [], changedTouches: [{ identifier: 1, clientX: 12, clientY: 34 }] } as unknown as WechatMiniprogram.TouchEvent;
+eq(toUChartsTouchEvent(legacy), legacy, 'falls back to raw event when x/y missing');
 console.log('tooltip drawn:', tipText);
 console.log('curveChart.check: OK');
