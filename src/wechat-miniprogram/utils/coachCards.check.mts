@@ -78,10 +78,19 @@ const masterPlanCard = {
   eq(view.title, '赛季训练计划已生成', 'master-plan title');
   eq(view.subtitle, '无锡马拉松（全马） · 24 周备赛，目标 3:30:00', 'master-plan subtitle');
   eq(view.badge, '初稿', 'master-plan badge');
-  eq(view.buttonText, '', 'master-plan cta empty until #429');
+  eq(view.buttonText, '', 'master-plan cta empty without plan_id (#429 降级卡片)');
+  eq(view.secondaryButtonText, '', 'master-plan secondary empty without plan_id');
   eq(view.url, '', 'master-plan no navigation');
   eq(view.inlineBody, true, 'master-plan inline body');
   eq(view.data, masterPlanCard, 'master-plan data');
+}
+// #429：落库成功带 plan_id 的卡片出「启用/放弃」双 CTA（动作型，不走 url）
+{
+  const withId = buildCoachCard({ $type: 'master-plan', data: { ...masterPlanCard, plan_id: 'plan-1' } }, raceTarget);
+  eq(withId?.buttonText, '启用', 'master-plan activate cta');
+  eq(withId?.secondaryButtonText, '放弃', 'master-plan abandon cta');
+  eq(withId?.url, '', 'master-plan action cta has no navigation');
+  eq((withId?.data as Record<string, unknown>).plan_id, 'plan-1', 'master-plan keeps plan_id for the handlers');
 }
 // 完赛为目标（无 target_time）：副标题不拼目标段
 {

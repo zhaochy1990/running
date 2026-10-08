@@ -11,6 +11,7 @@ import {
 import { createApp } from "./app.js";
 import { createJwtVerifier, fetchAuthPublicKey } from "./auth.js";
 import { CoachInvokerImpl } from "./coach/coachInvoker.js";
+import { createMasterPlanDraftSink } from "./coach/masterPlanDraftSink.js";
 import type { ApiConfig } from "./dto/config.js";
 import { MySqlCoachDataDeleter } from "./persistence/deletion.js";
 import { createPersistence, type Persistence } from "./persistence/index.js";
@@ -40,7 +41,9 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
   let planJobPublisher: RabbitPublisher | undefined;
   try {
     persistence = await createPersistence(apiConfig.persistenceDatabase);
-    const coachInvoker = new CoachInvokerImpl(dataProvider, coachConfig, persistence);
+    // #429：聊天内生成的 master-plan 直接落 Go draft（fail-soft），卡片带
+    // plan_id 供小程序「启用/放弃」CTA 调用户端点。
+    const coachInvoker = new CoachInvokerImpl(dataProvider, coachConfig, persistence, createMasterPlanDraftSink(dataProvider, apiConfig.goApi));
     await coachInvoker.initialize();
 
     // Deterministic plan-job enqueue (ADR 0030): store-first via the worker's

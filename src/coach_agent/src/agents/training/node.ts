@@ -21,9 +21,18 @@ export interface TrainingAgent {
   invoke(input: unknown, config?: unknown): Promise<{ messages: BaseMessage[] } & Record<string, unknown>>;
 }
 
+/**
+ * #429 draft 落库 sink：把生成计划存成 Go 侧 draft，成功返回 plan_id（进
+ * 卡片 data，作为「启用/放弃」CTA 的定位）；返回 null / 抛错均降级——卡片
+ * 照发，只是没有 CTA。落库绝不阻断回复。实现由 runtime 注入（coach_agent_api
+ * 的 Go internal draft sink）。
+ */
+export type MasterPlanDraftSink = (plan: MasterPlan, userId: string) => Promise<string | null>;
+
 export interface TrainingNodeDeps {
   agent: TrainingAgent;
   timeoutMs?: number;
+  persistDraft?: MasterPlanDraftSink;
 }
 
 /**
@@ -57,9 +66,10 @@ export function makeTrainingNode(deps: TrainingNodeDeps): GraphNode<typeof Agent
     const plan = extractMasterPlan(result) ?? leakedPlanFromText(result, state);
     if (plan !== undefined) {
       logger.info({ elapsedMs: Date.now() - startedAt, totalWeeks: plan.total_weeks }, "master plan generated in-turn");
+      const planId = await persistPlanDraft(deps.persistDraft, plan, config);
       // markdown 摘要正文 + `master-plan` 卡片信封（#428）。信封挂消息自身随
       // checkpoint 持久化，done/历史投影按消息读取，跨设备重进免费。
-      return { messages: [masterPlanCardMessage(plan)] };
+      return { messages: [masterPlanCardMessage(plan, planId)] };
     }
     // 无信封：目标缺失追问或说明类回复，按普通业务节点写回增量——agent 的
     // 工具调用轨迹（含 ToolStrategy 伪调用）留在节点内，不进入会话历史。
@@ -69,6 +79,34 @@ export function makeTrainingNode(deps: TrainingNodeDeps): GraphNode<typeof Agent
 
 const GENERATION_FAILED_COPY = "这次训练计划生成没能完成，请稍后再试一次。";
 const GENERATION_TIMEOUT_COPY = "这次训练计划生成用时超出了限制，已停止。请稍后再试一次。";
+
+/**
+ * #429 draft 落库（fail-soft）：userId 从 runtime context 读（与内层工具
+ * 同源）；任何失败（无 userId / sink 拒绝 / 抛错）都只降级卡片，不影响回复。
+ */
+async function persistPlanDraft(
+  persistDraft: ((plan: MasterPlan, userId: string) => Promise<string | null>) | undefined,
+  plan: MasterPlan,
+  config: unknown,
+): Promise<string | undefined> {
+  if (persistDraft === undefined) return undefined;
+  const userId = (config as { context?: { userId?: unknown } } | undefined)?.context?.userId;
+  if (typeof userId !== "string" || userId.length === 0) {
+    logger.warn("master-plan draft skipped: no userId in runtime context; card degrades without activate CTA");
+    return undefined;
+  }
+  try {
+    const planId = await persistDraft(plan, userId);
+    if (planId === null) {
+      logger.warn({ userId }, "master-plan draft not persisted (no race goal or insert rejected); card degrades");
+      return undefined;
+    }
+    return planId;
+  } catch (error) {
+    logger.error({ err: error instanceof Error ? error : undefined }, "master-plan draft persist threw; card degrades");
+    return undefined;
+  }
+}
 
 /** Rejected by `withDeadline` when the budget runs out before the turn lands. */
 class PlanDeadline extends Error {}

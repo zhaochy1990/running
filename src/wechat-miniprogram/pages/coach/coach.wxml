@@ -44,8 +44,11 @@
               subtitle="{{item.card.subtitle}}"
               badge="{{item.card.badge}}"
               buttonText="{{item.card.buttonText}}"
+              secondaryButtonText="{{item.card.secondaryButtonText}}"
               data-id="{{item.id}}"
               bindopen="onCardOpen"
+              bindcta="onCardCta"
+              bindsecondary="onCardSecondary"
             />
             <mp-html
               wx:if="{{item.html}}"

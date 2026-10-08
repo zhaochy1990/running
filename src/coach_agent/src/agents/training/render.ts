@@ -66,15 +66,15 @@ function loadProjectionLines(plan: MasterPlan, simulation?: SimulationReport): s
  * 不再运行时复验——投影是已校验 plan 的确定性标量挑选，形状由返回类型
  * 编译期钉死，契约由单测对信封 safeParse 把关）。
  */
-export function masterPlanCardMessage(plan: MasterPlan, simulation?: SimulationReport): AIMessage {
+export function masterPlanCardMessage(plan: MasterPlan, planId?: string, simulation?: SimulationReport): AIMessage {
   return new AIMessage({
     content: renderMasterPlanMarkdown(plan, simulation),
-    additional_kwargs: { card: { $type: "master-plan", data: projectMasterPlanCard(plan) } },
+    additional_kwargs: { card: { $type: "master-plan", data: projectMasterPlanCard(plan, planId) } },
   });
 }
 
 /** plan → 卡片结构（渲染/定位需要的标量摘要；时间轴与负荷投影走 markdown 正文）。 */
-function projectMasterPlanCard(plan: MasterPlan): MasterPlanCard {
+function projectMasterPlanCard(plan: MasterPlan, planId?: string): MasterPlanCard {
   return {
     goal: {
       race_name: plan.goal.race_name,
@@ -85,6 +85,9 @@ function projectMasterPlanCard(plan: MasterPlan): MasterPlanCard {
     start_date: plan.start_date,
     end_date: plan.end_date,
     total_weeks: plan.total_weeks,
+    // #429：draft 落库成功才有 plan_id（卡片「启用/放弃」CTA 的定位）；落库
+    // 失败/无 race goal 时整个省略，前端降级为无 CTA 卡片。
+    ...(planId !== undefined ? { plan_id: planId } : {}),
   };
 }
 

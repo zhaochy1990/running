@@ -6,7 +6,7 @@ import type { DataProvider } from "../data/dataProvider.js";
 import { getAgentNode } from "./agents.js";
 import { withLangfuseInvokeTracing } from "./langfuse.js";
 import { AgentsState } from "./state.js";
-import { createTrainingNode } from "./training/agent.js";
+import { createTrainingNode, type MasterPlanDraftSink } from "./training/agent.js";
 
 export { CoachContext, type CoachToolRuntime } from "./context.js";
 
@@ -17,6 +17,8 @@ export interface CoachAgentOptions {
   checkpointer?: BaseCheckpointSaver;
   /** Runtime-owned LangGraph long-term memory adapter. */
   store?: BaseStore;
+  /** #429 master-plan draft 落库 sink；缺省不落库（卡片无启用 CTA）。 */
+  masterPlanDraftSink?: MasterPlanDraftSink;
 }
 
 export interface CoachAgent {
@@ -33,7 +35,7 @@ export async function createCoachAgent(dataProvider: DataProvider, config: Coach
   const orchestratorConfig = getAgentConfig(config, "orchestrator");
   logger.info(`creating orchestrator with model ${orchestratorConfig.name} (${orchestratorConfig.model})`);
   // training 节点在 turn 内同步跑 deepagent 版 generate-master-plan agent。
-  const trainingNode = createTrainingNode(dataProvider, config);
+  const trainingNode = createTrainingNode(dataProvider, config, options.masterPlanDraftSink);
 
   const graph = new StateGraph(AgentsState)
     .addNode("orchestrator", getAgentNode("orchestrator", config, dataProvider), { ends: ["qa", "training", "race_strategy"] })

@@ -25,6 +25,7 @@ export type {
   CoachToolRuntime,
 } from "./agents/coachAgent.js";
 export { CoachContext, createCoachAgent } from "./agents/coachAgent.js";
+export type { MasterPlanDraftSink } from "./agents/training/agent.js";
 export { flushLangfuse, isLangfuseEnabled } from "./agents/langfuse.js";
 export type { CoachTurnScopeValue } from "./agents/turnScope.js";
 export { CoachTurnScope } from "./agents/turnScope.js";
