@@ -50,6 +50,8 @@ interface RaceCenterPageData {
 }
 
 interface RaceCenterPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onLoad(): void;
   onShow(): void;
   onPullDownRefresh(): void;
@@ -108,6 +110,12 @@ async function fetchYear(year: string, province: string): Promise<RaceCalendarRa
 }
 
 Page<RaceCenterPageData, RaceCenterPageHandlers>({
+  onShareAppMessage() {
+    return { title: '砺跑 · 全年路跑赛事日历', path: '/pages/race-center/race-center' };
+  },
+  onShareTimeline() {
+    return { title: '砺跑 · 全年路跑赛事日历' };
+  },
   data: {
     statusBarHeight: 0,
     loading: true,

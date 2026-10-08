@@ -15,6 +15,7 @@ import type {
 } from '../../services/master-plan';
 import { userStore } from '../../store/index';
 import { epochToShanghaiYmd, shanghaiToday, shanghaiYmdToEpoch } from '../../utils/date';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface PhaseMilestoneVM {
   key: string;
@@ -130,6 +131,8 @@ interface TrainingPlanPageData {
 }
 
 interface TrainingPlanPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onBackTap(): void;
   onRetryTap(): void;
   onCoachTap(): void;
@@ -671,6 +674,8 @@ function buildViewModels(plan: SeasonPlanContent, todayEpoch: number) {
 }
 
 Page<TrainingPlanPageData, TrainingPlanPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,

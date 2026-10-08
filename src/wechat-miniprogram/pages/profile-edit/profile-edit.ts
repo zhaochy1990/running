@@ -20,6 +20,7 @@ import { shanghaiToday } from '../../utils/date';
 // 取值表与 onboarding 的资料步共用一份（必须与后端 oneof 一致），见 utils/profileFields.ts
 import { AGE_OPTIONS, AGE_VALUES, SEX_OPTIONS, SEX_VALUES } from '../../utils/profileFields';
 import type { Sex } from '../../utils/profileFields';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface ProfileEditPageData {
   statusBarHeight: number;
@@ -43,6 +44,8 @@ interface ProfileEditPageData {
 }
 
 interface ProfileEditPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onBack(): void;
   onChooseAvatar(e: WechatMiniprogram.CustomEvent<{ avatarUrl: string }>): void;
   onNameInput(e: WechatMiniprogram.Input): void;
@@ -95,6 +98,8 @@ function friendlyError(err: unknown, fallback: string): string {
 }
 
 Page<ProfileEditPageData, ProfileEditPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,

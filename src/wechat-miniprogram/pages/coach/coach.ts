@@ -12,6 +12,7 @@ import { setPendingStrategyDraft, type RaceStrategy } from '../../services/race-
 import { userStore } from '../../store/index';
 import { buildCoachCard, looksLikeJsonText, parseLeakedRaceStrategyEnvelope, type CoachCardView } from '../../utils/coachCards';
 import { markdownToHtml } from '../../utils/markdown';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface CoachMessage {
   id: number;
@@ -107,6 +108,8 @@ interface CoachPageData {
 }
 
 interface CoachPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onInput(e: WechatMiniprogram.Input): void;
   onKeyboardHeightChange(e: WechatMiniprogram.InputKeyboardHeightChange): void;
   onBlur(): void;
@@ -275,6 +278,8 @@ function titleFromText(text: string): string {
 }
 
 Page<CoachPageData, CoachPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,

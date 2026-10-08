@@ -8,6 +8,7 @@ import {
 } from '../../services/declarations';
 import { markdownToHtml } from '../../utils/markdown';
 import { ApiError } from '../../services/request';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface DeclarationPageData {
   statusBarHeight: number;
@@ -23,6 +24,8 @@ interface DeclarationPageData {
 }
 
 interface DeclarationPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onBack(): void;
   loadDeclaration(docType: DeclarationDocType): Promise<void>;
 }
@@ -51,6 +54,8 @@ function contentPaddingTopRpx(): number {
 }
 
 Page<DeclarationPageData, DeclarationPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,

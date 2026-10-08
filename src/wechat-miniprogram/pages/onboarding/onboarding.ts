@@ -28,6 +28,7 @@ import {
 } from '../../utils/profileFields';
 import { shanghaiToday } from '../../utils/date';
 import { userStore } from '../../store/index';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 type Step = 'loading' | 'profile' | 'watch' | 'sync' | 'ready';
 
@@ -65,6 +66,8 @@ interface OnboardingPageData {
 }
 
 interface OnboardingPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onShow(): void;
   onUnload(): void;
   refresh(): Promise<void>;
@@ -97,6 +100,8 @@ interface OnboardingPageHandlers {
 }
 
 Page<OnboardingPageData, OnboardingPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     step: 'loading',
     avatarUrl: '',

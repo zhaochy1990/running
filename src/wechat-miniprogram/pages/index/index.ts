@@ -23,6 +23,7 @@ import type {
   WeeklyPlanDetail,
   WeeklyPlanContentStructured,
 } from '../../types/plan';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 // ---------------------------------------------------------------------------
 // 今日活动行（复用活动页 .activity 行样式）
@@ -99,6 +100,8 @@ interface IndexPageData {
 }
 
 interface IndexPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   fetchPlan(): Promise<void>;
   renderDay(dateYmd: string, isToday: boolean): void;
   fetchDayActivities(dateYmd: string): Promise<void>;
@@ -148,6 +151,8 @@ function contentPaddingTopRpx(): number {
 }
 
 Page<IndexPageData, IndexPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,

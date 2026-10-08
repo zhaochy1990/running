@@ -11,6 +11,7 @@ import type {
   WeeklyPlanContentStructured,
   WeeklyPlanDetail,
 } from '../../types/plan';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface PushDateSelectEvent {
   detail: { value: string };
@@ -31,6 +32,8 @@ interface PlanPageData {
 }
 
 interface PlanPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   fetchPlan(): Promise<void>;
   render(): void;
   onMenuTap(): void;
@@ -70,6 +73,8 @@ function contentPaddingTopRpx(): number {
 }
 
 Page<PlanPageData, PlanPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,

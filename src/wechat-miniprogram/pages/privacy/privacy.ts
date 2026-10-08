@@ -1,6 +1,7 @@
 // 隐私与权限页 —— 汇总合规声明入口（用户协议 / 隐私政策）。
 // 声明正文走公开接口 GET /api/declarations/:doc_type（见 services/declarations.ts）。
 import type { DeclarationDocType } from '../../services/declarations';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface PrivacyRow {
   key: DeclarationDocType;
@@ -16,6 +17,8 @@ interface PrivacyPageData {
 }
 
 interface PrivacyPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onBack(): void;
   onRowTap(e: WechatMiniprogram.TouchEvent): void;
 }
@@ -60,6 +63,8 @@ const PRIVACY_ROWS: PrivacyRow[] = [
 ];
 
 Page<PrivacyPageData, PrivacyPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,

@@ -48,6 +48,7 @@ import type {
   StrideZonesResponse,
 } from '../../types/health';
 import type { Activity } from '../../types/activity';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 type Chart = InstanceType<typeof UCharts>;
 
@@ -122,6 +123,8 @@ interface TrainingStatusPageData {
 }
 
 interface TrainingStatusPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onBack(): void;
   onWindowChange(e: WechatMiniprogram.TouchEvent): void;
   onHeatTap(e: WechatMiniprogram.TouchEvent): void;
@@ -473,6 +476,8 @@ function heatDetail(date: string, state: string, dose: number | null): HeatDayDe
 // ---------------------------------------------------------------------------
 
 Page<TrainingStatusPageData, TrainingStatusPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,

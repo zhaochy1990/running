@@ -2,6 +2,7 @@ import { getStrideTrainingLoad } from '../../services/health';
 import { fmtDose } from '../../utils/format';
 import { userStore } from '../../store/index';
 import type { StrideTrainingLoadRecord } from '../../types/health';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface HealthStat {
   value: string;
@@ -23,6 +24,8 @@ interface HealthPageData {
 }
 
 interface HealthPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   fetch(): Promise<void>;
   render(): void;
   onMenuTap(): void;
@@ -116,6 +119,8 @@ function buildFromRecord(record: StrideTrainingLoadRecord | null): {
 }
 
 Page<HealthPageData, HealthPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,

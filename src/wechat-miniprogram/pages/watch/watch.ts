@@ -9,6 +9,7 @@ import {
 import { ApiError } from '../../services/request';
 import { ensureSync } from '../../services/onboarding';
 import { userStore } from '../../store/index';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface WatchPageData {
   statusBarHeight: number;
@@ -30,6 +31,8 @@ interface WatchPageData {
 }
 
 interface WatchPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   /** query.provider 可选：由 onboarding 引导页带过来，直接进该品牌的登录表单。 */
   onLoad(query: Record<string, string | undefined>): void;
   onShow(): void;
@@ -91,6 +94,8 @@ function friendlyLoginError(err: unknown): string {
 }
 
 Page<WatchPageData, WatchPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,

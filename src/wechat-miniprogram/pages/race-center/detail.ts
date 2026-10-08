@@ -63,6 +63,7 @@ interface RaceDetailPageHandlers {
   onShow(): void;
   onPullDownRefresh(): void;
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onBack(): void;
   onStarTap(): void;
   onTabTap(e: WechatMiniprogram.TouchEvent): void;
@@ -370,6 +371,18 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
     return {
       title: date ? `${name} · ${date} 开跑` : name,
       path: `/pages/race-center/detail?id=${this._raceId}`,
+    };
+  },
+  onShareTimeline() {
+    // 单页模式不能改落地页，无 id 时不带 query，靠页面坏链兜底
+    if (!this._raceId) {
+      return { title: '赛事中心 · 全年路跑日历' };
+    }
+    const name = this.data.view?.head.name || '赛事详情';
+    const date = this._detail?.race_date || '';
+    return {
+      title: date ? `${name} · ${date} 开跑` : name,
+      query: `id=${this._raceId}`,
     };
   },
 });
