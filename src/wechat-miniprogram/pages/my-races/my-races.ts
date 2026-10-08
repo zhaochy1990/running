@@ -18,6 +18,7 @@ import {
 import { statePatch, toPlanCards, type PlanCardView } from '../../utils/racePlanRows';
 import { shanghaiDateFromIso } from '../../utils/date';
 import { userStore } from '../../store/index';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 /** tab 标识：plans=我的赛事（默认）/ results=我的成绩 */
 type TabId = 'plans' | 'results';
@@ -59,6 +60,8 @@ interface MyRacesPageData {
 }
 
 interface MyRacesPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onLoad(): void;
   onShow(): void;
   onPullDownRefresh(): void;
@@ -160,6 +163,8 @@ function buildSummary(rows: RaceRow[]): string {
 }
 
 Page<MyRacesPageData, MyRacesPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   _inflight: new Map(),
   _fetchSeq: 0,
   _resultsSeq: 0,

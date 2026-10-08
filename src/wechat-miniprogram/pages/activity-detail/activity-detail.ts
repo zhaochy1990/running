@@ -24,6 +24,7 @@ import type {
   TimeseriesPoint,
   Pause,
 } from '../../types/activity';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 // ---------------------------------------------------------------------------
 // 视图模型
@@ -161,6 +162,8 @@ interface ActivityDetailPageData {
 }
 
 interface ActivityDetailPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   fetch(): Promise<void>;
   drawCurves(): void;
   onHrCurveTouch(e: unknown): void;
@@ -899,6 +902,8 @@ function contentPaddingTopRpx(): number {
 }
 
 Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,

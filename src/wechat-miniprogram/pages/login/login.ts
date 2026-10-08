@@ -1,5 +1,6 @@
 import { sendBindPhoneCode, wechatBindAccount, wechatBindPhone } from '../../services/auth';
 import { userStore } from '../../store/index';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 // 手机号验证码登录的特性开关（issue #335）：auth-service 的新 grant
 // wechat_phone_bind 已上线后置 true；auth 回滚/未上线的窗口期置 false，
@@ -29,6 +30,8 @@ interface LoginPageData {
 
 // 页面自定义方法（TCustom 泛型，供 this 类型收窄）
 interface LoginPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onSwitchTab(e: WechatMiniprogram.TouchEvent): void;
   onFieldFocus(e: WechatMiniprogram.TouchEvent): void;
   onFieldBlur(): void;
@@ -54,6 +57,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^1\d{10}$/;
 
 Page<LoginPageData, LoginPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     // 默认手机号 tab（开关开启时）：新用户无需已有账号即可注册；邮箱密码 tab
     // 保留给老用户。开关关闭时回落邮箱 tab 并隐藏手机号 tab 按钮。

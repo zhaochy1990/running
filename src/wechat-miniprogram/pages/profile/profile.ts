@@ -3,6 +3,7 @@ import { triggerSync, pollPipeline } from '../../services/sync';
 import { getWatchInfo } from '../../services/watch';
 import type { UserProfile } from '../../types/api';
 import type { PollPipelineHandle } from '../../services/sync';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface MenuRow {
   key: string;
@@ -23,6 +24,8 @@ interface ProfilePageData {
 }
 
 interface ProfilePageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onMenuTap(): void;
   onRowTap(e: WechatMiniprogram.TouchEvent): void;
   onLogout(): void;
@@ -77,6 +80,8 @@ const MENU_ROWS: MenuRow[] = [
 ];
 
 Page<ProfilePageData, ProfilePageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,

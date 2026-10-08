@@ -3,6 +3,7 @@ import { fmtDurationShort, fmtKm, fmtPace, fmtDose } from '../../utils/format';
 import { shanghaiToday, shanghaiWeekdayLabel } from '../../utils/date';
 import { userStore } from '../../store/index';
 import type { Activity, ActivitiesListResponse } from '../../types/activity';
+import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
 interface ActivityRow {
   labelId: string;
@@ -56,6 +57,8 @@ interface ActivitiesPageData {
 }
 
 interface ActivitiesPageHandlers {
+  onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   fetch(): Promise<void>;
   onMenuTap(): void;
   onThumbError(e: WechatMiniprogram.CustomEvent): void;
@@ -256,6 +259,8 @@ function mergeMonthGroups(existing: MonthGroup[], res: ActivitiesListResponse): 
 }
 
 Page<ActivitiesPageData, ActivitiesPageHandlers>({
+  onShareAppMessage: defaultShareAppMessage,
+  onShareTimeline: defaultShareTimeline,
   data: {
     statusBarHeight: 0,
     contentPaddingTop: 232,

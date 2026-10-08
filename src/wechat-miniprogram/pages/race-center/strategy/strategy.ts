@@ -59,6 +59,7 @@ interface StrategyPageHandlers {
   patchPaceRow(index: number, patch: Partial<StrategyView['paceRows'][number]>): void;
   patchFuelingRow(index: number, patch: Partial<StrategyView['fuelingRows'][number]>): void;
   onShareAppMessage(): WechatMiniprogram.Page.ICustomShareContent;
+  onShareTimeline(): WechatMiniprogram.Page.ICustomTimelineContent;
   onBack(): void;
   onCoachTap(): void;
   onPaceBlur(e: WechatMiniprogram.InputBlur): void;
@@ -251,6 +252,15 @@ Page<StrategyPageData, StrategyPageHandlers>({
       // 分享落到赛事详情页（报告页是私有产物，接收方看自己是否已生成）
       path: `/pages/race-center/detail?id=${this._raceId}`,
     };
+  },
+  onShareTimeline() {
+    const view = this.data.view;
+    const name = view?.raceName || '比赛策略';
+    if (!view || !this._raceId) {
+      return { title: name };
+    }
+    // 单页模式不能跳页：query 带 id 落回本页
+    return { title: strategyShareTitle(view), query: `id=${this._raceId}` };
   },
 
   onBack() {
