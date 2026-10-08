@@ -147,4 +147,22 @@ const colOpts = buildColumnChartOptions({
 eq(colOpts.type, 'column', 'column chart type');
 eq((colOpts.series as Array<{ data: unknown }>)[0].data.length, 2, 'column keeps per-point data incl. null gap');
 
+// 柱间距自适应：uCharts 会把固定 width 乘 dpr 致柱子贴满格距，这里断言 categoryGap 随窗口缩放
+const columnGap = (categories: number, width: number): number => {
+  const opts = buildColumnChartOptions({
+    categories: Array.from({ length: categories }, (_, i) => String(i)),
+    data: Array.from({ length: categories }, () => 1),
+    color: '#e68a00',
+    bounds: { min: 0, max: 2 },
+    width,
+    height: 140,
+    dpr: 2,
+  });
+  return (opts.extra as { column: { categoryGap: number } }).column.categoryGap;
+};
+eq(columnGap(2, 300), 3, 'categoryGap caps at 3 for sparse columns');
+eq(columnGap(30, 300), 2, 'categoryGap proportional to slot at 30d');
+eq(columnGap(90, 300), 1, 'categoryGap floors at 1 for dense 90d columns');
+eq((colOpts.extra as { column: { width?: unknown } }).column.width, undefined, 'no fixed width to override the adaptive gap');
+
 console.log('trainingStatus.check: OK');

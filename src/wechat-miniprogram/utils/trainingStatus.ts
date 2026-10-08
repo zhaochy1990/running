@@ -404,6 +404,11 @@ export function buildColumnChartOptions(params: {
   height: number;
   dpr: number;
 }): Record<string, unknown> {
+  // uCharts 的 fixColumeData 会把 extra.column.width 乘上 dpr：固定 10 在 2x 屏是 20 物理
+  // px，比 30 天窗口的格距（≈20）还宽，柱子完全贴死。改用 categoryGap 按格距比例留缝，
+  // 柱宽 = 格距 − 2×categoryGap×dpr，14/30/60/90d 各窗口自适应。
+  const slot = params.width / params.categories.length;
+  const categoryGap = Math.min(3, Math.max(1, slot * 0.2));
   return {
     ...baseChartOptions({ type: 'column', width: params.width, height: params.height, dpr: params.dpr, categories: params.categories }),
     yAxis: {
@@ -416,7 +421,7 @@ export function buildColumnChartOptions(params: {
       data: [{ min: params.bounds.min, max: params.bounds.max, axisLine: false }],
     },
     extra: {
-      column: { type: 'group', width: 10 },
+      column: { type: 'group', categoryGap },
       tooltip: { showBox: true, bgColor: '#101111', fontColor: '#e3e2e5', gridType: 'dash' },
     },
     series: [{ name: '', color: params.color, data: params.data }],
