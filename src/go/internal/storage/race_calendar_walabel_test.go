@@ -108,3 +108,48 @@ func TestLoadRaceCalendarLabelScope(t *testing.T) {
 		t.Errorf("WorldAth = %+v, want only the Chinese 2026 row", scope.WorldAth)
 	}
 }
+
+// TestLoadRaceCalendarDedupScope pins the dedup scope: every 中国田协 row and
+// every manually sourced row of the year — the rows a 国际田联 listing must not
+// duplicate — and none of the 国际田联 mirror's own rows (a WA row can never be
+// the dedup target; same-key WA rows are ReplaceRaceCalendarYear's business).
+func TestLoadRaceCalendarDedupScope(t *testing.T) {
+	st := openTestStore(t)
+	migrateRaceContent(t, st)
+	ctx := context.Background()
+
+	rows := []RaceCalendarEvent{
+		{Source: RaceSourceChinaAth, Name: "杭马", RaceDate: "2026-11-01", Country: "CHN", Month: 11, DayOfMonth: 1, City: strPtr("杭州市"), Origin: RaceOriginSync, WALabel: strPtr("Gold")},
+		{Source: RaceSourceManual, Name: "手工建的比赛", RaceDate: "2026-10-18", Country: "CHN", Month: 10, DayOfMonth: 18, City: strPtr("常州市"), Origin: RaceOriginManual},
+		{Source: RaceSourceChinaAth, Name: "杭马2027", RaceDate: "2027-11-01", Country: "CHN", Month: 11, DayOfMonth: 1, City: strPtr("杭州市"), Origin: RaceOriginSync},
+		{Source: RaceSourceWorldAth, Name: "Hangzhou Marathon", RaceDate: "2026-11-01", Country: "CHN", Month: 11, DayOfMonth: 1, City: strPtr("杭州市"), Origin: RaceOriginSync},
+	}
+	for i := range rows {
+		if err := st.db.Create(&rows[i]).Error; err != nil {
+			t.Fatalf("seed %s: %v", rows[i].Name, err)
+		}
+	}
+
+	got, err := st.LoadRaceCalendarDedupScope(ctx, "2026")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("rows = %+v, want the 中国田协 and manual 2026 rows only", got)
+	}
+	byName := map[string]RaceCalendarEvent{}
+	for _, row := range got {
+		byName[row.Name] = row
+	}
+	if _, ok := byName["杭马"]; !ok {
+		t.Errorf("中国田协 row missing from scope: %+v", got)
+	}
+	if _, ok := byName["手工建的比赛"]; !ok {
+		t.Errorf("manual row missing from scope: %+v", got)
+	}
+	// The caller diffs against the stored tier to send changed rows only, so the
+	// loader must carry the column through.
+	if got := byName["杭马"].WALabel; got == nil || *got != "Gold" {
+		t.Errorf("杭马 wa_label = %v, want Gold carried through", got)
+	}
+}

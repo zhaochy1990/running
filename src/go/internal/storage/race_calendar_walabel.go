@@ -8,16 +8,20 @@ import (
 	"gorm.io/gorm"
 )
 
-// This file is the persistence half of the race_calendar_wa_label step: it loads
-// the two sources' rows for a year so the step can match them, and applies the
-// tiers it derived.
+// This file is the persistence half of the World Athletics tier plumbing: it
+// loads the row sets a step needs to match (the race_calendar_wa_label job's
+// year scope, and the Chinese rows the 国际田联 mirror dedups against), and
+// applies derived tiers.
 //
-// The step exists because the two calendars describe the same races under
+// The tier exists because the two calendars describe the same races under
 // different grades — a 中国田协 row carries 中国田协's own grade (A/B/C…), a
 // 国际田联 row carries the World Athletics tier (Platinum/Gold/Elite/Label) —
-// and the product wants both on the one row a runner sees. Neither mirror can
-// write the other's rows (ReplaceRaceCalendarYear is scoped to its own source),
-// so the tier is copied by a third pass that owns no source at all.
+// and the product wants both on the one row a runner sees. Since devops#443 the
+// tier lands on the 中国田协 row in the mirror step itself: a 国际田联 listing
+// whose (race_date, city) matches an existing Chinese row is not written at all,
+// and its tier is applied to that row via ApplyRaceCalendarWALabels. The
+// race_calendar_wa_label job keeps only the self-mirror (a 国际田联 row carrying
+// its own tier, for the races no Chinese row exists for).
 
 // RaceCalendarLabelScope is the row set one label run reconciles for a year:
 // both calendars' rows, because wa_label is written on both (a World Athletics
@@ -54,6 +58,28 @@ func (s *Store) LoadRaceCalendarLabelScope(ctx context.Context, year string) (Ra
 		return scope, fmt.Errorf("storage: load 国际田联 label scope: %w", err)
 	}
 	return scope, nil
+}
+
+// LoadRaceCalendarDedupScope returns the Chinese rows one year's 国际田联
+// mirror dedups against (devops#443): every 中国田协 row plus every manually
+// sourced row of the year. A WA listing matching one of these on (race_date,
+// city) must not create an English-name row — the Chinese row is the race.
+//
+// The 国际田联 mirror's own rows are excluded by construction (neither source
+// matches), so a WA row can never dedup against another WA row: those are
+// handled by ReplaceRaceCalendarYear's own (source, name, race_date) key. The
+// rows carry WALabel so the caller can skip writes whose value already matches.
+func (s *Store) LoadRaceCalendarDedupScope(ctx context.Context, year string) ([]RaceCalendarEvent, error) {
+	from, to := yearDateRange(year)
+	var rows []RaceCalendarEvent
+	err := s.db.WithContext(ctx).
+		Where("source IN ? AND race_date BETWEEN ? AND ?", []string{RaceSourceChinaAth, RaceSourceManual}, from, to).
+		Order("race_date, name").
+		Find(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("storage: load race_calendar dedup scope: %w", err)
+	}
+	return rows, nil
 }
 
 // RaceCalendarWALabel is one derived tier to write: the target 中国田协 row and

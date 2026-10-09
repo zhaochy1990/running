@@ -16,10 +16,15 @@ import (
 	"github.com/zhaochy1990/stride/internal/worldathletics"
 )
 
-// fakeStore records what the handler asks the storage layer to mirror.
+// fakeStore records what the handler asks the storage layer to mirror, plus the
+// dedup inputs it read and the wa_label writes it planned.
 type fakeStore struct {
 	years []string
 	races map[string][]storage.RaceCalendarEvent
+	// dedupScope is what LoadRaceCalendarDedupScope answers, per year.
+	dedupScope map[string][]storage.RaceCalendarEvent
+	// applied records every wa_label write the handler sent, in order.
+	applied []storage.RaceCalendarWALabel
 }
 
 func (f *fakeStore) ReplaceRaceCalendarYear(_ context.Context, source, year string, races []storage.RaceCalendarEvent) (storage.ReplaceRaceCalendarResult, error) {
@@ -33,6 +38,15 @@ func (f *fakeStore) ReplaceRaceCalendarYear(_ context.Context, source, year stri
 	}
 	f.races[year] = append([]storage.RaceCalendarEvent(nil), races...)
 	return storage.ReplaceRaceCalendarResult{Upserted: len(races)}, nil
+}
+
+func (f *fakeStore) LoadRaceCalendarDedupScope(_ context.Context, year string) ([]storage.RaceCalendarEvent, error) {
+	return f.dedupScope[year], nil
+}
+
+func (f *fakeStore) ApplyRaceCalendarWALabels(_ context.Context, labels []storage.RaceCalendarWALabel) (int, error) {
+	f.applied = append(f.applied, labels...)
+	return len(labels), nil
 }
 
 // waServer serves one year of events, keyed by the year variable in the
@@ -188,6 +202,48 @@ func TestHandlerIgnoresPartialCredentials(t *testing.T) {
 	}
 	if *gotKey != "k" {
 		t.Fatalf("server saw x-api-key %q, want configured key k (partial override ignored)", *gotKey)
+	}
+}
+
+// The dedup end to end: the 厦门 listing matches a Chinese row in the scope, so
+// the mirror write drops it (which is what stale-deletes a stored duplicate),
+// the tier lands on the Chinese row, and the empty 2027 upstream runs no dedup
+// and sends no writes at all.
+func TestHandlerDedupsChineseListings(t *testing.T) {
+	srv, _ := waServer(t)
+	st := &fakeStore{dedupScope: map[string][]storage.RaceCalendarEvent{
+		"2026": {cnRow(7, "2026-01-06", "厦门市", "Marathon")},
+	}}
+	h := newHandler(t, srv, []string{"2026"}, st)
+
+	res, err := h(context.Background(), &job.Job{InputJSON: `{"years":["2026","2027"]}`}, func(string, int) error { return nil })
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+
+	races := st.races["2026"]
+	if len(races) != 1 || races[0].Name != "Boston Marathon" {
+		t.Fatalf("mirrored = %+v, want only Boston (the 厦门 listing deduped away)", races)
+	}
+	if len(st.applied) != 1 {
+		t.Fatalf("applied = %+v, want one label write", st.applied)
+	}
+	if st.applied[0].ID != 7 || st.applied[0].WALabel == nil || *st.applied[0].WALabel != "Gold" {
+		t.Fatalf("applied[0] = %+v, want row 7 = Gold", st.applied[0])
+	}
+
+	var out struct {
+		Years map[string]yearSummary `json:"years"`
+	}
+	if err := json.Unmarshal([]byte(res), &out); err != nil {
+		t.Fatalf("result not json: %v", err)
+	}
+	s := out.Years["2026"]
+	if s.Deduped != 1 || s.Stamped != 1 || s.Upserted != 1 || s.Fetched != 2 {
+		t.Fatalf("2026 summary = %+v, want deduped 1 stamped 1 upserted 1 fetched 2", s)
+	}
+	if s := out.Years["2027"]; s.Fetched != 0 || s.Deduped != 0 || s.Stamped != 0 {
+		t.Fatalf("2027 summary = %+v, want an empty upstream to skip the dedup entirely", s)
 	}
 }
 
