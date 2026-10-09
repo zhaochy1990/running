@@ -56,16 +56,16 @@ PlannedSession _easyRun() => const PlannedSession(
       sessionIndex: 0,
       kind: 'run',
       summary: '',
-      spec: const RunWorkoutSpec(
+      spec: RunWorkoutSpec(
         name: '晨间轻松跑',
         note: null,
         blocks: [
           WorkoutBlock(steps: [
             WorkoutStep(
               stepKind: 'warmup',
-              target: const WorkoutTarget(kind: 'open'),
+              target: WorkoutTarget(kind: 'open'),
             ),
-            const WorkoutStep(
+            WorkoutStep(
               stepKind: 'work',
               target: WorkoutTarget(kind: 'hr_bpm', low: 130, high: 150),
             ),
@@ -82,7 +82,7 @@ PlannedSession _strength() => const PlannedSession(
       sessionIndex: 0,
       kind: 'strength',
       summary: '核心力量',
-      spec: const StrengthWorkoutSpec(
+      spec: StrengthWorkoutSpec(
         name: '核心力量',
         exercises: [
           StrengthExercise(

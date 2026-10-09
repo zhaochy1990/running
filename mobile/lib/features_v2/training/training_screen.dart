@@ -424,7 +424,7 @@ class _ActivityRow extends StatelessWidget {
     final showThumb = thumb != null && thumb.isNotEmpty;
 
     return InkWell(
-      onTap: widget.onTap,
+      onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.all(StrideTokens.spaceLg),
         child: Row(
