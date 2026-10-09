@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stride/core/api/api_exception.dart';
-import 'package:stride/core/router/routes_v2.dart';
+import 'package:stride/core/router/routes.dart';
 import 'package:stride/data/api/stride_api.dart';
 import 'package:stride/features_v2/onboarding/coros_link_screen.dart';
 
@@ -30,18 +30,18 @@ class _FakeApi extends StrideApi {
 
 Future<void> _pump(WidgetTester tester, _FakeApi api) async {
   final router = GoRouter(
-    initialLocation: RoutesV2.onboardingCoros,
+    initialLocation: Routes.onboardingCoros,
     routes: [
       GoRoute(
-        path: RoutesV2.onboardingCoros,
+        path: Routes.onboardingCoros,
         builder: (_, _) => const CorosLinkScreen(),
       ),
       GoRoute(
-        path: RoutesV2.onboardingSync,
+        path: Routes.onboardingSync,
         builder: (_, _) => const Scaffold(body: Text('sync-screen')),
       ),
       GoRoute(
-        path: RoutesV2.onboardingBrand,
+        path: Routes.onboardingBrand,
         builder: (_, _) => const Scaffold(body: Text('brand-screen')),
       ),
     ],

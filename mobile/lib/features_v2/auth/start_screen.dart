@@ -4,7 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/router/routes_v2.dart';
+import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 
@@ -44,12 +44,12 @@ class AuthStartScreen extends StatelessWidget {
               const Spacer(flex: 4),
               _PrimaryButton(
                 label: '登录',
-                onPressed: () => context.go(RoutesV2.authLogin),
+                onPressed: () => context.go(Routes.authLogin),
               ),
               const SizedBox(height: StrideTokens.spaceMd),
               _OutlineButton(
                 label: '注册',
-                onPressed: () => context.go(RoutesV2.authRegister),
+                onPressed: () => context.go(Routes.authRegister),
               ),
               const SizedBox(height: StrideTokens.space2xl),
             ],

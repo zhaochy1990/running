@@ -12,7 +12,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/auth_models.dart';
-import '../../core/router/routes_v2.dart';
+import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 import '../_shared/widgets/top_bar.dart';
@@ -120,7 +120,7 @@ class _AuthRegisterScreenState extends ConsumerState<AuthRegisterScreen> {
       appBar: StrideTopBar(
         title: '注册',
         leading: InkWell(
-          onTap: () => context.go(RoutesV2.authStart),
+          onTap: () => context.go(Routes.authStart),
           child: const Icon(Icons.arrow_back_ios_new, size: 18),
         ),
       ),
@@ -227,7 +227,7 @@ class _AuthRegisterScreenState extends ConsumerState<AuthRegisterScreen> {
               ),
               const SizedBox(height: StrideTokens.spaceMd),
               TextButton(
-                onPressed: () => context.go(RoutesV2.authLogin),
+                onPressed: () => context.go(Routes.authLogin),
                 child: const Text(
                   '已有账号？去登录',
                   style: TextStyle(

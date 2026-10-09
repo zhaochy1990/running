@@ -37,6 +37,7 @@ class Activity {
     this.commentary,
     this.commentaryGeneratedBy,
     this.commentaryGeneratedAt,
+    this.thumbUrl,
   });
 
   factory Activity.fromJson(Map<String, dynamic> json) =>
@@ -96,6 +97,10 @@ class Activity {
   final String? commentaryGeneratedBy;
   @JsonKey(name: 'commentary_generated_at')
   final String? commentaryGeneratedAt;
+
+  /// 路线缩略图公开地址；室内活动/未生成时为 null（回退运动图标）。
+  @JsonKey(name: 'thumb_url')
+  final String? thumbUrl;
 
   Map<String, dynamic> toJson() => _$ActivityToJson(this);
 }

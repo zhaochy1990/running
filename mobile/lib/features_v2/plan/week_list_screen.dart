@@ -1,19 +1,18 @@
 /// D2a — 周列表屏幕 (WeekListScreen).
 ///
-/// 路由：/v2/train（替换 TrainPlaceholderScreen，作为训练 tab 主页）
+/// 路由：/training/plan（训练 tab 的周计划列表）
 ///
 /// 内容：
 ///   1. StrideScreenHero "训练 · 周计划"
 ///   2. StrideSegControl ['本周', '下周', '历史']（本周 + 历史实现；下周 SnackBar）
 ///   3. 周卡列表 → 点击进入 D2 周计划预览
-///   4. FAB "生成本周计划"（仅在无计划时显示）→ SnackBar 占位
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/router/routes_v2.dart';
+import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 import '../_shared/widgets/refreshable.dart';
@@ -86,7 +85,6 @@ class _WeekListScreenState extends ConsumerState<WeekListScreen> {
           ),
         ],
       ),
-      floatingActionButton: _GenerateFab(asyncWeeks: asyncWeeks),
     );
   }
 }
@@ -121,7 +119,7 @@ class _WeekList extends StatelessWidget {
           final item = filtered[i];
           return WeekCard(
             item: item,
-            onTap: () => context.push(RoutesV2.weekDetail(item.folder)),
+            onTap: () => context.push(Routes.weekDetail(item.folder)),
           );
         },
       ),
@@ -207,59 +205,5 @@ class _ErrorBody extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-// ── Generate FAB ──────────────────────────────────────────────────────────────
-
-class _GenerateFab extends ConsumerWidget {
-  const _GenerateFab({required this.asyncWeeks});
-
-  final AsyncValue<List<WeekListItem>> asyncWeeks;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Show FAB only when data loaded and there's no in-progress week with plan.
-    final show = asyncWeeks.whenOrNull(
-      data: (weeks) {
-        final current = weeks
-            .where((w) => w.status == WeekStatus.inProgress)
-            .firstOrNull;
-        return current == null || !current.hasPlan;
-      },
-    ) ?? false;
-
-    if (!show) return const SizedBox.shrink();
-
-    return FloatingActionButton.extended(
-      onPressed: () {
-        final nextMonday = _nextMonday();
-        context.push(RoutesV2.generate(nextMonday));
-      },
-      backgroundColor: StrideTokens.accent,
-      foregroundColor: StrideTokens.surface,
-      label: const Text(
-        '生成本周计划',
-        style: TextStyle(
-          fontFamily: AppTypography.fontSans,
-          fontSize: StrideTokens.fs14,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      icon: const Icon(Icons.add, size: 20),
-    );
-  }
-
-  /// Returns the ISO date (YYYY-MM-DD) of the coming Monday
-  /// (or today if today is already Monday).
-  static String _nextMonday() {
-    final now = DateTime.now();
-    // weekday: Mon=1 … Sun=7
-    final daysUntilMonday = (DateTime.monday - now.weekday + 7) % 7;
-    final monday = now.add(Duration(days: daysUntilMonday));
-    final y = monday.year.toString().padLeft(4, '0');
-    final m = monday.month.toString().padLeft(2, '0');
-    final d = monday.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
   }
 }

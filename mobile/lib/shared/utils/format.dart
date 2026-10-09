@@ -1,3 +1,5 @@
+import 'shanghai_date.dart';
+
 // Format helpers — mirrors `frontend/src/api.ts` parseDate / formatDate / pace_str.
 
 DateTime? parseApiDate(String dateStr) {
@@ -30,12 +32,9 @@ String formatDateShort(String dateStr) {
   return '${d.month}月${d.day}日';
 }
 
-const _weekdayCN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
 String weekdayCN(String dateStr) {
-  final d = parseApiDate(dateStr);
-  if (d == null) return '';
-  return _weekdayCN[d.weekday % 7];
+  return shanghaiWeekdayLabel(dateStr);
 }
 
 /// Pace seconds-per-km → "M:SS/km"

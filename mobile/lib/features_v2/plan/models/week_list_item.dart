@@ -1,9 +1,9 @@
 /// WeekListItem — view-model for a single row in D2a 周列表.
 ///
-/// Derived from [WeekIndexEntry] (lightweight index) plus an optional
-/// [WeekDetail] / [PlanDaysResponse] for richer fields (mini-calendar,
-/// completion rate). The fields that the backend doesn't yet return are
-/// kept nullable with clear fallback behavior documented below.
+/// Derived from [WeekIndexEntry] (lightweight index) plus optional
+/// enrichment (mini-calendar, totals) from the structured weekly plan.
+/// The fields that the backend doesn't yet return are kept nullable with
+/// clear fallback behavior documented below.
 library;
 
 import '../../../data/models/plan.dart';
@@ -112,10 +112,8 @@ class WeekListItem {
   /// null means no plan for that day.
   ///
   /// MISMATCH NOTE: The [WeekIndexEntry] endpoint does NOT return per-day
-  /// session data. This field requires a follow-up [getWeek] + [getPlanDays]
-  /// call or a future backend extension. For M2 batch 3, this is populated
-  /// via a secondary [getPlanDays] call in the provider; if that fails or the
-  /// user has no plan, it falls back to null (mini-calendar hidden).
+  /// Enriched from the structured weekly plan (plan/weeks/{weekName});
+  /// silently absent when the secondary fetch fails.
   final List<String?>? miniCalendar;
 
   /// Return a copy with enriched fields from a plan days fetch.

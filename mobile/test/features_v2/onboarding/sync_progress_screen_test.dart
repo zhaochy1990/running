@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:stride/core/router/routes_v2.dart';
+import 'package:stride/core/router/routes.dart';
 import 'package:stride/data/api/stride_api.dart';
 import 'package:stride/features_v2/onboarding/sync_progress_screen.dart';
 
@@ -33,14 +33,14 @@ class _FakeApi extends StrideApi {
 
 Future<void> _pump(WidgetTester tester, _FakeApi api) async {
   final router = GoRouter(
-    initialLocation: RoutesV2.onboardingSync,
+    initialLocation: Routes.onboardingSync,
     routes: [
       GoRoute(
-        path: RoutesV2.onboardingSync,
+        path: Routes.onboardingSync,
         builder: (_, _) => const SyncProgressScreen(),
       ),
       GoRoute(
-        path: RoutesV2.onboardingBasicInfo,
+        path: Routes.onboardingBasicInfo,
         builder: (_, _) => const Scaffold(body: Text('basic-info-screen')),
       ),
     ],

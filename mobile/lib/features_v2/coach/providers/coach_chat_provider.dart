@@ -3,6 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/api/coach_turn_id.dart';
 import '../../../data/api/stride_api.dart';
 
+/// 跨页交接的教练消息预填（如 /training 的「和教练聊一聊」入口）。
+/// 教练 tab 消费后立即清空。
+final pendingCoachMessageProvider = StateProvider<String?>((ref) => null);
+
 /// A single chat message in the 教练 (S3 daily Q&A) transcript.
 class CoachMessage {
   const CoachMessage({required this.role, required this.text});
@@ -13,63 +17,18 @@ class CoachMessage {
   bool get isEvent => role == 'event';
 }
 
-/// A stateless season-plan proposal returned by the Coach orchestrator.
-/// The complete raw diff is retained so the selected proposal can be sent
-/// unchanged to the apply endpoint.
-class CoachProposal {
-  const CoachProposal({
-    required this.specialistId,
-    required this.proposal,
-    required this.baseRevision,
-  });
-
-  final String specialistId;
-  final Map<String, dynamic> proposal;
-  final String baseRevision;
-
-  String get diffId => proposal['diff_id'] as String? ?? '';
-  String get planId => proposal['plan_id'] as String? ?? '';
-  String get explanation => proposal['ai_explanation'] as String? ?? '训练计划调整方案';
-  List<Map<String, dynamic>> get ops {
-    final result = <Map<String, dynamic>>[];
-    for (final item in (proposal['ops'] as List? ?? const [])) {
-      if (item is Map<String, dynamic>) result.add(item);
-    }
-    return result;
-  }
-
-  static CoachProposal? fromCard(Map<String, dynamic> card) {
-    final specialistId = card['specialist_id'] as String? ?? '';
-    final rawProposal = card['proposal'];
-    if (specialistId != 'season_plan' || rawProposal is! Map<String, dynamic>) {
-      return null;
-    }
-    return CoachProposal(
-      specialistId: specialistId,
-      proposal: rawProposal,
-      baseRevision: card['base_revision'] as String? ?? '',
-    );
-  }
-}
-
 class CoachChatState {
   const CoachChatState({
     this.messages = const [],
     this.loading = false,
     this.threadId,
     this.error,
-    this.proposals = const [],
-    this.selectedProposalId,
-    this.applying = false,
   });
 
   final List<CoachMessage> messages;
   final bool loading;
   final String? threadId;
   final String? error;
-  final List<CoachProposal> proposals;
-  final String? selectedProposalId;
-  final bool applying;
 
   CoachChatState copyWith({
     List<CoachMessage>? messages,
@@ -77,20 +36,12 @@ class CoachChatState {
     String? threadId,
     String? error,
     bool clearError = false,
-    List<CoachProposal>? proposals,
-    String? Function()? selectedProposalId,
-    bool? applying,
   }) {
     return CoachChatState(
       messages: messages ?? this.messages,
       loading: loading ?? this.loading,
       threadId: threadId ?? this.threadId,
       error: clearError ? null : (error ?? this.error),
-      proposals: proposals ?? this.proposals,
-      selectedProposalId: selectedProposalId != null
-          ? selectedProposalId()
-          : this.selectedProposalId,
-      applying: applying ?? this.applying,
     );
   }
 }
@@ -112,7 +63,7 @@ class CoachChatNotifier extends StateNotifier<CoachChatState> {
 
   Future<void> sendMessage(String text) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty || state.loading || state.applying) return;
+    if (trimmed.isEmpty || state.loading) return;
 
     final isRetry = _pendingMessage == trimmed && _pendingClientTurnId != null;
     final clientTurnId = isRetry
@@ -127,8 +78,6 @@ class CoachChatNotifier extends StateNotifier<CoachChatState> {
           : [...state.messages, CoachMessage(role: 'user', text: trimmed)],
       loading: true,
       clearError: true,
-      proposals: const [],
-      selectedProposalId: () => null,
     );
 
     try {
@@ -143,11 +92,6 @@ class CoachChatNotifier extends StateNotifier<CoachChatState> {
           : (res.clarification?.trim().isNotEmpty == true
                 ? res.clarification!
                 : '（教练没有返回内容）');
-      final proposals = <CoachProposal>[];
-      for (final card in res.proposals) {
-        final proposal = CoachProposal.fromCard(card);
-        if (proposal != null) proposals.add(proposal);
-      }
       _pendingMessage = null;
       _pendingClientTurnId = null;
       state = state.copyWith(
@@ -157,114 +101,9 @@ class CoachChatNotifier extends StateNotifier<CoachChatState> {
         ],
         loading: false,
         threadId: res.threadId,
-        proposals: proposals,
-        selectedProposalId: () =>
-            proposals.isEmpty ? null : proposals.first.diffId,
       );
     } catch (e) {
       state = state.copyWith(loading: false, error: e.toString());
-    }
-  }
-
-  Future<List<CoachMessage>> _readTrustedHistory() async {
-    final threadId = state.threadId;
-    if (threadId == null || threadId.isEmpty) return state.messages;
-    try {
-      final history = await _api.getCoachThread(threadId);
-      return history
-          .map(
-            (message) => CoachMessage(role: message.role, text: message.text),
-          )
-          .toList(growable: false);
-    } catch (_) {
-      // The apply/abandon write already succeeded. A transient history read
-      // failure must not leave the proposal actionable for a duplicate retry.
-      return state.messages;
-    }
-  }
-
-  void selectProposal(String diffId) {
-    if (state.applying ||
-        !state.proposals.any((proposal) => proposal.diffId == diffId)) {
-      return;
-    }
-    state = state.copyWith(selectedProposalId: () => diffId);
-  }
-
-  CoachProposal? _selectedProposal() {
-    final selectedId = state.selectedProposalId;
-    if (selectedId == null) return null;
-    for (final proposal in state.proposals) {
-      if (proposal.diffId == selectedId) return proposal;
-    }
-    return null;
-  }
-
-  Future<void> dismissProposals() async {
-    if (state.applying) return;
-    final selected =
-        _selectedProposal() ??
-        (state.proposals.isEmpty ? null : state.proposals.first);
-    if (selected == null || selected.planId.isEmpty) {
-      state = state.copyWith(
-        proposals: const [],
-        selectedProposalId: () => null,
-      );
-      return;
-    }
-
-    state = state.copyWith(applying: true, clearError: true);
-    try {
-      await _api.abandonCoachProposal(
-        sessionId: _sessionId,
-        target: {'kind': 'master', 'plan_id': selected.planId},
-        summary: '用户放弃了本次调整方案',
-      );
-      final messages = await _readTrustedHistory();
-      state = state.copyWith(
-        messages: messages,
-        proposals: const [],
-        selectedProposalId: () => null,
-        applying: false,
-      );
-    } catch (e) {
-      state = state.copyWith(applying: false, error: e.toString());
-    }
-  }
-
-  Future<void> applySelectedProposal() async {
-    if (state.applying) return;
-    final selected = _selectedProposal();
-    if (selected == null ||
-        selected.planId.isEmpty ||
-        selected.baseRevision.isEmpty) {
-      return;
-    }
-    final opIds = selected.ops
-        .where((op) => op['accepted'] != false)
-        .map((op) => op['id'] as String? ?? '')
-        .where((id) => id.isNotEmpty)
-        .toList(growable: false);
-    if (opIds.isEmpty) return;
-
-    state = state.copyWith(applying: true, clearError: true);
-    try {
-      await _api.applyCoachMasterPlanDiff(
-        sessionId: _sessionId,
-        planId: selected.planId,
-        diff: selected.proposal,
-        acceptedOpIds: opIds,
-        baseRevision: selected.baseRevision,
-      );
-      final messages = await _readTrustedHistory();
-      state = state.copyWith(
-        messages: messages,
-        proposals: const [],
-        selectedProposalId: () => null,
-        applying: false,
-      );
-    } catch (e) {
-      state = state.copyWith(applying: false, error: e.toString());
     }
   }
 

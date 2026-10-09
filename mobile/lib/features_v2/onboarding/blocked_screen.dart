@@ -7,7 +7,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/router/routes_v2.dart';
+import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 
@@ -54,7 +54,7 @@ class BlockedScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 32),
                 ElevatedButton(
-                  onPressed: () => context.go(RoutesV2.onboardingBrand),
+                  onPressed: () => context.go(Routes.onboardingBrand),
                   child: const Text('立即绑定'),
                 ),
               ],

@@ -7,7 +7,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/router/routes_v2.dart';
+import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/pill_colors.dart';
 import '../../core/theme/tokens.dart';
@@ -31,7 +31,7 @@ class BrandScreen extends StatelessWidget {
             brand: 'COROS',
             badge: const StridePill(text: '主推', variant: PillVariant.green),
             enabled: true,
-            onTap: () => context.go(RoutesV2.onboardingCoros),
+            onTap: () => context.go(Routes.onboardingCoros),
           ),
           const SizedBox(height: StrideTokens.spaceLg),
           const _BrandCard(

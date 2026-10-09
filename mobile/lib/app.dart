@@ -1,15 +1,10 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:go_router/go_router.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 
 import 'core/auth/auth_controller.dart';
-import 'core/notifications/jpush_service.dart';
-import 'core/notifications/rationale_storage.dart';
-import 'core/router/app_router_v2.dart';
+import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/updater/update_checker.dart';
 import 'features/updater/update_prompt.dart';
@@ -22,23 +17,18 @@ class StrideApp extends ConsumerStatefulWidget {
 }
 
 class _StrideAppState extends ConsumerState<StrideApp> {
-  bool _bootstrapTriggered = false;
+  bool _updateCheckTriggered = false;
 
   @override
   Widget build(BuildContext context) {
-    final router = ref.watch(appRouterV2Provider);
+    final router = ref.watch(appRouterProvider);
 
-    // When auth becomes Authenticated, kick off post-login work exactly once
-    // per app instance: show the rationale screen (first launch) or
-    // silently init JPush (returning user with permission already granted).
+    // Check for a newer mobile release once per app instance, after the
+    // router settles. Fully best-effort — never blocks startup.
     ref.listen<AuthState>(authControllerProvider, (_, next) async {
-      if (next is! AuthAuthenticated) {
-        _bootstrapTriggered = false;
-        return;
-      }
-      if (_bootstrapTriggered) return;
-      _bootstrapTriggered = true;
-      await _onAuthenticated(router);
+      if (next is! AuthAuthenticated || _updateCheckTriggered) return;
+      _updateCheckTriggered = true;
+      await _checkForUpdate(router);
     });
 
     return MaterialApp.router(
@@ -47,34 +37,6 @@ class _StrideAppState extends ConsumerState<StrideApp> {
       theme: AppTheme.light(),
       routerConfig: router,
     );
-  }
-
-  Future<void> _onAuthenticated(GoRouter router) async {
-    final shown = await RationaleStorage().hasShown();
-    if (!shown) {
-      // Defer to next frame so the post-login redirect to /today completes
-      // first; pushing onto /today gives a clean back-stack.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        router.push('/notifications/rationale');
-      });
-    } else {
-      // Returning user — init JPush silently.
-      try {
-        final jpush = ref.read(jpushServiceProvider);
-        await jpush.init(
-          appKey: 'ab305c4addc8f9aa2b5efb4c',
-          channel: 'default',
-          production: true,
-        );
-        final pkg = await PackageInfo.fromPlatform();
-        await jpush.registerOnServer(appVersion: pkg.version);
-      } catch (_) {
-        // Best-effort.
-      }
-    }
-    // Independent of the rationale flow: check for a newer mobile release.
-    // Runs once per launch, fully best-effort.
-    unawaited(_checkForUpdate(router));
   }
 
   Future<void> _checkForUpdate(GoRouter router) async {

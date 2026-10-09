@@ -129,11 +129,10 @@ void main() {
     expect(find.text('AI 解读'), findsOneWidget);
   });
 
-  testWidgets('fixed bar renders 数据 title and menu icon', (tester) async {
+  testWidgets('fixed bar renders 数据与状态 title', (tester) async {
     await _pump(tester, const AsyncData(_fullOverview));
 
-    expect(find.byIcon(Icons.menu), findsOneWidget);
-    expect(find.text('数据'), findsOneWidget);
+    expect(find.text('数据与状态'), findsOneWidget);
     // Old hero eyebrow and sync icon are gone.
     expect(find.text('身体指标 · 今日'), findsNothing);
     expect(find.byIcon(Icons.sync), findsNothing);

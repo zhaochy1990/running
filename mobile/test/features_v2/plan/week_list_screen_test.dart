@@ -8,7 +8,6 @@
 ///   5. 本周 tab: 只显示 inProgress 周
 ///   6. 历史 tab: 显示所有周
 ///   7. 下周 tab: 点击显示 SnackBar
-///   8. 无计划周 → FAB 显示
 library;
 
 import 'dart:async';
@@ -19,7 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stride/core/auth/current_user.dart';
-import 'package:stride/core/router/routes_v2.dart';
+import 'package:stride/core/router/routes.dart';
 import 'package:stride/features_v2/plan/models/week_list_item.dart';
 import 'package:stride/features_v2/plan/providers/week_list_provider.dart';
 import 'package:stride/features_v2/plan/week_list_screen.dart';
@@ -100,7 +99,7 @@ GoRouter _makeRouter() {
         builder: (_, _) => const WeekListScreen(),
       ),
       GoRoute(
-        path: RoutesV2.weekDetailPattern,
+        path: Routes.weekDetailPattern,
         builder: (_, state) {
           _pushedRoutes.add('/v2/plan/weeks/${state.pathParameters['folder']}');
           return const Scaffold(body: Text('week-detail'));
@@ -232,25 +231,10 @@ void main() {
     expect(find.text('下周计划 v1.x 即将开放'), findsOneWidget);
   });
 
-  // ── 7. FAB shown when current week has no plan ────────────────────────────
-  testWidgets('FAB shown when in-progress week has no plan', (tester) async {
-    final noPlanWeek = _makeItem(
-      folder: '2026-05-11_05-17(W1)',
-      dateFrom: '2026-05-11',
-      dateTo: '2026-05-17',
-      status: WeekStatus.inProgress,
-      hasPlan: false,
-    );
-
-    await _pump(tester, AsyncData([noPlanWeek]));
-
-    expect(find.text('生成本周计划'), findsOneWidget);
-  });
-
-  // ── 8. FAB hidden when current week has plan ──────────────────────────────
-  testWidgets('FAB hidden when in-progress week has plan', (tester) async {
+  // ── 7. 生成本周计划 FAB 已随死端点删除 ────────────────────────────────────
+  testWidgets('no generate FAB anywhere', (tester) async {
     await _pump(tester, AsyncData([_week1]));
-    expect(find.text('生成本周计划'), findsNothing);
+    expect(find.byType(FloatingActionButton), findsNothing);
   });
 
   // ── 9. Mini-calendar blocks rendered ─────────────────────────────────────

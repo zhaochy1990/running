@@ -12,7 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/router/routes_v2.dart';
+import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 import '../_shared/widgets/refreshable.dart';
@@ -129,7 +129,7 @@ class _PbCard extends StatelessWidget {
       onTap: () {
         final labelId = record?.labelId;
         if (labelId != null) {
-          context.push(RoutesV2.activityDetail(labelId));
+          context.push(Routes.activityDetail(labelId));
         }
       },
       child: Container(

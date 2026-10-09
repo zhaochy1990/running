@@ -13,7 +13,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/pill_colors.dart';
 import '../../../core/theme/tokens.dart';
 import '../../_shared/widgets/pill.dart';
-import '../../../data/models/plan.dart';
+import '../../../data/models/weekly_plan.dart';
 
 class SessionRow extends StatelessWidget {
   const SessionRow({
@@ -78,7 +78,7 @@ class SessionRow extends StatelessWidget {
             // Session name
             Expanded(
               child: Text(
-                session.title ?? _kindFullLabel(session.kind),
+                session.displayName ?? _kindFullLabel(session.kind),
                 style: const TextStyle(
                   fontFamily: AppTypography.fontSans,
                   fontSize: StrideTokens.fs14,
@@ -127,33 +127,32 @@ class SessionRow extends StatelessWidget {
   }
 
   static String _kindLabel(String kind) {
-    return switch (kind.toUpperCase()) {
-      'REST' => '休',
-      'STRENGTH' => '力',
-      _ => kind.toUpperCase(),
+    return switch (kind) {
+      'run' => '跑',
+      'strength' => '力',
+      'rest' => '休',
+      'cross' => '交',
+      _ => kind,
     };
   }
 
   static String _kindFullLabel(String kind) {
-    return switch (kind.toUpperCase()) {
-      'E' => '轻松跑',
-      'M' => '马配跑',
-      'T' => '节奏跑',
-      'I' => '间歇跑',
-      'R' => '冲刺跑',
-      'REST' => '休息日',
-      'STRENGTH' => '力量训练',
+    return switch (kind) {
+      'run' => '跑步',
+      'strength' => '力量训练',
+      'rest' => '休息日',
+      'cross' => '交叉训练',
+      'note' => '备注',
       _ => '训练课',
     };
   }
 
   static PillVariant _kindVariant(String kind) {
-    return switch (kind.toUpperCase()) {
-      'E' => PillVariant.green,
-      'REST' => PillVariant.muted,
-      'R' => PillVariant.danger,
-      'STRENGTH' => PillVariant.solid,
-      _ => PillVariant.warn, // M / T / I
+    return switch (kind) {
+      'run' => PillVariant.green,
+      'rest' => PillVariant.muted,
+      'strength' => PillVariant.solid,
+      _ => PillVariant.warn, // cross / note
     };
   }
 }

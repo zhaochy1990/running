@@ -41,12 +41,6 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // JPush 极光推送 manifest placeholders.
-        // Real production AppKey: ab305c4addc8f9aa2b5efb4c (public; OK to commit).
-        // Master Secret is server-side only (Azure Key Vault).
-        // Per plan O5/F2: dev/prod use the same AppKey for v1.
-        manifestPlaceholders["JPUSH_APPKEY"] = "ab305c4addc8f9aa2b5efb4c"
-        manifestPlaceholders["JPUSH_CHANNEL"] = "default"
     }
 
     signingConfigs {

@@ -12,11 +12,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/router/routes_v2.dart';
+import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/pill_colors.dart';
 import '../../core/theme/tokens.dart';
-import '../_shared/shell/main_shell.dart';
 import '../_shared/widgets/pill.dart';
 import '../_shared/widgets/refreshable.dart';
 import '../_shared/widgets/top_bar.dart';
@@ -35,12 +34,7 @@ class HealthOverviewScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: StrideTokens.bg,
       appBar: StrideTopBar(
-        leading: IconButton(
-          icon: const Icon(Icons.menu),
-          tooltip: '菜单',
-          onPressed: () => shellScaffoldKey.currentState?.openDrawer(),
-        ),
-        title: '数据',
+        title: '数据与状态',
         actions: [
           Text(
             todayLabel(),
@@ -365,31 +359,31 @@ class _DetailEntries extends StatelessWidget {
         icon: Icons.show_chart,
         title: '训练负荷',
         subtitle: 'ATL / CTL / TSB 曲线',
-        route: RoutesV2.dataPmc,
+        route: Routes.meDataPmc,
       ),
       const _EntryItem(
         icon: Icons.ssid_chart,
         title: '趋势详情',
         subtitle: 'HRV / RHR / 睡眠 / 负荷',
-        route: RoutesV2.dataTrends,
+        route: Routes.meDataTrends,
       ),
       const _EntryItem(
         icon: Icons.radar,
         title: '能力分析',
         subtitle: '6 维 ability radar',
-        route: RoutesV2.abilityRadar,
+        route: Routes.meDataAbility,
       ),
       const _EntryItem(
         icon: Icons.flag_outlined,
         title: '成绩预测',
         subtitle: '5K / 10K / HM / FM + 目标差距',
-        route: RoutesV2.predictions,
+        route: Routes.meDataPredictions,
       ),
       const _EntryItem(
         icon: Icons.emoji_events_outlined,
         title: '个人最佳',
         subtitle: '4 距离自动检测',
-        route: RoutesV2.pbRecords,
+        route: Routes.meDataPbs,
       ),
     ];
 

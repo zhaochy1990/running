@@ -1,11 +1,9 @@
-/// 教练 (Coach) tab — real-time S3 daily Q&A chat with the Coach Agent.
+/// 教练 (Coach) tab — S3 daily Q&A chat with the Coach Agent.
 ///
-/// Mirrors `spec/stitch/mobile/tab-coach.html`: a ChatGPT-style transcript,
-/// quick-question chips when empty, and a bottom input bar.
-///
-/// Data: `POST /api/users/me/coach/chat` via [coachChatProvider]. The client
-/// sends a stable per-day `session_id`; the server maps it to a user-scoped
-/// orchestrator thread.
+/// A ChatGPT-style transcript, quick-question chips when empty, and a bottom
+/// input bar. Data: `POST /api/users/me/coach/chat` via [coachChatProvider].
+/// The client sends a stable per-day `session_id`; the server maps it to a
+/// user-scoped orchestrator thread.
 library;
 
 import 'package:flutter/material.dart';
@@ -13,7 +11,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
-import '../_shared/shell/main_shell.dart';
 import '../_shared/widgets/chat_markdown.dart';
 import '../_shared/widgets/top_bar.dart';
 import 'providers/coach_chat_provider.dart';
@@ -30,6 +27,20 @@ class CoachChatScreen extends ConsumerStatefulWidget {
 class _CoachChatScreenState extends ConsumerState<CoachChatScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 消费跨页交接的预填消息（如 /training「和教练聊一聊」）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final pending = ref.read(pendingCoachMessageProvider);
+      if (pending != null && pending.isNotEmpty) {
+        _input.text = pending;
+        ref.read(pendingCoachMessageProvider.notifier).state = null;
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -72,35 +83,17 @@ class _CoachChatScreenState extends ConsumerState<CoachChatScreen> {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: StrideTopBar(
-        title: '教练',
-        leading: IconButton(
-          icon: const Icon(Icons.menu),
-          onPressed: () => shellScaffoldKey.currentState?.openDrawer(),
-        ),
-      ),
+      appBar: const StrideTopBar(title: '教练'),
       body: Column(
         children: [
           Expanded(
             child: state.messages.isEmpty && !state.loading
                 ? _EmptyState(onTapSuggestion: _send)
-                : _MessageList(
-                    state: state,
-                    scroll: _scroll,
-                    onSelect: ref
-                        .read(coachChatProvider.notifier)
-                        .selectProposal,
-                    onApply: ref
-                        .read(coachChatProvider.notifier)
-                        .applySelectedProposal,
-                    onDismiss: ref
-                        .read(coachChatProvider.notifier)
-                        .dismissProposals,
-                  ),
+                : _MessageList(state: state, scroll: _scroll),
           ),
           _InputBar(
             controller: _input,
-            loading: state.loading || state.applying,
+            loading: state.loading,
             onSend: _send,
           ),
         ],
@@ -110,18 +103,10 @@ class _CoachChatScreenState extends ConsumerState<CoachChatScreen> {
 }
 
 class _MessageList extends StatelessWidget {
-  const _MessageList({
-    required this.state,
-    required this.scroll,
-    required this.onSelect,
-    required this.onApply,
-    required this.onDismiss,
-  });
+  const _MessageList({required this.state, required this.scroll});
+
   final CoachChatState state;
   final ScrollController scroll;
-  final ValueChanged<String> onSelect;
-  final VoidCallback onApply;
-  final VoidCallback onDismiss;
 
   @override
   Widget build(BuildContext context) {
@@ -133,24 +118,8 @@ class _MessageList extends StatelessWidget {
         horizontal: StrideTokens.spaceLg,
         vertical: StrideTokens.spaceMd,
       ),
-      itemCount:
-          msgs.length +
-          (state.loading ? 1 : 0) +
-          (state.proposals.isNotEmpty ? 1 : 0),
+      itemCount: msgs.length + (state.loading ? 1 : 0),
       itemBuilder: (context, index) {
-        if (state.proposals.isNotEmpty) {
-          if (index == 0) {
-            return _ProposalChooser(
-              proposals: state.proposals,
-              selectedId: state.selectedProposalId,
-              applying: state.applying,
-              onSelect: onSelect,
-              onApply: onApply,
-              onDismiss: onDismiss,
-            );
-          }
-          index -= 1;
-        }
         if (state.loading && index == 0) return const _TypingIndicator();
         final adjusted = state.loading ? index - 1 : index;
         final msg = msgs[msgs.length - 1 - adjusted];
@@ -158,201 +127,6 @@ class _MessageList extends StatelessWidget {
       },
     );
   }
-}
-
-class _ProposalChooser extends StatelessWidget {
-  const _ProposalChooser({
-    required this.proposals,
-    required this.selectedId,
-    required this.applying,
-    required this.onSelect,
-    required this.onApply,
-    required this.onDismiss,
-  });
-
-  final List<CoachProposal> proposals;
-  final String? selectedId;
-  final bool applying;
-  final ValueChanged<String> onSelect;
-  final VoidCallback onApply;
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const Key('coach-proposal-chooser'),
-      margin: const EdgeInsets.only(bottom: StrideTokens.spaceLg),
-      padding: const EdgeInsets.all(StrideTokens.spaceLg),
-      decoration: BoxDecoration(
-        color: StrideTokens.surface,
-        borderRadius: BorderRadius.circular(StrideTokens.radiusLg),
-        border: Border.all(color: StrideTokens.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            '选择一个调整方向',
-            style: TextStyle(
-              fontFamily: AppTypography.fontSans,
-              fontSize: StrideTokens.fs15,
-              fontWeight: FontWeight.w700,
-              color: StrideTokens.fg,
-            ),
-          ),
-          const SizedBox(height: StrideTokens.spaceMd),
-          for (final proposal in proposals) ...[
-            _ProposalCard(
-              proposal: proposal,
-              selected: proposal.diffId == selectedId,
-              enabled: !applying,
-              onTap: () => onSelect(proposal.diffId),
-            ),
-            const SizedBox(height: StrideTokens.spaceSm),
-          ],
-          const SizedBox(height: StrideTokens.spaceXs),
-          FilledButton(
-            key: const Key('apply-coach-proposal'),
-            onPressed: selectedId == null || applying ? null : onApply,
-            style: FilledButton.styleFrom(
-              backgroundColor: StrideTokens.accent,
-              foregroundColor: StrideTokens.surface,
-              minimumSize: const Size.fromHeight(46),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(StrideTokens.radiusMd),
-              ),
-            ),
-            child: applying
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: StrideTokens.surface,
-                    ),
-                  )
-                : const Text('应用所选方案'),
-          ),
-          TextButton(
-            onPressed: applying ? null : onDismiss,
-            child: const Text('暂不调整'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ProposalCard extends StatelessWidget {
-  const _ProposalCard({
-    required this.proposal,
-    required this.selected,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  final CoachProposal proposal;
-  final bool selected;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final change = _proposalChangeSummary(proposal);
-    return InkWell(
-      key: Key('coach-proposal-${proposal.diffId}'),
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(StrideTokens.radiusMd),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.all(StrideTokens.spaceMd),
-        decoration: BoxDecoration(
-          color: selected ? StrideTokens.accentFg : StrideTokens.bg,
-          borderRadius: BorderRadius.circular(StrideTokens.radiusMd),
-          border: Border.all(
-            color: selected ? StrideTokens.accent : StrideTokens.border2,
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Icon(
-                selected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_unchecked,
-                size: 20,
-                color: selected ? StrideTokens.accent : StrideTokens.muted2,
-              ),
-            ),
-            const SizedBox(width: StrideTokens.spaceSm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    proposal.explanation,
-                    style: const TextStyle(
-                      fontFamily: AppTypography.fontSans,
-                      fontSize: StrideTokens.fs14,
-                      fontWeight: FontWeight.w600,
-                      color: StrideTokens.fg,
-                      height: 1.4,
-                    ),
-                  ),
-                  if (change.isNotEmpty) ...[
-                    const SizedBox(height: StrideTokens.spaceXs),
-                    Text(
-                      change,
-                      style: const TextStyle(
-                        fontFamily: AppTypography.fontSans,
-                        fontSize: StrideTokens.fs12,
-                        color: StrideTokens.fgSoft,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: StrideTokens.spaceXs),
-                  Text(
-                    '${proposal.ops.length} 处改动',
-                    style: const TextStyle(
-                      fontFamily: AppTypography.fontSans,
-                      fontSize: StrideTokens.fs11,
-                      color: StrideTokens.muted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-String _proposalChangeSummary(CoachProposal proposal) {
-  if (proposal.ops.isEmpty) return '';
-  final op = proposal.ops.first;
-  final oldValue = op['old_value'];
-  final newValue = op['new_value'];
-  if (oldValue is Map && newValue is Map) {
-    final oldLow = oldValue['weekly_distance_km_low'];
-    final oldHigh = oldValue['weekly_distance_km_high'];
-    final newLow = newValue['weekly_distance_km_low'];
-    final newHigh = newValue['weekly_distance_km_high'];
-    if (oldLow != null &&
-        oldHigh != null &&
-        newLow != null &&
-        newHigh != null) {
-      return '$oldLow–$oldHigh km/周 → $newLow–$newHigh km/周';
-    }
-    if (oldValue['end_date'] != null && newValue['end_date'] != null) {
-      return '${oldValue['end_date']} → ${newValue['end_date']}';
-    }
-  }
-  return op['op'] as String? ?? '';
 }
 
 class _Bubble extends StatelessWidget {

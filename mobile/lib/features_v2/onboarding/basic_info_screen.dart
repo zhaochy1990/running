@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/router/routes_v2.dart';
+import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 import '../_shared/widgets/onboarding_scaffold.dart';
@@ -60,7 +60,7 @@ class _BasicInfoScreenState extends ConsumerState<BasicInfoScreen> {
               final ok = await controller.submit();
               if (!context.mounted) return;
               if (ok) {
-                context.go(RoutesV2.home);
+                context.go(Routes.training);
               } else {
                 final err =
                     ref.read(basicInfoControllerProvider).error ?? '提交失败，请稍后再试';
@@ -70,7 +70,7 @@ class _BasicInfoScreenState extends ConsumerState<BasicInfoScreen> {
               }
             },
       skipLabel: '稍后填写',
-      onSkip: () => context.go(RoutesV2.home),
+      onSkip: () => context.go(Routes.training),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

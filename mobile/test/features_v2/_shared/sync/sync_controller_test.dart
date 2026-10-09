@@ -11,8 +11,6 @@ import 'package:stride/features_v2/activity/models/activity_detail.dart';
 import 'package:stride/features_v2/activity/models/timeseries_data.dart';
 import 'package:stride/features_v2/activity/providers/activity_detail_provider.dart';
 import 'package:stride/features_v2/activity/providers/timeseries_provider.dart';
-import 'package:stride/features_v2/review/models/week_review.dart';
-import 'package:stride/features_v2/review/providers/week_review_provider.dart';
 
 class _StubApi extends StrideApi {
   _StubApi() : super(Dio());
@@ -21,7 +19,6 @@ class _StubApi extends StrideApi {
   final syncedUsers = <String>[];
   int activityDetailCalls = 0;
   int timeseriesCalls = 0;
-  int weekReviewCalls = 0;
   Completer<void> _completer = Completer<void>();
 
   void resolveOk() {
@@ -64,16 +61,6 @@ class _StubApi extends StrideApi {
     return TimeseriesData.fromJson({'label_id': labelId});
   }
 
-  @override
-  Future<WeekReview> getWeekReview(String user, String folder) async {
-    weekReviewCalls++;
-    return WeekReview.fromJson({
-      'folder': folder,
-      'date_from': '2026-07-13',
-      'date_to': '2026-07-19',
-      'summary': <String, dynamic>{},
-    });
-  }
 }
 
 ProviderContainer _container(_StubApi api) {
@@ -178,7 +165,6 @@ void main() {
 
     const activityId = 'activity-001';
     const seriesParams = (id: activityId, fields: 'hr');
-    const folder = '2026-07-13_07-19';
     final subscriptions = [
       c.listen(
         activityDetailProvider(activityId),
@@ -190,7 +176,6 @@ void main() {
         (_, _) {},
         fireImmediately: true,
       ),
-      c.listen(weekReviewProvider(folder), (_, _) {}, fireImmediately: true),
     ];
     addTearDown(() {
       for (final subscription in subscriptions) {
@@ -201,11 +186,10 @@ void main() {
     await Future.wait([
       c.read(activityDetailProvider(activityId).future),
       c.read(timeseriesProvider(seriesParams).future),
-      c.read(weekReviewProvider(folder).future),
     ]);
     expect(
-      (api.activityDetailCalls, api.timeseriesCalls, api.weekReviewCalls),
-      (1, 1, 1),
+      (api.activityDetailCalls, api.timeseriesCalls),
+      (1, 1),
     );
 
     final sync = c.read(syncControllerProvider.notifier).triggerSync();
@@ -214,12 +198,11 @@ void main() {
     await Future.wait([
       c.read(activityDetailProvider(activityId).future),
       c.read(timeseriesProvider(seriesParams).future),
-      c.read(weekReviewProvider(folder).future),
     ]);
 
     expect(
-      (api.activityDetailCalls, api.timeseriesCalls, api.weekReviewCalls),
-      (2, 2, 2),
+      (api.activityDetailCalls, api.timeseriesCalls),
+      (2, 2),
     );
   });
 

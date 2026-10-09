@@ -15,7 +15,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stride/core/auth/current_user.dart';
 import 'package:stride/data/api/stride_api.dart';
-import 'package:stride/data/models/plan.dart';
 import 'package:stride/features_v2/plan/providers/push_week_provider.dart';
 import 'package:stride/features_v2/plan/widgets/push_result_sheet.dart';
 
@@ -30,19 +29,11 @@ class _MockStrideApi extends StrideApi {
   Future<Map<String, dynamic>> pushPlannedSession(
     String user,
     String date,
-    int sessionIndex,
-  ) async {
+    int sessionIndex, {
+    String? targetDate,
+  }) async {
     pushCalls.add((userId: user, date: date, sessionIndex: sessionIndex));
     return {'status': 'ok'};
-  }
-
-  @override
-  Future<PlanDaysResponse> getPlanDays(
-    String user,
-    String from,
-    String to,
-  ) async {
-    return const PlanDaysResponse(days: []);
   }
 }
 

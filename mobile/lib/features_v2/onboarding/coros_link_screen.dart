@@ -4,7 +4,7 @@
 /// explicit region selector (auto-detected from device locale,
 /// override is the escape hatch when the heuristic is wrong).
 ///
-/// On success: route forward to /v2/onboarding/sync (B3).
+/// On success: route forward to /onboarding/sync (B3).
 library;
 
 import 'dart:io' show Platform;
@@ -13,7 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/router/routes_v2.dart';
+import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 import '../_shared/widgets/onboarding_scaffold.dart';
@@ -88,7 +88,7 @@ class _CorosLinkScreenState extends ConsumerState<CorosLinkScreen> {
     // Side effect: on success, advance to B3.
     ref.listen<CorosLinkState>(corosLinkProvider, (prev, next) {
       if (next.success && !(prev?.success ?? false)) {
-        context.go(RoutesV2.onboardingSync);
+        context.go(Routes.onboardingSync);
       }
     });
 
@@ -97,7 +97,7 @@ class _CorosLinkScreenState extends ConsumerState<CorosLinkScreen> {
       stepName: '绑定 COROS',
       title: '绑定 COROS 账号',
       lede: '输入 COROS Training Hub 账号，仅用于拉取你的训练数据。',
-      onBack: () => context.go(RoutesV2.onboardingBrand),
+      onBack: () => context.go(Routes.onboardingBrand),
       ctaLabel: '绑定',
       ctaLoading: state.loading,
       onCta: _canSubmit ? _submit : null,
