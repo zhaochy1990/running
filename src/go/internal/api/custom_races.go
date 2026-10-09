@@ -75,6 +75,11 @@ func (p *customRaceRoutes) register(rg *gin.RouterGroup) {
 // valid YYYY-MM-DD race_date (no bounds — past dates are backfill, far-future
 // allowed, #457 修正决议) and an item_type from the seven-chip whitelist;
 // everything else is optional. State defaults to want.
+//
+// hotel/transit are deliberately absent: the columns exist per the #457 DDL
+// (「状态/行程存自有表」) but the v1 contract's field list does not expose them
+// (no travel toggles on custom cards yet) — reads carry them, writes never
+// change them from the default.
 type customRaceRequest struct {
 	Name       string   `json:"name" binding:"required,max=128"`
 	RaceDate   string   `json:"race_date" binding:"required"`
@@ -286,7 +291,7 @@ func (p *customRaceRoutes) myRaces(c *gin.Context) {
 				Source: "official", Plan: &plan,
 				// An unknown date (offboarded placeholder, race row gone)
 				// sinks like a finished race: no date to count down against.
-				sortDate: date, done: date == "9999-99-99" || customRaceDone(date),
+				sortDate: date, done: date == "9999-99-99" || raceDatePassed(date),
 			})
 		}
 	}
@@ -346,10 +351,11 @@ func customRaceStateOrWant(state string) string {
 	return state
 }
 
-// customRaceDone reports whether the race day has passed: race_date < today
+// raceDatePassed reports whether the race day has passed: race_date < today
 // in Asia/Shanghai (the backend twin of the client's shanghaiToday/daysUntil
-// derivation). Same-day races are not done yet.
-func customRaceDone(raceDate string) bool {
+// derivation). Same-day races are not done yet. Applies to both custom rows
+// and official plan cards (my-races derive done for both).
+func raceDatePassed(raceDate string) bool {
 	rd, err := time.Parse("2006-01-02", raceDate)
 	if err != nil {
 		return false
@@ -363,7 +369,7 @@ func newCustomRaceDTO(row storage.UserCustomRace) customRaceDTO {
 		DistanceKm: row.DistanceKm, AscentM: row.AscentM,
 		City: row.City, Website: row.Website, Note: row.Note,
 		State: row.State, Hotel: row.Hotel, Transit: row.Transit,
-		Done:      customRaceDone(row.RaceDate),
+		Done:      raceDatePassed(row.RaceDate),
 		CreatedAt: row.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt: row.UpdatedAt.UTC().Format(time.RFC3339),
 	}
