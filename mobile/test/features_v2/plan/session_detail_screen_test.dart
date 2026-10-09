@@ -51,12 +51,12 @@ WeekDetailData _makeData(List<PlannedSession> sessions,
   );
 }
 
-PlannedSession _easyRun() => PlannedSession(
+PlannedSession _easyRun() => const PlannedSession(
       date: '2026-05-12',
       sessionIndex: 0,
       kind: 'run',
       summary: '',
-      spec: RunWorkoutSpec(
+      spec: const RunWorkoutSpec(
         name: '晨间轻松跑',
         note: null,
         blocks: [
@@ -77,7 +77,7 @@ PlannedSession _easyRun() => PlannedSession(
       totalDurationS: 3600,
     );
 
-PlannedSession _strength() => PlannedSession(
+PlannedSession _strength() => const PlannedSession(
       date: '2026-05-12',
       sessionIndex: 0,
       kind: 'strength',
@@ -205,7 +205,7 @@ void main() {
       AsyncData(
         _makeData(
           [_easyRun()],
-          nutrition: PlannedNutrition(
+          nutrition: const PlannedNutrition(
             date: '2026-05-12',
             kcalTarget: 2600,
             meals: [

@@ -24,7 +24,6 @@ import '../../features_v2/onboarding/brand_screen.dart';
 import '../../features_v2/onboarding/coros_link_screen.dart';
 import '../../features_v2/onboarding/sync_progress_screen.dart';
 import '../../features_v2/plan/session_detail_screen.dart';
-import '../../features_v2/plan/week_list_screen.dart';
 import '../../features_v2/plan/week_detail_screen.dart';
 import '../../features_v2/plan/week_list_screen.dart';
 import '../auth/auth_controller.dart';

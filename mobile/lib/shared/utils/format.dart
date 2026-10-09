@@ -32,7 +32,6 @@ String formatDateShort(String dateStr) {
   return '${d.month}月${d.day}日';
 }
 
-const _weekdayCN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
 String weekdayCN(String dateStr) {
   return shanghaiWeekdayLabel(dateStr);

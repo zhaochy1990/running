@@ -67,9 +67,9 @@ class SessionDetailScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
+              const Text(
                 '加载失败',
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: AppTypography.fontSans,
                   fontSize: StrideTokens.fs15,
                   color: StrideTokens.danger,

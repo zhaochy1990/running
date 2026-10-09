@@ -333,10 +333,6 @@ class StrideApi {
     return _unpack<T>(res);
   }
 
-  Future<T> _put<T>(String path, {Object? body}) async {
-    final res = await _dio.put<T>(path, data: body);
-    return _unpack<T>(res);
-  }
 
   Future<T> _patch<T>(String path, {Object? body}) async {
     final res = await _dio.patch<T>(path, data: body);

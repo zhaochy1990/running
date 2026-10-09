@@ -364,7 +364,7 @@ class _DaySection extends ConsumerWidget {
 
         // ── 今日营养（无饮食安排时整块隐藏）──
         if (dayView.nutrition != null) ...[
-          _SectionTitle('今日饮食营养'),
+          const _SectionTitle('今日饮食营养'),
           _NutritionCard(nutrition: dayView.nutrition!),
         ],
       ],
@@ -411,24 +411,17 @@ class _ActivitiesCard extends StatelessWidget {
   }
 }
 
-class _ActivityRow extends StatefulWidget {
+class _ActivityRow extends StatelessWidget {
   const _ActivityRow({required this.activity, required this.onTap});
 
   final Activity activity;
   final VoidCallback onTap;
 
   @override
-  State<_ActivityRow> createState() => _ActivityRowState();
-}
-
-class _ActivityRowState extends State<_ActivityRow> {
-  bool _thumbFailed = false;
-
-  @override
   Widget build(BuildContext context) {
-    final a = widget.activity;
+    final a = activity;
     final thumb = a.thumbUrl;
-    final showThumb = thumb != null && thumb.isNotEmpty && !_thumbFailed;
+    final showThumb = thumb != null && thumb.isNotEmpty;
 
     return InkWell(
       onTap: widget.onTap,
@@ -581,7 +574,7 @@ class _WorkoutCard extends StatelessWidget {
               if (workout.scheduledWorkoutId != null)
                 const Padding(
                   padding: EdgeInsets.only(right: StrideTokens.spaceSm),
-                  child: const StridePill(text: '已推送', variant: PillVariant.green, dense: true),
+                  child: StridePill(text: '已推送', variant: PillVariant.green, dense: true),
                 ),
               IconButton(
                 onPressed: pushing ? null : () => onPush(workout),

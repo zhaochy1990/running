@@ -57,7 +57,7 @@ WeeklyPlanDetail _stubWeeklyPlan() => WeeklyPlanDetail(
         sessionIndex: 0,
         kind: 'run',
         summary: '轻松跑 10km',
-        spec: RunWorkoutSpec(
+        spec: const RunWorkoutSpec(
           name: '晨间轻松跑',
           blocks: [
             WorkoutBlock(steps: [
