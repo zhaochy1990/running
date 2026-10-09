@@ -75,7 +75,7 @@ func TestPlanMirrorDedup(t *testing.T) {
 			},
 			wantKeep:   []string{"WA race"},
 			wantLabels: map[uint64]string{1: ""},
-			want:       mirrorDedupSummary{Kept: 1, TypeRefused: 1, Cleared: 1},
+			want:       mirrorDedupSummary{TypeRefused: 1, Cleared: 1},
 		},
 		{
 			name: "no Chinese row: the listing is the race (北京马拉松)",
@@ -86,7 +86,7 @@ func TestPlanMirrorDedup(t *testing.T) {
 				cnRow(1, "2026-11-01", "杭州市", "Marathon"),
 			},
 			wantKeep: []string{"WA race"},
-			want:     mirrorDedupSummary{Kept: 1},
+			want:     mirrorDedupSummary{},
 		},
 		{
 			name: "two Chinese rows on one key refuse the merge",
@@ -99,7 +99,7 @@ func TestPlanMirrorDedup(t *testing.T) {
 			},
 			wantKeep:   []string{"WA race"},
 			wantLabels: map[uint64]string{1: "", 2: ""},
-			want:       mirrorDedupSummary{Kept: 1, Ambiguous: 1, Cleared: 2},
+			want:       mirrorDedupSummary{Ambiguous: 1, Cleared: 2},
 		},
 		{
 			name: "two listings on one key refuse the merge (一对多)",
@@ -112,7 +112,7 @@ func TestPlanMirrorDedup(t *testing.T) {
 			},
 			wantKeep:   []string{"WA race", "WA race"},
 			wantLabels: map[uint64]string{1: ""},
-			want:       mirrorDedupSummary{Kept: 2, Ambiguous: 2, Cleared: 1},
+			want:       mirrorDedupSummary{Ambiguous: 2, Cleared: 1},
 		},
 		{
 			name: "a foreign listing never merges",
@@ -123,7 +123,7 @@ func TestPlanMirrorDedup(t *testing.T) {
 				cnRow(1, "2026-04-20", "Boston", "Marathon"),
 			},
 			wantKeep: []string{"WA race"},
-			want:     mirrorDedupSummary{Kept: 1},
+			want:     mirrorDedupSummary{},
 		},
 		{
 			name: "a listing without a parsed city cannot merge",
@@ -134,7 +134,7 @@ func TestPlanMirrorDedup(t *testing.T) {
 				cnRow(1, "2026-11-01", "杭州市", "Marathon"),
 			},
 			wantKeep: []string{"NoCity race"},
-			want:     mirrorDedupSummary{Kept: 1},
+			want:     mirrorDedupSummary{},
 		},
 		{
 			name: "matched listing without a tier clears a stale one",
@@ -173,7 +173,7 @@ func TestPlanMirrorDedup(t *testing.T) {
 			},
 			wantKeep:   []string{"WA race", "WA race"},
 			wantLabels: map[uint64]string{1: "Platinum"},
-			want:       mirrorDedupSummary{Deduped: 1, Kept: 2, Stamped: 1},
+			want:       mirrorDedupSummary{Deduped: 1, Stamped: 1},
 		},
 	}
 
@@ -246,4 +246,30 @@ func diffStrings(got, want []string) string {
 		}
 	}
 	return ""
+}
+
+// TestTypesCompatible pins the refute-only contract: the check exists to catch a
+// wrong pair, so it must never reject a pair merely because WA has no opinion.
+func TestTypesCompatible(t *testing.T) {
+	cn := encodeTypes([]string{"Marathon", "HalfMarathon"})
+	cases := []struct {
+		name string
+		wa   *string
+		want bool
+	}{
+		{"nil WA types have no opinion", nil, true},
+		{"Unknown has no opinion", encodeTypes([]string{"Unknown"}), true},
+		{"Other has no opinion", encodeTypes([]string{"Other"}), true},
+		{"present type confirms", encodeTypes([]string{"Marathon"}), true},
+		{"absent type refutes", encodeTypes([]string{"10Km"}), false},
+		{"mixed refutes on the concrete one", encodeTypes([]string{"Unknown", "10Km"}), false},
+		{"malformed decodes to no opinion", strp("{not json"), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := typesCompatible(tc.wa, cn); got != tc.want {
+				t.Fatalf("typesCompatible = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }

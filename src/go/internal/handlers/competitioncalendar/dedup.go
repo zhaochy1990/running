@@ -32,6 +32,10 @@
 package competitioncalendar
 
 import (
+	"encoding/json"
+	"strings"
+
+	"github.com/zhaochy1990/stride/internal/racetypes"
 	"github.com/zhaochy1990/stride/internal/storage"
 )
 
@@ -41,9 +45,6 @@ type mirrorDedupSummary struct {
 	// Deduped counts World Athletics listings not written because a unique
 	// Chinese row covers them; their tiers land on those rows instead.
 	Deduped int
-	// Kept counts listings still written because no Chinese row matched — the
-	// race's only row (北京马拉松), or a match the guards refused.
-	Kept int
 	// Ambiguous counts listings kept because their (race_date, city) key is not
 	// unique on one side or the other — merging could attach a tier to the
 	// wrong race.
@@ -67,9 +68,13 @@ type mirrorDedupSummary struct {
 // dropped listing makes its stored twin stale and gets it deleted) and the
 // changed-only RaceCalendarWALabel list to hand to ApplyRaceCalendarWALabels —
 // both the stamps for matched pairs and the clears for Chinese rows whose tier
-// no listing supports any more. The store re-checks origin and the wa_label
-// override on every write, so a manual or administrator-corrected row passed in
-// here is simply not written.
+// no listing supports any more.
+//
+// The store re-checks origin and the wa_label override on every write. A manual
+// row therefore dedups (no ghost row beside it) without receiving the tier: the
+// sync never writes a detached row, and the tier on it is the administrator's
+// to set. That beats keeping the listing as its own row just to carry a tier on
+// an unpublished duplicate nobody reads.
 func planMirrorDedup(upstream, candidates []storage.RaceCalendarEvent) ([]storage.RaceCalendarEvent, []storage.RaceCalendarWALabel, mirrorDedupSummary) {
 	cnByKey := make(map[labelKey][]storage.RaceCalendarEvent, len(candidates))
 	for _, cn := range candidates {
@@ -134,7 +139,6 @@ func planMirrorDedup(upstream, candidates []storage.RaceCalendarEvent) ([]storag
 			}
 		}
 	}
-	summary.Kept = len(keep)
 
 	labels := make([]storage.RaceCalendarWALabel, 0, len(candidates))
 	for _, cn := range candidates {
@@ -150,4 +154,63 @@ func planMirrorDedup(upstream, candidates []storage.RaceCalendarEvent) ([]storag
 		}
 	}
 	return keep, labels, summary
+}
+
+// labelKey is the match key: the race's calendar date and its city. Both sides
+// store city at the prefecture level (see the chinaCity table), which is what
+// makes this join sound.
+type labelKey struct {
+	RaceDate string
+	City     string
+}
+
+// keyOf derives the match key, reporting false when the row cannot take part: a
+// row without a city has nothing to join on.
+func keyOf(row storage.RaceCalendarEvent) (labelKey, bool) {
+	if row.City == nil || strings.TrimSpace(*row.City) == "" {
+		return labelKey{}, false
+	}
+	return labelKey{RaceDate: row.RaceDate, City: strings.TrimSpace(*row.City)}, true
+}
+
+// typesCompatible reports whether a World Athletics listing's race types are
+// consistent with the candidate row's. It only ever refutes: WA fills race types
+// from the GW/GL ranking categories alone, so most listings say ["Unknown"] and
+// can never confirm anything. When WA does state a concrete type, the candidate's
+// set must contain it — that is what catches a drifted WA date landing on a
+// different race in the same city (a marathon's tier on a half marathon), and it
+// is why a refused pair keeps its listing as its own row.
+func typesCompatible(wa, cn *string) bool {
+	waTypes := decodeTypes(wa)
+	if len(waTypes) == 0 {
+		return true
+	}
+	cnTypes := decodeTypes(cn)
+	for _, t := range waTypes {
+		if t == racetypes.Unknown || t == racetypes.Other {
+			continue
+		}
+		for _, c := range cnTypes {
+			if c == t {
+				return true
+			}
+		}
+		// WA stated a concrete type the candidate row does not list.
+		return false
+	}
+	// Nothing but Unknown/Other on the WA side: no opinion.
+	return true
+}
+
+// decodeTypes reads a row's race_types JSON array. A malformed or absent value
+// decodes to nothing, which typesCompatible treats as "no opinion".
+func decodeTypes(encoded *string) []string {
+	if encoded == nil || strings.TrimSpace(*encoded) == "" {
+		return nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(*encoded), &out); err != nil {
+		return nil
+	}
+	return out
 }

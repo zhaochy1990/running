@@ -40,32 +40,6 @@ func encodeTypes(types []string) *string {
 	return strp(string(b))
 }
 
-// TestTypesCompatible pins the refute-only contract: the check exists to catch a
-// wrong pair, so it must never reject a pair merely because WA has no opinion.
-func TestTypesCompatible(t *testing.T) {
-	cn := encodeTypes([]string{"Marathon", "HalfMarathon"})
-	cases := []struct {
-		name string
-		wa   *string
-		want bool
-	}{
-		{"nil WA types have no opinion", nil, true},
-		{"Unknown has no opinion", encodeTypes([]string{"Unknown"}), true},
-		{"Other has no opinion", encodeTypes([]string{"Other"}), true},
-		{"present type confirms", encodeTypes([]string{"Marathon"}), true},
-		{"absent type refutes", encodeTypes([]string{"10Km"}), false},
-		{"mixed refutes on the concrete one", encodeTypes([]string{"Unknown", "10Km"}), false},
-		{"malformed decodes to no opinion", strp("{not json"), true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := typesCompatible(tc.wa, cn); got != tc.want {
-				t.Fatalf("typesCompatible = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
 // --- handler ------------------------------------------------------------------
 
 type fakeLabelStore struct {

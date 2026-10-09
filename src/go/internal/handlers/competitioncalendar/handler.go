@@ -205,10 +205,11 @@ func New(cfg Config) job.Handler {
 				}
 			}
 			_ = hb(stage, 100)
+			skipped := dedup.Ambiguous + dedup.TypeRefused
 			out.Years[year] = yearSummary{
 				Fetched: len(events), Upserted: res.Upserted, Deleted: res.Deleted,
 				Deduped: dedup.Deduped, Stamped: dedup.Stamped, Cleared: dedup.Cleared,
-				Skipped: dedup.Ambiguous + dedup.TypeRefused, Applied: applied,
+				Skipped: skipped, Applied: applied,
 			}
 			log.Info("race_calendar_sync: year synced",
 				zap.String("job_id", j.ID),
@@ -219,7 +220,7 @@ func New(cfg Config) job.Handler {
 				zap.Int("deduped", dedup.Deduped),
 				zap.Int("stamped", dedup.Stamped),
 				zap.Int("cleared", dedup.Cleared),
-				zap.Int("skipped", dedup.Ambiguous+dedup.TypeRefused),
+				zap.Int("skipped", skipped),
 				zap.Int("labels_applied", applied))
 		}
 

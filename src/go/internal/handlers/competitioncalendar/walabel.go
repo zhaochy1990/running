@@ -1,23 +1,21 @@
 // This file is the race_calendar_wa_label step: it runs after both mirrors have
 // run.
 //
-// It exists because a World Athletics row must carry its own tier in wa_label,
-// not just in label — the races 中国田协 does not list (上海马拉松 Platinum,
-// 北京马拉松 Gold…) have their 国际田联 row as the only row a runner sees, and
+// The job is the self-mirror only: every 国际田联 row's own tier (Platinum /
+// Gold / Elite / Label) lands in its wa_label column. That is what keeps
+// wa_label populated for the races 中国田协 does not list (上海马拉松 Platinum,
+// 北京马拉松 Gold…), where the 国际田联 row *is* the only row a runner sees —
 // readers consult the one wa_label column instead of reasoning about which
-// calendar a row came from. The mirror writes wa_label on freshly inserted rows
-// only via the upsert's insert path (the column is deliberately outside
-// raceCalendarUpsertCols, so no mirror's merge can clobber it); this step
-// re-mirrors the tier on every run so an upstream tier change reaches the
-// stored rows too.
+// calendar a row came from.
 //
-// The cross-source half this step used to perform — copying a 国际田联 row's
-// tier onto the matching 中国田协 row — moved into the 国际田联 mirror itself
-// (devops#443): there the listing is deduped against the Chinese row instead of
-// being written, and its tier is applied to that row in the same run. This step
-// must not copy across sources any more: after the dedup there IS no 国际田联
-// row for a matched race, so a copy pass would read "no counterpart" and erase
-// the tier the mirror just wrote.
+// The column is deliberately outside raceCalendarUpsertCols, so no mirror's
+// upsert writes it and a tier can never be clobbered by a merge; this step is
+// what re-mirrors an upstream tier change onto the stored rows.
+//
+// A matched race's 中国田协 row gets its tier from the 国际田联 mirror's dedup
+// (dedup.go), not here — after that dedup there IS no 国际田联 row for a matched
+// race, so a copy pass here would read "no counterpart" and erase the tier the
+// mirror just wrote. Chinese rows are off limits to this step.
 //
 // It runs as its own single-step pipeline rather than inside the mirror: the
 // mirrors run as parallel jobs in the daily workflow, and a row inserted by
@@ -35,7 +33,6 @@ import (
 
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/logging"
-	"github.com/zhaochy1990/stride/internal/racetypes"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/utils/timefmt"
 )
@@ -63,26 +60,17 @@ type waLabelInput struct {
 	Years []string `json:"years"`
 }
 
-// waLabelYearSummary reports one year's work. The self-mirror is the whole job
-// since devops#443; the copy counts below stay in the result shape (dashboards
-// read this JSON) and are always zero — a nonzero Labeled/Cleared after this
-// change would mean the cross-source half came back.
+// waLabelYearSummary reports one year's work. The copy counts below are part of
+// the job result's operator-facing shape but are always zero: the cross-source
+// copy onto 中国田协 rows is the 国际田联 mirror's dedup now (dedup.go). A
+// nonzero Labeled or Cleared means that dedup is no longer running — treat it as
+// an alarm.
 type waLabelYearSummary struct {
-	// Labeled counts 中国田协 rows that took a tier from their World Athletics
-	// counterpart; Unmatched counts those that found no counterpart.
-	//
-	// Always zero since devops#443: the copy moved into the 国际田联 mirror's
-	// dedup (after which there is no counterpart row to find).
 	Labeled   int `json:"labeled"`
 	Unmatched int `json:"unmatched"`
-	// Cleared counts 中国田协 rows whose tier was removed (the listing is gone or
-	// the two no longer match).
-	//
-	// Always zero since devops#443: the mirror's dedup reconciles the Chinese
-	// rows' tiers in the same run that decides the matches.
-	Cleared int `json:"cleared"`
-	// Mirrored counts World Athletics rows that took their own tier into
-	// wa_label — the job's entire remaining work.
+	Cleared   int `json:"cleared"`
+	// Mirrored counts World Athletics rows whose stored tier changed — the
+	// job's entire work.
 	Mirrored int `json:"mirrored"`
 }
 
@@ -173,65 +161,6 @@ func NewWALabel(cfg WALabelConfig) job.Handler {
 		}
 		return string(encoded), nil
 	}
-}
-
-// labelKey is the match key: the race's calendar date and its city. Both sides
-// store city at the prefecture level (see the chinaCity table), which is what
-// makes this join sound. The match itself lives in dedup.go (the 国际田联
-// mirror's dedup); keyOf and typesCompatible below are its shared helpers.
-type labelKey struct {
-	RaceDate string
-	City     string
-}
-
-// keyOf derives the match key, reporting false when the row cannot take part: a
-// row without a city has nothing to join on.
-func keyOf(row storage.RaceCalendarEvent) (labelKey, bool) {
-	if row.City == nil || strings.TrimSpace(*row.City) == "" {
-		return labelKey{}, false
-	}
-	return labelKey{RaceDate: row.RaceDate, City: strings.TrimSpace(*row.City)}, true
-}
-
-// typesCompatible reports whether a World Athletics row's race types are
-// consistent with the 中国田协 row's. It only ever refutes: WA fills race types
-// from the GW/GL ranking categories alone, so most rows say ["Unknown"] and can
-// never confirm anything. When WA does state a type, the 中国田协 row's item-derived
-// set must contain it — that is what catches a drifted WA date landing on a
-// different race in the same city (a marathon's tier on a half marathon).
-func typesCompatible(wa, cn *string) bool {
-	waTypes := decodeTypes(wa)
-	if len(waTypes) == 0 {
-		return true
-	}
-	cnTypes := decodeTypes(cn)
-	for _, t := range waTypes {
-		if t == racetypes.Unknown || t == racetypes.Other {
-			continue
-		}
-		for _, c := range cnTypes {
-			if c == t {
-				return true
-			}
-		}
-		// WA stated a concrete type the 中国田协 row does not list.
-		return false
-	}
-	// Nothing but Unknown/Other on the WA side: no opinion.
-	return true
-}
-
-// decodeTypes reads a row's race_types JSON array. A malformed or absent value
-// decodes to nothing, which typesCompatible treats as "no opinion".
-func decodeTypes(encoded *string) []string {
-	if encoded == nil || strings.TrimSpace(*encoded) == "" {
-		return nil
-	}
-	var out []string
-	if err := json.Unmarshal([]byte(*encoded), &out); err != nil {
-		return nil
-	}
-	return out
 }
 
 // sameLabel reports whether a row already carries the desired tier. Pointer
