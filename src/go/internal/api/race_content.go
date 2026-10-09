@@ -29,6 +29,10 @@ type RaceContentStore interface {
 	GetRaceCalendarEvent(ctx context.Context, id uint64) (*storage.RaceCalendarEvent, error)
 	UpdateRaceCalendarEvent(ctx context.Context, row *storage.RaceCalendarEvent) error
 	GetRaceCityContent(ctx context.Context, city string) (*storage.RaceCityContent, error)
+	// ListRaceCityContentByCities is the batch read the publish dashboard's
+	// city gate uses (race_dashboard.go); the city-content surface itself
+	// never calls it, but the concrete store serves both from one method.
+	ListRaceCityContentByCities(ctx context.Context, cities []string) ([]storage.RaceCityContent, error)
 	UpsertRaceCityContent(ctx context.Context, in *storage.RaceCityContent) (*storage.RaceCityContent, error)
 	UpsertRaceCityContentAIDraft(ctx context.Context, in *storage.RaceCityContent) (*storage.RaceCityContent, error)
 }

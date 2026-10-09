@@ -75,6 +75,22 @@ func (s *Store) GetRaceCityContent(ctx context.Context, city string) (*RaceCityC
 	return &row, nil
 }
 
+// ListRaceCityContentByCities returns the content rows of the named cities in
+// one query — the publish dashboard checks every candidate race's city gate,
+// so the rows ride out in a single batch (the per-city Get above stays for the
+// single-city surface). Cities with no content row are simply absent. An empty
+// city list returns no rows rather than querying IN ().
+func (s *Store) ListRaceCityContentByCities(ctx context.Context, cities []string) ([]RaceCityContent, error) {
+	if len(cities) == 0 {
+		return nil, nil
+	}
+	var rows []RaceCityContent
+	if err := s.db.WithContext(ctx).Where("city IN ?", cities).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("storage: list race city content: %w", err)
+	}
+	return rows, nil
+}
+
 // UpsertRaceCityContent creates or replaces the working state of a city's
 // content — the save IS the content (no lifecycle). City on the incoming row
 // is the identity; everything admin-writable is overwritten.

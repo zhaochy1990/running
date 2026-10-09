@@ -504,6 +504,45 @@ func (s *Store) ListRaceCalendarEvents(ctx context.Context, f RaceCalendarListFi
 	return rows, total, nil
 }
 
+// ListRaceCalendarDashboardRows returns every race matching the country code
+// (the dashboard's cn scope passes the ISO code "CHN", never a source label —
+// filtering by source would drop the 北京/上海马拉松 rows that exist only on
+// the 国际田联 mirror; empty = no bound), ordered race_date, name, id — the
+// order the dashboard buckets keep.
+//
+// The time domain (upcoming/past) is deliberately NOT a SQL filter here: the
+// sync-new bucket ignores time entirely, so the handler — which batch-loads
+// the items and can see per-row admin data — applies the domain check in Go as
+// the single source of truth. A SQL-side time bound would need an OR branch
+// mirroring the never-maintained rule, a second copy of HasContent's field
+// list that would silently drift.
+func (s *Store) ListRaceCalendarDashboardRows(ctx context.Context, country string) ([]RaceCalendarEvent, error) {
+	query := s.db.WithContext(ctx).Model(&RaceCalendarEvent{})
+	if country != "" {
+		query = query.Where("country = ?", country)
+	}
+	var rows []RaceCalendarEvent
+	if err := query.Order("race_date ASC, name ASC, id ASC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("storage: list race dashboard rows: %w", err)
+	}
+	return rows, nil
+}
+
+// ListRaceCalendarItemsByEventIDs returns the items of the given events in one
+// query — the dashboard evaluates every candidate race's data gate, so the
+// items ride out in a single batch. An empty id list returns no rows rather
+// than querying IN ().
+func (s *Store) ListRaceCalendarItemsByEventIDs(ctx context.Context, eventIDs []uint64) ([]RaceCalendarItem, error) {
+	if len(eventIDs) == 0 {
+		return nil, nil
+	}
+	var rows []RaceCalendarItem
+	if err := s.db.WithContext(ctx).Where("race_event_id IN ?", eventIDs).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("storage: list race dashboard items: %w", err)
+	}
+	return rows, nil
+}
+
 // ─── user-facing catalog read ────────────────────────────────────────────────
 
 // PublishedRaceFilter bounds the user-facing race-catalog list (issue #390).

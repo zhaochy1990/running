@@ -34,6 +34,12 @@ type RaceCalendarStore interface {
 	UpdateRaceCalendarItem(ctx context.Context, row *storage.RaceCalendarItem) error
 	DeleteRaceCalendarItem(ctx context.Context, id uint64) error
 	MoveRaceContent(ctx context.Context, sourceEventID, targetEventID uint64) error
+	// ListRaceCalendarDashboardRows and ListRaceCalendarItemsByEventIDs back
+	// the publish dashboard (race_dashboard.go): one unpaginated read of the
+	// rows in country scope, plus one batch of their items. The time domain is
+	// the handler's call (see the storage method's comment).
+	ListRaceCalendarDashboardRows(ctx context.Context, country string) ([]storage.RaceCalendarEvent, error)
+	ListRaceCalendarItemsByEventIDs(ctx context.Context, eventIDs []uint64) ([]storage.RaceCalendarItem, error)
 }
 
 // raceCalendarRoutes serves the administrator race-calendar management surface.
@@ -51,13 +57,17 @@ type raceCalendarRoutes struct {
 	store    RaceCalendarStore
 	log      *zap.Logger
 	geocoder RaceItemGeocoder
+	// cities is the city-content lookup the publish dashboard needs; nil
+	// (tests that do not exercise the dashboard) leaves that endpoint
+	// unregistered.
+	cities raceDashboardCityStore
 }
 
-func newRaceCalendarRoutes(store RaceCalendarStore, log *zap.Logger, geocoder RaceItemGeocoder) *raceCalendarRoutes {
+func newRaceCalendarRoutes(store RaceCalendarStore, cities raceDashboardCityStore, log *zap.Logger, geocoder RaceItemGeocoder) *raceCalendarRoutes {
 	if log == nil {
 		log = logging.Default()
 	}
-	return &raceCalendarRoutes{store: store, log: log, geocoder: geocoder}
+	return &raceCalendarRoutes{store: store, log: log, geocoder: geocoder, cities: cities}
 }
 
 // register mounts the admin race-calendar endpoints. The whole surface is
@@ -69,6 +79,12 @@ func (r *raceCalendarRoutes) register(rg *gin.RouterGroup) {
 	}
 	rg.GET("/api/admin/races", r.list)
 	rg.POST("/api/admin/races", r.create)
+	// The static /dashboard segment must be declared before /:race_id (gin
+	// resolves static first, but the reading order keeps the route table
+	// honest); the two coexist on gin v1.12.
+	if r.cities != nil {
+		rg.GET("/api/admin/races/dashboard", r.dashboard)
+	}
 	rg.GET("/api/admin/races/:race_id", r.detail)
 	rg.PATCH("/api/admin/races/:race_id", r.update)
 	rg.DELETE("/api/admin/races/:race_id", r.delete)

@@ -352,7 +352,7 @@ func NewService(cfg Config) *Service {
 		masterPlan:              newMasterPlanRoutes(cfg.MasterPlanStore, log),
 		weeklyPlan:              newWeeklyPlanRoutes(cfg.WeeklyPlanStore, cfg.WorkoutPusher, cfg.ScheduledWorkoutStore, cfg.BodyCompositionStore, log),
 		legalDocuments:          newLegalDocumentRoutes(cfg.LegalDocumentStore, log),
-		raceCalendar:            newRaceCalendarRoutes(cfg.RaceCalendarStore, log, cfg.RaceItemGeocoder),
+		raceCalendar:            newRaceCalendarRoutes(cfg.RaceCalendarStore, cfg.RaceContentStore, log, cfg.RaceItemGeocoder),
 		raceFavorites:           newRaceFavoriteRoutes(cfg.RaceFavoriteStore, log),
 		racePlans:               newRacePlanRoutes(cfg.RacePlanStore, log),
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
