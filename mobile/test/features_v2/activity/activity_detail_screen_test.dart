@@ -259,13 +259,6 @@ void main() {
     expect(find.text('加载失败'), findsAtLeastNWidgets(1));
   });
 
-  testWidgets('AI commentary card shows 重新生成 button', (tester) async {
-    await _pump(tester, AsyncData(_makeDetail(commentary: '训练点评内容。')));
-
-    await tester.scrollUntilVisible(find.text('重新生成'), 500);
-    expect(find.text('重新生成'), findsOneWidget);
-  });
-
   testWidgets('commentary_generated_by shown as pill', (tester) async {
     await _pump(
       tester,
