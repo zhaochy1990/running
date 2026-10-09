@@ -810,7 +810,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Administrator only. Returns a page of races ordered by race date, filtered by optional year, source (国际田联 / 中国田协 / manual), month, keyword (matches name or name_cn) and published state.",
+                "description": "Administrator only. Returns a page of races ordered by race date, filtered by optional year, source (国际田联 / 中国田协 / manual), month, keyword (matches name or name_cn), published state and an inclusive race-date range (date_from / date_to).",
                 "tags": [
                     "admin"
                 ],
@@ -844,6 +844,18 @@ const docTemplate = `{
                         "type": "boolean",
                         "description": "Only published (true) or unpublished (false) races; omit for both",
                         "name": "published",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive range start, YYYY-MM-DD",
+                        "name": "date_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Inclusive range end, YYYY-MM-DD",
+                        "name": "date_to",
                         "in": "query"
                     },
                     {

@@ -244,13 +244,15 @@ func decodeRaceTypes(raw *string) []string {
 // list returns one page of races with the year/source/month/keyword filters.
 //
 //	@Summary		List the race calendar
-//	@Description	Administrator only. Returns a page of races ordered by race date, filtered by optional year, source (国际田联 / 中国田协 / manual), month, keyword (matches name or name_cn) and published state.
+//	@Description	Administrator only. Returns a page of races ordered by race date, filtered by optional year, source (国际田联 / 中国田协 / manual), month, keyword (matches name or name_cn), published state and an inclusive race-date range (date_from / date_to).
 //	@Tags			admin
 //	@Param			year		query	int		false	"4-digit year"
 //	@Param			month		query	int		false	"Month 1-12"
 //	@Param			source		query	string	false	"Source label"
 //	@Param			keyword		query	string	false	"Substring of name or name_cn"
 //	@Param			published	query	bool	false	"Only published (true) or unpublished (false) races; omit for both"
+//	@Param			date_from	query	string	false	"Inclusive range start, YYYY-MM-DD"
+//	@Param			date_to		query	string	false	"Inclusive range end, YYYY-MM-DD"
 //	@Param			page		query	int		false	"Page (1-based, default 1)"
 //	@Param			per_page	query	int		false	"Page size (default 20, max 100)"
 //	@Success		200			{object}	raceCalendarListResponse
@@ -820,6 +822,27 @@ func bindRaceListFilter(c *gin.Context) (storage.RaceCalendarListFilter, bool) {
 			return f, false
 		}
 		f.Month = month
+	}
+	// The date range bounds race_date itself (the year/month filters are its
+	// coarse shortcuts), so both ends share the calendar-date format the rows
+	// store, and an inverted window can only be a caller mistake.
+	if raw := strings.TrimSpace(c.Query("date_from")); raw != "" {
+		if !isCalendarDate(raw) {
+			c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_date_from"})
+			return f, false
+		}
+		f.DateFrom = raw
+	}
+	if raw := strings.TrimSpace(c.Query("date_to")); raw != "" {
+		if !isCalendarDate(raw) {
+			c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_date_to"})
+			return f, false
+		}
+		f.DateTo = raw
+	}
+	if f.DateFrom != "" && f.DateTo != "" && f.DateFrom > f.DateTo {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_date_range"})
+		return f, false
 	}
 	f.Page = 1
 	if raw := c.Query("page"); raw != "" {

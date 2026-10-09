@@ -418,7 +418,9 @@ func raceCalendarOverrideSet(fields []string) map[string]bool {
 // substring, and Page/PerPage are 1-based (PerPage is clamped by the caller).
 // ContentStale selects only the rows the stale-delete kept and flagged.
 // Published is tri-state: nil means no bound, so the admin can list all races,
-// only the published ones, or only the unpublished ones.
+// only the published ones, or only the unpublished ones. DateFrom/DateTo bound
+// race_date inclusively ("2006-01-02"; "" means no bound) and compose with the
+// Year/Month bounds.
 type RaceCalendarListFilter struct {
 	Year         string
 	Month        int
@@ -426,6 +428,8 @@ type RaceCalendarListFilter struct {
 	Keyword      string
 	ContentStale bool
 	Published    *bool
+	DateFrom     string
+	DateTo       string
 	Page         int
 	PerPage      int
 }
@@ -447,6 +451,12 @@ func (s *Store) ListRaceCalendarEvents(ctx context.Context, f RaceCalendarListFi
 		}
 		if f.Month > 0 {
 			query = query.Where("month = ?", f.Month)
+		}
+		if f.DateFrom != "" {
+			query = query.Where("race_date >= ?", f.DateFrom)
+		}
+		if f.DateTo != "" {
+			query = query.Where("race_date <= ?", f.DateTo)
 		}
 		if f.Source != "" {
 			query = query.Where("source = ?", f.Source)

@@ -75,6 +75,14 @@ func (f *fakeRaceCalendarStore) ListRaceCalendarEvents(_ context.Context, filter
 		if filter.Month > 0 && int(row.Month) != filter.Month {
 			continue
 		}
+		// Inclusive race_date bounds, mirroring the real store's string
+		// comparison on the "2006-01-02" column.
+		if filter.DateFrom != "" && row.RaceDate < filter.DateFrom {
+			continue
+		}
+		if filter.DateTo != "" && row.RaceDate > filter.DateTo {
+			continue
+		}
 		if filter.Source != "" && row.Source != filter.Source {
 			continue
 		}
@@ -576,6 +584,54 @@ func TestRaceCalendarAdmin_ListFiltersAndPagination(t *testing.T) {
 	}
 	if w := h.do(t, http.MethodGet, "/api/admin/races?month=13", nil, h.adminToken(t)); w.Code != http.StatusBadRequest {
 		t.Errorf("bad month = %d, want 400", w.Code)
+	}
+}
+
+func TestRaceCalendarAdmin_ListDateRangeFilter(t *testing.T) {
+	h := newRaceHarness(t)
+	h.store.seedEvent(storage.RaceCalendarEvent{Source: "国际田联", Origin: storage.RaceOriginSync, Name: "Tokyo Marathon", RaceDate: "2030-03-01", Month: 3, DayOfMonth: 1, Country: "JPN"})
+	h.store.seedEvent(storage.RaceCalendarEvent{Source: "中国田协", Origin: storage.RaceOriginSync, Name: "北京马拉松", RaceDate: "2030-10-01", Month: 10, DayOfMonth: 1, Country: "CHN"})
+
+	get := func(t *testing.T, query string) raceCalendarListResponse {
+		t.Helper()
+		w := h.do(t, http.MethodGet, "/api/admin/races?"+query, nil, h.adminToken(t))
+		if w.Code != http.StatusOK {
+			t.Fatalf("list %q = %d: %s", query, w.Code, w.Body.String())
+		}
+		var list raceCalendarListResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return list
+	}
+
+	// An inclusive window keeps the boundary dates themselves.
+	if list := get(t, "date_from=2030-03-01&date_to=2030-03-01"); list.Total != 1 || list.Races[0].Name != "Tokyo Marathon" {
+		t.Fatalf("same-day window = %+v, want Tokyo only", list.Races)
+	}
+	if list := get(t, "date_from=2030-03-01&date_to=2030-10-01"); list.Total != 2 {
+		t.Fatalf("open window total = %d, want both races", list.Total)
+	}
+	// One-sided bounds and composition with the month filter.
+	if list := get(t, "date_from=2030-04-01"); list.Total != 1 || list.Races[0].Name != "北京马拉松" {
+		t.Fatalf("lower bound = %+v, want 北京 only", list.Races)
+	}
+	if list := get(t, "date_to=2030-09-30"); list.Total != 1 || list.Races[0].Name != "Tokyo Marathon" {
+		t.Fatalf("upper bound = %+v, want Tokyo only", list.Races)
+	}
+	if list := get(t, "year=2030&date_from=2030-04-01&date_to=2030-12-31"); list.Total != 1 || list.Races[0].Name != "北京马拉松" {
+		t.Fatalf("year + window = %+v, want 北京 only", list.Races)
+	}
+
+	for _, tc := range []struct{ query, why string }{
+		{"date_from=2030-3-1", "malformed date"},
+		{"date_from=2030-13-01", "impossible date"},
+		{"date_to=2030/10/01", "wrong separator"},
+		{"date_from=2030-10-01&date_to=2030-03-01", "inverted window"},
+	} {
+		if w := h.do(t, http.MethodGet, "/api/admin/races?"+tc.query, nil, h.adminToken(t)); w.Code != http.StatusBadRequest {
+			t.Errorf("%s (%s) = %d, want 400", tc.why, tc.query, w.Code)
+		}
 	}
 }
 
