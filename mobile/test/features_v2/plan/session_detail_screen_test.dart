@@ -1,13 +1,13 @@
-/// Widget tests for D3 SessionDetailScreen.
+/// Widget tests for D3 SessionDetailScreen（结构化课表数据源）.
 ///
 /// Coverage:
-///   1. E 课渲染 → 配速 pill green + 距离 stat-row
-///   2. strength 课 → 显示动作清单 section header
-///   3. 推送按钮点击 → 调 API (mock 验证 endpoint URL)
+///   1. run 课渲染 → 课名 + 课表结构 steps
+///   2. strength 课 → 力量动作清单 rows
+///   3. 推送按钮点击 → 调 API (mock 验证 endpoint 调用)
 ///   4. 加载中 → CircularProgressIndicator
 ///   5. 错误态 → "加载失败"
-///   6. 第二 stat row 渲染
-///   7. 执行要点 + 训前营养 section headers
+///   6. 教练备注（notes_md 首行）渲染
+///   7. 当日营养渲染
 library;
 
 import 'dart:async';
@@ -16,86 +16,101 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:stride/core/auth/current_user.dart';
-import 'package:stride/core/theme/pill_colors.dart';
 import 'package:stride/data/api/stride_api.dart';
-import 'package:stride/data/models/plan.dart';
-import 'package:stride/features_v2/plan/models/day_plan.dart';
-import 'package:stride/features_v2/plan/providers/plan_day_provider.dart';
+import 'package:stride/data/models/weekly_plan.dart';
+import 'package:stride/features_v2/plan/providers/week_detail_provider.dart';
 import 'package:stride/features_v2/plan/session_detail_screen.dart';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-DayPlan _makeEasyPlan({
-  String? name,
-  num? distanceM,
-  num? durationSec,
-  int? paceLow,
-  int? paceHigh,
-  int? hrLow,
-  int? hrHigh,
-}) {
-  return DayPlan(
-    date: '2026-05-12',
-    sessionIndex: 0,
-    kind: 'E',
-    name: name ?? '晨间轻松跑',
-    distanceM: distanceM ?? 10000,
-    durationSec: durationSec ?? 3600,
-    targetPaceLowSecPerKm: paceLow ?? 300,
-    targetPaceHighSecPerKm: paceHigh ?? 330,
-    targetHrLow: hrLow ?? 130,
-    targetHrHigh: hrHigh ?? 150,
+const _folder = '2026-05-11_05-17(W1基础)';
+
+WeekDetailData _makeData(List<PlannedSession> sessions,
+    {PlannedNutrition? nutrition}) {
+  final content = WeeklyPlanContent(
+    sessions: sessions,
+    nutrition: nutrition == null ? const [] : [nutrition],
+    coachNotes: '本周以有氧基础为主。',
+  );
+  return WeekDetailData(
+    folder: _folder,
+    dateFrom: '2026-05-11',
+    dateTo: '2026-05-17',
+    planTitle: 'W1 基础',
+    planContent: content,
+    days: [
+      for (var i = 0; i < 7; i++)
+        WeekDaySessions(
+          date: '2026-05-${(11 + i).toString().padLeft(2, '0')}',
+          sessions: content.sessionsOn('2026-05-${(11 + i).toString().padLeft(2, '0')}'),
+        ),
+    ],
   );
 }
 
-DayPlan _makeStrengthPlan() {
-  return const DayPlan(
-    date: '2026-05-14',
-    sessionIndex: 0,
-    kind: 'strength',
-    name: '力量 A',
-    durationSec: 3000,
-  );
-}
+PlannedSession _easyRun() => PlannedSession(
+      date: '2026-05-12',
+      sessionIndex: 0,
+      kind: 'run',
+      summary: '',
+      spec: RunWorkoutSpec(
+        name: '晨间轻松跑',
+        note: null,
+        blocks: [
+          WorkoutBlock(steps: [
+            WorkoutStep(
+              stepKind: 'warmup',
+              target: const WorkoutTarget(kind: 'open'),
+            ),
+            const WorkoutStep(
+              stepKind: 'work',
+              target: WorkoutTarget(kind: 'hr_bpm', low: 130, high: 150),
+            ),
+          ]),
+        ],
+      ),
+      notesMd: '保持心率区间，别提速。\n第二行不显示。',
+      totalDistanceM: 10000,
+      totalDurationS: 3600,
+    );
 
-// ── Mock StrideApi ─────────────────────────────────────────────────────────────
+PlannedSession _strength() => PlannedSession(
+      date: '2026-05-12',
+      sessionIndex: 0,
+      kind: 'strength',
+      summary: '核心力量',
+      spec: const StrengthWorkoutSpec(
+        name: '核心力量',
+        exercises: [
+          StrengthExercise(
+            displayName: '平板支撑',
+            sets: 3,
+            targetKind: 'time_s',
+            targetValue: 60,
+            restSeconds: 45,
+          ),
+        ],
+      ),
+      totalDurationS: 1800,
+    );
 
-/// Records calls to [pushPlannedSession] for assertion.
 class _MockStrideApi extends StrideApi {
   _MockStrideApi() : super(Dio());
 
-  final List<({String userId, String date, int sessionIndex})> pushCalls = [];
+  final List<({String user, String date, int sessionIndex})> pushCalls = [];
 
   @override
   Future<Map<String, dynamic>> pushPlannedSession(
     String user,
     String date,
-    int sessionIndex,
-  ) async {
-    pushCalls.add((userId: user, date: date, sessionIndex: sessionIndex));
-    return {'status': 'ok'};
-  }
-
-  @override
-  Future<PlanDaysResponse> getPlanDays(
-    String user,
-    String from,
-    String to,
-  ) async {
-    // Return minimal plan day matching the date
-    final session = PlannedSession(
-      id: 1,
-      date: from,
-      sessionIndex: 0,
-      kind: 'E',
-      pushable: true,
-      title: '晨间轻松跑',
-      notes: '保持 Z2 心率，专注节奏。',
-    );
-    final day = PlanDay(date: from, sessions: [session]);
-    return PlanDaysResponse(days: [day]);
+    int sessionIndex, {
+    String? targetDate,
+  }) async {
+    pushCalls.add((user: user, date: date, sessionIndex: sessionIndex));
+    return {'ok': true};
   }
 }
 
@@ -103,229 +118,128 @@ class _MockStrideApi extends StrideApi {
 
 Future<void> _pump(
   WidgetTester tester,
-  AsyncValue<DayPlan> planState, {
-  String folder = '2026-05-11_05-17',
-  String date = '2026-05-12',
-  int sessionIndex = 0,
-  _MockStrideApi? mockApi,
+  AsyncValue<WeekDetailData> state, {
+  _MockStrideApi? api,
 }) async {
-  final params = (date: date, sessionIndex: sessionIndex);
-  final api = mockApi ?? _MockStrideApi();
+  final router = GoRouter(
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (_, _) => const SessionDetailScreen(
+          folder: _folder,
+          date: '2026-05-12',
+          sessionIndex: 0,
+        ),
+      ),
+    ],
+  );
 
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        planDayProvider(params).overrideWith((_) => _resolve(planState)),
+        weekDetailProvider(_folder).overrideWith((_) => _resolve(state)),
         currentUserIdProvider.overrideWithValue('user-001'),
-        strideApiProvider.overrideWithValue(api),
+        if (api != null) strideApiProvider.overrideWithValue(api),
       ],
-      child: MaterialApp(
-        home: SessionDetailScreen(
-          folder: folder,
-          date: date,
-          sessionIndex: sessionIndex,
-        ),
-      ),
+      child: MaterialApp.router(routerConfig: router),
     ),
   );
-  await tester.pumpAndSettle();
 }
 
-Future<DayPlan> _resolve(AsyncValue<DayPlan> state) {
+Future<WeekDetailData> _resolve(AsyncValue<WeekDetailData> state) {
   return switch (state) {
     AsyncData(:final value) => Future.value(value),
     AsyncError(:final error, :final stackTrace) =>
       Future.error(error, stackTrace),
-    _ => Completer<DayPlan>().future,
+    _ => Completer<WeekDetailData>().future,
   };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 void main() {
-  // ── 1. E 课渲染 ─────────────────────────────────────────────────────────────
-
-  testWidgets('renders session name in hero + summary card', (tester) async {
-    await _pump(tester, AsyncData(_makeEasyPlan(name: '晨间轻松跑')));
-    // Name appears twice post-wave-1: once in StrideScreenHero h1, once in
-    // the _SummaryCard title. The duplicate is intentional until wave 2
-    // collapses the summary card.
-    expect(find.text('晨间轻松跑'), findsAtLeastNWidgets(1));
-  });
-
-  testWidgets('E-kind pill has green variant background', (tester) async {
-    await _pump(tester, AsyncData(_makeEasyPlan()));
-
-    final greenBg = PillColors.of(PillVariant.green).bg;
-    final containerFinder = find.byWidgetPredicate((w) {
-      if (w is! Container) return false;
-      final deco = w.decoration;
-      if (deco is! BoxDecoration) return false;
-      return deco.color == greenBg;
-    });
-    expect(containerFinder, findsAtLeastNWidgets(1));
-  });
-
-  testWidgets('renders distance in km in stat row', (tester) async {
-    await _pump(tester, AsyncData(_makeEasyPlan(distanceM: 10000)));
-    // 10000m → "10.0"
-    expect(find.text('10.0'), findsOneWidget);
-    expect(find.text('距离'), findsOneWidget);
-  });
-
-  testWidgets('renders pace range string', (tester) async {
-    await _pump(
-      tester,
-      AsyncData(_makeEasyPlan(paceLow: 300, paceHigh: 330)),
-    );
-    expect(find.text('5:00–5:30'), findsOneWidget);
-  });
-
-  // ── 2. Strength 课 → 动作清单 section ────────────────────────────────────────
-
-  testWidgets('strength kind shows 力量动作清单 section header', (tester) async {
-    await _pump(
-      tester,
-      AsyncData(_makeStrengthPlan()),
-      date: '2026-05-14',
-    );
-    // The hero now occupies the top of the viewport, pushing the strength
-    // section header below the fold. Look past Sliver offstage clipping.
-    expect(
-      find.text('力量动作清单', skipOffstage: false),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('E kind does NOT show 力量动作清单 section', (tester) async {
-    await _pump(tester, AsyncData(_makeEasyPlan()));
-    expect(find.text('力量动作清单'), findsNothing);
-  });
-
-  testWidgets('strength session shows placeholder when no exercise spec',
-      (tester) async {
-    await _pump(
-      tester,
-      AsyncData(_makeStrengthPlan()),
-      date: '2026-05-14',
-    );
-    // Scroll down to expose the strength exercise list section.
-    await tester.dragFrom(
-      tester.getCenter(find.byType(ListView).first),
-      const Offset(0, -300),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('动作清单稍后同步'), findsOneWidget);
-  });
-
-  // ── 3. 推送按钮 → API 调用 ────────────────────────────────────────────────────
-
-  testWidgets('tapping 推送本节课 calls pushPlannedSession with correct args',
-      (tester) async {
-    final mockApi = _MockStrideApi();
-    await _pump(
-      tester,
-      AsyncData(_makeEasyPlan()),
-      date: '2026-05-12',
-      sessionIndex: 0,
-      mockApi: mockApi,
-    );
-
-    await tester.tap(find.text('推送本节课'));
-    await tester.pumpAndSettle();
-
-    expect(mockApi.pushCalls, hasLength(1));
-    expect(mockApi.pushCalls.first.userId, equals('user-001'));
-    expect(mockApi.pushCalls.first.date, equals('2026-05-12'));
-    expect(mockApi.pushCalls.first.sessionIndex, equals(0));
-  });
-
-  testWidgets('successful push shows 已推送到手表 SnackBar', (tester) async {
-    final mockApi = _MockStrideApi();
-    await _pump(
-      tester,
-      AsyncData(_makeEasyPlan()),
-      mockApi: mockApi,
-    );
-
-    await tester.tap(find.text('推送本节课'));
-    await tester.pump(); // let SnackBar appear
-
-    expect(find.text('已推送到手表'), findsOneWidget);
-  });
-
-  // ── 4. Loading state ──────────────────────────────────────────────────────────
-
+  // ── 1. Loading state ──────────────────────────────────────────────────────
   testWidgets('loading state shows CircularProgressIndicator', (tester) async {
-    const params = (date: '2026-05-12', sessionIndex: 0);
+    await _pump(tester, const AsyncLoading());
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsAtLeastNWidgets(1));
+  });
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          planDayProvider(params).overrideWith(
-            (_) => Completer<DayPlan>().future,
-          ),
-          currentUserIdProvider.overrideWithValue('user-001'),
-          strideApiProvider.overrideWithValue(_MockStrideApi()),
-        ],
-        child: const MaterialApp(
-          home: SessionDetailScreen(
-            folder: '2026-05-11_05-17',
+  // ── 2. Error state ────────────────────────────────────────────────────────
+  testWidgets('error state shows 加载失败', (tester) async {
+    await _pump(tester, AsyncError(Exception('network'), StackTrace.empty));
+    await tester.pumpAndSettle();
+    expect(find.text('加载失败'), findsOneWidget);
+  });
+
+  // ── 3. Run session renders name, spec steps, coach note ──────────────────
+  testWidgets('run session renders title, steps and coach note', (
+    tester,
+  ) async {
+    await _pump(tester, AsyncData(_makeData([_easyRun()])));
+    await tester.pumpAndSettle();
+
+    expect(find.text('晨间轻松跑'), findsOneWidget);
+    expect(find.text('课表结构'), findsOneWidget);
+    expect(find.text('热身'), findsOneWidget);
+    expect(find.text('主课'), findsOneWidget);
+    expect(find.text('心率 130–150 bpm'), findsOneWidget);
+    // 教练备注取 notes_md 首行。
+    expect(find.text('保持心率区间，别提速。'), findsOneWidget);
+  });
+
+  // ── 4. Strength session renders exercise list ────────────────────────────
+  testWidgets('strength session renders exercise rows', (tester) async {
+    await _pump(tester, AsyncData(_makeData([_strength()])));
+    await tester.pumpAndSettle();
+
+    expect(find.text('力量动作清单'), findsOneWidget);
+    expect(find.text('平板支撑'), findsOneWidget);
+    expect(find.text('3×60s'), findsOneWidget);
+  });
+
+  // ── 5. Nutrition section renders when the day has one ────────────────────
+  testWidgets('nutrition renders for the day', (tester) async {
+    await _pump(
+      tester,
+      AsyncData(
+        _makeData(
+          [_easyRun()],
+          nutrition: PlannedNutrition(
             date: '2026-05-12',
-            sessionIndex: 0,
+            kcalTarget: 2600,
+            meals: [
+              PlannedMeal(name: '早餐', kcal: 600, itemsMd: '燕麦 + 香蕉'),
+            ],
+            notesMd: '长距离日前增加碳水。',
           ),
         ),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(find.byType(CircularProgressIndicator), findsAtLeastNWidgets(1));
+    expect(find.text('当日营养'), findsOneWidget);
+    expect(find.text('早餐'), findsOneWidget);
+    expect(find.text('600 kcal'), findsOneWidget);
   });
 
-  // ── 5. Error state ────────────────────────────────────────────────────────────
+  // ── 6. Push button calls the API ─────────────────────────────────────────
+  testWidgets('push button calls the push endpoint', (tester) async {
+    final api = _MockStrideApi();
+    await _pump(tester, AsyncData(_makeData([_easyRun()])), api: api);
+    await tester.pumpAndSettle();
 
-  testWidgets('error state shows 加载失败', (tester) async {
-    await _pump(
-      tester,
-      AsyncError(Exception('network error'), StackTrace.empty),
+    await tester.scrollUntilVisible(
+      find.text('推送本节课'),
+      100.0,
+      scrollable: find.byType(Scrollable).first,
     );
-    // Post-wave-1 the error string appears both in the hero title and the
-    // body's error column.
-    expect(find.text('加载失败'), findsAtLeastNWidgets(1));
-  });
+    await tester.tap(find.text('推送本节课'), warnIfMissed: false);
+    await tester.pumpAndSettle();
 
-  // ── 6. 第二 stat row ──────────────────────────────────────────────────────────
-
-  testWidgets('renders secondary stat row with 心率区间 label', (tester) async {
-    await _pump(tester, AsyncData(_makeEasyPlan(hrLow: 130, hrHigh: 150)));
-    expect(find.text('心率区间'), findsOneWidget);
-  });
-
-  testWidgets('renders 卡路里估算 label in secondary row', (tester) async {
-    await _pump(tester, AsyncData(_makeEasyPlan(distanceM: 10000)));
-    expect(find.text('卡路里估算'), findsOneWidget);
-  });
-
-  // ── 7. Section headers ─────────────────────────────────────────────────────────
-
-  testWidgets('shows 执行要点 and 训前营养 section headers', (tester) async {
-    await _pump(tester, AsyncData(_makeEasyPlan()));
-    expect(find.text('执行要点'), findsOneWidget);
-    expect(find.text('训前营养'), findsOneWidget);
-  });
-
-  testWidgets('top bar title shows weekday and kind label', (tester) async {
-    await _pump(tester, AsyncData(_makeEasyPlan()));
-    // Date 2026-05-12 is Tuesday → weekdayCN → 周二. Kind 'E' falls back to
-    // the upper-cased raw code per DayPlan.kindLabel.
-    expect(find.text('周二 · E'), findsOneWidget);
-  });
-
-  // ── 8. Bottom buttons ─────────────────────────────────────────────────────────
-
-  testWidgets('renders 训练前准备 and 推送本节课 buttons', (tester) async {
-    await _pump(tester, AsyncData(_makeEasyPlan()));
-    expect(find.text('训练前准备'), findsOneWidget);
-    expect(find.text('推送本节课'), findsOneWidget);
+    expect(api.pushCalls, hasLength(1));
+    expect(api.pushCalls.single.date, '2026-05-12');
+    expect(api.pushCalls.single.sessionIndex, 0);
+    expect(find.text('已推送到手表'), findsOneWidget);
   });
 }

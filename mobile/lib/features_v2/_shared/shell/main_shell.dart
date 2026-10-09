@@ -1,38 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/router/routes_v2.dart';
+import '../../../core/router/routes.dart';
 import '../../../core/theme/tokens.dart';
-import '../../profile/widgets/account_drawer.dart';
 import '../widgets/nav_tab.dart';
 
-/// Global key for the shell [Scaffold] so child tab screens (which have their
-/// own nested Scaffolds) can open the account drawer via the top-left ≡ button:
-/// `shellScaffoldKey.currentState?.openDrawer()`.
-final shellScaffoldKey = GlobalKey<ScaffoldState>();
-
-/// Bottom-nav shell hosting **4 equal flat tabs** — 跑者 / 发现 / 数据 / 教练.
+/// Bottom-nav shell hosting the **four tabs mirroring the miniprogram** —
+/// 训练 / 记录 / 教练 / 我 (#414 IA decision).
 ///
-/// No center FAB. "教练" keeps the accent color even when idle to read as the
-/// intelligent core. The "我" surface moved off the bar into [AccountDrawer],
-/// opened from the top-left ≡ on each tab.
+/// No drawer: 「我」 is a tab page now. "教练" keeps the accent color even when
+/// idle to read as the intelligent core.
 ///
 /// Tab indices:
-///   0  跑者  /v2/home
-///   1  发现  /v2/discover
-///   2  数据  /v2/data
-///   3  教练  /v2/coach
-class MainShellV2 extends StatelessWidget {
-  const MainShellV2({required this.child, super.key});
+///   0  训练  /training
+///   1  记录  /records
+///   2  教练  /coach
+///   3  我    /me
+class MainShell extends StatelessWidget {
+  const MainShell({required this.child, super.key});
 
   final Widget child;
 
   static const _tabs = <_NavTabSpec>[
-    _NavTabSpec(RoutesV2.home, Icons.directions_run, '跑者'),
-    _NavTabSpec(RoutesV2.discover, Icons.explore_outlined, '发现'),
-    _NavTabSpec(RoutesV2.data, Icons.bar_chart, '数据'),
-    _NavTabSpec(RoutesV2.coach, Icons.chat_bubble_outline, '教练',
-        accentWhenIdle: true),
+    _NavTabSpec(Routes.training, Icons.directions_run, '训练'),
+    _NavTabSpec(Routes.records, Icons.format_list_bulleted, '记录'),
+    _NavTabSpec(
+      Routes.coach,
+      Icons.chat_bubble_outline,
+      '教练',
+      accentWhenIdle: true,
+    ),
+    _NavTabSpec(Routes.me, Icons.person_outline, '我'),
   ];
 
   int _currentTabIndex(String loc) {
@@ -48,8 +46,6 @@ class MainShellV2 extends StatelessWidget {
     final currentTabIndex = _currentTabIndex(loc);
 
     return Scaffold(
-      key: shellScaffoldKey,
-      drawer: const AccountDrawer(),
       body: child,
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
@@ -84,8 +80,12 @@ class MainShellV2 extends StatelessWidget {
 }
 
 class _NavTabSpec {
-  const _NavTabSpec(this.path, this.icon, this.label,
-      {this.accentWhenIdle = false});
+  const _NavTabSpec(
+    this.path,
+    this.icon,
+    this.label, {
+    this.accentWhenIdle = false,
+  });
   final String path;
   final IconData icon;
   final String label;

@@ -3,11 +3,7 @@
 /// State machine:
 ///   idle → loading → result (success/partial/failed)
 ///
-/// T22 整周推送 endpoint (`POST /api/{user}/plan/:folder/push`) is not yet
-/// deployed. When T22 is available, flip [_useT22Endpoint] to `true` and
-/// add `pushWeek(folder)` to [StrideApi].
-///
-/// FALLBACK (current): iterate over all sessions in the week and call the
+/// Iterates over all pushable sessions in the week and calls the
 /// per-session push endpoint sequentially, collecting results.
 library;
 
@@ -15,12 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/current_user.dart';
 import '../../../data/api/stride_api.dart';
-import '../../../data/models/plan.dart';
-
-// ── Feature flag ──────────────────────────────────────────────────────────────
-
-/// Set to `true` once T22 `POST /api/{user}/plan/:folder/push` is deployed.
-const bool _useT22Endpoint = false;
+import '../../../data/models/weekly_plan.dart';
+import 'week_detail_provider.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -53,9 +45,7 @@ class SessionPushResult {
 
 /// Aggregated result of a week push operation.
 class PushWeekResult {
-  const PushWeekResult({
-    required this.results,
-  });
+  const PushWeekResult({required this.results});
 
   final List<SessionPushResult> results;
 
@@ -101,13 +91,10 @@ class PushWeekNotifier extends StateNotifier<PushWeekState> {
 
   final Ref _ref;
 
-  /// Push all sessions for [folder] to the watch.
-  ///
-  /// When [_useT22Endpoint] is true, calls the T22 bulk endpoint.
-  /// Otherwise falls back to per-session single pushes.
+  /// Push all pushable sessions of [days] to the watch.
   Future<void> pushWeek({
     required String folder,
-    required List<PlanDay> days,
+    required List<WeekDaySessions> days,
   }) async {
     state = const PushWeekLoading();
 
@@ -119,19 +106,36 @@ class PushWeekNotifier extends StateNotifier<PushWeekState> {
         return;
       }
 
-      PushWeekResult result;
-
-      if (_useT22Endpoint) {
-        // ── T22 bulk endpoint (future) ──────────────────────────────────────
-        // result = await api.pushWeek(userId, folder);
-        // [placeholder — remove this branch comment once T22 lands]
-        result = const PushWeekResult(results: []);
-      } else {
-        // ── Fallback: per-session sequential push ──────────────────────────
-        result = await _pushSessionsFallback(api, userId, days);
+      final results = <SessionPushResult>[];
+      for (final day in days) {
+        for (final session in day.sessions) {
+          if (!session.pushable) continue; // rest days etc.
+          final name = session.displayName ?? kindLabel(session.kind);
+          try {
+            await api.pushPlannedSession(
+              userId,
+              day.date,
+              session.sessionIndex,
+            );
+            results.add(SessionPushResult(
+              date: day.date,
+              sessionIndex: session.sessionIndex,
+              sessionName: name,
+              success: true,
+            ));
+          } catch (e) {
+            results.add(SessionPushResult(
+              date: day.date,
+              sessionIndex: session.sessionIndex,
+              sessionName: name,
+              success: false,
+              errorMessage: e.toString(),
+            ));
+          }
+        }
       }
 
-      state = PushWeekDone(result);
+      state = PushWeekDone(PushWeekResult(results: results));
     } catch (e) {
       state = PushWeekError('推送失败：$e');
     }
@@ -147,10 +151,12 @@ class PushWeekNotifier extends StateNotifier<PushWeekState> {
 
     final api = _ref.read(strideApiProvider);
 
-    // Optimistically mark as retrying (replace with loading indicator if
-    // needed; for now we just re-trigger and update the result list).
     try {
-      await api.pushPlannedSession(userId, failed.date, failed.sessionIndex);
+      await api.pushPlannedSession(
+        userId,
+        failed.date,
+        failed.sessionIndex,
+      );
 
       final updated = currentState.result.results.map((r) {
         if (r.date == failed.date && r.sessionIndex == failed.sessionIndex) {
@@ -173,61 +179,6 @@ class PushWeekNotifier extends StateNotifier<PushWeekState> {
   }
 
   void reset() => state = const PushWeekIdle();
-
-  // ── Private helpers ────────────────────────────────────────────────────────
-
-  Future<PushWeekResult> _pushSessionsFallback(
-    StrideApi api,
-    String userId,
-    List<PlanDay> days,
-  ) async {
-    final results = <SessionPushResult>[];
-
-    for (final day in days) {
-      for (var idx = 0; idx < day.sessions.length; idx++) {
-        final session = day.sessions[idx];
-        final name = session.title ?? _kindLabel(session.kind);
-
-        if (!session.pushable) {
-          // Skip non-pushable sessions silently (rest days, etc.).
-          continue;
-        }
-
-        try {
-          await api.pushPlannedSession(userId, day.date, idx);
-          results.add(SessionPushResult(
-            date: day.date,
-            sessionIndex: idx,
-            sessionName: name,
-            success: true,
-          ));
-        } catch (e) {
-          results.add(SessionPushResult(
-            date: day.date,
-            sessionIndex: idx,
-            sessionName: name,
-            success: false,
-            errorMessage: e.toString(),
-          ));
-        }
-      }
-    }
-
-    return PushWeekResult(results: results);
-  }
-
-  static String _kindLabel(String kind) {
-    return switch (kind.toUpperCase()) {
-      'E' => '轻松跑',
-      'M' => '马配跑',
-      'T' => '节奏跑',
-      'I' => '间歇跑',
-      'R' => '冲刺跑',
-      'STRENGTH' => '力量训练',
-      'REST' => '休息日',
-      _ => '训练课',
-    };
-  }
 }
 
 final pushWeekProvider =

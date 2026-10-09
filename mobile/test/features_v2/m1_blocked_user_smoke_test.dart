@@ -2,8 +2,8 @@
 ///
 /// Scenario: a user is authenticated (onboardingComplete=true via
 /// completedAt != null) but has no watch bound (corosReady=false).
-/// The router redirect in appRouterV2Provider should land such a user
-/// on /v2/onboarding/blocked.
+/// The router redirect in appRouterProvider should land such a user
+/// on /onboarding/blocked.
 ///
 /// Full router wiring (authControllerProvider → SecureStorage → HTTP)
 /// cannot be done purely at widget-test level without mocking the secure
@@ -20,7 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:stride/core/router/routes_v2.dart';
+import 'package:stride/core/router/routes.dart';
 import 'package:stride/features_v2/onboarding/blocked_screen.dart';
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ group('BlockedScreen UI', () {
           builder: (_, $) => const BlockedScreen(),
         ),
         GoRoute(
-          path: RoutesV2.onboardingBrand,
+          path: Routes.onboardingBrand,
           builder: (_, $) => const Scaffold(body: Text('brand-stub')),
         ),
       ],
@@ -67,7 +67,7 @@ group('BlockedScreen UI', () {
           builder: (_, $) => const BlockedScreen(),
         ),
         GoRoute(
-          path: RoutesV2.onboardingBrand,
+          path: Routes.onboardingBrand,
           builder: (_, $) {
             navigatedToBrand = true;
             return const Scaffold(body: Text('brand-stub'));
@@ -101,32 +101,32 @@ group('BlockedScreen UI', () {
 //
 // We cannot inject live auth state without mocking SecureStorage.
 // This group verifies that a router whose redirect always returns
-// RoutesV2.onboardingBlocked (simulating the "no watch" condition)
+// Routes.onboardingBlocked (simulating the "no watch" condition)
 // correctly lands on BlockedScreen.
 
 group('Router redirect — no watch scenario', () {
   testWidgets('redirect to onboardingBlocked lands on BlockedScreen',
       (tester) async {
     final router = GoRouter(
-      initialLocation: RoutesV2.home,
+      initialLocation: Routes.training,
       redirect: (_, state) {
         // Simulate: authenticated, onboardingComplete, but !hasWatch.
-        if (state.matchedLocation != RoutesV2.onboardingBlocked) {
-          return RoutesV2.onboardingBlocked;
+        if (state.matchedLocation != Routes.onboardingBlocked) {
+          return Routes.onboardingBlocked;
         }
         return null;
       },
       routes: [
         GoRoute(
-          path: RoutesV2.home,
+          path: Routes.training,
           builder: (_, $) => const Scaffold(body: Text('home')),
         ),
         GoRoute(
-          path: RoutesV2.onboardingBlocked,
+          path: Routes.onboardingBlocked,
           builder: (_, $) => const BlockedScreen(),
         ),
         GoRoute(
-          path: RoutesV2.onboardingBrand,
+          path: Routes.onboardingBrand,
           builder: (_, $) => const Scaffold(body: Text('brand-stub')),
         ),
       ],

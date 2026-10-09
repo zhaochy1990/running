@@ -1,6 +1,6 @@
 /// D2 — 周计划预览屏幕 (WeekDetailScreen).
 ///
-/// 路由：/v2/plan/weeks/:folder（fullscreen，no shell）
+/// 路由：/training/plan/weeks/:folder（fullscreen，no shell）
 ///
 /// 内容：
 ///   1. StrideTopBar：返回 + week 标题 + "调整"按钮（SnackBar 占位）
@@ -16,7 +16,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
-import '../../core/router/routes_v2.dart';
+import '../../core/router/routes.dart';
 import '../_shared/widgets/stat_row.dart';
 import '../_shared/widgets/top_bar.dart';
 import '../../data/models/plan.dart';
@@ -48,19 +48,6 @@ class WeekDetailScreen extends ConsumerWidget {
         data: (data) => StrideTopBar(
           title: data.planTitle ?? _folderLabel(data.folder),
           leading: _backButton(context),
-          actions: [
-            TextButton(
-              onPressed: () => context.push(RoutesV2.planChat(folder)),
-              child: const Text(
-                '调整',
-                style: TextStyle(
-                  fontFamily: AppTypography.fontSans,
-                  fontSize: StrideTokens.fs14,
-                  color: StrideTokens.accent,
-                ),
-              ),
-            ),
-          ],
         ),
       ),
       body: async.when(
@@ -302,44 +289,14 @@ class _SessionListCard extends StatelessWidget {
       );
     }
 
-    // Build a flat list of rows: one per session (or rest row if no sessions).
+    // Flat rows: one per session, or a single rest row for empty days.
     final rows = <({String date, PlannedSession? session, int sessionIndex})>[];
-
-    // Gather all dates in the week (Mon → Sun).
-    final from = DateTime.tryParse(data.dateFrom);
-    final to = DateTime.tryParse(data.dateTo);
-    if (from != null && to != null) {
-      for (var d = from;
-          !d.isAfter(to);
-          d = d.add(const Duration(days: 1))) {
-        final isoDate =
-            '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-        final planDay = data.days.where((pd) => pd.date == isoDate).firstOrNull;
-        if (planDay == null || planDay.sessions.isEmpty) {
-          rows.add((date: isoDate, session: null, sessionIndex: 0));
-        } else {
-          for (var idx = 0; idx < planDay.sessions.length; idx++) {
-            rows.add((
-              date: isoDate,
-              session: planDay.sessions[idx],
-              sessionIndex: idx,
-            ));
-          }
-        }
-      }
-    } else {
-      // Fallback: just use the days returned by the API.
-      for (final day in data.days) {
-        if (day.sessions.isEmpty) {
-          rows.add((date: day.date, session: null, sessionIndex: 0));
-        } else {
-          for (var idx = 0; idx < day.sessions.length; idx++) {
-            rows.add((
-              date: day.date,
-              session: day.sessions[idx],
-              sessionIndex: idx,
-            ));
-          }
+    for (final day in data.days) {
+      if (day.sessions.isEmpty) {
+        rows.add((date: day.date, session: null, sessionIndex: 0));
+      } else {
+        for (final s in day.sessions) {
+          rows.add((date: day.date, session: s, sessionIndex: s.sessionIndex));
         }
       }
     }
@@ -381,7 +338,7 @@ class _SessionListCard extends StatelessWidget {
       date: row.date,
       session: row.session!,
       onTap: () => context.push(
-        RoutesV2.sessionDetail(folder, row.date, row.sessionIndex),
+        Routes.sessionDetail(folder, row.date, row.sessionIndex),
       ),
     );
   }
@@ -464,27 +421,6 @@ class _BottomActions extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          // 调整计划 — outline button
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () => context.push(RoutesV2.planChat(folder)),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
-                foregroundColor: StrideTokens.fg,
-                side: const BorderSide(color: StrideTokens.border),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(StrideTokens.radiusMd),
-                ),
-                textStyle: const TextStyle(
-                  fontFamily: AppTypography.fontSans,
-                  fontSize: StrideTokens.fs14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              child: const Text('调整计划'),
-            ),
-          ),
-          const SizedBox(width: StrideTokens.spaceMd),
           // 推送到手表 — primary filled button
           Expanded(
             child: FilledButton(

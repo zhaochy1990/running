@@ -1,7 +1,7 @@
 /// weekDetailProvider — fetches full week data for D2 周计划预览.
 ///
-/// Combines [StrideApi.getWeek] (plan markdown + metadata) with
-/// [StrideApi.getPlanDays] (structured sessions for the 7-day schedule).
+/// Combines [StrideApi.getWeek] (markdown + metadata) with
+/// [StrideApi.getWeeklyPlan] (structured sessions, plan/weeks/{weekName}).
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +9,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/current_user.dart';
 import '../../../data/api/stride_api.dart';
 import '../../../data/models/plan.dart';
+import '../../../data/models/weekly_plan.dart';
+
+/// One calendar day's sessions within the week.
+class WeekDaySessions {
+  const WeekDaySessions({required this.date, this.sessions = const []});
+
+  final String date; // YYYY-MM-DD
+  final List<PlannedSession> sessions;
+}
 
 /// Combined week detail view-model for D2.
 class WeekDetailData {
@@ -17,8 +26,7 @@ class WeekDetailData {
     required this.dateFrom,
     required this.dateTo,
     this.planTitle,
-    this.plan,
-    this.feedback,
+    this.planContent,
     this.days = const [],
   });
 
@@ -26,17 +34,14 @@ class WeekDetailData {
   final String dateFrom;
   final String dateTo;
 
-  /// Short display title, e.g. "W2 渐进负荷".
+  /// Short display title, e.g. "W2 渐进负荷"（从 plan markdown 提取）.
   final String? planTitle;
 
-  /// Raw plan markdown (may be null when no plan generated yet).
-  final String? plan;
+  /// Structured sessions/nutrition content (null when content_version==1).
+  final WeeklyPlanContent? planContent;
 
-  /// Raw feedback markdown.
-  final String? feedback;
-
-  /// Ordered list of plan days (Mon→Sun). May be empty.
-  final List<PlanDay> days;
+  /// Ordered days Mon→Sun. May be empty.
+  final List<WeekDaySessions> days;
 
   // ── Computed helpers ──────────────────────────────────────────────────────
 
@@ -67,7 +72,7 @@ class WeekDetailData {
     int count = 0;
     for (final day in days) {
       for (final s in day.sessions) {
-        if (s.kind.toLowerCase() == 'strength') count++;
+        if (s.kind == 'strength') count++;
       }
     }
     return count;
@@ -81,77 +86,44 @@ final weekDetailProvider =
     final userId = ref.watch(currentUserIdProvider);
     if (userId == null) throw Exception('用户未登录');
 
-    // Fire both requests in parallel.
-    final results = await Future.wait([
-      api.getWeek(userId, folder),
-      api.getPlanDays(userId, _folderDateFrom(folder), _folderDateTo(folder))
-          .catchError((_) => const PlanDaysResponse(days: [])),
-    ]);
+    final week = await api.getWeek(userId, folder);
 
-    final weekDetail = results[0] as WeekDetail;
-    final planDays = results[1] as PlanDaysResponse;
+    // Structured content keyed by weekName (`YYYY-MM-DD_MM-DD`). Missing plan
+    // (404/no content) is not an error — the screen renders an empty week.
+    final WeeklyPlanDetail? plan;
+    try {
+      plan = await api.getWeeklyPlan(userId, week.weekName);
+    } catch (_) {
+      plan = null;
+    }
 
-    // Sort days Mon→Sun.
-    final sortedDays = [...planDays.days]
-      ..sort((a, b) => a.date.compareTo(b.date));
+    // Days Mon→Sun from the week's own date range.
+    final days = <WeekDaySessions>[];
+    final from = DateTime.tryParse(week.dateFrom);
+    final to = DateTime.tryParse(week.dateTo);
+    if (from != null && to != null) {
+      for (var d = from;
+          !d.isAfter(to);
+          d = d.add(const Duration(days: 1))) {
+        final isoDate =
+            '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+        days.add(WeekDaySessions(
+          date: isoDate,
+          sessions: plan?.content?.sessionsOn(isoDate) ?? const [],
+        ));
+      }
+    }
 
     return WeekDetailData(
-      folder: weekDetail.folder,
-      dateFrom: weekDetail.dateFrom,
-      dateTo: weekDetail.dateTo,
-      planTitle: _extractPlanTitle(weekDetail.plan),
-      plan: weekDetail.plan,
-      feedback: weekDetail.feedback,
-      days: sortedDays,
+      folder: week.folder,
+      dateFrom: week.dateFrom,
+      dateTo: week.dateTo,
+      planTitle: _extractPlanTitle(week.plan),
+      planContent: plan?.content,
+      days: days,
     );
   },
 );
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/// Extract YYYY-MM-DD date_from from folder string.
-/// Folder format: "2026-05-11_05-17(W1基础)" or "2026-05-11_2026-05-17".
-/// Falls back to parsing the folder prefix.
-String _folderDateFrom(String folder) {
-  // Try extracting the first date segment (10 chars YYYY-MM-DD).
-  if (folder.length >= 10) {
-    final candidate = folder.substring(0, 10);
-    if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(candidate)) {
-      return candidate;
-    }
-  }
-  return folder;
-}
-
-/// Extract YYYY-MM-DD date_to from folder string.
-/// Folder format: "2026-05-11_05-17(W1基础)".
-String _folderDateTo(String folder) {
-  // Common format: YYYY-MM-DD_MM-DD(...) — year inferred from dateFrom.
-  final parts = folder.split('_');
-  if (parts.length >= 2) {
-    // parts[0] = "2026-05-11", parts[1] = "05-17(W1基础)" or "2026-05-17"
-    final year = parts[0].substring(0, 4);
-    var datePart = parts[1];
-    // Strip trailing parenthetical annotation.
-    final parenIdx = datePart.indexOf('(');
-    if (parenIdx >= 0) datePart = datePart.substring(0, parenIdx);
-    // If it looks like MM-DD, prepend year.
-    if (RegExp(r'^\d{2}-\d{2}$').hasMatch(datePart)) {
-      return '$year-$datePart';
-    }
-    // If it's already YYYY-MM-DD, use directly.
-    if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(datePart)) {
-      return datePart;
-    }
-  }
-  // Last resort: dateFrom + 6 days.
-  final from = DateTime.tryParse(_folderDateFrom(folder));
-  if (from != null) {
-    final to = from.add(const Duration(days: 6));
-    return '${to.year}-${to.month.toString().padLeft(2, '0')}-${to.day.toString().padLeft(2, '0')}';
-  }
-  return folder;
-}
 
 /// Best-effort extraction of a short plan title from the plan markdown.
 /// Looks for the first H2 heading or returns null.

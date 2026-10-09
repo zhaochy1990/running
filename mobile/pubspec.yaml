@@ -16,7 +16,6 @@ dependencies:
 
   # State management
   flutter_riverpod: ^2.6.1
-  riverpod_annotation: ^2.6.1
 
   # HTTP client (no retrofit codegen — per plan O3 'hand-write everything')
   dio: ^5.7.0
@@ -24,11 +23,8 @@ dependencies:
   # Serialization
   json_annotation: ^4.9.0
 
-  # Local DB / cache
-  drift: ^2.21.0
-  sqlite3_flutter_libs: ^0.5.27
+  # APK download directory (in-app self-updater)
   path_provider: ^2.1.5
-  path: ^1.9.0
 
   # Charts (HR / pace / altitude / zones)
   fl_chart: ^0.69.0
@@ -39,17 +35,8 @@ dependencies:
   # Secure storage (auth refresh tokens)
   flutter_secure_storage: ^9.2.2
 
-  # Push notifications (JPush 极光推送)
-  jpush_flutter: ^3.1.4
-
-  # Connectivity awareness for offline banner
-  connectivity_plus: ^6.1.0
-
   # Logging
   logger: ^2.5.0
-
-  # Open system app settings (denied-state notification UX deep-link)
-  app_settings: ^5.1.1
 
   # External URLs (privacy policy, etc.)
   url_launcher: ^6.3.1
@@ -58,9 +45,6 @@ dependencies:
   # gpt_markdown is purpose-built for ChatGPT/Gemini-style replies and is
   # actively maintained (the original flutter_markdown was discontinued).
   gpt_markdown: ^1.1.7
-
-  # Lightweight key-value store (job_id persistence across app restarts)
-  shared_preferences: ^2.3.3
 
   # In-app self-updater (GitHub Releases sideload, Android only for v1)
   package_info_plus: ^8.1.0
@@ -76,10 +60,6 @@ dev_dependencies:
   # Codegen
   build_runner: ^2.4.13
   json_serializable: ^6.8.0
-  drift_dev: ^2.21.0
-  riverpod_generator: ^2.6.3
-  custom_lint: ^0.7.0
-  riverpod_lint: ^2.6.3
 
   # Launcher icon generator
   flutter_launcher_icons: ^0.14.1

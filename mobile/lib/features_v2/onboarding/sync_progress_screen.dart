@@ -1,7 +1,7 @@
 /// B3 — first-sync progress (full-screen immersive).
 ///
 /// Blocks back navigation via PopScope; on terminal `done` state
-/// routes forward to /v2/onboarding/basic-info. On error shows a
+/// routes forward to /onboarding/basic-info. On error shows a
 /// retry button that restarts the sync.
 library;
 
@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/router/routes_v2.dart';
+import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 import '../auth/start_screen.dart' show StrideAuthPrimaryButton;
@@ -25,7 +25,7 @@ class SyncProgressScreen extends ConsumerWidget {
     ref.listen<SyncProgress>(syncProgressProvider, (prev, next) {
       if (next.phase == SyncPhase.done &&
           (prev?.phase ?? SyncPhase.starting) != SyncPhase.done) {
-        context.go(RoutesV2.onboardingBasicInfo);
+        context.go(Routes.onboardingBasicInfo);
       }
     });
 

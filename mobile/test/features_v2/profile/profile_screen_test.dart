@@ -5,8 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:stride/core/auth/current_user.dart';
 import 'package:stride/data/models/profile.dart';
 import 'package:stride/features_v2/profile/profile_screen.dart';
-import 'package:stride/features_v2/home/providers/home_provider.dart';
-import 'package:stride/features_v2/home/models/home_data.dart';
 
 // ── Test data ─────────────────────────────────────────────────────────────────
 
@@ -21,42 +19,18 @@ const _testProfile = MyProfile(
   profile: {'email': 'test@stride.cn'},
 );
 
-const _testHomeData = HomeData(
-  userId: 'user-123',
-  date: '2026-05-12',
-  statusRing: StatusRing(
-    tsb: -8.5,
-    tsbBand: 'productive',
-    loadRatio: 0.95,
-    chronicLoad: 55.0,
-    acuteLoad: 52.0,
-  ),
-  recentActivities: [],
-  weeklyStats: WeeklyStats(
-    weekStart: '2026-05-11',
-    totalDistanceKm: 50.0,
-    totalDurationSec: 18000,
-    sessionCount: 4,
-  ),
-  lifetimeStats: LifetimeStats(totalDistanceKm: 1234.5, totalActivities: 87),
-  planState: 'none',
-  watch: WatchInfo(brand: 'coros'),
-);
-
 // ── Pump helper ───────────────────────────────────────────────────────────────
 
 Future<void> _pump(
   WidgetTester tester, {
   required MyProfile? profile,
-  HomeData? homeData,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         currentUserProvider.overrideWith((_) => Future.value(profile)),
-        homeProvider.overrideWith((_) => Future.value(homeData)),
       ],
-      child: const MaterialApp(home: ProfileScreen()),
+      child: const MaterialApp(home: MeScreen()),
     ),
   );
   await tester.pump();
@@ -65,35 +39,55 @@ Future<void> _pump(
 
 void main() {
   testWidgets('shows display name and email', (tester) async {
-    await _pump(tester, profile: _testProfile, homeData: _testHomeData);
+    await _pump(tester, profile: _testProfile);
 
     expect(find.text('Test Runner'), findsOneWidget);
     expect(find.text('test@stride.cn'), findsOneWidget);
   });
 
-  testWidgets('shows cumulative mileage from home data', (tester) async {
-    await _pump(tester, profile: _testProfile, homeData: _testHomeData);
-
-    // 1234.5 km displayed — toStringAsFixed(0) rounds to "1234" or "1235".
-    // Check for the km suffix rather than exact digits.
-    expect(find.textContaining('km'), findsWidgets);
-  });
-
   testWidgets('avatar shows first letter of display name', (tester) async {
-    await _pump(tester, profile: _testProfile, homeData: _testHomeData);
+    await _pump(tester, profile: _testProfile);
 
     // CircleAvatar with initial 'T'.
     expect(find.text('T'), findsOneWidget);
   });
 
   testWidgets('top bar title is 我', (tester) async {
-    await _pump(tester, profile: _testProfile, homeData: _testHomeData);
+    await _pump(tester, profile: _testProfile);
 
     expect(find.text('我'), findsOneWidget);
   });
 
+  testWidgets('menu mirrors the miniprogram profile entries', (tester) async {
+    await _pump(tester, profile: _testProfile);
+
+    expect(find.text('手动同步'), findsOneWidget);
+    expect(find.text('训练状态'), findsOneWidget);
+    expect(find.text('赛事中心'), findsOneWidget);
+    expect(find.text('我的比赛'), findsOneWidget);
+    expect(find.text('手表管理'), findsOneWidget);
+    expect(find.text('数据与状态'), findsOneWidget);
+    expect(find.text('检查更新'), findsOneWidget);
+  });
+
+  testWidgets('watch subtitle reflects binding state', (tester) async {
+    await _pump(tester, profile: _testProfile);
+    expect(find.text('已绑定'), findsOneWidget);
+
+    await _pump(
+      tester,
+      profile: const MyProfile(
+        id: 'user-123',
+        displayName: 'Test Runner',
+        onboarding: OnboardingState(corosReady: false, profileReady: true),
+        profile: {'email': 'test@stride.cn'},
+      ),
+    );
+    expect(find.text('未绑定'), findsOneWidget);
+  });
+
   testWidgets('退出登录 button is present in list', (tester) async {
-    await _pump(tester, profile: _testProfile, homeData: _testHomeData);
+    await _pump(tester, profile: _testProfile);
 
     // May be off-screen in a short test viewport — scroll to find it.
     await tester.scrollUntilVisible(
@@ -105,7 +99,7 @@ void main() {
   });
 
   testWidgets('退出登录 shows confirm dialog', (tester) async {
-    await _pump(tester, profile: _testProfile, homeData: _testHomeData);
+    await _pump(tester, profile: _testProfile);
 
     await tester.scrollUntilVisible(
       find.text('退出登录'),
@@ -119,47 +113,14 @@ void main() {
 
     // Dialog content.
     expect(find.text('确认退出当前账号？'), findsOneWidget);
-    expect(find.text('取消'), findsOneWidget);
-    expect(find.text('退出'), findsOneWidget);
   });
 
-  testWidgets('cancel on logout dialog dismisses without action', (
+  testWidgets('renders with a null profile (still logged-in race)', (
     tester,
   ) async {
-    await _pump(tester, profile: _testProfile, homeData: _testHomeData);
+    await _pump(tester, profile: null);
 
-    await tester.scrollUntilVisible(
-      find.text('退出登录'),
-      100.0,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.ensureVisible(find.text('退出登录'));
-    await tester.pump();
-    await tester.tap(find.text('退出登录'), warnIfMissed: false);
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('取消'));
-    await tester.pumpAndSettle();
-
-    // Dialog gone, still on profile screen.
-    expect(find.text('确认退出当前账号？'), findsNothing);
-    expect(find.text('我'), findsOneWidget);
-  });
-
-  testWidgets('menu items are present in tree', (tester) async {
-    await _pump(tester, profile: _testProfile, homeData: _testHomeData);
-
-    // Hero now occupies the top ~80px; bottom-half menu items can fall
-    // below the 600px test viewport. Look past sliver offstage clipping.
-    expect(find.text('个人信息', skipOffstage: false), findsOneWidget);
-    expect(find.text('手表绑定', skipOffstage: false), findsOneWidget);
-    expect(find.text('通知设置', skipOffstage: false), findsOneWidget);
-    expect(find.text('关于 STRIDE', skipOffstage: false), findsOneWidget);
-  });
-
-  testWidgets('null home data shows — km placeholder', (tester) async {
-    await _pump(tester, profile: _testProfile, homeData: null);
-
-    expect(find.textContaining('—'), findsWidgets);
+    // Falls back to the email prefix of an empty email → 'U' avatar.
+    expect(find.text('U'), findsOneWidget);
   });
 }

@@ -1,12 +1,12 @@
 /// weekListProvider — fetches the week index and enriches each entry.
 ///
 /// Calls [StrideApi.listWeeks] to get the lightweight index, then for weeks
-/// that have a plan, fires a secondary [StrideApi.getPlanDays] call to obtain
-/// per-day session data for the mini-calendar and total-session count.
+/// that have a plan, fires a secondary [StrideApi.getWeeklyPlan] call to
+/// obtain per-day session data for the mini-calendar and total-session count.
 ///
 /// The secondary calls are fanned out in parallel (Future.wait) and failures
 /// are silently swallowed — a week card without a mini-calendar is still
-/// useful. This matches the M2 batch-3 spec: "先用占位（M2 后续 T27 后端可扩展）".
+/// useful.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -59,31 +59,23 @@ final weekListProvider =
     items.map((item) async {
       if (!item.hasPlan) return item;
       try {
-        final resp = await api.getPlanDays(userId, item.dateFrom, item.dateTo);
-        if (resp.days.isEmpty) return item;
+        final weekName =
+            '${item.dateFrom}_${item.dateTo.substring(5)}';
+        final plan = await api.getWeeklyPlan(userId, weekName);
+        final sessions = plan.content?.sessions ?? const [];
+        if (sessions.isEmpty) return item;
 
         // Build 7-element mini-calendar keyed by weekday (Mon=1 … Sun=7).
         final calMap = <int, String?>{};
         num totalDist = 0;
         num totalDur = 0;
-        int totalSessions = 0;
 
-        for (final day in resp.days) {
-          final date = DateTime.tryParse(day.date);
+        for (final s in sessions) {
+          final date = DateTime.tryParse(s.date);
           if (date == null) continue;
-          // weekday: 1=Mon…7=Sun
-          final weekday = date.weekday;
-          if (day.sessions.isEmpty) {
-            calMap[weekday] = 'rest';
-          } else {
-            // Use the first (primary) session kind for the color block.
-            calMap[weekday] = day.sessions.first.kind;
-            totalSessions += day.sessions.length;
-            for (final s in day.sessions) {
-              totalDist += s.totalDistanceM ?? 0;
-              totalDur += s.totalDurationS ?? 0;
-            }
-          }
+          calMap[date.weekday] = s.kind;
+          totalDist += s.totalDistanceM ?? 0;
+          totalDur += s.totalDurationS ?? 0;
         }
 
         // Build ordered list Mon(1)…Sun(7).
@@ -91,7 +83,7 @@ final weekListProvider =
 
         return item.withMiniCalendar(
           miniCalendar: miniCal,
-          totalSessions: totalSessions,
+          totalSessions: sessions.length,
           weeklyDistanceM: totalDist > 0 ? totalDist : null,
           weeklyDurationS: totalDur > 0 ? totalDur : null,
         );

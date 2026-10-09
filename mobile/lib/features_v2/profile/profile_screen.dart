@@ -1,7 +1,7 @@
-/// G1 — 个人中心 (Profile / Me screen).
+/// 我 tab（/me）—— 镜像小程序 pages/profile。
 ///
-/// Shows user header (avatar + name + email + lifetime mileage) and
-/// a menu list with settings entries + logout.
+/// 用户卡 + 手动同步 + 功能菜单（训练状态/赛事中心/我的比赛/手表管理/
+/// 数据与状态）+ 设置（检查更新/关于）+ 退出登录。
 library;
 
 import 'package:flutter/material.dart';
@@ -11,67 +11,107 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/current_user.dart';
-import '../../core/router/routes_v2.dart';
+import '../../core/router/routes.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/updater/update_checker.dart';
-import '../../data/api/stride_api.dart';
 import '../../features/updater/update_prompt.dart';
-import '../_shared/widgets/refreshable.dart';
+import '../_shared/sync/sync_controller.dart';
 import '../_shared/widgets/top_bar.dart';
-import '../home/models/home_data.dart';
-import '../home/providers/home_provider.dart';
 import 'widgets/menu_item.dart';
 
-class ProfileScreen extends ConsumerWidget {
-  const ProfileScreen({super.key});
+class MeScreen extends ConsumerWidget {
+  const MeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profileAsync = ref.watch(currentUserProvider);
-    final homeAsync = ref.watch(homeProvider);
+    final sync = ref.watch(syncControllerProvider);
+    final profile = profileAsync.valueOrNull;
+
+    final displayName = profile?.displayName ??
+        profile?.profile?['display_name'] as String? ??
+        _emailPrefix((profile?.profile?['email'] as String?) ?? '');
+    final email = (profile?.profile?['email'] as String?) ?? '';
+    final watchBound = profile?.onboarding.corosReady ?? false;
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: StrideTopBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          tooltip: '返回',
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: '我',
-      ),
-      body: profileAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Text(
-            '加载失败: $e',
-            style: const TextStyle(
-              fontFamily: AppTypography.fontSans,
-              fontSize: StrideTokens.fs13,
-              color: StrideTokens.muted,
-            ),
+      appBar: const StrideTopBar(title: '我'),
+      body: ListView(
+        children: [
+          _UserHeader(displayName: displayName, email: email),
+          const SizedBox(height: StrideTokens.spaceSm),
+
+          // ── 手动同步 ──
+          _SyncRow(sync: sync),
+          const _Divider(),
+          const SizedBox(height: StrideTokens.spaceSm),
+
+          // ── 功能 ──
+          ProfileMenuItem(
+            icon: Icons.monitor_heart_outlined,
+            label: '训练状态',
+            onTap: () => _comingSoon(context, '训练状态'),
           ),
-        ),
-        data: (profile) {
-          final displayName = profile?.displayName ??
-              profile?.profile?['display_name'] as String? ??
-              _emailPrefix(
-                  (profile?.profile?['email'] as String?) ?? '');
+          ProfileMenuItem(
+            icon: Icons.emoji_events_outlined,
+            label: '赛事中心',
+            onTap: () => _comingSoon(context, '赛事中心'),
+          ),
+          ProfileMenuItem(
+            icon: Icons.flag_outlined,
+            label: '我的比赛',
+            onTap: () => _comingSoon(context, '我的比赛'),
+          ),
+          ProfileMenuItem(
+            icon: Icons.watch_outlined,
+            label: '手表管理',
+            trailing: Text(
+              watchBound ? '已绑定' : '未绑定',
+              style: const TextStyle(
+                fontFamily: AppTypography.fontSans,
+                fontSize: StrideTokens.fs12,
+                color: StrideTokens.muted,
+              ),
+            ),
+            onTap: () => context.push(Routes.meWatch),
+          ),
+          ProfileMenuItem(
+            icon: Icons.insights_outlined,
+            label: '数据与状态',
+            onTap: () => context.push(Routes.meData),
+          ),
+          ProfileMenuItem(
+            icon: Icons.person_outline,
+            label: '个人信息编辑',
+            onTap: () => _comingSoon(context, '个人信息编辑'),
+          ),
+          const _Divider(),
+          const SizedBox(height: StrideTokens.spaceSm),
 
-          final email =
-              (profile?.profile?['email'] as String?) ?? '';
-
-          final lifetimeKm =
-              homeAsync.valueOrNull?.lifetimeStats.totalDistanceKm;
-
-          return _ProfileBody(
-            displayName: displayName,
-            email: email,
-            lifetimeKm: lifetimeKm,
-            watch: homeAsync.valueOrNull?.watch,
-          );
-        },
+          // ── 设置 ──
+          ProfileMenuItem(
+            icon: Icons.system_update_outlined,
+            label: '检查更新',
+            onTap: () => _checkForUpdate(context, ref),
+          ),
+          ProfileMenuItem(
+            icon: Icons.info_outline,
+            label: '关于 STRIDE',
+            onTap: () => _showAbout(context),
+          ),
+          const _Divider(),
+          const SizedBox(height: StrideTokens.spaceSm),
+          ProfileMenuItem(
+            icon: Icons.logout,
+            label: '退出登录',
+            destructive: true,
+            trailing: const SizedBox.shrink(),
+            onTap: () => _confirmLogout(context, ref),
+          ),
+          const SizedBox(height: StrideTokens.space3xl),
+        ],
       ),
     );
   }
@@ -80,107 +120,11 @@ class ProfileScreen extends ConsumerWidget {
     final at = email.indexOf('@');
     return at > 0 ? email.substring(0, at) : email;
   }
-}
 
-// ── Body ──────────────────────────────────────────────────────────────────────
-
-class _ProfileBody extends ConsumerWidget {
-  const _ProfileBody({
-    required this.displayName,
-    required this.email,
-    this.lifetimeKm,
-    this.watch,
-  });
-
-  final String displayName;
-  final String email;
-  final double? lifetimeKm;
-  final WatchInfo? watch;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return StrideRefreshable<HomeData>(
-      provider: homeProvider.future,
-      child: ListView(
-        children: [
-          _UserHeader(
-            displayName: displayName,
-            email: email,
-            lifetimeKm: lifetimeKm,
-          ),
-        const SizedBox(height: StrideTokens.spaceSm),
-        _Divider(),
-        // ── Personal ────────────────────────────────────────────────────
-        const _SectionTitle('个人'),
-        ProfileMenuItem(
-          icon: Icons.person_outline,
-          label: '个人信息',
-          onTap: () => _showComingSoon(context, '个人信息编辑'),
-        ),
-        ProfileMenuItem(
-          icon: Icons.directions_run,
-          label: '跑步档案',
-          onTap: () => _showComingSoon(context, '跑步档案'),
-        ),
-        ProfileMenuItem(
-          icon: Icons.flag_outlined,
-          label: '训练目标',
-          onTap: () => _showComingSoon(context, '训练目标'),
-        ),
-        ProfileMenuItem(
-          icon: Icons.restaurant_outlined,
-          label: '营养偏好',
-          onTap: () => context.push(RoutesV2.nutritionPrefs),
-        ),
-        _Divider(),
-        // ── Device ──────────────────────────────────────────────────────
-        const _SectionTitle('设备与通知'),
-        _WatchMenuItem(watch: watch),
-        ProfileMenuItem(
-          icon: Icons.notifications_outlined,
-          label: '通知设置',
-          onTap: () {
-            // Route to existing notification settings (legacy route).
-            try {
-              context.push('/notifications/settings');
-            } catch (_) {
-              _showComingSoon(context, '通知设置');
-            }
-          },
-        ),
-        _Divider(),
-        // ── App ─────────────────────────────────────────────────────────
-        const _SectionTitle('关于'),
-        ProfileMenuItem(
-          icon: Icons.system_update_outlined,
-          label: '检查更新',
-          onTap: () => _checkForUpdate(context, ref),
-        ),
-        ProfileMenuItem(
-          icon: Icons.info_outline,
-          label: '关于 STRIDE',
-          onTap: () => _showAbout(context),
-        ),
-        _Divider(),
-        // ── Logout ──────────────────────────────────────────────────────
-        const SizedBox(height: StrideTokens.spaceSm),
-        ProfileMenuItem(
-          icon: Icons.logout,
-          label: '退出登录',
-          destructive: true,
-          trailing: const SizedBox.shrink(),
-          onTap: () => _confirmLogout(context, ref),
-        ),
-        const SizedBox(height: StrideTokens.space3xl),
-        ],
-      ),
-    );
-  }
-
-  static void _showComingSoon(BuildContext context, String feature) {
+  static void _comingSoon(BuildContext context, String feature) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$feature — v1.x 即将支持'),
+        content: Text('$feature — 即将上线'),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -188,8 +132,6 @@ class _ProfileBody extends ConsumerWidget {
 
   static Future<void> _checkForUpdate(
       BuildContext context, WidgetRef ref) async {
-    // Snackbar messenger captured before the async gap so we can still
-    // surface a result if the user navigates away.
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(
       const SnackBar(
@@ -198,8 +140,7 @@ class _ProfileBody extends ConsumerWidget {
       ),
     );
     try {
-      final info =
-          await ref.read(updateCheckerProvider).check(force: true);
+      final info = await ref.read(updateCheckerProvider).check(force: true);
       if (info != null) {
         if (!context.mounted) return;
         await showUpdatePrompt(context, ref, info);
@@ -222,7 +163,6 @@ class _ProfileBody extends ConsumerWidget {
     try {
       info = await PackageInfo.fromPlatform();
     } catch (_) {
-      // Fallback in test env.
       if (!context.mounted) return;
       showAboutDialog(
         context: context,
@@ -274,7 +214,7 @@ class _ProfileBody extends ConsumerWidget {
     if (confirmed == true && context.mounted) {
       await ref.read(authControllerProvider.notifier).logout();
       if (context.mounted) {
-        context.go(RoutesV2.authStart);
+        context.go(Routes.authStart);
       }
     }
   }
@@ -283,23 +223,14 @@ class _ProfileBody extends ConsumerWidget {
 // ── User header ───────────────────────────────────────────────────────────────
 
 class _UserHeader extends StatelessWidget {
-  const _UserHeader({
-    required this.displayName,
-    required this.email,
-    this.lifetimeKm,
-  });
+  const _UserHeader({required this.displayName, required this.email});
 
   final String displayName;
   final String email;
-  final double? lifetimeKm;
 
   @override
   Widget build(BuildContext context) {
-    final initial =
-        displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
-    final kmStr = lifetimeKm != null
-        ? '${lifetimeKm!.toStringAsFixed(0)} km'
-        : '— km';
+    final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U';
 
     return Container(
       color: StrideTokens.surface,
@@ -347,22 +278,6 @@ class _UserHeader extends StatelessWidget {
                     ),
                   ),
                 ],
-                const SizedBox(height: StrideTokens.spaceSm),
-                Row(
-                  children: [
-                    const Icon(Icons.route_outlined,
-                        size: 14, color: StrideTokens.muted),
-                    const SizedBox(width: 4),
-                    Text(
-                      '累计 $kmStr',
-                      style: const TextStyle(
-                        fontFamily: AppTypography.fontMono,
-                        fontSize: StrideTokens.fs12,
-                        color: StrideTokens.muted,
-                      ),
-                    ),
-                  ],
-                ),
               ],
             ),
           ),
@@ -372,123 +287,87 @@ class _UserHeader extends StatelessWidget {
   }
 }
 
-// ── Watch menu item ───────────────────────────────────────────────────────────
+// ── Manual sync row ───────────────────────────────────────────────────────────
 
-class _WatchMenuItem extends ConsumerWidget {
-  const _WatchMenuItem({this.watch});
+class _SyncRow extends ConsumerWidget {
+  const _SyncRow({required this.sync});
 
-  final WatchInfo? watch;
+  final SyncState sync;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final brand = watch?.brand;
-    final brandLabel = brand != null ? brand.toUpperCase() : '未绑定';
+    final lastSynced = sync.lastSyncedAt;
+    final subtitle = sync.syncing
+        ? '正在同步…'
+        : lastSynced != null
+            ? '上次同步 ${lastSynced.month}月${lastSynced.day}日 ${lastSynced.hour.toString().padLeft(2, '0')}:${lastSynced.minute.toString().padLeft(2, '0')}'
+            : '从手表拉取最新训练数据';
 
-    return ProfileMenuItem(
-      icon: Icons.watch_outlined,
-      label: '手表绑定',
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            brandLabel,
-            style: const TextStyle(
-              fontFamily: AppTypography.fontSans,
-              fontSize: StrideTokens.fs12,
-              color: StrideTokens.muted,
-            ),
+    return Container(
+      color: StrideTokens.surface,
+      child: ListTile(
+        leading: sync.syncing
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: StrideTokens.accent,
+                ),
+              )
+            : const Icon(Icons.sync_outlined, size: 20, color: StrideTokens.fg),
+        title: const Text(
+          '手动同步',
+          style: TextStyle(
+            fontFamily: AppTypography.fontSans,
+            fontSize: StrideTokens.fs14,
+            color: StrideTokens.fg,
           ),
-          const SizedBox(width: 4),
-          const Icon(Icons.chevron_right, size: 18, color: StrideTokens.muted),
-        ],
+        ),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(
+            fontFamily: AppTypography.fontSans,
+            fontSize: StrideTokens.fs12,
+            color: StrideTokens.muted,
+          ),
+        ),
+        trailing: const Icon(Icons.chevron_right, size: 18, color: StrideTokens.muted),
+        onTap: sync.syncing
+            ? null
+            : () async {
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  await ref.read(syncControllerProvider.notifier).triggerSync();
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('同步完成'),
+                      backgroundColor: StrideTokens.accent,
+                    ),
+                  );
+                } catch (e) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('同步失败：$e'),
+                      backgroundColor: StrideTokens.danger,
+                    ),
+                  );
+                }
+              },
       ),
-      onTap: brand != null
-          ? () => _confirmUnbind(context, ref, brand)
-          : () => context.go(RoutesV2.onboardingBrand),
     );
-  }
-
-  Future<void> _confirmUnbind(
-      BuildContext context, WidgetRef ref, String brand) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('解绑手表'),
-        content: Text('确认解绑 ${brand.toUpperCase()} 手表？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: TextButton.styleFrom(
-              foregroundColor: StrideTokens.danger,
-            ),
-            child: const Text('解绑'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && context.mounted) {
-      try {
-        await ref.read(strideApiProvider).unbindWatch();
-        ref.invalidate(homeProvider);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('手表已解绑')),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('解绑失败: $e')),
-          );
-        }
-      }
-    }
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 class _Divider extends StatelessWidget {
+  const _Divider();
+
   @override
   Widget build(BuildContext context) {
     return const Divider(
       height: 1,
       thickness: 1,
       color: StrideTokens.border2,
-      indent: 0,
-      endIndent: 0,
-    );
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        StrideTokens.spaceLg,
-        StrideTokens.spaceMd,
-        StrideTokens.spaceLg,
-        StrideTokens.spaceXs,
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontFamily: AppTypography.fontSans,
-          fontSize: StrideTokens.fs11,
-          fontWeight: FontWeight.w500,
-          color: StrideTokens.muted,
-          letterSpacing: 0.5,
-        ),
-      ),
     );
   }
 }

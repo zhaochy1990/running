@@ -56,10 +56,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     // The shell always renders the 4 flat tabs regardless of body state.
-    expect(find.text('跑者'), findsOneWidget);
-    expect(find.text('发现'), findsOneWidget);
-    expect(find.text('数据'), findsOneWidget);
+    expect(find.text('训练'), findsOneWidget);
+    expect(find.text('记录'), findsOneWidget);
     expect(find.text('教练'), findsOneWidget);
+    expect(find.text('我'), findsOneWidget);
   });
 }
 

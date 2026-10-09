@@ -19,7 +19,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:stride/core/auth/current_user.dart';
 import 'package:stride/core/theme/pill_colors.dart';
-import 'package:stride/data/models/plan.dart';
+import 'package:stride/data/models/weekly_plan.dart';
 import 'package:stride/features_v2/plan/providers/week_detail_provider.dart';
 import 'package:stride/features_v2/plan/week_detail_screen.dart';
 
@@ -28,7 +28,6 @@ import 'package:stride/features_v2/plan/week_detail_screen.dart';
 const _folder = '2026-05-11_05-17(W1基础)';
 
 PlannedSession _makeSession({
-  required int id,
   required String date,
   required int sessionIndex,
   required String kind,
@@ -37,58 +36,44 @@ PlannedSession _makeSession({
   num? durationS,
 }) {
   return PlannedSession(
-    id: id,
     date: date,
     sessionIndex: sessionIndex,
     kind: kind,
-    title: title,
+    summary: title ?? '',
     totalDistanceM: distanceM,
     totalDurationS: durationS,
-    pushable: true,
   );
 }
 
 WeekDetailData _make7DayData() {
   // Mon–Sun: E, REST, T, E, REST, strength, REST
-  final days = [
-    PlanDay(
-      date: '2026-05-11',
-      sessions: [
-        _makeSession(id: 1, date: '2026-05-11', sessionIndex: 0, kind: 'E',
-            title: '轻松跑', distanceM: 10000, durationS: 3600),
-      ],
-    ),
-    const PlanDay(date: '2026-05-12', sessions: []),
-    PlanDay(
-      date: '2026-05-13',
-      sessions: [
-        _makeSession(id: 2, date: '2026-05-13', sessionIndex: 0, kind: 'T',
-            title: '节奏跑', distanceM: 12000, durationS: 4320),
-      ],
-    ),
-    PlanDay(
-      date: '2026-05-14',
-      sessions: [
-        _makeSession(id: 3, date: '2026-05-14', sessionIndex: 0, kind: 'E',
-            title: '恢复跑', distanceM: 8000, durationS: 3000),
-      ],
-    ),
-    const PlanDay(date: '2026-05-15', sessions: []),
-    PlanDay(
-      date: '2026-05-16',
-      sessions: [
-        _makeSession(id: 4, date: '2026-05-16', sessionIndex: 0,
-            kind: 'strength', title: '力量训练', durationS: 2700),
-      ],
-    ),
-    const PlanDay(date: '2026-05-17', sessions: []),
-  ];
+  WeeklyPlanContent mk(List<PlannedSession> sessions) =>
+      WeeklyPlanContent(sessions: sessions);
+
+  final content = mk([
+    _makeSession(date: '2026-05-11', sessionIndex: 0, kind: 'run',
+        title: '轻松跑', distanceM: 10000, durationS: 3600),
+    _makeSession(date: '2026-05-13', sessionIndex: 0, kind: 'run',
+        title: '节奏跑', distanceM: 12000, durationS: 4320),
+    _makeSession(date: '2026-05-14', sessionIndex: 0, kind: 'run',
+        title: '恢复跑', distanceM: 8000, durationS: 3000),
+    _makeSession(date: '2026-05-16', sessionIndex: 0, kind: 'strength',
+        title: '力量训练', durationS: 2700),
+  ]);
+
+  final days = <WeekDaySessions>[];
+  for (var i = 0; i < 7; i++) {
+    final date =
+        '2026-05-${(11 + i).toString().padLeft(2, '0')}';
+    days.add(WeekDaySessions(date: date, sessions: content.sessionsOn(date)));
+  }
 
   return WeekDetailData(
     folder: _folder,
     dateFrom: '2026-05-11',
     dateTo: '2026-05-17',
     planTitle: 'W1 基础',
+    planContent: content,
     days: days,
   );
 }

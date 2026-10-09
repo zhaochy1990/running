@@ -471,30 +471,6 @@ class _CommentaryCard extends StatefulWidget {
 }
 
 class _CommentaryCardState extends State<_CommentaryCard> {
-  bool _regenerating = false;
-
-  Future<void> _onRegenerate() async {
-    if (_regenerating) return;
-    setState(() => _regenerating = true);
-    try {
-      final userId = widget.ref.read(currentUserIdProvider);
-      if (userId != null) {
-        final api = widget.ref.read(strideApiProvider);
-        await api.regenerateCommentary(userId, widget.activityId);
-        // Invalidate detail to reload commentary
-        widget.ref.invalidate(activityDetailProvider(widget.activityId));
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('重新生成失败，请稍后再试')));
-      }
-    } finally {
-      if (mounted) setState(() => _regenerating = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final commentary = widget.activity.commentary;
@@ -536,26 +512,6 @@ class _CommentaryCardState extends State<_CommentaryCard> {
                 ),
               ],
               const Spacer(),
-              GestureDetector(
-                onTap: _regenerating ? null : _onRegenerate,
-                child: _regenerating
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: StrideTokens.accent,
-                        ),
-                      )
-                    : const Text(
-                        '重新生成',
-                        style: TextStyle(
-                          fontFamily: AppTypography.fontSans,
-                          fontSize: StrideTokens.fs12,
-                          color: StrideTokens.accent,
-                        ),
-                      ),
-              ),
             ],
           ),
           const SizedBox(height: StrideTokens.spaceSm),

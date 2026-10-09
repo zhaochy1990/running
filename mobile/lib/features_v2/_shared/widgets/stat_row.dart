@@ -1,4 +1,4 @@
-/// StrideStatRow — three-column equal-width metric row.
+/// StrideStatRow — equal-width metric row (N columns).
 ///
 /// Mirrors `.stat-row` from the design mock
 /// (`~/Downloads/index.html`, lines 372–397). Each column shows
@@ -20,7 +20,7 @@ class StatItem {
 
 class StrideStatRow extends StatelessWidget {
   const StrideStatRow({super.key, required this.items, this.mono = true})
-    : assert(items.length == 3, 'StrideStatRow requires exactly 3 items');
+    : assert(items.isNotEmpty, 'StrideStatRow requires at least one item');
 
   final List<StatItem> items;
   final bool mono;

@@ -14,8 +14,6 @@ import '../../health/providers/pb_records_provider.dart';
 import '../../health/providers/pmc_provider.dart';
 import '../../health/providers/race_prediction_provider.dart';
 import '../../health/providers/trends_provider.dart';
-import '../../home/providers/home_provider.dart';
-import '../../review/providers/week_review_provider.dart';
 
 /// SyncController — process-wide singleton owning the in-flight
 /// COROS sync state. Re-entry from the same user joins the active request;
@@ -103,7 +101,6 @@ class SyncController extends Notifier<SyncState> {
       if (ref.read(currentUserIdProvider) != userId) {
         throw StateError('账号已切换，同步结果已忽略');
       }
-      ref.invalidate(homeProvider);
       ref.invalidate(healthOverviewProvider);
       ref.invalidate(pmcProvider);
       ref.invalidate(abilitySnapshotProvider);
@@ -113,7 +110,6 @@ class SyncController extends Notifier<SyncState> {
       ref.invalidate(trendsProvider);
       ref.invalidate(activityDetailProvider);
       ref.invalidate(timeseriesProvider);
-      ref.invalidate(weekReviewProvider);
       state = state.copyWith(
         syncing: false,
         lastSyncedAt: DateTime.now(),

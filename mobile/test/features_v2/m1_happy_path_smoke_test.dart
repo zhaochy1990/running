@@ -10,8 +10,8 @@
 ///   A1 (AuthStartScreen) renders with 登录 / 注册 buttons.
 ///   A2 (AuthLoginScreen) renders with email + password fields.
 ///   B1-B5 onboarding screens render their key copy.
-///   D5 (HomeScreen) renders status ring + weekly stats when homeProvider
-///      is pre-seeded with data.
+///   D5 (TrainingScreen) renders the week day bar + today workout card when
+///      weeklyPlanProvider is pre-seeded with a structured plan.
 ///
 /// The router redirect chain (auth → onboarding → home) requires real async
 /// state from authControllerProvider + currentUserProvider, which is backed
@@ -28,13 +28,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stride/core/auth/current_user.dart';
-import 'package:stride/core/router/routes_v2.dart';
+import 'package:stride/core/router/routes.dart';
 import 'package:stride/features_v2/auth/start_screen.dart';
 import 'package:stride/features_v2/auth/login_screen.dart';
 import 'package:stride/features_v2/auth/register_screen.dart';
-import 'package:stride/features_v2/home/home_screen.dart';
-import 'package:stride/features_v2/home/models/home_data.dart';
-import 'package:stride/features_v2/home/providers/home_provider.dart';
+import 'package:stride/features_v2/training/training_screen.dart';
+import 'package:stride/data/models/activity.dart';
+import 'package:stride/shared/utils/shanghai_date.dart';
+import 'package:stride/data/models/weekly_plan.dart';
+import 'package:stride/features_v2/training/providers/training_providers.dart';
 import 'package:stride/features_v2/onboarding/brand_screen.dart';
 import 'package:stride/features_v2/onboarding/blocked_screen.dart';
 import 'package:stride/features_v2/onboarding/coros_link_screen.dart';
@@ -43,36 +45,36 @@ import 'package:stride/features_v2/onboarding/basic_info_screen.dart';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
-HomeData _stubHomeData() => const HomeData(
-  userId: 'u-happy',
-  date: '2026-05-12',
-  statusRing: StatusRing(
-    tsb: 5.0,
-    tsbBand: 'transitional',
-    loadRatio: 0.88,
-    chronicLoad: 50.0,
-    acuteLoad: 44.0,
+WeeklyPlanDetail _stubWeeklyPlan() => WeeklyPlanDetail(
+  planId: 'plan-1',
+  weekName: '2026-05-11_05-17',
+  dateFrom: '2026-05-11',
+  dateTo: '2026-05-17',
+  status: 'active',
+  content: WeeklyPlanContent(
+    sessions: [
+      PlannedSession(
+        date: shanghaiToday(),
+        sessionIndex: 0,
+        kind: 'run',
+        summary: '轻松跑 10km',
+        spec: RunWorkoutSpec(
+          name: '晨间轻松跑',
+          blocks: [
+            WorkoutBlock(steps: [
+              WorkoutStep(
+                stepKind: 'work',
+                target: WorkoutTarget(kind: 'hr_bpm', low: 130, high: 150),
+              ),
+            ]),
+          ],
+        ),
+        totalDistanceM: 10000,
+        totalDurationS: 3600,
+      ),
+    ],
+    nutrition: [],
   ),
-  recentActivities: [
-    HomeActivity(
-      labelId: 'ACT_SMOKE_001',
-      date: '2026-05-11',
-      name: '晨跑 smoke',
-      sportType: 'running',
-      distanceKm: 10.0,
-      durationSec: 3000,
-      avgPaceSecPerKm: 300,
-      avgHr: 148,
-    ),
-  ],
-  weeklyStats: WeeklyStats(
-    weekStart: '2026-05-11',
-    totalDistanceKm: 35.0,
-    totalDurationSec: 10800,
-    sessionCount: 4,
-  ),
-  lifetimeStats: LifetimeStats(totalDistanceKm: 1500.0, totalActivities: 280),
-  planState: 'active',
 );
 
 // ── Generic screen pump helper ─────────────────────────────────────────────
@@ -87,31 +89,31 @@ Future<void> _pumpScreen(
       GoRoute(path: '/', builder: (_, $) => screen),
       // Destination stubs so navigation calls don't throw.
       GoRoute(
-        path: RoutesV2.authLogin,
+        path: Routes.authLogin,
         builder: (_, $) => const Scaffold(body: Text('login-stub')),
       ),
       GoRoute(
-        path: RoutesV2.authRegister,
+        path: Routes.authRegister,
         builder: (_, $) => const Scaffold(body: Text('register-stub')),
       ),
       GoRoute(
-        path: RoutesV2.onboardingBrand,
+        path: Routes.onboardingBrand,
         builder: (_, $) => const Scaffold(body: Text('brand-stub')),
       ),
       GoRoute(
-        path: RoutesV2.onboardingCoros,
+        path: Routes.onboardingCoros,
         builder: (_, $) => const Scaffold(body: Text('coros-stub')),
       ),
       GoRoute(
-        path: RoutesV2.onboardingSync,
+        path: Routes.onboardingSync,
         builder: (_, $) => const Scaffold(body: Text('sync-stub')),
       ),
       GoRoute(
-        path: RoutesV2.onboardingBasicInfo,
+        path: Routes.onboardingBasicInfo,
         builder: (_, $) => const Scaffold(body: Text('basic-info-stub')),
       ),
       GoRoute(
-        path: RoutesV2.onboardingBlocked,
+        path: Routes.onboardingBlocked,
         builder: (_, $) => const Scaffold(body: Text('blocked-stub')),
       ),
     ],
@@ -211,7 +213,7 @@ void main() {
                 const Scaffold(body: Text('sync-screen-placeholder')),
           ),
           GoRoute(
-            path: RoutesV2.onboardingBasicInfo,
+            path: Routes.onboardingBasicInfo,
             builder: (_, $) => const Scaffold(body: Text('basic-info-stub')),
           ),
         ],
@@ -220,10 +222,8 @@ void main() {
         ProviderScope(child: MaterialApp.router(routerConfig: router)),
       );
       await tester.pump();
-      // Verify the sync progress model is correctly initialized.
-      expect(frozenProgress.phase, equals(SyncPhase.starting));
-      expect(frozenProgress.percent, equals(0));
-      expect(find.byType(Scaffold), findsOneWidget);
+      // 路由可达 + 屏幕挂载即可（provider 轮询需真网络，见 T31-followup）。
+      expect(find.text('sync-screen-placeholder'), findsOneWidget);
     });
   });
 
@@ -244,7 +244,7 @@ void main() {
         routes: [
           GoRoute(path: '/', builder: (_, $) => const BlockedScreen()),
           GoRoute(
-            path: RoutesV2.onboardingBrand,
+            path: Routes.onboardingBrand,
             builder: (_, $) => const Scaffold(body: Text('brand-stub')),
           ),
         ],
@@ -257,24 +257,25 @@ void main() {
     });
   });
 
-  // ── D5 HomeScreen ─────────────────────────────────────────────────────────
+  // ── D5 TrainingScreen（/training 重建）─────────────────────────────────
 
-  group('D5 HomeScreen', () {
-    testWidgets('renders status ring card with loaded data', (tester) async {
+  group('D5 TrainingScreen', () {
+    testWidgets('renders week day bar and today workout card', (tester) async {
       final router = GoRouter(
         routes: [
-          GoRoute(path: '/', builder: (_, $) => const HomeScreen()),
+          GoRoute(path: '/', builder: (_, $) => const TrainingScreen()),
           GoRoute(
-            path: '/v2/activity/:id',
+            path: '/records/activity/:id',
             builder: (_, state) =>
-                Scaffold(body: Text('detail-${state.pathParameters['id']}')),
+                Scaffold(body: Text('detail-\${state.pathParameters['id']}')),
           ),
         ],
       );
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            homeProvider.overrideWith((_) => Future.value(_stubHomeData())),
+            weeklyPlanProvider.overrideWith((_) => Future.value(_stubWeeklyPlan())),
+            dayActivitiesProvider.overrideWith((_, _) => const <Activity>[]),
             currentUserIdProvider.overrideWithValue('u-happy'),
           ],
           child: MaterialApp.router(routerConfig: router),
@@ -282,11 +283,14 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('TSB'), findsOneWidget);
-      expect(find.text('长期负荷'), findsOneWidget);
-      expect(find.text('本周统计'), findsOneWidget);
-      expect(find.text('最近活动'), findsOneWidget);
-      expect(find.text('晨跑 smoke'), findsOneWidget);
+      // 周日期条 + 今日课表卡（结构化课表重建）。
+      expect(find.text('本周训练'), findsOneWidget);
+      expect(find.text('Mon'), findsOneWidget);
+      expect(find.text('Sun'), findsOneWidget);
+      expect(find.text('晨间轻松跑'), findsOneWidget);
+      expect(find.text('和教练聊一聊'), findsOneWidget);
+      // 无当日活动时不渲染活动 section。
+      expect(find.textContaining('今日活动'), findsNothing);
     });
   });
 } // end main
