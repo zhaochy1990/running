@@ -140,6 +140,11 @@ func runAPI() error {
 	if err := store.AutoMigrateRacePlans(ctx); err != nil {
 		return err
 	}
+	// user_custom_race backs the「我的比赛」custom-race surface (#474). Only the
+	// API writes it, so the worker does not migrate it.
+	if err := store.AutoMigrateUserCustomRaces(ctx); err != nil {
+		return err
+	}
 	// race_strategy backs the coach race-strategy surface (#396). Only the API
 	// writes it (coach + runner both go through endpoints), so the worker does
 	// not migrate it.
@@ -243,6 +248,7 @@ func runAPI() error {
 		RaceCalendarStore:       store,
 		RaceFavoriteStore:       store,
 		RacePlanStore:           store,
+		CustomRaceStore:         store,
 		RaceStrategyStore:       store,
 		RaceContentStore:        store,
 		RaceCatalogStore:        store,

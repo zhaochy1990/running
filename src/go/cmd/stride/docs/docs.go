@@ -2231,6 +2231,195 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/users/me/custom-races": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Adds a race outside race_calendar for the current user (「我的比赛」手动添加). race_date is any valid YYYY-MM-DD; item_type must be one of the seven form chips.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "custom-races"
+                ],
+                "summary": "Create a custom race",
+                "parameters": [
+                    {
+                        "description": "Race fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.customRaceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.customRaceDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.validationErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/custom-races/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Full update of the current user's custom race; absent optional fields are cleared.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "custom-races"
+                ],
+                "summary": "Update a custom race",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Custom race id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Race fields",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.customRaceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.customRaceDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/api.validationErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes the current user's custom race.",
+                "tags": [
+                    "custom-races"
+                ],
+                "summary": "Delete a custom race",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Custom race id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/users/me/injuries": {
             "get": {
                 "security": [
@@ -2467,6 +2656,43 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/users/me/my-races": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Unified「我的比赛」list: official race-plan cards (source=official, the race-plans DTO verbatim, incl. offboarded) plus custom cards (source=custom, full fields + derived done). Not-finished items sort by race_date ascending, finished items sink to the bottom (ascending within the group).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "my-races"
+                ],
+                "summary": "List my races (aggregate)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.myRacesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
                         }
                     },
                     "500": {
@@ -7629,6 +7855,98 @@ const docTemplate = `{
                 }
             }
         },
+        "api.customRaceDTO": {
+            "type": "object",
+            "properties": {
+                "ascent_m": {
+                    "type": "integer"
+                },
+                "city": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "done": {
+                    "type": "boolean"
+                },
+                "hotel": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "transit": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "website": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.customRaceRequest": {
+            "type": "object",
+            "required": [
+                "item_type",
+                "name",
+                "race_date"
+            ],
+            "properties": {
+                "ascent_m": {
+                    "type": "integer"
+                },
+                "city": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "distance_km": {
+                    "type": "number"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "note": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string",
+                    "maxLength": 16
+                },
+                "website": {
+                    "type": "string",
+                    "maxLength": 512
+                }
+            }
+        },
         "api.disconnectWatchResponse": {
             "type": "object",
             "properties": {
@@ -8418,6 +8736,32 @@ const docTemplate = `{
                 },
                 "total_run_km": {
                     "type": "number"
+                }
+            }
+        },
+        "api.myRaceItem": {
+            "type": "object",
+            "properties": {
+                "plan": {
+                    "$ref": "#/definitions/api.racePlanDTO"
+                },
+                "race": {
+                    "$ref": "#/definitions/api.customRaceDTO"
+                },
+                "source": {
+                    "description": "\"official\" | \"custom\"",
+                    "type": "string"
+                }
+            }
+        },
+        "api.myRacesResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.myRaceItem"
+                    }
                 }
             }
         },

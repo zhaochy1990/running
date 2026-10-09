@@ -80,7 +80,7 @@ func TestFromChinaItems(t *testing.T) {
 
 func TestIsValid(t *testing.T) {
 	valid := []string{
-		Marathon, HalfMarathon, Other, Unknown,
+		Marathon, HalfMarathon, Trail, Ultra, Other, Unknown,
 		"10Km", "5Km", "21.0975Km", "50Km",
 	}
 	for _, token := range valid {
@@ -94,6 +94,25 @@ func TestIsValid(t *testing.T) {
 	for _, token := range invalid {
 		if IsValid(token) {
 			t.Errorf("IsValid(%q) = true, want false", token)
+		}
+	}
+}
+
+// TestIsCustomItemType pins the seven-chip custom-race whitelist (#457): the
+// two new named tokens join Marathon/HalfMarathon/10Km/5Km/Other, while the
+// rest of the IsValid space (Unknown, arbitrary {n}Km) stays closed to the
+// custom-race form.
+func TestIsCustomItemType(t *testing.T) {
+	valid := []string{Marathon, HalfMarathon, Trail, Ultra, Other, "10Km", "5Km"}
+	for _, token := range valid {
+		if !IsCustomItemType(token) {
+			t.Errorf("IsCustomItemType(%q) = false, want true", token)
+		}
+	}
+	invalid := []string{Unknown, "50Km", "21.0975Km", "10km", "trail", "", "Ultra "}
+	for _, token := range invalid {
+		if IsCustomItemType(token) {
+			t.Errorf("IsCustomItemType(%q) = true, want false", token)
 		}
 	}
 }

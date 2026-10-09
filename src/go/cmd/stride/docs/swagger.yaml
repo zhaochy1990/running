@@ -598,6 +598,69 @@ definitions:
       updated_at:
         type: string
     type: object
+  api.customRaceDTO:
+    properties:
+      ascent_m:
+        type: integer
+      city:
+        type: string
+      created_at:
+        type: string
+      distance_km:
+        type: number
+      done:
+        type: boolean
+      hotel:
+        type: boolean
+      id:
+        type: integer
+      item_type:
+        type: string
+      name:
+        type: string
+      note:
+        type: string
+      race_date:
+        type: string
+      state:
+        type: string
+      transit:
+        type: boolean
+      updated_at:
+        type: string
+      website:
+        type: string
+    type: object
+  api.customRaceRequest:
+    properties:
+      ascent_m:
+        type: integer
+      city:
+        maxLength: 64
+        type: string
+      distance_km:
+        type: number
+      item_type:
+        type: string
+      name:
+        maxLength: 128
+        type: string
+      note:
+        maxLength: 512
+        type: string
+      race_date:
+        type: string
+      state:
+        maxLength: 16
+        type: string
+      website:
+        maxLength: 512
+        type: string
+    required:
+    - item_type
+    - name
+    - race_date
+    type: object
   api.disconnectWatchResponse:
     properties:
       ok:
@@ -1126,6 +1189,23 @@ definitions:
         type: integer
       total_run_km:
         type: number
+    type: object
+  api.myRaceItem:
+    properties:
+      plan:
+        $ref: '#/definitions/api.racePlanDTO'
+      race:
+        $ref: '#/definitions/api.customRaceDTO'
+      source:
+        description: '"official" | "custom"'
+        type: string
+    type: object
+  api.myRacesResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/api.myRaceItem'
+        type: array
     type: object
   api.onboardingCompleteInput:
     properties:
@@ -6471,6 +6551,130 @@ paths:
       summary: Delete the current user's account and data
       tags:
       - users
+  /api/users/me/custom-races:
+    post:
+      consumes:
+      - application/json
+      description: Adds a race outside race_calendar for the current user (「我的比赛」手动添加).
+        race_date is any valid YYYY-MM-DD; item_type must be one of the seven form
+        chips.
+      parameters:
+      - description: Race fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.customRaceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.customRaceDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.validationErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a custom race
+      tags:
+      - custom-races
+  /api/users/me/custom-races/{id}:
+    delete:
+      description: Deletes the current user's custom race.
+      parameters:
+      - description: Custom race id
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a custom race
+      tags:
+      - custom-races
+    put:
+      consumes:
+      - application/json
+      description: Full update of the current user's custom race; absent optional
+        fields are cleared.
+      parameters:
+      - description: Custom race id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Race fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.customRaceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.customRaceDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/api.validationErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a custom race
+      tags:
+      - custom-races
   /api/users/me/injuries:
     get:
       description: Returns active records first, then updated_at descending and id
@@ -6627,6 +6831,32 @@ paths:
       summary: Get the current user's active season training plan
       tags:
       - master-plan
+  /api/users/me/my-races:
+    get:
+      description: 'Unified「我的比赛」list: official race-plan cards (source=official,
+        the race-plans DTO verbatim, incl. offboarded) plus custom cards (source=custom,
+        full fields + derived done). Not-finished items sort by race_date ascending,
+        finished items sink to the bottom (ascending within the group).'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.myRacesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List my races (aggregate)
+      tags:
+      - my-races
   /api/users/me/onboarding/complete:
     post:
       consumes:
