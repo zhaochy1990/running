@@ -24,6 +24,13 @@ const (
 	Marathon = "Marathon"
 	// HalfMarathon is the half marathon distance (21.0975 km).
 	HalfMarathon = "HalfMarathon"
+	// Trail is a trail / mountain race (越野跑), a user-picked custom-race type.
+	// The sync pipelines never emit it (see FromWACategory / FromChinaItems) —
+	// it only enters the system through user_custom_race.
+	Trail = "Trail"
+	// Ultra is an ultra-distance trail race (超长越野), the second user-picked
+	// custom-race type; same pipeline isolation as Trail.
+	Ultra = "Ultra"
 	// Other is a race with no fixed competitive distance the source declared —
 	// fun runs, mini/parent-child/health runs, walks (中国田协's 迷你/欢乐跑/…).
 	Other = "Other"
@@ -46,16 +53,29 @@ func DistanceKm(km float64) string {
 // space): a plain decimal number, always the capital "Km" suffix.
 var kmTokenRe = regexp.MustCompile(`^\d+(?:\.\d+)?Km$`)
 
-// IsValid reports whether token belongs to this vocabulary: one of the four
-// named kinds (Marathon/HalfMarathon/Other/Unknown) or a "{n}Km" distance
+// IsValid reports whether token belongs to this vocabulary: one of the named
+// kinds (Marathon/HalfMarathon/Trail/Ultra/Other/Unknown) or a "{n}Km" distance
 // token. Callers use it to reject a request body that would otherwise silently
 // invent a new type string.
 func IsValid(token string) bool {
 	switch token {
-	case Marathon, HalfMarathon, Other, Unknown:
+	case Marathon, HalfMarathon, Trail, Ultra, Other, Unknown:
 		return true
 	}
 	return kmTokenRe.MatchString(token)
+}
+
+// IsCustomItemType reports whether token is one of the seven chips the
+// custom-race add-form offers (马拉松/半马/10K/5K/越野跑/超长越野/其他，see
+// stride-devops#457). Unlike IsValid it admits neither arbitrary "{n}Km"
+// tokens nor Unknown: a user-picked type comes from a closed picker, not
+// free-form input.
+func IsCustomItemType(token string) bool {
+	switch token {
+	case Marathon, HalfMarathon, Trail, Ultra, Other, "10Km", "5Km":
+		return true
+	}
+	return false
 }
 
 // distanceRe extracts "<number><unit>" from a 中国田协 race-item segment. The

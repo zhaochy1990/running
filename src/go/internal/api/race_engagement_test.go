@@ -134,6 +134,7 @@ type engagementHarness struct {
 	svc        *Service
 	favs       *fakeRaceFavoriteStore
 	plans      *fakeRacePlanStore
+	customs    *fakeUserCustomRaceStore
 	strategies *fakeRaceStrategyStore
 	key        *rsa.PrivateKey
 }
@@ -150,14 +151,16 @@ func newEngagementHarness(t *testing.T) *engagementHarness {
 	}
 	favs := newFakeRaceFavoriteStore()
 	plans := newFakeRacePlanStore()
+	customs := newFakeUserCustomRaceStore()
 	strategies := newFakeRaceStrategyStore()
 	svc := NewService(Config{
 		Auth:              NewAuthenticator(testToken, verifier),
 		RaceFavoriteStore: favs,
 		RacePlanStore:     plans,
+		CustomRaceStore:   customs,
 		RaceStrategyStore: strategies,
 	})
-	return &engagementHarness{svc: svc, favs: favs, plans: plans, strategies: strategies, key: key}
+	return &engagementHarness{svc: svc, favs: favs, plans: plans, customs: customs, strategies: strategies, key: key}
 }
 
 func (h *engagementHarness) token(t *testing.T, audience, role string) map[string]string {

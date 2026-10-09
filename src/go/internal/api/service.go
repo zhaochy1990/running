@@ -208,6 +208,10 @@ type Config struct {
 	// auth path. Leave zero to run without them (e.g. in tests).
 	RaceFavoriteStore RaceFavoriteStore
 	RacePlanStore     RacePlanStore
+	// CustomRaceStore backs the「我的比赛」custom-race surface (#474): user-added
+	// races outside race_calendar, plus the my-races aggregate. Shares the
+	// RacePlanStore port for the aggregate. Leave zero to run without it.
+	CustomRaceStore UserCustomRaceStore
 	// RaceStrategyStore backs the race-strategy surface (#396): the coach's
 	// structured strategy per (user, race), written by the TS coach API via the
 	// internal endpoint and read/edited by the runner. Leave zero to run
@@ -295,6 +299,7 @@ type Service struct {
 	raceCalendar    *raceCalendarRoutes
 	raceFavorites   *raceFavoriteRoutes
 	racePlans       *racePlanRoutes
+	customRaces     *customRaceRoutes
 	raceStrategy    *raceStrategyRoutes
 	raceContent     *raceContentRoutes
 	raceCatalog     *raceCatalogRoutes
@@ -355,6 +360,7 @@ func NewService(cfg Config) *Service {
 		raceCalendar:            newRaceCalendarRoutes(cfg.RaceCalendarStore, cfg.RaceContentStore, log, cfg.RaceItemGeocoder),
 		raceFavorites:           newRaceFavoriteRoutes(cfg.RaceFavoriteStore, log),
 		racePlans:               newRacePlanRoutes(cfg.RacePlanStore, log),
+		customRaces:             newCustomRaceRoutes(cfg.CustomRaceStore, cfg.RacePlanStore, log),
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
 		raceCatalog:             newRaceCatalogRoutes(cfg.RaceCatalogStore, log),
@@ -462,6 +468,7 @@ func (s *Service) Router() *gin.Engine {
 	// the sibling user surfaces.
 	s.raceFavorites.register(authed)
 	s.racePlans.register(authed)
+	s.customRaces.register(authed)
 	s.raceStrategy.register(authed)
 	s.bodyComposition.register(authed)
 	s.ability.register(authed)

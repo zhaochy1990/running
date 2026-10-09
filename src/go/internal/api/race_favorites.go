@@ -134,14 +134,16 @@ func (f *raceFavoriteRoutes) list(c *gin.Context) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // writeRaceEngagementError maps the engagement stores' sentinels onto HTTP
-// status codes. Both surfaces answer a missing/unpublished race with the same
-// 404 race_not_found.
+// status codes. All surfaces answer a missing/unpublished race and a foreign
+// or missing row with the same 404 shape.
 func writeRaceEngagementError(c *gin.Context, log *zap.Logger, err error) {
 	switch {
 	case errors.Is(err, storage.ErrRaceCalendarNotFound):
 		c.JSON(http.StatusNotFound, errorResponse{Error: "race_not_found"})
 	case errors.Is(err, storage.ErrRacePlanNotFound):
 		c.JSON(http.StatusNotFound, errorResponse{Error: "race_plan_not_found"})
+	case errors.Is(err, storage.ErrUserCustomRaceNotFound):
+		c.JSON(http.StatusNotFound, errorResponse{Error: "custom_race_not_found"})
 	default:
 		if log != nil {
 			log.Error("race engagement write failed", zap.Error(err))
