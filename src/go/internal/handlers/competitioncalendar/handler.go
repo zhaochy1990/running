@@ -13,6 +13,11 @@
 // defaults, else the current Shanghai year. It also parses the upstream venue
 // string into a three-level address (country/province/city) and maps Chinese
 // cities to their Chinese names via the curated tables in geocode.go.
+//
+// Since devops#443 the mirror also dedups: a World Athletics listing for a
+// Chinese race whose (race_date, city) matches an existing Chinese row
+// (中国田协 or manual) is not written — its tier is applied to that row instead
+// (see dedup.go), so one race is one row.
 package competitioncalendar
 
 import (
@@ -44,6 +49,11 @@ const Source = storage.RaceSourceWorldAth
 // handler stays unit-testable with a fake. cmd/worker injects the real store.
 type CalendarStore interface {
 	ReplaceRaceCalendarYear(ctx context.Context, source, year string, races []storage.RaceCalendarEvent) (storage.ReplaceRaceCalendarResult, error)
+	// LoadRaceCalendarDedupScope + ApplyRaceCalendarWALabels serve the dedup
+	// (devops#443): the year's Chinese rows to match against, and the tier
+	// writes for the rows a listing merges into.
+	LoadRaceCalendarDedupScope(ctx context.Context, year string) ([]storage.RaceCalendarEvent, error)
+	ApplyRaceCalendarWALabels(ctx context.Context, labels []storage.RaceCalendarWALabel) (int, error)
 }
 
 // Config is the handler's static dependencies and defaults, wired in cmd/worker.
@@ -123,7 +133,38 @@ func New(cfg Config) job.Handler {
 			for _, e := range events {
 				rows = append(rows, toRow(e))
 			}
-			res, err := cfg.Store.ReplaceRaceCalendarYear(ctx, Source, year, rows)
+
+			// Dedup (devops#443): a Chinese race's World Athletics listing must
+			// not become a second row beside the Chinese one. Matched listings
+			// are dropped from the write — which also stale-deletes the
+			// duplicate rows earlier runs left behind — and their tiers land on
+			// the Chinese rows. An empty upstream skips the dedup entirely: like
+			// the mirror write, a reconcile over nothing must not clear tiers.
+			var keep []storage.RaceCalendarEvent
+			var labels []storage.RaceCalendarWALabel
+			var dedup mirrorDedupSummary
+			if len(rows) > 0 {
+				candidates, err := cfg.Store.LoadRaceCalendarDedupScope(ctx, year)
+				if err != nil {
+					log.Error("race_calendar_sync: dedup scope load failed",
+						zap.String("job_id", j.ID),
+						zap.String("year", year),
+						zap.Error(err))
+					return "", err
+				}
+				keep, labels, dedup = planMirrorDedup(rows, candidates)
+				if dedup.Ambiguous > 0 || dedup.TypeRefused > 0 {
+					log.Warn("race_calendar_sync: listings kept on refused matches",
+						zap.String("job_id", j.ID),
+						zap.String("year", year),
+						zap.Int("ambiguous", dedup.Ambiguous),
+						zap.Int("type_refused", dedup.TypeRefused))
+				}
+			} else {
+				keep = rows
+			}
+
+			res, err := cfg.Store.ReplaceRaceCalendarYear(ctx, Source, year, keep)
 			if err != nil {
 				if storage.IsDeterministicWriteError(err) {
 					log.Error("race_calendar_sync: year write failed (deterministic)",
@@ -139,14 +180,47 @@ func New(cfg Config) job.Handler {
 					zap.Error(err))
 				return "", err
 			}
+			_ = hb(stage, 90)
+
+			// The tier writes ride on the same guards as the wa_label job's
+			// (sync-owned rows only, never over an administrator's override), so
+			// applied can legitimately be smaller than sent.
+			applied := 0
+			if len(labels) > 0 {
+				applied, err = cfg.Store.ApplyRaceCalendarWALabels(ctx, labels)
+				if err != nil {
+					if storage.IsDeterministicWriteError(err) {
+						log.Error("race_calendar_sync: wa_label write failed (deterministic)",
+							zap.String("job_id", j.ID),
+							zap.String("year", year),
+							zap.String("error_code", "storage_constraint"),
+							zap.Error(err))
+						return "", job.NewPermanentError("storage_constraint", err)
+					}
+					log.Error("race_calendar_sync: wa_label write failed",
+						zap.String("job_id", j.ID),
+						zap.String("year", year),
+						zap.Error(err))
+					return "", err
+				}
+			}
 			_ = hb(stage, 100)
-			out.Years[year] = yearSummary{Fetched: len(events), Upserted: res.Upserted, Deleted: res.Deleted}
+			out.Years[year] = yearSummary{
+				Fetched: len(events), Upserted: res.Upserted, Deleted: res.Deleted,
+				Deduped: dedup.Deduped, Stamped: dedup.Stamped, Cleared: dedup.Cleared,
+				Skipped: dedup.Ambiguous + dedup.TypeRefused, Applied: applied,
+			}
 			log.Info("race_calendar_sync: year synced",
 				zap.String("job_id", j.ID),
 				zap.String("year", year),
 				zap.Int("fetched", len(events)),
 				zap.Int("upserted", res.Upserted),
-				zap.Int("deleted", res.Deleted))
+				zap.Int("deleted", res.Deleted),
+				zap.Int("deduped", dedup.Deduped),
+				zap.Int("stamped", dedup.Stamped),
+				zap.Int("cleared", dedup.Cleared),
+				zap.Int("skipped", dedup.Ambiguous+dedup.TypeRefused),
+				zap.Int("labels_applied", applied))
 		}
 
 		result, _ := json.Marshal(out)
@@ -154,11 +228,22 @@ func New(cfg Config) job.Handler {
 	}
 }
 
-// yearSummary is the per-year result reported in the job's result_json.
+// yearSummary is the per-year result reported in the job's result_json. The
+// dedup fields (devops#443) are the mirror's match decisions: Deduped listings
+// not written because a Chinese row covers them, Stamped/Cleared the wa_label
+// values sent for those rows (set/change/remove, before the store's origin and
+// override guards), Applied what the store actually wrote, Skipped the listings
+// kept on a refused match (ambiguous or type-contradicting) — each of those is
+// worth an operator's glance when it stops being zero.
 type yearSummary struct {
 	Fetched  int `json:"fetched"`
 	Upserted int `json:"upserted"`
 	Deleted  int `json:"deleted"`
+	Deduped  int `json:"deduped"`
+	Stamped  int `json:"stamped"`
+	Cleared  int `json:"cleared"`
+	Skipped  int `json:"skipped"`
+	Applied  int `json:"applied"`
 }
 
 // jobInput is the job's input: the run-level {"years":[...]} merged (by the

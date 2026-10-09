@@ -41,8 +41,10 @@ func (s *Store) AutoMigrateRaceCalendar(ctx context.Context) error {
 // the upstream re-lists is un-flagged by the same upsert that refreshes the row.
 //
 // wa_label is excluded too, and for a stronger reason than the rest: it is
-// written onto 中国田协 rows by the race_calendar_wa_label step, which no calendar
-// mirror owns. Leaving it out of this list is what makes that write survive the
+// applied through ApplyRaceCalendarWALabels — by the race_calendar_wa_label
+// step and, since devops#443, by the 国际田联 mirror's dedup stamping a
+// listing's tier onto the Chinese row it merges into — and no mirror's upsert
+// owns it. Leaving it out of this list is what makes those writes survive the
 // daily 中国田协 sync — an OnConflict merge would otherwise rebuild the row's
 // columns from the upstream struct and blank it.
 var raceCalendarUpsertCols = []string{
@@ -97,6 +99,13 @@ type ReplaceRaceCalendarResult struct {
 // stale-delete to that calendar year, so older years' history is untouched. An
 // empty races slice is a no-op (returns zero counts) rather than a wipe: a
 // transient empty upstream response must not clear a populated year.
+//
+// The caller may pass fewer rows than upstream lists — the 国际田联 mirror's
+// dedup (devops#443) drops a CHN listing whose Chinese row already exists. The
+// dropped listing's stored twin then simply no longer appears in the year's
+// keys, so the stale-delete below is what retires it, under the same
+// content/override/published protections as any other row the upstream stopped
+// listing.
 func (s *Store) ReplaceRaceCalendarYear(ctx context.Context, source, year string, races []RaceCalendarEvent) (ReplaceRaceCalendarResult, error) {
 	if len(races) == 0 {
 		return ReplaceRaceCalendarResult{}, nil

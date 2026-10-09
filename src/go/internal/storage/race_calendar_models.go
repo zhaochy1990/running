@@ -189,18 +189,19 @@ type RaceCalendarEvent struct {
 	// source-independent: it is written on EVERY row, so a reader consults one
 	// column instead of reasoning about which calendar the row came from.
 	//
-	// For the ~38 races both calendars list, the tier is copied from the
-	// 国际田联 row onto the 中国田协 row, which is the one a runner sees — that
-	// row's own Label holds 中国田协's grade (A/B/C…), so the two coexist. For the
-	// ~12 races 中国田协 does not list at all (上海马拉松 Platinum, 北京马拉松
-	// Gold…), the 国际田联 row *is* the race, and the step mirrors its own Label
-	// into WALabel; without that those races — the most prestigious ones — would
-	// read as having no World Athletics tier.
+	// A race both calendars list is one row — the Chinese one (the 国际田联
+	// mirror does not write an English-name row beside it, devops#443) — and the
+	// mirror's dedup stamps the listing's tier here in the same run. A race only
+	// the 国际田联 calendar lists (上海马拉松 Platinum, 北京马拉松 Gold…) keeps
+	// that row, and the race_calendar_wa_label step mirrors its own Label into
+	// WALabel; without that those races — the most prestigious ones — would read
+	// as having no World Athletics tier.
 	//
-	// It is written by the race_calendar_wa_label step. Like the content columns
-	// it is NOT in raceCalendarUpsertCols, so neither calendar mirror clobbers
-	// it — the 中国田协 mirror writes only its own source's rows and would not
-	// touch this column even if it did.
+	// Like the content columns it is NOT in raceCalendarUpsertCols, so neither
+	// calendar mirror's upsert clobbers it — the tier writes go through
+	// ApplyRaceCalendarWALabels, which guards origin and the administrator
+	// override (see RaceCalendarOverrideableFields: the match is a heuristic, so
+	// an administrator must be able to correct or clear a wrong tier).
 	//
 	// It is admin-overrideable (see RaceCalendarOverrideableFields): the match is
 	// a heuristic, so an administrator must be able to correct or clear a wrong

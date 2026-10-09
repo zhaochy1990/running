@@ -1,32 +1,28 @@
-// This file is the race_calendar_wa_label step: the third pass over the race
-// calendars, after both mirrors have run.
+// This file is the race_calendar_wa_label step: it runs after both mirrors have
+// run.
 //
-// It exists because a race has two grades and they live in two tables' rows. The
-// 中国田协 mirror writes 中国田协's own grade (A/B/C…) onto its rows; the World
-// Athletics mirror writes the WA tier (Platinum/Gold/Elite/Label) onto *its*
-// rows. A runner looking at one race should see both, and neither mirror can
-// write the other's rows — ReplaceRaceCalendarYear is scoped to its own source
-// by construction. So this step matches the two calendars and copies the tier
-// across, which is the only cross-source write in the pipeline.
+// It exists because a World Athletics row must carry its own tier in wa_label,
+// not just in label — the races 中国田协 does not list (上海马拉松 Platinum,
+// 北京马拉松 Gold…) have their 国际田联 row as the only row a runner sees, and
+// readers consult the one wa_label column instead of reasoning about which
+// calendar a row came from. The mirror writes wa_label on freshly inserted rows
+// only via the upsert's insert path (the column is deliberately outside
+// raceCalendarUpsertCols, so no mirror's merge can clobber it); this step
+// re-mirrors the tier on every run so an upstream tier change reaches the
+// stored rows too.
 //
-// It runs as its own single-step pipeline rather than inside either mirror: the
-// two mirrors run as parallel jobs in the daily workflow, so a step needing both
-// calendars' output cannot be part of either one.
+// The cross-source half this step used to perform — copying a 国际田联 row's
+// tier onto the matching 中国田协 row — moved into the 国际田联 mirror itself
+// (devops#443): there the listing is deduped against the Chinese row instead of
+// being written, and its tier is applied to that row in the same run. This step
+// must not copy across sources any more: after the dedup there IS no 国际田联
+// row for a matched race, so a copy pass would read "no counterpart" and erase
+// the tier the mirror just wrote.
 //
-// The match is (race_date, city), exact, and requires a unique candidate. There
-// is deliberately no fuzzy fallback:
-//
-//   - Names are useless across the sources. WA says "Fuzhou Marathona" (the
-//     upstream typo) and "Xi'an" while 中国田协 says "2026福州马拉松"; matching on
-//     name tokens would be a second heuristic to be wrong in.
-//   - race_types cannot carry the match either. WA fills it only from the
-//     GW/GL ranking categories, so 31 of the 38 Chinese matches in 2026 are
-//     ["Unknown"] — it can refute a match but rarely confirm one, which is
-//     exactly how it is used below.
-//   - A date disagreement is left unmatched rather than guessed at. 2026南昌马拉松
-//     is 11-15 (the organiser's announced date, corroborated by the local press)
-//     but WA still lists 11-08; the race simply keeps no tier rather than risk
-//     attaching it to whatever else that city ran that day.
+// It runs as its own single-step pipeline rather than inside the mirror: the
+// mirrors run as parallel jobs in the daily workflow, and a row inserted by
+// today's mirror run is labelled the same morning without either pipeline
+// waiting on the other.
 package competitioncalendar
 
 import (
@@ -67,20 +63,26 @@ type waLabelInput struct {
 	Years []string `json:"years"`
 }
 
-// waLabelYearSummary reports one year's work, split by which side of the match a
-// row was, so an operator can tell a failed cross-source match (Labeled falling
-// to zero) from the routine self-mirror still working (Mirrored steady).
+// waLabelYearSummary reports one year's work. The self-mirror is the whole job
+// since devops#443; the copy counts below stay in the result shape (dashboards
+// read this JSON) and are always zero — a nonzero Labeled/Cleared after this
+// change would mean the cross-source half came back.
 type waLabelYearSummary struct {
 	// Labeled counts 中国田协 rows that took a tier from their World Athletics
 	// counterpart; Unmatched counts those that found no counterpart.
+	//
+	// Always zero since devops#443: the copy moved into the 国际田联 mirror's
+	// dedup (after which there is no counterpart row to find).
 	Labeled   int `json:"labeled"`
 	Unmatched int `json:"unmatched"`
 	// Cleared counts 中国田协 rows whose tier was removed (the listing is gone or
-	// the two no longer match). Listed before Unmatched because the two are
-	// different states: a cleared row had a tier and lost it.
+	// the two no longer match).
+	//
+	// Always zero since devops#443: the mirror's dedup reconciles the Chinese
+	// rows' tiers in the same run that decides the matches.
 	Cleared int `json:"cleared"`
 	// Mirrored counts World Athletics rows that took their own tier into
-	// wa_label — routine, and the whole count for races 中国田协 does not list.
+	// wa_label — the job's entire remaining work.
 	Mirrored int `json:"mirrored"`
 }
 
@@ -127,35 +129,18 @@ func NewWALabel(cfg WALabelConfig) job.Handler {
 				return "", err
 			}
 
-			desired, matched := matchWALabels(scope)
-			_ = hb("label:"+year, 60)
-
+			// The self-mirror: every World Athletics row carries its own tier.
 			// Write only what changes, so a routine day writes nothing at all and
-			// a re-run of the same day is a no-op.
-			// Both calendars are reconciled, not only the 中国田协 side: a WA row
-			// carries its own tier (see matchWALabels). A fresh slice rather than
-			// append(scope.ChinaAth, ...) — that would write into the scope's own
-			// backing array when it has spare capacity.
-			all := make([]storage.RaceCalendarEvent, 0, len(scope.ChinaAth)+len(scope.WorldAth))
-			all = append(all, scope.ChinaAth...)
-			all = append(all, scope.WorldAth...)
-
-			changed := make([]storage.RaceCalendarWALabel, 0, len(all))
-			summary := waLabelYearSummary{Unmatched: len(scope.ChinaAth) - matched}
-			for _, row := range all {
-				want := desired[row.ID]
+			// a re-run of the same day is a no-op. The scope's 中国田协 half is
+			// loaded for the log's row counts only — the mirror's dedup owns
+			// those rows' tiers now.
+			changed := make([]storage.RaceCalendarWALabel, 0, len(scope.WorldAth))
+			for _, row := range scope.WorldAth {
+				want := row.Label
 				if sameLabel(row.WALabel, want) {
 					continue
 				}
 				changed = append(changed, storage.RaceCalendarWALabel{ID: row.ID, WALabel: want})
-				switch {
-				case row.Source == storage.RaceSourceWorldAth:
-					summary.Mirrored++
-				case want == nil:
-					summary.Cleared++
-				default:
-					summary.Labeled++
-				}
 			}
 
 			applied, err := cfg.Store.ApplyRaceCalendarWALabels(ctx, changed)
@@ -176,10 +161,9 @@ func NewWALabel(cfg WALabelConfig) job.Handler {
 				zap.String("job_id", j.ID), zap.String("year", year),
 				zap.Int("china_ath", len(scope.ChinaAth)),
 				zap.Int("world_ath", len(scope.WorldAth)),
-				zap.Int("matched", matched),
 				zap.Int("changed", len(changed)),
 				zap.Int("applied", applied))
-			out.Years[year] = summary
+			out.Years[year] = waLabelYearSummary{Mirrored: len(changed)}
 		}
 
 		_ = hb("label", 100)
@@ -191,75 +175,10 @@ func NewWALabel(cfg WALabelConfig) job.Handler {
 	}
 }
 
-// matchWALabels maps each in-scope row id to the World Athletics tier it should
-// carry, and reports how many 中国田协 rows found a counterpart.
-//
-// THE CONTRACT: the map must contain an entry for every row that has a tier, and
-// the caller treats an ABSENT entry as "clear it". That is what lets a race which
-// lost its World Athletics listing shed a stale tier — but it also means
-// forgetting to populate a row here does not leave it blank, it ERASES it. Every
-// source in the scope must be enumerated below; removing the World Athletics loop
-// would silently wipe those rows' tiers rather than merely stop filling them.
-//
-// A present entry may itself hold nil, which also clears — that is how a
-// 中国田协 row whose counterpart carries no tier is handled.
-//
-// The counterpart must be unique: two World Athletics listings sharing a city and
-// date would leave the choice a coin flip, so an ambiguous 中国田协 row is left out
-// of the map (and therefore cleared) rather than guessed at. The same rule is why
-// a WA date that has drifted onto another race's day cannot cause a wrong label.
-func matchWALabels(scope storage.RaceCalendarLabelScope) (map[uint64]*string, int) {
-	byKey := make(map[labelKey][]storage.RaceCalendarEvent, len(scope.WorldAth))
-	for _, wa := range scope.WorldAth {
-		k, ok := keyOf(wa)
-		if !ok {
-			continue
-		}
-		byKey[k] = append(byKey[k], wa)
-	}
-
-	desired := make(map[uint64]*string, len(scope.ChinaAth)+len(scope.WorldAth))
-
-	// A World Athletics row carries its own tier, and mirrors it onto itself.
-	//
-	// This is not redundant. For the 38 races both calendars list, the tier lands
-	// on the 中国田协 row and the WA row is a duplicate nobody reads. But 12 races
-	// exist ONLY in the World Athletics calendar — 上海马拉松 (Platinum),
-	// 北京马拉松 (Gold), 桂林, 黄石, 义乌, 深圳… — and for those the WA row *is*
-	// the race, so its `label` is the only place the tier lives. Without this the
-	// wa_label column would read empty for exactly the races whose tier is
-	// Platinum, which reads as "no World Athletics tier" rather than "not copied".
-	//
-	// The rule is then uniform and source-independent: wa_label is this race's
-	// World Athletics tier wherever one is known. A reader consults one column
-	// instead of reasoning about which calendar a row came from.
-	for _, wa := range scope.WorldAth {
-		desired[wa.ID] = wa.Label
-	}
-
-	matched := 0
-	for _, cn := range scope.ChinaAth {
-		k, ok := keyOf(cn)
-		if !ok {
-			continue
-		}
-		candidates := byKey[k]
-		if len(candidates) != 1 {
-			continue
-		}
-		wa := candidates[0]
-		if !typesCompatible(wa.RaceTypes, cn.RaceTypes) {
-			continue
-		}
-		matched++
-		desired[cn.ID] = wa.Label
-	}
-	return desired, matched
-}
-
 // labelKey is the match key: the race's calendar date and its city. Both sides
 // store city at the prefecture level (see the chinaCity table), which is what
-// makes this join sound.
+// makes this join sound. The match itself lives in dedup.go (the 国际田联
+// mirror's dedup); keyOf and typesCompatible below are its shared helpers.
 type labelKey struct {
 	RaceDate string
 	City     string
