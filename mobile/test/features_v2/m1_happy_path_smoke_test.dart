@@ -267,7 +267,7 @@ void main() {
           GoRoute(
             path: '/records/activity/:id',
             builder: (_, state) =>
-                Scaffold(body: Text('detail-\${state.pathParameters['id']}')),
+                Scaffold(body: Text("detail-${state.pathParameters['id']}")),
           ),
         ],
       );
