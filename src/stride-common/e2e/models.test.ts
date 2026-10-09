@@ -18,7 +18,7 @@ import { buildModel, ModelContractError, type StructuredModelConfig } from "@str
 import { z } from "zod/v4";
 
 const BASE = {
-  model: "deepseek-v4-flash",
+  model: "deepseek-flash",
   endpoint: "https://api.deepseek.com",
   api_key_env: "DEEPSEEK_API_KEY",
   // Ceilings, not the roles' values: the shipped timeouts reach 600s.

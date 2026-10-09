@@ -48,7 +48,7 @@ race-detection:
   api-kind: "chat-completions"
   endpoint: "https://api.deepseek.com"
   api-key: ""
-  model: "deepseek-v4-flash"
+  model: "deepseek-flash"
   timeout: 30s
   max-concurrency: 8
 
@@ -59,7 +59,7 @@ race-detection:
 city-ai-draft:
   endpoint: "https://api.deepseek.com"
   api-key: ""
-  model: "deepseek-v4-flash"
+  model: "deepseek-flash"
   timeout: 45s
 
 # Amap (高德) geocoding for race-calendar venue names: resolves start_point
