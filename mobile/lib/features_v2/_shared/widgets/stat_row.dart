@@ -19,8 +19,7 @@ class StatItem {
 }
 
 class StrideStatRow extends StatelessWidget {
-  const StrideStatRow({super.key, required this.items, this.mono = true})
-    : assert(items.isNotEmpty, 'StrideStatRow requires at least one item');
+  const StrideStatRow({super.key, required this.items, this.mono = true});
 
   final List<StatItem> items;
   final bool mono;

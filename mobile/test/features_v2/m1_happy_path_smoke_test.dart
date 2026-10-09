@@ -40,7 +40,6 @@ import 'package:stride/features_v2/training/providers/training_providers.dart';
 import 'package:stride/features_v2/onboarding/brand_screen.dart';
 import 'package:stride/features_v2/onboarding/blocked_screen.dart';
 import 'package:stride/features_v2/onboarding/coros_link_screen.dart';
-import 'package:stride/features_v2/onboarding/providers/sync_progress_provider.dart';
 import 'package:stride/features_v2/onboarding/basic_info_screen.dart';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
@@ -201,10 +200,6 @@ void main() {
       // exists in the router — a more invasive mock would require exposing
       // SyncProgressController internals.
       // Tracked as: T31-followup — SyncProgressScreen with mocked provider.
-      const frozenProgress = SyncProgress(
-        phase: SyncPhase.starting,
-        percent: 0,
-      );
       final router = GoRouter(
         routes: [
           GoRoute(

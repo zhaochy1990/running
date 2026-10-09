@@ -139,7 +139,7 @@ class StrengthWorkoutSpec extends WorkoutSpec {
 }
 
 class _UnknownWorkoutSpec extends WorkoutSpec {
-  const _UnknownWorkoutSpec.fromJson(Map<String, dynamic> json)
+  _UnknownWorkoutSpec.fromJson(Map<String, dynamic> json)
     : super(name: json['name'] as String? ?? '');
 }
 

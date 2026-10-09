@@ -12,8 +12,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
-import '../../data/api/stride_api.dart';
-import '../../core/auth/current_user.dart';
 import '../../core/theme/pill_colors.dart';
 import '../_shared/widgets/pill.dart';
 import '../_shared/widgets/refreshable.dart';

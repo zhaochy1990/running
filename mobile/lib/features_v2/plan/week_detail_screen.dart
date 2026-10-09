@@ -19,7 +19,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/router/routes.dart';
 import '../_shared/widgets/stat_row.dart';
 import '../_shared/widgets/top_bar.dart';
-import '../../data/models/plan.dart';
+import '../../data/models/weekly_plan.dart';
 import 'providers/push_week_provider.dart';
 import 'providers/week_detail_provider.dart';
 import 'widgets/push_result_sheet.dart';

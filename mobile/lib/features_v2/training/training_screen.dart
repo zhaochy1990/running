@@ -17,6 +17,7 @@ import '../../data/api/stride_api.dart';
 import '../../data/models/activity.dart';
 import '../../shared/utils/format.dart';
 import '../../shared/utils/shanghai_date.dart';
+import '../../core/theme/pill_colors.dart';
 import '../_shared/widgets/pill.dart';
 import '../_shared/widgets/top_bar.dart';
 import '../coach/providers/coach_chat_provider.dart';
@@ -580,7 +581,7 @@ class _WorkoutCard extends StatelessWidget {
               if (workout.scheduledWorkoutId != null)
                 const Padding(
                   padding: EdgeInsets.only(right: StrideTokens.spaceSm),
-                  child: StridePill(text: '已推送', variant: PillVariant.green, dense: true),
+                  child: const StridePill(text: '已推送', variant: PillVariant.green, dense: true),
                 ),
               IconButton(
                 onPressed: pushing ? null : () => onPush(workout),

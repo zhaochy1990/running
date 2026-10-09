@@ -111,6 +111,12 @@ List<WeekDay> buildWeekDays(String anchorYmd) {
   ];
 }
 
+/// 当前（上海）周的目录名。等价小程序 services/plan.ts 的 currentWeekName()。
+String currentWeekName() {
+  final today = shanghaiToday();
+  return weekFolderName(shanghaiWeekStart(today));
+}
+
 /// 「(2026年7月)」样式的周副标题，基于周一的年月。
 String weekSubtitle(String weekStartYmd) {
   final year = weekStartYmd.substring(0, 4);
@@ -128,7 +134,11 @@ String shanghaiDateFromIso(String? iso) {
 
 /// 推送日期选项（今天起共 8 个可选日，含今天）。
 class PushDateOption {
-  const PushDateOption({required this.label, required this.value, this.selected});
+  const PushDateOption({
+    required this.label,
+    required this.value,
+    this.selected = false,
+  });
 
   final String label;
   final String value; // YYYY-MM-DD
@@ -155,7 +165,7 @@ List<PushDateOption> buildPushDateOptions(String plannedDate) {
   for (var i = 0; i <= forwardDays; i++) {
     final date = epochToShanghaiYmd(todayEpoch + i * _dayMs);
 
-    var label;
+    String label;
     if (i == 0) {
       label = '今天';
     } else if (i == 1) {

@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/current_user.dart';
 import '../../../data/api/stride_api.dart';
-import '../../../data/models/plan.dart';
 import '../../../data/models/weekly_plan.dart';
 
 /// One calendar day's sessions within the week.
@@ -90,7 +89,7 @@ final weekDetailProvider =
 
     // Structured content keyed by weekName (`YYYY-MM-DD_MM-DD`). Missing plan
     // (404/no content) is not an error — the screen renders an empty week.
-    final WeeklyPlanDetail? plan;
+    WeeklyPlanDetail? plan;
     try {
       plan = await api.getWeeklyPlan(userId, week.weekName);
     } catch (_) {

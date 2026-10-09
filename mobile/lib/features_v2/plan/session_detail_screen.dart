@@ -24,7 +24,7 @@ import '../../shared/utils/format.dart';
 import '../_shared/widgets/pill.dart';
 import '../_shared/widgets/stat_row.dart';
 import '../_shared/widgets/top_bar.dart';
-import 'day_view.dart' show firstLine;
+import '../training/day_view.dart' show firstLine;
 import 'providers/week_detail_provider.dart';
 import 'widgets/strength_exercise_row.dart';
 
