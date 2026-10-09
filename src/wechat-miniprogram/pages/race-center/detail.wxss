@@ -1,8 +1,8 @@
 /* ============================================================
    赛事详情页 —— 深色 STRIDE 主题（与赛事中心列表页 #392 一致）。
    版式按 #385 定稿：头区（名称+星标+双徽章 → 三宫格 → 报名时间轴 →
-   报名按钮）+ 概要/项目/出行 三 tab。app.wxss 全局令牌是浅色，
-   深色类在本页重定义。
+   报名按钮）+ 概要/项目/出行 tab；#546 有赛道内容时增设赛道 tab。
+   app.wxss 全局令牌是浅色，深色类在本页重定义。
    ============================================================ */
 
 .page {
@@ -473,6 +473,140 @@
 .empty-card__title {
   white-space: normal;
   line-height: 40rpx;
+}
+
+/* ---------- 赛道 tab（#546）：路线文字 + 赛道全景站点线 ---------- */
+
+/* 路线文字串：整宽段落（项目 tab 里的赛道行是 kv 窄列，此处为赛道主场） */
+.course__route {
+  font-size: 26rpx;
+  line-height: 42rpx;
+  color: #c9c9cb;
+}
+
+.course__sep {
+  margin: 24rpx 0;
+  border-top: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.course__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.course__head .card__title {
+  margin-bottom: 0;
+}
+
+.course__meta {
+  font-size: 22rpx;
+  color: #8a8a8c;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 纵向站点线：线在左，站点卡绝对定位（top 由 utils/raceCourse 按紧凑间距算出） */
+.course__plot {
+  position: relative;
+  margin-top: 24rpx;
+  margin-left: 8rpx;
+}
+
+.course__vline {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6rpx;
+  border-radius: 3rpx;
+  background: #17181a;
+}
+
+.course__station {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+}
+
+/* 展开的站点卡提到最上层：紧凑间距下允许盖过相邻卡 */
+.course__station--open {
+  z-index: 10;
+}
+
+.course__dot {
+  flex-shrink: 0;
+  width: 20rpx;
+  height: 20rpx;
+  border-radius: 50%;
+  /* 对齐卡片首行文字的视觉中心：卡 padding 16rpx + 标题行高一半，
+     圆点含边框总高 26rpx；实机量偏差校准为 22rpx */
+  margin-top: 22rpx;
+  margin-left: -7rpx;
+  border: 3rpx solid #101111;
+}
+
+.course__card {
+  flex: 1;
+  min-width: 0;
+  margin-left: 20rpx;
+  background: #17181a;
+  border-radius: 12rpx;
+  padding: 16rpx 20rpx;
+}
+
+.course__card--open {
+  background: #1d1e21;
+}
+
+.course__row {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+}
+
+.course__cat {
+  flex-shrink: 0;
+  font-size: 18rpx;
+  line-height: 28rpx;
+  padding: 0 10rpx;
+  border-radius: 6rpx;
+}
+
+.course__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  font-weight: 600;
+  line-height: 36rpx;
+  color: #e3e2e5;
+}
+
+.course__km {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  font-variant-numeric: tabular-nums;
+}
+
+.course__more {
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  color: #6a6a6c;
+}
+
+.course__body {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 38rpx;
+  color: #c9c9cb;
+}
+
+.course__finish {
+  margin-top: 16rpx;
+  margin-left: 8rpx;
+  font-size: 20rpx;
+  color: #6a6a6c;
 }
 
 /* ---------- 报名选择器 action sheet ---------- */

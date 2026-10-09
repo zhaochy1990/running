@@ -107,6 +107,14 @@ export interface RacePoint {
   name: string;
 }
 
+/** 赛道难点（storage.RaceCourseChallenge 的 v1 投影）。distance_km 是自由
+ * 文本（"28" / "0–10km（外滩→南京西路）"）而非数值：难点拥有一段路而非
+ * 一个点，区间 + 地标才是诚实单位；null = 只有文字位置描述。 */
+export interface RaceCourseChallenge {
+  distance_km: string | null;
+  description: string;
+}
+
 /** 关门点（storage.RaceCutoff 的 v1 投影）：位置名 + 当日墙钟 HH:MM。 */
 export interface RaceCutoff {
   point: string;
@@ -127,6 +135,8 @@ export interface RaceItem {
   start_point: RacePoint | null;
   finish_point: RacePoint | null;
   route_description: string | null;
+  total_ascent_m: number | null;
+  course_challenges: RaceCourseChallenge[] | null;
   cutoffs: RaceCutoff[] | null;
 }
 

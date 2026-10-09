@@ -37,6 +37,8 @@ const item = (over: Partial<RaceItem>): RaceItem => ({
   start_point: { name: '黄龙体育中心' },
   finish_point: { name: '奥体中心' },
   route_description: null,
+  total_ascent_m: null,
+  course_challenges: null,
   cutoffs: [],
   ...over,
 });

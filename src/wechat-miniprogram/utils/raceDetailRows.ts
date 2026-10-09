@@ -2,12 +2,14 @@
 // 配套 utils/raceDetailRows.check.mts 自检
 // （`node --import ./utils/ts-resolve-hooks.mjs utils/raceDetailRows.check.mts`）。
 // 页面（pages/race-center/detail）负责请求与交互，这里只做
-// 数据 → 头区 / 概要 / 项目 / 出行 视图的确定性变换。
+// 数据 → 头区 / 概要 / 项目 / 出行 / 赛道 视图的确定性变换。
 // 版式按 #385 定稿：头区（名称+星标+双徽章 → 三宫格 → 报名时间轴 → 报名按钮）
-// + 概要/项目/出行 三 tab；比赛策略卡归 v2（#386），本期不上。
+// + 概要/项目/出行 tab；赛道 tab（#546）按项目分节，无赛道内容的赛事回落
+// 三 tab；比赛策略卡归 v2（#386），本期不上。
 
 import type { RaceDetail, RaceItem } from '../services/race-center';
 import type { RacePlanState } from '../services/race-plans';
+import { toCourseSection, type RaceCourseSection } from './raceCourse';
 import { cnBadgeOf, waBadgeOf, typeAbbr } from './raceCenterRows';
 import { shanghaiWeekdayLabel, shanghaiYmdToEpoch } from './date';
 
@@ -81,6 +83,13 @@ export interface RaceTripView {
   } | null;
 }
 
+/** 赛道 tab：按项目分节（路线文字 + 难点线）。available=false 时页面回落
+ * 三 tab（概要/项目/出行），路线文字留在项目 tab 的「赛道」行。 */
+export interface RaceCourseView {
+  available: boolean;
+  sections: RaceCourseSection[];
+}
+
 /** 详情页整体视图模型。 */
 export interface RaceDetailView {
   head: RaceDetailHead;
@@ -88,6 +97,7 @@ export interface RaceDetailView {
   channels: RaceChannelRow[];
   items: RaceItemSection[];
   trip: RaceTripView;
+  course: RaceCourseView;
 }
 
 /** 报名费分 → 元标签；null/非正数 = 待定。 */
@@ -235,6 +245,9 @@ function tripView(detail: RaceDetail): RaceTripView {
 
 /** 详情数据 → 页面渲染模型。today 注入以便自检可复现。 */
 export function toDetailView(detail: RaceDetail, today: string): RaceDetailView {
+  const courseSections = detail.items
+    .map(toCourseSection)
+    .filter((s): s is RaceCourseSection => s !== null);
   return {
     head: {
       name: detail.name_cn || detail.name,
@@ -247,6 +260,7 @@ export function toDetailView(detail: RaceDetail, today: string): RaceDetailView 
     channels: channelRows(detail),
     items: detail.items.map(itemSection),
     trip: tripView(detail),
+    course: { available: courseSections.length > 0, sections: courseSections },
   };
 }
 

@@ -56,6 +56,8 @@ interface RaceDetailPageData {
   strategyEntry: boolean;
   /** 已生成时的摘要态（最近更新版目标 + 版本数 + 更新时间）；null=未生成（CTA 态） */
   strategySummary: { target: string; count: number; updatedAt: string } | null;
+  /** 赛道 tab 站点卡的展开态，key 见 utils/raceCourse（sectionId:index，页面级唯一） */
+  courseOpen: Record<string, boolean>;
 }
 
 interface RaceDetailPageHandlers {
@@ -73,6 +75,8 @@ interface RaceDetailPageHandlers {
   onStrategyTap(): void;
   onSheetClose(): void;
   onCopyTap(e: WechatMiniprogram.TouchEvent): void;
+  /** 赛道 tab：站点卡展开/收起 */
+  onCourseToggle(e: WechatMiniprogram.TouchEvent): void;
   refresh(): Promise<void>;
   applyPlan(): void;
   _raceId: number;
@@ -113,6 +117,7 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
     sheetStates: [],
     strategyEntry: false,
     strategySummary: null,
+    courseOpen: {},
   },
 
   _raceId: 0,
@@ -186,7 +191,8 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
     this._plan = plansRes?.plans.find((p) => p.race_id === this._raceId) || null;
     this._detail = detail;
     const view = toDetailView(detail, shanghaiToday());
-    this.setData({
+    // 赛道 tab 缺席（无赛道内容）时 tabIndex===3 是死位（四 tab 版式残留），拉回概要
+    const patch: Partial<RaceDetailPageData> = {
       loading: false,
       error: '',
       view,
@@ -194,7 +200,10 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
       signupAvailable: itemChips(detail.items).length > 0,
       strategyEntry: detail.strategy_available,
       strategySummary,
-    });
+      courseOpen: {},
+    };
+    if (!view.course.available && this.data.tabIndex === 3) patch.tabIndex = 0;
+    this.setData(patch);
     this.applyPlan();
   },
 
@@ -355,6 +364,13 @@ Page<RaceDetailPageData, RaceDetailPageHandlers>({
       data: url,
       fail: () => wx.showToast({ title: '复制失败', icon: 'none' }),
     });
+  },
+
+  /** 赛道 tab：站点卡展开/收起（全文含口径来源，默认只露短标题）。 */
+  onCourseToggle(e: WechatMiniprogram.TouchEvent) {
+    const key = String(e.currentTarget.dataset.key || '');
+    if (!key) return;
+    this.setData({ [`courseOpen.${key}`]: !this.data.courseOpen[key] });
   },
 
   onBack() {

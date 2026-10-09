@@ -73,11 +73,13 @@
           </block>
         </view>
 
-        <!-- 三 tab：概要 / 项目 / 出行（#385：无报名 tab，渠道挪入概要） -->
+        <!-- 四 tab：概要 / 项目 / 赛道 / 出行（#385 定稿三 tab；#546 有赛道内容时
+             增设赛道 tab，无则回落三 tab 且路线文字留在项目 tab 的赛道行） -->
         <view class="tabs" style="top: calc({{statusBarHeight}}px + 128rpx);">
           <view class="tabs__item {{tabIndex === 0 ? 'tabs__item--on' : ''}}" data-tab="0" bindtap="onTabTap">概要</view>
           <view class="tabs__item {{tabIndex === 1 ? 'tabs__item--on' : ''}}" data-tab="1" bindtap="onTabTap">项目</view>
-          <view class="tabs__item {{tabIndex === 2 ? 'tabs__item--on' : ''}}" data-tab="2" bindtap="onTabTap">出行</view>
+          <view wx:if="{{view.course.available}}" class="tabs__item {{tabIndex === 2 ? 'tabs__item--on' : ''}}" data-tab="2" bindtap="onTabTap">赛道</view>
+          <view class="tabs__item {{(view.course.available ? tabIndex === 3 : tabIndex === 2) ? 'tabs__item--on' : ''}}" data-tab="{{view.course.available ? 3 : 2}}" bindtap="onTabTap">出行</view>
         </view>
 
         <!-- 概要：关键信息 + 报名渠道 -->
@@ -102,7 +104,8 @@
           </view>
         </block>
 
-        <!-- 项目：每项目一节；赛道空态「待补」 -->
+        <!-- 项目：每项目一节（纯报名信息）；赛道内容在有赛道 tab 时挪入赛道 tab，
+             无赛道 tab 的赛事（course.available=false）路线文字留在此处兜底 -->
         <block wx:elif="{{tabIndex === 1}}">
           <block wx:if="{{view.items.length}}">
             <view class="card" wx:for="{{view.items}}" wx:for-item="sec" wx:key="id">
@@ -111,7 +114,7 @@
                 <view class="kv__k">{{row.k}}</view>
                 <view class="kv__v">{{row.v}}</view>
               </view>
-              <view class="kv kv--last">
+              <view wx:if="{{!view.course.available}}" class="kv kv--last">
                 <view class="kv__k">赛道</view>
                 <view class="kv__v {{sec.route ? '' : 'kv__v--dim'}}">{{sec.route || '待补'}}</view>
               </view>
@@ -119,6 +122,49 @@
           </block>
           <view wx:else class="empty-card">
             <view class="empty-card__title">项目待发布</view>
+          </view>
+        </block>
+
+        <!-- 赛道：每项目一节 —— 路线文字 + 赛道全景（难点沿线纵向站点线，#546） -->
+        <block wx:elif="{{view.course.available && tabIndex === 2}}">
+          <view class="card" wx:for="{{view.course.sections}}" wx:for-item="sec" wx:key="id">
+            <view class="card__title">{{sec.title}} · 赛道</view>
+            <view wx:if="{{sec.route}}" class="course__route">{{sec.route}}</view>
+            <view wx:else class="card__empty">路线待补</view>
+
+            <block wx:if="{{sec.stations.length}}">
+              <view class="course__sep"></view>
+              <view class="course__head">
+                <view class="card__title">赛道全景</view>
+                <view class="course__meta">
+                  <text wx:if="{{sec.distanceKm}}">{{sec.distanceKm}}km </text>
+                  <text wx:if="{{sec.ascent}}">· 爬升约{{sec.ascent}}m </text>
+                  <text>· {{sec.stations.length}} 处</text>
+                </view>
+              </view>
+              <view class="course__plot" style="height: {{sec.plotH}}rpx;">
+                <view class="course__vline"></view>
+                <block wx:for="{{sec.stations}}" wx:for-item="st" wx:key="key">
+                  <view class="course__station {{courseOpen[st.key] ? 'course__station--open' : ''}}" style="top: {{st.top}}rpx;">
+                    <view class="course__dot" style="background: rgb({{st.color}});"></view>
+                    <view
+                      class="course__card {{courseOpen[st.key] ? 'course__card--open' : ''}}"
+                      data-key="{{st.key}}"
+                      bindtap="onCourseToggle"
+                    >
+                      <view class="course__row">
+                        <text class="course__cat" style="color: rgb({{st.color}}); background: rgba({{st.color}}, 0.12);">{{st.cat}}</text>
+                        <text class="course__title">{{st.title}}</text>
+                        <text class="course__km" style="color: rgb({{st.color}});">{{st.km}}</text>
+                      </view>
+                      <view wx:if="{{courseOpen[st.key]}}" class="course__body">{{st.body}}</view>
+                      <view wx:else class="course__more">展开 ▾</view>
+                    </view>
+                  </view>
+                </block>
+              </view>
+              <view class="course__finish">终点</view>
+            </block>
           </view>
         </block>
 
