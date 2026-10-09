@@ -26,7 +26,7 @@ models:
     reasoning_effort: high
 
   - name: deepseekv4flash
-    model: deepseek-v4-flash
+    model: deepseek-flash
     endpoint: https://api.deepseek.com
     api_key_env: DEEPSEEK_API_KEY
     api_kind: responses

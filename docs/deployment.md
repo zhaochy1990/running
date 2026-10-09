@@ -140,7 +140,7 @@ The worker's independent race-detection module (ADR 0029) requires
 
 - endpoint `https://api.deepseek.com`;
 - API protocol `chat-completions`;
-- model `deepseek-v4-flash`;
+- model `deepseek-flash`;
 - timeout 30 seconds;
 - maximum concurrency 8.
 

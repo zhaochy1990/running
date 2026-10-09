@@ -6,7 +6,7 @@ import { z } from "zod";
 
 const no_thinking: ModelConfig = {
   name: 'deepseekv4flash',
-  model: 'deepseek-v4-flash',
+  model: 'deepseek-flash',
   endpoint: 'https://api.deepseek.com',
   api_key_env: 'DEEPSEEK_API_KEY',
   api_kind: 'chat-completions',
@@ -18,7 +18,7 @@ const no_thinking: ModelConfig = {
 
 const thinking: ModelConfig = {
   name: 'deepseekv4flash',
-  model: 'deepseek-v4-flash',
+  model: 'deepseek-flash',
   endpoint: 'https://api.deepseek.com',
   api_key_env: 'DEEPSEEK_API_KEY',
   api_kind: 'chat-completions',

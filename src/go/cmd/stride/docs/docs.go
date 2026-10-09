@@ -810,7 +810,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Administrator only. Returns a page of races ordered by race date, filtered by optional year, source (国际田联 / 中国田协 / manual), month, keyword (matches name or name_cn), published state and an inclusive race-date range (date_from / date_to).",
+                "description": "Administrator only. Returns a page of races ordered by race date, filtered by optional year, source (国际田联 / 中国田协 / manual), months (comma-separated or repeated, 1-12), keyword (matches name or name_cn), published state, an exact race date (date) and grade labels (comma-separated or repeated, race_calendar.label strings).",
                 "tags": [
                     "admin"
                 ],
@@ -823,9 +823,9 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
-                        "type": "integer",
-                        "description": "Month 1-12",
-                        "name": "month",
+                        "type": "string",
+                        "description": "Comma-separated or repeated months, 1-12, e.g. months=3,10",
+                        "name": "months",
                         "in": "query"
                     },
                     {
@@ -848,14 +848,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Inclusive range start, YYYY-MM-DD",
-                        "name": "date_from",
+                        "description": "Exact race date, YYYY-MM-DD",
+                        "name": "date",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Inclusive range end, YYYY-MM-DD",
-                        "name": "date_to",
+                        "description": "Comma-separated or repeated grade labels, e.g. labels=A,Elite",
+                        "name": "labels",
                         "in": "query"
                     },
                     {

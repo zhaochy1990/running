@@ -241,18 +241,18 @@ func decodeRaceTypes(raw *string) []string {
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
-// list returns one page of races with the year/source/month/keyword filters.
+// list returns one page of races with the year/source/months/date/labels filters.
 //
 //	@Summary		List the race calendar
-//	@Description	Administrator only. Returns a page of races ordered by race date, filtered by optional year, source (国际田联 / 中国田协 / manual), month, keyword (matches name or name_cn), published state and an inclusive race-date range (date_from / date_to).
+//	@Description	Administrator only. Returns a page of races ordered by race date, filtered by optional year, source (国际田联 / 中国田协 / manual), months (comma-separated or repeated, 1-12), keyword (matches name or name_cn), published state, an exact race date (date) and grade labels (comma-separated or repeated, race_calendar.label strings).
 //	@Tags			admin
 //	@Param			year		query	int		false	"4-digit year"
-//	@Param			month		query	int		false	"Month 1-12"
+//	@Param			months		query	string	false	"Comma-separated or repeated months, 1-12, e.g. months=3,10"
 //	@Param			source		query	string	false	"Source label"
 //	@Param			keyword		query	string	false	"Substring of name or name_cn"
 //	@Param			published	query	bool	false	"Only published (true) or unpublished (false) races; omit for both"
-//	@Param			date_from	query	string	false	"Inclusive range start, YYYY-MM-DD"
-//	@Param			date_to		query	string	false	"Inclusive range end, YYYY-MM-DD"
+//	@Param			date		query	string	false	"Exact race date, YYYY-MM-DD"
+//	@Param			labels		query	string	false	"Comma-separated or repeated grade labels, e.g. labels=A,Elite"
 //	@Param			page		query	int		false	"Page (1-based, default 1)"
 //	@Param			per_page	query	int		false	"Page size (default 20, max 100)"
 //	@Success		200			{object}	raceCalendarListResponse
@@ -815,35 +815,22 @@ func bindRaceListFilter(c *gin.Context) (storage.RaceCalendarListFilter, bool) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_year"})
 		return f, false
 	}
-	if raw := c.Query("month"); raw != "" {
-		month, err := strconv.Atoi(raw)
-		if err != nil || month < 1 || month > 12 {
-			c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_month"})
-			return f, false
-		}
-		f.Month = month
-	}
-	// The date range bounds race_date itself (the year/month filters are its
-	// coarse shortcuts), so both ends share the calendar-date format the rows
-	// store, and an inverted window can only be a caller mistake.
-	if raw := strings.TrimSpace(c.Query("date_from")); raw != "" {
-		if !isCalendarDate(raw) {
-			c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_date_from"})
-			return f, false
-		}
-		f.DateFrom = raw
-	}
-	if raw := strings.TrimSpace(c.Query("date_to")); raw != "" {
-		if !isCalendarDate(raw) {
-			c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_date_to"})
-			return f, false
-		}
-		f.DateTo = raw
-	}
-	if f.DateFrom != "" && f.DateTo != "" && f.DateFrom > f.DateTo {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_date_range"})
+	months, ok := parseMonthList(queryCSVList(c, "months"))
+	if !ok {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_month"})
 		return f, false
 	}
+	f.Months = months
+	// The date filter pins race_date itself (the year/month filters are its
+	// coarse shortcuts), so it shares the calendar-date format the rows store.
+	if raw := strings.TrimSpace(c.Query("date")); raw != "" {
+		if !isCalendarDate(raw) {
+			c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_date"})
+			return f, false
+		}
+		f.Date = raw
+	}
+	f.Labels = queryCSVList(c, "labels")
 	f.Page = 1
 	if raw := c.Query("page"); raw != "" {
 		page, err := strconv.Atoi(raw)
@@ -863,6 +850,43 @@ func bindRaceListFilter(c *gin.Context) (storage.RaceCalendarListFilter, bool) {
 		f.PerPage = perPage
 	}
 	return f, true
+}
+
+// parseMonthList validates queryCSVList's output as race months, 1-12;
+// duplicates collapse.
+func parseMonthList(values []string) ([]int, bool) {
+	var months []int
+	seen := make(map[int]bool)
+	for _, m := range values {
+		month, err := strconv.Atoi(m)
+		if err != nil || month < 1 || month > 12 {
+			return nil, false
+		}
+		if !seen[month] {
+			seen[month] = true
+			months = append(months, month)
+		}
+	}
+	return months, true
+}
+
+// queryCSVList collects a repeated-or-comma-separated query param into trimmed,
+// non-empty, de-duplicated values — the dashboard writes one joined value into
+// the URL it shares with the API call.
+func queryCSVList(c *gin.Context, key string) []string {
+	var values []string
+	seen := make(map[string]bool)
+	for _, raw := range c.QueryArray(key) {
+		for _, part := range strings.Split(raw, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" || seen[part] {
+				continue
+			}
+			seen[part] = true
+			values = append(values, part)
+		}
+	}
+	return values
 }
 
 // buildManualRace validates a create body and assembles the manual row.

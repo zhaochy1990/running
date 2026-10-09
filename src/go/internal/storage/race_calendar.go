@@ -413,23 +413,23 @@ func raceCalendarOverrideSet(fields []string) map[string]bool {
 
 // ─── admin read/write surface ────────────────────────────────────────────────
 
-// RaceCalendarListFilter bounds and orders the admin race list. Year and Month
-// are optional ("" / 0 mean no bound), Keyword matches name or name_cn as a
-// substring, and Page/PerPage are 1-based (PerPage is clamped by the caller).
-// ContentStale selects only the rows the stale-delete kept and flagged.
-// Published is tri-state: nil means no bound, so the admin can list all races,
-// only the published ones, or only the unpublished ones. DateFrom/DateTo bound
-// race_date inclusively ("2006-01-02"; "" means no bound) and compose with the
-// Year/Month bounds.
+// RaceCalendarListFilter bounds and orders the admin race list. Year, Months,
+// Date, Labels, Source and Keyword are optional (empty/nil mean no bound);
+// Keyword matches name or name_cn as a substring, and Page/PerPage are 1-based
+// (PerPage is clamped by the caller). ContentStale selects only the rows the
+// stale-delete kept and flagged. Published is tri-state: nil means no bound, so
+// the admin can list all races, only the published ones, or only the
+// unpublished ones. Date matches race_date exactly ("2006-01-02") and composes
+// with the Year/Month bounds.
 type RaceCalendarListFilter struct {
 	Year         string
-	Month        int
+	Months       []int
 	Source       string
 	Keyword      string
 	ContentStale bool
 	Published    *bool
-	DateFrom     string
-	DateTo       string
+	Date         string
+	Labels       []string
 	Page         int
 	PerPage      int
 }
@@ -449,17 +449,17 @@ func (s *Store) ListRaceCalendarEvents(ctx context.Context, f RaceCalendarListFi
 			from, to := yearDateRange(f.Year)
 			query = query.Where("race_date BETWEEN ? AND ?", from, to)
 		}
-		if f.Month > 0 {
-			query = query.Where("month = ?", f.Month)
+		if len(f.Months) > 0 {
+			query = query.Where("month IN ?", f.Months)
 		}
-		if f.DateFrom != "" {
-			query = query.Where("race_date >= ?", f.DateFrom)
-		}
-		if f.DateTo != "" {
-			query = query.Where("race_date <= ?", f.DateTo)
+		if f.Date != "" {
+			query = query.Where("race_date = ?", f.Date)
 		}
 		if f.Source != "" {
 			query = query.Where("source = ?", f.Source)
+		}
+		if len(f.Labels) > 0 {
+			query = query.Where("label IN ?", f.Labels)
 		}
 		if kw := strings.TrimSpace(f.Keyword); kw != "" {
 			like := "%" + kw + "%"
