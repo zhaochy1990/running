@@ -19,28 +19,13 @@ import (
 
 // The dashboard handler tests run on the same in-memory fakes as the rest of
 // the calendar surface; the bucketing under test lives in the HTTP layer, so
-// the fakes only need to mirror the storage read's filtering (including the
-// never-maintained OR branch, at its event-level resolution).
+// the fake only mirrors the storage read's country filter — the time domain is
+// the handler's Go-side call, and the tests below exercise it for real.
 
-func (f *fakeRaceCalendarStore) ListRaceCalendarDashboardRows(_ context.Context, scope storage.RaceDashboardScope) ([]storage.RaceCalendarEvent, error) {
+func (f *fakeRaceCalendarStore) ListRaceCalendarDashboardRows(_ context.Context, country string) ([]storage.RaceCalendarEvent, error) {
 	var out []storage.RaceCalendarEvent
 	for _, row := range f.events {
-		if scope.Country != "" && row.Country != scope.Country {
-			continue
-		}
-		inDomain := true
-		switch {
-		case scope.FromDate != "":
-			inDomain = row.RaceDate >= scope.FromDate
-		case scope.ToDate != "":
-			inDomain = row.RaceDate < scope.ToDate
-		}
-		if !inDomain && scope.IncludeNeverMaintainedSync &&
-			row.Origin == storage.RaceOriginSync && !row.Published &&
-			!row.HasContent() && len(row.AdminOverrides) == 0 {
-			inDomain = true
-		}
-		if !inDomain {
+		if country != "" && row.Country != country {
 			continue
 		}
 		out = append(out, row)
@@ -256,21 +241,33 @@ func TestRaceDashboard_Bucketing(t *testing.T) {
 		Source: "中国田协", Origin: storage.RaceOriginSync, Name: "过去年份裸行",
 		RaceDate: "2019-04-01", Country: "CHN",
 	})
-	// 缺信息:维护过(有内容)但门槛不全的未开赛行。
+	// 缺信息:维护过(有内容)但门槛不全的未开赛行。content_stale 只打徽章,
+	// 不改变它落进缺信息桶。
 	missing := h.calendar.seedEvent(storage.RaceCalendarEvent{
 		Source: "中国田协", Origin: storage.RaceOriginSync, Name: "缺信息行",
 		RaceDate: dashboardDate(20), Country: "CHN", City: strPtrAPITest("厦门市"),
-		Climate: &storage.RaceClimate{Summary: "有气候"},
+		Climate: &storage.RaceClimate{Summary: "有气候"}, ContentStale: true,
 	})
 	h.calendar.seedItem(storage.RaceCalendarItem{RaceEventID: missing.ID, Name: "半程马拉松", Type: "HalfMarathon", Origin: storage.RaceOriginSync})
-	// 过去年份里被维护过的行:upcoming 视图绝不能让它漏进来(存储 OR 分支的
-	// 超集泄漏必须被丢弃)。
+	// 过去年份里被维护过的行:upcoming 视图绝不能让它漏进来(时间域在 Go 侧
+	// 收紧,域外的维护行必须被丢弃)。
 	pastMaintained := h.calendar.seedEvent(storage.RaceCalendarEvent{
 		Source: "中国田协", Origin: storage.RaceOriginSync, Name: "过去维护行",
 		RaceDate: "2020-01-01", Country: "CHN", City: strPtrAPITest("厦门市"),
 		Climate: &storage.RaceClimate{Summary: "有气候"},
 	})
 	h.calendar.seedItem(completeItem(pastMaintained.ID, "全程马拉松"))
+	// 丢弃路径的关键样本:event 级看似从未维护(六段全空、无 override),但
+	// item 带 sync 永远不会写的报名费——管理过的行,域外必须被丢弃,不能因
+	// event 级「看着空」就混进同步新增桶。
+	pastItemTouched := h.calendar.seedEvent(storage.RaceCalendarEvent{
+		Source: "中国田协", Origin: storage.RaceOriginSync, Name: "过去项目维护行",
+		RaceDate: "2021-06-01", Country: "CHN",
+	})
+	h.calendar.seedItem(storage.RaceCalendarItem{
+		RaceEventID: pastItemTouched.ID, Name: "全程马拉松", Type: "Marathon", Origin: storage.RaceOriginSync,
+		EntryFee: intPtrAPITest(100),
+	})
 
 	got := h.getDashboard(t, "") // 默认 upcoming + cn
 
@@ -285,6 +282,9 @@ func TestRaceDashboard_Bucketing(t *testing.T) {
 	}
 	if names := bucketNames(got.Missing); len(names) != 1 || names[0] != "缺信息行" {
 		t.Errorf("missing = %v, want [缺信息行]", names)
+	}
+	if !got.Missing.Races[0].ContentStale {
+		t.Error("content_stale must ride on the row as a badge, not change the bucket")
 	}
 	if got.Pending.Races[0].ID != compliant.ID || got.Published.Races[0].ID != published.ID {
 		t.Error("bucket rows carry the wrong ids")

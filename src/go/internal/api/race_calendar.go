@@ -36,8 +36,9 @@ type RaceCalendarStore interface {
 	MoveRaceContent(ctx context.Context, sourceEventID, targetEventID uint64) error
 	// ListRaceCalendarDashboardRows and ListRaceCalendarItemsByEventIDs back
 	// the publish dashboard (race_dashboard.go): one unpaginated read of the
-	// rows in scope, plus one batch of their items.
-	ListRaceCalendarDashboardRows(ctx context.Context, scope storage.RaceDashboardScope) ([]storage.RaceCalendarEvent, error)
+	// rows in country scope, plus one batch of their items. The time domain is
+	// the handler's call (see the storage method's comment).
+	ListRaceCalendarDashboardRows(ctx context.Context, country string) ([]storage.RaceCalendarEvent, error)
 	ListRaceCalendarItemsByEventIDs(ctx context.Context, eventIDs []uint64) ([]storage.RaceCalendarItem, error)
 }
 

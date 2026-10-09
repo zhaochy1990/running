@@ -504,67 +504,22 @@ func (s *Store) ListRaceCalendarEvents(ctx context.Context, f RaceCalendarListFi
 	return rows, total, nil
 }
 
-// RaceDashboardScope bounds the publish-dashboard row read (spec devops#473).
-// Country is an exact country-code match — the cn scope passes the ISO code
-// "CHN", never a source label, because filtering by source would drop the
-// 北京/上海马拉松 rows that exist only on the 国际田联 mirror. FromDate/ToDate
-// bound race_date as "2006-01-02" strings, FromDate inclusive and ToDate
-// exclusive, so upcoming/past split on the calendar date with no time-of-day
-// edge. Empty fields mean unbounded.
+// ListRaceCalendarDashboardRows returns every race matching the country code
+// (the dashboard's cn scope passes the ISO code "CHN", never a source label —
+// filtering by source would drop the 北京/上海马拉松 rows that exist only on
+// the 国际田联 mirror; empty = no bound), ordered race_date, name, id — the
+// order the dashboard buckets keep.
 //
-// IncludeNeverMaintainedSync widens the time bound: the sync-new bucket ignores
-// the time parameter (untouched sync rows stay visible from any season until
-// an administrator triages them), so a bounded read must also return sync rows
-// outside the window that have no event content and no field overrides. That
-// OR branch is deliberately a superset — it cannot see per-item admin data —
-// and the handler re-checks each out-of-window row against the loaded items
-// before bucketing, dropping the ones the branch let through in error.
-type RaceDashboardScope struct {
-	Country  string
-	FromDate string
-	ToDate   string
-	// IncludeNeverMaintainedSync appends the widened branch described above.
-	// The handler sets it exactly when a time bound is present.
-	IncludeNeverMaintainedSync bool
-}
-
-// raceDashboardNeverMaintainedPredicate matches sync rows with none of the six
-// event content sections and no field overrides — the event-level half of
-// RaceCalendarEvent.HasContent plus the empty-override rule. Item-level admin
-// data is checked in Go (the handler batch-loads the items anyway), keeping
-// the ten-column item OR out of SQL, the same trade ReplaceRaceCalendarYear
-// makes for its stale scan.
-const raceDashboardNeverMaintainedPredicate = "(origin = 'sync' AND published = FALSE" +
-	" AND partition_rule IS NULL AND signup_timeline IS NULL AND climate IS NULL" +
-	" AND (signup_channels IS NULL OR JSON_LENGTH(signup_channels) = 0)" +
-	" AND (packet_pickup IS NULL OR JSON_LENGTH(packet_pickup) = 0)" +
-	" AND (weather_windows IS NULL OR JSON_LENGTH(weather_windows) = 0)" +
-	" AND (admin_overrides IS NULL OR JSON_LENGTH(admin_overrides) = 0))"
-
-// ListRaceCalendarDashboardRows returns every race matching the scope, ordered
-// race_date, name, id — the order the dashboard buckets keep (the handler
-// buckets in Go, so storage stays a plain filtered read).
-func (s *Store) ListRaceCalendarDashboardRows(ctx context.Context, scope RaceDashboardScope) ([]RaceCalendarEvent, error) {
+// The time domain (upcoming/past) is deliberately NOT a SQL filter here: the
+// sync-new bucket ignores time entirely, so the handler — which batch-loads
+// the items and can see per-row admin data — applies the domain check in Go as
+// the single source of truth. A SQL-side time bound would need an OR branch
+// mirroring the never-maintained rule, a second copy of HasContent's field
+// list that would silently drift.
+func (s *Store) ListRaceCalendarDashboardRows(ctx context.Context, country string) ([]RaceCalendarEvent, error) {
 	query := s.db.WithContext(ctx).Model(&RaceCalendarEvent{})
-	if scope.Country != "" {
-		query = query.Where("country = ?", scope.Country)
-	}
-	var conds []string
-	var args []any
-	if scope.FromDate != "" {
-		conds = append(conds, "race_date >= ?")
-		args = append(args, scope.FromDate)
-	}
-	if scope.ToDate != "" {
-		conds = append(conds, "race_date < ?")
-		args = append(args, scope.ToDate)
-	}
-	if len(conds) > 0 {
-		timeDomain := "(" + strings.Join(conds, " AND ") + ")"
-		if scope.IncludeNeverMaintainedSync {
-			timeDomain = "(" + timeDomain + " OR " + raceDashboardNeverMaintainedPredicate + ")"
-		}
-		query = query.Where(timeDomain, args...)
+	if country != "" {
+		query = query.Where("country = ?", country)
 	}
 	var rows []RaceCalendarEvent
 	if err := query.Order("race_date ASC, name ASC, id ASC").Find(&rows).Error; err != nil {

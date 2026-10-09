@@ -119,6 +119,15 @@ type raceDashboardObservations struct {
 
 // ─── handler ─────────────────────────────────────────────────────────────────
 
+// raceDashboardFilter is the parsed dashboard query: the country code storage
+// filters on, plus the Shanghai-date time bounds the handler applies in Go
+// (from inclusive, to exclusive; empty = unbounded).
+type raceDashboardFilter struct {
+	country string
+	from    string
+	to      string
+}
+
 // dashboard returns the four-bucket publish state of the race calendar.
 //
 //	@Summary		Publish dashboard
@@ -137,11 +146,11 @@ func (r *raceCalendarRoutes) dashboard(c *gin.Context) {
 	if !requireAdmin(c) {
 		return
 	}
-	scope, ok := bindRaceDashboardFilter(c)
+	filter, ok := bindRaceDashboardFilter(c)
 	if !ok {
 		return
 	}
-	rows, err := r.store.ListRaceCalendarDashboardRows(c.Request.Context(), scope)
+	rows, err := r.store.ListRaceCalendarDashboardRows(c.Request.Context(), filter.country)
 	if err != nil {
 		writeRaceCalendarError(c, r.log, err)
 		return
@@ -191,16 +200,16 @@ func (r *raceCalendarRoutes) dashboard(c *gin.Context) {
 	for _, row := range rows {
 		rowItems := itemsByEvent[row.ID]
 		neverMaintained := row.Origin == storage.RaceOriginSync && raceNeverMaintained(row, rowItems)
-		// A row outside the requested time domain can only be present via the
-		// storage read's never-maintained OR branch — a superset that cannot
-		// see item-level admin data. Anything out of domain that is not
-		// genuinely an untouched sync row is that branch's leak; drop it.
-		if !raceDashboardInTimeDomain(row, scope) && !neverMaintained {
+		// The time domain is the handler's call, not storage's: the sync-new
+		// bucket ignores time, so an out-of-domain row survives only when it is
+		// genuinely an untouched sync row; everything else is dropped here.
+		if !raceDashboardInTimeDomain(row, filter) && !neverMaintained {
 			continue
 		}
 		switch {
 		case row.Published:
-			out.Published.Races = append(out.Published.Races, r.dashboardRow(row, rowItems, contentByCity))
+			gates, observations := r.dashboardVerdict(row, rowItems, contentByCity)
+			out.Published.Races = append(out.Published.Races, newRaceDashboardRace(row, gates, observations))
 		case neverMaintained:
 			out.NewSync.Races = append(out.NewSync.Races, newRaceDashboardRace(row, nil, nil))
 		default:
@@ -215,23 +224,16 @@ func (r *raceCalendarRoutes) dashboard(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
-// raceDashboardInTimeDomain re-checks the storage scope's date bounds in Go —
-// the same inclusive-from / exclusive-to comparison the SQL makes.
-func raceDashboardInTimeDomain(row storage.RaceCalendarEvent, scope storage.RaceDashboardScope) bool {
-	if scope.FromDate != "" && row.RaceDate < scope.FromDate {
+// raceDashboardInTimeDomain applies the requested date bounds in Go — from
+// inclusive, to exclusive, both compared as "2006-01-02" strings.
+func raceDashboardInTimeDomain(row storage.RaceCalendarEvent, filter raceDashboardFilter) bool {
+	if filter.from != "" && row.RaceDate < filter.from {
 		return false
 	}
-	if scope.ToDate != "" && row.RaceDate >= scope.ToDate {
+	if filter.to != "" && row.RaceDate >= filter.to {
 		return false
 	}
 	return true
-}
-
-// dashboardRow projects a published row together with its gates and
-// observations (published races keep their gaps visible).
-func (r *raceCalendarRoutes) dashboardRow(row storage.RaceCalendarEvent, items []storage.RaceCalendarItem, contentByCity map[string]*storage.RaceCityContent) raceDashboardRace {
-	gates, observations := r.dashboardVerdict(row, items, contentByCity)
-	return newRaceDashboardRace(row, gates, observations)
 }
 
 // dashboardVerdict computes the three-gate verdict and the watch-list gaps of
@@ -254,32 +256,29 @@ func (r *raceCalendarRoutes) dashboardVerdict(row storage.RaceCalendarEvent, ite
 
 // bindRaceDashboardFilter parses the dashboard query in the same style as
 // bindRaceListFilter: an unknown value is a 400 with a dedicated error code,
-// an absent value takes the spec default. A bounded time domain also asks the
-// storage read to widen to the never-maintained sync rows (the sync-new bucket
-// ignores time); the handler re-checks the widened superset per row.
-func bindRaceDashboardFilter(c *gin.Context) (storage.RaceDashboardScope, bool) {
-	var scope storage.RaceDashboardScope
+// an absent value takes the spec default.
+func bindRaceDashboardFilter(c *gin.Context) (raceDashboardFilter, bool) {
+	var filter raceDashboardFilter
 	today := timefmt.ShanghaiToday().Format("2006-01-02")
 	switch strings.TrimSpace(c.Query("time")) {
 	case "", "upcoming":
-		scope.FromDate = today
+		filter.from = today
 	case "past":
-		scope.ToDate = today
+		filter.to = today
 	case "all":
 	default:
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_time"})
-		return scope, false
+		return filter, false
 	}
 	switch strings.TrimSpace(c.Query("scope")) {
 	case "", "cn":
-		scope.Country = "CHN"
+		filter.country = "CHN"
 	case "all":
 	default:
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_scope"})
-		return scope, false
+		return filter, false
 	}
-	scope.IncludeNeverMaintainedSync = scope.FromDate != "" || scope.ToDate != ""
-	return scope, true
+	return filter, true
 }
 
 // raceNeverMaintained reports whether a sync-origin row has never been touched
@@ -304,7 +303,7 @@ func raceNeverMaintained(row storage.RaceCalendarEvent, items []storage.RaceCale
 // fields.
 func raceDashboardDataGateFor(items []storage.RaceCalendarItem) raceDashboardDataGate {
 	if len(items) == 0 {
-		return raceDashboardDataGate{OK: false, NoItems: true, Items: []raceDashboardItemGate{}}
+		return raceDashboardDataGate{OK: false, NoItems: true}
 	}
 	gates := make([]raceDashboardItemGate, 0, len(items))
 	ok := true
@@ -321,7 +320,7 @@ func raceDashboardDataGateFor(items []storage.RaceCalendarItem) raceDashboardDat
 // raceDashboardItemGateFor lists the data-gate fields one item is missing, in
 // the spec's field order.
 func raceDashboardItemGateFor(item storage.RaceCalendarItem) raceDashboardItemGate {
-	var missing []string
+	missing := make([]string, 0, 7)
 	if raceRouteDescriptionMissing(item.RouteDescription) {
 		missing = append(missing, "route_description")
 	}
@@ -342,9 +341,6 @@ func raceDashboardItemGateFor(item storage.RaceCalendarItem) raceDashboardItemGa
 	}
 	if item.Quota == nil {
 		missing = append(missing, "quota")
-	}
-	if missing == nil {
-		missing = []string{}
 	}
 	return raceDashboardItemGate{Name: item.Name, Missing: missing}
 }
@@ -380,9 +376,6 @@ func raceDashboardWeatherGateFor(row storage.RaceCalendarEvent) raceDashboardWea
 	}
 	if len(row.WeatherWindows) < 2 {
 		missing = append(missing, "weather_windows")
-	}
-	if missing == nil {
-		missing = []string{}
 	}
 	return raceDashboardWeatherGate{OK: len(missing) == 0, Missing: missing}
 }
