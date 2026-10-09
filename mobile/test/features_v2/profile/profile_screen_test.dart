@@ -70,10 +70,12 @@ void main() {
     expect(find.text('检查更新'), findsOneWidget);
   });
 
-  testWidgets('watch subtitle reflects binding state', (tester) async {
+  testWidgets('watch subtitle shows 已绑定 when corosReady', (tester) async {
     await _pump(tester, profile: _testProfile);
     expect(find.text('已绑定'), findsOneWidget);
+  });
 
+  testWidgets('watch subtitle shows 未绑定 when not bound', (tester) async {
     await _pump(
       tester,
       profile: const MyProfile(

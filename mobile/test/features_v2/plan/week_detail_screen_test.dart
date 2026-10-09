@@ -241,15 +241,6 @@ void main() {
     expect(find.byIcon(Icons.arrow_back), findsOneWidget);
   });
 
-  // ── 12. 调整计划 button is present ──────────────────────────────────────
-  // The button now navigates to the LLM chat screen (D4 / T32). The push
-  // target lives in a fullscreen route outside this test's MaterialApp, so
-  // we only assert the entry point is rendered.
-  testWidgets('调整计划 button is present', (tester) async {
-    await _pump(tester, AsyncData(_make7DayData()));
-    expect(find.text('调整计划'), findsAtLeastNWidgets(1));
-  });
-
   // ── 13. 推送到手表 button shows confirm dialog ──────────────────────────
   testWidgets('推送到手表 button shows confirm dialog', (tester) async {
     await _pump(tester, AsyncData(_make7DayData()));

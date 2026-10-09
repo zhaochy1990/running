@@ -3,11 +3,11 @@
 /// 路由：/training/plan/weeks/:folder（fullscreen，no shell）
 ///
 /// 内容：
-///   1. StrideTopBar：返回 + week 标题 + "调整"按钮（SnackBar 占位）
+///   1. StrideTopBar：返回 + week 标题
 ///   2. 本周定位卡：plan_title / phase
 ///   3. 周总览 StrideStatRow：周里程 / 总时长 / 力量次数
 ///   4. 7 天课表列表：每行 SessionRow，点击 → D3 课时详情（T25 占位）
-///   5. 底部固定区：调整计划 + 推送到手表（均为 SnackBar 占位）
+///   5. 底部固定区：推送到手表（整周逐课推送 + 结果 sheet）
 library;
 
 import 'package:flutter/material.dart';
