@@ -517,3 +517,65 @@
   font-size: 18rpx;
   color: #9c9c9d;
 }
+
+/* ---------- 自定义比赛卡（#475）---------- */
+
+/* 顶栏「＋」：添加自定义比赛入口 */
+.top-bar__plus {
+  font-size: 44rpx;
+  line-height: 44rpx;
+  color: #ff6363;
+  font-weight: 500;
+}
+
+/* 粉色「自定义」徽章：与官方项目徽章同族、主题藕粉 */
+.plan-badge--custom {
+  color: #ff8f8f;
+  background: rgba(255, 99, 99, 0.12);
+}
+
+/* 想跑：琥珀（与已中签同族暖色）；已结束：灰（与已下架同族） */
+.plan-badge--state--want {
+  color: #e8c07d;
+  background: rgba(232, 192, 125, 0.12);
+}
+
+.plan-badge--state--done {
+  color: #8a8a8c;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* 已结束派生：灰卡沉底（后端排好序），记录保留；灰化复用已下架的降级规则 */
+.plan--past {
+  background: #0d0e10;
+  border-color: rgba(255, 255, 255, 0.03);
+}
+
+/* ··· 菜单：编辑 / 删除唯一入口（自定义名称不可点） */
+.more-btn {
+  flex-shrink: 0;
+  padding: 0 8rpx;
+  font-size: 30rpx;
+  line-height: 36rpx;
+  color: #8a8a8c;
+  text-align: center;
+}
+
+/* 卡面备注：📝 前缀，弱化灰字 */
+.plan__note {
+  margin-top: 16rpx;
+  padding: 16rpx 24rpx;
+  font-size: 22rpx;
+  line-height: 34rpx;
+  color: #9c9c9d;
+  background: #0a0b0d;
+  border-radius: 18rpx;
+}
+
+/* 空态次级引导：赛事中心没有？手动添加一场 */
+.empty__ghost {
+  margin-top: 24rpx;
+  padding: 12rpx 36rpx;
+  font-size: 24rpx;
+  color: #8a8a8c;
+}

@@ -12,6 +12,7 @@
     "pages/training-status/training-status",
     "pages/training-plan/training-plan",
     "pages/my-races/my-races",
+    "pages/custom-race-form/custom-race-form",
     "pages/race-center/race-center",
     "pages/race-center/detail",
     "pages/race-center/strategy/strategy",

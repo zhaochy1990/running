@@ -70,9 +70,7 @@ export function toPlanCard(plan: RacePlan): PlanCardView {
     itemLabel: itemLabel || '—',
     itemToken: plan.item_type,
     ...statePatch(plan.state),
-    dateLabel: plan.race
-      ? `${plan.race.race_date.slice(0, 4)}/${plan.race.race_date.slice(5).replace('-', '/')} ${shanghaiWeekdayLabel(plan.race.race_date)}`
-      : '',
+    dateLabel: plan.race ? planDateLabel(plan.race.race_date) : '',
     city: plan.race?.city || '',
     countdown: countdownLabel(plan.race ? daysUntil(plan.race.race_date, shanghaiToday()) : null),
     hotel: plan.hotel,
@@ -81,8 +79,13 @@ export function toPlanCard(plan: RacePlan): PlanCardView {
   };
 }
 
-/** 开赛倒计时文案；null（无日期）/ 负数（已结束）不给文案。 */
-function countdownLabel(days: number | null): string {
+/** YYYY-MM-DD → 「2026/11/01 周日」——官方计划卡与自定义卡（myRaceRows）共用的日期列。 */
+export function planDateLabel(ymd: string): string {
+  return `${ymd.slice(0, 4)}/${ymd.slice(5).replace('-', '/')} ${shanghaiWeekdayLabel(ymd)}`;
+}
+
+/** 开赛倒计时文案；null（无日期）/ 负数（已结束）不给文案。自定义卡同源复用。 */
+export function countdownLabel(days: number | null): string {
   if (days == null || days < 0) return '';
   return days > 0 ? `距离比赛还有 ${days} 天` : '今天开赛';
 }
