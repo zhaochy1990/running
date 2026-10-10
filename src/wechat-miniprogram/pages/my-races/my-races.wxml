@@ -9,15 +9,6 @@
         <view class="top-bar__title">我的比赛</view>
         <view class="top-bar__subtitle">参赛计划与成绩</view>
       </view>
-      <!-- 「＋」：添加自定义比赛（仅我的赛事 tab；我的成绩 tab 保持占位对称） -->
-      <view
-        wx:if="{{activeTab === 'plans'}}"
-        class="top-bar__btn"
-        bindtap="onAddTap"
-      >
-        <view class="top-bar__plus">＋</view>
-      </view>
-      <view wx:else class="top-bar__btn top-bar__btn--spacer"></view>
     </view>
 
     <!-- tab：我的赛事（默认）/ 我的成绩 -->
@@ -207,4 +198,8 @@
       </view>
     </block>
   </view>
+
+  <!-- 「＋」：添加自定义比赛。右下角 FAB（#456 拍板：从顶栏移出，让开胶囊安全区）；
+       仅「我的赛事」tab 显示，与原顶栏入口的显隐逻辑一致 -->
+  <view wx:if="{{activeTab === 'plans'}}" class="fab" bindtap="onAddTap">＋</view>
 </view>

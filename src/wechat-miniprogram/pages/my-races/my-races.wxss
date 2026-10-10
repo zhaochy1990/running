@@ -41,10 +41,6 @@
   flex-shrink: 0;
 }
 
-.top-bar__btn--spacer {
-  width: 88rpx;
-}
-
 .top-bar__icon {
   width: 48rpx;
   height: 48rpx;
@@ -104,7 +100,7 @@
 }
 
 .content {
-  padding: 0 24rpx 48rpx;
+  padding: 0 24rpx calc(140rpx + env(safe-area-inset-bottom));
 }
 
 /* ---------- 卡片 ----------
@@ -521,12 +517,23 @@
 
 /* ---------- 自定义比赛卡（#475）---------- */
 
-/* 顶栏「＋」：添加自定义比赛入口 */
-.top-bar__plus {
-  font-size: 44rpx;
-  line-height: 44rpx;
-  color: #ff6363;
+/* 「＋」添加自定义比赛：右下角 FAB（#456 拍板，从顶栏移出让开胶囊安全区）。
+   藕粉主题实心圆 + 白色＋，安全区沿仓内 calc(Nrpx + env(safe-area-inset-bottom)) 惯例 */
+.fab {
+  position: fixed;
+  right: 40rpx;
+  bottom: calc(48rpx + env(safe-area-inset-bottom));
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 50%;
+  background: #ff6363;
+  color: #ffffff;
+  font-size: 52rpx;
+  line-height: 96rpx;
+  text-align: center;
   font-weight: 500;
+  box-shadow: 0 8rpx 24rpx rgba(255, 99, 99, 0.35);
+  z-index: 10;
 }
 
 /* 粉色「自定义」徽章：与官方项目徽章同族、主题藕粉 */
