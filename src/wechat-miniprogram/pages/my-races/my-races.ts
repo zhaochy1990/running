@@ -17,6 +17,7 @@ import {
   fetchMyRaces,
   updateCustomRace,
   type CustomRace,
+  type CustomRaceBody,
   type CustomRaceState,
 } from '../../services/custom-races';
 import { upsertRacePlan, type RacePlanState } from '../../services/race-plans';
@@ -380,7 +381,8 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
       success: (res) => {
         if (res.tapIndex === 0) {
           wx.navigateTo({
-            url: `/pages/custom-race-form/custom-race-form?id=${card.id}`,
+            // 回显数据走 eventChannel，URL 不带 id（表单 onLoad 不读 options）。
+            url: '/pages/custom-race-form/custom-race-form',
             success: (nav) => {
               nav.eventChannel.emit('race', this._customById.get(card.id));
             },
@@ -437,7 +439,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
 });
 
 /** 全量更新请求体：聚合下发的原始行 + 覆盖状态（PUT 缺省可选字段会被清空）。 */
-function customRaceBody(raw: CustomRace, state: CustomRaceState) {
+function customRaceBody(raw: CustomRace, state: CustomRaceState): CustomRaceBody {
   return {
     name: raw.name,
     race_date: raw.race_date,
@@ -451,18 +453,7 @@ function customRaceBody(raw: CustomRace, state: CustomRaceState) {
   };
 }
 
-/** 就地更新一行混排卡的局部字段（官方状态流转 / 自定义状态切换共用）。
- *  两个重载把补丁类型与行的 kind 绑定（union 展开会把两边的 state 词表混在一起）。 */
-function patchRow(
-  page: WechatMiniprogram.Page.Instance<MyRacesPageData, MyRacesPageHandlers>,
-  key: string,
-  patch: Partial<PlanCardView>,
-): void;
-function patchRow(
-  page: WechatMiniprogram.Page.Instance<MyRacesPageData, MyRacesPageHandlers>,
-  key: string,
-  patch: Partial<CustomCardView>,
-): void;
+/** 就地更新一行混排卡的局部字段（官方状态流转 / 自定义状态切换共用）。 */
 function patchRow(
   page: WechatMiniprogram.Page.Instance<MyRacesPageData, MyRacesPageHandlers>,
   key: string,
@@ -472,7 +463,9 @@ function patchRow(
   page.setData({ mixRows });
 }
 
-/** 把乐观补丁合并进一行混排卡（补丁与行的 kind 由 patchRow 重载在调用侧绑定）。 */
+/** 把乐观补丁合并进一行混排卡。补丁形状由调用侧保证与行 kind 一致
+ *  （官方卡调用点传 PlanCardView 补丁，自定义卡传 CustomCardView 补丁），
+ *  合并时按行的 kind 收窄。 */
 function mergeRow(row: MyRaceRow, patch: CardPatch): MyRaceRow {
   return row.kind === 'custom'
     ? { ...row, custom: { ...row.custom, ...(patch as Partial<CustomCardView>) } }

@@ -33,8 +33,6 @@ interface CustomRaceFormPageData {
   website: string;
   note: string;
   state: CustomRaceState;
-  /** 越野跑 / 超长越野：高亮建议填 D+ */
-  isTrail: boolean;
 }
 
 interface CustomRaceFormPageHandlers {
@@ -68,7 +66,6 @@ Page<CustomRaceFormPageData, CustomRaceFormPageHandlers>({
     website: '',
     note: '',
     state: 'want',
-    isTrail: true,
   },
 
   onLoad() {
@@ -89,7 +86,6 @@ Page<CustomRaceFormPageData, CustomRaceFormPageHandlers>({
         website: race.website,
         note: race.note,
         state: race.state,
-        isTrail: race.item_type === 'Trail' || race.item_type === 'Ultra',
       });
     });
   },
@@ -108,7 +104,6 @@ Page<CustomRaceFormPageData, CustomRaceFormPageHandlers>({
     this.setData({
       typeToken: token,
       typeChips: chipsWithOn(token),
-      isTrail: token === 'Trail' || token === 'Ultra',
     });
   },
 

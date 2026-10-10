@@ -9,7 +9,11 @@ import { countdownLabel, planDateLabel, toPlanCard } from './racePlanRows';
 import { shanghaiToday } from './date';
 import { daysUntil } from './raceDetailRows';
 
-/** 表单 chips 与卡面徽章共用的七值类型词表（token ↔ 中文，#457 拍板扩 racetypes）。 */
+/**
+ * 表单 chips 与卡面徽章共用的七值类型词表（token ↔ 中文，#457 拍板扩 racetypes）。
+ * 注意与 raceCenterRows 的 typeAbbr 是两张表：赛历卡用短名（全马/半马，空间紧），
+ * 自定义卡用全名（马拉松/半马）——文案差异是刻意的，收敛前先对两边 UI。
+ */
 export const CUSTOM_TYPE_CHIPS: ReadonlyArray<{ token: string; label: string }> = [
   { token: 'Marathon', label: '马拉松' },
   { token: 'HalfMarathon', label: '半马' },
@@ -61,7 +65,7 @@ export interface CustomCardView {
   /** 倒计时文案；done 时为 ''，wxml 隐藏 */
   countdown: string;
   done: boolean;
-  /** 备注，空串隐藏（已结束卡不显） */
+  /** 备注；空串隐藏。已结束卡保留备注（双评审拍板：记录完整呈现） */
   note: string;
 }
 
@@ -80,7 +84,9 @@ export function toCustomCard(race: CustomRace): CustomCardView {
   return {
     id: race.id,
     name: race.name,
-    badgeLabel: dist ? `${typeLabel} ${dist}` : typeLabel,
+    // 10Km/5Km 的类型名已含距离数字，距离一致时不再重复拼一遍（10Km+10 →
+    // 「10K」而非「10K 10K」）；距离与类型名不同则照常并列（10Km+15 → 「10K 15K」）。
+    badgeLabel: dist && dist !== typeLabel ? `${typeLabel} ${dist}` : typeLabel,
     state: base.state,
     stateLabel: race.done ? '已结束' : base.stateLabel,
     steps: race.done ? [] : base.steps,

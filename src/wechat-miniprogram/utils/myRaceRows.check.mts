@@ -44,6 +44,10 @@ eq(toCustomCard(race({ item_type: 'HalfMarathon', distance_km: 21.1 })).badgeLab
 eq(toCustomCard(race({ distance_km: null })).badgeLabel, '越野跑', 'badge no distance');
 eq(toCustomCard(race({ item_type: 'Other', distance_km: null })).badgeLabel, '其他', 'badge other');
 eq(toCustomCard(race({ item_type: 'Mystery' })).badgeLabel, 'Mystery 50K', 'badge unknown token passthrough');
+// 10Km/5Km 类型名自带距离：一致不重复，不一致照常并列
+eq(toCustomCard(race({ item_type: '10Km', distance_km: 10 })).badgeLabel, '10K', 'badge 10Km no dupe');
+eq(toCustomCard(race({ item_type: '5Km', distance_km: 5 })).badgeLabel, '5K', 'badge 5Km no dupe');
+eq(toCustomCard(race({ item_type: '10Km', distance_km: 15 })).badgeLabel, '10K 15K', 'badge 10Km mismatched dist');
 
 // 两态状态：标签、chips 点亮、切换补丁
 eq(toCustomCard(race({ state: 'want' })).stateLabel, '想跑', 'label want');

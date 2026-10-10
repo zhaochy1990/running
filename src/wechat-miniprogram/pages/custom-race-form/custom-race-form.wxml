@@ -46,7 +46,7 @@
       bindinput="onAscentInput"
     />
   </view>
-  <view wx:if="{{isTrail}}" class="hint hint--hl">⛰ 越野建议填爬升（D+）——越野区别于路跑的核心指标</view>
+  <view wx:if="{{typeToken === 'Trail' || typeToken === 'Ultra'}}" class="hint hint--hl">⛰ 越野建议填爬升（D+）——越野区别于路跑的核心指标</view>
 
   <!-- 参赛状态 -->
   <view class="sec">参赛状态</view>
