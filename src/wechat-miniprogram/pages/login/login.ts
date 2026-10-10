@@ -26,6 +26,8 @@ interface LoginPageData {
   focusField: FocusField;
   loading: boolean;
   errorMsg: string;
+  // 协议勾选状态：默认不勾选，须用户主动勾选（微信审核：不允许默示同意）
+  agreed: boolean;
 }
 
 // 页面自定义方法（TCustom 泛型，供 this 类型收窄）
@@ -48,6 +50,7 @@ interface LoginPageHandlers {
   submitPhone(): Promise<void>;
   onTermsTap(): void;
   onPrivacyTap(): void;
+  onToggleAgreement(): void;
 }
 
 // 倒计时 timer（页面实例卸载时清理，避免残留定时器）
@@ -73,6 +76,7 @@ Page<LoginPageData, LoginPageHandlers>({
     focusField: '',
     loading: false,
     errorMsg: '',
+    agreed: false,
   },
 
   onUnload() {
@@ -182,8 +186,14 @@ Page<LoginPageData, LoginPageHandlers>({
   // --- 提交 ---
 
   async onLoginTap() {
-    const { tab, loading } = this.data;
+    const { tab, loading, agreed } = this.data;
     if (loading) return;
+
+    // 未主动勾选协议不允许登录（审核要求：由用户自主阅读后选择是否同意）
+    if (!agreed) {
+      this.setData({ errorMsg: '请先阅读并勾选同意《用户协议》和《隐私政策》' });
+      return;
+    }
 
     if (tab === 'email') {
       await this.submitEmail();
@@ -295,5 +305,9 @@ Page<LoginPageData, LoginPageHandlers>({
 
   onPrivacyTap() {
     wx.navigateTo({ url: '/pages/declaration/declaration?doc_type=privacy_policy' });
+  },
+
+  onToggleAgreement() {
+    this.setData({ agreed: !this.data.agreed, errorMsg: '' });
   },
 });
