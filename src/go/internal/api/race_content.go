@@ -560,7 +560,7 @@ func newRaceItemContentDTO(row storage.RaceCalendarItem) *raceItemContentDTO {
 // and is treated as absent.
 func validateRaceEventContent(in *raceEventContentInput) error {
 	if in.PartitionRule != nil {
-		if in.PartitionRule.Mode != "mixed" && in.PartitionRule.Mode != "by_item" {
+		if in.PartitionRule.Mode != "mixed" && in.PartitionRule.Mode != "by_item" && in.PartitionRule.Mode != "pending" {
 			return errInvalidRaceContentInput
 		}
 	}
