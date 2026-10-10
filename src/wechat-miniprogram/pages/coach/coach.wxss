@@ -93,6 +93,19 @@
   border: 1rpx solid rgba(255, 99, 99, 0.25);
 }
 
+/* AI 生成内容标识：固定在对话区顶部，不随消息滚动 */
+.coach-ai-notice {
+  flex-shrink: 0;
+  text-align: center;
+  margin: 0 32rpx 8rpx;
+}
+
+.coach-ai-notice__text {
+  font-size: 20rpx;
+  line-height: 30rpx;
+  color: #8a8b8d;
+}
+
 .coach-context-hint__text {
   flex: 1;
   min-width: 0;

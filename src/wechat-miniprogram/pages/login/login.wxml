@@ -141,13 +141,14 @@
     </view>
   </view>
 
-  <!-- 法务条款 -->
+  <!-- 法务条款：用户主动勾选同意，默认不勾选（不允许默示同意） -->
   <view class="login-terms">
-    <view class="login-terms-text">注册/登录即代表您同意我们的</view>
-    <view class="login-terms-links">
-      <text class="login-terms-link" bindtap="onTermsTap">用户协议</text>
-      <text class="login-terms-sep">和</text>
-      <text class="login-terms-link" bindtap="onPrivacyTap">隐私政策</text>
+    <view class="login-terms-row" bindtap="onToggleAgreement">
+      <view class="login-terms-check {{agreed ? 'login-terms-check--on' : ''}}"></view>
+      <view class="login-terms-text">已阅读并同意</view>
+      <text class="login-terms-link" catchtap="onTermsTap">《用户协议》</text>
+      <text class="login-terms-text">和</text>
+      <text class="login-terms-link" catchtap="onPrivacyTap">《隐私政策》</text>
     </view>
   </view>
 </view>
