@@ -1,6 +1,7 @@
 import { http } from './request';
 import { AUTH_BASE_URL, STORAGE_KEYS } from '../constants/config';
 import type { UserProfile } from '../types/api';
+import { logger } from '../utils/logger';
 
 // auth-service 身份端点（与 services/auth.ts 一致）：GET/PATCH /api/users/me。
 const ME_ENDPOINT = `${AUTH_BASE_URL}/api/users/me`;
@@ -23,7 +24,11 @@ async function toLocalPath(src: string): Promise<string> {
     wx.downloadFile({
       url: src,
       success: (res) => resolve(res.tempFilePath),
-      fail: (err) => reject(new Error(err.errMsg || '下载头像失败')),
+      fail: (err) => {
+        // 域名白名单拦截等客户端侧失败只在这里可见（服务器零记录）
+        logger.error('avatar downloadFile fail', src.slice(0, 80), err.errMsg);
+        reject(new Error(err.errMsg || '下载头像失败'));
+      },
     });
   });
 }
@@ -47,12 +52,18 @@ export async function uploadAvatar(avatarUrl: string): Promise<string> {
           // ignore parse error; fall through to status check
         }
         if (res.statusCode >= 200 && res.statusCode < 300 && body.avatar_url) {
+          logger.info('avatar upload ok', body.avatar_url);
           resolve(body.avatar_url);
           return;
         }
+        logger.error('avatar upload http', res.statusCode, String(res.data).slice(0, 200));
         reject(new Error(body.detail || body.message || '头像上传失败'));
       },
-      fail: (err) => reject(new Error(err.errMsg || '头像上传失败')),
+      fail: (err) => {
+        // uploadFile 合法域名未配置时 errMsg 形如 "uploadFile:fail url not in domain list"
+        logger.error('avatar uploadFile fail', err.errMsg);
+        reject(new Error(err.errMsg || '头像上传失败'));
+      },
     });
   });
 }

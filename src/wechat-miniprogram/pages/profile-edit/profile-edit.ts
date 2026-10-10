@@ -17,6 +17,7 @@ import {
 import type { ProfilePatch } from '../../services/profile';
 import { ApiError } from '../../services/request';
 import { shanghaiToday } from '../../utils/date';
+import { logger } from '../../utils/logger';
 // 取值表与 onboarding 的资料步共用一份（必须与后端 oneof 一致），见 utils/profileFields.ts
 import { AGE_OPTIONS, AGE_VALUES, SEX_OPTIONS, SEX_VALUES } from '../../utils/profileFields';
 import type { Sex } from '../../utils/profileFields';
@@ -182,6 +183,7 @@ Page<ProfileEditPageData, ProfileEditPageHandlers>({
       userStore.setUser(updated);
       this.setData({ avatarUrl: updated.avatar_url || avatarUrl });
     } catch (err) {
+      logger.error('avatar save fail (profile-edit)', err instanceof Error ? err.message : String(err));
       wx.showToast({ title: friendlyError(err, '头像保存失败'), icon: 'none' });
     } finally {
       this.setData({ saving: false });
