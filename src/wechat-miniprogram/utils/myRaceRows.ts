@@ -80,7 +80,9 @@ export function toCustomCard(race: CustomRace): CustomCardView {
   return {
     id: race.id,
     name: race.name,
-    badgeLabel: dist ? `${typeLabel} ${dist}` : typeLabel,
+    // 10Km/5Km 的类型名已含距离数字，距离一致时不再重复拼一遍（10Km+10 →
+    // 「10K」而非「10K 10K」）；距离与类型名不同则照常并列（10Km+15 → 「10K 15K」）。
+    badgeLabel: dist && dist !== typeLabel ? `${typeLabel} ${dist}` : typeLabel,
     state: base.state,
     stateLabel: race.done ? '已结束' : base.stateLabel,
     steps: race.done ? [] : base.steps,
