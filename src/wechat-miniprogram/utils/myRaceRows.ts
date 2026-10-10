@@ -47,8 +47,6 @@ export function customStatePatch(
 
 /** 自定义比赛卡的渲染模型：全部字段预格式化，wxml 不做表达式逻辑。 */
 export interface CustomCardView {
-  /** wx:key 前缀 `c-`，与官方卡 `o-<race_id>` 区分（两表自增 id 会相撞） */
-  key: string;
   id: number;
   name: string;
   /** 类型（距离）徽章：distance_km 空 → 只显类型，如「越野跑 50K」/「其他」 */
@@ -80,7 +78,6 @@ export function toCustomCard(race: CustomRace): CustomCardView {
       : `${Number.isInteger(race.distance_km) ? race.distance_km : race.distance_km.toFixed(1)}K`;
   const base = customStatePatch(race.state);
   return {
-    key: `c-${race.id}`,
     id: race.id,
     name: race.name,
     badgeLabel: dist ? `${typeLabel} ${dist}` : typeLabel,

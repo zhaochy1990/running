@@ -187,8 +187,9 @@
   border-radius: 26rpx;
 }
 
-/* 已下架占位：灰卡、记录保留、不可交互 */
-.plan--off {
+/* 已下架占位 / 自定义已结束：灰卡、记录保留 */
+.plan--off,
+.plan--past {
   background: #0d0e10;
   border-color: rgba(255, 255, 255, 0.03);
 }
@@ -543,12 +544,6 @@
 .plan-badge--state--done {
   color: #8a8a8c;
   background: rgba(255, 255, 255, 0.06);
-}
-
-/* 已结束派生：灰卡沉底（后端排好序），记录保留；灰化复用已下架的降级规则 */
-.plan--past {
-  background: #0d0e10;
-  border-color: rgba(255, 255, 255, 0.03);
 }
 
 /* ··· 菜单：编辑 / 删除唯一入口（自定义名称不可点） */

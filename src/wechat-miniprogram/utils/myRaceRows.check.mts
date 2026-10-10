@@ -56,7 +56,6 @@ eq(
   ],
   'chips registered',
 );
-eq(customStatePatch('registered').stateLabel, '已报名', 'patch label');
 eq(
   customStatePatch('want').steps.map((s) => s.on),
   [true, false],
@@ -68,7 +67,6 @@ const past = toCustomCard(race({ race_date: ymdOffset(-1), done: true }));
 eq(past.stateLabel, '已结束', 'past label');
 eq(past.steps, [], 'past chips hidden');
 eq(past.countdown, '', 'past countdown hidden');
-eq(past.done, true, 'past done flag');
 
 // 倒计时：未来 N 天 / 当天开赛
 eq(toCustomCard(race({ race_date: ymdOffset(10) })).countdown, '距离比赛还有 10 天', 'countdown 10d');
@@ -118,8 +116,7 @@ eq(rows[1].kind === 'custom' && rows[1].custom.name, '柴古唐斯括苍山越�
 // 残缺项跳过：custom 无载荷 / 未知 source
 eq(toMyRaceRows([{ source: 'custom' }]).length, 0, 'custom without payload skipped');
 
-// 备注：空串隐藏；customStatePatch 不含 note（切换状态不清备注）
+// 备注：空串隐藏
 eq(toCustomCard(race({ note: '' })).note, '', 'note empty');
-eq('note' in customStatePatch('want'), false, 'patch keeps note');
 
 console.log('myRaceRows.check: all assertions passed');

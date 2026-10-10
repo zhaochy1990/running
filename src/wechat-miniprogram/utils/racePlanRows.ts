@@ -89,14 +89,3 @@ export function countdownLabel(days: number | null): string {
   if (days == null || days < 0) return '';
   return days > 0 ? `距离比赛还有 ${days} 天` : '今天开赛';
 }
-
-/** 整表 → 卡片序列，按比赛日升序（API 已排序，防御性重排；无日期的占位卡沉底）。 */
-export function toPlanCards(plans: RacePlan[]): PlanCardView[] {
-  return [...plans]
-    .sort((a, b) => {
-      const da = a.race?.race_date || '9999-99-99';
-      const db = b.race?.race_date || '9999-99-99';
-      return da === db ? a.race_id - b.race_id : da < db ? -1 : 1;
-    })
-    .map(toPlanCard);
-}

@@ -267,10 +267,7 @@ Page<MyRacesPageData, MyRacesPageHandlers>({
       // GET 若赶在 PUT 落库前返回，快照还是旧态：叠加在飞乐观补丁，不打回 UI
       const rows = toMyRaceRows(res.items).map((row) => {
         const patch = this._inflight.get(row.key);
-        if (!patch) return row;
-        return row.kind === 'custom'
-          ? { ...row, custom: { ...row.custom, ...(patch as Partial<CustomCardView>) } }
-          : { ...row, plan: { ...row.plan, ...(patch as Partial<PlanCardView>) } };
+        return patch ? mergeRow(row, patch) : row;
       });
       this.setData({ plansLoading: false, mixRows: rows });
     } catch (err: unknown) {
@@ -471,11 +468,13 @@ function patchRow(
   key: string,
   patch: CardPatch,
 ): void {
-  const mixRows = page.data.mixRows.map((row) => {
-    if (row.key !== key) return row;
-    return row.kind === 'custom'
-      ? { ...row, custom: { ...row.custom, ...(patch as Partial<CustomCardView>) } }
-      : { ...row, plan: { ...row.plan, ...(patch as Partial<PlanCardView>) } };
-  });
+  const mixRows = page.data.mixRows.map((row) => (row.key === key ? mergeRow(row, patch) : row));
   page.setData({ mixRows });
+}
+
+/** 把乐观补丁合并进一行混排卡（补丁与行的 kind 由 patchRow 重载在调用侧绑定）。 */
+function mergeRow(row: MyRaceRow, patch: CardPatch): MyRaceRow {
+  return row.kind === 'custom'
+    ? { ...row, custom: { ...row.custom, ...(patch as Partial<CustomCardView>) } }
+    : { ...row, plan: { ...row.plan, ...(patch as Partial<PlanCardView>) } };
 }

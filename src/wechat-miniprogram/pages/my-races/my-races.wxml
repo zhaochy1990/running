@@ -139,7 +139,7 @@
               <text class="steps__hint">点状态切换</text>
             </view>
 
-            <view wx:if="{{item.custom.note && !item.custom.done}}" class="plan__note">📝 {{item.custom.note}}</view>
+            <view wx:if="{{item.custom.note}}" class="plan__note">📝 {{item.custom.note}}</view>
           </view>
         </block>
 

@@ -5,12 +5,12 @@
     class="field"
     placeholder="比赛名称"
     placeholder-class="ph"
-    maxlength="{{128}}"
+    maxlength="128"
     value="{{name}}"
     bindinput="onNameInput"
   />
   <view class="hint">例：柴古唐斯括苍山越野赛 <text class="req">＊必填</text></view>
-  <picker mode="date" start="{{dateStart}}" value="{{date}}" bindchange="onDateChange">
+  <picker mode="date" start="1900-01-01" value="{{date}}" bindchange="onDateChange">
     <view class="field {{date ? '' : 'field--ph'}}">{{date || '比赛日期'}}</view>
   </picker>
   <view class="hint">比赛日期 <text class="req">＊必填</text>（无上限；过期自动归入已结束）</view>
@@ -69,7 +69,7 @@
     class="field"
     placeholder="地点，如 台州 · 临海"
     placeholder-class="ph"
-    maxlength="{{64}}"
+    maxlength="64"
     value="{{city}}"
     bindinput="onCityInput"
   />
@@ -77,7 +77,7 @@
     class="field field--gap"
     placeholder="官网 / 报名链接"
     placeholder-class="ph"
-    maxlength="{{512}}"
+    maxlength="512"
     value="{{website}}"
     bindinput="onWebsiteInput"
   />
@@ -85,7 +85,7 @@
     class="field field--area"
     placeholder="备注（行程、装备、同伴…）"
     placeholder-class="ph"
-    maxlength="{{512}}"
+    maxlength="512"
     value="{{note}}"
     auto-height
     bindinput="onNoteInput"

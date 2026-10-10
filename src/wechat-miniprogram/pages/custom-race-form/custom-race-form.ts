@@ -13,9 +13,6 @@ import {
 } from '../../services/custom-races';
 import { CUSTOM_TYPE_CHIPS } from '../../utils/myRaceRows';
 
-/** 日期 picker 下界：过去可补录（不设 end = 无上限）。 */
-const DATE_START = '1900-01-01';
-
 type TypeChips = Array<{ token: string; label: string; on: boolean }>;
 
 function chipsWithOn(token: string): TypeChips {
@@ -28,7 +25,6 @@ interface CustomRaceFormPageData {
   editingId: number;
   name: string;
   date: string;
-  dateStart: string;
   typeChips: TypeChips;
   typeToken: string;
   dist: string;
@@ -64,7 +60,6 @@ Page<CustomRaceFormPageData, CustomRaceFormPageHandlers>({
     editingId: 0,
     name: '',
     date: '',
-    dateStart: DATE_START,
     typeChips: chipsWithOn('Trail'),
     typeToken: 'Trail',
     dist: '',
@@ -99,15 +94,15 @@ Page<CustomRaceFormPageData, CustomRaceFormPageHandlers>({
     });
   },
 
-  onNameInput(e) {
+  onNameInput(e: WechatMiniprogram.Input) {
     this.setData({ name: e.detail.value });
   },
 
-  onDateChange(e) {
+  onDateChange(e: { detail: { value: string } }) {
     this.setData({ date: e.detail.value });
   },
 
-  onTypeTap(e) {
+  onTypeTap(e: WechatMiniprogram.TouchEvent) {
     const token = String(e.currentTarget.dataset.token);
     if (!token || token === this.data.typeToken) return;
     this.setData({
@@ -117,27 +112,27 @@ Page<CustomRaceFormPageData, CustomRaceFormPageHandlers>({
     });
   },
 
-  onDistInput(e) {
+  onDistInput(e: WechatMiniprogram.Input) {
     this.setData({ dist: e.detail.value });
   },
 
-  onAscentInput(e) {
+  onAscentInput(e: WechatMiniprogram.Input) {
     this.setData({ ascent: e.detail.value });
   },
 
-  onCityInput(e) {
+  onCityInput(e: WechatMiniprogram.Input) {
     this.setData({ city: e.detail.value });
   },
 
-  onWebsiteInput(e) {
+  onWebsiteInput(e: WechatMiniprogram.Input) {
     this.setData({ website: e.detail.value });
   },
 
-  onNoteInput(e) {
+  onNoteInput(e: WechatMiniprogram.Input) {
     this.setData({ note: e.detail.value });
   },
 
-  onStateTap(e) {
+  onStateTap(e: WechatMiniprogram.TouchEvent) {
     const state = e.currentTarget.dataset.state as CustomRaceState;
     if (state !== 'want' && state !== 'registered') return;
     this.setData({ state });
@@ -148,10 +143,6 @@ Page<CustomRaceFormPageData, CustomRaceFormPageHandlers>({
     const name = this.data.name.trim();
     if (!name) {
       toast('请填写比赛名称');
-      return;
-    }
-    if (name.length > 128) {
-      toast('名称最长 128 字');
       return;
     }
     const date = this.data.date;
@@ -167,15 +158,20 @@ Page<CustomRaceFormPageData, CustomRaceFormPageHandlers>({
         toast('距离需为正数（km）');
         return;
       }
+      if (distanceKm > 99999.9) {
+        toast('距离上限 99999.9 km');
+        return;
+      }
     }
     const ascent = this.data.ascent.trim();
     let ascentM: number | null = null;
     if (ascent !== '') {
-      ascentM = Math.round(Number(ascent));
-      if (!Number.isFinite(ascentM) || ascentM < 0) {
+      const n = Number(ascent);
+      if (!Number.isInteger(n) || n < 0) {
         toast('爬升需为非负整数（m）');
         return;
       }
+      ascentM = n;
     }
     // PUT 是全量更新（缺省可选字段会被清空），可选项显式带 null/空串即可
     const body: CustomRaceBody = {
