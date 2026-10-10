@@ -1,0 +1,97 @@
+<view class="form">
+  <!-- 基本信息 -->
+  <view class="sec">基本信息</view>
+  <input
+    class="field"
+    placeholder="比赛名称"
+    placeholder-class="ph"
+    maxlength="128"
+    value="{{name}}"
+    bindinput="onNameInput"
+  />
+  <view class="hint">例：柴古唐斯括苍山越野赛 <text class="req">＊必填</text></view>
+  <picker mode="date" start="1900-01-01" value="{{date}}" bindchange="onDateChange">
+    <view class="field {{date ? '' : 'field--ph'}}">{{date || '比赛日期'}}</view>
+  </picker>
+  <view class="hint">比赛日期 <text class="req">＊必填</text>（无上限；过期自动归入已结束）</view>
+
+  <!-- 项目 -->
+  <view class="sec">项目</view>
+  <view class="chips">
+    <view
+      wx:for="{{typeChips}}"
+      wx:key="token"
+      class="chip {{item.on ? 'chip--on' : ''}}"
+      data-token="{{item.token}}"
+      bindtap="onTypeTap"
+    >{{item.label}}</view>
+  </view>
+  <view class="row2">
+    <input
+      class="field"
+      placeholder="距离（km，可选）"
+      placeholder-class="ph"
+      type="digit"
+      maxlength="8"
+      value="{{dist}}"
+      bindinput="onDistInput"
+    />
+    <input
+      class="field"
+      placeholder="爬升 D+（m，可选）"
+      placeholder-class="ph"
+      type="number"
+      maxlength="8"
+      value="{{ascent}}"
+      bindinput="onAscentInput"
+    />
+  </view>
+  <view wx:if="{{isTrail}}" class="hint hint--hl">⛰ 越野建议填爬升（D+）——越野区别于路跑的核心指标</view>
+
+  <!-- 参赛状态 -->
+  <view class="sec">参赛状态</view>
+  <view class="seg">
+    <view
+      class="seg__item {{state === 'want' ? 'seg__item--on' : ''}}"
+      data-state="want"
+      bindtap="onStateTap"
+    >想跑</view>
+    <view
+      class="seg__item {{state === 'registered' ? 'seg__item--on' : ''}}"
+      data-state="registered"
+      bindtap="onStateTap"
+    >已报名</view>
+  </view>
+
+  <!-- 其他（可选） -->
+  <view class="sec">其他 <text class="opt">可选</text></view>
+  <input
+    class="field"
+    placeholder="地点，如 台州 · 临海"
+    placeholder-class="ph"
+    maxlength="64"
+    value="{{city}}"
+    bindinput="onCityInput"
+  />
+  <input
+    class="field field--gap"
+    placeholder="官网 / 报名链接"
+    placeholder-class="ph"
+    maxlength="512"
+    value="{{website}}"
+    bindinput="onWebsiteInput"
+  />
+  <textarea
+    class="field field--area"
+    placeholder="备注（行程、装备、同伴…）"
+    placeholder-class="ph"
+    maxlength="512"
+    value="{{note}}"
+    auto-height
+    bindinput="onNoteInput"
+  />
+
+  <button class="save" loading="{{saving}}" disabled="{{saving}}" bindtap="onSave">
+    {{saving ? '保存中…' : '保存'}}
+  </button>
+</view>

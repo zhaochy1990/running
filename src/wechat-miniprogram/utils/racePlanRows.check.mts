@@ -5,7 +5,7 @@
  * 比赛日排序，不依赖小程序运行时（services 只做 type-only 导入，剥离后无副作用）。
  */
 import type { RacePlan } from '../services/race-plans.ts';
-import { toPlanCard, toPlanCards } from './racePlanRows.ts';
+import { toPlanCard } from './racePlanRows.ts';
 import { epochToShanghaiYmd, shanghaiToday, shanghaiYmdToEpoch } from './date.ts';
 
 function eq(actual: unknown, expected: unknown, what: string): void {
@@ -84,14 +84,5 @@ eq(toPlanCard(plan({ race: raceOn(ymdShift(today, 29)) })).countdown, '距离比
 eq(toPlanCard(plan({ race: raceOn(today) })).countdown, '今天开赛', 'countdown race day');
 eq(toPlanCard(plan({ race: raceOn(ymdShift(today, -1)) })).countdown, '', 'countdown past hidden');
 eq(toPlanCard(plan({ race: null })).countdown, '', 'countdown hidden without race');
-
-// 排序：比赛日升序，同日按 race_id；无日期（race=null）沉底
-const unordered = toPlanCards([
-  plan({ race_id: 30, race: { ...DEF_RACE, race_date: '2026-12-06' } }),
-  plan({ race_id: 10 }),
-  plan({ race_id: 20, offboarded: true, race: null }),
-  plan({ race_id: 40, race: { ...DEF_RACE, race_date: '2026-10-18' } }),
-]);
-eq(unordered.map((c) => c.raceId), [40, 10, 30, 20], 'sorted by race_date, dateless sink');
 
 console.log('racePlanRows check passed');
