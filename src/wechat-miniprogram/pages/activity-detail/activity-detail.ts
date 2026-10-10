@@ -14,6 +14,7 @@ import {
   type ZoneBand,
 } from '../../utils/curve';
 import { createCurveChart, hrChartSpec, paceChartSpec, type CurveChart } from '../../utils/curveChart';
+import { toUChartsTouchEvent } from '../../utils/ucharts';
 import { lapPaceMarks } from '../../utils/lapRows';
 import { userStore } from '../../store/index';
 import type {
@@ -1011,12 +1012,12 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     }
   },
 
-  onHrCurveTouch(e: unknown) {
-    if (hrChart && hrSpec) hrChart.showToolTip(e, { formatter: (item, time) => hrSpec!.tooltip(item.data, time) });
+  onHrCurveTouch(e: WechatMiniprogram.TouchEvent) {
+    if (hrChart && hrSpec) hrChart.showToolTip(toUChartsTouchEvent(e), { formatter: (item, time) => hrSpec!.tooltip(item.data, time) });
   },
 
-  onPaceCurveTouch(e: unknown) {
-    if (paceChart && paceSpec) paceChart.showToolTip(e, { formatter: (item, time) => paceSpec!.tooltip(item.data, time) });
+  onPaceCurveTouch(e: WechatMiniprogram.TouchEvent) {
+    if (paceChart && paceSpec) paceChart.showToolTip(toUChartsTouchEvent(e), { formatter: (item, time) => paceSpec!.tooltip(item.data, time) });
   },
 
   onBack() {
