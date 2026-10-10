@@ -104,8 +104,9 @@
           </view>
         </block>
 
-        <!-- 项目：每项目一节（纯报名信息）；赛道内容在有赛道 tab 时挪入赛道 tab，
-             无赛道 tab 的赛事（course.available=false）路线文字留在此处兜底 -->
+        <!-- 项目：每项目一节（纯报名信息）；赛道内容在有赛道 tab 时挪入赛道 tab。
+             无赛道 tab 的赛事（course.available=false）保留 #385 版式的赛道空态行
+             ——此时各项目路线必为空，实际只会显示「待补」 -->
         <block wx:elif="{{tabIndex === 1}}">
           <block wx:if="{{view.items.length}}">
             <view class="card" wx:for="{{view.items}}" wx:for-item="sec" wx:key="id">
@@ -131,16 +132,14 @@
             <view class="card__title">{{sec.title}} · 赛道</view>
             <view wx:if="{{sec.route}}" class="course__route">{{sec.route}}</view>
             <view wx:else class="card__empty">路线待补</view>
+            <!-- 距离/爬升属路线语义：只要录了就显示，不依赖难点站点存在 -->
+            <view wx:if="{{sec.distanceKm || sec.ascent}}" class="course__meta course__meta--route"><text wx:if="{{sec.distanceKm}}">{{sec.distanceKm}}km</text><text wx:if="{{sec.ascent}}"> · 爬升约{{sec.ascent}}m</text></view>
 
             <block wx:if="{{sec.stations.length}}">
               <view class="course__sep"></view>
               <view class="course__head">
                 <view class="card__title">赛道全景</view>
-                <view class="course__meta">
-                  <text wx:if="{{sec.distanceKm}}">{{sec.distanceKm}}km </text>
-                  <text wx:if="{{sec.ascent}}">· 爬升约{{sec.ascent}}m </text>
-                  <text>· {{sec.stations.length}} 处</text>
-                </view>
+                <view class="course__meta">{{sec.stations.length}} 处</view>
               </view>
               <view class="course__plot" style="height: {{sec.plotH}}rpx;">
                 <view class="course__vline"></view>

@@ -11,7 +11,7 @@ import type { RaceItem } from '../services/race-center';
 export interface CourseStation {
   /** 展开态键（页面级唯一，供 wx:key 与展开/收起索引） */
   key: string;
-  /** 类别名（已剥离描述的【x】前缀），未知前缀归「其他」 */
+  /** 类别名（已剥离描述的【x】前缀）；未知前缀保留原文，配色回退灰 */
   cat: string;
   /** 类别主题色的 rgb 三元组（"255,159,10"）：wxml 拼 rgb()/rgba(…,0.12) 徽章 */
   color: string;
@@ -64,7 +64,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 const FALLBACK_COLOR = CATEGORY_COLORS['其他'];
 
-/** 【x】前缀 → 类别；正文剥掉前缀。无前缀的脏数据归「其他」。 */
+/** 【x】前缀 → 类别名（原文保留，配色按表查、未知名回退灰）；正文剥掉前缀。 */
 function splitCategory(description: string): { cat: string; body: string } {
   const m = /^【(.+?)】\s*/.exec(description);
   if (!m) return { cat: '其他', body: description };
@@ -72,30 +72,29 @@ function splitCategory(description: string): { cat: string; body: string } {
   return { cat: m[1], body: body || description };
 }
 
-/** 自由文本公里段 → [起点km, 终点km]；区间与单点都要吃下，解析不出 → null。 */
+/** 自由文本公里段 → [起点km, 终点km]；区间与单点都要吃下，解析不出 → null。
+ * 正则保证捕获组可解析，Number 不会产出非有限值。 */
 export function parseCourseKm(text: string | null): [number, number] | null {
   if (!text) return null;
-  const range = /(\d+(?:\.\d+)?)\s*[–—\-~]\s*(\d+(?:\.\d+)?)?/.exec(text);
-  if (range) {
-    const start = Number(range[1]);
-    const end = range[2] !== undefined ? Number(range[2]) : start;
-    if (Number.isFinite(start) && Number.isFinite(end)) return [start, end];
-  }
-  const single = /(\d+(?:\.\d+)?)/.exec(text);
-  if (!single) return null;
-  const v = Number(single[1]);
-  return Number.isFinite(v) ? [v, v] : null;
+  const m = /(\d+(?:\.\d+)?)(?:\s*[–—\-~]\s*(\d+(?:\.\d+)?))?/.exec(text);
+  if (!m) return null;
+  const start = Number(m[1]);
+  return [start, m[2] !== undefined ? Number(m[2]) : start];
 }
 
-/** 站点短标题：剥前导公里段 → 取首个分隔符前的主干 → 截断。 */
+/** 短标题截断上限：超出补省略号。 */
+const TITLE_MAX = 16;
+
+/** 站点短标题：剥前导公里段（区间或单点）→ 取首个分隔符前的主干 → 截断。 */
 export function courseStationTitle(body: string): string {
-  const stripped = body
-    .replace(/^\s*\d+(?:\.\d+)?\s*[–—\-~]\s*\d+(?:\.\d+)?\s*km?\s*/i, '')
-    .replace(/^\s*\d+(?:\.\d+)?\s*km?\s*/i, '');
+  const stripped = body.replace(
+    /^\s*\d+(?:\.\d+)?(?:\s*[–—\-~]\s*\d+(?:\.\d+)?)?\s*km?\s*/i,
+    '',
+  );
   const m = /^[^：:（(；;，,]*/.exec(stripped);
   let title = (m ? m[0] : stripped).trim();
-  if (title.length > 16) title = `${title.slice(0, 16)}…`;
-  return title || body.slice(0, 16);
+  if (title.length > TITLE_MAX) title = `${title.slice(0, TITLE_MAX)}…`;
+  return title || body.slice(0, TITLE_MAX);
 }
 
 /** 一个项目的赛道节；无路线且无难点 → null（调用方据此决定 tab 是否可用）。 */

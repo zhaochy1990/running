@@ -505,6 +505,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 距离/爬升 meta 行：属路线语义，跟在路线文字后，不随「赛道全景」站点块出现 */
+.course__meta--route {
+  margin-top: 12rpx;
+}
+
 /* 纵向站点线：线在左，站点卡绝对定位（top 由 utils/raceCourse 按紧凑间距算出） */
 .course__plot {
   position: relative;
