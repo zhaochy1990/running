@@ -773,6 +773,15 @@ func TestRaceCalendarAdmin_EventContentPatch(t *testing.T) {
 		t.Fatalf("bad mode = %d %s, want 400 invalid_request", w.Code, w.Body.String())
 	}
 
+	// The pending mode (官方尚未公布分区规则) is a valid rule and round-trips.
+	pending := map[string]any{"content": map[string]any{"partition_rule": map[string]any{"mode": "pending", "description": ""}}}
+	if w = h.do(t, http.MethodPatch, base, pending, admin); w.Code != http.StatusOK {
+		t.Fatalf("pending mode = %d: %s", w.Code, w.Body.String())
+	}
+	if got = decodeRaceDTO(t, w); got.Content == nil || got.Content.PartitionRule == nil || got.Content.PartitionRule.Mode != "pending" {
+		t.Fatalf("content = %+v, want partition rule mode pending", got.Content)
+	}
+
 	// An explicit null clears everything, including the stale flag.
 	h.store.events[h.store.findEvent(event.ID)].ContentStale = true
 	w = h.do(t, http.MethodPatch, base, map[string]any{"content": nil}, admin)

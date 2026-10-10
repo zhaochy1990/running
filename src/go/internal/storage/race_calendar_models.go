@@ -393,8 +393,10 @@ func IsRaceCalendarItemOverrideable(field string) bool {
 }
 
 // RacePartitionRule is the race-level start-corral arrangement (user story 9).
-// Mode is "mixed" (所有项目混合分区) or "by_item" (分项先后出发); Description
-// carries the free-text explanation.
+// Mode is "mixed" (所有项目混合分区), "by_item" (分项先后出发) or "pending"
+// (官方尚未公布分区规则); Description carries the free-text explanation. A
+// pending rule still counts as maintained — the dashboard's missing-partition
+// badge stays off, so admins are not nagged for something outside their control.
 type RacePartitionRule struct {
 	Mode        string `json:"mode"`
 	Description string `json:"description"`
