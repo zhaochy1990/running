@@ -9,7 +9,11 @@ import { countdownLabel, planDateLabel, toPlanCard } from './racePlanRows';
 import { shanghaiToday } from './date';
 import { daysUntil } from './raceDetailRows';
 
-/** 表单 chips 与卡面徽章共用的七值类型词表（token ↔ 中文，#457 拍板扩 racetypes）。 */
+/**
+ * 表单 chips 与卡面徽章共用的七值类型词表（token ↔ 中文，#457 拍板扩 racetypes）。
+ * 注意与 raceCenterRows 的 typeAbbr 是两张表：赛历卡用短名（全马/半马，空间紧），
+ * 自定义卡用全名（马拉松/半马）——文案差异是刻意的，收敛前先对两边 UI。
+ */
 export const CUSTOM_TYPE_CHIPS: ReadonlyArray<{ token: string; label: string }> = [
   { token: 'Marathon', label: '马拉松' },
   { token: 'HalfMarathon', label: '半马' },
@@ -61,7 +65,7 @@ export interface CustomCardView {
   /** 倒计时文案；done 时为 ''，wxml 隐藏 */
   countdown: string;
   done: boolean;
-  /** 备注，空串隐藏（已结束卡不显） */
+  /** 备注；空串隐藏。已结束卡保留备注（双评审拍板：记录完整呈现） */
   note: string;
 }
 
