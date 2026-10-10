@@ -26,11 +26,15 @@ page {
   color: #6a6a6c;
 }
 
+/* 原生 input 的纵向 padding 不参与内容盒：统一定高 + 水平 padding，
+   行高与高度一致让文字/占位符垂直居中（仓内同 profile-edit 的显式高度做法） */
 .field {
   box-sizing: border-box;
   width: 100%;
-  padding: 20rpx 24rpx;
+  height: 88rpx;
+  padding: 0 24rpx;
   font-size: 28rpx;
+  line-height: 88rpx;
   color: #e8e8ea;
   background: #101111;
   border: 1rpx solid rgba(255, 255, 255, 0.06);
@@ -46,8 +50,10 @@ page {
 }
 
 .field--area {
+  height: auto;
   margin-top: 16rpx;
   min-height: 120rpx;
+  padding: 20rpx 24rpx;
   line-height: 40rpx;
 }
 
