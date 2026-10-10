@@ -27,6 +27,7 @@ import {
   type ProfileInput,
 } from '../../utils/profileFields';
 import { shanghaiToday } from '../../utils/date';
+import { logger } from '../../utils/logger';
 import { userStore } from '../../store/index';
 import { defaultShareAppMessage, defaultShareTimeline } from '../../utils/share';
 
@@ -208,6 +209,7 @@ Page<OnboardingPageData, OnboardingPageHandlers>({
       this.setData({ avatarUrl: url, saving: false });
       console.log('[onboarding] 微信头像已上传');
     } catch (err) {
+      logger.error('avatar save fail (onboarding)', err instanceof Error ? err.message : String(err));
       this.setData({
         saving: false,
         formError: err instanceof Error ? err.message : '头像上传失败',
