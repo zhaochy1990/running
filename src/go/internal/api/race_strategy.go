@@ -7,6 +7,7 @@
 //	GET    /api/users/me/race-strategies/:race_id (report page / detail card)
 //	PUT    /api/users/me/race-strategies/:race_id (runner edits in the report page)
 //	DELETE /api/users/me/race-strategies/:race_id (remove one target's version)
+//	GET    /api/race-strategies/shared/:user_id/:race_id/:version_id (share link, #506, no auth)
 //
 // The three writers share the version key: target_finish_time extracted from
 // the content JSON — regenerating or editing a goal overwrites that goal's
@@ -41,6 +42,7 @@ type RaceStrategyStore interface {
 	// 201 vs 200 on it). TargetTime is the version key.
 	UpsertRaceStrategy(ctx context.Context, userID string, raceEventID uint64, targetTime, itemType, content string) (*storage.RaceStrategy, bool, error)
 	GetRaceStrategies(ctx context.Context, userID string, raceEventID uint64) ([]storage.RaceStrategy, error)
+	GetSharedRaceStrategy(ctx context.Context, userID string, raceEventID, versionID uint64) (*storage.SharedRaceStrategyView, error)
 	DeleteRaceStrategy(ctx context.Context, userID string, raceEventID uint64, targetTime string) error
 }
 
@@ -70,6 +72,16 @@ func (r *raceStrategyRoutes) register(rg *gin.RouterGroup) {
 	rg.DELETE("/api/users/me/race-strategies/:race_id", r.delete)
 }
 
+// registerPublic mounts the share-link read (#506) straight on the engine,
+// outside the authed group: the viewer may have no account, and the link's
+// UUID triple is the whole access boundary. Read-only by construction.
+func (r *raceStrategyRoutes) registerPublic(engine *gin.Engine) {
+	if r.store == nil {
+		return
+	}
+	engine.GET("/api/race-strategies/shared/:user_id/:race_id/:version_id", r.getShared)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DTOs
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,8 +89,10 @@ func (r *raceStrategyRoutes) register(rg *gin.RouterGroup) {
 // raceStrategyVersionDTO is one goal version on the wire: the version key plus
 // the strategy content as a JSON object (the canonical schema lives in
 // coach_contract; the client mirrors it, the server treats it as
-// validated-at-the-edge data).
+// validated-at-the-edge data). ID is the row id — the share link carries it as
+// the version identifier (#506).
 type raceStrategyVersionDTO struct {
+	ID               uint64         `json:"id"`
 	TargetFinishTime string         `json:"target_finish_time"`
 	ItemType         string         `json:"item_type"`
 	Content          map[string]any `json:"content"`
@@ -90,6 +104,21 @@ type raceStrategyVersionDTO struct {
 type raceStrategyListDTO struct {
 	RaceID     uint64                   `json:"race_id"`
 	Strategies []raceStrategyVersionDTO `json:"strategies"`
+}
+
+// raceStrategySharedDTO is the share-link response (#506): one version plus
+// the race context the landing page renders. The name is the race_calendar
+// row (canonical today), not the race_name copy inside the strategy content
+// (a generation-time snapshot); the date has no content counterpart at all —
+// a logged-out viewer could not render either without it.
+type raceStrategySharedDTO struct {
+	Race     raceStrategySharedRaceDTO `json:"race"`
+	Strategy raceStrategyVersionDTO    `json:"strategy"`
+}
+
+type raceStrategySharedRaceDTO struct {
+	Name     string `json:"name"`
+	RaceDate string `json:"race_date"`
 }
 
 type raceStrategyUpsertResponse struct {
@@ -283,6 +312,53 @@ func (r *raceStrategyRoutes) delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// getShared answers a read-only share link (#506): anyone who taps the card —
+// logged in or not — sees the owner's exact strategy version. Owner mismatch
+// and deleted version are the same 404: the UUID triple is the access
+// boundary, so a miss must not reveal which part was wrong.
+//
+//	@Summary		Get a shared race strategy
+//	@Description	Read-only share-link read. Returns one strategy version plus the race name/date, identified by the exact (owner, race, version) id triple. Any miss (wrong owner, deleted version, removed race) answers 404 without saying which part missed.
+//	@Tags			race-strategies
+//	@Produce		json
+//	@Param			user_id		path	string	true	"Owner user UUID"
+//	@Param			race_id		path	int		true	"Race id"
+//	@Param			version_id	path	int		true	"Strategy version (row) id"
+//	@Success		200			{object}	raceStrategySharedDTO
+//	@Failure		400			{object}	errorResponse
+//	@Failure		404			{object}	errorResponse
+//	@Failure		500			{object}	errorResponse
+//	@Router			/api/race-strategies/shared/{user_id}/{race_id}/{version_id} [get]
+func (r *raceStrategyRoutes) getShared(c *gin.Context) {
+	uid := c.Param("user_id")
+	if _, err := uuid.Parse(uid); err != nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid_user"})
+		return
+	}
+	raceID, ok := parseUintParam(c, "race_id")
+	if !ok {
+		return
+	}
+	versionID, ok := parseUintParam(c, "version_id")
+	if !ok {
+		return
+	}
+	view, err := r.store.GetSharedRaceStrategy(c.Request.Context(), uid, raceID, versionID)
+	if errors.Is(err, storage.ErrRaceStrategyNotFound) {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "race_strategy_not_found"})
+		return
+	}
+	if err != nil {
+		r.log.Error("load shared race strategy failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	c.JSON(http.StatusOK, raceStrategySharedDTO{
+		Race:     raceStrategySharedRaceDTO{Name: view.RaceName, RaceDate: view.RaceDate},
+		Strategy: newRaceStrategyVersionDTO(&view.Strategy),
+	})
+}
+
 // raceStrategyTargetRe pins the version key to the contract's target shape
 // (coach_contract: ^\d{1,2}:\d{2}:\d{2}$).
 var raceStrategyTargetRe = regexp.MustCompile(`^\d{1,2}:\d{2}:\d{2}$`)
@@ -334,6 +410,7 @@ func newRaceStrategyVersionDTO(row *storage.RaceStrategy) raceStrategyVersionDTO
 		content = map[string]any{}
 	}
 	return raceStrategyVersionDTO{
+		ID:               row.ID,
 		TargetFinishTime: row.TargetFinishTime,
 		ItemType:         row.ItemType,
 		Content:          content,

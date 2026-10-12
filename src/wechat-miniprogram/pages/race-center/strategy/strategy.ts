@@ -83,6 +83,8 @@ interface StrategyPageHandlers {
   /** 已保存版本全量（服务端目标升序）；_activeTarget 是当前选中的版本键。 */
   _versions: RaceStrategyVersion[];
   _activeTarget: string;
+  /** 当前选中版本的行 id（分享链接的版本标识；草稿/未选中态为 0）。 */
+  _activeVersionId: number;
   /** 指定初始选中的目标（?target= 或草稿应用后的落点）。 */
   _initialTarget: string;
 }
@@ -128,6 +130,7 @@ Page<StrategyPageData, StrategyPageHandlers>({
   _draftStrategy: null,
   _versions: [],
   _activeTarget: '',
+  _activeVersionId: 0,
   _initialTarget: '',
 
   onLoad(options) {
@@ -204,6 +207,7 @@ Page<StrategyPageData, StrategyPageHandlers>({
   applyVersion(version: RaceStrategyVersion, versions: RaceStrategyVersion[], detail: RaceDetail) {
     this._versions = versions;
     this._activeTarget = version.target_finish_time;
+    this._activeVersionId = version.id || 0;
     this._base = version.content;
     const view = toStrategyView(version.content);
     this.setData({
@@ -246,6 +250,16 @@ Page<StrategyPageData, StrategyPageHandlers>({
     const name = view?.raceName || '比赛策略';
     if (!view || !this._raceId) {
       return { title: name, path: '/pages/race-center/race-center' };
+    }
+    // #506：已落库的版本把 owner+race+version 三个 id 带进只读落地页——好友
+    // （含未登录）点开看到的是分享者的这一版，不是自己的；草稿/无版本行 id
+    // 时保持旧回落（赛事详情页）。
+    const ownerId = userStore.getState().user?.id;
+    if (this._activeVersionId && ownerId) {
+      return {
+        title: strategyShareTitle(view),
+        path: `/pages/race-center/strategy-share/strategy-share?user=${ownerId}&id=${this._raceId}&version=${this._activeVersionId}`,
+      };
     }
     return {
       title: strategyShareTitle(view),
@@ -410,6 +424,7 @@ Page<StrategyPageData, StrategyPageHandlers>({
       if (remaining.length === 0) {
         this._versions = [];
         this._activeTarget = '';
+        this._activeVersionId = 0;
         this.setData({
           versions: [],
           view: null,

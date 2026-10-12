@@ -397,6 +397,9 @@ func (s *Service) Router() *gin.Engine {
 	// Compliance declarations: readable before login (the app shows the
 	// agreements on the sign-up screen), and only ever the published versions.
 	s.legalDocuments.registerPublic(r)
+	// Strategy share link (#506): read-only, the UUID triple is the access
+	// boundary — the viewer may not be logged in.
+	s.raceStrategy.registerPublic(r)
 
 	authenticated := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
 	// Plan routes explicitly admit the separate admin JWT tier. The master-plan

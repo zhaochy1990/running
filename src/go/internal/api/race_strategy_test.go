@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"testing"
@@ -21,6 +22,7 @@ import (
 type fakeRaceStrategyStore struct {
 	strategies map[string]map[uint64]map[string]*storage.RaceStrategy
 	missing    map[uint64]bool
+	nextID     uint64
 }
 
 func newFakeRaceStrategyStore() *fakeRaceStrategyStore {
@@ -51,7 +53,9 @@ func (f *fakeRaceStrategyStore) UpsertRaceStrategy(_ context.Context, userID str
 		cur.UpdatedAt = now
 		return cur, false, nil
 	}
+	f.nextID++
 	row := &storage.RaceStrategy{
+		ID:     f.nextID,
 		UserID: userID, RaceEventID: raceEventID, TargetFinishTime: targetTime,
 		ItemType: itemType, Content: content,
 		CreatedAt: now, UpdatedAt: now,
@@ -84,6 +88,18 @@ func (f *fakeRaceStrategyStore) GetRaceStrategies(_ context.Context, userID stri
 		rows = append(rows, *byTarget[target])
 	}
 	return rows, nil
+}
+
+func (f *fakeRaceStrategyStore) GetSharedRaceStrategy(_ context.Context, userID string, raceEventID, versionID uint64) (*storage.SharedRaceStrategyView, error) {
+	for _, row := range f.strategies[userID][raceEventID] {
+		if row.ID == versionID {
+			return &storage.SharedRaceStrategyView{
+				RaceName: "策略赛", RaceDate: "2032-04-10", Strategy: *row,
+			}, nil
+		}
+	}
+	// Wrong owner, wrong race and dead version are one uniform miss (#506).
+	return nil, storage.ErrRaceStrategyNotFound
 }
 
 func (f *fakeRaceStrategyStore) DeleteRaceStrategy(_ context.Context, userID string, raceEventID uint64, targetTime string) error {
@@ -301,5 +317,78 @@ func TestRaceStrategy_GetEmptyIsNotAnError(t *testing.T) {
 	}
 	if dto.Strategies == nil || len(dto.Strategies) != 0 {
 		t.Fatalf("strategies = %v, want []", dto.Strategies)
+	}
+}
+
+func TestRaceStrategy_ShareLink(t *testing.T) {
+	h := newEngagementHarness(t)
+	uid := "11111111-2222-4333-8333-333333333333"
+	userPath := "/api/users/" + uid + "/race-strategies"
+
+	// Seed two versions; the share path carries the row id of the version
+	// being shared, so capture them from the list DTO.
+	for _, target := range []string{"2:55:00", "2:50:00"} {
+		w := h.do(t, http.MethodPost, userPath, map[string]any{
+			"race_event_id": 30, "item_type": "Marathon",
+			"content": map[string]any{"race_name": "上海马拉松", "target_finish_time": target},
+		}, internalHdr())
+		if w.Code != http.StatusCreated {
+			t.Fatalf("seed %s = %d: %s", target, w.Code, w.Body.String())
+		}
+	}
+	w := h.do(t, http.MethodGet, "/api/users/me/race-strategies/30", nil, h.userToken(t))
+	var list raceStrategyListDTO
+	if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(list.Strategies) != 2 || list.Strategies[0].ID == 0 || list.Strategies[1].ID == 0 {
+		t.Fatalf("list ids: %+v", list.Strategies)
+	}
+	v250 := list.Strategies[0] // fastest goal first
+	if v250.TargetFinishTime != "2:50:00" {
+		t.Fatalf("first version = %s, want 2:50:00", v250.TargetFinishTime)
+	}
+
+	// Anonymous GET — no token: this is the whole point of the share link.
+	w = h.do(t, http.MethodGet, fmt.Sprintf("/api/race-strategies/shared/%s/30/%d", uid, v250.ID), nil, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("anonymous shared get = %d: %s", w.Code, w.Body.String())
+	}
+	var shared raceStrategySharedDTO
+	if err := json.Unmarshal(w.Body.Bytes(), &shared); err != nil {
+		t.Fatalf("decode shared: %v", err)
+	}
+	if shared.Race.Name == "" || shared.Race.RaceDate == "" {
+		t.Fatalf("race context: %+v", shared.Race)
+	}
+	// The exact shared version — a logged-in friend must not see their own
+	// (empty) strategies either.
+	if shared.Strategy.ID != v250.ID || shared.Strategy.TargetFinishTime != "2:50:00" {
+		t.Fatalf("shared version: %+v, want row %d (2:50:00)", shared.Strategy, v250.ID)
+	}
+
+	// Wrong owner / wrong race / dead version: one uniform 404, never a hint
+	// about which part of the triple missed.
+	other := "44444444-4444-4444-8444-444444444444"
+	for name, path := range map[string]string{
+		"wrong owner":  fmt.Sprintf("/api/race-strategies/shared/%s/30/%d", other, v250.ID),
+		"wrong race":   fmt.Sprintf("/api/race-strategies/shared/%s/31/%d", uid, v250.ID),
+		"dead version": fmt.Sprintf("/api/race-strategies/shared/%s/30/999", uid),
+	} {
+		if w := h.do(t, http.MethodGet, path, nil, nil); w.Code != http.StatusNotFound {
+			t.Errorf("%s = %d, want 404", name, w.Code)
+		}
+	}
+
+	// Malformed params are rejected before any lookup.
+	for name, path := range map[string]string{
+		"bad uuid":     "/api/race-strategies/shared/not-a-uuid/30/1",
+		"zero race":    fmt.Sprintf("/api/race-strategies/shared/%s/0/1", uid),
+		"zero version": fmt.Sprintf("/api/race-strategies/shared/%s/30/0", uid),
+		"bad version":  fmt.Sprintf("/api/race-strategies/shared/%s/30/x", uid),
+	} {
+		if w := h.do(t, http.MethodGet, path, nil, nil); w.Code != http.StatusBadRequest {
+			t.Errorf("%s = %d, want 400", name, w.Code)
+		}
 	}
 }
