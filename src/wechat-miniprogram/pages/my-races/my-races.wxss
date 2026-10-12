@@ -1,16 +1,18 @@
 /* ============================================================
    我的比赛页 —— 双 tab（我的赛事 / 我的成绩），深色 STRIDE 主题
    （与 watch / race-center 一致）。app.wxss 的全局令牌是浅色主题，
-   深色页需在页面内重定义 .card / .card__label / banner / spinner
-   （同 watch 页做法）；.empty-card 为 app.wxss 里已是深色的全局类。
+   深色令牌抽至 styles/dark.wxss 由本页 @import；深色页仍需在页面内
+   重定义 .card / .card__label / banner / spinner（同 watch 页做法）；
+   .empty-card 为 app.wxss 里已是深色的全局类。
    「我的赛事」tab 样式自 race-center/plans 页并入，计划卡类名
    统一 plan- 前缀，避免与成绩列表 .card 冲突。
    ============================================================ */
+@import "../../styles/dark.wxss";
 
 .page {
   min-height: 100vh;
   box-sizing: border-box;
-  background: #07080a;
+  background: var(--color-bg);
   display: flex;
   flex-direction: column;
 }
@@ -21,7 +23,7 @@
   left: 0;
   right: 0;
   z-index: 50;
-  background: #07080a;
+  background: var(--color-bg);
   border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
 }
 
@@ -63,7 +65,7 @@
   line-height: 48rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
 }
 
 .top-bar__subtitle {
@@ -86,17 +88,17 @@
   line-height: 64rpx;
   text-align: center;
   font-size: 26rpx;
-  color: #9c9c9d;
-  background: #0a0b0d;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-sunken);
   border: 1rpx solid rgba(255, 255, 255, 0.06);
   border-radius: 32rpx;
 }
 
 .tabs__item--on {
-  color: #ffffff;
+  color: var(--color-on-accent);
   font-weight: 600;
-  background: #ff6363;
-  border-color: #ff6363;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .content {
@@ -104,12 +106,12 @@
 }
 
 /* ---------- 卡片 ----------
-   app.wxss 的全局 .card 用浅色主题令牌（--color-card: #ffffff），
-   深色页都在页面内重定义暗卡（与 watch / activities 一致）；
+   app.wxss 的全局 .card 用浅色主题令牌，深色页都在页面内
+   重定义暗卡（与 watch / activities 一致）；
    此处 .card 只用于「我的成绩」列表容器。 */
 
 .card {
-  background: #101111;
+  background: var(--color-card);
   border: 1rpx solid rgba(255, 255, 255, 0.06);
   border-radius: 24rpx;
   padding: 32rpx;
@@ -120,7 +122,7 @@
   font-size: 20rpx;
   letter-spacing: 2rpx;
   text-transform: uppercase;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
   padding-bottom: 16rpx;
   margin-bottom: 24rpx;
@@ -138,7 +140,7 @@
 
 .state-card__text {
   font-size: 24rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .banner {
@@ -149,16 +151,16 @@
 }
 
 .banner--error {
-  background: rgba(255, 99, 99, 0.1);
-  border: 1rpx solid rgba(255, 99, 99, 0.2);
-  color: #ff6363;
+  background: rgba(var(--color-accent-rgb), 0.1);
+  border: 1rpx solid rgba(var(--color-accent-rgb), 0.2);
+  color: var(--color-accent);
 }
 
 .spinner {
   width: 48rpx;
   height: 48rpx;
   border: 4rpx solid rgba(95, 201, 146, 0.3);
-  border-top-color: #5fc992;
+  border-top-color: var(--color-success);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -178,7 +180,7 @@
 .plan {
   margin-top: 24rpx;
   padding: 28rpx 28rpx 24rpx;
-  background: #101111;
+  background: var(--color-card);
   border: 1rpx solid rgba(255, 255, 255, 0.05);
   border-radius: 26rpx;
 }
@@ -186,7 +188,7 @@
 /* 已下架占位 / 自定义已结束：灰卡、记录保留 */
 .plan--off,
 .plan--past {
-  background: #0d0e10;
+  background: var(--color-bg-dim);
   border-color: rgba(255, 255, 255, 0.03);
 }
 
@@ -202,14 +204,14 @@
   font-size: 28rpx;
   font-weight: 600;
   line-height: 40rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .plan__name--dim {
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }
 
 .plan__meta {
@@ -219,7 +221,7 @@
   margin: 8rpx 0 20rpx;
   font-size: 22rpx;
   line-height: 32rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 /* 开赛倒计时：主题藕粉文字（与全马徽章同色族），不加底色避免卡上徽章过密 */
@@ -227,11 +229,11 @@
   margin-left: auto;
   flex-shrink: 0;
   font-weight: 600;
-  color: #ff8f8f;
+  color: var(--color-accent-light);
 }
 
 .plan__meta--dim {
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
   white-space: normal;
 }
 
@@ -246,32 +248,32 @@
 }
 
 .plan-badge--item {
-  color: #b9b8bc;
+  color: var(--color-text-bright);
   background: rgba(255, 255, 255, 0.08);
 }
 
 .plan-badge--state--registered {
-  color: #8fb8e8;
+  color: var(--color-info);
   background: rgba(143, 184, 232, 0.12);
 }
 
 .plan-badge--state--won {
-  color: #e8c07d;
+  color: var(--color-warning);
   background: rgba(232, 192, 125, 0.12);
 }
 
 .plan-badge--state--lost {
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   background: rgba(156, 156, 157, 0.14);
 }
 
 .plan-badge--state--confirmed {
-  color: #5fc992;
+  color: var(--color-success);
   background: rgba(95, 201, 146, 0.12);
 }
 
 .plan-badge--off {
-  color: #8a8a8c;
+  color: var(--color-text-muted);
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -282,7 +284,7 @@
   align-items: center;
   gap: 8rpx;
   padding: 16rpx;
-  background: #0a0b0d;
+  background: var(--color-bg-sunken);
   border-radius: 18rpx;
 }
 
@@ -290,28 +292,28 @@
   flex-shrink: 0;
   padding: 8rpx 20rpx;
   font-size: 22rpx;
-  color: #8a8f99;
-  background: #17181a;
+  color: var(--color-text-cool);
+  background: var(--color-chip);
   border-radius: 24rpx;
 }
 
 .steps__chip--on {
-  background: #ff6363;
-  color: #ffffff;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
   font-weight: 600;
 }
 
 .steps__arrow {
   flex-shrink: 0;
   font-size: 24rpx;
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 .steps__hint {
   margin-left: auto;
   flex-shrink: 0;
   font-size: 20rpx;
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 /* ---------- 未中签旁路：转化引导 ---------- */
@@ -323,15 +325,15 @@
   gap: 12rpx;
   margin-top: 16rpx;
   padding: 16rpx 24rpx;
-  background: #0a0b0d;
+  background: var(--color-bg-sunken);
   border-radius: 18rpx;
   font-size: 22rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .lost-row__link {
   flex-shrink: 0;
-  color: #ff6363;
+  color: var(--color-accent);
 }
 
 /* ---------- 行程布尔勾选 ---------- */
@@ -347,13 +349,13 @@
   text-align: center;
   padding: 14rpx 0;
   font-size: 22rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   border: 1rpx solid rgba(255, 255, 255, 0.1);
   border-radius: 18rpx;
 }
 
 .trip__chip--on {
-  color: #5fc992;
+  color: var(--color-success);
   border-color: rgba(95, 201, 146, 0.6);
   background: rgba(95, 201, 146, 0.08);
   font-weight: 600;
@@ -365,7 +367,7 @@
   margin: 28rpx 8rpx 8rpx;
   font-size: 20rpx;
   line-height: 36rpx;
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 .empty {
@@ -384,22 +386,22 @@
   margin-top: 24rpx;
   font-size: 30rpx;
   font-weight: 600;
-  color: #b9b8bc;
+  color: var(--color-text-bright);
 }
 
 .empty__hint {
   margin: 12rpx 0 36rpx;
   font-size: 24rpx;
   line-height: 40rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
   text-align: center;
 }
 
 .empty__btn {
   padding: 18rpx 52rpx;
   font-size: 26rpx;
-  color: #ffffff;
-  background: #ff6363;
+  color: var(--color-on-accent);
+  background: var(--color-accent);
   border-radius: 36rpx;
   font-weight: 600;
 }
@@ -441,17 +443,17 @@
 }
 
 .race__band--marathon {
-  color: #ff8f8f;
-  background: rgba(255, 99, 99, 0.14);
+  color: var(--color-accent-light);
+  background: rgba(var(--color-accent-rgb), 0.14);
 }
 
 .race__band--half {
-  color: #7ec9a6;
+  color: var(--color-success-light);
   background: rgba(95, 201, 146, 0.14);
 }
 
 .race__band--other {
-  color: #c9c3c4;
+  color: var(--color-band-other);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -463,20 +465,20 @@
   padding: 2rpx 14rpx;
   border-radius: 8rpx;
   flex-shrink: 0;
-  color: #e8c07d;
+  color: var(--color-warning);
   background: rgba(232, 192, 125, 0.14);
 }
 
 .race__date {
   font-size: 22rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 .race__name {
   font-size: 28rpx;
   font-weight: 600;
   line-height: 40rpx;
-  color: #e3e2e5;
+  color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -485,7 +487,7 @@
 .race__meta {
   margin-top: 6rpx;
   font-size: 22rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -505,14 +507,14 @@
 .race__duration {
   font-size: 32rpx;
   font-weight: 700;
-  color: #ffb3af;
+  color: var(--color-accent-pale);
   font-variant-numeric: tabular-nums;
 }
 
 .race__duration-label {
   margin-top: 4rpx;
   font-size: 18rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
 }
 
 /* ---------- 自定义比赛卡（#475）---------- */
@@ -526,30 +528,30 @@
   width: 96rpx;
   height: 96rpx;
   border-radius: 50%;
-  background: #ff6363;
-  color: #ffffff;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
   font-size: 52rpx;
   line-height: 96rpx;
   text-align: center;
   font-weight: 500;
-  box-shadow: 0 8rpx 24rpx rgba(255, 99, 99, 0.35);
+  box-shadow: 0 8rpx 24rpx rgba(var(--color-accent-rgb), 0.35);
   z-index: 10;
 }
 
 /* 粉色「自定义」徽章：与官方项目徽章同族、主题藕粉 */
 .plan-badge--custom {
-  color: #ff8f8f;
-  background: rgba(255, 99, 99, 0.12);
+  color: var(--color-accent-light);
+  background: rgba(var(--color-accent-rgb), 0.12);
 }
 
 /* 想跑：琥珀（与已中签同族暖色）；已结束：灰（与已下架同族） */
 .plan-badge--state--want {
-  color: #e8c07d;
+  color: var(--color-warning);
   background: rgba(232, 192, 125, 0.12);
 }
 
 .plan-badge--state--done {
-  color: #8a8a8c;
+  color: var(--color-text-muted);
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -559,7 +561,7 @@
   padding: 0 8rpx;
   font-size: 30rpx;
   line-height: 36rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
   text-align: center;
 }
 
@@ -569,8 +571,8 @@
   padding: 16rpx 24rpx;
   font-size: 22rpx;
   line-height: 34rpx;
-  color: #9c9c9d;
-  background: #0a0b0d;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-sunken);
   border-radius: 18rpx;
 }
 
@@ -579,5 +581,5 @@
   margin-top: 24rpx;
   padding: 12rpx 36rpx;
   font-size: 24rpx;
-  color: #8a8a8c;
+  color: var(--color-text-muted);
 }
