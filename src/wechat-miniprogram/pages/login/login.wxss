@@ -281,6 +281,42 @@
   text-align: center;
 }
 
+.login-terms-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-terms-check {
+  flex-shrink: 0;
+  width: 28rpx;
+  height: 28rpx;
+  margin-right: 10rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.35);
+  border-radius: 8rpx;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.login-terms-check--on {
+  background: #ff6363;
+  border-color: #ff6363;
+}
+
+/* CSS 画勾：白色 L 形旋转 45° */
+.login-terms-check--on::after {
+  content: '';
+  position: absolute;
+  left: 8rpx;
+  top: 3rpx;
+  width: 8rpx;
+  height: 14rpx;
+  border: solid #ffffff;
+  border-width: 0 3rpx 3rpx 0;
+  transform: rotate(45deg);
+}
+
 .login-terms-text {
   font-size: 22rpx;
   line-height: 36rpx;
@@ -288,21 +324,11 @@
   letter-spacing: 1rpx;
 }
 
-.login-terms-links {
-  margin-top: 8rpx;
-  font-size: 22rpx;
-  line-height: 36rpx;
-  color: #6a6b6c;
-}
-
 .login-terms-link {
-  display: inline-block;
   color: #e3e2e5;
   text-decoration: underline;
   text-decoration-color: rgba(255, 255, 255, 0.2);
   padding: 8rpx 4rpx;
-}
-
-.login-terms-sep {
-  margin: 0 8rpx;
+  font-size: 22rpx;
+  line-height: 36rpx;
 }
