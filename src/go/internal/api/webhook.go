@@ -11,7 +11,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -30,8 +29,9 @@ import (
 // WebhookEventStore persists push events (satisfied by *storage.Store).
 type WebhookEventStore interface {
 	// CreateProviderEvent inserts the event; created=false means the
-	// (provider, provider_activity_id) pair is already recorded (duplicate
-	// push — already processed, skip its enqueue).
+	// (provider, provider_activity_id) pair is already recorded. In both
+	// cases ev.ID ends up holding the row's id (the enqueue payload
+	// references it).
 	CreateProviderEvent(ctx context.Context, ev *storage.ProviderEvent) (bool, error)
 }
 
@@ -54,9 +54,8 @@ type webhookRoutes struct {
 	// fetchJobType is the provider_activity_fetch job type, injected from
 	// internal/catalog like WatchSyncJobType.
 	fetchJobType string
-	// enqueueEnabled gates enqueueing: the worker terminally fails unknown
-	// job types, so the switch must stay off until the fetch handler ships.
-	// Events are still recorded while off.
+	// enqueueEnabled gates enqueueing (events are still recorded while
+	// off); see catalog.JobTypeProviderActivityFetch for why it starts off.
 	enqueueEnabled bool
 	log            *zap.Logger
 }
@@ -106,10 +105,10 @@ func (w *webhookRoutes) fail(c *gin.Context, status int, message string) {
 	c.JSON(status, webhookResult{Result: fmt.Sprintf("%04d", status), Message: message})
 }
 
-// push handles one provider batch: read raw body first (archival + any future
-// rawBody-verified provider), then resolve the adapter (404), verify its
-// credentials (403), parse the batch (400), and per event: resolve the STRIDE
-// user, record idempotently, enqueue the fetch for new bound events.
+// push handles one provider batch: read raw body, resolve the adapter (404),
+// verify its credentials (403), parse the batch (400), and per event: resolve
+// the STRIDE user, record idempotently, enqueue the fetch for bound events
+// (duplicates included — a re-push must heal a previously failed enqueue).
 func (w *webhookRoutes) push(c *gin.Context) {
 	provider := c.Param("provider")
 	// Must precede any binding call: gin's body consumers drain the reader,
@@ -140,12 +139,14 @@ func (w *webhookRoutes) push(c *gin.Context) {
 	ctx := c.Request.Context()
 	now := time.Now().UTC()
 	created, duplicates, enqueued, unbound := 0, 0, 0, 0
+	// resolve tells whether user resolution runs this push. Resolution only
+	// matters when a fetch could be enqueued: while the enqueue switch is off
+	// (fetch handler not shipped) it would be a per-event cross-service call
+	// with no consumer of its result.
+	resolve := w.enqueueEnabled && w.resolver != nil
 	for _, ev := range events {
 		userID := ""
-		// Resolution only matters when a fetch could be enqueued; while the
-		// enqueue switch is off (fetch handler not shipped) it would be a
-		// per-event cross-service call with no consumer of its result.
-		if w.enqueueEnabled && w.resolver != nil {
+		if resolve {
 			userID, err = w.resolver.ResolveProviderUser(ctx, ev.Provider, ev.ProviderUserID)
 			if err != nil {
 				w.log.Error("webhook user resolution failed",
@@ -175,13 +176,13 @@ func (w *webhookRoutes) push(c *gin.Context) {
 			w.fail(c, http.StatusInternalServerError, "event insert failed")
 			return
 		}
-		if !isNew {
+		if isNew {
+			created++
+		} else {
 			duplicates++
-			continue
 		}
-		created++
-		if userID == "" || !w.enqueueEnabled {
-			if userID == "" && w.enqueueEnabled {
+		if userID == "" {
+			if resolve {
 				unbound++
 				w.log.Warn("webhook push for unbound provider user",
 					zap.String("provider", ev.Provider),
@@ -190,20 +191,20 @@ func (w *webhookRoutes) push(c *gin.Context) {
 			}
 			continue
 		}
-		input, err := json.Marshal(webhookFetchInput{EventID: row.ID})
-		if err != nil {
-			w.fail(c, http.StatusInternalServerError, "job input encode failed")
-			return
-		}
+		// Enqueue for bound users even when the event was already recorded:
+		// a re-push must heal a fetch enqueue that failed on the previous
+		// attempt (the 5xx that triggered the re-push). The payload is
+		// {"event_id":<row id>} — it points at the provider_events row, the
+		// authoritative payload, instead of copying activity fields — and the
+		// (UserID, IdempotencyKey) unique constraint is the dedup.
 		_, err = w.enq.Enqueue(ctx, job.EnqueueSpec{
 			Type:           w.fetchJobType,
 			UserID:         userID,
-			InputJSON:      string(input),
+			InputJSON:      fmt.Sprintf(`{"event_id":%d}`, row.ID),
 			IdempotencyKey: "webhook-" + ev.Provider + "-" + ev.ProviderActivityID,
 		})
 		if errors.Is(err, job.ErrConflict) {
-			// Double insurance with the event unique index: the fetch job
-			// already exists for this activity.
+			// The fetch job already exists for this activity.
 			continue
 		}
 		if err != nil {
@@ -223,11 +224,4 @@ func (w *webhookRoutes) push(c *gin.Context) {
 		zap.Int("enqueued", enqueued),
 		zap.Int("unbound", unbound))
 	w.ok(c)
-}
-
-// webhookFetchInput is the provider_activity_fetch job payload: it points at
-// the provider_events row — the authoritative payload — instead of copying
-// activity fields into the job.
-type webhookFetchInput struct {
-	EventID uint64 `json:"event_id"`
 }

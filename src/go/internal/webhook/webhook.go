@@ -50,9 +50,4 @@ type ProviderEvent struct {
 	OccurTime          time.Time // activity end, UTC
 	PlanWorkoutID      string    // optional; empty = not from a pushed plan workout
 	FitURL             string    // empty for multisport pushes (FIT urls live on child items)
-	// SummaryJSON is this event's raw JSON fragment from the push body,
-	// preserving fields STRIDE does not model (timezones, steps, child
-	// workout lists). The whole request body is additionally retained
-	// verbatim on the stored row.
-	SummaryJSON []byte
 }

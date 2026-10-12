@@ -251,12 +251,10 @@ type AMap struct {
 // Webhook configures the watch-provider event-push receiver (devops#287,
 // POST /webhook/push/{provider}). The COROS client/secret pair is issued by
 // the COROS open platform; both are secrets supplied via
-// STRIDE_WORKER_WEBHOOK_COROS_CLIENT / _SECRET (never committed). An empty
-// pair leaves the coros adapter unregistered, so its pushes answer 404 until
-// configured. EnqueueEnabled must stay false until the worker ships the
-// provider_activity_fetch handler: the dispatcher terminally fails unknown
-// job types, so enqueueing before the handler exists silently kills every
-// fetch (pushes are recorded either way).
+// STRIDE_WORKER_WEBHOOK_COROS_CLIENT / _SECRET (never committed), and an
+// empty pair leaves the coros adapter unregistered (its pushes answer 404).
+// See config.yml's webhook section for why enqueue-enabled must stay false
+// until the provider_activity_fetch handler ships.
 type Webhook struct {
 	EnqueueEnabled bool   `mapstructure:"enqueue-enabled"`
 	CorosClient    string `mapstructure:"coros-client"`

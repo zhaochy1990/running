@@ -42,8 +42,10 @@ type ProviderEvent struct {
 	// time; NULL when unbound (or resolution not yet wired) — such events are
 	// recorded for audit but never enqueue a fetch.
 	UserID *string `gorm:"column:user_id;type:char(36)"`
-	// RawPayload is the entire push request body, byte-for-byte.
-	RawPayload []byte `gorm:"column:raw_payload;type:blob;not null"`
+	// RawPayload is the entire push request body, byte-for-byte. mediumblob
+	// (16 MiB), not blob: the route admits bodies up to 1 MiB and a batch push
+	// of a hundred workouts already overruns blob's 64 KiB cap.
+	RawPayload []byte `gorm:"column:raw_payload;type:mediumblob;not null"`
 }
 
 // TableName pins the MySQL table name.
@@ -58,14 +60,23 @@ func (s *Store) AutoMigrateProviderEvents(ctx context.Context) error {
 	return nil
 }
 
-// CreateProviderEvent inserts one push event and reports whether a new row was
-// created. A push whose (provider, provider_activity_id) is already recorded
-// returns (false, nil) — the unique index IS the idempotency rule (devops#287),
-// not an application-level read-then-write — and the caller must treat the
-// event as already processed.
+// CreateProviderEvent inserts one push event and reports whether a new row
+// was created. A push whose (provider, provider_activity_id) is already
+// recorded reports created=false — the unique index IS the idempotency rule
+// (devops#287), not an application-level read-then-write — and back-fills
+// ev.ID with the existing row's id, so the caller can still reference the
+// event when it retries the enqueue a duplicate push must heal.
 func (s *Store) CreateProviderEvent(ctx context.Context, ev *ProviderEvent) (bool, error) {
 	err := s.db.WithContext(ctx).Create(ev).Error
 	if isDuplicateKey(err) {
+		var existingID uint64
+		if err := s.db.WithContext(ctx).
+			Model(&ProviderEvent{}).
+			Where("provider = ? AND provider_activity_id = ?", ev.Provider, ev.ProviderActivityID).
+			Select("id").Scan(&existingID).Error; err != nil {
+			return false, err
+		}
+		ev.ID = existingID
 		return false, nil
 	}
 	if err != nil {

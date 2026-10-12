@@ -251,8 +251,8 @@ type Config struct {
 	// service). WebhookUserResolver maps provider accounts to STRIDE users
 	// (optional; nil resolves nothing until the auth-service query ships).
 	// WebhookFetchJobType is injected from internal/catalog like
-	// WatchSyncJobType. WebhookEnqueueEnabled gates enqueueing — the fetch
-	// handler must ship before it is turned on.
+	// WatchSyncJobType; WebhookEnqueueEnabled is the enqueue gate
+	// (catalog.JobTypeProviderActivityFetch documents why it starts off).
 	WebhookAdapters       map[string]webhook.Adapter
 	WebhookEventStore     WebhookEventStore
 	WebhookUserResolver   ProviderUserResolver

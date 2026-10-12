@@ -61,14 +61,14 @@ func (f *fakeWebhookAdapter) ParseEvents(raw []byte) ([]webhook.ProviderEvent, e
 			EventType:          webhook.EventTypeActivityCreate,
 			FitURL:             item.FitURL,
 			PlanWorkoutID:      item.PlanWorkoutID,
-			SummaryJSON:        []byte(`{}`),
 		})
 	}
 	return events, nil
 }
 
 // fakeWebhookEvents mirrors the storage contract: (provider,
-// provider_activity_id) uniqueness with created=false on the duplicate.
+// provider_activity_id) uniqueness with created=false on the duplicate, and
+// the row id back-filled in both cases.
 type fakeWebhookEvents struct {
 	rows   map[string]*storage.ProviderEvent
 	nextID uint64
@@ -84,7 +84,8 @@ func (f *fakeWebhookEvents) CreateProviderEvent(_ context.Context, ev *storage.P
 		return false, f.err
 	}
 	key := ev.Provider + "|" + ev.ProviderActivityID
-	if _, dup := f.rows[key]; dup {
+	if existing, dup := f.rows[key]; dup {
+		ev.ID = existing.ID
 		return false, nil
 	}
 	f.nextID++
@@ -310,6 +311,8 @@ func TestWebhookPush_DuplicatePushes(t *testing.T) {
 			t.Fatalf("push #%d: code=%d result=%s, want 200/0000 (duplicate pushes are success)", i, w.Code, result(t, w))
 		}
 	}
+	// The re-push re-attempts the enqueue (duplicate events must heal a
+	// failed one); the job idempotency key keeps it at one job per activity.
 	if len(h.events.rows) != 2 {
 		t.Fatalf("rows = %d, want 2 (dedup by unique index)", len(h.events.rows))
 	}
@@ -330,6 +333,43 @@ func TestWebhookPush_DuplicatePushes(t *testing.T) {
 	}
 	if len(h.jobs.byID) != 3 {
 		t.Fatalf("jobs = %d, want 3 (2 from before + 1 for label-same)", len(h.jobs.byID))
+	}
+}
+
+// An enqueue transient failure answers 5xx so COROS re-pushes; the re-push
+// hits the recorded event but MUST retry the enqueue — otherwise the fetch
+// for that activity is lost forever while the provider stops retrying.
+func TestWebhookPush_EnqueueFailureHealsOnRetry(t *testing.T) {
+	h := newWebhookHarness(t, true)
+	h.jobs.enqError = errors.New("broker down")
+	w := h.push(eventBody(fakeEventItem{ProviderUserID: "openid-bound", ProviderActivityID: "label-1"}), goodHeaders())
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("first push: code = %d, want 500", w.Code)
+	}
+	if len(h.events.rows) != 1 {
+		t.Fatal("the event is durably recorded before the enqueue attempt")
+	}
+
+	h.jobs.enqError = nil // broker recovers; COROS re-pushes the same batch
+	w = h.push(eventBody(fakeEventItem{ProviderUserID: "openid-bound", ProviderActivityID: "label-1"}), goodHeaders())
+	if w.Code != http.StatusOK || result(t, w) != "0000" {
+		t.Fatalf("re-push: code=%d result=%s, want 200/0000", w.Code, result(t, w))
+	}
+	j := h.jobs.byIdem[jkey("user-1", "webhook-fake-label-1")]
+	if j == nil {
+		t.Fatal("re-push must heal the failed enqueue")
+	}
+	if len(h.events.rows) != 1 {
+		t.Fatalf("rows = %d, want 1 (still one event)", len(h.events.rows))
+	}
+	var input struct {
+		EventID uint64 `json:"event_id"`
+	}
+	if err := json.Unmarshal([]byte(j.InputJSON), &input); err != nil {
+		t.Fatalf("job input: %v", err)
+	}
+	if input.EventID != h.events.rows["fake|label-1"].ID {
+		t.Fatalf("healed job event_id = %d, want the existing row id %d", input.EventID, h.events.rows["fake|label-1"].ID)
 	}
 }
 

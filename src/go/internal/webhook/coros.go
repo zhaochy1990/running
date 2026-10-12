@@ -56,34 +56,34 @@ func constantTimeHeaderEquals(got, want string) bool {
 }
 
 // corosPushBody is the top-level 5.3.3 shape: a batch of workout summaries.
-// Items stay raw so each event's SummaryJSON preserves unmodelled fields
-// verbatim.
+// Fields STRIDE does not consume (deviceName, step, duration,
+// triathlonItemList) are deliberately not modeled — encoding/json ignores
+// them, and the whole body is retained verbatim in the stored event's
+// raw_payload. duration is the one required-table omission worth noting: the
+// parameter table does not list it (only triathlon children have it) yet
+// every JSON example carries it, so not modeling it also means a push without
+// it is never rejected.
 type corosPushBody struct {
-	SportDataList []json.RawMessage `json:"sportDataList"`
+	SportDataList []corosSportData `json:"sportDataList"`
 }
 
 // corosSportData is one workout summary. Required fields are pointers so a
-// missing key is distinguishable from a zero value; duration is the one field
-// the parameter table omits while every JSON example carries it, so it is
-// deliberately NOT required (a push without it must not be rejected).
+// missing key is distinguishable from a zero value.
 type corosSportData struct {
 	OpenID        string   `json:"openId"`
 	LabelID       string   `json:"labelId"`
 	Mode          *int     `json:"mode"`
 	SubMode       *int     `json:"subMode"`
-	DeviceName    string   `json:"deviceName"`
 	Distance      *float64 `json:"distance"`
 	Calorie       *float64 `json:"calorie"`
 	AvgSpeed      *float64 `json:"avgSpeed"`
 	AvgFrequency  *float64 `json:"avgFrequency"`
-	Step          *int     `json:"step"`
 	StartTime     *int64   `json:"startTime"`
 	EndTime       *int64   `json:"endTime"`
 	StartTimezone *int     `json:"startTimezone"`
 	EndTimezone   *int     `json:"endTimezone"`
 	FitURL        string   `json:"fitUrl"`
 	PlanWorkoutID string   `json:"planWorkoutId"`
-	Duration      *int64   `json:"duration"`
 }
 
 // ParseEvents implements Adapter: decodes sportDataList and validates every
@@ -97,11 +97,7 @@ func (a *CorosAdapter) ParseEvents(rawBody []byte) ([]ProviderEvent, error) {
 		return nil, fmt.Errorf("coros: push body has no sportDataList")
 	}
 	events := make([]ProviderEvent, 0, len(body.SportDataList))
-	for i, raw := range body.SportDataList {
-		var item corosSportData
-		if err := json.Unmarshal(raw, &item); err != nil {
-			return nil, fmt.Errorf("coros: decode sportDataList[%d]: %w", i, err)
-		}
+	for i, item := range body.SportDataList {
 		if err := validateCorosItem(i, item); err != nil {
 			return nil, err
 		}
@@ -113,7 +109,6 @@ func (a *CorosAdapter) ParseEvents(rawBody []byte) ([]ProviderEvent, error) {
 			OccurTime:          time.Unix(*item.EndTime, 0).UTC(),
 			PlanWorkoutID:      item.PlanWorkoutID,
 			FitURL:             item.FitURL,
-			SummaryJSON:        append(json.RawMessage(nil), raw...),
 		})
 	}
 	return events, nil

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
@@ -169,32 +168,14 @@ func TestCorosAdapter_ParseEvents_DocFixture(t *testing.T) {
 		t.Fatalf("event_type = %q, want %q", tri.EventType, EventTypeActivityCreate)
 	}
 	// Multisport parent (mode 13): no top-level fitUrl — must parse fine and
-	// stay empty, not rejected.
+	// stay empty, not rejected (the FIT urls live on the triathlonItemList
+	// children, which stay in the retained raw body).
 	if tri.FitURL != "" {
 		t.Fatalf("triathlon fit_url = %q, want empty (children carry the FIT urls)", tri.FitURL)
 	}
 	wantEnd := time.Unix(1532576178, 0).UTC()
 	if !tri.OccurTime.Equal(wantEnd) {
 		t.Fatalf("occur_time = %v, want %v (endTime, UTC)", tri.OccurTime, wantEnd)
-	}
-	// The triathlon children must survive verbatim in the summary fragment.
-	var frag struct {
-		Children []json.RawMessage `json:"triathlonItemList"`
-	}
-	if err := json.Unmarshal(tri.SummaryJSON, &frag); err != nil {
-		t.Fatalf("summary fragment not valid JSON: %v", err)
-	}
-	if len(frag.Children) != 3 {
-		t.Fatalf("triathlonItemList children = %d, want 3", len(frag.Children))
-	}
-	var child struct {
-		FitURL string `json:"fitUrl"`
-	}
-	if err := json.Unmarshal(frag.Children[0], &child); err != nil {
-		t.Fatalf("child decode: %v", err)
-	}
-	if !strings.HasPrefix(child.FitURL, "https://oss.coros.com/fit/") {
-		t.Fatalf("child fitUrl = %q, want the oss.coros.com download url", child.FitURL)
 	}
 
 	// Regular item keeps its top-level fitUrl and optional planWorkoutId is
@@ -231,9 +212,9 @@ func corosItem(overrides string) string {
 	return string(out)
 }
 
-func TestCorosAdapter_ParseEvents_PlanWorkoutIDAndDurationOptional(t *testing.T) {
+func TestCorosAdapter_ParseEvents_PlanWorkoutIDOptional(t *testing.T) {
 	adapter := NewCorosAdapter("c", "s")
-	body := `{"sportDataList":[` + corosItem(`{"planWorkoutId":null,"duration":null}`) + `]}`
+	body := `{"sportDataList":[` + corosItem(`{"planWorkoutId":null}`) + `]}`
 	events, err := adapter.ParseEvents([]byte(body))
 	if err != nil {
 		t.Fatalf("ParseEvents: %v", err)
