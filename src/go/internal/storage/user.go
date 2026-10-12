@@ -267,6 +267,10 @@ var userOwnedDeletionModels = []any{
 	&ScheduledWorkout{}, &WatchSchedule{}, &BodyCompositionScanRecord{},
 	&UserOnboarding{}, &UserProfile{}, &InjuryRecord{},
 	&UserHomeCity{}, &UserHomeCityHistory{},
+	// provider_events rows resolved to the user carry their raw workout
+	// payloads (devops#287) — erased with the account; unbound rows (NULL
+	// user_id) are not user-attributable and stay as provider audit records.
+	&ProviderEvent{},
 }
 
 // deletionTableName resolves a deletion model's table name for error

@@ -34,6 +34,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/provider/amap"
 	"github.com/zhaochy1990/stride/internal/storage"
 	"github.com/zhaochy1990/stride/internal/userdata"
+	"github.com/zhaochy1990/stride/internal/webhook"
 )
 
 func newAPICmd() *cobra.Command {
@@ -157,6 +158,11 @@ func runAPI() error {
 	if err := store.AutoMigrateRaceContent(ctx); err != nil {
 		return err
 	}
+	// provider_events backs the watch-provider event-push receiver (devops#287).
+	// Only the API writes it; the fetch handler's read migration lands with it.
+	if err := store.AutoMigrateProviderEvents(ctx); err != nil {
+		return err
+	}
 
 	// --- RabbitMQ (publisher only; no consumer) ---
 	topo := mq.Topology{Work: cfg.Queues.Work, Retry: cfg.Queues.Retry, Poison: cfg.Queues.Poison}
@@ -261,6 +267,15 @@ func runAPI() error {
 		},
 		WorkoutPusher:         workoutPush,
 		ScheduledWorkoutStore: store,
+		// Watch-provider event-push ingress (devops#287). The coros adapter
+		// registers only with a configured credential pair — an unconfigured
+		// provider answers 404 rather than accepting unverified pushes. The
+		// user resolver stays nil until the auth-service binding query ships;
+		// nil resolves nothing, so events record without enqueuing.
+		WebhookAdapters:       newWebhookAdapters(cfg),
+		WebhookEventStore:     store,
+		WebhookFetchJobType:   catalog.JobTypeProviderActivityFetch,
+		WebhookEnqueueEnabled: cfg.Webhook.EnqueueEnabled,
 		Auth:                  authn,
 		CORSOrigins:           cfg.API.CORSOrigins,
 		SwaggerEnabled:        cfg.API.SwaggerEnabled,
@@ -352,6 +367,17 @@ func apiPipelineCatalog() []api.PipelineCatalogEntry {
 		}
 	}
 	return out
+}
+
+// newWebhookAdapters builds the provider adapter registry from config: a
+// provider registers only when its credentials are fully configured.
+func newWebhookAdapters(cfg *config.APIConfig) map[string]webhook.Adapter {
+	adapters := map[string]webhook.Adapter{}
+	if cfg.Webhook.CorosClient != "" && cfg.Webhook.CorosSecret != "" {
+		a := webhook.NewCorosAdapter(cfg.Webhook.CorosClient, cfg.Webhook.CorosSecret)
+		adapters[a.Provider()] = a
+	}
+	return adapters
 }
 
 // newAMapGeocoder adapts the optional Amap client to the api geocoder

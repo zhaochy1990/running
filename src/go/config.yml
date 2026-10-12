@@ -71,6 +71,18 @@ amap:
   api-key: ""
   timeout: 3s
 
+# Watch-provider event-push receiver (`stride api`, devops#287) —
+# POST /webhook/push/coros. The COROS-issued pair is secret and comes from env:
+#   STRIDE_WORKER_WEBHOOK_COROS_CLIENT / STRIDE_WORKER_WEBHOOK_COROS_SECRET
+# Until both are set the coros adapter stays unregistered (its pushes answer
+# 404). enqueue-enabled MUST stay false until the worker ships the
+# provider_activity_fetch handler: events are recorded either way, but a fetch
+# enqueued with no handler terminally fails with nothing to retry it.
+webhook:
+  enqueue-enabled: false
+  coros-client: ""        # via STRIDE_WORKER_WEBHOOK_COROS_CLIENT (secret)
+  coros-secret: ""        # via STRIDE_WORKER_WEBHOOK_COROS_SECRET (secret)
+
 # Tencent Cloud COS bucket holding route-thumbnail PNGs (public read). Secrets
 # come from env:
 #   STRIDE_WORKER_COS_SECRET_ID / STRIDE_WORKER_COS_SECRET_KEY

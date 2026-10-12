@@ -184,6 +184,7 @@ type APIConfig struct {
 	API         API                 `mapstructure:"api"`
 	CityAIDraft CityAIDraft         `mapstructure:"city-ai-draft"`
 	AMap        AMap                `mapstructure:"amap"`
+	Webhook     Webhook             `mapstructure:"webhook"`
 }
 
 // API holds the HTTP API server knobs.
@@ -245,6 +246,21 @@ type CityAIDraft struct {
 type AMap struct {
 	APIKey  string        `mapstructure:"api-key"`
 	Timeout time.Duration `mapstructure:"timeout"`
+}
+
+// Webhook configures the watch-provider event-push receiver (devops#287,
+// POST /webhook/push/{provider}). The COROS client/secret pair is issued by
+// the COROS open platform; both are secrets supplied via
+// STRIDE_WORKER_WEBHOOK_COROS_CLIENT / _SECRET (never committed). An empty
+// pair leaves the coros adapter unregistered, so its pushes answer 404 until
+// configured. EnqueueEnabled must stay false until the worker ships the
+// provider_activity_fetch handler: the dispatcher terminally fails unknown
+// job types, so enqueueing before the handler exists silently kills every
+// fetch (pushes are recorded either way).
+type Webhook struct {
+	EnqueueEnabled bool   `mapstructure:"enqueue-enabled"`
+	CorosClient    string `mapstructure:"coros-client"`
+	CorosSecret    string `mapstructure:"coros-secret"`
 }
 
 // APIAuth configures RS256 verification of end-user JWTs (direct-browser tier).
