@@ -16,6 +16,7 @@
     "pages/race-center/race-center",
     "pages/race-center/detail",
     "pages/race-center/strategy/strategy",
+    "pages/race-center/strategy-share/strategy-share",
     "pages/watch/watch",
     "pages/onboarding/onboarding",
     "pages/privacy/privacy",

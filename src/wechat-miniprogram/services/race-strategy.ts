@@ -2,6 +2,7 @@
 //   GET    /api/users/me/race-strategies/:race_id（详情卡摘要态 / 报告页，全量版本）
 //   PUT    /api/users/me/race-strategies/:race_id（报告页手动编辑保存）
 //   DELETE /api/users/me/race-strategies/:race_id?target=（删除某个目标的版本）
+//   GET    /api/race-strategies/shared/:user_id/:race_id/:version_id（分享落地，#506，免登录）
 // 内容结构是 coach_contract RaceStrategySchema 的镜像。同一场比赛按目标成绩
 // 多版本共存（如 2:55 一版、2:50 一版）：content.target_finish_time 是版本键，
 // 同目标再生成/编辑=覆盖该版，其它目标不受影响——目标选哪个是用户自己的决策。
@@ -38,8 +39,9 @@ export interface RaceStrategy {
   basis_note: string;
 }
 
-/** 一个目标版本的落库视图（raceStrategyVersionDTO 镜像）。 */
+/** 一个目标版本的落库视图（raceStrategyVersionDTO 镜像）。id 是行 id（分享链接的版本标识，#506）。 */
 export interface RaceStrategyVersion {
+  id: number;
   target_finish_time: string;
   item_type: string;
   content: RaceStrategy;
@@ -55,6 +57,31 @@ export interface RaceStrategyListResponse {
 /** 拉当前用户一场赛事的全部策略版本；未生成时 strategies 为空数组（200）。 */
 export function getRaceStrategies(raceId: number): Promise<RaceStrategyListResponse> {
   return http.get<RaceStrategyListResponse>(`/api/users/me/race-strategies/${raceId}`);
+}
+
+// ── 只读分享落地（#506）：链接即看，UUID 三元组即访问边界 ───────────────────
+
+/** 分享响应的赛事上下文（查看者可能未登录，赛事名/日期必须随策略一起返回）。 */
+export interface SharedRaceContext {
+  name: string;
+  race_date: string;
+}
+
+/** GET /api/race-strategies/shared/... 的响应：一版策略 + 渲染上下文。 */
+export interface SharedRaceStrategyResponse {
+  race: SharedRaceContext;
+  strategy: RaceStrategyVersion;
+}
+
+/**
+ * 免登录拉分享的那一版策略（auth:false：查看者多半没有账号，链接本身是
+ * 访问边界）。404 / 参数非法由调用方统一渲染「该分享已失效」。
+ */
+export function getSharedRaceStrategy(userId: string, raceId: string, versionId: string): Promise<SharedRaceStrategyResponse> {
+  return http.get<SharedRaceStrategyResponse>(
+    `/api/race-strategies/shared/${userId}/${raceId}/${versionId}`,
+    { auth: false },
+  );
 }
 
 /** 最近更新的版本（详情卡摘要与报告页的默认选中；空列表返回 null）。 */

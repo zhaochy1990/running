@@ -198,3 +198,45 @@ func TestRaceStrategy_MigratesLegacySingleRow(t *testing.T) {
 		t.Fatalf("second migrate: %v", err)
 	}
 }
+
+func TestRaceStrategy_SharedLinkQuery(t *testing.T) {
+	st := openTestStore(t)
+	migrateRaceStrategy(t, st)
+	ctx := context.Background()
+	uid := uuid.NewString()
+	other := uuid.NewString()
+	pub := seedEngagementRace(t, st, "分享赛", "2032-05-10", true)
+
+	row250, _, err := st.UpsertRaceStrategy(ctx, uid, pub, "2:50:00", "Marathon", `{"target_finish_time":"2:50:00"}`)
+	if err != nil {
+		t.Fatalf("upsert 2:50:00: %v", err)
+	}
+	if _, _, err := st.UpsertRaceStrategy(ctx, uid, pub, "2:55:00", "Marathon", `{"target_finish_time":"2:55:00"}`); err != nil {
+		t.Fatalf("upsert 2:55:00: %v", err)
+	}
+
+	// The exact (owner, race, row id) triple resolves to that one version and
+	// carries the race context the landing page renders.
+	view, err := st.GetSharedRaceStrategy(ctx, uid, pub, row250.ID)
+	if err != nil {
+		t.Fatalf("shared read: %v", err)
+	}
+	if view.Strategy.ID != row250.ID || view.Strategy.TargetFinishTime != "2:50:00" {
+		t.Fatalf("shared version: %+v, want row %d", view.Strategy, row250.ID)
+	}
+	if view.RaceName != "分享赛" || view.RaceDate != "2032-05-10" {
+		t.Fatalf("race context: %+v", view)
+	}
+
+	// Owner mismatch / wrong race / dead row id are one uniform miss — the
+	// link triple is the access boundary, the 404 must not say which part.
+	if _, err := st.GetSharedRaceStrategy(ctx, other, pub, row250.ID); err != ErrRaceStrategyNotFound {
+		t.Fatalf("wrong owner = %v, want ErrRaceStrategyNotFound", err)
+	}
+	if _, err := st.GetSharedRaceStrategy(ctx, uid, pub+1, row250.ID); err != ErrRaceStrategyNotFound {
+		t.Fatalf("wrong race = %v, want ErrRaceStrategyNotFound", err)
+	}
+	if _, err := st.GetSharedRaceStrategy(ctx, uid, pub, row250.ID+999); err != ErrRaceStrategyNotFound {
+		t.Fatalf("dead version = %v, want ErrRaceStrategyNotFound", err)
+	}
+}

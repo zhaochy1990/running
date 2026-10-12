@@ -130,7 +130,7 @@
       <view class="card">
         <view class="card__title">赛道提示</view>
         <view class="tip" wx:for="{{view.courseTips}}" wx:key="*this">· {{item}}</view>
-        <view wx:if="{{!view.courseTips.length}}" class="card__empty">待补</view>
+        <view wx:if="{{view.courseTips.length === 0}}" class="card__empty">待补</view>
       </view>
       <view class="card">
         <view class="card__title">天气提示</view>

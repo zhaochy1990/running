@@ -160,6 +160,49 @@ func (s *Store) GetRaceStrategies(ctx context.Context, userID string, raceEventI
 	return rows, nil
 }
 
+// SharedRaceStrategyView is one strategy version plus the race context the
+// share-link landing page renders around it (#506): the viewer may have no
+// account, so the response has to carry the race name/date itself.
+type SharedRaceStrategyView struct {
+	RaceName string
+	RaceDate string
+	Strategy RaceStrategy
+}
+
+// GetSharedRaceStrategy loads one exact strategy version (owner + race + row
+// id) for the read-only share link (#506). The link's UUID triple is the
+// access boundary — no auth, no token — so a triple that doesn't resolve
+// (wrong owner, deleted version) is uniformly ErrRaceStrategyNotFound and
+// must not reveal which part missed. The race context is an INNER read: a
+// removed race row leaves nothing to render, so the share reads as invalid.
+// Published is deliberately not filtered — link-is-access, same model as the
+// UUID itself; an offboarded race's strategy stays viewable via its link.
+func (s *Store) GetSharedRaceStrategy(ctx context.Context, userID string, raceEventID, versionID uint64) (*SharedRaceStrategyView, error) {
+	uid, err := canonicalUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+	var row RaceStrategy
+	e := s.db.WithContext(ctx).
+		Where("user_id = ? AND race_event_id = ? AND id = ?", uid, raceEventID, versionID).
+		First(&row).Error
+	if errors.Is(e, gorm.ErrRecordNotFound) {
+		return nil, ErrRaceStrategyNotFound
+	}
+	if e != nil {
+		return nil, fmt.Errorf("storage: load shared race_strategy: %w", e)
+	}
+	var event RaceCalendarEvent
+	e = s.db.WithContext(ctx).Select("name", "race_date").First(&event, raceEventID).Error
+	if errors.Is(e, gorm.ErrRecordNotFound) {
+		return nil, ErrRaceStrategyNotFound
+	}
+	if e != nil {
+		return nil, fmt.Errorf("storage: load shared race context: %w", e)
+	}
+	return &SharedRaceStrategyView{RaceName: event.Name, RaceDate: event.RaceDate, Strategy: row}, nil
+}
+
 // DeleteRaceStrategy removes one target's version. ErrRaceStrategyNotFound
 // when that version does not exist; the race's remaining versions are untouched.
 func (s *Store) DeleteRaceStrategy(ctx context.Context, userID string, raceEventID uint64, targetTime string) error {
