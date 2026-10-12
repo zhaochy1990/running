@@ -192,6 +192,15 @@ jobs:
           go test ./internal/storage/...
           -run 'TestLeaseRenewalAndListStaleRunning|TestTransitionJobCompareAndSet'
           -count=1 -v
+      # The provider_events unique index is the webhook push idempotency rule
+      # (devops#287) — SQL-level, so only a real MySQL exercises it.
+      - name: Provider-event storage tests (MySQL)
+        env:
+          STRIDE_WORKER_TEST_MYSQL_DSN: "root:root@tcp(127.0.0.1:3306)/stride_test?parseTime=true&loc=UTC&charset=utf8mb4"
+        run: >-
+          go test ./internal/storage/...
+          -run 'TestProviderEvents'
+          -count=1 -v
 
   miniprogram:
     name: WeChat miniprogram (tsc + row self-checks)

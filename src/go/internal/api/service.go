@@ -19,6 +19,7 @@ import (
 	"github.com/zhaochy1990/stride/internal/httplog"
 	"github.com/zhaochy1990/stride/internal/job"
 	"github.com/zhaochy1990/stride/internal/logging"
+	"github.com/zhaochy1990/stride/internal/webhook"
 )
 
 // maxRequestBytes caps authenticated request bodies. The API has a public
@@ -243,6 +244,21 @@ type Config struct {
 	// (satisfied by *storage.Store).
 	ScheduledWorkoutStore ScheduledWorkoutStore
 
+	// Watch-provider event-push surface (devops#287). WebhookAdapters is the
+	// provider registry (key = Adapter.Provider); empty or nil leaves the
+	// push route unmounted-404 per provider. WebhookEventStore persists the
+	// events; nil disables the surface entirely (tests running a partial
+	// service). WebhookUserResolver maps provider accounts to STRIDE users
+	// (optional; nil resolves nothing until the auth-service query ships).
+	// WebhookFetchJobType is injected from internal/catalog like
+	// WatchSyncJobType; WebhookEnqueueEnabled is the enqueue gate
+	// (catalog.JobTypeProviderActivityFetch documents why it starts off).
+	WebhookAdapters       map[string]webhook.Adapter
+	WebhookEventStore     WebhookEventStore
+	WebhookUserResolver   ProviderUserResolver
+	WebhookFetchJobType   string
+	WebhookEnqueueEnabled bool
+
 	Auth           *Authenticator
 	CORSOrigins    []string
 	SwaggerEnabled bool
@@ -303,6 +319,7 @@ type Service struct {
 	raceStrategy    *raceStrategyRoutes
 	raceContent     *raceContentRoutes
 	raceCatalog     *raceCatalogRoutes
+	webhook         *webhookRoutes
 
 	auth           *Authenticator
 	corsOrigins    []string
@@ -364,6 +381,7 @@ func NewService(cfg Config) *Service {
 		raceStrategy:            newRaceStrategyRoutes(cfg.RaceStrategyStore, log),
 		raceContent:             newRaceContentRoutes(cfg.RaceContentStore, cfg.CityAIDraft, log),
 		raceCatalog:             newRaceCatalogRoutes(cfg.RaceCatalogStore, log),
+		webhook:                 newWebhookRoutes(cfg.WebhookAdapters, cfg.WebhookEventStore, cfg.WebhookUserResolver, cfg.Enqueuer, cfg.WebhookFetchJobType, cfg.WebhookEnqueueEnabled, log),
 		auth:                    cfg.Auth,
 		corsOrigins:             cfg.CORSOrigins,
 		swaggerEnabled:          cfg.SwaggerEnabled,
@@ -400,6 +418,9 @@ func (s *Service) Router() *gin.Engine {
 	// Strategy share link (#506): read-only, the UUID triple is the access
 	// boundary — the viewer may not be logged in.
 	s.raceStrategy.registerPublic(r)
+	// Watch-provider event-push ingress (devops#287): public, verified by
+	// each provider's own credentials (header constants), never a JWT caller.
+	s.webhook.register(r)
 
 	authenticated := r.Group("", limitBody(maxRequestBytes), s.auth.middleware())
 	// Plan routes explicitly admit the separate admin JWT tier. The master-plan

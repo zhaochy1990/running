@@ -81,6 +81,14 @@ const (
 	// (no subject user): internal-only, the single step of the
 	// homecity_recompute pipeline started by the weekly cron workflow.
 	JobTypeHomeCityRecompute = "homecity_recompute"
+	// JobTypeProviderActivityFetch pulls one provider activity's full data
+	// (FIT download first, open-platform pull on fallback) for an event the
+	// webhook receiver recorded (devops#287). The input points at the
+	// provider_events row — the authoritative payload. Internal-only: created
+	// exclusively by the webhook receiver, never via POST /jobs. The handler
+	// is a follow-up task; until it ships the webhook must keep its enqueue
+	// switch off (the dispatcher terminally fails unknown job types).
+	JobTypeProviderActivityFetch = "provider_activity_fetch"
 )
 
 // Pipeline names (ADR 0020). onboarding and data_sync are fronted by
@@ -236,6 +244,13 @@ func Jobs() []JobSpec {
 			Description:   "Recompute every user's resident city from activity GPS starts + watch-named activity cities (time-weighted voting with training-camp exclusion and a relocation gate) and upsert user_home_city, appending a user_home_city_history row when a user's city changes (new/relocated/drift/cleared). Idempotent full scan; per-user failures skip and count rather than fail the run. System job (no subject user). Internal-only; the weekly cron workflow starts it via the homecity_recompute pipeline.",
 			InputSchema:   json.RawMessage(`{"type":"object","additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{}`),
+		},
+		{
+			Type:          JobTypeProviderActivityFetch,
+			UserInitiable: false,
+			Description:   "Fetch one watch-provider activity's full data (FIT download first, open-platform pull on fallback) for an event recorded by the webhook push receiver. Input points at the provider_events row holding the raw push payload. Created exclusively by the webhook receiver (devops#287); not user-initiable.",
+			InputSchema:   json.RawMessage(`{"type":"object","required":["event_id"],"properties":{"event_id":{"type":"integer","description":"provider_events primary key the job reads its payload from"}},"additionalProperties":false}`),
+			ExampleInput:  json.RawMessage(`{"event_id":1}`),
 		},
 	}
 }
