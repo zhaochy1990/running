@@ -56,7 +56,8 @@ export interface Activity {
   windSpeed: number | null;
   sportNote: string | null;
   sport: string | null;
-  feel: string | null;
+  /** 主观体感，归一化 0–10 RPE（厂商量表换算或运动员经教练对话补填 #508）；null = 未评，不代表“感觉一般”。 */
+  feel: number | null;
   verticalOscillationMm: number | null;
   groundContactTimeMs: number | null;
   verticalRatioPct: number | null;

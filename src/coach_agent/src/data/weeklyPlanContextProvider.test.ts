@@ -31,7 +31,7 @@ const activity: Activity = {
   windSpeed: null,
   sportNote: "controlled",
   sport: "run_outdoor",
-  feel: "good",
+  feel: 6,
   verticalOscillationMm: null,
   groundContactTimeMs: null,
   verticalRatioPct: null,

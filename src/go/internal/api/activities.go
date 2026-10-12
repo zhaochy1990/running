@@ -31,7 +31,8 @@ import (
 // GORM. Satisfied by *storage.Store.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ActivityStore is the read surface the activity list + detail endpoints need.
+// ActivityStore is the read surface the activity list + detail endpoints need,
+// plus the one athlete-facing write (#508).
 type ActivityStore interface {
 	ListActivities(ctx context.Context, userID string, p storage.ActivityListParams) (*storage.ActivityPage, error)
 	ActivityByID(ctx context.Context, userID, labelID string) (*storage.Activity, error)
@@ -40,6 +41,7 @@ type ActivityStore interface {
 	ActivityZones(ctx context.Context, userID, labelID string) ([]storage.ActivityZone, error)
 	ActivityTrainingLoad(ctx context.Context, userID, labelID string) (*storage.ActivityTrainingLoad, error)
 	ActivityTimeseries(ctx context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error)
+	SetActivityFeel(ctx context.Context, userID, labelID string, feel float64) (bool, error)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,6 +68,7 @@ func newActivityRoutes(store ActivityStore, log *zap.Logger) *activityRoutes {
 func (a *activityRoutes) register(rg *gin.RouterGroup) {
 	rg.GET("/api/:user/activities", a.list)
 	rg.GET("/api/:user/activities/:labelId", a.detail)
+	rg.PATCH("/api/:user/activities/:labelId", a.updateFeel)
 }
 
 // authorizeUser enforces the tenant scope: a user-tier caller may only read
@@ -164,6 +167,65 @@ func (a *activityRoutes) detail(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+// updateFeelBody is the PATCH /api/{user}/activities/{labelId} request body:
+// the athlete's subjective feel on the normalized 0–10 RPE scale (#508).
+// Fractional values are allowed (Garmin's source scale resolves to 0.1 steps);
+// feel_type is deliberately absent — the vendor's raw value is never
+// user-writable.
+type updateFeelBody struct {
+	Feel *float64 `json:"feel" binding:"required"`
+}
+
+// updateFeel writes the athlete's subjective feel (normalized 0–10 RPE) for
+// one activity. Only the normalized feel column is touched; a later vendor
+// resync without a feel value preserves it (see storage.upsertActivity).
+// Responds 204 with no body — callers know what they sent; the stored value is
+// observable via the detail endpoint's feel field.
+//
+//	@Summary		Set an activity's athlete-rated feel
+//	@Description	Writes the athlete's subjective feel (0–10 RPE, "talk test" anchored) for one activity. Only the normalized feel column is written; the vendor feel_type is never modified. A user caller may only update their own activities; an internal caller (coach agent) may update any user's.
+//	@Tags			activities
+//	@Accept			json
+//	@Param			user		path		string				true	"User id (JWT sub)"
+//	@Param			labelId		path		string				true	"Activity label id"
+//	@Param			body		body		updateFeelBody		true	"Feel value"
+//	@Success		204			{string}	string				"No Content"
+//	@Failure		400			{object}	errorResponse
+//	@Failure		401			{object}	errorResponse
+//	@Failure		403			{object}	errorResponse
+//	@Failure		404			{object}	errorResponse
+//	@Failure		500			{object}	errorResponse
+//	@Security		InternalToken
+//	@Security		BearerAuth
+//	@Router			/api/{user}/activities/{labelId} [patch]
+func (a *activityRoutes) updateFeel(c *gin.Context) {
+	user := c.Param("user")
+	if !authorizeUser(c, user) {
+		return
+	}
+	var body updateFeelBody
+	if err := c.ShouldBindJSON(&body); err != nil || body.Feel == nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "feel is required (number 0–10)"})
+		return
+	}
+	feel := *body.Feel
+	if feel < 0 || feel > 10 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "feel must be within 0–10"})
+		return
+	}
+	found, err := a.store.SetActivityFeel(c.Request.Context(), user, c.Param("labelId"), feel)
+	if err != nil {
+		a.log.Error("set activity feel failed", zapErr(err))
+		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
+		return
+	}
+	if !found {
+		c.JSON(http.StatusNotFound, errorResponse{Error: "Not found"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // lapFamilyLoader fetches one lap family (lap_type) for an activity.
@@ -445,35 +507,38 @@ type activitiesListResponse struct {
 // core as the list item minus route_thumb, plus feel_type, sport_note and the
 // decoded pauses array. Commentary fields are omitted (ADR 0019).
 type activityDetailDTO struct {
-	LabelID         string          `json:"label_id"`
-	Name            *string         `json:"name"`
-	SportType       int             `json:"sport_type"`
-	SportName       *string         `json:"sport_name"`
-	Date            string          `json:"date"`
-	DistanceM       *float64        `json:"distance_m"`
-	DurationS       *float64        `json:"duration_s"`
-	AvgPaceSKm      *float64        `json:"avg_pace_s_km"`
-	AvgHR           *int            `json:"avg_hr"`
-	MaxHR           *int            `json:"max_hr"`
-	AvgCadence      *int            `json:"avg_cadence"`
-	AvgStepLenCm    *float64        `json:"avg_step_len_cm"`
-	CaloriesKcal    *int            `json:"calories_kcal"`
-	TrainingLoad    *float64        `json:"training_load"`
-	VO2Max          *float64        `json:"vo2max"`
-	TrainType       *string         `json:"train_type"`
-	AscentM         *float64        `json:"ascent_m"`
-	AerobicEffect   *float64        `json:"aerobic_effect"`
-	AnaerobicEffect *float64        `json:"anaerobic_effect"`
-	Temperature     *float64        `json:"temperature"`
-	Humidity        *float64        `json:"humidity"`
-	FeelsLike       *float64        `json:"feels_like"`
-	WindSpeed       *float64        `json:"wind_speed"`
-	FeelType        *int            `json:"feel_type"`
-	SportNote       *string         `json:"sport_note"`
-	DistanceKm      float64         `json:"distance_km"`
-	DurationFmt     string          `json:"duration_fmt"`
-	PaceFmt         string          `json:"pace_fmt"`
-	Pauses          json.RawMessage `json:"pauses" swaggertype:"object"`
+	LabelID         string   `json:"label_id"`
+	Name            *string  `json:"name"`
+	SportType       int      `json:"sport_type"`
+	SportName       *string  `json:"sport_name"`
+	Date            string   `json:"date"`
+	DistanceM       *float64 `json:"distance_m"`
+	DurationS       *float64 `json:"duration_s"`
+	AvgPaceSKm      *float64 `json:"avg_pace_s_km"`
+	AvgHR           *int     `json:"avg_hr"`
+	MaxHR           *int     `json:"max_hr"`
+	AvgCadence      *int     `json:"avg_cadence"`
+	AvgStepLenCm    *float64 `json:"avg_step_len_cm"`
+	CaloriesKcal    *int     `json:"calories_kcal"`
+	TrainingLoad    *float64 `json:"training_load"`
+	VO2Max          *float64 `json:"vo2max"`
+	TrainType       *string  `json:"train_type"`
+	AscentM         *float64 `json:"ascent_m"`
+	AerobicEffect   *float64 `json:"aerobic_effect"`
+	AnaerobicEffect *float64 `json:"anaerobic_effect"`
+	Temperature     *float64 `json:"temperature"`
+	Humidity        *float64 `json:"humidity"`
+	FeelsLike       *float64 `json:"feels_like"`
+	WindSpeed       *float64 `json:"wind_speed"`
+	FeelType        *int     `json:"feel_type"`
+	// Feel is the normalized 0–10 RPE feel — vendor-normalized or athlete-set
+	// via PATCH; NULL when unrated. (feel_type above stays the vendor raw value.)
+	Feel        *float64        `json:"feel"`
+	SportNote   *string         `json:"sport_note"`
+	DistanceKm  float64         `json:"distance_km"`
+	DurationFmt string          `json:"duration_fmt"`
+	PaceFmt     string          `json:"pace_fmt"`
+	Pauses      json.RawMessage `json:"pauses" swaggertype:"object"`
 }
 
 // lapDTO is the row shape shared by every segment (segmentDTO embeds it).
@@ -667,6 +732,7 @@ func toActivityDetail(a *storage.Activity) activityDetailDTO {
 		FeelsLike:       a.FeelsLike,
 		WindSpeed:       a.WindSpeed,
 		FeelType:        a.FeelType,
+		Feel:            a.Feel,
 		SportNote:       a.SportNote,
 		DistanceKm:      apifmt.DistanceKm(a.DistanceM),
 		DurationFmt:     apifmt.DurationFmt(a.DurationS),

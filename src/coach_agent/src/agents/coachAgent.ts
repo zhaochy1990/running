@@ -3,6 +3,7 @@ import type { BaseCheckpointSaver, BaseStore } from "@langchain/langgraph-checkp
 import { getLogger } from "@stride/common";
 import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
+import type { ActivityFeelWriter } from "../tools/feel.js";
 import { getAgentNode } from "./agents.js";
 import { withLangfuseInvokeTracing } from "./langfuse.js";
 import { AgentsState } from "./state.js";
@@ -19,6 +20,8 @@ export interface CoachAgentOptions {
   store?: BaseStore;
   /** #429 master-plan draft 落库 sink；缺省不落库（卡片无启用 CTA）。 */
   masterPlanDraftSink?: MasterPlanDraftSink;
+  /** #508 体感写端口（走 Go API PATCH）；缺省时 qa agent 纯只读，不采集体感。 */
+  activityFeelWriter?: ActivityFeelWriter;
 }
 
 export interface CoachAgent {
@@ -39,7 +42,7 @@ export async function createCoachAgent(dataProvider: DataProvider, config: Coach
 
   const graph = new StateGraph(AgentsState)
     .addNode("orchestrator", getAgentNode("orchestrator", config, dataProvider), { ends: ["qa", "training", "race_strategy"] })
-    .addNode("qa", getAgentNode("qa", config, dataProvider))
+    .addNode("qa", getAgentNode("qa", config, dataProvider, options.activityFeelWriter))
     .addNode("training", trainingNode)
     .addNode("race_strategy", getAgentNode("race_strategy", config, dataProvider))
     .addEdge(START, "orchestrator")

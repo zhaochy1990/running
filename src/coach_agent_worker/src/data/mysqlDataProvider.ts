@@ -722,7 +722,7 @@ function rowToActivity(row: RowDataPacket): Activity {
     windSpeed: (row.wind_speed ?? null) as number | null,
     sportNote: (row.sport_note ?? null) as string | null,
     sport: (row.sport ?? null) as string | null,
-    feel: (row.feel ?? null) as string | null,
+    feel: (row.feel ?? null) as number | null,
     verticalOscillationMm: (row.vertical_oscillation_mm ?? null) as number | null,
     groundContactTimeMs: (row.ground_contact_time_ms ?? null) as number | null,
     verticalRatioPct: (row.vertical_ratio_pct ?? null) as number | null,

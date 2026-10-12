@@ -43,6 +43,8 @@ type fakeActivityStore struct {
 	loadErr    error
 	series     []storage.TimeseriesPoint
 	seriesErr  error
+	feelFound  bool
+	feelErr    error
 
 	// captured inputs
 	gotListUser string
@@ -50,6 +52,9 @@ type fakeActivityStore struct {
 	gotDetailID string
 	gotLapTypes []string
 	tsCalled    bool
+	gotFeelUser string
+	gotFeelLbl  string
+	gotFeelVal  float64
 }
 
 func (f *fakeActivityStore) ListActivities(_ context.Context, userID string, p storage.ActivityListParams) (*storage.ActivityPage, error) {
@@ -91,6 +96,14 @@ func (f *fakeActivityStore) ActivityTrainingLoad(_ context.Context, _, _ string)
 func (f *fakeActivityStore) ActivityTimeseries(_ context.Context, _, _ string) ([]storage.TimeseriesPoint, error) {
 	f.tsCalled = true
 	return f.series, f.seriesErr
+}
+
+func (f *fakeActivityStore) SetActivityFeel(_ context.Context, userID, labelID string, feel float64) (bool, error) {
+	f.gotFeelUser, f.gotFeelLbl, f.gotFeelVal = userID, labelID, feel
+	if f.feelErr != nil {
+		return false, f.feelErr
+	}
+	return f.feelFound, nil
 }
 
 // --- harness -----------------------------------------------------------------
@@ -647,6 +660,80 @@ func TestActivityDetail_TrainingLoad_NilReasons_EmptyList(t *testing.T) {
 func TestActivityList_StoreError_500(t *testing.T) {
 	h := newActivityHarness(t, &fakeActivityStore{pageErr: errors.New("boom")})
 	if w := h.do(http.MethodGet, "/api/"+activityUserA+"/activities", h.bearer(t, activityUserA)); w.Code != http.StatusInternalServerError {
+		t.Fatalf("code = %d, want 500", w.Code)
+	}
+}
+
+// --- PATCH feel (#508) --------------------------------------------------------
+
+// doBody issues a request with a JSON body (the harness do() is bodyless).
+func (h *activityHarness) doBody(method, path string, headers map[string]string, body string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(method, path, strings.NewReader(body))
+	for k, v := range headers {
+		r.Header.Set(k, v)
+	}
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.svc.Router().ServeHTTP(w, r)
+	return w
+}
+
+func TestActivityFeel_NoToken_401(t *testing.T) {
+	h := newActivityHarness(t, &fakeActivityStore{feelFound: true})
+	if w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", nil, `{"feel":7}`); w.Code != http.StatusUnauthorized {
+		t.Fatalf("code = %d, want 401", w.Code)
+	}
+}
+
+func TestActivityFeel_UserTier_CrossUser_403(t *testing.T) {
+	h := newActivityHarness(t, &fakeActivityStore{feelFound: true})
+	if w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserB), `{"feel":7}`); w.Code != http.StatusForbidden {
+		t.Fatalf("code = %d, want 403", w.Code)
+	}
+}
+
+func TestActivityFeel_InternalTier_AnyUser_204(t *testing.T) {
+	h := newActivityHarness(t, &fakeActivityStore{feelFound: true})
+	w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1",
+		map[string]string{"X-Internal-Token": testToken}, `{"feel":7.5}`)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204: %s", w.Code, w.Body.String())
+	}
+	if h.store.gotFeelUser != activityUserA || h.store.gotFeelLbl != "act-1" || h.store.gotFeelVal != 7.5 {
+		t.Fatalf("forwarded = (%q, %q, %v)", h.store.gotFeelUser, h.store.gotFeelLbl, h.store.gotFeelVal)
+	}
+}
+
+func TestActivityFeel_BadBody_400(t *testing.T) {
+	h := newActivityHarness(t, &fakeActivityStore{feelFound: true})
+	for _, body := range []string{`{}`, `{"feel":null}`, `{"feel":"7"}`, `{"feel":-0.5}`, `{"feel":10.5}`} {
+		w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA), body)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("body %s: code = %d, want 400", body, w.Code)
+		}
+	}
+}
+
+func TestActivityFeel_Bounds_Accepted(t *testing.T) {
+	for _, v := range []string{"0", "10", "7"} {
+		h := newActivityHarness(t, &fakeActivityStore{feelFound: true})
+		w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA), `{"feel":`+v+`}`)
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("feel %s: code = %d, want 204", v, w.Code)
+		}
+	}
+}
+
+func TestActivityFeel_NotFound_404(t *testing.T) {
+	h := newActivityHarness(t, &fakeActivityStore{feelFound: false})
+	if w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/missing", h.bearer(t, activityUserA), `{"feel":7}`); w.Code != http.StatusNotFound {
+		t.Fatalf("code = %d, want 404", w.Code)
+	}
+}
+
+func TestActivityFeel_StoreError_500(t *testing.T) {
+	h := newActivityHarness(t, &fakeActivityStore{feelErr: errors.New("boom")})
+	if w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA), `{"feel":7}`); w.Code != http.StatusInternalServerError {
 		t.Fatalf("code = %d, want 500", w.Code)
 	}
 }
