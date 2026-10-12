@@ -1,7 +1,8 @@
-/* 自定义比赛表单页 —— 深色令牌与 my-races 页一致（#07080a / #101111 / #ff6363）。 */
+/* 自定义比赛表单页 —— 深色令牌抽至 styles/dark.wxss，与 my-races 共享。 */
+@import "../../styles/dark.wxss";
 
 page {
-  background: #07080a;
+  background: var(--color-bg);
 }
 
 .form {
@@ -12,7 +13,7 @@ page {
   margin: 40rpx 4rpx 16rpx;
   font-size: 26rpx;
   font-weight: 600;
-  color: #b9b8bc;
+  color: var(--color-text-bright);
 }
 
 .sec:first-child {
@@ -23,7 +24,7 @@ page {
   margin-left: 8rpx;
   font-size: 20rpx;
   font-weight: 400;
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 /* 原生 input 的纵向 padding 不参与内容盒：统一定高 + 水平 padding，
@@ -35,14 +36,14 @@ page {
   padding: 0 24rpx;
   font-size: 28rpx;
   line-height: 88rpx;
-  color: #e8e8ea;
-  background: #101111;
+  color: var(--color-field-text);
+  background: var(--color-card);
   border: 1rpx solid rgba(255, 255, 255, 0.06);
   border-radius: 18rpx;
 }
 
 .field--ph {
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 .field--gap {
@@ -58,24 +59,24 @@ page {
 }
 
 .ph {
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 .hint {
   margin: 10rpx 4rpx 0;
   font-size: 20rpx;
   line-height: 32rpx;
-  color: #6a6a6c;
+  color: var(--color-text-tertiary);
 }
 
 .req {
-  color: #ff8f8f;
+  color: var(--color-accent-light);
 }
 
 /* 越野 D+ 建议：主题藕粉高亮 */
 .hint--hl {
-  color: #ff8f8f;
-  background: rgba(255, 99, 99, 0.08);
+  color: var(--color-accent-light);
+  background: rgba(var(--color-accent-rgb), 0.08);
   border-radius: 12rpx;
   padding: 12rpx 16rpx;
 }
@@ -90,14 +91,14 @@ page {
 .chip {
   padding: 10rpx 26rpx;
   font-size: 24rpx;
-  color: #8a8f99;
-  background: #17181a;
+  color: var(--color-text-cool);
+  background: var(--color-chip);
   border-radius: 28rpx;
 }
 
 .chip--on {
-  background: #ff6363;
-  color: #ffffff;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
   font-weight: 600;
 }
 
@@ -123,15 +124,15 @@ page {
   text-align: center;
   padding: 16rpx 0;
   font-size: 26rpx;
-  color: #9c9c9d;
+  color: var(--color-text-secondary);
   border: 1rpx solid rgba(255, 255, 255, 0.1);
   border-radius: 18rpx;
 }
 
 .seg__item--on {
-  color: #ffffff;
-  border-color: #ff6363;
-  background: rgba(255, 99, 99, 0.12);
+  color: var(--color-on-accent);
+  border-color: var(--color-accent);
+  background: rgba(var(--color-accent-rgb), 0.12);
   font-weight: 600;
 }
 
@@ -141,13 +142,13 @@ page {
   padding: 22rpx 0;
   font-size: 30rpx;
   font-weight: 600;
-  color: #ffffff;
-  background: #ff6363;
+  color: var(--color-on-accent);
+  background: var(--color-accent);
   border-radius: 40rpx;
 }
 
 .save[disabled] {
   opacity: 0.6;
-  color: #ffffff;
-  background: #ff6363;
+  color: var(--color-on-accent);
+  background: var(--color-accent);
 }

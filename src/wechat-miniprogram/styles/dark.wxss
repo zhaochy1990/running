@@ -1,0 +1,41 @@
+/* ============================================================
+   深色页共享令牌（my-races / custom-race-form，#498）
+   app.wxss 的 page 级令牌是浅色主题；深色页 @import 本片段在
+   page 上重定义同名令牌并补充深色专属色，调色板与 watch /
+   race-center 页一致。主题色（藕粉）改动只改本文件。
+   注意：除主题色外的 rgba 均未抽 token——白色 overlay（边框 / 徽章底）、
+   绿 / 金 / 蓝徽章、顶栏副标题暖粉、未中签灰底，皆一次性用法，
+   改对应主色时需同查 rgba。
+   ============================================================ */
+page {
+  /* 底色 */
+  --color-bg: #07080a; /* 页面 / 顶栏底 */
+  --color-bg-sunken: #0a0b0d; /* 次级底：tab 条 / 状态条 / 提示行 / 备注 */
+  --color-bg-dim: #0d0e10; /* 更暗底：已下架 / 已结束卡 */
+  --color-card: #101111; /* 卡片 / 计划卡 / 输入框底 */
+  --color-chip: #17181a; /* chip 底 */
+
+  /* 文字（暗 → 亮） */
+  --color-text-tertiary: #6a6a6c; /* 最弱：占位符 / 提示 / 箭头 */
+  --color-text-muted: #8a8a8c; /* 弱化说明 / 已结束 / 已下架 */
+  --color-text-secondary: #9c9c9d; /* 正文次级 / 日期 / meta */
+  --color-text-cool: #8a8f99; /* chip 文字（冷灰） */
+  --color-text-bright: #b9b8bc; /* 区块标题 / 空态标题 */
+  --color-band-other: #c9c3c4; /* 成绩横带「其他项目」 */
+  --color-text-primary: #e3e2e5; /* 名称 / 标题 */
+  --color-field-text: #e8e8ea; /* 表单输入文字 */
+  --color-on-accent: #ffffff; /* 实心主题色上的文字 */
+
+  /* 主题色（藕粉）——改主题色只动这一组；
+     透明度变体用 --color-accent-rgb 组合：rgba(var(--color-accent-rgb), α) */
+  --color-accent: #ff6363;
+  --color-accent-rgb: 255, 99, 99;
+  --color-accent-light: #ff8f8f; /* 倒计时 / 横带 / 必填星号 / 高亮提示 */
+  --color-accent-pale: #ffb3af; /* 顶栏标题 / 成绩时长 */
+
+  /* 状态徽章（仅 my-races 用到，随调色板集中于此） */
+  --color-success: #5fc992; /* 加载环 / 已确认 / 勾选 */
+  --color-success-light: #7ec9a6; /* 半马横带 */
+  --color-warning: #e8c07d; /* 已中签 / 想跑 / PB 金 */
+  --color-info: #8fb8e8; /* 已报名蓝 */
+}
