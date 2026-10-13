@@ -88,11 +88,14 @@ const (
 	TrainUnknown   TrainKind = "unknown"
 )
 
-// Feel is stored as a unified numeric 0–10 scale (higher = better), not a
-// string enum. The conversion from each provider's native encoding lives in the
-// adapter: COROS feelType 1–5 → feel = feelType×2 (note: COROS low code = good,
-// so the numeric axis is inverted relative to the raw code); Garmin's 0–100
-// slider → feel = raw÷10. NULL when unrated. No normalize-level type is needed.
+// Feel is stored as a unified numeric 1–10 scale, not a string enum. The
+// conversion from each provider's native encoding lives in the adapter:
+// COROS feelType 1–5 → feel = feelType×2 (note: COROS low code = good, so the
+// numeric axis is inverted relative to the raw code); Garmin's 0–100 slider
+// → feel = raw÷10. Both clamp to [1,10]; NULL when unrated. The athlete's
+// own subjective feel is free text in activities.feel_note (coach-chat write
+// path), separate from this vendor-normalized column. No normalize-level
+// type is needed.
 
 // legacyTrainTypeMap maps a legacy activities.train_type string to a TrainKind.
 // Used as a fallback when the normalized train_kind column is NULL (pre-backfill

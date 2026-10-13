@@ -143,13 +143,19 @@ func trainKindFromLabel(label string) (normalize.TrainKind, bool) {
 }
 
 // feelFromScore converts Garmin's 0-100 feel slider to the unified numeric
-// 0–10 feel scale (feel = raw÷10). Returns nil when no rating (0/absent) —
-// leave the column NULL.
+// 1–10 feel scale (feel = raw÷10, clamped to [1,10]). Returns nil when no
+// rating (0/absent) — leave the column NULL.
 func feelFromScore(v *int) *float64 {
 	if v == nil || *v <= 0 {
 		return nil
 	}
-	return fptr(float64(*v) / 10.0)
+	feel := float64(*v) / 10.0
+	if feel < 1 {
+		feel = 1
+	} else if feel > 10 {
+		feel = 10
+	}
+	return fptr(feel)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

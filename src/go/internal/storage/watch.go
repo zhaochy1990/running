@@ -119,6 +119,12 @@ func (s *Store) upsertActivity(ctx context.Context, a *Activity, laps []Lap, ts 
 		// a re-render and re-upload. Omit them so a sync can only ever add
 		// activities, not strip their thumbnails.
 		omits := []string{"RouteThumbJSON", "RouteThumbURL"}
+		// feel_note is athlete-authored free text (coach-chat write path); a
+		// provider payload never carries it, so it is unconditionally omitted:
+		// without this every full resync would wipe the athlete's words (same
+		// mechanism as the thumbnails above, but unconditional — there is no
+		// vendor-side "newer statement" like the numeric feel has).
+		omits = append(omits, "FeelNote")
 		// Garmin can return an empty details payload while still returning the
 		// summary. In that incomplete-response path, preserve the previously
 		// cached start alongside the preserved timeseries. Omit the two columns

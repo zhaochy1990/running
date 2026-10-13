@@ -206,8 +206,15 @@ func ParseActivityDetail(userID, labelID string, fallbackDate time.Time, payload
 		a.TrainKind = sptr(string(coros_TrainKind(*s.TrainType)))
 	}
 	if d.SportFeelInfo.FeelType != nil && *d.SportFeelInfo.FeelType != 0 {
-		// Unified numeric feel: COROS feelType 1–5 → feel = feelType×2 (0–10).
-		a.Feel = fptr(float64(*d.SportFeelInfo.FeelType) * 2)
+		// Unified numeric feel: COROS feelType 1–5 → feel = feelType×2 (1–10,
+		// clamped defensively against out-of-range codes).
+		feel := float64(*d.SportFeelInfo.FeelType) * 2
+		if feel < 1 {
+			feel = 1
+		} else if feel > 10 {
+			feel = 10
+		}
+		a.Feel = fptr(feel)
 	}
 	if pauses := marshalPauses(d.PauseList); pauses != nil {
 		a.Pauses = pauses

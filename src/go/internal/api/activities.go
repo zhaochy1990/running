@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -41,7 +42,7 @@ type ActivityStore interface {
 	ActivityZones(ctx context.Context, userID, labelID string) ([]storage.ActivityZone, error)
 	ActivityTrainingLoad(ctx context.Context, userID, labelID string) (*storage.ActivityTrainingLoad, error)
 	ActivityTimeseries(ctx context.Context, userID, labelID string) ([]storage.TimeseriesPoint, error)
-	SetActivityFeel(ctx context.Context, userID, labelID string, feel float64) (bool, error)
+	SetActivityFeelNote(ctx context.Context, userID, labelID, note string) (bool, error)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -68,7 +69,7 @@ func newActivityRoutes(store ActivityStore, log *zap.Logger) *activityRoutes {
 func (a *activityRoutes) register(rg *gin.RouterGroup) {
 	rg.GET("/api/:user/activities", a.list)
 	rg.GET("/api/:user/activities/:labelId", a.detail)
-	rg.PATCH("/api/:user/activities/:labelId", a.updateFeel)
+	rg.PATCH("/api/:user/activities/:labelId", a.updateFeelNote)
 }
 
 // authorizeUser enforces the tenant scope: a user-tier caller may only read
@@ -169,28 +170,28 @@ func (a *activityRoutes) detail(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// updateFeelBody is the PATCH /api/{user}/activities/{labelId} request body:
-// the athlete's subjective feel on the normalized 0–10 RPE scale (#508).
-// Fractional values are allowed (Garmin's source scale resolves to 0.1 steps);
-// feel_type is deliberately absent — the vendor's raw value is never
-// user-writable.
-type updateFeelBody struct {
-	Feel *float64 `json:"feel" binding:"required"`
+// updateFeelNoteBody is the PATCH /api/{user}/activities/{labelId} request
+// body: the athlete's subjective feel as free text (one line or a short
+// paragraph, e.g. "前面4组体感6，最后两组7-8"). Stored verbatim in feel_note;
+// the vendor-normalized feel and raw feel_type are deliberately absent —
+// they are never user-writable.
+type updateFeelNoteBody struct {
+	FeelNote *string `json:"feel_note" binding:"required"`
 }
 
-// updateFeel writes the athlete's subjective feel (normalized 0–10 RPE) for
-// one activity. Only the normalized feel column is touched; a later vendor
-// resync without a feel value preserves it (see storage.upsertActivity).
-// Responds 204 with no body — callers know what they sent; the stored value is
-// observable via the detail endpoint's feel field.
+// updateFeelNote writes the athlete's subjective feel verbatim for one
+// activity. Only the feel_note column is touched; a later vendor resync
+// preserves it unconditionally (see storage.upsertActivity). Responds 204
+// with no body — callers know what they sent; the stored text is observable
+// via the detail endpoint's feel_note field.
 //
-//	@Summary		Set an activity's athlete-rated feel
-//	@Description	Writes the athlete's subjective feel (0–10 RPE, "talk test" anchored) for one activity. Only the normalized feel column is written; the vendor feel_type is never modified. A user caller may only update their own activities; an internal caller (coach agent) may update any user's.
+//	@Summary		Set an activity's athlete-rated feel (free text)
+//	@Description	Writes the athlete's subjective feel verbatim as free text (e.g. segmented RPE descriptions) for one activity. Stored verbatim in feel_note; the vendor-normalized feel and feel_type are never modified. A user caller may only update their own activities; an internal caller (coach agent) may update any user's.
 //	@Tags			activities
 //	@Accept			json
 //	@Param			user		path		string				true	"User id (JWT sub)"
 //	@Param			labelId		path		string				true	"Activity label id"
-//	@Param			body		body		updateFeelBody		true	"Feel value"
+//	@Param			body		body		updateFeelNoteBody	true	"Feel note text"
 //	@Success		204			{string}	string				"No Content"
 //	@Failure		400			{object}	errorResponse
 //	@Failure		401			{object}	errorResponse
@@ -200,24 +201,24 @@ type updateFeelBody struct {
 //	@Security		InternalToken
 //	@Security		BearerAuth
 //	@Router			/api/{user}/activities/{labelId} [patch]
-func (a *activityRoutes) updateFeel(c *gin.Context) {
+func (a *activityRoutes) updateFeelNote(c *gin.Context) {
 	user := c.Param("user")
 	if !authorizeUser(c, user) {
 		return
 	}
-	var body updateFeelBody
-	if err := c.ShouldBindJSON(&body); err != nil || body.Feel == nil {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "feel is required (number 0–10)"})
+	var body updateFeelNoteBody
+	if err := c.ShouldBindJSON(&body); err != nil || body.FeelNote == nil {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "feel_note is required (non-empty text, max 500 chars)"})
 		return
 	}
-	feel := *body.Feel
-	if feel < 0 || feel > 10 {
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "feel must be within 0–10"})
+	note := strings.TrimSpace(*body.FeelNote)
+	if note == "" || utf8.RuneCountInString(note) > 500 {
+		c.JSON(http.StatusBadRequest, errorResponse{Error: "feel_note must be 1–500 characters (non-blank)"})
 		return
 	}
-	found, err := a.store.SetActivityFeel(c.Request.Context(), user, c.Param("labelId"), feel)
+	found, err := a.store.SetActivityFeelNote(c.Request.Context(), user, c.Param("labelId"), note)
 	if err != nil {
-		a.log.Error("set activity feel failed", zapErr(err))
+		a.log.Error("set activity feel note failed", zapErr(err))
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		return
 	}
@@ -531,9 +532,10 @@ type activityDetailDTO struct {
 	FeelsLike       *float64 `json:"feels_like"`
 	WindSpeed       *float64 `json:"wind_speed"`
 	FeelType        *int     `json:"feel_type"`
-	// Feel is the normalized 0–10 RPE feel — vendor-normalized or athlete-set
-	// via PATCH; NULL when unrated. (feel_type above stays the vendor raw value.)
+	// Feel is the vendor-normalized 1–10 RPE feel (COROS×2, Garmin÷10, clamped
+	// to [1,10]); NULL when unrated. feel_type above stays the vendor raw value.
 	Feel        *float64        `json:"feel"`
+	FeelNote    *string         `json:"feel_note"`
 	SportNote   *string         `json:"sport_note"`
 	DistanceKm  float64         `json:"distance_km"`
 	DurationFmt string          `json:"duration_fmt"`
@@ -733,6 +735,7 @@ func toActivityDetail(a *storage.Activity) activityDetailDTO {
 		WindSpeed:       a.WindSpeed,
 		FeelType:        a.FeelType,
 		Feel:            a.Feel,
+		FeelNote:        a.FeelNote,
 		SportNote:       a.SportNote,
 		DistanceKm:      apifmt.DistanceKm(a.DistanceM),
 		DurationFmt:     apifmt.DurationFmt(a.DurationS),
