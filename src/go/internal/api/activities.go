@@ -207,7 +207,7 @@ func (a *activityRoutes) updateFeelNote(c *gin.Context) {
 		return
 	}
 	var body updateFeelNoteBody
-	if err := c.ShouldBindJSON(&body); err != nil || body.FeelNote == nil {
+	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "feel_note is required (non-empty text, max 500 chars)"})
 		return
 	}

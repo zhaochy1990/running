@@ -92,10 +92,21 @@ const (
 // conversion from each provider's native encoding lives in the adapter:
 // COROS feelType 1–5 → feel = feelType×2 (note: COROS low code = good, so the
 // numeric axis is inverted relative to the raw code); Garmin's 0–100 slider
-// → feel = raw÷10. Both clamp to [1,10]; NULL when unrated. The athlete's
-// own subjective feel is free text in activities.feel_note (coach-chat write
-// path), separate from this vendor-normalized column. No normalize-level
-// type is needed.
+// → feel = raw÷10. Both run through ClampFeel below; NULL when unrated. The
+// athlete's own subjective feel is free text in activities.feel_note
+// (coach-chat write path), separate from this vendor-normalized column. No
+// normalize-level type is needed.
+
+// ClampFeel bounds a provider-normalized feel to the unified 1–10 scale.
+func ClampFeel(v float64) float64 {
+	if v < 1 {
+		return 1
+	}
+	if v > 10 {
+		return 10
+	}
+	return v
+}
 
 // legacyTrainTypeMap maps a legacy activities.train_type string to a TrainKind.
 // Used as a fallback when the normalized train_kind column is NULL (pre-backfill

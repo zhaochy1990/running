@@ -30,7 +30,9 @@ const setActivityFeelSchema = z.object({
   feelNote: z
     .string()
     .min(1)
-    .max(500)
+    // 按码点计数对齐 Go 侧 utf8.RuneCountInString ≤500；zod 的 .max 按 UTF-16
+    // 码元计，含 emoji（代理对）时会比 Go 先拒绝。
+    .refine((v) => [...v].length <= 500, "体感原话最多 500 字")
     .describe("运动员描述体感的原话，原样落库。不解析、不改写、不总结、不抽成数字——用户说了什么就传什么。"),
 });
 
