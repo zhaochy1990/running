@@ -2,6 +2,7 @@ import type { BaseMessage } from "@langchain/core/messages";
 import type { GraphNode } from "@langchain/langgraph";
 import { type CoachAgentConfig, getAgentConfig } from "../config/config.js";
 import type { DataProvider } from "../data/dataProvider.js";
+import type { ActivityFeelWriter } from "../tools/feel.js";
 import { getOrchestratorNode } from "./orchestrator.js";
 import { getOtherAgent } from "./other/agent.js";
 import { getQaAgent } from "./qa/agent.js";
@@ -28,7 +29,12 @@ function makeAgentNode(agent: InnerAgent): GraphNode<typeof AgentsState> {
   };
 }
 
-export function getAgentNode(agentName: string, config: CoachAgentConfig, dataProvider: DataProvider): GraphNode<typeof AgentsState> {
+export function getAgentNode(
+  agentName: string,
+  config: CoachAgentConfig,
+  dataProvider: DataProvider,
+  feelWriter?: ActivityFeelWriter,
+): GraphNode<typeof AgentsState> {
   if (agentName === "orchestrator") {
     const agentConfig = getAgentConfig(config, "orchestrator");
     // master_plan 进 training 节点在聊天 turn 内同步跑 master kernel（#427）。
@@ -39,7 +45,7 @@ export function getAgentNode(agentName: string, config: CoachAgentConfig, dataPr
 
   if (agentName === "qa") {
     const agentConfig = getAgentConfig(config, "qa");
-    const qaAgent = getQaAgent(dataProvider, agentConfig) as unknown as InnerAgent;
+    const qaAgent = getQaAgent(dataProvider, agentConfig, feelWriter) as unknown as InnerAgent;
     return makeAgentNode(qaAgent);
   }
 

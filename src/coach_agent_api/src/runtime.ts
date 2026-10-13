@@ -10,6 +10,7 @@ import {
 } from "@stride/coach-agent-worker";
 import { createApp } from "./app.js";
 import { createJwtVerifier, fetchAuthPublicKey } from "./auth.js";
+import { createActivityFeelWriter } from "./coach/activityFeelWriter.js";
 import { CoachInvokerImpl } from "./coach/coachInvoker.js";
 import { createMasterPlanDraftSink } from "./coach/masterPlanDraftSink.js";
 import type { ApiConfig } from "./dto/config.js";
@@ -43,7 +44,14 @@ export async function createCoachApiRuntime(apiConfig: ApiConfig, coachConfig: C
     persistence = await createPersistence(apiConfig.persistenceDatabase);
     // #429：聊天内生成的 master-plan 直接落 Go draft（fail-soft），卡片带
     // plan_id 供小程序「启用/放弃」CTA 调用户端点。
-    const coachInvoker = new CoachInvokerImpl(dataProvider, coachConfig, persistence, createMasterPlanDraftSink(dataProvider, apiConfig.goApi));
+    // #508：qa agent 的 set_activity_feel 走 Go API 写归一化 feel（fail-loud）。
+    const coachInvoker = new CoachInvokerImpl(
+      dataProvider,
+      coachConfig,
+      persistence,
+      createMasterPlanDraftSink(dataProvider, apiConfig.goApi),
+      createActivityFeelWriter(apiConfig.goApi),
+    );
     await coachInvoker.initialize();
 
     // Deterministic plan-job enqueue (ADR 0030): store-first via the worker's

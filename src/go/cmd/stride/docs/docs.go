@@ -972,6 +972,66 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/admin/races/dashboard": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Administrator only. Buckets races into published / ready-to-publish / missing-info / new-from-sync per the spec's decision tree. time splits upcoming (race_date \u003e= today, by calendar date) and past (race_date \u003c today); the new-from-sync bucket ignores time entirely. scope=cn narrows to country=CHN. Rows carry their three-gate verdict and watch-list gaps; sync-new rows omit them.",
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Publish dashboard",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "upcoming (default) / past / all",
+                        "name": "time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "cn (default, country=CHN) / all",
+                        "name": "scope",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceDashboardResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/races/{race_id}": {
             "get": {
                 "security": [
@@ -2104,6 +2164,67 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/race-strategies/shared/{user_id}/{race_id}/{version_id}": {
+            "get": {
+                "description": "Read-only share-link read. Returns one strategy version plus the race name/date, identified by the exact (owner, race, version) id triple. Any miss (wrong owner, deleted version, removed race) answers 404 without saying which part missed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "race-strategies"
+                ],
+                "summary": "Get a shared race strategy",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Owner user UUID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Race id",
+                        "name": "race_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Strategy version (row) id",
+                        "name": "version_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.raceStrategySharedDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/api.errorResponse"
                         }
@@ -4850,6 +4971,87 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "InternalToken": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Writes the athlete's subjective feel (0–10 RPE, \"talk test\" anchored) for one activity. Only the normalized feel column is written; the vendor feel_type is never modified. A user caller may only update their own activities; an internal caller (coach agent) may update any user's.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "activities"
+                ],
+                "summary": "Set an activity's athlete-rated feel",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User id (JWT sub)",
+                        "name": "user",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Activity label id",
+                        "name": "labelId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Feel value",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.updateFeelBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/api.errorResponse"
+                        }
+                    }
+                }
             }
         },
         "/api/{user}/activities/{label_id}/ability": {
@@ -7134,6 +7336,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "duration_s": {
+                    "type": "number"
+                },
+                "feel": {
+                    "description": "Feel is the normalized 0–10 RPE feel — vendor-normalized or athlete-set\nvia PATCH; NULL when unrated. (feel_type above stays the vendor raw value.)",
                     "type": "number"
                 },
                 "feel_type": {
@@ -9691,6 +9897,179 @@ const docTemplate = `{
                 }
             }
         },
+        "api.raceDashboardBooleanGate": {
+            "type": "object",
+            "properties": {
+                "ok": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.raceDashboardBucket": {
+            "type": "object",
+            "properties": {
+                "races": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.raceDashboardRace"
+                    }
+                }
+            }
+        },
+        "api.raceDashboardDataGate": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.raceDashboardItemGate"
+                    }
+                },
+                "no_items": {
+                    "type": "boolean"
+                },
+                "ok": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.raceDashboardGates": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "$ref": "#/definitions/api.raceDashboardBooleanGate"
+                },
+                "data": {
+                    "$ref": "#/definitions/api.raceDashboardDataGate"
+                },
+                "weather": {
+                    "$ref": "#/definitions/api.raceDashboardWeatherGate"
+                }
+            }
+        },
+        "api.raceDashboardItemGate": {
+            "type": "object",
+            "properties": {
+                "missing": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.raceDashboardObservations": {
+            "type": "object",
+            "properties": {
+                "missing": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "api.raceDashboardRace": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string"
+                },
+                "content_source": {
+                    "description": "ContentSource/UpdatedAt are the automation tie-in surfaces (the daily\nfill job stamps WebSearch/updated_at); exposed for future review\nqueues, unused by the一期 UI.",
+                    "type": "string"
+                },
+                "content_stale": {
+                    "type": "boolean"
+                },
+                "country": {
+                    "description": "Country rides along beyond the spec's common-field list so the scope=all\nview can fold international rows by the same predicate the endpoint\nfilters with (source would wrongly fold the 国际田联-mirrored Chinese\nmajors).",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "gates": {
+                    "$ref": "#/definitions/api.raceDashboardGates"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "name_cn": {
+                    "type": "string"
+                },
+                "observations": {
+                    "$ref": "#/definitions/api.raceDashboardObservations"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "province": {
+                    "type": "string"
+                },
+                "published": {
+                    "type": "boolean"
+                },
+                "race_date": {
+                    "type": "string"
+                },
+                "race_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "source": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "wa_label": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.raceDashboardResponse": {
+            "type": "object",
+            "properties": {
+                "missing": {
+                    "$ref": "#/definitions/api.raceDashboardBucket"
+                },
+                "new_sync": {
+                    "$ref": "#/definitions/api.raceDashboardBucket"
+                },
+                "pending": {
+                    "$ref": "#/definitions/api.raceDashboardBucket"
+                },
+                "published": {
+                    "$ref": "#/definitions/api.raceDashboardBucket"
+                }
+            }
+        },
+        "api.raceDashboardWeatherGate": {
+            "type": "object",
+            "properties": {
+                "missing": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ok": {
+                    "type": "boolean"
+                }
+            }
+        },
         "api.raceEventContentDTO": {
             "type": "object",
             "properties": {
@@ -10083,6 +10462,28 @@ const docTemplate = `{
                 }
             }
         },
+        "api.raceStrategySharedDTO": {
+            "type": "object",
+            "properties": {
+                "race": {
+                    "$ref": "#/definitions/api.raceStrategySharedRaceDTO"
+                },
+                "strategy": {
+                    "$ref": "#/definitions/api.raceStrategyVersionDTO"
+                }
+            }
+        },
+        "api.raceStrategySharedRaceDTO": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "race_date": {
+                    "type": "string"
+                }
+            }
+        },
         "api.raceStrategyUpsertResponse": {
             "type": "object",
             "properties": {
@@ -10106,6 +10507,9 @@ const docTemplate = `{
                 "content": {
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "id": {
+                    "type": "integer"
                 },
                 "item_type": {
                     "type": "string"
@@ -10635,6 +11039,17 @@ const docTemplate = `{
                 }
             }
         },
+        "api.updateFeelBody": {
+            "type": "object",
+            "required": [
+                "feel"
+            ],
+            "properties": {
+                "feel": {
+                    "type": "number"
+                }
+            }
+        },
         "api.updateMasterPlanRequest": {
             "type": "object",
             "required": [
@@ -11036,6 +11451,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "duration_s": {
+                    "type": "number"
+                },
+                "feel": {
+                    "description": "Feel is the normalized 0–10 RPE feel — vendor-normalized or athlete-set\nvia PATCH; NULL when unrated. (feel_type above stays the vendor raw value.)",
                     "type": "number"
                 },
                 "feel_type": {

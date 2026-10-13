@@ -3,6 +3,7 @@ import { createAgent } from "langchain";
 import type { ModelConfig } from "../../config/config.js";
 import type { DataProvider } from "../../data/dataProvider.js";
 import { createActivitiesTools } from "../../tools/activities.js";
+import { type ActivityFeelWriter, createActivityFeelTools } from "../../tools/feel.js";
 import { createPlanTools } from "../../tools/plan.js";
 import { createRaceTools } from "../../tools/races.js";
 import { createRunningCalibrationTools } from "../../tools/runningCalibration.js";
@@ -36,11 +37,12 @@ const QA_SUBAGENT_PROMPT = `你是 STRIDE 跑步教练的训练问答专家，�
 你不对运动员的训练计划进行修改或调整，也不提供个性化训练建议。你只回答运动员关于训练的问题，并且只依据工具数据说话。
     `;
 
-/** qa 子代理使用的只读工具集（供测试复用）。 */
-export function getQaTools(store: DataProvider) {
+/** qa 子代理使用的工具集（供测试复用）。feelWriter 缺省时不挂写工具（纯只读）。 */
+export function getQaTools(store: DataProvider, feelWriter?: ActivityFeelWriter) {
   return [
     ...createPlanTools(store),
     ...createActivitiesTools(store),
+    ...(feelWriter ? createActivityFeelTools(feelWriter) : []),
     ...createTrainingLoadTools(store),
     ...createRaceTools(store),
     ...createRunningCalibrationTools(store),
@@ -48,7 +50,7 @@ export function getQaTools(store: DataProvider) {
 }
 
 /** qa 业务节点：一个内层 ReAct agent，最终 AIMessage 写回外层 messages。 */
-export function getQaAgent(store: DataProvider, config: ModelConfig) {
+export function getQaAgent(store: DataProvider, config: ModelConfig, feelWriter?: ActivityFeelWriter) {
   logger.info(`creating qa agent with model ${config.name} (${config.model})`);
 
   // 无 deepagents FilesystemBackend 后，把 SKILL.md 正文直接内联进系统提示。
@@ -56,7 +58,7 @@ export function getQaAgent(store: DataProvider, config: ModelConfig) {
 
   return createAgent({
     model: buildModel(config),
-    tools: getQaTools(store),
+    tools: getQaTools(store, feelWriter),
     systemPrompt,
     contextSchema: CoachContext,
     middleware: [createTurnScopeMiddleware(), createLoggingMiddleware("agent:qa")],

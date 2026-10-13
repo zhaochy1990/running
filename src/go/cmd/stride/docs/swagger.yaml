@@ -116,6 +116,11 @@ definitions:
         type: string
       duration_s:
         type: number
+      feel:
+        description: |-
+          Feel is the normalized 0–10 RPE feel — vendor-normalized or athlete-set
+          via PATCH; NULL when unrated. (feel_type above stays the vendor raw value.)
+        type: number
       feel_type:
         type: integer
       feels_like:
@@ -1861,6 +1866,126 @@ definitions:
       target_race_id:
         type: integer
     type: object
+  api.raceDashboardBooleanGate:
+    properties:
+      ok:
+        type: boolean
+    type: object
+  api.raceDashboardBucket:
+    properties:
+      races:
+        items:
+          $ref: '#/definitions/api.raceDashboardRace'
+        type: array
+    type: object
+  api.raceDashboardDataGate:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/api.raceDashboardItemGate'
+        type: array
+      no_items:
+        type: boolean
+      ok:
+        type: boolean
+    type: object
+  api.raceDashboardGates:
+    properties:
+      city:
+        $ref: '#/definitions/api.raceDashboardBooleanGate'
+      data:
+        $ref: '#/definitions/api.raceDashboardDataGate'
+      weather:
+        $ref: '#/definitions/api.raceDashboardWeatherGate'
+    type: object
+  api.raceDashboardItemGate:
+    properties:
+      missing:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+    type: object
+  api.raceDashboardObservations:
+    properties:
+      missing:
+        items:
+          type: string
+        type: array
+    type: object
+  api.raceDashboardRace:
+    properties:
+      city:
+        type: string
+      content_source:
+        description: |-
+          ContentSource/UpdatedAt are the automation tie-in surfaces (the daily
+          fill job stamps WebSearch/updated_at); exposed for future review
+          queues, unused by the一期 UI.
+        type: string
+      content_stale:
+        type: boolean
+      country:
+        description: |-
+          Country rides along beyond the spec's common-field list so the scope=all
+          view can fold international rows by the same predicate the endpoint
+          filters with (source would wrongly fold the 国际田联-mirrored Chinese
+          majors).
+        type: string
+      created_at:
+        type: string
+      gates:
+        $ref: '#/definitions/api.raceDashboardGates'
+      id:
+        type: integer
+      label:
+        type: string
+      name:
+        type: string
+      name_cn:
+        type: string
+      observations:
+        $ref: '#/definitions/api.raceDashboardObservations'
+      origin:
+        type: string
+      province:
+        type: string
+      published:
+        type: boolean
+      race_date:
+        type: string
+      race_types:
+        items:
+          type: string
+        type: array
+      source:
+        type: string
+      updated_at:
+        type: string
+      wa_label:
+        type: string
+    type: object
+  api.raceDashboardResponse:
+    properties:
+      missing:
+        $ref: '#/definitions/api.raceDashboardBucket'
+      new_sync:
+        $ref: '#/definitions/api.raceDashboardBucket'
+      pending:
+        $ref: '#/definitions/api.raceDashboardBucket'
+      published:
+        $ref: '#/definitions/api.raceDashboardBucket'
+    type: object
+  api.raceDashboardWeatherGate:
+    properties:
+      missing:
+        items:
+          type: string
+        type: array
+      ok:
+        type: boolean
+    type: object
   api.raceEventContentDTO:
     properties:
       climate:
@@ -2123,6 +2248,20 @@ definitions:
     - content
     - item_type
     type: object
+  api.raceStrategySharedDTO:
+    properties:
+      race:
+        $ref: '#/definitions/api.raceStrategySharedRaceDTO'
+      strategy:
+        $ref: '#/definitions/api.raceStrategyVersionDTO'
+    type: object
+  api.raceStrategySharedRaceDTO:
+    properties:
+      name:
+        type: string
+      race_date:
+        type: string
+    type: object
   api.raceStrategyUpsertResponse:
     properties:
       item_type:
@@ -2139,6 +2278,8 @@ definitions:
       content:
         additionalProperties: {}
         type: object
+      id:
+        type: integer
       item_type:
         type: string
       target_finish_time:
@@ -2492,6 +2633,13 @@ definitions:
       timestamp:
         type: integer
     type: object
+  api.updateFeelBody:
+    properties:
+      feel:
+        type: number
+    required:
+    - feel
+    type: object
   api.updateMasterPlanRequest:
     properties:
       content:
@@ -2767,6 +2915,11 @@ definitions:
       duration_fmt:
         type: string
       duration_s:
+        type: number
+      feel:
+        description: |-
+          Feel is the normalized 0–10 RPE feel — vendor-normalized or athlete-set
+          via PATCH; NULL when unrated. (feel_type above stays the vendor raw value.)
         type: number
       feel_type:
         type: integer
@@ -3409,6 +3562,61 @@ paths:
       - InternalToken: []
       - BearerAuth: []
       summary: Get one activity's detail
+      tags:
+      - activities
+    patch:
+      consumes:
+      - application/json
+      description: Writes the athlete's subjective feel (0–10 RPE, "talk test" anchored)
+        for one activity. Only the normalized feel column is written; the vendor feel_type
+        is never modified. A user caller may only update their own activities; an
+        internal caller (coach agent) may update any user's.
+      parameters:
+      - description: User id (JWT sub)
+        in: path
+        name: user
+        required: true
+        type: string
+      - description: Activity label id
+        in: path
+        name: labelId
+        required: true
+        type: string
+      - description: Feel value
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.updateFeelBody'
+      responses:
+        "204":
+          description: No Content
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - InternalToken: []
+      - BearerAuth: []
+      summary: Set an activity's athlete-rated feel
       tags:
       - activities
   /api/{user}/body-composition:
@@ -5566,6 +5774,48 @@ paths:
       summary: Move a race's content to another race
       tags:
       - admin
+  /api/admin/races/dashboard:
+    get:
+      description: Administrator only. Buckets races into published / ready-to-publish
+        / missing-info / new-from-sync per the spec's decision tree. time splits upcoming
+        (race_date >= today, by calendar date) and past (race_date < today); the new-from-sync
+        bucket ignores time entirely. scope=cn narrows to country=CHN. Rows carry
+        their three-gate verdict and watch-list gaps; sync-new rows omit them.
+      parameters:
+      - description: upcoming (default) / past / all
+        in: query
+        name: time
+        type: string
+      - description: cn (default, country=CHN) / all
+        in: query
+        name: scope
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.raceDashboardResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Publish dashboard
+      tags:
+      - admin
   /api/admin/users/{user_id}:
     delete:
       description: 'Deletes the user''s auth identity, coach data, STRIDE data, and
@@ -5973,6 +6223,50 @@ paths:
       summary: Get a published race
       tags:
       - races
+  /api/race-strategies/shared/{user_id}/{race_id}/{version_id}:
+    get:
+      description: Read-only share-link read. Returns one strategy version plus the
+        race name/date, identified by the exact (owner, race, version) id triple.
+        Any miss (wrong owner, deleted version, removed race) answers 404 without
+        saying which part missed.
+      parameters:
+      - description: Owner user UUID
+        in: path
+        name: user_id
+        required: true
+        type: string
+      - description: Race id
+        in: path
+        name: race_id
+        required: true
+        type: integer
+      - description: Strategy version (row) id
+        in: path
+        name: version_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.raceStrategySharedDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.errorResponse'
+      summary: Get a shared race strategy
+      tags:
+      - race-strategies
   /api/readyz/body-composition:
     get:
       description: Returns the static route contract required before the Web BFF enables

@@ -25,8 +25,8 @@ export type {
   CoachToolRuntime,
 } from "./agents/coachAgent.js";
 export { CoachContext, createCoachAgent } from "./agents/coachAgent.js";
-export type { MasterPlanDraftSink } from "./agents/training/agent.js";
 export { flushLangfuse, isLangfuseEnabled } from "./agents/langfuse.js";
+export type { MasterPlanDraftSink } from "./agents/training/agent.js";
 export type { CoachTurnScopeValue } from "./agents/turnScope.js";
 export { CoachTurnScope } from "./agents/turnScope.js";
 export type { CoachAgentConfig, ModelConfig } from "./config/config.js";
@@ -48,6 +48,7 @@ export { createMasterPlanLlmModels } from "./graph/master_plan/llm/index.js";
 export { createWeeklyPlanGeneratorGraph } from "./graph/weekly_plan/index.js";
 export type { AskUserQuestionPayload } from "./tools/askUserQuestions.js";
 export { ASK_USER_QUESTION_KIND } from "./tools/askUserQuestions.js";
+export type { ActivityFeelWriter } from "./tools/feel.js";
 export {
   formatTokenUsageReport,
   LlmTokenUsageTracker,
