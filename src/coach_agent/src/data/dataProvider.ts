@@ -56,8 +56,10 @@ export interface Activity {
   windSpeed: number | null;
   sportNote: string | null;
   sport: string | null;
-  /** 主观体感，归一化 0–10 RPE（厂商量表换算或运动员经教练对话补填 #508）；null = 未评，不代表“感觉一般”。 */
+  /** 主观体感：厂商归一化 1–10 RPE（Garmin÷10 / COROS×2 后 clamp）；null = 厂商未评。 */
   feel: number | null;
+  /** 运动员经教练对话补填的体感原话（自由文本，可分段，如「前面4组体感6，最后两组7-8」）；null = 没说过。 */
+  feelNote: string | null;
   verticalOscillationMm: number | null;
   groundContactTimeMs: number | null;
   verticalRatioPct: number | null;

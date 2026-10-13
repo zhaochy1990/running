@@ -370,7 +370,8 @@ function activityShape(activity: Activity) {
     avg_hr: activity.avgHr,
     max_hr: activity.maxHr,
     training_dose: activity.strideDose,
-    feedback: activity.feel,
+    // 体感反馈：运动员原话优先（可分段）；厂商数字兜底并标注来源，避免模型把它当运动员本人的话。
+    feedback: activity.feelNote ?? (activity.feel !== null ? `手表体感 ${activity.feel}/10` : null),
     note: activity.sportNote,
   };
 }

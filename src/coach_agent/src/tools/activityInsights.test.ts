@@ -37,6 +37,7 @@ function makeActivity(over: Partial<Activity> = {}): Activity {
     sportNote: null,
     sport: "run_outdoor",
     feel: null,
+    feelNote: null,
     verticalOscillationMm: null,
     groundContactTimeMs: null,
     verticalRatioPct: null,
@@ -156,6 +157,7 @@ test("insights: baseline regression, thermal drift, plan deviation, load positio
   assert.equal(result.session.day, "2026-10-09");
   assert.equal(result.session.is_quality, false);
   assert.deepEqual(result.session.weather, { feels_like_c: 32, humidity_pct: 70 });
+  assert.equal(result.session.feel_note, null);
 
   // 基线 math：HR = 0.25×pace + 75，300 s/km 处期望 150，实际 147 → delta −3。
   assert.deepEqual(result.efficiency_delta, { n: 3, method: "regression", expected_hr_bpm: 150, delta_bpm: -3 });

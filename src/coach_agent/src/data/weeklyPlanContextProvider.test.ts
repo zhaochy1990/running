@@ -32,6 +32,7 @@ const activity: Activity = {
   sportNote: "controlled",
   sport: "run_outdoor",
   feel: 6,
+  feelNote: "最后一组顶到 8，前面都轻松",
   verticalOscillationMm: null,
   groundContactTimeMs: null,
   verticalRatioPct: null,

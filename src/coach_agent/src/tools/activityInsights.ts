@@ -68,6 +68,8 @@ export interface ActivityInsights {
     avg_hr: number | null;
     max_hr: number | null;
     feel: number | null;
+    /** 运动员体感原话（自由文本，可分段）；null = 没说过。 */
+    feel_note: string | null;
     dose: number | null;
     session_class: string | null;
     is_quality: boolean;
@@ -177,6 +179,7 @@ class ActivityInsightsToolImpl {
         avg_hr: activity.avgHr,
         max_hr: activity.maxHr,
         feel: activity.feel,
+        feel_note: activity.feelNote,
         dose: activity.strideDose === null ? null : round(activity.strideDose, 1),
         session_class: activity.strideSessionClass,
         is_quality: isQualityRunningActivity(activity),
