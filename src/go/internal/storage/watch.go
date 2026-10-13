@@ -119,6 +119,12 @@ func (s *Store) upsertActivity(ctx context.Context, a *Activity, laps []Lap, ts 
 		// a re-render and re-upload. Omit them so a sync can only ever add
 		// activities, not strip their thumbnails.
 		omits := []string{"RouteThumbJSON", "RouteThumbURL"}
+		// feel_note is athlete-authored free text (coach-chat write path); a
+		// provider payload never carries it, so it is unconditionally omitted:
+		// without this every full resync would wipe the athlete's words (same
+		// mechanism as the thumbnails above, but unconditional — there is no
+		// vendor-side "newer statement" like the numeric feel has).
+		omits = append(omits, "FeelNote")
 		// Garmin can return an empty details payload while still returning the
 		// summary. In that incomplete-response path, preserve the previously
 		// cached start alongside the preserved timeseries. Omit the two columns
@@ -128,16 +134,13 @@ func (s *Store) upsertActivity(ctx context.Context, a *Activity, laps []Lap, ts 
 		if preserveEmpty && len(ts) == 0 && a.StartGPSLat == nil && a.StartGPSLon == nil {
 			omits = append(omits, "StartGPSLat", "StartGPSLon")
 		}
-		// feel (normalized 0–10) may have been set by the athlete through the
-		// coach-chat write path (#508). A provider payload without a feel must
-		// not erase it — most resyncs carry feel=NULL and would otherwise wipe
-		// the value on every full sync. Omitting the column (same mechanism as
-		// the thumbnails above) keeps it out of the INSERT and therefore out of
-		// the ON DUPLICATE KEY UPDATE list, so a concurrent athlete write can
-		// never be clobbered by a resync either. A non-NULL vendor feel still
-		// overwrites: rating the activity in the vendor app is the newer
-		// statement of the same signal. This is the decided user-write vs
-		// vendor-sync policy.
+		// feel (normalized 1–10) is vendor-only data — the athlete's subjective
+		// feel is free text in feel_note. A vendor payload without a feel (most
+		// resyncs) must not erase the value a fuller sync wrote. Omitting the
+		// column (same mechanism as the thumbnails above) keeps it out of the
+		// INSERT and therefore out of the ON DUPLICATE KEY UPDATE list. A
+		// non-NULL vendor feel still overwrites: rating the activity in the
+		// vendor app is the newer statement of the same signal.
 		if a.Feel == nil {
 			omits = append(omits, "Feel")
 		}

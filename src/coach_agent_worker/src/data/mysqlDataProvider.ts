@@ -213,7 +213,7 @@ export class MySqlDataProvider implements DataProvider {
               a.descent_m, t.training_dose AS stride_dose,
               t.session_class AS stride_session_class, a.temperature,
               a.humidity, a.feels_like, a.wind_speed, a.sport_note, a.sport,
-              a.feel, a.vertical_oscillation_mm, a.ground_contact_time_ms,
+              a.feel, a.feel_note, a.vertical_oscillation_mm, a.ground_contact_time_ms,
               a.vertical_ratio_pct, a.pauses, a.provider
          FROM activities a
          LEFT JOIN activity_training_load t
@@ -272,7 +272,7 @@ export class MySqlDataProvider implements DataProvider {
               a.descent_m, t.training_dose AS stride_dose,
               t.session_class AS stride_session_class, a.temperature,
               a.humidity, a.feels_like, a.wind_speed, a.sport_note, a.sport,
-              a.feel, a.vertical_oscillation_mm, a.ground_contact_time_ms,
+              a.feel, a.feel_note, a.vertical_oscillation_mm, a.ground_contact_time_ms,
               a.vertical_ratio_pct, a.pauses, a.provider, a.sport_type
          FROM activities a
          LEFT JOIN activity_training_load t
@@ -723,6 +723,7 @@ function rowToActivity(row: RowDataPacket): Activity {
     sportNote: (row.sport_note ?? null) as string | null,
     sport: (row.sport ?? null) as string | null,
     feel: (row.feel ?? null) as number | null,
+    feelNote: (row.feel_note ?? null) as string | null,
     verticalOscillationMm: (row.vertical_oscillation_mm ?? null) as number | null,
     groundContactTimeMs: (row.ground_contact_time_ms ?? null) as number | null,
     verticalRatioPct: (row.vertical_ratio_pct ?? null) as number | null,

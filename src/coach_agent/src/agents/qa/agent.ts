@@ -41,7 +41,7 @@ const QA_SUBAGENT_PROMPT = `你是 STRIDE 跑步教练的训练问答专家，�
 
 能查到的事实，先自己查清楚再回答；只有确实不在数据里的东西（比如官方成绩、你当时的主观感受、天气），才向运动员确认。分段配速、后程掉速、单次训练的细节一定在 get_activity_details 里，不要问运动员。
 
-feel 缺失时每次会话最多自然地问一次（锚点与落库规则见 analyze-activity skill）；已有值绝不重问，绝不批量提醒「有 N 次没填体感」。
+feel 与 feelNote 均缺失时每次会话最多自然地问一次（量表表格与落库规则见 analyze-activity skill）；运动员回答的原话直接经 set_activity_feel 落库，不做数值映射。任一已有值绝不重问，绝不批量提醒「有 N 次没填体感」。
     `;
 
 /** qa 子代理使用的工具集（供测试复用）。feelWriter 缺省时不挂写工具（纯只读）。 */

@@ -54,7 +54,7 @@ type fakeActivityStore struct {
 	tsCalled    bool
 	gotFeelUser string
 	gotFeelLbl  string
-	gotFeelVal  float64
+	gotFeelNote string
 }
 
 func (f *fakeActivityStore) ListActivities(_ context.Context, userID string, p storage.ActivityListParams) (*storage.ActivityPage, error) {
@@ -98,8 +98,8 @@ func (f *fakeActivityStore) ActivityTimeseries(_ context.Context, _, _ string) (
 	return f.series, f.seriesErr
 }
 
-func (f *fakeActivityStore) SetActivityFeel(_ context.Context, userID, labelID string, feel float64) (bool, error) {
-	f.gotFeelUser, f.gotFeelLbl, f.gotFeelVal = userID, labelID, feel
+func (f *fakeActivityStore) SetActivityFeelNote(_ context.Context, userID, labelID, note string) (bool, error) {
+	f.gotFeelUser, f.gotFeelLbl, f.gotFeelNote = userID, labelID, note
 	if f.feelErr != nil {
 		return false, f.feelErr
 	}
@@ -664,7 +664,7 @@ func TestActivityList_StoreError_500(t *testing.T) {
 	}
 }
 
-// --- PATCH feel (#508) --------------------------------------------------------
+// --- PATCH feel_note (#508) ---------------------------------------------------
 
 // doBody issues a request with a JSON body (the harness do() is bodyless).
 func (h *activityHarness) doBody(method, path string, headers map[string]string, body string) *httptest.ResponseRecorder {
@@ -678,62 +678,76 @@ func (h *activityHarness) doBody(method, path string, headers map[string]string,
 	return w
 }
 
-func TestActivityFeel_NoToken_401(t *testing.T) {
+func TestActivityFeelNote_NoToken_401(t *testing.T) {
 	h := newActivityHarness(t, &fakeActivityStore{feelFound: true})
-	if w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", nil, `{"feel":7}`); w.Code != http.StatusUnauthorized {
+	if w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", nil, `{"feel_note":"轻松"}`); w.Code != http.StatusUnauthorized {
 		t.Fatalf("code = %d, want 401", w.Code)
 	}
 }
 
-func TestActivityFeel_UserTier_CrossUser_403(t *testing.T) {
+func TestActivityFeelNote_UserTier_CrossUser_403(t *testing.T) {
 	h := newActivityHarness(t, &fakeActivityStore{feelFound: true})
-	if w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserB), `{"feel":7}`); w.Code != http.StatusForbidden {
+	if w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserB), `{"feel_note":"轻松"}`); w.Code != http.StatusForbidden {
 		t.Fatalf("code = %d, want 403", w.Code)
 	}
 }
 
-func TestActivityFeel_InternalTier_AnyUser_204(t *testing.T) {
+func TestActivityFeelNote_InternalTier_AnyUser_204(t *testing.T) {
 	h := newActivityHarness(t, &fakeActivityStore{feelFound: true})
+	note := "前面4组体感6，最后两组7-8"
 	w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1",
-		map[string]string{"X-Internal-Token": testToken}, `{"feel":7.5}`)
+		map[string]string{"X-Internal-Token": testToken}, `{"feel_note":"`+note+`"}`)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("code = %d, want 204: %s", w.Code, w.Body.String())
 	}
-	if h.store.gotFeelUser != activityUserA || h.store.gotFeelLbl != "act-1" || h.store.gotFeelVal != 7.5 {
-		t.Fatalf("forwarded = (%q, %q, %v)", h.store.gotFeelUser, h.store.gotFeelLbl, h.store.gotFeelVal)
+	if h.store.gotFeelUser != activityUserA || h.store.gotFeelLbl != "act-1" || h.store.gotFeelNote != note {
+		t.Fatalf("forwarded = (%q, %q, %q)", h.store.gotFeelUser, h.store.gotFeelLbl, h.store.gotFeelNote)
 	}
 }
 
-func TestActivityFeel_BadBody_400(t *testing.T) {
+func TestActivityFeelNote_TrimsWhitespace(t *testing.T) {
 	h := newActivityHarness(t, &fakeActivityStore{feelFound: true})
-	for _, body := range []string{`{}`, `{"feel":null}`, `{"feel":"7"}`, `{"feel":-0.5}`, `{"feel":10.5}`} {
+	if w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA), `{"feel_note":"  轻松  "}`); w.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204", w.Code)
+	}
+	if h.store.gotFeelNote != "轻松" {
+		t.Fatalf("forwarded = %q, want trimmed 轻松", h.store.gotFeelNote)
+	}
+}
+
+func TestActivityFeelNote_BadBody_400(t *testing.T) {
+	h := newActivityHarness(t, &fakeActivityStore{feelFound: true})
+	long := strings.Repeat("字", 501)
+	for _, body := range []string{
+		`{}`, `{"feel_note":null}`, `{"feel_note":""}`, `{"feel_note":"   "}`,
+		`{"feel_note":123}`, `{"feel_note":"` + long + `"}`,
+	} {
 		w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA), body)
 		if w.Code != http.StatusBadRequest {
-			t.Fatalf("body %s: code = %d, want 400", body, w.Code)
+			t.Fatalf("body %.20s…: code = %d, want 400", body, w.Code)
 		}
 	}
 }
 
-func TestActivityFeel_Bounds_Accepted(t *testing.T) {
-	for _, v := range []string{"0", "10", "7"} {
-		h := newActivityHarness(t, &fakeActivityStore{feelFound: true})
-		w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA), `{"feel":`+v+`}`)
-		if w.Code != http.StatusNoContent {
-			t.Fatalf("feel %s: code = %d, want 204", v, w.Code)
-		}
+func TestActivityFeelNote_MaxLength_Accepted(t *testing.T) {
+	h := newActivityHarness(t, &fakeActivityStore{feelFound: true})
+	note := strings.Repeat("字", 500)
+	w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA), `{"feel_note":"`+note+`"}`)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("code = %d, want 204", w.Code)
 	}
 }
 
-func TestActivityFeel_NotFound_404(t *testing.T) {
+func TestActivityFeelNote_NotFound_404(t *testing.T) {
 	h := newActivityHarness(t, &fakeActivityStore{feelFound: false})
-	if w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/missing", h.bearer(t, activityUserA), `{"feel":7}`); w.Code != http.StatusNotFound {
+	if w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/missing", h.bearer(t, activityUserA), `{"feel_note":"轻松"}`); w.Code != http.StatusNotFound {
 		t.Fatalf("code = %d, want 404", w.Code)
 	}
 }
 
-func TestActivityFeel_StoreError_500(t *testing.T) {
+func TestActivityFeelNote_StoreError_500(t *testing.T) {
 	h := newActivityHarness(t, &fakeActivityStore{feelErr: errors.New("boom")})
-	if w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA), `{"feel":7}`); w.Code != http.StatusInternalServerError {
+	if w := h.doBody(http.MethodPatch, "/api/"+activityUserA+"/activities/act-1", h.bearer(t, activityUserA), `{"feel_note":"轻松"}`); w.Code != http.StatusInternalServerError {
 		t.Fatalf("code = %d, want 500", w.Code)
 	}
 }

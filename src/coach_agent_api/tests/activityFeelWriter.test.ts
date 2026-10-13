@@ -20,7 +20,7 @@ test("activity feel writer PATCHes the Go user endpoint with the internal token"
     return jsonResponse(204);
   });
 
-  await writer.setActivityFeel("11111111-2222-3333-4444-555555555555", "act-1", 7.5);
+  await writer.setActivityFeelNote("11111111-2222-3333-4444-555555555555", "act-1", "前面4组体感6，最后两组7-8");
 
   assert.equal(requests.length, 1);
   const [request] = requests;
@@ -28,10 +28,10 @@ test("activity feel writer PATCHes the Go user endpoint with the internal token"
   assert.equal(request.url, "http://go:8080/api/11111111-2222-3333-4444-555555555555/activities/act-1");
   assert.equal(request.method, "PATCH");
   assert.equal(request.headers["x-internal-token"], "tok");
-  assert.deepEqual(request.body, { feel: 7.5 });
+  assert.deepEqual(request.body, { feel_note: "前面4组体感6，最后两组7-8" });
 });
 
 test("activity feel writer fails loud on non-2xx so the coach cannot fake success", async () => {
   const writer = createActivityFeelWriter(goApi, async () => jsonResponse(404));
-  await assert.rejects(() => writer.setActivityFeel("11111111-2222-3333-4444-555555555555", "missing", 7), /404/);
+  await assert.rejects(() => writer.setActivityFeelNote("11111111-2222-3333-4444-555555555555", "missing", "轻松"), /404/);
 });

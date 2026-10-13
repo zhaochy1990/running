@@ -190,6 +190,19 @@ func TestParseActivityDetailZeroCodesStayNull(t *testing.T) {
 	}
 }
 
+func TestParseActivityDetailFeelClamped(t *testing.T) {
+	// feelType is speced 1–5 (→2–10); an out-of-range code must clamp to the
+	// 1–10 scale rather than store an impossible value.
+	a, _, _, _, err := ParseActivityDetail("f10bc353-01ab-4db1-af9f-d9305ea9a532", "L0", time.Time{},
+		[]byte(`{"summary":{"sportType":100},"sportFeelInfo":{"feelType":9}}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if a.Feel == nil || *a.Feel != 10 {
+		t.Errorf("feel = %v, want 10 (feelType 9 ×2 clamped)", a.Feel)
+	}
+}
+
 func TestParseActivityDetailFallbackDate(t *testing.T) {
 	fallback := time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC)
 	a, _, _, _, err := ParseActivityDetail("f10bc353-01ab-4db1-af9f-d9305ea9a532", "L2", fallback,

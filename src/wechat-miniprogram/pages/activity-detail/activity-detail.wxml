@@ -153,9 +153,10 @@
       </view>
 
       <!-- 训练反馈 -->
-      <view wx:if="{{sportNote}}" class="card">
+      <view wx:if="{{sportNote || feelNote}}" class="card">
         <view class="card-title">训练反馈{{header.feelEmoji ? ' ' + header.feelEmoji : ''}}</view>
-        <view class="note-text">{{sportNote}}</view>
+        <view wx:if="{{feelNote}}" class="note-text">{{feelNote}}</view>
+        <view wx:if="{{sportNote}}" class="note-text">{{sportNote}}</view>
       </view>
 
       <!-- 教练简评 -->

@@ -58,11 +58,13 @@ func TestFeelFromScore(t *testing.T) {
 	}{
 		{nil, nil},
 		{mk(0), nil},
+		{mk(5), fptr(1.0)}, // 0.5 clamps up to the 1–10 floor
 		{mk(10), fptr(1.0)},
 		{mk(30), fptr(3.0)},
 		{mk(50), fptr(5.0)},
 		{mk(70), fptr(7.0)},
 		{mk(95), fptr(9.5)},
+		{mk(105), fptr(10.0)}, // defensive: out-of-range raw clamps to the ceiling
 	}
 	for _, c := range cases {
 		got := feelFromScore(c.in)

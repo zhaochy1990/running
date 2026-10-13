@@ -118,9 +118,11 @@ definitions:
         type: number
       feel:
         description: |-
-          Feel is the normalized 0–10 RPE feel — vendor-normalized or athlete-set
-          via PATCH; NULL when unrated. (feel_type above stays the vendor raw value.)
+          Feel is the vendor-normalized 1–10 RPE feel (COROS×2, Garmin÷10, clamped
+          to [1,10]); NULL when unrated. feel_type above stays the vendor raw value.
         type: number
+      feel_note:
+        type: string
       feel_type:
         type: integer
       feels_like:
@@ -2633,12 +2635,12 @@ definitions:
       timestamp:
         type: integer
     type: object
-  api.updateFeelBody:
+  api.updateFeelNoteBody:
     properties:
-      feel:
-        type: number
+      feel_note:
+        type: string
     required:
-    - feel
+    - feel_note
     type: object
   api.updateMasterPlanRequest:
     properties:
@@ -2918,9 +2920,11 @@ definitions:
         type: number
       feel:
         description: |-
-          Feel is the normalized 0–10 RPE feel — vendor-normalized or athlete-set
-          via PATCH; NULL when unrated. (feel_type above stays the vendor raw value.)
+          Feel is the vendor-normalized 1–10 RPE feel (COROS×2, Garmin÷10, clamped
+          to [1,10]); NULL when unrated. feel_type above stays the vendor raw value.
         type: number
+      feel_note:
+        type: string
       feel_type:
         type: integer
       feels_like:
@@ -3567,10 +3571,11 @@ paths:
     patch:
       consumes:
       - application/json
-      description: Writes the athlete's subjective feel (0–10 RPE, "talk test" anchored)
-        for one activity. Only the normalized feel column is written; the vendor feel_type
-        is never modified. A user caller may only update their own activities; an
-        internal caller (coach agent) may update any user's.
+      description: Writes the athlete's subjective feel verbatim as free text (e.g.
+        segmented RPE descriptions) for one activity. Stored verbatim in feel_note;
+        the vendor-normalized feel and feel_type are never modified. A user caller
+        may only update their own activities; an internal caller (coach agent) may
+        update any user's.
       parameters:
       - description: User id (JWT sub)
         in: path
@@ -3582,12 +3587,12 @@ paths:
         name: labelId
         required: true
         type: string
-      - description: Feel value
+      - description: Feel note text
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/api.updateFeelBody'
+          $ref: '#/definitions/api.updateFeelNoteBody'
       responses:
         "204":
           description: No Content
@@ -3616,7 +3621,7 @@ paths:
       security:
       - InternalToken: []
       - BearerAuth: []
-      summary: Set an activity's athlete-rated feel
+      summary: Set an activity's athlete-rated feel (free text)
       tags:
       - activities
   /api/{user}/body-composition:

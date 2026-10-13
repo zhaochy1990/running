@@ -4981,14 +4981,14 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Writes the athlete's subjective feel (0–10 RPE, \"talk test\" anchored) for one activity. Only the normalized feel column is written; the vendor feel_type is never modified. A user caller may only update their own activities; an internal caller (coach agent) may update any user's.",
+                "description": "Writes the athlete's subjective feel verbatim as free text (e.g. segmented RPE descriptions) for one activity. Stored verbatim in feel_note; the vendor-normalized feel and feel_type are never modified. A user caller may only update their own activities; an internal caller (coach agent) may update any user's.",
                 "consumes": [
                     "application/json"
                 ],
                 "tags": [
                     "activities"
                 ],
-                "summary": "Set an activity's athlete-rated feel",
+                "summary": "Set an activity's athlete-rated feel (free text)",
                 "parameters": [
                     {
                         "type": "string",
@@ -5005,12 +5005,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Feel value",
+                        "description": "Feel note text",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.updateFeelBody"
+                            "$ref": "#/definitions/api.updateFeelNoteBody"
                         }
                     }
                 ],
@@ -7339,8 +7339,11 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "feel": {
-                    "description": "Feel is the normalized 0–10 RPE feel — vendor-normalized or athlete-set\nvia PATCH; NULL when unrated. (feel_type above stays the vendor raw value.)",
+                    "description": "Feel is the vendor-normalized 1–10 RPE feel (COROS×2, Garmin÷10, clamped\nto [1,10]); NULL when unrated. feel_type above stays the vendor raw value.",
                     "type": "number"
+                },
+                "feel_note": {
+                    "type": "string"
                 },
                 "feel_type": {
                     "type": "integer"
@@ -11039,14 +11042,14 @@ const docTemplate = `{
                 }
             }
         },
-        "api.updateFeelBody": {
+        "api.updateFeelNoteBody": {
             "type": "object",
             "required": [
-                "feel"
+                "feel_note"
             ],
             "properties": {
-                "feel": {
-                    "type": "number"
+                "feel_note": {
+                    "type": "string"
                 }
             }
         },
@@ -11454,8 +11457,11 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "feel": {
-                    "description": "Feel is the normalized 0–10 RPE feel — vendor-normalized or athlete-set\nvia PATCH; NULL when unrated. (feel_type above stays the vendor raw value.)",
+                    "description": "Feel is the vendor-normalized 1–10 RPE feel (COROS×2, Garmin÷10, clamped\nto [1,10]); NULL when unrated. feel_type above stays the vendor raw value.",
                     "type": "number"
+                },
+                "feel_note": {
+                    "type": "string"
                 },
                 "feel_type": {
                     "type": "integer"
