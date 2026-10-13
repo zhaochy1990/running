@@ -39,6 +39,8 @@ export interface Activity {
   feels_like?: number | null;
   wind_speed?: number | null;
   feel_type?: number | null;
+  /** 运动员经教练对话补填的体感原话（自由文本）；null = 没说过。 */
+  feel_note?: string | null;
   sport_note?: string | null;
   pauses?: Pause[];
   commentary?: string | null;

@@ -149,6 +149,7 @@ interface ActivityDetailPageData {
   segments: ExerciseGroup[];
   hasSegments: boolean;
   sportNote: string;
+  feelNote: string;
   hasCommentary: boolean;
   commentary: string;
   weather: WeatherItem[];
@@ -829,6 +830,7 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
   }
 
   const sportNote = a.sport_note || '';
+  const feelNote = a.feel_note || '';
 
   // 轨迹地图：力量训练无 GPS，不渲染；默认按配速着色。
   let mapView: ReturnType<typeof computeMapView> = {
@@ -866,6 +868,7 @@ function buildView(detail: ActivityDetailResponse): Partial<ActivityDetailPageDa
     segments,
     hasSegments,
     sportNote,
+    feelNote,
     hasCommentary: Boolean(a.commentary && a.commentary.trim()),
     commentary: a.commentary || '',
     weather: buildWeather(a),
@@ -921,6 +924,7 @@ Page<ActivityDetailPageData, ActivityDetailPageHandlers>({
     segments: [],
     hasSegments: false,
     sportNote: '',
+    feelNote: '',
     hasCommentary: false,
     commentary: '',
     weather: [],
