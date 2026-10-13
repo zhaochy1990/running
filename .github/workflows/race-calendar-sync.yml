@@ -7,9 +7,12 @@ name: Race calendar sync
 #                               the same value as STRIDE_WORKER_API_INTERNAL_TOKEN.
 # If either value is unset the workflow fails so the omission is visible.
 #
-# One job per race-calendar source, distinguished only by the pipeline name
-# started via POST /pipelines: race_calendar_sync (World Athletics) and
-# chinaath_race_calendar_sync (中国田协).
+# Two jobs, strictly serial (devops#533): the 中国田协 mirror first, then the
+# 国际田联 mirror — its dedup reads the same morning's fresh Chinese catalogue
+# (devops#443), so a 田协 failure skips WA for the day and self-heals tomorrow
+# instead of matching against last night's rows. Distinguished only by the
+# pipeline name started via POST /pipelines: race_calendar_sync (World
+# Athletics) and chinaath_race_calendar_sync (中国田协).
 
 on:
   schedule:
@@ -18,25 +21,18 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  sync:
+  chinaath:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - pipeline: race_calendar_sync
-            label: World Athletics
-          - pipeline: chinaath_race_calendar_sync
-            label: 中国田协
+    env:
+      PIPELINE: chinaath_race_calendar_sync
+      LABEL: 中国田协
     steps:
-      - name: Start the ${{ matrix.pipeline }} pipeline
+      - name: Start the ${{ env.PIPELINE }} pipeline
         env:
           GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}
           GO_INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}
-          PIPELINE: ${{ matrix.pipeline }}
-          LABEL: ${{ matrix.label }}
         run: |
           set -u
           if [ -z "$GO_API_URL" ] || [ -z "$GO_INTERNAL_TOKEN" ]; then
@@ -104,14 +100,6 @@ jobs:
                 echo "::error::pipeline $run_id failed: $(head -c 500 /tmp/resp.json)"
                 exit 1
               fi
-              # done but an optional step failed (e.g. the key-discovery step):
-              # the calendar data was still synced via the configured key, but
-              # alert so key rotation can't break discovery silently.
-              failed_steps=$(python3 -c "import json; d=json.load(open('/tmp/resp.json')); print(','.join(s['name'] for s in d.get('steps', []) if s.get('status')=='failed'))" 2>/dev/null)
-              if [ -n "$failed_steps" ]; then
-                echo "::error::pipeline $run_id done but optional step(s) failed: $failed_steps (calendar step fell back to the configured key)"
-                exit 1
-              fi
               exit 0
             fi
             [ "$poll" -lt "$MAX_POLL" ] && sleep "$POLL_INTERVAL"
@@ -124,24 +112,26 @@ jobs:
         uses: zhaochy1990/configurations/notify-wecom@v1
         with:
           webhook_url: ${{ secrets.WECOM_WEBHOOK_URL }}
+          title: 赛历同步 · 中国田协
 
-  # The label pass is the third step of the same daily job, in its own job only
-  # because it MUST run after both mirrors: the matrix above runs them in
-  # parallel, and this step reads both calendars. Without `needs`, it would race
-  # the 中国田协 mirror and label against a stale catalogue.
-  label:
-    needs: sync
+  # The 国际田联 mirror runs strictly after the 中国田协 mirror: its dedup
+  # matches against the rows that mirror just wrote, so running it on a stale
+  # catalogue would re-create the duplicates the matcher exists to prevent.
+  wa:
+    needs: [chinaath]
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      PIPELINE: race_calendar_sync
+      LABEL: 国际田联
     steps:
-      # Same start-and-poll shape as the sync job above; kept inline rather than
-      # extracted into a shared action so the working sync job stays untouched.
-      - name: Start the race_calendar_wa_label pipeline
+      # Same start-and-poll shape as the chinaath job above; kept inline rather
+      # than extracted into a shared action so the working job stays untouched.
+      - name: Start the ${{ env.PIPELINE }} pipeline
         env:
           GO_API_URL: ${{ vars.STRIDE_GO_API_URL }}
           GO_INTERNAL_TOKEN: ${{ secrets.STRIDE_GO_INTERNAL_TOKEN }}
-          PIPELINE: race_calendar_wa_label
         run: |
           set -u
           if [ -z "$GO_API_URL" ] || [ -z "$GO_INTERNAL_TOKEN" ]; then
@@ -151,9 +141,9 @@ jobs:
 
           URL="${GO_API_URL%/}/pipelines"
           DAY=$(TZ=Asia/Shanghai date +%F)
-          KEY="race-calendar-wa-label-$DAY"
+          KEY="race-calendar-sync-$LABEL-$DAY"
 
-          echo "## Race calendar sync — WA label" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Race calendar sync — $LABEL" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Shanghai day: \`$DAY\`, idempotency key: \`$KEY\`" >> "$GITHUB_STEP_SUMMARY"
 
@@ -201,14 +191,24 @@ jobs:
                 echo "::error::pipeline $run_id failed: $(head -c 500 /tmp/resp.json)"
                 exit 1
               fi
+              # done but an optional step failed (e.g. the key-discovery step):
+              # the calendar data was still synced via the configured key, but
+              # alert so key rotation can't break discovery silently.
+              failed_steps=$(python3 -c "import json; d=json.load(open('/tmp/resp.json')); print(','.join(s['name'] for s in d.get('steps', []) if s.get('status')=='failed'))" 2>/dev/null)
+              if [ -n "$failed_steps" ]; then
+                echo "::error::pipeline $run_id done but optional step(s) failed: $failed_steps (calendar step fell back to the configured key)"
+                exit 1
+              fi
               exit 0
             fi
             [ "$poll" -lt "$MAX_POLL" ] && sleep "$POLL_INTERVAL"
           done
           echo "::warning::pipeline $run_id did not reach a terminal state within the poll window"
 
+      # Side-channel to the WeCom group; the action never fails this job.
       - name: Notify WeCom
         if: always()
         uses: zhaochy1990/configurations/notify-wecom@v1
         with:
           webhook_url: ${{ secrets.WECOM_WEBHOOK_URL }}
+          title: 赛历同步 · 国际田联

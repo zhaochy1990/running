@@ -41,12 +41,12 @@ func (s *Store) AutoMigrateRaceCalendar(ctx context.Context) error {
 // the upstream re-lists is un-flagged by the same upsert that refreshes the row.
 //
 // wa_label is excluded too, and for a stronger reason than the rest: it is
-// applied through ApplyRaceCalendarWALabels — by the race_calendar_wa_label
-// step and, since devops#443, by the 国际田联 mirror's dedup stamping a
-// listing's tier onto the Chinese row it merges into — and no mirror's upsert
-// owns it. Leaving it out of this list is what makes those writes survive the
-// daily 中国田协 sync — an OnConflict merge would otherwise rebuild the row's
-// columns from the upstream struct and blank it.
+// applied through ApplyRaceCalendarWALabels — since devops#443 (widened by
+// devops#533) by the 国际田联 mirror's dedup stamping a listing's tier onto the
+// Chinese row it merges into — and no mirror's upsert owns it. Leaving it out
+// of this list is what makes those writes survive the daily 中国田协 sync — an
+// OnConflict merge would otherwise rebuild the row's columns from the upstream
+// struct and blank it.
 var raceCalendarUpsertCols = []string{
 	"race_date", "month", "dayofmonth", "country", "province", "city", "label",
 	"race_types", "updated_at", "content_stale",

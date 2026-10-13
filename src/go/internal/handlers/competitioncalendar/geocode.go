@@ -31,7 +31,7 @@ var usStateNames = map[string]string{
 // 中国田协 catalogue splits raceAddress and discards its third segment, so that
 // side's city is always the prefecture. Leaving a district here makes the two
 // sources disagree on the city of the same race, which breaks the
-// (race_date, city) join the race_calendar_wa_label step matches on: before this
+// (race_date, city) join the mirror dedup matches on: before this
 // rule, 高淳/浦口/西昌/杨陵/镇宁 matched nothing and their races silently lost
 // their World Athletics tier. The race's own name carries the locality anyway.
 //
@@ -58,6 +58,9 @@ var chinaCity = map[string]chinaCityEntry{
 	"Guiyang":       {"贵阳市", "贵州省"},
 	"Hangzhou":      {"杭州市", "浙江省"},
 	"Harbin":        {"哈尔滨市", "黑龙江省"},
+	"Hefei":         {"合肥市", "安徽省"},
+	"Hengshui":      {"衡水市", "河北省"},
+	"Shaoxing":      {"绍兴市", "浙江省"},
 	"Huai'an":       {"淮安市", "江苏省"},
 	"Huangshi":      {"黄石市", "湖北省"},
 	"Jilin":         {"吉林市", "吉林省"},
@@ -86,6 +89,19 @@ var chinaCity = map[string]chinaCityEntry{
 	"Yichang":       {"宜昌市", "湖北省"},
 	"Yiwu":          {"义乌市", "浙江省"},
 	"Zhenning":      {"安顺市", "贵州省"},
+}
+
+// matchCity normalizes a stored city name to the spelling the (race_date, city)
+// match joins on (devops#533): a city the chinaCity table knows is joined by its
+// Chinese prefecture name, so a stored English spelling ("Hengshui", from rows
+// written before the table learned the city) matches the 中国田协 row's 衡水市.
+// It is match-time only — stored rows are never rewritten. Unknown spellings
+// pass through unchanged.
+func matchCity(city string) string {
+	if e, ok := chinaCity[city]; ok {
+		return e.CityZh
+	}
+	return city
 }
 
 // parseLocation derives (province, city) from the upstream venue string and

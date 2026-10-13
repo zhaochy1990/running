@@ -208,7 +208,8 @@ func New(cfg Config) job.Handler {
 			skipped := dedup.Ambiguous + dedup.TypeRefused
 			out.Years[year] = yearSummary{
 				Fetched: len(events), Upserted: res.Upserted, Deleted: res.Deleted,
-				Deduped: dedup.Deduped, Stamped: dedup.Stamped, Cleared: dedup.Cleared,
+				Deduped: dedup.Deduped, Drifted: dedup.Drifted,
+				Stamped: dedup.Stamped, Cleared: dedup.Cleared,
 				Skipped: skipped, Applied: applied,
 			}
 			log.Info("race_calendar_sync: year synced",
@@ -218,6 +219,7 @@ func New(cfg Config) job.Handler {
 				zap.Int("upserted", res.Upserted),
 				zap.Int("deleted", res.Deleted),
 				zap.Int("deduped", dedup.Deduped),
+				zap.Int("drifted", dedup.Drifted),
 				zap.Int("stamped", dedup.Stamped),
 				zap.Int("cleared", dedup.Cleared),
 				zap.Int("skipped", skipped),
@@ -231,16 +233,18 @@ func New(cfg Config) job.Handler {
 
 // yearSummary is the per-year result reported in the job's result_json. The
 // dedup fields (devops#443) are the mirror's match decisions: Deduped listings
-// not written because a Chinese row covers them, Stamped/Cleared the wa_label
-// values sent for those rows (set/change/remove, before the store's origin and
-// override guards), Applied what the store actually wrote, Skipped the listings
-// kept on a refused match (ambiguous or type-contradicting) — each of those is
-// worth an operator's glance when it stops being zero.
+// not written because a Chinese row covers them, Drifted the Deduped ones that
+// matched through the ±30d tier rather than on the exact date, Stamped/Cleared
+// the wa_label values sent for those rows (set/change/remove, before the
+// store's origin and override guards), Applied what the store actually wrote,
+// Skipped the listings kept on a refused match (ambiguous or type-contradicting)
+// — each of those is worth an operator's glance when it stops being zero.
 type yearSummary struct {
 	Fetched  int `json:"fetched"`
 	Upserted int `json:"upserted"`
 	Deleted  int `json:"deleted"`
 	Deduped  int `json:"deduped"`
+	Drifted  int `json:"drifted"`
 	Stamped  int `json:"stamped"`
 	Cleared  int `json:"cleared"`
 	Skipped  int `json:"skipped"`

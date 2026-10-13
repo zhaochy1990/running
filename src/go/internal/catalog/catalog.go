@@ -66,15 +66,6 @@ const (
 	// system job (no subject user): internal-only, the single step of the
 	// chinaath_race_calendar_sync pipeline started by the daily cron workflow.
 	JobTypeChinaAthRaceCalendar = "chinaath_race_calendar_sync"
-	// JobTypeRaceCalendarWALabel mirrors each 国际田联 row's own label tier
-	// (Platinum/Gold/Elite/Label) into its wa_label column. Since devops#443
-	// this is its whole job: the cross-source copy onto 中国田协 rows happens in
-	// the race_calendar_sync mirror's dedup, which does not write the duplicate
-	// 英文名行 at all and stamps the tier onto the Chinese row instead. It runs
-	// after the calendar mirror so a row inserted by today's run is labelled the
-	// same morning. System job (no subject user), internal-only, started by the
-	// daily cron workflow.
-	JobTypeRaceCalendarWALabel = "race_calendar_wa_label"
 	// JobTypeHomeCityRecompute recomputes every user's resident city from
 	// activity GPS starts + watch-named activity cities and upserts
 	// user_home_city, appending a history row on city changes. A system job
@@ -110,12 +101,6 @@ const (
 	// into race_calendar. Internal-only (system run, no subject user); the
 	// daily cron workflow starts it via POST /pipelines.
 	PipelineChinaAthRaceCalendar = "chinaath_race_calendar_sync"
-	// PipelineRaceCalendarWALabel runs the World Athletics tier self-mirror:
-	// each 国际田联 row's own tier lands in its wa_label column. Its own
-	// pipeline because it must run after the calendar mirror (a row inserted by
-	// today's run is labelled the same morning); the copy of tiers onto 中国田协
-	// rows is the mirror's dedup (devops#443), not this step.
-	PipelineRaceCalendarWALabel = "race_calendar_wa_label"
 	// PipelineHomeCityRecompute refreshes every user's resident-city snapshot.
 	// Internal-only (system run, no subject user); the weekly cron workflow
 	// starts it via POST /pipelines.
@@ -232,13 +217,6 @@ func Jobs() []JobSpec {
 			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
 		},
 		{
-			Type:          JobTypeRaceCalendarWALabel,
-			UserInitiable: false,
-			Description:   "Mirror each 国际田联 row's own World Athletics label tier (Platinum/Gold/Elite/Label) into its wa_label column. The tier copy onto 中国田协 rows belongs to the race_calendar_sync mirror's dedup, not this job. A row whose wa_label an administrator has overridden keeps its value. Idempotent — only rows whose tier changes are written. System job (no subject user). Years come from the input {\"years\":[...]}, else the current and next Shanghai year. Internal-only; the daily cron workflow starts it via the race_calendar_wa_label pipeline, after the calendar mirror.",
-			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"},"description":"Calendar years to label. Empty uses the current and next Shanghai year."}},"additionalProperties":false}`),
-			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
-		},
-		{
 			Type:          JobTypeHomeCityRecompute,
 			UserInitiable: false,
 			Description:   "Recompute every user's resident city from activity GPS starts + watch-named activity cities (time-weighted voting with training-camp exclusion and a relocation gate) and upsert user_home_city, appending a user_home_city_history row when a user's city changes (new/relocated/drift/cleared). Idempotent full scan; per-user failures skip and count rather than fail the run. System job (no subject user). Internal-only; the weekly cron workflow starts it via the homecity_recompute pipeline.",
@@ -319,18 +297,6 @@ func Pipelines() []PipelineSpec {
 			},
 			UserInitiable: false,
 			Description:   "Internal system pipeline (no subject user): fetch the full 中国田协 competition catalogue (no credentials needed, years filtered in memory) and mirror the requested years into the race_calendar table (source 中国田协). Started by the daily cron workflow via POST /pipelines; the optional input {\"years\":[...]} overrides which years to mirror.",
-			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
-			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
-		},
-		{
-			Def: pipeline.Def{
-				Name: PipelineRaceCalendarWALabel,
-				Steps: []pipeline.StepDef{
-					{Name: "label", JobType: JobTypeRaceCalendarWALabel},
-				},
-			},
-			UserInitiable: false,
-			Description:   "Internal system pipeline (no subject user): mirror each 国际田联 row's own World Athletics tier into its wa_label column. Started by the daily cron workflow via POST /pipelines AFTER the calendar mirror, so a row inserted by today's run is labelled the same morning. (The tier copy onto 中国田协 rows happens in the mirror's dedup.) The optional input {\"years\":[...]} overrides which years to label.",
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{"years":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`),
 			ExampleInput:  json.RawMessage(`{"years":["2026"]}`),
 		},

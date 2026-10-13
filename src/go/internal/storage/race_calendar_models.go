@@ -185,17 +185,16 @@ type RaceCalendarEvent struct {
 	// distinction nothing reads yet.
 	ContentSource *string `gorm:"column:content_source;size:32"`
 	// WALabel is this race's World Athletics road-race label tier (Platinum /
-	// Gold / Elite / Label), or nil when it has none. The rule is uniform and
-	// source-independent: it is written on EVERY row, so a reader consults one
-	// column instead of reasoning about which calendar the row came from.
+	// Gold / Elite / Label), or nil when it has none.
 	//
 	// A race both calendars list is one row — the Chinese one (the 国际田联
 	// mirror does not write an English-name row beside it, devops#443) — and the
-	// mirror's dedup stamps the listing's tier here in the same run. A race only
-	// the 国际田联 calendar lists (上海马拉松 Platinum, 北京马拉松 Gold…) keeps
-	// that row, and the race_calendar_wa_label step mirrors its own Label into
-	// WALabel; without that those races — the most prestigious ones — would read
-	// as having no World Athletics tier.
+	// mirror's dedup stamps the listing's tier here in the same run (devops#533
+	// widened the match: drifted dates, English city names, admin-detached
+	// rows). A race only the 国际田联 calendar lists (北京马拉松 Gold…) keeps
+	// that row and carries its tier in Label; since devops#533 its WALabel
+	// column is no longer self-mirrored — the dedicated race_calendar_wa_label
+	// job is gone, and Label is the fresh copy for those rows.
 	//
 	// Like the content columns it is NOT in raceCalendarUpsertCols, so neither
 	// calendar mirror's upsert clobbers it — the tier writes go through
@@ -206,7 +205,7 @@ type RaceCalendarEvent struct {
 	// It is admin-overrideable (see RaceCalendarOverrideableFields): the match is
 	// a heuristic, so an administrator must be able to correct or clear a wrong
 	// tier, and a row that declares the override keeps its value against the next
-	// label run.
+	// sync run.
 	WALabel *string `gorm:"column:wa_label;size:32"`
 	// Published marks a race the product actually surfaces: the 小程序/Web race
 	// calendar shows published rows and nothing else, so a race is invisible to

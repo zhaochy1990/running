@@ -115,9 +115,10 @@ type raceCalendarEventDTO struct {
 	City       *string `json:"city"`
 	Label      *string `json:"label"`
 	// WALabel is this race's World Athletics tier (Platinum/Gold/Elite/Label),
-	// written by the race_calendar_wa_label step, or null when the race has none.
-	// One meaning regardless of source: a 中国田协 row takes it from its World
-	// Athletics counterpart, and a 国际田联 row mirrors its own tier.
+	// written by the 国际田联 mirror's dedup (devops#443/#533), or null when the
+	// race has none. A 中国田协 row takes it from its World Athletics
+	// counterpart; a race only the 国际田联 calendar lists carries its tier in
+	// label instead.
 	WALabel      *string              `json:"wa_label"`
 	RaceTypes    []string             `json:"race_types"`
 	FieldSources map[string]string    `json:"field_sources"`
@@ -437,9 +438,9 @@ type raceCalendarUpdateRequest struct {
 	City     optionalField[string] `json:"city" swaggertype:"string"`
 	Label    optionalField[string] `json:"label" swaggertype:"string"`
 	// WALabel is the World Athletics tier written onto this row by the
-	// race_calendar_wa_label step. Editable like label so an administrator can
+	// 国际田联 mirror's dedup. Editable like label so an administrator can
 	// correct a mis-matched tier; declaring "wa_label" in Overrides makes the
-	// label run keep the administrator's value.
+	// next sync keep the administrator's value.
 	WALabel     optionalField[string] `json:"wa_label" swaggertype:"string"`
 	RaceTypes   *[]string             `json:"race_types"`
 	Overrides   []string              `json:"overrides"`

@@ -1,10 +1,57 @@
 package competitioncalendar
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/zhaochy1990/stride/internal/storage"
 )
+
+func strp(s string) *string { return &s }
+
+// waRow builds a World Athletics row as the mirror stores one.
+func waRow(id uint64, date, city, label string, types ...string) storage.RaceCalendarEvent {
+	return storage.RaceCalendarEvent{
+		ID: id, Source: storage.RaceSourceWorldAth, Country: "CHN",
+		Name: "WA race", RaceDate: date, City: strp(city), Label: strp(label),
+		RaceTypes: encodeTypes(types),
+	}
+}
+
+// cnRow builds a 中国田协 row as its mirror stores one.
+func cnRow(id uint64, date, city string, types ...string) storage.RaceCalendarEvent {
+	return storage.RaceCalendarEvent{
+		ID: id, Source: storage.RaceSourceChinaAth, Country: "CHN",
+		Name: "2026赛事", RaceDate: date, City: strp(city), Label: strp("A"),
+		Origin: storage.RaceOriginSync, RaceTypes: encodeTypes(types),
+	}
+}
+
+func encodeTypes(types []string) *string {
+	if len(types) == 0 {
+		return nil
+	}
+	b, _ := json.Marshal(types)
+	return strp(string(b))
+}
+
+// detachedWARow is a 国际田联 row an administrator took over — any admin edit
+// flips the whole row to origin=manual. Since devops#533 it stays in the dedup
+// scope, so its listing merges into it instead of re-inserting the twin. The
+// tier write it plans is blocked by the store's origin guard (the admin owns
+// the tier on a detached row); here the matcher's decision is what's pinned.
+func detachedWARow(id uint64, date, city, label string, types ...string) storage.RaceCalendarEvent {
+	row := waRow(id, date, city, label, types...)
+	row.Origin = storage.RaceOriginManual
+	return row
+}
+
+// named replaces a row's upstream name — the T2 cases need real listing names,
+// the distance guard derives from them.
+func named(row storage.RaceCalendarEvent, name string) storage.RaceCalendarEvent {
+	row.Name = name
+	return row
+}
 
 // namesOf extracts the kept rows' names in order — the assertions care about
 // which listings survive and in what order they reach the mirror write.
@@ -175,6 +222,128 @@ func TestPlanMirrorDedup(t *testing.T) {
 			wantLabels: map[uint64]string{1: "Platinum"},
 			want:       mirrorDedupSummary{Deduped: 1, Stamped: 1},
 		},
+		{
+			// devops#533 root cause 1: the admin took the WA row over (renamed
+			// it 上马), the old source-list scope lost it, and the next sync
+			// re-inserted the English-name twin beside it.
+			name: "a detached WA row joins the match set: the listing merges, no twin",
+			upstream: []storage.RaceCalendarEvent{
+				named(waRow(50, "2026-11-30", "上海市", "Platinum", "Unknown"), "Shanghai Marathon"),
+			},
+			candidates: []storage.RaceCalendarEvent{
+				detachedWARow(14962, "2026-11-30", "上海市", "", "Unknown"),
+			},
+			wantKeep:   []string{},
+			wantLabels: map[uint64]string{14962: "Platinum"},
+			want:       mirrorDedupSummary{Deduped: 1, Stamped: 1},
+		},
+		{
+			// devops#533 root cause 2: the stored WA row spells the city in
+			// English, the 中国田协 row in Chinese — normalize at match time.
+			name: "English city normalizes onto the Chinese row (Hefei ↔ 合肥市)",
+			upstream: []storage.RaceCalendarEvent{
+				named(waRow(50, "2026-04-12", "Hefei", "Label", "Unknown"), "Hefei Marathon"),
+			},
+			candidates: []storage.RaceCalendarEvent{
+				cnRow(1, "2026-04-12", "合肥市", "Marathon"),
+			},
+			wantKeep:   []string{},
+			wantLabels: map[uint64]string{1: "Label"},
+			want:       mirrorDedupSummary{Deduped: 1, Stamped: 1},
+		},
+		{
+			// devops#533 root cause 3, the 南昌 pair: WA still lists 11-08, the
+			// organiser's (and 中国田协's) date is 11-15. T2 merges across the
+			// drift: the listing is dropped, the tier lands.
+			name: "南昌式 7 天漂移 T2 命中",
+			upstream: []storage.RaceCalendarEvent{
+				named(waRow(50, "2026-11-08", "南昌市", "Label", "Unknown"), "Nanchang Marathon"),
+			},
+			candidates: []storage.RaceCalendarEvent{
+				cnRow(597, "2026-11-15", "南昌市", "Unknown"),
+			},
+			wantKeep:   []string{},
+			wantLabels: map[uint64]string{597: "Label"},
+			want:       mirrorDedupSummary{Deduped: 1, Drifted: 1, Stamped: 1},
+		},
+		{
+			name: "T2 drift merge with a matching derived half-marathon distance",
+			upstream: []storage.RaceCalendarEvent{
+				named(waRow(50, "2026-11-08", "常州市", "Elite", "Unknown"), "Changzhou West Taihu Half Marathon"),
+			},
+			candidates: []storage.RaceCalendarEvent{
+				cnRow(583, "2026-11-14", "常州市", "HalfMarathon"),
+			},
+			wantKeep:   []string{},
+			wantLabels: map[uint64]string{583: "Elite"},
+			want:       mirrorDedupSummary{Deduped: 1, Drifted: 1, Stamped: 1},
+		},
+		{
+			// The T2 guard's whole point: a city can run a half marathon half a
+			// month beside its marathon; a marathon listing must not stamp it.
+			name: "同城半月：marathon listing refuses the half-marathon row",
+			upstream: []storage.RaceCalendarEvent{
+				named(waRow(50, "2026-11-08", "上海市", "Platinum", "Unknown"), "Shanghai Marathon"),
+			},
+			candidates: []storage.RaceCalendarEvent{
+				cnRow(1, "2026-11-15", "上海市", "HalfMarathon"),
+			},
+			wantKeep:   []string{"Shanghai Marathon"},
+			wantLabels: map[uint64]string{},
+			want:       mirrorDedupSummary{TypeRefused: 1},
+		},
+		{
+			name: "T2 refuses when the listing's name derives no distance",
+			upstream: []storage.RaceCalendarEvent{
+				named(waRow(50, "2026-11-08", "南昌市", "Label", "Unknown"), "Nanchang Grand Running Festival"),
+			},
+			candidates: []storage.RaceCalendarEvent{
+				cnRow(597, "2026-11-15", "南昌市", "Unknown"),
+			},
+			wantKeep:   []string{"Nanchang Grand Running Festival"},
+			wantLabels: map[uint64]string{},
+			want:       mirrorDedupSummary{TypeRefused: 1},
+		},
+		{
+			name: "T2 refuses when two Chinese rows sit in the window (row side ambiguous)",
+			upstream: []storage.RaceCalendarEvent{
+				named(waRow(50, "2026-11-08", "南昌市", "Label", "Unknown"), "Nanchang Marathon"),
+			},
+			candidates: []storage.RaceCalendarEvent{
+				cnRow(597, "2026-11-15", "南昌市", "Unknown"),
+				cnRow(598, "2026-11-20", "南昌市", "Unknown"),
+			},
+			wantKeep:   []string{"Nanchang Marathon"},
+			wantLabels: map[uint64]string{},
+			want:       mirrorDedupSummary{Ambiguous: 1},
+		},
+		{
+			name: "T2 refuses when two listings sit near one Chinese row (listing side ambiguous)",
+			upstream: []storage.RaceCalendarEvent{
+				named(waRow(50, "2026-11-08", "南昌市", "Label", "Unknown"), "Nanchang Marathon"),
+				named(waRow(51, "2026-11-22", "南昌市", "Gold", "Unknown"), "Nanchang Riverside Half Marathon"),
+			},
+			candidates: []storage.RaceCalendarEvent{
+				cnRow(597, "2026-11-15", "南昌市", "Unknown"),
+			},
+			wantKeep:   []string{"Nanchang Marathon", "Nanchang Riverside Half Marathon"},
+			wantLabels: map[uint64]string{},
+			want:       mirrorDedupSummary{Ambiguous: 2},
+		},
+		{
+			// Exactly the 上马 drift pair, matched: the tier survives the drift,
+			// the 30d tier guard passes on the derived distance.
+			name: "T2 respects the window edge (31 days refuses)",
+			upstream: []storage.RaceCalendarEvent{
+				named(waRow(50, "2026-10-15", "南昌市", "Label", "Unknown"), "Nanchang Marathon"),
+			},
+			candidates: []storage.RaceCalendarEvent{
+				cnRow(597, "2026-11-15", "南昌市", "Unknown"),
+			},
+			wantKeep:   []string{"Nanchang Marathon"},
+			wantLabels: map[uint64]string{},
+			want:       mirrorDedupSummary{},
+		},
 	}
 
 	for _, tc := range cases {
@@ -269,6 +438,39 @@ func TestTypesCompatible(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := typesCompatible(tc.wa, cn); got != tc.want {
 				t.Fatalf("typesCompatible = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDriftCompatible pins the two T2-guard branches the plan-level table
+// above cannot reach: the 10Km name token, and a stated WA race type (GW/GL)
+// which merges without any name derivation. The merge/refuse/contradiction
+// behaviour around them is covered by the TestPlanMirrorDedup cases.
+func TestDriftCompatible(t *testing.T) {
+	cases := []struct {
+		name string
+		in   storage.RaceCalendarEvent
+		cn   storage.RaceCalendarEvent
+		want bool
+	}{
+		{
+			name: "10k name derives the 10Km token",
+			in:   named(waRow(1, "2026-11-08", "杭州市", "Label", "Unknown"), "Hangzhou 10K"),
+			cn:   cnRow(2, "2026-11-15", "杭州市", "10Km"),
+			want: true,
+		},
+		{
+			name: "a GW listing's stated Marathon needs no name derivation",
+			in:   named(waRow(1, "2026-11-08", "上海市", "Platinum", "Marathon"), "Shanghai International"),
+			cn:   cnRow(2, "2026-11-15", "上海市", "Marathon"),
+			want: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := driftCompatible(tc.in, tc.cn); got != tc.want {
+				t.Fatalf("driftCompatible = %v, want %v", got, tc.want)
 			}
 		})
 	}
