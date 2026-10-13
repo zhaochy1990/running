@@ -37,7 +37,7 @@ class RunningCalibrationToolImpl {
 }
 
 /** Threshold pace in s/km, derived here so the caller never inverts m/s itself. */
-function toPaceSPerKm(speedMps: number | null): number | null {
+export function toPaceSPerKm(speedMps: number | null): number | null {
   return speedMps !== null && speedMps > 0 ? Math.round(1000 / speedMps) : null;
 }
 
