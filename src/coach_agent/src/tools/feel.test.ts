@@ -47,6 +47,7 @@ test("set_activity_feel schema bounds feelNote to non-empty text ≤500 chars", 
   assert.ok(tool);
   const schema = tool.schema as unknown as { safeParse(input: unknown): { success: boolean } };
   assert.equal(schema.safeParse({ labelId: "act-1", feelNote: "" }).success, false);
+  assert.equal(schema.safeParse({ labelId: "act-1", feelNote: "   " }).success, false);
   assert.equal(schema.safeParse({ labelId: "act-1", feelNote: " ".repeat(501) }).success, false);
   assert.equal(schema.safeParse({ labelId: "act-1", feelNote: "字".repeat(500) }).success, true);
   assert.equal(schema.safeParse({ labelId: "act-1", feelNote: 7 }).success, false);

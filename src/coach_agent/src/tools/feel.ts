@@ -29,6 +29,9 @@ const setActivityFeelSchema = z.object({
   labelId: z.string().min(1).describe("运动记录的唯一 ID（labelId），取自 get_activities_by_date_range 或 get_activity_details 的返回。"),
   feelNote: z
     .string()
+    // 先 trim 再校验/落库，与 Go handler 同序；否则全空白能过工具层、
+    // 过不了 Go 判空，教练对话中途才 400。
+    .trim()
     .min(1)
     // 按码点计数对齐 Go 侧 utf8.RuneCountInString ≤500；zod 的 .max 按 UTF-16
     // 码元计，含 emoji（代理对）时会比 Go 先拒绝。
