@@ -1,4 +1,5 @@
 export { createActivitiesTools } from "./activities.js";
+export { createActivityInsightTools } from "./activityInsights.js";
 export type { AskUserQuestionPayload } from "./askUserQuestions.js";
 export {
   ASK_USER_QUESTION_KIND,
