@@ -24,6 +24,9 @@ analyzer:
     - "**/*.config.dart"
     - "**/generated/**"
     - "build/**"
+    - android/**
+    - ios/**
+    - web/**
 
 linter:
   rules:

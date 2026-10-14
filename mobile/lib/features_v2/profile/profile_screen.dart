@@ -303,7 +303,8 @@ class _SyncRow extends ConsumerWidget {
             ? '上次同步 ${lastSynced.month}月${lastSynced.day}日 ${lastSynced.hour.toString().padLeft(2, '0')}:${lastSynced.minute.toString().padLeft(2, '0')}'
             : '从手表拉取最新训练数据';
 
-    return Container(
+    // Material, not a colored Container: ListTile paints ink on the nearest Material (Flutter 3.47 asserts).
+    return Material(
       color: StrideTokens.surface,
       child: ListTile(
         leading: sync.syncing

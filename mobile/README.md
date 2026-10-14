@@ -28,8 +28,8 @@ Requires Flutter SDK (stable channel ≥ 3.40) and Android SDK (cmdline-tools or
 cd mobile
 flutter pub get
 
-# 2. Generate codegen output (Drift, Retrofit, json_serializable, Riverpod)
-dart run build_runner build --delete-conflicting-outputs
+# 2. Generate codegen output (json_serializable)
+dart run build_runner build
 
 # 3. (One-time) Generate launcher icons from assets/branding/icon-1024.png
 dart run flutter_launcher_icons
