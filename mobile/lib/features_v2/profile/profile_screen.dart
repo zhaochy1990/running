@@ -58,12 +58,14 @@ class MeScreen extends ConsumerWidget {
           ProfileMenuItem(
             icon: Icons.emoji_events_outlined,
             label: '赛事中心',
-            onTap: () => _comingSoon(context, '赛事中心'),
+            key: const Key('menu-race-center'),
+            onTap: () => context.push(Routes.races),
           ),
           ProfileMenuItem(
             icon: Icons.flag_outlined,
             label: '我的比赛',
-            onTap: () => _comingSoon(context, '我的比赛'),
+            key: const Key('menu-my-races'),
+            onTap: () => context.push(Routes.myRaces),
           ),
           ProfileMenuItem(
             icon: Icons.watch_outlined,

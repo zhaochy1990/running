@@ -41,6 +41,14 @@ class Routes {
   static const activityDetailPattern = '/records/activity/:id';
   static String activityDetail(String id) => '/records/activity/$id';
 
+  // Race domain（赛事域四屏，stride-devops#466：全页栈，不在 shell 内）
+  static const races = '/races';
+  static const raceDetailPattern = '/races/:id';
+  static String raceDetail(String id) => '/races/$id';
+  static const raceStrategyPattern = '/races/:id/strategy';
+  static String raceStrategy(String id) => '/races/$id/strategy';
+  static const myRaces = '/my-races';
+
   // Me — profile tab + second-level pages
   static const meData = '/me/data';
   static const meDataPmc = '/me/data/pmc';
